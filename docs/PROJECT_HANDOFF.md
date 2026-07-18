@@ -8,8 +8,8 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.30** (frontier staircase).
-- Current public Agent release: **v1.6.11** (`1.6.11`). Agent `1.6.3` and later
+- Current deployed application release: **v1.32** (adaptive refinement release guard).
+- Current public Agent release: **v1.6.13** (`1.6.13`). Agent `1.6.3` and later
   can offer this update inside the Agent after the user presses OK; Agent
   `1.6.2` and older still require one manual install of a self-update-capable
   build.
@@ -17,6 +17,123 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.32 - 2026-07-19 (deployed)
+
+- Agent 1.6.13 fixes a Windows version-resource mismatch discovered during the
+  final v1.31 release review. Agent 1.6.12 displayed `1.6.12`, but its numeric
+  `FixedFileInfo` tuple still contained `1.6.11.0`. The new executable reports
+  `1.6.13` and `1.6.13.0` consistently for file/product display and raw numeric
+  versions. `build_windows.ps1` now rejects any future mismatch between the
+  runtime semantic version, both fixed tuples, and both display strings; a
+  packaging regression covers the same contract.
+- Refinement is less dataset-specific. At a practical incumbent it probes the
+  same cap, then `current - 3`; if that stronger cap is infeasible, a
+  `current - 1` nearby fallback runs before further tightening or stagnation
+  termination. A successful stronger probe still rebuilds the queue immediately,
+  preserving the fast path measured on `default`. This lets schools with a
+  narrower feasible boundary improve within the same click.
+- A lower-session frontier no longer causes roughly 50 seconds to be left idle
+  merely to preserve the cleanup tail. Global probes may use all time before a
+  protected `30 + 2` second tail, including the target-cap path, and the final
+  gap-directed LNS still receives the full 30-second budget. Completeness, hard
+  requirements, fixed lessons, Pareto safety, zero singleton sessions, and zero
+  gap-2-plus sessions remain protected.
+- Local verification passes scheduler `127/127`, Agent `72/72`, frontend/UI
+  `219/219`, and deployment/credential tooling `7/7` (`425/425` total).
+  Isolated VPS staging ended with `STAGING_TESTS_OK`: scheduler `127/127`, Agent
+  `72/72`, Rust API `136/136`, and candidate validator `20/20` (`355/355`
+  total). GUI/solver-child smoke, UPX integrity, signed-manifest parsing, and
+  one-entry ZIP validation also pass.
+- The Agent release manifest is RSA-SHA256 signed and the executable is
+  one-layer UPX packed. The public one-entry ZIP is 95,291,399 bytes with
+  SHA-256
+  `6141C23CB14B13423978AFFD8BCD576DFC53A184E72E588803785F18BB9F0FAA`;
+  the EXE is 95,771,128 bytes with SHA-256
+  `45331874DB4F38BE5787B05468D8096A8C5BBC51A51786E99BE49FDB47F2956D`.
+  The EXE is not Authenticode-signed; integrity/authenticity is supplied by the
+  signed release manifest, whose key is pinned in the Agent.
+- Production deployment returned `UPDATE_OK`. Transaction backups are
+  `/opt/cherry-scheduler-backups/server-state-20260718-212432.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260718-212432.tar.gz`. Public
+  health serves API marker
+  `tkb_new-rust-api-2026-07-19-agent-version-metadata-v32`; the page serves
+  cache marker `20260719-v132-agent-version-metadata-v1`, bridge marker
+  `tkb-rust-api-v236-agent-version-metadata`, and planner marker
+  `updated-v9.1 (Agent 1.6.13 version metadata hotfix)`.
+- The public Agent ZIP was downloaded independently after deployment and both
+  its size and SHA-256 match the live signed manifest. The installed
+  `C:\TKBCherryAgent\TKBCherryAgent.exe` was updated to 1.6.13, reports raw
+  version `1.6.13.0`, starts the normal parent/worker pair, and is recognized by
+  the browser as `Agent đang ON · 1 máy đang hỗ trợ`.
+- Final production Agent E2E started from the already strong `460` teacher
+  sessions / `39` gap-1 incumbent and improved it to **459/38**. The timetable
+  remained complete at `1,566/1,566`, with zero unassigned periods, zero
+  singleton teacher sessions, zero gap-2-plus sessions, and zero student holes.
+  Exactly one Agent solver child owned the solve while VPS capacity stayed at
+  6/6 free tokens; after completion the solver child exited and both server and
+  Agent returned to their idle states.
+
+### v1.31 - 2026-07-19 (deployed)
+
+- Complete-incumbent refinement no longer begins with the overly aggressive
+  direct `466 -> 461` teacher-session cap. It now probes feasible nearby caps
+  through the deterministic frontier contract `466/seed A -> 463/seed B ->
+  462/seed C`. Seeds are consumed globally and are not reused after the
+  frontier changes, so successive attempts explore new trajectories instead of
+  replaying the same hint. Each Benders probe receives approximately 60
+  seconds, and the default refinement budget reserves 30 seconds for
+  gap-directed cleanup of the best lower-session frontier.
+- Completeness, every hard requirement, fixed lessons, the exact lesson count,
+  Pareto safety against the visible incumbent, zero one-period teacher
+  sessions, and zero gap-2-plus teacher sessions remain protected. A candidate
+  that lowers teaching sessions but cannot repair its gap-1 debt is never
+  allowed to replace a better visible timetable.
+- Exact local `default` benchmark from the production-equivalent complete
+  `466` teacher sessions / `44` gap-1 incumbent, using six workers, completed
+  in 171.826 seconds at **460 teacher sessions / 35 gap-1**. It retained
+  `1,566/1,566`, zero unassigned periods, zero singleton teacher sessions, and
+  zero gap-2-plus sessions.
+- Production Agent E2E refined `466/44 -> 462/41`. Exactly one Agent executor
+  owned the canonical job while the VPS remained at 6/6 free worker tokens;
+  the result was complete and hard-valid with `1,566/1,566`, zero unassigned,
+  zero singleton, and zero gap-2-plus sessions.
+- Production VPS-only E2E stopped the Agent, pressed Play exactly once, and
+  dismissed the Agent invitation with **Cancel** to choose VPS execution. The
+  VPS showed one active canonical job using all 6/6 worker tokens and refined
+  `462/41 -> 460/39`, again retaining `1,566/1,566`, zero unassigned, zero
+  singleton, zero gap-2-plus, and hard validity. The final UI notification was
+  exactly **Da xep xong!** (rendered in Vietnamese as **Đã xếp xong!**).
+- Local release verification passes scheduler `126/126`, Agent `71/71`,
+  frontend `219/219`, and tooling `7/7` (`423/423` total). Agent GUI smoke and
+  solver-child smoke pass both before and after one-layer UPX packing. Isolated
+  VPS staging ended with `STAGING_TESTS_OK`: scheduler `126/126`, Agent
+  `71/71`, Rust API `136/136`, and candidate validator `20/20` (`353/353`
+  total).
+- Public Agent 1.6.12 used a signed release manifest and a UPX-packed EXE. The
+  one-entry ZIP is
+  95,291,488 bytes with SHA-256
+  `C81A842837CCB26C28827F6044F08F9E6DB2250C84B445DCD60766220DFA1ECC`;
+  `TKBCherryAgent.exe` is 95,771,256 bytes with SHA-256
+  `49ED88F180E00F25705DC191655F1065DE170C52223DEBE08E44BC0436B21887`.
+  The public signed manifest reports version `1.6.12`.
+- Production deployment returned `UPDATE_OK`. Transaction backups are
+  `/opt/cherry-scheduler-backups/server-state-20260718-203657.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260718-203657.tar.gz`. Public
+  health serves API marker
+  `tkb_new-rust-api-2026-07-19-balanced-refinement-v31`; the page serves cache
+  marker `20260719-v131-balanced-refinement-v1`.
+- Post-deploy operational verification restarted the installed
+  `C:\TKBCherryAgent\TKBCherryAgent.exe --startup` copy and confirmed file/product
+  version 1.6.12, one normal parent/worker pair, and the browser status
+  `Agent đang ON · 1 máy đang hỗ trợ`. A further refinement started from the
+  already strong `460/39` incumbent, created exactly one Agent solver child,
+  left the VPS at 6/6 free worker tokens, and completed cleanly with the Pareto
+  guard retaining `460/39`. The public ZIP was downloaded independently after
+  deployment; its 95,291,488-byte size and SHA-256 match the signed manifest.
+  Beyond this release, continue benchmarking diverse school data: search
+  quality is intentionally saturation- and feasibility-driven rather than tied
+  to the `default` dataset's observed `460/35` result.
 
 ### v1.30 - 2026-07-19 (deployed)
 
@@ -1569,15 +1686,19 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-19: `UPDATE_OK` for
-v1.30. Public health serves API marker
-`tkb_new-rust-api-2026-07-19-frontier-staircase-v30`, zero active jobs, zero
-queued jobs, and 6/6 available worker tokens. The public page serves bridge
-`tkb-rust-api-v234-frontier-staircase` with cache key
-`20260719-v130-frontier-staircase-v1`; the planner marker is
-`updated-v8.9 (Agent 1.6.11 frontier staircase)`. Public Agent release `1.6.11`,
-its signed release manifest, and its one-entry ZIP are verified. The public ZIP
-manifest SHA-256 is
-`B4F0CAB37F43842ADEDF9C70DD49DABDF0645341ECE405F3505E438554217C52`.
+v1.32. Public health serves API marker
+`tkb_new-rust-api-2026-07-19-agent-version-metadata-v32`; the page serves cache
+key `20260719-v132-agent-version-metadata-v1`. Public Agent release `1.6.13`
+and its signed manifest are live. Its one-entry ZIP is 95,291,399 bytes with
+manifest SHA-256
+`6141C23CB14B13423978AFFD8BCD576DFC53A184E72E588803785F18BB9F0FAA`;
+the packaged EXE is 95,771,128 bytes with SHA-256
+`45331874DB4F38BE5787B05468D8096A8C5BBC51A51786E99BE49FDB47F2956D`.
+The v1.31 production E2E checks exercised both exclusive Agent execution and
+exclusive VPS-only execution. The final v1.32 Agent E2E retained that
+single-executor contract and improved the complete `default` timetable from
+`460/39` to `459/38`; v1.32 also adds the cross-school nearby-cap fallback and
+strict release-version guarding.
 Workstations on Agent `1.6.2` or older require one manual install of a
 self-update-capable build before future in-Agent updates are available.
 

@@ -2987,7 +2987,7 @@ class SolverResultContractTests(unittest.TestCase):
                 clock[0] += 36.0
                 return json.loads(json.dumps(lower_sessions_worse_gap))
             if len(attempted_caps) == 3:
-                clock[0] += 36.0
+                clock[0] += 108.0
                 return json.loads(json.dumps(improved))
             clock[0] += 120.0
             raise RuntimeError("portfolio exhausted")
@@ -3165,7 +3165,99 @@ class SolverResultContractTests(unittest.TestCase):
         frontier = payload["solver"]["teacher_session_optimization"]["exploration_frontier"]
         self.assertTrue(frontier["returned_visible_incumbent"])
 
-    def test_refinement_at_practical_target_uses_incumbent_for_lower_cap(self) -> None:
+    def test_refinement_reserves_thirty_seconds_for_frontier_gap_cleanup(self) -> None:
+        data = {
+            "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
+            "giaovien": [{"magv": "T1", "ten": "T1"}],
+            "monhoc": [{"ten": "Math", "ma": "M"}],
+            "mon": [{"khoi": "6", "ten": "Math", "sotiet": 4, "gioihan": 4}],
+            "pccmMatrix": {"L1|Math": "T1"},
+            "tkbConstraints": {},
+        }
+        incumbent = _first_click_payload(teacher_sessions=466, gap1=40)
+        frontier = _first_click_payload(teacher_sessions=463, gap1=45)
+        cleaned = _first_click_payload(teacher_sessions=463, gap1=38)
+        clock = [1_000.0]
+        attempt_limits: list[int] = []
+
+        def fake_benders(_data, _settings, **kwargs):
+            attempt_limits.append(int(kwargs["time_limit_seconds"]))
+            clock[0] += 40.0 if len(attempt_limits) == 1 else attempt_limits[-1]
+            return json.loads(json.dumps(frontier))
+
+        with (
+            patch("tkb_new.adapter.time.monotonic", side_effect=lambda: clock[0]),
+            patch(
+                "tkb_new.adapter._teacher_session_adaptive_bounds",
+                return_value={
+                    "lower_cap": 346,
+                    "start_cap": 466,
+                    "upper_cap": 1116,
+                    "expected_periods": 1566,
+                },
+            ),
+            patch(
+                "tkb_new.adapter._fast_benders_tight_fixed_off_profile",
+                return_value={
+                    "expected": 1566,
+                    "class_count": 54,
+                    "available_slots": 1566,
+                    "fixed_slots": 1566,
+                    "slack": 0,
+                },
+            ),
+            patch(
+                "tkb_new.adapter._validated_existing_soft_incumbent_payload",
+                return_value=incumbent,
+            ),
+            patch("tkb_new.adapter._school_seed_sequence", return_value=[11, 22, 33, 44]),
+            patch(
+                "tkb_new.adapter._polish_complete_incumbent_with_local_lns",
+                return_value=(json.loads(json.dumps(cleaned)), [{"operator": "gap1"}]),
+            ) as local_lns,
+            patch(
+                "tkb_new.adapter._solve_teacher_session_benders_candidate",
+                side_effect=fake_benders,
+            ),
+        ):
+            payload = _solve_teacher_session_optimized_from_ui_data(
+                data,
+                {
+                    "auto_sort_mode": "teacher_session_opt",
+                    "auto_sort_strategy": "continue_teacher_quality_from_incumbent",
+                    "ui_unified_auto_sort": True,
+                    "ui_unified_solve_kind": "refine_complete",
+                    "ui_use_existing_complete_incumbent": True,
+                    "quality_priority_order": "one_period_gap2_teacher_sessions_gap1",
+                    "target_gap1_sessions": 0,
+                    "optimization_accept_teacher_sessions": 466,
+                    "optimization_accept_gap1_sessions": 53,
+                    "optimization_time_limit_seconds": 120,
+                    "optimization_adaptive_time_limit_seconds": 120,
+                    "optimization_first_cap_time_limit_seconds": 60,
+                    "optimization_retry_cap_time_limit_seconds": 60,
+                    "optimization_frontier_cleanup_reserve_seconds": 30,
+                    "optimization_refine_try_lower_session_cap": True,
+                    "optimization_use_benders": True,
+                    "num_workers": 6,
+                },
+                rules=None,
+                progress=None,
+                out_dir=None,
+            )
+
+        local_lns.assert_called_once()
+        self.assertEqual(attempt_limits, [60, 48])
+        self.assertEqual(local_lns.call_args.kwargs["time_limit_seconds"], 30.0)
+        self.assertEqual(local_lns.call_args.kwargs["gap1_cleanup_cap"], 40)
+        self.assertEqual(payload["metrics"]["teacher_sessions"], 463)
+        self.assertEqual(_teacher_session_opt_gap1(payload["metrics"]), 38)
+        attempts = payload["solver"]["teacher_session_optimization"]["attempts"]
+        self.assertTrue(
+            any(attempt.get("reason") == "frontier_gap_cleanup_reserved" for attempt in attempts)
+        )
+
+    def test_refinement_first_noop_then_nearby_cap_improves_pareto(self) -> None:
         data = {
             "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
             "giaovien": [{"magv": "T1", "ten": "T1"}],
@@ -3175,13 +3267,17 @@ class SolverResultContractTests(unittest.TestCase):
             "tkbConstraints": {},
         }
         incumbent = _first_click_payload(teacher_sessions=466, gap1=44)
-        improved = _first_click_payload(teacher_sessions=461, gap1=33)
+        improved = _first_click_payload(teacher_sessions=463, gap1=38)
         clock = [1_000.0]
         attempted_caps: list[int] = []
+        attempted_seeds: list[int | None] = []
+        attempt_limits: list[int] = []
         hinted_sessions: list[int | None] = []
 
         def fake_benders(_data, _settings, **kwargs):
             attempted_caps.append(int(kwargs["cap"]))
+            attempted_seeds.append(kwargs.get("random_seed"))
+            attempt_limits.append(int(kwargs["time_limit_seconds"]))
             hint = kwargs.get("incumbent_payload")
             hint_metrics = hint.get("metrics") if isinstance(hint, dict) else None
             hinted_sessions.append(
@@ -3190,7 +3286,9 @@ class SolverResultContractTests(unittest.TestCase):
                 and hint_metrics.get("teacher_sessions") is not None
                 else None
             )
-            clock[0] += 176.0
+            clock[0] += 58.0
+            if len(attempted_caps) == 1:
+                return json.loads(json.dumps(incumbent))
             return json.loads(json.dumps(improved))
 
         with (
@@ -3218,6 +3316,7 @@ class SolverResultContractTests(unittest.TestCase):
                 "tkb_new.adapter._validated_existing_soft_incumbent_payload",
                 return_value=incumbent,
             ),
+            patch("tkb_new.adapter._school_seed_sequence", return_value=[11, 22, 33, 44]),
             patch(
                 "tkb_new.adapter._polish_complete_incumbent_with_local_lns",
                 return_value=None,
@@ -3239,8 +3338,11 @@ class SolverResultContractTests(unittest.TestCase):
                     "target_gap1_sessions": 0,
                     "optimization_accept_teacher_sessions": 466,
                     "optimization_accept_gap1_sessions": 53,
-                    "optimization_time_limit_seconds": 180,
-                    "optimization_adaptive_time_limit_seconds": 180,
+                    "optimization_time_limit_seconds": 120,
+                    "optimization_adaptive_time_limit_seconds": 120,
+                    "optimization_first_cap_time_limit_seconds": 60,
+                    "optimization_retry_cap_time_limit_seconds": 60,
+                    "optimization_polish_cap_time_limit_seconds": 60,
                     "optimization_refine_try_lower_session_cap": True,
                     "optimization_use_benders": True,
                     "num_workers": 6,
@@ -3251,10 +3353,201 @@ class SolverResultContractTests(unittest.TestCase):
             )
 
         local_lns.assert_not_called()
-        self.assertEqual(attempted_caps, [461])
-        self.assertEqual(hinted_sessions, [466])
-        self.assertEqual(payload["metrics"]["teacher_sessions"], 461)
-        self.assertEqual(_teacher_session_opt_gap1(payload["metrics"]), 33)
+        self.assertEqual(attempted_caps, [466, 463])
+        self.assertEqual(attempted_seeds, [11, 22])
+        self.assertEqual(attempt_limits, [60, 60])
+        self.assertEqual(hinted_sessions, [466, 466])
+        self.assertEqual(payload["metrics"]["teacher_sessions"], 463)
+        self.assertEqual(_teacher_session_opt_gap1(payload["metrics"]), 38)
+
+    def test_refinement_strong_cap_failure_runs_nearby_fallback_before_saturation(self) -> None:
+        data = {
+            "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
+            "giaovien": [{"magv": "T1", "ten": "T1"}],
+            "monhoc": [{"ten": "Math", "ma": "M"}],
+            "mon": [{"khoi": "6", "ten": "Math", "sotiet": 4, "gioihan": 4}],
+            "pccmMatrix": {"L1|Math": "T1"},
+            "tkbConstraints": {},
+        }
+        incumbent = _first_click_payload(teacher_sessions=466, gap1=44)
+        nearby_improved = _first_click_payload(teacher_sessions=465, gap1=40)
+        clock = [1_000.0]
+        attempted_caps: list[int] = []
+        attempted_seeds: list[int | None] = []
+
+        def fake_benders(_data, _settings, **kwargs):
+            attempted_caps.append(int(kwargs["cap"]))
+            attempted_seeds.append(kwargs.get("random_seed"))
+            if len(attempted_caps) == 1:
+                clock[0] += 30.0
+                return json.loads(json.dumps(incumbent))
+            if len(attempted_caps) == 2:
+                clock[0] += 30.0
+                raise RuntimeError("aggressive cap is infeasible for this school")
+            clock[0] += 60.0
+            return json.loads(json.dumps(nearby_improved))
+
+        with (
+            patch("tkb_new.adapter.time.monotonic", side_effect=lambda: clock[0]),
+            patch(
+                "tkb_new.adapter._teacher_session_adaptive_bounds",
+                return_value={
+                    "lower_cap": 346,
+                    "start_cap": 466,
+                    "upper_cap": 1116,
+                    "expected_periods": 1566,
+                },
+            ),
+            patch(
+                "tkb_new.adapter._fast_benders_tight_fixed_off_profile",
+                return_value={
+                    "expected": 1566,
+                    "class_count": 54,
+                    "available_slots": 1566,
+                    "fixed_slots": 1566,
+                    "slack": 0,
+                },
+            ),
+            patch(
+                "tkb_new.adapter._validated_existing_soft_incumbent_payload",
+                return_value=incumbent,
+            ),
+            patch("tkb_new.adapter._school_seed_sequence", return_value=[11, 22, 33, 44]),
+            patch(
+                "tkb_new.adapter._polish_complete_incumbent_with_local_lns",
+                return_value=None,
+            ),
+            patch(
+                "tkb_new.adapter._solve_teacher_session_benders_candidate",
+                side_effect=fake_benders,
+            ),
+        ):
+            payload = _solve_teacher_session_optimized_from_ui_data(
+                data,
+                {
+                    "auto_sort_mode": "teacher_session_opt",
+                    "auto_sort_strategy": "continue_teacher_quality_from_incumbent",
+                    "ui_unified_auto_sort": True,
+                    "ui_unified_solve_kind": "refine_complete",
+                    "ui_use_existing_complete_incumbent": True,
+                    "quality_priority_order": "one_period_gap2_teacher_sessions_gap1",
+                    "target_gap1_sessions": 0,
+                    "optimization_accept_teacher_sessions": 466,
+                    "optimization_accept_gap1_sessions": 53,
+                    "optimization_time_limit_seconds": 120,
+                    "optimization_adaptive_time_limit_seconds": 120,
+                    "optimization_first_cap_time_limit_seconds": 60,
+                    "optimization_retry_cap_time_limit_seconds": 60,
+                    "optimization_stop_on_stagnation": True,
+                    "optimization_adaptive_stagnant_attempts": 2,
+                    "optimization_adaptive_stagnant_seconds": 35,
+                    "optimization_refine_try_lower_session_cap": True,
+                    "optimization_use_benders": True,
+                    "num_workers": 6,
+                },
+                rules=None,
+                progress=None,
+                out_dir=None,
+            )
+
+        self.assertEqual(attempted_caps, [466, 463, 465])
+        self.assertEqual(attempted_seeds, [11, 22, 33])
+        self.assertEqual(payload["metrics"]["teacher_sessions"], 465)
+        self.assertEqual(_teacher_session_opt_gap1(payload["metrics"]), 40)
+
+    def test_refinement_rebuild_skips_consumed_seeds_after_cap_progress(self) -> None:
+        data = {
+            "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
+            "giaovien": [{"magv": "T1", "ten": "T1"}],
+            "monhoc": [{"ten": "Math", "ma": "M"}],
+            "mon": [{"khoi": "6", "ten": "Math", "sotiet": 4, "gioihan": 4}],
+            "pccmMatrix": {"L1|Math": "T1"},
+            "tkbConstraints": {},
+        }
+        incumbent = _first_click_payload(teacher_sessions=466, gap1=44)
+        same_cap_progress = _first_click_payload(teacher_sessions=466, gap1=42)
+        nearby_progress = _first_click_payload(teacher_sessions=463, gap1=38)
+        clock = [1_000.0]
+        attempted_caps: list[int] = []
+        attempted_seeds: list[int | None] = []
+
+        def fake_benders(_data, _settings, **kwargs):
+            attempted_caps.append(int(kwargs["cap"]))
+            attempted_seeds.append(kwargs.get("random_seed"))
+            if len(attempted_caps) == 1:
+                clock[0] += 55.0
+                return json.loads(json.dumps(same_cap_progress))
+            if len(attempted_caps) == 2:
+                clock[0] += 55.0
+                return json.loads(json.dumps(nearby_progress))
+            clock[0] += 70.0
+            raise RuntimeError("final nearby cap exhausted")
+
+        with (
+            patch("tkb_new.adapter.time.monotonic", side_effect=lambda: clock[0]),
+            patch(
+                "tkb_new.adapter._teacher_session_adaptive_bounds",
+                return_value={
+                    "lower_cap": 346,
+                    "start_cap": 466,
+                    "upper_cap": 1116,
+                    "expected_periods": 1566,
+                },
+            ),
+            patch(
+                "tkb_new.adapter._fast_benders_tight_fixed_off_profile",
+                return_value={
+                    "expected": 1566,
+                    "class_count": 54,
+                    "available_slots": 1566,
+                    "fixed_slots": 1566,
+                    "slack": 0,
+                },
+            ),
+            patch(
+                "tkb_new.adapter._validated_existing_soft_incumbent_payload",
+                return_value=incumbent,
+            ),
+            patch("tkb_new.adapter._school_seed_sequence", return_value=[11, 22, 33, 44]),
+            patch(
+                "tkb_new.adapter._polish_complete_incumbent_with_local_lns",
+                return_value=None,
+            ),
+            patch(
+                "tkb_new.adapter._solve_teacher_session_benders_candidate",
+                side_effect=fake_benders,
+            ),
+        ):
+            payload = _solve_teacher_session_optimized_from_ui_data(
+                data,
+                {
+                    "auto_sort_mode": "teacher_session_opt",
+                    "auto_sort_strategy": "continue_teacher_quality_from_incumbent",
+                    "ui_unified_auto_sort": True,
+                    "ui_unified_solve_kind": "refine_complete",
+                    "ui_use_existing_complete_incumbent": True,
+                    "quality_priority_order": "one_period_gap2_teacher_sessions_gap1",
+                    "target_gap1_sessions": 0,
+                    "optimization_accept_teacher_sessions": 466,
+                    "optimization_accept_gap1_sessions": 53,
+                    "optimization_time_limit_seconds": 180,
+                    "optimization_adaptive_time_limit_seconds": 180,
+                    "optimization_first_cap_time_limit_seconds": 60,
+                    "optimization_retry_cap_time_limit_seconds": 60,
+                    "optimization_refine_try_lower_session_cap": True,
+                    "optimization_use_benders": True,
+                    "num_workers": 6,
+                },
+                rules=None,
+                progress=None,
+                out_dir=None,
+            )
+
+        self.assertEqual(attempted_caps[:3], [466, 463, 461])
+        self.assertEqual(attempted_seeds[:3], [11, 22, 33])
+        self.assertEqual(len(set(attempted_seeds[:3])), 3)
+        self.assertEqual(payload["metrics"]["teacher_sessions"], 463)
+        self.assertEqual(_teacher_session_opt_gap1(payload["metrics"]), 38)
 
     def test_request_seed_reaches_global_refinement_queued_cap(self) -> None:
         data = {
@@ -5213,7 +5506,15 @@ class SolverResultContractTests(unittest.TestCase):
 
         self.assertEqual(compact[0], (466, 11, "target:11"))
         self.assertEqual(rough[0], (521, 11, "seed:11"))
-        self.assertEqual(at_practical_target[0], (461, 22, "tighten:22"))
+        self.assertEqual(
+            at_practical_target,
+            [
+                (466, 11, "seed:11"),
+                (463, 22, "tighten:22"),
+                (465, 33, "nearby:33"),
+                (462, 44, "tighten:44"),
+            ],
+        )
 
         forced_after_gap_progress = _refinement_gap_priority_attempts(
             {"teacher_sessions": 521, "gap_distribution": {0: 431, 1: 90}},

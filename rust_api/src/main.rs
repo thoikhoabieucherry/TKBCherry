@@ -24,21 +24,19 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-19-frontier-staircase-v30";
+const VERSION: &str = "tkb_new-rust-api-2026-07-19-agent-version-metadata-v32";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
 const MAX_REFERENCE_PROGRESS_FRAME_BYTES: usize = 32 * 1024;
 const AGENT_HELPER_PROTOCOL: &str = "tkb-agent-helper-v1";
 const AGENT_RESULT_DIGEST_PROTOCOL: &str = "tkb-json-tree-sha256-v1";
-// v1.6.11 is the first packaged runtime that continues below a practical
-// incumbent when its accepted cap equals the current teacher-session count.
-// It also preserves the exact incumbent lessons and uses the VPS-equivalent
-// worker width for large refinement requests. Older
-// binaries may speak protocol v1 but carry solver behavior that the current
-// server must not treat as an equivalent executor.
-const MIN_AGENT_HELPER_VERSION: &str = "1.6.11";
-const MIN_AGENT_HELPER_SEMVER: (u32, u32, u32) = (1, 6, 11);
+// v1.6.12 is the first packaged runtime that uses feasible nearby-cap waves,
+// globally distinct refinement seeds, and a bounded frontier-cleanup reserve.
+// Older binaries may speak protocol v1 but carry solver behavior that the
+// current server must not treat as an equivalent executor.
+const MIN_AGENT_HELPER_VERSION: &str = "1.6.12";
+const MIN_AGENT_HELPER_SEMVER: (u32, u32, u32) = (1, 6, 12);
 // A canonical server-owned job has exactly one executor. Keeping one Agent
 // task (instead of a seed portfolio) prevents the Agent and VPS from adding
 // parallel attempts to the same user request.
@@ -6675,7 +6673,7 @@ mod tests {
 
     #[test]
     fn agent_helper_version_gate_uses_strict_three_component_semver() {
-        for version in ["1.6.11", "1.7.0", "2.0.0"] {
+        for version in ["1.6.12", "1.7.0", "2.0.0"] {
             assert!(
                 agent_helper_version_supported(version),
                 "{version} should be eligible"

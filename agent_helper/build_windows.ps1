@@ -137,6 +137,27 @@ else {
     if ($LASTEXITCODE -ne 0) { throw "Could not install build dependencies." }
 }
 
+$VersionSource = Join-Path $AgentRoot "__init__.py"
+$AgentVersion = (& $VirtualPython -c "import runpy, sys; print(runpy.run_path(sys.argv[1])['VERSION'])" $VersionSource).Trim()
+if ($LASTEXITCODE -ne 0 -or $AgentVersion -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Could not read the Agent semantic version."
+}
+$VersionParts = $AgentVersion.Split('.')
+$FixedVersionTuple = "($($VersionParts[0]), $($VersionParts[1]), $($VersionParts[2]), 0)"
+$VersionInfoPath = Join-Path $AgentRoot "windows_version_info.txt"
+$VersionInfoText = [System.IO.File]::ReadAllText($VersionInfoPath)
+$ExpectedVersionMarkers = @(
+    "filevers=$FixedVersionTuple",
+    "prodvers=$FixedVersionTuple",
+    "StringStruct(u'FileVersion', u'$AgentVersion')",
+    "StringStruct(u'ProductVersion', u'$AgentVersion')"
+)
+foreach ($Marker in $ExpectedVersionMarkers) {
+    if (-not $VersionInfoText.Contains($Marker)) {
+        throw "windows_version_info.txt does not match Agent $AgentVersion ($Marker)."
+    }
+}
+
 $PythonBase = (& $VirtualPython -c "import sys; print(sys.base_prefix)").Trim()
 if (-not $PythonBase) { throw "Could not locate the Python runtime root." }
 $TclSourceRoot = Join-Path $PythonBase "tcl"
@@ -393,11 +414,6 @@ finally {
     $ReleaseZip.Dispose()
 }
 
-$VersionSource = Join-Path $AgentRoot "__init__.py"
-$AgentVersion = (& $VirtualPython -c "import runpy, sys; print(runpy.run_path(sys.argv[1])['VERSION'])" $VersionSource).Trim()
-if ($LASTEXITCODE -ne 0 -or $AgentVersion -notmatch '^\d+\.\d+\.\d+$') {
-    throw "Could not read the Agent semantic version."
-}
 $ReleaseManifest = Join-Path $OutputDirectory "TKBCherryAgent-release.json"
 $SignReleaseScript = Join-Path $RepositoryRoot "tools\agent-release\sign_release.py"
 & $VirtualPython $SignReleaseScript `

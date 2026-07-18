@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v234-frontier-staircase";
+  const VERSION = "tkb-rust-api-v236-agent-version-metadata";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;

@@ -6034,19 +6034,47 @@ def _refinement_gap_priority_attempts(
         min(int(upper_cap), _metric_int(metrics, "teacher_sessions", int(upper_cap))),
     )
     preferred = max(int(lower_cap), min(int(upper_cap), int(preferred_cap)))
-    if preferred > current:
-        return attempts
     if preferred == current:
-        if current <= int(lower_cap):
-            return attempts
-        continuation_cap = max(int(lower_cap), current - 5)
-        seed_index = 1 if len(polish_seeds) > 1 else 0
-        seed = int(polish_seeds[seed_index])
-        lower_attempt = (continuation_cap, seed, f"tighten:{seed}")
-        return [
-            lower_attempt,
-            *[item for item in attempts if int(item[0]) != continuation_cap],
-        ]
+        # At (or just below) the practical target, same-cap Benders waves are
+        # discovery searches rather than no-ops: their inner objective can
+        # still reduce both sessions and gaps. Probe a useful reduction first,
+        # then a conservative one-cap reduction before tightening further. A
+        # school whose -3 cap is infeasible therefore still gets a feasible
+        # fallback in the same click instead of spending every slice too low.
+        same_cap_attempts = [
+            item for item in attempts if int(item[0]) == current
+        ][:1]
+        continuation_floor = max(int(lower_cap), preferred - 5)
+        lower_attempts: list[tuple[int, int, str]] = []
+        seen_caps: set[int] = set()
+        for drop, raw_seed_index in ((3, 1), (1, 2), (4, 3)):
+            continuation_cap = max(continuation_floor, current - drop)
+            if continuation_cap >= current or continuation_cap in seen_caps:
+                continue
+            seen_caps.add(continuation_cap)
+            seed_index = min(raw_seed_index, len(polish_seeds) - 1)
+            seed = int(polish_seeds[seed_index])
+            attempt_kind = "nearby" if drop == 1 else "tighten"
+            lower_attempts.append((continuation_cap, seed, f"{attempt_kind}:{seed}"))
+        if not lower_attempts:
+            return same_cap_attempts or attempts
+        if force_lower_session_first:
+            return [*lower_attempts, *same_cap_attempts]
+        return [*same_cap_attempts, *lower_attempts]
+    if preferred > current:
+        same_cap_attempts = [item for item in attempts if int(item[0]) == current]
+        continuation_floor = max(int(lower_cap), preferred - 5)
+        continuation_cap = max(continuation_floor, current - 2)
+        lower_attempt: tuple[int, int, str] | None = None
+        if continuation_cap < current:
+            seed_index = min(2, len(polish_seeds) - 1)
+            seed = int(polish_seeds[seed_index])
+            lower_attempt = (continuation_cap, seed, f"tighten:{seed}")
+        if lower_attempt is None:
+            return same_cap_attempts or attempts
+        if force_lower_session_first:
+            return [lower_attempt, *same_cap_attempts]
+        return [*same_cap_attempts, lower_attempt]
     if not force_lower_session_first:
         # Once the gap is already practical, the proven direct target-cap
         # probe is faster than walking down a staircase one cap at a time.
@@ -9574,6 +9602,14 @@ def _solve_teacher_session_optimized_from_ui_data(
         )
         retry_cap_limit = max(20, _to_int(settings.get("optimization_retry_cap_time_limit_seconds"), 60))
         polish_cap_limit = max(20, _to_int(settings.get("optimization_polish_cap_time_limit_seconds"), 45))
+    frontier_cleanup_reserve = max(
+        20,
+        min(
+            35,
+            _to_int(settings.get("optimization_frontier_cleanup_reserve_seconds"), 30),
+        ),
+    )
+    frontier_cleanup_tail = float(frontier_cleanup_reserve) + 2.0
     tight_gap_benders_portfolio = (
         adaptive_gap_target_only
         and isinstance(tight_fixed_off_benders_profile, Mapping)
@@ -9614,6 +9650,7 @@ def _solve_teacher_session_optimized_from_ui_data(
         polish_seeds = [requested_random_seed, *[seed_rng.randint(1, 2_147_483_647) for _ in range(3)]]
     polish_index = 0
     refinement_global_seed_index = 0
+    consumed_refinement_seeds: set[int] = set()
     same_cap_polish_queue: list[tuple[int, int | None, str]] = []
     gap_priority_queue: list[tuple[int, int, str]] = []
     initial_gap_retry_queue: list[tuple[int, int, str]] = []
@@ -10853,12 +10890,15 @@ def _solve_teacher_session_optimized_from_ui_data(
             )
             search_end_reason = "time_budget_exhausted"
             break
-        if (
+        frontier_cleanup_pending = (
             refinement_frontier_enabled
             and best_payload is not None
             and visible_best_payload is not None
             and best_payload is not visible_best_payload
-            and remaining < 35
+        )
+        if (
+            frontier_cleanup_pending
+            and remaining < frontier_cleanup_tail + 8.0
         ):
             # Keep a short tail for repairing gap debt on a lower-session
             # frontier candidate. Without this reserve the last tight Benders
@@ -10880,6 +10920,10 @@ def _solve_teacher_session_optimized_from_ui_data(
             and adaptive_teacher_session_opt
             and best_metrics is not None
             and _teacher_session_opt_quality_gates_clean(best_metrics)
+            and not any(
+                str(item[2]).startswith("nearby:")
+                for item in gap_priority_queue
+            )
             and (
                 stagnant_attempts >= max(2, adaptive_stagnant_attempt_limit)
                 or (
@@ -10959,6 +11003,8 @@ def _solve_teacher_session_optimized_from_ui_data(
             while gap_priority_queue:
                 portfolio_cap, portfolio_seed, portfolio_key = gap_priority_queue.pop(0)
                 portfolio_cap = max(lower_cap, min(upper_cap, int(portfolio_cap)))
+                if int(portfolio_seed) in consumed_refinement_seeds:
+                    continue
                 if (portfolio_cap, portfolio_key) not in tried_attempts:
                     cap = portfolio_cap
                     random_seed = portfolio_seed
@@ -10993,6 +11039,8 @@ def _solve_teacher_session_optimized_from_ui_data(
             while gap_priority_queue:
                 portfolio_cap, portfolio_seed, portfolio_key = gap_priority_queue.pop(0)
                 portfolio_cap = max(lower_cap, min(upper_cap, int(portfolio_cap)))
+                if int(portfolio_seed) in consumed_refinement_seeds:
+                    continue
                 if (portfolio_cap, portfolio_key) not in tried_attempts:
                     cap = portfolio_cap
                     random_seed = portfolio_seed
@@ -11017,6 +11065,11 @@ def _solve_teacher_session_optimized_from_ui_data(
             while same_cap_polish_queue:
                 portfolio_cap, portfolio_seed, portfolio_key = same_cap_polish_queue.pop(0)
                 portfolio_cap = max(lower_cap, min(upper_cap, int(portfolio_cap)))
+                if (
+                    portfolio_seed is not None
+                    and int(portfolio_seed) in consumed_refinement_seeds
+                ):
+                    continue
                 if (portfolio_cap, portfolio_key) not in tried_attempts:
                     cap = portfolio_cap
                     random_seed = portfolio_seed
@@ -11034,6 +11087,11 @@ def _solve_teacher_session_optimized_from_ui_data(
                 while same_cap_polish_queue and remaining >= 25:
                     portfolio_cap, portfolio_seed, portfolio_key = same_cap_polish_queue.pop(0)
                     portfolio_cap = max(lower_cap, min(upper_cap, int(portfolio_cap)))
+                    if (
+                        portfolio_seed is not None
+                        and int(portfolio_seed) in consumed_refinement_seeds
+                    ):
+                        continue
                     if (portfolio_cap, portfolio_key) not in tried_attempts:
                         cap = portfolio_cap
                         random_seed = portfolio_seed
@@ -11080,8 +11138,19 @@ def _solve_teacher_session_optimized_from_ui_data(
             and phase in {"queued_cap", "tighten"}
             and polish_seeds
         ):
-            random_seed = polish_seeds[refinement_global_seed_index % len(polish_seeds)]
-            refinement_global_seed_index += 1
+            for _unused_seed_probe in range(len(polish_seeds)):
+                candidate_seed = int(
+                    polish_seeds[refinement_global_seed_index % len(polish_seeds)]
+                )
+                refinement_global_seed_index += 1
+                if candidate_seed not in consumed_refinement_seeds:
+                    random_seed = candidate_seed
+                    break
+            if random_seed is None:
+                random_seed = int(
+                    polish_seeds[refinement_global_seed_index % len(polish_seeds)]
+                )
+                refinement_global_seed_index += 1
 
         if cap is None:
             search_end_reason = "search_exhausted"
@@ -11096,6 +11165,8 @@ def _solve_teacher_session_optimized_from_ui_data(
         if attempt_key in tried_attempts:
             continue
         tried_attempts.add(attempt_key)
+        if refinement_request and random_seed is not None:
+            consumed_refinement_seeds.add(int(random_seed))
 
         cap_limit = min(
             remaining,
@@ -11103,6 +11174,13 @@ def _solve_teacher_session_optimized_from_ui_data(
             if best_payload is None or phase in {"tighten", "queued_cap"}
             else (polish_cap_limit if phase == "polish" else retry_cap_limit),
         )
+        if frontier_cleanup_pending and remaining > frontier_cleanup_tail:
+            # Spend the time before the cleanup reserve on another useful
+            # global probe instead of returning with most of that slice idle.
+            cap_limit = min(
+                cap_limit,
+                max(8.0, remaining - frontier_cleanup_tail),
+            )
         if phase == "target_cap_gap_opt":
             target_cap_limit = max(
                 60,
@@ -11117,7 +11195,7 @@ def _solve_teacher_session_optimized_from_ui_data(
                 if remaining > target_cap_reserve + 8
                 else remaining
             )
-            cap_limit = min(remaining, target_cap_limit, target_cap_available)
+            cap_limit = min(cap_limit, target_cap_limit, target_cap_available)
         if best_payload is None and cap >= upper_cap:
             cap_limit = remaining
         cap_limit_int = max(8, int(cap_limit))
@@ -11328,21 +11406,29 @@ def _solve_teacher_session_optimized_from_ui_data(
                 relaxed_polish_index = 0
                 polish_index = 0
                 best_sessions = _metric_int(metrics, "teacher_sessions", upper_cap)
-                gap_priority_queue = _refinement_gap_priority_attempts(
-                    metrics,
-                    target_gap1_sessions=target_gap1_sessions if adaptive_gap_target_only else None,
-                    preferred_cap=accept_teacher_sessions if adaptive_gap_target_only else None,
-                    accept_gap1_sessions=accept_gap1_sessions,
-                    lower_cap=lower_cap,
-                    upper_cap=upper_cap,
-                    polish_seeds=polish_seeds,
-                    session_first=refinement_frontier_enabled,
-                    force_lower_session_first=(
-                        refinement_frontier_enabled
-                        and previous_search_sessions is not None
-                        and best_sessions >= previous_search_sessions
-                    ),
-                )
+                gap_priority_queue = [
+                    item
+                    for item in _refinement_gap_priority_attempts(
+                        metrics,
+                        target_gap1_sessions=(
+                            target_gap1_sessions if adaptive_gap_target_only else None
+                        ),
+                        preferred_cap=(
+                            accept_teacher_sessions if adaptive_gap_target_only else None
+                        ),
+                        accept_gap1_sessions=accept_gap1_sessions,
+                        lower_cap=lower_cap,
+                        upper_cap=upper_cap,
+                        polish_seeds=polish_seeds,
+                        session_first=refinement_frontier_enabled,
+                        force_lower_session_first=(
+                            refinement_frontier_enabled
+                            and previous_search_sessions is not None
+                            and best_sessions >= previous_search_sessions
+                        ),
+                    )
+                    if int(item[1]) not in consumed_refinement_seeds
+                ]
                 if adaptive_gap_target_only:
                     same_cap_polish_queue = []
                 else:
@@ -11457,7 +11543,7 @@ def _solve_teacher_session_optimized_from_ui_data(
     ):
         cleanup_remaining = deadline.remaining()
         cleanup_budget = min(
-            30.0,
+            float(frontier_cleanup_reserve),
             max(0.0, float(cleanup_remaining or 0.0) - 2.0),
         )
         if cleanup_budget >= 1.0:

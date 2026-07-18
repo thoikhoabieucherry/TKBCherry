@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
+from agent_helper import VERSION
 from agent_helper.relocation import default_install_dir
 
 
@@ -10,6 +11,18 @@ AGENT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class PackagingTests(unittest.TestCase):
+    def test_windows_fixed_and_display_versions_match_runtime_version(self) -> None:
+        version_info = (AGENT_ROOT / "windows_version_info.txt").read_text(
+            encoding="utf-8"
+        )
+        parts = tuple(int(part) for part in VERSION.split("."))
+        self.assertEqual(3, len(parts))
+        fixed_tuple = f"({parts[0]}, {parts[1]}, {parts[2]}, 0)"
+        self.assertIn(f"filevers={fixed_tuple}", version_info)
+        self.assertIn(f"prodvers={fixed_tuple}", version_info)
+        self.assertIn(f"StringStruct(u'FileVersion', u'{VERSION}')", version_info)
+        self.assertIn(f"StringStruct(u'ProductVersion', u'{VERSION}')", version_info)
+
     def test_windows_build_is_onedir_and_contains_solver_assets(self) -> None:
         script = (AGENT_ROOT / "build_windows.ps1").read_text(encoding="utf-8")
         self.assertIn('"--onedir"', script)
@@ -17,6 +30,8 @@ class PackagingTests(unittest.TestCase):
         self.assertIn('"--noupx"', script)
         self.assertIn('"--icon"', script)
         self.assertIn('"--version-file"', script)
+        self.assertIn('$ExpectedVersionMarkers', script)
+        self.assertIn('windows_version_info.txt does not match Agent', script)
         self.assertIn('"--onefile"', script)
         self.assertNotIn('"--console"', script)
         self.assertIn("solver_runtime\\scripts", script)
