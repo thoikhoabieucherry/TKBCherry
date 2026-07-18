@@ -1,0 +1,5972 @@
+{
+  "metrics": {
+    "solver": "ortools_cp_sat_session",
+    "status": 2,
+    "status_name": "FEASIBLE",
+    "objective": 180.0,
+    "best_bound": 177.0,
+    "wall_time_seconds": 120.007929,
+    "elapsed_seconds": 120.00804924964905,
+    "branches": 853886,
+    "conflicts": 752107,
+    "max_teacher_sessions": 183,
+    "minimize_sessions": true,
+    "random_seed": null,
+    "hint": {
+      "used": false,
+      "fixed": false,
+      "repair": false
+    },
+    "assignment_session_vars": 2912,
+    "teacher_session_vars": 336,
+    "bridge_vars": 187,
+    "teacher_sessions": 180,
+    "load_distribution": {
+      "2": 13,
+      "3": 67,
+      "4": 100
+    }
+  },
+  "solution": [
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Chào cờ",
+      "teacher": "TI.Hiếu",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "TI.Hiếu",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "VA.Hòa",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "VA.Hòa",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hiền",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hiền",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hiền",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Cẩm",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Cẩm",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Cẩm",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Cẩm",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Phước",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Phước",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Phước",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Giáo dục công dân",
+      "teacher": "DI.Bình",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Lịch sử và Địa lý",
+      "teacher": "DI.Bình",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Lịch sử và Địa lý",
+      "teacher": "DI.Bình",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Lịch sử và Địa lý",
+      "teacher": "DI.Bình",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Vật lí",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Vật lí",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Sinh học",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Sinh học",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Công nghệ",
+      "teacher": "Sinh.Oanh",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Tin học",
+      "teacher": "TI.Hiếu",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/1",
+      "grade": "Khối 6",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Chào cờ",
+      "teacher": "VA.Hiền",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "VA.Hiền",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "TI.Thái",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "TI.Thái",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hiền",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hiền",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Cẩm",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Cẩm",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Cẩm",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Cẩm",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Phước",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Phước",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Phước",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Giáo dục công dân",
+      "teacher": "SU.Hiền",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Lịch sử và Địa lý",
+      "teacher": "DI.Bình",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Lịch sử và Địa lý",
+      "teacher": "DI.Bình",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Lịch sử và Địa lý",
+      "teacher": "DI.Bình",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Vật lí",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Vật lí",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Sinh học",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Sinh học",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Công nghệ",
+      "teacher": "Sinh.Oanh",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Tin học",
+      "teacher": "TI.Hiếu",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Mĩ thuật",
+      "teacher": "VA.Hiền",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/2",
+      "grade": "Khối 6",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Chào cờ",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "VA.Hiền",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "VA.Hiền",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hòa",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hòa",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hòa",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Cẩm",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Cẩm",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Cẩm",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Cẩm",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Phước",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Phước",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Phước",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Giáo dục công dân",
+      "teacher": "GD.Lan",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Lịch sử và Địa lý",
+      "teacher": "DI.Bình",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Lịch sử và Địa lý",
+      "teacher": "DI.Bình",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Lịch sử và Địa lý",
+      "teacher": "DI.Bình",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Vật lí",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Vật lí",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Sinh học",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Sinh học",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Công nghệ",
+      "teacher": "Sinh.Oanh",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Tin học",
+      "teacher": "TI.Hiếu",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/3",
+      "grade": "Khối 6",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Chào cờ",
+      "teacher": "TC.Huy",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "TC.Huy",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hòa",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hòa",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hòa",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Trang",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Trang",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Trang",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Trang",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Lý",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Lý",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Lý",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Giáo dục công dân",
+      "teacher": "GD.Lan",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Lịch sử và Địa lý",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Lịch sử và Địa lý",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Lịch sử và Địa lý",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Vật lí",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Vật lí",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Sinh học",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Sinh học",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Công nghệ",
+      "teacher": "Sinh.Oanh",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Tin học",
+      "teacher": "TI.Hiếu",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/4",
+      "grade": "Khối 6",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Chào cờ",
+      "teacher": "VA.Hòa",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "VA.Hòa",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "TO.Linh",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hòa",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hòa",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hòa",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Hải",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Hải",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Hải",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Toán",
+      "teacher": "TO.Hải",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Lý",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Lý",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Lý",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Giáo dục công dân",
+      "teacher": "GD.Lan",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Lịch sử và Địa lý",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Lịch sử và Địa lý",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Lịch sử và Địa lý",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Vật lí",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Vật lí",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Sinh học",
+      "teacher": "Sinh.Oanh",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Sinh học",
+      "teacher": "Sinh.Oanh",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Công nghệ",
+      "teacher": "Sinh.Oanh",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Tin học",
+      "teacher": "TI.Hiếu",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "6/5",
+      "grade": "Khối 6",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Chào cờ",
+      "teacher": "VA.Thanh",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "VA.Thanh",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "TO.Trang",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "TO.Trang",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Thanh",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Thanh",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Thanh",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Nam",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Nam",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Nam",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Nam",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Nữ",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Nữ",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Nữ",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Giáo dục công dân",
+      "teacher": "VA.Thanh",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Lịch sử",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Lịch sử",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Địa lí",
+      "teacher": "Đ.Tú",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Vật lí",
+      "teacher": "SI.Nguyên",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Vật lí",
+      "teacher": "SI.Nguyên",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Hóa học",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Sinh học",
+      "teacher": "SI.Nhàn",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Công nghệ",
+      "teacher": "SI.Phương",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Tin học",
+      "teacher": "TI.Thái",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/1",
+      "grade": "Khối 7",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Chào cờ",
+      "teacher": "SI.Nguyên",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "SI.Nguyên",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "VA.Thanh",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "VA.Thanh",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Thanh",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Thanh",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 2
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Thanh",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Nam",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Nam",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Nam",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Nam",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Nữ",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Nữ",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Nữ",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Giáo dục công dân",
+      "teacher": "VA.Thanh",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Lịch sử",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Lịch sử",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Địa lí",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Vật lí",
+      "teacher": "SI.Nguyên",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Hóa học",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Sinh học",
+      "teacher": "SI.Phương",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Công nghệ",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Tin học",
+      "teacher": "TI.Thái",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/2",
+      "grade": "Khối 7",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Chào cờ",
+      "teacher": "TO.Nam",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "TO.Nam",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "VA.Tiên",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "VA.Tiên",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hoa",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hoa",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hoa",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Nam",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Nam",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Nam",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Nam",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Nữ",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Nữ",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Nữ",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Giáo dục công dân",
+      "teacher": "VA.Hoa",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Lịch sử",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Lịch sử",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Địa lí",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Vật lí",
+      "teacher": "SI.Nguyên",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Vật lí",
+      "teacher": "SI.Nguyên",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Hóa học",
+      "teacher": "HO.Minh",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Sinh học",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Công nghệ",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Tin học",
+      "teacher": "TI.Thái",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/3",
+      "grade": "Khối 7",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Chào cờ",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "TO.Nam",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "TO.Nam",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hoa",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hoa",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 2
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hoa",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Cẩm",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Cẩm",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Cẩm",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Cẩm",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Nữ",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Nữ",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Nữ",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Giáo dục công dân",
+      "teacher": "VA.Hoa",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Lịch sử",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Lịch sử",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Địa lí",
+      "teacher": "Đ.Tú",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Vật lí",
+      "teacher": "SI.Nguyên",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Vật lí",
+      "teacher": "SI.Nguyên",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Hóa học",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Sinh học",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Công nghệ",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Tin học",
+      "teacher": "TI.Thái",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/4",
+      "grade": "Khối 7",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Chào cờ",
+      "teacher": "TC.Tuấn",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "TC.Tuấn",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "TI.Thái",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "TI.Thái",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Lộc",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Lộc",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Lộc",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Trang",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Trang",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Trang",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Trang",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Ánh",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Ánh",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Ánh",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Giáo dục công dân",
+      "teacher": "VA.Hiền",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Lịch sử",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Lịch sử",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Địa lí",
+      "teacher": "Đ.Tú",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Vật lí",
+      "teacher": "SI.Nguyên",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Vật lí",
+      "teacher": "SI.Nguyên",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Hóa học",
+      "teacher": "HO.Minh",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Sinh học",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Công nghệ",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Tin học",
+      "teacher": "TI.Thái",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/5",
+      "grade": "Khối 7",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Chào cờ",
+      "teacher": "TO.Trang",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "TO.Trang",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Lộc",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Lộc",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Trang",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Trang",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Trang",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Toán",
+      "teacher": "TO.Trang",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Ánh",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Ánh",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Ánh",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Giáo dục công dân",
+      "teacher": "VA.Hiền",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Lịch sử",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Lịch sử",
+      "teacher": "SU.Mai",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Địa lí",
+      "teacher": "Đ.Tú",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Vật lí",
+      "teacher": "SI.Nguyên",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Vật lí",
+      "teacher": "SI.Nguyên",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Hóa học",
+      "teacher": "HO.Minh",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Sinh học",
+      "teacher": "SI.Hương",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Công nghệ",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Tin học",
+      "teacher": "TI.Thái",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "7/6",
+      "grade": "Khối 7",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Chào cờ",
+      "teacher": "TA.Lý",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "TA.Lý",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "TO.Thảo",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "TO.Thảo",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Châm",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Châm",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Châm",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Châm",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Tường",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Tường",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Tường",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Tường",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Lý",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Lý",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Lý",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Giáo dục công dân",
+      "teacher": "GD.Lan",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Lịch sử",
+      "teacher": "SU.Hiền",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Địa lí",
+      "teacher": "Đ.Tú",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Địa lí",
+      "teacher": "Đ.Tú",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Vật lí",
+      "teacher": "LI.Thuyết",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Hóa học",
+      "teacher": "SI.Phương",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Sinh học",
+      "teacher": "Sinh.Oanh",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Sinh học",
+      "teacher": "Sinh.Oanh",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Công nghệ",
+      "teacher": "LI.Thuyết",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Công nghệ",
+      "teacher": "LI.Thuyết",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Tin học",
+      "teacher": "TI.Thái",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/1",
+      "grade": "Khối 8",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Chào cờ",
+      "teacher": "VA.Châm",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "VA.Châm",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "TA.Lý",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Châm",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Châm",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Tường",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Tường",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Tường",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Tường",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Lý",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Lý",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Lý",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Giáo dục công dân",
+      "teacher": "GD.Lan",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Lịch sử",
+      "teacher": "SU.Hiền",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Địa lí",
+      "teacher": "Đ.Tú",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Địa lí",
+      "teacher": "Đ.Tú",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Vật lí",
+      "teacher": "LI.Thuyết",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Hóa học",
+      "teacher": "SI.Phương",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Sinh học",
+      "teacher": "SI.Nhàn",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Sinh học",
+      "teacher": "SI.Nhàn",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Công nghệ",
+      "teacher": "LI.Thuyết",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Công nghệ",
+      "teacher": "LI.Thuyết",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Tin học",
+      "teacher": "TI.Thái",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/2",
+      "grade": "Khối 8",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Chào cờ",
+      "teacher": "TO.Tường",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "TO.Tường",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "VA.Tiên",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "VA.Tiên",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Châm",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Châm",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 2
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Châm",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Tường",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Tường",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Tường",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Tường",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Ánh",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Ánh",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Ánh",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Giáo dục công dân",
+      "teacher": "GD.Lan",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Lịch sử",
+      "teacher": "SU.Hiền",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Địa lí",
+      "teacher": "Đ.Tú",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Địa lí",
+      "teacher": "Đ.Tú",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Vật lí",
+      "teacher": "LI.Thuyết",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Hóa học",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Sinh học",
+      "teacher": "SI.Nhàn",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Sinh học",
+      "teacher": "SI.Nhàn",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Công nghệ",
+      "teacher": "LI.Thuyết",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Công nghệ",
+      "teacher": "LI.Thuyết",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Tin học",
+      "teacher": "TI.Thái",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/3",
+      "grade": "Khối 8",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Chào cờ",
+      "teacher": "LI.Thuyết",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "LI.Thuyết",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "TO.Tường",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "TO.Tường",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Tiên",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Tiên",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Thảo",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Thảo",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Thảo",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Thảo",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Ánh",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Ánh",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Ánh",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Giáo dục công dân",
+      "teacher": "GD.Lan",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Lịch sử",
+      "teacher": "SU.Hiền",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Địa lí",
+      "teacher": "Đ.Tú",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Địa lí",
+      "teacher": "Đ.Tú",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Vật lí",
+      "teacher": "LI.Thuyết",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Hóa học",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Sinh học",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Sinh học",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Công nghệ",
+      "teacher": "LI.Thuyết",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Công nghệ",
+      "teacher": "LI.Thuyết",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Tin học",
+      "teacher": "TI.Thái",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/4",
+      "grade": "Khối 8",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Chào cờ",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "SI.Nhàn",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "SI.Nhàn",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Tiên",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Tiên",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Tiên",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Tiên",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Thảo",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Thảo",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Thảo",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Thảo",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Ánh",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Ánh",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Ánh",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Giáo dục công dân",
+      "teacher": "GD.Lan",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Lịch sử",
+      "teacher": "SU.Hiền",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Địa lí",
+      "teacher": "Đ.Tú",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Địa lí",
+      "teacher": "Đ.Tú",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Vật lí",
+      "teacher": "LI.Khương",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Hóa học",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Sinh học",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Sinh học",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Công nghệ",
+      "teacher": "LI.Thuyết",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Công nghệ",
+      "teacher": "LI.Thuyết",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Tin học",
+      "teacher": "TI.Thái",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/5",
+      "grade": "Khối 8",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Chào cờ",
+      "teacher": "TO.Thảo",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "TO.Thảo",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Tiên",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Tiên",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Tiên",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 2
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Thảo",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Thảo",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Thảo",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Toán",
+      "teacher": "TO.Thảo",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Ánh",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Ánh",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Ánh",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Giáo dục công dân",
+      "teacher": "GD.Lan",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Lịch sử",
+      "teacher": "SU.Hiền",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Địa lí",
+      "teacher": "Đ.Tú",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Địa lí",
+      "teacher": "Đ.Tú",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Vật lí",
+      "teacher": "LI.Khương",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Hóa học",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Sinh học",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Sinh học",
+      "teacher": "SI.Thủy",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Công nghệ",
+      "teacher": "LI.Thuyết",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Công nghệ",
+      "teacher": "LI.Thuyết",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Tin học",
+      "teacher": "TI.Thái",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "8/6",
+      "grade": "Khối 8",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Chào cờ",
+      "teacher": "TO.Hải",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "TO.Hải",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "TO.Linh",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Lộc",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Lộc",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Lộc",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hải",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hải",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hải",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hải",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Nữ",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Nữ",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Nữ",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Giáo dục công dân",
+      "teacher": "GD.Lan",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Lịch sử",
+      "teacher": "SU.Hiền",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Lịch sử",
+      "teacher": "SU.Hiền",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Địa lí",
+      "teacher": "DI.Bình",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Vật lí",
+      "teacher": "LI.Quân",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Hóa học",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Hóa học",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Sinh học",
+      "teacher": "Sinh.Oanh",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Công nghệ",
+      "teacher": "LI.Quân",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Công nghệ",
+      "teacher": "LI.Quân",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Tin học",
+      "teacher": "TI.Hiếu",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/1",
+      "grade": "Khối 9",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "VA.Châm",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Chào cờ",
+      "teacher": "LI.Quân",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "LI.Quân",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "TO.Hải",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Lộc",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Lộc",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hải",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hải",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hải",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hải",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Nữ",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Nữ",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Nữ",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Giáo dục công dân",
+      "teacher": "GD.Lan",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Lịch sử",
+      "teacher": "SU.Hiền",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Lịch sử",
+      "teacher": "SU.Hiền",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Địa lí",
+      "teacher": "DI.Bình",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Vật lí",
+      "teacher": "LI.Quân",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Hóa học",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Hóa học",
+      "teacher": "HO.Hiền",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Sinh học",
+      "teacher": "Sinh.Oanh",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Công nghệ",
+      "teacher": "LI.Quân",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Công nghệ",
+      "teacher": "LI.Quân",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Tin học",
+      "teacher": "TI.Hiếu",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/2",
+      "grade": "Khối 9",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "VA.Châm",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Chào cờ",
+      "teacher": "TO.Hanh",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "TO.Hanh",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "Sinh.Oanh",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Thương",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Thương",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hanh",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hanh",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hanh",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hanh",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Phước",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Phước",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Phước",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Giáo dục công dân",
+      "teacher": "GD.Lan",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Lịch sử",
+      "teacher": "SU.Hiền",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Lịch sử",
+      "teacher": "SU.Hiền",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Địa lí",
+      "teacher": "DI.Bình",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Vật lí",
+      "teacher": "LI.Quân",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Hóa học",
+      "teacher": "SI.Phương",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Hóa học",
+      "teacher": "SI.Phương",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Sinh học",
+      "teacher": "Sinh.Oanh",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Công nghệ",
+      "teacher": "LI.Quân",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Công nghệ",
+      "teacher": "LI.Quân",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Tin học",
+      "teacher": "TI.Thái",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/3",
+      "grade": "Khối 9",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "VA.Châm",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Chào cờ",
+      "teacher": "SI.Nhàn",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "SI.Nhàn",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "SI.Phương",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "SI.Phương",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hoa",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hoa",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hanh",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hanh",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hanh",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hanh",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Phước",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Phước",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Phước",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Giáo dục công dân",
+      "teacher": "GD.Lan",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Lịch sử",
+      "teacher": "SU.Hiền",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Lịch sử",
+      "teacher": "SU.Hiền",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Địa lí",
+      "teacher": "DI.Bình",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Vật lí",
+      "teacher": "LI.Khương",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Hóa học",
+      "teacher": "SI.Phương",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Hóa học",
+      "teacher": "SI.Phương",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Sinh học",
+      "teacher": "SI.Nhàn",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Công nghệ",
+      "teacher": "LI.Quân",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Công nghệ",
+      "teacher": "LI.Quân",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Tin học",
+      "teacher": "TI.Thái",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/4",
+      "grade": "Khối 9",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "VA.Hoa",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Chào cờ",
+      "teacher": "SI.Phương",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp CN",
+      "teacher": "SI.Phương",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "SI.Nhàn",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Hoạt động trải nghiệm hướng nghiệp",
+      "teacher": "SI.Nhàn",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hoa",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hoa",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 2
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Ngữ văn",
+      "teacher": "VA.Hoa",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hanh",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hanh",
+      "room": "",
+      "day": 5,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hanh",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Toán",
+      "teacher": "TO.Hanh",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Phước",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Phước",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Ngoại ngữ",
+      "teacher": "TA.Phước",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Giáo dục công dân",
+      "teacher": "GD.Lan",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Lịch sử",
+      "teacher": "SU.Hiền",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Lịch sử",
+      "teacher": "SU.Hiền",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Địa lí",
+      "teacher": "DI.Bình",
+      "room": "",
+      "day": 3,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Vật lí",
+      "teacher": "LI.Khương",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Hóa học",
+      "teacher": "SI.Phương",
+      "room": "",
+      "day": 2,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Hóa học",
+      "teacher": "SI.Phương",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Sinh học",
+      "teacher": "SI.Nhàn",
+      "room": "",
+      "day": 4,
+      "session": "PM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Công nghệ",
+      "teacher": "LI.Quân",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Công nghệ",
+      "teacher": "LI.Quân",
+      "room": "",
+      "day": 4,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Tin học",
+      "teacher": "TI.Thái",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Mĩ thuật",
+      "teacher": "MT.Hải",
+      "room": "",
+      "day": 3,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Âm nhạc",
+      "teacher": "AN.Thi",
+      "room": "",
+      "day": 6,
+      "session": "AM",
+      "count": 1
+    },
+    {
+      "class": "9/5",
+      "grade": "Khối 9",
+      "subject": "Nội dung giáo dục địa phương",
+      "teacher": "VA.Hoa",
+      "room": "",
+      "day": 2,
+      "session": "PM",
+      "count": 1
+    }
+  ]
+}

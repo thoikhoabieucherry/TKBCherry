@@ -1,0 +1,208 @@
+/* Admin + planner shell polish — bớt cảm giác "tool-like" */
+body.app-shell-body {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  font-family: var(--tkb-font);
+}
+
+.app-shell-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 20px;
+  background: #ffffff;
+  color: var(--tkb-text);
+  border-bottom: 1px solid var(--tkb-border);
+  box-shadow: 0 1px 0 rgb(15 23 42 / 4%);
+}
+
+.app-shell-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.app-shell-brand img {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgb(244 63 94 / 15%);
+}
+
+.app-shell-brand-text h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--tkb-text);
+}
+
+.app-shell-brand-text p {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--tkb-muted);
+  letter-spacing: 0.01em;
+}
+
+.app-nav {
+  padding: 12px 14px 10px;
+  background: var(--tkb-surface);
+  border-bottom: 1px solid var(--tkb-border);
+  box-shadow: none;
+  flex-wrap: wrap;
+}
+
+.app-nav-main {
+  gap: 6px;
+  align-items: center;
+}
+
+.app-nav-main .btn {
+  height: 32px;
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-weight: 500;
+  font-size: 12.5px;
+  line-height: 1;
+  box-shadow: none;
+  transform: none;
+}
+
+.app-nav-main .btn[data-page] {
+  border-color: transparent;
+  background: transparent;
+  color: var(--tkb-muted);
+}
+
+.app-nav-main .btn[data-page]:hover {
+  background: var(--tkb-primary-soft);
+  color: var(--tkb-primary);
+  border-color: var(--tkb-primary-border);
+}
+
+.app-nav-main .btn[data-page].nav-active {
+  background: var(--tkb-primary-soft);
+  color: var(--tkb-primary);
+  border-color: var(--tkb-primary-border);
+  box-shadow: inset 0 0 0 1px rgb(29 78 216 / 8%);
+}
+
+.app-nav-main .btn.primary,
+.app-nav-side .btn-planner {
+  font-weight: 600;
+  background: var(--tkb-primary);
+  border-color: var(--tkb-primary);
+  color: #ffffff;
+}
+
+.app-nav-main .btn.primary:hover,
+.app-nav-side .btn-planner:hover {
+  background: var(--tkb-primary-hover);
+  border-color: var(--tkb-primary-hover);
+  transform: none;
+  box-shadow: none;
+}
+
+.app-nav-main .btn.primary:active,
+.app-nav-side .btn-planner:active {
+  transform: none;
+}
+
+#section-content {
+  padding: 16px 18px 24px;
+  max-width: 1440px;
+  width: 100%;
+  margin: 0 auto;
+  flex: 1 1 auto;
+}
+
+.section-card,
+.ui-loading,
+.pccm-shell > .pccm-panel:first-child {
+  border-radius: 12px;
+}
+
+/* Planner toolbar */
+body.planner-shell .toolbar {
+  background: var(--tkb-surface);
+  border-bottom: 1px solid var(--tkb-border);
+  padding: 10px 16px;
+  gap: 8px;
+  box-shadow: 0 1px 0 rgb(15 23 42 / 4%);
+}
+
+body.planner-shell .toolbar-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.planner-toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--tkb-bg);
+  border: 1px solid var(--tkb-border);
+}
+
+body.planner-shell .solver-preset-group {
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--tkb-border);
+  background: var(--tkb-bg);
+}
+
+body.planner-shell .toolbar .btn,
+body.planner-shell .toolbar button {
+  border-radius: 999px;
+  min-height: var(--tkb-control-h);
+  font-size: 12.5px;
+  font-weight: 500;
+  transition: background .15s ease, border-color .15s ease, transform .12s ease;
+}
+
+body.planner-shell .toolbar .primary {
+  box-shadow: 0 4px 14px rgb(29 78 216 / 20%);
+}
+
+body.planner-shell .left {
+  width: 168px;
+  background: var(--tkb-surface);
+  border-right: 1px solid var(--tkb-border);
+  padding: 12px 10px;
+}
+
+body.planner-shell .left h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--tkb-muted);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+body.planner-shell .lop-item {
+  border-radius: 8px;
+  border-color: var(--tkb-border);
+  font-size: 13px;
+  transition: background .14s ease, border-color .14s ease;
+}
+
+@media (max-width: 900px) {
+  .app-shell-header {
+    padding: 10px 12px;
+  }
+  .app-shell-brand-text p {
+    display: none;
+  }
+}

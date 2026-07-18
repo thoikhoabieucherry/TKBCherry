@@ -1,0 +1,1246 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>TKB Cherry</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TKB Cherry">
+<meta name="application-name" content="TKB Cherry">
+<link rel="icon" type="image/png" href="../assets/favicon-cherry.png?v=2">
+<link rel="apple-touch-icon" sizes="128x128" href="../assets/favicon-cherry.png?v=3">
+<link rel="apple-touch-icon-precomposed" sizes="128x128" href="../assets/favicon-cherry.png?v=3">
+<link rel="manifest" href="planner.webmanifest?v=20260714-cherry-icon-v2">
+<meta name="theme-color" content="#ffffff">
+
+<link rel="stylesheet" href="../tokens.css?v=20260710-light-v1">
+<link rel="stylesheet" href="phanmon.css?v=20260718-v123-first-click-quality-safety-v1">
+<link rel="stylesheet" href="../admin-shell.css?v=20260710-app-nav-right-v1">
+<link rel="stylesheet" href="../theme-light.css?v=20260710-stats-zfix-v1">
+<link rel="stylesheet" href="../runtime.css?v=20260710-runtime-v1">
+
+<style>
+/* In standalone mode, keep controls clear of the iPhone status/home areas.
+   Horizontal timetable space intentionally stays edge-to-edge. */
+body.planner-shell {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Keep feedback inline on desktop and below the compact mobile commands. */
+body.planner-shell .toolbar-main {
+  --planner-toolbar-button-width: clamp(96px, 7.2vw, 104px);
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding-right: 0;
+}
+
+body.planner-shell .toolbar-actions {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  min-width: 0;
+}
+
+/* Legacy planner CSS assigned order values only to buttons, which pushed the
+   duration field to the far left on desktop.  Keep one DOM order everywhere. */
+body.planner-shell .toolbar-actions > #btnRangBuoc,
+body.planner-shell .toolbar-actions > #btnUndoTKB,
+body.planner-shell .toolbar-actions > #btnRedoTKB,
+body.planner-shell .toolbar-actions > .solve-duration-control,
+body.planner-shell .toolbar-actions > #btnAutoSort,
+body.planner-shell .toolbar-actions > #btnStopAutoSort,
+body.planner-shell .toolbar-actions > #btnDeleteAll {
+  order: initial;
+}
+
+body.planner-shell .toolbar-actions > button {
+  flex: 0 0 var(--planner-toolbar-button-width);
+  box-sizing: border-box;
+  width: var(--planner-toolbar-button-width);
+  min-width: var(--planner-toolbar-button-width);
+  max-width: var(--planner-toolbar-button-width);
+  height: 36px;
+  min-height: 36px;
+  border-radius: 8px;
+}
+
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button,
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button,
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
+  border-radius: 8px;
+}
+
+body.planner-shell #btnRangBuoc {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding-inline: 11px;
+  border-color: #4d9b2c;
+  background: #58ad32;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 3px 10px rgb(77 155 44 / 22%);
+}
+
+body.planner-shell #btnRangBuoc:hover:not(:disabled) {
+  border-color: #3f8623;
+  background: #479827;
+}
+
+body.planner-shell #btnRangBuoc .toolbar-requirement-icon {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.8;
+}
+
+body.planner-shell .toolbar-actions > .solve-duration-control {
+  display: inline-flex;
+  order: initial;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 6px;
+  gap: 0;
+  border: 1px solid var(--tkb-border, #e2e8f0);
+  border-radius: 8px;
+  background: #fff;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+body.planner-shell .toolbar-actions > .solve-duration-control:focus-within {
+  border-color: #94a3b8;
+  box-shadow: 0 0 0 2px rgb(148 163 184 / 18%);
+}
+
+body.planner-shell #solveDurationSeconds {
+  box-sizing: border-box;
+  width: 42px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #0f172a;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  appearance: textfield;
+}
+
+body.planner-shell #solveDurationSeconds::-webkit-inner-spin-button,
+body.planner-shell #solveDurationSeconds::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+body.planner-shell .solve-duration-control:has(#solveDurationSeconds:disabled) {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+body.planner-shell .toolbar-actions > button.icon-button {
+  display: inline-flex;
+  flex: 0 0 var(--planner-toolbar-button-width);
+  align-items: center;
+  justify-content: center;
+  width: var(--planner-toolbar-button-width);
+  min-width: var(--planner-toolbar-button-width);
+  max-width: var(--planner-toolbar-button-width);
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 8px;
+  line-height: 1;
+}
+
+body.planner-shell .toolbar-icon {
+  display: block;
+  width: 19px;
+  height: 19px;
+  flex: none;
+  pointer-events: none;
+  transition: transform .16s ease;
+}
+
+body.planner-shell #btnUndoTKB .toolbar-icon,
+body.planner-shell #btnRedoTKB .toolbar-icon {
+  width: 20px;
+  height: 20px;
+}
+
+body.planner-shell #btnAutoSort .toolbar-icon {
+  width: 18px;
+  height: 18px;
+  transform: translateX(1px);
+}
+
+body.planner-shell #btnStopAutoSort .toolbar-icon {
+  width: 20px;
+  height: 20px;
+}
+
+body.planner-shell #btnDeleteAll .toolbar-icon {
+  width: 20px;
+  height: 20px;
+}
+
+body.planner-shell #btnDeleteAll {
+  border-color: #dc2626;
+  background: #dc2626;
+  color: #fff;
+  box-shadow: 0 3px 10px rgb(185 28 28 / 22%);
+}
+
+body.planner-shell #btnDeleteAll:hover:not(:disabled) {
+  border-color: #b91c1c;
+  background: #b91c1c;
+}
+
+body.planner-shell #btnStopAutoSort.is-active {
+  border-color: #ef9a9a !important;
+  background: #fff5f5 !important;
+  color: #c62828 !important;
+  box-shadow: 0 3px 10px rgb(198 40 40 / 14%);
+}
+
+body.planner-shell #btnStopAutoSort.is-active:hover:not(:disabled) {
+  border-color: #e57373 !important;
+  background: #ffebee !important;
+  color: #b71c1c !important;
+}
+
+body.planner-shell .toolbar-actions > button.icon-button:hover:not(:disabled) .toolbar-icon {
+  transform: scale(1.06);
+}
+
+body.planner-shell #btnAutoSort:hover:not(:disabled) .toolbar-icon {
+  transform: translateX(1px) scale(1.06);
+}
+
+body.planner-shell .toolbar-label-compact {
+  display: none;
+}
+
+body.planner-shell .toolbar-actions > button:focus-visible,
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > button:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 18%);
+}
+
+/* Keep the high-specificity history controls on the shared button width. */
+body.planner-shell .toolbar-actions > #btnUndoTKB,
+body.planner-shell .toolbar-actions > #btnRedoTKB {
+  display: inline-flex;
+  flex: 0 0 var(--planner-toolbar-button-width);
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--planner-toolbar-button-width);
+  min-width: var(--planner-toolbar-button-width);
+  max-width: var(--planner-toolbar-button-width);
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+body.planner-shell .toolbar-actions > #btnStopAutoSort:not(.is-active) {
+  display: none !important;
+}
+
+body.planner-shell .toolbar-actions > #btnStopAutoSort.is-active + #btnDeleteAll {
+  display: none !important;
+}
+
+body.planner-shell .toolbar-secondary-actions {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 0;
+}
+
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap {
+  position: relative;
+  inset: auto;
+  display: inline-flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  min-width: 0;
+}
+
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button,
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button,
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
+  flex: 0 0 var(--planner-toolbar-button-width);
+  box-sizing: border-box;
+  width: var(--planner-toolbar-button-width);
+  min-width: var(--planner-toolbar-button-width);
+  max-width: var(--planner-toolbar-button-width);
+  height: 36px;
+  min-height: 36px;
+}
+
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button {
+  order: 1;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding-inline: 6px;
+}
+
+body.planner-shell #btnAgentHelper .agent-status-dot {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #dc2626;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 24%);
+  pointer-events: none;
+}
+
+body.planner-shell #btnAgentHelper[data-agent-online="1"] .agent-status-dot {
+  background: #16a34a;
+}
+
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button[hidden] {
+  display: none !important;
+}
+
+body.planner-shell #btnAgentHelper .agent-ai-icon {
+  width: 17px;
+  height: 17px;
+  color: #6d28d9;
+  filter: drop-shadow(0 1px 2px rgb(109 40 217 / 18%));
+}
+
+body.planner-shell #btnAgentHelper:hover:not(:disabled) .agent-ai-icon {
+  transform: rotate(-4deg) scale(1.08);
+}
+
+body.planner-shell #btnHome.is-auto-sort-disabled,
+body.planner-shell #btnAgentHelper.is-auto-sort-disabled {
+  opacity: .45;
+  cursor: default;
+  filter: saturate(.6);
+}
+
+body.planner-shell .toolbar-feedback {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+body.planner-shell .toolbar-feedback > #autoSortProgress {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+}
+
+body.planner-shell .toolbar-feedback > #statusMsg {
+  flex: 1 1 180px;
+  width: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A narrow desktop remains a desktop toolbar; coarse-pointer devices use mobile rows. */
+@media (max-width: 900px) and (hover: none) and (pointer: coarse),
+       (max-width: 480px),
+       (orientation: landscape) and (max-height: 540px) and (any-pointer: coarse) {
+  html {
+    height: var(--tkb-mobile-viewport-h, 100dvh);
+    min-height: var(--tkb-mobile-viewport-h, 100dvh);
+  }
+
+  body.planner-shell {
+    --planner-mobile-feedback-h: 46px;
+    height: var(--tkb-mobile-viewport-h, 100dvh);
+    min-height: var(--tkb-mobile-viewport-h, 100dvh);
+    max-height: var(--tkb-mobile-viewport-h, 100dvh);
+    padding-bottom: 0;
+    overflow: hidden;
+  }
+
+  body.planner-shell .toolbar {
+    padding: 5px;
+    gap: 0;
+  }
+
+  body.planner-shell .toolbar-main {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-template-rows: 44px var(--planner-mobile-feedback-h);
+    align-items: stretch;
+    gap: 4px 2px;
+  }
+
+  body.planner-shell .toolbar-actions {
+    display: contents;
+  }
+
+  body.planner-shell .toolbar-actions > button,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
+    flex: 0 1 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 44px;
+    min-height: 44px;
+    padding: 0 6px;
+    border: 1px solid var(--tkb-border, #e2e8f0);
+    border-radius: var(--tkb-radius, 10px);
+    box-shadow: var(--tkb-shadow, 0 1px 3px rgb(15 23 42 / 6%));
+    font-size: clamp(11px, 3.05vw, 13px);
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color .16s ease, border-color .16s ease, box-shadow .12s ease, transform .12s ease;
+  }
+
+  body.planner-shell .toolbar-actions > button:active:not(:disabled),
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button:active:not(:disabled),
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle:active:not(:disabled) {
+    transform: translateY(1px);
+    box-shadow: 0 1px 1px rgb(15 23 42 / 8%);
+  }
+
+  body.planner-shell .toolbar-actions > #btnRangBuoc {
+    grid-column: 1;
+    grid-row: 1;
+    gap: 0;
+    padding: 0;
+  }
+
+  body.planner-shell .toolbar-actions > #btnUndoTKB {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  body.planner-shell .toolbar-actions > #btnRedoTKB {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  body.planner-shell .toolbar-actions > #btnUndoTKB,
+  body.planner-shell .toolbar-actions > #btnRedoTKB {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    height: 44px;
+    min-height: 44px;
+  }
+
+  body.planner-shell .toolbar-actions > #btnAutoSort {
+    grid-column: 5;
+    grid-row: 1;
+  }
+
+  body.planner-shell .toolbar-actions > .solve-duration-control {
+    grid-column: 4;
+    grid-row: 1;
+    width: 100%;
+    height: 44px;
+    min-height: 44px;
+    padding: 0 3px;
+    gap: 0;
+    border-radius: var(--tkb-radius, 10px);
+    box-shadow: var(--tkb-shadow, 0 1px 3px rgb(15 23 42 / 6%));
+    font-size: 10.5px;
+  }
+
+  body.planner-shell #solveDurationSeconds {
+    width: 100%;
+  }
+
+  body.planner-shell .toolbar-actions > #btnStopAutoSort,
+  body.planner-shell .toolbar-actions > #btnDeleteAll {
+    grid-column: 6 !important;
+    grid-row: 1 !important;
+  }
+
+  body.planner-shell .toolbar-actions > button.icon-button {
+    flex: 0 1 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+
+  body.planner-shell .toolbar-actions > #btnDeleteAll {
+    padding: 0;
+  }
+
+  body.planner-shell .toolbar-actions > #btnAutoSort {
+    padding: 0 !important;
+  }
+
+  body.planner-shell .toolbar-actions > #btnAutoSort .toolbar-icon {
+    margin: 0;
+    transform: translateX(1px);
+  }
+
+  body.planner-shell .toolbar-actions > #btnAutoSort:hover:not(:disabled) .toolbar-icon {
+    transform: translateX(1px) scale(1.06);
+  }
+
+  body.planner-shell .toolbar-actions > #btnUndoTKB,
+  body.planner-shell .toolbar-actions > #btnRedoTKB {
+    flex: 0 1 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 44px;
+    min-height: 44px;
+  }
+
+  body.planner-shell .toolbar-label-full {
+    display: none;
+  }
+
+  body.planner-shell .toolbar-label-compact {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  body.planner-shell .toolbar-label-compact .toolbar-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  body.planner-shell .toolbar-actions > #btnStopAutoSort {
+    padding: 0;
+  }
+
+  body.planner-shell .toolbar-actions > #btnDeleteAll {
+    padding-inline: 0;
+  }
+
+  body.planner-shell .tkb-support-table td {
+    padding-inline: 2px;
+  }
+
+  body.planner-shell .tkb-support-table .tkb-gv-cell,
+  body.planner-shell .tkb-support-table .tkb-cell-line {
+    font-size: clamp(9px, 2.6vw, 10px);
+    line-height: 1.05;
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: normal;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-mobile-stack-line {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    width: 100%;
+    min-width: 0;
+    text-align: center;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-mobile-stack-line > .tkb-cell-primary,
+  body.planner-shell #tkb.tkb-pair-stack .tkb-mobile-stack-line > .tkb-cell-secondary {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    line-height: 1.02;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-mobile-stack-line > .tkb-cell-primary {
+    font-weight: 600;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-mobile-stack-line > .tkb-cell-secondary {
+    color: #526173;
+    font-weight: 500;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-fixed .tkb-mobile-stack-line > .tkb-cell-secondary {
+    color: #1d4ed8;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-mobile-stack-line > .tkb-cell-separator,
+  body.planner-shell #tkb.tkb-pair-stack .tkb-support-table .tkb-room-line {
+    display: none;
+  }
+
+  body.planner-shell .toolbar-feedback {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    grid-template-rows: var(--planner-mobile-feedback-h);
+    align-items: center;
+    gap: 0 8px;
+    width: 100%;
+    min-width: 0;
+    height: var(--planner-mobile-feedback-h);
+    min-height: var(--planner-mobile-feedback-h);
+    max-height: var(--planner-mobile-feedback-h);
+    overflow: hidden;
+  }
+
+  body.planner-shell .toolbar-feedback > #autoSortProgress {
+    grid-column: 1;
+    grid-row: 1;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+  }
+
+  body.planner-shell .toolbar-feedback > #autoSortProgress .auto-sort-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    font-variant-numeric: tabular-nums;
+  }
+
+  body.planner-shell .toolbar-feedback > #statusMsg {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding-inline-start: 0;
+    align-self: center;
+    max-height: 2.4em;
+    overflow: hidden;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    transform: none !important;
+  }
+
+  body.planner-shell .toolbar-secondary-actions {
+    display: contents;
+  }
+
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap {
+    display: contents;
+  }
+
+  body.planner-shell #btnAgentHelper {
+    display: none !important;
+  }
+
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button {
+    grid-column: 7;
+    grid-row: 1;
+    padding-inline: 3px;
+  }
+
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
+    grid-column: 8;
+    grid-row: 1;
+    padding-inline: 3px;
+  }
+
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-popover {
+    position: fixed;
+    grid-column: auto;
+    order: initial;
+    width: auto;
+    margin-top: 0;
+  }
+
+  body.planner-shell .toolbar-feedback > #statusMsg {
+    font-size: 12px;
+    line-height: 1.2;
+    letter-spacing: 0;
+  }
+
+  /* Keep the functional unassigned dropdown, but omit duplicated pane totals
+     on phones so both timetable bodies receive the available height. */
+  body.planner-shell #tkb.tkb-pair-stack .tkb-pair-class-stats {
+    display: none !important;
+  }
+}
+
+@media (min-width: 481px) and (max-width: 900px) and (hover: hover) and (pointer: fine) {
+  body.planner-shell .toolbar {
+    padding: 5px 6px;
+  }
+
+  body.planner-shell .toolbar-main {
+    --planner-toolbar-button-width: 64px;
+    grid-template-columns: max-content minmax(0, 1fr) auto;
+    gap: 4px;
+  }
+
+  body.planner-shell .toolbar-actions,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap {
+    gap: 4px;
+  }
+
+  body.planner-shell .toolbar-actions > button,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
+    flex: 0 0 var(--planner-toolbar-button-width);
+    width: var(--planner-toolbar-button-width);
+    min-width: var(--planner-toolbar-button-width);
+    max-width: var(--planner-toolbar-button-width);
+    height: 34px;
+    min-height: 34px;
+    padding: 0 7px;
+    border-radius: 6px;
+    font-size: 11.5px;
+  }
+
+  body.planner-shell .toolbar-actions > button.icon-button {
+    width: var(--planner-toolbar-button-width);
+    min-width: var(--planner-toolbar-button-width);
+    max-width: var(--planner-toolbar-button-width);
+    padding: 0;
+  }
+
+  body.planner-shell #btnAgentHelper {
+    padding-inline: 3px;
+    font-size: 9.5px;
+  }
+
+  body.planner-shell .toolbar-label-full {
+    display: none;
+  }
+
+  body.planner-shell .toolbar-label-compact {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  body.planner-shell .toolbar-feedback {
+    overflow: hidden;
+  }
+
+  body.planner-shell .toolbar-feedback > #autoSortProgress {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    overflow: hidden;
+  }
+
+  body.planner-shell .toolbar-feedback > #autoSortProgress .auto-sort-label {
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+
+}
+
+@media (min-width: 901px) and (hover: none) and (pointer: coarse) {
+  body.planner-shell #btnAgentHelper {
+    display: none !important;
+  }
+}
+
+@media (max-width: 410px) {
+  body.planner-shell .toolbar-actions > #btnRangBuoc,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
+    padding-inline: 4px;
+    font-size: 10.5px;
+  }
+}
+
+@media (max-width: 360px) {
+  body.planner-shell .toolbar {
+    padding-inline: 4px;
+  }
+
+  body.planner-shell .toolbar-actions > #btnRangBuoc,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
+    padding-inline: 2px;
+    font-size: 9px;
+  }
+}
+
+/* Portrait phones: show all six weekdays and all ten periods in both panes. */
+@media (max-width: 480px) and (orientation: portrait) {
+  body.planner-shell .center {
+    padding: 2px;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack {
+    --tkb-pair-toolbar-h: 28px;
+    --tkb-pair-head-h: 20px;
+    --tkb-pair-row-h: clamp(21px, calc((var(--tkb-mobile-viewport-h, 100dvh) - 198px) / 22), 32px);
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    width: 100%;
+    max-width: 100%;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-pair-pane,
+  body.planner-shell #tkb.tkb-pair-stack > #tkbPairSupport,
+  body.planner-shell #tkb.tkb-pair-stack .tkb-pair-body {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-pair-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(86px, 32%);
+    grid-template-rows: 26px;
+    align-items: center;
+    height: var(--tkb-pair-toolbar-h);
+    min-height: var(--tkb-pair-toolbar-h);
+    padding: 1px 2px;
+    gap: 1px 2px;
+    overflow: visible;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-pair-tools {
+    grid-column: 1;
+    grid-row: 1;
+    width: 100%;
+    min-width: 0;
+    flex-wrap: nowrap;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-pair-pane.support .tkb-pair-tools,
+  body.planner-shell #tkb.tkb-pair-gv-phong .tkb-pair-pane.main .tkb-pair-tools {
+    grid-column: 1 / -1;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-pair-summary {
+    display: contents;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-pair-select {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-pair-select-btn,
+  body.planner-shell #tkb.tkb-pair-stack .unassigned-dropdown-btn {
+    height: 26px;
+    min-height: 26px;
+    padding-inline: 5px;
+    border-radius: 4px;
+    font-size: 10px;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .unassigned-dropdown {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    min-width: 86px;
+    max-width: none;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .table {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 100% !important;
+    table-layout: fixed !important;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .table th,
+  body.planner-shell #tkb.tkb-pair-stack .table td {
+    width: auto !important;
+    min-width: 0;
+    padding: 0 1px !important;
+    overflow: hidden;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .table th {
+    height: var(--tkb-pair-head-h);
+    font-size: clamp(8.5px, 2.45vw, 9.5px);
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .table td {
+    height: var(--tkb-pair-row-h);
+    font-size: clamp(8px, 2.35vw, 9.5px);
+    line-height: 1.02;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-cell-stack,
+  body.planner-shell #tkb.tkb-pair-stack .tkb-gv-cell {
+    height: calc(var(--tkb-pair-row-h) - 1px);
+    max-height: calc(var(--tkb-pair-row-h) - 1px);
+    min-height: 0;
+    gap: 0;
+    line-height: 1.02;
+    overflow: hidden;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-cell-line,
+  body.planner-shell #tkb.tkb-pair-stack .tkb-class-line,
+  body.planner-shell #tkb.tkb-pair-stack .tkb-teacher-line {
+    max-width: 100%;
+    font-size: inherit;
+    line-height: 1.02;
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: normal;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tiet-number {
+    top: 0;
+    right: 1px;
+    font-size: 6.5px;
+    line-height: 1;
+  }
+}
+
+/* Phone landscape: show one complete session in both panes; swipe for the rest. */
+@media (orientation: landscape) and (max-height: 540px) and (any-pointer: coarse) {
+  body.planner-shell {
+    --planner-mobile-feedback-h: 34px;
+    width: 100%;
+    max-width: none;
+    height: var(--tkb-mobile-viewport-h, 100dvh);
+    min-height: var(--tkb-mobile-viewport-h, 100dvh);
+    max-height: var(--tkb-mobile-viewport-h, 100dvh);
+    overflow: hidden;
+  }
+
+  body.planner-shell .toolbar {
+    padding-top: 2px;
+    padding-left: max(5px, env(safe-area-inset-left));
+    padding-right: max(5px, env(safe-area-inset-right));
+    padding-bottom: 2px;
+  }
+
+  body.planner-shell .toolbar-main {
+    grid-template-rows: 44px var(--planner-mobile-feedback-h);
+    row-gap: 2px;
+  }
+
+  body.planner-shell .toolbar-feedback {
+    display: grid;
+    grid-template-rows: var(--planner-mobile-feedback-h);
+    height: var(--planner-mobile-feedback-h);
+    min-height: var(--planner-mobile-feedback-h);
+    max-height: var(--planner-mobile-feedback-h);
+  }
+
+  body.planner-shell .toolbar-feedback > #autoSortProgress {
+    gap: 4px;
+    font-size: 10.5px;
+  }
+
+  body.planner-shell .toolbar-feedback .auto-sort-track {
+    width: 18px;
+    height: 18px;
+    flex-basis: 18px;
+  }
+
+  body.planner-shell .toolbar-feedback .auto-sort-pct {
+    font-size: 6.5px;
+  }
+
+  body.planner-shell .toolbar-feedback > #statusMsg {
+    max-height: 2.2em;
+    font-size: 10.5px;
+    line-height: 1.1;
+  }
+
+  body.planner-shell .center {
+    width: 100%;
+    max-width: none;
+    padding: 1px;
+    padding-left: 2px;
+    padding-right: 2px;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv {
+    --tkb-pair-toolbar-h: 25px;
+    --tkb-pair-head-h: 18px;
+    --tkb-pair-row-h: clamp(20px, calc((var(--tkb-mobile-viewport-h, 100dvh) - 160px) / 10), 28px);
+    display: grid;
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv > .tkb-pair-pane.main,
+  body.planner-shell #tkb.tkb-pair-lop-gv > #tkbPairSupport,
+  body.planner-shell #tkb.tkb-pair-lop-gv > #tkbPairSupport > .tkb-pair-pane.support {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .tkb-pair-toolbar {
+    display: flex;
+    align-items: center;
+    height: var(--tkb-pair-toolbar-h);
+    min-height: var(--tkb-pair-toolbar-h);
+    padding: 1px 3px;
+    gap: 2px;
+    overflow: visible;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .tkb-pair-tools {
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    flex: 1 1 180px;
+    flex-wrap: nowrap;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .tkb-pair-select {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    flex-wrap: nowrap;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .tkb-pair-select-btn {
+    height: 23px;
+    min-height: 23px;
+    padding-inline: 6px;
+    border-radius: 4px;
+    font-size: 10.5px;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .tkb-pair-summary {
+    min-width: 0;
+    display: flex;
+    flex: 0 1 auto;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+    gap: 4px;
+    overflow: hidden;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .unassigned-dropdown {
+    flex: 0 1 132px;
+    min-width: 104px;
+    max-width: 142px;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .tkb-pair-body {
+    height: auto;
+    min-width: 0;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .table {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: auto !important;
+    table-layout: fixed !important;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .table th,
+  body.planner-shell #tkb.tkb-pair-lop-gv .table td {
+    width: auto !important;
+    min-width: 0;
+    padding: 0 2px !important;
+    overflow: hidden;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .table th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    height: var(--tkb-pair-head-h);
+    font-size: 10.5px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .table td {
+    height: var(--tkb-pair-row-h);
+    min-height: var(--tkb-pair-row-h);
+    font-size: clamp(9px, 1.65vw, 10.5px);
+    line-height: 1.02;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .tkb-cell-stack,
+  body.planner-shell #tkb.tkb-pair-lop-gv .tkb-gv-cell {
+    height: calc(var(--tkb-pair-row-h) - 1px);
+    max-height: calc(var(--tkb-pair-row-h) - 1px);
+    min-height: 0;
+    gap: 0;
+    overflow: hidden;
+  }
+}
+
+/* Extra-short landscape phones need two readable lines inside a 20px period. */
+@media (orientation: landscape) and (max-height: 370px) and (any-pointer: coarse) {
+  body.planner-shell #tkb.tkb-pair-lop-gv .table td {
+    font-size: 9px;
+    line-height: 1;
+  }
+}
+</style>
+
+</head>
+
+<body class="planner-shell">
+
+<div class="toolbar">
+  <div class="toolbar-main">
+    <div class="toolbar-actions" role="toolbar" aria-label="Công cụ thời khóa biểu">
+      <select id="chonKhoi" onchange="loadLopList()" hidden></select>
+
+      <button id="btnRangBuoc" type="button" onclick="if(window.openRangBuocMenu)window.openRangBuocMenu(this);" title="Yêu cầu xếp thời khóa biểu" aria-label="Yêu cầu xếp thời khóa biểu"><svg class="toolbar-icon toolbar-requirement-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5.5 12.5 4.2 4.2L18.7 7.7"/></svg><span class="toolbar-label-full" aria-hidden="true">Yêu cầu</span></button>
+      <button id="btnUndoTKB" class="icon-button" type="button" onclick="tkbUndo()" title="Hoàn tác" aria-label="Hoàn tác" disabled><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 14-4-4 4-4"/><path d="M5 10h11a4 4 0 1 1 0 8h-1"/></svg></button>
+      <button id="btnRedoTKB" class="icon-button" type="button" onclick="tkbRedo()" title="Làm lại" aria-label="Làm lại" disabled><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 14 4-4-4-4"/><path d="M19 10H8a4 4 0 1 0 0 8h1"/></svg></button>
+      <label class="solve-duration-control">
+        <input id="solveDurationSeconds" type="number" inputmode="numeric" min="10" max="1800" step="10" aria-label="Thời lượng sắp xếp, tính bằng giây">
+      </label>
+      <button id="btnAutoSort" class="primary icon-button" type="button" onclick="sapXepTuDongAll()" title="Bắt đầu sắp xếp" aria-label="Bắt đầu sắp xếp"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8.35 6.3c0-1.02 1.12-1.65 2-1.12l8.1 4.88a1.3 1.3 0 0 1 0 2.22l-8.1 4.88c-.88.53-2-.1-2-1.12V6.3Z" fill="currentColor"/></svg></button>
+      <button type="button" id="btnStopAutoSort" class="auto-sort-stop icon-button" onclick="requestStopAutoSort()" title="Dừng sắp xếp" aria-label="Dừng sắp xếp" aria-hidden="false" disabled><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><rect x="9" y="9" width="6" height="6" rx="0.7" fill="currentColor" stroke="none"/></svg></button>
+      <button id="btnDeleteAll" class="danger icon-button" type="button" onclick="deleteAllTKB()" title="Xóa toàn bộ thời khóa biểu" aria-label="Xóa toàn bộ thời khóa biểu"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 7h15"/><path d="M9 7V4.8h6V7"/><path d="m6.7 7 .8 12h9l.8-12"/><path d="M10 10.5v5.2M14 10.5v5.2"/></svg></button>
+    </div>
+
+    <div class="toolbar-feedback" aria-label="Trạng thái sắp xếp">
+      <div id="autoSortProgress" class="auto-sort-progress" aria-live="polite" aria-hidden="true" hidden>
+        <div class="auto-sort-track" aria-hidden="true">
+          <div id="autoSortProgressFill" class="auto-sort-fill"></div>
+          <span id="autoSortProgressPct" class="auto-sort-pct">0%</span>
+        </div>
+        <span class="auto-sort-label">Sắp xếp</span>
+      </div>
+      <span id="statusMsg" aria-live="polite"></span>
+    </div>
+
+    <div class="toolbar-secondary-actions" aria-label="Điều hướng và thống kê">
+      <div class="stats-popover-wrap">
+        <button id="btnHome" class="primary save-button" type="button" title="Về trang chủ" aria-label="Về trang chủ" onclick="saveAndBack()">Home</button>
+        <button id="btnAgentHelper" class="agent-helper-button" type="button" title="Agent chưa kết nối · bấm để tải cho Windows" aria-label="Agent chưa kết nối · bấm để tải cho Windows" data-agent-online="0" onclick="downloadAgentHelper()" hidden aria-hidden="true"><span class="agent-status-dot" aria-hidden="true"></span><svg class="toolbar-icon agent-ai-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v2"/><rect x="4" y="6" width="16" height="14" rx="4"/><path d="M8 11h.01M16 11h.01M8.5 16c1 .8 2.15 1.2 3.5 1.2s2.5-.4 3.5-1.2"/><path d="m18.5 2 .45 1.05L20 3.5l-1.05.45L18.5 5l-.45-1.05L17 3.5l1.05-.45L18.5 2Z"/></svg><span>Agent</span></button>
+        <button id="statsToggle" class="stats-toggle" type="button" onclick="toggleStatsPopover(event)" title="Thống kê thời khóa biểu" aria-label="Thống kê thời khóa biểu" aria-expanded="false"><span class="toolbar-label-full" aria-hidden="true">Thống kê</span><span class="toolbar-label-compact" aria-hidden="true"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M4 20V13h4v7M10 20V9h4v11M16 20V5h4v15M3 20h18"/></svg></span></button>
+        <div id="statsPopover" class="stats-popover" hidden>
+          <div id="statsBox" class="stats-box"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="main">
+  <div class="left">
+    <h3 id="leftTitle">Lớp</h3>
+    <div id="listLop"></div>
+  </div>
+
+  <div class="center">
+    <div id="tkb"></div>
+  </div>
+</div>
+
+<div id="tooltip" class="tooltip"></div>
+
+<script src="../shared/school-context.js?v=20260708-sid-only-v3"></script>
+<script src="../shared/auth-api.js?v=20260713-persistent-session-v1"></script>
+<script src="../shared/auth.js?v=20260713-live-ip-owner-v2"></script>
+<script src="../shared/runtime.js?v=20260710-runtime-v2"></script>
+<script src="../shared/school-switcher.js?v=20260708-v1"></script>
+<script src="../shared/storage.js?v=20260709-active-schedule-v2"></script>
+<script src="../shared/tkb-constants.js?v=20260708-v1"></script>
+<script src="../shared/constraints-meta.js?v=20260709-v2"></script>
+<script>
+(function(){
+  if(window.TKBAuth){
+    const auth = window.TKBAuth.requireAuth(["school_admin","school_user","superadmin"]);
+    if(!auth || !auth.ok){
+      window.location.replace("/");
+      return;
+    }
+  }
+  if(window.TKBSchool && window.TKBSchool.bootstrapPlannerFromUrl){
+    window.TKBSchool.bootstrapPlannerFromUrl();
+  }
+})();
+</script>
+
+<script src="../no-logs.js?v=20260707-no-logs-v2"></script>
+<script src="../vendor/xlsx.min.js"></script>
+<script src="../vendor/jszip.min.js"></script>
+<script src="../excel-style.js?v=20260701-excel-style-v2"></script>
+<script src="../vendor/sql-wasm.js"></script>
+<script src="../kvdb.js?v=20260707-vendor-local-v1"></script>
+<script src="tkb-engine.js?v=20260624-clean-no-solver1"></script>
+<script src="phanmon.js?v=20260718-v123-first-click-quality-safety-v1"></script>
+<script src="phanmon-ops.js?v=20260617-fixed-legacy1"></script>
+<script src="tkb-constraints.js?v=20260716-teacher-assigned-total-v2"></script>
+<script src="tkb-constraints-menu.js?v=20260709-fixed-off-labels-v1"></script>
+<script src="tkb-gv-template.js"></script>
+<script src="tkb-export.js?v=20260701-excel-style-v1"></script>
+<script src="tkb-word-export.js?v=20260705-save-picker-v1"></script>
+<script src="tkb-student-excel-export.js?v=20260705-school-wide-prefix-v6"></script>
+  <script src="tkb-rust-bridge.js?v=20260718-v125-refinement-quality-portfolio-v1"></script>
+
+</body>
+</html>

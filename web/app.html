@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Thời khóa biểu — Quản trị</title>
+  <link rel="icon" type="image/png" href="assets/favicon-cherry.png?v=2" />
+  <meta name="theme-color" content="#ffffff" />
+
+  <link rel="stylesheet" href="tokens.css?v=20260710-light-v1" />
+  <link rel="stylesheet" href="style.css?v=20260710-app-nav-right-v1" />
+  <link rel="stylesheet" href="admin-shell.css?v=20260710-app-nav-right-v1" />
+  <link rel="stylesheet" href="theme-light.css?v=20260710-premium-ui-v2" />
+  <link rel="stylesheet" href="runtime.css?v=20260710-runtime-v1" />
+
+  <script src="no-logs.js?v=20260708-no-logs-v2"></script>
+  <script src="shared/school-context.js?v=20260708-sid-only-v3"></script>
+  <script src="shared/auth-api.js?v=20260713-persistent-session-v1"></script>
+  <script src="shared/auth.js?v=20260713-live-ip-owner-v2"></script>
+  <script src="shared/runtime.js?v=20260710-runtime-v2"></script>
+  <script src="shared/storage.js?v=20260709-active-schedule-v2"></script>
+  <script src="shared/tkb-constants.js?v=20260708-v1"></script>
+  <script src="vendor/xlsx.min.js"></script>
+  <script src="vendor/jszip.min.js"></script>
+  <script src="excel-style.js?v=20260701-excel-style-v2"></script>
+  <script src="vendor/sql-wasm.js"></script>
+  <script src="kvdb.js"></script>
+  <script src="quick-subject-presets.js?v=20260709-quick-subject-v3"></script>
+  <script src="modules/admin-nav.js?v=20260710-admin-nav-v1"></script>
+  <script defer src="app.js?v=20260714-standalone-session-limit-v4"></script>
+</head>
+
+<body class="app-shell-body">
+  <div class="app-nav">
+    <div class="app-nav-main">
+      <button class="btn" data-page="khoi" onclick="loadPage('khoi')">Khối học</button>
+      <button class="btn" data-page="lop" onclick="loadPage('lop')">Lớp học</button>
+      <button class="btn" data-page="giaovien" onclick="loadPage('giaovien')">Giáo viên</button>
+      <button class="btn" data-page="mon" onclick="loadPage('mon')">Môn học</button>
+      <button class="btn" data-page="tietchuan" onclick="loadPage('tietchuan')">Tiết chuẩn</button>
+      <button class="btn" data-page="pccm" onclick="loadPage('pccm')">Phân công</button>
+    </div>
+
+    <div class="app-nav-side">
+      <div class="school-switcher nav-switcher" onclick="showSchoolSwitcher()" title="Đổi trường">
+        <span id="schoolBadgeText"></span>
+        <span class="chevron">&#9662;</span>
+      </div>
+      <button class="btn primary btn-planner" onclick="openTKBPlanner()">Sắp xếp TKB</button>
+      <button type="button" class="btn btn-portal" id="btnUserPortal" hidden>Quản lý</button>
+      <button type="button" class="btn btn-logout" id="btnLogout" title="Đăng xuất">Thoát</button>
+    </div>
+  </div>
+
+  <div id="section-content">
+    <div class="ui-loading">Đang tải dữ liệu...</div>
+  </div>
+
+  <div id="modal" class="modal">
+    <div class="modal-content">
+      <h3 id="modal-title"></h3>
+      <div id="modal-body"></div>
+      <div class="modal-actions">
+        <button class="btn primary" onclick="saveData()">Lưu</button>
+        <button class="btn" onclick="closeModal()">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (async function(){
+      const roles = ["school_admin","school_user","superadmin"];
+      if(window.TKBRuntime && window.TKBRuntime.guardProtectedPage){
+        await window.TKBRuntime.guardProtectedPage(roles);
+      }
+      const auth = window.TKBAuth && window.TKBAuth.requireAuth(roles);
+      if(!auth || !auth.ok){
+        window.location.replace("/");
+        return;
+      }
+      const role = auth.ctx.user.role;
+      const portalBtn = document.getElementById("btnUserPortal");
+      if(portalBtn && (role === "school_admin" || role === "superadmin")){
+        portalBtn.hidden = false;
+        portalBtn.onclick = function(){
+          window.location.href = role === "superadmin" ? "/super-admin" : "/school-portal";
+        };
+      }
+      document.getElementById("btnLogout").onclick = function(){
+        if(window.TKBAuth) window.TKBAuth.logout();
+        window.location.href = "/";
+      };
+      const authCtx = window.TKBAuth && window.TKBAuth.currentUser();
+      if(authCtx && authCtx.user.role !== "superadmin"){
+        const sw = document.querySelector(".school-switcher");
+        if(sw) sw.style.display = "none";
+      }
+    })();
+  </script>
+</body>
+</html>

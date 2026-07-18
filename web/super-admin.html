@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Super Admin — TKB</title>
+  <link rel="icon" type="image/png" href="assets/favicon-cherry.png?v=2" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="stylesheet" href="tokens.css?v=20260710-light-v1" />
+  <link rel="stylesheet" href="auth.css?v=20260710-super-mobile-light-v1" />
+  <link rel="stylesheet" href="theme-light.css?v=20260710-premium-ui-v2" />
+  <link rel="stylesheet" href="runtime.css?v=20260710-runtime-v1" />
+  <link rel="stylesheet" href="super-admin.css?v=20260713-school-edit-v2" />
+  <script src="shared/school-context.js?v=20260708-v1"></script>
+  <script src="shared/auth-api.js?v=20260713-persistent-session-v1"></script>
+  <script src="shared/auth.js?v=20260713-live-ip-owner-v2"></script>
+  <script src="shared/runtime.js?v=20260710-runtime-v2"></script>
+  <script defer src="shared/password-toggle.js?v=20260708-v1"></script>
+  <script defer src="super-admin.js?v=20260713-school-edit-v2"></script>
+</head>
+<body class="portal-body portal-page-super">
+  <header class="portal-top">
+    <h1>Super Admin — Quản lý trường</h1>
+    <div class="portal-actions">
+      <button type="button" class="portal-btn" id="btnChangePassword">Đổi mật khẩu</button>
+      <button type="button" class="portal-btn" id="btnOpenApp">Mở phần mềm</button>
+      <button type="button" class="portal-btn danger" id="btnLogout">Đăng xuất</button>
+    </div>
+  </header>
+
+  <main class="portal-main portal-main-wide" id="portalRoot">
+    <section class="portal-card">
+      <div class="portal-card-head">
+        <h2>Danh sách trường</h2>
+        <div class="portal-card-actions">
+          <button type="button" class="portal-btn primary" id="btnAddSchool">Thêm mới</button>
+          <button type="button" class="portal-btn" id="btnReloadSchools">Tải lại danh sách</button>
+        </div>
+      </div>
+      <div class="portal-table-wrap portal-table-wrap-schools">
+        <table class="portal-table portal-table-schools" id="schoolsTable">
+          <colgroup>
+            <col class="col-school" />
+            <col class="col-email" />
+            <col class="col-plan" />
+            <col class="col-expiry" />
+            <col class="col-status" />
+            <col class="col-actions" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Trường</th>
+              <th>Email</th>
+              <th class="portal-th-compact">Gói</th>
+              <th class="portal-th-compact">Hết hạn</th>
+              <th class="portal-th-status">Trạng thái</th>
+              <th class="portal-th-actions">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody id="schoolsBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div class="portal-modal" id="addSchoolModal" hidden>
+    <div class="portal-modal-backdrop" data-close-modal></div>
+    <div class="portal-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="addSchoolTitle">
+      <div class="portal-modal-header">
+        <h2 id="addSchoolTitle">Thêm trường mới</h2>
+        <button type="button" class="portal-modal-close" id="btnCloseAddSchool" aria-label="Đóng">&times;</button>
+      </div>
+      <form id="addSchoolForm" class="portal-grid-2">
+        <div class="portal-field"><label>Tên trường<input name="name" required /></label></div>
+        <div class="portal-field"><label>Tên đăng nhập<input name="loginId" required autocomplete="username" /></label></div>
+        <div class="portal-field"><label>Email admin<input type="email" name="email" required /></label></div>
+        <div class="portal-field"><label>Số điện thoại<input type="tel" name="phone" required /></label></div>
+        <div class="portal-field"><label>Mật khẩu<input type="password" name="password" required minlength="6" /></label></div>
+        <div class="portal-field"><label>TKB số<input type="number" name="scheduleNumber" value="1" readonly /></label></div>
+        <div class="portal-field"><label>Ngày áp dụng<input type="date" name="effectiveDate" required /></label></div>
+        <div class="portal-field portal-modal-actions">
+          <button type="button" class="portal-btn" id="btnCancelAddSchool">Hủy</button>
+          <button type="submit" class="portal-btn primary">Thêm trường</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

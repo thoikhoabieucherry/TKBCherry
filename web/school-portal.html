@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quản lý — TKB</title>
+  <link rel="icon" type="image/png" href="assets/favicon-cherry.png?v=2" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="stylesheet" href="tokens.css?v=20260710-light-v1" />
+  <link rel="stylesheet" href="auth.css?v=20260709-otp-countdown-v1" />
+  <link rel="stylesheet" href="theme-light.css?v=20260710-premium-ui-v2" />
+  <link rel="stylesheet" href="runtime.css?v=20260710-runtime-v1" />
+  <script src="shared/school-context.js?v=20260708-v1"></script>
+  <script src="shared/auth-api.js?v=20260713-persistent-session-v1"></script>
+  <script src="shared/auth.js?v=20260713-live-ip-owner-v2"></script>
+  <script src="shared/runtime.js?v=20260710-runtime-v2"></script>
+  <script defer src="shared/password-toggle.js?v=20260708-v1"></script>
+  <script defer src="school-portal.js?v=20260709-otp-countdown-v1"></script>
+</head>
+<body class="portal-body">
+  <header class="portal-top">
+    <div>
+      <h1 id="portalTitle">Quản lý</h1>
+    </div>
+    <div class="portal-actions">
+      <button type="button" class="portal-btn primary" id="btnOpenApp">Mở phần mềm TKB</button>
+      <div class="portal-account-menu" id="accountMenu">
+        <button type="button" class="portal-account-chip" id="btnAccountMenu" aria-haspopup="true" aria-expanded="false">
+          <span class="portal-account-text">
+            <span class="portal-account-name" id="chipName">Tài khoản</span>
+            <span class="portal-account-plan" id="chipPlan"></span>
+          </span>
+          <span class="portal-account-caret" aria-hidden="true">&#9662;</span>
+        </button>
+        <div class="portal-account-dropdown" id="accountDropdown" hidden>
+          <div class="portal-account-modal-sub" id="accountModalSub"></div>
+          <div class="portal-grid-2" id="accountInfo"></div>
+          <div class="portal-modal-actions">
+            <button type="button" class="portal-btn" id="btnEditAccount">Chỉnh sửa</button>
+            <button type="button" class="portal-btn danger" id="btnLogout">Đăng xuất</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="portal-main">
+    <section class="portal-card" id="emailVerifyCard" hidden>
+      <h2>Xác thực email</h2>
+      <p class="portal-muted" style="margin-bottom:14px">Xác thực email để nhận ngay <strong>30 ngày miễn phí</strong> đầy đủ tính năng. Chưa xác thực thì tài khoản ở gói Free.</p>
+      <form id="emailVerifyForm" class="portal-grid-2" style="margin-bottom:12px">
+        <div class="portal-field"><label>Email<input type="email" name="email" id="verifyEmailField" required /></label></div>
+        <div class="portal-field"><label>Số điện thoại<input type="tel" name="phone" id="verifyPhoneField" required /></label></div>
+        <div class="portal-field" style="grid-column:1/-1;display:flex;gap:10px;flex-wrap:wrap">
+          <button type="button" class="portal-btn" id="btnSaveContact">Lưu email / SĐT</button>
+          <button type="button" class="portal-btn primary" id="btnSendOtp">Gửi mã xác thực</button>
+          <span class="portal-otp-status" id="portalOtpStatus" aria-live="polite"></span>
+        </div>
+      </form>
+      <div class="auth-otp-demo" id="portalOtpDemo" hidden style="margin-bottom:12px">
+        <span>Demo (chưa có SMTP): mã là <strong id="portalOtpCode"></strong></span>
+      </div>
+      <form id="otpConfirmForm" class="portal-grid-2">
+        <div class="portal-field"><label>Mã 6 số<input name="code" inputmode="numeric" maxlength="6" placeholder="000000" required /></label></div>
+        <div class="portal-field" style="align-self:end"><button type="submit" class="portal-btn primary">Xác nhận email</button></div>
+      </form>
+    </section>
+
+    <section class="portal-card">
+      <h2>Gói dịch vụ</h2>
+      <div class="plan-cards" id="planCards"></div>
+    </section>
+
+    <section class="portal-card portal-contact-box">
+      <h2>Dịch vụ xếp hộ TKB</h2>
+      <p>Liên hệ trực tiếp để đặt dịch vụ xếp hộ TKB.</p>
+      <p><a href="https://zalo.me/0352261815" target="_blank" rel="noopener">Zalo Thầy Ân · 0352261815</a></p>
+    </section>
+
+    <section class="portal-card">
+      <div class="portal-card-head">
+        <h2>Phiên bản thời khóa biểu</h2>
+        <div class="portal-card-head-actions">
+          <button type="button" class="portal-btn" id="btnNewSchedule">Tạo mới</button>
+        </div>
+      </div>
+      <div class="portal-table-wrap">
+        <table class="portal-table portal-schedule-table">
+          <thead><tr><th>TKB số</th><th>Ngày áp dụng</th><th class="portal-th-actions">Thao tác</th></tr></thead>
+          <tbody id="schedulesBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="portal-card">
+      <h2 id="subUsersHeading">Quản lý tài khoản phụ</h2>
+      <p class="portal-muted" id="addUserPlanHint" style="margin-bottom:12px"></p>
+      <form id="addUserForm" class="portal-grid-3" style="margin-bottom:16px">
+        <div class="portal-field"><label>Tên đăng nhập<input name="loginId" required placeholder="Nhập tên đăng nhập" autocomplete="username" /></label></div>
+        <div class="portal-field"><label>Mật khẩu<input type="password" name="password" required minlength="6" placeholder="Nhập mật khẩu" autocomplete="new-password" /></label></div>
+        <div class="portal-field"><label>Tên hiển thị<input name="displayName" placeholder="Nhập tên hiển thị" /></label></div>
+        <div class="portal-field" style="grid-column:1/-1"><button type="submit" class="portal-btn primary" id="btnAddUser">Thêm tài khoản</button></div>
+      </form>
+      <div class="portal-table-wrap">
+        <table class="portal-table">
+          <thead><tr><th>Tài khoản</th><th>Tên</th><th>Vai trò</th><th>Trạng thái</th><th></th></tr></thead>
+          <tbody id="usersBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div class="portal-modal" id="transferModal" hidden>
+    <div class="portal-modal-backdrop" data-close-transfer></div>
+    <div class="portal-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="transferModalTitle">
+      <div class="portal-modal-header">
+        <h2 id="transferModalTitle">Chuyển khoản đăng ký gói</h2>
+        <button type="button" class="portal-modal-close" id="btnCloseTransfer" aria-label="Đóng">&times;</button>
+      </div>
+      <div class="portal-topup-body" id="transferModalBody"></div>
+    </div>
+  </div>
+
+</body>
+</html>

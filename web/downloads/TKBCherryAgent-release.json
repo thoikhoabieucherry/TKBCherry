@@ -1,0 +1,12 @@
+{
+  "archiveSha256": "c0ed54e6be84a92f4ff9392ed8bce7d4c6eea74314f085640061d995d864f382",
+  "archiveSize": 91956291,
+  "archiveUrl": "/downloads/TKBCherryAgent-Windows.zip?v=1.6.7",
+  "executableSha256": "1a8bf93234386d413177deacaeedac6419692323371614ee119a2d879b6b6337",
+  "executableSize": 92422786,
+  "protocol": "tkb-agent-release-v1",
+  "publishedAt": "2026-07-18T11:52:29Z",
+  "signature": "j4aYKAssSadnsOEBDzId0wku7ZvmKBLNGvTFttk_wrYmi1_YfdyugASqNOvsYpCEZ9AP3dBQdBARt3aVpsv92pzv0pvqlcRu6vNvC0nDJ1LB9J6maMS4kHwao4DbUWE5VUeRUZG2KltEAHOASi1H2_pKOC0am-5rMwbPBZXkgADKUf4M0bCjoPkslNhSDsdEUKDsRFSrAvBJHMq9RamJsL42Dq5EkZjSVvPbNaVG_v3ANtmUNLO1ZxwRuE7SqWiPxO0YYOsjUVEkICvyPosjsrprUStRh4by8Fndw1cU9hDRIY4m50Q6jXhjvf-NdmpLknkeAetHtuhiOpFfvuTJXOEbKcXmidxu-4cQQq0dbbvQTQ4HJO27dZrdCtSJbJlh0VIiPjHCVZXPqp7tpJo3-iwuWcRXeMivJXrVOT7t5Bn3oMU9-rQCW_qdt2sG0JfUdN52Rjvvqb0rXyx2emX4cl4RvddO5UzBvtxGvOglmKA7D7e9zvJB2vplDlkR9zCR",
+  "signatureAlgorithm": "rsa-pkcs1-sha256",
+  "version": "1.6.7"
+}

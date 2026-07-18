@@ -1,0 +1,140 @@
+/* Super Admin page-only layout refinements. */
+.portal-page-super,
+.portal-page-super *,
+.portal-page-super *::before,
+.portal-page-super *::after {
+  box-sizing: border-box;
+}
+
+.portal-page-super {
+  margin: 0;
+}
+
+/* Keep every row action on the same visual baseline and the same width. Adding
+   Edit gives us nine compact tracks, which also makes the formerly wide TKB
+   version selector noticeably narrower without introducing an odd gap. */
+.portal-page-super .portal-table-schools .portal-action-bar {
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: 4px;
+  align-items: stretch;
+}
+
+.portal-page-super .portal-table-schools .portal-action-bar > .portal-btn-sm,
+.portal-page-super .portal-table-schools .portal-action-bar > .portal-plan-select,
+.portal-page-super .portal-table-schools .portal-action-bar > .portal-btn-slot {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  min-height: 32px;
+  margin: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-radius: 8px;
+  line-height: 1;
+}
+
+.portal-page-super .portal-table-schools .portal-tkb-select {
+  width: 100%;
+  max-width: none;
+}
+
+.portal-page-super .portal-table-schools .portal-btn-edit {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #334155;
+  font-weight: 600;
+}
+
+.portal-page-super .portal-table-schools .portal-btn-edit:hover {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+@media (max-width: 899px) {
+  .portal-page-super {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .portal-page-super .portal-top,
+  .portal-page-super .portal-main,
+  .portal-page-super .portal-card,
+  .portal-page-super .portal-table-wrap-schools,
+  .portal-page-super .portal-table-schools,
+  .portal-page-super .portal-table-schools tbody,
+  .portal-page-super .portal-table-schools tr.portal-school-row {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  /* A column flex item with auto side margins can shrink to its content on
+     mobile Safari. Pin the page content to the viewport instead. */
+  .portal-page-super .portal-main {
+    margin: 0;
+    padding: 10px 12px 12px;
+  }
+
+  .portal-page-super .portal-card {
+    margin: 0;
+  }
+
+  .portal-page-super .portal-actions,
+  .portal-page-super .portal-card-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .portal-page-super .portal-actions .portal-btn,
+  .portal-page-super .portal-card-actions .portal-btn {
+    min-width: 0;
+    white-space: nowrap;
+  }
+
+  .portal-page-super .portal-actions .portal-btn.danger {
+    grid-column: 1 / -1;
+  }
+
+  .portal-page-super .portal-table-schools tr.portal-school-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "school school"
+      "email email"
+      "plan expiry"
+      "status status"
+      "actions actions";
+  }
+
+  .portal-page-super .portal-table-schools .portal-action-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+  }
+
+  .portal-page-super .portal-table-schools .portal-action-bar > .portal-btn-sm,
+  .portal-page-super .portal-table-schools .portal-action-bar > .portal-plan-select,
+  .portal-page-super .portal-table-schools .portal-action-bar > .portal-btn-slot {
+    height: 38px;
+    min-height: 38px;
+    font-size: 0.75rem;
+  }
+
+  .portal-page-super .portal-table-schools .portal-tkb-select {
+    max-width: none;
+  }
+
+  .portal-page-super .portal-table-schools .portal-btn-del {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 359px) {
+  .portal-page-super .portal-top h1 {
+    font-size: 0.9rem;
+  }
+
+  .portal-page-super .portal-actions .portal-btn,
+  .portal-page-super .portal-card-actions .portal-btn {
+    font-size: 0.74rem;
+    padding-inline: 6px;
+  }
+}
