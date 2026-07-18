@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v229-refinement-quality-portfolio";
+  const VERSION = "tkb-rust-api-v230-balanced-refinement-interleave";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;

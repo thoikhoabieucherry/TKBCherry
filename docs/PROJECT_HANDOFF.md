@@ -8,22 +8,22 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.24** (deployed and publicly
-  asset/package-verified on 2026-07-18).
-- Staged application candidate: **v1.25**. Frontend/UI and local scheduler
-  verification passes; VPS staging, production deployment, and live browser
-  verification are pending.
-- Current public Agent release: **v1.6.7** (`1.6.7`). Agent `1.6.3` and later
+- Current deployed application release: **v1.25** (deployed and publicly
+  asset/package/live-E2E verified on 2026-07-18).
+- There is no newer staged application candidate after v1.25.
+- Current public Agent release: **v1.6.8** (`1.6.8`), carrying the v1.25
+  balanced refinement interleave. Agent `1.6.3` and later
   can offer this update inside the Agent after the user presses OK; Agent
   `1.6.2` and older still require one manual install of a self-update-capable
   build.
-- There is no newer staged Agent candidate after v1.6.7.
+- Agent v1.6.8 is built, UPX-packed, integrity-tested, GUI/solver-child-smoked,
+  signed, synchronized into `web/downloads`, and publicly verified.
 - Every deployed application or packaged Agent update must increment the
 applicable version here and add a short change note. Agent package updates
 must also update `agent_helper/__init__.py` and
 `agent_helper/windows_version_info.txt`.
 
-### v1.25 - 2026-07-18 (staged, not yet deployed)
+### v1.25 - 2026-07-18 (deployed)
 
 - Refinement now separates an internal search frontier from the visible
   incumbent. A lower-session candidate is allowed to carry temporary gap-1
@@ -60,9 +60,9 @@ must also update `agent_helper/__init__.py` and
   gap-2-plus sessions, `hard_ok=true`. Independent refinement seed probe also
   returned `462` sessions / `39` gap-1 in 174.547 seconds.
 - Local verification currently passes scheduler `123/123`, bridge `155/155`,
-  and the focused frontier/fallback regressions. The staged bridge marker is
-  `tkb-rust-api-v229-refinement-quality-portfolio`; page cache key is
-  `20260718-v125-refinement-quality-portfolio-v1`.
+  and the focused frontier/fallback regressions. The final staged bridge marker
+  is `tkb-rust-api-v230-balanced-refinement-interleave`; page cache key is
+  `20260718-v125-balanced-interleave-v2`.
 - Final interleaving benchmark on the exact complete `default` incumbent used
   a 180-second browser-equivalent continuation that improved `482` sessions /
   `41` gap-1 to `462` / `37` in
@@ -70,6 +70,44 @@ must also update `agent_helper/__init__.py` and
   gap-2-plus bucket, and `hard_ok=true`. The first global result was `466/41`;
   the next same-cap polish reached `462/37`, proving that both objectives move
   in one click rather than starving the session objective.
+- Final local release verification passes frontend/UI `218/218`, scheduler
+  `123/123`, Agent `71/71`, API E2E `46/46`, deployment/credential tooling
+  `19/19`, and JavaScript/Python syntax checks. Isolated VPS staging ended with
+  `STAGING_TESTS_OK`: scheduler `123/123`, Agent `71/71`, Rust API `123/123`,
+  and Agent-candidate validator `20/20`, for `337/337` total.
+- Agent 1.6.8 candidate artifacts:
+  - `TKBCherryAgent.exe`: 92,545,151 bytes, SHA-256
+    `881E01381E5C1F16957AA98BF48184F3364C3775B904BDB270A594AFE77CB668`.
+  - One-entry ZIP: 92,078,973 bytes, SHA-256
+    `4168C53A4187549C6AD1E5843EDD833956C97947C775BC54A3FC5F59C24A480B`.
+  - Signed manifest: 978 bytes, SHA-256
+    `8034619709C32CF19A5874CCAE682CC61774DF94B1F1FE8E33AFC2E096523A16`.
+  File/product version, parsed signed manifest, one-root-entry ZIP, UPX 5.2.0
+  integrity, GUI smoke, and packaged solver-child smoke all report `1.6.8`.
+- The source repository is initialized and backed up to the private GitHub
+  repository `thoikhoabieucherry/TKBCherry`, branch `main`. Initial source-only
+  backup commit is `24ef651`; secrets, databases, school workbooks, temporary
+  build trees, EXE/ZIP artifacts, and release archives are intentionally ignored.
+- Production deployment completed with `UPDATE_OK`. Backups are
+  `/opt/cherry-scheduler-backups/server-state-20260718-141453.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260718-141453.tar.gz`. Public
+  health returned `ok:true`, zero active/queued jobs, and 6/6 available worker
+  tokens. The public page serves cache key
+  `20260718-v125-balanced-interleave-v2`, bridge marker
+  `tkb-rust-api-v230-balanced-refinement-interleave`, planner marker
+  `updated-v8.6 (Agent 1.6.8 balanced refinement interleave)`, and the signed
+  Agent manifest reports `1.6.8`.
+- The public Agent ZIP downloaded as 92,078,973 bytes with SHA-256
+  `4168C53A4187549C6AD1E5843EDD833956C97947C775BC54A3FC5F59C24A480B`,
+  byte-identical by hash to the local signed candidate.
+- Production browser E2E on `sid=default` started from a complete timetable at
+  `1,566/1,566`, `506` teacher sessions, `50` gap-1, zero singleton, and zero
+  gap-2. One blank-duration `Xep tiep` completed at `466` sessions / `46`
+  gap-1, `1,566/1,566`, zero unassigned, zero singleton, and zero gap-2. Both
+  primary quality objectives improved in one click. During that live solve the
+  browser-control connection was deliberately lost and reattached at elapsed
+  `1:35`; it resumed the same canonical job without a second Play/POST, then
+  the VPS returned to zero active/queued jobs and 6/6 free worker tokens.
 
 ### v1.24 - 2026-07-18 (deployed)
 
