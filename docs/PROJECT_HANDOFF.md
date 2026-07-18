@@ -8,12 +8,11 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.25** (deployed and publicly
-  asset/package/live-E2E verified on 2026-07-18).
-- A newer **v1.26** candidate is staged locally and has passed isolated VPS
-  tests; production remains v1.25 until `UPDATE_OK` is verified.
-- Current public Agent release: **v1.6.8** (`1.6.8`), carrying the v1.25
-  balanced refinement interleave. Agent `1.6.3` and later
+- Current deployed application release: **v1.26** (deployed and publicly
+  health/asset/marker verified on 2026-07-18).
+- There is no newer staged application candidate after v1.26.
+- Current public Agent release: **v1.6.8** (`1.6.8`), carrying the v1.26
+  exclusive Agent/VPS handoff. Agent `1.6.3` and later
   can offer this update inside the Agent after the user presses OK; Agent
   `1.6.2` and older still require one manual install of a self-update-capable
   build.
@@ -24,7 +23,7 @@ applicable version here and add a short change note. Agent package updates
 must also update `agent_helper/__init__.py` and
 `agent_helper/windows_version_info.txt`.
 
-### v1.26 - staged, not deployed (2026-07-18)
+### v1.26 - 2026-07-18 (deployed)
 
 - Server-owned solving now has one exclusive executor at a time. A canonical
   job is routed to the Agent when an authenticated Agent is online; otherwise
@@ -44,17 +43,25 @@ must also update `agent_helper/__init__.py` and
   a 60/180-second solve to a fresh full run. The watchdog returns a structured
   timeout if no complete result remains.
 - The CP-SAT in-memory search tree is not transferable between machines. On a
-  mid-search Agent failure the VPS resumes the same canonical request with the
-  current persisted incumbent/body, rather than creating a second job; it may
-  restart the solver search itself.
-- Final successful UI notification is exactly **`Đã xếp xong!`**. Complete
+  mid-search Agent failure the VPS resumes the same canonical request/body,
+  rather than creating a second job; the in-memory search tree is restarted.
+- Final successful UI notification is exactly **Da xep xong!** (the UI uses the Vietnamese text Đã xếp xong!). Complete
   hard-valid schedules remain successful even when soft teacher-session/gap
   debt is still reported in metrics.
 - Staging verification: frontend/UI `218/218`, scheduler `123/123`, Agent
-  `71/71`, Rust API `126/126`, candidate validator `20/20`, and deployment
+  `71/71`, Rust API `128/128`, candidate validator `20/20`, and deployment
   packaging tests `25/25`. `stage-tests.py` ended with `STAGING_TESTS_OK`.
   Current production/staging package measurements are approximately
   93,561,154 / 93,670,943 bytes (tar metadata varies between runs).
+- Production deployment returned `UPDATE_OK` with backups
+  `/opt/cherry-scheduler-backups/server-state-20260718-162216.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260718-162216.tar.gz`.
+  Public health reports `ok:true`, zero active/queued jobs, and 6/6 worker
+  tokens. The public page serves cache key
+  `20260718-v126-concise-completion-v1`, bridge marker
+  `tkb-rust-api-v231-concise-completion`, planner marker
+  `updated-v8.6 (Agent 1.6.8 balanced refinement interleave)`, and signed
+  Agent manifest `1.6.8`.
 
 ### v1.25 - 2026-07-18 (deployed)
 
@@ -1370,9 +1377,9 @@ and in permanent regression tests.
 
 ## Local Workspace Cleanup
 
-- On 2026-07-18 the local tree was reduced from about 3.0 GiB to about 582 MiB
-  in the first cleanup pass, without removing application source, school data,
-  or the published Agent package.
+- On 2026-07-18 the local tree was reduced from about 3.0 GiB to about 295 MiB
+  (309,663,014 bytes), without removing application source, school data, or
+  the published Agent package.
 - Removed reproducible/generated content: old `.codex_tmp` diagnostics and
   dependency copies, Agent build work/venv, the internal onedir Agent
   bundle/archive, the 456 MiB Cargo target cache, solver logs, Python/test
@@ -1382,23 +1389,24 @@ and in permanent regression tests.
   published Agent download in `web/downloads`, `start.exe`, both old root RAR
   archives, all source/test fixtures, and the minimal local Rust runtime
   (`rust_api/target-gnu/release/tkb_rust_api.exe` plus `sqlite3.dll`).
-- `.codex_tmp/release-venv` is temporarily retained for the pending staging and
-  deployment commands; it will be removed after those checks. `.agents` and the
-  protected empty `.pytest_cache` directory are small Codex-managed paths and
-  could not be removed by the current Windows account, so they are left alone.
+- `.codex_tmp/release-venv` was removed after staging/deployment. `.agents` and
+  the protected empty `.pytest_cache` directory are small Codex-managed paths
+  and could not be removed by the current Windows account, so they are left
+  alone.
 - `.gitignore` excludes generated build/cache/log paths so they do not silently
   return. There is no system `cargo` on `PATH`; Rust changes must be compiled
   and tested during VPS staging before deployment.
 
 ## Deployment Package Hygiene
 
-- A not-yet-deployed infrastructure candidate now separates production and VPS
+- The deployed infrastructure now separates production and VPS
   staging archives. Production is an explicit runtime allowlist containing only
   `web`, the Rust API build/source and live sample fixture, the Python solver and
   its hint data, the mail server runtime files, and `solver-pool.conf`. Staging
   adds only the Agent and solver test sources needed by `stage-tests.py`. The
-  inspected production archive is 93,559,051 bytes with 107 members across five
-  top-level runtime directories; staging is 93,668,595 bytes with 150 members.
+  inspected production archive is about 93,561,154 bytes with 107 members
+  across five top-level runtime directories; staging is about 93,670,943 bytes
+  with 150 members.
 - Full and update deployment explicitly request the production profile;
   `stage-tests.py` explicitly requests staging. The full-install path now passes
   its unique upload directory through `TKB_DEPLOY_UPLOAD_DIR`, fixing the stale
@@ -1413,9 +1421,10 @@ and in permanent regression tests.
   pair. Backup retention keeps the newest 10 app releases and 30 state archives,
   always preserves the current transaction backups, and never deletes archives
   whose filename contains `manual`.
-- Verification for this candidate passes deployment/package tests `13/13`, all
-  root tooling tests `25/25`, Python syntax checks, and remote Ubuntu `bash -n`
-  checks for both server scripts. It has deliberately not been deployed yet.
+- Verification passes deployment/package tests `25/25`, all scheduler/Agent
+  suites, Python syntax checks, and remote Ubuntu `bash -n` checks for both
+  server scripts. Production deployment returned `UPDATE_OK`; remote inventory
+  is about 104 MiB with 785 files, with no Cargo target or solver log tree.
 
 ## VPS And Deployment
 
@@ -1457,8 +1466,12 @@ environment variables remain optional overrides.
 Update deployment from the repository root:
 
 ```powershell
-.\.codex_tmp\release-venv\Scripts\python.exe tools\vps-deploy\update-deploy.py
+python tools\vps-deploy\update-deploy.py
 ```
+
+Use a local virtual environment with `paramiko`/`pytest` before running the
+command; the disposable `.codex_tmp\release-venv` used for v1.26 was removed
+after deployment.
 
 Deployment is not complete until output contains `UPDATE_OK`. The update script
 drains active solver jobs, uploads a package, installs dependencies, rebuilds the
@@ -1475,15 +1488,15 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-18: `UPDATE_OK` for
-v1.22. Public health serves API marker
-`tkb_new-rust-api-2026-07-16-agent-reference-validation-v25`, zero active jobs,
+v1.26. Public health serves API marker
+`tkb_new-rust-api-2026-07-18-exclusive-agent-handoff-v26`, zero active jobs,
 zero queued jobs, and 6/6 available worker tokens. The public page serves bridge
-`tkb-rust-api-v226-mobile-background-reconnect` with cache key
-`20260718-v122-mobile-background-reconnect-v3`; the planner marker is
-`updated-v8.4 (Agent 1.6.6 requirement quality fallback)`. Public Agent release
-`1.6.6`, its signed release manifest, and its one-entry ZIP are verified. The
+`tkb-rust-api-v231-concise-completion` with cache key
+`20260718-v126-concise-completion-v1`; the planner marker is
+`updated-v8.6 (Agent 1.6.8 balanced refinement interleave)`. Public Agent release
+`1.6.8`, its signed release manifest, and its one-entry ZIP are verified. The
 public ZIP is byte-identical to local with SHA-256
-`E08882FFB12CFA8EAE6E08C8A6119592DAE7C6403DBA6C0866BA661CDD52FCB4`.
+`4168C53A4187549C6AD1E5843EDD833956C97947C775BC54A3FC5F59C24A480B`.
 Workstations on Agent `1.6.2` or older require one manual install of a
 self-update-capable build before future in-Agent updates are available.
 
