@@ -1395,7 +1395,9 @@ and in permanent regression tests.
   alone.
 - `.gitignore` excludes generated build/cache/log paths so they do not silently
   return. There is no system `cargo` on `PATH`; Rust changes must be compiled
-  and tested during VPS staging before deployment.
+  and tested during VPS staging before deployment. Recreate local Python
+  tooling with `scripts/setup.ps1` (or a venv containing `paramiko`, `pytest`,
+  and the solver requirements) before the next test/deploy session.
 
 ## Deployment Package Hygiene
 
