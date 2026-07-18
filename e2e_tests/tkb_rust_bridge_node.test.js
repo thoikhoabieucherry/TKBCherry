@@ -1351,7 +1351,7 @@ test("short first-click deadline and Benders failures are mapped to friendly gui
   completeBridge.window.calcSchoolTKBStats = () => ({soTiet:2, daXepTiet:2, chuaXepTiet:0});
   const completeFriendly = completeBridge.hooks.friendlySolveError(bendersError);
   assert.equal(completeFriendly.title, "Ch\u01b0a c\u1ea3i thi\u1ec7n th\u00eam");
-  assert.equal(completeFriendly.message, "Ch\u01b0a c\u1ea3i thi\u1ec7n th\u00eam; \u0111ang gi\u1eef l\u1ecbch hi\u1ec7n t\u1ea1i.");
+  assert.equal(completeFriendly.message, "\u0110\u00e3 x\u1ebfp xong!");
   assert.equal(completeFriendly.statusLevel, "warning");
   assert.doesNotMatch(`${completeFriendly.title}: ${completeFriendly.message}`, /Benders|"cap"|history/i);
 });
@@ -3570,7 +3570,7 @@ test("bounded unified lifecycle applies a complete schedule with unavoidable qua
   assert.equal(progress.pct.textContent, "!");
 });
 
-test("27-second unchanged refinement stays synchronized and reports retained quality honestly", async () => {
+test("27-second unchanged refinement stays synchronized and uses concise completion text", async () => {
   const data = makeData(2);
   const subject = data.mon[0].ten;
   data.tkb = {
@@ -3681,7 +3681,7 @@ test("27-second unchanged refinement stays synchronized and reports retained qua
   assert.equal(progress.label.textContent, "Giữ lịch");
   assert.equal(
     progress.nodes.get("statusMsg").textContent,
-    "Chưa cải thiện thêm. Giữ lịch: 1 buổi, 0 trống 1 tiết."
+    "Đã xếp xong!"
   );
 });
 
@@ -7144,7 +7144,7 @@ test("backendSolverState aborts a hanging state request", async () => {
   assert.equal(clock.pendingTimers(), 0);
 });
 
-test("truthful quality status uses readable numeric quality facts", () => {
+test("completed schedules use one concise final notification while retaining quality state", () => {
   const v = (...points) => String.fromCodePoint(...points);
   const data = makeData(1566);
   const {hooks} = loadBridge(data);
@@ -7167,20 +7167,19 @@ test("truthful quality status uses readable numeric quality facts", () => {
   const poor = hooks.completionQualityStatus(payload(504, 55), data);
   assert.equal(poor.level, "warning");
   assert.equal(poor.progressLabel, v(0x43,0x1ea7,0x6e,0x20,0x74,0x1ed1,0x69,0x20,0x1b0,0x75));
-  assert.ok(poor.message.includes("1566"));
-  assert.ok(poor.message.includes("504"));
-  assert.ok(poor.message.includes("55"));
-  assert.ok(poor.message.includes(v(0x63,0x1ea7,0x6e,0x20,0x74,0x1ed1,0x69,0x20,0x1b0,0x75,0x20,0x74,0x68,0x00ea,0x6d)));
+  assert.equal(poor.message, v(0x0110,0x00e3,0x20,0x78,0x1ebf,0x70,0x20,0x78,0x6f,0x6e,0x67,0x21));
   assert.equal(poor.targetMet, false);
 
   const good = hooks.completionQualityStatus(payload(460, 30), data);
   assert.equal(good.level, "ok");
   assert.equal(good.targetMet, true);
-  assert.ok(good.message.includes(v(0x0110,0x1ea1,0x74,0x20,0x6d,0x1ee5,0x63,0x20,0x74,0x69,0x00ea,0x75,0x20,0x68,0x69,0x1ec7,0x6e,0x20,0x74,0x1ea1,0x69)));
+  assert.equal(good.message, poor.message);
+  const completeVisible = {scheduled:1566, expected:1566, unassigned:0};
+  assert.equal(hooks.buildCompletionMessage(payload(504, 55), completeVisible), poor.message);
+  assert.equal(hooks.buildCompletionMessage(payload(460, 30), completeVisible), poor.message);
 
   const retained = hooks.noBetterScheduleStatus(payload(504, 55));
-  assert.ok(retained.includes(v(0x43,0x68,0x01b0,0x61,0x20,0x63,0x1ea3,0x69,0x20,0x74,0x68,0x69,0x1ec7,0x6e,0x20,0x74,0x68,0x00ea,0x6d)));
-  assert.ok(retained.includes("504") && retained.includes("55"));
+  assert.equal(retained, poor.message);
 
   const small = makeData(2);
   const subject = small.mon[0].ten;
@@ -7192,5 +7191,5 @@ test("truthful quality status uses readable numeric quality facts", () => {
   const friendly = smallBridge.hooks.friendlySolveError(Object.assign(new Error("expired"), {kind:"client_timeout"}));
   assert.equal(friendly.progressLabel, v(0x47,0x69,0x1eef,0x20,0x6c,0x1ecb,0x63,0x68));
   assert.equal(friendly.statusLevel, "warning");
-  assert.ok(friendly.statusMessage.includes(v(0x43,0x68,0x01b0,0x61,0x20,0x63,0x1ea3,0x69)));
+  assert.equal(friendly.statusMessage, poor.message);
 });

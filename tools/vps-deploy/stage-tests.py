@@ -12,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from deploy import make_tarball, new_ssh_client, run_ssh  # noqa: E402
+from deploy import PACKAGE_STAGING, make_tarball, new_ssh_client, run_ssh  # noqa: E402
 from vps_credentials import missing_credential_message, resolve_vps_connection  # noqa: E402
 
 
@@ -22,7 +22,7 @@ def main() -> int:
         print(missing_credential_message(), file=sys.stderr)
         return 1
 
-    archive = make_tarball()
+    archive = make_tarball(PACKAGE_STAGING)
     nonce = secrets.token_hex(6)
     remote_archive = f"/tmp/tkb-stage-{nonce}.tar.gz"
     remote_dir = f"/tmp/tkb-stage-{nonce}"

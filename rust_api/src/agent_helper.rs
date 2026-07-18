@@ -160,6 +160,13 @@ pub struct AgentCandidate {
 }
 
 #[derive(Clone, Debug)]
+pub enum AgentJobExecution {
+    Queued,
+    Leased { expires_at_ms: u64 },
+    Completed { candidate: Option<AgentCandidate> },
+}
+
+#[derive(Clone, Debug)]
 struct AgentWorker {
     owner: SolverOwner,
     session_binding: String,
@@ -536,6 +543,74 @@ impl AgentHelperCoordinator {
             state.jobs.remove(job_id);
         }
         owned
+    }
+
+    /// Return one coherent snapshot of the canonical Agent task. Calling this
+    /// method also prunes expired workers/leases, which lets the VPS watchdog
+    /// resume work even when a powered-off Agent cannot send a final request.
+    pub fn job_execution(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+        now_ms: u64,
+    ) -> Option<AgentJobExecution> {
+        let mut state = self.state.lock().ok()?;
+        prune_state(&mut state, now_ms);
+        let job = state
+            .jobs
+            .get(job_id)
+            .filter(|job| job.owner == *owner)?;
+        if let Some(candidate) = job.best_candidate.clone() {
+            return Some(AgentJobExecution::Completed {
+                candidate: Some(candidate),
+            });
+        }
+        if let Some(expires_at_ms) = job.tasks.iter().find_map(|task| match &task.state {
+            AgentTaskState::Leased { expires_at_ms, .. } => Some(*expires_at_ms),
+            _ => None,
+        }) {
+            return Some(AgentJobExecution::Leased { expires_at_ms });
+        }
+        if job
+            .tasks
+            .iter()
+            .all(|task| matches!(&task.state, AgentTaskState::Completed))
+        {
+            Some(AgentJobExecution::Completed { candidate: None })
+        } else {
+            Some(AgentJobExecution::Queued)
+        }
+    }
+
+    /// Atomically remove an Agent job only when no lease is still active. This
+    /// closes the expiry/reclaim race: a worker that manages to reclaim a task
+    /// just as the watchdog notices an old lease cannot be killed underneath a
+    /// running solver while the VPS starts a replacement.
+    pub fn take_over_for_vps(&self, job_id: &str, owner: &SolverOwner, now_ms: u64) -> bool {
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(_) => return false,
+        };
+        prune_state(&mut state, now_ms);
+        let Some(job) = state.jobs.get(job_id).filter(|job| job.owner == *owner) else {
+            return true;
+        };
+        // A candidate may complete between the watchdog's snapshot and this
+        // atomic takeover check. Preserve that candidate and let the
+        // coordinator re-enter the Agent path to commit it instead of
+        // discarding it and needlessly restarting on the VPS.
+        if job.best_candidate.is_some() {
+            return false;
+        }
+        if job
+            .tasks
+            .iter()
+            .any(|task| matches!(&task.state, AgentTaskState::Leased { .. }))
+        {
+            return false;
+        }
+        state.jobs.remove(job_id);
+        true
     }
 
     pub fn register_worker(
@@ -1068,21 +1143,10 @@ impl AgentHelperCoordinator {
     }
 
     pub fn has_active_lease(&self, job_id: &str, owner: &SolverOwner) -> bool {
-        self.state
-            .lock()
-            .ok()
-            .and_then(|state| {
-                state
-                    .jobs
-                    .get(job_id)
-                    .filter(|job| job.owner == *owner)
-                    .map(|job| {
-                        job.tasks
-                            .iter()
-                            .any(|task| matches!(task.state, AgentTaskState::Leased { .. }))
-                    })
-            })
-            .unwrap_or(false)
+        matches!(
+            self.job_execution(job_id, owner, crate::now_millis()),
+            Some(AgentJobExecution::Leased { .. })
+        )
     }
 }
 
@@ -1413,6 +1477,99 @@ mod tests {
                 lease.lease_expires_at_ms + 2,
             ),
             Err(AgentHelperError::LeaseNotFound)
+        ));
+    }
+
+    #[test]
+    fn job_execution_snapshot_requeues_an_abrupt_agent_without_a_final_request() {
+        let coordinator = AgentHelperCoordinator::default();
+        let owner = SolverOwner::new("school-a", "admin-a");
+        let binding = session_binding("session-a");
+        assert!(coordinator.register_job(
+            "handoff-job",
+            &owner,
+            Arc::new(br#"{"data":{},"settings":{}}"#.to_vec()),
+            1,
+            1_000,
+        ));
+        let worker = coordinator
+            .register_worker(&owner, &binding, "pc-1", "PC 1", 1, 1_000)
+            .unwrap();
+        assert!(matches!(
+            coordinator.job_execution("handoff-job", &owner, 1_000),
+            Some(AgentJobExecution::Queued)
+        ));
+        let lease = coordinator
+            .claim_work(&owner, &binding, &worker.worker_token, 1_001)
+            .unwrap();
+        assert!(matches!(
+            coordinator.job_execution("handoff-job", &owner, 1_002),
+            Some(AgentJobExecution::Leased { .. })
+        ));
+        assert!(!coordinator.take_over_for_vps("handoff-job", &owner, 1_002));
+        assert!(matches!(
+            coordinator.job_execution(
+                "handoff-job",
+                &owner,
+                lease.lease_expires_at_ms + 1,
+            ),
+            Some(AgentJobExecution::Queued)
+        ));
+        assert!(coordinator.take_over_for_vps(
+            "handoff-job",
+            &owner,
+            lease.lease_expires_at_ms + 1,
+        ));
+        assert!(coordinator.job_execution("handoff-job", &owner, lease.lease_expires_at_ms + 2).is_none());
+    }
+
+    #[test]
+    fn takeover_yields_to_a_candidate_completed_after_the_watchdog_snapshot() {
+        let coordinator = AgentHelperCoordinator::default();
+        let owner = SolverOwner::new("school-a", "admin-a");
+        let binding = session_binding("session-a");
+        assert!(coordinator.register_job(
+            "handoff-race",
+            &owner,
+            Arc::new(br#"{"data":{},"settings":{}}"#.to_vec()),
+            1,
+            1_000,
+        ));
+        let worker = coordinator
+            .register_worker(&owner, &binding, "pc-1", "PC 1", 1, 1_000)
+            .unwrap();
+        let lease = coordinator
+            .claim_work(&owner, &binding, &worker.worker_token, 1_001)
+            .unwrap();
+
+        // The watchdog has already observed the lease as expired/queued. A
+        // replacement Agent can still claim and finish it before takeover's
+        // atomic check; that result must win over a VPS restart.
+        let replacement = coordinator
+            .claim_work(&owner, &binding, &worker.worker_token, lease.lease_expires_at_ms + 1)
+            .unwrap();
+        assert!(coordinator
+            .accept_submission(
+                &owner,
+                &binding,
+                &worker.worker_token,
+                &replacement.work_id,
+                &replacement.lease_token,
+                serde_json::json!({"ok": true}),
+                [1, 0, 0, 0],
+                lease.lease_expires_at_ms + 2,
+            )
+            .unwrap());
+        assert!(!coordinator.take_over_for_vps(
+            "handoff-race",
+            &owner,
+            lease.lease_expires_at_ms + 3,
+        ));
+        assert!(matches!(
+            coordinator.job_execution("handoff-race", &owner, lease.lease_expires_at_ms + 3),
+            Some(AgentJobExecution::Completed {
+                candidate: Some(_)
+            })
         ));
     }
 

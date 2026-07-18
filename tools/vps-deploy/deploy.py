@@ -22,6 +22,51 @@ if str(TOOLS_DIR) not in sys.path:
 from vps_credentials import missing_credential_message, resolve_vps_connection
 
 ROOT = Path(__file__).resolve().parents[2]
+PACKAGE_PRODUCTION = "production"
+PACKAGE_STAGING = "staging"
+PACKAGE_PROFILES = {PACKAGE_PRODUCTION, PACKAGE_STAGING}
+
+# Production is intentionally allowlisted. Adding a new runtime component must
+# be accompanied by a packaging test so local tooling cannot silently reach the
+# live application directory.
+PRODUCTION_SUBTREES = {
+    "rust_api/src",
+    "solver_runtime/scripts",
+    "solver_runtime/src",
+}
+PRODUCTION_FILES = {
+    "mail-server/package-lock.json",
+    "mail-server/package.json",
+    "mail-server/server.js",
+    "rust_api/Cargo.lock",
+    "rust_api/Cargo.toml",
+    "rust_api/fixtures/sample-data.json",
+    "solver_runtime/requirements.txt",
+    "tools/vps-deploy/solver-pool.conf",
+}
+STAGING_SUBTREES = {
+    "agent_helper",
+    "solver_runtime/tests",
+}
+STAGING_FILES = {
+    "rust_api/fixtures/sample-data-with-class-off.json",
+}
+WEB_RUNTIME_EXTENSIONS = {
+    ".css",
+    ".html",
+    ".ico",
+    ".jpeg",
+    ".jpg",
+    ".js",
+    ".png",
+    ".svg",
+    ".wasm",
+    ".webmanifest",
+    ".zip",
+}
+WEB_RUNTIME_FILES = {
+    "web/downloads/TKBCherryAgent-release.json",
+}
 EXCLUDES = {
     ".git",
     ".agents",
@@ -43,6 +88,7 @@ EXCLUDES = {
     "__pycache__",
     ".cursor",
     ".codex_tmp",
+    ".pytest_cache",
     ".ruff_cache",
 }
 
@@ -54,7 +100,40 @@ def new_ssh_client() -> paramiko.SSHClient:
     return client
 
 
-def should_skip(rel: str) -> bool:
+def _matches_subtree(rel: str, subtree: str) -> bool:
+    return rel == subtree or rel.startswith(subtree + "/")
+
+
+def _is_parent_of(rel: str, candidate: str) -> bool:
+    return bool(rel) and candidate.startswith(rel + "/")
+
+
+def _profile_allows(rel: str, profile: str) -> bool:
+    if profile not in PACKAGE_PROFILES:
+        raise ValueError(f"Unknown deployment package profile: {profile}")
+
+    if rel == "web" or rel.startswith("web/"):
+        if rel == "web" or any(
+            _is_parent_of(rel, candidate) for candidate in WEB_RUNTIME_FILES
+        ):
+            return True
+        suffix = Path(rel).suffix.lower()
+        return suffix in WEB_RUNTIME_EXTENSIONS or rel in WEB_RUNTIME_FILES
+
+    subtrees = set(PRODUCTION_SUBTREES)
+    files = set(PRODUCTION_FILES)
+    if profile == PACKAGE_STAGING:
+        subtrees.update(STAGING_SUBTREES)
+        files.update(STAGING_FILES)
+
+    if any(_matches_subtree(rel, subtree) for subtree in subtrees):
+        return True
+    if rel in files:
+        return True
+    return any(_is_parent_of(rel, candidate) for candidate in (*subtrees, *files))
+
+
+def should_skip(rel: str, profile: str = PACKAGE_PRODUCTION) -> bool:
     parts = Path(rel).parts
     if not parts:
         return False
@@ -74,16 +153,18 @@ def should_skip(rel: str) -> bool:
         return True
     if len(parts) == 1 and Path(rel).suffix.lower() in {".exe", ".rar"}:
         return True
-    return False
+    return not _profile_allows(Path(rel).as_posix(), profile)
 
 
-def make_tarball() -> Path:
+def make_tarball(profile: str = PACKAGE_PRODUCTION) -> Path:
+    if profile not in PACKAGE_PROFILES:
+        raise ValueError(f"Unknown deployment package profile: {profile}")
     nonce = secrets.token_hex(4)
     tmp = Path(tempfile.gettempdir()) / f"cherry-deploy-{int(time.time())}-{nonce}.tar.gz"
     with tarfile.open(tmp, "w:gz") as tar:
         for path in ROOT.rglob("*"):
             rel = path.relative_to(ROOT).as_posix()
-            if should_skip(rel):
+            if should_skip(rel, profile):
                 continue
             # ROOT.rglob already walks descendants. recursive=False keeps a parent
             # directory from silently re-including files that should_skip rejected.
@@ -139,7 +220,7 @@ def main() -> int:
         return 1
 
     print("Creating deployment package...")
-    tarball = make_tarball()
+    tarball = make_tarball(PACKAGE_PRODUCTION)
     install_script = Path(__file__).with_name("install-server.sh")
     deploy_id = secrets.token_hex(6)
     remote_archive = f"/tmp/cherry-deploy-{deploy_id}.tar.gz"
@@ -171,6 +252,7 @@ def main() -> int:
         "if systemctl is-active --quiet tkb-app; then echo 'tkb-app is already running; use update-deploy.py so solver jobs can drain.' >&2; exit 64; fi",
         f"mkdir -m 0700 {shlex.quote(remote_upload)}",
         f"tar -xzf {shlex.quote(remote_archive)} -C {shlex.quote(remote_upload)}",
+        f"export TKB_DEPLOY_UPLOAD_DIR={shlex.quote(remote_upload)}",
         f"export TKB_DOMAIN={shlex.quote(args.domain)}",
         f"export GMAIL_USER={shlex.quote(gmail_user)}",
         f"export GMAIL_APP_PASSWORD={shlex.quote(gmail_pass)}",

@@ -20,6 +20,7 @@ NGINX_SITE_CONFIG="${TKB_NGINX_SITE_CONFIG:-/etc/nginx/sites-enabled/tkbcherry}"
 NGINX_GATE_BACKUP=""
 NGINX_GATE_SITE=""
 NGINX_GATE_ENABLED=0
+AGENT_ROLLBACK_STAGE=""
 
 for numeric_setting in \
   "$DRAIN_TIMEOUT_SECONDS" \
@@ -179,6 +180,83 @@ disable_solver_admission_gate() {
   NGINX_GATE_ENABLED=0
 }
 
+capture_agent_rollback_files() {
+  local filename source
+  AGENT_ROLLBACK_STAGE="$(mktemp -d)"
+  for filename in TKBCherryAgent-Windows.zip TKBCherryAgent-release.json; do
+    source="$APP_DIR/web/downloads/$filename"
+    [ ! -f "$source" ] || cp -a "$source" "$AGENT_ROLLBACK_STAGE/$filename"
+  done
+}
+
+restore_agent_rollback_files() {
+  local downloads filename source
+  downloads="$APP_DIR/web/downloads"
+  install -d -m 0755 "$downloads"
+  rm -f -- \
+    "$downloads/TKBCherryAgent-Windows.zip" \
+    "$downloads/TKBCherryAgent-release.json"
+  [ -n "$AGENT_ROLLBACK_STAGE" ] || return 0
+  for filename in TKBCherryAgent-Windows.zip TKBCherryAgent-release.json; do
+    source="$AGENT_ROLLBACK_STAGE/$filename"
+    if [ -f "$source" ]; then
+      cp -a "$source" "$downloads/$filename"
+      chmod 0644 "$downloads/$filename"
+    fi
+  done
+}
+
+cleanup_agent_rollback_stage() {
+  [ -z "$AGENT_ROLLBACK_STAGE" ] || rm -rf -- "$AGENT_ROLLBACK_STAGE"
+  AGENT_ROLLBACK_STAGE=""
+}
+
+prune_runtime_artifacts() {
+  local target_dir="$APP_DIR/rust_api/target"
+  local release_dir="$target_dir/release"
+  local runtime_binary="$release_dir/tkb_rust_api"
+  [ -x "$runtime_binary" ] || {
+    echo "Rust runtime binary is missing after build: $runtime_binary" >&2
+    return 1
+  }
+  rm -rf -- "$APP_DIR/rust_api/target-gnu" "$APP_DIR/solver_runtime/logs"
+  find "$target_dir" -mindepth 1 -maxdepth 1 ! -name release -exec rm -rf -- {} +
+  find "$release_dir" -mindepth 1 -maxdepth 1 ! -name tkb_rust_api -exec rm -rf -- {} +
+}
+
+prune_old_backups() {
+  python3 - "$BACKUP_DIR" "$RELEASE_BACKUP" "$STATE_BACKUP" <<'PY_PRUNE_BACKUPS'
+from pathlib import Path
+import sys
+
+directory = Path(sys.argv[1])
+current_release = Path(sys.argv[2]).resolve() if sys.argv[2] else None
+current_state = Path(sys.argv[3]).resolve() if sys.argv[3] else None
+
+
+def prune(pattern: str, keep: int, current: Path | None) -> None:
+    candidates = [
+        path
+        for path in directory.glob(pattern)
+        if path.is_file() and "manual" not in path.name.lower()
+    ]
+    candidates.sort(
+        key=lambda path: (path.stat().st_mtime_ns, path.name),
+        reverse=True,
+    )
+    protected = {path.resolve() for path in candidates[:keep]}
+    if current is not None:
+        protected.add(current)
+    for path in candidates:
+        if path.resolve() not in protected:
+            path.unlink()
+
+
+prune("app-release-*.tar.gz", 10, current_release)
+prune("server-state-*.tar.gz", 30, current_state)
+PY_PRUNE_BACKUPS
+}
+
 backup_server_state() {
   install -d -m 0700 "$BACKUP_DIR"
   if [ -d "$APP_DIR" ]; then
@@ -196,6 +274,7 @@ backup_server_state() {
 
 backup_release() {
   [ -d "$APP_DIR" ] || return 0
+  capture_agent_rollback_files
   BACKUP_STAGE="$(mktemp -d)"
   mkdir -p "$BACKUP_STAGE/app" "$BACKUP_STAGE/systemd"
   rsync -a \
@@ -208,6 +287,8 @@ backup_release() {
     --exclude='rust_api/target/' \
     --exclude='rust_api/target-*/' \
     --exclude='solver_runtime/logs/' \
+    --exclude='web/downloads/TKBCherryAgent-Windows.zip' \
+    --exclude='web/downloads/TKBCherryAgent-release.json' \
     "$APP_DIR/" "$BACKUP_STAGE/app/"
   if [ -f "$APP_DIR/rust_api/target/release/tkb_rust_api" ]; then
     mkdir -p "$BACKUP_STAGE/app/rust_api/target/release"
@@ -245,6 +326,7 @@ restore_release() {
     cp -a "$restore_dir/app/rust_api/target/release/tkb_rust_api" \
       "$APP_DIR/rust_api/target/release/tkb_rust_api"
   fi
+  restore_agent_rollback_files
   if [ -f "$restore_dir/systemd/tkb-app.service" ]; then
     cp -a "$restore_dir/systemd/tkb-app.service" /etc/systemd/system/tkb-app.service
   fi
@@ -284,6 +366,7 @@ rollback_and_exit() {
     echo "$reason; restoring $RELEASE_BACKUP" >&2
     restore_release || echo "Automatic rollback failed" >&2
   fi
+  cleanup_agent_rollback_stage
   disable_solver_admission_gate || echo "Failed to remove solver admission gate" >&2
   cleanup_deploy_artifacts
   exit "$code"
@@ -368,8 +451,6 @@ rsync -a --delete \
   --exclude='mail-server/.env' \
   --exclude='mail-server/node_modules/' \
   --exclude='rust_api/target/' \
-  --exclude='rust_api/target-*/' \
-  --exclude='solver_runtime/logs/' \
   "$UPLOAD_DIR/" "$APP_DIR/"
 if [ -f "$APP_DIR/web/downloads/TKBCherryAgent-Windows.zip" ]; then
   chmod 0755 "$APP_DIR" "$APP_DIR/web" "$APP_DIR/web/downloads"
@@ -406,15 +487,18 @@ if [ -f "$APP_DIR/rust_api/Cargo.toml" ]; then
     echo "cargo is required to build the Rust API" >&2
     exit 1
   fi
-  cargo build --release
+  cargo build --release --locked
 fi
 systemctl daemon-reload
 systemctl restart tkb-mail tkb-app
 nginx -t
 systemctl reload nginx
 wait_for_health
+prune_runtime_artifacts
 disable_solver_admission_gate
 UPDATE_STARTED=0
+cleanup_agent_rollback_stage
+prune_old_backups || echo "Warning: could not prune old deployment backups" >&2
 trap - EXIT ERR HUP INT TERM
 echo "STATE_BACKUP=$STATE_BACKUP"
 echo "RELEASE_BACKUP=$RELEASE_BACKUP"

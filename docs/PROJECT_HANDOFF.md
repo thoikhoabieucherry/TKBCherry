@@ -10,7 +10,8 @@ change so a machine restart or a new conversation does not erase project context
 
 - Current deployed application release: **v1.25** (deployed and publicly
   asset/package/live-E2E verified on 2026-07-18).
-- There is no newer staged application candidate after v1.25.
+- A newer **v1.26** candidate is staged locally and has passed isolated VPS
+  tests; production remains v1.25 until `UPDATE_OK` is verified.
 - Current public Agent release: **v1.6.8** (`1.6.8`), carrying the v1.25
   balanced refinement interleave. Agent `1.6.3` and later
   can offer this update inside the Agent after the user presses OK; Agent
@@ -22,6 +23,38 @@ change so a machine restart or a new conversation does not erase project context
 applicable version here and add a short change note. Agent package updates
 must also update `agent_helper/__init__.py` and
 `agent_helper/windows_version_info.txt`.
+
+### v1.26 - staged, not deployed (2026-07-18)
+
+- Server-owned solving now has one exclusive executor at a time. A canonical
+  job is routed to the Agent when an authenticated Agent is online; otherwise
+  the VPS owns it. An Agent hello requests a fenced VPS-to-Agent handoff,
+  cancels the VPS child, and invalidates the old generation before the Agent
+  lease is exposed. The VPS and Agent never receive parallel tasks for the
+  same job.
+- Agent lease expiry, worker loss, or a failed claim atomically returns the
+  same canonical job to the VPS. Generation fences reject stale VPS/Agent
+  results, and the Agent candidate/takeover race preserves a candidate that
+  completed at the handoff boundary. Each canonical job creates exactly one
+  Agent task (no seed portfolio); Agent claim grace is 8 seconds in production
+  and 100 ms in Rust unit tests.
+- A server-owned watchdog starts when the first executor is reserved and its
+  remaining milliseconds are carried into every executor request. VPS and
+  Agent settings are capped to the remaining budget, so a handoff cannot reset
+  a 60/180-second solve to a fresh full run. The watchdog returns a structured
+  timeout if no complete result remains.
+- The CP-SAT in-memory search tree is not transferable between machines. On a
+  mid-search Agent failure the VPS resumes the same canonical request with the
+  current persisted incumbent/body, rather than creating a second job; it may
+  restart the solver search itself.
+- Final successful UI notification is exactly **`Đã xếp xong!`**. Complete
+  hard-valid schedules remain successful even when soft teacher-session/gap
+  debt is still reported in metrics.
+- Staging verification: frontend/UI `218/218`, scheduler `123/123`, Agent
+  `71/71`, Rust API `126/126`, candidate validator `20/20`, and deployment
+  packaging tests `25/25`. `stage-tests.py` ended with `STAGING_TESTS_OK`.
+  Current production/staging package measurements are approximately
+  93,561,154 / 93,670,943 bytes (tar metadata varies between runs).
 
 ### v1.25 - 2026-07-18 (deployed)
 
@@ -1337,24 +1370,52 @@ and in permanent regression tests.
 
 ## Local Workspace Cleanup
 
-- On 2026-07-18 the local tree was reduced from about 4.26 GiB to 319.11 MiB,
-  reclaiming about 3.94 GiB without removing application source or school data.
-- Removed reproducible/generated content: `.codex_tmp`, Agent build venv/work
-  directories, the internal onedir Agent bundle/archive, Rust build caches,
-  502 solver log files, Python/test caches, and transient E2E logs.
-- Preserved the signed Agent 1.6.5 EXE/ZIP/manifest in `agent_helper/dist`, the
-  currently published Agent download in `web/downloads`, `start.exe`, both old
-  root RAR archives, all source/test fixtures, and a minimal local Rust runtime
-  (`rust_api/target-gnu/release/tkb_rust_api.exe` plus `sqlite3.dll`). The RARs
-  and launcher were retained because they are user-facing/backups and were not
-  proven obsolete.
-- `.gitignore` now excludes `.codex_tmp`, `.pytest_cache`, and `.ruff_cache` so
-  the removed scratch trees do not silently return.
-- There is currently no system `python` or `cargo` on `PATH`. The deleted Agent
-  build venv was generated, not source. Recreate Python dependencies/build state
-  with the documented setup/build commands before the next source test or Agent
-  rebuild. The retained Rust binary still passes local `/api/health`, but any
-  Rust source change must be freshly compiled and tested during staging.
+- On 2026-07-18 the local tree was reduced from about 3.0 GiB to about 582 MiB
+  in the first cleanup pass, without removing application source, school data,
+  or the published Agent package.
+- Removed reproducible/generated content: old `.codex_tmp` diagnostics and
+  dependency copies, Agent build work/venv, the internal onedir Agent
+  bundle/archive, the 456 MiB Cargo target cache, solver logs, Python/test
+  caches, and transient E2E logs. `mail-server/node_modules` was also removed
+  and is regenerated with `npm ci` when local mail development is needed.
+- Preserved the signed Agent 1.6.8 EXE/ZIP/manifest in `agent_helper/dist`, the
+  published Agent download in `web/downloads`, `start.exe`, both old root RAR
+  archives, all source/test fixtures, and the minimal local Rust runtime
+  (`rust_api/target-gnu/release/tkb_rust_api.exe` plus `sqlite3.dll`).
+- `.codex_tmp/release-venv` is temporarily retained for the pending staging and
+  deployment commands; it will be removed after those checks. `.agents` and the
+  protected empty `.pytest_cache` directory are small Codex-managed paths and
+  could not be removed by the current Windows account, so they are left alone.
+- `.gitignore` excludes generated build/cache/log paths so they do not silently
+  return. There is no system `cargo` on `PATH`; Rust changes must be compiled
+  and tested during VPS staging before deployment.
+
+## Deployment Package Hygiene
+
+- A not-yet-deployed infrastructure candidate now separates production and VPS
+  staging archives. Production is an explicit runtime allowlist containing only
+  `web`, the Rust API build/source and live sample fixture, the Python solver and
+  its hint data, the mail server runtime files, and `solver-pool.conf`. Staging
+  adds only the Agent and solver test sources needed by `stage-tests.py`. The
+  inspected production archive is 93,559,051 bytes with 107 members across five
+  top-level runtime directories; staging is 93,668,595 bytes with 150 members.
+- Full and update deployment explicitly request the production profile;
+  `stage-tests.py` explicitly requests staging. The full-install path now passes
+  its unique upload directory through `TKB_DEPLOY_UPLOAD_DIR`, fixing the stale
+  hard-coded `/tmp/cherry-upload/` source.
+- A successful deployment removes stale `target-gnu`, solver logs, Cargo debug
+  and dependency build products while retaining
+  `rust_api/target/release/tkb_rust_api`. Persistent databases, mail credentials,
+  Node runtime dependencies, and the public Agent download remain protected.
+- Release archives no longer duplicate the roughly 92 MB Agent ZIP and manifest.
+  The pre-update pair is held in a transaction-local temporary directory and is
+  restored if that update rolls back. Successful updates delete the temporary
+  pair. Backup retention keeps the newest 10 app releases and 30 state archives,
+  always preserves the current transaction backups, and never deletes archives
+  whose filename contains `manual`.
+- Verification for this candidate passes deployment/package tests `13/13`, all
+  root tooling tests `25/25`, Python syntax checks, and remote Ubuntu `bash -n`
+  checks for both server scripts. It has deliberately not been deployed yet.
 
 ## VPS And Deployment
 

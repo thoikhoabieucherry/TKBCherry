@@ -27,6 +27,10 @@ const MAX_SERVER_PROGRESS_BYTES: usize = 16 * 1024;
 const MAX_SERVER_PROGRESS_STAGE_BYTES: usize = 160;
 pub const MAX_UNRESOLVED_SERVER_JOBS: usize = 32;
 pub const MAX_UNRESOLVED_SERVER_JOBS_PER_OWNER: usize = 2;
+// A server-owned request carries one watchdog budget across every executor
+// handoff. Keep this in the pool module so both the coordinator and status
+// surfaces use the same upper bound without importing main.rs constants.
+pub const MAX_SERVER_WATCHDOG_MS: u64 = 1_800_000;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SolverOwner {
@@ -79,9 +83,80 @@ struct ServerOwnedSolverJob {
     progress_run_index: Option<u64>,
     progress: Option<Value>,
     progress_updated_ms: Option<u64>,
+    watchdog_budget_ms: Option<u64>,
+    watchdog_started_ms: Option<u64>,
     cancel_requested: bool,
+    execution_phase: ServerExecutionPhase,
+    execution_generation: u64,
     completed_ms: Option<u64>,
     response: Option<Vec<u8>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ServerExecutor {
+    Vps,
+    Agent,
+}
+
+impl ServerExecutor {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Vps => "vps",
+            Self::Agent => "agent",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ServerExecutionPhase {
+    Pending,
+    VpsQueued,
+    VpsRunning,
+    HandoffToAgent,
+    AgentWaiting,
+    AgentRunning,
+    Cancelling,
+    Completed,
+}
+
+impl ServerExecutionPhase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::VpsQueued => "vps_queued",
+            Self::VpsRunning => "vps_running",
+            Self::HandoffToAgent => "handoff_to_agent",
+            Self::AgentWaiting => "agent_waiting",
+            Self::AgentRunning => "agent_running",
+            Self::Cancelling => "cancelling",
+            Self::Completed => "completed",
+        }
+    }
+
+    pub fn executor(self) -> Option<ServerExecutor> {
+        match self {
+            Self::VpsQueued | Self::VpsRunning => Some(ServerExecutor::Vps),
+            Self::AgentWaiting | Self::AgentRunning => Some(ServerExecutor::Agent),
+            _ => None,
+        }
+    }
+
+    pub fn handoff_in_progress(self) -> bool {
+        matches!(self, Self::HandoffToAgent)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ServerExecutionFence {
+    pub generation: u64,
+    pub executor: ServerExecutor,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ServerExecutionSnapshot {
+    pub phase: ServerExecutionPhase,
+    pub generation: u64,
+    pub cancel_requested: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -95,6 +170,10 @@ pub struct ServerJobSnapshot {
     pub progress_run_index: Option<u64>,
     pub progress: Option<Value>,
     pub progress_updated_ms: Option<u64>,
+    pub watchdog_budget_ms: Option<u64>,
+    pub watchdog_started_ms: Option<u64>,
+    pub execution_phase: ServerExecutionPhase,
+    pub execution_generation: u64,
 }
 
 struct QueuedSolverJob {
@@ -134,7 +213,13 @@ pub struct SolverJobGuard {
 impl Drop for SolverJobGuard {
     fn drop(&mut self) {
         if let Ok(mut state) = self.pool.state.lock() {
-            state.jobs.remove(&self.job.job_id);
+            let owns_slot = state
+                .jobs
+                .get(&self.job.job_id)
+                .is_some_and(|current| Arc::ptr_eq(current, &self.job));
+            if owns_slot {
+                state.jobs.remove(&self.job.job_id);
+            }
         }
         self.job.cancel_requested.store(false, Ordering::SeqCst);
     }
@@ -277,6 +362,30 @@ impl SolverPool {
         progress_budget_seconds: Option<u64>,
         progress_run_index: Option<u64>,
     ) -> ServerJobClaim {
+        self.claim_server_job_with_scope_progress_and_watchdog(
+            job_id,
+            owner,
+            schedule_scope,
+            schedule_fingerprint,
+            progress_budget_seconds,
+            progress_run_index,
+            None,
+        )
+    }
+
+    /// Claim a canonical server job and attach its one-shot watchdog budget.
+    /// The older claim helpers intentionally remain usable by unit callers
+    /// that do not execute a server-owned request.
+    pub fn claim_server_job_with_scope_progress_and_watchdog(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+        schedule_scope: Option<&str>,
+        schedule_fingerprint: Option<&str>,
+        progress_budget_seconds: Option<u64>,
+        progress_run_index: Option<u64>,
+        watchdog_budget_ms: Option<u64>,
+    ) -> ServerJobClaim {
         let now_ms = crate::now_millis();
         let mut state = match self.state.lock() {
             Ok(state) => state,
@@ -295,6 +404,7 @@ impl SolverPool {
         let normalized_progress_budget_seconds =
             normalize_progress_budget_seconds(progress_budget_seconds);
         let normalized_progress_run_index = normalize_progress_run_index(progress_run_index);
+        let normalized_watchdog_budget_ms = normalize_server_watchdog_budget_ms(watchdog_budget_ms);
         if let Some(fingerprint) = normalized_schedule_fingerprint.as_deref() {
             let existing_job_id = state
                 .server_jobs
@@ -408,7 +518,11 @@ impl SolverPool {
                 progress_run_index: normalized_progress_run_index,
                 progress: None,
                 progress_updated_ms: None,
+                watchdog_budget_ms: normalized_watchdog_budget_ms,
+                watchdog_started_ms: None,
                 cancel_requested: false,
+                execution_phase: ServerExecutionPhase::Pending,
+                execution_generation: 0,
                 completed_ms: None,
                 response: None,
             },
@@ -441,6 +555,287 @@ impl SolverPool {
                     .map(|job| job.cancel_requested)
             })
             .unwrap_or(true)
+    }
+
+    pub fn server_execution_snapshot(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+    ) -> Option<ServerExecutionSnapshot> {
+        let state = self.state.lock().ok()?;
+        let job = state
+            .server_jobs
+            .get(job_id)
+            .filter(|job| &job.owner == owner)?;
+        Some(ServerExecutionSnapshot {
+            phase: job.execution_phase,
+            generation: job.execution_generation,
+            cancel_requested: job.cancel_requested,
+        })
+    }
+
+    /// Return the remaining canonical watchdog budget for a server-owned job.
+    /// `Some(0)` is a real exhausted budget; `None` means the caller used a
+    /// legacy claim without a server watchdog.
+    pub fn server_job_watchdog_remaining_ms(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+        now_ms: u64,
+    ) -> Option<u64> {
+        let state = self.state.lock().ok()?;
+        let job = state
+            .server_jobs
+            .get(job_id)
+            .filter(|job| &job.owner == owner)?;
+        let budget_ms = job.watchdog_budget_ms?;
+        let started_ms = job.watchdog_started_ms?;
+        Some(budget_ms.saturating_sub(now_ms.saturating_sub(started_ms)))
+    }
+
+    pub fn server_job_watchdog_snapshot(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+    ) -> Option<(Option<u64>, Option<u64>)> {
+        let state = self.state.lock().ok()?;
+        let job = state
+            .server_jobs
+            .get(job_id)
+            .filter(|job| &job.owner == owner)?;
+        Some((job.watchdog_budget_ms, job.watchdog_started_ms))
+    }
+
+    /// Ask the active VPS executor to stop and reserve the canonical job for an
+    /// Agent. The generation is bumped while holding the pool lock, so a local
+    /// result racing this transition can never become authoritative.
+    pub fn request_agent_handoff_for_owner(&self, owner: &SolverOwner) -> Vec<String> {
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(_) => return Vec::new(),
+        };
+        let job_ids = state
+            .server_jobs
+            .iter()
+            .filter(|(_, job)| {
+                &job.owner == owner
+                    && job.completed_ms.is_none()
+                    && !job.cancel_requested
+                    && matches!(
+                        job.execution_phase,
+                        ServerExecutionPhase::Pending
+                            | ServerExecutionPhase::VpsQueued
+                            | ServerExecutionPhase::VpsRunning
+                    )
+            })
+            .map(|(job_id, _)| job_id.clone())
+            .collect::<Vec<_>>();
+        for job_id in &job_ids {
+            if let Some(job) = state.server_jobs.get_mut(job_id) {
+                job.execution_generation = job.execution_generation.saturating_add(1);
+                job.execution_phase = ServerExecutionPhase::HandoffToAgent;
+            }
+            if let Some(job) = state.jobs.get(job_id) {
+                job.cancel_requested.store(true, Ordering::SeqCst);
+            }
+        }
+        if !job_ids.is_empty() {
+            state
+                .queue
+                .retain(|queued| !job_ids.iter().any(|job_id| job_id == &queued.job_id));
+        }
+        job_ids
+    }
+
+    pub fn prepare_agent_execution(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+    ) -> Option<ServerExecutionFence> {
+        let mut state = self.state.lock().ok()?;
+        let job = state
+            .server_jobs
+            .get_mut(job_id)
+            .filter(|job| &job.owner == owner && !job.cancel_requested && job.completed_ms.is_none())?;
+        match job.execution_phase {
+            ServerExecutionPhase::Pending => {
+                job.execution_generation = job.execution_generation.saturating_add(1);
+                job.execution_phase = ServerExecutionPhase::AgentWaiting;
+                start_server_watchdog(job, crate::now_millis());
+            }
+            ServerExecutionPhase::HandoffToAgent => {
+                job.execution_phase = ServerExecutionPhase::AgentWaiting;
+                start_server_watchdog(job, crate::now_millis());
+            }
+            ServerExecutionPhase::AgentWaiting => {
+                start_server_watchdog(job, crate::now_millis());
+            }
+            _ => return None,
+        }
+        Some(ServerExecutionFence {
+            generation: job.execution_generation,
+            executor: ServerExecutor::Agent,
+        })
+    }
+
+    pub fn mark_agent_execution_running(&self, fence: ServerExecutionFence, job_id: &str, owner: &SolverOwner) -> bool {
+        self.transition_execution(
+            job_id,
+            owner,
+            fence,
+            ServerExecutionPhase::AgentWaiting,
+            ServerExecutionPhase::AgentRunning,
+        )
+    }
+
+    pub fn prepare_vps_execution(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+    ) -> Option<ServerExecutionFence> {
+        let mut state = self.state.lock().ok()?;
+        let job = state
+            .server_jobs
+            .get_mut(job_id)
+            .filter(|job| &job.owner == owner && !job.cancel_requested && job.completed_ms.is_none())?;
+        match job.execution_phase {
+            ServerExecutionPhase::Pending => {
+                job.execution_generation = job.execution_generation.saturating_add(1);
+                job.execution_phase = ServerExecutionPhase::VpsQueued;
+                start_server_watchdog(job, crate::now_millis());
+            }
+            ServerExecutionPhase::VpsQueued => {
+                start_server_watchdog(job, crate::now_millis());
+            }
+            _ => return None,
+        }
+        Some(ServerExecutionFence {
+            generation: job.execution_generation,
+            executor: ServerExecutor::Vps,
+        })
+    }
+
+    pub fn mark_vps_execution_running(&self, fence: ServerExecutionFence, job_id: &str, owner: &SolverOwner) -> bool {
+        self.transition_execution(
+            job_id,
+            owner,
+            fence,
+            ServerExecutionPhase::VpsQueued,
+            ServerExecutionPhase::VpsRunning,
+        )
+    }
+
+    /// Release an Agent lease after expiry/failure and reserve the same
+    /// canonical request for the VPS. The returned fence invalidates every
+    /// previous Agent writer.
+    pub fn fallback_agent_to_vps(
+        &self,
+        fence: ServerExecutionFence,
+        job_id: &str,
+        owner: &SolverOwner,
+    ) -> Option<ServerExecutionFence> {
+        let mut state = self.state.lock().ok()?;
+        let job = state
+            .server_jobs
+            .get_mut(job_id)
+            .filter(|job| &job.owner == owner && !job.cancel_requested && job.completed_ms.is_none())?;
+        if job.execution_generation != fence.generation
+            || fence.executor != ServerExecutor::Agent
+            || !matches!(
+                job.execution_phase,
+                ServerExecutionPhase::AgentWaiting | ServerExecutionPhase::AgentRunning
+            )
+        {
+            return None;
+        }
+        job.execution_generation = job.execution_generation.saturating_add(1);
+        job.execution_phase = ServerExecutionPhase::VpsQueued;
+        Some(ServerExecutionFence {
+            generation: job.execution_generation,
+            executor: ServerExecutor::Vps,
+        })
+    }
+
+    pub fn execution_fence_current(
+        &self,
+        fence: ServerExecutionFence,
+        job_id: &str,
+        owner: &SolverOwner,
+    ) -> bool {
+        let Some(snapshot) = self.server_execution_snapshot(job_id, owner) else {
+            return false;
+        };
+        snapshot.generation == fence.generation
+            && snapshot.phase.executor() == Some(fence.executor)
+            && !snapshot.cancel_requested
+    }
+
+    pub fn complete_server_job_fenced(
+        &self,
+        fence: ServerExecutionFence,
+        job_id: &str,
+        owner: &SolverOwner,
+        response: Vec<u8>,
+    ) -> bool {
+        let now_ms = crate::now_millis();
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(_) => return false,
+        };
+        let Some(job) = state
+            .server_jobs
+            .get(job_id)
+            .filter(|job| &job.owner == owner)
+        else {
+            return false;
+        };
+        if job.cancel_requested
+            || job.completed_ms.is_some()
+            || job.execution_generation != fence.generation
+            || job.execution_phase.executor() != Some(fence.executor)
+        {
+            return false;
+        }
+        let job = state
+            .server_jobs
+            .get_mut(job_id)
+            .expect("owned server job still exists");
+        job.response = Some(response);
+        job.completed_ms = Some(now_ms);
+        job.execution_phase = ServerExecutionPhase::Completed;
+        state.queue.retain(|queued| queued.job_id != job_id);
+        prune_completed_server_jobs(&mut state, now_ms);
+        true
+    }
+
+    fn transition_execution(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+        fence: ServerExecutionFence,
+        from: ServerExecutionPhase,
+        to: ServerExecutionPhase,
+    ) -> bool {
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(_) => return false,
+        };
+        let Some(job) = state
+            .server_jobs
+            .get_mut(job_id)
+            .filter(|job| &job.owner == owner)
+        else {
+            return false;
+        };
+        if job.execution_generation != fence.generation
+            || job.execution_phase != from
+            || job.cancel_requested
+            || job.completed_ms.is_some()
+        {
+            return false;
+        }
+        job.execution_phase = to;
+        true
     }
 
     pub fn update_server_job_progress(&self, job_id: &str, progress: Value) -> bool {
@@ -485,12 +880,21 @@ impl SolverPool {
             state.server_jobs.remove(job_id);
             return false;
         }
+        // The unfenced compatibility helper is only safe for callers that
+        // never reserved an executor. Runtime server-owned workers must use
+        // `complete_server_job_fenced`, otherwise an old writer could commit
+        // after a VPS/Agent generation transition.
+        if !matches!(job.execution_phase, ServerExecutionPhase::Pending) {
+            return false;
+        }
         let job = state
             .server_jobs
             .get_mut(job_id)
             .expect("owned server job still exists");
         job.response = Some(response);
         job.completed_ms = Some(now_ms);
+        job.execution_phase = ServerExecutionPhase::Completed;
+        state.queue.retain(|queued| queued.job_id != job_id);
         prune_completed_server_jobs(&mut state, now_ms);
         true
     }
@@ -529,6 +933,10 @@ impl SolverPool {
                 progress_run_index: job.progress_run_index,
                 progress: job.progress.clone(),
                 progress_updated_ms: job.progress_updated_ms,
+                watchdog_budget_ms: job.watchdog_budget_ms,
+                watchdog_started_ms: job.watchdog_started_ms,
+                execution_phase: job.execution_phase,
+                execution_generation: job.execution_generation,
             })
             .collect::<Vec<_>>();
         snapshots.sort_unstable_by(|left, right| {
@@ -582,7 +990,15 @@ impl SolverPool {
             .server_jobs
             .get(&job_id)
             .filter(|job| job.owner == owner)
-            .map(|job| job.cancel_requested)
+            .map(|job| {
+                job.cancel_requested
+                    || !matches!(
+                        job.execution_phase,
+                        ServerExecutionPhase::Pending
+                            | ServerExecutionPhase::VpsQueued
+                            | ServerExecutionPhase::VpsRunning
+                    )
+            })
             .unwrap_or(false)
         {
             return Err(());
@@ -635,7 +1051,15 @@ impl SolverPool {
             .server_jobs
             .get(&job_id)
             .filter(|job| job.owner == owner)
-            .map(|job| job.cancel_requested)
+            .map(|job| {
+                job.cancel_requested
+                    || !matches!(
+                        job.execution_phase,
+                        ServerExecutionPhase::Pending
+                            | ServerExecutionPhase::VpsQueued
+                            | ServerExecutionPhase::VpsRunning
+                    )
+            })
             .unwrap_or(false)
         {
             return SolverAdmission::AlreadyRunning;
@@ -756,6 +1180,8 @@ impl SolverPool {
                 cancelled = true;
             } else {
                 job.cancel_requested = true;
+                job.execution_generation = job.execution_generation.saturating_add(1);
+                job.execution_phase = ServerExecutionPhase::Cancelling;
                 cancelled = true;
             }
         }
@@ -788,6 +1214,8 @@ impl SolverPool {
                 cancelled = true;
             } else {
                 job.cancel_requested = true;
+                job.execution_generation = job.execution_generation.saturating_add(1);
+                job.execution_phase = ServerExecutionPhase::Cancelling;
                 cancelled = true;
             }
         }
@@ -994,6 +1422,18 @@ fn normalize_progress_budget_seconds(value: Option<u64>) -> Option<u64> {
 
 fn normalize_progress_run_index(value: Option<u64>) -> Option<u64> {
     value.filter(|run_index| *run_index > 0 && *run_index <= MAX_PROGRESS_RUN_INDEX)
+}
+
+fn normalize_server_watchdog_budget_ms(value: Option<u64>) -> Option<u64> {
+    value.filter(|budget_ms| *budget_ms > 0).map(|budget_ms| {
+        budget_ms.min(MAX_SERVER_WATCHDOG_MS)
+    })
+}
+
+fn start_server_watchdog(job: &mut ServerOwnedSolverJob, now_ms: u64) {
+    if job.watchdog_budget_ms.is_some() && job.watchdog_started_ms.is_none() {
+        job.watchdog_started_ms = Some(now_ms);
+    }
 }
 
 fn normalize_server_progress(value: Value) -> Option<Value> {
@@ -1600,6 +2040,116 @@ mod tests {
 
         assert!(!pool.update_server_job_progress("missing-job", json!({"stage":"session:solve"}),));
         assert!(!pool.update_server_job_progress("progress-job", json!({"stage":"bad\nheader"}),));
+    }
+
+    #[test]
+    fn exclusive_executor_handoff_fences_vps_and_agent_writers() {
+        let pool = test_pool();
+        let owner = SolverOwner::new("school-handoff", "admin");
+        let response = b"HTTP/1.1 200 OK\r\n\r\n{}".to_vec();
+
+        // No Agent: the canonical job is reserved for the VPS and can commit
+        // exactly once.
+        assert_eq!(pool.claim_server_job("handoff-job", &owner), ServerJobClaim::Claimed);
+        let vps = pool
+            .prepare_vps_execution("handoff-job", &owner)
+            .expect("VPS fence");
+        assert!(pool.mark_vps_execution_running(vps, "handoff-job", &owner));
+
+        // An Agent hello invalidates the local generation. The old local result
+        // is rejected even if it races after the child has been asked to stop.
+        assert_eq!(
+            pool.request_agent_handoff_for_owner(&owner),
+            vec!["handoff-job".to_string()]
+        );
+        assert!(!pool.complete_server_job_fenced(vps, "handoff-job", &owner, response.clone()));
+        let agent = pool
+            .prepare_agent_execution("handoff-job", &owner)
+            .expect("Agent fence after VPS reaping");
+        assert!(pool.mark_agent_execution_running(agent, "handoff-job", &owner));
+        assert!(pool.complete_server_job_fenced(agent, "handoff-job", &owner, response.clone()));
+        assert!(!pool.complete_server_job_fenced(vps, "handoff-job", &owner, response.clone()));
+
+        // A fresh canonical job demonstrates abrupt Agent loss: expiry/failure
+        // advances the generation and hands the same job back to the VPS.
+        assert_eq!(pool.claim_server_job("agent-loss", &owner), ServerJobClaim::Claimed);
+        let agent = pool
+            .prepare_agent_execution("agent-loss", &owner)
+            .expect("initial Agent fence");
+        assert!(pool.mark_agent_execution_running(agent, "agent-loss", &owner));
+        let vps = pool
+            .fallback_agent_to_vps(agent, "agent-loss", &owner)
+            .expect("VPS fallback fence");
+        assert!(!pool.complete_server_job_fenced(agent, "agent-loss", &owner, response.clone()));
+        assert!(pool.mark_vps_execution_running(vps, "agent-loss", &owner));
+        assert!(pool.complete_server_job_fenced(vps, "agent-loss", &owner, response));
+    }
+
+    #[test]
+    fn server_watchdog_budget_is_monotonic_across_vps_to_agent_handoff() {
+        let pool = test_pool();
+        let owner = SolverOwner::new("school-watchdog", "admin");
+        assert_eq!(
+            pool.claim_server_job_with_scope_progress_and_watchdog(
+                "watchdog-job",
+                &owner,
+                None,
+                None,
+                None,
+                None,
+                Some(10_000),
+            ),
+            ServerJobClaim::Claimed
+        );
+        let vps = pool
+            .prepare_vps_execution("watchdog-job", &owner)
+            .expect("VPS fence");
+        let (budget, started) = pool
+            .server_job_watchdog_snapshot("watchdog-job", &owner)
+            .expect("watchdog snapshot");
+        assert_eq!(budget, Some(10_000));
+        let started = started.expect("watchdog start");
+        assert_eq!(
+            pool.server_job_watchdog_remaining_ms("watchdog-job", &owner, started + 2_500),
+            Some(7_500)
+        );
+        assert!(pool
+            .request_agent_handoff_for_owner(&owner)
+            .contains(&"watchdog-job".to_string()));
+        let agent = pool
+            .prepare_agent_execution("watchdog-job", &owner)
+            .expect("Agent fence");
+        assert!(agent.generation > vps.generation);
+        assert_eq!(
+            pool.server_job_watchdog_remaining_ms("watchdog-job", &owner, started + 2_500),
+            Some(7_500),
+            "handoff must not reset the canonical deadline"
+        );
+
+        let pending_pool = test_pool();
+        assert_eq!(
+            pending_pool.claim_server_job_with_scope_progress_and_watchdog(
+                "pending-watchdog",
+                &owner,
+                None,
+                None,
+                None,
+                None,
+                Some(5_000),
+            ),
+            ServerJobClaim::Claimed
+        );
+        assert_eq!(
+            pending_pool.request_agent_handoff_for_owner(&owner),
+            vec!["pending-watchdog".to_string()]
+        );
+        pending_pool
+            .prepare_agent_execution("pending-watchdog", &owner)
+            .expect("pending Agent fence");
+        assert!(pending_pool
+            .server_job_watchdog_snapshot("pending-watchdog", &owner)
+            .and_then(|(_, started)| started)
+            .is_some());
     }
 
     #[test]

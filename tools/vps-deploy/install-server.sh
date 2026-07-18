@@ -1,16 +1,65 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 APP_DIR="/opt/cherry-scheduler"
 BACKUP_DIR="/opt/cherry-scheduler-backups"
+UPLOAD_DIR="${TKB_DEPLOY_UPLOAD_DIR:-/tmp/cherry-upload}"
 DOMAIN="${TKB_DOMAIN:-tkbcherry.com}"
 MAIL_PORT="${TKB_MAIL_PORT:-8787}"
 APP_PORT="${TKB_APP_PORT:-1010}"
+STATE_BACKUP=""
+
+prune_runtime_artifacts() {
+  local target_dir="$APP_DIR/rust_api/target"
+  local release_dir="$target_dir/release"
+  local runtime_binary="$release_dir/tkb_rust_api"
+  [ -x "$runtime_binary" ] || {
+    echo "Rust runtime binary is missing after build: $runtime_binary" >&2
+    return 1
+  }
+  rm -rf -- "$APP_DIR/rust_api/target-gnu" "$APP_DIR/solver_runtime/logs"
+  find "$target_dir" -mindepth 1 -maxdepth 1 ! -name release -exec rm -rf -- {} +
+  find "$release_dir" -mindepth 1 -maxdepth 1 ! -name tkb_rust_api -exec rm -rf -- {} +
+}
+
+prune_old_backups() {
+  python3 - "$BACKUP_DIR" "" "$STATE_BACKUP" <<'PY_PRUNE_BACKUPS'
+from pathlib import Path
+import sys
+
+directory = Path(sys.argv[1])
+current_release = Path(sys.argv[2]).resolve() if sys.argv[2] else None
+current_state = Path(sys.argv[3]).resolve() if sys.argv[3] else None
+
+
+def prune(pattern: str, keep: int, current: Path | None) -> None:
+    candidates = [
+        path
+        for path in directory.glob(pattern)
+        if path.is_file() and "manual" not in path.name.lower()
+    ]
+    candidates.sort(
+        key=lambda path: (path.stat().st_mtime_ns, path.name),
+        reverse=True,
+    )
+    protected = {path.resolve() for path in candidates[:keep]}
+    if current is not None:
+        protected.add(current)
+    for path in candidates:
+        if path.resolve() not in protected:
+            path.unlink()
+
+
+prune("app-release-*.tar.gz", 10, current_release)
+prune("server-state-*.tar.gz", 30, current_state)
+PY_PRUNE_BACKUPS
+}
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y --fix-missing nginx certbot python3-certbot-nginx python3-pip \
-  build-essential curl pkg-config libssl-dev ufw rsync ca-certificates gnupg python-is-python3 || true
+  build-essential curl pkg-config libssl-dev libsqlite3-dev ufw rsync ca-certificates gnupg python-is-python3 || true
 
 if ! command -v node >/dev/null 2>&1; then
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
@@ -24,16 +73,18 @@ fi
 source "$HOME/.cargo/env" || true
 export PATH="$HOME/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-mkdir -p "$APP_DIR"
-mkdir -p "$BACKUP_DIR"
+install -d -m 0755 "$APP_DIR"
+install -d -m 0700 "$BACKUP_DIR"
 if [ -d "$APP_DIR" ]; then
   stamp="$(date +%Y%m%d-%H%M%S)"
+  STATE_BACKUP="$BACKUP_DIR/server-state-${stamp}.tar.gz"
   find "$APP_DIR" -type f \( \
     -name '*.db' -o \
     -name '*.sqlite' -o \
     -name '*.sqlite3' -o \
     -name '.env' \
-  \) -print0 | tar --null -czf "$BACKUP_DIR/server-state-${stamp}.tar.gz" --files-from - --ignore-failed-read 2>/dev/null || true
+  \) -print0 | tar --null -czf "$STATE_BACKUP" --files-from - --ignore-failed-read 2>/dev/null || true
+  [ ! -f "$STATE_BACKUP" ] || chmod 0600 "$STATE_BACKUP"
 fi
 rsync -a --delete \
   --exclude='*.db' \
@@ -41,8 +92,7 @@ rsync -a --delete \
   --exclude='*.sqlite3' \
   --exclude='.env' \
   --exclude='mail-server/.env' \
-  --exclude='solver_runtime/logs/' \
-  /tmp/cherry-upload/ "$APP_DIR/"
+  "$UPLOAD_DIR/" "$APP_DIR/"
 
 if [ -f "$APP_DIR/web/downloads/TKBCherryAgent-Windows.zip" ]; then
   chmod 0755 "$APP_DIR" "$APP_DIR/web" "$APP_DIR/web/downloads"
@@ -55,7 +105,8 @@ fi
 python3 -m pip install --break-system-packages -r "$APP_DIR/solver_runtime/requirements.txt"
 
 cd "$APP_DIR/rust_api"
-cargo build --release
+cargo build --release --locked
+prune_runtime_artifacts
 
 cd "$APP_DIR/mail-server"
 npm install --omit=dev
@@ -66,6 +117,7 @@ GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
 FROM_NAME=${FROM_NAME:-Cherry Scheduler}
 PORT=${MAIL_PORT}
 EOF
+chmod 0600 "$APP_DIR/mail-server/.env"
 
 cat > /etc/systemd/system/tkb-mail.service <<EOF
 [Unit]
@@ -178,6 +230,7 @@ systemctl restart tkb-mail
 systemctl restart tkb-app
 nginx -t
 systemctl reload nginx
+prune_old_backups || echo "Warning: could not prune old deployment backups" >&2
 
 if getent hosts "${DOMAIN}" >/dev/null 2>&1; then
   certbot --nginx -d "${DOMAIN}" -d "www.${DOMAIN}" --non-interactive --agree-tos -m "${GMAIL_USER}" --redirect || true

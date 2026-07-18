@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from deploy import make_tarball, new_ssh_client, run_ssh  # noqa: E402
+from deploy import PACKAGE_PRODUCTION, make_tarball, new_ssh_client, run_ssh  # noqa: E402
 from vps_credentials import missing_credential_message, resolve_vps_connection  # noqa: E402
 
 
@@ -48,7 +48,7 @@ def main() -> int:
         return 1
 
     print("Creating update package...")
-    tarball = make_tarball()
+    tarball = make_tarball(PACKAGE_PRODUCTION)
     update_script = Path(__file__).with_name("update-server.sh")
     deploy_id = secrets.token_hex(6)
     remote_archive = f"/tmp/cherry-deploy-{deploy_id}.tar.gz"

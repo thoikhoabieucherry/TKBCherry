@@ -24,21 +24,27 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-16-agent-reference-validation-v25";
+const VERSION: &str = "tkb_new-rust-api-2026-07-18-exclusive-agent-handoff-v26";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
 const MAX_REFERENCE_PROGRESS_FRAME_BYTES: usize = 32 * 1024;
 const AGENT_HELPER_PROTOCOL: &str = "tkb-agent-helper-v1";
 const AGENT_RESULT_DIGEST_PROTOCOL: &str = "tkb-json-tree-sha256-v1";
-const AGENT_HELPER_SEEDS_PER_JOB: usize = 4;
+// A canonical server-owned job has exactly one executor. Keeping one Agent
+// task (instead of a seed portfolio) prevents the Agent and VPS from adding
+// parallel attempts to the same user request.
+const AGENT_HELPER_SEEDS_PER_JOB: usize = 1;
+#[cfg(not(test))]
+const AGENT_CLAIM_GRACE_MS: u64 = 8_000;
+#[cfg(test)]
+const AGENT_CLAIM_GRACE_MS: u64 = 100;
 const MIN_SOLVER_DEADLINE_MS: u64 = 1_000;
 const MAX_SOLVER_DEADLINE_MS: u64 = 1_800_000;
 const DEFAULT_SOLVER_DEADLINE_MS: u64 = 180_000;
 const DEFAULT_SOLVER_RESERVE_MS: u64 = 1_500;
 const MAX_SOLVER_RESERVE_MS: u64 = 30_000;
 const UNIFIED_REFERENCE_WATCHDOG_RESERVE_MS: u64 = 5_000;
-const MAX_AGENT_CANDIDATE_GRACE_MS: u64 = 12_000;
 const REFERENCE_CANDIDATE_VALIDATION_TIMEOUT_MS: u64 = 15_000;
 
 struct ManagedChild(Child);
@@ -69,11 +75,14 @@ impl Drop for ManagedChild {
 
 use agent_helper::{
     session_binding as agent_session_binding, AgentHelperCoordinator, AgentHelperError,
-    AgentLeaseHeartbeat, AgentPairError, AgentPairStatus, AgentWorkLease, AGENT_IDLE_RETRY_MS,
+    AgentJobExecution, AgentLeaseHeartbeat, AgentPairError, AgentPairStatus, AgentWorkLease,
+    AGENT_IDLE_RETRY_MS,
 };
 use solver_pool::{
-    job_id_from_cancel_body, job_id_from_solve_body, ServerJobClaim, SolverAdmission,
-    SolverJobGuard, SolverOwner, SolverPool, MAX_UNRESOLVED_SERVER_JOBS,
+    job_id_from_cancel_body, job_id_from_solve_body, ServerJobClaim, ServerJobSnapshot,
+    SolverAdmission,
+    ServerExecutionFence, ServerExecutionPhase, ServerExecutor, SolverJobGuard, SolverOwner,
+    SolverPool, MAX_SERVER_WATCHDOG_MS, MAX_UNRESOLVED_SERVER_JOBS,
     MAX_UNRESOLVED_SERVER_JOBS_PER_OWNER,
 };
 
@@ -835,18 +844,26 @@ fn agent_helper_hello_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> 
         agent_helper_parallel(&body),
         now_millis(),
     ) {
-        Ok(registration) => json_response(
-            200,
-            json!({
-                "protocol": AGENT_HELPER_PROTOCOL,
-                "ok": true,
-                "workerToken": registration.worker_token,
-                "agentId": registration.worker_id,
-                "heartbeatEveryMs": registration.heartbeat_every_ms,
-                "workerExpiresAtMs": registration.worker_expires_at_ms,
-                "leaseMs": registration.lease_ms
-            }),
-        ),
+        Ok(registration) => {
+            // A fresh hello is the explicit signal that an Agent is available.
+            // Mark any VPS-owned canonical jobs for handoff while holding the
+            // solver-pool fence; the coordinator will only expose a lease once
+            // the local child has exited and its guard has been dropped.
+            let handoff_jobs = app.solver_pool.request_agent_handoff_for_owner(&owner);
+            json_response(
+                200,
+                json!({
+                    "protocol": AGENT_HELPER_PROTOCOL,
+                    "ok": true,
+                    "workerToken": registration.worker_token,
+                    "agentId": registration.worker_id,
+                    "heartbeatEveryMs": registration.heartbeat_every_ms,
+                    "workerExpiresAtMs": registration.worker_expires_at_ms,
+                    "leaseMs": registration.lease_ms,
+                    "handoffJobIds": handoff_jobs
+                }),
+            )
+        }
         Err(error) => agent_helper_error_json(error),
     }
 }
@@ -948,6 +965,25 @@ fn agent_helper_claim_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> 
             now_millis(),
         ) {
             Ok(lease) => {
+                if app
+                    .solver_pool
+                    .server_job_known_for_owner(&lease.job_id, &owner)
+                    && app
+                        .solver_pool
+                        .server_job_cancel_requested(&lease.job_id, &owner)
+                {
+                    let _ = app.agent_helper.finish_job(&lease.job_id, &owner);
+                    return json_response(
+                        409,
+                        json!({
+                            "protocol": AGENT_HELPER_PROTOCOL,
+                            "ok": false,
+                            "cancel": true,
+                            "kind": "solver_cancelled",
+                            "error": "solver_cancelled"
+                        }),
+                    );
+                }
                 return json_response(200, agent_helper_claim_payload(lease, cpu_workers));
             }
             Err(AgentHelperError::NoWork) if Instant::now() < wait_deadline => {
@@ -2129,6 +2165,15 @@ fn now_millis() -> u64 {
         .unwrap_or(0)
 }
 
+fn server_watchdog_remaining_from_snapshot(
+    snapshot: &ServerJobSnapshot,
+    now_ms: u64,
+) -> Option<u64> {
+    let budget_ms = snapshot.watchdog_budget_ms?;
+    let started_ms = snapshot.watchdog_started_ms?;
+    Some(budget_ms.saturating_sub(now_ms.saturating_sub(started_ms)))
+}
+
 fn solver_state_json(app: &App, query: &str, owner: &SolverOwner) -> Vec<u8> {
     let pool = &app.solver_pool;
     let requested_job_id = query_param(query, "jobId").unwrap_or_default();
@@ -2140,7 +2185,7 @@ fn solver_state_json(app: &App, query: &str, owner: &SolverOwner) -> Vec<u8> {
     let max_concurrent = pool.max_concurrent();
     let slots_available = pool.slots_available();
     let server_jobs = pool.server_job_snapshots_for_owner(owner);
-    let jobs = pool
+    let mut jobs = pool
         .snapshot_for_owner(owner)
         .into_iter()
         .map(
@@ -2154,22 +2199,22 @@ fn solver_state_json(app: &App, query: &str, owner: &SolverOwner) -> Vec<u8> {
                     "scheduleFingerprint": server_job.and_then(|job| job.schedule_fingerprint.as_deref()),
                     "progressBudgetSeconds": server_job.and_then(|job| job.progress_budget_seconds),
                     "progressRunIndex": server_job.and_then(|job| job.progress_run_index),
-                    "progress": server_job.and_then(|job| job.progress.as_ref()),
-                    "progressUpdatedAtMs": server_job.and_then(|job| job.progress_updated_ms),
-                    "serverOwned": server_job.is_some(),
+                     "progress": server_job.and_then(|job| job.progress.as_ref()),
+                     "progressUpdatedAtMs": server_job.and_then(|job| job.progress_updated_ms),
+                     "watchdogBudgetMs": server_job.and_then(|job| job.watchdog_budget_ms),
+                     "watchdogStartedAtMs": server_job.and_then(|job| job.watchdog_started_ms),
+                     "watchdogRemainingMs": server_job.and_then(|job| server_watchdog_remaining_from_snapshot(job, now_millis())),
+                     "serverOwned": server_job.is_some(),
+                    "executor": server_job.and_then(|job| job.execution_phase.executor()).map(ServerExecutor::as_str),
+                    "executionPhase": server_job.map(|job| job.execution_phase.as_str()),
+                    "executionGeneration": server_job.map(|job| job.execution_generation),
+                    "handoffInProgress": server_job.is_some_and(|job| job.execution_phase.handoff_in_progress()),
                     "cancelRequested": cancel_requested,
                     "allocatedWorkers": allocated_workers
                 })
             },
         )
         .collect::<Vec<_>>();
-    let requested_job_active = !requested_job_id.is_empty()
-        && jobs.iter().any(|job| {
-            job.get("jobId")
-                .and_then(Value::as_str)
-                .map(|job_id| job_id == requested_job_id.as_str())
-                .unwrap_or(false)
-        });
     let requested_job_result_ready = !requested_job_id.is_empty()
         && pool
             .completed_server_response_for_owner(&requested_job_id, owner)
@@ -2190,13 +2235,56 @@ fn solver_state_json(app: &App, query: &str, owner: &SolverOwner) -> Vec<u8> {
                 "scheduleFingerprint": server_job.and_then(|job| job.schedule_fingerprint.as_deref()),
                 "progressBudgetSeconds": server_job.and_then(|job| job.progress_budget_seconds),
                 "progressRunIndex": server_job.and_then(|job| job.progress_run_index),
-                "progress": server_job.and_then(|job| job.progress.as_ref()),
-                "progressUpdatedAtMs": server_job.and_then(|job| job.progress_updated_ms),
-                "serverOwned": server_job.is_some(),
+                 "progress": server_job.and_then(|job| job.progress.as_ref()),
+                 "progressUpdatedAtMs": server_job.and_then(|job| job.progress_updated_ms),
+                 "watchdogBudgetMs": server_job.and_then(|job| job.watchdog_budget_ms),
+                 "watchdogStartedAtMs": server_job.and_then(|job| job.watchdog_started_ms),
+                 "watchdogRemainingMs": server_job.and_then(|job| server_watchdog_remaining_from_snapshot(job, now_millis())),
+                 "serverOwned": server_job.is_some(),
+                "executor": server_job.and_then(|job| job.execution_phase.executor()).map(ServerExecutor::as_str),
+                "executionPhase": server_job.map(|job| job.execution_phase.as_str()),
+                "executionGeneration": server_job.map(|job| job.execution_generation),
+                "handoffInProgress": server_job.is_some_and(|job| job.execution_phase.handoff_in_progress()),
                 "desiredWorkers": desired_workers
             })
         })
         .collect::<Vec<_>>();
+    for server_job in server_jobs
+        .iter()
+        .filter(|job| job.completed_ms.is_none())
+    {
+        let represented = jobs.iter().chain(queue.iter()).any(|item| {
+            item.get("jobId").and_then(Value::as_str) == Some(server_job.job_id.as_str())
+        });
+        if represented {
+            continue;
+        }
+        jobs.push(json!({
+            "jobId": server_job.job_id,
+            "startedAtMs": server_job.created_ms,
+            "createdAtMs": server_job.created_ms,
+            "scheduleScope": server_job.schedule_scope,
+            "scheduleFingerprint": server_job.schedule_fingerprint,
+            "progressBudgetSeconds": server_job.progress_budget_seconds,
+            "progressRunIndex": server_job.progress_run_index,
+             "progress": server_job.progress,
+             "progressUpdatedAtMs": server_job.progress_updated_ms,
+             "watchdogBudgetMs": server_job.watchdog_budget_ms,
+             "watchdogStartedAtMs": server_job.watchdog_started_ms,
+             "watchdogRemainingMs": server_watchdog_remaining_from_snapshot(server_job, now_millis()),
+             "serverOwned": true,
+            "executor": server_job.execution_phase.executor().map(ServerExecutor::as_str),
+            "executionPhase": server_job.execution_phase.as_str(),
+            "executionGeneration": server_job.execution_generation,
+            "handoffInProgress": server_job.execution_phase.handoff_in_progress(),
+            "cancelRequested": matches!(server_job.execution_phase, ServerExecutionPhase::Cancelling),
+            "allocatedWorkers": 0
+        }));
+    }
+    let requested_job_active = !requested_job_id.is_empty()
+        && jobs.iter().any(|job| {
+            job.get("jobId").and_then(Value::as_str) == Some(requested_job_id.as_str())
+        });
     let mut completed_server_jobs = server_jobs
         .iter()
         .filter(|job| job.completed_ms.is_some())
@@ -2219,8 +2307,14 @@ fn solver_state_json(app: &App, query: &str, owner: &SolverOwner) -> Vec<u8> {
                 "scheduleFingerprint": job.schedule_fingerprint,
                 "progressBudgetSeconds": job.progress_budget_seconds,
                 "progressRunIndex": job.progress_run_index,
-                "progress": job.progress,
-                "progressUpdatedAtMs": job.progress_updated_ms
+                 "progress": job.progress,
+                 "progressUpdatedAtMs": job.progress_updated_ms,
+                 "watchdogBudgetMs": job.watchdog_budget_ms,
+                 "watchdogStartedAtMs": job.watchdog_started_ms,
+                 "watchdogRemainingMs": server_watchdog_remaining_from_snapshot(job, now_millis()),
+                 "executor": job.execution_phase.executor().map(ServerExecutor::as_str),
+                "executionPhase": job.execution_phase.as_str(),
+                "executionGeneration": job.execution_generation
             })
         })
         .collect::<Vec<_>>();
@@ -2256,7 +2350,13 @@ fn solver_state_json(app: &App, query: &str, owner: &SolverOwner) -> Vec<u8> {
             "requestedJobServerOwned": requested_job_server_owned,
             "requestedJobResultReady": requested_job_result_ready,
             "requestedJobProgress": requested_server_job.and_then(|job| job.progress.as_ref()),
-            "requestedJobProgressUpdatedAtMs": requested_server_job.and_then(|job| job.progress_updated_ms)
+             "requestedJobProgressUpdatedAtMs": requested_server_job.and_then(|job| job.progress_updated_ms),
+             "requestedJobWatchdogBudgetMs": requested_server_job.and_then(|job| job.watchdog_budget_ms),
+             "requestedJobWatchdogStartedAtMs": requested_server_job.and_then(|job| job.watchdog_started_ms),
+             "requestedJobWatchdogRemainingMs": requested_server_job.and_then(|job| server_watchdog_remaining_from_snapshot(job, now_millis())),
+             "requestedJobExecutor": requested_server_job.and_then(|job| job.execution_phase.executor()).map(ServerExecutor::as_str),
+            "requestedJobExecutionPhase": requested_server_job.map(|job| job.execution_phase.as_str()),
+            "requestedJobHandoffInProgress": requested_server_job.is_some_and(|job| job.execution_phase.handoff_in_progress())
         }),
     )
 }
@@ -2305,6 +2405,11 @@ fn solve_result_for_job_id_json(app: &App, job_id: &str, owner: &SolverOwner) ->
     let progress_run_index = server_job.as_ref().and_then(|job| job.progress_run_index);
     let progress = server_job.as_ref().and_then(|job| job.progress.as_ref());
     let progress_updated_ms = server_job.as_ref().and_then(|job| job.progress_updated_ms);
+    let watchdog_budget_ms = server_job.as_ref().and_then(|job| job.watchdog_budget_ms);
+    let watchdog_started_ms = server_job.as_ref().and_then(|job| job.watchdog_started_ms);
+    let watchdog_remaining_ms = server_job
+        .as_ref()
+        .and_then(|job| server_watchdog_remaining_from_snapshot(job, now_millis()));
     let queue_item = app
         .solver_pool
         .queue_snapshot_for_owner(owner)
@@ -2324,8 +2429,15 @@ fn solve_result_for_job_id_json(app: &App, job_id: &str, owner: &SolverOwner) ->
                 "queuedAtMs": queued_ms,
                 "progressBudgetSeconds": progress_budget_seconds,
                 "progressRunIndex": progress_run_index,
-                "progress": progress,
-                "progressUpdatedAtMs": progress_updated_ms,
+                 "progress": progress,
+                 "progressUpdatedAtMs": progress_updated_ms,
+                 "watchdogBudgetMs": watchdog_budget_ms,
+                 "watchdogStartedAtMs": watchdog_started_ms,
+                 "watchdogRemainingMs": watchdog_remaining_ms,
+                 "executor": ServerExecutor::Vps.as_str(),
+                "executionPhase": server_job
+                    .as_ref()
+                    .map(|job| job.execution_phase.as_str()),
                 "retryAfterMs": 700,
                 "requiredWorkers": desired_workers
             }),
@@ -2349,13 +2461,58 @@ fn solve_result_for_job_id_json(app: &App, job_id: &str, owner: &SolverOwner) ->
                 "startedAtMs": started_ms,
                 "progressBudgetSeconds": progress_budget_seconds,
                 "progressRunIndex": progress_run_index,
-                "progress": progress,
-                "progressUpdatedAtMs": progress_updated_ms,
+                 "progress": progress,
+                 "progressUpdatedAtMs": progress_updated_ms,
+                 "watchdogBudgetMs": watchdog_budget_ms,
+                 "watchdogStartedAtMs": watchdog_started_ms,
+                 "watchdogRemainingMs": watchdog_remaining_ms,
+                 "executor": ServerExecutor::Vps.as_str(),
+                "executionPhase": server_job
+                    .as_ref()
+                    .map(|job| job.execution_phase.as_str()),
                 "cancelRequested": cancel_requested,
                 "allocatedWorkers": allocated_workers,
                 "retryAfterMs": 700
             }),
         );
+    }
+    if let Some(server_job) = server_job.as_ref() {
+        if server_job.completed_ms.is_none()
+            && matches!(
+                server_job.execution_phase,
+                ServerExecutionPhase::Pending
+                    | ServerExecutionPhase::VpsQueued
+                    | ServerExecutionPhase::HandoffToAgent
+                    | ServerExecutionPhase::AgentWaiting
+                    | ServerExecutionPhase::AgentRunning
+                    | ServerExecutionPhase::Cancelling
+            )
+        {
+            return json_response(
+                202,
+                json!({
+                    "ok": false,
+                    "running": true,
+                    "serverOwned": true,
+                    "kind": "solver_running",
+                    "error": "solver_running",
+                    "jobId": job_id,
+                    "executor": server_job.execution_phase.executor().map(ServerExecutor::as_str),
+                    "executionPhase": server_job.execution_phase.as_str(),
+                    "handoffInProgress": server_job.execution_phase.handoff_in_progress(),
+                    "progressBudgetSeconds": progress_budget_seconds,
+                    "progressRunIndex": progress_run_index,
+                     "progress": progress,
+                     "progressUpdatedAtMs": progress_updated_ms,
+                     "watchdogBudgetMs": watchdog_budget_ms,
+                     "watchdogStartedAtMs": watchdog_started_ms,
+                     "watchdogRemainingMs": watchdog_remaining_ms,
+                     "cancelRequested": server_job.execution_phase == ServerExecutionPhase::Cancelling,
+                    "allocatedWorkers": 0,
+                    "retryAfterMs": 700
+                }),
+            );
+        }
     }
     json_response(
         202,
@@ -2367,9 +2524,12 @@ fn solve_result_for_job_id_json(app: &App, job_id: &str, owner: &SolverOwner) ->
             "jobId": job_id,
             "progressBudgetSeconds": progress_budget_seconds,
             "progressRunIndex": progress_run_index,
-            "progress": progress,
-            "progressUpdatedAtMs": progress_updated_ms,
-            "retryAfterMs": 250
+             "progress": progress,
+             "progressUpdatedAtMs": progress_updated_ms,
+             "watchdogBudgetMs": watchdog_budget_ms,
+             "watchdogStartedAtMs": watchdog_started_ms,
+             "watchdogRemainingMs": watchdog_remaining_ms,
+             "retryAfterMs": 250
         }),
     )
 }
@@ -2594,7 +2754,18 @@ fn reference_solver_budget(request: &Value) -> ReferenceBudget {
     let backend_ms =
         clamped_solver_deadline_ms(settings, "backend_deadline_ms", DEFAULT_SOLVER_DEADLINE_MS);
     let native_ms = clamped_solver_deadline_ms(settings, "native_global_deadline_ms", backend_ms);
-    let compute_ceiling_ms = backend_ms.min(native_ms);
+    // A server-owned handoff may inject the remaining canonical watchdog into
+    // the request. Treat it as an upper bound on both the helper and native
+    // lanes; otherwise a VPS -> Agent retry would silently restore the full
+    // per-request deadline.
+    let requested_watchdog_cap_ms =
+        setting_u64_allow_zero(settings, "reference_watchdog_deadline_ms", 0);
+    let watchdog_cap_ms = (requested_watchdog_cap_ms > 0).then_some(
+        requested_watchdog_cap_ms.clamp(MIN_SOLVER_DEADLINE_MS, MAX_SERVER_WATCHDOG_MS),
+    );
+    let effective_backend_ms = backend_ms.min(watchdog_cap_ms.unwrap_or(MAX_SERVER_WATCHDOG_MS));
+    let effective_native_ms = native_ms.min(watchdog_cap_ms.unwrap_or(MAX_SERVER_WATCHDOG_MS));
+    let effective_compute_ceiling_ms = effective_backend_ms.min(effective_native_ms);
     if uses_unified_reference_compute_budget(settings) {
         let requested_watchdog_reserve = setting_u64(
             settings,
@@ -2602,18 +2773,20 @@ fn reference_solver_budget(request: &Value) -> ReferenceBudget {
             UNIFIED_REFERENCE_WATCHDOG_RESERVE_MS,
         )
         .clamp(UNIFIED_REFERENCE_WATCHDOG_RESERVE_MS, 10_000);
-        let hard_ms = compute_ceiling_ms
+        let hard_ms = effective_compute_ceiling_ms
             .saturating_add(requested_watchdog_reserve)
-            .min(MAX_SOLVER_DEADLINE_MS);
+            .min(MAX_SOLVER_DEADLINE_MS)
+            .min(watchdog_cap_ms.unwrap_or(MAX_SERVER_WATCHDOG_MS));
+        let solver_ms = effective_compute_ceiling_ms.min(hard_ms);
         return ReferenceBudget {
             hard_ms,
-            solver_ms: compute_ceiling_ms,
-            reserve_ms: hard_ms.saturating_sub(compute_ceiling_ms),
-            backend_ms,
-            native_ms,
+            solver_ms,
+            reserve_ms: hard_ms.saturating_sub(solver_ms),
+            backend_ms: effective_backend_ms,
+            native_ms: effective_native_ms,
         };
     }
-    let hard_ms = compute_ceiling_ms;
+    let hard_ms = effective_compute_ceiling_ms;
     let requested_reserve = setting_u64_allow_zero(
         settings,
         "native_deadline_reserve_ms",
@@ -2629,8 +2802,8 @@ fn reference_solver_budget(request: &Value) -> ReferenceBudget {
             .saturating_sub(reserve_ms)
             .max(MIN_SOLVER_DEADLINE_MS),
         reserve_ms,
-        backend_ms,
-        native_ms,
+        backend_ms: effective_backend_ms,
+        native_ms: effective_native_ms,
     }
 }
 
@@ -2757,6 +2930,118 @@ fn reference_solver_body(
         );
     }
     serde_json::to_vec(&normalized).unwrap_or_else(|_| body.to_vec())
+}
+
+/// Clamp every solver-facing deadline in a canonical request to the remaining
+/// server watchdog. The same body is used when the job is handed to an Agent,
+/// while the parsed value is passed to the VPS solver, so neither executor can
+/// silently restart the original full budget.
+fn server_request_with_remaining_watchdog(request: &Value, remaining_ms: u64) -> Value {
+    let cap_ms = remaining_ms
+        .clamp(MIN_SOLVER_DEADLINE_MS, MAX_SERVER_WATCHDOG_MS);
+    let cap_seconds = (cap_ms / 1_000).max(1);
+    let mut capped = request.clone();
+    let settings = ensure_object_child(&mut capped, "settings");
+
+    for key in [
+        "backend_deadline_ms",
+        "native_global_deadline_ms",
+        "reference_watchdog_deadline_ms",
+        "reference_solver_budget_ms",
+    ] {
+        let current = setting_u64_allow_zero(Some(settings), key, 0);
+        settings.insert(
+            key.to_string(),
+            json!(if current > 0 { current.min(cap_ms) } else { cap_ms }),
+        );
+    }
+    let reserve = setting_u64_allow_zero(Some(settings), "native_deadline_reserve_ms", 0)
+        .min(cap_ms.saturating_sub(MIN_SOLVER_DEADLINE_MS));
+    settings.insert("native_deadline_reserve_ms".to_string(), json!(reserve));
+    for key in [
+        "overall_time_limit_seconds",
+        "integrated_time_limit",
+        "optimization_time_limit_seconds",
+    ] {
+        let current = setting_u64_allow_zero(Some(settings), key, 0);
+        settings.insert(
+            key.to_string(),
+            json!(if current > 0 {
+                current.min(cap_seconds)
+            } else {
+                cap_seconds
+            }),
+        );
+    }
+    capped
+}
+
+fn server_request_body_with_remaining_watchdog(
+    body: &[u8],
+    request: Option<&Value>,
+    remaining_ms: u64,
+) -> Arc<Vec<u8>> {
+    let Some(request) = request else {
+        return Arc::new(body.to_vec());
+    };
+    let capped = server_request_with_remaining_watchdog(request, remaining_ms);
+    Arc::new(serde_json::to_vec(&capped).unwrap_or_else(|_| body.to_vec()))
+}
+
+fn server_watchdog_timeout_response(request: &Value) -> Vec<u8> {
+    if let Some((status, payload)) = complete_existing_incumbent_payload(
+        request,
+        "server_watchdog_exhausted",
+        "canonical server watchdog budget exhausted",
+    ) {
+        if let Ok(mut payload) = serde_json::from_str::<Value>(&payload) {
+            let runtime = ensure_object_child(&mut payload, "solver")
+                .entry("runtime_settings".to_string())
+                .or_insert_with(|| json!({}));
+            if !runtime.is_object() {
+                *runtime = json!({});
+            }
+            if let Some(runtime) = runtime.as_object_mut() {
+                runtime.insert("phase".to_string(), json!("server_watchdog_incumbent_fallback"));
+                runtime.insert("deadline_hit".to_string(), json!(true));
+                runtime.insert("server_watchdog_exhausted".to_string(), json!(true));
+            }
+            return json_response(status, payload);
+        }
+    }
+    let expected = expected_periods_from_request(request);
+    let budget = reference_solver_budget(request);
+    json_response(
+        422,
+        json!({
+            "ok": false,
+            "kind": "no_complete_schedule_before_deadline",
+            "error": "Server watchdog budget was exhausted before a complete schedule was returned.",
+            "lessons": [],
+            "unassignedLessons": [],
+            "metrics": {
+                "scheduled_periods": 0,
+                "expected_periods": expected,
+                "unassigned_periods": expected,
+                "app_constraint_violation_count": 0,
+                "hard_ok": false,
+                "core_hard_ok": false,
+                "best_effort": false
+            },
+            "solver": {
+                "name": "server_watchdog",
+                "backend": "exclusive-vps-agent",
+                "runtime_settings": {
+                    "backend_deadline_ms": budget.backend_ms,
+                    "native_global_deadline_ms": budget.native_ms,
+                    "reference_solver_budget_ms": budget.solver_ms,
+                    "reference_watchdog_deadline_ms": budget.hard_ms,
+                    "deadline_hit": true,
+                    "server_watchdog_exhausted": true
+                }
+            }
+        }),
+    )
 }
 
 fn reference_solver_script(app: &App) -> Option<PathBuf> {
@@ -4031,6 +4316,8 @@ fn run_reference_solver(
         if cancel_requested.load(Ordering::SeqCst) {
             let _ = child.kill();
             let _ = child.wait();
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
             return Ok(reference_cancelled_payload(request, started));
         }
         if child
@@ -4151,80 +4438,19 @@ fn solver_response_with_progress(
     json_response(status, Value::Object(payload.clone()))
 }
 
-fn prefer_agent_candidate_response(
-    app: &App,
-    job_id: &str,
-    owner: &SolverOwner,
-    request_body: &[u8],
-    local_response: Vec<u8>,
-) -> Vec<u8> {
-    let Some(remote) = app.agent_helper.best_candidate(job_id, owner) else {
-        return local_response;
-    };
-    let local_quality = response_json_payload(&local_response).and_then(|payload| {
-        native_solver::validate_agent_candidate(request_body, &payload)
-            .ok()
-            .map(|candidate| candidate.quality)
-    });
-    if local_quality.is_some_and(|quality| quality <= remote.quality) {
-        return local_response;
-    }
-    json_response(200, remote.payload)
+enum ServerCoordinatorStart {
+    Vps {
+        fence: ServerExecutionFence,
+        initial_guard: Option<SolverJobGuard>,
+    },
+    Agent {
+        fence: ServerExecutionFence,
+    },
 }
 
-fn prefer_agent_candidate_response_with_wait(
-    app: &App,
-    job_id: &str,
-    owner: &SolverOwner,
-    request_body: &[u8],
-    local_response: Vec<u8>,
-    max_wait: Duration,
-) -> Vec<u8> {
-    let local_quality = response_json_payload(&local_response).and_then(|payload| {
-        native_solver::validate_agent_candidate(request_body, &payload)
-            .ok()
-            .map(|candidate| candidate.quality)
-    });
-    let choose_remote = |remote: agent_helper::AgentCandidate| {
-        if local_quality.is_some_and(|quality| quality <= remote.quality) {
-            None
-        } else {
-            Some(json_response(200, remote.payload))
-        }
-    };
-
-    if let Some(remote) = app.agent_helper.best_candidate(job_id, owner) {
-        return choose_remote(remote).unwrap_or(local_response);
-    }
-    if local_quality.is_some() || max_wait.is_zero() || !app.agent_helper.has_active_lease(job_id, owner) {
-        return local_response;
-    }
-
-    let deadline = Instant::now() + max_wait;
-    loop {
-        thread::sleep(Duration::from_millis(50));
-        if let Some(remote) = app.agent_helper.best_candidate(job_id, owner) {
-            return choose_remote(remote).unwrap_or(local_response);
-        }
-        if Instant::now() >= deadline || !app.agent_helper.has_active_lease(job_id, owner) {
-            return local_response;
-        }
-    }
-}
-
-fn remaining_agent_candidate_grace(
-    request: Option<&Value>,
-    solve_elapsed: Duration,
-) -> Duration {
-    let Some(request) = request else {
-        return Duration::ZERO;
-    };
-    let elapsed_ms = u64::try_from(solve_elapsed.as_millis()).unwrap_or(u64::MAX);
-    let remaining_ms = reference_solver_budget(request)
-        .hard_ms
-        .saturating_sub(elapsed_ms)
-        .min(MAX_AGENT_CANDIDATE_GRACE_MS);
-    Duration::from_millis(remaining_ms)
+fn cleanup_server_owned_job(app: &App, job_id: &str, owner: &SolverOwner) {
+    app.agent_helper.finish_job(job_id, owner);
+    app.solver_pool.abandon_server_job(job_id, owner);
 }
 
 fn spawn_server_owned_solver(
@@ -4234,7 +4460,7 @@ fn spawn_server_owned_solver(
     desired_workers: usize,
     body: Arc<Vec<u8>>,
     request: Option<Value>,
-    initial_guard: Option<SolverJobGuard>,
+    start: ServerCoordinatorStart,
 ) -> Result<(), String> {
     let background_app = app.clone();
     let cleanup_job_id = job_id.clone();
@@ -4242,80 +4468,371 @@ fn spawn_server_owned_solver(
     thread::Builder::new()
         .name("tkb-server-solver".to_string())
         .spawn(move || {
-            let job_guard = if let Some(guard) = initial_guard {
-                guard
-            } else {
-                loop {
-                    if background_app
-                        .solver_pool
-                        .server_job_cancel_requested(&job_id, &owner)
-                    {
-                        background_app
-                            .solver_pool
-                            .abandon_server_job(&job_id, &owner);
-                        background_app.agent_helper.finish_job(&job_id, &owner);
-                        return;
-                    }
-                    match background_app.solver_pool.acquire_or_enqueue_for_owner(
-                        job_id.clone(),
-                        desired_workers,
-                        owner.clone(),
-                    ) {
-                        SolverAdmission::Acquired(guard) => break guard,
-                        SolverAdmission::Queued { .. } => {
-                            thread::sleep(Duration::from_millis(250));
-                        }
-                        SolverAdmission::AlreadyRunning => {
+            let mut mode = start;
+            loop {
+                if background_app
+                    .solver_pool
+                    .server_job_cancel_requested(&job_id, &owner)
+                {
+                    cleanup_server_owned_job(&background_app, &job_id, &owner);
+                    return;
+                }
+
+                match mode {
+                    ServerCoordinatorStart::Vps {
+                        fence,
+                        mut initial_guard,
+                    } => {
+                        let job_guard = loop {
+                            if request.is_some()
+                                && background_app
+                                    .solver_pool
+                                    .server_job_watchdog_remaining_ms(
+                                        &job_id,
+                                        &owner,
+                                        now_millis(),
+                                    )
+                                    .is_some_and(|remaining_ms| {
+                                        remaining_ms < MIN_SOLVER_DEADLINE_MS
+                                    })
+                            {
+                                let response = server_watchdog_timeout_response(
+                                    request.as_ref().expect("watchdog request is present"),
+                                );
+                                if background_app.solver_pool.complete_server_job_fenced(
+                                    fence, &job_id, &owner, response,
+                                ) {
+                                    background_app.agent_helper.finish_job(&job_id, &owner);
+                                    return;
+                                }
+                            }
                             if background_app
                                 .solver_pool
                                 .server_job_cancel_requested(&job_id, &owner)
                             {
-                                background_app
+                                cleanup_server_owned_job(&background_app, &job_id, &owner);
+                                return;
+                            }
+                            if !background_app.solver_pool.execution_fence_current(
+                                fence, &job_id, &owner,
+                            ) {
+                                break None;
+                            }
+                            let admission = if let Some(guard) = initial_guard.take() {
+                                SolverAdmission::Acquired(guard)
+                            } else {
+                                background_app.solver_pool.acquire_or_enqueue_for_owner(
+                                    job_id.clone(),
+                                    desired_workers,
+                                    owner.clone(),
+                                )
+                            };
+                            match admission {
+                                SolverAdmission::Acquired(guard) => {
+                                    if background_app.solver_pool.mark_vps_execution_running(
+                                        fence, &job_id, &owner,
+                                    ) {
+                                        break Some(guard);
+                                    }
+                                    drop(guard);
+                                    break None;
+                                }
+                                SolverAdmission::Queued { .. }
+                                | SolverAdmission::AlreadyRunning => {
+                                    thread::sleep(Duration::from_millis(100));
+                                }
+                            }
+                        };
+
+                        let Some(job_guard) = job_guard else {
+                            if let Some(agent_fence) = background_app
+                                .solver_pool
+                                .prepare_agent_execution(&job_id, &owner)
+                            {
+                                mode = ServerCoordinatorStart::Agent {
+                                    fence: agent_fence,
+                                };
+                                continue;
+                            }
+                            if background_app
+                                .solver_pool
+                                .server_job_cancel_requested(&job_id, &owner)
+                            {
+                                cleanup_server_owned_job(&background_app, &job_id, &owner);
+                            }
+                            return;
+                        };
+
+                        let remaining_watchdog_ms = background_app
+                            .solver_pool
+                            .server_job_watchdog_remaining_ms(
+                                &job_id,
+                                &owner,
+                                now_millis(),
+                            );
+                        let watchdog_expired = request.is_some()
+                            && remaining_watchdog_ms
+                                .is_some_and(|remaining_ms| remaining_ms < MIN_SOLVER_DEADLINE_MS);
+                        let executor_request = request.as_ref().map(|request| {
+                            remaining_watchdog_ms
+                                .filter(|_| !watchdog_expired)
+                                .map(|remaining_ms| {
+                                    server_request_with_remaining_watchdog(request, remaining_ms)
+                                })
+                                .unwrap_or_else(|| request.clone())
+                        });
+                        let executor_body = remaining_watchdog_ms
+                            .filter(|_| !watchdog_expired)
+                            .map(|remaining_ms| {
+                                server_request_body_with_remaining_watchdog(
+                                    &body,
+                                    request.as_ref(),
+                                    remaining_ms,
+                                )
+                            })
+                            .unwrap_or_else(|| Arc::clone(&body));
+                        let response = if watchdog_expired {
+                            server_watchdog_timeout_response(
+                                request.as_ref().expect("watchdog request is present"),
+                            )
+                        } else {
+                            panic::catch_unwind(AssertUnwindSafe(|| {
+                                solve_admitted_json(
+                                    &background_app,
+                                    &executor_body,
+                                    executor_request.as_ref(),
+                                    &job_guard,
+                                )
+                            }))
+                            .unwrap_or_else(|_| {
+                                json_response(
+                                    500,
+                                    json!({
+                                        "ok": false,
+                                        "kind": "solver_worker_panicked",
+                                        "error": "solver_worker_panicked",
+                                        "jobId": job_id
+                                    }),
+                                )
+                            })
+                        };
+
+                        let response = if request.is_some()
+                            && background_app
+                                .solver_pool
+                                .server_job_watchdog_remaining_ms(
+                                    &job_id,
+                                    &owner,
+                                    now_millis(),
+                                )
+                                .is_some_and(|remaining_ms| remaining_ms < MIN_SOLVER_DEADLINE_MS)
+                        {
+                            server_watchdog_timeout_response(
+                                request.as_ref().expect("watchdog request is present"),
+                            )
+                        } else {
+                            response
+                        };
+
+                        // The child process has been killed/waited by the solver
+                        // path before it returns. Drop the CPU guard as the last
+                        // local-executor step, then expose Agent work.
+                        drop(job_guard);
+                        if background_app.solver_pool.complete_server_job_fenced(
+                            fence, &job_id, &owner, response,
+                        ) {
+                            background_app.agent_helper.finish_job(&job_id, &owner);
+                            return;
+                        }
+                        if let Some(agent_fence) = background_app
+                            .solver_pool
+                            .prepare_agent_execution(&job_id, &owner)
+                        {
+                            mode = ServerCoordinatorStart::Agent {
+                                fence: agent_fence,
+                            };
+                            continue;
+                        }
+                        if background_app
+                            .solver_pool
+                            .server_job_cancel_requested(&job_id, &owner)
+                        {
+                            cleanup_server_owned_job(&background_app, &job_id, &owner);
+                        }
+                        return;
+                    }
+                    ServerCoordinatorStart::Agent { fence } => {
+                        // No Agent task exists while a VPS child is alive. This
+                        // registration point is therefore the strict handoff
+                        // boundary in both the initial-Agent and VPS->Agent path.
+                        let remaining_watchdog_ms = background_app
+                            .solver_pool
+                            .server_job_watchdog_remaining_ms(
+                                &job_id,
+                                &owner,
+                                now_millis(),
+                            );
+                        if request.is_some()
+                            && remaining_watchdog_ms
+                                .is_some_and(|remaining_ms| remaining_ms < MIN_SOLVER_DEADLINE_MS)
+                        {
+                            let response = server_watchdog_timeout_response(
+                                request.as_ref().expect("watchdog request is present"),
+                            );
+                            if background_app.solver_pool.complete_server_job_fenced(
+                                fence, &job_id, &owner, response,
+                            ) {
+                                background_app.agent_helper.finish_job(&job_id, &owner);
+                            }
+                            return;
+                        }
+                        let agent_body = remaining_watchdog_ms
+                            .map(|remaining_ms| {
+                                server_request_body_with_remaining_watchdog(
+                                    &body,
+                                    request.as_ref(),
+                                    remaining_ms,
+                                )
+                            })
+                            .unwrap_or_else(|| Arc::clone(&body));
+                        if !background_app.agent_helper.register_job(
+                            &job_id,
+                            &owner,
+                            agent_body,
+                            AGENT_HELPER_SEEDS_PER_JOB,
+                            now_millis(),
+                        ) {
+                            let Some(vps_fence) = background_app
+                                .solver_pool
+                                .fallback_agent_to_vps(fence, &job_id, &owner)
+                            else {
+                                return;
+                            };
+                            mode = ServerCoordinatorStart::Vps {
+                                fence: vps_fence,
+                                initial_guard: None,
+                            };
+                            continue;
+                        }
+
+                        let waiting_since = Instant::now();
+                        let mut lease_started = false;
+                        let agent_response = loop {
+                            if background_app
+                                .solver_pool
+                                .server_job_cancel_requested(&job_id, &owner)
+                            {
+                                cleanup_server_owned_job(&background_app, &job_id, &owner);
+                                return;
+                            }
+                            if !background_app.solver_pool.execution_fence_current(
+                                fence, &job_id, &owner,
+                            ) {
+                                break None;
+                            }
+                            if request.is_some()
+                                && background_app
                                     .solver_pool
-                                    .abandon_server_job(&job_id, &owner);
+                                    .server_job_watchdog_remaining_ms(
+                                        &job_id,
+                                        &owner,
+                                        now_millis(),
+                                    )
+                                    .is_some_and(|remaining_ms| {
+                                        remaining_ms < MIN_SOLVER_DEADLINE_MS
+                                    })
+                            {
+                                break Some(server_watchdog_timeout_response(
+                                    request.as_ref().expect("watchdog request is present"),
+                                ));
+                            }
+                            match background_app.agent_helper.job_execution(
+                                &job_id,
+                                &owner,
+                                now_millis(),
+                            ) {
+                                Some(AgentJobExecution::Leased { .. }) => {
+                                    lease_started = true;
+                                    let _ = background_app
+                                        .solver_pool
+                                        .mark_agent_execution_running(fence, &job_id, &owner);
+                                }
+                                Some(AgentJobExecution::Completed {
+                                    candidate: Some(candidate),
+                                }) => {
+                                    if request.is_some()
+                                        && background_app
+                                            .solver_pool
+                                            .server_job_watchdog_remaining_ms(
+                                                &job_id,
+                                                &owner,
+                                                now_millis(),
+                                            )
+                                            .is_some_and(|remaining_ms| {
+                                                remaining_ms < MIN_SOLVER_DEADLINE_MS
+                                            })
+                                    {
+                                        break Some(server_watchdog_timeout_response(
+                                            request.as_ref()
+                                                .expect("watchdog request is present"),
+                                        ));
+                                    }
+                                    break Some(json_response(200, candidate.payload));
+                                }
+                                Some(AgentJobExecution::Completed { candidate: None }) => {
+                                    break None;
+                                }
+                                Some(AgentJobExecution::Queued)
+                                    if lease_started
+                                        || waiting_since.elapsed()
+                                            >= Duration::from_millis(AGENT_CLAIM_GRACE_MS) =>
+                                {
+                                    break None;
+                                }
+                                Some(AgentJobExecution::Queued) => {}
+                                None => break None,
+                            }
+                            thread::sleep(Duration::from_millis(100));
+                        };
+
+                        if let Some(response) = agent_response {
+                            if background_app.solver_pool.complete_server_job_fenced(
+                                fence, &job_id, &owner, response,
+                            ) {
                                 background_app.agent_helper.finish_job(&job_id, &owner);
                                 return;
                             }
-                            thread::sleep(Duration::from_millis(250));
                         }
+                        // Remove the Agent task atomically only after confirming
+                        // that no fresh lease won the expiry race. If a worker
+                        // reclaimed it in the meantime, keep waiting on that
+                        // same task instead of starting a VPS child beside it.
+                        if !background_app
+                            .agent_helper
+                            .take_over_for_vps(&job_id, &owner, now_millis())
+                        {
+                            mode = ServerCoordinatorStart::Agent { fence };
+                            continue;
+                        }
+                        let Some(vps_fence) = background_app
+                            .solver_pool
+                            .fallback_agent_to_vps(fence, &job_id, &owner)
+                        else {
+                            if background_app
+                                .solver_pool
+                                .server_job_cancel_requested(&job_id, &owner)
+                            {
+                                cleanup_server_owned_job(&background_app, &job_id, &owner);
+                            }
+                            return;
+                        };
+                        mode = ServerCoordinatorStart::Vps {
+                            fence: vps_fence,
+                            initial_guard: None,
+                        };
                     }
                 }
-            };
-            if background_app
-                .solver_pool
-                .server_job_cancel_requested(&job_id, &owner)
-            {
-                job_guard.job.cancel_requested.store(true, Ordering::SeqCst);
             }
-            let solve_started = Instant::now();
-            let response = panic::catch_unwind(AssertUnwindSafe(|| {
-                solve_admitted_json(&background_app, &body, request.as_ref(), &job_guard)
-            }))
-            .unwrap_or_else(|_| {
-                json_response(
-                    500,
-                    json!({
-                        "ok": false,
-                        "kind": "solver_worker_panicked",
-                        "error": "solver_worker_panicked",
-                        "jobId": job_id
-                    }),
-                )
-            });
-            let agent_grace = remaining_agent_candidate_grace(request.as_ref(), solve_started.elapsed());
-            let response = prefer_agent_candidate_response_with_wait(
-                &background_app,
-                &job_id,
-                &owner,
-                &body,
-                response,
-                agent_grace,
-            );
-            background_app
-                .solver_pool
-                .complete_server_job(&job_id, &owner, response);
-            background_app.agent_helper.finish_job(&job_id, &owner);
-            drop(job_guard);
         })
         .map(|_| ())
         .map_err(|error| {
@@ -4336,6 +4853,9 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
     let schedule_fingerprint = solver_schedule_fingerprint(request.as_ref());
     let progress_budget_seconds = solver_progress_budget_seconds(request.as_ref());
     let progress_run_index = solver_progress_run_index(request.as_ref());
+    let server_watchdog_budget_ms = request
+        .as_ref()
+        .map(|request| reference_solver_budget(request).hard_ms);
     let desired_workers = app.solver_pool.desired_workers(request.as_ref());
     let supports_fifo_admission = request
         .as_ref()
@@ -4346,6 +4866,7 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
             .as_ref()
             .map(|request| setting_bool(request_settings(request), "ui_solver_async_job", false))
             .unwrap_or(false);
+    let mut server_execution_fence = None;
     if server_owned {
         if let Some(response) = app
             .solver_pool
@@ -4353,23 +4874,18 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
         {
             return response;
         }
-        match app.solver_pool.claim_server_job_with_scope_progress(
+        match app
+            .solver_pool
+            .claim_server_job_with_scope_progress_and_watchdog(
             &job_id,
             owner,
             schedule_scope.as_deref(),
             schedule_fingerprint.as_deref(),
             progress_budget_seconds,
             progress_run_index,
+            server_watchdog_budget_ms,
         ) {
-            ServerJobClaim::Claimed => {
-                app.agent_helper.register_job(
-                    &job_id,
-                    owner,
-                    Arc::clone(&shared_body),
-                    AGENT_HELPER_SEEDS_PER_JOB,
-                    now_millis(),
-                );
-            }
+            ServerJobClaim::Claimed => {}
             ServerJobClaim::Existing => {
                 return solve_result_for_job_id_json(app, &job_id, owner);
             }
@@ -4434,6 +4950,118 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
                 );
             }
         }
+
+        if app.agent_helper.online_worker_count(owner, now_millis()) > 0 {
+            let Some(fence) = app
+                .solver_pool
+                .prepare_agent_execution(&job_id, owner)
+            else {
+                cleanup_server_owned_job(app, &job_id, owner);
+                return json_response(
+                    500,
+                    json!({
+                        "ok": false,
+                        "kind": "solver_executor_state_invalid",
+                        "error": "solver_executor_state_invalid",
+                        "jobId": job_id
+                    }),
+                );
+            };
+            if let Err(error) = spawn_server_owned_solver(
+                app,
+                job_id.clone(),
+                owner.clone(),
+                desired_workers,
+                Arc::clone(&shared_body),
+                request,
+                ServerCoordinatorStart::Agent { fence },
+            ) {
+                return json_response(
+                    500,
+                    json!({
+                        "ok": false,
+                        "kind": "solver_worker_start_failed",
+                        "error": error,
+                        "jobId": job_id
+                    }),
+                );
+            }
+            return json_response(
+                202,
+                json!({
+                    "ok": false,
+                    "running": true,
+                    "serverOwned": true,
+                    "kind": "solver_started",
+                    "error": "solver_started",
+                    "jobId": job_id,
+                    "executor": ServerExecutor::Agent.as_str(),
+                    "executionPhase": ServerExecutionPhase::AgentWaiting.as_str(),
+                    "progressBudgetSeconds": progress_budget_seconds,
+                    "progressRunIndex": progress_run_index,
+                    "requiredWorkers": 0,
+                    "retryAfterMs": 700
+                }),
+            );
+        }
+
+        server_execution_fence = app.solver_pool.prepare_vps_execution(&job_id, owner);
+        if server_execution_fence.is_none() {
+            // A hello can win the race between the online check and VPS
+            // reservation. Honor that fenced handoff instead of abandoning the
+            // canonical job.
+            if let Some(fence) = app
+                .solver_pool
+                .prepare_agent_execution(&job_id, owner)
+            {
+                if let Err(error) = spawn_server_owned_solver(
+                    app,
+                    job_id.clone(),
+                    owner.clone(),
+                    desired_workers,
+                    Arc::clone(&shared_body),
+                    request,
+                    ServerCoordinatorStart::Agent { fence },
+                ) {
+                    return json_response(
+                        500,
+                        json!({
+                            "ok": false,
+                            "kind": "solver_worker_start_failed",
+                            "error": error,
+                            "jobId": job_id
+                        }),
+                    );
+                }
+                return json_response(
+                    202,
+                    json!({
+                        "ok": false,
+                        "running": true,
+                        "serverOwned": true,
+                        "kind": "solver_started",
+                        "error": "solver_started",
+                        "jobId": job_id,
+                        "executor": ServerExecutor::Agent.as_str(),
+                        "executionPhase": ServerExecutionPhase::AgentWaiting.as_str(),
+                        "progressBudgetSeconds": progress_budget_seconds,
+                        "progressRunIndex": progress_run_index,
+                        "requiredWorkers": 0,
+                        "retryAfterMs": 700
+                    }),
+                );
+            }
+            cleanup_server_owned_job(app, &job_id, owner);
+            return json_response(
+                500,
+                json!({
+                    "ok": false,
+                    "kind": "solver_executor_state_invalid",
+                    "error": "solver_executor_state_invalid",
+                    "jobId": job_id
+                }),
+            );
+        }
     }
     let admission = if supports_fifo_admission {
         app.solver_pool
@@ -4476,7 +5104,11 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
                     desired_workers,
                     Arc::clone(&shared_body),
                     request,
-                    Some(guard),
+                    ServerCoordinatorStart::Vps {
+                        fence: server_execution_fence
+                            .expect("server-owned VPS fence exists"),
+                        initial_guard: Some(guard),
+                    },
                 ) {
                     return json_response(
                         500,
@@ -4497,6 +5129,8 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
                         "kind": "solver_started",
                         "error": "solver_started",
                         "jobId": job_id,
+                        "executor": ServerExecutor::Vps.as_str(),
+                        "executionPhase": ServerExecutionPhase::VpsRunning.as_str(),
                         "progressBudgetSeconds": progress_budget_seconds,
                         "progressRunIndex": progress_run_index,
                         "requiredWorkers": desired_workers,
@@ -4519,7 +5153,11 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
                     desired_workers,
                     Arc::clone(&shared_body),
                     request,
-                    None,
+                    ServerCoordinatorStart::Vps {
+                        fence: server_execution_fence
+                            .expect("server-owned VPS fence exists"),
+                        initial_guard: None,
+                    },
                 ) {
                     return json_response(
                         500,
@@ -4541,6 +5179,8 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
                     "kind": "solver_queued",
                     "error": "solver_queued",
                     "jobId": job_id,
+                    "executor": if server_owned { Value::String(ServerExecutor::Vps.as_str().to_string()) } else { Value::Null },
+                    "executionPhase": if server_owned { Value::String(ServerExecutionPhase::VpsQueued.as_str().to_string()) } else { Value::Null },
                     "progressBudgetSeconds": progress_budget_seconds,
                     "progressRunIndex": progress_run_index,
                     "queuePosition": position,
@@ -4561,8 +5201,45 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
         }
         SolverAdmission::AlreadyRunning => {
             if server_owned {
-                app.solver_pool.abandon_server_job(&job_id, owner);
-                app.agent_helper.finish_job(&job_id, owner);
+                if let Some(fence) = app
+                    .solver_pool
+                    .prepare_agent_execution(&job_id, owner)
+                {
+                    if let Err(error) = spawn_server_owned_solver(
+                        app,
+                        job_id.clone(),
+                        owner.clone(),
+                        desired_workers,
+                        Arc::clone(&shared_body),
+                        request,
+                        ServerCoordinatorStart::Agent { fence },
+                    ) {
+                        return json_response(
+                            500,
+                            json!({
+                                "ok": false,
+                                "kind": "solver_worker_start_failed",
+                                "error": error,
+                                "jobId": job_id
+                            }),
+                        );
+                    }
+                    return json_response(
+                        202,
+                        json!({
+                            "ok": false,
+                            "running": true,
+                            "serverOwned": true,
+                            "kind": "solver_started",
+                            "error": "solver_started",
+                            "jobId": job_id,
+                            "executor": ServerExecutor::Agent.as_str(),
+                            "executionPhase": ServerExecutionPhase::AgentWaiting.as_str(),
+                            "retryAfterMs": 700
+                        }),
+                    );
+                }
+                cleanup_server_owned_job(app, &job_id, owner);
             }
             return json_response(
                 409,
@@ -5681,87 +6358,6 @@ mod tests {
         })
     }
 
-    fn agent_selection_request(job_id: &str) -> Value {
-        json!({
-            "data": {
-                "lop": [
-                    {"id":"6A", "ten":"6A", "khoi":"6"},
-                    {"id":"6B", "ten":"6B", "khoi":"6"}
-                ],
-                "monhoc": [{"id":"math", "ten":"Math"}],
-                "mon": [{"khoi":"6", "ten":"Math", "sotiet":1, "gioihan":1}],
-                "pccmMatrix": {
-                    "6A|Math":"Shared Teacher",
-                    "6B|Math":"Shared Teacher"
-                },
-                "pccmTietMatrix": {"6A|Math":1, "6B|Math":1}
-            },
-            "settings": {"solve_run_id":job_id, "require_complete_schedule":true}
-        })
-    }
-
-    fn agent_selection_candidate(compact: bool, source: &str) -> Value {
-        let second_day = if compact { 2 } else { 3 };
-        let second_period = if compact { 2 } else { 1 };
-        json!({
-            "ok":true,
-            "source":source,
-            "lessons":[
-                {
-                    "classId":"6A", "subject":"Math", "teacher":"Shared Teacher",
-                    "room":"", "day":2, "session":"AM", "period":1, "fixed":false
-                },
-                {
-                    "classId":"6B", "subject":"Math", "teacher":"Shared Teacher",
-                    "room":"", "day":second_day, "session":"AM", "period":second_period,
-                    "fixed":false
-                }
-            ],
-            "unassignedLessons":[],
-            "metrics":{
-                "scheduled_periods":2,
-                "expected_periods":2,
-                "unassigned_periods":0,
-                "app_constraint_violation_count":0,
-                "hard_ok":true
-            },
-            "validation":{"hard_ok":true,"violations":[]}
-        })
-    }
-
-    fn store_agent_candidate(
-        app: &App,
-        owner: &SolverOwner,
-        binding: &str,
-        worker_token: &str,
-        job_id: &str,
-        request_body: Arc<Vec<u8>>,
-        candidate: Value,
-        now_ms: u64,
-    ) {
-        assert!(app
-            .agent_helper
-            .register_job(job_id, owner, Arc::clone(&request_body), 1, now_ms,));
-        let lease = app
-            .agent_helper
-            .claim_work(owner, binding, worker_token, now_ms + 1)
-            .unwrap();
-        let validated = native_solver::validate_agent_candidate(&request_body, &candidate).unwrap();
-        assert!(app
-            .agent_helper
-            .accept_submission(
-                owner,
-                binding,
-                worker_token,
-                &lease.work_id,
-                &lease.lease_token,
-                validated.payload,
-                validated.quality,
-                now_ms + 2,
-            )
-            .unwrap());
-    }
-
     #[test]
     fn agent_result_tree_digest_matches_the_python_cross_language_vector() {
         let first: Value = serde_json::from_str(r#"{"a":1,"b":[1e-7,-0.0],"c":"đ"}"#).unwrap();
@@ -5782,140 +6378,6 @@ mod tests {
             agent_helper_result_digest(&json!({"value":0.0})).unwrap(),
             agent_helper_result_digest(&json!({"value":-0.0})).unwrap()
         );
-    }
-
-    #[test]
-    fn canonical_completion_chooses_only_a_better_validated_agent_candidate() {
-        let (app, _token, owner) = agent_test_app();
-        let binding = agent_session_binding("selection-session");
-        let worker = app
-            .agent_helper
-            .register_worker(&owner, &binding, "selection-pc", "Selection PC", 1, 10_000)
-            .unwrap();
-
-        let better_request =
-            Arc::new(serde_json::to_vec(&agent_selection_request("remote-better")).unwrap());
-        store_agent_candidate(
-            &app,
-            &owner,
-            &binding,
-            &worker.worker_token,
-            "remote-better",
-            Arc::clone(&better_request),
-            agent_selection_candidate(true, "remote-compact"),
-            10_001,
-        );
-        let chosen = prefer_agent_candidate_response(
-            &app,
-            "remote-better",
-            &owner,
-            &better_request,
-            json_response(200, agent_selection_candidate(false, "local-worse")),
-        );
-        assert_eq!(response_payload(&chosen)["source"], json!("remote-compact"));
-        app.agent_helper.finish_job("remote-better", &owner);
-
-        let worse_request =
-            Arc::new(serde_json::to_vec(&agent_selection_request("remote-worse")).unwrap());
-        store_agent_candidate(
-            &app,
-            &owner,
-            &binding,
-            &worker.worker_token,
-            "remote-worse",
-            Arc::clone(&worse_request),
-            agent_selection_candidate(false, "remote-worse"),
-            10_100,
-        );
-        let chosen = prefer_agent_candidate_response(
-            &app,
-            "remote-worse",
-            &owner,
-            &worse_request,
-            json_response(200, agent_selection_candidate(true, "local-compact")),
-        );
-        assert_eq!(response_payload(&chosen)["source"], json!("local-compact"));
-        app.agent_helper.finish_job("remote-worse", &owner);
-    }
-
-    #[test]
-    fn failed_local_result_waits_for_a_late_valid_agent_candidate() {
-        let (app, _token, owner) = agent_test_app();
-        let binding = agent_session_binding("late-selection-session");
-        let worker = app
-            .agent_helper
-            .register_worker(
-                &owner,
-                &binding,
-                "late-selection-pc",
-                "Late Selection PC",
-                1,
-                now_millis(),
-            )
-            .unwrap();
-        let request = Arc::new(
-            serde_json::to_vec(&agent_selection_request("remote-late")).unwrap(),
-        );
-        assert!(app.agent_helper.register_job(
-            "remote-late",
-            &owner,
-            Arc::clone(&request),
-            1,
-            now_millis(),
-        ));
-        let lease = app
-            .agent_helper
-            .claim_work(
-                &owner,
-                &binding,
-                &worker.worker_token,
-                now_millis(),
-            )
-            .unwrap();
-        let candidate = agent_selection_candidate(true, "remote-late-compact");
-        let validated = native_solver::validate_agent_candidate(&request, &candidate).unwrap();
-
-        let background_app = app.clone();
-        let background_owner = owner.clone();
-        let background_binding = binding.clone();
-        let background_worker_token = worker.worker_token.clone();
-        let background_work_id = lease.work_id.clone();
-        let background_lease_token = lease.lease_token.clone();
-        let submitter = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(40));
-            background_app
-                .agent_helper
-                .accept_submission(
-                    &background_owner,
-                    &background_binding,
-                    &background_worker_token,
-                    &background_work_id,
-                    &background_lease_token,
-                    validated.payload,
-                    validated.quality,
-                    now_millis(),
-                )
-                .unwrap()
-        });
-
-        let chosen = prefer_agent_candidate_response_with_wait(
-            &app,
-            "remote-late",
-            &owner,
-            &request,
-            json_response(
-                500,
-                json!({"ok":false,"kind":"reference_solver_failed","error":"timeout"}),
-            ),
-            Duration::from_millis(500),
-        );
-        assert!(submitter.join().unwrap());
-        assert_eq!(response_status(&chosen), 200);
-        assert_eq!(
-            response_payload(&chosen)["source"],
-            json!("remote-late-compact")
-        );
-        app.agent_helper.finish_job("remote-late", &owner);
     }
 
     #[test]
@@ -6734,6 +7196,86 @@ mod tests {
     }
 
     #[test]
+    fn online_agent_gets_the_canonical_job_without_vps_allocation() {
+        let (app, token, owner) = agent_test_app();
+        let hello = agent_route(
+            &app,
+            Some(&token),
+            "/api/agent-helper/v1/hello",
+            agent_protocol_body(json!({
+                "agent":{"agentId":"exclusive-pc","version":"1.0.0","platform":"windows"},
+                "capacity":{"cpuWorkers":4,"maxConcurrentJobs":1}
+            })),
+        );
+        assert_eq!(response_status(&hello), 200);
+
+        let request = async_preserved_request("agent-only-canonical");
+        let started = solve_json(&app, request.to_string().as_bytes(), &owner);
+        assert_eq!(response_status(&started), 202);
+        let started_payload = response_payload(&started);
+        assert_eq!(started_payload["executor"], json!("agent"));
+        assert_eq!(started_payload["executionPhase"], json!("agent_waiting"));
+        assert_eq!(app.solver_pool.active_count(), 0);
+        assert_eq!(app.solver_pool.allocated_worker_tokens(), 0);
+
+        let running = solve_result_for_job_id_json(&app, "agent-only-canonical", &owner);
+        assert_eq!(response_status(&running), 202);
+        let running_payload = response_payload(&running);
+        assert_eq!(running_payload["executor"], json!("agent"));
+        assert_eq!(running_payload["running"], json!(true));
+
+        let cancelled = solve_cancel_json(
+            &app,
+            br#"{"jobId":"agent-only-canonical"}"#,
+            &owner,
+        );
+        assert_eq!(response_payload(&cancelled)["cancelRequested"], json!(true));
+        for _ in 0..100 {
+            if !app
+                .solver_pool
+                .server_job_known_for_owner("agent-only-canonical", &owner)
+            {
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(!app
+            .solver_pool
+            .server_job_known_for_owner("agent-only-canonical", &owner));
+    }
+
+    #[test]
+    fn online_agent_that_never_claims_falls_back_to_vps_on_the_same_job() {
+        let (app, token, owner) = agent_test_app();
+        let hello = agent_route(
+            &app,
+            Some(&token),
+            "/api/agent-helper/v1/hello",
+            agent_protocol_body(json!({
+                "agent":{"agentId":"idle-exclusive-pc","version":"1.0.0","platform":"windows"},
+                "capacity":{"cpuWorkers":4,"maxConcurrentJobs":1}
+            })),
+        );
+        assert_eq!(response_status(&hello), 200);
+
+        let request = async_preserved_request("agent-unclaimed-fallback");
+        let started = solve_json(&app, request.to_string().as_bytes(), &owner);
+        assert_eq!(response_status(&started), 202);
+        assert_eq!(response_payload(&started)["executor"], json!("agent"));
+        assert_eq!(app.solver_pool.active_count(), 0);
+
+        let completed = wait_for_server_result(&app, "agent-unclaimed-fallback", &owner);
+        assert_eq!(response_status(&completed), 200);
+        assert_eq!(app.solver_pool.active_count(), 0);
+        assert!(app
+            .solver_pool
+            .completed_server_response_for_owner("agent-unclaimed-fallback", &owner)
+            .is_some());
+        app.solver_pool
+            .abandon_server_job("agent-unclaimed-fallback", &owner);
+    }
+
+    #[test]
     fn server_owned_job_caps_return_http_429_before_spawning_more_threads() {
         let app = App {
             root: PathBuf::new(),
@@ -6799,7 +7341,10 @@ mod tests {
         let owner = SolverOwner::new("school-a", "admin-a");
         let blocker = app
             .solver_pool
-            .try_acquire("dedupe-blocker".to_string(), 6)
+            .try_acquire(
+                "dedupe-blocker".to_string(),
+                app.solver_pool.total_worker_tokens(),
+            )
             .expect("exclusive blocker");
 
         let first_request = async_preserved_request("dedupe-first");
@@ -6837,7 +7382,10 @@ mod tests {
         let owner = SolverOwner::new("school-a", "admin-a");
         let blocker = app
             .solver_pool
-            .try_acquire("scope-dedupe-blocker".to_string(), 6)
+            .try_acquire(
+                "scope-dedupe-blocker".to_string(),
+                app.solver_pool.total_worker_tokens(),
+            )
             .expect("exclusive blocker");
 
         let mut first_request = async_preserved_request("scope-dedupe-first");
@@ -6897,6 +7445,7 @@ mod tests {
             response_payload(&started)["kind"].as_str(),
             Some("solver_started")
         ));
+        assert_eq!(response_payload(&started)["executor"], json!("vps"));
         let duplicate = solve_json(&app, body.as_bytes(), &owner);
         assert!(matches!(response_status(&duplicate), 200 | 202));
 
@@ -7264,6 +7813,19 @@ mod tests {
             payload["solver"]["runtime_settings"]["returned_incumbent"],
             json!(true)
         );
+
+        let timeout_response = server_watchdog_timeout_response(&request);
+        assert_eq!(response_status(&timeout_response), 200);
+        let timeout_payload = response_payload(&timeout_response);
+        assert_eq!(timeout_payload["ok"], json!(true));
+        assert_eq!(
+            timeout_payload["solver"]["runtime_settings"]["phase"],
+            json!("server_watchdog_incumbent_fallback")
+        );
+        assert_eq!(
+            timeout_payload["solver"]["runtime_settings"]["deadline_hit"],
+            json!(true)
+        );
     }
 
     #[test]
@@ -7472,6 +8034,51 @@ mod tests {
         assert_eq!(
             payload["lease"]["limits"]["timeoutSeconds"],
             json!(MAX_SOLVER_DEADLINE_MS / 1_000)
+        );
+    }
+
+    #[test]
+    fn server_handoff_caps_every_agent_and_vps_deadline_to_remaining_budget() {
+        let request = json!({
+            "data": {},
+            "settings": {
+                "backend_deadline_ms": 180_000,
+                "native_global_deadline_ms": 180_000,
+                "native_deadline_reserve_ms": 1_500,
+                "overall_time_limit_seconds": 180,
+                "integrated_time_limit": 180,
+                "optimization_time_limit_seconds": 180
+            }
+        });
+        let capped = server_request_with_remaining_watchdog(&request, 37_500);
+        let settings = capped.get("settings").and_then(Value::as_object).unwrap();
+        assert_eq!(settings.get("backend_deadline_ms"), Some(&json!(37_500)));
+        assert_eq!(settings.get("native_global_deadline_ms"), Some(&json!(37_500)));
+        assert_eq!(
+            settings.get("reference_watchdog_deadline_ms"),
+            Some(&json!(37_500))
+        );
+        assert_eq!(settings.get("overall_time_limit_seconds"), Some(&json!(37)));
+        assert_eq!(settings.get("integrated_time_limit"), Some(&json!(37)));
+        assert_eq!(
+            settings.get("optimization_time_limit_seconds"),
+            Some(&json!(37))
+        );
+        let budget = reference_solver_budget(&capped);
+        assert_eq!(budget.hard_ms, 37_500);
+        assert_eq!(budget.backend_ms, 37_500);
+        assert_eq!(budget.native_ms, 37_500);
+
+        let body = serde_json::to_vec(&request).expect("request body");
+        let capped_body = server_request_body_with_remaining_watchdog(
+            &body,
+            Some(&request),
+            37_500,
+        );
+        let decoded: Value = serde_json::from_slice(&capped_body).expect("capped body");
+        assert_eq!(
+            decoded["settings"]["reference_watchdog_deadline_ms"],
+            json!(37_500)
         );
     }
 

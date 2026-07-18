@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 import sys
 import tarfile
@@ -43,10 +44,50 @@ def test_sensitive_and_build_paths_are_excluded() -> None:
         "rust_server_e2e.log",
         "start.exe",
         "TKB DEMO AI.rar",
+        ".github/workflows/test.yml",
+        "agent_helper/api.py",
+        "docs/PROJECT_HANDOFF.md",
+        "e2e_tests/test_suite.py",
+        "mail-server/server.test.js",
+        "rust_api/fixtures/sample-data-with-class-off.json",
+        "rust_api/prebuilt/README.md",
+        "rust_api/solver_pool_test_harness.rs",
+        "rust_api/vendor/sqlite3/sqlite3.dll",
+        "solver_runtime/tests/test_solver_result_contract.py",
+        "tests/test_vps_deploy_packaging.py",
+        "upx-5.2.0-win64/upx.exe",
     ]
     assert all(deploy.should_skip(path) for path in excluded)
     assert not deploy.should_skip("rust_api/src/main.rs")
     assert not deploy.should_skip("web/index.html")
+    assert not deploy.should_skip("web/downloads/TKBCherryAgent-release.json")
+    assert not deploy.should_skip("solver_runtime/src/tkb_new/adapter.py")
+    assert not deploy.should_skip("tools/vps-deploy/solver-pool.conf")
+
+
+def test_staging_profile_keeps_only_the_release_test_sources() -> None:
+    deploy = load_deploy_module()
+
+    included = [
+        "agent_helper/api.py",
+        "agent_helper/tests/test_api.py",
+        "rust_api/fixtures/sample-data-with-class-off.json",
+        "solver_runtime/tests/test_solver_result_contract.py",
+    ]
+    excluded = [
+        ".github/workflows/test.yml",
+        "agent_helper/.build-windows/TKBCherryAgent.exe",
+        "agent_helper/dist/TKBCherryAgent.exe",
+        "docs/PROJECT_HANDOFF.md",
+        "e2e_tests/test_suite.py",
+        "tests/test_vps_deploy_packaging.py",
+        "upx-5.2.0-win64/upx.exe",
+    ]
+
+    assert all(
+        not deploy.should_skip(path, deploy.PACKAGE_STAGING) for path in included
+    )
+    assert all(deploy.should_skip(path, deploy.PACKAGE_STAGING) for path in excluded)
 
 
 def test_tarball_contains_no_sensitive_or_build_files() -> None:
@@ -57,7 +98,38 @@ def test_tarball_contains_no_sensitive_or_build_files() -> None:
             names = archive.getnames()
         assert "rust_api/src/main.rs" in names
         assert "web/index.html" in names
+        assert "web/downloads/TKBCherryAgent-Windows.zip" in names
+        assert "web/downloads/TKBCherryAgent-release.json" in names
+        assert "solver_runtime/scripts/solve_stdio.py" in names
+        assert "solver_runtime/src/tkb_optimizer_ref/base_184_hint.json" in names
+        assert "mail-server/server.js" in names
+        assert "tools/vps-deploy/solver-pool.conf" in names
+        assert {name.split("/", 1)[0] for name in names} == {
+            "mail-server",
+            "rust_api",
+            "solver_runtime",
+            "tools",
+            "web",
+        }
         assert not any(deploy.should_skip(name.rstrip("/")) for name in names)
+    finally:
+        tarball.unlink(missing_ok=True)
+
+
+def test_staging_tarball_contains_release_suites_without_local_junk() -> None:
+    deploy = load_deploy_module()
+    tarball = deploy.make_tarball(deploy.PACKAGE_STAGING)
+    try:
+        with tarfile.open(tarball, "r:gz") as archive:
+            names = set(archive.getnames())
+        assert "agent_helper/api.py" in names
+        assert "agent_helper/tests/test_api.py" in names
+        assert "solver_runtime/tests/test_solver_result_contract.py" in names
+        assert "rust_api/fixtures/sample-data-with-class-off.json" in names
+        assert "agent_helper/dist/TKBCherryAgent.exe" not in names
+        assert "e2e_tests/test_suite.py" not in names
+        assert "tests/test_vps_deploy_packaging.py" not in names
+        assert "upx-5.2.0-win64/upx.exe" not in names
     finally:
         tarball.unlink(missing_ok=True)
 
@@ -110,17 +182,113 @@ def test_update_reinstalls_python_requirements_and_uses_unique_remote_paths() ->
     update_script = UPDATE_SERVER_PATH.read_text(encoding="utf-8")
     update_deploy = UPDATE_DEPLOY_PATH.read_text(encoding="utf-8")
     full_deploy = DEPLOY_PATH.read_text(encoding="utf-8")
+    full_install = INSTALL_SERVER_PATH.read_text(encoding="utf-8")
 
     assert "python3 -m pip install --break-system-packages" in update_script
     assert '"$APP_DIR/solver_runtime/requirements.txt"' in update_script
+    assert "cargo build --release --locked" in update_script
+    assert "cargo build --release --locked" in full_install
+    assert "libsqlite3-dev" in full_install
     assert 'secrets.token_hex(6)' in update_deploy
     assert 'remote_upload = f"/tmp/cherry-upload-{deploy_id}"' in update_deploy
     assert "TKB_DEPLOY_UPLOAD_DIR" in update_deploy
     assert 'secrets.token_hex(6)' in full_deploy
     assert 'remote_upload = f"/tmp/cherry-upload-{deploy_id}"' in full_deploy
+    assert "export TKB_DEPLOY_UPLOAD_DIR" in full_deploy
+    assert 'UPLOAD_DIR="${TKB_DEPLOY_UPLOAD_DIR:-/tmp/cherry-upload}"' in full_install
+    assert '"$UPLOAD_DIR/" "$APP_DIR/"' in full_install
+    assert "/tmp/cherry-upload/ \"$APP_DIR/\"" not in full_install
     assert "flock -n 9" in full_deploy
     assert "systemctl is-active --quiet tkb-app" in full_deploy
     assert "use update-deploy.py so solver jobs can drain" in full_deploy
+
+
+def test_production_and_staging_entrypoints_select_explicit_profiles() -> None:
+    deploy = DEPLOY_PATH.read_text(encoding="utf-8")
+    update = UPDATE_DEPLOY_PATH.read_text(encoding="utf-8")
+    stage = (ROOT / "tools" / "vps-deploy" / "stage-tests.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "make_tarball(PACKAGE_PRODUCTION)" in deploy
+    assert "make_tarball(PACKAGE_PRODUCTION)" in update
+    assert "make_tarball(PACKAGE_STAGING)" in stage
+
+
+def test_release_backup_avoids_agent_archive_duplication_and_keeps_rollback_pair() -> None:
+    script = UPDATE_SERVER_PATH.read_text(encoding="utf-8")
+
+    assert "capture_agent_rollback_files\n" in script
+    assert "restore_agent_rollback_files\n" in script
+    assert "cleanup_agent_rollback_stage\n" in script
+    assert "--exclude='web/downloads/TKBCherryAgent-Windows.zip'" in script
+    assert "--exclude='web/downloads/TKBCherryAgent-release.json'" in script
+    assert 'source="$AGENT_ROLLBACK_STAGE/$filename"' in script
+    assert 'cp -a "$source" "$downloads/$filename"' in script
+    assert script.index("restore_agent_rollback_files\n") < script.index(
+        "systemctl restart tkb-mail tkb-app", script.index("restore_release()")
+    )
+
+
+def test_runtime_cleanup_preserves_only_the_linux_release_binary() -> None:
+    for path in (UPDATE_SERVER_PATH, INSTALL_SERVER_PATH):
+        script = path.read_text(encoding="utf-8")
+        assert 'rm -rf -- "$APP_DIR/rust_api/target-gnu"' in script
+        assert '"$APP_DIR/solver_runtime/logs"' in script
+        assert '! -name release -exec rm -rf -- {} +' in script
+        assert '! -name tkb_rust_api -exec rm -rf -- {} +' in script
+        assert 'runtime_binary="$release_dir/tkb_rust_api"' in script
+        assert "prune_runtime_artifacts\n" in script
+
+
+def test_backup_retention_keeps_limits_manual_archives_and_current_backups() -> None:
+    script = UPDATE_SERVER_PATH.read_text(encoding="utf-8")
+    heredoc = 'python3 - "$BACKUP_DIR" "$RELEASE_BACKUP" "$STATE_BACKUP" <<\'PY_PRUNE_BACKUPS\'\n'
+    prune_start = script.index(heredoc) + len(heredoc)
+    prune_end = script.index("\nPY_PRUNE_BACKUPS\n", prune_start)
+    pruner = script[prune_start:prune_end]
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        directory = Path(temp_dir)
+        releases = []
+        states = []
+        for index in range(15):
+            path = directory / f"app-release-{index:02}.tar.gz"
+            path.write_bytes(b"release")
+            os.utime(path, (index + 1, index + 1))
+            releases.append(path)
+        for index in range(40):
+            path = directory / f"server-state-{index:02}.tar.gz"
+            path.write_bytes(b"state")
+            os.utime(path, (index + 1, index + 1))
+            states.append(path)
+        manual_release = directory / "app-release-manual-archive.tar.gz"
+        manual_state = directory / "server-state-manual-archive.tar.gz"
+        manual_release.write_bytes(b"manual")
+        manual_state.write_bytes(b"manual")
+
+        subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                pruner,
+                str(directory),
+                str(releases[0]),
+                str(states[0]),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        remaining_releases = list(directory.glob("app-release-[0-9][0-9].tar.gz"))
+        remaining_states = list(directory.glob("server-state-[0-9][0-9].tar.gz"))
+        assert len(remaining_releases) == 11
+        assert len(remaining_states) == 31
+        assert releases[0].exists()
+        assert states[0].exists()
+        assert manual_release.exists()
+        assert manual_state.exists()
 
 
 def test_nginx_serves_only_the_named_agent_release_files_directly() -> None:

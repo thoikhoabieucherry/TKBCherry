@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v230-balanced-refinement-interleave";
+  const VERSION = "tkb-rust-api-v231-concise-completion";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -21,8 +21,8 @@
     const MIN_CUSTOM_SOLVE_DURATION_SECONDS = 10;
     const MIN_FRESH_SOLVE_DURATION_SECONDS = 30;
     const MAX_CUSTOM_SOLVE_DURATION_SECONDS = 1800;
-    const SOLVE_COMPLETE_MESSAGE = "Đã xếp đủ tiết và đúng ràng buộc.";
-    const NO_BETTER_SCHEDULE_MESSAGE = "Chưa cải thiện thêm; đang giữ lịch hiện tại.";
+    const SOLVE_COMPLETE_MESSAGE = "Đã xếp xong!";
+    const NO_BETTER_SCHEDULE_MESSAGE = SOLVE_COMPLETE_MESSAGE;
     const SOLVER_PRESETS = {
       fast: { label: "Nhanh", bolts: 1 },
       balanced: { label: "Max", bolts: 2 }
@@ -6083,11 +6083,6 @@
     return inherited;
   }
 
-  function formatTeacherQualitySummary(payload){
-    const q = teacherQualitySummary(payload);
-    return `${q.teacherSessions} buổi GV, ${q.gap1} trống 1 tiết, ${q.onePeriod} dạy 1 tiết`;
-  }
-
   function hasVisibleTeacherQualityMetrics(payload){
     const metrics = payload?.metrics;
     return !!(
@@ -6103,9 +6098,9 @@
   function completionQualityStatus(payload, data){
     const completion = payloadCompletion(payload);
     const scheduled = Math.max(0, completion.scheduled || completion.expected || 0);
-    const genericMessage = scheduled > 0
-      ? `Đã xếp đủ ${scheduled} tiết và đúng ràng buộc.`
-      : SOLVE_COMPLETE_MESSAGE;
+    const genericMessage = completion.complete && completion.hardOk !== false
+      ? SOLVE_COMPLETE_MESSAGE
+      : (scheduled > 0 ? `Đã xếp ${scheduled} tiết nhưng chưa hoàn tất.` : "Chưa xếp xong.");
     if(!completion.complete || completion.hardOk === false){
       return {level:"warning", progressLabel:"Chưa đủ", message:genericMessage, targetMet:false};
     }
@@ -6122,16 +6117,11 @@
       && q.gap1 > Number(targets.gap1Target);
     const hardQualityDebt = q.onePeriod > 0 || q.gap2Plus > 0;
     const needsMore = hardQualityDebt || teacherDebt || gap1Debt;
-    const summary = `${q.teacherSessions} buổi, ${q.gap1} trống 1 tiết`;
-    const extra = [
-      q.onePeriod > 0 ? `${q.onePeriod} buổi dạy 1 tiết` : "",
-      q.gap2Plus > 0 ? `${q.gap2Plus} buổi trống từ 2 tiết` : ""
-    ].filter(Boolean).join(", ");
     if(needsMore){
       return {
         level:"warning",
         progressLabel:"Cần tối ưu",
-        message:`Đã xếp đủ ${scheduled} tiết. Hiện có ${summary}${extra ? `, ${extra}` : ""}; cần tối ưu thêm.`,
+        message:SOLVE_COMPLETE_MESSAGE,
         targetMet:false,
         quality:q,
         targets
@@ -6140,7 +6130,7 @@
     return {
       level:"ok",
       progressLabel:"Hoàn tất",
-      message:`Đã xếp đủ ${scheduled} tiết. Đạt mục tiêu hiện tại: ${summary}.`,
+      message:SOLVE_COMPLETE_MESSAGE,
       targetMet:true,
       quality:q,
       targets
@@ -6148,9 +6138,8 @@
   }
 
   function noBetterScheduleStatus(payload){
-    if(!hasVisibleTeacherQualityMetrics(payload)) return NO_BETTER_SCHEDULE_MESSAGE;
-    const q = teacherQualitySummary(payload);
-    return `Chưa cải thiện thêm. Giữ lịch: ${q.teacherSessions} buổi, ${q.gap1} trống 1 tiết.`;
+    void payload;
+    return NO_BETTER_SCHEDULE_MESSAGE;
   }
 
   function onePeriodTeacherSessionCount(metrics){
@@ -12244,13 +12233,9 @@
         finishProgress("Giữ lịch", "warning");
         window.__TKB_RUST_SOLVER_RUNNING = false;
         window.__TKB_SOLVE_UI_BUSY = false;
-        const message = [
-          incumbentQualityGuard.nearComplete
-            ? `Đã giữ lịch hiện tại vì phương án mới làm tăng buổi/tiết trống giáo viên quá nhiều. Lịch hiện tại còn Chưa phân: ${incumbentQualityGuard.missing} tiết.`
-            : NO_BETTER_SCHEDULE_MESSAGE,
-          `Lịch hiện tại: ${formatTeacherQualitySummary(incumbentPayload)}.`,
-          `Phương án mới: ${formatTeacherQualitySummary(payload)}.`
-        ].join("\n");
+        const message = incumbentQualityGuard.nearComplete
+          ? `Đã giữ lịch hiện tại vì phương án mới làm tăng buổi/tiết trống giáo viên quá nhiều. Lịch hiện tại còn Chưa phân: ${incumbentQualityGuard.missing} tiết.`
+          : NO_BETTER_SCHEDULE_MESSAGE;
         window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = message;
         setStatus(
           incumbentQualityGuard.nearComplete
@@ -12286,13 +12271,7 @@
         finishProgress("Giữ lịch", "warning");
         window.__TKB_RUST_SOLVER_RUNNING = false;
         window.__TKB_SOLVE_UI_BUSY = false;
-        const currentSessions = metricNumber(incumbentPayload?.metrics?.teacher_sessions);
-        const candidateSessions = metricNumber(payload?.metrics?.teacher_sessions);
-        const message = [
-          NO_BETTER_SCHEDULE_MESSAGE,
-          `Lịch hiện tại: ${currentSessions} buổi GV; phương án mới: ${candidateSessions} buổi GV.`,
-          `Thời gian thử lại: ${formatDuration(displayElapsed)}.`
-        ].join("\n");
+        const message = NO_BETTER_SCHEDULE_MESSAGE;
         window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = message;
         setStatus(noBetterScheduleStatus(incumbentPayload), "warning");
         publishE2EState("done", incumbentPayload, {message, keptIncumbent: true});
@@ -12532,6 +12511,7 @@
         teacherSessionGapQualityTarget,
         teacherSessionQuality,
         completionQualityStatus,
+        buildCompletionMessage,
         noBetterScheduleStatus,
         hasVisibleTeacherQualityMetrics,
         inheritRefinementRound,
