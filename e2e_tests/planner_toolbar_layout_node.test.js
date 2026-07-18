@@ -244,8 +244,8 @@ test("planner keeps eight compact, accessible commands in the mobile toolbar", (
     plannerHtml,
     /@media \(max-width:\s*900px\) and \(hover:\s*none\) and \(pointer:\s*coarse\),\s*\(max-width:\s*480px\)/
   );
-  assert.match(plannerHtml, /phanmon\.js\?v=20260718-v126-concise-completion-v1/);
-  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260718-v126-concise-completion-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260719-v130-frontier-staircase-v1/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260719-v130-frontier-staircase-v1/);
 });
 
 test("desktop Agent sits beside Home, uses an AI icon, and stays out of mobile layouts", () => {
@@ -273,7 +273,7 @@ test("desktop Agent sits beside Home, uses an AI icon, and stays out of mobile l
   assert.match(helperButton, /\shidden(?:\s|>)/);
   assert.match(helperButton, /aria-hidden="true"/);
   assert.match(plannerSource, /async function downloadAgentHelper\(\)/);
-  assert.match(plannerSource, /anchor\.href\s*=\s*"\/downloads\/TKBCherryAgent-Windows\.zip\?v=1\.6\.8"/);
+  assert.match(plannerSource, /anchor\.href\s*=\s*"\/downloads\/TKBCherryAgent-Windows\.zip\?v=1\.6\.11"/);
   assert.match(plannerSource, /anchor\.download\s*=\s*"TKBCherryAgent-Windows\.zip"/);
   assert.match(plannerSource, /Giải nén ZIP rồi mở TKBCherryAgent\.exe để kết nối\./);
   assert.match(plannerSource, /async function approveAgentPairFromUrl\(\)/);

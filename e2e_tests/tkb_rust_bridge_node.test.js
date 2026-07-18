@@ -1850,6 +1850,63 @@ test("a recorded no-improvement slice never blocks blank-duration sorting", () =
   assert.equal(hooks.optimizationPlateauState(data), null, "changing solver input unlocks optimization");
 });
 
+test("complete refinement request carries incumbent lessons while other requests stay compact", () => {
+  const data = makeData(2);
+  const subject = data.mon[0].ten;
+  data.tkb = {L1:{thu2:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]}}};
+  const lessons = [
+    {classId:"L1", className:"10A1", subject, teacher:"GV01", day:2, session:"AM", period:1},
+    {classId:"L1", className:"10A1", subject, teacher:"GV01", day:2, session:"AM", period:2}
+  ];
+  data.tkbSolverResult = {
+    lessons,
+    metrics:{
+      scheduled_periods:2,
+      expected_periods:2,
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      gap_sessions:[{teacher:"GV01", gap:1}]
+    },
+    validation:{hard_ok:true},
+    solver:{runtime_settings:{optimization_refinement_round:2}},
+    unassignedLessons:[]
+  };
+  const {hooks} = loadBridge(data);
+
+  const refine = hooks.dataForSolverRequest(data, {
+    allow_solver_warm_start:true,
+    preserve_existing_tkb:true,
+    ui_unified_solve_kind:"refine_complete",
+    ui_use_existing_complete_incumbent:true,
+    ui_existing_incumbent_revalidated:true
+  });
+  assert.equal(refine.tkbSolverResult.lessons.length, 2);
+  assert.equal(JSON.stringify(refine.tkbSolverResult.lessons), JSON.stringify(lessons));
+  assert.equal(refine.tkbSolverResult.metrics.gap_sessions, undefined);
+
+  delete data.tkbSolverResult.lessons;
+  const restoredRefine = hooks.dataForSolverRequest(data, {
+    allow_solver_warm_start:true,
+    preserve_existing_tkb:true,
+    ui_unified_solve_kind:"refine_complete",
+    ui_use_existing_complete_incumbent:true,
+    ui_existing_incumbent_revalidated:true
+  });
+  assert.equal(restoredRefine.tkbSolverResult.lessons.length, 2);
+  assert.equal(restoredRefine.tkbSolverResult.lessons[0].classId, "L1");
+
+  const genericWarm = hooks.dataForSolverRequest(data, {allow_solver_warm_start:true});
+  assert.ok(genericWarm.tkbSolverResult);
+  assert.equal(genericWarm.tkbSolverResult.lessons, undefined);
+
+  const fresh = hooks.dataForSolverRequest(data, {
+    allow_solver_warm_start:false,
+    ui_unified_solve_kind:"fresh_complete_first"
+  });
+  assert.equal(fresh.tkbSolverResult, undefined);
+});
+
 test("a persisted custom duration unlocks an optimized timetable immediately after reload", () => {
   const storage = memoryStorage();
   storage.setItem("TKB_SOLVE_DURATION_SECONDS_V2", "125");
@@ -2974,6 +3031,10 @@ test("refinement round survives POST, result application, and the next plan", as
     }
   };
   data.tkbSolverResult = {
+    lessons:[
+      {classId:"L1", className:"10A1", subject, teacher:"GV01", day:2, session:"AM", period:1},
+      {classId:"L1", className:"10A1", subject, teacher:"GV01", day:2, session:"AM", period:2}
+    ],
     metrics:{
       scheduled_periods:2,
       expected_periods:2,
@@ -3044,6 +3105,7 @@ test("refinement round survives POST, result application, and the next plan", as
 
   assert.ok(result);
   assert.equal(posted.settings.optimization_refinement_round, 4);
+  assert.equal(posted.data.tkbSolverResult.lessons.length, 2);
   assert.equal(posted.data.tkbSolverResult.solver.runtime_settings.optimization_refinement_round, 3);
   assert.ok(posted.data.tkb.L1);
   assert.equal(data.tkbSolverResult.solver.runtime_settings.optimization_refinement_round, 4);

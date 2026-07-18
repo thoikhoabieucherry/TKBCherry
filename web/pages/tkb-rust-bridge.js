@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v231-concise-completion";
+  const VERSION = "tkb-rust-api-v234-frontier-staircase";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -3892,6 +3892,12 @@
     const allowWarmStart = isTruthySetting(settings?.allow_solver_warm_start)
       || isTruthySetting(settings?.preserve_existing_tkb)
       || ["preserve_existing", "preserve-existing", "preserve"].includes(String(settings?.auto_sort_strategy || "").trim().toLowerCase());
+    const carryCompleteIncumbentLessons = String(settings?.ui_unified_solve_kind || "")
+      .trim()
+      .toLowerCase()
+      .replace(/-/g, "_") === "refine_complete"
+      && isTruthySetting(settings?.ui_use_existing_complete_incumbent)
+      && isTruthySetting(settings?.ui_existing_incumbent_revalidated);
     const requestSource = Object.assign({}, data || {});
     if(!allowWarmStart){
       delete requestSource.tkbSolverResult;
@@ -3900,7 +3906,21 @@
       delete requestSource.solverResult;
       delete requestSource.solverMetrics;
     }else if(requestSource.tkbSolverResult){
-      requestSource.tkbSolverResult = compactSolverResultForSnapshot(requestSource.tkbSolverResult);
+      const incumbent = requestSource.tkbSolverResult;
+      const compactIncumbent = compactSolverResultForSnapshot(incumbent);
+      if(
+        carryCompleteIncumbentLessons
+        && compactIncumbent
+        && typeof compactIncumbent === "object"
+      ){
+        const incumbentLessons = Array.isArray(incumbent.lessons) && incumbent.lessons.length
+          ? incumbent.lessons
+          : visibleScheduleLessonsFromData(data);
+        if(Array.isArray(incumbentLessons) && incumbentLessons.length){
+          compactIncumbent.lessons = incumbentLessons;
+        }
+      }
+      requestSource.tkbSolverResult = compactIncumbent;
     }
     const next = clonePlain(requestSource);
     if(!next || typeof next !== "object") return next;

@@ -1,12 +1,12 @@
 {
-  "archiveSha256": "4168c53a4187549c6ad1e5843edd833956c97947c775bc54a3fc5f59c24a480b",
-  "archiveSize": 92078973,
-  "archiveUrl": "/downloads/TKBCherryAgent-Windows.zip?v=1.6.8",
-  "executableSha256": "881e01381e5c1f16957aa98bf48184f3364c3775b904bdb270a594afe77cb668",
-  "executableSize": 92545151,
+  "archiveSha256": "b4f0cab37f43842adedf9c70dd49dabdf0645341ece405f3505e438554217c52",
+  "archiveSize": 91674716,
+  "archiveUrl": "/downloads/TKBCherryAgent-Windows.zip?v=1.6.11",
+  "executableSha256": "a2a7acc47db7610975389e86f643bd2759189fdfea5e5680c6e890ff96b32a6a",
+  "executableSize": 92139560,
   "protocol": "tkb-agent-release-v1",
-  "publishedAt": "2026-07-18T14:03:16Z",
-  "signature": "TU5FBglv-_PzMwNhiCUca_joPJk1LkzmLGbK1juEqWlopKWfghaQkBLuuIZC0-vaiDRdeQxUdLgNMQ23hV4pMIdgOQGeNoWSWy0wMSgkHn9nV004nHQwTyrkcy3Tq7oFFML_TGDumj-mYgO4-e7jDlvhDZHFmkShTb1x-24QrTxTt1NX6qLk9DaAeCQ0pRXMhOKOg9xEBg64MX8XWWCj3Qei4S5ahvfmS00IVDWQiRF2zWGJdG0HyHe86lRFVe0p3vI6iKsvC27mddGVlfjh5OC43J7KdZr-yetEf-SxQa0YEWxWZdF3WnbDCSUJnm_grfuaIj3VP69xXjJQS4Zv9E0M_Z3DNV0XO1GJq9BYeawWhf3fesolXuesjEGXnXatbu7ht7PmEnQirMN4Z5Np5wbPyNPdcQzsJIACI8GR5xmnXC5du4uDQtRHhCGF6oA0r3d1-ra4KoY6oxTcaotOB5CcYTl_UmnoqFt2_WqmLb4P6WD0FYl8e2Ei9qdxQ6tf",
+  "publishedAt": "2026-07-18T19:24:35Z",
+  "signature": "YA3T9YlA40n77NGZboi0vLBuLGC0xrTkqtezfkRNButAoY1Uk8rbl1rj-HuruhFe49mNcwjMyW7wuO-ya2OUAl4OUERy1BwcG91YiHdBWDyzs6QrBMslwl1UcCqGPSn1XyY-wFJsD98suSOYMjomgmKNxGnom7OVFpSM2a1t-RHuHRmXczcGGqgFqieFEw0IKihQbwVz6HNOVvGH3JM3LXg1mLIPeRTZFq0ybsooyaTF1WC907j1zDDtHK-rsuRs6CoQ9-ye9ELTFcArV4YojfRXLjV8HRC-P9CSdJgC3Xi_kpy5h1PPI199lOScLC1ZUy_9avMAladmPhbOvE-iUsknL7aM31brVNwf_LGc4Yy6BHOkFUmmTDhOMsQBj3NhykkBSiYcZxFVOzfzPyzlHLfyEalSOFNTu1ZPys7w2Bc3npHQ0wVbDeZsOgLHav8f7Rxcq3C4G-REO5p6j_JJEzV_kv7p_9Kr09Qpt25dBM61Lu9s_V2-VHN_AuEtxVUB",
   "signatureAlgorithm": "rsa-pkcs1-sha256",
-  "version": "1.6.8"
+  "version": "1.6.11"
 }

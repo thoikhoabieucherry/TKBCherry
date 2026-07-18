@@ -3165,6 +3165,97 @@ class SolverResultContractTests(unittest.TestCase):
         frontier = payload["solver"]["teacher_session_optimization"]["exploration_frontier"]
         self.assertTrue(frontier["returned_visible_incumbent"])
 
+    def test_refinement_at_practical_target_uses_incumbent_for_lower_cap(self) -> None:
+        data = {
+            "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
+            "giaovien": [{"magv": "T1", "ten": "T1"}],
+            "monhoc": [{"ten": "Math", "ma": "M"}],
+            "mon": [{"khoi": "6", "ten": "Math", "sotiet": 4, "gioihan": 4}],
+            "pccmMatrix": {"L1|Math": "T1"},
+            "tkbConstraints": {},
+        }
+        incumbent = _first_click_payload(teacher_sessions=466, gap1=44)
+        improved = _first_click_payload(teacher_sessions=461, gap1=33)
+        clock = [1_000.0]
+        attempted_caps: list[int] = []
+        hinted_sessions: list[int | None] = []
+
+        def fake_benders(_data, _settings, **kwargs):
+            attempted_caps.append(int(kwargs["cap"]))
+            hint = kwargs.get("incumbent_payload")
+            hint_metrics = hint.get("metrics") if isinstance(hint, dict) else None
+            hinted_sessions.append(
+                int(hint_metrics.get("teacher_sessions"))
+                if isinstance(hint_metrics, dict)
+                and hint_metrics.get("teacher_sessions") is not None
+                else None
+            )
+            clock[0] += 176.0
+            return json.loads(json.dumps(improved))
+
+        with (
+            patch("tkb_new.adapter.time.monotonic", side_effect=lambda: clock[0]),
+            patch(
+                "tkb_new.adapter._teacher_session_adaptive_bounds",
+                return_value={
+                    "lower_cap": 346,
+                    "start_cap": 466,
+                    "upper_cap": 1116,
+                    "expected_periods": 1566,
+                },
+            ),
+            patch(
+                "tkb_new.adapter._fast_benders_tight_fixed_off_profile",
+                return_value={
+                    "expected": 1566,
+                    "class_count": 54,
+                    "available_slots": 1566,
+                    "fixed_slots": 1566,
+                    "slack": 0,
+                },
+            ),
+            patch(
+                "tkb_new.adapter._validated_existing_soft_incumbent_payload",
+                return_value=incumbent,
+            ),
+            patch(
+                "tkb_new.adapter._polish_complete_incumbent_with_local_lns",
+                return_value=None,
+            ) as local_lns,
+            patch(
+                "tkb_new.adapter._solve_teacher_session_benders_candidate",
+                side_effect=fake_benders,
+            ),
+        ):
+            payload = _solve_teacher_session_optimized_from_ui_data(
+                data,
+                {
+                    "auto_sort_mode": "teacher_session_opt",
+                    "auto_sort_strategy": "continue_teacher_quality_from_incumbent",
+                    "ui_unified_auto_sort": True,
+                    "ui_unified_solve_kind": "refine_complete",
+                    "ui_use_existing_complete_incumbent": True,
+                    "quality_priority_order": "one_period_gap2_teacher_sessions_gap1",
+                    "target_gap1_sessions": 0,
+                    "optimization_accept_teacher_sessions": 466,
+                    "optimization_accept_gap1_sessions": 53,
+                    "optimization_time_limit_seconds": 180,
+                    "optimization_adaptive_time_limit_seconds": 180,
+                    "optimization_refine_try_lower_session_cap": True,
+                    "optimization_use_benders": True,
+                    "num_workers": 6,
+                },
+                rules=None,
+                progress=None,
+                out_dir=None,
+            )
+
+        local_lns.assert_not_called()
+        self.assertEqual(attempted_caps, [461])
+        self.assertEqual(hinted_sessions, [466])
+        self.assertEqual(payload["metrics"]["teacher_sessions"], 461)
+        self.assertEqual(_teacher_session_opt_gap1(payload["metrics"]), 33)
+
     def test_request_seed_reaches_global_refinement_queued_cap(self) -> None:
         data = {
             "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
@@ -5109,9 +5200,20 @@ class SolverResultContractTests(unittest.TestCase):
             polish_seeds=[11, 22, 33, 44],
             session_first=True,
         )
+        at_practical_target = _refinement_gap_priority_attempts(
+            {"teacher_sessions": 466, "gap_distribution": {0: 422, 1: 44}},
+            target_gap1_sessions=0,
+            preferred_cap=466,
+            accept_gap1_sessions=53,
+            lower_cap=346,
+            upper_cap=1116,
+            polish_seeds=[11, 22, 33, 44],
+            session_first=True,
+        )
 
         self.assertEqual(compact[0], (466, 11, "target:11"))
         self.assertEqual(rough[0], (521, 11, "seed:11"))
+        self.assertEqual(at_practical_target[0], (461, 22, "tighten:22"))
 
         forced_after_gap_progress = _refinement_gap_priority_attempts(
             {"teacher_sessions": 521, "gap_distribution": {0: 431, 1: 90}},

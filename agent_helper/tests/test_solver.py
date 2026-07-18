@@ -47,7 +47,7 @@ class SolverRunnerTests(unittest.TestCase):
         cases = (
             ("fresh_complete_first", 300, 2),
             ("fresh_complete_first", 1566, 4),
-            ("refine_complete", 1566, 3),
+            ("refine_complete", 1566, 6),
             ("fresh_complete_first", 3000, 6),
         )
         for solve_kind, expected, effective in cases:

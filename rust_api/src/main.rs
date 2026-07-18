@@ -24,19 +24,21 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-18-watchdog-reserve-agent-gate-v27";
+const VERSION: &str = "tkb_new-rust-api-2026-07-19-frontier-staircase-v30";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
 const MAX_REFERENCE_PROGRESS_FRAME_BYTES: usize = 32 * 1024;
 const AGENT_HELPER_PROTOCOL: &str = "tkb-agent-helper-v1";
 const AGENT_RESULT_DIGEST_PROTOCOL: &str = "tkb-json-tree-sha256-v1";
-// v1.6.8 is the first packaged runtime that exactly matches the canonical
-// v1.25+ solver contract used by the exclusive Agent/VPS dispatcher. Older
+// v1.6.11 is the first packaged runtime that continues below a practical
+// incumbent when its accepted cap equals the current teacher-session count.
+// It also preserves the exact incumbent lessons and uses the VPS-equivalent
+// worker width for large refinement requests. Older
 // binaries may speak protocol v1 but carry solver behavior that the current
 // server must not treat as an equivalent executor.
-const MIN_AGENT_HELPER_VERSION: &str = "1.6.8";
-const MIN_AGENT_HELPER_SEMVER: (u32, u32, u32) = (1, 6, 8);
+const MIN_AGENT_HELPER_VERSION: &str = "1.6.11";
+const MIN_AGENT_HELPER_SEMVER: (u32, u32, u32) = (1, 6, 11);
 // A canonical server-owned job has exactly one executor. Keeping one Agent
 // task (instead of a seed portfolio) prevents the Agent and VPS from adding
 // parallel attempts to the same user request.
@@ -44,7 +46,9 @@ const AGENT_HELPER_SEEDS_PER_JOB: usize = 1;
 #[cfg(not(test))]
 const AGENT_CLAIM_GRACE_MS: u64 = 8_000;
 #[cfg(test)]
-const AGENT_CLAIM_GRACE_MS: u64 = 100;
+// Keep test grace above the 150 ms HTTP lease-poll cadence so parallel tests
+// can observe a newly registered canonical task before the VPS fallback wins.
+const AGENT_CLAIM_GRACE_MS: u64 = 500;
 const MIN_SOLVER_DEADLINE_MS: u64 = 1_000;
 const MAX_SOLVER_DEADLINE_MS: u64 = 1_800_000;
 const DEFAULT_SOLVER_DEADLINE_MS: u64 = 180_000;
@@ -6671,7 +6675,7 @@ mod tests {
 
     #[test]
     fn agent_helper_version_gate_uses_strict_three_component_semver() {
-        for version in ["1.6.8", "1.6.9", "1.7.0", "2.0.0"] {
+        for version in ["1.6.11", "1.7.0", "2.0.0"] {
             assert!(
                 agent_helper_version_supported(version),
                 "{version} should be eligible"
@@ -6679,6 +6683,9 @@ mod tests {
         }
         for version in [
             "1.6.7",
+            "1.6.8",
+            "1.6.9",
+            "1.6.10",
             "1.6",
             "1.6.8-beta",
             "",
@@ -6811,14 +6818,14 @@ mod tests {
         assert_eq!(response_status(&started), 202);
         assert_eq!(response_payload(&started)["executor"], json!("agent"));
         let leased = (0..5)
-            .find_map(|_| {
+            .find_map(|attempt| {
                 let response = agent_route(
                     &app,
                     Some(&token),
                     "/api/agent-helper/v1/lease",
                     agent_protocol_body(json!({
                         "workerToken":worker_token.clone(),
-                        "leaseRequestId":"downgraded-current-request-0001",
+                        "leaseRequestId":format!("downgraded-current-request-{attempt:04}"),
                         "agent":{"agentId":"downgraded-lease-pc","version":MIN_AGENT_HELPER_VERSION,"platform":"windows"},
                         "capacity":{"cpuWorkers":4,"maxConcurrentJobs":1},
                         "waitSeconds":1
@@ -8194,6 +8201,42 @@ mod tests {
         assert_eq!(
             timeout_payload["solver"]["runtime_settings"]["deadline_hit"],
             json!(true)
+        );
+    }
+
+    #[test]
+    fn unified_refinement_watchdog_rejects_incumbent_without_lessons() {
+        let request = json!({
+            "settings": {
+                "ui_unified_auto_sort": true,
+                "ui_unified_solve_kind": "refine_complete",
+                "ui_use_existing_complete_incumbent": true,
+                "ui_existing_incumbent_revalidated": true,
+                "require_complete_schedule": true
+            },
+            "data": {
+                "tkbSolverResult": {
+                    "ok": true,
+                    "unassignedLessons": [],
+                    "metrics": {
+                        "scheduled_periods": 2,
+                        "expected_periods": 2,
+                        "unassigned_periods": 0,
+                        "app_constraint_violation_count": 0,
+                        "hard_ok": true,
+                        "core_hard_ok": true
+                    },
+                    "validation": {"hard_ok": true}
+                }
+            }
+        });
+
+        assert!(complete_existing_incumbent_payload(&request, "timeout", "detail").is_none());
+        let timeout = server_watchdog_timeout_response(&request);
+        assert_eq!(response_status(&timeout), 422);
+        assert_eq!(
+            response_payload(&timeout)["kind"],
+            json!("no_complete_schedule_before_deadline")
         );
     }
 

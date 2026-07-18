@@ -60,7 +60,11 @@ def _recommended_cpu_workers(request: Mapping[str, Any]) -> int:
     if expected and expected <= 600:
         return 2
     if solve_kind == "refine_complete":
-        return 3 if not expected or expected <= 2_400 else 4
+        # Complete refinement is the expensive quality lane.  It is the
+        # Agent's exclusive executor, so reserve the same six-worker search
+        # width used by the VPS for production-sized timetables instead of
+        # spending the whole watchdog on a three-worker slice.
+        return 6
     if not expected or expected <= 2_400:
         return 4
     return 6

@@ -1,4 +1,4 @@
-window.__PHANMON_VERSION = "updated-v8.6 (Agent 1.6.8 balanced refinement interleave)";
+window.__PHANMON_VERSION = "updated-v8.9 (Agent 1.6.11 frontier staircase)";
 
 (function installPlannerMobileViewportSync(){
   if(window.__TKB_MOBILE_VIEWPORT_SYNC_BOUND === true) return;
@@ -7475,7 +7475,7 @@ async function downloadAgentHelper(){
   try{
     _setStatus("Đang tải Agent cho Windows...", "info");
     const anchor = document.createElement("a");
-    anchor.href = "/downloads/TKBCherryAgent-Windows.zip?v=1.6.8";
+    anchor.href = "/downloads/TKBCherryAgent-Windows.zip?v=1.6.11";
     anchor.download = "TKBCherryAgent-Windows.zip";
     anchor.rel = "noopener";
     document.body.appendChild(anchor);

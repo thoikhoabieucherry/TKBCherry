@@ -6034,8 +6034,19 @@ def _refinement_gap_priority_attempts(
         min(int(upper_cap), _metric_int(metrics, "teacher_sessions", int(upper_cap))),
     )
     preferred = max(int(lower_cap), min(int(upper_cap), int(preferred_cap)))
-    if preferred >= current:
+    if preferred > current:
         return attempts
+    if preferred == current:
+        if current <= int(lower_cap):
+            return attempts
+        continuation_cap = max(int(lower_cap), current - 5)
+        seed_index = 1 if len(polish_seeds) > 1 else 0
+        seed = int(polish_seeds[seed_index])
+        lower_attempt = (continuation_cap, seed, f"tighten:{seed}")
+        return [
+            lower_attempt,
+            *[item for item in attempts if int(item[0]) != continuation_cap],
+        ]
     if not force_lower_session_first:
         # Once the gap is already practical, the proven direct target-cap
         # probe is faster than walking down a staircase one cap at a time.

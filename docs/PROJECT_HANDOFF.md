@@ -1,6 +1,6 @@
 # TKBCherry Project Handoff
 
-Last updated: 2026-07-18 (Asia/Bangkok)
+Last updated: 2026-07-19 (Asia/Bangkok)
 
 This is the persistent handoff note for future Codex sessions. Read this file
 before modifying the scheduler or deploying. Update it after every meaningful
@@ -8,19 +8,69 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current staged application release: **v1.27** (watchdog reserve and Agent
-  compatibility gate; staging verified on 2026-07-19). It is not deployed yet.
-- Current public Agent release: **v1.6.8** (`1.6.8`), carrying the v1.26
-  exclusive Agent/VPS handoff. Agent `1.6.3` and later
+- Current deployed application release: **v1.30** (frontier staircase).
+- Current public Agent release: **v1.6.11** (`1.6.11`). Agent `1.6.3` and later
   can offer this update inside the Agent after the user presses OK; Agent
   `1.6.2` and older still require one manual install of a self-update-capable
   build.
-- Agent v1.6.8 is built, UPX-packed, integrity-tested, GUI/solver-child-smoked,
-  signed, synchronized into `web/downloads`, and publicly verified.
 - Every deployed application or packaged Agent update must increment the
-applicable version here and add a short change note. Agent package updates
-must also update `agent_helper/__init__.py` and
-`agent_helper/windows_version_info.txt`.
+  applicable version here and add a short change note. Agent package updates
+  must also update `agent_helper/__init__.py` and
+  `agent_helper/windows_version_info.txt`.
+
+### v1.30 - 2026-07-19 (deployed)
+
+- Production Agent 1.6.10 received a complete-refinement job and returned the
+  unchanged complete, hard-valid `466` teacher sessions / `44` gap-1 schedule
+  after roughly three minutes. The browser, Rust dispatcher, Agent lease, and
+  solver-child wire all retain the request. Python reconstructs the soft
+  incumbent from the complete visible `data.tkb`, passes it into Benders, and
+  CP-SAT applies it with `AddHint`; the plateau was not caused by a missing
+  incumbent.
+- The packaged 1.6.10 adapter predates the final equality case in the bounded
+  staircase. At incumbent `466/44` with practical teacher target `466`, it
+  queues caps `466, 466, 467`; two stagnant attempts can stop the refinement
+  before any lower-session cap runs. The local source now queues cap `461`
+  first, with the exact `466` incumbent as the Benders soft hint. If that
+  candidate cannot also clear gap debt, the existing Pareto guard still returns
+  the exact visible incumbent.
+- Focused source regressions cover both the cap order and the end-to-end outer
+  contract: `466/44 -> cap 461` receives an incumbent payload at `466` and may
+  return `461/33`. The full solver-result contract suite passes `112/112` plus
+  nine subtests; Python bytecode compilation and `git diff --check` also pass.
+- Agent 1.6.11 is the first packaged runtime carrying this equality-case fix,
+  so the server accepts 1.6.11+ as active workers and leaves older Agents in
+  upgrade-only mode. Complete refinement requests six CPU workers, matching
+  the VPS production-width lane. The protected adapter was loaded directly and
+  verified to queue `461, 466, 466, 467`, not the stale 1.6.10 sequence.
+- GUI smoke before and after UPX, solver-child smoke, one-layer UPX integrity,
+  file/product version, and the signed manifest all pass. The public one-entry
+  ZIP is 91,674,716 bytes with SHA-256
+  `B4F0CAB37F43842ADEDF9C70DD49DABDF0645341ECE405F3505E438554217C52`;
+  the EXE is 92,139,560 bytes with SHA-256
+  `A2A7ACC47DB7610975389E86F643BD2759189FDFEA5E5680C6E890FF96B32A6A`.
+- Final staging returned `STAGING_TESTS_OK`: scheduler `124/124`, Agent
+  `71/71`, Rust API `136/136`, and candidate validator `20/20`. Local release
+  verification passes scheduler `112/112`, Agent `71/71`, deployment and
+  credential tooling `18/18`, frontend bridge/toolbar `182/182` across the
+  final sources, JavaScript syntax checks, and `git diff --check`.
+- Production deployment returned `UPDATE_OK`. Backups are
+  `/opt/cherry-scheduler-backups/server-state-20260718-193908.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260718-193908.tar.gz`. Public
+  health serves `tkb_new-rust-api-2026-07-19-frontier-staircase-v30`, zero
+  active/queued VPS jobs, and 6/6 free worker tokens. The page serves cache key
+  `20260719-v130-frontier-staircase-v1`, bridge marker
+  `tkb-rust-api-v234-frontier-staircase`, planner marker
+  `updated-v8.9 (Agent 1.6.11 frontier staircase)`, and signed Agent 1.6.11.
+- Production Agent E2E upgraded the installed `C:\TKBCherryAgent` copy from
+  1.6.10 to 1.6.11, showed exactly one online worker, and ran one canonical
+  refinement while VPS worker tokens stayed completely free. It returned a
+  complete hard-valid `1,566/1,566` timetable with zero unassigned, zero
+  singleton, and zero gap-2-plus sessions, but the visible Pareto guard retained
+  the incumbent `466` teacher sessions / `44` gap-1. This is safe but not yet a
+  quality improvement. Investigate whether cap `461` is too aggressive for the
+  first 60-second slice; benchmark nearby caps and a plateau-aware local-LNS
+  prelude before another scheduler release.
 
 ### v1.27 - 2026-07-19 (staged, not deployed)
 
@@ -33,9 +83,23 @@ must also update `agent_helper/__init__.py` and
   self-update flow can run, but they are excluded from online counts,
   handoff, and leases. Malformed versions and downgraded active leases are
   rejected and any lease is requeued to the VPS.
-- Staging verification after the patch: solver Python `123/123`, Agent
-  `71/71`, Rust API `135/135`, candidate validator `20/20`, and frontend
-  bridge `155/155` plus toolbar/mobile `38/38`.
+- Unified complete-refinement requests now retain the incumbent `lessons`
+  array inside the otherwise compact solver-result snapshot. If an earlier UI
+  rollback snapshot has already dropped that array, the bridge rebuilds it
+  from the visible timetable before POST. Generic warm-start requests remain
+  compact and fresh requests still omit `tkbSolverResult` entirely. Rust keeps
+  rejecting metrics-only or lesson-count-mismatched incumbents, so an expired
+  watchdog can return the exact complete incumbent with HTTP 200 without
+  weakening incomplete-schedule safety.
+- Staging verification before the incumbent-wire fix: solver Python
+  `123/123`, Agent `71/71`, Rust API `135/135`, candidate validator `20/20`,
+  and frontend bridge `155/155` plus toolbar/mobile `38/38`.
+- Local verification for the incumbent-wire fix passes frontend bridge
+  `156/156`, Rust API `136/136`, and JavaScript syntax checks. Full staging
+  verification still needs to be rerun before deployment. The bridge marker
+  and page cache key have not yet been bumped for this frontend delta.
+- Test-only Agent claim grace is `500 ms`, safely above the HTTP lease poll's
+  `150 ms` cadence; production claim grace remains `8 seconds`.
 - Candidate API marker: `tkb_new-rust-api-2026-07-18-watchdog-reserve-agent-gate-v27`.
 
 ### v1.26 - 2026-07-18 (deployed)
@@ -1504,16 +1568,16 @@ GET https://tkbcherry.com/pages/sapxep?sid=default
 Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
-Latest successful deployment marker observed on 2026-07-18: `UPDATE_OK` for
-v1.26. Public health serves API marker
-`tkb_new-rust-api-2026-07-18-exclusive-agent-handoff-v26`, zero active jobs,
-zero queued jobs, and 6/6 available worker tokens. The public page serves bridge
-`tkb-rust-api-v231-concise-completion` with cache key
-`20260718-v126-concise-completion-v1`; the planner marker is
-`updated-v8.6 (Agent 1.6.8 balanced refinement interleave)`. Public Agent release
-`1.6.8`, its signed release manifest, and its one-entry ZIP are verified. The
-public ZIP is byte-identical to local with SHA-256
-`4168C53A4187549C6AD1E5843EDD833956C97947C775BC54A3FC5F59C24A480B`.
+Latest successful deployment marker observed on 2026-07-19: `UPDATE_OK` for
+v1.30. Public health serves API marker
+`tkb_new-rust-api-2026-07-19-frontier-staircase-v30`, zero active jobs, zero
+queued jobs, and 6/6 available worker tokens. The public page serves bridge
+`tkb-rust-api-v234-frontier-staircase` with cache key
+`20260719-v130-frontier-staircase-v1`; the planner marker is
+`updated-v8.9 (Agent 1.6.11 frontier staircase)`. Public Agent release `1.6.11`,
+its signed release manifest, and its one-entry ZIP are verified. The public ZIP
+manifest SHA-256 is
+`B4F0CAB37F43842ADEDF9C70DD49DABDF0645341ECE405F3505E438554217C52`.
 Workstations on Agent `1.6.2` or older require one manual install of a
 self-update-capable build before future in-Agent updates are available.
 
@@ -1525,8 +1589,8 @@ self-update-capable build before future in-Agent updates are available.
   the Windows certificate stores during the v1.10 build. When the owner's token
   or certificate is available, sign the final EXE after UPX and add a trusted
   timestamp; never export or copy the private key into this repository.
-- `.git` exists locally but was empty/unusable when checked on 2026-07-16, so do
-  not assume `git status` or history is available. Inspect files directly and keep
-  edits tightly scoped.
+- The source repository is backed up to the private GitHub repository
+  `thoikhoabieucherry/TKBCherry` on branch `main`. Generated packages, databases,
+  school workbooks, credentials, and temporary build trees remain ignored.
 - The existing `PROJECT.md` and `progress.md` are older planning notes. This file
   is the authoritative current operational handoff.
