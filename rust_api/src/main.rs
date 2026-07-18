@@ -24,13 +24,19 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-18-exclusive-agent-handoff-v26";
+const VERSION: &str = "tkb_new-rust-api-2026-07-18-watchdog-reserve-agent-gate-v27";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
 const MAX_REFERENCE_PROGRESS_FRAME_BYTES: usize = 32 * 1024;
 const AGENT_HELPER_PROTOCOL: &str = "tkb-agent-helper-v1";
 const AGENT_RESULT_DIGEST_PROTOCOL: &str = "tkb-json-tree-sha256-v1";
+// v1.6.8 is the first packaged runtime that exactly matches the canonical
+// v1.25+ solver contract used by the exclusive Agent/VPS dispatcher. Older
+// binaries may speak protocol v1 but carry solver behavior that the current
+// server must not treat as an equivalent executor.
+const MIN_AGENT_HELPER_VERSION: &str = "1.6.8";
+const MIN_AGENT_HELPER_SEMVER: (u32, u32, u32) = (1, 6, 8);
 // A canonical server-owned job has exactly one executor. Keeping one Agent
 // task (instead of a seed portfolio) prevents the Agent and VPS from adding
 // parallel attempts to the same user request.
@@ -811,6 +817,68 @@ fn agent_helper_parallel(body: &Value) -> usize {
         .clamp(1, 8)
 }
 
+fn parse_agent_helper_semver(value: &str) -> Option<(u32, u32, u32)> {
+    let value = value.trim();
+    if value.is_empty() || value.len() > 32 {
+        return None;
+    }
+    let mut parts = value.split('.');
+    let mut next = || {
+        let part = parts.next()?;
+        if part.is_empty()
+            || !part.bytes().all(|byte| byte.is_ascii_digit())
+            || (part.len() > 1 && part.starts_with('0'))
+        {
+            return None;
+        }
+        part.parse::<u32>().ok()
+    };
+    let version = (next()?, next()?, next()?);
+    parts.next().is_none().then_some(version)
+}
+
+fn agent_helper_version_supported(version: &str) -> bool {
+    parse_agent_helper_semver(version).is_some_and(|version| version >= MIN_AGENT_HELPER_SEMVER)
+}
+
+fn agent_helper_body_version(body: &Value) -> &str {
+    body.get("agent")
+        .and_then(Value::as_object)
+        .and_then(|agent| agent.get("version"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+}
+
+fn agent_helper_upgrade_required_json() -> Vec<u8> {
+    json_response(
+        426,
+        json!({
+            "protocol": AGENT_HELPER_PROTOCOL,
+            "ok": false,
+            "kind": "agent_upgrade_required",
+            "error": "agent_upgrade_required",
+            "minimumAgentVersion": MIN_AGENT_HELPER_VERSION,
+            "downloadUrl": "/downloads/TKBCherryAgent-Windows.zip"
+        }),
+    )
+}
+
+fn agent_helper_upgrade_wait_json() -> Vec<u8> {
+    json_response(
+        200,
+        json!({
+            "protocol": AGENT_HELPER_PROTOCOL,
+            "ok": true,
+            "lease": Value::Null,
+            "retryAfterMs": AGENT_IDLE_RETRY_MS,
+            "agentEligible": false,
+            "upgradeRequired": true,
+            "minimumAgentVersion": MIN_AGENT_HELPER_VERSION,
+            "downloadUrl": "/downloads/TKBCherryAgent-Windows.zip"
+        }),
+    )
+}
+
 fn agent_helper_hello_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> Vec<u8> {
     let (owner, session_binding) = match agent_helper_context(app, auth_token) {
         Ok(value) => value,
@@ -831,11 +899,49 @@ fn agent_helper_hello_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> 
         .get("version")
         .and_then(Value::as_str)
         .unwrap_or_default();
+    let Some(version_semver) = parse_agent_helper_semver(version) else {
+        app.agent_helper.revoke_worker_identity(
+            &owner,
+            &session_binding,
+            agent_id,
+            now_millis(),
+        );
+        return agent_helper_upgrade_required_json();
+    };
     let platform = agent
         .get("platform")
         .and_then(Value::as_str)
         .unwrap_or_default();
     let name = format!("{} {}", platform.trim(), version.trim());
+    if version_semver < MIN_AGENT_HELPER_SEMVER {
+        return match app.agent_helper.register_upgrade_worker(
+            &owner,
+            &session_binding,
+            agent_id,
+            &name,
+            agent_helper_parallel(&body),
+            now_millis(),
+        ) {
+            Ok(registration) => json_response(
+                200,
+                json!({
+                    "protocol": AGENT_HELPER_PROTOCOL,
+                    "ok": true,
+                    "workerToken": registration.worker_token,
+                    "agentId": registration.worker_id,
+                    "heartbeatEveryMs": registration.heartbeat_every_ms,
+                    "workerExpiresAtMs": registration.worker_expires_at_ms,
+                    "leaseMs": registration.lease_ms,
+                    "agentEligible": false,
+                    "upgradeRequired": true,
+                    "minimumAgentVersion": MIN_AGENT_HELPER_VERSION,
+                    "downloadUrl": "/downloads/TKBCherryAgent-Windows.zip",
+                    "handoffJobIds": []
+                }),
+            ),
+            Err(error) => agent_helper_error_json(error),
+        };
+    }
     match app.agent_helper.register_worker(
         &owner,
         &session_binding,
@@ -860,6 +966,9 @@ fn agent_helper_hello_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> 
                     "heartbeatEveryMs": registration.heartbeat_every_ms,
                     "workerExpiresAtMs": registration.worker_expires_at_ms,
                     "leaseMs": registration.lease_ms,
+                    "agentEligible": true,
+                    "upgradeRequired": false,
+                    "minimumAgentVersion": MIN_AGENT_HELPER_VERSION,
                     "handoffJobIds": handoff_jobs
                 }),
             )
@@ -945,6 +1054,26 @@ fn agent_helper_claim_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> 
         Ok(value) => value,
         Err(response) => return response,
     };
+    let version = agent_helper_body_version(&body);
+    if !agent_helper_version_supported(version) {
+        if parse_agent_helper_semver(version).is_some()
+            && app.agent_helper.worker_eligibility(
+                &owner,
+                &session_binding,
+                &worker_token,
+                now_millis(),
+            ) == Some(false)
+        {
+            return agent_helper_upgrade_wait_json();
+        }
+        app.agent_helper.revoke_worker_token(
+            &owner,
+            &session_binding,
+            &worker_token,
+            now_millis(),
+        );
+        return agent_helper_upgrade_required_json();
+    }
     let cpu_workers = agent_helper_capacity(&body);
     let lease_request_id = body
         .get("leaseRequestId")
@@ -2765,7 +2894,13 @@ fn reference_solver_budget(request: &Value) -> ReferenceBudget {
     );
     let effective_backend_ms = backend_ms.min(watchdog_cap_ms.unwrap_or(MAX_SERVER_WATCHDOG_MS));
     let effective_native_ms = native_ms.min(watchdog_cap_ms.unwrap_or(MAX_SERVER_WATCHDOG_MS));
-    let effective_compute_ceiling_ms = effective_backend_ms.min(effective_native_ms);
+    // The watchdog is an end-to-end budget.  When a request is handed from
+    // the VPS to an Agent (or back), leave the configured serialization/
+    // upload reserve outside the child solver deadline.  Previously the
+    // watchdog cap was applied before adding the reserve, so a 120-second
+    // remaining lease gave the child the full 120 seconds and its complete
+    // JSON result was killed at the boundary.
+    let effective_compute_ceiling_ms = backend_ms.min(native_ms);
     if uses_unified_reference_compute_budget(settings) {
         let requested_watchdog_reserve = setting_u64(
             settings,
@@ -2777,7 +2912,9 @@ fn reference_solver_budget(request: &Value) -> ReferenceBudget {
             .saturating_add(requested_watchdog_reserve)
             .min(MAX_SOLVER_DEADLINE_MS)
             .min(watchdog_cap_ms.unwrap_or(MAX_SERVER_WATCHDOG_MS));
-        let solver_ms = effective_compute_ceiling_ms.min(hard_ms);
+        let solver_ms = effective_compute_ceiling_ms
+            .min(hard_ms.saturating_sub(requested_watchdog_reserve))
+            .max(MIN_SOLVER_DEADLINE_MS);
         return ReferenceBudget {
             hard_ms,
             solver_ms,
@@ -3316,6 +3453,39 @@ fn reference_payload_complete(payload: &Value) -> bool {
         && metrics_i64(payload, "unassigned_periods") == 0
         && metrics_i64(payload, "app_constraint_violation_count") == 0
         && metrics_bool(payload, "hard_ok")
+}
+
+/// A solver response is safe to keep after the watchdog boundary only when it
+/// is an actual successful, complete hard-valid schedule. Metrics alone are
+/// not enough: a failed/partial response can still report a stale incumbent.
+fn server_response_complete(response: &[u8]) -> bool {
+    if !response.starts_with(b"HTTP/1.1 200 ") {
+        return false;
+    }
+    let Some(separator) = response.windows(4).position(|window| window == b"\r\n\r\n") else {
+        return false;
+    };
+    let Some(payload) = serde_json::from_slice::<Value>(&response[separator + 4..]).ok() else {
+        return false;
+    };
+    payload.get("ok").and_then(Value::as_bool) == Some(true)
+        && complete_existing_incumbent_is_safe(&payload)
+}
+
+/// Apply the final watchdog fence without discarding a complete response that
+/// crossed the deadline by a few milliseconds while it was being serialized.
+fn server_watchdog_final_response(
+    request: &Value,
+    response: Vec<u8>,
+    remaining_watchdog_ms: Option<u64>,
+) -> Vec<u8> {
+    if remaining_watchdog_ms.is_some_and(|remaining_ms| remaining_ms < MIN_SOLVER_DEADLINE_MS)
+        && !server_response_complete(&response)
+    {
+        server_watchdog_timeout_response(request)
+    } else {
+        response
+    }
 }
 
 fn reference_payload_usable_partial(payload: &Value) -> bool {
@@ -4617,18 +4787,18 @@ fn spawn_server_owned_solver(
                             })
                         };
 
-                        let response = if request.is_some()
-                            && background_app
+                        let response = if let Some(request) = request.as_ref() {
+                            let remaining_watchdog_ms = background_app
                                 .solver_pool
                                 .server_job_watchdog_remaining_ms(
                                     &job_id,
                                     &owner,
                                     now_millis(),
-                                )
-                                .is_some_and(|remaining_ms| remaining_ms < MIN_SOLVER_DEADLINE_MS)
-                        {
-                            server_watchdog_timeout_response(
-                                request.as_ref().expect("watchdog request is present"),
+                                );
+                            server_watchdog_final_response(
+                                request,
+                                response,
+                                remaining_watchdog_ms,
                             )
                         } else {
                             response
@@ -4730,54 +4900,50 @@ fn spawn_server_owned_solver(
                             ) {
                                 break None;
                             }
-                            if request.is_some()
-                                && background_app
+                            let remaining_watchdog_ms = request.as_ref().and_then(|_| {
+                                background_app
                                     .solver_pool
                                     .server_job_watchdog_remaining_ms(
                                         &job_id,
                                         &owner,
                                         now_millis(),
                                     )
-                                    .is_some_and(|remaining_ms| {
-                                        remaining_ms < MIN_SOLVER_DEADLINE_MS
-                                    })
-                            {
-                                break Some(server_watchdog_timeout_response(
-                                    request.as_ref().expect("watchdog request is present"),
-                                ));
-                            }
+                            });
+                            let watchdog_expired = request.is_some()
+                                && remaining_watchdog_ms
+                                    .is_some_and(|remaining_ms| remaining_ms < MIN_SOLVER_DEADLINE_MS);
+                            // A candidate that has already passed validation wins the
+                            // boundary race; every other state remains watchdog-bounded.
                             match background_app.agent_helper.job_execution(
                                 &job_id,
                                 &owner,
                                 now_millis(),
                             ) {
+                                Some(AgentJobExecution::Completed {
+                                    candidate: Some(candidate),
+                                }) => {
+                                    let response = json_response(200, candidate.payload);
+                                    let response = if let Some(request) = request.as_ref() {
+                                        server_watchdog_final_response(
+                                            request,
+                                            response,
+                                            remaining_watchdog_ms,
+                                        )
+                                    } else {
+                                        response
+                                    };
+                                    break Some(response);
+                                }
+                                _ if watchdog_expired => break Some(
+                                    server_watchdog_timeout_response(
+                                        request.as_ref().expect("watchdog request is present"),
+                                    ),
+                                ),
                                 Some(AgentJobExecution::Leased { .. }) => {
                                     lease_started = true;
                                     let _ = background_app
                                         .solver_pool
                                         .mark_agent_execution_running(fence, &job_id, &owner);
-                                }
-                                Some(AgentJobExecution::Completed {
-                                    candidate: Some(candidate),
-                                }) => {
-                                    if request.is_some()
-                                        && background_app
-                                            .solver_pool
-                                            .server_job_watchdog_remaining_ms(
-                                                &job_id,
-                                                &owner,
-                                                now_millis(),
-                                            )
-                                            .is_some_and(|remaining_ms| {
-                                                remaining_ms < MIN_SOLVER_DEADLINE_MS
-                                            })
-                                    {
-                                        break Some(server_watchdog_timeout_response(
-                                            request.as_ref()
-                                                .expect("watchdog request is present"),
-                                        ));
-                                    }
-                                    break Some(json_response(200, candidate.payload));
                                 }
                                 Some(AgentJobExecution::Completed { candidate: None }) => {
                                     break None;
@@ -5789,6 +5955,7 @@ fn http_response(status: u16, content_type: &str, body: &[u8]) -> Vec<u8> {
         410 => "Gone",
         413 => "Payload Too Large",
         422 => "Unprocessable Entity",
+        426 => "Upgrade Required",
         429 => "Too Many Requests",
         500 => "Internal Server Error",
         503 => "Service Unavailable",
@@ -6425,7 +6592,7 @@ mod tests {
             Some(&agent_token),
             "/api/agent-helper/v1/hello",
             agent_protocol_body(json!({
-                "agent":{"agentId":"limited-pc","version":"0.1.0","platform":"windows"},
+                "agent":{"agentId":"limited-pc","version":MIN_AGENT_HELPER_VERSION,"platform":"windows"},
                 "capacity":{"cpuWorkers":2,"maxConcurrentJobs":1}
             })),
         );
@@ -6452,7 +6619,7 @@ mod tests {
             Some(&session_token),
             "/api/agent-helper/v1/hello",
             agent_protocol_body(json!({
-                "agent":{"agentId":"status-pc","version":"0.2.0","platform":"windows-amd64"},
+                "agent":{"agentId":"status-pc","version":MIN_AGENT_HELPER_VERSION,"platform":"windows-amd64"},
                 "capacity":{"cpuWorkers":2,"maxConcurrentJobs":1}
             })),
         );
@@ -6500,6 +6667,206 @@ mod tests {
             agent_helper_capacity(&json!({"capacity":{"cpuWorkers":999}})),
             256
         );
+    }
+
+    #[test]
+    fn agent_helper_version_gate_uses_strict_three_component_semver() {
+        for version in ["1.6.8", "1.6.9", "1.7.0", "2.0.0"] {
+            assert!(
+                agent_helper_version_supported(version),
+                "{version} should be eligible"
+            );
+        }
+        for version in [
+            "1.6.7",
+            "1.6",
+            "1.6.8-beta",
+            "",
+            "not-a-version",
+            "01.6.8",
+            "1.06.8",
+            "1.6.08",
+            "1.6.8.0",
+        ] {
+            assert!(
+                !agent_helper_version_supported(version),
+                "{version:?} should not be eligible"
+            );
+        }
+        assert_eq!(parse_agent_helper_semver(" 1.6.8 "), Some((1, 6, 8)));
+    }
+
+    #[test]
+    fn old_agent_stays_upgrade_only_without_handing_a_vps_job_over() {
+        let (app, token, owner) = agent_test_app();
+        assert_eq!(
+            app.solver_pool
+                .claim_server_job("old-agent-keeps-vps-owner", &owner),
+            ServerJobClaim::Claimed
+        );
+        let vps_fence = app
+            .solver_pool
+            .prepare_vps_execution("old-agent-keeps-vps-owner", &owner)
+            .expect("VPS execution fence");
+        assert_eq!(vps_fence.executor, ServerExecutor::Vps);
+        let before = app
+            .solver_pool
+            .server_execution_snapshot("old-agent-keeps-vps-owner", &owner)
+            .expect("VPS execution snapshot");
+
+        let old_hello = agent_route(
+            &app,
+            Some(&token),
+            "/api/agent-helper/v1/hello",
+            agent_protocol_body(json!({
+                "agent":{"agentId":"upgrade-only-pc","version":"1.6.7","platform":"windows"},
+                "capacity":{"cpuWorkers":4,"maxConcurrentJobs":1}
+            })),
+        );
+        assert_eq!(response_status(&old_hello), 200);
+        let old_payload = response_payload(&old_hello);
+        assert_eq!(old_payload["agentEligible"], json!(false));
+        assert_eq!(old_payload["upgradeRequired"], json!(true));
+        assert_eq!(
+            old_payload["minimumAgentVersion"],
+            json!(MIN_AGENT_HELPER_VERSION)
+        );
+        assert_eq!(old_payload["handoffJobIds"], json!([]));
+        assert_eq!(app.agent_helper.online_worker_count(&owner, now_millis()), 0);
+        let after = app
+            .solver_pool
+            .server_execution_snapshot("old-agent-keeps-vps-owner", &owner)
+            .expect("unchanged VPS execution snapshot");
+        assert_eq!(after.generation, before.generation);
+        assert_eq!(after.phase, before.phase);
+
+        let old_worker_token = old_payload["workerToken"].as_str().unwrap().to_string();
+        let old_lease = agent_route(
+            &app,
+            Some(&token),
+            "/api/agent-helper/v1/lease",
+            agent_protocol_body(json!({
+                "workerToken":old_worker_token,
+                "leaseRequestId":"upgrade-only-request-0001",
+                "agent":{"agentId":"upgrade-only-pc","version":"1.6.7","platform":"windows"},
+                "capacity":{"cpuWorkers":4,"maxConcurrentJobs":1},
+                "waitSeconds":0
+            })),
+        );
+        assert_eq!(response_status(&old_lease), 200);
+        assert_eq!(response_payload(&old_lease)["lease"], Value::Null);
+        assert_eq!(response_payload(&old_lease)["upgradeRequired"], json!(true));
+        let old_heartbeat = agent_route(
+            &app,
+            Some(&token),
+            "/api/agent-helper/v1/heartbeat",
+            agent_protocol_body(json!({
+                "workerToken":old_worker_token,
+                "agentId":"upgrade-only-pc",
+                "status":"idle"
+            })),
+        );
+        assert_eq!(response_status(&old_heartbeat), 200);
+
+        let current_hello = agent_route(
+            &app,
+            Some(&token),
+            "/api/agent-helper/v1/hello",
+            agent_protocol_body(json!({
+                "agent":{"agentId":"upgrade-only-pc","version":MIN_AGENT_HELPER_VERSION,"platform":"windows"},
+                "capacity":{"cpuWorkers":4,"maxConcurrentJobs":1}
+            })),
+        );
+        assert_eq!(response_status(&current_hello), 200);
+        let current_payload = response_payload(&current_hello);
+        assert_eq!(current_payload["agentEligible"], json!(true));
+        assert_eq!(
+            current_payload["handoffJobIds"],
+            json!(["old-agent-keeps-vps-owner"])
+        );
+        app.solver_pool
+            .abandon_server_job("old-agent-keeps-vps-owner", &owner);
+    }
+
+    #[test]
+    fn downgraded_lease_revokes_the_agent_and_falls_back_to_vps() {
+        let (app, token, owner) = agent_test_app();
+        let hello = agent_route(
+            &app,
+            Some(&token),
+            "/api/agent-helper/v1/hello",
+            agent_protocol_body(json!({
+                "agent":{"agentId":"downgraded-lease-pc","version":MIN_AGENT_HELPER_VERSION,"platform":"windows"},
+                "capacity":{"cpuWorkers":4,"maxConcurrentJobs":1}
+            })),
+        );
+        assert_eq!(response_status(&hello), 200);
+        let worker_token = response_payload(&hello)["workerToken"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let request = async_preserved_request("downgraded-agent-fallback");
+        let started = solve_json(&app, request.to_string().as_bytes(), &owner);
+        assert_eq!(response_status(&started), 202);
+        assert_eq!(response_payload(&started)["executor"], json!("agent"));
+        let leased = (0..5)
+            .find_map(|_| {
+                let response = agent_route(
+                    &app,
+                    Some(&token),
+                    "/api/agent-helper/v1/lease",
+                    agent_protocol_body(json!({
+                        "workerToken":worker_token.clone(),
+                        "leaseRequestId":"downgraded-current-request-0001",
+                        "agent":{"agentId":"downgraded-lease-pc","version":MIN_AGENT_HELPER_VERSION,"platform":"windows"},
+                        "capacity":{"cpuWorkers":4,"maxConcurrentJobs":1},
+                        "waitSeconds":1
+                    })),
+                );
+                (response_payload(&response)["lease"]["jobId"]
+                    == json!("downgraded-agent-fallback"))
+                .then_some(response)
+            })
+            .expect("canonical Agent lease should become available");
+        assert_eq!(response_status(&leased), 200);
+        assert_eq!(
+            response_payload(&leased)["lease"]["jobId"],
+            json!("downgraded-agent-fallback")
+        );
+
+        let downgraded = agent_route(
+            &app,
+            Some(&token),
+            "/api/agent-helper/v1/lease",
+            agent_protocol_body(json!({
+                "workerToken":worker_token,
+                "leaseRequestId":"downgraded-old-request-0002",
+                "agent":{"agentId":"downgraded-lease-pc","version":"1.6.7","platform":"windows"},
+                "capacity":{"cpuWorkers":4,"maxConcurrentJobs":1},
+                "waitSeconds":0
+            })),
+        );
+        assert_eq!(response_status(&downgraded), 426);
+        let downgraded_payload = response_payload(&downgraded);
+        assert_eq!(
+            downgraded_payload["kind"],
+            json!("agent_upgrade_required")
+        );
+        assert_eq!(
+            downgraded_payload["minimumAgentVersion"],
+            json!(MIN_AGENT_HELPER_VERSION)
+        );
+        assert_eq!(app.agent_helper.online_worker_count(&owner, now_millis()), 0);
+
+        let completed = wait_for_server_result(&app, "downgraded-agent-fallback", &owner);
+        assert_eq!(response_status(&completed), 200);
+        assert!(app
+            .solver_pool
+            .completed_server_response_for_owner("downgraded-agent-fallback", &owner)
+            .is_some());
+        app.solver_pool
+            .abandon_server_job("downgraded-agent-fallback", &owner);
     }
 
     #[test]
@@ -6667,7 +7034,7 @@ mod tests {
             Some(&token),
             "/api/agent-helper/v1/hello",
             agent_protocol_body(json!({
-                "agent":{"agentId":"replay-pc","version":"0.1.0","platform":"windows"},
+                "agent":{"agentId":"replay-pc","version":MIN_AGENT_HELPER_VERSION,"platform":"windows"},
                 "capacity":{"cpuWorkers":2,"maxConcurrentJobs":1}
             })),
         );
@@ -6687,7 +7054,7 @@ mod tests {
         let lease_body = agent_protocol_body(json!({
             "workerToken":worker_token,
             "leaseRequestId":"be672948-35a1-4619-a133-6548a61bb834",
-            "agent":{"agentId":"replay-pc","version":"0.1.0","platform":"windows"},
+            "agent":{"agentId":"replay-pc","version":MIN_AGENT_HELPER_VERSION,"platform":"windows"},
             "capacity":{"cpuWorkers":2,"maxConcurrentJobs":1},
             "waitSeconds":0
         }));
@@ -6718,6 +7085,7 @@ mod tests {
             agent_protocol_body(json!({
                 "workerToken":worker_token,
                 "leaseRequestId":"be672948-35a1-4619-a133-6548a61bb835",
+                "agent":{"agentId":"replay-pc","version":MIN_AGENT_HELPER_VERSION,"platform":"windows"},
                 "capacity":{"cpuWorkers":2,"maxConcurrentJobs":1},
                 "waitSeconds":0
             })),
@@ -6734,6 +7102,7 @@ mod tests {
             "/api/agent-helper/v1/lease",
             agent_protocol_body(json!({
                 "workerToken":worker_token,
+                "agent":{"agentId":"replay-pc","version":MIN_AGENT_HELPER_VERSION,"platform":"windows"},
                 "capacity":{"cpuWorkers":2,"maxConcurrentJobs":1},
                 "waitSeconds":0
             })),
@@ -6750,7 +7119,7 @@ mod tests {
     fn agent_helper_routes_require_a_session_and_keep_candidates_job_scoped() {
         let (app, token, owner) = agent_test_app();
         let hello = agent_protocol_body(json!({
-            "agent":{"agentId":"pc-1","version":"0.1.0","platform":"windows"},
+            "agent":{"agentId":"pc-1","version":MIN_AGENT_HELPER_VERSION,"platform":"windows"},
             "capacity":{"cpuWorkers":2,"maxConcurrentJobs":1}
         }));
         let unauthorized = agent_route(&app, None, "/api/agent-helper/v1/hello", hello.clone());
@@ -6783,7 +7152,7 @@ mod tests {
             agent_protocol_body(json!({
                 "workerToken":worker_token,
                 "leaseRequestId":"route-lease-request-0001",
-                "agent":{"agentId":"pc-1","version":"0.1.0","platform":"windows"},
+                "agent":{"agentId":"pc-1","version":MIN_AGENT_HELPER_VERSION,"platform":"windows"},
                 "capacity":{"cpuWorkers":2,"maxConcurrentJobs":1}
             })),
         );
@@ -6903,7 +7272,7 @@ mod tests {
             Some(&token),
             "/api/agent-helper/v1/hello",
             agent_protocol_body(json!({
-                "agent":{"agentId":"outcome-pc","version":"0.1.0","platform":"windows"},
+                "agent":{"agentId":"outcome-pc","version":MIN_AGENT_HELPER_VERSION,"platform":"windows"},
                 "capacity":{"cpuWorkers":2,"maxConcurrentJobs":1}
             })),
         );
@@ -6931,7 +7300,7 @@ mod tests {
                 agent_protocol_body(json!({
                     "workerToken":worker_token,
                     "leaseRequestId":format!("structured-request-{solver_status}"),
-                    "agent":{"agentId":"outcome-pc","version":"0.1.0","platform":"windows"},
+                    "agent":{"agentId":"outcome-pc","version":MIN_AGENT_HELPER_VERSION,"platform":"windows"},
                     "capacity":{"cpuWorkers":2,"maxConcurrentJobs":1},
                     "waitSeconds":0
                 })),
@@ -7203,7 +7572,7 @@ mod tests {
             Some(&token),
             "/api/agent-helper/v1/hello",
             agent_protocol_body(json!({
-                "agent":{"agentId":"exclusive-pc","version":"1.0.0","platform":"windows"},
+                "agent":{"agentId":"exclusive-pc","version":MIN_AGENT_HELPER_VERSION,"platform":"windows"},
                 "capacity":{"cpuWorkers":4,"maxConcurrentJobs":1}
             })),
         );
@@ -7252,7 +7621,7 @@ mod tests {
             Some(&token),
             "/api/agent-helper/v1/hello",
             agent_protocol_body(json!({
-                "agent":{"agentId":"idle-exclusive-pc","version":"1.0.0","platform":"windows"},
+                "agent":{"agentId":"idle-exclusive-pc","version":MIN_AGENT_HELPER_VERSION,"platform":"windows"},
                 "capacity":{"cpuWorkers":4,"maxConcurrentJobs":1}
             })),
         );
@@ -7829,6 +8198,94 @@ mod tests {
     }
 
     #[test]
+    fn watchdog_preserves_complete_hard_valid_response_at_deadline() {
+        let request = json!({"settings": {}});
+        let complete_payload = json!({
+            "ok": true,
+            "lessons": [{"classId":"L1","day":1,"period":1}],
+            "unassignedLessons": [],
+            "metrics": {
+                "scheduled_periods": 1,
+                "expected_periods": 1,
+                "unassigned_periods": 0,
+                "app_constraint_violation_count": 0,
+                "hard_ok": true,
+                "core_hard_ok": true
+            }
+        });
+        let complete_response = json_response(200, complete_payload);
+        assert!(server_response_complete(&complete_response));
+        let preserved = server_watchdog_final_response(
+            &request,
+            complete_response.clone(),
+            Some(MIN_SOLVER_DEADLINE_MS - 1),
+        );
+        assert_eq!(preserved, complete_response);
+
+        for invalid_payload in [
+            json!({
+                "ok": true,
+                "lessons": [{"classId":"L1"}],
+                "unassignedLessons": [{"classId":"L2"}],
+                "metrics": {
+                    "scheduled_periods": 1,
+                    "expected_periods": 2,
+                    "unassigned_periods": 1,
+                    "app_constraint_violation_count": 0,
+                    "hard_ok": false
+                }
+            }),
+            json!({
+                "ok": false,
+                "lessons": [{"classId":"L1"}],
+                "unassignedLessons": [],
+                "metrics": {
+                    "scheduled_periods": 1,
+                    "expected_periods": 1,
+                    "unassigned_periods": 0,
+                    "app_constraint_violation_count": 0,
+                    "hard_ok": true
+                }
+            }),
+            json!({
+                "ok": true,
+                "lessons": [],
+                "unassignedLessons": [],
+                "metrics": {
+                    "scheduled_periods": 1,
+                    "expected_periods": 1,
+                    "unassigned_periods": 0,
+                    "app_constraint_violation_count": 0,
+                    "hard_ok": true
+                }
+            }),
+        ] {
+            let response = json_response(200, invalid_payload);
+            assert!(!server_response_complete(&response));
+            let timeout = server_watchdog_final_response(
+                &request,
+                response,
+                Some(MIN_SOLVER_DEADLINE_MS - 1),
+            );
+            assert_eq!(response_status(&timeout), 422);
+            assert_eq!(
+                response_payload(&timeout)["kind"],
+                json!("no_complete_schedule_before_deadline")
+            );
+        }
+        assert!(!server_response_complete(
+            b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\nnot-json"
+        ));
+
+        let at_boundary = server_watchdog_final_response(
+            &request,
+            complete_response.clone(),
+            Some(MIN_SOLVER_DEADLINE_MS),
+        );
+        assert_eq!(at_boundary, complete_response);
+    }
+
+    #[test]
     fn unified_refinement_does_not_trust_incomplete_incumbent_metrics() {
         let request = json!({
             "settings": {
@@ -7974,6 +8431,35 @@ mod tests {
         assert_eq!(budget.hard_ms, 30_000);
         assert_eq!(budget.solver_ms, 28_500);
         assert_eq!(budget.reserve_ms, 1_500);
+    }
+
+    #[test]
+    fn unified_reference_budget_keeps_serialization_reserve_inside_remaining_watchdog() {
+        let request = json!({
+            "settings": {
+                "ui_unified_auto_sort": true,
+                "ui_unified_solve_kind": "refine_complete",
+                "ui_unified_reference_watchdog_reserve_ms": 5_000,
+                "backend_deadline_ms": 180_000,
+                "native_global_deadline_ms": 180_000,
+                "reference_watchdog_deadline_ms": 120_000,
+                "overall_time_limit_seconds": 180
+            }
+        });
+        let budget = reference_solver_budget(&request);
+        assert_eq!(budget.hard_ms, 120_000);
+        assert_eq!(budget.solver_ms, 115_000);
+        assert_eq!(budget.reserve_ms, 5_000);
+
+        let body = serde_json::to_vec(&request).expect("request body");
+        let helper: Value =
+            serde_json::from_slice(&reference_solver_body(&body, &request, budget, 3))
+                .expect("helper body");
+        assert_eq!(helper["settings"]["overall_time_limit_seconds"], json!(115));
+        assert_eq!(
+            helper["settings"]["reference_watchdog_deadline_ms"],
+            json!(120_000)
+        );
     }
 
     #[test]

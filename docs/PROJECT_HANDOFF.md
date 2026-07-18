@@ -8,9 +8,8 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.26** (deployed and publicly
-  health/asset/marker verified on 2026-07-18).
-- There is no newer staged application candidate after v1.26.
+- Current staged application release: **v1.27** (watchdog reserve and Agent
+  compatibility gate; staging verified on 2026-07-19). It is not deployed yet.
 - Current public Agent release: **v1.6.8** (`1.6.8`), carrying the v1.26
   exclusive Agent/VPS handoff. Agent `1.6.3` and later
   can offer this update inside the Agent after the user presses OK; Agent
@@ -22,6 +21,22 @@ change so a machine restart or a new conversation does not erase project context
 applicable version here and add a short change note. Agent package updates
 must also update `agent_helper/__init__.py` and
 `agent_helper/windows_version_info.txt`.
+
+### v1.27 - 2026-07-19 (staged, not deployed)
+
+- The shared VPS/Agent watchdog now reserves time for solver JSON
+  serialization and upload. A complete hard-valid response that crosses the
+  final millisecond fence is preserved; incomplete responses still become a
+  structured timeout. This fixes the production case where VPS-only sorting
+  left only the 54 fixed lessons.
+- Agent versions below `1.6.8` authenticate as upgrade-only workers so their
+  self-update flow can run, but they are excluded from online counts,
+  handoff, and leases. Malformed versions and downgraded active leases are
+  rejected and any lease is requeued to the VPS.
+- Staging verification after the patch: solver Python `123/123`, Agent
+  `71/71`, Rust API `135/135`, candidate validator `20/20`, and frontend
+  bridge `155/155` plus toolbar/mobile `38/38`.
+- Candidate API marker: `tkb_new-rust-api-2026-07-18-watchdog-reserve-agent-gate-v27`.
 
 ### v1.26 - 2026-07-18 (deployed)
 

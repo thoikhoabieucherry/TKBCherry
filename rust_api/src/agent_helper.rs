@@ -172,6 +172,7 @@ struct AgentWorker {
     session_binding: String,
     worker_id: String,
     _name: String,
+    eligible: bool,
     max_parallel: usize,
     last_seen_ms: u64,
     expires_at_ms: u64,
@@ -257,8 +258,101 @@ impl AgentHelperCoordinator {
         state
             .workers
             .values()
-            .filter(|worker| worker.owner == *owner && worker.expires_at_ms > now_ms)
+            .filter(|worker| {
+                worker.owner == *owner && worker.eligible && worker.expires_at_ms > now_ms
+            })
             .count()
+    }
+
+    /// Return whether an exact live worker token may receive canonical work.
+    /// Upgrade-only registrations remain authenticated for heartbeat/no-work
+    /// polling, but are deliberately excluded from executor selection.
+    pub fn worker_eligibility(
+        &self,
+        owner: &SolverOwner,
+        session_binding: &str,
+        worker_token: &str,
+        now_ms: u64,
+    ) -> Option<bool> {
+        let mut state = self.state.lock().ok()?;
+        prune_state(&mut state, now_ms);
+        authenticated_worker(
+            &state,
+            owner,
+            session_binding.trim(),
+            worker_token,
+            now_ms,
+        )
+        .ok()
+        .map(|(_, worker)| worker.eligible)
+    }
+
+    /// Remove every live registration for one Agent identity. This is used
+    /// when `/hello` proves that a previously accepted workstation has been
+    /// downgraded to an incompatible binary. Any lease is requeued so the
+    /// canonical coordinator can return it to the VPS.
+    pub fn revoke_worker_identity(
+        &self,
+        owner: &SolverOwner,
+        session_binding: &str,
+        worker_id: &str,
+        now_ms: u64,
+    ) -> bool {
+        let Ok(worker_id) = normalize_worker_id(worker_id) else {
+            return false;
+        };
+        let session_binding = session_binding.trim();
+        if session_binding.is_empty() {
+            return false;
+        }
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(_) => return false,
+        };
+        prune_state(&mut state, now_ms);
+        let revoked = state
+            .workers
+            .iter()
+            .filter(|(_, worker)| {
+                worker.owner == *owner
+                    && worker.session_binding == session_binding
+                    && worker.worker_id == worker_id
+            })
+            .map(|(token_hash, _)| token_hash.clone())
+            .collect::<HashSet<_>>();
+        for token_hash in &revoked {
+            state.workers.remove(token_hash);
+        }
+        release_worker_leases(&mut state.jobs, &revoked);
+        !revoked.is_empty()
+    }
+
+    /// Revoke the exact session-bound token that attempted to claim work with
+    /// an incompatible version. Ownership/session checks prevent one tenant
+    /// from invalidating another tenant's worker.
+    pub fn revoke_worker_token(
+        &self,
+        owner: &SolverOwner,
+        session_binding: &str,
+        worker_token: &str,
+        now_ms: u64,
+    ) -> bool {
+        let token_hash = secret_hash(worker_token.trim());
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(_) => return false,
+        };
+        prune_state(&mut state, now_ms);
+        let owned = state.workers.get(&token_hash).is_some_and(|worker| {
+            worker.owner == *owner && worker.session_binding == session_binding.trim()
+        });
+        if !owned {
+            return false;
+        }
+        state.workers.remove(&token_hash);
+        let revoked = HashSet::from([token_hash]);
+        release_worker_leases(&mut state.jobs, &revoked);
+        true
     }
 
     pub fn start_pairing(
@@ -622,6 +716,50 @@ impl AgentHelperCoordinator {
         max_parallel: usize,
         now_ms: u64,
     ) -> Result<AgentWorkerRegistration, AgentHelperError> {
+        self.register_worker_with_eligibility(
+            owner,
+            session_binding,
+            worker_id,
+            name,
+            max_parallel,
+            true,
+            now_ms,
+        )
+    }
+
+    /// Register an authenticated Agent only long enough for old packaged
+    /// clients to remain idle and offer their signed self-update. These
+    /// workers never count as online executors and cannot claim work.
+    pub fn register_upgrade_worker(
+        &self,
+        owner: &SolverOwner,
+        session_binding: &str,
+        worker_id: &str,
+        name: &str,
+        max_parallel: usize,
+        now_ms: u64,
+    ) -> Result<AgentWorkerRegistration, AgentHelperError> {
+        self.register_worker_with_eligibility(
+            owner,
+            session_binding,
+            worker_id,
+            name,
+            max_parallel,
+            false,
+            now_ms,
+        )
+    }
+
+    fn register_worker_with_eligibility(
+        &self,
+        owner: &SolverOwner,
+        session_binding: &str,
+        worker_id: &str,
+        name: &str,
+        max_parallel: usize,
+        eligible: bool,
+        now_ms: u64,
+    ) -> Result<AgentWorkerRegistration, AgentHelperError> {
         let worker_id = normalize_worker_id(worker_id)?;
         let session_binding = session_binding.trim();
         if session_binding.is_empty() {
@@ -671,6 +809,7 @@ impl AgentHelperCoordinator {
                 session_binding: session_binding.to_string(),
                 worker_id: worker_id.clone(),
                 _name: name,
+                eligible,
                 max_parallel,
                 last_seen_ms: now_ms,
                 expires_at_ms,
@@ -778,6 +917,9 @@ impl AgentHelperCoordinator {
         prune_state(&mut state, now_ms);
         let (worker_token_hash, worker) =
             authenticated_worker(&state, owner, session_binding, worker_token, now_ms)?;
+        if !worker.eligible {
+            return Err(AgentHelperError::NoWork);
+        }
 
         // Transport retries carry the same request ID. Resolve that replay
         // before enforcing capacity so the caller gets the exact active lease
@@ -1415,6 +1557,115 @@ mod tests {
             coordinator.online_worker_count(&owner, 1_000 + AGENT_WORKER_TTL_MS),
             0
         );
+    }
+
+    #[test]
+    fn upgrade_only_worker_can_idle_but_never_counts_online_or_claims_work() {
+        let coordinator = AgentHelperCoordinator::default();
+        let owner = SolverOwner::new("school-a", "admin-a");
+        let binding = session_binding("session-a");
+        assert!(coordinator.register_job(
+            "upgrade-only-job",
+            &owner,
+            Arc::new(br#"{"data":{},"settings":{}}"#.to_vec()),
+            1,
+            1_000,
+        ));
+        let worker = coordinator
+            .register_upgrade_worker(
+                &owner,
+                &binding,
+                "old-pc",
+                "Old PC",
+                1,
+                1_000,
+            )
+            .unwrap();
+
+        assert_eq!(coordinator.online_worker_count(&owner, 1_001), 0);
+        assert_eq!(
+            coordinator.worker_eligibility(
+                &owner,
+                &binding,
+                &worker.worker_token,
+                1_001
+            ),
+            Some(false)
+        );
+        assert!(coordinator
+            .heartbeat(&owner, &binding, &worker.worker_token, &[], 1_002)
+            .is_ok());
+        assert!(matches!(
+            coordinator.claim_work(&owner, &binding, &worker.worker_token, 1_003),
+            Err(AgentHelperError::NoWork)
+        ));
+        assert!(matches!(
+            coordinator.job_execution("upgrade-only-job", &owner, 1_004),
+            Some(AgentJobExecution::Queued)
+        ));
+    }
+
+    #[test]
+    fn revoking_worker_identity_or_token_requeues_its_active_lease() {
+        let coordinator = AgentHelperCoordinator::default();
+        let owner = SolverOwner::new("school-a", "admin-a");
+        let binding = session_binding("session-a");
+        assert!(coordinator.register_job(
+            "revoked-worker-job",
+            &owner,
+            Arc::new(br#"{"data":{},"settings":{}}"#.to_vec()),
+            1,
+            1_000,
+        ));
+        let first = coordinator
+            .register_worker(&owner, &binding, "pc-1", "PC 1", 1, 1_000)
+            .unwrap();
+        let first_lease = coordinator
+            .claim_work(&owner, &binding, &first.worker_token, 1_001)
+            .unwrap();
+
+        assert!(coordinator.revoke_worker_identity(
+            &owner,
+            &binding,
+            "PC-1",
+            1_002
+        ));
+        assert_eq!(coordinator.online_worker_count(&owner, 1_002), 0);
+        assert!(matches!(
+            coordinator.job_execution("revoked-worker-job", &owner, 1_002),
+            Some(AgentJobExecution::Queued)
+        ));
+        assert!(matches!(
+            coordinator.begin_submission(
+                &owner,
+                &binding,
+                &first.worker_token,
+                &first_lease.work_id,
+                &first_lease.lease_token,
+                1_003,
+            ),
+            Err(AgentHelperError::UnauthorizedWorker)
+        ));
+
+        let replacement = coordinator
+            .register_worker(&owner, &binding, "pc-1", "PC 1", 1, 1_003)
+            .unwrap();
+        let replacement_lease = coordinator
+            .claim_work(&owner, &binding, &replacement.worker_token, 1_004)
+            .unwrap();
+        assert_eq!(replacement_lease.work_id, first_lease.work_id);
+        assert_eq!(replacement_lease.attempt, 2);
+        assert!(coordinator.revoke_worker_token(
+            &owner,
+            &binding,
+            &replacement.worker_token,
+            1_005,
+        ));
+        assert_eq!(coordinator.online_worker_count(&owner, 1_005), 0);
+        assert!(matches!(
+            coordinator.job_execution("revoked-worker-job", &owner, 1_005),
+            Some(AgentJobExecution::Queued)
+        ));
     }
 
     #[test]
