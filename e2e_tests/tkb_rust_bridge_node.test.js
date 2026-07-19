@@ -301,6 +301,8 @@ function loadBridge(data, fetchImpl, runtime = {}){
   const window = {
     DATA: data,
     __TKB_E2E_EXPOSE_TEST_HOOKS: true,
+    TKBAuth: runtime.TKBAuth,
+    TKBAuthApi: runtime.TKBAuthApi,
     document,
     localStorage,
     sessionStorage,
@@ -5718,6 +5720,14 @@ test("iOS poll-only reattach keeps a complete incumbent when the server returns 
   assert.deepEqual(statusEvents.at(-1), {message:"Đã xếp xong!", type:"ok"});
   assert.equal(hooks.readPendingBackendJob(), null);
   assert.equal(hooks.isSettledBackendJob(jobId), true);
+  const reattachStart = BRIDGE_SOURCE.indexOf("async function reattachExistingServerJobPollOnly");
+  const reattachEnd = BRIDGE_SOURCE.indexOf("async function cancelBackendSolver", reattachStart);
+  const reattachBody = BRIDGE_SOURCE.slice(reattachStart, reattachEnd);
+  assert.match(
+    reattachBody,
+    /const retainedState = completeScheduleStateForExistingOptimize\(data\);\s*const retainedCompleteTerminal = !!retainedState;/,
+    "any terminal reattach failure must keep a complete hard-valid incumbent green"
+  );
 });
 
 test("poll-only reattach survives the pending row disappearing during its state probe", async () => {
@@ -6121,6 +6131,19 @@ test("pending jobs are scoped by sid and can auto-resume after reload", async ()
       return jsonResponse({ok:true, cancelRequested:true, jobId:cancelledJob});
     }
     if(requestUrl.includes("/api/solver-state")){
+      if(requestUrl.includes("jobId=stale-auto-resume")){
+        return jsonResponse({
+          ok:true,
+          requestedJobId:"stale-auto-resume",
+          requestedJobServerOwned:false,
+          requestedJobResultReady:false,
+          requestedJobActive:false,
+          requestedJobQueued:false,
+          jobs:[],
+          queue:[],
+          completedJobs:[]
+        });
+      }
       return jsonResponse({
         ok:true,
         requestedJobServerOwned:true,
@@ -6169,7 +6192,7 @@ test("pending jobs are scoped by sid and can auto-resume after reload", async ()
   assert.equal(progress.home.disabled, false);
 });
 
-test("a pending server job locks Home in place immediately after reload", () => {
+test("a pending server job locks Play and Home immediately after reload", () => {
   const data = makeData(2);
   const localStorage = memoryStorage();
   const location = {
@@ -6186,6 +6209,8 @@ test("a pending server job locks Home in place immediately after reload", () => 
     location
   });
   assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, "reload-running-job");
+  assert.equal(progress.button.disabled, true);
+  assert.notEqual(progress.label.textContent, "Sẵn sàng");
   assert.equal(progress.home.hidden, false);
   assert.equal(progress.home.disabled, true);
 
@@ -6375,6 +6400,405 @@ test("reload defers a temporary schedule fingerprint mismatch until DATA hydrati
   assert.equal(reloaded.window.__TKB_RUST_PROGRESS_STATE?.label, "10 giây");
   assert.equal(reloaded.window.__TKB_RUST_PROGRESS_STATE?.runIndex, 2);
   assert.match(progress.nodes.get("statusMsg").textContent, /nối lại/i);
+});
+
+test("reload keeps an active Agent job beyond slow DATA hydration and reattaches without Play", async () => {
+  const stableData = makeData(2);
+  const hydratingData = makeData(1);
+  const localStorage = memoryStorage();
+  const location = {
+    search:"?sid=default",
+    pathname:"/pages/sapxep",
+    href:"http://127.0.0.1:1010/pages/sapxep?sid=default"
+  };
+  const ownerId = "same-owner";
+  const jobId = "agent-running-through-slow-hydration";
+  const initial = loadBridge(stableData, null, {
+    localStorage,
+    location,
+    setTimeout(){ return 0; },
+    clearTimeout(){},
+    TKBAuth:{getSession:() => ({userId:ownerId})}
+  });
+  initial.window.TKBAuth = {getSession:() => ({userId:ownerId})};
+  const stableFingerprint = initial.hooks.durableScheduleFingerprint(stableData);
+  initial.hooks.writePendingBackendJob(jobId, stableFingerprint, {
+    createdAt:1_700_000_000_000 - 20_000,
+    solverStartedAtMs:1_700_000_000_000 - 16_000,
+    progressBudgetSeconds:60,
+    progressRunIndex:1
+  });
+
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const progress = createProgressDocument(clock);
+  let stateCalls = 0;
+  let resultPolls = 0;
+  let solvePosts = 0;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      stateCalls += 1;
+      return jsonResponse({
+        ok:true,
+        requestedJobId:jobId,
+        requestedJobServerOwned:true,
+        requestedJobActive:true,
+        requestedJobQueued:false,
+        requestedJobResultReady:false,
+        jobs:[{
+          jobId,
+          serverOwned:true,
+          executor:"agent",
+          executionPhase:"agent_running",
+          createdAtMs:clock.now() - 20_000,
+          startedAtMs:clock.now() - 16_000,
+          progressBudgetSeconds:60,
+          progressRunIndex:1,
+          scheduleFingerprint:stableFingerprint
+        }],
+        queue:[],
+        completedJobs:[]
+      });
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      throw detachedAbortError();
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      throw new Error("reload reattach must not submit a duplicate solve");
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const reloaded = loadBridge(hydratingData, fetchImpl, Object.assign({}, clock, {
+    localStorage,
+    location,
+    document:progress.document,
+    TKBAuth:{getSession:() => ({userId:ownerId})}
+  }));
+  assert.equal(progress.button.disabled, true, "reload must lock Play before the first state probe");
+  assert.notEqual(progress.label.textContent, "Sẵn sàng");
+
+  for(let attempt = 0; attempt < 6; attempt += 1){
+    assert.equal(await reloaded.hooks.resumePendingBackendJobOnLoad(attempt), false);
+  }
+  assert.equal(stateCalls, 0, "the short local hydration grace should avoid unnecessary state probes");
+
+  assert.equal(await reloaded.hooks.resumePendingBackendJobOnLoad(6), false);
+  assert.equal(stateCalls, 1, "the server must arbitrate whether the durable Agent job can be detached");
+  assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, jobId);
+  assert.equal(progress.button.disabled, true, "Play must stay locked while the Agent job remains live");
+  assert.match(progress.nodes.get("statusMsg").textContent, /nối lại/i);
+
+  Object.assign(hydratingData, JSON.parse(JSON.stringify(stableData)));
+  assert.equal(reloaded.hooks.durableScheduleFingerprint(hydratingData), stableFingerprint);
+  clock.advance(2_000);
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(stateCalls, 2);
+  assert.equal(resultPolls, 1, "hydrated DATA must automatically enter the same poll-only Agent job");
+  assert.equal(solvePosts, 0);
+  assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, jobId);
+});
+
+test("an Agent result completing during slow hydration stays pending until it can be applied", async () => {
+  const {data:stableData, payload:serverPayload} = makeLargeApplyFixture(1, 2);
+  const hydratingData = makeData(1);
+  const localStorage = memoryStorage();
+  const location = {
+    search:"?sid=default",
+    pathname:"/pages/sapxep",
+    href:"http://127.0.0.1:1010/pages/sapxep?sid=default"
+  };
+  const ownerId = "same-owner";
+  const jobId = "agent-completed-during-slow-hydration";
+  const initial = loadBridge(stableData, null, {
+    localStorage,
+    location,
+    setTimeout(){ return 0; },
+    clearTimeout(){}
+  });
+  initial.window.TKBAuth = {getSession:() => ({userId:ownerId})};
+  const stableFingerprint = initial.hooks.durableScheduleFingerprint(stableData);
+  initial.hooks.writePendingBackendJob(jobId, stableFingerprint, {
+    createdAt:1_700_000_000_000 - 20_000,
+    solverStartedAtMs:1_700_000_000_000 - 16_000,
+    progressBudgetSeconds:60
+  });
+
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const progress = createProgressDocument(clock);
+  let stateCalls = 0;
+  let resultPolls = 0;
+  let solvePosts = 0;
+  let cancelPosts = 0;
+  const fetchImpl = async (url) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      stateCalls += 1;
+      const completed = stateCalls >= 2;
+      return jsonResponse({
+        ok:true,
+        requestedJobId:jobId,
+        requestedJobServerOwned:true,
+        requestedJobActive:!completed,
+        requestedJobQueued:false,
+        requestedJobResultReady:completed,
+        jobs:completed ? [] : [{
+          jobId,
+          serverOwned:true,
+          executor:"agent",
+          executionPhase:"agent_running",
+          createdAtMs:clock.now() - 20_000,
+          startedAtMs:clock.now() - 16_000,
+          scheduleFingerprint:stableFingerprint
+        }],
+        queue:[],
+        completedJobs:completed ? [{
+          jobId,
+          serverOwned:true,
+          completedAtMs:clock.now(),
+          scheduleFingerprint:stableFingerprint
+        }] : []
+      });
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      return jsonResponse(serverPayload);
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      throw new Error("hydration recovery must not submit another solve");
+    }
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelPosts += 1;
+      throw new Error("hydration recovery must not cancel the completed Agent job");
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const reloaded = loadBridge(hydratingData, fetchImpl, Object.assign({}, clock, {
+    localStorage,
+    location,
+    document:progress.document,
+    TKBAuth:{getSession:() => ({userId:ownerId})}
+  }));
+
+  for(let attempt = 0; attempt < 7; attempt += 1){
+    assert.equal(await reloaded.hooks.resumePendingBackendJobOnLoad(attempt), false);
+  }
+  assert.equal(stateCalls, 1);
+  clock.advance(2_000);
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(stateCalls, 2);
+  assert.equal(resultPolls, 0, "a terminal result must wait for the matching visible DATA");
+  assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, jobId);
+  assert.equal(progress.button.disabled, true);
+
+  for(const key of Object.keys(hydratingData)) delete hydratingData[key];
+  Object.assign(hydratingData, JSON.parse(JSON.stringify(stableData)));
+  assert.equal(reloaded.hooks.durableScheduleFingerprint(hydratingData), stableFingerprint);
+  clock.advance(2_000);
+  for(let attempt = 0; attempt < 20 && reloaded.hooks.readPendingBackendJob(); attempt += 1){
+    await new Promise(resolve => setImmediate(resolve));
+  }
+
+  assert.equal(stateCalls, 3);
+  assert.equal(resultPolls, 1);
+  assert.equal(solvePosts, 0);
+  assert.equal(cancelPosts, 0);
+  assert.equal(reloaded.hooks.countScheduledLessons(hydratingData), 2);
+  assert.equal(reloaded.hooks.readPendingBackendJob(), null);
+});
+
+test("a fixed-only reload follows Agent to VPS handoff and applies the same completed job", async () => {
+  const {data:stableData, payload:serverPayload} = makeLargeApplyFixture(1, 2);
+  const subject = String(stableData.mon[0].ten);
+  stableData.tkb = {
+    L1:{thu2:{sang:[{mon:subject, fixed:true}, subject, "", "", ""], chieu:["", "", "", "", ""]}}
+  };
+  stableData.tkbSolverResult = JSON.parse(JSON.stringify(serverPayload));
+  const hydratingData = JSON.parse(JSON.stringify(stableData));
+  hydratingData.tkb.L1.thu2.sang[1] = "";
+  delete hydratingData.tkbSolverResult;
+
+  const localStorage = memoryStorage();
+  const location = {
+    search:"?sid=default",
+    pathname:"/pages/sapxep",
+    href:"http://127.0.0.1:1010/pages/sapxep?sid=default"
+  };
+  const ownerId = "same-owner";
+  const jobId = "completed-local-job-fixed-only-reload";
+  const initial = loadBridge(stableData, null, {
+    localStorage,
+    location,
+    setTimeout(){ return 0; },
+    clearTimeout(){},
+    TKBAuth:{getSession:() => ({userId:ownerId})}
+  });
+  const stableFingerprint = initial.hooks.durableScheduleFingerprint(stableData);
+  initial.hooks.writePendingBackendJob(jobId, stableFingerprint, {
+    createdAt:1_700_000_000_000 - 20_000,
+    solverStartedAtMs:1_700_000_000_000 - 16_000,
+    progressBudgetSeconds:60,
+    localClickTimeline:true
+  });
+
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const progress = createProgressDocument(clock);
+  let stateCalls = 0;
+  let resultPolls = 0;
+  let solvePosts = 0;
+  let cancelPosts = 0;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      stateCalls += 1;
+      const completed = stateCalls >= 3;
+      const executor = stateCalls === 1 ? "agent" : "vps";
+      return jsonResponse({
+        ok:true,
+        requestedJobId:jobId,
+        requestedJobServerOwned:true,
+        requestedJobActive:!completed,
+        requestedJobQueued:false,
+        requestedJobResultReady:completed,
+        requestedJobExecutor:completed ? "vps" : executor,
+        requestedJobExecutionPhase:completed
+          ? "completed"
+          : (executor === "agent" ? "agent_running" : "vps_running"),
+        jobs:completed ? [] : [{
+          jobId,
+          serverOwned:true,
+          executor,
+          executionPhase:executor === "agent" ? "agent_running" : "vps_running",
+          createdAtMs:clock.now() - 20_000,
+          startedAtMs:clock.now() - 16_000,
+          scheduleFingerprint:stableFingerprint
+        }],
+        queue:[],
+        completedJobs:completed ? [{
+          jobId,
+          serverOwned:true,
+          createdAtMs:clock.now() - 20_000,
+          completedAtMs:clock.now(),
+          scheduleFingerprint:stableFingerprint
+        }] : []
+      });
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      return jsonResponse(JSON.parse(JSON.stringify(serverPayload)));
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      throw new Error("fixed-only recovery must not start a second solve");
+    }
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelPosts += 1;
+      throw new Error("fixed-only recovery must not cancel the completed job");
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const reloaded = loadBridge(hydratingData, fetchImpl, Object.assign({}, clock, {
+    localStorage,
+    location,
+    document:progress.document,
+    TKBAuth:{getSession:() => ({userId:ownerId})}
+  }));
+  assert.equal(reloaded.hooks.readPendingBackendJob()?.localClickTimeline, true);
+  assert.equal(reloaded.hooks.expectedLessonCount(hydratingData), 2);
+  assert.equal(reloaded.hooks.countScheduledLessons(hydratingData), 1);
+
+  for(let attempt = 0; attempt < 6; attempt += 1){
+    assert.equal(await reloaded.hooks.resumePendingBackendJobOnLoad(attempt), false);
+  }
+  assert.equal(await reloaded.hooks.resumePendingBackendJobOnLoad(6), false);
+  assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, jobId);
+  assert.equal(progress.button.disabled, true);
+  assert.equal(await reloaded.hooks.resumePendingBackendJobOnLoad(7), false);
+  assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, jobId);
+  assert.equal(progress.button.disabled, true);
+  const recovered = await reloaded.hooks.resumePendingBackendJobOnLoad(8);
+
+  assert.ok(recovered, JSON.stringify({
+    scheduled:reloaded.hooks.countScheduledLessons(hydratingData),
+    pending:reloaded.hooks.readPendingBackendJob(),
+    status:progress.nodes.get("statusMsg").textContent,
+    lastError:reloaded.window.__TKB_SOLVER_LAST_ERROR,
+    lastErrorRaw:reloaded.window.__TKB_SOLVER_LAST_ERROR_RAW
+  }));
+  assert.equal(stateCalls, 3);
+  assert.equal(resultPolls, 1);
+  assert.equal(solvePosts, 0);
+  assert.equal(cancelPosts, 0);
+  assert.equal(reloaded.hooks.countScheduledLessons(hydratingData), 2);
+  assert.equal(reloaded.hooks.readPendingBackendJob(), null);
+  assert.match(progress.nodes.get("statusMsg").textContent, /xếp xong/i);
+});
+
+test("manual Play adopts a local pending Agent job without POST, cancel, or pre-apply mutation", async () => {
+  const {data, payload:serverPayload} = makeLargeApplyFixture(1, 2);
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const progress = createProgressDocument(clock);
+  const jobId = "manual-play-local-pending-agent";
+  let solvePosts = 0;
+  let cancelPosts = 0;
+  let resultPolls = 0;
+  let visibleBeforeApply = null;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      assert.equal(JSON.stringify({
+        tkb:data.tkb,
+        teachers:data.tkbLessonTeachers || {},
+        rooms:data.tkbLessonRooms || {},
+        off:data.tkbUserOff || {}
+      }), visibleBeforeApply);
+      return jsonResponse(serverPayload);
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      throw new Error("manual adoption must not POST the pending job again");
+    }
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelPosts += 1;
+      throw new Error("manual adoption must not cancel the pending job");
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+    document:progress.document
+  }));
+  hooks.writePendingBackendJob(jobId, hooks.durableScheduleFingerprint(data), {
+    createdAt:clock.now() - 20_000,
+    solverStartedAtMs:clock.now() - 16_000,
+    localClickTimeline:true
+  });
+  assert.equal(hooks.readPendingBackendJob()?.discoveredFromOwnerState, false);
+  visibleBeforeApply = JSON.stringify({
+    tkb:data.tkb,
+    teachers:data.tkbLessonTeachers || {},
+    rooms:data.tkbLessonRooms || {},
+    off:data.tkbUserOff || {}
+  });
+
+  const result = await window.sapXepTuDongAll();
+
+  assert.ok(result);
+  assert.equal(resultPolls, 1);
+  assert.equal(solvePosts, 0);
+  assert.equal(cancelPosts, 0);
+  assert.equal(hooks.countScheduledLessons(data), 2);
+  assert.equal(hooks.readPendingBackendJob(), null);
 });
 
 test("blank anonymous browser checks the shared server job state without attaching unrelated work", async () => {
@@ -6939,7 +7363,9 @@ test("manual Play attaches as an observer to a same-owner same-sid running job",
     throw new Error(`Unexpected URL: ${url}`);
   };
   const {window, hooks} = loadBridge(data, fetchImpl, {
-    location:{search:"?sid=default", pathname:"/pages/sapxep"}
+    location:{search:"?sid=default", pathname:"/pages/sapxep"},
+    setTimeout(){ return 0; },
+    clearTimeout(){}
   });
   window.TKBAuth = {getSession:() => ({userId:"same-owner"})};
   const guard = await hooks.inspectExistingBackendJobForManualSolve(data);
@@ -8268,7 +8694,7 @@ test("offline pending jobs retain a low-frequency retry and online wakeup", asyn
 
   assert.equal(await hooks.resumePendingBackendJobOnLoad(6), false);
   assert.equal(hooks.readPendingBackendJob()?.jobId, "offline-resume");
-  assert.equal(clock.pendingTimers(), 1);
+  assert.ok(clock.pendingTimers() >= 1, "offline recovery must retain its reconnect timer");
   assert.match(BRIDGE_SOURCE, /addEventListener\?\.\("online"/);
 });
 

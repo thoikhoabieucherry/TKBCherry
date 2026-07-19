@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v244-cross-tab-agent-reattach";
+  const VERSION = "tkb-rust-api-v245-ios-pwa-durable-resume";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -62,6 +62,7 @@
     const SERVER_SOLVER_JOB_BACKGROUND_RETRY_MS = 15_000;
     const SERVER_SOLVER_AUTH_READY_RETRIES = 12;
     const SERVER_SOLVER_FINGERPRINT_HYDRATION_RETRIES = 6;
+    const SERVER_SOLVER_COMPLETED_HYDRATION_RETRIES = 30;
 
     function solverRequestHeaders(extra){
       const fallback = Object.assign({"Accept": "application/json"}, extra || {});
@@ -434,6 +435,8 @@
     let activeServerJobReattachLeaseId = "";
     let pendingFingerprintHydrationJobId = "";
     let pendingFingerprintHydrationAttempts = 0;
+    let pendingCompletedHydrationJobId = "";
+    let pendingCompletedHydrationAttempts = 0;
     let completionPopupTimer = 0;
     let solveRunCounter = 0;
     let statusDotsTimer = 0;
@@ -1775,6 +1778,25 @@
     return err;
   }
 
+  function localPendingCanRecoverIncompleteHydration(metadata, data){
+    if(
+      metadata?.allowIncompleteHydrationRecovery !== true
+      || metadata?.localClickTimeline !== true
+      || metadata?.observeOnly === true
+      || !data
+    ) return false;
+    const expected = Math.max(0, Number(expectedLessonCount(data) || 0) || 0);
+    const scheduled = Math.max(0, Number(countScheduledLessons(data) || 0) || 0);
+    const flexibleScheduled = Math.max(
+      0,
+      Number(countScheduledLessons(data, {flexibleOnly:true}) || 0) || 0
+    );
+    // This exception is only for the known iOS bootstrap shape: the page has
+    // loaded fixed anchors but not the flexible timetable yet. A genuinely
+    // edited partial timetable keeps normal fingerprint protection.
+    return expected > 0 && scheduled < expected && flexibleScheduled === 0;
+  }
+
   async function reattachExistingServerJobPollOnly(jobMetadata){
     const metadata = jobMetadata && typeof jobMetadata === "object" ? jobMetadata : {};
     const jobId = String(metadata.jobId || "").trim();
@@ -1785,10 +1807,15 @@
     const scheduleFingerprint = String(
       metadata.scheduleFingerprint || durableScheduleFingerprint(data) || ""
     ).trim();
+    const incompleteHydrationRecovery = localPendingCanRecoverIncompleteHydration(
+      metadata,
+      data
+    );
     if(
       metadata.scheduleFingerprint
       && scheduleFingerprint
       && !durableScheduleFingerprintMatches(scheduleFingerprint, data)
+      && !incompleteHydrationRecovery
     ){
       const mismatch = reattachTerminalPayloadError(
         "Lịch hiện tại đã thay đổi; kết quả cũ trên máy chủ không được áp dụng.",
@@ -1860,6 +1887,16 @@
         );
       }
       const completion = payloadCompletion(payload);
+      if(
+        incompleteHydrationRecovery
+        && (!completion.complete || completion.hardOk === false)
+      ){
+        throw reattachTerminalPayloadError(
+          "Kết quả máy chủ chưa hoàn chỉnh; lịch đang hiển thị được giữ nguyên.",
+          "solver_resume_incomplete_hydration_result",
+          payload
+        );
+      }
       const metricsShapeOk = completion.expected > 0
         && completion.scheduled >= 0
         && completion.unassigned >= 0
@@ -1985,9 +2022,7 @@
         // a red error after an iPhone reload/background resume.
         const friendly = friendlySolveError(err);
         const retainedState = completeScheduleStateForExistingOptimize(data);
-        const retainedCompleteTerminal = friendly?.statusLevel === "ok"
-          && friendly?.statusMessage === SOLVE_COMPLETE_MESSAGE
-          && !!retainedState;
+        const retainedCompleteTerminal = !!retainedState;
         if(retainedCompleteTerminal){
           const retainedPayload = visibleCompleteIncumbentQualityPayload(
             data,
@@ -2005,7 +2040,10 @@
             pollOnlyReattach:true,
             jobId,
             keptIncumbent:true,
-            terminalQualityFailure:true
+            terminalQualityFailure:true,
+            terminalKind:String(err?.kind || err?.payload?.kind || ""),
+            terminalMessage:String(err?.message || ""),
+            terminalStatusLevel:String(friendly?.statusLevel || friendly?.level || "")
           });
           return retainedPayload || data?.tkbSolverResult || null;
         }
@@ -3365,13 +3403,14 @@
     }catch(_){}
   }
 
-  function startInstantProgressTicker(){
+  function startInstantProgressTicker(options){
     stopProgressTicker();
     const now = Date.now();
     // Only a confirmed reload/cross-device resume may reuse persisted UI
     // progress. A brand-new user click must always start from a fresh timer,
     // even if a just-finished job has not been removed from storage yet.
-    const isResume = window.__TKB_SERVER_JOB_RESUME_STARTED === true
+    const isResume = options?.resumePending === true
+      || window.__TKB_SERVER_JOB_RESUME_STARTED === true
       || window.__TKB_BACKEND_JOB_OBSERVER_ONLY === true;
     const pending = isResume
       ? readPendingBackendJob()
@@ -3406,6 +3445,20 @@
     if(progressState.deferFirstPaint) scheduleFirstProgressPaint();
     else tickEstimatedProgress();
     progressTimer = window.setInterval(tickEstimatedProgress, 1000);
+  }
+
+  function primePendingBackendResumeUi(pendingOverride){
+    const pending = pendingOverride?.jobId ? pendingOverride : readPendingBackendJob();
+    if(!pending?.jobId || automaticBackendResumeSuppressed()) return false;
+    if(
+      window.__TKB_SERVER_JOB_RESUME_STARTED === true
+      || window.__TKB_RUST_SOLVER_RUNNING === true
+      || window.__TKB_SOLVE_UI_BUSY === true
+    ) return false;
+    setAutoSortButtonBusy(true);
+    setStatus("Đang nối lại lượt xếp...", "info");
+    startInstantProgressTicker({resumePending:true});
+    return true;
   }
 
   function primeAutoSortStartUi(){
@@ -14029,6 +14082,14 @@
     if(existingBackendJob?.kind === "observe"){
       return await observeBackendJob(existingBackendJob.job);
     }
+    if(existingBackendJob?.kind === "pending" || existingBackendJob?.kind === "attached"){
+      // A manual Play during reload recovery adopts the durable canonical job
+      // directly. It must not enter planner/pre-release work or POST the same
+      // locally-created id again merely because its owner-state discovery bit
+      // has not hydrated yet.
+      prepareManualSolveIntent();
+      return await reattachExistingServerJobPollOnly(existingBackendJob.job);
+    }
     if(existingBackendJob?.kind === "busy"){
       releaseAutoSortButtonSoon();
       setStatus(
@@ -14456,6 +14517,7 @@
     }
     let pending = readPendingBackendJob();
     if(pendingBackendResumeBlocked(pending?.jobId)) return false;
+    if(pending?.jobId) primePendingBackendResumeUi(pending);
     const data = getData();
     if(!data){
       const nextAttempt = Number(attempt || 0) + 1;
@@ -14494,18 +14556,117 @@
         schedulePendingBackendResume(attempt, 500);
         return false;
       }
+      // Slow reload hydration can outlive the short local fingerprint grace
+      // window, especially for the production-sized default timetable. Never
+      // discard a still-active Agent/VPS job based on that local timer alone.
+      // Confirm the exact durable id with the authenticated server first, keep
+      // Play locked while it is live, and retry until DATA reaches the request
+      // fingerprint. A just-completed result gets one bounded hydration grace;
+      // an unknown or persistently mismatched terminal result is then detached
+      // and never applied to a different visible timetable.
+      const hydrationState = await backendSolverState(hydrationJobId);
+      if(automaticBackendResumeSuppressed()) return false;
+      if(!hydrationState || hydrationState.ok !== true){
+        schedulePendingBackendResume(attempt, SERVER_SOLVER_JOB_BACKGROUND_RETRY_MS);
+        return false;
+      }
+      const hydrationJobs = Array.isArray(hydrationState.jobs) ? hydrationState.jobs : [];
+      const hydrationQueue = Array.isArray(hydrationState.queue) ? hydrationState.queue : [];
+      const hydrationCompleted = Array.isArray(hydrationState.completedJobs)
+        ? hydrationState.completedJobs
+        : [];
+      const hydrationRunningItem = hydrationJobs.find(item => String(item?.jobId || "") === hydrationJobId);
+      const hydrationQueuedItem = hydrationQueue.find(item => String(item?.jobId || "") === hydrationJobId);
+      const hydrationCompletedItem = hydrationCompleted.find(item => String(item?.jobId || "") === hydrationJobId);
+      const hydrationJobLive = hydrationState.requestedJobActive === true
+        || hydrationState.requestedJobQueued === true
+        || !!hydrationRunningItem
+        || !!hydrationQueuedItem;
+      const hydrationJobCompleted = hydrationState.requestedJobResultReady === true
+        || !!hydrationCompletedItem;
+      const hydrationJobKnown = hydrationState.requestedJobServerOwned === true
+        || hydrationJobLive
+        || hydrationJobCompleted;
+      if(hydrationJobLive){
+        pendingCompletedHydrationJobId = "";
+        pendingCompletedHydrationAttempts = 0;
+      }else if(hydrationJobCompleted){
+        if(pendingCompletedHydrationJobId !== hydrationJobId){
+          pendingCompletedHydrationJobId = hydrationJobId;
+          pendingCompletedHydrationAttempts = 0;
+        }
+        pendingCompletedHydrationAttempts += 1;
+      }
+      const keepCompletedForHydration = hydrationJobCompleted
+        && pendingCompletedHydrationAttempts <= SERVER_SOLVER_COMPLETED_HYDRATION_RETRIES;
+      const recoverCompletedIncompleteHydration = hydrationJobCompleted
+        && localPendingCanRecoverIncompleteHydration(
+          Object.assign({}, pending, {allowIncompleteHydrationRecovery:true}),
+          data
+        );
+      if(recoverCompletedIncompleteHydration){
+        pendingFingerprintHydrationJobId = "";
+        pendingFingerprintHydrationAttempts = 0;
+        pendingCompletedHydrationJobId = "";
+        pendingCompletedHydrationAttempts = 0;
+        forgetSettledBackendJob(hydrationJobId);
+        const recoveryTarget = Object.assign({}, pending, {
+          createdAtMs:hydrationCompletedItem?.createdAtMs || pending.createdAt,
+          startedAtMs:hydrationCompletedItem?.startedAtMs || pending.solverStartedAtMs,
+          completedAtMs:hydrationCompletedItem?.completedAtMs,
+          progressBudgetSeconds:hydrationCompletedItem?.progressBudgetSeconds || pending.progressBudgetSeconds,
+          progressRunIndex:hydrationCompletedItem?.progressRunIndex || pending.progressRunIndex,
+          discoveredFromOwnerState:true,
+          localClickTimeline:true,
+          observeOnly:false,
+          allowIncompleteHydrationRecovery:true
+        });
+        activeBackendResumeTarget = recoveryTarget;
+        try{
+          return await reattachExistingServerJobPollOnly(recoveryTarget);
+        }finally{
+          activeBackendResumeTarget = null;
+          if(readPendingBackendJob()?.jobId){
+            schedulePendingBackendResume(0, SERVER_SOLVER_JOB_BACKGROUND_RETRY_MS);
+          }
+        }
+      }
+      if(
+        hydrationJobLive
+        || (hydrationJobKnown && !hydrationJobCompleted)
+        || keepCompletedForHydration
+      ){
+        setAutoSortButtonBusy(true);
+        setStatus("Đang nối lại lượt xếp...", "info");
+        setProgress(
+          Math.max(3, normalizePendingProgressPercent(pending.lastPercent) || 3),
+          "Đang nối lại",
+          {phase:"reconnecting"}
+        );
+        recordBackendLiveProgress(
+          hydrationState?.requestedJobProgress
+          || hydrationRunningItem?.progress
+          || hydrationQueuedItem?.progress
+        );
+        schedulePendingBackendResume(attempt, SERVER_SOLVER_JOB_DISCOVERY_RETRY_MS);
+        return false;
+      }
       pendingFingerprintHydrationJobId = "";
       pendingFingerprintHydrationAttempts = 0;
-      // A reload or another device must never cancel VPS work merely because
-      // its local data version differs. Detach locally and leave the owner job
-      // available for the device/data version that started it.
-      reportSkippedDiscoveredBackendJob({jobId:pending.jobId, kind:"running"});
+      pendingCompletedHydrationJobId = "";
+      pendingCompletedHydrationAttempts = 0;
+      // The server is authoritative that this id is no longer live. Detach
+      // locally without cancelling it or applying a mismatched terminal result.
+      reportSkippedDiscoveredBackendJob({jobId:pending.jobId, kind:hydrationJobCompleted ? "completed" : "running"});
       endServerJobReattachLease(pending.jobId);
       removePendingBackendJob(pending.jobId);
+      releaseAutoSortButtonSoon();
       return false;
     }
     pendingFingerprintHydrationJobId = "";
     pendingFingerprintHydrationAttempts = 0;
+    pendingCompletedHydrationJobId = "";
+    pendingCompletedHydrationAttempts = 0;
     if(!pending?.jobId && !ownerBackendJobDiscoveryAllowed()){
       const nextAttempt = Math.max(0, Number(attempt || 0) || 0) + 1;
       if(nextAttempt <= SERVER_SOLVER_AUTH_READY_RETRIES){
@@ -14659,6 +14820,7 @@
     }
     window.setInterval(updateBackendStatusBanner, 30000);
     setAutoSortHomeHiddenState(false);
+    primePendingBackendResumeUi();
     schedulePendingBackendResume(0, 800);
     try{
       document.addEventListener?.("visibilitychange", () => {

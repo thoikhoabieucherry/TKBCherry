@@ -8,20 +8,63 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.40** (cross-tab Agent reattach,
-  physical incumbent guard, and resilient VPS fallback). Public API marker:
-  `tkb_new-rust-api-2026-07-19-cross-tab-agent-reattach-v40`; page cache:
-  `20260719-v140-cross-tab-agent-reattach-v1`.
+- Current deployed application release: **v1.41** (iOS/PWA durable resume on
+  top of cross-tab Agent reattach, physical incumbent guarding, and resilient
+  VPS fallback). Public API marker:
+  `tkb_new-rust-api-2026-07-19-ios-pwa-durable-resume-v41`; page cache:
+  `20260719-v141-ios-pwa-durable-resume-v1`.
 - Current public Agent release: **v1.6.15** (`1.6.15`). The server lease gate
   must remain at 1.6.15 or newer so an older local Agent can update itself but
   cannot execute a job with a mismatched solver contract.
-- Current local and deployed release: application **v1.40** and Agent
-  **v1.6.15** (v1.34-style incumbent refinement, terminal-result recovery,
-  animated progress dots, and bounded Agent preflight).
+- Current local and deployed application release: **v1.41**. Agent remains
+  **v1.6.15**.
 - Every deployed application or packaged Agent update must increment the
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
    `agent_helper/windows_version_info.txt`.
+
+### v1.41 iOS/PWA durable resume (deployed)
+
+- A production v1.40 Agent run exposed a reload gap: while the Agent child kept
+  running, a slowly hydrated default timetable exhausted the fixed six x 500 ms
+  fingerprint grace, discarded its local pending row without consulting the
+  server, and showed `0% / Sẵn sàng` with Play enabled. A later manual Play
+  found the same canonical job again.
+- Reload now primes the persisted progress and locks Play immediately. After
+  the short local hydration grace, authenticated `/api/solver-state` is the
+  authority: an active Agent/VPS job remains pending, unknown work is detached,
+  and a just-completed result receives a bounded 30 x 2 second hydration grace
+  so it is not lost at the live-to-terminal boundary.
+- Manual Play with a local pending id now enters the immutable poll-only
+  reattach directly. It performs zero solve POSTs, zero cancels, and no default
+  group sync, constraint release, or timetable mutation before the validated
+  result is applied.
+- The local candidate also retains a complete hard-valid incumbent for any
+  terminal reattach failure and permits a locally-started completed job to
+  repair a fixed-only/incomplete reload, including Agent-to-VPS handoff, while
+  still rejecting incomplete or hard-invalid terminal payloads.
+- Bridge regressions cover slow live hydration, completion during hydration,
+  fixed-only Agent-to-VPS recovery, immediate Play/Home locking, and manual
+  poll-only adoption. Full local Node E2E passes **253/253** and scheduler
+  discovery passes **129/129**. Isolated VPS staging passes scheduler
+  **129/129**, Agent **72/72**, Rust API **136/136**, and validator **20/20**,
+  ending with `STAGING_TESTS_OK`.
+- Production deployment returned `UPDATE_OK`. Transaction backups are
+  `/opt/cherry-scheduler-backups/server-state-20260719-071929.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260719-071929.tar.gz`. Public
+  health reports the v41 API marker with `0` active/queued jobs and all `6/6`
+  VPS worker tokens available. The public bridge asset SHA-256 matches the
+  local release source exactly.
+- Production VPS-only E2E stopped the Agent, dismissed the Windows invitation
+  with Cancel, and created exactly one six-worker job. Reloading and completely
+  closing/reopening the scheduler retained the same canonical job, kept Play
+  locked, resumed visible progress, and finished green at `29/29` with zero
+  unassigned periods. A production Agent E2E then used the online local Agent,
+  left all `6/6` VPS workers idle, and also finished green at `29/29` with zero
+  unassigned periods. A complete incumbent may saturate early, so a short live
+  Agent refinement can finish before a reload is issued; the long-running
+  background/resume and Agent-to-VPS boundaries remain covered by the durable
+  bridge regressions above.
 
 ### v1.34 - 2026-07-19 (deployed)
 
@@ -2056,18 +2099,18 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-19: `UPDATE_OK` for
-v1.40. Public health serves API marker
-`tkb_new-rust-api-2026-07-19-cross-tab-agent-reattach-v40`; the page serves
-cache key `20260719-v140-cross-tab-agent-reattach-v1`. Public Agent release `1.6.15` and
+v1.41. Public health serves API marker
+`tkb_new-rust-api-2026-07-19-ios-pwa-durable-resume-v41`; the page serves
+cache key `20260719-v141-ios-pwa-durable-resume-v1`. Public Agent release `1.6.15` and
 its signed manifest are live. Its one-entry ZIP is 91,683,250 bytes with
 SHA-256 `a91ff1217990cf8b80e7b07f2f4e203f849c7ba794db60942b39789dd30ee5b2`;
 the packaged EXE is 92,148,649 bytes with SHA-256
 `5650ef4b0d65e43f866db5f455f36e735d9adf2f20145878e9feed8729140b99`.
-The v1.40 production VPS-only E2E dismissed the offline-Agent invitation with
-Cancel, reloaded during the canonical job, and completed with zero unassigned
-periods and all worker tokens released. The Agent E2E kept VPS capacity fully
-free, used one local solver child, and synchronized a reloaded v1.40 tab plus
-an older v1.39 tab to the same job and final result.
+The v1.41 production VPS-only E2E dismissed the offline-Agent invitation with
+Cancel, reloaded and closed/reopened during the canonical job, and completed
+with zero unassigned periods and all worker tokens released. The v1.41 Agent
+E2E kept VPS capacity fully free, used the online local Agent, and completed
+with zero unassigned periods.
 Workstations on Agent `1.6.2` or older require one manual install of a
 self-update-capable build before future in-Agent updates are available.
 

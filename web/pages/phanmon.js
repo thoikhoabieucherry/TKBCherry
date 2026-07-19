@@ -1,4 +1,4 @@
-window.__PHANMON_VERSION = "updated-v9.9 (v1.40 cross-tab Agent reattach + VPS fallback)";
+window.__PHANMON_VERSION = "updated-v10.0 (v1.41 iOS PWA durable resume)";
 
 (function installPlannerMobileViewportSync(){
   if(window.__TKB_MOBILE_VIEWPORT_SYNC_BOUND === true) return;
