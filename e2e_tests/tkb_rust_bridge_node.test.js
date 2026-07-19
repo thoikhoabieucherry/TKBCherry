@@ -1078,7 +1078,7 @@ test("planner exposes one automatic arrange button and one accessible seconds du
   assert.doesNotMatch(durationTag, /\bvalue=|\bplaceholder=|\btitle=/i);
 });
 
-test("an empty duration field uses 60 seconds fresh and 180 seconds for refinement", () => {
+test("an empty duration field allows a 110-second first-quality gate and 180-second refinement", () => {
   const storage = memoryStorage();
   const durationInput = {
     value:"",
@@ -1104,15 +1104,17 @@ test("an empty duration field uses 60 seconds fresh and 180 seconds for refineme
   assert.equal(durationInput.dataset.durationMode, "auto");
   assert.equal(durationInput.value, "");
   assert.equal(first.kind, "fresh_complete_first");
-  assert.equal(first.settings.overall_time_limit_seconds, 60);
-  assert.equal(first.settings.backend_deadline_ms, 60000);
-  assert.equal(first.settings.native_global_deadline_ms, 60000);
+  assert.equal(first.settings.overall_time_limit_seconds, 110);
+  assert.equal(first.settings.backend_deadline_ms, 110000);
+  assert.equal(first.settings.native_global_deadline_ms, 110000);
   assert.equal(first.settings.optimization_continue_quality_search, false);
   assert.equal(first.settings.optimization_first_click_quality_time_limit_seconds, 30);
   assert.equal(first.settings.ui_allow_incomplete_retry_after_single_pass, false);
-  assert.equal(first.settings.ui_stop_after_first_complete_schedule, false);
-  assert.equal(first.settings.optimization_first_click_continue_local_after_complete, true);
-  assert.equal(first.settings.optimization_first_click_skip_global_quality, false);
+  assert.equal(first.settings.ui_stop_after_first_complete_schedule, true);
+  assert.equal(first.settings.optimization_first_click_continue_local_after_complete, false);
+  assert.equal(first.settings.optimization_first_click_skip_global_quality, true);
+  assert.equal(first.settings.optimization_first_click_strict_quality_gate, true);
+  assert.equal(first.settings.optimization_first_click_strict_quality_gate_seconds, 55);
   assert.equal(first.settings.optimization_first_click_lean_global_quality, true);
   assert.equal(first.settings.optimization_first_click_quality_stop_at_cap, true);
   assert.equal(first.settings.optimization_first_click_local_lns_time_limit_seconds, 18);
@@ -1423,23 +1425,23 @@ test("failed blank fresh clicks add five seconds without changing the user input
   });
 
   const first = hooks.buildAutomaticAutoSortPlan(data);
-  assert.equal(first.settings.backend_deadline_ms, 60_000);
+  assert.equal(first.settings.backend_deadline_ms, 110_000);
   assert.equal(durationInput.value, "");
   assert.equal(durationInput.dataset.durationMode, "auto");
 
-  assert.equal(hooks.rememberManualFreshRetryFailure(data, first.settings, failure), 65);
+  assert.equal(hooks.rememberManualFreshRetryFailure(data, first.settings, failure), 115);
   assert.deepEqual(JSON.parse(JSON.stringify(internalSaves)), [{force:true, suppressHistory:true}]);
   const second = hooks.buildAutomaticAutoSortPlan(data);
-  assert.equal(second.settings.backend_deadline_ms, 65_000);
-  assert.equal(second.settings.ui_manual_fresh_retry_seconds, 65);
+  assert.equal(second.settings.backend_deadline_ms, 115_000);
+  assert.equal(second.settings.ui_manual_fresh_retry_seconds, 115);
   assert.equal(second.settings.ui_manual_fresh_retry_failures, 1);
   assert.equal(durationInput.value, "");
   assert.equal(durationInput.dataset.durationMode, "auto");
 
-  assert.equal(hooks.rememberManualFreshRetryFailure(data, second.settings, failure), 70);
+  assert.equal(hooks.rememberManualFreshRetryFailure(data, second.settings, failure), 120);
   const third = hooks.buildAutomaticAutoSortPlan(data);
-  assert.equal(third.settings.backend_deadline_ms, 70_000);
-  assert.equal(third.settings.ui_manual_fresh_retry_seconds, 70);
+  assert.equal(third.settings.backend_deadline_ms, 120_000);
+  assert.equal(third.settings.ui_manual_fresh_retry_seconds, 120);
   assert.equal(durationInput.value, "");
 
   hooks.writeCustomSolveDurationSeconds(90);
@@ -1452,7 +1454,7 @@ test("failed blank fresh clicks add five seconds without changing the user input
   hooks.writeCustomSolveDurationSeconds("");
   assert.equal(hooks.clearManualFreshRetryBudget(data), true);
   const reset = hooks.buildAutomaticAutoSortPlan(data);
-  assert.equal(reset.settings.backend_deadline_ms, 60_000);
+  assert.equal(reset.settings.backend_deadline_ms, 110_000);
   assert.equal(durationInput.value, "");
   assert.equal(durationInput.dataset.durationMode, "auto");
 });
@@ -1686,7 +1688,7 @@ test("automatic solver ignores legacy Fast preference and starts quality complet
   assert.equal(plan.kind, "fresh_complete_first");
   assert.equal(plan.settings.ui_solver_preset, "balanced");
   assert.equal(plan.settings.auto_sort_mode, "teacher_session_opt");
-  assert.equal(plan.settings.optimization_time_limit_seconds, 60);
+  assert.equal(plan.settings.optimization_time_limit_seconds, 110);
   assert.equal(plan.settings.ui_unified_reference_watchdog_reserve_ms, 5000);
   assert.equal(plan.settings.ui_client_timeout_reserve_ms, 10000);
   assert.equal(plan.settings.ui_allow_quality_after_single_pass, false);
@@ -1696,7 +1698,7 @@ test("automatic solver ignores legacy Fast preference and starts quality complet
   assert.equal(plan.settings.optimization_benders_disable_session_early_stop, true);
 });
 
-test("large unified first click uses one bounded 60-second first-good search", () => {
+test("large unified first click uses one bounded 110-second quality-gate search", () => {
   const data = makeData(1500);
   const {hooks} = loadBridge(data);
   const plan = hooks.buildAutomaticAutoSortPlan(data);
@@ -1704,13 +1706,13 @@ test("large unified first click uses one bounded 60-second first-good search", (
 
   assert.equal(plan.kind, "fresh_complete_first");
   assert.equal(effective.ui_unified_initial_fast_stage, true);
-  assert.equal(effective.ui_unified_initial_ceiling_seconds, 60);
-  assert.equal(effective.overall_time_limit_seconds, 60);
-  assert.equal(effective.integrated_time_limit, 60);
-  assert.equal(effective.optimization_time_limit_seconds, 60);
-  assert.equal(effective.backend_deadline_ms, 60000);
-  assert.equal(effective.native_global_deadline_ms, 60000);
-  assert.equal(effective.optimization_first_click_feasibility_time_limit_seconds, 60);
+  assert.equal(effective.ui_unified_initial_ceiling_seconds, 110);
+  assert.equal(effective.overall_time_limit_seconds, 110);
+  assert.equal(effective.integrated_time_limit, 110);
+  assert.equal(effective.optimization_time_limit_seconds, 110);
+  assert.equal(effective.backend_deadline_ms, 110000);
+  assert.equal(effective.native_global_deadline_ms, 110000);
+  assert.equal(effective.optimization_first_click_feasibility_time_limit_seconds, 110);
   assert.equal(effective.optimization_first_click_quality_time_limit_seconds, 35);
   assert.equal(effective.optimization_first_click_quality_minimum_seconds, 12);
   assert.equal(effective.optimization_first_click_local_lns_time_limit_seconds, 30);
@@ -1718,10 +1720,15 @@ test("large unified first click uses one bounded 60-second first-good search", (
   assert.equal(effective.optimization_first_click_quality_cap_headroom, 16);
   assert.equal(effective.optimization_first_click_target_probe_step, 2);
   assert.equal(effective.optimization_first_click_target_probe_time_limit_seconds, 30);
-  assert.equal(effective.optimization_first_click_target_probe_convergence_ceiling_seconds, 60);
+  assert.equal(effective.optimization_first_click_target_probe_convergence_ceiling_seconds, 110);
   assert.equal(effective.optimization_first_click_target_probe_enabled, false);
   assert.equal(effective.optimization_unbounded_quality_search, false);
   assert.equal(effective.ui_bounded_fresh_accept_quality_debt, true);
+  assert.equal(effective.optimization_first_click_strict_quality_gate, true);
+  assert.equal(effective.optimization_first_click_strict_quality_gate_seconds, 55);
+  assert.equal(effective.ui_stop_after_first_complete_schedule, true);
+  assert.equal(effective.optimization_first_click_continue_local_after_complete, false);
+  assert.equal(effective.optimization_first_click_skip_global_quality, true);
   assert.equal(effective.allow_quality_debt, true);
   assert.equal(effective.max_one_period_sessions, "off");
   assert.equal(effective.strict_one_period_sessions_cap, false);
@@ -1769,11 +1776,11 @@ test("ten no-hint fresh plans use ten distinct positive search trajectories", ()
   assert.equal(new Set(seeds).size, 10);
 });
 
-test("automatic duration keeps 60 seconds fresh and 180 seconds for refinement", () => {
+test("automatic duration keeps a 110-second quality gate and 180-second refinement", () => {
   const data = makeData(1500);
   const {hooks} = loadBridge(data);
 
-  assert.equal(hooks.initialAutomaticSolverCeilingSeconds(1500, data), 60);
+  assert.equal(hooks.initialAutomaticSolverCeilingSeconds(1500, data), 110);
   assert.equal(hooks.incrementalRefineCeilingSeconds(1500, data, 1), 180);
   assert.equal(hooks.incrementalRefineCeilingSeconds(1500, data, 2), 180);
   assert.equal(hooks.incrementalRefineCeilingSeconds(1500, data, 3), 180);
@@ -1896,16 +1903,16 @@ test("a blank first Play owns one adaptive pass without hidden retries", async (
 
   assert.equal(plan.settings.ui_disable_initial_fast_draft, true);
   assert.equal(plan.settings.ui_allow_incomplete_retry_after_single_pass, false);
-  assert.equal(plan.settings.ui_stop_after_first_complete_schedule, false);
-  assert.equal(plan.settings.optimization_first_click_continue_local_after_complete, true);
+  assert.equal(plan.settings.ui_stop_after_first_complete_schedule, true);
+  assert.equal(plan.settings.optimization_first_click_continue_local_after_complete, false);
   assert.equal(plan.settings.ui_disable_automatic_retry, true);
   assert.equal(plan.settings.complete_schedule_seed_retry_max_runs, 0);
-  assert.equal(plan.settings.overall_time_limit_seconds, 60);
-  assert.equal(plan.settings.backend_deadline_ms, 60000);
+  assert.equal(plan.settings.overall_time_limit_seconds, 110);
+  assert.equal(plan.settings.backend_deadline_ms, 110000);
   const result = await window.TKBRustAPI.solve({ask:false, settings:plan.settings, singlePass:true});
   assert.equal(result, null);
   assert.equal(solvePosts, 1);
-  assert.equal(postedSettings[0].overall_time_limit_seconds, 60);
+  assert.equal(postedSettings[0].overall_time_limit_seconds, 110);
 });
 
 test("an explicit duration remains one exact solver budget when no complete schedule is found", async () => {
@@ -1936,8 +1943,8 @@ test("an explicit duration remains one exact solver budget when no complete sche
   const plan = hooks.buildAutomaticAutoSortPlan(data);
 
   assert.equal(plan.settings.ui_allow_incomplete_retry_after_single_pass, false);
-  assert.equal(plan.settings.ui_stop_after_first_complete_schedule, false);
-  assert.equal(plan.settings.optimization_first_click_continue_local_after_complete, true);
+  assert.equal(plan.settings.ui_stop_after_first_complete_schedule, true);
+  assert.equal(plan.settings.optimization_first_click_continue_local_after_complete, false);
   assert.equal(plan.settings.overall_time_limit_seconds, 90);
   assert.equal(await window.TKBRustAPI.solve({ask:false, settings:plan.settings, singlePass:true}), null);
   assert.equal(solvePosts, 1);
@@ -2010,24 +2017,24 @@ test("blank first-solution search does not retry automatically after a deadline 
   assert.equal(solvePosts, 1);
   assert.deepEqual(
     postedSettings.map(settings => settings.overall_time_limit_seconds),
-    [60]
+    [110]
   );
   assert.deepEqual(
     progressSnapshots.map(state => [state.runIndex, state.percent, state.budgetSeconds]),
-    [[1, 4, 60]]
+    [[1, 4, 110]]
   );
   assert.deepEqual(
     progressSnapshots.map(state => state.label),
     ["0 giây"]
   );
-  assert.equal(data.tkbManualFreshRetryBudget.nextSeconds, 65);
+  assert.equal(data.tkbManualFreshRetryBudget.nextSeconds, 115);
   const nextManualPlan = hooks.buildAutomaticAutoSortPlan(data);
-  assert.equal(nextManualPlan.settings.backend_deadline_ms, 65_000);
-  assert.equal(nextManualPlan.settings.ui_manual_fresh_retry_seconds, 65);
+  assert.equal(nextManualPlan.settings.backend_deadline_ms, 115_000);
+  assert.equal(nextManualPlan.settings.ui_manual_fresh_retry_seconds, 115);
   assert.equal(solvePosts, 1, "a failed solve must never start another job automatically");
 });
 
-test("a complete manual retry uses the remembered 65-second fresh cap", async () => {
+test("a complete manual retry uses the remembered 115-second fresh cap", async () => {
   const data = makeData(2);
   let solvePosts = 0;
   let postedDeadline = 0;
@@ -2087,7 +2094,7 @@ test("a complete manual retry uses the remembered 65-second fresh cap", async ()
 
   assert.ok(result);
   assert.equal(solvePosts, 1);
-  assert.equal(postedDeadline, 65_000);
+  assert.equal(postedDeadline, 115_000);
   assert.equal(data.tkbManualFreshRetryBudget, undefined);
   assert.equal(hooks.manualFreshRetryBudgetSeconds(data), 60);
 });
@@ -3198,7 +3205,7 @@ test("a UI-rejected complete staged repair runs one fresh rebuild and keeps the 
   assert.equal(postedRequests[0].data.tkbConstraints.teacher.GV01.maxDaysSessions.maxDays, 3);
   assert.equal(postedRequests[1].settings.ui_constraint_change_fresh_retry, true);
   assert.equal(postedRequests[1].settings.ui_constraint_change_rebuild_from_empty, true);
-  assert.equal(postedRequests[1].settings.overall_time_limit_seconds, 60);
+  assert.equal(postedRequests[1].settings.overall_time_limit_seconds, 110);
   assert.equal(postedRequests[1].settings.preserve_existing_tkb, false);
   assert.equal(postedRequests[1].settings.allow_solver_warm_start, false);
   assert.equal(postedRequests[1].data.__tkbRequestStrippedSchedule, true);
@@ -3297,9 +3304,9 @@ test("a tightened teacher constraint stops after one staged fill and one fresh f
   assert.equal(postedSettings[1].period_max_teacher_gap, "off");
   assert.equal(postedSettings[1].ui_unified_initial_fast_stage, true);
   assert.equal(postedSettings[1].ui_disable_automatic_retry, true);
-  assert.equal(postedSettings[1].ui_constraint_change_fresh_ceiling_seconds, 60);
-  assert.equal(postedSettings[1].overall_time_limit_seconds, 60);
-  assert.equal(postedSettings[1].backend_deadline_ms, 60000);
+  assert.equal(postedSettings[1].ui_constraint_change_fresh_ceiling_seconds, 110);
+  assert.equal(postedSettings[1].overall_time_limit_seconds, 110);
+  assert.equal(postedSettings[1].backend_deadline_ms, 110000);
   assert.notEqual(postedSettings[1].robust_retry, true);
   assert.notEqual(postedSettings[1].complete_schedule_seed_retry, true);
   assert.equal(postedRequests[1].data.__tkbRequestStrippedSchedule, true);
@@ -3311,7 +3318,7 @@ test("a tightened teacher constraint stops after one staged fill and one fresh f
   );
 });
 
-test("large fixed-off fresh fallback preserves the automatic 60-second ceiling", async () => {
+test("large fixed-off fresh fallback preserves the automatic 110-second quality-gate ceiling", async () => {
   const fixture = makeLargeApplyFixture(54, 29);
   const {data} = fixture;
   const subject = String(data.mon[0].ten);
@@ -3380,12 +3387,12 @@ test("large fixed-off fresh fallback preserves the automatic 60-second ceiling",
   assert.equal(postedSettings.length, 2);
   const fallback = postedSettings[1];
   assert.equal(fallback.ui_constraint_change_fresh_retry, true);
-  assert.equal(fallback.ui_constraint_change_fresh_ceiling_seconds, 60);
-  assert.equal(fallback.overall_time_limit_seconds, 60);
-  assert.equal(fallback.optimization_time_limit_seconds, 60);
-  assert.equal(fallback.integrated_time_limit, 60);
-  assert.equal(fallback.backend_deadline_ms, 60000);
-  assert.equal(fallback.native_global_deadline_ms, 60000);
+  assert.equal(fallback.ui_constraint_change_fresh_ceiling_seconds, 110);
+  assert.equal(fallback.overall_time_limit_seconds, 110);
+  assert.equal(fallback.optimization_time_limit_seconds, 110);
+  assert.equal(fallback.integrated_time_limit, 110);
+  assert.equal(fallback.backend_deadline_ms, 110000);
+  assert.equal(fallback.native_global_deadline_ms, 110000);
   assert.equal(fallback.ui_allow_short_backend_deadline, true);
 });
 
@@ -3412,16 +3419,16 @@ test("fresh fallback ignores a stale 180-second manual retry budget", () => {
   delete base.ui_constraint_change_repair;
   delete base.ui_constraint_change_fresh_retry;
   const retry = hooks.stagedExistingFreshRetrySettings(base, data, "run-stale-budget");
-  assert.equal(retry.ui_constraint_change_fresh_ceiling_seconds, 60);
+  assert.equal(retry.ui_constraint_change_fresh_ceiling_seconds, 110);
   assert.equal(retry.ui_unified_initial_fast_stage, true);
-  assert.equal(retry.ui_unified_initial_ceiling_seconds, 60);
+  assert.equal(retry.ui_unified_initial_ceiling_seconds, 110);
 
   const effective = hooks.effectiveSettingsForSolve(retry, data);
-  assert.equal(effective.overall_time_limit_seconds, 60);
-  assert.equal(effective.optimization_time_limit_seconds, 60);
-  assert.equal(effective.integrated_time_limit, 60);
-  assert.equal(effective.backend_deadline_ms, 60000);
-  assert.equal(effective.native_global_deadline_ms, 60000);
+  assert.equal(effective.overall_time_limit_seconds, 110);
+  assert.equal(effective.optimization_time_limit_seconds, 110);
+  assert.equal(effective.integrated_time_limit, 110);
+  assert.equal(effective.backend_deadline_ms, 110000);
+  assert.equal(effective.native_global_deadline_ms, 110000);
   assert.equal(effective.ui_allow_short_backend_deadline, true);
 
   const customBase = Object.assign({}, base, {ui_custom_solve_duration_seconds:90});

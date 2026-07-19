@@ -8,10 +8,10 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.45** (iOS resume settlement and
-  complete-first period-safe scheduling). Public API marker:
-  `tkb_new-rust-api-2026-07-19-ios-resume-complete-first-v45`; page cache:
-  `20260719-v145-ios-resume-complete-first-v1`.
+- Current deployed application release: **v1.46** (strict first-result quality
+  gate, no-hint fresh seeds, and complete-debt safety fallback). Public API
+  marker: `tkb_new-rust-api-2026-07-19-strict-first-quality-gate-v46`; page
+  cache: `20260719-v146-strict-first-quality-gate-v1`.
 - Current public Agent release: **v1.6.16** (`1.6.16`). The server lease gate
   is also 1.6.16 so an older Agent can update itself but cannot execute a job
   with a mismatched solver contract.
@@ -271,6 +271,69 @@ change so a machine restart or a new conversation does not erase project context
   but a late CP-SAT `UNKNOWN` on a larger school could consume the click before
   that fallback is constructed. Benchmark a parallel or explicitly reserved
   complete-first lane in staging before changing this production flow again.
+
+### v1.46 strict first-result quality gate (deployed 2026-07-19)
+
+- The production v1.45 result reported by the user was not a statistics bug.
+  The retained VPS payload was complete and hard-valid, but genuinely contained
+  `522` teacher sessions, `24` one-period sessions, `83` gap-1 sessions, and
+  `9` gap-2 sessions. Its objective-free debt-allowed Phase F consumed
+  `42.232s`; Phase Q then spent `12.739s` rebuilding the cap-482 model, leaving
+  CP-SAT only about `1.1s` of actual search before `UNKNOWN`. The period-safe
+  rescue was disabled specifically for this safe-first branch and local LNS had
+  no watchdog budget.
+- A blank first click now has a 110-second hidden ceiling but stops as soon as
+  the first-result gate is met: all required lessons assigned, hard/application
+  constraints valid, zero one-period teacher sessions, and zero gap-2-plus
+  sessions. The duration input remains blank and an explicit user duration
+  still overrides the automatic ceiling.
+- Large period-sensitive data tries the wide cap-522 strict gate first. An
+  early failure may receive one distinct request-derived seed while preserving
+  at least 45 seconds for a completion fallback; a late `UNKNOWN` skips that
+  retry rather than consuming the completion reserve. Only after strict paths
+  fail may a debt-allowed, objective-free completion fallback run. A complete
+  hard-valid debt candidate is retained as a final safety incumbent if that
+  fallback itself fails. This keeps unavoidable singleton/gap-2 cases
+  schedulable without defining them as a successful quality gate.
+- Fresh solves use a new positive random seed per click. Legacy/static session
+  hints remain hard-disabled in `_legacy_solver_hints_enabled`; the strict gate
+  is an acceptance rule, not a timetable template. Exact-data seed 101 and 202
+  early results have different canonical assignment hashes.
+- Exact current `default` data includes 54 fixed lessons and the persisted
+  `A.Quyen maxDays=3` rule. Local early-stop probes completed at `1566/1566`,
+  zero unassigned, hard-valid, and zero/zero quality debt with distinct
+  assignment hashes: seed 101 in `38.0s` (`521 sessions / 124 gap-1`), seed
+  202 in `27.3s` (`522 / 128`), seed 303 in `31.8s` (`521 / 118`), and the
+  formerly rough production seed 2061401938 in `16.2s` (`521 / 120`).
+- The same three 110-second wires ran on the isolated VPS with Agent offline:
+  seed 101 in `68.5s`, seed 303 in `52.9s`, and seed 2061401938 in `41.0s`;
+  every result was `1566/1566`, `hard_ok=true`, zero one-period sessions,
+  zero gap-2-plus sessions, and each assignment hash differed. A VPS
+  180-second refinement from the seed-101 incumbent reached `472 sessions /
+  39 gap-1` in `177.4s`, retaining completeness and both zero gates.
+- A real 180-second second-click replay started from the seed-101 early result
+  and improved it to `465 teacher sessions / 38 gap-1`, while retaining
+  `1566/1566`, zero singleton, zero gap-2, and `hard_ok=true`. This confirms the
+  intended split: first click returns a clean timetable quickly; later clicks
+  compact sessions and gap-1 from the incumbent.
+- Candidate markers are API
+  `tkb_new-rust-api-2026-07-19-strict-first-quality-gate-v46`, bridge
+  `tkb-rust-api-v251-strict-first-quality-gate`, and page cache
+  `20260719-v146-strict-first-quality-gate-v1`. Agent remains `1.6.16`.
+- The candidate's additional fallback-cap and complete-debt-safety regressions
+  pass locally; full scheduler tests are `144/144`, bridge plus benchmark UI
+  tests are `195/195`, and isolated VPS staging is scheduler `145/145`, Agent
+  `72/72`, Rust API `136/136`, validator `20/20` (`STAGING_TESTS_OK`).
+- Production deployment returned `UPDATE_OK` after draining the solver. Transaction
+  backups are `/opt/cherry-scheduler-backups/server-state-20260719-161523.tar.gz`
+  and `/opt/cherry-scheduler-backups/app-release-20260719-161523.tar.gz`.
+  Public health reports API v46, zero active/queued jobs, and all `6/6` worker
+  tokens available. The deployed bridge SHA-256 is
+  `B50D5E9397859D59EB2CFC14DF1A480C1F898DD9E264E530D0B615D498451876`, matching
+  the local release source. Public page and bridge markers were verified after
+  deployment; the authenticated browser solve was not launched a second time
+  after the tab closed during its first click, so the isolated VPS wire probes
+  above remain the live solver acceptance evidence.
 
 ### Fixed-only empty-flexible fallback (included in deployed v1.43)
 

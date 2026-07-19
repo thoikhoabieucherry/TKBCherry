@@ -24,14 +24,14 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-19-ios-resume-complete-first-v45";
+const VERSION: &str = "tkb_new-rust-api-2026-07-19-strict-first-quality-gate-v46";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
 const MAX_REFERENCE_PROGRESS_FRAME_BYTES: usize = 32 * 1024;
 const AGENT_HELPER_PROTOCOL: &str = "tkb-agent-helper-v1";
 const AGENT_RESULT_DIGEST_PROTOCOL: &str = "tkb-json-tree-sha256-v1";
-// v1.6.16 is the first packaged runtime matching the current v1.45 wire and
+// v1.6.16 is the first packaged runtime matching the current v1.46 wire and
 // quality-debt/incumbent contract. Older binaries may speak protocol v1 but
 // carry solver behavior that the current server must not treat as an
 // equivalent executor; they remain upgrade-only and never receive a lease.

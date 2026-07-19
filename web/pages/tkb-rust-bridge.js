@@ -1,10 +1,11 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v250-ios-resume-complete-first";
+  const VERSION = "tkb-rust-api-v251-strict-first-quality-gate";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
+    const FIRST_QUALITY_GATE_CEILING_SECONDS = 110;
     const ROBUST_AUTO_DURATION_SECONDS = 180;
     const DEEP_AUTO_DURATION_SECONDS = 180;
     const MANUAL_FRESH_RETRY_STEP_SECONDS = 5;
@@ -13762,7 +13763,10 @@
 
   function initialAutomaticSolverCeilingSeconds(expected, data){
     void expected;
-    return manualFreshRetryBudgetSeconds(data);
+    return Math.max(
+      FIRST_QUALITY_GATE_CEILING_SECONDS,
+      manualFreshRetryBudgetSeconds(data)
+    );
   }
 
   function incrementalRefineCeilingSeconds(expected, data, refinementRound){
@@ -13820,7 +13824,7 @@
   // the 180-second refinement ceiling after earlier clicks).
   function applyBoundedFreshFallbackCeiling(settings, expected, data, requestedCustomSeconds){
     const requested = normalizeCustomSolveDurationSeconds(requestedCustomSeconds, 0);
-    const seconds = requested > 0 ? requested : INITIAL_AUTO_DURATION_SECONDS;
+    const seconds = requested > 0 ? requested : FIRST_QUALITY_GATE_CEILING_SECONDS;
     return applyUnifiedInitialCeiling(settings, expected, data, seconds);
   }
 
@@ -14079,15 +14083,16 @@
     // same click may return a complete hard-valid timetable with visible
     // quality debt instead of incorrectly reporting that no timetable exists.
     settings.ui_bounded_fresh_accept_quality_debt = true;
-    // Keep the first complete timetable as an incumbent, then spend whatever
-    // remains of the same click on a bounded quality pass. This avoids
-    // returning a technically clean but visibly rough result (for example
-    // 522 sessions / 119 gap-one sessions) while preserving the 60-second
-    // first-click ceiling. A later click still owns the deeper 180-second run.
-    settings.ui_unified_return_first_complete = false;
-    settings.ui_stop_after_first_complete_schedule = false;
-    settings.optimization_first_click_continue_local_after_complete = true;
-    settings.optimization_first_click_skip_global_quality = false;
+    settings.optimization_first_click_strict_quality_gate = true;
+    settings.optimization_first_click_strict_quality_gate_seconds = 55;
+    // The first automatic click has one explicit quality gate: complete and
+    // hard-valid, with no avoidable one-period teacher session or gap of two
+    // or more. Return as soon as that gate is met. The next manual click owns
+    // the deeper 180-second session/gap-1 compaction search.
+    settings.ui_unified_return_first_complete = true;
+    settings.ui_stop_after_first_complete_schedule = true;
+    settings.optimization_first_click_continue_local_after_complete = false;
+    settings.optimization_first_click_skip_global_quality = true;
     settings.optimization_first_click_lean_global_quality = boundedFirstComplete;
     settings.optimization_first_click_quality_stop_at_cap = boundedFirstComplete;
     settings.optimization_continue_quality_search = !boundedFirstComplete;

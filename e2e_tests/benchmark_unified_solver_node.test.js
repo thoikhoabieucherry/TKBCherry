@@ -167,7 +167,7 @@ test("constraint benchmark keeps the complete violating incumbent until backend 
     assert.equal(scenario.fresh.request.data.__tkbRequestFixedScheduleOnly, true);
     assert.equal(scenario.fresh.request.settings.ui_constraint_change_fresh_retry, true);
     assert.equal(scenario.fresh.request.settings.ui_constraint_change_rebuild_from_empty, true);
-    assert.equal(scenario.fresh.request.settings.overall_time_limit_seconds, 60);
+    assert.equal(scenario.fresh.request.settings.overall_time_limit_seconds, 110);
   });
 });
 
@@ -202,13 +202,13 @@ test("four deterministic UTF-8 lessons become one staged partial-repair request"
     assert.equal(request.settings.expected_scheduled_periods, 8);
     assert.equal(request.settings.preserve_existing_tkb, true);
     assert.ok(scenario.fresh, "a hard partial repair must prepare one fresh fallback");
-    assert.equal(scenario.fresh.request.settings.overall_time_limit_seconds, 60);
-    assert.equal(scenario.fresh.request.settings.optimization_time_limit_seconds, 60);
-    assert.equal(scenario.fresh.request.settings.integrated_time_limit, 60);
-    assert.equal(scenario.fresh.request.settings.backend_deadline_ms, 60_000);
+    assert.equal(scenario.fresh.request.settings.overall_time_limit_seconds, 110);
+    assert.equal(scenario.fresh.request.settings.optimization_time_limit_seconds, 110);
+    assert.equal(scenario.fresh.request.settings.integrated_time_limit, 110);
+    assert.equal(scenario.fresh.request.settings.backend_deadline_ms, 110_000);
     assert.equal(scenario.fresh.request.settings.ui_allow_short_backend_deadline, true);
     assert.equal(scenario.fresh.request.settings.ui_unified_auto_sort, true);
-    assert.equal(scenario.fresh.request.settings.ui_constraint_change_fresh_ceiling_seconds, 60);
+    assert.equal(scenario.fresh.request.settings.ui_constraint_change_fresh_ceiling_seconds, 110);
     assert.equal(scenario.fresh.request.data.__tkbRequestStrippedSchedule, true);
     assert.equal(scenario.fresh.request.data.__tkbRequestFixedScheduleOnly, true);
   });

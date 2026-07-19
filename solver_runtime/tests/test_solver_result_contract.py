@@ -26,6 +26,7 @@ from tkb_new.adapter import (  # noqa: E402
     _first_click_request_portfolio_seed,
     _incremental_lns_profile,
     _incremental_refinement_candidate_better,
+    _legacy_solver_hints_enabled,
     _merge_refinement_learning,
     _refinement_learning_from_payload,
     _refinement_gap_priority_attempts,
@@ -146,6 +147,17 @@ def _first_click_payload(
 
 
 class SolverResultContractTests(unittest.TestCase):
+    def test_legacy_static_hints_are_disabled_even_when_requested(self) -> None:
+        self.assertFalse(_legacy_solver_hints_enabled())
+        self.assertFalse(
+            _legacy_solver_hints_enabled(
+                {
+                    "allow_legacy_solver_hints": True,
+                    "disable_solver_hints": False,
+                }
+            )
+        )
+
     def test_assignment_session_limit_and_subject_day_limit_are_independent(self) -> None:
         base = {
             "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
@@ -5120,11 +5132,17 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertIs(result, feasibility)
         self.assertIs(metrics, feasibility["metrics"])
         self.assertEqual(termination, "first_click_feasibility_retained")
-        self.assertEqual(solve_candidate.call_count, 1)
-        feasibility_settings = solve_candidate.call_args.args[1]
+        self.assertEqual(solve_candidate.call_count, 2)
+        strict_settings = solve_candidate.call_args_list[0].args[1]
+        self.assertEqual(strict_settings["max_one_period_sessions"], 0)
+        self.assertTrue(strict_settings["strict_one_period_sessions_cap"])
+        self.assertEqual(strict_settings["period_max_teacher_gap"], 1)
+        self.assertTrue(attempts[0]["strict_quality_gate_first"])
+        self.assertFalse(attempts[0]["accepted"])
+        feasibility_settings = solve_candidate.call_args_list[1].args[1]
         self.assertEqual(
             feasibility_settings["auto_sort_strategy"],
-            "fresh_complete_period_safe_feasibility",
+            "constraint_change_quality_debt_fallback",
         )
         self.assertEqual(feasibility_settings["max_one_period_sessions"], "off")
         self.assertFalse(feasibility_settings["strict_one_period_sessions_cap"])
@@ -5136,10 +5154,9 @@ class SolverResultContractTests(unittest.TestCase):
             feasibility_settings["optimization_benders_period_feasibility_all_sessions"]
         )
         self.assertEqual(feasibility_settings["period_max_teacher_gap"], "off")
-        self.assertTrue(attempts[0]["constraint_change_feasibility_first"])
-        self.assertTrue(attempts[0]["safe_period_feasibility_first"])
-        self.assertTrue(attempts[0]["quality_debt_allowed"])
-        self.assertTrue(attempts[0]["accepted"])
+        self.assertTrue(attempts[1]["constraint_change_feasibility_first"])
+        self.assertTrue(attempts[1]["quality_debt_allowed"])
+        self.assertTrue(attempts[1]["accepted"])
 
     def test_bounded_fresh_first_click_accepts_hard_valid_quality_debt(self) -> None:
         feasibility = _first_click_payload(
@@ -5443,7 +5460,7 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertEqual(feasibility_call.args[1]["max_one_period_sessions"], 0)
         self.assertTrue(feasibility_call.args[1]["strict_one_period_sessions_cap"])
 
-    def test_period_bridge_bounded_click_accepts_hard_valid_debt_before_soft_quality(self) -> None:
+    def test_period_bridge_bounded_click_prioritizes_the_strict_quality_gate(self) -> None:
         data = {
             "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
             "giaovien": [{"magv": "T1", "ten": "T1"}],
@@ -5462,9 +5479,9 @@ class SolverResultContractTests(unittest.TestCase):
         hard_valid = _first_click_payload(
             teacher_sessions=2,
             gap1=0,
-            one_period_sessions=1,
+            one_period_sessions=0,
         )
-        hard_valid["metrics"]["gap_distribution"] = {"0": 1, "2": 1}
+        hard_valid["metrics"]["gap_distribution"] = {"0": 2}
 
         with patch(
             "tkb_new.adapter._solve_teacher_session_benders_candidate",
@@ -5503,20 +5520,20 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertEqual(termination, "first_click_feasibility_retained")
         self.assertEqual(solve_candidate.call_count, 1)
         phase_f_settings = solve_candidate.call_args.args[1]
-        # The mandatory period-safe lane uses the full data-sized feasibility
-        # ceiling.  The requested quality cap is attempted only after a
-        # complete incumbent exists.
+        # The first-result gate stays wide at the data-sized completion cap,
+        # but one-period sessions and gap>=2 remain forbidden.
         self.assertEqual(solve_candidate.call_args.kwargs["cap"], 4)
         self.assertEqual(phase_f_settings["max_teacher_sessions"], 4)
         self.assertEqual(
             phase_f_settings["auto_sort_strategy"],
-            "fresh_complete_period_safe_feasibility",
+            "fresh_complete_first_feasibility",
         )
-        self.assertEqual(phase_f_settings["max_one_period_sessions"], "off")
-        self.assertEqual(phase_f_settings["period_max_teacher_gap"], "off")
+        self.assertEqual(phase_f_settings["max_one_period_sessions"], 0)
+        self.assertEqual(phase_f_settings["period_max_teacher_gap"], 1)
         self.assertTrue(phase_f_settings["optimization_benders_session_feasibility_only"])
-        self.assertTrue(attempts[0]["safe_period_feasibility_first"])
-        self.assertTrue(attempts[0]["quality_debt_allowed"])
+        self.assertFalse(attempts[0]["safe_period_feasibility_first"])
+        self.assertTrue(attempts[0]["strict_quality_gate_first"])
+        self.assertFalse(attempts[0]["quality_debt_allowed"])
         self.assertTrue(attempts[0]["accepted"])
         self.assertFalse(
             any(
@@ -5525,12 +5542,8 @@ class SolverResultContractTests(unittest.TestCase):
             )
         )
 
-    def test_period_safe_phase_f_failure_retries_the_upper_completion_cap(self) -> None:
-        complete = _first_click_payload(
-            teacher_sessions=610,
-            gap1=90,
-            one_period_sessions=12,
-        )
+    def test_strict_quality_gate_unknown_retries_a_distinct_seed(self) -> None:
+        complete = _first_click_payload(teacher_sessions=520, gap1=90)
         with patch(
             "tkb_new.adapter._solve_teacher_session_benders_candidate",
             side_effect=[RuntimeError("tight cap unknown"), complete],
@@ -5568,13 +5581,129 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertEqual(termination, "first_click_feasibility_retained")
         self.assertEqual(solve_candidate.call_count, 2)
         self.assertEqual(solve_candidate.call_args_list[0].kwargs["cap"], 522)
-        self.assertEqual(solve_candidate.call_args_list[1].kwargs["cap"], 650)
-        fallback_settings = solve_candidate.call_args_list[1].args[1]
-        self.assertEqual(fallback_settings["max_teacher_sessions"], 650)
-        self.assertTrue(fallback_settings["optimization_benders_session_feasibility_only"])
+        self.assertEqual(solve_candidate.call_args_list[1].kwargs["cap"], 522)
+        self.assertEqual(
+            solve_candidate.call_args_list[1].kwargs["random_seed"],
+            _first_click_request_portfolio_seed(1, 1),
+        )
         self.assertFalse(attempts[0]["accepted"])
         self.assertTrue(attempts[1]["accepted"])
-        self.assertTrue(attempts[1]["quality_debt_allowed"])
+        self.assertFalse(attempts[1]["quality_debt_allowed"])
+        self.assertEqual(attempts[1]["attempt_key"], "fresh:phase_f:strict_quality_retry")
+
+    def test_strict_quality_gate_keeps_a_reserved_complete_debt_fallback(self) -> None:
+        complete = _first_click_payload(
+            teacher_sessions=610,
+            gap1=90,
+            one_period_sessions=12,
+        )
+        complete["metrics"]["gap_distribution"] = {"0": 580, "2": 30}
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=[
+                RuntimeError("primary strict unknown"),
+                RuntimeError("alternate strict unknown"),
+                complete,
+            ],
+        ) as solve_candidate:
+            result, metrics, attempts, termination = (
+                _solve_unified_first_click_feasibility_then_quality(
+                    {},
+                    {
+                        "target_teacher_sessions": 482,
+                        "optimization_accept_teacher_sessions": 482,
+                        "optimization_first_click_local_lns_time_limit_seconds": 0,
+                        "overall_time_limit_seconds": 110,
+                        "ui_constraint_change_fresh_retry": True,
+                        "ui_stop_after_first_complete_schedule": True,
+                        "num_workers": 6,
+                    },
+                    bound_ctx=_context(),
+                    bounds={
+                        "lower_cap": 450,
+                        "start_cap": 466,
+                        "upper_cap": 650,
+                        "expected_periods": 1566,
+                    },
+                    profile={"expected": 1566, "class_count": 54},
+                    rules=None,
+                    progress=None,
+                    deadline=SolverDeadline(110),
+                    polish_seeds=[1],
+                    requested_random_seed=1,
+                )
+            )
+
+        self.assertIs(result, complete)
+        self.assertIs(metrics, complete["metrics"])
+        self.assertEqual(termination, "first_click_feasibility_retained")
+        self.assertEqual(solve_candidate.call_count, 3)
+        fallback_call = solve_candidate.call_args_list[2]
+        self.assertEqual(fallback_call.kwargs["cap"], 650)
+        self.assertGreaterEqual(fallback_call.kwargs["time_limit_seconds"], 45)
+        fallback_settings = fallback_call.args[1]
+        self.assertEqual(fallback_settings["max_one_period_sessions"], "off")
+        self.assertEqual(fallback_settings["period_max_teacher_gap"], "off")
+        self.assertTrue(fallback_settings["optimization_benders_session_feasibility_only"])
+        self.assertFalse(attempts[0]["accepted"])
+        self.assertFalse(attempts[1]["accepted"])
+        self.assertTrue(attempts[2]["accepted"])
+        self.assertTrue(attempts[2]["quality_debt_allowed"])
+
+    def test_strict_quality_gate_retains_a_complete_debt_safety_candidate(self) -> None:
+        complete_with_debt = _first_click_payload(
+            teacher_sessions=610,
+            gap1=90,
+            one_period_sessions=12,
+        )
+        complete_with_debt["metrics"]["gap_distribution"] = {"0": 580, "2": 30}
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=[
+                complete_with_debt,
+                RuntimeError("alternate strict unknown"),
+                RuntimeError("completion fallback unknown"),
+            ],
+        ) as solve_candidate:
+            result, metrics, attempts, termination = (
+                _solve_unified_first_click_feasibility_then_quality(
+                    {},
+                    {
+                        "target_teacher_sessions": 482,
+                        "optimization_accept_teacher_sessions": 482,
+                        "optimization_first_click_local_lns_time_limit_seconds": 0,
+                        "overall_time_limit_seconds": 110,
+                        "ui_constraint_change_fresh_retry": True,
+                        "ui_stop_after_first_complete_schedule": True,
+                        "num_workers": 6,
+                    },
+                    bound_ctx=_context(),
+                    bounds={
+                        "lower_cap": 450,
+                        "start_cap": 466,
+                        "upper_cap": 650,
+                        "expected_periods": 1566,
+                    },
+                    profile={"expected": 1566, "class_count": 54},
+                    rules=None,
+                    progress=None,
+                    deadline=SolverDeadline(110),
+                    polish_seeds=[1],
+                    requested_random_seed=1,
+                )
+            )
+
+        self.assertIs(result, complete_with_debt)
+        self.assertIs(metrics, complete_with_debt["metrics"])
+        self.assertEqual(termination, "first_click_feasibility_retained")
+        self.assertEqual(solve_candidate.call_count, 3)
+        self.assertTrue(attempts[0]["quality_debt_safety_retained"])
+        safety_attempt = next(
+            item
+            for item in attempts
+            if item.get("attempt_key") == "fresh:phase_f:quality_debt_safety"
+        )
+        self.assertTrue(safety_attempt["quality_debt_allowed"])
 
     def test_fixed_and_residual_teacher_max_days_stays_on_the_session_model(self) -> None:
         classes = [

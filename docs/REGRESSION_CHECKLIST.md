@@ -22,7 +22,7 @@ Run after significant changes. Start app with `python start.py`, open `http://12
 - [ ] Chỉ tiết có `fixed: true` giữ nguyên vị trí; các tiết hiện có khác vẫn có thể swap/dời
 - [ ] Nút **Dừng** hiện giữa **Sắp xếp** và **Xóa ALL** khi đang xếp; hủy được cả lượt đang chạy lẫn đang chờ mà không ảnh hưởng trường khác
 - [ ] Khi server đầy slot/token, UI âm thầm chờ FIFO và thử lại; không hiện lỗi đỏ hoặc để lượt sau vượt lượt trước
-- [ ] Trường thời lượng trống dùng `60s` cho lịch mới/đổi yêu cầu và `180s` cho lịch đầy đủ cần tối ưu tiếp; có thể dừng sớm khi bão hòa, không tự điền ô thời gian và không tự tạo lượt retry
+- [ ] Trường thời lượng trống dùng cổng chất lượng tối đa `110s` cho lịch mới/đổi yêu cầu và `180s` cho lịch đầy đủ cần tối ưu tiếp; lượt mới trả sớm khi lịch đủ, hợp lệ, `Dạy 1 tiết/buổi = 0` và `Trống 2 tiết = 0`, không tự điền ô thời gian và không tự tạo lượt retry
 - [ ] Thời lượng do người dùng nhập luôn thắng mặc định ẩn; một lần bấm tạo đúng một canonical job
 - [ ] Khi tải trang, tiến trình mặc định ẩn. Sau khi dữ liệu/auth sẵn sàng, trang hỏi `/api/solver-state` đúng một lần; có job thì nối lại đúng `jobId`, không có job thì giữ trạng thái nghỉ và không polling ngầm
 - [ ] F5, đổi tab, khóa màn hình hoặc đưa PWA iPhone xuống nền không hủy job VPS; khi quay lại chỉ GET state/result, không POST solve thứ hai

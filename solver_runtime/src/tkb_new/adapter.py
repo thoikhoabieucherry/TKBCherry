@@ -8843,14 +8843,23 @@ def _solve_unified_first_click_feasibility_then_quality(
         or period_feasibility_bridge_required
         or _truthy_setting(settings.get("optimization_benders_period_feasibility_all_sessions"))
     )
-    # Period-sensitive schools build the large all-session CP-SAT bridge.  On
-    # the VPS, spending the first half of a 60-second click proving the soft
-    # zero-singleton/gap<=1 envelope can leave too little time to construct the
-    # mandatory relaxed model.  Obtain an unconstrained hard-valid incumbent
-    # first, then let Phase Q spend the remaining budget on those quality goals.
-    # The request seed is still used by Phase Q, so fresh clicks remain diverse.
+    # Large period-sensitive schools need a first-result quality gate: no
+    # avoidable one-period teacher session and no teacher gap of two or more.
+    # Try that wider cap before compacting sessions.  If the first attempt
+    # fails early, a second request-derived seed can use the remaining budget
+    # without replaying one hidden template. A separately reserved
+    # debt-allowed lane still guarantees that user rules which make the quality
+    # gate impossible can return a complete timetable.
+    strict_quality_gate_first = (
+        large_first_click
+        and period_feasibility_all_sessions
+        and quality_debt_fallback_enabled
+        and _truthy_setting(settings.get("optimization_first_click_strict_quality_gate", "1"))
+    )
     safe_period_feasibility_first = (
-        period_feasibility_all_sessions and quality_debt_fallback_enabled
+        period_feasibility_all_sessions
+        and quality_debt_fallback_enabled
+        and not strict_quality_gate_first
     )
     # The all-session period bridge is a substantially larger CP-SAT model.
     # Giving it the lean model's 24-second slice repeatedly returned UNKNOWN on
@@ -8859,7 +8868,27 @@ def _solve_unified_first_click_feasibility_then_quality(
     # seconds finding that single usable vector instead of reserving time for a
     # duplicate period-allocation pass.
     quality_debt_fallback_reserve = 0.0
-    if (
+    if strict_quality_gate_first:
+        quality_gate_completion_reserve = min(
+            45.0,
+            max(20.0, available_for_feasibility * 0.43),
+        )
+        primary_gate_budget = max(
+            12.0,
+            min(
+                60.0,
+                _to_float(
+                    settings.get("optimization_first_click_strict_quality_gate_seconds"),
+                    55.0,
+                ),
+                max(12.0, available_for_feasibility - quality_gate_completion_reserve),
+            ),
+        )
+        quality_debt_fallback_reserve = max(
+            0.0,
+            available_for_feasibility - primary_gate_budget,
+        )
+    elif (
         quality_debt_fallback_enabled
         and not safe_period_feasibility_first
         and available_for_feasibility >= 20.0
@@ -9033,6 +9062,7 @@ def _solve_unified_first_click_feasibility_then_quality(
             "period_feasibility_all_sessions": period_feasibility_all_sessions,
             "quality_debt_allowed": safe_period_feasibility_first,
             "safe_period_feasibility_first": safe_period_feasibility_first,
+            "strict_quality_gate_first": strict_quality_gate_first,
         }
     )
     strict_candidate_accepted = _unified_first_click_candidate_acceptable(
@@ -9040,12 +9070,123 @@ def _solve_unified_first_click_feasibility_then_quality(
         required_lessons,
         allow_quality_debt=safe_period_feasibility_first,
     )
+    quality_debt_safety_payload: dict[str, Any] = {}
+    if (
+        not strict_candidate_accepted
+        and _unified_first_click_candidate_acceptable(
+            feasibility_payload,
+            required_lessons,
+            allow_quality_debt=True,
+        )
+    ):
+        quality_debt_safety_payload = feasibility_payload
+        feasibility_summary["quality_debt_safety_retained"] = True
     feasibility_summary.update(
         {"accepted": strict_candidate_accepted, "new_best": strict_candidate_accepted}
     )
     attempts.append(feasibility_summary)
     if strict_candidate_accepted and safe_period_feasibility_first:
         feasibility_quality_debt_allowed = True
+
+    if not strict_candidate_accepted and strict_quality_gate_first:
+        remaining = deadline.remaining()
+        retry_available = max(
+            0.0,
+            (float(remaining) if remaining is not None else 0.0) - return_reserve,
+        )
+        # Preserve a real completion slice after an early alternate strict
+        # seed. Production measurements put the objective-free completion lane
+        # near 42 seconds, so the automatic 110-second contract keeps 45
+        # seconds untouched. A late strict failure can legitimately skip this
+        # retry when its reserved slice would be too short.
+        retry_completion_reserve = min(
+            45.0,
+            max(20.0, available_for_feasibility * 0.43),
+        )
+        retry_budget = min(25.0, max(0.0, retry_available - retry_completion_reserve))
+        if retry_budget >= 12.0:
+            retry_seed = _first_click_request_portfolio_seed(feasibility_seed, 1)
+            if progress:
+                progress(
+                    {
+                        "stage": "teacher_session_opt:first_click_quality_gate_retry",
+                        "message": "Dang thu quy dao sach thu hai",
+                        "cap": phase_f_cap,
+                        "time_limit_seconds": round(retry_budget, 3),
+                        "random_seed": retry_seed,
+                    }
+                )
+            retry_started = time.monotonic()
+            retry_payload: dict[str, Any] = {}
+            retry_error: Exception | None = None
+            try:
+                retry_payload = _solve_teacher_session_benders_candidate(
+                    ui_data,
+                    feasibility_settings,
+                    cap=phase_f_cap,
+                    time_limit_seconds=max(12, int(retry_budget)),
+                    rules=rules,
+                    progress=progress,
+                    incumbent_payload=None,
+                    random_seed=retry_seed,
+                    deadline=deadline,
+                )
+            except Exception as exc:  # noqa: BLE001 - the debt-allowed lane remains reserved.
+                retry_error = exc
+            retry_accepted = _unified_first_click_candidate_acceptable(
+                retry_payload,
+                required_lessons,
+                allow_quality_debt=False,
+            )
+            retry_summary = _teacher_session_opt_summarize_attempt(
+                cap=phase_f_cap,
+                elapsed_seconds=time.monotonic() - retry_started,
+                payload=retry_payload or None,
+                error=retry_error,
+            )
+            retry_summary.update(
+                {
+                    "phase": "fresh_complete_first_strict_quality_retry",
+                    "attempt_key": "fresh:phase_f:strict_quality_retry",
+                    "mandatory_fallback": True,
+                    "fixed_lessons_required": len(required_lessons),
+                    "constraint_change_feasibility_first": constraint_change_feasibility_first,
+                    "bounded_fresh_quality_debt": bounded_fresh_quality_debt,
+                    "period_feasibility_bridge_required": period_feasibility_bridge_required,
+                    "period_feasibility_all_sessions": period_feasibility_all_sessions,
+                    "quality_debt_allowed": False,
+                    "safe_period_feasibility_first": False,
+                    "strict_quality_gate_first": True,
+                    "random_seed": retry_seed,
+                    "accepted": retry_accepted,
+                    "new_best": retry_accepted,
+                }
+            )
+            attempts.append(retry_summary)
+            if retry_accepted:
+                feasibility_payload = retry_payload
+                strict_candidate_accepted = True
+            elif _unified_first_click_candidate_acceptable(
+                retry_payload,
+                required_lessons,
+                allow_quality_debt=True,
+            ):
+                safety_metrics = (
+                    quality_debt_safety_payload.get("metrics")
+                    if isinstance(quality_debt_safety_payload.get("metrics"), Mapping)
+                    else {}
+                )
+                retry_metrics = (
+                    retry_payload.get("metrics")
+                    if isinstance(retry_payload.get("metrics"), Mapping)
+                    else {}
+                )
+                if not quality_debt_safety_payload or _incremental_refinement_candidate_better(
+                    retry_metrics,
+                    safety_metrics,
+                ):
+                    quality_debt_safety_payload = retry_payload
+                retry_summary["quality_debt_safety_retained"] = True
 
     if not strict_candidate_accepted and quality_debt_fallback_enabled:
         remaining = deadline.remaining()
@@ -9063,6 +9204,7 @@ def _solve_unified_first_click_feasibility_then_quality(
             fallback_cap = (
                 upper_cap
                 if safe_period_feasibility_first
+                or strict_quality_gate_first
                 or _solver_worker_count(fallback_settings) <= 2
                 else feasibility_cap
             )
@@ -9084,7 +9226,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                     # itself failed, keep the retry objective-free as well so
                     # completion remains the only priority.
                     "optimization_benders_session_feasibility_only": (
-                        safe_period_feasibility_first
+                        safe_period_feasibility_first or strict_quality_gate_first
                     ),
                     "period_max_teacher_gap": "off",
                     "relax_period_teacher_gap_on_failure": True,
@@ -9123,7 +9265,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                     rules=rules,
                     progress=progress,
                     incumbent_payload=None,
-                    random_seed=feasibility_seed + 1,
+                    random_seed=_first_click_request_portfolio_seed(feasibility_seed, 2),
                     deadline=deadline,
                 )
             except Exception as exc:  # noqa: BLE001 - normalized into the final solve error below.
@@ -9159,6 +9301,26 @@ def _solve_unified_first_click_feasibility_then_quality(
                 feasibility_payload = fallback_payload
                 feasibility_settings = fallback_settings
                 feasibility_quality_debt_allowed = True
+
+    if (
+        not strict_candidate_accepted
+        and not feasibility_quality_debt_allowed
+        and quality_debt_safety_payload
+    ):
+        feasibility_payload = quality_debt_safety_payload
+        feasibility_quality_debt_allowed = True
+        attempts.append(
+            {
+                "ok": True,
+                "phase": "fresh_complete_first_quality_debt_safety",
+                "attempt_key": "fresh:phase_f:quality_debt_safety",
+                "accepted": True,
+                "new_best": False,
+                "quality_debt_allowed": True,
+                "incumbent_retained": True,
+                "reason": "complete_hard_valid_candidate_survived_failed_cleanup",
+            }
+        )
 
     if not _unified_first_click_candidate_acceptable(
         feasibility_payload,
