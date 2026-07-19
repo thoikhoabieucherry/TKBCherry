@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .models import Lesson, SchoolData
+from .random_seed import normalize_cp_sat_seed
 from .period_milp import (
     LessonEvent,
     _day_key,
@@ -124,6 +125,7 @@ def solve_gap0_cp_sat(
     progress: ProgressFn | None = None,
 ) -> tuple[list[Lesson], dict[str, Any]]:
     """Solve concrete periods with hard teacher no-gap and no one-period sessions."""
+    random_seed = normalize_cp_sat_seed(random_seed)
 
     cp_model = _load_cp_model()
     rule_set = resolve_rule_set(rules)

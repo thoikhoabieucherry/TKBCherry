@@ -54,7 +54,7 @@ Chất lượng được so sánh theo thứ tự ưu tiên (lexicographic), kh�
 4. Giảm tổng số buổi dạy của giáo viên.
 5. Giảm khoảng trống 1 tiết, sau đó mới xét tổng khoảng trống và độ cân bằng.
 
-Với lịch lớn, lần xếp mới có safety ceiling tối đa `180` giây và lần bấm tối ưu tiếp tối đa `120` giây. Lần đầu dựng lịch đầy đủ sạch trước, ép trần số buổi theo nấc ổn định rồi dùng ALNS an toàn trên incumbent; lần bấm tiếp mở rộng neighborhood và tiếp tục giảm số buổi/gap 1. Solver có thể dừng sớm khi chất lượng không cải thiện qua các vòng stagnation; thời gian chờ FIFO không bị tính vào thời gian giải. Nhánh sửa lịch thiếu ít tiết dùng ngân sách ngắn hơn theo đúng số tiết còn thiếu.
+Khi ô thời lượng để trống, lần xếp mới hoặc dựng lại sau khi đổi yêu cầu có safety ceiling `60` giây; lần bấm tối ưu tiếp trên lịch đầy đủ có ceiling `180` giây. Solver có thể dừng sớm khi đã có nghiệm tốt và không còn cải thiện qua các vòng stagnation. Ô thời lượng không bị tự điền, thời gian người dùng nhập luôn thắng mặc định ẩn, thời gian chờ FIFO không bị tính vào thời gian giải, và mỗi lần bấm chỉ tạo một canonical job. Nhánh sửa lịch thiếu ít tiết dùng ngân sách ngắn hơn theo đúng số tiết còn thiếu. Bản v1.44 thêm hàng rào lưu bắt buộc cho thao tác Xóa và Phase-Q thích nghi: nhánh nhanh được giữ lại, chỉ mở CP-SAT toàn kỳ khi nhánh đó thật sự bế tắc.
 
 `GET /api/health` trả về `api: "rust"` và `algorithmStatus` phản ánh backend đang dùng (ví dụ `hybrid-reference-cp-sat-milp-v1` khi Python solver sẵn sàng).
 
@@ -72,8 +72,8 @@ Với lịch lớn, lần xếp mới có safety ceiling tối đa `180` giây v
 
 Backend dùng **solver pool FIFO** có giới hạn CPU để nhiều trường không làm CP-SAT tranh tài nguyên rồi hết deadline:
 
-- VPS 6 CPU mặc định: `TKB_SOLVER_MAX_CONCURRENT=3`, `TKB_SOLVER_CPU_TOKENS=6`; fresh quality dùng toàn bộ worker và xếp hàng FIFO, refine dùng 3 worker, repair ngắn dùng 2 worker
-- Một job chỉ được nhận khi còn đủ toàn bộ worker yêu cầu; hai lượt fresh/refine có thể chạy song song `3 + 3`, còn repair ngắn có thể chia `2 + 2 + 2`
+- VPS 6 CPU mặc định: `TKB_SOLVER_MAX_CONCURRENT=3`, `TKB_SOLVER_CPU_TOKENS=6`; unified fresh/refine chất lượng dùng toàn bộ 6 worker và xếp hàng FIFO, repair ngắn dùng 2 worker
+- Một job chỉ được nhận khi còn đủ toàn bộ worker yêu cầu; mỗi thời điểm VPS chạy một unified fresh/refine hoặc tối đa ba repair ngắn `2 + 2 + 2`
 - Local `start.py` tự chọn 1-4 slot theo số CPU và chia tối đa 8 worker cho mỗi lượt
 - Khi hết slot/token, request nhận trạng thái `solver_queued` và giao diện âm thầm giữ vị trí, thử lại theo FIFO; lượt sau không được vượt lượt trước
 - Mỗi lượt xếp có `solve_run_id` và chủ sở hữu riêng — trạng thái và nút **Dừng** chỉ xem/hủy lượt đang chạy hoặc đang chờ của trường đó

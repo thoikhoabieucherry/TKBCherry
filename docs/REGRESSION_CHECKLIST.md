@@ -17,12 +17,17 @@ Run after significant changes. Start app with `python start.py`, open `http://12
 - [ ] Chỉ có một nút **Sắp xếp**; không còn dropdown/nút Nhanh, Max hoặc preset lưu từ phiên cũ
 - [ ] Lịch trống/thiếu nhiều chọn `fresh_complete_first`: xếp đủ nhu cầu trước rồi mới tối ưu
 - [ ] Lịch chỉ thiếu ít tiết chọn `repair_partial`: điền phần thiếu, có thể dời tiết không khóa và không dựng lại toàn bộ vô cớ
-- [ ] Lịch đã đủ và hard-valid chọn `refine_complete` sau confirm: dùng incumbent mềm và chất lượng không xấu hơn lịch đầu vào
+- [ ] Lịch đã đủ và hard-valid chọn `refine_complete` ngay khi người dùng bấm: dùng incumbent mềm và chất lượng không xấu hơn lịch đầu vào
 - [ ] Sau khi đổi PCCM, incumbent được dựng lại giáo viên theo PCCM mới; không khôi phục tiết mang giáo viên/phân công cũ
 - [ ] Chỉ tiết có `fixed: true` giữ nguyên vị trí; các tiết hiện có khác vẫn có thể swap/dời
 - [ ] Nút **Dừng** hiện giữa **Sắp xếp** và **Xóa ALL** khi đang xếp; hủy được cả lượt đang chạy lẫn đang chờ mà không ảnh hưởng trường khác
 - [ ] Khi server đầy slot/token, UI âm thầm chờ FIFO và thử lại; không hiện lỗi đỏ hoặc để lượt sau vượt lượt trước
- - [ ] Trường thời lượng trống dùng một lượt complete-first hội tụ với watchdog `1800s`; không chấp nhận lịch thiếu khi hết watchdog, không tạo retry/job ẩn, và giữ incumbent tốt nhất qua từng pha tối ưu
+- [ ] Trường thời lượng trống dùng `60s` cho lịch mới/đổi yêu cầu và `180s` cho lịch đầy đủ cần tối ưu tiếp; có thể dừng sớm khi bão hòa, không tự điền ô thời gian và không tự tạo lượt retry
+- [ ] Thời lượng do người dùng nhập luôn thắng mặc định ẩn; một lần bấm tạo đúng một canonical job
+- [ ] Khi tải trang, tiến trình mặc định ẩn. Sau khi dữ liệu/auth sẵn sàng, trang hỏi `/api/solver-state` đúng một lần; có job thì nối lại đúng `jobId`, không có job thì giữ trạng thái nghỉ và không polling ngầm
+- [ ] F5, đổi tab, khóa màn hình hoặc đưa PWA iPhone xuống nền không hủy job VPS; khi quay lại chỉ GET state/result, không POST solve thứ hai
+- [ ] Hai thiết bị/tab cùng tài khoản và cùng `sid` chỉ có một canonical job; thiết bị đến sau xem cùng tiến trình và có thể gửi Dừng cho job đó
+- [ ] Đổi yêu cầu không tự chạy và không xóa lịch ngay. Khi người dùng bấm xếp, giữ snapshot, thử sửa nhẹ rồi tối đa một fresh fallback; thất bại phải khôi phục nguyên lịch trước khi bấm
 - [ ] **Xóa ALL** shows confirm with school name + class count
 - [ ] Undo / Redo after manual edit
 - [ ] Constraints menu (**Yêu cầu**) opens
@@ -54,7 +59,8 @@ Dùng cùng một snapshot dữ liệu cho mọi lần so sánh. Không biến s
 - [ ] Fresh benchmark ghi lại: số tiết nhu cầu/đã xếp/chưa xếp, `hard_ok`, vi phạm app, runtime, buổi 1 tiết, gap >=2, tổng buổi GV và gap 1
 - [ ] Bộ regression 1566 tiết: kết quả phải đủ `1566/1566`, hard-valid và giữ đúng toàn bộ 54 tiết `fixed: true`
 - [ ] So sánh ứng viên bằng tuple lexicographic: đủ + hard-valid → buổi 1 tiết → gap >=2 → tổng buổi GV → gap 1
-- [ ] Bấm **Sắp xếp** lần hai trên lịch đầy đủ: chạy nhánh refine, không xấu hơn incumbent; với snapshot chuẩn không hồi quy quá baseline `471 buổi / 0 buổi 1 tiết / 44 gap-1`
+- [ ] Bấm **Sắp xếp** lần hai trên lịch đầy đủ: chạy nhánh refine và chỉ nhận ứng viên tốt hơn theo tuple; không hardcode mốc buổi/gap của bộ default cho trường khác
+- [ ] Với bộ default, ghi lại dải tham chiếu lịch sử (ví dụ khoảng `460-482` buổi và `34-50` gap-1) để phát hiện hồi quy, nhưng không biến dải này thành ràng buộc cứng
 - [ ] Residual benchmark: đổi vài PCCM hoặc bỏ một ít tiết, xác nhận nhánh repair nhanh hơn fresh, đủ tiết và không còn assignment cũ
 - [ ] Chạy lại cùng snapshot ít nhất 3 lần; lưu runtime và tuple chất lượng từng lần để phát hiện biến thiên bất thường
 - [ ] Benchmark tải: mô phỏng 10 trường cùng bấm; số job chạy không vượt `maxConcurrent`/CPU tokens, phần còn lại hoàn tất theo FIFO

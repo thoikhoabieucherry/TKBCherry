@@ -4523,17 +4523,10 @@ test("cancelled solve lifecycle never paints a fake 100%", async () => {
   assert.equal(result, null);
   assert.equal(progress.home.hidden, false);
   assert.equal(progress.home.disabled, false);
-  assert.ok(progress.events.some(event => (
-    event.type === "attribute"
-    && event.id === "btnHome"
-    && event.name === "aria-disabled"
-    && event.value === "true"
-  )), "Home must stay locked until cancellation finishes");
-  assert.equal(progress.events.some(event => (
-    event.type === "hidden" && event.id === "btnHome" && event.value === true
-  )), false, "Home must retain its toolbar slot until cancellation finishes");
-  assert.equal(progress.pct.textContent, "!");
-  assert.equal(progress.wrap.classList.contains("is-error"), true);
+  assert.equal(progress.home.hidden, false, "Home must unlock with Stop");
+  assert.equal(progress.button.disabled, false, "Play must unlock before cancel response");
+  assert.equal(progress.wrap.hidden, true, "progress must settle immediately on Stop");
+  assert.equal(progress.pct.textContent, "0%");
   assert.equal(progress.events.some(event => (
     event.type === "text" && event.id === "autoSortProgressPct" && event.value === "100%"
   )), false);
@@ -6177,22 +6170,16 @@ test("pending jobs are scoped by sid and can auto-resume after reload", async ()
   assert.equal(hooks.readPendingBackendJob()?.jobId, "job-school-b");
 
   hooks.writePendingBackendJob("stale-auto-resume", "v1:old-schedule");
-  for(let hydrationAttempt = 0; hydrationAttempt < 6; hydrationAttempt += 1){
-    assert.equal(await hooks.resumePendingBackendJobOnLoad(hydrationAttempt), false);
-    assert.equal(hooks.readPendingBackendJob()?.jobId, "stale-auto-resume");
-    assert.equal(progress.home.hidden, false);
-    assert.equal(progress.home.disabled, true);
-    assert.equal(cancelledJob, "");
-  }
-
-  assert.equal(await hooks.resumePendingBackendJobOnLoad(6), false);
+  // A stale id is checked against the VPS immediately; it must not create a
+  // six-attempt hydration spinner when the server has no such session.
+  assert.equal(await hooks.resumePendingBackendJobOnLoad(0), false);
   assert.equal(hooks.readPendingBackendJob(), null);
   assert.equal(cancelledJob, "");
   assert.equal(progress.home.hidden, false);
   assert.equal(progress.home.disabled, false);
 });
 
-test("a pending server job locks Play and Home immediately after reload", () => {
+test("local pending storage does not paint a running session before VPS confirmation", () => {
   const data = makeData(2);
   const localStorage = memoryStorage();
   const location = {
@@ -6209,10 +6196,9 @@ test("a pending server job locks Play and Home immediately after reload", () => 
     location
   });
   assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, "reload-running-job");
-  assert.equal(progress.button.disabled, true);
-  assert.notEqual(progress.label.textContent, "Sẵn sàng");
+  assert.equal(progress.button.disabled, false);
   assert.equal(progress.home.hidden, false);
-  assert.equal(progress.home.disabled, true);
+  assert.equal(progress.home.disabled, true, "Home may stay locked during the authoritative state probe");
 
   reloaded.hooks.removePendingBackendJob("reload-running-job");
   assert.equal(progress.home.hidden, false);
@@ -6325,31 +6311,12 @@ test("reload keeps a pending job until owner identity finishes hydrating on retr
   assert.match(progress.nodes.get("statusMsg").textContent, /nối lại/i);
 });
 
-test("reload defers a temporary schedule fingerprint mismatch until DATA hydration settles", async () => {
-  const stableData = makeData(2);
-  const hydratingData = makeData(1);
+test("planner data-ready event releases one deferred VPS probe", async () => {
+  const data = makeData(2);
   const clock = createFakeClock(1_700_000_000_000, 0);
   const localStorage = memoryStorage();
-  const location = {
-    search:"?sid=fingerprint-hydration-school",
-    pathname:"/pages/sapxep",
-    href:"http://127.0.0.1:1010/pages/sapxep?sid=fingerprint-hydration-school"
-  };
-  const jobId = "fingerprint-hydration-running-job";
-  const ownerId = "fingerprint-owner";
-  const firstPage = loadBridge(stableData, null, Object.assign({}, clock, {localStorage, location}));
-  firstPage.window.TKBAuth = {getSession:() => ({userId:ownerId})};
-  const stableFingerprint = firstPage.hooks.durableScheduleFingerprint(stableData);
-  firstPage.hooks.writePendingBackendJob(jobId, stableFingerprint, {
-    createdAt:clock.now() - 18_000,
-    solverStartedAtMs:clock.now() - 10_000,
-    uiStartedAtMs:clock.now() - 10_000,
-    lastPercent:16,
-    progressBudgetSeconds:120,
-    progressRunIndex:2,
-    localClickTimeline:false
-  });
-
+  const progress = createProgressDocument(clock);
+  const listeners = {};
   let stateCalls = 0;
   const fetchImpl = async url => {
     const requestUrl = String(url);
@@ -6358,82 +6325,178 @@ test("reload defers a temporary schedule fingerprint mismatch until DATA hydrati
       stateCalls += 1;
       return jsonResponse({
         ok:true,
-        requestedJobId:jobId,
-        requestedJobServerOwned:true,
-        requestedJobActive:true,
-        jobs:[{
-          jobId,
-          serverOwned:true,
-          createdAtMs:clock.now() - 18_000,
-          startedAtMs:clock.now() - 10_000,
-          scheduleFingerprint:stableFingerprint,
-          progressBudgetSeconds:120,
-          progressRunIndex:2
-        }],
+        requestedJobId:"data-ready-event-job",
+        requestedJobServerOwned:false,
+        requestedJobActive:false,
+        requestedJobQueued:false,
+        requestedJobResultReady:false,
+        jobs:[],
         queue:[],
         completedJobs:[]
       });
     }
-    if(requestUrl.includes("/api/solve-result")) throw detachedAbortError();
     throw new Error(`Unexpected URL: ${url}`);
   };
-  const progress = createProgressDocument(clock);
-  const reloaded = loadBridge(hydratingData, fetchImpl, Object.assign({}, clock, {
+  const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
     localStorage,
-    location,
-    document:progress.document
+    document:progress.document,
+    addEventListener(type, listener){ listeners[type] = listener; }
   }));
-  reloaded.window.TKBAuth = {getSession:() => ({userId:ownerId})};
-  assert.notEqual(reloaded.hooks.durableScheduleFingerprint(hydratingData), stableFingerprint);
-  assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, jobId);
+  window.__TKB_PLANNER_DATA_READY = false;
+  hooks.writePendingBackendJob("data-ready-event-job", hooks.durableScheduleFingerprint(data));
+  assert.equal(typeof listeners["tkb:planner-data-ready"], "function");
 
-  assert.equal(await reloaded.hooks.resumePendingBackendJobOnLoad(0), false);
-  assert.equal(stateCalls, 0, "a transient local mismatch should wait for hydration before contacting the VPS");
-  assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, jobId, "pending work must survive the first mismatch");
-  assert.ok(clock.pendingTimers() > 0, "a temporary fingerprint mismatch must schedule a retry");
+  listeners["tkb:planner-data-ready"]();
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(stateCalls, 0, "the wake must wait for explicit planner readiness");
+  assert.equal(hooks.readPendingBackendJob()?.jobId, "data-ready-event-job");
 
-  Object.assign(hydratingData, JSON.parse(JSON.stringify(stableData)));
-  assert.equal(reloaded.hooks.durableScheduleFingerprint(hydratingData), stableFingerprint);
-  assert.equal(await reloaded.hooks.resumePendingBackendJobOnLoad(1), true);
-  assert.equal(stateCalls, 1);
-  assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, jobId);
-  assert.equal(reloaded.window.__TKB_RUST_PROGRESS_STATE?.label, "10 giây");
-  assert.equal(reloaded.window.__TKB_RUST_PROGRESS_STATE?.runIndex, 2);
-  assert.match(progress.nodes.get("statusMsg").textContent, /nối lại/i);
+  window.__TKB_PLANNER_DATA_READY = true;
+  listeners["tkb:planner-data-ready"]();
+  for(let attempt = 0; attempt < 20 && stateCalls === 0; attempt += 1){
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.equal(stateCalls, 1, "one readiness event must issue one authoritative VPS probe");
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(progress.button.disabled, false);
 });
 
-test("reload keeps an active Agent job beyond slow DATA hydration and reattaches without Play", async () => {
-  const stableData = makeData(2);
-  const hydratingData = makeData(1);
+test("PWA wake waits for planner data-ready before asking VPS once", async () => {
+  const data = makeData(2);
   const localStorage = memoryStorage();
-  const location = {
-    search:"?sid=default",
-    pathname:"/pages/sapxep",
-    href:"http://127.0.0.1:1010/pages/sapxep?sid=default"
-  };
-  const ownerId = "same-owner";
-  const jobId = "agent-running-through-slow-hydration";
-  const initial = loadBridge(stableData, null, {
-    localStorage,
-    location,
-    setTimeout(){ return 0; },
-    clearTimeout(){},
-    TKBAuth:{getSession:() => ({userId:ownerId})}
-  });
-  initial.window.TKBAuth = {getSession:() => ({userId:ownerId})};
-  const stableFingerprint = initial.hooks.durableScheduleFingerprint(stableData);
-  initial.hooks.writePendingBackendJob(jobId, stableFingerprint, {
-    createdAt:1_700_000_000_000 - 20_000,
-    solverStartedAtMs:1_700_000_000_000 - 16_000,
-    progressBudgetSeconds:60,
-    progressRunIndex:1
-  });
-
-  const clock = createFakeClock(1_700_000_000_000, 0);
-  const progress = createProgressDocument(clock);
   let stateCalls = 0;
-  let resultPolls = 0;
-  let solvePosts = 0;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      stateCalls += 1;
+      return jsonResponse({
+        ok:true,
+        requestedJobServerOwned:false,
+        requestedJobActive:false,
+        requestedJobQueued:false,
+        requestedJobResultReady:false,
+        jobs:[],
+        queue:[],
+        completedJobs:[]
+      });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const progress = createProgressDocument();
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    localStorage,
+    document:progress.document,
+    setTimeout(){ return 0; },
+    clearTimeout(){}
+  });
+  window.__TKB_PLANNER_DATA_READY = false;
+  hooks.writePendingBackendJob("wait-for-data-ready", hooks.durableScheduleFingerprint(data));
+
+  assert.equal(await hooks.resumePendingBackendJobOnLoad(0), false);
+  assert.equal(stateCalls, 0);
+  assert.equal(progress.button.disabled, false);
+
+  window.__TKB_PLANNER_DATA_READY = true;
+  assert.equal(await hooks.resumePendingBackendJobOnLoad(1), false);
+  assert.equal(stateCalls, 1);
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(progress.button.disabled, false);
+});
+
+test("an idle page does not poll VPS while planner hydration is pending", async () => {
+  const data = makeData(2);
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const localStorage = memoryStorage();
+  const progress = createProgressDocument(clock);
+  const listeners = {};
+  let stateCalls = 0;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      stateCalls += 1;
+      return jsonResponse({ok:true, jobs:[], queue:[], completedJobs:[]});
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+    localStorage,
+    document:progress.document,
+    addEventListener(type, listener){ listeners[type] = listener; }
+  }));
+  window.__TKB_PLANNER_DATA_READY = false;
+
+  // Let the initial 800 ms lifecycle wake run. With no local pending job it
+  // must stop after this one attempt instead of arming a recurring retry.
+  clock.advance(800);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(stateCalls, 0);
+  assert.equal(clock.pendingTimers(), 0, "idle hydration must not leave a hidden retry timer");
+  assert.equal(progress.button.disabled, false);
+
+  // The explicit readiness event is still sufficient to perform the one
+  // authoritative probe and settle the page idle.
+  window.__TKB_PLANNER_DATA_READY = true;
+  listeners["tkb:planner-data-ready"]();
+  for(let attempt = 0; attempt < 20 && stateCalls === 0; attempt += 1){
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.equal(stateCalls, 1);
+  assert.equal(clock.pendingTimers(), 0);
+});
+
+test("planner-ready wake is not lost while an authoritative probe is in flight", async () => {
+  const data = makeData(2);
+  const localStorage = memoryStorage();
+  const listeners = {};
+  const stateResolvers = [];
+  let stateCalls = 0;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      stateCalls += 1;
+      return await new Promise(resolve => stateResolvers.push(resolve));
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    localStorage,
+    addEventListener(type, listener){ listeners[type] = listener; }
+  });
+  window.__TKB_PLANNER_DATA_READY = true;
+  const firstProbe = hooks.resumePendingBackendJobOnLoad(0);
+  for(let attempt = 0; attempt < 20 && stateCalls < 1; attempt += 1){
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.equal(stateCalls, 1, "the initial authoritative probe must be in flight");
+
+  // The readiness event can race the first probe on a slow mobile wake. It
+  // must request one follow-up probe even though this page has no local id.
+  assert.equal(typeof listeners["tkb:planner-data-ready"], "function");
+  listeners["tkb:planner-data-ready"]();
+  stateResolvers.shift()(jsonResponse({ok:true, jobs:[], queue:[], completedJobs:[]}));
+  for(let attempt = 0; attempt < 20 && stateCalls < 2; attempt += 1){
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  assert.equal(stateCalls, 2, "the readiness wake must not be swallowed by the first probe");
+  stateResolvers.shift()(jsonResponse({ok:true, jobs:[], queue:[], completedJobs:[]}));
+  await firstProbe;
+  assert.equal(hooks.readPendingBackendJob(), null);
+});
+
+test("PWA foreground wake adopts one concrete VPS job and applies its result", async () => {
+  const {data, payload} = makeLargeApplyFixture(1, 2);
+  const localStorage = memoryStorage();
+  const progress = createProgressDocument();
+  const jobId = "foreground-wake-canonical";
+  let stateCalls = 0;
+  let resultCalls = 0;
+  let resolveResult;
+  const resultPromise = new Promise(resolve => { resolveResult = resolve; });
+  let fingerprint = "";
   const fetchImpl = async url => {
     const requestUrl = String(url);
     if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
@@ -6449,298 +6512,278 @@ test("reload keeps an active Agent job beyond slow DATA hydration and reattaches
         jobs:[{
           jobId,
           serverOwned:true,
-          executor:"agent",
-          executionPhase:"agent_running",
-          createdAtMs:clock.now() - 20_000,
-          startedAtMs:clock.now() - 16_000,
-          progressBudgetSeconds:60,
-          progressRunIndex:1,
-          scheduleFingerprint:stableFingerprint
+          scheduleFingerprint:fingerprint,
+          scheduleScope:"default",
+          executor:"vps",
+          executionPhase:"vps_running",
+          createdAtMs:Date.now() - 4_000,
+          startedAtMs:Date.now() - 3_000,
+          progressBudgetSeconds:60
         }],
         queue:[],
         completedJobs:[]
       });
     }
     if(requestUrl.includes("/api/solve-result")){
-      resultPolls += 1;
-      throw detachedAbortError();
-    }
-    if(requestUrl.endsWith("/api/solve-data")){
-      solvePosts += 1;
-      throw new Error("reload reattach must not submit a duplicate solve");
+      resultCalls += 1;
+      return await resultPromise;
     }
     throw new Error(`Unexpected URL: ${url}`);
   };
-  const reloaded = loadBridge(hydratingData, fetchImpl, Object.assign({}, clock, {
+  const {hooks} = loadBridge(data, fetchImpl, {
     localStorage,
-    location,
     document:progress.document,
-    TKBAuth:{getSession:() => ({userId:ownerId})}
-  }));
-  assert.equal(progress.button.disabled, true, "reload must lock Play before the first state probe");
-  assert.notEqual(progress.label.textContent, "Sẵn sàng");
-
-  for(let attempt = 0; attempt < 6; attempt += 1){
-    assert.equal(await reloaded.hooks.resumePendingBackendJobOnLoad(attempt), false);
-  }
-  assert.equal(stateCalls, 0, "the short local hydration grace should avoid unnecessary state probes");
-
-  assert.equal(await reloaded.hooks.resumePendingBackendJobOnLoad(6), false);
-  assert.equal(stateCalls, 1, "the server must arbitrate whether the durable Agent job can be detached");
-  assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, jobId);
-  assert.equal(progress.button.disabled, true, "Play must stay locked while the Agent job remains live");
-  assert.match(progress.nodes.get("statusMsg").textContent, /nối lại/i);
-
-  Object.assign(hydratingData, JSON.parse(JSON.stringify(stableData)));
-  assert.equal(reloaded.hooks.durableScheduleFingerprint(hydratingData), stableFingerprint);
-  clock.advance(2_000);
-  await new Promise(resolve => setImmediate(resolve));
-  await new Promise(resolve => setImmediate(resolve));
-  await new Promise(resolve => setImmediate(resolve));
-
-  assert.equal(stateCalls, 2);
-  assert.equal(resultPolls, 1, "hydrated DATA must automatically enter the same poll-only Agent job");
-  assert.equal(solvePosts, 0);
-  assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, jobId);
-});
-
-test("an Agent result completing during slow hydration stays pending until it can be applied", async () => {
-  const {data:stableData, payload:serverPayload} = makeLargeApplyFixture(1, 2);
-  const hydratingData = makeData(1);
-  const localStorage = memoryStorage();
-  const location = {
-    search:"?sid=default",
-    pathname:"/pages/sapxep",
-    href:"http://127.0.0.1:1010/pages/sapxep?sid=default"
-  };
-  const ownerId = "same-owner";
-  const jobId = "agent-completed-during-slow-hydration";
-  const initial = loadBridge(stableData, null, {
-    localStorage,
-    location,
-    setTimeout(){ return 0; },
-    clearTimeout(){}
+    setTimeout,
+    clearTimeout
   });
-  initial.window.TKBAuth = {getSession:() => ({userId:ownerId})};
-  const stableFingerprint = initial.hooks.durableScheduleFingerprint(stableData);
-  initial.hooks.writePendingBackendJob(jobId, stableFingerprint, {
-    createdAt:1_700_000_000_000 - 20_000,
-    solverStartedAtMs:1_700_000_000_000 - 16_000,
-    progressBudgetSeconds:60
-  });
-
-  const clock = createFakeClock(1_700_000_000_000, 0);
-  const progress = createProgressDocument(clock);
-  let stateCalls = 0;
-  let resultPolls = 0;
-  let solvePosts = 0;
-  let cancelPosts = 0;
-  const fetchImpl = async (url) => {
-    const requestUrl = String(url);
-    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
-    if(requestUrl.includes("/api/solver-state")){
-      stateCalls += 1;
-      const completed = stateCalls >= 2;
-      return jsonResponse({
-        ok:true,
-        requestedJobId:jobId,
-        requestedJobServerOwned:true,
-        requestedJobActive:!completed,
-        requestedJobQueued:false,
-        requestedJobResultReady:completed,
-        jobs:completed ? [] : [{
-          jobId,
-          serverOwned:true,
-          executor:"agent",
-          executionPhase:"agent_running",
-          createdAtMs:clock.now() - 20_000,
-          startedAtMs:clock.now() - 16_000,
-          scheduleFingerprint:stableFingerprint
-        }],
-        queue:[],
-        completedJobs:completed ? [{
-          jobId,
-          serverOwned:true,
-          completedAtMs:clock.now(),
-          scheduleFingerprint:stableFingerprint
-        }] : []
-      });
-    }
-    if(requestUrl.includes("/api/solve-result")){
-      resultPolls += 1;
-      return jsonResponse(serverPayload);
-    }
-    if(requestUrl.endsWith("/api/solve-data")){
-      solvePosts += 1;
-      throw new Error("hydration recovery must not submit another solve");
-    }
-    if(requestUrl.endsWith("/api/solve-cancel")){
-      cancelPosts += 1;
-      throw new Error("hydration recovery must not cancel the completed Agent job");
-    }
-    throw new Error(`Unexpected URL: ${url}`);
-  };
-  const reloaded = loadBridge(hydratingData, fetchImpl, Object.assign({}, clock, {
-    localStorage,
-    location,
-    document:progress.document,
-    TKBAuth:{getSession:() => ({userId:ownerId})}
-  }));
-
-  for(let attempt = 0; attempt < 7; attempt += 1){
-    assert.equal(await reloaded.hooks.resumePendingBackendJobOnLoad(attempt), false);
-  }
-  assert.equal(stateCalls, 1);
-  clock.advance(2_000);
-  await new Promise(resolve => setImmediate(resolve));
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(stateCalls, 2);
-  assert.equal(resultPolls, 0, "a terminal result must wait for the matching visible DATA");
-  assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, jobId);
-  assert.equal(progress.button.disabled, true);
-
-  for(const key of Object.keys(hydratingData)) delete hydratingData[key];
-  Object.assign(hydratingData, JSON.parse(JSON.stringify(stableData)));
-  assert.equal(reloaded.hooks.durableScheduleFingerprint(hydratingData), stableFingerprint);
-  clock.advance(2_000);
-  for(let attempt = 0; attempt < 20 && reloaded.hooks.readPendingBackendJob(); attempt += 1){
-    await new Promise(resolve => setImmediate(resolve));
-  }
-
-  assert.equal(stateCalls, 3);
-  assert.equal(resultPolls, 1);
-  assert.equal(solvePosts, 0);
-  assert.equal(cancelPosts, 0);
-  assert.equal(reloaded.hooks.countScheduledLessons(hydratingData), 2);
-  assert.equal(reloaded.hooks.readPendingBackendJob(), null);
-});
-
-test("a fixed-only reload follows Agent to VPS handoff and applies the same completed job", async () => {
-  const {data:stableData, payload:serverPayload} = makeLargeApplyFixture(1, 2);
-  const subject = String(stableData.mon[0].ten);
-  stableData.tkb = {
-    L1:{thu2:{sang:[{mon:subject, fixed:true}, subject, "", "", ""], chieu:["", "", "", "", ""]}}
-  };
-  stableData.tkbSolverResult = JSON.parse(JSON.stringify(serverPayload));
-  const hydratingData = JSON.parse(JSON.stringify(stableData));
-  hydratingData.tkb.L1.thu2.sang[1] = "";
-  delete hydratingData.tkbSolverResult;
-
-  const localStorage = memoryStorage();
-  const location = {
-    search:"?sid=default",
-    pathname:"/pages/sapxep",
-    href:"http://127.0.0.1:1010/pages/sapxep?sid=default"
-  };
-  const ownerId = "same-owner";
-  const jobId = "completed-local-job-fixed-only-reload";
-  const initial = loadBridge(stableData, null, {
-    localStorage,
-    location,
-    setTimeout(){ return 0; },
-    clearTimeout(){},
-    TKBAuth:{getSession:() => ({userId:ownerId})}
-  });
-  const stableFingerprint = initial.hooks.durableScheduleFingerprint(stableData);
-  initial.hooks.writePendingBackendJob(jobId, stableFingerprint, {
-    createdAt:1_700_000_000_000 - 20_000,
-    solverStartedAtMs:1_700_000_000_000 - 16_000,
+  fingerprint = hooks.durableScheduleFingerprint(data);
+  hooks.writePendingBackendJob(jobId, fingerprint, {
+    createdAt:Date.now() - 4_000,
+    solverStartedAtMs:Date.now() - 3_000,
     progressBudgetSeconds:60,
     localClickTimeline:true
   });
 
+  const wake = hooks.resumePendingBackendJobOnLoad(0);
+  for(let attempt = 0; attempt < 10 && resultCalls === 0; attempt += 1){
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.equal(stateCalls, 1);
+  assert.equal(resultCalls, 1);
+  assert.equal(progress.button.disabled, true);
+  resolveResult(jsonResponse(payload));
+  const applied = await wake;
+
+  assert.ok(applied);
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(progress.button.disabled, false);
+  assert.equal(hooks.countScheduledLessons(data), 2);
+});
+
+test("a late lifecycle retry cannot overwrite a faster foreground wake", async () => {
+  const data = makeData(2);
   const clock = createFakeClock(1_700_000_000_000, 0);
-  const progress = createProgressDocument(clock);
+  const localStorage = memoryStorage();
   let stateCalls = 0;
-  let resultPolls = 0;
-  let solvePosts = 0;
-  let cancelPosts = 0;
   const fetchImpl = async url => {
     const requestUrl = String(url);
     if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
     if(requestUrl.includes("/api/solver-state")){
       stateCalls += 1;
-      const completed = stateCalls >= 3;
-      const executor = stateCalls === 1 ? "agent" : "vps";
-      return jsonResponse({
-        ok:true,
-        requestedJobId:jobId,
-        requestedJobServerOwned:true,
-        requestedJobActive:!completed,
-        requestedJobQueued:false,
-        requestedJobResultReady:completed,
-        requestedJobExecutor:completed ? "vps" : executor,
-        requestedJobExecutionPhase:completed
-          ? "completed"
-          : (executor === "agent" ? "agent_running" : "vps_running"),
-        jobs:completed ? [] : [{
-          jobId,
-          serverOwned:true,
-          executor,
-          executionPhase:executor === "agent" ? "agent_running" : "vps_running",
-          createdAtMs:clock.now() - 20_000,
-          startedAtMs:clock.now() - 16_000,
-          scheduleFingerprint:stableFingerprint
-        }],
-        queue:[],
-        completedJobs:completed ? [{
-          jobId,
-          serverOwned:true,
-          createdAtMs:clock.now() - 20_000,
-          completedAtMs:clock.now(),
-          scheduleFingerprint:stableFingerprint
-        }] : []
-      });
-    }
-    if(requestUrl.includes("/api/solve-result")){
-      resultPolls += 1;
-      return jsonResponse(JSON.parse(JSON.stringify(serverPayload)));
-    }
-    if(requestUrl.endsWith("/api/solve-data")){
-      solvePosts += 1;
-      throw new Error("fixed-only recovery must not start a second solve");
-    }
-    if(requestUrl.endsWith("/api/solve-cancel")){
-      cancelPosts += 1;
-      throw new Error("fixed-only recovery must not cancel the completed job");
+      return jsonResponse({ok:true, jobs:[], queue:[], completedJobs:[]});
     }
     throw new Error(`Unexpected URL: ${url}`);
   };
-  const reloaded = loadBridge(hydratingData, fetchImpl, Object.assign({}, clock, {
+  const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {localStorage}));
+  hooks.writePendingBackendJob("wake-priority-job", hooks.durableScheduleFingerprint(data));
+  window.__TKB_SOLVE_UI_BUSY = true;
+  window.__TKB_RUST_SOLVER_RUNNING = true;
+  hooks.schedulePendingBackendResume(0, 100);
+  clock.advance(100);
+  await new Promise(resolve => setImmediate(resolve));
+  // This models the old suspended lifecycle's late 15-second catch/finally.
+  hooks.schedulePendingBackendResume(0, 15_000);
+  window.__TKB_SOLVE_UI_BUSY = false;
+  window.__TKB_RUST_SOLVER_RUNNING = false;
+  clock.advance(1_999);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(stateCalls, 0, "the 2-second wake should not run early");
+  clock.advance(1);
+  for(let attempt = 0; attempt < 20 && stateCalls === 0; attempt += 1){
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.equal(stateCalls, 1, "the late 15-second retry must not replace the wake");
+});
+
+test("Delete tombstone prevents an old completed job from being adopted", async () => {
+  const data = makeData(2);
+  const localStorage = memoryStorage();
+  let stateCalls = 0;
+  let cancelPosts = 0;
+  const fetchImpl = async (url) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelPosts += 1;
+      return jsonResponse({ok:true, cancelRequested:true});
+    }
+    if(requestUrl.includes("/api/solver-state")){
+      stateCalls += 1;
+      return jsonResponse({ok:true, jobs:[], queue:[], completedJobs:[]});
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {hooks} = loadBridge(data, fetchImpl, {localStorage});
+  hooks.writePendingBackendJob("pre-delete-job", hooks.durableScheduleFingerprint(data));
+
+  const mutation = hooks.invalidatePendingSolveForScheduleMutation();
+  assert.equal(mutation.jobId, "pre-delete-job");
+  assert.ok(hooks.scheduleMutationTombstone());
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(await hooks.inspectExistingBackendJobForManualSolve(data), null);
+  assert.equal(stateCalls, 0);
+  for(let attempt = 0; attempt < 10 && cancelPosts === 0; attempt += 1){
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.equal(cancelPosts, 1);
+});
+
+test("immediate Play after Delete waits for remote persistence and posts a fixed-only fresh request", async () => {
+  const data = makeData(2);
+  const subject = data.mon[0].ten;
+  data.tkb = {
+    L1:{
+      thu2:{
+        sang:[{mon:subject, fixed:true}, "", "", "", ""],
+        chieu:["", "", "", "", ""]
+      }
+    }
+  };
+  delete data.tkbSolverResult;
+  let resolvePersistence;
+  const persistence = new Promise(resolve => { resolvePersistence = resolve; });
+  let solvePosts = 0;
+  let posted = null;
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      return jsonResponse({ok:true, jobs:[], queue:[], completedJobs:[]});
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      posted = JSON.parse(options.body);
+      return jsonResponse({
+        ok:false,
+        kind:"no_complete_schedule_before_deadline",
+        error:"test terminal",
+        metrics:{scheduled_periods:1, expected_periods:2, unassigned_periods:1, hard_ok:false},
+        solver:{runtime_settings:{deadline_hit:true}}
+      }, 422);
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const quietConsole = {log(){}, info(){}, warn(){}, error(){}};
+  const {window, hooks} = loadBridge(data, fetchImpl, {console:quietConsole});
+
+  hooks.invalidatePendingSolveForScheduleMutation();
+  window.__TKB_SCHEDULE_MUTATION_SAVE_PROMISE = persistence;
+  const plan = hooks.buildAutomaticAutoSortPlan(data);
+  assert.equal(plan.kind, "fresh_complete_first");
+  const solving = window.TKBRustAPI.solve({ask:false, settings:plan.settings, singlePass:true});
+
+  for(let attempt = 0; attempt < 20; attempt += 1){
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.equal(solvePosts, 0, "Play must not POST while the destructive remote save is pending");
+
+  resolvePersistence(true);
+  assert.equal(await solving, null);
+  assert.equal(solvePosts, 1);
+  assert.equal(posted.data.__tkbRequestFixedScheduleOnly, true);
+  assert.equal(posted.data.__tkbRequestStrippedSchedule, true);
+  assert.equal(posted.data.tkbSolverResult, undefined);
+  assert.equal(hooks.countScheduledLessons(posted.data), 1);
+  assert.equal(posted.settings.preserve_existing_tkb, false);
+});
+
+test("Play after Delete does not POST when remote persistence fails", async () => {
+  const data = makeData(2);
+  let solvePosts = 0;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      return jsonResponse({ok:true, jobs:[], queue:[], completedJobs:[]});
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      throw new Error("Play must not POST after a failed destructive save");
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const progress = createProgressDocument();
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    document:progress.document,
+    console:{log(){}, info(){}, warn(){}, error(){}}
+  });
+  hooks.invalidatePendingSolveForScheduleMutation();
+  window.__TKB_SCHEDULE_MUTATION_SAVE_PROMISE = Promise.reject(
+    new Error("remote school store unavailable")
+  );
+  const plan = hooks.buildAutomaticAutoSortPlan(data);
+
+  assert.equal(
+    await window.TKBRustAPI.solve({ask:false, settings:plan.settings, singlePass:true}),
+    null
+  );
+  assert.equal(solvePosts, 0);
+  assert.match(progress.nodes.get("statusMsg").textContent, /Chưa lưu được thao tác Xóa/);
+});
+
+test("Delete cancels a server job discovered while the local state probe is in flight", async () => {
+  const data = makeData(2);
+  const localStorage = memoryStorage();
+  const location = {
+    search:"?sid=default",
+    pathname:"/pages/sapxep",
+    href:"http://127.0.0.1:1010/pages/sapxep?sid=default"
+  };
+  const jobId = "delete-race-server-job";
+  const stateResolvers = [];
+  let stateCalls = 0;
+  let cancelPosts = 0;
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      stateCalls += 1;
+      return await new Promise(resolve => stateResolvers.push(resolve));
+    }
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelPosts += 1;
+      assert.equal(JSON.parse(options.body).solve_run_id, jobId);
+      return jsonResponse({ok:true, cancelRequested:true, jobId});
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {hooks} = loadBridge(data, fetchImpl, {
     localStorage,
     location,
-    document:progress.document,
-    TKBAuth:{getSession:() => ({userId:ownerId})}
-  }));
-  assert.equal(reloaded.hooks.readPendingBackendJob()?.localClickTimeline, true);
-  assert.equal(reloaded.hooks.expectedLessonCount(hydratingData), 2);
-  assert.equal(reloaded.hooks.countScheduledLessons(hydratingData), 1);
-
-  for(let attempt = 0; attempt < 6; attempt += 1){
-    assert.equal(await reloaded.hooks.resumePendingBackendJobOnLoad(attempt), false);
+    setTimeout(){ return 0; },
+    clearTimeout(){}
+  });
+  const probe = hooks.resumePendingBackendJobOnLoad(0);
+  for(let attempt = 0; attempt < 20 && stateCalls < 1; attempt += 1){
+    await new Promise(resolve => setImmediate(resolve));
   }
-  assert.equal(await reloaded.hooks.resumePendingBackendJobOnLoad(6), false);
-  assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, jobId);
-  assert.equal(progress.button.disabled, true);
-  assert.equal(await reloaded.hooks.resumePendingBackendJobOnLoad(7), false);
-  assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, jobId);
-  assert.equal(progress.button.disabled, true);
-  const recovered = await reloaded.hooks.resumePendingBackendJobOnLoad(8);
-
-  assert.ok(recovered, JSON.stringify({
-    scheduled:reloaded.hooks.countScheduledLessons(hydratingData),
-    pending:reloaded.hooks.readPendingBackendJob(),
-    status:progress.nodes.get("statusMsg").textContent,
-    lastError:reloaded.window.__TKB_SOLVER_LAST_ERROR,
-    lastErrorRaw:reloaded.window.__TKB_SOLVER_LAST_ERROR_RAW
-  }));
-  assert.equal(stateCalls, 3);
-  assert.equal(resultPolls, 1);
-  assert.equal(solvePosts, 0);
-  assert.equal(cancelPosts, 0);
-  assert.equal(reloaded.hooks.countScheduledLessons(hydratingData), 2);
-  assert.equal(reloaded.hooks.readPendingBackendJob(), null);
-  assert.match(progress.nodes.get("statusMsg").textContent, /xếp xong/i);
+  assert.ok(stateCalls >= 1, "the initial load probe must be in flight");
+  const mutation = hooks.invalidatePendingSolveForScheduleMutation();
+  for(let attempt = 0; attempt < 20 && stateCalls < 2; attempt += 1){
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.ok(stateCalls >= 2, "delete must perform an authoritative cancellation probe");
+  const state = jsonResponse({
+    ok:true,
+    requestedJobServerOwned:true,
+    requestedJobActive:true,
+    jobs:[{
+      jobId,
+      serverOwned:true,
+      scheduleScope:"default",
+      scheduleFingerprint:hooks.durableScheduleFingerprint(data),
+      createdAtMs:Date.now() - 1_000,
+      startedAtMs:Date.now() - 500
+    }],
+    queue:[],
+    completedJobs:[]
+  });
+  stateResolvers.splice(0).forEach(resolve => resolve(state));
+  await mutation.cancellation;
+  await probe;
+  assert.equal(cancelPosts, 1);
+  assert.equal(hooks.readServerCancellationIntent(), null);
+  assert.equal(hooks.readPendingBackendJob(), null);
 });
 
 test("manual Play adopts a local pending Agent job without POST, cancel, or pre-apply mutation", async () => {
@@ -6823,7 +6866,7 @@ test("blank anonymous browser checks the shared server job state without attachi
   assert.equal(hooks.readPendingBackendJob(), null);
 });
 
-test("blank authenticated browser keeps watching for a job admitted after its first owner-state check", async () => {
+test("blank authenticated browser stays idle after an empty owner-state check", async () => {
   const data = makeData(2);
   const clock = createFakeClock(1_700_000_000_000, 0);
   let scheduleFingerprint = "";
@@ -6834,21 +6877,7 @@ test("blank authenticated browser keeps watching for a job admitted after its fi
     if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
     if(requestUrl.includes("/api/solver-state")){
       stateCalls += 1;
-      if(stateCalls === 1){
-        return jsonResponse({ok:true, jobs:[], queue:[], completedJobs:[]});
-      }
-      return jsonResponse({
-        ok:true,
-        jobs:[{
-          jobId:runningJobId,
-          serverOwned:true,
-          createdAtMs:clock.now() - 5_000,
-          startedAtMs:clock.now() - 2_000,
-          scheduleFingerprint
-        }],
-        queue:[],
-        completedJobs:[]
-      });
+      return jsonResponse({ok:true, jobs:[], queue:[], completedJobs:[]});
     }
     if(requestUrl.includes("/api/solve-result")) throw detachedAbortError();
     throw new Error(`Unexpected URL: ${url}`);
@@ -6860,15 +6889,7 @@ test("blank authenticated browser keeps watching for a job admitted after its fi
   assert.equal(await hooks.resumePendingBackendJobOnLoad(0), false);
   assert.equal(stateCalls, 1);
   assert.equal(hooks.readPendingBackendJob(), null);
-  assert.ok(clock.pendingTimers() > 0, "an empty valid owner state must leave a background discovery timer");
-
-  clock.advance(2_000);
-  await new Promise(resolve => setImmediate(resolve));
-  await new Promise(resolve => setImmediate(resolve));
-
-  assert.equal(stateCalls, 2);
-  assert.equal(hooks.readPendingBackendJob()?.jobId, runningJobId);
-  assert.equal(hooks.readPendingBackendJob()?.discoveredFromOwnerState, true);
+  assert.equal(clock.pendingTimers(), 0, "an empty owner state must not start hidden polling");
 });
 
 test("blank authenticated browser auto-discovers the matching owner running job", async () => {
@@ -7654,6 +7675,88 @@ test("explicit Stop clears persistence even when the cancel response is lost", a
   assert.equal(hooks.readPendingBackendJob(), null);
   assert.equal(hooks.persistentAutoResumeSuppressionForScope(), true);
   assert.equal(await hooks.resumePendingBackendJobOnLoad(0), false);
+});
+
+test("Stop settles a 99-percent reconnect with no active poll lifecycle", async () => {
+  const stableData = makeData(2);
+  const subject = String(stableData.mon[0].ten);
+  stableData.tkb = {
+    L1:{thu2:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]}}
+  };
+  const hydratingData = JSON.parse(JSON.stringify(stableData));
+  hydratingData.tkb.L1.thu2.sang[1] = "";
+
+  const clock = createFakeClock(1_700_000_000_000, -1);
+  const progress = createProgressDocument(clock);
+  const localStorage = memoryStorage();
+  let cancelPosts = 0;
+  let stateCalls = 0;
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      stateCalls += 1;
+      return jsonResponse({ok:true, requestedJobServerOwned:true, requestedJobActive:true});
+    }
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelPosts += 1;
+      return jsonResponse({
+        ok:true,
+        cancelRequested:true,
+        jobId:JSON.parse(options.body).solve_run_id
+      });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const runtime = Object.assign({}, clock, {
+    localStorage,
+    document:progress.document,
+    enableIntervals:true
+  });
+  const {window, hooks} = loadBridge(hydratingData, fetchImpl, runtime);
+  window.setAutoSortProgress = (percent) => {
+    progress.wrap.hidden = false;
+    progress.pct.textContent = `${Math.round(Number(percent || 0))}%`;
+  };
+  window.hideAutoSortProgress = () => {
+    progress.wrap.hidden = true;
+    progress.pct.textContent = "0%";
+  };
+  const stableFingerprint = hooks.durableScheduleFingerprint(stableData);
+  const jobId = "stop-hydration-reconnect";
+  hooks.writePendingBackendJob(jobId, stableFingerprint, {
+    createdAt:clock.now() - 610_000,
+    solverStartedAtMs:clock.now() - 600_000,
+    progressBudgetSeconds:60,
+    lastPercent:99,
+    localClickTimeline:true
+  });
+
+  progress.button.disabled = true;
+  window.setAutoSortProgress(99);
+  assert.equal(hooks.localSolveLifecycleActive(), false);
+  assert.equal(progress.button.disabled, true);
+  assert.equal(progress.wrap.hidden, false);
+  assert.equal(progress.pct.textContent, "99%");
+
+  await window.requestStopAutoSort();
+  assert.equal(progress.button.disabled, false, JSON.stringify({
+    beforeAdvance:true,
+    status:progress.nodes.get("statusMsg")?.textContent,
+    timers:clock.pendingTimers(),
+    suppressed:hooks.automaticBackendResumeSuppressed(),
+    progressHidden:progress.wrap.hidden
+  }));
+  clock.advance(30_000);
+
+  assert.equal(cancelPosts, 1);
+  assert.equal(stateCalls, 0);
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(hooks.automaticBackendResumeSuppressed(), true);
+  assert.equal(progress.button.disabled, false);
+  assert.equal(progress.wrap.hidden, true);
+  assert.equal(progress.pct.textContent, "0%");
+  assert.ok(clock.pendingTimers() <= 1, "only the unrelated backend-health interval may remain");
 });
 
 test("Stop suppression survives UI stop reset until a genuine manual solve intent", async () => {

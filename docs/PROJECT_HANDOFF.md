@@ -8,20 +8,213 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.41** (iOS/PWA durable resume on
-  top of cross-tab Agent reattach, physical incumbent guarding, and resilient
-  VPS fallback). Public API marker:
-  `tkb_new-rust-api-2026-07-19-ios-pwa-durable-resume-v41`; page cache:
-  `20260719-v141-ios-pwa-durable-resume-v1`.
-- Current public Agent release: **v1.6.15** (`1.6.15`). The server lease gate
-  must remain at 1.6.15 or newer so an older local Agent can update itself but
-  cannot execute a job with a mismatched solver contract.
-- Current local and deployed application release: **v1.41**. Agent remains
-  **v1.6.15**.
+- Current deployed application release: **v1.44** (delete persistence barrier,
+  safe CP-SAT seeds, and adaptive first-click quality rescue). Public API
+  marker: `tkb_new-rust-api-2026-07-19-delete-barrier-adaptive-quality-v44`;
+  page cache: `20260719-v144-delete-barrier-adaptive-quality-v1`.
+- Current public Agent release: **v1.6.16** (`1.6.16`). The server lease gate
+  is also 1.6.16 so an older Agent can update itself but cannot execute a job
+  with a mismatched solver contract.
 - Every deployed application or packaged Agent update must increment the
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
    `agent_helper/windows_version_info.txt`.
+
+### v1.42 VPS-authoritative PWA wake (deployed 2026-07-19)
+
+- The browser no longer paints a running/reconnecting session from
+  `localStorage` alone. After planner data and remote school-store hydration
+  are ready, page load performs one authenticated `/api/solver-state` probe.
+  A concrete queued, active, or completed owner job is adopted; an empty state
+  leaves the UI idle with no hidden polling loop.
+- iPhone/PWA wake events (`visibilitychange` to visible, `pageshow`, `online`,
+  planner-data-ready, and auth-ready) trigger a new authoritative probe. Wake
+  calls are single-flight, preserve the earliest retry when an older suspended
+  lifecycle unwinds, and only reattach by canonical job ID. They never enter
+  the normal Play pipeline or create another solve POST.
+- Stop now unlocks Play/Home, hides progress, and stops timers immediately,
+  while server cancellation and idempotent lifecycle cleanup finish in the
+  background. Failed cancellation is stored as a scoped durable intent and is
+  retried on a later foreground/online wake.
+- Schedule deletion and other destructive timetable mutations write a scoped
+  revision/tombstone, abort local reattach, suppress stale result discovery,
+  and run a cancellation barrier that also discovers a server job when the
+  local tab did not yet know its ID. A new manual Play waits for that barrier,
+  then clears the tombstone and starts exactly one current-schedule request.
+  The valid fixed-only 54-period state is no longer mistaken for incomplete
+  browser hydration.
+- All direct and menu class/school delete routes force and await remote store
+  persistence before a stale result can be accepted. The durable fingerprint
+  includes the timetable schedule revision.
+- Release markers: page cache
+  `20260719-v142-vps-authoritative-pwa-wake-v1`, bridge
+  `tkb-rust-api-v247-vps-authoritative-pwa-wake`, planner
+  `updated-v10.2 (v1.42 VPS-authoritative PWA wake)`, and API
+  `tkb_new-rust-api-2026-07-19-vps-authoritative-pwa-wake-v42`.
+- Local verification: Node/UI **256/256**, local API E2E **46/46**, scheduler
+  **129/129**, Agent **72/72**, result-contract pytest **117/117 plus 9
+  subtests**, and deployment/package tests **25/25**. `node --check`,
+  `git diff --check`, and the changed-file credential scan pass.
+- Isolated VPS staging passes scheduler **129/129**, Agent **72/72**, Rust API
+  **136/136**, and validator **20/20**, ending with `STAGING_TESTS_OK`.
+- Production deployment returned `UPDATE_OK` after draining the solver. The
+  transaction backups are `/opt/cherry-scheduler-backups/server-state-20260719-085957.tar.gz`
+  and `/opt/cherry-scheduler-backups/app-release-20260719-085957.tar.gz`.
+  Production health reports API v42, zero active/queued jobs, and all `6/6`
+  worker tokens available. A fresh production page served both v142 script
+  markers and rendered the complete default fixture (`29/29`, zero unassigned)
+  without console errors. Existing iOS/PWA tabs can retain their old document
+  and local fixed-only state; close/reopen the standalone app or perform a
+  hard reload to obtain the v142 assets before comparing behavior.
+
+### v1.43 Diverse quality seed + fixed-only fallback (deployed 2026-07-19)
+
+- Large fresh solves no longer replace the caller's random trajectory with the
+  historical fixed Phase-Q seed `1`. That hidden default made independent
+  devices converge to the same 521-session, hint-like result. Reproducible
+  Phase-Q seeding remains available only when
+  `optimization_first_click_stable_quality_seed=true` is explicitly sent.
+- Production package markers are API
+  `tkb_new-rust-api-2026-07-19-diverse-quality-seed-v43`, bridge
+  `tkb-rust-api-v248-diverse-quality-seed`, planner
+  `updated-v10.3 (v1.43 diverse quality seed)`, and page cache
+  `20260719-v143-diverse-quality-seed-v1`. Agent **1.6.16** is one-layer UPX
+  packed and signed; the ZIP and executable hashes are recorded in the public
+  release manifest.
+- The packaged Agent ran the 1,566-period fixture to `1566/1566`, zero
+  unassigned, hard-valid, with Phase-Q seed `246813579` retained and
+  `stable_large_quality_seed=false`. Two local seeds produced different gap
+  profiles (`50` and `42`) instead of replaying one hint-like result.
+
+- Production deployment returned `UPDATE_OK` after draining the solver. Transaction
+  backups are `/opt/cherry-scheduler-backups/server-state-20260719-095743.tar.gz`
+  and `/opt/cherry-scheduler-backups/app-release-20260719-095743.tar.gz`.
+  Public health reports API v43, zero active/queued jobs, and all `6/6` worker
+  tokens available. The public page serves the v143 assets and the Agent
+  manifest serves **1.6.16**.
+- Production cross-device resume verification: one tab started a solve, a
+  second tab reloaded while it was running, and both tabs observed the same
+  canonical server job without a second solve POST. The reloaded tab displayed
+  VPS progress (`Đang nối lại lượt xếp...`), both tabs finished with
+  `Đã xếp xong!`, and health returned to zero active jobs. An idle reload keeps
+  the progress row hidden and performs one authoritative state probe; an empty
+  state does not start a hidden polling loop.
+- No further release number should be incremented merely to report progress.
+  v1.43 remains the production baseline until a separately reproduced defect
+  has a verified fix and an intentional deployment decision.
+
+### Post-v1.43 hydration maintenance fix (local, not deployed)
+
+- When planner hydration is still pending and there is no durable pending job,
+  the page now waits for the explicit planner/auth/foreground event instead of
+  arming a hidden two-second VPS probe loop. A known pending job keeps its
+  bounded retry so a real session can still reconnect.
+- Delete persistence is now a first-class manual-Play barrier. Every direct or
+  menu delete serializes its forced remote save behind any older in-flight
+  planner save and exposes that Promise to the solver bridge. An immediate Play
+  waits for both server-job cancellation and delete persistence before its one
+  solve POST, so users no longer need to refresh after deleting a complete
+  timetable and an older asynchronous write cannot later overwrite the new
+  result. The regression verifies zero solve POSTs while the delete save is
+  pending, followed by one fixed-only fresh request with no stale incumbent.
+- Local bridge verification is **188/188** and planner/toolbar verification is
+  **28/28**; `node --check` and `git diff --check` pass. Isolated VPS staging also passed
+  `STAGING_TESTS_OK` (`131` scheduler, `72` Agent, `136` Rust API, `20`
+  candidate-validator tests).
+- This maintenance change is intentionally **not deployed yet** and does not
+  change the public v1.43 markers. Deploy it only after the scheduler quality
+  baseline is accepted, with a clearly recorded release increment.
+
+### Post-v1.43 first-click period-safe quality rescue (local, not deployed)
+
+- The 1,566-period default fixture exposed a seed-sensitive Phase-Q failure:
+  seed `202` built a complete `522`-session Phase-F timetable, then spent about
+  28.5 seconds rejecting two lean `482`-session vectors at concrete-period
+  allocation and returned only `522 sessions / 108 gap-1` after local polish.
+- Large fixed-only first clicks keep the fast lean Phase-Q trajectory, so a
+  good seed is not penalized. That primary lane is limited to one vector; only
+  if it fails concrete-period allocation does the same server job run an
+  independent all-session CP-SAT rescue. The rescue seed is derived from that
+  click's random seed, carries no Phase-F/cached/static hint, and keeps Phase F
+  as the complete hard-valid fallback. One looser request-derived cap remains
+  available only when the tight rescue returns early with usable budget.
+- The adaptive seed-202 replay completed in **56.523 seconds** at `1566/1566`,
+  hard-valid, zero application violations, all `54/54` fixed lessons retained,
+  `482` teacher sessions, zero one-period sessions, `61` gap-1 sessions, and
+  zero gap-2-plus sessions. The lean vector failed in 12.204 seconds, the
+  independent integrated rescue produced `482 / 68` in 17.825 seconds, and
+  bounded LNS reduced gap-1 to 61.
+- Seed `101` verifies that the rescue is conditional: its lean Phase Q succeeded
+  in 14.292 seconds, no integrated rescue ran, and the final result improved
+  from the earlier `482 / 50` baseline to `481 / 46` in **56.284 seconds**.
+- Seed `303` exercised the rescue path and finished `482 / 51` in **56.429
+  seconds**. Compared with its earlier `481 / 57`, this is a one-session versus
+  six-gap-1 tradeoff rather than a Pareto improvement; keep it visible in any
+  later quality-policy tuning rather than hardcoding one fixture threshold.
+- Seeds `101`, `202`, and `303` produced three different canonical assignment
+  hashes, so the rescue does not reintroduce the old hidden-hint behavior.
+- Evidence is in `.codex_tmp/phase-q-adaptive-fresh-{101,202,303}-{wire,result,evidence,stderr}`.
+  Focused regressions cover the preserved lean primary, exact-cap integrated
+  rescue, and relaxed-cap error rescue. Result-contract tests pass **122/122**
+  and the complete scheduler suite passes **139/139**; `py_compile` and
+  `git diff --check` pass.
+- This change is local only. Do not deploy or increment the release until it is
+  combined with the pending lifecycle work and staging/live verification is
+  intentionally completed.
+
+### v1.44 delete barrier + adaptive quality (deployed 2026-07-19)
+
+- The delete-to-sort race is closed end to end. Destructive timetable writes are
+  serialized behind older remote saves, expose a Promise barrier, and manual
+  Play waits for both cancellation discovery and remote persistence. A failed
+  delete save fails closed without posting a solver job. The tombstone also
+  blocks stale result adoption after a delete.
+- CP-SAT seeds are normalized to the signed 32-bit range before use, including
+  derived retry seeds. The regression replays the former `2654435761` failure
+  and preserves all fixed lessons while completing the 1,566-period fixture.
+- Large first-click quality uses the adaptive Phase-Q portfolio described above:
+  the lean incumbent-assisted path runs first; only a failed concrete-period
+  vector opens one request-seeded, no-hint all-period CP-SAT rescue, with an
+  optional relaxed cap inside the same deadline. Fresh replay evidence covers
+  seeds 101, 202, and 303 with complete hard-valid schedules and distinct
+  assignment hashes.
+- Local verification after this candidate: Node/UI `217/217`, scheduler
+  `139/139`, isolated VPS staging scheduler `139/139`, Agent `72/72`, Rust API
+  `136/136`, and validator `20/20` (`STAGING_TESTS_OK`). No Agent was started
+  for the VPS-only browser path; an offline invitation must be dismissed with
+  Cancel/Hủy.
+- Release markers are API
+  `tkb_new-rust-api-2026-07-19-delete-barrier-adaptive-quality-v44`, bridge
+  `tkb-rust-api-v249-delete-barrier-adaptive-quality`, and page cache
+  `20260719-v144-delete-barrier-adaptive-quality-v1`. Agent remains `1.6.16`.
+- Deployment returned `UPDATE_OK`; transaction backups are
+  `/opt/cherry-scheduler-backups/server-state-20260719-113419.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260719-113419.tar.gz`.
+- Live health after restart reports API v44, zero active/queued jobs, and all
+  `6/6` worker tokens available. The refreshed scheduler served the v144 cache
+  and rendered the default fixture complete at `29/29` with zero unassigned.
+  The VPS-only browser check used one canonical job while Agent stayed offline;
+  no Agent invitation appeared and no second job was created.
+
+### Fixed-only empty-flexible fallback (included in deployed v1.43)
+
+- A Benders candidate that starts from an incomplete fixed-only request can now
+  make one guarded retry when its lean anchor-preserving search finds no complete
+  result. The retry stays inside the original deadline, discards every soft
+  incumbent/hint/warm start, enables the all-session period-feasibility bridge,
+  and keeps the fixed lessons plus all application constraints hard.
+- The retry is limited to sparse fixed-only inputs with no incumbent payload and
+  cannot recurse. Quality-only singleton/gap caps may relax so a complete
+  hard-valid timetable remains the priority; user-authored constraints do not.
+- The production-shaped local wire
+  `.codex_tmp/default-fixed-fresh-wire.json` completed at `1566/1566`, zero
+  unassigned, hard-valid, and canonical-validation `ok` in about 57 seconds.
+  Its primary solve succeeded. A forced cap-1/lean first vector against the same
+  wire then exercised the fallback itself and returned `1566/1566`, zero
+  unassigned, hard-valid, all `54` anchors preserved, no hint, and canonical
+  validation `ok` in about 37.8 seconds. The focused mock regression verifies
+  the same contract. Result-contract verification passes `119/119`; the full
+  scheduler suite passes `131/131` and Agent tests pass `72/72`.
 
 ### v1.41 iOS/PWA durable resume (deployed)
 
@@ -2099,18 +2292,16 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-19: `UPDATE_OK` for
-v1.41. Public health serves API marker
-`tkb_new-rust-api-2026-07-19-ios-pwa-durable-resume-v41`; the page serves
-cache key `20260719-v141-ios-pwa-durable-resume-v1`. Public Agent release `1.6.15` and
-its signed manifest are live. Its one-entry ZIP is 91,683,250 bytes with
-SHA-256 `a91ff1217990cf8b80e7b07f2f4e203f849c7ba794db60942b39789dd30ee5b2`;
-the packaged EXE is 92,148,649 bytes with SHA-256
-`5650ef4b0d65e43f866db5f455f36e735d9adf2f20145878e9feed8729140b99`.
-The v1.41 production VPS-only E2E dismissed the offline-Agent invitation with
-Cancel, reloaded and closed/reopened during the canonical job, and completed
-with zero unassigned periods and all worker tokens released. The v1.41 Agent
-E2E kept VPS capacity fully free, used the online local Agent, and completed
-with zero unassigned periods.
+v1.44. Public health serves API marker
+`tkb_new-rust-api-2026-07-19-delete-barrier-adaptive-quality-v44`; the page
+serves cache key `20260719-v144-delete-barrier-adaptive-quality-v1`. Public
+Agent release `1.6.16` and its signed manifest are live. The archive SHA-256 is
+`18b970418ec42af36114037e32514684cecf1a98a4d20c21dd9c43f36f17cc97`; the
+packed executable SHA-256 is
+`282c71be3dda0135599c3d937d9d75c587b02752ac32f6503559ee87cfa9d869`.
+The v1.44 production VPS-only E2E used one canonical job, finished with zero
+unassigned periods, and released all worker tokens. No-Agent/Cancel and Agent
+handoff regressions remain covered by the local and isolated VPS suites.
 Workstations on Agent `1.6.2` or older require one manual install of a
 self-update-capable build before future in-Agent updates are available.
 

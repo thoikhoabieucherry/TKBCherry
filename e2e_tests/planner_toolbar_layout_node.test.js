@@ -28,7 +28,7 @@ function inlineSvgMarkup(source){
   return source.match(/<svg\b[^>]*>[\s\S]*?<\/svg>/)?.[0] || "";
 }
 
-test("schedule deletion invalidates derived solver state before saving", () => {
+test("every schedule deletion invalidates solver state and force-saves remotely", () => {
   const helperStart = plannerSource.indexOf("function invalidateSolverStateAfterScheduleDelete");
   const helperEnd = plannerSource.indexOf("\nfunction ", helperStart + 10);
   assert.ok(helperStart >= 0 && helperEnd > helperStart, "delete invalidation helper is missing");
@@ -47,7 +47,17 @@ test("schedule deletion invalidates derived solver state before saving", () => {
     keepMe:{value:true}
   };
   staleFields.forEach(field => { data[field] = {stale:true}; });
-  const context = {DATA:data};
+  const bridgeInvalidations = [];
+  const context = {
+    DATA:data,
+    window:{
+      TKBRustAPI:{
+        invalidatePendingSolveForScheduleMutation(){
+          bridgeInvalidations.push("invalidated");
+        }
+      }
+    }
+  };
   vm.runInNewContext(
     `${plannerSource.slice(helperStart, helperEnd)}\nthis.invalidateDeleteState = invalidateSolverStateAfterScheduleDelete;`,
     context
@@ -55,6 +65,7 @@ test("schedule deletion invalidates derived solver state before saving", () => {
 
   const originalTeachers = data.tkbLessonTeachers;
   const originalRooms = data.tkbLessonRooms;
+  const initialRevision = Number(data.tkbScheduleRevision || 0);
   context.invalidateDeleteState(false);
   staleFields.forEach(field => {
     assert.equal(Object.prototype.hasOwnProperty.call(data, field), false, `${field} must be deleted`);
@@ -62,8 +73,11 @@ test("schedule deletion invalidates derived solver state before saving", () => {
   assert.equal(data.tkbLessonTeachers, originalTeachers, "class deletion must preserve teacher mappings");
   assert.equal(data.tkbLessonRooms, originalRooms, "class deletion must preserve room mappings");
   assert.equal(data.keepMe.value, true, "unrelated planner data must survive invalidation");
+  assert.ok(data.tkbScheduleRevision > initialRevision, "class deletion must advance the schedule revision");
+  assert.equal(bridgeInvalidations.length, 1, "class deletion must notify the solver bridge");
 
   staleFields.forEach(field => { data[field] = {stale:true}; });
+  const classDeleteRevision = data.tkbScheduleRevision;
   context.invalidateDeleteState(true);
   staleFields.forEach(field => {
     assert.equal(Object.prototype.hasOwnProperty.call(data, field), false, `${field} must stay deleted`);
@@ -72,6 +86,8 @@ test("schedule deletion invalidates derived solver state before saving", () => {
   assert.equal(typeof data.tkbLessonRooms, "object");
   assert.equal(Object.keys(data.tkbLessonTeachers).length, 0, "school deletion must reset teacher mappings");
   assert.equal(Object.keys(data.tkbLessonRooms).length, 0, "school deletion must reset room mappings");
+  assert.ok(data.tkbScheduleRevision > classDeleteRevision, "school deletion must advance the schedule revision");
+  assert.equal(bridgeInvalidations.length, 2, "school deletion must notify the solver bridge");
 
   const classDeleteBody = plannerSource.slice(
     plannerSource.indexOf("function deleteCurrentClassTKB"),
@@ -81,16 +97,52 @@ test("schedule deletion invalidates derived solver state before saving", () => {
     plannerSource.indexOf("function deleteAllTKB"),
     plannerSource.indexOf("function toggleDeleteMenu")
   );
-  assert.match(classDeleteBody, /invalidateSolverStateAfterScheduleDelete\(false\)/);
-  assert.match(schoolDeleteBody, /invalidateSolverStateAfterScheduleDelete\(true\)/);
-  assert.ok(
-    classDeleteBody.indexOf("invalidateSolverStateAfterScheduleDelete(false)") < classDeleteBody.indexOf("saveStore()"),
-    "class deletion must invalidate stale solver state before persistence"
+  const confirmDeleteBody = plannerSource.slice(
+    plannerSource.indexOf("function confirmDeleteMenu"),
+    plannerSource.indexOf("/* [MOVED -> phanmon-ops.js] Section: xep_lai */")
   );
-  assert.ok(
-    schoolDeleteBody.indexOf("invalidateSolverStateAfterScheduleDelete(true)") < schoolDeleteBody.indexOf("saveStore()"),
-    "school deletion must invalidate stale solver state and mappings before persistence"
+  const menuClassDeleteBody = confirmDeleteBody.slice(
+    confirmDeleteBody.indexOf('if(choice === "class"){'),
+    confirmDeleteBody.indexOf('if(choice === "school"){')
   );
+  const menuSchoolDeleteBody = confirmDeleteBody.slice(
+    confirmDeleteBody.indexOf('if(choice === "school"){')
+  );
+  const persistenceHelperBody = plannerSource.slice(
+    plannerSource.indexOf("function persistScheduleDelete"),
+    plannerSource.indexOf("function deleteCurrentClassTKB")
+  );
+  assert.match(
+    persistenceHelperBody,
+    /saveStore\(\{\s*force\s*:\s*true\s*,\s*awaitRemote\s*:\s*true\s*\}\)/,
+    "delete persistence must force an awaited remote save"
+  );
+  assert.match(
+    persistenceHelperBody,
+    /__TKB_SCHEDULE_MUTATION_SAVE_PROMISE\s*=\s*persistence/,
+    "delete persistence must expose the barrier to the solver bridge"
+  );
+  assert.match(
+    persistenceHelperBody,
+    /Promise\.resolve\(previousSave\)/,
+    "delete persistence must wait for an older in-flight save"
+  );
+
+  function assertDeleteContract(source, resetMappings, label){
+    const invalidateCall = `invalidateSolverStateAfterScheduleDelete(${resetMappings})`;
+    const persistCall = "persistScheduleDelete()";
+    assert.ok(source.includes(invalidateCall), `${label} must invalidate solver state`);
+    assert.ok(source.includes(persistCall), `${label} must start the remote persistence barrier`);
+    assert.ok(
+      source.indexOf(invalidateCall) < source.indexOf(persistCall),
+      `${label} must invalidate solver state before persistence`
+    );
+  }
+
+  assertDeleteContract(classDeleteBody, false, "direct class deletion");
+  assertDeleteContract(schoolDeleteBody, true, "direct school deletion");
+  assertDeleteContract(menuClassDeleteBody, false, "menu class deletion");
+  assertDeleteContract(menuSchoolDeleteBody, true, "menu school deletion");
 });
 
 test("teacher pane counts each class-subject assignment once", () => {
@@ -244,8 +296,8 @@ test("planner keeps eight compact, accessible commands in the mobile toolbar", (
     plannerHtml,
     /@media \(max-width:\s*900px\) and \(hover:\s*none\) and \(pointer:\s*coarse\),\s*\(max-width:\s*480px\)/
   );
-  assert.match(plannerHtml, /phanmon\.js\?v=20260719-v141-ios-pwa-durable-resume-v1/);
-  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260719-v141-ios-pwa-durable-resume-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260719-v144-delete-barrier-adaptive-quality-v1/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260719-v144-delete-barrier-adaptive-quality-v1/);
 });
 
 test("desktop Agent sits beside Home, uses an AI icon, and stays out of mobile layouts", () => {

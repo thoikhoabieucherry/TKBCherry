@@ -6,6 +6,7 @@ from typing import Any, Callable, Mapping
 from collections import Counter
 
 from .models import Lesson, SchoolData, SessionAllocation
+from .random_seed import normalize_cp_sat_seed
 from .rules import TimetableRuleSet, resolve_rule_set
 from .session_milp import (
     _assignment_block_allowed,
@@ -155,6 +156,7 @@ def solve_session_allocation_cp_sat(
     discovery on the bundled workbook. Concrete periods are still placed by
     ``allocate_periods`` and validated afterward.
     """
+    random_seed = normalize_cp_sat_seed(random_seed)
 
     rule_set = resolve_rule_set(rules)
     constraints = rule_set.constraints

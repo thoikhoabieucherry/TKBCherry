@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v245-ios-pwa-durable-resume";
+  const VERSION = "tkb-rust-api-v249-delete-barrier-adaptive-quality";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -34,6 +34,8 @@
     const SERVER_SOLVER_JOB_STORAGE_KEY = "TKB_SERVER_SOLVER_JOB_V1";
     const SERVER_SOLVER_JOB_SETTLED_KEY = "TKB_SERVER_SOLVER_JOB_SETTLED_V1";
     const SERVER_SOLVER_AUTO_RESUME_SUPPRESSED_KEY = "TKB_SERVER_SOLVER_AUTO_RESUME_SUPPRESSED_V1";
+    const SERVER_SOLVER_SCHEDULE_TOMBSTONE_KEY = "TKB_SERVER_SOLVER_SCHEDULE_TOMBSTONE_V1";
+    const SERVER_SOLVER_CANCEL_INTENT_KEY = "TKB_SERVER_SOLVER_CANCEL_INTENT_V1";
     // A queued job and an active solver have different clocks. The browser may
     // wait up to three minutes for admission, then must still give the solver's
     // advertised budget its full bounded reserve to publish and validate the
@@ -61,8 +63,6 @@
     const SERVER_SOLVER_JOB_DISCOVERY_RETRY_MS = 2_000;
     const SERVER_SOLVER_JOB_BACKGROUND_RETRY_MS = 15_000;
     const SERVER_SOLVER_AUTH_READY_RETRIES = 12;
-    const SERVER_SOLVER_FINGERPRINT_HYDRATION_RETRIES = 6;
-    const SERVER_SOLVER_COMPLETED_HYDRATION_RETRIES = 30;
 
     function solverRequestHeaders(extra){
       const fallback = Object.assign({"Accept": "application/json"}, extra || {});
@@ -427,16 +427,18 @@
     let activeSolveAbortController = null;
     let activeBackendJobId = "";
     let pendingBackendResumeTimer = 0;
-    let pendingBackendResumeInFlight = null;
+    let pendingBackendResumeDueAt = 0;
+  let pendingBackendResumeTimerGeneration = 0;
+  let pendingBackendResumeInFlight = null;
+  let pendingBackendWakeRequested = false;
+  let pendingBackendWakeNeedsEmptyProbe = false;
+    let backendResumeEpoch = 0;
+    let scheduleMutationCancellationInFlight = null;
     let activeBackendResumeTarget = null;
     // A foreground wakeup can overlap the previous page's terminal callback.
     // Keep the canonical id leased until the reattached payload has been
     // validated and applied; a late callback must not consume the id first.
     let activeServerJobReattachLeaseId = "";
-    let pendingFingerprintHydrationJobId = "";
-    let pendingFingerprintHydrationAttempts = 0;
-    let pendingCompletedHydrationJobId = "";
-    let pendingCompletedHydrationAttempts = 0;
     let completionPopupTimer = 0;
     let solveRunCounter = 0;
     let statusDotsTimer = 0;
@@ -916,6 +918,13 @@
       }
     }catch(_){}
     return null;
+  }
+
+  function plannerDataReady(){
+    // phanmon.js explicitly holds this at false until its remote store and
+    // load-time normalization have completed. Tests and older pages that do
+    // not publish the marker retain the historical ready-by-default behavior.
+    return window.__TKB_PLANNER_DATA_READY !== false;
   }
 
   let rustApiBaseCache = "";
@@ -1428,6 +1437,7 @@
 
   async function inspectExistingBackendJobForManualSolve(data){
     if(!data || window.__TKB_SERVER_JOB_RESUME_STARTED === true) return null;
+    if(scheduleMutationTombstone()) return null;
     const pending = readPendingBackendJob();
     if(pending?.jobId){
       if(pending.observeOnly === true) return {kind:"observe", job:pending};
@@ -1778,25 +1788,6 @@
     return err;
   }
 
-  function localPendingCanRecoverIncompleteHydration(metadata, data){
-    if(
-      metadata?.allowIncompleteHydrationRecovery !== true
-      || metadata?.localClickTimeline !== true
-      || metadata?.observeOnly === true
-      || !data
-    ) return false;
-    const expected = Math.max(0, Number(expectedLessonCount(data) || 0) || 0);
-    const scheduled = Math.max(0, Number(countScheduledLessons(data) || 0) || 0);
-    const flexibleScheduled = Math.max(
-      0,
-      Number(countScheduledLessons(data, {flexibleOnly:true}) || 0) || 0
-    );
-    // This exception is only for the known iOS bootstrap shape: the page has
-    // loaded fixed anchors but not the flexible timetable yet. A genuinely
-    // edited partial timetable keeps normal fingerprint protection.
-    return expected > 0 && scheduled < expected && flexibleScheduled === 0;
-  }
-
   async function reattachExistingServerJobPollOnly(jobMetadata){
     const metadata = jobMetadata && typeof jobMetadata === "object" ? jobMetadata : {};
     const jobId = String(metadata.jobId || "").trim();
@@ -1807,15 +1798,10 @@
     const scheduleFingerprint = String(
       metadata.scheduleFingerprint || durableScheduleFingerprint(data) || ""
     ).trim();
-    const incompleteHydrationRecovery = localPendingCanRecoverIncompleteHydration(
-      metadata,
-      data
-    );
     if(
       metadata.scheduleFingerprint
       && scheduleFingerprint
       && !durableScheduleFingerprintMatches(scheduleFingerprint, data)
-      && !incompleteHydrationRecovery
     ){
       const mismatch = reattachTerminalPayloadError(
         "Lịch hiện tại đã thay đổi; kết quả cũ trên máy chủ không được áp dụng.",
@@ -1887,16 +1873,6 @@
         );
       }
       const completion = payloadCompletion(payload);
-      if(
-        incompleteHydrationRecovery
-        && (!completion.complete || completion.hardOk === false)
-      ){
-        throw reattachTerminalPayloadError(
-          "Kết quả máy chủ chưa hoàn chỉnh; lịch đang hiển thị được giữ nguyên.",
-          "solver_resume_incomplete_hydration_result",
-          payload
-        );
-      }
       const metricsShapeOk = completion.expected > 0
         && completion.scheduled >= 0
         && completion.unassigned >= 0
@@ -2354,6 +2330,110 @@
     }catch(_){
       return false;
     }
+  }
+
+  function scheduleMutationTombstone(){
+    try{
+      const root = JSON.parse(localStorage.getItem(SERVER_SOLVER_SCHEDULE_TOMBSTONE_KEY) || "{}");
+      const entry = root && typeof root === "object" ? root[backendJobStorageScope()] : null;
+      return entry && typeof entry === "object" && Number(entry.revision || 0) > 0
+        ? entry
+        : null;
+    }catch(_){ return null; }
+  }
+
+  function markScheduleMutationTombstone(){
+    try{
+      const root = JSON.parse(localStorage.getItem(SERVER_SOLVER_SCHEDULE_TOMBSTONE_KEY) || "{}");
+      const safeRoot = root && typeof root === "object" ? root : {};
+      const revision = Date.now();
+      safeRoot[backendJobStorageScope()] = {revision, markedAt:revision};
+      localStorage.setItem(SERVER_SOLVER_SCHEDULE_TOMBSTONE_KEY, JSON.stringify(safeRoot));
+      return revision;
+    }catch(_){ return 0; }
+  }
+
+  function clearScheduleMutationTombstone(){
+    try{
+      const root = JSON.parse(localStorage.getItem(SERVER_SOLVER_SCHEDULE_TOMBSTONE_KEY) || "{}");
+      if(!root || typeof root !== "object") return false;
+      const scope = backendJobStorageScope();
+      if(!Object.prototype.hasOwnProperty.call(root, scope)) return false;
+      delete root[scope];
+      if(Object.keys(root).length) localStorage.setItem(SERVER_SOLVER_SCHEDULE_TOMBSTONE_KEY, JSON.stringify(root));
+      else localStorage.removeItem(SERVER_SOLVER_SCHEDULE_TOMBSTONE_KEY);
+      return true;
+    }catch(_){ return false; }
+  }
+
+  function readServerCancellationIntent(){
+    try{
+      const root = JSON.parse(localStorage.getItem(SERVER_SOLVER_CANCEL_INTENT_KEY) || "{}");
+      const entry = root && typeof root === "object" ? root[backendJobStorageScope()] : null;
+      if(!entry || typeof entry !== "object") return null;
+      const jobIds = Array.from(new Set(
+        (Array.isArray(entry.jobIds) ? entry.jobIds : [])
+          .map(value => String(value || "").trim())
+          .filter(Boolean)
+      ));
+      return jobIds.length ? {jobIds, markedAt:Number(entry.markedAt || 0) || 0} : null;
+    }catch(_){ return null; }
+  }
+
+  function rememberServerCancellationIntent(jobIds){
+    const ids = Array.from(new Set(
+      (Array.isArray(jobIds) ? jobIds : [jobIds])
+        .map(value => String(value || "").trim())
+        .filter(Boolean)
+    ));
+    if(!ids.length) return false;
+    try{
+      const root = JSON.parse(localStorage.getItem(SERVER_SOLVER_CANCEL_INTENT_KEY) || "{}");
+      const safeRoot = root && typeof root === "object" ? root : {};
+      const scope = backendJobStorageScope();
+      const existing = readServerCancellationIntent();
+      safeRoot[scope] = {
+        markedAt:Date.now(),
+        jobIds:Array.from(new Set([...(existing?.jobIds || []), ...ids]))
+      };
+      localStorage.setItem(SERVER_SOLVER_CANCEL_INTENT_KEY, JSON.stringify(safeRoot));
+      return true;
+    }catch(_){ return false; }
+  }
+
+  function clearServerCancellationIntent(jobIds){
+    try{
+      const root = JSON.parse(localStorage.getItem(SERVER_SOLVER_CANCEL_INTENT_KEY) || "{}");
+      if(!root || typeof root !== "object") return false;
+      const scope = backendJobStorageScope();
+      const entry = root[scope];
+      if(!entry || typeof entry !== "object") return false;
+      const remove = new Set(
+        (Array.isArray(jobIds) ? jobIds : [jobIds])
+          .map(value => String(value || "").trim())
+          .filter(Boolean)
+      );
+      const remaining = (Array.isArray(entry.jobIds) ? entry.jobIds : [])
+        .map(value => String(value || "").trim())
+        .filter(value => value && !remove.has(value));
+      if(remaining.length) root[scope] = Object.assign({}, entry, {jobIds:Array.from(new Set(remaining))});
+      else delete root[scope];
+      if(Object.keys(root).length) localStorage.setItem(SERVER_SOLVER_CANCEL_INTENT_KEY, JSON.stringify(root));
+      else localStorage.removeItem(SERVER_SOLVER_CANCEL_INTENT_KEY);
+      return true;
+    }catch(_){ return false; }
+  }
+
+  async function retryServerCancellationIntent(){
+    const intent = readServerCancellationIntent();
+    if(!intent?.jobIds?.length) return false;
+    const settled = [];
+    for(const jobId of intent.jobIds){
+      const response = await cancelBackendSolver(jobId);
+      if(response?.cancelRequested === true || response?.ok === true) settled.push(jobId);
+    }
+    if(settled.length) clearServerCancellationIntent(settled);
+    return settled.length > 0;
   }
 
   function settledBackendJobsForScope(){
@@ -2979,6 +3059,35 @@
     removePendingBackendJob(value);
   }
 
+  function settleStoppedSolveUi(jobId, controller){
+    const value = String(jobId || "").trim();
+    cancelPendingBackendResume();
+    stopProgressTicker();
+    stopStatusDots();
+    if(value) endServerJobReattachLease(value);
+    activeBackendResumeTarget = null;
+    activeServerJobReattachLeaseId = "";
+    activeBackendJobId = "";
+    window.__TKB_ACTIVE_BACKEND_JOB_ID = "";
+    clearActiveSolveAbortController(controller);
+    window.__TKB_ACTIVE_SOLVE_RUN_ID = "";
+    window.__TKB_SERVER_JOB_RESUME_STARTED = false;
+    window.__TKB_RUST_SOLVER_RUNNING = false;
+    window.__TKB_SOLVE_UI_BUSY = false;
+    window.__TKB_SOLVE_BACKEND_POSTED = false;
+    window.__TKB_SOLVE_QUEUE_WAITING = false;
+    window.__TKB_BACKEND_JOB_OBSERVER_ONLY = false;
+    setAutoSortButtonBusy(false);
+    hideAutoSortProgressDom();
+    callMaybe("hideAutoSortProgress", [{preserveStopRequest:true}]);
+    setStatus(makeUserCancelError().message, "info");
+    publishE2EState("cancelled", null, {
+      message:"user_cancelled",
+      jobId:value,
+      reconnectHydration:value !== ""
+    });
+  }
+
   async function requestStopActiveSolve(){
     const backendJobId = String(
       activeBackendJobId
@@ -2989,27 +3098,135 @@
     rememberPersistentAutoResumeSuppression();
     window.__TKB_AUTO_RESUME_SUPPRESSED = true;
     window.__AUTO_SORT_STOP_REQUESTED = true;
+    backendResumeEpoch += 1;
     cancelPendingBackendResume();
+    const controller = activeSolveAbortController;
     if(backendJobId){
       rememberSettledBackendJob(backendJobId);
       removePendingBackendJob(backendJobId);
       endServerJobReattachLease(backendJobId);
+      rememberServerCancellationIntent(backendJobId);
     }
     if(typeof window.__TKB_PHANMON_REQUEST_STOP === "function"){
       window.__TKB_PHANMON_REQUEST_STOP();
     }else if(typeof window.requestStopAutoSort === "function" && window.requestStopAutoSort !== requestStopActiveSolve){
       window.__AUTO_SORT_STOP_REQUESTED = true;
     }
-    if(activeSolveAbortController){
-      try{ activeSolveAbortController.abort(); }catch(_){}
+    if(controller){
+      try{ controller.abort(); }catch(_){}
     }
-    if(backendJobId){
-      try{
-        await cancelBackendSolver(backendJobId);
-      }finally{
+    // Stop is a user-facing terminal action. Unlock immediately even when the
+    // current poll is between abort-aware fetches; the lifecycle `finally` and
+    // server cancellation remain idempotent background cleanup.
+    settleStoppedSolveUi(backendJobId, controller);
+    try{
+      if(backendJobId){
+        const cancellation = await cancelBackendSolver(backendJobId);
+        if(cancellation?.cancelRequested === true || cancellation?.ok === true){
+          clearServerCancellationIntent(backendJobId);
+        }
+      }
+    }finally{
+      if(backendJobId){
         clearActiveBackendJobId(backendJobId);
       }
+      settleStoppedSolveUi(backendJobId, controller);
     }
+  }
+
+  function serverJobIdsForCurrentSchedule(state){
+    if(!state || state.ok !== true) return [];
+    const scheduleScope = backendScheduleScope();
+    return [
+      ...(Array.isArray(state.jobs) ? state.jobs : []),
+      ...(Array.isArray(state.queue) ? state.queue : [])
+    ]
+      .filter(item => item?.serverOwned === true && item?.cancelRequested !== true)
+      .filter(item => String(item?.scheduleScope || "").trim() === scheduleScope)
+      .map(item => String(item?.jobId || "").trim())
+      .filter(Boolean);
+  }
+
+  function beginScheduleMutationCancellation(knownJobId){
+    if(scheduleMutationCancellationInFlight) return scheduleMutationCancellationInFlight;
+    const known = String(knownJobId || "").trim();
+    const run = (async () => {
+      const cancelled = new Set();
+      const cancelOne = async jobId => {
+        const value = String(jobId || "").trim();
+        if(!value || cancelled.has(value)) return null;
+        cancelled.add(value);
+        rememberServerCancellationIntent(value);
+        const response = await cancelBackendSolver(value).catch(() => null);
+        if(response?.cancelRequested === true || response?.ok === true){
+          clearServerCancellationIntent(value);
+        }
+        return response;
+      };
+      const knownCancellation = known ? cancelOne(known) : Promise.resolve(null);
+      const state = await backendSolverState("");
+      await knownCancellation;
+      await Promise.all(serverJobIdsForCurrentSchedule(state).map(cancelOne));
+      return {ok:true, jobIds:Array.from(cancelled)};
+    })().catch(() => ({ok:false, jobIds:known ? [known] : []}));
+    scheduleMutationCancellationInFlight = run;
+    try{ window.__TKB_SCHEDULE_MUTATION_CANCEL_PROMISE = run; }catch(_){ }
+    run.finally(() => {
+      if(scheduleMutationCancellationInFlight === run){
+        scheduleMutationCancellationInFlight = null;
+        try{ window.__TKB_SCHEDULE_MUTATION_CANCEL_PROMISE = null; }catch(_){ }
+      }
+    });
+    return run;
+  }
+
+  async function waitForScheduleMutationCancellation(){
+    const pending = scheduleMutationCancellationInFlight;
+    if(!pending) return true;
+    await pending.catch(() => null);
+    return true;
+  }
+
+  async function waitForScheduleMutationPersistence(){
+    let pending = null;
+    try{ pending = window.__TKB_SCHEDULE_MUTATION_SAVE_PROMISE; }catch(_){ }
+    if(!pending || typeof pending.then !== "function") return true;
+    try{
+      await Promise.resolve(pending);
+      return true;
+    }catch(_){
+      return false;
+    }
+  }
+
+  function invalidatePendingSolveForScheduleMutation(){
+    const backendJobId = String(
+      activeBackendJobId
+      || window.__TKB_ACTIVE_BACKEND_JOB_ID
+      || readPendingBackendJob()?.jobId
+      || ""
+    ).trim();
+    const revision = markScheduleMutationTombstone();
+    rememberPersistentAutoResumeSuppression();
+    window.__TKB_AUTO_RESUME_SUPPRESSED = true;
+    window.__AUTO_SORT_STOP_REQUESTED = true;
+    backendResumeEpoch += 1;
+    cancelPendingBackendResume();
+    const controller = activeSolveAbortController;
+    if(backendJobId){
+      rememberSettledBackendJob(backendJobId);
+      removePendingBackendJob(backendJobId);
+      endServerJobReattachLease(backendJobId);
+    }
+    if(controller){
+      try{ controller.abort(); }catch(_){ }
+    }
+    settleStoppedSolveUi(backendJobId, controller);
+    const cancellation = beginScheduleMutationCancellation(backendJobId);
+    cancellation.finally(() => {
+      if(backendJobId) clearActiveBackendJobId(backendJobId, {force:true});
+    });
+    return {ok:true, jobId:backendJobId, revision, cancellation};
   }
 
   function isBackendUnavailableError(err){
@@ -3397,7 +3614,7 @@
       btn.setAttribute("aria-busy", busy ? "true" : "false");
       if(!busy && !autoSortProgressFinishedInDom()){
         hideAutoSortProgressDom();
-        callMaybe("hideAutoSortProgress");
+        callMaybe("hideAutoSortProgress", [{preserveStopRequest:isStopRequested()}]);
       }
       if(!busy) syncOptimizationLockState();
     }catch(_){}
@@ -3428,6 +3645,7 @@
       startedAt,
       uiStartedAt,
       localClickTimeline,
+      reconnecting:isResume,
       serverStartedAtMs:persistedServerStartedAt,
       backendQueued:persistedServerStartedAt <= 0 && !!pending?.jobId,
       estimatedSeconds:normalizePendingProgressSeconds(pending?.progressEstimateSeconds) || INITIAL_AUTO_DURATION_SECONDS,
@@ -3445,20 +3663,6 @@
     if(progressState.deferFirstPaint) scheduleFirstProgressPaint();
     else tickEstimatedProgress();
     progressTimer = window.setInterval(tickEstimatedProgress, 1000);
-  }
-
-  function primePendingBackendResumeUi(pendingOverride){
-    const pending = pendingOverride?.jobId ? pendingOverride : readPendingBackendJob();
-    if(!pending?.jobId || automaticBackendResumeSuppressed()) return false;
-    if(
-      window.__TKB_SERVER_JOB_RESUME_STARTED === true
-      || window.__TKB_RUST_SOLVER_RUNNING === true
-      || window.__TKB_SOLVE_UI_BUSY === true
-    ) return false;
-    setAutoSortButtonBusy(true);
-    setStatus("Đang nối lại lượt xếp...", "info");
-    startInstantProgressTicker({resumePending:true});
-    return true;
   }
 
   function primeAutoSortStartUi(){
@@ -3925,7 +4129,16 @@
     progressState.deferFirstPaint = false;
     // _setStatus has a short generic timeout. Refresh the one stable running
     // status on every visible progress tick so it cannot disappear mid-solve.
-    try{ setStatus("Đang sắp xếp...", "info"); }catch(_){ }
+    try{
+      if(!isStopRequested()){
+        setStatus(
+          progressState.reconnecting === true
+            ? "Đang nối lại lượt xếp..."
+            : "Đang sắp xếp...",
+          "info"
+        );
+      }
+    }catch(_){ }
     const serverStartedAtMs = Math.max(0, Number(progressState.serverStartedAtMs || 0) || 0);
     const canonicalServerProgress = serverStartedAtMs > 0 && progressState.backendQueued !== true;
     const elapsedSeconds = canonicalServerProgress
@@ -4897,7 +5110,8 @@
       "tkb",
       "tkbLessonTeachers",
       "tkbLessonRooms",
-      "tkbConfig"
+      "tkbConfig",
+      "tkbScheduleRevision"
     ].forEach(key => {
       if(Object.prototype.hasOwnProperty.call(data, key)) solverRelevant[key] = data[key];
     });
@@ -12268,6 +12482,18 @@
       return null;
     }
     prepareManualSolveIntent();
+    const [, scheduleMutationPersisted] = await Promise.all([
+      waitForScheduleMutationCancellation(),
+      waitForScheduleMutationPersistence()
+    ]);
+    if(!scheduleMutationPersisted){
+      releaseAutoSortButtonSoon();
+      setStatus(
+        "Chưa lưu được thao tác Xóa lên máy chủ. Vui lòng kiểm tra kết nối rồi bấm Xếp lại.",
+        "warning"
+      );
+      return null;
+    }
     const requestedSettings = Object.assign({}, options?.settings || readSettings());
     const settings = options?.shuffleOnly === true
       ? shuffleOnlySettings(requestedSettings)
@@ -13305,6 +13531,15 @@
          persistentAutoResumeSuppressionForScope,
         rememberPersistentAutoResumeSuppression,
         clearPersistentAutoResumeSuppression,
+        scheduleMutationTombstone,
+        markScheduleMutationTombstone,
+        clearScheduleMutationTombstone,
+        readServerCancellationIntent,
+        rememberServerCancellationIntent,
+        clearServerCancellationIntent,
+        retryServerCancellationIntent,
+        beginScheduleMutationCancellation,
+        invalidatePendingSolveForScheduleMutation,
         durableScheduleFingerprint,
         durableScheduleFingerprintMatches,
         readPendingBackendJob,
@@ -13340,6 +13575,7 @@
         localSolveLifecycleActive,
         automaticBackendResumeSuppressed,
         cancelPendingBackendResume,
+        waitForScheduleMutationCancellation,
         prepareManualSolveIntent,
         pendingBackendResumeBlocked,
         schedulePendingBackendResume,
@@ -13355,7 +13591,8 @@
     applyPayload,
     releaseConstraintViolatingLessons,
     readSettings,
-    promptSettings
+    promptSettings,
+    invalidatePendingSolveForScheduleMutation
   };
   window.TKBRustAPI = rustApi;
 
@@ -14414,11 +14651,14 @@
   }
 
   function cancelPendingBackendResume(){
+    pendingBackendResumeTimerGeneration += 1;
     if(pendingBackendResumeTimer){
       try{ window.clearTimeout(pendingBackendResumeTimer); }catch(_){ }
       pendingBackendResumeTimer = 0;
+      pendingBackendResumeDueAt = 0;
       return true;
     }
+    pendingBackendResumeDueAt = 0;
     return false;
   }
 
@@ -14428,11 +14668,16 @@
       || window.__TKB_AUTORUN_SOLVE_STARTED === true
     ) return false;
     cancelPendingBackendResume();
+    // A delete may have happened in another tab. Start the same cancellation
+    // barrier locally before clearing the tombstone so an immediate Play cannot
+    // race the old server job into a second single-flight request.
+    if(scheduleMutationTombstone()) beginScheduleMutationCancellation("");
     const pending = readPendingBackendJob();
     if(pending?.jobId && isSettledBackendJob(pending.jobId)){
       removePendingBackendJob(pending.jobId);
     }
     clearPersistentAutoResumeSuppression();
+    clearScheduleMutationTombstone();
     window.__TKB_AUTO_RESUME_SUPPRESSED = false;
     window.__AUTO_SORT_STOP_REQUESTED = false;
     try{ callMaybe("resetAutoSortStopRequest"); }catch(_){ }
@@ -14451,20 +14696,36 @@
     return false;
   }
 
-  function schedulePendingBackendResume(attempt, delayMs){
+  function schedulePendingBackendResume(attempt, delayMs, options){
     if(automaticBackendResumeSuppressed()){
       cancelPendingBackendResume();
       return false;
     }
+    const delay = Math.max(0, Number(delayMs || 0) || 0);
+    const dueAt = Date.now() + delay;
+    const force = options?.force === true;
+    // A foreground wake is a higher-priority request than a late callback from
+    // the suspended poll. Keep the earlier retry instead of letting a 15s
+    // background retry overwrite the 100ms/2s wake window.
+    if(
+      (pendingBackendResumeTimer || pendingBackendResumeDueAt > 0)
+      && !force
+      && pendingBackendResumeDueAt > 0
+      && pendingBackendResumeDueAt <= dueAt
+    ) return true;
     cancelPendingBackendResume();
+    const generation = pendingBackendResumeTimerGeneration;
+    pendingBackendResumeDueAt = dueAt;
     pendingBackendResumeTimer = window.setTimeout(() => {
+      if(generation !== pendingBackendResumeTimerGeneration) return;
       pendingBackendResumeTimer = 0;
+      pendingBackendResumeDueAt = 0;
       if(automaticBackendResumeSuppressed()) return;
       try{
         const pending = resumePendingBackendJobOnLoad(Number(attempt || 0));
         if(pending && typeof pending.catch === "function") pending.catch(() => {});
       }catch(_){ }
-    }, Math.max(0, Number(delayMs || 0) || 0));
+    }, delay);
     try{ pendingBackendResumeTimer?.unref?.(); }catch(_){ }
     return true;
   }
@@ -14480,8 +14741,26 @@
 
   async function resumePendingBackendJobOnLoad(attempt){
     if(pendingBackendResumeInFlight){
-      return await pendingBackendResumeInFlight;
+      const wakeWasRequested = pendingBackendWakeRequested === true;
+      const wakeNeedsEmptyProbe = pendingBackendWakeNeedsEmptyProbe === true;
+      const result = await pendingBackendResumeInFlight;
+      // A foreground event may arrive while the suspended lifecycle is still
+      // unwinding. Once that old promise settles, immediately perform the
+      // authoritative state probe that the wake requested instead of leaving
+      // the page dependent on the old poll's background retry.
+      if(
+        wakeWasRequested
+        && pendingBackendWakeRequested === true
+        && !automaticBackendResumeSuppressed()
+        && (readPendingBackendJob()?.jobId || wakeNeedsEmptyProbe)
+      ){
+        pendingBackendWakeRequested = false;
+        pendingBackendWakeNeedsEmptyProbe = false;
+        return await resumePendingBackendJobOnLoad(attempt);
+      }
+      return result;
     }
+    pendingBackendWakeRequested = false;
     const run = resumePendingBackendJobOnce(attempt);
     pendingBackendResumeInFlight = run;
     try{
@@ -14495,7 +14774,9 @@
     // A direct wakeup (pageshow, online, tests, or another UI hook) supersedes
     // an older scheduled wakeup so two owner-state checks cannot race.
     cancelPendingBackendResume();
+    if(readServerCancellationIntent()) await retryServerCancellationIntent();
     if(automaticBackendResumeSuppressed()) return false;
+    const resumeEpoch = backendResumeEpoch;
     if(
       window.__TKB_SERVER_JOB_RESUME_STARTED === true
       || localSolveLifecycleActive()
@@ -14517,7 +14798,21 @@
     }
     let pending = readPendingBackendJob();
     if(pendingBackendResumeBlocked(pending?.jobId)) return false;
-    if(pending?.jobId) primePendingBackendResumeUi(pending);
+    if(!plannerDataReady()){
+      // A blank page has no canonical session to recover while the planner is
+      // still hydrating. Do not start a hidden two-second probe loop here: it
+      // can keep a background tab busy indefinitely when remote hydration is
+      // slow or interrupted. A known durable job still gets a bounded retry so
+      // it can be reattached if the readiness event is lost; an idle page waits
+      // for the explicit planner/auth/foreground wake below.
+      if(pending?.jobId){
+        schedulePendingBackendResume(
+          Number(attempt || 0) + 1,
+          SERVER_SOLVER_JOB_DISCOVERY_RETRY_MS
+        );
+      }
+      return false;
+    }
     const data = getData();
     if(!data){
       const nextAttempt = Number(attempt || 0) + 1;
@@ -14530,6 +14825,7 @@
       return false;
     }
     const currentFingerprint = durableScheduleFingerprint(data);
+    if(pending?.jobId) setAutoSortButtonBusy(true);
     if(
       pending?.observeOnly === true
       && pending.scheduleFingerprint
@@ -14546,127 +14842,51 @@
       && !durableScheduleFingerprintMatches(pending.scheduleFingerprint, data)
       && pending.observeOnly !== true
     ){
-      const hydrationJobId = String(pending.jobId || "");
-      if(pendingFingerprintHydrationJobId !== hydrationJobId){
-        pendingFingerprintHydrationJobId = hydrationJobId;
-        pendingFingerprintHydrationAttempts = 0;
-      }
-      pendingFingerprintHydrationAttempts += 1;
-      if(pendingFingerprintHydrationAttempts <= SERVER_SOLVER_FINGERPRINT_HYDRATION_RETRIES){
-        schedulePendingBackendResume(attempt, 500);
-        return false;
-      }
-      // Slow reload hydration can outlive the short local fingerprint grace
-      // window, especially for the production-sized default timetable. Never
-      // discard a still-active Agent/VPS job based on that local timer alone.
-      // Confirm the exact durable id with the authenticated server first, keep
-      // Play locked while it is live, and retry until DATA reaches the request
-      // fingerprint. A just-completed result gets one bounded hydration grace;
-      // an unknown or persistently mismatched terminal result is then detached
-      // and never applied to a different visible timetable.
-      const hydrationState = await backendSolverState(hydrationJobId);
-      if(automaticBackendResumeSuppressed()) return false;
-      if(!hydrationState || hydrationState.ok !== true){
+      const authoritativeJobId = String(pending.jobId || "");
+      setAutoSortButtonBusy(true);
+      const authoritativeState = await backendSolverState(authoritativeJobId);
+      if(automaticBackendResumeSuppressed() || resumeEpoch !== backendResumeEpoch) return false;
+      if(!authoritativeState || authoritativeState.ok !== true){
+        releaseAutoSortButtonSoon();
         schedulePendingBackendResume(attempt, SERVER_SOLVER_JOB_BACKGROUND_RETRY_MS);
         return false;
       }
-      const hydrationJobs = Array.isArray(hydrationState.jobs) ? hydrationState.jobs : [];
-      const hydrationQueue = Array.isArray(hydrationState.queue) ? hydrationState.queue : [];
-      const hydrationCompleted = Array.isArray(hydrationState.completedJobs)
-        ? hydrationState.completedJobs
+      const authoritativeJobs = Array.isArray(authoritativeState.jobs)
+        ? authoritativeState.jobs
         : [];
-      const hydrationRunningItem = hydrationJobs.find(item => String(item?.jobId || "") === hydrationJobId);
-      const hydrationQueuedItem = hydrationQueue.find(item => String(item?.jobId || "") === hydrationJobId);
-      const hydrationCompletedItem = hydrationCompleted.find(item => String(item?.jobId || "") === hydrationJobId);
-      const hydrationJobLive = hydrationState.requestedJobActive === true
-        || hydrationState.requestedJobQueued === true
-        || !!hydrationRunningItem
-        || !!hydrationQueuedItem;
-      const hydrationJobCompleted = hydrationState.requestedJobResultReady === true
-        || !!hydrationCompletedItem;
-      const hydrationJobKnown = hydrationState.requestedJobServerOwned === true
-        || hydrationJobLive
-        || hydrationJobCompleted;
-      if(hydrationJobLive){
-        pendingCompletedHydrationJobId = "";
-        pendingCompletedHydrationAttempts = 0;
-      }else if(hydrationJobCompleted){
-        if(pendingCompletedHydrationJobId !== hydrationJobId){
-          pendingCompletedHydrationJobId = hydrationJobId;
-          pendingCompletedHydrationAttempts = 0;
-        }
-        pendingCompletedHydrationAttempts += 1;
-      }
-      const keepCompletedForHydration = hydrationJobCompleted
-        && pendingCompletedHydrationAttempts <= SERVER_SOLVER_COMPLETED_HYDRATION_RETRIES;
-      const recoverCompletedIncompleteHydration = hydrationJobCompleted
-        && localPendingCanRecoverIncompleteHydration(
-          Object.assign({}, pending, {allowIncompleteHydrationRecovery:true}),
-          data
-        );
-      if(recoverCompletedIncompleteHydration){
-        pendingFingerprintHydrationJobId = "";
-        pendingFingerprintHydrationAttempts = 0;
-        pendingCompletedHydrationJobId = "";
-        pendingCompletedHydrationAttempts = 0;
-        forgetSettledBackendJob(hydrationJobId);
-        const recoveryTarget = Object.assign({}, pending, {
-          createdAtMs:hydrationCompletedItem?.createdAtMs || pending.createdAt,
-          startedAtMs:hydrationCompletedItem?.startedAtMs || pending.solverStartedAtMs,
-          completedAtMs:hydrationCompletedItem?.completedAtMs,
-          progressBudgetSeconds:hydrationCompletedItem?.progressBudgetSeconds || pending.progressBudgetSeconds,
-          progressRunIndex:hydrationCompletedItem?.progressRunIndex || pending.progressRunIndex,
+      const authoritativeQueue = Array.isArray(authoritativeState.queue)
+        ? authoritativeState.queue
+        : [];
+      const authoritativeRunning = authoritativeJobs.find(
+        item => String(item?.jobId || "") === authoritativeJobId
+      );
+      const authoritativeQueued = authoritativeQueue.find(
+        item => String(item?.jobId || "") === authoritativeJobId
+      );
+      // A mismatched schedule is never allowed to attach merely because the
+      // API echoed a broad `requestedJobActive` bit. Require the concrete
+      // running/queued item so an orphaned or stale id is detached promptly.
+      const authoritativeLive = !!authoritativeRunning || !!authoritativeQueued;
+      if(authoritativeLive){
+        const observer = writePendingBackendJob(authoritativeJobId, pending.scheduleFingerprint, {
+          createdAt:authoritativeRunning?.createdAtMs || authoritativeQueued?.createdAtMs || pending.createdAt,
+          solverStartedAtMs:authoritativeRunning?.startedAtMs || pending.solverStartedAtMs,
+          progressBudgetSeconds:authoritativeRunning?.progressBudgetSeconds || authoritativeQueued?.progressBudgetSeconds || pending.progressBudgetSeconds,
+          progressRunIndex:authoritativeRunning?.progressRunIndex || authoritativeQueued?.progressRunIndex || pending.progressRunIndex,
           discoveredFromOwnerState:true,
-          localClickTimeline:true,
-          observeOnly:false,
-          allowIncompleteHydrationRecovery:true
+          localClickTimeline:false,
+          observeOnly:true
         });
-        activeBackendResumeTarget = recoveryTarget;
-        try{
-          return await reattachExistingServerJobPollOnly(recoveryTarget);
-        }finally{
-          activeBackendResumeTarget = null;
-          if(readPendingBackendJob()?.jobId){
-            schedulePendingBackendResume(0, SERVER_SOLVER_JOB_BACKGROUND_RETRY_MS);
-          }
-        }
+        if(observer?.jobId) return await observeBackendJob(observer);
       }
-      if(
-        hydrationJobLive
-        || (hydrationJobKnown && !hydrationJobCompleted)
-        || keepCompletedForHydration
-      ){
-        setAutoSortButtonBusy(true);
-        setStatus("Đang nối lại lượt xếp...", "info");
-        setProgress(
-          Math.max(3, normalizePendingProgressPercent(pending.lastPercent) || 3),
-          "Đang nối lại",
-          {phase:"reconnecting"}
-        );
-        recordBackendLiveProgress(
-          hydrationState?.requestedJobProgress
-          || hydrationRunningItem?.progress
-          || hydrationQueuedItem?.progress
-        );
-        schedulePendingBackendResume(attempt, SERVER_SOLVER_JOB_DISCOVERY_RETRY_MS);
-        return false;
-      }
-      pendingFingerprintHydrationJobId = "";
-      pendingFingerprintHydrationAttempts = 0;
-      pendingCompletedHydrationJobId = "";
-      pendingCompletedHydrationAttempts = 0;
-      // The server is authoritative that this id is no longer live. Detach
-      // locally without cancelling it or applying a mismatched terminal result.
-      reportSkippedDiscoveredBackendJob({jobId:pending.jobId, kind:hydrationJobCompleted ? "completed" : "running"});
-      endServerJobReattachLease(pending.jobId);
-      removePendingBackendJob(pending.jobId);
+      rememberSettledBackendJob(authoritativeJobId);
+      reportSkippedDiscoveredBackendJob({jobId:authoritativeJobId, kind:"stale_schedule"});
+      endServerJobReattachLease(authoritativeJobId);
+      removePendingBackendJob(authoritativeJobId);
       releaseAutoSortButtonSoon();
+      setStatus("", "ok");
       return false;
     }
-    pendingFingerprintHydrationJobId = "";
-    pendingFingerprintHydrationAttempts = 0;
-    pendingCompletedHydrationJobId = "";
-    pendingCompletedHydrationAttempts = 0;
     if(!pending?.jobId && !ownerBackendJobDiscoveryAllowed()){
       const nextAttempt = Math.max(0, Number(attempt || 0) || 0) + 1;
       if(nextAttempt <= SERVER_SOLVER_AUTH_READY_RETRIES){
@@ -14688,8 +14908,9 @@
     // Explicit Stop is authoritative. A settled bit alone is not: another tab
     // may have written it while this authenticated state probe was in flight,
     // even though the API still retains the exact result for this fingerprint.
-    if(automaticBackendResumeSuppressed()) return false;
+    if(automaticBackendResumeSuppressed() || resumeEpoch !== backendResumeEpoch) return false;
     if(!state || state.ok !== true){
+      if(pending?.jobId) releaseAutoSortButtonSoon();
       const nextAttempt = Number(attempt || 0) + 1;
       if(pending?.jobId || nextAttempt <= 6){
         schedulePendingBackendResume(nextAttempt, nextAttempt <= 6 ? 700 : SERVER_SOLVER_JOB_BACKGROUND_RETRY_MS);
@@ -14705,17 +14926,9 @@
       const discoveredJob = discovered.job || discovered.observerJob;
       const observeOnly = !discovered.job && !!discovered.observerJob;
       if(!discoveredJob){
-        // A second browser commonly opens while the first one is still doing
-        // local preflight, before the VPS job has reached owner state. Keep a
-        // low-rate authenticated watch alive so that later admission is found
-        // without requiring F5, tab switching, or another user action.
-        const nextAttempt = Math.max(0, Number(attempt || 0) || 0) + 1;
-        schedulePendingBackendResume(
-          nextAttempt,
-          nextAttempt <= 6
-            ? SERVER_SOLVER_JOB_DISCOVERY_RETRY_MS
-            : SERVER_SOLVER_JOB_BACKGROUND_RETRY_MS
-        );
+        // An idle page performs one authoritative load/wake probe. If there is
+        // no session, stay idle; a later pageshow/visibility/online/auth-ready
+        // event is the explicit next wake and will issue a fresh probe.
         return false;
       }
       if(
@@ -14749,15 +14962,23 @@
       || completedJobs.some(item => String(item?.jobId || "") === pending.jobId);
     if(!known){
       const unknownAttempt = Math.max(0, Number(attempt || 0) || 0);
-      if(unknownAttempt < SERVER_SOLVER_JOB_UNKNOWN_RETRIES){
+      const explicitlyAbsent = state.requestedJobServerOwned === false
+        && state.requestedJobActive !== true
+        && state.requestedJobQueued !== true
+        && state.requestedJobResultReady !== true;
+      if(!explicitlyAbsent && unknownAttempt < SERVER_SOLVER_JOB_UNKNOWN_RETRIES){
         schedulePendingBackendResume(unknownAttempt + 1, 700);
         return false;
       }
       // An unknown id after the short registration grace period is detached,
       // never replayed. Reposting it used to turn F5 into a brand-new solve
       // after an API restart and could resurrect a job the user had stopped.
+      rememberSettledBackendJob(pending.jobId);
+      removePendingBackendJob(pending.jobId);
       clearActiveBackendJobId(pending.jobId, {force:true});
       endServerJobReattachLease(pending.jobId);
+      releaseAutoSortButtonSoon();
+      setStatus("", "ok");
       return false;
     }
     const runningItem = jobs.find(item => String(item?.jobId || "") === pending.jobId);
@@ -14820,18 +15041,38 @@
     }
     window.setInterval(updateBackendStatusBanner, 30000);
     setAutoSortHomeHiddenState(false);
-    primePendingBackendResumeUi();
+    // Do not paint a reconnect state from localStorage alone. The VPS state
+    // probe below is authoritative; it decides whether a session exists.
     schedulePendingBackendResume(0, 800);
     try{
+      const requestBackendResumeWake = () => {
+        pendingBackendWakeRequested = true;
+        retryServerCancellationIntent().catch(() => {});
+        schedulePendingBackendResume(0, 100, {force:true});
+      };
+      window.addEventListener?.("tkb:planner-data-ready", () => {
+        // Data readiness can arrive while the initial authoritative probe is
+        // still unwinding. Mark it as a real wake so the single-flight wrapper
+        // performs one follow-up probe instead of losing the event when the
+        // older promise settles.
+        pendingBackendWakeRequested = true;
+        pendingBackendWakeNeedsEmptyProbe = true;
+        schedulePendingBackendResume(0, 0, {force:true});
+      });
       document.addEventListener?.("visibilitychange", () => {
-        if(document.hidden === false) schedulePendingBackendResume(0, 100);
+        if(document.hidden === false) requestBackendResumeWake();
       });
       window.addEventListener?.("pageshow", () => {
-        schedulePendingBackendResume(0, 100);
+        requestBackendResumeWake();
       });
       window.addEventListener?.("online", () => {
         rustApiBaseCache = "";
-        schedulePendingBackendResume(0, 100);
+        requestBackendResumeWake();
+      });
+      window.addEventListener?.("tkb:auth-ready", () => {
+        pendingBackendWakeRequested = true;
+        pendingBackendWakeNeedsEmptyProbe = true;
+        schedulePendingBackendResume(0, 0, {force:true});
       });
     }catch(_){ }
   }catch(_){}

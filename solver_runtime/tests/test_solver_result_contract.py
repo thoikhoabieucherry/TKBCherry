@@ -23,6 +23,7 @@ from tkb_new.adapter import (  # noqa: E402
     _extract_hard_fixed_lessons_from_tkb,
     _fast_benders_tight_fixed_off_profile,
     _fast_quality_warmup_direct_settings,
+    _first_click_request_portfolio_seed,
     _incremental_lns_profile,
     _incremental_refinement_candidate_better,
     _merge_refinement_learning,
@@ -4288,10 +4289,10 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertEqual(feasibility_call.args[1]["optimization_benders_iterations"], 5)
         self.assertEqual(feasibility_call.args[1]["num_workers"], 6)
         self.assertEqual(quality_call.kwargs["cap"], 500)
-        # A large first fresh keeps the browser seed for feasibility, but Phase
-        # Q uses the stable default seed so one unlucky click cannot strand the
-        # visible result at the rough feasibility ceiling.
-        self.assertEqual(quality_call.kwargs["random_seed"], 1)
+        # A normal large fresh keeps the caller's seed in Phase Q.  This is
+        # important for independent clicks/devices: a hidden stable seed made
+        # every run converge to the same hint-like timetable.
+        self.assertEqual(quality_call.kwargs["random_seed"], 77)
         self.assertIs(quality_call.kwargs["incumbent_payload"], feasibility)
         self.assertFalse(quality_call.args[1]["optimization_benders_disable_session_early_stop"])
         self.assertTrue(
@@ -4306,8 +4307,8 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertEqual(quality_call.args[1]["max_one_period_sessions"], 0)
         self.assertEqual(attempts[1]["quality_cap"], 500)
         self.assertTrue(attempts[1]["soft_hint_used"])
-        self.assertTrue(attempts[1]["stable_large_quality_seed"])
-        self.assertEqual(attempts[1]["random_seed"], 1)
+        self.assertFalse(attempts[1]["stable_large_quality_seed"])
+        self.assertEqual(attempts[1]["random_seed"], 77)
         self.assertEqual(target_call.kwargs["cap"], 484)
         self.assertIs(target_call.kwargs["incumbent_payload"], quality)
         self.assertEqual(target_call.args[1]["max_teacher_sessions"], 484)
@@ -4360,6 +4361,222 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertEqual(solve_candidate.call_args_list[0].kwargs["random_seed"], 77)
         self.assertEqual(solve_candidate.call_args_list[1].kwargs["random_seed"], 77)
         self.assertFalse(attempts[1]["stable_large_quality_seed"])
+
+    def test_large_first_click_keeps_requested_quality_seed_by_default(self) -> None:
+        """Independent fresh clicks must not silently fall back to seed 1."""
+        feasibility = _first_click_payload(teacher_sessions=520, gap1=84)
+        quality = _first_click_payload(teacher_sessions=498, gap1=58)
+        settings = {
+            "target_teacher_sessions": 482,
+            "optimization_accept_teacher_sessions": 482,
+            "optimization_first_click_local_lns_time_limit_seconds": 0,
+            "optimization_first_click_target_probe_enabled": False,
+            "num_workers": 6,
+        }
+        bounds = {
+            "lower_cap": 450,
+            "start_cap": 466,
+            "upper_cap": 650,
+            "expected_periods": 1566,
+        }
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=[feasibility, quality],
+        ) as solve_candidate:
+            _result, _metrics, attempts, _termination = (
+                _solve_unified_first_click_feasibility_then_quality(
+                    {},
+                    settings,
+                    bound_ctx=_context(),
+                    bounds=bounds,
+                    profile={"expected": 1566, "class_count": 54},
+                    rules=None,
+                    progress=None,
+                    deadline=SolverDeadline(90),
+                    polish_seeds=[1],
+                    requested_random_seed=77,
+                )
+            )
+
+        self.assertEqual(solve_candidate.call_count, 2)
+        self.assertEqual(solve_candidate.call_args_list[1].kwargs["random_seed"], 77)
+        self.assertFalse(attempts[1]["stable_large_quality_seed"])
+
+    def test_large_lean_first_click_preserves_fast_primary_and_arms_rescue(self) -> None:
+        feasibility = _first_click_payload(teacher_sessions=522, gap1=123)
+        quality = _first_click_payload(teacher_sessions=482, gap1=68)
+        settings = {
+            "target_teacher_sessions": 466,
+            "optimization_accept_teacher_sessions": 466,
+            "optimization_first_click_quality_cap_headroom": 16,
+            "optimization_first_click_lean_global_quality": True,
+            "optimization_first_click_local_lns_time_limit_seconds": 0,
+            "optimization_first_click_target_probe_enabled": False,
+            "num_workers": 6,
+        }
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=[feasibility, quality],
+        ) as solve_candidate:
+            result, _metrics, attempts, termination = (
+                _solve_unified_first_click_feasibility_then_quality(
+                    {},
+                    settings,
+                    bound_ctx=_context(),
+                    bounds={
+                        "lower_cap": 450,
+                        "start_cap": 466,
+                        "upper_cap": 650,
+                        "expected_periods": 1566,
+                    },
+                    profile={"expected": 1566, "class_count": 54},
+                    rules=None,
+                    progress=None,
+                    deadline=SolverDeadline(90),
+                    polish_seeds=[202],
+                    requested_random_seed=202,
+                )
+            )
+
+        self.assertIs(result, quality)
+        self.assertEqual(termination, "first_click_strict_quality_improved")
+        self.assertEqual(solve_candidate.call_count, 2)
+        quality_call = solve_candidate.call_args_list[1]
+        quality_settings = quality_call.args[1]
+        self.assertEqual(quality_call.kwargs["cap"], 482)
+        self.assertEqual(quality_call.kwargs["random_seed"], 202)
+        self.assertIs(quality_call.kwargs["incumbent_payload"], feasibility)
+        self.assertFalse(quality_settings["optimization_benders_period_feasibility_all_sessions"])
+        self.assertTrue(quality_settings["optimization_benders_lean_refinement_periods"])
+        self.assertFalse(quality_settings["optimization_benders_session_feasibility_only"])
+        self.assertEqual(quality_settings["optimization_benders_iterations"], 1)
+        self.assertEqual(quality_settings["session_cp_sat_linearization_level"], 1)
+        self.assertLessEqual(quality_settings["optimization_benders_session_time_limit"], 20)
+        self.assertTrue(quality_settings["_fixed_only_empty_fallback_attempted"])
+        self.assertTrue(attempts[1]["period_safe_quality_rescue_armed"])
+        self.assertFalse(attempts[1]["period_safe_quality_rescue"])
+        self.assertFalse(attempts[1]["concrete_periods_materialized"])
+        self.assertTrue(attempts[1]["soft_hint_used"])
+        self.assertEqual(attempts[1]["request_random_seed"], 202)
+
+    def test_lean_quality_error_uses_tight_period_safe_request_seed_rescue(self) -> None:
+        feasibility = _first_click_payload(teacher_sessions=522, gap1=123)
+        rescued = _first_click_payload(teacher_sessions=482, gap1=68)
+        settings = {
+            "target_teacher_sessions": 466,
+            "optimization_accept_teacher_sessions": 466,
+            "optimization_first_click_quality_cap_headroom": 16,
+            "optimization_first_click_lean_global_quality": True,
+            "optimization_first_click_local_lns_time_limit_seconds": 0,
+            "optimization_first_click_target_probe_enabled": False,
+            "num_workers": 6,
+        }
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=[feasibility, RuntimeError("lean period vector failed"), rescued],
+        ) as solve_candidate:
+            result, _metrics, attempts, termination = (
+                _solve_unified_first_click_feasibility_then_quality(
+                    {},
+                    settings,
+                    bound_ctx=_context(),
+                    bounds={
+                        "lower_cap": 450,
+                        "start_cap": 466,
+                        "upper_cap": 650,
+                        "expected_periods": 1566,
+                    },
+                    profile={"expected": 1566, "class_count": 54},
+                    rules=None,
+                    progress=None,
+                    deadline=SolverDeadline(90),
+                    polish_seeds=[202],
+                    requested_random_seed=202,
+                )
+            )
+
+        self.assertIs(result, rescued)
+        self.assertEqual(termination, "first_click_period_safe_quality_rescue_improved")
+        self.assertEqual(solve_candidate.call_count, 3)
+        rescue_call = solve_candidate.call_args_list[2]
+        rescue_settings = rescue_call.args[1]
+        self.assertEqual(rescue_call.kwargs["cap"], 482)
+        self.assertEqual(
+            rescue_call.kwargs["random_seed"],
+            _first_click_request_portfolio_seed(202, 1),
+        )
+        self.assertIsNone(rescue_call.kwargs["incumbent_payload"])
+        self.assertTrue(rescue_settings["optimization_benders_period_feasibility_all_sessions"])
+        self.assertFalse(rescue_settings["optimization_benders_lean_refinement_periods"])
+        self.assertTrue(rescue_settings["optimization_benders_session_feasibility_only"])
+        self.assertEqual(rescue_settings["optimization_benders_iterations"], 1)
+        self.assertLessEqual(rescue_settings["optimization_benders_session_time_limit"], 20)
+        self.assertEqual(attempts[2]["attempt_key"], "fresh:phase_q:period_safe")
+        self.assertTrue(attempts[2]["concrete_periods_materialized"])
+        self.assertFalse(attempts[2]["soft_hint_used"])
+        self.assertTrue(attempts[2]["new_best"])
+
+    def test_period_safe_unknown_can_use_one_looser_cap_without_hint(self) -> None:
+        feasibility = _first_click_payload(teacher_sessions=522, gap1=123)
+        relaxed = _first_click_payload(teacher_sessions=500, gap1=91)
+        settings = {
+            "target_teacher_sessions": 466,
+            "optimization_accept_teacher_sessions": 466,
+            "optimization_first_click_quality_cap_headroom": 16,
+            "optimization_first_click_lean_global_quality": True,
+            "optimization_first_click_local_lns_time_limit_seconds": 0,
+            "optimization_first_click_target_probe_enabled": False,
+            "num_workers": 6,
+        }
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=[
+                feasibility,
+                RuntimeError("lean period vector failed"),
+                RuntimeError("tight integrated unknown"),
+                relaxed,
+            ],
+        ) as solve_candidate:
+            result, _metrics, attempts, termination = (
+                _solve_unified_first_click_feasibility_then_quality(
+                    {},
+                    settings,
+                    bound_ctx=_context(),
+                    bounds={
+                        "lower_cap": 450,
+                        "start_cap": 466,
+                        "upper_cap": 650,
+                        "expected_periods": 1566,
+                    },
+                    profile={"expected": 1566, "class_count": 54},
+                    rules=None,
+                    progress=None,
+                    deadline=SolverDeadline(90),
+                    polish_seeds=[202],
+                    requested_random_seed=202,
+                )
+            )
+
+        self.assertIs(result, relaxed)
+        self.assertEqual(termination, "first_click_period_safe_relaxed_cap_improved")
+        self.assertEqual(solve_candidate.call_count, 4)
+        rescue_call = solve_candidate.call_args_list[3]
+        rescue_settings = rescue_call.args[1]
+        self.assertEqual(rescue_call.kwargs["cap"], 500)
+        self.assertEqual(
+            rescue_call.kwargs["random_seed"],
+            _first_click_request_portfolio_seed(202, 2),
+        )
+        self.assertIsNone(rescue_call.kwargs["incumbent_payload"])
+        self.assertTrue(rescue_settings["optimization_benders_period_feasibility_all_sessions"])
+        self.assertFalse(rescue_settings["optimization_benders_lean_refinement_periods"])
+        self.assertTrue(rescue_settings["optimization_benders_session_feasibility_only"])
+        self.assertEqual(attempts[3]["attempt_key"], "fresh:phase_q:period_safe_relaxed_cap")
+        self.assertTrue(attempts[3]["new_best"])
 
     def test_unbounded_first_click_deep_search_cannot_displace_safe_quality_incumbent(self) -> None:
         feasibility = _first_click_payload(teacher_sessions=520, gap1=84)
@@ -4559,7 +4776,7 @@ class SolverResultContractTests(unittest.TestCase):
             )
         )
 
-    def test_lean_refinement_does_not_expand_fixed_contiguous_period_bridge(self) -> None:
+    def test_lean_refinement_expands_fixed_period_bridge_only_in_empty_fallback(self) -> None:
         ctx = _context()
         assignment = ctx.school_data.assignments[0]
         fixed_lesson = Lesson(
@@ -4621,10 +4838,117 @@ class SolverResultContractTests(unittest.TestCase):
                             deadline=SolverDeadline(30),
                         )
 
+                self.assertEqual(solve_sessions.call_count, 2)
                 self.assertEqual(
-                    solve_sessions.call_args.kwargs["period_feasibility_session_indexes"],
+                    solve_sessions.call_args_list[0].kwargs["period_feasibility_session_indexes"],
                     expected_indexes,
                 )
+                self.assertEqual(
+                    solve_sessions.call_args_list[1].kwargs["period_feasibility_session_indexes"],
+                    set(range(12)),
+                )
+
+    def test_fixed_only_lean_failure_retries_empty_flexible_with_hard_anchors(self) -> None:
+        """A sparse fixed-only request gets one no-hint full-period retry."""
+        ctx = _context()
+        assignment = ctx.school_data.assignments[0]
+        fixed_lesson = Lesson(
+            class_name=assignment.class_name,
+            grade=assignment.grade,
+            day=2,
+            session="AM",
+            period=1,
+            subject=assignment.subject,
+            teacher=assignment.teacher,
+        )
+        residual_allocation = SessionAllocation(
+            class_name=assignment.class_name,
+            grade=assignment.grade,
+            subject=assignment.subject,
+            teacher=assignment.teacher,
+            session=Session(day=3, part="AM"),
+            count=1,
+        )
+        residual_lesson = Lesson(
+            class_name=assignment.class_name,
+            grade=assignment.grade,
+            day=3,
+            session="AM",
+            period=1,
+            subject=assignment.subject,
+            teacher=assignment.teacher,
+        )
+        no_solution = SessionCpSatNoSolution(
+            "lean anchor-preserving vector rejected",
+            {"status_name": "UNKNOWN", "elapsed_seconds": 0.01},
+        )
+        settings = {
+            "preserve_fixed_lessons_only": True,
+            "optimization_benders_iterations": 1,
+            "optimization_benders_session_time_limit": 10,
+            "optimization_benders_lean_refinement_periods": True,
+            "optimization_benders_period_feasibility_all_sessions": False,
+            "max_one_period_sessions": "off",
+            "strict_one_period_sessions_cap": False,
+            "num_workers": 1,
+        }
+
+        with (
+            patch("tkb_new.adapter.build_school_data_from_ui", return_value=ctx),
+            patch(
+                "tkb_new.adapter._extract_hard_fixed_lessons_from_tkb",
+                return_value=([fixed_lesson], []),
+            ),
+            patch(
+                "tkb_new.adapter._release_invalid_fixed_lessons",
+                return_value=([fixed_lesson], []),
+            ),
+            patch(
+                "tkb_new.adapter._trim_context_to_available_slots",
+                return_value=(ctx, []),
+            ),
+            patch(
+                "tkb_new.adapter.solve_session_allocation_cp_sat",
+                side_effect=[
+                    no_solution,
+                    ([residual_allocation], {"teacher_sessions": 1, "status_name": "FEASIBLE"}),
+                ],
+            ) as solve_sessions,
+            patch(
+                "tkb_new.adapter.allocate_periods",
+                return_value=([residual_lesson], {"solver": "test-period"}),
+            ) as allocate_periods_mock,
+        ):
+            result = _solve_teacher_session_benders_candidate(
+                {},
+                settings,
+                cap=2,
+                time_limit_seconds=30,
+                rules=ctx.rules,
+                progress=None,
+                incumbent_payload=None,
+                deadline=SolverDeadline(30),
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["metrics"]["scheduled_periods"], 2)
+        self.assertEqual(result["metrics"]["expected_periods"], 2)
+        self.assertTrue(result["metrics"]["hard_ok"])
+        self.assertEqual(solve_sessions.call_count, 2)
+        self.assertIsNone(
+            solve_sessions.call_args_list[0].kwargs["period_feasibility_session_indexes"]
+        )
+        self.assertEqual(
+            solve_sessions.call_args_list[1].kwargs["period_feasibility_session_indexes"],
+            set(range(12)),
+        )
+        self.assertIsNone(solve_sessions.call_args_list[1].kwargs["hint_allocations"])
+        self.assertFalse(solve_sessions.call_args_list[1].kwargs["repair_hint"])
+        self.assertEqual(solve_sessions.call_args_list[1].kwargs["fixed_lessons"], [fixed_lesson])
+        self.assertEqual(allocate_periods_mock.call_count, 1)
+        runtime = result["solver"]["runtime_settings"]
+        self.assertTrue(runtime["fixed_only_empty_fallback"])
+        self.assertTrue(runtime["fixed_only_empty_fallback_no_hint"])
 
     def test_first_click_rejects_bad_quality_and_retains_exact_feasible_result(self) -> None:
         fixed_lesson = Lesson(

@@ -26,6 +26,7 @@ from tkb_optimizer_ref.period_milp import (
     allocate_periods,
     save_period_solution,
 )
+from tkb_optimizer_ref.random_seed import normalize_cp_sat_seed
 from tkb_optimizer_ref.rules import TimetableConstraintRules, TimetableRuleSet
 from tkb_optimizer_ref.session_milp import (
     _assignment_available_periods,
@@ -1942,6 +1943,7 @@ def _repair_one_period_affected_class_cluster(
     known_current_metrics: Mapping[str, Any] | None = None,
 ) -> tuple[list[Lesson], dict[str, Any], dict[str, Any]] | None:
     """Repack a small class cluster while the rest of the timetable stays fixed."""
+    random_seed = normalize_cp_sat_seed(random_seed)
 
     wall_started = time.monotonic()
     wall_deadline = wall_started + max(0.0, float(time_limit_seconds))
@@ -6560,6 +6562,16 @@ def _solve_teacher_session_benders_candidate(
         and effective_rules.contiguous_multi_period_assignments
         and not lean_refinement_periods
     )
+    bridge_promotion_cut_count = max(
+        1,
+        min(
+            8,
+            _to_int(
+                settings.get("optimization_benders_period_bridge_promotion_cut_count"),
+                2,
+            ),
+        ),
+    )
     session_feasibility_only = _truthy_setting(
         settings.get("optimization_benders_session_feasibility_only")
     )
@@ -6699,6 +6711,14 @@ def _solve_teacher_session_benders_candidate(
             history.append({"iteration": iteration, "status": "budget_exhausted", "cuts": len(cuts)})
             break
         seed = seed_sequence[(iteration - 1) % len(seed_sequence)] if seed_sequence else None
+        # Once the lean allocator has rejected enough distinct period vectors,
+        # promote the next attempt before calculating the legacy period-MILP
+        # reserve.  The promoted CP-SAT call materializes and validates periods
+        # itself; reserving another allocator slice would starve it at the exact
+        # point where it is meant to recover an unlucky quality seed.
+        effective_bridge_all_period_sessions = bridge_all_period_sessions or (
+            complete_first and len(cuts) >= bridge_promotion_cut_count
+        )
         # The all-session bridge materializes and validates final periods inside
         # the CP-SAT call.  Reserving another period-allocation slice here only
         # shortens the model that is actually doing the work (on the default
@@ -6707,7 +6727,7 @@ def _solve_teacher_session_benders_candidate(
         # still required after the session model returns.
         phase_reserve = (
             0.0
-            if bridge_all_period_sessions
+            if effective_bridge_all_period_sessions
             else min(20.0, float(period_limit // 2 + 4))
         )
         session_limit = deadline.phase_limit(session_slice, reserve_seconds=phase_reserve)
@@ -6724,13 +6744,6 @@ def _solve_teacher_session_benders_candidate(
                 }
             )
         try:
-            # Start complete-first with the lean session model.  If a period
-            # MILP rejects two distinct vectors, the final Benders iteration
-            # promotes the full period-feasibility envelope instead of
-            # discovering one bad half-day per retry indefinitely.
-            effective_bridge_all_period_sessions = bridge_all_period_sessions or (
-                complete_first and len(cuts) >= 2
-            )
             allocations, session_metrics = solve_session_allocation_cp_sat(
                 ctx.school_data,
                 rules=effective_rules,
@@ -7230,6 +7243,159 @@ def _solve_teacher_session_benders_candidate(
                 break
             current_hint = allocations
 
+    # A fixed-only request is a special recovery shape: the visible request
+    # contains the hard anchors (usually the 54 fixed periods) but no flexible
+    # incumbent at all.  The lean Benders lane can reject every session vector
+    # because it was shaped around the old anchor-preserving trajectory.  Do
+    # one bounded retry from an empty flexible timetable while retaining the
+    # hard lessons and the complete application rule set.  This is deliberately
+    # inside the same deadline and guarded so a failed retry cannot recurse.
+    fixed_only_fallback_detail: dict[str, Any] | None = None
+    expected_fixed_only_periods = sum(
+        max(0, int(item.periods_per_week)) for item in original_ctx.school_data.assignments
+    )
+    fixed_only_fallback_eligible = (
+        fixed_existing_lessons_are_hard
+        and 0 < len(fixed_existing_lessons) < expected_fixed_only_periods
+        and incumbent_payload is None
+        and not _truthy_setting(settings.get("preserve_existing_tkb"))
+        and not _truthy_setting(settings.get("_fixed_only_empty_fallback_attempted"))
+    )
+    if best_payload is None and fixed_only_fallback_eligible:
+        remaining = deadline.remaining()
+        fallback_budget = (
+            max(0, int(float(remaining) - 1.0))
+            if remaining is not None
+            else max(0, int(time_limit_seconds))
+        )
+        fixed_only_fallback_detail = {
+            "eligible": True,
+            "fixed_lessons": len(fixed_existing_lessons),
+            "expected_periods": expected_fixed_only_periods,
+            "remaining_seconds": round(float(remaining), 3) if remaining is not None else None,
+            "attempted": False,
+        }
+        if fallback_budget >= 8:
+            fallback_settings = dict(settings)
+            fallback_settings.update(
+                {
+                    "_fixed_only_empty_fallback_attempted": True,
+                    "auto_sort_strategy": "fixed_only_empty_fresh_fallback",
+                    "preserve_existing_tkb": False,
+                    "preserve_fixed_lessons_only": True,
+                    "force_preserve_partial_existing": False,
+                    "partial_existing_rebuild": False,
+                    "repair_fill_first": False,
+                    "repair_partial_existing": False,
+                    "existing_fill_missing_schedule": False,
+                    "allow_solver_warm_start": False,
+                    "allow_backend_cache": False,
+                    "allow_legacy_solver_hints": False,
+                    "disable_native_hint_solver": True,
+                    "disable_solver_hints": True,
+                    "native_disable_cached_hint_candidate": True,
+                    "native_disable_static_hint_candidate": True,
+                    "native_hint_bank_max_entries": 0,
+                    "native_hint_bank_time_limit_ms": 0,
+                    "fast_repair_period_hint": False,
+                    "fast_validated_period_hint": False,
+                    "fresh_randomize": True,
+                    "randomize_search": True,
+                    "fresh_randomize_strategy": "solver_random",
+                    "optimization_benders_period_feasibility_all_sessions": True,
+                    "optimization_benders_lean_refinement_periods": False,
+                    "optimization_benders_session_feasibility_only": False,
+                    "optimization_benders_complete_first": True,
+                    "optimization_benders_allow_one_period_debt": True,
+                    "max_one_period_sessions": "off",
+                    "strict_one_period_sessions_cap": False,
+                    "enforce_max_one_period_sessions": False,
+                    "one_period_priority_absolute": False,
+                    "allow_quality_debt": True,
+                    "period_max_teacher_gap": "off",
+                    "relax_period_teacher_gap_on_failure": True,
+                    "best_effort_on_timeout": False,
+                    "require_complete_schedule": True,
+                    "overall_time_limit_seconds": fallback_budget,
+                    "integrated_time_limit": fallback_budget,
+                    "optimization_time_limit_seconds": fallback_budget,
+                    "optimization_benders_session_time_limit": max(
+                        10, min(30, fallback_budget - 2)
+                    ),
+                    "period_time_limit": max(12, min(30, fallback_budget - 2)),
+                    "optimization_period_retry_time_limit": max(12, min(30, fallback_budget - 2)),
+                }
+            )
+            fallback_seeds = [value for value in seed_sequence if value is not None]
+            fallback_seed = (
+                fallback_seeds[-1]
+                if fallback_seeds and fallback_seeds[-1] != seed
+                else (fallback_seeds[0] if fallback_seeds else 17)
+            )
+            fallback_settings["random_seed"] = fallback_seed
+            if progress:
+                progress(
+                    {
+                        "stage": "teacher_session_opt:fixed_only_empty_fallback",
+                        "message": "Thu xep lai tu cac tiet co dinh, bo qua lich tam",
+                        "fixed_lessons": len(fixed_existing_lessons),
+                        "expected_periods": expected_fixed_only_periods,
+                        "time_limit_seconds": fallback_budget,
+                        "random_seed": fallback_seed,
+                    }
+                )
+            fallback_started = time.monotonic()
+            fallback_error: Exception | None = None
+            fallback_payload: dict[str, Any] | None = None
+            try:
+                fallback_payload = _solve_teacher_session_benders_candidate(
+                    ui_data,
+                    fallback_settings,
+                    cap=max(cap, _relaxed_teacher_session_cap(cap, expected_fixed_only_periods)),
+                    time_limit_seconds=fallback_budget,
+                    rules=rules,
+                    progress=progress,
+                    incumbent_payload=None,
+                    random_seed=fallback_seed,
+                    deadline=deadline,
+                )
+            except Exception as fallback_exc:  # noqa: BLE001 - preserve original failure diagnostics.
+                fallback_error = fallback_exc
+            fallback_ok = bool(
+                isinstance(fallback_payload, Mapping)
+                and _complete_payload_metrics_acceptable(fallback_payload)
+                and _payload_preserves_required_lessons(fallback_payload, fixed_existing_lessons)
+            )
+            fixed_only_fallback_detail.update(
+                {
+                    "attempted": True,
+                    "accepted": fallback_ok,
+                    "elapsed_seconds": round(time.monotonic() - fallback_started, 3),
+                    "time_limit_seconds": fallback_budget,
+                    "random_seed": fallback_seed,
+                    "error": str(fallback_error)[:500] if fallback_error is not None else None,
+                }
+            )
+            if fallback_ok:
+                fallback_solver = fallback_payload.get("solver")
+                if not isinstance(fallback_solver, dict):
+                    fallback_solver = {}
+                    fallback_payload["solver"] = fallback_solver
+                fallback_runtime = fallback_solver.get("runtime_settings")
+                if not isinstance(fallback_runtime, dict):
+                    fallback_runtime = {}
+                    fallback_solver["runtime_settings"] = fallback_runtime
+                fallback_runtime.update(
+                    {
+                        "fixed_only_empty_fallback": True,
+                        "fixed_only_empty_fallback_fixed_lessons": len(fixed_existing_lessons),
+                        "fixed_only_empty_fallback_elapsed_seconds": fixed_only_fallback_detail["elapsed_seconds"],
+                        "fixed_only_empty_fallback_random_seed": fallback_seed,
+                        "fixed_only_empty_fallback_no_hint": True,
+                    }
+                )
+                return fallback_payload
+
     if best_payload is not None:
         solver_meta = best_payload.get("solver") if isinstance(best_payload.get("solver"), Mapping) else None
         benders_meta = (
@@ -7246,6 +7412,8 @@ def _solve_teacher_session_benders_candidate(
             benders_meta["history"] = list(history)
         return best_payload
     detail = {"cap": int(cap), "history": history, "cuts": len(cuts)}
+    if fixed_only_fallback_detail is not None:
+        detail["fixed_only_empty_fallback"] = fixed_only_fallback_detail
     raise RuntimeError("Benders teacher-session cap search failed: " + json.dumps(detail, ensure_ascii=False, default=str))
 
 
@@ -8525,6 +8693,19 @@ def _unified_first_click_candidate_acceptable(
     )
 
 
+def _first_click_request_portfolio_seed(primary_seed: int | None, lane: int = 1) -> int:
+    """Derive a distinct CP-SAT trajectory from this click's random seed."""
+
+    normalized = normalize_cp_sat_seed(primary_seed) or 1
+    rng = random.Random(normalized)
+    candidate = normalized
+    for _ in range(max(1, int(lane))):
+        candidate = rng.randint(1, 2_147_483_646)
+    if candidate == normalized:
+        candidate = (candidate % 2_147_483_646) + 1
+    return candidate
+
+
 def _solve_unified_first_click_feasibility_then_quality(
     ui_data: dict[str, Any],
     settings: Mapping[str, Any],
@@ -8552,13 +8733,19 @@ def _solve_unified_first_click_feasibility_then_quality(
         or _positive_setting(settings, "optimization_accept_teacher_sessions")
     )
     large_first_click = _to_int(profile.get("expected"), 0) >= 900
+    # Keep independent fresh clicks genuinely independent.  Earlier releases
+    # defaulted this switch on for large schools and replaced the browser's
+    # request seed with ``default_random_seed`` during Phase Q.  That made
+    # every device converge to the same quality trajectory (the familiar
+    # 521-session result), effectively behaving like a hidden hint.  A caller
+    # may still opt into a reproducible diagnostic/retry explicitly.
     stabilize_large_quality_seed = (
         large_first_click
         and _truthy_setting(
-            settings.get("optimization_first_click_stable_quality_seed", "1")
+            settings.get("optimization_first_click_stable_quality_seed", "0")
         )
     )
-    first_click_quality_seed = int(requested_random_seed or 1)
+    first_click_quality_seed = normalize_cp_sat_seed(requested_random_seed) or 1
     if stabilize_large_quality_seed:
         # Browser fresh clicks intentionally carry a random seed so later
         # searches can explore different schedules.  On a large empty rebuild,
@@ -9004,16 +9191,29 @@ def _solve_unified_first_click_feasibility_then_quality(
             ),
             max(0, int(float(remaining) - return_reserve)),
         )
+        # Preserve the fast lean trajectory for seeds that already produce a
+        # period-feasible compact timetable. On a large rebuild, stop that lean
+        # lane after its first failed vector so it cannot consume the whole
+        # quality budget; the exception path below can then run one independent
+        # all-period CP-SAT rescue. This remains one server job/click.
+        period_safe_quality_rescue_armed = (
+            large_first_click
+            and lean_global_quality
+            and _truthy_setting(
+                settings.get("optimization_first_click_period_safe_quality_rescue", "1")
+            )
+        )
+        quality_random_seed = first_click_quality_seed
         quality_settings = dict(feasibility_settings)
         # Keep the first strict-quality attempt deliberately conservative: it
         # is the handoff point from the mandatory complete incumbent. The
         # long/unbounded search is applied only to the subsequent tighter-cap
         # probe, where a timeout cannot displace that incumbent.
-        quality_benders_iterations = 3
+        quality_benders_iterations = 1 if period_safe_quality_rescue_armed else 3
         quality_session_limit = max(
             10,
             min(
-                40,
+                20 if period_safe_quality_rescue_armed else 40,
                 int(quality_budget) - 14,
                 _to_int(
                     settings.get("optimization_first_click_quality_session_time_limit_seconds"),
@@ -9042,6 +9242,10 @@ def _solve_unified_first_click_feasibility_then_quality(
                 "session_cp_sat_linearization_level": 1,
                 "optimization_benders_period_feasibility_all_sessions": not lean_global_quality,
                 "optimization_benders_lean_refinement_periods": lean_global_quality,
+                "optimization_benders_period_bridge_promotion_cut_count": (
+                    1 if lean_global_quality else 2
+                ),
+                "_fixed_only_empty_fallback_attempted": period_safe_quality_rescue_armed,
                 "max_one_period_sessions": 0,
                 "strict_one_period_sessions_cap": True,
                 "enforce_max_one_period_sessions": True,
@@ -9066,6 +9270,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                     "cap": quality_cap,
                     "target": requested_quality_cap,
                     "time_limit_seconds": quality_budget,
+                    "period_safe_rescue_armed": period_safe_quality_rescue_armed,
                 }
             )
         quality_started = time.monotonic()
@@ -9078,7 +9283,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                 rules=rules,
                 progress=progress,
                 incumbent_payload=best_payload,
-                random_seed=first_click_quality_seed,
+                random_seed=quality_random_seed,
                 deadline=deadline,
             )
             quality_summary = _teacher_session_opt_summarize_attempt(
@@ -9106,7 +9311,11 @@ def _solve_unified_first_click_feasibility_then_quality(
                     "fixed_lessons_required": len(required_lessons),
                     "soft_hint_used": True,
                     "single_attempt": True,
-                    "random_seed": first_click_quality_seed,
+                    "random_seed": quality_random_seed,
+                    "request_random_seed": first_click_quality_seed,
+                    "period_safe_quality_rescue_armed": period_safe_quality_rescue_armed,
+                    "period_safe_quality_rescue": False,
+                    "concrete_periods_materialized": False,
                     "stable_large_quality_seed": stabilize_large_quality_seed,
                     "incumbent_retained": not quality_better,
                 }
@@ -9138,7 +9347,11 @@ def _solve_unified_first_click_feasibility_then_quality(
                     "quality_cap": quality_cap,
                     "quality_target": int(requested_quality_cap),
                     "single_attempt": True,
-                    "random_seed": first_click_quality_seed,
+                    "random_seed": quality_random_seed,
+                    "request_random_seed": first_click_quality_seed,
+                    "period_safe_quality_rescue_armed": period_safe_quality_rescue_armed,
+                    "period_safe_quality_rescue": False,
+                    "concrete_periods_materialized": False,
                     "stable_large_quality_seed": stabilize_large_quality_seed,
                     "incumbent_retained": True,
                     "fixed_lessons_required": len(required_lessons),
@@ -9147,6 +9360,274 @@ def _solve_unified_first_click_feasibility_then_quality(
             )
             attempts.append(quality_summary)
             termination_reason = "first_click_feasibility_retained_after_quality_error"
+
+            tight_rescue_succeeded = False
+            integrated_remaining = deadline.remaining()
+            integrated_available = max(
+                0,
+                int(float(integrated_remaining or 0.0) - return_reserve),
+            )
+            if period_safe_quality_rescue_armed and integrated_available >= 18:
+                integrated_budget = min(26, integrated_available)
+                integrated_seed = _first_click_request_portfolio_seed(
+                    first_click_quality_seed,
+                    1,
+                )
+                integrated_settings = dict(quality_settings)
+                integrated_settings.update(
+                    {
+                        "auto_sort_strategy": "fresh_complete_first_period_safe_quality_rescue",
+                        "optimization_benders_iterations": 1,
+                        "optimization_benders_session_feasibility_only": True,
+                        "session_cp_sat_linearization_level": 0,
+                        "optimization_benders_period_feasibility_all_sessions": True,
+                        "optimization_benders_lean_refinement_periods": False,
+                        "optimization_benders_period_bridge_promotion_cut_count": 1,
+                        "_fixed_only_empty_fallback_attempted": True,
+                        "optimization_benders_session_time_limit": max(
+                            10,
+                            min(20, int(integrated_budget) - 5),
+                        ),
+                    }
+                )
+                if progress:
+                    progress(
+                        {
+                            "stage": "teacher_session_opt:first_click_period_safe_rescue",
+                            "message": "Dang thu quy dao xep tiet tich hop",
+                            "cap": int(quality_cap),
+                            "time_limit_seconds": int(integrated_budget),
+                        }
+                    )
+                integrated_started = time.monotonic()
+                try:
+                    integrated_payload = _solve_teacher_session_benders_candidate(
+                        ui_data,
+                        integrated_settings,
+                        cap=int(quality_cap),
+                        time_limit_seconds=max(8, int(integrated_budget)),
+                        rules=rules,
+                        progress=progress,
+                        incumbent_payload=None,
+                        random_seed=integrated_seed,
+                        deadline=deadline,
+                    )
+                    integrated_metrics = (
+                        integrated_payload.get("metrics")
+                        if isinstance(integrated_payload.get("metrics"), Mapping)
+                        else {}
+                    )
+                    integrated_valid = (
+                        _unified_first_click_candidate_acceptable(
+                            integrated_payload,
+                            required_lessons,
+                        )
+                        and _metric_int(integrated_metrics, "teacher_sessions", 10**9)
+                        <= int(quality_cap)
+                    )
+                    integrated_better = integrated_valid and _session_priority_better(
+                        integrated_metrics,
+                        best_metrics,
+                    )
+                    integrated_summary = _teacher_session_opt_summarize_attempt(
+                        cap=int(quality_cap),
+                        elapsed_seconds=time.monotonic() - integrated_started,
+                        payload=integrated_payload,
+                    )
+                    integrated_summary.update(
+                        {
+                            "phase": "fresh_complete_first_period_safe_quality_rescue",
+                            "attempt_key": "fresh:phase_q:period_safe",
+                            "quality_cap": int(quality_cap),
+                            "quality_target": int(requested_quality_cap),
+                            "random_seed": integrated_seed,
+                            "request_random_seed": first_click_quality_seed,
+                            "soft_hint_used": False,
+                            "period_safe_quality_rescue": True,
+                            "concrete_periods_materialized": True,
+                            "accepted": bool(integrated_better),
+                            "incumbent_retained": not integrated_better,
+                        }
+                    )
+                    if integrated_better:
+                        best_payload = integrated_payload
+                        best_metrics = integrated_metrics
+                        integrated_summary["new_best"] = True
+                        tight_rescue_succeeded = True
+                        termination_reason = "first_click_period_safe_quality_rescue_improved"
+                    else:
+                        integrated_summary["reject_reason"] = (
+                            "not_better_than_feasibility"
+                            if integrated_valid
+                            else "incomplete_hard_invalid_fixed_loss_cap_or_one_period"
+                        )
+                    attempts.append(integrated_summary)
+                except Exception as integrated_exc:  # noqa: BLE001 - Phase F remains valid.
+                    integrated_summary = _teacher_session_opt_summarize_attempt(
+                        cap=int(quality_cap),
+                        elapsed_seconds=time.monotonic() - integrated_started,
+                        error=integrated_exc,
+                    )
+                    integrated_summary.update(
+                        {
+                            "phase": "fresh_complete_first_period_safe_quality_rescue",
+                            "attempt_key": "fresh:phase_q:period_safe",
+                            "quality_cap": int(quality_cap),
+                            "quality_target": int(requested_quality_cap),
+                            "random_seed": integrated_seed,
+                            "request_random_seed": first_click_quality_seed,
+                            "soft_hint_used": False,
+                            "period_safe_quality_rescue": True,
+                            "concrete_periods_materialized": True,
+                            "incumbent_retained": True,
+                        }
+                    )
+                    attempts.append(integrated_summary)
+
+            # If the tight integrated rescue returns UNKNOWN early enough, use
+            # the watchdog remainder for one looser but still meaningful cap.
+            rescue_remaining = deadline.remaining()
+            rescue_available = max(
+                0,
+                int(float(rescue_remaining or 0.0) - return_reserve),
+            )
+            rescue_cap_step = max(
+                1,
+                min(
+                    64,
+                    _to_int(
+                        settings.get("optimization_first_click_period_safe_rescue_cap_step"),
+                        18,
+                    ),
+                ),
+            )
+            relaxed_rescue_cap = min(
+                feasibility_sessions - 1,
+                upper_cap,
+                quality_cap + rescue_cap_step,
+            )
+            can_run_relaxed_rescue = (
+                period_safe_quality_rescue_armed
+                and not tight_rescue_succeeded
+                and rescue_available >= 12
+                and relaxed_rescue_cap > quality_cap
+                and relaxed_rescue_cap < feasibility_sessions
+            )
+            if can_run_relaxed_rescue:
+                relaxed_rescue_budget = min(20, rescue_available)
+                relaxed_rescue_seed = _first_click_request_portfolio_seed(
+                    first_click_quality_seed,
+                    2,
+                )
+                relaxed_rescue_settings = dict(quality_settings)
+                relaxed_rescue_settings.update(
+                    {
+                        "auto_sort_strategy": "fresh_complete_first_period_safe_relaxed_cap_rescue",
+                        "max_teacher_sessions": int(relaxed_rescue_cap),
+                        "requested_max_teacher_sessions": int(relaxed_rescue_cap),
+                        "target_teacher_sessions": int(relaxed_rescue_cap),
+                        "optimization_benders_iterations": 1,
+                        "optimization_benders_session_feasibility_only": True,
+                        "session_cp_sat_linearization_level": 0,
+                        "optimization_benders_period_feasibility_all_sessions": True,
+                        "optimization_benders_lean_refinement_periods": False,
+                        "_fixed_only_empty_fallback_attempted": True,
+                        "optimization_benders_session_time_limit": max(
+                            10,
+                            min(15, int(relaxed_rescue_budget) - 4),
+                        ),
+                    }
+                )
+                if progress:
+                    progress(
+                        {
+                            "stage": "teacher_session_opt:first_click_period_safe_rescue",
+                            "message": "Dang thu quy dao xep tiet du phong",
+                            "cap": int(relaxed_rescue_cap),
+                            "time_limit_seconds": int(relaxed_rescue_budget),
+                        }
+                    )
+                relaxed_started = time.monotonic()
+                try:
+                    relaxed_payload = _solve_teacher_session_benders_candidate(
+                        ui_data,
+                        relaxed_rescue_settings,
+                        cap=int(relaxed_rescue_cap),
+                        time_limit_seconds=max(8, int(relaxed_rescue_budget)),
+                        rules=rules,
+                        progress=progress,
+                        incumbent_payload=None,
+                        random_seed=relaxed_rescue_seed,
+                        deadline=deadline,
+                    )
+                    relaxed_metrics = (
+                        relaxed_payload.get("metrics")
+                        if isinstance(relaxed_payload.get("metrics"), Mapping)
+                        else {}
+                    )
+                    relaxed_valid = (
+                        _unified_first_click_candidate_acceptable(
+                            relaxed_payload,
+                            required_lessons,
+                        )
+                        and _metric_int(relaxed_metrics, "teacher_sessions", 10**9)
+                        <= int(relaxed_rescue_cap)
+                    )
+                    relaxed_better = relaxed_valid and _session_priority_better(
+                        relaxed_metrics,
+                        best_metrics,
+                    )
+                    relaxed_summary = _teacher_session_opt_summarize_attempt(
+                        cap=int(relaxed_rescue_cap),
+                        elapsed_seconds=time.monotonic() - relaxed_started,
+                        payload=relaxed_payload,
+                    )
+                    relaxed_summary.update(
+                        {
+                            "phase": "fresh_complete_first_period_safe_relaxed_cap_rescue",
+                            "attempt_key": "fresh:phase_q:period_safe_relaxed_cap",
+                            "quality_cap": int(relaxed_rescue_cap),
+                            "quality_target": int(requested_quality_cap),
+                            "random_seed": relaxed_rescue_seed,
+                            "request_random_seed": first_click_quality_seed,
+                            "soft_hint_used": False,
+                            "concrete_periods_materialized": True,
+                            "accepted": bool(relaxed_better),
+                            "incumbent_retained": not relaxed_better,
+                        }
+                    )
+                    if relaxed_better:
+                        best_payload = relaxed_payload
+                        best_metrics = relaxed_metrics
+                        relaxed_summary["new_best"] = True
+                        termination_reason = "first_click_period_safe_relaxed_cap_improved"
+                    else:
+                        relaxed_summary["reject_reason"] = (
+                            "not_better_than_feasibility"
+                            if relaxed_valid
+                            else "incomplete_hard_invalid_fixed_loss_cap_or_one_period"
+                        )
+                    attempts.append(relaxed_summary)
+                except Exception as rescue_exc:  # noqa: BLE001 - Phase F remains valid.
+                    relaxed_summary = _teacher_session_opt_summarize_attempt(
+                        cap=int(relaxed_rescue_cap),
+                        elapsed_seconds=time.monotonic() - relaxed_started,
+                        error=rescue_exc,
+                    )
+                    relaxed_summary.update(
+                        {
+                            "phase": "fresh_complete_first_period_safe_relaxed_cap_rescue",
+                            "attempt_key": "fresh:phase_q:period_safe_relaxed_cap",
+                            "quality_cap": int(relaxed_rescue_cap),
+                            "quality_target": int(requested_quality_cap),
+                            "random_seed": relaxed_rescue_seed,
+                            "request_random_seed": first_click_quality_seed,
+                            "soft_hint_used": False,
+                            "concrete_periods_materialized": True,
+                            "incumbent_retained": True,
+                        }
+                    )
+                    attempts.append(relaxed_summary)
 
         best_sessions_after_quality = _metric_int(best_metrics, "teacher_sessions", 10**9)
         target_probe_local_reserve = max(
@@ -11838,6 +12319,16 @@ def solve_from_ui_data(
     _deadline: SolverDeadline | None = None,
 ) -> dict[str, Any]:
     settings = settings or {}
+    normalized_request_seed = normalize_cp_sat_seed(settings.get("random_seed"))
+    if normalized_request_seed is not None:
+        settings["random_seed"] = normalized_request_seed
+    else:
+        settings.pop("random_seed", None)
+    normalized_variant_seed = normalize_cp_sat_seed(settings.get("quality_variant_seed"))
+    if normalized_variant_seed is not None:
+        settings["quality_variant_seed"] = normalized_variant_seed
+    else:
+        settings.pop("quality_variant_seed", None)
     if _deadline is None:
         requested_deadlines = [
             value
@@ -12026,8 +12517,7 @@ def solve_from_ui_data(
     period_time_limit = max(1, min(requested_period_time_limit, period_fast_time_limit or requested_period_time_limit))
     period_phase_reserve_seconds = max(12.0, float(period_retry_time_limit + 4))
     integrated_time_limit = _to_int(settings.get("integrated_time_limit"), max(240, session_time_limit))
-    random_seed = settings.get("random_seed")
-    random_seed = None if random_seed in (None, "") else _to_int(random_seed, 0)
+    random_seed = normalize_cp_sat_seed(settings.get("random_seed"))
     solver_mode = str(settings.get("solver_mode", "auto")).casefold()
     auto_sort_strategy = str(settings.get("auto_sort_strategy", "")).strip().casefold()
     fresh_randomize = _truthy_setting(settings.get("fresh_randomize")) or auto_sort_strategy in {
@@ -12070,7 +12560,7 @@ def solve_from_ui_data(
         and not fresh_randomize
         and _truthy_setting(settings.get("deterministic_auto_seed", "1"))
     ):
-        random_seed = _to_int(settings.get("default_random_seed"), 1)
+        random_seed = normalize_cp_sat_seed(settings.get("default_random_seed")) or 1
     exact_teacher_sessions = str(settings.get("exact_teacher_sessions", "1")).casefold() not in {
         "0",
         "false",

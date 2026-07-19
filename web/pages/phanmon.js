@@ -1,4 +1,15 @@
-window.__PHANMON_VERSION = "updated-v10.0 (v1.41 iOS PWA durable resume)";
+window.__PHANMON_VERSION = "updated-v10.3 (v1.43 diverse quality seed)";
+try{
+  window.__TKB_PLANNER_DATA_READY = false;
+  window.__TKB_PLANNER_REMOTE_HYDRATION_PENDING = false;
+  window.__TKB_MARK_PLANNER_DATA_READY = function(){
+    if(window.__TKB_PLANNER_DATA_READY === true) return false;
+    window.__TKB_PLANNER_DATA_READY = true;
+    window.__TKB_PLANNER_DATA_READY_AT = Date.now();
+    window.dispatchEvent?.(new Event("tkb:planner-data-ready"));
+    return true;
+  };
+}catch(_){ }
 
 (function installPlannerMobileViewportSync(){
   if(window.__TKB_MOBILE_VIEWPORT_SYNC_BOUND === true) return;
@@ -337,6 +348,7 @@ if(!DATA.tkbUserOff || typeof DATA.tkbUserOff !== "object") DATA.tkbUserOff = {}
 // is already the source of truth; re-fetching here can compare against the
 // normalized DATA shape and trigger an endless reload loop.
 if (typeof schoolParam !== "undefined" && schoolParam && !(window.TKBStorage && window.TKBStorage.remoteOnly)) {
+  try{ window.__TKB_PLANNER_REMOTE_HYDRATION_PENDING = true; }catch(_){ }
   const remoteLoader = window.TKBStorage && window.TKBStorage.loadRemoteSchoolData
     ? window.TKBStorage.loadRemoteSchoolData(schoolParam)
     : fetch(`/api/school/store?id=${encodeURIComponent(schoolParam)}`).then(r => r.json());
@@ -350,10 +362,19 @@ if (typeof schoolParam !== "undefined" && schoolParam && !(window.TKBStorage && 
         if(!(window.TKBStorage && window.TKBStorage.remoteOnly)){
           localStorage.setItem(PRIMARY_STORE_KEY, remoteDataStr);
         }
+        try{ window.__TKB_PLANNER_REMOTE_RELOAD_REQUESTED = true; }catch(_){ }
         window.location.reload();
       }
     }
-  }).catch(e => console.warn("Remote store sync failed on load", e));
+  }).catch(e => console.warn("Remote store sync failed on load", e)).finally(() => {
+    try{
+      window.__TKB_PLANNER_REMOTE_HYDRATION_PENDING = false;
+      if(window.__TKB_PLANNER_REMOTE_RELOAD_REQUESTED !== true
+        && window.__TKB_PLANNER_DOM_READY === true){
+        window.__TKB_MARK_PLANNER_DATA_READY?.();
+      }
+    }catch(_){ }
+  });
 }
 
 // Many optimizer patches run in separate script blocks and access the store as
@@ -2283,6 +2304,16 @@ document.addEventListener("DOMContentLoaded", () => {
   setViewMode("lop");
   try{ initRightPanelCollapse(); }catch(_){ }
 });
+
+document.addEventListener("DOMContentLoaded", () => {
+  try{
+    window.__TKB_PLANNER_DOM_READY = true;
+    if(window.__TKB_PLANNER_REMOTE_HYDRATION_PENDING !== true
+      && window.__TKB_PLANNER_REMOTE_RELOAD_REQUESTED !== true){
+      window.__TKB_MARK_PLANNER_DATA_READY?.();
+    }
+  }catch(_){ }
+}, {once:true});
 
 function initRightPanelCollapse(){
   const panel = document.getElementById("rightPanel");
@@ -7566,7 +7597,8 @@ try{
   window.finishAutoSortProgress = finishAutoSortProgress;
 }catch(_){ }
 
-function hideAutoSortProgress(){
+function hideAutoSortProgress(options){
+  const preserveStopRequest = options?.preserveStopRequest === true;
   // Keep the feedback row's height reserved so the timetable never jumps, but
   // hide idle progress content until a solve or reconnect actually starts.
   window.clearTimeout(window.__autoSortProgressHideTimer);
@@ -7593,7 +7625,7 @@ function hideAutoSortProgress(){
     }
   }
   setAutoSortStopVisible(false);
-  resetAutoSortStopRequest();
+  if(!preserveStopRequest) resetAutoSortStopRequest();
 }
 
 function setAutoSortProgress(percent, label){
@@ -7683,6 +7715,11 @@ function finishAutoSortProgress(label, state){
 
 function invalidateSolverStateAfterScheduleDelete(resetLessonMappings){
   if(!DATA || typeof DATA !== "object") return;
+  try{
+    const previousRevision = Math.max(0, Number(DATA.tkbScheduleRevision || 0) || 0);
+    DATA.tkbScheduleRevision = Math.max(Date.now(), previousRevision + 1);
+    window.TKBRustAPI?.invalidatePendingSolveForScheduleMutation?.();
+  }catch(_){ }
   [
     "tkbSolverResult",
     "tkbRustSolverResult",
@@ -7706,6 +7743,30 @@ function invalidateSolverStateAfterScheduleDelete(resetLessonMappings){
   }catch(_){ }
 }
 
+function persistScheduleDelete(){
+  // A completed timetable may still have an asynchronous save in flight when
+  // Delete is pressed. Serialize the destructive save behind it, then expose
+  // one barrier so an immediate Play cannot race this write and later have the
+  // deleted state overwrite the newly solved timetable on the remote store.
+  let previousMutation = null;
+  try{ previousMutation = window.__TKB_SCHEDULE_MUTATION_SAVE_PROMISE; }catch(_){ }
+  const previousSave = previousMutation || __tkbLastSavePromise;
+  const persistence = Promise.resolve(previousSave)
+    .catch(e => console.warn("Previous save failed before schedule delete", e))
+    .then(() => saveStore({force:true, awaitRemote:true}));
+  try{ window.__TKB_SCHEDULE_MUTATION_SAVE_PROMISE = persistence; }catch(_){ }
+  persistence
+    .catch(e => console.warn("Delete save failed", e))
+    .finally(() => {
+      try{
+        if(window.__TKB_SCHEDULE_MUTATION_SAVE_PROMISE === persistence){
+          window.__TKB_SCHEDULE_MUTATION_SAVE_PROMISE = null;
+        }
+      }catch(_){ }
+    });
+  return persistence;
+}
+
 function deleteCurrentClassTKB(){
   cancelDeleteMenu(true);
   if(!currentLop){
@@ -7716,7 +7777,7 @@ function deleteCurrentClassTKB(){
   const cfg = DATA.tkbConfig || {fixed:[], off:[]};
   DATA.tkb[currentLop] = makeEmptyTKBPreservingOff(currentLop, cfg);
   invalidateSolverStateAfterScheduleDelete(false);
-  saveStore();
+  persistScheduleDelete();
   renderCurrentView();
   loadMonList();
 
@@ -7741,7 +7802,7 @@ function deleteAllTKB(){
     DATA.tkb[l.id] = makeEmptyTKBPreservingOff(l.id, cfg);
   });
   invalidateSolverStateAfterScheduleDelete(true);
-  saveStore();
+  persistScheduleDelete();
   renderCurrentView();
   loadMonList();
   _setStatus("✔ Đã xóa TKB toàn trường.", "ok");
@@ -7801,7 +7862,8 @@ function confirmDeleteMenu(){
     }
     const cfg = DATA.tkbConfig || {fixed:[], off:[]};
     DATA.tkb[currentLop] = makeEmptyTKBPreservingOff(currentLop, cfg);
-    saveStore();
+    invalidateSolverStateAfterScheduleDelete(false);
+    persistScheduleDelete();
     renderCurrentView();
     loadMonList();
     const lop = (DATA.lop||[]).find(x=>x.id==currentLop);
@@ -7816,7 +7878,8 @@ function confirmDeleteMenu(){
     (DATA.lop||[]).forEach(l=>{
       DATA.tkb[l.id] = makeEmptyTKBPreservingOff(l.id, cfg);
     });
-    saveStore();
+    invalidateSolverStateAfterScheduleDelete(true);
+    persistScheduleDelete();
     renderCurrentView();
     loadMonList();
     _setStatus("✔ Đã xóa TKB toàn trường.", "ok");
