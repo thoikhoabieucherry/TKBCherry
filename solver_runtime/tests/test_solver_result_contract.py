@@ -4288,7 +4288,10 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertEqual(feasibility_call.args[1]["optimization_benders_iterations"], 5)
         self.assertEqual(feasibility_call.args[1]["num_workers"], 6)
         self.assertEqual(quality_call.kwargs["cap"], 500)
-        self.assertEqual(quality_call.kwargs["random_seed"], 77)
+        # A large first fresh keeps the browser seed for feasibility, but Phase
+        # Q uses the stable default seed so one unlucky click cannot strand the
+        # visible result at the rough feasibility ceiling.
+        self.assertEqual(quality_call.kwargs["random_seed"], 1)
         self.assertIs(quality_call.kwargs["incumbent_payload"], feasibility)
         self.assertFalse(quality_call.args[1]["optimization_benders_disable_session_early_stop"])
         self.assertTrue(
@@ -4303,11 +4306,60 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertEqual(quality_call.args[1]["max_one_period_sessions"], 0)
         self.assertEqual(attempts[1]["quality_cap"], 500)
         self.assertTrue(attempts[1]["soft_hint_used"])
+        self.assertTrue(attempts[1]["stable_large_quality_seed"])
+        self.assertEqual(attempts[1]["random_seed"], 1)
         self.assertEqual(target_call.kwargs["cap"], 484)
         self.assertIs(target_call.kwargs["incumbent_payload"], quality)
         self.assertEqual(target_call.args[1]["max_teacher_sessions"], 484)
         self.assertEqual(attempts[2]["phase"], "fresh_complete_first_tighter_cap_probe")
         self.assertTrue(attempts[2]["new_best"])
+
+    def test_small_first_click_keeps_requested_quality_seed(self) -> None:
+        feasibility = _first_click_payload(
+            teacher_sessions=30,
+            gap1=8,
+            scheduled_periods=100,
+        )
+        quality = _first_click_payload(
+            teacher_sessions=24,
+            gap1=4,
+            scheduled_periods=100,
+        )
+        for payload in (feasibility, quality):
+            payload["metrics"]["expected_periods"] = 100
+            payload["metrics"]["unassigned_periods"] = 0
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=[feasibility, quality],
+        ) as solve_candidate:
+            result, _metrics, attempts, _termination = (
+                _solve_unified_first_click_feasibility_then_quality(
+                    {},
+                    {
+                        "target_teacher_sessions": 24,
+                        "optimization_accept_teacher_sessions": 24,
+                        "optimization_first_click_local_lns_time_limit_seconds": 0,
+                    },
+                    bound_ctx=_context(),
+                    bounds={
+                        "lower_cap": 20,
+                        "start_cap": 24,
+                        "upper_cap": 40,
+                        "expected_periods": 100,
+                    },
+                    profile={"expected": 100, "class_count": 8},
+                    rules=None,
+                    progress=None,
+                    deadline=SolverDeadline(60),
+                    polish_seeds=[1],
+                    requested_random_seed=77,
+                )
+            )
+
+        self.assertIs(result, quality)
+        self.assertEqual(solve_candidate.call_args_list[0].kwargs["random_seed"], 77)
+        self.assertEqual(solve_candidate.call_args_list[1].kwargs["random_seed"], 77)
+        self.assertFalse(attempts[1]["stable_large_quality_seed"])
 
     def test_unbounded_first_click_deep_search_cannot_displace_safe_quality_incumbent(self) -> None:
         feasibility = _first_click_payload(teacher_sessions=520, gap1=84)
@@ -4759,6 +4811,7 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertFalse(feasibility_settings["enforce_max_one_period_sessions"])
         self.assertTrue(feasibility_settings["allow_quality_debt"])
         self.assertTrue(feasibility_settings["optimization_benders_allow_one_period_debt"])
+        self.assertFalse(feasibility_settings["optimization_benders_session_feasibility_only"])
         self.assertTrue(
             feasibility_settings["optimization_benders_period_feasibility_all_sessions"]
         )
@@ -4826,6 +4879,7 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertFalse(feasibility_settings["enforce_max_one_period_sessions"])
         self.assertTrue(feasibility_settings["allow_quality_debt"])
         self.assertTrue(feasibility_settings["optimization_benders_allow_one_period_debt"])
+        self.assertFalse(feasibility_settings["optimization_benders_session_feasibility_only"])
         self.assertEqual(feasibility_settings["period_max_teacher_gap"], "off")
         self.assertEqual(solve_candidate.call_args_list[1].kwargs["cap"], 522)
         self.assertEqual(feasibility_settings["max_teacher_sessions"], 522)

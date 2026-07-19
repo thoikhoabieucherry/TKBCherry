@@ -8551,6 +8551,30 @@ def _solve_unified_first_click_feasibility_then_quality(
         _positive_setting(settings, "target_teacher_sessions")
         or _positive_setting(settings, "optimization_accept_teacher_sessions")
     )
+    large_first_click = _to_int(profile.get("expected"), 0) >= 900
+    stabilize_large_quality_seed = (
+        large_first_click
+        and _truthy_setting(
+            settings.get("optimization_first_click_stable_quality_seed", "1")
+        )
+    )
+    first_click_quality_seed = int(requested_random_seed or 1)
+    if stabilize_large_quality_seed:
+        # Browser fresh clicks intentionally carry a random seed so later
+        # searches can explore different schedules.  On a large empty rebuild,
+        # however, an unlucky first quality seed can yield a compact session
+        # vector that the period allocator rejects after consuming almost the
+        # whole 60-second click.  Retaining the 522-session feasibility draft
+        # then looks like a successful but very poor first result.  Use one
+        # stable, request-overridable seed only for Phase Q; feasibility and
+        # local/refinement portfolios remain diverse.
+        first_click_quality_seed = max(
+            1,
+            _to_int(
+                settings.get("optimization_first_click_quality_random_seed"),
+                _to_int(settings.get("default_random_seed"), 1),
+            ),
+        )
     # A blank/long automatic click may spend the remaining watchdog budget on
     # quality. Older releases silently capped this phase at three Benders
     # rounds, so a nominal 1,800-second click often returned after only a few
@@ -8827,6 +8851,12 @@ def _solve_unified_first_click_feasibility_then_quality(
                     "one_period_priority_absolute": False,
                     "allow_quality_debt": True,
                     "optimization_benders_allow_one_period_debt": True,
+                    # The strict lane uses feasibility-only CP-SAT to obtain a
+                    # guaranteed incumbent. The rescue lane must switch the
+                    # quality objective back on; inheriting this flag made the
+                    # fallback return a rough 522-session timetable even when
+                    # a cleaner complete candidate fit in the same budget.
+                    "optimization_benders_session_feasibility_only": False,
                     "period_max_teacher_gap": "off",
                     "relax_period_teacher_gap_on_failure": True,
                     # Teacher-session count is also a quality objective.  The
@@ -9048,7 +9078,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                 rules=rules,
                 progress=progress,
                 incumbent_payload=best_payload,
-                random_seed=requested_random_seed or 1,
+                random_seed=first_click_quality_seed,
                 deadline=deadline,
             )
             quality_summary = _teacher_session_opt_summarize_attempt(
@@ -9076,6 +9106,8 @@ def _solve_unified_first_click_feasibility_then_quality(
                     "fixed_lessons_required": len(required_lessons),
                     "soft_hint_used": True,
                     "single_attempt": True,
+                    "random_seed": first_click_quality_seed,
+                    "stable_large_quality_seed": stabilize_large_quality_seed,
                     "incumbent_retained": not quality_better,
                 }
             )
@@ -9106,6 +9138,8 @@ def _solve_unified_first_click_feasibility_then_quality(
                     "quality_cap": quality_cap,
                     "quality_target": int(requested_quality_cap),
                     "single_attempt": True,
+                    "random_seed": first_click_quality_seed,
+                    "stable_large_quality_seed": stabilize_large_quality_seed,
                     "incumbent_retained": True,
                     "fixed_lessons_required": len(required_lessons),
                     "soft_hint_used": True,
@@ -9259,7 +9293,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                     # adjacent quality cap.  Switching to an unrelated seed
                     # here made the tight probe spend its whole budget before
                     # finding a first session vector.
-                    random_seed=requested_random_seed,
+                    random_seed=first_click_quality_seed,
                     deadline=deadline,
                 )
                 target_probe_summary = _teacher_session_opt_summarize_attempt(

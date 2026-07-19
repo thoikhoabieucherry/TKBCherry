@@ -1,4 +1,4 @@
-window.__PHANMON_VERSION = "updated-v9.4 (v1.35 iOS poll-only reattach)";
+window.__PHANMON_VERSION = "updated-v9.6 (v1.37 quality-debt rebuild)";
 
 (function installPlannerMobileViewportSync(){
   if(window.__TKB_MOBILE_VIEWPORT_SYNC_BOUND === true) return;

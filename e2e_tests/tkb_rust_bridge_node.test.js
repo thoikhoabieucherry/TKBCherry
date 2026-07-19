@@ -1108,6 +1108,92 @@ test("an empty duration field uses 60 seconds fresh and 180 seconds for refineme
   assert.equal(later.settings.overall_time_limit_seconds, 180);
 });
 
+test("a severely rough complete timetable rebuilds once from fixed lessons in the fresh 60-second lane", () => {
+  const data = makeData(300);
+  const subject = data.mon[0].ten;
+  const fixedLesson = {mon:subject, fixed:true};
+  data.tkb = {
+    L1:{thu2:{sang:[fixedLesson, ...Array(299).fill(subject)], chieu:[]}}
+  };
+  data.tkbConstraints = {
+    fixedOff:{class:{L1:{"thu7|chieu|4":true}}}
+  };
+  data.tkbUserOff = {L1:["thu7|chieu|4"]};
+  const constraintsBefore = JSON.parse(JSON.stringify(data.tkbConstraints));
+  const userOffBefore = JSON.parse(JSON.stringify(data.tkbUserOff));
+  data.tkbSolverResult = {
+    lessons:Array.from({length:300}, (_, index) => ({
+      classId:"L1", subject, teacher:"GV01", day:2, session:"AM", period:index + 1
+    })),
+    metrics:{
+      scheduled_periods:300,
+      expected_periods:300,
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      teacher_sessions:100,
+      one_period_teacher_sessions:1,
+      gap_distribution:{"0":100}
+    },
+    validation:{hard_ok:true},
+    solver:{runtime_settings:{}}
+  };
+  const {window, hooks} = loadBridge(data);
+  window.calcSchoolTKBStats = () => ({soTiet:300, daXepTiet:300, chuaXepTiet:0});
+
+  const plan = hooks.buildAutomaticAutoSortPlan(data, undefined, 0);
+  const effective = hooks.effectiveSettingsForSolve(plan.settings, data);
+  const requestData = hooks.dataForSolverRequest(data, plan.settings);
+
+  assert.equal(plan.kind, "refine_complete", "the client still compares the rebuilt candidate with its incumbent");
+  assert.equal(plan.qualityDebtFreshRebuild, true);
+  assert.equal(plan.settings.ui_unified_solve_kind, "fresh_complete_first");
+  assert.equal(plan.settings.ui_quality_debt_fresh_rebuild, true);
+  assert.equal(plan.settings.overall_time_limit_seconds, 60);
+  assert.equal(plan.settings.backend_deadline_ms, 60000);
+  assert.equal(plan.settings.preserve_existing_tkb, false);
+  assert.equal(plan.settings.allow_solver_warm_start, false);
+  assert.equal(
+    effective.ui_keep_better_existing_on_resort,
+    true,
+    "the normalized no-hint request must retain the incumbent quality guard"
+  );
+  assert.equal(requestData.tkbSolverResult, undefined);
+  assert.equal(requestData.__tkbRequestStrippedSchedule, true);
+  assert.equal(requestData.__tkbRequestFixedScheduleOnly, true);
+  assert.equal(JSON.stringify(requestData.tkb.L1.thu2.sang[0]), JSON.stringify(fixedLesson));
+  assert.equal(JSON.stringify(requestData.tkbConstraints), JSON.stringify(constraintsBefore));
+  assert.equal(JSON.stringify(requestData.tkbUserOff), JSON.stringify(userOffBefore));
+});
+
+test("quality-debt rebuild threshold separates a rough 522-session result from a practical 481-session result", () => {
+  const data = makeData(1566);
+  const payload = (teacherSessions, gap1, onePeriod = 0, gap2 = 0) => ({
+    metrics:{
+      scheduled_periods:1566,
+      expected_periods:1566,
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      teacher_sessions:teacherSessions,
+      one_period_teacher_sessions:onePeriod,
+      gap_distribution:{"0":Math.max(0, teacherSessions - gap1 - gap2), "1":gap1, "2":gap2}
+    },
+    validation:{hard_ok:true}
+  });
+  const {hooks} = loadBridge(data);
+  const targets = {teacherTarget:482, gap1Target:53};
+
+  data.tkbSolverResult = payload(522, 118);
+  assert.equal(hooks.completeScheduleNeedsFreshQualityRebuild(data, targets), true);
+  data.tkbSolverResult = payload(481, 53);
+  assert.equal(hooks.completeScheduleNeedsFreshQualityRebuild(data, targets), false);
+  data.tkbSolverResult = payload(481, 53, 1, 0);
+  assert.equal(hooks.completeScheduleNeedsFreshQualityRebuild(data, targets), true);
+});
+
 test("failed blank fresh clicks add five seconds without changing the user input", () => {
   const storage = memoryStorage();
   const durationInput = {
@@ -1815,8 +1901,8 @@ test("an unchanged refinement ends cleanly without blocking a later Play", () =>
   assert.doesNotMatch(body, /refinementRetry|skipStartConfirm|__tkbInternalOptimizeRetry/);
   assert.match(body, /rememberOptimizationPlateau\(getData\(\),\s*plateauBeforeSolve,\s*false\)/);
   assert.match(body, /const plateauMessage\s*=\s*noBetterScheduleStatus\(/);
-  assert.match(body, /finishProgress\("Giữ lịch",\s*"warning"\)/);
-  assert.match(body, /setStatus\(plateauMessage,\s*"warning"\)/);
+  assert.match(body, /finishProgress\("100%",\s*"ok"\)/);
+  assert.match(body, /setStatus\(plateauMessage,\s*"ok"\)/);
 });
 
 test("every complete terminal path uses the concise completion notice", () => {
@@ -1840,7 +1926,7 @@ test("every complete terminal path uses the concise completion notice", () => {
     )
   );
   assert.match(incumbentGuard, /const message\s*=\s*SOLVE_COMPLETE_MESSAGE/);
-  assert.match(incumbentGuard, /setStatus\(\s*message,\s*"warning"\s*\)/);
+  assert.match(incumbentGuard, /setStatus\(message,\s*"ok"\)/);
   assert.doesNotMatch(incumbentGuard, /NO_BETTER_SCHEDULE_MESSAGE/);
 });
 
@@ -3974,8 +4060,11 @@ test("bounded unified lifecycle applies a complete schedule with unavoidable qua
   assert.equal(progress.events.some(event => (
     event.type === "hidden" && event.id === "btnHome" && event.value === true
   )), false, "Home must keep its toolbar slot while sorting");
+  assert.equal(progress.wrap.hidden, true);
   assert.equal(progress.wrap.classList.contains("is-complete"), false);
-  assert.equal(progress.pct.textContent, "!");
+  assert.equal(progress.pct.textContent, "0%");
+  assert.equal(progress.label.textContent, "Sẵn sàng");
+  assert.equal(progress.nodes.get("statusMsg").textContent, "Đã xếp xong!");
 });
 
 test("27-second unchanged refinement stays synchronized and uses concise completion text", async () => {
@@ -4085,16 +4174,17 @@ test("27-second unchanged refinement stays synchronized and uses concise complet
     && event.id === "autoSortProgressLabel"
     && event.value === "27 giây"
   )));
-  assert.equal(progress.pct.textContent, "!");
-  assert.equal(progress.label.textContent, "Giữ lịch");
+  assert.equal(progress.wrap.hidden, true);
+  assert.equal(progress.pct.textContent, "0%");
+  assert.equal(progress.label.textContent, "Sẵn sàng");
   assert.equal(
     progress.nodes.get("statusMsg").textContent,
     "Đã xếp xong!"
   );
   clock.advance(6_000);
-  assert.equal(progress.wrap.hidden, false);
-  assert.equal(progress.pct.textContent, "!");
-  assert.equal(progress.label.textContent, "Giữ lịch");
+  assert.equal(progress.wrap.hidden, true);
+  assert.equal(progress.pct.textContent, "0%");
+  assert.equal(progress.label.textContent, "Sẵn sàng");
   assert.equal(progress.nodes.get("statusMsg").textContent, "Đã xếp xong!");
 });
 

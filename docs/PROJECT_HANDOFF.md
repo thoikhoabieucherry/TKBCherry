@@ -8,13 +8,17 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.35** (iPhone poll-only canonical-job
-  reattach hardening). Public observation on 2026-07-19 serves cache marker
-  `20260719-v135-ios-poll-reattach-v1`.
+- Current deployed application release: **v1.36** (large first-fresh quality
+  stabilization). Public observation on 2026-07-19 serves cache marker
+  `20260719-v136-fresh-quality-stability-v1` and API marker
+  `tkb_new-rust-api-2026-07-19-fresh-quality-stability-v36`.
 - Current public Agent release: **v1.6.14** (`1.6.14`). Agent `1.6.3` and later
   can offer this update inside the Agent after the user presses OK; Agent
   `1.6.2` and older still require one manual install of a self-update-capable
   build.
+- Current local release candidate: application **v1.37** and Agent **v1.6.15**
+  (quality-debt fixed-only rebuild and concise complete status). These markers
+  are not public until staging and production checks below finish.
 - Every deployed application or packaged Agent update must increment the
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
@@ -136,6 +140,74 @@ change so a machine restart or a new conversation does not erase project context
   or error console entries. A destructive live solve was not started in this
   post-deploy check; the iOS background/resume contract is covered by the five
   focused production-shaped bridge regressions above.
+
+### v1.37 quality-debt rebuild (candidate, not deployed)
+
+- A complete but severely rough timetable now uses the user's requested
+  fallback behavior on the next Play: rebuild from fixed lessons only in the
+  bounded 60-second complete-first lane, while retaining the current complete
+  timetable as an incumbent guard. A rebuilt candidate is applied only when
+  the ordered quality vector improves; otherwise the old timetable remains
+  byte-for-byte intact.
+- The recovery threshold is data-sized and applies only to schedules with at
+  least 300 expected periods. It triggers for any singleton/gap-2 debt or for a
+  large excess above the practical teacher-session/gap-1 targets. The historical
+  `default` 522-session/122-gap incumbent triggers; a practical 481/53 result
+  continues through the normal 180-second soft-incumbent refinement lane.
+- Wire normalization preserves `ui_keep_better_existing_on_resort=true` for
+  this one no-hint rebuild mode. The normalized production-shaped request is
+  `kind=refine_complete`, server kind `fresh_complete_first`, 60 seconds, with
+  exactly 54 fixed cells, no old solver payload, and unchanged constraints/OFF
+  maps.
+- A six-worker local benchmark starting from 1,566/1,566 at 522 teacher sessions
+  and 122 gap-1 sessions finished in 56.3 seconds at **481 teacher sessions / 47
+  gap-1 sessions**, with zero singleton sessions, hard-valid completeness, and
+  all fixed lessons preserved. A direct 180-second incumbent refinement also
+  reproduced 522/122 -> 472/49, confirming the prior production no-change was a
+  path/seed issue rather than an impossible timetable.
+- Every complete hard-valid terminal path now hides the progress widget and
+  shows exactly **Đã xếp xong!**. Quality debt remains in metrics and E2E
+  metadata but no longer renders the contradictory `Cần tối ưu`/`Giữ lịch`
+  label beside the success message. Incomplete, stopped, and failed results
+  retain their visible warning/error progress.
+- Current verification: bridge **169/169**, focused quality-rebuild/status
+  regressions **7/7**, planner/mobile UI **27/27**, scheduler **129/129** plus
+  nine subtests, JavaScript syntax, and `git diff --check` pass. Production
+  staging, deployment, and public E2E are still pending.
+
+### v1.36 large first-fresh quality stabilization (deployed)
+
+- The production-equivalent `default` benchmark (54 fixed lessons,
+  `1,566/1,566` required) reproduced the rough first result with browser seed
+  `17`: **522 teacher sessions / 119 gap-1 sessions** in about 56.7 seconds.
+  Its Phase Q did find a 482-session vector, but that vector was period
+  infeasible; the remaining two- and one-second Benders retries could not
+  replace it, so the valid 522-session feasibility draft was retained.
+- Large (`expected >= 900`) empty-rebuild clicks now keep the browser seed for
+  the mandatory feasibility phase and randomized local portfolio, but use the
+  established deterministic default seed (`1`, request-overridable) for the
+  strict Phase-Q probe. Complete-incumbent refinement still derives its
+  portfolio from the click/round seed, so later optimization retains diversity.
+- Exact post-change reference benchmarks stayed within the 60-second contract:
+  seed `17` completed at **481/51** in 56.4 seconds and seed `18` at **482/47**
+  in 56.5 seconds. Both were `1,566/1,566`, canonical hard-valid, with zero
+  unassigned lessons, zero one-period teacher sessions, and zero gap-2-plus
+  sessions. The deterministic baseline completed at **481/48** in 56.3 seconds.
+- The independent `d8f7b12caf1` fixture with 108 fixed lessons also completed
+  in 56.4 seconds at **482 teacher sessions / 42 gap-1 sessions**, with
+  `1,566/1,566`, zero unassigned, zero singleton/gap-2 sessions, and zero
+  application-constraint violations.
+- The quality-debt rescue lane explicitly re-enables the CP-SAT session-quality
+  objective after the mandatory feasibility-only probe. It may relax product
+  quality debt when user requirements force that debt, but no longer inherits
+  the objective-free mode that returned a needlessly rough 522-session result.
+- Focused seed-policy regressions cover large stable Phase Q, unchanged
+  small-school request seeding, and the rescue objective reset. Full scheduler
+  discovery passes **129/129**.
+- Production now serves the v1.36 web/API markers and was observed healthy with
+  zero active/queued jobs and all six worker tokens available. Agent 1.6.15 was
+  built locally but was not yet public at this checkpoint; production still
+  served Agent 1.6.14.
 
 ### v1.33 - 2026-07-19 (deployed)
 

@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v239-ios-poll-reattach";
+  const VERSION = "tkb-rust-api-v241-quality-debt-rebuild";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -577,7 +577,13 @@
     settings.ui_allow_auto_existing_optimize = false;
     settings.ui_allow_staged_existing_on_fresh_sort = false;
     settings.ui_allow_presolve_local_fast_finish = false;
-    settings.ui_keep_better_existing_on_resort = false;
+    // A quality-debt rebuild deliberately solves without a warm-start hint,
+    // but it is still a refinement transaction: the visible complete
+    // incumbent must win when the rebuilt candidate is not Pareto-better.
+    // Preserve this through every no-hint normalization pass so iOS reattach
+    // applies the same incumbent-quality guard as the foreground lifecycle.
+    settings.ui_keep_better_existing_on_resort =
+      settings.ui_quality_debt_fresh_rebuild === true;
     settings.ui_disable_staged_existing_repair = true;
     settings.ui_disable_partial_existing_repair = true;
     if(!fixedOnly){
@@ -1897,11 +1903,16 @@
       window.__TKB_SOLVER_LAST_PAYLOAD = payload;
       window.__TKB_SOLVER_LAST_RESULT = applied;
       const quality = completionQualityStatus(payload, data);
-      finishProgress(quality.level === "warning" ? quality.progressLabel : "100%", quality.level);
+      finishProgress("100%", "ok");
       window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = SOLVE_COMPLETE_MESSAGE;
-      setStatus(SOLVE_COMPLETE_MESSAGE, quality.level || "ok");
+      setStatus(SOLVE_COMPLETE_MESSAGE, "ok");
       schedulePostSolveUi(payload, applied);
-      publishE2EState("done", payload, {message:SOLVE_COMPLETE_MESSAGE, pollOnlyReattach:true, jobId});
+      publishE2EState("done", payload, {
+        message:SOLVE_COMPLETE_MESSAGE,
+        pollOnlyReattach:true,
+        jobId,
+        qualityTargetMet:quality.targetMet
+      });
       return applied || payload;
     }catch(err){
       const keep = err?.keepPendingServerJob === true
@@ -6426,6 +6437,38 @@
       quality:q,
       targets
     };
+  }
+
+  function completeScheduleNeedsFreshQualityRebuild(data, qualityTargets){
+    const payload = data?.tkbSolverResult || data?.tkbRustSolverResult || null;
+    if(!payload || !payloadCompletion(payload).complete || !hasVisibleTeacherQualityMetrics(payload)){
+      return false;
+    }
+    const expected = Math.max(
+      0,
+      metricNumber(payload?.metrics?.expected_periods, expectedLessonCount(data || getData()))
+    );
+    if(expected < 300) return false;
+    const quality = teacherQualitySummary(payload);
+    const targets = qualityTargets || practicalTeacherQualityTargets(data || getData());
+    const teacherTarget = positiveNumberSetting(targets?.teacherTarget);
+    const gap1Target = nonnegativeNumberSetting(targets?.gap1Target);
+    const teacherDebt = teacherTarget > 0
+      ? quality.teacherSessions - teacherTarget
+      : 0;
+    const gap1Debt = gap1Target != null
+      ? quality.gap1 - gap1Target
+      : 0;
+    const teacherRebuildMargin = teacherTarget > 0
+      ? Math.max(8, Math.ceil(teacherTarget * 0.04))
+      : Number.POSITIVE_INFINITY;
+    const gap1RebuildMargin = gap1Target != null
+      ? Math.max(12, Math.ceil(Math.max(1, gap1Target) * 0.35))
+      : Number.POSITIVE_INFINITY;
+    return quality.onePeriod > 0
+      || quality.gap2Plus > 0
+      || teacherDebt >= teacherRebuildMargin
+      || gap1Debt >= gap1RebuildMargin;
   }
 
   function noBetterScheduleStatus(payload){
@@ -12654,7 +12697,7 @@
         syncVisibleCompletionMetrics(incumbentPayload, incumbentPayload);
         window.__TKB_SOLVER_LAST_PAYLOAD = incumbentPayload;
         window.__TKB_SOLVER_LAST_RESULT = incumbentPayload;
-        finishProgress("Giữ lịch", "warning");
+        finishProgress("100%", "ok");
         window.__TKB_RUST_SOLVER_RUNNING = false;
         window.__TKB_SOLVE_UI_BUSY = false;
         // The incumbent-quality guard can retain the current complete
@@ -12663,10 +12706,7 @@
         // reason and missing count in E2E metadata below.
         const message = SOLVE_COMPLETE_MESSAGE;
         window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = message;
-        setStatus(
-          message,
-          "warning"
-        );
+        setStatus(message, "ok");
         scheduleUiRefresh();
         publishE2EState("done", incumbentPayload, {
           message,
@@ -12692,12 +12732,12 @@
         restoreScheduleData(dataForProgress || getData(), scheduleSnapshot);
         window.__TKB_SOLVER_LAST_PAYLOAD = incumbentPayload;
         window.__TKB_SOLVER_LAST_RESULT = incumbentPayload;
-        finishProgress("Giữ lịch", "warning");
+        finishProgress("100%", "ok");
         window.__TKB_RUST_SOLVER_RUNNING = false;
         window.__TKB_SOLVE_UI_BUSY = false;
         const message = SOLVE_COMPLETE_MESSAGE;
         window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = message;
-        setStatus(message, "warning");
+        setStatus(message, "ok");
         publishE2EState("done", incumbentPayload, {message, keptIncumbent: true});
         showCompletionPopup(message, "ok");
         refreshStatsPopoverIfOpen();
@@ -12817,17 +12857,17 @@
       window.__TKB_SOLVER_LAST_PAYLOAD = payload;
       window.__TKB_SOLVER_LAST_RESULT = result;
       const finalQualityStatus = completionQualityStatus(payload, dataForProgress || getData());
-      finishProgress(
-        finalQualityStatus.level === "warning" ? finalQualityStatus.progressLabel : "100%",
-        finalQualityStatus.level
-      );
+      finishProgress("100%", "ok");
+      window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = SOLVE_COMPLETE_MESSAGE;
+      setStatus(SOLVE_COMPLETE_MESSAGE, "ok");
       window.__TKB_RUST_SOLVER_RUNNING = false;
       window.__TKB_SOLVE_UI_BUSY = false;
       schedulePostSolveUi(payload, result);
       clearManualFreshRetryBudget(dataForProgress || getData(), true);
       publishE2EState("done", payload, {
         scheduleUnchanged: unchangedSchedule,
-        qualityDebt: qualityDebtMessage(payload, payload?.solver?.runtime_settings || settings)
+        qualityDebt: qualityDebtMessage(payload, payload?.solver?.runtime_settings || settings),
+        qualityTargetMet: finalQualityStatus.targetMet
       });
       return result;
     }catch(err){
@@ -12937,6 +12977,7 @@
         teacherSessionGapQualityTarget,
         teacherSessionQuality,
         completionQualityStatus,
+        completeScheduleNeedsFreshQualityRebuild,
         buildCompletionMessage,
         noBetterScheduleStatus,
         hasVisibleTeacherQualityMetrics,
@@ -13310,12 +13351,17 @@
       hasKnownConstraintViolations ? knownViolations : undefined,
       expectedCount
     );
+    const qualityDebtFreshRebuild = !!completeState
+      && completeScheduleNeedsFreshQualityRebuild(
+        safeData,
+        freshPlan.qualityTargets
+      );
     const useInitialFastStage = !completeState
       && countScheduledLessons(safeData, {flexibleOnly:true}) <= 0
       && (hasKnownConstraintViolations
         ? knownViolations === 0
         : currentConstraintViolations(1).length === 0);
-    if(completeState){
+    if(completeState && !qualityDebtFreshRebuild){
       clearFreshOnlyFlags(settings);
       settings.ui_unified_solve_kind = "refine_complete";
       settings.ui_use_existing_complete_incumbent = true;
@@ -13414,6 +13460,20 @@
     }
 
     settings.ui_unified_solve_kind = "fresh_complete_first";
+    if(qualityDebtFreshRebuild){
+      // A very rough complete incumbent is cheaper and more reliable to
+      // rebuild from fixed lessons than to squeeze one session cap at a time.
+      // The normal incumbent guard still accepts the rebuilt timetable only
+      // when its ordered teacher-quality statistics improve.
+      settings.ui_quality_debt_fresh_rebuild = true;
+      settings.ui_keep_better_existing_on_resort = true;
+      settings.allow_solver_warm_start = false;
+      settings.preserve_existing_tkb = false;
+      settings.force_fresh_backend_solve = true;
+      settings.allow_backend_cache = false;
+    }else{
+      delete settings.ui_quality_debt_fresh_rebuild;
+    }
     delete settings.optimization_benders_lean_refinement_periods;
     settings.ui_allow_incomplete_retry_after_single_pass = false;
     settings.ui_stop_after_first_complete_schedule = true;
@@ -13599,7 +13659,13 @@
       settings.optimization_continue_quality_search = true;
     }
     syncSolveDurationPreview(settings, effectiveCustomDurationSeconds);
-    return {kind:"fresh_complete_first", settings, qualityTargets:freshPlan.qualityTargets, state:null};
+    return {
+      kind:qualityDebtFreshRebuild ? "refine_complete" : "fresh_complete_first",
+      settings,
+      qualityTargets:freshPlan.qualityTargets,
+      state:qualityDebtFreshRebuild ? completeState : null,
+      qualityDebtFreshRebuild
+    };
   }
 
   function buildConstraintRepairAutoSortPlan(data, expected, releasedCount, knownConstraintViolationCount, preparedFreshPlan){
@@ -13930,8 +13996,8 @@
         result || getData()?.tkbSolverResult || incumbentPayloadBeforeAutoSort || null
       );
       window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = plateauMessage;
-      finishProgress("Giữ lịch", "warning");
-      setStatus(plateauMessage, "warning");
+      finishProgress("100%", "ok");
+      setStatus(plateauMessage, "ok");
       return result;
     }
     if(result && completeAfterSolve){
