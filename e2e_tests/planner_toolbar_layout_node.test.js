@@ -244,8 +244,8 @@ test("planner keeps eight compact, accessible commands in the mobile toolbar", (
     plannerHtml,
     /@media \(max-width:\s*900px\) and \(hover:\s*none\) and \(pointer:\s*coarse\),\s*\(max-width:\s*480px\)/
   );
-  assert.match(plannerHtml, /phanmon\.js\?v=20260719-v132-agent-version-metadata-v1/);
-  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260719-v132-agent-version-metadata-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260719-v134-ios-resume-frontier-v1/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260719-v134-ios-resume-frontier-v1/);
 });
 
 test("desktop Agent sits beside Home, uses an AI icon, and stays out of mobile layouts", () => {
@@ -478,6 +478,15 @@ test("toolbar status messages hide after five seconds", () => {
   assert.equal(element.classList.removed, "is-auto-sort-running-label");
   assert.equal(context.window.__TKB_STATUS_HIDE_TIMER, 0);
   assert.deepEqual(cleared, [0]);
+
+  callback = null;
+  delay = 0;
+  context.setPlannerStatus("Đã xếp xong!", "ok");
+  assert.equal(element.textContent, "Đã xếp xong!");
+  assert.equal(element.style.display, "inline-block");
+  assert.equal(callback, null, "the final success notice must not receive a hide timer");
+  assert.equal(delay, 0);
+  assert.equal(context.window.__TKB_STATUS_HIDE_TIMER, 0);
 });
 
 test("mobile status text keeps a readable size and wraps instead of scaling", () => {
@@ -608,6 +617,23 @@ test("Stop state changes preserve the inline stop-circle and square markup", () 
   assert.ok(stopStateStart >= 0 && stopStateEnd > stopStateStart, "Stop state helpers are missing");
   assert.doesNotMatch(stopStateSource, /\bbtn\.(?:textContent|innerHTML|outerHTML)\s*=/);
   assert.doesNotMatch(stopStateSource, /\bbtn\.replaceChildren\s*\(/);
+});
+
+test("mobile progress resets to visible idle and terminal states do not auto-hide", () => {
+  const idleStart = plannerSource.indexOf("function hideAutoSortProgress");
+  const progressStart = plannerSource.indexOf("function setAutoSortProgress", idleStart);
+  const finishStart = plannerSource.indexOf("function finishAutoSortProgress", progressStart);
+  const finishEnd = plannerSource.indexOf("function invalidateSolverStateAfterScheduleDelete", finishStart);
+  const idleSource = plannerSource.slice(idleStart, progressStart);
+  const finishSource = plannerSource.slice(finishStart, finishEnd);
+
+  assert.ok(idleStart >= 0 && progressStart > idleStart && finishStart > progressStart && finishEnd > finishStart);
+  assert.match(idleSource, /classList\.add\("is-idle"\)/);
+  assert.match(idleSource, /wrap\.hidden\s*=\s*false/);
+  assert.match(idleSource, /pct\.textContent\s*=\s*"0%"/);
+  assert.match(idleSource, /text\.textContent\s*=\s*"Sẵn sàng"/);
+  assert.doesNotMatch(finishSource, /setTimeout\s*\(/);
+  assert.match(finishSource, /setAutoSortProgress\(100,\s*"Hoàn tất"\)/);
 });
 
 test("cross-device observer progress locks Play and exposes the owner cancel action", () => {
@@ -1015,11 +1041,14 @@ test("mobile reserves one stable feedback row so sorting never shifts the timeta
   assert.match(feedback, /id="autoSortProgress"/);
   assert.match(feedback, /id="statusMsg"/);
   assert.ok(feedback.indexOf('id="autoSortProgress"') < feedback.indexOf('id="statusMsg"'));
+  assert.match(feedback, /id="autoSortProgress" class="auto-sort-progress is-idle"[^>]*aria-hidden="false"/);
+  assert.doesNotMatch(feedback, /id="autoSortProgress"[^>]*\shidden(?:\s|>)/);
   assert.match(plannerHtml, /body\.planner-shell\s*\{[^}]*--planner-mobile-feedback-h:\s*46px;[^}]*padding-bottom:\s*0;[^}]*overflow:\s*hidden;/s);
   assert.match(plannerHtml, /\.toolbar-main\s*\{[^}]*grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);[^}]*grid-template-rows:\s*44px var\(--planner-mobile-feedback-h\);/s);
   assert.match(plannerHtml, /\.toolbar-feedback\s*\{[^}]*grid-column:\s*1 \/ -1;[^}]*grid-row:\s*2;[^}]*display:\s*grid;[^}]*grid-template-rows:\s*var\(--planner-mobile-feedback-h\);[^}]*height:\s*var\(--planner-mobile-feedback-h\);[^}]*min-height:\s*var\(--planner-mobile-feedback-h\);[^}]*max-height:\s*var\(--planner-mobile-feedback-h\);[^}]*overflow:\s*hidden;/s);
   assert.doesNotMatch(plannerHtml, /\.toolbar-feedback:has\(> #autoSortProgress\.is-active\)/);
   assert.match(plannerHtml, /\.toolbar-feedback\s*>\s*#autoSortProgress\s*\{[^}]*grid-row:\s*1;/s);
+  assert.match(plannerHtml, /\.toolbar-feedback\s*>\s*#autoSortProgress\.is-idle\s*\{[^}]*display:\s*flex;/s);
   assert.match(plannerHtml, /\.toolbar-feedback\s*>\s*#statusMsg\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*1;[^}]*max-height:\s*2\.4em;[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*clip;[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;[^}]*transform:\s*none !important;/s);
   assert.match(plannerHtml, /\.toolbar-feedback\s*>\s*#statusMsg\s*\{[^}]*font-size:\s*12px;[^}]*line-height:\s*1\.2;[^}]*letter-spacing:\s*0;/s);
   assert.doesNotMatch(plannerSource, /function fitPlannerMobileStatusMessage[\s\S]*?scaleX/);

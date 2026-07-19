@@ -8269,6 +8269,7 @@ def _polish_complete_incumbent_with_local_lns(
     time_limit_seconds: float,
     operator_learning: dict[str, Any] | None = None,
     gap1_cleanup_cap: int | None = None,
+    protected_cleanup_budget: bool = False,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
     """Improve an incumbent with a bounded, round-adaptive ALNS portfolio."""
 
@@ -8315,6 +8316,13 @@ def _polish_complete_incumbent_with_local_lns(
         settings.get("optimization_existing_local_quality_lns_early_accept", True)
     )
     stagnant_pass_limit = int(profile["stagnant_passes"])
+    if protected_cleanup_budget:
+        # The outer frontier search reserved this whole slice specifically for
+        # gap repair. Do not let the generic two-miss ALNS plateau rule return
+        # after only a few seconds; cheap failed neighborhoods should buy more
+        # independent seeds, while the wall-clock budget remains authoritative.
+        max_passes = max(max_passes, min(32, max(1, int(math.ceil(budget)))))
+        stagnant_pass_limit = max_passes
     seeds = _school_refinement_seed_sequence(
         bound_ctx.school_data,
         refinement_round,
@@ -8346,6 +8354,14 @@ def _polish_complete_incumbent_with_local_lns(
             gap1_cleanup_cap is not None
             and _teacher_session_opt_gap1(current_polished_metrics) > int(gap1_cleanup_cap)
         )
+        cleanup_pass_gap1_cap: int | None = None
+        if gap1_cleanup_cap is not None:
+            visible_gap1_cap = max(0, int(gap1_cleanup_cap))
+            current_gap1 = _teacher_session_opt_gap1(current_polished_metrics)
+            # A small class cluster often cannot erase all frontier debt in one
+            # solve. Accept two-gap internal steps; the outer Pareto guard still
+            # withholds the frontier until it reaches the visible incumbent.
+            cleanup_pass_gap1_cap = max(visible_gap1_cap, current_gap1 - 2)
         if cleanup_gap1_needed:
             operator = "gap1"
             operator_selection = {
@@ -8392,10 +8408,7 @@ def _polish_complete_incumbent_with_local_lns(
             gap1_first=False,
             preserve_teacher_quality=True,
             max_gap1_sessions=(
-                min(
-                    _incremental_refinement_gap1_cap(current_polished_metrics),
-                    max(0, int(gap1_cleanup_cap)),
-                )
+                cleanup_pass_gap1_cap
                 if gap1_cleanup_cap is not None
                 else _incremental_refinement_gap1_cap(current_polished_metrics)
             ),
@@ -11569,6 +11582,7 @@ def _solve_teacher_session_optimized_from_ui_data(
                         if visible_best_metrics is not None
                         else None
                     ),
+                    protected_cleanup_budget=True,
                 )
             except Exception as exc:  # noqa: BLE001 - visible incumbent is retained below.
                 cleanup_error = exc
@@ -11614,7 +11628,11 @@ def _solve_teacher_session_optimized_from_ui_data(
                 cleanup_summary["error"] = str(cleanup_error)
             else:
                 cleanup_summary["skipped"] = True
-                cleanup_summary["reason"] = "frontier_cleanup_budget_exhausted"
+                cleanup_summary["reason"] = "frontier_cleanup_no_pareto_improvement"
+                cleanup_summary["budget_exhausted"] = cleanup_elapsed >= max(
+                    0.0,
+                    cleanup_budget - 0.25,
+                )
             attempts.append(cleanup_summary)
 
     exploration_frontier: dict[str, Any] | None = None

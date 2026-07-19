@@ -2262,6 +2262,67 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertTrue(all(call.kwargs["seed_classes"] == ["6/1"] for call in repair.call_args_list))
         self.assertEqual(learning["operators"]["gap1"]["attempts"], 2)
 
+    def test_frontier_cleanup_uses_reserved_budget_past_generic_stagnation(self) -> None:
+        ctx = _context()
+        lessons = [Lesson("6/1", "6", 2, "AM", 1, "Math", "T1")]
+        frontier = _first_click_payload(teacher_sessions=472, gap1=48)
+        visible = _first_click_payload(teacher_sessions=482, gap1=42)
+        gap46 = _first_click_payload(teacher_sessions=472, gap1=46)
+        gap44 = _first_click_payload(teacher_sessions=472, gap1=44)
+        cleaned = _first_click_payload(teacher_sessions=472, gap1=42)
+        repair_results = [
+            None,
+            None,
+            (lessons, gap46["metrics"], {"repair_kind": "gap_cleanup_48_to_46"}),
+            (lessons, gap44["metrics"], {"repair_kind": "gap_cleanup_46_to_44"}),
+            (lessons, cleaned["metrics"], {"repair_kind": "gap_cleanup_44_to_42"}),
+        ]
+
+        with (
+            patch("tkb_new.adapter._extract_hard_fixed_lessons_from_tkb", return_value=([], [])),
+            patch("tkb_new.adapter._payload_lessons_to_lessons", return_value=lessons),
+            patch(
+                "tkb_new.adapter._repair_one_period_affected_class_cluster",
+                side_effect=repair_results,
+            ) as repair,
+            patch("tkb_new.adapter.build_payload", return_value=cleaned),
+        ):
+            result = _polish_complete_incumbent_with_local_lns(
+                {},
+                {
+                    "optimization_existing_local_quality_lns_passes": 2,
+                    "optimization_existing_local_quality_lns_stagnant_passes": 2,
+                    "optimization_existing_local_quality_lns_pass_seconds": 1,
+                },
+                ctx,
+                frontier,
+                rules=ctx.rules,
+                polish_seeds=[],
+                time_limit_seconds=5,
+                gap1_cleanup_cap=42,
+                protected_cleanup_budget=True,
+            )
+
+        self.assertIsNotNone(result)
+        candidate, passes = result
+        self.assertEqual(repair.call_count, 5)
+        self.assertEqual(
+            [call.kwargs["max_gap1_sessions"] for call in repair.call_args_list],
+            [46, 46, 46, 44, 42],
+        )
+        self.assertEqual(candidate["metrics"]["teacher_sessions"], 472)
+        self.assertEqual(_teacher_session_opt_gap1(candidate["metrics"]), 42)
+        self.assertEqual(len(passes), 5)
+        self.assertFalse(
+            _incremental_refinement_candidate_better(gap46["metrics"], visible["metrics"])
+        )
+        self.assertFalse(
+            _incremental_refinement_candidate_better(gap44["metrics"], visible["metrics"])
+        )
+        self.assertTrue(
+            _incremental_refinement_candidate_better(cleaned["metrics"], visible["metrics"])
+        )
+
     def test_incremental_lns_keeps_hard_fixed_lessons_immutable(self) -> None:
         ctx = _context()
         fixed = Lesson("6/1", "Khá»‘i 6", 2, "AM", 1, "ToÃ¡n", "GV1")
@@ -3250,6 +3311,7 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertEqual(attempt_limits, [60, 48])
         self.assertEqual(local_lns.call_args.kwargs["time_limit_seconds"], 30.0)
         self.assertEqual(local_lns.call_args.kwargs["gap1_cleanup_cap"], 40)
+        self.assertTrue(local_lns.call_args.kwargs["protected_cleanup_budget"])
         self.assertEqual(payload["metrics"]["teacher_sessions"], 463)
         self.assertEqual(_teacher_session_opt_gap1(payload["metrics"]), 38)
         attempts = payload["solver"]["teacher_session_optimization"]["attempts"]

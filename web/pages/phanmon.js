@@ -1,4 +1,4 @@
-window.__PHANMON_VERSION = "updated-v9.1 (Agent 1.6.13 version metadata hotfix)";
+window.__PHANMON_VERSION = "updated-v9.3 (v1.34 iOS resume + frontier cleanup)";
 
 (function installPlannerMobileViewportSync(){
   if(window.__TKB_MOBILE_VIEWPORT_SYNC_BOUND === true) return;
@@ -7189,7 +7189,8 @@ function _setStatus(msg, type="error"){
   else if(type === "warning") el.style.color = "#b45309";
   else el.style.color = "#a8071a";
   fitPlannerMobileStatusMessage(el);
-  if(msg){
+  const persistentCompletion = String(msg || "").trim() === "Đã xếp xong!";
+  if(msg && !persistentCompletion){
     window.__TKB_STATUS_HIDE_TIMER = window.setTimeout(() => {
       el.textContent = "";
       el.style.display = "none";
@@ -7557,13 +7558,30 @@ try{
 }catch(_){ }
 
 function hideAutoSortProgress(){
+  // Compatibility API: reset to the mobile idle state instead of blanking the
+  // permanently reserved feedback row. Desktop CSS still hides `.is-idle`.
   window.clearTimeout(window.__autoSortProgressHideTimer);
   window.__autoSortProgressHideTimer = null;
   const wrap = document.getElementById("autoSortProgress");
   if(wrap){
     wrap.classList.remove("is-active", "is-error", "is-warning", "is-complete");
-    wrap.hidden = true;
-    wrap.setAttribute("aria-hidden", "true");
+    wrap.classList.add("is-idle");
+    wrap.hidden = false;
+    wrap.setAttribute("aria-hidden", "false");
+    const track = wrap.querySelector(".auto-sort-track");
+    const fill = document.getElementById("autoSortProgressFill");
+    const pct = document.getElementById("autoSortProgressPct");
+    const text = wrap.querySelector(".auto-sort-label");
+    if(track){
+      track.style.setProperty("--auto-sort-progress", "0deg");
+      track.setAttribute("aria-label", "Sẵn sàng");
+    }
+    if(fill) fill.style.width = "0%";
+    if(pct) pct.textContent = "0%";
+    if(text){
+      text.textContent = "Sẵn sàng";
+      text.title = "";
+    }
   }
   setAutoSortStopVisible(false);
   resetAutoSortStopRequest();
@@ -7587,7 +7605,7 @@ function setAutoSortProgress(percent, label){
   if(btn) btn.disabled = true;
   window.clearTimeout(window.__autoSortProgressHideTimer);
   setAutoSortStopVisible(true);
-  wrap.classList.remove("is-error", "is-warning", "is-complete");
+  wrap.classList.remove("is-idle", "is-error", "is-warning", "is-complete");
   if(!window.__AUTO_SORT_STOP_REQUESTED && n < 100){
     const btn = document.getElementById("btnStopAutoSort");
     if(btn){
@@ -7638,36 +7656,26 @@ function finishAutoSortProgress(label, state){
     const pct = document.getElementById("autoSortProgressPct");
     const track = wrap?.querySelector(".auto-sort-track");
     if(wrap){
+      wrap.classList.remove("is-idle");
       wrap.classList.toggle("is-error", isError);
       wrap.classList.toggle("is-warning", isWarning);
+      wrap.classList.remove("is-complete");
     }
     if(pct) pct.textContent = numericText ? `${targetPct}%` : "!";
     if(track) track.setAttribute("aria-label", `${isWarning ? "Chưa đủ" : "Lỗi"} ${targetPct}%`);
     window.clearTimeout(window.__autoSortProgressHideTimer);
-    window.__autoSortProgressHideTimer = window.setTimeout(()=>{
-      const wrap = document.getElementById("autoSortProgress");
-      if(wrap){
-        wrap.classList.remove("is-active", "is-error", "is-warning", "is-complete");
-        wrap.hidden = true;
-        wrap.setAttribute("aria-hidden", "true");
-      }
-      setAutoSortStopVisible(false);
-      resetAutoSortStopRequest();
-    }, isError ? 5200 : 4200);
-    return;
-  }
-  setAutoSortProgress(100, (/^\d+\s*%$/.test(text) ? "Sắp xếp" : (text || "Sắp xếp")));
-  window.clearTimeout(window.__autoSortProgressHideTimer);
-  window.__autoSortProgressHideTimer = window.setTimeout(()=>{
-    const wrap = document.getElementById("autoSortProgress");
-    if(wrap){
-      wrap.classList.remove("is-active");
-      wrap.hidden = true;
-      wrap.setAttribute("aria-hidden", "true");
-    }
+    window.__autoSortProgressHideTimer = null;
     setAutoSortStopVisible(false);
     resetAutoSortStopRequest();
-  }, 2600);
+    return;
+  }
+  setAutoSortProgress(100, "Hoàn tất");
+  const wrap = document.getElementById("autoSortProgress");
+  if(wrap) wrap.classList.add("is-complete");
+  window.clearTimeout(window.__autoSortProgressHideTimer);
+  window.__autoSortProgressHideTimer = null;
+  setAutoSortStopVisible(false);
+  resetAutoSortStopRequest();
 }
 
 function invalidateSolverStateAfterScheduleDelete(resetLessonMappings){

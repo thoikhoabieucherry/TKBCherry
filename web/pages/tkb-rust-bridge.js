@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v236-agent-version-metadata";
+  const VERSION = "tkb-rust-api-v238-ios-resume-frontier";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -421,6 +421,7 @@
     let activeSolveAbortController = null;
     let activeBackendJobId = "";
     let pendingBackendResumeTimer = 0;
+    let pendingBackendResumeInFlight = null;
     let pendingFingerprintHydrationJobId = "";
     let pendingFingerprintHydrationAttempts = 0;
     let completionPopupTimer = 0;
@@ -2827,6 +2828,7 @@
     const currentPct = Number((pct.textContent || "").match(/\d+/)?.[0]);
     const n = needsAttention ? Math.max(1, Math.min(99, Number.isFinite(currentPct) && currentPct > 0 ? currentPct : 99)) : 100;
     wrap.classList.add("is-active");
+    wrap.classList.remove("is-idle");
     wrap.hidden = false;
     wrap.classList.toggle("is-error", isError);
     wrap.classList.toggle("is-warning", isWarning);
@@ -2839,22 +2841,13 @@
     fill.style.width = n + "%";
     pct.textContent = needsAttention ? "!" : "100%";
     if(text){
-      text.textContent = needsAttention ? (textValue || (isWarning ? "Chưa đủ" : "Lỗi")) : "";
+      text.textContent = needsAttention ? (textValue || (isWarning ? "Chưa đủ" : "Lỗi")) : "Hoàn tất";
       text.title = needsAttention ? (textValue || (isWarning ? "Chưa đủ" : "Lỗi")) : "";
     }
     try{ callMaybe("setAutoSortStopVisible", [false]); }catch(_){}
     try{ callMaybe("resetAutoSortStopRequest"); }catch(_){}
     window.clearTimeout(window.__autoSortProgressHideTimer);
-    window.__autoSortProgressHideTimer = window.setTimeout(() => {
-      const node = document.getElementById("autoSortProgress");
-      if(node){
-        node.classList.remove("is-active", "is-error", "is-warning", "is-complete");
-        node.hidden = true;
-        node.setAttribute("aria-hidden", "true");
-      }
-      try{ callMaybe("setAutoSortStopVisible", [false]); }catch(_){}
-      try{ callMaybe("resetAutoSortStopRequest"); }catch(_){}
-    }, isError ? 5200 : (isWarning ? 4200 : 2600));
+    window.__autoSortProgressHideTimer = null;
   }
 
   function finishProgress(label, state){
@@ -2868,13 +2861,30 @@
   }
 
   function hideAutoSortProgressDom(){
+    // Keep the historical helper name for callers, but reset the reserved
+    // mobile row to a useful idle state instead of leaving an empty band.
     window.clearTimeout(window.__autoSortProgressHideTimer);
     window.__autoSortProgressHideTimer = null;
     const wrap = document.getElementById("autoSortProgress");
     if(wrap){
       wrap.classList.remove("is-active", "is-error", "is-warning", "is-complete");
-      wrap.hidden = true;
-      wrap.setAttribute("aria-hidden", "true");
+      wrap.classList.add("is-idle");
+      wrap.hidden = false;
+      wrap.setAttribute("aria-hidden", "false");
+      const fill = document.getElementById("autoSortProgressFill");
+      const pct = document.getElementById("autoSortProgressPct");
+      const track = wrap.querySelector(".auto-sort-track");
+      const text = wrap.querySelector(".auto-sort-label");
+      if(track){
+        track.style.setProperty("--auto-sort-progress", "0deg");
+        track.setAttribute("aria-label", "Sẵn sàng");
+      }
+      if(fill) fill.style.width = "0%";
+      if(pct) pct.textContent = "0%";
+      if(text){
+        text.textContent = "Sẵn sàng";
+        text.title = "";
+      }
     }
     try{ callMaybe("setAutoSortStopVisible", [false]); }catch(_){}
     try{ callMaybe("resetAutoSortStopRequest"); }catch(_){}
@@ -3008,8 +3018,7 @@
     // an older page-load discovery timer race its request or progress state.
     cancelPendingBackendResume();
     setAutoSortButtonBusy(true);
-    hideAutoSortProgressDom();
-    callMaybe("hideAutoSortProgress");
+    setProgress(0, "Chuẩn bị", {replaceLocalPercent:true, phase:"preparing"});
     setStatus("Đang sắp xếp...", "info");
     startInstantProgressTicker();
   }
@@ -6452,9 +6461,25 @@
     return fullCount && unassigned === 0 && !c.hardOk;
   }
 
+  function stagedExistingErrorAllowsFreshRetry(err){
+    if(!err) return true;
+    if(err.backendUnavailable === true || err.name === "AbortError") return false;
+    const kind = String(err.kind || err?.payload?.kind || "").trim().toLowerCase();
+    if([
+      "cancelled",
+      "canceled",
+      "client_timeout",
+      "solver_busy",
+      "solver_schedule_busy"
+    ].includes(kind)) return false;
+    const status = Number(err.status || 0);
+    return status !== 401 && status !== 403;
+  }
+
   function stagedExistingFreshRetrySettings(baseSettings, baseData, runId){
     const seed = makeRandomSeed();
     const constraintChangeFresh = baseSettings?.ui_constraint_change_repair === true;
+    const requestedCustomSeconds = customSolveDurationFromSettings(baseSettings);
     const freshPlanningData = constraintChangeFresh
       ? dataForSolverRequest(baseData || getData() || {}, {
           allow_solver_warm_start:false,
@@ -6501,6 +6526,30 @@
       );
       delete next.robust_retry;
       delete next.complete_schedule_seed_retry_run;
+    }else{
+      // A failed light repair becomes the same bounded fresh solve as a first
+      // click. Do not inherit the legacy 180-second robust-retry budget: the
+      // current click owns one 60-second rebuild (or the user's explicit
+      // duration), while a later click owns deeper refinement.
+      clearExistingRepairSettings(next);
+      next.ui_unified_auto_sort = true;
+      next.ui_unified_solve_kind = "fresh_complete_first";
+      next.ui_constraint_change_fresh_retry = true;
+      next.ui_constraint_change_rebuild_from_empty = true;
+      next.ui_bounded_fresh_accept_quality_debt = true;
+      next.ui_constraint_change_allow_quality_debt = true;
+      next.ui_skip_pre_solve_constraint_release = true;
+      next.ui_disable_automatic_retry = true;
+      next.ui_allow_incomplete_retry_after_single_pass = false;
+      next.complete_schedule_seed_retry = false;
+      next.complete_schedule_seed_retry_max_runs = 0;
+      next.ui_constraint_change_fresh_ceiling_seconds = applyUnifiedInitialCeiling(
+        next,
+        expectedLessonCount(baseData),
+        baseData
+      );
+      delete next.robust_retry;
+      delete next.complete_schedule_seed_retry_run;
     }
     next.ui_disable_staged_existing_repair = true;
     next.ui_local_repair_needs_rearrange = true;
@@ -6526,12 +6575,21 @@
     next.solve_run_id = `${runId || makeSolveRunId()}-fresh-after-staged-hard-invalid-${seed}`;
     delete next.ui_staged_existing_repair;
     delete next.ui_staged_existing_phase;
+    delete next.ui_unified_partial_repair;
+    delete next.ui_unified_repair_ceiling_seconds;
+    delete next.ui_force_staged_existing_repair;
+    delete next.ui_allow_staged_existing_on_fresh_sort;
     delete next.native_skip_teacher_optimization;
     delete next.repair_partial_existing_reason;
     delete next.repair_existing_missing_periods;
     delete next.existing_scheduled_periods;
     delete next.existing_flexible_scheduled_periods;
-    return enforceNoHintFreshSolveSettings(next);
+    enforceNoHintFreshSolveSettings(next);
+    if(requestedCustomSeconds > 0){
+      applyCustomSolveDurationSettings(next, requestedCustomSeconds);
+      next.ui_constraint_change_fresh_ceiling_seconds = requestedCustomSeconds;
+    }
+    return next;
   }
 
   function disableStagedExistingRepairForThisRun(settings){
@@ -6576,26 +6634,40 @@
     const fillSettings = stagedExistingRepairSettings(baseSettings, state, "fill", runId);
     setStatus("Đang sắp xếp...", "info");
     restartProgressForRetry(fillSettings, baseData);
-    const fillPayload = markStagedExistingPayload(
-      await postSolve(fillSettings, baseData),
-      state,
-      "fill"
-    );
+    let fillPayload = null;
+    let fillError = null;
+    try{
+      fillPayload = markStagedExistingPayload(
+        await postSolve(fillSettings, baseData),
+        state,
+        "fill"
+      );
+    }catch(err){
+      rethrowCancelledSolve(err, runId);
+      if(!stagedExistingErrorAllowsFreshRetry(err)) throw err;
+      fillError = err;
+    }
     const fillCompletion = payloadCompletion(fillPayload);
-    const constraintRepairNeedsFreshRetry = baseSettings?.ui_constraint_change_repair === true
-      && !fillCompletion.complete;
-    if(stagedExistingNeedsFreshRetry(fillPayload) || constraintRepairNeedsFreshRetry){
+    const fillNeedsFreshRetry = !!fillError
+      || !fillCompletion.complete
+      || stagedExistingNeedsFreshRetry(fillPayload);
+    if(fillNeedsFreshRetry){
       disableStagedExistingRepairForThisRun(baseSettings);
       const retrySettings = stagedExistingFreshRetrySettings(baseSettings, baseData, runId);
-      if(constraintRepairNeedsFreshRetry){
+      if(baseSettings?.ui_constraint_change_repair === true){
         retrySettings.ui_constraint_change_repair = true;
         retrySettings.ui_constraint_change_fresh_retry = true;
-        retrySettings.ui_staged_existing_fresh_retry_reason = "partial_repair_incomplete";
       }
+      retrySettings.ui_staged_existing_fresh_retry_reason = fillError
+        ? "staged_fill_error"
+        : (!fillCompletion.complete ? "partial_repair_incomplete" : "hard_invalid_after_fill");
       setStatus("Đang sắp xếp...", "info");
       restartProgressForRetry(retrySettings, baseData);
       const retryPayload = await postSolve(retrySettings, baseData);
       return markStagedExistingFreshRetryPayload(retryPayload, state, {
+        ui_staged_fill_error:!!fillError,
+        ui_staged_fill_error_kind:String(fillError?.kind || fillError?.payload?.kind || "").slice(0, 80),
+        ui_staged_fill_error_status:Math.max(0, Number(fillError?.status || 0) || 0),
         ui_staged_fill_hard_invalid_count: fillCompletion.violations,
         ui_staged_fill_hard_ok: fillCompletion.hardOk,
         ui_staged_fill_incomplete: !fillCompletion.complete
@@ -10220,14 +10292,16 @@
       preserveExisting: isTruthySetting(settings?.preserve_existing_tkb),
       skipPreRelease: settings?.ui_skip_pre_solve_constraint_release === true
     });
-    try{
-      const rb = window.TKBConstraints || window.TKBConstraintsFull;
-      if(rb && typeof rb.syncDefaultGroups === "function") rb.syncDefaultGroups();
-    }catch(_){}
+    if(!resumeExistingServerJobOnly){
+      try{
+        const rb = window.TKBConstraints || window.TKBConstraintsFull;
+        if(rb && typeof rb.syncDefaultGroups === "function") rb.syncDefaultGroups();
+      }catch(_){}
+    }
     await yieldResponsiveUi();
     const optimizeExistingOnly = settings?.optimize_existing_schedule === true;
     const skipPreSolveRelease = settings?.ui_skip_pre_solve_constraint_release === true;
-    const releasedViolatingLessons = optimizeExistingOnly || skipPreSolveRelease
+    const releasedViolatingLessons = resumeExistingServerJobOnly || optimizeExistingOnly || skipPreSolveRelease
       ? 0
       : releaseConstraintViolatingLessons(data);
     if(releasedViolatingLessons > 0){
@@ -10237,7 +10311,9 @@
       );
     }
     await yieldResponsiveUi();
-    syncOffLocksToData(data, collectOffLocks(data));
+    if(!resumeExistingServerJobOnly){
+      syncOffLocksToData(data, collectOffLocks(data));
+    }
     const effectiveSettings = effectiveSettingsForSolve(settings, data);
     await yieldResponsiveUi();
     enforceCompleteScheduleForUi(effectiveSettings);
@@ -11429,11 +11505,13 @@
     window.__TKB_SOLVER_LAST_PAYLOAD = payload;
     window.__TKB_SOLVER_LAST_RESULT = payload;
     window.__TKB_SOLVER_LAST_ERROR = "";
-    window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = "Đã vá nhanh Chưa phân; lịch đã đủ tiết.";
+    // Keep the terminal success notice intentionally short.  The detailed
+    // repair diagnostics remain available in the solver payload/E2E state.
+    window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = SOLVE_COMPLETE_MESSAGE;
     try{ callMaybe("saveStore", [{force:true}]); }catch(_){}
     scheduleUiRefresh();
     schedulePostSolveUi(payload, payload);
-    setStatus("Đã vá nhanh Chưa phân; lịch đã đủ tiết.", "ok");
+    setStatus(SOLVE_COMPLETE_MESSAGE, "ok");
     finishProgress("100%", "ok");
     releaseAutoSortButtonSoon();
     publishE2EState("done", payload, {message: window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE, localUnassignedRepairFast: true});
@@ -11535,11 +11613,11 @@
     window.__TKB_SOLVER_LAST_PAYLOAD = payload;
     window.__TKB_SOLVER_LAST_RESULT = payload;
     window.__TKB_SOLVER_LAST_ERROR = "";
-    window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = "Đã khôi phục tiết vừa bỏ nghỉ; lịch đã đủ tiết.";
+    window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = SOLVE_COMPLETE_MESSAGE;
     try{ callMaybe("saveStore", [{force:true}]); }catch(_){}
     scheduleUiRefresh();
     schedulePostSolveUi(payload, payload);
-    setStatus("Đã khôi phục tiết vừa bỏ nghỉ; lịch đã đủ tiết.", "ok");
+    setStatus(SOLVE_COMPLETE_MESSAGE, "ok");
     finishProgress("100%", "ok");
     releaseAutoSortButtonSoon();
     publishE2EState("done", payload, {message: window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE, localOffRestoreFast: true});
@@ -12123,11 +12201,10 @@
           finishProgress("100%", "ok");
           window.__TKB_RUST_SOLVER_RUNNING = false;
           window.__TKB_SOLVE_UI_BUSY = false;
-          const restoredCompletion = visibleCompletionMetrics(restoredPayload || incumbentPayloadForIncomplete);
-          const restoredTotal = restoredCompletion.scheduled || restoredCompletion.expected || incumbentScheduledForIncomplete || incumbentExpectedForIncomplete;
-          const message = restoredTotal
-            ? `Đã giữ lịch hiện tại vì phương án mới còn mục Chưa phân. Lịch hiện tại đã xếp đủ ${restoredTotal} tiết.`
-            : "Đã giữ lịch hiện tại vì phương án mới còn mục Chưa phân.";
+          // A complete incumbent is a successful solve result. Keep the
+          // visible terminal notice consistent across fresh, repair, and
+          // incumbent-restore paths; diagnostics stay in E2E metadata.
+          const message = SOLVE_COMPLETE_MESSAGE;
           window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = message;
           setStatus(message, "ok");
           publishE2EState("done", restoredPayload || incumbentPayloadForIncomplete, {
@@ -12253,14 +12330,14 @@
         finishProgress("Giữ lịch", "warning");
         window.__TKB_RUST_SOLVER_RUNNING = false;
         window.__TKB_SOLVE_UI_BUSY = false;
-        const message = incumbentQualityGuard.nearComplete
-          ? `Đã giữ lịch hiện tại vì phương án mới làm tăng buổi/tiết trống giáo viên quá nhiều. Lịch hiện tại còn Chưa phân: ${incumbentQualityGuard.missing} tiết.`
-          : NO_BETTER_SCHEDULE_MESSAGE;
+        // The incumbent-quality guard can retain the current complete
+        // timetable, but its terminal UI notice follows the same concise
+        // success contract as every other completed path. Keep the guard
+        // reason and missing count in E2E metadata below.
+        const message = SOLVE_COMPLETE_MESSAGE;
         window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = message;
         setStatus(
-          incumbentQualityGuard.nearComplete
-            ? `Đã giữ lịch hiện tại; Chưa phân: ${incumbentQualityGuard.missing} tiết.`
-            : noBetterScheduleStatus(incumbentPayload),
+          message,
           "warning"
         );
         scheduleUiRefresh();
@@ -12291,9 +12368,9 @@
         finishProgress("Giữ lịch", "warning");
         window.__TKB_RUST_SOLVER_RUNNING = false;
         window.__TKB_SOLVE_UI_BUSY = false;
-        const message = NO_BETTER_SCHEDULE_MESSAGE;
+        const message = SOLVE_COMPLETE_MESSAGE;
         window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = message;
-        setStatus(noBetterScheduleStatus(incumbentPayload), "warning");
+        setStatus(message, "warning");
         publishE2EState("done", incumbentPayload, {message, keptIncumbent: true});
         showCompletionPopup(message, "ok");
         refreshStatsPopoverIfOpen();
@@ -13677,14 +13754,42 @@
   }
 
   async function resumePendingBackendJobOnLoad(attempt){
+    if(pendingBackendResumeInFlight){
+      return await pendingBackendResumeInFlight;
+    }
+    const run = resumePendingBackendJobOnce(attempt);
+    pendingBackendResumeInFlight = run;
+    try{
+      return await run;
+    }finally{
+      if(pendingBackendResumeInFlight === run) pendingBackendResumeInFlight = null;
+    }
+  }
+
+  async function resumePendingBackendJobOnce(attempt){
     // A direct wakeup (pageshow, online, tests, or another UI hook) supersedes
     // an older scheduled wakeup so two owner-state checks cannot race.
     cancelPendingBackendResume();
+    if(automaticBackendResumeSuppressed()) return false;
     if(
       window.__TKB_SERVER_JOB_RESUME_STARTED === true
       || localSolveLifecycleActive()
-      || automaticBackendResumeSuppressed()
-    ) return false;
+    ){
+      // Mobile Safari may deliver pageshow/visibilitychange while the
+      // suspended request is still unwinding. That wakeup used to replace the
+      // durable reconnect timer with a 100 ms attempt which then returned here
+      // and was lost forever. Keep one poll-only retry armed until the local
+      // lifecycle releases; it will adopt the same canonical job id and can
+      // never submit a second solve.
+      const activePending = readPendingBackendJob();
+      if(activePending?.jobId && !pendingBackendResumeBlocked(activePending.jobId)){
+        schedulePendingBackendResume(
+          Number(attempt || 0),
+          SERVER_SOLVER_JOB_DISCOVERY_RETRY_MS
+        );
+      }
+      return false;
+    }
     let pending = readPendingBackendJob();
     if(pendingBackendResumeBlocked(pending?.jobId)) return false;
     const data = getData();

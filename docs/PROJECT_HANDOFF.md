@@ -8,15 +8,95 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.32** (adaptive refinement release guard).
-- Current public Agent release: **v1.6.13** (`1.6.13`). Agent `1.6.3` and later
+- Current deployed application release: **v1.34** (iPhone canonical-job
+  reattach and frontier cleanup). Public observation on 2026-07-19 serves
+  cache marker `20260719-v134-ios-resume-frontier-v1`.
+- Current public Agent release: **v1.6.14** (`1.6.14`). Agent `1.6.3` and later
   can offer this update inside the Agent after the user presses OK; Agent
   `1.6.2` and older still require one manual install of a self-update-capable
   build.
 - Every deployed application or packaged Agent update must increment the
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
-  `agent_helper/windows_version_info.txt`.
+   `agent_helper/windows_version_info.txt`.
+
+### v1.34 - 2026-07-19 (deployed)
+
+- iPhone foreground recovery now keeps exactly one durable reconnect attempt
+  alive when `visibilitychange` or `pageshow` arrives while the suspended
+  request is still unwinding. Concurrent foreground events share one
+  single-flight state probe and attach to the existing canonical job ID.
+- A resumed job is structurally read-only until its terminal payload is
+  validated: it skips default-group synchronization, constraint-release, and
+  OFF-lock mirroring regardless of caller settings. Reattach performs no new
+  solve POST and no cancel; it polls the existing job, applies the result once,
+  then clears the pending record.
+- The iOS regression uses a visible flexible timetable that would lose lessons
+  if pre-solve release ran. It fires both foreground events, verifies the
+  timetable and mappings remain byte-identical before apply, and records one
+  state GET, one result GET, zero solve POSTs, zero cancels, and one result
+  application. Stop-suppression regressions also remain green.
+- Protected frontier cleanup now continues through its reserved budget instead
+  of stopping after two unsuccessful neighborhoods. Gap cleanup descends in
+  reachable steps (`48 -> 46 -> 44 -> 42`) while the Pareto guard continues to
+  reject any visible regression in teacher sessions or gap-1 sessions.
+- Agent `1.6.14` is built, one-layer UPX packed, smoke-tested, and signed. Its
+  packaged `default` benchmark finished `1566/1566` at `460` teacher sessions,
+  `37` gap-1 sessions, zero one-period sessions, and zero gap-2-plus sessions.
+  The one-entry ZIP is 91,681,899 bytes with SHA-256
+  `96e79db5458ee68970051ab2e16f9e2a14d859dc871adc1c8c22846d6e50b52f`;
+  the EXE is 92,147,596 bytes with SHA-256
+  `d46ee0e4bb86bb7d7f8448f3e14d7b28441cbc06ed87de9c9f68c1cec9dded48`.
+- Release verification passes scheduler `128/128` plus nine
+  subtests, Agent `72/72` plus 25 subtests, and frontend/UI `232/232`.
+  The final markers are cache `20260719-v134-ios-resume-frontier-v1`, bridge
+  `tkb-rust-api-v238-ios-resume-frontier`, API
+  `tkb_new-rust-api-2026-07-19-ios-resume-frontier-v34`, and planner
+  `updated-v9.3 (v1.34 iOS resume + frontier cleanup)`.
+- Production deployment returned `UPDATE_OK` after draining the solver. Transaction
+  backups are `/opt/cherry-scheduler-backups/server-state-20260719-013522.tar.gz`
+  and `/opt/cherry-scheduler-backups/app-release-20260719-013522.tar.gz`.
+  Public health now reports the v34 API marker, zero active/queued jobs, and all
+  `6/6` VPS worker tokens available. The public Agent manifest serves `1.6.14`
+  and its independently downloaded ZIP size/hash match the signed manifest.
+- Production VPS-only E2E stopped the local Agent, dismissed the Agent invitation
+  with Cancel, started exactly one solve, then reloaded the scheduler while the
+  VPS job was running (`45% / 28 giây`). The reloaded page continued the same
+  canonical progress and finished with **Đã xếp xong!**, `Chưa phân:0`, and the
+  selected `6/1` class complete at `29/29`. Post-run health remained `0` active,
+  `0` queued, `6/6` available. The local Agent was then restored from 1.6.14 and
+  starts as the normal parent/worker pair.
+- A production mobile render at `440x956` (iPhone 16 Pro Max CSS size) keeps the
+  reserved feedback row visible at `46px`, with `0% / Sẵn sàng` and no overflow;
+  the timetable reaches the bottom edge.
+
+### v1.33 - 2026-07-19 (deployed)
+
+- Changed-requirement and staged-repair fallback requests now use the same
+  bounded fresh-solve contract as a first click: a blank request is capped at
+  the hidden 60-second ceiling, while an explicit user duration is preserved.
+  Legacy `robust_retry`/`complete_schedule_seed_retry` flags and the old
+  partial-repair ceiling are cleared before the fresh request is normalized.
+  This prevents fixed-off schools from having the fallback silently expanded
+  to 180 seconds by the scheduling-pressure floor.
+- `tools/benchmark-unified-solver.js` now builds the fallback through the same
+  bridge path as the browser. The fixed-off four-missing benchmark asserts the
+  final wire budget is `60s / 60,000ms`, with no stale partial-repair flags.
+- The persistent mobile progress row and concise terminal notice from the
+  post-v1.32 audit remain in this candidate. Desktop keeps idle progress
+  visually hidden; mobile keeps the row visible through idle, running, and
+  terminal states.
+- Local verification after the fallback fix: Rust bridge `160/160`, scheduler
+  `127/127`, Agent `72/72`, benchmark `6/6`, toolbar `27/27`, PWA `4/4`, mobile
+  actions `3/3`, subject semantics `12/12`, pair scroll `1/1`, app integrity
+  `7/7`, auth persistence `6/6`, and super-admin UI `4/4`.
+- A live production Agent smoke run on `default` used exactly one local
+  solver-child while the VPS stayed at zero active jobs and `6/6` free tokens.
+  It completed `1566/1566` with `458` teacher sessions, `38` gap-1 sessions,
+  zero unassigned periods, zero gap-2 sessions, zero singleton sessions, and
+  zero student holes. Public observation after deployment serves cache marker
+  `20260719-v133-fresh-fallback-budget-v1`; the API binary retained the v1.32
+  marker because v1.33 changed browser and benchmark contracts only.
 
 ### v1.32 - 2026-07-19 (deployed)
 
@@ -73,6 +153,41 @@ change so a machine restart or a new conversation does not erase project context
   Exactly one Agent solver child owned the solve while VPS capacity stayed at
   6/6 free tokens; after completion the solver child exited and both server and
   Agent returned to their idle states.
+- A repeat production Agent E2E on 2026-07-19 confirmed the already-saturated
+  `459/38` incumbent is retained unchanged. The blank duration input used the
+  hidden refinement policy, no Agent/VPS selection dialog appeared because one
+  current Agent was already online, and exactly one local `--solver-child`
+  owned the job while VPS stayed at zero jobs with all 6/6 tokens free. The UI
+  finished at `1,566/1,566`, `459` teacher sessions, `38` gap-1 sessions, and
+  zero singleton, gap-2-plus, or student-hole debt; the solver child then exited.
+- All successful terminal UI paths now use the concise notice **Đã xếp xong!**,
+  including quick local repairs, off-day restoration, and complete-incumbent
+  rollback. Detailed repair/rollback context remains in the payload and E2E
+  metadata rather than being repeated in the visible status line.
+
+### Post-v1.32 mobile feedback audit (local, not deployed)
+
+- The reserved mobile feedback row is now informative in every lifecycle
+  state. It shows `0% / Sẵn sàng` while idle, switches immediately to
+  `0% / Chuẩn bị` when Play is pressed, then advances to elapsed-time progress
+  after the existing one-second measurement boundary. The first second is no
+  longer a blank row.
+- Complete, warning, and error progress states remain visible instead of being
+  hidden by a 2.6/4.2/5.2-second timer. The exact successful status
+  **Đã xếp xong!** is also exempt from the generic five-second status timeout;
+  other transient toolbar notices still expire normally. Desktop keeps the
+  idle progress element visually hidden through the existing base CSS, while
+  mobile shows it inside the already-reserved 46/34-pixel feedback row.
+- Focused local verification passes bridge `158/158` and mobile/PWA/toolbar/
+  cell-action `34/34`. The bridge suite is invoked with Node's explicit
+  `--test-timeout=10000` guard so a failed asynchronous test cannot leave the
+  test runner waiting on a diagnostic interval. Production remains v1.32; no
+  cache marker was bumped and this audit change has not been deployed.
+- A local Chromium render check at iPhone 16 Pro Max CSS sizes `440x956` and
+  `956x440` shows the idle progress row at 46/34 pixels and the complete notice
+  fully visible. A `320x568` narrow-phone probe wraps the longer reconnect
+  notice onto exactly two lines with `scrollHeight == clientHeight`, so the
+  text is not clipped.
 
 ### v1.31 - 2026-07-19 (deployed)
 
@@ -1363,6 +1478,34 @@ change so a machine restart or a new conversation does not erase project context
 - This version label is the reference for the Agent package and deployment
   notes; frontend cache markers may continue to use their own scoped markers.
 
+## Local Transactional Benchmark Audit (not deployed)
+
+- `tools/benchmark-unified-solver.js` now models the manual-click transaction
+  without releasing visible lessons in the UI. The real `K.Phát maxDays=3`
+  case retains all `1,566` incumbent periods (`54` hard-fixed + `1,512`
+  flexible), records one actual preflight violation, sends staged fill first,
+  and prepares at most one 60-second fixed-only fresh fallback.
+- The full local `default` run returned staged `409`, then exactly one fresh
+  fallback completed `1,566/1,566` in about 56.7 seconds. Canonical Python
+  revalidation passed with zero malformed/unassigned lessons and zero app
+  constraint violations. Planning left both the schedule fingerprint and exact
+  four-field snapshot hash unchanged.
+- The deterministic four-missing case removes four flexible lessons from
+  `L026`/`8/1`, retaining `1,562/1,566`, all `54` fixed lessons and `1,508`
+  flexible lessons. The binary-safe Python reference run (`--reference-run`)
+  filled all four in about 2.5 seconds and passed canonical validation. This
+  flag changes only the executor selector from Rust-native to Python-reference;
+  the persisted production wire request remains unchanged.
+- `tools/solver-stdio-runner.js` sends and receives raw UTF-8 buffers without a
+  shell, parses the one-frame solver protocol strictly, and always validates
+  benchmark candidates through `solve_stdio.py validate-candidate`. The
+  generated evidence now preserves strings such as `Khối 8` exactly.
+- A bridge lifecycle regression starts from a complete but violating incumbent,
+  forces staged and fresh failure, asserts exactly two solver POSTs, then
+  deep-compares `tkb`, teacher/room maps, and compact solver result after
+  rollback while confirming the edited max-days rule remains. Focused tests pass
+  benchmark tooling `6/6` and transactional lifecycle `2/2`.
+
 ## Product Behavior That Must Be Preserved
 
 - Editing a requirement must never start the solver automatically. Solving starts
@@ -1686,19 +1829,18 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-19: `UPDATE_OK` for
-v1.32. Public health serves API marker
-`tkb_new-rust-api-2026-07-19-agent-version-metadata-v32`; the page serves cache
-key `20260719-v132-agent-version-metadata-v1`. Public Agent release `1.6.13`
-and its signed manifest are live. Its one-entry ZIP is 95,291,399 bytes with
+v1.34. Public health serves API marker
+`tkb_new-rust-api-2026-07-19-ios-resume-frontier-v34`; the page serves cache
+key `20260719-v134-ios-resume-frontier-v1`. Public Agent release `1.6.14` and
+its signed manifest are live. Its one-entry ZIP is 91,681,899 bytes with
 manifest SHA-256
-`6141C23CB14B13423978AFFD8BCD576DFC53A184E72E588803785F18BB9F0FAA`;
-the packaged EXE is 95,771,128 bytes with SHA-256
-`45331874DB4F38BE5787B05468D8096A8C5BBC51A51786E99BE49FDB47F2956D`.
-The v1.31 production E2E checks exercised both exclusive Agent execution and
-exclusive VPS-only execution. The final v1.32 Agent E2E retained that
-single-executor contract and improved the complete `default` timetable from
-`460/39` to `459/38`; v1.32 also adds the cross-school nearby-cap fallback and
-strict release-version guarding.
+`96e79db5458ee68970051ab2e16f9e2a14d859dc871adc1c8c22846d6e50b52f`;
+the packaged EXE is 92,147,596 bytes with SHA-256
+`d46ee0e4bb86bb7d7f8448f3e14d7b28441cbc06ed87de9c9f68c1cec9dded48`.
+The v1.34 production VPS-only E2E reloaded the browser during the canonical
+job and still completed with zero unassigned periods, no duplicate job, and
+all worker tokens released. Agent 1.6.14's packaged `default` benchmark reached
+`460/37` while preserving completeness and zero singleton/gap-2-plus debt.
 Workstations on Agent `1.6.2` or older require one manual install of a
 self-update-capable build before future in-Agent updates are available.
 

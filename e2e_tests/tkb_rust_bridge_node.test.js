@@ -319,6 +319,8 @@ function loadBridge(data, fetchImpl, runtime = {}){
     clearInterval: clearIntervalImpl,
     requestAnimationFrame(callback){ return setTimeoutImpl(callback, 0); },
     requestIdleCallback(callback){ return setTimeoutImpl(callback, 0); },
+    addEventListener: runtime.addEventListener || (() => {}),
+    removeEventListener: runtime.removeEventListener || (() => {}),
     confirm: runtime.confirm || (() => true),
     alert(){},
     console: consoleImpl
@@ -390,6 +392,30 @@ test("watchdog and local fast finishes complete progress before releasing the bu
   assert.match(busyButtonBody, /setAttribute\("aria-busy",\s*busy \? "true" : "false"\)/);
 });
 
+test("progress stays informative before Play and after every terminal state", () => {
+  const hardFinishBody = BRIDGE_SOURCE.slice(
+    BRIDGE_SOURCE.indexOf("function hardFinishProgressDom"),
+    BRIDGE_SOURCE.indexOf("function finishProgress")
+  );
+  const idleBody = BRIDGE_SOURCE.slice(
+    BRIDGE_SOURCE.indexOf("function hideAutoSortProgressDom"),
+    BRIDGE_SOURCE.indexOf("function autoSortProgressFinishedInDom")
+  );
+  const primeBody = BRIDGE_SOURCE.slice(
+    BRIDGE_SOURCE.indexOf("function primeAutoSortStartUi"),
+    BRIDGE_SOURCE.indexOf("function releaseAutoSortButtonSoon")
+  );
+
+  assert.doesNotMatch(hardFinishBody, /setTimeout\s*\(/, "terminal progress must not schedule its own disappearance");
+  assert.match(hardFinishBody, /text\.textContent\s*=\s*needsAttention[\s\S]*?:\s*"Hoàn tất"/);
+  assert.match(idleBody, /classList\.add\("is-idle"\)/);
+  assert.match(idleBody, /wrap\.hidden\s*=\s*false/);
+  assert.match(idleBody, /pct\.textContent\s*=\s*"0%"/);
+  assert.match(idleBody, /text\.textContent\s*=\s*"Sẵn sàng"/);
+  assert.match(primeBody, /setProgress\(0,\s*"Chuẩn bị",\s*\{replaceLocalPercent:true,\s*phase:"preparing"\}\)/);
+  assert.doesNotMatch(primeBody, /hideAutoSortProgressDom\(\)/);
+});
+
 test("automatic sorting paints progress and slices validation before starting the solver", () => {
   const body = BRIDGE_SOURCE.slice(
     BRIDGE_SOURCE.indexOf("window.sapXepTuDongAll = async function"),
@@ -438,7 +464,7 @@ test("Play advances elapsed time and progress before VPS admission", () => {
   assert.equal(afterOneSecond.updatedAt, clock.now());
 });
 
-test("a fresh Play stays busy but does not flash a 4-percent zero-second progress frame", () => {
+test("a fresh Play shows an immediate preparation frame before timed progress", () => {
   const data = makeData(2);
   const clock = createFakeClock();
   const progress = createProgressDocument(clock);
@@ -467,30 +493,30 @@ test("a fresh Play stays busy but does not flash a 4-percent zero-second progres
   assert.equal(progress.button.disabled, true, "Play must lock immediately on click");
   assert.equal(progress.button.classList.contains("is-busy"), true);
   assert.equal(progress.button.getAttribute("aria-busy"), "true");
-  assert.equal(progress.wrap.hidden, true, "the progress frame must remain hidden at t=0");
-  assert.equal(visibleProgressCalls.length, 0, "prime/start must not paint 4% · 0 giây");
+  assert.equal(progress.wrap.hidden, false, "the reserved progress frame must be visible at t=0");
+  assert.deepEqual(visibleProgressCalls, [{percent:0, label:"Chuẩn bị", at:clock.now()}]);
 
   clock.advance(999);
-  assert.equal(progress.wrap.hidden, true);
-  assert.equal(visibleProgressCalls.length, 0);
+  assert.equal(progress.wrap.hidden, false);
+  assert.equal(visibleProgressCalls.length, 1);
 
   clock.advance(1);
   assert.equal(progress.wrap.hidden, false);
-  assert.ok(visibleProgressCalls.length >= 1);
-  assert.ok(visibleProgressCalls.every(call => call.at === clock.now()));
-  assert.ok(visibleProgressCalls.every(call => call.label === "1 giây"));
-  assert.equal(visibleProgressCalls[0].label, "1 giây");
-  assert.ok(visibleProgressCalls[0].percent > 3);
+  assert.ok(visibleProgressCalls.length >= 2);
+  const timedProgressCalls = visibleProgressCalls.slice(1);
+  assert.ok(timedProgressCalls.every(call => call.at === clock.now()));
+  assert.ok(timedProgressCalls.every(call => call.label === "1 giây"));
+  assert.ok(timedProgressCalls[0].percent > 3);
   const status = progress.nodes.get("statusMsg");
   assert.equal(status.textContent, "Đang sắp xếp...");
   assert.notEqual(status.style.display, "none");
 
   clock.advance(1_000);
   assert.equal(visibleProgressCalls.at(-1).label, "2 giây");
-  assert.ok(visibleProgressCalls.at(-1).percent >= visibleProgressCalls[0].percent);
+  assert.ok(visibleProgressCalls.at(-1).percent >= timedProgressCalls[0].percent);
 });
 
-test("a synchronous five-second preflight stays hidden until its first paint can run", () => {
+test("a synchronous five-second preflight keeps its preparation frame until timed paint can run", () => {
   const data = makeData(2);
   const clock = createFakeClock();
   const progress = createProgressDocument(clock);
@@ -505,14 +531,14 @@ test("a synchronous five-second preflight stays hidden until its first paint can
   };
 
   hooks.primeAutoSortStartUi();
-  assert.equal(progress.wrap.hidden, true);
-  assert.equal(visibleProgressCalls.length, 0);
+  assert.equal(progress.wrap.hidden, false);
+  assert.deepEqual(visibleProgressCalls, [{percent:0, label:"Chuẩn bị", at:clock.now()}]);
 
   // Wall time can pass while synchronous JavaScript owns the main thread, but
   // interval callbacks and DOM updates cannot execute until that work yields.
   clock.elapseWithoutTasks(5_000);
-  assert.equal(progress.wrap.hidden, true);
-  assert.equal(visibleProgressCalls.length, 0);
+  assert.equal(progress.wrap.hidden, false);
+  assert.equal(visibleProgressCalls.length, 1);
 
   clock.flushDueTimers();
   assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 9);
@@ -1786,6 +1812,31 @@ test("an unchanged refinement ends cleanly without blocking a later Play", () =>
   assert.match(body, /setStatus\(plateauMessage,\s*"warning"\)/);
 });
 
+test("every complete terminal path uses the concise completion notice", () => {
+  const source = BRIDGE_SOURCE;
+  const firstCompletionCheck = needle => source.indexOf(
+    needle,
+    source.indexOf("function finishLocalUnassignedRepairPayload")
+  );
+  const successPath = source.slice(
+    source.indexOf("function finishLocalUnassignedRepairPayload"),
+    firstCompletionCheck("completion = payloadCompletion(payload);")
+  );
+  assert.match(successPath, /window\.__TKB_SOLVER_LAST_COMPLETION_MESSAGE\s*=\s*SOLVE_COMPLETE_MESSAGE/);
+  assert.match(successPath, /setStatus\(SOLVE_COMPLETE_MESSAGE,\s*"ok"\)/);
+
+  const incumbentGuard = source.slice(
+    source.indexOf("shouldKeepIncumbentForTeacherQuality(payload, incumbentPayload, incumbentQualityGuard)"),
+    source.indexOf(
+      "completion = payloadCompletion(payload);",
+      source.indexOf("shouldKeepIncumbentForTeacherQuality(payload, incumbentPayload, incumbentQualityGuard)")
+    )
+  );
+  assert.match(incumbentGuard, /const message\s*=\s*SOLVE_COMPLETE_MESSAGE/);
+  assert.match(incumbentGuard, /setStatus\(\s*message,\s*"warning"\s*\)/);
+  assert.doesNotMatch(incumbentGuard, /NO_BETTER_SCHEDULE_MESSAGE/);
+});
+
 test("refinement replacement is decided by ordered quality statistics", () => {
   const data = makeData(10);
   const {hooks} = loadBridge(data);
@@ -2489,6 +2540,88 @@ test("an incomplete staged constraint repair automatically falls back to a fresh
   assert.match(body, /ui_constraint_change_fresh_retry\s*=\s*true/);
 });
 
+test("an HTTP error from staged constraint repair still runs exactly one fresh fallback", async () => {
+  const data = makeData(3);
+  const subject = data.mon[0].ten;
+  data.tkb = {
+    L1:{
+      thu2:{sang:[subject, "", "", "", ""], chieu:["", "", "", "", ""]},
+      thu3:{sang:[subject, "", "", "", ""], chieu:["", "", "", "", ""]},
+      thu4:{sang:[subject, "", "", "", ""], chieu:["", "", "", "", ""]}
+    }
+  };
+  data.tkbConstraints = {teacher:{GV01:{maxDaysSessions:{maxDays:2}}}};
+  const completePayload = {
+    ok:true,
+    classes:[{id:"L1", name:"10A1"}],
+    lessons:[1, 2, 3].map(period => ({
+      classId:"L1", className:"10A1", subject, teacher:"GV01",
+      day:2, session:"AM", period
+    })),
+    metrics:{
+      scheduled_periods:3,
+      expected_periods:3,
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      one_period_teacher_sessions:0,
+      teacher_gap2_sessions:0,
+      teacher_sessions:1,
+      gap_distribution:{"0":1}
+    },
+    validation:{hard_ok:true, violations:[]},
+    solver:{runtime_settings:{elapsed_seconds:1}},
+    unassignedLessons:[],
+    warnings:[]
+  };
+  const postedRequests = [];
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-data")){
+      postedRequests.push(JSON.parse(options.body));
+      if(postedRequests.length === 1){
+        return jsonResponse({
+          kind:"no_complete_schedule_before_deadline",
+          error:"staged repair exhausted its bounded deadline"
+        }, 422);
+      }
+      return jsonResponse(JSON.parse(JSON.stringify(completePayload)));
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const quietConsole = {log(){}, info(){}, warn(){}, error(){}};
+  const {window, hooks} = loadBridge(data, fetchImpl, {console:quietConsole});
+  const activeDays = () => Object.values(data.tkb?.L1 || {}).filter(sessions => (
+    [...(sessions?.sang || []), ...(sessions?.chieu || [])].some(value => value && value !== "OFF")
+  )).length;
+  window.TKBConstraints = {
+    get(){ return data.tkbConstraints; },
+    validateAll(){
+      return activeDays() > 2
+        ? [{kind:"teacher.maxDays", message:"GV01 exceeds max teaching days"}]
+        : [];
+    }
+  };
+  const plan = hooks.buildConstraintRepairAutoSortPlan(data, 3, 0, 1);
+
+  const result = await window.TKBRustAPI.solve({ask:false, settings:plan.settings, singlePass:true});
+
+  assert.ok(result);
+  assert.equal(postedRequests.length, 2);
+  assert.equal(hooks.countScheduledLessons(postedRequests[0].data), 3, "the UI must not pre-release the incumbent");
+  assert.equal(postedRequests[0].settings.ui_staged_existing_repair, true);
+  assert.equal(postedRequests[1].settings.ui_constraint_change_fresh_retry, true);
+  assert.equal(postedRequests[1].settings.ui_constraint_change_rebuild_from_empty, true);
+  assert.equal(postedRequests[1].data.__tkbRequestStrippedSchedule, true);
+  assert.equal(postedRequests[1].data.tkb, undefined);
+  assert.equal(hooks.countScheduledLessons(data), 3);
+  assert.equal(activeDays(), 1);
+  assert.equal(data.tkbSolverResult.solver.runtime_settings.ui_staged_fill_error, true);
+  assert.equal(data.tkbSolverResult.solver.runtime_settings.ui_staged_fill_error_status, 422);
+});
+
 test("a failed constraint repair restores the exact pre-click timetable instead of progressively deleting it", () => {
   const data = makeData(4);
   const subject = data.mon[0].ten;
@@ -2824,6 +2957,91 @@ test("a tightened teacher constraint stops after one staged fill and one fresh f
     3,
     "fresh fallback must retain the new constraints"
   );
+});
+
+test("a complete violating incumbent survives two failed transactional attempts byte-for-byte", async () => {
+  const data = makeData(7);
+  const subject = data.mon[0].ten;
+  data.tkb = {
+    L1:{
+      thu2:{sang:[subject, subject, subject, "", ""], chieu:["", "", "", "", ""]},
+      thu3:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]},
+      thu4:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]}
+    }
+  };
+  data.tkbLessonTeachers = {"L1|Toán":"GV01"};
+  data.tkbLessonRooms = {"L1|Toán":"Phòng UTF-8"};
+  data.tkbConstraints = {teacher:{GV01:{maxDaysSessions:{maxDays:2}}}};
+
+  const incompletePayload = {
+    ok:true,
+    classes:[{id:"L1", name:"10A1"}],
+    lessons:[
+      ...[1, 2, 3].map(period => ({
+        classId:"L1", className:"10A1", subject, teacher:"GV01", day:2, session:"AM", period
+      })),
+      ...[1, 2].map(period => ({
+        classId:"L1", className:"10A1", subject, teacher:"GV01", day:3, session:"AM", period
+      })),
+      {classId:"L1", className:"10A1", subject, teacher:"GV01", day:4, session:"AM", period:1}
+    ],
+    metrics:{
+      scheduled_periods:6,
+      expected_periods:7,
+      unassigned_periods:1,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      best_effort:true
+    },
+    validation:{hard_ok:true, violations:[]},
+    solver:{runtime_settings:{elapsed_seconds:1}},
+    unassignedLessons:[{classId:"L1", subject, count:1}],
+    warnings:[]
+  };
+  const postedRequests = [];
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-data")){
+      postedRequests.push(JSON.parse(options.body));
+      return jsonResponse(JSON.parse(JSON.stringify(incompletePayload)));
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const quietConsole = {log(){}, info(){}, warn(){}, error(){}};
+  const {window, hooks} = loadBridge(data, fetchImpl, {console:quietConsole});
+  const teacherDays = () => Object.entries(data.tkb?.L1 || {}).filter(([, sessions]) => (
+    [...(sessions?.sang || []), ...(sessions?.chieu || [])].some(value => value && value !== "OFF")
+  )).length;
+  window.TKBConstraints = {
+    get(){ return data.tkbConstraints; },
+    validateAll(){
+      return teacherDays() > 2
+        ? [{kind:"teacher.maxDays", message:"GV01 exceeds max teaching days"}]
+        : [];
+    }
+  };
+  const before = hooks.snapshotScheduleData(data);
+  const plan = hooks.buildConstraintRepairAutoSortPlan(data, 7, 0, 1);
+
+  assert.equal(await window.TKBRustAPI.solve({ask:false, settings:plan.settings, singlePass:true}), null);
+  assert.equal(postedRequests.length, 2, "one staged attempt may start exactly one fresh fallback");
+  assert.equal(hooks.countScheduledLessons(postedRequests[0].data), 7, "UI must not pre-release the violating incumbent");
+  assert.equal(postedRequests[0].settings.repair_existing_missing_periods, 0);
+  assert.equal(postedRequests[0].settings.ui_skip_pre_solve_constraint_release, true);
+  assert.equal(postedRequests[1].settings.ui_constraint_change_fresh_retry, true);
+  assert.equal(postedRequests[1].settings.ui_constraint_change_rebuild_from_empty, true);
+  assert.equal(postedRequests[1].data.__tkbRequestStrippedSchedule, true);
+  assert.equal(postedRequests[1].data.tkb, undefined, "no-fixed toy fallback must strip every old cell");
+
+  const after = hooks.snapshotScheduleData(data);
+  assert.deepEqual(after.tkb, before.tkb);
+  assert.deepEqual(after.tkbLessonTeachers, before.tkbLessonTeachers);
+  assert.deepEqual(after.tkbLessonRooms, before.tkbLessonRooms);
+  assert.deepEqual(after.tkbSolverResult, before.tkbSolverResult);
+  assert.equal(data.tkbConstraints.teacher.GV01.maxDaysSessions.maxDays, 2);
+  assert.equal(hooks.countScheduledLessons(data), 7);
 });
 
 test("a completed solve returns its result without scheduling an optimize-more question", () => {
@@ -3745,6 +3963,11 @@ test("27-second unchanged refinement stays synchronized and uses concise complet
     progress.nodes.get("statusMsg").textContent,
     "Đã xếp xong!"
   );
+  clock.advance(6_000);
+  assert.equal(progress.wrap.hidden, false);
+  assert.equal(progress.pct.textContent, "!");
+  assert.equal(progress.label.textContent, "Giữ lịch");
+  assert.equal(progress.nodes.get("statusMsg").textContent, "Đã xếp xong!");
 });
 
 test("failed solve lifecycle never paints a fake 100%", async () => {
@@ -4595,6 +4818,275 @@ test("iOS background elapsed time keeps the VPS job and reconnects without cance
   assert.equal(await hooks.resumePendingBackendJobOnLoad(0), true);
   assert.equal(resumeCalls, 1);
   assert.equal(cancelPosts, 0);
+});
+
+test("iOS pageshow during request unwind keeps a retry and applies the canonical VPS result", async () => {
+  const {data, payload:serverPayload} = makeLargeApplyFixture(1, 2);
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const jobId = "ios-pageshow-canonical-job";
+  let solvePosts = 0;
+  let cancelPosts = 0;
+  let resultPolls = 0;
+  const fetchImpl = async (url) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      return jsonResponse({
+        ok:true,
+        requestedJobServerOwned:true,
+        requestedJobResultReady:true,
+        requestedJobActive:false,
+        jobs:[],
+        queue:[],
+        completedJobs:[{
+          jobId,
+          serverOwned:true,
+          scheduleFingerprint:"",
+          completedAtMs:clock.now()
+        }]
+      });
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      assert.equal(new URL(requestUrl).searchParams.get("jobId"), jobId);
+      return jsonResponse(serverPayload);
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      throw new Error("resume must not submit a second solve");
+    }
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelPosts += 1;
+      throw new Error("backgrounding must not cancel the VPS job");
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, clock);
+  hooks.writePendingBackendJob(jobId, hooks.durableScheduleFingerprint(data), {
+    createdAt:clock.now() - 20_000,
+    solverStartedAtMs:clock.now() - 18_000,
+    progressBudgetSeconds:60
+  });
+
+  // pageshow fires before the suspended request's catch/finally has released
+  // the UI lifecycle. The first reconnect attempt must leave another attempt
+  // armed instead of consuming the only durable wakeup.
+  window.__TKB_SOLVE_UI_BUSY = true;
+  window.__TKB_RUST_SOLVER_RUNNING = true;
+  hooks.schedulePendingBackendResume(0, 100);
+  clock.advance(100);
+  await Promise.resolve();
+  assert.equal(hooks.readPendingBackendJob()?.jobId, jobId);
+  assert.equal(clock.pendingTimers(), 1, "a retry must survive the still-active local lifecycle");
+
+  let finishResume;
+  let failResume;
+  const resumed = new Promise((resolve, reject) => {
+    finishResume = resolve;
+    failResume = reject;
+  });
+  window.sapXepTuDongAll = async () => {
+    try{
+      const result = await hooks.postSolve({
+        solver_mode:"auto",
+        auto_sort_mode:"fast",
+        ui_solver_preset:"fast",
+        ui_internal_allow_incomplete:true,
+        ui_allow_short_backend_deadline:true,
+        overall_time_limit_seconds:1,
+        optimization_time_limit_seconds:1,
+        ui_skip_pre_solve_constraint_release:true
+      }, data);
+      await window.TKBRustAPI.applyPayload(result);
+      finishResume(result);
+      return result;
+    }catch(err){
+      failResume(err);
+      throw err;
+    }
+  };
+
+  window.__TKB_SOLVE_UI_BUSY = false;
+  window.__TKB_RUST_SOLVER_RUNNING = false;
+  clock.advance(2_000);
+  const applied = await resumed;
+
+  assert.equal(applied.ok, true);
+  assert.equal(resultPolls, 1);
+  assert.equal(solvePosts, 0);
+  assert.equal(cancelPosts, 0);
+  assert.equal(hooks.countScheduledLessons(data), 2);
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(hooks.isSettledBackendJob(jobId), true);
+});
+
+test("repeated iOS foreground wakeups share one immutable poll-only reattach", async () => {
+  const {data, payload:serverPayload} = makeLargeApplyFixture(1, 2);
+  const subject = data.mon[0].ten;
+  const empty = () => ["", "", "", "", ""];
+  data.tkb = {
+    L1:{
+      thu2:{sang:[subject, "", "", "", ""], chieu:empty()},
+      thu3:{sang:[subject, "", "", "", ""], chieu:empty()}
+    }
+  };
+  data.tkbLessonTeachers = {[`L1|${subject}`]:"GV01"};
+  data.tkbLessonRooms = {[`L1|${subject}`]:"R1"};
+  data.tkbConstraints = {teacher:{GV01:{maxDaysSessions:{maxDays:1}}}};
+
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const progress = createProgressDocument(clock);
+  const documentListeners = new Map();
+  const windowListeners = new Map();
+  const addListener = (root, type, callback) => {
+    const key = String(type);
+    if(!root.has(key)) root.set(key, []);
+    root.get(key).push(callback);
+  };
+  progress.document.hidden = false;
+  progress.document.addEventListener = (type, callback) => addListener(documentListeners, type, callback);
+  progress.document.removeEventListener = () => {};
+
+  const jobId = "ios-single-flight-poll-only-job";
+  let solvePosts = 0;
+  let cancelPosts = 0;
+  let stateCalls = 0;
+  let resultPolls = 0;
+  let resolveState;
+  const stateResponse = new Promise(resolve => { resolveState = resolve; });
+  const fetchImpl = async (url) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      stateCalls += 1;
+      return await stateResponse;
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      assert.equal(new URL(requestUrl).searchParams.get("jobId"), jobId);
+      return jsonResponse(serverPayload);
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      throw new Error("foreground reattach must not submit another solve");
+    }
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelPosts += 1;
+      throw new Error("foreground reattach must not cancel the canonical solve");
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+    document:progress.document,
+    addEventListener(type, callback){ addListener(windowListeners, type, callback); },
+    removeEventListener(){}
+  }));
+
+  let syncDefaultGroupCalls = 0;
+  window.TKBConstraints = {
+    get(){ return data.tkbConstraints; },
+    validateAll(){ return []; },
+    syncDefaultGroups(){
+      syncDefaultGroupCalls += 1;
+      data.tkb.L1.thu2.sang[0] = "mutated-by-pre-solve";
+    }
+  };
+  const releaseProbe = JSON.parse(JSON.stringify(data));
+  assert.ok(
+    hooks.releaseConstraintViolatingLessons(releaseProbe) > 0,
+    "the fixture must prove that an unguarded resume would release flexible lessons"
+  );
+  const visibleBefore = JSON.parse(JSON.stringify({
+    tkb:data.tkb,
+    tkbLessonTeachers:data.tkbLessonTeachers,
+    tkbLessonRooms:data.tkbLessonRooms,
+    tkbUserOff:data.tkbUserOff,
+    tkbConstraints:data.tkbConstraints
+  }));
+  const strippedRequest = hooks.dataForSolverRequest(data, {});
+  assert.equal(strippedRequest.__tkbRequestStrippedSchedule, true);
+  assert.equal(hooks.countScheduledLessons(strippedRequest), 0);
+  assert.deepEqual(data.tkb, visibleBefore.tkb, "building a fixed-only request must not touch visible DATA");
+
+  hooks.writePendingBackendJob(jobId, hooks.durableScheduleFingerprint(data), {
+    createdAt:clock.now() - 20_000,
+    solverStartedAtMs:clock.now() - 18_000,
+    progressBudgetSeconds:60
+  });
+  let attachCalls = 0;
+  let finishResume;
+  let failResume;
+  const resumed = new Promise((resolve, reject) => {
+    finishResume = resolve;
+    failResume = reject;
+  });
+  window.sapXepTuDongAll = async () => {
+    attachCalls += 1;
+    try{
+      const result = await hooks.postSolve({
+        solver_mode:"auto",
+        auto_sort_mode:"fast",
+        ui_solver_preset:"fast",
+        ui_internal_allow_incomplete:true,
+        ui_allow_short_backend_deadline:true,
+        overall_time_limit_seconds:1,
+        optimization_time_limit_seconds:1
+      }, data);
+      assert.deepEqual(
+        JSON.parse(JSON.stringify({
+          tkb:data.tkb,
+          tkbLessonTeachers:data.tkbLessonTeachers,
+          tkbLessonRooms:data.tkbLessonRooms,
+          tkbUserOff:data.tkbUserOff,
+          tkbConstraints:data.tkbConstraints
+        })),
+        visibleBefore,
+        "poll-only reattach must preserve the flexible timetable byte-for-byte until apply"
+      );
+      await window.TKBRustAPI.applyPayload(result);
+      finishResume(result);
+      return result;
+    }catch(err){
+      failResume(err);
+      throw err;
+    }
+  };
+
+  assert.equal(documentListeners.get("visibilitychange")?.length, 1);
+  assert.equal(windowListeners.get("pageshow")?.length, 1);
+  documentListeners.get("visibilitychange")[0]();
+  clock.advance(100);
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(stateCalls, 1);
+
+  windowListeners.get("pageshow")[0]();
+  clock.advance(100);
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(stateCalls, 1, "an in-flight visibility probe and pageshow must share one state request");
+
+  resolveState(jsonResponse({
+    ok:true,
+    requestedJobServerOwned:true,
+    requestedJobResultReady:true,
+    requestedJobActive:false,
+    jobs:[],
+    queue:[],
+    completedJobs:[{jobId, serverOwned:true, completedAtMs:clock.now()}]
+  }));
+  const applied = await resumed;
+
+  assert.equal(applied.ok, true);
+  assert.equal(stateCalls, 1);
+  assert.equal(attachCalls, 1);
+  assert.equal(resultPolls, 1);
+  assert.equal(solvePosts, 0);
+  assert.equal(cancelPosts, 0);
+  assert.equal(syncDefaultGroupCalls, 0);
+  assert.equal(hooks.countScheduledLessons(data), 2);
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(hooks.isSettledBackendJob(jobId), true);
 });
 
 test("AbortError detaches without cancelling and can reconnect on the same page", async () => {
