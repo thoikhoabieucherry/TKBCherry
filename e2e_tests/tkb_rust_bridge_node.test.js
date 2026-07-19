@@ -5061,6 +5061,72 @@ test("a simultaneous duplicate POST adopts and polls the canonical owner job", a
   assert.equal(window.__TKB_ACTIVE_BACKEND_JOB_ID, "");
 });
 
+test("a 409 canonical adoption never flashes a reconnect status", async () => {
+  const data = makeData(2);
+  const clock = createFakeClock();
+  const progress = createProgressDocument(clock);
+  const canonicalJobId = "canonical-409-status-job";
+  let fingerprint = "";
+  let resultPolls = 0;
+  const fetchImpl = async (url) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-data")){
+      return jsonResponse({
+        ok:false,
+        kind:"solver_schedule_busy",
+        existingJobId:canonicalJobId,
+        existingScheduleFingerprint:fingerprint,
+        startedAtMs:clock.now() - 1_000,
+        retryAfterMs:700
+      }, 409);
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      assert.equal(new URL(requestUrl).searchParams.get("jobId"), canonicalJobId);
+      return jsonResponse({
+        ok:true,
+        lessons:[],
+        unassignedLessons:[],
+        metrics:{scheduled_periods:2, expected_periods:2, unassigned_periods:0, hard_ok:true},
+        validation:{hard_ok:true},
+        solver:{runtime_settings:{}}
+      });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+    document:progress.document,
+    enableIntervals:true
+  }));
+  fingerprint = hooks.durableScheduleFingerprint(data);
+  const firstStatusEvent = progress.events.length;
+
+  const payload = await hooks.postSolve({
+    solver_mode:"auto",
+    auto_sort_mode:"fast",
+    ui_solver_preset:"fast",
+    ui_internal_allow_incomplete:true,
+    ui_allow_short_backend_deadline:true,
+    overall_time_limit_seconds:1,
+    optimization_time_limit_seconds:1,
+    ui_skip_pre_solve_constraint_release:true
+  }, data);
+
+  const statusWrites = progress.events
+    .slice(firstStatusEvent)
+    .filter(event => event.type === "text" && event.id === "statusMsg" && event.value)
+    .map(event => event.value);
+  assert.equal(payload.ok, true);
+  assert.equal(resultPolls, 1);
+  assert.ok(statusWrites.length > 0);
+  assert.ok(
+    statusWrites.every(value => /^\u0110ang s\u1eafp x\u1ebfp\.{1,3}$/u.test(value)),
+    `active status history must stay stable: ${statusWrites.join(" | ")}`
+  );
+  assert.doesNotMatch(statusWrites.join(" | "), /n\u1ed1i|theo d\u00f5i/iu);
+});
+
 test("a resumed owner job polls by id without reposting or recreating it", async () => {
   const data = makeData(2);
   const clock = createFakeClock();
@@ -5200,6 +5266,7 @@ test("detached server jobs are shown as reconnecting instead of failed", () => {
   assert.equal(friendly.title, "Đang chờ kết nối lại");
   assert.equal(friendly.level, "warning");
   assert.equal(friendly.statusLevel, "info");
+  assert.equal(friendly.statusMessage, "\u0110ang s\u1eafp x\u1ebfp...");
   assert.equal(friendly.progressLabel, "Nối lại");
   assert.doesNotMatch(`${friendly.title}: ${friendly.message}`, /Có lỗi khi sắp xếp/);
   assert.match(
@@ -6334,7 +6401,6 @@ test("reload keeps a pending job until owner identity finishes hydrating on retr
   assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, jobId);
   assert.equal(reloaded.window.__TKB_RUST_PROGRESS_STATE?.label, "12 giây");
   assert.equal(reloaded.window.__TKB_RUST_PROGRESS_STATE?.runIndex, 2);
-  assert.match(progress.nodes.get("statusMsg").textContent, /nối lại/i);
 });
 
 test("planner data-ready event releases one deferred VPS probe", async () => {
@@ -8693,6 +8759,49 @@ test("routine sorting status remains visible after the time-only progress label"
   hooks.writeStatus("Thiếu ô xếp", "warning");
   assert.equal(status.classList.contains("is-auto-sort-running-label"), false);
   assert.equal(status.textContent, "Thiếu ô xếp");
+});
+
+test("reattached active jobs keep one stable sorting status", async () => {
+  const data = makeData(2);
+  const clock = createFakeClock();
+  const progress = createProgressDocument(clock);
+  const jobId = "stable-reattach-status";
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solve-result")) throw detachedAbortError();
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+    document:progress.document,
+    enableIntervals:true
+  }));
+  const fingerprint = hooks.durableScheduleFingerprint(data);
+  hooks.writePendingBackendJob(jobId, fingerprint, {
+    createdAt:clock.now() - 2_000,
+    solverStartedAtMs:clock.now() - 1_000,
+    progressBudgetSeconds:60
+  });
+  const firstStatusEvent = progress.events.length;
+
+  await hooks.reattachExistingServerJobPollOnly({
+    jobId,
+    scheduleFingerprint:fingerprint,
+    createdAt:clock.now() - 2_000,
+    startedAtMs:clock.now() - 1_000,
+    progressBudgetSeconds:60
+  });
+
+  const statusWrites = progress.events
+    .slice(firstStatusEvent)
+    .filter(event => event.type === "text" && event.id === "statusMsg" && event.value)
+    .map(event => event.value);
+  assert.ok(statusWrites.length > 0);
+  assert.ok(
+    statusWrites.every(value => /^\u0110ang s\u1eafp x\u1ebfp\.{1,3}$/u.test(value)),
+    `reattach status history must stay stable: ${statusWrites.join(" | ")}`
+  );
+  assert.doesNotMatch(statusWrites.join(" | "), /n\u1ed1i|theo d\u00f5i/iu);
 });
 
 test("queue and solver admission keep one continuous click timer and monotonic progress", () => {

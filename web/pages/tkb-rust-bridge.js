@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v251-strict-first-quality-gate";
+  const VERSION = "tkb-rust-api-v252-stable-active-progress";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -1705,7 +1705,7 @@
     setAutoSortButtonBusy(true);
     hideAutoSortProgressDom();
     callMaybe("hideAutoSortProgress");
-    setStatus("\u0110ang theo d\u00f5i l\u01b0\u1ee3t x\u1ebfp tr\u00ean thi\u1ebft b\u1ecb kh\u00e1c...", "info");
+    setStatus("\u0110ang s\u1eafp x\u1ebfp...", "info");
     startInstantProgressTicker();
     try{
       const apiBase = await rustApiBase();
@@ -1734,7 +1734,9 @@
     }catch(err){
       if(err?.kind === "user_cancelled") return false;
       if(err?.keepPendingServerJob === true){
-        setStatus("M\u1ea5t k\u1ebft n\u1ed1i t\u1ea1m th\u1eddi; s\u1ebd t\u1ef1 n\u1ed1i l\u1ea1i ti\u1ebfn tr\u00ecnh \u0111ang ch\u1ea1y.", "info");
+        // The observer still owns the same canonical VPS job. Keep transport
+        // recovery internal so the running label cannot flash between states.
+        setStatus("\u0110ang s\u1eafp x\u1ebfp...", "info");
         schedulePendingBackendResume(0, SERVER_SOLVER_JOB_BACKGROUND_RETRY_MS);
         return false;
       }
@@ -1848,7 +1850,7 @@
     setActiveBackendJobId(jobId, scheduleFingerprint);
     bindActiveSolveAbortController(controller);
     setAutoSortButtonBusy(true);
-    setStatus("Đang nối lại lượt xếp...", "info");
+    setStatus("\u0110ang s\u1eafp x\u1ebfp...", "info");
     startInstantProgressTicker();
     publishE2EState("running", null, {runId, pollOnlyReattach:true, jobId});
 
@@ -1989,7 +1991,9 @@
         || err?.kind === "solver_result_unknown"
         || err?.kind === "solver_result_auth_required";
       if(keep){
-        setStatus("Mất kết nối tạm thời; sẽ tự nối lại tiến trình đang chạy.", "info");
+        // Reconnect metadata is diagnostic only; visibly this remains the
+        // same running job until Stop or a terminal server result arrives.
+        setStatus("\u0110ang s\u1eafp x\u1ebfp...", "info");
         schedulePendingBackendResume(0, SERVER_SOLVER_JOB_BACKGROUND_RETRY_MS);
       }else{
         // A terminal quality/deadline response can legitimately contain no
@@ -3017,6 +3021,10 @@
         );
       }
       progressState.backendProgressJobId = value;
+      // Reattachment is complete once the canonical server reports that the
+      // job is running. Keep the transport detail internal so the visible
+      // status cannot alternate with the normal sorting label.
+      progressState.reconnecting = false;
       progressState.backendQueued = false;
       progressState.serverStartedAtMs = reportedStartedAt;
       progressState.startedAt = reportedStartedAt || normalizedStartedAt;
@@ -4145,12 +4153,10 @@
     // status on every visible progress tick so it cannot disappear mid-solve.
     try{
       if(!isStopRequested()){
-        setStatus(
-          progressState.reconnecting === true
-            ? "Đang nối lại lượt xếp..."
-            : "Đang sắp xếp...",
-          "info"
-        );
+        // A running canonical job always has one user-facing status. The
+        // reconnecting flag is diagnostic only and must not cause flicker.
+        progressState.reconnecting = false;
+        setStatus("\u0110ang s\u1eafp x\u1ebfp...", "info");
       }
     }catch(_){ }
     const serverStartedAtMs = Math.max(0, Number(progressState.serverStartedAtMs || 0) || 0);
@@ -5792,7 +5798,7 @@
         message: raw || "Lượt xếp vẫn chạy trên máy chủ và hệ thống đang tự nối lại.",
         level: "warning",
         statusLevel: "info",
-        statusMessage: "Lượt xếp vẫn chạy trên máy chủ; đang tự nối lại.",
+        statusMessage: "\u0110ang s\u1eafp x\u1ebfp...",
         progressLabel: "Nối lại"
       };
     }
@@ -11600,7 +11606,7 @@
               setActiveBackendJobId(existingJobId, existingFingerprint, {
                 qualityDebtFreshRebuild:effectiveSettings.ui_quality_debt_fresh_rebuild === true
               });
-              setStatus("Đang nối vào lượt xếp đang chạy...", "info");
+              setStatus("\u0110ang s\u1eafp x\u1ebfp...", "info");
               response = await waitForServerOwnedSolverResult(
                 apiBase,
                 existingJobId,

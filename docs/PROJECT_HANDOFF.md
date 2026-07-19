@@ -8,10 +8,11 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.46** (strict first-result quality
-  gate, no-hint fresh seeds, and complete-debt safety fallback). Public API
-  marker: `tkb_new-rust-api-2026-07-19-strict-first-quality-gate-v46`; page
-  cache: `20260719-v146-strict-first-quality-gate-v1`.
+- Current deployed application release: **v1.47** (one stable visible status
+  for active, reattached, observed, and canonical-adopted jobs). Scheduler
+  behavior remains the v1.46 strict first-result quality gate. Public API
+  marker: `tkb_new-rust-api-2026-07-19-stable-active-progress-v47`; page cache:
+  `20260719-v147-stable-active-progress-v1`.
 - Current public Agent release: **v1.6.16** (`1.6.16`). The server lease gate
   is also 1.6.16 so an older Agent can update itself but cannot execute a job
   with a mismatched solver contract.
@@ -316,7 +317,7 @@ change so a machine restart or a new conversation does not erase project context
   `1566/1566`, zero singleton, zero gap-2, and `hard_ok=true`. This confirms the
   intended split: first click returns a clean timetable quickly; later clicks
   compact sessions and gap-1 from the incumbent.
-- Candidate markers are API
+- Release markers are API
   `tkb_new-rust-api-2026-07-19-strict-first-quality-gate-v46`, bridge
   `tkb-rust-api-v251-strict-first-quality-gate`, and page cache
   `20260719-v146-strict-first-quality-gate-v1`. Agent remains `1.6.16`.
@@ -334,6 +335,38 @@ change so a machine restart or a new conversation does not erase project context
   deployment; the authenticated browser solve was not launched a second time
   after the tab closed during its first click, so the isolated VPS wire probes
   above remain the live solver acceptance evidence.
+
+### v1.47 stable active-progress status (deployed 2026-07-19)
+
+- A reattached job could visibly alternate between `Dang noi lai luot xep...`
+  and `Dang sap xep...`: the reattach path and each HTTP 202/timer tick were
+  writing different labels to the same status element. The canonical job was
+  still singular and continued on the VPS; this was a UI race, not a second
+  solver thread.
+- All active/reattached/observer paths now paint one stable `Dang sap xep...`
+  label. Reconnect ownership remains available in internal progress state and
+  diagnostics. The same contract covers temporary transport loss and the HTTP
+  409 path that adopts an already-running canonical job with the same schedule
+  fingerprint.
+- Release markers are API
+  `tkb_new-rust-api-2026-07-19-stable-active-progress-v47`, bridge
+  `tkb-rust-api-v252-stable-active-progress`, and page cache
+  `20260719-v147-stable-active-progress-v1`. Agent remains `1.6.16`.
+- DOM-history regressions exercise real poll-only reattach and 409 canonical
+  adoption, and reject every active status write except `Dang sap xep.` / `..`
+  / `...`. Local verification passes bridge **191/191**, all Node/UI
+  **262/262**, local API E2E **46/46**, `node --check`, and `git diff --check`.
+- Isolated VPS staging passes scheduler **145/145**, Agent contract **72/72**,
+  Rust API **136/136**, and validator **20/20**, ending with
+  `STAGING_TESTS_OK`.
+- Production deployment returned `UPDATE_OK`. Transaction backups are
+  `/opt/cherry-scheduler-backups/server-state-20260719-165330.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260719-165330.tar.gz`.
+  Public health reports API v47, zero active/queued jobs, and all `6/6` worker
+  tokens available. The public page serves v147, the bridge serves v252 with
+  SHA-256 `4E430240DE143A0420AE7C3560611E8CF5C83BBDD8D1C29340F57580225887A8`,
+  and the obsolete reconnect status writer is absent. The in-app browser
+  loaded the v147 page idle with no v252 warning/error console entries.
 
 ### Fixed-only empty-flexible fallback (included in deployed v1.43)
 
@@ -2431,17 +2464,19 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-19: `UPDATE_OK` for
-v1.45. Public health serves API marker
-`tkb_new-rust-api-2026-07-19-ios-resume-complete-first-v45`; the page serves
-cache key `20260719-v145-ios-resume-complete-first-v1`. Public
-Agent release `1.6.16` and its signed manifest are live. The archive SHA-256 is
+v1.47. Public health serves API marker
+`tkb_new-rust-api-2026-07-19-stable-active-progress-v47`; the page serves cache
+key `20260719-v147-stable-active-progress-v1`, and the bridge marker is
+`tkb-rust-api-v252-stable-active-progress`. Public health was idle with zero
+active/queued jobs and `6/6` tokens available after deployment. Transaction
+backups are `/opt/cherry-scheduler-backups/server-state-20260719-165330.tar.gz`
+and `/opt/cherry-scheduler-backups/app-release-20260719-165330.tar.gz`.
+Public Agent release `1.6.16` and its signed manifest remain live. The archive SHA-256 is
 `18b970418ec42af36114037e32514684cecf1a98a4d20c21dd9c43f36f17cc97`; the
 packed executable SHA-256 is
 `282c71be3dda0135599c3d937d9d75c587b02752ac32f6503559ee87cfa9d869`.
-The v1.45 production VPS-only iPhone-resume E2E used one canonical job,
-finished with zero unassigned periods, settled after reopening, and released
-all worker tokens. No-Agent/Cancel and Agent handoff regressions remain covered
-by the local and isolated VPS suites.
+Stable active-status DOM histories, iPhone/PWA reattach, No-Agent/Cancel, and
+Agent handoff regressions remain covered by the local and isolated VPS suites.
 Workstations on Agent `1.6.2` or older require one manual install of a
 self-update-capable build before future in-Agent updates are available.
 
