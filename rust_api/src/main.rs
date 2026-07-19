@@ -24,14 +24,14 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-19-incumbent-refinement-v38";
+const VERSION: &str = "tkb_new-rust-api-2026-07-19-cross-tab-agent-reattach-v40";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
 const MAX_REFERENCE_PROGRESS_FRAME_BYTES: usize = 32 * 1024;
 const AGENT_HELPER_PROTOCOL: &str = "tkb-agent-helper-v1";
 const AGENT_RESULT_DIGEST_PROTOCOL: &str = "tkb-json-tree-sha256-v1";
-// v1.6.15 is the first packaged runtime matching the current v1.38 wire and
+// v1.6.15 is the first packaged runtime matching the current v1.40 wire and
 // quality-debt/incumbent contract. Older binaries may speak protocol v1 but
 // carry solver behavior that the current server must not treat as an
 // equivalent executor; they remain upgrade-only and never receive a lease.
@@ -7598,6 +7598,26 @@ mod tests {
         let running_payload = response_payload(&running);
         assert_eq!(running_payload["executor"], json!("agent"));
         assert_eq!(running_payload["running"], json!(true));
+
+        let owner_state = solver_state_json(
+            &app,
+            "jobId=agent-only-canonical",
+            &owner,
+        );
+        let owner_state_payload = response_payload(&owner_state);
+        assert_eq!(owner_state_payload["requestedJobServerOwned"], json!(true));
+        assert_eq!(owner_state_payload["requestedJobActive"], json!(true));
+        assert_eq!(owner_state_payload["requestedJobExecutor"], json!("agent"));
+        let visible_job = owner_state_payload["jobs"]
+            .as_array()
+            .and_then(|jobs| {
+                jobs.iter().find(|job| {
+                    job["jobId"] == json!("agent-only-canonical")
+                })
+            })
+            .expect("Agent-owned canonical job must stay visible after reload");
+        assert_eq!(visible_job["serverOwned"], json!(true));
+        assert_eq!(visible_job["executor"], json!("agent"));
 
         let cancelled = solve_cancel_json(
             &app,

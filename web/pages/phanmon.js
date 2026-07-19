@@ -1,4 +1,4 @@
-window.__PHANMON_VERSION = "updated-v9.7 (v1.38 incumbent refinement + VPS fallback)";
+window.__PHANMON_VERSION = "updated-v9.9 (v1.40 cross-tab Agent reattach + VPS fallback)";
 
 (function installPlannerMobileViewportSync(){
   if(window.__TKB_MOBILE_VIEWPORT_SYNC_BOUND === true) return;

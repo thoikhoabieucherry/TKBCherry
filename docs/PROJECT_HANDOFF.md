@@ -8,14 +8,14 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.38** (incumbent refinement and
-  resilient VPS fallback). Public health serves API marker
-  `tkb_new-rust-api-2026-07-19-incumbent-refinement-v38` and the page serves
-  cache marker `20260719-v138-incumbent-refinement-v1`.
+- Current deployed application release: **v1.40** (cross-tab Agent reattach,
+  physical incumbent guard, and resilient VPS fallback). Public API marker:
+  `tkb_new-rust-api-2026-07-19-cross-tab-agent-reattach-v40`; page cache:
+  `20260719-v140-cross-tab-agent-reattach-v1`.
 - Current public Agent release: **v1.6.15** (`1.6.15`). The server lease gate
   must remain at 1.6.15 or newer so an older local Agent can update itself but
   cannot execute a job with a mismatched solver contract.
-- Current local and deployed release: application **v1.38** and Agent
+- Current local and deployed release: application **v1.40** and Agent
   **v1.6.15** (v1.34-style incumbent refinement, terminal-result recovery,
   animated progress dots, and bounded Agent preflight).
 - Every deployed application or packaged Agent update must increment the
@@ -72,6 +72,54 @@ change so a machine restart or a new conversation does not erase project context
 - A production mobile render at `440x956` (iPhone 16 Pro Max CSS size) keeps the
   reserved feedback row visible at `46px`, with `0% / Sẵn sàng` and no overflow;
   the timetable reaches the bottom edge.
+
+### v1.39 physical incumbent guard (deployed before v1.40)
+
+- Refinement and poll-only iPhone reattach now derive the retained incumbent's
+  quality from the visible timetable cells and current teacher statistics,
+  even when `tkbSolverResult` is absent or stale. A worse terminal candidate
+  cannot replace a complete hard-valid schedule after reload.
+- The no-Agent invitation remains explicit: choosing Huy/Cancel continues with
+  exactly one canonical VPS solve. Agent status preflight is bounded at 2.5
+  seconds, so a hung Agent endpoint falls through to VPS instead of leaving
+  the Play control locked indefinitely.
+- Regressions cover physical-vs-stale metrics, normal-refinement iPhone
+  reattach, Cancel-to-VPS single-flight behavior, and the hung Agent probe.
+- Local verification passed bridge 177/177, planner/UI 28/28, and subject
+  semantics 12/12. Deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260719-054021.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260719-054021.tar.gz`.
+
+### v1.40 cross-tab Agent reattach (deployed)
+
+- A stale settled marker written by an older cached tab can no longer hide an
+  active or queued server-owned Agent/VPS job. The authenticated owner-state
+  response is authoritative for live work; an explicit Stop still suppresses
+  rediscovery through its persistent stop marker.
+- Blank/reloaded tabs clear the stale marker before adopting a matching live
+  job, while completed jobs already consumed by this browser remain filtered.
+  This keeps one canonical executor and prevents a second click from starting
+  a duplicate solve.
+- Regression coverage now includes an active Agent job hidden by an older tab,
+  the existing pending-row race, explicit Stop suppression, and a Rust API
+  assertion that Agent-owned jobs remain visible through `/api/solver-state`.
+- v1.39 production E2E exposed the old-tab edge; clean one-tab and two-tab
+  checks both retained progress and finished green.
+- Full local verification passed Node E2E 249/249 and solver 129/129. VPS
+  staging passed solver 129/129, Agent 72/72, Rust API 136/136, and validator
+  20/20, ending with `STAGING_TESTS_OK`.
+- Production deployment returned `UPDATE_OK`. Backups are
+  `/opt/cherry-scheduler-backups/server-state-20260719-061201.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260719-061201.tar.gz`.
+- Live Agent E2E kept one local `--solver-child` while VPS stayed 6/6 free.
+  A v1.40 tab reloaded while two older v1.39 tabs remained open; clicking Play
+  in an old tab adopted the same canonical job. Both tabs finished green with
+  `29/29`, zero unassigned, and the child exited.
+- Live no-Agent E2E waited for the Agent lease to expire, dismissed the prompt
+  with Cancel, and used one six-worker VPS job. Reload at 29 seconds resumed at
+  26 percent with Play locked; it finished green at `29/29`, zero unassigned,
+  and health returned to 0 active/queued with 6/6 workers free. Agent 1.6.15
+  was restarted afterward.
 
 ### Fresh-fallback budget audit (included in v1.35)
 
@@ -2008,18 +2056,18 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-19: `UPDATE_OK` for
-v1.38. Public health serves API marker
-`tkb_new-rust-api-2026-07-19-incumbent-refinement-v38`; the page serves cache
-key `20260719-v138-incumbent-refinement-v1`. Public Agent release `1.6.15` and
+v1.40. Public health serves API marker
+`tkb_new-rust-api-2026-07-19-cross-tab-agent-reattach-v40`; the page serves
+cache key `20260719-v140-cross-tab-agent-reattach-v1`. Public Agent release `1.6.15` and
 its signed manifest are live. Its one-entry ZIP is 91,683,250 bytes with
 SHA-256 `a91ff1217990cf8b80e7b07f2f4e203f849c7ba794db60942b39789dd30ee5b2`;
 the packaged EXE is 92,148,649 bytes with SHA-256
 `5650ef4b0d65e43f866db5f455f36e735d9adf2f20145878e9feed8729140b99`.
-The v1.38 production VPS-only E2E reloaded the browser during the canonical
-job and still completed with zero unassigned periods, no duplicate job, and
-all worker tokens released. The Agent E2E then kept VPS capacity fully free,
-used one local solver child, and exited that child after retaining the best
-complete incumbent.
+The v1.40 production VPS-only E2E dismissed the offline-Agent invitation with
+Cancel, reloaded during the canonical job, and completed with zero unassigned
+periods and all worker tokens released. The Agent E2E kept VPS capacity fully
+free, used one local solver child, and synchronized a reloaded v1.40 tab plus
+an older v1.39 tab to the same job and final result.
 Workstations on Agent `1.6.2` or older require one manual install of a
 self-update-capable build before future in-Agent updates are available.
 

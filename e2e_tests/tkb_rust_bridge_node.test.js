@@ -1326,6 +1326,73 @@ test("visible teacher quality remains the incumbent source when the saved solver
   assert.equal(effective.ui_keep_better_existing_on_resort, true);
 });
 
+test("normal refinement compares candidates with physical quality instead of stale saved metrics", async () => {
+  const {data, payload:basePayload} = makeLargeApplyFixture(1, 2);
+  const subject = String(data.mon[0].ten);
+  data.tkb = {
+    L1:{thu2:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]}}
+  };
+  data.tkbLessonTeachers = {[`L1|${subject}`]:"GV01"};
+  data.tkbLessonRooms = {[`L1|${subject}`]:"R1"};
+  data.tkbSolverResult = {
+    ...JSON.parse(JSON.stringify(basePayload)),
+    metrics:{
+      ...basePayload.metrics,
+      scheduled_periods:2,
+      expected_periods:2,
+      unassigned_periods:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      app_constraint_violation_count:0,
+      teacher_sessions:1,
+      one_period_teacher_sessions:0,
+      gap_distribution:{"0":1, "1":0}
+    },
+    validation:{hard_ok:true, violations:[]},
+    solver:{runtime_settings:{optimization_refinement_round:1}}
+  };
+  const candidate = JSON.parse(JSON.stringify(basePayload));
+  Object.assign(candidate.metrics, {
+    scheduled_periods:2,
+    expected_periods:2,
+    unassigned_periods:0,
+    hard_ok:true,
+    core_hard_ok:true,
+    app_constraint_violation_count:0,
+    teacher_sessions:9,
+    one_period_teacher_sessions:0,
+    gap_distribution:{"0":5, "1":4}
+  });
+  candidate.validation = {hard_ok:true, violations:[]};
+  candidate.solver.runtime_settings.optimization_refinement_round = 2;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-data")) return jsonResponse(candidate);
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl);
+  window.calcSchoolTKBStats = () => ({soTiet:2, daXepTiet:2, chuaXepTiet:0});
+  window.calcTeacherTKBStats = () => ({
+    tsBuoiDay:10,
+    soBuoiDay1:0,
+    soBuoiTrong1:5,
+    soBuoiTrong2:0
+  });
+  const plan = hooks.buildAutomaticAutoSortPlan(data, 2, 0);
+
+  const result = await window.TKBRustAPI.solve({
+    ask:false,
+    settings:plan.settings,
+    singlePass:true
+  });
+
+  assert.ok(result);
+  assert.equal(result.metrics.teacher_sessions, 9);
+  assert.equal(data.tkbSolverResult.metrics.teacher_sessions, 9);
+  assert.equal(data.tkbSolverResult.solver.runtime_settings.optimization_refinement_round, 2);
+});
+
 test("failed blank fresh clicks add five seconds without changing the user input", () => {
   const storage = memoryStorage();
   const durationInput = {
@@ -5451,7 +5518,7 @@ test("repeated iOS foreground wakeups share one immutable poll-only reattach", a
   assert.equal(hooks.isSettledBackendJob(jobId), true);
 });
 
-test("iOS poll-only reattach keeps the complete incumbent when a quality-debt rebuild is worse", async () => {
+test("iOS poll-only reattach keeps the complete incumbent when a normal refinement is worse", async () => {
   const {data, payload:basePayload} = makeLargeApplyFixture(1, 2);
   const subject = String(data.mon[0].ten);
   const incumbentLessons = JSON.parse(JSON.stringify(basePayload.lessons));
@@ -5497,7 +5564,7 @@ test("iOS poll-only reattach keeps the complete incumbent when a quality-debt re
   worsePayload.solver.runtime_settings.optimization_refinement_round = 2;
 
   const clock = createFakeClock(1_700_000_000_000, 0);
-  const jobId = "ios-quality-debt-rebuild-guard";
+  const jobId = "ios-normal-refinement-guard";
   let solvePosts = 0;
   let cancelPosts = 0;
   let resultPolls = 0;
@@ -5539,13 +5606,12 @@ test("iOS poll-only reattach keeps the complete incumbent when a quality-debt re
   });
   const fingerprint = hooks.durableScheduleFingerprint(data);
   hooks.writePendingBackendJob(jobId, fingerprint, {
-    qualityDebtFreshRebuild:true,
     createdAt:clock.now() - 20_000,
     solverStartedAtMs:clock.now() - 15_000,
-    progressBudgetSeconds:60
+    progressBudgetSeconds:180
   });
   hooks.writePendingBackendJob(jobId, fingerprint, {lastPercent:40});
-  assert.equal(hooks.readPendingBackendJob()?.qualityDebtFreshRebuild, true);
+  assert.equal(hooks.readPendingBackendJob()?.qualityDebtFreshRebuild, false);
   const visibleBefore = JSON.stringify(data.tkb);
 
   const retained = await hooks.resumePendingBackendJobOnLoad(0);
@@ -6440,6 +6506,86 @@ test("blank authenticated browser auto-discovers the matching owner running job"
   assert.equal(stateUrls.length, 1);
   assert.equal(stateUrls[0].endsWith("/api/solver-state"), true);
   assert.deepEqual(stateAuth, ["Bearer same-owner"]);
+});
+
+test("a stale settled marker from an older tab cannot hide an active Agent job", async () => {
+  const data = makeData(2);
+  const clock = createFakeClock();
+  const localStorage = memoryStorage();
+  const location = {
+    search:"?sid=default",
+    pathname:"/pages/sapxep",
+    href:"http://127.0.0.1:1010/pages/sapxep?sid=default"
+  };
+  const jobId = "active-agent-hidden-by-old-tab";
+  const firstPage = loadBridge(data, null, Object.assign({}, clock, {
+    localStorage,
+    location,
+    setTimeout(){ return 0; },
+    clearTimeout(){}
+  }));
+  firstPage.window.TKBAuth = {getSession:() => ({userId:"same-owner"})};
+  const fingerprint = firstPage.hooks.durableScheduleFingerprint(data);
+  firstPage.hooks.writePendingBackendJob(jobId, fingerprint);
+  firstPage.hooks.rememberSettledBackendJob(jobId);
+  firstPage.hooks.removePendingBackendJob(jobId);
+  assert.equal(firstPage.hooks.readPendingBackendJob(), null);
+  assert.equal(firstPage.hooks.isSettledBackendJob(jobId), true);
+
+  let stateCalls = 0;
+  let resultPolls = 0;
+  let solvePosts = 0;
+  let cancelPosts = 0;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      stateCalls += 1;
+      return jsonResponse({
+        ok:true,
+        jobs:[{
+          jobId,
+          serverOwned:true,
+          executor:"agent",
+          executionPhase:"agent_running",
+          createdAtMs:clock.now() - 20_000,
+          startedAtMs:clock.now() - 12_000,
+          progressBudgetSeconds:180,
+          scheduleFingerprint:fingerprint
+        }],
+        queue:[],
+        completedJobs:[]
+      });
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      throw detachedAbortError();
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      throw new Error("reattach must not submit a duplicate solve");
+    }
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelPosts += 1;
+      throw new Error("reattach must not cancel the Agent job");
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const reloadedPage = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+    localStorage,
+    location,
+    setTimeout(){ return 0; },
+    clearTimeout(){}
+  }));
+  reloadedPage.window.TKBAuth = {getSession:() => ({userId:"same-owner"})};
+
+  assert.equal(await reloadedPage.hooks.resumePendingBackendJobOnLoad(0), true);
+  assert.equal(stateCalls, 1);
+  assert.equal(resultPolls, 1);
+  assert.equal(solvePosts, 0);
+  assert.equal(cancelPosts, 0);
+  assert.equal(reloadedPage.hooks.readPendingBackendJob()?.jobId, jobId);
+  assert.equal(reloadedPage.hooks.isSettledBackendJob(jobId), false);
 });
 
 test("blank authenticated browser auto-discovers the matching owner queued job", async () => {

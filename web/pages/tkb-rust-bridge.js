@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v242-incumbent-refinement";
+  const VERSION = "tkb-rust-api-v244-cross-tab-agent-reattach";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -1438,6 +1438,7 @@
     const selected = selectDiscoverableBackendJob(state, data, Date.now());
     if(selected.job){
       const job = selected.job;
+      if(job.kind !== "completed") forgetSettledBackendJob(job.jobId);
       const pendingJob = writePendingBackendJob(job.jobId, job.scheduleFingerprint, {
         createdAt:job.createdAtMs,
         solverStartedAtMs:job.startedAtMs,
@@ -1450,6 +1451,7 @@
     }
     if(selected.observerJob){
       const job = selected.observerJob;
+      forgetSettledBackendJob(job.jobId);
       const pendingJob = writePendingBackendJob(job.jobId, job.scheduleFingerprint, {
         createdAt:job.createdAtMs,
         solverStartedAtMs:job.startedAtMs,
@@ -1893,8 +1895,9 @@
       // makes that operation transactional if a late constraint or malformed
       // lesson is rejected after the payload has started applying.
       const snapshot = snapshotScheduleData(data);
+      const retainedCompleteState = completeScheduleStateForExistingOptimize(data);
       let incumbentPayload = snapshot?.tkbSolverResult || null;
-      if(effectiveMetadata?.qualityDebtFreshRebuild === true){
+      if(retainedCompleteState){
         incumbentPayload = visibleCompleteIncumbentQualityPayload(
           data,
           incumbentPayload
@@ -1904,7 +1907,7 @@
           incumbentPayload = snapshot.tkbSolverResult;
         }
       }
-      const retainedQualityGuard = effectiveMetadata?.qualityDebtFreshRebuild === true
+      const retainedQualityGuard = retainedCompleteState
         ? incumbentQualityGuardState(
             incumbentPayload,
             snapshot,
@@ -2365,6 +2368,34 @@
     return !!value && Number(settledBackendJobsForScope()[value] || 0) > 0;
   }
 
+  function forgetSettledBackendJob(jobId){
+    const value = String(jobId || "").trim();
+    if(!value) return false;
+    try{
+      const root = JSON.parse(localStorage.getItem(SERVER_SOLVER_JOB_SETTLED_KEY) || "{}");
+      if(!root || typeof root !== "object") return false;
+      const scope = backendJobStorageScope();
+      const scoped = root[scope] && typeof root[scope] === "object"
+        ? root[scope]
+        : null;
+      if(!scoped || !Object.prototype.hasOwnProperty.call(scoped, value)) return false;
+      delete scoped[value];
+      if(Object.keys(scoped).length > 0){
+        root[scope] = scoped;
+      }else{
+        delete root[scope];
+      }
+      if(Object.keys(root).length > 0){
+        localStorage.setItem(SERVER_SOLVER_JOB_SETTLED_KEY, JSON.stringify(root));
+      }else{
+        localStorage.removeItem(SERVER_SOLVER_JOB_SETTLED_KEY);
+      }
+      return true;
+    }catch(_){
+      return false;
+    }
+  }
+
   function epochMillisFromBackend(value){
     let timestamp = Number(value);
     if(!Number.isFinite(timestamp) || timestamp <= 0) return 0;
@@ -2632,7 +2663,12 @@
     const jobId = String(item?.jobId || "").trim();
     const scheduleFingerprint = String(item?.scheduleFingerprint || "").trim();
     if(!jobId || !scheduleFingerprint) return null;
-    if(isSettledBackendJob(jobId)) return null;
+    // A completed result that this browser already consumed stays ignored.
+    // Running/queued server state is stronger than a stale settled bit that an
+    // older tab may have written while a newer Agent/VPS executor still owns
+    // the canonical job. Explicit Stop remains authoritative through the
+    // persistent auto-resume suppression checked before discovery.
+    if(isSettledBackendJob(jobId) && kind === "completed") return null;
     if(item?.serverOwned !== true) return null;
     const itemScope = String(item?.scheduleScope || "").trim();
     if(itemScope && itemScope !== String(currentScope || "").trim()) return null;
@@ -12261,8 +12297,19 @@
       applyCapacityShortageAcceptedSettings(settings);
     }
     await yieldResponsiveUi();
+    const knownPreflightViolationCount = Number(settings?.ui_preflight_constraint_violation_count);
+    const incumbentSatisfiesCurrentConstraints = Number.isFinite(knownPreflightViolationCount)
+      && knownPreflightViolationCount >= 0
+      ? knownPreflightViolationCount === 0
+      : currentConstraintViolations(1).length === 0;
+    const protectVisibleCompleteIncumbent = (
+        settings?.ui_use_existing_complete_incumbent === true
+        || settings?.ui_unified_solve_kind === "refine_complete"
+        || settings?.ui_quality_debt_fresh_rebuild === true
+      )
+      && incumbentSatisfiesCurrentConstraints;
     const scheduleSnapshot = snapshotScheduleData(dataForProgress);
-    if(settings?.ui_quality_debt_fresh_rebuild === true && scheduleSnapshot){
+    if(protectVisibleCompleteIncumbent && scheduleSnapshot){
       const visibleIncumbent = visibleCompleteIncumbentQualityPayload(
         dataForProgress,
         scheduleSnapshot.tkbSolverResult
@@ -12271,11 +12318,6 @@
         scheduleSnapshot.tkbSolverResult = clonePlain(visibleIncumbent);
       }
     }
-    const knownPreflightViolationCount = Number(settings?.ui_preflight_constraint_violation_count);
-    const incumbentSatisfiesCurrentConstraints = Number.isFinite(knownPreflightViolationCount)
-      && knownPreflightViolationCount >= 0
-      ? knownPreflightViolationCount === 0
-      : currentConstraintViolations(1).length === 0;
     traceSolveStep("solve:snapshot-ready", {
       scheduled: snapshotScheduledLessonCount(scheduleSnapshot),
       incumbentSatisfiesCurrentConstraints
@@ -13225,6 +13267,7 @@
          removePendingBackendJob,
         settledBackendJobsForScope,
         rememberSettledBackendJob,
+        forgetSettledBackendJob,
         isSettledBackendJob,
         clearActiveBackendJobId,
         markBackendJobQueued,
@@ -14088,7 +14131,7 @@
     }finally{
       endAutoSortPlanningMemo(planningMemoToken);
     }
-    if(automaticPlan?.qualityDebtFreshRebuild === true){
+    if(automaticPlan?.kind === "refine_complete"){
       incumbentPayloadBeforeAutoSort = visibleCompleteIncumbentQualityPayload(
         data,
         incumbentPayloadBeforeAutoSort
@@ -14337,11 +14380,14 @@
 
   function pendingBackendResumeBlocked(jobId){
     const value = String(jobId || "").trim();
-    if(value && isSettledBackendJob(value)){
-      removePendingBackendJob(value);
+    if(automaticBackendResumeSuppressed()){
+      if(value) removePendingBackendJob(value);
       return true;
     }
-    return automaticBackendResumeSuppressed();
+    // Do not trust a shared settled bit until authenticated server state says
+    // the job is no longer active. Older cached tabs can finish an obsolete
+    // lifecycle and write this bit while the Agent still owns the real job.
+    return false;
   }
 
   function schedulePendingBackendResume(attempt, delayMs){
@@ -14489,6 +14535,9 @@
       }
       return false;
     }
+    const queue = Array.isArray(state.queue) ? state.queue : [];
+    const jobs = Array.isArray(state.jobs) ? state.jobs : [];
+    const completedJobs = Array.isArray(state.completedJobs) ? state.completedJobs : [];
     if(!pending?.jobId){
       const discovered = selectDiscoverableBackendJob(state, data, Date.now());
       if(discovered.staleJob) reportSkippedDiscoveredBackendJob(discovered.staleJob);
@@ -14512,6 +14561,9 @@
         localSolveLifecycleActive()
         || pendingBackendResumeBlocked(discoveredJob.jobId)
       ) return false;
+      if(discoveredJob.kind !== "completed"){
+        forgetSettledBackendJob(discoveredJob.jobId);
+      }
       pending = writePendingBackendJob(
         discoveredJob.jobId,
         discoveredJob.scheduleFingerprint,
@@ -14527,9 +14579,6 @@
       );
       if(!pending?.jobId) return false;
     }
-    const queue = Array.isArray(state.queue) ? state.queue : [];
-    const jobs = Array.isArray(state.jobs) ? state.jobs : [];
-    const completedJobs = Array.isArray(state.completedJobs) ? state.completedJobs : [];
     const known = state.requestedJobServerOwned === true
       || state.requestedJobResultReady === true
       || state.requestedJobActive === true

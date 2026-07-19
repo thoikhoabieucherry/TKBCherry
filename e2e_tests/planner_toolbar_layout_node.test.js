@@ -244,8 +244,8 @@ test("planner keeps eight compact, accessible commands in the mobile toolbar", (
     plannerHtml,
     /@media \(max-width:\s*900px\) and \(hover:\s*none\) and \(pointer:\s*coarse\),\s*\(max-width:\s*480px\)/
   );
-  assert.match(plannerHtml, /phanmon\.js\?v=20260719-v138-incumbent-refinement-v1/);
-  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260719-v138-incumbent-refinement-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260719-v140-cross-tab-agent-reattach-v1/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260719-v140-cross-tab-agent-reattach-v1/);
 });
 
 test("desktop Agent sits beside Home, uses an AI icon, and stays out of mobile layouts", () => {
