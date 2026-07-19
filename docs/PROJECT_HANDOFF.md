@@ -8,9 +8,9 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.34** (iPhone canonical-job
-  reattach and frontier cleanup). Public observation on 2026-07-19 serves
-  cache marker `20260719-v134-ios-resume-frontier-v1`.
+- Current deployed application release: **v1.35** (iPhone poll-only canonical-job
+  reattach hardening). Public observation on 2026-07-19 serves cache marker
+  `20260719-v135-ios-poll-reattach-v1`.
 - Current public Agent release: **v1.6.14** (`1.6.14`). Agent `1.6.3` and later
   can offer this update inside the Agent after the user presses OK; Agent
   `1.6.2` and older still require one manual install of a self-update-capable
@@ -69,6 +69,73 @@ change so a machine restart or a new conversation does not erase project context
 - A production mobile render at `440x956` (iPhone 16 Pro Max CSS size) keeps the
   reserved feedback row visible at `46px`, with `0% / Sẵn sàng` and no overflow;
   the timetable reaches the bottom edge.
+
+### Fresh-fallback budget audit (included in v1.35)
+
+- A staged-repair fallback is now explicitly bounded to the hidden fresh ceiling
+  (`60` seconds for a blank duration, or the user's explicit duration). It no
+  longer inherits the persisted `tkbManualFreshRetryBudget` value, which may
+  have reached the `180`-second refinement ceiling after earlier failed clicks.
+- The fallback marks its initial fast stage and ceiling before wire normalization;
+  `effectiveSettingsForSolve` honors that marker, and
+  `applySchedulingPressureTimeFloor` does not expand this second-half-of-click
+  request back to the fixed-off pressure floor. The final wire fields therefore
+  remain `overall/integrated/optimization = 60` and
+  `backend/native_global_deadline_ms = 60,000` for blank input.
+- Focused verification passes the new stale-budget and large fixed-off fallback
+  regressions, the fallback/duration bridge subset (`17/17`), benchmark tooling
+  (`6/6`), JavaScript syntax checks, and `git diff --check`; the changes are
+  included in the v1.35 production package.
+
+### iOS poll-only hardening (included in v1.35)
+
+- Foreground recovery for queued, active, and completed owner jobs now enters a
+  dedicated GET-only reattach lifecycle. It never calls the normal Play
+  preflight/planner, never POSTs `/api/solve-data`, and never requests cancel.
+  The visible timetable remains unchanged until the terminal response has
+  passed fingerprint, response-shape, completeness/best-effort, hard-validity,
+  and full UI apply validation.
+- Applying a resumed result is transactional: the incumbent is snapshotted and
+  restored if UI validation rejects the payload. The canonical pending row is
+  marked settled only after a successful apply or a terminal rejection. A
+  short in-memory reattach lease prevents the old suspended lifecycle from
+  deleting that row while the foreground state probe or result apply owns it.
+- A new race regression removes the pending localStorage row while the state
+  GET is in flight. Reattach continues from its immutable job metadata, applies
+  the retained VPS result exactly once, and records one state GET, one result
+  GET, zero solve POSTs, and zero cancels. Repeated `visibilitychange` and
+  `pageshow` events still share one state probe and one result application.
+- Local bridge verification passes **167/167** with Node's explicit 10-second
+  per-test timeout. The five focused iOS/race regressions pass **5/5**;
+  JavaScript syntax and `git diff --check` also pass. These changes are now
+  deployed as v1.35.
+
+### v1.35 - 2026-07-19 (deployed)
+
+- iOS `visibilitychange`/`pageshow` recovery now uses one immutable, GET-only
+  reattach for the authenticated canonical VPS job. A suspended page never
+  enters the normal Play/preflight path, never posts a second solve, and never
+  cancels the server job merely because the phone was backgrounded.
+- The reattach lease survives a late callback or another tab marking the local
+  job settled and deleting its storage row. The server-owned state and retained
+  result remain authoritative; the result is applied transactionally only after
+  fingerprint, shape, completeness, hard-validity, and UI validation checks.
+- Frontend/API markers are `20260719-v135-ios-poll-reattach-v1`,
+  `tkb-rust-api-v239-ios-poll-reattach`, and
+  `tkb_new-rust-api-2026-07-19-ios-poll-reattach-v35`.
+- Verification before deployment: bridge **167/167**, planner/mobile UI
+  **27/27**, five focused iOS/race tests **5/5**, staging scheduler **128/128**,
+  Agent **72/72**, Rust API **136/136**, validator **20/20**, JavaScript syntax
+  checks, and `git diff --check` all pass.
+- Deployment returned `UPDATE_OK` at 2026-07-19 02:43 UTC. Transaction backups
+  are `/opt/cherry-scheduler-backups/server-state-20260719-024306.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260719-024306.tar.gz`.
+- Post-deploy health reports `ok:true`, `0` active/queued jobs, and `6/6`
+  worker tokens available. The public page serves the v135 cache marker and the
+  authenticated browser loaded the timetable with `Chưa phân:0` and no warning
+  or error console entries. A destructive live solve was not started in this
+  post-deploy check; the iOS background/resume contract is covered by the five
+  focused production-shaped bridge regressions above.
 
 ### v1.33 - 2026-07-19 (deployed)
 
@@ -1829,9 +1896,9 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-19: `UPDATE_OK` for
-v1.34. Public health serves API marker
-`tkb_new-rust-api-2026-07-19-ios-resume-frontier-v34`; the page serves cache
-key `20260719-v134-ios-resume-frontier-v1`. Public Agent release `1.6.14` and
+v1.35. Public health serves API marker
+`tkb_new-rust-api-2026-07-19-ios-poll-reattach-v35`; the page serves cache
+key `20260719-v135-ios-poll-reattach-v1`. Public Agent release `1.6.14` and
 its signed manifest are live. Its one-entry ZIP is 91,681,899 bytes with
 manifest SHA-256
 `96e79db5458ee68970051ab2e16f9e2a14d859dc871adc1c8c22846d6e50b52f`;
@@ -1839,7 +1906,9 @@ the packaged EXE is 92,147,596 bytes with SHA-256
 `d46ee0e4bb86bb7d7f8448f3e14d7b28441cbc06ed87de9c9f68c1cec9dded48`.
 The v1.34 production VPS-only E2E reloaded the browser during the canonical
 job and still completed with zero unassigned periods, no duplicate job, and
-all worker tokens released. Agent 1.6.14's packaged `default` benchmark reached
+all worker tokens released. The v1.35 production post-deploy check additionally
+verified the served v135 cache/API markers, zero active/queued jobs, and all
+worker tokens available. Agent 1.6.14's packaged `default` benchmark reached
 `460/37` while preserving completeness and zero singleton/gap-2-plus debt.
 Workstations on Agent `1.6.2` or older require one manual install of a
 self-update-capable build before future in-Agent updates are available.

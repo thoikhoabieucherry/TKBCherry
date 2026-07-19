@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v238-ios-resume-frontier";
+  const VERSION = "tkb-rust-api-v239-ios-poll-reattach";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -52,6 +52,11 @@
     // can close the browser overnight without accepting implausibly old running
     // timestamps as a live timer.
     const SERVER_SOLVER_RESULT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+    // A browser can be suspended for longer than the active solve clock while
+    // the API still retains the completed result. Keep the durable id for the
+    // same retention window so iOS can recover that result instead of turning
+    // a legitimate resume into `solver_resume_missing`.
+    const SERVER_SOLVER_JOB_RETENTION_MAX_AGE_MS = SERVER_SOLVER_RESULT_MAX_AGE_MS;
     const SERVER_SOLVER_JOB_UNKNOWN_RETRIES = 3;
     const SERVER_SOLVER_JOB_DISCOVERY_RETRY_MS = 2_000;
     const SERVER_SOLVER_JOB_BACKGROUND_RETRY_MS = 15_000;
@@ -422,6 +427,11 @@
     let activeBackendJobId = "";
     let pendingBackendResumeTimer = 0;
     let pendingBackendResumeInFlight = null;
+    let activeBackendResumeTarget = null;
+    // A foreground wakeup can overlap the previous page's terminal callback.
+    // Keep the canonical id leased until the reattached payload has been
+    // validated and applied; a late callback must not consume the id first.
+    let activeServerJobReattachLeaseId = "";
     let pendingFingerprintHydrationJobId = "";
     let pendingFingerprintHydrationAttempts = 0;
     let completionPopupTimer = 0;
@@ -1522,7 +1532,7 @@
     const boundedWaitMs = Math.min(
       SERVER_SOLVER_ACTIVE_WAIT_MAX_MS,
       requestedWaitMs,
-      Math.max(1_000, SERVER_SOLVER_JOB_MAX_AGE_MS - pendingAgeMs)
+      Math.max(1_000, SERVER_SOLVER_JOB_RETENTION_MAX_AGE_MS - pendingAgeMs)
     );
     const deadline = Date.now() + Math.min(
       SERVER_SOLVER_ACTIVE_WAIT_MAX_MS,
@@ -1719,6 +1729,211 @@
       window.__TKB_RUST_SOLVER_RUNNING = false;
       window.__TKB_SOLVE_UI_BUSY = false;
       window.__TKB_BACKEND_JOB_OBSERVER_ONLY = false;
+      releaseAutoSortButtonSoon();
+    }
+  }
+
+  function reattachTerminalPayloadFromResponse(response, data){
+    let rawPayload = null;
+    try{
+      if(parsedSolverResponsePayloads.has(response)){
+        rawPayload = parsedSolverResponsePayloads.get(response);
+        parsedSolverResponsePayloads.delete(response);
+      }
+    }catch(_){ }
+    if(!rawPayload || typeof rawPayload !== "object"){
+      // `waitForServerOwnedSolverResult` has already consumed every 202
+      // response.  The remaining response must be terminal, so reading it is
+      // safe and does not create another request or mutate the schedule.
+      return Promise.resolve(response?.json?.().catch(() => ({}))).then(payload => {
+        const normalized = normalizePayloadForUiConstraints(data, payload);
+        return {payload:normalized, status:Number(response?.status || 0) || 0};
+      });
+    }
+    return Promise.resolve({
+      payload:normalizePayloadForUiConstraints(data, rawPayload),
+      status:Number(response?.status || 0) || 0
+    });
+  }
+
+  function reattachTerminalPayloadError(message, kind, payload){
+    const err = new Error(String(message || "Kết quả từ máy chủ không hợp lệ."));
+    err.kind = kind || "solver_resume_terminal_invalid";
+    err.backendUnavailable = false;
+    err.payload = payload || null;
+    err.keepPendingServerJob = false;
+    return err;
+  }
+
+  async function reattachExistingServerJobPollOnly(jobMetadata){
+    const metadata = jobMetadata && typeof jobMetadata === "object" ? jobMetadata : {};
+    const jobId = String(metadata.jobId || "").trim();
+    const data = getData();
+    if(!jobId || !data) return false;
+    if(automaticBackendResumeSuppressed()) return false;
+
+    const scheduleFingerprint = String(
+      metadata.scheduleFingerprint || durableScheduleFingerprint(data) || ""
+    ).trim();
+    if(
+      metadata.scheduleFingerprint
+      && scheduleFingerprint
+      && !durableScheduleFingerprintMatches(scheduleFingerprint, data)
+    ){
+      const mismatch = reattachTerminalPayloadError(
+        "Lịch hiện tại đã thay đổi; kết quả cũ trên máy chủ không được áp dụng.",
+        "solver_resume_schedule_changed"
+      );
+      // A result for a different timetable is never replayed. It is safe to
+      // consume this browser's pending row, while the server result remains
+      // available to the owner that started it.
+      removePendingBackendJob(jobId);
+      reportSkippedDiscoveredBackendJob({jobId, kind:"running"});
+      setStatus(mismatch.message, "warning");
+      return false;
+    }
+
+    beginServerJobReattachLease(jobId);
+    const persisted = writePendingBackendJob(jobId, scheduleFingerprint, {
+      createdAt:metadata.createdAtMs || metadata.createdAt,
+      solverStartedAtMs:metadata.startedAtMs || metadata.solverStartedAtMs,
+      progressBudgetSeconds:metadata.progressBudgetSeconds,
+      progressRunIndex:metadata.progressRunIndex,
+      discoveredFromOwnerState:metadata.discoveredFromOwnerState === true,
+      localClickTimeline:false,
+      observeOnly:false,
+      allowSettledReplay:true
+    });
+    // A browser may have lost localStorage while the API still owns the job.
+    // Keep polling from the immutable metadata even if persistence failed.
+    const effectiveMetadata = persisted || Object.assign({}, metadata, {
+      jobId,
+      scheduleFingerprint
+    });
+    const runId = `reattach:${jobId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+    const controller = new AbortController();
+    const applyGuardFingerprint = durableScheduleFingerprint(data);
+    window.__TKB_SERVER_JOB_RESUME_STARTED = true;
+    window.__TKB_RUST_SOLVER_RUNNING = true;
+    window.__TKB_SOLVE_UI_BUSY = true;
+    window.__TKB_SOLVE_BACKEND_POSTED = false;
+    window.__TKB_SOLVE_QUEUE_WAITING = false;
+    window.__TKB_BACKEND_JOB_OBSERVER_ONLY = false;
+    window.__TKB_ACTIVE_SOLVE_RUN_ID = runId;
+    window.__AUTO_SORT_STOP_REQUESTED = false;
+    setActiveBackendJobId(jobId, scheduleFingerprint);
+    bindActiveSolveAbortController(controller);
+    setAutoSortButtonBusy(true);
+    setStatus("Đang nối lại lượt xếp...", "info");
+    startInstantProgressTicker();
+    publishE2EState("running", null, {runId, pollOnlyReattach:true, jobId});
+
+    try{
+      const apiBase = await rustApiBase();
+      if(!apiBase) throw detachedServerJobError("solver_resume_backend_unavailable", 0);
+      const response = await waitForServerOwnedSolverResult(
+        apiBase,
+        jobId,
+        runId,
+        serverOwnedResultWaitMs(0, effectiveMetadata),
+        700,
+        controller.signal
+      );
+      const terminal = await reattachTerminalPayloadFromResponse(response, data);
+      const status = terminal.status;
+      const payload = terminal.payload;
+      if(status < 200 || status >= 300 || status === 202){
+        throw reattachTerminalPayloadError(
+          payload?.error || `Máy chủ trả về HTTP ${status || 0}.`,
+          "solver_resume_terminal_http_error",
+          payload
+        );
+      }
+      const completion = payloadCompletion(payload);
+      const metricsShapeOk = completion.expected > 0
+        && completion.scheduled >= 0
+        && completion.unassigned >= 0
+        && completion.violations >= 0;
+      const usable = payloadHasUsableSchedule(payload);
+      const acceptablePartial = payloadAcceptableWithUnassigned(payload)
+        || payloadAcceptableForUiCleanup(payload);
+      if(
+        !payload
+        || payload.ok === false
+        || !metricsShapeOk
+        || (!usable && !acceptablePartial)
+        || (completion.hardOk === false && !acceptablePartial)
+      ){
+        throw reattachTerminalPayloadError(
+          "Kết quả máy chủ chưa đủ điều kiện để áp dụng; lịch hiện tại được giữ nguyên.",
+          "solver_resume_terminal_invalid",
+          payload
+        );
+      }
+      if(
+        applyGuardFingerprint
+        && !durableScheduleFingerprintMatches(applyGuardFingerprint, data)
+      ){
+        throw reattachTerminalPayloadError(
+          "Lịch hiện tại đã thay đổi trong lúc nối lại; kết quả cũ không được áp dụng.",
+          "solver_stale_result",
+          payload
+        );
+      }
+
+      // applyPayload performs the full UI-constraint validation. The snapshot
+      // makes that operation transactional if a late constraint or malformed
+      // lesson is rejected after the payload has started applying.
+      const snapshot = snapshotScheduleData(data);
+      let applied;
+      try{
+        applied = await applyPayload(payload);
+      }catch(err){
+        restoreScheduleData(data, snapshot);
+        throw err;
+      }
+      clearActiveBackendJobId(jobId, {force:true});
+      endServerJobReattachLease(jobId);
+      window.__TKB_SOLVER_LAST_PAYLOAD = payload;
+      window.__TKB_SOLVER_LAST_RESULT = applied;
+      const quality = completionQualityStatus(payload, data);
+      finishProgress(quality.level === "warning" ? quality.progressLabel : "100%", quality.level);
+      window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = SOLVE_COMPLETE_MESSAGE;
+      setStatus(SOLVE_COMPLETE_MESSAGE, quality.level || "ok");
+      schedulePostSolveUi(payload, applied);
+      publishE2EState("done", payload, {message:SOLVE_COMPLETE_MESSAGE, pollOnlyReattach:true, jobId});
+      return applied || payload;
+    }catch(err){
+      const keep = err?.keepPendingServerJob === true
+        || (err?.name === "AbortError" && !isStopRequested())
+        || err?.kind === "solver_result_wait_timeout"
+        || err?.kind === "solver_result_transport_unavailable"
+        || err?.kind === "solver_result_unknown"
+        || err?.kind === "solver_result_auth_required";
+      if(keep){
+        setStatus("Mất kết nối tạm thời; sẽ tự nối lại tiến trình đang chạy.", "info");
+        schedulePendingBackendResume(0, SERVER_SOLVER_JOB_BACKGROUND_RETRY_MS);
+      }else{
+        clearActiveBackendJobId(jobId, {force:true});
+        finishProgress("Lỗi", "error");
+        setStatus(err?.message || "Không theo dõi được lượt xếp trên máy chủ.", "warning");
+        publishE2EState("error", err?.payload || null, {
+          message:err?.message || "solver_resume_failed",
+          pollOnlyReattach:true,
+          jobId
+        });
+      }
+      return keep;
+    }finally{
+      stopProgressTicker();
+      clearActiveSolveAbortController(controller);
+      if(window.__TKB_ACTIVE_SOLVE_RUN_ID === runId) window.__TKB_ACTIVE_SOLVE_RUN_ID = "";
+      window.__TKB_RUST_SOLVER_RUNNING = false;
+      window.__TKB_SOLVE_UI_BUSY = false;
+      window.__TKB_SOLVE_BACKEND_POSTED = false;
+      window.__TKB_SOLVE_QUEUE_WAITING = false;
+      window.__TKB_SERVER_JOB_RESUME_STARTED = false;
+      endServerJobReattachLease(jobId);
       releaseAutoSortButtonSoon();
     }
   }
@@ -2018,7 +2233,7 @@
       const active = Object.fromEntries(
         Object.entries(scoped)
           .map(([jobId, timestamp]) => [String(jobId || "").trim(), Math.max(0, Number(timestamp || 0) || 0)])
-          .filter(([jobId, timestamp]) => jobId && timestamp > 0 && now - timestamp <= SERVER_SOLVER_JOB_MAX_AGE_MS)
+          .filter(([jobId, timestamp]) => jobId && timestamp > 0 && now - timestamp <= SERVER_SOLVER_JOB_RETENTION_MAX_AGE_MS)
           .sort((left, right) => right[1] - left[1])
           .slice(0, 48)
       );
@@ -2116,7 +2331,7 @@
       const jobId = String(item?.jobId || "").trim();
       const createdAt = Math.max(0, Number(item?.createdAt || 0) || 0);
       if(!jobId) return null;
-      if(createdAt > 0 && Date.now() - createdAt > SERVER_SOLVER_JOB_MAX_AGE_MS){
+      if(createdAt > 0 && Date.now() - createdAt > SERVER_SOLVER_JOB_RETENTION_MAX_AGE_MS){
         rememberSettledBackendJob(jobId);
         delete map[scope];
         localStorage.setItem(SERVER_SOLVER_JOB_STORAGE_KEY, JSON.stringify(map));
@@ -2176,7 +2391,11 @@
     // A late callback from a stopped/consumed request must never recreate the
     // durable pending entry that Stop just removed. This also protects another
     // open tab sharing the same localStorage ledger.
-    if(isSettledBackendJob(value)) return null;
+    // A poll-only foreground reattach may arrive just after an older page has
+    // consumed the local pending row while its terminal callback was still
+    // unwinding.  The server state probe is the authority in that narrow case;
+    // allow that caller to recreate the row under its immutable reattach lease.
+    if(isSettledBackendJob(value) && metadata?.allowSettledReplay !== true) return null;
     try{
       const map = JSON.parse(localStorage.getItem(SERVER_SOLVER_JOB_STORAGE_KEY) || "{}");
       const safeMap = map && typeof map === "object" ? map : {};
@@ -2435,7 +2654,9 @@
     const value = String(jobId || "").trim();
     activeBackendJobId = value;
     window.__TKB_ACTIVE_BACKEND_JOB_ID = value;
-    if(value) writePendingBackendJob(value, scheduleFingerprint);
+    if(value) writePendingBackendJob(value, scheduleFingerprint, {
+      allowSettledReplay:activeServerJobReattachLeaseId === value
+    });
     return value;
   }
 
@@ -2546,8 +2767,40 @@
     return normalizedStartedAt;
   }
 
-  function clearActiveBackendJobId(jobId){
+  function beginServerJobReattachLease(jobId){
     const value = String(jobId || "").trim();
+    if(!value) return false;
+    activeServerJobReattachLeaseId = value;
+    return true;
+  }
+
+  function endServerJobReattachLease(jobId){
+    const value = String(jobId || "").trim();
+    if(!value || activeServerJobReattachLeaseId === value){
+      activeServerJobReattachLeaseId = "";
+      return true;
+    }
+    return false;
+  }
+
+  function consumeActiveBackendResumeTarget(jobId){
+    const value = String(jobId || "").trim();
+    if(!value || String(activeBackendResumeTarget?.jobId || "") !== value) return false;
+    window.__TKB_SERVER_JOB_RESUME_CONSUMED_ID = value;
+    activeBackendResumeTarget = null;
+    endServerJobReattachLease(value);
+    return true;
+  }
+
+  function clearActiveBackendJobId(jobId, options){
+    const value = String(jobId || "").trim();
+    const force = options?.force === true;
+    if(!force && value && activeServerJobReattachLeaseId === value){
+      // The old page may finish the same request while iOS is restoring this
+      // page.  Do not mark the result settled or remove the durable row until
+      // the poll-only reattach has atomically applied it.
+      return false;
+    }
     if(value && activeBackendJobId && activeBackendJobId !== value) return;
     if(value) rememberSettledBackendJob(value);
     activeBackendJobId = "";
@@ -2569,6 +2822,7 @@
     if(backendJobId){
       rememberSettledBackendJob(backendJobId);
       removePendingBackendJob(backendJobId);
+      endServerJobReattachLease(backendJobId);
     }
     if(typeof window.__TKB_PHANMON_REQUEST_STOP === "function"){
       window.__TKB_PHANMON_REQUEST_STOP();
@@ -2856,21 +3110,29 @@
       callMaybe("hideAutoSortProgress");
       return;
     }
+    // A complete, hard-valid timetable has one terminal message. Quality debt
+    // remains available in metrics/E2E metadata for a later refinement click,
+    // but must not be rendered beside success as a contradictory status.
+    if(String(state || "ok").toLowerCase() === "ok"){
+      callMaybe("hideAutoSortProgress");
+      hideAutoSortProgressDom();
+      return;
+    }
     callMaybe("finishAutoSortProgress", [label || "100%", state || "ok"]);
     hardFinishProgressDom(label || "100%", state || "ok");
   }
 
   function hideAutoSortProgressDom(){
-    // Keep the historical helper name for callers, but reset the reserved
-    // mobile row to a useful idle state instead of leaving an empty band.
+    // Keep the feedback row's height reserved, but do not expose an idle or
+    // successful progress label. The status message owns the terminal text.
     window.clearTimeout(window.__autoSortProgressHideTimer);
     window.__autoSortProgressHideTimer = null;
     const wrap = document.getElementById("autoSortProgress");
     if(wrap){
       wrap.classList.remove("is-active", "is-error", "is-warning", "is-complete");
       wrap.classList.add("is-idle");
-      wrap.hidden = false;
-      wrap.setAttribute("aria-hidden", "false");
+      wrap.hidden = true;
+      wrap.setAttribute("aria-hidden", "true");
       const fill = document.getElementById("autoSortProgressFill");
       const pct = document.getElementById("autoSortProgressPct");
       const track = wrap.querySelector(".auto-sort-track");
@@ -6519,11 +6781,14 @@
       delete next.ui_requested_custom_solve_duration_seconds;
       delete next.ui_fresh_solve_duration_floor_applied;
       delete next.ui_custom_fresh_continue_quality;
-      next.ui_constraint_change_fresh_ceiling_seconds = applyUnifiedInitialCeiling(
+      next.ui_constraint_change_fresh_ceiling_seconds = applyBoundedFreshFallbackCeiling(
         next,
         expectedLessonCount(baseData),
-        baseData
+        baseData,
+        requestedCustomSeconds
       );
+      next.ui_unified_initial_fast_stage = true;
+      next.ui_unified_initial_ceiling_seconds = next.ui_constraint_change_fresh_ceiling_seconds;
       delete next.robust_retry;
       delete next.complete_schedule_seed_retry_run;
     }else{
@@ -6543,11 +6808,14 @@
       next.ui_allow_incomplete_retry_after_single_pass = false;
       next.complete_schedule_seed_retry = false;
       next.complete_schedule_seed_retry_max_runs = 0;
-      next.ui_constraint_change_fresh_ceiling_seconds = applyUnifiedInitialCeiling(
+      next.ui_constraint_change_fresh_ceiling_seconds = applyBoundedFreshFallbackCeiling(
         next,
         expectedLessonCount(baseData),
-        baseData
+        baseData,
+        requestedCustomSeconds
       );
+      next.ui_unified_initial_fast_stage = true;
+      next.ui_unified_initial_ceiling_seconds = next.ui_constraint_change_fresh_ceiling_seconds;
       delete next.robust_retry;
       delete next.complete_schedule_seed_retry_run;
     }
@@ -7666,8 +7934,11 @@
             || effective.progress_estimate_seconds
             || 0
         ) || 0;
-        const requestedCeiling = stagedExistingCeiling
-          ? Number(effective.ui_staged_existing_ceiling_seconds || effective.overall_time_limit_seconds || 0)
+        const boundedFreshFallback = effective.ui_constraint_change_fresh_retry === true;
+        const requestedCeiling = boundedFreshFallback
+          ? Number(effective.ui_constraint_change_fresh_ceiling_seconds || INITIAL_AUTO_DURATION_SECONDS)
+          : stagedExistingCeiling
+           ? Number(effective.ui_staged_existing_ceiling_seconds || effective.overall_time_limit_seconds || 0)
           : (unifiedKind === "repair_partial"
               ? Number(effective.ui_unified_repair_ceiling_seconds || 0)
               : (unifiedKind === "refine_complete"
@@ -7696,7 +7967,8 @@
         effective.backend_deadline_ms = unifiedCeiling * 1000;
         effective.native_global_deadline_ms = unifiedCeiling * 1000;
         effective.progress_estimate_seconds = unifiedCeiling;
-        effective.ui_allow_short_backend_deadline = effective.ui_allow_short_backend_deadline === true
+        effective.ui_allow_short_backend_deadline = boundedFreshFallback
+          || effective.ui_allow_short_backend_deadline === true
           || stagedExistingCeiling
           || effective.ui_unified_partial_repair === true;
         if(effective.ui_incremental_refine_progress === true){
@@ -8336,6 +8608,12 @@
 
   function applySchedulingPressureTimeFloor(settings, data){
     if(!settings || typeof settings !== "object") return;
+    // A fresh fallback is the second half of the same user click.  Its explicit
+    // 60-second (or user-entered) ceiling must win over the fixed-off pressure
+    // floor used by ordinary deep/refinement solves.
+    if(settings.ui_constraint_change_fresh_retry === true){
+      return;
+    }
     const expected = expectedLessonCount(data);
     const fixedPressure = isFixedOffPressureProfile(data);
     const constrained = hasActiveConstraintData(data);
@@ -10255,13 +10533,47 @@
   async function postSolve(settings, dataOverride, conflictRetry){
     const data = dataOverride || getData();
     if(!data) throw new Error("Không tìm thấy DATA của giao diện.");
-    const resumeExistingServerJobOnly = window.__TKB_SERVER_JOB_RESUME_STARTED === true
-      || settings?.ui_resume_existing_server_job_only === true;
+    const resumeLifecycleActive = window.__TKB_SERVER_JOB_RESUME_STARTED === true;
+    const explicitResumeOnly = settings?.ui_resume_existing_server_job_only === true;
+    const consumedResumeJobId = String(window.__TKB_SERVER_JOB_RESUME_CONSUMED_ID || "").trim();
+    const resumeTarget = activeBackendResumeTarget && typeof activeBackendResumeTarget === "object"
+      ? activeBackendResumeTarget
+      : null;
     // Capture the durable source before solver-only normalization mutates DATA.
     // A reload restores this source, not transient default groups or duplicated
     // off-lock mirrors created only while preparing the solver request.
     const sourceScheduleFingerprint = durableScheduleFingerprint(data);
     let pendingBackendJob = readPendingBackendJob();
+    // The owner tab may consume/remove the shared localStorage entry while a
+    // foregrounded iPhone is still entering the resume path. The state probe
+    // already authenticated this exact job, so retain a read-only synthetic
+    // descriptor for this one poll instead of throwing or reposting it.
+    if(
+      !pendingBackendJob?.jobId
+      && resumeLifecycleActive
+      && resumeTarget?.jobId
+    ){
+      pendingBackendJob = Object.assign({}, resumeTarget, {
+        scheduleFingerprint:String(resumeTarget.scheduleFingerprint || sourceScheduleFingerprint || ""),
+        discoveredFromOwnerState:true,
+        observeOnly:false
+      });
+    }
+    // Resume mode is one-shot. Once its canonical response has been consumed,
+    // any later request in the same click is a deliberate sequential fallback
+    // and may submit a new job; it must not be mistaken for a duplicate poll.
+    const resumeTargetMatches = !!(
+      resumeLifecycleActive
+      && resumeTarget?.jobId
+      && pendingBackendJob?.jobId === String(resumeTarget.jobId)
+    );
+    const resumeExistingServerJobOnly = explicitResumeOnly
+      || (
+        resumeLifecycleActive
+        && !consumedResumeJobId
+        && !!pendingBackendJob?.jobId
+        && (!resumeTarget?.jobId || resumeTargetMatches)
+      );
     if(pendingBackendJob?.observeOnly === true){
       const err = new Error("Observer-only jobs cannot submit, cancel, or apply a solver result.");
       err.kind = "solver_observer_only";
@@ -10282,7 +10594,11 @@
       removePendingBackendJob(pendingBackendJob.jobId);
       pendingBackendJob = null;
     }
-    if(resumeExistingServerJobOnly && !pendingBackendJob?.jobId){
+    const resumeLifecycleNeedsFirstJob = resumeLifecycleActive && !consumedResumeJobId;
+    if(
+      (resumeExistingServerJobOnly || resumeLifecycleNeedsFirstJob)
+      && !pendingBackendJob?.jobId
+    ){
       const err = new Error("Không còn lượt xếp máy chủ để tiếp tục theo dõi.");
       err.kind = "solver_resume_missing";
       throw err;
@@ -10940,7 +11256,8 @@
       && currentScheduleFingerprint
       && !durableScheduleFingerprintMatches(requestApplyGuardFingerprint, data)
     ){
-      clearActiveBackendJobId(solveRunId);
+      const consumedResumeTarget = consumeActiveBackendResumeTarget(solveRunId);
+      clearActiveBackendJobId(solveRunId, {force:consumedResumeTarget});
       const staleErr = new Error("Lịch đã thay đổi trong khi server đang xếp; kết quả cũ không được áp dụng.");
       staleErr.kind = "solver_stale_result";
       staleErr.backendUnavailable = false;
@@ -10960,7 +11277,17 @@
     if(transientServerJobStatus(response?.status) && !terminalServerJobFailure(response?.status, payload)){
       throw detachedServerJobError("solver_result_transport_unavailable", response?.status, payload);
     }
-    clearActiveBackendJobId(solveRunId);
+    if(
+      resumeExistingServerJobOnly
+      && resumeTarget?.jobId
+      && String(resumeTarget.jobId) === String(solveRunId)
+    ){
+      // Mark only the canonical poll as consumed. A later sequential fallback
+      // in this same click may submit a fresh job, but it must never repost the
+      // already-consumed VPS job.
+      consumeActiveBackendResumeTarget(solveRunId);
+    }
+    clearActiveBackendJobId(solveRunId, {force:resumeExistingServerJobOnly});
     if(!response.ok){
       window.__TKB_SOLVER_LAST_ERROR_PAYLOAD = payload;
       const busy = Number(response.status || 0) === 409 && String(payload?.error || "") === "solver_busy";
@@ -12574,6 +12901,7 @@
         readCustomSolveDurationSeconds,
         writeCustomSolveDurationSeconds,
         applyCustomSolveDurationSettings,
+        applyBoundedFreshFallbackCeiling,
         fastPresetDeadlineSeconds,
         automaticSolverCeilingSeconds,
         initialAutomaticSolverCeilingSeconds,
@@ -12585,6 +12913,7 @@
         friendlySolveError,
         buildAutomaticAutoSortPlan,
         buildConstraintRepairAutoSortPlan,
+        stagedExistingFreshRetrySettings,
         cheapSchoolCompletionStats,
         hardQualityViolationMessage,
         maybeRunBackendPrecheck,
@@ -12647,6 +12976,9 @@
          liveBackendJobForScheduleScope,
          inspectExistingBackendJobForManualSolve,
          observeBackendJob,
+         reattachExistingServerJobPollOnly,
+         beginServerJobReattachLease,
+         endServerJobReattachLease,
          removePendingBackendJob,
         settledBackendJobsForScope,
         rememberSettledBackendJob,
@@ -12877,8 +13209,11 @@
     return seconds;
   }
 
-  function applyUnifiedInitialCeiling(settings, expected, data){
-    const seconds = initialAutomaticSolverCeilingSeconds(expected, data);
+  function applyUnifiedInitialCeiling(settings, expected, data, ceilingOverride){
+    const override = normalizeCustomSolveDurationSeconds(ceilingOverride, 0);
+    const seconds = override > 0
+      ? override
+      : initialAutomaticSolverCeilingSeconds(expected, data);
     settings.optimization_time_limit_seconds = seconds;
     settings.optimization_adaptive_time_limit_seconds = seconds;
     settings.overall_time_limit_seconds = seconds;
@@ -12888,6 +13223,16 @@
     settings.progress_estimate_seconds = seconds;
     settings.ui_allow_short_backend_deadline = true;
     return seconds;
+  }
+
+  // A staged repair has already consumed its short local slice.  If that slice
+  // cannot produce a valid candidate, the same click gets one fresh rebuild;
+  // it must not inherit the persistent retry budget (which may have reached
+  // the 180-second refinement ceiling after earlier clicks).
+  function applyBoundedFreshFallbackCeiling(settings, expected, data, requestedCustomSeconds){
+    const requested = normalizeCustomSolveDurationSeconds(requestedCustomSeconds, 0);
+    const seconds = requested > 0 ? requested : INITIAL_AUTO_DURATION_SECONDS;
+    return applyUnifiedInitialCeiling(settings, expected, data, seconds);
   }
 
   function applyUnifiedReferenceWatchdogReserve(settings){
@@ -13836,6 +14181,7 @@
       // its local data version differs. Detach locally and leave the owner job
       // available for the device/data version that started it.
       reportSkippedDiscoveredBackendJob({jobId:pending.jobId, kind:"running"});
+      endServerJobReattachLease(pending.jobId);
       removePendingBackendJob(pending.jobId);
       return false;
     }
@@ -13851,8 +14197,18 @@
       }
       return false;
     }
+    // Lease only the asynchronous state probe. Once it resolves, JavaScript
+    // runs synchronously into the dedicated reattach, which immediately
+    // reacquires the same lease. Early deferrals must not leave a stale lease
+    // that could prevent an unrelated normal solve from clearing its job.
+    const probeLeaseJobId = pending?.observeOnly === true ? "" : String(pending?.jobId || "");
+    if(probeLeaseJobId) beginServerJobReattachLease(probeLeaseJobId);
     const state = await backendSolverState(pending?.jobId || "");
-    if(pendingBackendResumeBlocked(pending?.jobId)) return false;
+    if(probeLeaseJobId) endServerJobReattachLease(probeLeaseJobId);
+    // Explicit Stop is authoritative. A settled bit alone is not: another tab
+    // may have written it while this authenticated state probe was in flight,
+    // even though the API still retains the exact result for this fingerprint.
+    if(automaticBackendResumeSuppressed()) return false;
     if(!state || state.ok !== true){
       const nextAttempt = Number(attempt || 0) + 1;
       if(pending?.jobId || nextAttempt <= 6){
@@ -13917,7 +14273,8 @@
       // An unknown id after the short registration grace period is detached,
       // never replayed. Reposting it used to turn F5 into a brand-new solve
       // after an API restart and could resurrect a job the user had stopped.
-      clearActiveBackendJobId(pending.jobId);
+      clearActiveBackendJobId(pending.jobId, {force:true});
+      endServerJobReattachLease(pending.jobId);
       return false;
     }
     const runningItem = jobs.find(item => String(item?.jobId || "") === pending.jobId);
@@ -13942,16 +14299,18 @@
       schedulePendingBackendResume(0, 2_000);
       return false;
     }
-    if(pendingBackendResumeBlocked(pending.jobId)) return false;
+    if(automaticBackendResumeSuppressed()) return false;
     if(pending.observeOnly === true){
       return await observeBackendJob(pending);
     }
-    window.__TKB_SERVER_JOB_RESUME_STARTED = true;
+    // Every foreground recovery is the same immutable poll-only operation,
+    // whether the canonical job is queued, active, or already terminal. The
+    // normal Play/preflight/planning pipeline is never entered from here.
+    activeBackendResumeTarget = Object.assign({}, pending);
     try{
-      await window.sapXepTuDongAll();
-      return true;
+      return await reattachExistingServerJobPollOnly(activeBackendResumeTarget);
     }finally{
-      window.__TKB_SERVER_JOB_RESUME_STARTED = false;
+      activeBackendResumeTarget = null;
       if(readPendingBackendJob()?.jobId){
         schedulePendingBackendResume(0, SERVER_SOLVER_JOB_BACKGROUND_RETRY_MS);
       }

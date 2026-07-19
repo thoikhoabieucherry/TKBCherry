@@ -363,6 +363,12 @@ function jsonResponse(payload, status = 200){
   };
 }
 
+function detachedAbortError(message = "browser transport detached"){
+  const error = new Error(message);
+  error.name = "AbortError";
+  return error;
+}
+
 test("watchdog and local fast finishes complete progress before releasing the button", () => {
   const forceBody = BRIDGE_SOURCE.slice(
     BRIDGE_SOURCE.indexOf("function forceFinishSolveUi"),
@@ -392,7 +398,7 @@ test("watchdog and local fast finishes complete progress before releasing the bu
   assert.match(busyButtonBody, /setAttribute\("aria-busy",\s*busy \? "true" : "false"\)/);
 });
 
-test("progress stays informative before Play and after every terminal state", () => {
+test("progress appears for Play and hides after a successful terminal state", () => {
   const hardFinishBody = BRIDGE_SOURCE.slice(
     BRIDGE_SOURCE.indexOf("function hardFinishProgressDom"),
     BRIDGE_SOURCE.indexOf("function finishProgress")
@@ -409,7 +415,8 @@ test("progress stays informative before Play and after every terminal state", ()
   assert.doesNotMatch(hardFinishBody, /setTimeout\s*\(/, "terminal progress must not schedule its own disappearance");
   assert.match(hardFinishBody, /text\.textContent\s*=\s*needsAttention[\s\S]*?:\s*"Hoàn tất"/);
   assert.match(idleBody, /classList\.add\("is-idle"\)/);
-  assert.match(idleBody, /wrap\.hidden\s*=\s*false/);
+  assert.match(idleBody, /wrap\.hidden\s*=\s*true/);
+  assert.match(idleBody, /setAttribute\("aria-hidden",\s*"true"\)/);
   assert.match(idleBody, /pct\.textContent\s*=\s*"0%"/);
   assert.match(idleBody, /text\.textContent\s*=\s*"Sẵn sàng"/);
   assert.match(primeBody, /setProgress\(0,\s*"Chuẩn bị",\s*\{replaceLocalPercent:true,\s*phase:"preparing"\}\)/);
@@ -2959,6 +2966,127 @@ test("a tightened teacher constraint stops after one staged fill and one fresh f
   );
 });
 
+test("large fixed-off fresh fallback preserves the automatic 60-second ceiling", async () => {
+  const fixture = makeLargeApplyFixture(54, 29);
+  const {data} = fixture;
+  const subject = String(data.mon[0].ten);
+  // Materialize the complete incumbent represented by makeLargeApplyFixture.
+  data.tkb = {};
+  for(const classInfo of data.lop){
+    data.tkb[classInfo.id] = {};
+    for(const day of ["thu2", "thu3", "thu4", "thu5", "thu6", "thu7"]){
+      data.tkb[classInfo.id][day] = {sang:["", "", "", "", ""], chieu:["", "", "", "", ""]};
+    }
+  }
+  for(const lesson of fixture.payload.lessons){
+    const day = `thu${lesson.day}`;
+    const session = String(lesson.session).toLowerCase() === "pm" ? "chieu" : "sang";
+    data.tkb[lesson.classId][day][session][lesson.period - 1] = subject;
+  }
+  data.tkbConstraints = {
+    fixedOff:{class:{L1:{"thu7|chieu|4":true}}},
+    teacher:{GV01:{maxDaysSessions:{maxDays:2}}}
+  };
+
+  const postedSettings = [];
+  const incompletePayload = {
+    ok:true,
+    classes:fixture.payload.classes,
+    lessons:fixture.payload.lessons.slice(0, fixture.payload.lessons.length - 1),
+    metrics:{
+      scheduled_periods:1565,
+      expected_periods:1566,
+      unassigned_periods:1,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      best_effort:true
+    },
+    validation:{hard_ok:true, violations:[]},
+    solver:{runtime_settings:{elapsed_seconds:1}},
+    unassignedLessons:[{classId:"L1", subject, count:1}],
+    warnings:[]
+  };
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-data")){
+      postedSettings.push(JSON.parse(options.body).settings);
+      return jsonResponse(incompletePayload);
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const quietConsole = {log(){}, info(){}, warn(){}, error(){}};
+  const {window, hooks} = loadBridge(data, fetchImpl, {console:quietConsole});
+  window.TKBConstraints = {
+    get(){ return data.tkbConstraints; },
+    validateAll(){ return []; }
+  };
+  data.tkbManualFreshRetryBudget = {
+    version:1,
+    fingerprint:hooks.durableScheduleFingerprint(data),
+    nextSeconds:180,
+    failures:4,
+    updatedAt:Date.now()
+  };
+  const plan = hooks.buildConstraintRepairAutoSortPlan(data, 1566, 0, 1);
+  assert.equal(plan.state.eligible, true);
+  assert.equal(await window.TKBRustAPI.solve({ask:false, settings:plan.settings, singlePass:true}), null);
+  assert.equal(postedSettings.length, 2);
+  const fallback = postedSettings[1];
+  assert.equal(fallback.ui_constraint_change_fresh_retry, true);
+  assert.equal(fallback.ui_constraint_change_fresh_ceiling_seconds, 60);
+  assert.equal(fallback.overall_time_limit_seconds, 60);
+  assert.equal(fallback.optimization_time_limit_seconds, 60);
+  assert.equal(fallback.integrated_time_limit, 60);
+  assert.equal(fallback.backend_deadline_ms, 60000);
+  assert.equal(fallback.native_global_deadline_ms, 60000);
+  assert.equal(fallback.ui_allow_short_backend_deadline, true);
+});
+
+test("fresh fallback ignores a stale 180-second manual retry budget", () => {
+  const data = makeData(7);
+  const subject = data.mon[0].ten;
+  data.tkb = {
+    L1:{
+      thu2:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]},
+      thu3:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]},
+      thu4:{sang:[subject, subject, subject, "", ""], chieu:["", "", "", "", ""]}
+    }
+  };
+  data.tkbConstraints = {teacher:{GV01:{maxDaysSessions:{maxDays:3}}}};
+  const {hooks} = loadBridge(data);
+  const plan = hooks.buildConstraintRepairAutoSortPlan(data, 7, 0, 1);
+  const fingerprint = hooks.durableScheduleFingerprint(data);
+  data.tkbManualFreshRetryBudget = {version:1, fingerprint, nextSeconds:180, failures:24};
+  assert.equal(hooks.manualFreshRetryBudgetSeconds(data), 180);
+
+  // Exercise the generic staged-repair fallback (without the constraint-change
+  // marker) where the old robust retry settings leaked their 180-second cap.
+  const base = Object.assign({}, plan.settings);
+  delete base.ui_constraint_change_repair;
+  delete base.ui_constraint_change_fresh_retry;
+  const retry = hooks.stagedExistingFreshRetrySettings(base, data, "run-stale-budget");
+  assert.equal(retry.ui_constraint_change_fresh_ceiling_seconds, 60);
+  assert.equal(retry.ui_unified_initial_fast_stage, true);
+  assert.equal(retry.ui_unified_initial_ceiling_seconds, 60);
+
+  const effective = hooks.effectiveSettingsForSolve(retry, data);
+  assert.equal(effective.overall_time_limit_seconds, 60);
+  assert.equal(effective.optimization_time_limit_seconds, 60);
+  assert.equal(effective.integrated_time_limit, 60);
+  assert.equal(effective.backend_deadline_ms, 60000);
+  assert.equal(effective.native_global_deadline_ms, 60000);
+  assert.equal(effective.ui_allow_short_backend_deadline, true);
+
+  const customBase = Object.assign({}, base, {ui_custom_solve_duration_seconds:90});
+  const customRetry = hooks.stagedExistingFreshRetrySettings(customBase, data, "run-custom-budget");
+  assert.equal(customRetry.ui_constraint_change_fresh_ceiling_seconds, 90);
+  const customEffective = hooks.effectiveSettingsForSolve(customRetry, data);
+  assert.equal(customEffective.overall_time_limit_seconds, 90);
+  assert.equal(customEffective.backend_deadline_ms, 90000);
+});
+
 test("a complete violating incumbent survives two failed transactional attempts byte-for-byte", async () => {
   const data = makeData(7);
   const subject = data.mon[0].ten;
@@ -4736,7 +4864,6 @@ test("iOS background elapsed time keeps the VPS job and reconnects without cance
   let wireJobId = "";
   let resultPolls = 0;
   let cancelPosts = 0;
-  let resumeCalls = 0;
   const fetchImpl = async (url, options = {}) => {
     const requestUrl = String(url);
     if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
@@ -4814,14 +4941,16 @@ test("iOS background elapsed time keeps the VPS job and reconnects without cance
   assert.equal(hooks.friendlySolveError(detachedError).title, "Đang chờ kết nối lại");
   assert.equal(hooks.localSolveLifecycleActive(), false);
 
-  window.sapXepTuDongAll = async () => { resumeCalls += 1; return null; };
   assert.equal(await hooks.resumePendingBackendJobOnLoad(0), true);
-  assert.equal(resumeCalls, 1);
   assert.equal(cancelPosts, 0);
 });
 
 test("iOS pageshow during request unwind keeps a retry and applies the canonical VPS result", async () => {
   const {data, payload:serverPayload} = makeLargeApplyFixture(1, 2);
+  const incumbentCell = {mon:String(data.mon[0].ten), gv:"GV01"};
+  data.tkb = {
+    L1:{thu2:{sang:[incumbentCell, "", "", "", ""], chieu:["", "", "", "", ""]}}
+  };
   const clock = createFakeClock(1_700_000_000_000, 0);
   const jobId = "ios-pageshow-canonical-job";
   let solvePosts = 0;
@@ -4879,42 +5008,16 @@ test("iOS pageshow during request unwind keeps a retry and applies the canonical
   assert.equal(hooks.readPendingBackendJob()?.jobId, jobId);
   assert.equal(clock.pendingTimers(), 1, "a retry must survive the still-active local lifecycle");
 
-  let finishResume;
-  let failResume;
-  const resumed = new Promise((resolve, reject) => {
-    finishResume = resolve;
-    failResume = reject;
-  });
-  window.sapXepTuDongAll = async () => {
-    try{
-      const result = await hooks.postSolve({
-        solver_mode:"auto",
-        auto_sort_mode:"fast",
-        ui_solver_preset:"fast",
-        ui_internal_allow_incomplete:true,
-        ui_allow_short_backend_deadline:true,
-        overall_time_limit_seconds:1,
-        optimization_time_limit_seconds:1,
-        ui_skip_pre_solve_constraint_release:true
-      }, data);
-      await window.TKBRustAPI.applyPayload(result);
-      finishResume(result);
-      return result;
-    }catch(err){
-      failResume(err);
-      throw err;
-    }
-  };
-
+  const visibleBeforeResult = JSON.stringify(data.tkb);
   window.__TKB_SOLVE_UI_BUSY = false;
   window.__TKB_RUST_SOLVER_RUNNING = false;
-  clock.advance(2_000);
-  const applied = await resumed;
+  const applied = await hooks.resumePendingBackendJobOnLoad(0);
 
-  assert.equal(applied.ok, true);
+  assert.ok(applied);
   assert.equal(resultPolls, 1);
   assert.equal(solvePosts, 0);
   assert.equal(cancelPosts, 0);
+  assert.notEqual(JSON.stringify(data.tkb), visibleBeforeResult);
   assert.equal(hooks.countScheduledLessons(data), 2);
   assert.equal(hooks.readPendingBackendJob(), null);
   assert.equal(hooks.isSettledBackendJob(jobId), true);
@@ -4952,6 +5055,7 @@ test("repeated iOS foreground wakeups share one immutable poll-only reattach", a
   let cancelPosts = 0;
   let stateCalls = 0;
   let resultPolls = 0;
+  let visibleBefore = null;
   let resolveState;
   const stateResponse = new Promise(resolve => { resolveState = resolve; });
   const fetchImpl = async (url) => {
@@ -4964,6 +5068,17 @@ test("repeated iOS foreground wakeups share one immutable poll-only reattach", a
     if(requestUrl.includes("/api/solve-result")){
       resultPolls += 1;
       assert.equal(new URL(requestUrl).searchParams.get("jobId"), jobId);
+      assert.deepEqual(
+        JSON.parse(JSON.stringify({
+          tkb:data.tkb,
+          tkbLessonTeachers:data.tkbLessonTeachers,
+          tkbLessonRooms:data.tkbLessonRooms,
+          tkbUserOff:data.tkbUserOff,
+          tkbConstraints:data.tkbConstraints
+        })),
+        visibleBefore,
+        "poll-only reattach must preserve the flexible timetable byte-for-byte until apply"
+      );
       return jsonResponse(serverPayload);
     }
     if(requestUrl.endsWith("/api/solve-data")){
@@ -4996,7 +5111,7 @@ test("repeated iOS foreground wakeups share one immutable poll-only reattach", a
     hooks.releaseConstraintViolatingLessons(releaseProbe) > 0,
     "the fixture must prove that an unguarded resume would release flexible lessons"
   );
-  const visibleBefore = JSON.parse(JSON.stringify({
+  visibleBefore = JSON.parse(JSON.stringify({
     tkb:data.tkb,
     tkbLessonTeachers:data.tkbLessonTeachers,
     tkbLessonRooms:data.tkbLessonRooms,
@@ -5013,45 +5128,6 @@ test("repeated iOS foreground wakeups share one immutable poll-only reattach", a
     solverStartedAtMs:clock.now() - 18_000,
     progressBudgetSeconds:60
   });
-  let attachCalls = 0;
-  let finishResume;
-  let failResume;
-  const resumed = new Promise((resolve, reject) => {
-    finishResume = resolve;
-    failResume = reject;
-  });
-  window.sapXepTuDongAll = async () => {
-    attachCalls += 1;
-    try{
-      const result = await hooks.postSolve({
-        solver_mode:"auto",
-        auto_sort_mode:"fast",
-        ui_solver_preset:"fast",
-        ui_internal_allow_incomplete:true,
-        ui_allow_short_backend_deadline:true,
-        overall_time_limit_seconds:1,
-        optimization_time_limit_seconds:1
-      }, data);
-      assert.deepEqual(
-        JSON.parse(JSON.stringify({
-          tkb:data.tkb,
-          tkbLessonTeachers:data.tkbLessonTeachers,
-          tkbLessonRooms:data.tkbLessonRooms,
-          tkbUserOff:data.tkbUserOff,
-          tkbConstraints:data.tkbConstraints
-        })),
-        visibleBefore,
-        "poll-only reattach must preserve the flexible timetable byte-for-byte until apply"
-      );
-      await window.TKBRustAPI.applyPayload(result);
-      finishResume(result);
-      return result;
-    }catch(err){
-      failResume(err);
-      throw err;
-    }
-  };
-
   assert.equal(documentListeners.get("visibilitychange")?.length, 1);
   assert.equal(windowListeners.get("pageshow")?.length, 1);
   documentListeners.get("visibilitychange")[0]();
@@ -5075,11 +5151,15 @@ test("repeated iOS foreground wakeups share one immutable poll-only reattach", a
     queue:[],
     completedJobs:[{jobId, serverOwned:true, completedAtMs:clock.now()}]
   }));
-  const applied = await resumed;
+  for(let attempt = 0; attempt < 80 && resultPolls === 0; attempt += 1){
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  for(let attempt = 0; attempt < 80 && hooks.readPendingBackendJob(); attempt += 1){
+    await new Promise(resolve => setImmediate(resolve));
+  }
 
-  assert.equal(applied.ok, true);
+  assert.equal(hooks.countScheduledLessons(data), 2);
   assert.equal(stateCalls, 1);
-  assert.equal(attachCalls, 1);
   assert.equal(resultPolls, 1);
   assert.equal(solvePosts, 0);
   assert.equal(cancelPosts, 0);
@@ -5089,12 +5169,205 @@ test("repeated iOS foreground wakeups share one immutable poll-only reattach", a
   assert.equal(hooks.isSettledBackendJob(jobId), true);
 });
 
+test("poll-only reattach survives the pending row disappearing during its state probe", async () => {
+  const {data, payload:serverPayload} = makeLargeApplyFixture(1, 2);
+  data.tkb = {
+    L1:{thu2:{sang:[String(data.mon[0].ten), "", "", "", ""], chieu:["", "", "", "", ""]}}
+  };
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const jobId = "ios-pending-row-race-job";
+  let stateCalls = 0;
+  let resultPolls = 0;
+  let solvePosts = 0;
+  let cancelPosts = 0;
+  let resolveState;
+  let markStateStarted;
+  const stateStarted = new Promise(resolve => { markStateStarted = resolve; });
+  const stateResponse = new Promise(resolve => { resolveState = resolve; });
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      stateCalls += 1;
+      markStateStarted();
+      return await stateResponse;
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      assert.equal(new URL(requestUrl).searchParams.get("jobId"), jobId);
+      return jsonResponse(serverPayload);
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      throw new Error("reattach must not submit a replacement solve");
+    }
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelPosts += 1;
+      throw new Error("reattach must not cancel the canonical solve");
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {hooks} = loadBridge(data, fetchImpl, clock);
+  const fingerprint = hooks.durableScheduleFingerprint(data);
+  hooks.writePendingBackendJob(jobId, fingerprint, {
+    createdAt:clock.now() - 20_000,
+    solverStartedAtMs:clock.now() - 15_000,
+    progressBudgetSeconds:60
+  });
+
+  const resumed = hooks.resumePendingBackendJobOnLoad(0);
+  await stateStarted;
+  hooks.clearActiveBackendJobId(jobId);
+  assert.equal(
+    hooks.readPendingBackendJob()?.jobId,
+    jobId,
+    "the reattach lease must reject a late terminal clear from the old lifecycle"
+  );
+  assert.equal(hooks.isSettledBackendJob(jobId), false);
+
+  // A late callback in another tab first marks the id settled and then removes
+  // the shared row. The in-flight reattach must trust the authenticated server
+  // state and continue from its immutable metadata rather than falling into
+  // solver_resume_missing or starting a new solve.
+  hooks.rememberSettledBackendJob(jobId);
+  hooks.removePendingBackendJob(jobId);
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(hooks.isSettledBackendJob(jobId), true);
+  resolveState(jsonResponse({
+    ok:true,
+    requestedJobServerOwned:true,
+    requestedJobResultReady:true,
+    requestedJobActive:false,
+    jobs:[],
+    queue:[],
+    completedJobs:[{jobId, serverOwned:true, scheduleFingerprint:fingerprint, completedAtMs:clock.now()}]
+  }));
+  const applied = await resumed;
+
+  assert.ok(applied);
+  assert.equal(stateCalls, 1);
+  assert.equal(resultPolls, 1);
+  assert.equal(solvePosts, 0);
+  assert.equal(cancelPosts, 0);
+  assert.equal(hooks.countScheduledLessons(data), 2);
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(hooks.isSettledBackendJob(jobId), true);
+});
+
+test("a resumed incomplete result ends without solver_resume_missing or a duplicate solve", async () => {
+  const data = makeData(2);
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const canonicalJobId = "ios-resume-incomplete-canonical";
+  let resultPolls = 0;
+  let solvePosts = 0;
+  let cancelPosts = 0;
+  const incomplete = {
+    ok:false,
+    kind:"no_complete_schedule_before_deadline",
+    error:"Chưa đủ thời gian để hoàn tất.",
+    lessons:[{classId:"L1", subject:"Toán", teacher:"GV01", day:2, session:"AM", period:1}],
+    metrics:{scheduled_periods:1, expected_periods:2, unassigned_periods:1, hard_ok:true},
+    validation:{hard_ok:true, violations:[]},
+    solver:{runtime_settings:{}},
+    unassignedLessons:[{classId:"L1", subject:"Toán", count:1}]
+  };
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      return jsonResponse({
+        ok:true,
+        requestedJobServerOwned:true,
+        requestedJobResultReady:true,
+        requestedJobActive:false,
+        jobs:[],
+        queue:[],
+        completedJobs:[{jobId:canonicalJobId, serverOwned:true, completedAtMs:clock.now()}]
+      });
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      assert.equal(new URL(requestUrl).searchParams.get("jobId"), canonicalJobId);
+      return jsonResponse(incomplete, 422);
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      throw new Error("an incomplete terminal reattach must not submit a duplicate solve");
+    }
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelPosts += 1;
+      return jsonResponse({ok:true, cancelRequested:true});
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, clock);
+  hooks.writePendingBackendJob(canonicalJobId, hooks.durableScheduleFingerprint(data), {
+    createdAt:clock.now() - 20_000,
+    solverStartedAtMs:clock.now() - 18_000,
+    progressBudgetSeconds:60
+  });
+
+  assert.equal(await hooks.resumePendingBackendJobOnLoad(0), false);
+  assert.equal(resultPolls, 1);
+  assert.equal(solvePosts, 0);
+  assert.equal(cancelPosts, 0);
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(hooks.isSettledBackendJob(canonicalJobId), true);
+});
+
+test("a long iOS suspension retains the pending id beyond the active solve clock", async () => {
+  const {data, payload:finalPayload} = makeLargeApplyFixture(1, 2);
+  data.tkb = {
+    L1:{thu2:{sang:[String(data.mon[0].ten), "", "", "", ""], chieu:["", "", "", "", ""]}}
+  };
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const jobId = "ios-long-suspension-retained-job";
+  const oldAgeMs = 2_200_000; // beyond the old queue + active-job age fence
+  let resultPolls = 0;
+  let solvePosts = 0;
+  const fetchImpl = async (url) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      return jsonResponse({
+        ok:true,
+        requestedJobServerOwned:true,
+        requestedJobResultReady:true,
+        requestedJobActive:false,
+        jobs:[],
+        queue:[],
+        completedJobs:[{jobId, serverOwned:true, completedAtMs:clock.now() - 1000}]
+      });
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      return jsonResponse(finalPayload);
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      throw new Error("a retained resume must never POST a new solve");
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, clock);
+  hooks.writePendingBackendJob(jobId, hooks.durableScheduleFingerprint(data), {
+    createdAt:clock.now() - oldAgeMs,
+    solverStartedAtMs:clock.now() - oldAgeMs + 5_000,
+    progressBudgetSeconds:60
+  });
+  assert.equal(hooks.readPendingBackendJob()?.jobId, jobId);
+
+  assert.ok(await hooks.resumePendingBackendJobOnLoad(0));
+  assert.equal(resultPolls, 1);
+  assert.equal(solvePosts, 0);
+  assert.equal(hooks.readPendingBackendJob(), null);
+});
+
 test("AbortError detaches without cancelling and can reconnect on the same page", async () => {
   const data = makeData(2);
   const clock = createFakeClock();
   let cancelPosts = 0;
   let wireJobId = "";
-  let resumeCalls = 0;
   const fetchImpl = async (url, options = {}) => {
     const requestUrl = String(url);
     if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
@@ -5151,9 +5424,7 @@ test("AbortError detaches without cancelling and can reconnect on the same page"
   assert.equal(hooks.readPendingBackendJob()?.jobId, wireJobId);
   assert.equal(hooks.friendlySolveError(detachedError).title, "Đang chờ kết nối lại");
   assert.equal(hooks.localSolveLifecycleActive(), false, "a remote pending id must not block its own reconnect");
-  window.sapXepTuDongAll = async () => { resumeCalls += 1; return null; };
   assert.equal(await hooks.resumePendingBackendJobOnLoad(0), true);
-  assert.equal(resumeCalls, 1);
 });
 
 test("a failed POST transport preserves the stable job id for replay", async () => {
@@ -5290,7 +5561,6 @@ test("pending jobs are scoped by sid and can auto-resume after reload", async ()
   const data = makeData(2);
   const clock = createFakeClock(1_700_000_000_000, 0);
   const progress = createProgressDocument(clock);
-  let resumeCalls = 0;
   let cancelledJob = "";
   const fetchImpl = async (url, options = {}) => {
     const requestUrl = String(url);
@@ -5308,6 +5578,7 @@ test("pending jobs are scoped by sid and can auto-resume after reload", async ()
         queue:[]
       });
     }
+    if(requestUrl.includes("/api/solve-result")) throw detachedAbortError();
     throw new Error(`Unexpected URL: ${url}`);
   };
   const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
@@ -5328,9 +5599,8 @@ test("pending jobs are scoped by sid and can auto-resume after reload", async ()
   assert.equal(hooks.readPendingBackendJob()?.jobId, "job-school-a");
 
   window.location.search = "?sid=school-b";
-  window.sapXepTuDongAll = async () => { resumeCalls += 1; return null; };
   assert.equal(await hooks.resumePendingBackendJobOnLoad(0), true);
-  assert.equal(resumeCalls, 1);
+  assert.equal(hooks.readPendingBackendJob()?.jobId, "job-school-b");
 
   hooks.writePendingBackendJob("stale-auto-resume", "v1:old-schedule");
   for(let hydrationAttempt = 0; hydrationAttempt < 6; hydrationAttempt += 1){
@@ -5450,6 +5720,7 @@ test("reload keeps a pending job until owner identity finishes hydrating on retr
         completedJobs:[]
       });
     }
+    if(requestUrl.includes("/api/solve-result")) throw detachedAbortError();
     throw new Error(`Unexpected URL: ${url}`);
   };
   const progress = createProgressDocument(clock);
@@ -5458,23 +5729,9 @@ test("reload keeps a pending job until owner identity finishes hydrating on retr
     location,
     document:progress.document
   }));
-  let resumeCalls = 0;
-  let attachedJob = null;
-  let restoredProgress = null;
-  let restoredStatus = "";
-  reloaded.window.sapXepTuDongAll = async () => {
-    resumeCalls += 1;
-    attachedJob = reloaded.hooks.readPendingBackendJob();
-    reloaded.hooks.primeAutoSortStartUi();
-    restoredProgress = Object.assign({}, reloaded.window.__TKB_RUST_PROGRESS_STATE || {});
-    restoredStatus = progress.nodes.get("statusMsg").textContent;
-    return null;
-  };
-
   assert.equal(reloaded.hooks.readPendingBackendJob(), null, "owner identity is intentionally unavailable at first");
   assert.equal(await reloaded.hooks.resumePendingBackendJobOnLoad(0), false);
   assert.equal(stateCalls, 0);
-  assert.equal(resumeCalls, 0);
   const storedBeforeIdentity = JSON.parse(localStorage.getItem("TKB_SERVER_SOLVER_JOB_V1") || "{}");
   assert.equal(
     Object.values(storedBeforeIdentity).some(item => item?.jobId === jobId),
@@ -5486,12 +5743,10 @@ test("reload keeps a pending job until owner identity finishes hydrating on retr
   reloaded.window.TKBAuth = {getSession:() => ({userId:ownerId})};
   assert.equal(await reloaded.hooks.resumePendingBackendJobOnLoad(1), true);
   assert.equal(stateCalls, 1);
-  assert.equal(resumeCalls, 1);
-  assert.equal(attachedJob?.jobId, jobId);
   assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, jobId);
-  assert.equal(restoredProgress.label, "12 giây");
-  assert.equal(restoredProgress.runIndex, 2);
-  assert.equal(restoredStatus, "Đang sắp xếp...");
+  assert.equal(reloaded.window.__TKB_RUST_PROGRESS_STATE?.label, "12 giây");
+  assert.equal(reloaded.window.__TKB_RUST_PROGRESS_STATE?.runIndex, 2);
+  assert.match(progress.nodes.get("statusMsg").textContent, /nối lại/i);
 });
 
 test("reload defers a temporary schedule fingerprint mismatch until DATA hydration settles", async () => {
@@ -5543,6 +5798,7 @@ test("reload defers a temporary schedule fingerprint mismatch until DATA hydrati
         completedJobs:[]
       });
     }
+    if(requestUrl.includes("/api/solve-result")) throw detachedAbortError();
     throw new Error(`Unexpected URL: ${url}`);
   };
   const progress = createProgressDocument(clock);
@@ -5555,22 +5811,8 @@ test("reload defers a temporary schedule fingerprint mismatch until DATA hydrati
   assert.notEqual(reloaded.hooks.durableScheduleFingerprint(hydratingData), stableFingerprint);
   assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, jobId);
 
-  let resumeCalls = 0;
-  let attachedJobId = "";
-  let restoredProgress = null;
-  let restoredStatus = "";
-  reloaded.window.sapXepTuDongAll = async () => {
-    resumeCalls += 1;
-    attachedJobId = reloaded.hooks.readPendingBackendJob()?.jobId || "";
-    reloaded.hooks.primeAutoSortStartUi();
-    restoredProgress = Object.assign({}, reloaded.window.__TKB_RUST_PROGRESS_STATE || {});
-    restoredStatus = progress.nodes.get("statusMsg").textContent;
-    return null;
-  };
-
   assert.equal(await reloaded.hooks.resumePendingBackendJobOnLoad(0), false);
   assert.equal(stateCalls, 0, "a transient local mismatch should wait for hydration before contacting the VPS");
-  assert.equal(resumeCalls, 0);
   assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, jobId, "pending work must survive the first mismatch");
   assert.ok(clock.pendingTimers() > 0, "a temporary fingerprint mismatch must schedule a retry");
 
@@ -5578,12 +5820,10 @@ test("reload defers a temporary schedule fingerprint mismatch until DATA hydrati
   assert.equal(reloaded.hooks.durableScheduleFingerprint(hydratingData), stableFingerprint);
   assert.equal(await reloaded.hooks.resumePendingBackendJobOnLoad(1), true);
   assert.equal(stateCalls, 1);
-  assert.equal(resumeCalls, 1);
-  assert.equal(attachedJobId, jobId);
   assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, jobId);
-  assert.equal(restoredProgress.label, "10 giây");
-  assert.equal(restoredProgress.runIndex, 2);
-  assert.equal(restoredStatus, "Đang sắp xếp...");
+  assert.equal(reloaded.window.__TKB_RUST_PROGRESS_STATE?.label, "10 giây");
+  assert.equal(reloaded.window.__TKB_RUST_PROGRESS_STATE?.runIndex, 2);
+  assert.match(progress.nodes.get("statusMsg").textContent, /nối lại/i);
 });
 
 test("blank anonymous browser checks the shared server job state without attaching unrelated work", async () => {
@@ -5635,20 +5875,15 @@ test("blank authenticated browser keeps watching for a job admitted after its fi
         completedJobs:[]
       });
     }
+    if(requestUrl.includes("/api/solve-result")) throw detachedAbortError();
     throw new Error(`Unexpected URL: ${url}`);
   };
   const {window, hooks} = loadBridge(data, fetchImpl, clock);
   scheduleFingerprint = hooks.durableScheduleFingerprint(data);
   window.TKBAuth = {getSession:() => ({userId:"same-owner"})};
-  let resumeCalls = 0;
-  window.sapXepTuDongAll = async () => {
-    resumeCalls += 1;
-    return null;
-  };
 
   assert.equal(await hooks.resumePendingBackendJobOnLoad(0), false);
   assert.equal(stateCalls, 1);
-  assert.equal(resumeCalls, 0);
   assert.equal(hooks.readPendingBackendJob(), null);
   assert.ok(clock.pendingTimers() > 0, "an empty valid owner state must leave a background discovery timer");
 
@@ -5657,7 +5892,6 @@ test("blank authenticated browser keeps watching for a job admitted after its fi
   await new Promise(resolve => setImmediate(resolve));
 
   assert.equal(stateCalls, 2);
-  assert.equal(resumeCalls, 1);
   assert.equal(hooks.readPendingBackendJob()?.jobId, runningJobId);
   assert.equal(hooks.readPendingBackendJob()?.discoveredFromOwnerState, true);
 });
@@ -5693,6 +5927,7 @@ test("blank authenticated browser auto-discovers the matching owner running job"
         completedJobs:[]
       });
     }
+    if(requestUrl.includes("/api/solve-result")) throw detachedAbortError();
     throw new Error(`Unexpected URL: ${url}`);
   };
   const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
@@ -5707,13 +5942,8 @@ test("blank authenticated browser auto-discovers the matching owner running job"
   };
   assert.equal(hooks.readPendingBackendJob(), null);
 
-  let pendingSeenByResume = null;
-  window.sapXepTuDongAll = async () => {
-    pendingSeenByResume = hooks.readPendingBackendJob();
-    return null;
-  };
-
   assert.equal(await hooks.resumePendingBackendJobOnLoad(0), true);
+  const pendingSeenByResume = hooks.readPendingBackendJob();
   assert.equal(pendingSeenByResume?.jobId, runningJobId);
   assert.equal(pendingSeenByResume?.scheduleFingerprint, scheduleFingerprint);
   assert.equal(pendingSeenByResume?.discoveredFromOwnerState, true);
@@ -5751,6 +5981,7 @@ test("blank authenticated browser auto-discovers the matching owner queued job",
         completedJobs:[]
       });
     }
+    if(requestUrl.includes("/api/solve-result")) throw detachedAbortError();
     throw new Error(`Unexpected URL: ${url}`);
   };
   const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
@@ -5761,13 +5992,8 @@ test("blank authenticated browser auto-discovers the matching owner queued job",
   window.TKBAuth = {getSession:() => ({userId:"same-owner"})};
   assert.equal(hooks.readPendingBackendJob(), null);
 
-  let resumedJobId = "";
-  window.sapXepTuDongAll = async () => {
-    resumedJobId = hooks.readPendingBackendJob()?.jobId || "";
-    return null;
-  };
-
   assert.equal(await hooks.resumePendingBackendJobOnLoad(0), true);
+  const resumedJobId = hooks.readPendingBackendJob()?.jobId || "";
   assert.equal(resumedJobId, queuedJobId);
   assert.equal(hooks.readPendingBackendJob()?.jobId, queuedJobId);
   assert.equal(hooks.readPendingBackendJob()?.scheduleFingerprint, scheduleFingerprint);
@@ -5805,6 +6031,7 @@ test("blank authenticated browser recovers the newest matching completed owner j
         ]
       });
     }
+    if(requestUrl.includes("/api/solve-result")) throw detachedAbortError();
     throw new Error(`Unexpected URL: ${url}`);
   };
   const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
@@ -5815,13 +6042,8 @@ test("blank authenticated browser recovers the newest matching completed owner j
   window.TKBAuth = {getSession:() => ({userId:"same-owner"})};
   assert.equal(hooks.readPendingBackendJob(), null);
 
-  let resumedJobId = "";
-  window.sapXepTuDongAll = async () => {
-    resumedJobId = hooks.readPendingBackendJob()?.jobId || "";
-    return null;
-  };
-
   assert.equal(await hooks.resumePendingBackendJobOnLoad(0), true);
+  const resumedJobId = hooks.readPendingBackendJob()?.jobId || "";
   assert.equal(resumedJobId, "completed-newest");
   assert.equal(hooks.readPendingBackendJob()?.jobId, "completed-newest");
   assert.equal(hooks.readPendingBackendJob()?.discoveredFromOwnerState, true);
@@ -5865,6 +6087,7 @@ test("F5 does not rediscover a completed job already consumed by this browser", 
         }]
       });
     }
+    if(requestUrl.includes("/api/solve-result")) throw detachedAbortError();
     throw new Error(`Unexpected URL: ${url}`);
   };
   const reloadedPage = loadBridge(data, fetchImpl, runtime);
@@ -6006,6 +6229,7 @@ test("cross-device discovery prioritizes a matching running job over queued and 
         }]
       });
     }
+    if(requestUrl.includes("/api/solve-result")) throw detachedAbortError();
     throw new Error(`Unexpected URL: ${url}`);
   };
   const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
@@ -6015,13 +6239,8 @@ test("cross-device discovery prioritizes a matching running job over queued and 
   scheduleFingerprint = hooks.durableScheduleFingerprint(data);
   window.TKBAuth = {getSession:() => ({userId:"same-owner"})};
 
-  let resumedJobId = "";
-  window.sapXepTuDongAll = async () => {
-    resumedJobId = hooks.readPendingBackendJob()?.jobId || "";
-    return null;
-  };
-
   assert.equal(await hooks.resumePendingBackendJobOnLoad(0), true);
+  const resumedJobId = hooks.readPendingBackendJob()?.jobId || "";
   assert.equal(resumedJobId, "priority-running");
   assert.equal(hooks.readPendingBackendJob()?.jobId, "priority-running");
 });
@@ -6198,6 +6417,7 @@ test("closing and reopening keeps the same pending VPS job across derived reload
         completedJobs:[]
       });
     }
+    if(requestUrl.includes("/api/solve-result")) throw detachedAbortError();
     if(requestUrl.endsWith("/api/solve-cancel")){
       cancelPosts += 1;
       return jsonResponse({ok:true, cancelRequested:true});
@@ -6209,13 +6429,8 @@ test("closing and reopening keeps the same pending VPS job across derived reload
     setTimeout(){ return 0; },
     clearTimeout(){}
   });
-  let resumedJobId = "";
-  reloadedPage.window.sapXepTuDongAll = async () => {
-    resumedJobId = reloadedPage.hooks.readPendingBackendJob()?.jobId || "";
-    return null;
-  };
-
   assert.equal(await reloadedPage.hooks.resumePendingBackendJobOnLoad(0), true);
+  const resumedJobId = reloadedPage.hooks.readPendingBackendJob()?.jobId || "";
   assert.equal(resumedJobId, "reload-vps-job");
   assert.equal(reloadedPage.hooks.isSettledBackendJob("reload-vps-job"), false);
   assert.equal(cancelPosts, 0);

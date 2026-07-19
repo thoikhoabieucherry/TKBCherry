@@ -1,4 +1,4 @@
-window.__PHANMON_VERSION = "updated-v9.3 (v1.34 iOS resume + frontier cleanup)";
+window.__PHANMON_VERSION = "updated-v9.4 (v1.35 iOS poll-only reattach)";
 
 (function installPlannerMobileViewportSync(){
   if(window.__TKB_MOBILE_VIEWPORT_SYNC_BOUND === true) return;
@@ -7558,16 +7558,16 @@ try{
 }catch(_){ }
 
 function hideAutoSortProgress(){
-  // Compatibility API: reset to the mobile idle state instead of blanking the
-  // permanently reserved feedback row. Desktop CSS still hides `.is-idle`.
+  // Keep the feedback row's height reserved so the timetable never jumps, but
+  // hide idle progress content until a solve or reconnect actually starts.
   window.clearTimeout(window.__autoSortProgressHideTimer);
   window.__autoSortProgressHideTimer = null;
   const wrap = document.getElementById("autoSortProgress");
   if(wrap){
     wrap.classList.remove("is-active", "is-error", "is-warning", "is-complete");
     wrap.classList.add("is-idle");
-    wrap.hidden = false;
-    wrap.setAttribute("aria-hidden", "false");
+    wrap.hidden = true;
+    wrap.setAttribute("aria-hidden", "true");
     const track = wrap.querySelector(".auto-sort-track");
     const fill = document.getElementById("autoSortProgressFill");
     const pct = document.getElementById("autoSortProgressPct");
@@ -7669,13 +7669,7 @@ function finishAutoSortProgress(label, state){
     resetAutoSortStopRequest();
     return;
   }
-  setAutoSortProgress(100, "Hoàn tất");
-  const wrap = document.getElementById("autoSortProgress");
-  if(wrap) wrap.classList.add("is-complete");
-  window.clearTimeout(window.__autoSortProgressHideTimer);
-  window.__autoSortProgressHideTimer = null;
-  setAutoSortStopVisible(false);
-  resetAutoSortStopRequest();
+  hideAutoSortProgress();
 }
 
 function invalidateSolverStateAfterScheduleDelete(resetLessonMappings){
