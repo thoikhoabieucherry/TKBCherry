@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v249-delete-barrier-adaptive-quality";
+  const VERSION = "tkb-rust-api-v250-ios-resume-complete-first";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -2024,10 +2024,23 @@
           return retainedPayload || data?.tkbSolverResult || null;
         }
         clearActiveBackendJobId(jobId, {force:true});
-        finishProgress("Lỗi", "error");
-        setStatus(err?.message || "Không theo dõi được lượt xếp trên máy chủ.", "warning");
-        publishE2EState("error", err?.payload || null, {
-          message:err?.message || "solver_resume_failed",
+        const rawError = String(err && (err.message || err) || err);
+        const level = friendly?.level || "error";
+        const statusLevel = friendly?.statusLevel || level;
+        const statusMessage = friendly?.statusMessage
+          || (friendly?.title ? `${friendly.title}: ${friendly.message}` : friendly?.message)
+          || "Không theo dõi được lượt xếp trên máy chủ.";
+        window.__TKB_SOLVER_LAST_ERROR_RAW = rawError;
+        window.__TKB_SOLVER_LAST_ERROR = friendly?.message || statusMessage;
+        if(err?.payload && typeof err.payload === "object"){
+          window.__TKB_SOLVER_LAST_ERROR_PAYLOAD = err.payload;
+        }
+        finishProgress(level === "warning" ? (friendly?.progressLabel || "Chưa đủ") : "Lỗi", level);
+        setStatus(statusMessage, statusLevel);
+        publishE2EState(level === "warning" ? "incomplete" : "error", err?.payload || null, {
+          title:friendly?.title || "",
+          message:friendly?.message || statusMessage,
+          rawError,
           pollOnlyReattach:true,
           jobId
         });

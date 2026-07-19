@@ -5808,17 +5808,19 @@ test("poll-only reattach survives the pending row disappearing during its state 
   assert.equal(hooks.isSettledBackendJob(jobId), true);
 });
 
-test("a resumed incomplete result ends without solver_resume_missing or a duplicate solve", async () => {
+test("an iOS foreground after the deadline localizes a terminal watchdog and settles once", async () => {
   const data = makeData(2);
   const clock = createFakeClock(1_700_000_000_000, 0);
+  const progress = createProgressDocument(clock);
   const canonicalJobId = "ios-resume-incomplete-canonical";
   let resultPolls = 0;
   let solvePosts = 0;
   let cancelPosts = 0;
+  const statusEvents = [];
   const incomplete = {
     ok:false,
     kind:"no_complete_schedule_before_deadline",
-    error:"Chưa đủ thời gian để hoàn tất.",
+    error:"Server watchdog budget was exhausted before a complete schedule was returned.",
     lessons:[{classId:"L1", subject:"Toán", teacher:"GV01", day:2, session:"AM", period:1}],
     metrics:{scheduled_periods:1, expected_periods:2, unassigned_periods:1, hard_ok:true},
     validation:{hard_ok:true, violations:[]},
@@ -5854,10 +5856,15 @@ test("a resumed incomplete result ends without solver_resume_missing or a duplic
     }
     throw new Error(`Unexpected URL: ${url}`);
   };
-  const {window, hooks} = loadBridge(data, fetchImpl, clock);
+  const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+    document:progress.document
+  }));
+  window._setStatus = (message, type) => {
+    statusEvents.push({message:String(message || ""), type:String(type || "")});
+  };
   hooks.writePendingBackendJob(canonicalJobId, hooks.durableScheduleFingerprint(data), {
-    createdAt:clock.now() - 20_000,
-    solverStartedAtMs:clock.now() - 18_000,
+    createdAt:clock.now() - 310_000,
+    solverStartedAtMs:clock.now() - 305_000,
     progressBudgetSeconds:60
   });
 
@@ -5867,6 +5874,18 @@ test("a resumed incomplete result ends without solver_resume_missing or a duplic
   assert.equal(cancelPosts, 0);
   assert.equal(hooks.readPendingBackendJob(), null);
   assert.equal(hooks.isSettledBackendJob(canonicalJobId), true);
+  assert.deepEqual(statusEvents.at(-1), {
+    message:"Chưa tìm được lịch đủ; lịch hiện tại vẫn được giữ nguyên.",
+    type:"warning"
+  });
+  assert.doesNotMatch(statusEvents.map(item => item.message).join("\n"), /Server watchdog budget/i);
+  assert.equal(progress.label.textContent, "Chưa đủ");
+  assert.equal(progress.button.disabled, false);
+
+  // A later foreground wake may probe owner state again, but the settled
+  // terminal id must not be adopted or polled a second time.
+  assert.equal(await hooks.resumePendingBackendJobOnLoad(0), false);
+  assert.equal(resultPolls, 1);
 });
 
 test("a long iOS suspension retains the pending id beyond the active solve clock", async () => {

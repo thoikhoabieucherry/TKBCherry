@@ -8,10 +8,10 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.44** (delete persistence barrier,
-  safe CP-SAT seeds, and adaptive first-click quality rescue). Public API
-  marker: `tkb_new-rust-api-2026-07-19-delete-barrier-adaptive-quality-v44`;
-  page cache: `20260719-v144-delete-barrier-adaptive-quality-v1`.
+- Current deployed application release: **v1.45** (iOS resume settlement and
+  complete-first period-safe scheduling). Public API marker:
+  `tkb_new-rust-api-2026-07-19-ios-resume-complete-first-v45`; page cache:
+  `20260719-v145-ios-resume-complete-first-v1`.
 - Current public Agent release: **v1.6.16** (`1.6.16`). The server lease gate
   is also 1.6.16 so an older Agent can update itself but cannot execute a job
   with a mismatched solver contract.
@@ -195,6 +195,82 @@ change so a machine restart or a new conversation does not erase project context
   and rendered the default fixture complete at `29/29` with zero unassigned.
   The VPS-only browser check used one canonical job while Agent stayed offline;
   no Agent invitation appeared and no second job was created.
+
+### Post-v1.44 iOS terminal-watchdog UI contract (local, not deployed)
+
+- Reproduced the iPhone Home Screen sequence where a fixed-only fresh solve is
+  backgrounded beyond its deadline and the VPS retains a terminal
+  `no_complete_schedule_before_deadline` result. Foreground recovery was
+  correctly polling the canonical job once and settling it, but the poll-only
+  catch path bypassed `friendlySolveError`, painted a red `Lỗi`, and exposed the
+  raw English server-watchdog text.
+- Poll-only reattach now uses the same localized terminal-error contract as the
+  foreground solve path. A genuine incomplete watchdog result ends as the
+  Vietnamese warning `Chưa tìm được lịch đủ; lịch hiện tại vẫn được giữ
+  nguyên.`, records the raw payload only in diagnostics, consumes the pending
+  job, unlocks Play, and cannot be rediscovered into a reconnect loop.
+- The regression suspends the simulated page for over five minutes and verifies
+  one result GET, zero duplicate solve POSTs, zero cancel requests, no raw
+  English UI text, a settled job id, and no second poll on the next wake. The
+  bridge suite passes **189/189**, planner PWA tests pass **4/4** (**193/193**
+  combined), and `node --check` passes. This UI fix does not turn a genuinely
+  incomplete watchdog payload into a complete timetable; the solver/watchdog
+  cause must be verified separately before a release.
+
+### v1.45 iOS resume + complete-first (deployed 2026-07-19)
+
+- Production logs prove that iPhone backgrounding did not cancel or duplicate
+  the reported jobs. Each canonical VPS job ran about `65.16s` with the Agent
+  offline, then genuinely returned HTTP `422` because no complete candidate had
+  reached the Rust watchdog. The retained result remained available server-side
+  and the foreground tab correctly reattached to that same job.
+- Poll-only iOS/PWA reattach now routes terminal errors through
+  `friendlySolveError`, consumes the terminal job once, unlocks Play, and never
+  exposes the raw English watchdog message. A simulated 305-second suspension
+  verifies one result poll, zero duplicate solve POSTs, and zero cancel calls.
+- Phase F now builds a complete hard-valid timetable before treating singleton
+  sessions or gap-2 as quality failures. `maxDays`, `maxSessions`, AM/PM counts,
+  and one-session-per-day remain hard in the compact session CP-SAT model and
+  are no longer misclassified as concrete-period bridge rules.
+- For large period-sensitive data, mandatory Phase F uses the computed
+  data-sized feasibility ceiling instead of the UI quality target plus
+  headroom. On the exact 1,566-period `default` data, cap `501` failed one of
+  three VPS seeds; cap `522` completed all three at `1566/1566`, zero unassigned,
+  `hard_ok=true`, while preserving all 54 fixed lessons and the three-day
+  teacher rule. A fast failure still retries the theoretical upper completion
+  cap; all later quality exceptions retain the validated Phase-F incumbent.
+- Soft singleton/gap-2 debt remains allowed when user constraints make those
+  goals impossible. Actual CP-SAT regressions cover an unavoidable singleton,
+  an unavoidable gap-2, and a fixed lesson plus residual demand under aggregate
+  teacher day/session caps.
+- Release markers: API
+  `tkb_new-rust-api-2026-07-19-ios-resume-complete-first-v45`, bridge
+  `tkb-rust-api-v250-ios-resume-complete-first`, and page cache
+  `20260719-v145-ios-resume-complete-first-v1`. Agent remains `1.6.16` and is
+  deliberately offline for the server-only staging/live path.
+- Local verification passes frontend/PWA **229/229** and scheduler **142/142**.
+  Isolated VPS staging passes scheduler **142/142**, Agent contract **72/72**,
+  Rust API **136/136**, and validator **20/20**, ending with
+  `STAGING_TESTS_OK`.
+- Production deployment returned `UPDATE_OK`. Transaction backups are
+  `/opt/cherry-scheduler-backups/server-state-20260719-141010.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260719-141010.tar.gz`. The public
+  bridge SHA-256 matches the release source:
+  `691E69D899DB246545342D1F5A5895E7AA1A52908DF65791959190AA34D8EEF1`.
+- Live Agent-offline E2E reproduced the reported iPhone lifecycle: start from
+  the 54 fixed lessons, click Play, navigate away while the VPS solves, then
+  reopen after the solver deadline. The browser reattached with `solver-state`
+  and `solve-result`, issued no duplicate solve POST, applied all 1,566 lessons,
+  and settled to `Đã xếp xong!` with controls unlocked. The accepted timetable
+  had zero unassigned lessons, `hard_ok=true`, 522 teacher sessions, 21
+  one-period sessions, 91 gap-1 sessions, and 9 gap-2 sessions. Result
+  application plus remote persistence can take another one to two minutes on
+  this large timetable after the solver itself has finished.
+- Known follow-up risk: the period-safe Phase-F lane reserves no separate time
+  for its theoretical upper-cap retry. A fast cap failure is covered and tested,
+  but a late CP-SAT `UNKNOWN` on a larger school could consume the click before
+  that fallback is constructed. Benchmark a parallel or explicitly reserved
+  complete-first lane in staging before changing this production flow again.
 
 ### Fixed-only empty-flexible fallback (included in deployed v1.43)
 
@@ -2292,16 +2368,17 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-19: `UPDATE_OK` for
-v1.44. Public health serves API marker
-`tkb_new-rust-api-2026-07-19-delete-barrier-adaptive-quality-v44`; the page
-serves cache key `20260719-v144-delete-barrier-adaptive-quality-v1`. Public
+v1.45. Public health serves API marker
+`tkb_new-rust-api-2026-07-19-ios-resume-complete-first-v45`; the page serves
+cache key `20260719-v145-ios-resume-complete-first-v1`. Public
 Agent release `1.6.16` and its signed manifest are live. The archive SHA-256 is
 `18b970418ec42af36114037e32514684cecf1a98a4d20c21dd9c43f36f17cc97`; the
 packed executable SHA-256 is
 `282c71be3dda0135599c3d937d9d75c587b02752ac32f6503559ee87cfa9d869`.
-The v1.44 production VPS-only E2E used one canonical job, finished with zero
-unassigned periods, and released all worker tokens. No-Agent/Cancel and Agent
-handoff regressions remain covered by the local and isolated VPS suites.
+The v1.45 production VPS-only iPhone-resume E2E used one canonical job,
+finished with zero unassigned periods, settled after reopening, and released
+all worker tokens. No-Agent/Cancel and Agent handoff regressions remain covered
+by the local and isolated VPS suites.
 Workstations on Agent `1.6.2` or older require one manual install of a
 self-update-capable build before future in-Agent updates are available.
 

@@ -5120,31 +5120,26 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertIs(result, feasibility)
         self.assertIs(metrics, feasibility["metrics"])
         self.assertEqual(termination, "first_click_feasibility_retained")
-        self.assertEqual(solve_candidate.call_count, 2)
-        strict_settings = solve_candidate.call_args_list[0].args[1]
-        self.assertEqual(strict_settings["max_one_period_sessions"], 0)
-        self.assertTrue(strict_settings["strict_one_period_sessions_cap"])
-        self.assertEqual(strict_settings["period_max_teacher_gap"], 1)
-        feasibility_settings = solve_candidate.call_args_list[1].args[1]
+        self.assertEqual(solve_candidate.call_count, 1)
+        feasibility_settings = solve_candidate.call_args.args[1]
         self.assertEqual(
             feasibility_settings["auto_sort_strategy"],
-            "constraint_change_quality_debt_fallback",
+            "fresh_complete_period_safe_feasibility",
         )
         self.assertEqual(feasibility_settings["max_one_period_sessions"], "off")
         self.assertFalse(feasibility_settings["strict_one_period_sessions_cap"])
         self.assertFalse(feasibility_settings["enforce_max_one_period_sessions"])
         self.assertTrue(feasibility_settings["allow_quality_debt"])
         self.assertTrue(feasibility_settings["optimization_benders_allow_one_period_debt"])
-        self.assertFalse(feasibility_settings["optimization_benders_session_feasibility_only"])
+        self.assertTrue(feasibility_settings["optimization_benders_session_feasibility_only"])
         self.assertTrue(
             feasibility_settings["optimization_benders_period_feasibility_all_sessions"]
         )
         self.assertEqual(feasibility_settings["period_max_teacher_gap"], "off")
         self.assertTrue(attempts[0]["constraint_change_feasibility_first"])
-        self.assertFalse(attempts[0]["quality_debt_allowed"])
-        self.assertFalse(attempts[0]["accepted"])
-        self.assertTrue(attempts[1]["quality_debt_allowed"])
-        self.assertTrue(attempts[1]["accepted"])
+        self.assertTrue(attempts[0]["safe_period_feasibility_first"])
+        self.assertTrue(attempts[0]["quality_debt_allowed"])
+        self.assertTrue(attempts[0]["accepted"])
 
     def test_bounded_fresh_first_click_accepts_hard_valid_quality_debt(self) -> None:
         feasibility = _first_click_payload(
@@ -5331,7 +5326,7 @@ class SolverResultContractTests(unittest.TestCase):
             36,
         )
 
-    def test_first_click_with_tight_teacher_days_enables_full_period_bridge(self) -> None:
+    def test_first_click_with_tight_teacher_days_uses_session_model_without_period_bridge(self) -> None:
         data = {
             "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
             "giaovien": [{"magv": "T1", "ten": "T1"}],
@@ -5378,14 +5373,16 @@ class SolverResultContractTests(unittest.TestCase):
 
         self.assertIs(result, feasibility)
         feasibility_settings = solve_candidate.call_args.args[1]
-        self.assertTrue(
+        self.assertFalse(
             feasibility_settings["optimization_benders_period_feasibility_all_sessions"]
         )
+        self.assertTrue(feasibility_settings["optimization_benders_lean_refinement_periods"])
         self.assertFalse(attempts[0]["constraint_change_feasibility_first"])
-        self.assertTrue(attempts[0]["period_feasibility_bridge_required"])
-        self.assertTrue(attempts[0]["period_feasibility_all_sessions"])
+        self.assertFalse(attempts[0]["period_feasibility_bridge_required"])
+        self.assertFalse(attempts[0]["period_feasibility_all_sessions"])
+        self.assertFalse(attempts[0]["safe_period_feasibility_first"])
 
-    def test_first_60_second_period_bridge_gets_a_complete_session_slice(self) -> None:
+    def test_first_60_second_teacher_day_rule_stays_on_lean_session_model(self) -> None:
         data = {
             "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
             "giaovien": [{"magv": "T1", "ten": "T1"}],
@@ -5431,13 +5428,238 @@ class SolverResultContractTests(unittest.TestCase):
                 requested_random_seed=1,
             )
 
-        feasibility_call = solve_candidate.call_args_list[0]
+        self.assertEqual(solve_candidate.call_count, 1)
+        feasibility_call = solve_candidate.call_args
         self.assertGreaterEqual(feasibility_call.kwargs["time_limit_seconds"], 26)
         self.assertLessEqual(feasibility_call.kwargs["time_limit_seconds"], 27)
         self.assertEqual(
             feasibility_call.args[1]["optimization_benders_session_time_limit"],
-            41,
+            24,
         )
+        self.assertFalse(
+            feasibility_call.args[1]["optimization_benders_period_feasibility_all_sessions"]
+        )
+        self.assertTrue(feasibility_call.args[1]["optimization_benders_lean_refinement_periods"])
+        self.assertEqual(feasibility_call.args[1]["max_one_period_sessions"], 0)
+        self.assertTrue(feasibility_call.args[1]["strict_one_period_sessions_cap"])
+
+    def test_period_bridge_bounded_click_accepts_hard_valid_debt_before_soft_quality(self) -> None:
+        data = {
+            "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
+            "giaovien": [{"magv": "T1", "ten": "T1"}],
+            "monhoc": [{"ten": "Math", "ma": "M"}],
+            "mon": [{"khoi": "6", "ten": "Math", "sotiet": 2, "gioihan": 2}],
+            "pccmMatrix": {"L1|Math": "T1"},
+            "tkbConstraints": {
+                "fixedOff": {
+                    "class": {
+                        "L1": {"thu2|sang|0": True},
+                    },
+                }
+            },
+        }
+        ctx = build_school_data_from_ui(data)
+        hard_valid = _first_click_payload(
+            teacher_sessions=2,
+            gap1=0,
+            one_period_sessions=1,
+        )
+        hard_valid["metrics"]["gap_distribution"] = {"0": 1, "2": 1}
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            return_value=hard_valid,
+        ) as solve_candidate:
+            result, metrics, attempts, termination = (
+                _solve_unified_first_click_feasibility_then_quality(
+                    data,
+                    {
+                        "target_teacher_sessions": 2,
+                        "optimization_accept_teacher_sessions": 2,
+                        "optimization_first_click_local_lns_time_limit_seconds": 0,
+                        "optimization_first_click_quality_cap_headroom": 1,
+                        "overall_time_limit_seconds": 60,
+                        "ui_bounded_fresh_accept_quality_debt": True,
+                        "num_workers": 6,
+                    },
+                    bound_ctx=ctx,
+                    bounds={
+                        "lower_cap": 2,
+                        "start_cap": 2,
+                        "upper_cap": 4,
+                        "expected_periods": 1566,
+                    },
+                    profile={"expected": 1566, "class_count": 1},
+                    rules=ctx.rules,
+                    progress=None,
+                    deadline=SolverDeadline(60),
+                    polish_seeds=[1],
+                    requested_random_seed=2054740674,
+                )
+            )
+
+        self.assertIs(result, hard_valid)
+        self.assertIs(metrics, hard_valid["metrics"])
+        self.assertEqual(termination, "first_click_feasibility_retained")
+        self.assertEqual(solve_candidate.call_count, 1)
+        phase_f_settings = solve_candidate.call_args.args[1]
+        # The mandatory period-safe lane uses the full data-sized feasibility
+        # ceiling.  The requested quality cap is attempted only after a
+        # complete incumbent exists.
+        self.assertEqual(solve_candidate.call_args.kwargs["cap"], 4)
+        self.assertEqual(phase_f_settings["max_teacher_sessions"], 4)
+        self.assertEqual(
+            phase_f_settings["auto_sort_strategy"],
+            "fresh_complete_period_safe_feasibility",
+        )
+        self.assertEqual(phase_f_settings["max_one_period_sessions"], "off")
+        self.assertEqual(phase_f_settings["period_max_teacher_gap"], "off")
+        self.assertTrue(phase_f_settings["optimization_benders_session_feasibility_only"])
+        self.assertTrue(attempts[0]["safe_period_feasibility_first"])
+        self.assertTrue(attempts[0]["quality_debt_allowed"])
+        self.assertTrue(attempts[0]["accepted"])
+        self.assertFalse(
+            any(
+                item.get("attempt_key") == "fresh:phase_f:quality_debt_fallback"
+                for item in attempts
+            )
+        )
+
+    def test_period_safe_phase_f_failure_retries_the_upper_completion_cap(self) -> None:
+        complete = _first_click_payload(
+            teacher_sessions=610,
+            gap1=90,
+            one_period_sessions=12,
+        )
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=[RuntimeError("tight cap unknown"), complete],
+        ) as solve_candidate:
+            result, metrics, attempts, termination = (
+                _solve_unified_first_click_feasibility_then_quality(
+                    {},
+                    {
+                        "target_teacher_sessions": 482,
+                        "optimization_accept_teacher_sessions": 482,
+                        "optimization_first_click_local_lns_time_limit_seconds": 0,
+                        "overall_time_limit_seconds": 60,
+                        "ui_constraint_change_fresh_retry": True,
+                        "ui_stop_after_first_complete_schedule": True,
+                        "num_workers": 6,
+                    },
+                    bound_ctx=_context(),
+                    bounds={
+                        "lower_cap": 450,
+                        "start_cap": 466,
+                        "upper_cap": 650,
+                        "expected_periods": 1566,
+                    },
+                    profile={"expected": 1566, "class_count": 54},
+                    rules=None,
+                    progress=None,
+                    deadline=SolverDeadline(60),
+                    polish_seeds=[1],
+                    requested_random_seed=1,
+                )
+            )
+
+        self.assertIs(result, complete)
+        self.assertIs(metrics, complete["metrics"])
+        self.assertEqual(termination, "first_click_feasibility_retained")
+        self.assertEqual(solve_candidate.call_count, 2)
+        self.assertEqual(solve_candidate.call_args_list[0].kwargs["cap"], 522)
+        self.assertEqual(solve_candidate.call_args_list[1].kwargs["cap"], 650)
+        fallback_settings = solve_candidate.call_args_list[1].args[1]
+        self.assertEqual(fallback_settings["max_teacher_sessions"], 650)
+        self.assertTrue(fallback_settings["optimization_benders_session_feasibility_only"])
+        self.assertFalse(attempts[0]["accepted"])
+        self.assertTrue(attempts[1]["accepted"])
+        self.assertTrue(attempts[1]["quality_debt_allowed"])
+
+    def test_fixed_and_residual_teacher_max_days_stays_on_the_session_model(self) -> None:
+        classes = [
+            {"id": "L1", "ten": "6/1", "khoi": "6"},
+            {"id": "L2", "ten": "6/2", "khoi": "6"},
+            {"id": "L3", "ten": "6/3", "khoi": "6"},
+        ]
+        data = {
+            "lop": classes,
+            "giaovien": [{"magv": "T1", "ten": "T1"}],
+            "monhoc": [{"ten": "Math", "ma": "M"}],
+            "mon": [{"khoi": "6", "ten": "Math", "sotiet": 1, "gioihan": 1}],
+            "pccmMatrix": {f"{item['id']}|Math": "T1" for item in classes},
+            "pccmTietMatrix": {f"{item['id']}|Math": 1 for item in classes},
+            "tkb": {
+                "L1": {
+                    "thu2": {
+                        "sang": [
+                            {"mon": "Math", "fixed": True},
+                            "",
+                            "",
+                            "",
+                            "",
+                        ]
+                    }
+                }
+            },
+            "tkbConstraints": {
+                "teacher": {
+                    "T1": {
+                        "maxDaysSessions": {"maxDays": 1, "maxSessions": 1},
+                    }
+                }
+            },
+        }
+        ctx = build_school_data_from_ui(data)
+        result, metrics, attempts, termination = (
+            _solve_unified_first_click_feasibility_then_quality(
+                data,
+                {
+                    "target_teacher_sessions": 1,
+                    "optimization_accept_teacher_sessions": 1,
+                    "optimization_first_click_feasibility_time_limit_seconds": 12,
+                    "optimization_first_click_local_lns_time_limit_seconds": 0,
+                    "overall_time_limit_seconds": 12,
+                    "ui_bounded_fresh_accept_quality_debt": True,
+                    "ui_stop_after_first_complete_schedule": True,
+                    "num_workers": 1,
+                },
+                bound_ctx=ctx,
+                bounds={
+                    "lower_cap": 1,
+                    "start_cap": 1,
+                    "upper_cap": 12,
+                    "expected_periods": 3,
+                },
+                profile={"expected": 3, "class_count": 3},
+                rules=ctx.rules,
+                progress=None,
+                deadline=SolverDeadline(15),
+                polish_seeds=[1],
+                requested_random_seed=1,
+            )
+        )
+
+        self.assertEqual(termination, "first_click_feasibility_retained")
+        self.assertTrue(metrics["hard_ok"], json.dumps(result, ensure_ascii=False))
+        self.assertEqual(metrics["scheduled_periods"], 3)
+        self.assertEqual(metrics["unassigned_periods"], 0)
+        teacher_lessons = [item for item in result["lessons"] if item.get("teacher") == "T1"]
+        self.assertEqual(len(teacher_lessons), 3)
+        self.assertEqual({item["day"] for item in teacher_lessons}, {2})
+        self.assertEqual({item["session"] for item in teacher_lessons}, {"AM"})
+        self.assertTrue(
+            any(
+                item["day"] == 2
+                and item["session"] == "AM"
+                and item["period"] == 1
+                and item.get("className") == "6/1"
+                for item in teacher_lessons
+            )
+        )
+        self.assertFalse(attempts[0]["period_feasibility_bridge_required"])
+        self.assertFalse(attempts[0]["period_feasibility_all_sessions"])
+        self.assertFalse(attempts[0]["safe_period_feasibility_first"])
 
     def test_constraint_change_feasibility_places_unavoidable_single_period_teacher(self) -> None:
         data = {
@@ -5491,10 +5713,15 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertEqual(metrics["unassigned_periods"], 0)
         self.assertEqual(metrics["one_period_teacher_sessions"], 1)
         self.assertEqual(termination, "first_click_feasibility_retained")
-        self.assertFalse(attempts[0]["quality_debt_allowed"])
-        self.assertFalse(attempts[0]["accepted"])
-        self.assertTrue(attempts[1]["quality_debt_allowed"])
-        self.assertTrue(attempts[1]["accepted"])
+        self.assertFalse(
+            any(
+                item.get("attempt_key") == "fresh:phase_f:quality_debt_fallback"
+                for item in attempts
+            )
+        )
+        self.assertTrue(attempts[0]["safe_period_feasibility_first"])
+        self.assertTrue(attempts[0]["quality_debt_allowed"])
+        self.assertTrue(attempts[0]["accepted"])
 
     def test_fresh_feasibility_keeps_unavoidable_singleton_and_gap_two(self) -> None:
         def fixed_off_except(allowed: set[tuple[int, str, int]]) -> dict[str, bool]:
@@ -5611,9 +5838,15 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertGreater(metrics["one_period_teacher_sessions"], 0)
         self.assertEqual(int(metrics["gap_distribution"].get(2, 0)), 1)
         self.assertEqual(termination, "first_click_feasibility_retained")
-        self.assertFalse(attempts[0]["accepted"])
-        self.assertTrue(attempts[1]["quality_debt_allowed"])
-        self.assertTrue(attempts[1]["accepted"])
+        self.assertFalse(
+            any(
+                item.get("attempt_key") == "fresh:phase_f:quality_debt_fallback"
+                for item in attempts
+            )
+        )
+        self.assertTrue(attempts[0]["safe_period_feasibility_first"])
+        self.assertTrue(attempts[0]["quality_debt_allowed"])
+        self.assertTrue(attempts[0]["accepted"])
 
     def test_constraint_change_local_polish_keeps_partial_quality_improvement(self) -> None:
         feasibility = _first_click_payload(

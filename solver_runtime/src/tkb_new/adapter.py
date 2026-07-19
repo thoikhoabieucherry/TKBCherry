@@ -5251,21 +5251,10 @@ def _constraints_need_period_feasibility_bridge(rule_set: TimetableRuleSet) -> b
     def teacher_rule_needs_period_bridge(rule: Any) -> bool:
         if not isinstance(rule, Mapping):
             return False
-        max_days_sessions = rule.get("maxDaysSessions")
-        if isinstance(max_days_sessions, Mapping):
-            max_days = _to_int(max_days_sessions.get("maxDays"), 0)
-            max_sessions = _to_int(max_days_sessions.get("maxSessions"), 0)
-            if 0 < max_days < 6 or 0 < max_sessions < 12:
-                return True
-        morning_afternoon = rule.get("maxMorningAfternoon")
-        if isinstance(morning_afternoon, Mapping):
-            morning = _to_int(morning_afternoon.get("morning"), 0)
-            afternoon = _to_int(morning_afternoon.get("afternoon"), 0)
-            if 0 < morning < 6 or 0 < afternoon < 6:
-                return True
-        one_session = rule.get("oneSessionPerDay")
-        if isinstance(one_session, Mapping) and any(_truthy_setting(item) for item in one_session.values()):
-            return True
+        # Day/session counts are represented directly by d_vars/z_vars in the
+        # session CP-SAT model, including fixed lessons. They do not need the
+        # much larger concrete-period bridge. Only rules that name actual
+        # periods or cross the AM/PM period boundary belong below.
         must_teach = rule.get("mustTeach")
         if isinstance(must_teach, Mapping) and any(_truthy_setting(item) for item in must_teach.values()):
             return True
@@ -8854,6 +8843,15 @@ def _solve_unified_first_click_feasibility_then_quality(
         or period_feasibility_bridge_required
         or _truthy_setting(settings.get("optimization_benders_period_feasibility_all_sessions"))
     )
+    # Period-sensitive schools build the large all-session CP-SAT bridge.  On
+    # the VPS, spending the first half of a 60-second click proving the soft
+    # zero-singleton/gap<=1 envelope can leave too little time to construct the
+    # mandatory relaxed model.  Obtain an unconstrained hard-valid incumbent
+    # first, then let Phase Q spend the remaining budget on those quality goals.
+    # The request seed is still used by Phase Q, so fresh clicks remain diverse.
+    safe_period_feasibility_first = (
+        period_feasibility_all_sessions and quality_debt_fallback_enabled
+    )
     # The all-session period bridge is a substantially larger CP-SAT model.
     # Giving it the lean model's 24-second slice repeatedly returned UNKNOWN on
     # the six-worker VPS even though the same vector was feasible. The bridge
@@ -8861,7 +8859,11 @@ def _solve_unified_first_click_feasibility_then_quality(
     # seconds finding that single usable vector instead of reserving time for a
     # duplicate period-allocation pass.
     quality_debt_fallback_reserve = 0.0
-    if quality_debt_fallback_enabled and available_for_feasibility >= 20.0:
+    if (
+        quality_debt_fallback_enabled
+        and not safe_period_feasibility_first
+        and available_for_feasibility >= 20.0
+    ):
         # A strict all-session period model can consume its whole slice on an
         # unlucky seed.  The old 10-20 second reserve then forced the relaxed
         # safety lane to rebuild the same 1,566-period model with too little
@@ -8930,6 +8932,9 @@ def _solve_unified_first_click_feasibility_then_quality(
             # lessons. Model feasibility from the first session vector instead
             # of discovering one infeasible half-day per retry.
             "optimization_benders_period_feasibility_all_sessions": period_feasibility_all_sessions,
+            "optimization_benders_lean_refinement_periods": (
+                not period_feasibility_all_sessions
+            ),
             "period_max_teacher_gap": 1,
             "relax_period_teacher_gap_on_failure": False,
             # A session allocation can satisfy every session-level constraint
@@ -8945,13 +8950,41 @@ def _solve_unified_first_click_feasibility_then_quality(
             "preserve_fixed_lessons_only": bool(required_lessons),
         }
     )
+    phase_f_cap = feasibility_cap
+    if safe_period_feasibility_first:
+        # Keep the data-sized completion ceiling for this mandatory lane.  A
+        # UI quality target plus its normal headroom can still be too tight for
+        # an unlucky CP-SAT seed: on the 1,566-period default school, cap 501
+        # completed for two seeds but timed out for a third, while the computed
+        # feasibility ceiling 522 completed for all three.  Phase Q owns the
+        # tighter quality target after this incumbent has been retained.
+        phase_f_cap = feasibility_cap
+        feasibility_settings.update(
+            {
+                "auto_sort_strategy": "fresh_complete_period_safe_feasibility",
+                "max_teacher_sessions": phase_f_cap,
+                "requested_max_teacher_sessions": phase_f_cap,
+                "target_teacher_sessions": phase_f_cap,
+                "optimization_accept_teacher_sessions": phase_f_cap,
+                "max_one_period_sessions": "off",
+                "strict_one_period_sessions_cap": False,
+                "enforce_max_one_period_sessions": False,
+                "one_period_priority_absolute": False,
+                "allow_quality_debt": True,
+                "optimization_benders_allow_one_period_debt": True,
+                "optimization_benders_session_feasibility_only": True,
+                "period_max_teacher_gap": "off",
+                "relax_period_teacher_gap_on_failure": True,
+            }
+        )
     if progress:
         progress(
             {
                 "stage": "teacher_session_opt:first_click_feasibility",
                 "message": "Dang tao lich day du va hop le",
-                "cap": feasibility_cap,
+                "cap": phase_f_cap,
                 "time_limit_seconds": round(strict_feasibility_budget, 3),
+                "quality_debt_allowed": safe_period_feasibility_first,
             }
         )
     phase_started = time.monotonic()
@@ -8968,7 +9001,7 @@ def _solve_unified_first_click_feasibility_then_quality(
         feasibility_payload = _solve_teacher_session_benders_candidate(
             ui_data,
             feasibility_settings,
-            cap=feasibility_cap,
+            cap=phase_f_cap,
             time_limit_seconds=max(8, int(strict_feasibility_budget)),
             rules=rules,
             progress=progress,
@@ -8979,7 +9012,7 @@ def _solve_unified_first_click_feasibility_then_quality(
     except Exception as exc:  # noqa: BLE001 - a hard-valid fallback still has to run.
         strict_error = exc
     feasibility_summary = _teacher_session_opt_summarize_attempt(
-        cap=feasibility_cap,
+        cap=phase_f_cap,
         elapsed_seconds=time.monotonic() - phase_started,
         payload=feasibility_payload or None,
         error=strict_error,
@@ -8987,25 +9020,32 @@ def _solve_unified_first_click_feasibility_then_quality(
     feasibility_summary.update(
         {
             "phase": "fresh_complete_first_feasibility",
-            "attempt_key": "fresh:phase_f:strict_quality",
+            "attempt_key": (
+                "fresh:phase_f:period_safe_complete"
+                if safe_period_feasibility_first
+                else "fresh:phase_f:strict_quality"
+            ),
             "mandatory_fallback": True,
             "fixed_lessons_required": len(required_lessons),
             "constraint_change_feasibility_first": constraint_change_feasibility_first,
             "bounded_fresh_quality_debt": bounded_fresh_quality_debt,
             "period_feasibility_bridge_required": period_feasibility_bridge_required,
             "period_feasibility_all_sessions": period_feasibility_all_sessions,
-            "quality_debt_allowed": False,
+            "quality_debt_allowed": safe_period_feasibility_first,
+            "safe_period_feasibility_first": safe_period_feasibility_first,
         }
     )
     strict_candidate_accepted = _unified_first_click_candidate_acceptable(
         feasibility_payload,
         required_lessons,
-        allow_quality_debt=False,
+        allow_quality_debt=safe_period_feasibility_first,
     )
     feasibility_summary.update(
         {"accepted": strict_candidate_accepted, "new_best": strict_candidate_accepted}
     )
     attempts.append(feasibility_summary)
+    if strict_candidate_accepted and safe_period_feasibility_first:
+        feasibility_quality_debt_allowed = True
 
     if not strict_candidate_accepted and quality_debt_fallback_enabled:
         remaining = deadline.remaining()
@@ -9022,7 +9062,8 @@ def _solve_unified_first_click_feasibility_then_quality(
             # strict probe, so its safety lane favors completion explicitly.
             fallback_cap = (
                 upper_cap
-                if _solver_worker_count(fallback_settings) <= 2
+                if safe_period_feasibility_first
+                or _solver_worker_count(fallback_settings) <= 2
                 else feasibility_cap
             )
             fallback_settings.update(
@@ -9038,12 +9079,13 @@ def _solve_unified_first_click_feasibility_then_quality(
                     "one_period_priority_absolute": False,
                     "allow_quality_debt": True,
                     "optimization_benders_allow_one_period_debt": True,
-                    # The strict lane uses feasibility-only CP-SAT to obtain a
-                    # guaranteed incumbent. The rescue lane must switch the
-                    # quality objective back on; inheriting this flag made the
-                    # fallback return a rough 522-session timetable even when
-                    # a cleaner complete candidate fit in the same budget.
-                    "optimization_benders_session_feasibility_only": False,
+                    # A normal strict-first retry can spend its remaining time
+                    # on a cleaner relaxed result. If the safe period lane
+                    # itself failed, keep the retry objective-free as well so
+                    # completion remains the only priority.
+                    "optimization_benders_session_feasibility_only": (
+                        safe_period_feasibility_first
+                    ),
                     "period_max_teacher_gap": "off",
                     "relax_period_teacher_gap_on_failure": True,
                     # Teacher-session count is also a quality objective.  The
@@ -9199,6 +9241,7 @@ def _solve_unified_first_click_feasibility_then_quality(
         period_safe_quality_rescue_armed = (
             large_first_click
             and lean_global_quality
+            and not safe_period_feasibility_first
             and _truthy_setting(
                 settings.get("optimization_first_click_period_safe_quality_rescue", "1")
             )

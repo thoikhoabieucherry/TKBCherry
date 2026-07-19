@@ -54,7 +54,7 @@ Chất lượng được so sánh theo thứ tự ưu tiên (lexicographic), kh�
 4. Giảm tổng số buổi dạy của giáo viên.
 5. Giảm khoảng trống 1 tiết, sau đó mới xét tổng khoảng trống và độ cân bằng.
 
-Khi ô thời lượng để trống, lần xếp mới hoặc dựng lại sau khi đổi yêu cầu có safety ceiling `60` giây; lần bấm tối ưu tiếp trên lịch đầy đủ có ceiling `180` giây. Solver có thể dừng sớm khi đã có nghiệm tốt và không còn cải thiện qua các vòng stagnation. Ô thời lượng không bị tự điền, thời gian người dùng nhập luôn thắng mặc định ẩn, thời gian chờ FIFO không bị tính vào thời gian giải, và mỗi lần bấm chỉ tạo một canonical job. Nhánh sửa lịch thiếu ít tiết dùng ngân sách ngắn hơn theo đúng số tiết còn thiếu. Bản v1.44 thêm hàng rào lưu bắt buộc cho thao tác Xóa và Phase-Q thích nghi: nhánh nhanh được giữ lại, chỉ mở CP-SAT toàn kỳ khi nhánh đó thật sự bế tắc.
+Khi ô thời lượng để trống, lần xếp mới hoặc dựng lại sau khi đổi yêu cầu có safety ceiling `60` giây; lần bấm tối ưu tiếp trên lịch đầy đủ có ceiling `180` giây. Solver có thể dừng sớm khi đã có nghiệm tốt và không còn cải thiện qua các vòng stagnation. Ô thời lượng không bị tự điền, thời gian người dùng nhập luôn thắng mặc định ẩn, thời gian chờ FIFO không bị tính vào thời gian giải, và mỗi lần bấm chỉ tạo một canonical job. Nhánh sửa lịch thiếu ít tiết dùng ngân sách ngắn hơn theo đúng số tiết còn thiếu. Bản v1.45 giữ hàng rào lưu bắt buộc cho thao tác Xóa, tạo một lịch đủ và hợp lệ trước khi siết các mục tiêu mềm, rồi mới dùng thời gian còn lại để tối ưu.
 
 `GET /api/health` trả về `api: "rust"` và `algorithmStatus` phản ánh backend đang dùng (ví dụ `hybrid-reference-cp-sat-milp-v1` khi Python solver sẵn sàng).
 
