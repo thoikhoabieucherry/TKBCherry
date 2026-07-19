@@ -244,8 +244,8 @@ test("planner keeps eight compact, accessible commands in the mobile toolbar", (
     plannerHtml,
     /@media \(max-width:\s*900px\) and \(hover:\s*none\) and \(pointer:\s*coarse\),\s*\(max-width:\s*480px\)/
   );
-  assert.match(plannerHtml, /phanmon\.js\?v=20260719-v137-quality-debt-rebuild-v1/);
-  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260719-v137-quality-debt-rebuild-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260719-v138-incumbent-refinement-v1/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260719-v138-incumbent-refinement-v1/);
 });
 
 test("desktop Agent sits beside Home, uses an AI icon, and stays out of mobile layouts", () => {
@@ -414,6 +414,59 @@ test("Windows invite downloads only when an offline user accepts", async () => {
   assert.equal(await acceptedInvite.context.inviteBeforeSort(), false);
   assert.equal(acceptedInvite.prompts(), 2);
   assert.equal(acceptedInvite.downloads(), 2);
+});
+
+test("a hung Agent status check times out and lets VPS sorting continue", async () => {
+  const start = plannerSource.indexOf("async function refreshAgentHelperStatus");
+  const end = plannerSource.indexOf("function setAutoSortHomeHidden", start);
+  assert.ok(start >= 0 && end > start, "Agent preflight helpers are missing");
+  const preflightSource = plannerSource.slice(start, end);
+  let timeoutMs = 0;
+  let timeoutClears = 0;
+  let prompts = 0;
+  let signal = null;
+  const context = {
+    AbortController,
+    navigator:{platform:"Win32", userAgent:""},
+    window:{
+      __TKB_AGENT_INVITE_SHOWN:false,
+      confirm(){ prompts += 1; return false; },
+      setTimeout(callback, delay){
+        timeoutMs = Number(delay || 0);
+        Promise.resolve().then(callback);
+        return 1;
+      },
+      clearTimeout(){ timeoutClears += 1; }
+    },
+    Date,
+    syncAgentHelperVisibility(){ return true; },
+    setAgentHelperOnlineState(){ return false; },
+    isAgentHelperSupportedDevice(){ return true; },
+    async downloadAgentHelper(){ throw new Error("a failed status check must not download"); },
+    _setStatus(){},
+    fetch(_url, options){
+      signal = options.signal;
+      return new Promise((resolve, reject) => {
+        options.signal.addEventListener("abort", () => {
+          const error = new Error("status timeout");
+          error.name = "AbortError";
+          reject(error);
+        }, {once:true});
+      });
+    }
+  };
+  context.window.window = context.window;
+  vm.runInNewContext(
+    `${preflightSource}\nthis.inviteBeforeSort = maybeInviteAgentBeforeSort;`,
+    context
+  );
+
+  assert.equal(await context.inviteBeforeSort(), true);
+  assert.equal(timeoutMs, 2500);
+  assert.equal(signal?.aborted, true);
+  assert.equal(timeoutClears, 1);
+  assert.equal(prompts, 0, "unknown Agent state must fall through to VPS without another modal");
+  assert.equal(context.window.__TKB_AGENT_STATUS_INFLIGHT, null);
 });
 
 test("a connected green Agent never downloads the ZIP again", async () => {

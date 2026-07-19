@@ -8,17 +8,16 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.36** (large first-fresh quality
-  stabilization). Public observation on 2026-07-19 serves cache marker
-  `20260719-v136-fresh-quality-stability-v1` and API marker
-  `tkb_new-rust-api-2026-07-19-fresh-quality-stability-v36`.
-- Current public Agent release: **v1.6.14** (`1.6.14`). Agent `1.6.3` and later
-  can offer this update inside the Agent after the user presses OK; Agent
-  `1.6.2` and older still require one manual install of a self-update-capable
-  build.
-- Current local release candidate: application **v1.37** and Agent **v1.6.15**
-  (quality-debt fixed-only rebuild and concise complete status). These markers
-  are not public until staging and production checks below finish.
+- Current deployed application release: **v1.38** (incumbent refinement and
+  resilient VPS fallback). Public health serves API marker
+  `tkb_new-rust-api-2026-07-19-incumbent-refinement-v38` and the page serves
+  cache marker `20260719-v138-incumbent-refinement-v1`.
+- Current public Agent release: **v1.6.15** (`1.6.15`). The server lease gate
+  must remain at 1.6.15 or newer so an older local Agent can update itself but
+  cannot execute a job with a mismatched solver contract.
+- Current local and deployed release: application **v1.38** and Agent
+  **v1.6.15** (v1.34-style incumbent refinement, terminal-result recovery,
+  animated progress dots, and bounded Agent preflight).
 - Every deployed application or packaged Agent update must increment the
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
@@ -141,7 +140,49 @@ change so a machine restart or a new conversation does not erase project context
   post-deploy check; the iOS background/resume contract is covered by the five
   focused production-shaped bridge regressions above.
 
-### v1.37 quality-debt rebuild (candidate, not deployed)
+### v1.38 incumbent refinement and VPS fallback (deployed)
+
+- A complete, hard-valid timetable always enters the incumbent-safe refinement
+  lane used by v1.34, with the normal 180-second ceiling. The v1.37 branch that
+  discarded the flexible timetable and rebuilt from fixed lessons in a fresh
+  60-second lane is disabled; that branch could return an unstable feasibility
+  draft such as `522/119` before quality search ran.
+- If a server-owned refinement reaches a terminal deadline without a better
+  candidate, an iPhone reload/foreground reattach retains the complete
+  incumbent and reports exactly **Đã xếp xong!** in green. A genuinely
+  incomplete or hard-invalid result still stays warning/error.
+- Sorting status animates `Đang sắp xếp.`, `Đang sắp xếp..`,
+  `Đang sắp xếp...`; the timer stops at terminal state and the toolbar reserves
+  stable width. A hung Agent status probe aborts after 2.5 seconds and falls
+  through to VPS. Dismissing the offline-Agent prompt produces exactly one VPS
+  solve POST.
+- The Rust API minimum Agent lease version is now **1.6.15**. Agent 1.6.14 and
+  older receive upgrade-only status and never receive a solver lease.
+- Local verification: all Node E2E **247/247** (including bridge **176/176**,
+  planner/UI **28/28**, and subject semantics **12/12**), solver Python
+  **129/129**, JavaScript syntax, and `git diff --check`. Isolated VPS staging
+  returned `STAGING_TESTS_OK`: solver
+  **129/129**, Agent **72/72**, Rust API **136/136**, and validator **20/20**.
+- Production deployment returned `UPDATE_OK`. Transaction backups are
+  `/opt/cherry-scheduler-backups/server-state-20260719-045824.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260719-045824.tar.gz`. Post-deploy
+  health was idle at `0` active, `0` queued, and `6/6` VPS worker tokens.
+- Live no-Agent E2E dismissed the offline-Agent prompt with Cancel, submitted
+  exactly one VPS job, and reloaded the tab during the run. The same job resumed
+  from `35` to `38` seconds with Play still locked. It completed green at
+  `1566/1566`, improving **522 teacher sessions / 100 gap-1** to **476 / 55**,
+  with zero singleton and zero gap-2 sessions; VPS capacity returned to `6/6`.
+- The installed Agent 1.6.14 was correctly invisible/ineligible under the new
+  lease gate. Launching the packaged 1.6.15 replaced it in
+  `C:\TKBCherryAgent`, after which the page reported one online Agent. The live
+  Agent E2E used one local `--solver-child` while VPS stayed `0` active and
+  `6/6` free, retained the Pareto-equal `476/55` incumbent, completed green,
+  and removed the solver child afterward.
+- Mobile production verification at `440x956` (iPhone 16 Pro Max CSS size)
+  shows the full timetable to the bottom edge, exact green **Đã xếp xong!**,
+  no `Cần tối ưu`, and a stable toolbar/status row.
+
+### v1.37 quality-debt rebuild (deployed before v1.38)
 
 - A complete but severely rough timetable now uses the user's requested
   fallback behavior on the next Play: rebuild from fixed lessons only in the
@@ -170,10 +211,9 @@ change so a machine restart or a new conversation does not erase project context
   metadata but no longer renders the contradictory `Cần tối ưu`/`Giữ lịch`
   label beside the success message. Incomplete, stopped, and failed results
   retain their visible warning/error progress.
-- Current verification: bridge **169/169**, focused quality-rebuild/status
-  regressions **7/7**, planner/mobile UI **27/27**, scheduler **129/129** plus
-  nine subtests, JavaScript syntax, and `git diff --check` pass. Production
-  staging, deployment, and public E2E are still pending.
+- The v1.37 production health marker was observed with `0` active jobs,
+  `0` queued jobs, and `6/6` worker tokens available. Its fixed-only quality
+  lane is intentionally disabled by the deployed v1.38 release above.
 
 ### v1.36 large first-fresh quality stabilization (deployed)
 
@@ -1968,20 +2008,18 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-19: `UPDATE_OK` for
-v1.35. Public health serves API marker
-`tkb_new-rust-api-2026-07-19-ios-poll-reattach-v35`; the page serves cache
-key `20260719-v135-ios-poll-reattach-v1`. Public Agent release `1.6.14` and
-its signed manifest are live. Its one-entry ZIP is 91,681,899 bytes with
-manifest SHA-256
-`96e79db5458ee68970051ab2e16f9e2a14d859dc871adc1c8c22846d6e50b52f`;
-the packaged EXE is 92,147,596 bytes with SHA-256
-`d46ee0e4bb86bb7d7f8448f3e14d7b28441cbc06ed87de9c9f68c1cec9dded48`.
-The v1.34 production VPS-only E2E reloaded the browser during the canonical
+v1.38. Public health serves API marker
+`tkb_new-rust-api-2026-07-19-incumbent-refinement-v38`; the page serves cache
+key `20260719-v138-incumbent-refinement-v1`. Public Agent release `1.6.15` and
+its signed manifest are live. Its one-entry ZIP is 91,683,250 bytes with
+SHA-256 `a91ff1217990cf8b80e7b07f2f4e203f849c7ba794db60942b39789dd30ee5b2`;
+the packaged EXE is 92,148,649 bytes with SHA-256
+`5650ef4b0d65e43f866db5f455f36e735d9adf2f20145878e9feed8729140b99`.
+The v1.38 production VPS-only E2E reloaded the browser during the canonical
 job and still completed with zero unassigned periods, no duplicate job, and
-all worker tokens released. The v1.35 production post-deploy check additionally
-verified the served v135 cache/API markers, zero active/queued jobs, and all
-worker tokens available. Agent 1.6.14's packaged `default` benchmark reached
-`460/37` while preserving completeness and zero singleton/gap-2-plus debt.
+all worker tokens released. The Agent E2E then kept VPS capacity fully free,
+used one local solver child, and exited that child after retaining the best
+complete incumbent.
 Workstations on Agent `1.6.2` or older require one manual install of a
 self-update-capable build before future in-Agent updates are available.
 

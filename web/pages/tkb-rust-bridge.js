@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v241-quality-debt-rebuild";
+  const VERSION = "tkb-rust-api-v242-incumbent-refinement";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -438,6 +438,8 @@
     let solveRunCounter = 0;
     let statusDotsTimer = 0;
     let statusDotsFrame = 0;
+    let statusDotsBase = "";
+    let statusDotsType = "";
     let autoSortPlanningMemo = null;
     let autoSortPreflightToken = null;
     let autoSortPreflightCounter = 0;
@@ -1891,6 +1893,54 @@
       // makes that operation transactional if a late constraint or malformed
       // lesson is rejected after the payload has started applying.
       const snapshot = snapshotScheduleData(data);
+      let incumbentPayload = snapshot?.tkbSolverResult || null;
+      if(effectiveMetadata?.qualityDebtFreshRebuild === true){
+        incumbentPayload = visibleCompleteIncumbentQualityPayload(
+          data,
+          incumbentPayload
+        );
+        if(snapshot && incumbentPayload){
+          snapshot.tkbSolverResult = clonePlain(incumbentPayload);
+          incumbentPayload = snapshot.tkbSolverResult;
+        }
+      }
+      const retainedQualityGuard = effectiveMetadata?.qualityDebtFreshRebuild === true
+        ? incumbentQualityGuardState(
+            incumbentPayload,
+            snapshot,
+            data,
+            {ui_keep_better_existing_on_resort:true}
+          )
+        : null;
+      if(
+        retainedQualityGuard?.complete === true
+        && shouldKeepIncumbentForTeacherQuality(
+          payload,
+          incumbentPayload,
+          retainedQualityGuard
+        )
+      ){
+        inheritRefinementRound(incumbentPayload, payload);
+        restoreScheduleData(data, snapshot);
+        const retainedIncumbent = data.tkbSolverResult || incumbentPayload;
+        clearActiveBackendJobId(jobId, {force:true});
+        endServerJobReattachLease(jobId);
+        syncVisibleCompletionMetrics(retainedIncumbent, retainedIncumbent);
+        window.__TKB_SOLVER_LAST_PAYLOAD = retainedIncumbent;
+        window.__TKB_SOLVER_LAST_RESULT = retainedIncumbent;
+        finishProgress("100%", "ok");
+        window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = SOLVE_COMPLETE_MESSAGE;
+        setStatus(SOLVE_COMPLETE_MESSAGE, "ok");
+        schedulePostSolveUi(retainedIncumbent, retainedIncumbent);
+        publishE2EState("done", retainedIncumbent, {
+          message:SOLVE_COMPLETE_MESSAGE,
+          pollOnlyReattach:true,
+          jobId,
+          keptIncumbent:true,
+          rejectedWorseQuality:true
+        });
+        return retainedIncumbent;
+      }
       let applied;
       try{
         applied = await applyPayload(payload);
@@ -1925,6 +1975,37 @@
         setStatus("Mất kết nối tạm thời; sẽ tự nối lại tiến trình đang chạy.", "info");
         schedulePendingBackendResume(0, SERVER_SOLVER_JOB_BACKGROUND_RETRY_MS);
       }else{
+        // A terminal quality/deadline response can legitimately contain no
+        // replacement candidate even though the incumbent timetable is still
+        // complete and hard-valid. Treat that as a successful retained
+        // schedule, just like the foreground solve path, instead of showing
+        // a red error after an iPhone reload/background resume.
+        const friendly = friendlySolveError(err);
+        const retainedState = completeScheduleStateForExistingOptimize(data);
+        const retainedCompleteTerminal = friendly?.statusLevel === "ok"
+          && friendly?.statusMessage === SOLVE_COMPLETE_MESSAGE
+          && !!retainedState;
+        if(retainedCompleteTerminal){
+          const retainedPayload = visibleCompleteIncumbentQualityPayload(
+            data,
+            data?.tkbSolverResult || window.__TKB_SOLVER_LAST_PAYLOAD || null
+          );
+          clearActiveBackendJobId(jobId, {force:true});
+          endServerJobReattachLease(jobId);
+          window.__TKB_SOLVER_LAST_PAYLOAD = retainedPayload;
+          window.__TKB_SOLVER_LAST_RESULT = retainedPayload;
+          window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = SOLVE_COMPLETE_MESSAGE;
+          finishProgress("100%", "ok");
+          setStatus(SOLVE_COMPLETE_MESSAGE, "ok");
+          publishE2EState("done", retainedPayload, {
+            message:SOLVE_COMPLETE_MESSAGE,
+            pollOnlyReattach:true,
+            jobId,
+            keptIncumbent:true,
+            terminalQualityFailure:true
+          });
+          return retainedPayload || data?.tkbSolverResult || null;
+        }
         clearActiveBackendJobId(jobId, {force:true});
         finishProgress("Lỗi", "error");
         setStatus(err?.message || "Không theo dõi được lượt xếp trên máy chủ.", "warning");
@@ -2381,6 +2462,7 @@
         jobId,
         createdAt,
         scheduleFingerprint:String(item?.scheduleFingerprint || ""),
+        qualityDebtFreshRebuild:item?.qualityDebtFreshRebuild === true,
         discoveredFromOwnerState:item?.discoveredFromOwnerState === true,
         observeOnly:item?.observeOnly === true,
         localClickTimeline:item?.localClickTimeline === true,
@@ -2462,6 +2544,8 @@
             metadata?.observeOnly === true
             || (sameJob && existing?.observeOnly === true)
           );
+      const qualityDebtFreshRebuild = metadata?.qualityDebtFreshRebuild === true
+        || (sameJob && existing?.qualityDebtFreshRebuild === true);
       safeMap[scope] = {
         jobId:value,
         createdAt,
@@ -2470,6 +2554,7 @@
           || (sameJob ? existing?.scheduleFingerprint : "")
           || ""
         ),
+        qualityDebtFreshRebuild,
         discoveredFromOwnerState:metadata?.discoveredFromOwnerState === true
           || (sameJob && existing?.discoveredFromOwnerState === true),
         observeOnly,
@@ -2661,12 +2746,13 @@
     }catch(_){ }
   }
 
-  function setActiveBackendJobId(jobId, scheduleFingerprint){
+  function setActiveBackendJobId(jobId, scheduleFingerprint, metadata){
     const value = String(jobId || "").trim();
     activeBackendJobId = value;
     window.__TKB_ACTIVE_BACKEND_JOB_ID = value;
     if(value) writePendingBackendJob(value, scheduleFingerprint, {
-      allowSettledReplay:activeServerJobReattachLeaseId === value
+      allowSettledReplay:activeServerJobReattachLeaseId === value,
+      qualityDebtFreshRebuild:metadata?.qualityDebtFreshRebuild === true
     });
     return value;
   }
@@ -3915,13 +4001,20 @@
       statusDotsTimer = 0;
     }
     statusDotsFrame = 0;
+    statusDotsBase = "";
+    statusDotsType = "";
   }
 
   function startStatusDots(baseText, type){
+    const nextBase = String(baseText || "");
+    const nextType = String(type || "info");
+    if(statusDotsTimer && statusDotsBase === nextBase && statusDotsType === nextType) return;
     stopStatusDots();
+    statusDotsBase = nextBase;
+    statusDotsType = nextType;
     const tick = () => {
       statusDotsFrame = (statusDotsFrame % 3) + 1;
-      writeStatus(`${baseText}${".".repeat(statusDotsFrame)}`, type || "info");
+      writeStatus(`${nextBase}${".".repeat(statusDotsFrame)}`, nextType);
     };
     tick();
     statusDotsTimer = window.setInterval(tick, 420);
@@ -3930,10 +4023,7 @@
   function setStatus(message, type){
     const text = String(message || "");
     if((type || "info") === "info" && text === `${ROUTINE_SORTING_STATUS_BASE}...`){
-      // A shared VPS job must have the same status in every browser. Avoid
-      // independent dot animations and their repeated toolbar layout updates.
-      stopStatusDots();
-      writeStatus(text, type || "info");
+      startStatusDots(ROUTINE_SORTING_STATUS_BASE, type || "info");
       return;
     }
     stopStatusDots();
@@ -5411,7 +5501,7 @@
           title: "Chưa có kết quả mới",
           message: statusMessage,
           level: "warning",
-          statusLevel: "warning",
+          statusLevel: "ok",
           statusMessage,
           progressLabel: "Giữ lịch"
         };
@@ -5459,7 +5549,7 @@
           title: "Chưa cải thiện thêm",
           message: statusMessage,
           level: "warning",
-          statusLevel: "warning",
+          statusLevel: "ok",
           statusMessage,
           progressLabel: "Giữ lịch cũ"
         };
@@ -5495,13 +5585,16 @@
       const metrics = err?.payload?.metrics || {};
       const scheduled = Number(metrics.scheduled_periods || 0) || 0;
       const expected = Number(metrics.expected_periods || 0) || 0;
+      const retainedComplete = completeScheduleStateForExistingOptimize(getData());
       const progressHint = scheduled > 0
         ? `Đã xếp thử ${scheduled}/${expected || "?"} tiết.`
         : "Chưa tìm được lịch đủ tiết trong giới hạn thời gian hiện tại.";
       const actionHint = "Bảng cũ được giữ lại. Hãy nới bớt tiết Nghỉ/ràng buộc rồi xếp lại.";
-      const statusMessage = noBetterScheduleStatus(
-        getData()?.tkbSolverResult || window.__TKB_SOLVER_LAST_PAYLOAD || null
-      );
+      const statusMessage = retainedComplete
+        ? noBetterScheduleStatus(
+            getData()?.tkbSolverResult || window.__TKB_SOLVER_LAST_PAYLOAD || null
+          )
+        : "Chưa tìm được lịch đủ; lịch hiện tại vẫn được giữ nguyên.";
       return {
         title: "Chưa tìm được lịch đủ",
         message: [
@@ -5509,7 +5602,7 @@
           actionHint
         ].filter(Boolean).join(" "),
         level: "warning",
-        statusLevel: "info",
+        statusLevel: retainedComplete ? "ok" : "warning",
         statusMessage,
         progressLabel: "Chưa đủ"
       };
@@ -6421,8 +6514,8 @@
     const needsMore = hardQualityDebt || teacherDebt || gap1Debt;
     if(needsMore){
       return {
-        level:"warning",
-        progressLabel:"Cần tối ưu",
+        level:"ok",
+        progressLabel:"Hoàn tất",
         message:SOLVE_COMPLETE_MESSAGE,
         targetMet:false,
         quality:q,
@@ -6440,17 +6533,32 @@
   }
 
   function completeScheduleNeedsFreshQualityRebuild(data, qualityTargets){
-    const payload = data?.tkbSolverResult || data?.tkbRustSolverResult || null;
-    if(!payload || !payloadCompletion(payload).complete || !hasVisibleTeacherQualityMetrics(payload)){
-      return false;
-    }
+    const safeData = data || getData();
+    const payload = safeData?.tkbSolverResult || safeData?.tkbRustSolverResult || null;
+    const visibleCompletion = cheapSchoolCompletionStats(safeData);
+    const physicallyComplete = !!visibleCompletion
+      && Number(visibleCompletion.expected || 0) > 0
+      && Number(visibleCompletion.scheduled || 0) >= Number(visibleCompletion.expected || 0)
+      && Number(visibleCompletion.unassigned || 0) <= 0;
+    const payloadComplete = !!payload && payloadCompletion(payload).complete;
     const expected = Math.max(
       0,
-      metricNumber(payload?.metrics?.expected_periods, expectedLessonCount(data || getData()))
+      Number(visibleCompletion?.expected || 0) || 0,
+      metricNumber(payload?.metrics?.expected_periods, 0),
+      expectedLessonCount(safeData)
     );
-    if(expected < 300) return false;
-    const quality = teacherQualitySummary(payload);
-    const targets = qualityTargets || practicalTeacherQualityTargets(data || getData());
+    if(expected < 300 || (!physicallyComplete && !payloadComplete)) return false;
+    // The physical timetable is authoritative. A reload, legacy save, or
+    // retained incumbent can leave tkbSolverResult absent or with old quality
+    // totals even though the visible table is complete (for example 521/100).
+    const visibleMetrics = uiTeacherQualityMetrics(safeData);
+    const visibleQualityUsable = metricNumber(visibleMetrics.teacher_sessions, 0) > 0;
+    const payloadQualityUsable = payloadComplete && hasVisibleTeacherQualityMetrics(payload);
+    if(!visibleQualityUsable && !payloadQualityUsable) return false;
+    const quality = teacherQualitySummary({
+      metrics:visibleQualityUsable ? visibleMetrics : payload.metrics
+    });
+    const targets = qualityTargets || practicalTeacherQualityTargets(safeData);
     const teacherTarget = positiveNumberSetting(targets?.teacherTarget);
     const gap1Target = nonnegativeNumberSetting(targets?.gap1Target);
     const teacherDebt = teacherTarget > 0
@@ -7602,7 +7710,14 @@
     window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = message;
     if(statusType === "ok"){
       const qualityStatus = completionQualityStatus(payload, getData());
-      setStatus(qualityStatus.message, qualityStatus.level);
+      const completion = payloadCompletion(payload);
+      if(completion.complete && completion.hardOk !== false){
+        // Teacher-quality debt stays available to the next refinement click,
+        // but a complete hard-valid timetable has one successful terminal UI.
+        setStatus(SOLVE_COMPLETE_MESSAGE, "ok");
+      }else{
+        setStatus(qualityStatus.message, qualityStatus.level);
+      }
     }
     else if(unassigned > 0 || incomplete){
       const remain = Math.max(unassigned, expected > 0 ? Math.max(0, expected - scheduled) : 0);
@@ -10935,7 +11050,9 @@
       // yielding. Check immediately before publishing the durable wire id so a
       // pre-admission Stop cannot leave an unknown job that F5 would replay.
       throwIfStopRequested(activeSolveRunId);
-      setActiveBackendJobId(solveRunId, sourceScheduleFingerprint);
+      setActiveBackendJobId(solveRunId, sourceScheduleFingerprint, {
+        qualityDebtFreshRebuild:effectiveSettings.ui_quality_debt_fresh_rebuild === true
+      });
       let queueDeadline = Date.now() + queueTimeoutMs;
       let lastFetchError = null;
       let queueAttempt = 0;
@@ -11022,7 +11139,9 @@
             const duplicateRequestJobId = solveRunId;
             removePendingBackendJob(duplicateRequestJobId);
             solveRunId = responseJobId;
-            setActiveBackendJobId(solveRunId, sourceScheduleFingerprint);
+            setActiveBackendJobId(solveRunId, sourceScheduleFingerprint, {
+              qualityDebtFreshRebuild:effectiveSettings.ui_quality_debt_fresh_rebuild === true
+            });
             try{
               window.__TKB_RUST_LAST_REQUEST_DEBUG = Object.assign(
                 {},
@@ -11161,7 +11280,9 @@
               && existingFingerprint === sourceScheduleFingerprint
             ){
               window.__TKB_SOLVE_BACKEND_POSTED = false;
-              setActiveBackendJobId(existingJobId, existingFingerprint);
+              setActiveBackendJobId(existingJobId, existingFingerprint, {
+                qualityDebtFreshRebuild:effectiveSettings.ui_quality_debt_fresh_rebuild === true
+              });
               setStatus("Đang nối vào lượt xếp đang chạy...", "info");
               response = await waitForServerOwnedSolverResult(
                 apiBase,
@@ -11807,18 +11928,26 @@
     return next;
   }
 
-  function uiTeacherQualityMetrics(){
+  function uiTeacherQualityMetrics(data){
+    const memo = activeAutoSortPlanningMemo(data || getData());
+    if(memo?.uiTeacherQualityMetrics){
+      return Object.assign({}, memo.uiTeacherQualityMetrics, {
+        gap_distribution:Object.assign({}, memo.uiTeacherQualityMetrics.gap_distribution || {})
+      });
+    }
     try{
       const statsFn = typeof window.calcTeacherTKBStats === "function"
         ? window.calcTeacherTKBStats
         : (typeof calcTeacherTKBStats === "function" ? calcTeacherTKBStats : null);
       if(typeof statsFn !== "function") return {};
       const stats = statsFn() || {};
+      const teacherSessions = Number(stats.tsBuoiDay);
+      if(!Number.isFinite(teacherSessions) || teacherSessions <= 0) return {};
       const onePeriod = metricNumber(stats.soBuoiDay1, 0);
       const gap1 = metricNumber(stats.soBuoiTrong1, 0);
       const gap2 = metricNumber(stats.soBuoiTrong2, 0);
-      return {
-        teacher_sessions: metricNumber(stats.tsBuoiDay, 0),
+      const result = {
+        teacher_sessions: teacherSessions,
         one_period_teacher_sessions: onePeriod,
         teacher_gap2_sessions: gap2,
         gap_distribution: {
@@ -11826,9 +11955,50 @@
           "2": gap2
         }
       };
+      if(memo) memo.uiTeacherQualityMetrics = clonePlain(result);
+      return result;
     }catch(_){
       return {};
     }
+  }
+
+  function visibleCompleteIncumbentQualityPayload(data, basePayload){
+    const safeData = data || getData();
+    const completion = cheapSchoolCompletionStats(safeData);
+    const quality = uiTeacherQualityMetrics(safeData);
+    if(
+      !completion
+      || Number(completion.expected || 0) <= 0
+      || Number(completion.scheduled || 0) < Number(completion.expected || 0)
+      || Number(completion.unassigned || 0) > 0
+      || metricNumber(quality.teacher_sessions, 0) <= 0
+    ){
+      return basePayload && typeof basePayload === "object" ? basePayload : null;
+    }
+    const payload = clonePlain(basePayload && typeof basePayload === "object" ? basePayload : {}) || {};
+    payload.ok = true;
+    payload.metrics = Object.assign({}, payload.metrics || {}, quality, {
+      scheduled_periods:Number(completion.scheduled || 0),
+      expected_periods:Number(completion.expected || 0),
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      best_effort:false
+    });
+    payload.validation = Object.assign({}, payload.validation || {}, {
+      hard_ok:true,
+      violations:[]
+    });
+    payload.solver = payload.solver && typeof payload.solver === "object"
+      ? payload.solver
+      : {runtime_settings:{}};
+    if(!payload.solver.runtime_settings || typeof payload.solver.runtime_settings !== "object"){
+      payload.solver.runtime_settings = {};
+    }
+    payload.bestEffort = false;
+    payload.unassignedLessons = [];
+    return payload;
   }
 
   function localUnassignedRepairPayload(data, repairResult, detail){
@@ -12005,7 +12175,7 @@
     }
     const lockedState = syncOptimizationLockState();
     if(lockedState?.locked === true){
-      setStatus(noBetterScheduleStatus(getData()?.tkbSolverResult || null), "warning");
+      setStatus(noBetterScheduleStatus(getData()?.tkbSolverResult || null), "ok");
       return null;
     }
     prepareManualSolveIntent();
@@ -12092,6 +12262,15 @@
     }
     await yieldResponsiveUi();
     const scheduleSnapshot = snapshotScheduleData(dataForProgress);
+    if(settings?.ui_quality_debt_fresh_rebuild === true && scheduleSnapshot){
+      const visibleIncumbent = visibleCompleteIncumbentQualityPayload(
+        dataForProgress,
+        scheduleSnapshot.tkbSolverResult
+      );
+      if(visibleIncumbent){
+        scheduleSnapshot.tkbSolverResult = clonePlain(visibleIncumbent);
+      }
+    }
     const knownPreflightViolationCount = Number(settings?.ui_preflight_constraint_violation_count);
     const incumbentSatisfiesCurrentConstraints = Number.isFinite(knownPreflightViolationCount)
       && knownPreflightViolationCount >= 0
@@ -12907,9 +13086,26 @@
       const level = friendly.level || "error";
       const statusLevel = friendly.statusLevel || level;
       const statusMessage = friendly.statusMessage || (friendly.title ? `${friendly.title}: ${friendly.message}` : friendly.message);
-      finishProgress(level === "warning" ? (friendly.progressLabel || "Chưa đủ") : "Lỗi", level);
+      const retainedCompleteTerminal = statusLevel === "ok"
+        && statusMessage === SOLVE_COMPLETE_MESSAGE
+        && !!completeScheduleStateForExistingOptimize(dataForProgress || getData());
+      if(retainedCompleteTerminal){
+        window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = SOLVE_COMPLETE_MESSAGE;
+      }
+      finishProgress(
+        retainedCompleteTerminal
+          ? "100%"
+          : (level === "warning" ? (friendly.progressLabel || "Chưa đủ") : "Lỗi"),
+        retainedCompleteTerminal ? "ok" : level
+      );
       setStatus(statusMessage, statusLevel);
-      publishE2EState(level === "warning" ? "incomplete" : "error", err?.payload || null, {title: friendly.title, message: friendly.message, rawError});
+      publishE2EState(
+        retainedCompleteTerminal ? "done" : (level === "warning" ? "incomplete" : "error"),
+        retainedCompleteTerminal
+          ? ((dataForProgress || getData())?.tkbSolverResult || window.__TKB_SOLVER_LAST_PAYLOAD || null)
+          : (err?.payload || null),
+        {title: friendly.title, message: friendly.message, rawError, keptIncumbent:retainedCompleteTerminal}
+      );
       if(Number(window.__TKB_SOLVE_RELEASED_CONSTRAINT_VIOLATIONS || 0) <= 0){
         restoreScheduleData(dataForProgress || getData(), scheduleSnapshot);
         rememberManualFreshRetryFailure(dataForProgress || getData(), settings, err);
@@ -12978,7 +13174,13 @@
         teacherSessionQuality,
         completionQualityStatus,
         completeScheduleNeedsFreshQualityRebuild,
+        uiTeacherQualityMetrics,
+        visibleCompleteIncumbentQualityPayload,
         buildCompletionMessage,
+        schedulePostSolveUi,
+        finishProgress,
+        setStatus,
+        stopStatusDots,
         noBetterScheduleStatus,
         hasVisibleTeacherQualityMetrics,
         inheritRefinementRound,
@@ -13351,17 +13553,18 @@
       hasKnownConstraintViolations ? knownViolations : undefined,
       expectedCount
     );
-    const qualityDebtFreshRebuild = !!completeState
-      && completeScheduleNeedsFreshQualityRebuild(
-        safeData,
-        freshPlan.qualityTargets
-      );
+    // A complete, hard-valid timetable is already a usable incumbent. Keep
+    // it as the starting point and run the normal v1.34-style refinement
+    // lane (up to the 180-second ceiling). Rebuilding from fixed lessons on
+    // every rough-looking result made later clicks nondeterministic and could
+    // return the feasibility draft before quality search ran.
+    const qualityDebtFreshRebuild = false;
     const useInitialFastStage = !completeState
       && countScheduledLessons(safeData, {flexibleOnly:true}) <= 0
       && (hasKnownConstraintViolations
         ? knownViolations === 0
         : currentConstraintViolations(1).length === 0);
-    if(completeState && !qualityDebtFreshRebuild){
+    if(completeState){
       clearFreshOnlyFlags(settings);
       settings.ui_unified_solve_kind = "refine_complete";
       settings.ui_use_existing_complete_incumbent = true;
@@ -13456,24 +13659,17 @@
       settings.optimization_benders_accept_stagnant_iterations = 2;
       void refineBudgetSeconds;
       syncSolveDurationPreview(settings, customDurationSeconds);
-      return {kind:"refine_complete", settings, qualityTargets:freshPlan.qualityTargets, state:completeState};
+      return {
+        kind:"refine_complete",
+        settings,
+        qualityTargets:freshPlan.qualityTargets,
+        state:completeState,
+        qualityDebtFreshRebuild:false
+      };
     }
 
     settings.ui_unified_solve_kind = "fresh_complete_first";
-    if(qualityDebtFreshRebuild){
-      // A very rough complete incumbent is cheaper and more reliable to
-      // rebuild from fixed lessons than to squeeze one session cap at a time.
-      // The normal incumbent guard still accepts the rebuilt timetable only
-      // when its ordered teacher-quality statistics improve.
-      settings.ui_quality_debt_fresh_rebuild = true;
-      settings.ui_keep_better_existing_on_resort = true;
-      settings.allow_solver_warm_start = false;
-      settings.preserve_existing_tkb = false;
-      settings.force_fresh_backend_solve = true;
-      settings.allow_backend_cache = false;
-    }else{
-      delete settings.ui_quality_debt_fresh_rebuild;
-    }
+    delete settings.ui_quality_debt_fresh_rebuild;
     delete settings.optimization_benders_lean_refinement_periods;
     settings.ui_allow_incomplete_retry_after_single_pass = false;
     settings.ui_stop_after_first_complete_schedule = true;
@@ -13812,7 +14008,7 @@
     // busy state, Stop button, progress ring, and timer have reached a frame.
     const lockedState = syncOptimizationLockState();
     if(lockedState?.locked === true){
-      setStatus(noBetterScheduleStatus(getData()?.tkbSolverResult || null), "warning");
+      setStatus(noBetterScheduleStatus(getData()?.tkbSolverResult || null), "ok");
       return null;
     }
     traceSolveStep("auto-sort:start");
@@ -13825,7 +14021,7 @@
     // snapshotScheduleData already detached and compacted the incumbent.
     // Cloning the full stale solver payload here used to block the browser
     // main thread for several seconds after Delete, freezing 4% / 0 seconds.
-    const incumbentPayloadBeforeAutoSort = scheduleSnapshotBeforeAutoSort?.tkbSolverResult || null;
+    let incumbentPayloadBeforeAutoSort = scheduleSnapshotBeforeAutoSort?.tkbSolverResult || null;
     // Reuse the post-paint plateau result instead of hashing all data twice in
     // the same preparation turn.
     const plateauBeforeSolve = lockedState;
@@ -13891,6 +14087,17 @@
           );
     }finally{
       endAutoSortPlanningMemo(planningMemoToken);
+    }
+    if(automaticPlan?.qualityDebtFreshRebuild === true){
+      incumbentPayloadBeforeAutoSort = visibleCompleteIncumbentQualityPayload(
+        data,
+        incumbentPayloadBeforeAutoSort
+      );
+      if(scheduleSnapshotBeforeAutoSort && incumbentPayloadBeforeAutoSort){
+        scheduleSnapshotBeforeAutoSort.tkbSolverResult = clonePlain(
+          incumbentPayloadBeforeAutoSort
+        );
+      }
     }
     await yieldResponsiveUi();
     if(!autoSortPreparationMatches(data, planningScheduleFingerprint)){

@@ -1,4 +1,4 @@
-window.__PHANMON_VERSION = "updated-v9.6 (v1.37 quality-debt rebuild)";
+window.__PHANMON_VERSION = "updated-v9.7 (v1.38 incumbent refinement + VPS fallback)";
 
 (function installPlannerMobileViewportSync(){
   if(window.__TKB_MOBILE_VIEWPORT_SYNC_BOUND === true) return;
@@ -7299,6 +7299,12 @@ async function refreshAgentHelperStatus(force){
     return window.__TKB_AGENT_STATUS_INFLIGHT;
   }
   const request = (async () => {
+    const controller = typeof AbortController === "function"
+      ? new AbortController()
+      : null;
+    const timeout = controller
+      ? window.setTimeout(() => controller.abort(), 2500)
+      : 0;
     try{
       const headers = window.TKBAuthApi?.getAuthHeaders
         ? window.TKBAuthApi.getAuthHeaders({"Accept":"application/json"})
@@ -7306,7 +7312,8 @@ async function refreshAgentHelperStatus(force){
       const response = await fetch("/api/agent-helper/v1/status", {
         method:"GET",
         headers,
-        cache:"no-store"
+        cache:"no-store",
+        ...(controller ? {signal:controller.signal} : {})
       });
       const payload = await response.json().catch(() => ({}));
       if(!response.ok || payload?.ok !== true){
@@ -7321,6 +7328,8 @@ async function refreshAgentHelperStatus(force){
       window.__TKB_AGENT_STATUS_CHECKED_AT = Date.now();
       setAgentHelperOnlineState(false, {known:false, count:0});
       return null;
+    }finally{
+      if(timeout) window.clearTimeout(timeout);
     }
   })();
   window.__TKB_AGENT_STATUS_INFLIGHT = request;

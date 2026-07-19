@@ -24,19 +24,19 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-19-quality-debt-rebuild-v37";
+const VERSION: &str = "tkb_new-rust-api-2026-07-19-incumbent-refinement-v38";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
 const MAX_REFERENCE_PROGRESS_FRAME_BYTES: usize = 32 * 1024;
 const AGENT_HELPER_PROTOCOL: &str = "tkb-agent-helper-v1";
 const AGENT_RESULT_DIGEST_PROTOCOL: &str = "tkb-json-tree-sha256-v1";
-// v1.6.12 is the first packaged runtime that uses feasible nearby-cap waves,
-// globally distinct refinement seeds, and a bounded frontier-cleanup reserve.
-// Older binaries may speak protocol v1 but carry solver behavior that the
-// current server must not treat as an equivalent executor.
-const MIN_AGENT_HELPER_VERSION: &str = "1.6.12";
-const MIN_AGENT_HELPER_SEMVER: (u32, u32, u32) = (1, 6, 12);
+// v1.6.15 is the first packaged runtime matching the current v1.38 wire and
+// quality-debt/incumbent contract. Older binaries may speak protocol v1 but
+// carry solver behavior that the current server must not treat as an
+// equivalent executor; they remain upgrade-only and never receive a lease.
+const MIN_AGENT_HELPER_VERSION: &str = "1.6.15";
+const MIN_AGENT_HELPER_SEMVER: (u32, u32, u32) = (1, 6, 15);
 // A canonical server-owned job has exactly one executor. Keeping one Agent
 // task (instead of a seed portfolio) prevents the Agent and VPS from adding
 // parallel attempts to the same user request.
@@ -6673,7 +6673,7 @@ mod tests {
 
     #[test]
     fn agent_helper_version_gate_uses_strict_three_component_semver() {
-        for version in ["1.6.12", "1.7.0", "2.0.0"] {
+        for version in ["1.6.15", "1.7.0", "2.0.0"] {
             assert!(
                 agent_helper_version_supported(version),
                 "{version} should be eligible"
@@ -6684,6 +6684,7 @@ mod tests {
             "1.6.8",
             "1.6.9",
             "1.6.10",
+            "1.6.14",
             "1.6",
             "1.6.8-beta",
             "",

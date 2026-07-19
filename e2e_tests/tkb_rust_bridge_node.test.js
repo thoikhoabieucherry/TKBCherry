@@ -900,6 +900,56 @@ test("automatic-sort preflight lock is released by an early busy exit", async ()
   assert.equal(hooks.localSolveLifecycleActive(), false);
 });
 
+test("dismissing the offline Agent invitation starts exactly one VPS solve", async () => {
+  const {data, payload} = makeLargeApplyFixture(1, 2);
+  let inviteCalls = 0;
+  let stateCalls = 0;
+  let solvePosts = 0;
+  let cancelPosts = 0;
+  let confirmCalls = 0;
+  const fetchImpl = async (url) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      stateCalls += 1;
+      return jsonResponse({ok:true, jobs:[], queue:[], completedJobs:[]});
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      return jsonResponse(JSON.parse(JSON.stringify(payload)));
+    }
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelPosts += 1;
+      return jsonResponse({ok:true, cancelRequested:true});
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    confirm(){
+      confirmCalls += 1;
+      return false;
+    }
+  });
+  window.maybeInviteAgentBeforeSort = async () => {
+    inviteCalls += 1;
+    // The real planner helper returns true when the user presses Cancel/Hủy;
+    // model that branch here so this bridge test covers the full handoff.
+    return window.confirm("Agent offline") === false;
+  };
+
+  const result = await window.sapXepTuDongAll({manualAgentInvite:true});
+
+  assert.ok(result);
+  assert.equal(inviteCalls, 1);
+  assert.equal(confirmCalls, 1);
+  assert.equal(stateCalls, 1);
+  assert.equal(solvePosts, 1);
+  assert.equal(cancelPosts, 0);
+  assert.equal(hooks.countScheduledLessons(data), 2);
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(hooks.autoSortPreflightActive(), false);
+});
+
 test("automatic-sort preflight rejects an in-place timetable edit made while validation yields", async () => {
   const data = makeData(2);
   const {window, hooks} = loadBridge(data);
@@ -1108,7 +1158,7 @@ test("an empty duration field uses 60 seconds fresh and 180 seconds for refineme
   assert.equal(later.settings.overall_time_limit_seconds, 180);
 });
 
-test("a severely rough complete timetable rebuilds once from fixed lessons in the fresh 60-second lane", () => {
+test("a severely rough complete timetable keeps its incumbent and uses the 180-second refinement lane", () => {
   const data = makeData(300);
   const subject = data.mon[0].ten;
   const fixedLesson = {mon:subject, fixed:true};
@@ -1146,23 +1196,18 @@ test("a severely rough complete timetable rebuilds once from fixed lessons in th
   const effective = hooks.effectiveSettingsForSolve(plan.settings, data);
   const requestData = hooks.dataForSolverRequest(data, plan.settings);
 
-  assert.equal(plan.kind, "refine_complete", "the client still compares the rebuilt candidate with its incumbent");
-  assert.equal(plan.qualityDebtFreshRebuild, true);
-  assert.equal(plan.settings.ui_unified_solve_kind, "fresh_complete_first");
-  assert.equal(plan.settings.ui_quality_debt_fresh_rebuild, true);
-  assert.equal(plan.settings.overall_time_limit_seconds, 60);
-  assert.equal(plan.settings.backend_deadline_ms, 60000);
-  assert.equal(plan.settings.preserve_existing_tkb, false);
-  assert.equal(plan.settings.allow_solver_warm_start, false);
-  assert.equal(
-    effective.ui_keep_better_existing_on_resort,
-    true,
-    "the normalized no-hint request must retain the incumbent quality guard"
-  );
-  assert.equal(requestData.tkbSolverResult, undefined);
-  assert.equal(requestData.__tkbRequestStrippedSchedule, true);
-  assert.equal(requestData.__tkbRequestFixedScheduleOnly, true);
-  assert.equal(JSON.stringify(requestData.tkb.L1.thu2.sang[0]), JSON.stringify(fixedLesson));
+  assert.equal(plan.kind, "refine_complete");
+  assert.equal(plan.qualityDebtFreshRebuild, false);
+  assert.equal(plan.settings.ui_unified_solve_kind, "refine_complete");
+  assert.equal(plan.settings.ui_quality_debt_fresh_rebuild, undefined);
+  assert.equal(plan.settings.overall_time_limit_seconds, 180);
+  assert.equal(plan.settings.backend_deadline_ms, 180000);
+  assert.equal(plan.settings.preserve_existing_tkb, true);
+  assert.equal(plan.settings.allow_solver_warm_start, true);
+  assert.equal(effective.ui_keep_better_existing_on_resort, true);
+  assert.ok(requestData.tkbSolverResult, "incumbent payload remains available to refinement");
+  assert.equal(requestData.__tkbRequestStrippedSchedule, undefined);
+  assert.equal(requestData.__tkbRequestFixedScheduleOnly, undefined);
   assert.equal(JSON.stringify(requestData.tkbConstraints), JSON.stringify(constraintsBefore));
   assert.equal(JSON.stringify(requestData.tkbUserOff), JSON.stringify(userOffBefore));
 });
@@ -1192,6 +1237,93 @@ test("quality-debt rebuild threshold separates a rough 522-session result from a
   assert.equal(hooks.completeScheduleNeedsFreshQualityRebuild(data, targets), false);
   data.tkbSolverResult = payload(481, 53, 1, 0);
   assert.equal(hooks.completeScheduleNeedsFreshQualityRebuild(data, targets), true);
+});
+
+test("visible teacher quality remains the incumbent source when the saved solver payload is absent or stale", () => {
+  const data = makeData(300);
+  const subject = data.mon[0].ten;
+  data.tkb = {
+    L1:{thu2:{sang:Array(300).fill(subject), chieu:[]}}
+  };
+  const {window, hooks} = loadBridge(data);
+  window.calcSchoolTKBStats = () => ({soTiet:300, daXepTiet:300, chuaXepTiet:0});
+  window.calcTeacherTKBStats = () => ({
+    tsBuoiDay:100,
+    soBuoiDay1:0,
+    soBuoiTrong1:50,
+    soBuoiTrong2:0
+  });
+  const targets = {teacherTarget:90, gap1Target:10};
+
+  assert.equal(data.tkbSolverResult, undefined);
+  assert.equal(hooks.completeScheduleNeedsFreshQualityRebuild(data, targets), true);
+  const visibleIncumbent = hooks.visibleCompleteIncumbentQualityPayload(data, null);
+  assert.equal(visibleIncumbent.metrics.scheduled_periods, 300);
+  assert.equal(visibleIncumbent.metrics.teacher_sessions, 100);
+  assert.equal(visibleIncumbent.metrics.gap_distribution["1"], 50);
+
+  data.tkbSolverResult = {
+    metrics:{
+      scheduled_periods:300,
+      expected_periods:300,
+      unassigned_periods:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      teacher_sessions:80,
+      one_period_teacher_sessions:0,
+      gap_distribution:{"0":80, "1":0}
+    },
+    validation:{hard_ok:true},
+    solver:{runtime_settings:{}}
+  };
+  assert.equal(
+    hooks.completeScheduleNeedsFreshQualityRebuild(data, targets),
+    true,
+    "physical 100/50 statistics must override the stale 80/0 payload"
+  );
+  const refreshedIncumbent = hooks.visibleCompleteIncumbentQualityPayload(
+    data,
+    data.tkbSolverResult
+  );
+  assert.equal(refreshedIncumbent.metrics.teacher_sessions, 100);
+  assert.equal(refreshedIncumbent.metrics.gap_distribution["1"], 50);
+  const snapshot = hooks.snapshotScheduleData(data);
+  snapshot.tkbSolverResult = refreshedIncumbent;
+  const guard = hooks.incumbentQualityGuardState(
+    refreshedIncumbent,
+    snapshot,
+    data,
+    {ui_keep_better_existing_on_resort:true}
+  );
+  const candidate = (teacherSessions, gap1) => ({
+    metrics:{
+      scheduled_periods:300,
+      expected_periods:300,
+      unassigned_periods:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      teacher_sessions:teacherSessions,
+      one_period_teacher_sessions:0,
+      gap_distribution:{"0":Math.max(0, teacherSessions - gap1), "1":gap1}
+    },
+    validation:{hard_ok:true}
+  });
+  assert.equal(
+    hooks.shouldKeepIncumbentForTeacherQuality(candidate(101, 49), refreshedIncumbent, guard),
+    true,
+    "a gap improvement cannot replace the visible incumbent by increasing sessions"
+  );
+  assert.equal(
+    hooks.shouldKeepIncumbentForTeacherQuality(candidate(99, 49), refreshedIncumbent, guard),
+    false
+  );
+
+  const plan = hooks.buildAutomaticAutoSortPlan(data, 300, 0);
+  const effective = hooks.effectiveSettingsForSolve(plan.settings, data);
+  assert.equal(plan.kind, "refine_complete");
+  assert.equal(plan.qualityDebtFreshRebuild, false);
+  assert.equal(plan.settings.ui_unified_solve_kind, "refine_complete");
+  assert.equal(effective.ui_keep_better_existing_on_resort, true);
 });
 
 test("failed blank fresh clicks add five seconds without changing the user input", () => {
@@ -1471,7 +1603,7 @@ test("short first-click deadline and Benders failures are mapped to friendly gui
   const completeFriendly = completeBridge.hooks.friendlySolveError(bendersError);
   assert.equal(completeFriendly.title, "Ch\u01b0a c\u1ea3i thi\u1ec7n th\u00eam");
   assert.equal(completeFriendly.message, "\u0110\u00e3 x\u1ebfp xong!");
-  assert.equal(completeFriendly.statusLevel, "warning");
+  assert.equal(completeFriendly.statusLevel, "ok");
   assert.doesNotMatch(`${completeFriendly.title}: ${completeFriendly.message}`, /Benders|"cap"|history/i);
 });
 
@@ -2177,6 +2309,64 @@ test("incomplete physical incumbent is not described as a complete old timetable
   assert.equal(hooks.countScheduledLessons(data), 1);
   assert.match(window.__TKB_SOLVER_LAST_ERROR, /1 tiết hiện có/);
   assert.doesNotMatch(window.__TKB_SOLVER_LAST_ERROR, /giữ lịch cũ/i);
+});
+
+test("a deadline that retains a complete hard-valid timetable ends with green concise success", async () => {
+  const data = makeData(2);
+  const subject = data.mon[0].ten;
+  data.tkb = {L1:{thu2:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]}}};
+  data.tkbSolverResult = {
+    metrics:{
+      scheduled_periods:2,
+      expected_periods:2,
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      teacher_sessions:1,
+      one_period_teacher_sessions:0,
+      gap_distribution:{"0":1}
+    },
+    validation:{hard_ok:true, violations:[]}
+  };
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const progress = createProgressDocument(clock);
+  const statusEvents = [];
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-data")){
+      return jsonResponse({
+        ok:false,
+        kind:"no_complete_schedule_before_deadline",
+        error:"deadline",
+        lessons:[],
+        metrics:{scheduled_periods:0, expected_periods:2, unassigned_periods:2, hard_ok:false},
+        solver:{runtime_settings:{deadline_hit:true}}
+      }, 422);
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    ...clock,
+    document:progress.document,
+    location:{search:"?e2e=1"},
+    console:{log(){}, info(){}, warn(){}, error(){}}
+  });
+  window.calcSchoolTKBStats = () => ({soTiet:2, daXepTiet:2, chuaXepTiet:0});
+  window._setStatus = (message, type) => {
+    statusEvents.push({message:String(message || ""), type:String(type || "")});
+    progress.nodes.get("statusMsg").textContent = String(message || "");
+  };
+  const plan = hooks.buildAutomaticAutoSortPlan(data);
+
+  const result = await window.TKBRustAPI.solve({ask:false, settings:plan.settings, singlePass:true});
+
+  assert.equal(result, null);
+  assert.deepEqual(statusEvents.at(-1), {message:"Đã xếp xong!", type:"ok"});
+  assert.equal(progress.wrap.hidden, true);
+  assert.equal(progress.wrap.classList.contains("is-warning"), false);
+  assert.equal(JSON.parse(progress.document.getElementById("tkb-e2e-state").textContent).status, "done");
 });
 
 test("automatic solver sends a small residual through full quality instead of fast-only repair", () => {
@@ -3554,9 +3744,11 @@ test("stale backend goal flags cannot hide gap2 or one-period debt", () => {
       expected_periods:2,
       unassigned_periods:0,
       app_constraint_violation_count:0,
-      teacher_sessions:1,
+      // Deliberately stale: the physical timetable below is one teacher
+      // session, while the retained payload still claims 77.
+      teacher_sessions:77,
       one_period_teacher_sessions:0,
-      gap_distribution:{"0":1}
+      gap_distribution:{"0":77}
     },
     validation:{hard_ok:true},
     solver:{teacher_session_optimization:{target_met:true}}
@@ -5255,6 +5447,209 @@ test("repeated iOS foreground wakeups share one immutable poll-only reattach", a
   assert.equal(cancelPosts, 0);
   assert.equal(syncDefaultGroupCalls, 0);
   assert.equal(hooks.countScheduledLessons(data), 2);
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(hooks.isSettledBackendJob(jobId), true);
+});
+
+test("iOS poll-only reattach keeps the complete incumbent when a quality-debt rebuild is worse", async () => {
+  const {data, payload:basePayload} = makeLargeApplyFixture(1, 2);
+  const subject = String(data.mon[0].ten);
+  const incumbentLessons = JSON.parse(JSON.stringify(basePayload.lessons));
+  data.tkb = {
+    L1:{thu2:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]}}
+  };
+  data.tkbLessonTeachers = {[`L1|${subject}`]:"GV01"};
+  data.tkbLessonRooms = {[`L1|${subject}`]:"R1"};
+  data.tkbSolverResult = {
+    ok:true,
+    classes:JSON.parse(JSON.stringify(basePayload.classes)),
+    lessons:incumbentLessons,
+    metrics:{
+      scheduled_periods:2,
+      expected_periods:2,
+      unassigned_periods:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      app_constraint_violation_count:0,
+      teacher_sessions:1,
+      one_period_teacher_sessions:0,
+      gap_distribution:{"0":1}
+    },
+    validation:{hard_ok:true, violations:[]},
+    solver:{runtime_settings:{optimization_refinement_round:1}},
+    unassignedLessons:[]
+  };
+  const worsePayload = JSON.parse(JSON.stringify(basePayload));
+  worsePayload.lessons[1].day = 3;
+  worsePayload.lessons[1].period = 1;
+  Object.assign(worsePayload.metrics, {
+    scheduled_periods:2,
+    expected_periods:2,
+    unassigned_periods:0,
+    hard_ok:true,
+    core_hard_ok:true,
+    app_constraint_violation_count:0,
+    teacher_sessions:2,
+    one_period_teacher_sessions:2,
+    gap_distribution:{"0":2}
+  });
+  worsePayload.validation = {hard_ok:true, violations:[]};
+  worsePayload.solver.runtime_settings.optimization_refinement_round = 2;
+
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const jobId = "ios-quality-debt-rebuild-guard";
+  let solvePosts = 0;
+  let cancelPosts = 0;
+  let resultPolls = 0;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      return jsonResponse({
+        ok:true,
+        requestedJobServerOwned:true,
+        requestedJobResultReady:true,
+        requestedJobActive:false,
+        jobs:[],
+        queue:[],
+        completedJobs:[{jobId, serverOwned:true, completedAtMs:clock.now()}]
+      });
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      return jsonResponse(worsePayload);
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      throw new Error("reattach must not submit a replacement solve");
+    }
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelPosts += 1;
+      throw new Error("reattach must not cancel the canonical solve");
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, clock);
+  window.calcSchoolTKBStats = () => ({soTiet:2, daXepTiet:2, chuaXepTiet:0});
+  window.calcTeacherTKBStats = () => ({
+    tsBuoiDay:1,
+    soBuoiDay1:0,
+    soBuoiTrong1:0,
+    soBuoiTrong2:0
+  });
+  const fingerprint = hooks.durableScheduleFingerprint(data);
+  hooks.writePendingBackendJob(jobId, fingerprint, {
+    qualityDebtFreshRebuild:true,
+    createdAt:clock.now() - 20_000,
+    solverStartedAtMs:clock.now() - 15_000,
+    progressBudgetSeconds:60
+  });
+  hooks.writePendingBackendJob(jobId, fingerprint, {lastPercent:40});
+  assert.equal(hooks.readPendingBackendJob()?.qualityDebtFreshRebuild, true);
+  const visibleBefore = JSON.stringify(data.tkb);
+
+  const retained = await hooks.resumePendingBackendJobOnLoad(0);
+
+  assert.ok(retained);
+  assert.equal(resultPolls, 1);
+  assert.equal(solvePosts, 0);
+  assert.equal(cancelPosts, 0);
+  assert.equal(JSON.stringify(data.tkb), visibleBefore);
+  assert.equal(retained.metrics.teacher_sessions, 1);
+  assert.equal(retained.solver.runtime_settings.optimization_refinement_round, 2);
+  assert.equal(data.tkbSolverResult.solver.runtime_settings.optimization_refinement_round, 2);
+  assert.equal(window.__TKB_SOLVER_LAST_RESULT.metrics.teacher_sessions, 1);
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(hooks.isSettledBackendJob(jobId), true);
+});
+
+test("iOS poll-only reattach keeps a complete incumbent when the server returns a terminal deadline", async () => {
+  const {data, payload:basePayload} = makeLargeApplyFixture(1, 2);
+  const subject = String(data.mon[0].ten);
+  data.tkb = {
+    L1:{thu2:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]}}
+  };
+  data.tkbSolverResult = {
+    ...JSON.parse(JSON.stringify(basePayload)),
+    metrics:{
+      ...basePayload.metrics,
+      scheduled_periods:2,
+      expected_periods:2,
+      unassigned_periods:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      app_constraint_violation_count:0,
+      teacher_sessions:1,
+      one_period_teacher_sessions:0,
+      gap_distribution:{"0":1}
+    },
+    validation:{hard_ok:true, violations:[]},
+    solver:{runtime_settings:{optimization_refinement_round:1}}
+  };
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const jobId = "ios-terminal-deadline-incumbent";
+  let resultPolls = 0;
+  let solvePosts = 0;
+  let cancelPosts = 0;
+  const statusEvents = [];
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      return jsonResponse({
+        ok:true,
+        requestedJobServerOwned:true,
+        requestedJobResultReady:true,
+        requestedJobActive:false,
+        jobs:[],
+        queue:[],
+        completedJobs:[{jobId, serverOwned:true, completedAtMs:clock.now()}]
+      });
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      return jsonResponse({
+        ok:false,
+        kind:"no_complete_schedule_before_deadline",
+        error:"deadline",
+        metrics:{scheduled_periods:0, expected_periods:2, unassigned_periods:2, hard_ok:false}
+      }, 422);
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      throw new Error("reattach must not submit a replacement solve");
+    }
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelPosts += 1;
+      throw new Error("reattach must not cancel the canonical solve");
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, clock);
+  window.calcSchoolTKBStats = () => ({soTiet:2, daXepTiet:2, chuaXepTiet:0});
+  window.calcTeacherTKBStats = () => ({
+    tsBuoiDay:1,
+    soBuoiDay1:0,
+    soBuoiTrong1:0,
+    soBuoiTrong2:0
+  });
+  window._setStatus = (message, type) => {
+    statusEvents.push({message:String(message || ""), type:String(type || "")});
+  };
+  const fingerprint = hooks.durableScheduleFingerprint(data);
+  hooks.writePendingBackendJob(jobId, fingerprint, {
+    createdAt:clock.now() - 20_000,
+    solverStartedAtMs:clock.now() - 15_000,
+    progressBudgetSeconds:180
+  });
+  const retained = await hooks.resumePendingBackendJobOnLoad(0);
+
+  assert.ok(retained);
+  assert.equal(resultPolls, 1);
+  assert.equal(solvePosts, 0);
+  assert.equal(cancelPosts, 0);
+  assert.equal(retained.metrics.teacher_sessions, 1);
+  assert.deepEqual(statusEvents.at(-1), {message:"Đã xếp xong!", type:"ok"});
   assert.equal(hooks.readPendingBackendJob(), null);
   assert.equal(hooks.isSettledBackendJob(jobId), true);
 });
@@ -7580,7 +7975,7 @@ test("routine sorting status remains visible after the time-only progress label"
 
   window.__TKB_SERVER_JOB_RESUME_STARTED = true;
   hooks.setStatus("Đang sắp xếp...", "info");
-  assert.equal(status.textContent, "Đang sắp xếp...");
+  assert.match(status.textContent, /^Đang sắp xếp\.{1,3}$/);
   assert.notEqual(status.style.display, "none");
 
   const feedbackStart = PLANNER_HTML.indexOf('<div class="toolbar-feedback"');
@@ -8024,8 +8419,8 @@ test("completed schedules use one concise final notification while retaining qua
   });
 
   const poor = hooks.completionQualityStatus(payload(504, 55), data);
-  assert.equal(poor.level, "warning");
-  assert.equal(poor.progressLabel, v(0x43,0x1ea7,0x6e,0x20,0x74,0x1ed1,0x69,0x20,0x1b0,0x75));
+  assert.equal(poor.level, "ok");
+  assert.equal(poor.progressLabel, v(0x48,0x6f,0x00e0,0x6e,0x20,0x74,0x1ea5,0x74));
   assert.equal(poor.message, v(0x0110,0x00e3,0x20,0x78,0x1ebf,0x70,0x20,0x78,0x6f,0x6e,0x67,0x21));
   assert.equal(poor.targetMet, false);
 
@@ -8049,6 +8444,89 @@ test("completed schedules use one concise final notification while retaining qua
   const smallBridge = loadBridge(small);
   const friendly = smallBridge.hooks.friendlySolveError(Object.assign(new Error("expired"), {kind:"client_timeout"}));
   assert.equal(friendly.progressLabel, v(0x47,0x69,0x1eef,0x20,0x6c,0x1ecb,0x63,0x68));
-  assert.equal(friendly.statusLevel, "warning");
+  assert.equal(friendly.statusLevel, "ok");
   assert.equal(friendly.statusMessage, poor.message);
+
+  const deadline = smallBridge.hooks.friendlySolveError(Object.assign(new Error("deadline"), {
+    kind:"no_complete_schedule_before_deadline",
+    payload:{metrics:{scheduled_periods:1, expected_periods:2}}
+  }));
+  assert.equal(deadline.statusLevel, "ok");
+  assert.equal(deadline.statusMessage, poor.message);
+});
+
+test("complete hard-valid async completion keeps success ok and progress hidden despite quality debt", async () => {
+  const data = makeData(1566);
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const progress = createProgressDocument(clock);
+  const {window, hooks} = loadBridge(data, undefined, {
+    ...clock,
+    document:progress.document
+  });
+  const statusEvents = [];
+  window._setStatus = (message, type) => {
+    statusEvents.push({message:String(message || ""), type:String(type || "")});
+    progress.nodes.get("statusMsg").textContent = String(message || "");
+  };
+  const payload = {
+    metrics:{
+      scheduled_periods:1566,
+      expected_periods:1566,
+      unassigned_periods:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      app_constraint_violation_count:0,
+      teacher_sessions:522,
+      one_period_teacher_sessions:31,
+      gap_distribution:{"0":437, "1":72, "2":13}
+    },
+    validation:{hard_ok:true, violations:[]},
+    solver:{runtime_settings:{}}
+  };
+
+  progress.wrap.hidden = false;
+  progress.wrap.classList.add("is-active", "is-warning");
+  progress.label.textContent = "Cần tối ưu";
+  hooks.finishProgress("100%", "ok");
+  assert.equal(progress.wrap.hidden, true);
+  assert.equal(progress.wrap.classList.contains("is-warning"), false);
+
+  hooks.schedulePostSolveUi(payload, payload);
+  await Promise.resolve();
+  clock.flushDueTimers();
+
+  assert.deepEqual(statusEvents.at(-1), {message:"Đã xếp xong!", type:"ok"});
+  assert.equal(progress.nodes.get("statusMsg").textContent, "Đã xếp xong!");
+  assert.equal(progress.wrap.hidden, true);
+  assert.equal(progress.wrap.classList.contains("is-warning"), false);
+});
+
+test("routine sorting status cycles one two three dots and stops on terminal success", () => {
+  const data = makeData(2);
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  clock.enableIntervals = true;
+  const progress = createProgressDocument(clock);
+  const {hooks} = loadBridge(data, undefined, {
+    ...clock,
+    document:progress.document
+  });
+  const status = progress.nodes.get("statusMsg");
+
+  hooks.setStatus("Đang sắp xếp...", "info");
+  assert.equal(status.textContent, "Đang sắp xếp.");
+  assert.equal(status.classList.contains("is-auto-sort-running-label"), true);
+  clock.advance(420);
+  assert.equal(status.textContent, "Đang sắp xếp..");
+  hooks.setStatus("Đang sắp xếp...", "info");
+  assert.equal(status.textContent, "Đang sắp xếp..", "repeated progress ticks must not restart the dots");
+  clock.advance(420);
+  assert.equal(status.textContent, "Đang sắp xếp...");
+  clock.advance(420);
+  assert.equal(status.textContent, "Đang sắp xếp.");
+
+  hooks.setStatus("Đã xếp xong!", "ok");
+  assert.equal(status.textContent, "Đã xếp xong!");
+  assert.equal(status.classList.contains("is-auto-sort-running-label"), false);
+  clock.advance(2_000);
+  assert.equal(status.textContent, "Đã xếp xong!");
 });
