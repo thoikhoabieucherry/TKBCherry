@@ -20,7 +20,7 @@ change so a machine restart or a new conversation does not erase project context
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
 
-### v1.49 local live-default quality investigation (not deployed)
+### v1.49 live-default quality investigation (included in v1.50)
 
 - A production replay of the plain `default` school (no non-empty subject
   `lessonBlocks`) returned a complete `1566/1566` timetable with singleton and
@@ -32,8 +32,8 @@ change so a machine restart or a new conversation does not erase project context
   the strict retry/fallback budget and allows the same wide-cap cleanup used by
   the subject-period case to enforce zero one-period sessions and gap <= 1.
 - Local verification: result-contract unittest `132/132`, `py_compile`, and
-  `git diff --check` pass. This change is still local; production deployment
-  and live re-test remain open.
+  `git diff --check` pass. The production release is recorded below under
+  v1.50, which includes this period-safe completion lane.
 
 ### v1.50 subject-period constraint rebuild (deployed 2026-07-20)
 
