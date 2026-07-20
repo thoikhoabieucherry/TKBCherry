@@ -212,7 +212,7 @@ def _run_worker_session(
     token = _load_or_pair_token(config, identity, stop_event, status_callback)
     if stop_event.is_set():
         return
-    api = ApiClient(config, identity, token=token)
+    api = ApiClient(config, identity, token=token, stop_event=stop_event)
     worker = AgentWorker(
         api,
         solver,

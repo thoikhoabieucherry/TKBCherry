@@ -3,6 +3,7 @@
 
   const SC = window.TKBSchool;
   const REMOTE_ONLY_STORAGE = true;
+  let remoteAuthRequired = false;
 
   function safeParseJSON(raw, fallback){
     if(SC && SC.safeParseJSON) return SC.safeParseJSON(raw, fallback);
@@ -137,7 +138,37 @@
     return Object.assign({ "Accept": "application/json" }, extra || {});
   }
 
+  function reportRemoteAuthRequired(status, source, payload){
+    const value = Number(status || 0) || 0;
+    if(value !== 401 && value !== 403) return false;
+    const first = !remoteAuthRequired;
+    remoteAuthRequired = true;
+    if(!first) return true;
+    const detail = {
+      status:value,
+      source:String(source || "school-store"),
+      payload:payload && typeof payload === "object" ? payload : null,
+      returnTo:String(location.pathname || "") + String(location.search || "")
+    };
+    try{
+      const handler = window.TKBRuntime?.handleAuthExpired;
+      if(typeof handler === "function"){
+        Promise.resolve(handler(detail)).catch(() => {});
+      }else{
+        window.dispatchEvent?.(new CustomEvent("tkb:auth-expired", {detail}));
+      }
+    }catch(_){ }
+    return true;
+  }
+
+  try{
+    window.addEventListener?.("tkb:auth-ready", () => {
+      remoteAuthRequired = false;
+    });
+  }catch(_){ }
+
   async function fetchJsonWithTimeout(url, timeoutMs){
+    if(remoteAuthRequired) return null;
     const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
     const timer = ctrl ? setTimeout(() => ctrl.abort(), Number(timeoutMs || 5000)) : null;
     try{
@@ -146,6 +177,12 @@
         cache: "no-store",
         signal: ctrl ? ctrl.signal : undefined
       });
+      if(resp.status === 401 || resp.status === 403){
+        let payload = null;
+        try{ payload = await resp.clone().json(); }catch(_){ }
+        reportRemoteAuthRequired(resp.status, "school-store-load", payload);
+        return null;
+      }
       if(!resp.ok) return null;
       return await resp.json().catch(() => null);
     }finally{
@@ -165,9 +202,11 @@
   async function loadRemoteSchoolDataWithFallback(schoolId){
     const target = cleanSchoolId(schoolId);
     const direct = await loadRemoteSchoolData(target);
+    if(remoteAuthRequired) return null;
     if(hasMeaningfulData(direct)) return direct;
     const ids = relatedStoreIds(target).filter(id => id !== target);
     for(const id of ids){
+      if(remoteAuthRequired) return null;
       const data = await loadRemoteSchoolData(id);
       if(hasMeaningfulData(data)){
         saveRemoteSchoolData(target, JSON.stringify(data)).catch(() => {});
@@ -178,6 +217,7 @@
   }
 
   function loadRemoteSchoolDataSync(schoolId){
+    if(remoteAuthRequired) return null;
     try{
       if(typeof XMLHttpRequest === "undefined") return null;
       const xhr = new XMLHttpRequest();
@@ -186,6 +226,10 @@
       const headers = authHeaders();
       if(headers.Authorization) xhr.setRequestHeader("Authorization", headers.Authorization);
       xhr.send(null);
+      if(xhr.status === 401 || xhr.status === 403){
+        reportRemoteAuthRequired(xhr.status, "school-store-load-sync");
+        return null;
+      }
       if(xhr.status < 200 || xhr.status >= 300) return null;
       return safeParseJSON(xhr.responseText, null);
     }catch(e){
@@ -196,9 +240,11 @@
   function loadRemoteSchoolDataWithFallbackSync(schoolId){
     const target = cleanSchoolId(schoolId);
     const direct = loadRemoteSchoolDataSync(target);
+    if(remoteAuthRequired) return null;
     if(hasMeaningfulData(direct)) return direct;
     const ids = relatedStoreIds(target).filter(id => id !== target);
     for(const id of ids){
+      if(remoteAuthRequired) return null;
       const data = loadRemoteSchoolDataSync(id);
       if(hasMeaningfulData(data)){
         try{ saveRemoteSchoolData(target, JSON.stringify(data)).catch(() => {}); }catch(_){}
@@ -210,6 +256,7 @@
 
   async function saveRemoteSchoolData(schoolId, dataJson){
     const raw = String(dataJson || "{}");
+    if(remoteAuthRequired) return false;
     try{
       const resp = await fetch(remoteStoreUrl(schoolId), {
         method: "POST",
@@ -217,6 +264,12 @@
         body: raw,
         cache: "no-store"
       });
+      if(resp.status === 401 || resp.status === 403){
+        let payload = null;
+        try{ payload = await resp.clone().json(); }catch(_){ }
+        reportRemoteAuthRequired(resp.status, "school-store-save", payload);
+        return false;
+      }
       return resp.ok;
     }catch(e){
       console.warn("Remote school store save failed", e);

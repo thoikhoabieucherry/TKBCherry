@@ -2,7 +2,9 @@
   "use strict";
 
   const HEALTH_URL = "/api/health";
+  const AUTH_RETURN_TO_KEY = "TKB_AUTH_RETURN_TO";
   let healthTimer = null;
+  let authExpiryPromise = null;
 
   function isDevRuntime(){
     const host = String(location.hostname || "").toLowerCase();
@@ -53,22 +55,80 @@
     if(!session || !session.sessionToken) return false;
     const live = await api.apiValidateSession(session.sessionToken);
     if(live) return true;
-    if(A.logout) A.logout();
+    if(A.expireSession) A.expireSession();
+    else if(A.logout) await A.logout();
     return false;
+  }
+
+  function protectedReturnTarget(value){
+    const raw = String(value || "").trim();
+    if(!raw.startsWith("/") || raw.startsWith("//") || raw === "/") return "";
+    return raw;
+  }
+
+  function dispatchAuthEvent(name, detail){
+    try{
+      window.dispatchEvent(new CustomEvent(name, {detail:detail || {}}));
+    }catch(_){ }
+  }
+
+  function rememberAuthReturnTarget(value){
+    const target = protectedReturnTarget(value);
+    if(!target) return "";
+    try{ sessionStorage.setItem(AUTH_RETURN_TO_KEY, target); }catch(_){ }
+    return target;
+  }
+
+  async function handleAuthExpired(options){
+    if(authExpiryPromise) return authExpiryPromise;
+    const detail = Object.assign({}, options || {});
+    rememberAuthReturnTarget(
+      detail.returnTo
+      || (String(location.pathname || "") + String(location.search || ""))
+    );
+    authExpiryPromise = (async () => {
+      // Let the singleton promise become visible before dispatching. A planner
+      // listener may route the same event back through this central handler.
+      await Promise.resolve();
+      dispatchAuthEvent("tkb:auth-expired", detail);
+      const live = await validateSession();
+      const protectedRequestRejected = Number(detail.status || 0) === 401
+        || Number(detail.status || 0) === 403;
+      if(live && !protectedRequestRejected){
+        authExpiryPromise = null;
+        dispatchAuthEvent("tkb:auth-ready", {source:"session-validation"});
+        return false;
+      }
+      if(live){
+        const A = window.TKBAuth;
+        if(A?.expireSession) A.expireSession();
+        else if(A?.logout) await A.logout();
+      }
+      if(detail.redirect !== false) window.location.replace("/");
+      return true;
+    })();
+    return authExpiryPromise;
   }
 
   async function guardProtectedPage(roles){
     const A = window.TKBAuth;
-    if(!A || !A.requireAuth) return;
+    if(!A || !A.requireAuth) return false;
     const auth = A.requireAuth(roles || null);
     if(!auth.ok){
       window.location.replace(auth.redirect || "/");
-      return;
+      return false;
     }
     const ok = await validateSession();
+    if(authExpiryPromise){
+      await authExpiryPromise;
+      return false;
+    }
     if(!ok){
       window.location.replace("/");
+      return false;
     }
+    dispatchAuthEvent("tkb:auth-ready", {source:"protected-page-guard"});
+    return true;
   }
 
   function startHealthPolling(){
@@ -85,6 +145,8 @@
   window.TKBRuntime = {
     checkHealth,
     validateSession,
+    handleAuthExpired,
+    rememberAuthReturnTarget,
     guardProtectedPage,
     startHealthPolling
   };

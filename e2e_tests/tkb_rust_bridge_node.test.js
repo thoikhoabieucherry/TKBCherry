@@ -10,6 +10,7 @@ const BRIDGE_PATH = path.resolve(__dirname, "..", "web", "pages", "tkb-rust-brid
 const BRIDGE_SOURCE = fs.readFileSync(BRIDGE_PATH, "utf8");
 const PLANNER_SOURCE = fs.readFileSync(path.resolve(__dirname, "..", "web", "pages", "phanmon.js"), "utf8");
 const PLANNER_HTML = fs.readFileSync(path.resolve(__dirname, "..", "web", "pages", "sapxep.html"), "utf8");
+const STORAGE_SOURCE = fs.readFileSync(path.resolve(__dirname, "..", "web", "shared", "storage.js"), "utf8");
 
 function memoryStorage(){
   const values = new Map();
@@ -303,6 +304,7 @@ function loadBridge(data, fetchImpl, runtime = {}){
     __TKB_E2E_EXPOSE_TEST_HOOKS: true,
     TKBAuth: runtime.TKBAuth,
     TKBAuthApi: runtime.TKBAuthApi,
+    TKBRuntime: runtime.TKBRuntime,
     document,
     localStorage,
     sessionStorage,
@@ -642,6 +644,7 @@ test("result application force-saves through the trusted fast path", async () =>
   assert.equal(saveCalls.length, 1);
   assert.deepEqual(saveCalls[0], {
     force:true,
+    awaitRemote:true,
     trustedSolverApply:true,
     knownStats:{
       total:3,
@@ -716,6 +719,177 @@ test("a completed server-owned solve result is decoded exactly once across polli
   }, data);
   assert.equal(payload.ok, true);
   assert.equal(jsonCalls, 1, "polling and postSolve must share the one decoded final payload");
+});
+
+test("a completed HTTP 200 remains recoverable until its timetable is applied and saved", async () => {
+  const {data, payload:serverPayload} = makeLargeApplyFixture(1, 2);
+  const storage = memoryStorage();
+  const firstClock = createFakeClock(1_700_000_000_000, 0);
+  let jobId = "";
+  let firstSolvePosts = 0;
+  let firstResultPolls = 0;
+  const firstFetch = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-data")){
+      firstSolvePosts += 1;
+      jobId = JSON.parse(options.body).settings.ui_solve_run_id;
+      return jsonResponse({
+        ok:false,
+        running:true,
+        serverOwned:true,
+        kind:"solver_started",
+        jobId,
+        startedAtMs:firstClock.now(),
+        progressBudgetSeconds:60,
+        retryAfterMs:250
+      }, 202);
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      firstResultPolls += 1;
+      return jsonResponse(serverPayload);
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const first = loadBridge(data, firstFetch, Object.assign({}, firstClock, {
+    localStorage:storage
+  }));
+  first.window.__TKB_DEFER_SERVER_RESULT_SETTLEMENT_UNTIL_APPLY = true;
+
+  const decoded = await first.hooks.postSolve({
+    solver_mode:"auto",
+    auto_sort_mode:"fast",
+    ui_solver_preset:"fast",
+    ui_internal_allow_incomplete:true,
+    ui_allow_short_backend_deadline:true,
+    overall_time_limit_seconds:1,
+    optimization_time_limit_seconds:1,
+    ui_skip_pre_solve_constraint_release:true
+  }, data);
+
+  assert.equal(decoded.ok, true);
+  assert.equal(firstSolvePosts, 1);
+  assert.equal(firstResultPolls, 1);
+  assert.equal(first.hooks.countScheduledLessons(data), 0, "HTTP decoding alone must not mutate the grid");
+  const pending = first.hooks.readPendingBackendJob();
+  assert.equal(pending?.jobId, jobId, "the durable id must survive until apply commits");
+  assert.equal(first.hooks.isSettledBackendJob(jobId), false);
+
+  // Simulate iOS terminating the PWA after HTTP 200 but before applyPayload.
+  // A new document must rediscover the same completed result and apply it,
+  // without posting or cancelling another solve.
+  const secondClock = createFakeClock(firstClock.now(), 0);
+  let resumedResultPolls = 0;
+  let resumedSolvePosts = 0;
+  let cancelPosts = 0;
+  const secondFetch = async (url) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      return jsonResponse({
+        ok:true,
+        requestedJobServerOwned:true,
+        requestedJobResultReady:true,
+        requestedJobActive:false,
+        jobs:[],
+        queue:[],
+        completedJobs:[{
+          jobId,
+          serverOwned:true,
+          scheduleFingerprint:pending.scheduleFingerprint,
+          completedAtMs:secondClock.now()
+        }]
+      });
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resumedResultPolls += 1;
+      return jsonResponse(serverPayload);
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      resumedSolvePosts += 1;
+      throw new Error("resume must not submit a replacement solve");
+    }
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelPosts += 1;
+      throw new Error("resume must not cancel a completed result");
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const second = loadBridge(data, secondFetch, Object.assign({}, secondClock, {
+    localStorage:storage
+  }));
+  const applied = await second.hooks.resumePendingBackendJobOnLoad(0);
+
+  assert.ok(applied);
+  assert.equal(second.hooks.countScheduledLessons(data), 2);
+  assert.equal(resumedResultPolls, 1);
+  assert.equal(resumedSolvePosts, 0);
+  assert.equal(cancelPosts, 0);
+  assert.equal(second.hooks.readPendingBackendJob(), null);
+  assert.equal(second.hooks.isSettledBackendJob(jobId), true);
+});
+
+test("a completed result stays recoverable until the remote timetable save resolves", async () => {
+  const {data, payload:serverPayload} = makeLargeApplyFixture(1, 2);
+  const storage = memoryStorage();
+  const clock = createFakeClock(1_700_000_100_000, 0);
+  let jobId = "";
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-data")){
+      jobId = JSON.parse(options.body).settings.ui_solve_run_id;
+      return jsonResponse({
+        ok:false,
+        running:true,
+        serverOwned:true,
+        kind:"solver_started",
+        jobId,
+        startedAtMs:clock.now(),
+        progressBudgetSeconds:60,
+        retryAfterMs:250
+      }, 202);
+    }
+    if(requestUrl.includes("/api/solve-result")) return jsonResponse(serverPayload);
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+    localStorage:storage
+  }));
+  window.__TKB_DEFER_SERVER_RESULT_SETTLEMENT_UNTIL_APPLY = true;
+
+  const decoded = await hooks.postSolve({
+    solver_mode:"auto",
+    auto_sort_mode:"fast",
+    ui_solver_preset:"fast",
+    ui_internal_allow_incomplete:true,
+    ui_allow_short_backend_deadline:true,
+    overall_time_limit_seconds:1,
+    optimization_time_limit_seconds:1,
+    ui_skip_pre_solve_constraint_release:true
+  }, data);
+
+  let releaseRemoteSave;
+  let saveOptions = null;
+  const saveStarted = new Promise(resolve => {
+    window.saveStore = options => {
+      saveOptions = options;
+      resolve();
+      return new Promise(saveResolve => { releaseRemoteSave = saveResolve; });
+    };
+  });
+  const applying = window.TKBRustAPI.applyPayload(decoded);
+  await saveStarted;
+
+  assert.equal(hooks.countScheduledLessons(data), 2);
+  assert.equal(saveOptions?.awaitRemote, true);
+  assert.equal(hooks.readPendingBackendJob()?.jobId, jobId);
+  assert.equal(hooks.isSettledBackendJob(jobId), false);
+
+  releaseRemoteSave(true);
+  await applying;
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(hooks.isSettledBackendJob(jobId), true);
 });
 
 test("hidden timetable statistics stay lazy while opening the popover still renders them", () => {
@@ -909,6 +1083,7 @@ test("dismissing the offline Agent invitation starts exactly one VPS solve", asy
   let solvePosts = 0;
   let cancelPosts = 0;
   let confirmCalls = 0;
+  let inviteOptions = null;
   const fetchImpl = async (url) => {
     const requestUrl = String(url);
     if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
@@ -932,8 +1107,9 @@ test("dismissing the offline Agent invitation starts exactly one VPS solve", asy
       return false;
     }
   });
-  window.maybeInviteAgentBeforeSort = async () => {
+  window.maybeInviteAgentBeforeSort = async options => {
     inviteCalls += 1;
+    inviteOptions = options;
     // The real planner helper returns true when the user presses Cancel/Hủy;
     // model that branch here so this bridge test covers the full handoff.
     return window.confirm("Agent offline") === false;
@@ -943,6 +1119,7 @@ test("dismissing the offline Agent invitation starts exactly one VPS solve", asy
 
   assert.ok(result);
   assert.equal(inviteCalls, 1);
+  assert.equal(inviteOptions?.preferVpsFallback, true);
   assert.equal(confirmCalls, 1);
   assert.equal(stateCalls, 1);
   assert.equal(solvePosts, 1);
@@ -950,6 +1127,63 @@ test("dismissing the offline Agent invitation starts exactly one VPS solve", asy
   assert.equal(hooks.countScheduledLessons(data), 2);
   assert.equal(hooks.readPendingBackendJob(), null);
   assert.equal(hooks.autoSortPreflightActive(), false);
+});
+
+test("an unresolved offline Agent check cannot delay the single VPS solve POST", async () => {
+  const {data, payload} = makeLargeApplyFixture(1, 2);
+  let solvePosts = 0;
+  let inviteCalls = 0;
+  let confirmCalls = 0;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      return jsonResponse({ok:true, jobs:[], queue:[], completedJobs:[]});
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      return jsonResponse(JSON.parse(JSON.stringify(payload)));
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    confirm(){
+      confirmCalls += 1;
+      throw new Error("manual Play must not open a native Agent dialog");
+    }
+  });
+  const unresolvedAgentStatus = new Promise(() => {});
+  window.maybeInviteAgentBeforeSort = async options => {
+    inviteCalls += 1;
+    if(options?.preferVpsFallback === true){
+      Promise.resolve(unresolvedAgentStatus).catch(() => null);
+      return true;
+    }
+    return unresolvedAgentStatus;
+  };
+
+  let promptDeadline = 0;
+  let result;
+  try{
+    result = await Promise.race([
+      window.sapXepTuDongAll({manualAgentInvite:true}),
+      new Promise((_, reject) => {
+        promptDeadline = setTimeout(
+          () => reject(new Error("manual Play did not reach the VPS promptly")),
+          2_000
+        );
+      })
+    ]);
+  }finally{
+    clearTimeout(promptDeadline);
+  }
+
+  assert.ok(result);
+  assert.equal(inviteCalls, 1);
+  assert.equal(confirmCalls, 0);
+  assert.equal(solvePosts, 1);
+  assert.equal(hooks.countScheduledLessons(data), 2);
+  assert.equal(hooks.readPendingBackendJob(), null);
 });
 
 test("automatic-sort preflight rejects an in-place timetable edit made while validation yields", async () => {
@@ -1078,7 +1312,7 @@ test("planner exposes one automatic arrange button and one accessible seconds du
   assert.doesNotMatch(durationTag, /\bvalue=|\bplaceholder=|\btitle=/i);
 });
 
-test("an empty duration field allows a 110-second first-quality gate and 180-second refinement", () => {
+test("an empty duration field allows a 130-second first-quality gate and 180-second refinement", () => {
   const storage = memoryStorage();
   const durationInput = {
     value:"",
@@ -1104,11 +1338,11 @@ test("an empty duration field allows a 110-second first-quality gate and 180-sec
   assert.equal(durationInput.dataset.durationMode, "auto");
   assert.equal(durationInput.value, "");
   assert.equal(first.kind, "fresh_complete_first");
-  assert.equal(first.settings.overall_time_limit_seconds, 110);
-  assert.equal(first.settings.backend_deadline_ms, 110000);
-  assert.equal(first.settings.native_global_deadline_ms, 110000);
+  assert.equal(first.settings.overall_time_limit_seconds, 130);
+  assert.equal(first.settings.backend_deadline_ms, 130000);
+  assert.equal(first.settings.native_global_deadline_ms, 130000);
   assert.equal(first.settings.optimization_continue_quality_search, false);
-  assert.equal(first.settings.optimization_first_click_quality_time_limit_seconds, 30);
+  assert.equal(first.settings.optimization_first_click_quality_time_limit_seconds, 40);
   assert.equal(first.settings.ui_allow_incomplete_retry_after_single_pass, false);
   assert.equal(first.settings.ui_stop_after_first_complete_schedule, true);
   assert.equal(first.settings.optimization_first_click_continue_local_after_complete, false);
@@ -1162,7 +1396,7 @@ test("an empty duration field allows a 110-second first-quality gate and 180-sec
   assert.equal(later.settings.overall_time_limit_seconds, 180);
 });
 
-test("a severely rough complete timetable keeps its incumbent and uses the 180-second refinement lane", () => {
+test("a severely rough complete timetable enters strict wide-cap incumbent refinement", () => {
   const data = makeData(300);
   const subject = data.mon[0].ten;
   const fixedLesson = {mon:subject, fixed:true};
@@ -1170,7 +1404,12 @@ test("a severely rough complete timetable keeps its incumbent and uses the 180-s
     L1:{thu2:{sang:[fixedLesson, ...Array(299).fill(subject)], chieu:[]}}
   };
   data.tkbConstraints = {
-    fixedOff:{class:{L1:{"thu7|chieu|4":true}}}
+    fixedOff:{class:{L1:{"thu7|chieu|4":true}}},
+    subject:{
+      [subject]:{
+        byClass:{L1:{lessonBlocks:{"2":{min:1}}}}
+      }
+    }
   };
   data.tkbUserOff = {L1:["thu7|chieu|4"]};
   const constraintsBefore = JSON.parse(JSON.stringify(data.tkbConstraints));
@@ -1203,20 +1442,32 @@ test("a severely rough complete timetable keeps its incumbent and uses the 180-s
   assert.equal(plan.kind, "refine_complete");
   assert.equal(plan.qualityDebtFreshRebuild, false);
   assert.equal(plan.settings.ui_unified_solve_kind, "refine_complete");
-  assert.equal(plan.settings.ui_quality_debt_fresh_rebuild, undefined);
+  assert.notEqual(plan.settings.ui_quality_debt_fresh_rebuild, true);
   assert.equal(plan.settings.overall_time_limit_seconds, 180);
   assert.equal(plan.settings.backend_deadline_ms, 180000);
+  assert.equal(
+    effective.backend_deadline_ms,
+    180000,
+    "the final wire normalization must preserve the 180-second refinement ceiling"
+  );
   assert.equal(plan.settings.preserve_existing_tkb, true);
   assert.equal(plan.settings.allow_solver_warm_start, true);
+  assert.equal(plan.settings.optimization_refine_strict_integrated_period_bridge, true);
+  assert.equal(
+    plan.settings.optimization_benders_lean_refinement_periods,
+    false,
+    "subject-period refinement must keep concrete-period feasibility in the session model"
+  );
   assert.equal(effective.ui_keep_better_existing_on_resort, true);
-  assert.ok(requestData.tkbSolverResult, "incumbent payload remains available to refinement");
-  assert.equal(requestData.__tkbRequestStrippedSchedule, undefined);
-  assert.equal(requestData.__tkbRequestFixedScheduleOnly, undefined);
+  assert.equal(requestData.tkbSolverResult.lessons.length, 300);
+  assert.notEqual(requestData.__tkbRequestStrippedSchedule, true);
+  assert.notEqual(requestData.__tkbRequestFixedScheduleOnly, true);
+  assert.equal(hooks.countScheduledLessons(requestData), 300, "the complete incumbent is sent");
   assert.equal(JSON.stringify(requestData.tkbConstraints), JSON.stringify(constraintsBefore));
   assert.equal(JSON.stringify(requestData.tkbUserOff), JSON.stringify(userOffBefore));
 });
 
-test("quality-debt rebuild threshold separates a rough 522-session result from a practical 481-session result", () => {
+test("quality-debt rebuild threshold keeps moderate complete debt as an incumbent", () => {
   const data = makeData(1566);
   const payload = (teacherSessions, gap1, onePeriod = 0, gap2 = 0) => ({
     metrics:{
@@ -1236,10 +1487,12 @@ test("quality-debt rebuild threshold separates a rough 522-session result from a
   const targets = {teacherTarget:482, gap1Target:53};
 
   data.tkbSolverResult = payload(522, 118);
-  assert.equal(hooks.completeScheduleNeedsFreshQualityRebuild(data, targets), true);
+  assert.equal(hooks.completeScheduleNeedsFreshQualityRebuild(data, targets), false);
   data.tkbSolverResult = payload(481, 53);
   assert.equal(hooks.completeScheduleNeedsFreshQualityRebuild(data, targets), false);
   data.tkbSolverResult = payload(481, 53, 1, 0);
+  assert.equal(hooks.completeScheduleNeedsFreshQualityRebuild(data, targets), false);
+  data.tkbSolverResult = payload(612, 118, 75, 30);
   assert.equal(hooks.completeScheduleNeedsFreshQualityRebuild(data, targets), true);
 });
 
@@ -1260,7 +1513,7 @@ test("visible teacher quality remains the incumbent source when the saved solver
   const targets = {teacherTarget:90, gap1Target:10};
 
   assert.equal(data.tkbSolverResult, undefined);
-  assert.equal(hooks.completeScheduleNeedsFreshQualityRebuild(data, targets), true);
+  assert.equal(hooks.completeScheduleNeedsFreshQualityRebuild(data, targets), false);
   const visibleIncumbent = hooks.visibleCompleteIncumbentQualityPayload(data, null);
   assert.equal(visibleIncumbent.metrics.scheduled_periods, 300);
   assert.equal(visibleIncumbent.metrics.teacher_sessions, 100);
@@ -1282,8 +1535,8 @@ test("visible teacher quality remains the incumbent source when the saved solver
   };
   assert.equal(
     hooks.completeScheduleNeedsFreshQualityRebuild(data, targets),
-    true,
-    "physical 100/50 statistics must override the stale 80/0 payload"
+    false,
+    "physical 100/50 statistics must keep the visible complete incumbent for refinement"
   );
   const refreshedIncumbent = hooks.visibleCompleteIncumbentQualityPayload(
     data,
@@ -1327,7 +1580,7 @@ test("visible teacher quality remains the incumbent source when the saved solver
   assert.equal(plan.kind, "refine_complete");
   assert.equal(plan.qualityDebtFreshRebuild, false);
   assert.equal(plan.settings.ui_unified_solve_kind, "refine_complete");
-  assert.equal(effective.ui_keep_better_existing_on_resort, true);
+  assert.equal(effective.ui_use_existing_complete_incumbent, true);
 });
 
 test("normal refinement compares candidates with physical quality instead of stale saved metrics", async () => {
@@ -1425,23 +1678,23 @@ test("failed blank fresh clicks add five seconds without changing the user input
   });
 
   const first = hooks.buildAutomaticAutoSortPlan(data);
-  assert.equal(first.settings.backend_deadline_ms, 110_000);
+  assert.equal(first.settings.backend_deadline_ms, 130_000);
   assert.equal(durationInput.value, "");
   assert.equal(durationInput.dataset.durationMode, "auto");
 
-  assert.equal(hooks.rememberManualFreshRetryFailure(data, first.settings, failure), 115);
+  assert.equal(hooks.rememberManualFreshRetryFailure(data, first.settings, failure), 135);
   assert.deepEqual(JSON.parse(JSON.stringify(internalSaves)), [{force:true, suppressHistory:true}]);
   const second = hooks.buildAutomaticAutoSortPlan(data);
-  assert.equal(second.settings.backend_deadline_ms, 115_000);
-  assert.equal(second.settings.ui_manual_fresh_retry_seconds, 115);
+  assert.equal(second.settings.backend_deadline_ms, 135_000);
+  assert.equal(second.settings.ui_manual_fresh_retry_seconds, 135);
   assert.equal(second.settings.ui_manual_fresh_retry_failures, 1);
   assert.equal(durationInput.value, "");
   assert.equal(durationInput.dataset.durationMode, "auto");
 
-  assert.equal(hooks.rememberManualFreshRetryFailure(data, second.settings, failure), 120);
+  assert.equal(hooks.rememberManualFreshRetryFailure(data, second.settings, failure), 140);
   const third = hooks.buildAutomaticAutoSortPlan(data);
-  assert.equal(third.settings.backend_deadline_ms, 120_000);
-  assert.equal(third.settings.ui_manual_fresh_retry_seconds, 120);
+  assert.equal(third.settings.backend_deadline_ms, 140_000);
+  assert.equal(third.settings.ui_manual_fresh_retry_seconds, 140);
   assert.equal(durationInput.value, "");
 
   hooks.writeCustomSolveDurationSeconds(90);
@@ -1454,7 +1707,7 @@ test("failed blank fresh clicks add five seconds without changing the user input
   hooks.writeCustomSolveDurationSeconds("");
   assert.equal(hooks.clearManualFreshRetryBudget(data), true);
   const reset = hooks.buildAutomaticAutoSortPlan(data);
-  assert.equal(reset.settings.backend_deadline_ms, 110_000);
+  assert.equal(reset.settings.backend_deadline_ms, 130_000);
   assert.equal(durationInput.value, "");
   assert.equal(durationInput.dataset.durationMode, "auto");
 });
@@ -1688,9 +1941,9 @@ test("automatic solver ignores legacy Fast preference and starts quality complet
   assert.equal(plan.kind, "fresh_complete_first");
   assert.equal(plan.settings.ui_solver_preset, "balanced");
   assert.equal(plan.settings.auto_sort_mode, "teacher_session_opt");
-  assert.equal(plan.settings.optimization_time_limit_seconds, 110);
-  assert.equal(plan.settings.ui_unified_reference_watchdog_reserve_ms, 5000);
-  assert.equal(plan.settings.ui_client_timeout_reserve_ms, 10000);
+  assert.equal(plan.settings.optimization_time_limit_seconds, 130);
+  assert.equal(plan.settings.ui_unified_reference_watchdog_reserve_ms, 10000);
+  assert.equal(plan.settings.ui_client_timeout_reserve_ms, 30000);
   assert.equal(plan.settings.ui_allow_quality_after_single_pass, false);
   assert.equal(plan.settings.target_gap1_sessions, 0);
   assert.equal(plan.settings.optimization_accept_gap1_sessions, 0);
@@ -1698,7 +1951,7 @@ test("automatic solver ignores legacy Fast preference and starts quality complet
   assert.equal(plan.settings.optimization_benders_disable_session_early_stop, true);
 });
 
-test("large unified first click uses one bounded 110-second quality-gate search", () => {
+test("large unified first click uses one bounded 130-second quality-gate search", () => {
   const data = makeData(1500);
   const {hooks} = loadBridge(data);
   const plan = hooks.buildAutomaticAutoSortPlan(data);
@@ -1706,13 +1959,13 @@ test("large unified first click uses one bounded 110-second quality-gate search"
 
   assert.equal(plan.kind, "fresh_complete_first");
   assert.equal(effective.ui_unified_initial_fast_stage, true);
-  assert.equal(effective.ui_unified_initial_ceiling_seconds, 110);
-  assert.equal(effective.overall_time_limit_seconds, 110);
-  assert.equal(effective.integrated_time_limit, 110);
-  assert.equal(effective.optimization_time_limit_seconds, 110);
-  assert.equal(effective.backend_deadline_ms, 110000);
-  assert.equal(effective.native_global_deadline_ms, 110000);
-  assert.equal(effective.optimization_first_click_feasibility_time_limit_seconds, 110);
+  assert.equal(effective.ui_unified_initial_ceiling_seconds, 130);
+  assert.equal(effective.overall_time_limit_seconds, 130);
+  assert.equal(effective.integrated_time_limit, 130);
+  assert.equal(effective.optimization_time_limit_seconds, 130);
+  assert.equal(effective.backend_deadline_ms, 130000);
+  assert.equal(effective.native_global_deadline_ms, 130000);
+  assert.equal(effective.optimization_first_click_feasibility_time_limit_seconds, 130);
   assert.equal(effective.optimization_first_click_quality_time_limit_seconds, 35);
   assert.equal(effective.optimization_first_click_quality_minimum_seconds, 12);
   assert.equal(effective.optimization_first_click_local_lns_time_limit_seconds, 30);
@@ -1720,7 +1973,7 @@ test("large unified first click uses one bounded 110-second quality-gate search"
   assert.equal(effective.optimization_first_click_quality_cap_headroom, 16);
   assert.equal(effective.optimization_first_click_target_probe_step, 2);
   assert.equal(effective.optimization_first_click_target_probe_time_limit_seconds, 30);
-  assert.equal(effective.optimization_first_click_target_probe_convergence_ceiling_seconds, 110);
+  assert.equal(effective.optimization_first_click_target_probe_convergence_ceiling_seconds, 120);
   assert.equal(effective.optimization_first_click_target_probe_enabled, false);
   assert.equal(effective.optimization_unbounded_quality_search, false);
   assert.equal(effective.ui_bounded_fresh_accept_quality_debt, true);
@@ -1747,8 +2000,8 @@ test("large unified first click uses one bounded 110-second quality-gate search"
   assert.ok(Number.isInteger(effective.random_seed));
   assert.ok(effective.random_seed > 0);
   assert.equal(effective.quality_variant_seed, effective.random_seed);
-  assert.equal(effective.ui_unified_reference_watchdog_reserve_ms, 5000);
-  assert.equal(effective.ui_client_timeout_reserve_ms, 10000);
+  assert.equal(effective.ui_unified_reference_watchdog_reserve_ms, 10000);
+  assert.equal(effective.ui_client_timeout_reserve_ms, 30000);
 });
 
 test("ten no-hint fresh plans use ten distinct positive search trajectories", () => {
@@ -1776,11 +2029,11 @@ test("ten no-hint fresh plans use ten distinct positive search trajectories", ()
   assert.equal(new Set(seeds).size, 10);
 });
 
-test("automatic duration keeps a 110-second quality gate and 180-second refinement", () => {
+test("automatic duration keeps a 130-second quality gate and 180-second refinement", () => {
   const data = makeData(1500);
   const {hooks} = loadBridge(data);
 
-  assert.equal(hooks.initialAutomaticSolverCeilingSeconds(1500, data), 110);
+  assert.equal(hooks.initialAutomaticSolverCeilingSeconds(1500, data), 130);
   assert.equal(hooks.incrementalRefineCeilingSeconds(1500, data, 1), 180);
   assert.equal(hooks.incrementalRefineCeilingSeconds(1500, data, 2), 180);
   assert.equal(hooks.incrementalRefineCeilingSeconds(1500, data, 3), 180);
@@ -1923,12 +2176,12 @@ test("a blank first Play owns one adaptive pass without hidden retries", async (
   assert.equal(plan.settings.optimization_first_click_continue_local_after_complete, false);
   assert.equal(plan.settings.ui_disable_automatic_retry, true);
   assert.equal(plan.settings.complete_schedule_seed_retry_max_runs, 0);
-  assert.equal(plan.settings.overall_time_limit_seconds, 110);
-  assert.equal(plan.settings.backend_deadline_ms, 110000);
+  assert.equal(plan.settings.overall_time_limit_seconds, 130);
+  assert.equal(plan.settings.backend_deadline_ms, 130000);
   const result = await window.TKBRustAPI.solve({ask:false, settings:plan.settings, singlePass:true});
   assert.equal(result, null);
   assert.equal(solvePosts, 1);
-  assert.equal(postedSettings[0].overall_time_limit_seconds, 110);
+  assert.equal(postedSettings[0].overall_time_limit_seconds, 130);
 });
 
 test("an explicit duration remains one exact solver budget when no complete schedule is found", async () => {
@@ -2033,24 +2286,24 @@ test("blank first-solution search does not retry automatically after a deadline 
   assert.equal(solvePosts, 1);
   assert.deepEqual(
     postedSettings.map(settings => settings.overall_time_limit_seconds),
-    [110]
+    [130]
   );
   assert.deepEqual(
     progressSnapshots.map(state => [state.runIndex, state.percent, state.budgetSeconds]),
-    [[1, 4, 110]]
+    [[1, 4, 130]]
   );
   assert.deepEqual(
     progressSnapshots.map(state => state.label),
     ["0 giây"]
   );
-  assert.equal(data.tkbManualFreshRetryBudget.nextSeconds, 115);
+  assert.equal(data.tkbManualFreshRetryBudget.nextSeconds, 135);
   const nextManualPlan = hooks.buildAutomaticAutoSortPlan(data);
-  assert.equal(nextManualPlan.settings.backend_deadline_ms, 115_000);
-  assert.equal(nextManualPlan.settings.ui_manual_fresh_retry_seconds, 115);
+  assert.equal(nextManualPlan.settings.backend_deadline_ms, 135_000);
+  assert.equal(nextManualPlan.settings.ui_manual_fresh_retry_seconds, 135);
   assert.equal(solvePosts, 1, "a failed solve must never start another job automatically");
 });
 
-test("a complete manual retry uses the remembered 115-second fresh cap", async () => {
+test("a complete manual retry uses the remembered 135-second fresh cap", async () => {
   const data = makeData(2);
   let solvePosts = 0;
   let postedDeadline = 0;
@@ -2110,7 +2363,7 @@ test("a complete manual retry uses the remembered 115-second fresh cap", async (
 
   assert.ok(result);
   assert.equal(solvePosts, 1);
-  assert.equal(postedDeadline, 115_000);
+  assert.equal(postedDeadline, 135_000);
   assert.equal(data.tkbManualFreshRetryBudget, undefined);
   assert.equal(hooks.manualFreshRetryBudgetSeconds(data), 60);
 });
@@ -2483,8 +2736,8 @@ test("automatic solver sends a small residual through full quality instead of fa
   assert.equal(effective.strict_one_period_sessions_cap, false);
   assert.equal(effective.allow_quality_debt, true);
   assert.equal(effective.period_max_teacher_gap, "off");
-  assert.equal(effective.ui_unified_reference_watchdog_reserve_ms, 5000);
-  assert.equal(effective.ui_client_timeout_reserve_ms, 10000);
+  assert.equal(effective.ui_unified_reference_watchdog_reserve_ms, 10000);
+  assert.equal(effective.ui_client_timeout_reserve_ms, 30000);
 });
 
 test("automatic solver refines a demand-valid complete timetable as a soft incumbent", () => {
@@ -2517,8 +2770,8 @@ test("automatic solver refines a demand-valid complete timetable as a soft incum
   assert.equal(effective.ui_allow_short_backend_deadline, false);
   assert.equal(effective.progress_estimate_seconds, 30);
   assert.equal(hooks.progressBudgetSeconds(effective, hooks.estimateSolveSeconds(effective, data)), 180);
-  assert.equal(effective.ui_unified_reference_watchdog_reserve_ms, 5000);
-  assert.equal(effective.ui_client_timeout_reserve_ms, 10000);
+  assert.equal(effective.ui_unified_reference_watchdog_reserve_ms, 10000);
+  assert.equal(effective.ui_client_timeout_reserve_ms, 30000);
   assert.notEqual(effective.ui_no_hint_fresh_solve, true);
   assert.equal(effective.allow_solver_warm_start, true);
   assert.equal(effective.optimization_existing_local_quality_lns_passes, undefined);
@@ -2808,6 +3061,96 @@ test("complete subject-period violation uses a fresh strict-quality rebuild inst
   assert.equal(requestData.__tkbRequestStrippedSchedule, true);
   assert.equal(hooks.countScheduledLessons(requestData), 0);
   assert.equal(JSON.stringify(requestData.tkbConstraints), JSON.stringify(data.tkbConstraints));
+});
+
+test("fixed-only lesson-block minimum debt is planned as a fresh quality solve", () => {
+  const data = makeData(4);
+  const subject = data.mon[0].ten;
+  data.tkb = {
+    L1:{
+      thu2:{
+        sang:[{mon:subject, fixed:true}, "", "", "", ""],
+        chieu:["", "", "", "", ""]
+      }
+    }
+  };
+  data.tkbConstraints = {
+    subject:{[subject]:{byClass:{L1:{
+      lessonBlocks:{2:{min:1}},
+      avoidBreakPair23:{morning:true, afternoon:true}
+    }}}}
+  };
+  const {hooks} = loadBridge(data);
+  const plan = hooks.buildConstraintRepairAutoSortPlan(
+    data,
+    4,
+    0,
+    1,
+    null,
+    [{kind:"subject.lessonBlocks.min", message:"10A1 - Toan: chua dat Min cum 2 tiet xep lien."}]
+  );
+  const effective = hooks.effectiveSettingsForSolve(plan.settings, data);
+  const requestData = hooks.dataForSolverRequest(data, effective);
+
+  assert.equal(plan.kind, "fresh_complete_first");
+  assert.equal(plan.settings.ui_unified_solve_kind, "fresh_complete_first");
+  assert.equal(plan.settings.auto_sort_mode, "teacher_session_opt");
+  assert.equal(plan.settings.ui_disable_initial_fast_draft, true);
+  assert.equal(plan.settings.ui_force_staged_existing_repair, undefined);
+  assert.equal(plan.settings.ui_deferred_incomplete_lesson_block_minimum_count, 1);
+  assert.equal(effective.overall_time_limit_seconds, 180);
+  assert.equal(effective.backend_deadline_ms, 180000);
+  assert.equal(requestData.__tkbRequestStrippedSchedule, true);
+  assert.equal(requestData.__tkbRequestFixedScheduleOnly, true);
+  assert.equal(hooks.countScheduledLessons(requestData), 1);
+  assert.equal(JSON.stringify(requestData.tkbConstraints), JSON.stringify(data.tkbConstraints));
+});
+
+test("localized fixed-only Min debt without a structured kind stays on the fresh lane", () => {
+  const data = makeData(4);
+  const subject = data.mon[0].ten;
+  data.tkb = {
+    L1:{
+      thu2:{
+        sang:[{mon:subject, fixed:true}, "", "", "", ""],
+        chieu:["", "", "", "", ""]
+      }
+    }
+  };
+  data.tkbConstraints = {
+    subject:{[subject]:{byClass:{L1:{
+      lessonBlocks:{2:{min:1}},
+      avoidBreakPair23:{morning:true, afternoon:true}
+    }}}}
+  };
+  data.tkbManualFreshRetryBudget = {
+    version:1,
+    fingerprint:"ignored until the bridge computes the current value",
+    nextSeconds:80,
+    failures:4
+  };
+  const {hooks} = loadBridge(data);
+  data.tkbManualFreshRetryBudget.fingerprint = hooks.durableScheduleFingerprint(data);
+  const plan = hooks.buildConstraintRepairAutoSortPlan(
+    data,
+    4,
+    0,
+    1,
+    null,
+    [{
+      lopId:"L1",
+      className:"10A1",
+      mon:subject,
+      message:"10A1 - Toan: s\u1ed1 bu\u1ed5i/c\u1ee5m c\u00f3 2 ti\u1ebft x\u1ebfp li\u1ec1n 0, ch\u01b0a \u0111\u1ea1t Min 1."
+    }]
+  );
+  const effective = hooks.effectiveSettingsForSolve(plan.settings, data);
+
+  assert.equal(plan.kind, "fresh_complete_first");
+  assert.equal(plan.settings.ui_unified_solve_kind, "fresh_complete_first");
+  assert.equal(plan.settings.ui_deferred_incomplete_lesson_block_minimum_count, 1);
+  assert.equal(effective.overall_time_limit_seconds, 180);
+  assert.equal(effective.backend_deadline_ms, 180000);
 });
 
 test("Play sends one fixed-only 180-second rebuild for a complete subject-period violation", async () => {
@@ -3428,7 +3771,7 @@ test("a UI-rejected complete staged repair runs one fresh rebuild and keeps the 
   assert.equal(postedRequests[0].data.tkbConstraints.teacher.GV01.maxDaysSessions.maxDays, 3);
   assert.equal(postedRequests[1].settings.ui_constraint_change_fresh_retry, true);
   assert.equal(postedRequests[1].settings.ui_constraint_change_rebuild_from_empty, true);
-  assert.equal(postedRequests[1].settings.overall_time_limit_seconds, 110);
+  assert.equal(postedRequests[1].settings.overall_time_limit_seconds, 130);
   assert.equal(postedRequests[1].settings.preserve_existing_tkb, false);
   assert.equal(postedRequests[1].settings.allow_solver_warm_start, false);
   assert.equal(postedRequests[1].data.__tkbRequestStrippedSchedule, true);
@@ -3527,9 +3870,9 @@ test("a tightened teacher constraint stops after one staged fill and one fresh f
   assert.equal(postedSettings[1].period_max_teacher_gap, "off");
   assert.equal(postedSettings[1].ui_unified_initial_fast_stage, true);
   assert.equal(postedSettings[1].ui_disable_automatic_retry, true);
-  assert.equal(postedSettings[1].ui_constraint_change_fresh_ceiling_seconds, 110);
-  assert.equal(postedSettings[1].overall_time_limit_seconds, 110);
-  assert.equal(postedSettings[1].backend_deadline_ms, 110000);
+  assert.equal(postedSettings[1].ui_constraint_change_fresh_ceiling_seconds, 130);
+  assert.equal(postedSettings[1].overall_time_limit_seconds, 130);
+  assert.equal(postedSettings[1].backend_deadline_ms, 130000);
   assert.notEqual(postedSettings[1].robust_retry, true);
   assert.notEqual(postedSettings[1].complete_schedule_seed_retry, true);
   assert.equal(postedRequests[1].data.__tkbRequestStrippedSchedule, true);
@@ -3541,7 +3884,7 @@ test("a tightened teacher constraint stops after one staged fill and one fresh f
   );
 });
 
-test("large fixed-off fresh fallback preserves the automatic 110-second quality-gate ceiling", async () => {
+test("large fixed-off fresh fallback preserves the automatic 130-second quality-gate ceiling", async () => {
   const fixture = makeLargeApplyFixture(54, 29);
   const {data} = fixture;
   const subject = String(data.mon[0].ten);
@@ -3610,12 +3953,12 @@ test("large fixed-off fresh fallback preserves the automatic 110-second quality-
   assert.equal(postedSettings.length, 2);
   const fallback = postedSettings[1];
   assert.equal(fallback.ui_constraint_change_fresh_retry, true);
-  assert.equal(fallback.ui_constraint_change_fresh_ceiling_seconds, 110);
-  assert.equal(fallback.overall_time_limit_seconds, 110);
-  assert.equal(fallback.optimization_time_limit_seconds, 110);
-  assert.equal(fallback.integrated_time_limit, 110);
-  assert.equal(fallback.backend_deadline_ms, 110000);
-  assert.equal(fallback.native_global_deadline_ms, 110000);
+  assert.equal(fallback.ui_constraint_change_fresh_ceiling_seconds, 130);
+  assert.equal(fallback.overall_time_limit_seconds, 130);
+  assert.equal(fallback.optimization_time_limit_seconds, 130);
+  assert.equal(fallback.integrated_time_limit, 130);
+  assert.equal(fallback.backend_deadline_ms, 130000);
+  assert.equal(fallback.native_global_deadline_ms, 130000);
   assert.equal(fallback.ui_allow_short_backend_deadline, true);
 });
 
@@ -3642,16 +3985,16 @@ test("fresh fallback ignores a stale 180-second manual retry budget", () => {
   delete base.ui_constraint_change_repair;
   delete base.ui_constraint_change_fresh_retry;
   const retry = hooks.stagedExistingFreshRetrySettings(base, data, "run-stale-budget");
-  assert.equal(retry.ui_constraint_change_fresh_ceiling_seconds, 110);
+  assert.equal(retry.ui_constraint_change_fresh_ceiling_seconds, 130);
   assert.equal(retry.ui_unified_initial_fast_stage, true);
-  assert.equal(retry.ui_unified_initial_ceiling_seconds, 110);
+  assert.equal(retry.ui_unified_initial_ceiling_seconds, 130);
 
   const effective = hooks.effectiveSettingsForSolve(retry, data);
-  assert.equal(effective.overall_time_limit_seconds, 110);
-  assert.equal(effective.optimization_time_limit_seconds, 110);
-  assert.equal(effective.integrated_time_limit, 110);
-  assert.equal(effective.backend_deadline_ms, 110000);
-  assert.equal(effective.native_global_deadline_ms, 110000);
+  assert.equal(effective.overall_time_limit_seconds, 130);
+  assert.equal(effective.optimization_time_limit_seconds, 130);
+  assert.equal(effective.integrated_time_limit, 130);
+  assert.equal(effective.backend_deadline_ms, 130000);
+  assert.equal(effective.native_global_deadline_ms, 130000);
   assert.equal(effective.ui_allow_short_backend_deadline, true);
 
   const customBase = Object.assign({}, base, {ui_custom_solve_duration_seconds:90});
@@ -5136,8 +5479,9 @@ test("server-owned solve posts once and polls the durable result", async () => {
   assert.equal(window.__TKB_ACTIVE_BACKEND_JOB_ID, "");
 });
 
-test("a 180-second server job keeps its result reserve after the FIFO deadline", async () => {
+test("a 180-second server result after 190 seconds is applied before the 210-second client deadline", async () => {
   const data = makeData(2);
+  const subject = data.mon[0].ten;
   const clock = createFakeClock();
   const startedAtMs = clock.now();
   let resultPolls = 0;
@@ -5160,7 +5504,7 @@ test("a 180-second server job keeps its result reserve after the FIFO deadline",
     }
     if(requestUrl.includes("/api/solve-result")){
       resultPolls += 1;
-      if(clock.now() - startedAtMs < 181_000){
+      if(clock.now() - startedAtMs < 195_000){
         return jsonResponse({
           ok:false,
           running:true,
@@ -5173,43 +5517,60 @@ test("a 180-second server job keeps its result reserve after the FIFO deadline",
       }
       return jsonResponse({
         ok:true,
-        lessons:[],
+        classes:[{id:"L1", name:"10A1"}],
+        lessons:[
+          {classId:"L1", className:"10A1", subject, teacher:"GV01", day:2, session:"AM", period:1},
+          {classId:"L1", className:"10A1", subject, teacher:"GV01", day:2, session:"AM", period:2}
+        ],
         unassignedLessons:[],
-        metrics:{scheduled_periods:2, expected_periods:2, unassigned_periods:0, hard_ok:true},
-        validation:{hard_ok:true},
+        metrics:{
+          scheduled_periods:2,
+          expected_periods:2,
+          unassigned_periods:0,
+          app_constraint_violation_count:0,
+          hard_ok:true,
+          core_hard_ok:true,
+          teacher_sessions:1,
+          one_period_teacher_sessions:0,
+          gap_distribution:{"0":1}
+        },
+        validation:{hard_ok:true, violations:[]},
         solver:{runtime_settings:{}}
       });
     }
     throw new Error(`Unexpected URL: ${url}`);
   };
   const {window, hooks} = loadBridge(data, fetchImpl, clock);
+  window.calcSchoolTKBStats = () => ({
+    soTiet:2,
+    daXepTiet:hooks.countScheduledLessons(data),
+    chuaXepTiet:Math.max(0, 2 - hooks.countScheduledLessons(data))
+  });
+  const plan = hooks.buildAutomaticAutoSortPlan(data);
+  plan.settings.ui_custom_solve_duration_seconds = 180;
 
-  const payload = await hooks.postSolve({
-    solver_mode:"auto",
-    auto_sort_mode:"fast",
-    ui_solver_preset:"fast",
-    ui_internal_allow_incomplete:true,
-    ui_custom_solve_duration_seconds:180,
-    ui_client_timeout_reserve_ms:90_000,
-    ui_solver_queue_timeout_ms:180_000,
-    overall_time_limit_seconds:180,
-    optimization_time_limit_seconds:180,
-    ui_skip_pre_solve_constraint_release:true
-  }, data);
+  const payload = await window.TKBRustAPI.solve({
+    ask:false,
+    settings:plan.settings,
+    singlePass:true
+  });
 
-  assert.equal(payload.ok, true);
+  assert.ok(payload);
   assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.backendDeadlineMs, 180_000);
-  assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.timeoutMs, 270_000);
-  assert.ok(resultPolls > 250, `expected polling past 180 seconds, got ${resultPolls}`);
-  assert.ok(clock.now() - startedAtMs >= 181_000);
+  assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.timeoutMs, 210_000);
+  assert.ok(resultPolls > 270, `expected polling past 190 seconds, got ${resultPolls}`);
+  assert.ok(clock.now() - startedAtMs > 190_000);
+  assert.ok(clock.now() - startedAtMs < 210_000);
+  assert.equal(hooks.countScheduledLessons(data), 2);
+  assert.equal(data.tkbSolverResult.metrics.scheduled_periods, 2);
   assert.equal(hooks.readPendingBackendJob(), null);
 });
 
-test("automatic server result wait honors its explicit ten-second response reserve", () => {
+test("automatic server result wait honors its explicit thirty-second response reserve", () => {
   const data = makeData(2);
   const clock = createFakeClock();
   const {hooks} = loadBridge(data, null, withoutAutomaticBackendResume(clock));
-  const liveWait = hooks.serverOwnedResultWaitMs(190_000, {
+  const liveWait = hooks.serverOwnedResultWaitMs(210_000, {
     progressBudgetSeconds:180,
     startedAtMs:clock.now()
   });
@@ -5218,7 +5579,7 @@ test("automatic server result wait honors its explicit ten-second response reser
     startedAtMs:clock.now()
   });
 
-  assert.equal(liveWait, 190_000);
+  assert.equal(liveWait, 210_000);
   assert.equal(reloadFallback, 270_000);
 });
 
@@ -7884,14 +8245,19 @@ test("solve-result auth loss detaches without deleting the pending job", async (
   const data = makeData(2);
   const clock = createFakeClock();
   let wireJobId = "";
+  let solvePosts = 0;
+  let resultPolls = 0;
+  let authTransitions = 0;
   const fetchImpl = async (url, options = {}) => {
     const requestUrl = String(url);
     if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
     if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
       wireJobId = JSON.parse(options.body).settings.ui_solve_run_id;
       return jsonResponse({ok:false, running:true, serverOwned:true, kind:"solver_started", jobId:wireJobId}, 202);
     }
     if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
       return jsonResponse({
         ok:false,
         kind:"auth_required",
@@ -7901,7 +8267,14 @@ test("solve-result auth loss detaches without deleting the pending job", async (
     }
     throw new Error(`Unexpected URL: ${url}`);
   };
-  const {hooks} = loadBridge(data, fetchImpl, clock);
+  const {hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+    TKBRuntime:{
+      async handleAuthExpired(){
+        authTransitions += 1;
+        return true;
+      }
+    }
+  }));
   await assert.rejects(
     hooks.postSolve({
       solver_mode:"auto",
@@ -7918,6 +8291,177 @@ test("solve-result auth loss detaches without deleting the pending job", async (
       && err?.payload?.diagnostics?.reason === "session_expired_during_resume"
   );
   assert.equal(hooks.readPendingBackendJob()?.jobId, wireJobId);
+  assert.equal(hooks.backendAuthRequired(), true);
+  assert.equal(authTransitions, 1);
+  assert.equal(solvePosts, 1);
+  assert.equal(resultPolls, 1);
+  assert.equal(hooks.schedulePendingBackendResume(0, 0), false);
+  clock.advance(60_000);
+  await Promise.resolve();
+  assert.equal(solvePosts, 1, "auth recovery must never repost the canonical job");
+  assert.equal(resultPolls, 1, "auth recovery must stop the result polling loop");
+});
+
+test("solve-result 401 does not cascade into a school-store save", async () => {
+  const data = makeData(2);
+  const clock = createFakeClock();
+  let wireJobId = "";
+  let saveCalls = 0;
+  let solvePosts = 0;
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      wireJobId = JSON.parse(options.body).settings.ui_solve_run_id;
+      return jsonResponse({
+        ok:false,
+        running:true,
+        serverOwned:true,
+        kind:"solver_started",
+        jobId:wireJobId
+      }, 202);
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      return jsonResponse({ok:false, kind:"auth_required"}, 401);
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+    TKBRuntime:{async handleAuthExpired(){ return true; }}
+  }));
+  window.saveStore = () => {
+    saveCalls += 1;
+    return true;
+  };
+
+  const result = await window.TKBRustAPI.solve({
+    ask:false,
+    singlePass:true,
+    settings:{
+      solver_mode:"auto",
+      auto_sort_mode:"fast",
+      ui_solver_preset:"fast",
+      ui_internal_allow_incomplete:true,
+      ui_allow_short_backend_deadline:true,
+      overall_time_limit_seconds:1,
+      optimization_time_limit_seconds:1,
+      ui_skip_pre_solve_constraint_release:true,
+      ui_skip_capacity_precheck:true,
+      ui_skip_default_fresh_capacity_precheck:true
+    }
+  });
+
+  assert.equal(result, null);
+  assert.equal(saveCalls, 0, "auth expiry must not restore-and-save the snapshot");
+  assert.equal(solvePosts, 1);
+  assert.equal(hooks.readPendingBackendJob()?.jobId, wireJobId);
+  assert.equal(hooks.backendAuthRequired(), true);
+});
+
+test("solver-state auth loss preserves the pending job and suppresses every retry", async () => {
+  const data = makeData(2);
+  const localStorage = memoryStorage();
+  const jobId = "owner-job-survives-state-auth-expiry";
+  let stateGets = 0;
+  let solvePosts = 0;
+  let authTransitions = 0;
+  const fetchImpl = async (url) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      throw new Error("an auth-expired pending job must never be reposted");
+    }
+    if(requestUrl.includes("/api/solver-state")){
+      stateGets += 1;
+      return jsonResponse({ok:false, kind:"auth_required", error:"session_expired"}, 401);
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    localStorage,
+    setTimeout(){ return 0; },
+    clearTimeout(){},
+    TKBRuntime:{
+      async handleAuthExpired(){
+        authTransitions += 1;
+        return true;
+      }
+    }
+  });
+  hooks.writePendingBackendJob(jobId, hooks.durableScheduleFingerprint(data), {
+    createdAt:Date.now() - 5_000,
+    discoveredFromOwnerState:true
+  });
+
+  const state = await window.TKBRustAPI.backendSolverState(jobId);
+  assert.equal(state.ok, false);
+  assert.equal(state.authRequired, true);
+  assert.equal(state.status, 401);
+  assert.equal(hooks.backendAuthRequired(), true);
+  assert.equal(hooks.readPendingBackendJob()?.jobId, jobId);
+  assert.equal(authTransitions, 1);
+  assert.equal(await hooks.resumePendingBackendJobOnLoad(0), false);
+
+  const blockedState = await window.TKBRustAPI.backendSolverState(jobId);
+  assert.equal(blockedState.authRequired, true);
+  assert.equal(stateGets, 1, "auth suspension must stop the solver-state loop");
+  assert.equal(solvePosts, 0, "auth suspension must not create a duplicate solve");
+  assert.equal(hooks.readPendingBackendJob()?.jobId, jobId);
+});
+
+test("school-store 401 enters auth recovery once and blocks later save attempts", async () => {
+  const localStorage = memoryStorage();
+  let storePosts = 0;
+  let authTransitions = 0;
+  const listeners = new Map();
+  const location = {
+    pathname:"/pages/sapxep.html",
+    search:"?sid=default"
+  };
+  const window = {
+    localStorage,
+    location,
+    TKBSchool:{sanitizeSchoolId(value){ return String(value || "default"); }},
+    TKBAuthApi:{
+      getAuthHeaders(extra){ return Object.assign({Authorization:"Bearer expired"}, extra || {}); }
+    },
+    TKBRuntime:{
+      async handleAuthExpired(detail){
+        authTransitions += 1;
+        assert.equal(detail.status, 401);
+        assert.equal(detail.source, "school-store-save");
+        return true;
+      }
+    },
+    addEventListener(name, listener){ listeners.set(String(name), listener); },
+    dispatchEvent(){ return true; }
+  };
+  window.window = window;
+  const fetchImpl = async (url, options = {}) => {
+    assert.match(String(url), /\/api\/school\/store\?id=default$/);
+    assert.equal(options.method, "POST");
+    storePosts += 1;
+    return jsonResponse({ok:false, kind:"auth_required"}, 401);
+  };
+  const context = vm.createContext({
+    window,
+    localStorage,
+    location,
+    fetch:fetchImpl,
+    console,
+    AbortController,
+    setTimeout,
+    clearTimeout
+  });
+  vm.runInContext(STORAGE_SOURCE, context, {filename:"storage.js"});
+
+  assert.equal(await window.TKBStorage.saveRemoteSchoolData("default", "{}"), false);
+  assert.equal(await window.TKBStorage.saveRemoteSchoolData("default", "{}"), false);
+  assert.equal(await window.TKBStorage.loadRemoteSchoolData("default"), null);
+  assert.equal(storePosts, 1, "auth-expired storage must not keep posting saves");
+  assert.equal(authTransitions, 1);
 });
 
 test("server-owned capacity 429 waits and reposts the same stable job id", async () => {
@@ -8358,6 +8902,153 @@ test("an unknown pending job after reload is detached instead of replayed", asyn
   assert.equal(postedJobId, "");
   assert.equal(hooks.readPendingBackendJob(), null);
   assert.equal(hooks.isSettledBackendJob(stableJobId), true);
+});
+
+test("authoritative idle state clears a stale reconnect warning and unlocks Play", async () => {
+  const data = makeData(2);
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const progress = createProgressDocument(clock);
+  const fetchImpl = async (url) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      return jsonResponse({
+        ok:true,
+        requestedJobServerOwned:false,
+        requestedJobResultReady:false,
+        requestedJobActive:false,
+        requestedJobQueued:false,
+        jobs:[],
+        queue:[],
+        completedJobs:[]
+      });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    ...clock,
+    document:progress.document
+  });
+  const jobId = "completed-before-reconnect-probe";
+  hooks.writePendingBackendJob(jobId, hooks.durableScheduleFingerprint(data), {
+    createdAt:clock.now() - 180_000,
+    solverStartedAtMs:clock.now() - 170_000,
+    progressBudgetSeconds:60
+  });
+  window._setStatus = (message) => {
+    progress.nodes.get("statusMsg").textContent = String(message || "");
+  };
+  progress.button.disabled = true;
+  progress.wrap.hidden = false;
+  progress.wrap.classList.add("is-active", "is-warning");
+  progress.pct.textContent = "!";
+  progress.label.textContent = "Ná»‘i láº¡i";
+  hooks.setStatus("Äang sáº¯p xáº¿p...", "info");
+
+  assert.equal(await hooks.resumePendingBackendJobOnLoad(3), false);
+  clock.flushDueTimers();
+
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(hooks.isSettledBackendJob(jobId), true);
+  assert.equal(progress.button.disabled, false);
+  assert.equal(progress.wrap.hidden, true);
+  assert.equal(progress.wrap.classList.contains("is-warning"), false);
+  assert.equal(progress.pct.textContent, "0%");
+  assert.equal(
+    progress.label.textContent,
+    String.fromCodePoint(0x53,0x1eb5,0x6e,0x20,0x73,0xe0,0x6e,0x67)
+  );
+  assert.equal(progress.nodes.get("statusMsg").textContent, "");
+});
+
+test("ordinary authoritative idle clears a stale incomplete warning on an unsorted page", async () => {
+  const data = makeData(2);
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const progress = createProgressDocument(clock);
+  let stateProbes = 0;
+  const fetchImpl = async (url) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      stateProbes += 1;
+      return jsonResponse({
+        ok:true,
+        requestedJobServerOwned:false,
+        requestedJobResultReady:false,
+        requestedJobActive:false,
+        requestedJobQueued:false,
+        jobs:[],
+        queue:[],
+        completedJobs:[]
+      });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    ...clock,
+    document:progress.document
+  });
+  window._setStatus = (message) => {
+    progress.nodes.get("statusMsg").textContent = String(message || "");
+  };
+  progress.button.disabled = true;
+  progress.wrap.hidden = false;
+  progress.wrap.classList.add("is-active", "is-warning");
+  progress.pct.textContent = "!";
+  progress.label.textContent = "Chưa đủ";
+  hooks.setStatus("Không tìm thấy thời khóa biểu đầy đủ.", "warning");
+
+  assert.equal(await hooks.resumePendingBackendJobOnLoad(0), false);
+
+  assert.equal(stateProbes, 1);
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(progress.button.disabled, false);
+  assert.equal(progress.wrap.hidden, true);
+  assert.equal(progress.wrap.classList.contains("is-warning"), false);
+  assert.equal(progress.pct.textContent, "0%");
+  assert.equal(progress.nodes.get("statusMsg").textContent, "");
+});
+
+test("ordinary authoritative idle wake preserves a completed solve status", async () => {
+  const data = makeData(2);
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const progress = createProgressDocument(clock);
+  let stateProbes = 0;
+  const fetchImpl = async (url) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      stateProbes += 1;
+      return jsonResponse({
+        ok:true,
+        requestedJobServerOwned:false,
+        requestedJobResultReady:false,
+        requestedJobActive:false,
+        requestedJobQueued:false,
+        jobs:[],
+        queue:[],
+        completedJobs:[]
+      });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    ...clock,
+    document:progress.document
+  });
+  const completionMessage = "\u0110\u00e3 x\u1ebfp xong!";
+  window._setStatus = (message) => {
+    progress.nodes.get("statusMsg").textContent = String(message || "");
+  };
+  window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = completionMessage;
+  hooks.setStatus(completionMessage, "ok");
+
+  assert.equal(await hooks.resumePendingBackendJobOnLoad(0), false);
+
+  assert.equal(stateProbes, 1);
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(progress.nodes.get("statusMsg").textContent, completionMessage);
+  assert.equal(window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE, completionMessage);
 });
 
 test("an API restart cannot replay an old pending job or its stale clock", async () => {

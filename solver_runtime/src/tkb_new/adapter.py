@@ -1548,12 +1548,18 @@ def _teacher_session_opt_within_balanced_envelope(
     candidate: Mapping[str, Any],
     incumbent: Mapping[str, Any],
 ) -> bool:
-    """Keep every primary timetable statistic monotone during refinement.
+    """Keep the lexicographic quality envelope monotone during refinement.
 
     A longer optimization budget may explore more candidates, but it must never
-    replace the incumbent by trading one visible statistic for another. Hidden
-    per-teacher imbalance values remain final tie-breakers in the quality tuple;
-    they must not veto a candidate that reduces both total sessions and gaps.
+    replace the incumbent by trading a higher-priority statistic for a lower one.
+    The product order is one-period sessions, gap-2-plus sessions, teacher
+    sessions, then gap-1 sessions. Consequently a candidate that turns a gap-2
+    into a gap-1 may temporarily increase the visible gap-1 count; that is an
+    allowed transition because the wider hard-quality debt has disappeared.
+    Once gap-2 debt is tied, gap-1 must remain monotone while singleton and
+    session counts are compacted.
+    Hidden per-teacher imbalance values remain final tie-breakers in the quality
+    tuple and never veto a primary improvement.
     """
 
     candidate_one = _metric_int(candidate, "one_period_teacher_sessions", 10**9)
@@ -1570,11 +1576,16 @@ def _teacher_session_opt_within_balanced_envelope(
         10**9,
     ):
         return False
+    # A gap-2 becoming a gap-1 is the canonical cleanup transition and must be
+    # admissible. Merely reducing singleton count does not justify creating a
+    # large number of new gap-1 sessions, so it keeps the ordinary monotone
+    # gap guard below.
+    primary_gate_improved = candidate_gap2 < incumbent_gap2
     incumbent_gap1 = _teacher_session_opt_gap1(incumbent)
     candidate_gap1 = _teacher_session_opt_gap1(candidate)
-    if candidate_gap1 > incumbent_gap1:
+    if candidate_gap1 > incumbent_gap1 and not primary_gate_improved:
         return False
-    if _gap_total(candidate) > _gap_total(incumbent):
+    if _gap_total(candidate) > _gap_total(incumbent) and not primary_gate_improved:
         return False
     return True
 
@@ -6572,6 +6583,12 @@ def _solve_teacher_session_benders_candidate(
     session_feasibility_only = _truthy_setting(
         settings.get("optimization_benders_session_feasibility_only")
     )
+    session_minimize_one_period_sessions = _truthy_setting(
+        settings.get(
+            "optimization_benders_minimize_one_period_sessions",
+            not session_feasibility_only,
+        )
+    )
     max_iterations = max(1, _to_int(settings.get("optimization_benders_iterations"), 8))
     session_slice = max(10, _to_int(settings.get("optimization_benders_session_time_limit"), 30))
     minimum_period_limit = 12 if complete_first else 20
@@ -6687,7 +6704,25 @@ def _solve_teacher_session_benders_candidate(
         ]
         return kept or None
 
-    current_hint = residual_allocations(_payload_lessons_to_allocations(incumbent_payload))
+    incumbent_hint_lessons = _payload_lessons_to_lessons(incumbent_payload)
+    if fixed_existing_lessons_are_hard and incumbent_hint_lessons:
+        # The residual school context has already removed every hard-fixed
+        # lesson from assignment demand. Feeding the full incumbent back as a
+        # CP-SAT hint over-counts those assignments (54 periods on default), so
+        # the hint cannot satisfy the residual equalities and OR-Tools starts
+        # essentially from scratch. Keep only movable instances in the warm
+        # start; fixed lessons are supplied separately through ``fixed_lessons``
+        # and remain hard constraints in both session and period models.
+        incumbent_hint_lessons = _lessons_without_fixed_instances(
+            incumbent_hint_lessons,
+            fixed_existing_lessons,
+        )
+    current_hint = residual_allocations(
+        _allocations_from_lessons(incumbent_hint_lessons)
+        if incumbent_hint_lessons
+        else None
+    )
+    current_period_hint_lessons = list(incumbent_hint_lessons or []) or None
     seed_sequence: list[int | None] = []
     raw_seed_sequence: list[int | None] = []
     if random_seed is not None:
@@ -6747,7 +6782,7 @@ def _solve_teacher_session_benders_candidate(
                 max_teacher_sessions=int(cap),
                 max_one_period_sessions=max_one_period_sessions,
                 minimize_sessions=not session_feasibility_only,
-                minimize_one_period_sessions=not session_feasibility_only,
+                minimize_one_period_sessions=session_minimize_one_period_sessions,
                 one_period_priority_absolute=not allow_complete_first_one_period_debt,
                 time_limit_seconds=session_limit,
                 early_stop_teacher_sessions=(
@@ -6764,6 +6799,7 @@ def _solve_teacher_session_benders_candidate(
                 num_workers=solver_workers,
                 random_seed=seed,
                 hint_allocations=current_hint,
+                hint_lessons=current_period_hint_lessons,
                 fixed_lessons=session_fixed_lessons,
                 repair_hint=current_hint is not None,
                 forbidden_session_vectors=cuts,
@@ -6781,7 +6817,13 @@ def _solve_teacher_session_benders_candidate(
                 # Keep a known period-feasible incumbent close when quality is
                 # tied.  Session/one-period quality remains the primary
                 # objective inside the CP-SAT model.
-                minimize_hint_distance=current_hint is not None and not session_feasibility_only,
+                minimize_hint_distance=(
+                    current_hint is not None
+                    and not session_feasibility_only
+                    and _truthy_setting(
+                        settings.get("optimization_benders_minimize_hint_distance", True)
+                    )
+                ),
                 legacy_wednesday_pm_bridge=False,
                 progress=progress,
             )
@@ -7239,6 +7281,11 @@ def _solve_teacher_session_benders_candidate(
             if added <= 0:
                 break
             current_hint = allocations
+            # A failed period vector has no concrete period assignment to use
+            # as a subsequent CP-SAT period hint. Keep the aggregate allocation
+            # warm start, but do not feed stale concrete blocks into the next
+            # Benders cut model.
+            current_period_hint_lessons = None
 
     # A fixed-only request is a special recovery shape: the visible request
     # contains the hard anchors (usually the 54 fixed periods) but no flexible
@@ -8766,17 +8813,23 @@ def _solve_unified_first_click_feasibility_then_quality(
     unbounded_quality_search = _truthy_setting(
         settings.get("optimization_unbounded_quality_search")
     )
-    continue_local_after_complete = _truthy_setting(
-        settings.get("optimization_first_click_continue_local_after_complete")
+    plain_first_click_lean_quality = _truthy_setting(
+        settings.get("ui_plain_first_click_lean_quality")
     )
-    skip_global_quality = _truthy_setting(
-        settings.get("optimization_first_click_skip_global_quality")
+    continue_local_after_complete = (
+        _truthy_setting(settings.get("optimization_first_click_continue_local_after_complete"))
+        or plain_first_click_lean_quality
+    )
+    skip_global_quality = (
+        _truthy_setting(settings.get("optimization_first_click_skip_global_quality"))
+        and not plain_first_click_lean_quality
     )
     lean_global_quality = _truthy_setting(
         settings.get("optimization_first_click_lean_global_quality")
     )
     stop_after_first_complete = (
         _truthy_setting(settings.get("ui_stop_after_first_complete_schedule"))
+        and not plain_first_click_lean_quality
         and not unbounded_quality_search
         and not continue_local_after_complete
     )
@@ -8850,12 +8903,10 @@ def _solve_unified_first_click_feasibility_then_quality(
         constraint_change_feasibility_first
         or period_feasibility_bridge_required
         or _truthy_setting(settings.get("optimization_benders_period_feasibility_all_sessions"))
-        # The automatic fresh first-click contract must reserve time for the
-        # quality cleanup even when the school has no subject-period rows.  On
-        # large plain schools the strict singleton/gap model can spend the
-        # entire deadline proving an objective-free completion; the period-safe
-        # lane finds a complete incumbent first, then the cleanup phase can
-        # improve that incumbent without losing the schedule.
+        # The automatic large fresh contract needs one concrete, period-safe
+        # incumbent before quality work begins even when the school has no
+        # subject-period rows. This is also the atomic fallback if Phase Q is
+        # inconclusive, so a failed quality vector can never blank the result.
         or (
             large_first_click
             and quality_debt_fallback_enabled
@@ -8881,13 +8932,33 @@ def _solve_unified_first_click_feasibility_then_quality(
         large_first_click
         and period_feasibility_all_sessions
         and quality_debt_fallback_enabled
+        # Subject-period rules remain hard, but combining their exact period
+        # bridge with the zero-singleton/gap<=1 objective before any incumbent
+        # exists is too expensive on production-size schools. It spent most of
+        # the 180-second click proving UNKNOWN, then forced the completion
+        # rescue to open a very wide session cap. Build the normal period-safe
+        # complete incumbent first and let Phase Q use it as a soft warm start.
         and not subject_period_requirements_completion_first
-        and _truthy_setting(settings.get("optimization_first_click_strict_quality_gate", "1"))
+        and not constraint_change_feasibility_first
+        and (
+            not plain_first_click_lean_quality
+            and _truthy_setting(settings.get("optimization_first_click_strict_quality_gate", "0"))
+        )
     )
     safe_period_feasibility_first = (
         period_feasibility_all_sessions
         and quality_debt_fallback_enabled
         and not strict_quality_gate_first
+    )
+    # On a large fixed-anchor school, use the all-session bridge first only to
+    # obtain a complete incumbent.  The quality pass is much more effective
+    # when it starts from that concrete timetable than when it spends the
+    # whole click proving a tight 522-session cap from an empty model.
+    wide_period_safe_first = (
+        safe_period_feasibility_first
+        and large_first_click
+        and subject_period_requirements_completion_first
+        and not constraint_change_feasibility_first
     )
     # The all-session period bridge is a substantially larger CP-SAT model.
     # Giving it the lean model's 24-second slice repeatedly returned UNKNOWN on
@@ -8897,18 +8968,25 @@ def _solve_unified_first_click_feasibility_then_quality(
     # duplicate period-allocation pass.
     quality_debt_fallback_reserve = 0.0
     if strict_quality_gate_first:
+        configured_strict_gate_budget = _to_float(
+            settings.get("optimization_first_click_strict_quality_gate_seconds"),
+            105.0,
+        )
+        if requested_click_budget >= 150:
+            # The bridge's historical 55-second value was tuned for the old
+            # lightweight session model.  The current exact period bridge
+            # needs about 90-95s to emit its first clean incumbent on default.
+            # This is an internal phase split, not the user's duration input.
+            configured_strict_gate_budget = max(105.0, configured_strict_gate_budget)
         quality_gate_completion_reserve = min(
-            45.0,
-            max(20.0, available_for_feasibility * 0.43),
+            75.0,
+            max(55.0, available_for_feasibility * 0.40),
         )
         primary_gate_budget = max(
             12.0,
             min(
-                60.0,
-                _to_float(
-                    settings.get("optimization_first_click_strict_quality_gate_seconds"),
-                    55.0,
-                ),
+                115.0,
+                configured_strict_gate_budget,
                 max(12.0, available_for_feasibility - quality_gate_completion_reserve),
             ),
         )
@@ -8932,19 +9010,59 @@ def _solve_unified_first_click_feasibility_then_quality(
             max(28.0, available_for_feasibility * 0.50),
             max(0.0, available_for_feasibility - 8.0),
         )
+    elif (
+        wide_period_safe_first
+        and available_for_feasibility >= 40.0
+    ):
+        # A wide objective-free incumbent normally appears in 15-25 seconds on
+        # the default school. Reserve the rest of this bounded lane for the
+        # same-click quality cleanup; if the wide solve is unlucky, that
+        # reserve is still available to the existing completion fallback.
+        first_complete_budget = min(
+            50.0,
+            max(35.0, available_for_feasibility * 0.30),
+        )
+        quality_debt_fallback_reserve = max(
+            0.0,
+            available_for_feasibility - first_complete_budget,
+        )
+    elif (
+        quality_debt_fallback_enabled
+        and safe_period_feasibility_first
+        and large_first_click
+        and available_for_feasibility >= 40.0
+    ):
+        # The period-safe lane is the completion guard for large schools with
+        # authored subject-period rules. It used to consume the entire
+        # watchdog, so a CP-SAT UNKNOWN left no time for a second, relaxed
+        # completion attempt and the browser received HTTP 422 despite a
+        # feasible timetable. Keep a real rescue slice for that case. The
+        # first lane still gets enough time to find the normal cap-522 result;
+        # the reserve is only spent when that lane fails.
+        quality_debt_fallback_reserve = min(
+            70.0,
+            max(35.0, available_for_feasibility * 0.40),
+            max(0.0, available_for_feasibility - 8.0),
+        )
     strict_feasibility_budget = max(
         8.0,
         available_for_feasibility - quality_debt_fallback_reserve,
     )
     base_session_slice = 41 if period_feasibility_all_sessions else 24
-    feasibility_session_slice = max(
-        10,
-        min(
-            60,
-            base_session_slice + max(0, int(feasibility_budget) - 55) // 2,
-            max(10, int(feasibility_budget) - 12),
-        ),
-    )
+    if strict_quality_gate_first:
+        # Give the strict CP-SAT lane one uninterrupted search window.  The
+        # previous 60s/72s/38s portfolio repeatedly restarted the same hard
+        # model before it could emit its first zero-singleton incumbent.
+        feasibility_session_slice = max(20, min(170, int(strict_feasibility_budget) - 4))
+    else:
+        feasibility_session_slice = max(
+            10,
+            min(
+                60,
+                base_session_slice + max(0, int(feasibility_budget) - 55) // 2,
+                max(10, int(feasibility_budget) - 12),
+            ),
+        )
     feasibility_settings = dict(settings)
     for key in (
         "target_teacher_sessions",
@@ -8979,8 +9097,8 @@ def _solve_unified_first_click_feasibility_then_quality(
             # The mandatory first phase needs one hard-valid timetable, not an
             # optimized proof.  Removing the objective lets CP-SAT return its
             # first feasible vector and leaves teacher quality to Phase Q/LNS.
-            "optimization_benders_session_feasibility_only": True,
-            "session_cp_sat_linearization_level": 0,
+            "optimization_benders_session_feasibility_only": not strict_quality_gate_first,
+            "session_cp_sat_linearization_level": 1 if strict_quality_gate_first else 0,
             "optimization_benders_allow_one_period_debt": False,
             "optimization_benders_skip_relaxed_period_probe": True,
             # A constraint-change rebuild has no trustworthy flexible-period
@@ -8998,7 +9116,7 @@ def _solve_unified_first_click_feasibility_then_quality(
             # and still make one period MILP infeasible.  Keep one bounded cut
             # retries in the mandatory feasibility lane so a random seed cannot
             # turn that recoverable case into a blank first-click result.
-            "optimization_benders_iterations": 5,
+            "optimization_benders_iterations": 1 if strict_quality_gate_first else 5,
             "optimization_benders_session_time_limit": feasibility_session_slice,
             "period_time_limit": 15,
             "optimization_period_retry_time_limit": 15,
@@ -9034,6 +9152,35 @@ def _solve_unified_first_click_feasibility_then_quality(
                 "relax_period_teacher_gap_on_failure": True,
             }
         )
+    if wide_period_safe_first:
+        # Do not spend the first-result lane on the compact cap.  A wide,
+        # hard-valid schedule is only an incumbent; Phase Q below owns the
+        # singleton/gap-2 gates and teacher-session compaction.
+        phase_f_cap = upper_cap
+        feasibility_settings.update(
+            {
+                "auto_sort_strategy": "fresh_complete_wide_period_safe",
+                "max_teacher_sessions": phase_f_cap,
+                "requested_max_teacher_sessions": phase_f_cap,
+                "target_teacher_sessions": phase_f_cap,
+                "optimization_accept_teacher_sessions": phase_f_cap,
+                "max_one_period_sessions": "off",
+                "strict_one_period_sessions_cap": False,
+                "enforce_max_one_period_sessions": False,
+                "one_period_priority_absolute": False,
+                "allow_quality_debt": True,
+                "optimization_benders_allow_one_period_debt": True,
+                "optimization_benders_session_feasibility_only": True,
+                "optimization_benders_iterations": 5,
+                "optimization_benders_session_time_limit": max(
+                    25,
+                    min(45, int(strict_feasibility_budget) - 5),
+                ),
+                "period_max_teacher_gap": "off",
+                "relax_period_teacher_gap_on_failure": True,
+                "session_cp_sat_linearization_level": 0,
+            }
+        )
     if progress:
         progress(
             {
@@ -9047,11 +9194,19 @@ def _solve_unified_first_click_feasibility_then_quality(
     phase_started = time.monotonic()
     feasibility_payload: dict[str, Any] = {}
     strict_error: Exception | None = None
+    # A fresh click must keep the caller's trajectory. A global rescue seed
+    # made independent devices converge to the same timetable even though no
+    # lesson hint was present. Diagnostics can still request an explicit seed
+    # through optimization_first_click_strict_quality_random_seed.
+    default_first_click_seed = int(requested_random_seed or 1)
     feasibility_seed = max(
         1,
         _to_int(
             settings.get("optimization_first_click_feasibility_random_seed"),
-            int(requested_random_seed or 1),
+            _to_int(
+                settings.get("optimization_first_click_strict_quality_random_seed"),
+                default_first_click_seed,
+            ),
         ),
     )
     try:
@@ -9119,7 +9274,23 @@ def _solve_unified_first_click_feasibility_then_quality(
     if strict_candidate_accepted and safe_period_feasibility_first:
         feasibility_quality_debt_allowed = True
 
-    if not strict_candidate_accepted and strict_quality_gate_first:
+    if (
+        not strict_candidate_accepted
+        and strict_quality_gate_first
+        # A short server watchdog cannot afford two full all-session CP-SAT
+        # builds before its objective-free completion rescue. Subject-period
+        # rules are hard, so reserve the remaining budget for one wide,
+        # debt-allowed schedule instead of gambling it on a second cosmetic
+        # zero-singleton/gap trajectory. Longer clicks keep the diverse retry.
+        and not (
+            subject_period_requirements_completion_first
+            and available_for_feasibility < 100.0
+        )
+        # A long strict lane has already had enough time to converge. Restarting
+        # the same exact model for another short seed only steals the completion
+        # reserve; go directly to the wide debt-allowed safety solve instead.
+        and strict_feasibility_budget < 90.0
+    ):
         remaining = deadline.remaining()
         retry_available = max(
             0.0,
@@ -9234,9 +9405,11 @@ def _solve_unified_first_click_feasibility_then_quality(
             # strict probe, so its safety lane favors completion explicitly.
             fallback_cap = (
                 upper_cap
-                if safe_period_feasibility_first
-                or strict_quality_gate_first
-                or _solver_worker_count(fallback_settings) <= 2
+                if (
+                    (large_first_click and period_feasibility_all_sessions)
+                    or safe_period_feasibility_first
+                    or _solver_worker_count(fallback_settings) <= 2
+                )
                 else feasibility_cap
             )
             fallback_settings.update(
@@ -9258,6 +9431,18 @@ def _solve_unified_first_click_feasibility_then_quality(
                     # completion remains the only priority.
                     "optimization_benders_session_feasibility_only": (
                         safe_period_feasibility_first or strict_quality_gate_first
+                    ),
+                    # The rescue has no optimization objective. Linearization
+                    # level zero materially reduces presolve/model overhead on
+                    # the 1,566-period default school and leaves more of a
+                    # short VPS watchdog for primal discovery.
+                    "session_cp_sat_linearization_level": (
+                        0
+                        if safe_period_feasibility_first or strict_quality_gate_first
+                        else feasibility_settings.get(
+                            "session_cp_sat_linearization_level",
+                            1,
+                        )
                     ),
                     "period_max_teacher_gap": "off",
                     "relax_period_teacher_gap_on_failure": True,
@@ -9383,6 +9568,13 @@ def _solve_unified_first_click_feasibility_then_quality(
         feasibility_payload,
     )
     termination_reason = "first_click_feasibility_retained"
+    requested_local_budget = max(
+        0.0,
+        _to_float(
+            settings.get("optimization_first_click_local_lns_time_limit_seconds"),
+            16.0,
+        ),
+    )
 
     quality_minimum = max(
         12,
@@ -9408,8 +9600,64 @@ def _solve_unified_first_click_feasibility_then_quality(
             or _teacher_session_opt_gap2_plus(best_metrics) > 0
         )
     )
+    strict_period_quality_cleanup = (
+        subject_period_requirements_completion_first
+        or _truthy_setting(settings.get("ui_quality_debt_fresh_rebuild"))
+    )
+    # The real automatic first click on a large school must validate concrete
+    # periods while it removes singleton/gap-2 debt. Keep lean Phase Q only for
+    # explicit or diagnostic callers that do not carry this UI contract.
+    automatic_large_fresh_quality = (
+        large_first_click
+        and _truthy_setting(settings.get("ui_unified_first_click_quality"))
+        and str(settings.get("ui_unified_solve_kind") or "").strip().casefold()
+        == "fresh_complete_first"
+    )
+    quality_period_bridge_required = (
+        strict_period_quality_cleanup
+        or not lean_global_quality
+        or automatic_large_fresh_quality
+    )
+    short_subject_period_completion_rescue = (
+        subject_period_requirements_completion_first
+        and available_for_feasibility < 100.0
+        and feasibility_quality_debt_allowed
+        and not strict_candidate_accepted
+    )
+    local_tail_eligible = (
+        requested_local_budget >= 0.5
+        and _complete_payload_metrics_acceptable(best_payload)
+        and not short_subject_period_completion_rescue
+        and (
+            _teacher_session_opt_quality_gates_clean(best_metrics)
+            or quality_cleanup_required
+        )
+    )
+    # Phase Q is exact but may legitimately finish UNKNOWN.  Once a complete
+    # incumbent exists, protect a small final slice for the independent local
+    # portfolio instead of allowing one CP-SAT call to consume the entire
+    # watchdog.  This reserve never reduces the mandatory Phase-F completion
+    # budget and never extends the caller's deadline.
+    protected_local_tail = (
+        min(
+            16.0,
+            requested_local_budget,
+            max(
+                0.0,
+                float(remaining or 0.0) - return_reserve - float(quality_minimum),
+            ),
+        )
+        if local_tail_eligible
+        else 0.0
+    )
     can_start_quality = (
-        (quality_cleanup_required or not stop_after_first_complete)
+        # Once the short-watchdog completion rescue has produced a hard-valid
+        # timetable, return it while the VPS still has serialization margin.
+        # Starting another exact all-session cleanup here used to cross the
+        # server watchdog and discard the already-complete incumbent. A later
+        # explicit click owns the quality pass.
+        not short_subject_period_completion_rescue
+        and (quality_cleanup_required or not stop_after_first_complete)
         and (quality_cleanup_required or not skip_global_quality)
         and (quality_cleanup_required or requested_quality_cap is not None)
         and (
@@ -9420,7 +9668,7 @@ def _solve_unified_first_click_feasibility_then_quality(
             )
         )
         and remaining is not None
-        and remaining >= quality_minimum + return_reserve
+        and remaining >= quality_minimum + return_reserve + protected_local_tail
     )
     if can_start_quality:
         quality_headroom = max(
@@ -9431,11 +9679,43 @@ def _solve_unified_first_click_feasibility_then_quality(
             ),
         )
         if quality_cleanup_required:
-            # Subject period rules can make the normal compact cap infeasible.
-            # Keep the complete Phase-F cap while enforcing only the first-run
-            # zero-singleton / gap<=1 quality envelope.
-            quality_cap = max(1, min(feasibility_cap, feasibility_sessions, upper_cap))
-            quality_budget = max(0, int(float(remaining) - return_reserve))
+            # First remove singleton and gap-2 debt without also demanding a
+            # large session-count reduction.  A relaxed completion rescue may
+            # legitimately need more sessions than ``feasibility_cap``; using
+            # that tighter cap here made the cleanup model solve both problems
+            # at once and frequently return UNKNOWN.  The next explicit click
+            # owns deeper session/gap-1 compaction.
+            quality_cap = max(1, min(feasibility_sessions, upper_cap))
+            available_quality_budget = max(
+                0,
+                int(float(remaining) - return_reserve - protected_local_tail),
+            )
+            deep_quality_rebuild = (
+                strict_period_quality_cleanup
+                or unbounded_quality_search
+            )
+            # Subject-period rules make the all-session model materially
+            # harder, but the complete incumbent is already retained. Spend
+            # the remaining first-click budget driving singleton and gap-2
+            # debt to zero instead of returning a known rough timetable after
+            # a 35-second probe. Plain fresh sorts keep the bounded cleanup;
+            # deliberate quality rebuilds also own the full remaining budget.
+            quality_budget = (
+                available_quality_budget
+                if deep_quality_rebuild
+                else min(
+                    available_quality_budget,
+                    max(
+                        quality_minimum,
+                        _to_int(
+                            settings.get(
+                                "optimization_first_click_quality_time_limit_seconds"
+                            ),
+                            45,
+                        ),
+                    ),
+                )
+            )
         else:
             quality_cap = max(
                 int(requested_quality_cap),
@@ -9451,7 +9731,10 @@ def _solve_unified_first_click_feasibility_then_quality(
                     quality_minimum,
                     _to_int(settings.get("optimization_first_click_quality_time_limit_seconds"), 45),
                 ),
-                max(0, int(float(remaining) - return_reserve)),
+                max(
+                    0,
+                    int(float(remaining) - return_reserve - protected_local_tail),
+                ),
             )
         # Preserve the fast lean trajectory for seeds that already produce a
         # period-feasible compact timetable. On a large rebuild, stop that lean
@@ -9461,7 +9744,7 @@ def _solve_unified_first_click_feasibility_then_quality(
         period_safe_quality_rescue_armed = (
             large_first_click
             and lean_global_quality
-            and not safe_period_feasibility_first
+            and not quality_period_bridge_required
             and _truthy_setting(
                 settings.get("optimization_first_click_period_safe_quality_rescue", "1")
             )
@@ -9486,12 +9769,16 @@ def _solve_unified_first_click_feasibility_then_quality(
                 10,
                 min(
                     160,
-                    max(10, int(quality_budget) - 18),
+                    # The all-session bridge materializes concrete periods in
+                    # this CP-SAT call, so it does not need the old 18-second
+                    # external allocator reserve.  Leave only serialization
+                    # margin and give the warm-start cleanup a real slice.
+                    max(10, int(quality_budget) - 5),
                     _to_int(
                         settings.get(
                             "optimization_first_click_subject_period_quality_session_time_limit_seconds"
                         ),
-                        max(10, int(quality_budget) - 18),
+                        min(72, max(10, int(quality_budget) - 5)),
                     ),
                 ),
             )
@@ -9512,13 +9799,27 @@ def _solve_unified_first_click_feasibility_then_quality(
             quality_period_limit = 15
             quality_retry_limit = 15
         quality_solver_target = (
-            quality_cap
+            int(requested_quality_cap or quality_cap)
             if (
             quality_cleanup_required
                 or _truthy_setting(settings.get("optimization_first_click_quality_stop_at_cap"))
             )
             else int(requested_quality_cap)
         )
+        quality_gap1_target = _nonnegative_setting(settings, "target_gap1_sessions")
+        quality_gap1_accept = _nonnegative_setting(
+            settings,
+            "optimization_accept_gap1_sessions",
+        )
+        if quality_gap1_accept is None:
+            quality_gap1_accept = quality_gap1_target
+        # The automatic large fresh contract must validate concrete periods in
+        # the same CP-SAT model that removes singleton and gap-2 debt.  A lean
+        # session-only Phase Q can find an attractive vector (for example 461
+        # sessions on default) that the later period allocator rejects, leaving
+        # the user with the wide Phase-F draft despite a long quality slice.
+        # Keep lean Phase Q for explicit/diagnostic callers, but restore the
+        # period-safe path for the real first-click request on a large school.
         quality_settings.update(
             {
                 "auto_sort_strategy": "fresh_complete_first_strict_quality",
@@ -9526,18 +9827,33 @@ def _solve_unified_first_click_feasibility_then_quality(
                 "requested_max_teacher_sessions": quality_cap,
                 "target_teacher_sessions": int(quality_solver_target),
                 "optimization_accept_teacher_sessions": int(
-                    quality_cap if quality_cleanup_required else requested_quality_cap
+                    requested_quality_cap or quality_cap
                 ),
                 "optimization_benders_iterations": quality_benders_iterations,
-                "optimization_benders_complete_first": True,
-                "optimization_benders_disable_session_early_stop": False,
+                # Phase F already owns the complete hard-valid fallback. Once
+                # Phase Q has a concrete incumbent, keep optimizing beyond the
+                # first zero-singleton/gap<=1 vector instead of returning with
+                # most of the 180-second click unused. The incumbent remains
+                # the atomic fallback if this bounded quality search times out.
+                "optimization_benders_complete_first": not quality_cleanup_required,
+                "optimization_benders_disable_session_early_stop": quality_cleanup_required,
                 "optimization_benders_session_feasibility_only": False,
-                "session_cp_sat_linearization_level": 1,
+                "session_cp_sat_linearization_level": (
+                    0 if quality_cleanup_required else 1
+                ),
                 "optimization_benders_period_feasibility_all_sessions": (
-                    quality_cleanup_required or not lean_global_quality
+                    quality_period_bridge_required
                 ),
                 "optimization_benders_lean_refinement_periods": (
-                    lean_global_quality and not quality_cleanup_required
+                    lean_global_quality and not quality_period_bridge_required
+                ),
+                # Use the complete schedule produced earlier in this same
+                # click as a repair hint, but never add a distance objective.
+                # It is not a bundled/template hint and no cell is fixed; it
+                # merely gives CP-SAT a hard-valid neighborhood from which to
+                # eliminate singleton and gap-2 debt quickly.
+                "optimization_benders_minimize_hint_distance": (
+                    False if quality_cleanup_required else True
                 ),
                 "optimization_benders_period_bridge_promotion_cut_count": (
                     1 if lean_global_quality else 2
@@ -9549,7 +9865,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                 "one_period_priority_absolute": True,
                 "allow_quality_debt": False,
                 "optimization_benders_allow_one_period_debt": False,
-                "optimization_continue_quality_search": False,
+                "optimization_continue_quality_search": quality_cleanup_required,
                 "period_max_teacher_gap": 1,
                 "relax_period_teacher_gap_on_failure": False,
                 "optimization_benders_session_time_limit": quality_session_limit,
@@ -9561,6 +9877,12 @@ def _solve_unified_first_click_feasibility_then_quality(
                 "quality_cleanup_required": quality_cleanup_required,
             }
         )
+        if quality_cleanup_required and quality_gap1_target is not None:
+            quality_settings["target_gap1_sessions"] = int(quality_gap1_target)
+        if quality_cleanup_required and quality_gap1_accept is not None:
+            quality_settings["optimization_accept_gap1_sessions"] = int(
+                quality_gap1_accept
+            )
         if progress:
             progress(
                 {
@@ -9583,6 +9905,10 @@ def _solve_unified_first_click_feasibility_then_quality(
                 time_limit_seconds=max(8, int(quality_budget)),
                 rules=rules,
                 progress=progress,
+                # The same-click complete incumbent is a soft repair hint. Its
+                # distance objective is disabled above, so quality search can
+                # move freely while avoiding a cold rebuild of every authored
+                # subject-period constraint.
                 incumbent_payload=best_payload,
                 random_seed=quality_random_seed,
                 deadline=deadline,
@@ -9618,7 +9944,9 @@ def _solve_unified_first_click_feasibility_then_quality(
                     "subject_period_strict_quality_cleanup": quality_cleanup_required,
                     "quality_cleanup_required": quality_cleanup_required,
                     "period_safe_quality_rescue": False,
-                    "concrete_periods_materialized": False,
+                    "concrete_periods_materialized": bool(
+                        quality_period_bridge_required
+                    ),
                     "stable_large_quality_seed": stabilize_large_quality_seed,
                     "incumbent_retained": not quality_better,
                 }
@@ -9655,7 +9983,9 @@ def _solve_unified_first_click_feasibility_then_quality(
                     "period_safe_quality_rescue_armed": period_safe_quality_rescue_armed,
                     "subject_period_strict_quality_cleanup": quality_cleanup_required,
                     "period_safe_quality_rescue": False,
-                    "concrete_periods_materialized": False,
+                    "concrete_periods_materialized": bool(
+                        quality_period_bridge_required
+                    ),
                     "stable_large_quality_seed": stabilize_large_quality_seed,
                     "incumbent_retained": True,
                     "fixed_lessons_required": len(required_lessons),
@@ -10155,15 +10485,19 @@ def _solve_unified_first_click_feasibility_then_quality(
                 "single_attempt": True,
                 "incumbent_retained": True,
                 "reason": (
-                    "bounded_local_polish_preferred"
-                    if skip_global_quality
+                    "short_watchdog_completion_rescue_returned"
+                    if short_subject_period_completion_rescue
                     else (
-                        "no_stricter_requested_cap"
-                        if requested_quality_cap is None or requested_quality_cap >= feasibility_cap
+                        "bounded_local_polish_preferred"
+                        if skip_global_quality
                         else (
-                            "feasibility_already_at_target"
-                            if requested_quality_cap >= feasibility_sessions
-                            else "watchdog_return_reserve"
+                            "no_stricter_requested_cap"
+                            if requested_quality_cap is None or requested_quality_cap >= feasibility_cap
+                            else (
+                                "feasibility_already_at_target"
+                                if requested_quality_cap >= feasibility_sessions
+                                else "watchdog_return_reserve"
+                            )
                         )
                     )
                 ),
@@ -10173,15 +10507,39 @@ def _solve_unified_first_click_feasibility_then_quality(
             }
         )
 
+    clean_frontier_polish = (
+        stop_after_first_complete
+        and requested_local_budget >= 0.5
+        and _truthy_setting(
+            settings.get("optimization_first_click_clean_frontier_polish", "1")
+        )
+        and _teacher_session_opt_quality_gates_clean(best_metrics)
+    )
+    quality_debt_tail_polish = (
+        stop_after_first_complete
+        and requested_local_budget >= 0.5
+        and _complete_payload_metrics_acceptable(best_payload)
+        and (
+            _metric_int(best_metrics, "one_period_teacher_sessions", 0) > 0
+            or _teacher_session_opt_gap2_plus(best_metrics) > 0
+        )
+    )
+    # ``ui_stop_after_first_complete_schedule`` protects the first usable
+    # timetable, but it must not discard an explicitly reserved polish slice
+    # after the incumbent is already complete and clean.  The local portfolio
+    # is bounded by the same deadline and its acceptance guard below is
+    # Pareto-safe, so a failed or worse neighborhood simply returns the exact
+    # incumbent immediately.
     configured_local_budget = (
         0.0
-        if stop_after_first_complete
-        else max(
-            0.0,
-            min(
-                180.0 if unbounded_quality_search else 50.0,
-                _to_float(settings.get("optimization_first_click_local_lns_time_limit_seconds"), 16.0),
-            ),
+        if (
+            stop_after_first_complete
+            and not clean_frontier_polish
+            and not quality_debt_tail_polish
+        )
+        else min(
+            180.0 if unbounded_quality_search else 50.0,
+            requested_local_budget,
         )
     )
     remaining = deadline.remaining()
@@ -10212,6 +10570,12 @@ def _solve_unified_first_click_feasibility_then_quality(
                 polish_seeds=polish_seeds,
                 time_limit_seconds=local_budget,
                 operator_learning=refinement_learning,
+                gap1_cleanup_cap=_teacher_session_opt_gap1(best_metrics),
+                protected_cleanup_budget=(
+                    protected_local_tail >= 0.5
+                    or clean_frontier_polish
+                    or quality_debt_tail_polish
+                ),
             )
         except Exception as exc:  # noqa: BLE001 - retain the global incumbent.
             local_error = exc
@@ -10238,7 +10602,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                 required_lessons,
                 allow_quality_debt=feasibility_quality_debt_allowed,
             )
-            and _session_priority_better(local_metrics, best_metrics)
+            and _incremental_refinement_candidate_better(local_metrics, best_metrics)
         )
         if local_better:
             best_payload = local_payload
@@ -10271,6 +10635,9 @@ def _solve_unified_first_click_feasibility_then_quality(
     else:
         local_summary["improved"] = False
     _attach_refinement_learning(best_payload, refinement_learning)
+    local_summary["clean_frontier_polish"] = clean_frontier_polish
+    local_summary["quality_debt_tail_polish"] = quality_debt_tail_polish
+    local_summary["protected_local_tail_seconds"] = round(protected_local_tail, 3)
     local_summary["refinement_learning_attempts"] = _to_int(
         refinement_learning.get("total_attempts"),
         0,
@@ -10302,6 +10669,13 @@ def _solve_teacher_session_optimized_from_ui_data(
         )
     )
     if refinement_request:
+        if "optimization_benders_lean_refinement_periods" not in settings:
+            # Preserve the fast legacy default for plain/older clients, while
+            # an explicit integrated-period request defaults to the exact
+            # bridge. An explicit caller value always remains authoritative.
+            settings["optimization_benders_lean_refinement_periods"] = not _truthy_setting(
+                settings.get("optimization_refine_strict_integrated_period_bridge")
+            )
         settings.update(
             {
                 "optimization_continue_quality_search": True,
@@ -10316,7 +10690,10 @@ def _solve_teacher_session_optimized_from_ui_data(
                 # only the local-LNS flags and therefore stopped after a
                 # superficially successful polish pass.
                 "optimization_refine_try_lower_session_cap": True,
-                "optimization_benders_lean_refinement_periods": True,
+                # Keep the caller's period-bridge choice. Subject-period
+                # requirements explicitly disable the lean session-only lane;
+                # forcing it back on here creates attractive aggregate session
+                # vectors that cannot be materialized into concrete periods.
                 "optimization_existing_incumbent_gap_attempts": max(
                     4,
                     _to_int(settings.get("optimization_existing_incumbent_gap_attempts"), 0),
@@ -10516,6 +10893,21 @@ def _solve_teacher_session_optimized_from_ui_data(
     termination_reason: str | None = None
     search_end_reason: str | None = None
     refinement_strategy_meta: dict[str, Any] | None = None
+    strict_existing_quality_cleanup_pending = False
+    strict_existing_quality_cleanup_seed_index = 0
+    # A complete, revalidated timetable is already concrete-period feasible.
+    # Refining it through the all-period CP-SAT bridge adds roughly 25k period
+    # variables and can consume the whole 180-second click before reducing a
+    # single teacher session.  Keep the proven hybrid refinement lane whenever
+    # the browser explicitly selected lean refinement: CP-SAT compacts the
+    # session vector, the period allocator materializes it, and the final hard
+    # validator rejects any candidate that violates an authored period rule.
+    # Fresh and constraint-change solves do not set the lean flag and continue
+    # to use the integrated bridge for first-result reliability.
+    strict_existing_quality_cleanup_requires_period_bridge = (
+        _truthy_setting(settings.get("optimization_refine_strict_integrated_period_bridge"))
+        and not _truthy_setting(settings.get("optimization_benders_lean_refinement_periods"))
+    )
 
     existing_incumbent = _validated_existing_soft_incumbent_payload(
         ui_data,
@@ -10553,6 +10945,38 @@ def _solve_teacher_session_optimized_from_ui_data(
                 existing_metrics
             )
             last_improvement_at = time.monotonic()
+            # A complete incumbent can already have the two hard quality gates
+            # clean (zero singleton sessions and no gap >= 2) while still being
+            # visibly loose: too many teacher sessions or too many one-period
+            # gaps.  The ordinary refinement portfolio starts by probing a
+            # tight cap and often spends the whole click proving that cap, then
+            # returns this same incumbent.  Reserve one wide, all-period
+            # Benders pass whenever the incumbent is above either practical
+            # acceptance threshold.  The pass is Pareto-guarded below, so an
+            # incumbent already at its thresholds is left alone.
+            existing_needs_wide_quality_cleanup = (
+                (
+                    accept_teacher_sessions is not None
+                    and existing_sessions > int(accept_teacher_sessions)
+                )
+                or (
+                    accept_gap1_sessions is not None
+                    and _teacher_session_opt_gap1(existing_metrics)
+                    > int(accept_gap1_sessions)
+                )
+            )
+            strict_existing_quality_cleanup_pending = (
+                refinement_request
+                and _to_int(bounds.get("expected_periods"), 0) >= 900
+                and total_limit >= 90
+                and existing_needs_wide_quality_cleanup
+                and _truthy_setting(
+                    settings.get("optimization_refine_strict_wide_cleanup", "1")
+                )
+            )
+            existing_summary["strict_wide_cleanup_pending"] = bool(
+                strict_existing_quality_cleanup_pending
+            )
             if _session_priority_metrics_acceptable(existing_metrics):
                 gap_priority_queue = _refinement_gap_priority_attempts(
                     existing_metrics,
@@ -10580,6 +11004,10 @@ def _solve_teacher_session_optimized_from_ui_data(
                 ]
             else:
                 existing_summary["quality_cleanup_required"] = True
+                # A large complete incumbent with singleton/gap-2 debt, or a
+                # clean incumbent that still misses the practical session/gap1
+                # thresholds, uses the same strict wide-cap pass before any
+                # aggressive session cap.
         else:
             existing_summary["accepted"] = False
             existing_summary["hint_only"] = True
@@ -10660,6 +11088,9 @@ def _solve_teacher_session_optimized_from_ui_data(
                 and target_gap1_sessions is not None
                 and _teacher_session_opt_gap1(best_metrics) > int(target_gap1_sessions)
             )
+            reserve_strict_global_quality_cleanup = bool(
+                strict_existing_quality_cleanup_pending
+            )
             # A clean incumbent is already eligible for the proven same-cap
             # Benders gap portfolio. Spending 10-20 seconds on local LNS first
             # shortened the third global attempt and made the old 483 -> 468
@@ -10667,7 +11098,10 @@ def _solve_teacher_session_optimized_from_ui_data(
             # to clear singleton/gap2 debt before entering the global search.
             configured_local_budget = (
                 0.0
-                if reserve_clean_global_gap_portfolio
+                if (
+                    reserve_clean_global_gap_portfolio
+                    or reserve_strict_global_quality_cleanup
+                )
                 else float(local_profile["budget_seconds"])
             )
             remaining_local_budget = max(
@@ -10818,9 +11252,13 @@ def _solve_teacher_session_optimized_from_ui_data(
                         "attempt_key": "existing:local_lns",
                         "skipped": True,
                         "reason": (
-                            "clean_incumbent_global_gap_portfolio_reserved"
-                            if reserve_clean_global_gap_portfolio
-                            else "local_budget_unavailable"
+                            "strict_wide_quality_cleanup_reserved"
+                            if reserve_strict_global_quality_cleanup
+                            else (
+                                "clean_incumbent_global_gap_portfolio_reserved"
+                                if reserve_clean_global_gap_portfolio
+                                else "local_budget_unavailable"
+                            )
                         ),
                         "retained_incumbent": True,
                         "refinement_round": refinement_round,
@@ -10829,12 +11267,19 @@ def _solve_teacher_session_optimized_from_ui_data(
                 )
                 termination_reason = "existing_local_quality_lns_budget_retained"
                 refinement_strategy_meta["outcome"] = (
-                    "global_gap_portfolio_reserved"
-                    if reserve_clean_global_gap_portfolio
-                    else "budget_retained"
+                    "strict_wide_quality_cleanup_reserved"
+                    if reserve_strict_global_quality_cleanup
+                    else (
+                        "global_gap_portfolio_reserved"
+                        if reserve_clean_global_gap_portfolio
+                        else "budget_retained"
+                    )
                 )
             refinement_strategy_meta["clean_global_gap_portfolio_reserved"] = bool(
                 reserve_clean_global_gap_portfolio
+            )
+            refinement_strategy_meta["strict_wide_quality_cleanup_reserved"] = bool(
+                reserve_strict_global_quality_cleanup
             )
             refinement_strategy_meta["refinement_learning"] = refinement_learning
             remaining_cap_budget = max(0.0, float(total_limit) - (time.monotonic() - started))
@@ -11725,11 +12170,23 @@ def _solve_teacher_session_optimized_from_ui_data(
             )
             search_end_reason = "time_budget_exhausted"
             break
+        frontier_gap_target_pending = (
+            refinement_frontier_enabled
+            and strict_existing_quality_cleanup_requires_period_bridge
+            and total_limit >= 150
+            and best_metrics is not None
+            and _teacher_session_opt_quality_gates_clean(best_metrics)
+            and target_gap1_sessions is not None
+            and _teacher_session_opt_gap1(best_metrics) > int(target_gap1_sessions)
+        )
         frontier_cleanup_pending = (
             refinement_frontier_enabled
             and best_payload is not None
             and visible_best_payload is not None
-            and best_payload is not visible_best_payload
+            and (
+                best_payload is not visible_best_payload
+                or frontier_gap_target_pending
+            )
         )
         if (
             frontier_cleanup_pending
@@ -11755,6 +12212,7 @@ def _solve_teacher_session_optimized_from_ui_data(
             and adaptive_teacher_session_opt
             and best_metrics is not None
             and _teacher_session_opt_quality_gates_clean(best_metrics)
+            and not strict_existing_quality_cleanup_pending
             and not any(
                 str(item[2]).startswith("nearby:")
                 for item in gap_priority_queue
@@ -11824,6 +12282,29 @@ def _solve_teacher_session_optimized_from_ui_data(
                     random_seed = retry_seed
                     phase = "initial_gap_retry"
                     break
+        if (
+            cap is None
+            and strict_existing_quality_cleanup_pending
+            and best_metrics is not None
+        ):
+            cap = max(
+                lower_cap,
+                min(
+                    upper_cap,
+                    _metric_int(best_metrics, "teacher_sessions", upper_cap),
+                ),
+            )
+            if polish_seeds:
+                random_seed = int(
+                    polish_seeds[
+                        strict_existing_quality_cleanup_seed_index % len(polish_seeds)
+                    ]
+                )
+                strict_existing_quality_cleanup_seed_index += 1
+            else:
+                random_seed = requested_random_seed
+            phase = "existing_strict_wide_quality_cleanup"
+            strict_existing_quality_cleanup_pending = False
         prioritize_gap_portfolio = (
             cap is None
             and best_metrics is not None
@@ -12006,9 +12487,33 @@ def _solve_teacher_session_optimized_from_ui_data(
         cap_limit = min(
             remaining,
             first_cap_limit
-            if best_payload is None or phase in {"tighten", "queued_cap"}
+            if best_payload is None
+            or phase
+            in {
+                "tighten",
+                "queued_cap",
+                "existing_strict_wide_quality_cleanup",
+            }
             else (polish_cap_limit if phase == "polish" else retry_cap_limit),
         )
+        if phase == "existing_strict_wide_quality_cleanup":
+            if strict_existing_quality_cleanup_requires_period_bridge:
+                # Subject-period rules need one uninterrupted integrated model.
+                # Splitting this into 60-75 second restarts repeatedly returned
+                # UNKNOWN before the first useful incumbent; the proven 180s
+                # replay reached 484 sessions with both hard quality gates clean.
+                cap_limit = max(8.0, remaining - 2.0)
+            else:
+                # Plain schools do not need the 25k-variable all-period bridge.
+                # Keep the proven staircase portfolio: roughly 60 seconds per
+                # independent session vector, followed by another cap/seed
+                # while budget remains. This is what produced the former
+                # 465-session/38-gap default result instead of spending the
+                # entire click on one unlucky integrated trajectory.
+                cap_limit = min(
+                    cap_limit,
+                    max(45.0, min(75.0, remaining - 5.0)),
+                )
         if frontier_cleanup_pending and remaining > frontier_cleanup_tail:
             # Spend the time before the cleanup reserve on another useful
             # global probe instead of returning with most of that slice idle.
@@ -12044,6 +12549,64 @@ def _solve_teacher_session_optimized_from_ui_data(
             random_seed=random_seed,
         )
         candidate_settings["optimization_adaptive_target"] = adaptive_teacher_session_opt
+        if phase == "existing_strict_wide_quality_cleanup":
+            strict_quality_settings = {
+                "auto_sort_strategy": "continue_strict_wide_quality_from_incumbent",
+                "optimization_benders_complete_first": True,
+                "optimization_benders_iterations": max(
+                    4,
+                    _to_int(
+                        settings.get("optimization_benders_iterations"),
+                        0,
+                    ),
+                ),
+                "optimization_benders_session_feasibility_only": False,
+                "optimization_benders_disable_session_early_stop": True,
+                "optimization_continue_quality_search": True,
+                "max_one_period_sessions": 0,
+                "strict_one_period_sessions_cap": True,
+                "enforce_max_one_period_sessions": True,
+                "one_period_priority_absolute": True,
+                "period_max_teacher_gap": 1,
+                "relax_period_teacher_gap_on_failure": False,
+            }
+            if strict_existing_quality_cleanup_requires_period_bridge:
+                strict_quality_settings.update(
+                    {
+                        "optimization_benders_period_feasibility_all_sessions": True,
+                        "optimization_benders_lean_refinement_periods": False,
+                        "optimization_benders_minimize_one_period_sessions": True,
+                        "optimization_continue_quality_search": True,
+                        "optimization_benders_disable_session_early_stop": True,
+                        "optimization_benders_session_time_limit": max(
+                            30,
+                            min(170, cap_limit_int - 4),
+                        ),
+                        "minimize_one_period_sessions": True,
+                        "session_cp_sat_linearization_level": 0,
+                    }
+                )
+            else:
+                # Leave the legacy two-stage period allocator active. Its
+                # attempt-budget adapter supplies a 30s session slice plus a
+                # bounded period slice, allowing several independent seeds in
+                # one 180s refinement click.  This request already owns a
+                # complete hard-valid incumbent, so it must not use the
+                # complete-first cut promotion: after two failed half-days that
+                # promotion expands the next retry to every session and spends
+                # the rest of the click rebuilding the 25k-variable period
+                # bridge.  Sparse Benders cuts grow only around the sessions
+                # that actually failed, while the incumbent remains the atomic
+                # fallback outside this candidate search.
+                strict_quality_settings.update(
+                    {
+                        "optimization_benders_complete_first": False,
+                        "optimization_benders_period_feasibility_all_sessions": False,
+                        "optimization_benders_lean_refinement_periods": True,
+                        "optimization_benders_minimize_one_period_sessions": True,
+                    }
+                )
+            candidate_settings.update(strict_quality_settings)
         if phase == "target_cap_gap_opt":
             candidate_settings["optimization_benders_accept_stagnant_iterations"] = (
                 0
@@ -12101,6 +12664,7 @@ def _solve_teacher_session_optimized_from_ui_data(
                     "same_cap_gap_polish",
                     "relaxed_cap_gap_polish",
                     "target_cap_gap_opt",
+                    "existing_strict_wide_quality_cleanup",
                 }
                 and (
                     phase in {
@@ -12109,10 +12673,15 @@ def _solve_teacher_session_optimized_from_ui_data(
                         "same_cap_gap_polish",
                         "relaxed_cap_gap_polish",
                         "target_cap_gap_opt",
+                        "existing_strict_wide_quality_cleanup",
                     }
                     or cap <= best_sessions_for_benders
                 )
-                and (benders_teacher_goal_cap is None or cap <= int(benders_teacher_goal_cap))
+                and (
+                    phase == "existing_strict_wide_quality_cleanup"
+                    or benders_teacher_goal_cap is None
+                    or cap <= int(benders_teacher_goal_cap)
+                )
                 and cap_limit_int >= 30
             )
             independent_gap_portfolio = (
@@ -12123,18 +12692,35 @@ def _solve_teacher_session_optimized_from_ui_data(
                 }
             )
             if use_benders:
-                candidate = _solve_teacher_session_benders_candidate(
-                    ui_data,
-                    candidate_settings,
-                    cap=cap,
-                    time_limit_seconds=cap_limit_int,
-                    rules=rules,
-                    progress=progress,
-                    incumbent_payload=(
-                        None
-                        if independent_gap_portfolio
-                        else (best_payload or feasibility_hint_payload)
-                    ),
+                    candidate = _solve_teacher_session_benders_candidate(
+                        ui_data,
+                        candidate_settings,
+                        cap=cap,
+                        time_limit_seconds=cap_limit_int,
+                        rules=rules,
+                        progress=progress,
+                        # A clean concrete-period incumbent is also the safest
+                        # warm start for the integrated bridge. It gives CP-SAT
+                        # an immediately feasible 1,566-period solution and
+                        # leaves the remaining budget for session/gap quality.
+                        # Dirty incumbents still explore freely. The hint is
+                        # never fixed and the outer Pareto guard rejects any
+                        # regression.
+                        incumbent_payload=(
+                            None
+                            if independent_gap_portfolio
+                            or (
+                                phase == "existing_strict_wide_quality_cleanup"
+                                and (
+                                    not strict_existing_quality_cleanup_requires_period_bridge
+                                    or not (
+                                        isinstance(best_metrics, Mapping)
+                                        and _teacher_session_opt_quality_gates_clean(best_metrics)
+                                    )
+                                )
+                            )
+                            else (best_payload or feasibility_hint_payload)
+                        ),
                     random_seed=random_seed,
                     deadline=deadline,
                 )
@@ -12157,6 +12743,17 @@ def _solve_teacher_session_optimized_from_ui_data(
             summary["random_seed"] = random_seed
             summary["attempt_key"] = attempt_key[1]
             summary["benders"] = bool(use_benders)
+            if (
+                phase == "existing_strict_wide_quality_cleanup"
+                and strict_existing_quality_cleanup_requires_period_bridge
+                and strict_existing_quality_cleanup_seed_index < len(polish_seeds)
+            ):
+                retry_remaining = deadline.remaining()
+                if retry_remaining is None:
+                    retry_remaining = total_limit - (time.monotonic() - started)
+                if retry_remaining >= 45:
+                    strict_existing_quality_cleanup_pending = True
+                    summary["strict_wide_retry_pending"] = True
             attempts.append(summary)
             if (
                 tight_gap_benders_portfolio
@@ -12292,6 +12889,22 @@ def _solve_teacher_session_optimized_from_ui_data(
                             "gap_distribution": metrics.get("gap_distribution"),
                         }
                     )
+                if (
+                    phase == "existing_strict_wide_quality_cleanup"
+                    and strict_existing_quality_cleanup_requires_period_bridge
+                    and strict_existing_quality_cleanup_seed_index < len(polish_seeds)
+                    and not _teacher_session_opt_good_enough(
+                        metrics,
+                        accept_teacher_sessions=accept_teacher_sessions,
+                        accept_gap1_sessions=accept_gap1_sessions,
+                    )
+                ):
+                    followup_remaining = deadline.remaining()
+                    if followup_remaining is None:
+                        followup_remaining = total_limit - (time.monotonic() - started)
+                    if followup_remaining >= 45:
+                        strict_existing_quality_cleanup_pending = True
+                        summary["strict_wide_followup_pending"] = True
         else:
             summary["accepted"] = False
             if _complete_payload_metrics_acceptable(candidate):
@@ -12370,11 +12983,23 @@ def _solve_teacher_session_optimized_from_ui_data(
             + json.dumps(detail, ensure_ascii=False, default=str)
         )
 
+    final_gap_target_cleanup = (
+        refinement_frontier_enabled
+        and strict_existing_quality_cleanup_requires_period_bridge
+        and total_limit >= 150
+        and best_metrics is not None
+        and _teacher_session_opt_quality_gates_clean(best_metrics)
+        and target_gap1_sessions is not None
+        and _teacher_session_opt_gap1(best_metrics) > int(target_gap1_sessions)
+    )
     if (
         refinement_frontier_enabled
         and best_payload is not None
         and visible_best_payload is not None
-        and best_payload is not visible_best_payload
+        and (
+            best_payload is not visible_best_payload
+            or final_gap_target_cleanup
+        )
     ):
         cleanup_remaining = deadline.remaining()
         cleanup_budget = min(
@@ -16180,24 +16805,17 @@ def solve_from_ui_data(
     if fixed_existing_lessons_are_hard:
         # The residual timetable is validated against synthetic blockers made
         # from hard lessons, but teacher-session quality can only be judged
-        # after those real lessons are merged back in.
-        if best_effort_used and not one_period_best_effort:
-            residual_validation = compute_metrics(
-                ctx.school_data,
-                lessons,
-                rules=residual_validation_rules,
-            )
-        else:
-            residual_validation = assert_acceptance(
-                ctx.school_data,
-                lessons,
-                rules=residual_validation_rules,
-                max_teacher_sessions=max(
-                    validation_max_teacher_sessions,
-                    sum(item.periods_per_week for item in ctx.school_data.assignments),
-                ),
-                max_one_period_teacher_sessions=None,
-            )
+        # after those real lessons are merged back in.  Weekly rules such as
+        # lessonBlocks.min intentionally span fixed and residual periods; an
+        # isolated residual half cannot satisfy that rule by itself.  Keep the
+        # diagnostic metrics, then make the authoritative acceptance decision
+        # on the merged full timetable below.
+        residual_validation = compute_metrics(
+            ctx.school_data,
+            lessons,
+            rules=residual_validation_rules,
+        )
+        residual_validation["fixed_lessons_merged_for_acceptance"] = len(hard_fixed_lessons)
         solver_metrics["residual_validation"] = residual_validation
         lessons = _merge_fixed_lessons_into_solution(lessons, hard_fixed_lessons)
         if best_effort_used and not one_period_best_effort:

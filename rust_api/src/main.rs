@@ -24,18 +24,18 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-20-subject-period-constraint-rebuild-v50";
+const VERSION: &str = "tkb_new-rust-api-2026-07-20-quality-frontier-polish-v56";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
 const MAX_REFERENCE_PROGRESS_FRAME_BYTES: usize = 32 * 1024;
 const AGENT_HELPER_PROTOCOL: &str = "tkb-agent-helper-v1";
 const AGENT_RESULT_DIGEST_PROTOCOL: &str = "tkb-json-tree-sha256-v1";
-// v1.6.18 prioritizes hard subject-period requirements before cosmetic
-// teacher-quality gates. Older binaries may speak protocol v1 but carry a
-// different solve-order contract, so they remain upgrade-only.
-const MIN_AGENT_HELPER_VERSION: &str = "1.6.18";
-const MIN_AGENT_HELPER_SEMVER: (u32, u32, u32) = (1, 6, 18);
+// v1.6.22 includes the same-click soft-incumbent quality rescue used by the
+// VPS solver. Older binaries may speak protocol v1 but carry an older solver
+// contract, so they remain upgrade-only.
+const MIN_AGENT_HELPER_VERSION: &str = "1.6.22";
+const MIN_AGENT_HELPER_SEMVER: (u32, u32, u32) = (1, 6, 22);
 // A canonical server-owned job has exactly one executor. Keeping one Agent
 // task (instead of a seed portfolio) prevents the Agent and VPS from adding
 // parallel attempts to the same user request.
@@ -51,7 +51,11 @@ const MAX_SOLVER_DEADLINE_MS: u64 = 1_800_000;
 const DEFAULT_SOLVER_DEADLINE_MS: u64 = 180_000;
 const DEFAULT_SOLVER_RESERVE_MS: u64 = 1_500;
 const MAX_SOLVER_RESERVE_MS: u64 = 30_000;
-const UNIFIED_REFERENCE_WATCHDOG_RESERVE_MS: u64 = 5_000;
+const UNIFIED_REFERENCE_WATCHDOG_RESERVE_MS: u64 = 10_000;
+// Once the helper has announced a successful terminal result, computation is
+// already complete. Give it a small, bounded window to flush the JSON wrapper
+// and exit instead of replacing that finished timetable with a watchdog 422.
+const REFERENCE_TERMINAL_RESULT_GRACE_MS: u64 = 10_000;
 const REFERENCE_CANDIDATE_VALIDATION_TIMEOUT_MS: u64 = 15_000;
 
 struct ManagedChild(Child);
@@ -2805,14 +2809,24 @@ fn solver_schedule_scope(request: Option<&Value>) -> Option<String> {
 }
 
 fn solver_progress_budget_seconds(request: Option<&Value>) -> Option<u64> {
-    let settings = request.map(request_settings)?;
+    let request = request?;
+    let settings = request_settings(request);
+    let automatic_floor_seconds = automatic_large_fresh_budget_floor_ms(request) / 1_000;
     let explicit = setting_u64_allow_zero(settings, "ui_progress_budget_seconds", 0);
     if explicit > 0 {
-        return Some(explicit.clamp(1, MAX_SOLVER_DEADLINE_MS / 1_000));
+        return Some(
+            explicit
+                .max(automatic_floor_seconds)
+                .clamp(1, MAX_SOLVER_DEADLINE_MS / 1_000),
+        );
     }
     let backend_ms = setting_u64_allow_zero(settings, "backend_deadline_ms", 0);
-    (backend_ms > 0)
-        .then(|| backend_ms.div_ceil(1_000).clamp(1, MAX_SOLVER_DEADLINE_MS / 1_000))
+    let effective_ms = backend_ms.max(automatic_floor_seconds.saturating_mul(1_000));
+    (effective_ms > 0).then(|| {
+        effective_ms
+            .div_ceil(1_000)
+            .clamp(1, MAX_SOLVER_DEADLINE_MS / 1_000)
+    })
 }
 
 fn solver_progress_run_index(request: Option<&Value>) -> Option<u64> {
@@ -2879,11 +2893,80 @@ fn uses_unified_reference_compute_budget(
         != Some("repair_partial")
 }
 
+fn constraint_value_is_enabled(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(enabled) => *enabled,
+        Value::Number(number) => number.as_f64().is_some_and(|item| item != 0.0),
+        Value::String(text) => !text.trim().is_empty() && text.trim() != "0",
+        Value::Array(items) => items.iter().any(constraint_value_is_enabled),
+        Value::Object(items) => items.values().any(constraint_value_is_enabled),
+    }
+}
+
+fn has_subject_period_requirement(value: &Value) -> bool {
+    match value {
+        Value::Array(items) => items.iter().any(has_subject_period_requirement),
+        Value::Object(items) => items.iter().any(|(key, child)| {
+            (matches!(
+                key.as_str(),
+                "lessonBlocks"
+                    | "avoidBreakPairs"
+                    | "avoidBreakPair23"
+                    | "avoidBreakPair34"
+                    | "linkedDays"
+            ) && constraint_value_is_enabled(child))
+                || has_subject_period_requirement(child)
+        }),
+        _ => false,
+    }
+}
+
+/// Cached PWA documents can keep an older automatic 60-75 second ceiling even
+/// after the server and solver contract have moved on. Large fixed-anchor first
+/// solves need enough time to produce one complete timetable; a blank automatic
+/// duration may therefore be raised server-side, while an explicit user duration
+/// remains authoritative. The solver still returns as soon as its quality gate is
+/// met, so this is a ceiling rather than a forced wait.
+fn automatic_large_fresh_budget_floor_ms(request: &Value) -> u64 {
+    let settings = request_settings(request);
+    let has_subject_period_rules = request
+        .get("data")
+        .and_then(|data| data.get("tkbConstraints"))
+        .is_some_and(has_subject_period_requirement);
+    let solve_kind = setting_string(settings, "ui_unified_solve_kind")
+        .map(|value| value.trim().to_ascii_lowercase().replace('-', "_"))
+        .unwrap_or_default();
+    let automatic_large = setting_bool(settings, "ui_unified_auto_sort", false)
+        && setting_u64_allow_zero(settings, "ui_custom_solve_duration_seconds", 0) == 0
+        && setting_u64_allow_zero(settings, "expected_scheduled_periods", 0) >= 900;
+    let automatic_fresh = solve_kind == "fresh_complete_first";
+    // v1.53 PWA tabs could misclassify localized lessonBlocks Min debt as a
+    // constraint repair. Keep that stale-client request on the same robust
+    // fixed-anchor budget until the refreshed bridge supplies the stable kind.
+    let stale_subject_period_fresh = solve_kind == "repair_constraints"
+        && has_subject_period_rules;
+    if !automatic_large || (!automatic_fresh && !stale_subject_period_fresh) {
+        return 0;
+    }
+    if has_subject_period_rules {
+        180_000
+    } else {
+        130_000
+    }
+}
+
 fn reference_solver_budget(request: &Value) -> ReferenceBudget {
     let settings = request_settings(request);
-    let backend_ms =
-        clamped_solver_deadline_ms(settings, "backend_deadline_ms", DEFAULT_SOLVER_DEADLINE_MS);
-    let native_ms = clamped_solver_deadline_ms(settings, "native_global_deadline_ms", backend_ms);
+    let automatic_floor_ms = automatic_large_fresh_budget_floor_ms(request);
+    let backend_ms = clamped_solver_deadline_ms(
+        settings,
+        "backend_deadline_ms",
+        DEFAULT_SOLVER_DEADLINE_MS,
+    )
+    .max(automatic_floor_ms);
+    let native_ms = clamped_solver_deadline_ms(settings, "native_global_deadline_ms", backend_ms)
+        .max(automatic_floor_ms);
     // A server-owned handoff may inject the remaining canonical watchdog into
     // the request. Treat it as an upper bound on both the helper and native
     // lanes; otherwise a VPS -> Agent retry would silently restore the full
@@ -4403,6 +4486,45 @@ fn parse_reference_progress_frame(line: &[u8]) -> Option<Value> {
     Some(value)
 }
 
+fn reference_progress_reports_complete(progress: &Value) -> bool {
+    progress.get("stage").and_then(Value::as_str) == Some("result:complete")
+        && progress
+            .get("status")
+            .and_then(Value::as_u64)
+            .is_some_and(|status| (200..300).contains(&status))
+}
+
+fn reference_terminal_grace_active(
+    terminal_result_ready: bool,
+    elapsed: Duration,
+    deadline: Duration,
+) -> bool {
+    terminal_result_ready
+        && elapsed
+            < deadline.saturating_add(Duration::from_millis(REFERENCE_TERMINAL_RESULT_GRACE_MS))
+}
+
+fn decode_reference_solver_stdout(
+    stdout: &str,
+    request: &Value,
+    started: Instant,
+    deadline: Duration,
+) -> Result<(u16, String), String> {
+    let wrapper = parse_reference_solver_wrapper(stdout)?;
+    let status = wrapper
+        .get("status")
+        .and_then(Value::as_u64)
+        .and_then(|value| u16::try_from(value).ok())
+        .unwrap_or(200);
+    let payload = wrapper
+        .get("payload")
+        .cloned()
+        .ok_or_else(|| "reference solver response missing payload".to_string())?;
+    Ok(normalize_reference_payload(
+        payload, request, status, started, deadline,
+    ))
+}
+
 fn run_reference_solver(
     app: &App,
     body: &[u8],
@@ -4456,6 +4578,8 @@ fn run_reference_solver(
         .ok_or_else(|| "failed to capture reference solver stderr".to_string())?;
     let progress_pool = Arc::clone(&app.solver_pool);
     let progress_job_id = job_id.to_string();
+    let terminal_result_ready = Arc::new(AtomicBool::new(false));
+    let terminal_result_observer = Arc::clone(&terminal_result_ready);
     let stderr_reader = thread::spawn(move || {
         let mut reader = BufReader::new(stderr_pipe);
         let mut stderr = String::new();
@@ -4465,6 +4589,9 @@ fn run_reference_solver(
                 Ok(0) => break Ok(()),
                 Ok(_) => {
                     if let Some(progress) = parse_reference_progress_frame(&line) {
+                        if reference_progress_reports_complete(&progress) {
+                            terminal_result_observer.store(true, Ordering::SeqCst);
+                        }
                         progress_pool.update_server_job_progress(&progress_job_id, progress);
                     } else {
                         stderr.push_str(&String::from_utf8_lossy(&line));
@@ -4498,15 +4625,33 @@ fn run_reference_solver(
         {
             break;
         }
-        if started.elapsed() >= deadline {
+        let elapsed = started.elapsed();
+        if elapsed >= deadline {
+            if reference_terminal_grace_active(
+                terminal_result_ready.load(Ordering::SeqCst),
+                elapsed,
+                deadline,
+            ) {
+                thread::sleep(Duration::from_millis(20));
+                continue;
+            }
             let _ = child.kill();
             let _ = child.wait();
-            let (_, _) = stdout_reader
+            let (stdout, stdout_read) = stdout_reader
                 .join()
                 .map_err(|_| "failed to join reference stdout reader".to_string())?;
-            let (stderr, _) = stderr_reader
+            stdout_read.map_err(|err| format!("failed to read reference stdout: {err}"))?;
+            let (stderr, stderr_read) = stderr_reader
                 .join()
                 .map_err(|_| "failed to join reference stderr reader".to_string())?;
+            stderr_read.map_err(|err| format!("failed to read reference stderr: {err}"))?;
+            // The wrapper may already be fully present even if the process had
+            // not exited before the last watchdog poll. Never discard it solely
+            // because process teardown crossed the boundary.
+            if let Ok(result) = decode_reference_solver_stdout(&stdout, request, started, deadline)
+            {
+                return Ok(result);
+            }
             return Ok(reference_timeout_payload(request, started, stderr.trim()));
         }
         thread::sleep(Duration::from_millis(100));
@@ -4531,24 +4676,12 @@ fn run_reference_solver(
         ));
     }
 
-    let wrapper = parse_reference_solver_wrapper(&stdout).map_err(|err| {
+    decode_reference_solver_stdout(&stdout, request, started, deadline).map_err(|err| {
         format!(
             "reference solver returned invalid JSON: {err}; stderr={}",
             stderr.trim()
         )
-    })?;
-    let status = wrapper
-        .get("status")
-        .and_then(Value::as_u64)
-        .and_then(|value| u16::try_from(value).ok())
-        .unwrap_or(200);
-    let payload = wrapper
-        .get("payload")
-        .cloned()
-        .ok_or_else(|| "reference solver response missing payload".to_string())?;
-    Ok(normalize_reference_payload(
-        payload, request, status, started, deadline,
-    ))
+    })
 }
 
 fn reference_solver_error_status(error: &str) -> u16 {
@@ -4935,11 +5068,30 @@ fn spawn_server_owned_solver(
                                     };
                                     break Some(response);
                                 }
-                                _ if watchdog_expired => break Some(
-                                    server_watchdog_timeout_response(
+                                _ if watchdog_expired => {
+                                    // Close the Agent task while holding its
+                                    // coordinator lock. A candidate accepted
+                                    // after the snapshot above but before this
+                                    // terminal fence must win over the timeout;
+                                    // after the close, no late submission can
+                                    // race a second HTTP result into this job.
+                                    let response = background_app
+                                        .agent_helper
+                                        .take_candidate_and_finish_job(&job_id, &owner)
+                                        .map(|candidate| json_response(200, candidate.payload))
+                                        .unwrap_or_else(|| {
+                                            server_watchdog_timeout_response(
+                                                request
+                                                    .as_ref()
+                                                    .expect("watchdog request is present"),
+                                            )
+                                        });
+                                    break Some(server_watchdog_final_response(
                                         request.as_ref().expect("watchdog request is present"),
-                                    ),
-                                ),
+                                        response,
+                                        remaining_watchdog_ms,
+                                    ));
+                                }
                                 Some(AgentJobExecution::Leased { .. }) => {
                                     lease_started = true;
                                     let _ = background_app
@@ -6672,7 +6824,7 @@ mod tests {
 
     #[test]
     fn agent_helper_version_gate_uses_strict_three_component_semver() {
-        for version in ["1.6.18", "1.7.0", "2.0.0"] {
+        for version in ["1.6.22", "1.7.0", "2.0.0"] {
             assert!(
                 agent_helper_version_supported(version),
                 "{version} should be eligible"
@@ -6687,6 +6839,9 @@ mod tests {
             "1.6.15",
             "1.6.16",
             "1.6.17",
+            "1.6.18",
+            "1.6.19",
+            "1.6.20",
             "1.6",
             "1.6.8-beta",
             "",
@@ -8457,8 +8612,8 @@ mod tests {
             assert_eq!(budget.backend_ms, 180_000);
             assert_eq!(budget.native_ms, 180_000);
             assert_eq!(budget.solver_ms, 180_000);
-            assert_eq!(budget.hard_ms, 185_000);
-            assert_eq!(budget.reserve_ms, 5_000);
+            assert_eq!(budget.hard_ms, 190_000);
+            assert_eq!(budget.reserve_ms, 10_000);
 
             let body = serde_json::to_vec(&request).expect("request body");
             let helper: Value =
@@ -8476,7 +8631,7 @@ mod tests {
             );
             assert_eq!(
                 helper["settings"]["reference_watchdog_deadline_ms"],
-                json!(185_000)
+                json!(190_000)
             );
         }
 
@@ -8498,6 +8653,96 @@ mod tests {
     }
 
     #[test]
+    fn old_automatic_large_fresh_request_gets_the_current_server_budget_floor() {
+        let constrained = json!({
+            "data": {
+                "tkbConstraints": {
+                    "subject": {
+                        "Math": {
+                            "byClass": {
+                                "L1": {"lessonBlocks": {"2": {"min": 1}}}
+                            }
+                        }
+                    }
+                }
+            },
+            "settings": {
+                "ui_unified_auto_sort": true,
+                "ui_unified_solve_kind": "fresh_complete_first",
+                "expected_scheduled_periods": 1566,
+                "backend_deadline_ms": 60_000,
+                "native_global_deadline_ms": 60_000,
+                "overall_time_limit_seconds": 60
+            }
+        });
+        let budget = reference_solver_budget(&constrained);
+        assert_eq!(budget.backend_ms, 180_000);
+        assert_eq!(budget.native_ms, 180_000);
+        assert_eq!(budget.solver_ms, 180_000);
+        assert_eq!(budget.hard_ms, 190_000);
+        assert_eq!(solver_progress_budget_seconds(Some(&constrained)), Some(180));
+
+        let mut cached_v153_repair = constrained.clone();
+        cached_v153_repair["settings"]["ui_unified_solve_kind"] =
+            json!("repair_constraints");
+        let cached_budget = reference_solver_budget(&cached_v153_repair);
+        assert_eq!(cached_budget.solver_ms, 180_000);
+        assert_eq!(cached_budget.hard_ms, 190_000);
+        assert_eq!(
+            solver_progress_budget_seconds(Some(&cached_v153_repair)),
+            Some(180)
+        );
+
+        let plain = json!({
+            "data": {"tkbConstraints": {}},
+            "settings": {
+                "ui_unified_auto_sort": true,
+                "ui_unified_solve_kind": "fresh_complete_first",
+                "expected_scheduled_periods": 1566,
+                "backend_deadline_ms": 60_000,
+                "native_global_deadline_ms": 60_000
+            }
+        });
+        let plain_budget = reference_solver_budget(&plain);
+        assert_eq!(plain_budget.solver_ms, 130_000);
+        assert_eq!(plain_budget.hard_ms, 140_000);
+        assert_eq!(solver_progress_budget_seconds(Some(&plain)), Some(130));
+    }
+
+    #[test]
+    fn explicit_large_fresh_duration_is_not_raised_by_the_server() {
+        let request = json!({
+            "data": {
+                "tkbConstraints": {
+                    "subject": {
+                        "Math": {"lessonBlocks": {"2": {"min": 1}}}
+                    }
+                }
+            },
+            "settings": {
+                "ui_unified_auto_sort": true,
+                "ui_unified_solve_kind": "fresh_complete_first",
+                "ui_custom_solve_duration_seconds": 60,
+                "expected_scheduled_periods": 1566,
+                "backend_deadline_ms": 60_000,
+                "native_global_deadline_ms": 60_000,
+                "overall_time_limit_seconds": 60
+            }
+        });
+        let budget = reference_solver_budget(&request);
+        assert_eq!(budget.solver_ms, 60_000);
+        assert_eq!(budget.hard_ms, 70_000);
+        assert_eq!(solver_progress_budget_seconds(Some(&request)), Some(60));
+
+        let mut cached_v153_repair = request.clone();
+        cached_v153_repair["settings"]["ui_unified_solve_kind"] =
+            json!("repair_constraints");
+        let cached_budget = reference_solver_budget(&cached_v153_repair);
+        assert_eq!(cached_budget.solver_ms, 60_000);
+        assert_eq!(cached_budget.hard_ms, 70_000);
+    }
+
+    #[test]
     fn unified_reference_budget_keeps_serialization_reserve_inside_remaining_watchdog() {
         let request = json!({
             "settings": {
@@ -8512,14 +8757,14 @@ mod tests {
         });
         let budget = reference_solver_budget(&request);
         assert_eq!(budget.hard_ms, 120_000);
-        assert_eq!(budget.solver_ms, 115_000);
-        assert_eq!(budget.reserve_ms, 5_000);
+        assert_eq!(budget.solver_ms, 110_000);
+        assert_eq!(budget.reserve_ms, 10_000);
 
         let body = serde_json::to_vec(&request).expect("request body");
         let helper: Value =
             serde_json::from_slice(&reference_solver_body(&body, &request, budget, 3))
                 .expect("helper body");
-        assert_eq!(helper["settings"]["overall_time_limit_seconds"], json!(115));
+        assert_eq!(helper["settings"]["overall_time_limit_seconds"], json!(110));
         assert_eq!(
             helper["settings"]["reference_watchdog_deadline_ms"],
             json!(120_000)
@@ -8754,6 +8999,78 @@ mod tests {
             "x".repeat(MAX_REFERENCE_PROGRESS_FRAME_BYTES)
         );
         assert!(parse_reference_progress_frame(oversized.as_bytes()).is_none());
+    }
+
+    #[test]
+    fn terminal_result_grace_only_follows_a_successful_complete_frame() {
+        let complete = json!({"stage": "result:complete", "status": 200});
+        assert!(reference_progress_reports_complete(&complete));
+        assert!(!reference_progress_reports_complete(
+            &json!({"stage": "result:error", "status": 422})
+        ));
+        assert!(!reference_progress_reports_complete(
+            &json!({"stage": "result:complete", "status": 500})
+        ));
+
+        let deadline = Duration::from_secs(80);
+        assert!(reference_terminal_grace_active(
+            true,
+            deadline + Duration::from_millis(1),
+            deadline,
+        ));
+        assert!(!reference_terminal_grace_active(
+            true,
+            deadline + Duration::from_millis(REFERENCE_TERMINAL_RESULT_GRACE_MS),
+            deadline,
+        ));
+        assert!(!reference_terminal_grace_active(
+            false,
+            deadline + Duration::from_millis(1),
+            deadline,
+        ));
+    }
+
+    #[test]
+    fn completed_stdout_wrapper_survives_a_deadline_boundary() {
+        let request = json!({
+            "settings": {
+                "backend_deadline_ms": 1_000,
+                "native_global_deadline_ms": 1_000,
+                "require_complete_schedule": true
+            }
+        });
+        let stdout = serde_json::to_string(&json!({
+            "protocol": REFERENCE_STDIO_PROTOCOL,
+            "status": 200,
+            "payload": {
+                "ok": true,
+                "lessons": [{"classId": "L1", "day": 2, "period": 1}],
+                "unassignedLessons": [],
+                "metrics": {
+                    "scheduled_periods": 1,
+                    "expected_periods": 1,
+                    "unassigned_periods": 0,
+                    "app_constraint_violation_count": 0,
+                    "hard_ok": true,
+                    "core_hard_ok": true
+                }
+            }
+        }))
+        .expect("stdout wrapper");
+        let started = Instant::now()
+            .checked_sub(Duration::from_secs(2))
+            .expect("test instant");
+        let (status, payload) =
+            decode_reference_solver_stdout(&stdout, &request, started, Duration::from_secs(1))
+                .expect("complete wrapper must remain decodable after the deadline");
+        let payload: Value = serde_json::from_str(&payload).expect("normalized payload");
+        assert_eq!(status, 200);
+        assert_eq!(payload["ok"], json!(true));
+        assert_eq!(payload["metrics"]["scheduled_periods"], json!(1));
+        assert_eq!(
+            payload["solver"]["runtime_settings"]["deadline_hit"],
+            json!(true)
+        );
     }
 
     #[test]

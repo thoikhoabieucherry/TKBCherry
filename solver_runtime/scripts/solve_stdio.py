@@ -166,6 +166,16 @@ def _save_solve_artifacts(payload: dict, status: int) -> None:
 
 
 def write_json(payload: dict, status: int = 200) -> None:
+    # The stdout wrapper is the authoritative result. Flush it before optional
+    # artifact logging so slow storage can never turn a completed timetable
+    # into a parent-process watchdog timeout.
+    _write_protocol_value(
+        {
+            "protocol": STDIO_PROTOCOL,
+            "status": status,
+            "payload": payload,
+        }
+    )
     emit_progress(
         {
             "stage": "result:complete" if status < 400 else "result:error",
@@ -174,13 +184,6 @@ def write_json(payload: dict, status: int = 200) -> None:
         }
     )
     _save_solve_artifacts(payload, status)
-    _write_protocol_value(
-        {
-            "protocol": STDIO_PROTOCOL,
-            "status": status,
-            "payload": payload,
-        }
-    )
 
 
 def _finalize_solve_status(payload: dict, settings: dict | None) -> int:

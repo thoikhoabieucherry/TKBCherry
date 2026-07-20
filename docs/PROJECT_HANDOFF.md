@@ -8,12 +8,11 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.50** (subject-period constraint
-  rebuild). Public API marker:
-  `tkb_new-rust-api-2026-07-20-subject-period-constraint-rebuild-v50`; page
-  cache: `20260720-v150-subject-period-constraint-rebuild-v1`.
-- Current public Agent release: **v1.6.18** (`1.6.18`). The server lease gate
-  is also 1.6.18 so an older Agent can update itself but cannot execute a job
+- Current deployed application release: **v1.56** (quality-frontier polish).
+  Public API marker: `tkb_new-rust-api-2026-07-20-quality-frontier-polish-v56`;
+  page cache: `20260720-v156-quality-frontier-polish-v1`.
+- Current public Agent release: **v1.6.22** (`1.6.22`). The server lease gate
+  is also 1.6.22 so an older Agent can update itself but cannot execute a job
   with a mismatched solver contract.
 - Every deployed application or packaged Agent update must increment the
   applicable version here and add a short change note. Agent package updates
@@ -71,6 +70,414 @@ change so a machine restart or a new conversation does not erase project context
   VPS worker tokens available. The public page serves the v150 cache; the
   bridge asset contains `tkb-rust-api-v255-subject-period-constraint-rebuild`,
   and the Agent manifest serves signed `1.6.18`.
+
+### Post-v1.50 Min-block semantics and quality recovery (local, not deployed)
+
+- `lessonBlocks.2.min = 1` means at least one contiguous two-period block for
+  that class/subject during the week. Other weekly periods may remain separate.
+  An absent/blank `max` means no upper bound; it must not be interpreted as one
+  block. Focused solver regressions accept both `[2, 1, 1]` and `[2, 2]`.
+- The session CP-SAT model now counts a block formed by a hard-fixed period and
+  an adjacent residual period. Previously fixed demand was removed before the
+  residual model, so this feasible pair was incorrectly reported impossible.
+  Residual-only validation is diagnostic; final merged fixed-plus-residual
+  validation remains the authoritative acceptance check.
+- A fixed-only timetable naturally violates a weekly `lessonBlocks.min` before
+  sorting. The bridge now defers that preflight-only minimum and sends a real
+  fixed-anchor fresh solve instead of misrouting it to the short staged repair.
+- The final wire normalizer now preserves an explicit unified initial ceiling.
+  This fixes a quality rebuild planned for 180 seconds being silently reduced
+  to 60 seconds immediately before the VPS/Agent request.
+- A first sort keeps a complete hard-valid Phase-F timetable as soon as it is
+  found. If it still has singleton/gap-2 debt, only the configured bounded
+  cleanup slice is attempted before returning it. A later explicit quality
+  rebuild (`ui_quality_debt_fresh_rebuild`) may use the full remaining 180
+  seconds. Very rough complete schedules are rebuilt from fixed anchors, with
+  the visible complete incumbent retained unless the new candidate is better.
+- The ordinary automatic first-quality ceiling is 130 seconds. Subject-period
+  and deliberate quality rebuilds may carry a 180-second ceiling; explicit user
+  duration still wins and the input itself is never auto-filled.
+- Exact local replay of the captured production `default` data completed
+  `1566/1566`, hard-valid, with zero application-constraint violations. All
+  324 `Min=1` rows were satisfied. Weekly session shapes were `(2)` = 54,
+  `(2,1)` = 108, `(2,1,1)` = 149, and `(2,2)` = 13. Thus 257 rows retained
+  separate periods while 13 valid rows used more than one pair with no Max.
+- The same six-worker replay remains quality-sensitive: a deep 180-second
+  rebuild returned `522 sessions / 23 singleton / gap1=83 / gap2=3`; a separate
+  first-result replay returned complete at about 158 seconds and was handed
+  back immediately at `522 / 25 / gap1=62 / gap2=6`. These are complete valid
+  safety results, not the final quality target. Continue the separate teacher
+  quality investigation before claiming that later clicks reach the desired
+  zero singleton/gap-2 goal reliably.
+- Local verification after this candidate: bridge `197/197`, subject semantics
+  `14/14`, toolbar `28/28`, unified benchmark `6/6`, scheduler `152/152`, Agent
+  `72/72`, Python syntax, and `git diff --check`. Production remains v1.50;
+  this candidate has not been staged, packaged, committed, or deployed.
+
+### Post-v1.50 completion-rescue hardening (local, not deployed)
+
+- The production `422` after a long first click had two independent causes:
+  fixed-period demand was removed before `lessonBlocks.min` modeling, and the
+  large period-safe lane had no emergency completion slice after a CP-SAT
+  `UNKNOWN`. The session model now counts fixed+flexible contiguous blocks
+  when concrete period choices exist, and defers the affected min/max bound to
+  merged validation when a legacy session-only caller has no period bridge.
+- Large safe-first requests reserve `35-70` seconds for one relaxed completion
+  attempt. That rescue uses the theoretical upper session cap only in this
+  emergency lane, keeps all user-authored application constraints hard, and
+  never replaces a complete incumbent with an incomplete payload.
+- Focused regression covers the no-period-bridge fixed+flexible pair and the
+  late-`UNKNOWN` rescue. Local scheduler verification is now `154/154`; full
+  backend E2E is `46/46`; bridge `197/197`, benchmark `6/6`, subject semantics
+  `14/14`, Agent `72/72`. Isolated VPS staging of this candidate ended with
+  `STAGING_TESTS_OK` (`154` scheduler, `72` Agent, `136` Rust API, `20`
+  validator). Production remains v1.50; no deployment was performed.
+- Exact current `default` fresh-after-delete replay with the previously bad
+  seed returned `1566/1566`, `hard_ok=true`, and zero application violations
+  after the first complete candidate was found; the run no longer ends as a
+  422 merely because the first cap probe is `UNKNOWN`.
+
+### v1.51 completion-rescue quality recovery (deployed 2026-07-20)
+
+- The candidate keeps a complete hard-valid timetable as soon as the strict
+  period-safe lane finds one, and never replaces it with an incomplete or
+  lower-quality payload. The first-click gate requires zero one-period teacher
+  sessions and zero gap-2-plus sessions when those goals are feasible; authored
+  constraints remain hard and may legitimately force quality debt.
+- A fresh default replay with 1,566 periods and 54 fixed lessons returned
+  `1566/1566`, `hard_ok=true`, zero application violations, zero singleton
+  sessions, and zero gap-2-plus sessions. A captured strict replay reached
+  `522` teacher sessions with gap distribution `0=417, 1=105` in about 66
+  seconds. Refinement replays are Pareto-guarded and retain the complete
+  incumbent when a tighter cap is inconclusive.
+- `lessonBlocks.2.min=1` remains an at-least-one-pair rule; blank `max` remains
+  unbounded. Fixed-plus-flexible contiguous pairs are validated only after the
+  fixed lessons are merged back into the candidate.
+- Local verification: result contract `139/139` plus 9 subtests, bridge/UI
+  suites and syntax checks pass. The release Agent is `1.6.19`; its ZIP and
+  signed manifest are copied to `web/downloads` and the ZIP contains exactly
+  one root-level `TKBCherryAgent.exe`.
+- Release markers: API
+  `tkb_new-rust-api-2026-07-20-completion-rescue-v51`, bridge
+  `tkb-rust-api-v256-quality-recovery`, and page cache
+  `20260720-v151-completion-rescue-v1`.
+- Isolated VPS staging passed `STAGING_TESTS_OK` (scheduler 156, Agent 72,
+  Rust API 136, validator 20). Production deployment returned `UPDATE_OK`;
+  post-deploy health reports API v51, zero active/queued jobs, and all `6/6`
+  worker tokens available. Public page and bridge markers were verified, and
+  the signed Agent 1.6.19 manifest/hash are live.
+- The existing in-app browser tab was refreshed after deployment and served
+  `phanmon.js` and `tkb-rust-bridge.js` with the v151 cache key; it settled at
+  `Sẵn sàng` with no active job. A standalone/PWA tab must be refreshed or
+  reopened once if it still holds the old v150 document in memory.
+
+### Post-v1.51 Agent OFF responsiveness (local, not packaged or deployed)
+
+- The Agent ON/OFF window now paints OFF immediately after the stop signal is
+  set. Solver cancellation still uses the same event, while an already-open
+  long-poll socket may finish harmlessly in the daemon worker. A quick ON click
+  during that drain is remembered and starts exactly one fresh worker session
+  after the old session exits.
+- `ApiClient` observes the worker stop event before every request and during
+  retry backoff, so OFF no longer waits through multiple network retry sleeps.
+  The lease socket timeout is bounded to the configured long-poll plus a
+  five-second transport margin. If a long-poll returns a lease after OFF, the
+  worker does not start the solver; the server reclaims that lease normally.
+- `Tắt Agent` continues to remove only the app-owned HKCU Run value and leaves
+  the lightweight tray process available for a later ON click. `Thoát` closes
+  the process; the window X continues to hide it to the tray. The two same-name
+  processes visible for a published one-file executable are the normal
+  PyInstaller bootloader parent/application-child pair, not two worker leases;
+  `SingleInstanceLock` still prevents a second Agent session for the same ID.
+- After stopping the observed local executable, both the process list and the
+  `TKBCherryAgent` HKCU Run value were confirmed empty. Local Agent verification
+  passes all `75/75` tests. The local source candidate is version `1.6.20`; it
+  still needs a signed package build and release/deployment decision before
+  users receive it. The public manifest remains `1.6.19` meanwhile.
+
+### Post-v1.51 authoritative-idle warning cleanup (local, not deployed)
+
+- An authenticated `/api/solver-state` response with no active, queued, or
+  completed owner job now clears a visible stale solver warning/error even when
+  the browser has no durable pending job id. This removes an old `Chưa đủ`
+  progress ring left behind after an iOS/PWA suspension and unlocks Play.
+- An ordinary idle wake does not otherwise reset the page. In particular, the
+  legitimate green `Đã xếp xong!` terminal status remains visible; if it ever
+  coexists with a stale warning ring, only the ring is removed.
+- Focused authoritative-idle regressions pass `3/3`, the complete bridge suite
+  passes `203/203`, `node --check`, and changed-file `git diff --check` pass.
+  This UI-contract change has not been versioned, packaged, staged, or deployed.
+
+### v1.52 auth recovery and integrated refinement (deployed 2026-07-20)
+
+- Solver/result/state and remote school-store `401/403` responses are now
+  authentication expiry, not transport outages. The browser stops polling and
+  saving, preserves the canonical VPS job id, performs one central login
+  recovery, remembers the protected return URL, and resumes the same owner job
+  after authentication. It never cancels or reposts the job during this flow.
+- An authoritative owner-state response with no job clears a stale visible
+  warning such as `Chưa đủ`, but preserves the legitimate green
+  `Đã xếp xong!` status. Shared auth/runtime/storage assets and the login entry
+  page have v1.52 cache keys so iPhone/PWA tabs cannot silently keep the old
+  recovery code after deployment.
+- A complete timetable with subject-period requirements now keeps the exact
+  all-session period bridge during `Xếp tiếp`. The backend previously overwrote
+  the browser's `lean=false` request, found attractive session-only vectors,
+  then rejected them when concrete periods were allocated and returned the
+  unchanged incumbent. The overwrite is removed.
+- When the incumbent already has zero one-period teacher sessions and zero
+  gap-2-plus sessions, the integrated model receives its concrete lessons as a
+  soft warm start. A dirty incumbent still explores without that hint. The hint
+  is never fixed, and the existing Pareto guard still rejects regressions.
+- Exact current `default` replay uses 1,566 periods, 54 fixed lessons, 324
+  `lessonBlocks.2.min=1` rows, and 324 avoid-2-3 rules. A no-hint first solve
+  completed in 89.003 seconds at `522 sessions / 0 singleton / gap1=108 /
+  gap2+=0`, hard-valid with zero app violations. Before the fix, a 180-second
+  refine returned the identical `522/108`. After the fix, consecutive
+  180-second refinements improved it to `498/87` and then `493/84`, while
+  remaining 1,566/1,566, hard-valid, zero app violations, zero singleton, and
+  zero gap-2-plus. A shorter 75-second probe already improved `522/108` to
+  `514/90`.
+- Release markers are API
+  `tkb_new-rust-api-2026-07-20-auth-resume-integrated-refine-v52`, bridge
+  `tkb-rust-api-v257-auth-resume-integrated-refine`, and page cache
+  `20260720-v152-auth-resume-refine-v1`. The minimum/public Agent candidate is
+  `1.6.20`.
+- Agent 1.6.20 was rebuilt after the final solver change, passed GUI and
+  solver-child smoke checks, one-layer UPX integrity, `--version`, ZIP-layout,
+  and signed-manifest checks. The public ZIP SHA-256 is
+  `c03e17f09bfc2a4a8f6a294c20fa0953ef64a30b241db468c2912910b298a8d3`;
+  the executable SHA-256 is
+  `3e34a0c863ca86b0e26d6479d8c7fd1501258f729cff010842cb151b14490df5`.
+  The final ZIP and signed manifest are copied to `web/downloads`.
+- Local verification: bridge/UI `203/203`, other Node UI `74/74`, scheduler
+  `157/157`, Agent `75/75`, application E2E `46/46`, deployment/package
+  `25/25`, Python syntax, Node syntax, and `git diff --check` pass. The isolated
+  Linux staging and production update both completed successfully. Public
+  health was rechecked before v1.53 staging and served the v1.52 API marker,
+  zero active/queued jobs, and all `6/6` worker tokens available.
+
+### Post-v1.52 non-blocking manual Play (local, not deployed)
+
+- Production tracing found a manual Play could stop after successful
+  `/api/solver-state` and Agent-status reads but before `/api/solve-data`.
+  The blocking point was the native offline-Agent `confirm` dialog, which ran
+  before the progress UI and request preparation and could suspend an embedded
+  browser renderer indefinitely.
+- Manual Play now chooses immediate VPS fallback. Agent status refresh is
+  opportunistic and cannot delay the solve; an online Agent still leases the
+  one canonical VPS-owned job through the existing handoff protocol. The
+  separate Agent toolbar button remains the explicit install/download action,
+  and the legacy invitation helper still supports its direct prompt path.
+- Regression coverage verifies that a pending Agent-status request cannot show
+  a prompt or delay VPS fallback, and that the offline/Cancel path reaches
+  exactly one solve POST with no cancel POST. Bridge tests pass `204/204`,
+  toolbar/UI tests pass `28/28`, both changed JavaScript files pass
+  `node --check`, and changed-file `git diff --check` passes. This fix has not
+  been deployed or in-app-browser retested yet.
+
+### v1.53 VPS-first Play and same-click quality rescue (release candidate)
+
+- Manual Play no longer waits for or prompts about an offline Agent. It creates
+  exactly one canonical VPS-owned job immediately. An online Agent may lease
+  that same job; turning Agent off leaves VPS as the executor rather than
+  blocking the click or creating a second flow.
+- A strict quality-cap probe can time out and fall back to a complete but wide
+  schedule. Phase Q now starts from that same-click complete schedule as a soft
+  incumbent, keeps its current session cap initially, and spends the remaining
+  budget on integrated cleanup. It does not fix cells, import a legacy sample,
+  or optimize hint distance. This removes the old failure where Phase Q jumped
+  straight back to an unrealistically tight cap and returned `UNKNOWN`.
+- The exact period bridge and period MILP now apply subject break-pair and
+  linked-day rules to merged fixed-plus-flexible blocks. Previously a fixed P2
+  plus flexible P3 could pass the residual model under avoid-2-3, then be
+  rejected by final validation even though fixed P2 plus flexible P1 was
+  feasible. A focused regression covers `lessonBlocks.2.min=1` with this fixed
+  anchor and proves the valid P1+P2 pair is selected.
+- Exact current `default` replays contain 1,566 periods, 54 fixed lessons, 324
+  `lessonBlocks.2.min=1` rows and 324 avoid-2-3 rows, with no legacy solver
+  result in the fresh wire. Post-fix seed 101 returned `1566/1566`, hard-valid,
+  zero app violations, `579 sessions / 0 singleton / gap1=147 / gap2+=0` in
+  137.5 seconds. An independent validation returned HTTP 200. A 180-second
+  refine from a comparable `578/154` incumbent improved to `518/100`, retained
+  zero singleton and gap-2-plus debt, and again passed independent validation.
+  Earlier candidate seeds also reached `521/99`; output is intentionally
+  randomized and is not a stored timetable template.
+- Release markers are API
+  `tkb_new-rust-api-2026-07-20-nonblocking-vps-play-v53`, bridge
+  `tkb-rust-api-v258-nonblocking-vps-play`, and page cache
+  `20260720-v153-nonblocking-vps-play-v1`. Minimum/public Agent is `1.6.21`.
+- Agent 1.6.21 was rebuilt after the final solver change. GUI and solver-child
+  smoke tests, one-layer UPX integrity, signed-manifest parsing, one-entry ZIP
+  layout, and archive/executable hash checks pass. Public ZIP SHA-256 is
+  `06ab213a0dbc5e6bae1befca3327b57501aa71dadb8a0566e5494d7c338f2efa`;
+  executable SHA-256 is
+  `edd0263bfbdbad594f8e4fddfbc6a2b2702cb0211d6a6166491aec045604b2ff`.
+- Local verification passes scheduler `159/159`, Agent `75/75`, bridge
+  `204/204`, other Node UI `74/74`, benchmark `6/6`, deployment packaging
+  `13/13`, Python/Node syntax, and `git diff --check`. Isolated Linux staging
+  passes the same scheduler and Agent suites, Rust API `138/138`, validator
+  `20/20`, and ends with `STAGING_TESTS_OK`. Production deployment and browser
+  acceptance remain pending at this checkpoint.
+
+### Post-v1.53 localized Min preflight routing (local, not deployed)
+
+- The retained production `default` state after the v1.53 HTTP 422 was replayed
+  through the real constraint validator and bridge VM. It contained 1,566
+  required periods, 54 fixed cells, 324 `lessonBlocks.2.min=1` preflight
+  messages, and a fingerprint-matched 80-second retry record. The captured
+  v1.53 validator messages had no structured `kind` field.
+- The fallback classifier normalized accents with NFD but did not normalize the
+  Vietnamese `d`-stroke. Consequently every localized `chua dat Min` message
+  was missed and the fixed-only request was misplanned as `repair_constraints`
+  with an 80-second deadline instead of `fresh_complete_first`.
+- New sync and async validator results include the stable kind
+  `subject.lessonBlocks.min`; constraint-message normalization also explicitly
+  maps Unicode `U+0111` after accent removal for old tabs and retained data.
+  Replaying the exact production state now plans one fixed-only fresh request,
+  records all 324 deferred Min rows, keeps all 54 fixed cells, strips flexible
+  solver state, and assigns a 180-second backend deadline. Teacher-only
+  violations still retain the staged repair path.
+- Verification: focused localized-message regression `1/1`, full bridge suite
+  `205/205`, constraint semantics `14/14`, JavaScript syntax, exact
+  production-data VM replay, and changed-file `git diff --check` pass. No
+  deployment was performed for this scoped fix.
+- The browser forwards a 10-second Python-reference watchdog reserve, matching
+  the backend contract, while its response/poll lifetime has a separate
+  30-second reserve. This prevents a terminal completion near the old
+  five-second boundary from racing the process watchdog without making the
+  server compute budget itself 30 seconds longer. This frontend contract update
+  is not deployed yet.
+
+### v1.54 terminal-result safety (release candidate)
+
+- Production v1.53 failed after the Python solver emitted
+  `result:complete/status=200` at about 84.873 seconds. The Rust parent reached
+  its 85-second watchdog before the child exited, killed it, discarded the
+  already-flushed stdout wrapper, and synthesized an empty HTTP 422. The UI
+  correctly retained the original 54 fixed lessons, but no completed candidate
+  remained for the browser to apply.
+- The helper now flushes its authoritative result wrapper before progress and
+  optional artifact logging. Rust keeps a bounded 10-second result reserve,
+  observes a successful terminal frame, permits a bounded exit grace, and
+  decodes any complete wrapper already in stdout before it may create a timeout
+  response. The existing final-response fence still accepts only a complete,
+  hard-valid, constraint-clean HTTP 200 payload.
+- Cached v1.53 iPhone/PWA requests that still label this fixed-anchor subject
+  solve as `repair_constraints` receive the same defensive 180-second server
+  ceiling and all six worker tokens. An explicit user-entered duration remains
+  authoritative and is never raised by this compatibility rule. Partial repair
+  remains the lightweight two-worker lane.
+- Unified browser requests keep the 10-second server watchdog reserve but wait
+  up to 30 additional seconds for the terminal response and result polling. A
+  fake-clock lifecycle regression holds a 180-second job until about 195
+  seconds, then proves the complete two-period result is still applied before
+  the 210-second client deadline and the durable pending job is cleared.
+- Scheduler contract regressions now mirror the large subject-period flow:
+  Phase F uses the wide objective-free `fresh_complete_wide_period_safe` lane,
+  Phase Q receives that complete result as a soft incumbent and enforces
+  singleton `0` plus gap-2 `0`, and a Phase-Q error retains the complete
+  hard-valid Phase-F result. The full result-contract module passes `143/143`;
+  this was a test-only update and did not change `adapter.py`.
+- Release markers are API
+  `tkb_new-rust-api-2026-07-20-terminal-result-safe-v54`, bridge
+  `tkb-rust-api-v259-terminal-result-safe`, and page cache
+  `20260720-v154-terminal-result-safe-v1`. Agent remains `1.6.21`; this release
+  does not change the Agent solver contract.
+- Focused verification currently passes bridge `205/205`, subject constraint
+  semantics `14/14`, Rust API `140/140`, validator `20/20`, stdio protocol
+  `5/5`, Python/Node syntax, and changed-file `git diff --check`. Full local
+  suites, isolated staging, deployment, and production acceptance are pending.
+
+### Post-v1.54 first-click Pareto tail polish (local, not deployed)
+
+- The unified first-click path previously set the local LNS budget to zero when
+  `ui_stop_after_first_complete_schedule` was present. A complete but rough
+  Phase-F result could therefore be retained after Phase Q consumed the full
+  remaining deadline and returned `UNKNOWN`, with no independent cleanup left.
+- After a complete incumbent exists, Phase Q now protects up to 16 seconds of
+  the configured local-LNS budget. This reserve is never taken from mandatory
+  Phase-F completion and never extends the caller's deadline. It applies to
+  both clean and quality-debt incumbents.
+- A local candidate is accepted only when complete, hard-valid, constraint
+  clean, fixed lessons survive, and `_incremental_refinement_candidate_better`
+  confirms no regression in one-period sessions, gap-2 sessions, teacher
+  sessions, gap-1 sessions, or total gaps. Failed and slower neighborhoods keep
+  the exact incumbent. Attempt metadata records `clean_frontier_polish`,
+  `quality_debt_tail_polish`, and `protected_local_tail_seconds`.
+- An exact binary-safe replay of the captured 1,566-period default request with
+  54 fixed lessons returned `1566/1566`, `hard_ok=true`, zero application
+  violations, zero singleton sessions, and zero gap-2 sessions. Phase Q reached
+  `536 sessions / gap1=91`; the protected tail improved gap-1 to `89`. A real
+  180-second `Xep tiep` replay then improved the same incumbent to
+  `503 sessions / gap1=87`, preserving every hard-quality gate.
+- Verification: result contract `143/143`, all solver-runtime tests `161/161`,
+  benchmark E2E `6/6`, Python syntax, and changed-file `git diff --check`. No
+  staging, packaging, or production deployment has been performed for this
+  candidate.
+
+### v1.56 quality-frontier polish (staged release candidate)
+
+- Phase Q now continues from the first complete hard-valid timetable instead of
+  treating the first clean `0 singleton / 0 gap-2` result as the end of the
+  search. Teacher-session and gap-1 targets are carried into the bounded quality
+  pass, session early-stop is disabled while that pass is active, and a final
+  local LNS slice is reserved for gap polishing.
+- The local tail is Pareto guarded: it can never lose periods or fixed lessons,
+  increase teacher sessions, introduce gap-2 debt, or regress singleton quality.
+  A gap-2 to gap-1 transition is allowed because it removes the higher-priority
+  debt; ordinary gap-1 regressions remain rejected. Fresh clicks keep request
+  seeds independent and do not use a static hint/template.
+- Exact default replay (1,566 expected periods, 54 fixed lessons) remains
+  complete, hard-valid, and application-constraint clean with zero singleton and
+  zero gap-2 sessions. The first candidate was `506 sessions / gap1=88`; a
+  180-second refinement reached `499 / 82`, then independent consecutive
+  refinements reached `495 / 78` and `493 / 74`. These are measured replay
+  outcomes, not a stored timetable.
+- Root-cause replay of the plain `default` first click found that a session-only
+  Phase Q could report a 461-session vector whose external period materializer
+  failed; the browser then retained the wide `522 / 28 singleton / gap2=8`
+  draft. The automatic large fresh path now uses the all-session period bridge
+  in both Phase F and Phase Q, and only retains the Phase-F incumbent if the
+  integrated quality attempt is inconclusive. Exact raw seed `101` now returns
+  `1,566/1,566`, `hard_ok=true`, zero application violations, `501 sessions`,
+  zero singleton, and zero gap-2 in about 86 seconds; independent seed `202`
+  returns `511 / 0 / 0` in about 104 seconds. A 60-second artificial deadline
+  still returns a complete hard-valid schedule, but may retain quality debt due
+  to the deliberately shorter budget.
+- The Agent package is rebuilt as `1.6.22`; its signed ZIP and manifest are
+  copied to both `agent_helper/dist` and `web/downloads`. The public package hash
+  is recorded in the release manifest, and the ZIP contains one root-level
+  `TKBCherryAgent.exe`.
+- Local verification: scheduler `163/163`, Agent `75/75`, bridge/UI `207/207`,
+  other Node UI `55/55`, root tests `25/25`, benchmark E2E `6/6`, Python/Node
+  syntax, and `git diff --check` pass. Isolated VPS staging passed scheduler
+  `163/163`, Agent `75/75`, Rust API `140/140`, validator `20/20`, ending with
+  `STAGING_TESTS_OK`.
+- Before deployment, the release gate required `UPDATE_OK`, matching health and
+  page/bridge cache markers, Agent manifest `1.6.22`, zero active/queued jobs,
+  and an Agent-OFF default replay followed by a refinement replay; those checks
+  are recorded below.
+
+### v1.56 production acceptance (deployed 2026-07-20)
+
+- `tools/vps-deploy/update-deploy.py` returned `UPDATE_OK`. Transaction backups:
+  `/opt/cherry-scheduler-backups/server-state-20260720-175029.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260720-175029.tar.gz`.
+- Public health serves API marker
+  `tkb_new-rust-api-2026-07-20-quality-frontier-polish-v56`; the page serves
+  cache `20260720-v156-quality-frontier-polish-v1`; the bridge asset is v261;
+  and the signed Agent manifest is `1.6.22` with archive SHA-256
+  `50c1ba1df6cfd5d977fa989eae4d0bc026fb6cd5c4c44f729164921b33e40963`.
+- Post-deploy browser acceptance with Agent **OFF** completed on the live
+  `default` school: `1566/1566` periods, `hard_ok=true`, application violations
+  `0`, `trống 2 tiết=0`, `dạy 1 tiết=0`, `491 buổi`, and `trống 1 tiết=69`.
+  The page ended with the concise green `Đã xếp xong!` notice and the VPS had
+  zero active/queued jobs and all `6/6` worker tokens available.
+- The quality frontier is therefore incremental: a later `Xếp tiếp` may lower
+  `buổi` and `trống 1 tiết` further, but it never replaces a complete or
+  hard-invalid schedule. Fresh clicks remain randomized and do not use a
+  static hint.
 
 ### v1.42 VPS-authoritative PWA wake (deployed 2026-07-19)
 
@@ -2601,19 +3008,19 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-20: `UPDATE_OK` for
-v1.50. Public health serves API marker
-`tkb_new-rust-api-2026-07-20-subject-period-constraint-rebuild-v50`; the page
-serves cache key `20260720-v150-subject-period-constraint-rebuild-v1`, and the
-bridge marker is `tkb-rust-api-v255-subject-period-constraint-rebuild`. Public
-health was idle with zero active/queued jobs and `6/6` tokens available after
-deployment. Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260720-031046.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260720-031046.tar.gz`.
-Public Agent release `1.6.18` and its signed manifest remain live. The archive
+v1.56. Public health serves API marker
+`tkb_new-rust-api-2026-07-20-quality-frontier-polish-v56`; the page serves cache
+key `20260720-v156-quality-frontier-polish-v1`, and the bridge marker is
+`tkb-rust-api-v261-quality-frontier-polish`. Public health was idle with zero
+active/queued jobs and `6/6` tokens available after deployment. Transaction
+backups are
+`/opt/cherry-scheduler-backups/server-state-20260720-175029.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260720-175029.tar.gz`.
+Public Agent release `1.6.22` and its signed manifest are live. The archive
 SHA-256 is
-`5fe2355440f5022d3bdc99f3cf33494873d5f4d9a9f88581841d7122271399ea`; the
+`50c1ba1df6cfd5d977fa989eae4d0bc026fb6cd5c4c44f729164921b33e40963`; the
 packed executable SHA-256 is
-`42c81626228dc4885543d271dcb485e657e8e0707a31577d0b930f25881f2fa3`.
+`28f8e499e37f989d1813c295c50b099861bc09069c059ee7fd7f9c0803ce72e1`.
 Stable active-status DOM histories, iPhone/PWA reattach, No-Agent/Cancel, and
 Agent handoff regressions remain covered by the local and isolated VPS suites.
 Workstations on Agent `1.6.2` or older require one manual install of a

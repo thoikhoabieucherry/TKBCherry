@@ -14,6 +14,10 @@ const authApiSource = fs.readFileSync(
   path.resolve(__dirname, "..", "web", "shared", "auth-api.js"),
   "utf8"
 );
+const runtimeSource = fs.readFileSync(
+  path.resolve(__dirname, "..", "web", "shared", "runtime.js"),
+  "utf8"
+);
 
 function memoryStorage(initial = {}){
   const values = new Map(Object.entries(initial).map(([key, value]) => [key, String(value)]));
@@ -102,6 +106,79 @@ test("logout releases the server session then clears both browser stores", async
   assert.equal(logoutCalls, 1);
   assert.equal(runtime.localStorage.getItem("TKB_SESSION"), null);
   assert.equal(runtime.sessionStorage.getItem("TKB_SESSION"), null);
+});
+
+test("central auth expiry is single-flight and remembers the protected return page", async () => {
+  const sessionStorage = memoryStorage();
+  const events = [];
+  const redirects = [];
+  let validationCalls = 0;
+  let expireCalls = 0;
+  const location = {
+    protocol:"https:",
+    hostname:"tkbcherry.com",
+    pathname:"/pages/sapxep.html",
+    search:"?sid=default",
+    replace(value){ redirects.push(String(value)); }
+  };
+  class CustomEvent {
+    constructor(type, options = {}){
+      this.type = String(type);
+      this.detail = options.detail || {};
+    }
+  }
+  const window = {
+    location,
+    sessionStorage,
+    TKBAuth:{
+      getSession(){ return {sessionToken:"expired-token"}; },
+      expireSession(){ expireCalls += 1; }
+    },
+    TKBAuthApi:{
+      async apiValidateSession(){ validationCalls += 1; return null; }
+    },
+    dispatchEvent(event){ events.push(event); return true; },
+    setInterval(){ return 0; },
+    clearInterval(){},
+    document:null
+  };
+  const document = {
+    readyState:"complete",
+    getElementById(){ return null; },
+    addEventListener(){},
+    body:{appendChild(){}}
+  };
+  window.window = window;
+  window.document = document;
+  const context = vm.createContext({
+    window,
+    document,
+    sessionStorage,
+    location,
+    CustomEvent,
+    console,
+    setInterval:window.setInterval,
+    clearInterval:window.clearInterval
+  });
+  vm.runInContext(runtimeSource, context, {filename:"runtime.js"});
+
+  const first = window.TKBRuntime.handleAuthExpired({
+    status:401,
+    source:"solve-result",
+    returnTo:"/pages/sapxep.html?sid=default"
+  });
+  const second = window.TKBRuntime.handleAuthExpired({status:401, source:"school-store"});
+  assert.deepEqual(await Promise.all([first, second]), [true, true]);
+
+  assert.equal(validationCalls, 1);
+  assert.equal(expireCalls, 1);
+  assert.deepEqual(redirects, ["/"]);
+  assert.equal(
+    sessionStorage.getItem("TKB_AUTH_RETURN_TO"),
+    "/pages/sapxep.html?sid=default"
+  );
+  assert.equal(events.filter(event => event.type === "tkb:auth-expired").length, 1);
+  assert.equal(events.filter(event => event.type === "tkb:auth-ready").length, 0);
 });
 
 test("registration IP history blocks only while its school or account still exists", () => {

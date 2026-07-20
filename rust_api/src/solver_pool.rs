@@ -1571,7 +1571,16 @@ fn solver_worker_demand(
     );
     if unified_partial_repair {
         2_usize.max(min_workers_per_job).min(max_workers_per_job)
-    } else if unified && unified_solve_kind == "fresh_complete_first" {
+    } else if unified
+        && matches!(
+            unified_solve_kind.as_str(),
+            "fresh_complete_first" | "repair_constraints"
+        )
+    {
+        // `repair_constraints` is also the compatibility value emitted by
+        // cached v1.53 PWA tabs for a fixed-only subject-period fresh solve.
+        // Give it the full quality worker allocation; partial repair was
+        // already excluded above and remains the lightweight two-worker lane.
         COMPLETE_FRESH_WORKERS_PER_JOB
             .max(min_workers_per_job)
             .min(max_workers_per_job)
@@ -1684,6 +1693,11 @@ mod tests {
             "ui_unified_solve_kind": "refine_complete",
             "auto_sort_mode": "teacher_session_opt"
         }});
+        let cached_v153_constraint_repair = json!({"settings": {
+            "ui_unified_auto_sort": true,
+            "ui_unified_solve_kind": "repair_constraints",
+            "auto_sort_mode": "teacher_session_opt"
+        }});
         let unified_partial = json!({"settings": {
             "ui_unified_auto_sort": true,
             "ui_unified_partial_repair": true,
@@ -1699,6 +1713,10 @@ mod tests {
         assert_eq!(solver_worker_demand(Some(&fast_request), 2, 6), 2);
         assert_eq!(solver_worker_demand(Some(&unified_fresh), 2, 6), 6);
         assert_eq!(solver_worker_demand(Some(&unified_refine), 2, 6), 6);
+        assert_eq!(
+            solver_worker_demand(Some(&cached_v153_constraint_repair), 2, 6),
+            6
+        );
         assert_eq!(solver_worker_demand(Some(&unified_partial), 2, 6), 2);
         assert_eq!(solver_worker_demand(Some(&unified_partial_kind), 2, 6), 2);
         assert_eq!(solver_worker_demand(None, 2, 6), 2);

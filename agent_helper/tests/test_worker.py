@@ -105,6 +105,14 @@ class CancelledSolver(FakeSolver):
         raise SolverCancelled("Agent was switched off")
 
 
+class MustNotRunSolver(FakeSolver):
+    def run(
+        self, active: Lease, *, heartbeat: object, stop_event: threading.Event
+    ) -> SolverResult:
+        del active, heartbeat, stop_event
+        raise AssertionError("solver started after Agent was switched off")
+
+
 class WorkerTests(unittest.TestCase):
     def test_full_flow_is_hello_lease_heartbeat_candidate_complete(self) -> None:
         api = FakeApi(lease())
@@ -149,6 +157,24 @@ class WorkerTests(unittest.TestCase):
         )
         self.assertTrue(worker.run_once())
         self.assertNotIn("fail", api.events)
+
+    def test_late_long_poll_lease_does_not_start_solver_after_off(self) -> None:
+        stop_event = threading.Event()
+
+        class StopDuringLeaseApi(FakeApi):
+            def lease(self) -> Lease | None:
+                value = super().lease()
+                stop_event.set()
+                return value
+
+        api = StopDuringLeaseApi(lease())
+        worker = AgentWorker(
+            api,
+            MustNotRunSolver(),  # type: ignore[arg-type]
+            stop_event=stop_event,
+        )
+        self.assertTrue(worker.run_once())
+        self.assertEqual(api.events, ["hello", "lease"])
 
 
 if __name__ == "__main__":

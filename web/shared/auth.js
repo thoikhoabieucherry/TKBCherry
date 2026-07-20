@@ -927,14 +927,18 @@
     return { ok: true, role: session.role, schoolId: session.schoolId };
   }
 
-  async function logout(){
-    if(window.TKBAuthApi && window.TKBAuthApi.apiLogout){
-      try{ await window.TKBAuthApi.apiLogout(); }catch(_){}
-    }
+  function expireSession(){
     setSession(null);
     registryCache = emptyRegistry();
     remoteRegistryLoaded = false;
     remoteSyncPromise = null;
+  }
+
+  async function logout(){
+    if(window.TKBAuthApi && window.TKBAuthApi.apiLogout){
+      try{ await window.TKBAuthApi.apiLogout(); }catch(_){}
+    }
+    expireSession();
   }
 
   function randomOtp(){
@@ -2237,6 +2241,7 @@
     transferContentForSchool,
     login,
     logout,
+    expireSession,
     registerSchool,
     verifyEmailOtp,
     requestEmailVerification,

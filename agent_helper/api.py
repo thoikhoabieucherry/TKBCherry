@@ -8,6 +8,7 @@ import math
 import socket
 import ssl
 import struct
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -231,6 +232,7 @@ class ApiClient:
         token: str | None = None,
         transport: HttpTransport | None = None,
         sleep: Any = time.sleep,
+        stop_event: threading.Event | None = None,
     ) -> None:
         self.config = config
         self.identity = identity
@@ -244,6 +246,18 @@ class ApiClient:
         self._worker_token: str | None = None
         self._transport = transport or UrllibTransport()
         self._sleep = sleep
+        self._stop_event = stop_event
+
+    def _raise_if_stopped(self) -> None:
+        if self._stop_event is not None and self._stop_event.is_set():
+            raise ApiError("Agent shutdown was requested")
+
+    def _wait_before_retry(self, delay: float) -> None:
+        if self._stop_event is None:
+            self._sleep(delay)
+            return
+        if self._stop_event.wait(max(0.0, delay)):
+            self._raise_if_stopped()
 
     def _require_worker_token(self) -> str:
         if self._worker_token is None:
@@ -294,6 +308,7 @@ class ApiClient:
             else max(1, retry_attempts)
         )
         for attempt in range(attempts):
+            self._raise_if_stopped()
             response: HttpResponse | None = None
             try:
                 response = self._transport.request(
@@ -307,7 +322,7 @@ class ApiClient:
             except TransportError as exc:
                 last_transport_error = exc
                 if attempt + 1 < attempts:
-                    self._sleep(self._retry_delay(attempt))
+                    self._wait_before_retry(self._retry_delay(attempt))
                     continue
                 raise ApiError(f"request to {path} failed after retries") from exc
 
@@ -352,7 +367,7 @@ class ApiClient:
                 return response.status, decoded
 
             if response.status in _RETRYABLE_STATUSES and attempt + 1 < attempts:
-                self._sleep(self._retry_delay(attempt, response))
+                self._wait_before_retry(self._retry_delay(attempt, response))
                 continue
             raise ApiError(
                 f"server rejected {path} with HTTP {response.status}",
@@ -435,10 +450,10 @@ class ApiClient:
             idempotency_key=make_idempotency_key(
                 "lease", self.identity.agent_id, request_id
             ),
-            timeout=max(
-                self.config.request_timeout_seconds,
-                self.config.poll_wait_seconds + 10,
-            ),
+            # The server is expected to answer when waitSeconds elapses. A
+            # small transport margin keeps the socket bounded without turning
+            # a configured 60-second poll into a guaranteed early timeout.
+            timeout=max(1.0, float(self.config.poll_wait_seconds) + 5.0),
         )
         if status == 204 or response is None:
             return None

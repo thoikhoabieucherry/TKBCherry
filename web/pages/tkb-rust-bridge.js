@@ -1,11 +1,11 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v255-subject-period-constraint-rebuild";
+  const VERSION = "tkb-rust-api-v261-quality-frontier-polish";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
-    const FIRST_QUALITY_GATE_CEILING_SECONDS = 110;
+    const FIRST_QUALITY_GATE_CEILING_SECONDS = 130;
     const ROBUST_AUTO_DURATION_SECONDS = 180;
     const DEEP_AUTO_DURATION_SECONDS = 180;
     const MANUAL_FRESH_RETRY_STEP_SECONDS = 5;
@@ -425,8 +425,10 @@
     let progressFirstPaintTimer = 0;
     let progressState = null;
     const parsedSolverResponsePayloads = new WeakMap();
+    const deferredBackendResultPayloads = new WeakMap();
     let activeSolveAbortController = null;
     let activeBackendJobId = "";
+    let deferredBackendResultJobId = "";
     let pendingBackendResumeTimer = 0;
     let pendingBackendResumeDueAt = 0;
   let pendingBackendResumeTimerGeneration = 0;
@@ -434,6 +436,8 @@
   let pendingBackendWakeRequested = false;
   let pendingBackendWakeNeedsEmptyProbe = false;
     let backendResumeEpoch = 0;
+    let backendAuthRequired = false;
+    let backendAuthFlowStarted = false;
     let scheduleMutationCancellationInFlight = null;
     let activeBackendResumeTarget = null;
     // A foreground wakeup can overlap the previous page's terminal callback.
@@ -1382,6 +1386,14 @@
   }
 
   async function backendSolverState(jobId){
+    if(backendAuthRequired){
+      return {
+        ok:false,
+        kind:"auth_required",
+        authRequired:true,
+        status:Number(window.__TKB_SOLVER_AUTH_REQUIRED?.status || 401) || 401
+      };
+    }
     const apiBase = await rustApiBase();
     if(!apiBase) return null;
     const trackedJobId = String(jobId || "").trim();
@@ -1397,6 +1409,15 @@
         signal:controller.signal
       });
       const payload = await response.json().catch(() => null);
+      if(response.status === 401 || response.status === 403){
+        suspendBackendResumeForAuth(response.status, payload, "solver-state");
+        return {
+          ok:false,
+          kind:"auth_required",
+          authRequired:true,
+          status:Number(response.status || 0) || 0
+        };
+      }
       if(trackedJobId && payload && typeof payload === "object"){
         const matchingJob = (Array.isArray(payload.jobs) ? payload.jobs : [])
           .find(item => String(item?.jobId || "") === trackedJobId);
@@ -1437,6 +1458,7 @@
   }
 
   async function inspectExistingBackendJobForManualSolve(data){
+    if(backendAuthRequired) return {kind:"auth_required"};
     if(!data || window.__TKB_SERVER_JOB_RESUME_STARTED === true) return null;
     if(scheduleMutationTombstone()) return null;
     const pending = readPendingBackendJob();
@@ -1448,6 +1470,7 @@
       ) return {kind:"pending", job:pending};
     }
     const state = await backendSolverState("");
+    if(backendAuthRequired || state?.authRequired === true) return {kind:"auth_required"};
     if(!state || state.ok !== true) return null;
     const selected = selectDiscoverableBackendJob(state, data, Date.now());
     if(selected.job){
@@ -1494,6 +1517,53 @@
     return err;
   }
 
+  function serverJobAuthRequiredError(status, payload){
+    const err = detachedServerJobError("solver_result_auth_required", status, payload);
+    err.message = "Phi\u00ean \u0111\u0103ng nh\u1eadp \u0111\u00e3 h\u1ebft h\u1ea1n. L\u01b0\u1ee3t x\u1ebfp v\u1eabn \u0111\u01b0\u1ee3c gi\u1eef tr\u00ean m\u00e1y ch\u1ee7; \u0111\u0103ng nh\u1eadp l\u1ea1i \u0111\u1ec3 nh\u1eadn k\u1ebft qu\u1ea3.";
+    err.authRequired = true;
+    return err;
+  }
+
+  function suspendBackendResumeForAuth(status, payload, source){
+    const value = Number(status || 0) || 0;
+    if(value !== 401 && value !== 403) return false;
+    backendAuthRequired = true;
+    backendResumeEpoch += 1;
+    cancelPendingBackendResume();
+    stopProgressTicker();
+    stopStatusDots();
+    setAutoSortButtonBusy(false);
+    setAutoSortHomeHiddenState(false);
+    window.__TKB_SOLVER_AUTH_REQUIRED = {
+      status:value,
+      source:String(source || "solver"),
+      at:Date.now()
+    };
+    setStatus("Phi\u00ean \u0111\u0103ng nh\u1eadp \u0111\u00e3 h\u1ebft h\u1ea1n. \u0110ang chuy\u1ec3n \u0111\u1ebfn trang \u0111\u0103ng nh\u1eadp...", "warning");
+    if(backendAuthFlowStarted) return true;
+    backendAuthFlowStarted = true;
+    try{
+      const handler = window.TKBRuntime?.handleAuthExpired;
+      if(typeof handler === "function"){
+        Promise.resolve(handler({
+          status:value,
+          source:String(source || "solver"),
+          payload:payload && typeof payload === "object" ? payload : null,
+          returnTo:String(window.location?.pathname || "") + String(window.location?.search || "")
+        })).catch(() => {});
+      }else if(typeof window.location?.replace === "function"){
+        window.location.replace("/");
+      }
+    }catch(_){ }
+    return true;
+  }
+
+  function clearBackendAuthRequired(){
+    backendAuthRequired = false;
+    backendAuthFlowStarted = false;
+    try{ window.__TKB_SOLVER_AUTH_REQUIRED = null; }catch(_){ }
+  }
+
   function transientServerJobStatus(status){
     const value = Number(status || 0) || 0;
     return value === 401
@@ -1527,7 +1597,7 @@
       : 0;
     const requestedTimeoutMs = Math.max(0, Number(timeoutMs || 0) || 0);
     // The live request already includes its configured response reserve. Do
-    // not silently replace a 180s + 10s automatic ceiling with the generic
+    // not silently replace a 180s + 30s automatic ceiling with the generic
     // 180s + 90s reconnect reserve. Reload-only observers have no request
     // timeout, so they still use the wider reported-budget fallback.
     const boundedTimeoutMs = Math.max(
@@ -1621,7 +1691,8 @@
         if(transientServerJobStatus(responseStatus) && !terminalServerJobFailure(responseStatus, transportPayload)){
           networkFailures += 1;
           if(responseStatus === 401 || responseStatus === 403){
-            throw detachedServerJobError("solver_result_auth_required", responseStatus, transportPayload);
+            suspendBackendResumeForAuth(responseStatus, transportPayload, "solve-result");
+            throw serverJobAuthRequiredError(responseStatus, transportPayload);
           }
           if(
             responseStatus === 404
@@ -1796,6 +1867,7 @@
     const jobId = String(metadata.jobId || "").trim();
     const data = getData();
     if(!jobId || !data) return false;
+    if(backendAuthRequired) return false;
     if(automaticBackendResumeSuppressed()) return false;
 
     const scheduleFingerprint = String(
@@ -1991,10 +2063,17 @@
         || err?.kind === "solver_result_unknown"
         || err?.kind === "solver_result_auth_required";
       if(keep){
-        // Reconnect metadata is diagnostic only; visibly this remains the
-        // same running job until Stop or a terminal server result arrives.
-        setStatus("\u0110ang s\u1eafp x\u1ebfp...", "info");
-        schedulePendingBackendResume(0, SERVER_SOLVER_JOB_BACKGROUND_RETRY_MS);
+        if(err?.kind === "solver_result_auth_required" || err?.authRequired === true){
+          // Authentication is not a transport outage. Keep the canonical id,
+          // stop polling, and let the central login flow resume it after the
+          // same owner authenticates again.
+          suspendBackendResumeForAuth(err?.status, err?.payload, "solver-reattach");
+        }else{
+          // Reconnect metadata is diagnostic only; visibly this remains the
+          // same running job until Stop or a terminal server result arrives.
+          setStatus("\u0110ang s\u1eafp x\u1ebfp...", "info");
+          schedulePendingBackendResume(0, SERVER_SOLVER_JOB_BACKGROUND_RETRY_MS);
+        }
       }else{
         // A terminal quality/deadline response can legitimately contain no
         // replacement candidate even though the incumbent timetable is still
@@ -2159,6 +2238,10 @@
   function rethrowCancelledSolve(err, runId){
     if(err?.kind === "user_cancelled") throw err;
     throwIfStopRequested(runId);
+  }
+
+  function rethrowAuthRequiredSolve(err){
+    if(err?.kind === "solver_result_auth_required" || err?.authRequired === true) throw err;
   }
 
   async function waitForBackendSolverTurn(
@@ -3081,6 +3164,30 @@
     removePendingBackendJob(value);
   }
 
+  function deferBackendResultSettlement(jobId, payload){
+    const value = String(jobId || "").trim();
+    if(!value || !payload || typeof payload !== "object") return false;
+    deferredBackendResultJobId = value;
+    try{ deferredBackendResultPayloads.set(payload, value); }catch(_){ }
+    return true;
+  }
+
+  function settleDeferredBackendResult(jobId){
+    const value = String(jobId || deferredBackendResultJobId || "").trim();
+    if(!value) return false;
+    if(deferredBackendResultJobId === value) deferredBackendResultJobId = "";
+    clearActiveBackendJobId(value, {force:true});
+    return true;
+  }
+
+  function settleDeferredBackendResultForPayload(payload){
+    let jobId = "";
+    try{ jobId = String(deferredBackendResultPayloads.get(payload) || "").trim(); }catch(_){ }
+    if(!jobId) return false;
+    try{ deferredBackendResultPayloads.delete(payload); }catch(_){ }
+    return settleDeferredBackendResult(jobId);
+  }
+
   function settleStoppedSolveUi(jobId, controller){
     const value = String(jobId || "").trim();
     cancelPendingBackendResume();
@@ -3560,6 +3667,46 @@
     }
     try{ callMaybe("setAutoSortStopVisible", [false]); }catch(_){}
     try{ callMaybe("resetAutoSortStopRequest"); }catch(_){}
+  }
+
+  function settleAuthoritativeIdleSolveUi(options){
+    // A reconnect warning is only provisional until the owner-scoped VPS
+    // state probe completes. Once that probe confirms there is no canonical
+    // job, clear the terminal-looking warning as well as the durable job id;
+    // otherwise the page stays stuck on "Nối lại" even though Play is usable.
+    if(localSolveLifecycleActive()) return false;
+    // An ordinary foreground wake also receives an authoritative idle state.
+    // Clear a visible terminal warning/error even when there was no durable
+    // pending id (for example an old "Chưa đủ" left by a suspended iOS tab).
+    // Do not otherwise touch an idle page merely because it was foregrounded.
+    const progressWrap = document.getElementById("autoSortProgress");
+    const visibleAttention = !!progressWrap
+      && progressWrap.hidden !== true
+      && (
+        progressWrap.classList.contains("is-warning")
+        || progressWrap.classList.contains("is-error")
+      );
+    if(options?.force !== true && !visibleAttention) return false;
+    const statusText = String(document.getElementById("statusMsg")?.textContent || "").trim();
+    const preserveCompletion = statusText === SOLVE_COMPLETE_MESSAGE;
+    stopProgressTicker();
+    stopStatusDots();
+    progressState = null;
+    try{ window.__TKB_RUST_LAST_LIVE_PROGRESS = null; }catch(_){ }
+    try{
+      window.__TKB_RUST_PROGRESS_STATE = {
+        percent:0,
+        label:"",
+        phase:"idle",
+        updatedAt:Date.now()
+      };
+    }catch(_){ }
+    setAutoSortButtonBusy(false);
+    hideAutoSortProgressDom();
+    callMaybe("hideAutoSortProgress", [{preserveStopRequest:false}]);
+    setAutoSortHomeHiddenState(false);
+    if(!preserveCompletion) setStatus("", "ok");
+    return true;
   }
 
   function autoSortProgressFinishedInDom(){
@@ -5789,6 +5936,16 @@
     const backendDetail = String(err?.payload?.error || err?.payload?.detail || "").trim();
     const text = `${kind} ${backendDetail} ${raw}`.toLowerCase();
     const normalizedKind = kind.toLowerCase();
+    if(normalizedKind === "solver_result_auth_required" || err?.authRequired === true){
+      return {
+        title: "Phi\u00ean \u0111\u0103ng nh\u1eadp h\u1ebft h\u1ea1n",
+        message: raw || "L\u01b0\u1ee3t x\u1ebfp v\u1eabn \u0111\u01b0\u1ee3c gi\u1eef tr\u00ean m\u00e1y ch\u1ee7.",
+        level: "warning",
+        statusLevel: "warning",
+        statusMessage: "Phi\u00ean \u0111\u0103ng nh\u1eadp \u0111\u00e3 h\u1ebft h\u1ea1n.",
+        progressLabel: "\u0110\u0103ng nh\u1eadp"
+      };
+    }
     if(
       err?.keepPendingServerJob === true
       || normalizedKind === "solver_result_wait_timeout"
@@ -6129,6 +6286,7 @@
       return {payload, seedAttemptsUsed:usedSeedAttempts || 0};
     }catch(retryErr){
       rethrowCancelledSolve(retryErr, runId);
+      rethrowAuthRequiredSolve(retryErr);
       if(
         baseSettings?.ui_stop_after_first_complete_schedule !== true
         || retryErr?.kind === "solver_busy"
@@ -6156,6 +6314,7 @@
           return {payload, seedAttemptsUsed:index + 1};
         }catch(seedErr){
           rethrowCancelledSolve(seedErr, runId);
+          rethrowAuthRequiredSolve(seedErr);
           lastError = seedErr;
           console.warn(`[${VERSION}] complete schedule seed ${seeds[index]} skipped after retry error`, seedErr);
         }
@@ -6883,23 +7042,28 @@
     });
     const targets = qualityTargets || practicalTeacherQualityTargets(safeData);
     const teacherTarget = positiveNumberSetting(targets?.teacherTarget);
-    const gap1Target = nonnegativeNumberSetting(targets?.gap1Target);
     const teacherDebt = teacherTarget > 0
       ? quality.teacherSessions - teacherTarget
       : 0;
-    const gap1Debt = gap1Target != null
-      ? quality.gap1 - gap1Target
-      : 0;
-    const teacherRebuildMargin = teacherTarget > 0
-      ? Math.max(8, Math.ceil(teacherTarget * 0.04))
-      : Number.POSITIVE_INFINITY;
-    const gap1RebuildMargin = gap1Target != null
-      ? Math.max(12, Math.ceil(Math.max(1, gap1Target) * 0.35))
-      : Number.POSITIVE_INFINITY;
-    return quality.onePeriod > 0
-      || quality.gap2Plus > 0
-      || teacherDebt >= teacherRebuildMargin
-      || gap1Debt >= gap1RebuildMargin;
+    // A complete timetable with zero one-period sessions and zero gap-2 is a
+    // valuable incumbent even when its teacher-session count is still above
+    // the practical target. Refine that incumbent in place so the next click
+    // spends its budget compacting sessions instead of rebuilding the same
+    // feasibility trajectory. Rebuild from fixed anchors only when the
+    // visible schedule still carries hard quality debt; that is the case where
+    // the incumbent neighbourhood is genuinely too rough (for example the
+    // former 612-session/75-singleton result).
+    const hasHardQualityDebt = quality.onePeriod > 0 || quality.gap2Plus > 0;
+    if(!hasHardQualityDebt) return false;
+    if(expected < 900) return true;
+    const severeSingletonDebt = quality.onePeriod >= Math.max(
+      40,
+      teacherTarget > 0 ? Math.ceil(teacherTarget * 0.12) : 40
+    );
+    const severeGap2Debt = quality.gap2Plus >= 10;
+    const severeTeacherDebt = teacherTarget > 0
+      && teacherDebt >= Math.max(80, Math.ceil(teacherTarget * 0.20));
+    return severeSingletonDebt || severeGap2Debt || severeTeacherDebt;
   }
 
   function noBetterScheduleStatus(payload){
@@ -7386,6 +7550,7 @@
       );
     }catch(err){
       rethrowCancelledSolve(err, runId);
+      rethrowAuthRequiredSolve(err);
       if(!stagedExistingErrorAllowsFreshRetry(err)) throw err;
       fillError = err;
     }
@@ -7448,6 +7613,7 @@
       });
     }catch(err){
       rethrowCancelledSolve(err, runId);
+      rethrowAuthRequiredSolve(err);
       console.warn(`[${VERSION}] staged quality slice skipped`, err);
       return markStagedExistingPayload(fillPayload, state, "fill", {
         ui_staged_quality_error: String(err && (err.message || err) || err).slice(0, 180)
@@ -7627,6 +7793,7 @@
       );
     }catch(err){
       rethrowCancelledSolve(err, runId);
+      rethrowAuthRequiredSolve(err);
       if(err?.kind === "solver_busy") throw err;
       console.warn(`[${VERSION}] initial fast draft skipped`, err);
       return null;
@@ -7664,6 +7831,7 @@
       }
     }catch(err){
       rethrowCancelledSolve(err, runId);
+      rethrowAuthRequiredSolve(err);
       if(err?.kind === "solver_busy") throw err;
       console.warn(`[${VERSION}] initial fast draft quality slice skipped`, err);
     }
@@ -8195,6 +8363,17 @@
         || Object.values(c.subjectGroup || {}).some(rootHasRequirement);
     }
 
+    function normalizedConstraintViolationText(item){
+      let text = String(item?.message || item || "").toLowerCase();
+      try{
+        text = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      }catch(_){ }
+      // Vietnamese d-stroke is not a decomposable diacritic, so NFD leaves it
+      // intact. Keep this escape ASCII-safe because these messages come from
+      // the localized validator and are also used to choose the solve lane.
+      return text.replace(/\u0111/g, "d");
+    }
+
     function isSubjectPeriodConstraintViolation(item){
       const kind = String(item?.kind || "").trim().toLowerCase();
       if(
@@ -8205,16 +8384,26 @@
         || kind.startsWith("subject.linkedday")
         || kind.startsWith("subjectgroup.linkedday")
       ) return true;
-      let text = String(item?.message || item || "").toLowerCase();
-      try{
-        text = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/Ä‘/g, "d");
-      }catch(_){ }
+      const text = normalizedConstraintViolationText(item);
       return (
         (text.includes("tiet xep lien") && (text.includes("so buoi/cum") || text.includes("min") || text.includes("max")))
         || text.includes("tranh xep lien tiet 2-3")
         || text.includes("tranh xep lien tiet 3-4")
         || text.includes("tranh xep tiet lien vao")
       );
+    }
+
+    function isDeferredIncompleteLessonBlockMinimumViolation(item){
+      const kind = String(item?.kind || "").trim().toLowerCase();
+      if(
+        kind.startsWith("subject.lessonblocks.min")
+        || kind.startsWith("subject.lessonblock.min")
+        || kind.startsWith("subjectgroup.lessonblocks.min")
+        || kind.startsWith("subjectgroup.lessonblock.min")
+      ) return true;
+      const text = normalizedConstraintViolationText(item);
+      return text.includes("chua dat min")
+        && (text.includes("tiet xep lien") || text.includes("cum"));
     }
 
     function effectiveSettingsForSolve(settings, data){
@@ -8471,9 +8660,10 @@
               ? Number(effective.ui_unified_repair_ceiling_seconds || 0)
               : (unifiedKind === "refine_complete"
                   ? Number(effective.ui_unified_refine_ceiling_seconds || 0)
-                  : (effective.ui_unified_initial_fast_stage === true
-                      ? Number(effective.ui_unified_initial_ceiling_seconds || 0)
-                      : automaticSolverCeilingSeconds(expectedLessonCount(data), data))));
+              : (unifiedKind === "fresh_complete_first"
+                  && Number(effective.ui_unified_initial_ceiling_seconds || 0) > 0
+                    ? Number(effective.ui_unified_initial_ceiling_seconds || 0)
+                    : automaticSolverCeilingSeconds(expectedLessonCount(data), data))));
         const unifiedCeiling = Math.max(stagedExistingCeiling ? 1 : 10, Math.round(requestedCeiling || 0));
         const capSeconds = key => {
           const current = Number(effective[key] || 0) || unifiedCeiling;
@@ -11040,18 +11230,27 @@
     }
     const appliedMetrics = payload?.metrics || {};
     const applySaveStartedAt = Date.now();
-    callMaybe("saveStore", [{
+    const saveStoreFn = window.saveStore;
+    if(typeof saveStoreFn === "function"){
+      await Promise.resolve(saveStoreFn.call(window, {
       force:true,
+      awaitRemote:true,
       trustedSolverApply:true,
       knownStats:{
         total:metricNumber(appliedMetrics.expected_periods),
         assigned:metricNumber(appliedMetrics.scheduled_periods),
         missing:metricNumber(appliedMetrics.unassigned_periods)
       }
-    }]);
+      }));
+    }
     traceSolveStep("solve:apply-save-done", {
       elapsedMs:Math.max(0, Date.now() - applySaveStartedAt)
     });
+    // Keep the canonical result recoverable until validation, DATA mutation,
+    // and persistence have all succeeded. Mobile Safari may terminate the PWA
+    // at any await above; settling before this commit point leaves a blank grid
+    // while also hiding the completed server result on the next launch.
+    settleDeferredBackendResultForPayload(payload);
     scheduleUiRefresh();
     await yieldApplySlice(true);
     traceSolveStep("solve:apply-done", {
@@ -11064,7 +11263,20 @@
 
   async function postSolve(settings, dataOverride, conflictRetry){
     const data = dataOverride || getData();
+    if(
+      window.__TKB_DEFER_SERVER_RESULT_SETTLEMENT_UNTIL_APPLY === true
+      && deferredBackendResultJobId
+    ){
+      // A newer canonical request is taking over the one durable pending slot.
+      // The current solve pipeline already owns the previous decoded payload.
+      settleDeferredBackendResult(deferredBackendResultJobId);
+    }
     if(!data) throw new Error("Không tìm thấy DATA của giao diện.");
+    if(backendAuthRequired){
+      throw serverJobAuthRequiredError(
+        Number(window.__TKB_SOLVER_AUTH_REQUIRED?.status || 401) || 401
+      );
+    }
     const resumeLifecycleActive = window.__TKB_SERVER_JOB_RESUME_STARTED === true;
     const explicitResumeOnly = settings?.ui_resume_existing_server_job_only === true;
     const consumedResumeJobId = String(window.__TKB_SERVER_JOB_RESUME_CONSUMED_ID || "").trim();
@@ -11627,7 +11839,8 @@
           }
         }
         if(responseStatus === 401 || responseStatus === 403){
-          throw detachedServerJobError("solver_result_auth_required", responseStatus);
+          suspendBackendResumeForAuth(responseStatus, null, "solve-data");
+          throw serverJobAuthRequiredError(responseStatus);
         }
         if(responseStatus === 408 || responseStatus === 425 || responseStatus >= 500){
           transientPostFailures += 1;
@@ -11734,6 +11947,10 @@
         throw timeoutErr;
       }
       rethrowCancelledSolve(err, activeSolveRunId);
+      if(err?.kind === "solver_result_auth_required" || err?.authRequired === true){
+        suspendBackendResumeForAuth(err?.status, err?.payload, "solver-request");
+        throw err;
+      }
       if(err?.kind === "solver_result_wait_timeout"){
         // iOS suspends JavaScript timers while the user switches apps. When
         // the page returns, the local wait deadline may already be past even
@@ -11812,6 +12029,10 @@
       rawPayload = await response.json().catch(() => ({}));
     }
     const payload = normalizePayloadForUiConstraints(data, rawPayload);
+    if(response?.status === 401 || response?.status === 403){
+      suspendBackendResumeForAuth(response.status, payload, "solve-response");
+      throw serverJobAuthRequiredError(response.status, payload);
+    }
     if(transientServerJobStatus(response?.status) && !terminalServerJobFailure(response?.status, payload)){
       throw detachedServerJobError("solver_result_transport_unavailable", response?.status, payload);
     }
@@ -11825,8 +12046,8 @@
       // already-consumed VPS job.
       consumeActiveBackendResumeTarget(solveRunId);
     }
-    clearActiveBackendJobId(solveRunId, {force:resumeExistingServerJobOnly});
     if(!response.ok){
+      clearActiveBackendJobId(solveRunId, {force:resumeExistingServerJobOnly});
       window.__TKB_SOLVER_LAST_ERROR_PAYLOAD = payload;
       const busy = Number(response.status || 0) === 409 && String(payload?.error || "") === "solver_busy";
       const noComplete = Number(response.status || 0) === 422
@@ -11864,6 +12085,16 @@
       if(noComplete) err.kind = "no_complete_schedule_before_deadline";
       if(payload && payload.kind) err.backendUnavailable = false;
       throw err;
+    }
+    const completion = payloadCompletion(payload);
+    const deferSettlement = window.__TKB_DEFER_SERVER_RESULT_SETTLEMENT_UNTIL_APPLY === true
+      && effectiveSettings.ui_solver_async_job === true
+      && completion.complete
+      && payloadHasUsableSchedule(payload);
+    if(deferSettlement){
+      deferBackendResultSettlement(solveRunId, payload);
+    }else{
+      clearActiveBackendJobId(solveRunId, {force:resumeExistingServerJobOnly});
     }
     return payload;
   }
@@ -12685,6 +12916,7 @@
     window.__TKB_SOLVER_LAST_FAILURE_RETRYABLE = false;
     window.__TKB_SOLVER_LAST_REJECTED_CANDIDATE = null;
     window.__TKB_ACTIVE_SOLVE_RUN_ID = activeSolveRunId;
+    window.__TKB_DEFER_SERVER_RESULT_SETTLEMENT_UNTIL_APPLY = true;
     window.__TKB_SOLVE_BACKEND_POSTED = false;
     window.__TKB_SOLVE_QUEUE_WAITING = false;
     window.__TKB_SOLVE_RELEASED_CONSTRAINT_VIOLATIONS = 0;
@@ -12733,6 +12965,7 @@
         }
         if(!isCurrentSolveRun(activeSolveRunId)) return null;
       }catch(firstErr){
+        rethrowAuthRequiredSolve(firstErr);
         if(firstErr?.kind === "solver_busy"){
           throw firstErr;
         }else if(!shouldRetrySolveError(settings, firstErr)){
@@ -12836,6 +13069,7 @@
             }
           }catch(seedErr){
             rethrowCancelledSolve(seedErr, activeSolveRunId);
+            rethrowAuthRequiredSolve(seedErr);
             console.warn(`[${VERSION}] complete schedule seed ${seeds[index]} skipped`, seedErr);
           }
         }
@@ -12869,6 +13103,7 @@
             }
           }catch(seedErr){
             rethrowCancelledSolve(seedErr, activeSolveRunId);
+            rethrowAuthRequiredSolve(seedErr);
             console.warn(`[${VERSION}] shuffle teacher compact seed ${seed} skipped`, seedErr);
           }
         }
@@ -12899,6 +13134,7 @@
               }
             }catch(seedErr){
               rethrowCancelledSolve(seedErr, activeSolveRunId);
+              rethrowAuthRequiredSolve(seedErr);
               console.warn(`[${VERSION}] teacher-session fast portfolio seed ${seed} skipped`, seedErr);
             }
           }
@@ -12930,6 +13166,7 @@
             }
           }catch(zeroOneErr){
             rethrowCancelledSolve(zeroOneErr, activeSolveRunId);
+            rethrowAuthRequiredSolve(zeroOneErr);
             console.warn(`[${VERSION}] zero-one quality retry seed ${seeds[index]} skipped`, zeroOneErr);
           }
         }
@@ -12976,6 +13213,7 @@
             if(qualityNoImproveAttempts >= 1) break;
           }catch(qualityErr){
             rethrowCancelledSolve(qualityErr, activeSolveRunId);
+            rethrowAuthRequiredSolve(qualityErr);
             console.warn(`[${VERSION}] teacher-session quality retry ${qualityAttempt + 1} skipped`, qualityErr);
             break;
           }
@@ -12999,6 +13237,7 @@
             }
           }catch(optimizeErr){
             rethrowCancelledSolve(optimizeErr, activeSolveRunId);
+            rethrowAuthRequiredSolve(optimizeErr);
             console.warn(`[${VERSION}] final teacher gap optimize skipped`, optimizeErr);
             try{
               payload.solver = payload.solver && typeof payload.solver === "object" ? payload.solver : {};
@@ -13028,6 +13267,7 @@
           }
         }catch(afternoonFillErr){
           rethrowCancelledSolve(afternoonFillErr, activeSolveRunId);
+          rethrowAuthRequiredSolve(afternoonFillErr);
           console.warn(`[${VERSION}] afternoon fill pass skipped`, afternoonFillErr);
         }
       }
@@ -13452,13 +13692,29 @@
         publishE2EState("cancelled", null, {message: err.message || "user_cancelled"});
         return null;
       }
-      console.error(`[${VERSION}] solve failed`, err);
       const rawError = String(err && (err.message || err) || err);
       const friendly = friendlySolveError(err);
       if(err?.payload && typeof err.payload === "object"){
         window.__TKB_SOLVER_LAST_ERROR_PAYLOAD = err.payload;
       }
       const failedKind = String(err?.kind || err?.payload?.kind || "").trim().toLowerCase();
+      if(failedKind === "solver_result_auth_required" || err?.authRequired === true){
+        const authMessage = "Phi\u00ean \u0111\u0103ng nh\u1eadp \u0111\u00e3 h\u1ebft h\u1ea1n. L\u01b0\u1ee3t x\u1ebfp v\u1eabn \u0111\u01b0\u1ee3c gi\u1eef tr\u00ean m\u00e1y ch\u1ee7.";
+        suspendBackendResumeForAuth(err?.status, err?.payload, "solver-ui");
+        window.__TKB_SOLVER_LAST_ERROR_RAW = rawError;
+        window.__TKB_SOLVER_LAST_ERROR = authMessage;
+        finishProgress("\u0110\u0103ng nh\u1eadp", "warning");
+        setStatus(authMessage, "warning");
+        publishE2EState("auth_required", err?.payload || null, {
+          title:"Phi\u00ean \u0111\u0103ng nh\u1eadp h\u1ebft h\u1ea1n",
+          message:authMessage,
+          rawError,
+          pendingJobId:readPendingBackendJob()?.jobId || ""
+        });
+        refreshStatsPopoverIfOpen();
+        return null;
+      }
+      console.error(`[${VERSION}] solve failed`, err);
       window.__TKB_SOLVER_LAST_FAILURE_RETRYABLE = retryableManualFreshSolveFailure(settings, err);
       const snapshotExpected = Math.max(0, Number(expectedLessonCount(dataForProgress || getData()) || 0) || 0);
       const snapshotScheduled = Math.max(0, Number(snapshotScheduledLessonCount(scheduleSnapshot) || 0) || 0);
@@ -13505,6 +13761,7 @@
       refreshStatsPopoverIfOpen();
       return null;
     }finally{
+      window.__TKB_DEFER_SERVER_RESULT_SETTLEMENT_UNTIL_APPLY = false;
       if(isCurrentSolveRun(activeSolveRunId)){
         stopProgressTicker();
         window.__TKB_RUST_SOLVER_RUNNING = false;
@@ -13651,6 +13908,9 @@
         pendingBackendResumeBlocked,
         schedulePendingBackendResume,
         resumePendingBackendJobOnLoad,
+        backendAuthRequired:() => backendAuthRequired,
+        suspendBackendResumeForAuth,
+        clearBackendAuthRequired,
         postSolve
       };
     }
@@ -13894,8 +14154,10 @@
   }
 
   function applyUnifiedReferenceWatchdogReserve(settings){
-    settings.ui_unified_reference_watchdog_reserve_ms = 5000;
-    settings.ui_client_timeout_reserve_ms = 10000;
+    settings.ui_unified_reference_watchdog_reserve_ms = 10000;
+    // Keep the solver watchdog handoff tight, while giving the browser an
+    // additional bounded window to receive and decode the terminal payload.
+    settings.ui_client_timeout_reserve_ms = 30_000;
     return settings;
   }
 
@@ -13968,19 +14230,21 @@
       hasKnownConstraintViolations ? knownViolations : undefined,
       expectedCount
     );
-    // A complete, hard-valid timetable is already a usable incumbent. Keep
-    // it as the starting point and run the normal v1.34-style refinement
-    // lane (up to the 180-second ceiling). Rebuilding from fixed lessons on
-    // every rough-looking result made later clicks nondeterministic and could
-    // return the feasibility draft before quality search ran.
+    // A complete timetable is always the incumbent for a later click.  Even a
+    // rough one must enter the same strict wide-cap refinement lane: rebuilding
+    // from fixed anchors discards the useful arrangement and can spend the
+    // whole 180-second budget proving a fresh cap without producing a better
+    // result.  The backend keeps this incumbent as an atomic Pareto fallback.
     const qualityDebtFreshRebuild = false;
     const useInitialFastStage = !completeState
       && countScheduledLessons(safeData, {flexibleOnly:true}) <= 0
       && (hasKnownConstraintViolations
         ? knownViolations === 0
         : currentConstraintViolations(1).length === 0);
-    if(completeState){
+    if(completeState && !qualityDebtFreshRebuild){
       clearFreshOnlyFlags(settings);
+      settings.ui_disable_initial_fast_draft = true;
+      settings.ui_force_initial_fast_draft = false;
       settings.ui_unified_solve_kind = "refine_complete";
       settings.ui_use_existing_complete_incumbent = true;
       // Tell the server that this complete, constraint-clean schedule was
@@ -14049,7 +14313,16 @@
       settings.optimization_continue_quality_search = true;
       settings.ui_stop_refinement_when_good_enough = false;
       settings.optimization_refine_try_lower_session_cap = true;
-      settings.optimization_benders_lean_refinement_periods = true;
+      const subjectPeriodRefinement = hasSubjectPeriodRequirements(safeData);
+      settings.optimization_refine_strict_integrated_period_bridge =
+        subjectPeriodRefinement;
+      // Subject-period requirements must travel with every session decision.
+      // A lean session-only proposal can look much better (for example 484
+      // teacher sessions) and still fail as soon as concrete periods are
+      // allocated, causing the whole refinement click to return unchanged.
+      // Plain schools keep the faster Benders materialization path.
+      settings.optimization_benders_lean_refinement_periods =
+        !subjectPeriodRefinement;
       settings.optimization_stop_on_stagnation = true;
       settings.optimization_benders_accept_stagnant_iterations = 2;
       settings.optimization_adaptive_stagnant_attempts = Math.min(4, nextRound + 1);
@@ -14084,7 +14357,27 @@
     }
 
     settings.ui_unified_solve_kind = "fresh_complete_first";
-    delete settings.ui_quality_debt_fresh_rebuild;
+    if(qualityDebtFreshRebuild){
+      settings.ui_quality_debt_fresh_rebuild = true;
+      settings.ui_keep_better_existing_on_resort = true;
+      settings.allow_solver_warm_start = false;
+      settings.preserve_existing_tkb = false;
+      settings.force_fresh_backend_solve = true;
+      settings.allow_backend_cache = false;
+      settings.ui_disable_initial_fast_draft = true;
+      settings.ui_force_initial_fast_draft = false;
+      const qualityRebuildCeiling = customDurationSeconds > 0
+        ? customDurationSeconds
+        : ROBUST_AUTO_DURATION_SECONDS;
+      settings.ui_unified_initial_ceiling_seconds = applyUnifiedInitialCeiling(
+        settings,
+        expectedCount,
+        safeData,
+        qualityRebuildCeiling
+      );
+    }else{
+      delete settings.ui_quality_debt_fresh_rebuild;
+    }
     delete settings.optimization_benders_lean_refinement_periods;
     settings.ui_allow_incomplete_retry_after_single_pass = false;
     settings.ui_stop_after_first_complete_schedule = true;
@@ -14097,7 +14390,7 @@
         expectedCount,
         safeData
       );
-    }else{
+    }else if(!qualityDebtFreshRebuild){
       delete settings.ui_unified_initial_fast_stage;
       delete settings.ui_unified_initial_ceiling_seconds;
     }
@@ -14143,21 +14436,32 @@
     );
     const automaticFirstGood = effectiveCustomDurationSeconds <= 0;
     const boundedFirstComplete = automaticFirstGood || firstClickCeiling < 120;
+    const subjectPeriodFirstClick = hasSubjectPeriodRequirements(safeData);
     // The backend first tries the clean zero-singleton / gap-at-most-one lane.
     // If user-authored constraints make that quality envelope impossible, the
     // same click may return a complete hard-valid timetable with visible
     // quality debt instead of incorrectly reporting that no timetable exists.
     settings.ui_bounded_fresh_accept_quality_debt = true;
     settings.optimization_first_click_strict_quality_gate = true;
-    settings.optimization_first_click_strict_quality_gate_seconds = 55;
+    settings.optimization_first_click_strict_quality_gate_seconds = subjectPeriodFirstClick
+      ? 105
+      : 55;
     // The first automatic click has one explicit quality gate: complete and
     // hard-valid, with no avoidable one-period teacher session or gap of two
     // or more. Return as soon as that gate is met. The next manual click owns
     // the deeper 180-second session/gap-1 compaction search.
+    // Subject-period rules need one uninterrupted all-period strict search.
+    // A plain school keeps the faster v1.44 lean Phase-Q path, which has already
+    // produced complete zero-singleton/zero-gap2 schedules for diverse seeds in
+    // roughly one minute. Both paths retain a complete hard-valid safety result.
     settings.ui_unified_return_first_complete = true;
     settings.ui_stop_after_first_complete_schedule = true;
     settings.optimization_first_click_continue_local_after_complete = false;
     settings.optimization_first_click_skip_global_quality = true;
+    // Backend marker: keep the public first-click contract stable while routing
+    // plain schools through the proven lean Phase-Q path. Subject-period rows
+    // deliberately omit this shortcut and use the exact all-period gate.
+    settings.ui_plain_first_click_lean_quality = !subjectPeriodFirstClick;
     settings.optimization_first_click_lean_global_quality = boundedFirstComplete;
     settings.optimization_first_click_quality_stop_at_cap = boundedFirstComplete;
     settings.optimization_continue_quality_search = !boundedFirstComplete;
@@ -14282,6 +14586,38 @@
 
   function buildConstraintRepairAutoSortPlan(data, expected, releasedCount, knownConstraintViolationCount, preparedFreshPlan, knownConstraintViolations){
     const safeData = data || getData();
+    const expectedCount = Math.max(0, Number(expected || expectedLessonCount(safeData)) || 0);
+    const knownViolationItems = Array.isArray(knownConstraintViolations)
+      ? knownConstraintViolations
+      : [];
+    const deferredIncompleteMinimums = knownViolationItems.length > 0
+      && knownViolationItems.every(isDeferredIncompleteLessonBlockMinimumViolation);
+    if(
+      expectedCount > 0
+      && countScheduledLessons(safeData) < expectedCount
+      && isFixedOnlySeedSchedule(safeData)
+      && hasSubjectPeriodRequirements(safeData)
+      && deferredIncompleteMinimums
+    ){
+      // A lessonBlocks Min is evaluated over the completed week. A fixed-only
+      // seed naturally violates it before the first sort, so treating that as
+      // an existing-schedule repair incorrectly launches the 70-second Fast
+      // draft. Keep the requirement in the request, but plan this click as a
+      // real fixed-anchor fresh solve with the subject-period quality budget.
+      const freshBase = buildAutomaticAutoSortPlan(
+        safeData,
+        expectedCount,
+        0,
+        preparedFreshPlan
+      );
+      freshBase.settings.ui_deferred_incomplete_lesson_block_minimum_count = knownViolationItems.length;
+      freshBase.settings.ui_preflight_constraint_violation_count = 0;
+      freshBase.settings.ui_disable_initial_fast_draft = true;
+      freshBase.settings.ui_force_initial_fast_draft = false;
+      return Object.assign({}, freshBase, {
+        released:Math.max(0, Math.round(Number(releasedCount || 0) || 0))
+      });
+    }
     const base = buildAutomaticAutoSortPlan(
       safeData,
       expected,
@@ -14291,7 +14627,6 @@
     const settings = base.settings;
     const released = Math.max(0, Math.round(Number(releasedCount || 0) || 0));
     const repairWindow = Math.max(96, released);
-    const expectedCount = Math.max(0, Number(expected || expectedLessonCount(safeData)) || 0);
     const completeSubjectPeriodRepair = Number(knownConstraintViolationCount || 0) > 0
       && expectedCount > 0
       && countScheduledLessons(safeData) >= expectedCount
@@ -14452,6 +14787,7 @@
       return null;
     }
     const existingBackendJob = await inspectExistingBackendJobForManualSolve(getData());
+    if(existingBackendJob?.kind === "auth_required") return null;
     if(existingBackendJob?.kind === "observe"){
       return await observeBackendJob(existingBackendJob.job);
     }
@@ -14475,7 +14811,9 @@
       invocationOptions.manualAgentInvite === true
       && typeof window.maybeInviteAgentBeforeSort === "function"
     ){
-      const shouldContinue = await window.maybeInviteAgentBeforeSort();
+      const shouldContinue = await window.maybeInviteAgentBeforeSort({
+        preferVpsFallback:true
+      });
       if(!shouldContinue) return null;
     }
     prepareManualSolveIntent();
@@ -14834,6 +15172,10 @@
   }
 
   function schedulePendingBackendResume(attempt, delayMs, options){
+    if(backendAuthRequired){
+      cancelPendingBackendResume();
+      return false;
+    }
     if(automaticBackendResumeSuppressed()){
       cancelPendingBackendResume();
       return false;
@@ -14877,6 +15219,7 @@
   }
 
   async function resumePendingBackendJobOnLoad(attempt){
+    if(backendAuthRequired) return false;
     if(pendingBackendResumeInFlight){
       const wakeWasRequested = pendingBackendWakeRequested === true;
       const wakeNeedsEmptyProbe = pendingBackendWakeNeedsEmptyProbe === true;
@@ -14911,6 +15254,7 @@
     // A direct wakeup (pageshow, online, tests, or another UI hook) supersedes
     // an older scheduled wakeup so two owner-state checks cannot race.
     cancelPendingBackendResume();
+    if(backendAuthRequired) return false;
     if(readServerCancellationIntent()) await retryServerCancellationIntent();
     if(automaticBackendResumeSuppressed()) return false;
     const resumeEpoch = backendResumeEpoch;
@@ -15020,8 +15364,7 @@
       reportSkippedDiscoveredBackendJob({jobId:authoritativeJobId, kind:"stale_schedule"});
       endServerJobReattachLease(authoritativeJobId);
       removePendingBackendJob(authoritativeJobId);
-      releaseAutoSortButtonSoon();
-      setStatus("", "ok");
+      settleAuthoritativeIdleSolveUi({force:true});
       return false;
     }
     if(!pending?.jobId && !ownerBackendJobDiscoveryAllowed()){
@@ -15066,6 +15409,7 @@
         // An idle page performs one authoritative load/wake probe. If there is
         // no session, stay idle; a later pageshow/visibility/online/auth-ready
         // event is the explicit next wake and will issue a fresh probe.
+        settleAuthoritativeIdleSolveUi();
         return false;
       }
       if(
@@ -15114,8 +15458,7 @@
       removePendingBackendJob(pending.jobId);
       clearActiveBackendJobId(pending.jobId, {force:true});
       endServerJobReattachLease(pending.jobId);
-      releaseAutoSortButtonSoon();
-      setStatus("", "ok");
+      settleAuthoritativeIdleSolveUi({force:true});
       return false;
     }
     const runningItem = jobs.find(item => String(item?.jobId || "") === pending.jobId);
@@ -15207,9 +15550,17 @@
         requestBackendResumeWake();
       });
       window.addEventListener?.("tkb:auth-ready", () => {
+        clearBackendAuthRequired();
         pendingBackendWakeRequested = true;
         pendingBackendWakeNeedsEmptyProbe = true;
         schedulePendingBackendResume(0, 0, {force:true});
+      });
+      window.addEventListener?.("tkb:auth-expired", event => {
+        suspendBackendResumeForAuth(
+          Number(event?.detail?.status || 401) || 401,
+          event?.detail?.payload || null,
+          event?.detail?.source || "auth-event"
+        );
       });
     }catch(_){ }
   }catch(_){}

@@ -7,9 +7,26 @@
     return;
   }
 
+  const AUTH_RETURN_TO_KEY = "TKB_AUTH_RETURN_TO";
+
+  function pendingAuthReturnTarget(consume){
+    let raw = "";
+    try{ raw = sessionStorage.getItem(AUTH_RETURN_TO_KEY) || ""; }catch(_){ }
+    try{
+      const queryValue = new URLSearchParams(String(location.search || "")).get("returnTo");
+      if(queryValue) raw = queryValue;
+    }catch(_){ }
+    const target = String(raw || "").trim();
+    const safe = target.startsWith("/") && !target.startsWith("//") && target !== "/";
+    if(consume){
+      try{ sessionStorage.removeItem(AUTH_RETURN_TO_KEY); }catch(_){ }
+    }
+    return safe ? target : "";
+  }
+
   const ctx = A.currentUser();
   if(ctx){
-    window.location.replace(A.redirectAfterLogin(ctx.user.role));
+    window.location.replace(pendingAuthReturnTarget(true) || A.redirectAfterLogin(ctx.user.role));
     return;
   }
 
@@ -177,7 +194,8 @@
     if(fd.get("remember")) saveRemembered(fd.get("loginId"));
     else clearRemembered();
     showAlert("Đăng nhập thành công. Đang chuyển...", "success");
-    setTimeout(() => { window.location.href = A.redirectAfterLogin(res.role); }, 400);
+    const returnTarget = pendingAuthReturnTarget(true);
+    setTimeout(() => { window.location.href = returnTarget || A.redirectAfterLogin(res.role); }, 400);
   });
 
   function todayIso(){

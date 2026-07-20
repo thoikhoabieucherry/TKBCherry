@@ -84,6 +84,7 @@ class AgentToggleApp:
         self.update_apply_thread: threading.Thread | None = None
         self.update_in_progress = False
         self.update_install_started = False
+        self.restart_after_stop = False
         self.dismissed_update_versions: set[str] = set()
         self._build_window()
         self._render("off")
@@ -287,8 +288,16 @@ class AgentToggleApp:
         if self.closing or self.desired_on or self.update_in_progress:
             return
         if self.worker_thread is not None and self.worker_thread.is_alive():
+            # OFF is immediate from the user's perspective, while an in-flight
+            # socket may need a short grace period to unwind. Remember a quick
+            # ON request and start a fresh session as soon as it has stopped.
+            self.restart_after_stop = True
+            self.desired_on = True
+            self._set_startup_enabled(True)
+            self._render("starting")
             return
         self._set_startup_enabled(True)
+        self.restart_after_stop = False
         self.generation += 1
         generation = self.generation
         self.desired_on = True
@@ -318,13 +327,14 @@ class AgentToggleApp:
         if not self.desired_on or self.update_in_progress:
             return
         self.desired_on = False
+        self.restart_after_stop = False
         self._set_startup_enabled(False)
         if self.stop_event is not None:
             self.stop_event.set()
-        if self.worker_thread is not None and self.worker_thread.is_alive():
-            self._render("stopping")
-        else:
-            self._render("off")
+        # Solver cancellation is synchronous and network retry waits observe
+        # the same event. Paint OFF immediately instead of making the user wait
+        # for a harmless long-poll socket to finish closing.
+        self._render("off")
 
     def _drain_events(self) -> None:
         while True:
@@ -349,10 +359,15 @@ class AgentToggleApp:
             if generation != self.generation:
                 continue
             if status == "stopped":
+                restart = self.restart_after_stop and self.desired_on
                 self.worker_thread = None
                 self.stop_event = None
                 if self.update_in_progress:
                     self._start_update_install()
+                elif restart:
+                    self.restart_after_stop = False
+                    self.desired_on = False
+                    self.turn_on()
                 elif self.desired_on:
                     self.desired_on = False
                     self._render("error")
@@ -511,6 +526,7 @@ class AgentToggleApp:
             return
         self.closing = True
         self.desired_on = False
+        self.restart_after_stop = False
         if self.stop_event is not None:
             self.stop_event.set()
         if self.tray is not None:

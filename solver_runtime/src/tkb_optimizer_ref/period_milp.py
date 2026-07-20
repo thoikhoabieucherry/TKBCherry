@@ -189,21 +189,29 @@ def _event_period_allowed(event: LessonEvent, session: Session, period: int, rul
     return True
 
 
-def _event_start_allowed(event: LessonEvent, session: Session, start: int, rules: TimetableRuleSet) -> bool:
-    if not all(_event_period_allowed(event, session, period, rules) for period in range(start, start + event.duration)):
+def _event_start_allowed(
+    event: LessonEvent,
+    session: Session,
+    start: int,
+    rules: TimetableRuleSet,
+    *,
+    fixed_periods: set[int] | None = None,
+) -> bool:
+    residual_periods = set(range(start, start + event.duration))
+    if not all(_event_period_allowed(event, session, period, rules) for period in residual_periods):
         return False
     constraints = rules.constraints
     if constraints is None:
         return True
+    covered = residual_periods | set(fixed_periods or set())
     subject_rule = constraints.subject_rule_for(event.class_name, event.subject)
     group_rules = [rule for _gid, rule in constraints.subject_group_rules_for(event.class_name, event.subject)]
     for rule_obj in [subject_rule, *group_rules]:
         if not isinstance(rule_obj, Mapping) or not rule_obj:
             continue
-        if event.duration > 1:
+        if len(covered) > 1:
             session_key = _session_key(session)
             period_key = "morning" if session_key == "sang" else "afternoon"
-            covered = set(range(start, start + event.duration))
             legacy = rule_obj.get("avoidBreakPairs") if isinstance(rule_obj.get("avoidBreakPairs"), Mapping) else {}
             avoid_23 = rule_obj.get("avoidBreakPair23") if isinstance(rule_obj.get("avoidBreakPair23"), Mapping) else {}
             avoid_34 = rule_obj.get("avoidBreakPair34") if isinstance(rule_obj.get("avoidBreakPair34"), Mapping) else {}
@@ -211,7 +219,11 @@ def _event_start_allowed(event: LessonEvent, session: Session, start: int, rules
                 return False
             if (_truthy(legacy.get(period_key)) or _truthy(avoid_34.get(period_key))) and {3, 4}.issubset(covered):
                 return False
-        if event.duration > 1 and isinstance(rule_obj.get("linkedDays"), Mapping):
+        if (
+            len(covered) > 1
+            and _periods_are_contiguous(covered)
+            and isinstance(rule_obj.get("linkedDays"), Mapping)
+        ):
             linked = rule_obj["linkedDays"]
             if _linked_day_avoided(linked, _session_key(session), _day_key(session.day)):
                 return False
@@ -422,14 +434,20 @@ def _allocate_periods_sequential(
         var_count = 0
         skip_session = False
         for ei, event in enumerate(events):
-            starts = [
-                start
-                for start in _start_candidates(class_grade[event.class_name], event.class_name, session, event.duration, rules)
-                if _event_start_allowed(event, session, start, rules)
-            ]
             fixed_periods = fixed_assignment_periods.get(
                 (event.class_name, event.subject, event.teacher), set()
             )
+            starts = [
+                start
+                for start in _start_candidates(class_grade[event.class_name], event.class_name, session, event.duration, rules)
+                if _event_start_allowed(
+                    event,
+                    session,
+                    start,
+                    rules,
+                    fixed_periods=fixed_periods,
+                )
+            ]
             if rules.contiguous_multi_period_assignments and fixed_periods:
                 starts = [
                     start

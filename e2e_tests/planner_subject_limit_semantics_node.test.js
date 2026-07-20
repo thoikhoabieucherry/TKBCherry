@@ -154,6 +154,10 @@ test("async full validation preserves results and yields between short slices", 
   assert.ok(scheduledYields > yieldsBeforeAsync, "async validation must yield back to the UI");
   assert.match(asyncResult.map(item => item.message).join("\n"), /s\u1ed1 bu\u1ed5i\/c\u1ee5m/);
   assert.match(asyncResult.map(item => item.message).join("\n"), /v\u1ecb tr\u00ed ph\u1ea3i c\u00f3 ti\u1ebft d\u1ea1y/);
+  assert.ok(
+    asyncResult.some(item => item.kind === "subject.lessonBlocks.min"),
+    "lesson-block Min debt needs a stable machine-readable kind"
+  );
 
   const cancelledResult = await api.validateAllAsync(100, {shouldCancel(){ return true; }});
   assert.equal(cancelledResult.cancelled, true);

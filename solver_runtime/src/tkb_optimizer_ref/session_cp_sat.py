@@ -16,6 +16,7 @@ from .session_milp import (
     _day_key,
     _get_path,
     _session_key,
+    _subject_like_block_allowed,
     _teacher_session_period_capacity,
     _truthy,
 )
@@ -48,6 +49,17 @@ def _to_int(value: Any, default: int = 0) -> int:
         return int(float(str(value).strip()))
     except (TypeError, ValueError):
         return default
+
+
+def _count_contiguous_blocks(periods: set[int] | list[int] | tuple[int, ...], length: int) -> int:
+    ordered = sorted({int(period) for period in periods})
+    period_set = set(ordered)
+    return sum(
+        1
+        for period in ordered
+        if period - 1 not in period_set
+        and all(period + offset in period_set for offset in range(max(1, int(length))))
+    )
 
 
 def _day_limit_from_rule(rule: Mapping[str, Any], path: str, day: int) -> int:
@@ -139,6 +151,7 @@ def solve_session_allocation_cp_sat(
     num_workers: int = 8,
     random_seed: int | None = None,
     hint_allocations: list[SessionAllocation] | None = None,
+    hint_lessons: list[Lesson] | None = None,
     fixed_lessons: list[Lesson] | None = None,
     fix_hint: bool = False,
     repair_hint: bool = False,
@@ -164,6 +177,7 @@ def solve_session_allocation_cp_sat(
     sessions = all_sessions()
     session_by_key = {(session.day, session.part): si for si, session in enumerate(sessions)}
     fixed_lessons = fixed_lessons or []
+    hint_lessons = hint_lessons or []
     fixed_teacher_session_load: Counter[tuple[str, int]] = Counter()
     fixed_teacher_day_load: Counter[tuple[str, int]] = Counter()
     fixed_class_session_load: Counter[tuple[str, int]] = Counter()
@@ -258,9 +272,26 @@ def solve_session_allocation_cp_sat(
 
     period_block_vars = 0
     lesson_block_impossible_constraints = 0
+    lesson_block_deferred_constraints = 0
     teacher_cross_session_period_constraints = 0
     teacher_period_gap_constraints = 0
     period_block_choices: dict[tuple[int, int], list[tuple[int, int, Any, tuple[int, ...]]]] = {}
+    hinted_periods_by_assignment_session: dict[tuple[int, int], set[int]] = {}
+    if hint_lessons:
+        assignment_index_by_key = {
+            (assignment.class_name, assignment.subject, assignment.teacher): ai
+            for ai, assignment in enumerate(data.assignments)
+        }
+        for lesson in hint_lessons:
+            ai = assignment_index_by_key.get(
+                (lesson.class_name, lesson.subject, lesson.teacher)
+            )
+            si = session_by_key.get((int(lesson.day), str(lesson.session)))
+            if ai is None or si is None:
+                continue
+            hinted_periods_by_assignment_session.setdefault((ai, si), set()).add(
+                int(lesson.period)
+            )
     period_feasibility_session_indexes = set(period_feasibility_session_indexes or set())
     if constraints is not None and constraints.active and period_feasibility_session_indexes:
         class_period_terms: dict[tuple[str, int, int], list[Any]] = {}
@@ -295,6 +326,44 @@ def solve_session_allocation_cp_sat(
                         != len(combined_periods)
                     ):
                         continue
+                    combined_block_allowed = True
+                    if (
+                        fixed_periods
+                        and max(combined_periods) - min(combined_periods) + 1
+                        == len(combined_periods)
+                    ):
+                        combined_start = min(combined_periods)
+                        combined_duration = len(combined_periods)
+                        subject_rule = constraints.subject_rule_for(
+                            assignment.class_name,
+                            assignment.subject,
+                        )
+                        if isinstance(subject_rule, Mapping):
+                            combined_block_allowed = _subject_like_block_allowed(
+                                subject_rule,
+                                session,
+                                combined_start,
+                                combined_duration,
+                            )
+                        if combined_block_allowed:
+                            combined_block_allowed = all(
+                                not isinstance(group_rule, Mapping)
+                                or _subject_like_block_allowed(
+                                    group_rule,
+                                    session,
+                                    combined_start,
+                                    combined_duration,
+                                )
+                                for _group_id, group_rule in constraints.subject_group_rules_for(
+                                    assignment.class_name,
+                                    assignment.subject,
+                                )
+                            )
+                    if not combined_block_allowed:
+                        # A residual one-period choice can complete a block
+                        # across a fixed anchor. Apply break-pair and linked-day
+                        # rules to that merged block, not just the residual.
+                        continue
                     choice = model.NewBoolVar(f"period_block_{ai}_{si}_{duration}_{start}")
                     period_block_vars += 1
                     choices.append((duration, choice, block))
@@ -309,6 +378,18 @@ def solve_session_allocation_cp_sat(
             if choices:
                 model.Add(sum(choice for _duration, choice, _block in choices) <= 1)
                 model.Add(n_var == sum(duration * choice for duration, choice, _block in choices))
+                hinted_periods = hinted_periods_by_assignment_session.get((ai, si), set())
+                hinted_block = tuple(sorted(hinted_periods))
+                matching_hint = bool(hinted_block) and any(
+                    tuple(block) == hinted_block
+                    for _duration, _choice, block in choices
+                )
+                if not hinted_block or matching_hint:
+                    for _duration, choice, block in choices:
+                        model.AddHint(
+                            choice,
+                            1 if matching_hint and tuple(block) == hinted_block else 0,
+                        )
             else:
                 model.Add(n_var == 0)
 
@@ -582,51 +663,101 @@ def solve_session_allocation_cp_sat(
 
                 lesson_blocks = rule_obj.get("lessonBlocks") if isinstance(rule_obj.get("lessonBlocks"), Mapping) else {}
                 if scope == "subject" and lesson_blocks:
-                    block_vars_by_length: dict[int, list[Any]] = {length: [] for length in (2, 3, 4, 5)}
+                    block_terms_by_length: dict[int, list[Any]] = {length: [] for length in (2, 3, 4, 5)}
+                    fixed_blocks_by_length: dict[int, int] = {length: 0 for length in (2, 3, 4, 5)}
+                    unmodeled_fixed_residual_by_length: dict[int, bool] = {
+                        length: False for length in (2, 3, 4, 5)
+                    }
                     scheduled_terms_for_rule = matching_terms_for_sessions(list(range(len(sessions))))
                     scheduled_expr_for_rule = sum(scheduled_terms_for_rule)
+                    fixed_scheduled_for_rule = 0
                     for bi, candidate in enumerate(data.assignments):
                         if not matcher(candidate):
                             continue
                         for si, _session in enumerate(sessions):
+                            fixed_periods = fixed_assignment_session_periods.get(
+                                (
+                                    candidate.class_name,
+                                    candidate.subject,
+                                    candidate.teacher,
+                                    si,
+                                ),
+                                set(),
+                            )
+                            fixed_scheduled_for_rule += len(fixed_periods)
                             key = (bi, si)
-                            if key not in n_vars:
-                                continue
-                            n_var = n_vars[key]
-                            cap = int(n_caps.get(key, 0))
                             for length in (2, 3, 4, 5):
-                                if cap < length:
-                                    continue
                                 conf = lesson_blocks.get(str(length)) or lesson_blocks.get(length)
                                 if not isinstance(conf, Mapping):
+                                    continue
+                                fixed_blocks = _count_contiguous_blocks(fixed_periods, length)
+                                fixed_blocks_by_length[length] += fixed_blocks
+                                if key not in n_vars:
+                                    continue
+                                choices = period_block_choices.get(key, [])
+                                if choices:
+                                    # The concrete-period bridge can count a
+                                    # pair formed by one hard-fixed lesson and
+                                    # one residual lesson. Counting n_var alone
+                                    # misses that valid Min=1 case because fixed
+                                    # demand was already removed upstream.
+                                    for _duration, _start, choice, block in choices:
+                                        combined_blocks = _count_contiguous_blocks(
+                                            set(fixed_periods) | set(block),
+                                            length,
+                                        )
+                                        block_delta = combined_blocks - fixed_blocks
+                                        if block_delta:
+                                            block_terms_by_length[length].append(
+                                                block_delta * choice
+                                            )
+                                    continue
+                                # Subject-period requirements normally enable
+                                # the concrete-period bridge. If a legacy lane
+                                # omits it, do not guess how residual periods
+                                # interact with fixed periods. Defer the whole
+                                # bound for this length to merged validation;
+                                # adding an "impossible" contradiction here
+                                # would reject a valid fixed+flexible pair.
+                                if fixed_periods:
+                                    unmodeled_fixed_residual_by_length[length] = True
+                                    continue
+                                n_var = n_vars[key]
+                                cap = int(n_caps.get(key, 0))
+                                if cap < length:
                                     continue
                                 block_var = model.NewBoolVar(f"subject_block_{scope}_{bi}_{si}_{length}")
                                 model.Add(n_var >= length).OnlyEnforceIf(block_var)
                                 model.Add(n_var <= length - 1).OnlyEnforceIf(block_var.Not())
-                                block_vars_by_length[length].append(block_var)
-                    for length, block_vars in block_vars_by_length.items():
+                                block_terms_by_length[length].append(block_var)
+                    for length, block_terms in block_terms_by_length.items():
                         conf = lesson_blocks.get(str(length)) or lesson_blocks.get(length)
                         if not isinstance(conf, Mapping):
                             continue
+                        if unmodeled_fixed_residual_by_length.get(length):
+                            lesson_block_deferred_constraints += 1
+                            continue
                         minimum = _to_int(conf.get("min"), 0)
                         maximum = _to_int(conf.get("max"), 0)
+                        fixed_blocks = int(fixed_blocks_by_length.get(length, 0))
+                        block_expr = sum(block_terms) + fixed_blocks
                         if minimum > 0:
-                            if allow_unassigned:
+                            if allow_unassigned and fixed_scheduled_for_rule <= 0:
                                 target_active = model.NewBoolVar(
                                     f"subject_block_active_{scope}_{assignment.class_name}_{target_id}_{length}"
                                 )
                                 model.Add(scheduled_expr_for_rule >= 1).OnlyEnforceIf(target_active)
                                 model.Add(scheduled_expr_for_rule == 0).OnlyEnforceIf(target_active.Not())
-                                model.Add(sum(block_vars) >= minimum).OnlyEnforceIf(target_active)
-                            elif block_vars:
-                                model.Add(sum(block_vars) >= minimum)
+                                model.Add(block_expr >= minimum).OnlyEnforceIf(target_active)
+                            elif block_terms or fixed_blocks > 0:
+                                model.Add(block_expr >= minimum)
                             else:
                                 impossible = model.NewBoolVar(f"impossible_subject_block_{scope}_{target_id}_{length}")
                                 model.Add(impossible == 0)
                                 model.Add(impossible == 1)
                                 lesson_block_impossible_constraints += 1
-                        if maximum > 0 and block_vars:
-                            model.Add(sum(block_vars) <= maximum)
+                        if maximum > 0:
+                            model.Add(block_expr <= maximum)
 
         for class_name, groups in (constraints.subject_no_same_session or {}).items():
             if not isinstance(groups, Mapping):
@@ -962,6 +1093,21 @@ def solve_session_allocation_cp_sat(
                 hint_distance_upper_bound += diff_cap
         for key, var in z_vars.items():
             model.AddHint(var, 1 if key in hinted_teacher_sessions else 0)
+        hinted_class_sessions = {
+            (data.assignments[ai].class_name, si)
+            for (ai, si), count in hinted_counts.items()
+            if count > 0
+        }
+        hinted_teacher_days = {
+            (teacher, sessions[si].day)
+            for teacher, si in hinted_teacher_sessions
+        }
+        for key, var in u_vars.items():
+            model.AddHint(var, 1 if hinted_counts.get(key, 0) > 0 else 0)
+        for key, var in c_vars.items():
+            model.AddHint(var, 1 if key in hinted_class_sessions else 0)
+        for key, var in d_vars.items():
+            model.AddHint(var, 1 if key in hinted_teacher_days else 0)
         solver_hint_session_count = len(hinted_teacher_sessions)
         hint_metrics = {
             "used": True,
@@ -970,6 +1116,10 @@ def solve_session_allocation_cp_sat(
             "unmapped_allocations": unmapped,
             "hinted_assignment_sessions": len(hinted_counts),
             "hinted_teacher_sessions": solver_hint_session_count,
+            "hinted_period_lessons": len(hint_lessons),
+            "hinted_period_assignment_sessions": len(
+                hinted_periods_by_assignment_session
+            ),
             "minimize_distance": bool(minimize_hint_distance),
         }
 
@@ -1058,6 +1208,7 @@ def solve_session_allocation_cp_sat(
                 "teacher_single_vars": len(teacher_single_vars),
                 "period_block_vars": period_block_vars,
                 "lesson_block_impossible_constraints": lesson_block_impossible_constraints,
+                "lesson_block_deferred_constraints": lesson_block_deferred_constraints,
                 "period_feasibility_session_indexes": sorted(period_feasibility_session_indexes),
                 "legacy_wednesday_pm_bridge": bool(legacy_wednesday_pm_bridge),
                 "objective_mode": objective_mode,
@@ -1163,6 +1314,7 @@ def solve_session_allocation_cp_sat(
         "teacher_period_gap_constraints": teacher_period_gap_constraints,
         "period_max_teacher_gap": period_max_teacher_gap,
         "lesson_block_impossible_constraints": lesson_block_impossible_constraints,
+        "lesson_block_deferred_constraints": lesson_block_deferred_constraints,
         "period_feasibility_session_indexes": sorted(period_feasibility_session_indexes),
         "legacy_wednesday_pm_bridge": bool(legacy_wednesday_pm_bridge),
         "objective_mode": objective_mode,

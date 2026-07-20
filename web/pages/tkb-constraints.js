@@ -1197,7 +1197,7 @@
     // hậu kiểm Min số buổi/cụm xếp liền cho môn học
     try{
       const c=model();
-      Object.keys(c.subject||{}).forEach(sk=>{ const sobj=c.subject[sk]; Object.keys(sobj.byClass||{}).forEach(lopId=>{ const r=sobj.byClass[lopId]; if(!r.lessonBlocks) return; const cells=subjectCellsAfterPlace(lopId,sk,{lopId,mon:sk}); for(const len of [2,3,4,5]){ const min=toInt(r.lessonBlocks?.[len]?.min,0); if(min>0){ let blocks=0; for(const d of days()) for(const b of SESSION_KEYS) blocks += countConsecutiveBlocks(indexesInSession(cells,d,b),len); if(blocks<min) add({lopId,className:classNameOf(lopId),mon:sk,message:`${classNameOf(lopId)} - ${sk}: số buổi/cụm có ${len} tiết xếp liền ${blocks}, chưa đạt Min ${min}.`}); } } }); });
+      Object.keys(c.subject||{}).forEach(sk=>{ const sobj=c.subject[sk]; Object.keys(sobj.byClass||{}).forEach(lopId=>{ const r=sobj.byClass[lopId]; if(!r.lessonBlocks) return; const cells=subjectCellsAfterPlace(lopId,sk,{lopId,mon:sk}); for(const len of [2,3,4,5]){ const min=toInt(r.lessonBlocks?.[len]?.min,0); if(min>0){ let blocks=0; for(const d of days()) for(const b of SESSION_KEYS) blocks += countConsecutiveBlocks(indexesInSession(cells,d,b),len); if(blocks<min) add({kind:'subject.lessonBlocks.min',lopId,className:classNameOf(lopId),mon:sk,message:`${classNameOf(lopId)} - ${sk}: số buổi/cụm có ${len} tiết xếp liền ${blocks}, chưa đạt Min ${min}.`}); } } }); });
     }catch(e){ console.warn('[tkb-constraints] post validate failed', e); }
     return out;
   }
@@ -1323,7 +1323,7 @@
             if(min<=0) continue;
             let blocks=0;
             for(const d of days()) for(const b of SESSION_KEYS) blocks += countConsecutiveBlocks(indexesInSession(cells,d,b),len);
-            if(blocks<min) add({lopId,className:classNameOf(lopId),mon:sk,message:`${classNameOf(lopId)} - ${sk}: s\u1ed1 bu\u1ed5i/c\u1ee5m c\u00f3 ${len} ti\u1ebft x\u1ebfp li\u1ec1n ${blocks}, ch\u01b0a \u0111\u1ea1t Min ${min}.`});
+            if(blocks<min) add({kind:'subject.lessonBlocks.min',lopId,className:classNameOf(lopId),mon:sk,message:`${classNameOf(lopId)} - ${sk}: s\u1ed1 bu\u1ed5i/c\u1ee5m c\u00f3 ${len} ti\u1ebft x\u1ebfp li\u1ec1n ${blocks}, ch\u01b0a \u0111\u1ea1t Min ${min}.`});
             if(out.length>=max) return out;
           }
           const interruption=await maybeYield();

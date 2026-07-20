@@ -63,6 +63,7 @@ def bare_app(runner: object) -> tuple[AgentToggleApp, list[str]]:
     app.update_apply_thread = None
     app.update_in_progress = False
     app.update_install_started = False
+    app.restart_after_stop = False
     app.dismissed_update_versions = set()
     rendered: list[str] = []
     app._render = rendered.append  # type: ignore[method-assign]
@@ -195,8 +196,44 @@ class ToggleLifecycleTests(unittest.TestCase):
         self.assertFalse(app.desired_on)
         self.assertTrue(app.stop_event is None or app.stop_event.is_set())
         self.assertIn("starting", rendered)
-        self.assertIn("stopping", rendered)
+        self.assertEqual(rendered[-1], "off")
         self.assertEqual(startup_states, [True, False])
+
+    def test_turning_back_on_while_network_drains_restarts_after_stop(self) -> None:
+        first_started = threading.Event()
+        allow_first_to_stop = threading.Event()
+        second_started = threading.Event()
+        sessions = 0
+
+        def runner(stop_event: threading.Event, report: object) -> None:
+            nonlocal sessions
+            del report
+            sessions += 1
+            if sessions == 1:
+                first_started.set()
+                stop_event.wait(2)
+                allow_first_to_stop.wait(2)
+            else:
+                second_started.set()
+                stop_event.wait(2)
+
+        app, rendered = bare_app(runner)
+        app.turn_on()
+        self.assertTrue(first_started.wait(1))
+        app.turn_off()
+        app.turn_on()
+
+        self.assertTrue(app.restart_after_stop)
+        self.assertTrue(app.desired_on)
+        self.assertEqual(rendered[-1], "starting")
+        allow_first_to_stop.set()
+        deadline = time.monotonic() + 1
+        while not second_started.is_set():
+            app._drain_events()
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(0.01)
+        self.assertEqual(sessions, 2)
+        app.close()
 
     def test_startup_registry_failure_does_not_block_on_or_off(self) -> None:
         started = threading.Event()

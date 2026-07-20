@@ -178,6 +178,11 @@ class AgentWorker:
         if self.stop_event.is_set():
             return False
         lease = self.api.lease()
+        if self.stop_event.is_set():
+            # A long-poll may finish just after OFF was requested. Do not start
+            # a solver process for that late lease; the server will reclaim it
+            # through the normal short lease expiry.
+            return lease is not None
         if lease is None:
             self.api.heartbeat("idle")
             self.status_callback("waiting")

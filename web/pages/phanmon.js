@@ -7385,10 +7385,19 @@ function startAgentHelperStatusPolling(){
   return true;
 }
 
-async function maybeInviteAgentBeforeSort(){
+async function maybeInviteAgentBeforeSort(options){
+  const opts = options && typeof options === "object" ? options : {};
   if(!isAgentHelperSupportedDevice(
     typeof navigator !== "undefined" ? navigator : null
   )) return true;
+
+  if(opts.preferVpsFallback === true){
+    // Play must never wait behind a native confirm dialog. The VPS owns the
+    // canonical job either way, and an online Agent can lease it from there.
+    // Refresh the status dot opportunistically while the solve starts now.
+    Promise.resolve(refreshAgentHelperStatus(true)).catch(() => null);
+    return true;
+  }
 
   const online = await refreshAgentHelperStatus(true);
   // A transient status/API failure must never block normal VPS sorting.

@@ -639,6 +639,29 @@ impl AgentHelperCoordinator {
         owned
     }
 
+    /// Atomically close one owned Agent job and return a candidate that was
+    /// already accepted before the close. The server watchdog uses this as its
+    /// terminal fence so a submission cannot land between a stale no-result
+    /// snapshot and committing a timeout response.
+    pub fn take_candidate_and_finish_job(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+    ) -> Option<AgentCandidate> {
+        let mut state = self.state.lock().ok()?;
+        let owned = state
+            .jobs
+            .get(job_id)
+            .is_some_and(|job| job.owner == *owner);
+        if !owned {
+            return None;
+        }
+        state
+            .jobs
+            .remove(job_id)
+            .and_then(|job| job.best_candidate)
+    }
+
     /// Return one coherent snapshot of the canonical Agent task. Calling this
     /// method also prunes expired workers/leases, which lets the VPS watchdog
     /// resume work even when a powered-off Agent cannot send a final request.
@@ -1892,8 +1915,25 @@ mod tests {
         assert!(coordinator
             .best_candidate("job-a", &SolverOwner::new("school-b", "admin-b"))
             .is_none());
-        assert!(coordinator.finish_job("job-a", &owner));
+        let terminal_candidate = coordinator
+            .take_candidate_and_finish_job("job-a", &owner)
+            .expect("accepted candidate must win the terminal close");
+        assert_eq!(terminal_candidate.worker_id, "pc-1");
         assert!(coordinator.best_candidate("job-a", &owner).is_none());
+
+        assert!(coordinator.register_job(
+            "job-without-candidate",
+            &owner,
+            Arc::new(br#"{"data":{},"settings":{}}"#.to_vec()),
+            1,
+            2_600,
+        ));
+        assert!(coordinator
+            .take_candidate_and_finish_job("job-without-candidate", &owner)
+            .is_none());
+        assert!(coordinator
+            .job_execution("job-without-candidate", &owner, 2_601)
+            .is_none());
     }
 
     #[test]

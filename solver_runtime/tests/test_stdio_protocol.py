@@ -102,6 +102,48 @@ class StdioProtocolTests(unittest.TestCase):
         self.assertIn(b"native-before", completed.stderr)
         self.assertIn(b"native-after", completed.stderr)
 
+    def test_result_wrapper_is_flushed_before_optional_artifact_logging(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            order_path = Path(temp_dir) / "order.txt"
+            child_code = "\n".join(
+                [
+                    "from pathlib import Path",
+                    "from scripts import solve_stdio as protocol",
+                    "protocol._install_stdout_protocol_guard()",
+                    f"order = Path({str(order_path)!r})",
+                    "original_write = protocol._write_protocol_value",
+                    "def write(value):",
+                    "    order.write_text('wire\\n', encoding='utf-8')",
+                    "    original_write(value)",
+                    "def save(payload, status):",
+                    "    with order.open('a', encoding='utf-8') as stream:",
+                    "        stream.write('artifact\\n')",
+                    "protocol._write_protocol_value = write",
+                    "protocol._save_solve_artifacts = save",
+                    "protocol.write_json({'ok': True}, 200)",
+                ]
+            )
+            completed = subprocess.run(
+                [sys.executable, "-c", child_code],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=RUNTIME_ROOT,
+                check=False,
+                timeout=30,
+            )
+
+            self.assertEqual(
+                completed.returncode,
+                0,
+                completed.stderr.decode("utf-8", errors="replace"),
+            )
+            wrapper = json.loads(completed.stdout.decode("utf-8"))
+            self.assertEqual(wrapper["status"], 200)
+            self.assertEqual(
+                order_path.read_text(encoding="utf-8").splitlines(),
+                ["wire", "artifact"],
+            )
+
     def test_no_logs_disables_sensitive_solver_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             child_code = "\n".join(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import unittest
 
 from agent_helper import AGENT_PROTOCOL
@@ -196,6 +197,45 @@ class ApiTests(unittest.TestCase):
             first["headers"]["Idempotency-Key"],  # type: ignore[index]
             second["headers"]["Idempotency-Key"],  # type: ignore[index]
         )
+
+    def test_shutdown_interrupts_network_retry_backoff(self) -> None:
+        stop_event = threading.Event()
+        registered = {
+            "protocol": AGENT_PROTOCOL,
+            "ok": True,
+            "workerToken": "f" * 64,
+        }
+
+        class StopOnLeaseTransport(FakeTransport):
+            def request(self, **kwargs: object) -> HttpResponse:
+                try:
+                    return super().request(**kwargs)
+                except TransportError:
+                    stop_event.set()
+                    raise
+
+        transport = StopOnLeaseTransport(
+            [response(200, registered), TransportError("offline")]
+        )
+        config = AgentConfig.from_mapping(
+            {
+                "cpu_workers": 2,
+                "retry_attempts": 4,
+                "retry_backoff_seconds": 30,
+                "poll_wait_seconds": 0,
+            }
+        )
+        client = ApiClient(
+            config,
+            identity(),
+            token="test-token",
+            transport=transport,
+            stop_event=stop_event,
+        )
+        client.hello()
+        with self.assertRaisesRegex(ApiError, "shutdown"):
+            client.lease()
+        self.assertEqual(len(transport.calls), 2)
 
 
 if __name__ == "__main__":

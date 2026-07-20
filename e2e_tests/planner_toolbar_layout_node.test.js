@@ -296,8 +296,8 @@ test("planner keeps eight compact, accessible commands in the mobile toolbar", (
     plannerHtml,
     /@media \(max-width:\s*900px\) and \(hover:\s*none\) and \(pointer:\s*coarse\),\s*\(max-width:\s*480px\)/
   );
-  assert.match(plannerHtml, /phanmon\.js\?v=20260720-v150-subject-period-constraint-rebuild-v1/);
-  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260720-v150-subject-period-constraint-rebuild-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260720-v156-quality-frontier-polish-v1/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260720-v156-quality-frontier-polish-v1/);
 });
 
 test("desktop Agent sits beside Home, uses an AI icon, and stays out of mobile layouts", () => {
@@ -333,7 +333,7 @@ test("desktop Agent sits beside Home, uses an AI icon, and stays out of mobile l
   assert.match(plannerSource, /function isAgentHelperSupportedDevice\(deviceNavigator\)/);
   assert.match(plannerSource, /function syncAgentHelperVisibility\(\)/);
   assert.match(plannerSource, /fetch\("\/api\/agent-helper\/v1\/status"/);
-  assert.match(plannerSource, /async function maybeInviteAgentBeforeSort\(\)/);
+  assert.match(plannerSource, /async function maybeInviteAgentBeforeSort\(options\)/);
   assert.match(
     bridgeSource,
     /manualAgentInvite[\s\S]*?maybeInviteAgentBeforeSort[\s\S]*?prepareManualSolveIntent\(\)/,
@@ -343,6 +343,11 @@ test("desktop Agent sits beside Home, uses an AI icon, and stays out of mobile l
     bridgeSource,
     /window\.sapXepTuDongAll\(\{manualAgentInvite:true\}\)/,
     "the Play button must mark the sort as a manual Agent-invite opportunity"
+  );
+  assert.match(
+    bridgeSource,
+    /maybeInviteAgentBeforeSort\(\{\s*preferVpsFallback:true\s*\}\)/,
+    "manual Play must start through the VPS without a blocking Agent dialog"
   );
   assert.match(
     plannerHtml,
@@ -451,6 +456,18 @@ test("Windows invite downloads only when an offline user accepts", async () => {
   const online = makeContext({status:true});
   assert.equal(await online.context.inviteBeforeSort(), true);
   assert.equal(online.prompts(), 0);
+
+  const promptFreeFallback = makeContext({
+    status:new Promise(() => {}),
+    accepted:true
+  });
+  assert.equal(
+    await promptFreeFallback.context.inviteBeforeSort({preferVpsFallback:true}),
+    true,
+    "Play must continue even while the Agent status request is unresolved"
+  );
+  assert.equal(promptFreeFallback.prompts(), 0);
+  assert.equal(promptFreeFallback.downloads(), 0);
 
   const declined = makeContext({status:false, accepted:false});
   assert.equal(await declined.context.inviteBeforeSort(), true);
