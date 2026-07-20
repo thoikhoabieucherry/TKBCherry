@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-VERSION = "1.6.16"
+VERSION = "1.6.18"
 AGENT_PROTOCOL = "tkb-agent-helper-v1"
 SOLVER_PROTOCOL = "tkb-reference-solver-stdio-v1"
 

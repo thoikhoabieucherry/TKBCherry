@@ -1,6 +1,6 @@
 # TKBCherry Project Handoff
 
-Last updated: 2026-07-19 (Asia/Bangkok)
+Last updated: 2026-07-20 (Asia/Bangkok)
 
 This is the persistent handoff note for future Codex sessions. Read this file
 before modifying the scheduler or deploying. Update it after every meaningful
@@ -8,18 +8,69 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.47** (one stable visible status
-  for active, reattached, observed, and canonical-adopted jobs). Scheduler
-  behavior remains the v1.46 strict first-result quality gate. Public API
-  marker: `tkb_new-rust-api-2026-07-19-stable-active-progress-v47`; page cache:
-  `20260719-v147-stable-active-progress-v1`.
-- Current public Agent release: **v1.6.16** (`1.6.16`). The server lease gate
-  is also 1.6.16 so an older Agent can update itself but cannot execute a job
+- Current deployed application release: **v1.50** (subject-period constraint
+  rebuild). Public API marker:
+  `tkb_new-rust-api-2026-07-20-subject-period-constraint-rebuild-v50`; page
+  cache: `20260720-v150-subject-period-constraint-rebuild-v1`.
+- Current public Agent release: **v1.6.18** (`1.6.18`). The server lease gate
+  is also 1.6.18 so an older Agent can update itself but cannot execute a job
   with a mismatched solver contract.
 - Every deployed application or packaged Agent update must increment the
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
-   `agent_helper/windows_version_info.txt`.
+  `agent_helper/windows_version_info.txt`.
+
+### v1.49 local live-default quality investigation (not deployed)
+
+- A production replay of the plain `default` school (no non-empty subject
+  `lessonBlocks`) returned a complete `1566/1566` timetable with singleton and
+  gap-2 debt because the first strict-quality CP-SAT lane consumed the whole
+  deadline before its debt fallback could run.
+- The scheduler now recognizes an automatic large fresh first click via
+  `ui_unified_first_click_quality` + `fresh_complete_first` and enables the
+  period-safe completion lane even without subject-period rows. This reserves
+  the strict retry/fallback budget and allows the same wide-cap cleanup used by
+  the subject-period case to enforce zero one-period sessions and gap <= 1.
+- Local verification: result-contract unittest `132/132`, `py_compile`, and
+  `git diff --check` pass. This change is still local; production deployment
+  and live re-test remain open.
+
+### v1.50 subject-period constraint rebuild (deployed 2026-07-20)
+
+- When a complete timetable violates a newly authored subject-period rule
+  (`lessonBlocks`, `avoidBreakPair23/34`, or linked-day contiguous-period
+  rules), the browser no longer sends it through the staged fill-only repair.
+  That repair deliberately skips teacher optimization and only has a short
+  quality slice, which was the cause of complete results retaining singleton
+  sessions and gap-2 periods.
+- The affected path now performs one transactional `fresh_complete_first`
+  rebuild. Flexible timetable cells and the old solver payload are stripped;
+  fixed lessons and the edited constraints remain. The automatic subject-rule
+  ceiling is 180 seconds, and the unified backend first keeps a complete
+  hard-valid incumbent, then enforces zero one-period teacher sessions and
+  teacher gap at most one. If those quality goals are impossible under the
+  authored rules, the complete hard-valid incumbent is retained.
+- The violation classifier is scoped to subject-period messages/kinds. A
+  teacher-only max-days/max-sessions violation on a school that also has
+  subject rules continues to use the existing staged repair path.
+- Release markers for deployment: API
+  `tkb_new-rust-api-2026-07-20-subject-period-constraint-rebuild-v50`, bridge
+  `tkb-rust-api-v255-subject-period-constraint-rebuild`, and page cache
+  `20260720-v150-subject-period-constraint-rebuild-v1`. Agent package
+  `1.6.18` is signed and hash-matched in `agent_helper/dist` and
+  `web/downloads`.
+- Local verification: bridge `196/196`, constraint semantics `14/14`, toolbar
+  `28/28`, scheduler `149/149`, result-contract `132/132`, Python syntax, and
+  `git diff --check`. Isolated VPS staging passed scheduler `149/149`, Agent
+  `72/72`, Rust API `136/136`, and validator `20/20`, ending with
+  `STAGING_TESTS_OK`.
+- Production deployment returned `UPDATE_OK`. Transaction backups are
+  `/opt/cherry-scheduler-backups/server-state-20260720-031046.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260720-031046.tar.gz`.
+- Post-deploy health reports API v50, zero active/queued jobs, and all `6/6`
+  VPS worker tokens available. The public page serves the v150 cache; the
+  bridge asset contains `tkb-rust-api-v255-subject-period-constraint-rebuild`,
+  and the Agent manifest serves signed `1.6.18`.
 
 ### v1.42 VPS-authoritative PWA wake (deployed 2026-07-19)
 
@@ -367,6 +418,92 @@ change so a machine restart or a new conversation does not erase project context
   SHA-256 `4E430240DE143A0420AE7C3560611E8CF5C83BBDD8D1C29340F57580225887A8`,
   and the obsolete reconnect status writer is absent. The in-app browser
   loaded the v147 page idle with no v252 warning/error console entries.
+
+### v1.48 subject-period complete first (deployed 2026-07-20)
+
+- The production `default` data gained 324 ordinary subject-period rules: six
+  subjects across 54 classes require at least one consecutive two-period block
+  (`lessonBlocks.2.min = 1`) while avoiding the period 2-3 pair. These rules
+  are feasible and remain hard requirements.
+- The previous large first-click lane promoted zero one-period teacher sessions
+  and zero gap-2 sessions to mandatory search goals before it had a complete
+  timetable. It repeatedly returned 1,565/1,566 candidates until the watchdog
+  expired, then incorrectly surfaced HTTP 422 even though the user-authored
+  requirements were satisfiable.
+- Requests with subject-period rules now use the period-feasibility-first lane.
+  The solver must first return a complete, hard-valid timetable that satisfies
+  every application constraint. Teacher-session and gap cleanup remains an
+  optimization objective for the remaining budget and later manual clicks; any
+  residual quality debt must not be reported as an impossible timetable.
+- Release markers are API
+  `tkb_new-rust-api-2026-07-20-subject-period-complete-first-v48`, bridge
+  `tkb-rust-api-v253-subject-period-complete-first`, page cache
+  `20260720-v148-subject-period-complete-first-v1`, and Agent **1.6.17**.
+- Local verification passes scheduler **147/147**, Agent **72/72**, bridge
+  **191/191**, planner/UI **28/28**, constraint UI **12/12**, Python syntax,
+  and `git diff --check`. Three independent real-data seeds completed
+  `1566/1566`, hard-valid, with zero application violations in about 35-55
+  seconds and produced different schedule hashes. The real Agent runner and
+  the packed Agent EXE also completed `1566/1566`, hard-valid, with zero
+  violations.
+- Isolated VPS staging passes scheduler **147/147**, Agent **72/72**, Rust API
+  **136/136**, and validator **20/20**, ending with `STAGING_TESTS_OK`.
+- Production deployment returned `UPDATE_OK`. Transaction backups are
+  `/opt/cherry-scheduler-backups/server-state-20260720-003147.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260720-003147.tar.gz`. Public
+  health serves v48 with zero queued/active jobs and all `6/6` worker tokens
+  available after the production E2E.
+- Authenticated no-Agent production E2E dismissed the Agent invitation with
+  Cancel and created one VPS job. The page finished at `1566/1566`,
+  `Chua phan: 0`, and the final status `Da xep xong!`; a fresh reload retained
+  the complete result and emitted no warning/error console entries. This run
+  intentionally proves completion with the two new hard rules. Its first-click
+  quality debt is eligible for later manual optimization and is not a reason
+  to discard the complete schedule.
+- Public Agent archive SHA-256 is
+  `d7ea7e965d123adc9b0826535adf2880638c7fa05d440d9597a2981c058f326c`;
+  packed executable SHA-256 is
+  `5e1135e748fdc4636ec370d8a92b52966de3eefdef0c74dde4d2d12410c25ec8`.
+
+### Post-v1.48 subject-period strict cleanup (local, not deployed)
+
+- The v1.48 completion-first lane correctly preserved the 324 hard subject
+  rules, but it returned the first complete debt-allowed timetable immediately
+  because `ui_stop_after_first_complete_schedule` and
+  `optimization_first_click_skip_global_quality` also suppressed Phase Q. The
+  reproduced result was `522` teacher sessions, `28` one-period sessions, and
+  `5` gap-2 sessions; this was real quality debt rather than a statistics bug.
+- A subject-period first click now retains that complete hard-valid timetable
+  as a safety incumbent and opens one bounded strict cleanup at the proven
+  complete cap instead of immediately tightening to the ordinary compact cap.
+  The cleanup requires zero one-period teacher sessions, teacher gap at most
+  one period, and all-session period materialization. A timeout, infeasible
+  quality envelope, or cleanup error returns the complete incumbent rather
+  than turning a feasible timetable into HTTP 422.
+- Exact-data seed-101 replay with the six subjects across all 54 classes used a
+  `180`-second ceiling. Phase F retained `1566/1566` at `522 / 28 / 5`; the
+  incumbent-assisted cap-522 cleanup then returned `1566/1566`, hard-valid,
+  zero application violations, `522` teacher sessions, zero one-period
+  sessions, and gap distribution `{0: 418, 1: 104}`. Total optimizer time was
+  `119.364` seconds, and the cleanup stopped before any tighter-cap compaction.
+- Focused regressions cover strict cleanup despite first-complete stop flags and
+  incumbent retention when cleanup fails. Result-contract tests pass
+  **131/131** plus nine subtests; the full scheduler suite passes **148/148**
+  plus nine subtests. `py_compile` and `git diff --check` pass.
+
+### Post-v1.49 complete clean constraint repair guard (local, not deployed)
+
+- A complete schedule with zero current constraint violations must not enter the
+  staged fill-only repair path. That native path intentionally sets
+  `native_skip_teacher_optimization=true`, so using it for a complete clean
+  schedule preserved rough singleton/gap debt instead of running the normal
+  quality refinement. `partialExistingRepairState` now marks a complete
+  constraint repair eligible only when preflight reports at least one real
+  violation; incomplete schedules and genuinely violating complete schedules
+  retain staged repair behavior.
+- Added an E2E regression covering a complete constraint-clean timetable and
+  verified bridge tests at **193/193**, `node --check`, `py_compile`, and
+  `git diff --check`.
 
 ### Fixed-only empty-flexible fallback (included in deployed v1.43)
 
@@ -2463,18 +2600,20 @@ GET https://tkbcherry.com/pages/sapxep?sid=default
 Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
-Latest successful deployment marker observed on 2026-07-19: `UPDATE_OK` for
-v1.47. Public health serves API marker
-`tkb_new-rust-api-2026-07-19-stable-active-progress-v47`; the page serves cache
-key `20260719-v147-stable-active-progress-v1`, and the bridge marker is
-`tkb-rust-api-v252-stable-active-progress`. Public health was idle with zero
-active/queued jobs and `6/6` tokens available after deployment. Transaction
-backups are `/opt/cherry-scheduler-backups/server-state-20260719-165330.tar.gz`
-and `/opt/cherry-scheduler-backups/app-release-20260719-165330.tar.gz`.
-Public Agent release `1.6.16` and its signed manifest remain live. The archive SHA-256 is
-`18b970418ec42af36114037e32514684cecf1a98a4d20c21dd9c43f36f17cc97`; the
+Latest successful deployment marker observed on 2026-07-20: `UPDATE_OK` for
+v1.50. Public health serves API marker
+`tkb_new-rust-api-2026-07-20-subject-period-constraint-rebuild-v50`; the page
+serves cache key `20260720-v150-subject-period-constraint-rebuild-v1`, and the
+bridge marker is `tkb-rust-api-v255-subject-period-constraint-rebuild`. Public
+health was idle with zero active/queued jobs and `6/6` tokens available after
+deployment. Transaction backups are
+`/opt/cherry-scheduler-backups/server-state-20260720-031046.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260720-031046.tar.gz`.
+Public Agent release `1.6.18` and its signed manifest remain live. The archive
+SHA-256 is
+`5fe2355440f5022d3bdc99f3cf33494873d5f4d9a9f88581841d7122271399ea`; the
 packed executable SHA-256 is
-`282c71be3dda0135599c3d937d9d75c587b02752ac32f6503559ee87cfa9d869`.
+`42c81626228dc4885543d271dcb485e657e8e0707a31577d0b930f25881f2fa3`.
 Stable active-status DOM histories, iPhone/PWA reattach, No-Agent/Cancel, and
 Agent handoff regressions remain covered by the local and isolated VPS suites.
 Workstations on Agent `1.6.2` or older require one manual install of a

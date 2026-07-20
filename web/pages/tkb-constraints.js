@@ -13,7 +13,7 @@
 (function(){
   'use strict';
 
-  const VERSION = 'constraints-ui-v32-teacher-assigned-total';
+  const VERSION = 'constraints-ui-v33-mobile-safe-area-bulk-fill';
   const PANEL_ID = 'tkbConstraintsFullPanel';
   const STYLE_ID = 'tkbConstraintsFullStyle';
   const DAY_KEYS_DEFAULT = ['thu2','thu3','thu4','thu5','thu6','thu7'];
@@ -1551,6 +1551,14 @@
       #${PANEL_ID}.rb-page-panel .rb-main-page,
       #${PANEL_ID}.rb-page-panel .rb-content{min-height:0;height:100%;box-sizing:border-box}
       #${PANEL_ID}.rb-page-panel .rb-content{overflow:hidden}
+      #${PANEL_ID}.rb-page-panel .rb-content[data-rb-section="subject"],
+      #${PANEL_ID}.rb-page-panel .rb-content[data-rb-section="subjectGroup"]{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+      #${PANEL_ID}.rb-page-panel .rb-content[data-rb-section="subject"] > .toolbar,
+      #${PANEL_ID}.rb-page-panel .rb-content[data-rb-section="subjectGroup"] > .toolbar{flex:0 0 auto}
+      #${PANEL_ID}.rb-page-panel .rb-content[data-rb-section="subject"] > .table-wrap,
+      #${PANEL_ID}.rb-page-panel .rb-content[data-rb-section="subjectGroup"] > .table-wrap{flex:1 1 auto;min-height:0;max-height:none;overflow:auto;overscroll-behavior:contain;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch}
+      #${PANEL_ID} .rb-lesson-block-fill-row td{background:#f3f7ff;font-weight:700}
+      #${PANEL_ID} .rb-lesson-block-fill-row td:first-child{background:#f3f7ff}
       #${PANEL_ID}.rb-page-panel .rb-fixedoff-screen{height:100%;min-height:0;align-items:stretch}
       #${PANEL_ID}.rb-page-panel .rb-fixedoff-list{max-height:none}
       #${PANEL_ID}.rb-page-panel .rb-fixedoff-main{height:100%;min-height:0;display:flex;flex-direction:column}
@@ -1611,6 +1619,9 @@
   #${PANEL_ID}.rb-page-panel .rb-fixedoff-screen{grid-template-rows:minmax(60px,max-content) minmax(0,1fr)}
   #${PANEL_ID}.rb-page-panel .rb-fixedoff-list{max-height:104px}
   #${PANEL_ID}:not(.rb-page-panel) .rb-fixedoff-list{max-height:160px}
+}
+@media (max-width:860px) and (orientation:portrait){
+  #${PANEL_ID}.rb-page-panel{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 }
     `; document.head.appendChild(css);
   }
@@ -2570,7 +2581,7 @@ function buildMenuPopup(items, left, top, level){
     nav.innerHTML=`<h4>Tổng quan</h4>${navButton('Yêu cầu thời khóa biểu','dashboard')}<h4>Giáo viên</h4>${TEACHER_RULES.map(r=>navButton(r[1],'teacher',r[0])).join('')}<h4>Lớp / Môn học</h4>${SUBJECT_RULES.map(r=>navButton(r[1],'subject',r[0])).join('')}<h4>${FIXED_OFF_GROUP_LABEL}</h4>${FIXED_OFF_TYPES.map(r=>navButton(r[1],'fixedOff',r[0])).join('')}<h4>Khác</h4>${navButton('Giới hạn số tiết/1 thời điểm','timeLimit')}${navButton('Xóa yêu cầu TKB','clear')}`;
     nav.querySelectorAll('button[data-section]').forEach(b=>{ b.onclick=()=>{ if(!saveCurrentBeforeNavigation()) return; state.section=b.dataset.section; const r=b.dataset.rule; if(state.section==='teacher'&&r) state.teacherRule=r; if(state.section==='subject'&&r) state.subjectRule=r; if(state.section==='subjectGroup'&&r) state.subjectGroupRule=r; if(state.section==='fixedOff'&&r) state.fixedType=r; render(); }; });
   }
-  function render(){ renderNav(); updateFixedOffRibbon(); const body=document.querySelector(`#${PANEL_ID} [data-rb-body]`); if(!body) return; if(state.section==='info') body.innerHTML=renderInfo(); else if(state.section==='dashboard') body.innerHTML=renderDashboard(); else if(state.section==='groups') body.innerHTML=renderGroups(); else if(state.section==='teacher') body.innerHTML=renderTeacherRule(state.teacherRule); else if(state.section==='subject') body.innerHTML=renderSubjectRule(state.subjectRule); else if(state.section==='subjectGroup') body.innerHTML=renderSubjectGroupRule(state.subjectGroupRule); else if(state.section==='fixedOff') body.innerHTML=renderFixedOff(state.fixedType); else if(state.section==='fixedLesson') body.innerHTML=renderFixedLessons(); else if(state.section==='timeLimit') body.innerHTML=renderTimeLimit(); else if(state.section==='check') body.innerHTML=renderCheck(); else if(state.section==='clear') body.innerHTML=renderClear(); else body.innerHTML=renderDashboard(); updateFixedOffRibbon(); bindBodyEvents(); rememberCurrentFormSignature(); if(state.section==='dashboard') scheduleDashboardCapacityWarnings(); }
+  function render(){ renderNav(); updateFixedOffRibbon(); const body=document.querySelector(`#${PANEL_ID} [data-rb-body]`); if(!body) return; body.dataset.rbSection=state.section || 'dashboard'; if(state.section==='info') body.innerHTML=renderInfo(); else if(state.section==='dashboard') body.innerHTML=renderDashboard(); else if(state.section==='groups') body.innerHTML=renderGroups(); else if(state.section==='teacher') body.innerHTML=renderTeacherRule(state.teacherRule); else if(state.section==='subject') body.innerHTML=renderSubjectRule(state.subjectRule); else if(state.section==='subjectGroup') body.innerHTML=renderSubjectGroupRule(state.subjectGroupRule); else if(state.section==='fixedOff') body.innerHTML=renderFixedOff(state.fixedType); else if(state.section==='fixedLesson') body.innerHTML=renderFixedLessons(); else if(state.section==='timeLimit') body.innerHTML=renderTimeLimit(); else if(state.section==='check') body.innerHTML=renderCheck(); else if(state.section==='clear') body.innerHTML=renderClear(); else body.innerHTML=renderDashboard(); updateFixedOffRibbon(); bindBodyEvents(); rememberCurrentFormSignature(); if(state.section==='dashboard') scheduleDashboardCapacityWarnings(); }
   function fixedOffListScrollKey(){
     if(state.section==='teacher' && state.teacherRule==='mustTeach') return 'teacher:mustTeach';
     if(state.section==='fixedOff') return `fixedOff:${state.fixedType || ''}`;
@@ -3268,6 +3279,7 @@ function buildMenuPopup(items, left, top, level){
   function renderSubjectGroupRule(rule){ const table=subjectTable(rule,true); return `${selectSubjectGroupToolbar()}${wrapSubjectCheckAll(rule,table)}`; }
   function getRuleContainer(isGroup){ const c=model(); if(isGroup){ const gid=state.subjectGroupId || Object.keys(c.groups.subject||{})[0] || ''; state.subjectGroupId=gid; c.subjectGroup[gid]=c.subjectGroup[gid]||{byClass:{}}; return c.subjectGroup[gid]; } const sid=state.subjectId || (getSubjectList()[0]?.id || ''); state.subjectId=sid; c.subject[sid]=c.subject[sid]||{byClass:{}}; return c.subject[sid]; }
   function inputC(prefix,id,path,val){ return `<input type="number" ${numberInputClass()} data-cid="${esc(id)}" data-path="${esc(path)}" min="0" value="${esc(val == null ? '' : val)}">`; }
+  function lessonBlockFillInput(path,label){ return `<input type="number" inputmode="numeric" data-rb-lesson-block-fill="${esc(path)}" min="0" value="" aria-label="${esc(label)}" title="${esc(label)}">`; }
   function checkC(prefix,id,path,val){ return `<input type="checkbox" data-cid="${esc(id)}" data-path="${esc(path)}" ${truthy(val)?'checked':''}>`; }
   function renderGlobalLimitTable(scope, rule){ const rootKey=scope==='subjectGroup'?state.subjectGroupId:state.subjectId; const obj=scope==='subjectGroup'?(model().subjectGroup[rootKey]=model().subjectGroup[rootKey]||{}):(model().subject[rootKey]=model().subject[rootKey]||{}); const base=rule==='groupLimit'?'groupLimit':'globalLimit'; const conf=obj[base]||{}; const fake='global'; function cell(path){ return `<input type="number" ${numberInputClass()} data-global-scope="${esc(scope)}" data-global-root="${esc(rootKey)}" data-global-base="${esc(base)}" data-path="${esc(path)}" min="0" value="${esc(getPath(conf,path,''))}">`; } return `<div class="table-wrap"><table><thead><tr><th>Phạm vi</th><th>Lớp học</th><th>Giáo viên</th><th>Phòng học</th></tr></thead><tbody><tr><td><b>/1 tiết</b></td><td>${cell('perSlot.classes')}</td><td>${cell('perSlot.teachers')}</td><td>${cell('perSlot.rooms')}</td></tr><tr><td><b>/1 buổi</b></td><td>${cell('perSession.classes')}</td><td>${cell('perSession.teachers')}</td><td>${cell('perSession.rooms')}</td></tr></tbody></table></div>`; }
 
@@ -3319,7 +3331,8 @@ function buildMenuPopup(items, left, top, level){
       return `<div class="table-wrap rb-linked-days"><table>${cols}<thead><tr><th rowspan="2">TT</th><th rowspan="2">Lớp học</th><th class="rb-linked-session-head" colspan="${days().length}">BUỔI SÁNG</th><th class="rb-linked-session-head" colspan="${days().length}">BUỔI CHIỀU</th></tr><tr>${dayHead('sang')}${dayHead('chieu')}</tr></thead><tbody>${rows.map((cls,i)=>{const r=rowRule(cls);return `<tr><td>${i+1}</td><td><b>${esc(cls.name)}</b></td>${days().map(d=>`<td class="rb-check">${checkC('',cls.id,'linkedDays.sang.'+d,linkedDaysCellChecked(r,'sang',d))}</td>`).join('')}${days().map(d=>`<td class="rb-check">${checkC('',cls.id,'linkedDays.chieu.'+d,linkedDaysCellChecked(r,'chieu',d))}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>`;
     }
     if(rule==='lessonBlocks'){
-      return `<div class="table-wrap"><table><thead><tr><th rowspan="2">Lớp</th><th rowspan="2">Số tiết</th>${[2,3,4,5].map(n=>`<th colspan="2">${n} tiết xếp liền</th>`).join('')}</tr><tr>${[2,3,4,5].map(()=>`<th>Min</th><th>Max</th>`).join('')}</tr></thead><tbody>${rows.map(cls=>{const r=rowRule(cls);return `<tr>${classPeriodCells(cls)}${[2,3,4,5].map(n=>`<td>${inputC('',cls.id,'lessonBlocks.'+n+'.min',getPath(r,'lessonBlocks.'+n+'.min',''))}</td><td>${inputC('',cls.id,'lessonBlocks.'+n+'.max',getPath(r,'lessonBlocks.'+n+'.max',''))}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>`;
+      const fillRow=`<tr class="rb-lesson-block-fill-row"><td>Nhập nhanh</td><td>—</td>${[2,3,4,5].map(n=>`<td>${lessonBlockFillInput('lessonBlocks.'+n+'.min','Nhập nhanh Min cho '+n+' tiết xếp liền')}</td><td>${lessonBlockFillInput('lessonBlocks.'+n+'.max','Nhập nhanh Max cho '+n+' tiết xếp liền')}</td>`).join('')}</tr>`;
+      return `<div class="table-wrap"><table><thead><tr><th rowspan="2">Lớp</th><th rowspan="2">Số tiết</th>${[2,3,4,5].map(n=>`<th colspan="2">${n} tiết xếp liền</th>`).join('')}</tr><tr>${[2,3,4,5].map(()=>`<th>Min</th><th>Max</th>`).join('')}</tr></thead><tbody>${fillRow}${rows.map(cls=>{const r=rowRule(cls);return `<tr>${classPeriodCells(cls)}${[2,3,4,5].map(n=>`<td>${inputC('',cls.id,'lessonBlocks.'+n+'.min',getPath(r,'lessonBlocks.'+n+'.min',''))}</td><td>${inputC('',cls.id,'lessonBlocks.'+n+'.max',getPath(r,'lessonBlocks.'+n+'.max',''))}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>`;
     }
     if(rule==='globalLimit'||rule==='groupLimit') return renderGlobalLimitTable(isGroup?'subjectGroup':'subject', rule);
     return '';
@@ -5918,6 +5931,19 @@ function gradeListText(grades){
     input.value=rbNumNormalizePasteValue(value);
     return true;
   }
+  function applyLessonBlockBulkFill(root,path,value){
+    const scope=root || rbNumPanelRoot();
+    const targetPath=String(path || '');
+    if(!scope || !targetPath) return 0;
+    const normalized=rbNumNormalizePasteValue(value);
+    let changed=0;
+    scope.querySelectorAll('[data-cid][data-path]').forEach(input=>{
+      if(String(input.dataset.path || '') !== targetPath) return;
+      input.value=normalized;
+      changed+=1;
+    });
+    return changed;
+  }
   function rbNumParseClipboard(text){
     const raw=String(text ?? '').replace(/\r/g,'');
     if(!raw) return [];
@@ -6072,6 +6098,14 @@ function gradeListText(grades){
   }
   function bindBodyEvents(){ const root=document.getElementById(PANEL_ID); if(!root) return;
     bindCheckAllControls(root);
+    root.querySelectorAll('[data-rb-lesson-block-fill]').forEach(master=>{
+      master.oninput=()=>{
+        const count=applyLessonBlockBulkFill(root,master.dataset.rbLessonBlockFill,master.value);
+        if(!count) return;
+        rbNumCommitGridEdit();
+        rbNumUpdateSelectionUI(root);
+      };
+    });
     const fixedList=root.querySelector('.rb-fixedoff-list');
     if(fixedList){
       const key=fixedOffListScrollKey();
@@ -6598,7 +6632,9 @@ function gradeListText(grades){
         setFixedOffSingleClass,
         toggleFixedOffClass,
         teacherStats,
-        teacherRuleTable
+        teacherRuleTable,
+        renderSubjectRule,
+        applyLessonBlockBulkFill
       };
     }
   }catch(_){ }

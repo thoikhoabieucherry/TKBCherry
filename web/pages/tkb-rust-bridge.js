@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v252-stable-active-progress";
+  const VERSION = "tkb-rust-api-v255-subject-period-constraint-rebuild";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -8170,6 +8170,53 @@
       return heavyRows >= 5 ? 197 : 0;
     }
 
+  function hasSubjectPeriodRequirements(data){
+      const c = data?.tkbConstraints;
+      if(!c || typeof c !== "object") return false;
+      const truthy = value => value === true || value === 1 || value === "1" || String(value || "").toLowerCase() === "true";
+      const rowHasRequirement = rule => {
+        if(!rule || typeof rule !== "object") return false;
+        const blocks = rule.lessonBlocks && typeof rule.lessonBlocks === "object" ? rule.lessonBlocks : {};
+        if(Object.values(blocks).some(item => {
+          const min = Number(item?.min || 0);
+          const max = Number(item?.max || 0);
+          return (Number.isFinite(min) && min > 0) || (Number.isFinite(max) && max > 0);
+        })) return true;
+        return ["avoidBreakPair23", "avoidBreakPair34", "avoidBreakPairs"].some(key => {
+          const item = rule[key];
+          return item && typeof item === "object" && (truthy(item.morning) || truthy(item.afternoon));
+        });
+      };
+      const rootHasRequirement = root => {
+        const byClass = root?.byClass && typeof root.byClass === "object" ? root.byClass : {};
+        return Object.values(byClass).some(rowHasRequirement);
+      };
+      return Object.values(c.subject || {}).some(rootHasRequirement)
+        || Object.values(c.subjectGroup || {}).some(rootHasRequirement);
+    }
+
+    function isSubjectPeriodConstraintViolation(item){
+      const kind = String(item?.kind || "").trim().toLowerCase();
+      if(
+        kind.startsWith("subject.lessonblock")
+        || kind.startsWith("subjectgroup.lessonblock")
+        || kind.startsWith("subject.avoidbreak")
+        || kind.startsWith("subjectgroup.avoidbreak")
+        || kind.startsWith("subject.linkedday")
+        || kind.startsWith("subjectgroup.linkedday")
+      ) return true;
+      let text = String(item?.message || item || "").toLowerCase();
+      try{
+        text = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/Ä‘/g, "d");
+      }catch(_){ }
+      return (
+        (text.includes("tiet xep lien") && (text.includes("so buoi/cum") || text.includes("min") || text.includes("max")))
+        || text.includes("tranh xep lien tiet 2-3")
+        || text.includes("tranh xep lien tiet 3-4")
+        || text.includes("tranh xep tiet lien vao")
+      );
+    }
+
     function effectiveSettingsForSolve(settings, data){
       const next = Object.assign({}, settings || {});
       const mode = String(next.solver_mode || "auto").toLowerCase();
@@ -9598,10 +9645,14 @@
     );
     const maxMissing = repairFillFirstMaxMissing(settings);
     const ratio = expected > 0 ? scheduled / expected : 0;
+    const knownConstraintViolations = Number(settings?.ui_preflight_constraint_violation_count);
+    const hasKnownConstraintViolations = Number.isFinite(knownConstraintViolations)
+      && knownConstraintViolations > 0;
     const completeConstraintRepair = settings?.ui_constraint_change_repair === true
       && expected > 0
       && scheduled >= expected
-      && missing === 0;
+      && missing === 0
+      && hasKnownConstraintViolations;
     const fewLessons = completeConstraintRepair
       || (missing > 0 && (missing <= 6 || (maxMissing > 0 && missing <= maxMissing)));
     const closeEnough = expected > 0 && scheduled > 0 && (
@@ -13768,10 +13819,13 @@
   }
 
   function initialAutomaticSolverCeilingSeconds(expected, data){
-    void expected;
+    const subjectPeriodCeiling = hasSubjectPeriodRequirements(data)
+      ? ROBUST_AUTO_DURATION_SECONDS
+      : 0;
     return Math.max(
       FIRST_QUALITY_GATE_CEILING_SECONDS,
-      manualFreshRetryBudgetSeconds(data)
+      manualFreshRetryBudgetSeconds(data),
+      subjectPeriodCeiling
     );
   }
 
@@ -13830,7 +13884,12 @@
   // the 180-second refinement ceiling after earlier clicks).
   function applyBoundedFreshFallbackCeiling(settings, expected, data, requestedCustomSeconds){
     const requested = normalizeCustomSolveDurationSeconds(requestedCustomSeconds, 0);
-    const seconds = requested > 0 ? requested : FIRST_QUALITY_GATE_CEILING_SECONDS;
+    const seconds = requested > 0
+      ? requested
+      : Math.max(
+          FIRST_QUALITY_GATE_CEILING_SECONDS,
+          hasSubjectPeriodRequirements(data) ? ROBUST_AUTO_DURATION_SECONDS : 0
+        );
     return applyUnifiedInitialCeiling(settings, expected, data, seconds);
   }
 
@@ -14221,7 +14280,7 @@
     };
   }
 
-  function buildConstraintRepairAutoSortPlan(data, expected, releasedCount, knownConstraintViolationCount, preparedFreshPlan){
+  function buildConstraintRepairAutoSortPlan(data, expected, releasedCount, knownConstraintViolationCount, preparedFreshPlan, knownConstraintViolations){
     const safeData = data || getData();
     const base = buildAutomaticAutoSortPlan(
       safeData,
@@ -14232,6 +14291,59 @@
     const settings = base.settings;
     const released = Math.max(0, Math.round(Number(releasedCount || 0) || 0));
     const repairWindow = Math.max(96, released);
+    const expectedCount = Math.max(0, Number(expected || expectedLessonCount(safeData)) || 0);
+    const completeSubjectPeriodRepair = Number(knownConstraintViolationCount || 0) > 0
+      && expectedCount > 0
+      && countScheduledLessons(safeData) >= expectedCount
+      && hasSubjectPeriodRequirements(safeData)
+      && Array.isArray(knownConstraintViolations)
+      && knownConstraintViolations.some(isSubjectPeriodConstraintViolation);
+
+    if(completeSubjectPeriodRepair){
+      // A complete timetable that violates a newly authored subject-period
+      // rule needs a real rebuild. The staged native repair intentionally
+      // skips teacher optimization and gives its cleanup only two seconds,
+      // which can leave a hard-valid result with many singleton sessions.
+      // Keep the visible timetable transactional, but send only fixed anchors
+      // to the unified complete-first lane so it can satisfy the new rule and
+      // then enforce singleton=0 and gap<=1 inside the same bounded click.
+      clearExistingRepairSettings(settings);
+      settings.ui_unified_auto_sort = true;
+      settings.ui_unified_solve_kind = "fresh_complete_first";
+      settings.ui_constraint_change_repair = true;
+      settings.ui_constraint_change_fresh_retry = true;
+      settings.ui_constraint_change_rebuild_from_empty = true;
+      settings.ui_constraint_change_allow_quality_debt = true;
+      settings.ui_bounded_fresh_accept_quality_debt = true;
+      settings.ui_skip_pre_solve_constraint_release = true;
+      settings.ui_disable_staged_existing_repair = true;
+      settings.ui_disable_partial_existing_repair = true;
+      settings.ui_local_repair_needs_rearrange = true;
+      settings.ui_allow_staged_existing_on_fresh_sort = false;
+      settings.ui_force_staged_existing_repair = false;
+      settings.ui_stop_after_first_complete_schedule = false;
+      settings.complete_schedule_seed_retry = false;
+      settings.complete_schedule_seed_retry_max_runs = 0;
+      settings.auto_sort_mode = "teacher_session_opt";
+      settings.auto_sort_strategy = "constraint_change_subject_period_fresh_rebuild";
+      settings.require_complete_schedule = true;
+      settings.best_effort_on_timeout = true;
+      settings.ui_constraint_change_fresh_ceiling_seconds = applyBoundedFreshFallbackCeiling(
+        settings,
+        expectedCount,
+        safeData,
+        customSolveDurationFromSettings(settings)
+      );
+      settings.ui_unified_initial_ceiling_seconds = settings.ui_constraint_change_fresh_ceiling_seconds;
+      enforceNoHintFreshSolveSettings(settings);
+      return {
+        kind:"fresh_complete_first",
+        settings,
+        qualityTargets:base.qualityTargets,
+        state:null,
+        released
+      };
+    }
 
     clearFreshOnlyFlags(settings);
     settings.ui_unified_solve_kind = "repair_constraints";
@@ -14436,13 +14548,14 @@
         setStatus("\u0110\u00e3 d\u1eebng s\u1eafp x\u1ebfp theo y\u00eau c\u1ea7u.", "info");
         return null;
       }
-      automaticPlan = violationsForAutomaticPlan.length > 0
+          automaticPlan = violationsForAutomaticPlan.length > 0
         ? buildConstraintRepairAutoSortPlan(
             data,
             expected,
             releasedForConstraintRepair,
             violationsForAutomaticPlan.length,
-            preparedFreshPlan
+            preparedFreshPlan,
+            violationsForAutomaticPlan
           )
         : buildAutomaticAutoSortPlan(
             data,

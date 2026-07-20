@@ -223,6 +223,53 @@ test("teacher requirement tables show one assigned-period total independent of a
   assert.doesNotMatch(html, /rb-stat-head|>Sáng<|>Chiều<|>Tổng</);
 });
 
+test("lesson-block entry has one bulk row and fills only the currently rendered classes", () => {
+  const api = loadConstraints(constraintData(null));
+  const hooks = api.__testHooks;
+  assert.ok(hooks);
+
+  const html = hooks.renderSubjectRule("lessonBlocks");
+  assert.match(html, /class="rb-lesson-block-fill-row"/);
+  assert.equal(
+    (html.match(/data-rb-lesson-block-fill=/g) || []).length,
+    8,
+    "Min and Max for 2, 3, 4, and 5 consecutive periods need bulk inputs"
+  );
+
+  const grade8 = {dataset:{cid:"8/1", path:"lessonBlocks.2.min"}, value:"7"};
+  const grade9a = {dataset:{cid:"9/1", path:"lessonBlocks.2.min"}, value:""};
+  const grade9b = {dataset:{cid:"9/2", path:"lessonBlocks.2.min"}, value:""};
+  const otherColumn = {dataset:{cid:"9/1", path:"lessonBlocks.2.max"}, value:"4"};
+  const grade9Root = {
+    querySelectorAll(selector){
+      assert.equal(selector, "[data-cid][data-path]");
+      return [grade9a, grade9b, otherColumn];
+    }
+  };
+
+  assert.equal(hooks.applyLessonBlockBulkFill(grade9Root, "lessonBlocks.2.min", "1"), 2);
+  assert.equal(grade9a.value, "1");
+  assert.equal(grade9b.value, "1");
+  assert.equal(otherColumn.value, "4");
+  assert.equal(grade8.value, "7", "a class outside the selected grade must remain untouched");
+});
+
+test("mobile constraint pages reserve the portrait safe area and give subject tables real scroll space", () => {
+  assert.match(
+    CONSTRAINTS_SOURCE,
+    /@media \(max-width:860px\) and \(orientation:portrait\)\{[\s\S]*?padding-top:env\(safe-area-inset-top,0px\);[\s\S]*?padding-bottom:env\(safe-area-inset-bottom,0px\)/
+  );
+  assert.match(CONSTRAINTS_SOURCE, /body\.dataset\.rbSection=state\.section \|\| 'dashboard'/);
+  assert.match(
+    CONSTRAINTS_SOURCE,
+    /\.rb-content\[data-rb-section="subject"\][\s\S]*?display:flex;flex-direction:column;min-height:0;overflow:hidden/
+  );
+  assert.match(
+    CONSTRAINTS_SOURCE,
+    /\.rb-content\[data-rb-section="subject"\] > \.table-wrap[\s\S]*?flex:1 1 auto;min-height:0;max-height:none;overflow:auto;[\s\S]*?touch-action:pan-x pan-y/
+  );
+});
+
 function constraintData(dayLimit){
   const maxPeriods = dayLimit == null ? {} : {day:{thu2:dayLimit}};
   return {

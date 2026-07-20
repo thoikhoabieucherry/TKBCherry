@@ -5236,6 +5236,44 @@ def _constraints_need_lesson_block_feasibility_ceiling(rule_set: TimetableRuleSe
     return False
 
 
+def _subject_like_rule_needs_period_bridge(row: Any) -> bool:
+    if not isinstance(row, Mapping):
+        return False
+    lesson_blocks = row.get("lessonBlocks")
+    if isinstance(lesson_blocks, Mapping):
+        for conf in lesson_blocks.values():
+            if isinstance(conf, Mapping) and (
+                _to_int(conf.get("min"), 0) > 0 or _to_int(conf.get("max"), 0) > 0
+            ):
+                return True
+    for key in ("avoidBreakPairs", "avoidBreakPair23", "avoidBreakPair34"):
+        value = row.get(key)
+        if isinstance(value, Mapping) and any(_truthy_setting(item) for item in value.values()):
+            return True
+    linked = row.get("linkedDays")
+    if isinstance(linked, Mapping):
+        for session_key in ("sang", "chieu"):
+            for day in range(2, 8):
+                if _linked_day_avoided(linked, session_key, _day_key(day)):
+                    return True
+    return False
+
+
+def _constraints_have_subject_period_requirements(rule_set: TimetableRuleSet) -> bool:
+    constraints = rule_set.constraints
+    if constraints is None or not constraints.active:
+        return False
+    for rule_map in (constraints.subject, constraints.subject_group):
+        for root in (rule_map or {}).values():
+            by_class = root.get("byClass", {}) if isinstance(root, Mapping) else {}
+            if isinstance(by_class, Mapping) and any(
+                _subject_like_rule_needs_period_bridge(row)
+                for row in by_class.values()
+            ):
+                return True
+    return False
+
+
 def _constraints_need_period_feasibility_bridge(rule_set: TimetableRuleSet) -> bool:
     constraints = rule_set.constraints
     if constraints is None or not constraints.active:
@@ -5267,39 +5305,9 @@ def _constraints_need_period_feasibility_bridge(rule_set: TimetableRuleSet) -> b
             return True
         return False
 
-    def row_has_period_sensitive_subject_rule(row: Any) -> bool:
-        if not isinstance(row, Mapping):
-            return False
-        lesson_blocks = row.get("lessonBlocks")
-        if isinstance(lesson_blocks, Mapping):
-            for conf in lesson_blocks.values():
-                if isinstance(conf, Mapping) and (
-                    _to_int(conf.get("min"), 0) > 0 or _to_int(conf.get("max"), 0) > 0
-                ):
-                    return True
-        for key in ("avoidBreakPairs", "avoidBreakPair23", "avoidBreakPair34"):
-            value = row.get(key)
-            if isinstance(value, Mapping) and any(_truthy_setting(item) for item in value.values()):
-                return True
-        linked = row.get("linkedDays")
-        if isinstance(linked, Mapping):
-            for session_key in ("sang", "chieu"):
-                for day in range(2, 8):
-                    if _linked_day_avoided(linked, session_key, _day_key(day)):
-                        return True
-        return False
-
     if any(teacher_rule_needs_period_bridge(rule) for rule in (constraints.teacher or {}).values()):
         return True
-    for root in (constraints.subject or {}).values():
-        by_class = root.get("byClass", {}) if isinstance(root, Mapping) else {}
-        if isinstance(by_class, Mapping) and any(row_has_period_sensitive_subject_rule(row) for row in by_class.values()):
-            return True
-    for root in (constraints.subject_group or {}).values():
-        by_class = root.get("byClass", {}) if isinstance(root, Mapping) else {}
-        if isinstance(by_class, Mapping) and any(row_has_period_sensitive_subject_rule(row) for row in by_class.values()):
-            return True
-    return False
+    return _constraints_have_subject_period_requirements(rule_set)
 
 
 def _normalized_auto_sort_mode(settings: Mapping[str, Any] | None) -> str:
@@ -8842,7 +8850,26 @@ def _solve_unified_first_click_feasibility_then_quality(
         constraint_change_feasibility_first
         or period_feasibility_bridge_required
         or _truthy_setting(settings.get("optimization_benders_period_feasibility_all_sessions"))
+        # The automatic fresh first-click contract must reserve time for the
+        # quality cleanup even when the school has no subject-period rows.  On
+        # large plain schools the strict singleton/gap model can spend the
+        # entire deadline proving an objective-free completion; the period-safe
+        # lane finds a complete incumbent first, then the cleanup phase can
+        # improve that incumbent without losing the schedule.
+        or (
+            large_first_click
+            and quality_debt_fallback_enabled
+            and _truthy_setting(settings.get("ui_unified_first_click_quality"))
+            and str(settings.get("ui_unified_solve_kind") or "").strip().casefold()
+            == "fresh_complete_first"
+        )
     )
+    subject_period_requirements_completion_first = (
+        _constraints_have_subject_period_requirements(report_rules)
+    )
+    # A subject block/period rule is authored by the user and therefore outranks
+    # cosmetic teacher-quality goals. Build one complete hard-valid timetable
+    # before trying to remove singleton sessions or wide teacher gaps.
     # Large period-sensitive schools need a first-result quality gate: no
     # avoidable one-period teacher session and no teacher gap of two or more.
     # Try that wider cap before compacting sessions.  If the first attempt
@@ -8854,6 +8881,7 @@ def _solve_unified_first_click_feasibility_then_quality(
         large_first_click
         and period_feasibility_all_sessions
         and quality_debt_fallback_enabled
+        and not subject_period_requirements_completion_first
         and _truthy_setting(settings.get("optimization_first_click_strict_quality_gate", "1"))
     )
     safe_period_feasibility_first = (
@@ -9060,6 +9088,9 @@ def _solve_unified_first_click_feasibility_then_quality(
             "bounded_fresh_quality_debt": bounded_fresh_quality_debt,
             "period_feasibility_bridge_required": period_feasibility_bridge_required,
             "period_feasibility_all_sessions": period_feasibility_all_sessions,
+            "subject_period_requirements_completion_first": (
+                subject_period_requirements_completion_first
+            ),
             "quality_debt_allowed": safe_period_feasibility_first,
             "safe_period_feasibility_first": safe_period_feasibility_first,
             "strict_quality_gate_first": strict_quality_gate_first,
@@ -9362,12 +9393,32 @@ def _solve_unified_first_click_feasibility_then_quality(
     )
     remaining = deadline.remaining()
     feasibility_sessions = _metric_int(best_metrics, "teacher_sessions", 10**9)
+    quality_cleanup_required = (
+        (
+            subject_period_requirements_completion_first
+            or (
+                large_first_click
+                and _truthy_setting(settings.get("ui_unified_first_click_quality"))
+                and str(settings.get("ui_unified_solve_kind") or "").strip().casefold()
+                == "fresh_complete_first"
+            )
+        )
+        and (
+            _metric_int(best_metrics, "one_period_teacher_sessions", 0) > 0
+            or _teacher_session_opt_gap2_plus(best_metrics) > 0
+        )
+    )
     can_start_quality = (
-        not stop_after_first_complete
-        and not skip_global_quality
-        and requested_quality_cap is not None
-        and requested_quality_cap < feasibility_cap
-        and requested_quality_cap < feasibility_sessions
+        (quality_cleanup_required or not stop_after_first_complete)
+        and (quality_cleanup_required or not skip_global_quality)
+        and (quality_cleanup_required or requested_quality_cap is not None)
+        and (
+            quality_cleanup_required
+            or (
+                requested_quality_cap < feasibility_cap
+                and requested_quality_cap < feasibility_sessions
+            )
+        )
         and remaining is not None
         and remaining >= quality_minimum + return_reserve
     )
@@ -9379,22 +9430,29 @@ def _solve_unified_first_click_feasibility_then_quality(
                 _to_int(settings.get("optimization_first_click_quality_cap_headroom"), 18),
             ),
         )
-        quality_cap = max(
-            int(requested_quality_cap),
-            min(
-                upper_cap,
-                int(requested_quality_cap) + quality_headroom,
-                feasibility_cap - 1,
-                feasibility_sessions - 1,
-            ),
-        )
-        quality_budget = min(
-            max(
-                quality_minimum,
-                _to_int(settings.get("optimization_first_click_quality_time_limit_seconds"), 45),
-            ),
-            max(0, int(float(remaining) - return_reserve)),
-        )
+        if quality_cleanup_required:
+            # Subject period rules can make the normal compact cap infeasible.
+            # Keep the complete Phase-F cap while enforcing only the first-run
+            # zero-singleton / gap<=1 quality envelope.
+            quality_cap = max(1, min(feasibility_cap, feasibility_sessions, upper_cap))
+            quality_budget = max(0, int(float(remaining) - return_reserve))
+        else:
+            quality_cap = max(
+                int(requested_quality_cap),
+                min(
+                    upper_cap,
+                    int(requested_quality_cap) + quality_headroom,
+                    feasibility_cap - 1,
+                    feasibility_sessions - 1,
+                ),
+            )
+            quality_budget = min(
+                max(
+                    quality_minimum,
+                    _to_int(settings.get("optimization_first_click_quality_time_limit_seconds"), 45),
+                ),
+                max(0, int(float(remaining) - return_reserve)),
+            )
         # Preserve the fast lean trajectory for seeds that already produce a
         # period-feasible compact timetable. On a large rebuild, stop that lean
         # lane after its first failed vector so it cannot consume the whole
@@ -9408,29 +9466,57 @@ def _solve_unified_first_click_feasibility_then_quality(
                 settings.get("optimization_first_click_period_safe_quality_rescue", "1")
             )
         )
-        quality_random_seed = first_click_quality_seed
+        quality_random_seed = (
+            _first_click_request_portfolio_seed(first_click_quality_seed, 1)
+            if quality_cleanup_required
+            else first_click_quality_seed
+        )
         quality_settings = dict(feasibility_settings)
         # Keep the first strict-quality attempt deliberately conservative: it
         # is the handoff point from the mandatory complete incumbent. The
         # long/unbounded search is applied only to the subsequent tighter-cap
         # probe, where a timeout cannot displace that incumbent.
-        quality_benders_iterations = 1 if period_safe_quality_rescue_armed else 3
-        quality_session_limit = max(
-            10,
-            min(
-                20 if period_safe_quality_rescue_armed else 40,
-                int(quality_budget) - 14,
-                _to_int(
-                    settings.get("optimization_first_click_quality_session_time_limit_seconds"),
-                    40,
-                ),
-            ),
+        quality_benders_iterations = (
+            4
+            if quality_cleanup_required
+            else (1 if period_safe_quality_rescue_armed else 3)
         )
-        quality_period_limit = 15
-        quality_retry_limit = 15
+        if quality_cleanup_required:
+            quality_session_limit = max(
+                10,
+                min(
+                    160,
+                    max(10, int(quality_budget) - 18),
+                    _to_int(
+                        settings.get(
+                            "optimization_first_click_subject_period_quality_session_time_limit_seconds"
+                        ),
+                        max(10, int(quality_budget) - 18),
+                    ),
+                ),
+            )
+            quality_period_limit = 20
+            quality_retry_limit = 20
+        else:
+            quality_session_limit = max(
+                10,
+                min(
+                    20 if period_safe_quality_rescue_armed else 40,
+                    int(quality_budget) - 14,
+                    _to_int(
+                        settings.get("optimization_first_click_quality_session_time_limit_seconds"),
+                        40,
+                    ),
+                ),
+            )
+            quality_period_limit = 15
+            quality_retry_limit = 15
         quality_solver_target = (
             quality_cap
-            if _truthy_setting(settings.get("optimization_first_click_quality_stop_at_cap"))
+            if (
+            quality_cleanup_required
+                or _truthy_setting(settings.get("optimization_first_click_quality_stop_at_cap"))
+            )
             else int(requested_quality_cap)
         )
         quality_settings.update(
@@ -9439,14 +9525,20 @@ def _solve_unified_first_click_feasibility_then_quality(
                 "max_teacher_sessions": quality_cap,
                 "requested_max_teacher_sessions": quality_cap,
                 "target_teacher_sessions": int(quality_solver_target),
-                "optimization_accept_teacher_sessions": int(requested_quality_cap),
+                "optimization_accept_teacher_sessions": int(
+                    quality_cap if quality_cleanup_required else requested_quality_cap
+                ),
                 "optimization_benders_iterations": quality_benders_iterations,
                 "optimization_benders_complete_first": True,
                 "optimization_benders_disable_session_early_stop": False,
                 "optimization_benders_session_feasibility_only": False,
                 "session_cp_sat_linearization_level": 1,
-                "optimization_benders_period_feasibility_all_sessions": not lean_global_quality,
-                "optimization_benders_lean_refinement_periods": lean_global_quality,
+                "optimization_benders_period_feasibility_all_sessions": (
+                    quality_cleanup_required or not lean_global_quality
+                ),
+                "optimization_benders_lean_refinement_periods": (
+                    lean_global_quality and not quality_cleanup_required
+                ),
                 "optimization_benders_period_bridge_promotion_cut_count": (
                     1 if lean_global_quality else 2
                 ),
@@ -9465,6 +9557,8 @@ def _solve_unified_first_click_feasibility_then_quality(
                 "optimization_period_retry_time_limit": quality_retry_limit,
                 "optimization_unbounded_quality_search": unbounded_quality_search,
                 "optimization_stop_on_stagnation": True,
+                "subject_period_strict_quality_cleanup": quality_cleanup_required,
+                "quality_cleanup_required": quality_cleanup_required,
             }
         )
         if progress:
@@ -9476,6 +9570,8 @@ def _solve_unified_first_click_feasibility_then_quality(
                     "target": requested_quality_cap,
                     "time_limit_seconds": quality_budget,
                     "period_safe_rescue_armed": period_safe_quality_rescue_armed,
+                    "subject_period_strict_quality_cleanup": quality_cleanup_required,
+                    "quality_cleanup_required": quality_cleanup_required,
                 }
             )
         quality_started = time.monotonic()
@@ -9512,13 +9608,15 @@ def _solve_unified_first_click_feasibility_then_quality(
                     "phase": "fresh_complete_first_strict_quality",
                     "attempt_key": "fresh:phase_q",
                     "quality_cap": quality_cap,
-                    "quality_target": int(requested_quality_cap),
+                    "quality_target": int(requested_quality_cap or quality_cap),
                     "fixed_lessons_required": len(required_lessons),
                     "soft_hint_used": True,
                     "single_attempt": True,
                     "random_seed": quality_random_seed,
                     "request_random_seed": first_click_quality_seed,
                     "period_safe_quality_rescue_armed": period_safe_quality_rescue_armed,
+                    "subject_period_strict_quality_cleanup": quality_cleanup_required,
+                    "quality_cleanup_required": quality_cleanup_required,
                     "period_safe_quality_rescue": False,
                     "concrete_periods_materialized": False,
                     "stable_large_quality_seed": stabilize_large_quality_seed,
@@ -9550,11 +9648,12 @@ def _solve_unified_first_click_feasibility_then_quality(
                     "phase": "fresh_complete_first_strict_quality",
                     "attempt_key": "fresh:phase_q",
                     "quality_cap": quality_cap,
-                    "quality_target": int(requested_quality_cap),
+                    "quality_target": int(requested_quality_cap or quality_cap),
                     "single_attempt": True,
                     "random_seed": quality_random_seed,
                     "request_random_seed": first_click_quality_seed,
                     "period_safe_quality_rescue_armed": period_safe_quality_rescue_armed,
+                    "subject_period_strict_quality_cleanup": quality_cleanup_required,
                     "period_safe_quality_rescue": False,
                     "concrete_periods_materialized": False,
                     "stable_large_quality_seed": stabilize_large_quality_seed,
@@ -9644,7 +9743,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                             "phase": "fresh_complete_first_period_safe_quality_rescue",
                             "attempt_key": "fresh:phase_q:period_safe",
                             "quality_cap": int(quality_cap),
-                            "quality_target": int(requested_quality_cap),
+                            "quality_target": int(requested_quality_cap or quality_cap),
                             "random_seed": integrated_seed,
                             "request_random_seed": first_click_quality_seed,
                             "soft_hint_used": False,
@@ -9678,7 +9777,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                             "phase": "fresh_complete_first_period_safe_quality_rescue",
                             "attempt_key": "fresh:phase_q:period_safe",
                             "quality_cap": int(quality_cap),
-                            "quality_target": int(requested_quality_cap),
+                            "quality_target": int(requested_quality_cap or quality_cap),
                             "random_seed": integrated_seed,
                             "request_random_seed": first_click_quality_seed,
                             "soft_hint_used": False,
@@ -9792,7 +9891,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                             "phase": "fresh_complete_first_period_safe_relaxed_cap_rescue",
                             "attempt_key": "fresh:phase_q:period_safe_relaxed_cap",
                             "quality_cap": int(relaxed_rescue_cap),
-                            "quality_target": int(requested_quality_cap),
+                            "quality_target": int(requested_quality_cap or quality_cap),
                             "random_seed": relaxed_rescue_seed,
                             "request_random_seed": first_click_quality_seed,
                             "soft_hint_used": False,
@@ -9824,7 +9923,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                             "phase": "fresh_complete_first_period_safe_relaxed_cap_rescue",
                             "attempt_key": "fresh:phase_q:period_safe_relaxed_cap",
                             "quality_cap": int(relaxed_rescue_cap),
-                            "quality_target": int(requested_quality_cap),
+                            "quality_target": int(requested_quality_cap or quality_cap),
                             "random_seed": relaxed_rescue_seed,
                             "request_random_seed": first_click_quality_seed,
                             "soft_hint_used": False,
@@ -9891,7 +9990,10 @@ def _solve_unified_first_click_feasibility_then_quality(
                 best_sessions_after_quality - target_probe_step,
             )
         can_probe_tighter_cap = (
-            _truthy_setting(settings.get("optimization_first_click_target_probe_enabled", "1"))
+            not quality_cleanup_required
+            and _truthy_setting(
+                settings.get("optimization_first_click_target_probe_enabled", "1")
+            )
             and termination_reason == "first_click_strict_quality_improved"
             and requested_quality_cap is not None
             and target_probe_cap < best_sessions_after_quality
@@ -10006,7 +10108,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                         "phase": "fresh_complete_first_tighter_cap_probe",
                         "attempt_key": "fresh:phase_q_target",
                         "quality_cap": int(target_probe_cap),
-                        "quality_target": int(requested_quality_cap),
+                        "quality_target": int(requested_quality_cap or quality_cap),
                         "fixed_lessons_required": len(required_lessons),
                         "soft_hint_used": True,
                         "incumbent_retained": not target_probe_better,
@@ -10036,7 +10138,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                         "phase": "fresh_complete_first_tighter_cap_probe",
                         "attempt_key": "fresh:phase_q_target",
                         "quality_cap": int(target_probe_cap),
-                        "quality_target": int(requested_quality_cap),
+                        "quality_target": int(requested_quality_cap or quality_cap),
                         "fixed_lessons_required": len(required_lessons),
                         "soft_hint_used": True,
                         "incumbent_retained": True,

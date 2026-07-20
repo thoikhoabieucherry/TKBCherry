@@ -1787,6 +1787,22 @@ test("automatic duration keeps a 110-second quality gate and 180-second refineme
   assert.equal(hooks.incrementalRefineCeilingSeconds(1500, data, 8), 180);
 });
 
+test("subject period requirements may use the 180-second first-click ceiling", () => {
+  const data = makeData(1500);
+  data.tkbConstraints = {
+    subject:{
+      Toán:{byClass:{L1:{lessonBlocks:{2:{min:1}}, avoidBreakPair23:{morning:true}}}}
+    }
+  };
+  const {hooks} = loadBridge(data);
+
+  assert.equal(hooks.initialAutomaticSolverCeilingSeconds(1500, data), 180);
+  const fallback = {};
+  assert.equal(hooks.applyBoundedFreshFallbackCeiling(fallback, 1500, data), 180);
+  assert.equal(fallback.overall_time_limit_seconds, 180);
+  assert.equal(fallback.backend_deadline_ms, 180000);
+});
+
 test("automatic retries keep click progress monotonic while following the 60-180-180 second budget", () => {
   const data = makeData(1500);
   const clock = createFakeClock();
@@ -2737,6 +2753,213 @@ test("aggregate teacher max-days violation creates an internal repair without de
   assert.equal(plan.state.eligible, true);
   assert.equal(plan.state.missing, 0);
   assert.equal(plan.released, 0);
+});
+
+test("complete subject-period violation uses a fresh strict-quality rebuild instead of staged fill", () => {
+  const data = makeData(4);
+  const subject = data.mon[0].ten;
+  const one = () => [subject, "", "", "", ""];
+  data.tkb = {
+    L1:{
+      thu2:{sang:one(), chieu:["", "", "", "", ""]},
+      thu3:{sang:one(), chieu:["", "", "", "", ""]},
+      thu4:{sang:one(), chieu:["", "", "", "", ""]},
+      thu5:{sang:one(), chieu:["", "", "", "", ""]}
+    }
+  };
+  data.tkbConstraints = {
+    subject:{
+      [subject]:{
+        byClass:{
+          L1:{
+            lessonBlocks:{2:{min:1}},
+            avoidBreakPair23:{morning:true}
+          }
+        }
+      }
+    }
+  };
+  const {hooks} = loadBridge(data);
+  const plan = hooks.buildConstraintRepairAutoSortPlan(
+    data,
+    4,
+    0,
+    1,
+    null,
+    [{kind:"subject.lessonBlocks.min", message:"10A1 - Toán: số buổi/cụm có 2 tiết xếp liền 0, chưa đạt Min 1."}]
+  );
+
+  assert.equal(plan.kind, "fresh_complete_first");
+  assert.equal(plan.state, null);
+  assert.equal(plan.settings.ui_unified_solve_kind, "fresh_complete_first");
+  assert.equal(plan.settings.ui_constraint_change_fresh_retry, true);
+  assert.equal(plan.settings.ui_constraint_change_rebuild_from_empty, true);
+  assert.equal(plan.settings.ui_disable_staged_existing_repair, true);
+  assert.equal(plan.settings.ui_disable_partial_existing_repair, true);
+  assert.equal(plan.settings.preserve_existing_tkb, false);
+  assert.equal(plan.settings.allow_solver_warm_start, false);
+  assert.equal(plan.settings.overall_time_limit_seconds, 180);
+  const effective = hooks.effectiveSettingsForSolve(plan.settings, data);
+  assert.equal(effective.overall_time_limit_seconds, 180);
+  assert.equal(effective.backend_deadline_ms, 180000);
+  assert.notEqual(effective.ui_staged_existing_repair, true);
+  assert.notEqual(effective.native_skip_teacher_optimization, true);
+  const requestData = hooks.dataForSolverRequest(data, effective);
+  assert.equal(requestData.__tkbRequestStrippedSchedule, true);
+  assert.equal(hooks.countScheduledLessons(requestData), 0);
+  assert.equal(JSON.stringify(requestData.tkbConstraints), JSON.stringify(data.tkbConstraints));
+});
+
+test("Play sends one fixed-only 180-second rebuild for a complete subject-period violation", async () => {
+  const data = makeData(4);
+  const subject = data.mon[0].ten;
+  const empty = () => ["", "", "", "", ""];
+  const one = () => [subject, "", "", "", ""];
+  data.tkb = {
+    L1:{
+      thu2:{sang:one(), chieu:empty()},
+      thu3:{sang:one(), chieu:empty()},
+      thu4:{sang:one(), chieu:empty()},
+      thu5:{sang:one(), chieu:empty()}
+    }
+  };
+  data.tkbConstraints = {
+    subject:{[subject]:{byClass:{L1:{
+      lessonBlocks:{2:{min:1}},
+      avoidBreakPair23:{morning:true}
+    }}}}
+  };
+  const candidate = {
+    ok:true,
+    classes:[{id:"L1", name:"10A1"}],
+    lessons:[
+      {classId:"L1", className:"10A1", subject, teacher:"GV01", day:2, session:"AM", period:1},
+      {classId:"L1", className:"10A1", subject, teacher:"GV01", day:2, session:"AM", period:2},
+      {classId:"L1", className:"10A1", subject, teacher:"GV01", day:3, session:"AM", period:1},
+      {classId:"L1", className:"10A1", subject, teacher:"GV01", day:3, session:"AM", period:2}
+    ],
+    metrics:{
+      scheduled_periods:4,
+      expected_periods:4,
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      teacher_sessions:2,
+      one_period_teacher_sessions:0,
+      gap_distribution:{"0":2}
+    },
+    validation:{hard_ok:true},
+    solver:{runtime_settings:{optimization_termination_reason:"first_click_strict_quality_improved"}},
+    warnings:[],
+    unassignedLessons:[]
+  };
+  let solvePosts = 0;
+  let posted = null;
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      posted = JSON.parse(options.body);
+      return jsonResponse(candidate);
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    console:{log(){}, info(){}, warn(){}, error(){}}
+  });
+  const hasRequiredPair = () => Object.values(data.tkb?.L1 || {}).some(day => (
+    [day?.sang, day?.chieu].some(session => Array.isArray(session)
+      && session.some((value, index) => value === subject && session[index + 1] === subject))
+  ));
+  window.TKBConstraints = {
+    get(){ return data.tkbConstraints; },
+    syncDefaultGroups(){},
+    validateAll(){
+      return hasRequiredPair()
+        ? []
+        : [{kind:"subject.lessonBlocks.min", lopId:"L1", mon:subject, message:"Chưa đạt Min 1."}];
+    },
+    async validateAllAsync(){
+      return this.validateAll();
+    }
+  };
+  window.calcSchoolTKBStats = () => ({
+    soTiet:4,
+    daXepTiet:hooks.countScheduledLessons(data),
+    chuaXepTiet:Math.max(0, 4 - hooks.countScheduledLessons(data))
+  });
+
+  const result = await window.sapXepTuDongAll();
+
+  assert.ok(result);
+  assert.equal(solvePosts, 1);
+  assert.equal(posted.settings.ui_unified_solve_kind, "fresh_complete_first");
+  assert.equal(posted.settings.overall_time_limit_seconds, 180);
+  assert.equal(posted.settings.backend_deadline_ms, 180000);
+  assert.equal(posted.settings.ui_disable_staged_existing_repair, true);
+  assert.notEqual(posted.settings.native_skip_teacher_optimization, true);
+  assert.equal(posted.data.__tkbRequestStrippedSchedule, true);
+  assert.equal(hooks.countScheduledLessons(posted.data), 0);
+  assert.equal(JSON.stringify(posted.data.tkbConstraints), JSON.stringify(data.tkbConstraints));
+  assert.equal(data.tkbSolverResult.metrics.one_period_teacher_sessions, 0);
+  assert.equal(data.tkbSolverResult.metrics.gap_distribution["2"] || 0, 0);
+});
+
+test("an unrelated teacher violation stays staged when subject-period rules also exist", () => {
+  const data = makeData(4);
+  const subject = data.mon[0].ten;
+  const one = () => [subject, "", "", "", ""];
+  data.tkb = {
+    L1:{
+      thu2:{sang:one(), chieu:["", "", "", "", ""]},
+      thu3:{sang:one(), chieu:["", "", "", "", ""]},
+      thu4:{sang:one(), chieu:["", "", "", "", ""]},
+      thu5:{sang:one(), chieu:["", "", "", "", ""]}
+    }
+  };
+  data.tkbConstraints = {
+    teacher:{GV01:{maxDaysSessions:{maxDays:3}}},
+    subject:{[subject]:{byClass:{L1:{lessonBlocks:{2:{min:1}}}}}}
+  };
+  const {hooks} = loadBridge(data);
+  const plan = hooks.buildConstraintRepairAutoSortPlan(
+    data,
+    4,
+    0,
+    1,
+    null,
+    [{kind:"teacher.maxDays", teacherId:"GV01", days:4, maxDays:3}]
+  );
+
+  assert.equal(plan.kind, "repair_constraints");
+  assert.equal(plan.state.eligible, true);
+  assert.equal(plan.settings.ui_force_staged_existing_repair, true);
+});
+
+test("a complete constraint-clean timetable skips the staged fill-only path", () => {
+  const data = makeData(4);
+  const subject = data.mon[0].ten;
+  const one = () => [subject, "", "", "", ""];
+  data.tkb = {
+    L1:{
+      thu2:{sang:one(), chieu:["", "", "", "", ""]},
+      thu3:{sang:one(), chieu:["", "", "", "", ""]},
+      thu4:{sang:one(), chieu:["", "", "", "", ""]},
+      thu5:{sang:one(), chieu:["", "", "", "", ""]}
+    }
+  };
+  data.tkbConstraints = {teacher:{GV01:{maxDaysSessions:{maxDays:6}}}};
+  const {hooks} = loadBridge(data);
+  const plan = hooks.buildConstraintRepairAutoSortPlan(data, 4, 0, 0);
+  assert.equal(plan.kind, "repair_constraints");
+  assert.equal(plan.state.missing, 0);
+  assert.equal(plan.state.eligible, false, "without a current violation this is a normal quality refinement");
+
+  const effective = hooks.effectiveSettingsForSolve(plan.settings, data);
+  assert.notEqual(effective.ui_staged_existing_repair, true);
+  assert.notEqual(effective.native_skip_teacher_optimization, true);
 });
 
 test("constraint repair POST keeps every visible lesson and reports zero client-side missing periods", async () => {
