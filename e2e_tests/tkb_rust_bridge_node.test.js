@@ -9299,7 +9299,9 @@ test("pending result and solver-state responses forward their latest VPS progres
         requestedJobProgress:stateCalls === 1 ? progressSnapshot : null,
         jobs:[{
           jobId,
-          startedAtMs:clock.now() - 10_000,
+          // The state endpoint must expose the same canonical start as the
+          // running result response, even when both are polled in succession.
+          startedAtMs:clock.now() - 8_000,
           progress:progressSnapshot
         }],
         queue:[],
@@ -9350,6 +9352,66 @@ test("pending result and solver-state responses forward their latest VPS progres
   assert.equal(window.__TKB_RUST_PROGRESS_STATE.label, "8 giây");
   assert.ok(window.__TKB_RUST_PROGRESS_STATE.percent >= percentAfterResultPoll);
   assert.equal(stateCalls, 2);
+});
+
+test("the owner tab adopts the canonical VPS clock when FIFO state turns running", async () => {
+  const data = makeData(2);
+  const clock = createFakeClock();
+  const progress = createProgressDocument(clock);
+  const jobId = "owner-fifo-state-admission";
+  const startedAtMs = clock.now() - 47_000;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      return jsonResponse({
+        ok:true,
+        requestedJobId:jobId,
+        requestedJobActive:true,
+        requestedJobQueued:false,
+        requestedJobStartedAtMs:startedAtMs,
+        jobs:[{
+          jobId,
+          startedAtMs,
+          progressBudgetSeconds:180,
+          progressRunIndex:2
+        }],
+        queue:[],
+        completedJobs:[]
+      });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+    document:progress.document
+  }));
+
+  hooks.primeAutoSortStartUi();
+  hooks.startProgressTicker({
+    auto_sort_mode:"teacher_session_opt",
+    overall_time_limit_seconds:180,
+    backend_deadline_ms:180_000
+  }, data);
+  hooks.writePendingBackendJob(jobId, hooks.durableScheduleFingerprint(data), {
+    progressBudgetSeconds:180,
+    progressRunIndex:2
+  });
+  hooks.markBackendJobQueued(jobId, {
+    progressBudgetSeconds:180,
+    progressRunIndex:2
+  });
+  clock.advance(9_000);
+  hooks.tickEstimatedProgress();
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.phase, "queued");
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 12);
+
+  await window.TKBRustAPI.backendSolverState(jobId);
+  const state = window.__TKB_RUST_PROGRESS_STATE;
+  assert.equal(state.serverStartedAtMs, startedAtMs);
+  assert.equal(state.canonicalServerProgress, true);
+  assert.equal(state.phase, "running");
+  assert.equal(state.label, "56 giây");
+  assert.ok(state.percent > 12, `canonical admission must advance past the queue cap: ${state.percent}`);
 });
 
 test("all pending VPS response paths hand progress to the live-progress recorder", () => {

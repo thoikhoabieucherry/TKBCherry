@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v261-quality-frontier-polish";
+  const VERSION = "tkb-rust-api-v262-canonical-progress";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -1428,6 +1428,36 @@
           || matchingJob?.progress
           || matchingQueueItem?.progress
         );
+
+        // The tab that created a queued job polls this endpoint while waiting
+        // for FIFO admission.  Promote it to the canonical VPS clock as soon
+        // as the state response exposes the concrete running item.  Previously
+        // only the reattach path did this, so the owner tab could remain capped
+        // at the 12% pre-admission band while another device advanced normally.
+        const stateProgressMetadata = {
+          progressBudgetSeconds:matchingJob?.progressBudgetSeconds
+            || matchingQueueItem?.progressBudgetSeconds
+            || payload.progressBudgetSeconds
+            || payload.requestedJobProgressBudgetSeconds,
+          progressRunIndex:matchingJob?.progressRunIndex
+            || matchingQueueItem?.progressRunIndex
+            || payload.progressRunIndex
+            || payload.requestedJobProgressRunIndex
+        };
+        const trackedJobIsLive = !!matchingJob
+          || payload.requestedJobActive === true;
+        const reportedStartedAtMs = trackedJobIsLive
+          ? (
+            matchingJob?.startedAtMs
+            || payload.requestedJobStartedAtMs
+            || payload.startedAtMs
+          )
+          : 0;
+        if(Number(reportedStartedAtMs || 0) > 0){
+          recordBackendJobStarted(trackedJobId, reportedStartedAtMs, stateProgressMetadata);
+        }else if(matchingQueueItem || payload.requestedJobQueued === true){
+          markBackendJobQueued(trackedJobId, stateProgressMetadata);
+        }
       }
       return payload;
     }catch(_){

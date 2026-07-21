@@ -24,7 +24,7 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-20-quality-frontier-polish-v56";
+const VERSION: &str = "tkb_new-rust-api-2026-07-21-canonical-progress-v57";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
@@ -2308,6 +2308,28 @@ fn server_watchdog_remaining_from_snapshot(
     Some(budget_ms.saturating_sub(now_ms.saturating_sub(started_ms)))
 }
 
+/// Return the one canonical start timestamp shared by every observer of a
+/// server-owned job.  The watchdog starts when the coordinator reserves the
+/// executor and remains unchanged across Agent/VPS handoff; a claimed job
+/// without a watchdog (legacy/unit callers) falls back to its creation time.
+fn server_job_started_at_ms(snapshot: &ServerJobSnapshot) -> Option<u64> {
+    snapshot
+        .watchdog_started_ms
+        .or_else(|| (snapshot.created_ms > 0).then_some(snapshot.created_ms))
+}
+
+fn server_job_started_at_for_owner(
+    app: &App,
+    job_id: &str,
+    owner: &SolverOwner,
+) -> Option<u64> {
+    app.solver_pool
+        .server_job_snapshots_for_owner(owner)
+        .into_iter()
+        .find(|job| job.job_id == job_id)
+        .and_then(|job| server_job_started_at_ms(&job))
+}
+
 fn solver_state_json(app: &App, query: &str, owner: &SolverOwner) -> Vec<u8> {
     let pool = &app.solver_pool;
     let requested_job_id = query_param(query, "jobId").unwrap_or_default();
@@ -2325,9 +2347,11 @@ fn solver_state_json(app: &App, query: &str, owner: &SolverOwner) -> Vec<u8> {
         .map(
             |(job_id, started_at_ms, cancel_requested, allocated_workers)| {
                 let server_job = server_jobs.iter().find(|job| job.job_id == job_id);
+                let canonical_started_at_ms =
+                    server_job.and_then(server_job_started_at_ms);
                 json!({
                     "jobId": job_id,
-                    "startedAtMs": started_at_ms,
+                    "startedAtMs": canonical_started_at_ms.unwrap_or(started_at_ms),
                     "createdAtMs": server_job.map(|job| job.created_ms),
                     "scheduleScope": server_job.and_then(|job| job.schedule_scope.as_deref()),
                     "scheduleFingerprint": server_job.and_then(|job| job.schedule_fingerprint.as_deref()),
@@ -2364,6 +2388,11 @@ fn solver_state_json(app: &App, query: &str, owner: &SolverOwner) -> Vec<u8> {
                 "jobId": job_id,
                 "position": position,
                 "queuedAtMs": queued_at_ms,
+                // A queued server job may already have a canonical watchdog
+                // start (the coordinator reserves it before FIFO admission).
+                // Do not invent one from creation time while it is merely
+                // waiting for workers.
+                "startedAtMs": server_job.and_then(|job| job.watchdog_started_ms),
                 "createdAtMs": server_job.map(|job| job.created_ms),
                 "scheduleScope": server_job.and_then(|job| job.schedule_scope.as_deref()),
                 "scheduleFingerprint": server_job.and_then(|job| job.schedule_fingerprint.as_deref()),
@@ -2395,7 +2424,7 @@ fn solver_state_json(app: &App, query: &str, owner: &SolverOwner) -> Vec<u8> {
         }
         jobs.push(json!({
             "jobId": server_job.job_id,
-            "startedAtMs": server_job.created_ms,
+            "startedAtMs": server_job_started_at_ms(server_job),
             "createdAtMs": server_job.created_ms,
             "scheduleScope": server_job.schedule_scope,
             "scheduleFingerprint": server_job.schedule_fingerprint,
@@ -2435,6 +2464,7 @@ fn solver_state_json(app: &App, query: &str, owner: &SolverOwner) -> Vec<u8> {
         .map(|job| {
             json!({
                 "jobId": job.job_id,
+                "startedAtMs": server_job_started_at_ms(job),
                 "createdAtMs": job.created_ms,
                 "completedAtMs": job.completed_ms,
                 "scheduleScope": job.schedule_scope,
@@ -2483,6 +2513,7 @@ fn solver_state_json(app: &App, query: &str, owner: &SolverOwner) -> Vec<u8> {
             "requestedJobQueued": requested_job_queued,
             "requestedJobServerOwned": requested_job_server_owned,
             "requestedJobResultReady": requested_job_result_ready,
+            "requestedJobStartedAtMs": requested_server_job.and_then(server_job_started_at_ms),
             "requestedJobProgress": requested_server_job.and_then(|job| job.progress.as_ref()),
              "requestedJobProgressUpdatedAtMs": requested_server_job.and_then(|job| job.progress_updated_ms),
              "requestedJobWatchdogBudgetMs": requested_server_job.and_then(|job| job.watchdog_budget_ms),
@@ -2520,6 +2551,9 @@ fn solve_result_for_job_id_json(app: &App, job_id: &str, owner: &SolverOwner) ->
             response,
             server_job.as_ref().and_then(|job| job.progress.as_ref()),
             server_job.as_ref().and_then(|job| job.progress_updated_ms),
+            server_job
+                .as_ref()
+                .and_then(server_job_started_at_ms),
         );
     }
     if !app.solver_pool.server_job_known_for_owner(job_id, owner) {
@@ -2544,6 +2578,9 @@ fn solve_result_for_job_id_json(app: &App, job_id: &str, owner: &SolverOwner) ->
     let watchdog_remaining_ms = server_job
         .as_ref()
         .and_then(|job| server_watchdog_remaining_from_snapshot(job, now_millis()));
+    let canonical_started_at_ms = server_job
+        .as_ref()
+        .and_then(server_job_started_at_ms);
     let queue_item = app
         .solver_pool
         .queue_snapshot_for_owner(owner)
@@ -2559,6 +2596,9 @@ fn solve_result_for_job_id_json(app: &App, job_id: &str, owner: &SolverOwner) ->
                 "kind": "solver_queued",
                 "error": "solver_queued",
                 "jobId": job_id,
+                "startedAtMs": server_job
+                    .as_ref()
+                    .and_then(|job| job.watchdog_started_ms),
                 "queuePosition": position,
                 "queuedAtMs": queued_ms,
                 "progressBudgetSeconds": progress_budget_seconds,
@@ -2592,7 +2632,7 @@ fn solve_result_for_job_id_json(app: &App, job_id: &str, owner: &SolverOwner) ->
                 "kind": "solver_running",
                 "error": "solver_running",
                 "jobId": job_id,
-                "startedAtMs": started_ms,
+                "startedAtMs": canonical_started_at_ms.unwrap_or(started_ms),
                 "progressBudgetSeconds": progress_budget_seconds,
                 "progressRunIndex": progress_run_index,
                  "progress": progress,
@@ -2631,6 +2671,7 @@ fn solve_result_for_job_id_json(app: &App, job_id: &str, owner: &SolverOwner) ->
                     "kind": "solver_running",
                     "error": "solver_running",
                     "jobId": job_id,
+                    "startedAtMs": canonical_started_at_ms,
                     "executor": server_job.execution_phase.executor().map(ServerExecutor::as_str),
                     "executionPhase": server_job.execution_phase.as_str(),
                     "handoffInProgress": server_job.execution_phase.handoff_in_progress(),
@@ -2656,6 +2697,7 @@ fn solve_result_for_job_id_json(app: &App, job_id: &str, owner: &SolverOwner) ->
             "kind": "solver_cancelling",
             "error": "solver_cancelling",
             "jobId": job_id,
+            "startedAtMs": canonical_started_at_ms,
             "progressBudgetSeconds": progress_budget_seconds,
             "progressRunIndex": progress_run_index,
              "progress": progress,
@@ -4714,10 +4756,11 @@ fn solver_response_with_progress(
     response: Vec<u8>,
     progress: Option<&Value>,
     progress_updated_ms: Option<u64>,
+    started_at_ms: Option<u64>,
 ) -> Vec<u8> {
-    let Some(progress) = progress else {
+    if progress.is_none() && started_at_ms.is_none() {
         return response;
-    };
+    }
     let Some(header_end) = response.windows(4).position(|window| window == b"\r\n\r\n") else {
         return response;
     };
@@ -4735,9 +4778,14 @@ fn solver_response_with_progress(
     let Some(payload) = payload.as_object_mut() else {
         return response;
     };
-    payload.insert("progress".to_string(), progress.clone());
+    if let Some(progress) = progress {
+        payload.insert("progress".to_string(), progress.clone());
+    }
     if let Some(updated_ms) = progress_updated_ms {
         payload.insert("progressUpdatedAtMs".to_string(), json!(updated_ms));
+    }
+    if let Some(started_at_ms) = started_at_ms {
+        payload.insert("startedAtMs".to_string(), json!(started_at_ms));
     }
     json_response(status, Value::Object(payload.clone()))
 }
@@ -5314,6 +5362,7 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
                     "kind": "solver_started",
                     "error": "solver_started",
                     "jobId": job_id,
+                    "startedAtMs": server_job_started_at_for_owner(app, &job_id, owner),
                     "executor": ServerExecutor::Agent.as_str(),
                     "executionPhase": ServerExecutionPhase::AgentWaiting.as_str(),
                     "progressBudgetSeconds": progress_budget_seconds,
@@ -5361,6 +5410,7 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
                         "kind": "solver_started",
                         "error": "solver_started",
                         "jobId": job_id,
+                        "startedAtMs": server_job_started_at_for_owner(app, &job_id, owner),
                         "executor": ServerExecutor::Agent.as_str(),
                         "executionPhase": ServerExecutionPhase::AgentWaiting.as_str(),
                         "progressBudgetSeconds": progress_budget_seconds,
@@ -5448,6 +5498,7 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
                         "kind": "solver_started",
                         "error": "solver_started",
                         "jobId": job_id,
+                        "startedAtMs": server_job_started_at_for_owner(app, &job_id, owner),
                         "executor": ServerExecutor::Vps.as_str(),
                         "executionPhase": ServerExecutionPhase::VpsRunning.as_str(),
                         "progressBudgetSeconds": progress_budget_seconds,
@@ -5498,6 +5549,11 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
                     "kind": "solver_queued",
                     "error": "solver_queued",
                     "jobId": job_id,
+                    "startedAtMs": if server_owned {
+                        server_job_started_at_for_owner(app, &job_id, owner)
+                    } else {
+                        None
+                    },
                     "executor": if server_owned { Value::String(ServerExecutor::Vps.as_str().to_string()) } else { Value::Null },
                     "executionPhase": if server_owned { Value::String(ServerExecutionPhase::VpsQueued.as_str().to_string()) } else { Value::Null },
                     "progressBudgetSeconds": progress_budget_seconds,
@@ -5552,8 +5608,11 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
                             "kind": "solver_started",
                             "error": "solver_started",
                             "jobId": job_id,
+                            "startedAtMs": server_job_started_at_for_owner(app, &job_id, owner),
                             "executor": ServerExecutor::Agent.as_str(),
                             "executionPhase": ServerExecutionPhase::AgentWaiting.as_str(),
+                            "progressBudgetSeconds": progress_budget_seconds,
+                            "progressRunIndex": progress_run_index,
                             "retryAfterMs": 700
                         }),
                     );
@@ -7747,6 +7806,10 @@ mod tests {
         let started_payload = response_payload(&started);
         assert_eq!(started_payload["executor"], json!("agent"));
         assert_eq!(started_payload["executionPhase"], json!("agent_waiting"));
+        let canonical_started_at_ms = started_payload["startedAtMs"]
+            .as_u64()
+            .expect("Agent-owned start response must expose canonical startedAtMs");
+        assert!(canonical_started_at_ms >= 1_000_000_000_000);
         assert_eq!(app.solver_pool.active_count(), 0);
         assert_eq!(app.solver_pool.allocated_worker_tokens(), 0);
 
@@ -7755,6 +7818,11 @@ mod tests {
         let running_payload = response_payload(&running);
         assert_eq!(running_payload["executor"], json!("agent"));
         assert_eq!(running_payload["running"], json!(true));
+        assert_eq!(
+            running_payload["startedAtMs"],
+            json!(canonical_started_at_ms),
+            "solve-result must use the same timestamp as the initial Agent response"
+        );
 
         let owner_state = solver_state_json(
             &app,
@@ -7765,6 +7833,10 @@ mod tests {
         assert_eq!(owner_state_payload["requestedJobServerOwned"], json!(true));
         assert_eq!(owner_state_payload["requestedJobActive"], json!(true));
         assert_eq!(owner_state_payload["requestedJobExecutor"], json!("agent"));
+        assert_eq!(
+            owner_state_payload["requestedJobStartedAtMs"],
+            json!(canonical_started_at_ms)
+        );
         let visible_job = owner_state_payload["jobs"]
             .as_array()
             .and_then(|jobs| {
@@ -7775,6 +7847,7 @@ mod tests {
             .expect("Agent-owned canonical job must stay visible after reload");
         assert_eq!(visible_job["serverOwned"], json!(true));
         assert_eq!(visible_job["executor"], json!("agent"));
+        assert_eq!(visible_job["startedAtMs"], json!(canonical_started_at_ms));
 
         let cancelled = solve_cancel_json(
             &app,
@@ -7814,10 +7887,18 @@ mod tests {
         let started = solve_json(&app, request.to_string().as_bytes(), &owner);
         assert_eq!(response_status(&started), 202);
         assert_eq!(response_payload(&started)["executor"], json!("agent"));
+        let canonical_started_at_ms = response_payload(&started)["startedAtMs"]
+            .as_u64()
+            .expect("fallback job must have a canonical startedAtMs");
         assert_eq!(app.solver_pool.active_count(), 0);
 
         let completed = wait_for_server_result(&app, "agent-unclaimed-fallback", &owner);
         assert_eq!(response_status(&completed), 200);
+        assert_eq!(
+            response_payload(&completed)["startedAtMs"],
+            json!(canonical_started_at_ms),
+            "Agent-to-VPS fallback must preserve the canonical start timestamp"
+        );
         assert_eq!(app.solver_pool.active_count(), 0);
         assert!(app
             .solver_pool
@@ -7998,6 +8079,10 @@ mod tests {
             Some("solver_started")
         ));
         assert_eq!(response_payload(&started)["executor"], json!("vps"));
+        let canonical_started_at_ms = response_payload(&started)["startedAtMs"]
+            .as_u64()
+            .expect("VPS start response must expose canonical startedAtMs");
+        assert!(canonical_started_at_ms >= 1_000_000_000_000);
         let duplicate = solve_json(&app, body.as_bytes(), &owner);
         assert!(matches!(response_status(&duplicate), 200 | 202));
 
@@ -8006,6 +8091,11 @@ mod tests {
         assert_eq!(
             response_payload(&completed)["metrics"]["scheduled_periods"],
             json!(1)
+        );
+        assert_eq!(
+            response_payload(&completed)["startedAtMs"],
+            json!(canonical_started_at_ms),
+            "completed solve-result must retain the canonical start timestamp"
         );
         assert_eq!(
             response_status(&solve_result_json(
@@ -8034,6 +8124,10 @@ mod tests {
         assert_eq!(state["completedJobs"][0]["progressRunIndex"], json!(3));
         assert!(state["completedJobs"][0]["createdAtMs"].is_u64());
         assert!(state["completedJobs"][0]["completedAtMs"].is_u64());
+        assert_eq!(
+            state["completedJobs"][0]["startedAtMs"],
+            json!(canonical_started_at_ms)
+        );
         assert!(state["completedJobs"][0].get("response").is_none());
         let other_state = response_payload(&solver_state_json(&app, "", &other_owner));
         assert_eq!(

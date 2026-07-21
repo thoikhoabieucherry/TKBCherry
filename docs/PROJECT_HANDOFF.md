@@ -1,6 +1,6 @@
 # TKBCherry Project Handoff
 
-Last updated: 2026-07-20 (Asia/Bangkok)
+Last updated: 2026-07-21 (Asia/Bangkok)
 
 This is the persistent handoff note for future Codex sessions. Read this file
 before modifying the scheduler or deploying. Update it after every meaningful
@@ -8,9 +8,12 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.56** (quality-frontier polish).
-  Public API marker: `tkb_new-rust-api-2026-07-20-quality-frontier-polish-v56`;
-  page cache: `20260720-v156-quality-frontier-polish-v1`.
+- Current application release prepared for deployment: **v1.57** (canonical
+  cross-device progress). Public API marker:
+  `tkb_new-rust-api-2026-07-21-canonical-progress-v57`; page cache:
+  `20260721-v157-canonical-progress-v1`; bridge marker:
+  `tkb-rust-api-v262-canonical-progress`. Production remains v1.56 until the
+  deployment entry below reports `UPDATE_OK`.
 - Current public Agent release: **v1.6.22** (`1.6.22`). The server lease gate
   is also 1.6.22 so an older Agent can update itself but cannot execute a job
   with a mismatched solver contract.
@@ -478,6 +481,37 @@ change so a machine restart or a new conversation does not erase project context
   `buổi` and `trống 1 tiết` further, but it never replaces a complete or
   hard-invalid schedule. Fresh clicks remain randomized and do not use a
   static hint.
+
+### v1.57 canonical cross-device progress (prepared 2026-07-21)
+
+- Root cause of the reported `Xếp tiếp` progress split: the owner tab received
+  `solver_queued`, then polled `/api/solver-state` while waiting for FIFO
+  admission. When the job became active, that path only refreshed the status
+  and live stage; it did not promote the tab from the 12% pre-admission cap to
+  the canonical server clock. A second device did promote itself during
+  reattach, so the same job could show 12% on one screen and 35% on another.
+- The bridge now promotes a tracked job whenever a concrete running item is
+  returned by `/api/solver-state`, while queued responses remain capped until
+  admission. Promotion is guarded to live state only, so a terminal/idle probe
+  cannot resurrect an old progress timestamp.
+- Rust server-owned responses now expose one `startedAtMs` derived from the
+  canonical watchdog start (falling back to creation time for legacy/unit
+  jobs) across initial `solver_started`, queued/running/completed
+  `solve-result`, active/queued/completed `solver-state`, and Agent-to-VPS
+  handoff. `requestedJobStartedAtMs` is also exposed for observers.
+- Release markers: API
+  `tkb_new-rust-api-2026-07-21-canonical-progress-v57`, bridge
+  `tkb-rust-api-v262-canonical-progress`, and page cache
+  `20260721-v157-canonical-progress-v1`.
+- Verification before deployment: bridge `208/208`, toolbar `28/28`, subject
+  semantics `14/14`, scheduler `163/163`, Agent `75/75`, isolated VPS staging
+  Rust API `140/140` plus validator `20/20`, Python syntax/unit checks, and
+  `git diff --check` all pass. The focused regression reproduces queued →
+  running admission and asserts the owner tab leaves 12% with the same server
+  timestamp used by another observer.
+- Deployment and post-deploy health/browser acceptance remain open; record the
+  `UPDATE_OK` marker, public cache/API values, and one live cross-device
+  progress observation here after release.
 
 ### v1.42 VPS-authoritative PWA wake (deployed 2026-07-19)
 
