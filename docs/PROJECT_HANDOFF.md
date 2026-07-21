@@ -8,12 +8,11 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current application release prepared for deployment: **v1.57** (canonical
-  cross-device progress). Public API marker:
+- Current deployed application release: **v1.57** (canonical cross-device
+  progress). Public API marker:
   `tkb_new-rust-api-2026-07-21-canonical-progress-v57`; page cache:
   `20260721-v157-canonical-progress-v1`; bridge marker:
-  `tkb-rust-api-v262-canonical-progress`. Production remains v1.56 until the
-  deployment entry below reports `UPDATE_OK`.
+  `tkb-rust-api-v262-canonical-progress`.
 - Current public Agent release: **v1.6.22** (`1.6.22`). The server lease gate
   is also 1.6.22 so an older Agent can update itself but cannot execute a job
   with a mismatched solver contract.
@@ -482,7 +481,7 @@ change so a machine restart or a new conversation does not erase project context
   hard-invalid schedule. Fresh clicks remain randomized and do not use a
   static hint.
 
-### v1.57 canonical cross-device progress (prepared 2026-07-21)
+### v1.57 canonical cross-device progress (deployed 2026-07-21)
 
 - Root cause of the reported `Xếp tiếp` progress split: the owner tab received
   `solver_queued`, then polled `/api/solver-state` while waiting for FIFO
@@ -509,9 +508,16 @@ change so a machine restart or a new conversation does not erase project context
   `git diff --check` all pass. The focused regression reproduces queued →
   running admission and asserts the owner tab leaves 12% with the same server
   timestamp used by another observer.
-- Deployment and post-deploy health/browser acceptance remain open; record the
-  `UPDATE_OK` marker, public cache/API values, and one live cross-device
-  progress observation here after release.
+- `tools/vps-deploy/update-deploy.py` returned `UPDATE_OK`. Transaction
+  backups: `/opt/cherry-scheduler-backups/server-state-20260721-072758.tar.gz`
+  and `/opt/cherry-scheduler-backups/app-release-20260721-072758.tar.gz`.
+- Post-deploy health reports the v57 API marker, `0` active/queued jobs, and
+  all `6/6` VPS worker tokens available. The in-app browser loaded
+  `20260721-v157-canonical-progress-v1` and the v262 bridge; its console had no
+  warning/error entries. A real `default` solve was intentionally not started
+  during acceptance so the user's saved timetable was not changed; the
+  queued-to-running and cross-device behavior is covered by the focused
+  regression and VPS Rust tests above.
 
 ### v1.42 VPS-authoritative PWA wake (deployed 2026-07-19)
 
