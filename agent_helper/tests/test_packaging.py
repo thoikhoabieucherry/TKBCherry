@@ -101,6 +101,17 @@ class PackagingTests(unittest.TestCase):
         self.assertNotIn("TKB_AGENT_RELEASE_SIGNING_KEY", workflow)
         self.assertNotIn("TKB_VPS_PASSWORD", workflow)
 
+    def test_release_signer_uses_dpapi_without_loading_native_crypto(self) -> None:
+        signer = (
+            REPOSITORY_ROOT / "tools" / "agent-release" / "sign_release.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("_windows_dpapi", signer)
+        self.assertIn("_parse_pkcs8_rsa_private_key", signer)
+        self.assertIn("_rsa_pkcs1_sha256_sign", signer)
+        self.assertIn("RSA private key consistency check failed", signer)
+        self.assertNotIn("from cryptography", signer)
+        self.assertNotIn("import cryptography", signer)
+
 
 if __name__ == "__main__":
     unittest.main()
