@@ -5,6 +5,7 @@
 **/.env
 **/.env.*
 !**/.env.example
+tools/trusted-worker/*.env*
 tools/vps-deploy/super-admin.conf
 *.pem
 *.key

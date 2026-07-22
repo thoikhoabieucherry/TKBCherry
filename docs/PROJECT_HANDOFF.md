@@ -1,6 +1,6 @@
 # TKBCherry Project Handoff
 
-Last updated: 2026-07-22 (Asia/Bangkok)
+Last updated: 2026-07-23 (Asia/Bangkok)
 
 This is the persistent handoff note for future Codex sessions. Read this file
 before modifying the scheduler or deploying. Update it after every meaningful
@@ -104,10 +104,50 @@ change so a machine restart or a new conversation does not erase project context
   trusted-token digest matching, replay-idempotent queue handoff, per-worker
   pending-capacity reservations, and draining queued work without interrupting
   a running VPS job. Isolated Linux staging passes scheduler **169/169**, Agent
-  **83/83**, Rust API **144/144**, and validator **20/20**, ending with
-  `STAGING_TESTS_OK`. Deployment-package verification passes **13/13**. The
+  **89/89**, trusted-worker operations **5/5**, Rust API **149/149**, and
+  validator **20/20**, ending with `STAGING_TESTS_OK`. Deployment-package
+  verification passes **13/13**. The
   candidate API marker is
-  `tkb_new-rust-api-2026-07-23-trusted-worker-pool-v59`.
+  `tkb_new-rust-api-2026-07-23-trusted-worker-race-safe-v60`.
+- A committed trusted-worker `leaseRequestId` reserves capacity until its
+  AgentJob is registered or claimed, then remains as a non-capacity replay
+  tombstone until TTL. Claiming or finishing the Agent task no longer deletes
+  that marker, and a replay is scoped to its recorded job, so a delayed retry
+  cannot lease an unrelated task or drain a second VPS job. Cleanup after an
+  intervening cancel or takeover releases the reservation without deleting the
+  tombstone, so neither concurrent polls nor cancel-before-registration can
+  overbook or strand the worker. These lifecycle paths have dedicated tests.
+- Trusted spillover now walks the real `SolverPoolState.queue` under the pool
+  mutex and preserves that deque's FIFO order. A server job whose phase is only
+  `VpsQueued` but which has not entered admission is not eligible, and a job
+  already present in active `state.jobs` is also excluded. Regression coverage
+  holds a fresh pre-admission job on the VPS, holds both acquired and running
+  jobs on the VPS, and hands off only the first of two genuinely queued jobs.
+- `python -m agent_helper --headless` is the explicit non-GUI continuous-worker
+  entry point. It never opens device pairing, passes the process stop event into
+  HTTP calls, and requires its credential through the configured environment
+  variable. `--check` now verifies the server credential with `/hello` as well
+  as probing the real solver. `TKB_AGENT_STATE_DIR` selects an absolute service
+  state path; normal Linux source runs otherwise follow the XDG state layout.
+- `tools/trusted-worker` contains an Ubuntu installer, hardened single-capacity
+  systemd unit, non-secret config, protected credential generator, operational
+  runbook, and regression tests. The generator atomically creates a unique
+  root-only mode-0600 environment file and prints only the server's
+  domain-separated digest. The installer copies an allowlisted runtime into a
+  root-owned release and will not start from a symlinked, non-root-owned, or
+  incorrectly permissioned credential. A systemd `ExecStartPre` verifies both
+  `/hello` authentication and the actual solver protocol before the worker can
+  become active. Trusted-worker files are staging-only;
+  trusted-worker `*.env` credentials remain excluded from Git and deployment
+  archives.
+- No existing host currently supplies safe extra capacity: the production VPS
+  is the resource being relieved and a second worker there would bypass its CPU
+  token pool, this Windows workstation is blocked from unsigned native solver
+  code by Smart App Control, no usable WSL Linux distribution is configured,
+  and no second Linux host is available. Keep
+  `TKB_TRUSTED_AGENT_TOKEN_SHA256` unset until a separate
+  operator-controlled Linux node is provisioned and the live queue/fallback
+  acceptance in `tools/trusted-worker/README.md` passes.
 - Agent source and Windows version metadata are now **1.6.24**. In the enforced
   Smart App Control fallback it creates a controllable taskbar button but stays
   minimized instead of forcing the `VPS` window in front of the user. Focused

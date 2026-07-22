@@ -17,12 +17,31 @@ class StateError(RuntimeError):
 _CREDENTIAL_FILE = "agent-credential"
 _DPAPI_PREFIX = b"TKB-DPAPI-V1\0"
 _PLAIN_PREFIX = b"TKB-PLAIN-V1\0"
+_STATE_DIR_ENV = "TKB_AGENT_STATE_DIR"
 
 
 def default_state_dir() -> Path:
+    configured = os.environ.get(_STATE_DIR_ENV, "").strip()
+    if configured:
+        path = Path(configured).expanduser()
+        if not path.is_absolute():
+            raise StateError(f"{_STATE_DIR_ENV} must be an absolute path")
+        return path
     local_app_data = os.environ.get("LOCALAPPDATA")
-    base = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
-    return base / "TKBCherry" / "AgentHelper"
+    if os.name == "nt" or local_app_data:
+        base = (
+            Path(local_app_data)
+            if local_app_data
+            else Path.home() / "AppData" / "Local"
+        )
+        return base / "TKBCherry" / "AgentHelper"
+    xdg_state_home = os.environ.get("XDG_STATE_HOME", "").strip()
+    base = (
+        Path(xdg_state_home).expanduser()
+        if xdg_state_home
+        else Path.home() / ".local" / "state"
+    )
+    return base / "tkbcherry-agent"
 
 
 def _parse_agent_id(raw: str) -> str:

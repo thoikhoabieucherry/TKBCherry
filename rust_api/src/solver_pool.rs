@@ -663,21 +663,20 @@ impl SolverPool {
             Ok(state) => state,
             Err(_) => return Vec::new(),
         };
-        let mut candidates = state
-            .server_jobs
+        prune_stale_queue(&mut state, crate::now_millis());
+        let job_ids = state
+            .queue
             .iter()
-            .filter(|(_, job)| {
-                job.completed_ms.is_none()
-                    && !job.cancel_requested
-                    && job.execution_phase == ServerExecutionPhase::VpsQueued
+            .filter(|queued| {
+                !state.jobs.contains_key(&queued.job_id)
+                    && state.server_jobs.get(&queued.job_id).is_some_and(|job| {
+                        job.completed_ms.is_none()
+                            && !job.cancel_requested
+                            && job.execution_phase == ServerExecutionPhase::VpsQueued
+                    })
             })
-            .map(|(job_id, job)| (job.created_ms, job_id.clone()))
-            .collect::<Vec<_>>();
-        candidates.sort_unstable();
-        let job_ids = candidates
-            .into_iter()
             .take(max_jobs)
-            .map(|(_, job_id)| job_id)
+            .map(|queued| queued.job_id.clone())
             .collect::<Vec<_>>();
         for job_id in &job_ids {
             if let Some(job) = state.server_jobs.get_mut(job_id) {
@@ -2186,49 +2185,114 @@ mod tests {
     }
 
     #[test]
-    fn trusted_worker_drains_global_queue_without_interrupting_running_vps() {
+    fn trusted_worker_does_not_take_vps_phase_before_fifo_admission() {
         let pool = test_pool();
-        let queued_owner = SolverOwner::new("school-queued", "admin");
-        let running_owner = SolverOwner::new("school-running", "admin");
-        let pending_owner = SolverOwner::new("school-pending", "admin");
+        let owner = SolverOwner::new("school-fresh", "admin");
         assert_eq!(
-            pool.claim_server_job("queued-for-trusted", &queued_owner),
+            pool.claim_server_job("fresh-vps-reservation", &owner),
+            ServerJobClaim::Claimed
+        );
+        let fence = pool
+            .prepare_vps_execution("fresh-vps-reservation", &owner)
+            .expect("fresh VPS fence");
+
+        assert!(pool.request_agent_handoff_for_trusted_worker(1).is_empty());
+        assert!(pool.execution_fence_current(
+            fence,
+            "fresh-vps-reservation",
+            &owner
+        ));
+    }
+
+    #[test]
+    fn trusted_worker_does_not_take_an_acquired_or_running_vps_job() {
+        let pool = test_pool();
+        let owner = SolverOwner::new("school-acquired", "admin");
+        assert_eq!(
+            pool.claim_server_job("acquired-before-running", &owner),
+            ServerJobClaim::Claimed
+        );
+        let fence = pool
+            .prepare_vps_execution("acquired-before-running", &owner)
+            .expect("VPS fence");
+        let guard = pool
+            .try_acquire_for_owner("acquired-before-running".to_string(), 2, owner.clone())
+            .expect("VPS CPU guard");
+
+        assert!(pool.request_agent_handoff_for_trusted_worker(1).is_empty());
+        assert!(pool.mark_vps_execution_running(
+            fence,
+            "acquired-before-running",
+            &owner
+        ));
+        assert!(pool.request_agent_handoff_for_trusted_worker(1).is_empty());
+        assert!(pool.execution_fence_current(
+            fence,
+            "acquired-before-running",
+            &owner
+        ));
+        drop(guard);
+    }
+
+    #[test]
+    fn trusted_worker_drains_only_the_true_global_fifo_queue() {
+        let pool = test_pool();
+        let first_owner = SolverOwner::new("school-queued-first", "admin");
+        let second_owner = SolverOwner::new("school-queued-second", "admin");
+        let pending_owner = SolverOwner::new("school-pending", "admin");
+        let blocker = pool
+            .try_acquire("trusted-queue-blocker".to_string(), 6)
+            .expect("VPS capacity blocker");
+        assert_eq!(
+            pool.claim_server_job("queued-for-trusted-first", &first_owner),
             ServerJobClaim::Claimed
         );
         assert_eq!(
-            pool.claim_server_job("already-running", &running_owner),
+            pool.claim_server_job("queued-for-trusted-second", &second_owner),
             ServerJobClaim::Claimed
         );
         assert_eq!(
             pool.claim_server_job("fresh-pending", &pending_owner),
             ServerJobClaim::Claimed
         );
-        let queued_vps = pool
-            .prepare_vps_execution("queued-for-trusted", &queued_owner)
-            .expect("queued VPS fence");
-        let running_vps = pool
-            .prepare_vps_execution("already-running", &running_owner)
-            .expect("running VPS fence");
-        assert!(pool.mark_vps_execution_running(
-            running_vps,
-            "already-running",
-            &running_owner
+        let first_vps = pool
+            .prepare_vps_execution("queued-for-trusted-first", &first_owner)
+            .expect("first queued VPS fence");
+        pool.prepare_vps_execution("queued-for-trusted-second", &second_owner)
+            .expect("second queued VPS fence");
+        assert!(matches!(
+            pool.acquire_or_enqueue_for_owner(
+                "queued-for-trusted-first".to_string(),
+                2,
+                first_owner.clone(),
+            ),
+            SolverAdmission::Queued { position: 1, .. }
+        ));
+        assert!(matches!(
+            pool.acquire_or_enqueue_for_owner(
+                "queued-for-trusted-second".to_string(),
+                2,
+                second_owner.clone(),
+            ),
+            SolverAdmission::Queued { position: 2, .. }
         ));
 
         assert_eq!(
             pool.request_agent_handoff_for_trusted_worker(1),
-            vec!["queued-for-trusted".to_string()]
+            vec!["queued-for-trusted-first".to_string()]
         );
         assert!(!pool.execution_fence_current(
-            queued_vps,
-            "queued-for-trusted",
-            &queued_owner
+            first_vps,
+            "queued-for-trusted-first",
+            &first_owner
         ));
-        assert!(pool.execution_fence_current(
-            running_vps,
-            "already-running",
-            &running_owner
-        ));
+        assert_eq!(pool.queue_snapshot_for_owner(&second_owner)[0].2, 1);
+        assert_eq!(
+            pool.server_execution_snapshot("queued-for-trusted-second", &second_owner)
+                .expect("second queue snapshot")
+                .phase,
+            ServerExecutionPhase::VpsQueued
+        );
         assert_eq!(
             pool.server_execution_snapshot("fresh-pending", &pending_owner)
                 .expect("pending snapshot")
@@ -2236,13 +2300,14 @@ mod tests {
             ServerExecutionPhase::Pending
         );
         let trusted = pool
-            .prepare_agent_execution("queued-for-trusted", &queued_owner)
+            .prepare_agent_execution("queued-for-trusted-first", &first_owner)
             .expect("trusted Agent fence");
         assert!(pool.trusted_worker_eligible_for_agent_execution(
             trusted,
-            "queued-for-trusted",
-            &queued_owner
+            "queued-for-trusted-first",
+            &first_owner
         ));
+        drop(blocker);
     }
 
     #[test]

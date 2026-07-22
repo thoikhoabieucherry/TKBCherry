@@ -24,7 +24,7 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-23-trusted-worker-pool-v59";
+const VERSION: &str = "tkb_new-rust-api-2026-07-23-trusted-worker-race-safe-v60";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
@@ -7055,6 +7055,15 @@ mod tests {
         );
         let (app, _session_token, _) = agent_test_app();
         let foreign_owner = SolverOwner::new("school-foreign", "foreign-admin");
+        let mut blockers = Vec::new();
+        while !app.solver_pool.at_capacity() {
+            let blocker_id = format!("trusted-http-blocker-{}", blockers.len());
+            blockers.push(
+                app.solver_pool
+                    .try_acquire(blocker_id, app.solver_pool.max_workers_per_job())
+                    .expect("fill VPS capacity before testing trusted spillover"),
+            );
+        }
         assert_eq!(
             app.solver_pool
                 .claim_server_job("trusted-queued-job", &foreign_owner),
@@ -7071,6 +7080,22 @@ mod tests {
         app.solver_pool
             .prepare_vps_execution("trusted-queued-job-second", &foreign_owner)
             .expect("second queued VPS fence");
+        assert!(matches!(
+            app.solver_pool.acquire_or_enqueue_for_owner(
+                "trusted-queued-job".to_string(),
+                app.solver_pool.min_workers_per_job(),
+                foreign_owner.clone(),
+            ),
+            SolverAdmission::Queued { position: 1, .. }
+        ));
+        assert!(matches!(
+            app.solver_pool.acquire_or_enqueue_for_owner(
+                "trusted-queued-job-second".to_string(),
+                app.solver_pool.min_workers_per_job(),
+                foreign_owner.clone(),
+            ),
+            SolverAdmission::Queued { position: 2, .. }
+        ));
 
         let hello = agent_route(
             &app,

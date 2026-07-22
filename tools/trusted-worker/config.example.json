@@ -1,0 +1,13 @@
+{
+  "api_base": "https://tkbcherry.com/api/agent-helper/v1",
+  "token_env": "TKB_AGENT_TOKEN",
+  "cpu_workers": 6,
+  "poll_wait_seconds": 20,
+  "heartbeat_seconds": 5.0,
+  "request_timeout_seconds": 35,
+  "idle_backoff_seconds": 2.0,
+  "solver_timeout_seconds": 1800,
+  "max_memory_mb": 16384,
+  "retry_attempts": 4,
+  "retry_backoff_seconds": 0.5
+}

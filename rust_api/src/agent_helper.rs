@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::sync::{Arc, Mutex};
 
@@ -240,6 +240,7 @@ struct TrustedHandoffRequest {
     worker_token_hash: String,
     expires_at_ms: u64,
     job_id: Option<String>,
+    capacity_reserved: bool,
 }
 
 #[derive(Default)]
@@ -248,6 +249,7 @@ struct AgentHelperState {
     jobs: HashMap<String, AgentJob>,
     pairings: HashMap<String, AgentPairing>,
     trusted_handoff_requests: HashMap<String, TrustedHandoffRequest>,
+    trusted_handoff_capacity_releases: VecDeque<String>,
 }
 
 #[derive(Default)]
@@ -347,7 +349,9 @@ impl AgentHelperCoordinator {
         let pending_handoffs = state
             .trusted_handoff_requests
             .values()
-            .filter(|request| request.worker_token_hash == worker_token_hash)
+            .filter(|request| {
+                request.worker_token_hash == worker_token_hash && request.capacity_reserved
+            })
             .count();
         if active_leases.saturating_add(pending_handoffs) >= worker.max_parallel {
             return Err(AgentHelperError::WorkerAtCapacity);
@@ -361,6 +365,7 @@ impl AgentHelperCoordinator {
                 worker_token_hash,
                 expires_at_ms: now_ms.saturating_add(AGENT_WORKER_TTL_MS),
                 job_id: None,
+                capacity_reserved: true,
             },
         );
         Ok(true)
@@ -391,18 +396,24 @@ impl AgentHelperCoordinator {
             return Ok(false);
         }
         let marker = trusted_handoff_marker(&worker_token_hash, &lease_request_id);
-        let already_leased = state.jobs.get(job_id).is_some_and(|job| {
-            job.tasks
-                .iter()
-                .any(|task| matches!(&task.state, AgentTaskState::Leased { .. }))
-        });
-        if already_leased {
-            return Ok(state.trusted_handoff_requests.remove(&marker).is_some());
-        }
-        let Some(request) = state.trusted_handoff_requests.get_mut(&marker) else {
+        let Some(existing_request) = state.trusted_handoff_requests.get(&marker) else {
             return Ok(false);
         };
+        if let Some(existing_job_id) = existing_request.job_id.as_deref() {
+            return Ok(existing_job_id == job_id);
+        }
+        let job_registered = state.jobs.contains_key(job_id);
+        let job_already_transitioned = take_trusted_handoff_capacity_release(&mut state, job_id);
+        let request = state
+            .trusted_handoff_requests
+            .get_mut(&marker)
+            .expect("trusted handoff marker checked above");
+        // A committed marker remains a replay tombstone until TTL. It keeps
+        // reserving one worker slot until the Agent job is registered; if the
+        // coordinator won that race already, only the tombstone remains.
         request.job_id = Some(job_id.to_string());
+        request.capacity_reserved = !(job_registered || job_already_transitioned);
+        clear_orphaned_trusted_handoff_capacity_releases(&mut state);
         Ok(true)
     }
 
@@ -429,7 +440,15 @@ impl AgentHelperCoordinator {
             return Ok(false);
         }
         let marker = trusted_handoff_marker(&worker_token_hash, &lease_request_id);
-        Ok(state.trusted_handoff_requests.remove(&marker).is_some())
+        let releasable = state
+            .trusted_handoff_requests
+            .get(&marker)
+            .is_some_and(|request| request.job_id.is_none());
+        if releasable {
+            state.trusted_handoff_requests.remove(&marker);
+            clear_orphaned_trusted_handoff_capacity_releases(&mut state);
+        }
+        Ok(releasable)
     }
 
     /// Remove every live registration for one Agent identity. This is used
@@ -471,6 +490,7 @@ impl AgentHelperCoordinator {
         state.trusted_handoff_requests.retain(|_, request| {
             !revoked.contains(&request.worker_token_hash)
         });
+        clear_orphaned_trusted_handoff_capacity_releases(&mut state);
         release_worker_leases(&mut state.jobs, &revoked);
         !revoked.is_empty()
     }
@@ -501,6 +521,7 @@ impl AgentHelperCoordinator {
         state.trusted_handoff_requests.retain(|_, request| {
             request.worker_token_hash != token_hash
         });
+        clear_orphaned_trusted_handoff_capacity_releases(&mut state);
         let revoked = HashSet::from([token_hash]);
         release_worker_leases(&mut state.jobs, &revoked);
         true
@@ -769,7 +790,11 @@ impl AgentHelperCoordinator {
         };
         prune_state(&mut state, now_ms);
         if let Some(existing) = state.jobs.get(job_id) {
-            return existing.owner == *owner;
+            let owned = existing.owner == *owner;
+            if owned {
+                release_trusted_handoff_capacity_for_job(&mut state, job_id);
+            }
+            return owned;
         }
         let seed_count = seed_count.clamp(1, MAX_AGENT_SEEDS_PER_JOB);
         let tasks = (0..seed_count)
@@ -791,6 +816,7 @@ impl AgentHelperCoordinator {
                 best_candidate: None,
             },
         );
+        release_trusted_handoff_capacity_for_job(&mut state, job_id);
         true
     }
 
@@ -806,8 +832,11 @@ impl AgentHelperCoordinator {
             .unwrap_or(false);
         if owned {
             state.jobs.remove(job_id);
-            clear_trusted_handoff_for_job(&mut state, job_id);
         }
+        // Cleanup can win the small race after the VPS queue handoff commits
+        // but before the AgentJob is registered. Free that reservation while
+        // retaining its replay tombstone.
+        release_trusted_handoff_capacity_for_job(&mut state, job_id);
         owned
     }
 
@@ -826,13 +855,14 @@ impl AgentHelperCoordinator {
             .get(job_id)
             .is_some_and(|job| job.owner == *owner);
         if !owned {
+            release_trusted_handoff_capacity_for_job(&mut state, job_id);
             return None;
         }
         let candidate = state
             .jobs
             .remove(job_id)
             .and_then(|job| job.best_candidate);
-        clear_trusted_handoff_for_job(&mut state, job_id);
+        release_trusted_handoff_capacity_for_job(&mut state, job_id);
         candidate
     }
 
@@ -884,6 +914,7 @@ impl AgentHelperCoordinator {
         };
         prune_state(&mut state, now_ms);
         let Some(job) = state.jobs.get(job_id).filter(|job| job.owner == *owner) else {
+            release_trusted_handoff_capacity_for_job(&mut state, job_id);
             return true;
         };
         // A candidate may complete between the watchdog's snapshot and this
@@ -901,7 +932,7 @@ impl AgentHelperCoordinator {
             return false;
         }
         state.jobs.remove(job_id);
-        clear_trusted_handoff_for_job(&mut state, job_id);
+        release_trusted_handoff_capacity_for_job(&mut state, job_id);
         true
     }
 
@@ -1185,6 +1216,24 @@ impl AgentHelperCoordinator {
             return Ok(lease);
         }
 
+        // A committed trusted request may claim only the job reserved for that
+        // logical poll. Once that job is gone, a delayed replay must return no
+        // work instead of leasing another tenant's already-exposed Agent task.
+        // While the handoff is still uncommitted, overlapping retries wait for
+        // the first request to attach its canonical job ID.
+        let trusted_job_scope = if worker.trusted_global {
+            let marker = trusted_handoff_marker(&worker_token_hash, &lease_request_id);
+            match state.trusted_handoff_requests.get(&marker) {
+                Some(request) => match request.job_id.as_ref() {
+                    Some(job_id) => Some(job_id.clone()),
+                    None => return Err(AgentHelperError::NoWork),
+                },
+                None => None,
+            }
+        } else {
+            None
+        };
+
         let active_leases = state
             .jobs
             .values()
@@ -1204,7 +1253,12 @@ impl AgentHelperCoordinator {
         let mut available = state
             .jobs
             .iter()
-            .filter(|(_, job)| worker_can_access_job(&worker, job))
+            .filter(|(job_id, job)| {
+                worker_can_access_job(&worker, job)
+                    && trusted_job_scope
+                        .as_deref()
+                        .is_none_or(|assigned_job_id| assigned_job_id == job_id.as_str())
+            })
             .flat_map(|(job_id, job)| {
                 job.tasks
                     .iter()
@@ -1256,7 +1310,7 @@ impl AgentHelperCoordinator {
                 request_body: Arc::clone(&job.request_body),
             }
         };
-        clear_trusted_handoff_for_job(&mut state, &job_id);
+        release_trusted_handoff_capacity_for_job(&mut state, &job_id);
         Ok(lease)
     }
 
@@ -1614,10 +1668,54 @@ fn trusted_handoff_marker(worker_token_hash: &str, lease_request_id: &str) -> St
     ))
 }
 
-fn clear_trusted_handoff_for_job(state: &mut AgentHelperState, job_id: &str) {
-    state.trusted_handoff_requests.retain(|_, request| {
-        request.job_id.as_deref() != Some(job_id)
-    });
+fn release_trusted_handoff_capacity_for_job(state: &mut AgentHelperState, job_id: &str) {
+    for request in state.trusted_handoff_requests.values_mut() {
+        if request.job_id.as_deref() == Some(job_id) {
+            request.capacity_reserved = false;
+        }
+    }
+    // Registration/cleanup can beat commit_trusted_handoff_request after the
+    // solver-pool fence has moved. Remember that transition while any
+    // uncommitted reservation exists so the later commit becomes a tombstone
+    // instead of reserving a dead job for the full worker TTL.
+    if state
+        .trusted_handoff_requests
+        .values()
+        .any(|request| request.job_id.is_none() && request.capacity_reserved)
+        && !state
+            .trusted_handoff_capacity_releases
+            .iter()
+            .any(|released_job_id| released_job_id == job_id)
+    {
+        state
+            .trusted_handoff_capacity_releases
+            .push_back(job_id.to_string());
+        while state.trusted_handoff_capacity_releases.len() > MAX_TRUSTED_HANDOFF_REQUESTS {
+            state.trusted_handoff_capacity_releases.pop_front();
+        }
+    }
+}
+
+fn take_trusted_handoff_capacity_release(state: &mut AgentHelperState, job_id: &str) -> bool {
+    let Some(index) = state
+        .trusted_handoff_capacity_releases
+        .iter()
+        .position(|released_job_id| released_job_id == job_id)
+    else {
+        return false;
+    };
+    state.trusted_handoff_capacity_releases.remove(index);
+    true
+}
+
+fn clear_orphaned_trusted_handoff_capacity_releases(state: &mut AgentHelperState) {
+    if !state
+        .trusted_handoff_requests
+        .values()
+        .any(|request| request.job_id.is_none() && request.capacity_reserved)
+    {
+        state.trusted_handoff_capacity_releases.clear();
+    }
 }
 
 fn authenticated_worker(
@@ -1660,6 +1758,7 @@ fn prune_state(state: &mut AgentHelperState, now_ms: u64) {
     state.trusted_handoff_requests.retain(|_, request| {
         !expired_workers.contains(&request.worker_token_hash)
     });
+    clear_orphaned_trusted_handoff_capacity_releases(state);
     for job in state.jobs.values_mut() {
         for task in &mut job.tasks {
             let release = matches!(
@@ -1905,24 +2004,15 @@ mod tests {
                 &worker.worker_token,
                 "trusted-poll-1",
                 "global-job-a",
-                1_003,
+                1_004,
             )
             .unwrap());
-        assert!(matches!(
-            coordinator.begin_trusted_handoff_request(
-                &trusted_owner,
-                &trusted_binding,
-                &worker.worker_token,
-                "trusted-poll-2",
-                1_003,
-            ),
-            Err(AgentHelperError::WorkerAtCapacity)
-        ));
         let first = coordinator
-            .claim_work(
+            .claim_work_with_request_id(
                 &trusted_owner,
                 &trusted_binding,
                 &worker.worker_token,
+                "trusted-poll-1",
                 1_004,
             )
             .unwrap();
@@ -1946,12 +2036,53 @@ mod tests {
                 1_005,
             )
             .unwrap();
+        assert!(coordinator.finish_job("global-job-a", &first_owner));
 
-        let second = coordinator
-            .claim_work(
+        assert!(matches!(
+            coordinator.claim_work_with_request_id(
                 &trusted_owner,
                 &trusted_binding,
                 &worker.worker_token,
+                "trusted-poll-1",
+                1_006,
+            ),
+            Err(AgentHelperError::NoWork)
+        ));
+        assert!(!coordinator
+            .begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "trusted-poll-1",
+                1_006,
+            )
+            .unwrap());
+        assert!(coordinator
+            .begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "trusted-poll-2",
+                1_006,
+            )
+            .unwrap());
+        assert!(coordinator
+            .commit_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "trusted-poll-2",
+                "global-job-b",
+                1_006,
+            )
+            .unwrap());
+
+        let second = coordinator
+            .claim_work_with_request_id(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "trusted-poll-2",
                 1_006,
             )
             .unwrap();
@@ -1960,6 +2091,319 @@ mod tests {
             coordinator.job_execution("owner-direct-job", &first_owner, 1_007),
             Some(AgentJobExecution::Queued)
         ));
+    }
+
+    #[test]
+    fn committed_trusted_handoff_reserves_capacity_until_registration_or_cancel() {
+        let coordinator = AgentHelperCoordinator::default();
+        let job_owner = SolverOwner::new("school-capacity", "admin");
+        let trusted_owner = SolverOwner::new("operator-infrastructure", "trusted-worker");
+        let trusted_binding = session_binding("trusted-capacity-service-token");
+        let worker = coordinator
+            .register_trusted_worker(
+                &trusted_owner,
+                &trusted_binding,
+                "trusted-linux-capacity",
+                "Trusted Linux Capacity",
+                1,
+                1_000,
+            )
+            .unwrap();
+
+        assert!(coordinator
+            .begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "capacity-poll-one",
+                1_001,
+            )
+            .unwrap());
+        assert!(coordinator
+            .commit_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "capacity-poll-one",
+                "capacity-job-one",
+                1_001,
+            )
+            .unwrap());
+        assert!(matches!(
+            coordinator.begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "capacity-poll-two",
+                1_002,
+            ),
+            Err(AgentHelperError::WorkerAtCapacity)
+        ));
+
+        assert!(coordinator.register_job_with_trusted_eligibility(
+            "capacity-job-one",
+            &job_owner,
+            Arc::new(br#"{"data":{},"settings":{}}"#.to_vec()),
+            1,
+            true,
+            1_003,
+        ));
+        assert!(coordinator
+            .begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "capacity-poll-two",
+                1_003,
+            )
+            .unwrap());
+        assert!(coordinator
+            .release_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "capacity-poll-two",
+                1_003,
+            )
+            .unwrap());
+        assert!(!coordinator
+            .begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "capacity-poll-one",
+                1_004,
+            )
+            .unwrap());
+
+        assert!(coordinator
+            .begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "cancel-before-register",
+                1_005,
+            )
+            .unwrap());
+        assert!(coordinator
+            .commit_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "cancel-before-register",
+                "cancelled-capacity-job",
+                1_005,
+            )
+            .unwrap());
+        assert!(matches!(
+            coordinator.begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "capacity-after-cancel",
+                1_006,
+            ),
+            Err(AgentHelperError::WorkerAtCapacity)
+        ));
+        assert!(!coordinator.finish_job("cancelled-capacity-job", &job_owner));
+        assert!(coordinator
+            .begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "capacity-after-cancel",
+                1_006,
+            )
+            .unwrap());
+        assert!(!coordinator
+            .begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "cancel-before-register",
+                1_006,
+            )
+            .unwrap());
+    }
+
+    #[test]
+    fn transition_before_trusted_handoff_commit_releases_capacity_but_keeps_replay() {
+        let coordinator = AgentHelperCoordinator::default();
+        let job_owner = SolverOwner::new("school-commit-race", "admin");
+        let trusted_owner = SolverOwner::new("operator-infrastructure", "trusted-worker");
+        let trusted_binding = session_binding("trusted-commit-race-token");
+        let worker = coordinator
+            .register_trusted_worker(
+                &trusted_owner,
+                &trusted_binding,
+                "trusted-linux-commit-race",
+                "Trusted Linux Commit Race",
+                1,
+                1_000,
+            )
+            .unwrap();
+
+        assert!(coordinator
+            .begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "commit-race-poll",
+                1_001,
+            )
+            .unwrap());
+        assert!(coordinator.register_job_with_trusted_eligibility(
+            "commit-race-job",
+            &job_owner,
+            Arc::new(br#"{"data":{},"settings":{}}"#.to_vec()),
+            1,
+            true,
+            1_002,
+        ));
+        assert!(coordinator.finish_job("commit-race-job", &job_owner));
+
+        // The lifecycle transition won the race before the HTTP handoff path
+        // attached its job ID. Commit must not resurrect the capacity hold.
+        assert!(coordinator
+            .commit_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "commit-race-poll",
+                "commit-race-job",
+                1_003,
+            )
+            .unwrap());
+        assert!(!coordinator
+            .commit_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "commit-race-poll",
+                "different-job-must-not-rebind",
+                1_003,
+            )
+            .unwrap());
+        assert!(coordinator
+            .begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "next-after-commit-race",
+                1_004,
+            )
+            .unwrap());
+        assert!(!coordinator
+            .begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "commit-race-poll",
+                1_004,
+            )
+            .unwrap());
+    }
+
+    #[test]
+    fn cancelled_trusted_handoff_keeps_a_replay_tombstone_until_ttl() {
+        let coordinator = AgentHelperCoordinator::default();
+        let trusted_owner = SolverOwner::new("operator-infrastructure", "trusted-worker");
+        let trusted_binding = session_binding("trusted-service-token");
+        let worker = coordinator
+            .register_trusted_worker(
+                &trusted_owner,
+                &trusted_binding,
+                "trusted-linux-tombstone",
+                "Trusted Linux Tombstone",
+                1,
+                1_000,
+            )
+            .unwrap();
+
+        assert!(coordinator
+            .begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "trusted-cancelled-poll",
+                1_001,
+            )
+            .unwrap());
+        assert!(coordinator
+            .commit_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "trusted-cancelled-poll",
+                "cancelled-before-agent-registration",
+                1_001,
+            )
+            .unwrap());
+
+        // Cancellation can reach cleanup before an AgentJob is registered.
+        // The committed request must still block its own replay, while no
+        // longer occupying this worker's single execution slot.
+        assert!(!coordinator.finish_job(
+            "cancelled-before-agent-registration",
+            &SolverOwner::new("school-cancelled", "admin")
+        ));
+        assert!(!coordinator
+            .begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "trusted-cancelled-poll",
+                1_002,
+            )
+            .unwrap());
+        assert!(coordinator
+            .begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "trusted-next-poll",
+                1_002,
+            )
+            .unwrap());
+        assert!(matches!(
+            coordinator.begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "trusted-third-poll",
+                1_002,
+            ),
+            Err(AgentHelperError::WorkerAtCapacity)
+        ));
+        assert!(coordinator
+            .release_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "trusted-next-poll",
+                1_002,
+            )
+            .unwrap());
+
+        let heartbeat_at = 1_000 + AGENT_WORKER_TTL_MS - 1;
+        coordinator
+            .heartbeat(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                &[],
+                heartbeat_at,
+            )
+            .unwrap();
+        assert!(coordinator
+            .begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "trusted-cancelled-poll",
+                1_001 + AGENT_WORKER_TTL_MS,
+            )
+            .unwrap());
     }
 
     #[test]

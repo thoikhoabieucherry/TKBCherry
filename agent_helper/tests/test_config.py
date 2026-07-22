@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from agent_helper.config import AgentConfig, ConfigError
-from agent_helper.state import SingleInstanceLock, StateError, load_or_create_agent_id
+from agent_helper.state import (
+    SingleInstanceLock,
+    StateError,
+    default_state_dir,
+    load_or_create_agent_id,
+)
 
 
 class ConfigTests(unittest.TestCase):
@@ -80,6 +86,39 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(first, second)
             files = [path.name for path in state_dir.iterdir()]
             self.assertEqual(files, ["agent-id"])
+
+    def test_operator_can_select_an_absolute_headless_state_directory(self) -> None:
+        selected = (
+            Path("C:/tkb-state")
+            if Path.cwd().drive
+            else Path("/var/lib/tkb-state")
+        )
+        with patch.dict(
+            "os.environ", {"TKB_AGENT_STATE_DIR": str(selected)}, clear=False
+        ):
+            self.assertEqual(default_state_dir(), selected)
+
+    def test_headless_state_directory_rejects_relative_paths(self) -> None:
+        with patch.dict(
+            "os.environ", {"TKB_AGENT_STATE_DIR": "relative-state"}, clear=False
+        ):
+            with self.assertRaises(StateError):
+                default_state_dir()
+
+    @unittest.skipIf(os.name == "nt", "Linux XDG path semantics")
+    def test_linux_default_uses_the_xdg_state_directory(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "TKB_AGENT_STATE_DIR": "",
+                "LOCALAPPDATA": "",
+                "XDG_STATE_HOME": "/tmp/tkb-xdg-state",
+            },
+            clear=False,
+        ):
+            self.assertEqual(
+                default_state_dir(), Path("/tmp/tkb-xdg-state/tkbcherry-agent")
+            )
 
     def test_single_instance_lock_rejects_a_second_helper(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

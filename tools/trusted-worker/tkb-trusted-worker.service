@@ -1,0 +1,52 @@
+[Unit]
+Description=TKBCherry operator trusted solver worker
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=tkb-trusted-worker
+Group=tkb-trusted-worker
+WorkingDirectory=/opt/tkbcherry-trusted-worker/current
+EnvironmentFile=/etc/tkbcherry/trusted-worker.env
+Environment=TKB_AGENT_STATE_DIR=/var/lib/tkbcherry-trusted-worker
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStartPre=/opt/tkbcherry-trusted-worker/current/venv/bin/python -m agent_helper --check --config /etc/tkbcherry/trusted-worker.json
+ExecStart=/opt/tkbcherry-trusted-worker/current/venv/bin/python -m agent_helper --headless --config /etc/tkbcherry/trusted-worker.json
+Restart=always
+RestartSec=5
+TimeoutStopSec=40
+KillMode=control-group
+UMask=0077
+
+# The process opens only outbound HTTPS connections and writes only anonymous
+# temporary solver buffers plus its stable Agent ID under StateDirectory.
+StateDirectory=tkbcherry-trusted-worker
+StateDirectoryMode=0700
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+TasksMax=256
+MemoryHigh=12G
+MemoryMax=16G
+
+[Install]
+WantedBy=multi-user.target

@@ -28,6 +28,10 @@ def test_sensitive_and_build_paths_are_excluded() -> None:
     deploy = load_deploy_module()
     excluded = [
         "mail-server/.env",
+        "tools/trusted-worker/.env",
+        "tools/trusted-worker/.env.production",
+        "tools/trusted-worker/trusted-worker.env",
+        "tools/trusted-worker/trusted-worker.env.backup",
         "rust_api/tkb_store.db",
         "rust_api/target/release/tkb_rust_api",
         "rust_api/target-gnu/release/tkb_rust_api.exe",
@@ -74,6 +78,9 @@ def test_staging_profile_keeps_only_the_release_test_sources() -> None:
         "agent_helper/tests/test_api.py",
         "rust_api/fixtures/sample-data-with-class-off.json",
         "solver_runtime/tests/test_solver_result_contract.py",
+        "tools/agent-release/sign_release.py",
+        "tools/trusted-worker/install-linux.sh",
+        "tools/trusted-worker/tests/test_trusted_worker_ops.py",
     ]
     excluded = [
         ".github/workflows/test.yml",
@@ -128,6 +135,9 @@ def test_staging_tarball_contains_release_suites_without_local_junk() -> None:
         assert ".github/workflows/build-agent-windows.yml" in names
         assert "solver_runtime/tests/test_solver_result_contract.py" in names
         assert "rust_api/fixtures/sample-data-with-class-off.json" in names
+        assert "tools/agent-release/sign_release.py" in names
+        assert "tools/trusted-worker/install-linux.sh" in names
+        assert "tools/trusted-worker/tests/test_trusted_worker_ops.py" in names
         assert "agent_helper/dist/TKBCherryAgent.exe" not in names
         assert "e2e_tests/test_suite.py" not in names
         assert "tests/test_vps_deploy_packaging.py" not in names

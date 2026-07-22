@@ -47,10 +47,12 @@ PRODUCTION_FILES = {
 STAGING_SUBTREES = {
     "agent_helper",
     "solver_runtime/tests",
+    "tools/trusted-worker",
 }
 STAGING_FILES = {
     ".github/workflows/build-agent-windows.yml",
     "rust_api/fixtures/sample-data-with-class-off.json",
+    "tools/agent-release/sign_release.py",
 }
 WEB_RUNTIME_EXTENSIONS = {
     ".css",
@@ -145,7 +147,16 @@ def should_skip(rel: str, profile: str = PACKAGE_PRODUCTION) -> bool:
     # inputs and may contain stale credentials, so keep them out defensively.
     if any(re.search(r" \(\d+\)(?:\.[^.]*)?$", part) for part in parts):
         return True
-    if Path(rel).name == ".env" or rel.endswith((".db", ".sqlite", ".sqlite3", ".pyc")):
+    name = Path(rel).name.lower()
+    secret_env_name = (
+        name == ".env"
+        or name.startswith(".env.")
+        or name.endswith(".env")
+        or ".env." in name
+    )
+    if secret_env_name or rel.endswith(
+        (".db", ".sqlite", ".sqlite3", ".pyc")
+    ):
         return True
     for ex in EXCLUDES:
         if rel == ex or rel.startswith(ex + "/") or rel.startswith(ex + "\\"):

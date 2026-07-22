@@ -154,6 +154,11 @@ def _parser() -> argparse.ArgumentParser:
         "--once", action="store_true", help="Poll at most one job, then exit"
     )
     parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run the worker continuously without opening the desktop GUI",
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help="Validate config, credential and the actual solver import/protocol, then exit",
@@ -219,7 +224,10 @@ def _load_or_pair_token(
     if token:
         return token
     if not allow_pair:
-        raise ConfigError("Agent is not paired; open TKBCherryAgent.exe normally first")
+        raise ConfigError(
+            f"Agent credential is unavailable; provide {config.token_env} "
+            "or pair the desktop Agent first"
+        )
     report("pairing")
     token = PairingClient(config, identity).pair(stop_event)
     save_agent_token(token)
@@ -273,6 +281,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     raw_arguments = list(sys.argv[1:] if argv is None else argv)
     headless_flags = {
         "--check",
+        "--headless",
         "--once",
         "--solver-child",
         "--gui-smoke",
@@ -287,7 +296,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if arguments.gui_smoke:
         return _gui_smoke_main()
 
-    gui_mode = not arguments.once and not arguments.check
+    gui_mode = not arguments.once and not arguments.check and not arguments.headless
     solver_blocked = solver_blocked_by_windows_code_integrity()
     if gui_mode:
         logging.basicConfig(
@@ -401,20 +410,35 @@ def main(argv: Sequence[str] | None = None) -> int:
                 config,
                 identity,
                 stop_event,
-                allow_pair=not arguments.check,
+                allow_pair=not (arguments.check or arguments.headless),
             )
             if arguments.check:
                 assert solver is not None
+                # A solver-only probe can pass while the trusted-worker digest
+                # is absent or stale on the server. Register once as part of
+                # the explicit check so operators catch that configuration
+                # error before enabling the service.
+                ApiClient(
+                    config,
+                    identity,
+                    token=token,
+                    stop_event=stop_event,
+                ).hello()
                 probe_status = _probe_solver(solver, config)
                 logging.getLogger("agent_helper").info(
-                    "Configuration, credential and solver probe are valid (%s CPU workers, probe status %s).",
+                    "Configuration, server credential and solver probe are valid (%s CPU workers, probe status %s).",
                     config.cpu_workers,
                     probe_status,
                 )
                 return 0
 
             assert solver is not None
-            api = ApiClient(config, identity, token=token)
+            api = ApiClient(
+                config,
+                identity,
+                token=token,
+                stop_event=stop_event,
+            )
             worker = AgentWorker(api, solver, stop_event=stop_event)
             if arguments.once:
                 worker.run_once()

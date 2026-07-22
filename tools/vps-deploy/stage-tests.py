@@ -56,6 +56,8 @@ def main() -> int:
             f"cd {shlex.quote(remote_dir)}",
             "python3 -m unittest discover -s solver_runtime/tests -p 'test_*.py'",
             "python3 -m unittest discover -s agent_helper/tests -p 'test_*.py'",
+            "python3 -m unittest discover -s tools/trusted-worker/tests -p 'test_*.py'",
+            "bash -n tools/trusted-worker/install-linux.sh",
             "cd rust_api",
             "cargo test --locked",
             "echo STAGING_TESTS_OK",
