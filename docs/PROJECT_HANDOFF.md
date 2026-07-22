@@ -11,13 +11,13 @@ change so a machine restart or a new conversation does not erase project context
 - Current deployed application release: **v1.63** (teacher/day morning,
   afternoon, or either-session modes plus responsive requirement tables). The
   public API marker is
-  `tkb_new-rust-api-2026-07-22-session-modes-sac-fallback-v58`, the bridge
+  `tkb_new-rust-api-2026-07-23-trusted-worker-race-safe-v60`, the bridge
   marker remains `tkb-rust-api-v262-canonical-progress`, the constraints marker
   is `constraints-ui-v38-one-session-responsive-tables`, and the constraints
   cache is `20260722-v163-one-session-responsive-tables-v1`.
-- Current public Agent release: **v1.6.23** (`1.6.23`). The server lease gate
-  is also 1.6.23, so older Agents remain upgrade-only and cannot claim or
-  execute work with an older solver contract.
+- Current public Agent release: **v1.6.24** (`1.6.24`). The normal owner-Agent
+  minimum lease gate remains 1.6.23, so 1.6.22 and older stay upgrade-only;
+  the operator trusted-worker source and release contract are 1.6.24.
 - Every deployed application or packaged Agent update must increment the
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
@@ -74,7 +74,7 @@ change so a machine restart or a new conversation does not erase project context
   available. Production serves API v58, the v1.63 constraints cache and marker,
   and the unchanged v262 bridge marker.
 
-### Post-v1.63 operator trusted-worker pool and Agent 1.6.24 candidate (local, not deployed)
+### Post-v1.63 trusted-worker protocol and Agent 1.6.24 (API deployed 2026-07-23; worker dormant)
 
 - The Agent coordinator has an opt-in operator trusted-worker scope for adding
   compute capacity outside the main VPS. It is disabled unless the API process
@@ -106,8 +106,7 @@ change so a machine restart or a new conversation does not erase project context
   a running VPS job. Isolated Linux staging passes scheduler **169/169**, Agent
   **89/89**, trusted-worker operations **5/5**, Rust API **149/149**, and
   validator **20/20**, ending with `STAGING_TESTS_OK`. Deployment-package
-  verification passes **13/13**. The
-  candidate API marker is
+  verification passes **13/13**. The deployed API marker is
   `tkb_new-rust-api-2026-07-23-trusted-worker-race-safe-v60`.
 - A committed trusted-worker `leaseRequestId` reserves capacity until its
   AgentJob is registered or claimed, then remains as a non-capacity replay
@@ -151,7 +150,10 @@ change so a machine restart or a new conversation does not erase project context
 - Agent source and Windows version metadata are now **1.6.24**. In the enforced
   Smart App Control fallback it creates a controllable taskbar button but stays
   minimized instead of forcing the `VPS` window in front of the user. Focused
-  GUI/security/packaging tests pass **22/22**.
+  GUI/security/packaging tests pass **23/23**; the full Agent staging suite
+  passes **89/89**. The installed copy at
+  `C:\TKBCherryAgent\TKBCherryAgent.exe` was updated to the verified 1.6.24
+  executable while the Agent was stopped.
 - `.github/workflows/build-agent-windows.yml` is a manual, read-only Windows
   runner that builds and smoke-tests an unsigned ZIP/EXE candidate without any
   VPS or release-signing secret. `build_windows.ps1 -SkipReleaseSigning` removes
@@ -159,6 +161,25 @@ change so a machine restart or a new conversation does not erase project context
   bytes must still be downloaded and signed by the local DPAPI release key
   before replacing the public Agent ZIP/manifest. Authenticode remains a
   separate requirement for local solver execution under Smart App Control.
+- Commit `0740c33` is pushed to private GitHub `main`. Transactional deployment
+  returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260722-174528.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260722-174528.tar.gz`. Public
+  health and version serve API v60 with zero active/queued jobs and `6/6`
+  worker tokens available. The public page loaded completely in the in-app
+  Browser with the toolbar and progress region present and no console warnings
+  or errors.
+- The signed public Agent 1.6.24 archive is 93,923,421 bytes with SHA-256
+  `a4f68328a11bd18202883a115c40358e42bd64402adf52a9a3fd13c1a40bdc29`;
+  its executable is 94,485,948 bytes with SHA-256
+  `1b76a1f7cfe1939eaec3bccc7f55e356c0ada6f2c7c64b3b104371df573d4536`.
+  The public manifest signature, streamed archive size, and streamed archive
+  hash were independently verified after deployment.
+- Production intentionally has neither the trusted-worker systemd drop-in nor
+  `TKB_TRUSTED_AGENT_TOKEN_SHA256` in the running API environment. The global
+  spillover path is therefore dormant until a separate managed Linux host is
+  provisioned and completes the runbook acceptance; normal VPS and owner-Agent
+  scheduling are unchanged meanwhile.
 
 ### v1.62 full-width subject requirement tables (deployed 2026-07-21)
 
@@ -3334,28 +3355,30 @@ GET https://tkbcherry.com/pages/sapxep?sid=default
 Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
-Latest successful deployment marker observed on 2026-07-22: `UPDATE_OK` for
-v1.63. Public health serves API marker
-`tkb_new-rust-api-2026-07-22-session-modes-sac-fallback-v58`; the page serves
-constraints cache key `20260722-v163-one-session-responsive-tables-v1`, the
-constraints asset serves `constraints-ui-v38-one-session-responsive-tables`,
-and the bridge marker remains `tkb-rust-api-v262-canonical-progress`. Public
-health was idle with zero active/queued jobs and `6/6` tokens available after
-deployment. Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260722-154806.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260722-154806.tar.gz`.
-Public Agent release `1.6.23` and its signed manifest are live. The 91,746,236
+Latest successful deployment marker observed on 2026-07-23: `UPDATE_OK` for
+the post-v1.63 API v60 hardening release. Public health serves
+`tkb_new-rust-api-2026-07-23-trusted-worker-race-safe-v60`; the unchanged page
+still serves constraints cache key
+`20260722-v163-one-session-responsive-tables-v1`, constraints marker
+`constraints-ui-v38-one-session-responsive-tables`, and bridge marker
+`tkb-rust-api-v262-canonical-progress`. Public health was idle with zero
+active/queued jobs and `6/6` tokens available after deployment. Transaction
+backups are
+`/opt/cherry-scheduler-backups/server-state-20260722-174528.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260722-174528.tar.gz`.
+Public Agent release `1.6.24` and its signed manifest are live. The 93,923,421
 byte archive SHA-256 is
-`7c7e5499a66bf1c20a955a05f76bfdb94abd343fec3a329f0b22096a1d7f6bb7`; the
-92,342,359 byte executable SHA-256 is
-`f2d8c7cc6118e8b4368cf367ac2a5f672a2ec2439b169b819180752a69cd2d5e`.
-On enforced Smart App Control systems Agent 1.6.23 displays `VPS` and does not
-claim local solver work; the installed copy was verified with zero new Code
-Integrity 3033/3077 events.
+`a4f68328a11bd18202883a115c40358e42bd64402adf52a9a3fd13c1a40bdc29`; the
+94,485,948 byte executable SHA-256 is
+`1b76a1f7cfe1939eaec3bccc7f55e356c0ada6f2c7c64b3b104371df573d4536`.
+On enforced Smart App Control systems Agent 1.6.24 displays `VPS`, stays
+minimized instead of forcing its window forward, and does not claim local
+solver work. The local installed copy is 1.6.24.
 Stable active-status DOM histories, iPhone/PWA reattach, No-Agent/Cancel, and
 Agent handoff regressions remain covered by the local and isolated VPS suites.
-Older Agents are upgrade-only at the server lease gate until they update to
-1.6.23.
+Owner Agents older than 1.6.23 are upgrade-only at the server lease gate.
+Trusted spillover remains disabled until a separate Linux node is accepted and
+its server digest is configured.
 
 ## Security And Repository Notes
 
