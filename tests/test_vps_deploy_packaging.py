@@ -69,6 +69,7 @@ def test_staging_profile_keeps_only_the_release_test_sources() -> None:
     deploy = load_deploy_module()
 
     included = [
+        ".github/workflows/build-agent-windows.yml",
         "agent_helper/api.py",
         "agent_helper/tests/test_api.py",
         "rust_api/fixtures/sample-data-with-class-off.json",
@@ -124,6 +125,7 @@ def test_staging_tarball_contains_release_suites_without_local_junk() -> None:
             names = set(archive.getnames())
         assert "agent_helper/api.py" in names
         assert "agent_helper/tests/test_api.py" in names
+        assert ".github/workflows/build-agent-windows.yml" in names
         assert "solver_runtime/tests/test_solver_result_contract.py" in names
         assert "rust_api/fixtures/sample-data-with-class-off.json" in names
         assert "agent_helper/dist/TKBCherryAgent.exe" not in names

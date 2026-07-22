@@ -74,6 +74,52 @@ change so a machine restart or a new conversation does not erase project context
   available. Production serves API v58, the v1.63 constraints cache and marker,
   and the unchanged v262 bridge marker.
 
+### Post-v1.63 operator trusted-worker pool and Agent 1.6.24 candidate (local, not deployed)
+
+- The Agent coordinator has an opt-in operator trusted-worker scope for adding
+  compute capacity outside the main VPS. It is disabled unless the API process
+  receives `TKB_TRUSTED_AGENT_TOKEN_SHA256`, a domain-separated digest of a
+  high-entropy `tkbt_` bearer. The raw bearer must exist only on the managed
+  worker and must never be committed, embedded in a release, or exposed to a
+  browser.
+- Browser-paired Agents remain strictly owner scoped. A trusted worker may pull
+  the oldest canonical Agent task across owners, but it remains a replacement
+  executor: a job runs on the trusted worker or VPS, never both. Only an
+  authenticated free lease poll may drain one VPS-queued job; trusted workers
+  do not race fresh direct starts and do not interrupt a VPS child that is
+  already running. Lease expiry/failure returns the same fenced canonical
+  request to the VPS.
+- Trusted capacity is deliberately absent from each school's Agent status. The
+  server still validates every candidate against the original request and is
+  the only component that publishes the result. The lease carries its real job
+  owner internally so cancellation checks remain correct without exposing that
+  owner on the worker wire.
+- This Windows workstation still cannot supply solver compute through the
+  packaged Agent while Smart App Control enforces unsigned native-code policy.
+  Practical worker hosts are an additional operator-controlled Linux node or a
+  tested WSL runtime; the durable Windows solution is trusted Authenticode
+  signing of the outer executable and every embedded EXE/DLL/PYD. The existing
+  updater-manifest RSA signature is not an Authenticode signature.
+- Added Rust unit coverage for global FIFO leasing, hidden owner status,
+  trusted-token digest matching, replay-idempotent queue handoff, per-worker
+  pending-capacity reservations, and draining queued work without interrupting
+  a running VPS job. Isolated Linux staging passes scheduler **169/169**, Agent
+  **83/83**, Rust API **144/144**, and validator **20/20**, ending with
+  `STAGING_TESTS_OK`. Deployment-package verification passes **13/13**. The
+  candidate API marker is
+  `tkb_new-rust-api-2026-07-23-trusted-worker-pool-v59`.
+- Agent source and Windows version metadata are now **1.6.24**. In the enforced
+  Smart App Control fallback it creates a controllable taskbar button but stays
+  minimized instead of forcing the `VPS` window in front of the user. Focused
+  GUI/security/packaging tests pass **22/22**.
+- `.github/workflows/build-agent-windows.yml` is a manual, read-only Windows
+  runner that builds and smoke-tests an unsigned ZIP/EXE candidate without any
+  VPS or release-signing secret. `build_windows.ps1 -SkipReleaseSigning` removes
+  any stale manifest and labels that output non-publishable. Exact candidate
+  bytes must still be downloaded and signed by the local DPAPI release key
+  before replacing the public Agent ZIP/manifest. Authenticode remains a
+  separate requirement for local solver execution under Smart App Control.
+
 ### v1.62 full-width subject requirement tables (deployed 2026-07-21)
 
 - This is a constraints-UI-only change. Scheduler logic, hard-constraint

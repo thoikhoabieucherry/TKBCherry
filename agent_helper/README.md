@@ -16,6 +16,8 @@ Hỗ trợ Windows 10/11 64-bit. Không cần cài đặt và không cần quy�
 
 Bấm **TẮT AGENT** để ngừng nhận việc, dừng cả solver đang chạy và gỡ mục tự khởi động; bấm **BẬT AGENT** sẽ đăng ký lại. Nút X chỉ ẩn cửa sổ xuống khay như UniKey; kích đúp icon khay để mở lại, hoặc chuột phải để Mở, Bật, Tắt và Thoát nhanh. Mọi lần mở thủ công hoặc chạy cùng Windows đều tự ON và chỉ nằm ở khay. Lệnh **Thoát** dừng phiên hiện tại nhưng giữ tự khởi động nếu Agent đang ON. Khi ON nhưng chưa có lượt xếp, Agent chỉ giữ kết nối chờ nhẹ và không chạy solver. Mục tự khởi động chỉ chứa đường dẫn `TKBCherryAgent.exe` và cờ cố định `--startup`; không có token hay dữ liệu người dùng. Gói Windows không dùng bộ cài CMD/PowerShell, không cần chạy lệnh cài đặt và không chứa sẵn token hay mật khẩu.
 
+Nếu Windows Smart App Control đang chặn các thư viện solver chưa có chữ ký tin cậy, Agent hiển thị trạng thái **VPS** và không nạp Pillow/khay hệ thống hay solver cục bộ. Trong chế độ này cửa sổ tự thu nhỏ xuống taskbar thay vì bật ra trước mặt; bấm biểu tượng taskbar để mở lại. Lượt xếp vẫn chạy trên VPS cho đến khi gói native có chữ ký Authenticode đáng tin cậy.
+
 Token Agent không phải mật khẩu đăng nhập, không thể truy cập dữ liệu quản trị và không thể tự tạo một lượt xếp. Trên Windows, token được mã hóa bằng DPAPI cho đúng tài khoản Windows hiện tại rồi lưu tại `%LOCALAPPDATA%\TKBCherry\AgentHelper\agent-credential`; tài khoản Windows khác không thể giải mã file này.
 
 Để gỡ hoàn toàn, mở Agent từ khay, bấm **TẮT AGENT**, chọn **Thoát**, rồi xóa file ZIP, `TKBCherryAgent.exe` đã giải nén và `%LOCALAPPDATA%\TKBCherry\AgentHelper`. Nút TẮT xóa giá trị `TKBCherryAgent` do ứng dụng tạo trong `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` nhưng không xóa khóa Run dùng chung. Xóa thư mục trạng thái cũng thu hồi việc ghép đôi cục bộ; lần mở sau Agent sẽ yêu cầu duyệt một mã mới.
@@ -74,6 +76,10 @@ Dành cho nhà phát triển, chạy từ thư mục gốc dự án:
 ```powershell
 .\agent_helper\build_windows.ps1 -Clean
 ```
+
+Máy phát hành có Smart App Control không được chạy lại PyInstaller/OR-Tools cục bộ. Workflow thủ công `Build Windows Agent candidate` build, smoke-test và chạy unit test trên runner `windows-2022`, sau đó trả về ZIP/EXE cùng SHA-256 dưới dạng artifact ngắn hạn. Candidate này cố ý không chứa `TKBCherryAgent-release.json` và không được đưa lên web ngay.
+
+Sau khi tải artifact về, máy phát hành chỉ chạy `tools/agent-release/sign_release.py` để ký manifest cho đúng byte ZIP/EXE bằng khóa RSA đang được DPAPI bảo vệ. Khóa riêng không được chuyển lên GitHub. Chữ ký manifest bảo vệ cơ chế cập nhật của TKBCherry nhưng không thay thế Authenticode cho các DLL/PYD native.
 
 File phát hành cho web là `agent_helper\dist\TKBCherryAgent-Windows.zip`. Archive này được script kiểm tra bắt buộc chỉ có một entry `TKBCherryAgent.exe` ở root. EXE dùng PyInstaller `onefile`, chế độ cửa sổ; runtime solver được biên dịch thành bytecode tối ưu và bỏ file `.py` thô. Bản phát hành không nén lại bằng UPX để giữ nguyên bootloader chuẩn, giảm tín hiệu dễ bị Smart App Control đánh giá là không đáng tin cậy. Vì EXE tự chứa NumPy, SciPy và OR-Tools nên lần mở đầu có thể chậm hơn vài giây trong lúc giải nén an toàn vào thư mục tạm. Build chỉ thành công sau khi bản onedir và onefile tạo được cửa sổ Tk ẩn thật, đồng thời solver-child trả đúng protocol. Gói không kèm token, mật khẩu, CMD hay PowerShell.
 

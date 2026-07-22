@@ -15,6 +15,7 @@ class FakeRoot:
         self.callbacks: list[tuple[int, object]] = []
         self.destroyed = False
         self.withdrawn = False
+        self.iconified = False
         self.protocols: dict[str, object] = {}
 
     def after(self, delay: int, callback: object) -> None:
@@ -31,6 +32,11 @@ class FakeRoot:
 
     def deiconify(self) -> None:
         self.withdrawn = False
+        self.iconified = False
+
+    def iconify(self) -> None:
+        self.withdrawn = False
+        self.iconified = True
 
     def lift(self) -> None:
         pass
@@ -71,6 +77,16 @@ def bare_app(runner: object) -> tuple[AgentToggleApp, list[str]]:
 
 
 class ToggleLifecycleTests(unittest.TestCase):
+    def test_trayless_window_minimizes_to_a_controllable_taskbar_button(self) -> None:
+        app, _ = bare_app(lambda stop_event, report: None)
+
+        app.minimize_window()
+
+        self.assertTrue(app.root.iconified)
+        self.assertFalse(app.root.withdrawn)
+        app.show_window()
+        self.assertFalse(app.root.iconified)
+
     def test_tray_close_hides_window_and_exit_command_stops_tray(self) -> None:
         class FakeTray:
             def __init__(self) -> None:

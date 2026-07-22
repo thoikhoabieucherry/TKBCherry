@@ -76,6 +76,7 @@ struct SolverPoolState {
 
 struct ServerOwnedSolverJob {
     owner: SolverOwner,
+    trusted_worker_eligible: bool,
     schedule_scope: Option<String>,
     created_ms: u64,
     schedule_fingerprint: Option<String>,
@@ -511,6 +512,7 @@ impl SolverPool {
             job_id.to_string(),
             ServerOwnedSolverJob {
                 owner: owner.clone(),
+                trusted_worker_eligible: false,
                 schedule_scope: normalized_schedule_scope,
                 created_ms: now_ms,
                 schedule_fingerprint: normalized_schedule_fingerprint,
@@ -634,6 +636,54 @@ impl SolverPool {
             if let Some(job) = state.server_jobs.get_mut(job_id) {
                 job.execution_generation = job.execution_generation.saturating_add(1);
                 job.execution_phase = ServerExecutionPhase::HandoffToAgent;
+                job.trusted_worker_eligible = false;
+            }
+            if let Some(job) = state.jobs.get(job_id) {
+                job.cancel_requested.store(true, Ordering::SeqCst);
+            }
+        }
+        if !job_ids.is_empty() {
+            state
+                .queue
+                .retain(|queued| !job_ids.iter().any(|job_id| job_id == &queued.job_id));
+        }
+        job_ids
+    }
+
+    /// Move globally queued work to an operator-managed trusted worker without
+    /// interrupting VPS computation that is already running. This makes spare
+    /// infrastructure capacity drain the central queue while avoiding wasted
+    /// search time on an active VPS child. The regular owner Agent handoff
+    /// above intentionally retains its stronger VPS-running takeover behavior.
+    pub fn request_agent_handoff_for_trusted_worker(&self, max_jobs: usize) -> Vec<String> {
+        if max_jobs == 0 {
+            return Vec::new();
+        }
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(_) => return Vec::new(),
+        };
+        let mut candidates = state
+            .server_jobs
+            .iter()
+            .filter(|(_, job)| {
+                job.completed_ms.is_none()
+                    && !job.cancel_requested
+                    && job.execution_phase == ServerExecutionPhase::VpsQueued
+            })
+            .map(|(job_id, job)| (job.created_ms, job_id.clone()))
+            .collect::<Vec<_>>();
+        candidates.sort_unstable();
+        let job_ids = candidates
+            .into_iter()
+            .take(max_jobs)
+            .map(|(_, job_id)| job_id)
+            .collect::<Vec<_>>();
+        for job_id in &job_ids {
+            if let Some(job) = state.server_jobs.get_mut(job_id) {
+                job.execution_generation = job.execution_generation.saturating_add(1);
+                job.execution_phase = ServerExecutionPhase::HandoffToAgent;
+                job.trusted_worker_eligible = true;
             }
             if let Some(job) = state.jobs.get(job_id) {
                 job.cancel_requested.store(true, Ordering::SeqCst);
@@ -661,6 +711,7 @@ impl SolverPool {
             ServerExecutionPhase::Pending => {
                 job.execution_generation = job.execution_generation.saturating_add(1);
                 job.execution_phase = ServerExecutionPhase::AgentWaiting;
+                job.trusted_worker_eligible = false;
                 start_server_watchdog(job, crate::now_millis());
             }
             ServerExecutionPhase::HandoffToAgent => {
@@ -675,6 +726,29 @@ impl SolverPool {
         Some(ServerExecutionFence {
             generation: job.execution_generation,
             executor: ServerExecutor::Agent,
+        })
+    }
+
+    pub fn trusted_worker_eligible_for_agent_execution(
+        &self,
+        fence: ServerExecutionFence,
+        job_id: &str,
+        owner: &SolverOwner,
+    ) -> bool {
+        let Ok(state) = self.state.lock() else {
+            return false;
+        };
+        state.server_jobs.get(job_id).is_some_and(|job| {
+            &job.owner == owner
+                && !job.cancel_requested
+                && job.completed_ms.is_none()
+                && job.trusted_worker_eligible
+                && fence.executor == ServerExecutor::Agent
+                && job.execution_generation == fence.generation
+                && matches!(
+                    job.execution_phase,
+                    ServerExecutionPhase::AgentWaiting | ServerExecutionPhase::AgentRunning
+                )
         })
     }
 
@@ -702,9 +776,11 @@ impl SolverPool {
             ServerExecutionPhase::Pending => {
                 job.execution_generation = job.execution_generation.saturating_add(1);
                 job.execution_phase = ServerExecutionPhase::VpsQueued;
+                job.trusted_worker_eligible = false;
                 start_server_watchdog(job, crate::now_millis());
             }
             ServerExecutionPhase::VpsQueued => {
+                job.trusted_worker_eligible = false;
                 start_server_watchdog(job, crate::now_millis());
             }
             _ => return None,
@@ -750,6 +826,7 @@ impl SolverPool {
         }
         job.execution_generation = job.execution_generation.saturating_add(1);
         job.execution_phase = ServerExecutionPhase::VpsQueued;
+        job.trusted_worker_eligible = false;
         Some(ServerExecutionFence {
             generation: job.execution_generation,
             executor: ServerExecutor::Vps,
@@ -2084,6 +2161,11 @@ mod tests {
         let agent = pool
             .prepare_agent_execution("handoff-job", &owner)
             .expect("Agent fence after VPS reaping");
+        assert!(!pool.trusted_worker_eligible_for_agent_execution(
+            agent,
+            "handoff-job",
+            &owner
+        ));
         assert!(pool.mark_agent_execution_running(agent, "handoff-job", &owner));
         assert!(pool.complete_server_job_fenced(agent, "handoff-job", &owner, response.clone()));
         assert!(!pool.complete_server_job_fenced(vps, "handoff-job", &owner, response.clone()));
@@ -2101,6 +2183,66 @@ mod tests {
         assert!(!pool.complete_server_job_fenced(agent, "agent-loss", &owner, response.clone()));
         assert!(pool.mark_vps_execution_running(vps, "agent-loss", &owner));
         assert!(pool.complete_server_job_fenced(vps, "agent-loss", &owner, response));
+    }
+
+    #[test]
+    fn trusted_worker_drains_global_queue_without_interrupting_running_vps() {
+        let pool = test_pool();
+        let queued_owner = SolverOwner::new("school-queued", "admin");
+        let running_owner = SolverOwner::new("school-running", "admin");
+        let pending_owner = SolverOwner::new("school-pending", "admin");
+        assert_eq!(
+            pool.claim_server_job("queued-for-trusted", &queued_owner),
+            ServerJobClaim::Claimed
+        );
+        assert_eq!(
+            pool.claim_server_job("already-running", &running_owner),
+            ServerJobClaim::Claimed
+        );
+        assert_eq!(
+            pool.claim_server_job("fresh-pending", &pending_owner),
+            ServerJobClaim::Claimed
+        );
+        let queued_vps = pool
+            .prepare_vps_execution("queued-for-trusted", &queued_owner)
+            .expect("queued VPS fence");
+        let running_vps = pool
+            .prepare_vps_execution("already-running", &running_owner)
+            .expect("running VPS fence");
+        assert!(pool.mark_vps_execution_running(
+            running_vps,
+            "already-running",
+            &running_owner
+        ));
+
+        assert_eq!(
+            pool.request_agent_handoff_for_trusted_worker(1),
+            vec!["queued-for-trusted".to_string()]
+        );
+        assert!(!pool.execution_fence_current(
+            queued_vps,
+            "queued-for-trusted",
+            &queued_owner
+        ));
+        assert!(pool.execution_fence_current(
+            running_vps,
+            "already-running",
+            &running_owner
+        ));
+        assert_eq!(
+            pool.server_execution_snapshot("fresh-pending", &pending_owner)
+                .expect("pending snapshot")
+                .phase,
+            ServerExecutionPhase::Pending
+        );
+        let trusted = pool
+            .prepare_agent_execution("queued-for-trusted", &queued_owner)
+            .expect("trusted Agent fence");
+        assert!(pool.trusted_worker_eligible_for_agent_execution(
+            trusted,
+            "queued-for-trusted",
+            &queued_owner
+        ));
     }
 
     #[test]

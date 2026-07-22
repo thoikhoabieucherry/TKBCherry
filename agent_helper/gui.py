@@ -302,6 +302,21 @@ class AgentToggleApp:
         except Exception:
             self.close()
 
+    def minimize_window(self) -> None:
+        """Keep a tray-less Agent controllable without showing its panel."""
+
+        if self.closing:
+            return
+        try:
+            # The root is withdrawn before Tk's event loop starts. Map it once
+            # before iconifying so Windows creates a real taskbar button.
+            self.root.deiconify()
+            self.root.iconify()
+        except Exception:
+            # A visible Tk window is the last-resort control surface when the
+            # platform cannot provide either a tray icon or a taskbar button.
+            self.show_window()
+
     def toggle(self) -> None:
         if self.update_in_progress:
             return
@@ -617,6 +632,8 @@ def run_toggle_window(
             app.show_window()
     else:
         # PIL/pystray can load optional native codecs. Under enforced code
-        # integrity keep the signed-independent Tk/update surface only.
-        app.show_window()
+        # integrity keep the signed-independent Tk/update surface only. Leave
+        # that surface minimized on the taskbar so it remains controllable
+        # without forcing a window in front of the user on every launch.
+        app.minimize_window()
     root.mainloop()

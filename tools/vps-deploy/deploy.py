@@ -49,6 +49,7 @@ STAGING_SUBTREES = {
     "solver_runtime/tests",
 }
 STAGING_FILES = {
+    ".github/workflows/build-agent-windows.yml",
     "rust_api/fixtures/sample-data-with-class-off.json",
 }
 WEB_RUNTIME_EXTENSIONS = {

@@ -4,7 +4,8 @@ param(
     [string]$OutputDirectory = "",
     [string]$TclRuntimeRoot = "",
     [switch]$Clean,
-    [switch]$SkipDependencyInstall
+    [switch]$SkipDependencyInstall,
+    [switch]$SkipReleaseSigning
 )
 
 $ErrorActionPreference = "Stop"
@@ -394,19 +395,32 @@ finally {
 }
 
 $ReleaseManifest = Join-Path $OutputDirectory "TKBCherryAgent-release.json"
-$SignReleaseScript = Join-Path $RepositoryRoot "tools\agent-release\sign_release.py"
-& $VirtualPython $SignReleaseScript `
-    --version $AgentVersion `
-    --archive $Archive `
-    --executable $StandaloneExecutable `
-    --output $ReleaseManifest
-if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $ReleaseManifest -PathType Leaf)) {
-    throw "Could not create the signed Agent release manifest."
+if ($SkipReleaseSigning) {
+    # CI builds native artifacts on an isolated Windows runner, while the
+    # existing DPAPI key remains on the release workstation. Never allow a
+    # stale manifest to make an unsigned CI candidate look publishable.
+    if (Test-Path -LiteralPath $ReleaseManifest) {
+        Remove-Item -LiteralPath $ReleaseManifest -Force
+    }
+    Write-Host "Release signing skipped; candidate ZIP/EXE must be signed before publication."
+}
+else {
+    $SignReleaseScript = Join-Path $RepositoryRoot "tools\agent-release\sign_release.py"
+    & $VirtualPython $SignReleaseScript `
+        --version $AgentVersion `
+        --archive $Archive `
+        --executable $StandaloneExecutable `
+        --output $ReleaseManifest
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $ReleaseManifest -PathType Leaf)) {
+        throw "Could not create the signed Agent release manifest."
+    }
 }
 
 Write-Host "Windows onedir bundle created at: $Bundle"
 Write-Host "Onedir diagnostics archive created at: $OnedirArchive"
 Write-Host "Standalone executable created at: $StandaloneExecutable"
 Write-Host "One-file release ZIP created at: $Archive"
-Write-Host "Signed release manifest created at: $ReleaseManifest"
+if (-not $SkipReleaseSigning) {
+    Write-Host "Signed release manifest created at: $ReleaseManifest"
+}
 Write-Host "Release files contain no password, bearer credential, CMD, PowerShell, or obfuscated installer."

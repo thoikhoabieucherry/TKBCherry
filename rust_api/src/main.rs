@@ -24,13 +24,15 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-22-session-modes-sac-fallback-v58";
+const VERSION: &str = "tkb_new-rust-api-2026-07-23-trusted-worker-pool-v59";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
 const MAX_REFERENCE_PROGRESS_FRAME_BYTES: usize = 32 * 1024;
 const AGENT_HELPER_PROTOCOL: &str = "tkb-agent-helper-v1";
 const AGENT_RESULT_DIGEST_PROTOCOL: &str = "tkb-json-tree-sha256-v1";
+const TRUSTED_AGENT_TOKEN_HASH_ENV: &str = "TKB_TRUSTED_AGENT_TOKEN_SHA256";
+const TRUSTED_AGENT_TOKEN_PREFIX: &str = "tkbt_";
 // v1.6.23 detects Smart App Control before loading native solver DLLs and
 // leaves the canonical job for the VPS on affected unsigned installations.
 // Older binaries remain upgrade-only so they cannot trigger repeated blocks.
@@ -482,18 +484,81 @@ fn route(req: Request, app: &App) -> Vec<u8> {
     }
 }
 
+struct AgentHelperContext {
+    owner: SolverOwner,
+    session_binding: String,
+    trusted_global: bool,
+}
+
+fn trusted_agent_token_digest(token: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"tkb-trusted-agent-token-v1\0");
+    hasher.update(token.trim().as_bytes());
+    hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn constant_time_ascii_equal(left: &str, right: &str) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    left.as_bytes()
+        .iter()
+        .zip(right.as_bytes())
+        .fold(0_u8, |difference, (left, right)| difference | (*left ^ *right))
+        == 0
+}
+
+fn trusted_agent_token_matches(configured_hash: Option<&str>, token: &str) -> bool {
+    let token = token.trim();
+    if !token.starts_with(TRUSTED_AGENT_TOKEN_PREFIX)
+        || token.len() < TRUSTED_AGENT_TOKEN_PREFIX.len() + 32
+        || token.len() > 512
+    {
+        return false;
+    }
+    let configured = configured_hash
+        .map(str::trim)
+        .filter(|value| {
+            value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+        })
+        .map(str::to_ascii_lowercase);
+    let Some(configured) = configured else {
+        return false;
+    };
+    constant_time_ascii_equal(&configured, &trusted_agent_token_digest(token))
+}
+
 fn agent_helper_context(
     app: &App,
     auth_token: Option<&str>,
-) -> Result<(SolverOwner, String), Vec<u8>> {
+) -> Result<AgentHelperContext, Vec<u8>> {
     let token = auth_token.map(str::trim).filter(|value| !value.is_empty());
+    let configured_trusted_hash = env::var(TRUSTED_AGENT_TOKEN_HASH_ENV).ok();
+    if token.is_some_and(|token| {
+        trusted_agent_token_matches(configured_trusted_hash.as_deref(), token)
+    }) {
+        let token = token.unwrap_or_default();
+        return Ok(AgentHelperContext {
+            owner: SolverOwner::new("operator-infrastructure", "trusted-worker"),
+            session_binding: agent_session_binding(token),
+            trusted_global: true,
+        });
+    }
     let Some(session) = auth::require_session(&app.db, token)
         .or_else(|| auth::require_agent_credential(&app.db, token))
     else {
         return Err(auth::unauthorized_response());
     };
     let owner = solver_owner_from_session(&session).ok_or_else(auth::forbidden_response)?;
-    Ok((owner, agent_session_binding(token.unwrap_or_default())))
+    Ok(AgentHelperContext {
+        owner,
+        session_binding: agent_session_binding(token.unwrap_or_default()),
+        trusted_global: false,
+    })
 }
 
 fn agent_helper_bootstrap_json(app: &App, auth_token: Option<&str>) -> Vec<u8> {
@@ -885,7 +950,11 @@ fn agent_helper_upgrade_wait_json() -> Vec<u8> {
 }
 
 fn agent_helper_hello_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> Vec<u8> {
-    let (owner, session_binding) = match agent_helper_context(app, auth_token) {
+    let AgentHelperContext {
+        owner,
+        session_binding,
+        trusted_global,
+    } = match agent_helper_context(app, auth_token) {
         Ok(value) => value,
         Err(response) => return response,
     };
@@ -947,20 +1016,39 @@ fn agent_helper_hello_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> 
             Err(error) => agent_helper_error_json(error),
         };
     }
-    match app.agent_helper.register_worker(
-        &owner,
-        &session_binding,
-        agent_id,
-        &name,
-        agent_helper_parallel(&body),
-        now_millis(),
-    ) {
+    let registration = if trusted_global {
+        app.agent_helper.register_trusted_worker(
+            &owner,
+            &session_binding,
+            agent_id,
+            &name,
+            agent_helper_parallel(&body),
+            now_millis(),
+        )
+    } else {
+        app.agent_helper.register_worker(
+            &owner,
+            &session_binding,
+            agent_id,
+            &name,
+            agent_helper_parallel(&body),
+            now_millis(),
+        )
+    };
+    match registration {
         Ok(registration) => {
             // A fresh hello is the explicit signal that an Agent is available.
             // Mark any VPS-owned canonical jobs for handoff while holding the
             // solver-pool fence; the coordinator will only expose a lease once
             // the local child has exited and its guard has been dropped.
-            let handoff_jobs = app.solver_pool.request_agent_handoff_for_owner(&owner);
+            let handoff_jobs = if trusted_global {
+                // A trusted worker drains the global queue only from its
+                // authenticated lease poll. Keeping hello side-effect free
+                // prevents hello + lease from reserving two jobs for one slot.
+                Vec::new()
+            } else {
+                app.solver_pool.request_agent_handoff_for_owner(&owner)
+            };
             json_response(
                 200,
                 json!({
@@ -983,7 +1071,11 @@ fn agent_helper_hello_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> 
 }
 
 fn agent_helper_heartbeat_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> Vec<u8> {
-    let (owner, session_binding) = match agent_helper_context(app, auth_token) {
+    let AgentHelperContext {
+        owner,
+        session_binding,
+        ..
+    } = match agent_helper_context(app, auth_token) {
         Ok(value) => value,
         Err(response) => return response,
     };
@@ -1046,8 +1138,55 @@ fn agent_helper_claim_payload(lease: AgentWorkLease, cpu_workers: usize) -> Valu
     })
 }
 
+fn try_trusted_queue_handoff(
+    app: &App,
+    owner: &SolverOwner,
+    session_binding: &str,
+    worker_token: &str,
+    lease_request_id: &str,
+) -> Result<bool, AgentHelperError> {
+    let now_ms = now_millis();
+    if !app.agent_helper.begin_trusted_handoff_request(
+        owner,
+        session_binding,
+        worker_token,
+        lease_request_id,
+        now_ms,
+    )? {
+        // This logical request was already committed by an overlapping
+        // transport retry, or the authenticated worker is not trusted-global.
+        return Ok(true);
+    }
+    let moved = app
+        .solver_pool
+        .request_agent_handoff_for_trusted_worker(1);
+    if let Some(job_id) = moved.first() {
+        app.agent_helper.commit_trusted_handoff_request(
+            owner,
+            session_binding,
+            worker_token,
+            lease_request_id,
+            job_id,
+            now_millis(),
+        )?;
+        return Ok(true);
+    }
+    app.agent_helper.release_trusted_handoff_request(
+        owner,
+        session_binding,
+        worker_token,
+        lease_request_id,
+        now_millis(),
+    )?;
+    Ok(false)
+}
+
 fn agent_helper_claim_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> Vec<u8> {
-    let (owner, session_binding) = match agent_helper_context(app, auth_token) {
+    let AgentHelperContext {
+        owner,
+        session_binding,
+        trusted_global,
+    } = match agent_helper_context(app, auth_token) {
         Ok(value) => value,
         Err(response) => return response,
     };
@@ -1090,6 +1229,7 @@ fn agent_helper_claim_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> 
         .unwrap_or(0)
         .min(30);
     let wait_deadline = Instant::now() + Duration::from_secs(wait_seconds);
+    let mut trusted_handoff_requested = false;
     loop {
         match app.agent_helper.claim_work_with_request_id(
             &owner,
@@ -1101,12 +1241,14 @@ fn agent_helper_claim_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> 
             Ok(lease) => {
                 if app
                     .solver_pool
-                    .server_job_known_for_owner(&lease.job_id, &owner)
+                    .server_job_known_for_owner(&lease.job_id, &lease.job_owner)
                     && app
                         .solver_pool
-                        .server_job_cancel_requested(&lease.job_id, &owner)
+                        .server_job_cancel_requested(&lease.job_id, &lease.job_owner)
                 {
-                    let _ = app.agent_helper.finish_job(&lease.job_id, &owner);
+                    let _ = app
+                        .agent_helper
+                        .finish_job(&lease.job_id, &lease.job_owner);
                     return json_response(
                         409,
                         json!({
@@ -1121,9 +1263,39 @@ fn agent_helper_claim_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> 
                 return json_response(200, agent_helper_claim_payload(lease, cpu_workers));
             }
             Err(AgentHelperError::NoWork) if Instant::now() < wait_deadline => {
+                // Reaching NoWork proves both the durable bearer/worker token
+                // and the worker's free capacity. Reserve at most one queued
+                // job for this logical long-poll, then wait for its coordinator
+                // to publish the canonical Agent task.
+                if trusted_global && !trusted_handoff_requested {
+                    match try_trusted_queue_handoff(
+                        app,
+                        &owner,
+                        &session_binding,
+                        &worker_token,
+                        lease_request_id,
+                    ) {
+                        Ok(committed) => trusted_handoff_requested = committed,
+                        Err(error) => return agent_helper_error_json(error),
+                    }
+                }
                 thread::sleep(Duration::from_millis(150));
             }
             Err(AgentHelperError::NoWork) => {
+                if trusted_global && !trusted_handoff_requested {
+                    // A zero-wait poll still nudges one queued job. The next
+                    // poll may lease it after the fenced handoff completes.
+                    match try_trusted_queue_handoff(
+                        app,
+                        &owner,
+                        &session_binding,
+                        &worker_token,
+                        lease_request_id,
+                    ) {
+                        Ok(_) => {}
+                        Err(error) => return agent_helper_error_json(error),
+                    }
+                }
                 return json_response(
                     200,
                     json!({
@@ -1230,7 +1402,11 @@ fn agent_helper_lease_action_json(
     if lease_id.is_empty() || lease_id.len() > 256 || action.contains('/') {
         return json_response(404, json!({"ok":false,"error":"not_found"}));
     }
-    let (owner, session_binding) = match agent_helper_context(app, auth_token) {
+    let AgentHelperContext {
+        owner,
+        session_binding,
+        ..
+    } = match agent_helper_context(app, auth_token) {
         Ok(value) => value,
         Err(response) => return response,
     };
@@ -1331,7 +1507,7 @@ fn agent_helper_lease_action_json(
     }
     if app
         .solver_pool
-        .server_job_cancel_requested(&ticket.job_id, &owner)
+        .server_job_cancel_requested(&ticket.job_id, &ticket.job_owner)
     {
         if action == "heartbeat" {
             return json_response(
@@ -5047,13 +5223,23 @@ fn spawn_server_owned_solver(
                                 )
                             })
                             .unwrap_or_else(|| Arc::clone(&body));
-                        if !background_app.agent_helper.register_job(
-                            &job_id,
-                            &owner,
-                            agent_body,
-                            AGENT_HELPER_SEEDS_PER_JOB,
-                            now_millis(),
-                        ) {
+                        let trusted_worker_eligible = background_app
+                            .solver_pool
+                            .trusted_worker_eligible_for_agent_execution(
+                                fence,
+                                &job_id,
+                                &owner,
+                            );
+                        if !background_app
+                            .agent_helper
+                            .register_job_with_trusted_eligibility(
+                                &job_id,
+                                &owner,
+                                agent_body,
+                                AGENT_HELPER_SEEDS_PER_JOB,
+                                trusted_worker_eligible,
+                                now_millis(),
+                            ) {
                             let Some(vps_fence) = background_app
                                 .solver_pool
                                 .fallback_agent_to_vps(fence, &job_id, &owner)
@@ -5318,6 +5504,10 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
             }
         }
 
+        // A paired owner Agent may take its own job immediately. Operator
+        // trusted workers are auxiliary queue capacity and pull only jobs that
+        // are actually waiting behind VPS admission; they never race a fresh
+        // direct start for the same free worker slot.
         if app.agent_helper.online_worker_count(owner, now_millis()) > 0 {
             let Some(fence) = app
                 .solver_pool
@@ -6232,6 +6422,31 @@ fn percent_decode(value: &str) -> String {
 mod tests {
     use super::*;
 
+    static TRUSTED_AGENT_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct EnvironmentRestore {
+        name: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl EnvironmentRestore {
+        fn set(name: &'static str, value: &str) -> Self {
+            let previous = std::env::var_os(name);
+            std::env::set_var(name, value);
+            Self { name, previous }
+        }
+    }
+
+    impl Drop for EnvironmentRestore {
+        fn drop(&mut self) {
+            if let Some(previous) = self.previous.as_ref() {
+                std::env::set_var(self.name, previous);
+            } else {
+                std::env::remove_var(self.name);
+            }
+        }
+    }
+
     fn registry_security_fixture() -> Value {
         json!({
             "version": 1,
@@ -6624,6 +6839,23 @@ mod tests {
         assert!(solver_owner_from_session(&json!({"role": "school_admin"})).is_none());
     }
 
+    #[test]
+    fn trusted_agent_bearer_requires_the_exact_server_configured_digest() {
+        let token = format!("{TRUSTED_AGENT_TOKEN_PREFIX}{}", "a".repeat(64));
+        let digest = trusted_agent_token_digest(&token);
+        assert!(trusted_agent_token_matches(Some(&digest), &token));
+        assert!(trusted_agent_token_matches(
+            Some(&digest.to_ascii_uppercase()),
+            &token
+        ));
+        assert!(!trusted_agent_token_matches(Some(&digest), "tkbt_wrong"));
+        assert!(!trusted_agent_token_matches(None, &token));
+        assert!(!trusted_agent_token_matches(
+            Some(&"0".repeat(64)),
+            &token
+        ));
+    }
+
     fn response_payload(response: &[u8]) -> Value {
         let text = String::from_utf8_lossy(response);
         let (_, body) = text
@@ -6810,6 +7042,146 @@ mod tests {
         );
         assert_eq!(response_status(&hello), 200);
         assert!(response_payload(&hello)["workerToken"].is_string());
+    }
+
+    #[test]
+    fn trusted_worker_handoff_requires_an_authenticated_free_lease_poll() {
+        let _environment_lock = TRUSTED_AGENT_ENV_LOCK.lock().unwrap();
+        let trusted_token = format!("{TRUSTED_AGENT_TOKEN_PREFIX}{}", "b".repeat(64));
+        let trusted_digest = trusted_agent_token_digest(&trusted_token);
+        let _environment = EnvironmentRestore::set(
+            TRUSTED_AGENT_TOKEN_HASH_ENV,
+            &trusted_digest,
+        );
+        let (app, _session_token, _) = agent_test_app();
+        let foreign_owner = SolverOwner::new("school-foreign", "foreign-admin");
+        assert_eq!(
+            app.solver_pool
+                .claim_server_job("trusted-queued-job", &foreign_owner),
+            ServerJobClaim::Claimed
+        );
+        app.solver_pool
+            .prepare_vps_execution("trusted-queued-job", &foreign_owner)
+            .expect("queued VPS fence");
+        assert_eq!(
+            app.solver_pool
+                .claim_server_job("trusted-queued-job-second", &foreign_owner),
+            ServerJobClaim::Claimed
+        );
+        app.solver_pool
+            .prepare_vps_execution("trusted-queued-job-second", &foreign_owner)
+            .expect("second queued VPS fence");
+
+        let hello = agent_route(
+            &app,
+            Some(&trusted_token),
+            "/api/agent-helper/v1/hello",
+            agent_protocol_body(json!({
+                "agent": {
+                    "agentId":"trusted-worker-http",
+                    "version":MIN_AGENT_HELPER_VERSION,
+                    "platform":"linux-amd64"
+                },
+                "capacity":{"cpuWorkers":6,"maxConcurrentJobs":1}
+            })),
+        );
+        assert_eq!(response_status(&hello), 200);
+        let hello = response_payload(&hello);
+        assert_eq!(hello["handoffJobIds"], json!([]));
+        let worker_token = hello["workerToken"]
+            .as_str()
+            .expect("trusted worker token")
+            .to_string();
+        assert_eq!(
+            app.solver_pool
+                .server_execution_snapshot("trusted-queued-job", &foreign_owner)
+                .expect("queued snapshot")
+                .phase,
+            ServerExecutionPhase::VpsQueued
+        );
+
+        let rejected = agent_route(
+            &app,
+            Some(&trusted_token),
+            "/api/agent-helper/v1/lease",
+            agent_protocol_body(json!({
+                "workerToken":"invalid-worker-token",
+                "leaseRequestId":"trusted-invalid-poll",
+                "agent": {
+                    "agentId":"trusted-worker-http",
+                    "version":MIN_AGENT_HELPER_VERSION,
+                    "platform":"linux-amd64"
+                },
+                "capacity":{"cpuWorkers":6,"maxConcurrentJobs":1},
+                "waitSeconds":0
+            })),
+        );
+        assert_eq!(response_status(&rejected), 401);
+        assert_eq!(
+            app.solver_pool
+                .server_execution_snapshot("trusted-queued-job", &foreign_owner)
+                .expect("still queued after rejected poll")
+                .phase,
+            ServerExecutionPhase::VpsQueued
+        );
+
+        let poll = agent_route(
+            &app,
+            Some(&trusted_token),
+            "/api/agent-helper/v1/lease",
+            agent_protocol_body(json!({
+                "workerToken":worker_token.clone(),
+                "leaseRequestId":"trusted-valid-poll",
+                "agent": {
+                    "agentId":"trusted-worker-http",
+                    "version":MIN_AGENT_HELPER_VERSION,
+                    "platform":"linux-amd64"
+                },
+                "capacity":{"cpuWorkers":6,"maxConcurrentJobs":1},
+                "waitSeconds":0
+            })),
+        );
+        assert_eq!(response_status(&poll), 200);
+        assert!(response_payload(&poll)["lease"].is_null());
+        assert_eq!(
+            app.solver_pool
+                .server_execution_snapshot("trusted-queued-job", &foreign_owner)
+                .expect("trusted handoff snapshot")
+                .phase,
+            ServerExecutionPhase::HandoffToAgent
+        );
+        assert_eq!(
+            app.solver_pool
+                .server_execution_snapshot("trusted-queued-job-second", &foreign_owner)
+                .expect("second job remains queued")
+                .phase,
+            ServerExecutionPhase::VpsQueued
+        );
+
+        let replay = agent_route(
+            &app,
+            Some(&trusted_token),
+            "/api/agent-helper/v1/lease",
+            agent_protocol_body(json!({
+                "workerToken":worker_token.clone(),
+                "leaseRequestId":"trusted-valid-poll",
+                "agent": {
+                    "agentId":"trusted-worker-http",
+                    "version":MIN_AGENT_HELPER_VERSION,
+                    "platform":"linux-amd64"
+                },
+                "capacity":{"cpuWorkers":6,"maxConcurrentJobs":1},
+                "waitSeconds":0
+            })),
+        );
+        assert_eq!(response_status(&replay), 200);
+        assert_eq!(
+            app.solver_pool
+                .server_execution_snapshot("trusted-queued-job-second", &foreign_owner)
+                .expect("idempotent replay keeps second job queued")
+                .phase,
+            ServerExecutionPhase::VpsQueued
+        );
     }
 
     #[test]
@@ -8914,6 +9286,7 @@ mod tests {
         let lease = AgentWorkLease {
             work_id: "work-convergence".to_string(),
             job_id: "job-convergence".to_string(),
+            job_owner: SolverOwner::new("school-convergence", "admin"),
             lease_token: "lease-convergence".to_string(),
             lease_expires_at_ms: 1,
             seed: 7,

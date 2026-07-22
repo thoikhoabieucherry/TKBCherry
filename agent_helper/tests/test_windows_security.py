@@ -146,8 +146,8 @@ class WindowsSecurityTests(unittest.TestCase):
                 del root, session_runner, options
                 events.append("app")
 
-            def show_window(self) -> None:
-                events.append("show")
+            def minimize_window(self) -> None:
+                events.append("minimize")
 
         tkinter = SimpleNamespace(Tk=lambda: events.append("tk") or Root())
         blocked_tray = SimpleNamespace(
@@ -169,7 +169,10 @@ class WindowsSecurityTests(unittest.TestCase):
                 allow_system_tray=False,
             )
 
-        self.assertEqual(events, ["tk", "withdraw", "app", "show", "mainloop"])
+        self.assertEqual(
+            events,
+            ["tk", "withdraw", "app", "minimize", "mainloop"],
+        )
 
     def test_fallback_session_never_registers_and_waits_for_stop(self) -> None:
         stop_event = threading.Event()

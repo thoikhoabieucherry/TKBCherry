@@ -17,6 +17,7 @@ const AGENT_JOB_TTL_MS: u64 = 6 * 60 * 60 * 1_000;
 const MAX_AGENT_WORKERS: usize = 128;
 const MAX_AGENT_WORKERS_PER_OWNER: usize = 16;
 const MAX_AGENT_PAIRINGS: usize = 256;
+const MAX_TRUSTED_HANDOFF_REQUESTS: usize = 1_024;
 const MAX_AGENT_PARALLEL_PER_WORKER: usize = 8;
 const MAX_AGENT_SEEDS_PER_JOB: usize = 16;
 const MAX_WORKER_ID_BYTES: usize = 80;
@@ -134,6 +135,7 @@ pub struct AgentHeartbeatResult {
 pub struct AgentWorkLease {
     pub work_id: String,
     pub job_id: String,
+    pub job_owner: SolverOwner,
     pub lease_token: String,
     pub lease_expires_at_ms: u64,
     pub seed: u64,
@@ -145,6 +147,7 @@ pub struct AgentWorkLease {
 pub struct AgentSubmissionTicket {
     pub work_id: String,
     pub job_id: String,
+    pub job_owner: SolverOwner,
     pub worker_id: String,
     pub seed: u64,
     pub request_body: Arc<Vec<u8>>,
@@ -169,6 +172,7 @@ pub enum AgentJobExecution {
 #[derive(Clone, Debug)]
 struct AgentWorker {
     owner: SolverOwner,
+    trusted_global: bool,
     session_binding: String,
     worker_id: String,
     _name: String,
@@ -201,6 +205,7 @@ struct AgentTask {
 
 struct AgentJob {
     owner: SolverOwner,
+    trusted_global_eligible: bool,
     created_at_ms: u64,
     request_body: Arc<Vec<u8>>,
     tasks: Vec<AgentTask>,
@@ -230,11 +235,19 @@ struct AgentPairing {
     state: AgentPairState,
 }
 
+#[derive(Clone, Debug)]
+struct TrustedHandoffRequest {
+    worker_token_hash: String,
+    expires_at_ms: u64,
+    job_id: Option<String>,
+}
+
 #[derive(Default)]
 struct AgentHelperState {
     workers: HashMap<String, AgentWorker>,
     jobs: HashMap<String, AgentJob>,
     pairings: HashMap<String, AgentPairing>,
+    trusted_handoff_requests: HashMap<String, TrustedHandoffRequest>,
 }
 
 #[derive(Default)]
@@ -259,7 +272,10 @@ impl AgentHelperCoordinator {
             .workers
             .values()
             .filter(|worker| {
-                worker.owner == *owner && worker.eligible && worker.expires_at_ms > now_ms
+                !worker.trusted_global
+                    && worker.owner == *owner
+                    && worker.eligible
+                    && worker.expires_at_ms > now_ms
             })
             .count()
     }
@@ -285,6 +301,135 @@ impl AgentHelperCoordinator {
         )
         .ok()
         .map(|(_, worker)| worker.eligible)
+    }
+
+    /// Authorize at most one global VPS-queue handoff for one authenticated
+    /// logical lease poll. Transport retries reuse `lease_request_id`, so the
+    /// hashed request marker prevents a dropped long-poll connection from
+    /// draining multiple jobs before its first Agent task becomes visible.
+    pub fn begin_trusted_handoff_request(
+        &self,
+        owner: &SolverOwner,
+        session_binding: &str,
+        worker_token: &str,
+        lease_request_id: &str,
+        now_ms: u64,
+    ) -> Result<bool, AgentHelperError> {
+        let lease_request_id = normalize_lease_request_id(lease_request_id)?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| AgentHelperError::UnauthorizedWorker)?;
+        prune_state(&mut state, now_ms);
+        let (worker_token_hash, worker) =
+            authenticated_worker(&state, owner, session_binding, worker_token, now_ms)?;
+        if !worker.eligible || !worker.trusted_global {
+            return Ok(false);
+        }
+        let marker = trusted_handoff_marker(&worker_token_hash, &lease_request_id);
+        if state.trusted_handoff_requests.contains_key(&marker) {
+            return Ok(false);
+        }
+        let active_leases = state
+            .jobs
+            .values()
+            .flat_map(|job| job.tasks.iter())
+            .filter(|task| {
+                matches!(
+                    &task.state,
+                    AgentTaskState::Leased {
+                        worker_token_hash: assigned,
+                        ..
+                    } if assigned == &worker_token_hash
+                )
+            })
+            .count();
+        let pending_handoffs = state
+            .trusted_handoff_requests
+            .values()
+            .filter(|request| request.worker_token_hash == worker_token_hash)
+            .count();
+        if active_leases.saturating_add(pending_handoffs) >= worker.max_parallel {
+            return Err(AgentHelperError::WorkerAtCapacity);
+        }
+        if state.trusted_handoff_requests.len() >= MAX_TRUSTED_HANDOFF_REQUESTS {
+            return Err(AgentHelperError::WorkerCapacity);
+        }
+        state.trusted_handoff_requests.insert(
+            marker,
+            TrustedHandoffRequest {
+                worker_token_hash,
+                expires_at_ms: now_ms.saturating_add(AGENT_WORKER_TTL_MS),
+                job_id: None,
+            },
+        );
+        Ok(true)
+    }
+
+    pub fn commit_trusted_handoff_request(
+        &self,
+        owner: &SolverOwner,
+        session_binding: &str,
+        worker_token: &str,
+        lease_request_id: &str,
+        job_id: &str,
+        now_ms: u64,
+    ) -> Result<bool, AgentHelperError> {
+        let lease_request_id = normalize_lease_request_id(lease_request_id)?;
+        let job_id = job_id.trim();
+        if job_id.is_empty() || job_id.len() > 256 {
+            return Err(AgentHelperError::JobNotFound);
+        }
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| AgentHelperError::UnauthorizedWorker)?;
+        prune_state(&mut state, now_ms);
+        let (worker_token_hash, worker) =
+            authenticated_worker(&state, owner, session_binding, worker_token, now_ms)?;
+        if !worker.eligible || !worker.trusted_global {
+            return Ok(false);
+        }
+        let marker = trusted_handoff_marker(&worker_token_hash, &lease_request_id);
+        let already_leased = state.jobs.get(job_id).is_some_and(|job| {
+            job.tasks
+                .iter()
+                .any(|task| matches!(&task.state, AgentTaskState::Leased { .. }))
+        });
+        if already_leased {
+            return Ok(state.trusted_handoff_requests.remove(&marker).is_some());
+        }
+        let Some(request) = state.trusted_handoff_requests.get_mut(&marker) else {
+            return Ok(false);
+        };
+        request.job_id = Some(job_id.to_string());
+        Ok(true)
+    }
+
+    /// Release an uncommitted trusted-handoff marker when no VPS-queued job
+    /// was available. A later tick of the same long-poll may then try again;
+    /// committed markers remain until TTL so transport replays stay idempotent.
+    pub fn release_trusted_handoff_request(
+        &self,
+        owner: &SolverOwner,
+        session_binding: &str,
+        worker_token: &str,
+        lease_request_id: &str,
+        now_ms: u64,
+    ) -> Result<bool, AgentHelperError> {
+        let lease_request_id = normalize_lease_request_id(lease_request_id)?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| AgentHelperError::UnauthorizedWorker)?;
+        prune_state(&mut state, now_ms);
+        let (worker_token_hash, worker) =
+            authenticated_worker(&state, owner, session_binding, worker_token, now_ms)?;
+        if !worker.eligible || !worker.trusted_global {
+            return Ok(false);
+        }
+        let marker = trusted_handoff_marker(&worker_token_hash, &lease_request_id);
+        Ok(state.trusted_handoff_requests.remove(&marker).is_some())
     }
 
     /// Remove every live registration for one Agent identity. This is used
@@ -323,6 +468,9 @@ impl AgentHelperCoordinator {
         for token_hash in &revoked {
             state.workers.remove(token_hash);
         }
+        state.trusted_handoff_requests.retain(|_, request| {
+            !revoked.contains(&request.worker_token_hash)
+        });
         release_worker_leases(&mut state.jobs, &revoked);
         !revoked.is_empty()
     }
@@ -350,6 +498,9 @@ impl AgentHelperCoordinator {
             return false;
         }
         state.workers.remove(&token_hash);
+        state.trusted_handoff_requests.retain(|_, request| {
+            request.worker_token_hash != token_hash
+        });
         let revoked = HashSet::from([token_hash]);
         release_worker_leases(&mut state.jobs, &revoked);
         true
@@ -589,6 +740,25 @@ impl AgentHelperCoordinator {
         seed_count: usize,
         now_ms: u64,
     ) -> bool {
+        self.register_job_with_trusted_eligibility(
+            job_id,
+            owner,
+            request_body,
+            seed_count,
+            false,
+            now_ms,
+        )
+    }
+
+    pub fn register_job_with_trusted_eligibility(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+        request_body: Arc<Vec<u8>>,
+        seed_count: usize,
+        trusted_global_eligible: bool,
+        now_ms: u64,
+    ) -> bool {
         let job_id = job_id.trim();
         if job_id.is_empty() || request_body.is_empty() {
             return false;
@@ -614,6 +784,7 @@ impl AgentHelperCoordinator {
             job_id.to_string(),
             AgentJob {
                 owner: owner.clone(),
+                trusted_global_eligible,
                 created_at_ms: now_ms,
                 request_body,
                 tasks,
@@ -635,6 +806,7 @@ impl AgentHelperCoordinator {
             .unwrap_or(false);
         if owned {
             state.jobs.remove(job_id);
+            clear_trusted_handoff_for_job(&mut state, job_id);
         }
         owned
     }
@@ -656,10 +828,12 @@ impl AgentHelperCoordinator {
         if !owned {
             return None;
         }
-        state
+        let candidate = state
             .jobs
             .remove(job_id)
-            .and_then(|job| job.best_candidate)
+            .and_then(|job| job.best_candidate);
+        clear_trusted_handoff_for_job(&mut state, job_id);
+        candidate
     }
 
     /// Return one coherent snapshot of the canonical Agent task. Calling this
@@ -727,6 +901,7 @@ impl AgentHelperCoordinator {
             return false;
         }
         state.jobs.remove(job_id);
+        clear_trusted_handoff_for_job(&mut state, job_id);
         true
     }
 
@@ -745,6 +920,32 @@ impl AgentHelperCoordinator {
             worker_id,
             name,
             max_parallel,
+            true,
+            false,
+            now_ms,
+        )
+    }
+
+    /// Register an operator-managed worker that may draw from the global
+    /// canonical queue. This entry point is never used by browser pairing;
+    /// the HTTP layer exposes it only after a separate trusted-worker bearer
+    /// has been verified against server configuration.
+    pub fn register_trusted_worker(
+        &self,
+        owner: &SolverOwner,
+        session_binding: &str,
+        worker_id: &str,
+        name: &str,
+        max_parallel: usize,
+        now_ms: u64,
+    ) -> Result<AgentWorkerRegistration, AgentHelperError> {
+        self.register_worker_with_eligibility(
+            owner,
+            session_binding,
+            worker_id,
+            name,
+            max_parallel,
+            true,
             true,
             now_ms,
         )
@@ -769,6 +970,7 @@ impl AgentHelperCoordinator {
             name,
             max_parallel,
             false,
+            false,
             now_ms,
         )
     }
@@ -781,6 +983,7 @@ impl AgentHelperCoordinator {
         name: &str,
         max_parallel: usize,
         eligible: bool,
+        trusted_global: bool,
         now_ms: u64,
     ) -> Result<AgentWorkerRegistration, AgentHelperError> {
         let worker_id = normalize_worker_id(worker_id)?;
@@ -829,6 +1032,7 @@ impl AgentHelperCoordinator {
             worker_token_hash,
             AgentWorker {
                 owner: owner.clone(),
+                trusted_global,
                 session_binding: session_binding.to_string(),
                 worker_id: worker_id.clone(),
                 _name: name,
@@ -877,7 +1081,7 @@ impl AgentHelperCoordinator {
             for job in state
                 .jobs
                 .values_mut()
-                .filter(|job| job.owner == worker.owner)
+                .filter(|job| worker_can_access_job(&worker, job))
             {
                 let Some(task) = job
                     .tasks
@@ -950,7 +1154,7 @@ impl AgentHelperCoordinator {
         let replay = state
             .jobs
             .iter()
-            .filter(|(_, job)| job.owner == worker.owner)
+            .filter(|(_, job)| worker_can_access_job(&worker, job))
             .find_map(|(job_id, job)| {
                 job.tasks.iter().find_map(|task| match &task.state {
                     AgentTaskState::Leased {
@@ -966,6 +1170,7 @@ impl AgentHelperCoordinator {
                         Some(AgentWorkLease {
                             work_id: task.work_id.clone(),
                             job_id: job_id.clone(),
+                            job_owner: job.owner.clone(),
                             lease_token: lease_token.clone(),
                             lease_expires_at_ms: *expires_at_ms,
                             seed: task.seed,
@@ -999,7 +1204,7 @@ impl AgentHelperCoordinator {
         let mut available = state
             .jobs
             .iter()
-            .filter(|(_, job)| job.owner == worker.owner)
+            .filter(|(_, job)| worker_can_access_job(&worker, job))
             .flat_map(|(job_id, job)| {
                 job.tasks
                     .iter()
@@ -1023,31 +1228,36 @@ impl AgentHelperCoordinator {
         let lease_token = make_secret();
         let lease_token_hash = secret_hash(&lease_token);
         let lease_expires_at_ms = now_ms.saturating_add(AGENT_WORK_LEASE_MS);
-        let job = state
-            .jobs
-            .get_mut(&job_id)
-            .ok_or(AgentHelperError::JobNotFound)?;
-        let task = job
-            .tasks
-            .get_mut(task_index)
-            .ok_or(AgentHelperError::JobNotFound)?;
-        task.attempt = task.attempt.saturating_add(1);
-        task.state = AgentTaskState::Leased {
-            worker_token_hash,
-            lease_token_hash,
-            lease_token: lease_token.clone(),
-            lease_request_id,
-            expires_at_ms: lease_expires_at_ms,
+        let lease = {
+            let job = state
+                .jobs
+                .get_mut(&job_id)
+                .ok_or(AgentHelperError::JobNotFound)?;
+            let task = job
+                .tasks
+                .get_mut(task_index)
+                .ok_or(AgentHelperError::JobNotFound)?;
+            task.attempt = task.attempt.saturating_add(1);
+            task.state = AgentTaskState::Leased {
+                worker_token_hash,
+                lease_token_hash,
+                lease_token: lease_token.clone(),
+                lease_request_id,
+                expires_at_ms: lease_expires_at_ms,
+            };
+            AgentWorkLease {
+                work_id: task.work_id.clone(),
+                job_id: job_id.clone(),
+                job_owner: job.owner.clone(),
+                lease_token,
+                lease_expires_at_ms,
+                seed: task.seed,
+                attempt: task.attempt,
+                request_body: Arc::clone(&job.request_body),
+            }
         };
-        Ok(AgentWorkLease {
-            work_id: task.work_id.clone(),
-            job_id,
-            lease_token,
-            lease_expires_at_ms,
-            seed: task.seed,
-            attempt: task.attempt,
-            request_body: Arc::clone(&job.request_body),
-        })
+        clear_trusted_handoff_for_job(&mut state, &job_id);
+        Ok(lease)
     }
 
     pub fn work_id_for_lease(
@@ -1069,7 +1279,7 @@ impl AgentHelperCoordinator {
         state
             .jobs
             .values()
-            .filter(|job| job.owner == worker.owner)
+            .filter(|job| worker_can_access_job(&worker, job))
             .flat_map(|job| job.tasks.iter())
             .find_map(|task| match &task.state {
                 AgentTaskState::Leased {
@@ -1108,7 +1318,7 @@ impl AgentHelperCoordinator {
         for (job_id, job) in state
             .jobs
             .iter()
-            .filter(|(_, job)| job.owner == worker.owner)
+            .filter(|(_, job)| worker_can_access_job(&worker, job))
         {
             let Some(task) = job.tasks.iter().find(|task| task.work_id == work_id) else {
                 continue;
@@ -1126,6 +1336,7 @@ impl AgentHelperCoordinator {
                     Ok(AgentSubmissionTicket {
                         work_id: task.work_id.clone(),
                         job_id: job_id.clone(),
+                        job_owner: job.owner.clone(),
                         worker_id: worker.worker_id.clone(),
                         seed: task.seed,
                         request_body: Arc::clone(&job.request_body),
@@ -1163,7 +1374,7 @@ impl AgentHelperCoordinator {
         for job in state
             .jobs
             .values_mut()
-            .filter(|job| job.owner == worker.owner)
+            .filter(|job| worker_can_access_job(&worker, job))
         {
             let Some(task_index) = job.tasks.iter().position(|task| task.work_id == work_id) else {
                 continue;
@@ -1225,7 +1436,7 @@ impl AgentHelperCoordinator {
         for job in state
             .jobs
             .values_mut()
-            .filter(|job| job.owner == worker.owner)
+            .filter(|job| worker_can_access_job(&worker, job))
         {
             let Some(task) = job.tasks.iter_mut().find(|task| task.work_id == work_id) else {
                 continue;
@@ -1273,7 +1484,7 @@ impl AgentHelperCoordinator {
         for job in state
             .jobs
             .values_mut()
-            .filter(|job| job.owner == worker.owner)
+            .filter(|job| worker_can_access_job(&worker, job))
         {
             let Some(task) = job.tasks.iter_mut().find(|task| task.work_id == work_id) else {
                 continue;
@@ -1389,6 +1600,26 @@ fn normalize_device_code(value: &str) -> Result<&str, AgentPairError> {
     Ok(value)
 }
 
+fn worker_can_access_job(worker: &AgentWorker, job: &AgentJob) -> bool {
+    if worker.trusted_global {
+        job.trusted_global_eligible
+    } else {
+        job.owner == worker.owner
+    }
+}
+
+fn trusted_handoff_marker(worker_token_hash: &str, lease_request_id: &str) -> String {
+    secret_hash(&format!(
+        "trusted-handoff\0{worker_token_hash}\0{lease_request_id}"
+    ))
+}
+
+fn clear_trusted_handoff_for_job(state: &mut AgentHelperState, job_id: &str) {
+    state.trusted_handoff_requests.retain(|_, request| {
+        request.job_id.as_deref() != Some(job_id)
+    });
+}
+
 fn authenticated_worker(
     state: &AgentHelperState,
     owner: &SolverOwner,
@@ -1414,6 +1645,9 @@ fn prune_state(state: &mut AgentHelperState, now_ms: u64) {
     state
         .pairings
         .retain(|_, pairing| pairing.expires_at_ms > now_ms);
+    state
+        .trusted_handoff_requests
+        .retain(|_, request| request.expires_at_ms > now_ms);
     let expired_workers = state
         .workers
         .iter()
@@ -1423,6 +1657,9 @@ fn prune_state(state: &mut AgentHelperState, now_ms: u64) {
     state
         .workers
         .retain(|token_hash, _| !expired_workers.contains(token_hash));
+    state.trusted_handoff_requests.retain(|_, request| {
+        !expired_workers.contains(&request.worker_token_hash)
+    });
     for job in state.jobs.values_mut() {
         for task in &mut job.tasks {
             let release = matches!(
@@ -1580,6 +1817,149 @@ mod tests {
             coordinator.online_worker_count(&owner, 1_000 + AGENT_WORKER_TTL_MS),
             0
         );
+    }
+
+    #[test]
+    fn trusted_worker_draws_global_fifo_without_appearing_as_a_user_agent() {
+        let coordinator = AgentHelperCoordinator::default();
+        let first_owner = SolverOwner::new("school-a", "admin-a");
+        let second_owner = SolverOwner::new("school-b", "admin-b");
+        let trusted_owner = SolverOwner::new("operator-infrastructure", "trusted-worker");
+        let trusted_binding = session_binding("trusted-service-token");
+        assert!(coordinator.register_job(
+            "owner-direct-job",
+            &first_owner,
+            Arc::new(br#"{"data":{"school":"owner"},"settings":{}}"#.to_vec()),
+            1,
+            999,
+        ));
+        assert!(coordinator.register_job_with_trusted_eligibility(
+            "global-job-a",
+            &first_owner,
+            Arc::new(br#"{"data":{"school":"a"},"settings":{}}"#.to_vec()),
+            1,
+            true,
+            1_000,
+        ));
+        assert!(coordinator.register_job_with_trusted_eligibility(
+            "global-job-b",
+            &second_owner,
+            Arc::new(br#"{"data":{"school":"b"},"settings":{}}"#.to_vec()),
+            1,
+            true,
+            1_001,
+        ));
+        let worker = coordinator
+            .register_trusted_worker(
+                &trusted_owner,
+                &trusted_binding,
+                "trusted-linux-1",
+                "Trusted Linux 1",
+                1,
+                1_002,
+            )
+            .unwrap();
+
+        assert_eq!(coordinator.online_worker_count(&first_owner, 1_003), 0);
+        assert_eq!(coordinator.online_worker_count(&second_owner, 1_003), 0);
+        assert!(coordinator
+            .begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "trusted-poll-1",
+                1_003,
+            )
+            .unwrap());
+        assert!(!coordinator
+            .begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "trusted-poll-1",
+                1_003,
+            )
+            .unwrap());
+        assert!(coordinator
+            .release_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "trusted-poll-1",
+                1_003,
+            )
+            .unwrap());
+        assert!(coordinator
+            .begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "trusted-poll-1",
+                1_003,
+            )
+            .unwrap());
+        assert!(coordinator
+            .commit_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "trusted-poll-1",
+                "global-job-a",
+                1_003,
+            )
+            .unwrap());
+        assert!(matches!(
+            coordinator.begin_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "trusted-poll-2",
+                1_003,
+            ),
+            Err(AgentHelperError::WorkerAtCapacity)
+        ));
+        let first = coordinator
+            .claim_work(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                1_004,
+            )
+            .unwrap();
+        assert_eq!(first.job_id, "global-job-a");
+        assert!(!coordinator
+            .release_trusted_handoff_request(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                "trusted-poll-1",
+                1_004,
+            )
+            .unwrap());
+        coordinator
+            .accept_structured_outcome(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                &first.work_id,
+                &first.lease_token,
+                1_005,
+            )
+            .unwrap();
+
+        let second = coordinator
+            .claim_work(
+                &trusted_owner,
+                &trusted_binding,
+                &worker.worker_token,
+                1_006,
+            )
+            .unwrap();
+        assert_eq!(second.job_id, "global-job-b");
+        assert!(matches!(
+            coordinator.job_execution("owner-direct-job", &first_owner, 1_007),
+            Some(AgentJobExecution::Queued)
+        ));
     }
 
     #[test]

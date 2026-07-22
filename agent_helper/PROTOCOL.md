@@ -10,11 +10,40 @@ Every request uses `Content-Type: application/json`, `Accept: application/json`,
 
 - `/pair/start` and `/pair/status` are device-pairing routes and do not use an `Authorization` header. The unguessable `deviceCode` is the capability required by `/pair/status`.
 - `/pair/approve` requires a normal, live browser-session bearer. An Agent credential cannot approve another Agent.
-- `/hello`, `/heartbeat`, `/lease`, and every `/leases/{leaseId}/...` route require `Authorization: Bearer <agent credential>` and `X-TKB-Agent-Id: <UUID>`.
+- `/hello`, `/heartbeat`, `/lease`, and every `/leases/{leaseId}/...` route require `Authorization: Bearer <agent credential>` and `X-TKB-Agent-Id: <UUID>`. An operator trusted worker uses its separate `tkbt_` bearer on only these same work routes, as described below.
 
 TLS certificate verification is mandatory. The Agent's pairing and authenticated HTTP clients reject redirects. In particular, an Authorization header or `deviceCode` must never be forwarded to a different origin.
 
 The public Windows distribution is `TKBCherryAgent-Windows.zip`. Its archive root contains exactly one entry, `TKBCherryAgent.exe`; the user extracts that file before running it. A separate `TKBCherryAgent-Windows-onedir.zip` may be produced for internal diagnostics, but it is not the public download.
+
+## Operator trusted-worker mode
+
+Normal browser-paired Agents are always owner scoped and can lease only work
+belonging to the school/account that approved the pairing. They must never be
+used as shared capacity for other tenants.
+
+An operator-managed machine may instead authenticate with a high-entropy token
+whose domain-separated SHA-256 digest is configured on the API process as
+`TKB_TRUSTED_AGENT_TOKEN_SHA256`. The raw token uses the `tkbt_` prefix, is
+stored only on that worker (for example in a protected service environment),
+and is never placed in the repository, browser, release package, or VPS
+configuration as plaintext. Without the server-side digest, trusted-worker mode
+is disabled.
+
+A trusted worker uses this same REST protocol, but it can lease the oldest
+canonical Agent task across owners. It remains a replacement executor rather
+than an additional attempt: one job runs on either that worker or the VPS, not
+both. An authenticated free lease poll may drain one VPS-queued job; trusted
+workers do not race fresh direct starts and do not interrupt a VPS child that
+is already running. Lease expiry or worker loss
+returns the canonical job to the VPS under the existing generation fence.
+
+The server does not include trusted workers in any school's `/status` count.
+It validates every submitted candidate against the original request and remains
+the only component allowed to publish the final result. This mode is intended
+only for infrastructure controlled by the service operator because the solver
+payload necessarily contains timetable data; distributing a trusted token to a
+normal user's workstation would break tenant confidentiality.
 
 ## `GET /status` (browser only)
 

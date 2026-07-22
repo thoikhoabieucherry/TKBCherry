@@ -8,6 +8,7 @@ from agent_helper.relocation import default_install_dir
 
 
 AGENT_ROOT = Path(__file__).resolve().parents[1]
+REPOSITORY_ROOT = AGENT_ROOT.parent
 
 
 class PackagingTests(unittest.TestCase):
@@ -63,6 +64,9 @@ class PackagingTests(unittest.TestCase):
         self.assertIn('$ReleaseEntry.FullName -cne "TKBCherryAgent.exe"', script)
         self.assertIn("Standalone executable created at", script)
         self.assertIn("Signed release manifest created at", script)
+        self.assertIn("[switch]$SkipReleaseSigning", script)
+        self.assertIn("candidate ZIP/EXE must be signed before publication", script)
+        self.assertIn("Remove-Item -LiteralPath $ReleaseManifest -Force", script)
         self.assertNotRegex(script, r"(?i)\$env:TKB_AGENT_TOKEN\s*=")
         self.assertNotRegex(script, r"(?i)(password|authorization)\s*=")
         self.assertNotRegex(script, r"(?i)Cai-TKBCherry-Agent\.(cmd|ps1)")
@@ -81,6 +85,21 @@ class PackagingTests(unittest.TestCase):
         self.assertIn("stop_running_windows_executable", relocation)
         self.assertIn('["taskkill", "/PID", str(process_id), "/T", "/F"]', relocation)
         self.assertNotIn("TKB_AGENT_TOKEN", relocation)
+
+    def test_windows_ci_builds_an_unprivileged_release_candidate(self) -> None:
+        workflow = (
+            REPOSITORY_ROOT / ".github" / "workflows" / "build-agent-windows.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("permissions:\n  contents: read", workflow)
+        self.assertIn("runs-on: windows-2022", workflow)
+        self.assertIn("-SkipReleaseSigning", workflow)
+        self.assertIn("-m unittest discover -s agent_helper/tests -v", workflow)
+        self.assertIn("TKBCherryAgent-Windows.zip", workflow)
+        self.assertIn("TKBCherryAgent.exe", workflow)
+        self.assertIn("actions/upload-artifact@", workflow)
+        self.assertNotIn("TKB_AGENT_RELEASE_SIGNING_KEY", workflow)
+        self.assertNotIn("TKB_VPS_PASSWORD", workflow)
 
 
 if __name__ == "__main__":
