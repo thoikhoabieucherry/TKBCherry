@@ -18,6 +18,10 @@ const bridgeSource = fs.readFileSync(
   path.resolve(__dirname, "..", "web", "pages", "tkb-rust-bridge.js"),
   "utf8"
 );
+const constraintsMenuSource = fs.readFileSync(
+  path.resolve(__dirname, "..", "web", "pages", "tkb-constraints-menu.js"),
+  "utf8"
+);
 
 function buttonMarkup(source, id){
   return (source.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) || [])
@@ -27,6 +31,119 @@ function buttonMarkup(source, id){
 function inlineSvgMarkup(source){
   return source.match(/<svg\b[^>]*>[\s\S]*?<\/svg>/)?.[0] || "";
 }
+
+test("requirements submenus toggle only by click", () => {
+  assert.doesNotMatch(
+    constraintsMenuSource,
+    /addEventListener\(['"](?:pointerover|mouseover|mousemove|focusin)['"]/,
+    "hover and focus movement must not open or switch requirement groups"
+  );
+  assert.match(constraintsMenuSource, /aria-expanded', 'false'/);
+  assert.match(constraintsMenuSource, /window\.__TKB_CONSTRAINTS_MENU_VERSION = VERSION/);
+  assert.match(constraintsMenuSource, /addEventListener\('scroll', onWindowScroll, true\)/);
+  assert.doesNotMatch(constraintsMenuSource, /addEventListener\('scroll', closeMenu, true\)/);
+
+  const start = constraintsMenuSource.indexOf("  function setSubmenuOpen");
+  const end = constraintsMenuSource.indexOf("  function positionSubmenu", start);
+  assert.ok(start >= 0 && end > start, "click accordion helpers must be extractable");
+
+  function makeItem(hasSubmenu = true){
+    const classes = new Set();
+    const attributes = {};
+    const item = {
+      classList:{
+        add(name){ classes.add(name); },
+        remove(name){ classes.delete(name); },
+        contains(name){ return classes.has(name); }
+      },
+      button:{setAttribute(name, value){ attributes[name] = value; }},
+      attributes,
+      descendants:[],
+      querySelector(selector){
+        if(selector === ':scope > .rb-menu-sub') return hasSubmenu ? {} : null;
+        if(selector === ':scope > button') return this.button;
+        return null;
+      },
+      querySelectorAll(selector){
+        if(selector !== 'li.is-open') return [];
+        return this.descendants.filter(child => child.classList.contains('is-open'));
+      }
+    };
+    return item;
+  }
+
+  let positioned = 0;
+  const context = {positionSubmenu(){ positioned += 1; }};
+  vm.runInNewContext(
+    `${constraintsMenuSource.slice(start, end)}\nthis.toggleRequirementSubmenu = toggleSubmenu;`,
+    context
+  );
+  const first = makeItem();
+  const second = makeItem();
+  const leaf = makeItem(false);
+  const root = {children:[first, second, leaf]};
+  first.parentNode = root;
+  second.parentNode = root;
+  leaf.parentNode = root;
+
+  assert.equal(context.toggleRequirementSubmenu({}, first), true);
+  assert.equal(first.classList.contains('is-open'), true);
+  assert.equal(first.attributes['aria-expanded'], 'true');
+  assert.equal(positioned, 1);
+
+  assert.equal(context.toggleRequirementSubmenu({}, first), true);
+  assert.equal(first.classList.contains('is-open'), false);
+  assert.equal(first.attributes['aria-expanded'], 'false');
+  assert.equal(positioned, 1, "closing the same group must not reposition it");
+
+  context.toggleRequirementSubmenu({}, first);
+  context.toggleRequirementSubmenu({}, second);
+  assert.equal(first.classList.contains('is-open'), false, "opening a group closes its sibling");
+  assert.equal(second.classList.contains('is-open'), true);
+  assert.equal(second.attributes['aria-expanded'], 'true');
+  assert.equal(context.toggleRequirementSubmenu({}, leaf), false, "leaf actions remain outside accordion handling");
+  assert.equal('aria-expanded' in leaf.attributes, false, "leaf actions must not get accordion state");
+
+  const outsideStart = constraintsMenuSource.indexOf("  function onOutsideClick");
+  const outsideEnd = constraintsMenuSource.indexOf("\n\n  window.toggleRangBuoc", outsideStart);
+  assert.ok(outsideStart >= 0 && outsideEnd > outsideStart, "outside-click handler must be extractable");
+  let closed = 0;
+  const anchorChild = {};
+  const anchor = {contains(target){ return target === anchorChild; }};
+  const outsideContext = {
+    anchor,
+    MENU_ID:'tkbConstraintsDropdownMenu',
+    document:{getElementById(){ return {contains(){ return false; }}; }},
+    closeMenu(){ closed += 1; }
+  };
+  vm.runInNewContext(
+    `let activeAnchor = this.anchor;${constraintsMenuSource.slice(outsideStart, outsideEnd)}\nthis.handleRequirementOutsideClick = onOutsideClick;`,
+    outsideContext
+  );
+  outsideContext.handleRequirementOutsideClick({target:anchorChild});
+  assert.equal(closed, 0, "the capture listener must let the anchor's own click close the open menu");
+  outsideContext.handleRequirementOutsideClick({target:{}});
+  assert.equal(closed, 1, "a real outside click must still close the menu");
+
+  const scrollStart = constraintsMenuSource.indexOf("  function onWindowScroll");
+  const scrollEnd = constraintsMenuSource.indexOf("\n\n  function onOutsideClick", scrollStart);
+  assert.ok(scrollStart >= 0 && scrollEnd > scrollStart, "scroll handler must be extractable");
+  let scrollClosed = 0;
+  const internalScroller = {};
+  const scrollContext = {
+    MENU_ID:'tkbConstraintsDropdownMenu',
+    document:{getElementById(){ return {contains(target){ return target === internalScroller; }}; }},
+    closeMenu(){ scrollClosed += 1; }
+  };
+  vm.runInNewContext(
+    `${constraintsMenuSource.slice(scrollStart, scrollEnd)}\nthis.handleRequirementScroll = onWindowScroll;`,
+    scrollContext
+  );
+  scrollContext.handleRequirementScroll({target:internalScroller});
+  assert.equal(scrollClosed, 0, "scrolling inside a long mobile menu must keep it open");
+  scrollContext.handleRequirementScroll({target:{}});
+  assert.equal(scrollClosed, 1, "scrolling the page must still close the fixed menu");
+});
 
 test("every schedule deletion invalidates solver state and force-saves remotely", () => {
   const helperStart = plannerSource.indexOf("function invalidateSolverStateAfterScheduleDelete");

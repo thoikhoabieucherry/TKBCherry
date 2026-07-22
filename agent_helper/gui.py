@@ -25,6 +25,9 @@ _STATUS_TEXT = {
     "working": "Đang hỗ trợ xếp thời khóa biểu",
     "stopping": "Đang dừng Agent...",
     "updating": "Đang cập nhật Agent an toàn...",
+    "windows_security": (
+        "Windows Security cần Agent có chữ ký · lượt xếp đang dùng VPS"
+    ),
     "off": "Agent đang tắt · không sử dụng CPU để xếp",
     "error": "Agent đã dừng do có lỗi kết nối",
 }
@@ -166,6 +169,8 @@ class AgentToggleApp:
             bg="#ffffff",
             fg="#8a94a6",
             font=("Segoe UI", 8),
+            wraplength=325,
+            justify="left",
         )
         self.detail_label.pack(anchor="w")
 
@@ -192,12 +197,44 @@ class AgentToggleApp:
         self.current_state = state
         on = self.desired_on and state not in {"off", "stopping", "error"}
         updating = state == "updating"
+        windows_security = state == "windows_security"
         self.badge.configure(
-            text="UPDATE" if updating else ("ON" if on else "OFF"),
-            bg="#fff3cd" if updating else ("#d9fbe7" if on else "#e8eaf0"),
-            fg="#8a5b00" if updating else ("#08783e" if on else "#4b5565"),
+            text=(
+                "UPDATE"
+                if updating
+                else ("VPS" if windows_security else ("ON" if on else "OFF"))
+            ),
+            bg=(
+                "#fff3cd"
+                if updating
+                else (
+                    "#e8f0ff"
+                    if windows_security
+                    else ("#d9fbe7" if on else "#e8eaf0")
+                )
+            ),
+            fg=(
+                "#8a5b00"
+                if updating
+                else (
+                    "#2458d8"
+                    if windows_security
+                    else ("#08783e" if on else "#4b5565")
+                )
+            ),
         )
         self.status_label.configure(text=_STATUS_TEXT.get(state, _STATUS_TEXT["off"]))
+        if hasattr(self, "detail_label"):
+            self.detail_label.configure(
+                text=(
+                    "Agent không nạp solver trên máy này nên sẽ không hiện popup DLL."
+                    if windows_security
+                    else (
+                        f"Trần cho phép: {self.cpu_workers} CPU · "
+                        f"{self.max_memory_mb / 1024:.1f} GB RAM · tự cân theo lượt."
+                    )
+                )
+            )
         if updating:
             self.toggle_button.configure(
                 text="ĐANG CẬP NHẬT...",
@@ -467,7 +504,7 @@ class AgentToggleApp:
             or self.closing
             or self.update_in_progress
             or not self.desired_on
-            or self.current_state != "waiting"
+            or self.current_state not in {"waiting", "windows_security"}
         ):
             return
         self.dismissed_update_versions.add(version)
@@ -543,6 +580,7 @@ def run_toggle_window(
     start_hidden: bool = False,
     update_checker: UpdateChecker | None = None,
     update_installer: UpdateInstaller | None = None,
+    allow_system_tray: bool = True,
 ) -> None:
     """Open the native Agent window. Import Tk only for the normal GUI path."""
 
@@ -562,18 +600,23 @@ def run_toggle_window(
         update_checker=update_checker,
         update_installer=update_installer,
     )
-    try:
-        from .tray import create_system_tray
+    if allow_system_tray:
+        try:
+            from .tray import create_system_tray
 
-        app.attach_tray(
-            create_system_tray(
-                agent_icon_path(),
-                app.request_tray_command,
-                lambda: app.desired_on,
+            app.attach_tray(
+                create_system_tray(
+                    agent_icon_path(),
+                    app.request_tray_command,
+                    lambda: app.desired_on,
+                )
             )
-        )
-    except Exception:
-        # If the optional tray cannot start, never leave a hidden process the
-        # user cannot control. The normal window remains fully functional.
+        except Exception:
+            # If the optional tray cannot start, never leave a hidden process
+            # the user cannot control. The normal window remains functional.
+            app.show_window()
+    else:
+        # PIL/pystray can load optional native codecs. Under enforced code
+        # integrity keep the signed-independent Tk/update surface only.
         app.show_window()
     root.mainloop()

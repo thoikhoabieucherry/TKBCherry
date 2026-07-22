@@ -1,6 +1,6 @@
 # TKBCherry Project Handoff
 
-Last updated: 2026-07-21 (Asia/Bangkok)
+Last updated: 2026-07-22 (Asia/Bangkok)
 
 This is the persistent handoff note for future Codex sessions. Read this file
 before modifying the scheduler or deploying. Update it after every meaningful
@@ -8,18 +8,219 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.57** (canonical cross-device
-  progress). Public API marker:
-  `tkb_new-rust-api-2026-07-21-canonical-progress-v57`; page cache:
-  `20260721-v157-canonical-progress-v1`; bridge marker:
-  `tkb-rust-api-v262-canonical-progress`.
-- Current public Agent release: **v1.6.22** (`1.6.22`). The server lease gate
-  is also 1.6.22 so an older Agent can update itself but cannot execute a job
-  with a mismatched solver contract.
+- Current deployed application release: **v1.63** (teacher/day morning,
+  afternoon, or either-session modes plus responsive requirement tables). The
+  public API marker is
+  `tkb_new-rust-api-2026-07-22-session-modes-sac-fallback-v58`, the bridge
+  marker remains `tkb-rust-api-v262-canonical-progress`, the constraints marker
+  is `constraints-ui-v38-one-session-responsive-tables`, and the constraints
+  cache is `20260722-v163-one-session-responsive-tables-v1`.
+- Current public Agent release: **v1.6.23** (`1.6.23`). The server lease gate
+  is also 1.6.23, so older Agents remain upgrade-only and cannot claim or
+  execute work with an older solver contract.
 - Every deployed application or packaged Agent update must increment the
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.63 teacher session modes, responsive tables, and SAC fallback (deployed 2026-07-22)
+
+- `oneSessionPerDay.thuX` now stores one mutually exclusive teacher/day mode:
+  `{morning:true}` permits only the morning session, `{afternoon:true}` permits
+  only the afternoon session, and `{either:true}` permits morning or afternoon
+  but never both on that day. No selected mode means no such constraint. Legacy
+  boolean `true` remains equivalent to `either`, so existing school data stays
+  compatible.
+- The three choices render as compact square checkboxes in the
+  `Chỉ dạy 1 buổi/1 ngày` table and selecting one clears the other two. The same
+  semantics are enforced by client validation and capacity checks, the MILP
+  allocator, session CP-SAT, gap-0 CP-SAT, final validator, and adapter local
+  LNS. VPS and Agent execution therefore use the same contract.
+- All requirement checkboxes use stable 18 px square controls. Desktop tables
+  fill their wrapper with fixed, content-appropriate proportions; mobile tables
+  retain explicit minimum widths and horizontal scrolling so labels and controls
+  do not collapse together. Local visual acceptance measured the desktop table
+  and wrapper at 1,341 px in a 1365x900 viewport. At 430x932, the one-session
+  table retained 1,240 px and the period-limit table 1,280 px; horizontal
+  scrolling, mutual exclusion, and all controls worked with no browser console
+  warnings or errors.
+- Full local Node E2E verification passed **296/296**. Isolated VPS staging
+  passed scheduler **169/169**, Agent **78/78**, Rust API **140/140**, and
+  validator **20/20**, ending with `STAGING_TESTS_OK`.
+- Agent 1.6.23 detects enforced Windows Smart App Control
+  (`VerifiedAndReputablePolicyState=1`) before importing OR-Tools/Pillow or
+  loading their unsigned native DLL/PYD dependencies. On such a workstation it
+  does not register or claim solver work, displays `VPS`, keeps the updater
+  available, and leaves scheduling entirely to the VPS. This avoids presenting
+  a broken local-compute path while preserving normal server scheduling. Forced
+  UPX packing was removed. A complete local-compute fix still requires trusted
+  Authenticode signatures for every embedded EXE/DLL/PYD and then the outer EXE.
+- The installed `C:\TKBCherryAgent\TKBCherryAgent.exe` was started after the
+  update on 2026-07-22 and correctly showed `VPS`; the verification interval
+  produced zero new Code Integrity event 3033 or 3077 entries. The 22:34
+  `rustc` security popup came from a one-off local `cargo` test, not from the
+  deployed web application or VPS scheduler. Do not repeat local Rust,
+  OR-Tools/native-solver, PyInstaller, or Agent package tests on this Smart App
+  Control machine; run all native tests in isolated VPS staging.
+- The signed public Agent ZIP is 91,746,236 bytes with SHA-256
+  `7c7e5499a66bf1c20a955a05f76bfdb94abd343fec3a329f0b22096a1d7f6bb7`.
+  Its root executable is 92,342,359 bytes with SHA-256
+  `f2d8c7cc6118e8b4368cf367ac2a5f672a2ec2439b169b819180752a69cd2d5e`.
+  The public manifest reports 1.6.23 and the public ZIP `HEAD` length matches.
+- Transactional deployment returned `UPDATE_OK`. Backups are
+  `/opt/cherry-scheduler-backups/server-state-20260722-154806.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260722-154806.tar.gz`. Public
+  health reports `ok:true`, zero active/queued jobs, and all `6/6` worker tokens
+  available. Production serves API v58, the v1.63 constraints cache and marker,
+  and the unchanged v262 bridge marker.
+
+### v1.62 full-width subject requirement tables (deployed 2026-07-21)
+
+- This is a constraints-UI-only change. Scheduler logic, hard-constraint
+  semantics, Rust bridge, solver policy, Agent package, and persisted school
+  data are unchanged.
+- The five tables under `Yêu cầu đối với lớp học 2 ca` and `Giới hạn số buổi
+  học` under `Yêu cầu khác` now use the shared `rb-subject-full-table` layout.
+  They occupy the complete desktop content width with a 720 px mobile minimum,
+  so narrow devices retain deliberate horizontal scrolling instead of
+  compressing or clipping headings. The two `Môn học không cùng buổi/ngày`
+  grids already used their own full-width scroll layout and remain unchanged.
+- Live browser acceptance opened all eight entries in the two menu groups. At
+  1440x900, the sample weekly-session table and its content viewport both
+  measured 1,399 px; its columns measured `124, 167, 554, 554`. At 430x932,
+  the content viewport measured 389 px, the table retained its 720 px floor,
+  and horizontal scrolling was available with columns `64, 86, 285, 285`.
+  The other five updated tables also rendered at 720 px on the phone; the two
+  existing no-same-session/day grids retained their 670 px scroll width.
+- Verification: constraints/data/gesture semantics `21/21`, toolbar/mobile/PWA
+  `36/36`, JavaScript syntax checks, and `git diff --check` pass. The constraints
+  marker is `constraints-ui-v37-full-width-subject-tables`.
+- Transactional deployment returned `UPDATE_OK`. Backups are
+  `/opt/cherry-scheduler-backups/server-state-20260721-164535.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260721-164535.tar.gz`. Public
+  health reports `ok:true`, zero active/queued jobs, and all `6/6` worker tokens
+  available. The public page, constraints marker, and full-width CSS all serve
+  the v1.62 release.
+
+### v1.61 mobile requirement-grid double-tap actions (deployed 2026-07-21)
+
+- This is a frontend-only constraints interaction change. Scheduler, Rust
+  bridge, solver policy, Agent package, and existing persisted requirements are
+  unchanged.
+- On touch/pen devices, two taps on one `Vị trí phải có tiết dạy` cell within
+  380 ms toggle that one required-teaching `X`. A later double-tap removes it.
+  A single tap still selects only, swiping still selects a range, and a 550 ms
+  hold still applies `X` to the selected range. Mouse double-click behavior is
+  not routed through the touch controller.
+- In `Yêu cầu cố định`, double-tapping an empty class cell opens the existing
+  subject picker with `Nghỉ` as the first item. Double-tapping a visible `Nghỉ`
+  or fixed-lesson cell clears it immediately. For teacher/subject fixed-off
+  grids, an empty double-tap applies `Nghỉ` directly and the next double-tap
+  clears it. Multi-row actions choose add/remove intent from the visible primary
+  cell, then apply that action to the selected rows.
+- The fixed-subject popup is clamped to `visualViewport`, including rightmost
+  and bottom grid cells, and gains bounded internal scrolling. Synthetic native
+  click/dblclick events after a handled touch double-tap are suppressed so an
+  action cannot run twice.
+- Real local browser acceptance at 430x932 used the production UI script: the
+  must-teach cell changed `selected -> selected must -> selected`; the class
+  picker rendered exactly `Nghỉ, Toán`; `Nghỉ` and a fixed `Toán` lesson could
+  each be added and then removed by double-tap; teacher `Nghỉ` also toggled
+  directly. Browser warning/error logs were empty.
+- Verification: constraints/gesture/data semantics `21/21`, toolbar/mobile/PWA
+  `36/36`, JavaScript syntax checks, and `git diff --check` pass. The constraints
+  marker is `constraints-ui-v36-mobile-grid-double-tap`.
+- Transactional deployment returned `UPDATE_OK`. Backups are
+  `/opt/cherry-scheduler-backups/server-state-20260721-162857.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260721-162857.tar.gz`. Public
+  health reports `ok:true`, zero active/queued jobs, and all `6/6` worker tokens
+  available. The public page and constraints asset serve the v1.61 cache and
+  marker; public browser logs were empty.
+
+### v1.59-v1.60 full-width subject grid and click accordions (deployed 2026-07-21)
+
+- These are frontend-only follow-ups to v1.58. No scheduler, Rust bridge,
+  solver policy, persisted constraints, or Agent package changed.
+- The consecutive-period subject table now fills the available desktop wrapper
+  instead of leaving a blank band on the right. It keeps an 820 px mobile
+  minimum, uses an 84 px class column and 64 px assigned-period column, and
+  distributes the eight Min/Max columns across the remaining width. At a
+  1365 px desktop viewport the table and wrapper both measured about 1324 px,
+  with columns `84, 64, 147 x 8`; narrow devices retain horizontal scrolling.
+- Every requirements group is now click-controlled. The first click opens it,
+  a second click on the same group closes it, and opening another group closes
+  its sibling. Pointer movement no longer opens or switches groups. The same
+  behavior is used by the toolbar button inside a requirements page. Leaf
+  navigation and print commands retain their previous actions.
+- Submenu buttons expose `aria-haspopup` and synchronized `aria-expanded`
+  state. The active menu anchor is excluded from the capture-phase outside
+  click so clicking the main `Yeu cau` button again really closes it instead
+  of immediately reopening it. Leaf buttons do not receive accordion state.
+- v1.60 follows v1.59 with an internal-scroll guard: scrolling or swiping a
+  long mobile requirements menu keeps it open, while a real page scroll still
+  closes the fixed menu. Live browser acceptance at 390x700 scrolled the long
+  subject menu to its lower items and retained the open group; 430x932 and
+  desktop click/hover checks also passed. Browser warning/error logs were empty.
+- Verification: subject/gesture/copy `19/19`, menu/toolbar `29/29`, mobile/PWA
+  `7/7`, JavaScript syntax checks, and `git diff --check` pass. The menu marker
+  is `constraints-menu-v3-click-accordion-scroll-safe`; the constraints marker
+  remains `constraints-ui-v35-full-width-subject-grid`.
+- The final transactional deployment returned `UPDATE_OK`. Final backups are
+  `/opt/cherry-scheduler-backups/server-state-20260721-160304.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260721-160304.tar.gz`. Public
+  health reports `ok:true`, zero active/queued jobs, and all `6/6` worker tokens
+  available. The served page contains both v1.59/v1.60 cache keys and the served
+  menu contains no hover-open listener.
+
+### v1.58 compact constraint tables and mobile grid gestures (deployed 2026-07-21)
+
+- This is a frontend-only constraints UI change. No scheduler, Rust bridge,
+  solver policy, or Agent code is changed; the v1.57 API and v262 bridge
+  markers remain current.
+- Subject-requirement tables with numeric values no longer stretch sparse
+  columns across the whole viewport. The consecutive-period table uses a
+  128 px class column, a 72 px assigned-period column, and eight 84 px Min/Max
+  columns. The generic sticky-column selector now targets only the first real
+  header row, so the first `Min` heading is centered instead of being mistaken
+  for the leftmost class column. The same header-row scoping also fixes the
+  multi-row linked-days table.
+- The separate `Nhập nhanh` row was removed. Each of the eight quick-fill
+  inputs now sits immediately before its `Min` or `Max` label in the second
+  header row, while retaining grade-filtered bulk fill behavior.
+- Numeric requirement cells reuse the existing Tiết chuẩn-style grid contract:
+  mouse drag, Ctrl/Cmd-click, and Shift-click select cells; Ctrl/Cmd+C copies a
+  TSV rectangle; Ctrl/Cmd+V pastes a rectangle or repeats one value across the
+  selected cells. A browser probe copied `1\t2\n3\t4` from a selected 2x2
+  rectangle and pasted `8\t9\n10\t11` back into the matching four cells.
+- On touch/pen devices, swiping inside `Yêu cầu cố định` or `Vị trí phải có
+  tiết dạy` selects the existing rectangular range. Holding for 550 ms applies
+  the same `X` action as the desktop keyboard. Holding an already selected cell
+  preserves the multi-selection; normal taps and desktop mouse/double-click
+  behavior remain on their prior paths. Native long-press context menus are
+  suppressed only for these coarse-pointer grid cells. A swipe starting inside
+  the grid deliberately selects cells; scrolling still works from the list or
+  outside the grid.
+- Local browser verification covered 1440x900 desktop, 440x956 phone portrait,
+  and 768x1024 tablet viewports. The compact table measured 872 px, its wrapper
+  remained device-width and horizontally scrollable on narrow devices, all
+  eight inline quick-fill inputs measured 36 px, and no quick-fill body row was
+  present.
+- Verification: constraints/gesture/copy-paste `19/19`, toolbar `28/28`, mobile
+  cell actions plus PWA `7/7`, `node --check`, and `git diff --check` pass. The
+  public page cache is `20260721-v158-compact-constraint-ui-v1` and the
+  constraints marker is `constraints-ui-v34-compact-grid-touch-copy`.
+- The final transactional deployment returned `UPDATE_OK`. Backups are
+  `/opt/cherry-scheduler-backups/server-state-20260721-153807.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260721-153807.tar.gz`. Post-deploy
+  health reports zero active/queued jobs and all `6/6` worker tokens available;
+  the public page and constraints asset serve the v1.58 cache/marker, inline
+  quick heads, touch gesture controller, and clipboard scope guard.
+- Final in-app-browser acceptance loaded the live `default` school without
+  editing its constraints. The rendered table measured 872 px inside a 641 px
+  scroll wrapper, contained 432 spreadsheet numeric cells and exactly eight
+  36 px inline quick-fill inputs, had no quick-fill body row, and computed the
+  first `Min` header as centered with `left:auto`. Browser warning/error logs
+  were empty.
 
 ### v1.49 live-default quality investigation (included in v1.50)
 
@@ -3047,24 +3248,28 @@ GET https://tkbcherry.com/pages/sapxep?sid=default
 Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
-Latest successful deployment marker observed on 2026-07-20: `UPDATE_OK` for
-v1.56. Public health serves API marker
-`tkb_new-rust-api-2026-07-20-quality-frontier-polish-v56`; the page serves cache
-key `20260720-v156-quality-frontier-polish-v1`, and the bridge marker is
-`tkb-rust-api-v261-quality-frontier-polish`. Public health was idle with zero
-active/queued jobs and `6/6` tokens available after deployment. Transaction
-backups are
-`/opt/cherry-scheduler-backups/server-state-20260720-175029.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260720-175029.tar.gz`.
-Public Agent release `1.6.22` and its signed manifest are live. The archive
-SHA-256 is
-`50c1ba1df6cfd5d977fa989eae4d0bc026fb6cd5c4c44f729164921b33e40963`; the
-packed executable SHA-256 is
-`28f8e499e37f989d1813c295c50b099861bc09069c059ee7fd7f9c0803ce72e1`.
+Latest successful deployment marker observed on 2026-07-22: `UPDATE_OK` for
+v1.63. Public health serves API marker
+`tkb_new-rust-api-2026-07-22-session-modes-sac-fallback-v58`; the page serves
+constraints cache key `20260722-v163-one-session-responsive-tables-v1`, the
+constraints asset serves `constraints-ui-v38-one-session-responsive-tables`,
+and the bridge marker remains `tkb-rust-api-v262-canonical-progress`. Public
+health was idle with zero active/queued jobs and `6/6` tokens available after
+deployment. Transaction backups are
+`/opt/cherry-scheduler-backups/server-state-20260722-154806.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260722-154806.tar.gz`.
+Public Agent release `1.6.23` and its signed manifest are live. The 91,746,236
+byte archive SHA-256 is
+`7c7e5499a66bf1c20a955a05f76bfdb94abd343fec3a329f0b22096a1d7f6bb7`; the
+92,342,359 byte executable SHA-256 is
+`f2d8c7cc6118e8b4368cf367ac2a5f672a2ec2439b169b819180752a69cd2d5e`.
+On enforced Smart App Control systems Agent 1.6.23 displays `VPS` and does not
+claim local solver work; the installed copy was verified with zero new Code
+Integrity 3033/3077 events.
 Stable active-status DOM histories, iPhone/PWA reattach, No-Agent/Cancel, and
 Agent handoff regressions remain covered by the local and isolated VPS suites.
-Workstations on Agent `1.6.2` or older require one manual install of a
-self-update-capable build before future in-Agent updates are available.
+Older Agents are upgrade-only at the server lease gate until they update to
+1.6.23.
 
 ## Security And Repository Notes
 

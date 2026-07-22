@@ -1,8 +1,10 @@
 (function(){
   'use strict';
 
+  const VERSION = 'constraints-menu-v3-click-accordion-scroll-safe';
   const MENU_ID = 'tkbConstraintsDropdownMenu';
   const STYLE_ID = 'tkbConstraintsDropdownStyle';
+  let activeAnchor = null;
 
   const teacherCommon = [
     ['maxDaysSessions', 'Giới hạn số ngày dạy & buổi dạy/1 tuần'],
@@ -68,9 +70,10 @@
       #${MENU_ID}{position:fixed;z-index:1000002;min-width:228px;max-width:calc(100vw - 8px);max-height:calc(100vh - 16px);overflow-y:auto;overflow-x:hidden;background:#fff;border:1px solid #cfd6e3;box-shadow:0 8px 22px rgba(0,0,0,.18);font:13px Arial,sans-serif;color:#222}
       #${MENU_ID},#${MENU_ID} ul{list-style:none;margin:0;padding:4px 0}
       #${MENU_ID} li{position:relative;white-space:nowrap}
-      #${MENU_ID} button{width:100%;display:flex;align-items:center;justify-content:space-between;gap:18px;border:0;background:transparent;border-radius:0;padding:7px 28px 7px 14px;text-align:left;color:inherit;font:inherit;cursor:default}
+      #${MENU_ID} button{width:100%;display:flex;align-items:center;justify-content:space-between;gap:18px;border:0;background:transparent;border-radius:0;padding:7px 28px 7px 14px;text-align:left;color:inherit;font:inherit;cursor:pointer}
       #${MENU_ID} button:hover,#${MENU_ID} li:hover>button{background:#e8f0ff}
-      #${MENU_ID} .rb-menu-arrow{position:absolute;right:9px}
+      #${MENU_ID} .rb-menu-arrow{position:absolute;right:9px;transition:transform .14s ease}
+      #${MENU_ID} li.is-open>button>.rb-menu-arrow{transform:rotate(90deg)}
       #${MENU_ID} .rb-menu-sep{height:1px;background:#d8d8d8;margin:4px 0}
       #${MENU_ID} .rb-menu-head{padding:6px 14px 4px;font-weight:700;color:#333}
       #${MENU_ID} .rb-menu-sub{display:none;position:fixed;left:auto;top:auto;min-width:322px;max-width:calc(100vw - 8px);max-height:calc(100vh - 16px);overflow:auto;background:#fff;border:1px solid #cfd6e3;box-shadow:0 8px 22px rgba(0,0,0,.18);padding:4px 0}
@@ -178,9 +181,10 @@
 
   function closeMenu(){
     document.getElementById(MENU_ID)?.remove();
+    activeAnchor = null;
     document.removeEventListener('click', onOutsideClick, true);
     window.removeEventListener('resize', closeMenu);
-    window.removeEventListener('scroll', closeMenu, true);
+    window.removeEventListener('scroll', onWindowScroll, true);
   }
 
   function toggleMenu(anchor){
@@ -188,9 +192,17 @@
     if(old){ closeMenu(); return; }
     ensureStyle();
     const menu = document.createElement('div');
+    activeAnchor = anchor && typeof anchor.contains === 'function' ? anchor : null;
     menu.id = MENU_ID;
     menu.innerHTML = buildMenu();
     document.body.appendChild(menu);
+    menu.querySelectorAll('li').forEach(item => {
+      const sub = item.querySelector(':scope > .rb-menu-sub');
+      const button = item.querySelector(':scope > button');
+      if(!sub || !button) return;
+      button.setAttribute('aria-haspopup', 'true');
+      button.setAttribute('aria-expanded', 'false');
+    });
     const rect = (anchor || document.activeElement || document.body).getBoundingClientRect();
     const left = Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8);
     const top = Math.min(rect.bottom + 2, window.innerHeight - menu.offsetHeight - 8);
@@ -207,37 +219,15 @@
       }
       const btn = ev.target.closest('[data-rb-open]');
       if(!btn){
-        const parent = ev.target.closest('li');
-        const sub = parent && parent.querySelector(':scope > .rb-menu-sub');
-        if(sub){
-          closeSiblingSubmenus(parent);
-          positionSubmenu(menu, parent);
-          parent.classList.add('is-open');
-          return;
-        }
+        const parent = menuItemForTarget(menu, ev.target);
+        if(toggleSubmenu(menu, parent)) return;
         return;
       }
       openPage(btn.dataset.rbOpen, btn.dataset.rbRule || '', btn.dataset.rbTitle || '');
     });
-    const openHoveredSubmenu = ev => {
-      const parent = menuItemForTarget(menu, ev.target);
-      if(!parent) return;
-      if(!parent.querySelector(':scope > .rb-menu-sub')){
-        closeSiblingSubmenus(parent);
-        return;
-      }
-      if(ev.relatedTarget && parent.contains(ev.relatedTarget) && parent.classList.contains('is-open')) return;
-      closeSiblingSubmenus(parent);
-      positionSubmenu(menu, parent);
-      parent.classList.add('is-open');
-    };
-    menu.addEventListener('pointerover', openHoveredSubmenu);
-    menu.addEventListener('mouseover', openHoveredSubmenu);
-    menu.addEventListener('mousemove', openHoveredSubmenu);
-    menu.addEventListener('focusin', openHoveredSubmenu);
     setTimeout(() => document.addEventListener('click', onOutsideClick, true), 0);
     window.addEventListener('resize', closeMenu);
-    window.addEventListener('scroll', closeMenu, true);
+    window.addEventListener('scroll', onWindowScroll, true);
   }
 
   function menuItemForTarget(menu, target){
@@ -246,12 +236,42 @@
     return item;
   }
 
+  function setSubmenuOpen(parent, open){
+    if(!parent) return;
+    const sub = parent.querySelector(':scope > .rb-menu-sub');
+    if(!sub) return;
+    if(open) parent.classList.add('is-open');
+    else parent.classList.remove('is-open');
+    const button = parent.querySelector(':scope > button');
+    if(button) button.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  function closeSubmenuBranch(parent){
+    if(!parent) return;
+    setSubmenuOpen(parent, false);
+    Array.from(parent.querySelectorAll('li.is-open')).forEach(item => setSubmenuOpen(item, false));
+  }
+
   function closeSiblingSubmenus(parent){
     const root = parent && parent.parentNode;
     if(!root) return;
     Array.from(root.children || []).forEach(item => {
-      if(item !== parent && item.classList) item.classList.remove('is-open');
+      if(item !== parent && item.classList) closeSubmenuBranch(item);
     });
+  }
+
+  function toggleSubmenu(menu, parent){
+    const sub = parent && parent.querySelector(':scope > .rb-menu-sub');
+    if(!sub) return false;
+    const wasOpen = parent.classList.contains('is-open');
+    if(wasOpen){
+      closeSubmenuBranch(parent);
+      return true;
+    }
+    closeSiblingSubmenus(parent);
+    positionSubmenu(menu, parent);
+    setSubmenuOpen(parent, true);
+    return true;
   }
 
   function positionSubmenu(menu, parent){
@@ -271,9 +291,16 @@
     sub.style.display = '';
   }
 
+  function onWindowScroll(ev){
+    const menu = document.getElementById(MENU_ID);
+    if(menu && ev && ev.target && (ev.target === menu || menu.contains(ev.target))) return;
+    closeMenu();
+  }
+
   function onOutsideClick(ev){
     const menu = document.getElementById(MENU_ID);
     if(menu && menu.contains(ev.target)) return;
+    if(activeAnchor && (ev.target === activeAnchor || activeAnchor.contains(ev.target))) return;
     closeMenu();
   }
 
@@ -281,4 +308,5 @@
     toggleMenu(document.activeElement);
   };
   window.openRangBuocMenu = toggleMenu;
+  window.__TKB_CONSTRAINTS_MENU_VERSION = VERSION;
 })();

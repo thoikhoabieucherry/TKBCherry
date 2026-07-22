@@ -13,7 +13,7 @@
 (function(){
   'use strict';
 
-  const VERSION = 'constraints-ui-v33-mobile-safe-area-bulk-fill';
+  const VERSION = 'constraints-ui-v38-one-session-responsive-tables';
   const PANEL_ID = 'tkbConstraintsFullPanel';
   const STYLE_ID = 'tkbConstraintsFullStyle';
   const DAY_KEYS_DEFAULT = ['thu2','thu3','thu4','thu5','thu6','thu7'];
@@ -98,6 +98,13 @@
   let rbNumDragStart = null;
   let rbNumDragging = false;
   let rbNumBound = false;
+  const CONSTRAINT_GRID_LONG_PRESS_MS = 550;
+  const CONSTRAINT_GRID_DOUBLE_TAP_MS = 380;
+  let constraintGridTouchGesture = null;
+  let constraintGridLastTap = null;
+  let constraintGridTouchBound = false;
+  let constraintGridSuppressClickUntil = 0;
+  let constraintGridSuppressContextUntil = 0;
 
   /* ===================== BASICS ===================== */
   function D(){
@@ -123,6 +130,37 @@
   }
   function toInt(v, def){ if(v === '' || v == null) return def; const n = Number(v); return Number.isFinite(n) ? Math.round(n) : def; }
   function truthy(v){ return v === true || v === 'true' || v === 1 || v === '1' || v === 'on'; }
+  function teacherOneSessionDayMode(value){
+    if(truthy(value)) return 'either';
+    const scalar=String(value == null ? '' : value).trim().toLowerCase();
+    if(scalar==='morning'||scalar==='sang') return 'morning';
+    if(scalar==='afternoon'||scalar==='chieu') return 'afternoon';
+    if(scalar==='either'||scalar==='both'||scalar==='ca2') return 'either';
+    if(!value || typeof value!=='object' || Array.isArray(value)) return '';
+    // Deterministic precedence also repairs malformed data with several modes.
+    if(truthy(value.morning) || truthy(value.sang)) return 'morning';
+    if(truthy(value.afternoon) || truthy(value.chieu)) return 'afternoon';
+    if(truthy(value.either) || truthy(value.both)) return 'either';
+    const explicit=String(value.mode || '').trim().toLowerCase();
+    if(explicit==='morning'||explicit==='afternoon'||explicit==='either') return explicit;
+    return '';
+  }
+  function normalizeTeacherOneSessionRule(rule){
+    if(!rule || typeof rule!=='object') return rule;
+    const conf=rule.oneSessionPerDay;
+    if(!conf || typeof conf!=='object' || Array.isArray(conf)){
+      if(!conf) delete rule.oneSessionPerDay;
+      return rule;
+    }
+    days().forEach(thu=>{
+      const mode=teacherOneSessionDayMode(conf[thu]);
+      if(mode) conf[thu]={[mode]:true};
+      else delete conf[thu];
+    });
+    delEmpty(conf);
+    if(!Object.keys(conf).length) delete rule.oneSessionPerDay;
+    return rule;
+  }
   function arrUnique(a){ return Array.from(new Set((a||[]).map(x => String(x == null ? '' : x).trim()).filter(Boolean))); }
   function slotKey(thu, buoi, ti){ return String(thu)+'|'+String(buoi)+'|'+String(Number(ti)); }
   function parseSlotKey(k){ const p = String(k||'').split('|'); return {thu:p[0]||'', buoi:p[1]||'', ti:Number(p[2]||0)}; }
@@ -204,6 +242,23 @@
       corrected = true;
     });
     return corrected;
+  }
+  function enforceTeacherOneSessionInputs(root, sources){
+    const scope=root || document.getElementById(PANEL_ID) || document;
+    const changed=[];
+    const all=Array.from(scope.querySelectorAll('input[type="checkbox"][data-tid][data-rb-one-session-mode][data-rb-one-session-day]'));
+    const sourceList=Array.isArray(sources) ? sources : [sources];
+    sourceList.filter(Boolean).forEach(source=>{
+      if(!source.checked || !source.dataset?.tid) return;
+      all.forEach(box=>{
+        if(box===source || !box.checked) return;
+        if(String(box.dataset.tid)!==String(source.dataset.tid)) return;
+        if(String(box.dataset.rbOneSessionDay)!==String(source.dataset.rbOneSessionDay)) return;
+        box.checked=false;
+        changed.push(box);
+      });
+    });
+    return changed;
   }
   function delEmpty(obj){
     if(!obj || typeof obj !== 'object') return obj;
@@ -332,6 +387,7 @@
       if(!rule || typeof rule !== 'object') return;
       delete rule.lessonPlans;
       delete rule.maxPeriodsClass;
+      normalizeTeacherOneSessionRule(rule);
       delEmpty(rule);
       if(!Object.keys(rule).length) delete c.teacher[id];
     });
@@ -957,7 +1013,14 @@
     const maxMorning=toInt(r.maxMorningAfternoon?.morning,0), maxAfternoon=toInt(r.maxMorningAfternoon?.afternoon,0);
     if(maxMorning>0){ const n=uniqueCount(cells.filter(x=>x.buoi==='sang'),x=>x.thu+'|'+x.buoi); if(n>maxMorning) add(`${label}: dạy ${n} buổi sáng/tuần, vượt giới hạn ${maxMorning}.`); }
     if(maxAfternoon>0){ const n=uniqueCount(cells.filter(x=>x.buoi==='chieu'),x=>x.thu+'|'+x.buoi); if(n>maxAfternoon) add(`${label}: dạy ${n} buổi chiều/tuần, vượt giới hạn ${maxAfternoon}.`); }
-    if(truthy(r.oneSessionPerDay?.[thu])){ const hasS=cells.some(x=>x.thu===thu&&x.buoi==='sang'), hasC=cells.some(x=>x.thu===thu&&x.buoi==='chieu'); if(hasS&&hasC) add(`${label}: ${dayLabel(thu)} đang bật chỉ dạy 1 buổi/ngày nhưng có cả sáng và chiều.`); }
+    const oneSessionMode=teacherOneSessionDayMode(r.oneSessionPerDay?.[thu]);
+    if(oneSessionMode){
+      const hasS=cells.some(x=>x.thu===thu&&x.buoi==='sang');
+      const hasC=cells.some(x=>x.thu===thu&&x.buoi==='chieu');
+      if(oneSessionMode==='morning' && hasC) add(`${label}: ${dayLabel(thu)} chỉ được dạy buổi sáng.`);
+      if(oneSessionMode==='afternoon' && hasS) add(`${label}: ${dayLabel(thu)} chỉ được dạy buổi chiều.`);
+      if(oneSessionMode==='either' && hasS && hasC) add(`${label}: ${dayLabel(thu)} chỉ được dạy sáng hoặc chiều, không dạy cả hai buổi.`);
+    }
     if(truthy(r.noMorningP5AfternoonP1?.[thu]) || truthy(r.noMorningP5AfternoonP1?.sang?.[thu]) || truthy(r.noMorningP5AfternoonP1?.chieu?.[thu])){ const hasP5=cells.some(x=>x.thu===thu&&x.buoi==='sang'&&Number(x.ti)===4), hasP1C=cells.some(x=>x.thu===thu&&x.buoi==='chieu'&&Number(x.ti)===0); if(hasP5&&hasP1C) add(`${label}: ${dayLabel(thu)} vi phạm không dạy tiết 5 sáng và tiết 1 chiều.`); }
     for(const ruleName of ['oneLocationPerSession','gapBetweenLocations','maxOneMovePerSession']){
       if(!truthy(getPath(r,`${ruleName}.${buoi}.${thu}`,false))) continue;
@@ -1386,13 +1449,13 @@
       #${PANEL_ID} .rb-fixedoff-tools{justify-content:flex-start;gap:6px}
       #${PANEL_ID} .rb-fixedoff-tools button{height:30px;min-height:30px;padding:0 9px;font-size:12px}
       #${PANEL_ID} .rb-fixedoff-selected-count{margin-left:auto;color:#506078;font-size:12px;line-height:30px;white-space:nowrap}
-      #${PANEL_ID} input[type=checkbox]{appearance:none;-webkit-appearance:none;box-sizing:border-box;display:inline-block;width:28px!important;min-width:28px!important;max-width:28px;height:16px!important;min-height:16px!important;max-height:16px;padding:0!important;margin:0;border:0;border-radius:999px;background:#cfd8e3;position:relative;vertical-align:middle;cursor:pointer;line-height:0;flex:0 0 28px;transition:background .16s ease,box-shadow .16s ease;box-shadow:inset 0 0 0 1px rgba(15,23,42,.10)}
-      #${PANEL_ID} input[type=checkbox]::before{content:"";position:absolute;width:12px;height:12px;left:2px;top:2px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.26);transition:transform .16s ease}
-      #${PANEL_ID} input[type=checkbox]:checked{background:#34c759;box-shadow:inset 0 0 0 1px rgba(15,23,42,.06)}
-      #${PANEL_ID} input[type=checkbox]:checked::before{transform:translateX(12px)}
-      #${PANEL_ID} input[type=checkbox]:indeterminate{background:#8e8e93}
-      #${PANEL_ID} input[type=checkbox]:indeterminate::before{transform:translateX(6px)}
-      #${PANEL_ID} input[type=checkbox]:focus-visible{outline:2px solid rgba(52,199,89,.35);outline-offset:2px}
+      #${PANEL_ID} input[type=checkbox]{appearance:none;-webkit-appearance:none;box-sizing:border-box;display:inline-grid;place-items:center;width:18px!important;min-width:18px!important;max-width:18px;height:18px!important;min-height:18px!important;max-height:18px;padding:0!important;margin:0;border:1px solid #96a4ba;border-radius:4px;background:#fff;position:relative;vertical-align:middle;cursor:pointer;line-height:0;flex:0 0 18px;transition:background .12s ease,border-color .12s ease,box-shadow .12s ease}
+      #${PANEL_ID} input[type=checkbox]::before{content:"";box-sizing:border-box;width:5px;height:9px;border:solid transparent;border-width:0 2px 2px 0;transform:rotate(45deg) scale(0);transform-origin:center;transition:transform .12s ease}
+      #${PANEL_ID} input[type=checkbox]:checked{background:#2458d8;border-color:#2458d8;box-shadow:none}
+      #${PANEL_ID} input[type=checkbox]:checked::before{border-color:#fff;transform:rotate(45deg) scale(1)}
+      #${PANEL_ID} input[type=checkbox]:indeterminate{background:#64748b;border-color:#64748b}
+      #${PANEL_ID} input[type=checkbox]:indeterminate::before{width:9px;height:2px;border:0;background:#fff;transform:none}
+      #${PANEL_ID} input[type=checkbox]:focus-visible{outline:2px solid rgba(36,88,216,.35);outline-offset:2px}
       #${PANEL_ID} input[type=checkbox]:disabled{opacity:.55;cursor:not-allowed}
       #${PANEL_ID} .rb-check-all input{margin:0;flex:0 0 auto}
       #${PANEL_ID} .rb-th-check-all{display:inline-flex;align-items:center;justify-content:center;gap:5px;white-space:nowrap}
@@ -1436,7 +1499,7 @@
       #${PANEL_ID} .rb-group-items{max-height:calc(84vh - 250px);overflow:auto;border:1px solid #e1e7f2;border-radius:8px;padding:8px;background:#fff}
       #${PANEL_ID} .rb-group-items label{display:flex;align-items:center;gap:7px;padding:5px 4px;font-size:12px;border-radius:5px}
       #${PANEL_ID} .rb-group-items label:hover{background:#f5f8fc}
-      #${PANEL_ID} .table-wrap{overflow:auto;border:1px solid #dfe6f4;border-radius:8px;max-height:calc(84vh - 210px)} #${PANEL_ID} table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:12px} #${PANEL_ID} th,#${PANEL_ID} td{border:0;border-right:1px solid #e2e7f2;border-bottom:1px solid #e2e7f2;padding:6px 7px;text-align:center;vertical-align:middle;background:#fff} #${PANEL_ID} th{position:sticky;top:0;z-index:1;background:#edf3fb;font-weight:700;color:#26324a} #${PANEL_ID} tbody tr:nth-child(even) td{background:#fbfdff} #${PANEL_ID} td:first-child,#${PANEL_ID} th:first-child{position:sticky;left:0;z-index:2;text-align:left;background:#fff} #${PANEL_ID} th:first-child{z-index:3;background:#edf3fb}
+      #${PANEL_ID} .table-wrap{overflow:auto;border:1px solid #dfe6f4;border-radius:8px;max-height:calc(84vh - 210px)} #${PANEL_ID} table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:12px} #${PANEL_ID} th,#${PANEL_ID} td{border:0;border-right:1px solid #e2e7f2;border-bottom:1px solid #e2e7f2;padding:6px 7px;text-align:center;vertical-align:middle;background:#fff} #${PANEL_ID} th{position:sticky;top:0;z-index:1;background:#edf3fb;font-weight:700;color:#26324a} #${PANEL_ID} tbody tr:nth-child(even) td{background:#fbfdff} #${PANEL_ID} tbody td:first-child,#${PANEL_ID} thead tr:first-child>th:first-child{position:sticky;left:0;z-index:2;text-align:left;background:#fff} #${PANEL_ID} thead tr:first-child>th:first-child{z-index:3;background:#edf3fb}
       #${PANEL_ID} .rb-nss-layout{display:grid;grid-template-columns:145px minmax(0,1fr);gap:10px;min-height:0}
       #${PANEL_ID} .rb-nss-classes{display:flex;flex-direction:column;gap:4px;overflow:auto;max-height:calc(84vh - 155px);border:1px solid #dfe6f4;border-radius:8px;padding:6px;background:#fbfdff}
       #${PANEL_ID}.rb-page-panel .rb-nss-classes{max-height:calc(100vh - 92px)}
@@ -1460,9 +1523,9 @@
       #${PANEL_ID} .rb-teacher-toolbar{gap:10px;background:#f8f8fb;border-color:#d8ddec;padding:8px 10px}
       #${PANEL_ID} .rb-teacher-toolbar label{display:flex;align-items:center;gap:6px}
       #${PANEL_ID} .rb-toolbar-spacer{flex:1 1 auto}
-      #${PANEL_ID} .rb-desktop-wrap{border-radius:0;max-height:calc(84vh - 170px)}
-      #${PANEL_ID} .rb-desktop-table{font-size:12px}
-      #${PANEL_ID} .rb-desktop-table th,#${PANEL_ID} .rb-desktop-table td{padding:4px 6px;min-width:42px}
+      #${PANEL_ID} .rb-desktop-wrap{border-radius:0;max-height:calc(84vh - 170px);width:100%;max-width:100%;overscroll-behavior:contain;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch}
+      #${PANEL_ID} .rb-desktop-table{table-layout:fixed;width:100%;min-width:0;font-size:12px}
+      #${PANEL_ID} .rb-desktop-table th,#${PANEL_ID} .rb-desktop-table td{box-sizing:border-box;padding:4px 6px;min-width:0;overflow-wrap:anywhere}
       #${PANEL_ID} .rb-desktop-table td input[type=number]{width:82px;min-width:82px;height:30px;padding:4px 8px;box-sizing:border-box;text-align:center}
       #${PANEL_ID} .rb-desktop-table td select{height:24px}
       #${PANEL_ID} .rb-desktop-table .rb-tt{min-width:34px;width:34px;text-align:center}
@@ -1472,17 +1535,49 @@
       #${PANEL_ID} .rb-desktop-table .rb-total{color:#d10000;font-weight:700}
       #${PANEL_ID} .rb-desktop-table .rb-check input{transform:none}
       #${PANEL_ID} .rb-desktop-table thead th{background:#f7f7fb}
-      #${PANEL_ID} .rb-teacher-period-wrap{overflow-y:auto;overflow-x:hidden}
-      #${PANEL_ID} .rb-teacher-period-table{table-layout:fixed;width:100%;min-width:0}
+      #${PANEL_ID} .rb-teacher-simple-table{min-width:680px}
+      #${PANEL_ID} .rb-teacher-simple-table col.rb-teacher-tt-col{width:48px}
+      #${PANEL_ID} .rb-teacher-simple-table col.rb-teacher-name-col{width:190px}
+      #${PANEL_ID} .rb-teacher-simple-table col.rb-teacher-stat-col{width:68px}
+      #${PANEL_ID} .rb-teacher-simple-table col.rb-teacher-value-col{width:auto}
+      #${PANEL_ID} .rb-teacher-session-check-table{min-width:900px}
+      #${PANEL_ID} .rb-teacher-one-session-table{min-width:1120px}
+      #${PANEL_ID} .rb-teacher-session-check-table col.rb-teacher-tt-col,
+      #${PANEL_ID} .rb-teacher-one-session-table col.rb-teacher-tt-col{width:44px}
+      #${PANEL_ID} .rb-teacher-session-check-table col.rb-teacher-name-col,
+      #${PANEL_ID} .rb-teacher-one-session-table col.rb-teacher-name-col{width:170px}
+      #${PANEL_ID} .rb-teacher-session-check-table col.rb-teacher-check-col,
+      #${PANEL_ID} .rb-teacher-one-session-table col.rb-teacher-check-col{width:auto}
+      #${PANEL_ID} .rb-teacher-simple-table .rb-tt,
+      #${PANEL_ID} .rb-teacher-session-check-table .rb-tt,
+      #${PANEL_ID} .rb-teacher-one-session-table .rb-tt{min-width:0;width:auto}
+      #${PANEL_ID} .rb-teacher-simple-table tbody td.rb-name{position:sticky;left:48px;z-index:2;background:#fff}
+      #${PANEL_ID} .rb-teacher-session-check-table tbody td.rb-name,
+      #${PANEL_ID} .rb-teacher-one-session-table tbody td.rb-name{position:sticky;left:44px;z-index:2;background:#fff}
+      #${PANEL_ID} .rb-teacher-simple-table thead tr:first-child>th:nth-child(2){position:sticky;left:48px;z-index:4;background:#f7f7fb}
+      #${PANEL_ID} .rb-teacher-session-check-table thead tr:first-child>th:nth-child(2),
+      #${PANEL_ID} .rb-teacher-one-session-table thead tr:first-child>th:nth-child(2){position:sticky;left:44px;z-index:4;background:#f7f7fb}
+      #${PANEL_ID} .rb-teacher-simple-table tbody tr:nth-child(even) td.rb-name,
+      #${PANEL_ID} .rb-teacher-session-check-table tbody tr:nth-child(even) td.rb-name,
+      #${PANEL_ID} .rb-teacher-one-session-table tbody tr:nth-child(even) td.rb-name{background:#fbfdff}
+      #${PANEL_ID} .rb-one-session-day-head{font-size:12px;white-space:nowrap}
+      #${PANEL_ID} .rb-one-session-option-head{padding:4px 2px}
+      #${PANEL_ID} .rb-one-session-option-head .rb-th-check-all{flex-direction:column;gap:3px;font-size:11px;line-height:1.05}
+      #${PANEL_ID} .rb-teacher-period-wrap{overflow:auto}
+      #${PANEL_ID} .rb-teacher-period-table{table-layout:fixed;width:100%;min-width:1120px}
       #${PANEL_ID} .rb-teacher-period-table col.rb-period-tt-col{width:42px}
-      #${PANEL_ID} .rb-teacher-period-table col.rb-period-teacher-col{width:180px}
-      #${PANEL_ID} .rb-teacher-period-table col.rb-period-stat-col{width:42px}
+      #${PANEL_ID} .rb-teacher-period-table col.rb-period-teacher-col{width:170px}
+      #${PANEL_ID} .rb-teacher-period-table col.rb-period-stat-col{width:58px}
       #${PANEL_ID} .rb-teacher-period-table col.rb-period-day-col{width:auto}
       #${PANEL_ID} .rb-teacher-period-table th,
       #${PANEL_ID} .rb-teacher-period-table td{min-width:0;padding:3px 2px;box-sizing:border-box}
       #${PANEL_ID} .rb-teacher-period-table .rb-name{min-width:0;width:auto;text-align:center}
+      #${PANEL_ID} .rb-teacher-period-table .rb-tt{min-width:0;width:auto}
       #${PANEL_ID} .rb-teacher-period-table .rb-teacher-short{max-width:100%}
-      #${PANEL_ID} .rb-teacher-period-table td input[type=number]{width:18px;min-width:18px;max-width:100%;height:26px;padding:2px 1px;font-size:12px}
+      #${PANEL_ID} .rb-teacher-period-table tbody td.rb-name{position:sticky;left:42px;z-index:2;background:#fff}
+      #${PANEL_ID} .rb-teacher-period-table tbody tr:nth-child(even) td.rb-name{background:#fbfdff}
+      #${PANEL_ID} .rb-teacher-period-table thead tr:first-child>th:nth-child(2){position:sticky;left:42px;z-index:4;background:#f7f7fb}
+      #${PANEL_ID} .rb-teacher-period-table td input[type=number]{width:100%;min-width:0;max-width:100%;height:28px;padding:2px 3px;font-size:12px}
       #${PANEL_ID} td.rb-num-cell-host{padding:0!important;cursor:cell;user-select:none;background:#fff}
       #${PANEL_ID} td.rb-num-cell-host.rb-num-selected{background:#fff1b8!important;box-shadow:inset 0 0 0 1px #ffd666}
       #${PANEL_ID} td.rb-num-cell-host.rb-num-anchor{box-shadow:inset 0 0 0 2px #2458d8}
@@ -1498,9 +1593,9 @@
       #${PANEL_ID} .rb-linked-days col.rb-linked-check-col{width:auto}
       #${PANEL_ID} .rb-linked-days th,#${PANEL_ID} .rb-linked-days td{box-sizing:border-box;padding:6px 7px;min-width:54px;text-align:center}
       #${PANEL_ID} .rb-linked-days th.rb-linked-session-head{font-size:13px;text-transform:uppercase;background:#edf3fb}
-      #${PANEL_ID} .rb-linked-days th:first-child,#${PANEL_ID} .rb-linked-days td:first-child{width:54px;min-width:54px;max-width:54px;text-align:center}
-      #${PANEL_ID} .rb-linked-days th:nth-child(2),#${PANEL_ID} .rb-linked-days td:nth-child(2){width:140px;min-width:140px;max-width:140px;text-align:center}
-      #${PANEL_ID} .rb-linked-days td.rb-check input,#${PANEL_ID} .rb-linked-days .rb-th-check-all input{margin:0;width:28px!important;height:16px!important;min-height:16px!important;padding:0!important;transform:none}
+      #${PANEL_ID} .rb-linked-days thead tr:first-child>th:first-child,#${PANEL_ID} .rb-linked-days tbody td:first-child{width:54px;min-width:54px;max-width:54px;text-align:center}
+      #${PANEL_ID} .rb-linked-days thead tr:first-child>th:nth-child(2),#${PANEL_ID} .rb-linked-days tbody td:nth-child(2){width:140px;min-width:140px;max-width:140px;text-align:center}
+      #${PANEL_ID} .rb-linked-days td.rb-check input,#${PANEL_ID} .rb-linked-days .rb-th-check-all input{margin:0;width:18px!important;height:18px!important;min-height:18px!important;padding:0!important;transform:none}
       #${PANEL_ID} .rb-linked-days .rb-th-check-all{gap:7px;font-size:12px;font-weight:700;color:#555}
       #${PANEL_ID} .rb-avoid-wrap table{table-layout:fixed;width:100%;min-width:720px}
       #${PANEL_ID} .rb-avoid-wrap col.rb-avoid-tt-col{width:54px}
@@ -1548,6 +1643,10 @@
       #${PANEL_ID} .rb-fixedoff-grid td.off.selected{box-shadow:inset 0 0 0 2px #2458d8;background:#ffedcf}
       #${PANEL_ID} .rb-fixedoff-grid td.lesson.selected{box-shadow:inset 0 0 0 2px #2458d8;background:#dff2e8}
       #${PANEL_ID} .rb-fixedoff-grid tr.sep td{border-top:2px solid #5876d3}
+      @media (any-pointer:coarse){
+        #${PANEL_ID} .rb-fixedoff-grid td[data-fo-toggle],
+        #${PANEL_ID} .rb-fixedoff-grid td[data-mt-toggle]{touch-action:none;-webkit-touch-callout:none}
+      }
       #${PANEL_ID}.rb-page-panel .rb-main-page,
       #${PANEL_ID}.rb-page-panel .rb-content{min-height:0;height:100%;box-sizing:border-box}
       #${PANEL_ID}.rb-page-panel .rb-content{overflow:hidden}
@@ -1557,8 +1656,18 @@
       #${PANEL_ID}.rb-page-panel .rb-content[data-rb-section="subjectGroup"] > .toolbar{flex:0 0 auto}
       #${PANEL_ID}.rb-page-panel .rb-content[data-rb-section="subject"] > .table-wrap,
       #${PANEL_ID}.rb-page-panel .rb-content[data-rb-section="subjectGroup"] > .table-wrap{flex:1 1 auto;min-height:0;max-height:none;overflow:auto;overscroll-behavior:contain;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch}
-      #${PANEL_ID} .rb-lesson-block-fill-row td{background:#f3f7ff;font-weight:700}
-      #${PANEL_ID} .rb-lesson-block-fill-row td:first-child{background:#f3f7ff}
+      #${PANEL_ID} .rb-subject-compact-table{min-width:0}
+      #${PANEL_ID} .rb-subject-full-table{width:100%;min-width:720px}
+      #${PANEL_ID} .rb-subject-full-table{table-layout:fixed}
+      #${PANEL_ID} .rb-subject-full-table th:first-child,#${PANEL_ID} .rb-subject-full-table td:first-child{width:96px}
+      #${PANEL_ID} .rb-subject-full-table th:nth-child(2),#${PANEL_ID} .rb-subject-full-table td:nth-child(2){width:82px}
+      #${PANEL_ID} .rb-lesson-block-table{table-layout:fixed;width:100%;min-width:820px}
+      #${PANEL_ID} .rb-lesson-block-table col.rb-lesson-class-col{width:84px}
+      #${PANEL_ID} .rb-lesson-block-table col.rb-lesson-period-col{width:64px}
+      #${PANEL_ID} .rb-lesson-block-table col.rb-lesson-bound-col{width:auto}
+      #${PANEL_ID} .rb-lesson-block-table th,#${PANEL_ID} .rb-lesson-block-table td{box-sizing:border-box}
+      #${PANEL_ID} .rb-lesson-block-head{display:inline-flex;align-items:center;justify-content:center;gap:4px;white-space:nowrap}
+      #${PANEL_ID} .rb-lesson-block-head input[type=number]{box-sizing:border-box;width:36px;height:26px;min-height:26px;padding:2px 4px;border-radius:5px;font-weight:400}
       #${PANEL_ID}.rb-page-panel .rb-fixedoff-screen{height:100%;min-height:0;align-items:stretch}
       #${PANEL_ID}.rb-page-panel .rb-fixedoff-list{max-height:none}
       #${PANEL_ID}.rb-page-panel .rb-fixedoff-main{height:100%;min-height:0;display:flex;flex-direction:column}
@@ -1575,7 +1684,7 @@
         #${PANEL_ID}.rb-page-panel .rb-fixedoff-list{height:100%;max-height:none}
       }
 
-.rb-menu-pop{position:fixed;z-index:1000002;min-width:232px;background:#fff;border:1px solid #d2d9e6;border-radius:8px;box-shadow:0 10px 28px rgba(22,34,66,.18);padding:5px}
+.rb-menu-pop{position:fixed;z-index:1000002;min-width:232px;max-width:calc(100vw - 8px);max-height:calc(100vh - 8px);overflow:auto;overscroll-behavior:contain;background:#fff;border:1px solid #d2d9e6;border-radius:8px;box-shadow:0 10px 28px rgba(22,34,66,.18);padding:5px}
 .rb-menu-item{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 10px;border-radius:6px;font-size:12px;cursor:pointer;white-space:nowrap}
 .rb-menu-item:hover{background:#eef4fb}
 .rb-menu-item.sep{height:1px;padding:0;margin:4px 0;background:#d9d9d9;cursor:default}
@@ -1615,6 +1724,12 @@
   #${PANEL_ID} .rb-group-editor{grid-template-columns:1fr}
   #${PANEL_ID} .rb-time-limit-editor{grid-template-columns:1fr}
   #${PANEL_ID} .rb-time-limit-list{max-height:170px}
+  #${PANEL_ID} .table-wrap{max-width:100%;overflow:auto;overscroll-behavior:contain;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch}
+  #${PANEL_ID} .rb-teacher-simple-table{min-width:720px}
+  #${PANEL_ID} .rb-teacher-session-check-table{min-width:900px}
+  #${PANEL_ID} .rb-teacher-one-session-table{min-width:1240px}
+  #${PANEL_ID} .rb-teacher-period-table{min-width:1280px}
+  #${PANEL_ID} .rb-time-limit-main .rb-desktop-table{min-width:980px}
   #${PANEL_ID} .rb-fixedoff-screen{grid-template-columns:1fr}
   #${PANEL_ID}.rb-page-panel .rb-fixedoff-screen{grid-template-rows:minmax(60px,max-content) minmax(0,1fr)}
   #${PANEL_ID}.rb-page-panel .rb-fixedoff-list{max-height:104px}
@@ -1762,6 +1877,22 @@ function buildMenuTree(){
   ];
 }
 function closeRbMenus(){ document.querySelectorAll('.rb-menu-pop').forEach(x=>x.remove()); }
+function positionRbMenuPopup(pop,left,top){
+  if(!pop) return;
+  const viewport=window.visualViewport;
+  const viewportLeft=Number(viewport?.offsetLeft || 0);
+  const viewportTop=Number(viewport?.offsetTop || 0);
+  const viewportWidth=Math.max(0,Number(viewport?.width || window.innerWidth || 0));
+  const viewportHeight=Math.max(0,Number(viewport?.height || window.innerHeight || 0));
+  const margin=4;
+  pop.style.maxWidth=Math.max(120,viewportWidth-margin*2)+'px';
+  pop.style.maxHeight=Math.max(120,viewportHeight-margin*2)+'px';
+  const rect=pop.getBoundingClientRect();
+  const maxLeft=viewportLeft+viewportWidth-Math.min(rect.width,viewportWidth-margin*2)-margin;
+  const maxTop=viewportTop+viewportHeight-Math.min(rect.height,viewportHeight-margin*2)-margin;
+  pop.style.left=Math.round(Math.max(viewportLeft+margin,Math.min(Number(left || 0),maxLeft)))+'px';
+  pop.style.top=Math.round(Math.max(viewportTop+margin,Math.min(Number(top || 0),maxTop)))+'px';
+}
 function buildMenuPopup(items, left, top, level){
   const pop=document.createElement('div'); pop.className='rb-menu-pop'; pop.dataset.level=String(level||0); pop.style.left=Math.round(left)+'px'; pop.style.top=Math.round(top)+'px';
   items.forEach(it=>{
@@ -1773,11 +1904,23 @@ function buildMenuPopup(items, left, top, level){
       row.dataset.rbTitle = it.title || it.label || '';
     }
     if(!it.heading){
-      row.addEventListener('mouseenter',()=>{
+      row.addEventListener('click',(e)=>{
+        e.stopPropagation();
         document.querySelectorAll(`.rb-menu-pop`).forEach(p=>{ if(Number(p.dataset.level||0) > (level||0)) p.remove(); });
-        if(it.children){ const r=row.getBoundingClientRect(); const next=buildMenuPopup(it.children, r.right-2, r.top-4, (level||0)+1); document.body.appendChild(next); }
+        const wasOpen=row.classList.contains('is-open');
+        Array.from(pop.querySelectorAll(':scope > .rb-menu-item.is-open')).forEach(item=>item.classList.remove('is-open'));
+        if(it.children){
+          if(wasOpen) return;
+          row.classList.add('is-open');
+          const r=row.getBoundingClientRect();
+          const next=buildMenuPopup(it.children, r.right-2, r.top-4, (level||0)+1);
+          document.body.appendChild(next);
+          positionRbMenuPopup(next,r.right-2,r.top-4);
+          return;
+        }
+        closeRbMenus();
+        try{ it.action && it.action(); }catch(_){}
       });
-      row.addEventListener('click',(e)=>{ e.stopPropagation(); if(it.children) return; closeRbMenus(); try{ it.action && it.action(); }catch(_){} });
     }
     pop.appendChild(row);
   });
@@ -1961,7 +2104,10 @@ function buildMenuPopup(items, left, top, level){
       let dayCap=sumNumbers(perDay.map(x=>x.cap));
       const dayLimit=toInt(getPath(rule,`maxPeriods.day.${thu}`,0),0);
       if(dayLimit > 0) dayCap=Math.min(dayCap, dayLimit);
-      if(truthy(rule.oneSessionPerDay?.[thu])) dayCap=Math.min(dayCap, Math.max(0, ...perDay.map(x=>x.cap)));
+      const oneSessionMode=teacherOneSessionDayMode(rule.oneSessionPerDay?.[thu]);
+      if(oneSessionMode==='morning') dayCap=Math.min(dayCap, perDay.find(x=>x.buoi==='sang')?.cap || 0);
+      else if(oneSessionMode==='afternoon') dayCap=Math.min(dayCap, perDay.find(x=>x.buoi==='chieu')?.cap || 0);
+      else if(oneSessionMode==='either') dayCap=Math.min(dayCap, Math.max(0, ...perDay.map(x=>x.cap)));
       dayCaps.push({thu,cap:dayCap});
     });
     let cap=sumNumbers(dayCaps.map(x=>x.cap));
@@ -2642,7 +2788,13 @@ function buildMenuPopup(items, left, top, level){
   function filteredTeachers(){ let arr=getTeacherList(); const q=norm(state.search); if(q) arr=arr.filter(x=>norm(x.id).includes(q)||norm(x.name).includes(q)); return arr; }
   function numberInputClass(){ return `class="rb-num-cell-input" data-rb-num-cell="1" inputmode="numeric"`; }
   function inputNum(tid,path,val){ return `<input type="number" ${numberInputClass()} data-tid="${esc(tid)}" data-path="${esc(path)}" min="0" value="${esc(val == null ? '' : val)}">`; }
-  function inputCheck(tid,path,val){ return `<input type="checkbox" data-tid="${esc(tid)}" data-path="${esc(path)}" ${truthy(val)?'checked':''}>`; }
+  function inputCheck(tid,path,val,attrs){ return `<input type="checkbox" data-tid="${esc(tid)}" data-path="${esc(path)}" ${truthy(val)?'checked':''}${attrs?' '+attrs:''}>`; }
+  function teacherOneSessionInput(tid,thu,mode,selectedMode){
+    const labels={morning:'Sáng',afternoon:'Chiều',either:'Cả 2'};
+    const path=`oneSessionPerDay.${thu}.${mode}`;
+    const aria=`${teacherName(tid)} - ${dayLabel(thu)} - ${labels[mode] || mode}`;
+    return inputCheck(tid,path,selectedMode===mode,`data-rb-one-session-mode="${esc(mode)}" data-rb-one-session-day="${esc(thu)}" aria-label="${esc(aria)}"`);
+  }
   function inputSelect(tid,path,val,options){ return `<select data-tid="${esc(tid)}" data-path="${esc(path)}">${options.map(o=>`<option value="${esc(o[0])}" ${String(o[0])===String(val)?'selected':''}>${esc(o[1])}</option>`).join('')}</select>`; }
   function thDaysGrouped(colspan){ return days().map(d=>`<th colspan="${colspan}">${esc(dayLabel(d))}</th>`).join(''); }
   function tableEmpty(msg){ return `<div class="hint">${esc(msg || 'Chưa có dữ liệu.')}</div>`; }
@@ -3224,6 +3376,12 @@ function buildMenuPopup(items, left, top, level){
   function teacherPeriodColgroup(){
     return `<colgroup><col class="rb-period-tt-col"><col class="rb-period-teacher-col"><col class="rb-period-stat-col">${days().map(()=>'<col class="rb-period-day-col">').join('')}${days().map(()=>'<col class="rb-period-day-col">').join('')}${days().map(()=>'<col class="rb-period-day-col">').join('')}</colgroup>`;
   }
+  function teacherSimpleColgroup(extraColumns){
+    return `<colgroup><col class="rb-teacher-tt-col"><col class="rb-teacher-name-col"><col class="rb-teacher-stat-col">${Array.from({length:extraColumns||0},()=>'<col class="rb-teacher-value-col">').join('')}</colgroup>`;
+  }
+  function teacherCheckColgroup(checkColumns){
+    return `<colgroup><col class="rb-teacher-tt-col"><col class="rb-teacher-name-col">${Array.from({length:checkColumns||0},()=>'<col class="rb-teacher-check-col">').join('')}</colgroup>`;
+  }
   function renderTeacherRule(rule){
     const title=(TEACHER_RULES.find(x=>x[0]===rule)||[])[1]||'Yêu cầu giáo viên';
     if(rule==='mustTeach') return renderTeacherMustTeach(title);
@@ -3232,11 +3390,11 @@ function buildMenuPopup(items, left, top, level){
   }
   function teacherRuleTable(rule,rows){
     if(rule==='maxDaysSessions'){
-      return `<div class="table-wrap rb-desktop-wrap"><table class="rb-desktop-table"><thead><tr><th>TT</th><th>Giáo viên</th>${teacherHeaderStats()}<th>Giới hạn số ngày dạy/1 tuần</th><th>Giới hạn số buổi dạy/1 tuần</th></tr></thead><tbody>${rows.map((t,i)=>{const r=teacherRuleObj(t.id);return `<tr>${teacherIndexCell(i)}${teacherNameCell(t)}${teacherStatsCells(t)}<td>${inputNum(t.id,'maxDaysSessions.maxDays',getPath(r,'maxDaysSessions.maxDays',''))}</td><td>${inputNum(t.id,'maxDaysSessions.maxSessions',getPath(r,'maxDaysSessions.maxSessions',''))}</td></tr>`;}).join('')}</tbody></table></div>`;
+      return `<div class="table-wrap rb-desktop-wrap"><table class="rb-desktop-table rb-teacher-simple-table">${teacherSimpleColgroup(2)}<thead><tr><th>TT</th><th>Giáo viên</th>${teacherHeaderStats()}<th>Giới hạn số ngày dạy/1 tuần</th><th>Giới hạn số buổi dạy/1 tuần</th></tr></thead><tbody>${rows.map((t,i)=>{const r=teacherRuleObj(t.id);return `<tr>${teacherIndexCell(i)}${teacherNameCell(t)}${teacherStatsCells(t)}<td>${inputNum(t.id,'maxDaysSessions.maxDays',getPath(r,'maxDaysSessions.maxDays',''))}</td><td>${inputNum(t.id,'maxDaysSessions.maxSessions',getPath(r,'maxDaysSessions.maxSessions',''))}</td></tr>`;}).join('')}</tbody></table></div>`;
     }
     if(rule==='maxPeriods') return teacherDaySessionNumberTable(rows,'maxPeriods');
     if(rule==='maxMorningAfternoon'){
-      return `<div class="table-wrap rb-desktop-wrap"><table class="rb-desktop-table"><thead><tr><th>TT</th><th>Giáo viên</th>${teacherHeaderStats()}<th>Giới hạn số buổi dạy sáng</th><th>Giới hạn số buổi dạy chiều</th></tr></thead><tbody>${rows.map((t,i)=>{const r=teacherRuleObj(t.id);return `<tr>${teacherIndexCell(i)}${teacherNameCell(t)}${teacherStatsCells(t)}<td>${inputNum(t.id,'maxMorningAfternoon.morning',getPath(r,'maxMorningAfternoon.morning',''))}</td><td>${inputNum(t.id,'maxMorningAfternoon.afternoon',getPath(r,'maxMorningAfternoon.afternoon',''))}</td></tr>`;}).join('')}</tbody></table></div>`;
+      return `<div class="table-wrap rb-desktop-wrap"><table class="rb-desktop-table rb-teacher-simple-table">${teacherSimpleColgroup(2)}<thead><tr><th>TT</th><th>Giáo viên</th>${teacherHeaderStats()}<th>Giới hạn số buổi dạy sáng</th><th>Giới hạn số buổi dạy chiều</th></tr></thead><tbody>${rows.map((t,i)=>{const r=teacherRuleObj(t.id);return `<tr>${teacherIndexCell(i)}${teacherNameCell(t)}${teacherStatsCells(t)}<td>${inputNum(t.id,'maxMorningAfternoon.morning',getPath(r,'maxMorningAfternoon.morning',''))}</td><td>${inputNum(t.id,'maxMorningAfternoon.afternoon',getPath(r,'maxMorningAfternoon.afternoon',''))}</td></tr>`;}).join('')}</tbody></table></div>`;
     }
     if(rule==='oneSessionPerDay') return teacherDayCheckTable(rows,rule,{mode:'day'});
     if(rule==='noMorningP5AfternoonP1') return teacherDayCheckTable(rows,rule,{mode:'sessionNoMorning'});
@@ -3249,14 +3407,15 @@ function buildMenuPopup(items, left, top, level){
   function teacherDayCheckTable(rows,base,opts){
     const mode = opts?.mode || 'day';
     if(mode === 'day'){
-      const html = `<div class="table-wrap rb-desktop-wrap"><table class="rb-desktop-table"><thead><tr><th>TT</th><th>${tableCheckAllHeader('Giáo viên')}</th>${days().map(d=>`<th>${esc(dayLabel(d))}</th>`).join('')}</tr></thead><tbody>${rows.map((t,i)=>{const r=teacherRuleObj(t.id);return `<tr>${teacherIndexCell(i)}${teacherNameCell(t)}${days().map(d=>`<td class="rb-check">${inputCheck(t.id,base+'.'+d,getPath(r,base+'.'+d,false))}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>`;
+      const modes=[['morning','Sáng'],['afternoon','Chiều'],['either','Cả 2']];
+      const html = `<div class="table-wrap rb-desktop-wrap rb-teacher-one-session-wrap"><table class="rb-desktop-table rb-teacher-one-session-table">${teacherCheckColgroup(days().length*modes.length)}<thead><tr><th rowspan="2">TT</th><th rowspan="2">Giáo viên</th>${days().map(d=>`<th colspan="3" class="rb-one-session-day-head">${esc(dayLabel(d))}</th>`).join('')}</tr><tr>${days().map(d=>modes.map(([value,label])=>`<th class="rb-one-session-option-head">${tableCheckAllHeader(label,`path:${base}.${d}.${value}`)}</th>`).join('')).join('')}</tr></thead><tbody>${rows.map((t,i)=>{const r=teacherRuleObj(t.id);return `<tr>${teacherIndexCell(i)}${teacherNameCell(t)}${days().map(d=>{const selected=teacherOneSessionDayMode(getPath(r,base+'.'+d,''));return modes.map(([value])=>`<td class="rb-check">${teacherOneSessionInput(t.id,d,value,selected)}</td>`).join('');}).join('')}</tr>`;}).join('')}</tbody></table></div>`;
       return `<div data-rb-check-scope="fields">${html}</div>`;
     }
     if(mode === 'sessionNoMorning'){
-      const html = `<div class="table-wrap rb-desktop-wrap"><table class="rb-desktop-table"><thead><tr><th rowspan="2">TT</th><th rowspan="2">Giáo viên</th><th colspan="${days().length}">${tableCheckAllHeader('Buổi sáng','morning')}</th><th colspan="${days().length}">${tableCheckAllHeader('Buổi chiều','afternoon')}</th></tr><tr>${days().map(d=>`<th>${shortDayLabel(d)}</th>`).join('')}${days().map(d=>`<th>${shortDayLabel(d)}</th>`).join('')}</tr></thead><tbody>${rows.map((t,i)=>{const r=teacherRuleObj(t.id);return `<tr>${teacherIndexCell(i)}${teacherNameCell(t)}${days().map(d=>`<td class="rb-check">${inputCheck(t.id,base+'.sang.'+d,getPath(r,base+'.sang.'+d,getPath(r,base+'.'+d,false)))}</td>`).join('')}${days().map(d=>`<td class="rb-check">${inputCheck(t.id,base+'.chieu.'+d,getPath(r,base+'.chieu.'+d,getPath(r,base+'.'+d,false)))}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>`;
+      const html = `<div class="table-wrap rb-desktop-wrap"><table class="rb-desktop-table rb-teacher-session-check-table">${teacherCheckColgroup(days().length*2)}<thead><tr><th rowspan="2">TT</th><th rowspan="2">Giáo viên</th><th colspan="${days().length}">${tableCheckAllHeader('Buổi sáng','morning')}</th><th colspan="${days().length}">${tableCheckAllHeader('Buổi chiều','afternoon')}</th></tr><tr>${days().map(d=>`<th>${shortDayLabel(d)}</th>`).join('')}${days().map(d=>`<th>${shortDayLabel(d)}</th>`).join('')}</tr></thead><tbody>${rows.map((t,i)=>{const r=teacherRuleObj(t.id);return `<tr>${teacherIndexCell(i)}${teacherNameCell(t)}${days().map(d=>`<td class="rb-check">${inputCheck(t.id,base+'.sang.'+d,getPath(r,base+'.sang.'+d,getPath(r,base+'.'+d,false)))}</td>`).join('')}${days().map(d=>`<td class="rb-check">${inputCheck(t.id,base+'.chieu.'+d,getPath(r,base+'.chieu.'+d,getPath(r,base+'.'+d,false)))}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>`;
       return `<div data-rb-check-scope="fields">${html}</div>`;
     }
-    const html = `<div class="table-wrap rb-desktop-wrap"><table class="rb-desktop-table"><thead><tr><th rowspan="2">TT</th><th rowspan="2">Giáo viên</th><th colspan="${days().length}">${tableCheckAllHeader('Buổi sáng','morning')}</th><th colspan="${days().length}">${tableCheckAllHeader('Buổi chiều','afternoon')}</th></tr><tr>${days().map(d=>`<th>${shortDayLabel(d)}</th>`).join('')}${days().map(d=>`<th>${shortDayLabel(d)}</th>`).join('')}</tr></thead><tbody>${rows.map((t,i)=>{const r=teacherRuleObj(t.id);return `<tr>${teacherIndexCell(i)}${teacherNameCell(t)}${days().map(d=>`<td class="rb-check">${inputCheck(t.id,base+'.sang.'+d,getPath(r,base+'.sang.'+d,false))}</td>`).join('')}${days().map(d=>`<td class="rb-check">${inputCheck(t.id,base+'.chieu.'+d,getPath(r,base+'.chieu.'+d,false))}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>`;
+    const html = `<div class="table-wrap rb-desktop-wrap"><table class="rb-desktop-table rb-teacher-session-check-table">${teacherCheckColgroup(days().length*2)}<thead><tr><th rowspan="2">TT</th><th rowspan="2">Giáo viên</th><th colspan="${days().length}">${tableCheckAllHeader('Buổi sáng','morning')}</th><th colspan="${days().length}">${tableCheckAllHeader('Buổi chiều','afternoon')}</th></tr><tr>${days().map(d=>`<th>${shortDayLabel(d)}</th>`).join('')}${days().map(d=>`<th>${shortDayLabel(d)}</th>`).join('')}</tr></thead><tbody>${rows.map((t,i)=>{const r=teacherRuleObj(t.id);return `<tr>${teacherIndexCell(i)}${teacherNameCell(t)}${days().map(d=>`<td class="rb-check">${inputCheck(t.id,base+'.sang.'+d,getPath(r,base+'.sang.'+d,false))}</td>`).join('')}${days().map(d=>`<td class="rb-check">${inputCheck(t.id,base+'.chieu.'+d,getPath(r,base+'.chieu.'+d,false))}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>`;
     return `<div data-rb-check-scope="fields">${html}</div>`;
   }
 
@@ -3281,10 +3440,10 @@ function buildMenuPopup(items, left, top, level){
   function inputC(prefix,id,path,val){ return `<input type="number" ${numberInputClass()} data-cid="${esc(id)}" data-path="${esc(path)}" min="0" value="${esc(val == null ? '' : val)}">`; }
   function lessonBlockFillInput(path,label){ return `<input type="number" inputmode="numeric" data-rb-lesson-block-fill="${esc(path)}" min="0" value="" aria-label="${esc(label)}" title="${esc(label)}">`; }
   function checkC(prefix,id,path,val){ return `<input type="checkbox" data-cid="${esc(id)}" data-path="${esc(path)}" ${truthy(val)?'checked':''}>`; }
-  function renderGlobalLimitTable(scope, rule){ const rootKey=scope==='subjectGroup'?state.subjectGroupId:state.subjectId; const obj=scope==='subjectGroup'?(model().subjectGroup[rootKey]=model().subjectGroup[rootKey]||{}):(model().subject[rootKey]=model().subject[rootKey]||{}); const base=rule==='groupLimit'?'groupLimit':'globalLimit'; const conf=obj[base]||{}; const fake='global'; function cell(path){ return `<input type="number" ${numberInputClass()} data-global-scope="${esc(scope)}" data-global-root="${esc(rootKey)}" data-global-base="${esc(base)}" data-path="${esc(path)}" min="0" value="${esc(getPath(conf,path,''))}">`; } return `<div class="table-wrap"><table><thead><tr><th>Phạm vi</th><th>Lớp học</th><th>Giáo viên</th><th>Phòng học</th></tr></thead><tbody><tr><td><b>/1 tiết</b></td><td>${cell('perSlot.classes')}</td><td>${cell('perSlot.teachers')}</td><td>${cell('perSlot.rooms')}</td></tr><tr><td><b>/1 buổi</b></td><td>${cell('perSession.classes')}</td><td>${cell('perSession.teachers')}</td><td>${cell('perSession.rooms')}</td></tr></tbody></table></div>`; }
+  function renderGlobalLimitTable(scope, rule){ const rootKey=scope==='subjectGroup'?state.subjectGroupId:state.subjectId; const obj=scope==='subjectGroup'?(model().subjectGroup[rootKey]=model().subjectGroup[rootKey]||{}):(model().subject[rootKey]=model().subject[rootKey]||{}); const base=rule==='groupLimit'?'groupLimit':'globalLimit'; const conf=obj[base]||{}; const fake='global'; function cell(path){ return `<input type="number" ${numberInputClass()} data-global-scope="${esc(scope)}" data-global-root="${esc(rootKey)}" data-global-base="${esc(base)}" data-path="${esc(path)}" min="0" value="${esc(getPath(conf,path,''))}">`; } return `<div class="table-wrap"><table class="rb-subject-compact-table"><thead><tr><th>Phạm vi</th><th>Lớp học</th><th>Giáo viên</th><th>Phòng học</th></tr></thead><tbody><tr><td><b>/1 tiết</b></td><td>${cell('perSlot.classes')}</td><td>${cell('perSlot.teachers')}</td><td>${cell('perSlot.rooms')}</td></tr><tr><td><b>/1 buổi</b></td><td>${cell('perSession.classes')}</td><td>${cell('perSession.teachers')}</td><td>${cell('perSession.rooms')}</td></tr></tbody></table></div>`; }
 
   function simpleClassNumberTable(rows,rowRule,cols,isGroup){
-    return `<div class="table-wrap"><table><thead><tr><th>Lớp</th><th>Số tiết</th>${cols.map(c=>`<th>${esc(c[1])}</th>`).join('')}</tr></thead><tbody>${rows.map(cls=>{const r=rowRule(cls);return `<tr><td><b>${esc(cls.name)}</b></td>${subjectPeriodsCell(cls,!!isGroup)}${cols.map(c=>`<td>${inputC('',cls.id,c[0],getPath(r,c[0],''))}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>`;
+    return `<div class="table-wrap"><table class="rb-subject-full-table"><thead><tr><th>Lớp</th><th>Số tiết</th>${cols.map(c=>`<th>${esc(c[1])}</th>`).join('')}</tr></thead><tbody>${rows.map(cls=>{const r=rowRule(cls);return `<tr><td><b>${esc(cls.name)}</b></td>${subjectPeriodsCell(cls,!!isGroup)}${cols.map(c=>`<td>${inputC('',cls.id,c[0],getPath(r,c[0],''))}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>`;
   }
   function renderSubjectNoSameRuleTable(rule){
     const subjects=getSubjectList();
@@ -3309,15 +3468,15 @@ function buildMenuPopup(items, left, top, level){
     const classPeriodCells=cls=>`<td><b>${esc(cls.name)}</b></td>${subjectPeriodsCell(cls,isGroup)}`;
 
     if(rule==='sessionAllowed'){
-      return `<div class="table-wrap"><table><thead><tr><th>Lớp</th>${periodHead}<th>${tableCheckAllHeader('Học buổi sáng','morning')}</th><th>${tableCheckAllHeader('Học buổi chiều','afternoon')}</th><th>${tableCheckAllHeader('Chỉ học một buổi (sáng hoặc chiều)/1 ngày','oneSession')}</th></tr></thead><tbody>${rows.map(cls=>{const r=rowRule(cls);return `<tr>${classPeriodCells(cls)}<td>${checkC('',cls.id,'sessionAllowed.allowMorning',getPath(r,'sessionAllowed.allowMorning',true))}</td><td>${checkC('',cls.id,'sessionAllowed.allowAfternoon',getPath(r,'sessionAllowed.allowAfternoon',true))}</td><td>${checkC('',cls.id,'sessionAllowed.oneSessionPerDay',getPath(r,'sessionAllowed.oneSessionPerDay',false))}</td></tr>`;}).join('')}</tbody></table></div>`;
+      return `<div class="table-wrap"><table class="rb-subject-full-table"><thead><tr><th>Lớp</th>${periodHead}<th>${tableCheckAllHeader('Học buổi sáng','morning')}</th><th>${tableCheckAllHeader('Học buổi chiều','afternoon')}</th><th>${tableCheckAllHeader('Chỉ học một buổi (sáng hoặc chiều)/1 ngày','oneSession')}</th></tr></thead><tbody>${rows.map(cls=>{const r=rowRule(cls);return `<tr>${classPeriodCells(cls)}<td>${checkC('',cls.id,'sessionAllowed.allowMorning',getPath(r,'sessionAllowed.allowMorning',true))}</td><td>${checkC('',cls.id,'sessionAllowed.allowAfternoon',getPath(r,'sessionAllowed.allowAfternoon',true))}</td><td>${checkC('',cls.id,'sessionAllowed.oneSessionPerDay',getPath(r,'sessionAllowed.oneSessionPerDay',false))}</td></tr>`;}).join('')}</tbody></table></div>`;
     }
     if(rule==='weeklySessionPeriods'){
-      return `<div class="table-wrap"><table><thead><tr><th>Lớp</th>${periodHead}<th>Giới hạn tiết sáng/tuần</th><th>Giới hạn tiết chiều/tuần</th></tr></thead><tbody>${rows.map(cls=>{const r=rowRule(cls);return `<tr>${classPeriodCells(cls)}<td>${inputC('',cls.id,'weeklySessionPeriods.morning',getPath(r,'weeklySessionPeriods.morning',''))}</td><td>${inputC('',cls.id,'weeklySessionPeriods.afternoon',getPath(r,'weeklySessionPeriods.afternoon',''))}</td></tr>`;}).join('')}</tbody></table></div>`;
+      return `<div class="table-wrap"><table class="rb-subject-full-table"><thead><tr><th>Lớp</th>${periodHead}<th>Giới hạn tiết sáng/tuần</th><th>Giới hạn tiết chiều/tuần</th></tr></thead><tbody>${rows.map(cls=>{const r=rowRule(cls);return `<tr>${classPeriodCells(cls)}<td>${inputC('',cls.id,'weeklySessionPeriods.morning',getPath(r,'weeklySessionPeriods.morning',''))}</td><td>${inputC('',cls.id,'weeklySessionPeriods.afternoon',getPath(r,'weeklySessionPeriods.afternoon',''))}</td></tr>`;}).join('')}</tbody></table></div>`;
     }
     if(rule==='maxPeriods') return simpleClassNumberTable(rows,rowRule,[['maxPeriods.sang','Buổi sáng'],['maxPeriods.chieu','Buổi chiều']],isGroup);
     if(rule==='maxPeriodsDay'){
       const cols=days().map(d=>['maxPeriods.day.'+d,dayLabel(d),d]);
-      return `<div class="table-wrap"><table><thead><tr><th>Lớp</th><th>Số tiết</th>${cols.map(c=>`<th>${esc(c[1])}</th>`).join('')}</tr></thead><tbody>${rows.map(cls=>{const r=rowRule(cls);return `<tr><td><b>${esc(cls.name)}</b></td>${subjectPeriodsCell(cls,!!isGroup)}${cols.map(c=>`<td>${inputC('',cls.id,c[0],dayLimitInputValue(r,'maxPeriods.day',c[2]))}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>`;
+      return `<div class="table-wrap"><table class="rb-subject-full-table"><thead><tr><th>Lớp</th><th>Số tiết</th>${cols.map(c=>`<th>${esc(c[1])}</th>`).join('')}</tr></thead><tbody>${rows.map(cls=>{const r=rowRule(cls);return `<tr><td><b>${esc(cls.name)}</b></td>${subjectPeriodsCell(cls,!!isGroup)}${cols.map(c=>`<td>${inputC('',cls.id,c[0],dayLimitInputValue(r,'maxPeriods.day',c[2]))}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>`;
     }
     if(rule==='maxSessions') return simpleClassNumberTable(rows,rowRule,[['maxSessions.morning','Buổi sáng'],['maxSessions.afternoon','Buổi chiều'],['maxSessions.day','Cả ngày']],isGroup);
     if(rule==='maxSubjects') return simpleClassNumberTable(rows,rowRule,[['maxSubjects.sang','Buổi sáng'],['maxSubjects.chieu','Buổi chiều'],['maxSubjects.day','Cả ngày']],isGroup);
@@ -3331,8 +3490,9 @@ function buildMenuPopup(items, left, top, level){
       return `<div class="table-wrap rb-linked-days"><table>${cols}<thead><tr><th rowspan="2">TT</th><th rowspan="2">Lớp học</th><th class="rb-linked-session-head" colspan="${days().length}">BUỔI SÁNG</th><th class="rb-linked-session-head" colspan="${days().length}">BUỔI CHIỀU</th></tr><tr>${dayHead('sang')}${dayHead('chieu')}</tr></thead><tbody>${rows.map((cls,i)=>{const r=rowRule(cls);return `<tr><td>${i+1}</td><td><b>${esc(cls.name)}</b></td>${days().map(d=>`<td class="rb-check">${checkC('',cls.id,'linkedDays.sang.'+d,linkedDaysCellChecked(r,'sang',d))}</td>`).join('')}${days().map(d=>`<td class="rb-check">${checkC('',cls.id,'linkedDays.chieu.'+d,linkedDaysCellChecked(r,'chieu',d))}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>`;
     }
     if(rule==='lessonBlocks'){
-      const fillRow=`<tr class="rb-lesson-block-fill-row"><td>Nhập nhanh</td><td>—</td>${[2,3,4,5].map(n=>`<td>${lessonBlockFillInput('lessonBlocks.'+n+'.min','Nhập nhanh Min cho '+n+' tiết xếp liền')}</td><td>${lessonBlockFillInput('lessonBlocks.'+n+'.max','Nhập nhanh Max cho '+n+' tiết xếp liền')}</td>`).join('')}</tr>`;
-      return `<div class="table-wrap"><table><thead><tr><th rowspan="2">Lớp</th><th rowspan="2">Số tiết</th>${[2,3,4,5].map(n=>`<th colspan="2">${n} tiết xếp liền</th>`).join('')}</tr><tr>${[2,3,4,5].map(()=>`<th>Min</th><th>Max</th>`).join('')}</tr></thead><tbody>${fillRow}${rows.map(cls=>{const r=rowRule(cls);return `<tr>${classPeriodCells(cls)}${[2,3,4,5].map(n=>`<td>${inputC('',cls.id,'lessonBlocks.'+n+'.min',getPath(r,'lessonBlocks.'+n+'.min',''))}</td><td>${inputC('',cls.id,'lessonBlocks.'+n+'.max',getPath(r,'lessonBlocks.'+n+'.max',''))}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>`;
+      const cols=`<colgroup><col class="rb-lesson-class-col"><col class="rb-lesson-period-col">${[2,3,4,5].map(()=>'<col class="rb-lesson-bound-col"><col class="rb-lesson-bound-col">').join('')}</colgroup>`;
+      const boundHeads=[2,3,4,5].map(n=>['min','max'].map(bound=>{ const label=bound==='min'?'Min':'Max'; const path='lessonBlocks.'+n+'.'+bound; return `<th><span class="rb-lesson-block-head">${lessonBlockFillInput(path,'Nhập nhanh '+label+' cho '+n+' tiết xếp liền')}<span>${label}</span></span></th>`; }).join('')).join('');
+      return `<div class="table-wrap"><table class="rb-subject-compact-table rb-lesson-block-table">${cols}<thead><tr><th rowspan="2">Lớp</th><th rowspan="2">Số tiết</th>${[2,3,4,5].map(n=>`<th colspan="2">${n} tiết xếp liền</th>`).join('')}</tr><tr>${boundHeads}</tr></thead><tbody>${rows.map(cls=>{const r=rowRule(cls);return `<tr>${classPeriodCells(cls)}${[2,3,4,5].map(n=>`<td>${inputC('',cls.id,'lessonBlocks.'+n+'.min',getPath(r,'lessonBlocks.'+n+'.min',''))}</td><td>${inputC('',cls.id,'lessonBlocks.'+n+'.max',getPath(r,'lessonBlocks.'+n+'.max',''))}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>`;
     }
     if(rule==='globalLimit'||rule==='groupLimit') return renderGlobalLimitTable(isGroup?'subjectGroup':'subject', rule);
     return '';
@@ -3900,20 +4060,37 @@ function gradeListText(grades){
     render();
     return true;
   }
-  function openClassFixedLessonSubjectMenu(el,type,id,slot){
+  function applyClassOffToSelection(type,id,slot){
     if(type!=='class') return false;
+    const p=parseSlotKey(slot);
+    setFixedOffSingleSlot(slot);
+    fixedOffApplyIds('class',id).forEach(lopId=>clearClassFixedLessonAt(lopId,p.thu,p.buoi,p.ti));
+    return applyFixedOffSelectedSlots('class',id,true);
+  }
+  function fixedRequirementCellHasValue(type,id,slot){
+    const p=parseSlotKey(slot);
+    return fixedOffSlotChecked(type,id,p.thu,p.buoi,p.ti) ||
+      (type==='class' && !!fixedLessonAt(id,p.thu,p.buoi,p.ti));
+  }
+  function openClassFixedLessonSubjectMenu(el,type,id,slot,opts){
+    if(type!=='class') return false;
+    opts=opts||{};
     const targets=fixedOffApplyIds('class',id);
     const subjects=subjectOptionsForClasses(targets);
-    if(!subjects.length){
+    if(!subjects.length && !opts.includeOffFirst){
       notifySaved('Các lớp đang chọn chưa có môn phân công để cố định tại ô này.');
       return true;
     }
     const p=parseSlotKey(slot);
     const hasFixed=targets.some(lopId=>!!fixedLessonAt(lopId,p.thu,p.buoi,p.ti));
-    const items=subjects.map(subject=>({
+    const items=[];
+    if(opts.includeOffFirst){
+      items.push({label:'Nghỉ', action:()=>applyClassOffToSelection(type,id,slot)});
+    }
+    items.push(...subjects.map(subject=>({
       label: (()=>{ const base=subject.name || subjectDisplayName(subject.id) || subject.id; const count=Number(subject.classCount || 0); const total=Number(subject.totalClassCount || targets.length || 0); return total > 1 && count > 0 && count < total ? `${base} (${count}/${total} lớp)` : base; })(),
       action:()=>applyClassFixedLessonToSelection(type,id,slot,subject.id)
-    }));
+    })));
     if(hasFixed){
       items.push({sep:true});
       items.push({label:'Bỏ tiết cố định', action:()=>clearClassFixedLessonForSelection(type,id,slot)});
@@ -3922,6 +4099,7 @@ function gradeListText(grades){
     const rect=el.getBoundingClientRect();
     const pop=buildMenuPopup(items, rect.left, rect.bottom+2, 0);
     document.body.appendChild(pop);
+    positionRbMenuPopup(pop,rect.left,rect.bottom+2);
     const closer=ev=>{
       if(!ev.target.closest('.rb-menu-pop') && ev.target!==el){
         closeRbMenus();
@@ -3930,6 +4108,23 @@ function gradeListText(grades){
     };
     document.addEventListener('mousedown', closer, true);
     return true;
+  }
+  function handleMobileFixedRequirementDoubleTap(el,meta){
+    const type=String(meta?.type || el?.dataset?.offType || '');
+    const id=String(meta?.id || el?.dataset?.offId || '');
+    const slot=String(meta?.slot || el?.dataset?.slot || '');
+    if(!type || !id || !slot) return false;
+    closeRbMenus();
+    setFixedOffSingleSlot(slot);
+    const root=document.getElementById(PANEL_ID);
+    refreshFixedOffSelection(root || document);
+    if(fixedRequirementCellHasValue(type,id,slot)){
+      return clearFixedOffSelectedSlots(type,id);
+    }
+    if(type==='class'){
+      return openClassFixedLessonSubjectMenu(el,type,id,slot,{includeOffFirst:true});
+    }
+    return applyFixedOffSelectedSlots(type,id,true);
   }
   function openFixedLessonMenuFromCell(el, ev, opts){
     if(!el) return false;
@@ -5335,6 +5530,189 @@ function gradeListText(grades){
     if(clearOff) clearFixedOffSelectedSlots(type,id);
     else applyFixedOffSelectedSlots(type,id,true);
   }
+  function isConstraintGridTouchPointer(ev){
+    const pointerType=String(ev?.pointerType || '').toLowerCase();
+    if(pointerType) return pointerType==='touch' || pointerType==='pen';
+    try{ return !!window.matchMedia?.('(any-pointer: coarse)')?.matches; }catch(_){ return false; }
+  }
+  function constraintGridCellMeta(cell){
+    if(!cell || !cell.dataset) return null;
+    const slot=String(cell.dataset.slot || '');
+    if(!slot) return null;
+    if(cell.matches?.('[data-mt-toggle][data-mt-id][data-slot]')){
+      return {kind:'mustTeach',slot,id:String(cell.dataset.mtId || '')};
+    }
+    if(cell.matches?.('[data-fo-toggle][data-off-type][data-off-id][data-slot]')){
+      return {kind:'fixedOff',slot,type:String(cell.dataset.offType || ''),id:String(cell.dataset.offId || '')};
+    }
+    return null;
+  }
+  function constraintGridCellFromTarget(target){
+    return target?.closest?.('[data-mt-toggle][data-mt-id][data-slot],[data-fo-toggle][data-off-type][data-off-id][data-slot]') || null;
+  }
+  function sameConstraintGrid(a,b){
+    if(!a || !b || a.kind!==b.kind || a.id!==b.id) return false;
+    return a.kind==='mustTeach' || a.type===b.type;
+  }
+  function refreshConstraintGridSelection(kind){
+    const root=document.getElementById(PANEL_ID) || document;
+    if(kind==='mustTeach') refreshMustTeachSelection(root);
+    else refreshFixedOffSelection(root);
+  }
+  function setConstraintGridSingle(meta){
+    if(meta.kind==='mustTeach') setMustTeachSingleSlot(meta.slot);
+    else setFixedOffSingleSlot(meta.slot);
+  }
+  function selectConstraintGridRange(meta){
+    if(meta.kind==='mustTeach') selectMustTeachRange(meta.slot,false);
+    else selectFixedOffRange(meta.slot,false);
+  }
+  function constraintGridSelectedSlots(kind){
+    return kind==='mustTeach' ? mustTeachSelectedSlots() : fixedOffSelectedSlots();
+  }
+  function applyConstraintGridX(meta){
+    if(meta.kind==='mustTeach') return applyMustTeachSelectedSlots(true);
+    return applyFixedOffSelectedSlots(meta.type,meta.id,true);
+  }
+  function applyConstraintGridDoubleTap(gesture){
+    if(gesture.kind==='mustTeach'){
+      setMustTeachSingleSlot(gesture.slot);
+      refreshConstraintGridSelection('mustTeach');
+      return applyMustTeachSelectedSlots();
+    }
+    return handleMobileFixedRequirementDoubleTap(gesture.captureCell,gesture);
+  }
+  function clearConstraintGridTouchTimer(gesture){
+    if(!gesture?.timer) return;
+    clearTimeout(gesture.timer);
+    gesture.timer=null;
+  }
+  function scheduleConstraintGridLongPress(gesture){
+    clearConstraintGridTouchTimer(gesture);
+    gesture.timer=setTimeout(()=>{
+      if(constraintGridTouchGesture!==gesture) return;
+      gesture.timer=null;
+      gesture.longPressed=true;
+      constraintGridLastTap=null;
+      constraintGridSuppressClickUntil=Date.now()+800;
+      constraintGridSuppressContextUntil=Date.now()+800;
+      try{ applyConstraintGridX(gesture); }
+      finally{
+        try{ gesture.captureCell?.releasePointerCapture?.(gesture.pointerId); }catch(_){ }
+        if(constraintGridTouchGesture===gesture) constraintGridTouchGesture=null;
+      }
+    },CONSTRAINT_GRID_LONG_PRESS_MS);
+  }
+  function constraintGridCellAtPoint(ev,gesture){
+    let target=null;
+    try{ target=document.elementFromPoint?.(Number(ev.clientX),Number(ev.clientY)) || ev.target; }catch(_){ target=ev.target; }
+    const cell=constraintGridCellFromTarget(target);
+    const meta=constraintGridCellMeta(cell);
+    return sameConstraintGrid(meta,gesture) ? meta : null;
+  }
+  function beginConstraintGridTouch(ev){
+    if(!isConstraintGridTouchPointer(ev) || ev?.isPrimary===false || (ev?.button != null && ev.button!==0)) return;
+    const cell=ev.currentTarget || constraintGridCellFromTarget(ev.target);
+    const meta=constraintGridCellMeta(cell);
+    if(!meta) return;
+    if(constraintGridTouchGesture) clearConstraintGridTouchTimer(constraintGridTouchGesture);
+    const selected=constraintGridSelectedSlots(meta.kind).map(String);
+    if(selected.length<=1 || !selected.includes(meta.slot)){
+      setConstraintGridSingle(meta);
+      refreshConstraintGridSelection(meta.kind);
+    }
+    const gesture=Object.assign(meta,{
+      pointerId:ev.pointerId,
+      startX:Number(ev.clientX || 0),
+      startY:Number(ev.clientY || 0),
+      startSlot:meta.slot,
+      lastSlot:meta.slot,
+      dragging:false,
+      longPressed:false,
+      startedAt:Date.now(),
+      captureCell:cell,
+      timer:null
+    });
+    constraintGridTouchGesture=gesture;
+    scheduleConstraintGridLongPress(gesture);
+    try{ cell.setPointerCapture?.(ev.pointerId); }catch(_){ }
+  }
+  function moveConstraintGridTouch(ev){
+    const gesture=constraintGridTouchGesture;
+    if(!gesture || ev.pointerId!==gesture.pointerId) return;
+    const dx=Number(ev.clientX || 0)-gesture.startX;
+    const dy=Number(ev.clientY || 0)-gesture.startY;
+    const target=constraintGridCellAtPoint(ev,gesture);
+    const movedFar=Math.hypot(dx,dy)>=8;
+    const changedSlot=!!target && target.slot!==gesture.lastSlot;
+    if(!gesture.dragging && !movedFar && !changedSlot) return;
+    clearConstraintGridTouchTimer(gesture);
+    if(!gesture.dragging){
+      gesture.dragging=true;
+      constraintGridLastTap=null;
+      setConstraintGridSingle(Object.assign({},gesture,{slot:gesture.startSlot}));
+    }
+    if(target){
+      selectConstraintGridRange(target);
+      gesture.lastSlot=target.slot;
+      scheduleConstraintGridLongPress(gesture);
+    }
+    refreshConstraintGridSelection(gesture.kind);
+    constraintGridSuppressClickUntil=Date.now()+800;
+    if(ev.cancelable) ev.preventDefault();
+  }
+  function endConstraintGridTouch(ev){
+    const gesture=constraintGridTouchGesture;
+    if(!gesture || ev.pointerId!==gesture.pointerId) return;
+    clearConstraintGridTouchTimer(gesture);
+    const now=Date.now();
+    const cancelled=String(ev?.type || '')==='pointercancel';
+    if(cancelled || gesture.dragging || gesture.longPressed){
+      constraintGridLastTap=null;
+      if(gesture.dragging || gesture.longPressed) constraintGridSuppressClickUntil=now+800;
+    }else{
+      const previous=constraintGridLastTap;
+      const isDoubleTap=!!previous && sameConstraintGrid(previous,gesture) &&
+        previous.slot===gesture.slot && now-previous.at<=CONSTRAINT_GRID_DOUBLE_TAP_MS;
+      if(isDoubleTap){
+        constraintGridLastTap=null;
+        constraintGridSuppressClickUntil=now+800;
+        applyConstraintGridDoubleTap(gesture);
+      }else{
+        constraintGridLastTap={kind:gesture.kind,id:gesture.id,type:gesture.type,slot:gesture.slot,at:now};
+      }
+    }
+    try{ gesture.captureCell?.releasePointerCapture?.(gesture.pointerId); }catch(_){ }
+    constraintGridTouchGesture=null;
+  }
+  function ensureConstraintGridTouchHandlers(){
+    if(constraintGridTouchBound) return;
+    constraintGridTouchBound=true;
+    document.addEventListener('pointermove',moveConstraintGridTouch,{capture:true,passive:false});
+    document.addEventListener('pointerup',endConstraintGridTouch,true);
+    document.addEventListener('pointercancel',endConstraintGridTouch,true);
+    document.addEventListener('click',ev=>{
+      if(Date.now()>constraintGridSuppressClickUntil || !constraintGridCellFromTarget(ev.target)) return;
+      ev.preventDefault();
+      ev.stopImmediatePropagation?.();
+    },true);
+    document.addEventListener('dblclick',ev=>{
+      if(Date.now()>constraintGridSuppressClickUntil || !constraintGridCellFromTarget(ev.target)) return;
+      ev.preventDefault();
+      ev.stopImmediatePropagation?.();
+    },true);
+    document.addEventListener('contextmenu',ev=>{
+      const active=!!constraintGridTouchGesture;
+      if(!constraintGridCellFromTarget(ev.target) || (!active && Date.now()>constraintGridSuppressContextUntil)) return;
+      ev.preventDefault();
+    },true);
+  }
+  function bindConstraintGridTouchGestures(root){
+    const cells=root.querySelectorAll('[data-mt-toggle][data-mt-id][data-slot],[data-fo-toggle][data-off-type][data-off-id][data-slot]');
+    if(!cells.length) return;
+    ensureConstraintGridTouchHandlers();
+    cells.forEach(cell=>cell.addEventListener('pointerdown',beginConstraintGridTouch));
+  }
   function teacherMustTeachTopTable(id){
     const total=teacherTotalPeriodsForLimit(id);
     return `<div class="rb-fixedoff-titlebar"><h3>Giáo viên ${teacherShortHtml(id)}</h3><div class="rb-fixedoff-total">Tổng số tiết: ${total}</div></div>`;
@@ -5641,6 +6019,7 @@ function gradeListText(grades){
     const c=model();
     const container=(state.section==='subject')?getRuleContainer(false):(state.section==='subjectGroup'?getRuleContainer(true):null);
     let changed=false;
+    const touchedTeachers=new Set();
     (boxes || []).forEach(el=>{
       if(!el) return;
       if(el.matches('input[type="checkbox"][data-tid][data-path]')){
@@ -5649,6 +6028,7 @@ function gradeListText(grades){
         setPath(c.teacher[tid],path,!!el.checked);
         delEmpty(c.teacher[tid]);
         if(Object.keys(c.teacher[tid]).length===0) delete c.teacher[tid];
+        else touchedTeachers.add(tid);
         changed=true;
         return;
       }
@@ -5664,6 +6044,11 @@ function gradeListText(grades){
         if(Object.keys(container.byClass[cid]).length===0) delete container.byClass[cid];
         changed=true;
       }
+    });
+    touchedTeachers.forEach(tid=>{
+      normalizeTeacherOneSessionRule(c.teacher[tid]);
+      delEmpty(c.teacher[tid]);
+      if(!Object.keys(c.teacher[tid] || {}).length) delete c.teacher[tid];
     });
     if(!changed) return false;
     touchSave();
@@ -5694,9 +6079,11 @@ function gradeListText(grades){
         const boxes=checkboxTargetsForMaster(master);
         const checked=!!master.checked;
         boxes.forEach(box=>{ box.checked=checked; });
+        const mutuallyCleared=enforceTeacherOneSessionInputs(root,boxes);
         enforceSessionAllowedInputs(root, master);
         if((master.dataset.rbCheckAll || '') === 'fields'){
-          if(!fastSaveCheckboxTargets(boxes)) saveCurrentFromUI(false, {releaseExisting:false});
+          const saveBoxes=Array.from(new Set(boxes.concat(mutuallyCleared)));
+          if(!fastSaveCheckboxTargets(saveBoxes)) saveCurrentFromUI(false, {releaseExisting:false});
         }else if((master.dataset.rbCheckAll || '') === 'groupItems'){
           autoSaveGroupFromUI();
         }
@@ -5705,6 +6092,7 @@ function gradeListText(grades){
     });
     root.querySelectorAll('input[type="checkbox"][data-tid][data-path], input[type="checkbox"][data-cid][data-path], [data-rb-group-items] input[type="checkbox"]').forEach(box=>{
       box.addEventListener('change',()=>{
+        enforceTeacherOneSessionInputs(root,box);
         enforceSessionAllowedInputs(root, box);
         if(box.closest?.('[data-rb-group-items]')) autoSaveGroupFromUI();
         refreshCheckAllMasters(root);
@@ -6015,17 +6403,21 @@ function gradeListText(grades){
     const root=rbNumPanelRoot();
     return !!(root && rbNumSelection && rbNumSelection.size && root.querySelector('input.rb-num-cell-input[data-rb-num-cell]'));
   }
-  function rbNumEventInsidePanel(ev){
+  function rbNumEventTargetsGrid(ev){
     const root=rbNumPanelRoot();
     if(!root) return false;
-    const target=ev?.target;
-    const active=document.activeElement;
-    return (!!target && root.contains(target)) || (!!active && root.contains(active));
+    const findInput=el=>{
+      if(!el) return null;
+      if(el.matches?.('input.rb-num-cell-input[data-rb-num-cell]')) return el;
+      return el.closest?.('input.rb-num-cell-input[data-rb-num-cell]') || null;
+    };
+    const input=findInput(ev?.target) || findInput(document.activeElement);
+    return !!(input && root.contains(input));
   }
   function rbNumGlobalCopy(ev){
     try{
       if(!rbNumIsActive()) return;
-      if(!rbNumEventInsidePanel(ev)) return;
+      if(!rbNumEventTargetsGrid(ev)) return;
       const text=rbNumBuildCopyText();
       if(!text) return;
       ev.clipboardData?.setData('text/plain', text);
@@ -6035,7 +6427,7 @@ function gradeListText(grades){
   function rbNumGlobalPaste(ev){
     try{
       if(!rbNumIsActive()) return;
-      if(!rbNumEventInsidePanel(ev)) return;
+      if(!rbNumEventTargetsGrid(ev)) return;
       const text=(ev.clipboardData || window.clipboardData)?.getData('text');
       if(typeof text !== 'string') return;
       const matrix=rbNumParseClipboard(text);
@@ -6047,7 +6439,7 @@ function gradeListText(grades){
   function rbNumGlobalKeydown(ev){
     try{
       if(!rbNumIsActive()) return;
-      if(!rbNumEventInsidePanel(ev)) return;
+      if(!rbNumEventTargetsGrid(ev)) return;
       const key=String(ev.key || '').toLowerCase();
       if(key === 'escape'){
         ev.preventDefault();
@@ -6226,6 +6618,7 @@ function gradeListText(grades){
         refreshFixedOffSelection(root);
       };
     });
+    bindConstraintGridTouchGestures(root);
     const clearAll=root.querySelector('[data-rb-clear-all]'); if(clearAll) clearAll.onclick=clearAllConstraints; ['teacher','subject','fixedOff','timeLimit'].forEach(k=>{ const b=root.querySelector(`[data-clear-${k}]`); if(b) b.onclick=()=>clearSection(k); });
     bindNumberCellGrid(root);
   }
@@ -6394,6 +6787,11 @@ function gradeListText(grades){
     if(state.section==='timeLimit' && root.querySelector('[data-tll-type][data-tll-target-id][data-tll-field][data-tll-buoi][data-tll-day]')) return saveTimeLimitLimitsFromUI(showMsg);
     // teacher
     root.querySelectorAll('[data-tid][data-path]').forEach(el=>{ const tid=el.dataset.tid, path=el.dataset.path; c.teacher[tid]=c.teacher[tid]||{}; let val=el.type==='checkbox'?!!el.checked:(el.tagName==='SELECT'?String(el.value||'').trim():(el.value===''?'':toInt(el.value,''))); setPath(c.teacher[tid],path,val); delEmpty(c.teacher[tid]); if(Object.keys(c.teacher[tid]).length===0) delete c.teacher[tid]; });
+    Object.keys(c.teacher || {}).forEach(tid=>{
+      normalizeTeacherOneSessionRule(c.teacher[tid]);
+      delEmpty(c.teacher[tid]);
+      if(!Object.keys(c.teacher[tid] || {}).length) delete c.teacher[tid];
+    });
     // subject / subjectGroup by class
     const isSG=state.section==='subjectGroup'; const container=(state.section==='subject')?getRuleContainer(false):(state.section==='subjectGroup'?getRuleContainer(true):null); if(container){ container.byClass=container.byClass||{}; root.querySelectorAll('[data-cid][data-path]').forEach(el=>{ const cid=el.dataset.cid, path=el.dataset.path; container.byClass[cid]=container.byClass[cid]||{}; let val=el.type==='checkbox'?!!el.checked:(el.value===''?'':toInt(el.value,'')); setPath(container.byClass[cid],path,val); if(path.startsWith('avoidBreakPair23.')||path.startsWith('avoidBreakPair34.')) delete container.byClass[cid].avoidBreakPairs; if(path.startsWith('linkedDays.')) normalizeLinkedDaysRow(container.byClass[cid]); if(path.startsWith('sessionAllowed.')) normalizeSessionAllowedRow(container.byClass[cid]); delEmpty(container.byClass[cid]); if(Object.keys(container.byClass[cid]).length===0) delete container.byClass[cid]; }); Object.keys(container.byClass||{}).forEach(cid=>{ normalizeSessionAllowedRow(container.byClass[cid]); delEmpty(container.byClass[cid]); if(Object.keys(container.byClass[cid]||{}).length===0) delete container.byClass[cid]; }); }
     // global limits embedded in subject / subjectGroup
@@ -6633,6 +7031,9 @@ function gradeListText(grades){
         toggleFixedOffClass,
         teacherStats,
         teacherRuleTable,
+        teacherOneSessionDayMode,
+        normalizeTeacherOneSessionRule,
+        enforceTeacherOneSessionInputs,
         renderSubjectRule,
         applyLessonBlockBulkFill
       };

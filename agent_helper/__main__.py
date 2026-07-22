@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
 import logging
 import os
 import runpy
@@ -13,7 +14,7 @@ import threading
 from pathlib import Path
 from typing import Callable, Sequence
 
-from . import VERSION
+from . import SOLVER_PROTOCOL, VERSION
 from .api import ApiClient, ApiError
 from .config import AgentConfig, ConfigError
 from .models import AgentIdentity, Lease, LeaseLimits, ProtocolError
@@ -28,6 +29,10 @@ from .state import (
     save_agent_token,
 )
 from .worker import AgentWorker
+from .windows_security import (
+    WINDOWS_CODE_INTEGRITY_KIND,
+    solver_blocked_by_windows_code_integrity,
+)
 
 
 def _restore_solver_child_stdio() -> bool:
@@ -76,6 +81,29 @@ def _restore_solver_child_stdio() -> bool:
 def _solver_child_main() -> int:
     if not _restore_solver_child_stdio():
         return 70
+    if solver_blocked_by_windows_code_integrity():
+        try:
+            if getattr(sys.stdin, "buffer", None) is not None:
+                sys.stdin.buffer.read()
+            else:
+                sys.stdin.read()
+            frame = {
+                "protocol": SOLVER_PROTOCOL,
+                "status": 503,
+                "payload": {
+                    "ok": False,
+                    "kind": WINDOWS_CODE_INTEGRITY_KIND,
+                    "error": (
+                        "Windows Security requires a trusted signed Agent; "
+                        "scheduling continues on the VPS."
+                    ),
+                },
+            }
+            sys.stdout.write(json.dumps(frame, separators=(",", ":")) + "\n")
+            sys.stdout.flush()
+            return 0
+        except (AttributeError, OSError, TypeError, ValueError):
+            return 70
     runtime_root = (
         SolverRunner.bundled_runtime_root()
         if getattr(sys, "frozen", False)
@@ -222,6 +250,16 @@ def _run_worker_session(
     worker.run_forever()
 
 
+def _run_windows_security_fallback_session(
+    stop_event: threading.Event,
+    status_callback: Callable[[str], None],
+) -> None:
+    """Keep the GUI/update loop alive without registering a solver worker."""
+
+    status_callback("windows_security")
+    stop_event.wait()
+
+
 def _show_gui_error(message: str) -> None:
     try:
         from tkinter import messagebox
@@ -250,6 +288,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _gui_smoke_main()
 
     gui_mode = not arguments.once and not arguments.check
+    solver_blocked = solver_blocked_by_windows_code_integrity()
     if gui_mode:
         logging.basicConfig(
             level=logging.DEBUG if arguments.verbose else logging.INFO,
@@ -266,10 +305,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         identity = AgentIdentity(
             agent_id=agent_id, version=VERSION, platform=platform_tag()
         )
-        solver = SolverRunner(config)
-        command, cwd = solver._command_and_cwd()
-        if not command or not cwd.is_dir():
-            raise ConfigError("solver runtime is missing")
+        solver: SolverRunner | None = None
+        if not solver_blocked:
+            solver = SolverRunner(config)
+            command, cwd = solver._command_and_cwd()
+            if not command or not cwd.is_dir():
+                raise ConfigError("solver runtime is missing")
 
         with SingleInstanceLock(agent_id):
             if gui_mode:
@@ -317,14 +358,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                     startup_toggle = update_startup
                     startup_toggle(True)
 
+                if solver_blocked:
+                    session_runner = _run_windows_security_fallback_session
+                else:
+                    assert solver is not None
+
+                    def session_runner(
+                        stop_event: threading.Event,
+                        status_callback: Callable[[str], None],
+                    ) -> None:
+                        _run_worker_session(
+                            config,
+                            identity,
+                            solver,
+                            stop_event,
+                            status_callback,
+                        )
+
                 run_toggle_window(
-                    lambda stop_event, status_callback: _run_worker_session(
-                        config,
-                        identity,
-                        solver,
-                        stop_event,
-                        status_callback,
-                    ),
+                    session_runner,
                     cpu_workers=config.cpu_workers,
                     max_memory_mb=config.max_memory_mb,
                     startup_toggle=startup_toggle,
@@ -333,6 +385,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     update_installer=(
                         updater.prepare_and_launch if updater is not None else None
                     ),
+                    allow_system_tray=not solver_blocked,
+                )
+                return 0
+
+            if solver_blocked:
+                logging.getLogger("agent_helper").warning(
+                    "Windows code integrity blocks the unsigned native solver; use the VPS fallback."
                 )
                 return 0
 
@@ -345,6 +404,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 allow_pair=not arguments.check,
             )
             if arguments.check:
+                assert solver is not None
                 probe_status = _probe_solver(solver, config)
                 logging.getLogger("agent_helper").info(
                     "Configuration, credential and solver probe are valid (%s CPU workers, probe status %s).",
@@ -353,6 +413,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 return 0
 
+            assert solver is not None
             api = ApiClient(config, identity, token=token)
             worker = AgentWorker(api, solver, stop_event=stop_event)
             if arguments.once:

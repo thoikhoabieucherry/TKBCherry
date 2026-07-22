@@ -27,7 +27,11 @@ from tkb_optimizer_ref.period_milp import (
     save_period_solution,
 )
 from tkb_optimizer_ref.random_seed import normalize_cp_sat_seed
-from tkb_optimizer_ref.rules import TimetableConstraintRules, TimetableRuleSet
+from tkb_optimizer_ref.rules import (
+    TimetableConstraintRules,
+    TimetableRuleSet,
+    one_session_per_day_mode,
+)
 from tkb_optimizer_ref.session_milp import (
     _assignment_available_periods,
     _assignment_session_allowed,
@@ -2518,7 +2522,28 @@ def _repair_one_period_affected_class_cluster(
                 session_indexes = [si for si, session in enumerate(sessions) if session.day == day and si in teacher_sessions]
                 if not session_indexes:
                     continue
-                if _truthy(_get_path(rule, f"oneSessionPerDay.{dk}", False)):
+                session_mode = one_session_per_day_mode(
+                    _get_path(rule, f"oneSessionPerDay.{dk}", False)
+                )
+                if session_mode == "morning":
+                    model.Add(
+                        sum(
+                            teacher_active_vars[(teacher, si)]
+                            for si in session_indexes
+                            if sessions[si].part == "PM"
+                        )
+                        == 0
+                    )
+                elif session_mode == "afternoon":
+                    model.Add(
+                        sum(
+                            teacher_active_vars[(teacher, si)]
+                            for si in session_indexes
+                            if sessions[si].part == "AM"
+                        )
+                        == 0
+                    )
+                elif session_mode == "either":
                     model.Add(sum(teacher_active_vars[(teacher, si)] for si in session_indexes) <= 1)
                 day_limit = _to_int(_get_path(rule, f"maxPeriods.day.{dk}", 0), 0)
                 if day_limit > 0:

@@ -123,7 +123,10 @@ if (-not (Test-Path -LiteralPath $VirtualPython -PathType Leaf)) {
 }
 
 if ($SkipDependencyInstall) {
-    & $VirtualPython -c "import cryptography, numpy, openpyxl, ortools, PIL, PyInstaller, pystray, scipy; print('Offline build dependencies OK')"
+    # Do not import native solver packages here. Smart App Control can block an
+    # unsigned OR-Tools DLL during this inventory step even though packaging
+    # only needs to read the installed files.
+    & $VirtualPython -c "import importlib.util as u; names=('cryptography','numpy','openpyxl','ortools','PIL','PyInstaller','pystray','scipy'); missing=[n for n in names if u.find_spec(n) is None]; assert not missing, 'missing: '+','.join(missing); print('Offline build dependencies OK')"
     if ($LASTEXITCODE -ne 0) {
         throw "The existing build environment is incomplete; rerun without -SkipDependencyInstall when package access is available."
     }
@@ -217,8 +220,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Ship optimized sourceless bytecode for the runtime data tree. PyInstaller is
-# the deployment container and UPX is only a compressor; neither is presented
-# as strong protection against a determined reverse engineer.
+# the deployment container; it is not presented as strong protection against
+# a determined reverse engineer.
 $ProtectedSolverRoot = Join-Path $BuildRoot "solver-runtime-bytecode"
 if (Test-Path -LiteralPath $ProtectedSolverRoot) {
     Remove-Item -LiteralPath $ProtectedSolverRoot -Recurse -Force
@@ -356,32 +359,8 @@ if ($BundledRawSources.Count -gt 0) {
     throw "The onedir Agent contains raw solver Python source."
 }
 Test-PackagedGui -Executable $OnedirExecutable
-$UpxCandidate = Join-Path $BuildRoot "TKBCherryAgent-packed.exe"
-if (Test-Path -LiteralPath $UpxCandidate) {
-    Remove-Item -LiteralPath $UpxCandidate -Force
-}
-Copy-Item -LiteralPath $StandaloneExecutable -Destination $UpxCandidate -Force
 Test-PackagedGui -Executable $StandaloneExecutable
-
-$UpxExecutable = Join-Path $RepositoryRoot "upx-5.2.0-win64\upx.exe"
-if (-not (Test-Path -LiteralPath $UpxExecutable -PathType Leaf)) {
-    throw "UPX 5.2.0 was not found at $UpxExecutable"
-}
-$UpxPacked = $false
-for ($Attempt = 1; $Attempt -le 4; $Attempt++) {
-    & $UpxExecutable --best --lzma --force $UpxCandidate
-    if ($LASTEXITCODE -eq 0) {
-        $UpxPacked = $true
-        break
-    }
-    if ($Attempt -lt 4) { Start-Sleep -Seconds (2 * $Attempt) }
-}
-if (-not $UpxPacked) { throw "UPX failed to pack the standalone Agent." }
-& $UpxExecutable -t $UpxCandidate
-if ($LASTEXITCODE -ne 0) { throw "UPX integrity validation failed for the standalone Agent." }
-Test-PackagedGui -Executable $UpxCandidate
-Test-PackagedSolverChild -Executable $UpxCandidate
-Copy-Item -LiteralPath $UpxCandidate -Destination $StandaloneExecutable -Force
+Test-PackagedSolverChild -Executable $StandaloneExecutable
 
 # The public download is intentionally a one-entry ZIP. Keeping the executable
 # at the archive root makes the user flow unambiguous: extract, then run it.

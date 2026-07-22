@@ -4,7 +4,7 @@ from collections import Counter, defaultdict
 from typing import Any, Mapping
 
 from .models import Lesson, SchoolData
-from .rules import TimetableRuleSet, resolve_rule_set
+from .rules import TimetableRuleSet, one_session_per_day_mode, resolve_rule_set
 from .template import all_sessions, class_available_periods, class_sort_key
 
 
@@ -242,8 +242,40 @@ def validate_app_constraints(data: SchoolData, lessons: list[Lesson], rules: Tim
         for day in range(2, 8):
             day_items = by_teacher_day.get((teacher, day), [])
             dk = _day_key(day)
-            if _truthy(_get_path(rule, f"oneSessionPerDay.{dk}", False)) and {"AM", "PM"}.issubset({x.session for x in day_items}):
-                violations.append(_violation("teacher.oneSessionPerDay", f"{teacher}: Thứ {day} có cả sáng và chiều.", teacher=teacher, day=day))
+            session_mode = one_session_per_day_mode(
+                _get_path(rule, f"oneSessionPerDay.{dk}", False)
+            )
+            taught_sessions = {item.session for item in day_items}
+            if session_mode == "morning" and "PM" in taught_sessions:
+                violations.append(
+                    _violation(
+                        "teacher.oneSessionPerDay",
+                        f"{teacher}: Thứ {day} chỉ được dạy buổi sáng.",
+                        teacher=teacher,
+                        day=day,
+                        mode=session_mode,
+                    )
+                )
+            elif session_mode == "afternoon" and "AM" in taught_sessions:
+                violations.append(
+                    _violation(
+                        "teacher.oneSessionPerDay",
+                        f"{teacher}: Thứ {day} chỉ được dạy buổi chiều.",
+                        teacher=teacher,
+                        day=day,
+                        mode=session_mode,
+                    )
+                )
+            elif session_mode == "either" and {"AM", "PM"}.issubset(taught_sessions):
+                violations.append(
+                    _violation(
+                        "teacher.oneSessionPerDay",
+                        f"{teacher}: Thứ {day} có cả sáng và chiều.",
+                        teacher=teacher,
+                        day=day,
+                        mode=session_mode,
+                    )
+                )
             day_limit = _to_int(_get_path(rule, f"maxPeriods.day.{dk}", 0), 0)
             if day_limit > 0 and len(day_items) > day_limit:
                 violations.append(_violation("teacher.maxPeriods.day", f"{teacher}: Thứ {day} vượt số tiết/ngày.", teacher=teacher, day=day))

@@ -306,6 +306,20 @@ class ToggleLifecycleTests(unittest.TestCase):
         self.assertEqual(prompts, ["1.7.0"])
         self.assertFalse(app.update_in_progress)
 
+    def test_windows_security_fallback_can_offer_a_signed_update(self) -> None:
+        release = SimpleNamespace(version="1.7.0")
+        app, _ = bare_app(lambda stop_event, report: None)
+        app.desired_on = True
+        app.current_state = "windows_security"
+        app.available_update = release
+        prompts: list[str] = []
+        app._ask_to_update = lambda version: prompts.append(version) or False  # type: ignore[method-assign]
+
+        app._offer_update_if_idle()
+
+        self.assertEqual(prompts, ["1.7.0"])
+        self.assertFalse(app.update_in_progress)
+
     def test_confirmed_update_stops_worker_before_installing(self) -> None:
         release = SimpleNamespace(version="1.7.0")
         worker_started = threading.Event()

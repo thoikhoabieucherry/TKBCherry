@@ -227,13 +227,32 @@ test("teacher requirement tables show one assigned-period total independent of a
   assert.doesNotMatch(html, /rb-stat-head|>Sáng<|>Chiều<|>Tổng</);
 });
 
-test("lesson-block entry has one bulk row and fills only the currently rendered classes", () => {
+test("lesson-block headers hold compact bulk inputs and fill only the currently rendered classes", () => {
   const api = loadConstraints(constraintData(null));
   const hooks = api.__testHooks;
   assert.ok(hooks);
 
   const html = hooks.renderSubjectRule("lessonBlocks");
-  assert.match(html, /class="rb-lesson-block-fill-row"/);
+  assert.doesNotMatch(html, /rb-lesson-block-fill-row|>Nhập nhanh</);
+  assert.equal(
+    (html.match(/class="rb-lesson-block-head"/g) || []).length,
+    8,
+    "each Min/Max heading needs one inline quick-fill control"
+  );
+  assert.match(
+    html,
+    /class="rb-lesson-block-head"><input[^>]*data-rb-lesson-block-fill="lessonBlocks\.2\.min"[^>]*><span>Min<\/span>/
+  );
+  assert.match(html, /class="rb-subject-compact-table rb-lesson-block-table"/);
+  assert.match(
+    html,
+    /<colgroup><col class="rb-lesson-class-col"><col class="rb-lesson-period-col">/
+  );
+  assert.equal(
+    (html.match(/class="rb-lesson-bound-col"/g) || []).length,
+    8,
+    "each Min/Max field needs one compact numeric column"
+  );
   assert.equal(
     (html.match(/data-rb-lesson-block-fill=/g) || []).length,
     8,
@@ -258,6 +277,159 @@ test("lesson-block entry has one bulk row and fills only the currently rendered 
   assert.equal(grade8.value, "7", "a class outside the selected grade must remain untouched");
 });
 
+test("two-session and other subject requirement tables fill their wrapper", () => {
+  const api = loadConstraints(constraintData(null));
+  const hooks = api.__testHooks;
+  assert.ok(hooks);
+
+  [
+    "sessionAllowed",
+    "weeklySessionPeriods",
+    "maxPeriods",
+    "maxPeriodsDay",
+    "maxSessions",
+    "maxSubjects",
+    "spacingDays"
+  ].forEach(rule => {
+    const html = hooks.renderSubjectRule(rule);
+    assert.match(html, /<table class="rb-subject-full-table"/, `${rule} should fill its wrapper`);
+    assert.doesNotMatch(html, /rb-subject-compact-table/);
+  });
+
+  ["globalLimit", "lessonBlocks"].forEach(rule => {
+    assert.match(hooks.renderSubjectRule(rule), /<table class="[^"]*rb-subject-compact-table/);
+  });
+  ["noSameSession", "noSameDay"].forEach(rule => {
+    assert.match(hooks.renderSubjectRule(rule), /class="table-wrap rb-nss-table"/);
+  });
+
+  assert.match(
+    CONSTRAINTS_SOURCE,
+    /\.rb-subject-full-table\{width:100%;min-width:720px\}/,
+    "full-width subject tables need a mobile scroll floor"
+  );
+  assert.match(CONSTRAINTS_SOURCE, /\.rb-subject-compact-table\{min-width:0\}/);
+  assert.match(CONSTRAINTS_SOURCE, /\.rb-lesson-block-table\{table-layout:fixed;width:100%;min-width:820px\}/);
+  assert.match(CONSTRAINTS_SOURCE, /\.rb-lesson-block-table col\.rb-lesson-class-col\{width:84px\}/);
+  assert.match(CONSTRAINTS_SOURCE, /\.rb-lesson-block-table col\.rb-lesson-period-col\{width:64px\}/);
+  assert.match(CONSTRAINTS_SOURCE, /\.rb-lesson-block-table col\.rb-lesson-bound-col\{width:auto\}/);
+  assert.match(
+    CONSTRAINTS_SOURCE,
+    /tbody td:first-child,#\$\{PANEL_ID\} thead tr:first-child>th:first-child\{position:sticky;left:0;/
+  );
+  assert.doesNotMatch(
+    CONSTRAINTS_SOURCE,
+    /td:first-child,#\$\{PANEL_ID\} th:first-child\{position:sticky;/,
+    "a Min/Max cell in the second header row must not be mistaken for the sticky class column"
+  );
+  assert.match(
+    CONSTRAINTS_SOURCE,
+    /\.rb-linked-days thead tr:first-child>th:nth-child\(2\),#\$\{PANEL_ID\} \.rb-linked-days tbody td:nth-child\(2\)/
+  );
+});
+
+test("subject numeric cells reuse spreadsheet-style range copy and paste", () => {
+  const start = CONSTRAINTS_SOURCE.indexOf("function rbNumKey");
+  const end = CONSTRAINTS_SOURCE.indexOf("function bindBodyEvents", start);
+  assert.ok(start >= 0 && end > start, "numeric-cell spreadsheet helpers must be extractable");
+
+  let commits = 0;
+  const makeCell = () => ({
+    classList:{add(){},toggle(){}},
+  });
+  const makeInput = (r,c,value) => {
+    const td = makeCell();
+    const input = {
+      value:String(value),
+      dataset:{rbNumCell:"1",rbNumTable:"t0",rbNumR:String(r),rbNumC:String(c)},
+      classList:{toggle(){}},
+      matches(selector){ return selector === "input.rb-num-cell-input[data-rb-num-cell]"; },
+      closest(selector){
+        if(selector === "td") return td;
+        return selector === "input.rb-num-cell-input[data-rb-num-cell]" ? input : null;
+      }
+    };
+    return input;
+  };
+  const inputs = [
+    makeInput(1,2,"1"),
+    makeInput(1,3,"2"),
+    makeInput(2,2,"3"),
+    makeInput(2,3,"4")
+  ];
+  const root = {
+    querySelectorAll(selector){
+      return selector === "input.rb-num-cell-input[data-rb-num-cell]" ? inputs : [];
+    },
+    querySelector(){ return inputs[0]; },
+    contains(){ return true; }
+  };
+  const context = {
+    window:{getSelection(){ return {removeAllRanges(){}}; }},
+    document:{getElementById(){ return root; },activeElement:inputs[0],addEventListener(){}},
+    PANEL_ID:"panel",
+    Set,
+    Array,
+    String,
+    Number,
+    Math,
+    Object,
+    saveCurrentFromUI(){ commits += 1; },
+    scheduleRememberCurrentFormSignature(){}
+  };
+  vm.runInNewContext(`
+    let rbNumSelection = new Set();
+    let rbNumAnchor = null;
+    let rbNumDragStart = null;
+    let rbNumDragging = false;
+    let rbNumBound = false;
+    ${CONSTRAINTS_SOURCE.slice(start, end)}
+    this.setSelection = infos => { rbNumSelection = new Set(infos.map(rbNumKey)); };
+    this.buildCopyText = rbNumBuildCopyText;
+    this.pasteMatrix = rbNumPasteMatrix;
+    this.parseClipboard = rbNumParseClipboard;
+    this.copySelection = rbNumGlobalCopy;
+  `, context, {filename:CONSTRAINTS_PATH});
+
+  const all = [
+    {table:"t0",r:1,c:2},
+    {table:"t0",r:1,c:3},
+    {table:"t0",r:2,c:2},
+    {table:"t0",r:2,c:3}
+  ];
+  context.setSelection(all);
+  assert.equal(context.buildCopyText(), "1\t2\n3\t4");
+  let copied = "";
+  const gridCopyEvent = {
+    target:inputs[0],
+    clipboardData:{setData(type,value){ assert.equal(type,"text/plain"); copied=value; }},
+    preventDefault(){ this.prevented=true; }
+  };
+  context.copySelection(gridCopyEvent);
+  assert.equal(copied, "1\t2\n3\t4");
+  assert.equal(gridCopyEvent.prevented, true);
+
+  const quickInput = {matches(){return false;},closest(){return null;}};
+  const nativeCopyEvent = {
+    target:quickInput,
+    clipboardData:{setData(){ throw new Error("quick-fill input copy must stay native"); }},
+    preventDefault(){ this.prevented=true; }
+  };
+  context.document.activeElement=quickInput;
+  context.copySelection(nativeCopyEvent);
+  assert.equal(nativeCopyEvent.prevented, undefined);
+  context.document.activeElement=inputs[0];
+
+  context.pasteMatrix([["7"]]);
+  assert.deepEqual(inputs.map(input => input.value), ["7","7","7","7"]);
+  assert.equal(commits, 1);
+
+  context.setSelection([{table:"t0",r:1,c:2}]);
+  context.pasteMatrix(context.parseClipboard("8\t9\n10\t11\n"));
+  assert.deepEqual(inputs.map(input => input.value), ["8","9","10","11"]);
+  assert.equal(commits, 2);
+});
+
 test("mobile constraint pages reserve the portrait safe area and give subject tables real scroll space", () => {
   assert.match(
     CONSTRAINTS_SOURCE,
@@ -272,6 +444,329 @@ test("mobile constraint pages reserve the portrait safe area and give subject ta
     CONSTRAINTS_SOURCE,
     /\.rb-content\[data-rb-section="subject"\] > \.table-wrap[\s\S]*?flex:1 1 auto;min-height:0;max-height:none;overflow:auto;[\s\S]*?touch-action:pan-x pan-y/
   );
+});
+
+test("coarse-pointer requirement grids support swipe, long-press, and double-tap actions", () => {
+  const start = CONSTRAINTS_SOURCE.indexOf("function isConstraintGridTouchPointer");
+  const end = CONSTRAINTS_SOURCE.indexOf("function teacherMustTeachTopTable", start);
+  assert.ok(start >= 0 && end > start, "shared constraint-grid gesture controller must be extractable");
+  const gestureSource = CONSTRAINTS_SOURCE.slice(start, end);
+
+  assert.match(CONSTRAINTS_SOURCE, /CONSTRAINT_GRID_LONG_PRESS_MS\s*=\s*550/);
+  assert.match(CONSTRAINTS_SOURCE, /CONSTRAINT_GRID_DOUBLE_TAP_MS\s*=\s*380/);
+  assert.match(gestureSource, /pointerType==='touch'\s*\|\|\s*pointerType==='pen'/);
+  assert.match(gestureSource, /document\.elementFromPoint/);
+  assert.match(gestureSource, /selectMustTeachRange\(meta\.slot,false\)/);
+  assert.match(gestureSource, /selectFixedOffRange\(meta\.slot,false\)/);
+  assert.match(gestureSource, /applyMustTeachSelectedSlots\(true\)/);
+  assert.match(gestureSource, /applyMustTeachSelectedSlots\(\)/);
+  assert.match(gestureSource, /applyFixedOffSelectedSlots\(meta\.type,meta\.id,true\)/);
+  assert.match(gestureSource, /handleMobileFixedRequirementDoubleTap\(gesture\.captureCell,gesture\)/);
+  assert.match(gestureSource, /scheduleConstraintGridLongPress\(gesture\)/);
+  assert.match(CONSTRAINTS_SOURCE, /bindConstraintGridTouchGestures\(root\);/);
+  assert.match(
+    CONSTRAINTS_SOURCE,
+    /@media \(any-pointer:coarse\)\{[\s\S]*?td\[data-fo-toggle\],[\s\S]*?td\[data-mt-toggle\]\{touch-action:none;-webkit-touch-callout:none\}/
+  );
+});
+
+function loadConstraintGridGestureHarness(){
+  const start = CONSTRAINTS_SOURCE.indexOf("function isConstraintGridTouchPointer");
+  const end = CONSTRAINTS_SOURCE.indexOf("function teacherMustTeachTopTable", start);
+  assert.ok(start >= 0 && end > start, "shared constraint-grid gesture controller must be extractable");
+
+  const listeners = new Map();
+  const timers = new Map();
+  const calls = {
+    mustSingle:[],
+    fixedSingle:[],
+    mustRange:[],
+    fixedRange:[],
+    mustApply:[],
+    fixedApply:[],
+    fixedDouble:[]
+  };
+  let now = 1000;
+  let nextTimerId = 1;
+  let pointTarget = null;
+  let mustSlots = [];
+  let fixedSlots = [];
+  let mustAnchor = "";
+  let fixedAnchor = "";
+  const root = {querySelectorAll(){ return []; }};
+  const document = {
+    getElementById(){ return root; },
+    elementFromPoint(){ return pointTarget; },
+    addEventListener(type, handler){
+      const handlers = listeners.get(type) || [];
+      handlers.push(handler);
+      listeners.set(type, handlers);
+    }
+  };
+  const context = {
+    window:{matchMedia(){ return {matches:true}; }},
+    document,
+    Date:{now(){ return now; }},
+    Math,
+    Object,
+    String,
+    Number,
+    clearTimeout(id){ timers.delete(id); },
+    setTimeout(handler, delay){
+      const id = nextTimerId++;
+      timers.set(id, {handler,delay});
+      return id;
+    },
+    PANEL_ID:"panel",
+    mustTeachSelectedSlots(){ return mustSlots; },
+    fixedOffSelectedSlots(){ return fixedSlots; },
+    setMustTeachSingleSlot(slot){
+      mustSlots = slot ? [String(slot)] : [];
+      mustAnchor = String(slot || "");
+      calls.mustSingle.push(String(slot || ""));
+    },
+    setFixedOffSingleSlot(slot){
+      fixedSlots = slot ? [String(slot)] : [];
+      fixedAnchor = String(slot || "");
+      calls.fixedSingle.push(String(slot || ""));
+    },
+    selectMustTeachRange(slot){
+      calls.mustRange.push(String(slot || ""));
+      mustSlots = Array.from(new Set([mustAnchor,String(slot || "")].filter(Boolean)));
+    },
+    selectFixedOffRange(slot){
+      calls.fixedRange.push(String(slot || ""));
+      fixedSlots = Array.from(new Set([fixedAnchor,String(slot || "")].filter(Boolean)));
+    },
+    refreshMustTeachSelection(){},
+    refreshFixedOffSelection(){},
+    applyMustTeachSelectedSlots(checked){ calls.mustApply.push(checked); return true; },
+    applyFixedOffSelectedSlots(type,id,checked){ calls.fixedApply.push({type,id,checked}); return true; },
+    handleMobileFixedRequirementDoubleTap(cell,meta){ calls.fixedDouble.push({cell,slot:meta.slot,type:meta.type,id:meta.id}); return true; }
+  };
+  const gestureSource = CONSTRAINTS_SOURCE.slice(start, end);
+  vm.runInNewContext(`
+    const CONSTRAINT_GRID_LONG_PRESS_MS = 550;
+    const CONSTRAINT_GRID_DOUBLE_TAP_MS = 380;
+    let constraintGridTouchGesture = null;
+    let constraintGridLastTap = null;
+    let constraintGridTouchBound = false;
+    let constraintGridSuppressClickUntil = 0;
+    let constraintGridSuppressContextUntil = 0;
+    ${gestureSource}
+  `, context, {filename:CONSTRAINTS_PATH});
+
+  function cell(kind, slot, options = {}){
+    const isMust = kind === "mustTeach";
+    const dataset = isMust
+      ? {mtToggle:"1", mtId:String(options.id || "GV1"), slot:String(slot)}
+      : {foToggle:"1", offType:String(options.type || "class"), offId:String(options.id || "L1"), slot:String(slot)};
+    return {
+      dataset,
+      captures:[],
+      releases:[],
+      matches(selector){ return isMust ? selector.includes("[data-mt-toggle]") : selector.includes("[data-fo-toggle]"); },
+      closest(selector){
+        const matches = isMust ? selector.includes("[data-mt-toggle]") : selector.includes("[data-fo-toggle]");
+        return matches ? this : null;
+      },
+      setPointerCapture(pointerId){ this.captures.push(pointerId); },
+      releasePointerCapture(pointerId){ this.releases.push(pointerId); }
+    };
+  }
+  function pointer(cellTarget, options = {}){
+    return {
+      currentTarget:cellTarget,
+      target:cellTarget,
+      pointerType:options.pointerType || "touch",
+      pointerId:options.pointerId == null ? 1 : options.pointerId,
+      isPrimary:options.isPrimary == null ? true : options.isPrimary,
+      button:options.button == null ? 0 : options.button,
+      clientX:options.clientX || 0,
+      clientY:options.clientY || 0,
+      type:options.type || '',
+      cancelable:true,
+      prevented:false,
+      preventDefault(){ this.prevented = true; },
+      stopImmediatePropagation(){ this.stopped = true; }
+    };
+  }
+  return {
+    context,
+    calls,
+    cell,
+    pointer,
+    setPointTarget(target){ pointTarget = target; },
+    advanceTime(ms){ now += Number(ms || 0); },
+    setMustSlots(slots){ mustSlots = slots.slice(); mustAnchor = mustSlots[0] || ""; },
+    setFixedSlots(slots){ fixedSlots = slots.slice(); fixedAnchor = fixedSlots[0] || ""; },
+    getMustSlots(){ return mustSlots.slice(); },
+    getFixedSlots(){ return fixedSlots.slice(); },
+    timerCount(){ return timers.size; },
+    runLastTimer(){
+      const entry = Array.from(timers.entries()).at(-1);
+      assert.ok(entry, "a long-press timer must be pending");
+      const [id,timer] = entry;
+      timers.delete(id);
+      timer.handler();
+      return timer.delay;
+    },
+    dispatch(type,event){ (listeners.get(type) || []).forEach(handler=>handler(event)); }
+  };
+}
+
+test("touch swipe selects a range, hold applies must-teach, and a regular tap stays a click", () => {
+  const harness = loadConstraintGridGestureHarness();
+  const slotA = "thu2|sang|0";
+  const slotB = "thu3|sang|1";
+  const cellA = harness.cell("mustTeach", slotA);
+  const cellB = harness.cell("mustTeach", slotB);
+  harness.context.ensureConstraintGridTouchHandlers();
+
+  harness.context.beginConstraintGridTouch(harness.pointer(cellA, {pointerType:"mouse"}));
+  assert.deepEqual(harness.getMustSlots(), [], "a fine mouse pointer must keep the desktop click path untouched");
+  assert.equal(harness.timerCount(), 0);
+
+  const tapDown = harness.pointer(cellA, {pointerId:2});
+  harness.context.beginConstraintGridTouch(tapDown);
+  assert.equal(tapDown.prevented, false, "pointerdown must not suppress the regular tap/click sequence");
+  assert.deepEqual(harness.getMustSlots(), [slotA]);
+  harness.context.endConstraintGridTouch(harness.pointer(cellA, {pointerId:2}));
+  assert.equal(harness.timerCount(), 0);
+  assert.deepEqual(harness.calls.mustApply, [], "lifting before the threshold must not apply X");
+  const tapClick = harness.pointer(cellA, {pointerId:2});
+  harness.dispatch("click", tapClick);
+  assert.equal(tapClick.prevented, false, "the click following a regular tap must reach the existing handler");
+
+  harness.context.beginConstraintGridTouch(harness.pointer(cellA, {pointerId:3}));
+  harness.setPointTarget(cellB);
+  const move = harness.pointer(cellA, {pointerId:3,clientX:24,clientY:12});
+  harness.context.moveConstraintGridTouch(move);
+  assert.equal(move.prevented, true, "an active swipe owns movement inside the grid");
+  assert.equal(harness.calls.mustRange.at(-1), slotB);
+  assert.deepEqual(harness.getMustSlots(), [slotA,slotB]);
+  assert.equal(harness.runLastTimer(), 550, "holding after the swipe uses the documented long-press threshold");
+  assert.deepEqual(harness.calls.mustApply, [true]);
+});
+
+test("mobile double-tap toggles must-teach and routes fixed requirements to the mobile action", () => {
+  const harness = loadConstraintGridGestureHarness();
+  const mustSlot = "thu2|sang|0";
+  const mustCell = harness.cell("mustTeach", mustSlot);
+  harness.context.ensureConstraintGridTouchHandlers();
+
+  const tap = (cell, pointerId, gapBefore = 0) => {
+    harness.advanceTime(gapBefore);
+    harness.context.beginConstraintGridTouch(harness.pointer(cell, {pointerId}));
+    harness.advanceTime(30);
+    harness.context.endConstraintGridTouch(harness.pointer(cell, {pointerId,type:"pointerup"}));
+    const click = harness.pointer(cell, {pointerId});
+    harness.dispatch("click", click);
+    return click;
+  };
+
+  const firstClick = tap(mustCell, 10);
+  assert.equal(firstClick.prevented, false, "one tap must keep the normal single-cell selection path");
+  assert.deepEqual(harness.calls.mustApply, []);
+  const secondClick = tap(mustCell, 11, 120);
+  assert.equal(secondClick.prevented, true, "the synthetic click after a handled double-tap must be suppressed");
+  assert.deepEqual(harness.calls.mustApply, [undefined], "the first double-tap uses must-teach toggle semantics");
+
+  tap(mustCell, 12, 120);
+  tap(mustCell, 13, 120);
+  assert.deepEqual(harness.calls.mustApply, [undefined,undefined], "the next double-tap toggles the same cell again");
+
+  const expired = loadConstraintGridGestureHarness();
+  const expiredCell = expired.cell("mustTeach", mustSlot);
+  expired.context.beginConstraintGridTouch(expired.pointer(expiredCell, {pointerId:20}));
+  expired.context.endConstraintGridTouch(expired.pointer(expiredCell, {pointerId:20,type:"pointerup"}));
+  expired.advanceTime(381);
+  expired.context.beginConstraintGridTouch(expired.pointer(expiredCell, {pointerId:21}));
+  expired.context.endConstraintGridTouch(expired.pointer(expiredCell, {pointerId:21,type:"pointerup"}));
+  assert.deepEqual(expired.calls.mustApply, [], "two taps outside the threshold must not toggle the requirement");
+
+  const fixed = loadConstraintGridGestureHarness();
+  const fixedCell = fixed.cell("fixedOff", "thu3|sang|1", {type:"class",id:"L1"});
+  fixed.context.beginConstraintGridTouch(fixed.pointer(fixedCell, {pointerId:30}));
+  fixed.context.endConstraintGridTouch(fixed.pointer(fixedCell, {pointerId:30,type:"pointerup"}));
+  fixed.advanceTime(120);
+  fixed.context.beginConstraintGridTouch(fixed.pointer(fixedCell, {pointerId:31}));
+  fixed.context.endConstraintGridTouch(fixed.pointer(fixedCell, {pointerId:31,type:"pointerup"}));
+  assert.equal(fixed.calls.fixedDouble.length, 1);
+  assert.equal(fixed.calls.fixedDouble[0].slot, "thu3|sang|1");
+  assert.deepEqual(fixed.calls.fixedApply, [], "fixed double-tap must use its menu/delete action, not long-press X");
+
+  const fixedMenuStart = CONSTRAINTS_SOURCE.indexOf("function openClassFixedLessonSubjectMenu");
+  const fixedMenuEnd = CONSTRAINTS_SOURCE.indexOf("function openFixedLessonMenuFromCell", fixedMenuStart);
+  const fixedMenuSource = CONSTRAINTS_SOURCE.slice(fixedMenuStart, fixedMenuEnd);
+  assert.ok(fixedMenuStart >= 0 && fixedMenuEnd > fixedMenuStart);
+  assert.ok(
+    fixedMenuSource.indexOf("items.push({label:'Nghỉ'") < fixedMenuSource.indexOf("items.push(...subjects.map"),
+    "Nghỉ must be the first mobile option before fixed subjects"
+  );
+  assert.match(fixedMenuSource, /fixedRequirementCellHasValue[\s\S]*?clearFixedOffSelectedSlots/);
+  assert.match(fixedMenuSource, /includeOffFirst:true/);
+
+  const visibleStateStart = CONSTRAINTS_SOURCE.indexOf("function fixedRequirementCellHasValue");
+  const visibleStateEnd = CONSTRAINTS_SOURCE.indexOf("function openClassFixedLessonSubjectMenu", visibleStateStart);
+  const visibleStateSource = CONSTRAINTS_SOURCE.slice(visibleStateStart, visibleStateEnd);
+  assert.match(visibleStateSource, /fixedOffSlotChecked\(type,id,/);
+  assert.doesNotMatch(
+    visibleStateSource,
+    /fixedOffApplyIds/,
+    "double-tap intent must follow the visible primary cell, not a hidden selected row"
+  );
+});
+
+test("fixed requirement popup stays inside the visual viewport", () => {
+  assert.match(
+    CONSTRAINTS_SOURCE,
+    /\.rb-menu-pop\{[^}]*max-width:calc\(100vw - 8px\);max-height:calc\(100vh - 8px\);overflow:auto;overscroll-behavior:contain/
+  );
+  const start = CONSTRAINTS_SOURCE.indexOf("function positionRbMenuPopup");
+  const end = CONSTRAINTS_SOURCE.indexOf("function buildMenuPopup", start);
+  assert.ok(start >= 0 && end > start, "popup positioning helper must be extractable");
+  const context = {
+    window:{visualViewport:{offsetLeft:0,offsetTop:0,width:320,height:480},innerWidth:320,innerHeight:480},
+    Math,
+    Number
+  };
+  vm.runInNewContext(
+    `${CONSTRAINTS_SOURCE.slice(start, end)}\nthis.positionPopup = positionRbMenuPopup;`,
+    context
+  );
+  const popup = {
+    style:{},
+    getBoundingClientRect(){ return {width:260,height:300}; }
+  };
+  context.positionPopup(popup,300,460);
+  assert.equal(popup.style.left,"56px");
+  assert.equal(popup.style.top,"176px");
+  assert.equal(popup.style.maxWidth,"312px");
+  assert.equal(popup.style.maxHeight,"472px");
+});
+
+test("fixed-off long press preserves a multi-selection, applies X, and suppresses the touch menu", () => {
+  const harness = loadConstraintGridGestureHarness();
+  const slotA = "thu2|sang|0";
+  const slotB = "thu3|sang|1";
+  const cellA = harness.cell("fixedOff", slotA, {type:"teacher",id:"GV1"});
+  harness.setFixedSlots([slotA,slotB]);
+  harness.context.ensureConstraintGridTouchHandlers();
+  harness.context.beginConstraintGridTouch(harness.pointer(cellA, {pointerId:4}));
+
+  assert.deepEqual(harness.getFixedSlots(), [slotA,slotB], "pressing inside the selected range must not collapse it");
+  assert.deepEqual(harness.calls.fixedSingle, []);
+  const menuWhilePressed = harness.pointer(cellA, {pointerId:4});
+  harness.dispatch("contextmenu", menuWhilePressed);
+  assert.equal(menuWhilePressed.prevented, true, "the native context menu must stay closed during a long press");
+
+  assert.equal(harness.runLastTimer(), 550);
+  assert.deepEqual(harness.calls.fixedApply, [{type:"teacher",id:"GV1",checked:true}]);
+  assert.deepEqual(harness.getFixedSlots(), [slotA,slotB]);
+  const menuAfterApply = harness.pointer(cellA, {pointerId:4});
+  harness.dispatch("contextmenu", menuAfterApply);
+  assert.equal(menuAfterApply.prevented, true, "the delayed context menu must also be suppressed after X is applied");
 });
 
 function constraintData(dayLimit){

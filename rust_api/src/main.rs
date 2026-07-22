@@ -24,18 +24,18 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-21-canonical-progress-v57";
+const VERSION: &str = "tkb_new-rust-api-2026-07-22-session-modes-sac-fallback-v58";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
 const MAX_REFERENCE_PROGRESS_FRAME_BYTES: usize = 32 * 1024;
 const AGENT_HELPER_PROTOCOL: &str = "tkb-agent-helper-v1";
 const AGENT_RESULT_DIGEST_PROTOCOL: &str = "tkb-json-tree-sha256-v1";
-// v1.6.22 includes the same-click soft-incumbent quality rescue used by the
-// VPS solver. Older binaries may speak protocol v1 but carry an older solver
-// contract, so they remain upgrade-only.
-const MIN_AGENT_HELPER_VERSION: &str = "1.6.22";
-const MIN_AGENT_HELPER_SEMVER: (u32, u32, u32) = (1, 6, 22);
+// v1.6.23 detects Smart App Control before loading native solver DLLs and
+// leaves the canonical job for the VPS on affected unsigned installations.
+// Older binaries remain upgrade-only so they cannot trigger repeated blocks.
+const MIN_AGENT_HELPER_VERSION: &str = "1.6.23";
+const MIN_AGENT_HELPER_SEMVER: (u32, u32, u32) = (1, 6, 23);
 // A canonical server-owned job has exactly one executor. Keeping one Agent
 // task (instead of a seed portfolio) prevents the Agent and VPS from adding
 // parallel attempts to the same user request.
@@ -6883,7 +6883,7 @@ mod tests {
 
     #[test]
     fn agent_helper_version_gate_uses_strict_three_component_semver() {
-        for version in ["1.6.22", "1.7.0", "2.0.0"] {
+        for version in ["1.6.23", "1.7.0", "2.0.0"] {
             assert!(
                 agent_helper_version_supported(version),
                 "{version} should be eligible"
@@ -6901,6 +6901,7 @@ mod tests {
             "1.6.18",
             "1.6.19",
             "1.6.20",
+            "1.6.22",
             "1.6",
             "1.6.8-beta",
             "",

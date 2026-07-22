@@ -13,7 +13,12 @@ from scipy.optimize import Bounds, LinearConstraint, milp
 from scipy.sparse import coo_matrix
 
 from .models import Lesson, SchoolData, Session, SessionAllocation
-from .rules import TimetableConstraintRules, TimetableRuleSet, resolve_rule_set
+from .rules import (
+    TimetableConstraintRules,
+    TimetableRuleSet,
+    one_session_per_day_mode,
+    resolve_rule_set,
+)
 from .template import (
     LOWER_GRADES,
     all_sessions,
@@ -539,7 +544,30 @@ def solve_session_allocation(
             for day in sorted({s.day for s in sessions}):
                 dk = _day_key(day)
                 sis = [si for si, s in enumerate(sessions) if s.day == day]
-                if _truthy(_get_path(rule, f"oneSessionPerDay.{dk}", False)):
+                session_mode = one_session_per_day_mode(
+                    _get_path(rule, f"oneSessionPerDay.{dk}", False)
+                )
+                if session_mode == "morning":
+                    add(
+                        {
+                            z_vars[(teacher, si)]: 1
+                            for si in sis
+                            if sessions[si].part == "PM"
+                        },
+                        0,
+                        0,
+                    )
+                elif session_mode == "afternoon":
+                    add(
+                        {
+                            z_vars[(teacher, si)]: 1
+                            for si in sis
+                            if sessions[si].part == "AM"
+                        },
+                        0,
+                        0,
+                    )
+                elif session_mode == "either":
                     add({z_vars[(teacher, si)]: 1 for si in sis}, 0, 1)
 
                 day_limit = _to_int(_get_path(rule, f"maxPeriods.day.{dk}", 0), 0)

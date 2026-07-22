@@ -4,6 +4,52 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 
+_ONE_SESSION_PER_DAY_ALIASES = {
+    "morning": "morning",
+    "sang": "morning",
+    "afternoon": "afternoon",
+    "chieu": "afternoon",
+    "either": "either",
+    "both": "either",
+    "ca2": "either",
+}
+
+
+def _constraint_flag_enabled(value: Any) -> bool:
+    if value is True or value == 1:
+        return True
+    if isinstance(value, str):
+        return value.strip().casefold() in {"1", "true", "on", "yes"}
+    return False
+
+
+def one_session_per_day_mode(value: Any) -> str:
+    """Return the normalized teacher/day session mode.
+
+    The current UI stores one mutually exclusive flag in an object. Legacy
+    boolean ``true`` retains its original meaning: teach in at most one of the
+    two sessions. Direct mode strings are accepted for wire compatibility.
+    Malformed objects with multiple selected flags are normalized by the UI
+    order so every solver applies the same deterministic interpretation.
+    """
+
+    if isinstance(value, Mapping):
+        for mode, keys in (
+            ("morning", ("morning", "sang")),
+            ("afternoon", ("afternoon", "chieu")),
+            ("either", ("either", "both")),
+        ):
+            if any(_constraint_flag_enabled(value.get(key)) for key in keys):
+                return mode
+        explicit_mode = str(value.get("mode") or "").strip().casefold()
+        return _ONE_SESSION_PER_DAY_ALIASES.get(explicit_mode, "")
+
+    direct_mode = str(value or "").strip().casefold()
+    if direct_mode in _ONE_SESSION_PER_DAY_ALIASES:
+        return _ONE_SESSION_PER_DAY_ALIASES[direct_mode]
+    return "either" if _constraint_flag_enabled(value) else ""
+
+
 @dataclass(frozen=True, slots=True)
 class TimetableConstraintRules:
     """Normalized app-level constraints carried from the original UI.
