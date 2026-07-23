@@ -9,6 +9,7 @@ on:
       - "agent_helper/**"
       - "agent_wasm_solver/**"
       - "rust_api/src/native_solver.rs"
+      - "tools/test-browser-wasm-abi.mjs"
   workflow_dispatch:
 
 permissions:

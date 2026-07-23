@@ -8,6 +8,7 @@ on:
       - ".github/workflows/build-agent-wasm.yml"
       - "agent_wasm_solver/**"
       - "rust_api/src/native_solver.rs"
+      - "tools/test-browser-wasm-abi.mjs"
   workflow_dispatch:
 
 permissions:
