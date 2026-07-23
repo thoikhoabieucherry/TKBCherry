@@ -15,11 +15,10 @@ change so a machine restart or a new conversation does not erase project context
   marker remains `tkb-rust-api-v262-canonical-progress`, the constraints marker
   is `constraints-ui-v38-one-session-responsive-tables`, and the constraints
   cache is `20260722-v163-one-session-responsive-tables-v1`.
-- Current public Agent release: **v1.6.25** (`1.6.25`). The normal owner-Agent
+- Current public Agent release: **v1.6.26** (`1.6.26`). The normal owner-Agent
   minimum lease gate remains 1.6.23, so 1.6.22 and older stay upgrade-only;
-  the operator trusted-worker source and release contract are 1.6.24. Source
-  currently contains the tested **1.6.26 candidate** described below; it is not
-  public until its Windows artifact is built, release-signed and deployed.
+  the operator trusted-worker source and release contract remain 1.6.24. The
+  public owner-Agent source and Windows metadata are 1.6.26.
 - Every deployed application or packaged Agent update must increment the
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
@@ -76,7 +75,7 @@ change so a machine restart or a new conversation does not erase project context
   available. Production serves API v58, the v1.63 constraints cache and marker,
   and the unchanged v262 bridge marker.
 
-### Agent 1.6.26 automatic first-run WSL setup (candidate 2026-07-23; not deployed)
+### Agent 1.6.26 automatic first-run WSL setup (deployed 2026-07-23)
 
 - Live testing of 1.6.25 found the one-time setup returned code 2 on a fresh
   Smart App Control workstation. The Windows Store WSL package and
@@ -104,8 +103,27 @@ change so a machine restart or a new conversation does not erase project context
   persistence, automatic first-open setup, retry, and hidden normal startup.
   Isolated VPS staging passes scheduler **172/172**, Agent **126/126**,
   trusted-worker operations **5/5**, Rust API **149/149**, and candidate
-  validator **20/20**, ending in `STAGING_TESTS_OK`. The Windows artifact,
-  release signature and deployment are still pending.
+  validator **20/20**, ending in `STAGING_TESTS_OK`.
+- GitHub Actions run `29973749053` built commit `4c8441d`; the outer artifact
+  digest, candidate hash file, one-root-entry ZIP, and file/product version all
+  matched before release signing. The signed public archive is 87,989,262 bytes
+  with SHA-256
+  `a489e51248d25dca6cd2cbee7a3d94ba04f1d9dd8a9cc175402c0a54605c76e8`;
+  its executable is 88,546,944 bytes with SHA-256
+  `1c771f33caed54c1340844c90bc7f62014f62e68341f91b0e9a12f6ae8449e70`.
+  Transactional deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260723-022845.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260723-022845.tar.gz`. The public
+  manifest signature and fully streamed ZIP matched; API v60 remained idle with
+  `6/6` worker tokens.
+- The local installed Agent was atomically updated to the exact 1.6.26 hash and
+  its manual first-open path automatically displayed the panel and UAC. DISM
+  enabled `Microsoft-Windows-Subsystem-Linux`; Windows then set CBS reboot
+  pending and a bounded real `wsl --list` probe still timed out after about five
+  seconds, proving this workstation genuinely needs one reboot before the WSL
+  kernel component can run. The Agent persisted only its non-secret resume
+  marker and will automatically continue setup after the next login. Until
+  then it remains in VPS fallback and does not claim solver work.
 
 ### Agent 1.6.25 notification-area and WSL owner solver (deployed 2026-07-23)
 
@@ -3451,17 +3469,17 @@ still serves constraints cache key
 `tkb-rust-api-v262-canonical-progress`. Public health was idle with zero
 active/queued jobs and `6/6` tokens available after deployment. Transaction
 backups are
-`/opt/cherry-scheduler-backups/server-state-20260723-014247.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260723-014247.tar.gz`.
-Public Agent release `1.6.25` and its signed manifest are live. The 87,980,919
+`/opt/cherry-scheduler-backups/server-state-20260723-022845.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260723-022845.tar.gz`.
+Public Agent release `1.6.26` and its signed manifest are live. The 87,989,262
 byte archive SHA-256 is
-`4641d511851083089bc98f2e1b455acfbb3d05dc4439a1c79d4bdd07fe540e95`; the
-88,538,667 byte executable SHA-256 is
-`cc3ae7cc2ed38695d2728cb2c9b47b5a3f9d71173c5aa7c5baa3046e60242555`.
-On enforced Smart App Control systems Agent 1.6.25 displays `VPS`, stays
-controllable from the Win32 notification area, and offers the one-time WSL
-solver setup. The local installed copy is 1.6.25; its first setup exposed the
-disabled-feature ordering bug fixed in the 1.6.26 candidate above.
+`a489e51248d25dca6cd2cbee7a3d94ba04f1d9dd8a9cc175402c0a54605c76e8`; the
+88,546,944 byte executable SHA-256 is
+`1c771f33caed54c1340844c90bc7f62014f62e68341f91b0e9a12f6ae8449e70`.
+On enforced Smart App Control systems Agent 1.6.26 automatically opens and
+starts the one-time WSL setup when required, while staying controllable from
+the Win32 notification area. The local installed copy is 1.6.26 and is waiting
+for the one Windows restart required after enabling the WSL optional feature.
 Stable active-status DOM histories, iPhone/PWA reattach, No-Agent/Cancel, and
 Agent handoff regressions remain covered by the local and isolated VPS suites.
 Owner Agents older than 1.6.23 are upgrade-only at the server lease gate.
