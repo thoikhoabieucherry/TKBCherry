@@ -15,17 +15,16 @@ change so a machine restart or a new conversation does not erase project context
   marker remains `tkb-rust-api-v262-canonical-progress`, the constraints marker
   is `constraints-ui-v38-one-session-responsive-tables`, and the constraints
   cache is `20260722-v163-one-session-responsive-tables-v1`.
-- Current public Agent release: **v1.6.28** (`1.6.28`). The normal owner-Agent
+- Current public Agent release: **v1.6.29** (`1.6.29`). The normal owner-Agent
   minimum lease gate remains 1.6.23, so 1.6.22 and older stay upgrade-only;
   the operator trusted-worker source and release contract remain 1.6.24. The
-  worktree owner-Agent source and Windows metadata are 1.6.29 while its WSL
-  name-collision recovery candidate is being verified.
+  public owner-Agent source and Windows metadata are 1.6.29.
 - Every deployed application or packaged Agent update must increment the
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
 
-### Agent 1.6.29 dedicated WSL distro recovery (candidate, not deployed)
+### Agent 1.6.29 dedicated WSL distro recovery (deployed 2026-07-23)
 
 - Live acceptance of 1.6.28 exposed a real modern-WSL edge case: both
   `wsl --list --quiet` and `wsl --list --all --quiet` returned no distro, while
@@ -46,12 +45,28 @@ change so a machine restart or a new conversation does not erase project context
   `20260723.1`. Setup generation `20260723.2` lets this repaired installer retry
   exactly once over a same-boot marker written by an older setup, while the same
   generation still suppresses UAC loops. Agent source and Windows metadata are
-  1.6.29. Full local Agent verification passes **150/150** with one
+  1.6.29. Full local Agent verification passes **151/151** with one
   platform-semantic skip. Focused WSL/setup/packaging verification passes
-  **36/36**. Earlier isolated staging passed before the final capability and
-  broken-distro probes were added, so the complete staging matrix must run
-  again. This candidate still needs the normal GitHub Windows build, release
-  signing, transactional deployment, and live WSL1 acceptance.
+  **36/36**. Final isolated VPS staging passes scheduler **172/172**, Agent
+  **151/151**, trusted-worker operations **5/5**, Rust API **149/149**, and
+  validator **20/20**, ending with `STAGING_TESTS_OK`.
+- GitHub Actions run `29979458980` built commit `b014db9`; artifact
+  `8552689198` matched its recorded hashes, one-root-entry ZIP and file/product
+  version before local DPAPI release signing. The signed public archive is
+  88,001,209 bytes with SHA-256
+  `b36e5774f7e89402f7ffbb7075eb2541e7a63a1f874558abba128fe8ecfa25f6`;
+  its executable is 88,559,299 bytes with SHA-256
+  `ed60b70fd5d6aa08d41b4c551ad1261f61bb52078ef3e98689627b855afa0671`.
+  Transactional deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260723-043044.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260723-043044.tar.gz`. The
+  public manifest signature and fully streamed ZIP matched, and public health
+  remained idle with `6/6` worker tokens.
+- The exact 1.6.29 executable is installed locally and upgraded the old schema-1
+  same-boot marker to schema 2 with setup generation `20260723.2`, proving that
+  the repaired installer automatically retries once after an upgrade. Its one
+  required Windows UAC confirmation is currently pending; until accepted, the
+  Agent remains safely in VPS fallback and no distro or local worker is active.
 
 ### v1.63 teacher session modes, responsive tables, and SAC fallback (deployed 2026-07-22)
 
@@ -3490,7 +3505,8 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-23: `UPDATE_OK` for
-the post-v1.63 API v60 hardening release. Public health serves
+Agent 1.6.29 over the unchanged post-v1.63 API v60 hardening release. Public
+health serves
 `tkb_new-rust-api-2026-07-23-trusted-worker-race-safe-v60`; the unchanged page
 still serves constraints cache key
 `20260722-v163-one-session-responsive-tables-v1`, constraints marker
@@ -3498,17 +3514,17 @@ still serves constraints cache key
 `tkb-rust-api-v262-canonical-progress`. Public health was idle with zero
 active/queued jobs and `6/6` tokens available after deployment. Transaction
 backups are
-`/opt/cherry-scheduler-backups/server-state-20260723-022845.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260723-022845.tar.gz`.
-Public Agent release `1.6.26` and its signed manifest are live. The 87,989,262
+`/opt/cherry-scheduler-backups/server-state-20260723-043044.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260723-043044.tar.gz`.
+Public Agent release `1.6.29` and its signed manifest are live. The 88,001,209
 byte archive SHA-256 is
-`a489e51248d25dca6cd2cbee7a3d94ba04f1d9dd8a9cc175402c0a54605c76e8`; the
-88,546,944 byte executable SHA-256 is
-`1c771f33caed54c1340844c90bc7f62014f62e68341f91b0e9a12f6ae8449e70`.
-On enforced Smart App Control systems Agent 1.6.26 automatically opens and
-starts the one-time WSL setup when required, while staying controllable from
-the Win32 notification area. The local installed copy is 1.6.26 and is waiting
-for the one Windows restart required after enabling the WSL optional feature.
+`b36e5774f7e89402f7ffbb7075eb2541e7a63a1f874558abba128fe8ecfa25f6`; the
+88,559,299 byte executable SHA-256 is
+`ed60b70fd5d6aa08d41b4c551ad1261f61bb52078ef3e98689627b855afa0671`.
+On enforced Smart App Control systems Agent 1.6.29 starts hidden, prepares its
+private WSL runtime automatically, and stays controllable from the Win32
+notification area. The exact local 1.6.29 copy is waiting only for the single
+Windows UAC confirmation before its live WSL1 acceptance can continue.
 Stable active-status DOM histories, iPhone/PWA reattach, No-Agent/Cancel, and
 Agent handoff regressions remain covered by the local and isolated VPS suites.
 Owner Agents older than 1.6.23 are upgrade-only at the server lease gate.
