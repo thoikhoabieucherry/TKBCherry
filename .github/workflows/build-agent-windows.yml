@@ -1,6 +1,14 @@
 name: Build Windows Agent candidate
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-agent-windows.yml"
+      - "agent_helper/**"
+      - "agent_wasm_solver/**"
+      - "rust_api/src/native_solver.rs"
   workflow_dispatch:
 
 permissions:
