@@ -292,7 +292,7 @@ test("teacher pane counts each class-subject assignment once", () => {
   );
 });
 
-test("planner keeps eight compact mobile slots with stacked history and duration input", () => {
+test("portrait planner keeps eight compact mobile slots with stacked history and duration input", () => {
   const actionsStart = plannerHtml.indexOf('<div class="toolbar-actions"');
   const feedbackStart = plannerHtml.indexOf('<div class="toolbar-feedback"');
   const secondaryStart = plannerHtml.indexOf('<div class="toolbar-secondary-actions"', feedbackStart);
@@ -417,8 +417,26 @@ test("planner keeps eight compact mobile slots with stacked history and duration
     plannerHtml,
     /@media \(max-width:\s*900px\) and \(hover:\s*none\) and \(pointer:\s*coarse\),\s*\(max-width:\s*480px\)/
   );
-  assert.match(plannerHtml, /phanmon\.js\?v=20260723-v16[567]-[a-z0-9-]+/);
-  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260723-v16[567]-[a-z0-9-]+/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260723-v168-landscape-history-v1/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260723-v168-landscape-history-v1/);
+});
+
+test("landscape phones separate Undo and Redo into nine full-height slots", () => {
+  const start = plannerHtml.indexOf("@media (orientation: landscape) and (max-height: 540px) and (any-pointer: coarse)");
+  const end = plannerHtml.indexOf("@media (min-width: 481px)", start);
+  assert.ok(start >= 0 && end > start, "landscape toolbar override is missing");
+  const landscapeCss = plannerHtml.slice(start, end);
+
+  assert.match(landscapeCss, /\.toolbar-main\s*\{[^}]*grid-template-columns:\s*repeat\(9, minmax\(0, 1fr\)\);/s);
+  assert.match(landscapeCss, /#btnUndoTKB\s*\{[^}]*grid-column:\s*2;[^}]*align-self:\s*stretch;/s);
+  assert.match(landscapeCss, /#btnRedoTKB\s*\{[^}]*grid-column:\s*3;[^}]*align-self:\s*stretch;/s);
+  assert.match(landscapeCss, /#btnUndoTKB,[^}]*#btnRedoTKB\s*\{[^}]*height:\s*44px;[^}]*min-height:\s*44px;[^}]*border-radius:\s*var\(--tkb-radius, 10px\);/s);
+  assert.match(landscapeCss, /\.solve-duration-control\s*\{[^}]*grid-column:\s*4;/s);
+  assert.match(landscapeCss, /#btnAutoSort\s*\{[^}]*grid-column:\s*5;/s);
+  assert.match(landscapeCss, /#btnStopAutoSort,[^}]*#btnDeleteAll\s*\{[^}]*grid-column:\s*6 !important;/s);
+  assert.match(landscapeCss, /#btnAgentHelper\s*\{[^}]*grid-column:\s*7;/s);
+  assert.match(landscapeCss, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*8;/s);
+  assert.match(landscapeCss, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*9;/s);
 });
 
 test("browser Agent toggle is cross-platform and sits before Home on desktop and mobile", () => {

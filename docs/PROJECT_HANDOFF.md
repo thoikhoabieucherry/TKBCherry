@@ -8,11 +8,11 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.67** (compact mobile history
-  controls with the duration input restored). The public API marker is
+- Current deployed application release: **v1.68** (orientation-aware mobile
+  history controls). The public API marker is
   `tkb_new-rust-api-2026-07-23-browser-portfolio-direct-v63`, the bridge marker
   is `tkb-rust-api-v265-browser-portfolio-direct`, and the planner script cache
-  is `20260723-v167-compact-history-duration-v1`. The unchanged constraints marker is
+  is `20260723-v168-landscape-history-v1`. The unchanged constraints marker is
   `constraints-ui-v38-one-session-responsive-tables`.
 - Current public Agent release: **v1.6.29** (`1.6.29`). The normal owner-Agent
   minimum lease gate remains 1.6.23, so 1.6.22 and older stay upgrade-only;
@@ -22,6 +22,26 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.68 orientation-aware mobile history controls (deployed 2026-07-23)
+
+- Portrait phones retain the compact eight-column toolbar introduced in v1.67,
+  with Redo above Undo in one 44px column. Landscape phones now use nine equal
+  tracks and restore Undo and Redo as separate full-height 44px buttons. The
+  Duration, Play, Delete/Stop, Agent, Home and Statistics controls each retain
+  their own stable landscape column.
+- This is a responsive CSS and cache-only change. Scheduler behavior, the v63
+  API, v265 bridge, browser-Agent execution and the WASM binary are unchanged.
+- Verification passes the full Node suite **318/318**, the focused toolbar and
+  browser-Agent suites **49/49**, JavaScript syntax, `git diff --check`, and the
+  real WASM ABI smoke (`BROWSER_WASM_ABI_OK`). Production checks at 430x932 and
+  932x430 confirmed stacked portrait history, separate landscape history, the
+  visible blank duration input, stable neighboring controls and no console
+  warning or error.
+- Transactional production deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260723-121024.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260723-121024.tar.gz`. The public
+  cache marker is `20260723-v168-landscape-history-v1`.
 
 ### v1.67 compact mobile history and duration control (deployed 2026-07-23)
 
@@ -3681,14 +3701,14 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-23: `UPDATE_OK` for
-application v1.67. Public health serves
+application v1.68. Public health serves
 `tkb_new-rust-api-2026-07-23-browser-portfolio-direct-v63`; the page serves
-`20260723-v167-compact-history-duration-v1` and bridge marker
+`20260723-v168-landscape-history-v1` and bridge marker
 `tkb-rust-api-v265-browser-portfolio-direct`. Public health was idle with zero
 active/queued jobs and `6/6` tokens available after signed-in production UI
 acceptance. Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260723-115402.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260723-115402.tar.gz`.
+`/opt/cherry-scheduler-backups/server-state-20260723-121024.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260723-121024.tar.gz`.
 Public Agent release `1.6.29` and its signed manifest are live. The 88,001,209
 byte archive SHA-256 is
 `b36e5774f7e89402f7ffbb7075eb2541e7a63a1f874558abba128fe8ecfa25f6`; the
