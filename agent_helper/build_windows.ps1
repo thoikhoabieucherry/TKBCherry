@@ -326,6 +326,7 @@ $PyInstallerArguments = @(
     "--hidden-import", "ortools.util.python.sorted_interval_list",
     "--collect-binaries", "ortools",
     "--hidden-import", "openpyxl",
+    "--exclude-module", "PIL",
     "--hidden-import", "tkinter",
     "--hidden-import", "tkinter.ttk",
     "--hidden-import", "_tkinter",
@@ -369,6 +370,7 @@ $StandaloneArguments = @(
     "--hidden-import", "ortools.util.python.sorted_interval_list",
     "--collect-binaries", "ortools",
     "--hidden-import", "openpyxl",
+    "--exclude-module", "PIL",
     "--hidden-import", "tkinter",
     "--hidden-import", "tkinter.ttk",
     "--hidden-import", "_tkinter",
@@ -389,10 +391,23 @@ if (-not (Test-Path -LiteralPath $StandaloneExecutable -PathType Leaf)) {
 
 $OnedirExecutable = Join-Path $Bundle "TKBCherryAgent.exe"
 $BundledRawSources = @(Get-ChildItem -LiteralPath $Bundle -Filter "*.py" -File -Recurse | Where-Object {
-    $_.FullName -like "*\solver_runtime\*"
+    $Relative = [System.IO.Path]::GetRelativePath($Bundle, $_.FullName).Replace('\', '/')
+    $Relative.StartsWith("solver_runtime/", [System.StringComparison]::OrdinalIgnoreCase)
 })
 if ($BundledRawSources.Count -gt 0) {
     throw "The onedir Agent contains raw solver Python source."
+}
+$BundledWslSources = @(Get-ChildItem -LiteralPath (Join-Path $Bundle "_internal\wsl_runtime") -Filter "*.py" -File -Recurse -ErrorAction SilentlyContinue)
+if ($BundledWslSources.Count -eq 0) {
+    throw "The onedir Agent is missing its WSL runtime source."
+}
+$BundledPillow = @(Get-ChildItem -LiteralPath (Join-Path $Bundle "_internal") -File -Recurse -ErrorAction SilentlyContinue | Where-Object {
+    $Relative = [System.IO.Path]::GetRelativePath((Join-Path $Bundle "_internal"), $_.FullName).Replace('\', '/')
+    $Relative.StartsWith("PIL/", [System.StringComparison]::OrdinalIgnoreCase) -or
+        $_.Name -like "_imaging*.pyd"
+})
+if ($BundledPillow.Count -gt 0) {
+    throw "Build-only Pillow files entered the Agent runtime."
 }
 Test-PackagedGui -Executable $OnedirExecutable
 Test-PackagedGui -Executable $StandaloneExecutable
