@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
 
 use serde_json::{json, Map, Value};
 
@@ -86,45 +85,58 @@ impl SolverConfig {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+extern "C" {
+    fn tkb_now_ms() -> f64;
+}
+
+fn wall_clock_ms() -> u64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        // The browser host provides Date.now(). Keeping time outside the WASM
+        // module avoids a WASI/Linux runtime and lets the same solver run in
+        // signed Microsoft Edge on Windows.
+        let value = unsafe { tkb_now_ms() };
+        if value.is_finite() && value > 0.0 {
+            return value.min(u64::MAX as f64) as u64;
+        }
+        return 0;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|value| value.as_millis().min(u64::MAX as u128) as u64)
+            .unwrap_or(0)
+    }
+}
+
 struct SolveClock<'a> {
-    started_at: Instant,
-    deadline_at: Option<Instant>,
-    reserve: Duration,
+    started_at_ms: u64,
+    deadline_at_ms: u64,
+    reserve_ms: u64,
     cancel_requested: Option<&'a AtomicBool>,
 }
 
 impl<'a> SolveClock<'a> {
     fn new(config: SolverConfig, cancel_requested: Option<&'a AtomicBool>) -> Self {
-        let started_at = Instant::now();
-        let deadline_at =
-            started_at.checked_add(Duration::from_millis(config.effective_deadline_ms()));
+        let started_at_ms = wall_clock_ms();
         Self {
-            started_at,
-            deadline_at,
-            reserve: Duration::from_millis(config.native_deadline_reserve_ms),
+            started_at_ms,
+            deadline_at_ms: started_at_ms.saturating_add(config.effective_deadline_ms()),
+            reserve_ms: config.native_deadline_reserve_ms,
             cancel_requested,
         }
     }
 
     fn elapsed_seconds(&self) -> f64 {
-        self.started_at.elapsed().as_secs_f64()
+        wall_clock_ms().saturating_sub(self.started_at_ms) as f64 / 1_000.0
     }
 
     fn time_remaining_ms(&self) -> i64 {
-        match self.deadline_at {
-            Some(deadline_at) => {
-                let now = Instant::now();
-                if now >= deadline_at {
-                    0
-                } else {
-                    deadline_at
-                        .duration_since(now)
-                        .as_millis()
-                        .min(i64::MAX as u128) as i64
-                }
-            }
-            None => i64::MAX,
-        }
+        self.deadline_at_ms
+            .saturating_sub(wall_clock_ms())
+            .min(i64::MAX as u64) as i64
     }
 
     fn deadline_hit(&self) -> bool {
@@ -138,12 +150,7 @@ impl<'a> SolveClock<'a> {
         if self.cancelled() {
             return true;
         }
-        match self.deadline_at {
-            Some(_) => {
-                self.deadline_hit() || self.time_remaining_ms() <= self.reserve.as_millis() as i64
-            }
-            None => false,
-        }
+        self.deadline_hit() || self.time_remaining_ms() <= self.reserve_ms as i64
     }
 
     fn cancelled(&self) -> bool {
@@ -2463,10 +2470,8 @@ fn solve_seed(request: &Value) -> u64 {
         hash_part(&mut hash, nonce);
     }
     if !has_explicit_entropy {
-        if let Ok(now) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
-            hash ^= now.as_nanos() as u64;
-            hash = hash.wrapping_mul(0x100000001b3);
-        }
+        hash ^= wall_clock_ms();
+        hash = hash.wrapping_mul(0x100000001b3);
     }
     if hash == 0 {
         0x9e3779b97f4a7c15
@@ -8589,10 +8594,7 @@ fn count_one_period_teacher_sessions(lessons: &[Value]) -> i64 {
 }
 
 fn current_timestamp_string() -> String {
-    match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
-        Ok(value) => format!("{}", value.as_secs()),
-        Err(_) => "0".to_string(),
-    }
+    format!("{}", wall_clock_ms() / 1_000)
 }
 
 #[cfg(test)]

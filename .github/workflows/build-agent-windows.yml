@@ -25,6 +25,20 @@ jobs:
           python-version: "3.13"
           architecture: x64
 
+      - name: Build browser WASM solver
+        shell: pwsh
+        run: |
+          rustup target add wasm32-unknown-unknown
+          if ($LASTEXITCODE -ne 0) { throw "Could not install the Rust WASM target." }
+          cargo build --manifest-path agent_wasm_solver/Cargo.toml --target wasm32-unknown-unknown --release
+          if ($LASTEXITCODE -ne 0) { throw "Could not build the Agent WASM solver." }
+          $source = "agent_wasm_solver/target/wasm32-unknown-unknown/release/tkb_agent_wasm_solver.wasm"
+          $destination = "agent_helper/assets/tkb_native_solver.wasm"
+          New-Item -ItemType Directory -Force -Path (Split-Path $destination -Parent) | Out-Null
+          Copy-Item -LiteralPath $source -Destination $destination -Force
+          $item = Get-Item -LiteralPath $destination
+          if ($item.Length -lt 100000) { throw "The Agent WASM solver artifact is unexpectedly small." }
+
       - name: Build isolated release candidate
         shell: pwsh
         run: >-
@@ -75,6 +89,8 @@ jobs:
             agent_helper/dist/TKBCherryAgent.exe
             agent_helper/dist/candidate-hashes.json
             agent_helper/dist/DO-NOT-PUBLISH.txt
+            agent_helper/assets/tkb_native_solver.wasm
+            agent_wasm_solver/Cargo.lock
           if-no-files-found: error
           compression-level: 0
           retention-days: 3
