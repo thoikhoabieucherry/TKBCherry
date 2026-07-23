@@ -2,20 +2,25 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
 
 from .wsl_solver import (
     WSL_RUNTIME_VERSION,
+    _decode_wsl_output,
     _hidden_creation_flags,
     _terminate_probe_tree,
     discover_wsl_runtime,
-    list_wsl_distributions,
+    parse_wsl_distributions,
     wsl_executable,
 )
 
@@ -24,15 +29,53 @@ DEFAULT_DISTRIBUTION = "Ubuntu-24.04"
 SETUP_OK = 0
 SETUP_FAILED = 2
 SETUP_RESTART_REQUIRED = 75
+SETUP_RESULT_SCHEMA = 1
+SETUP_RESULT_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+ELEVATED_SETUP_TIMEOUT_MS = 60 * 60 * 1000
+_RESTART_EXIT_CODES = frozenset({3010, 1641})
+_WINDOWS_FEATURES = (
+    (
+        "Microsoft-Windows-Subsystem-Linux",
+        "Windows Subsystem for Linux",
+    ),
+    (
+        "VirtualMachinePlatform",
+        "Virtual Machine Platform",
+    ),
+)
 
 
 class WslSetupError(RuntimeError):
-    pass
+    """A safe, user-displayable setup failure.
+
+    ``diagnostic`` is deliberately limited to command status/output and never
+    contains command arguments, environment variables, or credentials.
+    """
+
+    def __init__(self, message: str, diagnostic: str = "") -> None:
+        super().__init__(message)
+        self.message = message
+        self.diagnostic = diagnostic.strip()
+
+    def __str__(self) -> str:
+        if not self.diagnostic:
+            return self.message
+        return f"{self.message}\n\nChi tiết: {self.diagnostic}"
 
 
 @dataclass(frozen=True, slots=True)
 class WslSetupResult:
     distribution: str
+    restart_required: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class SetupReport:
+    """Result written by the elevated child for the non-elevated GUI."""
+
+    code: int
+    message: str
+    diagnostic: str = ""
     restart_required: bool = False
 
 
@@ -175,12 +218,52 @@ def _validate_distribution(name: str) -> str:
     return value
 
 
+def _safe_diagnostic_text(value: str, *, limit: int = 600) -> str:
+    """Redact user paths and Agent tokens from a diagnostic fragment."""
+
+    text = value.replace("\x00", " ")
+    text = " ".join(text.split())
+    for private_path in (
+        os.environ.get("USERPROFILE", ""),
+        os.environ.get("LOCALAPPDATA", ""),
+        os.environ.get("TEMP", ""),
+        os.environ.get("TMP", ""),
+    ):
+        if private_path:
+            text = re.sub(
+                re.escape(private_path),
+                "<user-path>",
+                text,
+                flags=re.IGNORECASE,
+            )
+    text = re.sub(
+        r"tkb(?:a|t)?_[A-Za-z0-9_-]{12,}",
+        "<redacted-token>",
+        text,
+    )
+    return text[-limit:]
+
+
+def _safe_command_diagnostic(
+    completed: subprocess.CompletedProcess[bytes],
+    *,
+    label: str,
+) -> str:
+    """Return bounded, non-secret command diagnostics for the UI/log file."""
+
+    raw = completed.stderr or completed.stdout or b""
+    text = _safe_diagnostic_text(_decode_wsl_output(raw))
+    status = f"{label} trả mã {completed.returncode}."
+    return f"{status} {text}".strip()
+
+
 def _run(
     command: Sequence[str],
     *,
     run: RunCommand | None,
     timeout: float,
     input_data: bytes | None = None,
+    action: str = "Cài bộ xử lý Agent",
 ) -> subprocess.CompletedProcess[bytes]:
     if run is None:
         try:
@@ -193,13 +276,17 @@ def _run(
                 creationflags=_hidden_creation_flags(),
             )
         except OSError as exc:
-            raise WslSetupError("Không thể khởi động trình cài WSL.") from exc
+            raise WslSetupError(
+                f"Không thể khởi động bước {action.lower()}.",
+                _safe_diagnostic_text(f"{type(exc).__name__}: {exc}", limit=240),
+            ) from exc
         try:
             stdout, stderr = process.communicate(input_data, timeout=timeout)
         except subprocess.TimeoutExpired as exc:
             _terminate_probe_tree(process)
             raise WslSetupError(
-                "Cài bộ xử lý Agent đã quá thời gian cho phép."
+                f"{action} đã quá thời gian cho phép.",
+                f"Đã dừng sau {int(timeout)} giây để tránh treo Agent.",
             ) from exc
         return subprocess.CompletedProcess(
             list(command), process.returncode, stdout, stderr
@@ -217,9 +304,15 @@ def _run(
             creationflags=creationflags,
         )
     except subprocess.TimeoutExpired as exc:
-        raise WslSetupError("Cài bộ xử lý Agent đã quá thời gian cho phép.") from exc
+        raise WslSetupError(
+            f"{action} đã quá thời gian cho phép.",
+            f"Đã dừng sau {int(timeout)} giây để tránh treo Agent.",
+        ) from exc
     except OSError as exc:
-        raise WslSetupError("Không thể khởi động trình cài WSL.") from exc
+        raise WslSetupError(
+            f"Không thể khởi động bước {action.lower()}.",
+            _safe_diagnostic_text(f"{type(exc).__name__}: {exc}", limit=240),
+        ) from exc
 
 
 def _select_distribution(installed: Sequence[str], preferred: str) -> str | None:
@@ -231,6 +324,127 @@ def _select_distribution(installed: Sequence[str], preferred: str) -> str | None
     return None
 
 
+def _dism_executable() -> str:
+    """Locate the signed Windows servicing tool without relying on PATH."""
+
+    if os.name == "nt":
+        candidate = Path(os.environ.get("WINDIR", r"C:\Windows")) / "System32" / "dism.exe"
+        if candidate.is_file():
+            return str(candidate)
+    return shutil.which("dism.exe") or shutil.which("dism") or "dism.exe"
+
+
+def _feature_state(
+    feature: str,
+    *,
+    dism: str,
+    run: RunCommand | None,
+) -> str:
+    """Read a feature state using DISM's locale-independent English output."""
+
+    completed = _run(
+        [
+            dism,
+            "/Online",
+            "/English",
+            "/Get-FeatureInfo",
+            f"/FeatureName:{feature}",
+        ],
+        run=run,
+        timeout=120.0,
+        action=f"Kiểm tra thành phần Windows {feature}",
+    )
+    if completed.returncode != 0:
+        raise WslSetupError(
+            f"Không đọc được trạng thái thành phần Windows {feature}.",
+            _safe_command_diagnostic(completed, label="DISM"),
+        )
+    output = _decode_wsl_output(completed.stdout + b"\n" + completed.stderr)
+    match = re.search(r"^\s*State\s*:\s*(.+?)\s*$", output, flags=re.IGNORECASE | re.MULTILINE)
+    if not match:
+        raise WslSetupError(
+            f"Windows không trả về trạng thái thành phần {feature}.",
+            "DISM không có dòng State; chưa gọi WSL để tránh treo.",
+        )
+    state = re.sub(r"[^a-z]", "", match.group(1).casefold())
+    if state == "enabled":
+        return "enabled"
+    if state in {"enablepending", "disablepending"}:
+        return "pending"
+    if state in {"disabled", "disabledwithpayloadremoved"}:
+        return "disabled"
+    raise WslSetupError(
+        f"Trạng thái thành phần Windows {feature} chưa được hỗ trợ.",
+        f"DISM trả về State: {match.group(1).strip()[:120]}.",
+    )
+
+
+def _ensure_windows_features(
+    *,
+    dism: str | None = None,
+    run: RunCommand | None = None,
+) -> bool:
+    """Enable WSL prerequisites and report whether Windows must reboot.
+
+    We intentionally return before touching ``wsl.exe`` after an enablement
+    operation.  Calling WSL while the optional feature is still pending is the
+    source of the long ``wsl --list`` hangs seen on fresh machines.
+    """
+
+    servicing_tool = dism or _dism_executable()
+    states = [
+        (feature, label, _feature_state(feature, dism=servicing_tool, run=run))
+        for feature, label in _WINDOWS_FEATURES
+    ]
+    restart_pending = any(state == "pending" for _feature, _label, state in states)
+    changed: list[str] = []
+    for feature, label, state in states:
+        if state != "disabled":
+            continue
+        completed = _run(
+            [
+                servicing_tool,
+                "/Online",
+                "/English",
+                "/Enable-Feature",
+                f"/FeatureName:{feature}",
+                "/All",
+                "/NoRestart",
+            ],
+            run=run,
+            timeout=300.0,
+            action=f"Bật thành phần Windows {label}",
+        )
+        if completed.returncode not in ({0} | _RESTART_EXIT_CODES):
+            raise WslSetupError(
+                f"Không thể bật thành phần Windows {label}.",
+                _safe_command_diagnostic(completed, label="DISM"),
+            )
+        changed.append(label)
+    return restart_pending or bool(changed)
+
+
+def _setup_distributions(
+    executable: str,
+    *,
+    run: RunCommand | None,
+) -> list[str]:
+    """List distributions with a setup-specific error instead of swallowing it."""
+
+    completed = _run(
+        [executable, "--list", "--quiet"],
+        run=run,
+        timeout=15.0,
+        action="Kiểm tra môi trường WSL",
+    )
+    if completed.returncode != 0:
+        raise WslSetupError(
+            "WSL chưa sẵn sàng sau khi bật các thành phần Windows.",
+            _safe_command_diagnostic(completed, label="wsl --list"),
+        )
+    return parse_wsl_distributions(completed.stdout)
+
+
 def install_wsl_runtime(
     *,
     source_root: Path | None = None,
@@ -238,16 +452,28 @@ def install_wsl_runtime(
     preferred_distribution: str = DEFAULT_DISTRIBUTION,
     executable: str | None = None,
     run: RunCommand | None = None,
+    platform_name: str | None = None,
+    dism_executable: str | None = None,
 ) -> WslSetupResult:
     source = _validate_source(source_root or wsl_source_root())
     distribution_name = _validate_distribution(preferred_distribution)
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,40}", version):
         raise WslSetupError("Phiên bản bộ xử lý Agent không hợp lệ.")
+    platform = os.name if platform_name is None else platform_name
+    if platform == "nt" and _ensure_windows_features(
+        dism=dism_executable,
+        run=run,
+    ):
+        return WslSetupResult(distribution_name, restart_required=True)
+
     wsl = executable or wsl_executable()
     if not wsl:
-        raise WslSetupError("Windows Subsystem for Linux chưa có trên máy.")
+        raise WslSetupError(
+            "Windows Subsystem for Linux chưa có trên máy.",
+            "Hai thành phần Windows đã bật nhưng không tìm thấy wsl.exe.",
+        )
 
-    installed = list_wsl_distributions(wsl, timeout=10.0, run=run)
+    installed = _setup_distributions(wsl, run=run)
     distribution = _select_distribution(installed, distribution_name)
     if distribution is None:
         completed = _run(
@@ -260,12 +486,16 @@ def install_wsl_runtime(
             ],
             run=run,
             timeout=20 * 60,
+            action=f"Cài môi trường Linux {distribution_name}",
         )
+        if completed.returncode in _RESTART_EXIT_CODES:
+            return WslSetupResult(distribution_name, restart_required=True)
         if completed.returncode != 0:
             raise WslSetupError(
-                "Windows không cài được môi trường Linux cho Agent."
+                f"Windows không cài được môi trường Linux {distribution_name} cho Agent.",
+                _safe_command_diagnostic(completed, label="wsl --install"),
             )
-        installed = list_wsl_distributions(wsl, timeout=20.0, run=run)
+        installed = _setup_distributions(wsl, run=run)
         distribution = _select_distribution(installed, distribution_name)
         if distribution is None:
             return WslSetupResult(distribution_name, restart_required=True)
@@ -287,10 +517,12 @@ def install_wsl_runtime(
         run=run,
         timeout=30 * 60,
         input_data=_INSTALL_SCRIPT.encode("utf-8"),
+        action="Cài thư viện tối ưu trong WSL",
     )
     if completed.returncode != 0:
         raise WslSetupError(
-            "Không thể cài bộ giải trong WSL; Agent vẫn để VPS xếp an toàn."
+            "Không thể cài bộ giải trong WSL; Agent vẫn để VPS xếp an toàn.",
+            _safe_command_diagnostic(completed, label="Bộ cài Linux"),
         )
     runtime = discover_wsl_runtime(
         preferred_distribution=distribution,
@@ -299,8 +531,73 @@ def install_wsl_runtime(
         run=run,
     )
     if runtime is None:
-        raise WslSetupError("Bộ giải WSL chưa vượt qua bước kiểm tra sau cài đặt.")
+        raise WslSetupError(
+            "Bộ giải WSL chưa vượt qua bước kiểm tra sau cài đặt.",
+            "Không đọc được READY đúng phiên bản sau khi cài.",
+        )
     return WslSetupResult(runtime.distribution)
+
+
+def _setup_result_root() -> Path:
+    local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
+    base = Path(local_app_data) if local_app_data else Path(tempfile.gettempdir())
+    return base / "TKBCherry" / "Agent" / "setup-results"
+
+
+def _setup_result_path(result_id: str) -> Path:
+    normalized = result_id.strip().casefold()
+    if not SETUP_RESULT_ID_PATTERN.fullmatch(normalized):
+        raise WslSetupError("Mã phiên cài bộ xử lý Agent không hợp lệ.")
+    return _setup_result_root() / f"setup-{normalized}.json"
+
+
+def _write_setup_report(result_id: str, report: SetupReport) -> None:
+    path = _setup_result_path(result_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(f".{os.getpid()}.tmp")
+    payload = {
+        "schema": SETUP_RESULT_SCHEMA,
+        "code": int(report.code),
+        "message": report.message[:600],
+        "diagnostic": report.diagnostic[:1200],
+        "restartRequired": bool(report.restart_required),
+    }
+    try:
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        os.replace(temporary, path)
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _read_setup_report(result_id: str) -> SetupReport | None:
+    path = _setup_result_path(result_id)
+    try:
+        if path.stat().st_size > 4096:
+            return None
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("schema") != SETUP_RESULT_SCHEMA:
+        return None
+    code = payload.get("code")
+    message = payload.get("message")
+    diagnostic = payload.get("diagnostic", "")
+    if code not in {SETUP_OK, SETUP_FAILED, SETUP_RESTART_REQUIRED}:
+        return None
+    if not isinstance(message, str) or not isinstance(diagnostic, str):
+        return None
+    return SetupReport(
+        code=code,
+        message=message[:600],
+        diagnostic=diagnostic[:1200],
+        restart_required=bool(payload.get("restartRequired", False)),
+    )
 
 
 def run_elevated_setup() -> int:
@@ -338,14 +635,20 @@ def run_elevated_setup() -> int:
     kernel32.WaitForSingleObject.restype = wintypes.DWORD
     kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
     kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    kernel32.TerminateProcess.restype = wintypes.BOOL
     kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
     kernel32.CloseHandle.restype = wintypes.BOOL
 
-    parameters = (
-        "--wsl-setup"
+    result_id = uuid.uuid4().hex
+    result_path = _setup_result_path(result_id)
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    arguments = (
+        ["--wsl-setup", "--wsl-setup-result", result_id]
         if getattr(sys, "frozen", False)
-        else "-m agent_helper --wsl-setup"
+        else ["-m", "agent_helper", "--wsl-setup", "--wsl-setup-result", result_id]
     )
+    parameters = subprocess.list2cmdline(arguments)
     information = SHELLEXECUTEINFOW()
     information.cbSize = ctypes.sizeof(SHELLEXECUTEINFOW)
     information.fMask = 0x00000040  # SEE_MASK_NOCLOSEPROCESS
@@ -359,20 +662,88 @@ def run_elevated_setup() -> int:
             raise WslSetupError("Bạn đã hủy quyền cài bộ xử lý Agent.")
         raise WslSetupError("Windows không mở được trình cài Agent.")
     try:
-        kernel32.WaitForSingleObject(information.hProcess, 0xFFFFFFFF)
+        wait_result = int(
+            kernel32.WaitForSingleObject(
+                information.hProcess,
+                ELEVATED_SETUP_TIMEOUT_MS,
+            )
+        )
+        if wait_result == 0x00000102:  # WAIT_TIMEOUT
+            kernel32.TerminateProcess(information.hProcess, SETUP_FAILED)
+            raise WslSetupError(
+                "Trình cài bộ xử lý Agent không phản hồi và đã được dừng.",
+                "Đã chờ tối đa 60 phút; lượt xếp vẫn dùng VPS.",
+            )
+        if wait_result != 0x00000000:  # WAIT_OBJECT_0
+            raise WslSetupError(
+                "Windows không theo dõi được tiến trình cài bộ xử lý Agent.",
+                f"WaitForSingleObject trả mã {wait_result}.",
+            )
         exit_code = wintypes.DWORD()
         if not kernel32.GetExitCodeProcess(
             information.hProcess, ctypes.byref(exit_code)
         ):
             raise WslSetupError("Không đọc được kết quả cài bộ xử lý Agent.")
-        return int(exit_code.value)
+        code = int(exit_code.value)
+        report = _read_setup_report(result_id)
+        if report is None:
+            if code in {SETUP_OK, SETUP_RESTART_REQUIRED}:
+                return code
+            raise WslSetupError(
+                "Trình cài bộ xử lý Agent đã dừng nhưng không trả về chẩn đoán.",
+                f"Tiến trình Administrator trả mã {code}.",
+            )
+        if report.code != code:
+            raise WslSetupError(
+                "Kết quả cài bộ xử lý Agent không nhất quán.",
+                f"Tiến trình trả mã {code}, báo cáo trả mã {report.code}.",
+            )
+        if code == SETUP_FAILED:
+            raise WslSetupError(report.message, report.diagnostic)
+        return code
     finally:
         kernel32.CloseHandle(information.hProcess)
+        try:
+            result_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
-def setup_cli() -> int:
+def setup_cli(result_id: str | None = None) -> int:
     try:
         result = install_wsl_runtime()
-    except WslSetupError:
-        return SETUP_FAILED
-    return SETUP_RESTART_REQUIRED if result.restart_required else SETUP_OK
+    except WslSetupError as exc:
+        report = SetupReport(
+            code=SETUP_FAILED,
+            message=exc.message,
+            diagnostic=exc.diagnostic,
+        )
+    except Exception as exc:
+        report = SetupReport(
+            code=SETUP_FAILED,
+            message="Bộ cài Agent gặp lỗi ngoài dự kiến; lượt xếp vẫn dùng VPS.",
+            diagnostic=f"Loại lỗi: {type(exc).__name__}.",
+        )
+    else:
+        if result.restart_required:
+            report = SetupReport(
+                code=SETUP_RESTART_REQUIRED,
+                message=(
+                    "Windows đã chuẩn bị thành phần Linux cho Agent và cần "
+                    "khởi động lại máy một lần."
+                ),
+                restart_required=True,
+            )
+        else:
+            report = SetupReport(
+                code=SETUP_OK,
+                message="Bộ xử lý Agent đã được cài và kiểm tra thành công.",
+            )
+    if result_id is not None:
+        try:
+            _write_setup_report(result_id, report)
+        except (OSError, WslSetupError):
+            # The process exit code remains authoritative if the medium-integrity
+            # parent cannot read the optional diagnostics file.
+            pass
+    return report.code

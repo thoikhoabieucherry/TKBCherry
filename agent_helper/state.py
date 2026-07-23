@@ -15,6 +15,7 @@ class StateError(RuntimeError):
 
 
 _CREDENTIAL_FILE = "agent-credential"
+_WSL_SETUP_RESTART_FILE = "wsl-setup-restart-pending"
 _DPAPI_PREFIX = b"TKB-DPAPI-V1\0"
 _PLAIN_PREFIX = b"TKB-PLAIN-V1\0"
 _STATE_DIR_ENV = "TKB_AGENT_STATE_DIR"
@@ -199,6 +200,47 @@ def clear_agent_token(state_dir: Path | None = None) -> None:
         ((state_dir or default_state_dir()) / _CREDENTIAL_FILE).unlink(missing_ok=True)
     except OSError as exc:
         raise StateError("cannot remove the paired Agent credential") from exc
+
+
+def wsl_setup_restart_pending(state_dir: Path | None = None) -> bool:
+    """Return whether the one-time WSL setup asked Windows to restart."""
+
+    path = (state_dir or default_state_dir()) / _WSL_SETUP_RESTART_FILE
+    try:
+        return path.is_file()
+    except OSError as exc:
+        raise StateError("cannot read the WSL setup restart state") from exc
+
+
+def set_wsl_setup_restart_pending(
+    pending: bool, state_dir: Path | None = None
+) -> None:
+    """Persist only the small non-secret flag needed across a Windows restart."""
+
+    directory = state_dir or default_state_dir()
+    path = directory / _WSL_SETUP_RESTART_FILE
+    try:
+        if not pending:
+            path.unlink(missing_ok=True)
+            return
+        directory.mkdir(parents=True, exist_ok=True)
+        temporary = (
+            directory / f"{_WSL_SETUP_RESTART_FILE}.tmp-{uuid.uuid4().hex}"
+        )
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(descriptor, "w", encoding="ascii", newline="\n") as handle:
+                handle.write("1\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+        finally:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+    except OSError as exc:
+        raise StateError("cannot persist the WSL setup restart state") from exc
 
 
 class SingleInstanceLock:

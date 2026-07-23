@@ -4,11 +4,19 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from agent_helper.wsl_setup import (
     DEFAULT_DISTRIBUTION,
+    SETUP_FAILED,
+    SETUP_RESTART_REQUIRED,
+    SetupReport,
     WslSetupError,
+    WslSetupResult,
+    _read_setup_report,
+    _write_setup_report,
     install_wsl_runtime,
+    setup_cli,
 )
 from agent_helper.wsl_solver import WSL_RUNTIME_VERSION
 
@@ -38,7 +46,9 @@ class WslSetupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             with self.assertRaises(WslSetupError):
                 install_wsl_runtime(
-                    source_root=Path(temporary), executable="wsl.exe"
+                    source_root=Path(temporary),
+                    executable="wsl.exe",
+                    platform_name="posix",
                 )
 
     def test_installed_distribution_receives_script_over_stdin(self) -> None:
@@ -59,7 +69,10 @@ class WslSetupTests(unittest.TestCase):
             source = Path(temporary)
             make_source(source)
             result = install_wsl_runtime(
-                source_root=source, executable="wsl.exe", run=run
+                source_root=source,
+                executable="wsl.exe",
+                run=run,
+                platform_name="posix",
             )
 
         self.assertEqual(result.distribution, DEFAULT_DISTRIBUTION)
@@ -89,7 +102,10 @@ class WslSetupTests(unittest.TestCase):
             source = Path(temporary)
             make_source(source)
             result = install_wsl_runtime(
-                source_root=source, executable="wsl.exe", run=run
+                source_root=source,
+                executable="wsl.exe",
+                run=run,
+                platform_name="posix",
             )
 
         self.assertEqual(list_count, 2)
@@ -111,12 +127,235 @@ class WslSetupTests(unittest.TestCase):
             source = Path(temporary)
             make_source(source)
             result = install_wsl_runtime(
-                source_root=source, executable="wsl.exe", run=run
+                source_root=source,
+                executable="wsl.exe",
+                run=run,
+                platform_name="posix",
             )
 
         self.assertTrue(result.restart_required)
         self.assertTrue(any("--install" in command for command in commands))
         self.assertFalse(any("bash" in command for command in commands))
+
+    def test_disabled_wsl_feature_is_enabled_before_any_wsl_probe(self) -> None:
+        commands: list[list[str]] = []
+
+        def run(command: list[str], **options: object) -> subprocess.CompletedProcess[bytes]:
+            del options
+            commands.append(command)
+            if "/Get-FeatureInfo" in command:
+                state = (
+                    "Disabled"
+                    if "/FeatureName:Microsoft-Windows-Subsystem-Linux" in command
+                    else "Enabled"
+                )
+                return subprocess.CompletedProcess(
+                    command, 0, f"State : {state}\r\n".encode(), b""
+                )
+            if "/Enable-Feature" in command:
+                return subprocess.CompletedProcess(command, 0, b"ok", b"")
+            self.fail(f"WSL must not run before restart: {command}")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            make_source(source)
+            result = install_wsl_runtime(
+                source_root=source,
+                executable="wsl.exe",
+                run=run,
+                platform_name="nt",
+                dism_executable="dism.exe",
+            )
+
+        self.assertTrue(result.restart_required)
+        self.assertEqual(
+            sum("/Enable-Feature" in command for command in commands),
+            1,
+        )
+        self.assertFalse(any(command[0] == "wsl.exe" for command in commands))
+
+    def test_pending_feature_requests_restart_without_enable_or_wsl(self) -> None:
+        commands: list[list[str]] = []
+
+        def run(command: list[str], **options: object) -> subprocess.CompletedProcess[bytes]:
+            del options
+            commands.append(command)
+            if "/Get-FeatureInfo" in command:
+                state = (
+                    "Enable Pending"
+                    if "/FeatureName:Microsoft-Windows-Subsystem-Linux" in command
+                    else "Enabled"
+                )
+                return subprocess.CompletedProcess(
+                    command, 0, f"State : {state}\r\n".encode(), b""
+                )
+            self.fail(f"unexpected command: {command}")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            make_source(source)
+            result = install_wsl_runtime(
+                source_root=source,
+                executable="wsl.exe",
+                run=run,
+                platform_name="nt",
+                dism_executable="dism.exe",
+            )
+
+        self.assertTrue(result.restart_required)
+        self.assertFalse(any("/Enable-Feature" in command for command in commands))
+        self.assertFalse(any(command[0] == "wsl.exe" for command in commands))
+
+    def test_feature_failure_exposes_bounded_redacted_diagnostic(self) -> None:
+        def run(command: list[str], **options: object) -> subprocess.CompletedProcess[bytes]:
+            del options
+            return subprocess.CompletedProcess(
+                command,
+                5,
+                b"",
+                b"Access denied for tkba_1234567890abcdef at C:\\Users\\Example",
+            )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            make_source(source)
+            with patch.dict("os.environ", {"USERPROFILE": r"C:\Users\Example"}):
+                with self.assertRaises(WslSetupError) as raised:
+                    install_wsl_runtime(
+                        source_root=source,
+                        executable="wsl.exe",
+                        run=run,
+                        platform_name="nt",
+                        dism_executable="dism.exe",
+                    )
+
+        rendered = str(raised.exception)
+        self.assertIn("trả mã 5", rendered)
+        self.assertIn("<redacted-token>", rendered)
+        self.assertIn("<user-path>", rendered)
+        self.assertNotIn("tkba_1234567890abcdef", rendered)
+        self.assertNotIn(r"C:\Users\Example", rendered)
+
+    def test_wsl_list_timeout_is_specific_and_bounded(self) -> None:
+        def run(command: list[str], **options: object) -> subprocess.CompletedProcess[bytes]:
+            raise subprocess.TimeoutExpired(command, options.get("timeout", 0))
+
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            make_source(source)
+            with self.assertRaises(WslSetupError) as raised:
+                install_wsl_runtime(
+                    source_root=source,
+                    executable="wsl.exe",
+                    run=run,
+                    platform_name="posix",
+                )
+
+        self.assertIn("Kiểm tra môi trường WSL", str(raised.exception))
+        self.assertIn("15 giây", str(raised.exception))
+
+    def test_enabled_features_wsl_exit_two_is_reported_not_silenced(self) -> None:
+        def run(command: list[str], **options: object) -> subprocess.CompletedProcess[bytes]:
+            del options
+            if "/Get-FeatureInfo" in command:
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    b"State : Enabled\r\n",
+                    b"",
+                )
+            if command[0] == "wsl.exe":
+                return subprocess.CompletedProcess(
+                    command,
+                    2,
+                    b"",
+                    b"WSL service is not ready",
+                )
+            self.fail(f"unexpected command: {command}")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            make_source(source)
+            with self.assertRaises(WslSetupError) as raised:
+                install_wsl_runtime(
+                    source_root=source,
+                    executable="wsl.exe",
+                    run=run,
+                    platform_name="nt",
+                    dism_executable="dism.exe",
+                )
+
+        rendered = str(raised.exception)
+        self.assertIn("WSL chưa sẵn sàng", rendered)
+        self.assertIn("wsl --list trả mã 2", rendered)
+        self.assertIn("WSL service is not ready", rendered)
+
+    def test_setup_report_round_trip_is_bounded(self) -> None:
+        result_id = "a" * 32
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch(
+                "agent_helper.wsl_setup._setup_result_root",
+                return_value=Path(temporary),
+            ):
+                _write_setup_report(
+                    result_id,
+                    SetupReport(
+                        SETUP_FAILED,
+                        "Không cài được.",
+                        "D" * 5000,
+                    ),
+                )
+                report = _read_setup_report(result_id)
+
+        self.assertIsNotNone(report)
+        assert report is not None
+        self.assertEqual(report.code, SETUP_FAILED)
+        self.assertEqual(report.message, "Không cài được.")
+        self.assertEqual(len(report.diagnostic), 1200)
+
+    def test_setup_cli_persists_restart_result_for_parent_gui(self) -> None:
+        result_id = "b" * 32
+        with tempfile.TemporaryDirectory() as temporary:
+            with (
+                patch(
+                    "agent_helper.wsl_setup._setup_result_root",
+                    return_value=Path(temporary),
+                ),
+                patch(
+                    "agent_helper.wsl_setup.install_wsl_runtime",
+                    return_value=WslSetupResult(
+                        DEFAULT_DISTRIBUTION,
+                        restart_required=True,
+                    ),
+                ),
+            ):
+                code = setup_cli(result_id)
+                report = _read_setup_report(result_id)
+
+        self.assertEqual(code, SETUP_RESTART_REQUIRED)
+        self.assertIsNotNone(report)
+        assert report is not None
+        self.assertTrue(report.restart_required)
+        self.assertIn("khởi động lại", report.message)
+
+    def test_elevated_cli_forwards_opaque_result_id(self) -> None:
+        from agent_helper.__main__ import main
+
+        result_id = "c" * 32
+        with patch(
+            "agent_helper.wsl_setup.setup_cli",
+            return_value=SETUP_RESTART_REQUIRED,
+        ) as setup:
+            code = main(
+                [
+                    "--wsl-setup",
+                    "--wsl-setup-result",
+                    result_id,
+                ]
+            )
+
+        self.assertEqual(code, SETUP_RESTART_REQUIRED)
+        setup.assert_called_once_with(result_id)
 
 
 if __name__ == "__main__":

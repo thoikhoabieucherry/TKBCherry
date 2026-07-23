@@ -15,10 +15,10 @@ change so a machine restart or a new conversation does not erase project context
   marker remains `tkb-rust-api-v262-canonical-progress`, the constraints marker
   is `constraints-ui-v38-one-session-responsive-tables`, and the constraints
   cache is `20260722-v163-one-session-responsive-tables-v1`.
-- Current public Agent release: **v1.6.24** (`1.6.24`). The normal owner-Agent
+- Current public Agent release: **v1.6.25** (`1.6.25`). The normal owner-Agent
   minimum lease gate remains 1.6.23, so 1.6.22 and older stay upgrade-only;
   the operator trusted-worker source and release contract are 1.6.24. Source
-  currently contains the tested **1.6.25 candidate** described below; it is not
+  currently contains the tested **1.6.26 candidate** described below; it is not
   public until its Windows artifact is built, release-signed and deployed.
 - Every deployed application or packaged Agent update must increment the
   applicable version here and add a short change note. Agent package updates
@@ -76,7 +76,38 @@ change so a machine restart or a new conversation does not erase project context
   available. Production serves API v58, the v1.63 constraints cache and marker,
   and the unchanged v262 bridge marker.
 
-### Agent 1.6.25 notification-area and WSL owner solver (candidate 2026-07-23; not deployed)
+### Agent 1.6.26 automatic first-run WSL setup (candidate 2026-07-23; not deployed)
+
+- Live testing of 1.6.25 found the one-time setup returned code 2 on a fresh
+  Smart App Control workstation. The Windows Store WSL package and
+  `VirtualMachinePlatform` were present, but the
+  `Microsoft-Windows-Subsystem-Linux` optional feature was disabled. The old
+  setup probed `wsl --list` before enabling that feature, so the probe could
+  hang or fail and the elevated child reduced the cause to a generic exit code.
+- The elevated setup now checks both prerequisite features with signed DISM
+  using locale-independent output. It enables missing features before invoking
+  WSL, returns restart-required without probing a pending WSL service, and uses
+  bounded process-tree timeouts for every servicing, distro and Linux-package
+  step. A random one-use JSON result file carries only bounded, path/token-
+  redacted diagnostics back to the normal user process; credentials and command
+  environments are never persisted.
+- Opening an unprepared Agent manually now shows its 420x400 panel and starts
+  the one-time UAC setup automatically. Normal Windows startup remains hidden;
+  if Windows requested a restart, a small non-secret marker makes the next
+  startup show the panel and resume setup automatically. Cancel/failure remains
+  visibly on the panel with a retry action while all scheduling stays on VPS.
+  Successful setup clears the marker, wakes the existing owner worker and hides
+  the panel back into the notification area.
+- Source and Windows metadata are 1.6.26. Local Agent verification currently
+  passes **126/126** with one platform-semantic skip, including disabled and
+  pending Windows features, bounded WSL failure diagnostics, restart-marker
+  persistence, automatic first-open setup, retry, and hidden normal startup.
+  Isolated VPS staging passes scheduler **172/172**, Agent **126/126**,
+  trusted-worker operations **5/5**, Rust API **149/149**, and candidate
+  validator **20/20**, ending in `STAGING_TESTS_OK`. The Windows artifact,
+  release signature and deployment are still pending.
+
+### Agent 1.6.25 notification-area and WSL owner solver (deployed 2026-07-23)
 
 - The Agent now behaves like a notification-area utility on every supported
   Windows path: it starts hidden, double-click opens the panel, X hides it,
@@ -118,6 +149,17 @@ change so a machine restart or a new conversation does not erase project context
   WSL wrapper. Git Bash syntax-checks the embedded installer, Win32 tray
   integration creates/updates/stops a real icon, and the local WSL timeout
   probe returns no runtime with no orphan process.
+- GitHub Actions run `29971326206` built commit `362d107`; candidate hashes,
+  one-root-entry ZIP and file/product version were independently verified before
+  signing. The signed public archive is 87,980,919 bytes with SHA-256
+  `4641d511851083089bc98f2e1b455acfbb3d05dc4439a1c79d4bdd07fe540e95`;
+  its executable is 88,538,667 bytes with SHA-256
+  `cc3ae7cc2ed38695d2728cb2c9b47b5a3f9d71173c5aa7c5baa3046e60242555`.
+  Transactional deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260723-014247.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260723-014247.tar.gz`. The public
+  manifest signature and fully streamed archive matched, API v60 stayed idle,
+  and the installed local Agent was atomically updated to the same 1.6.25 hash.
 
 ### Post-v1.63 trusted-worker protocol and Agent 1.6.24 (API deployed 2026-07-23; worker dormant)
 
@@ -3409,16 +3451,17 @@ still serves constraints cache key
 `tkb-rust-api-v262-canonical-progress`. Public health was idle with zero
 active/queued jobs and `6/6` tokens available after deployment. Transaction
 backups are
-`/opt/cherry-scheduler-backups/server-state-20260722-174528.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260722-174528.tar.gz`.
-Public Agent release `1.6.24` and its signed manifest are live. The 93,923,421
+`/opt/cherry-scheduler-backups/server-state-20260723-014247.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260723-014247.tar.gz`.
+Public Agent release `1.6.25` and its signed manifest are live. The 87,980,919
 byte archive SHA-256 is
-`a4f68328a11bd18202883a115c40358e42bd64402adf52a9a3fd13c1a40bdc29`; the
-94,485,948 byte executable SHA-256 is
-`1b76a1f7cfe1939eaec3bccc7f55e356c0ada6f2c7c64b3b104371df573d4536`.
-On enforced Smart App Control systems Agent 1.6.24 displays `VPS`, stays
-minimized instead of forcing its window forward, and does not claim local
-solver work. The local installed copy is 1.6.24.
+`4641d511851083089bc98f2e1b455acfbb3d05dc4439a1c79d4bdd07fe540e95`; the
+88,538,667 byte executable SHA-256 is
+`cc3ae7cc2ed38695d2728cb2c9b47b5a3f9d71173c5aa7c5baa3046e60242555`.
+On enforced Smart App Control systems Agent 1.6.25 displays `VPS`, stays
+controllable from the Win32 notification area, and offers the one-time WSL
+solver setup. The local installed copy is 1.6.25; its first setup exposed the
+disabled-feature ordering bug fixed in the 1.6.26 candidate above.
 Stable active-status DOM histories, iPhone/PWA reattach, No-Agent/Cancel, and
 Agent handoff regressions remain covered by the local and isolated VPS suites.
 Owner Agents older than 1.6.23 are upgrade-only at the server lease gate.

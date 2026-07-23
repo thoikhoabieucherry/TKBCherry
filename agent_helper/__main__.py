@@ -27,6 +27,8 @@ from .state import (
     load_or_create_agent_id,
     platform_tag,
     save_agent_token,
+    set_wsl_setup_restart_pending,
+    wsl_setup_restart_pending,
 )
 from .worker import AgentWorker
 from .windows_security import (
@@ -173,6 +175,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--gui-smoke", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--startup", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--wsl-setup", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--wsl-setup-result", help=argparse.SUPPRESS)
     return parser
 
 
@@ -322,7 +325,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if arguments.wsl_setup:
         from .wsl_setup import setup_cli
 
-        return setup_cli()
+        return setup_cli(arguments.wsl_setup_result)
 
     gui_mode = not arguments.once and not arguments.check and not arguments.headless
     native_solver_blocked = solver_blocked_by_windows_code_integrity()
@@ -342,6 +345,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         identity = AgentIdentity(
             agent_id=agent_id, version=VERSION, platform=platform_tag()
         )
+        setup_restart_pending = wsl_setup_restart_pending() if gui_mode else False
         solver: SolverRunner | None = None
         if native_solver_blocked:
             from .wsl_solver import WslSolverRunner, discover_wsl_runtime
@@ -352,6 +356,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             solver = SolverRunner(config)
         if solver is not None:
+            if setup_restart_pending:
+                try:
+                    set_wsl_setup_restart_pending(False)
+                except StateError:
+                    pass
             command, cwd = solver._command_and_cwd()
             if not command or not cwd.is_dir():
                 raise ConfigError("solver runtime is missing")
@@ -435,7 +444,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                     from .wsl_setup import run_elevated_setup
 
                     def solver_setup() -> int:
-                        result = run_elevated_setup()
+                        try:
+                            result = run_elevated_setup()
+                        except Exception:
+                            try:
+                                set_wsl_setup_restart_pending(False)
+                            except StateError:
+                                pass
+                            raise
+                        try:
+                            set_wsl_setup_restart_pending(result == 75)
+                        except StateError:
+                            pass
                         if result == 0:
                             wsl_refresh_event.set()
                         return result
@@ -451,6 +471,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         updater.prepare_and_launch if updater is not None else None
                     ),
                     solver_setup=solver_setup,
+                    show_setup_on_start=(
+                        solver_setup is not None
+                        and (not arguments.startup or setup_restart_pending)
+                    ),
                     # The notification icon is implemented with stdlib ctypes
                     # and Win32 only, so it is safe in the VPS fallback too.
                     allow_system_tray=True,

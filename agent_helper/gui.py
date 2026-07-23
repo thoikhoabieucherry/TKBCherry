@@ -17,6 +17,7 @@ UpdateChecker = Callable[[], object | None]
 UpdateInstaller = Callable[[object], object]
 SolverSetup = Callable[[], int]
 UPDATE_RECHECK_MILLISECONDS = 6 * 60 * 60 * 1000
+INITIAL_SETUP_DELAY_MILLISECONDS = 250
 
 
 _STATUS_TEXT = {
@@ -30,6 +31,8 @@ _STATUS_TEXT = {
     "windows_security": (
         "Agent cục bộ chưa thể chạy, lượt xếp đang dùng VPS"
     ),
+    "setup_failed": "Chưa cài được bộ xử lý Agent, lượt xếp vẫn dùng VPS",
+    "setup_restart": "Cần khởi động lại Windows để hoàn tất bộ xử lý Agent",
     "off": "Agent đang tắt, không dùng CPU/RAM của máy",
     "error": "Agent đã dừng do có lỗi kết nối",
 }
@@ -90,6 +93,10 @@ class AgentToggleApp:
         self.update_check_thread: threading.Thread | None = None
         self.update_apply_thread: threading.Thread | None = None
         self.solver_setup_thread: threading.Thread | None = None
+        self.setup_auto_on_show = solver_setup is not None
+        self.setup_auto_attempted = False
+        self.setup_attention = False
+        self.setup_failure_detail = ""
         self.update_in_progress = False
         self.update_install_started = False
         self.restart_after_stop = False
@@ -108,7 +115,7 @@ class AgentToggleApp:
         self.root.title("TKBCherry Agent")
         self.root.configure(bg="#f2f5f3")
         self.root.resizable(False, False)
-        self.root.geometry("420x370")
+        self.root.geometry("420x400")
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         try:
             self.window_icon = tk.PhotoImage(file=str(agent_icon_path()))
@@ -236,13 +243,16 @@ class AgentToggleApp:
         updating = state == "updating"
         installing = state == "installing"
         windows_security = state == "windows_security"
+        setup_failed = state == "setup_failed"
+        setup_restart = state == "setup_restart"
+        setup_action = windows_security or setup_failed or setup_restart
         self.badge.configure(
             text=(
                 "SETUP"
                 if installing
                 else "UPDATE"
                 if updating
-                else ("VPS" if windows_security else ("ON" if on else "OFF"))
+                else ("VPS" if setup_action else ("ON" if on else "OFF"))
             ),
             bg=(
                 "#e8f0ff"
@@ -251,7 +261,7 @@ class AgentToggleApp:
                 if updating
                 else (
                     "#e8f0ff"
-                    if windows_security
+                    if setup_action
                     else ("#d9fbe7" if on else "#e8eaf0")
                 )
             ),
@@ -262,7 +272,7 @@ class AgentToggleApp:
                 if updating
                 else (
                     "#2458d8"
-                    if windows_security
+                    if setup_action
                     else ("#08783e" if on else "#4b5565")
                 )
             ),
@@ -271,8 +281,21 @@ class AgentToggleApp:
         if hasattr(self, "detail_label"):
             self.detail_label.configure(
                 text=(
-                    "Cài bộ xử lý một lần để Agent dùng CPU/RAM máy này an toàn."
-                    if windows_security
+                    (
+                        self.setup_failure_detail
+                        or "Lượt xếp vẫn dùng VPS an toàn. Bấm Thử cài lại để tiếp tục."
+                    )
+                    if setup_failed
+                    else (
+                        "Khởi động lại Windows một lần để hoàn tất. "
+                        "Trong lúc chờ, lượt xếp vẫn dùng VPS."
+                        if setup_restart
+                        else (
+                            "Cài một lần WSL/Ubuntu và OR-Tools/SciPy để Agent "
+                            "dùng CPU/RAM máy này an toàn."
+                        )
+                    )
+                    if windows_security or setup_restart
                     else (
                         f"Tối đa {self.cpu_workers} luồng CPU   ·   "
                         f"{self.max_memory_mb / 1024:.1f} GB RAM"
@@ -303,9 +326,15 @@ class AgentToggleApp:
                 fg="#667085",
                 activebackground="#d7dae2",
             )
-        elif windows_security and getattr(self, "solver_setup", None) is not None:
+        elif setup_action and getattr(self, "solver_setup", None) is not None:
             self.toggle_button.configure(
-                text="CÀI BỘ XỬ LÝ AGENT",
+                text=(
+                    "THỬ CÀI LẠI"
+                    if setup_failed
+                    else "THỬ HOÀN TẤT CÀI ĐẶT"
+                    if setup_restart
+                    else "CÀI BỘ XỬ LÝ AGENT"
+                ),
                 state="normal",
                 bg="#167552",
                 fg="#ffffff",
@@ -354,6 +383,19 @@ class AgentToggleApp:
             self.root.focus_force()
         except Exception:
             return
+        if (
+            getattr(self, "setup_auto_on_show", False)
+            and not getattr(self, "setup_auto_attempted", False)
+            and getattr(self, "solver_setup", None) is not None
+        ):
+            self.setup_auto_attempted = True
+            self.setup_attention = True
+            try:
+                self.root.after(
+                    INITIAL_SETUP_DELAY_MILLISECONDS, self._start_solver_setup
+                )
+            except Exception:
+                self._start_solver_setup()
 
     def hide_window(self) -> None:
         if self.closing:
@@ -381,7 +423,7 @@ class AgentToggleApp:
     def _hide_after_start(self) -> None:
         """Return a manually started Agent to the tray like a small utility."""
 
-        if self.tray is None or self.closing:
+        if self.tray is None or self.closing or self.setup_attention:
             return
         try:
             self.root.after(180, self.hide_window)
@@ -402,7 +444,8 @@ class AgentToggleApp:
         if self.update_in_progress:
             return
         if (
-            self.current_state == "windows_security"
+            self.current_state
+            in {"windows_security", "setup_failed", "setup_restart"}
             and getattr(self, "solver_setup", None) is not None
         ):
             self._start_solver_setup()
@@ -517,7 +560,11 @@ class AgentToggleApp:
                 else:
                     self._render("off")
             elif self.desired_on:
-                self._render(status)
+                if not (
+                    status == "windows_security"
+                    and getattr(self, "setup_attention", False)
+                ):
+                    self._render(status)
         while True:
             try:
                 event, payload = self.update_events.get_nowait()
@@ -550,6 +597,9 @@ class AgentToggleApp:
             or getattr(self, "solver_setup_thread", None) is not None
         ):
             return
+        self.setup_auto_attempted = True
+        self.setup_attention = True
+        self.show_window()
         self._render("installing")
 
         def run() -> None:
@@ -570,28 +620,26 @@ class AgentToggleApp:
         if self.closing:
             return
         if result == 0:
-            self._render("starting")
+            self.setup_attention = False
+            self.setup_failure_detail = ""
+            self._render("starting" if self.desired_on else "off")
+            self._hide_after_start()
             return
-        self._render("windows_security")
-        try:
-            from tkinter import messagebox
-
-            if result == 75:
-                messagebox.showinfo(
-                    "TKBCherry Agent",
-                    "Windows cần khởi động lại một lần để hoàn tất bộ xử lý Agent.",
-                    parent=self.root,
-                )
-            else:
-                message = str(result) if isinstance(result, Exception) else ""
-                messagebox.showerror(
-                    "TKBCherry Agent",
-                    "Chưa cài được bộ xử lý Agent. Lượt xếp vẫn dùng VPS an toàn."
-                    + (f"\n\n{message}" if message else ""),
-                    parent=self.root,
-                )
-        except Exception:
-            return
+        self.setup_attention = True
+        if result == 75:
+            self.setup_failure_detail = ""
+            self._render("setup_restart")
+        else:
+            reason = (
+                " ".join(str(result).split())
+                if isinstance(result, Exception)
+                else ""
+            )
+            self.setup_failure_detail = (
+                reason[:150] if reason else "Bấm Thử cài lại để tiếp tục."
+            )
+            self._render("setup_failed")
+        self.show_window()
 
     @staticmethod
     def _release_version(release: object | None) -> str:
@@ -663,7 +711,8 @@ class AgentToggleApp:
             or self.closing
             or self.update_in_progress
             or not self.desired_on
-            or self.current_state not in {"waiting", "windows_security"}
+            or self.current_state
+            not in {"waiting", "windows_security", "setup_failed", "setup_restart"}
         ):
             return
         self.dismissed_update_versions.add(version)
@@ -740,6 +789,7 @@ def run_toggle_window(
     update_checker: UpdateChecker | None = None,
     update_installer: UpdateInstaller | None = None,
     solver_setup: SolverSetup | None = None,
+    show_setup_on_start: bool = False,
     allow_system_tray: bool = True,
 ) -> None:
     """Open the native Agent window. Import Tk only for the normal GUI path."""
@@ -780,4 +830,6 @@ def run_toggle_window(
         # Kept for tests and unsupported desktops. Production Windows builds
         # use the stdlib Win32 tray in both local-solver and VPS fallback mode.
         app.minimize_window()
+    if show_setup_on_start and solver_setup is not None:
+        app.show_window()
     root.mainloop()

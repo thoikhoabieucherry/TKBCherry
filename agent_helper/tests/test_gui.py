@@ -67,16 +67,54 @@ def bare_app(runner: object) -> tuple[AgentToggleApp, list[str]]:
     app.available_update = None
     app.update_check_thread = None
     app.update_apply_thread = None
+    app.solver_setup = None
+    app.solver_setup_thread = None
+    app.setup_auto_on_show = False
+    app.setup_auto_attempted = False
+    app.setup_attention = False
+    app.setup_failure_detail = ""
     app.update_in_progress = False
     app.update_install_started = False
     app.restart_after_stop = False
     app.dismissed_update_versions = set()
     rendered: list[str] = []
-    app._render = rendered.append  # type: ignore[method-assign]
+
+    def render(state: str) -> None:
+        app.current_state = state
+        rendered.append(state)
+
+    app._render = render  # type: ignore[method-assign]
     return app, rendered
 
 
 class ToggleLifecycleTests(unittest.TestCase):
+    def test_failed_setup_panel_keeps_vps_message_and_retry_action_visible(self) -> None:
+        class Widget:
+            def __init__(self) -> None:
+                self.options: dict[str, object] = {}
+
+            def configure(self, **options: object) -> None:
+                self.options.update(options)
+
+        app = AgentToggleApp.__new__(AgentToggleApp)
+        app.desired_on = True
+        app.cpu_workers = 4
+        app.max_memory_mb = 4096
+        app.setup_failure_detail = "Bạn đã hủy quyền cài đặt."
+        app.solver_setup = lambda: 0
+        app.tray = None
+        app.badge = Widget()
+        app.status_label = Widget()
+        app.detail_label = Widget()
+        app.toggle_button = Widget()
+
+        AgentToggleApp._render(app, "setup_failed")
+
+        self.assertEqual(app.badge.options["text"], "VPS")
+        self.assertIn("VPS", str(app.status_label.options["text"]))
+        self.assertIn("hủy", str(app.detail_label.options["text"]))
+        self.assertEqual(app.toggle_button.options["text"], "THỬ CÀI LẠI")
+
     def test_trayless_window_minimizes_to_a_controllable_taskbar_button(self) -> None:
         app, _ = bare_app(lambda stop_event, report: None)
 
@@ -252,6 +290,65 @@ class ToggleLifecycleTests(unittest.TestCase):
         self.assertIn("installing", rendered)
         self.assertEqual(rendered[-1], "starting")
         self.assertTrue(app.desired_on)
+
+    def test_opening_unprepared_agent_shows_panel_and_starts_setup_automatically(self) -> None:
+        setup_started = threading.Event()
+        app, rendered = bare_app(lambda stop_event, report: None)
+        app.solver_setup = lambda: setup_started.set() or 0
+        app.setup_auto_on_show = True
+        app.desired_on = True
+
+        app.show_window()
+
+        self.assertFalse(app.root.withdrawn)
+        self.assertTrue(app.setup_auto_attempted)
+        self.assertTrue(app.setup_attention)
+        delayed_setup = app.root.callbacks[-1][1]
+        delayed_setup()  # type: ignore[operator]
+        assert app.solver_setup_thread is not None
+        app.solver_setup_thread.join(1)
+        self.assertTrue(setup_started.is_set())
+        app._drain_events()
+
+        self.assertIn("installing", rendered)
+        self.assertEqual(rendered[-1], "starting")
+        self.assertFalse(app.setup_attention)
+
+    def test_cancelled_setup_stays_visible_with_vps_fallback_and_retry(self) -> None:
+        app, rendered = bare_app(lambda stop_event, report: None)
+        app.solver_setup = lambda: 0
+        app.setup_auto_on_show = True
+        app.setup_auto_attempted = True
+        app.desired_on = True
+        app.root.withdraw()
+
+        app._handle_solver_setup_result(RuntimeError("Bạn đã hủy quyền cài đặt"))
+
+        self.assertEqual(rendered[-1], "setup_failed")
+        self.assertFalse(app.root.withdrawn)
+        self.assertTrue(app.setup_attention)
+        self.assertIn("hủy", app.setup_failure_detail)
+
+        app.toggle()
+        assert app.solver_setup_thread is not None
+        app.solver_setup_thread.join(1)
+        app._drain_events()
+        self.assertEqual(rendered[-1], "starting")
+        self.assertFalse(app.setup_attention)
+
+    def test_restart_required_keeps_panel_visible(self) -> None:
+        app, rendered = bare_app(lambda stop_event, report: None)
+        app.solver_setup = lambda: 75
+        app.setup_auto_on_show = True
+        app.setup_auto_attempted = True
+        app.desired_on = True
+        app.root.withdraw()
+
+        app._handle_solver_setup_result(75)
+
+        self.assertEqual(rendered[-1], "setup_restart")
+        self.assertFalse(app.root.withdrawn)
+        self.assertTrue(app.setup_attention)
 
     def test_closing_before_scheduled_auto_on_never_starts_a_session(self) -> None:
         started = threading.Event()
