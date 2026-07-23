@@ -279,7 +279,7 @@ class Win32NotificationAreaBackend:
         with self._state_lock:
             online = self._online
             state = self._state
-        if state == "windows_security":
+        if state in {"windows_security", "setup_failed", "setup_restart"}:
             suffix = "VPS"
         elif state == "working":
             suffix = "Đang xếp"

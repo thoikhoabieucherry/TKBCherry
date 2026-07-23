@@ -234,6 +234,10 @@ class TrayTests(unittest.TestCase):
         self.assertEqual(backend._title(), "TKBCherry Agent · Đang xếp")
         backend.update(True, state="windows_security")
         self.assertEqual(backend._title(), "TKBCherry Agent · VPS")
+        backend.update(True, state="setup_failed")
+        self.assertEqual(backend._title(), "TKBCherry Agent · VPS")
+        backend.update(True, state="setup_restart")
+        self.assertEqual(backend._title(), "TKBCherry Agent · VPS")
         backend.update(False, state="off")
         self.assertEqual(backend._title(), "TKBCherry Agent · OFF")
 

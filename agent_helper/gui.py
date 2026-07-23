@@ -93,8 +93,6 @@ class AgentToggleApp:
         self.update_check_thread: threading.Thread | None = None
         self.update_apply_thread: threading.Thread | None = None
         self.solver_setup_thread: threading.Thread | None = None
-        self.setup_auto_on_show = solver_setup is not None
-        self.setup_auto_attempted = False
         self.setup_attention = False
         self.setup_failure_detail = ""
         self.update_in_progress = False
@@ -107,6 +105,12 @@ class AgentToggleApp:
         # the first event-loop turn. Pairing/network work never blocks paint.
         self.root.after(0, self.turn_on)
         self.root.after(100, self._drain_events)
+        if self.solver_setup is not None:
+            # WSL preparation is part of startup, not a control-panel action.
+            # Keep the Agent in its VPS fallback while the elevated helper runs.
+            self.root.after(
+                INITIAL_SETUP_DELAY_MILLISECONDS, self._start_solver_setup
+            )
         if self.update_checker is not None and self.update_installer is not None:
             self.root.after(1500, self._start_update_check)
 
@@ -245,14 +249,14 @@ class AgentToggleApp:
         windows_security = state == "windows_security"
         setup_failed = state == "setup_failed"
         setup_restart = state == "setup_restart"
-        setup_action = windows_security or setup_failed or setup_restart
+        vps_fallback = windows_security or setup_failed or setup_restart
         self.badge.configure(
             text=(
                 "SETUP"
                 if installing
                 else "UPDATE"
                 if updating
-                else ("VPS" if setup_action else ("ON" if on else "OFF"))
+                else ("VPS" if vps_fallback else ("ON" if on else "OFF"))
             ),
             bg=(
                 "#e8f0ff"
@@ -261,7 +265,7 @@ class AgentToggleApp:
                 if updating
                 else (
                     "#e8f0ff"
-                    if setup_action
+                    if vps_fallback
                     else ("#d9fbe7" if on else "#e8eaf0")
                 )
             ),
@@ -272,7 +276,7 @@ class AgentToggleApp:
                 if updating
                 else (
                     "#2458d8"
-                    if setup_action
+                    if vps_fallback
                     else ("#08783e" if on else "#4b5565")
                 )
             ),
@@ -326,15 +330,9 @@ class AgentToggleApp:
                 fg="#667085",
                 activebackground="#d7dae2",
             )
-        elif setup_action and getattr(self, "solver_setup", None) is not None:
+        elif setup_failed and getattr(self, "solver_setup", None) is not None:
             self.toggle_button.configure(
-                text=(
-                    "THỬ CÀI LẠI"
-                    if setup_failed
-                    else "THỬ HOÀN TẤT CÀI ĐẶT"
-                    if setup_restart
-                    else "CÀI BỘ XỬ LÝ AGENT"
-                ),
+                text="THỬ CÀI LẠI",
                 state="normal",
                 bg="#167552",
                 fg="#ffffff",
@@ -383,19 +381,6 @@ class AgentToggleApp:
             self.root.focus_force()
         except Exception:
             return
-        if (
-            getattr(self, "setup_auto_on_show", False)
-            and not getattr(self, "setup_auto_attempted", False)
-            and getattr(self, "solver_setup", None) is not None
-        ):
-            self.setup_auto_attempted = True
-            self.setup_attention = True
-            try:
-                self.root.after(
-                    INITIAL_SETUP_DELAY_MILLISECONDS, self._start_solver_setup
-                )
-            except Exception:
-                self._start_solver_setup()
 
     def hide_window(self) -> None:
         if self.closing:
@@ -444,8 +429,7 @@ class AgentToggleApp:
         if self.update_in_progress:
             return
         if (
-            self.current_state
-            in {"windows_security", "setup_failed", "setup_restart"}
+            self.current_state == "setup_failed"
             and getattr(self, "solver_setup", None) is not None
         ):
             self._start_solver_setup()
@@ -597,10 +581,11 @@ class AgentToggleApp:
             or getattr(self, "solver_setup_thread", None) is not None
         ):
             return
-        self.setup_auto_attempted = True
-        self.setup_attention = True
-        self.show_window()
-        self._render("installing")
+        self.setup_attention = False
+        self.setup_failure_detail = ""
+        self._render("windows_security" if self.desired_on else "off")
+        if self.tray is not None:
+            self.hide_window()
 
         def run() -> None:
             try:
@@ -625,11 +610,14 @@ class AgentToggleApp:
             self._render("starting" if self.desired_on else "off")
             self._hide_after_start()
             return
-        self.setup_attention = True
         if result == 75:
+            self.setup_attention = False
             self.setup_failure_detail = ""
-            self._render("setup_restart")
+            self._render("setup_restart" if self.desired_on else "off")
+            self._hide_after_start()
+            return
         else:
+            self.setup_attention = True
             reason = (
                 " ".join(str(result).split())
                 if isinstance(result, Exception)
@@ -710,6 +698,7 @@ class AgentToggleApp:
             or version in self.dismissed_update_versions
             or self.closing
             or self.update_in_progress
+            or self.solver_setup_thread is not None
             or not self.desired_on
             or self.current_state
             not in {"waiting", "windows_security", "setup_failed", "setup_restart"}
@@ -785,11 +774,9 @@ def run_toggle_window(
     cpu_workers: int,
     max_memory_mb: int,
     startup_toggle: StartupToggle | None = None,
-    start_hidden: bool = False,
     update_checker: UpdateChecker | None = None,
     update_installer: UpdateInstaller | None = None,
     solver_setup: SolverSetup | None = None,
-    show_setup_on_start: bool = False,
     allow_system_tray: bool = True,
 ) -> None:
     """Open the native Agent window. Import Tk only for the normal GUI path."""
@@ -830,6 +817,4 @@ def run_toggle_window(
         # Kept for tests and unsupported desktops. Production Windows builds
         # use the stdlib Win32 tray in both local-solver and VPS fallback mode.
         app.minimize_window()
-    if show_setup_on_start and solver_setup is not None:
-        app.show_window()
     root.mainloop()

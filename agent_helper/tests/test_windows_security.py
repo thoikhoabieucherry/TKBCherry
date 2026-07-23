@@ -6,7 +6,7 @@ import threading
 import unittest
 from contextlib import nullcontext
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from agent_helper.gui import run_toggle_window
 from agent_helper.__main__ import (
@@ -99,6 +99,7 @@ class WindowsSecurityTests(unittest.TestCase):
 
     def test_blocked_gui_never_constructs_solver_and_keeps_stdlib_tray(self) -> None:
         captured: dict[str, object] = {}
+        startup_states: list[bool] = []
 
         def run_window(session_runner: object, **options: object) -> None:
             captured["session_runner"] = session_runner
@@ -115,18 +116,22 @@ class WindowsSecurityTests(unittest.TestCase):
             patch("agent_helper.__main__.platform_tag", return_value="windows-amd64"),
             patch("agent_helper.__main__.SingleInstanceLock", return_value=nullcontext()),
             patch(
-                "agent_helper.__main__.wsl_setup_restart_pending", return_value=False
+                "agent_helper.__main__.wsl_setup_restart_state",
+                return_value=SimpleNamespace(pending=False, same_boot=False),
             ),
             patch("agent_helper.__main__.set_wsl_setup_restart_pending") as set_restart,
             patch("agent_helper.__main__.SolverRunner") as solver_runner,
-            patch("agent_helper.wsl_solver.discover_wsl_runtime", return_value=None),
+            patch(
+                "agent_helper.wsl_solver.discover_wsl_runtime",
+                side_effect=[None, SimpleNamespace(distribution="Ubuntu-24.04")],
+            ),
             patch(
                 "agent_helper.wsl_setup.run_elevated_setup", return_value=0
             ) as elevated_setup,
             patch("agent_helper.gui.run_toggle_window", side_effect=run_window),
             patch(
                 "agent_helper.startup.startup_toggle_for_current_process",
-                return_value=None,
+                return_value=lambda enabled: startup_states.append(enabled) or True,
             ),
         ):
             self.assertEqual(main([]), 0)
@@ -136,13 +141,18 @@ class WindowsSecurityTests(unittest.TestCase):
         solver_runner.assert_not_called()
         self.assertTrue(callable(captured["session_runner"]))
         elevated_setup.assert_called_once_with()
-        set_restart.assert_called_once_with(False)
+        self.assertEqual(set_restart.call_args_list, [call(True), call(False)])
         self.assertIs(captured["allow_system_tray"], True)
         self.assertEqual(captured["cpu_workers"], 4)
         self.assertEqual(captured["max_memory_mb"], 8192)
-        self.assertIs(captured["show_setup_on_start"], True)
+        self.assertEqual(startup_states, [True])
+        self.assertTrue(callable(captured["startup_toggle"]))
+        captured["startup_toggle"](True)  # type: ignore[operator]
+        self.assertEqual(startup_states, [True])
+        self.assertNotIn("start_hidden", captured)
+        self.assertNotIn("show_setup_on_start", captured)
 
-    def test_os_startup_keeps_unprepared_agent_hidden_without_restart_marker(self) -> None:
+    def test_os_startup_keeps_unprepared_agent_background_setup_available(self) -> None:
         captured: dict[str, object] = {}
 
         def run_window(session_runner: object, **options: object) -> None:
@@ -160,7 +170,10 @@ class WindowsSecurityTests(unittest.TestCase):
             patch("agent_helper.__main__.platform_tag", return_value="windows-amd64"),
             patch("agent_helper.__main__.SingleInstanceLock", return_value=nullcontext()),
             patch("agent_helper.wsl_solver.discover_wsl_runtime", return_value=None),
-            patch("agent_helper.__main__.wsl_setup_restart_pending", return_value=False),
+            patch(
+                "agent_helper.__main__.wsl_setup_restart_state",
+                return_value=SimpleNamespace(pending=False, same_boot=False),
+            ),
             patch("agent_helper.gui.run_toggle_window", side_effect=run_window),
             patch(
                 "agent_helper.startup.startup_toggle_for_current_process",
@@ -169,10 +182,11 @@ class WindowsSecurityTests(unittest.TestCase):
         ):
             self.assertEqual(main(["--startup"]), 0)
 
-        self.assertIs(captured["start_hidden"], True)
-        self.assertIs(captured["show_setup_on_start"], False)
+        self.assertTrue(callable(captured["solver_setup"]))
+        self.assertNotIn("start_hidden", captured)
+        self.assertNotIn("show_setup_on_start", captured)
 
-    def test_os_startup_shows_and_resumes_setup_after_restart_marker(self) -> None:
+    def test_os_startup_resumes_setup_after_restart_marker_without_panel(self) -> None:
         captured: dict[str, object] = {}
 
         def run_window(session_runner: object, **options: object) -> None:
@@ -190,7 +204,10 @@ class WindowsSecurityTests(unittest.TestCase):
             patch("agent_helper.__main__.platform_tag", return_value="windows-amd64"),
             patch("agent_helper.__main__.SingleInstanceLock", return_value=nullcontext()),
             patch("agent_helper.wsl_solver.discover_wsl_runtime", return_value=None),
-            patch("agent_helper.__main__.wsl_setup_restart_pending", return_value=True),
+            patch(
+                "agent_helper.__main__.wsl_setup_restart_state",
+                return_value=SimpleNamespace(pending=True, same_boot=False),
+            ),
             patch("agent_helper.gui.run_toggle_window", side_effect=run_window),
             patch(
                 "agent_helper.startup.startup_toggle_for_current_process",
@@ -199,7 +216,84 @@ class WindowsSecurityTests(unittest.TestCase):
         ):
             self.assertEqual(main(["--startup"]), 0)
 
-        self.assertIs(captured["show_setup_on_start"], True)
+        self.assertTrue(callable(captured["solver_setup"]))
+        self.assertNotIn("start_hidden", captured)
+        self.assertNotIn("show_setup_on_start", captured)
+
+    def test_same_boot_restart_marker_suppresses_automatic_setup_retry(self) -> None:
+        captured: dict[str, object] = {}
+
+        def run_window(session_runner: object, **options: object) -> None:
+            del session_runner
+            captured.update(options)
+
+        config = SimpleNamespace(cpu_workers=4, max_memory_mb=8192)
+        with (
+            patch(
+                "agent_helper.__main__.solver_blocked_by_windows_code_integrity",
+                return_value=True,
+            ),
+            patch("agent_helper.__main__.AgentConfig.load", return_value=config),
+            patch("agent_helper.__main__.load_or_create_agent_id", return_value="agent-1"),
+            patch("agent_helper.__main__.platform_tag", return_value="windows-amd64"),
+            patch("agent_helper.__main__.SingleInstanceLock", return_value=nullcontext()),
+            patch("agent_helper.wsl_solver.discover_wsl_runtime", return_value=None),
+            patch(
+                "agent_helper.__main__.wsl_setup_restart_state",
+                return_value=SimpleNamespace(pending=True, same_boot=True),
+            ),
+            patch("agent_helper.wsl_setup.run_elevated_setup") as elevated_setup,
+            patch("agent_helper.gui.run_toggle_window", side_effect=run_window),
+            patch(
+                "agent_helper.startup.startup_toggle_for_current_process",
+                return_value=None,
+            ),
+        ):
+            self.assertEqual(main(["--startup"]), 0)
+
+        self.assertIsNone(captured["solver_setup"])
+        elevated_setup.assert_not_called()
+
+    def test_failed_post_reboot_setup_keeps_gate_for_current_boot(self) -> None:
+        captured: dict[str, object] = {}
+
+        def run_window(session_runner: object, **options: object) -> None:
+            del session_runner
+            captured.update(options)
+
+        config = SimpleNamespace(cpu_workers=4, max_memory_mb=8192)
+        with (
+            patch(
+                "agent_helper.__main__.solver_blocked_by_windows_code_integrity",
+                return_value=True,
+            ),
+            patch("agent_helper.__main__.AgentConfig.load", return_value=config),
+            patch("agent_helper.__main__.load_or_create_agent_id", return_value="agent-1"),
+            patch("agent_helper.__main__.platform_tag", return_value="windows-amd64"),
+            patch("agent_helper.__main__.SingleInstanceLock", return_value=nullcontext()),
+            patch("agent_helper.wsl_solver.discover_wsl_runtime", return_value=None),
+            patch(
+                "agent_helper.__main__.wsl_setup_restart_state",
+                return_value=SimpleNamespace(pending=True, same_boot=False),
+            ),
+            patch("agent_helper.__main__.set_wsl_setup_restart_pending") as set_restart,
+            patch(
+                "agent_helper.wsl_setup.run_elevated_setup",
+                side_effect=RuntimeError("repair failed"),
+            ),
+            patch("agent_helper.gui.run_toggle_window", side_effect=run_window),
+            patch(
+                "agent_helper.startup.startup_toggle_for_current_process",
+                return_value=None,
+            ),
+        ):
+            self.assertEqual(main(["--startup"]), 0)
+            setup = captured["solver_setup"]
+            self.assertTrue(callable(setup))
+            with self.assertRaisesRegex(RuntimeError, "repair failed"):
+                setup()  # type: ignore[operator]
+
+        set_restart.assert_called_once_with(True)
 
     def test_fallback_window_uses_dependency_free_notification_tray(self) -> None:
         events: list[str] = []

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import ctypes
+import json
 import os
 import platform
+import time
 import uuid
-import ctypes
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +19,11 @@ class StateError(RuntimeError):
 
 _CREDENTIAL_FILE = "agent-credential"
 _WSL_SETUP_RESTART_FILE = "wsl-setup-restart-pending"
+_WSL_SETUP_RESTART_SCHEMA = 1
+_WINDOWS_BOOT_ID_KEY = (
+    r"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"
+    r"\PrefetchParameters"
+)
 _DPAPI_PREFIX = b"TKB-DPAPI-V1\0"
 _PLAIN_PREFIX = b"TKB-PLAIN-V1\0"
 _STATE_DIR_ENV = "TKB_AGENT_STATE_DIR"
@@ -202,14 +210,132 @@ def clear_agent_token(state_dir: Path | None = None) -> None:
         raise StateError("cannot remove the paired Agent credential") from exc
 
 
-def wsl_setup_restart_pending(state_dir: Path | None = None) -> bool:
-    """Return whether the one-time WSL setup asked Windows to restart."""
+@dataclass(frozen=True, slots=True)
+class WslSetupRestartState:
+    """Durable setup gate tied to the Windows boot that created it."""
+
+    pending: bool
+    same_boot: bool = False
+    boot_id: int | None = None
+
+
+def _current_windows_boot_id() -> int | None:
+    """Read Windows' monotonic boot sequence without spawning a helper."""
+
+    if os.name != "nt":
+        return None
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            _WINDOWS_BOOT_ID_KEY,
+            0,
+            winreg.KEY_QUERY_VALUE,
+        ) as key:
+            value, kind = winreg.QueryValueEx(key, "BootId")
+        if kind not in {winreg.REG_DWORD, winreg.REG_QWORD}:
+            return None
+        parsed = int(value)
+        return parsed if parsed >= 0 else None
+    except (OSError, TypeError, ValueError):
+        return None
+
+
+def _current_windows_boot_started_ns() -> int | None:
+    """Best-effort fallback for old markers on systems without ``BootId``."""
+
+    if os.name != "nt":
+        return None
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.GetTickCount64.argtypes = []
+        kernel32.GetTickCount64.restype = ctypes.c_ulonglong
+        uptime_ms = int(kernel32.GetTickCount64())
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
+    return time.time_ns() - (uptime_ms * 1_000_000)
+
+
+def wsl_setup_restart_state(
+    state_dir: Path | None = None,
+    *,
+    current_boot_id: int | None = None,
+    boot_started_ns: int | None = None,
+) -> WslSetupRestartState:
+    """Return whether setup may resume or must wait for a real Windows reboot.
+
+    A marker created during the current boot suppresses automatic setup.  Once
+    Windows' boot sequence changes, the same marker permits exactly one resume
+    attempt.  The timestamp fallback keeps the plain ``1`` marker written by
+    Agent 1.6.26 safe across its first upgrade.
+    """
 
     path = (state_dir or default_state_dir()) / _WSL_SETUP_RESTART_FILE
     try:
-        return path.is_file()
+        raw = path.read_text(encoding="ascii").strip()
+        modified_ns = path.stat().st_mtime_ns
+    except FileNotFoundError:
+        return WslSetupRestartState(False)
     except OSError as exc:
         raise StateError("cannot read the WSL setup restart state") from exc
+    except UnicodeError:
+        # A damaged marker must never trigger repeated setup/UAC attempts.
+        return WslSetupRestartState(True, same_boot=True)
+
+    stored_boot_id: int | None = None
+    created_ns = modified_ns
+    if raw != "1":
+        try:
+            payload = json.loads(raw)
+            if (
+                not isinstance(payload, dict)
+                or payload.get("schema") != _WSL_SETUP_RESTART_SCHEMA
+            ):
+                raise ValueError("unsupported marker")
+            raw_boot_id = payload.get("bootId")
+            if raw_boot_id is not None:
+                stored_boot_id = int(raw_boot_id)
+                if stored_boot_id < 0:
+                    raise ValueError("invalid boot id")
+            raw_created_ns = payload.get("createdNs")
+            if raw_created_ns is not None:
+                created_ns = int(raw_created_ns)
+                if created_ns <= 0:
+                    raise ValueError("invalid creation time")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return WslSetupRestartState(True, same_boot=True)
+
+    observed_boot_id = (
+        _current_windows_boot_id()
+        if current_boot_id is None
+        else current_boot_id
+    )
+    if stored_boot_id is not None and observed_boot_id is not None:
+        return WslSetupRestartState(
+            True,
+            same_boot=stored_boot_id == observed_boot_id,
+            boot_id=stored_boot_id,
+        )
+
+    observed_boot_started_ns = (
+        _current_windows_boot_started_ns()
+        if boot_started_ns is None
+        else boot_started_ns
+    )
+    if observed_boot_started_ns is None:
+        return WslSetupRestartState(True, same_boot=True, boot_id=stored_boot_id)
+    return WslSetupRestartState(
+        True,
+        same_boot=created_ns >= observed_boot_started_ns,
+        boot_id=stored_boot_id,
+    )
+
+
+def wsl_setup_restart_pending(state_dir: Path | None = None) -> bool:
+    """Return whether a durable WSL setup gate exists."""
+
+    return wsl_setup_restart_state(state_dir).pending
 
 
 def set_wsl_setup_restart_pending(
@@ -227,10 +353,20 @@ def set_wsl_setup_restart_pending(
         temporary = (
             directory / f"{_WSL_SETUP_RESTART_FILE}.tmp-{uuid.uuid4().hex}"
         )
+        payload = json.dumps(
+            {
+                "schema": _WSL_SETUP_RESTART_SCHEMA,
+                "bootId": _current_windows_boot_id(),
+                "createdNs": time.time_ns(),
+            },
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         try:
             with os.fdopen(descriptor, "w", encoding="ascii", newline="\n") as handle:
-                handle.write("1\n")
+                handle.write(payload + "\n")
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, path)

@@ -7,7 +7,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from agent_helper.gui import AgentToggleApp
+from agent_helper.gui import INITIAL_SETUP_DELAY_MILLISECONDS, AgentToggleApp
 
 
 class FakeRoot:
@@ -69,8 +69,6 @@ def bare_app(runner: object) -> tuple[AgentToggleApp, list[str]]:
     app.update_apply_thread = None
     app.solver_setup = None
     app.solver_setup_thread = None
-    app.setup_auto_on_show = False
-    app.setup_auto_attempted = False
     app.setup_attention = False
     app.setup_failure_detail = ""
     app.update_in_progress = False
@@ -114,6 +112,33 @@ class ToggleLifecycleTests(unittest.TestCase):
         self.assertIn("VPS", str(app.status_label.options["text"]))
         self.assertIn("hủy", str(app.detail_label.options["text"]))
         self.assertEqual(app.toggle_button.options["text"], "THỬ CÀI LẠI")
+
+    def test_normal_wsl_fallback_never_offers_an_install_action(self) -> None:
+        class Widget:
+            def __init__(self) -> None:
+                self.options: dict[str, object] = {}
+
+            def configure(self, **options: object) -> None:
+                self.options.update(options)
+
+        app = AgentToggleApp.__new__(AgentToggleApp)
+        app.desired_on = True
+        app.cpu_workers = 4
+        app.max_memory_mb = 4096
+        app.setup_failure_detail = ""
+        app.solver_setup = lambda: 0
+        app.tray = None
+        app.badge = Widget()
+        app.status_label = Widget()
+        app.detail_label = Widget()
+        app.toggle_button = Widget()
+
+        for state in ("windows_security", "setup_restart"):
+            with self.subTest(state=state):
+                AgentToggleApp._render(app, state)
+                self.assertEqual(app.badge.options["text"], "VPS")
+                self.assertEqual(app.toggle_button.options["text"], "TẮT AGENT")
+                self.assertNotIn("CÀI", str(app.toggle_button.options["text"]))
 
     def test_trayless_window_minimizes_to_a_controllable_taskbar_button(self) -> None:
         app, _ = bare_app(lambda stop_event, report: None)
@@ -275,51 +300,67 @@ class ToggleLifecycleTests(unittest.TestCase):
             "closing stops this session but keeps next-logon startup enabled",
         )
 
-    def test_windows_security_action_installs_solver_without_turning_agent_off(self) -> None:
+    def test_windows_security_action_turns_agent_off_without_starting_setup(self) -> None:
+        setup_started = threading.Event()
         app, rendered = bare_app(lambda stop_event, report: None)
-        app.solver_setup = lambda: 0
+        app.solver_setup = lambda: setup_started.set() or 0
         app.solver_setup_thread = None
         app.current_state = "windows_security"
         app.desired_on = True
 
         app.toggle()
-        assert app.solver_setup_thread is not None
-        app.solver_setup_thread.join(1)
-        app._drain_events()
 
-        self.assertIn("installing", rendered)
-        self.assertEqual(rendered[-1], "starting")
-        self.assertTrue(app.desired_on)
+        self.assertIsNone(app.solver_setup_thread)
+        self.assertFalse(setup_started.is_set())
+        self.assertEqual(rendered[-1], "off")
+        self.assertFalse(app.desired_on)
 
-    def test_opening_unprepared_agent_shows_panel_and_starts_setup_automatically(self) -> None:
+    def test_unprepared_agent_starts_setup_in_background_while_withdrawn(self) -> None:
         setup_started = threading.Event()
-        app, rendered = bare_app(lambda stop_event, report: None)
-        app.solver_setup = lambda: setup_started.set() or 0
-        app.setup_auto_on_show = True
-        app.desired_on = True
+        worker_started = threading.Event()
+        root = FakeRoot()
+        root.withdraw()
+        rendered: list[str] = []
 
-        app.show_window()
+        def runner(stop_event: threading.Event, report: object) -> None:
+            del report
+            worker_started.set()
+            stop_event.wait(2)
 
-        self.assertFalse(app.root.withdrawn)
-        self.assertTrue(app.setup_auto_attempted)
-        self.assertTrue(app.setup_attention)
-        delayed_setup = app.root.callbacks[-1][1]
-        delayed_setup()  # type: ignore[operator]
+        with (
+            patch.object(AgentToggleApp, "_build_window"),
+            patch.object(AgentToggleApp, "_render", side_effect=rendered.append),
+        ):
+            app = AgentToggleApp(
+                root,
+                runner,
+                cpu_workers=2,
+                tk_module=object(),
+                solver_setup=lambda: setup_started.set() or 0,
+            )
+        app._render = rendered.append  # type: ignore[method-assign]
+
+        callbacks = {delay: callback for delay, callback in root.callbacks}
+        callbacks[0]()  # type: ignore[operator]
+        self.assertTrue(worker_started.wait(1))
+        callbacks[INITIAL_SETUP_DELAY_MILLISECONDS]()  # type: ignore[operator]
         assert app.solver_setup_thread is not None
         app.solver_setup_thread.join(1)
         self.assertTrue(setup_started.is_set())
+        self.assertTrue(root.withdrawn)
         app._drain_events()
 
-        self.assertIn("installing", rendered)
+        self.assertIn("windows_security", rendered)
         self.assertEqual(rendered[-1], "starting")
         self.assertFalse(app.setup_attention)
+        self.assertTrue(root.withdrawn)
+        app.close()
 
     def test_cancelled_setup_stays_visible_with_vps_fallback_and_retry(self) -> None:
         app, rendered = bare_app(lambda stop_event, report: None)
         app.solver_setup = lambda: 0
-        app.setup_auto_on_show = True
-        app.setup_auto_attempted = True
         app.desired_on = True
+        app.tray = SimpleNamespace(update=lambda *args, **kwargs: None)
         app.root.withdraw()
 
         app._handle_solver_setup_result(RuntimeError("Bạn đã hủy quyền cài đặt"))
@@ -335,20 +376,20 @@ class ToggleLifecycleTests(unittest.TestCase):
         app._drain_events()
         self.assertEqual(rendered[-1], "starting")
         self.assertFalse(app.setup_attention)
+        self.assertTrue(app.root.withdrawn)
 
-    def test_restart_required_keeps_panel_visible(self) -> None:
+    def test_restart_required_stays_withdrawn_in_vps_fallback(self) -> None:
         app, rendered = bare_app(lambda stop_event, report: None)
         app.solver_setup = lambda: 75
-        app.setup_auto_on_show = True
-        app.setup_auto_attempted = True
         app.desired_on = True
+        app.tray = SimpleNamespace(update=lambda *args, **kwargs: None)
         app.root.withdraw()
 
         app._handle_solver_setup_result(75)
 
         self.assertEqual(rendered[-1], "setup_restart")
-        self.assertFalse(app.root.withdrawn)
-        self.assertTrue(app.setup_attention)
+        self.assertTrue(app.root.withdrawn)
+        self.assertFalse(app.setup_attention)
 
     def test_closing_before_scheduled_auto_on_never_starts_a_session(self) -> None:
         started = threading.Event()
@@ -519,6 +560,20 @@ class ToggleLifecycleTests(unittest.TestCase):
         app._offer_update_if_idle()
 
         self.assertEqual(prompts, ["1.7.0"])
+        self.assertFalse(app.update_in_progress)
+
+    def test_update_is_deferred_while_background_setup_is_running(self) -> None:
+        app, _ = bare_app(lambda stop_event, report: None)
+        app.desired_on = True
+        app.current_state = "windows_security"
+        app.available_update = SimpleNamespace(version="1.7.0")
+        app.solver_setup_thread = threading.current_thread()
+        prompts: list[str] = []
+        app._ask_to_update = lambda version: prompts.append(version) or False  # type: ignore[method-assign]
+
+        app._offer_update_if_idle()
+
+        self.assertEqual(prompts, [])
         self.assertFalse(app.update_in_progress)
 
     def test_confirmed_update_stops_worker_before_installing(self) -> None:

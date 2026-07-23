@@ -32,6 +32,7 @@ SETUP_RESTART_REQUIRED = 75
 SETUP_RESULT_SCHEMA = 1
 SETUP_RESULT_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 ELEVATED_SETUP_TIMEOUT_MS = 60 * 60 * 1000
+WSL_PACKAGE_REPAIR_TIMEOUT_SECONDS = 15 * 60
 _RESTART_EXIT_CODES = frozenset({3010, 1641})
 _WINDOWS_FEATURES = (
     (
@@ -334,6 +335,31 @@ def _dism_executable() -> str:
     return shutil.which("dism.exe") or shutil.which("dism") or "dism.exe"
 
 
+def _winget_executable(*, platform_name: str | None = None) -> str | None:
+    """Locate Windows' signed App Installer command through PATH."""
+
+    platform = os.name if platform_name is None else platform_name
+    if platform != "nt":
+        return None
+    candidate = shutil.which("winget.exe")
+    if not candidate:
+        return None
+    path = Path(candidate)
+    local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
+    if local_app_data:
+        alias_root = Path(local_app_data) / "Microsoft" / "WindowsApps"
+        if os.path.normcase(os.path.abspath(path.parent)) == os.path.normcase(
+            os.path.abspath(alias_root)
+        ):
+            # Windows owns this app-execution alias and dispatches it to the
+            # signed Desktop App Installer package. The zero-byte alias itself
+            # cannot be passed to WinVerifyTrust.
+            return str(path)
+    from .windows_security import executable_has_trusted_authenticode
+
+    return str(path) if executable_has_trusted_authenticode(path) else None
+
+
 def _feature_state(
     feature: str,
     *,
@@ -445,6 +471,74 @@ def _setup_distributions(
     return parse_wsl_distributions(completed.stdout)
 
 
+def _repair_wsl_store_package(
+    *,
+    run: RunCommand | None,
+) -> None:
+    """Force-repair Microsoft's WSL package without Store UI or prompts."""
+
+    winget = _winget_executable()
+    if not winget:
+        raise WslSetupError(
+            "Windows không tìm thấy trình sửa gói WSL chính chủ.",
+            "Không tìm thấy winget.exe trong Windows App Installer.",
+        )
+    completed = _run(
+        [
+            winget,
+            "install",
+            "--id",
+            "Microsoft.WSL",
+            "--exact",
+            "--source",
+            "winget",
+            "--silent",
+            "--disable-interactivity",
+            "--accept-package-agreements",
+            "--accept-source-agreements",
+            "--force",
+        ],
+        run=run,
+        timeout=WSL_PACKAGE_REPAIR_TIMEOUT_SECONDS,
+        action="Sửa và cập nhật gói WSL chính chủ",
+    )
+    if completed.returncode != 0:
+        raise WslSetupError(
+            "Windows không sửa được gói WSL chính chủ.",
+            _safe_command_diagnostic(completed, label="winget Microsoft.WSL"),
+        )
+
+
+def _setup_distributions_with_repair(
+    executable: str,
+    *,
+    run: RunCommand | None,
+) -> list[str]:
+    """Probe WSL, repair its Store package once on failure, then probe again."""
+
+    try:
+        return _setup_distributions(executable, run=run)
+    except WslSetupError as initial_error:
+        try:
+            _repair_wsl_store_package(run=run)
+        except WslSetupError as repair_error:
+            diagnostic = _safe_diagnostic_text(
+                f"Lần kiểm tra đầu: {initial_error} Lần sửa gói: {repair_error}",
+                limit=1200,
+            )
+            raise WslSetupError(
+                "WSL không phản hồi và Agent không thể tự sửa gói WSL.",
+                diagnostic,
+            ) from repair_error
+        try:
+            return _setup_distributions(executable, run=run)
+        except WslSetupError as retry_error:
+            raise WslSetupError(
+                "Windows đã sửa gói WSL nhưng dịch vụ WSL vẫn chưa phản hồi.",
+                _safe_diagnostic_text(str(retry_error), limit=1200),
+            ) from retry_error
+
+
 def install_wsl_runtime(
     *,
     source_root: Path | None = None,
@@ -473,7 +567,14 @@ def install_wsl_runtime(
             "Hai thành phần Windows đã bật nhưng không tìm thấy wsl.exe.",
         )
 
-    installed = _setup_distributions(wsl, run=run)
+    installed = (
+        _setup_distributions_with_repair(
+            wsl,
+            run=run,
+        )
+        if platform == "nt"
+        else _setup_distributions(wsl, run=run)
+    )
     distribution = _select_distribution(installed, distribution_name)
     if distribution is None:
         completed = _run(

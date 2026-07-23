@@ -14,6 +14,7 @@ from agent_helper.wsl_setup import (
     WslSetupError,
     WslSetupResult,
     _read_setup_report,
+    _winget_executable,
     _write_setup_report,
     install_wsl_runtime,
     setup_cli,
@@ -42,6 +43,28 @@ def make_source(root: Path) -> None:
 
 
 class WslSetupTests(unittest.TestCase):
+    def test_winget_uses_registered_windows_apps_alias_from_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            local_app_data = Path(temporary)
+            alias = local_app_data / "Microsoft" / "WindowsApps" / "winget.exe"
+            alias.parent.mkdir(parents=True)
+            alias.touch()
+            with (
+                patch.dict(
+                    "agent_helper.wsl_setup.os.environ",
+                    {"LOCALAPPDATA": str(local_app_data)},
+                    clear=True,
+                ),
+                patch(
+                    "agent_helper.wsl_setup.shutil.which",
+                    return_value=str(alias),
+                ) as which,
+            ):
+                located = _winget_executable(platform_name="nt")
+
+        self.assertEqual(located, str(alias))
+        which.assert_called_once_with("winget.exe")
+
     def test_missing_source_is_rejected_before_wsl_is_called(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             with self.assertRaises(WslSetupError):
@@ -254,9 +277,106 @@ class WslSetupTests(unittest.TestCase):
         self.assertIn("Kiểm tra môi trường WSL", str(raised.exception))
         self.assertIn("15 giây", str(raised.exception))
 
-    def test_enabled_features_wsl_exit_two_is_reported_not_silenced(self) -> None:
+    def test_healthy_wsl_probe_never_repairs_store_package(self) -> None:
         def run(command: list[str], **options: object) -> subprocess.CompletedProcess[bytes]:
             del options
+            if "/Get-FeatureInfo" in command:
+                return subprocess.CompletedProcess(
+                    command, 0, b"State : Enabled\r\n", b""
+                )
+            if command[1:3] == ["--list", "--quiet"]:
+                return subprocess.CompletedProcess(
+                    command, 0, b"Ubuntu-24.04\n", b""
+                )
+            if "bash" in command:
+                return subprocess.CompletedProcess(command, 0, b"", b"")
+            if "cat" in command:
+                return subprocess.CompletedProcess(
+                    command, 0, WSL_RUNTIME_VERSION.encode(), b""
+                )
+            self.fail(f"unexpected command: {command}")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            make_source(source)
+            with patch(
+                "agent_helper.wsl_setup._repair_wsl_store_package"
+            ) as repair:
+                result = install_wsl_runtime(
+                    source_root=source,
+                    executable="wsl.exe",
+                    run=run,
+                    platform_name="nt",
+                    dism_executable="dism.exe",
+                )
+
+        self.assertEqual(result.distribution, "Ubuntu-24.04")
+        repair.assert_not_called()
+
+    def test_wsl_timeout_repairs_official_package_once_then_resumes_setup(self) -> None:
+        commands: list[tuple[list[str], float]] = []
+        list_count = 0
+
+        def run(command: list[str], **options: object) -> subprocess.CompletedProcess[bytes]:
+            nonlocal list_count
+            commands.append((command, float(options.get("timeout", 0))))
+            if "/Get-FeatureInfo" in command:
+                return subprocess.CompletedProcess(
+                    command, 0, b"State : Enabled\r\n", b""
+                )
+            if command[0] == "wsl.exe" and command[1:3] == ["--list", "--quiet"]:
+                list_count += 1
+                if list_count == 1:
+                    raise subprocess.TimeoutExpired(command, options.get("timeout", 0))
+                return subprocess.CompletedProcess(command, 0, b"Ubuntu-24.04\n", b"")
+            if command[0] == "winget.exe":
+                return subprocess.CompletedProcess(command, 0, b"repaired", b"")
+            if "bash" in command:
+                return subprocess.CompletedProcess(command, 0, b"", b"")
+            if "cat" in command:
+                return subprocess.CompletedProcess(
+                    command, 0, WSL_RUNTIME_VERSION.encode(), b""
+                )
+            self.fail(f"unexpected command: {command}")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            make_source(source)
+            with patch(
+                "agent_helper.wsl_setup._winget_executable",
+                return_value="winget.exe",
+            ):
+                result = install_wsl_runtime(
+                    source_root=source,
+                    executable="wsl.exe",
+                    run=run,
+                    platform_name="nt",
+                    dism_executable="dism.exe",
+                )
+
+        self.assertEqual(result.distribution, "Ubuntu-24.04")
+        repair_calls = [entry for entry in commands if entry[0][0] == "winget.exe"]
+        self.assertEqual(len(repair_calls), 1)
+        repair_command, repair_timeout = repair_calls[0]
+        self.assertEqual(repair_command[1], "install")
+        self.assertIn("Microsoft.WSL", repair_command)
+        self.assertIn("--exact", repair_command)
+        self.assertEqual(
+            repair_command[repair_command.index("--source") + 1], "winget"
+        )
+        self.assertIn("--silent", repair_command)
+        self.assertIn("--disable-interactivity", repair_command)
+        self.assertIn("--accept-package-agreements", repair_command)
+        self.assertIn("--accept-source-agreements", repair_command)
+        self.assertIn("--force", repair_command)
+        self.assertEqual(repair_timeout, 15 * 60)
+
+    def test_wsl_probe_and_official_package_repair_failure_are_diagnostic(self) -> None:
+        commands: list[list[str]] = []
+
+        def run(command: list[str], **options: object) -> subprocess.CompletedProcess[bytes]:
+            del options
+            commands.append(command)
             if "/Get-FeatureInfo" in command:
                 return subprocess.CompletedProcess(
                     command,
@@ -271,12 +391,25 @@ class WslSetupTests(unittest.TestCase):
                     b"",
                     b"WSL service is not ready",
                 )
+            if command[0] == "winget.exe":
+                return subprocess.CompletedProcess(
+                    command,
+                    1603,
+                    b"",
+                    b"Microsoft.WSL repair failed",
+                )
             self.fail(f"unexpected command: {command}")
 
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary)
             make_source(source)
-            with self.assertRaises(WslSetupError) as raised:
+            with (
+                patch(
+                    "agent_helper.wsl_setup._winget_executable",
+                    return_value="winget.exe",
+                ),
+                self.assertRaises(WslSetupError) as raised,
+            ):
                 install_wsl_runtime(
                     source_root=source,
                     executable="wsl.exe",
@@ -286,8 +419,47 @@ class WslSetupTests(unittest.TestCase):
                 )
 
         rendered = str(raised.exception)
-        self.assertIn("WSL chưa sẵn sàng", rendered)
+        self.assertIn("không thể tự sửa gói WSL", rendered)
         self.assertIn("wsl --list trả mã 2", rendered)
+        self.assertIn("WSL service is not ready", rendered)
+        self.assertIn("winget Microsoft.WSL trả mã 1603", rendered)
+        self.assertIn("Microsoft.WSL repair failed", rendered)
+        self.assertEqual(sum(command[0] == "winget.exe" for command in commands), 1)
+
+    def test_broken_wsl_without_winget_has_clear_failure(self) -> None:
+        def run(command: list[str], **options: object) -> subprocess.CompletedProcess[bytes]:
+            del options
+            if "/Get-FeatureInfo" in command:
+                return subprocess.CompletedProcess(
+                    command, 0, b"State : Enabled\r\n", b""
+                )
+            if command[0] == "wsl.exe":
+                return subprocess.CompletedProcess(
+                    command, 2, b"", b"WSL service is not ready"
+                )
+            self.fail(f"unexpected command: {command}")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            make_source(source)
+            with (
+                patch(
+                    "agent_helper.wsl_setup._winget_executable",
+                    return_value=None,
+                ),
+                self.assertRaises(WslSetupError) as raised,
+            ):
+                install_wsl_runtime(
+                    source_root=source,
+                    executable="wsl.exe",
+                    run=run,
+                    platform_name="nt",
+                    dism_executable="dism.exe",
+                )
+
+        rendered = str(raised.exception)
+        self.assertIn("không thể tự sửa gói WSL", rendered)
+        self.assertIn("Không tìm thấy winget.exe", rendered)
         self.assertIn("WSL service is not ready", rendered)
 
     def test_setup_report_round_trip_is_bounded(self) -> None:

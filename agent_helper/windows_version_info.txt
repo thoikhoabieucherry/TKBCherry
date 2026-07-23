@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-          filevers=(1, 6, 26, 0),
-          prodvers=(1, 6, 26, 0),
+          filevers=(1, 6, 27, 0),
+          prodvers=(1, 6, 27, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -16,12 +16,12 @@ VSVersionInfo(
         [
           StringStruct(u'CompanyName', u'TKBCherry'),
           StringStruct(u'FileDescription', u'TKBCherry Agent'),
-          StringStruct(u'FileVersion', u'1.6.26'),
+          StringStruct(u'FileVersion', u'1.6.27'),
           StringStruct(u'InternalName', u'TKBCherryAgent'),
           StringStruct(u'LegalCopyright', u'TKBCherry'),
           StringStruct(u'OriginalFilename', u'TKBCherryAgent.exe'),
           StringStruct(u'ProductName', u'TKBCherry Agent'),
-          StringStruct(u'ProductVersion', u'1.6.26')
+          StringStruct(u'ProductVersion', u'1.6.27')
         ]
       )
     ]),

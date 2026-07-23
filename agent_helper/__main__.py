@@ -28,7 +28,7 @@ from .state import (
     platform_tag,
     save_agent_token,
     set_wsl_setup_restart_pending,
-    wsl_setup_restart_pending,
+    wsl_setup_restart_state,
 )
 from .worker import AgentWorker
 from .windows_security import (
@@ -345,7 +345,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         identity = AgentIdentity(
             agent_id=agent_id, version=VERSION, platform=platform_tag()
         )
-        setup_restart_pending = wsl_setup_restart_pending() if gui_mode else False
+        setup_restart = wsl_setup_restart_state() if gui_mode else None
         solver: SolverRunner | None = None
         if native_solver_blocked:
             from .wsl_solver import WslSolverRunner, discover_wsl_runtime
@@ -356,7 +356,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             solver = SolverRunner(config)
         if solver is not None:
-            if setup_restart_pending:
+            if setup_restart is not None and setup_restart.pending:
                 try:
                     set_wsl_setup_restart_pending(False)
                 except StateError:
@@ -440,23 +440,37 @@ def main(argv: Sequence[str] | None = None) -> int:
                         )
 
                 solver_setup = None
-                if native_solver_blocked and solver is None:
+                if (
+                    native_solver_blocked
+                    and solver is None
+                    and not (
+                        setup_restart is not None
+                        and setup_restart.pending
+                        and setup_restart.same_boot
+                    )
+                ):
                     from .wsl_setup import run_elevated_setup
 
                     def solver_setup() -> int:
-                        try:
-                            result = run_elevated_setup()
-                        except Exception:
+                        # Bind the attempt to this Windows boot before opening
+                        # UAC. A cancellation, crash or failed repair therefore
+                        # cannot create an automatic retry loop on relaunch.
+                        set_wsl_setup_restart_pending(True)
+                        result = run_elevated_setup()
+                        if result == 0:
+                            # WSL may need several seconds to start its VM after
+                            # a package repair; use the same bounded post-install
+                            # window as the installer instead of reporting a
+                            # false failure on slower machines.
+                            verified_runtime = discover_wsl_runtime(timeout=20.0)
+                            if verified_runtime is None:
+                                raise RuntimeError(
+                                    "Bộ xử lý WSL chưa sẵn sàng sau khi cài đặt."
+                                )
                             try:
                                 set_wsl_setup_restart_pending(False)
                             except StateError:
                                 pass
-                            raise
-                        try:
-                            set_wsl_setup_restart_pending(result == 75)
-                        except StateError:
-                            pass
-                        if result == 0:
                             wsl_refresh_event.set()
                         return result
 
@@ -465,16 +479,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     cpu_workers=config.cpu_workers,
                     max_memory_mb=config.max_memory_mb,
                     startup_toggle=startup_toggle,
-                    start_hidden=arguments.startup,
                     update_checker=updater.check if updater is not None else None,
                     update_installer=(
                         updater.prepare_and_launch if updater is not None else None
                     ),
                     solver_setup=solver_setup,
-                    show_setup_on_start=(
-                        solver_setup is not None
-                        and (not arguments.startup or setup_restart_pending)
-                    ),
                     # The notification icon is implemented with stdlib ctypes
                     # and Win32 only, so it is safe in the VPS fallback too.
                     allow_system_tray=True,
