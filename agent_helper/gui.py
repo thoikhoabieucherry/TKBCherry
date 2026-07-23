@@ -15,20 +15,22 @@ SessionRunner = Callable[[threading.Event, StatusCallback], None]
 StartupToggle = Callable[[bool], object]
 UpdateChecker = Callable[[], object | None]
 UpdateInstaller = Callable[[object], object]
+SolverSetup = Callable[[], int]
 UPDATE_RECHECK_MILLISECONDS = 6 * 60 * 60 * 1000
 
 
 _STATUS_TEXT = {
     "starting": "Đang khởi động Agent...",
     "pairing": "Đang chờ bạn xác nhận trên trình duyệt...",
-    "waiting": "Đã kết nối · đang chờ lượt xếp",
-    "working": "Đang hỗ trợ xếp thời khóa biểu",
+    "waiting": "Agent đã kết nối, đang chờ lượt xếp",
+    "working": "Agent đang hỗ trợ xếp thời khóa biểu",
     "stopping": "Đang dừng Agent...",
     "updating": "Đang cập nhật Agent an toàn...",
+    "installing": "Đang cài bộ xử lý dùng CPU/RAM của máy...",
     "windows_security": (
-        "Windows Security cần Agent có chữ ký · lượt xếp đang dùng VPS"
+        "Agent cục bộ chưa thể chạy, lượt xếp đang dùng VPS"
     ),
-    "off": "Agent đang tắt · không sử dụng CPU để xếp",
+    "off": "Agent đang tắt, không dùng CPU/RAM của máy",
     "error": "Agent đã dừng do có lỗi kết nối",
 }
 
@@ -62,6 +64,7 @@ class AgentToggleApp:
         startup_toggle: StartupToggle | None = None,
         update_checker: UpdateChecker | None = None,
         update_installer: UpdateInstaller | None = None,
+        solver_setup: SolverSetup | None = None,
     ) -> None:
         self.root = root
         self.session_runner = session_runner
@@ -71,6 +74,7 @@ class AgentToggleApp:
         self.startup_toggle = startup_toggle
         self.update_checker = update_checker
         self.update_installer = update_installer
+        self.solver_setup = solver_setup
         self.events: queue.SimpleQueue[tuple[int, str]] = queue.SimpleQueue()
         self.update_events: queue.SimpleQueue[tuple[str, object | None]] = queue.SimpleQueue()
         self.commands: queue.SimpleQueue[str] = queue.SimpleQueue()
@@ -85,6 +89,7 @@ class AgentToggleApp:
         self.available_update: object | None = None
         self.update_check_thread: threading.Thread | None = None
         self.update_apply_thread: threading.Thread | None = None
+        self.solver_setup_thread: threading.Thread | None = None
         self.update_in_progress = False
         self.update_install_started = False
         self.restart_after_stop = False
@@ -101,9 +106,9 @@ class AgentToggleApp:
     def _build_window(self) -> None:
         tk = self.tk
         self.root.title("TKBCherry Agent")
-        self.root.configure(bg="#f6f7fb")
+        self.root.configure(bg="#f2f5f3")
         self.root.resizable(False, False)
-        self.root.geometry("430x330")
+        self.root.geometry("420x370")
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         try:
             self.window_icon = tk.PhotoImage(file=str(agent_icon_path()))
@@ -111,65 +116,90 @@ class AgentToggleApp:
         except Exception:
             self.window_icon = None
 
-        frame = tk.Frame(self.root, bg="#f6f7fb", padx=28, pady=24)
+        frame = tk.Frame(self.root, bg="#f2f5f3", padx=24, pady=22)
         frame.pack(fill="both", expand=True)
+
+        header = tk.Frame(frame, bg="#f2f5f3")
+        header.pack(fill="x")
         tk.Label(
-            frame,
+            header,
+            text="TKB",
+            bg="#cf3e53",
+            fg="#ffffff",
+            font=("Segoe UI Semibold", 10),
+            padx=8,
+            pady=6,
+        ).pack(side="left", anchor="n", pady=(1, 0))
+        heading = tk.Frame(header, bg="#f2f5f3")
+        heading.pack(side="left", fill="x", expand=True, padx=(11, 0))
+        tk.Label(
+            heading,
             text="TKBCherry Agent",
-            bg="#f6f7fb",
-            fg="#172033",
-            font=("Segoe UI Semibold", 18),
+            bg="#f2f5f3",
+            fg="#18251f",
+            font=("Segoe UI Semibold", 17),
         ).pack(anchor="w")
         tk.Label(
-            frame,
-            text="Chỉ dùng tài nguyên máy khi bạn bật Agent và có lượt xếp.",
-            bg="#f6f7fb",
-            fg="#667085",
+            heading,
+            text="Dùng CPU và RAM của máy để hỗ trợ xếp nhanh hơn.",
+            bg="#f2f5f3",
+            fg="#65736c",
             font=("Segoe UI", 9),
-            wraplength=365,
+            wraplength=320,
             justify="left",
-        ).pack(anchor="w", pady=(5, 20))
+        ).pack(anchor="w", pady=(2, 0))
 
         card = tk.Frame(
             frame,
             bg="#ffffff",
-            highlightbackground="#dfe3eb",
+            highlightbackground="#d9e0dc",
             highlightthickness=1,
-            padx=20,
-            pady=18,
+            padx=18,
+            pady=16,
         )
-        card.pack(fill="x")
+        card.pack(fill="x", pady=(18, 0))
+        status_row = tk.Frame(card, bg="#ffffff")
+        status_row.pack(fill="x")
         self.badge = tk.Label(
-            card,
+            status_row,
             text="OFF",
-            width=6,
+            width=7,
             bg="#e8eaf0",
             fg="#4b5565",
-            font=("Segoe UI Semibold", 11),
-            padx=8,
-            pady=5,
+            font=("Segoe UI Semibold", 10),
+            padx=7,
+            pady=4,
         )
-        self.badge.pack(anchor="w")
+        self.badge.pack(side="left")
+        tk.Label(
+            status_row,
+            text="TRẠNG THÁI",
+            bg="#ffffff",
+            fg="#829087",
+            font=("Segoe UI Semibold", 8),
+        ).pack(side="left", padx=(10, 0))
         self.status_label = tk.Label(
             card,
             text="",
             bg="#ffffff",
-            fg="#344054",
-            font=("Segoe UI", 10),
-            wraplength=325,
+            fg="#24322b",
+            font=("Segoe UI Semibold", 10),
+            wraplength=334,
             justify="left",
         )
-        self.status_label.pack(anchor="w", pady=(14, 4))
+        self.status_label.pack(anchor="w", pady=(12, 9))
+        resource_bar = tk.Frame(card, bg="#f5f7f6", padx=10, pady=8)
+        resource_bar.pack(fill="x")
         self.detail_label = tk.Label(
-            card,
+            resource_bar,
             text=(
-                f"Trần cho phép: {self.cpu_workers} CPU · "
-                f"{self.max_memory_mb / 1024:.1f} GB RAM · tự cân theo lượt."
+                f"Tối đa {self.cpu_workers} luồng CPU   ·   "
+                f"{self.max_memory_mb / 1024:.1f} GB RAM"
             ),
-            bg="#ffffff",
-            fg="#8a94a6",
+            bg="#f5f7f6",
+            fg="#66756d",
             font=("Segoe UI", 8),
-            wraplength=325,
+            wraplength=312,
             justify="left",
         )
         self.detail_label.pack(anchor="w")
@@ -182,9 +212,16 @@ class AgentToggleApp:
             cursor="hand2",
             font=("Segoe UI Semibold", 11),
             padx=18,
-            pady=11,
+            pady=10,
         )
-        self.toggle_button.pack(fill="x", pady=(18, 0))
+        self.toggle_button.pack(fill="x", pady=(14, 0))
+        tk.Label(
+            frame,
+            text="Đóng cửa sổ để ẩn Agent xuống khay hệ thống.",
+            bg="#f2f5f3",
+            fg="#78867e",
+            font=("Segoe UI", 8),
+        ).pack(anchor="center", pady=(10, 0))
 
         self.root.update_idletasks()
         width = self.root.winfo_width()
@@ -197,15 +234,20 @@ class AgentToggleApp:
         self.current_state = state
         on = self.desired_on and state not in {"off", "stopping", "error"}
         updating = state == "updating"
+        installing = state == "installing"
         windows_security = state == "windows_security"
         self.badge.configure(
             text=(
-                "UPDATE"
+                "SETUP"
+                if installing
+                else "UPDATE"
                 if updating
                 else ("VPS" if windows_security else ("ON" if on else "OFF"))
             ),
             bg=(
-                "#fff3cd"
+                "#e8f0ff"
+                if installing
+                else "#fff3cd"
                 if updating
                 else (
                     "#e8f0ff"
@@ -214,7 +256,9 @@ class AgentToggleApp:
                 )
             ),
             fg=(
-                "#8a5b00"
+                "#2458d8"
+                if installing
+                else "#8a5b00"
                 if updating
                 else (
                     "#2458d8"
@@ -227,15 +271,23 @@ class AgentToggleApp:
         if hasattr(self, "detail_label"):
             self.detail_label.configure(
                 text=(
-                    "Agent không nạp solver trên máy này nên sẽ không hiện popup DLL."
+                    "Cài bộ xử lý một lần để Agent dùng CPU/RAM máy này an toàn."
                     if windows_security
                     else (
-                        f"Trần cho phép: {self.cpu_workers} CPU · "
-                        f"{self.max_memory_mb / 1024:.1f} GB RAM · tự cân theo lượt."
+                        f"Tối đa {self.cpu_workers} luồng CPU   ·   "
+                        f"{self.max_memory_mb / 1024:.1f} GB RAM"
                     )
                 )
             )
-        if updating:
+        if installing:
+            self.toggle_button.configure(
+                text="ĐANG CÀI BỘ XỬ LÝ...",
+                state="disabled",
+                bg="#dce7ff",
+                fg="#2458d8",
+                activebackground="#dce7ff",
+            )
+        elif updating:
             self.toggle_button.configure(
                 text="ĐANG CẬP NHẬT...",
                 state="disabled",
@@ -251,6 +303,15 @@ class AgentToggleApp:
                 fg="#667085",
                 activebackground="#d7dae2",
             )
+        elif windows_security and getattr(self, "solver_setup", None) is not None:
+            self.toggle_button.configure(
+                text="CÀI BỘ XỬ LÝ AGENT",
+                state="normal",
+                bg="#167552",
+                fg="#ffffff",
+                activebackground="#0f6143",
+                activeforeground="#ffffff",
+            )
         elif on:
             self.toggle_button.configure(
                 text="TẮT AGENT",
@@ -264,24 +325,24 @@ class AgentToggleApp:
             self.toggle_button.configure(
                 text="BẬT AGENT",
                 state="normal",
-                bg="#6c4cff",
+                bg="#167552",
                 fg="#ffffff",
-                activebackground="#593ae8",
+                activebackground="#0f6143",
                 activeforeground="#ffffff",
             )
         if self.tray is not None:
-            self.tray.update(on)
+            self.tray.update(on, state=state)
 
     def attach_tray(self, tray: Any) -> None:
         """Attach a notification icon and make the window close button hide."""
 
+        tray.start()
         self.tray = tray
         self.root.protocol("WM_DELETE_WINDOW", self.hide_window)
-        self.tray.start()
-        self.tray.update(self.desired_on)
+        self.tray.update(self.desired_on, state=self.current_state)
 
     def request_tray_command(self, command: str) -> None:
-        if command in {"show", "on", "off", "exit"}:
+        if command in {"show", "on", "off", "exit", "tray_lost"}:
             self.commands.put(command)
 
     def show_window(self) -> None:
@@ -317,8 +378,34 @@ class AgentToggleApp:
             # platform cannot provide either a tray icon or a taskbar button.
             self.show_window()
 
+    def _hide_after_start(self) -> None:
+        """Return a manually started Agent to the tray like a small utility."""
+
+        if self.tray is None or self.closing:
+            return
+        try:
+            self.root.after(180, self.hide_window)
+        except Exception:
+            return
+
+    def _handle_tray_loss(self) -> None:
+        """Keep a taskbar control surface if Explorer cannot restore the icon."""
+
+        tray = self.tray
+        self.tray = None
+        if tray is not None:
+            tray.stop()
+        self.root.protocol("WM_DELETE_WINDOW", self.close)
+        self.show_window()
+
     def toggle(self) -> None:
         if self.update_in_progress:
+            return
+        if (
+            self.current_state == "windows_security"
+            and getattr(self, "solver_setup", None) is not None
+        ):
+            self._start_solver_setup()
             return
         if self.desired_on:
             self.turn_off()
@@ -347,6 +434,7 @@ class AgentToggleApp:
             self.desired_on = True
             self._set_startup_enabled(True)
             self._render("starting")
+            self._hide_after_start()
             return
         self._set_startup_enabled(True)
         self.restart_after_stop = False
@@ -374,6 +462,7 @@ class AgentToggleApp:
             daemon=True,
         )
         self.worker_thread.start()
+        self._hide_after_start()
 
     def turn_off(self) -> None:
         if not self.desired_on or self.update_in_progress:
@@ -403,6 +492,8 @@ class AgentToggleApp:
             elif command == "exit":
                 self.close()
                 return
+            elif command == "tray_lost":
+                self._handle_tray_loss()
         while True:
             try:
                 generation, status = self.events.get_nowait()
@@ -445,9 +536,62 @@ class AgentToggleApp:
                 return
             elif event == "install_error":
                 self._handle_update_error(payload)
+            elif event == "solver_setup_complete":
+                self.solver_setup_thread = None
+                self._handle_solver_setup_result(payload)
         self._offer_update_if_idle()
         if not self.closing:
             self.root.after(100, self._drain_events)
+
+    def _start_solver_setup(self) -> None:
+        if (
+            self.closing
+            or getattr(self, "solver_setup", None) is None
+            or getattr(self, "solver_setup_thread", None) is not None
+        ):
+            return
+        self._render("installing")
+
+        def run() -> None:
+            try:
+                result: object = self.solver_setup()
+            except Exception as exc:
+                result = exc
+            self.update_events.put(("solver_setup_complete", result))
+
+        self.solver_setup_thread = threading.Thread(
+            target=run,
+            name="TKBCherryAgentWslSetup",
+            daemon=True,
+        )
+        self.solver_setup_thread.start()
+
+    def _handle_solver_setup_result(self, result: object) -> None:
+        if self.closing:
+            return
+        if result == 0:
+            self._render("starting")
+            return
+        self._render("windows_security")
+        try:
+            from tkinter import messagebox
+
+            if result == 75:
+                messagebox.showinfo(
+                    "TKBCherry Agent",
+                    "Windows cần khởi động lại một lần để hoàn tất bộ xử lý Agent.",
+                    parent=self.root,
+                )
+            else:
+                message = str(result) if isinstance(result, Exception) else ""
+                messagebox.showerror(
+                    "TKBCherry Agent",
+                    "Chưa cài được bộ xử lý Agent. Lượt xếp vẫn dùng VPS an toàn."
+                    + (f"\n\n{message}" if message else ""),
+                    parent=self.root,
+                )
+        except Exception:
+            return
 
     @staticmethod
     def _release_version(release: object | None) -> str:
@@ -595,6 +739,7 @@ def run_toggle_window(
     start_hidden: bool = False,
     update_checker: UpdateChecker | None = None,
     update_installer: UpdateInstaller | None = None,
+    solver_setup: SolverSetup | None = None,
     allow_system_tray: bool = True,
 ) -> None:
     """Open the native Agent window. Import Tk only for the normal GUI path."""
@@ -614,6 +759,7 @@ def run_toggle_window(
         startup_toggle=startup_toggle,
         update_checker=update_checker,
         update_installer=update_installer,
+        solver_setup=solver_setup,
     )
     if allow_system_tray:
         try:
@@ -631,9 +777,7 @@ def run_toggle_window(
             # the user cannot control. The normal window remains functional.
             app.show_window()
     else:
-        # PIL/pystray can load optional native codecs. Under enforced code
-        # integrity keep the signed-independent Tk/update surface only. Leave
-        # that surface minimized on the taskbar so it remains controllable
-        # without forcing a window in front of the user on every launch.
+        # Kept for tests and unsupported desktops. Production Windows builds
+        # use the stdlib Win32 tray in both local-solver and VPS fallback mode.
         app.minimize_window()
     root.mainloop()

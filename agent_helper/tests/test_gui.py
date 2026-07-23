@@ -92,13 +92,13 @@ class ToggleLifecycleTests(unittest.TestCase):
             def __init__(self) -> None:
                 self.started = False
                 self.stopped = False
-                self.states: list[bool] = []
+                self.states: list[tuple[bool, str | None]] = []
 
             def start(self) -> None:
                 self.started = True
 
-            def update(self, online: bool) -> None:
-                self.states.append(online)
+            def update(self, online: bool, *, state: str | None = None) -> None:
+                self.states.append((online, state))
 
             def stop(self) -> None:
                 self.stopped = True
@@ -107,6 +107,7 @@ class ToggleLifecycleTests(unittest.TestCase):
         tray = FakeTray()
         app.attach_tray(tray)
         self.assertTrue(tray.started)
+        self.assertEqual(tray.states, [(False, "off")])
         close_button = app.root.protocols["WM_DELETE_WINDOW"]
         close_button()  # type: ignore[operator]
         self.assertTrue(app.root.withdrawn)
@@ -118,6 +119,77 @@ class ToggleLifecycleTests(unittest.TestCase):
         app.request_tray_command("exit")
         app._drain_events()
         self.assertTrue(tray.stopped)
+        self.assertTrue(app.root.destroyed)
+
+    def test_turning_on_from_panel_returns_window_to_notification_area(self) -> None:
+        class FakeTray:
+            def start(self) -> None:
+                pass
+
+            def update(self, online: bool, *, state: str | None = None) -> None:
+                del online, state
+
+            def stop(self) -> None:
+                pass
+
+        def runner(stop_event: threading.Event, report: object) -> None:
+            del report
+            stop_event.wait(2)
+
+        app, _ = bare_app(runner)
+        app.attach_tray(FakeTray())
+        app.show_window()
+        app.turn_on()
+
+        hide_callbacks = [callback for delay, callback in app.root.callbacks if delay == 180]
+        self.assertEqual(len(hide_callbacks), 1)
+        hide_callbacks[0]()  # type: ignore[operator]
+        self.assertTrue(app.root.withdrawn)
+        app.close()
+
+    def test_failed_tray_start_keeps_normal_close_control(self) -> None:
+        class BrokenTray:
+            def start(self) -> None:
+                raise OSError("Explorer unavailable")
+
+        app, _ = bare_app(lambda stop_event, report: None)
+        app.root.protocol("WM_DELETE_WINDOW", app.close)
+
+        with self.assertRaises(OSError):
+            app.attach_tray(BrokenTray())
+
+        self.assertIsNone(app.tray)
+        close_button = app.root.protocols["WM_DELETE_WINDOW"]
+        close_button()  # type: ignore[operator]
+        self.assertTrue(app.root.destroyed)
+
+    def test_lost_tray_restores_panel_and_normal_close_button(self) -> None:
+        class LostTray:
+            def __init__(self) -> None:
+                self.stopped = False
+
+            def start(self) -> None:
+                pass
+
+            def update(self, online: bool, *, state: str | None = None) -> None:
+                del online, state
+
+            def stop(self) -> None:
+                self.stopped = True
+
+        app, _ = bare_app(lambda stop_event, report: None)
+        tray = LostTray()
+        app.attach_tray(tray)
+        app.hide_window()
+
+        app.request_tray_command("tray_lost")
+        app._drain_events()
+
+        self.assertTrue(tray.stopped)
+        self.assertIsNone(app.tray)
+        self.assertFalse(app.root.withdrawn)
+        close_button = app.root.protocols["WM_DELETE_WINDOW"]
+        close_button()  # type: ignore[operator]
         self.assertTrue(app.root.destroyed)
 
     def test_window_schedules_auto_on_for_the_first_event_loop_turn(self) -> None:
@@ -164,6 +236,22 @@ class ToggleLifecycleTests(unittest.TestCase):
             [True],
             "closing stops this session but keeps next-logon startup enabled",
         )
+
+    def test_windows_security_action_installs_solver_without_turning_agent_off(self) -> None:
+        app, rendered = bare_app(lambda stop_event, report: None)
+        app.solver_setup = lambda: 0
+        app.solver_setup_thread = None
+        app.current_state = "windows_security"
+        app.desired_on = True
+
+        app.toggle()
+        assert app.solver_setup_thread is not None
+        app.solver_setup_thread.join(1)
+        app._drain_events()
+
+        self.assertIn("installing", rendered)
+        self.assertEqual(rendered[-1], "starting")
+        self.assertTrue(app.desired_on)
 
     def test_closing_before_scheduled_auto_on_never_starts_a_session(self) -> None:
         started = threading.Event()

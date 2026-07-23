@@ -172,6 +172,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--solver-child", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--gui-smoke", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--startup", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--wsl-setup", action="store_true", help=argparse.SUPPRESS)
     return parser
 
 
@@ -258,14 +259,37 @@ def _run_worker_session(
     worker.run_forever()
 
 
-def _run_windows_security_fallback_session(
+def _run_wsl_or_windows_security_session(
+    config: AgentConfig,
+    identity: AgentIdentity,
     stop_event: threading.Event,
     status_callback: Callable[[str], None],
+    refresh_event: threading.Event | None = None,
 ) -> None:
-    """Keep the GUI/update loop alive without registering a solver worker."""
+    """Wait safely for one-time WSL setup, then become a normal owner worker."""
+
+    from .wsl_solver import WslSolverRunner, discover_wsl_runtime
 
     status_callback("windows_security")
-    stop_event.wait()
+    while not stop_event.is_set():
+        runtime = discover_wsl_runtime(timeout=2.0)
+        if runtime is not None:
+            status_callback("starting")
+            _run_worker_session(
+                config,
+                identity,
+                WslSolverRunner(config, runtime),
+                stop_event,
+                status_callback,
+            )
+            return
+        if refresh_event is None:
+            stop_event.wait()
+            return
+        while not stop_event.is_set():
+            if refresh_event.wait(0.5):
+                refresh_event.clear()
+                break
 
 
 def _show_gui_error(message: str) -> None:
@@ -295,9 +319,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _solver_child_main()
     if arguments.gui_smoke:
         return _gui_smoke_main()
+    if arguments.wsl_setup:
+        from .wsl_setup import setup_cli
+
+        return setup_cli()
 
     gui_mode = not arguments.once and not arguments.check and not arguments.headless
-    solver_blocked = solver_blocked_by_windows_code_integrity()
+    native_solver_blocked = solver_blocked_by_windows_code_integrity()
     if gui_mode:
         logging.basicConfig(
             level=logging.DEBUG if arguments.verbose else logging.INFO,
@@ -315,8 +343,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             agent_id=agent_id, version=VERSION, platform=platform_tag()
         )
         solver: SolverRunner | None = None
-        if not solver_blocked:
+        if native_solver_blocked:
+            from .wsl_solver import WslSolverRunner, discover_wsl_runtime
+
+            wsl_runtime = discover_wsl_runtime(timeout=2.0)
+            if wsl_runtime is not None:
+                solver = WslSolverRunner(config, wsl_runtime)
+        else:
             solver = SolverRunner(config)
+        if solver is not None:
             command, cwd = solver._command_and_cwd()
             if not command or not cwd.is_dir():
                 raise ConfigError("solver runtime is missing")
@@ -367,10 +402,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                     startup_toggle = update_startup
                     startup_toggle(True)
 
-                if solver_blocked:
-                    session_runner = _run_windows_security_fallback_session
+                if solver is None:
+                    wsl_refresh_event = threading.Event()
+
+                    def session_runner(
+                        stop_event: threading.Event,
+                        status_callback: Callable[[str], None],
+                    ) -> None:
+                        _run_wsl_or_windows_security_session(
+                            config,
+                            identity,
+                            stop_event,
+                            status_callback,
+                            wsl_refresh_event,
+                        )
                 else:
-                    assert solver is not None
 
                     def session_runner(
                         stop_event: threading.Event,
@@ -384,6 +430,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                             status_callback,
                         )
 
+                solver_setup = None
+                if native_solver_blocked and solver is None:
+                    from .wsl_setup import run_elevated_setup
+
+                    def solver_setup() -> int:
+                        result = run_elevated_setup()
+                        if result == 0:
+                            wsl_refresh_event.set()
+                        return result
+
                 run_toggle_window(
                     session_runner,
                     cpu_workers=config.cpu_workers,
@@ -394,13 +450,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                     update_installer=(
                         updater.prepare_and_launch if updater is not None else None
                     ),
-                    allow_system_tray=not solver_blocked,
+                    solver_setup=solver_setup,
+                    # The notification icon is implemented with stdlib ctypes
+                    # and Win32 only, so it is safe in the VPS fallback too.
+                    allow_system_tray=True,
                 )
                 return 0
 
-            if solver_blocked:
+            if solver is None:
                 logging.getLogger("agent_helper").warning(
-                    "Windows code integrity blocks the unsigned native solver; use the VPS fallback."
+                    "Windows code integrity blocks the native solver and no WSL runtime is ready; use the VPS fallback."
                 )
                 return 0
 

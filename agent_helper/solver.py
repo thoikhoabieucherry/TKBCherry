@@ -466,7 +466,12 @@ class SolverRunner:
                 hard_seconds = min(hard_seconds, float(watchdog_ms) / 1000.0)
         return max(0.1, hard_seconds)
 
-    def _solver_environment(self, cpu_workers: int) -> dict[str, str]:
+    def _solver_environment(
+        self,
+        cpu_workers: int,
+        memory_limit_mb: int | None = None,
+        timeout_seconds: float | None = None,
+    ) -> dict[str, str]:
         allowed = {
             "APPDATA",
             "COMSPEC",
@@ -500,6 +505,12 @@ class SolverRunner:
             {
                 "PYTHONIOENCODING": "utf-8",
                 "TKB_SOLVER_MAX_WORKERS": str(cpu_workers),
+                "TKB_SOLVER_MAX_MEMORY_MB": str(
+                    max(512, int(memory_limit_mb or self.config.max_memory_mb))
+                ),
+                "TKB_SOLVER_HARD_TIMEOUT_SECONDS": str(
+                    max(1, int(timeout_seconds or self.config.solver_timeout_seconds))
+                ),
                 "OMP_NUM_THREADS": "1",
                 "OMP_THREAD_LIMIT": "1",
                 "OPENBLAS_NUM_THREADS": "1",
@@ -512,6 +523,11 @@ class SolverRunner:
             }
         )
         return environment
+
+    def _terminate_child(
+        self, process: subprocess.Popen[bytes], job: _WindowsJob
+    ) -> None:
+        _terminate_process_tree(process, job)
 
     def run(
         self,
@@ -566,7 +582,11 @@ class SolverRunner:
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         cwd=cwd,
-                        env=self._solver_environment(effective_cpu_workers),
+                        env=self._solver_environment(
+                            effective_cpu_workers,
+                            effective_memory_mb,
+                            hard_timeout,
+                        ),
                         shell=False,
                         close_fds=True,
                         creationflags=creationflags,
@@ -693,11 +713,11 @@ class SolverRunner:
                             stop_event.wait(0.05)
                         process.wait(timeout=1)
                     except BaseException:
-                        _terminate_process_tree(process, job)
+                        self._terminate_child(process, job)
                         raise
                     finally:
                         if process.poll() is None:
-                            _terminate_process_tree(process, job)
+                            self._terminate_child(process, job)
                         else:
                             job.close()
                         output_drainer.join()
@@ -705,7 +725,7 @@ class SolverRunner:
             except SolverInfrastructureError:
                 if process is not None and process.poll() is None:
                     if job is not None:
-                        _terminate_process_tree(process, job)
+                        self._terminate_child(process, job)
                     else:
                         process.kill()
                         process.wait(timeout=3)
@@ -717,7 +737,7 @@ class SolverRunner:
             except OSError as exc:
                 if process is not None and process.poll() is None:
                     if job is not None:
-                        _terminate_process_tree(process, job)
+                        self._terminate_child(process, job)
                     else:
                         process.kill()
                         process.wait(timeout=3)

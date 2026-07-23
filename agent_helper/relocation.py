@@ -16,7 +16,14 @@ INSTALL_EXE_NAME = "TKBCherryAgent.exe"
 INSTALL_DIR_NAME = "TKBCherryAgent"
 FALLBACK_DIR_PARTS = ("TKBCherry", "Agent")
 HEADLESS_FLAGS = frozenset(
-    {"--check", "--once", "--solver-child", "--gui-smoke", "--version"}
+    {
+        "--check",
+        "--once",
+        "--solver-child",
+        "--gui-smoke",
+        "--wsl-setup",
+        "--version",
+    }
 )
 
 CopyExecutable = Callable[[str, str], object]

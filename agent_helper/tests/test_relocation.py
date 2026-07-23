@@ -16,6 +16,7 @@ class RelocationTests(unittest.TestCase):
                 (("--check",), True),
                 (("--once",), True),
                 (("--gui-smoke",), True),
+                (("--wsl-setup",), True),
             ):
                 spawned: list[object] = []
                 self.assertTrue(

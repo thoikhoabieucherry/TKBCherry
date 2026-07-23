@@ -17,7 +17,9 @@ change so a machine restart or a new conversation does not erase project context
   cache is `20260722-v163-one-session-responsive-tables-v1`.
 - Current public Agent release: **v1.6.24** (`1.6.24`). The normal owner-Agent
   minimum lease gate remains 1.6.23, so 1.6.22 and older stay upgrade-only;
-  the operator trusted-worker source and release contract are 1.6.24.
+  the operator trusted-worker source and release contract are 1.6.24. Source
+  currently contains the tested **1.6.25 candidate** described below; it is not
+  public until its Windows artifact is built, release-signed and deployed.
 - Every deployed application or packaged Agent update must increment the
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
@@ -73,6 +75,48 @@ change so a machine restart or a new conversation does not erase project context
   health reports `ok:true`, zero active/queued jobs, and all `6/6` worker tokens
   available. Production serves API v58, the v1.63 constraints cache and marker,
   and the unchanged v262 bridge marker.
+
+### Agent 1.6.25 notification-area and WSL owner solver (candidate 2026-07-23; not deployed)
+
+- The Agent now behaves like a notification-area utility on every supported
+  Windows path: it starts hidden, double-click opens the panel, X hides it,
+  and the context menu exposes Open, On, Off and Exit. The tray backend uses
+  only stdlib `ctypes` plus signed Win32 shell APIs, so the Smart App Control
+  fallback no longer imports Pillow/pystray or leaves a taskbar-only window.
+  Explorer restart is handled through `TaskbarCreated`; bounded retries fall
+  back to a visible, closable panel instead of stranding a hidden process.
+- Pillow and pystray were removed from the Agent build dependencies and
+  PyInstaller collection. The redesigned 420x370 control panel states the
+  CPU/RAM ceiling and automatically returns to the tray when Agent is enabled.
+- On an enforced Smart App Control machine, elevation of the Windows Agent is
+  still deliberately rejected as a solution. The panel instead offers a
+  one-time elevated WSL setup. Normal Agent launches remain `asInvoker`; UAC is
+  used only by `--wsl-setup` to enable/install Ubuntu when needed, create the
+  unprivileged Linux user `tkb-agent`, install pinned OR-Tools/SciPy, run a real
+  import probe, compile the runtime to bytecode and remove installed `.py`
+  files. Smart App Control stays enabled.
+- After setup, the Windows process keeps DPAPI pairing, HTTPS, owner scoping,
+  lease heartbeat and candidate upload. Only the solver subprocess crosses to
+  WSL, so no Agent credential is written into Linux or put on a command line.
+  The exact production pipeline runs through stdin/stdout, with worker count,
+  adaptive RAM ceiling and hard timeout passed through `WSLENV`. A random
+  per-run id fences PID cancellation; OFF first terminates that exact Linux
+  process group, then closes the Windows relay. A parent crash still leaves an
+  internal Linux timeout, while the existing server lease expiry returns the
+  canonical job to VPS. Agent and VPS never solve the same lease concurrently.
+- The WSL ready marker is runtime-contract exact (`20260723.1`), so UI-only
+  Agent updates do not demand UAC again while a solver/runtime change must bump
+  the contract before release. WSL discovery uses a bounded process-tree probe; an
+  unavailable/broken WSL service does not leave orphan `wsl.exe` processes.
+  This workstation currently has no registered distro, so public live local
+  compute still requires the one-time setup after 1.6.25 is installed.
+- Local Agent verification passes **111/111**. Final isolated VPS staging passes
+  scheduler **172/172**, Agent **111/111**, trusted-worker operations **5/5**,
+  Rust API **149/149**, and candidate validator **20/20**, ending in
+  `STAGING_TESTS_OK`. This includes a Linux-only end-to-end stdio test for the
+  WSL wrapper. Git Bash syntax-checks the embedded installer, Win32 tray
+  integration creates/updates/stops a real icon, and the local WSL timeout
+  probe returns no runtime with no orphan process.
 
 ### Post-v1.63 trusted-worker protocol and Agent 1.6.24 (API deployed 2026-07-23; worker dormant)
 

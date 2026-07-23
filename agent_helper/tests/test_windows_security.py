@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from agent_helper.gui import run_toggle_window
 from agent_helper.__main__ import (
-    _run_windows_security_fallback_session,
+    _run_wsl_or_windows_security_session,
     _solver_child_main,
     main,
 )
@@ -97,7 +97,7 @@ class WindowsSecurityTests(unittest.TestCase):
         self.assertFalse(frame["payload"]["ok"])
         self.assertEqual(frame["payload"]["kind"], WINDOWS_CODE_INTEGRITY_KIND)
 
-    def test_blocked_gui_never_constructs_solver_and_disables_native_tray(self) -> None:
+    def test_blocked_gui_never_constructs_solver_and_keeps_stdlib_tray(self) -> None:
         captured: dict[str, object] = {}
 
         def run_window(session_runner: object, **options: object) -> None:
@@ -115,6 +115,10 @@ class WindowsSecurityTests(unittest.TestCase):
             patch("agent_helper.__main__.platform_tag", return_value="windows-amd64"),
             patch("agent_helper.__main__.SingleInstanceLock", return_value=nullcontext()),
             patch("agent_helper.__main__.SolverRunner") as solver_runner,
+            patch("agent_helper.wsl_solver.discover_wsl_runtime", return_value=None),
+            patch(
+                "agent_helper.wsl_setup.run_elevated_setup", return_value=0
+            ) as elevated_setup,
             patch("agent_helper.gui.run_toggle_window", side_effect=run_window),
             patch(
                 "agent_helper.startup.startup_toggle_for_current_process",
@@ -124,14 +128,15 @@ class WindowsSecurityTests(unittest.TestCase):
             self.assertEqual(main([]), 0)
 
         solver_runner.assert_not_called()
-        self.assertIs(
-            captured["session_runner"], _run_windows_security_fallback_session
-        )
-        self.assertIs(captured["allow_system_tray"], False)
+        self.assertTrue(callable(captured["session_runner"]))
+        self.assertTrue(callable(captured["solver_setup"]))
+        self.assertEqual(captured["solver_setup"](), 0)  # type: ignore[operator]
+        elevated_setup.assert_called_once_with()
+        self.assertIs(captured["allow_system_tray"], True)
         self.assertEqual(captured["cpu_workers"], 4)
         self.assertEqual(captured["max_memory_mb"], 8192)
 
-    def test_fallback_window_does_not_import_pillow_tray_path(self) -> None:
+    def test_fallback_window_uses_dependency_free_notification_tray(self) -> None:
         events: list[str] = []
 
         class Root:
@@ -146,35 +151,49 @@ class WindowsSecurityTests(unittest.TestCase):
                 del root, session_runner, options
                 events.append("app")
 
-            def minimize_window(self) -> None:
-                events.append("minimize")
+            def request_tray_command(self, command: str) -> None:
+                del command
+
+            desired_on = True
+
+            def attach_tray(self, tray: object) -> None:
+                del tray
+                events.append("attach")
+
+            def show_window(self) -> None:
+                events.append("show")
 
         tkinter = SimpleNamespace(Tk=lambda: events.append("tk") or Root())
-        blocked_tray = SimpleNamespace(
-            create_system_tray=lambda *args, **kwargs: self.fail(
-                f"native tray path was used: {args!r} {kwargs!r}"
-            )
+        dependency_free_tray = SimpleNamespace(
+            create_system_tray=lambda *args, **kwargs: events.append("tray")
+            or object()
         )
         with (
             patch.dict(
                 "sys.modules",
-                {"tkinter": tkinter, "agent_helper.tray": blocked_tray},
+                {
+                    "tkinter": tkinter,
+                    "agent_helper.tray": dependency_free_tray,
+                    "PIL": None,
+                    "pystray": None,
+                },
             ),
             patch("agent_helper.gui.AgentToggleApp", App),
+            patch("agent_helper.gui.agent_icon_path"),
         ):
             run_toggle_window(
                 lambda stop_event, report: None,
                 cpu_workers=2,
                 max_memory_mb=4096,
-                allow_system_tray=False,
+                allow_system_tray=True,
             )
 
         self.assertEqual(
             events,
-            ["tk", "withdraw", "app", "minimize", "mainloop"],
+            ["tk", "withdraw", "app", "tray", "attach", "mainloop"],
         )
 
-    def test_fallback_session_never_registers_and_waits_for_stop(self) -> None:
+    def test_unprepared_wsl_session_never_registers_and_waits_for_stop(self) -> None:
         stop_event = threading.Event()
         ready = threading.Event()
         statuses: list[str] = []
@@ -183,19 +202,56 @@ class WindowsSecurityTests(unittest.TestCase):
             statuses.append(status)
             ready.set()
 
-        thread = threading.Thread(
-            target=_run_windows_security_fallback_session,
-            args=(stop_event, report),
-        )
-        thread.start()
-        try:
-            self.assertTrue(ready.wait(1))
-            self.assertEqual(statuses, ["windows_security"])
-            self.assertTrue(thread.is_alive())
-        finally:
-            stop_event.set()
-            thread.join(1)
+        with patch(
+            "agent_helper.wsl_solver.discover_wsl_runtime", return_value=None
+        ):
+            thread = threading.Thread(
+                target=_run_wsl_or_windows_security_session,
+                args=(SimpleNamespace(), SimpleNamespace(), stop_event, report),
+                kwargs={"refresh_event": threading.Event()},
+            )
+            thread.start()
+            try:
+                self.assertTrue(ready.wait(1))
+                self.assertEqual(statuses, ["windows_security"])
+                self.assertTrue(thread.is_alive())
+            finally:
+                stop_event.set()
+                thread.join(1)
         self.assertFalse(thread.is_alive())
+
+    def test_ready_wsl_runtime_transitions_into_normal_owner_worker(self) -> None:
+        stop_event = threading.Event()
+        statuses: list[str] = []
+        config = SimpleNamespace()
+        identity = SimpleNamespace()
+        runtime = SimpleNamespace(distribution="TKBCherryAgent")
+        runner = object()
+
+        with (
+            patch(
+                "agent_helper.wsl_solver.discover_wsl_runtime",
+                return_value=runtime,
+            ),
+            patch("agent_helper.wsl_solver.WslSolverRunner", return_value=runner),
+            patch("agent_helper.__main__._run_worker_session") as run_worker,
+        ):
+            _run_wsl_or_windows_security_session(
+                config,
+                identity,
+                stop_event,
+                statuses.append,
+                threading.Event(),
+            )
+
+        self.assertEqual(statuses, ["windows_security", "starting"])
+        run_worker.assert_called_once_with(
+            config,
+            identity,
+            runner,
+            stop_event,
+            statuses.append,
+        )
 
 
 if __name__ == "__main__":

@@ -11,12 +11,45 @@ from pathlib import Path
 
 RUNTIME_ROOT = Path(__file__).resolve().parents[1]
 SOLVE_SCRIPT = RUNTIME_ROOT / "scripts" / "solve_stdio.py"
+WSL_SOLVE_SCRIPT = RUNTIME_ROOT / "scripts" / "wsl_solve.py"
 PROTOCOL = "tkb-reference-solver-stdio-v1"
 PROGRESS_PROTOCOL = "tkb-reference-solver-progress-v1"
 PROGRESS_PREFIX = b"@@TKB_PROGRESS@@"
 
 
 class StdioProtocolTests(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "WSL wrapper uses Linux process limits")
+    def test_wsl_wrapper_preserves_protocol_and_resource_environment(self) -> None:
+        environment = dict(os.environ)
+        environment.update(
+            {
+                "TKB_AGENT_SOLVER_RUN_ID": "a" * 32,
+                "TKB_SOLVER_MAX_MEMORY_MB": "4096",
+                "TKB_SOLVER_HARD_TIMEOUT_SECONDS": "30",
+                "TKB_SOLVER_MAX_WORKERS": "2",
+            }
+        )
+        completed = subprocess.run(
+            [sys.executable, str(WSL_SOLVE_SCRIPT), "solve"],
+            input=b"",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=RUNTIME_ROOT,
+            env=environment,
+            check=False,
+            timeout=40,
+        )
+
+        self.assertEqual(
+            completed.returncode,
+            0,
+            completed.stderr.decode("utf-8", errors="replace"),
+        )
+        wrapper = json.loads(completed.stdout.decode("utf-8"))
+        self.assertEqual(wrapper["protocol"], PROTOCOL)
+        self.assertEqual(wrapper["status"], 400)
+        self.assertEqual(completed.stdout.count(b"\n"), 1)
+
     def test_solve_entrypoint_emits_one_framed_json_document(self) -> None:
         completed = subprocess.run(
             [sys.executable, str(SOLVE_SCRIPT), "solve"],

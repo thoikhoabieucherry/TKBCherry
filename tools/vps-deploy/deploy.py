@@ -52,6 +52,7 @@ STAGING_SUBTREES = {
 STAGING_FILES = {
     ".github/workflows/build-agent-windows.yml",
     "rust_api/fixtures/sample-data-with-class-off.json",
+    "solver_runtime/requirements-wsl.txt",
     "tools/agent-release/sign_release.py",
 }
 WEB_RUNTIME_EXTENSIONS = {

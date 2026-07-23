@@ -6,7 +6,7 @@ Agent chỉ tạo kết nối HTTPS đi ra ngoài. Nó không mở cổng, khôn
 
 ## Cài trên Windows
 
-Hỗ trợ Windows 10/11 64-bit. Không cần cài đặt và không cần quyền Administrator.
+Hỗ trợ Windows 10/11 64-bit. Agent chạy hằng ngày bằng quyền người dùng thường. Trên máy bật Smart App Control, lần bấm **CÀI BỘ XỬ LÝ AGENT** đầu tiên sẽ hỏi quyền Administrator để Windows cài WSL; những lần mở sau không hỏi lại.
 
 1. Trong trang Xếp trên máy tính Windows, bấm **Agent** để tải `TKBCherryAgent-Windows.zip`.
 2. Chọn **Giải nén tất cả**. Gói phát hành chỉ chứa đúng một file `TKBCherryAgent.exe` ngay ở thư mục gốc; không chạy EXE trực tiếp bên trong ZIP.
@@ -16,7 +16,9 @@ Hỗ trợ Windows 10/11 64-bit. Không cần cài đặt và không cần quy�
 
 Bấm **TẮT AGENT** để ngừng nhận việc, dừng cả solver đang chạy và gỡ mục tự khởi động; bấm **BẬT AGENT** sẽ đăng ký lại. Nút X chỉ ẩn cửa sổ xuống khay như UniKey; kích đúp icon khay để mở lại, hoặc chuột phải để Mở, Bật, Tắt và Thoát nhanh. Mọi lần mở thủ công hoặc chạy cùng Windows đều tự ON và chỉ nằm ở khay. Lệnh **Thoát** dừng phiên hiện tại nhưng giữ tự khởi động nếu Agent đang ON. Khi ON nhưng chưa có lượt xếp, Agent chỉ giữ kết nối chờ nhẹ và không chạy solver. Mục tự khởi động chỉ chứa đường dẫn `TKBCherryAgent.exe` và cờ cố định `--startup`; không có token hay dữ liệu người dùng. Gói Windows không dùng bộ cài CMD/PowerShell, không cần chạy lệnh cài đặt và không chứa sẵn token hay mật khẩu.
 
-Nếu Windows Smart App Control đang chặn các thư viện solver chưa có chữ ký tin cậy, Agent hiển thị trạng thái **VPS** và không nạp Pillow/khay hệ thống hay solver cục bộ. Trong chế độ này cửa sổ tự thu nhỏ xuống taskbar thay vì bật ra trước mặt; bấm biểu tượng taskbar để mở lại. Lượt xếp vẫn chạy trên VPS cho đến khi gói native có chữ ký Authenticode đáng tin cậy.
+Nếu Windows Smart App Control chặn các thư viện solver native chưa có chữ ký tin cậy, Agent vẫn nằm trong khay thông báo bằng Win32 thuần và hiển thị **VPS**. Mở Agent rồi bấm **CÀI BỘ XỬ LÝ AGENT**: một UAC duy nhất cài môi trường WSL và đúng bộ OR-Tools/SciPy đang dùng trên VPS. Sau khi cài xong, Agent tự chuyển sang ON, nhận việc bằng token của đúng trường và bộ giải Linux dùng CPU/RAM máy này. Nếu Windows yêu cầu khởi động lại, thực hiện một lần rồi mở Agent và bấm cài lại để hoàn tất. Không tắt Smart App Control và không cần chạy Agent bằng Administrator mỗi ngày.
+
+Agent không chạy cùng một lượt song song với VPS. Khi Agent ON và đã nhận lease, Agent là nơi xếp duy nhất; khi Agent OFF, máy ngủ/tắt hoặc mất kết nối, lease hết hạn và VPS nhận lại công việc. Bộ xử lý WSL chạy dưới tài khoản hệ thống hạn chế `tkb-agent`, không nhận token đăng nhập và không mở cổng mạng.
 
 Token Agent không phải mật khẩu đăng nhập, không thể truy cập dữ liệu quản trị và không thể tự tạo một lượt xếp. Trên Windows, token được mã hóa bằng DPAPI cho đúng tài khoản Windows hiện tại rồi lưu tại `%LOCALAPPDATA%\TKBCherry\AgentHelper\agent-credential`; tài khoản Windows khác không thể giải mã file này.
 
@@ -32,7 +34,7 @@ Bản EXE mới dùng cơ chế thay thế atomic hiện có: dừng tiến trì
 
 1. Bản Windows đóng gói tự bật từ OFF sang ON ngay khi mở. Nếu chưa có token, Agent tạo một mã ghép đôi ngắn hạn bằng `/pair/start`, mở `verificationUrl` chứa truy vấn `agentPair=XXXX-XXXX`, rồi chờ `/pair/status`. Trình duyệt đang đăng nhập duyệt đúng một lần qua `/pair/approve`; token Agent chỉ được trả về cho phía đang giữ `deviceCode` bí mật.
 2. Agent xác thực bằng token đã ghép đôi; `/hello` trả một `workerToken` ngắn hạn, ràng buộc với đúng phiên đó và chỉ được giữ trong RAM. Sau đó Agent mở một yêu cầu chờ dài (`long-poll`). Khi người dùng bấm **Xếp**, công việc có thể được giao ngay trên kết nối đang chờ.
-3. Agent gửi nguyên gói `{data, settings}` cho `solver_runtime/scripts/solve_stdio.py` qua stdin.
+3. Agent gửi nguyên gói `{data, settings}` cho solver qua stdin. Máy bình thường dùng solver-child Windows; máy bị Smart App Control chặn native dùng cùng pipeline CP-SAT trong WSL.
 4. Trong lúc xếp, Agent gia hạn lease và nhận tín hiệu hủy từ máy chủ.
 5. Agent tải ứng viên lên, rồi xác nhận ứng viên đã gửi bằng mã băm `tkb-json-tree-sha256-v1` và khóa chống gửi trùng. VPS vẫn là nơi duy nhất quyết định và công bố kết quả cuối.
 6. Web chỉ đọc trạng thái/kết quả từ máy chủ; tab trình duyệt không sở hữu tiến trình xếp. Chuyển Agent sang OFF đặt tín hiệu dừng, hủy cây tiến trình solver và ngừng long-poll trước khi cho phép bật lại.
@@ -64,7 +66,7 @@ python -m agent_helper --config agent-helper.json --once
 - `poll_wait_seconds`: thời gian long-poll, tối đa 60 giây.
 - `heartbeat_seconds`: chu kỳ gia hạn công việc đang chạy.
 - `solver_timeout_seconds`: trần thời gian tuyệt đối; giới hạn lease từ máy chủ có thể ngắn hơn.
-- `max_memory_mb`: mặc định cho phép đến toàn bộ RAM vật lý, nhưng đây chỉ là trần chứ không phải lượng RAM được đặt trước. Windows Job Object tự dùng trần thích ứng 4 GB, 8 GB hoặc 16 GB theo kích thước TKB và không vượt mức người dùng cho phép.
+- `max_memory_mb`: mặc định cho phép đến toàn bộ RAM vật lý, nhưng đây chỉ là trần chứ không phải lượng RAM được đặt trước. Windows Job Object hoặc giới hạn địa chỉ Linux trong WSL dùng trần thích ứng 4 GB, 8 GB hoặc 16 GB theo kích thước TKB và không vượt mức người dùng cho phép.
 - `max_request_bytes`, `max_result_bytes`, `max_stderr_bytes`: chặn dữ liệu hoặc log native quá lớn. stdout/stderr được hút song song qua pipe có backpressure và chỉ ghi tới giới hạn, nên tiến trình không thể làm đầy RAM hay ổ đĩa bằng log.
 
 Agent lưu một UUID vô danh tại `%LOCALAPPDATA%\TKBCherry\AgentHelper\agent-id` và token Agent đã được DPAPI bảo vệ tại file `agent-credential`; đồng thời dùng khóa hệ điều hành để không cho hai bản Agent chạy cùng lúc. Dữ liệu trường, yêu cầu xếp, kết quả và mật khẩu không được Agent lưu lâu dài. `deviceCode` chỉ tồn tại trong lúc ghép đôi; `workerToken` do `/hello` cấp chỉ tồn tại trong bộ nhớ đến khi Agent dừng hoặc đăng ký lại. Token, `workerToken` và các biến môi trường nhạy cảm bị loại khỏi môi trường solver con. stdin/stdout/stderr dùng file tạm delete-on-close và bị hệ điều hành xóa kể cả khi Agent bị đóng đột ngột; solver được chạy với `TKB_NO_LOGS=1`.
@@ -81,7 +83,7 @@ Máy phát hành có Smart App Control không được chạy lại PyInstaller/
 
 Sau khi tải artifact về, máy phát hành chỉ chạy `tools/agent-release/sign_release.py` để ký manifest cho đúng byte ZIP/EXE bằng khóa RSA đang được DPAPI bảo vệ. Khóa riêng không được chuyển lên GitHub. Chữ ký manifest bảo vệ cơ chế cập nhật của TKBCherry nhưng không thay thế Authenticode cho các DLL/PYD native.
 
-File phát hành cho web là `agent_helper\dist\TKBCherryAgent-Windows.zip`. Archive này được script kiểm tra bắt buộc chỉ có một entry `TKBCherryAgent.exe` ở root. EXE dùng PyInstaller `onefile`, chế độ cửa sổ; runtime solver được biên dịch thành bytecode tối ưu và bỏ file `.py` thô. Bản phát hành không nén lại bằng UPX để giữ nguyên bootloader chuẩn, giảm tín hiệu dễ bị Smart App Control đánh giá là không đáng tin cậy. Vì EXE tự chứa NumPy, SciPy và OR-Tools nên lần mở đầu có thể chậm hơn vài giây trong lúc giải nén an toàn vào thư mục tạm. Build chỉ thành công sau khi bản onedir và onefile tạo được cửa sổ Tk ẩn thật, đồng thời solver-child trả đúng protocol. Gói không kèm token, mật khẩu, CMD hay PowerShell.
+File phát hành cho web là `agent_helper\dist\TKBCherryAgent-Windows.zip`. Archive này được script kiểm tra bắt buộc chỉ có một entry `TKBCherryAgent.exe` ở root. EXE dùng PyInstaller `onefile`, chế độ cửa sổ; runtime Windows được biên dịch thành bytecode tối ưu. EXE đồng thời mang nguồn runtime tối thiểu cho bước cài WSL; trình cài chép sang Linux, kiểm tra import thật, biên dịch bytecode rồi xóa `.py` trong bản đã cài. Bản phát hành không nén lại bằng UPX để giữ nguyên bootloader chuẩn. Vì EXE tự chứa NumPy, SciPy và OR-Tools nên lần mở đầu có thể chậm hơn vài giây trong lúc giải nén an toàn vào thư mục tạm. Build chỉ thành công sau khi bản onedir và onefile tạo được cửa sổ Tk ẩn thật, đồng thời solver-child trả đúng protocol. Gói không kèm token, mật khẩu, CMD hay PowerShell.
 
 Build đồng thời tạo `agent_helper\dist\TKBCherryAgent-release.json`. Metadata này chứa phiên bản, URL, kích thước và SHA-256 của ZIP/EXE rồi được ký RSA-SHA256 bằng khóa phát hành DPAPI. Script từ chối tạo manifest nếu khóa riêng không khớp khóa công khai đã ghim trong Agent.
 

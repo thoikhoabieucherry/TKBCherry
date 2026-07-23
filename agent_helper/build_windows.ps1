@@ -127,7 +127,7 @@ if ($SkipDependencyInstall) {
     # Do not import native solver packages here. Smart App Control can block an
     # unsigned OR-Tools DLL during this inventory step even though packaging
     # only needs to read the installed files.
-    & $VirtualPython -c "import importlib.util as u; names=('cryptography','numpy','openpyxl','ortools','PIL','PyInstaller','pystray','scipy'); missing=[n for n in names if u.find_spec(n) is None]; assert not missing, 'missing: '+','.join(missing); print('Offline build dependencies OK')"
+    & $VirtualPython -c "import importlib.util as u; names=('cryptography','numpy','openpyxl','ortools','PyInstaller','scipy'); missing=[n for n in names if u.find_spec(n) is None]; assert not missing, 'missing: '+','.join(missing); print('Offline build dependencies OK')"
     if ($LASTEXITCODE -ne 0) {
         throw "The existing build environment is incomplete; rerun without -SkipDependencyInstall when package access is available."
     }
@@ -243,11 +243,48 @@ if (Get-ChildItem -LiteralPath $ProtectedSolverRoot -Filter "*.py" -File -Recurs
     throw "Raw solver Python source remained in the protected runtime."
 }
 
+# Keep a separate Linux-source payload for the one-time WSL setup. Copy only
+# Python source files so test caches, local artifacts and unrelated data can
+# never enter the public EXE.
+$WslRuntimeSource = Join-Path $BuildRoot "wsl-runtime-source"
+if (Test-Path -LiteralPath $WslRuntimeSource) {
+    Remove-Item -LiteralPath $WslRuntimeSource -Recurse -Force
+}
+$WslSolverRoot = Join-Path $WslRuntimeSource "solver_runtime"
+foreach ($RelativeRoot in @("scripts", "src")) {
+    $SourceDirectory = Join-Path $SolverRoot $RelativeRoot
+    foreach ($SourceFile in Get-ChildItem -LiteralPath $SourceDirectory -File -Filter "*.py" -Recurse) {
+        $RelativeFile = [System.IO.Path]::GetRelativePath($SourceDirectory, $SourceFile.FullName)
+        $DestinationFile = Join-Path (Join-Path $WslSolverRoot $RelativeRoot) $RelativeFile
+        New-Item -ItemType Directory -Force -Path (Split-Path $DestinationFile -Parent) | Out-Null
+        Copy-Item -LiteralPath $SourceFile.FullName -Destination $DestinationFile -Force
+    }
+}
+foreach ($DataFile in Get-ChildItem -LiteralPath (Join-Path $SolverRoot "src") -File -Filter "*.json" -Recurse) {
+    $RelativeFile = [System.IO.Path]::GetRelativePath((Join-Path $SolverRoot "src"), $DataFile.FullName)
+    $DestinationFile = Join-Path (Join-Path $WslSolverRoot "src") $RelativeFile
+    New-Item -ItemType Directory -Force -Path (Split-Path $DestinationFile -Parent) | Out-Null
+    Copy-Item -LiteralPath $DataFile.FullName -Destination $DestinationFile -Force
+}
+Copy-Item `
+    -LiteralPath (Join-Path $SolverRoot "requirements-wsl.txt") `
+    -Destination (Join-Path $WslSolverRoot "requirements-wsl.txt") `
+    -Force
+if (-not (Test-Path -LiteralPath (Join-Path $WslSolverRoot "scripts\wsl_solve.py") -PathType Leaf)) {
+    throw "The WSL solver wrapper was not staged."
+}
+if (Get-ChildItem -LiteralPath $WslRuntimeSource -File -Recurse | Where-Object { $_.Extension -notin @(".py", ".json", ".txt") }) {
+    throw "Unexpected file entered the WSL runtime payload."
+}
+
 $WorkPath = Join-Path $BuildRoot "work"
 $SpecPath = Join-Path $BuildRoot "spec"
 $Launcher = Join-Path $AgentRoot "launcher.py"
 $SolverScriptsData = "$(Join-Path $ProtectedSolverRoot 'scripts');solver_runtime\scripts"
 $SolverSourceData = "$(Join-Path $ProtectedSolverRoot 'src');solver_runtime\src"
+$WslSolverScriptsData = "$(Join-Path $WslSolverRoot 'scripts');wsl_runtime\solver_runtime\scripts"
+$WslSolverSourceData = "$(Join-Path $WslSolverRoot 'src');wsl_runtime\solver_runtime\src"
+$WslRequirementsData = "$(Join-Path $WslSolverRoot 'requirements-wsl.txt');wsl_runtime\solver_runtime"
 $AgentIconData = "$(Join-Path $RepositoryRoot 'web\assets\favicon-cherry.png');agent_helper\assets"
 $TclData = "$(Join-Path $TclRuntimeRoot 'tcl8.6');_tcl_data"
 $TkData = "$(Join-Path $TclRuntimeRoot 'tk8.6');_tk_data"
@@ -269,6 +306,9 @@ $PyInstallerArguments = @(
     "--paths", (Join-Path $SolverRoot "src"),
     "--add-data", $SolverScriptsData,
     "--add-data", $SolverSourceData,
+    "--add-data", $WslSolverScriptsData,
+    "--add-data", $WslSolverSourceData,
+    "--add-data", $WslRequirementsData,
     "--add-data", $AgentIconData,
     "--add-data", $TclData,
     "--add-data", $TkData,
@@ -286,13 +326,9 @@ $PyInstallerArguments = @(
     "--hidden-import", "ortools.util.python.sorted_interval_list",
     "--collect-binaries", "ortools",
     "--hidden-import", "openpyxl",
-    "--hidden-import", "pystray",
-    "--hidden-import", "pystray._win32",
     "--hidden-import", "tkinter",
     "--hidden-import", "tkinter.ttk",
     "--hidden-import", "_tkinter",
-    "--hidden-import", "PIL.Image",
-    "--hidden-import", "PIL.PngImagePlugin",
     $Launcher
 )
 & $VirtualPython @PyInstallerArguments
@@ -317,6 +353,9 @@ $StandaloneArguments = @(
     "--paths", (Join-Path $SolverRoot "src"),
     "--add-data", $SolverScriptsData,
     "--add-data", $SolverSourceData,
+    "--add-data", $WslSolverScriptsData,
+    "--add-data", $WslSolverSourceData,
+    "--add-data", $WslRequirementsData,
     "--add-data", $AgentIconData,
     "--add-data", $TclData,
     "--add-data", $TkData,
@@ -330,13 +369,9 @@ $StandaloneArguments = @(
     "--hidden-import", "ortools.util.python.sorted_interval_list",
     "--collect-binaries", "ortools",
     "--hidden-import", "openpyxl",
-    "--hidden-import", "pystray",
-    "--hidden-import", "pystray._win32",
     "--hidden-import", "tkinter",
     "--hidden-import", "tkinter.ttk",
     "--hidden-import", "_tkinter",
-    "--hidden-import", "PIL.Image",
-    "--hidden-import", "PIL.PngImagePlugin",
     $Launcher
 )
 & $VirtualPython @StandaloneArguments
