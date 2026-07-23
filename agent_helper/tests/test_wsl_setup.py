@@ -107,6 +107,8 @@ class WslSetupTests(unittest.TestCase):
             calls.append((command, data if isinstance(data, bytes) else None))
             if command[1:3] == ["--list", "--quiet"]:
                 return subprocess.CompletedProcess(command, 0, b"TKBCherryAgent\n", b"")
+            if "/bin/true" in command:
+                return subprocess.CompletedProcess(command, 0, b"", b"")
             if "cat" in command:
                 return subprocess.CompletedProcess(
                     command, 0, WSL_RUNTIME_VERSION.encode(), b""
@@ -174,6 +176,8 @@ class WslSetupTests(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 0, output, b"")
             if command[1:3] == ["--install", "--distribution"]:
                 return subprocess.CompletedProcess(command, 0, b"installed", b"")
+            if "/bin/true" in command:
+                return subprocess.CompletedProcess(command, 0, b"", b"")
             if "bash" in command:
                 return subprocess.CompletedProcess(command, 0, b"", b"")
             if "cat" in command:
@@ -248,6 +252,8 @@ class WslSetupTests(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 0, output, b"")
             if command[1:3] == ["--install", "--distribution"]:
                 return subprocess.CompletedProcess(command, 0, b"installed", b"")
+            if "/bin/true" in command:
+                return subprocess.CompletedProcess(command, 0, b"", b"")
             if "bash" in command:
                 return subprocess.CompletedProcess(command, 0, b"", b"")
             if "cat" in command:
@@ -311,6 +317,8 @@ class WslSetupTests(unittest.TestCase):
                         b"",
                     )
                 return subprocess.CompletedProcess(command, 0, b"installed", b"")
+            if "/bin/true" in command:
+                return subprocess.CompletedProcess(command, 0, b"", b"")
             if "bash" in command:
                 return subprocess.CompletedProcess(command, 0, b"", b"")
             if "cat" in command:
@@ -337,6 +345,58 @@ class WslSetupTests(unittest.TestCase):
         )
         self.assertEqual(result.distribution, WSL_MANAGED_DISTRIBUTIONS[1])
 
+    def test_broken_primary_agent_distribution_uses_secondary_name(self) -> None:
+        commands: list[list[str]] = []
+        secondary_installed = False
+
+        def run(command: list[str], **options: object) -> subprocess.CompletedProcess[bytes]:
+            nonlocal secondary_installed
+            del options
+            commands.append(command)
+            if command[1:3] == ["--list", "--quiet"]:
+                output = (
+                    b"TKBCherryAgent\nTKBCherryAgent-2\n"
+                    if secondary_installed
+                    else b"TKBCherryAgent\n"
+                )
+                return subprocess.CompletedProcess(command, 0, output, b"")
+            if "/bin/true" in command:
+                selected = command[command.index("--distribution") + 1]
+                return subprocess.CompletedProcess(
+                    command,
+                    1 if selected == "TKBCherryAgent" else 0,
+                    b"",
+                    b"The existing distribution cannot start",
+                )
+            if command[1:3] == ["--install", "--distribution"]:
+                secondary_installed = True
+                return subprocess.CompletedProcess(command, 0, b"installed", b"")
+            if "bash" in command:
+                return subprocess.CompletedProcess(command, 0, b"", b"")
+            if "cat" in command:
+                return subprocess.CompletedProcess(
+                    command, 0, WSL_RUNTIME_VERSION.encode(), b""
+                )
+            self.fail(f"unexpected command: {command}")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            make_source(source)
+            result = install_wsl_runtime(
+                source_root=source,
+                executable="wsl.exe",
+                run=run,
+                platform_name="posix",
+            )
+
+        install_command = next(command for command in commands if "--install" in command)
+        self.assertEqual(
+            install_command[install_command.index("--name") + 1],
+            WSL_MANAGED_DISTRIBUTIONS[1],
+        )
+        self.assertFalse(any("--unregister" in command for command in commands))
+        self.assertEqual(result.distribution, WSL_MANAGED_DISTRIBUTIONS[1])
+
     def test_missing_source_falls_back_to_other_official_distribution(self) -> None:
         commands: list[list[str]] = []
         active_distribution = ""
@@ -361,6 +421,8 @@ class WslSetupTests(unittest.TestCase):
                     )
                 active_distribution = source_name
                 return subprocess.CompletedProcess(command, 0, b"installed", b"")
+            if "/bin/true" in command:
+                return subprocess.CompletedProcess(command, 0, b"", b"")
             if "bash" in command:
                 return subprocess.CompletedProcess(command, 0, b"", b"")
             if "cat" in command:
@@ -514,6 +576,8 @@ class WslSetupTests(unittest.TestCase):
                 return subprocess.CompletedProcess(
                     command, 0, b"TKBCherryAgent\n", b""
                 )
+            if "/bin/true" in command:
+                return subprocess.CompletedProcess(command, 0, b"", b"")
             if "bash" in command:
                 return subprocess.CompletedProcess(command, 0, b"", b"")
             if "cat" in command:
@@ -555,6 +619,8 @@ class WslSetupTests(unittest.TestCase):
                 if list_count == 1:
                     raise subprocess.TimeoutExpired(command, options.get("timeout", 0))
                 return subprocess.CompletedProcess(command, 0, b"TKBCherryAgent\n", b"")
+            if "/bin/true" in command:
+                return subprocess.CompletedProcess(command, 0, b"", b"")
             if command[0] == "winget.exe":
                 return subprocess.CompletedProcess(command, 0, b"repaired", b"")
             if "bash" in command:
@@ -616,9 +682,17 @@ class WslSetupTests(unittest.TestCase):
             if command[0] == "wsl.exe" and command[1:] == ["--help"]:
                 help_count += 1
                 help_text = (
-                    "--install --distribution --name --web-download"
+                    "    --install [Distro]\n"
+                    "            --name <Name>\n"
+                    "            --web-download\n"
+                    "    --mount <Disk>\n"
                     if help_count >= 2
-                    else "--install --distribution"
+                    else (
+                        "    --install [Distro]\n"
+                        "            --web-download\n"
+                        "    --mount <Disk>\n"
+                        "            --name <Name>\n"
+                    )
                 )
                 return subprocess.CompletedProcess(
                     command, 0, help_text.encode("utf-16-le"), b""
@@ -628,6 +702,8 @@ class WslSetupTests(unittest.TestCase):
             if command[1:3] == ["--install", "--distribution"]:
                 installed = True
                 return subprocess.CompletedProcess(command, 0, b"installed", b"")
+            if "/bin/true" in command:
+                return subprocess.CompletedProcess(command, 0, b"", b"")
             if "bash" in command:
                 return subprocess.CompletedProcess(command, 0, b"", b"")
             if "cat" in command:

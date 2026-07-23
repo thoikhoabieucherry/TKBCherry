@@ -320,13 +320,53 @@ def _run(
         ) from exc
 
 
-def _select_distribution(installed: Sequence[str]) -> str | None:
+def _probe_managed_distributions(
+    executable: str,
+    installed: Sequence[str],
+    *,
+    run: RunCommand | None,
+    excluded: set[str] | frozenset[str] = frozenset(),
+) -> tuple[str | None, set[str], list[str]]:
+    """Pick a launchable Agent distro without deleting a broken one."""
+
     lookup = {name.casefold(): name for name in installed}
-    for name in WSL_MANAGED_DISTRIBUTIONS:
-        selected = lookup.get(name.casefold())
-        if selected:
-            return selected
-    return None
+    unusable: set[str] = set()
+    diagnostics: list[str] = []
+    for managed_name in WSL_MANAGED_DISTRIBUTIONS:
+        if managed_name.casefold() in excluded:
+            continue
+        distribution = lookup.get(managed_name.casefold())
+        if not distribution:
+            continue
+        try:
+            completed = _run(
+                [
+                    executable,
+                    "--distribution",
+                    distribution,
+                    "--user",
+                    "root",
+                    "--exec",
+                    "/bin/true",
+                ],
+                run=run,
+                timeout=30.0,
+                action=f"Kiểm tra môi trường Linux riêng {distribution}",
+            )
+        except WslSetupError as exc:
+            unusable.add(distribution.casefold())
+            diagnostics.append(_safe_diagnostic_text(str(exc), limit=500))
+            continue
+        if completed.returncode == 0:
+            return distribution, unusable, diagnostics
+        unusable.add(distribution.casefold())
+        diagnostics.append(
+            _safe_command_diagnostic(
+                completed,
+                label=f"WSL {distribution}",
+            )
+        )
+    return None, unusable, diagnostics
 
 
 def _distribution_sources(preferred: str) -> tuple[str, ...]:
@@ -617,8 +657,30 @@ def _supports_private_distribution_install(
             _decode_wsl_output(completed.stderr or b""),
         )
         if text
-    ).casefold()
-    return "--name" in output and "--web-download" in output
+    )
+    install_flags: set[str] = set()
+    install_indent: int | None = None
+    for raw_line in output.expandtabs(4).splitlines():
+        stripped = raw_line.strip()
+        indent = len(raw_line) - len(raw_line.lstrip())
+        if install_indent is None:
+            if re.match(r"^--install(?:\s|,|$)", stripped, flags=re.IGNORECASE):
+                install_indent = indent
+                install_flags.update(
+                    flag.casefold()
+                    for flag in re.findall(r"--[a-z0-9-]+", stripped, re.IGNORECASE)
+                )
+            continue
+        if (
+            indent <= install_indent
+            and re.match(r"^--[a-z0-9-]+(?:\s|,|$)", stripped, re.IGNORECASE)
+        ):
+            break
+        install_flags.update(
+            flag.casefold()
+            for flag in re.findall(r"--[a-z0-9-]+", stripped, re.IGNORECASE)
+        )
+    return {"--name", "--web-download"}.issubset(install_flags)
 
 
 def _ensure_private_distribution_install_support(
@@ -711,17 +773,31 @@ def install_wsl_runtime(
         if platform == "nt"
         else _setup_distributions(wsl, run=run)
     )
-    distribution = _select_distribution(installed)
+    distribution, unusable_distributions, diagnostics = _probe_managed_distributions(
+        wsl,
+        installed,
+        run=run,
+    )
     if distribution is None:
+        sources = _distribution_sources(distribution_name)
+        installed_lookup = {name.casefold() for name in installed}
+        install_targets = [
+            name
+            for name in WSL_MANAGED_DISTRIBUTIONS
+            if name.casefold() not in installed_lookup
+        ]
+        if not install_targets:
+            raise WslSetupError(
+                "Các môi trường Linux riêng của Agent hiện không khởi động được.",
+                _safe_diagnostic_text(" ".join(diagnostics), limit=1200),
+            )
         if platform == "nt":
             _ensure_private_distribution_install_support(wsl, run=run)
-        sources = _distribution_sources(distribution_name)
         source_index = 0
         target_index = 0
-        diagnostics: list[str] = []
         while distribution is None:
             source_distribution = sources[source_index]
-            target_distribution = WSL_MANAGED_DISTRIBUTIONS[target_index]
+            target_distribution = install_targets[target_index]
             install_command = [
                 wsl,
                 "--install",
@@ -744,7 +820,14 @@ def install_wsl_runtime(
                 return WslSetupResult(target_distribution, restart_required=True)
 
             installed = _setup_distributions(wsl, run=run)
-            distribution = _select_distribution(installed)
+            distribution, newly_unusable, probe_diagnostics = _probe_managed_distributions(
+                wsl,
+                installed,
+                run=run,
+                excluded=unusable_distributions,
+            )
+            unusable_distributions.update(newly_unusable)
+            diagnostics.extend(probe_diagnostics)
             if distribution is not None:
                 break
             if completed.returncode == 0:
@@ -758,7 +841,7 @@ def install_wsl_runtime(
             )
             if (
                 _is_distribution_name_collision(completed)
-                and target_index + 1 < len(WSL_MANAGED_DISTRIBUTIONS)
+                and target_index + 1 < len(install_targets)
             ):
                 target_index += 1
                 continue

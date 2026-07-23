@@ -38,18 +38,20 @@ change so a machine restart or a new conversation does not erase project context
   existing Ubuntu, Debian or Docker distro. A bounded second private name
   handles an invisible stale registration; Ubuntu and Debian source images are
   fallback options only when WSL explicitly reports the preceding official
-  source as unavailable. No distro is unregistered or deleted.
+  source as unavailable. The installer parses only the `wsl --install` help
+  block and updates an older responsive WSL package before using `--name`; a
+  lightweight `/bin/true` probe also bypasses a visible but unlaunchable managed
+  distro. No distro is unregistered or deleted.
 - WSL1/WSL2 selection remains capability based and the runtime contract remains
   `20260723.1`. Setup generation `20260723.2` lets this repaired installer retry
   exactly once over a same-boot marker written by an older setup, while the same
   generation still suppresses UAC loops. Agent source and Windows metadata are
-  1.6.29. Full local Agent verification passes **149/149** with one
+  1.6.29. Full local Agent verification passes **150/150** with one
   platform-semantic skip. Focused WSL/setup/packaging verification passes
-  **35/35**. Isolated VPS staging passes scheduler **172/172**, Agent **149/149**,
-  trusted-worker operations **5/5**, Rust API **149/149**, and validator
-  **20/20**, ending with `STAGING_TESTS_OK`. This candidate still needs the
-  normal GitHub Windows build, release signing, transactional deployment, and
-  live WSL1 acceptance.
+  **36/36**. Earlier isolated staging passed before the final capability and
+  broken-distro probes were added, so the complete staging matrix must run
+  again. This candidate still needs the normal GitHub Windows build, release
+  signing, transactional deployment, and live WSL1 acceptance.
 
 ### v1.63 teacher session modes, responsive tables, and SAC fallback (deployed 2026-07-22)
 
