@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import re
@@ -335,6 +336,35 @@ def _dism_executable() -> str:
     return shutil.which("dism.exe") or shutil.which("dism") or "dism.exe"
 
 
+def _preferred_wsl_version(*, platform_name: str | None = None) -> int:
+    """Choose WSL2 when firmware virtualization is available, else WSL1.
+
+    Some Windows laptops expose the WSL service but have virtualization or
+    SLAT disabled in firmware. Asking those machines to install the default
+    WSL2 VM only produces a long, opaque ``wsl --list`` timeout. WSL1 still
+    runs the same Linux solver and uses the host CPU/RAM without requiring a
+    virtual machine.
+    """
+
+    platform = os.name if platform_name is None else platform_name
+    if platform != "nt":
+        return 2
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.IsProcessorFeaturePresent.argtypes = [ctypes.c_uint]
+        kernel32.IsProcessorFeaturePresent.restype = ctypes.c_bool
+        # Windows processor-feature constants:
+        # PF_SECOND_LEVEL_ADDRESS_TRANSLATION=20,
+        # PF_VIRT_FIRMWARE_ENABLED=21.
+        slat = bool(kernel32.IsProcessorFeaturePresent(20))
+        firmware = bool(kernel32.IsProcessorFeaturePresent(21))
+    except (AttributeError, OSError, TypeError, ValueError):
+        # Let WSL2 remain the normal choice if the capability probe is not
+        # available; its bounded setup error can still be shown safely.
+        return 2
+    return 2 if slat and firmware else 1
+
+
 def _winget_executable(*, platform_name: str | None = None) -> str | None:
     """Locate Windows' signed App Installer command through PATH."""
 
@@ -567,6 +597,7 @@ def install_wsl_runtime(
             "Hai thành phần Windows đã bật nhưng không tìm thấy wsl.exe.",
         )
 
+    preferred_wsl_version = _preferred_wsl_version(platform_name=platform)
     installed = (
         _setup_distributions_with_repair(
             wsl,
@@ -577,14 +608,17 @@ def install_wsl_runtime(
     )
     distribution = _select_distribution(installed, distribution_name)
     if distribution is None:
+        install_command = [
+            wsl,
+            "--install",
+            "--distribution",
+            distribution_name,
+            "--no-launch",
+            "--version",
+            str(preferred_wsl_version),
+        ]
         completed = _run(
-            [
-                wsl,
-                "--install",
-                "--distribution",
-                distribution_name,
-                "--no-launch",
-            ],
+            install_command,
             run=run,
             timeout=20 * 60,
             action=f"Cài môi trường Linux {distribution_name}",

@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from agent_helper.wsl_setup import (
     DEFAULT_DISTRIBUTION,
@@ -14,6 +14,7 @@ from agent_helper.wsl_setup import (
     WslSetupError,
     WslSetupResult,
     _read_setup_report,
+    _preferred_wsl_version,
     _winget_executable,
     _write_setup_report,
     install_wsl_runtime,
@@ -43,6 +44,29 @@ def make_source(root: Path) -> None:
 
 
 class WslSetupTests(unittest.TestCase):
+    def test_missing_firmware_virtualization_selects_wsl1(self) -> None:
+        kernel32 = MagicMock()
+        kernel32.IsProcessorFeaturePresent.return_value = False
+        with patch(
+            "agent_helper.wsl_setup.ctypes.WinDLL",
+            return_value=kernel32,
+            create=True,
+        ):
+            self.assertEqual(_preferred_wsl_version(platform_name="nt"), 1)
+
+    def test_firmware_virtualization_selects_wsl2(self) -> None:
+        kernel32 = MagicMock()
+        kernel32.IsProcessorFeaturePresent.side_effect = lambda feature: feature in {20, 21}
+        with patch(
+            "agent_helper.wsl_setup.ctypes.WinDLL",
+            return_value=kernel32,
+            create=True,
+        ):
+            self.assertEqual(_preferred_wsl_version(platform_name="nt"), 2)
+
+    def test_non_windows_defaults_to_wsl2(self) -> None:
+        self.assertEqual(_preferred_wsl_version(platform_name="posix"), 2)
+
     def test_winget_uses_registered_windows_apps_alias_from_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             local_app_data = Path(temporary)
