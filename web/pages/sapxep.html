@@ -126,6 +126,10 @@ body.planner-shell .toolbar-actions > .solve-duration-control {
   white-space: nowrap;
 }
 
+body.planner-shell .toolbar-actions > .solve-duration-control[hidden] {
+  display: none !important;
+}
+
 body.planner-shell .toolbar-actions > .solve-duration-control:focus-within {
   border-color: #94a3b8;
   box-shadow: 0 0 0 2px rgb(148 163 184 / 18%);
@@ -307,7 +311,7 @@ body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggl
 }
 
 body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button {
-  order: 1;
+  order: initial;
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -324,7 +328,7 @@ body.planner-shell #btnAgentHelper .agent-status-dot {
   height: 8px;
   border: 2px solid #fff;
   border-radius: 50%;
-  background: #94a3b8;
+  background: #dc2626;
   box-shadow: 0 1px 3px rgb(15 23 42 / 24%);
   pointer-events: none;
 }
@@ -345,6 +349,10 @@ body.planner-shell #btnAgentHelper:disabled {
 }
 
 body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button[hidden] {
+  display: none !important;
+}
+
+body.planner-shell #btnAgentHelper[hidden] {
   display: none !important;
 }
 
@@ -428,6 +436,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
   body.planner-shell .toolbar-actions > button,
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button,
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
     flex: 0 1 auto;
     width: 100%;
@@ -451,6 +460,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
   body.planner-shell .toolbar-actions > button:active:not(:disabled),
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button:active:not(:disabled),
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button:active:not(:disabled),
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle:active:not(:disabled) {
     transform: translateY(1px);
     box-shadow: 0 1px 1px rgb(15 23 42 / 8%);
@@ -466,11 +476,13 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   body.planner-shell .toolbar-actions > #btnUndoTKB {
     grid-column: 2;
     grid-row: 1;
+    align-self: end;
   }
 
   body.planner-shell .toolbar-actions > #btnRedoTKB {
-    grid-column: 3;
+    grid-column: 2;
     grid-row: 1;
+    align-self: start;
   }
 
   body.planner-shell .toolbar-actions > #btnUndoTKB,
@@ -478,23 +490,31 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     flex: none;
     width: 100%;
     min-width: 0;
-    height: 44px;
-    min-height: 44px;
+    height: 22px;
+    min-height: 22px;
+  }
+
+  body.planner-shell .toolbar-actions > #btnRedoTKB {
+    border-radius: var(--tkb-radius, 10px) var(--tkb-radius, 10px) 0 0;
+  }
+
+  body.planner-shell .toolbar-actions > #btnUndoTKB {
+    border-radius: 0 0 var(--tkb-radius, 10px) var(--tkb-radius, 10px);
   }
 
   body.planner-shell .toolbar-actions > #btnAutoSort {
-    grid-column: 5;
+    grid-column: 4;
     grid-row: 1;
   }
 
   body.planner-shell .toolbar-actions > .solve-duration-control {
-    grid-column: 4;
+    grid-column: 3;
     grid-row: 1;
+    display: inline-flex;
     width: 100%;
     height: 44px;
     min-height: 44px;
     padding: 0 3px;
-    gap: 0;
     border-radius: var(--tkb-radius, 10px);
     box-shadow: var(--tkb-shadow, 0 1px 3px rgb(15 23 42 / 6%));
     font-size: 10.5px;
@@ -506,7 +526,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
   body.planner-shell .toolbar-actions > #btnStopAutoSort,
   body.planner-shell .toolbar-actions > #btnDeleteAll {
-    grid-column: 6 !important;
+    grid-column: 5 !important;
     grid-row: 1 !important;
   }
 
@@ -535,16 +555,6 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
   body.planner-shell .toolbar-actions > #btnAutoSort:hover:not(:disabled) .toolbar-icon {
     transform: translateX(1px) scale(1.06);
-  }
-
-  body.planner-shell .toolbar-actions > #btnUndoTKB,
-  body.planner-shell .toolbar-actions > #btnRedoTKB {
-    flex: 0 1 auto;
-    width: 100%;
-    min-width: 0;
-    max-width: none;
-    height: 44px;
-    min-height: 44px;
   }
 
   body.planner-shell .toolbar-label-full {
@@ -687,7 +697,32 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   }
 
   body.planner-shell #btnAgentHelper {
-    display: none !important;
+    grid-column: 6;
+    grid-row: 1;
+    display: inline-flex !important;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    gap: 0;
+    border-radius: var(--tkb-radius, 10px);
+    font-size: 0;
+    touch-action: manipulation;
+  }
+
+  body.planner-shell #btnAgentHelper .agent-ai-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  body.planner-shell #btnAgentHelper .agent-status-dot {
+    top: 3px;
+    left: 3px;
+    width: 8px;
+    height: 8px;
+    border-width: 2px;
   }
 
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button {
@@ -699,7 +734,15 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
     grid-column: 8;
     grid-row: 1;
+    height: 44px;
+    min-height: 44px;
     padding-inline: 3px;
+    border-radius: var(--tkb-radius, 10px);
+  }
+
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle .toolbar-icon {
+    width: 20px;
+    height: 20px;
   }
 
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-popover {
@@ -798,12 +841,6 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     overflow-wrap: normal;
   }
 
-}
-
-@media (min-width: 901px) and (hover: none) and (pointer: coarse) {
-  body.planner-shell #btnAgentHelper {
-    display: none !important;
-  }
 }
 
 @media (max-width: 410px) {
@@ -1191,8 +1228,8 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
     <div class="toolbar-secondary-actions" aria-label="Điều hướng và thống kê">
       <div class="stats-popover-wrap">
+        <button id="btnAgentHelper" class="agent-helper-button" type="button" title="Agent đang bật; bấm để dùng VPS." aria-label="Agent đang bật; bấm để dùng VPS." aria-pressed="true" onclick="toggleBrowserAgent()" data-agent-state="unavailable" hidden aria-hidden="true" aria-disabled="true" disabled><span class="agent-status-dot" aria-hidden="true"></span><svg class="toolbar-icon agent-ai-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v2"/><rect x="4" y="6" width="16" height="14" rx="4"/><path d="M8 11h.01M16 11h.01M8.5 16c1 .8 2.15 1.2 3.5 1.2s2.5-.4 3.5-1.2"/><path d="m18.5 2 .45 1.05L20 3.5l-1.05.45L18.5 5l-.45-1.05L17 3.5l1.05-.45L18.5 2Z"/></svg><span>Agent</span></button>
         <button id="btnHome" class="primary save-button" type="button" title="Về trang chủ" aria-label="Về trang chủ" onclick="saveAndBack()">Home</button>
-        <button id="btnAgentHelper" class="agent-helper-button" type="button" title="Agent trình duyệt sẵn sàng, dùng CPU/RAM khi tối ưu." aria-label="Agent trình duyệt sẵn sàng, dùng CPU/RAM khi tối ưu." data-agent-state="unavailable" hidden aria-hidden="true" aria-disabled="true" disabled><span class="agent-status-dot" aria-hidden="true"></span><svg class="toolbar-icon agent-ai-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v2"/><rect x="4" y="6" width="16" height="14" rx="4"/><path d="M8 11h.01M16 11h.01M8.5 16c1 .8 2.15 1.2 3.5 1.2s2.5-.4 3.5-1.2"/><path d="m18.5 2 .45 1.05L20 3.5l-1.05.45L18.5 5l-.45-1.05L17 3.5l1.05-.45L18.5 2Z"/></svg><span>Agent</span></button>
         <button id="statsToggle" class="stats-toggle" type="button" onclick="toggleStatsPopover(event)" title="Thống kê thời khóa biểu" aria-label="Thống kê thời khóa biểu" aria-expanded="false"><span class="toolbar-label-full" aria-hidden="true">Thống kê</span><span class="toolbar-label-compact" aria-hidden="true"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M4 20V13h4v7M10 20V9h4v11M16 20V5h4v15M3 20h18"/></svg></span></button>
         <div id="statsPopover" class="stats-popover" hidden>
           <div id="statsBox" class="stats-box"></div>
@@ -1252,8 +1289,8 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="../vendor/sql-wasm.js"></script>
 <script src="../kvdb.js?v=20260707-vendor-local-v1"></script>
 <script src="tkb-engine.js?v=20260624-clean-no-solver1"></script>
-<script src="tkb-browser-wasm.js?v=20260723-v165-ios-agent-status-v1"></script>
-<script src="phanmon.js?v=20260723-v165-ios-agent-status-v1"></script>
+<script src="tkb-browser-wasm.js?v=20260723-v167-compact-history-duration-v1"></script>
+<script src="phanmon.js?v=20260723-v167-compact-history-duration-v1"></script>
 <script src="phanmon-ops.js?v=20260617-fixed-legacy1"></script>
 <script src="tkb-constraints.js?v=20260722-v163-one-session-responsive-tables-v1"></script>
 <script src="tkb-constraints-menu.js?v=20260721-v160-click-accordion-scroll-safe-v1"></script>
@@ -1261,7 +1298,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="tkb-export.js?v=20260701-excel-style-v1"></script>
 <script src="tkb-word-export.js?v=20260705-save-picker-v1"></script>
 <script src="tkb-student-excel-export.js?v=20260705-school-wide-prefix-v6"></script>
-  <script src="tkb-rust-bridge.js?v=20260723-v165-ios-agent-status-v1"></script>
+  <script src="tkb-rust-bridge.js?v=20260723-v167-compact-history-duration-v1"></script>
 
 </body>
 </html>

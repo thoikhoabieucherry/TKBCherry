@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-browser-wasm-worker-v2";
+  const VERSION = "tkb-browser-wasm-worker-v3-portfolio";
   const SOLVER_PROTOCOL = "tkb-reference-solver-stdio-v1";
   const MAX_WASM_BYTES = 64 * 1024 * 1024;
   const MAX_REQUEST_BYTES = 32 * 1024 * 1024;

@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v264-browser-refinement-gate";
+  const VERSION = "tkb-rust-api-v265-browser-portfolio-direct";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -11641,7 +11641,7 @@
       await yieldResponsiveUi();
       if(!cacheEligible) requestData.__tkbSolverRequestNonce = solveRunId;
       const browserWasmRequest = {data: requestData, settings: effectiveSettings};
-      const body = JSON.stringify(browserWasmRequest);
+      let body = "";
       await yieldResponsiveUi();
       const browserWasmEligible = !!(
         window.TKBBrowserWasmExecutor
@@ -11663,6 +11663,12 @@
           signal:controller.signal
         }).catch(() => false);
       }
+      if(browserWasmProbed){
+        effectiveSettings.ui_browser_wasm_ready = true;
+      }else{
+        delete effectiveSettings.ui_browser_wasm_ready;
+      }
+      body = JSON.stringify(browserWasmRequest);
       traceSolveStep("postSolve:before-fetch", {
         requestBytes: body.length,
         timeoutMs,

@@ -1,7 +1,7 @@
 (function(root){
   "use strict";
 
-  const VERSION = "tkb-browser-wasm-executor-v3-ios-foreground";
+  const VERSION = "tkb-browser-wasm-executor-v4-portfolio-toggle";
   const AGENT_PROTOCOL = "tkb-agent-helper-v1";
   const AGENT_VERSION = "1.6.29";
   const SOLVER_PROTOCOL = "tkb-reference-solver-stdio-v1";
@@ -10,12 +10,16 @@
   const WASM_URL = `tkb_native_solver.wasm?v=${encodeURIComponent(VERSION)}`;
   const HEARTBEAT_MS = 8000;
   const MAX_DIGEST_BYTES = 96 * 1024 * 1024;
+  const ENABLED_STORAGE_KEY = "TKB_BROWSER_WASM_ENABLED_V1";
+  const MAX_DESKTOP_WORKERS = 8;
+  const MAX_MOBILE_WORKERS = 2;
 
   const state = {
     active:false,
     apiBase:"",
     authHeaders:{},
     worker:null,
+    workers:[],
     workerToken:"",
     agentId:"",
     jobId:"",
@@ -32,10 +36,25 @@
     activationPromise:null,
     closePromise:null,
     loopPromise:null,
-    pendingFetches:new Set()
+    pendingFetches:new Set(),
+    enabledOverride:null
   };
 
   const encoder = new TextEncoder();
+
+  function isIOSNavigator(deviceNavigator){
+    const nav = deviceNavigator || {};
+    const platform = String(nav.userAgentData?.platform || nav.platform || "");
+    const userAgent = String(nav.userAgent || "");
+    return /iPhone|iPad|iPod/i.test(userAgent)
+      || (/MacIntel/i.test(platform) && Number(nav.maxTouchPoints || 0) > 1);
+  }
+
+  function browserAgentEnabled(){
+    if(typeof state.enabledOverride === "boolean") return state.enabledOverride;
+    try{ return root.localStorage?.getItem(ENABLED_STORAGE_KEY) !== "0"; }
+    catch(_){ return true; }
+  }
 
   function isSupportedNavigator(deviceNavigator){
     const nav = deviceNavigator || {};
@@ -49,12 +68,13 @@
     const isiOS = /iPhone|iPad|iPod/i.test(userAgent) || iPadDesktopMode;
     const windows = /Windows/i.test(platform) || /Windows NT/i.test(userAgent);
     const android = uaData.platform === "Android" || /Android/i.test(userAgent);
+    const linux = /Linux/i.test(platform) || /Linux|X11/i.test(userAgent);
     const macOS = (/Mac/i.test(platform) || /Macintosh|Mac OS X/i.test(userAgent))
       && !iPadDesktopMode;
-    return windows || android || macOS || isiOS;
+    return windows || android || macOS || isiOS || (linux && !android);
   }
 
-  function runtimeSupported(){
+  function runtimeCapable(){
     return isSupportedNavigator(root.navigator)
       && root.document?.visibilityState !== "hidden"
       && typeof root.Worker === "function"
@@ -63,6 +83,23 @@
       && typeof root.TextEncoder === "function"
       && !!root.crypto?.subtle
       && typeof root.fetch === "function";
+  }
+
+  function runtimeSupported(){
+    return browserAgentEnabled() && runtimeCapable();
+  }
+
+  function portfolioWorkerCount(deviceNavigator){
+    const nav = deviceNavigator || {};
+    const hardware = Math.max(1, Math.min(64, Number(nav.hardwareConcurrency || 1) || 1));
+    const userAgent = String(nav.userAgent || "");
+    const android = nav.userAgentData?.platform === "Android" || /Android/i.test(userAgent);
+    const mobile = isIOSNavigator(nav) || android || nav.userAgentData?.mobile === true;
+    const memory = Number(nav.deviceMemory || 0);
+    let cap = mobile ? MAX_MOBILE_WORKERS : MAX_DESKTOP_WORKERS;
+    if(memory > 0 && memory <= 2) cap = 1;
+    else if(memory > 0 && memory <= 4) cap = Math.min(cap, 2);
+    return Math.max(1, Math.min(cap, hardware > 1 ? hardware - 1 : 1));
   }
 
   function isCompleteRefinementRequest(request){
@@ -97,6 +134,7 @@
       || typeof metrics !== "object"
       || Array.isArray(metrics)
       || !Array.isArray(lessons)
+      || incumbent?.validation?.hard_ok !== true
     ) return false;
     const expected = metrics.expected_periods;
     const scheduled = metrics.scheduled_periods;
@@ -244,8 +282,8 @@
     state.pendingFetches.clear();
   }
 
-  function workerRequest(type, payload, timeoutMs, signal){
-    if(!state.worker) return Promise.reject(new Error("browser_wasm_worker_missing"));
+  function workerRequestOn(worker, type, payload, timeoutMs, signal){
+    if(!worker) return Promise.reject(new Error("browser_wasm_worker_missing"));
     const requestId = `${Date.now().toString(36)}-${++state.requestCounter}`;
     return new Promise((resolve, reject) => {
       if(signal?.aborted){
@@ -269,9 +307,20 @@
         reject(error);
       };
       signal?.addEventListener?.("abort", onAbort, {once:true});
-      state.waiters.set(requestId, {resolve, reject, timer, signal, onAbort});
-      state.worker.postMessage(Object.assign({type, requestId, wasmUrl:WASM_URL}, payload || {}));
+      state.waiters.set(requestId, {resolve, reject, timer, signal, onAbort, worker});
+      try{
+        worker.postMessage(Object.assign({type, requestId, wasmUrl:WASM_URL}, payload || {}));
+      }catch(error){
+        state.waiters.delete(requestId);
+        root.clearTimeout(timer);
+        signal?.removeEventListener?.("abort", onAbort);
+        reject(error);
+      }
     });
+  }
+
+  function workerRequest(type, payload, timeoutMs, signal){
+    return workerRequestOn(state.worker, type, payload, timeoutMs, signal);
   }
 
   function settleWorkerMessage(message){
@@ -285,22 +334,60 @@
     else waiter.resolve(message);
   }
 
-  function rejectWorkerWaiters(error){
-    for(const waiter of state.waiters.values()){
+  function rejectWorkerWaiters(error, targetWorker){
+    for(const [requestId, waiter] of Array.from(state.waiters.entries())){
+      if(targetWorker && waiter.worker !== targetWorker) continue;
+      state.waiters.delete(requestId);
       root.clearTimeout(waiter.timer);
       waiter.signal?.removeEventListener?.("abort", waiter.onAbort);
       try{ waiter.reject(error); }catch(_){ }
     }
-    state.waiters.clear();
+    if(!targetWorker) state.waiters.clear();
+  }
+
+  function terminateComputeWorkers(){
+    for(const worker of state.workers){
+      try{ worker?.terminate?.(); }catch(_){ }
+    }
+    state.workers = [];
+    state.worker = null;
   }
 
   async function startComputeWorker(signal){
-    if(state.worker) return true;
-    const worker = new root.Worker(WORKER_URL);
-    state.worker = worker;
-    worker.onmessage = event => settleWorkerMessage(event?.data || {});
-    worker.onerror = () => rejectWorkerWaiters(new Error("browser_wasm_worker_crashed"));
-    await workerRequest("probe", {}, 8000, signal);
+    if(state.workers.length) return true;
+    const count = portfolioWorkerCount(root.navigator);
+    const workers = [];
+    state.workers = workers;
+    try{
+      for(let index = 0; index < count; index++){
+        const worker = new root.Worker(WORKER_URL);
+        workers.push(worker);
+        worker.onmessage = event => settleWorkerMessage(event?.data || {});
+        worker.onerror = () => rejectWorkerWaiters(
+          new Error("browser_wasm_worker_crashed"),
+          worker
+        );
+      }
+      state.worker = workers[0] || null;
+      const probes = await Promise.allSettled(workers.map(worker => (
+        workerRequestOn(worker, "probe", {}, 8000, signal)
+      )));
+      const readyWorkers = workers.filter((worker, index) => {
+        const ready = probes[index]?.status === "fulfilled";
+        if(!ready){
+          rejectWorkerWaiters(new Error("browser_wasm_worker_probe_failed"), worker);
+          try{ worker.terminate(); }catch(_){ }
+        }
+        return ready;
+      });
+      if(!readyWorkers.length) throw new Error("browser_wasm_worker_probe_failed");
+      state.workers = readyWorkers;
+      state.worker = readyWorkers[0];
+    }catch(error){
+      terminateComputeWorkers();
+      rejectWorkerWaiters(error);
+      throw error;
+    }
     return true;
   }
 
@@ -511,6 +598,144 @@
     }
   }
 
+  function nonnegativeMetric(metrics, key){
+    const value = Number(metrics?.[key]);
+    return Number.isFinite(value) && value >= 0 ? Math.trunc(value) : null;
+  }
+
+  function completeHardResult(result){
+    const metrics = result?.metrics;
+    const lessons = result?.lessons;
+    if(
+      !result
+      || typeof result !== "object"
+      || Array.isArray(result)
+      || result.ok !== true
+      || !metrics
+      || typeof metrics !== "object"
+      || Array.isArray(metrics)
+      || !Array.isArray(lessons)
+      || !Array.isArray(result.unassignedLessons)
+      || result.unassignedLessons.length !== 0
+      || result?.validation?.hard_ok !== true
+    ) return false;
+    const expected = Number(metrics.expected_periods);
+    return Number.isSafeInteger(expected)
+      && expected > 0
+      && Number(metrics.scheduled_periods) === expected
+      && lessons.length === expected
+      && Number(metrics.unassigned_periods) === 0
+      && metrics.hard_ok === true
+      && Number(metrics.app_constraint_violation_count) === 0;
+  }
+
+  function qualityTupleFromResult(result){
+    const metrics = result?.metrics;
+    if(!metrics || typeof metrics !== "object" || Array.isArray(metrics)) return null;
+    const onePeriod = nonnegativeMetric(metrics, "one_period_teacher_sessions");
+    let gap2 = nonnegativeMetric(metrics, "teacher_gap2_sessions");
+    const teacherSessions = nonnegativeMetric(metrics, "teacher_sessions");
+    const distribution = metrics.gap_distribution;
+    if(!distribution || typeof distribution !== "object" || Array.isArray(distribution)) return null;
+    const gap1 = Object.prototype.hasOwnProperty.call(distribution, "1")
+      ? nonnegativeMetric(distribution, "1")
+      : 0;
+    let totalGap = nonnegativeMetric(metrics, "gap_total");
+    if(gap2 == null){
+      gap2 = Object.entries(distribution).reduce((total, [gap, count]) => {
+        const numericGap = Number(gap);
+        const numericCount = Number(count);
+        return numericGap >= 2 && Number.isFinite(numericCount) && numericCount > 0
+          ? total + Math.trunc(numericCount)
+          : total;
+      }, 0);
+    }
+    if(totalGap == null){
+      totalGap = Object.entries(distribution).reduce((total, [gap, count]) => {
+        const numericGap = Number(gap);
+        const numericCount = Number(count);
+        return numericGap >= 0 && Number.isFinite(numericCount) && numericCount > 0
+          ? total + Math.trunc(numericGap) * Math.trunc(numericCount)
+          : total;
+      }, 0);
+    }
+    if([onePeriod, gap2, teacherSessions, gap1, totalGap].some(value => value == null)) return null;
+    return [onePeriod, gap2, teacherSessions, gap1, totalGap];
+  }
+
+  function compareQuality(left, right){
+    if(!left && !right) return 0;
+    if(!left) return 1;
+    if(!right) return -1;
+    for(let index = 0; index < Math.min(left.length, right.length); index++){
+      if(left[index] !== right[index]) return left[index] - right[index];
+    }
+    return left.length - right.length;
+  }
+
+  function portfolioRequest(request, index, count, lease){
+    if(count <= 1) return request;
+    const cloned = JSON.parse(JSON.stringify(request));
+    const settings = cloned.settings && typeof cloned.settings === "object"
+      ? cloned.settings
+      : (cloned.settings = {});
+    const baseSeed = settings.random_seed == null ? "" : String(settings.random_seed);
+    if(index > 0){
+      settings.random_seed = `${baseSeed}|web-portfolio-v1:${index}|${String(lease?.jobId || "")}`;
+    }
+    settings.browser_portfolio_index = index;
+    settings.browser_portfolio_count = count;
+    return cloned;
+  }
+
+  function qualityWithinEnvelope(candidate, incumbent){
+    if(!candidate || !incumbent || candidate.length !== incumbent.length) return false;
+    return candidate.every((value, index) => value <= incumbent[index]);
+  }
+
+  async function runPortfolio(refinementRequest, lease, signal){
+    const workers = state.workers.length ? state.workers.slice() : [state.worker].filter(Boolean);
+    if(!workers.length) throw new Error("browser_wasm_worker_missing");
+    const incumbent = refinementRequest?.data?.tkbSolverResult;
+    const incumbentQuality = qualityTupleFromResult(incumbent);
+    let best = null;
+    let validCandidateCount = 0;
+    await Promise.all(workers.map(async (worker, index) => {
+      try{
+        const message = await workerRequestOn(
+          worker,
+          "solve",
+          {payload:portfolioRequest(refinementRequest, index, workers.length, lease)},
+          31 * 60 * 1000,
+          signal
+        );
+        const frame = message?.frame;
+        const status = Number(frame?.status || 0);
+        const result = frame?.payload;
+        if(
+          frame?.protocol !== SOLVER_PROTOCOL
+          || !Number.isInteger(status)
+          || status < 200
+          || status >= 300
+          || !result
+          || typeof result !== "object"
+          || Array.isArray(result)
+          || !completeHardResult(result)
+        ) return;
+        const candidate = {frame, status, result, quality:qualityTupleFromResult(result), index};
+        if(!candidate.quality) return;
+        validCandidateCount += 1;
+        if(incumbentQuality && !qualityWithinEnvelope(candidate.quality, incumbentQuality)) return;
+        if(!best || compareQuality(candidate.quality, best.quality) < 0) best = candidate;
+      }catch(_){ }
+    }));
+    if(best) return best;
+    if(validCandidateCount > 0 && completeHardResult(incumbent) && incumbentQuality){
+      return {status:200, result:incumbent, quality:incumbentQuality, index:workers.length};
+    }
+    throw new Error("browser_wasm_no_candidate");
+  }
+
   async function runLease(lease, generation, signal){
     lease.localExpiresAtMs = Date.now() + state.leaseMs;
     state.lease = lease;
@@ -521,30 +746,11 @@
         await failLease(lease, state.workerToken, "browser_wasm_ineligible_request", false);
         return false;
       }
-      const resultMessage = await workerRequest(
-        "solve",
-        {payload:refinementRequest},
-        31 * 60 * 1000,
-        signal
-      );
+      const portfolio = await runPortfolio(refinementRequest, lease, signal);
       if(!state.active || state.generation !== generation || state.lease !== lease){
         return false;
       }
-      const frame = resultMessage?.frame;
-      const status = Number(frame?.status || 0);
-      const result = frame?.payload;
-      if(
-        frame?.protocol !== SOLVER_PROTOCOL
-        || !Number.isInteger(status)
-        || status < 200
-        || status >= 300
-        || !result
-        || typeof result !== "object"
-        || Array.isArray(result)
-      ){
-        await failLease(lease, state.workerToken, "browser_wasm_no_candidate", false);
-        return false;
-      }
+      const {status, result} = portfolio;
       const digest = await resultDigest(result);
       const candidate = await fetchJson(
         `/api/agent-helper/v1/leases/${encodeURIComponent(lease.leaseId)}/candidate`,
@@ -603,7 +809,7 @@
           jobId:state.jobId,
           leaseRequestId:requestId,
           agent:agentWire(),
-          capacity:{cpuWorkers:1, maxConcurrentJobs:1},
+          capacity:{cpuWorkers:Math.max(1, state.workers.length), maxConcurrentJobs:1},
           waitSeconds:5
         }, {timeoutMs:11000, signal});
         const lease = payload?.lease;
@@ -627,7 +833,7 @@
   async function probeExecutor(options){
     const opts = options && typeof options === "object" ? options : {};
     if(!isCompleteRefinementRequest(opts.request) || opts.signal?.aborted) return false;
-    if(state.probed && state.worker) return true;
+    if(state.probed && state.worker && state.workers.length) return true;
     if(state.probePromise) return state.probePromise;
     state.probePromise = (async () => {
       if(state.closePromise) await state.closePromise.catch(() => null);
@@ -651,8 +857,7 @@
       state.probed = true;
       return true;
     })().catch(() => {
-      try{ state.worker?.terminate?.(); }catch(_){ }
-      state.worker = null;
+      terminateComputeWorkers();
       state.probed = false;
       return false;
     }).finally(() => {
@@ -663,14 +868,18 @@
 
   async function activateExecutor(options){
     const opts = options && typeof options === "object" ? options : {};
-    if(!isCompleteRefinementRequest(opts.request) || opts.signal?.aborted) return false;
+    if(
+      !browserAgentEnabled()
+      || !isCompleteRefinementRequest(opts.request)
+      || opts.signal?.aborted
+    ) return false;
     const jobId = String(opts.jobId || "").trim();
     if(!jobId || jobId.length > 256) return false;
     if(state.active && state.workerToken) return state.jobId === jobId;
     if(state.activationPromise) return state.activationPromise;
     state.activationPromise = (async () => {
       const activationFence = state.generation;
-      if(!state.probed || !state.worker){
+      if(!state.probed || !state.worker || !state.workers.length){
         const probed = await probeExecutor(opts);
         if(!probed) return false;
       }
@@ -679,7 +888,7 @@
         protocol:AGENT_PROTOCOL,
         jobId,
         agent:agentWire(),
-        capacity:{cpuWorkers:1, maxConcurrentJobs:1}
+        capacity:{cpuWorkers:Math.max(1, state.workers.length), maxConcurrentJobs:1}
       }, {timeoutMs:4000, signal:opts.signal});
       const workerToken = String(hello?.workerToken || "");
       if(workerToken.length < 32 || workerToken.length > 512){
@@ -688,6 +897,8 @@
       if(
         state.generation !== activationFence
         || !state.worker
+        || !state.workers.length
+        || !browserAgentEnabled()
         || root.document?.visibilityState === "hidden"
       ){
         // pagehide may race the hello response. Revoke the just-issued token
@@ -704,8 +915,7 @@
       state.loopPromise = claimLoop(generation, opts.signal);
       return true;
     })().catch(() => {
-      try{ state.worker?.terminate?.(); }catch(_){ }
-      state.worker = null;
+      terminateComputeWorkers();
       state.workerToken = "";
       state.active = false;
       return false;
@@ -733,8 +943,7 @@
     clearHeartbeat();
     abortPendingFetches();
     rejectWorkerWaiters(new Error(String(reason || "browser_wasm_closed")));
-    try{ state.worker?.terminate?.(); }catch(_){ }
-    state.worker = null;
+    terminateComputeWorkers();
     state.workerToken = "";
     state.jobId = "";
     state.closePromise = (async () => {
@@ -747,11 +956,23 @@
     return state.closePromise;
   }
 
+  async function setBrowserAgentEnabled(enabled){
+    const next = enabled !== false;
+    state.enabledOverride = next;
+    try{ root.localStorage?.setItem(ENABLED_STORAGE_KEY, next ? "1" : "0"); }
+    catch(_){ }
+    if(!next){
+      await closeExecutor("browser_agent_disabled", {failLease:true, keepalive:true});
+    }
+    return next;
+  }
+
   function stopForBackground(){
     if(
       !state.active
       && !state.workerToken
       && !state.worker
+      && state.workers.length === 0
       && !state.probed
       && state.pendingFetches.size === 0
     ) return false;
@@ -769,6 +990,9 @@
   root.TKBBrowserWasmExecutor = {
     version:VERSION,
     isSupportedNavigator,
+    isEnabled:browserAgentEnabled,
+    setEnabled:setBrowserAgentEnabled,
+    portfolioWorkerCount,
     canHandleRequest:isCompleteRefinementRequest,
     refinementRequestClone:browserRefinementRequest,
     probe:probeExecutor,
@@ -781,8 +1005,11 @@
       active:state.active,
       probed:state.probed,
       hasWorker:!!state.worker,
+      workerCount:state.workers.length,
       hasLease:!!state.lease,
-      jobId:state.jobId
+      jobId:state.jobId,
+      enabled:browserAgentEnabled(),
+      available:runtimeCapable()
     })
   };
 })(typeof window !== "undefined" ? window : globalThis);

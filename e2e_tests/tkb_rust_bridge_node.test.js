@@ -308,7 +308,8 @@ function loadBridge(data, fetchImpl, runtime = {}){
     document,
     localStorage,
     sessionStorage,
-    navigator: {hardwareConcurrency: 8},
+    navigator: Object.assign({hardwareConcurrency: 8}, runtime.navigator || {}),
+    TKBBrowserWasmExecutor: runtime.TKBBrowserWasmExecutor,
     location: Object.assign({
       protocol: "http:",
       hostname: "127.0.0.1",
@@ -325,6 +326,7 @@ function loadBridge(data, fetchImpl, runtime = {}){
     requestIdleCallback(callback){ return setTimeoutImpl(callback, 0); },
     addEventListener: runtime.addEventListener || (() => {}),
     removeEventListener: runtime.removeEventListener || (() => {}),
+    matchMedia: runtime.matchMedia || (() => ({matches:false})),
     confirm: runtime.confirm || (() => true),
     alert(){},
     console: consoleImpl
@@ -1310,6 +1312,137 @@ test("planner exposes one automatic arrange button and one accessible seconds du
   const durationTag = PLANNER_HTML.match(/<input\b[^>]*id="solveDurationSeconds"[^>]*>/i)?.[0] || "";
   assert.match(durationTag, /type="number"[^>]*min="10"[^>]*max="1800"[^>]*aria-label="[^"]*giây[^"]*"/i);
   assert.doesNotMatch(durationTag, /\bvalue=|\bplaceholder=|\btitle=/i);
+});
+
+test("iPhone and iPad keep an explicit custom duration while blank remains automatic", () => {
+  const mobileNavigators = [
+    {
+      platform:"iPhone",
+      userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)",
+      maxTouchPoints:5
+    },
+    {
+      platform:"MacIntel",
+      userAgent:"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15)",
+      maxTouchPoints:5
+    }
+  ];
+  for(const navigator of mobileNavigators){
+    const storage = memoryStorage();
+    storage.setItem("TKB_SOLVE_DURATION_SECONDS_V2", "275");
+    const durationControl = {
+      hidden:false,
+      ariaHidden:"false",
+      setAttribute(name, value){ if(name === "aria-hidden") this.ariaHidden = String(value); }
+    };
+    const input = {
+      value:"275",
+      dataset:{},
+      disabled:false,
+      closest(selector){ return selector === ".solve-duration-control" ? durationControl : null; },
+      addEventListener(){},
+      removeEventListener(){},
+      setAttribute(){},
+      removeAttribute(){}
+    };
+    const document = {
+      getElementById(id){ return id === "solveDurationSeconds" ? input : null; },
+      querySelector(){ return null; },
+      querySelectorAll(){ return []; },
+      createElement(){
+        return {
+          dataset:{},
+          classList:{add(){}, remove(){}, toggle(){}},
+          setAttribute(){},
+          appendChild(){},
+          remove(){}
+        };
+      },
+      documentElement:{appendChild(){}},
+      body:{appendChild(){}}
+    };
+    const {hooks} = loadBridge(makeData(2), null, {
+      localStorage:storage,
+      document,
+      navigator
+    });
+
+    assert.equal(storage.getItem("TKB_SOLVE_DURATION_SECONDS_V2"), "275");
+    assert.equal(input.value, "275");
+    assert.equal(input.dataset.durationMode, "custom");
+    assert.equal(durationControl.hidden, false);
+    assert.equal(durationControl.ariaHidden, "false");
+    const plan = hooks.buildAutomaticAutoSortPlan(makeData(2));
+    assert.equal(plan.settings.ui_custom_solve_duration_seconds, 275);
+    assert.equal(plan.settings.overall_time_limit_seconds, 275);
+    assert.equal(plan.settings.backend_deadline_ms, 275000);
+  }
+});
+
+test("browser readiness marker is serialized only after a successful eligible WASM probe", async () => {
+  for(const browserReady of [true, false]){
+    const data = makeData(2);
+    const subject = data.mon[0].ten;
+    data.tkb = {
+      L1:{thu2:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]}}
+    };
+    data.tkbSolverResult = {
+      ok:true,
+      lessons:[
+        {classId:"L1", subject, teacherId:"GV01", day:"thu2", session:"sang", period:0},
+        {classId:"L1", subject, teacherId:"GV01", day:"thu2", session:"sang", period:1}
+      ],
+      metrics:{
+        scheduled_periods:2,
+        expected_periods:2,
+        unassigned_periods:0,
+        hard_ok:true,
+        core_hard_ok:true,
+        app_constraint_violation_count:0
+      },
+      validation:{hard_ok:true},
+      unassignedLessons:[],
+      solver:{runtime_settings:{}}
+    };
+    let posted = null;
+    let probeCalls = 0;
+    let closeCalls = 0;
+    const executor = {
+      isEnabled(){ return browserReady; },
+      canHandleRequest(){ return true; },
+      async probe(){ probeCalls += 1; return browserReady; },
+      async activate(){ throw new Error("a direct test response must not activate a lease"); },
+      async close(){ closeCalls += 1; return true; }
+    };
+    const fetchImpl = async (url, options = {}) => {
+      const requestUrl = String(url);
+      if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+      if(requestUrl.endsWith("/api/solve-data")){
+        posted = JSON.parse(options.body);
+        return jsonResponse(JSON.parse(JSON.stringify(data.tkbSolverResult)));
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+    const {window, hooks} = loadBridge(data, fetchImpl, {
+      TKBBrowserWasmExecutor:executor
+    });
+    window.calcSchoolTKBStats = () => ({soTiet:2, daXepTiet:2, chuaXepTiet:0});
+    const plan = hooks.buildAutomaticAutoSortPlan(data);
+    assert.equal(plan.kind, "refine_complete");
+
+    const payload = await hooks.postSolve(plan.settings, data);
+
+    assert.equal(payload.ok, true);
+    assert.equal(probeCalls, 1);
+    assert.ok(posted);
+    if(browserReady){
+      assert.equal(posted.settings.ui_browser_wasm_ready, true);
+      assert.equal(closeCalls, 1);
+    }else{
+      assert.equal(Object.hasOwn(posted.settings, "ui_browser_wasm_ready"), false);
+      assert.equal(closeCalls, 0);
+    }
+  }
 });
 
 test("an empty duration field allows a 130-second first-quality gate and 180-second refinement", () => {

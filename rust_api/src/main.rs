@@ -24,7 +24,7 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-23-browser-refinement-gate-v62";
+const VERSION: &str = "tkb_new-rust-api-2026-07-23-browser-portfolio-direct-v63";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
@@ -5536,6 +5536,13 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
             .map(|request| setting_bool(request_settings(request), "ui_solver_async_job", false))
         .unwrap_or(false);
     let browser_wasm_eligible = agent_helper::browser_refinement_request_eligible(body);
+    let browser_wasm_ready = browser_wasm_eligible
+        && request
+            .as_ref()
+            .map(|request| {
+                setting_bool(request_settings(request), "ui_browser_wasm_ready", false)
+            })
+            .unwrap_or(false);
     let mut server_execution_fence = None;
     if server_owned {
         if let Some(response) = app
@@ -5625,6 +5632,65 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
                     }),
                 );
             }
+        }
+
+        // A browser that already compiled the WASM runtime may publish this
+        // bounded readiness hint with its complete, revalidated refinement
+        // request. The server independently verifies eligibility above and
+        // starts in AgentWaiting so it does not allocate VPS CPU just to stop
+        // it again after the browser receives the durable job ID. A spoofed or
+        // vanished browser can only consume the existing claim grace before
+        // the fenced coordinator falls back to VPS.
+        if browser_wasm_ready {
+            let Some(fence) = app.solver_pool.prepare_agent_execution(&job_id, owner) else {
+                cleanup_server_owned_job(app, &job_id, owner);
+                return json_response(
+                    500,
+                    json!({
+                        "ok": false,
+                        "kind": "solver_executor_state_invalid",
+                        "error": "solver_executor_state_invalid",
+                        "jobId": job_id
+                    }),
+                );
+            };
+            if let Err(error) = spawn_server_owned_solver(
+                app,
+                job_id.clone(),
+                owner.clone(),
+                desired_workers,
+                Arc::clone(&shared_body),
+                request,
+                ServerCoordinatorStart::Agent { fence },
+            ) {
+                return json_response(
+                    500,
+                    json!({
+                        "ok": false,
+                        "kind": "solver_worker_start_failed",
+                        "error": error,
+                        "jobId": job_id
+                    }),
+                );
+            }
+            return json_response(
+                202,
+                json!({
+                    "ok": false,
+                    "running": true,
+                    "serverOwned": true,
+                    "kind": "solver_started",
+                    "error": "solver_started",
+                    "jobId": job_id,
+                    "startedAtMs": server_job_started_at_for_owner(app, &job_id, owner),
+                    "executor": ServerExecutor::Agent.as_str(),
+                    "executionPhase": ServerExecutionPhase::AgentWaiting.as_str(),
+                    "progressBudgetSeconds": progress_budget_seconds,
+                    "progressRunIndex": progress_run_index,
+                    "requiredWorkers": 0,
+                    "retryAfterMs": 700
+                }),
+            );
         }
 
         // A paired owner Agent may take its own job immediately. Operator
@@ -8494,6 +8560,153 @@ mod tests {
                 "ui_existing_incumbent_revalidated": true
             }
         })
+    }
+
+    fn browser_ready_refinement_request(job_id: &str) -> Value {
+        let mut request = async_preserved_request(job_id);
+        request["data"]["tkbSolverResult"]["lessons"] = json!([{"classId":"6A"}]);
+        request["data"]["tkbSolverResult"]["validation"] = json!({"hard_ok":true});
+        request["settings"]["ui_unified_solve_kind"] = json!("refine_complete");
+        request["settings"]["ui_use_existing_complete_incumbent"] = json!(true);
+        request["settings"]["ui_browser_wasm_ready"] = json!(true);
+        request
+    }
+
+    #[test]
+    fn ready_browser_refinement_starts_agent_waiting_without_vps_tokens() {
+        let (app, _token, owner) = agent_test_app();
+        let request = browser_ready_refinement_request("browser-ready-direct-agent");
+        let body = request.to_string();
+        assert!(agent_helper::browser_refinement_request_eligible(
+            body.as_bytes()
+        ));
+        assert_eq!(
+            app.agent_helper.online_worker_count_for_job(
+                &owner,
+                "browser-ready-direct-agent",
+                now_millis(),
+            ),
+            0,
+            "the readiness fast path must not depend on a pre-online Agent"
+        );
+
+        let started = solve_json(&app, body.as_bytes(), &owner);
+        let started_payload = response_payload(&started);
+        assert_eq!(response_status(&started), 202);
+        assert_eq!(started_payload["jobId"], json!("browser-ready-direct-agent"));
+        assert_eq!(started_payload["executor"], json!("agent"));
+        assert_eq!(started_payload["executionPhase"], json!("agent_waiting"));
+        assert_eq!(started_payload["requiredWorkers"], json!(0));
+        assert_eq!(app.solver_pool.active_count(), 0);
+        assert_eq!(app.solver_pool.queued_count(), 0);
+        assert_eq!(app.solver_pool.allocated_worker_tokens(), 0);
+        assert_eq!(
+            app.solver_pool.available_worker_tokens(),
+            app.solver_pool.total_worker_tokens()
+        );
+
+        let cancelled = solve_cancel_json(
+            &app,
+            br#"{"jobId":"browser-ready-direct-agent"}"#,
+            &owner,
+        );
+        assert_eq!(response_payload(&cancelled)["cancelRequested"], json!(true));
+    }
+
+    #[test]
+    fn fake_browser_readiness_on_ineligible_request_starts_vps() {
+        let (app, _token, owner) = agent_test_app();
+        let mut request = browser_ready_refinement_request("browser-ready-ineligible");
+        request["settings"]["ui_unified_solve_kind"] = json!("fresh_complete_first");
+        let body = request.to_string();
+        assert!(!agent_helper::browser_refinement_request_eligible(
+            body.as_bytes()
+        ));
+
+        let started = solve_json(&app, body.as_bytes(), &owner);
+        let started_payload = response_payload(&started);
+        assert_eq!(response_status(&started), 202);
+        assert_eq!(started_payload["jobId"], json!("browser-ready-ineligible"));
+        assert_eq!(started_payload["executor"], json!("vps"));
+        assert_eq!(started_payload["executionPhase"], json!("vps_running"));
+        assert!(started_payload["requiredWorkers"].as_u64().unwrap_or(0) > 0);
+
+        let completed = wait_for_server_result(&app, "browser-ready-ineligible", &owner);
+        assert_eq!(response_status(&completed), 200);
+        app.solver_pool
+            .abandon_server_job("browser-ready-ineligible", &owner);
+    }
+
+    #[test]
+    fn ready_browser_no_show_falls_back_to_vps_on_the_same_job_after_grace() {
+        let (app, _token, owner) = agent_test_app();
+        let blocker = app
+            .solver_pool
+            .try_acquire(
+                "browser-no-show-vps-blocker".to_string(),
+                app.solver_pool.total_worker_tokens(),
+            )
+            .expect("exclusive VPS capacity blocker");
+        let baseline_allocated = app.solver_pool.allocated_worker_tokens();
+        let request = browser_ready_refinement_request("browser-ready-no-show");
+        let body = request.to_string();
+
+        let started_at = Instant::now();
+        let started = solve_json(&app, body.as_bytes(), &owner);
+        let started_payload = response_payload(&started);
+        assert_eq!(response_status(&started), 202);
+        assert_eq!(started_payload["executor"], json!("agent"));
+        assert_eq!(started_payload["executionPhase"], json!("agent_waiting"));
+        assert_eq!(started_payload["requiredWorkers"], json!(0));
+        assert_eq!(
+            app.solver_pool.allocated_worker_tokens(),
+            baseline_allocated,
+            "the readiness fast path must not allocate VPS tokens before claim grace"
+        );
+        let canonical_started_at_ms = started_payload["startedAtMs"]
+            .as_u64()
+            .expect("browser-ready job must expose canonical startedAtMs");
+
+        let fallback_deadline =
+            Instant::now() + Duration::from_millis(AGENT_CLAIM_GRACE_MS + 1_500);
+        let fallback_state = loop {
+            let state = response_payload(&solver_state_json(
+                &app,
+                "jobId=browser-ready-no-show",
+                &owner,
+            ));
+            if state["requestedJobExecutor"] == json!("vps")
+                && state["requestedJobExecutionPhase"] == json!("vps_queued")
+            {
+                break state;
+            }
+            assert!(
+                Instant::now() < fallback_deadline,
+                "browser no-show did not fall back to VPS within bounded claim grace: {state}"
+            );
+            thread::sleep(Duration::from_millis(10));
+        };
+        assert!(
+            started_at.elapsed() >= Duration::from_millis(AGENT_CLAIM_GRACE_MS),
+            "VPS must not race the browser before its bounded claim grace expires"
+        );
+        assert_eq!(fallback_state["requestedJobId"], json!("browser-ready-no-show"));
+        assert_eq!(fallback_state["requestedJobServerOwned"], json!(true));
+        assert_eq!(
+            fallback_state["requestedJobStartedAtMs"],
+            json!(canonical_started_at_ms),
+            "Agent-to-VPS fallback must retain the same canonical job"
+        );
+
+        drop(blocker);
+        let completed = wait_for_server_result(&app, "browser-ready-no-show", &owner);
+        assert_eq!(response_status(&completed), 200);
+        assert_eq!(
+            response_payload(&completed)["startedAtMs"],
+            json!(canonical_started_at_ms)
+        );
+        app.solver_pool
+            .abandon_server_job("browser-ready-no-show", &owner);
     }
 
     #[test]

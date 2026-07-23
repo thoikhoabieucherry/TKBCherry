@@ -8,11 +8,11 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.65** (iOS foreground-only browser
-  refinement and Windows local-Agent status). The public API marker is
-  `tkb_new-rust-api-2026-07-23-browser-refinement-gate-v62`, the bridge marker
-  is `tkb-rust-api-v264-browser-refinement-gate`, and the planner script cache
-  is `20260723-v165-ios-agent-status-v1`. The unchanged constraints marker is
+- Current deployed application release: **v1.67** (compact mobile history
+  controls with the duration input restored). The public API marker is
+  `tkb_new-rust-api-2026-07-23-browser-portfolio-direct-v63`, the bridge marker
+  is `tkb-rust-api-v265-browser-portfolio-direct`, and the planner script cache
+  is `20260723-v167-compact-history-duration-v1`. The unchanged constraints marker is
   `constraints-ui-v38-one-session-responsive-tables`.
 - Current public Agent release: **v1.6.29** (`1.6.29`). The normal owner-Agent
   minimum lease gate remains 1.6.23, so 1.6.22 and older stay upgrade-only;
@@ -22,6 +22,65 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.67 compact mobile history and duration control (deployed 2026-07-23)
+
+- The mobile planner toolbar keeps eight stable columns: Requirements,
+  Redo-over-Undo, Duration, Play, Delete/Stop, Agent, Home and Statistics.
+  Redo and Undo each occupy one 22px half of the existing 44px command row, so
+  the history controls use one column without increasing toolbar height.
+- The duration input is visible again on phones and tablets. An empty value
+  preserves the automatic scheduler budgets; an explicit value remains a
+  user-owned override. Desktop keeps the normal separate history buttons and
+  the navigation order Agent, Home, Statistics.
+- This is a toolbar/cache-only follow-up to v1.66. It does not change scheduler
+  scoring, the v63 API, the v265 bridge contract or the WASM solver binary.
+- Local verification passes the full Node suite **317/317**, the focused
+  browser-Agent/toolbar suites **48/48**, an independent related-suite review
+  **258/258**, JavaScript syntax checks, Python deployment syntax checks and
+  `git diff --check`. The real WASM ABI smoke returns `BROWSER_WASM_ABI_OK`;
+  both public runtime copies retain SHA-256
+  `4ad576cd7136349c9aa163df3db0cf4bb63875d3189ec0e2388e4fe40bb36652`.
+- Transactional production deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260723-115402.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260723-115402.tar.gz`. Public
+  health was idle with zero active/queued jobs and `6/6` worker tokens. The
+  public page served all three v1.67 cache keys. A signed-in production check at
+  430x932 confirmed the exact eight-column geometry, the blank duration input,
+  Agent between Delete and Home, and no console warning or error.
+
+### v1.66 direct browser-Agent worker portfolio (deployed 2026-07-23)
+
+- The integrated browser Agent is enabled by default and exposes one compact
+  green/red toggle. Disabling it returns eligible work to VPS. Desktop reserves
+  one logical CPU and uses at most eight isolated WASM Workers; mobile uses at
+  most two. Portfolio workers receive distinct search seeds and submit only the
+  best hard-valid candidate.
+- Browser compute remains restricted to a complete, revalidated
+  `refine_complete` incumbent. Fresh, incomplete, hard-invalid and
+  constraint-repair jobs remain VPS CP-SAT work. The browser and VPS never
+  solve the same generation concurrently; hidden tabs, expired leases or an
+  Agent-off toggle return the same canonical job to VPS.
+- Browser candidates cannot regress one-period sessions, gap-2 sessions,
+  teacher sessions, gap-1 periods or total gap. If every candidate is worse,
+  the complete incumbent is submitted unchanged. The API may start an eligible
+  browser-ready request in `agent_waiting` without consuming a VPS token, with
+  bounded fallback when no browser claims it.
+- Markers are API
+  `tkb_new-rust-api-2026-07-23-browser-portfolio-direct-v63`, bridge
+  `tkb-rust-api-v265-browser-portfolio-direct`, and cache
+  `20260723-v166-browser-agent-portfolio-v1`. Local verification passed the
+  full Node suite **317/317** and the real WASM ABI smoke. Isolated VPS staging
+  passed scheduler **172/172**, Agent **151/151**, trusted-worker operations
+  **5/5**, Rust API **155/155**, and validator **20/20**, ending with
+  `STAGING_TESTS_OK`.
+- Transactional production deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260723-113605.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260723-113605.tar.gz`. A live
+  complete-default refinement showed `Agent đang tối ưu bằng 8 Worker`, kept
+  VPS allocation at zero with `6/6` tokens available, and returned 1,566/1,566
+  lessons, zero gap-2 sessions, zero one-period sessions, 505 teacher sessions
+  and 75 gap-1 periods without a console warning or error.
 
 ### v1.65 iOS foreground compute and Windows Agent status (deployed 2026-07-23)
 
@@ -3622,14 +3681,14 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-23: `UPDATE_OK` for
-application v1.65. Public health serves
-`tkb_new-rust-api-2026-07-23-browser-refinement-gate-v62`; the page serves
-`20260723-v165-ios-agent-status-v1` and bridge marker
-`tkb-rust-api-v264-browser-refinement-gate`. Public health was idle with zero
+application v1.67. Public health serves
+`tkb_new-rust-api-2026-07-23-browser-portfolio-direct-v63`; the page serves
+`20260723-v167-compact-history-duration-v1` and bridge marker
+`tkb-rust-api-v265-browser-portfolio-direct`. Public health was idle with zero
 active/queued jobs and `6/6` tokens available after signed-in production UI
 acceptance. Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260723-102722.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260723-102722.tar.gz`.
+`/opt/cherry-scheduler-backups/server-state-20260723-115402.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260723-115402.tar.gz`.
 Public Agent release `1.6.29` and its signed manifest are live. The 88,001,209
 byte archive SHA-256 is
 `b36e5774f7e89402f7ffbb7075eb2541e7a63a1f874558abba128fe8ecfa25f6`; the

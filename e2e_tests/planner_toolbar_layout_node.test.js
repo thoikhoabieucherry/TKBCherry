@@ -292,7 +292,7 @@ test("teacher pane counts each class-subject assignment once", () => {
   );
 });
 
-test("planner keeps eight compact, accessible commands in the mobile toolbar", () => {
+test("planner keeps eight compact mobile slots with stacked history and duration input", () => {
   const actionsStart = plannerHtml.indexOf('<div class="toolbar-actions"');
   const feedbackStart = plannerHtml.indexOf('<div class="toolbar-feedback"');
   const secondaryStart = plannerHtml.indexOf('<div class="toolbar-secondary-actions"', feedbackStart);
@@ -372,22 +372,26 @@ test("planner keeps eight compact, accessible commands in the mobile toolbar", (
   for(const [id, column] of [
     ["btnRangBuoc", "1"],
     ["btnUndoTKB", "2"],
-    ["btnRedoTKB", "3"],
-    ["btnAutoSort", "5"]
+    ["btnRedoTKB", "2"],
+    ["btnAutoSort", "4"]
   ]){
     assert.match(
       plannerHtml,
       new RegExp(`#${id}\\s*\\{[^}]*grid-column:\\s*${column};[^}]*grid-row:\\s*1;`, "s")
     );
   }
-  assert.match(plannerHtml, /\.solve-duration-control\s*\{[^}]*grid-column:\s*4;[^}]*grid-row:\s*1;/s);
+  assert.match(plannerHtml, /#btnRedoTKB\s*\{[^}]*grid-column:\s*2;[^}]*align-self:\s*start;/s);
+  assert.match(plannerHtml, /#btnUndoTKB\s*\{[^}]*grid-column:\s*2;[^}]*align-self:\s*end;/s);
+  assert.match(plannerHtml, /#btnUndoTKB,[^}]*#btnRedoTKB\s*\{[^}]*height:\s*22px;[^}]*min-height:\s*22px;/s);
+  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*\.solve-duration-control\s*\{[^}]*grid-column:\s*3;[^}]*grid-row:\s*1;[^}]*display:\s*inline-flex;[^}]*height:\s*44px;/s);
   assert.match(plannerHtml, /\.toolbar-actions\s*>\s*\.solve-duration-control\s*\{[^}]*order:\s*initial;/s);
   assert.match(
     plannerHtml,
     /\.toolbar-actions\s*>\s*#btnRangBuoc,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnUndoTKB,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnRedoTKB,\s*body\.planner-shell \.toolbar-actions\s*>\s*\.solve-duration-control,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnAutoSort,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnStopAutoSort,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnDeleteAll\s*\{[^}]*order:\s*initial;/s,
     "all direct toolbar items must neutralize legacy order rules"
   );
-  assert.match(plannerHtml, /#btnDeleteAll\s*\{[^}]*grid-column:\s*6 !important;[^}]*grid-row:\s*1 !important;/s);
+  assert.match(plannerHtml, /#btnDeleteAll\s*\{[^}]*grid-column:\s*5 !important;[^}]*grid-row:\s*1 !important;/s);
+  assert.match(plannerHtml, /#btnAgentHelper\s*\{[^}]*grid-column:\s*6;[^}]*grid-row:\s*1;[^}]*height:\s*44px;/s);
   assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*7;[^}]*grid-row:\s*1;/s);
   assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*8;[^}]*grid-row:\s*1;/s);
   assert.match(plannerHtml, /\.toolbar-icon\s*\{[^}]*width:\s*19px;[^}]*height:\s*19px;[^}]*transition:\s*transform \.16s ease;/s);
@@ -413,11 +417,11 @@ test("planner keeps eight compact, accessible commands in the mobile toolbar", (
     plannerHtml,
     /@media \(max-width:\s*900px\) and \(hover:\s*none\) and \(pointer:\s*coarse\),\s*\(max-width:\s*480px\)/
   );
-  assert.match(plannerHtml, /phanmon\.js\?v=20260723-v165-ios-agent-status-v1/);
-  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260723-v165-ios-agent-status-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260723-v16[567]-[a-z0-9-]+/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260723-v16[567]-[a-z0-9-]+/);
 });
 
-test("browser Agent indicator is compact, local-only, and desktop-only", () => {
+test("browser Agent toggle is cross-platform and sits before Home on desktop and mobile", () => {
   const secondaryStart = plannerHtml.indexOf('<div class="toolbar-secondary-actions"');
   const secondaryEnd = plannerHtml.indexOf("\n  </div>\n\n</div>", secondaryStart);
   const secondary = plannerHtml.slice(secondaryStart, secondaryEnd);
@@ -426,20 +430,21 @@ test("browser Agent indicator is compact, local-only, and desktop-only", () => {
   const statsIndex = secondary.indexOf('id="statsToggle"');
   const helperButton = buttonMarkup(secondary, "btnAgentHelper");
 
-  assert.ok(homeIndex >= 0, "Home button is missing");
-  assert.ok(helperIndex > homeIndex, "Agent must immediately follow Home");
-  assert.ok(statsIndex > helperIndex, "Agent must stay before Statistics");
+  assert.ok(helperIndex >= 0, "Agent button is missing");
+  assert.ok(homeIndex > helperIndex, "Agent must sit immediately before Home");
+  assert.ok(statsIndex > homeIndex, "Statistics must stay after Home");
   assert.match(
     secondary,
-    /id="btnHome"[\s\S]*?>Home<\/button>\s*<button id="btnAgentHelper"/,
-    "Agent must be the next toolbar button after Home"
+    /id="btnAgentHelper"[\s\S]*?<\/button>\s*<button id="btnHome"[\s\S]*?>Home<\/button>/,
+    "Agent must be the toolbar button immediately before Home"
   );
   assert.match(helperButton, /class="agent-helper-button"[^>]*type="button"/);
-  assert.match(helperButton, /title="Agent trình duyệt sẵn sàng, dùng CPU\/RAM khi tối ưu\."/);
-  assert.match(helperButton, /aria-label="Agent trình duyệt sẵn sàng, dùng CPU\/RAM khi tối ưu\."/);
+  assert.match(helperButton, /title="Agent [^"]+VPS\."/);
+  assert.match(helperButton, /aria-label="Agent [^"]+VPS\."/);
   assert.match(helperButton, /data-agent-state="unavailable"/);
   assert.match(helperButton, /class="agent-status-dot"[^>]*aria-hidden="true"/);
-  assert.doesNotMatch(helperButton, /onclick=/);
+  assert.match(helperButton, /onclick="toggleBrowserAgent\(\)"/);
+  assert.match(helperButton, /aria-pressed="true"/);
   assert.match(helperButton, /\sdisabled(?:\s|>)/);
   assert.match(helperButton, /aria-disabled="true"/);
   assert.match(helperButton, /class="toolbar-icon agent-ai-icon"[\s\S]*<span>Agent<\/span><\/button>/);
@@ -473,7 +478,7 @@ test("browser Agent indicator is compact, local-only, and desktop-only", () => {
   );
   assert.match(
     plannerHtml,
-    /#btnAgentHelper \.agent-status-dot\s*\{[^}]*top:\s*3px;[^}]*left:\s*3px;[^}]*background:\s*#94a3b8;/s
+    /#btnAgentHelper \.agent-status-dot\s*\{[^}]*top:\s*3px;[^}]*left:\s*3px;[^}]*background:\s*#dc2626;/s
   );
   assert.match(
     plannerHtml,
@@ -484,7 +489,7 @@ test("browser Agent indicator is compact, local-only, and desktop-only", () => {
     /#btnAgentHelper\[data-agent-state="working"\] \.agent-status-dot\s*\{[^}]*box-shadow:\s*0 0 0 3px rgb\(22 163 74 \/ 18%\)/s
   );
   assert.match(plannerHtml, /#btnAgentHelper:disabled\s*\{[^}]*opacity:\s*1;[^}]*cursor:\s*default;/s);
-  assert.doesNotMatch(plannerHtml, /#btnAgentHelper[^}]*background:\s*#dc2626/s);
+  assert.match(plannerHtml, /#btnAgentHelper\[data-agent-state="ready"\][\s\S]*?background:\s*#16a34a;/s);
   assert.doesNotMatch(plannerSource, /EncodedCommand|powershell\.exe|Cai-TKBCherry-Agent\.cmd/);
 
   const supportStart = plannerSource.indexOf("function isAgentHelperSupportedDevice");
@@ -493,10 +498,11 @@ test("browser Agent indicator is compact, local-only, and desktop-only", () => {
   const supportsAgent = Function(`${supportSource}; return isAgentHelperSupportedDevice;`)();
   assert.equal(supportsAgent({platform:"Win32", userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}), true);
   assert.equal(supportsAgent({userAgentData:{platform:"Windows", mobile:false}, userAgent:""}), true);
-  assert.equal(supportsAgent({platform:"MacIntel", maxTouchPoints:0, userAgent:"Mozilla/5.0 (Macintosh)"}), false);
-  assert.equal(supportsAgent({platform:"MacIntel", maxTouchPoints:5, userAgent:"Mozilla/5.0 (Macintosh)"}), false);
-  assert.equal(supportsAgent({platform:"Linux armv8l", userAgent:"Mozilla/5.0 (Linux; Android 15; Tablet)"}), false);
-  assert.equal(supportsAgent({platform:"iPhone", userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0)"}), false);
+  assert.equal(supportsAgent({platform:"MacIntel", maxTouchPoints:0, userAgent:"Mozilla/5.0 (Macintosh)"}), true);
+  assert.equal(supportsAgent({platform:"MacIntel", maxTouchPoints:5, userAgent:"Mozilla/5.0 (Macintosh)"}), true);
+  assert.equal(supportsAgent({platform:"Linux armv8l", userAgent:"Mozilla/5.0 (Linux; Android 15; Tablet)"}), true);
+  assert.equal(supportsAgent({platform:"Linux x86_64", userAgent:"Mozilla/5.0 (X11; Linux x86_64)"}), true);
+  assert.equal(supportsAgent({platform:"iPhone", userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0)"}), true);
   assert.match(
     plannerHtml,
     /\.stats-popover-wrap\s*>\s*\.save-button,\s*body\.planner-shell \.toolbar-secondary-actions \.stats-popover-wrap\s*>\s*\.agent-helper-button,\s*body\.planner-shell \.toolbar-secondary-actions \.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*flex:\s*0 0 var\(--planner-toolbar-button-width\);[^}]*width:\s*var\(--planner-toolbar-button-width\);[^}]*min-width:\s*var\(--planner-toolbar-button-width\);[^}]*max-width:\s*var\(--planner-toolbar-button-width\);[^}]*height:\s*36px;[^}]*min-height:\s*36px;/s,
@@ -511,11 +517,22 @@ test("browser Agent indicator is compact, local-only, and desktop-only", () => {
   const mobileStart = plannerHtml.indexOf("@media (max-width: 900px) and (hover: none) and (pointer: coarse)");
   const mobileEnd = plannerHtml.indexOf("@media (min-width: 481px)", mobileStart);
   const mobileCss = plannerHtml.slice(mobileStart, mobileEnd);
-  assert.match(mobileCss, /#btnAgentHelper\s*\{[^}]*display:\s*none !important;/s);
+  assert.match(
+    mobileCss,
+    /#btnAgentHelper\s*\{[^}]*grid-column:\s*6;[^}]*grid-row:\s*1;[^}]*display:\s*inline-flex !important;[^}]*height:\s*44px;/s
+  );
+  assert.match(
+    mobileCss,
+    /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*7;[^}]*grid-row:\s*1;/s
+  );
+  assert.match(
+    mobileCss,
+    /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*8;[^}]*grid-row:\s*1;[^}]*height:\s*44px;/s
+  );
   assert.match(
     plannerHtml,
-    /@media \(min-width:\s*901px\) and \(hover:\s*none\) and \(pointer:\s*coarse\)\s*\{[\s\S]*?#btnAgentHelper\s*\{[^}]*display:\s*none !important;/s,
-    "wide coarse-pointer devices must not expose the desktop-only helper button"
+    /\.stats-popover-wrap\s*>\s*\.agent-helper-button\[hidden\]\s*\{[^}]*display:\s*none !important;/s,
+    "the initial hidden attribute must beat the mobile inline-flex rule before JavaScript hydrates"
   );
 });
 
@@ -533,7 +550,9 @@ test("browser Agent indicator reports ready and active compute without server po
     attributes:{},
     setAttribute(name, value){ this.attributes[name] = value; }
   };
-  const executorState = {active:false, probed:false, hasWorker:false, hasLease:false};
+  const executorState = {active:false, probed:false, hasWorker:false, hasLease:false, workerCount:0};
+  let agentEnabled = true;
+  const statusEvents = [];
   const windowsNavigator = {
     platform:"Win32",
     userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
@@ -549,24 +568,30 @@ test("browser Agent indicator reports ready and active compute without server po
       fetch:async () => { throw new Error("status indicator must stay local"); },
       TKBBrowserWasmExecutor:{
         isSupportedNavigator(){ return true; },
+        isEnabled(){ return agentEnabled; },
+        async setEnabled(next){ agentEnabled = next !== false; return agentEnabled; },
+        portfolioWorkerCount(){ return 4; },
         prepare(){},
         state(){ return executorState; }
       }
     },
-    document:{getElementById(id){ return id === "btnAgentHelper" ? button : null; }}
+    document:{getElementById(id){ return id === "btnAgentHelper" ? button : null; }},
+    _setStatus(message, kind){ statusEvents.push([message, kind]); }
   };
   vm.runInNewContext(
-    `${indicatorSource}\nthis.syncIndicator = syncAgentHelperVisibility; this.refreshIndicator = refreshAgentHelperStatus;`,
+    `${indicatorSource}\nthis.syncIndicator = syncAgentHelperVisibility; this.refreshIndicator = refreshAgentHelperStatus; this.toggleIndicator = toggleBrowserAgent;`,
     context
   );
 
   assert.equal(context.syncIndicator(), true);
   assert.equal(button.hidden, false);
-  assert.equal(button.disabled, true);
+  assert.equal(button.disabled, false);
   assert.equal(button.attributes["aria-hidden"], "false");
   assert.equal(button.dataset.agentState, "ready");
-  assert.equal(button.title, "Agent trình duyệt sẵn sàng, dùng CPU/RAM khi tối ưu.");
+  assert.equal(button.title, "Agent đang bật; sẵn sàng dùng 4 Worker CPU/RAM. Bấm để dùng VPS.");
   assert.equal(button.attributes["aria-label"], button.title);
+  assert.equal(button.attributes["aria-pressed"], "true");
+  assert.equal(button.attributes["aria-disabled"], "false");
   assert.equal(context.window.__TKB_BROWSER_AGENT_READY, true);
   assert.equal(context.window.__TKB_BROWSER_AGENT_WORKING, false);
 
@@ -574,11 +599,20 @@ test("browser Agent indicator reports ready and active compute without server po
   executorState.probed = true;
   executorState.hasWorker = true;
   executorState.hasLease = true;
+  executorState.workerCount = 4;
   assert.equal(await context.refreshIndicator(true), true);
   assert.equal(button.dataset.agentState, "working");
-  assert.equal(button.title, "Agent trình duyệt đang tối ưu, đang dùng CPU/RAM.");
+  assert.equal(button.title, "Agent đang tối ưu bằng 4 Worker trên thiết bị. Bấm để chuyển về VPS.");
   assert.equal(context.window.__TKB_BROWSER_AGENT_ACTIVE, true);
   assert.equal(context.window.__TKB_BROWSER_AGENT_WORKING, true);
+
+  assert.equal(await context.toggleIndicator(), false);
+  assert.equal(agentEnabled, false);
+  assert.equal(button.disabled, false);
+  assert.equal(button.dataset.agentState, "off");
+  assert.equal(button.attributes["aria-pressed"], "false");
+  assert.equal(button.title, "Agent đã tắt; lượt xếp sẽ dùng VPS. Bấm để bật Agent.");
+  assert.deepEqual(statusEvents.at(-1), ["Agent đã tắt; các lượt xếp sẽ dùng VPS.", "info"]);
 });
 
 test("manual Play never prompts or downloads a native Agent", async () => {
@@ -658,31 +692,20 @@ test("manual Play bypasses native Agent status checks entirely", async () => {
   assert.equal(prompts, 0);
 });
 
-test("legacy Agent action reports integrated browser compute without downloading", async () => {
+test("legacy Agent action delegates to the integrated browser toggle without downloading", async () => {
   const start = plannerSource.indexOf("async function downloadAgentHelper");
   const end = plannerSource.indexOf("async function approveAgentPairFromUrl", start);
   assert.ok(start >= 0 && end > start, "Agent download helper is missing");
-  let created = 0;
-  const statuses = [];
-  const button = {dataset:{agentOnline:"1"}};
+  let toggles = 0;
   const context = {
-    BROWSER_AGENT_READY_LABEL:"Agent tr\u00ecnh duy\u1ec7t s\u1eb5n s\u00e0ng, d\u00f9ng CPU/RAM khi t\u1ed1i \u01b0u.",
-    window:{__TKB_BROWSER_AGENT_READY:true},
-    document:{
-      getElementById(){ return button; },
-      createElement(){ created += 1; return {}; },
-      body:{appendChild(){}}
-    },
-    syncAgentHelperVisibility(){ return true; },
-    _setStatus(message, kind){ statuses.push([message, kind]); }
+    async toggleBrowserAgent(){ toggles += 1; return true; }
   };
   vm.runInNewContext(
     `${plannerSource.slice(start, end)}\nthis.downloadConnectedAgent = downloadAgentHelper;`,
     context
   );
-  assert.equal(await context.downloadConnectedAgent(), false);
-  assert.equal(created, 0);
-  assert.deepEqual(statuses, [["Agent trình duyệt sẵn sàng, dùng CPU/RAM khi tối ưu.", "info"]]);
+  assert.equal(await context.downloadConnectedAgent(), true);
+  assert.equal(toggles, 1);
 });
 
 test("toolbar status messages hide after five seconds", () => {
@@ -810,7 +833,7 @@ test("mobile Play matches the other controls and centers its white glyph", () =>
   assert.ok(mobileStart >= 0 && mobileEnd > mobileStart, "mobile toolbar media query is missing");
   assert.match(
     mobileCss,
-    /#btnAutoSort\s*\{[^}]*grid-column:\s*5;[^}]*grid-row:\s*1;/s
+    /#btnAutoSort\s*\{[^}]*grid-column:\s*4;[^}]*grid-row:\s*1;/s
   );
   assert.match(
     mobileCss,
@@ -1134,7 +1157,7 @@ test("sorting keeps Home and the browser Agent indicator in stable slots", () =>
   assert.match(homeControl, /const agentVisible\s*=\s*syncAgentHelperVisibility\(\)/);
   assert.match(homeControl, /agentBtn\.hidden\s*=\s*!agentVisible/);
   assert.match(homeControl, /agentBtn\.setAttribute\("aria-hidden",\s*agentVisible \? "false" : "true"\)/);
-  assert.match(homeControl, /agentBtn\.disabled\s*=\s*true/);
+  assert.doesNotMatch(homeControl, /agentBtn\.disabled\s*=\s*true/);
   assert.match(homeControl, /agentBtn\.classList\.remove\("is-auto-sort-disabled"\)/);
   assert.match(
     plannerHtml,
@@ -1166,7 +1189,7 @@ test("sorting keeps Home and the browser Agent indicator in stable slots", () =>
 
   const controls = {
     btnHome:makeControl(false),
-    btnAgentHelper:makeControl(true),
+    btnAgentHelper:makeControl(false),
     btnUndoTKB:makeControl(false),
     btnRedoTKB:makeControl(true),
     btnDeleteAll:makeControl(false),
@@ -1207,7 +1230,7 @@ test("sorting keeps Home and the browser Agent indicator in stable slots", () =>
   assert.equal(controls.btnHome.hidden, false);
   assert.equal(controls.btnHome.disabled, true);
   assert.equal(controls.btnAgentHelper.hidden, false);
-  assert.equal(controls.btnAgentHelper.disabled, true);
+  assert.equal(controls.btnAgentHelper.disabled, false);
   assert.equal(controls.btnAgentHelper.getAttribute("aria-hidden"), "false");
   assert.equal(controls.btnUndoTKB.disabled, true);
   assert.equal(controls.btnRedoTKB.disabled, true);
@@ -1217,7 +1240,7 @@ test("sorting keeps Home and the browser Agent indicator in stable slots", () =>
   assert.equal(controls.btnHome.hidden, false);
   assert.equal(controls.btnHome.disabled, false);
   assert.equal(controls.btnAgentHelper.hidden, false);
-  assert.equal(controls.btnAgentHelper.disabled, true);
+  assert.equal(controls.btnAgentHelper.disabled, false);
   assert.equal(controls.btnUndoTKB.disabled, false);
   assert.equal(controls.btnRedoTKB.disabled, true);
   assert.equal(controls.solveDurationSeconds.disabled, false);
@@ -1335,7 +1358,7 @@ test("mobile reserves one stable feedback row so sorting never shifts the timeta
   );
 });
 
-test("Home and statistics occupy columns seven and eight before mobile feedback", () => {
+test("Agent, Home, and Statistics occupy mobile columns six through eight", () => {
   const feedbackStart = plannerHtml.indexOf('<div class="toolbar-feedback"');
   const secondaryStart = plannerHtml.indexOf('<div class="toolbar-secondary-actions"');
   const secondary = plannerHtml.slice(secondaryStart, plannerHtml.indexOf("\n  </div>\n\n</div>", secondaryStart));
@@ -1345,6 +1368,7 @@ test("Home and statistics occupy columns seven and eight before mobile feedback"
   assert.match(secondary, /id="statsToggle"[^>]*>[\s\S]*?toolbar-label-compact[^>]*>\s*<svg class="toolbar-icon"[^>]*>[\s\S]*?<\/svg>\s*<\/span><\/button>/);
   assert.match(plannerHtml, /\.toolbar-secondary-actions\s*\{[^}]*display:\s*contents;/s);
   assert.match(plannerHtml, /\.toolbar-secondary-actions \.stats-popover-wrap\s*\{[^}]*display:\s*contents;/s);
+  assert.match(plannerHtml, /#btnAgentHelper\s*\{[^}]*grid-column:\s*6;[^}]*height:\s*44px;/s);
   assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*7;/s);
-  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*8;/s);
+  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*8;[^}]*height:\s*44px;/s);
 });

@@ -7270,24 +7270,34 @@ function isAgentHelperSupportedDevice(deviceNavigator){
     : {};
   const platform = String(uaData.platform || nav.platform || "");
   const userAgent = String(nav.userAgent || "");
-  const touchPoints = Number(nav.maxTouchPoints || 0);
-  const isIPadDesktopMode = /MacIntel/i.test(platform) && touchPoints > 1;
-  const isMobileOrTablet = uaData.mobile === true
-    || /Android|Mobi|iPhone|iPad|iPod|Tablet|Silk|Kindle/i.test(userAgent)
-    || isIPadDesktopMode;
+  const isIPadDesktopMode = /MacIntel/i.test(platform) && Number(nav.maxTouchPoints || 0) > 1;
   const isWindows = /Windows/i.test(platform) || /Windows NT/i.test(userAgent);
-  return isWindows && !isMobileOrTablet;
+  const isAndroid = uaData.platform === "Android" || /Android/i.test(userAgent);
+  const isIOS = /iPhone|iPad|iPod/i.test(userAgent) || isIPadDesktopMode;
+  const isMacOS = (/Mac/i.test(platform) || /Macintosh|Mac OS X/i.test(userAgent))
+    && !isIPadDesktopMode;
+  const isLinux = /Linux/i.test(platform) || /Linux|X11/i.test(userAgent);
+  return isWindows || isAndroid || isIOS || isMacOS || (isLinux && !isAndroid);
 }
 
-const BROWSER_AGENT_READY_LABEL = "Agent trình duyệt sẵn sàng, dùng CPU/RAM khi tối ưu.";
-const BROWSER_AGENT_ACTIVE_LABEL = "Agent trình duyệt đang chờ lượt tối ưu.";
-const BROWSER_AGENT_WORKING_LABEL = "Agent trình duyệt đang tối ưu, đang dùng CPU/RAM.";
-const BROWSER_AGENT_UNAVAILABLE_LABEL = "Agent trình duyệt chưa sẵn sàng trên trình duyệt này.";
+const BROWSER_AGENT_UNAVAILABLE_LABEL = "Agent không khả dụng trên trình duyệt này; VPS sẽ xử lý.";
+const BROWSER_AGENT_OFF_LABEL = "Agent đã tắt; lượt xếp sẽ dùng VPS. Bấm để bật Agent.";
+
+function browserAgentLabel(state){
+  const workers = Math.max(1, Number(state?.workerCount || state?.plannedWorkerCount || 1) || 1);
+  if(state?.working) return `Agent đang tối ưu bằng ${workers} Worker trên thiết bị. Bấm để chuyển về VPS.`;
+  if(state?.active) return `Agent đã kết nối bằng ${workers} Worker và đang chờ việc. Bấm để chuyển về VPS.`;
+  if(state?.available && state?.enabled){
+    return `Agent đang bật; sẵn sàng dùng ${workers} Worker CPU/RAM. Bấm để dùng VPS.`;
+  }
+  return state?.available ? BROWSER_AGENT_OFF_LABEL : BROWSER_AGENT_UNAVAILABLE_LABEL;
+}
 
 function browserAgentRuntimeState(deviceNavigator){
   const nav = deviceNavigator || (typeof navigator !== "undefined" ? navigator : {});
   const executor = window.TKBBrowserWasmExecutor;
-  const available = isAgentHelperSupportedDevice(nav)
+  const supportedDevice = isAgentHelperSupportedDevice(nav);
+  const available = supportedDevice
     && !!executor
     && typeof executor.isSupportedNavigator === "function"
     && executor.isSupportedNavigator(nav) === true
@@ -7307,11 +7317,21 @@ function browserAgentRuntimeState(deviceNavigator){
       executorState = {};
     }
   }
+  const enabled = available && (typeof executor.isEnabled !== "function" || executor.isEnabled() !== false);
+  const workerCount = Math.max(0, Number(executorState.workerCount || 0) || 0);
+  let plannedWorkerCount = 1;
+  try{
+    plannedWorkerCount = Math.max(1, Number(executor.portfolioWorkerCount?.(nav) || 1) || 1);
+  }catch(_){ }
   return {
+    supportedDevice,
     available,
-    active:available && executorState.active === true,
-    working:available && executorState.hasLease === true,
-    probed:available && executorState.probed === true
+    enabled,
+    active:available && enabled && executorState.active === true,
+    working:available && enabled && executorState.hasLease === true,
+    probed:available && enabled && executorState.probed === true,
+    workerCount,
+    plannedWorkerCount
   };
 }
 
@@ -7320,15 +7340,15 @@ function renderBrowserAgentIndicator(runtimeState){
     ? runtimeState
     : browserAgentRuntimeState();
   const available = state.available === true;
-  const active = available && state.active === true;
-  const working = available && state.working === true;
-  const name = working ? "working" : (active ? "active" : (available ? "ready" : "unavailable"));
-  const label = working
-    ? BROWSER_AGENT_WORKING_LABEL
-    : (active
-      ? BROWSER_AGENT_ACTIVE_LABEL
-      : (available ? BROWSER_AGENT_READY_LABEL : BROWSER_AGENT_UNAVAILABLE_LABEL));
-  window.__TKB_BROWSER_AGENT_READY = available;
+  const enabled = available && state.enabled !== false;
+  const active = enabled && state.active === true;
+  const working = enabled && state.working === true;
+  const name = working
+    ? "working"
+    : (active ? "active" : (enabled ? "ready" : (available ? "off" : "unavailable")));
+  const label = browserAgentLabel(Object.assign({}, state, {available, enabled, active, working}));
+  window.__TKB_BROWSER_AGENT_READY = available && enabled;
+  window.__TKB_BROWSER_AGENT_ENABLED = enabled;
   window.__TKB_BROWSER_AGENT_ACTIVE = active;
   window.__TKB_BROWSER_AGENT_WORKING = working;
   const btn = document.getElementById("btnAgentHelper");
@@ -7336,6 +7356,9 @@ function renderBrowserAgentIndicator(runtimeState){
   btn.dataset.agentState = name;
   btn.title = label;
   btn.setAttribute("aria-label", label);
+  btn.setAttribute("aria-pressed", enabled ? "true" : "false");
+  btn.disabled = !available;
+  btn.setAttribute("aria-disabled", available ? "false" : "true");
   return available;
 }
 
@@ -7346,11 +7369,24 @@ function syncAgentHelperVisibility(){
     typeof navigator !== "undefined" ? navigator : {}
   );
   btn.hidden = !visible;
-  btn.disabled = true;
   btn.setAttribute("aria-hidden", visible ? "false" : "true");
-  btn.setAttribute("aria-disabled", "true");
   if(visible) renderBrowserAgentIndicator(browserAgentRuntimeState());
   return visible;
+}
+
+async function toggleBrowserAgent(){
+  const executor = window.TKBBrowserWasmExecutor;
+  if(!executor || typeof executor.setEnabled !== "function") return false;
+  const next = !(typeof executor.isEnabled === "function" ? executor.isEnabled() : true);
+  const enabled = await executor.setEnabled(next);
+  renderBrowserAgentIndicator(browserAgentRuntimeState());
+  _setStatus(
+    enabled
+      ? "Agent đã bật; thiết bị sẽ hỗ trợ các lượt tối ưu phù hợp."
+      : "Agent đã tắt; các lượt xếp sẽ dùng VPS.",
+    enabled ? "ok" : "info"
+  );
+  return enabled;
 }
 
 function setAgentHelperOnlineState(){
@@ -7398,9 +7434,7 @@ function setAutoSortHomeHidden(hidden){
   if(agentBtn){
     const agentVisible = syncAgentHelperVisibility();
     agentBtn.hidden = !agentVisible;
-    agentBtn.disabled = true;
     agentBtn.setAttribute("aria-hidden", agentVisible ? "false" : "true");
-    agentBtn.setAttribute("aria-disabled", "true");
     agentBtn.classList.remove("is-auto-sort-disabled");
   }
   return true;
@@ -7469,8 +7503,7 @@ function requestStopAutoSort(){
 }
 
 async function downloadAgentHelper(){
-  _setStatus(BROWSER_AGENT_READY_LABEL, "info");
-  return false;
+  return toggleBrowserAgent();
 }
 
 async function approveAgentPairFromUrl(){
@@ -7528,6 +7561,7 @@ try{
   window.syncAgentHelperVisibility = syncAgentHelperVisibility;
   window.setAgentHelperOnlineState = setAgentHelperOnlineState;
   window.refreshAgentHelperStatus = refreshAgentHelperStatus;
+  window.toggleBrowserAgent = toggleBrowserAgent;
   window.maybeInviteAgentBeforeSort = maybeInviteAgentBeforeSort;
   window.hideAutoSortProgress = hideAutoSortProgress;
   window.setAutoSortProgress = setAutoSortProgress;

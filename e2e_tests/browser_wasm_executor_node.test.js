@@ -24,10 +24,20 @@ function response(payload, status = 200){
   };
 }
 
+function memoryStorage(initial = {}){
+  const values = new Map(Object.entries(initial).map(([key, value]) => [String(key), String(value)]));
+  return {
+    getItem(key){ return values.has(String(key)) ? values.get(String(key)) : null; },
+    setItem(key, value){ values.set(String(key), String(value)); },
+    removeItem(key){ values.delete(String(key)); }
+  };
+}
+
 function completeRefinementRequest(){
   return {
     data:{
       tkbSolverResult:{
+        ok:true,
         lessons:[
           {classId:"L1", subject:"Toan", teacherId:"GV1", day:"thu2", session:"sang", period:0},
           {classId:"L1", subject:"Van", teacherId:"GV2", day:"thu2", session:"sang", period:1}
@@ -37,7 +47,12 @@ function completeRefinementRequest(){
           expected_periods:2,
           unassigned_periods:0,
           hard_ok:true,
-          app_constraint_violation_count:0
+          app_constraint_violation_count:0,
+          teacher_sessions:460,
+          one_period_teacher_sessions:0,
+          teacher_gap2_sessions:0,
+          gap_distribution:{"0":420, "1":40},
+          gap_total:40
         },
         validation:{hard_ok:true},
         unassignedLessons:[]
@@ -84,6 +99,7 @@ function executorContext(overrides = {}){
       getItem(key){ return this.values.get(key) || null; },
       setItem(key, value){ this.values.set(key, String(value)); }
     },
+    localStorage:memoryStorage(),
     TKBAuthApi:{
       getAuthHeaders(extra){
         return Object.assign({}, extra, {Authorization:"Bearer browser-session"});
@@ -102,7 +118,104 @@ function executorContext(overrides = {}){
   return {context, documentListeners, windowListeners};
 }
 
-test("browser WASM enables desktop, Android, iPhone and every iPadOS navigator form", () => {
+function completePortfolioCandidate(canonical, marker, metrics = {}){
+  return {
+    ok:true,
+    candidateMarker:marker,
+    lessons:JSON.parse(JSON.stringify(canonical.data.tkbSolverResult.lessons)),
+    metrics:Object.assign({
+      scheduled_periods:2,
+      expected_periods:2,
+      unassigned_periods:0,
+      hard_ok:true,
+      app_constraint_violation_count:0,
+      one_period_teacher_sessions:0,
+      teacher_gap2_sessions:0,
+      teacher_sessions:460,
+      gap_distribution:{"0":420, "1":40},
+      gap_total:40
+    }, metrics),
+    validation:{hard_ok:true},
+    unassignedLessons:[]
+  };
+}
+
+async function exercisePortfolioCandidates(canonical, candidates, navigator){
+  const workerPayloads = [];
+  const failures = [];
+  let workerIndex = 0;
+  let leaseIssued = false;
+  let submittedResult = null;
+  class FakeWorker {
+    constructor(){ this.index = workerIndex++; }
+    postMessage(message){
+      if(message.type === "probe"){
+        queueMicrotask(() => this.onmessage({data:{type:"ready", requestId:message.requestId}}));
+        return;
+      }
+      if(message.type === "solve"){
+        workerPayloads[this.index] = message.payload;
+        queueMicrotask(() => this.onmessage({data:{
+          type:"result",
+          requestId:message.requestId,
+          frame:{
+            protocol:"tkb-reference-solver-stdio-v1",
+            status:200,
+            payload:candidates[this.index]
+          }
+        }}));
+      }
+    }
+    terminate(){}
+  }
+  const fetch = async (url, options = {}) => {
+    const pathname = new URL(url).pathname;
+    if(pathname.endsWith("/status")) return response({ok:true, online:false});
+    if(pathname.endsWith("/hello")){
+      assert.equal(JSON.parse(options.body).capacity.cpuWorkers, candidates.length);
+      return response({ok:true, workerToken:"s".repeat(48)});
+    }
+    if(pathname.endsWith("/lease") && !leaseIssued){
+      leaseIssued = true;
+      return response({ok:true, lease:{
+        jobId:"job-portfolio-contract",
+        leaseId:"lease-portfolio-contract",
+        payload:canonical
+      }});
+    }
+    if(pathname.endsWith("/candidate")){
+      const candidate = JSON.parse(options.body);
+      submittedResult = candidate.result;
+      return response({ok:true, candidateId:"candidate-contract", sha256:candidate.sha256});
+    }
+    if(pathname.endsWith("/complete")) return response({ok:true, completed:true});
+    if(pathname.endsWith("/fail")){
+      failures.push(JSON.parse(options.body));
+      return response({ok:true, requeued:true});
+    }
+    if(pathname.endsWith("/disconnect")) return response({ok:true, disconnected:true});
+    if(pathname.endsWith("/lease")) return new Promise(() => {});
+    throw new Error(`unexpected request ${pathname}`);
+  };
+  const {context} = executorContext({navigator, fetch, Worker:FakeWorker});
+  assert.equal(await context.TKBBrowserWasmExecutor.probe({
+    apiBase:"https://tkbcherry.com",
+    request:canonical
+  }), true);
+  assert.equal(context.TKBBrowserWasmExecutor.state().workerCount, candidates.length);
+  assert.equal(await context.TKBBrowserWasmExecutor.activate({
+    apiBase:"https://tkbcherry.com",
+    jobId:"job-portfolio-contract",
+    request:canonical
+  }), true);
+  for(let index = 0; index < 50 && !submittedResult; index += 1){
+    await new Promise(resolve => setTimeout(resolve, 1));
+  }
+  await context.TKBBrowserWasmExecutor.close("test_finished", {failLease:true});
+  return {submittedResult, workerPayloads, failures};
+}
+
+test("browser WASM enables Windows, macOS, Linux, Android, iPhone and every iPadOS navigator form", () => {
   const {context} = executorContext({fetch:async () => response({ok:false}, 503), Worker:function(){}});
   const supported = context.TKBBrowserWasmExecutor.isSupportedNavigator;
   assert.equal(supported({platform:"Win32", userAgent:"Windows NT 10.0", maxTouchPoints:0}), true);
@@ -111,7 +224,115 @@ test("browser WASM enables desktop, Android, iPhone and every iPadOS navigator f
   assert.equal(supported({platform:"iPhone", userAgent:"iPhone; CPU iPhone OS 18_0", maxTouchPoints:5}), true);
   assert.equal(supported({platform:"iPad", userAgent:"iPad; CPU OS 18_0 like Mac OS X", maxTouchPoints:5}), true);
   assert.equal(supported({platform:"MacIntel", userAgent:"Macintosh", maxTouchPoints:5}), true);
-  assert.equal(supported({platform:"Linux x86_64", userAgent:"X11; Linux x86_64", maxTouchPoints:0}), false);
+  assert.equal(supported({platform:"Linux x86_64", userAgent:"X11; Linux x86_64", maxTouchPoints:0}), true);
+});
+
+test("browser Agent is enabled by default and persists an explicit VPS-only toggle", async () => {
+  const storage = memoryStorage();
+  const first = executorContext({
+    localStorage:storage,
+    fetch:async () => response({ok:false}, 503),
+    Worker:function Worker(){}
+  }).context;
+  assert.equal(first.TKBBrowserWasmExecutor.isEnabled(), true);
+  assert.equal(first.TKBBrowserWasmExecutor.state().enabled, true);
+
+  assert.equal(await first.TKBBrowserWasmExecutor.setEnabled(false), false);
+  assert.equal(storage.getItem("TKB_BROWSER_WASM_ENABLED_V1"), "0");
+  assert.equal(first.TKBBrowserWasmExecutor.state().enabled, false);
+
+  const reloaded = executorContext({
+    localStorage:storage,
+    fetch:async () => response({ok:false}, 503),
+    Worker:function Worker(){}
+  }).context;
+  assert.equal(reloaded.TKBBrowserWasmExecutor.isEnabled(), false);
+  assert.equal(await reloaded.TKBBrowserWasmExecutor.probe({
+    apiBase:"https://tkbcherry.com",
+    request:completeRefinementRequest()
+  }), false);
+
+  assert.equal(await reloaded.TKBBrowserWasmExecutor.setEnabled(true), true);
+  assert.equal(storage.getItem("TKB_BROWSER_WASM_ENABLED_V1"), "1");
+  assert.equal(reloaded.TKBBrowserWasmExecutor.isEnabled(), true);
+});
+
+test("browser portfolio reserves one core and caps workers by platform and memory", () => {
+  const {context} = executorContext({fetch:async () => response({ok:false}, 503), Worker:function Worker(){}});
+  const workerCount = context.TKBBrowserWasmExecutor.portfolioWorkerCount;
+  assert.equal(workerCount({platform:"Win32", userAgent:"Windows NT 10.0", hardwareConcurrency:16}), 8);
+  assert.equal(workerCount({platform:"Linux x86_64", userAgent:"X11; Linux x86_64", hardwareConcurrency:8}), 7);
+  assert.equal(workerCount({platform:"MacIntel", userAgent:"Macintosh", hardwareConcurrency:4}), 3);
+  assert.equal(workerCount({platform:"iPhone", userAgent:"iPhone", hardwareConcurrency:8, maxTouchPoints:5}), 2);
+  assert.equal(workerCount({platform:"Linux armv8l", userAgent:"Android 15; Mobile", hardwareConcurrency:8}), 2);
+  assert.equal(workerCount({platform:"Win32", userAgent:"Windows NT 10.0", hardwareConcurrency:16, deviceMemory:2}), 1);
+  assert.equal(workerCount({platform:"Win32", userAgent:"Windows NT 10.0", hardwareConcurrency:16, deviceMemory:4}), 2);
+  assert.equal(workerCount({platform:"Win32", userAgent:"Windows NT 10.0", hardwareConcurrency:1}), 1);
+});
+
+test("browser portfolio keeps healthy probes and cleans up partial worker startup", async () => {
+  const request = completeRefinementRequest();
+  let created = 0;
+  let terminated = 0;
+  class PartialWorker {
+    constructor(){ this.index = created++; }
+    postMessage(message){
+      if(message.type !== "probe") return;
+      queueMicrotask(() => this.onmessage({data:this.index === 1
+        ? {type:"error", requestId:message.requestId, error:"probe_failed"}
+        : {type:"ready", requestId:message.requestId}
+      }));
+    }
+    terminate(){ terminated += 1; }
+  }
+  const partial = executorContext({
+    navigator:{
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      hardwareConcurrency:5,
+      maxTouchPoints:0
+    },
+    fetch:async url => new URL(url).pathname.endsWith("/status")
+      ? response({ok:true, online:false})
+      : response({ok:false}, 404),
+    Worker:PartialWorker
+  }).context;
+  assert.equal(await partial.TKBBrowserWasmExecutor.probe({
+    apiBase:"https://tkbcherry.com",
+    request
+  }), true);
+  assert.equal(partial.TKBBrowserWasmExecutor.state().workerCount, 3);
+  assert.equal(terminated, 1);
+  await partial.TKBBrowserWasmExecutor.close("test_finished", {failLease:false});
+  assert.equal(terminated, 4);
+
+  let constructorCalls = 0;
+  let constructorCleanup = 0;
+  class ConstructorFailureWorker {
+    constructor(){
+      constructorCalls += 1;
+      if(constructorCalls === 2) throw new Error("constructor_failed");
+    }
+    terminate(){ constructorCleanup += 1; }
+  }
+  const failed = executorContext({
+    navigator:{
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      hardwareConcurrency:5,
+      maxTouchPoints:0
+    },
+    fetch:async url => new URL(url).pathname.endsWith("/status")
+      ? response({ok:true, online:false})
+      : response({ok:false}, 404),
+    Worker:ConstructorFailureWorker
+  }).context;
+  assert.equal(await failed.TKBBrowserWasmExecutor.probe({
+    apiBase:"https://tkbcherry.com",
+    request
+  }), false);
+  assert.equal(constructorCleanup, 1);
+  assert.equal(failed.TKBBrowserWasmExecutor.state().workerCount, 0);
 });
 
 test("iPhone and iPad browser compute can probe only while the page is foreground", async () => {
@@ -222,7 +443,7 @@ test("foreground executor probes WASM before hello and disconnects without an in
   assert.equal(context.TKBBrowserWasmExecutor.state().active, false);
   assert.deepEqual(calls.slice(0, 5), [
     "GET:/api/agent-helper/v1/status",
-    "worker:tkb-browser-wasm-worker.js?v=tkb-browser-wasm-executor-v3-ios-foreground",
+    "worker:tkb-browser-wasm-worker.js?v=tkb-browser-wasm-executor-v4-portfolio-toggle",
     "worker-message:probe",
     "POST:/api/solve-data",
     "POST:/api/agent-helper/v1/hello",
@@ -299,6 +520,81 @@ test("iPhone visibilitychange terminates compute, fails the exact lease, then re
   assert.ok(disconnectIndex > failIndex, "worker disconnect must follow lease release");
 });
 
+test("turning Agent off during compute terminates every worker and hands the lease to VPS", async () => {
+  const calls = [];
+  let leaseIssued = false;
+  let terminated = 0;
+  const request = completeRefinementRequest();
+  class FakeWorker {
+    postMessage(message){
+      if(message.type === "probe"){
+        queueMicrotask(() => this.onmessage({data:{type:"ready", requestId:message.requestId}}));
+      }
+    }
+    terminate(){ terminated += 1; }
+  }
+  const fetch = async (url) => {
+    const pathname = new URL(url).pathname;
+    calls.push(pathname);
+    if(pathname.endsWith("/status")) return response({ok:true, online:false});
+    if(pathname.endsWith("/hello")) return response({ok:true, workerToken:"t".repeat(48)});
+    if(pathname.endsWith("/lease") && !leaseIssued){
+      leaseIssued = true;
+      return response({ok:true, lease:{
+        jobId:"job-toggle-off",
+        leaseId:"lease-toggle-off",
+        payload:request
+      }});
+    }
+    if(pathname.endsWith("/fail")) return response({ok:true, requeued:true});
+    if(pathname.endsWith("/disconnect")) return response({ok:true, disconnected:true});
+    if(pathname.endsWith("/lease")) return new Promise(() => {});
+    throw new Error(`unexpected request ${pathname}`);
+  };
+  const storage = memoryStorage();
+  const {context} = executorContext({
+    navigator:{
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      hardwareConcurrency:5,
+      maxTouchPoints:0
+    },
+    localStorage:storage,
+    fetch,
+    Worker:FakeWorker
+  });
+  assert.equal(await context.TKBBrowserWasmExecutor.probe({
+    apiBase:"https://tkbcherry.com",
+    request
+  }), true);
+  assert.equal(context.TKBBrowserWasmExecutor.state().workerCount, 4);
+  assert.equal(await context.TKBBrowserWasmExecutor.activate({
+    apiBase:"https://tkbcherry.com",
+    jobId:"job-toggle-off",
+    request
+  }), true);
+  for(let index = 0; index < 30 && !context.TKBBrowserWasmExecutor.state().hasLease; index += 1){
+    await new Promise(resolve => setTimeout(resolve, 1));
+  }
+  assert.equal(context.TKBBrowserWasmExecutor.state().hasLease, true);
+
+  assert.equal(await context.TKBBrowserWasmExecutor.setEnabled(false), false);
+  assert.equal(storage.getItem("TKB_BROWSER_WASM_ENABLED_V1"), "0");
+  assert.equal(terminated, 4);
+  assert.ok(calls.some(value => value.endsWith("/leases/lease-toggle-off/fail")));
+  assert.ok(calls.some(value => value.endsWith("/disconnect")));
+  assert.deepEqual(JSON.parse(JSON.stringify(context.TKBBrowserWasmExecutor.state())), {
+    active:false,
+    probed:false,
+    hasWorker:false,
+    workerCount:0,
+    hasLease:false,
+    jobId:"",
+    enabled:false,
+    available:true
+  });
+});
+
 test("iPad desktop-mode pagehide racing hello revokes the late token and leaves VPS canonical", async () => {
   let resolveHello;
   let disconnects = 0;
@@ -356,8 +652,11 @@ test("iPad desktop-mode pagehide racing hello revokes the late token and leaves 
     active:false,
     probed:false,
     hasWorker:false,
+    workerCount:0,
     hasLease:false,
-    jobId:""
+    jobId:"",
+    enabled:true,
+    available:true
   });
 });
 
@@ -593,6 +892,175 @@ test("complete refinement sends an overridden clone to WASM without mutating the
   await context.TKBBrowserWasmExecutor.close("test_finished", {failLease:true});
 });
 
+test("four-worker portfolio uses distinct seeds and submits the best non-regressing candidate", async () => {
+  const canonical = completeRefinementRequest();
+  canonical.settings.random_seed = "base-seed";
+  const originalWire = JSON.stringify(canonical);
+  const workerPayloads = [];
+  let workerIndex = 0;
+  let leaseIssued = false;
+  let submittedResult = null;
+  const qualities = [
+    {id:"fewer-sessions-but-worse-gap1", one:0, gap2:0, sessions:459, gap1:41, total:41},
+    {id:"best-within-envelope", one:0, gap2:0, sessions:460, gap1:39, total:39},
+    {id:"malformed-hard-candidate", one:0, gap2:0, sessions:430, gap1:10, total:10, appViolations:1},
+    {id:"gap2-regression", one:0, gap2:1, sessions:440, gap1:15, total:17}
+  ];
+  class FakeWorker {
+    constructor(){ this.index = workerIndex++; }
+    postMessage(message){
+      if(message.type === "probe"){
+        queueMicrotask(() => this.onmessage({data:{type:"ready", requestId:message.requestId}}));
+        return;
+      }
+      if(message.type === "solve"){
+        workerPayloads[this.index] = message.payload;
+        const quality = qualities[this.index];
+        queueMicrotask(() => this.onmessage({data:{
+          type:"result",
+          requestId:message.requestId,
+          frame:{
+            protocol:"tkb-reference-solver-stdio-v1",
+            status:200,
+            payload:{
+              ok:true,
+              candidateMarker:quality.id,
+              lessons:canonical.data.tkbSolverResult.lessons,
+              metrics:{
+                scheduled_periods:2,
+                expected_periods:2,
+                unassigned_periods:0,
+                hard_ok:true,
+                app_constraint_violation_count:quality.appViolations || 0,
+                one_period_teacher_sessions:quality.one,
+                teacher_gap2_sessions:quality.gap2,
+                teacher_sessions:quality.sessions,
+                gap_distribution:{"0":Math.max(0, quality.sessions - quality.gap1), "1":quality.gap1},
+                gap_total:quality.total
+              },
+              validation:{hard_ok:true},
+              unassignedLessons:[]
+            }
+          }
+        }}));
+      }
+    }
+    terminate(){}
+  }
+  const fetch = async (url, options = {}) => {
+    const pathname = new URL(url).pathname;
+    if(pathname.endsWith("/status")) return response({ok:true, online:false});
+    if(pathname.endsWith("/hello")){
+      const hello = JSON.parse(options.body);
+      assert.equal(hello.capacity.cpuWorkers, 4);
+      return response({ok:true, workerToken:"p".repeat(48)});
+    }
+    if(pathname.endsWith("/lease") && !leaseIssued){
+      leaseIssued = true;
+      return response({ok:true, lease:{
+        jobId:"job-portfolio",
+        leaseId:"lease-portfolio",
+        payload:canonical
+      }});
+    }
+    if(pathname.endsWith("/candidate")){
+      const candidate = JSON.parse(options.body);
+      submittedResult = candidate.result;
+      return response({ok:true, candidateId:"candidate-portfolio", sha256:candidate.sha256});
+    }
+    if(pathname.endsWith("/complete")) return response({ok:true, completed:true});
+    if(pathname.endsWith("/disconnect")) return response({ok:true, disconnected:true});
+    if(pathname.endsWith("/lease")) return new Promise(() => {});
+    throw new Error(`unexpected request ${pathname}`);
+  };
+  const {context} = executorContext({
+    navigator:{
+      platform:"Linux x86_64",
+      userAgent:"Mozilla/5.0 (X11; Linux x86_64)",
+      hardwareConcurrency:5,
+      maxTouchPoints:0
+    },
+    fetch,
+    Worker:FakeWorker
+  });
+  assert.equal(await context.TKBBrowserWasmExecutor.probe({
+    apiBase:"https://tkbcherry.com",
+    request:canonical
+  }), true);
+  assert.equal(context.TKBBrowserWasmExecutor.state().workerCount, 4);
+  assert.equal(await context.TKBBrowserWasmExecutor.activate({
+    apiBase:"https://tkbcherry.com",
+    jobId:"job-portfolio",
+    request:canonical
+  }), true);
+  for(let index = 0; index < 50 && !submittedResult; index += 1){
+    await new Promise(resolve => setTimeout(resolve, 1));
+  }
+
+  assert.equal(workerPayloads.length, 4);
+  assert.equal(new Set(workerPayloads.map(payload => payload.settings.random_seed)).size, 4);
+  assert.deepEqual(
+    workerPayloads.map(payload => payload.settings.browser_portfolio_index),
+    [0, 1, 2, 3]
+  );
+  assert.ok(workerPayloads.every(payload => payload.settings.browser_portfolio_count === 4));
+  assert.equal(workerPayloads[0].settings.random_seed, "base-seed");
+  assert.ok(workerPayloads.slice(1).every(payload => payload.settings.random_seed.includes("job-portfolio")));
+  assert.equal(submittedResult?.candidateMarker, "best-within-envelope");
+  assert.equal(JSON.stringify(canonical), originalWire, "portfolio seeds must not mutate the canonical lease");
+  await context.TKBBrowserWasmExecutor.close("test_finished", {failLease:true});
+});
+
+test("portfolio treats an omitted gap-1 bucket as zero and derives total gap", async () => {
+  const canonical = completeRefinementRequest();
+  const derivedZero = completePortfolioCandidate(canonical, "derived-zero-gap", {
+    teacher_gap2_sessions:undefined,
+    gap_distribution:{"0":460},
+    gap_total:undefined
+  });
+  const explicitOne = completePortfolioCandidate(canonical, "explicit-one-gap", {
+    gap_distribution:{"0":459, "1":1},
+    gap_total:1
+  });
+  const {submittedResult, failures} = await exercisePortfolioCandidates(
+    canonical,
+    [derivedZero, explicitOne],
+    {
+      platform:"iPhone",
+      userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)",
+      hardwareConcurrency:3,
+      maxTouchPoints:5
+    }
+  );
+  assert.equal(submittedResult?.candidateMarker, "derived-zero-gap", JSON.stringify(failures));
+});
+
+test("portfolio submits the incumbent when every hard-valid candidate regresses a visible metric", async () => {
+  const canonical = completeRefinementRequest();
+  const incumbentWire = JSON.stringify(canonical.data.tkbSolverResult);
+  const worseGap = completePortfolioCandidate(canonical, "worse-gap", {
+    gap_distribution:{"0":419, "1":41},
+    gap_total:41
+  });
+  const worseSessions = completePortfolioCandidate(canonical, "worse-sessions", {
+    teacher_sessions:461,
+    gap_distribution:{"0":422, "1":39},
+    gap_total:39
+  });
+  const {submittedResult, failures} = await exercisePortfolioCandidates(
+    canonical,
+    [worseGap, worseSessions],
+    {
+      platform:"Linux armv8l",
+      userAgent:"Mozilla/5.0 (Linux; Android 15; Mobile)",
+      hardwareConcurrency:3,
+      maxTouchPoints:5
+    }
+  );
+  assert.equal(JSON.stringify(submittedResult), incumbentWire, JSON.stringify(failures));
+  assert.equal(submittedResult?.candidateMarker, undefined);
+});
+
 test("closing the executor aborts its outstanding lease long-poll immediately", async () => {
   const request = completeRefinementRequest();
   let leaseSignal = null;
@@ -644,7 +1112,7 @@ test("planner wires the browser worker only around a new canonical solve", () =>
   const bridge = fs.readFileSync(BRIDGE_PATH, "utf8");
   const page = fs.readFileSync(PAGE_PATH, "utf8");
   const server = fs.readFileSync(SERVER_PATH, "utf8");
-  assert.match(page, /tkb-browser-wasm\.js\?v=20260723-v165-ios-agent-status-v1/);
+  assert.match(page, /tkb-browser-wasm\.js\?v=20260723-v167-compact-history-duration-v1/);
   assert.ok(page.indexOf("tkb-browser-wasm.js") < page.indexOf("tkb-rust-bridge.js"));
   assert.match(bridge, /TKBBrowserWasmExecutor\.canHandleRequest\(browserWasmRequest\)/);
   assert.match(bridge, /!resumeExistingServerJobOnly[\s\S]*browserWasmEligible[\s\S]*TKBBrowserWasmExecutor\.probe/);
