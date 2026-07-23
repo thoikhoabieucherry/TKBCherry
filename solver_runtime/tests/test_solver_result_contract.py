@@ -1753,6 +1753,12 @@ class SolverResultContractTests(unittest.TestCase):
             max_one_period_sessions=0,
             minimize_sessions=False,
             minimize_one_period_sessions=False,
+            hint_allocations=[
+                SessionAllocation("6/1", "6", "Math", "T1", Session(2, "AM"), 1),
+                SessionAllocation("6/2", "6", "Science", "T1", Session(2, "AM"), 1),
+            ],
+            repair_hint=True,
+            minimize_hint_distance=False,
             period_feasibility_session_indexes=set(range(12)),
             period_max_teacher_gap=1,
             materialize_period_lessons=True,
@@ -1763,11 +1769,67 @@ class SolverResultContractTests(unittest.TestCase):
 
         self.assertEqual(sum(item.count for item in allocations), 2)
         self.assertEqual(metrics["one_period_teacher_sessions"], 0)
+        self.assertEqual(metrics["teacher_single_vars"], 0)
+        self.assertFalse(metrics["minimize_one_period_sessions"])
+        self.assertTrue(metrics["hint"]["used"])
+        self.assertFalse(metrics["hint"]["minimize_distance"])
+        self.assertEqual(metrics["hint_distance_upper_bound"], 0)
         self.assertTrue(metrics["period_bridge_materialization_complete"])
         self.assertGreater(metrics["teacher_period_gap_constraints"], 0)
         rows = metrics["period_bridge_lessons"]
         self.assertEqual(len(rows), 2)
         self.assertEqual(sorted(int(item["period"]) for item in rows), [1, 3])
+
+    def test_session_cp_sat_direct_zero_single_cap_remains_hard_without_single_vars(self) -> None:
+        data = SchoolData(
+            classes=[ClassInfo("6/1", "6"), ClassInfo("6/2", "6")],
+            assignments=[
+                Assignment("6/1", "6", "Math", "T1", 1, 1),
+                Assignment("6/2", "6", "Science", "T1", 1, 1),
+            ],
+            teachers=["T1"],
+            subjects=["Math", "Science"],
+            periods_by_grade_subject={("6", "Math"): 1, ("6", "Science"): 1},
+            limits_by_grade_subject={("6", "Math"): 1, ("6", "Science"): 1},
+        )
+        all_slots = {
+            (day, part, period)
+            for day in range(2, 8)
+            for part in ("AM", "PM")
+            for period in range(1, 6)
+        }
+        rules = TimetableRuleSet(
+            constraints=TimetableConstraintRules(
+                groups={},
+                group_names={},
+                fixed_off={
+                    "class": {
+                        "6/1": frozenset(all_slots - {(2, "AM", 1)}),
+                        "6/2": frozenset(all_slots - {(2, "PM", 1)}),
+                    }
+                },
+                teacher={},
+                subject={},
+                subject_group={},
+            )
+        )
+
+        with self.assertRaises(SessionCpSatNoSolution) as raised:
+            solve_session_allocation_cp_sat(
+                data,
+                rules=rules,
+                max_teacher_sessions=2,
+                max_one_period_sessions=0,
+                minimize_sessions=False,
+                minimize_one_period_sessions=False,
+                time_limit_seconds=5,
+                num_workers=1,
+            )
+
+        self.assertEqual(raised.exception.metrics["teacher_single_vars"], 0)
+        self.assertFalse(
+            raised.exception.metrics["minimize_one_period_sessions"]
+        )
 
     def test_session_cp_sat_linearization_profile_is_clamped_and_overridable(self) -> None:
         self.assertEqual(_session_cp_sat_linearization_level({}), 1)
@@ -3638,6 +3700,13 @@ class SolverResultContractTests(unittest.TestCase):
         strict_settings = calls[0]["settings"]
         self.assertTrue(strict_settings["optimization_benders_period_feasibility_all_sessions"])
         self.assertFalse(strict_settings["optimization_benders_lean_refinement_periods"])
+        self.assertFalse(
+            strict_settings["optimization_benders_minimize_one_period_sessions"]
+        )
+        self.assertFalse(
+            strict_settings["optimization_benders_minimize_hint_distance"]
+        )
+        self.assertFalse(strict_settings["minimize_one_period_sessions"])
         self.assertEqual(strict_settings["max_one_period_sessions"], 0)
         self.assertEqual(strict_settings["period_max_teacher_gap"], 1)
         self.assertGreaterEqual(
@@ -5390,6 +5459,123 @@ class SolverResultContractTests(unittest.TestCase):
             )
         )
 
+    def test_benders_structural_cut_skips_redundant_relaxed_period_probe(self) -> None:
+        ctx = _context()
+        allocation = SessionAllocation(
+            class_name="6/1",
+            grade="Khoi 6",
+            subject="Math",
+            teacher="T1",
+            session=Session(day=2, part="AM"),
+            count=2,
+        )
+        no_solution = SessionCpSatNoSolution(
+            "cut excludes the failed vector",
+            {"status_name": "INFEASIBLE", "elapsed_seconds": 0.1},
+        )
+
+        with (
+            patch("tkb_new.adapter.build_school_data_from_ui", return_value=ctx),
+            patch(
+                "tkb_new.adapter._trim_context_to_available_slots",
+                return_value=(ctx, []),
+            ),
+            patch(
+                "tkb_new.adapter.solve_session_allocation_cp_sat",
+                side_effect=[([allocation], {"teacher_sessions": 1}), no_solution],
+            ),
+            patch(
+                "tkb_new.adapter.allocate_periods",
+                side_effect=RuntimeError("strict period vector rejected"),
+            ) as allocate_periods_mock,
+            patch(
+                "tkb_new.adapter._cut_for_period_error_sparse",
+                return_value=[(0, {0: 2})],
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Benders teacher-session cap search failed"):
+                _solve_teacher_session_benders_candidate(
+                    {},
+                    {
+                        "optimization_benders_iterations": 2,
+                        "optimization_benders_session_time_limit": 10,
+                        "period_max_teacher_gap": 1,
+                        "max_one_period_sessions": 0,
+                        "strict_one_period_sessions_cap": True,
+                        "num_workers": 1,
+                    },
+                    cap=2,
+                    time_limit_seconds=30,
+                    rules=None,
+                    progress=None,
+                    deadline=SolverDeadline(30),
+                )
+
+        self.assertEqual(allocate_periods_mock.call_count, 1)
+
+    def test_benders_first_clean_gate_returns_without_another_quality_iteration(self) -> None:
+        ctx = _context()
+        allocation = SessionAllocation(
+            class_name="6/1",
+            grade="Khoi 6",
+            subject="Math",
+            teacher="T1",
+            session=Session(day=2, part="AM"),
+            count=2,
+        )
+        lessons = [
+            Lesson("6/1", "Khoi 6", 2, "AM", period, "Math", "T1")
+            for period in (1, 2)
+        ]
+        clean = _first_click_payload(teacher_sessions=1, gap1=1)
+
+        with (
+            patch("tkb_new.adapter.build_school_data_from_ui", return_value=ctx),
+            patch(
+                "tkb_new.adapter._trim_context_to_available_slots",
+                return_value=(ctx, []),
+            ),
+            patch(
+                "tkb_new.adapter.solve_session_allocation_cp_sat",
+                return_value=([allocation], {"teacher_sessions": 1}),
+            ) as solve_sessions,
+            patch(
+                "tkb_new.adapter.allocate_periods",
+                return_value=(lessons, {}),
+            ) as allocate_periods_mock,
+            patch("tkb_new.adapter.build_payload", return_value=clean),
+        ):
+            result = _solve_teacher_session_benders_candidate(
+                {},
+                {
+                    "optimization_benders_iterations": 3,
+                    "optimization_continue_quality_search": True,
+                    "optimization_benders_stop_on_first_quality_gate_clean": True,
+                    "target_teacher_sessions": 1,
+                    "target_gap1_sessions": 0,
+                    "max_one_period_sessions": 0,
+                    "strict_one_period_sessions_cap": True,
+                    "num_workers": 1,
+                },
+                cap=2,
+                time_limit_seconds=30,
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(30),
+            )
+
+        self.assertIs(result, clean)
+        self.assertEqual(solve_sessions.call_count, 1)
+        self.assertEqual(allocate_periods_mock.call_count, 1)
+        self.assertEqual(
+            solve_sessions.call_args.kwargs["early_stop_teacher_sessions"],
+            2,
+        )
+        self.assertEqual(
+            solve_sessions.call_args.kwargs["early_stop_max_one_period_sessions"],
+            0,
+        )
+
     def test_lean_refinement_expands_fixed_period_bridge_only_in_empty_fallback(self) -> None:
         ctx = _context()
         assignment = ctx.school_data.assignments[0]
@@ -6264,6 +6450,12 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertFalse(
             phase_q_settings["optimization_benders_minimize_hint_distance"]
         )
+        self.assertFalse(
+            phase_q_settings["optimization_benders_minimize_one_period_sessions"]
+        )
+        self.assertTrue(
+            phase_q_settings["optimization_benders_stop_on_first_quality_gate_clean"]
+        )
         self.assertFalse(phase_q_settings["optimization_benders_complete_first"])
         self.assertTrue(
             phase_q_settings["optimization_benders_disable_session_early_stop"]
@@ -6382,6 +6574,9 @@ class SolverResultContractTests(unittest.TestCase):
         )
         self.assertFalse(
             cleanup_call.args[1]["optimization_benders_minimize_hint_distance"]
+        )
+        self.assertFalse(
+            cleanup_call.args[1]["optimization_benders_minimize_one_period_sessions"]
         )
         self.assertEqual(
             cleanup_call.args[1]["session_cp_sat_linearization_level"],

@@ -43,6 +43,36 @@ change so a machine restart or a new conversation does not erase project context
   `/opt/cherry-scheduler-backups/app-release-20260723-121024.tar.gz`. The public
   cache marker is `20260723-v168-landscape-history-v1`.
 
+### Post-v1.68 first-clean speed candidate (backup branch, not deployed)
+
+- The fresh Phase Q model now uses the existing direct hard
+  `load >= 2 * active` encoding for `max_one_period_sessions=0` instead of also
+  creating 744 redundant singleton objective variables. Strict refinement also
+  keeps the incumbent as a CP-SAT hint without creating hint-distance objective
+  variables. A forced-singleton unit case remains infeasible, proving the hard
+  cap is unchanged.
+- Benders no longer repeats a relaxed period allocation after a strict period
+  failure has already produced a structural cut. On the measured `default`
+  trace each redundant relaxed wave cost about 12.3 seconds.
+- The first-click Phase Q has an opt-in first-clean stop. Its first complete,
+  hard-valid candidate with zero one-period teacher sessions and zero gap-2
+  sessions becomes the atomic first result; later refinement remains separate.
+  On the live `default` fixture (54 classes, 93 teachers, 1,566 periods, 54
+  fixed periods, six VPS workers, seed 101), this candidate returned in 87.60s
+  instead of the 172.15s baseline. Canonical validation passed and quality was
+  `570 teacher sessions / 112 gap-1`, versus the slower baseline's `509 / 83`.
+  This proves the latency gain but also proves that a separate deep optimizer
+  is required before replacing the deployed flow.
+- Local scheduler verification passes **175/175** with three platform skips,
+  focused CP-SAT and Benders tests pass, and `git diff --check` passes. The
+  candidate is preserved on `codex/v169-first-clean-backup`; it is not deployed.
+- Next investigation: an atomic two-phase refinement. Phase S may temporarily
+  trade gap-1/gap-2 for fewer teacher sessions while retaining the hard
+  no-singleton cap. Phase G must lock the achieved teacher-session ceiling,
+  restore gap-2 to zero when constraints permit, and reduce gap-1. Only a final
+  candidate that passes the complete hard validator and the visible Pareto
+  guard may replace the incumbent.
+
 ### v1.67 compact mobile history and duration control (deployed 2026-07-23)
 
 - The mobile planner toolbar keeps eight stable columns: Requirements,

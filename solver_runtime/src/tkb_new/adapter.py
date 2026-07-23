@@ -6578,6 +6578,9 @@ def _solve_teacher_session_benders_candidate(
     complete_first = _truthy_setting(settings.get("optimization_benders_complete_first"))
     adaptive_target = _truthy_setting(settings.get("optimization_adaptive_target"))
     continue_quality_search = _truthy_setting(settings.get("optimization_continue_quality_search"))
+    stop_on_first_quality_gate_clean = _truthy_setting(
+        settings.get("optimization_benders_stop_on_first_quality_gate_clean")
+    )
     disable_session_early_stop = _truthy_setting(
         settings.get("optimization_benders_disable_session_early_stop")
     ) or continue_quality_search
@@ -6811,14 +6814,22 @@ def _solve_teacher_session_benders_candidate(
                 one_period_priority_absolute=not allow_complete_first_one_period_debt,
                 time_limit_seconds=session_limit,
                 early_stop_teacher_sessions=(
-                    None
-                    if disable_session_early_stop or session_feasibility_only
-                    else int(target_teacher_sessions or cap)
+                    int(cap)
+                    if stop_on_first_quality_gate_clean and not session_feasibility_only
+                    else (
+                        None
+                        if disable_session_early_stop or session_feasibility_only
+                        else int(target_teacher_sessions or cap)
+                    )
                 ),
                 early_stop_max_one_period_sessions=(
-                    None
-                    if disable_session_early_stop or allow_complete_first_one_period_debt
-                    else 0
+                    0
+                    if stop_on_first_quality_gate_clean and not allow_complete_first_one_period_debt
+                    else (
+                        None
+                        if disable_session_early_stop or allow_complete_first_one_period_debt
+                        else 0
+                    )
                 ),
                 linearization_level=session_linearization_level,
                 num_workers=solver_workers,
@@ -7207,6 +7218,12 @@ def _solve_teacher_session_benders_candidate(
                     best_metrics = metrics
                     new_best_this_iteration = True
                     history[-1]["new_best"] = True
+                if (
+                    stop_on_first_quality_gate_clean
+                    and _teacher_session_opt_quality_gates_clean(metrics)
+                ):
+                    history[-1]["first_quality_gate_stop"] = True
+                    return best_payload or payload
                 goal_satisfied = _teacher_session_opt_should_stop(
                     metrics,
                     target_teacher_sessions=target_teacher_sessions,
@@ -7254,7 +7271,12 @@ def _solve_teacher_session_benders_candidate(
             strict_cuts = _cut_for_period_error_sparse(ctx.school_data, allocations, exc)
             relaxed_metrics: Mapping[str, Any] = {}
             relaxed_error = None
-            if not skip_relaxed_period_probe:
+            # A structural cut already tells the next session solve exactly
+            # which aggregate vector to avoid. Re-solving the same vector with
+            # relaxed teacher-gap bounds cannot improve that cut and consumed
+            # a full period wave on large schools. Keep the relaxed diagnostic
+            # only when the strict failure could not produce a usable cut.
+            if not skip_relaxed_period_probe and not strict_cuts:
                 try:
                     relaxed_lessons, _relaxed_period_metrics = allocate_periods(
                         ctx.school_data,
@@ -9862,7 +9884,20 @@ def _solve_unified_first_click_feasibility_then_quality(
                 # the atomic fallback if this bounded quality search times out.
                 "optimization_benders_complete_first": not quality_cleanup_required,
                 "optimization_benders_disable_session_early_stop": quality_cleanup_required,
+                "optimization_benders_stop_on_first_quality_gate_clean": bool(
+                    stop_after_first_complete
+                    and _truthy_setting(
+                        settings.get(
+                            "optimization_first_click_stop_on_first_quality_gate_clean",
+                            "1",
+                        )
+                    )
+                ),
                 "optimization_benders_session_feasibility_only": False,
+                # The hard zero-singleton cap below has a direct load >= 2*z
+                # formulation. Do not also create one Boolean objective var
+                # per teacher/session for a value already fixed to zero.
+                "optimization_benders_minimize_one_period_sessions": False,
                 "session_cp_sat_linearization_level": (
                     0 if quality_cleanup_required else 1
                 ),
@@ -12588,6 +12623,11 @@ def _solve_teacher_session_optimized_from_ui_data(
                 "optimization_benders_session_feasibility_only": False,
                 "optimization_benders_disable_session_early_stop": True,
                 "optimization_continue_quality_search": True,
+                # Zero-singleton is a hard cap in this cleanup. Keep the model
+                # lean and retain the incumbent only as a CP-SAT hint, without
+                # either redundant singleton or hint-distance objective vars.
+                "optimization_benders_minimize_one_period_sessions": False,
+                "optimization_benders_minimize_hint_distance": False,
                 "max_one_period_sessions": 0,
                 "strict_one_period_sessions_cap": True,
                 "enforce_max_one_period_sessions": True,
@@ -12600,14 +12640,13 @@ def _solve_teacher_session_optimized_from_ui_data(
                     {
                         "optimization_benders_period_feasibility_all_sessions": True,
                         "optimization_benders_lean_refinement_periods": False,
-                        "optimization_benders_minimize_one_period_sessions": True,
                         "optimization_continue_quality_search": True,
                         "optimization_benders_disable_session_early_stop": True,
                         "optimization_benders_session_time_limit": max(
                             30,
                             min(170, cap_limit_int - 4),
                         ),
-                        "minimize_one_period_sessions": True,
+                        "minimize_one_period_sessions": False,
                         "session_cp_sat_linearization_level": 0,
                     }
                 )
@@ -12628,7 +12667,6 @@ def _solve_teacher_session_optimized_from_ui_data(
                         "optimization_benders_complete_first": False,
                         "optimization_benders_period_feasibility_all_sessions": False,
                         "optimization_benders_lean_refinement_periods": True,
-                        "optimization_benders_minimize_one_period_sessions": True,
                     }
                 )
             candidate_settings.update(strict_quality_settings)
