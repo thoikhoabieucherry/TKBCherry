@@ -102,15 +102,66 @@ function executorContext(overrides = {}){
   return {context, documentListeners, windowListeners};
 }
 
-test("browser WASM enables Windows, macOS and Android but excludes every iOS/iPadOS form", () => {
+test("browser WASM enables desktop, Android, iPhone and every iPadOS navigator form", () => {
   const {context} = executorContext({fetch:async () => response({ok:false}, 503), Worker:function(){}});
   const supported = context.TKBBrowserWasmExecutor.isSupportedNavigator;
   assert.equal(supported({platform:"Win32", userAgent:"Windows NT 10.0", maxTouchPoints:0}), true);
   assert.equal(supported({platform:"MacIntel", userAgent:"Macintosh; Intel Mac OS X 14_5", maxTouchPoints:0}), true);
   assert.equal(supported({platform:"Linux armv8l", userAgent:"Android 15; Mobile", maxTouchPoints:5}), true);
-  assert.equal(supported({platform:"iPhone", userAgent:"iPhone; CPU iPhone OS 18_0", maxTouchPoints:5}), false);
-  assert.equal(supported({platform:"MacIntel", userAgent:"Macintosh", maxTouchPoints:5}), false);
+  assert.equal(supported({platform:"iPhone", userAgent:"iPhone; CPU iPhone OS 18_0", maxTouchPoints:5}), true);
+  assert.equal(supported({platform:"iPad", userAgent:"iPad; CPU OS 18_0 like Mac OS X", maxTouchPoints:5}), true);
+  assert.equal(supported({platform:"MacIntel", userAgent:"Macintosh", maxTouchPoints:5}), true);
   assert.equal(supported({platform:"Linux x86_64", userAgent:"X11; Linux x86_64", maxTouchPoints:0}), false);
+});
+
+test("iPhone and iPad browser compute can probe only while the page is foreground", async () => {
+  for(const navigator of [
+    {platform:"iPhone", userAgent:"iPhone; CPU iPhone OS 18_0", maxTouchPoints:5},
+    {platform:"iPad", userAgent:"iPad; CPU OS 18_0 like Mac OS X", maxTouchPoints:5},
+    {platform:"MacIntel", userAgent:"Macintosh", maxTouchPoints:5}
+  ]){
+    let workerStarts = 0;
+    class FakeWorker {
+      constructor(){
+        workerStarts += 1;
+        this.onmessage = null;
+      }
+      postMessage(message){
+        if(message.type === "probe"){
+          queueMicrotask(() => this.onmessage({data:{type:"ready", requestId:message.requestId}}));
+        }
+      }
+      terminate(){}
+    }
+    const visible = executorContext({
+      navigator,
+      fetch:async () => response({ok:true, online:false}),
+      Worker:FakeWorker
+    }).context;
+    assert.equal(await visible.TKBBrowserWasmExecutor.probe({
+      apiBase:"https://tkbcherry.com",
+      request:completeRefinementRequest()
+    }), true);
+    assert.equal(workerStarts, 1);
+    await visible.TKBBrowserWasmExecutor.close("test_finished", {failLease:true});
+
+    workerStarts = 0;
+    const hiddenDocument = {
+      visibilityState:"hidden",
+      addEventListener(){}
+    };
+    const hidden = executorContext({
+      navigator,
+      document:hiddenDocument,
+      fetch:async () => response({ok:true, online:false}),
+      Worker:FakeWorker
+    }).context;
+    assert.equal(await hidden.TKBBrowserWasmExecutor.probe({
+      apiBase:"https://tkbcherry.com",
+      request:completeRefinementRequest()
+    }), false);
+    assert.equal(workerStarts, 0);
+  }
 });
 
 test("browser tree digest matches the server wire value after JSON serialization", async () => {
@@ -171,7 +222,7 @@ test("foreground executor probes WASM before hello and disconnects without an in
   assert.equal(context.TKBBrowserWasmExecutor.state().active, false);
   assert.deepEqual(calls.slice(0, 5), [
     "GET:/api/agent-helper/v1/status",
-    "worker:tkb-browser-wasm-worker.js?v=tkb-browser-wasm-executor-v2",
+    "worker:tkb-browser-wasm-worker.js?v=tkb-browser-wasm-executor-v3-ios-foreground",
     "worker-message:probe",
     "POST:/api/solve-data",
     "POST:/api/agent-helper/v1/hello",
@@ -181,7 +232,7 @@ test("foreground executor probes WASM before hello and disconnects without an in
   assert.doesNotMatch(EXECUTOR_SOURCE, /\bconfirm\s*\(|\balert\s*\(|downloadAgent/i);
 });
 
-test("backgrounding terminates compute, fails the exact lease, then disconnects", async () => {
+test("iPhone visibilitychange terminates compute, fails the exact lease, then returns it to VPS", async () => {
   const calls = [];
   const request = completeRefinementRequest();
   let leaseIssued = false;
@@ -216,7 +267,15 @@ test("backgrounding terminates compute, fails the exact lease, then disconnects"
     if(pathname.endsWith("/lease")) return new Promise(() => {});
     throw new Error(`unexpected request ${pathname}`);
   };
-  const {context} = executorContext({fetch, Worker:FakeWorker});
+  const {context, documentListeners} = executorContext({
+    navigator:{
+      platform:"iPhone",
+      userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)",
+      maxTouchPoints:5
+    },
+    fetch,
+    Worker:FakeWorker
+  });
   assert.equal(await context.TKBBrowserWasmExecutor.probe({
     apiBase:"https://tkbcherry.com",
     request
@@ -230,7 +289,8 @@ test("backgrounding terminates compute, fails the exact lease, then disconnects"
     await new Promise(resolve => setTimeout(resolve, 1));
   }
   assert.equal(context.TKBBrowserWasmExecutor.state().hasLease, true);
-  assert.equal(context.TKBBrowserWasmExecutor.stopForBackground(), true);
+  context.document.visibilityState = "hidden";
+  documentListeners.get("visibilitychange")();
   await context.TKBBrowserWasmExecutor.close("browser_hidden", {failLease:true, keepalive:true});
   const failIndex = calls.findIndex(value => value.endsWith("/leases/lease-browser-1/fail"));
   const disconnectIndex = calls.findIndex(value => value.endsWith("/disconnect"));
@@ -239,7 +299,7 @@ test("backgrounding terminates compute, fails the exact lease, then disconnects"
   assert.ok(disconnectIndex > failIndex, "worker disconnect must follow lease release");
 });
 
-test("pagehide racing hello revokes the late token without resurrecting compute", async () => {
+test("iPad desktop-mode pagehide racing hello revokes the late token and leaves VPS canonical", async () => {
   let resolveHello;
   let disconnects = 0;
   const request = completeRefinementRequest();
@@ -263,7 +323,15 @@ test("pagehide racing hello revokes the late token without resurrecting compute"
     }
     throw new Error(`unexpected request ${pathname}`);
   };
-  const {context} = executorContext({fetch, Worker:FakeWorker});
+  const {context, windowListeners} = executorContext({
+    navigator:{
+      platform:"MacIntel",
+      userAgent:"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15)",
+      maxTouchPoints:5
+    },
+    fetch,
+    Worker:FakeWorker
+  });
   assert.equal(await context.TKBBrowserWasmExecutor.probe({
     apiBase:"https://tkbcherry.com",
     request
@@ -277,8 +345,7 @@ test("pagehide racing hello revokes the late token without resurrecting compute"
     await new Promise(resolve => setTimeout(resolve, 1));
   }
   assert.equal(typeof resolveHello, "function");
-  context.document.visibilityState = "hidden";
-  context.TKBBrowserWasmExecutor.stopForBackground();
+  windowListeners.get("pagehide")();
   resolveHello(response({ok:true, workerToken:"z".repeat(48)}));
   assert.equal(await activation, false);
   for(let index = 0; index < 20 && disconnects < 1; index++){
@@ -577,7 +644,7 @@ test("planner wires the browser worker only around a new canonical solve", () =>
   const bridge = fs.readFileSync(BRIDGE_PATH, "utf8");
   const page = fs.readFileSync(PAGE_PATH, "utf8");
   const server = fs.readFileSync(SERVER_PATH, "utf8");
-  assert.match(page, /tkb-browser-wasm\.js\?v=20260723-v164-browser-compute-v1/);
+  assert.match(page, /tkb-browser-wasm\.js\?v=20260723-v165-ios-agent-status-v1/);
   assert.ok(page.indexOf("tkb-browser-wasm.js") < page.indexOf("tkb-rust-bridge.js"));
   assert.match(bridge, /TKBBrowserWasmExecutor\.canHandleRequest\(browserWasmRequest\)/);
   assert.match(bridge, /!resumeExistingServerJobOnly[\s\S]*browserWasmEligible[\s\S]*TKBBrowserWasmExecutor\.probe/);

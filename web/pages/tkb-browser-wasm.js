@@ -1,7 +1,7 @@
 (function(root){
   "use strict";
 
-  const VERSION = "tkb-browser-wasm-executor-v2";
+  const VERSION = "tkb-browser-wasm-executor-v3-ios-foreground";
   const AGENT_PROTOCOL = "tkb-agent-helper-v1";
   const AGENT_VERSION = "1.6.29";
   const SOLVER_PROTOCOL = "tkb-reference-solver-stdio-v1";
@@ -47,12 +47,11 @@
     const touchPoints = Number(nav.maxTouchPoints || 0);
     const iPadDesktopMode = /MacIntel/i.test(platform) && touchPoints > 1;
     const isiOS = /iPhone|iPad|iPod/i.test(userAgent) || iPadDesktopMode;
-    if(isiOS) return false;
     const windows = /Windows/i.test(platform) || /Windows NT/i.test(userAgent);
     const android = uaData.platform === "Android" || /Android/i.test(userAgent);
     const macOS = (/Mac/i.test(platform) || /Macintosh|Mac OS X/i.test(userAgent))
       && !iPadDesktopMode;
-    return windows || android || macOS;
+    return windows || android || macOS || isiOS;
   }
 
   function runtimeSupported(){

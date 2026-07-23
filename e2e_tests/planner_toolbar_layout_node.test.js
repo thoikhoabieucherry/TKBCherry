@@ -413,11 +413,11 @@ test("planner keeps eight compact, accessible commands in the mobile toolbar", (
     plannerHtml,
     /@media \(max-width:\s*900px\) and \(hover:\s*none\) and \(pointer:\s*coarse\),\s*\(max-width:\s*480px\)/
   );
-  assert.match(plannerHtml, /phanmon\.js\?v=20260723-v164-browser-compute-v1/);
-  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260723-v164-browser-compute-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260723-v165-ios-agent-status-v1/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260723-v165-ios-agent-status-v1/);
 });
 
-test("legacy Agent download control stays hidden after browser compute integration", () => {
+test("browser Agent indicator is compact, local-only, and desktop-only", () => {
   const secondaryStart = plannerHtml.indexOf('<div class="toolbar-secondary-actions"');
   const secondaryEnd = plannerHtml.indexOf("\n  </div>\n\n</div>", secondaryStart);
   const secondary = plannerHtml.slice(secondaryStart, secondaryEnd);
@@ -435,11 +435,13 @@ test("legacy Agent download control stays hidden after browser compute integrati
     "Agent must be the next toolbar button after Home"
   );
   assert.match(helperButton, /class="agent-helper-button"[^>]*type="button"/);
-  assert.match(helperButton, /title="Bộ xử lý đã tích hợp trong trình duyệt"[^>]*aria-label="Bộ xử lý đã tích hợp trong trình duyệt"/);
-  assert.match(helperButton, /data-agent-online="0"/);
+  assert.match(helperButton, /title="Agent trình duyệt sẵn sàng, dùng CPU\/RAM khi tối ưu\."/);
+  assert.match(helperButton, /aria-label="Agent trình duyệt sẵn sàng, dùng CPU\/RAM khi tối ưu\."/);
+  assert.match(helperButton, /data-agent-state="unavailable"/);
   assert.match(helperButton, /class="agent-status-dot"[^>]*aria-hidden="true"/);
   assert.doesNotMatch(helperButton, /onclick=/);
   assert.match(helperButton, /\sdisabled(?:\s|>)/);
+  assert.match(helperButton, /aria-disabled="true"/);
   assert.match(helperButton, /class="toolbar-icon agent-ai-icon"[\s\S]*<span>Agent<\/span><\/button>/);
   assert.match(helperButton, /\shidden(?:\s|>)/);
   assert.match(helperButton, /aria-hidden="true"/);
@@ -450,8 +452,9 @@ test("legacy Agent download control stays hidden after browser compute integrati
   assert.match(plannerSource, /async function approveAgentPairFromUrl\(\)/);
   assert.match(plannerSource, /fetch\("\/api\/agent-helper\/v1\/pair\/approve"/);
   assert.match(plannerSource, /function isAgentHelperSupportedDevice\(deviceNavigator\)/);
+  assert.match(plannerSource, /function browserAgentRuntimeState\(deviceNavigator\)/);
+  assert.match(plannerSource, /window\.TKBBrowserWasmExecutor/);
   assert.match(plannerSource, /function syncAgentHelperVisibility\(\)/);
-  assert.match(plannerSource, /fetch\("\/api\/agent-helper\/v1\/status"/);
   assert.match(plannerSource, /async function maybeInviteAgentBeforeSort\(options\)/);
   assert.match(
     bridgeSource,
@@ -470,12 +473,18 @@ test("legacy Agent download control stays hidden after browser compute integrati
   );
   assert.match(
     plannerHtml,
-    /#btnAgentHelper \.agent-status-dot\s*\{[^}]*top:\s*3px;[^}]*left:\s*3px;[^}]*background:\s*#dc2626;/s
+    /#btnAgentHelper \.agent-status-dot\s*\{[^}]*top:\s*3px;[^}]*left:\s*3px;[^}]*background:\s*#94a3b8;/s
   );
   assert.match(
     plannerHtml,
-    /#btnAgentHelper\[data-agent-online="1"\] \.agent-status-dot\s*\{[^}]*background:\s*#16a34a;/s
+    /#btnAgentHelper\[data-agent-state="ready"\] \.agent-status-dot,[\s\S]*?#btnAgentHelper\[data-agent-state="working"\] \.agent-status-dot\s*\{[^}]*background:\s*#16a34a;/s
   );
+  assert.match(
+    plannerHtml,
+    /#btnAgentHelper\[data-agent-state="working"\] \.agent-status-dot\s*\{[^}]*box-shadow:\s*0 0 0 3px rgb\(22 163 74 \/ 18%\)/s
+  );
+  assert.match(plannerHtml, /#btnAgentHelper:disabled\s*\{[^}]*opacity:\s*1;[^}]*cursor:\s*default;/s);
+  assert.doesNotMatch(plannerHtml, /#btnAgentHelper[^}]*background:\s*#dc2626/s);
   assert.doesNotMatch(plannerSource, /EncodedCommand|powershell\.exe|Cai-TKBCherry-Agent\.cmd/);
 
   const supportStart = plannerSource.indexOf("function isAgentHelperSupportedDevice");
@@ -510,34 +519,66 @@ test("legacy Agent download control stays hidden after browser compute integrati
   );
 });
 
-test("Agent status state paints the owner-scoped VPS result green or red", () => {
-  const start = plannerSource.indexOf("function setAgentHelperOnlineState");
-  const end = plannerSource.indexOf("async function refreshAgentHelperStatus", start);
-  assert.ok(start >= 0 && end > start, "Agent status renderer is missing");
+test("browser Agent indicator reports ready and active compute without server polling", async () => {
+  const start = plannerSource.indexOf("function isAgentHelperSupportedDevice");
+  const end = plannerSource.indexOf("function startAgentHelperStatusPolling", start);
+  assert.ok(start >= 0 && end > start, "browser Agent status renderer is missing");
+  const indicatorSource = plannerSource.slice(start, end);
+  assert.doesNotMatch(indicatorSource, /\/api\/agent-helper\/v1\/status|\bfetch\s*\(/);
   const button = {
-    dataset:{},
+    dataset:{agentState:"unavailable"},
+    hidden:true,
+    disabled:false,
     title:"",
     attributes:{},
     setAttribute(name, value){ this.attributes[name] = value; }
   };
+  const executorState = {active:false, probed:false, hasWorker:false, hasLease:false};
+  const windowsNavigator = {
+    platform:"Win32",
+    userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+  };
   const context = {
-    window:{},
+    navigator:windowsNavigator,
+    window:{
+      Worker:function Worker(){},
+      WebAssembly:{},
+      BigInt,
+      TextEncoder,
+      crypto:{subtle:{}},
+      fetch:async () => { throw new Error("status indicator must stay local"); },
+      TKBBrowserWasmExecutor:{
+        isSupportedNavigator(){ return true; },
+        prepare(){},
+        state(){ return executorState; }
+      }
+    },
     document:{getElementById(id){ return id === "btnAgentHelper" ? button : null; }}
   };
   vm.runInNewContext(
-    `${plannerSource.slice(start, end)}\nthis.renderAgentState = setAgentHelperOnlineState;`,
+    `${indicatorSource}\nthis.syncIndicator = syncAgentHelperVisibility; this.refreshIndicator = refreshAgentHelperStatus;`,
     context
   );
 
-  assert.equal(context.renderAgentState(true, {known:true, count:2}), true);
-  assert.equal(button.dataset.agentOnline, "1");
-  assert.equal(button.dataset.agentCount, "2");
-  assert.match(button.title, /Agent đang ON/);
-  assert.equal(context.window.__TKB_AGENT_STATUS_KNOWN, true);
+  assert.equal(context.syncIndicator(), true);
+  assert.equal(button.hidden, false);
+  assert.equal(button.disabled, true);
+  assert.equal(button.attributes["aria-hidden"], "false");
+  assert.equal(button.dataset.agentState, "ready");
+  assert.equal(button.title, "Agent trình duyệt sẵn sàng, dùng CPU/RAM khi tối ưu.");
+  assert.equal(button.attributes["aria-label"], button.title);
+  assert.equal(context.window.__TKB_BROWSER_AGENT_READY, true);
+  assert.equal(context.window.__TKB_BROWSER_AGENT_WORKING, false);
 
-  assert.equal(context.renderAgentState(false, {known:true, count:0}), false);
-  assert.equal(button.dataset.agentOnline, "0");
-  assert.match(button.title, /Agent chưa kết nối/);
+  executorState.active = true;
+  executorState.probed = true;
+  executorState.hasWorker = true;
+  executorState.hasLease = true;
+  assert.equal(await context.refreshIndicator(true), true);
+  assert.equal(button.dataset.agentState, "working");
+  assert.equal(button.title, "Agent trình duyệt đang tối ưu, đang dùng CPU/RAM.");
+  assert.equal(context.window.__TKB_BROWSER_AGENT_ACTIVE, true);
+  assert.equal(context.window.__TKB_BROWSER_AGENT_WORKING, true);
 });
 
 test("manual Play never prompts or downloads a native Agent", async () => {
@@ -625,7 +666,8 @@ test("legacy Agent action reports integrated browser compute without downloading
   const statuses = [];
   const button = {dataset:{agentOnline:"1"}};
   const context = {
-    window:{__TKB_AGENT_ONLINE:true},
+    BROWSER_AGENT_READY_LABEL:"Agent tr\u00ecnh duy\u1ec7t s\u1eb5n s\u00e0ng, d\u00f9ng CPU/RAM khi t\u1ed1i \u01b0u.",
+    window:{__TKB_BROWSER_AGENT_READY:true},
     document:{
       getElementById(){ return button; },
       createElement(){ created += 1; return {}; },
@@ -640,7 +682,7 @@ test("legacy Agent action reports integrated browser compute without downloading
   );
   assert.equal(await context.downloadConnectedAgent(), false);
   assert.equal(created, 0);
-  assert.deepEqual(statuses, [["Bộ xử lý đã tích hợp trong trình duyệt và sẽ tự dùng khi phù hợp.", "info"]]);
+  assert.deepEqual(statuses, [["Agent trình duyệt sẵn sàng, dùng CPU/RAM khi tối ưu.", "info"]]);
 });
 
 test("toolbar status messages hide after five seconds", () => {
@@ -1075,7 +1117,7 @@ test("landscape phones show a full session in both panes and scroll the remainde
   assert.ok(paneBodyHeight >= 18 + (5 * 20));
 });
 
-test("sorting keeps Home stable while the retired Agent control remains hidden", () => {
+test("sorting keeps Home and the browser Agent indicator in stable slots", () => {
   const homeControl = plannerSource.slice(
     plannerSource.indexOf("function setAutoSortHomeHidden"),
     plannerSource.indexOf("function setAutoSortBusyControls")
@@ -1089,13 +1131,16 @@ test("sorting keeps Home stable while the retired Agent control remains hidden",
   assert.match(homeControl, /setAutoSortControlLocked\(btn,\s*shouldLock\)/);
   assert.doesNotMatch(homeControl, /btn\.hidden\s*=\s*!!hidden/);
   assert.match(homeControl, /getElementById\("btnAgentHelper"\)/);
-  assert.match(homeControl, /agentBtn\.hidden\s*=\s*true/);
-  assert.match(homeControl, /agentBtn\.setAttribute\("aria-hidden",\s*"true"\)/);
+  assert.match(homeControl, /const agentVisible\s*=\s*syncAgentHelperVisibility\(\)/);
+  assert.match(homeControl, /agentBtn\.hidden\s*=\s*!agentVisible/);
+  assert.match(homeControl, /agentBtn\.setAttribute\("aria-hidden",\s*agentVisible \? "false" : "true"\)/);
   assert.match(homeControl, /agentBtn\.disabled\s*=\s*true/);
+  assert.match(homeControl, /agentBtn\.classList\.remove\("is-auto-sort-disabled"\)/);
   assert.match(
     plannerHtml,
-    /#btnHome\.is-auto-sort-disabled,\s*body\.planner-shell #btnAgentHelper\.is-auto-sort-disabled\s*\{[^}]*opacity:\s*\.45;[^}]*filter:\s*saturate\(\.6\);/s
+    /#btnHome\.is-auto-sort-disabled\s*\{[^}]*opacity:\s*\.45;[^}]*filter:\s*saturate\(\.6\);/s
   );
+  assert.doesNotMatch(plannerHtml, /#btnAgentHelper\.is-auto-sort-disabled/);
   assert.match(busyControls, /getElementById\("btnUndoTKB"\)/);
   assert.match(busyControls, /getElementById\("btnRedoTKB"\)/);
   assert.match(busyControls, /getElementById\("solveDurationSeconds"\)/);
@@ -1121,6 +1166,7 @@ test("sorting keeps Home stable while the retired Agent control remains hidden",
 
   const controls = {
     btnHome:makeControl(false),
+    btnAgentHelper:makeControl(true),
     btnUndoTKB:makeControl(false),
     btnRedoTKB:makeControl(true),
     btnDeleteAll:makeControl(false),
@@ -1129,11 +1175,27 @@ test("sorting keeps Home stable while the retired Agent control remains hidden",
   };
   let historyRefreshes = 0;
   const context = {
-    window:{__TKB_RUST_SOLVER_RUNNING:false, __TKB_SOLVE_UI_BUSY:false},
+    navigator:{platform:"Win32", userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+    window:{
+      __TKB_RUST_SOLVER_RUNNING:false,
+      __TKB_SOLVE_UI_BUSY:false,
+      Worker:function Worker(){},
+      WebAssembly:{},
+      BigInt,
+      TextEncoder,
+      crypto:{subtle:{}},
+      fetch:async () => ({}),
+      TKBBrowserWasmExecutor:{
+        isSupportedNavigator(){ return true; },
+        prepare(){},
+        state(){ return {active:false, hasLease:false, probed:false}; }
+      }
+    },
     document:{
       getElementById(id){ return controls[id] || null; },
       querySelectorAll(){ return []; }
     },
+    syncAgentHelperVisibility(){ return true; },
     __tkbUpdateHistoryButtons(){ historyRefreshes += 1; }
   };
   vm.runInNewContext(`${plannerSource.slice(
@@ -1144,6 +1206,9 @@ test("sorting keeps Home stable while the retired Agent control remains hidden",
   context.lockBusyControls(true);
   assert.equal(controls.btnHome.hidden, false);
   assert.equal(controls.btnHome.disabled, true);
+  assert.equal(controls.btnAgentHelper.hidden, false);
+  assert.equal(controls.btnAgentHelper.disabled, true);
+  assert.equal(controls.btnAgentHelper.getAttribute("aria-hidden"), "false");
   assert.equal(controls.btnUndoTKB.disabled, true);
   assert.equal(controls.btnRedoTKB.disabled, true);
   assert.equal(controls.solveDurationSeconds.disabled, true);
@@ -1151,6 +1216,8 @@ test("sorting keeps Home stable while the retired Agent control remains hidden",
   context.lockBusyControls(false);
   assert.equal(controls.btnHome.hidden, false);
   assert.equal(controls.btnHome.disabled, false);
+  assert.equal(controls.btnAgentHelper.hidden, false);
+  assert.equal(controls.btnAgentHelper.disabled, true);
   assert.equal(controls.btnUndoTKB.disabled, false);
   assert.equal(controls.btnRedoTKB.disabled, true);
   assert.equal(controls.solveDurationSeconds.disabled, false);

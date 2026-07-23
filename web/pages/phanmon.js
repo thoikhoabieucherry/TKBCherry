@@ -7279,102 +7279,99 @@ function isAgentHelperSupportedDevice(deviceNavigator){
   return isWindows && !isMobileOrTablet;
 }
 
+const BROWSER_AGENT_READY_LABEL = "Agent trình duyệt sẵn sàng, dùng CPU/RAM khi tối ưu.";
+const BROWSER_AGENT_ACTIVE_LABEL = "Agent trình duyệt đang chờ lượt tối ưu.";
+const BROWSER_AGENT_WORKING_LABEL = "Agent trình duyệt đang tối ưu, đang dùng CPU/RAM.";
+const BROWSER_AGENT_UNAVAILABLE_LABEL = "Agent trình duyệt chưa sẵn sàng trên trình duyệt này.";
+
+function browserAgentRuntimeState(deviceNavigator){
+  const nav = deviceNavigator || (typeof navigator !== "undefined" ? navigator : {});
+  const executor = window.TKBBrowserWasmExecutor;
+  const available = isAgentHelperSupportedDevice(nav)
+    && !!executor
+    && typeof executor.isSupportedNavigator === "function"
+    && executor.isSupportedNavigator(nav) === true
+    && typeof executor.prepare === "function"
+    && typeof executor.state === "function"
+    && typeof window.Worker === "function"
+    && typeof window.WebAssembly === "object"
+    && typeof window.BigInt === "function"
+    && typeof window.TextEncoder === "function"
+    && !!window.crypto?.subtle
+    && typeof window.fetch === "function";
+  let executorState = {};
+  if(available){
+    try{
+      executorState = executor.state() || {};
+    }catch(_){
+      executorState = {};
+    }
+  }
+  return {
+    available,
+    active:available && executorState.active === true,
+    working:available && executorState.hasLease === true,
+    probed:available && executorState.probed === true
+  };
+}
+
+function renderBrowserAgentIndicator(runtimeState){
+  const state = runtimeState && typeof runtimeState === "object"
+    ? runtimeState
+    : browserAgentRuntimeState();
+  const available = state.available === true;
+  const active = available && state.active === true;
+  const working = available && state.working === true;
+  const name = working ? "working" : (active ? "active" : (available ? "ready" : "unavailable"));
+  const label = working
+    ? BROWSER_AGENT_WORKING_LABEL
+    : (active
+      ? BROWSER_AGENT_ACTIVE_LABEL
+      : (available ? BROWSER_AGENT_READY_LABEL : BROWSER_AGENT_UNAVAILABLE_LABEL));
+  window.__TKB_BROWSER_AGENT_READY = available;
+  window.__TKB_BROWSER_AGENT_ACTIVE = active;
+  window.__TKB_BROWSER_AGENT_WORKING = working;
+  const btn = document.getElementById("btnAgentHelper");
+  if(!btn) return available;
+  btn.dataset.agentState = name;
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+  return available;
+}
+
 function syncAgentHelperVisibility(){
   const btn = document.getElementById("btnAgentHelper");
   if(!btn) return false;
-  // Local compute is now an automatic Web Worker/WASM capability. Keep the
-  // former download control out of the toolbar; the Play flow selects browser
-  // or VPS without asking the user to install anything.
-  btn.hidden = true;
+  const visible = isAgentHelperSupportedDevice(
+    typeof navigator !== "undefined" ? navigator : {}
+  );
+  btn.hidden = !visible;
   btn.disabled = true;
-  btn.setAttribute("aria-hidden", "true");
+  btn.setAttribute("aria-hidden", visible ? "false" : "true");
   btn.setAttribute("aria-disabled", "true");
-  return false;
+  if(visible) renderBrowserAgentIndicator(browserAgentRuntimeState());
+  return visible;
 }
 
-function setAgentHelperOnlineState(online, options){
-  const opts = options && typeof options === "object" ? options : {};
-  const btn = document.getElementById("btnAgentHelper");
-  const isOnline = online === true;
-  const count = Math.max(0, Number(opts.count || 0) || 0);
-  window.__TKB_AGENT_ONLINE = isOnline;
-  window.__TKB_AGENT_STATUS_KNOWN = opts.known !== false;
-  if(!btn) return isOnline;
-  btn.dataset.agentOnline = isOnline ? "1" : "0";
-  btn.dataset.agentCount = String(count);
-  const label = isOnline
-    ? `Agent đang ON · ${count || 1} máy đang hỗ trợ`
-    : "Agent chưa kết nối · bấm để tải cho Windows";
-  btn.title = label;
-  btn.setAttribute("aria-label", label);
-  return isOnline;
+function setAgentHelperOnlineState(){
+  // Compatibility name retained for older cached bridge code. The indicator
+  // deliberately ignores native-Agent server status and reads only local WASM.
+  return renderBrowserAgentIndicator(browserAgentRuntimeState());
 }
 
 async function refreshAgentHelperStatus(force){
+  void force;
   if(!syncAgentHelperVisibility()) return null;
-  const now = Date.now();
-  const checkedAt = Number(window.__TKB_AGENT_STATUS_CHECKED_AT || 0);
-  if(
-    force !== true
-    && window.__TKB_AGENT_STATUS_KNOWN === true
-    && now - checkedAt < 4000
-  ){
-    return window.__TKB_AGENT_ONLINE === true;
-  }
-  if(window.__TKB_AGENT_STATUS_INFLIGHT){
-    return window.__TKB_AGENT_STATUS_INFLIGHT;
-  }
-  const request = (async () => {
-    const controller = typeof AbortController === "function"
-      ? new AbortController()
-      : null;
-    const timeout = controller
-      ? window.setTimeout(() => controller.abort(), 2500)
-      : 0;
-    try{
-      const headers = window.TKBAuthApi?.getAuthHeaders
-        ? window.TKBAuthApi.getAuthHeaders({"Accept":"application/json"})
-        : {"Accept":"application/json"};
-      const response = await fetch("/api/agent-helper/v1/status", {
-        method:"GET",
-        headers,
-        cache:"no-store",
-        ...(controller ? {signal:controller.signal} : {})
-      });
-      const payload = await response.json().catch(() => ({}));
-      if(!response.ok || payload?.ok !== true){
-        throw new Error("agent_status_unavailable");
-      }
-      window.__TKB_AGENT_STATUS_CHECKED_AT = Date.now();
-      return setAgentHelperOnlineState(payload.online === true, {
-        known:true,
-        count:payload.agentCount
-      });
-    }catch(_){
-      window.__TKB_AGENT_STATUS_CHECKED_AT = Date.now();
-      setAgentHelperOnlineState(false, {known:false, count:0});
-      return null;
-    }finally{
-      if(timeout) window.clearTimeout(timeout);
-    }
-  })();
-  window.__TKB_AGENT_STATUS_INFLIGHT = request;
-  try{
-    return await request;
-  }finally{
-    if(window.__TKB_AGENT_STATUS_INFLIGHT === request){
-      window.__TKB_AGENT_STATUS_INFLIGHT = null;
-    }
-  }
+  return setAgentHelperOnlineState();
 }
 
 function startAgentHelperStatusPolling(){
   if(!syncAgentHelperVisibility()) return false;
   refreshAgentHelperStatus(true);
-  if(!window.__TKB_AGENT_STATUS_TIMER){
-    window.__TKB_AGENT_STATUS_TIMER = window.setInterval(
+  if(!window.__TKB_BROWSER_AGENT_STATUS_TIMER){
+    window.__TKB_BROWSER_AGENT_STATUS_TIMER = window.setInterval(
       () => refreshAgentHelperStatus(true),
-      10000
+      750
     );
   }
   return true;
@@ -7396,13 +7393,15 @@ function setAutoSortHomeHidden(hidden){
     btn.setAttribute("aria-hidden", "false");
     setAutoSortControlLocked(btn, shouldLock);
   }
-  // Keep Agent in its toolbar slot like Home, but dim and lock it while the
-  // solver owns the controls so the row never shifts.
+  // The status indicator keeps its desktop slot while sorting so it can show
+  // when the browser executor actually owns a lease.
   if(agentBtn){
-    agentBtn.hidden = true;
+    const agentVisible = syncAgentHelperVisibility();
+    agentBtn.hidden = !agentVisible;
     agentBtn.disabled = true;
-    agentBtn.setAttribute("aria-hidden", "true");
+    agentBtn.setAttribute("aria-hidden", agentVisible ? "false" : "true");
     agentBtn.setAttribute("aria-disabled", "true");
+    agentBtn.classList.remove("is-auto-sort-disabled");
   }
   return true;
 }
@@ -7470,7 +7469,7 @@ function requestStopAutoSort(){
 }
 
 async function downloadAgentHelper(){
-  _setStatus("Bộ xử lý đã tích hợp trong trình duyệt và sẽ tự dùng khi phù hợp.", "info");
+  _setStatus(BROWSER_AGENT_READY_LABEL, "info");
   return false;
 }
 

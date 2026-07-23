@@ -8,11 +8,11 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.64** (browser-integrated WASM
-  refinement with VPS capability fallback). The public API marker is
+- Current deployed application release: **v1.65** (iOS foreground-only browser
+  refinement and Windows local-Agent status). The public API marker is
   `tkb_new-rust-api-2026-07-23-browser-refinement-gate-v62`, the bridge marker
   is `tkb-rust-api-v264-browser-refinement-gate`, and the planner script cache
-  is `20260723-v164-browser-compute-v1`. The unchanged constraints marker is
+  is `20260723-v165-ios-agent-status-v1`. The unchanged constraints marker is
   `constraints-ui-v38-one-session-responsive-tables`.
 - Current public Agent release: **v1.6.29** (`1.6.29`). The normal owner-Agent
   minimum lease gate remains 1.6.23, so 1.6.22 and older stay upgrade-only;
@@ -22,6 +22,48 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.65 iOS foreground compute and Windows Agent status (deployed 2026-07-23)
+
+- iPhone, iPad and iPad desktop mode may now run the existing Rust-WASM
+  refinement executor while the scheduling page remains visible. The existing
+  capability gate is unchanged: only a complete, revalidated
+  `refine_complete` incumbent is eligible; fresh, incomplete, hard-invalid and
+  constraint-repair work remains on VPS CP-SAT.
+- iOS backgrounding deliberately does not imitate media playback. A real
+  `visibilitychange` to hidden or `pagehide` terminates the Web Worker, fails
+  the exact lease with a keepalive request and disconnects the browser token so
+  VPS can resume the canonical job. If iOS suspends networking before keepalive
+  completes, the existing 30-second lease expiry remains the bounded fallback.
+  The browser and VPS therefore still never solve the same generation at once.
+- Windows desktop now shows a compact, non-interactive Agent status control.
+  Its dot is green when local Browser WASM prerequisites are ready and gains a
+  green ring while a lease is actively using local CPU/RAM. The indicator reads
+  only `TKBBrowserWasmExecutor.state()` and no longer polls the retired native
+  Agent status endpoint. Mobile/coarse-pointer toolbars remain unchanged.
+- This release does not add GPU execution or claim that additional RAM improves
+  solve speed. The current browser solver uses one dedicated Web Worker, so
+  stronger single-core CPU performance can help while memory is allocated only
+  as needed. GPU or multi-worker execution remains gated on a separate quality
+  and thermal benchmark.
+- Cache marker is `20260723-v165-ios-agent-status-v1`; executor marker is
+  `tkb-browser-wasm-executor-v3-ios-foreground`. Rust API v62, bridge v264,
+  constraints v38 and the WASM binary are unchanged.
+- Local verification passes browser lifecycle **12/12**, toolbar/UI **29/29**,
+  full Node E2E **308/308**, JavaScript syntax checks and the real WASM ABI
+  smoke (`BROWSER_WASM_ABI_OK`). Isolated VPS staging passes scheduler
+  **172/172**, Agent **151/151**, trusted-worker operations **5/5**, Rust API
+  **152/152**, and validator **20/20**, ending with `STAGING_TESTS_OK`.
+- Transactional production deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260723-102722.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260723-102722.tar.gz`. Public
+  health stayed idle with zero active/queued jobs and `6/6` worker tokens.
+  Public HTML and JavaScript served the v1.65 cache and executor markers, the
+  iOS navigator branch, the local-only indicator state reader, and no retired
+  `/api/agent-helper/v1/status` poll. A signed-in in-app-browser reload showed
+  the Windows Agent indicator visible, disabled and `ready` with its green dot
+  between Home and Statistics; the console had no warning or error. No live
+  schedule was started during this UI/lifecycle release acceptance.
 
 ### v1.64 browser-integrated refinement executor (deployed 2026-07-23)
 
@@ -3580,14 +3622,14 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-23: `UPDATE_OK` for
-application v1.64. Public health serves
+application v1.65. Public health serves
 `tkb_new-rust-api-2026-07-23-browser-refinement-gate-v62`; the page serves
-`20260723-v164-browser-compute-v1` and bridge marker
+`20260723-v165-ios-agent-status-v1` and bridge marker
 `tkb-rust-api-v264-browser-refinement-gate`. Public health was idle with zero
-active/queued jobs and `6/6` tokens available after the signed-in production
+active/queued jobs and `6/6` tokens available after signed-in production UI
 acceptance. Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260723-084838.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260723-084838.tar.gz`.
+`/opt/cherry-scheduler-backups/server-state-20260723-102722.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260723-102722.tar.gz`.
 Public Agent release `1.6.29` and its signed manifest are live. The 88,001,209
 byte archive SHA-256 is
 `b36e5774f7e89402f7ffbb7075eb2541e7a63a1f874558abba128fe8ecfa25f6`; the
