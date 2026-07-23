@@ -24,7 +24,7 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-23-trusted-worker-race-safe-v60";
+const VERSION: &str = "tkb_new-rust-api-2026-07-23-browser-refinement-gate-v62";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
@@ -449,6 +449,9 @@ fn route(req: Request, app: &App) -> Vec<u8> {
         }
         ("POST", "/api/agent-helper/v1/heartbeat") => {
             agent_helper_heartbeat_json(app, req.auth_token.as_deref(), &req.body)
+        }
+        ("POST", "/api/agent-helper/v1/disconnect") => {
+            agent_helper_disconnect_json(app, req.auth_token.as_deref(), &req.body)
         }
         ("POST", "/api/agent-helper/v1/lease") => {
             agent_helper_claim_json(app, req.auth_token.as_deref(), &req.body)
@@ -987,6 +990,39 @@ fn agent_helper_hello_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> 
         .and_then(Value::as_str)
         .unwrap_or_default();
     let name = format!("{} {}", platform.trim(), version.trim());
+    let browser_job_scope = if !trusted_global && platform.trim() == "web-wasm" {
+        let Some(job_id) = body
+            .get("jobId")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && value.len() <= 256)
+        else {
+            return agent_helper_error_json(AgentHelperError::InvalidWorker);
+        };
+        if !app.solver_pool.server_job_known_for_owner(job_id, &owner) {
+            return agent_helper_error_json(AgentHelperError::JobNotFound);
+        }
+        if !app
+            .solver_pool
+            .server_job_browser_wasm_eligible(job_id, &owner)
+        {
+            // Keep first/incomplete/constraint-repair jobs on the VPS CP-SAT
+            // pipeline. A rejected browser hello has no handoff side effect,
+            // so the canonical job continues without an avoidable timeout.
+            return json_response(
+                409,
+                json!({
+                    "protocol": AGENT_HELPER_PROTOCOL,
+                    "ok": false,
+                    "kind": "browser_wasm_refinement_required",
+                    "error": "browser_wasm_refinement_required"
+                }),
+            );
+        }
+        Some(job_id.to_string())
+    } else {
+        None
+    };
     if version_semver < MIN_AGENT_HELPER_SEMVER {
         return match app.agent_helper.register_upgrade_worker(
             &owner,
@@ -1025,6 +1061,16 @@ fn agent_helper_hello_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> 
             agent_helper_parallel(&body),
             now_millis(),
         )
+    } else if let Some(job_id) = browser_job_scope.as_deref() {
+        app.agent_helper.register_scoped_worker(
+            &owner,
+            &session_binding,
+            agent_id,
+            &name,
+            agent_helper_parallel(&body),
+            job_id,
+            now_millis(),
+        )
     } else {
         app.agent_helper.register_worker(
             &owner,
@@ -1046,6 +1092,11 @@ fn agent_helper_hello_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> 
                 // authenticated lease poll. Keeping hello side-effect free
                 // prevents hello + lease from reserving two jobs for one slot.
                 Vec::new()
+            } else if let Some(job_id) = browser_job_scope.as_deref() {
+                app.solver_pool
+                    .request_agent_handoff_for_job(job_id, &owner)
+                    .then(|| vec![job_id.to_string()])
+                    .unwrap_or_default()
             } else {
                 app.solver_pool.request_agent_handoff_for_owner(&owner)
             };
@@ -1062,7 +1113,8 @@ fn agent_helper_hello_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> 
                     "agentEligible": true,
                     "upgradeRequired": false,
                     "minimumAgentVersion": MIN_AGENT_HELPER_VERSION,
-                    "handoffJobIds": handoff_jobs
+                    "handoffJobIds": handoff_jobs,
+                    "jobScope": browser_job_scope
                 }),
             )
         }
@@ -1105,7 +1157,53 @@ fn agent_helper_heartbeat_json(app: &App, auth_token: Option<&str>, body: &[u8])
     }
 }
 
-fn agent_helper_claim_payload(lease: AgentWorkLease, cpu_workers: usize) -> Value {
+fn agent_helper_disconnect_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> Vec<u8> {
+    let AgentHelperContext {
+        owner,
+        session_binding,
+        ..
+    } = match agent_helper_context(app, auth_token) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let body = match agent_helper_body(body) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let worker_token = match agent_helper_worker_token(&body) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    // Authenticate the exact session-bound token before revoking it. Revocation
+    // atomically requeues any live lease, so the fenced coordinator may return
+    // the same canonical request to VPS without waiting for the worker TTL.
+    if let Err(error) = app
+        .agent_helper
+        .heartbeat(&owner, &session_binding, &worker_token, &[], now_millis())
+    {
+        return agent_helper_error_json(error);
+    }
+    let disconnected = app.agent_helper.revoke_worker_token(
+        &owner,
+        &session_binding,
+        &worker_token,
+        now_millis(),
+    );
+    json_response(
+        200,
+        json!({
+            "protocol": AGENT_HELPER_PROTOCOL,
+            "ok": true,
+            "disconnected": disconnected
+        }),
+    )
+}
+
+fn agent_helper_claim_payload(
+    lease: AgentWorkLease,
+    cpu_workers: usize,
+    browser_wasm: bool,
+) -> Value {
     let mut request = serde_json::from_slice::<Value>(&lease.request_body)
         .unwrap_or_else(|_| json!({"data":{}, "settings":{}}));
     let settings = ensure_object_child(&mut request, "settings");
@@ -1120,6 +1218,15 @@ fn agent_helper_claim_payload(lease: AgentWorkLease, cpu_workers: usize) -> Valu
     settings.insert("ui_solver_async_job".to_string(), json!(false));
     settings.insert("ui_solver_fifo_admission".to_string(), json!(false));
     settings.insert("agent_helper_seed".to_string(), json!(lease.seed));
+    if browser_wasm {
+        // The canonical refinement request keeps the reference solver's
+        // settings. Only the browser lease copy selects the incumbent-preserving
+        // Rust path; candidate validation still uses the untouched request.
+        settings.insert("optimize_existing_schedule".to_string(), json!(true));
+        settings.insert("force_fresh_backend_solve".to_string(), json!(false));
+        settings.insert("native_skip_teacher_optimization".to_string(), json!(false));
+        settings.insert("browser_wasm_refinement".to_string(), json!(true));
+    }
     json!({
         "protocol": AGENT_HELPER_PROTOCOL,
         "ok": true,
@@ -1219,6 +1326,12 @@ fn agent_helper_claim_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> 
         return agent_helper_upgrade_required_json();
     }
     let cpu_workers = agent_helper_capacity(&body);
+    let browser_wasm = body
+        .get("agent")
+        .and_then(Value::as_object)
+        .and_then(|agent| agent.get("platform"))
+        .and_then(Value::as_str)
+        .is_some_and(|platform| platform.trim() == "web-wasm");
     let lease_request_id = body
         .get("leaseRequestId")
         .and_then(Value::as_str)
@@ -1260,7 +1373,10 @@ fn agent_helper_claim_json(app: &App, auth_token: Option<&str>, body: &[u8]) -> 
                         }),
                     );
                 }
-                return json_response(200, agent_helper_claim_payload(lease, cpu_workers));
+                return json_response(
+                    200,
+                    agent_helper_claim_payload(lease, cpu_workers, browser_wasm),
+                );
             }
             Err(AgentHelperError::NoWork) if Instant::now() < wait_deadline => {
                 // Reaching NoWork proves both the durable bearer/worker token
@@ -5418,7 +5534,8 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
         && request
             .as_ref()
             .map(|request| setting_bool(request_settings(request), "ui_solver_async_job", false))
-            .unwrap_or(false);
+        .unwrap_or(false);
+    let browser_wasm_eligible = agent_helper::browser_refinement_request_eligible(body);
     let mut server_execution_fence = None;
     if server_owned {
         if let Some(response) = app
@@ -5438,7 +5555,13 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
             progress_run_index,
             server_watchdog_budget_ms,
         ) {
-            ServerJobClaim::Claimed => {}
+            ServerJobClaim::Claimed => {
+                app.solver_pool.set_server_job_browser_wasm_eligible(
+                    &job_id,
+                    owner,
+                    browser_wasm_eligible,
+                );
+            }
             ServerJobClaim::Existing => {
                 return solve_result_for_job_id_json(app, &job_id, owner);
             }
@@ -5508,7 +5631,11 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
         // trusted workers are auxiliary queue capacity and pull only jobs that
         // are actually waiting behind VPS admission; they never race a fresh
         // direct start for the same free worker slot.
-        if app.agent_helper.online_worker_count(owner, now_millis()) > 0 {
+        if app
+            .agent_helper
+            .online_worker_count_for_job(owner, &job_id, now_millis())
+            > 0
+        {
             let Some(fence) = app
                 .solver_pool
                 .prepare_agent_execution(&job_id, owner)
@@ -7264,6 +7391,191 @@ mod tests {
         ));
         assert_eq!(other["online"], json!(false));
         assert_eq!(other["agentCount"], json!(0));
+    }
+
+    #[test]
+    fn browser_worker_cannot_take_over_a_fresh_or_incomplete_job() {
+        let (app, session_token, owner) = agent_test_app();
+        assert_eq!(
+            app.solver_pool.claim_server_job("browser-fresh-job", &owner),
+            ServerJobClaim::Claimed
+        );
+        app.solver_pool
+            .prepare_vps_execution("browser-fresh-job", &owner)
+            .expect("fresh job VPS fence");
+
+        let hello = agent_route(
+            &app,
+            Some(&session_token),
+            "/api/agent-helper/v1/hello",
+            agent_protocol_body(json!({
+                "jobId":"browser-fresh-job",
+                "agent":{"agentId":"web-fresh-worker","version":MIN_AGENT_HELPER_VERSION,"platform":"web-wasm"},
+                "capacity":{"cpuWorkers":1,"maxConcurrentJobs":1}
+            })),
+        );
+        assert_eq!(response_status(&hello), 409);
+        assert_eq!(
+            response_payload(&hello)["kind"],
+            json!("browser_wasm_refinement_required")
+        );
+        assert_eq!(
+            app.solver_pool
+                .server_execution_snapshot("browser-fresh-job", &owner)
+                .expect("fresh job snapshot")
+                .phase,
+            ServerExecutionPhase::VpsQueued
+        );
+        assert_eq!(app.agent_helper.online_worker_count(&owner, now_millis()), 0);
+    }
+
+    #[test]
+    fn browser_worker_disconnect_requeues_its_lease_and_clears_online_status() {
+        let (app, session_token, owner) = agent_test_app();
+        assert_eq!(
+            app.solver_pool
+                .claim_server_job("browser-disconnect-job", &owner),
+            ServerJobClaim::Claimed
+        );
+        app.solver_pool
+            .prepare_vps_execution("browser-disconnect-job", &owner)
+            .expect("browser job VPS fence");
+        assert!(app.solver_pool.set_server_job_browser_wasm_eligible(
+            "browser-disconnect-job",
+            &owner,
+            true,
+        ));
+        assert_eq!(
+            app.solver_pool
+                .claim_server_job("browser-other-job", &owner),
+            ServerJobClaim::Claimed
+        );
+        app.solver_pool
+            .prepare_vps_execution("browser-other-job", &owner)
+            .expect("other job VPS fence");
+        let hello = agent_route(
+            &app,
+            Some(&session_token),
+            "/api/agent-helper/v1/hello",
+            agent_protocol_body(json!({
+                "jobId":"browser-disconnect-job",
+                "agent":{"agentId":"web-browser-worker","version":MIN_AGENT_HELPER_VERSION,"platform":"web-wasm"},
+                "capacity":{"cpuWorkers":1,"maxConcurrentJobs":1}
+            })),
+        );
+        assert_eq!(response_status(&hello), 200);
+        let worker_token = response_payload(&hello)["workerToken"]
+            .as_str()
+            .expect("browser worker token")
+            .to_string();
+        assert_eq!(
+            app.agent_helper.online_worker_count_for_job(
+                &owner,
+                "browser-disconnect-job",
+                now_millis(),
+            ),
+            1
+        );
+        assert_eq!(
+            app.agent_helper.online_worker_count_for_job(
+                &owner,
+                "browser-other-job",
+                now_millis(),
+            ),
+            0
+        );
+        assert_eq!(
+            app.solver_pool
+                .server_execution_snapshot("browser-disconnect-job", &owner)
+                .expect("scoped handoff snapshot")
+                .phase,
+            ServerExecutionPhase::HandoffToAgent
+        );
+        assert_eq!(
+            app.solver_pool
+                .server_execution_snapshot("browser-other-job", &owner)
+                .expect("unrelated job snapshot")
+                .phase,
+            ServerExecutionPhase::VpsQueued
+        );
+        assert!(app.agent_helper.register_job(
+            "browser-disconnect-job",
+            &owner,
+            Arc::new(serde_json::to_vec(&agent_solver_request("browser-disconnect-job")).unwrap()),
+            1,
+            now_millis(),
+        ));
+        assert!(app.agent_helper.register_job(
+            "browser-other-job",
+            &owner,
+            Arc::new(serde_json::to_vec(&agent_solver_request("browser-other-job")).unwrap()),
+            1,
+            now_millis(),
+        ));
+
+        let lease = agent_route(
+            &app,
+            Some(&session_token),
+            "/api/agent-helper/v1/lease",
+            agent_protocol_body(json!({
+                "workerToken":worker_token.clone(),
+                "jobId":"browser-disconnect-job",
+                "leaseRequestId":"browser-disconnect-request",
+                "agent":{"agentId":"web-browser-worker","version":MIN_AGENT_HELPER_VERSION,"platform":"web-wasm"},
+                "capacity":{"cpuWorkers":1,"maxConcurrentJobs":1},
+                "waitSeconds":0
+            })),
+        );
+        assert_eq!(response_status(&lease), 200);
+        let lease_payload = response_payload(&lease);
+        assert!(lease_payload["lease"].is_object());
+        assert_eq!(
+            lease_payload["lease"]["payload"]["settings"]["optimize_existing_schedule"],
+            json!(true)
+        );
+        assert_eq!(
+            lease_payload["lease"]["payload"]["settings"]["browser_wasm_refinement"],
+            json!(true)
+        );
+        assert!(matches!(
+            app.agent_helper
+                .job_execution("browser-disconnect-job", &owner, now_millis()),
+            Some(AgentJobExecution::Leased { .. })
+        ));
+
+        let disconnected = agent_route(
+            &app,
+            Some(&session_token),
+            "/api/agent-helper/v1/disconnect",
+            agent_protocol_body(json!({
+                "agentId":"web-browser-worker",
+                "workerToken":worker_token.clone()
+            })),
+        );
+        assert_eq!(response_status(&disconnected), 200);
+        assert_eq!(response_payload(&disconnected)["disconnected"], json!(true));
+        assert!(matches!(
+            app.agent_helper
+                .job_execution("browser-disconnect-job", &owner, now_millis()),
+            Some(AgentJobExecution::Queued)
+        ));
+        let status = response_payload(&agent_get_route(
+            &app,
+            Some(&session_token),
+            "/api/agent-helper/v1/status",
+        ));
+        assert_eq!(status["online"], json!(false));
+
+        let replay = agent_route(
+            &app,
+            Some(&session_token),
+            "/api/agent-helper/v1/disconnect",
+            agent_protocol_body(json!({
+                "agentId":"web-browser-worker",
+                "workerToken":worker_token
+            })),
+        );
+        assert_eq!(response_status(&replay), 401);
     }
 
     #[test]
@@ -9318,7 +9630,7 @@ mod tests {
             attempt: 1,
             request_body: Arc::new(serde_json::to_vec(&request).expect("request")),
         };
-        let payload = agent_helper_claim_payload(lease, 4);
+        let payload = agent_helper_claim_payload(lease, 4, false);
         assert_eq!(
             payload["lease"]["limits"]["timeoutSeconds"],
             json!(MAX_SOLVER_DEADLINE_MS / 1_000)

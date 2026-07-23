@@ -22,6 +22,7 @@ const MAX_AGENT_PARALLEL_PER_WORKER: usize = 8;
 const MAX_AGENT_SEEDS_PER_JOB: usize = 16;
 const MAX_WORKER_ID_BYTES: usize = 80;
 const MAX_WORKER_NAME_BYTES: usize = 120;
+const MAX_JOB_SCOPE_BYTES: usize = 256;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AgentHelperError {
@@ -176,6 +177,7 @@ struct AgentWorker {
     session_binding: String,
     worker_id: String,
     _name: String,
+    job_scope: Option<String>,
     eligible: bool,
     max_parallel: usize,
     last_seen_ms: u64,
@@ -204,6 +206,7 @@ struct AgentTask {
 }
 
 struct AgentJob {
+    job_id: String,
     owner: SolverOwner,
     trusted_global_eligible: bool,
     created_at_ms: u64,
@@ -278,6 +281,35 @@ impl AgentHelperCoordinator {
                     && worker.owner == *owner
                     && worker.eligible
                     && worker.expires_at_ms > now_ms
+            })
+            .count()
+    }
+
+    /// Count executors that may actually claim this canonical job. Durable
+    /// native Agents are unscoped; a browser worker is visible only to the one
+    /// job named during its hello handshake.
+    pub fn online_worker_count_for_job(
+        &self,
+        owner: &SolverOwner,
+        job_id: &str,
+        now_ms: u64,
+    ) -> usize {
+        let Ok(mut state) = self.state.lock() else {
+            return 0;
+        };
+        prune_state(&mut state, now_ms);
+        state
+            .workers
+            .values()
+            .filter(|worker| {
+                !worker.trusted_global
+                    && worker.owner == *owner
+                    && worker.eligible
+                    && worker.expires_at_ms > now_ms
+                    && worker
+                        .job_scope
+                        .as_deref()
+                        .is_none_or(|scope| scope == job_id)
             })
             .count()
     }
@@ -808,6 +840,7 @@ impl AgentHelperCoordinator {
         state.jobs.insert(
             job_id.to_string(),
             AgentJob {
+                job_id: job_id.to_string(),
                 owner: owner.clone(),
                 trusted_global_eligible,
                 created_at_ms: now_ms,
@@ -953,6 +986,33 @@ impl AgentHelperCoordinator {
             max_parallel,
             true,
             false,
+            None,
+            now_ms,
+        )
+    }
+
+    /// Register a foreground browser worker for one exact canonical job. This
+    /// scope is enforced by every lease, heartbeat and submission lookup, so a
+    /// tab cannot consume another tab's older job for the same owner.
+    pub fn register_scoped_worker(
+        &self,
+        owner: &SolverOwner,
+        session_binding: &str,
+        worker_id: &str,
+        name: &str,
+        max_parallel: usize,
+        job_id: &str,
+        now_ms: u64,
+    ) -> Result<AgentWorkerRegistration, AgentHelperError> {
+        self.register_worker_with_eligibility(
+            owner,
+            session_binding,
+            worker_id,
+            name,
+            max_parallel,
+            true,
+            false,
+            Some(job_id),
             now_ms,
         )
     }
@@ -978,6 +1038,7 @@ impl AgentHelperCoordinator {
             max_parallel,
             true,
             true,
+            None,
             now_ms,
         )
     }
@@ -1002,6 +1063,7 @@ impl AgentHelperCoordinator {
             max_parallel,
             false,
             false,
+            None,
             now_ms,
         )
     }
@@ -1015,6 +1077,7 @@ impl AgentHelperCoordinator {
         max_parallel: usize,
         eligible: bool,
         trusted_global: bool,
+        job_scope: Option<&str>,
         now_ms: u64,
     ) -> Result<AgentWorkerRegistration, AgentHelperError> {
         let worker_id = normalize_worker_id(worker_id)?;
@@ -1023,6 +1086,16 @@ impl AgentHelperCoordinator {
             return Err(AgentHelperError::UnauthorizedWorker);
         }
         let name = normalize_worker_name(name, &worker_id);
+        let job_scope = match job_scope {
+            Some(value) => {
+                let value = value.trim();
+                if value.is_empty() || value.len() > MAX_JOB_SCOPE_BYTES {
+                    return Err(AgentHelperError::InvalidWorker);
+                }
+                Some(value.to_string())
+            }
+            None => None,
+        };
         let max_parallel = max_parallel.clamp(1, MAX_AGENT_PARALLEL_PER_WORKER);
         let mut state = self
             .state
@@ -1067,6 +1140,7 @@ impl AgentHelperCoordinator {
                 session_binding: session_binding.to_string(),
                 worker_id: worker_id.clone(),
                 _name: name,
+                job_scope,
                 eligible,
                 max_parallel,
                 last_seen_ms: now_ms,
@@ -1655,11 +1729,88 @@ fn normalize_device_code(value: &str) -> Result<&str, AgentPairError> {
 }
 
 fn worker_can_access_job(worker: &AgentWorker, job: &AgentJob) -> bool {
-    if worker.trusted_global {
+    let owner_allowed = if worker.trusted_global {
         job.trusted_global_eligible
     } else {
         job.owner == worker.owner
+    };
+    owner_allowed
+        && worker
+            .job_scope
+            .as_deref()
+            .is_none_or(|job_scope| job_scope == job.job_id)
+}
+
+/// Browser WASM is intentionally a complete-timetable refinement worker. The
+/// lightweight Rust runtime cannot construct a production timetable as
+/// reliably as the VPS CP-SAT pipeline, so web takeover is allowed only for a
+/// canonical request carrying a revalidated, complete incumbent.
+pub(crate) fn browser_refinement_request_eligible(request_body: &[u8]) -> bool {
+    let Ok(request) = serde_json::from_slice::<Value>(request_body) else {
+        return false;
+    };
+    let Some(settings) = request.get("settings").and_then(Value::as_object) else {
+        return false;
+    };
+    if settings
+        .get("ui_unified_solve_kind")
+        .and_then(Value::as_str)
+        != Some("refine_complete")
+        || settings
+            .get("ui_use_existing_complete_incumbent")
+            .and_then(Value::as_bool)
+            != Some(true)
+        || settings
+            .get("ui_existing_incumbent_revalidated")
+            .and_then(Value::as_bool)
+            != Some(true)
+    {
+        return false;
     }
+
+    let Some(result) = request
+        .get("data")
+        .and_then(|data| data.get("tkbSolverResult"))
+        .and_then(Value::as_object)
+    else {
+        return false;
+    };
+    let Some(metrics) = result.get("metrics").and_then(Value::as_object) else {
+        return false;
+    };
+    let expected = metrics
+        .get("expected_periods")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let scheduled = metrics
+        .get("scheduled_periods")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let unassigned = metrics
+        .get("unassigned_periods")
+        .and_then(Value::as_u64)
+        .unwrap_or(u64::MAX);
+    let violations = metrics
+        .get("app_constraint_violation_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(u64::MAX);
+    let lessons = result
+        .get("lessons")
+        .and_then(Value::as_array)
+        .map(|items| items.len() as u64)
+        .unwrap_or(0);
+
+    expected > 0
+        && scheduled == expected
+        && lessons == expected
+        && unassigned == 0
+        && violations == 0
+        && metrics.get("hard_ok").and_then(Value::as_bool) == Some(true)
+        && result
+            .get("validation")
+            .and_then(|validation| validation.get("hard_ok"))
+            .and_then(Value::as_bool)
+            == Some(true)
 }
 
 fn trusted_handoff_marker(worker_token_hash: &str, lease_request_id: &str) -> String {
@@ -1893,6 +2044,58 @@ fn hex_bytes(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn browser_refinement_request() -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "data": {
+                "tkbSolverResult": {
+                    "lessons": [{"classId":"6A"}, {"classId":"6A"}],
+                    "metrics": {
+                        "scheduled_periods": 2,
+                        "expected_periods": 2,
+                        "unassigned_periods": 0,
+                        "app_constraint_violation_count": 0,
+                        "hard_ok": true
+                    },
+                    "validation": {"hard_ok": true}
+                }
+            },
+            "settings": {
+                "ui_unified_solve_kind": "refine_complete",
+                "ui_use_existing_complete_incumbent": true,
+                "ui_existing_incumbent_revalidated": true
+            }
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn browser_worker_accepts_only_revalidated_complete_refinement_jobs() {
+        let request = browser_refinement_request();
+        assert!(browser_refinement_request_eligible(&request));
+
+        let mut fresh: Value = serde_json::from_slice(&request).unwrap();
+        fresh["settings"]["ui_unified_solve_kind"] =
+            serde_json::json!("fresh_complete_first");
+        assert!(!browser_refinement_request_eligible(
+            &serde_json::to_vec(&fresh).unwrap()
+        ));
+
+        let mut incomplete: Value = serde_json::from_slice(&request).unwrap();
+        incomplete["data"]["tkbSolverResult"]["metrics"]["unassigned_periods"] =
+            serde_json::json!(1);
+        assert!(!browser_refinement_request_eligible(
+            &serde_json::to_vec(&incomplete).unwrap()
+        ));
+
+        let mut forged: Value = serde_json::from_slice(&request).unwrap();
+        forged["data"]["tkbSolverResult"]["lessons"] =
+            serde_json::json!([{"classId":"6A"}]);
+        assert!(!browser_refinement_request_eligible(
+            &serde_json::to_vec(&forged).unwrap()
+        ));
+
+    }
 
     #[test]
     fn online_worker_count_is_owner_scoped_and_drops_expired_sessions() {

@@ -1186,7 +1186,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     <div class="toolbar-secondary-actions" aria-label="Điều hướng và thống kê">
       <div class="stats-popover-wrap">
         <button id="btnHome" class="primary save-button" type="button" title="Về trang chủ" aria-label="Về trang chủ" onclick="saveAndBack()">Home</button>
-        <button id="btnAgentHelper" class="agent-helper-button" type="button" title="Agent chưa kết nối · bấm để tải cho Windows" aria-label="Agent chưa kết nối · bấm để tải cho Windows" data-agent-online="0" onclick="downloadAgentHelper()" hidden aria-hidden="true"><span class="agent-status-dot" aria-hidden="true"></span><svg class="toolbar-icon agent-ai-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v2"/><rect x="4" y="6" width="16" height="14" rx="4"/><path d="M8 11h.01M16 11h.01M8.5 16c1 .8 2.15 1.2 3.5 1.2s2.5-.4 3.5-1.2"/><path d="m18.5 2 .45 1.05L20 3.5l-1.05.45L18.5 5l-.45-1.05L17 3.5l1.05-.45L18.5 2Z"/></svg><span>Agent</span></button>
+        <button id="btnAgentHelper" class="agent-helper-button" type="button" title="Bộ xử lý đã tích hợp trong trình duyệt" aria-label="Bộ xử lý đã tích hợp trong trình duyệt" data-agent-online="0" hidden aria-hidden="true" disabled><span class="agent-status-dot" aria-hidden="true"></span><svg class="toolbar-icon agent-ai-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v2"/><rect x="4" y="6" width="16" height="14" rx="4"/><path d="M8 11h.01M16 11h.01M8.5 16c1 .8 2.15 1.2 3.5 1.2s2.5-.4 3.5-1.2"/><path d="m18.5 2 .45 1.05L20 3.5l-1.05.45L18.5 5l-.45-1.05L17 3.5l1.05-.45L18.5 2Z"/></svg><span>Agent</span></button>
         <button id="statsToggle" class="stats-toggle" type="button" onclick="toggleStatsPopover(event)" title="Thống kê thời khóa biểu" aria-label="Thống kê thời khóa biểu" aria-expanded="false"><span class="toolbar-label-full" aria-hidden="true">Thống kê</span><span class="toolbar-label-compact" aria-hidden="true"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M4 20V13h4v7M10 20V9h4v11M16 20V5h4v15M3 20h18"/></svg></span></button>
         <div id="statsPopover" class="stats-popover" hidden>
           <div id="statsBox" class="stats-box"></div>
@@ -1246,7 +1246,8 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="../vendor/sql-wasm.js"></script>
 <script src="../kvdb.js?v=20260707-vendor-local-v1"></script>
 <script src="tkb-engine.js?v=20260624-clean-no-solver1"></script>
-<script src="phanmon.js?v=20260721-v157-canonical-progress-v1"></script>
+<script src="tkb-browser-wasm.js?v=20260723-v164-browser-compute-v1"></script>
+<script src="phanmon.js?v=20260723-v164-browser-compute-v1"></script>
 <script src="phanmon-ops.js?v=20260617-fixed-legacy1"></script>
 <script src="tkb-constraints.js?v=20260722-v163-one-session-responsive-tables-v1"></script>
 <script src="tkb-constraints-menu.js?v=20260721-v160-click-accordion-scroll-safe-v1"></script>
@@ -1254,7 +1255,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="tkb-export.js?v=20260701-excel-style-v1"></script>
 <script src="tkb-word-export.js?v=20260705-save-picker-v1"></script>
 <script src="tkb-student-excel-export.js?v=20260705-school-wide-prefix-v6"></script>
-  <script src="tkb-rust-bridge.js?v=20260721-v157-canonical-progress-v1"></script>
+  <script src="tkb-rust-bridge.js?v=20260723-v164-browser-compute-v1"></script>
 
 </body>
 </html>

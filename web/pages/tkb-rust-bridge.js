@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v262-canonical-progress";
+  const VERSION = "tkb-rust-api-v264-browser-refinement-gate";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -11617,6 +11617,8 @@
     const controller = new AbortController();
     bindActiveSolveAbortController(controller);
     let timer = 0;
+    let browserWasmProbed = false;
+    let browserWasmActivated = false;
     const disarmClientTimeout = () => {
       if(!timer) return;
       window.clearTimeout(timer);
@@ -11638,12 +11640,35 @@
       const requestData = dataForSolverRequest(data, effectiveSettings);
       await yieldResponsiveUi();
       if(!cacheEligible) requestData.__tkbSolverRequestNonce = solveRunId;
-      const body = JSON.stringify({data: requestData, settings: effectiveSettings});
+      const browserWasmRequest = {data: requestData, settings: effectiveSettings};
+      const body = JSON.stringify(browserWasmRequest);
       await yieldResponsiveUi();
+      const browserWasmEligible = !!(
+        window.TKBBrowserWasmExecutor
+        && typeof window.TKBBrowserWasmExecutor.canHandleRequest === "function"
+        && window.TKBBrowserWasmExecutor.canHandleRequest(browserWasmRequest) === true
+      );
+      if(
+        !resumeExistingServerJobOnly
+        && effectiveSettings.ui_solver_async_job === true
+        && browserWasmEligible
+        && typeof window.TKBBrowserWasmExecutor.probe === "function"
+      ){
+        // Compile the WASM module before the canonical POST, but do not send
+        // hello yet: there is no server job to hand off at this point.
+        browserWasmProbed = await window.TKBBrowserWasmExecutor.probe({
+          apiBase,
+          preferNativeAgent:true,
+          request:browserWasmRequest,
+          signal:controller.signal
+        }).catch(() => false);
+      }
       traceSolveStep("postSolve:before-fetch", {
         requestBytes: body.length,
         timeoutMs,
-        backendDeadlineMs
+        backendDeadlineMs,
+        browserWasmEligible,
+        browserWasmProbed
       });
       try{
         window.__TKB_RUST_LAST_REQUEST_DEBUG = Object.assign({}, window.__TKB_RUST_LAST_REQUEST_DEBUG || {}, {
@@ -11783,6 +11808,23 @@
           }
           if(serverOwnedJob){
             window.__TKB_SOLVE_BACKEND_POSTED = false;
+            if(
+              browserWasmProbed
+              && !browserWasmActivated
+              && !controller.signal.aborted
+              && typeof window.TKBBrowserWasmExecutor?.activate === "function"
+            ){
+              // The durable job now exists. Hello advances its execution
+              // generation and requests VPS -> browser handoff; the lease is
+              // published only after the VPS child has fully exited.
+              browserWasmActivated = await window.TKBBrowserWasmExecutor.activate({
+                apiBase,
+                jobId:solveRunId,
+                preferNativeAgent:true,
+                request:browserWasmRequest,
+                signal:controller.signal
+              }).catch(() => false);
+            }
             knownRequiredWorkers = Math.max(
               knownRequiredWorkers,
               Number(queuedPayload?.requiredWorkers || 0) || 0
@@ -12033,6 +12075,17 @@
       clearActiveSolveAbortController(controller);
       window.__TKB_SOLVE_BACKEND_POSTED = false;
       window.__TKB_SOLVE_QUEUE_WAITING = false;
+      if(
+        (browserWasmProbed || browserWasmActivated)
+        && typeof window.TKBBrowserWasmExecutor?.close === "function"
+      ){
+        // The canonical result (or terminal failure) is already server-owned
+        // here. Revoke this short-lived browser registration so another tab or
+        // device cannot wait behind an idle web worker on its next click.
+        Promise.resolve(window.TKBBrowserWasmExecutor.close("solve_finished", {
+          failLease:true
+        })).catch(() => null);
+      }
     }
     throwIfStopRequested(activeSolveRunId);
     const currentScheduleFingerprint = durableScheduleFingerprint(data);

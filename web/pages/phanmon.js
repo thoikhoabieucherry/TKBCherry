@@ -7282,19 +7282,14 @@ function isAgentHelperSupportedDevice(deviceNavigator){
 function syncAgentHelperVisibility(){
   const btn = document.getElementById("btnAgentHelper");
   if(!btn) return false;
-  const supported = isAgentHelperSupportedDevice(
-    typeof navigator !== "undefined" ? navigator : null
-  );
-  btn.hidden = !supported;
-  btn.setAttribute("aria-hidden", supported ? "false" : "true");
-  if(!supported){
-    btn.disabled = true;
-    btn.setAttribute("aria-disabled", "true");
-  }else if(!btn.dataset.autoSortLock && btn.dataset.downloading !== "1"){
-    btn.disabled = false;
-    btn.removeAttribute("aria-disabled");
-  }
-  return supported;
+  // Local compute is now an automatic Web Worker/WASM capability. Keep the
+  // former download control out of the toolbar; the Play flow selects browser
+  // or VPS without asking the user to install anything.
+  btn.hidden = true;
+  btn.disabled = true;
+  btn.setAttribute("aria-hidden", "true");
+  btn.setAttribute("aria-disabled", "true");
+  return false;
 }
 
 function setAgentHelperOnlineState(online, options){
@@ -7386,37 +7381,8 @@ function startAgentHelperStatusPolling(){
 }
 
 async function maybeInviteAgentBeforeSort(options){
-  const opts = options && typeof options === "object" ? options : {};
-  if(!isAgentHelperSupportedDevice(
-    typeof navigator !== "undefined" ? navigator : null
-  )) return true;
-
-  if(opts.preferVpsFallback === true){
-    // Play must never wait behind a native confirm dialog. The VPS owns the
-    // canonical job either way, and an online Agent can lease it from there.
-    // Refresh the status dot opportunistically while the solve starts now.
-    Promise.resolve(refreshAgentHelperStatus(true)).catch(() => null);
-    return true;
-  }
-
-  const online = await refreshAgentHelperStatus(true);
-  // A transient status/API failure must never block normal VPS sorting.
-  if(online === true || online == null) return true;
-  if(window.__TKB_AGENT_INVITE_SHOWN === true) return true;
-
-  const accepted = window.confirm(
-    "Agent đang chưa kết nối. Bạn có muốn tải và mở Agent trên máy Windows này trước khi xếp không?\n\n" +
-    "Chọn OK để tải Agent và dừng lượt xếp này. Chọn Hủy để tiếp tục xếp bằng VPS."
-  );
-  if(!accepted){
-    // Respect the VPS choice for the rest of this page session. A reload gives
-    // the user a fresh invitation if Agent is still offline.
-    window.__TKB_AGENT_INVITE_SHOWN = true;
-    return true;
-  }
-  await downloadAgentHelper();
-  _setStatus("Hãy giải nén ZIP và mở Agent. Khi chấm chuyển xanh, bạn bấm Xếp lại nhé.", "info");
-  return false;
+  void options;
+  return true;
 }
 
 function setAutoSortHomeHidden(hidden){
@@ -7433,16 +7399,10 @@ function setAutoSortHomeHidden(hidden){
   // Keep Agent in its toolbar slot like Home, but dim and lock it while the
   // solver owns the controls so the row never shifts.
   if(agentBtn){
-    const agentSupported = isAgentHelperSupportedDevice(
-      typeof navigator !== "undefined" ? navigator : null
-    );
-    agentBtn.hidden = !agentSupported;
-    agentBtn.setAttribute("aria-hidden", agentSupported ? "false" : "true");
-    if(agentSupported) setAutoSortControlLocked(agentBtn, shouldLock);
-    else{
-      agentBtn.disabled = true;
-      agentBtn.setAttribute("aria-disabled", "true");
-    }
+    agentBtn.hidden = true;
+    agentBtn.disabled = true;
+    agentBtn.setAttribute("aria-hidden", "true");
+    agentBtn.setAttribute("aria-disabled", "true");
   }
   return true;
 }
@@ -7510,39 +7470,8 @@ function requestStopAutoSort(){
 }
 
 async function downloadAgentHelper(){
-  const btn = document.getElementById("btnAgentHelper");
-  if(!syncAgentHelperVisibility()) return false;
-  if(btn?.dataset?.agentOnline === "1" || window.__TKB_AGENT_ONLINE === true){
-    _setStatus("Agent đang ON và đã kết nối với VPS.", "ok");
-    return false;
-  }
-  if(btn?.dataset?.downloading === "1") return false;
-  if(btn){
-    btn.dataset.downloading = "1";
-    btn.disabled = true;
-    btn.setAttribute("aria-busy", "true");
-  }
-  try{
-    _setStatus("Đang tải Agent cho Windows...", "info");
-    const anchor = document.createElement("a");
-    anchor.href = "/downloads/TKBCherryAgent-Windows.zip?v=1.6.13";
-    anchor.download = "TKBCherryAgent-Windows.zip";
-    anchor.rel = "noopener";
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    _setStatus("Đã tải Agent. Giải nén ZIP rồi mở TKBCherryAgent.exe để kết nối.", "ok");
-    return true;
-  }catch(error){
-    _setStatus(error?.message || "Không tải được Agent.", "error");
-    return false;
-  }finally{
-    if(btn){
-      delete btn.dataset.downloading;
-      btn.removeAttribute("aria-busy");
-      if(!window.__TKB_RUST_SOLVER_RUNNING && !window.__TKB_SOLVE_UI_BUSY) btn.disabled = false;
-    }
-  }
+  _setStatus("Bộ xử lý đã tích hợp trong trình duyệt và sẽ tự dùng khi phù hợp.", "info");
+  return false;
 }
 
 async function approveAgentPairFromUrl(){

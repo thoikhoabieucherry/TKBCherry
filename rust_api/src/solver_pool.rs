@@ -77,6 +77,7 @@ struct SolverPoolState {
 struct ServerOwnedSolverJob {
     owner: SolverOwner,
     trusted_worker_eligible: bool,
+    browser_wasm_eligible: bool,
     schedule_scope: Option<String>,
     created_ms: u64,
     schedule_fingerprint: Option<String>,
@@ -513,6 +514,7 @@ impl SolverPool {
             ServerOwnedSolverJob {
                 owner: owner.clone(),
                 trusted_worker_eligible: false,
+                browser_wasm_eligible: false,
                 schedule_scope: normalized_schedule_scope,
                 created_ms: now_ms,
                 schedule_fingerprint: normalized_schedule_fingerprint,
@@ -542,6 +544,45 @@ impl SolverPool {
             .server_jobs
             .get(job_id)
             .map(|job| &job.owner == owner)
+            .unwrap_or(false)
+    }
+
+    pub fn set_server_job_browser_wasm_eligible(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+        eligible: bool,
+    ) -> bool {
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(_) => return false,
+        };
+        let Some(job) = state
+            .server_jobs
+            .get_mut(job_id)
+            .filter(|job| &job.owner == owner && job.completed_ms.is_none())
+        else {
+            return false;
+        };
+        job.browser_wasm_eligible = eligible;
+        true
+    }
+
+    pub fn server_job_browser_wasm_eligible(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+    ) -> bool {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|state| {
+                state
+                    .server_jobs
+                    .get(job_id)
+                    .filter(|job| &job.owner == owner && job.completed_ms.is_none())
+                    .map(|job| job.browser_wasm_eligible)
+            })
             .unwrap_or(false)
     }
 
@@ -648,6 +689,44 @@ impl SolverPool {
                 .retain(|queued| !job_ids.iter().any(|job_id| job_id == &queued.job_id));
         }
         job_ids
+    }
+
+    /// Hand one exact canonical job to a short-lived browser WASM worker.
+    /// Unlike a durable owner Agent hello, a browser tab must never interrupt
+    /// another tab's job merely because both sessions belong to one owner.
+    pub fn request_agent_handoff_for_job(&self, job_id: &str, owner: &SolverOwner) -> bool {
+        let job_id = job_id.trim();
+        if job_id.is_empty() {
+            return false;
+        }
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(_) => return false,
+        };
+        let eligible = state.server_jobs.get(job_id).is_some_and(|job| {
+            &job.owner == owner
+                && job.completed_ms.is_none()
+                && !job.cancel_requested
+                && matches!(
+                    job.execution_phase,
+                    ServerExecutionPhase::Pending
+                        | ServerExecutionPhase::VpsQueued
+                        | ServerExecutionPhase::VpsRunning
+                )
+        });
+        if !eligible {
+            return false;
+        }
+        if let Some(job) = state.server_jobs.get_mut(job_id) {
+            job.execution_generation = job.execution_generation.saturating_add(1);
+            job.execution_phase = ServerExecutionPhase::HandoffToAgent;
+            job.trusted_worker_eligible = false;
+        }
+        if let Some(job) = state.jobs.get(job_id) {
+            job.cancel_requested.store(true, Ordering::SeqCst);
+        }
+        state.queue.retain(|queued| queued.job_id != job_id);
+        true
     }
 
     /// Move globally queued work to an operator-managed trusted worker without

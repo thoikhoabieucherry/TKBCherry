@@ -24,6 +24,72 @@ change so a machine restart or a new conversation does not erase project context
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
 
+### Pending v1.64 browser-integrated refinement executor (not yet deployed)
+
+- Windows, macOS and Android can run the Rust hint solver directly inside a
+  dedicated Web Worker during a manual scheduling job. There is no download,
+  install prompt or always-on browser worker. iPhone, iPad and iPod are
+  deliberately excluded, including iPad desktop mode (`MacIntel` with touch),
+  because iOS may suspend Web Workers immediately after the PWA is backgrounded.
+- Browser WASM is deliberately capability-gated to `refine_complete` requests
+  carrying a revalidated, complete incumbent. A production `default` fresh
+  probe proved why: four 90-second Rust-WASM seeds stopped around 1,530/1,566
+  lessons, so fresh, incomplete, hard-invalid and constraint-repair requests
+  bypass WASM entirely and remain on the VPS CP-SAT pipeline. The same real
+  complete `default` incumbent (1,566/1,566, hard-valid, 459 teacher sessions,
+  zero one-period sessions, zero gap-2 sessions and 38 gap-1 periods) ran in
+  the browser runtime in about 22 seconds, preserved every hard-quality metric
+  and reduced gap-1 from 38 to 37. This is the browser acceptance role.
+- The page compiles/probes `tkb_native_solver.wasm` before creating an eligible
+  refinement job but does not announce executor capacity yet. Only after `POST /api/solve-data`
+  returns a durable server-owned `202` does it call Agent `hello` and begin
+  leasing. The existing solver-pool execution generation then stops VPS and
+  exposes one task only after the VPS child exits; browser and VPS never solve
+  the same generation in parallel. Browser hello, worker registration, handoff
+  and lease are scoped to that exact `solveRunId`; a tab cannot interrupt or
+  claim an older job merely because it has the same school/user owner.
+- Eligibility is independently rechecked by the server before it accepts a
+  `web-wasm` hello. The leased browser copy enables
+  `optimize_existing_schedule`; the canonical request remains byte-for-byte
+  unchanged for VPS fallback and candidate validation. Closing the executor or
+  pressing Stop aborts an outstanding lease long-poll immediately. The retired
+  toolbar download control stays hidden, and manual Play never prompts, checks
+  status for, or downloads a native Windows Agent.
+- Lease heartbeat and candidate upload stay on the main thread while the
+  compute-heavy WASM call blocks only its Web Worker. `visibilitychange` and
+  `pagehide` terminate local compute, fail any exact lease and call the new
+  session-bound `/api/agent-helper/v1/disconnect` endpoint. If mobile or a
+  browser is suspended too quickly to send that request, the 30-second lease
+  expiry and generation fence return the canonical request to VPS and reject a
+  late browser result. A local expiry watchdog terminates WASM 500 ms before
+  its last acknowledged lease deadline, and terminal 4xx heartbeat responses
+  stop it immediately, so VPS fallback does not run beside orphaned local CPU.
+- The server still validates every browser candidate before publication. The
+  browser implements the exact `tkb-json-tree-sha256-v1` digest; its cross-
+  language vector matches Python after JSON wire serialization. Source markers
+  are `tkb-rust-api-v264-browser-refinement-gate` and
+  `tkb_new-rust-api-2026-07-23-browser-refinement-gate-v62`.
+- The WASM workflow now publishes the same reproducible artifact to both
+  `agent_helper/assets/tkb_native_solver.wasm` and
+  `web/pages/tkb_native_solver.wasm`. The first generated artifact exposed an
+  ABI allocator trap when freeing output: a `Vec` was reconstructed with
+  `capacity == length` even though serialization had reserved a larger
+  capacity. Both input and output now cross the ABI as exact `Box<[u8]>`
+  allocations. `tools/test-browser-wasm-abi.mjs` solves a real tiny timetable
+  and frees both buffers; both WASM workflows must run it before accepting or
+  auto-committing an artifact. GitHub artifact commit `560a840` contains the
+  rebuilt 1,020,728-byte runtime; both Agent and web copies have SHA-256
+  `4ad576cd7136349c9aa163df3db0cf4bb63875d3189ec0e2388e4fe40bb36652`, and the
+  real local ABI smoke returns `BROWSER_WASM_ABI_OK`.
+- Local frontend verification passes browser-WASM **11/11**, the existing
+  bridge suite **208/208**, and toolbar/UI **29/29**. Isolated VPS Rust
+  verification passes API/coordinator **152/152** and candidate validator
+  **20/20**. The full Node suite passes **307/307**. Final isolated staging
+  passes scheduler **172/172**, Agent **151/151**, trusted-worker operations
+  **5/5**, Rust API **152/152**, and validator **20/20**, ending with
+  `STAGING_TESTS_OK`. A real signed-in browser/VPS acceptance remains required
+  before deployment.
+
 ### Agent 1.6.29 dedicated WSL distro recovery (deployed 2026-07-23)
 
 - Live acceptance of 1.6.28 exposed a real modern-WSL edge case: both

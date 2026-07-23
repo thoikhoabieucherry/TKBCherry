@@ -413,11 +413,11 @@ test("planner keeps eight compact, accessible commands in the mobile toolbar", (
     plannerHtml,
     /@media \(max-width:\s*900px\) and \(hover:\s*none\) and \(pointer:\s*coarse\),\s*\(max-width:\s*480px\)/
   );
-  assert.match(plannerHtml, /phanmon\.js\?v=20260721-v157-canonical-progress-v1/);
-  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260721-v157-canonical-progress-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260723-v164-browser-compute-v1/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260723-v164-browser-compute-v1/);
 });
 
-test("desktop Agent sits beside Home, uses an AI icon, and stays out of mobile layouts", () => {
+test("legacy Agent download control stays hidden after browser compute integration", () => {
   const secondaryStart = plannerHtml.indexOf('<div class="toolbar-secondary-actions"');
   const secondaryEnd = plannerHtml.indexOf("\n  </div>\n\n</div>", secondaryStart);
   const secondary = plannerHtml.slice(secondaryStart, secondaryEnd);
@@ -435,16 +435,18 @@ test("desktop Agent sits beside Home, uses an AI icon, and stays out of mobile l
     "Agent must be the next toolbar button after Home"
   );
   assert.match(helperButton, /class="agent-helper-button"[^>]*type="button"/);
-  assert.match(helperButton, /title="Agent chưa kết nối · bấm để tải cho Windows"[^>]*aria-label="Agent chưa kết nối · bấm để tải cho Windows"/);
+  assert.match(helperButton, /title="Bộ xử lý đã tích hợp trong trình duyệt"[^>]*aria-label="Bộ xử lý đã tích hợp trong trình duyệt"/);
   assert.match(helperButton, /data-agent-online="0"/);
   assert.match(helperButton, /class="agent-status-dot"[^>]*aria-hidden="true"/);
-  assert.match(helperButton, /onclick="downloadAgentHelper\(\)"[^>]*>[\s\S]*class="toolbar-icon agent-ai-icon"[\s\S]*<span>Agent<\/span><\/button>/);
+  assert.doesNotMatch(helperButton, /onclick=/);
+  assert.match(helperButton, /\sdisabled(?:\s|>)/);
+  assert.match(helperButton, /class="toolbar-icon agent-ai-icon"[\s\S]*<span>Agent<\/span><\/button>/);
   assert.match(helperButton, /\shidden(?:\s|>)/);
   assert.match(helperButton, /aria-hidden="true"/);
   assert.match(plannerSource, /async function downloadAgentHelper\(\)/);
-  assert.match(plannerSource, /anchor\.href\s*=\s*"\/downloads\/TKBCherryAgent-Windows\.zip\?v=1\.6\.13"/);
-  assert.match(plannerSource, /anchor\.download\s*=\s*"TKBCherryAgent-Windows\.zip"/);
-  assert.match(plannerSource, /Giải nén ZIP rồi mở TKBCherryAgent\.exe để kết nối\./);
+  assert.doesNotMatch(plannerSource, /anchor\.href\s*=\s*"\/downloads\/TKBCherryAgent-Windows\.zip/);
+  assert.doesNotMatch(plannerSource, /anchor\.download\s*=\s*"TKBCherryAgent-Windows\.zip"/);
+  assert.doesNotMatch(plannerSource, /Giải nén ZIP rồi mở TKBCherryAgent\.exe/);
   assert.match(plannerSource, /async function approveAgentPairFromUrl\(\)/);
   assert.match(plannerSource, /fetch\("\/api\/agent-helper\/v1\/pair\/approve"/);
   assert.match(plannerSource, /function isAgentHelperSupportedDevice\(deviceNavigator\)/);
@@ -454,7 +456,7 @@ test("desktop Agent sits beside Home, uses an AI icon, and stays out of mobile l
   assert.match(
     bridgeSource,
     /manualAgentInvite[\s\S]*?maybeInviteAgentBeforeSort[\s\S]*?prepareManualSolveIntent\(\)/,
-    "a manual Play click must invite an offline Windows user before sorting"
+    "manual Play keeps the non-blocking compatibility hook before sorting"
   );
   assert.match(
     bridgeSource,
@@ -538,71 +540,32 @@ test("Agent status state paints the owner-scoped VPS result green or red", () =>
   assert.match(button.title, /Agent chưa kết nối/);
 });
 
-test("Windows invite downloads only when an offline user accepts", async () => {
+test("manual Play never prompts or downloads a native Agent", async () => {
   const start = plannerSource.indexOf("async function maybeInviteAgentBeforeSort");
   const end = plannerSource.indexOf("function setAutoSortHomeHidden", start);
   assert.ok(start >= 0 && end > start, "Agent invitation helper is missing");
   const invitationSource = plannerSource.slice(start, end);
-
-  const makeContext = ({supported=true, status=false, accepted=false} = {}) => {
-    let prompts = 0;
-    let downloads = 0;
-    const context = {
-      navigator:{platform:supported ? "Win32" : "MacIntel", userAgent:""},
-      window:{
-        __TKB_AGENT_INVITE_SHOWN:false,
-        confirm(){ prompts += 1; return accepted; }
-      },
-      isAgentHelperSupportedDevice(){ return supported; },
-      async refreshAgentHelperStatus(){ return status; },
-      async downloadAgentHelper(){ downloads += 1; return true; },
-      _setStatus(){},
-    };
-    context.window.window = context.window;
-    vm.runInNewContext(
-      `${invitationSource}\nthis.inviteBeforeSort = maybeInviteAgentBeforeSort;`,
-      context
-    );
-    return {context, prompts:() => prompts, downloads:() => downloads};
+  let prompts = 0;
+  let downloads = 0;
+  let statusChecks = 0;
+  const context = {
+    window:{confirm(){ prompts += 1; return true; }},
+    async refreshAgentHelperStatus(){ statusChecks += 1; return false; },
+    async downloadAgentHelper(){ downloads += 1; return true; }
   };
-
-  const mobile = makeContext({supported:false});
-  assert.equal(await mobile.context.inviteBeforeSort(), true);
-  assert.equal(mobile.prompts(), 0);
-
-  const online = makeContext({status:true});
-  assert.equal(await online.context.inviteBeforeSort(), true);
-  assert.equal(online.prompts(), 0);
-
-  const promptFreeFallback = makeContext({
-    status:new Promise(() => {}),
-    accepted:true
-  });
-  assert.equal(
-    await promptFreeFallback.context.inviteBeforeSort({preferVpsFallback:true}),
-    true,
-    "Play must continue even while the Agent status request is unresolved"
+  vm.runInNewContext(
+    `${invitationSource}\nthis.inviteBeforeSort = maybeInviteAgentBeforeSort;`,
+    context
   );
-  assert.equal(promptFreeFallback.prompts(), 0);
-  assert.equal(promptFreeFallback.downloads(), 0);
 
-  const declined = makeContext({status:false, accepted:false});
-  assert.equal(await declined.context.inviteBeforeSort(), true);
-  assert.equal(await declined.context.inviteBeforeSort(), true);
-  assert.equal(declined.prompts(), 1, "the invitation must appear once per page session");
-  assert.equal(declined.downloads(), 0);
-
-  const acceptedInvite = makeContext({status:false, accepted:true});
-  assert.equal(await acceptedInvite.context.inviteBeforeSort(), false);
-  assert.equal(acceptedInvite.prompts(), 1);
-  assert.equal(acceptedInvite.downloads(), 1);
-  assert.equal(acceptedInvite.context.window.__TKB_AGENT_INVITE_SHOWN, false);
-  assert.equal(await acceptedInvite.context.inviteBeforeSort(), false);
-  assert.equal(acceptedInvite.prompts(), 2);
-  assert.equal(acceptedInvite.downloads(), 2);
+  assert.equal(await context.inviteBeforeSort({preferVpsFallback:true}), true);
+  assert.equal(await context.inviteBeforeSort(), true);
+  assert.equal(prompts, 0);
+  assert.equal(downloads, 0);
+  assert.equal(statusChecks, 0);
 });
 
-test("a hung Agent status check times out and lets VPS sorting continue", async () => {
+test("manual Play bypasses native Agent status checks entirely", async () => {
   const start = plannerSource.indexOf("async function refreshAgentHelperStatus");
   const end = plannerSource.indexOf("function setAutoSortHomeHidden", start);
   assert.ok(start >= 0 && end > start, "Agent preflight helpers are missing");
@@ -648,14 +611,13 @@ test("a hung Agent status check times out and lets VPS sorting continue", async 
   );
 
   assert.equal(await context.inviteBeforeSort(), true);
-  assert.equal(timeoutMs, 2500);
-  assert.equal(signal?.aborted, true);
-  assert.equal(timeoutClears, 1);
-  assert.equal(prompts, 0, "unknown Agent state must fall through to VPS without another modal");
-  assert.equal(context.window.__TKB_AGENT_STATUS_INFLIGHT, null);
+  assert.equal(timeoutMs, 0);
+  assert.equal(signal, null);
+  assert.equal(timeoutClears, 0);
+  assert.equal(prompts, 0);
 });
 
-test("a connected green Agent never downloads the ZIP again", async () => {
+test("legacy Agent action reports integrated browser compute without downloading", async () => {
   const start = plannerSource.indexOf("async function downloadAgentHelper");
   const end = plannerSource.indexOf("async function approveAgentPairFromUrl", start);
   assert.ok(start >= 0 && end > start, "Agent download helper is missing");
@@ -678,7 +640,7 @@ test("a connected green Agent never downloads the ZIP again", async () => {
   );
   assert.equal(await context.downloadConnectedAgent(), false);
   assert.equal(created, 0);
-  assert.deepEqual(statuses, [["Agent đang ON và đã kết nối với VPS.", "ok"]]);
+  assert.deepEqual(statuses, [["Bộ xử lý đã tích hợp trong trình duyệt và sẽ tự dùng khi phù hợp.", "info"]]);
 });
 
 test("toolbar status messages hide after five seconds", () => {
@@ -1113,7 +1075,7 @@ test("landscape phones show a full session in both panes and scroll the remainde
   assert.ok(paneBodyHeight >= 18 + (5 * 20));
 });
 
-test("sorting keeps Home and a supported Windows Agent locked in stable toolbar slots", () => {
+test("sorting keeps Home stable while the retired Agent control remains hidden", () => {
   const homeControl = plannerSource.slice(
     plannerSource.indexOf("function setAutoSortHomeHidden"),
     plannerSource.indexOf("function setAutoSortBusyControls")
@@ -1127,10 +1089,9 @@ test("sorting keeps Home and a supported Windows Agent locked in stable toolbar 
   assert.match(homeControl, /setAutoSortControlLocked\(btn,\s*shouldLock\)/);
   assert.doesNotMatch(homeControl, /btn\.hidden\s*=\s*!!hidden/);
   assert.match(homeControl, /getElementById\("btnAgentHelper"\)/);
-  assert.match(homeControl, /agentBtn\.hidden\s*=\s*!agentSupported/);
-  assert.match(homeControl, /agentBtn\.setAttribute\("aria-hidden",\s*agentSupported\s*\?\s*"false"\s*:\s*"true"\)/);
-  assert.match(homeControl, /setAutoSortControlLocked\(agentBtn,\s*shouldLock\)/);
-  assert.doesNotMatch(homeControl, /agentBtn\.hidden\s*=\s*shouldLock/);
+  assert.match(homeControl, /agentBtn\.hidden\s*=\s*true/);
+  assert.match(homeControl, /agentBtn\.setAttribute\("aria-hidden",\s*"true"\)/);
+  assert.match(homeControl, /agentBtn\.disabled\s*=\s*true/);
   assert.match(
     plannerHtml,
     /#btnHome\.is-auto-sort-disabled,\s*body\.planner-shell #btnAgentHelper\.is-auto-sort-disabled\s*\{[^}]*opacity:\s*\.45;[^}]*filter:\s*saturate\(\.6\);/s
