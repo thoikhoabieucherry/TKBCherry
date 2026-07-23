@@ -127,7 +127,7 @@ if ($SkipDependencyInstall) {
     # Do not import native solver packages here. Smart App Control can block an
     # unsigned OR-Tools DLL during this inventory step even though packaging
     # only needs to read the installed files.
-    & $VirtualPython -c "import importlib.util as u; names=('cryptography','numpy','openpyxl','ortools','PyInstaller','scipy'); missing=[n for n in names if u.find_spec(n) is None]; assert not missing, 'missing: '+','.join(missing); print('Offline build dependencies OK')"
+    & $VirtualPython -c "import importlib.util as u; names=('cryptography','numpy','openpyxl','ortools','PIL','PyInstaller','scipy'); missing=[n for n in names if u.find_spec(n) is None]; assert not missing, 'missing: '+','.join(missing); print('Offline build dependencies OK')"
     if ($LASTEXITCODE -ne 0) {
         throw "The existing build environment is incomplete; rerun without -SkipDependencyInstall when package access is available."
     }

@@ -26,6 +26,9 @@ class PackagingTests(unittest.TestCase):
 
     def test_windows_build_is_onedir_and_contains_solver_assets(self) -> None:
         script = (AGENT_ROOT / "build_windows.ps1").read_text(encoding="utf-8")
+        build_requirements = (AGENT_ROOT / "requirements-build.txt").read_text(
+            encoding="utf-8"
+        )
         self.assertIn('"--onedir"', script)
         self.assertIn('"--windowed"', script)
         self.assertIn('"--noupx"', script)
@@ -45,6 +48,7 @@ class PackagingTests(unittest.TestCase):
         self.assertIn('"--hidden-import", "tkinter"', script)
         self.assertIn('"--hidden-import", "_tkinter"', script)
         self.assertNotIn('"--hidden-import", "PIL.PngImagePlugin"', script)
+        self.assertIn("Pillow", build_requirements)
         self.assertIn("wsl_runtime\\solver_runtime\\scripts", script)
         self.assertIn("wsl_runtime\\solver_runtime\\src", script)
         self.assertIn("requirements-wsl.txt", script)

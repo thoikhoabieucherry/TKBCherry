@@ -85,9 +85,10 @@ change so a machine restart or a new conversation does not erase project context
   fallback no longer imports Pillow/pystray or leaves a taskbar-only window.
   Explorer restart is handled through `TaskbarCreated`; bounded retries fall
   back to a visible, closable panel instead of stranding a hidden process.
-- Pillow and pystray were removed from the Agent build dependencies and
-  PyInstaller collection. The redesigned 420x370 control panel states the
-  CPU/RAM ceiling and automatically returns to the tray when Agent is enabled.
+- Pystray and Pillow were removed from the packaged runtime collection;
+  Pillow remains a build-only tool that converts the PNG logo into the EXE
+  icon. The redesigned 420x370 control panel states the CPU/RAM ceiling and
+  automatically returns to the tray when Agent is enabled.
 - On an enforced Smart App Control machine, elevation of the Windows Agent is
   still deliberately rejected as a solution. The panel instead offers a
   one-time elevated WSL setup. Normal Agent launches remain `asInvoker`; UAC is
