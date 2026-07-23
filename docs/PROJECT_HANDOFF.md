@@ -8,13 +8,12 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.63** (teacher/day morning,
-  afternoon, or either-session modes plus responsive requirement tables). The
-  public API marker is
-  `tkb_new-rust-api-2026-07-23-trusted-worker-race-safe-v60`, the bridge
-  marker remains `tkb-rust-api-v262-canonical-progress`, the constraints marker
-  is `constraints-ui-v38-one-session-responsive-tables`, and the constraints
-  cache is `20260722-v163-one-session-responsive-tables-v1`.
+- Current deployed application release: **v1.64** (browser-integrated WASM
+  refinement with VPS capability fallback). The public API marker is
+  `tkb_new-rust-api-2026-07-23-browser-refinement-gate-v62`, the bridge marker
+  is `tkb-rust-api-v264-browser-refinement-gate`, and the planner script cache
+  is `20260723-v164-browser-compute-v1`. The unchanged constraints marker is
+  `constraints-ui-v38-one-session-responsive-tables`.
 - Current public Agent release: **v1.6.29** (`1.6.29`). The normal owner-Agent
   minimum lease gate remains 1.6.23, so 1.6.22 and older stay upgrade-only;
   the operator trusted-worker source and release contract remain 1.6.24. The
@@ -24,7 +23,7 @@ change so a machine restart or a new conversation does not erase project context
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
 
-### Pending v1.64 browser-integrated refinement executor (not yet deployed)
+### v1.64 browser-integrated refinement executor (deployed 2026-07-23)
 
 - Windows, macOS and Android can run the Rust hint solver directly inside a
   dedicated Web Worker during a manual scheduling job. There is no download,
@@ -87,8 +86,18 @@ change so a machine restart or a new conversation does not erase project context
   **20/20**. The full Node suite passes **307/307**. Final isolated staging
   passes scheduler **172/172**, Agent **151/151**, trusted-worker operations
   **5/5**, Rust API **152/152**, and validator **20/20**, ending with
-  `STAGING_TESTS_OK`. A real signed-in browser/VPS acceptance remains required
-  before deployment.
+  `STAGING_TESTS_OK`.
+- Transactional deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260723-084838.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260723-084838.tar.gz`. Public
+  health served API v62 idle with `6/6` worker tokens, the planner served the
+  v1.64 cache keys, and the live WASM response was 1,020,728 bytes with
+  `application/wasm` and the expected SHA-256. A signed-in in-app-browser
+  refinement on production `default` completed with `Đã xếp xong!`, remained
+  1,566/1,566 with zero gap-2 and zero one-period teacher sessions, emitted no
+  browser warning/error, and did not allocate any VPS worker token. That
+  already-saturated incumbent remained at 494 teacher sessions and 81 gap-1
+  periods rather than accepting an equal or worse rearrangement.
 
 ### Agent 1.6.29 dedicated WSL distro recovery (deployed 2026-07-23)
 
@@ -3571,17 +3580,14 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-23: `UPDATE_OK` for
-Agent 1.6.29 over the unchanged post-v1.63 API v60 hardening release. Public
-health serves
-`tkb_new-rust-api-2026-07-23-trusted-worker-race-safe-v60`; the unchanged page
-still serves constraints cache key
-`20260722-v163-one-session-responsive-tables-v1`, constraints marker
-`constraints-ui-v38-one-session-responsive-tables`, and bridge marker
-`tkb-rust-api-v262-canonical-progress`. Public health was idle with zero
-active/queued jobs and `6/6` tokens available after deployment. Transaction
-backups are
-`/opt/cherry-scheduler-backups/server-state-20260723-043044.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260723-043044.tar.gz`.
+application v1.64. Public health serves
+`tkb_new-rust-api-2026-07-23-browser-refinement-gate-v62`; the page serves
+`20260723-v164-browser-compute-v1` and bridge marker
+`tkb-rust-api-v264-browser-refinement-gate`. Public health was idle with zero
+active/queued jobs and `6/6` tokens available after the signed-in production
+acceptance. Transaction backups are
+`/opt/cherry-scheduler-backups/server-state-20260723-084838.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260723-084838.tar.gz`.
 Public Agent release `1.6.29` and its signed manifest are live. The 88,001,209
 byte archive SHA-256 is
 `b36e5774f7e89402f7ffbb7075eb2541e7a63a1f874558abba128fe8ecfa25f6`; the
