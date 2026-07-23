@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 from .wsl_solver import (
+    WSL_MANAGED_DISTRIBUTIONS,
     WSL_RUNTIME_VERSION,
     _decode_wsl_output,
     _hidden_creation_flags,
@@ -27,6 +28,8 @@ from .wsl_solver import (
 
 
 DEFAULT_DISTRIBUTION = "Ubuntu-24.04"
+FALLBACK_DISTRIBUTIONS = ("Ubuntu", "Debian")
+WSL_SETUP_GENERATION = "20260723.2"
 SETUP_OK = 0
 SETUP_FAILED = 2
 SETUP_RESTART_REQUIRED = 75
@@ -317,13 +320,68 @@ def _run(
         ) from exc
 
 
-def _select_distribution(installed: Sequence[str], preferred: str) -> str | None:
+def _select_distribution(installed: Sequence[str]) -> str | None:
     lookup = {name.casefold(): name for name in installed}
-    for name in (preferred, DEFAULT_DISTRIBUTION, "Ubuntu", "Debian"):
+    for name in WSL_MANAGED_DISTRIBUTIONS:
         selected = lookup.get(name.casefold())
         if selected:
             return selected
     return None
+
+
+def _distribution_sources(preferred: str) -> tuple[str, ...]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for name in (preferred, DEFAULT_DISTRIBUTION, *FALLBACK_DISTRIBUTIONS):
+        validated = _validate_distribution(name)
+        key = validated.casefold()
+        if key not in seen:
+            ordered.append(validated)
+            seen.add(key)
+    return tuple(ordered)
+
+
+def _install_error_text(completed: subprocess.CompletedProcess[bytes]) -> str:
+    # Decode streams independently. WSL commonly writes BOM-less UTF-16LE to
+    # stdout; inserting a one-byte separator before decoding shifts every code
+    # unit and hides stable error identifiers such as ERROR_ALREADY_EXISTS.
+    return "\n".join(
+        text
+        for text in (
+            _decode_wsl_output(completed.stderr or b""),
+            _decode_wsl_output(completed.stdout or b""),
+        )
+        if text
+    ).casefold()
+
+
+def _is_distribution_name_collision(
+    completed: subprocess.CompletedProcess[bytes],
+) -> bool:
+    text = _install_error_text(completed)
+    return any(
+        marker in text
+        for marker in (
+            "error_already_exists",
+            "supplied name already exists",
+            "distribution name already exists",
+        )
+    )
+
+
+def _is_distribution_source_unavailable(
+    completed: subprocess.CompletedProcess[bytes],
+) -> bool:
+    text = _install_error_text(completed)
+    return any(
+        marker in text
+        for marker in (
+            "wsl_e_distro_not_found",
+            "error_distro_not_found",
+            "no distribution with the supplied name",
+            "distribution was not found",
+        )
+    )
 
 
 def _dism_executable() -> str:
@@ -539,6 +597,53 @@ def _repair_wsl_store_package(
         )
 
 
+def _supports_private_distribution_install(
+    executable: str,
+    *,
+    run: RunCommand | None,
+) -> bool:
+    """Return whether WSL supports isolated names and direct downloads."""
+
+    completed = _run(
+        [executable, "--help"],
+        run=run,
+        timeout=15.0,
+        action="Kiểm tra khả năng cài môi trường Linux riêng",
+    )
+    output = "\n".join(
+        text
+        for text in (
+            _decode_wsl_output(completed.stdout or b""),
+            _decode_wsl_output(completed.stderr or b""),
+        )
+        if text
+    ).casefold()
+    return "--name" in output and "--web-download" in output
+
+
+def _ensure_private_distribution_install_support(
+    executable: str,
+    *,
+    run: RunCommand | None,
+) -> None:
+    """Update an old but otherwise responsive WSL before using new flags."""
+
+    if _supports_private_distribution_install(executable, run=run):
+        return
+    try:
+        _repair_wsl_store_package(run=run)
+    except WslSetupError as repair_error:
+        raise WslSetupError(
+            "WSL trên máy quá cũ và Agent không thể tự cập nhật gói chính chủ.",
+            _safe_diagnostic_text(str(repair_error), limit=1200),
+        ) from repair_error
+    if not _supports_private_distribution_install(executable, run=run):
+        raise WslSetupError(
+            "Windows đã cập nhật WSL nhưng chưa hỗ trợ môi trường riêng cho Agent.",
+            "wsl --help chưa có đồng thời --name và --web-download.",
+        )
+
+
 def _setup_distributions_with_repair(
     executable: str,
     *,
@@ -606,34 +711,68 @@ def install_wsl_runtime(
         if platform == "nt"
         else _setup_distributions(wsl, run=run)
     )
-    distribution = _select_distribution(installed, distribution_name)
+    distribution = _select_distribution(installed)
     if distribution is None:
-        install_command = [
-            wsl,
-            "--install",
-            "--distribution",
-            distribution_name,
-            "--no-launch",
-            "--version",
-            str(preferred_wsl_version),
-        ]
-        completed = _run(
-            install_command,
-            run=run,
-            timeout=20 * 60,
-            action=f"Cài môi trường Linux {distribution_name}",
-        )
-        if completed.returncode in _RESTART_EXIT_CODES:
-            return WslSetupResult(distribution_name, restart_required=True)
-        if completed.returncode != 0:
-            raise WslSetupError(
-                f"Windows không cài được môi trường Linux {distribution_name} cho Agent.",
-                _safe_command_diagnostic(completed, label="wsl --install"),
+        if platform == "nt":
+            _ensure_private_distribution_install_support(wsl, run=run)
+        sources = _distribution_sources(distribution_name)
+        source_index = 0
+        target_index = 0
+        diagnostics: list[str] = []
+        while distribution is None:
+            source_distribution = sources[source_index]
+            target_distribution = WSL_MANAGED_DISTRIBUTIONS[target_index]
+            install_command = [
+                wsl,
+                "--install",
+                "--distribution",
+                source_distribution,
+                "--name",
+                target_distribution,
+                "--no-launch",
+                "--web-download",
+                "--version",
+                str(preferred_wsl_version),
+            ]
+            completed = _run(
+                install_command,
+                run=run,
+                timeout=20 * 60,
+                action=f"Cài môi trường Linux riêng cho Agent từ {source_distribution}",
             )
-        installed = _setup_distributions(wsl, run=run)
-        distribution = _select_distribution(installed, distribution_name)
-        if distribution is None:
-            return WslSetupResult(distribution_name, restart_required=True)
+            if completed.returncode in _RESTART_EXIT_CODES:
+                return WslSetupResult(target_distribution, restart_required=True)
+
+            installed = _setup_distributions(wsl, run=run)
+            distribution = _select_distribution(installed)
+            if distribution is not None:
+                break
+            if completed.returncode == 0:
+                return WslSetupResult(target_distribution, restart_required=True)
+
+            diagnostics.append(
+                _safe_command_diagnostic(
+                    completed,
+                    label=f"wsl --install {source_distribution} ({target_distribution})",
+                )
+            )
+            if (
+                _is_distribution_name_collision(completed)
+                and target_index + 1 < len(WSL_MANAGED_DISTRIBUTIONS)
+            ):
+                target_index += 1
+                continue
+            if (
+                _is_distribution_source_unavailable(completed)
+                and source_index + 1 < len(sources)
+            ):
+                source_index += 1
+                target_index = 0
+                continue
+            raise WslSetupError(
+                "Windows không cài được môi trường Linux riêng cho Agent.",
+                _safe_diagnostic_text(" ".join(diagnostics), limit=1200),
+            )
 
     completed = _run(
         [

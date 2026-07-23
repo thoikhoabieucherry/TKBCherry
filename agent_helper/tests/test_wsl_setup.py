@@ -21,6 +21,7 @@ from agent_helper.wsl_setup import (
     setup_cli,
 )
 from agent_helper.wsl_solver import WSL_RUNTIME_VERSION
+from agent_helper.wsl_solver import WSL_MANAGED_DISTRIBUTIONS
 
 
 def make_source(root: Path) -> None:
@@ -105,7 +106,7 @@ class WslSetupTests(unittest.TestCase):
             data = options.get("input")
             calls.append((command, data if isinstance(data, bytes) else None))
             if command[1:3] == ["--list", "--quiet"]:
-                return subprocess.CompletedProcess(command, 0, b"Ubuntu-24.04\n", b"")
+                return subprocess.CompletedProcess(command, 0, b"TKBCherryAgent\n", b"")
             if "cat" in command:
                 return subprocess.CompletedProcess(
                     command, 0, WSL_RUNTIME_VERSION.encode(), b""
@@ -122,7 +123,7 @@ class WslSetupTests(unittest.TestCase):
                 platform_name="posix",
             )
 
-        self.assertEqual(result.distribution, DEFAULT_DISTRIBUTION)
+        self.assertEqual(result.distribution, WSL_MANAGED_DISTRIBUTIONS[0])
         install_calls = [call for call in calls if "bash" in call[0]]
         self.assertEqual(len(install_calls), 1)
         command, script = install_calls[0]
@@ -157,6 +158,51 @@ class WslSetupTests(unittest.TestCase):
 
         self.assertEqual(list_count, 2)
         self.assertTrue(result.restart_required)
+        self.assertEqual(result.distribution, WSL_MANAGED_DISTRIBUTIONS[0])
+
+    def test_new_distribution_uses_private_name_and_direct_download(self) -> None:
+        commands: list[list[str]] = []
+        list_count = 0
+
+        def run(command: list[str], **options: object) -> subprocess.CompletedProcess[bytes]:
+            nonlocal list_count
+            del options
+            commands.append(command)
+            if command[1:3] == ["--list", "--quiet"]:
+                list_count += 1
+                output = b"" if list_count == 1 else b"TKBCherryAgent\n"
+                return subprocess.CompletedProcess(command, 0, output, b"")
+            if command[1:3] == ["--install", "--distribution"]:
+                return subprocess.CompletedProcess(command, 0, b"installed", b"")
+            if "bash" in command:
+                return subprocess.CompletedProcess(command, 0, b"", b"")
+            if "cat" in command:
+                return subprocess.CompletedProcess(
+                    command, 0, WSL_RUNTIME_VERSION.encode(), b""
+                )
+            self.fail(f"unexpected command: {command}")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            make_source(source)
+            result = install_wsl_runtime(
+                source_root=source,
+                executable="wsl.exe",
+                run=run,
+                platform_name="posix",
+            )
+
+        install_command = next(command for command in commands if "--install" in command)
+        self.assertEqual(
+            install_command[install_command.index("--name") + 1],
+            WSL_MANAGED_DISTRIBUTIONS[0],
+        )
+        self.assertIn("--web-download", install_command)
+        self.assertIn("--no-launch", install_command)
+        self.assertEqual(
+            install_command[install_command.index("--version") + 1], "2"
+        )
+        self.assertEqual(result.distribution, WSL_MANAGED_DISTRIBUTIONS[0])
 
     def test_unrelated_docker_distribution_is_never_modified(self) -> None:
         commands: list[list[str]] = []
@@ -183,6 +229,162 @@ class WslSetupTests(unittest.TestCase):
         self.assertTrue(result.restart_required)
         self.assertTrue(any("--install" in command for command in commands))
         self.assertFalse(any("bash" in command for command in commands))
+
+    def test_personal_ubuntu_and_docker_are_not_modified(self) -> None:
+        commands: list[list[str]] = []
+        list_count = 0
+
+        def run(command: list[str], **options: object) -> subprocess.CompletedProcess[bytes]:
+            nonlocal list_count
+            del options
+            commands.append(command)
+            if command[1:3] == ["--list", "--quiet"]:
+                list_count += 1
+                output = (
+                    b"Ubuntu\ndocker-desktop\n"
+                    if list_count == 1
+                    else b"Ubuntu\ndocker-desktop\nTKBCherryAgent\n"
+                )
+                return subprocess.CompletedProcess(command, 0, output, b"")
+            if command[1:3] == ["--install", "--distribution"]:
+                return subprocess.CompletedProcess(command, 0, b"installed", b"")
+            if "bash" in command:
+                return subprocess.CompletedProcess(command, 0, b"", b"")
+            if "cat" in command:
+                return subprocess.CompletedProcess(
+                    command, 0, WSL_RUNTIME_VERSION.encode(), b""
+                )
+            self.fail(f"unexpected command: {command}")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            make_source(source)
+            result = install_wsl_runtime(
+                source_root=source,
+                executable="wsl.exe",
+                run=run,
+                platform_name="posix",
+            )
+
+        bash_command = next(command for command in commands if "bash" in command)
+        self.assertEqual(
+            bash_command[bash_command.index("--distribution") + 1],
+            WSL_MANAGED_DISTRIBUTIONS[0],
+        )
+        self.assertEqual(result.distribution, WSL_MANAGED_DISTRIBUTIONS[0])
+        self.assertFalse(
+            any(
+                "bash" in command
+                and command[command.index("--distribution") + 1]
+                in {"Ubuntu", "docker-desktop"}
+                for command in commands
+            )
+        )
+
+    def test_hidden_name_collision_retries_secondary_private_name(self) -> None:
+        commands: list[list[str]] = []
+        list_count = 0
+        install_count = 0
+
+        def run(command: list[str], **options: object) -> subprocess.CompletedProcess[bytes]:
+            nonlocal install_count, list_count
+            del options
+            commands.append(command)
+            if command[1:3] == ["--list", "--quiet"]:
+                list_count += 1
+                output = (
+                    b"TKBCherryAgent-2\n"
+                    if install_count >= 2
+                    else b""
+                )
+                return subprocess.CompletedProcess(command, 0, output, b"")
+            if command[1:3] == ["--install", "--distribution"]:
+                install_count += 1
+                if install_count == 1:
+                    return subprocess.CompletedProcess(
+                        command,
+                        0xFFFFFFFF,
+                        (
+                            "A distribution with the supplied name already exists. "
+                            "Error code: Wsl/InstallDistro/ERROR_ALREADY_EXISTS"
+                        ).encode("utf-16-le"),
+                        b"",
+                    )
+                return subprocess.CompletedProcess(command, 0, b"installed", b"")
+            if "bash" in command:
+                return subprocess.CompletedProcess(command, 0, b"", b"")
+            if "cat" in command:
+                return subprocess.CompletedProcess(
+                    command, 0, WSL_RUNTIME_VERSION.encode(), b""
+                )
+            self.fail(f"unexpected command: {command}")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            make_source(source)
+            result = install_wsl_runtime(
+                source_root=source,
+                executable="wsl.exe",
+                run=run,
+                platform_name="posix",
+            )
+
+        installs = [command for command in commands if "--install" in command]
+        self.assertEqual(len(installs), 2)
+        self.assertEqual(
+            [command[command.index("--name") + 1] for command in installs],
+            list(WSL_MANAGED_DISTRIBUTIONS),
+        )
+        self.assertEqual(result.distribution, WSL_MANAGED_DISTRIBUTIONS[1])
+
+    def test_missing_source_falls_back_to_other_official_distribution(self) -> None:
+        commands: list[list[str]] = []
+        active_distribution = ""
+
+        def run(command: list[str], **options: object) -> subprocess.CompletedProcess[bytes]:
+            nonlocal active_distribution
+            del options
+            commands.append(command)
+            if command[1:3] == ["--list", "--quiet"]:
+                output = b"TKBCherryAgent\n" if active_distribution else b""
+                return subprocess.CompletedProcess(command, 0, output, b"")
+            if command[1:3] == ["--install", "--distribution"]:
+                source_name = command[command.index("--distribution") + 1]
+                if source_name == DEFAULT_DISTRIBUTION:
+                    return subprocess.CompletedProcess(
+                        command,
+                        0xFFFFFFFF,
+                        "Error code: Wsl/InstallDistro/WSL_E_DISTRO_NOT_FOUND".encode(
+                            "utf-16-le"
+                        ),
+                        b"",
+                    )
+                active_distribution = source_name
+                return subprocess.CompletedProcess(command, 0, b"installed", b"")
+            if "bash" in command:
+                return subprocess.CompletedProcess(command, 0, b"", b"")
+            if "cat" in command:
+                return subprocess.CompletedProcess(
+                    command, 0, WSL_RUNTIME_VERSION.encode(), b""
+                )
+            self.fail(f"unexpected command: {command}")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            make_source(source)
+            result = install_wsl_runtime(
+                source_root=source,
+                executable="wsl.exe",
+                run=run,
+                platform_name="posix",
+            )
+
+        installs = [command for command in commands if "--install" in command]
+        self.assertEqual(
+            [command[command.index("--distribution") + 1] for command in installs],
+            [DEFAULT_DISTRIBUTION, "Ubuntu"],
+        )
+        self.assertEqual(result.distribution, WSL_MANAGED_DISTRIBUTIONS[0])
 
     def test_disabled_wsl_feature_is_enabled_before_any_wsl_probe(self) -> None:
         commands: list[list[str]] = []
@@ -310,7 +512,7 @@ class WslSetupTests(unittest.TestCase):
                 )
             if command[1:3] == ["--list", "--quiet"]:
                 return subprocess.CompletedProcess(
-                    command, 0, b"Ubuntu-24.04\n", b""
+                    command, 0, b"TKBCherryAgent\n", b""
                 )
             if "bash" in command:
                 return subprocess.CompletedProcess(command, 0, b"", b"")
@@ -334,7 +536,7 @@ class WslSetupTests(unittest.TestCase):
                     dism_executable="dism.exe",
                 )
 
-        self.assertEqual(result.distribution, "Ubuntu-24.04")
+        self.assertEqual(result.distribution, "TKBCherryAgent")
         repair.assert_not_called()
 
     def test_wsl_timeout_repairs_official_package_once_then_resumes_setup(self) -> None:
@@ -352,7 +554,7 @@ class WslSetupTests(unittest.TestCase):
                 list_count += 1
                 if list_count == 1:
                     raise subprocess.TimeoutExpired(command, options.get("timeout", 0))
-                return subprocess.CompletedProcess(command, 0, b"Ubuntu-24.04\n", b"")
+                return subprocess.CompletedProcess(command, 0, b"TKBCherryAgent\n", b"")
             if command[0] == "winget.exe":
                 return subprocess.CompletedProcess(command, 0, b"repaired", b"")
             if "bash" in command:
@@ -378,7 +580,7 @@ class WslSetupTests(unittest.TestCase):
                     dism_executable="dism.exe",
                 )
 
-        self.assertEqual(result.distribution, "Ubuntu-24.04")
+        self.assertEqual(result.distribution, "TKBCherryAgent")
         repair_calls = [entry for entry in commands if entry[0][0] == "winget.exe"]
         self.assertEqual(len(repair_calls), 1)
         repair_command, repair_timeout = repair_calls[0]
@@ -394,6 +596,76 @@ class WslSetupTests(unittest.TestCase):
         self.assertIn("--accept-source-agreements", repair_command)
         self.assertIn("--force", repair_command)
         self.assertEqual(repair_timeout, 15 * 60)
+
+    def test_old_responsive_wsl_is_updated_before_private_install(self) -> None:
+        commands: list[list[str]] = []
+        help_count = 0
+        installed = False
+
+        def run(command: list[str], **options: object) -> subprocess.CompletedProcess[bytes]:
+            nonlocal help_count, installed
+            del options
+            commands.append(command)
+            if "/Get-FeatureInfo" in command:
+                return subprocess.CompletedProcess(
+                    command, 0, b"State : Enabled\r\n", b""
+                )
+            if command[0] == "wsl.exe" and command[1:3] == ["--list", "--quiet"]:
+                output = b"TKBCherryAgent\n" if installed else b""
+                return subprocess.CompletedProcess(command, 0, output, b"")
+            if command[0] == "wsl.exe" and command[1:] == ["--help"]:
+                help_count += 1
+                help_text = (
+                    "--install --distribution --name --web-download"
+                    if help_count >= 2
+                    else "--install --distribution"
+                )
+                return subprocess.CompletedProcess(
+                    command, 0, help_text.encode("utf-16-le"), b""
+                )
+            if command[0] == "winget.exe":
+                return subprocess.CompletedProcess(command, 0, b"updated", b"")
+            if command[1:3] == ["--install", "--distribution"]:
+                installed = True
+                return subprocess.CompletedProcess(command, 0, b"installed", b"")
+            if "bash" in command:
+                return subprocess.CompletedProcess(command, 0, b"", b"")
+            if "cat" in command:
+                return subprocess.CompletedProcess(
+                    command, 0, WSL_RUNTIME_VERSION.encode(), b""
+                )
+            self.fail(f"unexpected command: {command}")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            make_source(source)
+            with (
+                patch(
+                    "agent_helper.wsl_setup._winget_executable",
+                    return_value="winget.exe",
+                ),
+                patch(
+                    "agent_helper.wsl_setup._preferred_wsl_version",
+                    return_value=1,
+                ),
+            ):
+                result = install_wsl_runtime(
+                    source_root=source,
+                    executable="wsl.exe",
+                    run=run,
+                    platform_name="nt",
+                    dism_executable="dism.exe",
+                )
+
+        repair_index = next(
+            index for index, command in enumerate(commands) if command[0] == "winget.exe"
+        )
+        install_index = next(
+            index for index, command in enumerate(commands) if "--install" in command
+        )
+        self.assertLess(repair_index, install_index)
+        self.assertEqual(help_count, 2)
+        self.assertEqual(result.distribution, WSL_MANAGED_DISTRIBUTIONS[0])
 
     def test_wsl_probe_and_official_package_repair_failure_are_diagnostic(self) -> None:
         commands: list[list[str]] = []

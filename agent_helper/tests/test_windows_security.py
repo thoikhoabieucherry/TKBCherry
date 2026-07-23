@@ -8,16 +8,17 @@ from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import call, patch
 
-from agent_helper.gui import run_toggle_window
 from agent_helper.__main__ import (
     _run_wsl_or_windows_security_session,
     _solver_child_main,
     main,
 )
+from agent_helper.gui import run_toggle_window
 from agent_helper.windows_security import (
     WINDOWS_CODE_INTEGRITY_KIND,
     solver_blocked_by_windows_code_integrity,
 )
+from agent_helper.wsl_setup import WSL_SETUP_GENERATION
 
 
 class WindowsSecurityTests(unittest.TestCase):
@@ -117,8 +118,12 @@ class WindowsSecurityTests(unittest.TestCase):
             patch("agent_helper.__main__.SingleInstanceLock", return_value=nullcontext()),
             patch(
                 "agent_helper.__main__.wsl_setup_restart_state",
-                return_value=SimpleNamespace(pending=False, same_boot=False),
-            ),
+                return_value=SimpleNamespace(
+                    pending=False,
+                    same_boot=False,
+                    same_setup_generation=True,
+                ),
+            ) as restart_state,
             patch("agent_helper.__main__.set_wsl_setup_restart_pending") as set_restart,
             patch("agent_helper.__main__.SolverRunner") as solver_runner,
             patch(
@@ -139,9 +144,15 @@ class WindowsSecurityTests(unittest.TestCase):
             self.assertEqual(captured["solver_setup"](), 0)  # type: ignore[operator]
 
         solver_runner.assert_not_called()
+        restart_state.assert_called_once_with(
+            current_setup_generation=WSL_SETUP_GENERATION
+        )
         self.assertTrue(callable(captured["session_runner"]))
         elevated_setup.assert_called_once_with()
-        self.assertEqual(set_restart.call_args_list, [call(True), call(False)])
+        self.assertEqual(
+            set_restart.call_args_list,
+            [call(True, setup_generation=WSL_SETUP_GENERATION), call(False)],
+        )
         self.assertIs(captured["allow_system_tray"], True)
         self.assertEqual(captured["cpu_workers"], 4)
         self.assertEqual(captured["max_memory_mb"], 8192)
@@ -172,7 +183,11 @@ class WindowsSecurityTests(unittest.TestCase):
             patch("agent_helper.wsl_solver.discover_wsl_runtime", return_value=None),
             patch(
                 "agent_helper.__main__.wsl_setup_restart_state",
-                return_value=SimpleNamespace(pending=False, same_boot=False),
+                return_value=SimpleNamespace(
+                    pending=False,
+                    same_boot=False,
+                    same_setup_generation=True,
+                ),
             ),
             patch("agent_helper.gui.run_toggle_window", side_effect=run_window),
             patch(
@@ -206,7 +221,11 @@ class WindowsSecurityTests(unittest.TestCase):
             patch("agent_helper.wsl_solver.discover_wsl_runtime", return_value=None),
             patch(
                 "agent_helper.__main__.wsl_setup_restart_state",
-                return_value=SimpleNamespace(pending=True, same_boot=False),
+                return_value=SimpleNamespace(
+                    pending=True,
+                    same_boot=False,
+                    same_setup_generation=True,
+                ),
             ),
             patch("agent_helper.gui.run_toggle_window", side_effect=run_window),
             patch(
@@ -240,7 +259,11 @@ class WindowsSecurityTests(unittest.TestCase):
             patch("agent_helper.wsl_solver.discover_wsl_runtime", return_value=None),
             patch(
                 "agent_helper.__main__.wsl_setup_restart_state",
-                return_value=SimpleNamespace(pending=True, same_boot=True),
+                return_value=SimpleNamespace(
+                    pending=True,
+                    same_boot=True,
+                    same_setup_generation=True,
+                ),
             ),
             patch("agent_helper.wsl_setup.run_elevated_setup") as elevated_setup,
             patch("agent_helper.gui.run_toggle_window", side_effect=run_window),
@@ -253,6 +276,50 @@ class WindowsSecurityTests(unittest.TestCase):
 
         self.assertIsNone(captured["solver_setup"])
         elevated_setup.assert_not_called()
+
+    def test_same_boot_older_generation_allows_one_automatic_setup_retry(self) -> None:
+        captured: dict[str, object] = {}
+
+        def run_window(session_runner: object, **options: object) -> None:
+            del session_runner
+            captured.update(options)
+
+        config = SimpleNamespace(cpu_workers=4, max_memory_mb=8192)
+        with (
+            patch(
+                "agent_helper.__main__.solver_blocked_by_windows_code_integrity",
+                return_value=True,
+            ),
+            patch("agent_helper.__main__.AgentConfig.load", return_value=config),
+            patch("agent_helper.__main__.load_or_create_agent_id", return_value="agent-1"),
+            patch("agent_helper.__main__.platform_tag", return_value="windows-amd64"),
+            patch("agent_helper.__main__.SingleInstanceLock", return_value=nullcontext()),
+            patch("agent_helper.wsl_solver.discover_wsl_runtime", return_value=None),
+            patch(
+                "agent_helper.__main__.wsl_setup_restart_state",
+                return_value=SimpleNamespace(
+                    pending=True,
+                    same_boot=True,
+                    same_setup_generation=False,
+                ),
+            ),
+            patch("agent_helper.__main__.set_wsl_setup_restart_pending") as set_restart,
+            patch("agent_helper.wsl_setup.run_elevated_setup", return_value=75) as setup,
+            patch("agent_helper.gui.run_toggle_window", side_effect=run_window),
+            patch(
+                "agent_helper.startup.startup_toggle_for_current_process",
+                return_value=None,
+            ),
+        ):
+            self.assertEqual(main(["--startup"]), 0)
+            retry = captured["solver_setup"]
+            self.assertTrue(callable(retry))
+            self.assertEqual(retry(), 75)  # type: ignore[operator]
+
+        setup.assert_called_once_with()
+        set_restart.assert_called_once_with(
+            True, setup_generation=WSL_SETUP_GENERATION
+        )
 
     def test_failed_post_reboot_setup_keeps_gate_for_current_boot(self) -> None:
         captured: dict[str, object] = {}
@@ -274,7 +341,11 @@ class WindowsSecurityTests(unittest.TestCase):
             patch("agent_helper.wsl_solver.discover_wsl_runtime", return_value=None),
             patch(
                 "agent_helper.__main__.wsl_setup_restart_state",
-                return_value=SimpleNamespace(pending=True, same_boot=False),
+                return_value=SimpleNamespace(
+                    pending=True,
+                    same_boot=False,
+                    same_setup_generation=True,
+                ),
             ),
             patch("agent_helper.__main__.set_wsl_setup_restart_pending") as set_restart,
             patch(
@@ -293,7 +364,9 @@ class WindowsSecurityTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "repair failed"):
                 setup()  # type: ignore[operator]
 
-        set_restart.assert_called_once_with(True)
+        set_restart.assert_called_once_with(
+            True, setup_generation=WSL_SETUP_GENERATION
+        )
 
     def test_fallback_window_uses_dependency_free_notification_tray(self) -> None:
         events: list[str] = []

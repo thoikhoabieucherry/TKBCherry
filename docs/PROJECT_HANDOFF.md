@@ -15,14 +15,41 @@ change so a machine restart or a new conversation does not erase project context
   marker remains `tkb-rust-api-v262-canonical-progress`, the constraints marker
   is `constraints-ui-v38-one-session-responsive-tables`, and the constraints
   cache is `20260722-v163-one-session-responsive-tables-v1`.
-- Current public Agent release: **v1.6.26** (`1.6.26`). The normal owner-Agent
+- Current public Agent release: **v1.6.28** (`1.6.28`). The normal owner-Agent
   minimum lease gate remains 1.6.23, so 1.6.22 and older stay upgrade-only;
   the operator trusted-worker source and release contract remain 1.6.24. The
-  public owner-Agent source and Windows metadata are 1.6.26.
+  worktree owner-Agent source and Windows metadata are 1.6.29 while its WSL
+  name-collision recovery candidate is being verified.
 - Every deployed application or packaged Agent update must increment the
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### Agent 1.6.29 dedicated WSL distro recovery (candidate, not deployed)
+
+- Live acceptance of 1.6.28 exposed a real modern-WSL edge case: both
+  `wsl --list --quiet` and `wsl --list --all --quiet` returned no distro, while
+  installing `Ubuntu-24.04` returned
+  `Wsl/InstallDistro/ERROR_ALREADY_EXISTS`. The WSL package was healthy at
+  2.7.10 and HKCU `Lxss` had no registered child, so retrying the same public
+  distro name could never recover.
+- New setup installs an official rootfs through `--web-download` under the
+  private name `TKBCherryAgent`. It does not run the installer inside an
+  existing Ubuntu, Debian or Docker distro. A bounded second private name
+  handles an invisible stale registration; Ubuntu and Debian source images are
+  fallback options only when WSL explicitly reports the preceding official
+  source as unavailable. No distro is unregistered or deleted.
+- WSL1/WSL2 selection remains capability based and the runtime contract remains
+  `20260723.1`. Setup generation `20260723.2` lets this repaired installer retry
+  exactly once over a same-boot marker written by an older setup, while the same
+  generation still suppresses UAC loops. Agent source and Windows metadata are
+  1.6.29. Full local Agent verification passes **149/149** with one
+  platform-semantic skip. Focused WSL/setup/packaging verification passes
+  **35/35**. Isolated VPS staging passes scheduler **172/172**, Agent **149/149**,
+  trusted-worker operations **5/5**, Rust API **149/149**, and validator
+  **20/20**, ending with `STAGING_TESTS_OK`. This candidate still needs the
+  normal GitHub Windows build, release signing, transactional deployment, and
+  live WSL1 acceptance.
 
 ### v1.63 teacher session modes, responsive tables, and SAC fallback (deployed 2026-07-22)
 

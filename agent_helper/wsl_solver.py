@@ -20,6 +20,7 @@ from .solver import HeartbeatCallback, SolverResult, SolverRunner, _WindowsJob
 WSL_RUNTIME_ROOT = "/opt/tkbcherry-agent/current"
 WSL_RUNTIME_VERSION = "20260723.1"
 WSL_RUNTIME_USER = "tkb-agent"
+WSL_MANAGED_DISTRIBUTIONS = ("TKBCherryAgent", "TKBCherryAgent-2")
 WSL_READY_MARKER = f"{WSL_RUNTIME_ROOT}/READY"
 WSL_PYTHON = f"{WSL_RUNTIME_ROOT}/venv/bin/python"
 WSL_SOLVER_SCRIPT = f"{WSL_RUNTIME_ROOT}/solver_runtime/scripts/wsl_solve.pyc"
@@ -193,7 +194,7 @@ def _distribution_candidates(
     ordered: list[str] = []
     if requested and requested.casefold() in lookup:
         ordered.append(lookup[requested.casefold()])
-    for name in ("TKBCherryAgent", "Ubuntu-24.04", "Ubuntu", "Debian"):
+    for name in (*WSL_MANAGED_DISTRIBUTIONS, "Ubuntu-24.04", "Ubuntu", "Debian"):
         actual = lookup.get(name.casefold())
         if actual and actual not in ordered:
             ordered.append(actual)

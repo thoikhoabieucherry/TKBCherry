@@ -30,6 +30,7 @@ from .state import (
     set_wsl_setup_restart_pending,
     wsl_setup_restart_state,
 )
+from .wsl_setup import WSL_SETUP_GENERATION
 from .worker import AgentWorker
 from .windows_security import (
     WINDOWS_CODE_INTEGRITY_KIND,
@@ -345,7 +346,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         identity = AgentIdentity(
             agent_id=agent_id, version=VERSION, platform=platform_tag()
         )
-        setup_restart = wsl_setup_restart_state() if gui_mode else None
+        setup_restart = (
+            wsl_setup_restart_state(
+                current_setup_generation=WSL_SETUP_GENERATION
+            )
+            if gui_mode
+            else None
+        )
         solver: SolverRunner | None = None
         if native_solver_blocked:
             from .wsl_solver import WslSolverRunner, discover_wsl_runtime
@@ -447,6 +454,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         setup_restart is not None
                         and setup_restart.pending
                         and setup_restart.same_boot
+                        and setup_restart.same_setup_generation
                     )
                 ):
                     from .wsl_setup import run_elevated_setup
@@ -455,7 +463,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                         # Bind the attempt to this Windows boot before opening
                         # UAC. A cancellation, crash or failed repair therefore
                         # cannot create an automatic retry loop on relaunch.
-                        set_wsl_setup_restart_pending(True)
+                        set_wsl_setup_restart_pending(
+                            True, setup_generation=WSL_SETUP_GENERATION
+                        )
                         result = run_elevated_setup()
                         if result == 0:
                             # WSL may need several seconds to start its VM after

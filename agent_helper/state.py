@@ -19,7 +19,8 @@ class StateError(RuntimeError):
 
 _CREDENTIAL_FILE = "agent-credential"
 _WSL_SETUP_RESTART_FILE = "wsl-setup-restart-pending"
-_WSL_SETUP_RESTART_SCHEMA = 1
+_WSL_SETUP_RESTART_SCHEMA = 2
+_WSL_SETUP_RESTART_LEGACY_SCHEMA = 1
 _WINDOWS_BOOT_ID_KEY = (
     r"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"
     r"\PrefetchParameters"
@@ -217,6 +218,8 @@ class WslSetupRestartState:
     pending: bool
     same_boot: bool = False
     boot_id: int | None = None
+    same_setup_generation: bool = True
+    setup_generation: str | None = None
 
 
 def _current_windows_boot_id() -> int | None:
@@ -262,13 +265,15 @@ def wsl_setup_restart_state(
     *,
     current_boot_id: int | None = None,
     boot_started_ns: int | None = None,
+    current_setup_generation: str | None = None,
 ) -> WslSetupRestartState:
     """Return whether setup may resume or must wait for a real Windows reboot.
 
-    A marker created during the current boot suppresses automatic setup.  Once
-    Windows' boot sequence changes, the same marker permits exactly one resume
-    attempt.  The timestamp fallback keeps the plain ``1`` marker written by
-    Agent 1.6.26 safe across its first upgrade.
+    A marker created by the same setup generation during the current boot
+    suppresses automatic setup.  A newer Agent generation may retry once in
+    that boot, while a Windows boot change still permits the normal resume.
+    The timestamp fallback keeps the plain ``1`` marker written by Agent 1.6.26
+    compatible across its first upgrade.
     """
 
     path = (state_dir or default_state_dir()) / _WSL_SETUP_RESTART_FILE
@@ -284,13 +289,18 @@ def wsl_setup_restart_state(
         return WslSetupRestartState(True, same_boot=True)
 
     stored_boot_id: int | None = None
+    stored_setup_generation: str | None = None
     created_ns = modified_ns
     if raw != "1":
         try:
             payload = json.loads(raw)
             if (
                 not isinstance(payload, dict)
-                or payload.get("schema") != _WSL_SETUP_RESTART_SCHEMA
+                or payload.get("schema")
+                not in {
+                    _WSL_SETUP_RESTART_LEGACY_SCHEMA,
+                    _WSL_SETUP_RESTART_SCHEMA,
+                }
             ):
                 raise ValueError("unsupported marker")
             raw_boot_id = payload.get("bootId")
@@ -303,8 +313,31 @@ def wsl_setup_restart_state(
                 created_ns = int(raw_created_ns)
                 if created_ns <= 0:
                     raise ValueError("invalid creation time")
+            raw_setup_generation = payload.get("setupGeneration")
+            if raw_setup_generation is not None:
+                stored_setup_generation = str(raw_setup_generation).strip()
+                if (
+                    not stored_setup_generation
+                    or len(stored_setup_generation) > 64
+                    or any(
+                        ord(character) < 32 or ord(character) > 126
+                        for character in stored_setup_generation
+                    )
+                ):
+                    raise ValueError("invalid setup generation")
         except (TypeError, ValueError, json.JSONDecodeError):
             return WslSetupRestartState(True, same_boot=True)
+
+    requested_setup_generation = (
+        str(current_setup_generation).strip()
+        if current_setup_generation is not None
+        else None
+    )
+    same_setup_generation = (
+        True
+        if requested_setup_generation is None
+        else stored_setup_generation == requested_setup_generation
+    )
 
     observed_boot_id = (
         _current_windows_boot_id()
@@ -316,6 +349,8 @@ def wsl_setup_restart_state(
             True,
             same_boot=stored_boot_id == observed_boot_id,
             boot_id=stored_boot_id,
+            same_setup_generation=same_setup_generation,
+            setup_generation=stored_setup_generation,
         )
 
     observed_boot_started_ns = (
@@ -324,11 +359,19 @@ def wsl_setup_restart_state(
         else boot_started_ns
     )
     if observed_boot_started_ns is None:
-        return WslSetupRestartState(True, same_boot=True, boot_id=stored_boot_id)
+        return WslSetupRestartState(
+            True,
+            same_boot=True,
+            boot_id=stored_boot_id,
+            same_setup_generation=same_setup_generation,
+            setup_generation=stored_setup_generation,
+        )
     return WslSetupRestartState(
         True,
         same_boot=created_ns >= observed_boot_started_ns,
         boot_id=stored_boot_id,
+        same_setup_generation=same_setup_generation,
+        setup_generation=stored_setup_generation,
     )
 
 
@@ -339,7 +382,10 @@ def wsl_setup_restart_pending(state_dir: Path | None = None) -> bool:
 
 
 def set_wsl_setup_restart_pending(
-    pending: bool, state_dir: Path | None = None
+    pending: bool,
+    state_dir: Path | None = None,
+    *,
+    setup_generation: str | None = None,
 ) -> None:
     """Persist only the small non-secret flag needed across a Windows restart."""
 
@@ -353,12 +399,27 @@ def set_wsl_setup_restart_pending(
         temporary = (
             directory / f"{_WSL_SETUP_RESTART_FILE}.tmp-{uuid.uuid4().hex}"
         )
+        normalized_setup_generation = (
+            str(setup_generation).strip() if setup_generation is not None else None
+        )
+        if normalized_setup_generation is not None and (
+            not normalized_setup_generation
+            or len(normalized_setup_generation) > 64
+            or any(
+                ord(character) < 32 or ord(character) > 126
+                for character in normalized_setup_generation
+            )
+        ):
+            raise StateError("invalid WSL setup generation")
+        marker = {
+            "schema": _WSL_SETUP_RESTART_SCHEMA,
+            "bootId": _current_windows_boot_id(),
+            "createdNs": time.time_ns(),
+        }
+        if normalized_setup_generation is not None:
+            marker["setupGeneration"] = normalized_setup_generation
         payload = json.dumps(
-            {
-                "schema": _WSL_SETUP_RESTART_SCHEMA,
-                "bootId": _current_windows_boot_id(),
-                "createdNs": time.time_ns(),
-            },
+            marker,
             ensure_ascii=True,
             separators=(",", ":"),
             sort_keys=True,

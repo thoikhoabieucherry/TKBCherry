@@ -59,6 +59,27 @@ class WslSolverTests(unittest.TestCase):
 
         self.assertIsNone(discover_wsl_runtime(executable="wsl.exe", run=run))
 
+    def test_discovery_accepts_secondary_dedicated_runtime(self) -> None:
+        def run(command: list[str], **options: object) -> subprocess.CompletedProcess[bytes]:
+            del options
+            if command[1:3] == ["--list", "--quiet"]:
+                return subprocess.CompletedProcess(
+                    command, 0, b"Ubuntu\nTKBCherryAgent-2\n", b""
+                )
+            selected = command[command.index("--distribution") + 1]
+            return subprocess.CompletedProcess(
+                command,
+                0 if selected == "TKBCherryAgent-2" else 1,
+                WSL_RUNTIME_VERSION.encode() if selected == "TKBCherryAgent-2" else b"",
+                b"",
+            )
+
+        runtime = discover_wsl_runtime(executable="wsl.exe", run=run)
+
+        self.assertIsNotNone(runtime)
+        assert runtime is not None
+        self.assertEqual(runtime.distribution, "TKBCherryAgent-2")
+
     def test_runner_passes_only_solver_limits_through_wslenv(self) -> None:
         config = SimpleNamespace(
             heartbeat_seconds=2,
