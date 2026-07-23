@@ -1,5 +1,5 @@
-use std::mem;
 use std::path::Path;
+use std::ptr;
 use std::slice;
 
 use serde_json::{json, Value};
@@ -54,10 +54,8 @@ fn response_bytes(input: &[u8]) -> Vec<u8> {
 #[no_mangle]
 pub extern "C" fn tkb_alloc(length: u32) -> u32 {
     let length = length as usize;
-    let mut bytes = vec![0_u8; length];
-    let pointer = bytes.as_mut_ptr() as usize as u32;
-    mem::forget(bytes);
-    pointer
+    let bytes = vec![0_u8; length].into_boxed_slice();
+    Box::into_raw(bytes) as *mut u8 as usize as u32
 }
 
 #[no_mangle]
@@ -65,11 +63,8 @@ pub unsafe extern "C" fn tkb_free(pointer: u32, length: u32) {
     if pointer == 0 || length == 0 {
         return;
     }
-    drop(Vec::from_raw_parts(
-        pointer as usize as *mut u8,
-        length as usize,
-        length as usize,
-    ));
+    let bytes = ptr::slice_from_raw_parts_mut(pointer as usize as *mut u8, length as usize);
+    drop(Box::from_raw(bytes));
 }
 
 #[no_mangle]
@@ -78,13 +73,11 @@ pub unsafe extern "C" fn tkb_solve(pointer: u32, length: u32) -> u64 {
         return 0;
     }
     let input = slice::from_raw_parts(pointer as usize as *const u8, length as usize);
-    let mut output = response_bytes(input);
+    let output = response_bytes(input).into_boxed_slice();
     if output.is_empty() || output.len() > u32::MAX as usize {
         return 0;
     }
-    let output_pointer = output.as_mut_ptr() as usize as u32;
     let output_length = output.len() as u64;
-    mem::forget(output);
+    let output_pointer = Box::into_raw(output) as *mut u8 as usize as u32;
     (output_length << 32) | output_pointer as u64
 }
-

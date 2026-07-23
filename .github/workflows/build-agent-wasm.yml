@@ -37,10 +37,16 @@ jobs:
             --manifest-path agent_wasm_solver/Cargo.toml \
             --target wasm32-unknown-unknown \
             --release
+          node tools/test-browser-wasm-abi.mjs \
+            agent_wasm_solver/target/wasm32-unknown-unknown/release/tkb_agent_wasm_solver.wasm
           install -D -m 0644 \
             agent_wasm_solver/target/wasm32-unknown-unknown/release/tkb_agent_wasm_solver.wasm \
             agent_helper/assets/tkb_native_solver.wasm
+          install -D -m 0644 \
+            agent_wasm_solver/target/wasm32-unknown-unknown/release/tkb_agent_wasm_solver.wasm \
+            web/pages/tkb_native_solver.wasm
           test "$(stat -c %s agent_helper/assets/tkb_native_solver.wasm)" -ge 100000
+          cmp agent_helper/assets/tkb_native_solver.wasm web/pages/tkb_native_solver.wasm
 
       - name: Commit reproducible runtime
         if: github.event_name == 'push'
@@ -49,7 +55,10 @@ jobs:
           set -euo pipefail
           git config user.name "TKBCherry Build"
           git config user.email "thoikhoabieucherry@users.noreply.github.com"
-          git add agent_wasm_solver/Cargo.lock agent_helper/assets/tkb_native_solver.wasm
+          git add \
+            agent_wasm_solver/Cargo.lock \
+            agent_helper/assets/tkb_native_solver.wasm \
+            web/pages/tkb_native_solver.wasm
           if git diff --cached --quiet; then
             exit 0
           fi
@@ -62,7 +71,7 @@ jobs:
           name: TKBCherry-Agent-WASM-${{ github.sha }}
           path: |
             agent_helper/assets/tkb_native_solver.wasm
+            web/pages/tkb_native_solver.wasm
             agent_wasm_solver/Cargo.lock
           if-no-files-found: error
           retention-days: 3
-

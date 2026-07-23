@@ -41,6 +41,8 @@ jobs:
           cargo build --manifest-path agent_wasm_solver/Cargo.toml --target wasm32-unknown-unknown --release
           if ($LASTEXITCODE -ne 0) { throw "Could not build the Agent WASM solver." }
           $source = "agent_wasm_solver/target/wasm32-unknown-unknown/release/tkb_agent_wasm_solver.wasm"
+          node tools/test-browser-wasm-abi.mjs $source
+          if ($LASTEXITCODE -ne 0) { throw "The Agent WASM ABI smoke test failed." }
           $destination = "agent_helper/assets/tkb_native_solver.wasm"
           New-Item -ItemType Directory -Force -Path (Split-Path $destination -Parent) | Out-Null
           Copy-Item -LiteralPath $source -Destination $destination -Force
