@@ -86,6 +86,7 @@ impl SolverConfig {
 }
 
 #[cfg(target_arch = "wasm32")]
+#[link(wasm_import_module = "env")]
 extern "C" {
     fn tkb_now_ms() -> f64;
 }
