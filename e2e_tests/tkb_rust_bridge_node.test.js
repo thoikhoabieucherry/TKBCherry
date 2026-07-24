@@ -269,6 +269,36 @@ function createProgressDocument(clock){
   return {document, nodes, events, button, wrap, fill, pct, track, label, home, duration};
 }
 
+function installRealPlannerProgressUi(window, progress){
+  const stopButton = progress.document.createElement("button");
+  stopButton.id = "btnStopAutoSort";
+  stopButton.disabled = true;
+  progress.document.body.appendChild(stopButton);
+  window.__AUTO_SORT_STOP_REQUESTED = false;
+
+  const functionSource = (name, nextName) => {
+    const start = PLANNER_SOURCE.indexOf(`function ${name}(`);
+    const end = PLANNER_SOURCE.indexOf(`function ${nextName}(`, start + 1);
+    assert.ok(start >= 0 && end > start, `missing planner function ${name}`);
+    return PLANNER_SOURCE.slice(start, end);
+  };
+  const source = [
+    functionSource("setAutoSortStopAccessibleState", "setAutoSortBusyControls"),
+    functionSource("setAutoSortStopVisible", "resetAutoSortStopRequest"),
+    functionSource("setAutoSortProgress", "finishAutoSortProgress"),
+    "window.setAutoSortStopVisible = setAutoSortStopVisible;",
+    "window.setAutoSortProgress = setAutoSortProgress;"
+  ].join("\n");
+  const context = vm.createContext({
+    window,
+    document:progress.document,
+    setAutoSortBusyControls(){},
+    hideAutoSortProgress(){ progress.wrap.hidden = true; }
+  });
+  vm.runInContext(source, context, {filename:"phanmon-progress-ui.js"});
+  return stopButton;
+}
+
 function loadBridge(data, fetchImpl, runtime = {}){
   const localStorage = runtime.localStorage || memoryStorage();
   const sessionStorage = runtime.sessionStorage || memoryStorage();
@@ -2150,12 +2180,17 @@ test("desktop scheduler modes map to one focused backend contract", () => {
   Object.entries(modes).forEach(([mode, focus]) => {
     const base = hooks.buildAutomaticAutoSortPlan(data);
     const plan = hooks.applyRequestedSolveModeToPlan(base, mode, data, 2);
+    const effective = hooks.effectiveSettingsForSolve(plan.settings, data);
     assert.equal(plan.kind, "refine_complete");
     assert.equal(plan.settings.ui_requested_solve_mode, mode);
     assert.equal(plan.settings.optimization_focus, focus);
     assert.equal(plan.settings.ui_progress_mode, "work");
     assert.equal(plan.settings.ui_use_existing_complete_incumbent, true);
     assert.equal(plan.settings.ui_return_complete_incumbent_on_existing_optimize_failure, true);
+    assert.equal(effective.optimization_focus, focus);
+    assert.equal(effective.minimize_sessions, focus === "sessions");
+    assert.equal(effective.minimize_teacher_gaps, focus === "gaps");
+    assert.equal(effective.period_max_teacher_gap, focus === "gaps" ? 1 : "off");
   });
 
   const quickData = makeData(2);
@@ -2268,6 +2303,83 @@ test("metric progress uses work quality rather than elapsed time", () => {
     metricTarget:0,
     metricBaseline:68
   }), "34 ti\u1ebft tr\u1ed1ng");
+});
+
+test("Quick on an already complete constraint-clean timetable finishes without a VPS solve", async () => {
+  const data = makeData(2);
+  const subject = data.mon[0].ten;
+  const lessons = [1, 2].map(period => ({
+    classId:"L1",
+    className:"10A1",
+    subject,
+    teacher:"GV01",
+    room:"R1",
+    day:2,
+    session:"AM",
+    period
+  }));
+  data.tkb = {
+    L1:{thu2:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]}}
+  };
+  data.tkbSolverResult = {
+    ok:true,
+    classes:[{id:"L1", name:"10A1"}],
+    lessons,
+    metrics:{
+      scheduled_periods:2,
+      expected_periods:2,
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      teacher_sessions:1,
+      one_period_teacher_sessions:0,
+      gap_distribution:{"0":1}
+    },
+    validation:{hard_ok:true, violations:[]},
+    solver:{runtime_settings:{}}
+  };
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const progress = createProgressDocument(clock);
+  let solvePosts = 0;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.includes("/api/solve-state")){
+      return jsonResponse({ok:true, jobs:[], queue:[], completedJobs:[]});
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      throw new Error("Quick must not post an already complete timetable");
+    }
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    ...clock,
+    document:progress.document
+  });
+  window.maybeInviteAgentBeforeSort = async () => true;
+  window.TKBConstraints = {
+    async validateAllAsync(){ return []; },
+    validateAll(){ return []; }
+  };
+  window.calcSchoolTKBStats = () => ({
+    soTiet:2,
+    daXepTiet:2,
+    chuaXepTiet:0,
+    tsBuoiDay:1,
+    soBuoiDay1:0,
+    soBuoiTrong1:0,
+    soBuoiTrong2:0
+  });
+
+  const result = await window.sapXepTheoCheDo("quick_complete");
+
+  assert.ok(result);
+  assert.equal(solvePosts, 0);
+  assert.equal(hooks.countScheduledLessons(data), 2);
+  assert.equal(progress.nodes.get("statusMsg").textContent, "Đã xếp xong!");
+  assert.equal(progress.button.disabled, false);
 });
 
 test("large unified first click uses one bounded 130-second quality-gate search", () => {
@@ -5100,6 +5212,55 @@ test("Fast accepts one-period quality debt while Max keeps the zero hard cap", (
   assert.match(hooks.hardQualityViolationMessage(payload, max), /1 tiết/);
 });
 
+test("focused checkpoints treat unfinished quality targets as progress, not hard violations", () => {
+  const data = makeData(2);
+  const {hooks} = loadBridge(data);
+  const payload = {
+    metrics:{
+      scheduled_periods:2,
+      expected_periods:2,
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      one_period_teacher_sessions:134,
+      teacher_gap2_sessions:20,
+      gap_distribution:{"2":20}
+    },
+    validation:{hard_ok:true},
+    lessons:[{}]
+  };
+  const strictAutomatic = {
+    optimization_focus:"automatic",
+    require_complete_schedule:true,
+    strict_one_period_sessions_cap:true,
+    enforce_max_one_period_sessions:true,
+    max_one_period_sessions:0,
+    period_max_teacher_gap:1
+  };
+
+  assert.match(hooks.hardQualityViolationMessage(payload, strictAutomatic), /ràng buộc cứng/u);
+  for(const focus of ["singletons", "sessions", "gaps"]){
+    assert.equal(
+      hooks.hardQualityViolationMessage(payload, {...strictAutomatic, optimization_focus:focus}),
+      "",
+      `${focus} must accept a hard-valid partial quality checkpoint`
+    );
+  }
+
+  const hardInvalid = structuredClone(payload);
+  hardInvalid.lessons = [];
+  hardInvalid.metrics.scheduled_periods = 0;
+  hardInvalid.metrics.unassigned_periods = 2;
+  hardInvalid.metrics.app_constraint_violation_count = 1;
+  hardInvalid.metrics.hard_ok = false;
+  hardInvalid.validation.hard_ok = false;
+  assert.match(
+    hooks.hardQualityViolationMessage(hardInvalid, {...strictAutomatic, optimization_focus:"singletons"}),
+    /ràng buộc cứng/u
+  );
+});
+
 test("long unified sorting keeps quality strict first but accepts unavoidable debt", () => {
   const data = makeData(10);
   const storage = memoryStorage();
@@ -5497,8 +5658,8 @@ test("focused Stop keeps polling and applies the best server incumbent", async (
     core_hard_ok:true,
     teacher_sessions:1,
     one_period_teacher_sessions:0,
-    teacher_gap2_sessions:0,
-    gap_distribution:{"0":1}
+    teacher_gap2_sessions:1,
+    gap_distribution:{"2":1}
   });
   serverPayload.solver.runtime_settings = {
     optimization_focus:"sessions",
@@ -5583,6 +5744,11 @@ test("focused Stop keeps polling and applies the best server incumbent", async (
   assert.equal(hooks.readPendingBackendJob()?.optimizationFocus, "sessions");
 
   const firstStop = window.requestStopAutoSort();
+  assert.match(
+    progress.nodes.get("statusMsg").textContent,
+    /phương án tốt nhất/u,
+    "soft Stop feedback must not flicker back to the running label"
+  );
   await cancelStarted;
   const secondStop = await window.requestStopAutoSort();
 
@@ -8658,6 +8824,48 @@ test("cross-device discovery skips cancelling work and recovers a matching compl
   assert.equal(selected.staleJob, null);
 });
 
+test("cross-device discovery hashes the current v3 schedule once for many completed jobs", () => {
+  const data = makeData(2);
+  const {hooks} = loadBridge(data, null, {
+    setTimeout(){ return 0; },
+    clearTimeout(){}
+  });
+  const originalClasses = data.lop;
+  let classReads = 0;
+  Object.defineProperty(data, "lop", {
+    configurable:true,
+    enumerable:true,
+    get(){
+      classReads += 1;
+      return originalClasses;
+    }
+  });
+  const scheduleFingerprint = hooks.durableScheduleFingerprint(data);
+  const now = Date.now();
+  const scheduleScope = hooks.backendScheduleScope();
+  classReads = 0;
+  const completedJobs = Array.from({length:128}, (_, index) => ({
+    jobId:`completed-${index}`,
+    serverOwned:true,
+    scheduleScope,
+    scheduleFingerprint:index === 127
+      ? scheduleFingerprint
+      : `v3:stale-${index}:0`,
+    createdAtMs:now - 10_000 - index,
+    completedAtMs:now - 1_000 - index
+  }));
+
+  const selected = hooks.selectDiscoverableBackendJob({
+    ok:true,
+    jobs:[],
+    queue:[],
+    completedJobs
+  }, data, now);
+
+  assert.equal(selected.job?.jobId, "completed-127");
+  assert.equal(classReads, 1, "the current v3 fingerprint must be computed once per discovery pass");
+});
+
 test("manual Play attaches as an observer to a same-owner same-sid running job", async () => {
   const data = makeData(2);
   const fingerprint = (() => {
@@ -10516,7 +10724,14 @@ test("cross-device discovery restores focused mode before the first paint", () =
 test("Quick progress follows scheduled periods and does not advance with time", () => {
   const data = makeData(2);
   const clock = createFakeClock();
-  const {window, hooks} = loadBridge(data, null, clock);
+  const progress = createProgressDocument(clock);
+  const {window, hooks} = loadBridge(data, null, {
+    ...clock,
+    document:progress.document
+  });
+  const stopButton = installRealPlannerProgressUi(window, progress);
+  progress.button.disabled = true;
+  window.__TKB_SOLVE_UI_BUSY = true;
   const plan = hooks.applyRequestedSolveModeToPlan(
     hooks.buildAutomaticAutoSortPlan(data),
     "quick_complete",
@@ -10541,6 +10756,47 @@ test("Quick progress follows scheduled periods and does not advance with time", 
   hooks.tickEstimatedProgress();
   assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 50);
   assert.equal(window.__TKB_RUST_PROGRESS_STATE.label, "1/2 ti\u1ebft \u00b7 30 gi\u00e2y");
+  hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"period_milp:metric",
+    sequence:2,
+    elapsedMs:31_000,
+    solveRequestMode:"quick_complete",
+    optimizationFocus:"scheduled_periods",
+    metricCurrent:2,
+    metricTarget:2,
+    metricBaseline:2
+  });
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.metricPercent, 100);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 99, "100% is reserved for terminal completion");
+  assert.match(window.__TKB_RUST_PROGRESS_STATE.label, /^2\/2 ti\u1ebft/);
+  assert.equal(progress.pct.textContent, "99%");
+  assert.equal(progress.fill.style.width, "99%");
+  assert.equal(progress.track.getAttribute("aria-label"), "99%");
+  assert.equal(stopButton.disabled, false, "Quick remains stoppable until its result is applied");
+});
+
+test("an active stale 100-percent snapshot stays at 99 in the real planner progress UI", () => {
+  const data = makeData(2);
+  const clock = createFakeClock();
+  const progress = createProgressDocument(clock);
+  const {window, hooks} = loadBridge(data, null, {
+    ...clock,
+    document:progress.document
+  });
+  const stopButton = installRealPlannerProgressUi(window, progress);
+
+  hooks.primeAutoSortStartUi({requestedSolveMode:"optimize_singletons", data});
+  hooks.setProgress(100, "0 bu\u1ed5i 1 ti\u1ebft \u00b7 10 gi\u00e2y", {
+    replaceLocalPercent:true,
+    phase:"running"
+  });
+
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 99);
+  assert.equal(progress.pct.textContent, "99%");
+  assert.equal(progress.fill.style.width, "99%");
+  assert.equal(progress.track.getAttribute("aria-label"), "99%");
+  assert.equal(stopButton.disabled, false, "an active stale snapshot must keep Stop available");
 });
 
 test("a new VPS or Agent execution generation accepts progress sequence one", () => {

@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v270-stable-live-progress-r2";
+  const VERSION = "tkb-rust-api-v275-active-progress-cap";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -242,6 +242,32 @@
         settings.optimization_benders_minimize_one_period_sessions = false;
         settings.optimization_benders_minimize_period_gaps = false;
         settings.native_skip_teacher_optimization = true;
+      }else if(optimizationFocus === "singletons"){
+        // A focused singleton pass may temporarily trade session/gap quality
+        // while it removes one-period teacher sessions. The server's focused
+        // checkpoint envelope decides whether that trade is acceptable.
+        settings.minimize_one_period_sessions = true;
+        settings.minimize_sessions = false;
+        settings.minimize_teacher_gaps = false;
+        settings.period_max_teacher_gap = "off";
+        settings.relax_period_teacher_gap_on_failure = true;
+      }else if(optimizationFocus === "sessions"){
+        // Session compression owns teacher-session count. Gap cleanup is a
+        // separate command and must not prevent an improved checkpoint from
+        // being returned when the user presses Stop.
+        settings.minimize_one_period_sessions = true;
+        settings.minimize_sessions = true;
+        settings.minimize_teacher_gaps = false;
+        settings.period_max_teacher_gap = "off";
+        settings.relax_period_teacher_gap_on_failure = true;
+      }else if(optimizationFocus === "gaps"){
+        // Gap cleanup preserves the current teacher-session cap instead of
+        // starting another session-reduction phase.
+        settings.minimize_one_period_sessions = true;
+        settings.minimize_sessions = false;
+        settings.minimize_teacher_gaps = true;
+        settings.period_max_teacher_gap = 1;
+        settings.relax_period_teacher_gap_on_failure = false;
       }
       return settings;
     }
@@ -2961,7 +2987,7 @@
     return 0;
   }
 
-  function discoverableBackendJobCandidate(item, kind, data, nowMs, currentScope){
+  function discoverableBackendJobCandidate(item, kind, data, nowMs, currentScope, matchesCurrentSchedule){
     const jobId = String(item?.jobId || "").trim();
     const scheduleFingerprint = String(item?.scheduleFingerprint || "").trim();
     if(!jobId || !scheduleFingerprint) return null;
@@ -3013,7 +3039,9 @@
           )
         : "",
       position:Math.max(0, Number(item?.position || 0) || 0),
-      matchesCurrentSchedule:durableScheduleFingerprintMatches(scheduleFingerprint, data)
+      matchesCurrentSchedule:typeof matchesCurrentSchedule === "function"
+        ? matchesCurrentSchedule(scheduleFingerprint)
+        : durableScheduleFingerprintMatches(scheduleFingerprint, data)
     };
   }
 
@@ -3021,8 +3049,9 @@
     if(!state || state.ok !== true || !data) return {job:null, observerJob:null, staleJob:null};
     const now = Math.max(0, Number(nowMs || Date.now()) || Date.now());
     const currentScope = backendScheduleScope();
+    const matchesCurrentSchedule = durableScheduleFingerprintMatcher(data);
     const running = (Array.isArray(state.jobs) ? state.jobs : [])
-      .map(item => discoverableBackendJobCandidate(item, "running", data, now, currentScope))
+      .map(item => discoverableBackendJobCandidate(item, "running", data, now, currentScope, matchesCurrentSchedule))
       .filter(Boolean)
       .sort((left, right) => (
         right.startedAtMs - left.startedAtMs
@@ -3030,7 +3059,7 @@
         || left.jobId.localeCompare(right.jobId)
       ));
     const queued = (Array.isArray(state.queue) ? state.queue : [])
-      .map(item => discoverableBackendJobCandidate(item, "queued", data, now, currentScope))
+      .map(item => discoverableBackendJobCandidate(item, "queued", data, now, currentScope, matchesCurrentSchedule))
       .filter(Boolean)
       .sort((left, right) => (
         (left.position || Number.MAX_SAFE_INTEGER) - (right.position || Number.MAX_SAFE_INTEGER)
@@ -3038,7 +3067,7 @@
         || left.jobId.localeCompare(right.jobId)
       ));
     const completed = (Array.isArray(state.completedJobs) ? state.completedJobs : [])
-      .map(item => discoverableBackendJobCandidate(item, "completed", data, now, currentScope))
+      .map(item => discoverableBackendJobCandidate(item, "completed", data, now, currentScope, matchesCurrentSchedule))
       .filter(Boolean)
       .sort((left, right) => (
         right.completedAtMs - left.completedAtMs
@@ -3738,7 +3767,10 @@
       callMaybe("hideAutoSortProgress");
       return;
     }
-    let n = Math.max(0, Math.min(100, Math.round(Number(percent || 0))));
+    // setProgress owns only an active solve lifecycle. Keep 100% reserved for
+    // finishProgress so a completed work metric or stale snapshot cannot make
+    // the live UI look terminal while the result is still being validated.
+    let n = Math.max(0, Math.min(SERVER_WAIT_PROGRESS_CAP, Math.round(Number(percent || 0))));
     if(progressState){
       if(options?.replaceLocalPercent !== true){
         n = Math.max(n, normalizePendingProgressPercent(progressState.lastPercent));
@@ -4117,7 +4149,10 @@
       backendQueued:persistedServerStartedAt <= 0 && !!pending?.jobId,
       estimatedSeconds:normalizePendingProgressSeconds(pending?.progressEstimateSeconds) || INITIAL_AUTO_DURATION_SECONDS,
       lastPercent:instantWorkMode
-        ? (instantMetricProgress?.percent ?? normalizePendingProgressPercent(pending?.lastPercent))
+        ? Math.min(
+            SERVER_WAIT_PROGRESS_CAP,
+            instantMetricProgress?.percent ?? normalizePendingProgressPercent(pending?.lastPercent)
+          )
         : (canonicalServerProgress && !localClickTimeline
             ? 3
             : Math.max(3, normalizePendingProgressPercent(pending?.lastPercent) || 3)),
@@ -4704,7 +4739,7 @@
         // A running canonical job always has one user-facing status. The
         // reconnecting flag is diagnostic only and must not cause flicker.
         progressState.reconnecting = false;
-        setStatus("\u0110ang s\u1eafp x\u1ebfp...", "info");
+        setActiveSolveRunningStatus();
       }
     }catch(_){ }
     const serverStartedAtMs = Math.max(0, Number(progressState.serverStartedAtMs || 0) || 0);
@@ -4776,9 +4811,9 @@
     // no longer pretends to be percent-complete.
     const percent = hasMetricProgress
       ? Math.max(
-          lastPercent,
-          generationPercentFloor,
-          Math.max(0, Math.min(100, Math.round(metricPercent)))
+          Math.min(SERVER_WAIT_PROGRESS_CAP, lastPercent),
+          Math.min(SERVER_WAIT_PROGRESS_CAP, generationPercentFloor),
+          Math.max(0, Math.min(SERVER_WAIT_PROGRESS_CAP, Math.round(metricPercent)))
         )
       : (!workMetricMode
           ? Math.max(lastPercent, Math.max(4, Math.min(cap, estimatedPercent)))
@@ -4840,7 +4875,7 @@
     });
     const workMetricMode = progressUsesWorkMetrics(settings || {});
     const initialPercent = workMetricMode && configuredMetricProgress
-      ? Math.max(0, Math.min(100, Math.round(configuredMetricProgress.percent)))
+      ? Math.max(0, Math.min(SERVER_WAIT_PROGRESS_CAP, Math.round(configuredMetricProgress.percent)))
       : (canonicalServerProgress && !localClickTimeline
           ? 3
           : Math.max(3, previousPercent, persistedPercent));
@@ -5730,6 +5765,24 @@
     return expected === durableScheduleFingerprint(data);
   }
 
+  function durableScheduleFingerprintMatcher(data){
+    const currentByVersion = new Map();
+    return fingerprint => {
+      const expected = String(fingerprint || "");
+      if(!expected) return true;
+      const version = expected.startsWith("v1:")
+        ? "v1"
+        : (expected.startsWith("v2:") ? "v2" : "v3");
+      if(!currentByVersion.has(version)){
+        const current = version === "v1"
+          ? `v1:${scheduleFingerprintFromData(data)}`
+          : (version === "v2" ? legacyV2ScheduleFingerprint(data) : durableScheduleFingerprint(data));
+        currentByVersion.set(version, current);
+      }
+      return expected === currentByVersion.get(version);
+    };
+  }
+
   function lessonSessionValue(lesson){
     const raw = String(lesson?.session || "").trim();
     if(!raw) return "";
@@ -5903,7 +5956,10 @@
       if(unassigned > 0) reasons.push(`chưa xếp = ${unassigned}`);
       if(expected > 0 && scheduled < expected) reasons.push(`tiết đã xếp = ${scheduled}/${expected}`);
     }
-    const enforceOnePeriodCap = (
+    const focusedOptimization = ["singletons", "sessions", "gaps"].includes(
+      optimizationFocusForSolveRequestMode(settings?.optimization_focus)
+    );
+    const enforceOnePeriodCap = !focusedOptimization && (
       settings?.strict_one_period_sessions_cap === true
       || settings?.enforce_max_one_period_sessions === true
       || settings?.strict_quality_targets === true
@@ -5918,7 +5974,7 @@
     }
     const maxTeacherGap = nonnegativeNumberSetting(settings?.period_max_teacher_gap);
     const gap2Plus = gap2PlusCount(metrics);
-    if(maxTeacherGap != null && maxTeacherGap <= 1 && gap2Plus > 0){
+    if(!focusedOptimization && maxTeacherGap != null && maxTeacherGap <= 1 && gap2Plus > 0){
       reasons.push(`buổi GV có từ 2 tiết trống: ${gap2Plus}, mục tiêu 0`);
     }
     return reasons.length
@@ -14512,6 +14568,7 @@
         buildCompletionMessage,
         schedulePostSolveUi,
         finishProgress,
+        setProgress,
         setStatus,
         stopStatusDots,
         noBetterScheduleStatus,
@@ -15813,6 +15870,29 @@
     if(!autoSortPreparationMatches(data, scheduleFingerprintBefore)){
       reportAutoSortPreparationChanged();
       return null;
+    }
+    if(requestedSolveMode === SOLVE_REQUEST_MODES.quickComplete){
+      const completeState = completeScheduleStateForExistingOptimize(
+        data,
+        violationsBeforeRepair.length
+      );
+      if(completeState){
+        const retainedPayload = visibleCompleteIncumbentQualityPayload(
+          data,
+          data?.tkbSolverResult || data?.tkbRustSolverResult || null
+        );
+        window.__TKB_SOLVER_LAST_PAYLOAD = retainedPayload;
+        window.__TKB_SOLVER_LAST_RESULT = retainedPayload;
+        window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = SOLVE_COMPLETE_MESSAGE;
+        finishProgress("100%", "ok");
+        setStatus(SOLVE_COMPLETE_MESSAGE, "ok");
+        publishE2EState("done", retainedPayload, {
+          message:SOLVE_COMPLETE_MESSAGE,
+          quickCompleteAlreadySatisfied:true
+        });
+        releaseAutoSortButtonSoon();
+        return retainedPayload;
+      }
     }
     await yieldResponsiveUi();
     // Keep the visible incumbent untouched. The backend receives the complete

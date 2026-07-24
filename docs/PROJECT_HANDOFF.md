@@ -8,11 +8,11 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.73** (stable live progress and
-  checkpoint Stop). The public API marker is
+- Current deployed application release: **v1.74** (responsive job discovery,
+  terminal-only 100%, and stable checkpoint Stop). The public API marker is
   `tkb_new-rust-api-2026-07-24-stable-live-progress-v68`, the bridge marker is
-  `tkb-rust-api-v270-stable-live-progress`, and the planner script cache is
-  `20260724-v173-stable-live-progress-v2`. The unchanged constraints marker is
+  `tkb-rust-api-v275-active-progress-cap`, and the planner script cache is
+  `20260724-v174-responsive-stop-preflight-v5`. The unchanged constraints marker is
   `constraints-ui-v38-one-session-responsive-tables`.
 - Current public Agent release: **v1.6.29** (`1.6.29`). The normal owner-Agent
   minimum lease gate remains 1.6.23, so 1.6.22 and older stay upgrade-only;
@@ -22,6 +22,43 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.74 responsive progress and stable Stop (deployed 2026-07-24)
+
+- Production Browser reproduction found a roughly 4.9-second main-thread block
+  after choosing `Toi uu -> Buoi` with the Browser Agent disabled. The owner
+  state can contain many completed jobs, and `selectDiscoverableBackendJob`
+  previously rebuilt the deep current-school fingerprint separately for every
+  candidate before the progress frame or Stop action could respond.
+- The bridge now creates one lazy fingerprint matcher per discovery pass.
+  It computes the current v1, v2, or v3 fingerprint at most once per protocol,
+  then reuses it for all running, queued, and completed candidates. Direct
+  one-off fingerprint matching retains its existing compatibility behavior.
+- On the real 263,038-byte `default` production fixture, 100 stale completed
+  jobs fell from 8.60 seconds to 59 ms and 250 jobs fell from 21.06 seconds to
+  64 ms. A deterministic regression with 128 completed jobs asserts that the
+  current v3 schedule is read for hashing exactly once.
+- The v5 follow-up centralizes the active-progress invariant in
+  `setProgress`: any active `100%` input is rendered and persisted as `99%`, so
+  the real planner progress UI keeps Stop available until `finishProgress`
+  owns terminal completion. A complete, constraint-clean Quick click also ends
+  locally instead of posting another VPS solve.
+- Focused Stop keeps one stable `Đang nhận phương án tốt nhất...` status while
+  the final checkpoint is collected. Focused singleton/session/gap checkpoints
+  may carry temporary debt in a different quality metric, while Automatic
+  remains strict and every authored constraint stays mandatory.
+- Local verification passes full Node **348/348**, bridge **231/231**, all
+  planner suites **68/68**, Browser executor **24/24**, JavaScript syntax, and
+  `git diff --check`. The unchanged isolated VPS candidate passed scheduler
+  **219/219**, Agent **151/151**, trusted worker **5/5**, Rust API **178/178**,
+  and validator **32/32**, ending with `STAGING_TESTS_OK`.
+- Final production deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260724-091828.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260724-091828.tar.gz`. Signed-in
+  in-app Browser acceptance loaded cache v5 with Browser Agent off, completed
+  Quick with `Đã xếp xong!`, kept focused Stop feedback stable through terminal
+  success, and reloaded to an idle page with hidden progress. Public health is
+  idle with zero active/queued jobs and `6/6` worker tokens.
 
 ### v1.71 bounded progressive Stop handoff (deployed 2026-07-24)
 
@@ -68,7 +105,7 @@ change so a machine restart or a new conversation does not erase project context
 
 - Candidate markers are API
   `tkb_new-rust-api-2026-07-24-stable-live-progress-v68`, bridge
-  `tkb-rust-api-v270-stable-live-progress`, planner cache
+  `tkb-rust-api-v270-stable-live-progress-r2`, planner cache
   `20260724-v173-stable-live-progress-v2`, and Browser executor
   `tkb-browser-wasm-executor-v8-checkpoint-stop`. The packaged Agent remains
   1.6.29.
@@ -4002,17 +4039,17 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-24: `UPDATE_OK` for
-application v1.73. Public health serves
+application v1.74. Public health serves
 `tkb_new-rust-api-2026-07-24-stable-live-progress-v68`; the page serves
-`20260724-v173-stable-live-progress-v2`, bridge marker
-`tkb-rust-api-v270-stable-live-progress`, and Browser executor
+`20260724-v174-responsive-stop-preflight-v5`, bridge marker
+`tkb-rust-api-v275-active-progress-cap`, and Browser executor
 `tkb-browser-wasm-executor-v8-checkpoint-stop`. The public WASM is 1,031,910
 bytes and matches SHA-256
 `926d2a490a2004235d2b0b445956d1326fc614b3fd5af179b19f7af5f1e1832c`.
 Public health is idle with zero active/queued jobs and `6/6` worker tokens.
 Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260724-075341.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260724-075341.tar.gz`.
+`/opt/cherry-scheduler-backups/server-state-20260724-091828.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260724-091828.tar.gz`.
 Public Agent release `1.6.29` and its signed manifest are live. The 88,001,209
 byte archive SHA-256 is
 `b36e5774f7e89402f7ffbb7075eb2541e7a63a1f874558abba128fe8ecfa25f6`; the
