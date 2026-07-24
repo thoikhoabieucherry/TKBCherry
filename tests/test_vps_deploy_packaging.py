@@ -155,8 +155,15 @@ def test_update_script_hardens_backups_and_avoids_mixed_release() -> None:
     assert 'chmod 0600 "$STATE_BACKUP"' in script
     assert 'chmod 0600 "$RELEASE_BACKUP"' in script
 
-    release_backup_finished = script.index("backup_release\nUPDATE_STARTED=1")
-    services_stopped = script.index("systemctl stop tkb-app tkb-mail")
+    candidate_prepared = script.index("prepare_candidate_runtime\n")
+    gate_enabled = script.index("enable_solver_admission_gate\n", candidate_prepared)
+    solver_drained = script.index("wait_for_solver_idle\n", gate_enabled)
+    python_prepared = script.index(
+        "install_candidate_python_requirements\n", solver_drained
+    )
+    release_backup_finished = script.index("backup_release\n", python_prepared)
+    update_started = script.index("UPDATE_STARTED=1", release_backup_finished)
+    services_stopped = script.index("systemctl stop tkb-app tkb-mail", update_started)
     state_backup_finished = script.index("backup_server_state", services_stopped)
     source_replaced = script.index("rsync -a --delete", services_stopped)
     services_restarted = script.index("systemctl restart tkb-mail tkb-app", source_replaced)
@@ -164,8 +171,24 @@ def test_update_script_hardens_backups_and_avoids_mixed_release() -> None:
     update_ok = script.index('echo "UPDATE_OK"', health_checked)
     staging_cleaned = script.index("cleanup_deploy_artifacts", update_ok)
 
-    assert release_backup_finished < services_stopped < state_backup_finished < source_replaced
+    assert candidate_prepared < gate_enabled < solver_drained < python_prepared
+    assert python_prepared < release_backup_finished < update_started < services_stopped
+    assert services_stopped < state_backup_finished < source_replaced
     assert source_replaced < services_restarted < health_checked < update_ok < staging_cleaned
+
+    cutover = script[services_stopped:services_restarted]
+    assert "cargo build" not in cutover
+    assert "npm install" not in cutover
+    assert "pip install" not in cutover
+    assert script.index("install_candidate_runtime\n", source_replaced) < services_restarted
+
+    restore_started = script.index("restore_release()")
+    mail_runtime_restored = script.index("restore_mail_runtime\n", restore_started)
+    rollback_restart = script.index(
+        "systemctl restart tkb-mail tkb-app", mail_runtime_restored
+    )
+    assert restore_started < mail_runtime_restored < rollback_restart
+    assert script.count("cleanup_mail_runtime_rollback_stage\n") >= 2
 
 
 def test_update_script_serializes_deploys_and_drains_solver_jobs() -> None:
@@ -197,8 +220,16 @@ def test_update_reinstalls_python_requirements_and_uses_unique_remote_paths() ->
     full_install = INSTALL_SERVER_PATH.read_text(encoding="utf-8")
 
     assert "python3 -m pip install --break-system-packages" in update_script
-    assert '"$APP_DIR/solver_runtime/requirements.txt"' in update_script
+    assert '"$UPLOAD_DIR/solver_runtime/requirements.txt"' in update_script
     assert "cargo build --release --locked" in update_script
+    assert 'CARGO_TARGET_DIR="$UPLOAD_DIR/rust_api/target"' in update_script
+    assert 'CANDIDATE_RUST_BINARY="$UPLOAD_DIR/rust_api/target/release/tkb_rust_api"' in update_script
+    assert '"$CANDIDATE_RUST_BINARY"' in update_script
+    assert 'CANDIDATE_MAIL_NODE_MODULES="$UPLOAD_DIR/mail-server/node_modules"' in update_script
+    assert 'source "$HOME/.cargo/env"' in update_script
+    assert 'Missing mail-server/package.json in deployment candidate' in update_script
+    assert 'Missing rust_api/Cargo.toml in deployment candidate' in update_script
+    assert 'MAIL_RUNTIME_ROLLBACK_STAGE="$(mktemp -d' in update_script
     assert "cargo build --release --locked" in full_install
     assert "libsqlite3-dev" in full_install
     assert 'secrets.token_hex(6)' in update_deploy

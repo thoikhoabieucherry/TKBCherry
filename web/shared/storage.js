@@ -3,6 +3,9 @@
 
   const SC = window.TKBSchool;
   const REMOTE_ONLY_STORAGE = true;
+  const REMOTE_SAVE_MAX_ATTEMPTS = 40;
+  const REMOTE_SAVE_RETRY_WINDOW_MS = 180000;
+  const remoteSaveQueues = new Map();
   let remoteAuthRequired = false;
 
   function safeParseJSON(raw, fallback){
@@ -254,27 +257,113 @@
     return direct;
   }
 
-  async function saveRemoteSchoolData(schoolId, dataJson){
-    const raw = String(dataJson || "{}");
-    if(remoteAuthRequired) return false;
+  function remoteSaveRetryableStatus(status){
+    const value = Number(status || 0) || 0;
+    return value === 408 || value === 425 || value === 429 || value >= 500;
+  }
+
+  function remoteSaveRetryDelayMs(resp, attempt){
     try{
-      const resp = await fetch(remoteStoreUrl(schoolId), {
-        method: "POST",
-        headers: authHeaders({ "Content-Type": "application/json" }),
-        body: raw,
-        cache: "no-store"
-      });
-      if(resp.status === 401 || resp.status === 403){
-        let payload = null;
-        try{ payload = await resp.clone().json(); }catch(_){ }
-        reportRemoteAuthRequired(resp.status, "school-store-save", payload);
-        return false;
+      const raw = String(resp?.headers?.get?.("Retry-After") || "").trim();
+      if(/^\d+(?:\.\d+)?$/.test(raw)){
+        return Math.max(100, Math.min(10000, Math.round(Number(raw) * 1000)));
       }
-      return resp.ok;
-    }catch(e){
-      console.warn("Remote school store save failed", e);
-      return false;
+    }catch(_){ }
+    return Math.min(5000, 250 * Math.pow(2, Math.min(5, Math.max(0, Number(attempt) || 0))));
+  }
+
+  function waitForRemoteSaveRetry(delayMs){
+    return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(delayMs) || 0)));
+  }
+
+  function recordRemoteSaveState(schoolId, detail){
+    try{
+      window.__TKB_REMOTE_STORE_LAST_SAVE = Object.assign({
+        schoolId:cleanSchoolId(schoolId),
+        at:new Date().toISOString()
+      }, detail || {});
+    }catch(_){ }
+  }
+
+  async function saveRemoteSchoolDataWithRetry(schoolId, raw){
+    const startedAt = Date.now();
+    let lastError = null;
+    let lastStatus = 0;
+    let attemptsUsed = 0;
+    for(let attempt = 0; attempt < REMOTE_SAVE_MAX_ATTEMPTS; attempt += 1){
+      if(remoteAuthRequired) return false;
+      attemptsUsed = attempt + 1;
+      let resp = null;
+      try{
+        resp = await fetch(remoteStoreUrl(schoolId), {
+          method: "POST",
+          headers: authHeaders({ "Content-Type": "application/json" }),
+          body: raw,
+          cache: "no-store"
+        });
+        lastStatus = Number(resp?.status || 0) || 0;
+        if(lastStatus === 401 || lastStatus === 403){
+          let payload = null;
+          try{ payload = await resp.clone().json(); }catch(_){ }
+          reportRemoteAuthRequired(lastStatus, "school-store-save", payload);
+          recordRemoteSaveState(schoolId, {ok:false, authRequired:true, status:lastStatus, attempts:attempt + 1});
+          return false;
+        }
+        if(resp.ok){
+          recordRemoteSaveState(schoolId, {ok:true, status:lastStatus, attempts:attempt + 1});
+          return true;
+        }
+        if(!remoteSaveRetryableStatus(lastStatus)){
+          recordRemoteSaveState(schoolId, {ok:false, status:lastStatus, attempts:attempt + 1});
+          return false;
+        }
+      }catch(e){
+        lastError = e;
+        lastStatus = 0;
+      }
+
+      const delayMs = remoteSaveRetryDelayMs(resp, attempt);
+      const elapsedMs = Math.max(0, Date.now() - startedAt);
+      if(
+        attempt + 1 >= REMOTE_SAVE_MAX_ATTEMPTS
+        || elapsedMs + delayMs > REMOTE_SAVE_RETRY_WINDOW_MS
+      ) break;
+      recordRemoteSaveState(schoolId, {
+        ok:false,
+        retrying:true,
+        status:lastStatus,
+        attempts:attempt + 1,
+        retryInMs:delayMs
+      });
+      await waitForRemoteSaveRetry(delayMs);
     }
+    if(lastError) console.warn("Remote school store save failed", lastError);
+    recordRemoteSaveState(schoolId, {
+      ok:false,
+      status:lastStatus,
+      attempts:attemptsUsed,
+      exhausted:true
+    });
+    return false;
+  }
+
+  function saveRemoteSchoolData(schoolId, dataJson){
+    const target = cleanSchoolId(schoolId);
+    const raw = String(dataJson || "{}");
+    if(remoteAuthRequired) return Promise.resolve(false);
+
+    const previous = remoteSaveQueues.get(target) || null;
+    if(previous && previous.raw === raw) return previous.promise;
+
+    const queued = Promise.resolve(previous?.promise)
+      .catch(() => false)
+      .then(() => saveRemoteSchoolDataWithRetry(target, raw));
+    const entry = {raw, promise:null};
+    entry.promise = queued.finally(() => {
+      if(remoteSaveQueues.get(target) === entry) remoteSaveQueues.delete(target);
+    });
+    remoteSaveQueues.set(target, entry);
+    return entry.promise;
   }
 
   async function openKvStore(dbName){
@@ -365,6 +454,7 @@
   }
 
   window.TKBStorage = {
+    version:"remote-save-retry-v1",
     safeParseJSON,
     remoteOnly: REMOTE_ONLY_STORAGE,
     lsKey,

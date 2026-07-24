@@ -24,7 +24,7 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-24-full-resource-agent-v71";
+const VERSION: &str = "tkb_new-rust-api-2026-07-24-durable-school-store-v72";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
@@ -2827,8 +2827,16 @@ fn school_store_post_json(
     let key = format!("school_{id}");
     if let Ok(content) = String::from_utf8(body.to_vec()) {
         if let Ok(_value) = serde_json::from_str::<Value>(&content) {
-            let _ = app.db.set(&key, &content);
-            return json_response(200, json!({"ok": true}));
+            return match app.db.set(&key, &content) {
+                Ok(()) => json_response(200, json!({"ok": true})),
+                Err(error) => {
+                    eprintln!("school store write failed: {error}");
+                    json_response(
+                        503,
+                        json!({"ok": false, "kind": "school_store_write_failed"}),
+                    )
+                }
+            };
         }
     }
     json_response(400, json!({"ok": false, "error": "invalid_json"}))

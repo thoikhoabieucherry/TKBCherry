@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v277-full-resource-automatic-budget";
+  const VERSION = "tkb-rust-api-v278-durable-school-store";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -6607,6 +6607,15 @@
       return {
         title: "Thuật toán đã được dọn",
         message: raw || "Dịch vụ xếp lịch vẫn đang chạy, nhưng thuật toán xếp TKB đã được gỡ để chờ viết lại."
+      };
+    }
+    if(text.includes("remote school store save failed")){
+      return {
+        title: "Đã xếp xong nhưng chưa lưu được",
+        message: "Kết quả vẫn được giữ trên VPS. Phần mềm sẽ nhận lại khi kết nối ổn định.",
+        level: "warning",
+        statusLevel: "warning",
+        progressLabel: "Chờ lưu"
       };
     }
     return {

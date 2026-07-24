@@ -409,6 +409,38 @@ function jsonResponse(payload, status = 200){
   };
 }
 
+function loadStorageModule(fetchImpl, options = {}){
+  const localStorage = options.localStorage || memoryStorage();
+  const listeners = new Map();
+  const location = options.location || {
+    pathname:"/pages/sapxep.html",
+    search:"?sid=default"
+  };
+  const window = Object.assign({
+    localStorage,
+    location,
+    TKBSchool:{sanitizeSchoolId(value){ return String(value || "default"); }},
+    TKBAuthApi:{getAuthHeaders(extra){ return Object.assign({Authorization:"Bearer test"}, extra || {}); }},
+    addEventListener(name, listener){ listeners.set(String(name), listener); },
+    dispatchEvent(){ return true; }
+  }, options.window || {});
+  window.window = window;
+  const context = vm.createContext({
+    window,
+    localStorage,
+    location,
+    fetch:fetchImpl,
+    console:options.console || console,
+    AbortController,
+    Date:options.Date || Date,
+    Promise,
+    setTimeout:options.setTimeout || setTimeout,
+    clearTimeout:options.clearTimeout || clearTimeout
+  });
+  vm.runInContext(STORAGE_SOURCE, context, {filename:"storage.js"});
+  return {window, listeners};
+}
+
 function detachedAbortError(message = "browser transport detached"){
   const error = new Error(message);
   error.name = "AbortError";
@@ -6715,6 +6747,18 @@ test("detached server jobs are shown as reconnecting instead of failed", () => {
   );
 });
 
+test("a completed result waiting for remote persistence is not labeled as a sorting failure", () => {
+  const {hooks} = loadBridge(makeData(2), null, withoutAutomaticBackendResume(createFakeClock()));
+  const friendly = hooks.friendlySolveError(new Error("Remote school store save failed"));
+
+  assert.equal(friendly.title, "Đã xếp xong nhưng chưa lưu được");
+  assert.equal(friendly.level, "warning");
+  assert.equal(friendly.statusLevel, "warning");
+  assert.equal(friendly.progressLabel, "Chờ lưu");
+  assert.match(friendly.message, /giữ trên VPS/);
+  assert.doesNotMatch(`${friendly.title}: ${friendly.message}`, /Có lỗi khi sắp xếp/);
+});
+
 test("iOS background elapsed time keeps the VPS job and reconnects without cancelling", async () => {
   const data = makeData(2);
   const clock = createFakeClock(1_700_000_000_000, 1_000);
@@ -9359,6 +9403,71 @@ test("school-store 401 enters auth recovery once and blocks later save attempts"
   assert.equal(await window.TKBStorage.loadRemoteSchoolData("default"), null);
   assert.equal(storePosts, 1, "auth-expired storage must not keep posting saves");
   assert.equal(authTransitions, 1);
+});
+
+test("school-store save retries transient deployment outages until the VPS is available", async () => {
+  const statuses = [502, 503, 200];
+  const delays = [];
+  let storePosts = 0;
+  const fetchImpl = async (url, options = {}) => {
+    assert.match(String(url), /\/api\/school\/store\?id=default$/);
+    assert.equal(options.method, "POST");
+    assert.equal(options.body, "{\"tkb\":{\"L1\":[]}}");
+    const status = statuses[Math.min(storePosts, statuses.length - 1)];
+    storePosts += 1;
+    const response = jsonResponse({ok:status === 200}, status);
+    response.headers = {
+      get(name){
+        return status === 503 && String(name).toLowerCase() === "retry-after" ? "0.1" : null;
+      }
+    };
+    return response;
+  };
+  const {window} = loadStorageModule(fetchImpl, {
+    setTimeout(callback, delay){
+      delays.push(Number(delay));
+      Promise.resolve().then(callback);
+      return delays.length;
+    },
+    clearTimeout(){}
+  });
+
+  assert.equal(
+    await window.TKBStorage.saveRemoteSchoolData("default", "{\"tkb\":{\"L1\":[]}}"),
+    true
+  );
+  assert.equal(storePosts, 3);
+  assert.deepEqual(delays, [250, 100]);
+  assert.equal(window.TKBStorage.version, "remote-save-retry-v1");
+  assert.equal(window.__TKB_REMOTE_STORE_LAST_SAVE?.ok, true);
+  assert.equal(window.__TKB_REMOTE_STORE_LAST_SAVE?.attempts, 3);
+});
+
+test("school-store saves are serialized and identical concurrent payloads share one POST", async () => {
+  const postedBodies = [];
+  let releaseFirst = null;
+  const fetchImpl = async (_url, options = {}) => {
+    postedBodies.push(options.body);
+    if(postedBodies.length === 1){
+      return await new Promise(resolve => {
+        releaseFirst = () => resolve(jsonResponse({ok:true}));
+      });
+    }
+    return jsonResponse({ok:true});
+  };
+  const {window} = loadStorageModule(fetchImpl);
+
+  const first = window.TKBStorage.saveRemoteSchoolData("default", "{\"revision\":1}");
+  const duplicate = window.TKBStorage.saveRemoteSchoolData("default", "{\"revision\":1}");
+  const second = window.TKBStorage.saveRemoteSchoolData("default", "{\"revision\":2}");
+  assert.equal(first, duplicate);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(postedBodies, ["{\"revision\":1}"]);
+
+  releaseFirst();
+  assert.equal(await first, true);
+  assert.equal(await second, true);
+  assert.deepEqual(postedBodies, ["{\"revision\":1}", "{\"revision\":2}"]);
 });
 
 test("server-owned capacity 429 waits and reposts the same stable job id", async () => {

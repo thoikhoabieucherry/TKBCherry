@@ -21,6 +21,9 @@ NGINX_GATE_BACKUP=""
 NGINX_GATE_SITE=""
 NGINX_GATE_ENABLED=0
 AGENT_ROLLBACK_STAGE=""
+CANDIDATE_RUST_BINARY=""
+CANDIDATE_MAIL_NODE_MODULES=""
+MAIL_RUNTIME_ROLLBACK_STAGE=""
 
 for numeric_setting in \
   "$DRAIN_TIMEOUT_SECONDS" \
@@ -211,6 +214,23 @@ cleanup_agent_rollback_stage() {
   AGENT_ROLLBACK_STAGE=""
 }
 
+cleanup_mail_runtime_rollback_stage() {
+  [ -z "$MAIL_RUNTIME_ROLLBACK_STAGE" ] || \
+    rm -rf -- "$MAIL_RUNTIME_ROLLBACK_STAGE"
+  MAIL_RUNTIME_ROLLBACK_STAGE=""
+}
+
+restore_mail_runtime() {
+  local live_modules old_modules
+  [ -n "$MAIL_RUNTIME_ROLLBACK_STAGE" ] || return 0
+  live_modules="$APP_DIR/mail-server/node_modules"
+  old_modules="$MAIL_RUNTIME_ROLLBACK_STAGE/node_modules"
+  rm -rf -- "$live_modules"
+  if [ -d "$old_modules" ]; then
+    mv "$old_modules" "$live_modules"
+  fi
+}
+
 prune_runtime_artifacts() {
   local target_dir="$APP_DIR/rust_api/target"
   local release_dir="$target_dir/release"
@@ -327,6 +347,7 @@ restore_release() {
       "$APP_DIR/rust_api/target/release/tkb_rust_api"
   fi
   restore_agent_rollback_files
+  restore_mail_runtime
   if [ -f "$restore_dir/systemd/tkb-app.service" ]; then
     cp -a "$restore_dir/systemd/tkb-app.service" /etc/systemd/system/tkb-app.service
   fi
@@ -367,6 +388,7 @@ rollback_and_exit() {
     restore_release || echo "Automatic rollback failed" >&2
   fi
   cleanup_agent_rollback_stage
+  cleanup_mail_runtime_rollback_stage
   disable_solver_admission_gate || echo "Failed to remove solver admission gate" >&2
   cleanup_deploy_artifacts
   exit "$code"
@@ -429,6 +451,82 @@ wait_for_solver_idle() {
   return 1
 }
 
+prepare_candidate_runtime() {
+  if [ ! -f "$UPLOAD_DIR/solver_runtime/requirements.txt" ]; then
+    echo "Missing solver_runtime/requirements.txt" >&2
+    return 1
+  fi
+  if [ ! -f "$UPLOAD_DIR/mail-server/package.json" ]; then
+    echo "Missing mail-server/package.json in deployment candidate" >&2
+    return 1
+  fi
+  if [ ! -f "$UPLOAD_DIR/rust_api/Cargo.toml" ]; then
+    echo "Missing rust_api/Cargo.toml in deployment candidate" >&2
+    return 1
+  fi
+  if [ -f "$HOME/.cargo/env" ]; then
+    # shellcheck disable=SC1091
+    source "$HOME/.cargo/env"
+  fi
+  export PATH="$HOME/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  command -v cargo >/dev/null 2>&1 || {
+    echo "cargo is required to build the Rust API" >&2
+    return 1
+  }
+
+  (cd "$UPLOAD_DIR/mail-server" && npm install --omit=dev)
+  CANDIDATE_MAIL_NODE_MODULES="$UPLOAD_DIR/mail-server/node_modules"
+  [ -d "$CANDIDATE_MAIL_NODE_MODULES" ] || {
+    echo "Candidate mail-server node_modules is missing after install" >&2
+    return 1
+  }
+
+  (
+    cd "$UPLOAD_DIR/rust_api"
+    CARGO_TARGET_DIR="$UPLOAD_DIR/rust_api/target" \
+      cargo build --release --locked
+  )
+  CANDIDATE_RUST_BINARY="$UPLOAD_DIR/rust_api/target/release/tkb_rust_api"
+  [ -x "$CANDIDATE_RUST_BINARY" ] || {
+    echo "Candidate Rust runtime binary is missing after build" >&2
+    return 1
+  }
+}
+
+install_candidate_python_requirements() {
+  python3 -m pip install --break-system-packages \
+    -r "$UPLOAD_DIR/solver_runtime/requirements.txt"
+}
+
+install_candidate_runtime() {
+  if [ -n "$CANDIDATE_MAIL_NODE_MODULES" ]; then
+    [ -d "$CANDIDATE_MAIL_NODE_MODULES" ] || {
+      echo "Candidate mail-server node_modules is missing" >&2
+      return 1
+    }
+    MAIL_RUNTIME_ROLLBACK_STAGE="$(mktemp -d "$(dirname "$APP_DIR")/.cherry-mail-rollback-${STAMP}.XXXXXX")"
+    if [ -d "$APP_DIR/mail-server/node_modules" ]; then
+      mv "$APP_DIR/mail-server/node_modules" \
+        "$MAIL_RUNTIME_ROLLBACK_STAGE/node_modules"
+    fi
+    install -d -m 0755 "$APP_DIR/mail-server/node_modules"
+    rsync -a --delete \
+      "$CANDIDATE_MAIL_NODE_MODULES/" \
+      "$APP_DIR/mail-server/node_modules/"
+  fi
+
+  if [ -n "$CANDIDATE_RUST_BINARY" ]; then
+    [ -x "$CANDIDATE_RUST_BINARY" ] || {
+      echo "Candidate Rust runtime binary is missing at cutover" >&2
+      return 1
+    }
+    install -d -m 0755 "$APP_DIR/rust_api/target/release"
+    install -m 0755 \
+      "$CANDIDATE_RUST_BINARY" \
+      "$APP_DIR/rust_api/target/release/tkb_rust_api"
+  fi
+}
+
 trap rollback_on_error ERR
 trap rollback_on_exit EXIT
 trap 'rollback_on_signal HUP 129' HUP
@@ -436,9 +534,11 @@ trap 'rollback_on_signal INT 130' INT
 trap 'rollback_on_signal TERM 143' TERM
 install -d -m 0700 "$BACKUP_DIR"
 find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.tar.gz' -exec chmod 0600 {} +
+prepare_candidate_runtime
 ensure_agent_download_location
 enable_solver_admission_gate
 wait_for_solver_idle
+install_candidate_python_requirements
 backup_release
 UPDATE_STARTED=1
 systemctl stop tkb-app tkb-mail
@@ -452,6 +552,7 @@ rsync -a --delete \
   --exclude='mail-server/node_modules/' \
   --exclude='rust_api/target/' \
   "$UPLOAD_DIR/" "$APP_DIR/"
+install_candidate_runtime
 if [ -f "$APP_DIR/web/downloads/TKBCherryAgent-Windows.zip" ]; then
   chmod 0755 "$APP_DIR" "$APP_DIR/web" "$APP_DIR/web/downloads"
   chmod 0644 "$APP_DIR/web/downloads/TKBCherryAgent-Windows.zip"
@@ -474,21 +575,6 @@ if [ -n "${TKB_SUPER_PASSWORD:-}" ]; then
 elif [ -f /etc/systemd/system/tkb-app.service.d/super-admin.conf ]; then
   : # keep existing VPS config
 fi
-cd "$APP_DIR/mail-server" && npm install --omit=dev
-if [ ! -f "$APP_DIR/solver_runtime/requirements.txt" ]; then
-  echo "Missing solver_runtime/requirements.txt" >&2
-  exit 1
-fi
-python3 -m pip install --break-system-packages \
-  -r "$APP_DIR/solver_runtime/requirements.txt"
-if [ -f "$APP_DIR/rust_api/Cargo.toml" ]; then
-  cd "$APP_DIR/rust_api"
-  if ! command -v cargo >/dev/null 2>&1; then
-    echo "cargo is required to build the Rust API" >&2
-    exit 1
-  fi
-  cargo build --release --locked
-fi
 systemctl daemon-reload
 systemctl restart tkb-mail tkb-app
 nginx -t
@@ -498,6 +584,7 @@ prune_runtime_artifacts
 disable_solver_admission_gate
 UPDATE_STARTED=0
 cleanup_agent_rollback_stage
+cleanup_mail_runtime_rollback_stage
 prune_old_backups || echo "Warning: could not prune old deployment backups" >&2
 trap - EXIT ERR HUP INT TERM
 echo "STATE_BACKUP=$STATE_BACKUP"

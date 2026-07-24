@@ -405,8 +405,9 @@ test("portrait planner keeps seven compact mobile slots with stacked history and
     plannerHtml,
     /@media \(max-width:\s*900px\) and \(hover:\s*none\) and \(pointer:\s*coarse\),\s*\(max-width:\s*480px\)/
   );
-  assert.match(plannerHtml, /phanmon\.js\?v=20260724-v178-native-full-resource-v1/);
-  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260724-v178-native-full-resource-v1/);
+  assert.match(plannerHtml, /shared\/storage\.js\?v=20260724-v180-durable-store-save-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260724-v180-durable-store-save-v1/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260724-v180-durable-store-save-v1/);
 });
 
 test("landscape phones separate Undo and Redo into eight full-height slots", () => {
@@ -483,18 +484,26 @@ test("browser Agent toggle is cross-platform and sits before Home on desktop and
   );
   assert.match(
     plannerHtml,
-    /#btnAgentHelper \.agent-status-dot\s*\{[^}]*top:\s*3px;[^}]*left:\s*3px;[^}]*background:\s*#dc2626;/s
+    /#btnAgentHelper \.agent-status-dot\s*\{[^}]*top:\s*3px;[^}]*left:\s*3px;[^}]*background:\s*#94a3b8;/s
   );
   assert.match(
     plannerHtml,
-    /#btnAgentHelper\[data-agent-state="active"\] \.agent-status-dot,[\s\S]*?#btnAgentHelper\[data-agent-state="working"\] \.agent-status-dot\s*\{[^}]*background:\s*#16a34a;/s
+    /#btnAgentHelper\[data-agent-state="enabled"\] \.agent-status-dot,[\s\S]*?#btnAgentHelper\[data-agent-state="prepared"\] \.agent-status-dot\s*\{[^}]*background:\s*#16a34a;/s
   );
   assert.match(
     plannerHtml,
-    /#btnAgentHelper\[data-agent-state="working"\] \.agent-status-dot\s*\{[^}]*box-shadow:\s*0 0 0 3px rgb\(22 163 74 \/ 18%\)/s
+    /#btnAgentHelper\[data-agent-state="active"\] \.agent-status-dot,[\s\S]*?#btnAgentHelper\[data-agent-state="working"\] \.agent-status-dot\s*\{[^}]*background:\s*#22c55e;/s
+  );
+  assert.match(
+    plannerHtml,
+    /#btnAgentHelper\[data-agent-state="working"\] \.agent-status-dot\s*\{[^}]*animation:\s*planner-agent-working-pulse 1\.2s ease-in-out infinite;/s
+  );
+  assert.match(plannerHtml, /@keyframes planner-agent-working-pulse\s*\{/);
+  assert.match(
+    plannerHtml,
+    /#btnAgentHelper\[data-agent-state="error"\] \.agent-status-dot\s*\{[^}]*background:\s*#dc2626;/s
   );
   assert.match(plannerHtml, /#btnAgentHelper:disabled\s*\{[^}]*opacity:\s*1;[^}]*cursor:\s*default;/s);
-  assert.doesNotMatch(plannerHtml, /#btnAgentHelper\[data-agent-state="enabled"\] \.agent-status-dot\s*[,\{]/s);
   assert.doesNotMatch(plannerSource, /EncodedCommand|powershell\.exe|Cai-TKBCherry-Agent\.cmd/);
 
   const supportStart = plannerSource.indexOf("function isAgentHelperSupportedDevice");
@@ -541,7 +550,7 @@ test("browser Agent toggle is cross-platform and sits before Home on desktop and
   );
 });
 
-test("browser Agent indicator stays red until local connection and reports real compute", async () => {
+test("browser Agent indicator shows enabled readiness and reports real compute", async () => {
   const start = plannerSource.indexOf("function isAgentHelperSupportedDevice");
   const end = plannerSource.indexOf("function startAgentHelperStatusPolling", start);
   assert.ok(start >= 0 && end > start, "browser Agent status renderer is missing");
@@ -603,7 +612,7 @@ test("browser Agent indicator stays red until local connection and reports real 
   assert.equal(button.disabled, false);
   assert.equal(button.attributes["aria-hidden"], "false");
   assert.equal(button.dataset.agentState, "enabled");
-  assert.equal(button.title, "Agent đang bật nhưng chưa kết nối; sẽ dùng 4 Worker CPU/RAM khi bắt đầu lượt xếp phù hợp. Bấm để dùng VPS.");
+  assert.equal(button.title, "Agent đã bật, sẵn sàng dùng 4 Worker CPU/RAM khi có lượt xếp phù hợp. Bấm để dùng VPS.");
   assert.equal(button.attributes["aria-label"], button.title);
   assert.equal(button.attributes["aria-pressed"], "true");
   assert.equal(button.attributes["aria-disabled"], "false");
@@ -634,7 +643,7 @@ test("browser Agent indicator stays red until local connection and reports real 
   executorState.lastComputeWorkerCount = 4;
   assert.equal(await context.refreshIndicator(true), true);
   assert.equal(button.dataset.agentState, "enabled");
-  assert.equal(button.title, "Agent đang bật; lượt gần nhất đã xử lý cục bộ bằng 4 Worker. Hiện đang nghỉ; bấm để dùng VPS.");
+  assert.equal(button.title, "Agent đã bật, sẵn sàng dùng 4 Worker CPU/RAM; lượt gần nhất đã xử lý cục bộ trên thiết bị. Bấm để dùng VPS.");
   assert.equal(context.window.__TKB_BROWSER_AGENT_ACTIVE, false);
   assert.equal(context.window.__TKB_BROWSER_AGENT_WORKING, false);
 

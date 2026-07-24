@@ -8,12 +8,12 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.78** (full-resource Browser and
-  native Agents). The public API marker is
-  `tkb_new-rust-api-2026-07-24-full-resource-agent-v71`, the bridge marker is
-  `tkb-rust-api-v277-full-resource-automatic-budget`, the Browser executor is
+- Current deployed application release: **v1.80** (durable remote saves and
+  green ready-Agent status). The public API marker is
+  `tkb_new-rust-api-2026-07-24-durable-school-store-v72`, the bridge marker is
+  `tkb-rust-api-v278-durable-school-store`, the Browser executor is
   `tkb-browser-wasm-executor-v13-native-full-resource`, and the planner cache is
-  `20260724-v178-native-full-resource-v1`. The unchanged constraints marker is
+  `20260724-v180-durable-store-save-v1`. The unchanged constraints marker is
   `constraints-ui-v38-one-session-responsive-tables`.
 - Current public Agent release: **v1.6.30** (`1.6.30`). The normal owner-Agent
   minimum lease gate is 1.6.30, so 1.6.29 and older stay upgrade-only;
@@ -23,6 +23,69 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.80 durable school-store save (deployed 2026-07-24)
+
+- The Browser Agent indicator now treats enabled readiness as success: enabled
+  and prepared are green, active/working are brighter green, working alone
+  pulses, off/unavailable are gray, and red is reserved for a future truthful
+  error state. Idle copy says the Agent is ready to use the reported Worker
+  count instead of saying it has not connected. The full-resource policy is
+  unchanged: local compute still uses every reported logical CPU when an
+  eligible job starts, while idle Agent state consumes no solver CPU and RAM
+  remains demand-allocated rather than eagerly filled.
+
+- The reported `Remote school store save failed` was not a scheduler failure.
+  Nginx access/error logs show two `POST /api/school/store?id=default` requests
+  returned 502 at 2026-07-24 13:13:03 UTC while `tkb-app` was stopped from
+  13:12:35 through 13:15:05 for a deployment build. The completed timetable
+  reached `applyPayload`, but its required remote commit failed and the generic
+  error mapper mislabeled that persistence outage as a sorting error.
+- Shared remote storage now serializes writes per school, deduplicates identical
+  concurrent payloads, and retries transport failures plus HTTP 408/425/429/5xx
+  responses with bounded exponential backoff for up to 180 seconds. HTTP
+  401/403 still enters the existing one-shot auth recovery immediately, and
+  permanent 4xx validation failures are not retried. The awaited solver-result
+  save therefore remains the commit point, so a result is not settled or lost
+  while VPS persistence is temporarily unavailable.
+- The bridge maps an exhausted remote-store commit to the truthful warning
+  `Đã xếp xong nhưng chưa lưu được`; it states that the canonical result remains
+  on the VPS and can be reattached after connectivity returns. It no longer
+  displays the raw English persistence exception as `Có lỗi khi sắp xếp`.
+- The Rust school-store endpoint no longer ignores SQLite write errors and then
+  returns false success. A database write failure now logs server-side and
+  returns retryable HTTP 503 with `school_store_write_failed`.
+- Update deployment now prepares npm/Cargo artifacts before gating/stopping the
+  live app and installs Python requirements after solver drain but before the
+  stop. The offline cutover contains only state backup, source/runtime copy and
+  restart. Candidate mail dependencies have a dedicated rollback stage, while
+  database and Agent-package protection remains unchanged. This removes the
+  observed multi-minute app outage from future builds.
+- Deployed markers are API
+  `tkb_new-rust-api-2026-07-24-durable-school-store-v72`, bridge
+  `tkb-rust-api-v278-durable-school-store`, shared storage
+  `remote-save-retry-v1`, and page cache
+  `20260724-v180-durable-store-save-v1`. Browser executor and native Agent are
+  unchanged.
+- Verification passes full Node **357/357** (including bridge/storage
+  **236/236**), deployment packaging **13/13**, remote Rust API **186/186**,
+  validator **38/38**, remote `bash -n`, JavaScript syntax and
+  `git diff --check`. Isolated VPS staging also passes scheduler **222/222**,
+  Agent **152/152**, trusted worker **5/5**, Rust API **186/186**, and validator
+  **38/38**, ending with `STAGING_TESTS_OK`.
+- Transactional production deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260724-133825.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260724-133825.tar.gz`. A public
+  health probe sampled 901 times at roughly four checks per second across the
+  full deployment. Only four consecutive 502 responses occurred from
+  20:41:16.104 through 20:41:17.270 local time, reducing the offline cutover
+  from the previous 150 seconds to about 1.2 seconds. The new client retry
+  window safely covers that cutover.
+- Signed-in in-app Browser acceptance loaded the v1.80 storage, planner and
+  bridge cache URLs, showed the enabled 22-Worker Agent dot as
+  `rgb(22, 163, 74)`, kept idle progress hidden, and reported no console warning
+  or error. Public health is idle with zero active/queued jobs and `6/6` VPS
+  worker tokens.
 
 ### v1.78 full-resource native Agent (deployed 2026-07-24)
 
@@ -4127,17 +4190,17 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-24: `UPDATE_OK` for
-application v1.78. Public health serves
-`tkb_new-rust-api-2026-07-24-full-resource-agent-v71`; the page serves
-`20260724-v178-native-full-resource-v1`, bridge marker
-`tkb-rust-api-v277-full-resource-automatic-budget`, and Browser executor
+application v1.80. Public health serves
+`tkb_new-rust-api-2026-07-24-durable-school-store-v72`; the page serves
+`20260724-v180-durable-store-save-v1`, bridge marker
+`tkb-rust-api-v278-durable-school-store`, and Browser executor
 `tkb-browser-wasm-executor-v13-native-full-resource`. The public WASM is
 1,106,828 bytes and matches SHA-256
 `99627656c515211a404b1148cd367284449c94b9051447b4b855ff62d70a0f8d`.
 Public health is idle with zero active/queued jobs and `6/6` worker tokens.
 Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260724-124144.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260724-124144.tar.gz`.
+`/opt/cherry-scheduler-backups/server-state-20260724-133825.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260724-133825.tar.gz`.
 Public Agent release `1.6.30` and its signed manifest are live. The 88,053,147
 byte archive SHA-256 is
 `20e5f973cf6af2b0bd272ce703885e47b66f2cbf79671d66b378e6120616d321`; the

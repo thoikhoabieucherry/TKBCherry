@@ -7295,9 +7295,9 @@ function browserAgentLabel(state){
   if(state?.probed) return `Agent đã nạp WASM bằng ${workers} Worker và đang chờ kết nối. Hiện chưa dùng CPU để xếp.`;
   if(state?.available && state?.enabled){
     if(Number(state?.localAcceptedResults || 0) > 0){
-      return `Agent đang bật; lượt gần nhất đã xử lý cục bộ bằng ${workers} Worker. Hiện đang nghỉ; bấm để dùng VPS.`;
+      return `Agent đã bật, sẵn sàng dùng ${workers} Worker CPU/RAM; lượt gần nhất đã xử lý cục bộ trên thiết bị. Bấm để dùng VPS.`;
     }
-    return `Agent đang bật nhưng chưa kết nối; sẽ dùng ${workers} Worker CPU/RAM khi bắt đầu lượt xếp phù hợp. Bấm để dùng VPS.`;
+    return `Agent đã bật, sẵn sàng dùng ${workers} Worker CPU/RAM khi có lượt xếp phù hợp. Bấm để dùng VPS.`;
   }
   return state?.available ? BROWSER_AGENT_OFF_LABEL : BROWSER_AGENT_UNAVAILABLE_LABEL;
 }
