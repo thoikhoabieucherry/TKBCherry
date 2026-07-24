@@ -244,6 +244,7 @@ function createProgressDocument(clock){
   const pct = makeNode("autoSortProgressPct", {textContent:"0%"});
   const track = makeNode("autoSortProgressTrack");
   const label = makeNode("autoSortProgressLabel");
+  const metric = makeNode("autoSortProgressMetric", {hidden:true});
   const home = makeNode("btnHome");
   const duration = makeNode("solveDurationSeconds");
   duration.value = "";
@@ -251,6 +252,7 @@ function createProgressDocument(clock){
   wrap.querySelector = selector => {
     if(selector === ".auto-sort-track") return track;
     if(selector === ".auto-sort-label") return label;
+    if(selector === ".auto-sort-metric") return metric;
     return null;
   };
 
@@ -266,7 +268,7 @@ function createProgressDocument(clock){
       appendChild(child){ if(child?.id) nodes.set(String(child.id), child); return child; }
     }
   };
-  return {document, nodes, events, button, wrap, fill, pct, track, label, home, duration};
+  return {document, nodes, events, button, wrap, fill, pct, track, label, metric, home, duration};
 }
 
 function installRealPlannerProgressUi(window, progress){
@@ -1087,6 +1089,11 @@ test("result-apply progress keeps updating the visible elapsed time", () => {
   const labelBody = BRIDGE_SOURCE.slice(labelStart, labelEnd);
   assert.match(labelBody, /const elapsed = formatLiveDuration\(elapsedSeconds\);[\s\S]*?metricProgressCurrentLabel\(progressState\?\.metricProgress\)/);
   assert.doesNotMatch(labelBody, /backendProgressStageLabel\(/);
+  const displayStart = BRIDGE_SOURCE.indexOf("function progressDisplayParts", labelStart);
+  const displayEnd = BRIDGE_SOURCE.indexOf("function stopProgressTicker", displayStart);
+  const displayBody = BRIDGE_SOURCE.slice(displayStart, displayEnd);
+  assert.match(displayBody, /elapsedLabel:formatLiveDuration\(elapsedSeconds\)/);
+  assert.match(displayBody, /metricLabel:progressUsesWorkMetrics/);
 
   const tickStart = BRIDGE_SOURCE.indexOf("function tickEstimatedProgress");
   const tickEnd = BRIDGE_SOURCE.indexOf("function startProgressTicker", tickStart);
@@ -2365,6 +2372,8 @@ test("metric progress uses work quality rather than elapsed time", () => {
   assert.equal(hooks.metricProgressPercent("teacher_sessions", 469, 432, 509), 92);
   assert.equal(hooks.metricProgressPercent("teacher_gap2_sessions", 0, 0, 7), 100);
   assert.equal(hooks.metricProgressPercent("teacher_gap1_sessions", 34, 0, 68), 50);
+  assert.equal(hooks.metricProgressPercent("teacher_gap_sessions", 9, 0, 10), 10);
+  assert.equal(hooks.metricProgressPercent("teacher_gap_sessions", 0, 0, 10), 100);
 
   const normalized = hooks.normalizeMetricProgressSnapshot({
     optimizationFocus:"teacher_sessions",
@@ -2391,14 +2400,14 @@ test("metric progress uses work quality rather than elapsed time", () => {
     metricBaseline:8
   }), "3 bu\u1ed5i 1 ti\u1ebft");
   assert.equal(hooks.metricProgressCurrentLabel({
-    optimizationFocus:"teacher_gap1_sessions",
+    optimizationFocus:"teacher_gap_sessions",
     metricCurrent:34,
     metricTarget:0,
     metricBaseline:68
   }), "34 ti\u1ebft tr\u1ed1ng");
 });
 
-test("gap progress keeps separate baselines from the latest Quick across repeated optimization", () => {
+test("gap progress combines the latest Quick gap baselines across repeated optimization", () => {
   const data = makeData(2);
   const subject = data.mon[0].ten;
   data.tkb = {
@@ -2443,10 +2452,10 @@ test("gap progress keeps separate baselines from the latest Quick across repeate
     data,
     2
   );
-  assert.equal(gap2Plan.settings.ui_progress_metric_focus, "teacher_gap2_sessions");
-  assert.equal(gap2Plan.settings.ui_progress_metric_current, 3);
-  assert.equal(gap2Plan.settings.ui_progress_metric_baseline, 4);
-  assert.equal(gap2Plan.settings.ui_progress_metric_percent, 25);
+  assert.equal(gap2Plan.settings.ui_progress_metric_focus, "teacher_gap_sessions");
+  assert.equal(gap2Plan.settings.ui_progress_metric_current, 12);
+  assert.equal(gap2Plan.settings.ui_progress_metric_baseline, 14);
+  assert.equal(gap2Plan.settings.ui_progress_metric_percent, 14);
   assert.equal(gap2Plan.settings.ui_progress_gap1_baseline, 10);
   assert.equal(gap2Plan.settings.ui_progress_gap2_baseline, 4);
 
@@ -2457,10 +2466,10 @@ test("gap progress keeps separate baselines from the latest Quick across repeate
     data,
     2
   );
-  assert.equal(firstGap1Plan.settings.ui_progress_metric_focus, "teacher_gap1_sessions");
+  assert.equal(firstGap1Plan.settings.ui_progress_metric_focus, "teacher_gap_sessions");
   assert.equal(firstGap1Plan.settings.ui_progress_metric_current, 9);
-  assert.equal(firstGap1Plan.settings.ui_progress_metric_baseline, 10);
-  assert.equal(firstGap1Plan.settings.ui_progress_metric_percent, 10);
+  assert.equal(firstGap1Plan.settings.ui_progress_metric_baseline, 14);
+  assert.equal(firstGap1Plan.settings.ui_progress_metric_percent, 36);
 
   gap1 = 5;
   const repeatedGap1Plan = hooks.applyRequestedSolveModeToPlan(
@@ -2470,8 +2479,8 @@ test("gap progress keeps separate baselines from the latest Quick across repeate
     2
   );
   assert.equal(repeatedGap1Plan.settings.ui_progress_metric_current, 5);
-  assert.equal(repeatedGap1Plan.settings.ui_progress_metric_baseline, 10);
-  assert.equal(repeatedGap1Plan.settings.ui_progress_metric_percent, 50);
+  assert.equal(repeatedGap1Plan.settings.ui_progress_metric_baseline, 14);
+  assert.equal(repeatedGap1Plan.settings.ui_progress_metric_percent, 64);
   const retained = hooks.readGapProgressBaseline(data);
   assert.equal(retained.gap1, 10);
   assert.equal(retained.gap2Plus, 4);
@@ -2544,6 +2553,52 @@ test("gap progress clamps regressions to zero without replacing the Quick baseli
   assert.equal(normalized.percent, 0);
   assert.equal(data.tkbGapProgressBaseline.gap1, 10);
   assert.equal(hooks.metricProgressPercent("teacher_gap1_sessions", 12, 0, 10), 0);
+});
+
+test("live gap progress counts gap-1 and gap-2 sessions against one Quick baseline", () => {
+  const data = makeData(2);
+  data.tkbGapProgressBaseline = {
+    version:1,
+    gap1:8,
+    gap2Plus:2,
+    expectedPeriods:2,
+    updatedAt:"2026-07-24T00:00:00.000Z"
+  };
+  const {window, hooks} = loadBridge(data);
+  hooks.startProgressTicker({
+    auto_sort_mode:"teacher_session_opt",
+    optimization_focus:"gaps",
+    ui_requested_solve_mode:"optimize_gaps",
+    ui_progress_mode:"work",
+    ui_progress_metric_focus:"teacher_gap_sessions",
+    ui_progress_metric_current:10,
+    ui_progress_metric_target:0,
+    ui_progress_metric_baseline:10,
+    ui_progress_metric_percent:0,
+    ui_progress_gap1_baseline:8,
+    ui_progress_gap2_baseline:2
+  }, data);
+
+  hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"gap_cp_sat:metric",
+    executionGeneration:1,
+    sequence:1,
+    elapsedMs:1_000,
+    solveRequestMode:"optimize_gaps",
+    optimizationFocus:"teacher_gap_sessions",
+    metricCurrent:9,
+    metricTarget:0,
+    metricBaseline:9,
+    metricPercent:0,
+    gap1Baseline:8,
+    gap2Baseline:2
+  });
+
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.metricCurrent, 9);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.metricBaseline, 10);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 10);
+  assert.match(window.__TKB_RUST_PROGRESS_STATE.label, /^9 ti\u1ebft tr\u1ed1ng/);
 });
 
 test("live VPS or Agent gap frames are recalculated from the saved Quick baseline", () => {
@@ -2762,9 +2817,9 @@ test("legacy timetable data falls back to the current gap counters", () => {
     data,
     2
   );
-  assert.equal(plan.settings.ui_progress_metric_focus, "teacher_gap2_sessions");
-  assert.equal(plan.settings.ui_progress_metric_current, 2);
-  assert.equal(plan.settings.ui_progress_metric_baseline, 2);
+  assert.equal(plan.settings.ui_progress_metric_focus, "teacher_gap_sessions");
+  assert.equal(plan.settings.ui_progress_metric_current, 8);
+  assert.equal(plan.settings.ui_progress_metric_baseline, 8);
   assert.equal(plan.settings.ui_progress_metric_percent, 0);
   assert.equal(Object.hasOwn(data, "tkbGapProgressBaseline"), false);
 });
@@ -2885,6 +2940,76 @@ test("Quick on an already complete constraint-clean timetable finishes without a
   assert.equal(quickSaveOptions?.awaitRemote, true);
   assert.equal(quickSaveOptions?.suppressHistory, true);
   assert.equal(progress.button.disabled, false);
+});
+
+test("singleton optimization at zero finishes before Agent invitation or VPS solve", async () => {
+  const data = makeData(2);
+  const subject = data.mon[0].ten;
+  data.tkb = {
+    L1:{thu2:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]}}
+  };
+  data.tkbSolverResult = {
+    ok:true,
+    metrics:{
+      scheduled_periods:2,
+      expected_periods:2,
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      teacher_sessions:1,
+      one_period_teacher_sessions:0,
+      gap_distribution:{"0":1}
+    },
+    validation:{hard_ok:true, violations:[]},
+    solver:{runtime_settings:{}}
+  };
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const progress = createProgressDocument(clock);
+  let inviteCalls = 0;
+  let solvePosts = 0;
+  let solverStateCalls = 0;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.includes("/api/solver-state")){
+      solverStateCalls += 1;
+      throw new Error("zero singleton optimization must finish before backend discovery");
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      throw new Error("zero singleton optimization must not create a solver job");
+    }
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    ...clock,
+    document:progress.document
+  });
+  window.maybeInviteAgentBeforeSort = async () => {
+    inviteCalls += 1;
+    return true;
+  };
+  window.calcTeacherTKBStats = () => ({
+    tsBuoiDay:1,
+    soBuoiDay1:0,
+    soBuoiTrong1:4,
+    soBuoiTrong2:2
+  });
+
+  const result = await window.sapXepTheoCheDo("optimize_singletons");
+
+  assert.ok(result);
+  assert.equal(inviteCalls, 0);
+  assert.equal(solvePosts, 0);
+  assert.equal(solverStateCalls, 0);
+  assert.equal(progress.nodes.get("statusMsg").textContent, "Đã xếp xong!");
+  assert.equal(progress.wrap.hidden, true);
+  assert.equal(progress.pct.textContent, "0%");
+  assert.equal(progress.button.disabled, false);
+  assert.notEqual(window.__TKB_RUST_SOLVER_RUNNING, true);
+  assert.notEqual(window.__TKB_SOLVE_UI_BUSY, true);
+  assert.equal(hooks.autoSortPreflightActive(), false);
 });
 
 test("large unified first click uses one bounded 130-second quality-gate search", () => {
@@ -11334,10 +11459,17 @@ test("Quick progress follows scheduled periods and does not advance with time", 
   });
   assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 50);
   assert.equal(window.__TKB_RUST_PROGRESS_STATE.label, "1/2 ti\u1ebft \u00b7 0 gi\u00e2y");
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.elapsedLabel, "0 gi\u00e2y");
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.metricLabel, "1/2 ti\u1ebft");
+  assert.equal(progress.label.textContent, "0 gi\u00e2y");
+  assert.equal(progress.metric.textContent, "1/2 ti\u1ebft");
+  assert.equal(progress.metric.hidden, false);
   clock.advance(30_000);
   hooks.tickEstimatedProgress();
   assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 50);
   assert.equal(window.__TKB_RUST_PROGRESS_STATE.label, "1/2 ti\u1ebft \u00b7 30 gi\u00e2y");
+  assert.equal(progress.label.textContent, "30 gi\u00e2y");
+  assert.equal(progress.metric.textContent, "1/2 ti\u1ebft");
   hooks.recordBackendLiveProgress({
     protocol:"tkb-reference-solver-progress-v1",
     stage:"period_milp:metric",

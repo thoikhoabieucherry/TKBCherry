@@ -1514,31 +1514,15 @@ def _optimization_metric_payload(
         current_gap1 = max(0, _teacher_session_opt_gap1(metrics))
         baseline_gap2 = max(0, _teacher_session_opt_gap2_plus(baseline))
         baseline_gap1 = max(0, _teacher_session_opt_gap1(baseline))
-        # Gap cleanup is explicitly staged: eliminate every severe gap first,
-        # then reduce the remaining one-period gaps. Keep the raw counter tied
-        # to the active stage, but reserve the first half of the progress ring
-        # for gap-2 and the second half for gap-1. This prevents the visible
-        # percent from jumping from 100 back to 0 when the active counter
-        # changes while still avoiding the old mixed, misleading gap count.
-        if current_gap2 > 0:
-            current = current_gap2
-            initial = max(current, baseline_gap2)
-            percent = 0.0 if initial <= 0 else (
-                (initial - current) * 50.0 / initial
-                if baseline_gap2 > 0
-                else 0.0
-            )
-        else:
-            current = current_gap1
-            initial = max(current, baseline_gap1)
-            gap1_percent = 100.0 if current == 0 else (
-                0.0 if initial <= 0 else (initial - current) * 100.0 / initial
-            )
-            percent = (
-                50.0 + gap1_percent * 0.5
-                if baseline_gap2 > 0
-                else gap1_percent
-            )
+        # Keep one stable workload while the solver prioritizes severe gaps:
+        # every session containing either a one-period or a two-plus-period gap.
+        # A Quick baseline of 8 + 2 therefore advances ten percentage points
+        # whenever either counter drops by one.
+        current = current_gap1 + current_gap2
+        initial = baseline_gap1 + baseline_gap2
+        percent = 100.0 if current == 0 else (
+            0.0 if initial <= 0 else (initial - current) * 100.0 / initial
+        )
         target = 0
         baseline_value = initial
 
@@ -1555,11 +1539,7 @@ def _optimization_metric_payload(
         elif kind == "sessions":
             progress_focus = "teacher_sessions"
         else:
-            progress_focus = (
-                "teacher_gap2_sessions"
-                if _teacher_session_opt_gap2_plus(metrics) > 0
-                else "teacher_gap1_sessions"
-            )
+            progress_focus = "teacher_gap_sessions"
     solve_request_mode = {
         "quick_complete": "quick_complete",
         "singletons": "optimize_singletons",
@@ -12307,7 +12287,7 @@ def _solve_two_stage_concrete_refinement(
                         "max_gap2_plus_sessions": checkpoint_gap2_cap,
                     },
                     phase_s_checkpoint_metrics,
-                    metric_kind="gaps",
+                    metric_kind="gaps_gap1",
                     baseline_metrics=phase_s_checkpoint_metrics,
                 )
                 try:
@@ -12319,7 +12299,7 @@ def _solve_two_stage_concrete_refinement(
                         rules=rules,
                         progress=phase_progress(
                             phase_s_checkpoint_metrics,
-                            metric_kind="gaps",
+                            metric_kind="gaps_gap1",
                             baseline_metrics=phase_s_checkpoint_metrics,
                         ),
                         incumbent_payload=phase_s_checkpoint,
@@ -12505,7 +12485,7 @@ def _solve_two_stage_concrete_refinement(
                 "message": "Da hoan tat toi uu tiet trong",
             },
             phase_g_metrics if phase_g_improved else phase_s_checkpoint_metrics,
-            metric_kind="gaps",
+            metric_kind=("gaps_gap1" if phase_g_relaxed_attempted else "gaps"),
             baseline_metrics=phase_s_checkpoint_metrics,
         )
 

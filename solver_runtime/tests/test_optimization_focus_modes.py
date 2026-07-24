@@ -142,9 +142,10 @@ class OptimizationFocusModeTests(unittest.TestCase):
             baseline_metrics={"gap_distribution": {1: 5, 2: 4}},
             metric_kind="gaps",
         )
-        self.assertEqual(gaps["optimizationFocus"], "teacher_gap2_sessions")
+        self.assertEqual(gaps["optimizationFocus"], "teacher_gap_sessions")
         self.assertEqual(gaps["solveRequestMode"], "optimize_gaps")
-        self.assertEqual(gaps["metricCurrent"], 4)
+        self.assertEqual(gaps["metricCurrent"], 9)
+        self.assertEqual(gaps["metricBaseline"], 9)
         self.assertEqual(gaps["metricPercent"], 0.0)
         self.assertLessEqual(gaps["metricPercent"], 100.0)
 
@@ -154,9 +155,9 @@ class OptimizationFocusModeTests(unittest.TestCase):
             baseline_metrics={"gap_distribution": {1: 5, 2: 4}},
             metric_kind="gaps",
         )
-        self.assertEqual(gap2_improved["optimizationFocus"], "teacher_gap2_sessions")
-        self.assertEqual(gap2_improved["metricCurrent"], 2)
-        self.assertEqual(gap2_improved["metricPercent"], 25.0)
+        self.assertEqual(gap2_improved["optimizationFocus"], "teacher_gap_sessions")
+        self.assertEqual(gap2_improved["metricCurrent"], 7)
+        self.assertEqual(gap2_improved["metricPercent"], 22.2)
 
         gap1 = _optimization_metric_payload(
             "gaps",
@@ -164,10 +165,10 @@ class OptimizationFocusModeTests(unittest.TestCase):
             baseline_metrics={"gap_distribution": {1: 5, 2: 4}},
             metric_kind="gaps",
         )
-        self.assertEqual(gap1["optimizationFocus"], "teacher_gap1_sessions")
+        self.assertEqual(gap1["optimizationFocus"], "teacher_gap_sessions")
         self.assertEqual(gap1["metricCurrent"], 3)
-        self.assertEqual(gap1["metricBaseline"], 5)
-        self.assertEqual(gap1["metricPercent"], 70.0)
+        self.assertEqual(gap1["metricBaseline"], 9)
+        self.assertEqual(gap1["metricPercent"], 66.7)
 
         gap1_only = _optimization_metric_payload(
             "gaps",
@@ -175,7 +176,7 @@ class OptimizationFocusModeTests(unittest.TestCase):
             baseline_metrics={"gap_distribution": {1: 5}},
             metric_kind="gaps",
         )
-        self.assertEqual(gap1_only["optimizationFocus"], "teacher_gap1_sessions")
+        self.assertEqual(gap1_only["optimizationFocus"], "teacher_gap_sessions")
         self.assertEqual(gap1_only["metricPercent"], 40.0)
 
         automatic = _optimization_metric_payload(
@@ -791,11 +792,18 @@ class OptimizationFocusModeTests(unittest.TestCase):
         incumbent = _payload(sessions=5, gap1=3, gap2=1)
         bounded = _payload(sessions=5, gap1=1, gap2=1)
         calls: list[dict] = []
+        events: list[dict] = []
 
         def fake_benders(_data, call_settings, **kwargs):
             calls.append({"settings": dict(call_settings), **kwargs})
             if len(calls) == 1:
                 raise RuntimeError("zero gap2 infeasible")
+            kwargs["progress"](
+                {
+                    "stage": "session_cp_sat:metric",
+                    "gap_distribution": {1: 2, 2: 1},
+                }
+            )
             return bounded
 
         with patch(
@@ -806,7 +814,7 @@ class OptimizationFocusModeTests(unittest.TestCase):
                 {},
                 {"optimization_focus": "gaps"},
                 rules=None,
-                progress=None,
+                progress=events.append,
                 deadline=SolverDeadline(90),
                 total_limit=90,
                 incumbent_payload=incumbent,
@@ -825,6 +833,31 @@ class OptimizationFocusModeTests(unittest.TestCase):
         self.assertEqual(metrics["gap_distribution"][1], 1)
         self.assertEqual(reason, "two_stage_gap_cleanup")
         self.assertTrue(attempts[0]["bounded_gap2_fallback"]["attempted"])
+        fallback_events = [
+            event
+            for event in events
+            if event.get("stage")
+            in {
+                "teacher_session_opt:phase_gaps_bounded_fallback",
+                "session_cp_sat:metric",
+                "teacher_session_opt:phase_gaps_done",
+            }
+        ]
+        self.assertGreaterEqual(len(fallback_events), 3)
+        self.assertTrue(
+            all(
+                event["optimizationFocus"] == "teacher_gap_sessions"
+                for event in fallback_events
+            )
+        )
+        live_gap1 = next(
+            event
+            for event in fallback_events
+            if event.get("stage") == "session_cp_sat:metric"
+        )
+        self.assertEqual(live_gap1["metricCurrent"], 3)
+        self.assertEqual(live_gap1["metricBaseline"], 4)
+        self.assertEqual(live_gap1["metricPercent"], 25.0)
         self.assertEqual(
             result["solver"]["two_stage_teacher_optimization"]["selected_phase"],
             "gap_cleanup",

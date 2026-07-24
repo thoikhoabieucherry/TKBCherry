@@ -8,12 +8,12 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.83** (latest-login-wins auth,
-  canonical Quick gap-progress baselines, and concise Agent Hint). The public
-  API marker is `tkb_new-rust-api-2026-07-24-latest-login-wins-v75`, the bridge
-  marker is `tkb-rust-api-v280-canonical-quick-gap-baseline`, the unchanged
+- Current deployed application release: **v1.85** (network-free zero-singleton
+  completion on top of the v1.84 focused progress UI). The
+  public API marker is `tkb_new-rust-api-2026-07-24-focused-progress-v76`, the
+  bridge marker is `tkb-rust-api-v282-immediate-singleton-zero`, the unchanged
   Browser executor is `tkb-browser-wasm-executor-v14-adaptive-workload`, and
-  the planner cache is `20260724-v183-latest-login-wins-v1`. The unchanged
+  the planner cache is `20260724-v185-immediate-singleton-zero-v1`. The unchanged
   constraints marker is `constraints-ui-v38-one-session-responsive-tables`.
 - Current public Agent release: **v1.6.31** (`1.6.31`). The normal owner-Agent
   minimum lease gate is 1.6.31, so 1.6.30 and older stay upgrade-only;
@@ -23,6 +23,50 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.85 network-free zero-singleton completion (deployed 2026-07-24)
+
+- On a complete, hard-valid visible timetable whose `Buoi 1 tiet` counter is
+  already zero, the focused action now returns `Da xep xong!` before remote
+  job discovery. It performs no `/api/solver-state` request, Agent invitation,
+  or solve POST, so a slow/offline VPS cannot add the former 2.5-second delay.
+- The regression test makes `/api/solver-state` fail if called and proves the
+  result still completes synchronously through the existing preflight cleanup.
+  Combined gap progress and all v1.84 solver/API behavior are unchanged.
+- Verification passes full Node **372/372**, bridge **248/248**, focused toolbar
+  and mode tests **34/34**, optimization-focus Python **27/27**, JavaScript
+  syntax through the Node suite, and `git diff --check`.
+- Transactional production deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260724-174341.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260724-174341.tar.gz`.
+
+### v1.84 combined focused progress UI (deployed 2026-07-24)
+
+- Gap optimization keeps one `Tiet trong` action and measures progress against
+  one canonical Quick baseline: `gap-1 sessions + gap-2-or-more sessions`.
+  For example, a Quick baseline of 8 gap-1 sessions plus 2 gap-2 sessions is
+  10 total; reducing either counter so 9 remain reports 10%, and zero reports
+  100%. The solver may still remove gap-2 sessions before gap-1 internally.
+- The combined baseline is carried through the Browser, VPS and native-Agent
+  progress protocols and remains fixed across executor generation handoffs.
+  Every checkpoint recomputes percent from the current combined count; an
+  executor cannot reset the baseline to its latest incumbent.
+- Selecting `Buoi 1 tiet` when the visible complete hard-valid timetable is
+  already at zero returns `Da xep xong!` without creating a VPS or Agent solve
+  job or flashing a fake 0-99% progress run. v1.85 moves this guard ahead of
+  remote job discovery as well.
+- While any solve is active, `Xep nhanh`, `Toi uu`, and every optimization menu
+  item are disabled and visibly muted. `Dung` remains actionable. The compact
+  progress row is ordered as percent, elapsed time, colored live metric, then
+  status text; elapsed time and metric use separate DOM fields.
+- Verification passes full Node **372/372**, bridge **248/248**, toolbar
+  **30/30**, optimization-focus Python **27/27**, and deployment/package pytest
+  **18/18**. Final isolated VPS staging passes scheduler **222/222**, Agent
+  **155/155**, trusted worker **5/5**, Rust API **192/192**, and validator
+  **38/38**, ending with `STAGING_TESTS_OK`.
+- Transactional production deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260724-173134.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260724-173134.tar.gz`.
 
 ### v1.83 latest-login-wins auth and Agent Hint (deployed 2026-07-24)
 
@@ -4303,15 +4347,15 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-24: `UPDATE_OK` for
-application v1.83. Public health serves
-`tkb_new-rust-api-2026-07-24-latest-login-wins-v75`; the page serves
-`20260724-v183-latest-login-wins-v1`, bridge marker
-`tkb-rust-api-v280-canonical-quick-gap-baseline`, and Browser executor
+application v1.85. Public health serves
+`tkb_new-rust-api-2026-07-24-focused-progress-v76`; the page serves
+`20260724-v185-immediate-singleton-zero-v1`, bridge marker
+`tkb-rust-api-v282-immediate-singleton-zero`, and Browser executor
 `tkb-browser-wasm-executor-v14-adaptive-workload`.
 Public health is idle with zero active/queued jobs and `6/6` worker tokens.
 Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260724-164221.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260724-164221.tar.gz`.
+`/opt/cherry-scheduler-backups/server-state-20260724-174341.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260724-174341.tar.gz`.
 Public Agent release `1.6.31` and its signed manifest are live. The 88,054,539
 byte archive SHA-256 is
 `402f4eba12db1b31aa923e0960450855a7314729c90c796889741b31a4aaaa96`; the

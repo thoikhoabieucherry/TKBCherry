@@ -24,7 +24,7 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-24-latest-login-wins-v75";
+const VERSION: &str = "tkb_new-rust-api-2026-07-24-focused-progress-v76";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
@@ -1594,10 +1594,24 @@ fn agent_checkpoint_progress(request_body: &[u8], candidate: &Value) -> Option<V
         .and_then(|data| data.get("tkbSolverResult"))
         .and_then(|result| result.get("metrics"))
         .unwrap_or(metrics);
+    let configured_metric = |key: &str| {
+        settings.get(key).and_then(|value| {
+            value
+                .as_i64()
+                .or_else(|| value.as_u64().and_then(|number| i64::try_from(number).ok()))
+                .or_else(|| value.as_str()?.trim().parse::<i64>().ok())
+                .map(|number| number.max(0))
+        })
+    };
     let (solve_mode, progress_focus, current, target, baseline_value, percent) = match focus {
         "singletons" => {
             let current = metric(metrics, "one_period_teacher_sessions");
-            let baseline = metric(baseline, "one_period_teacher_sessions").max(current);
+            // The browser request carries the click's canonical baseline. Keep it
+            // even when the Agent request body omits the incumbent payload or the
+            // candidate is temporarily worse; otherwise every live checkpoint
+            // resets progress to 0% at the latest count.
+            let baseline = configured_metric("ui_progress_metric_baseline")
+                .unwrap_or_else(|| metric(baseline, "one_period_teacher_sessions"));
             let percent = if current == 0 {
                 100.0
             } else if baseline == 0 {
@@ -1616,7 +1630,8 @@ fn agent_checkpoint_progress(request_body: &[u8], candidate: &Value) -> Option<V
         }
         "sessions" => {
             let current = metric(metrics, "teacher_sessions");
-            let baseline = metric(baseline, "teacher_sessions").max(current);
+            let baseline = configured_metric("ui_progress_metric_baseline")
+                .unwrap_or_else(|| metric(baseline, "teacher_sessions"));
             let target = settings
                 .get("ui_progress_metric_target")
                 .or_else(|| settings.get("target_teacher_sessions"))
@@ -1650,50 +1665,34 @@ fn agent_checkpoint_progress(request_body: &[u8], candidate: &Value) -> Option<V
                 .and_then(Value::as_i64)
                 .unwrap_or_default()
                 .max(0);
-            let baseline_gap2 = metric(baseline, "teacher_gap2_sessions")
-                .max(gap_count(baseline, 2));
-            let baseline_gap1 = baseline
+            let baseline_gap2 = configured_metric("ui_progress_gap2_baseline")
+                .unwrap_or_else(|| {
+                    metric(baseline, "teacher_gap2_sessions").max(gap_count(baseline, 2))
+                });
+            let baseline_gap1 = configured_metric("ui_progress_gap1_baseline")
+                .unwrap_or_else(|| baseline
                 .get("gap_distribution")
                 .and_then(|distribution| distribution.get("1"))
                 .and_then(Value::as_i64)
                 .unwrap_or_default()
-                .max(0);
-            if current_gap2 > 0 {
-                let percent = if baseline_gap2 > 0 {
-                    (baseline_gap2 - current_gap2) as f64 * 50.0 / baseline_gap2 as f64
-                } else {
-                    0.0
-                };
-                (
-                    "optimize_gaps",
-                    "teacher_gap2_sessions",
-                    current_gap2,
-                    0,
-                    baseline_gap2,
-                    percent,
-                )
+                .max(0));
+            let current = current_gap1 + current_gap2;
+            let baseline = baseline_gap1 + baseline_gap2;
+            let percent = if current == 0 {
+                100.0
+            } else if baseline > 0 {
+                (baseline - current) as f64 * 100.0 / baseline as f64
             } else {
-                let gap1_percent = if current_gap1 == 0 {
-                    100.0
-                } else if baseline_gap1 > 0 {
-                    (baseline_gap1 - current_gap1) as f64 * 100.0 / baseline_gap1 as f64
-                } else {
-                    0.0
-                };
-                let percent = if baseline_gap2 > 0 {
-                    50.0 + gap1_percent * 0.5
-                } else {
-                    gap1_percent
-                };
-                (
-                    "optimize_gaps",
-                    "teacher_gap1_sessions",
-                    current_gap1,
-                    0,
-                    baseline_gap1,
-                    percent,
-                )
-            }
+                0.0
+            };
+            (
+                "optimize_gaps",
+                "teacher_gap_sessions",
+                current,
+                0,
+                baseline,
+                percent,
+            )
         }
     };
     Some(json!({
@@ -3476,6 +3475,7 @@ fn solver_initial_work_progress(request: Option<&Value>) -> Option<Value> {
             | "quick_complete"
             | "one_period_teacher_sessions"
             | "teacher_sessions"
+            | "teacher_gap_sessions"
             | "teacher_gap1_sessions"
             | "teacher_gap2_sessions"
     ) {
@@ -7755,34 +7755,67 @@ mod tests {
     }
 
     #[test]
-    fn gap_checkpoint_keeps_the_quick_baseline_when_the_count_regresses() {
+    fn browser_checkpoint_progress_keeps_the_click_baseline_without_incumbent_payload() {
+        let request = json!({
+            "data": {},
+            "settings": {
+                "optimization_focus":"singletons",
+                "ui_progress_metric_focus":"one_period_teacher_sessions",
+                "ui_progress_metric_current":58,
+                "ui_progress_metric_target":0,
+                "ui_progress_metric_baseline":58
+            }
+        });
+        let body = serde_json::to_vec(&request).unwrap();
+        let progress = agent_checkpoint_progress(
+            &body,
+            &json!({"metrics":{"one_period_teacher_sessions":53}}),
+        )
+        .expect("focused checkpoint progress");
+
+        assert_eq!(progress["optimizationFocus"], json!("one_period_teacher_sessions"));
+        assert_eq!(progress["metricCurrent"], json!(53));
+        assert_eq!(progress["metricBaseline"], json!(58));
+        assert_eq!(progress["metricPercent"], json!(8.6));
+    }
+
+    #[test]
+    fn gap_checkpoint_uses_the_combined_quick_baseline() {
         let request = json!({
             "data": {
                 "tkbSolverResult": {
                     "metrics": {
-                        "teacher_gap2_sessions":0,
-                        "gap_distribution":{"1":10}
+                        "teacher_gap2_sessions":2,
+                        "gap_distribution":{"1":8, "2":2}
                     }
                 }
             },
-            "settings": {"optimization_focus":"gaps"}
+            "settings": {
+                "optimization_focus":"gaps",
+                "ui_progress_metric_focus":"teacher_gap_sessions",
+                "ui_progress_metric_current":10,
+                "ui_progress_metric_target":0,
+                "ui_progress_metric_baseline":10,
+                "ui_progress_gap1_baseline":8,
+                "ui_progress_gap2_baseline":2
+            }
         });
         let body = serde_json::to_vec(&request).unwrap();
         let progress = agent_checkpoint_progress(
             &body,
             &json!({
                 "metrics": {
-                    "teacher_gap2_sessions":0,
-                    "gap_distribution":{"1":12}
+                    "teacher_gap2_sessions":2,
+                    "gap_distribution":{"1":7, "2":2}
                 }
             }),
         )
         .expect("gap checkpoint progress");
 
-        assert_eq!(progress["optimizationFocus"], json!("teacher_gap1_sessions"));
-        assert_eq!(progress["metricCurrent"], json!(12));
+        assert_eq!(progress["optimizationFocus"], json!("teacher_gap_sessions"));
+        assert_eq!(progress["metricCurrent"], json!(9));
         assert_eq!(progress["metricBaseline"], json!(10));
-        assert_eq!(progress["metricPercent"], json!(0.0));
+        assert_eq!(progress["metricPercent"], json!(10.0));
     }
 
     #[test]

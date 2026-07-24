@@ -1130,6 +1130,52 @@ impl SolverPool {
                             }
                         }
                     }
+
+                    // Countdown progress is measured from the workload visible
+                    // when the owner clicked Optimize. Executors may rebuild the
+                    // incumbent and report the latest count as a new baseline,
+                    // which would reset the ring to 0%. Keep the request baseline
+                    // canonical across VPS/Agent frames and recompute each update.
+                    let countdown_progress = previous
+                        .get("solveRequestMode")
+                        .and_then(Value::as_str)
+                        .zip(previous.get("optimizationFocus").and_then(Value::as_str))
+                        .is_some_and(|(mode, focus)| {
+                            (mode == "optimize_singletons"
+                                && focus == "one_period_teacher_sessions")
+                                || (mode == "optimize_gaps"
+                                    && focus == "teacher_gap_sessions")
+                        });
+                    if countdown_progress {
+                        if let Some(baseline) = previous.get("metricBaseline") {
+                            object.insert("metricBaseline".to_string(), baseline.clone());
+                        }
+                        let recomputed_percent = {
+                            let metric = |key: &str| {
+                                object
+                                    .get(key)
+                                    .and_then(Value::as_f64)
+                                    .filter(|value| value.is_finite())
+                                    .map(|value| value.max(0.0))
+                            };
+                            metric("metricCurrent")
+                                .zip(metric("metricTarget"))
+                                .zip(metric("metricBaseline"))
+                                .map(|((current, target), baseline)| {
+                                    let percent = if current <= target {
+                                        100.0
+                                    } else if baseline <= target {
+                                        0.0
+                                    } else {
+                                        (baseline - current) * 100.0 / (baseline - target)
+                                    };
+                                    (percent.clamp(0.0, 100.0) * 10.0).round() / 10.0
+                                })
+                        };
+                        if let Some(percent) = recomputed_percent {
+                            object.insert("metricPercent".to_string(), Value::from(percent));
+                        }
+                    }
                 }
             }
             if let Some(protocol) = stamp_protocol {
@@ -2551,6 +2597,113 @@ mod tests {
         assert_eq!(progress["optimizationFocus"], json!("teacher_gap1_sessions"));
         assert_eq!(progress["gap1Baseline"], json!(10));
         assert_eq!(progress["gap2Baseline"], json!(4));
+    }
+
+    #[test]
+    fn canonical_singleton_baseline_survives_executor_checkpoints() {
+        let pool = test_pool();
+        let owner = SolverOwner::new("singleton-progress-school", "admin");
+        assert_eq!(
+            pool.claim_server_job("singleton-progress", &owner),
+            ServerJobClaim::Claimed
+        );
+        assert!(pool.update_server_job_progress(
+            "singleton-progress",
+            json!({
+                "protocol":"tkb-reference-solver-progress-v1",
+                "stage":"request:accepted",
+                "sequence":1,
+                "solveRequestMode":"optimize_singletons",
+                "optimizationFocus":"one_period_teacher_sessions",
+                "metricCurrent":58,
+                "metricTarget":0,
+                "metricBaseline":58,
+                "metricPercent":0
+            })
+        ));
+        let vps = pool
+            .prepare_vps_execution("singleton-progress", &owner)
+            .expect("VPS generation");
+        assert!(pool.update_server_job_progress_frame_fenced(
+            "singleton-progress",
+            vps.generation,
+            "tkb-reference-solver-progress-v1",
+            json!({
+                "stage":"teacher_session_opt:best",
+                "solveRequestMode":"optimize_singletons",
+                "optimizationFocus":"one_period_teacher_sessions",
+                "metricCurrent":53,
+                "metricTarget":0,
+                "metricBaseline":53,
+                "metricPercent":0
+            })
+        ));
+
+        let progress = pool
+            .server_job_snapshots_for_owner(&owner)
+            .into_iter()
+            .next()
+            .and_then(|snapshot| snapshot.progress)
+            .expect("canonical singleton progress");
+        assert_eq!(progress["metricCurrent"], json!(53));
+        assert_eq!(progress["metricBaseline"], json!(58));
+        assert_eq!(progress["metricPercent"], json!(8.6));
+    }
+
+    #[test]
+    fn canonical_combined_gap_baseline_survives_executor_checkpoints() {
+        let pool = test_pool();
+        let owner = SolverOwner::new("gap-progress-school", "admin");
+        assert_eq!(
+            pool.claim_server_job("gap-progress", &owner),
+            ServerJobClaim::Claimed
+        );
+        let vps = pool
+            .prepare_vps_execution("gap-progress", &owner)
+            .expect("VPS generation");
+        assert!(pool.update_server_job_progress_fenced(
+            "gap-progress",
+            vps.generation,
+            json!({
+                "protocol":"tkb-reference-solver-progress-v1",
+                "stage":"request:accepted",
+                "sequence":1,
+                "solveRequestMode":"optimize_gaps",
+                "optimizationFocus":"teacher_gap_sessions",
+                "metricCurrent":10,
+                "metricTarget":0,
+                "metricBaseline":10,
+                "metricPercent":0,
+                "gap1Baseline":8,
+                "gap2Baseline":2
+            })
+        ));
+        assert!(pool.update_server_job_progress_frame_fenced(
+            "gap-progress",
+            vps.generation,
+            "tkb-reference-solver-progress-v1",
+            json!({
+                "stage":"teacher_session_opt:best",
+                "solveRequestMode":"optimize_gaps",
+                "optimizationFocus":"teacher_gap_sessions",
+                "metricCurrent":9,
+                "metricTarget":0,
+                "metricBaseline":9,
+                "metricPercent":0
+            })
+        ));
+
+        let progress = pool
+            .server_job_snapshots_for_owner(&owner)
+            .into_iter()
+            .next()
+            .and_then(|snapshot| snapshot.progress)
+            .expect("canonical gap progress");
+        assert_eq!(progress["metricCurrent"], json!(9));
+        assert_eq!(progress["metricBaseline"], json!(10));
+        assert_eq!(progress["metricPercent"], json!(10.0));
+        assert_eq!(progress["gap1Baseline"], json!(8));
+        assert_eq!(progress["gap2Baseline"], json!(2));
     }
 
     #[test]

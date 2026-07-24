@@ -104,6 +104,13 @@ body.planner-shell .desktop-solve-controls {
     color: #0f172a;
   }
 
+  body.planner-shell .desktop-solve-controls .planner-mode-button.is-auto-sort-disabled,
+  body.planner-shell .planner-optimize-menu > button.is-auto-sort-disabled {
+    opacity: .45;
+    cursor: default;
+    filter: saturate(.6);
+  }
+
   body.planner-shell .desktop-solve-controls .planner-mode-button:focus-visible,
   body.planner-shell .planner-optimize-menu > button:focus-visible {
     outline: 2px solid #2563eb;
@@ -509,6 +516,28 @@ body.planner-shell .toolbar-feedback > #autoSortProgress {
   max-width: none;
 }
 
+body.planner-shell .toolbar-feedback > #autoSortProgress .auto-sort-label {
+  flex: 0 0 auto;
+  color: #475569;
+  font-variant-numeric: tabular-nums;
+}
+
+body.planner-shell .toolbar-feedback > #autoSortProgress .auto-sort-metric {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 18ch;
+  overflow: hidden;
+  color: #7c3aed;
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.planner-shell .toolbar-feedback > #autoSortProgress .auto-sort-metric[hidden] {
+  display: none !important;
+}
+
 body.planner-shell .toolbar-feedback > #statusMsg {
   flex: 1 1 180px;
   width: auto;
@@ -743,7 +772,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     grid-column: 1 / -1;
     grid-row: 2;
     display: grid;
-    grid-template-columns: max-content minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(92px, max-content);
     grid-template-rows: var(--planner-mobile-feedback-h);
     align-items: center;
     gap: 0 8px;
@@ -758,9 +787,10 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   body.planner-shell .toolbar-feedback > #autoSortProgress {
     grid-column: 1;
     grid-row: 1;
-    width: auto;
+    width: 100%;
     min-width: 0;
     max-width: none;
+    overflow: hidden;
   }
 
   body.planner-shell .toolbar-feedback > #autoSortProgress.is-idle {
@@ -768,12 +798,18 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   }
 
   body.planner-shell .toolbar-feedback > #autoSortProgress .auto-sort-label {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    flex: 0 0 auto;
+    min-width: 4ch;
+    overflow: visible;
+    text-overflow: clip;
     white-space: nowrap;
     overflow-wrap: normal;
     font-variant-numeric: tabular-nums;
+  }
+
+  body.planner-shell .toolbar-feedback > #autoSortProgress .auto-sort-metric {
+    flex: 1 1 auto;
+    max-width: min(18ch, 32vw);
   }
 
   body.planner-shell .toolbar-feedback > #statusMsg {
@@ -1379,7 +1415,8 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
           <div id="autoSortProgressFill" class="auto-sort-fill"></div>
           <span id="autoSortProgressPct" class="auto-sort-pct">0%</span>
         </div>
-        <span class="auto-sort-label">Sẵn sàng</span>
+        <span id="autoSortProgressElapsed" class="auto-sort-label auto-sort-elapsed">Sẵn sàng</span>
+        <span id="autoSortProgressMetric" class="auto-sort-metric" hidden></span>
       </div>
       <span id="statusMsg" aria-live="polite"></span>
     </div>
@@ -1504,9 +1541,9 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <div id="tooltip" class="tooltip"></div>
 
 <script src="../shared/school-context.js?v=20260708-sid-only-v3"></script>
-<script src="../shared/auth-api.js?v=20260724-v183-latest-login-wins-v1"></script>
-<script src="../shared/auth.js?v=20260724-v183-latest-login-wins-v1"></script>
-<script src="../shared/runtime.js?v=20260724-v183-latest-login-wins-v1"></script>
+<script src="../shared/auth-api.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
+<script src="../shared/auth.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
+<script src="../shared/runtime.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
 <script src="../shared/school-switcher.js?v=20260708-v1"></script>
 <script src="../shared/storage.js?v=20260724-v180-durable-store-save-v1"></script>
 <script src="../shared/tkb-constants.js?v=20260708-v1"></script>
@@ -1540,7 +1577,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="../kvdb.js?v=20260707-vendor-local-v1"></script>
 <script src="tkb-engine.js?v=20260624-clean-no-solver1"></script>
 <script src="tkb-browser-wasm.js?v=20260724-v181-adaptive-browser-workers-v1"></script>
-<script src="phanmon.js?v=20260724-v183-latest-login-wins-v1"></script>
+<script src="phanmon.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
 <script src="phanmon-ops.js?v=20260617-fixed-legacy1"></script>
 <script src="tkb-constraints.js?v=20260722-v163-one-session-responsive-tables-v1"></script>
 <script src="tkb-constraints-menu.js?v=20260721-v160-click-accordion-scroll-safe-v1"></script>
@@ -1548,7 +1585,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="tkb-export.js?v=20260701-excel-style-v1"></script>
 <script src="tkb-word-export.js?v=20260705-save-picker-v1"></script>
 <script src="tkb-student-excel-export.js?v=20260705-school-wide-prefix-v6"></script>
-  <script src="tkb-rust-bridge.js?v=20260724-v183-latest-login-wins-v1"></script>
+  <script src="tkb-rust-bridge.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
 
 </body>
 </html>

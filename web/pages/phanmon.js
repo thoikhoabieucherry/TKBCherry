@@ -7480,15 +7480,24 @@ function setAutoSortBusyControls(locked){
   const solverStillRunning = window.__TKB_RUST_SOLVER_RUNNING === true
     || window.__TKB_SOLVE_UI_BUSY === true;
   const shouldLock = !!locked || solverStillRunning;
+  const optimizeMenu = document.getElementById("plannerOptimizeMenu");
+  const optimizeToggle = document.getElementById("btnOptimizeMenu");
   const controls = [
     document.getElementById("btnDeleteAll"),
     document.getElementById("btnRangBuoc"),
     document.getElementById("btnUndoTKB"),
     document.getElementById("btnRedoTKB"),
+    document.getElementById("btnQuickComplete"),
+    optimizeToggle,
     document.getElementById("solveDurationSeconds"),
+    ...Array.from(document.querySelectorAll("#plannerOptimizeMenu [role='menuitem']")),
     ...Array.from(document.querySelectorAll(".solver-preset-btn[data-preset]"))
   ].filter(Boolean);
   controls.forEach(el => setAutoSortControlLocked(el, shouldLock));
+  if(shouldLock && optimizeMenu){
+    optimizeMenu.hidden = true;
+    optimizeToggle?.setAttribute("aria-expanded", "false");
+  }
   const presetGroup = document.getElementById("solverPresetGroup");
   if(presetGroup) presetGroup.setAttribute("aria-disabled", shouldLock ? "true" : "false");
   setAutoSortHomeHidden(shouldLock);
@@ -7612,6 +7621,7 @@ function hideAutoSortProgress(options){
     const fill = document.getElementById("autoSortProgressFill");
     const pct = document.getElementById("autoSortProgressPct");
     const text = wrap.querySelector(".auto-sort-label");
+    const metric = wrap.querySelector(".auto-sort-metric");
     if(track){
       track.style.setProperty("--auto-sort-progress", "0deg");
       track.setAttribute("aria-label", "Sẵn sàng");
@@ -7622,12 +7632,17 @@ function hideAutoSortProgress(options){
       text.textContent = "Sẵn sàng";
       text.title = "";
     }
+    if(metric){
+      metric.textContent = "";
+      metric.title = "";
+      metric.hidden = true;
+    }
   }
   setAutoSortStopVisible(false);
   if(!preserveStopRequest) resetAutoSortStopRequest();
 }
 
-function setAutoSortProgress(percent, label){
+function setAutoSortProgress(percent, label, details){
   const sortBtn = document.getElementById("btnAutoSort");
   const solving = window.__TKB_RUST_SOLVER_RUNNING === true || window.__TKB_SOLVE_UI_BUSY === true;
   if(sortBtn && !sortBtn.disabled && !solving){
@@ -7639,6 +7654,7 @@ function setAutoSortProgress(percent, label){
   const pct = document.getElementById("autoSortProgressPct");
   const track = wrap?.querySelector(".auto-sort-track");
   const text = wrap?.querySelector(".auto-sort-label");
+  const metric = wrap?.querySelector(".auto-sort-metric");
   if(!wrap || !fill || !pct) return;
   const n = Math.max(0, Math.min(100, Math.round(Number(percent || 0))));
   const btn = document.getElementById("btnStopAutoSort");
@@ -7665,6 +7681,12 @@ function setAutoSortProgress(percent, label){
   if(text){
     text.textContent = label || "Đang tối ưu";
     text.title = label || "";
+  }
+  if(metric){
+    const metricLabel = String(details?.metricLabel || "").trim();
+    metric.textContent = metricLabel;
+    metric.title = metricLabel;
+    metric.hidden = !metricLabel;
   }
 }
 

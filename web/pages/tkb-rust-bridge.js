@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v280-canonical-quick-gap-baseline";
+  const VERSION = "tkb-rust-api-v282-immediate-singleton-zero";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -3781,9 +3781,13 @@
       persistPendingProgressState();
     }
     const metricProgress = progressState?.metricProgress || null;
+    const elapsedLabel = String(options?.elapsedLabel || label || "");
+    const metricLabel = String(options?.metricLabel || "").trim();
     window.__TKB_RUST_PROGRESS_STATE = Object.assign({}, window.__TKB_RUST_PROGRESS_STATE || {}, {
       percent: n,
       label: String(label || ""),
+      elapsedLabel,
+      metricLabel,
       runIndex:normalizePendingProgressRunIndex(progressState?.runIndex || 1),
       budgetSeconds:normalizePendingProgressSeconds(progressState?.progressBudgetSeconds),
       phase:String(options?.phase || progressState?.phase || ""),
@@ -3801,7 +3805,7 @@
       bestEffortStopPending:progressState?.bestEffortStopPending === true,
       updatedAt: Date.now()
     });
-    callMaybe("setAutoSortProgress", [n, label]);
+    callMaybe("setAutoSortProgress", [n, elapsedLabel, {metricLabel}]);
   }
 
   function hardFinishProgressDom(label, state){
@@ -3827,6 +3831,7 @@
     const pct = document.getElementById("autoSortProgressPct");
     const track = wrap?.querySelector(".auto-sort-track");
     const text = wrap?.querySelector(".auto-sort-label");
+    const metric = wrap?.querySelector(".auto-sort-metric");
     if(!wrap || !fill || !pct) return;
     const currentPct = Number((pct.textContent || "").match(/\d+/)?.[0]);
     const n = needsAttention ? Math.max(1, Math.min(99, Number.isFinite(currentPct) && currentPct > 0 ? currentPct : 99)) : 100;
@@ -3846,6 +3851,11 @@
     if(text){
       text.textContent = needsAttention ? (textValue || (isWarning ? "Chưa đủ" : "Lỗi")) : "Hoàn tất";
       text.title = needsAttention ? (textValue || (isWarning ? "Chưa đủ" : "Lỗi")) : "";
+    }
+    if(metric){
+      metric.textContent = "";
+      metric.title = "";
+      metric.hidden = true;
     }
     try{ callMaybe("setAutoSortStopVisible", [false]); }catch(_){}
     try{ callMaybe("resetAutoSortStopRequest"); }catch(_){}
@@ -3886,6 +3896,7 @@
       const pct = document.getElementById("autoSortProgressPct");
       const track = wrap.querySelector(".auto-sort-track");
       const text = wrap.querySelector(".auto-sort-label");
+      const metric = wrap.querySelector(".auto-sort-metric");
       if(track){
         track.style.setProperty("--auto-sort-progress", "0deg");
         track.setAttribute("aria-label", "Sẵn sàng");
@@ -3895,6 +3906,11 @@
       if(text){
         text.textContent = "Sẵn sàng";
         text.title = "";
+      }
+      if(metric){
+        metric.textContent = "";
+        metric.title = "";
+        metric.hidden = true;
       }
     }
     try{ callMaybe("setAutoSortStopVisible", [false]); }catch(_){}
@@ -4098,10 +4114,10 @@
     settings.ui_progress_gap2_baseline = gap2Baseline;
     configurePlanMetricProgress(
       settings,
-      currentGap2 > 0 ? "teacher_gap2_sessions" : "teacher_gap1_sessions",
-      currentGap2 > 0 ? currentGap2 : currentGap1,
+      "teacher_gap_sessions",
+      currentGap1 + currentGap2,
       0,
-      currentGap2 > 0 ? gap2Baseline : gap1Baseline
+      gap1Baseline + gap2Baseline
     );
     return settings;
   }
@@ -4694,13 +4710,22 @@
     }
 
   function progressLabel(_phase, elapsedSeconds, _backendStage){
-    // Keep the compact control stable: ring, elapsed time, then statusMsg.
-    // Detailed VPS stages remain available in progressState for diagnostics.
+    // Preserve one combined diagnostic label for resume/E2E state. The visible
+    // toolbar receives elapsed and metric as separate fields below.
     const elapsed = formatLiveDuration(elapsedSeconds);
     const metric = progressUsesWorkMetrics(progressState?.settings || {})
       ? metricProgressCurrentLabel(progressState?.metricProgress)
       : "";
     return metric ? `${metric} \u00b7 ${elapsed}` : elapsed;
+  }
+
+  function progressDisplayParts(elapsedSeconds){
+    return {
+      elapsedLabel:formatLiveDuration(elapsedSeconds),
+      metricLabel:progressUsesWorkMetrics(progressState?.settings || {})
+        ? metricProgressCurrentLabel(progressState?.metricProgress)
+        : ""
+    };
   }
 
   function stopProgressTicker(){
@@ -4771,9 +4796,11 @@
         Math.max(4, metricNumber(progressState.lastPercent, 4))
       );
       progressState.lastLabel = progressLabel("result_apply", visibleElapsedSeconds);
+      const displayParts = progressDisplayParts(visibleElapsedSeconds);
       setProgress(applyPercent, progressState.lastLabel, {
         replaceLocalPercent:true,
-        phase:"result_apply"
+        phase:"result_apply",
+        ...displayParts
       });
       return;
     }
@@ -4818,7 +4845,8 @@
       .trim()
       .toLowerCase()
       .replace(/[\s-]+/g, "_");
-    const gapMetricProgress = metricFocus === "teacher_gap1_sessions"
+    const gapMetricProgress = metricFocus === "teacher_gap_sessions"
+      || metricFocus === "teacher_gap1_sessions"
       || metricFocus === "teacher_gap2_sessions";
     // Once the solver publishes a real quality/completion metric, the ring is
     // driven only by that metric. Time remains visible in the compact label but
@@ -4851,7 +4879,11 @@
       visibleElapsedSeconds,
       progressState.backendProgressStage
     );
-    setProgress(percent, progressState.lastLabel, {replaceLocalPercent:true, phase});
+    setProgress(percent, progressState.lastLabel, {
+      replaceLocalPercent:true,
+      phase,
+      ...progressDisplayParts(visibleElapsedSeconds)
+    });
   }
 
   function startProgressTicker(settings, data){
@@ -7682,6 +7714,7 @@
       "gap",
       "gaps",
       "teacher_gaps",
+      "teacher_gap_sessions",
       "teacher_gap1_sessions",
       "teacher_gap2_sessions",
       "optimize_gaps"
@@ -7711,6 +7744,7 @@
     }
     if(
       normalizedFocus === "one_period_teacher_sessions"
+      || normalizedFocus === "teacher_gap_sessions"
       || normalizedFocus === "teacher_gap2_sessions"
       || normalizedFocus === "teacher_gap1_sessions"
       || normalizedFocus === "optimize_singletons"
@@ -7774,7 +7808,11 @@
       return `${current} bu\u1ed5i 1 ti\u1ebft`;
     }
     if(focus === "teacher_gap2_sessions") return `${current} tr\u1ed1ng 2+`;
-    if(focus === "teacher_gap1_sessions" || focus === "optimize_gaps"){
+    if(
+      focus === "teacher_gap_sessions"
+      || focus === "teacher_gap1_sessions"
+      || focus === "optimize_gaps"
+    ){
       return `${current} ti\u1ebft tr\u1ed1ng`;
     }
     return "";
@@ -8787,11 +8825,13 @@
       ?? snapshot.metric_focus
       ?? ""
     ).trim();
-    // Backend normally emits the concrete gap focus. Leave generic focus
-    // untouched because it does not identify gap 1 versus gap 2+.
     const focus = rawFocus || configuredFocus;
     const normalized = focus.toLowerCase().replace(/[\s-]+/g, "_");
-    if(normalized !== "teacher_gap1_sessions" && normalized !== "teacher_gap2_sessions") return snapshot;
+    if(
+      normalized !== "teacher_gap_sessions"
+      && normalized !== "teacher_gap1_sessions"
+      && normalized !== "teacher_gap2_sessions"
+    ) return snapshot;
     const storedBaseline = readGapProgressBaseline(data || getData());
     const frameGap1 = Number(snapshot.gap1Baseline ?? snapshot.gap1_baseline);
     const frameGap2 = Number(snapshot.gap2Baseline ?? snapshot.gap2_baseline);
@@ -8801,9 +8841,13 @@
     const current = Number(snapshot.metricCurrent ?? snapshot.metric_current);
     const target = Number(snapshot.metricTarget ?? snapshot.metric_target);
     if(!Number.isFinite(current) || !Number.isFinite(target)) return snapshot;
-    const baselineValue = normalized === "teacher_gap2_sessions"
-      ? (hasFrameBaseline ? frameGap2 : storedBaseline.gap2Plus)
-      : (hasFrameBaseline ? frameGap1 : storedBaseline.gap1);
+    const baselineValue = normalized === "teacher_gap_sessions"
+      ? (hasFrameBaseline
+          ? frameGap1 + frameGap2
+          : storedBaseline.gap1 + storedBaseline.gap2Plus)
+      : (normalized === "teacher_gap2_sessions"
+          ? (hasFrameBaseline ? frameGap2 : storedBaseline.gap2Plus)
+          : (hasFrameBaseline ? frameGap1 : storedBaseline.gap1));
     const percent = metricProgressPercent(normalized, current, target, baselineValue);
     return Object.assign({}, snapshot, {
       optimizationFocus:normalized,
@@ -15837,10 +15881,10 @@
     settings.ui_progress_gap2_baseline = gap2Baseline;
     configurePlanMetricProgress(
       settings,
-      currentGap2 > 0 ? "teacher_gap2_sessions" : "teacher_gap1_sessions",
-      currentGap2 > 0 ? currentGap2 : currentGap1,
+      "teacher_gap_sessions",
+      currentGap1 + currentGap2,
       0,
-      currentGap2 > 0 ? gap2Baseline : gap1Baseline
+      gap1Baseline + gap2Baseline
     );
     applyFocusedOptimizationCeiling(settings);
     return plan;
@@ -16049,7 +16093,38 @@
       setStatus("Đang có lượt xếp chạy, vui lòng chờ hoàn tất.", "info");
       return null;
     }
-    const existingBackendJob = await inspectExistingBackendJobForManualSolve(getData());
+    const currentData = getData();
+    if(
+      requestedSolveMode === SOLVE_REQUEST_MODES.singletons
+      && currentScheduleAppearsComplete(currentData)
+    ){
+      const visibleMetrics = uiTeacherQualityMetrics(currentData);
+      const hasVisibleSingletonMetric = Object.prototype.hasOwnProperty.call(
+        visibleMetrics,
+        "one_period_teacher_sessions"
+      );
+      if(
+        hasVisibleSingletonMetric
+        && metricNumber(visibleMetrics.one_period_teacher_sessions, 1) === 0
+      ){
+        const retainedPayload = visibleCompleteIncumbentQualityPayload(
+          currentData,
+          currentData?.tkbSolverResult || currentData?.tkbRustSolverResult || null
+        );
+        window.__TKB_SOLVER_LAST_PAYLOAD = retainedPayload;
+        window.__TKB_SOLVER_LAST_RESULT = retainedPayload;
+        window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = SOLVE_COMPLETE_MESSAGE;
+        finishProgress("100%", "ok");
+        setStatus(SOLVE_COMPLETE_MESSAGE, "ok");
+        publishE2EState("done", retainedPayload, {
+          message:SOLVE_COMPLETE_MESSAGE,
+          singletonOptimizationAlreadySatisfied:true
+        });
+        releaseAutoSortButtonSoon();
+        return retainedPayload;
+      }
+    }
+    const existingBackendJob = await inspectExistingBackendJobForManualSolve(currentData);
     if(existingBackendJob?.kind === "auth_required") return null;
     if(existingBackendJob?.kind === "observe"){
       return await observeBackendJob(existingBackendJob.job);

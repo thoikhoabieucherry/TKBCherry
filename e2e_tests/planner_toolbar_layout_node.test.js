@@ -406,8 +406,8 @@ test("portrait planner keeps seven compact mobile slots with stacked history and
     /@media \(max-width:\s*900px\) and \(hover:\s*none\) and \(pointer:\s*coarse\),\s*\(max-width:\s*480px\)/
   );
   assert.match(plannerHtml, /shared\/storage\.js\?v=20260724-v180-durable-store-save-v1/);
-  assert.match(plannerHtml, /phanmon\.js\?v=20260724-v183-latest-login-wins-v1/);
-  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260724-v183-latest-login-wins-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260724-v185-immediate-singleton-zero-v1/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260724-v185-immediate-singleton-zero-v1/);
 });
 
 test("landscape phones separate Undo and Redo into eight full-height slots", () => {
@@ -1208,9 +1208,19 @@ test("sorting keeps Home and the browser Agent indicator in stable slots", () =>
     plannerHtml,
     /#btnHome\.is-auto-sort-disabled\s*\{[^}]*opacity:\s*\.45;[^}]*filter:\s*saturate\(\.6\);/s
   );
+  assert.match(
+    plannerHtml,
+    /\.desktop-solve-controls \.planner-mode-button\.is-auto-sort-disabled,[\s\S]*?\.planner-optimize-menu > button\.is-auto-sort-disabled\s*\{[^}]*opacity:\s*\.45;[^}]*filter:\s*saturate\(\.6\);/s
+  );
   assert.doesNotMatch(plannerHtml, /#btnAgentHelper\.is-auto-sort-disabled/);
   assert.match(busyControls, /getElementById\("btnUndoTKB"\)/);
   assert.match(busyControls, /getElementById\("btnRedoTKB"\)/);
+  assert.match(busyControls, /getElementById\("btnQuickComplete"\)/);
+  assert.match(busyControls, /getElementById\("btnOptimizeMenu"\)/);
+  assert.match(busyControls, /querySelectorAll\("#plannerOptimizeMenu \[role='menuitem'\]"\)/);
+  assert.doesNotMatch(busyControls, /getElementById\("btnStopAutoSort"\)/);
+  assert.match(busyControls, /optimizeMenu\.hidden\s*=\s*true/);
+  assert.match(busyControls, /optimizeToggle\?\.setAttribute\("aria-expanded",\s*"false"\)/);
   assert.match(busyControls, /getElementById\("solveDurationSeconds"\)/);
   assert.match(busyControls, /setAutoSortControlLocked\(el,\s*shouldLock\)/);
 
@@ -1239,8 +1249,14 @@ test("sorting keeps Home and the browser Agent indicator in stable slots", () =>
     btnRedoTKB:makeControl(true),
     btnDeleteAll:makeControl(false),
     btnRangBuoc:makeControl(false),
+    btnQuickComplete:makeControl(false),
+    btnOptimizeMenu:makeControl(false),
+    plannerOptimizeMenu:makeControl(false),
     solveDurationSeconds:makeControl(false)
   };
+  controls.plannerOptimizeMenu.hidden = false;
+  controls.btnOptimizeMenu.setAttribute("aria-expanded", "true");
+  const optimizeItems = [makeControl(false), makeControl(false), makeControl(false)];
   let historyRefreshes = 0;
   const context = {
     navigator:{platform:"Win32", userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
@@ -1261,7 +1277,10 @@ test("sorting keeps Home and the browser Agent indicator in stable slots", () =>
     },
     document:{
       getElementById(id){ return controls[id] || null; },
-      querySelectorAll(){ return []; }
+      querySelectorAll(selector){
+        if(selector === "#plannerOptimizeMenu [role='menuitem']") return optimizeItems;
+        return [];
+      }
     },
     syncAgentHelperVisibility(){ return true; },
     __tkbUpdateHistoryButtons(){ historyRefreshes += 1; }
@@ -1279,6 +1298,11 @@ test("sorting keeps Home and the browser Agent indicator in stable slots", () =>
   assert.equal(controls.btnAgentHelper.getAttribute("aria-hidden"), "false");
   assert.equal(controls.btnUndoTKB.disabled, true);
   assert.equal(controls.btnRedoTKB.disabled, true);
+  assert.equal(controls.btnQuickComplete.disabled, true);
+  assert.equal(controls.btnOptimizeMenu.disabled, true);
+  assert.equal(controls.plannerOptimizeMenu.hidden, true);
+  assert.equal(controls.btnOptimizeMenu.getAttribute("aria-expanded"), "false");
+  assert.equal(optimizeItems.every(item => item.disabled), true);
   assert.equal(controls.solveDurationSeconds.disabled, true);
 
   context.lockBusyControls(false);
@@ -1288,6 +1312,9 @@ test("sorting keeps Home and the browser Agent indicator in stable slots", () =>
   assert.equal(controls.btnAgentHelper.disabled, false);
   assert.equal(controls.btnUndoTKB.disabled, false);
   assert.equal(controls.btnRedoTKB.disabled, true);
+  assert.equal(controls.btnQuickComplete.disabled, false);
+  assert.equal(controls.btnOptimizeMenu.disabled, false);
+  assert.equal(optimizeItems.every(item => item.disabled === false), true);
   assert.equal(controls.solveDurationSeconds.disabled, false);
   assert.equal(historyRefreshes, 1);
 });
@@ -1374,6 +1401,9 @@ test("mobile reserves one stable feedback row so sorting never shifts the timeta
   assert.match(feedback, /id="autoSortProgress"/);
   assert.match(feedback, /id="statusMsg"/);
   assert.ok(feedback.indexOf('id="autoSortProgress"') < feedback.indexOf('id="statusMsg"'));
+  assert.ok(feedback.indexOf('id="autoSortProgressElapsed"') < feedback.indexOf('id="autoSortProgressMetric"'));
+  assert.ok(feedback.indexOf('id="autoSortProgressMetric"') < feedback.indexOf('id="statusMsg"'));
+  assert.match(feedback, /id="autoSortProgressMetric" class="auto-sort-metric" hidden/);
   assert.match(feedback, /id="autoSortProgress" class="auto-sort-progress is-idle"[^>]*aria-hidden="true"[^>]*\shidden(?:\s|>)/);
   assert.match(plannerHtml, /body\.planner-shell\s*\{[^}]*--planner-mobile-feedback-h:\s*46px;[^}]*padding-bottom:\s*0;[^}]*overflow:\s*hidden;/s);
   assert.match(plannerHtml, /\.toolbar-main\s*\{[^}]*grid-template-columns:\s*repeat\(7, minmax\(0, 1fr\)\);[^}]*grid-template-rows:\s*44px var\(--planner-mobile-feedback-h\);/s);
@@ -1388,6 +1418,7 @@ test("mobile reserves one stable feedback row so sorting never shifts the timeta
   assert.doesNotMatch(plannerHtml, /--mobile-progress-text-offset|#statusMsg\s*\{[^}]*grid-row:\s*2;/s);
   assert.match(plannerHtml, /\.toolbar-actions\s*>\s*button,[^}]*flex:\s*0 1 auto;[^}]*width:\s*100%;[^}]*min-width:\s*0;[^}]*max-width:\s*none;[^}]*height:\s*44px;[^}]*min-height:\s*44px;[^}]*touch-action:\s*manipulation;/s);
   assert.match(plannerHtml, /#autoSortProgress \.auto-sort-label\s*\{[^}]*font-variant-numeric:\s*tabular-nums;/s);
+  assert.match(plannerHtml, /#autoSortProgress \.auto-sort-metric\s*\{[^}]*color:\s*#7c3aed;[^}]*font-weight:\s*600;[^}]*text-overflow:\s*ellipsis;/s);
   assert.match(plannerHtml, /\.toolbar-actions\s*>\s*button,[^}]*border:\s*1px solid var\(--tkb-border, #e2e8f0\);[^}]*border-radius:\s*var\(--tkb-radius, 10px\);[^}]*box-shadow:\s*var\(--tkb-shadow,[^;]+\);[^}]*font-size:\s*clamp\(11px, 3\.05vw, 13px\);[^}]*font-weight:\s*600;/s);
   assert.match(plannerHtml, /\.toolbar-actions\s*>\s*button:active:not\(:disabled\),[^}]*transform:\s*translateY\(1px\);[^}]*box-shadow:\s*0 1px 1px rgb\(15 23 42 \/ 8%\);/s);
   assert.match(plannerHtml, /#btnStopAutoSort\s*\{[^}]*padding:\s*0;/s);
