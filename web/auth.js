@@ -8,6 +8,7 @@
   }
 
   const AUTH_RETURN_TO_KEY = "TKB_AUTH_RETURN_TO";
+  const AUTH_NOTICE_KEY = "TKB_AUTH_NOTICE";
 
   function pendingAuthReturnTarget(consume){
     let raw = "";
@@ -22,6 +23,15 @@
       try{ sessionStorage.removeItem(AUTH_RETURN_TO_KEY); }catch(_){ }
     }
     return safe ? target : "";
+  }
+
+  function pendingAuthNotice(){
+    let message = "";
+    try{
+      message = sessionStorage.getItem(AUTH_NOTICE_KEY) || "";
+      sessionStorage.removeItem(AUTH_NOTICE_KEY);
+    }catch(_){ }
+    return String(message || "").trim();
   }
 
   const ctx = A.currentUser();
@@ -94,6 +104,9 @@
     alertEl.hidden = !msg;
     alertEl.className = "auth-alert" + (type ? " is-" + type : "");
   }
+
+  const authNotice = pendingAuthNotice();
+  if(authNotice) showAlert(authNotice, "error");
 
   function showPane(name){
     card.querySelectorAll("[data-pane]").forEach(p => {

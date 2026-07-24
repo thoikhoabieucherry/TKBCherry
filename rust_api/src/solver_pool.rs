@@ -1077,6 +1077,15 @@ impl SolverPool {
             // otherwise every observer temporarily falls back to the 12%
             // admission band even though a complete incumbent is available.
             if let Some(previous) = job.progress.as_ref().and_then(Value::as_object) {
+                // Gap baselines come from the owner's Quick timetable and are
+                // canonical job metadata. Carry them across VPS/Agent
+                // generations and stage switches; executors cannot replace
+                // them with a per-attempt incumbent baseline.
+                for key in ["gap1Baseline", "gap2Baseline"] {
+                    if let Some(value) = previous.get(key) {
+                        object.insert(key.to_string(), value.clone());
+                    }
+                }
                 let identity_matches = ["solveRequestMode", "optimizationFocus"]
                     .iter()
                     .all(|key| {
@@ -2487,6 +2496,61 @@ mod tests {
         assert_eq!(checkpoint["metricCurrent"], json!(134));
         assert!(checkpoint["elapsedMs"].as_u64().is_some());
         assert_eq!(checkpoint["executionGeneration"], json!(agent.generation));
+    }
+
+    #[test]
+    fn canonical_quick_gap_baselines_survive_executor_frames_and_stage_switches() {
+        let pool = test_pool();
+        let owner = SolverOwner::new("gap-progress-school", "admin");
+        assert_eq!(
+            pool.claim_server_job("gap-progress", &owner),
+            ServerJobClaim::Claimed
+        );
+        let vps = pool
+            .prepare_vps_execution("gap-progress", &owner)
+            .expect("VPS generation");
+        assert!(pool.update_server_job_progress_fenced(
+            "gap-progress",
+            vps.generation,
+            json!({
+                "protocol":"tkb-reference-solver-progress-v1",
+                "stage":"request:accepted",
+                "sequence":1,
+                "solveRequestMode":"optimize_gaps",
+                "optimizationFocus":"teacher_gap2_sessions",
+                "metricCurrent":4,
+                "metricTarget":0,
+                "metricBaseline":4,
+                "metricPercent":0,
+                "gap1Baseline":10,
+                "gap2Baseline":4
+            })
+        ));
+        assert!(pool.update_server_job_progress_frame_fenced(
+            "gap-progress",
+            vps.generation,
+            "tkb-reference-solver-progress-v1",
+            json!({
+                "stage":"gap0_cp_sat:best",
+                "solveRequestMode":"optimize_gaps",
+                "optimizationFocus":"teacher_gap1_sessions",
+                "metricCurrent":9,
+                "metricTarget":0,
+                "metricBaseline":9,
+                "metricPercent":0,
+                "gap1Baseline":9,
+                "gap2Baseline":0
+            })
+        ));
+        let progress = pool
+            .server_job_snapshots_for_owner(&owner)
+            .into_iter()
+            .next()
+            .and_then(|snapshot| snapshot.progress)
+            .expect("canonical gap progress");
+        assert_eq!(progress["optimizationFocus"], json!("teacher_gap1_sessions"));
+        assert_eq!(progress["gap1Baseline"], json!(10));
+        assert_eq!(progress["gap2Baseline"], json!(4));
     }
 
     #[test]

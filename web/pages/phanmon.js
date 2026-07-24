@@ -7297,11 +7297,7 @@ function browserAgentLabel(state){
   if(state?.active) return `Agent đã kết nối bằng ${workers} Worker${adaptiveNote} cho lượt này. Bấm để chuyển về VPS.`;
   if(state?.probed) return `Agent đã chuẩn bị ${workers} Worker${adaptiveNote} cho lượt này. Hiện chưa dùng CPU để xếp.`;
   if(state?.available && state?.enabled){
-    if(Number(state?.localAcceptedResults || 0) > 0){
-      const lastWorkers = Math.max(1, Number(state?.lastComputeWorkerCount || workers) || 1);
-      return `Agent đã bật, tự điều chỉnh tối đa ${ceiling} Worker; lượt gần nhất dùng ${lastWorkers} Worker. Bấm để dùng VPS.`;
-    }
-    return `Agent đã bật, tự điều chỉnh tối đa ${ceiling} Worker theo lượt xếp. Bấm để dùng VPS.`;
+    return "Agent đã bật";
   }
   return state?.available ? BROWSER_AGENT_OFF_LABEL : BROWSER_AGENT_UNAVAILABLE_LABEL;
 }

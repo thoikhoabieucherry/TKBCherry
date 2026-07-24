@@ -24,7 +24,7 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-24-adaptive-agent-cpu-v73";
+const VERSION: &str = "tkb_new-rust-api-2026-07-24-latest-login-wins-v75";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
@@ -1651,14 +1651,13 @@ fn agent_checkpoint_progress(request_body: &[u8], candidate: &Value) -> Option<V
                 .unwrap_or_default()
                 .max(0);
             let baseline_gap2 = metric(baseline, "teacher_gap2_sessions")
-                .max(gap_count(baseline, 2))
-                .max(current_gap2);
+                .max(gap_count(baseline, 2));
             let baseline_gap1 = baseline
                 .get("gap_distribution")
                 .and_then(|distribution| distribution.get("1"))
                 .and_then(Value::as_i64)
                 .unwrap_or_default()
-                .max(current_gap1);
+                .max(0);
             if current_gap2 > 0 {
                 let percent = if baseline_gap2 > 0 {
                     (baseline_gap2 - current_gap2) as f64 * 50.0 / baseline_gap2 as f64
@@ -3493,7 +3492,12 @@ fn solver_initial_work_progress(request: Option<&Value>) -> Option<Value> {
     };
     let current = metric("ui_progress_metric_current")?;
     let target = metric("ui_progress_metric_target")?;
-    let baseline = metric("ui_progress_metric_baseline")?.max(current);
+    let baseline_value = metric("ui_progress_metric_baseline")?;
+    let baseline = if solve_mode == "optimize_gaps" {
+        baseline_value
+    } else {
+        baseline_value.max(current)
+    };
     let mut progress = json!({
         "protocol": REFERENCE_PROGRESS_PROTOCOL,
         "stage": "request:accepted",
@@ -3507,6 +3511,15 @@ fn solver_initial_work_progress(request: Option<&Value>) -> Option<Value> {
     });
     if let Some(percent) = metric("ui_progress_metric_percent").map(|value| value.min(100)) {
         progress["metricPercent"] = json!(percent);
+    }
+    if solve_mode == "optimize_gaps" {
+        if let (Some(gap1), Some(gap2)) = (
+            metric("ui_progress_gap1_baseline"),
+            metric("ui_progress_gap2_baseline"),
+        ) {
+            progress["gap1Baseline"] = json!(gap1);
+            progress["gap2Baseline"] = json!(gap2);
+        }
     }
     Some(progress)
 }
@@ -7742,6 +7755,37 @@ mod tests {
     }
 
     #[test]
+    fn gap_checkpoint_keeps_the_quick_baseline_when_the_count_regresses() {
+        let request = json!({
+            "data": {
+                "tkbSolverResult": {
+                    "metrics": {
+                        "teacher_gap2_sessions":0,
+                        "gap_distribution":{"1":10}
+                    }
+                }
+            },
+            "settings": {"optimization_focus":"gaps"}
+        });
+        let body = serde_json::to_vec(&request).unwrap();
+        let progress = agent_checkpoint_progress(
+            &body,
+            &json!({
+                "metrics": {
+                    "teacher_gap2_sessions":0,
+                    "gap_distribution":{"1":12}
+                }
+            }),
+        )
+        .expect("gap checkpoint progress");
+
+        assert_eq!(progress["optimizationFocus"], json!("teacher_gap1_sessions"));
+        assert_eq!(progress["metricCurrent"], json!(12));
+        assert_eq!(progress["metricBaseline"], json!(10));
+        assert_eq!(progress["metricPercent"], json!(0.0));
+    }
+
+    #[test]
     fn bootstrap_issues_a_durable_agent_only_credential() {
         let (app, session_token, owner) = agent_test_app();
         let bootstrap = agent_route(
@@ -10860,6 +10904,26 @@ mod tests {
         assert_eq!(progress["metricTarget"], json!(432));
         assert_eq!(progress["metricBaseline"], json!(654));
         assert_eq!(progress["metricPercent"], json!(66));
+
+        let gap_request = json!({
+            "settings": {
+                "ui_requested_solve_mode": "optimize_gaps",
+                "ui_progress_mode": "work",
+                "ui_progress_metric_focus": "teacher_gap1_sessions",
+                "ui_progress_metric_current": 12,
+                "ui_progress_metric_target": 0,
+                "ui_progress_metric_baseline": 10,
+                "ui_progress_metric_percent": 0,
+                "ui_progress_gap1_baseline": 10,
+                "ui_progress_gap2_baseline": 4
+            }
+        });
+        let gap_progress =
+            solver_initial_work_progress(Some(&gap_request)).expect("gap progress");
+        assert_eq!(gap_progress["metricBaseline"], json!(10));
+        assert_eq!(gap_progress["metricPercent"], json!(0));
+        assert_eq!(gap_progress["gap1Baseline"], json!(10));
+        assert_eq!(gap_progress["gap2Baseline"], json!(4));
 
         let mut automatic = request;
         automatic["settings"]["ui_requested_solve_mode"] = json!("automatic");

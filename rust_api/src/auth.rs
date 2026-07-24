@@ -27,8 +27,7 @@ static LOGIN_LIMITER: LazyLock<Mutex<LoginLimiter>> = LazyLock::new(|| {
         attempts: HashMap::new(),
     })
 });
-// Serializes the active-session check and session creation so two simultaneous
-// login requests cannot both claim the same non-superadmin account.
+// Serializes active-session replacement so the newest successful login wins.
 static SESSION_LOGIN_GUARD: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 // Registration reads and rewrites one registry document. Serialize the whole
 // check-and-create transaction so two simultaneous requests cannot both claim
@@ -405,28 +404,12 @@ fn clear_active_session_if_matches(db: &Db, user_key: &str, token: &str) {
     let _ = db.clear_if_matches(&key, token.trim());
 }
 
-fn active_session_exists(db: &Db, user_key: &str) -> rusqlite::Result<bool> {
-    let key = active_session_key(user_key);
-    let token = db.get(&key)?.unwrap_or_default();
-    let token = token.trim();
-    if token.is_empty() {
-        return Ok(false);
-    }
-
-    let raw = db.get(&session_key(token))?.unwrap_or_default();
-    let session = serde_json::from_str::<Value>(&raw).ok();
-    let valid = session.as_ref().is_some_and(|value| {
-        !session_has_expired(value) && value.get("userId").and_then(Value::as_str) == Some(user_key)
-    });
-    if !valid {
-        db.clear_if_matches(&key, token)?;
-    }
-    Ok(valid)
-}
-
 fn session_is_active(db: &Db, token: &str, session: &Value) -> bool {
     if is_superadmin_session(session) {
         return true;
+    }
+    if session.get("replacedAt").and_then(Value::as_u64).is_some() {
+        return false;
     }
     let user_key = session
         .get("userId")
@@ -475,6 +458,59 @@ pub fn create_session(db: &Db, user_key: &str, user: &Value) -> Option<String> {
                 let _ = db.set(&session_key(&token), "");
                 return None;
             }
+        }
+    }
+    Some(token)
+}
+
+fn create_replacing_session(db: &Db, user_key: &str, user: &Value) -> Option<String> {
+    if user_key == SUPER_ID {
+        return create_session(db, user_key, user);
+    }
+
+    let token = random_token();
+    let expires = now_secs().saturating_add(SESSION_TTL_SECS);
+    let payload = json!({
+        "userId": user_key,
+        "role": user.get("role").cloned().unwrap_or(json!("")),
+        "schoolId": user.get("schoolId").cloned().unwrap_or(json!("")),
+        "displayName": user.get("displayName").cloned().unwrap_or(json!(user_key)),
+        "expiresAt": expires
+    });
+    let new_session_key = session_key(&token);
+    if db
+        .set(
+            &new_session_key,
+            &serde_json::to_string(&payload).unwrap_or_default(),
+        )
+        .is_err()
+    {
+        return None;
+    }
+
+    let active_key = active_session_key(user_key);
+    let previous = db.get(&active_key).ok().flatten().unwrap_or_default();
+    if db.set(&active_key, &token).is_err() {
+        let _ = db.set(&new_session_key, "");
+        return None;
+    }
+    let previous = previous.trim();
+    if !previous.is_empty() && previous != token {
+        let previous_key = session_key(previous);
+        let marked = db
+            .get(&previous_key)
+            .ok()
+            .flatten()
+            .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+            .and_then(|mut value| {
+                value
+                    .as_object_mut()?
+                    .insert("replacedAt".to_string(), json!(now_secs()));
+                serde_json::to_string(&value).ok()
+            })
+            .is_some_and(|value| db.set(&previous_key, &value).is_ok());
+        if !marked {
+            let _ = db.set(&previous_key, "");
         }
     }
     Some(token)
@@ -627,17 +663,7 @@ pub fn login_json(db: &Db, body: &[u8], request_ip: &str) -> Vec<u8> {
 
     clear_login_failures(client_ip);
     let _session_login_guard = SESSION_LOGIN_GUARD.lock().unwrap();
-    if user_key != SUPER_ID && active_session_exists(db, &user_key).unwrap_or(true) {
-        return json_bytes(
-            409,
-            json!({
-                "ok": false,
-                "error": "account_already_logged_in",
-                "message": "Tài khoản này đang được đăng nhập ở nơi khác. Hãy đăng xuất phiên hiện tại trước."
-            }),
-        );
-    }
-    let Some(token) = create_session(db, &user_key, &user) else {
+    let Some(token) = create_replacing_session(db, &user_key, &user) else {
         return json_bytes(
             500,
             json!({"ok": false, "message": "Không tạo được phiên đăng nhập."}),
@@ -686,7 +712,14 @@ pub fn session_json(db: &Db, token: &str) -> Vec<u8> {
     }
     if !session_is_active(db, token, &session) {
         let _ = db.set(&session_key(token), "");
-        return json_bytes(401, json!({"ok": false, "error": "invalid_session"}));
+        return json_bytes(
+            401,
+            json!({
+                "ok": false,
+                "error": "session_replaced",
+                "message": "Tài khoản đã được đăng nhập ở nơi khác."
+            }),
+        );
     }
     json_bytes(200, json!({"ok": true, "session": session}))
 }
@@ -756,7 +789,6 @@ pub fn require_session(db: &Db, auth_token: Option<&str>) -> Option<Value> {
         return None;
     }
     if !session_is_active(db, token, &session) {
-        let _ = db.set(&session_key(token), "");
         return None;
     }
     Some(session)
@@ -1524,6 +1556,25 @@ mod tests {
         let first = create_session(&db, "school_admin_1", &user).expect("first session");
         assert!(create_session(&db, "school_admin_1", &user).is_none());
         assert!(require_session(&db, Some(&first)).is_some());
+    }
+
+    #[test]
+    fn newest_login_replaces_the_previous_ordinary_session() {
+        let db = Db::new(":memory:".into()).expect("in-memory database");
+        let user = json!({
+            "role": "school_admin",
+            "schoolId": "school1",
+            "displayName": "School Admin"
+        });
+        let first = create_session(&db, "school_admin_1", &user).expect("first session");
+        let second =
+            create_replacing_session(&db, "school_admin_1", &user).expect("replacement session");
+
+        assert!(require_session(&db, Some(&first)).is_none());
+        assert!(require_session(&db, Some(&second)).is_some());
+        let response = String::from_utf8(session_json(&db, &first)).expect("session response");
+        assert!(response.starts_with("HTTP/1.1 401"));
+        assert!(response.contains("session_replaced"));
     }
 
     #[test]

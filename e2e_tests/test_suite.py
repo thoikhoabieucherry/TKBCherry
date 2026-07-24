@@ -258,7 +258,7 @@ class TestSuite(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertFalse(data.get("ok"))
 
-    def test_auth_login_rejects_second_active_session_until_logout(self):
+    def test_auth_login_replaces_the_previous_active_session(self):
         login_id = self._auth_login_id("single_session")
         password = "SecurePassword123!"
         _, first_login, first_token = self._register_and_login(login_id, password)
@@ -268,27 +268,25 @@ class TestSuite(unittest.TestCase):
             "password": password,
             "clientIp": ""
         })
-        self.assertEqual(second_status, 409, second_data)
-        self.assertFalse(second_data.get("ok"))
-        self.assertEqual(second_data.get("error"), "account_already_logged_in")
+        self.assertEqual(second_status, 200, second_data)
+        self.assertTrue(second_data.get("ok"))
+        second_token = second_data.get("sessionToken")
+        self.assertNotEqual(second_token, first_login.get("sessionToken"))
 
         first_headers = {"Authorization": f"Bearer {first_token}"}
         session_status, session_data = self._get("/api/auth/session", headers=first_headers)
-        self.assertEqual(session_status, 200, session_data)
-
-        logout_status, logout_data = self._post(
-            "/api/auth/logout", None, headers=first_headers
+        self.assertEqual(session_status, 401, session_data)
+        self.assertEqual(session_data.get("error"), "session_replaced")
+        self.assertEqual(
+            session_data.get("message"),
+            "Tài khoản đã được đăng nhập ở nơi khác."
         )
-        self.assertEqual(logout_status, 200, logout_data)
 
-        retry_status, retry_data = self._post("/api/auth/login", {
-            "loginId": login_id,
-            "password": password,
-            "clientIp": ""
-        })
-        self.assertEqual(retry_status, 200, retry_data)
-        self.assertTrue(retry_data.get("ok"))
-        self.assertNotEqual(retry_data.get("sessionToken"), first_login.get("sessionToken"))
+        second_headers = {"Authorization": f"Bearer {second_token}"}
+        second_session_status, second_session_data = self._get(
+            "/api/auth/session", headers=second_headers
+        )
+        self.assertEqual(second_session_status, 200, second_session_data)
 
     def test_auth_logout_only_releases_its_own_active_session(self):
         login_id = self._auth_login_id("logout_owner")
@@ -311,13 +309,6 @@ class TestSuite(unittest.TestCase):
             "/api/auth/logout", None, headers=first_headers
         )
         self.assertEqual(stale_logout_status, 200)
-        blocked_status, blocked_data = self._post("/api/auth/login", {
-            "loginId": login_id,
-            "password": password,
-            "clientIp": ""
-        })
-        self.assertEqual(blocked_status, 409, blocked_data)
-
         second_headers = {"Authorization": f"Bearer {second_token}"}
         second_session_status, second_session_data = self._get(
             "/api/auth/session", headers=second_headers

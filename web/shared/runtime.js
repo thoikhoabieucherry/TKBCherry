@@ -3,6 +3,7 @@
 
   const HEALTH_URL = "/api/health";
   const AUTH_RETURN_TO_KEY = "TKB_AUTH_RETURN_TO";
+  const AUTH_NOTICE_KEY = "TKB_AUTH_NOTICE";
   let healthTimer = null;
   let authExpiryPromise = null;
 
@@ -55,6 +56,17 @@
     if(!session || !session.sessionToken) return false;
     const live = await api.apiValidateSession(session.sessionToken);
     if(live) return true;
+    const failure = typeof api.getLastSessionFailure === "function"
+      ? api.getLastSessionFailure()
+      : null;
+    if(failure?.error === "session_replaced"){
+      try{
+        sessionStorage.setItem(
+          AUTH_NOTICE_KEY,
+          failure.message || "Tài khoản đã được đăng nhập ở nơi khác."
+        );
+      }catch(_){ }
+    }
     if(A.expireSession) A.expireSession();
     else if(A.logout) await A.logout();
     return false;

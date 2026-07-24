@@ -345,6 +345,7 @@ function loadBridge(data, fetchImpl, runtime = {}){
     TKBAuth: runtime.TKBAuth,
     TKBAuthApi: runtime.TKBAuthApi,
     TKBRuntime: runtime.TKBRuntime,
+    TKBStorage: runtime.TKBStorage,
     document,
     localStorage,
     sessionStorage,
@@ -729,7 +730,7 @@ test("automatic-sort validation preserves stale state without a synchronous fall
 });
 
 test("result application is async, sliced, and never falls back to synchronous validation", () => {
-  const applyStart = BRIDGE_SOURCE.indexOf("async function applyPayload(payload)");
+  const applyStart = BRIDGE_SOURCE.indexOf("async function applyPayload(");
   const applyEnd = BRIDGE_SOURCE.indexOf("async function postSolve", applyStart);
   assert.ok(applyStart >= 0 && applyEnd > applyStart, "async applyPayload body must be extractable");
   const applyBody = BRIDGE_SOURCE.slice(applyStart, applyEnd);
@@ -753,7 +754,7 @@ test("result application is async, sliced, and never falls back to synchronous v
     solveStart
   );
   const solveBody = BRIDGE_SOURCE.slice(solveStart, solveEnd);
-  assert.match(solveBody, /result = await applyPayload\(payload\)/);
+  assert.match(solveBody, /result = await applyPayload\(payload, settings\)/);
 });
 
 test("result application force-saves through the trusted fast path", async () => {
@@ -2397,6 +2398,398 @@ test("metric progress uses work quality rather than elapsed time", () => {
   }), "34 ti\u1ebft tr\u1ed1ng");
 });
 
+test("gap progress keeps separate baselines from the latest Quick across repeated optimization", () => {
+  const data = makeData(2);
+  const subject = data.mon[0].ten;
+  data.tkb = {
+    L1:{thu2:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]}}
+  };
+  data.tkbSolverResult = {
+    metrics:{
+      scheduled_periods:2,
+      expected_periods:2,
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      teacher_sessions:20,
+      one_period_teacher_sessions:0,
+      teacher_gap2_sessions:3,
+      gap_distribution:{"1":9, "2":3}
+    },
+    validation:{hard_ok:true},
+    solver:{runtime_settings:{}}
+  };
+  data.tkbGapProgressBaseline = {
+    version:1,
+    gap1:10,
+    gap2Plus:4,
+    expectedPeriods:2,
+    updatedAt:1_700_000_000_000
+  };
+  let gap1 = 9;
+  let gap2Plus = 3;
+  const {window, hooks} = loadBridge(data);
+  window.calcTeacherTKBStats = () => ({
+    tsBuoiDay:20,
+    soBuoiDay1:0,
+    soBuoiTrong1:gap1,
+    soBuoiTrong2:gap2Plus
+  });
+
+  const gap2Plan = hooks.applyRequestedSolveModeToPlan(
+    hooks.buildAutomaticAutoSortPlan(data),
+    "optimize_gaps",
+    data,
+    2
+  );
+  assert.equal(gap2Plan.settings.ui_progress_metric_focus, "teacher_gap2_sessions");
+  assert.equal(gap2Plan.settings.ui_progress_metric_current, 3);
+  assert.equal(gap2Plan.settings.ui_progress_metric_baseline, 4);
+  assert.equal(gap2Plan.settings.ui_progress_metric_percent, 25);
+  assert.equal(gap2Plan.settings.ui_progress_gap1_baseline, 10);
+  assert.equal(gap2Plan.settings.ui_progress_gap2_baseline, 4);
+
+  gap2Plus = 0;
+  const firstGap1Plan = hooks.applyRequestedSolveModeToPlan(
+    hooks.buildAutomaticAutoSortPlan(data),
+    "optimize_gaps",
+    data,
+    2
+  );
+  assert.equal(firstGap1Plan.settings.ui_progress_metric_focus, "teacher_gap1_sessions");
+  assert.equal(firstGap1Plan.settings.ui_progress_metric_current, 9);
+  assert.equal(firstGap1Plan.settings.ui_progress_metric_baseline, 10);
+  assert.equal(firstGap1Plan.settings.ui_progress_metric_percent, 10);
+
+  gap1 = 5;
+  const repeatedGap1Plan = hooks.applyRequestedSolveModeToPlan(
+    hooks.buildAutomaticAutoSortPlan(data),
+    "optimize_gaps",
+    data,
+    2
+  );
+  assert.equal(repeatedGap1Plan.settings.ui_progress_metric_current, 5);
+  assert.equal(repeatedGap1Plan.settings.ui_progress_metric_baseline, 10);
+  assert.equal(repeatedGap1Plan.settings.ui_progress_metric_percent, 50);
+  const retained = hooks.readGapProgressBaseline(data);
+  assert.equal(retained.gap1, 10);
+  assert.equal(retained.gap2Plus, 4);
+  assert.equal(retained.expectedPeriods, 2);
+  assert.equal(data.tkbGapProgressBaseline.updatedAt, 1_700_000_000_000);
+});
+
+test("gap optimization refreshes a newer Quick baseline from the remote school store", async () => {
+  const data = makeData(2);
+  data.tkbGapProgressBaseline = {
+    version:1,
+    gap1:10,
+    gap2Plus:4,
+    expectedPeriods:2,
+    updatedAt:"2026-07-24T08:00:00.000Z"
+  };
+  const remote = JSON.parse(JSON.stringify(data));
+  remote.tkbGapProgressBaseline = {
+    version:1,
+    gap1:7,
+    gap2Plus:2,
+    expectedPeriods:2,
+    updatedAt:"2026-07-24T09:00:00.000Z"
+  };
+  let requestedSchool = "";
+  const {hooks} = loadBridge(data, null, {
+    location:{search:"?sid=default"},
+    TKBStorage:{
+      async loadRemoteSchoolData(schoolId){
+        requestedSchool = String(schoolId || "");
+        return remote;
+      }
+    }
+  });
+
+  const baseline = await hooks.refreshGapProgressBaselineFromRemote(data);
+  assert.equal(requestedSchool, "default");
+  assert.equal(baseline.gap1, 7);
+  assert.equal(baseline.gap2Plus, 2);
+  assert.equal(data.tkbGapProgressBaseline.updatedAt, "2026-07-24T09:00:00.000Z");
+  assert.match(
+    BRIDGE_SOURCE,
+    /requestedSolveMode === SOLVE_REQUEST_MODES\.gaps[\s\S]*refreshGapProgressBaselineFromRemote\(getData\(\)\)/
+  );
+});
+
+test("gap progress clamps regressions to zero without replacing the Quick baseline", () => {
+  const data = makeData(2);
+  data.tkbGapProgressBaseline = {
+    version:1,
+    gap1:10,
+    gap2Plus:4,
+    expectedPeriods:2,
+    updatedAt:1_700_000_000_000
+  };
+  const {hooks} = loadBridge(data);
+
+  const canonical = hooks.canonicalizeGapProgressSnapshot({
+    optimizationFocus:"teacher-gap1-sessions",
+    metricCurrent:12,
+    metricTarget:0,
+    metricBaseline:12,
+    metricPercent:0
+  }, data);
+  const normalized = hooks.normalizeMetricProgressSnapshot(canonical);
+
+  assert.equal(normalized.focus, "teacher_gap1_sessions");
+  assert.equal(normalized.current, 12);
+  assert.equal(normalized.baseline, 10);
+  assert.equal(normalized.percent, 0);
+  assert.equal(data.tkbGapProgressBaseline.gap1, 10);
+  assert.equal(hooks.metricProgressPercent("teacher_gap1_sessions", 12, 0, 10), 0);
+});
+
+test("live VPS or Agent gap frames are recalculated from the saved Quick baseline", () => {
+  const makeBaselineData = () => {
+    const data = makeData(2);
+    data.tkbGapProgressBaseline = {
+      version:1,
+      gap1:10,
+      gap2Plus:4,
+      expectedPeriods:2,
+      updatedAt:"2026-07-24T00:00:00.000Z"
+    };
+    return data;
+  };
+  const startGapProgress = (data, current) => {
+    const bridge = loadBridge(data);
+    bridge.hooks.startProgressTicker({
+      auto_sort_mode:"teacher_session_opt",
+      optimization_focus:"gaps",
+      ui_requested_solve_mode:"optimize_gaps",
+      ui_progress_mode:"work",
+      ui_progress_metric_focus:"teacher_gap1_sessions",
+      ui_progress_metric_current:current,
+      ui_progress_metric_target:0,
+      ui_progress_metric_baseline:10,
+      ui_progress_metric_percent:bridge.hooks.metricProgressPercent(
+        "teacher_gap1_sessions",
+        current,
+        0,
+        10
+      )
+    }, data);
+    return bridge;
+  };
+
+  const staleObserverData = makeBaselineData();
+  staleObserverData.tkbGapProgressBaseline.gap1 = 99;
+  staleObserverData.tkbGapProgressBaseline.gap2Plus = 44;
+  const improved = startGapProgress(staleObserverData, 10);
+  improved.hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"gap0_cp_sat:best",
+    executionGeneration:1,
+    sequence:1,
+    elapsedMs:1_000,
+    solveRequestMode:"optimize_gaps",
+    optimizationFocus:"teacher_gap1_sessions",
+    metricCurrent:9,
+    metricTarget:0,
+    metricBaseline:9,
+    metricPercent:100,
+    gap1Baseline:10,
+    gap2Baseline:4
+  });
+  assert.equal(improved.window.__TKB_RUST_PROGRESS_STATE.metricCurrent, 9);
+  assert.equal(improved.window.__TKB_RUST_PROGRESS_STATE.metricBaseline, 10);
+  assert.equal(improved.window.__TKB_RUST_PROGRESS_STATE.percent, 10);
+  assert.equal(improved.window.__TKB_RUST_LAST_LIVE_PROGRESS.metricPercent, 10);
+  assert.equal(improved.window.DATA.tkbGapProgressBaseline.gap1, 99);
+
+  const regressed = startGapProgress(makeBaselineData(), 12);
+  regressed.hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"gap0_cp_sat:best",
+    executionGeneration:1,
+    sequence:1,
+    elapsedMs:1_000,
+    solveRequestMode:"optimize_gaps",
+    optimizationFocus:"teacher_gap1_sessions",
+    metricCurrent:12,
+    metricTarget:0,
+    metricBaseline:12,
+    metricPercent:100,
+    gap1Baseline:10,
+    gap2Baseline:4
+  });
+  assert.equal(regressed.window.__TKB_RUST_PROGRESS_STATE.metricCurrent, 12);
+  assert.equal(regressed.window.__TKB_RUST_PROGRESS_STATE.metricBaseline, 10);
+  assert.equal(regressed.window.__TKB_RUST_PROGRESS_STATE.percent, 0);
+  assert.equal(regressed.window.__TKB_RUST_LAST_LIVE_PROGRESS.metricPercent, 0);
+  assert.equal(regressed.window.DATA.tkbGapProgressBaseline.gap1, 10);
+});
+
+test("a new Quick replaces both saved gap baselines and reload keeps them", () => {
+  const data = makeData(2);
+  data.tkbGapProgressBaseline = {
+    version:1,
+    gap1:10,
+    gap2Plus:4,
+    expectedPeriods:2,
+    updatedAt:1_600_000_000_000
+  };
+  const first = loadBridge(data);
+  const saved = first.hooks.rememberQuickGapProgressBaseline(data, {
+    expected_periods:2,
+    gap_distribution:{"1":7, "2":1, "3":2}
+  });
+
+  assert.equal(saved.version, 1);
+  assert.equal(saved.gap1, 7);
+  assert.equal(saved.gap2Plus, 3);
+  assert.equal(saved.expectedPeriods, 2);
+  assert.ok(Date.parse(saved.updatedAt) > 1_600_000_000_000);
+  assert.equal(data.tkbGapProgressBaseline.gap1, saved.gap1);
+  assert.equal(data.tkbGapProgressBaseline.gap2Plus, saved.gap2Plus);
+  assert.equal(data.tkbGapProgressBaseline.expectedPeriods, saved.expectedPeriods);
+  assert.equal(data.tkbGapProgressBaseline.updatedAt, saved.updatedAt);
+
+  const reloaded = loadBridge(data);
+  const reloadedBaseline = reloaded.hooks.readGapProgressBaseline(data);
+  assert.equal(reloadedBaseline.gap1, saved.gap1);
+  assert.equal(reloadedBaseline.gap2Plus, saved.gap2Plus);
+  assert.equal(reloadedBaseline.expectedPeriods, saved.expectedPeriods);
+  assert.equal(reloadedBaseline.updatedAt, saved.updatedAt);
+});
+
+test("applying a Quick result stores its gap baseline before the trusted save", async () => {
+  const {data, payload} = makeLargeApplyFixture(1, 2);
+  payload.metrics.teacher_sessions = 12;
+  payload.metrics.one_period_teacher_sessions = 0;
+  payload.metrics.teacher_gap2_sessions = 3;
+  payload.metrics.gap_distribution = {"1":7, "2":1, "3":2};
+  payload.solver.runtime_settings = {
+    ui_requested_solve_mode:"quick_complete",
+    optimization_focus:"quick_complete"
+  };
+  const {window} = loadBridge(data);
+  let baselineAtSave = null;
+  window.saveStore = () => {
+    baselineAtSave = JSON.parse(JSON.stringify(data.tkbGapProgressBaseline || null));
+    return true;
+  };
+
+  await window.TKBRustAPI.applyPayload(payload);
+
+  assert.equal(baselineAtSave?.gap1, 7);
+  assert.equal(baselineAtSave?.gap2Plus, 3);
+  assert.equal(baselineAtSave?.expectedPeriods, 2);
+  assert.equal(data.tkbGapProgressBaseline.gap1, baselineAtSave.gap1);
+  assert.equal(data.tkbGapProgressBaseline.gap2Plus, baselineAtSave.gap2Plus);
+  assert.equal(data.tkbGapProgressBaseline.expectedPeriods, baselineAtSave.expectedPeriods);
+});
+
+test("failed remote Quick save restores the previous gap baseline", async () => {
+  const {data, payload} = makeLargeApplyFixture(1, 2);
+  data.tkbGapProgressBaseline = {
+    version:1,
+    gap1:10,
+    gap2Plus:4,
+    expectedPeriods:2,
+    updatedAt:"2026-07-24T00:00:00.000Z"
+  };
+  payload.metrics.gap_distribution = {"1":7, "2":3};
+  payload.solver.runtime_settings = {ui_requested_solve_mode:"quick_complete"};
+  const {window} = loadBridge(data);
+  window.saveStore = async () => { throw new Error("remote save failed"); };
+
+  await assert.rejects(window.TKBRustAPI.applyPayload(payload), /remote save failed/);
+  assert.equal(data.tkbGapProgressBaseline.gap1, 10);
+  assert.equal(data.tkbGapProgressBaseline.gap2Plus, 4);
+  assert.equal(data.tkbGapProgressBaseline.updatedAt, "2026-07-24T00:00:00.000Z");
+});
+
+test("Quick baseline uses the applied timetable counters over stale backend metrics", async () => {
+  const {data, payload} = makeLargeApplyFixture(1, 2);
+  payload.metrics.gap_distribution = {"1":7, "2":3};
+  payload.solver.runtime_settings = {ui_requested_solve_mode:"quick_complete"};
+  const {window} = loadBridge(data);
+  window.calcTeacherTKBStats = () => ({
+    tsBuoiDay:12,
+    soBuoiDay1:0,
+    soBuoiTrong1:5,
+    soBuoiTrong2:2
+  });
+  window.saveStore = () => true;
+
+  await window.TKBRustAPI.applyPayload(payload);
+  assert.equal(data.tkbGapProgressBaseline.gap1, 5);
+  assert.equal(data.tkbGapProgressBaseline.gap2Plus, 2);
+});
+
+test("legacy timetable data falls back to the current gap counters", () => {
+  const data = makeData(2);
+  const subject = data.mon[0].ten;
+  data.tkb = {
+    L1:{thu2:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]}}
+  };
+  data.tkbSolverResult = {
+    metrics:{
+      scheduled_periods:2,
+      expected_periods:2,
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      teacher_sessions:20,
+      one_period_teacher_sessions:0,
+      teacher_gap2_sessions:2,
+      gap_distribution:{"1":6, "2":2}
+    },
+    validation:{hard_ok:true},
+    solver:{runtime_settings:{}}
+  };
+  const {window, hooks} = loadBridge(data);
+  window.calcTeacherTKBStats = () => ({
+    tsBuoiDay:20,
+    soBuoiDay1:0,
+    soBuoiTrong1:6,
+    soBuoiTrong2:2
+  });
+
+  assert.equal(hooks.readGapProgressBaseline(data), null);
+  const plan = hooks.applyRequestedSolveModeToPlan(
+    hooks.buildAutomaticAutoSortPlan(data),
+    "optimize_gaps",
+    data,
+    2
+  );
+  assert.equal(plan.settings.ui_progress_metric_focus, "teacher_gap2_sessions");
+  assert.equal(plan.settings.ui_progress_metric_current, 2);
+  assert.equal(plan.settings.ui_progress_metric_baseline, 2);
+  assert.equal(plan.settings.ui_progress_metric_percent, 0);
+  assert.equal(Object.hasOwn(data, "tkbGapProgressBaseline"), false);
+});
+
+test("changed lesson demand ignores an old Quick baseline until the next Quick", () => {
+  const data = makeData(3);
+  data.tkbGapProgressBaseline = {
+    version:1,
+    gap1:10,
+    gap2Plus:4,
+    expectedPeriods:2,
+    updatedAt:"2026-07-24T00:00:00.000Z"
+  };
+  const {hooks} = loadBridge(data);
+
+  assert.equal(hooks.readGapProgressBaseline(data), null);
+  assert.equal(data.tkbGapProgressBaseline.gap1, 10);
+  assert.equal(data.tkbGapProgressBaseline.expectedPeriods, 2);
+
+  data.tkbGapProgressBaseline.expectedPeriods = 0;
+  assert.equal(hooks.readGapProgressBaseline(data), null);
+  delete data.tkbGapProgressBaseline.expectedPeriods;
+  assert.equal(hooks.readGapProgressBaseline(data), null);
+});
+
 test("Quick on an already complete constraint-clean timetable finishes without a VPS solve", async () => {
   const data = makeData(2);
   const subject = data.mon[0].ten;
@@ -2464,6 +2857,19 @@ test("Quick on an already complete constraint-clean timetable finishes without a
     soBuoiTrong1:0,
     soBuoiTrong2:0
   });
+  window.calcTeacherTKBStats = () => ({
+    tsBuoiDay:1,
+    soBuoiDay1:0,
+    soBuoiTrong1:3,
+    soBuoiTrong2:2
+  });
+  let quickBaselineAtSave = null;
+  let quickSaveOptions = null;
+  window.saveStore = options => {
+    quickBaselineAtSave = JSON.parse(JSON.stringify(data.tkbGapProgressBaseline || null));
+    quickSaveOptions = JSON.parse(JSON.stringify(options || null));
+    return true;
+  };
 
   const result = await window.sapXepTheoCheDo("quick_complete");
 
@@ -2471,6 +2877,13 @@ test("Quick on an already complete constraint-clean timetable finishes without a
   assert.equal(solvePosts, 0);
   assert.equal(hooks.countScheduledLessons(data), 2);
   assert.equal(progress.nodes.get("statusMsg").textContent, "Đã xếp xong!");
+  assert.equal(data.tkbGapProgressBaseline?.gap1, 3);
+  assert.equal(data.tkbGapProgressBaseline?.gap2Plus, 2);
+  assert.equal(data.tkbGapProgressBaseline?.expectedPeriods, 2);
+  assert.equal(quickBaselineAtSave?.gap1, 3);
+  assert.equal(quickBaselineAtSave?.gap2Plus, 2);
+  assert.equal(quickSaveOptions?.awaitRemote, true);
+  assert.equal(quickSaveOptions?.suppressHistory, true);
   assert.equal(progress.button.disabled, false);
 });
 

@@ -8,21 +8,78 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.81** (adaptive local CPU and
-  demand-allocated RAM). The public API marker is
-  `tkb_new-rust-api-2026-07-24-adaptive-agent-cpu-v73`, the bridge marker is
-  `tkb-rust-api-v278-durable-school-store`, the Browser executor is
-  `tkb-browser-wasm-executor-v14-adaptive-workload`, and the planner cache is
-  `20260724-v181-adaptive-browser-workers-v1`. The unchanged constraints marker is
-  `constraints-ui-v38-one-session-responsive-tables`.
+- Current deployed application release: **v1.83** (latest-login-wins auth,
+  canonical Quick gap-progress baselines, and concise Agent Hint). The public
+  API marker is `tkb_new-rust-api-2026-07-24-latest-login-wins-v75`, the bridge
+  marker is `tkb-rust-api-v280-canonical-quick-gap-baseline`, the unchanged
+  Browser executor is `tkb-browser-wasm-executor-v14-adaptive-workload`, and
+  the planner cache is `20260724-v183-latest-login-wins-v1`. The unchanged
+  constraints marker is `constraints-ui-v38-one-session-responsive-tables`.
 - Current public Agent release: **v1.6.31** (`1.6.31`). The normal owner-Agent
   minimum lease gate is 1.6.31, so 1.6.30 and older stay upgrade-only;
   the operator trusted-worker source and release contract remain 1.6.24. The
-  public owner-Agent source and Windows metadata are 1.6.30.
+  public owner-Agent source and Windows metadata are 1.6.31.
 - Every deployed application or packaged Agent update must increment the
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.83 latest-login-wins auth and Agent Hint (deployed 2026-07-24)
+
+- A valid login now replaces the previous ordinary account session under the
+  server login guard. The new device enters immediately; the old session is
+  marked replaced and cannot reclaim the active-session slot later.
+- The old device receives `session_replaced` from `/api/auth/session`, stores a
+  one-shot notice, clears its local session, and returns to the login page with
+  `Tài khoản đã được đăng nhập ở nơi khác.`. Existing logout semantics and
+  unrestricted superadmin sessions remain unchanged.
+- The toolbar keeps the visible label `Agent`. When enabled, its Hint and ARIA
+  label are `Agent đã bật`; compact portrait mobile still uses the existing
+  icon-only CSS. Worker detail remains available for active/working states.
+- Before a Gap optimization click, an already-open device refreshes a newer
+  Quick gap baseline from the canonical school store when the expected lesson
+  count matches. Rust progress no longer raises a canonical Gap baseline to a
+  regressed current count, so a 10-to-12 regression stays at 0%.
+- Verification passes full Node **370/370**. Final isolated VPS staging passes
+  scheduler **222/222**, Agent **155/155**, trusted worker **5/5**, Rust API
+  **189/189**, and validator **38/38**, ending with `STAGING_TESTS_OK`.
+- Final transactional production deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260724-164221.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260724-164221.tar.gz`.
+- Public health serves API v75 with zero active/queued jobs and `6/6` VPS worker
+  tokens. In-app browser acceptance loaded all v183 assets, showed text
+  `Agent` with Hint `Agent đã bật`, and reported no warning or error logs.
+
+### v1.82 canonical gap progress and Agent labels (deployed 2026-07-24)
+
+- Gap optimization progress now uses independent Gap 1 and Gap 2+ baselines
+  captured from the latest successful Quick timetable. For example, reducing a
+  baseline of 10 to 9 reports 10%; increasing to 12 reports 0% without moving
+  the baseline. Repeated optimization keeps the same baselines until a new
+  successful Quick run replaces them.
+- Baselines are persisted in the school store, validated against the expected
+  period count, derived from the timetable actually applied to the UI, and
+  carried as canonical job metadata through reloads, already-open devices,
+  VPS/Agent generation handoffs, and the Gap 2-to-Gap 1 stage switch. Legacy,
+  missing, or malformed metadata falls back to current metrics.
+- Both normal Quick completion and the already-complete Quick path save the new
+  baselines atomically with the timetable. A failed remote save restores the
+  previous baseline. Executor-reported counters cannot overwrite canonical
+  Quick baselines.
+- On desktop and other label-capable layouts, the Agent toolbar button now says
+  `Agent đã bật` when enabled and `Agent đã tắt` when disabled, while retaining
+  detailed Worker information in its tooltip. Compact portrait-mobile layouts
+  intentionally remain icon/dot-only because their CSS hides toolbar text.
+- Verification passes full Node **367/367**. Final isolated VPS staging passes
+  scheduler **222/222**, Agent **155/155**, trusted worker **5/5**, Rust API
+  **187/187**, and validator **38/38**, ending with `STAGING_TESTS_OK`.
+- Final transactional production deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260724-161512.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260724-161512.tar.gz`.
+- Public health serves API v74 with zero active/queued jobs and `6/6` VPS worker
+  tokens. Public HTML serves cache v182; bridge v280 exposes both canonical gap
+  baseline fields, and the live planner asset contains both explicit Agent
+  labels.
 
 ### v1.81 adaptive local resources (deployed 2026-07-24)
 
@@ -4246,17 +4303,15 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-24: `UPDATE_OK` for
-application v1.81. Public health serves
-`tkb_new-rust-api-2026-07-24-adaptive-agent-cpu-v73`; the page serves
-`20260724-v181-adaptive-browser-workers-v1`, bridge marker
-`tkb-rust-api-v278-durable-school-store`, and Browser executor
-`tkb-browser-wasm-executor-v14-adaptive-workload`. The public WASM is
-1,106,828 bytes and matches SHA-256
-`99627656c515211a404b1148cd367284449c94b9051447b4b855ff62d70a0f8d`.
+application v1.83. Public health serves
+`tkb_new-rust-api-2026-07-24-latest-login-wins-v75`; the page serves
+`20260724-v183-latest-login-wins-v1`, bridge marker
+`tkb-rust-api-v280-canonical-quick-gap-baseline`, and Browser executor
+`tkb-browser-wasm-executor-v14-adaptive-workload`.
 Public health is idle with zero active/queued jobs and `6/6` worker tokens.
 Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260724-145424.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260724-145424.tar.gz`.
+`/opt/cherry-scheduler-backups/server-state-20260724-164221.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260724-164221.tar.gz`.
 Public Agent release `1.6.31` and its signed manifest are live. The 88,054,539
 byte archive SHA-256 is
 `402f4eba12db1b31aa923e0960450855a7314729c90c796889741b31a4aaaa96`; the

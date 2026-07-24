@@ -406,8 +406,8 @@ test("portrait planner keeps seven compact mobile slots with stacked history and
     /@media \(max-width:\s*900px\) and \(hover:\s*none\) and \(pointer:\s*coarse\),\s*\(max-width:\s*480px\)/
   );
   assert.match(plannerHtml, /shared\/storage\.js\?v=20260724-v180-durable-store-save-v1/);
-  assert.match(plannerHtml, /phanmon\.js\?v=20260724-v181-adaptive-browser-workers-v1/);
-  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260724-v180-durable-store-save-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260724-v183-latest-login-wins-v1/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260724-v183-latest-login-wins-v1/);
 });
 
 test("landscape phones separate Undo and Redo into eight full-height slots", () => {
@@ -445,15 +445,15 @@ test("browser Agent toggle is cross-platform and sits before Home on desktop and
     "Agent must be the toolbar button immediately before Home"
   );
   assert.match(helperButton, /class="agent-helper-button"[^>]*type="button"/);
-  assert.match(helperButton, /title="Agent [^"]+VPS\."/);
-  assert.match(helperButton, /aria-label="Agent [^"]+VPS\."/);
+  assert.match(helperButton, /title="Agent đã bật"/);
+  assert.match(helperButton, /aria-label="Agent đã bật"/);
   assert.match(helperButton, /data-agent-state="unavailable"/);
   assert.match(helperButton, /class="agent-status-dot"[^>]*aria-hidden="true"/);
   assert.match(helperButton, /onclick="toggleBrowserAgent\(\)"/);
   assert.match(helperButton, /aria-pressed="true"/);
   assert.match(helperButton, /\sdisabled(?:\s|>)/);
   assert.match(helperButton, /aria-disabled="true"/);
-  assert.match(helperButton, /class="toolbar-icon agent-ai-icon"[\s\S]*<span>Agent<\/span><\/button>/);
+  assert.match(helperButton, /class="toolbar-icon agent-ai-icon"[\s\S]*<span class="agent-button-label">Agent<\/span><\/button>/);
   assert.match(helperButton, /\shidden(?:\s|>)/);
   assert.match(helperButton, /aria-hidden="true"/);
   assert.match(plannerSource, /async function downloadAgentHelper\(\)/);
@@ -614,7 +614,7 @@ test("browser Agent indicator shows enabled readiness and reports real compute",
   assert.equal(button.disabled, false);
   assert.equal(button.attributes["aria-hidden"], "false");
   assert.equal(button.dataset.agentState, "enabled");
-  assert.equal(button.title, "Agent đã bật, tự điều chỉnh tối đa 4 Worker theo lượt xếp. Bấm để dùng VPS.");
+  assert.equal(button.title, "Agent đã bật");
   assert.equal(button.attributes["aria-label"], button.title);
   assert.equal(button.attributes["aria-pressed"], "true");
   assert.equal(button.attributes["aria-disabled"], "false");
@@ -647,7 +647,7 @@ test("browser Agent indicator shows enabled readiness and reports real compute",
   executorState.lastComputeWorkerCount = 1;
   assert.equal(await context.refreshIndicator(true), true);
   assert.equal(button.dataset.agentState, "enabled");
-  assert.equal(button.title, "Agent đã bật, tự điều chỉnh tối đa 4 Worker; lượt gần nhất dùng 1 Worker. Bấm để dùng VPS.");
+  assert.equal(button.title, "Agent đã bật");
   assert.equal(context.window.__TKB_BROWSER_AGENT_ACTIVE, false);
   assert.equal(context.window.__TKB_BROWSER_AGENT_WORKING, false);
 

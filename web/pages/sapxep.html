@@ -1386,7 +1386,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
     <div class="toolbar-secondary-actions" aria-label="Điều hướng và thống kê">
       <div class="stats-popover-wrap">
-        <button id="btnAgentHelper" class="agent-helper-button" type="button" title="Agent đang bật; bấm để dùng VPS." aria-label="Agent đang bật; bấm để dùng VPS." aria-pressed="true" onclick="toggleBrowserAgent()" data-agent-state="unavailable" hidden aria-hidden="true" aria-disabled="true" disabled><span class="agent-status-dot" aria-hidden="true"></span><svg class="toolbar-icon agent-ai-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v2"/><rect x="4" y="6" width="16" height="14" rx="4"/><path d="M8 11h.01M16 11h.01M8.5 16c1 .8 2.15 1.2 3.5 1.2s2.5-.4 3.5-1.2"/><path d="m18.5 2 .45 1.05L20 3.5l-1.05.45L18.5 5l-.45-1.05L17 3.5l1.05-.45L18.5 2Z"/></svg><span>Agent</span></button>
+        <button id="btnAgentHelper" class="agent-helper-button" type="button" title="Agent đã bật" aria-label="Agent đã bật" aria-pressed="true" onclick="toggleBrowserAgent()" data-agent-state="unavailable" hidden aria-hidden="true" aria-disabled="true" disabled><span class="agent-status-dot" aria-hidden="true"></span><svg class="toolbar-icon agent-ai-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v2"/><rect x="4" y="6" width="16" height="14" rx="4"/><path d="M8 11h.01M16 11h.01M8.5 16c1 .8 2.15 1.2 3.5 1.2s2.5-.4 3.5-1.2"/><path d="m18.5 2 .45 1.05L20 3.5l-1.05.45L18.5 5l-.45-1.05L17 3.5l1.05-.45L18.5 2Z"/></svg><span class="agent-button-label">Agent</span></button>
         <button id="btnHome" class="primary save-button" type="button" title="Về trang chủ" aria-label="Về trang chủ" onclick="saveAndBack()">Home</button>
         <button id="statsToggle" class="stats-toggle" type="button" onclick="toggleStatsPopover(event)" title="Thống kê thời khóa biểu" aria-label="Thống kê thời khóa biểu" aria-expanded="false"><span class="toolbar-label-full" aria-hidden="true">Thống kê</span><span class="toolbar-label-compact" aria-hidden="true"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M4 20V13h4v7M10 20V9h4v11M16 20V5h4v15M3 20h18"/></svg></span></button>
         <div id="statsPopover" class="stats-popover" hidden>
@@ -1504,9 +1504,9 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <div id="tooltip" class="tooltip"></div>
 
 <script src="../shared/school-context.js?v=20260708-sid-only-v3"></script>
-<script src="../shared/auth-api.js?v=20260713-persistent-session-v1"></script>
-<script src="../shared/auth.js?v=20260721-v157-canonical-progress-v1"></script>
-<script src="../shared/runtime.js?v=20260721-v157-canonical-progress-v1"></script>
+<script src="../shared/auth-api.js?v=20260724-v183-latest-login-wins-v1"></script>
+<script src="../shared/auth.js?v=20260724-v183-latest-login-wins-v1"></script>
+<script src="../shared/runtime.js?v=20260724-v183-latest-login-wins-v1"></script>
 <script src="../shared/school-switcher.js?v=20260708-v1"></script>
 <script src="../shared/storage.js?v=20260724-v180-durable-store-save-v1"></script>
 <script src="../shared/tkb-constants.js?v=20260708-v1"></script>
@@ -1540,7 +1540,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="../kvdb.js?v=20260707-vendor-local-v1"></script>
 <script src="tkb-engine.js?v=20260624-clean-no-solver1"></script>
 <script src="tkb-browser-wasm.js?v=20260724-v181-adaptive-browser-workers-v1"></script>
-<script src="phanmon.js?v=20260724-v181-adaptive-browser-workers-v1"></script>
+<script src="phanmon.js?v=20260724-v183-latest-login-wins-v1"></script>
 <script src="phanmon-ops.js?v=20260617-fixed-legacy1"></script>
 <script src="tkb-constraints.js?v=20260722-v163-one-session-responsive-tables-v1"></script>
 <script src="tkb-constraints-menu.js?v=20260721-v160-click-accordion-scroll-safe-v1"></script>
@@ -1548,7 +1548,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="tkb-export.js?v=20260701-excel-style-v1"></script>
 <script src="tkb-word-export.js?v=20260705-save-picker-v1"></script>
 <script src="tkb-student-excel-export.js?v=20260705-school-wide-prefix-v6"></script>
-  <script src="tkb-rust-bridge.js?v=20260724-v180-durable-store-save-v1"></script>
+  <script src="tkb-rust-bridge.js?v=20260724-v183-latest-login-wins-v1"></script>
 
 </body>
 </html>

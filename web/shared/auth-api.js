@@ -8,6 +8,7 @@
   const SESSION_API = "/api/auth/session";
   const REGISTRY_API = "/api/auth/registry";
   const SESSION_KEY = "TKB_SESSION";
+  let lastSessionFailure = null;
 
   function readSession(){
     let raw = "";
@@ -133,12 +134,25 @@
         headers: getAuthHeaders(),
         cache: "no-store"
       });
-      if(!resp.ok) return null;
       const data = await parseJson(resp);
-      return data && data.ok ? data.session : null;
+      if(!resp.ok || !data || data.ok !== true){
+        lastSessionFailure = {
+          status:Number(resp.status || 0) || 0,
+          error:String(data?.error || ""),
+          message:String(data?.message || "")
+        };
+        return null;
+      }
+      lastSessionFailure = null;
+      return data.session || null;
     }catch(_){
+      lastSessionFailure = null;
       return null;
     }
+  }
+
+  function getLastSessionFailure(){
+    return lastSessionFailure ? Object.assign({}, lastSessionFailure) : null;
   }
 
   async function apiFetchRegistry(){
@@ -219,6 +233,7 @@
     apiRegister,
     apiHashPassword,
     apiValidateSession,
+    getLastSessionFailure,
     apiFetchRegistry,
     apiFetchRegistrySync,
     apiSaveRegistry,

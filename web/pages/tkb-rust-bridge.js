@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v278-durable-school-store";
+  const VERSION = "tkb-rust-api-v280-canonical-quick-gap-baseline";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -32,6 +32,8 @@
       sessions: "optimize_sessions",
       gaps: "optimize_gaps"
     });
+    const GAP_PROGRESS_BASELINE_DATA_KEY = "tkbGapProgressBaseline";
+    const GAP_PROGRESS_BASELINE_VERSION = 1;
     const SOLVER_PRESETS = {
       fast: { label: "Nhanh", bolts: 1 },
       balanced: { label: "Max", bolts: 2 }
@@ -4089,12 +4091,17 @@
 
     const currentGap2 = Math.max(0, gap2PlusCount(metrics));
     const currentGap1 = Math.max(0, gapExactCount(metrics, 1));
+    const gapBaseline = readGapProgressBaseline(safeData);
+    const gap2Baseline = gapBaseline ? gapBaseline.gap2Plus : currentGap2;
+    const gap1Baseline = gapBaseline ? gapBaseline.gap1 : currentGap1;
+    settings.ui_progress_gap1_baseline = gap1Baseline;
+    settings.ui_progress_gap2_baseline = gap2Baseline;
     configurePlanMetricProgress(
       settings,
       currentGap2 > 0 ? "teacher_gap2_sessions" : "teacher_gap1_sessions",
       currentGap2 > 0 ? currentGap2 : currentGap1,
       0,
-      currentGap2 > 0 ? currentGap2 : currentGap1
+      currentGap2 > 0 ? gap2Baseline : gap1Baseline
     );
     return settings;
   }
@@ -4537,6 +4544,8 @@
     delete settings.ui_progress_metric_target;
     delete settings.ui_progress_metric_baseline;
     delete settings.ui_progress_metric_percent;
+    delete settings.ui_progress_gap1_baseline;
+    delete settings.ui_progress_gap2_baseline;
     return settings;
   }
 
@@ -4650,7 +4659,8 @@
         ui_progress_mode:normalizedMode === SOLVE_REQUEST_MODES.automatic ? "time" : "work"
       });
     }
-    const metricProgress = normalizeMetricProgressSnapshot(snapshot);
+    const canonicalProgressSnapshot = canonicalizeGapProgressSnapshot(snapshot, getData());
+    const metricProgress = normalizeMetricProgressSnapshot(canonicalProgressSnapshot);
     if(metricProgress && progressUsesWorkMetrics(progressState.settings || {})){
       progressState.metricProgress = metricProgress;
     }else if(!progressUsesWorkMetrics(progressState.settings || {})){
@@ -4804,15 +4814,23 @@
     const workMetricMode = progressUsesWorkMetrics(progressState.settings || {});
     const metricPercent = Number(progressState.metricProgress?.percent);
     const hasMetricProgress = workMetricMode && Number.isFinite(metricPercent);
+    const metricFocus = String(progressState.metricProgress?.focus || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_");
+    const gapMetricProgress = metricFocus === "teacher_gap1_sessions"
+      || metricFocus === "teacher_gap2_sessions";
     // Once the solver publishes a real quality/completion metric, the ring is
     // driven only by that metric. Time remains visible in the compact label but
     // no longer pretends to be percent-complete.
     const percent = hasMetricProgress
-      ? Math.max(
-          Math.min(SERVER_WAIT_PROGRESS_CAP, lastPercent),
-          Math.min(SERVER_WAIT_PROGRESS_CAP, generationPercentFloor),
-          Math.max(0, Math.min(SERVER_WAIT_PROGRESS_CAP, Math.round(metricPercent)))
-        )
+      ? (gapMetricProgress
+          ? Math.max(0, Math.min(SERVER_WAIT_PROGRESS_CAP, Math.round(metricPercent)))
+          : Math.max(
+              Math.min(SERVER_WAIT_PROGRESS_CAP, lastPercent),
+              Math.min(SERVER_WAIT_PROGRESS_CAP, generationPercentFloor),
+              Math.max(0, Math.min(SERVER_WAIT_PROGRESS_CAP, Math.round(metricPercent)))
+            ))
       : (!workMetricMode
           ? Math.max(lastPercent, Math.max(4, Math.min(cap, estimatedPercent)))
           : Math.max(0, Math.min(PRE_ADMISSION_PROGRESS_CAP, lastPercent)));
@@ -7677,7 +7695,10 @@
     const normalizedFocus = String(focus || "").trim().toLowerCase();
     const currentValue = Math.max(0, Number(current || 0) || 0);
     const targetValue = Math.max(0, Number(target || 0) || 0);
-    const baselineValue = Math.max(currentValue, Number(baseline || 0) || 0);
+    const parsedBaseline = Number(baseline);
+    const baselineValue = Number.isFinite(parsedBaseline)
+      ? Math.max(0, parsedBaseline)
+      : currentValue;
     if(normalizedFocus === "scheduled_periods" || normalizedFocus === "quick_complete"){
       return targetValue > 0
         ? Math.max(0, Math.min(100, Math.round(currentValue * 100 / targetValue)))
@@ -8632,6 +8653,165 @@
 
   function gapExactCount(metrics, targetGap){
     return metricNumber((metrics?.gap_distribution || {})[String(targetGap)], 0);
+  }
+
+  // Gap progress is relative to the most recent Quick timetable, not to the
+  // incumbent at the start of each refinement click. Keep this small marker
+  // in DATA so reloads and other devices use the same denominator.
+  function readGapProgressBaseline(data){
+    const source = data?.[GAP_PROGRESS_BASELINE_DATA_KEY];
+    if(!source || typeof source !== "object" || Array.isArray(source)) return null;
+    const gap1 = Number(source.gap1);
+    const gap2Plus = Number(source.gap2Plus ?? source.gap2_plus);
+    const expectedPeriods = Number(source.expectedPeriods ?? source.expected_periods);
+    if(
+      !Number.isFinite(gap1) || gap1 < 0
+      || !Number.isFinite(gap2Plus) || gap2Plus < 0
+    ) return null;
+    const expected = Math.max(0, Math.round(Number(expectedPeriods) || 0));
+    if(expected <= 0) return null;
+    const currentExpected = Math.max(0, expectedLessonCount(data || getData()));
+    // A changed demand set needs a new Quick anchor. Do not mutate the old
+    // marker here; the next successful Quick click will replace it.
+    if(expected > 0 && currentExpected > 0 && expected !== currentExpected) return null;
+    return {
+      version:Math.max(1, Math.round(Number(source.version || GAP_PROGRESS_BASELINE_VERSION) || GAP_PROGRESS_BASELINE_VERSION)),
+      gap1:Math.max(0, Math.round(gap1)),
+      gap2Plus:Math.max(0, Math.round(gap2Plus)),
+      expectedPeriods:expected,
+      updatedAt:String(source.updatedAt || "")
+    };
+  }
+
+  function gapProgressCountsFromMetrics(metrics){
+    if(!metrics || typeof metrics !== "object" || Array.isArray(metrics)) return null;
+    const distribution = metrics.gap_distribution;
+    const hasDistribution = distribution && typeof distribution === "object" && !Array.isArray(distribution);
+    const gap1Raw = hasDistribution && Object.prototype.hasOwnProperty.call(distribution, "1")
+      ? Number(distribution["1"])
+      : Number(metrics.teacher_gap1_sessions ?? metrics.gap1_sessions);
+    const gap2Raw = hasDistribution
+      ? Object.entries(distribution).reduce((sum, [gap, count]) => (
+          Number(gap) > 1 ? sum + Math.max(0, Number(count) || 0) : sum
+        ), 0)
+      : Number(metrics.teacher_gap2_sessions ?? metrics.gap2_plus_sessions ?? metrics.gap2_sessions);
+    if(!Number.isFinite(gap1Raw) || !Number.isFinite(gap2Raw)) return null;
+    return {
+      gap1:Math.max(0, Math.round(gap1Raw)),
+      gap2Plus:Math.max(0, Math.round(gap2Raw))
+    };
+  }
+
+  function quickGapMetrics(data, payloadOrMetrics){
+    const payloadMetrics = payloadOrMetrics?.metrics && typeof payloadOrMetrics.metrics === "object"
+      ? payloadOrMetrics.metrics
+      : payloadOrMetrics;
+    const visible = uiTeacherQualityMetrics(data || getData());
+    const visibleCounts = gapProgressCountsFromMetrics(visible);
+    const payloadCounts = gapProgressCountsFromMetrics(payloadMetrics);
+    const counts = visibleCounts || payloadCounts;
+    if(!counts) return null;
+    const expectedFromMetrics = Number(payloadMetrics?.expected_periods);
+    const expected = Math.max(
+      0,
+      Math.round(
+        Number.isFinite(expectedFromMetrics) && expectedFromMetrics > 0
+          ? expectedFromMetrics
+          : expectedLessonCount(data || getData())
+      )
+    );
+    return Object.assign({}, counts, {expectedPeriods:expected});
+  }
+
+  function rememberQuickGapProgressBaseline(data, payloadOrMetrics){
+    if(!data || typeof data !== "object") return null;
+    const counts = quickGapMetrics(data, payloadOrMetrics);
+    if(!counts) return null;
+    const expected = Math.max(0, Math.round(Number(counts.expectedPeriods || 0) || 0));
+    if(expected <= 0) return null;
+    const baseline = {
+      version:GAP_PROGRESS_BASELINE_VERSION,
+      gap1:Math.max(0, Math.round(Number(counts.gap1 || 0) || 0)),
+      gap2Plus:Math.max(0, Math.round(Number(counts.gap2Plus || 0) || 0)),
+      expectedPeriods:expected,
+      updatedAt:new Date().toISOString()
+    };
+    data[GAP_PROGRESS_BASELINE_DATA_KEY] = baseline;
+    return clonePlain(baseline);
+  }
+
+  async function refreshGapProgressBaselineFromRemote(data){
+    if(!data || typeof data !== "object") return null;
+    const storage = window.TKBStorage;
+    if(!storage || typeof storage.loadRemoteSchoolData !== "function"){
+      return readGapProgressBaseline(data);
+    }
+    let schoolId = "";
+    try{
+      schoolId = typeof schoolParam !== "undefined" ? String(schoolParam || "") : "";
+    }catch(_){ }
+    if(!schoolId){
+      try{ schoolId = new URLSearchParams(String(location.search || "")).get("sid") || ""; }catch(_){ }
+    }
+    if(!schoolId) return readGapProgressBaseline(data);
+
+    let remote = null;
+    try{ remote = await storage.loadRemoteSchoolData(schoolId); }catch(_){ }
+    const remoteBaseline = readGapProgressBaseline(remote);
+    if(!remoteBaseline) return readGapProgressBaseline(data);
+    const currentExpected = Math.max(0, expectedLessonCount(data));
+    if(currentExpected > 0 && remoteBaseline.expectedPeriods !== currentExpected){
+      return readGapProgressBaseline(data);
+    }
+
+    const localBaseline = readGapProgressBaseline(data);
+    const remoteUpdatedAt = Date.parse(String(remoteBaseline.updatedAt || ""));
+    const localUpdatedAt = Date.parse(String(localBaseline?.updatedAt || ""));
+    if(
+      !localBaseline
+      || (Number.isFinite(remoteUpdatedAt) && (!Number.isFinite(localUpdatedAt) || remoteUpdatedAt > localUpdatedAt))
+    ){
+      data[GAP_PROGRESS_BASELINE_DATA_KEY] = clonePlain(remoteBaseline);
+      return clonePlain(remoteBaseline);
+    }
+    return localBaseline;
+  }
+
+  function canonicalizeGapProgressSnapshot(snapshot, data){
+    if(!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return snapshot;
+    const configuredFocus = String(progressState?.settings?.ui_progress_metric_focus || "").trim();
+    const rawFocus = String(
+      snapshot.optimizationFocus
+      ?? snapshot.optimization_focus
+      ?? snapshot.metricFocus
+      ?? snapshot.metric_focus
+      ?? ""
+    ).trim();
+    // Backend normally emits the concrete gap focus. Leave generic focus
+    // untouched because it does not identify gap 1 versus gap 2+.
+    const focus = rawFocus || configuredFocus;
+    const normalized = focus.toLowerCase().replace(/[\s-]+/g, "_");
+    if(normalized !== "teacher_gap1_sessions" && normalized !== "teacher_gap2_sessions") return snapshot;
+    const storedBaseline = readGapProgressBaseline(data || getData());
+    const frameGap1 = Number(snapshot.gap1Baseline ?? snapshot.gap1_baseline);
+    const frameGap2 = Number(snapshot.gap2Baseline ?? snapshot.gap2_baseline);
+    const hasFrameBaseline = Number.isFinite(frameGap1) && frameGap1 >= 0
+      && Number.isFinite(frameGap2) && frameGap2 >= 0;
+    if(!storedBaseline && !hasFrameBaseline) return snapshot;
+    const current = Number(snapshot.metricCurrent ?? snapshot.metric_current);
+    const target = Number(snapshot.metricTarget ?? snapshot.metric_target);
+    if(!Number.isFinite(current) || !Number.isFinite(target)) return snapshot;
+    const baselineValue = normalized === "teacher_gap2_sessions"
+      ? (hasFrameBaseline ? frameGap2 : storedBaseline.gap2Plus)
+      : (hasFrameBaseline ? frameGap1 : storedBaseline.gap1);
+    const percent = metricProgressPercent(normalized, current, target, baselineValue);
+    return Object.assign({}, snapshot, {
+      optimizationFocus:normalized,
+      metricBaseline:baselineValue,
+      metricPercent:percent,
+      metric_baseline:baselineValue,
+      metric_percent:percent
+    });
   }
 
   function metricGapTotal(metrics){
@@ -11671,7 +11851,32 @@
     return released;
   }
 
-  async function applyPayload(payload){
+  function isQuickCompleteResult(payload, solveSettings){
+    const runtime = payload?.solver?.runtime_settings && typeof payload.solver.runtime_settings === "object"
+      ? payload.solver.runtime_settings
+      : {};
+    const explicitMode = String(solveSettings?.ui_requested_solve_mode || "").trim();
+    if(explicitMode){
+      return normalizeSolveRequestMode(explicitMode) === SOLVE_REQUEST_MODES.quickComplete;
+    }
+    const explicitFocus = String(solveSettings?.optimization_focus || "").trim();
+    if(explicitFocus){
+      return normalizeSolveRequestMode(explicitFocus) === SOLVE_REQUEST_MODES.quickComplete;
+    }
+    const candidates = [
+      payload?.solveRequestMode,
+      payload?.solve_request_mode,
+      payload?.optimizationFocus,
+      payload?.optimization_focus,
+      runtime.ui_requested_solve_mode,
+      runtime.optimization_focus,
+      runtime.solveRequestMode,
+      runtime.solve_request_mode
+    ];
+    return candidates.some(value => normalizeSolveRequestMode(value) === SOLVE_REQUEST_MODES.quickComplete);
+  }
+
+  async function applyPayload(payload, solveSettings){
     const data = getData();
     // Search-policy learning is durable even when this candidate is later
     // rejected and the visible timetable is restored.
@@ -11890,20 +12095,37 @@
     if(postApplyReleased > 0){
       data.tkbSolverResult.constraintReleasedAfterApply = postApplyReleased;
     }
+    const quickResult = isQuickCompleteResult(payload, solveSettings);
+    const quickCompletion = payloadCompletion(data.tkbSolverResult);
+    const previousGapBaseline = Object.prototype.hasOwnProperty.call(data, GAP_PROGRESS_BASELINE_DATA_KEY)
+      ? clonePlain(data[GAP_PROGRESS_BASELINE_DATA_KEY])
+      : undefined;
+    const shouldRememberQuickBaseline = quickResult && quickCompletion.complete;
+    if(shouldRememberQuickBaseline){
+      rememberQuickGapProgressBaseline(data, data.tkbSolverResult);
+    }
     const appliedMetrics = payload?.metrics || {};
     const applySaveStartedAt = Date.now();
     const saveStoreFn = window.saveStore;
-    if(typeof saveStoreFn === "function"){
-      await Promise.resolve(saveStoreFn.call(window, {
-      force:true,
-      awaitRemote:true,
-      trustedSolverApply:true,
-      knownStats:{
-        total:metricNumber(appliedMetrics.expected_periods),
-        assigned:metricNumber(appliedMetrics.scheduled_periods),
-        missing:metricNumber(appliedMetrics.unassigned_periods)
+    try{
+      if(typeof saveStoreFn === "function"){
+        await Promise.resolve(saveStoreFn.call(window, {
+        force:true,
+        awaitRemote:true,
+        trustedSolverApply:true,
+        knownStats:{
+          total:metricNumber(appliedMetrics.expected_periods),
+          assigned:metricNumber(appliedMetrics.scheduled_periods),
+          missing:metricNumber(appliedMetrics.unassigned_periods)
+        }
+        }));
       }
-      }));
+    }catch(err){
+      if(shouldRememberQuickBaseline){
+        if(previousGapBaseline === undefined) delete data[GAP_PROGRESS_BASELINE_DATA_KEY];
+        else data[GAP_PROGRESS_BASELINE_DATA_KEY] = previousGapBaseline;
+      }
+      throw err;
     }
     traceSolveStep("solve:apply-save-done", {
       elapsedMs:Math.max(0, Date.now() - applySaveStartedAt)
@@ -14351,7 +14573,7 @@
       await sleep(0);
       let result;
       try{
-        result = await applyPayload(payload);
+        result = await applyPayload(payload, settings);
       }catch(applyErr){
         const appliedRuntime = payload?.solver?.runtime_settings || {};
         const canFreshRetryRejectedStagedCandidate = isApplyPayloadCandidateContractError(applyErr)
@@ -14392,7 +14614,7 @@
           freshErr.payload = payload;
           throw freshErr;
         }
-        result = await applyPayload(payload);
+        result = await applyPayload(payload, retrySettings);
       }
       const localRepairAfterPayload = metricNumber(payload?.metrics?.unassigned_periods, 0) > 0
         ? autoPlaceUnassignedFromUi("after_payload", {maxPlace: 24})
@@ -14555,6 +14777,10 @@
         normalizeMetricProgressSnapshot,
         metricProgressPercent,
         metricProgressCurrentLabel,
+        readGapProgressBaseline,
+        rememberQuickGapProgressBaseline,
+        refreshGapProgressBaselineFromRemote,
+        canonicalizeGapProgressSnapshot,
         activeStudentSessionCount,
         buildConstraintRepairAutoSortPlan,
         stagedExistingFreshRetrySettings,
@@ -15457,6 +15683,8 @@
     }
 
     settings.ui_progress_mode = "work";
+    delete settings.ui_progress_gap1_baseline;
+    delete settings.ui_progress_gap2_baseline;
 
     // Focused optimization starts only from a complete, validated timetable.
     // If the user chooses it too early, complete the timetable first and keep
@@ -15602,12 +15830,17 @@
     settings.max_teacher_sessions = currentSessions;
     settings.requested_max_teacher_sessions = currentSessions;
     settings.strict_teacher_session_cap = true;
+    const gapBaseline = readGapProgressBaseline(safeData);
+    const gap2Baseline = gapBaseline ? gapBaseline.gap2Plus : currentGap2;
+    const gap1Baseline = gapBaseline ? gapBaseline.gap1 : currentGap1;
+    settings.ui_progress_gap1_baseline = gap1Baseline;
+    settings.ui_progress_gap2_baseline = gap2Baseline;
     configurePlanMetricProgress(
       settings,
       currentGap2 > 0 ? "teacher_gap2_sessions" : "teacher_gap1_sessions",
       currentGap2 > 0 ? currentGap2 : currentGap1,
       0,
-      currentGap2 > 0 ? currentGap2 : currentGap1
+      currentGap2 > 0 ? gap2Baseline : gap1Baseline
     );
     applyFocusedOptimizationCeiling(settings);
     return plan;
@@ -15837,6 +16070,9 @@
       );
       return null;
     }
+    if(requestedSolveMode === SOLVE_REQUEST_MODES.gaps){
+      await refreshGapProgressBaselineFromRemote(getData());
+    }
     if(
       invocationOptions.manualAgentInvite === true
       && typeof window.maybeInviteAgentBeforeSort === "function"
@@ -15900,6 +16136,33 @@
           data,
           data?.tkbSolverResult || data?.tkbRustSolverResult || null
         );
+        const hadGapBaseline = Object.prototype.hasOwnProperty.call(data, GAP_PROGRESS_BASELINE_DATA_KEY);
+        const previousGapBaseline = hadGapBaseline
+          ? clonePlain(data[GAP_PROGRESS_BASELINE_DATA_KEY])
+          : undefined;
+        const rememberedGapBaseline = rememberQuickGapProgressBaseline(data, retainedPayload);
+        if(rememberedGapBaseline){
+          try{
+            const saveStoreFn = window.saveStore;
+            if(typeof saveStoreFn === "function"){
+              await Promise.resolve(saveStoreFn.call(window, {
+                force:true,
+                awaitRemote:true,
+                trustedSolverApply:true,
+                suppressHistory:true,
+                knownStats:{
+                  total:completeState.expected,
+                  assigned:completeState.scheduled,
+                  missing:completeState.unassigned
+                }
+              }));
+            }
+          }catch(err){
+            if(hadGapBaseline) data[GAP_PROGRESS_BASELINE_DATA_KEY] = previousGapBaseline;
+            else delete data[GAP_PROGRESS_BASELINE_DATA_KEY];
+            throw err;
+          }
+        }
         window.__TKB_SOLVER_LAST_PAYLOAD = retainedPayload;
         window.__TKB_SOLVER_LAST_RESULT = retainedPayload;
         window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = SOLVE_COMPLETE_MESSAGE;

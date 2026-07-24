@@ -18,6 +18,10 @@ const runtimeSource = fs.readFileSync(
   path.resolve(__dirname, "..", "web", "shared", "runtime.js"),
   "utf8"
 );
+const loginPageSource = fs.readFileSync(
+  path.resolve(__dirname, "..", "web", "auth.js"),
+  "utf8"
+);
 
 function memoryStorage(initial = {}){
   const values = new Map(Object.entries(initial).map(([key, value]) => [key, String(value)]));
@@ -58,7 +62,7 @@ function loadAuth({local = {}, session = {}, api = null} = {}){
   return {window, localStorage, sessionStorage};
 }
 
-function loadAuthApi({local = {}, session = {}} = {}){
+function loadAuthApi({local = {}, session = {}, fetchImpl = null} = {}){
   const localStorage = memoryStorage(local);
   const sessionStorage = memoryStorage(session);
   const window = {localStorage, sessionStorage};
@@ -68,7 +72,7 @@ function loadAuthApi({local = {}, session = {}} = {}){
     localStorage,
     sessionStorage,
     console,
-    fetch:async () => ({ok:true, status:200, json:async () => ({ok:true})}),
+    fetch:fetchImpl || (async () => ({ok:true, status:200, json:async () => ({ok:true})})),
     TextEncoder,
     URL,
     crypto:globalThis.crypto
@@ -91,6 +95,32 @@ test("auth API reads the persistent session after the original tab closes", () =
   const runtime = loadAuthApi({local:{TKB_SESSION:JSON.stringify(saved)}});
 
   assert.equal(runtime.window.TKBAuthApi.getSessionToken(), "persistent-token");
+});
+
+test("auth API preserves the server reason when a newer login replaces the session", async () => {
+  const saved = {userId:"school1", sessionToken:"replaced-token"};
+  const runtime = loadAuthApi({
+    local:{TKB_SESSION:JSON.stringify(saved)},
+    fetchImpl:async () => ({
+      ok:false,
+      status:401,
+      json:async () => ({
+        ok:false,
+        error:"session_replaced",
+        message:"Tài khoản đã được đăng nhập ở nơi khác."
+      })
+    })
+  });
+
+  assert.equal(await runtime.window.TKBAuthApi.apiValidateSession(), null);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(runtime.window.TKBAuthApi.getLastSessionFailure())),
+    {
+      status:401,
+      error:"session_replaced",
+      message:"Tài khoản đã được đăng nhập ở nơi khác."
+    }
+  );
 });
 
 test("logout releases the server session then clears both browser stores", async () => {
@@ -135,7 +165,14 @@ test("central auth expiry is single-flight and remembers the protected return pa
       expireSession(){ expireCalls += 1; }
     },
     TKBAuthApi:{
-      async apiValidateSession(){ validationCalls += 1; return null; }
+      async apiValidateSession(){ validationCalls += 1; return null; },
+      getLastSessionFailure(){
+        return {
+          status:401,
+          error:"session_replaced",
+          message:"Tài khoản đã được đăng nhập ở nơi khác."
+        };
+      }
     },
     dispatchEvent(event){ events.push(event); return true; },
     setInterval(){ return 0; },
@@ -179,6 +216,16 @@ test("central auth expiry is single-flight and remembers the protected return pa
   );
   assert.equal(events.filter(event => event.type === "tkb:auth-expired").length, 1);
   assert.equal(events.filter(event => event.type === "tkb:auth-ready").length, 0);
+  assert.equal(
+    sessionStorage.getItem("TKB_AUTH_NOTICE"),
+    "Tài khoản đã được đăng nhập ở nơi khác."
+  );
+});
+
+test("login page consumes the replacement notice into its alert", () => {
+  assert.match(loginPageSource, /const AUTH_NOTICE_KEY = "TKB_AUTH_NOTICE"/);
+  assert.match(loginPageSource, /sessionStorage\.removeItem\(AUTH_NOTICE_KEY\)/);
+  assert.match(loginPageSource, /if\(authNotice\) showAlert\(authNotice, "error"\)/);
 });
 
 test("registration IP history blocks only while its school or account still exists", () => {
