@@ -5661,6 +5661,154 @@ class SolverResultContractTests(unittest.TestCase):
             )
         )
 
+    def test_quick_benders_completes_small_hard_valid_residual_before_retry(self) -> None:
+        ctx = _context()
+        assignment = ctx.school_data.assignments[0]
+        allocation = SessionAllocation(
+            class_name=assignment.class_name,
+            grade=assignment.grade,
+            subject=assignment.subject,
+            teacher=assignment.teacher,
+            session=Session(day=2, part="AM"),
+            count=1,
+        )
+        partial_lesson = Lesson(
+            class_name=assignment.class_name,
+            grade=assignment.grade,
+            day=2,
+            session="AM",
+            period=1,
+            subject=assignment.subject,
+            teacher=assignment.teacher,
+        )
+        trimmed_period = {
+            "classId": ctx.classes[0].id,
+            "className": assignment.class_name,
+            "grade": assignment.grade,
+            "subject": assignment.subject,
+            "teacher": assignment.teacher,
+            "room": assignment.room,
+            "periods": 1,
+            "reason": "not_enough_available_slots",
+            "message": "test residual",
+        }
+
+        with (
+            patch("tkb_new.adapter.build_school_data_from_ui", return_value=ctx),
+            patch(
+                "tkb_new.adapter._trim_context_to_available_slots",
+                return_value=(ctx, [trimmed_period]),
+            ),
+            patch(
+                "tkb_new.adapter.solve_session_allocation_cp_sat",
+                return_value=([allocation], {"teacher_sessions": 1}),
+            ) as solve_sessions,
+            patch(
+                "tkb_new.adapter.allocate_periods",
+                return_value=([partial_lesson], {"solver": "test-partial-period"}),
+            ) as allocate_periods_mock,
+        ):
+            result = _solve_teacher_session_benders_candidate(
+                {},
+                {
+                    "optimization_focus": "quick_complete",
+                    "optimization_benders_iterations": 5,
+                    "optimization_benders_session_time_limit": 10,
+                    "optimization_quick_residual_completion_max_missing": 2,
+                    "optimization_quick_residual_completion_time_limit_seconds": 1,
+                    "period_max_teacher_gap": "off",
+                    "max_one_period_sessions": "off",
+                    "strict_one_period_sessions_cap": False,
+                    "num_workers": 1,
+                },
+                cap=2,
+                time_limit_seconds=30,
+                rules=ctx.rules,
+                progress=None,
+                deadline=SolverDeadline(30),
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["metrics"]["hard_ok"])
+        self.assertEqual(result["metrics"]["scheduled_periods"], 2)
+        self.assertEqual(result["metrics"]["expected_periods"], 2)
+        self.assertEqual(result["metrics"]["unassigned_periods"], 0)
+        self.assertEqual(len(result["lessons"]), 2)
+        self.assertEqual(solve_sessions.call_count, 1)
+        self.assertEqual(allocate_periods_mock.call_count, 1)
+        repair = result["solver"]["period_solver"]["quick_residual_completion"]
+        self.assertEqual(repair["repair_kind"], "bounded_soft_incumbent_residual_completion")
+        self.assertEqual(repair["missing_periods"], 1)
+        history = result["solver"]["teacher_session_benders"]["history"]
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["status"], "period_ok")
+        self.assertTrue(history[0]["quick_residual_completion"]["accepted"])
+
+    def test_non_quick_benders_does_not_use_quick_residual_completion(self) -> None:
+        ctx = _context()
+        assignment = ctx.school_data.assignments[0]
+        allocation = SessionAllocation(
+            assignment.class_name,
+            assignment.grade,
+            assignment.subject,
+            assignment.teacher,
+            Session(day=2, part="AM"),
+            1,
+        )
+        partial_lesson = Lesson(
+            assignment.class_name,
+            assignment.grade,
+            2,
+            "AM",
+            1,
+            assignment.subject,
+            assignment.teacher,
+        )
+
+        with (
+            patch("tkb_new.adapter.build_school_data_from_ui", return_value=ctx),
+            patch(
+                "tkb_new.adapter._trim_context_to_available_slots",
+                return_value=(ctx, []),
+            ),
+            patch(
+                "tkb_new.adapter.solve_session_allocation_cp_sat",
+                return_value=([allocation], {"teacher_sessions": 1}),
+            ),
+            patch(
+                "tkb_new.adapter.allocate_periods",
+                return_value=([partial_lesson], {"solver": "test-partial-period"}),
+            ),
+            patch(
+                "tkb_new.adapter._bounded_soft_incumbent_residual_completion"
+            ) as residual_completion,
+        ):
+            for focus in ("automatic", "singletons", "sessions", "gaps"):
+                with self.subTest(focus=focus):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        "Benders teacher-session cap search failed",
+                    ):
+                        _solve_teacher_session_benders_candidate(
+                            {},
+                            {
+                                "optimization_focus": focus,
+                                "optimization_benders_iterations": 1,
+                                "optimization_benders_session_time_limit": 10,
+                                "period_max_teacher_gap": "off",
+                                "max_one_period_sessions": "off",
+                                "strict_one_period_sessions_cap": False,
+                                "num_workers": 1,
+                            },
+                            cap=2,
+                            time_limit_seconds=30,
+                            rules=ctx.rules,
+                            progress=None,
+                            deadline=SolverDeadline(30),
+                        )
+
+        residual_completion.assert_not_called()
+
     def test_benders_structural_cut_skips_redundant_relaxed_period_probe(self) -> None:
         ctx = _context()
         allocation = SessionAllocation(

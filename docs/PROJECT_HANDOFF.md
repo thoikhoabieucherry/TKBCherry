@@ -8,12 +8,13 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.74** (responsive job discovery,
-  terminal-only 100%, and stable checkpoint Stop). The public API marker is
-  `tkb_new-rust-api-2026-07-24-stable-live-progress-v68`, the bridge marker is
-  `tkb-rust-api-v275-active-progress-cap`, and the planner script cache is
-  `20260724-v174-responsive-stop-preflight-v5`. The unchanged constraints marker is
-  `constraints-ui-v38-one-session-responsive-tables`.
+- Current deployed application release: **v1.77** (full-resource Browser Agent,
+  bounded Quick/focused execution, and truthful local-compute state). The public
+  API marker is `tkb_new-rust-api-2026-07-24-bounded-browser-agent-v70`, the
+  bridge marker is `tkb-rust-api-v277-full-resource-automatic-budget`, the
+  Browser executor is `tkb-browser-wasm-executor-v12-full-resource-first-target`,
+  and the planner cache is `20260724-v177-full-resource-agent-v1`. The unchanged
+  constraints marker is `constraints-ui-v38-one-session-responsive-tables`.
 - Current public Agent release: **v1.6.29** (`1.6.29`). The normal owner-Agent
   minimum lease gate remains 1.6.23, so 1.6.22 and older stay upgrade-only;
   the operator trusted-worker source and release contract remain 1.6.24. The
@@ -22,6 +23,50 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.77 full-resource Browser Agent (deployed 2026-07-24)
+
+- Browser Agent status now distinguishes enabled capability from real local
+  work. An idle enabled browser remains red; green is reserved for a scoped
+  server connection or an active WASM solve. The tooltip explicitly says idle
+  Agent work runs inside the browser process only when an eligible solve starts.
+- Browser executor runtime evidence now records active local compute, run and
+  server-accepted result counts, worker count, and start/finish/accept times.
+  Each state transition emits `tkb-browser-agent-state`; the planner also keeps
+  the probe, activation and final evidence in
+  `window.__TKB_RUST_LAST_REQUEST_DEBUG` for acceptance diagnostics.
+- Trace audit confirms the exclusive path is probe/compile -> durable POST ->
+  scoped hello -> lease -> Web Worker/WASM -> digested candidate -> server
+  native/reference validation -> complete. Hidden pages, disabled Agent,
+  heartbeat/lease loss and rejected local results release the same canonical
+  job to VPS fallback. A first Automatic solve remains VPS-only by contract;
+  Quick and eligible complete refinement/focused solves can use Browser Agent.
+- Quick fresh/partial requests run locally for at most 12 seconds and return the
+  first complete hard-valid candidate; focused Browser optimization runs at
+  most 60 seconds plus a 15-second validation reserve. `Buoi 1 tiet` stops its
+  remaining portfolio workers as soon as a validated zero target is available.
+- Browser Agent always uses the full positive integer reported by
+  `navigator.hardwareConcurrency`; it does not reserve a core, inspect
+  `deviceMemory`, or retain the former 64-worker cap. Every auto/Quick/focused
+  request overwrites stale lower `num_workers` settings with the same hardware
+  count. A deterministic regression proves 512 reported logical CPUs with
+  0.25 GB reported device memory still selects 512 workers. If a browser cannot
+  create or probe every Worker, it keeps the healthy Workers it actually made.
+- Local verification passes Node **354/354**, scheduler Python **218 passed / 3
+  skipped** plus **49** unittest subtests, both JavaScript syntax checks, WASM
+  ABI, and `git diff --check`. Isolated VPS staging passes scheduler **221/221**,
+  Agent **151/151**, trusted worker **5/5**, Rust API **186/186**, and validator
+  **38/38**, ending with `STAGING_TESTS_OK`.
+- Transactional production deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260724-121214.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260724-121214.tar.gz`. Public
+  health is idle with zero active/queued jobs and `6/6` VPS worker tokens. The
+  public WASM remains 1,104,120 bytes with SHA-256
+  `e7d4ecc1942f404e2c95d561a3909ee9e2c0901db0eacc21ea4d8feea51edd37`.
+- Native Agent 1.6.29 still has its legacy per-workload 2/4/6 CPU and 4/8/16 GB
+  runtime slices. The v1.78/Agent 1.6.30 follow-up must remove those limits,
+  upgrade the WSL runtime marker, and gate old native Agents before this
+  full-resource policy is considered complete for every executor type.
 
 ### v1.74 responsive progress and stable Stop (deployed 2026-07-24)
 
@@ -4039,17 +4084,17 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-24: `UPDATE_OK` for
-application v1.74. Public health serves
-`tkb_new-rust-api-2026-07-24-stable-live-progress-v68`; the page serves
-`20260724-v174-responsive-stop-preflight-v5`, bridge marker
-`tkb-rust-api-v275-active-progress-cap`, and Browser executor
-`tkb-browser-wasm-executor-v8-checkpoint-stop`. The public WASM is 1,031,910
-bytes and matches SHA-256
-`926d2a490a2004235d2b0b445956d1326fc614b3fd5af179b19f7af5f1e1832c`.
+application v1.77. Public health serves
+`tkb_new-rust-api-2026-07-24-bounded-browser-agent-v70`; the page serves
+`20260724-v177-full-resource-agent-v1`, bridge marker
+`tkb-rust-api-v277-full-resource-automatic-budget`, and Browser executor
+`tkb-browser-wasm-executor-v12-full-resource-first-target`. The public WASM is
+1,104,120 bytes and matches SHA-256
+`e7d4ecc1942f404e2c95d561a3909ee9e2c0901db0eacc21ea4d8feea51edd37`.
 Public health is idle with zero active/queued jobs and `6/6` worker tokens.
 Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260724-091828.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260724-091828.tar.gz`.
+`/opt/cherry-scheduler-backups/server-state-20260724-121214.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260724-121214.tar.gz`.
 Public Agent release `1.6.29` and its signed manifest are live. The 88,001,209
 byte archive SHA-256 is
 `b36e5774f7e89402f7ffbb7075eb2541e7a63a1f874558abba128fe8ecfa25f6`; the

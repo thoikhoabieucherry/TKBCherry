@@ -6987,6 +6987,10 @@ def _solve_teacher_session_benders_candidate(
     solver_workers = _solver_worker_count(settings)
     session_linearization_level = _session_cp_sat_linearization_level(settings)
     complete_first = _truthy_setting(settings.get("optimization_benders_complete_first"))
+    quick_complete_residual_rescue = (
+        _normalized_optimization_focus(settings) == "quick_complete"
+        and _truthy_setting(settings.get("optimization_quick_residual_completion", "1"))
+    )
     adaptive_target = _truthy_setting(settings.get("optimization_adaptive_target"))
     continue_quality_search = _truthy_setting(settings.get("optimization_continue_quality_search"))
     stop_on_first_quality_gate_clean = _truthy_setting(
@@ -7560,8 +7564,110 @@ def _solve_teacher_session_benders_candidate(
                 ),
             )
             metrics = payload.get("metrics") if isinstance(payload.get("metrics"), Mapping) else {}
-            new_best_this_iteration = False
+            quick_residual_completion: dict[str, Any] | None = None
             candidate_acceptable = _complete_payload_metrics_acceptable(payload)
+            if quick_complete_residual_rescue and not candidate_acceptable:
+                scheduled_periods = _metric_int(metrics, "scheduled_periods", 0)
+                expected_periods = _metric_int(metrics, "expected_periods", 0)
+                missing_periods = max(0, expected_periods - scheduled_periods)
+                max_missing = max(
+                    1,
+                    min(
+                        16,
+                        _to_int(
+                            settings.get("optimization_quick_residual_completion_max_missing"),
+                            4,
+                        ),
+                    ),
+                )
+                partial_candidate_eligible = (
+                    scheduled_periods > 0
+                    and 0 < missing_periods <= max_missing
+                    and not bool(payload.get("bestEffort"))
+                    and _placement_hard_ok_for_partial(
+                        metrics,
+                        allow_temporary_teacher_gap_debt=True,
+                    )
+                    and not deadline.exhausted(0.05)
+                )
+                if partial_candidate_eligible:
+                    remaining = deadline.remaining()
+                    requested_seconds = max(
+                        0.05,
+                        _to_float(
+                            settings.get(
+                                "optimization_quick_residual_completion_time_limit_seconds"
+                            ),
+                            2.0,
+                        ),
+                    )
+                    rescue_seconds = (
+                        requested_seconds
+                        if remaining is None
+                        else max(0.05, min(requested_seconds, remaining))
+                    )
+                    quick_residual_completion = {
+                        "attempted": True,
+                        "accepted": False,
+                        "missing_periods": missing_periods,
+                        "time_limit_seconds": round(rescue_seconds, 3),
+                    }
+                    residual_completion = _bounded_soft_incumbent_residual_completion(
+                        original_ctx.school_data,
+                        lessons,
+                        report_rules,
+                        max_missing=max_missing,
+                        max_nodes=max(
+                            100,
+                            _to_int(
+                                settings.get(
+                                    "optimization_quick_residual_completion_max_nodes"
+                                ),
+                                50_000,
+                            ),
+                        ),
+                        time_limit_seconds=rescue_seconds,
+                    )
+                    if residual_completion is not None:
+                        rescued_lessons, rescued_metrics, rescue_meta = residual_completion
+                        rescued_solver_metrics = {
+                            **solver_metrics,
+                            "period_solver": {
+                                **dict(solver_metrics.get("period_solver") or {}),
+                                "solver": "bounded_soft_incumbent_residual_completion",
+                                "quick_residual_completion": dict(rescue_meta),
+                            },
+                            "validation": dict(rescued_metrics),
+                        }
+                        rescued_payload = build_payload(
+                            original_ctx,
+                            rescued_lessons,
+                            rescued_solver_metrics,
+                            report_rules,
+                            unassigned_lessons=[],
+                            best_effort=False,
+                            allow_temporary_teacher_gap_debt=True,
+                        )
+                        rescued_acceptable = _complete_payload_metrics_acceptable(
+                            rescued_payload
+                        )
+                        quick_residual_completion.update(
+                            {
+                                **dict(rescue_meta),
+                                "accepted": bool(rescued_acceptable),
+                            }
+                        )
+                        if rescued_acceptable:
+                            lessons = rescued_lessons
+                            solver_metrics = rescued_solver_metrics
+                            payload = rescued_payload
+                            metrics = (
+                                payload.get("metrics")
+                                if isinstance(payload.get("metrics"), Mapping)
+                                else {}
+                            )
+                            candidate_acceptable = True
+            new_best_this_iteration = False
             history_entry: dict[str, Any] = {
                 "iteration": iteration,
                 "status": "period_ok" if candidate_acceptable else "period_candidate_rejected",
@@ -7613,6 +7719,8 @@ def _solve_teacher_session_benders_candidate(
                     if isinstance(item, Mapping)
                 ],
             }
+            if quick_residual_completion is not None:
+                history_entry["quick_residual_completion"] = quick_residual_completion
             residual_validation = solver_metrics.get("residual_validation")
             if isinstance(residual_validation, Mapping):
                 history_entry["residual_validation"] = {

@@ -1823,10 +1823,10 @@ fn worker_can_access_job(worker: &AgentWorker, job: &AgentJob) -> bool {
             .is_none_or(|job_scope| job_scope == job.job_id)
 }
 
-/// Browser WASM is intentionally a complete-timetable refinement worker. The
-/// lightweight Rust runtime cannot construct a production timetable as
-/// reliably as the VPS CP-SAT pipeline, so web takeover is allowed only for a
-/// canonical request carrying a revalidated, complete incumbent.
+/// Browser WASM may run bounded Quick completion or refine a revalidated,
+/// complete incumbent. Quick eligibility is based only on the canonical solve
+/// envelope; any client-supplied partial incumbent remains untrusted and the
+/// submitted candidate must still pass the server's complete validator.
 pub(crate) fn browser_refinement_request_eligible(request_body: &[u8]) -> bool {
     let Ok(request) = serde_json::from_slice::<Value>(request_body) else {
         return false;
@@ -1842,10 +1842,31 @@ pub(crate) fn browser_refinement_request_eligible(request_body: &[u8]) -> bool {
         .to_ascii_lowercase()
         .replace(' ', "_")
         .replace('-', "_");
-    if matches!(
-        optimization_focus.as_str(),
-        "quick" | "complete" | "quick_complete"
-    ) {
+    if optimization_focus == "quick_complete" {
+        if settings
+            .get("ui_solver_fifo_admission")
+            .and_then(Value::as_bool)
+            != Some(true)
+            || settings
+                .get("ui_solver_async_job")
+                .and_then(Value::as_bool)
+                != Some(true)
+            || settings
+                .get("require_complete_schedule")
+                .and_then(Value::as_bool)
+                != Some(true)
+        {
+            return false;
+        }
+        return settings
+            .get("ui_progress_metric_target")
+            .is_none_or(|target| {
+                target
+                    .as_u64()
+                    .is_some_and(|target| target > 0 && target <= i64::MAX as u64)
+            });
+    }
+    if matches!(optimization_focus.as_str(), "quick" | "complete") {
         return false;
     }
     if settings
@@ -2172,12 +2193,51 @@ mod tests {
 
         let mut quick: Value = serde_json::from_slice(&request).unwrap();
         quick["settings"]["optimization_focus"] = serde_json::json!("quick_complete");
-        assert!(!browser_refinement_request_eligible(
+        quick["settings"]["ui_solver_fifo_admission"] = serde_json::json!(true);
+        quick["settings"]["ui_solver_async_job"] = serde_json::json!(true);
+        quick["settings"]["require_complete_schedule"] = serde_json::json!(true);
+        quick["settings"]["ui_progress_metric_target"] = serde_json::json!(2);
+        assert!(browser_refinement_request_eligible(
             &serde_json::to_vec(&quick).unwrap()
+        ));
+
+        let mut quick_alias = quick.clone();
+        quick_alias["settings"]["optimization_focus"] = serde_json::json!("quick");
+        assert!(!browser_refinement_request_eligible(
+            &serde_json::to_vec(&quick_alias).unwrap()
+        ));
+
+        let mut quick_partial = quick.clone();
+        quick_partial["data"]["tkbSolverResult"]["lessons"] =
+            serde_json::json!([{"classId":"6A"}]);
+        quick_partial["data"]["tkbSolverResult"]["metrics"]["scheduled_periods"] =
+            serde_json::json!(1);
+        quick_partial["data"]["tkbSolverResult"]["metrics"]["unassigned_periods"] =
+            serde_json::json!(1);
+        assert!(browser_refinement_request_eligible(
+            &serde_json::to_vec(&quick_partial).unwrap()
+        ));
+
+        let mut quick_without_complete_contract = quick.clone();
+        quick_without_complete_contract["settings"]["require_complete_schedule"] =
+            serde_json::json!(false);
+        assert!(!browser_refinement_request_eligible(
+            &serde_json::to_vec(&quick_without_complete_contract).unwrap()
+        ));
+
+        let mut quick_with_invalid_target = quick.clone();
+        quick_with_invalid_target["settings"]["ui_progress_metric_target"] =
+            serde_json::json!(0);
+        assert!(!browser_refinement_request_eligible(
+            &serde_json::to_vec(&quick_with_invalid_target).unwrap()
         ));
 
         let mut fresh: Value = serde_json::from_slice(&request).unwrap();
         fresh["settings"]["ui_unified_solve_kind"] = serde_json::json!("fresh_complete_first");
+        fresh["settings"]["optimization_focus"] = serde_json::json!("automatic");
+        fresh["settings"]["ui_solver_fifo_admission"] = serde_json::json!(true);
+        fresh["settings"]["ui_solver_async_job"] = serde_json::json!(true);
+        fresh["settings"]["require_complete_schedule"] = serde_json::json!(true);
         assert!(!browser_refinement_request_eligible(
             &serde_json::to_vec(&fresh).unwrap()
         ));

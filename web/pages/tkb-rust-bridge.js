@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v275-active-progress-cap";
+  const VERSION = "tkb-rust-api-v277-full-resource-automatic-budget";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -49,7 +49,7 @@
     // wait up to three minutes for admission, then must still give the solver's
     // advertised budget its full bounded reserve to publish and validate the
     // response. The 30-minute maximum remains available only for an explicit
-    // custom duration; automatic fresh/refine lanes use 60/180 seconds.
+    // legacy cached custom duration; current UI always uses automatic budgets.
     const SERVER_SOLVER_ACTIVE_WAIT_MAX_MS = (
       MAX_CUSTOM_SOLVE_DURATION_SECONDS * 1000
       + CLIENT_TIMEOUT_BACKEND_RESERVE_MS
@@ -562,8 +562,9 @@
   function hardwareWorkerCount(){
     let cores = 0;
     try{ cores = Number(window.navigator && window.navigator.hardwareConcurrency); }catch(_){}
-    if(!Number.isFinite(cores) || cores <= 0) cores = 12;
-    return Math.max(1, Math.min(64, Math.round(cores)));
+    return Number.isFinite(cores) && cores > 0
+      ? Math.max(1, Math.floor(cores))
+      : 1;
   }
 
   function isFalseSetting(value){
@@ -755,12 +756,8 @@
       if(input.dataset.durationMode === "auto") return 0;
       return writeCustomSolveDurationSeconds(input.value);
     }
-    let stored = null;
-    try{ stored = localStorage.getItem(CUSTOM_SOLVE_DURATION_KEY); }catch(_){}
-    // Headless/internal calls without a duration control keep their existing
-    // automatic budget unless a user preference was explicitly persisted.
-    if(stored == null) return 0;
-    return writeCustomSolveDurationSeconds(stored);
+    try{ localStorage.removeItem(CUSTOM_SOLVE_DURATION_KEY); }catch(_){}
+    return 0;
   }
 
   function customSolveDurationOverrideActive(){
@@ -769,9 +766,7 @@
       if(input.dataset.durationMode === "auto") return false;
       return normalizeCustomSolveDurationSeconds(input.value, 0) > 0;
     }
-    let stored = null;
-    try{ stored = localStorage.getItem(CUSTOM_SOLVE_DURATION_KEY); }catch(_){}
-    return normalizeCustomSolveDurationSeconds(stored, 0) > 0;
+    return false;
   }
 
   function customSolveDurationFromSettings(settings){
@@ -1227,7 +1222,10 @@
 
   function initCustomSolveDurationUi(){
     const input = customSolveDurationInput();
-    if(!input) return;
+    if(!input){
+      try{ localStorage.removeItem(CUSTOM_SOLVE_DURATION_KEY); }catch(_){}
+      return;
+    }
     let stored = null;
     try{ stored = localStorage.getItem(CUSTOM_SOLVE_DURATION_KEY); }catch(_){}
     if(stored == null){
@@ -9078,7 +9076,7 @@
         next.preserve_existing_min_ratio = preserveExistingMinRatio(next);
         if(next.aggressive_fast_mode == null) next.aggressive_fast_mode = true;
         next.deep_session_rescue = isFalseSetting(next.aggressive_fast_mode) ? !!next.deep_session_rescue : false;
-        if(next.num_workers == null || String(next.num_workers).toLowerCase() === "auto") next.num_workers = hardwareWorkerCount();
+        next.num_workers = hardwareWorkerCount();
         normalizeSolveTimeLimits(next, data);
       }
       if(mode === "auto" && search && hasActiveConstraintData(data)){
@@ -10698,14 +10696,7 @@
     next.deep_session_rescue = isFalseSetting(next.aggressive_fast_mode) ? !!next.deep_session_rescue : false;
     next.preserve_existing_min_ratio = preserveExistingMinRatio(next);
     const tightClassFixedOff = applyTightClassFixedOffSettings(next, data);
-    if(next.num_workers == null || String(next.num_workers).toLowerCase() === "auto"){
-      next.num_workers = hardwareWorkerCount();
-    }else{
-      const requestedWorkers = Number(next.num_workers);
-      next.num_workers = Number.isFinite(requestedWorkers) && requestedWorkers > 0
-        ? Math.max(1, Math.min(64, Math.round(requestedWorkers)))
-        : hardwareWorkerCount();
-    }
+    next.num_workers = hardwareWorkerCount();
     normalizeSolveTimeLimits(next, data);
     next.exact_teacher_sessions = false;
     next.search_teacher_sessions = true;
@@ -10811,9 +10802,7 @@
     next.integrated_time_limit = Math.max(optLimit, Number(next.integrated_time_limit || 0) || 0);
     next.progress_estimate_seconds = optLimit;
     next.expected_scheduled_periods = expected;
-    if(next.num_workers == null || String(next.num_workers).toLowerCase() === "auto"){
-      next.num_workers = hardwareWorkerCount();
-    }
+    next.num_workers = hardwareWorkerCount();
     delete next.random_seed;
     return enforceNoHintFreshSolveSettings(next);
   }
@@ -11033,9 +11022,7 @@
         Number(next.session_priority_rescue_time_limit || 0) || 0
       );
     }
-    if(next.num_workers == null || String(next.num_workers).toLowerCase() === "auto"){
-      next.num_workers = hardwareWorkerCount();
-    }
+    next.num_workers = hardwareWorkerCount();
     const partialRepairState = applyPartialExistingRepairSettings(next, data, "few_unassigned_fast_quality");
     if(!partialRepairState && shouldUseScheduleDiversity(next)){
       applyScheduleDiversitySettings(next, data);
@@ -12333,6 +12320,12 @@
           requestApplyGuardFingerprint,
           scheduleDiversity: effectiveSettings.schedule_diversity === true,
           qualityVariantSeed: effectiveSettings.quality_variant_seed || "",
+          browserWasmEligible,
+          browserWasmProbed,
+          browserWasmActivated:false,
+          browserWasmState:typeof window.TKBBrowserWasmExecutor?.state === "function"
+            ? window.TKBBrowserWasmExecutor.state()
+            : null,
           strippedSolverResult: !!data?.tkbSolverResult,
           strippedSchedule: !!requestData?.__tkbRequestStrippedSchedule,
           startedAt: new Date().toISOString()
@@ -12475,6 +12468,18 @@
                 request:browserWasmRequest,
                 signal:controller.signal
               }).catch(() => false);
+              try{
+                window.__TKB_RUST_LAST_REQUEST_DEBUG = Object.assign(
+                  {},
+                  window.__TKB_RUST_LAST_REQUEST_DEBUG || {},
+                  {
+                    browserWasmActivated,
+                    browserWasmState:typeof window.TKBBrowserWasmExecutor?.state === "function"
+                      ? window.TKBBrowserWasmExecutor.state()
+                      : null
+                  }
+                );
+              }catch(_){ }
             }
             knownRequiredWorkers = Math.max(
               knownRequiredWorkers,
@@ -12654,6 +12659,10 @@
         window.__TKB_RUST_LAST_REQUEST_DEBUG = Object.assign({}, window.__TKB_RUST_LAST_REQUEST_DEBUG || {}, {
           responseStatus: response.status,
           responseOk: response.ok,
+          browserWasmActivated,
+          browserWasmFinalState:typeof window.TKBBrowserWasmExecutor?.state === "function"
+            ? window.TKBBrowserWasmExecutor.state()
+            : null,
           finishedAt: new Date().toISOString()
         });
       }catch(_){}
@@ -14510,6 +14519,7 @@
   try{
     if(window.__TKB_E2E_EXPOSE_TEST_HOOKS === true){
       window.__TKB_RUST_BRIDGE_TEST_HOOKS = {
+        hardwareWorkerCount,
         settingsForAutoSort,
         settingsForFastQualityAutoSort,
         settingsForTeacherSessionOpt,

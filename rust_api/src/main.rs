@@ -24,7 +24,7 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-24-stable-live-progress-v68";
+const VERSION: &str = "tkb_new-rust-api-2026-07-24-bounded-browser-agent-v70";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
@@ -53,6 +53,8 @@ const MAX_SOLVER_DEADLINE_MS: u64 = 1_800_000;
 const DEFAULT_SOLVER_DEADLINE_MS: u64 = 180_000;
 const DEFAULT_SOLVER_RESERVE_MS: u64 = 1_500;
 const MAX_SOLVER_RESERVE_MS: u64 = 30_000;
+const BROWSER_WASM_QUICK_ATTEMPT_MS: u64 = 12_000;
+const BROWSER_WASM_QUICK_RESERVE_MS: u64 = 750;
 const UNIFIED_REFERENCE_WATCHDOG_RESERVE_MS: u64 = 10_000;
 // Once the helper has announced a successful terminal result, computation is
 // already complete. Give it a small, bounded window to flush the JSON wrapper
@@ -1227,13 +1229,47 @@ fn agent_helper_claim_payload(
     settings.insert("ui_solver_fifo_admission".to_string(), json!(false));
     settings.insert("agent_helper_seed".to_string(), json!(lease.seed));
     if browser_wasm {
-        // The canonical refinement request keeps the reference solver's
-        // settings. Only the browser lease copy selects the incumbent-preserving
-        // Rust path; candidate validation still uses the untouched request.
-        settings.insert("optimize_existing_schedule".to_string(), json!(true));
-        settings.insert("force_fresh_backend_solve".to_string(), json!(false));
-        settings.insert("native_skip_teacher_optimization".to_string(), json!(false));
-        settings.insert("browser_wasm_refinement".to_string(), json!(true));
+        let optimization_focus = settings
+            .get("optimization_focus")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase()
+            .replace(' ', "_")
+            .replace('-', "_");
+        if optimization_focus == "quick_complete" {
+            // Quick owns completeness only. Keep the canonical fresh/partial
+            // choice instead of forcing the incumbent-preserving refinement
+            // path, and bound this local attempt before VPS fallback.
+            settings.insert("require_complete_schedule".to_string(), json!(true));
+            settings.insert("best_effort_on_timeout".to_string(), json!(false));
+            settings.insert("native_skip_teacher_optimization".to_string(), json!(true));
+            settings.insert("browser_wasm_quick_attempt".to_string(), json!(true));
+            for key in ["backend_deadline_ms", "native_global_deadline_ms"] {
+                let capped = settings
+                    .get(key)
+                    .and_then(Value::as_u64)
+                    .filter(|value| *value > 0)
+                    .unwrap_or(BROWSER_WASM_QUICK_ATTEMPT_MS)
+                    .min(BROWSER_WASM_QUICK_ATTEMPT_MS);
+                settings.insert(key.to_string(), json!(capped));
+            }
+            let reserve = settings
+                .get("native_deadline_reserve_ms")
+                .and_then(Value::as_u64)
+                .filter(|value| *value > 0)
+                .unwrap_or(BROWSER_WASM_QUICK_RESERVE_MS)
+                .min(BROWSER_WASM_QUICK_RESERVE_MS);
+            settings.insert("native_deadline_reserve_ms".to_string(), json!(reserve));
+        } else {
+            // The canonical refinement request keeps the reference solver's
+            // settings. Only the browser lease copy selects the incumbent-preserving
+            // Rust path; candidate validation still uses the untouched request.
+            settings.insert("optimize_existing_schedule".to_string(), json!(true));
+            settings.insert("force_fresh_backend_solve".to_string(), json!(false));
+            settings.insert("native_skip_teacher_optimization".to_string(), json!(false));
+            settings.insert("browser_wasm_refinement".to_string(), json!(true));
+        }
     }
     json!({
         "protocol": AGENT_HELPER_PROTOCOL,
@@ -9421,6 +9457,75 @@ mod tests {
         request
     }
 
+    fn browser_ready_quick_request(job_id: &str, partial: bool) -> Value {
+        let mut request = agent_solver_request(job_id);
+        request["settings"]["ui_solver_fifo_admission"] = json!(true);
+        request["settings"]["ui_solver_async_job"] = json!(true);
+        request["settings"]["ui_unified_solve_kind"] = if partial {
+            json!("repair_partial")
+        } else {
+            json!("fresh_complete_first")
+        };
+        request["settings"]["ui_requested_solve_mode"] = json!("quick_complete");
+        request["settings"]["optimization_focus"] = json!("quick_complete");
+        request["settings"]["ui_progress_metric_focus"] = json!("scheduled_periods");
+        request["settings"]["ui_progress_metric_target"] = json!(2);
+        request["settings"]["require_complete_schedule"] = json!(true);
+        request["settings"]["ui_browser_wasm_ready"] = json!(true);
+        request["settings"]["optimize_existing_schedule"] = json!(partial);
+        request["settings"]["force_fresh_backend_solve"] = json!(!partial);
+        if partial {
+            request["data"]["tkbSolverResult"] = json!({
+                "ok": false,
+                "lessons": [{"classId":"6A","subject":"Math"}],
+                "unassignedLessons": [{"classId":"6A","subject":"Literature"}],
+                "metrics": {
+                    "scheduled_periods": 1,
+                    "expected_periods": 2,
+                    "unassigned_periods": 1,
+                    "app_constraint_violation_count": 0,
+                    "hard_ok": true
+                }
+            });
+        }
+        request
+    }
+
+    #[test]
+    fn ready_browser_quick_starts_agent_waiting_without_vps_tokens() {
+        for partial in [false, true] {
+            let (app, _token, owner) = agent_test_app();
+            let job_id = if partial {
+                "browser-ready-quick-partial"
+            } else {
+                "browser-ready-quick-fresh"
+            };
+            let request = browser_ready_quick_request(job_id, partial);
+            let body = request.to_string();
+            assert!(agent_helper::browser_refinement_request_eligible(
+                body.as_bytes()
+            ));
+
+            let started = solve_json(&app, body.as_bytes(), &owner);
+            let started_payload = response_payload(&started);
+            assert_eq!(response_status(&started), 202);
+            assert_eq!(started_payload["jobId"], json!(job_id));
+            assert_eq!(started_payload["executor"], json!("agent"));
+            assert_eq!(started_payload["executionPhase"], json!("agent_waiting"));
+            assert_eq!(started_payload["requiredWorkers"], json!(0));
+            assert_eq!(app.solver_pool.active_count(), 0);
+            assert_eq!(app.solver_pool.queued_count(), 0);
+            assert_eq!(app.solver_pool.allocated_worker_tokens(), 0);
+
+            let cancelled = solve_cancel_json(
+                &app,
+                format!(r#"{{"jobId":"{job_id}"}}"#).as_bytes(),
+                &owner,
+            );
+            assert_eq!(response_payload(&cancelled)["cancelRequested"], json!(true));
+        }
+    }
+
     #[test]
     fn ready_browser_refinement_starts_agent_waiting_without_vps_tokens() {
         let (app, _token, owner) = agent_test_app();
@@ -9463,10 +9568,13 @@ mod tests {
     }
 
     #[test]
-    fn fake_browser_readiness_on_ineligible_request_starts_vps() {
+    fn forged_browser_readiness_on_automatic_fresh_request_starts_vps() {
         let (app, _token, owner) = agent_test_app();
         let mut request = browser_ready_refinement_request("browser-ready-ineligible");
         request["settings"]["ui_unified_solve_kind"] = json!("fresh_complete_first");
+        request["settings"]["ui_requested_solve_mode"] = json!("automatic");
+        request["settings"]["optimization_focus"] = json!("automatic");
+        request["settings"]["require_complete_schedule"] = json!(true);
         let body = request.to_string();
         assert!(!agent_helper::browser_refinement_request_eligible(
             body.as_bytes()
@@ -9487,7 +9595,7 @@ mod tests {
     }
 
     #[test]
-    fn ready_browser_no_show_falls_back_to_vps_on_the_same_job_after_grace() {
+    fn ready_browser_quick_no_show_falls_back_to_vps_on_the_same_job_after_grace() {
         let (app, _token, owner) = agent_test_app();
         let blocker = app
             .solver_pool
@@ -9497,7 +9605,7 @@ mod tests {
             )
             .expect("exclusive VPS capacity blocker");
         let baseline_allocated = app.solver_pool.allocated_worker_tokens();
-        let request = browser_ready_refinement_request("browser-ready-no-show");
+        let request = browser_ready_quick_request("browser-ready-no-show", false);
         let body = request.to_string();
 
         let started_at = Instant::now();
@@ -9548,14 +9656,125 @@ mod tests {
         );
 
         drop(blocker);
-        let completed = wait_for_server_result(&app, "browser-ready-no-show", &owner);
-        assert_eq!(response_status(&completed), 200);
-        assert_eq!(
-            response_payload(&completed)["startedAtMs"],
-            json!(canonical_started_at_ms)
-        );
+        // This test app deliberately has no reference-solver runtime. The
+        // asserted contract is the same canonical job returning to the VPS
+        // queue; production completion is covered by staging and browser E2E.
         app.solver_pool
             .abandon_server_job("browser-ready-no-show", &owner);
+    }
+
+    #[test]
+    fn failed_browser_quick_lease_returns_the_same_job_to_vps() {
+        let (app, token, owner) = agent_test_app();
+        let blocker = app
+            .solver_pool
+            .try_acquire(
+                "browser-quick-failure-vps-blocker".to_string(),
+                app.solver_pool.total_worker_tokens(),
+            )
+            .expect("exclusive VPS capacity blocker");
+        let request = browser_ready_quick_request("browser-ready-quick-failure", false);
+        let body = request.to_string();
+        let started = solve_json(&app, body.as_bytes(), &owner);
+        let started_payload = response_payload(&started);
+        assert_eq!(response_status(&started), 202);
+        assert_eq!(started_payload["executor"], json!("agent"));
+        let canonical_started_at_ms = started_payload["startedAtMs"]
+            .as_u64()
+            .expect("Quick job must expose canonical startedAtMs");
+
+        let hello = agent_route(
+            &app,
+            Some(&token),
+            "/api/agent-helper/v1/hello",
+            agent_protocol_body(json!({
+                "jobId":"browser-ready-quick-failure",
+                "agent":{"agentId":"web-quick-failure","version":MIN_AGENT_HELPER_VERSION,"platform":"web-wasm"},
+                "capacity":{"cpuWorkers":4,"maxConcurrentJobs":1}
+            })),
+        );
+        assert_eq!(response_status(&hello), 200);
+        let worker_token = response_payload(&hello)["workerToken"]
+            .as_str()
+            .expect("worker token")
+            .to_string();
+        let leased = agent_route(
+            &app,
+            Some(&token),
+            "/api/agent-helper/v1/lease",
+            agent_protocol_body(json!({
+                "workerToken":worker_token,
+                "leaseRequestId":"browser-quick-failure-lease-1",
+                "agent":{"agentId":"web-quick-failure","version":MIN_AGENT_HELPER_VERSION,"platform":"web-wasm"},
+                "capacity":{"cpuWorkers":4,"maxConcurrentJobs":1},
+                "waitSeconds":1
+            })),
+        );
+        assert_eq!(response_status(&leased), 200);
+        let lease_payload = response_payload(&leased);
+        let lease_id = lease_payload["lease"]["leaseId"]
+            .as_str()
+            .expect("lease id")
+            .to_string();
+        let lease_settings = &lease_payload["lease"]["payload"]["settings"];
+        assert_eq!(lease_settings["require_complete_schedule"], json!(true));
+        assert_eq!(lease_settings["best_effort_on_timeout"], json!(false));
+        assert_eq!(lease_settings["native_skip_teacher_optimization"], json!(true));
+        assert_eq!(lease_settings["browser_wasm_quick_attempt"], json!(true));
+        assert_eq!(lease_settings["backend_deadline_ms"], json!(12_000));
+        assert_eq!(lease_settings["native_global_deadline_ms"], json!(12_000));
+        assert_eq!(lease_settings["native_deadline_reserve_ms"], json!(750));
+        assert_eq!(lease_settings["optimize_existing_schedule"], json!(false));
+        assert_eq!(lease_settings["force_fresh_backend_solve"], json!(true));
+        assert!(lease_settings.get("browser_wasm_refinement").is_none());
+
+        let failed = agent_route(
+            &app,
+            Some(&token),
+            &format!("/api/agent-helper/v1/leases/{lease_id}/fail"),
+            agent_protocol_body(json!({
+                "workerToken":worker_token,
+                "agentId":"web-quick-failure",
+                "jobId":"browser-ready-quick-failure",
+                "leaseId":lease_id,
+                "kind":"browser_wasm_failed"
+            })),
+        );
+        assert_eq!(response_status(&failed), 202);
+        assert_eq!(response_payload(&failed)["requeued"], json!(true));
+
+        let fallback_deadline = Instant::now() + Duration::from_millis(1_500);
+        let fallback_state = loop {
+            let state = response_payload(&solver_state_json(
+                &app,
+                "jobId=browser-ready-quick-failure",
+                &owner,
+            ));
+            if state["requestedJobExecutor"] == json!("vps")
+                && state["requestedJobExecutionPhase"] == json!("vps_queued")
+            {
+                break state;
+            }
+            assert!(
+                Instant::now() < fallback_deadline,
+                "failed Quick lease did not return to VPS: {state}"
+            );
+            thread::sleep(Duration::from_millis(10));
+        };
+        assert_eq!(
+            fallback_state["requestedJobId"],
+            json!("browser-ready-quick-failure")
+        );
+        assert_eq!(
+            fallback_state["requestedJobStartedAtMs"],
+            json!(canonical_started_at_ms)
+        );
+
+        drop(blocker);
+        // Completion needs the production reference-solver runtime; this unit
+        // contract ends once the same canonical job is back in the VPS queue.
+        app.solver_pool
+            .abandon_server_job("browser-ready-quick-failure", &owner);
     }
 
     #[test]

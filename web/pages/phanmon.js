@@ -7284,11 +7284,20 @@ const BROWSER_AGENT_UNAVAILABLE_LABEL = "Agent không khả dụng trên trình 
 const BROWSER_AGENT_OFF_LABEL = "Agent đã tắt; lượt xếp sẽ dùng VPS. Bấm để bật Agent.";
 
 function browserAgentLabel(state){
-  const workers = Math.max(1, Number(state?.workerCount || state?.plannedWorkerCount || 1) || 1);
+  const workers = Math.max(1, Number(
+    state?.workerCount
+    || state?.lastComputeWorkerCount
+    || state?.plannedWorkerCount
+    || 1
+  ) || 1);
   if(state?.working) return `Agent đang tối ưu bằng ${workers} Worker trên thiết bị. Bấm để chuyển về VPS.`;
   if(state?.active) return `Agent đã kết nối bằng ${workers} Worker và đang chờ việc. Bấm để chuyển về VPS.`;
+  if(state?.probed) return `Agent đã nạp WASM bằng ${workers} Worker và đang chờ kết nối. Hiện chưa dùng CPU để xếp.`;
   if(state?.available && state?.enabled){
-    return `Agent đang bật; sẵn sàng dùng ${workers} Worker CPU/RAM. Bấm để dùng VPS.`;
+    if(Number(state?.localAcceptedResults || 0) > 0){
+      return `Agent đang bật; lượt gần nhất đã xử lý cục bộ bằng ${workers} Worker. Hiện đang nghỉ; bấm để dùng VPS.`;
+    }
+    return `Agent đang bật nhưng chưa kết nối; sẽ dùng ${workers} Worker CPU/RAM khi bắt đầu lượt xếp phù hợp. Bấm để dùng VPS.`;
   }
   return state?.available ? BROWSER_AGENT_OFF_LABEL : BROWSER_AGENT_UNAVAILABLE_LABEL;
 }
@@ -7328,10 +7337,16 @@ function browserAgentRuntimeState(deviceNavigator){
     available,
     enabled,
     active:available && enabled && executorState.active === true,
-    working:available && enabled && executorState.hasLease === true,
+    working:available && enabled && executorState.computeActive === true,
     probed:available && enabled && executorState.probed === true,
     workerCount,
-    plannedWorkerCount
+    plannedWorkerCount,
+    localComputeRuns:Math.max(0, Number(executorState.localComputeRuns || 0) || 0),
+    localAcceptedResults:Math.max(0, Number(executorState.localAcceptedResults || 0) || 0),
+    lastComputeWorkerCount:Math.max(0, Number(executorState.lastComputeWorkerCount || 0) || 0),
+    lastComputeStartedAtMs:Math.max(0, Number(executorState.lastComputeStartedAtMs || 0) || 0),
+    lastComputeFinishedAtMs:Math.max(0, Number(executorState.lastComputeFinishedAtMs || 0) || 0),
+    lastAcceptedResultAtMs:Math.max(0, Number(executorState.lastAcceptedResultAtMs || 0) || 0)
   };
 }
 
@@ -7345,9 +7360,9 @@ function renderBrowserAgentIndicator(runtimeState){
   const working = enabled && state.working === true;
   const name = working
     ? "working"
-    : (active ? "active" : (enabled ? "ready" : (available ? "off" : "unavailable")));
+    : (active ? "active" : (state.probed ? "prepared" : (enabled ? "enabled" : (available ? "off" : "unavailable"))));
   const label = browserAgentLabel(Object.assign({}, state, {available, enabled, active, working}));
-  window.__TKB_BROWSER_AGENT_READY = available && enabled;
+  window.__TKB_BROWSER_AGENT_READY = enabled && state.probed === true;
   window.__TKB_BROWSER_AGENT_ENABLED = enabled;
   window.__TKB_BROWSER_AGENT_ACTIVE = active;
   window.__TKB_BROWSER_AGENT_WORKING = working;
@@ -7412,6 +7427,12 @@ function startAgentHelperStatusPolling(){
   }
   return true;
 }
+
+try{
+  window.addEventListener?.("tkb-browser-agent-state", () => {
+    renderBrowserAgentIndicator(browserAgentRuntimeState());
+  });
+}catch(_){ }
 
 async function maybeInviteAgentBeforeSort(options){
   void options;

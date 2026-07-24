@@ -313,8 +313,18 @@ function loadBridge(data, fetchImpl, runtime = {}){
     : (() => {});
   const DateImpl = runtime.Date || Date;
   const MathImpl = runtime.Math || Math;
+  const legacyDurationInput = {
+    value:"",
+    dataset:{},
+    disabled:false,
+    closest(){ return null; },
+    addEventListener(){},
+    removeEventListener(){},
+    setAttribute(){},
+    removeAttribute(){}
+  };
   const document = runtime.document || {
-    getElementById(){ return null; },
+    getElementById(id){ return id === "solveDurationSeconds" ? legacyDurationInput : null; },
     querySelector(){ return null; },
     querySelectorAll(){ return []; },
     createElement(){
@@ -404,6 +414,27 @@ function detachedAbortError(message = "browser transport detached"){
   error.name = "AbortError";
   return error;
 }
+
+test("browser solve settings always use every reported logical CPU", () => {
+  const data = makeData(24);
+  const {hooks} = loadBridge(data, null, {
+    navigator:{hardwareConcurrency:512, deviceMemory:0.25}
+  });
+
+  assert.equal(hooks.hardwareWorkerCount(), 512);
+  assert.equal(
+    hooks.effectiveSettingsForSolve({solver_mode:"auto", num_workers:2}, data).num_workers,
+    512
+  );
+  assert.equal(hooks.settingsForAutoSort({num_workers:2}).num_workers, 512);
+  assert.equal(hooks.settingsForTeacherSessionOpt({num_workers:2}).num_workers, 512);
+  assert.equal(hooks.settingsForFastQualityAutoSort({num_workers:2}).num_workers, 512);
+
+  const fallback = loadBridge(data, null, {
+    navigator:{hardwareConcurrency:Infinity, deviceMemory:0.25}
+  });
+  assert.equal(fallback.hooks.hardwareWorkerCount(), 1);
+});
 
 test("watchdog and local fast finishes complete progress before releasing the button", () => {
   const forceBody = BRIDGE_SOURCE.slice(
@@ -1358,7 +1389,7 @@ test("expectedLessonCount observes same-length PCCM period edits", () => {
   assert.equal(plan.settings.expected_scheduled_periods, 3);
 });
 
-test("planner exposes one automatic arrange button and one accessible seconds duration input", () => {
+test("planner exposes one automatic arrange button and no manual duration input", () => {
   assert.equal((PLANNER_HTML.match(/id="btnAutoSort"/g) || []).length, 1);
   const selectTags = PLANNER_HTML.match(/<select\b[^>]*>/gi) || [];
   assert.equal(selectTags.length, 1);
@@ -1369,10 +1400,28 @@ test("planner exposes one automatic arrange button and one accessible seconds du
   assert.doesNotMatch(PLANNER_HTML, /id="tkbBackendBanner"/);
   assert.doesNotMatch(PLANNER_HTML, /Dịch vụ xếp lịch chưa chạy/);
   assert.doesNotMatch(PLANNER_HTML, /\b(?:1|2|3)\s*ph[uú]t\b/i);
-  assert.equal((PLANNER_HTML.match(/id="solveDurationSeconds"/g) || []).length, 1);
-  const durationTag = PLANNER_HTML.match(/<input\b[^>]*id="solveDurationSeconds"[^>]*>/i)?.[0] || "";
-  assert.match(durationTag, /type="number"[^>]*min="10"[^>]*max="1800"[^>]*aria-label="[^"]*giây[^"]*"/i);
-  assert.doesNotMatch(durationTag, /\bvalue=|\bplaceholder=|\btitle=/i);
+  assert.doesNotMatch(PLANNER_HTML, /solveDurationSeconds|solve-duration-control/);
+});
+
+test("missing duration control clears a stale preference and keeps automatic budgets", () => {
+  const storage = memoryStorage();
+  storage.setItem("TKB_SOLVE_DURATION_SECONDS_V2", "275");
+  const document = {
+    getElementById(){ return null; },
+    querySelector(){ return null; },
+    querySelectorAll(){ return []; },
+    createElement(){ return {dataset:{}, classList:{add(){}, remove(){}, toggle(){}}, setAttribute(){}, appendChild(){}, remove(){}}; },
+    documentElement:{appendChild(){}},
+    body:{appendChild(){}}
+  };
+  const data = makeData(2);
+  const {hooks} = loadBridge(data, null, {localStorage:storage, document});
+  const plan = hooks.buildAutomaticAutoSortPlan(data);
+
+  assert.equal(storage.getItem("TKB_SOLVE_DURATION_SECONDS_V2"), null);
+  assert.equal(hooks.readCustomSolveDurationSeconds(), 0);
+  assert.equal(plan.settings.ui_custom_solve_duration_seconds, undefined);
+  assert.equal(plan.settings.backend_deadline_ms, 130000);
 });
 
 test("iPhone and iPad keep an explicit custom duration while blank remains automatic", () => {
@@ -1473,7 +1522,16 @@ test("browser readiness marker is serialized only after a successful eligible WA
       canHandleRequest(){ return true; },
       async probe(){ probeCalls += 1; return browserReady; },
       async activate(){ throw new Error("a direct test response must not activate a lease"); },
-      async close(){ closeCalls += 1; return true; }
+      async close(){ closeCalls += 1; return true; },
+      state(){
+        return {
+          probed:browserReady,
+          active:false,
+          computeActive:false,
+          localComputeRuns:0,
+          localAcceptedResults:0
+        };
+      }
     };
     const fetchImpl = async (url, options = {}) => {
       const requestUrl = String(url);
@@ -1496,6 +1554,11 @@ test("browser readiness marker is serialized only after a successful eligible WA
     assert.equal(payload.ok, true);
     assert.equal(probeCalls, 1);
     assert.ok(posted);
+    assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserWasmEligible, true);
+    assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserWasmProbed, browserReady);
+    assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserWasmActivated, false);
+    assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserWasmFinalState.computeActive, false);
+    assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserWasmFinalState.localAcceptedResults, 0);
     if(browserReady){
       assert.equal(posted.settings.ui_browser_wasm_ready, true);
       assert.equal(closeCalls, 1);
@@ -1968,9 +2031,6 @@ test("custom seconds duration is persisted, clamped, and overrides automatic sol
   assert.equal(hooks.writeCustomSolveDurationSeconds(1), 10);
   assert.equal(hooks.writeCustomSolveDurationSeconds(999), 999);
   assert.equal(hooks.writeCustomSolveDurationSeconds(9999), 1800);
-  storage.setItem("TKB_SOLVE_DURATION_SECONDS_V2", "not-a-number");
-  assert.equal(hooks.readCustomSolveDurationSeconds(), 0);
-  assert.equal(storage.getItem("TKB_SOLVE_DURATION_SECONDS_V2"), null);
 });
 
 test("a 180-second first run keeps the remaining budget for quality", () => {

@@ -232,6 +232,152 @@ struct Assignment {
     periods: i64,
     session_limit: i64,
     day_limits: HashMap<i64, i64>,
+    quick_min_two_blocks: i64,
+    quick_avoid_pair23_morning: bool,
+    quick_avoid_pair23_afternoon: bool,
+}
+
+#[derive(Clone, Debug)]
+struct PendingQuickAssignment {
+    assignment: Assignment,
+    remaining: i64,
+    sequence: i64,
+    required_two_blocks: i64,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct QuickPlacementChoice {
+    domain_size: usize,
+    unit_size: i64,
+    remaining: i64,
+    teacher_load: i64,
+    tie_break: u64,
+}
+
+#[derive(Default)]
+struct QuickOccupancyIndex {
+    off_by_class: HashMap<String, u64>,
+    occupied_by_class: HashMap<String, u64>,
+    occupied_by_teacher: HashMap<String, u64>,
+    occupied_by_room: HashMap<String, u64>,
+    occupied_by_subject: HashMap<(String, String), u64>,
+}
+
+impl QuickOccupancyIndex {
+    fn from_state(
+        assignments: &[PendingQuickAssignment],
+        off_slots: &HashSet<String>,
+        lessons: &[Value],
+    ) -> Self {
+        let mut index = Self::default();
+        let mut seen_classes = HashSet::new();
+        for item in assignments {
+            let assignment = &item.assignment;
+            if !seen_classes.insert(assignment.class_id.clone()) {
+                continue;
+            }
+            for (_, day) in DAYS {
+                for (session_key, _) in SESSIONS {
+                    for period in 0..PERIODS_PER_SESSION {
+                        let slot = make_slot(day, session_key, period);
+                        let bit = quick_slot_bit(&slot);
+                        if off_slots.contains(&slot_key(&assignment.class_id, &slot)) {
+                            *index
+                                .off_by_class
+                                .entry(assignment.class_id.clone())
+                                .or_insert(0) |= bit;
+                        }
+                    }
+                }
+            }
+        }
+        for lesson in lessons {
+            let Some(slot) = lesson_slot(lesson) else {
+                continue;
+            };
+            let bit = quick_slot_bit(&slot);
+            let class_id = lesson_class_id(lesson);
+            let subject = norm(&lesson_subject(lesson));
+            let teacher = lesson_teacher_key(lesson);
+            let room = norm(&lesson_room(lesson));
+            *index.occupied_by_class.entry(class_id.clone()).or_insert(0) |= bit;
+            if !subject.is_empty() {
+                *index
+                    .occupied_by_subject
+                    .entry((class_id, subject))
+                    .or_insert(0) |= bit;
+            }
+            if !teacher.is_empty() {
+                *index.occupied_by_teacher.entry(teacher).or_insert(0) |= bit;
+            }
+            if !room.is_empty() {
+                *index.occupied_by_room.entry(room).or_insert(0) |= bit;
+            }
+        }
+        index
+    }
+
+    fn available_mask(&self, assignment: &Assignment) -> u64 {
+        let mut blocked = self
+            .off_by_class
+            .get(&assignment.class_id)
+            .copied()
+            .unwrap_or(0)
+            | self
+                .occupied_by_class
+                .get(&assignment.class_id)
+                .copied()
+                .unwrap_or(0);
+        let teacher = norm(&assignment.teacher);
+        if !teacher.is_empty() {
+            blocked |= self.occupied_by_teacher.get(&teacher).copied().unwrap_or(0);
+        }
+        let room = norm(&assignment.room);
+        if !room.is_empty() {
+            blocked |= self.occupied_by_room.get(&room).copied().unwrap_or(0);
+        }
+        QUICK_ALL_SLOTS_MASK & !blocked
+    }
+
+    fn subject_mask(&self, assignment: &Assignment) -> u64 {
+        self.occupied_by_subject
+            .get(&(assignment.class_id.clone(), norm(&assignment.subject)))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    fn add(&mut self, assignment: &Assignment, slot: &Slot) {
+        let bit = quick_slot_bit(slot);
+        *self
+            .occupied_by_class
+            .entry(assignment.class_id.clone())
+            .or_insert(0) |= bit;
+        *self
+            .occupied_by_subject
+            .entry((assignment.class_id.clone(), norm(&assignment.subject)))
+            .or_insert(0) |= bit;
+        if !assignment.teacher.is_empty() {
+            *self
+                .occupied_by_teacher
+                .entry(norm(&assignment.teacher))
+                .or_insert(0) |= bit;
+        }
+        if !assignment.room.is_empty() {
+            *self
+                .occupied_by_room
+                .entry(norm(&assignment.room))
+                .or_insert(0) |= bit;
+        }
+    }
+}
+
+const QUICK_ALL_SLOTS_MASK: u64 = (1_u64 << 60) - 1;
+
+fn quick_slot_bit(slot: &Slot) -> u64 {
+    let day_offset = slot.day.saturating_sub(2).clamp(0, 5) as u32;
+    let session_offset = if slot.session_key == "chieu" { 5 } else { 0 };
+    let offset = day_offset * 10 + session_offset + slot.period_index.clamp(0, 4) as u32;
+    1_u64 << offset
 }
 
 #[derive(Clone, Debug)]
@@ -1087,7 +1233,7 @@ fn solve_simple(
     let pccm_session_limits = numeric_matrix(data.get("pccmGioihanMatrix"));
     let pccm_rooms = string_matrix(data.get("pccmRoomMatrix"));
     let off_slots = collect_off_slots(data, &class_alias);
-    let fixed_lessons = collect_fixed_lessons(data, &class_alias, &subject_alias);
+    let mut fixed_lessons = collect_fixed_lessons(data, &class_alias, &subject_alias);
     let mut assignments = parse_assignments(
         data,
         &classes,
@@ -1100,6 +1246,23 @@ fn solve_simple(
         &pccm_session_limits,
         &pccm_rooms,
     );
+    if config.optimization_focus == OptimizationFocus::QuickComplete {
+        apply_quick_authored_subject_rules(data, &mut assignments, &class_alias, &subject_alias);
+        for fixed in &mut fixed_lessons {
+            let Some(assignment) = assignments.iter().find(|assignment| {
+                assignment.class_id == fixed.class_id
+                    && norm(&assignment.subject) == norm(&fixed.subject)
+            }) else {
+                continue;
+            };
+            if fixed.teacher.is_empty() {
+                fixed.teacher = assignment.teacher.clone();
+            }
+            if fixed.room.is_empty() {
+                fixed.room = assignment.room.clone();
+            }
+        }
+    }
     let teacher_load = teacher_period_load_map(&assignments);
     let mut rng = SimpleRng::new(run_seed);
     shuffle_slice(&mut assignments, &mut rng);
@@ -1113,6 +1276,9 @@ fn solve_simple(
             .then_with(|| b_teacher_load.cmp(&a_teacher_load))
             .then_with(|| b.periods.cmp(&a.periods))
     });
+    let quick_authored_assignments = (config.optimization_focus
+        == OptimizationFocus::QuickComplete)
+        .then(|| assignments.clone());
     let subject_limits = subject_limit_map(&assignments);
 
     let mut lessons = Vec::new();
@@ -1147,26 +1313,30 @@ fn solve_simple(
         ));
     }
 
-    let mut expected_periods = 0_i64;
-    for assignment in assignments {
-        expected_periods += assignment.periods;
-        let fixed_count = fixed_by_class_subject
-            .get(&(assignment.class_id.clone(), norm(&assignment.subject)))
-            .copied()
-            .unwrap_or(0);
-        let mut remaining = assignment.periods.saturating_sub(fixed_count);
-        let mut seq = 0_i64;
-        if clock.deadline_hit() {
-            push_unassigned_periods(
-                &mut unassigned,
-                &assignment,
-                remaining,
-                &mut seq,
-                "backend_deadline_hit",
-            );
-            continue;
-        }
-        while remaining > 0 {
+    let expected_periods = assignments.iter().map(|item| item.periods).sum::<i64>();
+    if config.optimization_focus == OptimizationFocus::QuickComplete {
+        place_quick_assignments_mrv(
+            assignments,
+            &fixed_by_class_subject,
+            &teacher_load,
+            &off_slots,
+            &mut occupied_by_class,
+            &mut teacher_occ,
+            &mut room_occ,
+            &mut heuristic_state,
+            &mut lessons,
+            &mut unassigned,
+            run_seed,
+            clock,
+        );
+    } else {
+        for assignment in assignments {
+            let fixed_count = fixed_by_class_subject
+                .get(&(assignment.class_id.clone(), norm(&assignment.subject)))
+                .copied()
+                .unwrap_or(0);
+            let mut remaining = assignment.periods.saturating_sub(fixed_count);
+            let mut seq = 0_i64;
             if clock.deadline_hit() {
                 push_unassigned_periods(
                     &mut unassigned,
@@ -1175,72 +1345,101 @@ fn solve_simple(
                     &mut seq,
                     "backend_deadline_hit",
                 );
-                break;
-            }
-            let slots = choose_assignment_slots(
-                &assignment,
-                remaining,
-                &off_slots,
-                &occupied_by_class,
-                &teacher_occ,
-                &room_occ,
-                &heuristic_state,
-                run_seed,
-            );
-
-            let Some(slots) = slots else {
-                seq += 1;
-                unassigned.push(json!({
-                    "classId": assignment.class_id,
-                    "className": assignment.class_name,
-                    "subject": assignment.subject,
-                    "teacher": assignment.teacher,
-                    "room": assignment.room,
-                    "reason": "not_enough_non_off_slots_or_subject_limit",
-                    "sessionLimit": assignment.session_limit,
-                    "index": seq
-                }));
-                remaining = remaining.saturating_sub(1);
                 continue;
-            };
-
-            for slot in slots {
-                seq += 1;
-                occupied_by_class.insert(slot_key(&assignment.class_id, &slot));
-                if !assignment.teacher.is_empty() {
-                    teacher_occ.insert(resource_slot_key(&assignment.teacher, &slot));
+            }
+            while remaining > 0 {
+                if clock.deadline_hit() {
+                    push_unassigned_periods(
+                        &mut unassigned,
+                        &assignment,
+                        remaining,
+                        &mut seq,
+                        "backend_deadline_hit",
+                    );
+                    break;
                 }
-                if !assignment.room.is_empty() {
-                    room_occ.insert(resource_slot_key(&assignment.room, &slot));
-                }
-                heuristic_state.add(
-                    &assignment.class_id,
-                    &assignment.subject,
-                    &assignment.teacher,
-                    &slot,
+                let slots = choose_assignment_slots(
+                    &assignment,
+                    remaining,
+                    &off_slots,
+                    &occupied_by_class,
+                    &teacher_occ,
+                    &room_occ,
+                    &heuristic_state,
+                    run_seed,
                 );
-                lessons.push(lesson_json(
-                    &assignment.class_id,
-                    &assignment.class_name,
-                    &assignment.subject,
-                    &assignment.teacher,
-                    &assignment.room,
-                    &slot,
-                    false,
-                ));
-                remaining = remaining.saturating_sub(1);
+
+                let Some(slots) = slots else {
+                    seq += 1;
+                    unassigned.push(json!({
+                        "classId": assignment.class_id,
+                        "className": assignment.class_name,
+                        "subject": assignment.subject,
+                        "teacher": assignment.teacher,
+                        "room": assignment.room,
+                        "reason": "not_enough_non_off_slots_or_subject_limit",
+                        "sessionLimit": assignment.session_limit,
+                        "index": seq
+                    }));
+                    remaining = remaining.saturating_sub(1);
+                    continue;
+                };
+
+                for slot in slots {
+                    seq += 1;
+                    occupied_by_class.insert(slot_key(&assignment.class_id, &slot));
+                    if !assignment.teacher.is_empty() {
+                        teacher_occ.insert(resource_slot_key(&assignment.teacher, &slot));
+                    }
+                    if !assignment.room.is_empty() {
+                        room_occ.insert(resource_slot_key(&assignment.room, &slot));
+                    }
+                    heuristic_state.add(
+                        &assignment.class_id,
+                        &assignment.subject,
+                        &assignment.teacher,
+                        &slot,
+                    );
+                    lessons.push(lesson_json(
+                        &assignment.class_id,
+                        &assignment.class_name,
+                        &assignment.subject,
+                        &assignment.teacher,
+                        &assignment.room,
+                        &slot,
+                        false,
+                    ));
+                    remaining = remaining.saturating_sub(1);
+                }
             }
         }
     }
 
-    let unassigned_repair_moves = repair_unassigned_lessons(
-        &mut lessons,
-        &mut unassigned,
-        &off_slots,
-        &subject_limits,
-        run_seed,
-        clock,
-    );
+    let quick_repair_moves = if config.optimization_focus == OptimizationFocus::QuickComplete {
+        repair_quick_unassigned_lessons_first_fit(
+            &mut lessons,
+            &mut unassigned,
+            &off_slots,
+            &subject_limits,
+            quick_authored_assignments.as_deref().unwrap_or(&[]),
+            run_seed,
+            clock,
+        )
+    } else {
+        0
+    };
+    let unassigned_repair_moves = if config.optimization_focus == OptimizationFocus::QuickComplete {
+        quick_repair_moves
+    } else {
+        repair_unassigned_lessons(
+            &mut lessons,
+            &mut unassigned,
+            &off_slots,
+            &subject_limits,
+            run_seed,
+            clock,
+        )
+    };
 
     let mut returned_incumbent = false;
     let best_complete_incumbent =
@@ -1742,6 +1941,53 @@ fn constraint_subject_day_limit_map(
     out
 }
 
+fn apply_quick_authored_subject_rules(
+    data: &Map<String, Value>,
+    assignments: &mut [Assignment],
+    class_alias: &HashMap<String, ClassInfo>,
+    subject_alias: &HashMap<String, String>,
+) {
+    let Some(subject_rules) = data
+        .get("tkbConstraints")
+        .and_then(|value| value.get("subject"))
+        .and_then(Value::as_object)
+    else {
+        return;
+    };
+    for (raw_subject, subject_rule) in subject_rules {
+        let subject = canonical_subject(raw_subject, subject_alias);
+        let Some(by_class) = subject_rule.get("byClass").and_then(Value::as_object) else {
+            continue;
+        };
+        for (raw_class, class_rule) in by_class {
+            let Some(class) = class_alias.get(&norm(raw_class)) else {
+                continue;
+            };
+            let min_two_blocks = class_rule
+                .get("lessonBlocks")
+                .and_then(|value| value.get("2"))
+                .and_then(|value| value.get("min"))
+                .map(|value| int_value(Some(value), 0).max(0))
+                .unwrap_or(0);
+            let avoid_pair = class_rule.get("avoidBreakPair23");
+            let avoid_morning = avoid_pair
+                .and_then(|value| value.get("morning"))
+                .is_some_and(truthy);
+            let avoid_afternoon = avoid_pair
+                .and_then(|value| value.get("afternoon"))
+                .is_some_and(truthy);
+            for assignment in assignments.iter_mut().filter(|assignment| {
+                assignment.class_id == class.id && norm(&assignment.subject) == norm(&subject)
+            }) {
+                assignment.quick_min_two_blocks =
+                    assignment.quick_min_two_blocks.max(min_two_blocks);
+                assignment.quick_avoid_pair23_morning |= avoid_morning;
+                assignment.quick_avoid_pair23_afternoon |= avoid_afternoon;
+            }
+        }
+    }
+}
+
 fn parse_assignments(
     data: &Map<String, Value>,
     classes: &[ClassInfo],
@@ -1848,6 +2094,9 @@ fn parse_assignments(
             periods,
             session_limit,
             day_limits,
+            quick_min_two_blocks: 0,
+            quick_avoid_pair23_morning: false,
+            quick_avoid_pair23_afternoon: false,
         });
     }
     out.sort_by(|a, b| {
@@ -2116,6 +2365,551 @@ fn collect_off_slots(
         }
     }
     out
+}
+
+#[allow(clippy::too_many_arguments)]
+fn place_quick_assignments_mrv(
+    assignments: Vec<Assignment>,
+    fixed_by_class_subject: &HashMap<(String, String), i64>,
+    teacher_load: &HashMap<String, i64>,
+    off_slots: &HashSet<String>,
+    occupied_by_class: &mut HashSet<String>,
+    teacher_occ: &mut HashSet<String>,
+    room_occ: &mut HashSet<String>,
+    heuristic_state: &mut HeuristicState,
+    lessons: &mut Vec<Value>,
+    unassigned: &mut Vec<Value>,
+    run_seed: u64,
+    clock: &SolveClock,
+) {
+    let mut pending = assignments
+        .into_iter()
+        .filter_map(|assignment| {
+            let fixed_count = fixed_by_class_subject
+                .get(&(assignment.class_id.clone(), norm(&assignment.subject)))
+                .copied()
+                .unwrap_or(0);
+            let remaining = assignment.periods.saturating_sub(fixed_count);
+            let required_two_blocks =
+                assignment
+                    .quick_min_two_blocks
+                    .saturating_sub(quick_subject_two_block_count(
+                        lessons,
+                        &assignment.class_id,
+                        &assignment.subject,
+                    ));
+            (remaining > 0).then_some(PendingQuickAssignment {
+                assignment,
+                remaining,
+                sequence: fixed_count,
+                required_two_blocks,
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut occupancy_index = QuickOccupancyIndex::from_state(&pending, off_slots, lessons);
+
+    while !pending.is_empty() && !clock.deadline_hit() {
+        let mut best: Option<(QuickPlacementChoice, usize)> = None;
+        for (pending_index, item) in pending.iter().enumerate() {
+            let (domain_size, unit_size) = quick_assignment_domain(
+                &item.assignment,
+                item.remaining,
+                item.required_two_blocks,
+                &occupancy_index,
+            );
+            let choice = QuickPlacementChoice {
+                domain_size,
+                unit_size,
+                remaining: item.remaining,
+                teacher_load: teacher_load
+                    .get(&norm(&item.assignment.teacher))
+                    .copied()
+                    .unwrap_or(0),
+                tie_break: quick_assignment_jitter(&item.assignment, run_seed),
+            };
+            if best
+                .as_ref()
+                .is_none_or(|(current, _)| quick_choice_precedes(&choice, current))
+            {
+                best = Some((choice, pending_index));
+            }
+        }
+
+        let Some((choice, pending_index)) = best else {
+            break;
+        };
+        if choice.domain_size == 0 {
+            let mut item = pending.swap_remove(pending_index);
+            push_unassigned_periods(
+                unassigned,
+                &item.assignment,
+                item.remaining,
+                &mut item.sequence,
+                "quick_mrv_domain_exhausted",
+            );
+            continue;
+        }
+
+        let item = &mut pending[pending_index];
+        let Some(slots) = choose_quick_assignment_slots(
+            &item.assignment,
+            item.remaining,
+            item.required_two_blocks > 0,
+            off_slots,
+            occupied_by_class,
+            teacher_occ,
+            room_occ,
+            heuristic_state,
+            run_seed,
+        ) else {
+            let mut item = pending.swap_remove(pending_index);
+            push_unassigned_periods(
+                unassigned,
+                &item.assignment,
+                item.remaining,
+                &mut item.sequence,
+                "quick_mrv_domain_changed",
+            );
+            continue;
+        };
+        let placed_two_block = (slots.len() == 2
+            && slots[0].day == slots[1].day
+            && slots[0].session_key == slots[1].session_key
+            && (slots[0].period_index - slots[1].period_index).abs() == 1)
+            || (slots.len() == 1
+                && item.required_two_blocks > 0
+                && quick_single_extends_isolated_subject(
+                    &item.assignment,
+                    &slots[0],
+                    heuristic_state,
+                ));
+        for slot in slots {
+            item.sequence += 1;
+            occupancy_index.add(&item.assignment, &slot);
+            occupied_by_class.insert(slot_key(&item.assignment.class_id, &slot));
+            if !item.assignment.teacher.is_empty() {
+                teacher_occ.insert(resource_slot_key(&item.assignment.teacher, &slot));
+            }
+            if !item.assignment.room.is_empty() {
+                room_occ.insert(resource_slot_key(&item.assignment.room, &slot));
+            }
+            heuristic_state.add(
+                &item.assignment.class_id,
+                &item.assignment.subject,
+                &item.assignment.teacher,
+                &slot,
+            );
+            lessons.push(lesson_json(
+                &item.assignment.class_id,
+                &item.assignment.class_name,
+                &item.assignment.subject,
+                &item.assignment.teacher,
+                &item.assignment.room,
+                &slot,
+                false,
+            ));
+            item.remaining = item.remaining.saturating_sub(1);
+        }
+        if item.required_two_blocks > 0 && placed_two_block {
+            item.required_two_blocks -= 1;
+        }
+        if item.remaining == 0 {
+            pending.swap_remove(pending_index);
+        }
+    }
+
+    for mut item in pending {
+        let reason = if clock.deadline_hit() {
+            "backend_deadline_hit"
+        } else {
+            "quick_mrv_incomplete"
+        };
+        push_unassigned_periods(
+            unassigned,
+            &item.assignment,
+            item.remaining,
+            &mut item.sequence,
+            reason,
+        );
+    }
+}
+
+fn quick_subject_two_block_count(lessons: &[Value], class_id: &str, subject: &str) -> i64 {
+    let subject_key = norm(subject);
+    let mut sessions: HashMap<(i64, String), Vec<i64>> = HashMap::new();
+    for lesson in lessons {
+        if lesson_class_id(lesson) != class_id || norm(&lesson_subject(lesson)) != subject_key {
+            continue;
+        }
+        let Some(slot) = lesson_slot(lesson) else {
+            continue;
+        };
+        sessions
+            .entry((slot.day, slot.session_key))
+            .or_default()
+            .push(slot.period_index);
+    }
+    let mut blocks = 0_i64;
+    for periods in sessions.values_mut() {
+        periods.sort_unstable();
+        let mut run_length = 1_usize;
+        for index in 1..periods.len() {
+            if periods[index] == periods[index - 1] + 1 {
+                run_length += 1;
+            } else {
+                blocks += i64::from(run_length >= 2);
+                run_length = 1;
+            }
+        }
+        blocks += i64::from(run_length >= 2);
+    }
+    blocks
+}
+
+fn quick_choice_precedes(candidate: &QuickPlacementChoice, current: &QuickPlacementChoice) -> bool {
+    if candidate.domain_size == 0 || current.domain_size == 0 {
+        return candidate.domain_size < current.domain_size;
+    }
+    let candidate_slack =
+        candidate.domain_size as i128 * candidate.unit_size as i128 * current.remaining as i128;
+    let current_slack =
+        current.domain_size as i128 * current.unit_size as i128 * candidate.remaining as i128;
+    candidate_slack < current_slack
+        || (candidate_slack == current_slack
+            && (candidate.domain_size < current.domain_size
+                || (candidate.domain_size == current.domain_size
+                    && (candidate.teacher_load > current.teacher_load
+                        || (candidate.teacher_load == current.teacher_load
+                            && (candidate.remaining > current.remaining
+                                || (candidate.remaining == current.remaining
+                                    && candidate.tie_break < current.tie_break)))))))
+}
+
+fn quick_assignment_jitter(assignment: &Assignment, run_seed: u64) -> u64 {
+    let mut hash = run_seed ^ 0x517c_c1b7_2722_0a95;
+    hash_part(&mut hash, &assignment.class_id);
+    hash_part(&mut hash, &assignment.subject);
+    hash_part(&mut hash, &assignment.teacher);
+    hash
+}
+
+fn quick_assignment_domain(
+    assignment: &Assignment,
+    remaining: i64,
+    required_two_blocks: i64,
+    occupancy_index: &QuickOccupancyIndex,
+) -> (usize, i64) {
+    let available = occupancy_index.available_mask(assignment);
+    let subject_mask = occupancy_index.subject_mask(assignment);
+    if required_two_blocks > 0 {
+        let extensions = available & quick_required_pair_extension_mask(assignment, subject_mask);
+        if extensions != 0 {
+            return (extensions.count_ones() as usize, 1);
+        }
+        if remaining < 2 {
+            return (0, 2);
+        }
+    }
+    if assignment.session_limit >= 2 && remaining >= 2 {
+        let mut blocks = 0_usize;
+        for day_offset in 0..6_u32 {
+            let day = day_offset as i64 + 2;
+            let day_subject_count = ((subject_mask >> (day_offset * 10)) & 0x3ff).count_ones();
+            if assignment
+                .day_limits
+                .get(&day)
+                .is_some_and(|limit| day_subject_count as i64 + 2 > *limit)
+            {
+                continue;
+            }
+            for session_offset in [0_u32, 5_u32] {
+                let offset = day_offset * 10 + session_offset;
+                if ((subject_mask >> offset) & 0x1f) != 0 {
+                    continue;
+                }
+                let free = (available >> offset) & 0x1f;
+                let mut starts = free & (free >> 1) & 0x0f;
+                if quick_avoid_pair23_for_session(assignment, session_offset) {
+                    starts &= !(1_u64 << 1);
+                }
+                blocks += starts.count_ones() as usize;
+            }
+        }
+        if blocks > 0 {
+            return (blocks, 2);
+        }
+        if required_two_blocks > 0 {
+            return (0, 2);
+        }
+    }
+
+    let singles =
+        (available & quick_subject_single_mask(assignment, subject_mask)).count_ones() as usize;
+    (singles, 1)
+}
+
+fn quick_required_pair_extension_mask(assignment: &Assignment, subject_mask: u64) -> u64 {
+    let mut extensions = 0_u64;
+    for day_offset in 0..6_u32 {
+        for session_offset in [0_u32, 5_u32] {
+            let offset = day_offset * 10 + session_offset;
+            let session_subject = (subject_mask >> offset) & 0x1f;
+            if session_subject.count_ones() == 1 {
+                let adjacent = ((session_subject << 1) | (session_subject >> 1)) & 0x1f;
+                extensions |= adjacent << offset;
+            }
+        }
+    }
+    extensions & quick_subject_single_mask(assignment, subject_mask)
+}
+
+fn quick_subject_single_mask(assignment: &Assignment, subject_mask: u64) -> u64 {
+    let mut allowed = 0_u64;
+    for day_offset in 0..6_u32 {
+        let day = day_offset as i64 + 2;
+        let day_subject_count = ((subject_mask >> (day_offset * 10)) & 0x3ff).count_ones();
+        if assignment
+            .day_limits
+            .get(&day)
+            .is_some_and(|limit| day_subject_count as i64 >= *limit)
+        {
+            continue;
+        }
+        for session_offset in [0_u32, 5_u32] {
+            let offset = day_offset * 10 + session_offset;
+            let session_subject = (subject_mask >> offset) & 0x1f;
+            let session_count = session_subject.count_ones() as i64;
+            if assignment.session_limit > 0 && session_count >= assignment.session_limit {
+                continue;
+            }
+            let mut session_allowed = 0x1f_u64;
+            if assignment.session_limit >= 2 && session_count > 0 {
+                session_allowed = 0;
+                for period in 0..5_u32 {
+                    let with_candidate = session_subject | (1_u64 << period);
+                    let first = with_candidate.trailing_zeros();
+                    let last = 63 - with_candidate.leading_zeros();
+                    if last.saturating_sub(first) + 1 == with_candidate.count_ones() {
+                        session_allowed |= 1_u64 << period;
+                    }
+                }
+            }
+            if quick_avoid_pair23_for_session(assignment, session_offset) {
+                if session_subject & (1_u64 << 1) != 0 {
+                    session_allowed &= !(1_u64 << 2);
+                }
+                if session_subject & (1_u64 << 2) != 0 {
+                    session_allowed &= !(1_u64 << 1);
+                }
+            }
+            allowed |= session_allowed << offset;
+        }
+    }
+    allowed
+}
+
+fn quick_avoid_pair23_for_session(assignment: &Assignment, session_offset: u32) -> bool {
+    if session_offset == 0 {
+        assignment.quick_avoid_pair23_morning
+    } else {
+        assignment.quick_avoid_pair23_afternoon
+    }
+}
+
+fn choose_quick_assignment_slots(
+    assignment: &Assignment,
+    remaining: i64,
+    require_two_block: bool,
+    off_slots: &HashSet<String>,
+    occupied_by_class: &HashSet<String>,
+    teacher_occ: &HashSet<String>,
+    room_occ: &HashSet<String>,
+    heuristic_state: &HeuristicState,
+    run_seed: u64,
+) -> Option<Vec<Slot>> {
+    if require_two_block {
+        if let Some(slot) = choose_quick_slot(
+            assignment,
+            off_slots,
+            occupied_by_class,
+            teacher_occ,
+            room_occ,
+            heuristic_state,
+            true,
+            run_seed,
+        ) {
+            return Some(vec![slot]);
+        }
+    }
+    if assignment.session_limit >= 2 && remaining >= 2 {
+        if let Some(block) = choose_quick_slot_block(
+            assignment,
+            off_slots,
+            occupied_by_class,
+            teacher_occ,
+            room_occ,
+            heuristic_state,
+            run_seed,
+        ) {
+            return Some(block);
+        }
+    }
+    if require_two_block {
+        return None;
+    }
+    choose_quick_slot(
+        assignment,
+        off_slots,
+        occupied_by_class,
+        teacher_occ,
+        room_occ,
+        heuristic_state,
+        false,
+        run_seed,
+    )
+    .map(|slot| vec![slot])
+}
+
+#[allow(clippy::too_many_arguments)]
+fn choose_quick_slot(
+    assignment: &Assignment,
+    off_slots: &HashSet<String>,
+    occupied_by_class: &HashSet<String>,
+    teacher_occ: &HashSet<String>,
+    room_occ: &HashSet<String>,
+    heuristic_state: &HeuristicState,
+    require_pair_extension: bool,
+    run_seed: u64,
+) -> Option<Slot> {
+    let mut best: Option<(i64, Slot)> = None;
+    for (day_key, day) in DAYS {
+        for (session_key, session) in SESSIONS {
+            for period_index in 0..PERIODS_PER_SESSION {
+                let slot = Slot {
+                    day_key: day_key.to_string(),
+                    day,
+                    session_key: session_key.to_string(),
+                    session,
+                    period_index,
+                };
+                if off_slots.contains(&slot_key(&assignment.class_id, &slot))
+                    || occupied_by_class.contains(&slot_key(&assignment.class_id, &slot))
+                    || !heuristic_state.can_place_subject_session(assignment, &slot)
+                    || !quick_single_avoids_pair23(assignment, &slot, heuristic_state)
+                    || (require_pair_extension
+                        && !quick_single_extends_isolated_subject(
+                            assignment,
+                            &slot,
+                            heuristic_state,
+                        ))
+                    || (!assignment.teacher.is_empty()
+                        && teacher_occ.contains(&resource_slot_key(&assignment.teacher, &slot)))
+                    || (!assignment.room.is_empty()
+                        && room_occ.contains(&resource_slot_key(&assignment.room, &slot)))
+                {
+                    continue;
+                }
+                let score = heuristic_state.score(assignment, &slot, run_seed);
+                match &best {
+                    Some((best_score, _)) if *best_score <= score => {}
+                    _ => best = Some((score, slot)),
+                }
+            }
+        }
+    }
+    best.map(|(_, slot)| slot)
+}
+
+fn quick_single_extends_isolated_subject(
+    assignment: &Assignment,
+    slot: &Slot,
+    heuristic_state: &HeuristicState,
+) -> bool {
+    heuristic_state
+        .class_subject_session_slots
+        .get(&format!(
+            "{}|{}|{}|{}",
+            assignment.class_id,
+            norm(&assignment.subject),
+            slot.day_key,
+            slot.session_key
+        ))
+        .is_some_and(|periods| periods.len() == 1 && (periods[0] - slot.period_index).abs() == 1)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn choose_quick_slot_block(
+    assignment: &Assignment,
+    off_slots: &HashSet<String>,
+    occupied_by_class: &HashSet<String>,
+    teacher_occ: &HashSet<String>,
+    room_occ: &HashSet<String>,
+    heuristic_state: &HeuristicState,
+    run_seed: u64,
+) -> Option<Vec<Slot>> {
+    let mut best: Option<(i64, Vec<Slot>)> = None;
+    for (_, day) in DAYS {
+        for (session_key, _) in SESSIONS {
+            for period_index in 0..(PERIODS_PER_SESSION - 1) {
+                let session_offset = if session_key == "chieu" { 5 } else { 0 };
+                if period_index == 1 && quick_avoid_pair23_for_session(assignment, session_offset) {
+                    continue;
+                }
+                let slots = vec![
+                    make_slot(day, session_key, period_index),
+                    make_slot(day, session_key, period_index + 1),
+                ];
+                if !can_place_slot_block(
+                    assignment,
+                    &slots,
+                    off_slots,
+                    occupied_by_class,
+                    teacher_occ,
+                    room_occ,
+                    heuristic_state,
+                    true,
+                ) {
+                    continue;
+                }
+                let score = slots
+                    .iter()
+                    .map(|slot| heuristic_state.score(assignment, slot, run_seed))
+                    .sum::<i64>()
+                    + block_jitter(assignment, &slots, run_seed);
+                match &best {
+                    Some((best_score, _)) if *best_score <= score => {}
+                    _ => best = Some((score, slots)),
+                }
+            }
+        }
+    }
+    best.map(|(_, slots)| slots)
+}
+
+fn quick_single_avoids_pair23(
+    assignment: &Assignment,
+    slot: &Slot,
+    heuristic_state: &HeuristicState,
+) -> bool {
+    let avoid = if slot.session_key == "sang" {
+        assignment.quick_avoid_pair23_morning
+    } else {
+        assignment.quick_avoid_pair23_afternoon
+    };
+    if !avoid || !matches!(slot.period_index, 1 | 2) {
+        return true;
+    }
+    let counterpart = if slot.period_index == 1 { 2 } else { 1 };
+    heuristic_state
+        .class_subject_session_slots
+        .get(&format!(
+            "{}|{}|{}|{}",
+            assignment.class_id,
+            norm(&assignment.subject),
+            slot.day_key,
+            slot.session_key
+        ))
+        .is_none_or(|periods| !periods.contains(&counterpart))
 }
 
 fn choose_slot(
@@ -6630,6 +7424,43 @@ fn repair_unassigned_lessons(
             subject_limits,
             run_seed,
             allow_expensive_cycles,
+            false,
+            None,
+            clock,
+        ) else {
+            break;
+        };
+        *lessons = candidate_lessons;
+        unassigned.remove(unassigned_index);
+        moves += 1;
+    }
+    moves
+}
+
+fn repair_quick_unassigned_lessons_first_fit(
+    lessons: &mut Vec<Value>,
+    unassigned: &mut Vec<Value>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    quick_authored_assignments: &[Assignment],
+    run_seed: u64,
+    clock: &SolveClock,
+) -> i64 {
+    let mut moves = 0_i64;
+    let max_rounds = unassigned.len().saturating_mul(2).max(1);
+    for _ in 0..max_rounds {
+        if unassigned.is_empty() || clock.deadline_hit() {
+            break;
+        }
+        let Some((unassigned_index, candidate_lessons)) = best_unassigned_repair(
+            lessons,
+            unassigned,
+            off_slots,
+            subject_limits,
+            run_seed,
+            true,
+            true,
+            Some(quick_authored_assignments),
             clock,
         ) else {
             break;
@@ -6648,6 +7479,8 @@ fn best_unassigned_repair(
     subject_limits: &SubjectLimitMap,
     run_seed: u64,
     allow_expensive_cycles: bool,
+    first_fit: bool,
+    quick_authored_assignments: Option<&[Assignment]>,
     clock: &SolveClock,
 ) -> Option<(usize, Vec<Value>)> {
     let mut best: Option<(i64, usize, Vec<Value>)> = None;
@@ -6679,8 +7512,16 @@ fn best_unassigned_repair(
                 slot,
                 false,
             ));
-            if !schedule_hard_ok(&candidate, off_slots, subject_limits) {
+            if !repair_candidate_hard_ok(
+                &candidate,
+                off_slots,
+                subject_limits,
+                quick_authored_assignments,
+            ) {
                 continue;
+            }
+            if first_fit {
+                return Some((unassigned_index, candidate));
             }
             let score = repair_candidate_score(&candidate, 1, item, slot, run_seed);
             match &best {
@@ -6723,8 +7564,16 @@ fn best_unassigned_repair(
                     slot,
                     false,
                 ));
-                if !schedule_hard_ok(&candidate, off_slots, subject_limits) {
+                if !repair_candidate_hard_ok(
+                    &candidate,
+                    off_slots,
+                    subject_limits,
+                    quick_authored_assignments,
+                ) {
                     continue;
+                }
+                if first_fit {
+                    return Some((unassigned_index, candidate));
                 }
                 let score = repair_candidate_score(&candidate, 2, item, slot, run_seed)
                     + move_jitter(blocker, &blocker_slot, run_seed);
@@ -6764,8 +7613,16 @@ fn best_unassigned_repair(
                     slot,
                     false,
                 ));
-                if !schedule_hard_ok(&candidate, off_slots, subject_limits) {
+                if !repair_candidate_hard_ok(
+                    &candidate,
+                    off_slots,
+                    subject_limits,
+                    quick_authored_assignments,
+                ) {
                     continue;
+                }
+                if first_fit {
+                    return Some((unassigned_index, candidate));
                 }
                 let score = repair_candidate_score(&candidate, 3, item, slot, run_seed)
                     + move_jitter(blocker, &blocker_target_slot, run_seed)
@@ -6833,8 +7690,16 @@ fn best_unassigned_repair(
                             slot,
                             false,
                         ));
-                        if !schedule_hard_ok(&candidate, off_slots, subject_limits) {
+                        if !repair_candidate_hard_ok(
+                            &candidate,
+                            off_slots,
+                            subject_limits,
+                            quick_authored_assignments,
+                        ) {
                             continue;
+                        }
+                        if first_fit {
+                            return Some((unassigned_index, candidate));
                         }
                         let score = repair_candidate_score(&candidate, 4, item, slot, run_seed)
                             + move_jitter(blocker, first_slot, run_seed)
@@ -6884,8 +7749,16 @@ fn best_unassigned_repair(
                     &target_slot,
                     false,
                 ));
-                if !schedule_hard_ok(&candidate, off_slots, subject_limits) {
+                if !repair_candidate_hard_ok(
+                    &candidate,
+                    off_slots,
+                    subject_limits,
+                    quick_authored_assignments,
+                ) {
                     continue;
+                }
+                if first_fit {
+                    return Some((unassigned_index, candidate));
                 }
                 let score = repair_candidate_score(&candidate, 2, item, &target_slot, run_seed)
                     + move_jitter(blocker, empty_slot, run_seed);
@@ -6897,6 +7770,68 @@ fn best_unassigned_repair(
         }
     }
     best.map(|(_, index, candidate)| (index, candidate))
+}
+
+fn repair_candidate_hard_ok(
+    lessons: &[Value],
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    quick_authored_assignments: Option<&[Assignment]>,
+) -> bool {
+    schedule_hard_ok(lessons, off_slots, subject_limits)
+        && quick_authored_assignments
+            .is_none_or(|assignments| quick_authored_subject_rules_ok(lessons, assignments))
+}
+
+fn quick_authored_subject_rules_ok(lessons: &[Value], assignments: &[Assignment]) -> bool {
+    let mut subject_sessions: HashMap<(String, String, i64, String), u8> = HashMap::new();
+    let mut subject_counts: HashMap<(String, String), i64> = HashMap::new();
+    for lesson in lessons {
+        let class_id = lesson_class_id(lesson);
+        let subject = norm(&lesson_subject(lesson));
+        let Some(slot) = lesson_slot(lesson) else {
+            return false;
+        };
+        if class_id.is_empty() || subject.is_empty() {
+            return false;
+        }
+        *subject_counts
+            .entry((class_id.clone(), subject.clone()))
+            .or_insert(0) += 1;
+        *subject_sessions
+            .entry((class_id, subject, slot.day, slot.session_key))
+            .or_insert(0) |= 1_u8 << slot.period_index.clamp(0, 4);
+    }
+
+    for assignment in assignments {
+        if assignment.quick_min_two_blocks <= 0
+            && !assignment.quick_avoid_pair23_morning
+            && !assignment.quick_avoid_pair23_afternoon
+        {
+            continue;
+        }
+        let key = (assignment.class_id.clone(), norm(&assignment.subject));
+        let observed = subject_counts.get(&key).copied().unwrap_or(0);
+        let mut two_blocks = 0_i64;
+        for ((class_id, subject, _, session), mask) in &subject_sessions {
+            if class_id != &key.0 || subject != &key.1 {
+                continue;
+            }
+            if (*mask & 0b0_0110) == 0b0_0110
+                && ((session == "sang" && assignment.quick_avoid_pair23_morning)
+                    || (session == "chieu" && assignment.quick_avoid_pair23_afternoon))
+            {
+                return false;
+            }
+            if (*mask & (*mask >> 1)) != 0 {
+                two_blocks += 1;
+            }
+        }
+        if observed >= assignment.periods && two_blocks < assignment.quick_min_two_blocks {
+            return false;
+        }
+    }
+    true
 }
 
 fn usable_slots_for_class(class_id: &str, off_slots: &HashSet<String>) -> Vec<Slot> {
@@ -9425,6 +10360,304 @@ mod tests {
         assert_eq!(stats.moves, 0);
         assert_eq!(stats.initial_one_period_sessions, 1);
         assert_eq!(stats.final_one_period_sessions, 1);
+    }
+
+    #[test]
+    fn quick_mrv_preserves_a_teacher_singleton_with_one_available_slot() {
+        let class_a_off = off_except(&[
+            ("thu2", "sang", 0),
+            ("thu2", "sang", 1),
+            ("thu3", "sang", 0),
+            ("thu3", "sang", 1),
+        ]);
+        let class_b_off = off_except(&[("thu2", "sang", 0)]);
+        let root = json!({
+            "lop": [
+                {"id":"6A", "ten":"6A", "khoi":"6"},
+                {"id":"7A", "ten":"7A", "khoi":"7"}
+            ],
+            "monhoc": [{"id":"math", "ten":"Math"}],
+            "mon": [
+                {"khoi":"6", "ten":"Math", "sotiet":2, "gioihan":2},
+                {"khoi":"7", "ten":"Math", "sotiet":1, "gioihan":1}
+            ],
+            "pccmMatrix": {
+                "6A|Math":"Teacher 1",
+                "7A|Math":"Teacher 1"
+            },
+            "tkbUserOff": {
+                "6A":class_a_off,
+                "7A":class_b_off
+            }
+        });
+        let data = root.as_object().expect("test data object");
+        let mut solver_config = config(true, false);
+        solver_config.optimization_focus = OptimizationFocus::QuickComplete;
+        solver_config.skip_teacher_optimization = true;
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+
+        let result = solve_simple(data, 19, solver_config, &clock).expect("native quick solve");
+        let payload: Value = serde_json::from_str(&result.payload).expect("solver payload");
+
+        assert_eq!(result.status, 200);
+        assert_eq!(payload["metrics"]["scheduled_periods"], json!(3));
+        assert_eq!(payload["metrics"]["unassigned_periods"], json!(0));
+        assert_eq!(payload["metrics"]["hard_ok"], json!(true));
+        let singleton = payload["lessons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|lesson| lesson["classId"] == json!("7A"))
+            .expect("singleton lesson");
+        assert_eq!(singleton["day"], json!(2));
+        assert_eq!(singleton["period"], json!(1));
+    }
+
+    #[test]
+    fn quick_authored_min_block_avoids_the_forbidden_period_two_three_pair() {
+        let class_off = off_except(&[
+            ("thu2", "sang", 1),
+            ("thu2", "sang", 2),
+            ("thu3", "sang", 0),
+            ("thu3", "sang", 1),
+        ]);
+        let root = json!({
+            "lop": [{"id":"6A", "ten":"6A", "khoi":"6"}],
+            "monhoc": [{"id":"pe", "ten":"PE"}],
+            "mon": [{"khoi":"6", "ten":"PE", "sotiet":2, "gioihan":2}],
+            "pccmMatrix": {"6A|PE":"Teacher 1"},
+            "tkbUserOff": {"6A":class_off},
+            "tkbConstraints": {
+                "subject": {
+                    "PE": {
+                        "byClass": {
+                            "6A": {
+                                "avoidBreakPair23": {"morning":true, "afternoon":false},
+                                "lessonBlocks": {"2":{"min":1}}
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        let data = root.as_object().expect("test data object");
+        let mut solver_config = config(true, false);
+        solver_config.optimization_focus = OptimizationFocus::QuickComplete;
+        solver_config.skip_teacher_optimization = true;
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+
+        let result = solve_simple(data, 29, solver_config, &clock).expect("native quick solve");
+        let payload: Value = serde_json::from_str(&result.payload).expect("solver payload");
+        let lessons = payload["lessons"].as_array().expect("lessons array");
+        let mut periods = lessons
+            .iter()
+            .map(|lesson| lesson["period"].as_i64().unwrap())
+            .collect::<Vec<_>>();
+        periods.sort_unstable();
+
+        assert_eq!(result.status, 200);
+        assert_eq!(payload["metrics"]["hard_ok"], json!(true));
+        assert_eq!(lessons.len(), 2);
+        assert!(lessons.iter().all(|lesson| lesson["day"] == json!(3)));
+        assert_eq!(periods, vec![1, 2]);
+    }
+
+    #[test]
+    fn quick_min_two_counts_one_four_period_run_as_one_block() {
+        let assignment = Assignment {
+            class_id: "6A".to_string(),
+            class_name: "6A".to_string(),
+            subject: "Math".to_string(),
+            teacher: "Teacher 1".to_string(),
+            room: String::new(),
+            periods: 4,
+            session_limit: 4,
+            day_limits: HashMap::new(),
+            quick_min_two_blocks: 2,
+            quick_avoid_pair23_morning: false,
+            quick_avoid_pair23_afternoon: false,
+        };
+        let lessons = (0..4)
+            .map(|period| {
+                lesson_json(
+                    "6A",
+                    "6A",
+                    "Math",
+                    "Teacher 1",
+                    "",
+                    &make_slot(2, "sang", period),
+                    false,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(quick_subject_two_block_count(&lessons, "6A", "Math"), 1);
+        assert!(!quick_authored_subject_rules_ok(&lessons, &[assignment]));
+    }
+
+    #[test]
+    fn quick_min_block_extends_one_fixed_period_instead_of_exhausting_domain() {
+        let class_off = off_except(&[("thu2", "sang", 0), ("thu2", "sang", 1)]);
+        let root = json!({
+            "lop": [{"id":"6A", "ten":"6A", "khoi":"6"}],
+            "monhoc": [{"id":"math", "ten":"Math"}],
+            "mon": [{"khoi":"6", "ten":"Math", "sotiet":2, "gioihan":2}],
+            "pccmMatrix": {"6A|Math":"Teacher 1"},
+            "tkbUserOff": {"6A":class_off},
+            "tkb": {
+                "6A": {
+                    "thu2": {
+                        "sang": [
+                            {"mon":"Math", "fixed":true},
+                            null,
+                            null,
+                            null,
+                            null
+                        ]
+                    }
+                }
+            },
+            "tkbConstraints": {
+                "subject": {
+                    "Math": {
+                        "byClass": {
+                            "6A": {"lessonBlocks":{"2":{"min":1}}}
+                        }
+                    }
+                }
+            }
+        });
+        let data = root.as_object().expect("test data object");
+        let mut solver_config = config(true, false);
+        solver_config.optimization_focus = OptimizationFocus::QuickComplete;
+        solver_config.skip_teacher_optimization = true;
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+
+        let result = solve_simple(data, 31, solver_config, &clock).expect("native quick solve");
+        let payload: Value = serde_json::from_str(&result.payload).expect("solver payload");
+        let lessons = payload["lessons"].as_array().expect("lessons array");
+        let mut periods = lessons
+            .iter()
+            .map(|lesson| lesson["period"].as_i64().unwrap())
+            .collect::<Vec<_>>();
+        periods.sort_unstable();
+
+        assert_eq!(result.status, 200);
+        assert_eq!(payload["metrics"]["hard_ok"], json!(true));
+        assert_eq!(periods, vec![1, 2]);
+        assert!(lessons
+            .iter()
+            .all(|lesson| lesson["teacher"] == json!("Teacher 1")));
+    }
+
+    #[test]
+    fn quick_fixed_lesson_inherits_assignment_teacher_when_legacy_maps_are_absent() {
+        let root = json!({
+            "lop": [{"id":"6A", "ten":"6A", "khoi":"6"}],
+            "monhoc": [{"id":"math", "ten":"Math"}],
+            "mon": [{"khoi":"6", "ten":"Math", "sotiet":1, "gioihan":1}],
+            "pccmMatrix": {"6A|Math":"Teacher 1"},
+            "tkb": {
+                "6A": {
+                    "thu2": {
+                        "sang": [
+                            {"mon":"Math", "fixed":true},
+                            null,
+                            null,
+                            null,
+                            null
+                        ]
+                    }
+                }
+            }
+        });
+        let data = root.as_object().expect("test data object");
+        let mut solver_config = config(true, false);
+        solver_config.optimization_focus = OptimizationFocus::QuickComplete;
+        solver_config.skip_teacher_optimization = true;
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+
+        let result = solve_simple(data, 37, solver_config, &clock).expect("native quick solve");
+        let payload: Value = serde_json::from_str(&result.payload).expect("solver payload");
+        let lessons = payload["lessons"].as_array().expect("lessons array");
+
+        assert_eq!(result.status, 200);
+        assert_eq!(payload["metrics"]["hard_ok"], json!(true));
+        assert_eq!(lessons.len(), 1);
+        assert_eq!(lessons[0]["teacher"], json!("Teacher 1"));
+        assert_eq!(lessons[0]["fixed"], json!(true));
+    }
+
+    #[test]
+    fn quick_first_fit_repair_uses_a_same_class_blocker_swap() {
+        let source = make_slot(2, "sang", 0);
+        let target = make_slot(2, "sang", 1);
+        let mut lessons = vec![
+            lesson_json("7A", "7A", "Blocker", "Teacher 1", "", &source, false),
+            lesson_json("7A", "7A", "Occupant", "Teacher 2", "", &target, false),
+        ];
+        let mut unassigned = vec![json!({
+            "classId":"6A",
+            "className":"6A",
+            "subject":"Missing",
+            "teacher":"Teacher 1",
+            "room":"",
+            "sessionLimit":1,
+            "index":1
+        })];
+        let mut off_slots = HashSet::new();
+        for slot in off_except(&[("thu2", "sang", 0)]) {
+            off_slots.insert(format!("6A|{slot}"));
+        }
+        for slot in off_except(&[("thu2", "sang", 0), ("thu2", "sang", 1)]) {
+            off_slots.insert(format!("7A|{slot}"));
+        }
+        let subject_limits = HashMap::from([
+            (
+                ("6A".to_string(), norm("Missing")),
+                SubjectLimit {
+                    per_session: 1,
+                    per_day: HashMap::new(),
+                },
+            ),
+            (
+                ("7A".to_string(), norm("Blocker")),
+                SubjectLimit {
+                    per_session: 1,
+                    per_day: HashMap::new(),
+                },
+            ),
+            (
+                ("7A".to_string(), norm("Occupant")),
+                SubjectLimit {
+                    per_session: 1,
+                    per_day: HashMap::new(),
+                },
+            ),
+        ]);
+        let mut solver_config = config(true, false);
+        solver_config.optimization_focus = OptimizationFocus::QuickComplete;
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+
+        let moves = repair_quick_unassigned_lessons_first_fit(
+            &mut lessons,
+            &mut unassigned,
+            &off_slots,
+            &subject_limits,
+            &[],
+            23,
+            &clock,
+        );
+
+        assert_eq!(moves, 1);
+        assert!(unassigned.is_empty());
+        assert_eq!(lessons.len(), 3);
+        assert!(schedule_hard_ok(&lessons, &off_slots, &subject_limits));
     }
 
     #[test]

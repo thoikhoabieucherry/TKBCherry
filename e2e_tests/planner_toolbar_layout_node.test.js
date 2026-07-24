@@ -292,7 +292,7 @@ test("teacher pane counts each class-subject assignment once", () => {
   );
 });
 
-test("portrait planner keeps eight compact mobile slots with stacked history and duration input", () => {
+test("portrait planner keeps seven compact mobile slots with stacked history and automatic timing", () => {
   const actionsStart = plannerHtml.indexOf('<div class="toolbar-actions"');
   const feedbackStart = plannerHtml.indexOf('<div class="toolbar-feedback"');
   const secondaryStart = plannerHtml.indexOf('<div class="toolbar-secondary-actions"', feedbackStart);
@@ -305,7 +305,6 @@ test("portrait planner keeps eight compact mobile slots with stacked history and
     "btnRangBuoc",
     "btnUndoTKB",
     "btnRedoTKB",
-    "solveDurationSeconds",
     "btnAutoSort",
     "btnStopAutoSort",
     "btnDeleteAll"
@@ -343,16 +342,7 @@ test("portrait planner keeps eight compact mobile slots with stacked history and
   assert.doesNotMatch(stopButton, />\s*(?:Dừng|Đang dừng)\s*</);
   assert.doesNotMatch(actions, /<span[^>]*>s<\/span>/i);
   assert.doesNotMatch(actions, /id="autoSortProgress"|id="statusMsg"|id="statsToggle"|>Home<\/button>/);
-  assert.match(plannerHtml, /#solveDurationSeconds\s*\{[^}]*text-align:\s*center;/s);
-  const durationTag = actions.match(/<input\b[^>]*id="solveDurationSeconds"[^>]*>/)?.[0] || "";
-  assert.ok(durationTag, "duration input is missing");
-  assert.doesNotMatch(durationTag, /\bvalue=|\bplaceholder=|\btitle=/i);
-  assert.doesNotMatch(actions, /<label class="solve-duration-control"[^>]+title=/i);
-  assert.match(
-    actions,
-    /<label class="solve-duration-control">[\s\S]*?id="solveDurationSeconds"[\s\S]*?<\/label>\s*<button id="btnAutoSort"/,
-    "duration input must be immediately adjacent to the left of Play"
-  );
+  assert.doesNotMatch(actions, /solveDurationSeconds|solve-duration-control/);
 
   const secondary = plannerHtml.slice(secondaryStart, plannerHtml.indexOf("\n  </div>\n\n</div>", secondaryStart));
   assert.match(secondary, /id="btnHome"[^>]*aria-label="Về trang chủ"[^>]*>Home<\/button>/);
@@ -367,13 +357,13 @@ test("portrait planner keeps eight compact mobile slots with stacked history and
     inlineSvgMarkup(statsButton),
     "requirements and statistics must use distinct clipboard-check and chart glyphs"
   );
-  assert.match(plannerHtml, /\.toolbar-main\s*\{[^}]*grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);[^}]*grid-template-rows:\s*44px var\(--planner-mobile-feedback-h\);/s);
+  assert.match(plannerHtml, /\.toolbar-main\s*\{[^}]*grid-template-columns:\s*repeat\(7, minmax\(0, 1fr\)\);[^}]*grid-template-rows:\s*44px var\(--planner-mobile-feedback-h\);/s);
   assert.match(plannerHtml, /\.toolbar-actions\s*\{[^}]*display:\s*contents;/s);
   for(const [id, column] of [
     ["btnRangBuoc", "1"],
     ["btnUndoTKB", "2"],
     ["btnRedoTKB", "2"],
-    ["btnAutoSort", "4"]
+    ["btnAutoSort", "3"]
   ]){
     assert.match(
       plannerHtml,
@@ -383,17 +373,15 @@ test("portrait planner keeps eight compact mobile slots with stacked history and
   assert.match(plannerHtml, /#btnRedoTKB\s*\{[^}]*grid-column:\s*2;[^}]*align-self:\s*start;/s);
   assert.match(plannerHtml, /#btnUndoTKB\s*\{[^}]*grid-column:\s*2;[^}]*align-self:\s*end;/s);
   assert.match(plannerHtml, /#btnUndoTKB,[^}]*#btnRedoTKB\s*\{[^}]*height:\s*22px;[^}]*min-height:\s*22px;/s);
-  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*\.solve-duration-control\s*\{[^}]*grid-column:\s*3;[^}]*grid-row:\s*1;[^}]*display:\s*inline-flex;[^}]*height:\s*44px;/s);
-  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*\.solve-duration-control\s*\{[^}]*order:\s*initial;/s);
   assert.match(
     plannerHtml,
-    /\.toolbar-actions\s*>\s*#btnRangBuoc,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnUndoTKB,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnRedoTKB,\s*body\.planner-shell \.toolbar-actions\s*>\s*\.solve-duration-control,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnAutoSort,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnStopAutoSort,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnDeleteAll\s*\{[^}]*order:\s*initial;/s,
+    /\.toolbar-actions\s*>\s*#btnRangBuoc,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnUndoTKB,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnRedoTKB,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnAutoSort,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnStopAutoSort,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnDeleteAll\s*\{[^}]*order:\s*initial;/s,
     "all direct toolbar items must neutralize legacy order rules"
   );
-  assert.match(plannerHtml, /#btnDeleteAll\s*\{[^}]*grid-column:\s*5 !important;[^}]*grid-row:\s*1 !important;/s);
-  assert.match(plannerHtml, /#btnAgentHelper\s*\{[^}]*grid-column:\s*6;[^}]*grid-row:\s*1;[^}]*height:\s*44px;/s);
-  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*7;[^}]*grid-row:\s*1;/s);
-  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*8;[^}]*grid-row:\s*1;/s);
+  assert.match(plannerHtml, /#btnDeleteAll\s*\{[^}]*grid-column:\s*4 !important;[^}]*grid-row:\s*1 !important;/s);
+  assert.match(plannerHtml, /#btnAgentHelper\s*\{[^}]*grid-column:\s*5;[^}]*grid-row:\s*1;[^}]*height:\s*44px;/s);
+  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*6;[^}]*grid-row:\s*1;/s);
+  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*7;[^}]*grid-row:\s*1;/s);
   assert.match(plannerHtml, /\.toolbar-icon\s*\{[^}]*width:\s*19px;[^}]*height:\s*19px;[^}]*transition:\s*transform \.16s ease;/s);
   assert.match(plannerHtml, /#btnAutoSort \.toolbar-icon\s*\{[^}]*width:\s*18px;[^}]*height:\s*18px;[^}]*transform:\s*translateX\(1px\);/s);
   assert.match(plannerHtml, /\.toolbar-label-compact\s*\{[^}]*display:\s*none;/s);
@@ -404,9 +392,9 @@ test("portrait planner keeps eight compact mobile slots with stacked history and
   assert.doesNotMatch(plannerHtml, /#btnHome\[hidden\]\s*\{[^}]*display:\s*none !important;/s);
   assert.match(plannerHtml, /\.toolbar-main\s*\{[^}]*gap:\s*4px 2px;/s);
   assert.equal(
-    (plannerHtml.match(/grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);/g) || []).length,
+    (plannerHtml.match(/grid-template-columns:\s*repeat\(7, minmax\(0, 1fr\)\);/g) || []).length,
     1,
-    "the mobile toolbar must use one inherited set of eight equal tracks"
+    "the mobile toolbar must use one inherited set of seven equal tracks"
   );
   assert.doesNotMatch(
     plannerHtml,
@@ -417,26 +405,25 @@ test("portrait planner keeps eight compact mobile slots with stacked history and
     plannerHtml,
     /@media \(max-width:\s*900px\) and \(hover:\s*none\) and \(pointer:\s*coarse\),\s*\(max-width:\s*480px\)/
   );
-  assert.match(plannerHtml, /phanmon\.js\?v=20260724-v174-responsive-stop-preflight-v5/);
-  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260724-v174-responsive-stop-preflight-v5/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260724-v177-full-resource-agent-v1/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260724-v177-full-resource-agent-v1/);
 });
 
-test("landscape phones separate Undo and Redo into nine full-height slots", () => {
+test("landscape phones separate Undo and Redo into eight full-height slots", () => {
   const start = plannerHtml.indexOf("@media (orientation: landscape) and (max-height: 540px) and (any-pointer: coarse)");
   const end = plannerHtml.indexOf("@media (min-width: 481px)", start);
   assert.ok(start >= 0 && end > start, "landscape toolbar override is missing");
   const landscapeCss = plannerHtml.slice(start, end);
 
-  assert.match(landscapeCss, /\.toolbar-main\s*\{[^}]*grid-template-columns:\s*repeat\(9, minmax\(0, 1fr\)\);/s);
+  assert.match(landscapeCss, /\.toolbar-main\s*\{[^}]*grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);/s);
   assert.match(landscapeCss, /#btnUndoTKB\s*\{[^}]*grid-column:\s*2;[^}]*align-self:\s*stretch;/s);
   assert.match(landscapeCss, /#btnRedoTKB\s*\{[^}]*grid-column:\s*3;[^}]*align-self:\s*stretch;/s);
   assert.match(landscapeCss, /#btnUndoTKB,[^}]*#btnRedoTKB\s*\{[^}]*height:\s*44px;[^}]*min-height:\s*44px;[^}]*border-radius:\s*var\(--tkb-radius, 10px\);/s);
-  assert.match(landscapeCss, /\.solve-duration-control\s*\{[^}]*grid-column:\s*4;/s);
-  assert.match(landscapeCss, /#btnAutoSort\s*\{[^}]*grid-column:\s*5;/s);
-  assert.match(landscapeCss, /#btnStopAutoSort,[^}]*#btnDeleteAll\s*\{[^}]*grid-column:\s*6 !important;/s);
-  assert.match(landscapeCss, /#btnAgentHelper\s*\{[^}]*grid-column:\s*7;/s);
-  assert.match(landscapeCss, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*8;/s);
-  assert.match(landscapeCss, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*9;/s);
+  assert.match(landscapeCss, /#btnAutoSort\s*\{[^}]*grid-column:\s*4;/s);
+  assert.match(landscapeCss, /#btnStopAutoSort,[^}]*#btnDeleteAll\s*\{[^}]*grid-column:\s*5 !important;/s);
+  assert.match(landscapeCss, /#btnAgentHelper\s*\{[^}]*grid-column:\s*6;/s);
+  assert.match(landscapeCss, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*7;/s);
+  assert.match(landscapeCss, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*8;/s);
 });
 
 test("browser Agent toggle is cross-platform and sits before Home on desktop and mobile", () => {
@@ -500,14 +487,14 @@ test("browser Agent toggle is cross-platform and sits before Home on desktop and
   );
   assert.match(
     plannerHtml,
-    /#btnAgentHelper\[data-agent-state="ready"\] \.agent-status-dot,[\s\S]*?#btnAgentHelper\[data-agent-state="working"\] \.agent-status-dot\s*\{[^}]*background:\s*#16a34a;/s
+    /#btnAgentHelper\[data-agent-state="active"\] \.agent-status-dot,[\s\S]*?#btnAgentHelper\[data-agent-state="working"\] \.agent-status-dot\s*\{[^}]*background:\s*#16a34a;/s
   );
   assert.match(
     plannerHtml,
     /#btnAgentHelper\[data-agent-state="working"\] \.agent-status-dot\s*\{[^}]*box-shadow:\s*0 0 0 3px rgb\(22 163 74 \/ 18%\)/s
   );
   assert.match(plannerHtml, /#btnAgentHelper:disabled\s*\{[^}]*opacity:\s*1;[^}]*cursor:\s*default;/s);
-  assert.match(plannerHtml, /#btnAgentHelper\[data-agent-state="ready"\][\s\S]*?background:\s*#16a34a;/s);
+  assert.doesNotMatch(plannerHtml, /#btnAgentHelper\[data-agent-state="enabled"\] \.agent-status-dot\s*[,\{]/s);
   assert.doesNotMatch(plannerSource, /EncodedCommand|powershell\.exe|Cai-TKBCherry-Agent\.cmd/);
 
   const supportStart = plannerSource.indexOf("function isAgentHelperSupportedDevice");
@@ -537,15 +524,15 @@ test("browser Agent toggle is cross-platform and sits before Home on desktop and
   const mobileCss = plannerHtml.slice(mobileStart, mobileEnd);
   assert.match(
     mobileCss,
-    /#btnAgentHelper\s*\{[^}]*grid-column:\s*6;[^}]*grid-row:\s*1;[^}]*display:\s*inline-flex !important;[^}]*height:\s*44px;/s
+    /#btnAgentHelper\s*\{[^}]*grid-column:\s*5;[^}]*grid-row:\s*1;[^}]*display:\s*inline-flex !important;[^}]*height:\s*44px;/s
   );
   assert.match(
     mobileCss,
-    /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*7;[^}]*grid-row:\s*1;/s
+    /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*6;[^}]*grid-row:\s*1;/s
   );
   assert.match(
     mobileCss,
-    /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*8;[^}]*grid-row:\s*1;[^}]*height:\s*44px;/s
+    /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*7;[^}]*grid-row:\s*1;[^}]*height:\s*44px;/s
   );
   assert.match(
     plannerHtml,
@@ -554,7 +541,7 @@ test("browser Agent toggle is cross-platform and sits before Home on desktop and
   );
 });
 
-test("browser Agent indicator reports ready and active compute without server polling", async () => {
+test("browser Agent indicator stays red until local connection and reports real compute", async () => {
   const start = plannerSource.indexOf("function isAgentHelperSupportedDevice");
   const end = plannerSource.indexOf("function startAgentHelperStatusPolling", start);
   assert.ok(start >= 0 && end > start, "browser Agent status renderer is missing");
@@ -568,7 +555,17 @@ test("browser Agent indicator reports ready and active compute without server po
     attributes:{},
     setAttribute(name, value){ this.attributes[name] = value; }
   };
-  const executorState = {active:false, probed:false, hasWorker:false, hasLease:false, workerCount:0};
+  const executorState = {
+    active:false,
+    probed:false,
+    hasWorker:false,
+    hasLease:false,
+    computeActive:false,
+    workerCount:0,
+    localComputeRuns:0,
+    localAcceptedResults:0,
+    lastComputeWorkerCount:0
+  };
   let agentEnabled = true;
   const statusEvents = [];
   const windowsNavigator = {
@@ -605,24 +602,41 @@ test("browser Agent indicator reports ready and active compute without server po
   assert.equal(button.hidden, false);
   assert.equal(button.disabled, false);
   assert.equal(button.attributes["aria-hidden"], "false");
-  assert.equal(button.dataset.agentState, "ready");
-  assert.equal(button.title, "Agent đang bật; sẵn sàng dùng 4 Worker CPU/RAM. Bấm để dùng VPS.");
+  assert.equal(button.dataset.agentState, "enabled");
+  assert.equal(button.title, "Agent đang bật nhưng chưa kết nối; sẽ dùng 4 Worker CPU/RAM khi bắt đầu lượt xếp phù hợp. Bấm để dùng VPS.");
   assert.equal(button.attributes["aria-label"], button.title);
   assert.equal(button.attributes["aria-pressed"], "true");
   assert.equal(button.attributes["aria-disabled"], "false");
-  assert.equal(context.window.__TKB_BROWSER_AGENT_READY, true);
+  assert.equal(context.window.__TKB_BROWSER_AGENT_READY, false);
   assert.equal(context.window.__TKB_BROWSER_AGENT_WORKING, false);
 
   executorState.active = true;
   executorState.probed = true;
   executorState.hasWorker = true;
   executorState.hasLease = true;
+  executorState.computeActive = true;
+  executorState.localComputeRuns = 1;
   executorState.workerCount = 4;
   assert.equal(await context.refreshIndicator(true), true);
   assert.equal(button.dataset.agentState, "working");
   assert.equal(button.title, "Agent đang tối ưu bằng 4 Worker trên thiết bị. Bấm để chuyển về VPS.");
   assert.equal(context.window.__TKB_BROWSER_AGENT_ACTIVE, true);
   assert.equal(context.window.__TKB_BROWSER_AGENT_WORKING, true);
+  assert.equal(context.window.__TKB_BROWSER_AGENT_READY, true);
+
+  executorState.active = false;
+  executorState.probed = false;
+  executorState.hasWorker = false;
+  executorState.hasLease = false;
+  executorState.computeActive = false;
+  executorState.workerCount = 0;
+  executorState.localAcceptedResults = 1;
+  executorState.lastComputeWorkerCount = 4;
+  assert.equal(await context.refreshIndicator(true), true);
+  assert.equal(button.dataset.agentState, "enabled");
+  assert.equal(button.title, "Agent đang bật; lượt gần nhất đã xử lý cục bộ bằng 4 Worker. Hiện đang nghỉ; bấm để dùng VPS.");
+  assert.equal(context.window.__TKB_BROWSER_AGENT_ACTIVE, false);
+  assert.equal(context.window.__TKB_BROWSER_AGENT_WORKING, false);
 
   assert.equal(await context.toggleIndicator(), false);
   assert.equal(agentEnabled, false);
@@ -851,7 +865,7 @@ test("mobile Play matches the other controls and centers its white glyph", () =>
   assert.ok(mobileStart >= 0 && mobileEnd > mobileStart, "mobile toolbar media query is missing");
   assert.match(
     mobileCss,
-    /#btnAutoSort\s*\{[^}]*grid-column:\s*4;[^}]*grid-row:\s*1;/s
+    /#btnAutoSort\s*\{[^}]*grid-column:\s*3;[^}]*grid-row:\s*1;/s
   );
   assert.match(
     mobileCss,
@@ -867,7 +881,7 @@ test("mobile Play matches the other controls and centers its white glyph", () =>
     /#btnAutoSort:hover:not\(:disabled\) \.toolbar-icon\s*\{[^}]*transform:\s*translateX\(1px\) scale\(1\.06\);/s
   );
   assert.equal(
-    (mobileCss.match(/grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);/g) || []).length,
+    (mobileCss.match(/grid-template-columns:\s*repeat\(7, minmax\(0, 1fr\)\);/g) || []).length,
     1
   );
   assert.doesNotMatch(mobileCss, /#btnAutoSort\s*\{[^}]*(?:border-radius:\s*50%|aspect-ratio|width:\s*min\(42px)/s);
@@ -1293,11 +1307,7 @@ test("desktop keeps controls, feedback, and navigation in one toolbar row", () =
     plannerHtml,
     /\.toolbar-secondary-actions \.stats-popover-wrap\s*>\s*\.save-button,\s*body\.planner-shell \.toolbar-secondary-actions \.stats-popover-wrap\s*>\s*\.agent-helper-button,\s*body\.planner-shell \.toolbar-secondary-actions \.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*flex:\s*0 0 var\(--planner-toolbar-button-width\);[^}]*width:\s*var\(--planner-toolbar-button-width\);[^}]*min-width:\s*var\(--planner-toolbar-button-width\);[^}]*max-width:\s*var\(--planner-toolbar-button-width\);[^}]*height:\s*36px;/s
   );
-  assert.match(
-    plannerHtml,
-    /\.toolbar-actions\s*>\s*\.solve-duration-control\s*\{[^}]*flex:\s*0 0 auto;[^}]*height:\s*36px;/s
-  );
-  assert.match(plannerHtml, /#solveDurationSeconds\s*\{[^}]*width:\s*42px;[^}]*min-width:\s*0;/s);
+  assert.doesNotMatch(plannerHtml, /solveDurationSeconds|solve-duration-control/);
   assert.match(plannerHtml, /toolbar-label-full"[^>]*>Yêu cầu<\/span>/);
   assert.match(plannerHtml, /toolbar-label-full"[^>]*>Thống kê<\/span>/);
 });
@@ -1353,7 +1363,7 @@ test("mobile reserves one stable feedback row so sorting never shifts the timeta
   assert.ok(feedback.indexOf('id="autoSortProgress"') < feedback.indexOf('id="statusMsg"'));
   assert.match(feedback, /id="autoSortProgress" class="auto-sort-progress is-idle"[^>]*aria-hidden="true"[^>]*\shidden(?:\s|>)/);
   assert.match(plannerHtml, /body\.planner-shell\s*\{[^}]*--planner-mobile-feedback-h:\s*46px;[^}]*padding-bottom:\s*0;[^}]*overflow:\s*hidden;/s);
-  assert.match(plannerHtml, /\.toolbar-main\s*\{[^}]*grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);[^}]*grid-template-rows:\s*44px var\(--planner-mobile-feedback-h\);/s);
+  assert.match(plannerHtml, /\.toolbar-main\s*\{[^}]*grid-template-columns:\s*repeat\(7, minmax\(0, 1fr\)\);[^}]*grid-template-rows:\s*44px var\(--planner-mobile-feedback-h\);/s);
   assert.match(plannerHtml, /\.toolbar-feedback\s*\{[^}]*grid-column:\s*1 \/ -1;[^}]*grid-row:\s*2;[^}]*display:\s*grid;[^}]*grid-template-rows:\s*var\(--planner-mobile-feedback-h\);[^}]*height:\s*var\(--planner-mobile-feedback-h\);[^}]*min-height:\s*var\(--planner-mobile-feedback-h\);[^}]*max-height:\s*var\(--planner-mobile-feedback-h\);[^}]*overflow:\s*hidden;/s);
   assert.doesNotMatch(plannerHtml, /\.toolbar-feedback:has\(> #autoSortProgress\.is-active\)/);
   assert.match(plannerHtml, /\.toolbar-feedback\s*>\s*#autoSortProgress\s*\{[^}]*grid-row:\s*1;/s);
@@ -1376,7 +1386,7 @@ test("mobile reserves one stable feedback row so sorting never shifts the timeta
   );
 });
 
-test("Agent, Home, and Statistics occupy mobile columns six through eight", () => {
+test("Agent, Home, and Statistics occupy mobile columns five through seven", () => {
   const feedbackStart = plannerHtml.indexOf('<div class="toolbar-feedback"');
   const secondaryStart = plannerHtml.indexOf('<div class="toolbar-secondary-actions"');
   const secondary = plannerHtml.slice(secondaryStart, plannerHtml.indexOf("\n  </div>\n\n</div>", secondaryStart));
@@ -1386,7 +1396,7 @@ test("Agent, Home, and Statistics occupy mobile columns six through eight", () =
   assert.match(secondary, /id="statsToggle"[^>]*>[\s\S]*?toolbar-label-compact[^>]*>\s*<svg class="toolbar-icon"[^>]*>[\s\S]*?<\/svg>\s*<\/span><\/button>/);
   assert.match(plannerHtml, /\.toolbar-secondary-actions\s*\{[^}]*display:\s*contents;/s);
   assert.match(plannerHtml, /\.toolbar-secondary-actions \.stats-popover-wrap\s*\{[^}]*display:\s*contents;/s);
-  assert.match(plannerHtml, /#btnAgentHelper\s*\{[^}]*grid-column:\s*6;[^}]*height:\s*44px;/s);
-  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*7;/s);
-  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*8;[^}]*height:\s*44px;/s);
+  assert.match(plannerHtml, /#btnAgentHelper\s*\{[^}]*grid-column:\s*5;[^}]*height:\s*44px;/s);
+  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*6;/s);
+  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*7;[^}]*height:\s*44px;/s);
 });

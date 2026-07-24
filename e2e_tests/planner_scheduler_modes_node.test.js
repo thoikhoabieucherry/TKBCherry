@@ -48,13 +48,13 @@ test("automatic Play remains available while focused commands are desktop-only",
 
   assert.match(
     plannerHtml,
-    /@media \(max-width:\s*900px\)[\s\S]*?grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);/,
-    "portrait touch geometry must retain eight slots"
+    /@media \(max-width:\s*900px\)[\s\S]*?grid-template-columns:\s*repeat\(7, minmax\(0, 1fr\)\);/,
+    "portrait touch geometry must retain seven slots"
   );
   assert.match(
     plannerHtml,
-    /@media \(orientation:\s*landscape\) and \(max-height:\s*540px\)[\s\S]*?grid-template-columns:\s*repeat\(9, minmax\(0, 1fr\)\);/,
-    "landscape touch geometry must retain nine slots"
+    /@media \(orientation:\s*landscape\) and \(max-height:\s*540px\)[\s\S]*?grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);/,
+    "landscape touch geometry must retain eight slots"
   );
 });
 

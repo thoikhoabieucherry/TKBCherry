@@ -1,7 +1,7 @@
 (function(root){
   "use strict";
 
-  const VERSION = "tkb-browser-wasm-executor-v8-checkpoint-stop";
+  const VERSION = "tkb-browser-wasm-executor-v12-full-resource-first-target";
   const AGENT_PROTOCOL = "tkb-agent-helper-v1";
   const AGENT_VERSION = "1.6.29";
   const SOLVER_PROTOCOL = "tkb-reference-solver-stdio-v1";
@@ -11,8 +11,11 @@
   const HEARTBEAT_MS = 8000;
   const MAX_DIGEST_BYTES = 96 * 1024 * 1024;
   const ENABLED_STORAGE_KEY = "TKB_BROWSER_WASM_ENABLED_V1";
-  const MAX_DESKTOP_WORKERS = 8;
-  const MAX_MOBILE_WORKERS = 2;
+  const QUICK_LOCAL_ATTEMPT_MS = 12000;
+  const QUICK_LOCAL_RESERVE_MS = 750;
+  const FOCUSED_LOCAL_ATTEMPT_MS = 60000;
+  const QUICK_WORKER_SETTLE_RESERVE_MS = 3000;
+  const FOCUSED_WORKER_SETTLE_RESERVE_MS = 15000;
 
   const state = {
     active:false,
@@ -38,7 +41,14 @@
     loopPromise:null,
     leaseRun:null,
     pendingFetches:new Set(),
-    enabledOverride:null
+    enabledOverride:null,
+    computeActive:false,
+    localComputeRuns:0,
+    localAcceptedResults:0,
+    lastComputeWorkerCount:0,
+    lastComputeStartedAtMs:0,
+    lastComputeFinishedAtMs:0,
+    lastAcceptedResultAtMs:0
   };
 
   const encoder = new TextEncoder();
@@ -92,18 +102,13 @@
 
   function portfolioWorkerCount(deviceNavigator){
     const nav = deviceNavigator || {};
-    const hardware = Math.max(1, Math.min(64, Number(nav.hardwareConcurrency || 1) || 1));
-    const userAgent = String(nav.userAgent || "");
-    const android = nav.userAgentData?.platform === "Android" || /Android/i.test(userAgent);
-    const mobile = isIOSNavigator(nav) || android || nav.userAgentData?.mobile === true;
-    const memory = Number(nav.deviceMemory || 0);
-    let cap = mobile ? MAX_MOBILE_WORKERS : MAX_DESKTOP_WORKERS;
-    if(memory > 0 && memory <= 2) cap = 1;
-    else if(memory > 0 && memory <= 4) cap = Math.min(cap, 2);
-    return Math.max(1, Math.min(cap, hardware > 1 ? hardware - 1 : 1));
+    const reported = Number(nav.hardwareConcurrency);
+    return Number.isFinite(reported) && reported > 0
+      ? Math.max(1, Math.floor(reported))
+      : 1;
   }
 
-  function isCompleteRefinementRequest(request){
+  function requestEnvelope(request){
     if(!request || typeof request !== "object" || Array.isArray(request)) return false;
     const data = request.data;
     const settings = request.settings;
@@ -115,7 +120,18 @@
       || typeof settings !== "object"
       || Array.isArray(settings)
     ) return false;
-    if(normalizedOptimizationFocus(settings) === "quick_complete") return false;
+    return {data, settings};
+  }
+
+  function isQuickCompletionRequest(request){
+    const envelope = requestEnvelope(request);
+    return !!envelope && normalizedOptimizationFocus(envelope.settings) === "quick_complete";
+  }
+
+  function isCompleteRefinementRequest(request){
+    const envelope = requestEnvelope(request);
+    if(!envelope || normalizedOptimizationFocus(envelope.settings) === "quick_complete") return false;
+    const {data, settings} = envelope;
     const solveKind = String(settings.ui_unified_solve_kind || "")
       .trim()
       .toLowerCase()
@@ -152,13 +168,41 @@
       && violations === 0;
   }
 
+  function isBrowserAgentRequest(request){
+    return isQuickCompletionRequest(request) || isCompleteRefinementRequest(request);
+  }
+
+  function capLocalDeadline(settings, key, maximum){
+    const current = Number(settings[key]);
+    settings[key] = Number.isFinite(current) && current > 0
+      ? Math.min(Math.round(current), maximum)
+      : maximum;
+  }
+
   function browserRefinementRequest(request){
-    if(!isCompleteRefinementRequest(request)) return null;
+    if(!isBrowserAgentRequest(request)) return null;
     let cloned;
     try{
       cloned = JSON.parse(JSON.stringify(request));
     }catch(_){
       return null;
+    }
+    if(isQuickCompletionRequest(cloned)){
+      const settings = cloned.settings;
+      settings.require_complete_schedule = true;
+      settings.best_effort_on_timeout = false;
+      settings.native_skip_teacher_optimization = true;
+      settings.browser_wasm_quick_attempt = true;
+      capLocalDeadline(settings, "backend_deadline_ms", QUICK_LOCAL_ATTEMPT_MS);
+      capLocalDeadline(settings, "native_global_deadline_ms", QUICK_LOCAL_ATTEMPT_MS);
+      const requestedReserve = Number(settings.native_deadline_reserve_ms);
+      settings.native_deadline_reserve_ms = Math.min(
+        Number.isFinite(requestedReserve) && requestedReserve > 0
+          ? Math.round(requestedReserve)
+          : QUICK_LOCAL_RESERVE_MS,
+        QUICK_LOCAL_RESERVE_MS
+      );
+      return isQuickCompletionRequest(cloned) ? cloned : null;
     }
     if(!isCompleteRefinementRequest(cloned)) return null;
     cloned.settings.optimize_existing_schedule = true;
@@ -172,6 +216,8 @@
     cloned.settings.require_complete_schedule = true;
     cloned.settings.best_effort_on_timeout = false;
     cloned.settings.ui_return_complete_incumbent_on_existing_optimize_failure = true;
+    capLocalDeadline(cloned.settings, "backend_deadline_ms", FOCUSED_LOCAL_ATTEMPT_MS);
+    capLocalDeadline(cloned.settings, "native_global_deadline_ms", FOCUSED_LOCAL_ATTEMPT_MS);
     return cloned;
   }
 
@@ -355,6 +401,35 @@
     state.worker = null;
   }
 
+  function publicRuntimeState(){
+    return {
+      active:state.active,
+      probed:state.probed,
+      hasWorker:!!state.worker,
+      workerCount:state.workers.length,
+      hasLease:!!state.lease,
+      computeActive:state.computeActive,
+      localComputeRuns:state.localComputeRuns,
+      localAcceptedResults:state.localAcceptedResults,
+      lastComputeWorkerCount:state.lastComputeWorkerCount,
+      lastComputeStartedAtMs:state.lastComputeStartedAtMs,
+      lastComputeFinishedAtMs:state.lastComputeFinishedAtMs,
+      lastAcceptedResultAtMs:state.lastAcceptedResultAtMs,
+      jobId:state.jobId,
+      enabled:browserAgentEnabled(),
+      available:runtimeCapable()
+    };
+  }
+
+  function publishRuntimeState(){
+    try{
+      if(typeof root.CustomEvent !== "function" || typeof root.dispatchEvent !== "function") return;
+      root.dispatchEvent(new root.CustomEvent("tkb-browser-agent-state", {
+        detail:publicRuntimeState()
+      }));
+    }catch(_){ }
+  }
+
   async function startComputeWorker(signal){
     if(state.workers.length) return true;
     const count = portfolioWorkerCount(root.navigator);
@@ -362,7 +437,13 @@
     state.workers = workers;
     try{
       for(let index = 0; index < count; index++){
-        const worker = new root.Worker(WORKER_URL);
+        let worker;
+        try{
+          worker = new root.Worker(WORKER_URL);
+        }catch(error){
+          if(!workers.length) throw error;
+          break;
+        }
         workers.push(worker);
         worker.onmessage = event => settleWorkerMessage(event?.data || {});
         worker.onerror = () => rejectWorkerWaiters(
@@ -385,6 +466,7 @@
       if(!readyWorkers.length) throw new Error("browser_wasm_worker_probe_failed");
       state.workers = readyWorkers;
       state.worker = readyWorkers[0];
+      publishRuntimeState();
     }catch(error){
       terminateComputeWorkers();
       rejectWorkerWaiters(error);
@@ -665,6 +747,26 @@
     return [onePeriod, gap2, teacherSessions, gap1, totalGap];
   }
 
+  function portfolioQualityFromResult(result, settings){
+    if(normalizedOptimizationFocus(settings) !== "quick_complete"){
+      return qualityTupleFromResult(result);
+    }
+    const metrics = result?.metrics;
+    const scheduled = nonnegativeMetric(metrics, "scheduled_periods");
+    const expected = nonnegativeMetric(metrics, "expected_periods");
+    const unassigned = nonnegativeMetric(metrics, "unassigned_periods");
+    const requestedTarget = nonnegativeMetric(settings, "ui_progress_metric_target");
+    if(
+      scheduled == null
+      || expected == null
+      || unassigned == null
+      || scheduled !== expected
+      || unassigned !== 0
+      || (requestedTarget != null && requestedTarget > 0 && scheduled !== requestedTarget)
+    ) return null;
+    return [unassigned, -scheduled];
+  }
+
   function normalizedOptimizationFocus(settings){
     const raw = String(settings?.optimization_focus || "automatic")
       .trim()
@@ -675,6 +777,27 @@
     if(["session", "sessions", "teacher_sessions"].includes(raw)) return "sessions";
     if(["gap", "gaps", "teacher_gaps"].includes(raw)) return "gaps";
     return "automatic";
+  }
+
+  function portfolioWorkerTimeoutMs(settings){
+    const focus = normalizedOptimizationFocus(settings);
+    const maximum = focus === "quick_complete"
+      ? QUICK_LOCAL_ATTEMPT_MS
+      : FOCUSED_LOCAL_ATTEMPT_MS;
+    const deadlines = ["native_global_deadline_ms", "backend_deadline_ms"]
+      .map(key => Number(settings?.[key]))
+      .filter(value => Number.isFinite(value) && value > 0);
+    const requested = deadlines.length ? Math.min(...deadlines) : maximum;
+    const budget = Math.max(1000, Math.min(maximum, Math.round(requested)));
+    return budget + (focus === "quick_complete"
+      ? QUICK_WORKER_SETTLE_RESERVE_MS
+      : FOCUSED_WORKER_SETTLE_RESERVE_MS);
+  }
+
+  function candidateSaturatesFocus(candidate, settings){
+    return normalizedOptimizationFocus(settings) === "singletons"
+      && Array.isArray(candidate?.quality)
+      && Number(candidate.quality[0]) === 0;
   }
 
   function qualityComparisonOrder(settings){
@@ -743,17 +866,20 @@
     const workers = state.workers.length ? state.workers.slice() : [state.worker].filter(Boolean);
     if(!workers.length) throw new Error("browser_wasm_worker_missing");
     const incumbent = refinementRequest?.data?.tkbSolverResult;
-    const incumbentQuality = qualityTupleFromResult(incumbent);
     const settings = refinementRequest?.settings || {};
+    const focus = normalizedOptimizationFocus(settings);
+    const quickCompletion = focus === "quick_complete";
+    const workerTimeoutMs = portfolioWorkerTimeoutMs(settings);
+    const incumbentQuality = quickCompletion ? null : qualityTupleFromResult(incumbent);
     let best = null;
     let validCandidateCount = 0;
-    await Promise.all(workers.map(async (worker, index) => {
+    const solveWorker = async (worker, index) => {
       try{
         const message = await workerRequestOn(
           worker,
           "solve",
           {payload:portfolioRequest(refinementRequest, index, workers.length, lease)},
-          31 * 60 * 1000,
+          workerTimeoutMs,
           signal
         );
         const frame = message?.frame;
@@ -768,17 +894,78 @@
           || typeof result !== "object"
           || Array.isArray(result)
           || !completeHardResult(result)
-        ) return;
-        const candidate = {frame, status, result, quality:qualityTupleFromResult(result), index};
-        if(!candidate.quality) return;
+        ) return null;
+        const candidate = {
+          frame,
+          status,
+          result,
+          quality:portfolioQualityFromResult(result, settings),
+          index
+        };
+        if(!candidate.quality) return null;
         validCandidateCount += 1;
-        if(incumbentQuality && !qualityWithinEnvelope(candidate.quality, incumbentQuality, settings)) return;
+        if(incumbentQuality && !qualityWithinEnvelope(candidate.quality, incumbentQuality, settings)){
+          return null;
+        }
         if(!best || compareQuality(candidate.quality, best.quality, settings) < 0){
           best = candidate;
-          if(typeof onBestCandidate === "function") await onBestCandidate(candidate);
+          if(!quickCompletion && typeof onBestCandidate === "function") await onBestCandidate(candidate);
         }
-      }catch(_){ }
-    }));
+        return candidate;
+      }catch(_){
+        return null;
+      }
+    };
+    const pending = workers.map((worker, index) => solveWorker(worker, index));
+    if(quickCompletion){
+      const firstComplete = await new Promise((resolve, reject) => {
+        let remaining = pending.length;
+        for(const promise of pending){
+          promise.then(candidate => {
+            if(candidate){
+              resolve(candidate);
+              return;
+            }
+            remaining -= 1;
+            if(remaining === 0) reject(new Error("browser_wasm_no_candidate"));
+          }, () => {
+            remaining -= 1;
+            if(remaining === 0) reject(new Error("browser_wasm_no_candidate"));
+          });
+        }
+      });
+      // Quick owns completeness only. Once one worker succeeds, extra seeds
+      // cannot improve the accepted result and must stop consuming CPU.
+      terminateComputeWorkers();
+      rejectWorkerWaiters(new Error("browser_wasm_quick_winner_selected"));
+      return firstComplete;
+    }
+    if(focus === "singletons"){
+      const saturated = await new Promise(resolve => {
+        let remaining = pending.length;
+        for(const promise of pending){
+          promise.then(candidate => {
+            if(candidateSaturatesFocus(candidate, settings)){
+              resolve(candidate);
+              return;
+            }
+            remaining -= 1;
+            if(remaining === 0) resolve(null);
+          }, () => {
+            remaining -= 1;
+            if(remaining === 0) resolve(null);
+          });
+        }
+      });
+      if(saturated){
+        // Zero one-period sessions is the exact terminal target. The first
+        // validated checkpoint that reaches it wins; slower seeds add no value.
+        terminateComputeWorkers();
+        rejectWorkerWaiters(new Error("browser_wasm_singleton_target_reached"));
+        return saturated;
+      }
+    }
+    await Promise.all(pending);
     if(best) return best;
     if(validCandidateCount > 0 && completeHardResult(incumbent) && incumbentQuality){
       return {status:200, result:incumbent, quality:incumbentQuality, index:workers.length};
@@ -805,6 +992,9 @@
       },
       {timeoutMs:30000}
     );
+    state.localAcceptedResults += 1;
+    state.lastAcceptedResultAtMs = Date.now();
+    publishRuntimeState();
     return {
       candidateId:String(candidate?.candidateId || ""),
       sha256:String(candidate?.sha256 || digest),
@@ -844,6 +1034,12 @@
         await failLease(lease, state.workerToken, "browser_wasm_ineligible_request", false);
         return false;
       }
+      state.computeActive = true;
+      state.localComputeRuns += 1;
+      state.lastComputeWorkerCount = Math.max(1, state.workers.length);
+      state.lastComputeStartedAtMs = Date.now();
+      state.lastComputeFinishedAtMs = 0;
+      publishRuntimeState();
       let checkpointTail = Promise.resolve();
       const queueCheckpoint = portfolio => {
         checkpointTail = checkpointTail.then(async () => {
@@ -908,6 +1104,11 @@
       }
       return false;
     }finally{
+      if(state.computeActive){
+        state.computeActive = false;
+        state.lastComputeFinishedAtMs = Date.now();
+        publishRuntimeState();
+      }
       signal?.removeEventListener?.("abort", abortPortfolio);
       leaseRun.settle({submitted:false});
       if(state.leaseRun === leaseRun) state.leaseRun = null;
@@ -954,7 +1155,7 @@
 
   async function probeExecutor(options){
     const opts = options && typeof options === "object" ? options : {};
-    if(!isCompleteRefinementRequest(opts.request) || opts.signal?.aborted) return false;
+    if(!isBrowserAgentRequest(opts.request) || opts.signal?.aborted) return false;
     if(state.probed && state.worker && state.workers.length) return true;
     if(state.probePromise) return state.probePromise;
     state.probePromise = (async () => {
@@ -992,7 +1193,7 @@
     const opts = options && typeof options === "object" ? options : {};
     if(
       !browserAgentEnabled()
-      || !isCompleteRefinementRequest(opts.request)
+      || !isBrowserAgentRequest(opts.request)
       || opts.signal?.aborted
     ) return false;
     const jobId = String(opts.jobId || "").trim();
@@ -1035,6 +1236,7 @@
       state.active = true;
       const generation = ++state.generation;
       state.loopPromise = claimLoop(generation, opts.signal);
+      publishRuntimeState();
       return true;
     })().catch(() => {
       terminateComputeWorkers();
@@ -1067,6 +1269,11 @@
       return {handled:false, submitted:false, jobId:expectedJobId};
     }
     leaseRun.stopRequested = true;
+    if(state.computeActive){
+      state.computeActive = false;
+      state.lastComputeFinishedAtMs = Date.now();
+      publishRuntimeState();
+    }
     try{ leaseRun.controller?.abort(); }catch(_){ }
     rejectWorkerWaiters(new Error("browser_wasm_best_effort_stop"));
     terminateComputeWorkers();
@@ -1086,6 +1293,10 @@
     const keepalive = opts.keepalive === true;
     state.active = false;
     state.probed = false;
+    if(state.computeActive){
+      state.computeActive = false;
+      state.lastComputeFinishedAtMs = Date.now();
+    }
     state.generation += 1;
     state.lease = null;
     clearHeartbeat();
@@ -1094,6 +1305,7 @@
     terminateComputeWorkers();
     state.workerToken = "";
     state.jobId = "";
+    publishRuntimeState();
     state.closePromise = (async () => {
       if(opts.failLease !== false) await failLease(lease, token, reason, keepalive);
       await disconnectToken(token, keepalive);
@@ -1112,6 +1324,7 @@
     if(!next){
       await closeExecutor("browser_agent_disabled", {failLease:true, keepalive:true});
     }
+    publishRuntimeState();
     return next;
   }
 
@@ -1141,7 +1354,8 @@
     isEnabled:browserAgentEnabled,
     setEnabled:setBrowserAgentEnabled,
     portfolioWorkerCount,
-    canHandleRequest:isCompleteRefinementRequest,
+    portfolioWorkerTimeoutMs,
+    canHandleRequest:isBrowserAgentRequest,
     refinementRequestClone:browserRefinementRequest,
     probe:probeExecutor,
     activate:activateExecutor,
@@ -1150,15 +1364,6 @@
     close:closeExecutor,
     stopForBackground,
     resultDigest,
-    state:() => ({
-      active:state.active,
-      probed:state.probed,
-      hasWorker:!!state.worker,
-      workerCount:state.workers.length,
-      hasLease:!!state.lease,
-      jobId:state.jobId,
-      enabled:browserAgentEnabled(),
-      available:runtimeCapable()
-    })
+    state:publicRuntimeState
   };
 })(typeof window !== "undefined" ? window : globalThis);
