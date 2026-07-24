@@ -1,9 +1,9 @@
 (function(root){
   "use strict";
 
-  const VERSION = "tkb-browser-wasm-executor-v13-native-full-resource";
+  const VERSION = "tkb-browser-wasm-executor-v14-adaptive-workload";
   const AGENT_PROTOCOL = "tkb-agent-helper-v1";
-  const AGENT_VERSION = "1.6.30";
+  const AGENT_VERSION = "1.6.31";
   const SOLVER_PROTOCOL = "tkb-reference-solver-stdio-v1";
   const DIGEST_PROTOCOL = "tkb-json-tree-sha256-v1";
   const WORKER_URL = `tkb-browser-wasm-worker.js?v=${encodeURIComponent(VERSION)}`;
@@ -45,6 +45,8 @@
     computeActive:false,
     localComputeRuns:0,
     localAcceptedResults:0,
+    workerCeiling:0,
+    plannedWorkerCount:0,
     lastComputeWorkerCount:0,
     lastComputeStartedAtMs:0,
     lastComputeFinishedAtMs:0,
@@ -106,6 +108,55 @@
     return Number.isFinite(reported) && reported > 0
       ? Math.max(1, Math.floor(reported))
       : 1;
+  }
+
+  function finiteWorkloadValue(value){
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0
+      ? Math.max(1, Math.floor(numeric))
+      : 0;
+  }
+
+  function requestWorkloadPeriods(request){
+    const envelope = requestEnvelope(request);
+    if(!envelope) return 0;
+    const {data, settings} = envelope;
+    const incumbent = data.tkbSolverResult;
+    const metrics = incumbent?.metrics;
+    const candidates = [
+      settings.expected_scheduled_periods,
+      metrics?.expected_periods,
+      Array.isArray(incumbent?.lessons) ? incumbent.lessons.length : 0
+    ];
+    if(String(settings.ui_progress_metric_focus || "") === "scheduled_periods"){
+      candidates.push(
+        settings.ui_progress_metric_target,
+        settings.ui_progress_metric_baseline,
+        settings.ui_progress_metric_current
+      );
+    }
+    const scheduled = finiteWorkloadValue(metrics?.scheduled_periods);
+    const unassigned = finiteWorkloadValue(metrics?.unassigned_periods);
+    if(scheduled || unassigned) candidates.push(scheduled + unassigned);
+    return candidates.reduce(
+      (maximum, value) => Math.max(maximum, finiteWorkloadValue(value)),
+      0
+    );
+  }
+
+  function adaptivePortfolioWorkerCount(request, deviceNavigator){
+    const ceiling = portfolioWorkerCount(deviceNavigator);
+    if(normalizedOptimizationFocus(request?.settings) !== "quick_complete"){
+      // Quality search benefits from independent seeds. Keep the whole device
+      // available for singleton, session, gap and coordinated refinement.
+      return ceiling;
+    }
+    const periods = requestWorkloadPeriods(request);
+    if(periods <= 0) return Math.min(4, ceiling);
+    if(periods <= 128) return 1;
+    if(periods <= 512) return Math.min(2, ceiling);
+    if(periods <= 2000) return Math.min(4, ceiling);
+    return Math.min(8, ceiling);
   }
 
   function requestEnvelope(request){
@@ -411,6 +462,8 @@
       computeActive:state.computeActive,
       localComputeRuns:state.localComputeRuns,
       localAcceptedResults:state.localAcceptedResults,
+      workerCeiling:state.workerCeiling || portfolioWorkerCount(root.navigator),
+      plannedWorkerCount:state.plannedWorkerCount,
       lastComputeWorkerCount:state.lastComputeWorkerCount,
       lastComputeStartedAtMs:state.lastComputeStartedAtMs,
       lastComputeFinishedAtMs:state.lastComputeFinishedAtMs,
@@ -430,9 +483,15 @@
     }catch(_){ }
   }
 
-  async function startComputeWorker(signal){
+  async function startComputeWorker(plannedWorkerCount, signal){
     if(state.workers.length) return true;
-    const count = portfolioWorkerCount(root.navigator);
+    const ceiling = portfolioWorkerCount(root.navigator);
+    const count = Math.max(1, Math.min(
+      ceiling,
+      Math.floor(Number(plannedWorkerCount) || 1)
+    ));
+    state.workerCeiling = ceiling;
+    state.plannedWorkerCount = count;
     const workers = [];
     state.workers = workers;
     try{
@@ -822,17 +881,20 @@
   }
 
   function portfolioRequest(request, index, count, lease){
-    if(count <= 1) return request;
     const cloned = JSON.parse(JSON.stringify(request));
     const settings = cloned.settings && typeof cloned.settings === "object"
       ? cloned.settings
       : (cloned.settings = {});
+    // One Web Worker owns one single-threaded WASM solver. The outer portfolio
+    // is the CPU parallelism, so nested solver workers must stay at one.
+    settings.num_workers = 1;
+    settings.browser_portfolio_index = index;
+    settings.browser_portfolio_count = count;
+    if(count <= 1) return cloned;
     const baseSeed = settings.random_seed == null ? "" : String(settings.random_seed);
     if(index > 0){
       settings.random_seed = `${baseSeed}|web-portfolio-v1:${index}|${String(lease?.jobId || "")}`;
     }
-    settings.browser_portfolio_index = index;
-    settings.browser_portfolio_count = count;
     return cloned;
   }
 
@@ -1156,7 +1218,11 @@
   async function probeExecutor(options){
     const opts = options && typeof options === "object" ? options : {};
     if(!isBrowserAgentRequest(opts.request) || opts.signal?.aborted) return false;
-    if(state.probed && state.worker && state.workers.length) return true;
+    const workerCeiling = portfolioWorkerCount(root.navigator);
+    const plannedWorkerCount = adaptivePortfolioWorkerCount(opts.request, root.navigator);
+    const samePlan = state.plannedWorkerCount === plannedWorkerCount
+      && state.workerCeiling === workerCeiling;
+    if(state.probed && state.worker && state.workers.length && samePlan) return true;
     if(state.probePromise) return state.probePromise;
     state.probePromise = (async () => {
       if(state.closePromise) await state.closePromise.catch(() => null);
@@ -1176,7 +1242,10 @@
         }catch(_){ }
       }
       if(opts.signal?.aborted || root.document?.visibilityState === "hidden") return false;
-      await startComputeWorker(opts.signal);
+      if(state.workers.length) terminateComputeWorkers();
+      state.workerCeiling = workerCeiling;
+      state.plannedWorkerCount = plannedWorkerCount;
+      await startComputeWorker(plannedWorkerCount, opts.signal);
       state.probed = true;
       return true;
     })().catch(() => {
@@ -1305,6 +1374,7 @@
     terminateComputeWorkers();
     state.workerToken = "";
     state.jobId = "";
+    state.plannedWorkerCount = 0;
     publishRuntimeState();
     state.closePromise = (async () => {
       if(opts.failLease !== false) await failLease(lease, token, reason, keepalive);
@@ -1354,6 +1424,8 @@
     isEnabled:browserAgentEnabled,
     setEnabled:setBrowserAgentEnabled,
     portfolioWorkerCount,
+    adaptivePortfolioWorkerCount,
+    requestWorkloadPeriods,
     portfolioWorkerTimeoutMs,
     canHandleRequest:isBrowserAgentRequest,
     refinementRequestClone:browserRefinementRequest,

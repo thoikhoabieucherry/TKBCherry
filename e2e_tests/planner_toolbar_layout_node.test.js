@@ -406,7 +406,7 @@ test("portrait planner keeps seven compact mobile slots with stacked history and
     /@media \(max-width:\s*900px\) and \(hover:\s*none\) and \(pointer:\s*coarse\),\s*\(max-width:\s*480px\)/
   );
   assert.match(plannerHtml, /shared\/storage\.js\?v=20260724-v180-durable-store-save-v1/);
-  assert.match(plannerHtml, /phanmon\.js\?v=20260724-v180-durable-store-save-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260724-v181-adaptive-browser-workers-v1/);
   assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260724-v180-durable-store-save-v1/);
 });
 
@@ -573,6 +573,8 @@ test("browser Agent indicator shows enabled readiness and reports real compute",
     workerCount:0,
     localComputeRuns:0,
     localAcceptedResults:0,
+    workerCeiling:4,
+    plannedWorkerCount:0,
     lastComputeWorkerCount:0
   };
   let agentEnabled = true;
@@ -612,7 +614,7 @@ test("browser Agent indicator shows enabled readiness and reports real compute",
   assert.equal(button.disabled, false);
   assert.equal(button.attributes["aria-hidden"], "false");
   assert.equal(button.dataset.agentState, "enabled");
-  assert.equal(button.title, "Agent đã bật, sẵn sàng dùng 4 Worker CPU/RAM khi có lượt xếp phù hợp. Bấm để dùng VPS.");
+  assert.equal(button.title, "Agent đã bật, tự điều chỉnh tối đa 4 Worker theo lượt xếp. Bấm để dùng VPS.");
   assert.equal(button.attributes["aria-label"], button.title);
   assert.equal(button.attributes["aria-pressed"], "true");
   assert.equal(button.attributes["aria-disabled"], "false");
@@ -625,10 +627,11 @@ test("browser Agent indicator shows enabled readiness and reports real compute",
   executorState.hasLease = true;
   executorState.computeActive = true;
   executorState.localComputeRuns = 1;
-  executorState.workerCount = 4;
+  executorState.workerCount = 1;
+  executorState.plannedWorkerCount = 1;
   assert.equal(await context.refreshIndicator(true), true);
   assert.equal(button.dataset.agentState, "working");
-  assert.equal(button.title, "Agent đang tối ưu bằng 4 Worker trên thiết bị. Bấm để chuyển về VPS.");
+  assert.equal(button.title, "Agent đang tối ưu bằng 1 Worker (tối đa 4 Worker) trên thiết bị. Bấm để chuyển về VPS.");
   assert.equal(context.window.__TKB_BROWSER_AGENT_ACTIVE, true);
   assert.equal(context.window.__TKB_BROWSER_AGENT_WORKING, true);
   assert.equal(context.window.__TKB_BROWSER_AGENT_READY, true);
@@ -639,11 +642,12 @@ test("browser Agent indicator shows enabled readiness and reports real compute",
   executorState.hasLease = false;
   executorState.computeActive = false;
   executorState.workerCount = 0;
+  executorState.plannedWorkerCount = 0;
   executorState.localAcceptedResults = 1;
-  executorState.lastComputeWorkerCount = 4;
+  executorState.lastComputeWorkerCount = 1;
   assert.equal(await context.refreshIndicator(true), true);
   assert.equal(button.dataset.agentState, "enabled");
-  assert.equal(button.title, "Agent đã bật, sẵn sàng dùng 4 Worker CPU/RAM; lượt gần nhất đã xử lý cục bộ trên thiết bị. Bấm để dùng VPS.");
+  assert.equal(button.title, "Agent đã bật, tự điều chỉnh tối đa 4 Worker; lượt gần nhất dùng 1 Worker. Bấm để dùng VPS.");
   assert.equal(context.window.__TKB_BROWSER_AGENT_ACTIVE, false);
   assert.equal(context.window.__TKB_BROWSER_AGENT_WORKING, false);
 

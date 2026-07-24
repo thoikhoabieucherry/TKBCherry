@@ -25,9 +25,97 @@ from .models import Lease
 HeartbeatCallback = Callable[[float, float], bool]
 
 
+def _positive_int_value(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return parsed if parsed > 0 else 0
+
+
+def _expected_period_count(request: Mapping[str, Any]) -> int:
+    candidates: list[int] = []
+    settings = request.get("settings")
+    if isinstance(settings, Mapping):
+        candidates.append(
+            _positive_int_value(settings.get("expected_scheduled_periods"))
+        )
+        if (
+            _normalized_setting(settings, "ui_progress_metric_focus")
+            == "scheduled_periods"
+        ):
+            candidates.extend(
+                _positive_int_value(settings.get(key))
+                for key in (
+                    "ui_progress_metric_target",
+                    "ui_progress_metric_baseline",
+                    "ui_progress_metric_current",
+                )
+            )
+
+    data = request.get("data")
+    if not isinstance(data, Mapping):
+        return max(candidates, default=0)
+    for result_key in ("tkbSolverResult", "tkbRustSolverResult"):
+        result = data.get(result_key)
+        if not isinstance(result, Mapping):
+            continue
+        metrics = result.get("metrics")
+        if isinstance(metrics, Mapping):
+            candidates.append(_positive_int_value(metrics.get("expected_periods")))
+            candidates.append(
+                _positive_int_value(metrics.get("scheduled_periods"))
+                + _positive_int_value(metrics.get("unassigned_periods"))
+            )
+        lessons = result.get("lessons")
+        if isinstance(lessons, list):
+            candidates.append(len(lessons))
+    return max(candidates, default=0)
+
+
+def _normalized_setting(settings: Mapping[str, Any], key: str) -> str:
+    return (
+        str(settings.get(key) or "")
+        .strip()
+        .casefold()
+        .replace("-", "_")
+        .replace(" ", "_")
+    )
+
+
+def _recommended_cpu_workers(request: Mapping[str, Any], permitted: int) -> int:
+    ceiling = max(1, int(permitted))
+    settings = request.get("settings")
+    if not isinstance(settings, Mapping):
+        settings = {}
+
+    focus = _normalized_setting(settings, "optimization_focus")
+    solve_kind = _normalized_setting(settings, "ui_unified_solve_kind")
+    use_size_tier = focus == "quick_complete" or solve_kind == "fresh_complete_first"
+    if not use_size_tier and (
+        focus in {"singletons", "sessions", "gaps"}
+        or solve_kind == "refine_complete"
+    ):
+        return ceiling
+
+    expected = _expected_period_count(request)
+    if 0 < expected <= 128:
+        tier = 1
+    elif 0 < expected <= 512:
+        tier = 2
+    elif expected == 0 or expected <= 2_000:
+        tier = 4
+    else:
+        tier = 8
+    return min(ceiling, tier)
+
+
 def _effective_cpu_workers(request: Mapping[str, Any], permitted: int) -> int:
-    del request
-    return max(1, int(permitted))
+    # Lease capacity is a ceiling. Incoming num_workers may describe an older
+    # VPS/browser policy, so the native Agent selects its own benchmarked tier.
+    return _recommended_cpu_workers(request, permitted)
 
 
 def _effective_memory_limit_mb(request: Mapping[str, Any], permitted_mb: int) -> int:

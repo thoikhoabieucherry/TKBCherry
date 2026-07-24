@@ -24,6 +24,40 @@ change so a machine restart or a new conversation does not erase project context
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
 
+### v1.81 adaptive local resources (candidate; not deployed)
+
+- Available CPU and RAM are ceilings, not utilization targets. Browser and
+  native Agents now choose Quick CPU width from the measured timetable size:
+  at most 128 periods uses 1 Worker, 129-512 uses 2, 513-2,000 uses 4, and a
+  larger timetable uses 8, always capped by the device/lease ceiling. An older
+  request without a trustworthy period count uses the balanced 4-Worker tier.
+- The real 1,566-period default Quick fixture completed in 12.359 seconds with
+  4 Workers, 13.125 seconds with 8, 12.789 seconds with 12, and 19.907 seconds
+  with 22. The former all-CPU policy therefore made this common Quick workload
+  about 61% slower than the selected 4-Worker tier.
+- Quality-heavy singleton, teacher-session, gap, and coordinated complete
+  refinement runs retain access to every available logical CPU. Browser WASM
+  uses one solver thread per outer Web Worker so parallelism cannot multiply
+  recursively. Native Agent RAM retains the full permitted physical-memory
+  ceiling, but memory is allocated only when the solver actually needs it.
+- Browser runtime state distinguishes the hardware `workerCeiling`, the
+  per-request `plannedWorkerCount`, the active Worker count, and the last real
+  compute width. The toolbar reports actual/max Worker counts while running and
+  the most recent actual count while idle. First Automatic VPS-only routing,
+  hidden-tab handoff, Stop behavior, hard constraints, and quality acceptance
+  rules are unchanged.
+- Candidate markers are API
+  `tkb_new-rust-api-2026-07-24-adaptive-agent-cpu-v73`, Browser executor
+  `tkb-browser-wasm-executor-v14-adaptive-workload`, and planner cache
+  `20260724-v181-adaptive-browser-workers-v1`; bridge v278 is unchanged. Native
+  Agent candidate 1.6.31 raises the owner-Agent lease gate to 1.6.31 and the
+  private WSL runtime marker to `20260724.2`.
+- Local verification passes full Node **358/358**, focused Browser/UI
+  **57/57**, Agent **155/155** with one platform skip, Rust API **186/186**,
+  validator **38/38**, JavaScript/Python syntax, and `git diff --check`. The
+  Windows release artifact, VPS staging, deployment, and signed-in Browser
+  acceptance are still pending.
+
 ### v1.80 durable school-store save (deployed 2026-07-24)
 
 - The Browser Agent indicator now treats enabled readiness as success: enabled

@@ -7288,16 +7288,20 @@ function browserAgentLabel(state){
     state?.workerCount
     || state?.lastComputeWorkerCount
     || state?.plannedWorkerCount
+    || state?.workerCeiling
     || 1
   ) || 1);
-  if(state?.working) return `Agent đang tối ưu bằng ${workers} Worker trên thiết bị. Bấm để chuyển về VPS.`;
-  if(state?.active) return `Agent đã kết nối bằng ${workers} Worker và đang chờ việc. Bấm để chuyển về VPS.`;
-  if(state?.probed) return `Agent đã nạp WASM bằng ${workers} Worker và đang chờ kết nối. Hiện chưa dùng CPU để xếp.`;
+  const ceiling = Math.max(workers, Number(state?.workerCeiling || 0) || workers);
+  const adaptiveNote = workers < ceiling ? ` (tối đa ${ceiling} Worker)` : "";
+  if(state?.working) return `Agent đang tối ưu bằng ${workers} Worker${adaptiveNote} trên thiết bị. Bấm để chuyển về VPS.`;
+  if(state?.active) return `Agent đã kết nối bằng ${workers} Worker${adaptiveNote} cho lượt này. Bấm để chuyển về VPS.`;
+  if(state?.probed) return `Agent đã chuẩn bị ${workers} Worker${adaptiveNote} cho lượt này. Hiện chưa dùng CPU để xếp.`;
   if(state?.available && state?.enabled){
     if(Number(state?.localAcceptedResults || 0) > 0){
-      return `Agent đã bật, sẵn sàng dùng ${workers} Worker CPU/RAM; lượt gần nhất đã xử lý cục bộ trên thiết bị. Bấm để dùng VPS.`;
+      const lastWorkers = Math.max(1, Number(state?.lastComputeWorkerCount || workers) || 1);
+      return `Agent đã bật, tự điều chỉnh tối đa ${ceiling} Worker; lượt gần nhất dùng ${lastWorkers} Worker. Bấm để dùng VPS.`;
     }
-    return `Agent đã bật, sẵn sàng dùng ${workers} Worker CPU/RAM khi có lượt xếp phù hợp. Bấm để dùng VPS.`;
+    return `Agent đã bật, tự điều chỉnh tối đa ${ceiling} Worker theo lượt xếp. Bấm để dùng VPS.`;
   }
   return state?.available ? BROWSER_AGENT_OFF_LABEL : BROWSER_AGENT_UNAVAILABLE_LABEL;
 }
@@ -7328,10 +7332,16 @@ function browserAgentRuntimeState(deviceNavigator){
   }
   const enabled = available && (typeof executor.isEnabled !== "function" || executor.isEnabled() !== false);
   const workerCount = Math.max(0, Number(executorState.workerCount || 0) || 0);
-  let plannedWorkerCount = 1;
+  let workerCeiling = Math.max(0, Number(executorState.workerCeiling || 0) || 0);
   try{
-    plannedWorkerCount = Math.max(1, Number(executor.portfolioWorkerCount?.(nav) || 1) || 1);
+    if(workerCeiling <= 0){
+      workerCeiling = Math.max(1, Number(executor.portfolioWorkerCount?.(nav) || 1) || 1);
+    }
   }catch(_){ }
+  const plannedWorkerCount = Math.max(
+    0,
+    Number(executorState.plannedWorkerCount || workerCount || 0) || 0
+  );
   return {
     supportedDevice,
     available,
@@ -7340,6 +7350,7 @@ function browserAgentRuntimeState(deviceNavigator){
     working:available && enabled && executorState.computeActive === true,
     probed:available && enabled && executorState.probed === true,
     workerCount,
+    workerCeiling,
     plannedWorkerCount,
     localComputeRuns:Math.max(0, Number(executorState.localComputeRuns || 0) || 0),
     localAcceptedResults:Math.max(0, Number(executorState.localAcceptedResults || 0) || 0),

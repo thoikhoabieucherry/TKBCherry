@@ -297,7 +297,7 @@ test("browser Agent is enabled by default and persists an explicit VPS-only togg
   assert.equal(reloaded.TKBBrowserWasmExecutor.isEnabled(), true);
 });
 
-test("browser portfolio uses every logical CPU reported by the device", () => {
+test("browser Worker ceiling uses every logical CPU reported by every supported platform", () => {
   const {context} = executorContext({fetch:async () => response({ok:false}, 503), Worker:function Worker(){}});
   const workerCount = context.TKBBrowserWasmExecutor.portfolioWorkerCount;
   const workerTimeout = context.TKBBrowserWasmExecutor.portfolioWorkerTimeoutMs;
@@ -315,6 +315,58 @@ test("browser portfolio uses every logical CPU reported by the device", () => {
   assert.equal(workerTimeout({optimization_focus:"singletons", backend_deadline_ms:60000}), 75000);
   assert.equal(workerTimeout({optimization_focus:"sessions", backend_deadline_ms:180000}), 75000);
   assert.equal(workerTimeout({optimization_focus:"gaps", backend_deadline_ms:1800000}), 75000);
+});
+
+test("browser portfolio scales Quick work by timetable size and never exceeds the device ceiling", () => {
+  const {context} = executorContext({fetch:async () => response({ok:false}, 503), Worker:function Worker(){}});
+  const adaptiveCount = context.TKBBrowserWasmExecutor.adaptivePortfolioWorkerCount;
+  const workloadPeriods = context.TKBBrowserWasmExecutor.requestWorkloadPeriods;
+  const quick = periods => {
+    const request = quickCompletionRequest();
+    request.settings.expected_scheduled_periods = periods;
+    request.settings.ui_progress_metric_target = periods;
+    return request;
+  };
+  const small = quick(96);
+  const medium = quick(500);
+  const large = quick(900);
+  const defaultSchool = quick(1566);
+  const huge = quick(2400);
+  const unknown = quickCompletionRequest();
+  delete unknown.settings.expected_scheduled_periods;
+  delete unknown.settings.ui_progress_metric_target;
+  const platforms = [
+    {platform:"Win32", userAgent:"Windows NT 10.0", hardwareConcurrency:22, deviceMemory:0.25},
+    {platform:"Linux x86_64", userAgent:"X11; Linux x86_64", hardwareConcurrency:16},
+    {platform:"MacIntel", userAgent:"Macintosh", hardwareConcurrency:12},
+    {platform:"iPhone", userAgent:"iPhone", hardwareConcurrency:8, maxTouchPoints:5},
+    {platform:"Linux armv8l", userAgent:"Android 15; Mobile", hardwareConcurrency:8, deviceMemory:1}
+  ];
+
+  assert.equal(workloadPeriods(small), 96);
+  assert.equal(adaptiveCount(small, platforms[0]), 1);
+  assert.equal(adaptiveCount(medium, platforms[0]), 2);
+  assert.equal(adaptiveCount(large, platforms[0]), 4);
+  assert.equal(adaptiveCount(defaultSchool, platforms[0]), 4);
+  assert.equal(adaptiveCount(huge, platforms[0]), 8);
+  assert.equal(adaptiveCount(unknown, platforms[0]), 4);
+  for(const navigator of platforms){
+    assert.equal(adaptiveCount(small, navigator), 1, navigator.platform);
+    assert.equal(adaptiveCount(defaultSchool, navigator), Math.min(4, navigator.hardwareConcurrency), navigator.platform);
+    assert.equal(adaptiveCount(huge, navigator), Math.min(8, navigator.hardwareConcurrency), navigator.platform);
+  }
+
+  for(const focus of ["singletons", "sessions", "gaps", "automatic"]){
+    const tinyQuality = completeRefinementRequest();
+    tinyQuality.settings.optimization_focus = focus;
+    assert.equal(adaptiveCount(tinyQuality, platforms[0]), 22, `${focus} portfolios retain all seeds`);
+  }
+  assert.equal(adaptiveCount(defaultSchool, {...platforms[0], hardwareConcurrency:512}), 4);
+  assert.equal(adaptiveCount(medium, {...platforms[0], hardwareConcurrency:512}), 2);
+  assert.equal(adaptiveCount(huge, {...platforms[0], hardwareConcurrency:512}), 8);
+  assert.equal(adaptiveCount(defaultSchool, {...platforms[0], hardwareConcurrency:2}), 2);
+  assert.equal(adaptiveCount(defaultSchool, {...platforms[0], hardwareConcurrency:1}), 1);
+  assert.equal(adaptiveCount(defaultSchool, {...platforms[0], hardwareConcurrency:Infinity}), 1);
 });
 
 test("browser portfolio keeps healthy probes and cleans up partial worker startup", async () => {
@@ -498,7 +550,7 @@ test("foreground executor probes WASM before hello and disconnects without an in
   assert.equal(context.TKBBrowserWasmExecutor.state().active, false);
   assert.deepEqual(calls.slice(0, 5), [
     "GET:/api/agent-helper/v1/status",
-    "worker:tkb-browser-wasm-worker.js?v=tkb-browser-wasm-executor-v13-native-full-resource",
+    "worker:tkb-browser-wasm-worker.js?v=tkb-browser-wasm-executor-v14-adaptive-workload",
     "worker-message:probe",
     "POST:/api/solve-data",
     "POST:/api/agent-helper/v1/hello",
@@ -647,6 +699,8 @@ test("turning Agent off during compute terminates every worker and hands the lea
     computeActive:false,
     localComputeRuns:1,
     localAcceptedResults:0,
+    workerCeiling:4,
+    plannedWorkerCount:0,
     lastComputeWorkerCount:4,
     lastComputeStartedAtMs:context.TKBBrowserWasmExecutor.state().lastComputeStartedAtMs,
     lastComputeFinishedAtMs:context.TKBBrowserWasmExecutor.state().lastComputeFinishedAtMs,
@@ -721,6 +775,8 @@ test("iPad desktop-mode pagehide racing hello revokes the late token and leaves 
     computeActive:false,
     localComputeRuns:0,
     localAcceptedResults:0,
+    workerCeiling:1,
+    plannedWorkerCount:0,
     lastComputeWorkerCount:0,
     lastComputeStartedAtMs:0,
     lastComputeFinishedAtMs:0,
@@ -978,7 +1034,9 @@ test("quick fresh and incomplete requests are Browser Agent eligible and run a b
     apiBase:"https://tkbcherry.com",
     request
   }), true);
-  assert.equal(context.TKBBrowserWasmExecutor.state().workerCount, 3);
+  assert.equal(context.TKBBrowserWasmExecutor.state().workerCeiling, 3);
+  assert.equal(context.TKBBrowserWasmExecutor.state().plannedWorkerCount, 1);
+  assert.equal(context.TKBBrowserWasmExecutor.state().workerCount, 1);
   assert.equal(await context.TKBBrowserWasmExecutor.activate({
     apiBase:"https://tkbcherry.com",
     jobId:"job-quick-local",
@@ -989,8 +1047,8 @@ test("quick fresh and incomplete requests are Browser Agent eligible and run a b
   }
 
   assert.equal(completed, true);
-  assert.equal(terminated, 3, "first complete Quick worker must stop slower portfolio seeds");
-  assert.equal(workerPayloads.length, 3);
+  assert.equal(terminated, 1, "a tiny Quick solve must stop its one planned worker after completion");
+  assert.equal(workerPayloads.length, 1);
   for(const payload of workerPayloads){
     assert.equal(payload.settings.optimization_focus, "quick_complete");
     assert.equal(payload.settings.require_complete_schedule, true);
@@ -1000,6 +1058,8 @@ test("quick fresh and incomplete requests are Browser Agent eligible and run a b
     assert.equal(payload.settings.backend_deadline_ms, 12000);
     assert.equal(payload.settings.native_global_deadline_ms, 12000);
     assert.equal(payload.settings.native_deadline_reserve_ms, 750);
+    assert.equal(payload.settings.num_workers, 1);
+    assert.equal(payload.settings.browser_portfolio_count, 1);
   }
   assert.deepEqual(submissions.map(item => item.pathname), [
     "/api/agent-helper/v1/leases/lease-quick-local/candidate"
@@ -1283,6 +1343,7 @@ test("four-worker portfolio uses distinct seeds and submits the best non-regress
     [0, 1, 2, 3]
   );
   assert.ok(workerPayloads.every(payload => payload.settings.browser_portfolio_count === 4));
+  assert.ok(workerPayloads.every(payload => payload.settings.num_workers === 1));
   assert.equal(workerPayloads[0].settings.random_seed, "base-seed");
   assert.ok(workerPayloads.slice(1).every(payload => payload.settings.random_seed.includes("job-portfolio")));
   assert.equal(submittedResult?.candidateMarker, "fewer-sessions-but-worse-gap1");
@@ -1633,7 +1694,7 @@ test("planner wires the browser worker only around a new canonical solve", () =>
   const bridge = fs.readFileSync(BRIDGE_PATH, "utf8");
   const page = fs.readFileSync(PAGE_PATH, "utf8");
   const server = fs.readFileSync(SERVER_PATH, "utf8");
-  assert.match(page, /tkb-browser-wasm\.js\?v=20260724-v180-durable-store-save-v1/);
+  assert.match(page, /tkb-browser-wasm\.js\?v=20260724-v181-adaptive-browser-workers-v1/);
   assert.ok(page.indexOf("tkb-browser-wasm.js") < page.indexOf("tkb-rust-bridge.js"));
   assert.match(bridge, /TKBBrowserWasmExecutor\.canHandleRequest\(browserWasmRequest\)/);
   assert.match(bridge, /!resumeExistingServerJobOnly[\s\S]*browserWasmEligible[\s\S]*TKBBrowserWasmExecutor\.probe/);

@@ -16,6 +16,7 @@ from agent_helper.solver import (
     SolverInfrastructureError,
     SolverRunner,
     SolverTimedOut,
+    _effective_cpu_workers,
     _effective_memory_limit_mb,
 )
 
@@ -43,15 +44,17 @@ def make_lease(*, timeout: int = 3) -> Lease:
 
 
 class SolverRunnerTests(unittest.TestCase):
-    def test_every_workload_uses_all_workers_permitted_by_the_lease(self) -> None:
+    def test_quick_and_fresh_work_use_size_based_cpu_tiers(self) -> None:
         cases = (
-            ("fresh_complete_first", 300, 1),
-            ("fresh_complete_first", 1566, 4),
-            ("refine_complete", 1566, 6),
-            ("fresh_complete_first", 3000, 12),
+            ("quick_complete", "fresh_complete_first", 128, 1),
+            ("quick_complete", "fresh_complete_first", 129, 2),
+            ("automatic", "fresh_complete_first", 512, 2),
+            ("automatic", "fresh_complete_first", 1_566, 4),
+            ("quick_complete", "refine_complete", 2_000, 4),
+            ("quick_complete", "fresh_complete_first", 2_001, 8),
         )
-        for solve_kind, expected, requested in cases:
-            with self.subTest(solve_kind=solve_kind, expected=expected):
+        for focus, solve_kind, expected, workers in cases:
+            with self.subTest(focus=focus, expected=expected):
                 lease = Lease(
                     job_id="job-adaptive",
                     lease_id="lease-adaptive",
@@ -62,13 +65,83 @@ class SolverRunnerTests(unittest.TestCase):
                         "settings": {
                             "expected_scheduled_periods": expected,
                             "ui_unified_solve_kind": solve_kind,
-                            "num_workers": requested,
+                            "optimization_focus": focus,
+                            "num_workers": 1,
                         },
                     },
                     limits=LeaseLimits(cpu_workers=22, timeout_seconds=180),
                 )
                 request = SolverRunner._normalized_request(lease)
-                self.assertEqual(request["settings"]["num_workers"], 22)
+                self.assertEqual(request["settings"]["num_workers"], workers)
+
+    def test_quality_and_complete_refinement_use_full_permitted_cpu(self) -> None:
+        cases = (
+            ("singletons", "refine_complete"),
+            ("sessions", "refine_complete"),
+            ("gaps", "refine_complete"),
+            ("automatic", "refine_complete"),
+        )
+        for focus, solve_kind in cases:
+            with self.subTest(focus=focus):
+                request = {
+                    "data": {},
+                    "settings": {
+                        "expected_scheduled_periods": 1_566,
+                        "ui_unified_solve_kind": solve_kind,
+                        "optimization_focus": focus,
+                        "num_workers": 1,
+                    },
+                }
+                self.assertEqual(_effective_cpu_workers(request, 22), 22)
+
+    def test_cpu_tiers_never_exceed_lease_ceiling(self) -> None:
+        request = {
+            "data": {},
+            "settings": {
+                "expected_scheduled_periods": 3_000,
+                "optimization_focus": "quick_complete",
+            },
+        }
+        self.assertEqual(_effective_cpu_workers(request, 3), 3)
+        request["settings"]["optimization_focus"] = "sessions"
+        self.assertEqual(_effective_cpu_workers(request, 6), 6)
+
+    def test_cpu_size_falls_back_to_incumbent_metrics(self) -> None:
+        request = {
+            "data": {
+                "tkbSolverResult": {"metrics": {"expected_periods": 400}},
+            },
+            "settings": {
+                "ui_unified_solve_kind": "fresh_complete_first",
+                "num_workers": 99,
+            },
+        }
+        self.assertEqual(_effective_cpu_workers(request, 22), 2)
+
+        request = {
+            "data": {
+                "tkbRustSolverResult": {
+                    "metrics": {
+                        "scheduled_periods": 1_500,
+                        "unassigned_periods": 66,
+                    },
+                    "lessons": [None] * 400,
+                },
+            },
+            "settings": {
+                "expected_scheduled_periods": 100,
+                "ui_unified_solve_kind": "fresh_complete_first",
+            },
+        }
+        self.assertEqual(_effective_cpu_workers(request, 22), 4)
+
+        request = {
+            "data": {
+                "tkbRustSolverResult": {"lessons": [None] * 2_001},
+            },
+            "settings": {"optimization_focus": "quick_complete"},
+        }
+        self.assertEqual(_effective_cpu_workers(request, 22), 8)
 
     def test_every_workload_can_use_all_permitted_physical_memory(self) -> None:
         for expected in (300, 1566, 3000):

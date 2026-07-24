@@ -24,7 +24,7 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-24-durable-school-store-v72";
+const VERSION: &str = "tkb_new-rust-api-2026-07-24-adaptive-agent-cpu-v73";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
@@ -33,11 +33,11 @@ const AGENT_HELPER_PROTOCOL: &str = "tkb-agent-helper-v1";
 const AGENT_RESULT_DIGEST_PROTOCOL: &str = "tkb-json-tree-sha256-v1";
 const TRUSTED_AGENT_TOKEN_HASH_ENV: &str = "TKB_TRUSTED_AGENT_TOKEN_SHA256";
 const TRUSTED_AGENT_TOKEN_PREFIX: &str = "tkbt_";
-// v1.6.30 removes workload-sized CPU/RAM slices and upgrades the private WSL
-// runtime. Older binaries remain upgrade-only so they cannot claim a job with
-// the legacy 2/4/6-worker policy before a full-resource executor.
-const MIN_AGENT_HELPER_VERSION: &str = "1.6.30";
-const MIN_AGENT_HELPER_SEMVER: (u32, u32, u32) = (1, 6, 30);
+// v1.6.31 selects CPU width from solve mode and timetable size while retaining
+// full memory as an on-demand ceiling. Older binaries remain upgrade-only so
+// they cannot claim work with the superseded all-CPU policy.
+const MIN_AGENT_HELPER_VERSION: &str = "1.6.31";
+const MIN_AGENT_HELPER_SEMVER: (u32, u32, u32) = (1, 6, 31);
 // A canonical server-owned job has exactly one executor. Keeping one Agent
 // task (instead of a seed portfolio) prevents the Agent and VPS from adding
 // parallel attempts to the same user request.
@@ -8215,7 +8215,7 @@ mod tests {
 
     #[test]
     fn agent_helper_version_gate_uses_strict_three_component_semver() {
-        for version in ["1.6.30", "1.7.0", "2.0.0"] {
+        for version in ["1.6.31", "1.7.0", "2.0.0"] {
             assert!(
                 agent_helper_version_supported(version),
                 "{version} should be eligible"
@@ -8236,6 +8236,7 @@ mod tests {
             "1.6.22",
             "1.6.23",
             "1.6.29",
+            "1.6.30",
             "1.6",
             "1.6.8-beta",
             "",
