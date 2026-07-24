@@ -18,6 +18,15 @@ if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
 }
 $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 
+function Get-RelativePathCompat {
+    param([string]$BasePath, [string]$TargetPath)
+    $BaseFullPath = [System.IO.Path]::GetFullPath($BasePath).TrimEnd([char[]]"\/") + [System.IO.Path]::DirectorySeparatorChar
+    $TargetFullPath = [System.IO.Path]::GetFullPath($TargetPath)
+    $BaseUri = [System.Uri]::new($BaseFullPath)
+    $TargetUri = [System.Uri]::new($TargetFullPath)
+    return [System.Uri]::UnescapeDataString($BaseUri.MakeRelativeUri($TargetUri).ToString()).Replace('/', '\')
+}
+
 function Test-PackagedSolverChild {
     param([string]$Executable)
     $StartInfo = [System.Diagnostics.ProcessStartInfo]::new()
@@ -254,14 +263,14 @@ $WslSolverRoot = Join-Path $WslRuntimeSource "solver_runtime"
 foreach ($RelativeRoot in @("scripts", "src")) {
     $SourceDirectory = Join-Path $SolverRoot $RelativeRoot
     foreach ($SourceFile in Get-ChildItem -LiteralPath $SourceDirectory -File -Filter "*.py" -Recurse) {
-        $RelativeFile = [System.IO.Path]::GetRelativePath($SourceDirectory, $SourceFile.FullName)
+        $RelativeFile = Get-RelativePathCompat $SourceDirectory $SourceFile.FullName
         $DestinationFile = Join-Path (Join-Path $WslSolverRoot $RelativeRoot) $RelativeFile
         New-Item -ItemType Directory -Force -Path (Split-Path $DestinationFile -Parent) | Out-Null
         Copy-Item -LiteralPath $SourceFile.FullName -Destination $DestinationFile -Force
     }
 }
 foreach ($DataFile in Get-ChildItem -LiteralPath (Join-Path $SolverRoot "src") -File -Filter "*.json" -Recurse) {
-    $RelativeFile = [System.IO.Path]::GetRelativePath((Join-Path $SolverRoot "src"), $DataFile.FullName)
+    $RelativeFile = Get-RelativePathCompat (Join-Path $SolverRoot "src") $DataFile.FullName
     $DestinationFile = Join-Path (Join-Path $WslSolverRoot "src") $RelativeFile
     New-Item -ItemType Directory -Force -Path (Split-Path $DestinationFile -Parent) | Out-Null
     Copy-Item -LiteralPath $DataFile.FullName -Destination $DestinationFile -Force
@@ -391,7 +400,7 @@ if (-not (Test-Path -LiteralPath $StandaloneExecutable -PathType Leaf)) {
 
 $OnedirExecutable = Join-Path $Bundle "TKBCherryAgent.exe"
 $BundledRawSources = @(Get-ChildItem -LiteralPath $Bundle -Filter "*.py" -File -Recurse | Where-Object {
-    $Relative = [System.IO.Path]::GetRelativePath($Bundle, $_.FullName).Replace('\', '/')
+    $Relative = (Get-RelativePathCompat $Bundle $_.FullName).Replace('\', '/')
     $Relative.StartsWith("solver_runtime/", [System.StringComparison]::OrdinalIgnoreCase)
 })
 if ($BundledRawSources.Count -gt 0) {
@@ -402,7 +411,7 @@ if ($BundledWslSources.Count -eq 0) {
     throw "The onedir Agent is missing its WSL runtime source."
 }
 $BundledPillow = @(Get-ChildItem -LiteralPath (Join-Path $Bundle "_internal") -File -Recurse -ErrorAction SilentlyContinue | Where-Object {
-    $Relative = [System.IO.Path]::GetRelativePath((Join-Path $Bundle "_internal"), $_.FullName).Replace('\', '/')
+    $Relative = (Get-RelativePathCompat (Join-Path $Bundle "_internal") $_.FullName).Replace('\', '/')
     $Relative.StartsWith("PIL/", [System.StringComparison]::OrdinalIgnoreCase) -or
         $_.Name -like "_imaging*.pyd"
 })

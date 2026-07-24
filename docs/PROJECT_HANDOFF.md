@@ -57,6 +57,10 @@ change so a machine restart or a new conversation does not erase project context
   validator **38/38**, JavaScript/Python syntax, and `git diff --check`. The
   Windows release artifact, VPS staging, deployment, and signed-in Browser
   acceptance are still pending.
+- `agent_helper/build_windows.ps1` now uses a URI-backed relative-path helper
+  instead of the PowerShell 7-only `System.IO.Path.GetRelativePath`. Packaging
+  can therefore run under the workstation's Windows PowerShell 5.1 as well as
+  the CI runner's PowerShell 7. Packaging contract tests pass **5/5**.
 
 ### v1.80 durable school-store save (deployed 2026-07-24)
 

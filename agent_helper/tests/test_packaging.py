@@ -55,7 +55,11 @@ class PackagingTests(unittest.TestCase):
         self.assertIn("requirements-wsl.txt", script)
         self.assertIn('StartsWith("solver_runtime/"', script)
         self.assertIn("Build-only Pillow files entered the Agent runtime", script)
-        self.assertIn('GetRelativePath($SourceDirectory, $SourceFile.FullName)', script)
+        self.assertIn("function Get-RelativePathCompat", script)
+        self.assertIn(
+            "Get-RelativePathCompat $SourceDirectory $SourceFile.FullName", script
+        )
+        self.assertNotIn("[System.IO.Path]::GetRelativePath", script)
         self.assertIn('-Filter "*.json" -Recurse', script)
         self.assertIn('$_.Extension -notin @(".py", ".json", ".txt")', script)
         for package in ("numpy", "scipy", "ortools", "openpyxl"):
