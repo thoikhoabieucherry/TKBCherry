@@ -88,6 +88,7 @@ struct SolverConfig {
 impl SolverConfig {
     fn from_request(request: &Value, random_seed: u64) -> Self {
         let settings = request.get("settings").and_then(Value::as_object);
+        let optimization_focus = OptimizationFocus::from_settings(settings);
         let require_complete_schedule = settings_bool(settings, "require_complete_schedule", true);
         let backend_deadline_ms =
             settings_u64(settings, "backend_deadline_ms", DEFAULT_SOLVER_DEADLINE_MS)
@@ -113,12 +114,13 @@ impl SolverConfig {
                 "best_effort_on_timeout",
                 !require_complete_schedule,
             ),
-            skip_teacher_optimization: settings
-                .and_then(|value| value.get("native_skip_teacher_optimization"))
-                .map(truthy)
-                .unwrap_or(false),
+            skip_teacher_optimization: optimization_focus == OptimizationFocus::QuickComplete
+                || settings
+                    .and_then(|value| value.get("native_skip_teacher_optimization"))
+                    .map(truthy)
+                    .unwrap_or(false),
             two_stage_teacher_quality: two_stage_teacher_quality_requested(settings),
-            optimization_focus: OptimizationFocus::from_settings(settings),
+            optimization_focus,
             random_seed,
         }
     }
@@ -1402,18 +1404,15 @@ fn settings_bool(settings: Option<&Map<String, Value>>, key: &str, default: bool
 }
 
 fn two_stage_teacher_quality_requested(settings: Option<&Map<String, Value>>) -> bool {
-    settings_bool(
-        settings,
-        "optimization_two_stage_teacher_quality",
-        false,
-    ) || settings
-        .and_then(|value| value.get("quality_priority_order"))
-        .and_then(Value::as_str)
-        .is_some_and(|value| {
-            value
-                .trim()
-                .eq_ignore_ascii_case(QUALITY_PRIORITY_TWO_STAGE)
-        })
+    settings_bool(settings, "optimization_two_stage_teacher_quality", false)
+        || settings
+            .and_then(|value| value.get("quality_priority_order"))
+            .and_then(Value::as_str)
+            .is_some_and(|value| {
+                value
+                    .trim()
+                    .eq_ignore_ascii_case(QUALITY_PRIORITY_TWO_STAGE)
+            })
 }
 
 fn quality_priority_order(two_stage_teacher_quality: bool) -> &'static str {
@@ -2912,7 +2911,10 @@ fn optimize_teacher_single_sessions(
     clock: &SolveClock,
 ) -> TeacherSessionOptStats {
     match optimization_focus {
-        OptimizationFocus::QuickComplete | OptimizationFocus::Singletons => {
+        OptimizationFocus::QuickComplete => {
+            return teacher_session_opt_snapshot(lessons);
+        }
+        OptimizationFocus::Singletons => {
             return optimize_teacher_singletons_focused(
                 lessons,
                 off_slots,
@@ -9393,6 +9395,39 @@ mod tests {
     }
 
     #[test]
+    fn quick_focus_skips_teacher_quality_work() {
+        let request = json!({
+            "settings": {
+                "optimization_focus": "quick_complete",
+                "native_skip_teacher_optimization": false
+            }
+        });
+        let parsed = SolverConfig::from_request(&request, 1);
+        assert!(parsed.skip_teacher_optimization);
+
+        let mut lessons = vec![teacher_quality_test_lesson("6A", "GV01", 2, 0)];
+        let before = lessons.clone();
+        let mut solver_config = config(true, false);
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+        let stats = optimize_teacher_single_sessions(
+            &mut lessons,
+            &HashSet::new(),
+            &HashMap::new(),
+            31,
+            true,
+            true,
+            OptimizationFocus::QuickComplete,
+            &clock,
+        );
+
+        assert_eq!(lessons, before);
+        assert_eq!(stats.moves, 0);
+        assert_eq!(stats.initial_one_period_sessions, 1);
+        assert_eq!(stats.final_one_period_sessions, 1);
+    }
+
+    #[test]
     fn two_stage_session_priority_accepts_a_strict_reduction_with_gap_debt() {
         let before = TeacherOptimizationQuality {
             one_period_sessions: 0,
@@ -9486,10 +9521,7 @@ mod tests {
             total_gap: 1,
         };
 
-        assert!(!focused_gap_candidate_acceptable(
-            &before,
-            &fewer_sessions
-        ));
+        assert!(!focused_gap_candidate_acceptable(&before, &fewer_sessions));
         assert!(!focused_agent_candidate_acceptable(
             OptimizationFocus::Gaps,
             true,

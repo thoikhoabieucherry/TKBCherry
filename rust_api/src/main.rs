@@ -24,7 +24,7 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-24-focused-two-stage-v64";
+const VERSION: &str = "tkb_new-rust-api-2026-07-24-progressive-stop-flush-v66";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
@@ -61,6 +61,14 @@ const REFERENCE_TERMINAL_RESULT_GRACE_MS: u64 = 10_000;
 const REFERENCE_CANDIDATE_VALIDATION_TIMEOUT_MS: u64 = 15_000;
 
 struct ManagedChild(Child);
+
+struct ManagedStopFile(PathBuf);
+
+impl Drop for ManagedStopFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
 
 impl std::ops::Deref for ManagedChild {
     type Target = Child;
@@ -2660,6 +2668,7 @@ fn solver_state_json(app: &App, query: &str, owner: &SolverOwner) -> Vec<u8> {
                     "executionGeneration": server_job.map(|job| job.execution_generation),
                     "handoffInProgress": server_job.is_some_and(|job| job.execution_phase.handoff_in_progress()),
                     "cancelRequested": cancel_requested,
+                    "bestEffortStopRequested": server_job.is_some_and(|job| job.best_effort_stop_requested),
                     "allocatedWorkers": allocated_workers
                 })
             },
@@ -2700,6 +2709,7 @@ fn solver_state_json(app: &App, query: &str, owner: &SolverOwner) -> Vec<u8> {
                 "executionPhase": server_job.map(|job| job.execution_phase.as_str()),
                 "executionGeneration": server_job.map(|job| job.execution_generation),
                 "handoffInProgress": server_job.is_some_and(|job| job.execution_phase.handoff_in_progress()),
+                "bestEffortStopRequested": server_job.is_some_and(|job| job.best_effort_stop_requested),
                 "desiredWorkers": desired_workers
             })
         })
@@ -2733,6 +2743,7 @@ fn solver_state_json(app: &App, query: &str, owner: &SolverOwner) -> Vec<u8> {
             "executionGeneration": server_job.execution_generation,
             "handoffInProgress": server_job.execution_phase.handoff_in_progress(),
             "cancelRequested": matches!(server_job.execution_phase, ServerExecutionPhase::Cancelling),
+            "bestEffortStopRequested": server_job.best_effort_stop_requested,
             "allocatedWorkers": 0
         }));
     }
@@ -2770,7 +2781,8 @@ fn solver_state_json(app: &App, query: &str, owner: &SolverOwner) -> Vec<u8> {
                  "watchdogRemainingMs": server_watchdog_remaining_from_snapshot(job, now_millis()),
                  "executor": job.execution_phase.executor().map(ServerExecutor::as_str),
                 "executionPhase": job.execution_phase.as_str(),
-                "executionGeneration": job.execution_generation
+                "executionGeneration": job.execution_generation,
+                "bestEffortStopRequested": job.best_effort_stop_requested
             })
         })
         .collect::<Vec<_>>();
@@ -2813,7 +2825,8 @@ fn solver_state_json(app: &App, query: &str, owner: &SolverOwner) -> Vec<u8> {
              "requestedJobWatchdogRemainingMs": requested_server_job.and_then(|job| server_watchdog_remaining_from_snapshot(job, now_millis())),
              "requestedJobExecutor": requested_server_job.and_then(|job| job.execution_phase.executor()).map(ServerExecutor::as_str),
             "requestedJobExecutionPhase": requested_server_job.map(|job| job.execution_phase.as_str()),
-            "requestedJobHandoffInProgress": requested_server_job.is_some_and(|job| job.execution_phase.handoff_in_progress())
+            "requestedJobHandoffInProgress": requested_server_job.is_some_and(|job| job.execution_phase.handoff_in_progress()),
+            "requestedJobBestEffortStopRequested": requested_server_job.is_some_and(|job| job.best_effort_stop_requested)
         }),
     )
 }
@@ -2846,6 +2859,9 @@ fn solve_result_for_job_id_json(app: &App, job_id: &str, owner: &SolverOwner) ->
             server_job
                 .as_ref()
                 .and_then(server_job_started_at_ms),
+            server_job
+                .as_ref()
+                .is_some_and(|job| job.best_effort_stop_requested),
         );
     }
     if !app.solver_pool.server_job_known_for_owner(job_id, owner) {
@@ -2904,6 +2920,9 @@ fn solve_result_for_job_id_json(app: &App, job_id: &str, owner: &SolverOwner) ->
                 "executionPhase": server_job
                     .as_ref()
                     .map(|job| job.execution_phase.as_str()),
+                "bestEffortStopRequested": server_job
+                    .as_ref()
+                    .is_some_and(|job| job.best_effort_stop_requested),
                 "retryAfterMs": 700,
                 "requiredWorkers": desired_workers
             }),
@@ -2937,6 +2956,9 @@ fn solve_result_for_job_id_json(app: &App, job_id: &str, owner: &SolverOwner) ->
                     .as_ref()
                     .map(|job| job.execution_phase.as_str()),
                 "cancelRequested": cancel_requested,
+                "bestEffortStopRequested": server_job
+                    .as_ref()
+                    .is_some_and(|job| job.best_effort_stop_requested),
                 "allocatedWorkers": allocated_workers,
                 "retryAfterMs": 700
             }),
@@ -2975,6 +2997,7 @@ fn solve_result_for_job_id_json(app: &App, job_id: &str, owner: &SolverOwner) ->
                      "watchdogStartedAtMs": watchdog_started_ms,
                      "watchdogRemainingMs": watchdog_remaining_ms,
                      "cancelRequested": server_job.execution_phase == ServerExecutionPhase::Cancelling,
+                    "bestEffortStopRequested": server_job.best_effort_stop_requested,
                     "allocatedWorkers": 0,
                     "retryAfterMs": 700
                 }),
@@ -2997,6 +3020,9 @@ fn solve_result_for_job_id_json(app: &App, job_id: &str, owner: &SolverOwner) ->
              "watchdogBudgetMs": watchdog_budget_ms,
              "watchdogStartedAtMs": watchdog_started_ms,
              "watchdogRemainingMs": watchdog_remaining_ms,
+            "bestEffortStopRequested": server_job
+                .as_ref()
+                .is_some_and(|job| job.best_effort_stop_requested),
              "retryAfterMs": 250
         }),
     )
@@ -3004,8 +3030,15 @@ fn solve_result_for_job_id_json(app: &App, job_id: &str, owner: &SolverOwner) ->
 
 fn solve_cancel_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
     let job_id = job_id_from_cancel_body(body);
-    let cancelled = if job_id.is_empty() {
+    let retain_best = serde_json::from_slice::<Value>(body)
+        .ok()
+        .and_then(|value| value.get("retainBest").and_then(Value::as_bool))
+        .unwrap_or(false);
+    let requested = if job_id.is_empty() {
         false
+    } else if retain_best {
+        app.solver_pool
+            .request_best_effort_stop_for_owner(&job_id, owner)
     } else {
         app.solver_pool.cancel_job_for_owner(&job_id, owner)
     };
@@ -3013,7 +3046,8 @@ fn solve_cancel_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
         200,
         json!({
             "ok": true,
-            "cancelRequested": cancelled,
+            "cancelRequested": requested && !retain_best,
+            "bestEffortStopRequested": requested && retain_best,
             "jobId": job_id,
             "activeJobs": app.solver_pool.active_count(),
             "maxConcurrent": app.solver_pool.max_concurrent(),
@@ -4865,6 +4899,8 @@ fn run_reference_solver(
     request: &Value,
     job_id: &str,
     cancel_requested: &AtomicBool,
+    best_effort_stop_requested: &AtomicBool,
+    progress_execution_generation: Option<u64>,
     allocated_workers: usize,
 ) -> Result<(u16, String), String> {
     let Some(script) = reference_solver_script(app) else {
@@ -4875,6 +4911,22 @@ fn run_reference_solver(
     let deadline = reference_solver_deadline(request);
     let helper_body = reference_solver_body(body, request, budget, allocated_workers);
     let started = Instant::now();
+    let mut stop_file_hasher = Sha256::new();
+    stop_file_hasher.update(b"tkb-solver-stop-v1\0");
+    stop_file_hasher.update(job_id.as_bytes());
+    let stop_file_job_hash = stop_file_hasher
+        .finalize()
+        .iter()
+        .take(12)
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let stop_file = env::temp_dir().join(format!(
+        "tkb-solver-stop-{}-{}-{}.flag",
+        std::process::id(),
+        now_millis(),
+        stop_file_job_hash
+    ));
+    let _stop_file_guard = ManagedStopFile(stop_file.clone());
     let mut child = ManagedChild(
         Command::new(&python)
             .arg(&script)
@@ -4882,6 +4934,7 @@ fn run_reference_solver(
             .current_dir(script.parent().and_then(Path::parent).unwrap_or(&app.root))
             .env("PYTHONIOENCODING", "utf-8")
             .env("TKB_SOLVER_MAX_WORKERS", allocated_workers.to_string())
+            .env("TKB_SOLVER_STOP_FILE", &stop_file)
             .env("OMP_NUM_THREADS", "1")
             .env("OMP_THREAD_LIMIT", "1")
             .env("OPENBLAS_NUM_THREADS", "1")
@@ -4926,7 +4979,18 @@ fn run_reference_solver(
                         if reference_progress_reports_complete(&progress) {
                             terminal_result_observer.store(true, Ordering::SeqCst);
                         }
-                        progress_pool.update_server_job_progress(&progress_job_id, progress);
+                        if let Some(generation) = progress_execution_generation {
+                            progress_pool.update_server_job_progress_fenced(
+                                &progress_job_id,
+                                generation,
+                                progress,
+                            );
+                        } else {
+                            progress_pool.update_server_job_progress(
+                                &progress_job_id,
+                                progress,
+                            );
+                        }
                     } else {
                         stderr.push_str(&String::from_utf8_lossy(&line));
                     }
@@ -4944,6 +5008,7 @@ fn run_reference_solver(
     }
     drop(child.stdin.take());
 
+    let mut best_effort_stop_signalled = false;
     loop {
         if cancel_requested.load(Ordering::SeqCst) {
             let _ = child.kill();
@@ -4951,6 +5016,11 @@ fn run_reference_solver(
             let _ = stdout_reader.join();
             let _ = stderr_reader.join();
             return Ok(reference_cancelled_payload(request, started));
+        }
+        if best_effort_stop_requested.load(Ordering::SeqCst) && !best_effort_stop_signalled {
+            fs::write(&stop_file, b"stop\n")
+                .map_err(|err| format!("failed to signal best-effort solver stop: {err}"))?;
+            best_effort_stop_signalled = true;
         }
         if child
             .try_wait()
@@ -5049,8 +5119,9 @@ fn solver_response_with_progress(
     progress: Option<&Value>,
     progress_updated_ms: Option<u64>,
     started_at_ms: Option<u64>,
+    best_effort_stop_requested: bool,
 ) -> Vec<u8> {
-    if progress.is_none() && started_at_ms.is_none() {
+    if progress.is_none() && started_at_ms.is_none() && !best_effort_stop_requested {
         return response;
     }
     let Some(header_end) = response.windows(4).position(|window| window == b"\r\n\r\n") else {
@@ -5079,6 +5150,9 @@ fn solver_response_with_progress(
     if let Some(started_at_ms) = started_at_ms {
         payload.insert("startedAtMs".to_string(), json!(started_at_ms));
     }
+    if best_effort_stop_requested {
+        payload.insert("bestEffortStopRequested".to_string(), json!(true));
+    }
     json_response(status, Value::Object(payload.clone()))
 }
 
@@ -5090,6 +5164,66 @@ enum ServerCoordinatorStart {
     Agent {
         fence: ServerExecutionFence,
     },
+}
+
+enum AgentBestEffortStopOutcome {
+    NotRequested,
+    Completed,
+    FallbackToVps(ServerExecutionFence),
+    Stale,
+}
+
+fn stop_agent_best_effort_if_requested(
+    app: &App,
+    job_id: &str,
+    owner: &SolverOwner,
+    fence: ServerExecutionFence,
+    request: Option<&Value>,
+) -> AgentBestEffortStopOutcome {
+    let Some(snapshot) = app.solver_pool.server_execution_snapshot(job_id, owner) else {
+        return AgentBestEffortStopOutcome::Stale;
+    };
+    if snapshot.generation != fence.generation
+        || snapshot.phase.executor() != Some(ServerExecutor::Agent)
+    {
+        return AgentBestEffortStopOutcome::Stale;
+    }
+    if !snapshot.best_effort_stop_requested {
+        return AgentBestEffortStopOutcome::NotRequested;
+    }
+
+    // Closing the Agent task and taking its accepted candidate share one
+    // coordinator lock. A worker can therefore neither publish a late result
+    // beside the VPS nor lose a candidate that arrived just before Stop.
+    if let Some(candidate) = app
+        .agent_helper
+        .take_candidate_and_finish_job(job_id, owner)
+    {
+        let response = json_response(200, candidate.payload);
+        let response = if let Some(request) = request {
+            let remaining_watchdog_ms = app.solver_pool.server_job_watchdog_remaining_ms(
+                job_id,
+                owner,
+                now_millis(),
+            );
+            server_watchdog_final_response(request, response, remaining_watchdog_ms)
+        } else {
+            response
+        };
+        return if app
+            .solver_pool
+            .complete_server_job_fenced(fence, job_id, owner, response)
+        {
+            AgentBestEffortStopOutcome::Completed
+        } else {
+            AgentBestEffortStopOutcome::Stale
+        };
+    }
+
+    app.solver_pool
+        .fallback_agent_to_vps(fence, job_id, owner)
+        .map(AgentBestEffortStopOutcome::FallbackToVps)
+        .unwrap_or(AgentBestEffortStopOutcome::Stale)
 }
 
 fn cleanup_server_owned_job(app: &App, job_id: &str, owner: &SolverOwner) {
@@ -5113,7 +5247,7 @@ fn spawn_server_owned_solver(
         .name("tkb-server-solver".to_string())
         .spawn(move || {
             let mut mode = start;
-            loop {
+            'coordinator: loop {
                 if background_app
                     .solver_pool
                     .server_job_cancel_requested(&job_id, &owner)
@@ -5246,6 +5380,7 @@ fn spawn_server_owned_solver(
                                     &executor_body,
                                     executor_request.as_ref(),
                                     &job_guard,
+                                    Some(fence.generation),
                                 )
                             }))
                             .unwrap_or_else(|_| {
@@ -5306,6 +5441,32 @@ fn spawn_server_owned_solver(
                         return;
                     }
                     ServerCoordinatorStart::Agent { fence } => {
+                        match stop_agent_best_effort_if_requested(
+                            &background_app,
+                            &job_id,
+                            &owner,
+                            fence,
+                            request.as_ref(),
+                        ) {
+                            AgentBestEffortStopOutcome::NotRequested => {}
+                            AgentBestEffortStopOutcome::Completed => return,
+                            AgentBestEffortStopOutcome::FallbackToVps(vps_fence) => {
+                                mode = ServerCoordinatorStart::Vps {
+                                    fence: vps_fence,
+                                    initial_guard: None,
+                                };
+                                continue 'coordinator;
+                            }
+                            AgentBestEffortStopOutcome::Stale => {
+                                if background_app
+                                    .solver_pool
+                                    .server_job_cancel_requested(&job_id, &owner)
+                                {
+                                    cleanup_server_owned_job(&background_app, &job_id, &owner);
+                                }
+                                return;
+                            }
+                        }
                         // No Agent task exists while a VPS child is alive. This
                         // registration point is therefore the strict handoff
                         // boundary in both the initial-Agent and VPS->Agent path.
@@ -5383,6 +5544,36 @@ fn spawn_server_owned_solver(
                                 fence, &job_id, &owner,
                             ) {
                                 break None;
+                            }
+                            match stop_agent_best_effort_if_requested(
+                                &background_app,
+                                &job_id,
+                                &owner,
+                                fence,
+                                request.as_ref(),
+                            ) {
+                                AgentBestEffortStopOutcome::NotRequested => {}
+                                AgentBestEffortStopOutcome::Completed => return,
+                                AgentBestEffortStopOutcome::FallbackToVps(vps_fence) => {
+                                    mode = ServerCoordinatorStart::Vps {
+                                        fence: vps_fence,
+                                        initial_guard: None,
+                                    };
+                                    continue 'coordinator;
+                                }
+                                AgentBestEffortStopOutcome::Stale => {
+                                    if background_app
+                                        .solver_pool
+                                        .server_job_cancel_requested(&job_id, &owner)
+                                    {
+                                        cleanup_server_owned_job(
+                                            &background_app,
+                                            &job_id,
+                                            &owner,
+                                        );
+                                    }
+                                    return;
+                                }
                             }
                             let remaining_watchdog_ms = request.as_ref().and_then(|_| {
                                 background_app
@@ -6013,7 +6204,7 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
             );
         }
     };
-    solve_admitted_json(app, body, request.as_ref(), &job_guard)
+    solve_admitted_json(app, body, request.as_ref(), &job_guard, None)
 }
 
 fn solve_admitted_json(
@@ -6021,8 +6212,10 @@ fn solve_admitted_json(
     body: &[u8],
     request: Option<&Value>,
     job_guard: &SolverJobGuard,
+    progress_execution_generation: Option<u64>,
 ) -> Vec<u8> {
     let cancel_requested = &job_guard.job.cancel_requested;
+    let best_effort_stop_requested = &job_guard.job.best_effort_stop_requested;
     let allocated_workers = job_guard.job.allocated_workers;
     if let Some(request) = request {
         if let Some((status, payload)) = preserve_complete_hybrid_existing_payload(request) {
@@ -6040,6 +6233,8 @@ fn solve_admitted_json(
                 request,
                 &job_guard.job.job_id,
                 cancel_requested,
+                best_effort_stop_requested,
+                progress_execution_generation,
                 allocated_workers,
             ) {
                 Ok((status, payload)) => {
@@ -8420,6 +8615,135 @@ mod tests {
         let owner_cancel = response_payload(&solve_cancel_json(&app, cancel_body, &owner_a));
         assert_eq!(owner_cancel["cancelRequested"], json!(true));
         assert!(running.job.cancel_requested.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn optimization_stop_requests_the_best_result_without_cancelling_the_job() {
+        let app = App {
+            root: PathBuf::new(),
+            web_root: PathBuf::new(),
+            sample_data: PathBuf::new(),
+            solver_pool: SolverPool::from_env(),
+            agent_helper: AgentHelperCoordinator::new(),
+            db: Arc::new(db::Db::new(PathBuf::from(":memory:")).expect("in-memory database")),
+        };
+        let owner = SolverOwner::new("school-a", "admin-a");
+        let other_owner = SolverOwner::new("school-b", "admin-b");
+        assert_eq!(
+            app.solver_pool.claim_server_job("keep-best", &owner),
+            ServerJobClaim::Claimed
+        );
+        let running = app
+            .solver_pool
+            .try_acquire_for_owner("keep-best".to_string(), 2, owner.clone())
+            .expect("active solver");
+
+        let wrong_owner = response_payload(&solve_cancel_json(
+            &app,
+            br#"{"jobId":"keep-best","retainBest":true}"#,
+            &other_owner,
+        ));
+        assert_eq!(wrong_owner["bestEffortStopRequested"], json!(false));
+
+        let response = response_payload(&solve_cancel_json(
+            &app,
+            br#"{"jobId":"keep-best","retainBest":true}"#,
+            &owner,
+        ));
+        assert_eq!(response["cancelRequested"], json!(false));
+        assert_eq!(response["bestEffortStopRequested"], json!(true));
+        assert!(
+            running
+                .job
+                .best_effort_stop_requested
+                .load(Ordering::SeqCst)
+        );
+        assert!(!running.job.cancel_requested.load(Ordering::SeqCst));
+        assert!(app.solver_pool.server_job_known_for_owner("keep-best", &owner));
+
+        let state = response_payload(&solver_state_json(&app, "jobId=keep-best", &owner));
+        assert_eq!(
+            state["requestedJobBestEffortStopRequested"],
+            json!(true)
+        );
+        assert_eq!(state["jobs"][0]["bestEffortStopRequested"], json!(true));
+        let result = response_payload(&solve_result_json(&app, "jobId=keep-best", &owner));
+        assert_eq!(result["bestEffortStopRequested"], json!(true));
+
+        drop(running);
+        assert!(app.solver_pool.complete_server_job(
+            "keep-best",
+            &owner,
+            json_response(200, json!({"ok":true}))
+        ));
+        let completed = response_payload(&solve_result_json(&app, "jobId=keep-best", &owner));
+        assert_eq!(completed["ok"], json!(true));
+        assert_eq!(completed["bestEffortStopRequested"], json!(true));
+    }
+
+    #[test]
+    fn agent_best_effort_stop_falls_back_to_vps_with_the_stop_flag_intact() {
+        for agent_running in [false, true] {
+            let app = App {
+                root: PathBuf::new(),
+                web_root: PathBuf::new(),
+                sample_data: PathBuf::new(),
+                solver_pool: SolverPool::from_env(),
+                agent_helper: AgentHelperCoordinator::new(),
+                db: Arc::new(
+                    db::Db::new(PathBuf::from(":memory:")).expect("in-memory database"),
+                ),
+            };
+            let owner = SolverOwner::new("agent-stop-school", "admin");
+            let job_id = if agent_running {
+                "agent-running-soft-stop"
+            } else {
+                "agent-waiting-soft-stop"
+            };
+            assert_eq!(
+                app.solver_pool.claim_server_job(job_id, &owner),
+                ServerJobClaim::Claimed
+            );
+            let agent_fence = app
+                .solver_pool
+                .prepare_agent_execution(job_id, &owner)
+                .expect("Agent fence");
+            if agent_running {
+                assert!(
+                    app.solver_pool
+                        .mark_agent_execution_running(agent_fence, job_id, &owner)
+                );
+            }
+            assert!(
+                app.solver_pool
+                    .request_best_effort_stop_for_owner(job_id, &owner)
+            );
+
+            let vps_fence = match stop_agent_best_effort_if_requested(
+                &app,
+                job_id,
+                &owner,
+                agent_fence,
+                None,
+            ) {
+                AgentBestEffortStopOutcome::FallbackToVps(fence) => fence,
+                _ => panic!("Agent soft Stop must return the canonical job to VPS"),
+            };
+            let running = app
+                .solver_pool
+                .try_acquire_for_owner(job_id.to_string(), 2, owner.clone())
+                .expect("VPS acquires the canonical job");
+            assert!(
+                running
+                    .job
+                    .best_effort_stop_requested
+                    .load(Ordering::SeqCst)
+            );
+            assert!(
+                app.solver_pool
+                    .mark_vps_execution_running(vps_fence, job_id, &owner)
+            );
+        }
     }
 
     #[test]

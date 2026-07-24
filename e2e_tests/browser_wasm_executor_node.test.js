@@ -443,7 +443,7 @@ test("foreground executor probes WASM before hello and disconnects without an in
   assert.equal(context.TKBBrowserWasmExecutor.state().active, false);
   assert.deepEqual(calls.slice(0, 5), [
     "GET:/api/agent-helper/v1/status",
-    "worker:tkb-browser-wasm-worker.js?v=tkb-browser-wasm-executor-v5-focused-two-stage",
+    "worker:tkb-browser-wasm-worker.js?v=tkb-browser-wasm-executor-v7-best-stop-flush",
     "worker-message:probe",
     "POST:/api/solve-data",
     "POST:/api/agent-helper/v1/hello",
@@ -1011,97 +1011,128 @@ test("four-worker portfolio uses distinct seeds and submits the best non-regress
   await context.TKBBrowserWasmExecutor.close("test_finished", {failLease:true});
 });
 
-test("quick portfolio clears singleton debt even when the best candidate temporarily adds gap-2", async () => {
+test("soft Stop submits the best completed Browser Agent candidate without waiting for slower workers", async () => {
   const canonical = completeRefinementRequest();
-  Object.assign(canonical.settings, {
-    optimization_focus:"quick_complete",
-    max_one_period_sessions:0,
-    strict_one_period_sessions_cap:true,
-    enforce_max_one_period_sessions:true,
-    period_max_teacher_gap:"off"
-  });
-  Object.assign(canonical.data.tkbSolverResult.metrics, {
-    teacher_sessions:462,
-    one_period_teacher_sessions:2,
-    teacher_gap2_sessions:0,
-    gap_distribution:{"0":460, "1":2},
-    gap_total:2
-  });
-  const sessionFirst = completePortfolioCandidate(canonical, "quick-session-first", {
+  canonical.settings.optimization_focus = "sessions";
+  const improved = completePortfolioCandidate(canonical, "fast-improvement", {
     teacher_sessions:459,
     one_period_teacher_sessions:0,
-    teacher_gap2_sessions:4,
-    gap_distribution:{"0":455, "2":4},
-    gap_total:8
+    teacher_gap2_sessions:1,
+    gap_distribution:{"0":458, "2":1},
+    gap_total:2
   });
-  const gapClean = completePortfolioCandidate(canonical, "quick-gap-clean", {
-    teacher_sessions:460,
-    one_period_teacher_sessions:0,
-    teacher_gap2_sessions:0,
-    gap_distribution:{"0":460},
-    gap_total:0
-  });
-  const partialSingletonCleanup = completePortfolioCandidate(canonical, "quick-partial-singleton", {
-    teacher_sessions:458,
-    one_period_teacher_sessions:1,
-    teacher_gap2_sessions:0,
-    gap_distribution:{"0":458},
-    gap_total:0
-  });
+  let workerIndex = 0;
+  let leaseIssued = false;
+  let submittedResult = null;
+  let completeSeen = false;
+  let fastCandidateDelivered = false;
+  let terminated = 0;
 
-  const {submittedResult, failures} = await exercisePortfolioCandidates(
-    canonical,
-    [sessionFirst, gapClean, partialSingletonCleanup],
-    {
-      platform:"Linux x86_64",
-      userAgent:"Mozilla/5.0 (X11; Linux x86_64)",
-      hardwareConcurrency:4,
-      maxTouchPoints:0
+  class StaggeredWorker {
+    constructor(){ this.index = workerIndex++; }
+    postMessage(message){
+      if(message.type === "probe"){
+        queueMicrotask(() => this.onmessage({data:{type:"ready", requestId:message.requestId}}));
+        return;
+      }
+      if(message.type === "solve" && this.index === 0){
+        queueMicrotask(() => {
+          fastCandidateDelivered = true;
+          this.onmessage({data:{
+            type:"result",
+            requestId:message.requestId,
+            frame:{
+              protocol:"tkb-reference-solver-stdio-v1",
+              status:200,
+              payload:improved
+            }
+          }});
+        });
+      }
+      // Worker 1 intentionally never responds. The soft Stop must not wait for it.
     }
-  );
+    terminate(){ terminated += 1; }
+  }
 
-  assert.equal(submittedResult?.candidateMarker, "quick-session-first", JSON.stringify(failures));
-  assert.equal(submittedResult?.metrics?.one_period_teacher_sessions, 0);
-  assert.equal(submittedResult?.metrics?.teacher_gap2_sessions, 4);
+  const fetch = async (url, options = {}) => {
+    const pathname = new URL(url).pathname;
+    if(pathname.endsWith("/status")) return response({ok:true, online:false});
+    if(pathname.endsWith("/hello")) return response({ok:true, workerToken:"q".repeat(48)});
+    if(pathname.endsWith("/lease") && !leaseIssued){
+      leaseIssued = true;
+      return response({ok:true, lease:{
+        jobId:"job-soft-stop-portfolio",
+        leaseId:"lease-soft-stop-portfolio",
+        payload:canonical
+      }});
+    }
+    if(pathname.endsWith("/candidate")){
+      submittedResult = JSON.parse(options.body).result;
+      return response({ok:true, candidateId:"candidate-soft-stop", sha256:"digest-soft-stop"});
+    }
+    if(pathname.endsWith("/complete")){
+      completeSeen = true;
+      return response({ok:true, completed:true});
+    }
+    if(pathname.endsWith("/fail")) return response({ok:true, requeued:true});
+    if(pathname.endsWith("/disconnect")) return response({ok:true, disconnected:true});
+    if(pathname.endsWith("/lease")) return new Promise(() => {});
+    throw new Error(`unexpected request ${pathname}`);
+  };
+
+  const {context} = executorContext({
+    navigator:{
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      hardwareConcurrency:3,
+      maxTouchPoints:0
+    },
+    fetch,
+    Worker:StaggeredWorker
+  });
+  assert.equal(await context.TKBBrowserWasmExecutor.probe({
+    apiBase:"https://tkbcherry.com",
+    request:canonical
+  }), true);
+  assert.equal(await context.TKBBrowserWasmExecutor.activate({
+    apiBase:"https://tkbcherry.com",
+    jobId:"job-soft-stop-portfolio",
+    request:canonical
+  }), true);
+  for(let index = 0; index < 50 && !fastCandidateDelivered; index += 1){
+    await new Promise(resolve => setTimeout(resolve, 1));
+  }
+  assert.equal(fastCandidateDelivered, true);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(submittedResult, null, "the hanging worker must still be holding Promise.all open");
+
+  const stopped = await context.TKBBrowserWasmExecutor.stopAndSubmitBest({
+    jobId:"job-soft-stop-portfolio",
+    timeoutMs:2000
+  });
+  assert.equal(stopped.handled, true);
+  assert.equal(stopped.submitted, true);
+  assert.equal(submittedResult?.candidateMarker, "fast-improvement");
+  assert.equal(terminated, 2, "all portfolio workers must stop consuming CPU");
+  for(let index = 0; index < 20 && !completeSeen; index += 1){
+    await new Promise(resolve => setTimeout(resolve, 1));
+  }
+  assert.equal(completeSeen, true);
+  await context.TKBBrowserWasmExecutor.close("test_finished", {failLease:false});
 });
 
-test("quick portfolio keeps a hard-valid partial singleton cleanup when zero is infeasible", async () => {
+test("quick completion bypasses browser quality portfolios", () => {
   const canonical = completeRefinementRequest();
   Object.assign(canonical.settings, {
     optimization_focus:"quick_complete",
-    max_one_period_sessions:0,
-    strict_one_period_sessions_cap:true,
-    enforce_max_one_period_sessions:true,
+    max_one_period_sessions:"off",
+    strict_one_period_sessions_cap:false,
+    enforce_max_one_period_sessions:false,
     period_max_teacher_gap:"off"
   });
-  Object.assign(canonical.data.tkbSolverResult.metrics, {
-    teacher_sessions:462,
-    one_period_teacher_sessions:2,
-    teacher_gap2_sessions:0,
-    gap_distribution:{"0":460, "1":2},
-    gap_total:2
-  });
-  const partialCleanup = completePortfolioCandidate(canonical, "quick-partial-only", {
-    teacher_sessions:459,
-    one_period_teacher_sessions:1,
-    teacher_gap2_sessions:0,
-    gap_distribution:{"0":459},
-    gap_total:0
-  });
-
-  const {submittedResult, failures} = await exercisePortfolioCandidates(
-    canonical,
-    [partialCleanup],
-    {
-      platform:"Linux armv8l",
-      userAgent:"Mozilla/5.0 (Linux; Android 15; Mobile)",
-      hardwareConcurrency:2,
-      maxTouchPoints:5
-    }
-  );
-
-  assert.equal(submittedResult?.candidateMarker, "quick-partial-only", JSON.stringify(failures));
-  assert.equal(submittedResult?.metrics?.one_period_teacher_sessions, 1);
+  const {context} = executorContext();
+  assert.equal(context.TKBBrowserWasmExecutor.canHandleRequest(canonical), false);
+  assert.equal(context.TKBBrowserWasmExecutor.refinementRequestClone(canonical), null);
 });
 
 test("temporary session gap debt does not relax automatic or gap-only envelopes", async () => {
@@ -1308,7 +1339,7 @@ test("planner wires the browser worker only around a new canonical solve", () =>
   const bridge = fs.readFileSync(BRIDGE_PATH, "utf8");
   const page = fs.readFileSync(PAGE_PATH, "utf8");
   const server = fs.readFileSync(SERVER_PATH, "utf8");
-  assert.match(page, /tkb-browser-wasm\.js\?v=20260724-v169-focused-two-stage-v1/);
+  assert.match(page, /tkb-browser-wasm\.js\?v=20260724-v171-progressive-stop-flush-v1/);
   assert.ok(page.indexOf("tkb-browser-wasm.js") < page.indexOf("tkb-rust-bridge.js"));
   assert.match(bridge, /TKBBrowserWasmExecutor\.canHandleRequest\(browserWasmRequest\)/);
   assert.match(bridge, /!resumeExistingServerJobOnly[\s\S]*browserWasmEligible[\s\S]*TKBBrowserWasmExecutor\.probe/);

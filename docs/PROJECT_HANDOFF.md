@@ -8,11 +8,11 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.69** (focused two-stage
-  scheduler). The public API marker is
-  `tkb_new-rust-api-2026-07-24-focused-two-stage-v64`, the bridge marker is
-  `tkb-rust-api-v266-focused-two-stage`, and the planner script cache is
-  `20260724-v169-focused-two-stage-v1`. The unchanged constraints marker is
+- Current deployed application release: **v1.71** (bounded progressive Stop
+  handoff). The public API marker is
+  `tkb_new-rust-api-2026-07-24-progressive-stop-flush-v66`, the bridge marker is
+  `tkb-rust-api-v268-progressive-stop-flush`, and the planner script cache is
+  `20260724-v171-progressive-stop-flush-v1`. The unchanged constraints marker is
   `constraints-ui-v38-one-session-responsive-tables`.
 - Current public Agent release: **v1.6.29** (`1.6.29`). The normal owner-Agent
   minimum lease gate remains 1.6.23, so 1.6.22 and older stay upgrade-only;
@@ -22,6 +22,103 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.71 bounded progressive Stop handoff (deployed 2026-07-24)
+
+- Deployed markers are API
+  `tkb_new-rust-api-2026-07-24-progressive-stop-flush-v66`, bridge
+  `tkb-rust-api-v268-progressive-stop-flush`, planner cache
+  `20260724-v171-progressive-stop-flush-v1`, and Browser executor
+  `tkb-browser-wasm-executor-v7-best-stop-flush`. The packaged Agent remains
+  1.6.29; this patch changes the integrated Browser Agent, bridge and reference
+  scheduler only.
+- The focused optimizer wall-clock ceiling is now enforced on the final wire
+  request. A persisted custom duration and the sum of CP-SAT sub-budgets can no
+  longer expand `Buoi 1 tiet`, `Buoi`, or `Tiet trong` past 180 seconds; an
+  explicit shorter duration is still honored.
+- Focused Browser Agent Stop now aborts only its slow portfolio workers, flushes
+  the best completed hard-valid candidate to the canonical lease, and only then
+  asks the server to retain best-so-far. The bridge keeps polling and applies
+  the accepted result even when candidate completion races the Stop request.
+- Progress cannot move backward after an Agent/VPS execution-generation handoff.
+  Gap cleanup uses one continuous two-stage percentage: the first half removes
+  gap-2 and the second half reduces gap-1, while the raw active count remains
+  visible beside elapsed time.
+- Local verification passes full Node **338/338**, scheduler Python **215 passed
+  / 3 skipped** plus **45** unittest subtests, Browser executor **24/24**, bridge
+  **221/221**, JavaScript/Python syntax and `git diff --check`. Isolated VPS
+  staging passes scheduler **218/218**, Agent **151/151**, trusted worker
+  **5/5**, Rust API **173/173**, and validator **32/32**, ending with
+  `STAGING_TESTS_OK`.
+- Transactional production deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260724-040943.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260724-040943.tar.gz`. Public
+  health is idle with zero active/queued jobs and `6/6` worker tokens. The
+  unchanged public WASM is 1,031,910 bytes with SHA-256
+  `926d2a490a2004235d2b0b445956d1326fc614b3fd5af179b19f7af5f1e1832c`.
+- Signed-in in-app Browser acceptance loaded v1.71 with 1,566/1,566 periods,
+  497 teacher sessions, gap-1 64, gap-2 0 and singleton sessions 0. Production
+  labels expose `Xep nhanh`, `Buoi 1 tiet`, `Buoi`, and `Tiet trong`; an actual
+  VPS Play/Stop cycle returned to idle with no console error and no timetable
+  mutation. Focused Stop ordering is covered deterministically by the Browser
+  executor and bridge suites because the 794px acceptance viewport correctly
+  keeps the desktop-only focused controls hidden.
+
+### v1.70 progressive focused optimization (deployed 2026-07-24)
+
+- Deployed markers are API
+  `tkb_new-rust-api-2026-07-24-progressive-best-stop-v65`, bridge
+  `tkb-rust-api-v267-progressive-best-stop`, planner cache
+  `20260724-v170-progressive-best-stop-v1`, and Browser executor
+  `tkb-browser-wasm-executor-v6-progressive-focus`. The Agent package remains
+  1.6.29 because this release changes the web/server scheduler contract only.
+- Desktop `Xep nhanh` now owns completeness only: it returns the first complete,
+  authored-hard-valid timetable without spending time on teacher singleton,
+  session or gap quality. The explicit actions are `Buoi 1 tiet`, `Buoi`, and
+  `Tiet trong`; their menu rows use one stable left-aligned geometry.
+- Each focused optimizer is bounded to at most 180 seconds. A shorter explicit
+  duration is honored. Singleton cleanup stops at the first complete valid
+  zero-singleton timetable. Session compression keeps singleton count at zero
+  but may deliberately increase gap-1/gap-2. Gap cleanup locks the achieved
+  teacher-session count, removes gap-2 first, then reduces gap-1.
+- CP-SAT publishes strict-best metric-only incumbents during the solve. The UI
+  is driven by real scheduled periods, teacher sessions, singleton sessions or
+  gaps and also shows the raw current value beside elapsed time, so consecutive
+  one-session improvements remain visible even when integer percent is equal.
+  No intermediate timetable cells are published or partially applied.
+- Focused Stop is best-effort rather than destructive. `retainBest:true` flows
+  from the browser to the canonical server job, a per-job stop file calls
+  `CpSolver.stop_search()`, and the normal result path materializes, validates,
+  applies and saves the best incumbent found so far. Quick Stop remains the
+  old hard cancel. A repeated focused Stop is idempotent and keeps polling.
+- VPS/Agent transfer is generation-fenced. A soft-stopping VPS cannot be handed
+  away. An Agent job commits an already accepted candidate or returns the same
+  canonical job to VPS with the stop flag intact. Progress frames carry the
+  execution generation, rejecting late frames from an old executor while
+  allowing the replacement stream to restart at sequence one.
+- Real `default` sequential benchmark (1,566 periods, six workers) produced:
+  Quick in 13.48s at 627 teacher sessions / 118 singleton sessions; singleton
+  cleanup in 15.18s at 571 / 0; Session optimization in 174.58s at 486 / 0
+  with temporary gap-1 67 / gap-2 7; Gap optimization in 175.80s kept 486 / 0
+  and reached gap-1 45 / gap-2 0. Every result was 1,566/1,566, hard-valid,
+  zero authored violations, and passed the canonical validator. Session CP-SAT
+  emitted 56 strict improvements; Gap CP-SAT emitted 16.
+- Local verification currently passes full Node **335/335**, scheduler Python
+  **215 passed / 3 skipped** plus 45 unittest subtests, deployment/credential
+  **25/25**, remote Rust API **173/173**, validator **32/32**, JavaScript/Python
+  syntax, `git diff --check`, and both WASM ABI smokes. The rebuilt WASM is
+  1,031,910 bytes with SHA-256
+  `926d2a490a2004235d2b0b445956d1326fc614b3fd5af179b19f7af5f1e1832c` in
+  both runtime locations. Full isolated staging passes scheduler **218/218**,
+  Agent **151/151**, trusted worker **5/5**, Rust API **173/173**, and validator
+  **32/32**, ending with `STAGING_TESTS_OK`.
+- Transactional production deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260724-034627.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260724-034627.tar.gz`. Public
+  health is idle with zero active/queued jobs and `6/6` worker tokens. The
+  public cache, bridge marker, Browser executor marker and 1,031,910-byte WASM
+  SHA-256 shown above were verified after deployment. Signed-in browser
+  acceptance remains a separate final check and is not claimed here.
 
 ### v1.68 orientation-aware mobile history controls (deployed 2026-07-23)
 
@@ -3813,14 +3910,17 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-24: `UPDATE_OK` for
-application v1.69. Public health serves
-`tkb_new-rust-api-2026-07-24-focused-two-stage-v64`; the page serves
-`20260724-v169-focused-two-stage-v1`, bridge marker
-`tkb-rust-api-v266-focused-two-stage`, Browser executor v5, and the exact public
-WASM digest recorded above. Public health is idle with zero active/queued jobs
-and `6/6` tokens available. Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260724-014305.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260724-014305.tar.gz`.
+application v1.71. Public health serves
+`tkb_new-rust-api-2026-07-24-progressive-stop-flush-v66`; the page serves
+`20260724-v171-progressive-stop-flush-v1`, bridge marker
+`tkb-rust-api-v268-progressive-stop-flush`, and Browser executor
+`tkb-browser-wasm-executor-v7-best-stop-flush`. The public WASM is 1,031,910
+bytes and matches SHA-256
+`926d2a490a2004235d2b0b445956d1326fc614b3fd5af179b19f7af5f1e1832c`.
+Public health is idle with zero active/queued jobs and `6/6` worker tokens.
+Transaction backups are
+`/opt/cherry-scheduler-backups/server-state-20260724-040943.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260724-040943.tar.gz`.
 Public Agent release `1.6.29` and its signed manifest are live. The 88,001,209
 byte archive SHA-256 is
 `b36e5774f7e89402f7ffbb7075eb2541e7a63a1f874558abba128fe8ecfa25f6`; the

@@ -55,6 +55,7 @@ pub struct SolverJob {
     pub job_id: String,
     pub allocated_workers: usize,
     pub cancel_requested: AtomicBool,
+    pub best_effort_stop_requested: AtomicBool,
     pub started_ms: AtomicU64,
     owner: SolverOwner,
 }
@@ -88,6 +89,7 @@ struct ServerOwnedSolverJob {
     watchdog_budget_ms: Option<u64>,
     watchdog_started_ms: Option<u64>,
     cancel_requested: bool,
+    best_effort_stop_requested: bool,
     execution_phase: ServerExecutionPhase,
     execution_generation: u64,
     completed_ms: Option<u64>,
@@ -159,6 +161,7 @@ pub struct ServerExecutionSnapshot {
     pub phase: ServerExecutionPhase,
     pub generation: u64,
     pub cancel_requested: bool,
+    pub best_effort_stop_requested: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -176,6 +179,7 @@ pub struct ServerJobSnapshot {
     pub watchdog_started_ms: Option<u64>,
     pub execution_phase: ServerExecutionPhase,
     pub execution_generation: u64,
+    pub best_effort_stop_requested: bool,
 }
 
 struct QueuedSolverJob {
@@ -224,6 +228,9 @@ impl Drop for SolverJobGuard {
             }
         }
         self.job.cancel_requested.store(false, Ordering::SeqCst);
+        self.job
+            .best_effort_stop_requested
+            .store(false, Ordering::SeqCst);
     }
 }
 
@@ -525,6 +532,7 @@ impl SolverPool {
                 watchdog_budget_ms: normalized_watchdog_budget_ms,
                 watchdog_started_ms: None,
                 cancel_requested: false,
+                best_effort_stop_requested: false,
                 execution_phase: ServerExecutionPhase::Pending,
                 execution_generation: 0,
                 completed_ms: None,
@@ -614,6 +622,7 @@ impl SolverPool {
             phase: job.execution_phase,
             generation: job.execution_generation,
             cancel_requested: job.cancel_requested,
+            best_effort_stop_requested: job.best_effort_stop_requested,
         })
     }
 
@@ -664,6 +673,7 @@ impl SolverPool {
                 &job.owner == owner
                     && job.completed_ms.is_none()
                     && !job.cancel_requested
+                    && !job.best_effort_stop_requested
                     && matches!(
                         job.execution_phase,
                         ServerExecutionPhase::Pending
@@ -707,6 +717,7 @@ impl SolverPool {
             &job.owner == owner
                 && job.completed_ms.is_none()
                 && !job.cancel_requested
+                && !job.best_effort_stop_requested
                 && matches!(
                     job.execution_phase,
                     ServerExecutionPhase::Pending
@@ -751,6 +762,7 @@ impl SolverPool {
                     && state.server_jobs.get(&queued.job_id).is_some_and(|job| {
                         job.completed_ms.is_none()
                             && !job.cancel_requested
+                            && !job.best_effort_stop_requested
                             && job.execution_phase == ServerExecutionPhase::VpsQueued
                     })
             })
@@ -994,7 +1006,29 @@ impl SolverPool {
     }
 
     pub fn update_server_job_progress(&self, job_id: &str, progress: Value) -> bool {
-        let Some(progress) = normalize_server_progress(progress) else {
+        self.update_server_job_progress_for_generation(job_id, None, progress)
+    }
+
+    pub fn update_server_job_progress_fenced(
+        &self,
+        job_id: &str,
+        execution_generation: u64,
+        progress: Value,
+    ) -> bool {
+        self.update_server_job_progress_for_generation(
+            job_id,
+            Some(execution_generation),
+            progress,
+        )
+    }
+
+    fn update_server_job_progress_for_generation(
+        &self,
+        job_id: &str,
+        execution_generation: Option<u64>,
+        progress: Value,
+    ) -> bool {
+        let Some(mut progress) = normalize_server_progress(progress) else {
             return false;
         };
         let now_ms = crate::now_millis();
@@ -1005,7 +1039,23 @@ impl SolverPool {
         let Some(job) = state.server_jobs.get_mut(job_id) else {
             return false;
         };
-        if job.completed_ms.is_some() || job.cancel_requested {
+        if job.completed_ms.is_some()
+            || job.cancel_requested
+            || execution_generation
+                .is_some_and(|generation| generation != job.execution_generation)
+        {
+            return false;
+        }
+        if let Some(object) = progress.as_object_mut() {
+            object.insert(
+                "executionGeneration".to_string(),
+                Value::from(job.execution_generation),
+            );
+        }
+        if serde_json::to_vec(&progress)
+            .ok()
+            .is_none_or(|encoded| encoded.len() > MAX_SERVER_PROGRESS_BYTES)
+        {
             return false;
         }
         job.progress = Some(progress);
@@ -1092,6 +1142,7 @@ impl SolverPool {
                 watchdog_started_ms: job.watchdog_started_ms,
                 execution_phase: job.execution_phase,
                 execution_generation: job.execution_generation,
+                best_effort_stop_requested: job.best_effort_stop_requested,
             })
             .collect::<Vec<_>>();
         snapshots.sort_unstable_by(|left, right| {
@@ -1307,10 +1358,15 @@ impl SolverPool {
             .saturating_sub(allocated_workers(&state.jobs));
         let allocated_worker_count = self.normalized_worker_demand(desired_workers);
         debug_assert!(available_workers >= allocated_worker_count);
+        let best_effort_stop_requested = state
+            .server_jobs
+            .get(&job_id)
+            .is_some_and(|job| job.best_effort_stop_requested);
         let job = Arc::new(SolverJob {
             job_id: job_id.clone(),
             allocated_workers: allocated_worker_count,
             cancel_requested: AtomicBool::new(false),
+            best_effort_stop_requested: AtomicBool::new(best_effort_stop_requested),
             started_ms: AtomicU64::new(crate::now_millis()),
             owner,
         });
@@ -1388,6 +1444,34 @@ impl SolverPool {
             .queue
             .retain(|queued| queued.job_id != job_id || &queued.owner != owner);
         cancelled || state.queue.len() != before
+    }
+
+    pub fn request_best_effort_stop_for_owner(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+    ) -> bool {
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(_) => return false,
+        };
+        let requested = if let Some(job) = state
+            .server_jobs
+            .get_mut(job_id)
+            .filter(|job| &job.owner == owner && job.completed_ms.is_none() && !job.cancel_requested)
+        {
+            job.best_effort_stop_requested = true;
+            true
+        } else {
+            false
+        };
+        if requested {
+            if let Some(job) = state.jobs.get(job_id).filter(|job| &job.owner == owner) {
+                job.best_effort_stop_requested
+                    .store(true, Ordering::SeqCst);
+            }
+        }
+        requested
     }
 
     #[allow(dead_code)]
@@ -2216,6 +2300,69 @@ mod tests {
     }
 
     #[test]
+    fn executor_generation_fences_stale_progress_and_stamps_the_current_stream() {
+        let pool = test_pool();
+        let owner = SolverOwner::new("progress-generation-school", "admin");
+        assert_eq!(
+            pool.claim_server_job("progress-generation", &owner),
+            ServerJobClaim::Claimed
+        );
+        let vps = pool
+            .prepare_vps_execution("progress-generation", &owner)
+            .expect("first VPS generation");
+        assert!(pool.update_server_job_progress_fenced(
+            "progress-generation",
+            vps.generation,
+            json!({
+                "protocol":"tkb-reference-solver-progress-v1",
+                "stage":"session_cp_sat:metric",
+                "sequence":8
+            })
+        ));
+        let first = pool
+            .server_job_snapshots_for_owner(&owner)
+            .into_iter()
+            .next()
+            .and_then(|snapshot| snapshot.progress)
+            .expect("first progress");
+        assert_eq!(first["executionGeneration"], json!(vps.generation));
+
+        assert!(pool.request_agent_handoff_for_job(
+            "progress-generation",
+            &owner
+        ));
+        let agent = pool
+            .prepare_agent_execution("progress-generation", &owner)
+            .expect("Agent generation");
+        assert!(!pool.update_server_job_progress_fenced(
+            "progress-generation",
+            vps.generation,
+            json!({
+                "protocol":"tkb-reference-solver-progress-v1",
+                "stage":"session_cp_sat:metric",
+                "sequence":99
+            })
+        ));
+        assert!(pool.update_server_job_progress_fenced(
+            "progress-generation",
+            agent.generation,
+            json!({
+                "protocol":"tkb-reference-solver-progress-v1",
+                "stage":"session_cp_sat:metric",
+                "sequence":1
+            })
+        ));
+        let current = pool
+            .server_job_snapshots_for_owner(&owner)
+            .into_iter()
+            .next()
+            .and_then(|snapshot| snapshot.progress)
+            .expect("current progress");
+        assert_eq!(current["executionGeneration"], json!(agent.generation));
+        assert_eq!(current["sequence"], json!(1));
+    }
+
+    #[test]
     fn exclusive_executor_handoff_fences_vps_and_agent_writers() {
         let pool = test_pool();
         let owner = SolverOwner::new("school-handoff", "admin");
@@ -2678,6 +2825,118 @@ mod tests {
         assert!(!running.job.cancel_requested.load(Ordering::SeqCst));
         assert!(pool.cancel_job_for_owner("owned-active", &owner_a));
         assert!(running.job.cancel_requested.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn best_effort_stop_keeps_the_server_job_and_signals_the_active_solver() {
+        let pool = test_pool();
+        let owner = SolverOwner::new("school-a", "admin-a");
+        let other_owner = SolverOwner::new("school-b", "admin-b");
+        assert_eq!(
+            pool.claim_server_job("best-effort-stop", &owner),
+            ServerJobClaim::Claimed
+        );
+        let fence = pool
+            .prepare_vps_execution("best-effort-stop", &owner)
+            .expect("VPS fence");
+        let running = pool
+            .try_acquire_for_owner("best-effort-stop".to_string(), 2, owner.clone())
+            .expect("active solver");
+        assert!(pool.mark_vps_execution_running(fence, "best-effort-stop", &owner));
+
+        assert!(!pool.request_best_effort_stop_for_owner("best-effort-stop", &other_owner));
+        assert!(pool.request_best_effort_stop_for_owner("best-effort-stop", &owner));
+        assert!(
+            running
+                .job
+                .best_effort_stop_requested
+                .load(Ordering::SeqCst)
+        );
+        assert!(!running.job.cancel_requested.load(Ordering::SeqCst));
+        let snapshot = pool
+            .server_job_snapshots_for_owner(&owner)
+            .into_iter()
+            .find(|job| job.job_id == "best-effort-stop")
+            .expect("server job remains visible");
+        assert!(snapshot.best_effort_stop_requested);
+        assert!(pool.server_job_known_for_owner("best-effort-stop", &owner));
+        assert!(pool.execution_fence_current(fence, "best-effort-stop", &owner));
+        assert!(pool.request_agent_handoff_for_owner(&owner).is_empty());
+        assert!(!pool.request_agent_handoff_for_job(
+            "best-effort-stop",
+            &owner
+        ));
+        assert!(pool.complete_server_job_fenced(
+            fence,
+            "best-effort-stop",
+            &owner,
+            b"HTTP/1.1 200 OK\r\n\r\n{}".to_vec()
+        ));
+    }
+
+    #[test]
+    fn best_effort_stop_returns_waiting_and_running_agent_jobs_to_vps() {
+        for agent_running in [false, true] {
+            let pool = test_pool();
+            let owner = SolverOwner::new("school-agent-stop", "admin");
+            let job_id = if agent_running {
+                "agent-running-stop"
+            } else {
+                "agent-waiting-stop"
+            };
+            assert_eq!(pool.claim_server_job(job_id, &owner), ServerJobClaim::Claimed);
+            let agent_fence = pool
+                .prepare_agent_execution(job_id, &owner)
+                .expect("Agent fence");
+            if agent_running {
+                assert!(pool.mark_agent_execution_running(agent_fence, job_id, &owner));
+            }
+
+            assert!(pool.request_best_effort_stop_for_owner(job_id, &owner));
+            let vps_fence = pool
+                .fallback_agent_to_vps(agent_fence, job_id, &owner)
+                .expect("same canonical job falls back to VPS");
+            assert!(!pool.execution_fence_current(agent_fence, job_id, &owner));
+            let running = pool
+                .try_acquire_for_owner(job_id.to_string(), 2, owner.clone())
+                .expect("VPS receives the stopped Agent job");
+            assert!(
+                running
+                    .job
+                    .best_effort_stop_requested
+                    .load(Ordering::SeqCst)
+            );
+            assert!(pool.mark_vps_execution_running(vps_fence, job_id, &owner));
+            assert!(pool.complete_server_job_fenced(
+                vps_fence,
+                job_id,
+                &owner,
+                b"HTTP/1.1 200 OK\r\n\r\n{}".to_vec()
+            ));
+        }
+    }
+
+    #[test]
+    fn trusted_worker_cannot_take_a_soft_stopping_vps_queue_ticket() {
+        let pool = test_pool();
+        let owner = SolverOwner::new("school-queued-stop", "admin");
+        let blocker = pool
+            .try_acquire("best-stop-capacity-blocker".to_string(), 6)
+            .expect("capacity blocker");
+        assert_eq!(
+            pool.claim_server_job("queued-best-stop", &owner),
+            ServerJobClaim::Claimed
+        );
+        pool.prepare_vps_execution("queued-best-stop", &owner)
+            .expect("queued VPS fence");
+        assert!(matches!(
+            pool.acquire_or_enqueue_for_owner("queued-best-stop".to_string(), 2, owner.clone()),
+            SolverAdmission::Queued { .. }
+        ));
+        assert!(pool.request_best_effort_stop_for_owner("queued-best-stop", &owner));
+        assert!(pool.request_agent_handoff_for_trusted_worker(1).is_empty());
+        assert_eq!(pool.queue_snapshot_for_owner(&owner).len(), 1);
+        drop(blocker);
     }
 
     #[test]

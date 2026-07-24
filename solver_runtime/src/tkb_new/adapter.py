@@ -1363,19 +1363,53 @@ def _settings_for_optimization_focus(settings: Mapping[str, Any] | None) -> dict
     focused["auto_sort_mode"] = "teacher_session_opt"
     focused["ui_unified_auto_sort"] = True
     if focus == "quick_complete":
+        for key in (
+            "target_one_period_teacher_sessions",
+            "target_teacher_sessions",
+            "target_gap1_sessions",
+            "target_gap2_plus_sessions",
+            "optimization_accept_teacher_sessions",
+            "optimization_default_accept_teacher_sessions",
+            "optimization_accept_gap1_sessions",
+            "optimization_default_accept_gap1_sessions",
+            "session_early_stop_teacher_sessions",
+            "session_early_stop_max_one_period_sessions",
+            "quality_priority_order",
+        ):
+            focused.pop(key, None)
         focused.update(
             {
                 "auto_sort_strategy": "fresh_complete_first",
                 "ui_unified_solve_kind": "fresh_complete_first",
                 "ui_unified_first_click_quality": True,
                 "ui_stop_after_first_complete_schedule": True,
+                "ui_plain_first_click_lean_quality": False,
                 "optimization_continue_quality_search": False,
+                "optimization_unbounded_quality_search": False,
                 "optimization_two_stage_teacher_quality": False,
+                "optimization_first_click_singleton_cleanup": False,
+                "optimization_first_click_gap_cleanup": False,
+                "optimization_first_click_continue_local_after_complete": False,
+                "optimization_first_click_skip_global_quality": True,
+                "optimization_first_click_local_lns_time_limit_seconds": 0,
+                "optimization_refine_try_lower_session_cap": False,
+                "optimization_benders_session_feasibility_only": True,
+                "optimization_benders_minimize_one_period_sessions": False,
+                "optimization_benders_minimize_period_gaps": False,
+                "optimization_benders_period_gap_priority_absolute": False,
+                "optimization_benders_allow_one_period_debt": True,
+                "minimize_one_period_sessions": False,
+                "minimize_sessions": False,
+                "max_one_period_sessions": "off",
+                "strict_one_period_sessions_cap": False,
+                "enforce_max_one_period_sessions": False,
+                "one_period_priority_absolute": False,
+                "minimize_teacher_gaps": False,
+                "period_max_teacher_gap": "off",
+                "relax_period_teacher_gap_on_failure": True,
+                "native_skip_teacher_optimization": True,
             }
         )
-        focused.setdefault("optimization_first_click_quality_minimum_seconds", 12)
-        focused.setdefault("optimization_first_click_quality_time_limit_seconds", 15)
-        focused.setdefault("optimization_first_click_local_lns_time_limit_seconds", 4)
         return focused
 
     focused.update(
@@ -1480,20 +1514,32 @@ def _optimization_metric_payload(
         baseline_gap2 = max(0, _teacher_session_opt_gap2_plus(baseline))
         baseline_gap1 = max(0, _teacher_session_opt_gap1(baseline))
         # Gap cleanup is explicitly staged: eliminate every severe gap first,
-        # then report the remaining one-period gaps as a fresh metric. Mixing
-        # both buckets made a visible "gap-2" counter show 107 when only six
-        # severe gaps existed on the default school.
+        # then reduce the remaining one-period gaps. Keep the raw counter tied
+        # to the active stage, but reserve the first half of the progress ring
+        # for gap-2 and the second half for gap-1. This prevents the visible
+        # percent from jumping from 100 back to 0 when the active counter
+        # changes while still avoiding the old mixed, misleading gap count.
         if current_gap2 > 0:
             current = current_gap2
             initial = max(current, baseline_gap2)
+            percent = 0.0 if initial <= 0 else (
+                (initial - current) * 50.0 / initial
+                if baseline_gap2 > 0
+                else 0.0
+            )
         else:
             current = current_gap1
             initial = max(current, baseline_gap1)
+            gap1_percent = 100.0 if current == 0 else (
+                0.0 if initial <= 0 else (initial - current) * 100.0 / initial
+            )
+            percent = (
+                50.0 + gap1_percent * 0.5
+                if baseline_gap2 > 0
+                else gap1_percent
+            )
         target = 0
         baseline_value = initial
-        percent = 100.0 if current == 0 else (
-            0.0 if initial <= 0 else (initial - current) * 100.0 / initial
-        )
 
     progress_focus = {
         "quick_complete": "scheduled_periods",
@@ -1698,10 +1744,9 @@ def _optimization_focus_goal_status(
         and _metric_int(metrics, "unassigned_periods", 0) == 0
     )
     if focus == "quick_complete":
-        achieved = (
-            complete
-            and _metric_int(metrics, "one_period_teacher_sessions", 10**9) == 0
-        )
+        # Quick owns completion only. Singleton/session/gap quality is handled
+        # exclusively by the three explicit optimization actions.
+        achieved = complete
         return achieved, achieved
     if focus == "singletons":
         achieved = (
@@ -9211,7 +9256,7 @@ def _solve_unified_first_click_feasibility_then_quality(
     """Build a mandatory feasible incumbent, then spend leftover time on quality."""
 
     optimization_focus = _normalized_optimization_focus(settings)
-    quick_complete_allow_gap2_debt = optimization_focus == "quick_complete"
+    quick_complete_feasibility_only = optimization_focus == "quick_complete"
 
     def _first_click_candidate_acceptable(
         payload: Mapping[str, Any],
@@ -9222,8 +9267,9 @@ def _solve_unified_first_click_feasibility_then_quality(
         return _unified_first_click_candidate_acceptable(
             payload,
             required,
-            allow_quality_debt=allow_quality_debt,
-            allow_gap2_debt=quick_complete_allow_gap2_debt,
+            allow_quality_debt=(
+                allow_quality_debt or quick_complete_feasibility_only
+            ),
         )
 
     attempts: list[dict[str, Any]] = []
@@ -9353,7 +9399,11 @@ def _solve_unified_first_click_feasibility_then_quality(
     # fallback when fixed slots or another user requirement makes either goal
     # impossible. The fallback never relaxes application constraints.
     quality_debt_fallback_enabled = (
-        constraint_change_feasibility_first or bounded_fresh_quality_debt
+        not quick_complete_feasibility_only
+        and (
+            constraint_change_feasibility_first
+            or bounded_fresh_quality_debt
+        )
     )
     feasibility_quality_debt_allowed = False
     period_feasibility_bridge_required = (
@@ -9370,7 +9420,10 @@ def _solve_unified_first_click_feasibility_then_quality(
         # inconclusive, so a failed quality vector can never blank the result.
         or (
             large_first_click
-            and quality_debt_fallback_enabled
+            and (
+                quick_complete_feasibility_only
+                or quality_debt_fallback_enabled
+            )
             and _truthy_setting(settings.get("ui_unified_first_click_quality"))
             and str(settings.get("ui_unified_solve_kind") or "").strip().casefold()
             == "fresh_complete_first"
@@ -9393,7 +9446,7 @@ def _solve_unified_first_click_feasibility_then_quality(
         large_first_click
         and period_feasibility_all_sessions
         and quality_debt_fallback_enabled
-        and not quick_complete_allow_gap2_debt
+        and not quick_complete_feasibility_only
         # Subject-period rules remain hard, but combining their exact period
         # bridge with the zero-singleton/gap<=1 objective before any incumbent
         # exists is too expensive on production-size schools. It spent most of
@@ -9572,9 +9625,7 @@ def _solve_unified_first_click_feasibility_then_quality(
             "optimization_benders_lean_refinement_periods": (
                 not period_feasibility_all_sessions
             ),
-            "period_max_teacher_gap": (
-                "off" if quick_complete_allow_gap2_debt else 1
-            ),
+            "period_max_teacher_gap": 1,
             "relax_period_teacher_gap_on_failure": False,
             # A session allocation can satisfy every session-level constraint
             # and still make one period MILP infeasible.  Keep one bounded cut
@@ -9645,6 +9696,36 @@ def _solve_unified_first_click_feasibility_then_quality(
                 "session_cp_sat_linearization_level": 0,
             }
         )
+    if quick_complete_feasibility_only:
+        # Quick is a pure feasibility lane. The theoretical upper bound makes
+        # the session ceiling non-binding, and every teacher-quality objective
+        # is disabled so CP-SAT may return its first authored-hard-valid
+        # complete timetable. The explicit optimizers own all later cleanup.
+        phase_f_cap = upper_cap
+        feasibility_settings.update(
+            {
+                "auto_sort_strategy": "fresh_complete_fastest_feasibility",
+                "max_teacher_sessions": phase_f_cap,
+                "requested_max_teacher_sessions": phase_f_cap,
+                "target_teacher_sessions": phase_f_cap,
+                "optimization_accept_teacher_sessions": phase_f_cap,
+                "max_one_period_sessions": "off",
+                "strict_one_period_sessions_cap": False,
+                "enforce_max_one_period_sessions": False,
+                "one_period_priority_absolute": False,
+                "allow_quality_debt": True,
+                "optimization_benders_allow_one_period_debt": True,
+                "optimization_benders_session_feasibility_only": True,
+                "optimization_benders_minimize_one_period_sessions": False,
+                "optimization_benders_minimize_period_gaps": False,
+                "optimization_benders_period_gap_priority_absolute": False,
+                "optimization_benders_disable_session_early_stop": True,
+                "minimize_teacher_gaps": False,
+                "period_max_teacher_gap": "off",
+                "relax_period_teacher_gap_on_failure": True,
+                "session_cp_sat_linearization_level": 0,
+            }
+        )
     if progress:
         progress(
             {
@@ -9652,7 +9733,10 @@ def _solve_unified_first_click_feasibility_then_quality(
                 "message": "Dang tao lich day du va hop le",
                 "cap": phase_f_cap,
                 "time_limit_seconds": round(strict_feasibility_budget, 3),
-                "quality_debt_allowed": safe_period_feasibility_first,
+                "quality_debt_allowed": (
+                    safe_period_feasibility_first
+                    or quick_complete_feasibility_only
+                ),
             }
         )
     phase_started = time.monotonic()
@@ -9710,7 +9794,10 @@ def _solve_unified_first_click_feasibility_then_quality(
             "subject_period_requirements_completion_first": (
                 subject_period_requirements_completion_first
             ),
-            "quality_debt_allowed": safe_period_feasibility_first,
+            "quality_debt_allowed": (
+                safe_period_feasibility_first
+                or quick_complete_feasibility_only
+            ),
             "safe_period_feasibility_first": safe_period_feasibility_first,
             "strict_quality_gate_first": strict_quality_gate_first,
         }
@@ -10050,7 +10137,8 @@ def _solve_unified_first_click_feasibility_then_quality(
     remaining = deadline.remaining()
     feasibility_sessions = _metric_int(best_metrics, "teacher_sessions", 10**9)
     quality_cleanup_required = (
-        (
+        not quick_complete_feasibility_only
+        and (
             subject_period_requirements_completion_first
             or (
                 large_first_click
@@ -10062,7 +10150,7 @@ def _solve_unified_first_click_feasibility_then_quality(
         and (
             _metric_int(best_metrics, "one_period_teacher_sessions", 0) > 0
             or (
-                not quick_complete_allow_gap2_debt
+                not quick_complete_feasibility_only
                 and _teacher_session_opt_gap2_plus(best_metrics) > 0
             )
         )
@@ -10076,7 +10164,7 @@ def _solve_unified_first_click_feasibility_then_quality(
     # explicit or diagnostic callers that do not carry this UI contract.
     automatic_large_fresh_quality = (
         large_first_click
-        and not quick_complete_allow_gap2_debt
+        and not quick_complete_feasibility_only
         and _truthy_setting(settings.get("ui_unified_first_click_quality"))
         and str(settings.get("ui_unified_solve_kind") or "").strip().casefold()
         == "fresh_complete_first"
@@ -10124,7 +10212,8 @@ def _solve_unified_first_click_feasibility_then_quality(
         # Starting another exact all-session cleanup here used to cross the
         # server watchdog and discard the already-complete incumbent. A later
         # explicit click owns the quality pass.
-        not short_subject_period_completion_rescue
+        not quick_complete_feasibility_only
+        and not short_subject_period_completion_rescue
         and (quality_cleanup_required or not stop_after_first_complete)
         and (quality_cleanup_required or not skip_global_quality)
         and (quality_cleanup_required or requested_quality_cap is not None)
@@ -10315,7 +10404,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                     )
                 ),
                 "optimization_benders_allow_gap2_quality_gate": (
-                    quick_complete_allow_gap2_debt
+                    quick_complete_feasibility_only
                 ),
                 "optimization_benders_session_feasibility_only": False,
                 # The hard zero-singleton cap below has a direct load >= 2*z
@@ -10351,7 +10440,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                 "optimization_benders_allow_one_period_debt": False,
                 "optimization_continue_quality_search": quality_cleanup_required,
                 "period_max_teacher_gap": (
-                    "off" if quick_complete_allow_gap2_debt else 1
+                    "off" if quick_complete_feasibility_only else 1
                 ),
                 "relax_period_teacher_gap_on_failure": False,
                 "optimization_benders_session_time_limit": quality_session_limit,
@@ -11008,7 +11097,7 @@ def _solve_unified_first_click_feasibility_then_quality(
         and (
             _metric_int(best_metrics, "one_period_teacher_sessions", 0) > 0
             or (
-                not quick_complete_allow_gap2_debt
+                not quick_complete_feasibility_only
                 and _teacher_session_opt_gap2_plus(best_metrics) > 0
             )
         )
@@ -11507,6 +11596,11 @@ def _solve_two_stage_concrete_refinement(
             singleton_settings = {
                 **base_settings,
                 "optimization_benders_session_time_limit": singleton_limit,
+                # This focused action owns one goal only: find the first
+                # complete authored-hard-valid timetable with zero singleton
+                # teacher sessions. Session compression belongs to the next
+                # explicit action and must not keep this solve running.
+                "optimization_benders_session_feasibility_only": True,
                 "optimization_benders_minimize_period_gaps": False,
                 "optimization_benders_period_gap_priority_absolute": False,
             }

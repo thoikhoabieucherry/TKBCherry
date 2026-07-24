@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
+import threading
 import time
+from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from collections import Counter
@@ -1616,16 +1619,27 @@ def solve_session_allocation_cp_sat(
         solver.parameters.fix_variables_to_their_hinted_value = bool(fix_hint)
         solver.parameters.repair_hint = False
 
-    early_stop_callback = None
-    if early_stop_teacher_threshold is not None:
-        teacher_session_vars = tuple(z_vars.values())
-        one_period_vars = tuple(teacher_single_vars)
-        unassigned_vars = tuple(shortfall_vars.values())
+    quality_callback = None
+    early_stop_enabled = early_stop_teacher_threshold is not None
+    # Feasibility-only Quick runs keep the lightest possible solver path. Live
+    # incumbent reporting is useful only when CP-SAT has a quality objective.
+    progress_callback_enabled = progress is not None and objective_expr is not None
+    if early_stop_enabled or progress_callback_enabled:
+        teacher_session_indexes = tuple(var.index for var in z_vars.values())
+        one_period_indexes = tuple(var.index for var in teacher_single_vars)
+        unassigned_indexes = tuple(var.index for var in shortfall_vars.values())
+        gap_period_indexes = tuple(var.index for var in teacher_period_gap_period_vars)
+        gap1_indexes = tuple(var.index for var in teacher_period_gap1_vars)
+        gap2_plus_indexes = tuple(var.index for var in teacher_period_gap2_plus_vars)
+        severe_gap_indexes = tuple(var.index for var in teacher_period_severe_gap_vars)
 
-        class SessionQualityEarlyStop(cp_model.CpSolverSolutionCallback):
+        class SessionQualityCallback(cp_model.CpSolverSolutionCallback):
             def __init__(self) -> None:
                 super().__init__()
                 self.solution_count = 0
+                self.progress_improvements_emitted = 0
+                self.best_objective_value: int | None = None
+                self.last_progress_signature: tuple[int, ...] | None = None
                 self.hit = False
                 self.first_solution_seconds: float | None = None
                 self.first_teacher_sessions: int | None = None
@@ -1636,19 +1650,101 @@ def solve_session_allocation_cp_sat(
 
             def on_solution_callback(self) -> None:
                 self.solution_count += 1
-                teacher_sessions = sum(int(self.value(var)) for var in teacher_session_vars)
-                one_period_sessions = sum(int(self.value(var)) for var in one_period_vars)
-                unassigned_periods = sum(int(self.value(var)) for var in unassigned_vars)
+                # Read one response vector and sum indexes in Python instead of
+                # crossing the Python/C++ boundary once per model variable.
+                solution = self.response_proto.solution
+                teacher_sessions = sum(solution[index] for index in teacher_session_indexes)
+                one_period_sessions = sum(solution[index] for index in one_period_indexes)
+                unassigned_periods = sum(solution[index] for index in unassigned_indexes)
+                gap_periods = sum(solution[index] for index in gap_period_indexes)
+                gap1_sessions = sum(solution[index] for index in gap1_indexes)
+                gap2_plus_sessions = sum(solution[index] for index in gap2_plus_indexes)
+                severe_gap_periods = sum(solution[index] for index in severe_gap_indexes)
                 if self.first_solution_seconds is None:
                     self.first_solution_seconds = float(self.wall_time)
                     self.first_teacher_sessions = teacher_sessions
                     self.first_one_period_sessions = one_period_sessions
+
+                objective_value = (
+                    int(self.value(objective_expr))
+                    if objective_expr is not None
+                    else None
+                )
+                strict_objective_improvement = (
+                    self.best_objective_value is None
+                    or (
+                        objective_value is not None
+                        and objective_value < self.best_objective_value
+                    )
+                )
+                if strict_objective_improvement and objective_value is not None:
+                    self.best_objective_value = objective_value
+
+                # CP-SAT callbacks are incumbent callbacks. Emit only when the
+                # strict objective incumbent also changes a user-visible quality
+                # metric; hint-distance-only improvements must not make the UI
+                # flicker. No lesson cells are materialized or published here.
+                progress_signature = (
+                    unassigned_periods,
+                    one_period_sessions,
+                    teacher_sessions,
+                    gap2_plus_sessions,
+                    severe_gap_periods,
+                    gap1_sessions,
+                    gap_periods,
+                )
+                if (
+                    progress_callback_enabled
+                    and progress is not None
+                    and strict_objective_improvement
+                    and progress_signature != self.last_progress_signature
+                ):
+                    self.last_progress_signature = progress_signature
+                    self.progress_improvements_emitted += 1
+                    progress_event: dict[str, Any] = {
+                        "stage": "session_cp_sat:metric",
+                        "message": (
+                            "Dang toi uu: "
+                            f"{teacher_sessions} buoi, "
+                            f"{one_period_sessions} buoi 1 tiet"
+                        ),
+                        "unassigned_periods": unassigned_periods,
+                        "teacher_sessions": teacher_sessions,
+                        "one_period_teacher_sessions": one_period_sessions,
+                        "objective": objective_value,
+                        "best_bound": float(self.best_objective_bound),
+                        "wall_time_seconds": float(self.wall_time),
+                        "solutions_seen": self.solution_count,
+                    }
+                    if period_gap_model_complete:
+                        progress_event.update(
+                            {
+                                "message": (
+                                    f"{progress_event['message']}, "
+                                    f"{gap2_plus_sessions} tiet trong nang, "
+                                    f"{gap1_sessions} tiet trong don"
+                                ),
+                                # Gap 2+ is one visible bucket here. The final
+                                # canonical timetable computes every exact gap
+                                # length after the solve returns.
+                                "gap_distribution": {
+                                    1: gap1_sessions,
+                                    2: gap2_plus_sessions,
+                                },
+                                "teacher_gap_periods": gap_periods,
+                                "teacher_gap1_sessions": gap1_sessions,
+                                "teacher_gap2_plus_sessions": gap2_plus_sessions,
+                                "teacher_severe_gap_periods": severe_gap_periods,
+                            }
+                        )
+                    progress(progress_event)
                 one_period_ok = (
                     early_stop_one_period_threshold is None
                     or one_period_sessions <= early_stop_one_period_threshold
                 )
                 if (
-                    unassigned_periods == 0
+                    early_stop_enabled
+                    and unassigned_periods == 0
                     and one_period_ok
                     and teacher_sessions <= early_stop_teacher_threshold
                 ):
@@ -1658,10 +1754,51 @@ def solve_session_allocation_cp_sat(
                     self.hit_one_period_sessions = one_period_sessions
                     self.stop_search()
 
-        early_stop_callback = SessionQualityEarlyStop()
+        quality_callback = SessionQualityCallback()
+
+    soft_stop_file = str(os.environ.get("TKB_SOLVER_STOP_FILE") or "").strip()
+    soft_stop_done = threading.Event()
+    soft_stop_observed = threading.Event()
+    soft_stop_applied = threading.Event()
+    soft_stop_errors: list[str] = []
+    soft_stop_watcher: threading.Thread | None = None
+    if soft_stop_file:
+        stop_path = Path(soft_stop_file)
+
+        def watch_soft_stop() -> None:
+            while not soft_stop_done.wait(0.1):
+                try:
+                    requested = stop_path.is_file()
+                except OSError:
+                    requested = False
+                if not requested:
+                    continue
+                soft_stop_observed.set()
+                try:
+                    # OR-Tools supports StopSearch from another thread. This
+                    # returns the best incumbent through the normal result path
+                    # instead of discarding it like a hard process kill.
+                    solver.stop_search()
+                except Exception as exc:  # pragma: no cover - defensive API guard.
+                    soft_stop_errors.append(str(exc)[:500])
+                else:
+                    soft_stop_applied.set()
+                return
+
+        soft_stop_watcher = threading.Thread(
+            target=watch_soft_stop,
+            name="tkb-cp-sat-soft-stop",
+            daemon=True,
+        )
+        soft_stop_watcher.start()
 
     started = time.time()
-    status = solver.Solve(model, early_stop_callback)
+    try:
+        status = solver.Solve(model, quality_callback)
+    finally:
+        soft_stop_done.set()
+        if soft_stop_watcher is not None:
+            soft_stop_watcher.join(timeout=0.5)
     elapsed = time.time() - started
     status_name = solver.StatusName(status)
     metrics: dict[str, Any] = {
@@ -1726,30 +1863,37 @@ def solve_session_allocation_cp_sat(
         "forbidden_session_vectors": len(forbidden_session_vectors),
         "forbidden_eq_vars": forbidden_eq_vars,
         "minimize_hint_distance": bool(minimize_hint_distance),
-        "early_stop_enabled": early_stop_callback is not None,
-        "early_stop_hit": bool(early_stop_callback and early_stop_callback.hit),
+        "early_stop_enabled": early_stop_enabled,
+        "early_stop_hit": bool(quality_callback and quality_callback.hit),
+        "progress_callback_enabled": progress_callback_enabled,
+        "progress_improvements_emitted": (
+            quality_callback.progress_improvements_emitted if quality_callback else 0
+        ),
+        "best_effort_stop_requested": soft_stop_observed.is_set(),
+        "best_effort_stop_applied": soft_stop_applied.is_set(),
+        "best_effort_stop_error": soft_stop_errors[0] if soft_stop_errors else None,
         "early_stop_teacher_threshold": early_stop_teacher_threshold,
         "early_stop_one_period_threshold": early_stop_one_period_threshold,
         "period_gap_objective_suppressed_session_early_stop": (
             period_gap_objective_suppressed_session_early_stop
         ),
         "early_stop_teacher_sessions": (
-            early_stop_callback.hit_teacher_sessions if early_stop_callback else None
+            quality_callback.hit_teacher_sessions if quality_callback else None
         ),
         "early_stop_one_period_sessions": (
-            early_stop_callback.hit_one_period_sessions if early_stop_callback else None
+            quality_callback.hit_one_period_sessions if quality_callback else None
         ),
-        "early_stop_wall_time_seconds": early_stop_callback.hit_seconds if early_stop_callback else None,
+        "early_stop_wall_time_seconds": quality_callback.hit_seconds if quality_callback else None,
         "first_solution_wall_time_seconds": (
-            early_stop_callback.first_solution_seconds if early_stop_callback else None
+            quality_callback.first_solution_seconds if quality_callback else None
         ),
         "first_solution_teacher_sessions": (
-            early_stop_callback.first_teacher_sessions if early_stop_callback else None
+            quality_callback.first_teacher_sessions if quality_callback else None
         ),
         "first_solution_one_period_sessions": (
-            early_stop_callback.first_one_period_sessions if early_stop_callback else None
+            quality_callback.first_one_period_sessions if quality_callback else None
         ),
-        "solutions_seen": early_stop_callback.solution_count if early_stop_callback else None,
+        "solutions_seen": quality_callback.solution_count if quality_callback else None,
     }
     if objective_expr is not None and status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         metrics["objective"] = float(solver.ObjectiveValue())

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import Any, Mapping
+from unittest.mock import patch
 
 
 RUNTIME_ROOT = Path(__file__).resolve().parents[1]
@@ -247,6 +251,131 @@ class SessionCpSatPeriodGapQualityTests(unittest.TestCase):
             if item["subject"] == "B"
         }
         self.assertEqual(selected, {3})
+
+    def test_quality_progress_emits_best_metrics_without_publishing_a_timetable(self) -> None:
+        events: list[dict[str, Any]] = []
+
+        _allocations, metrics = _solve(
+            {3, 4},
+            period_minimize_teacher_gaps=True,
+            period_teacher_gap_priority_absolute=True,
+            progress=events.append,
+        )
+
+        improvements = [
+            event
+            for event in events
+            if event.get("stage") == "session_cp_sat:metric"
+        ]
+        self.assertTrue(metrics["progress_callback_enabled"])
+        self.assertEqual(
+            metrics["progress_improvements_emitted"],
+            len(improvements),
+        )
+        self.assertGreaterEqual(len(improvements), 1)
+        self.assertEqual(
+            improvements[-1]["teacher_sessions"],
+            metrics["teacher_sessions"],
+        )
+        self.assertEqual(
+            improvements[-1]["one_period_teacher_sessions"],
+            metrics["one_period_teacher_sessions"],
+        )
+        self.assertEqual(
+            improvements[-1]["gap_distribution"],
+            {
+                1: metrics["period_bridge_teacher_gap1_sessions"],
+                2: metrics["period_bridge_teacher_gap2_plus_sessions"],
+            },
+        )
+        objectives = [
+            float(event["objective"])
+            for event in improvements
+            if event.get("objective") is not None
+        ]
+        self.assertTrue(
+            all(current < previous for previous, current in zip(objectives, objectives[1:]))
+        )
+        for event in improvements:
+            self.assertNotIn("period_bridge_lessons", event)
+            self.assertNotIn("lessons", event)
+            self.assertNotIn("tkb", event)
+
+    def test_feasibility_only_solve_does_not_install_a_progress_callback(self) -> None:
+        events: list[dict[str, Any]] = []
+
+        _allocations, metrics = _solve(
+            {3},
+            minimize_sessions=False,
+            minimize_one_period_sessions=False,
+            progress=events.append,
+        )
+
+        self.assertFalse(metrics["progress_callback_enabled"])
+        self.assertEqual(metrics["progress_improvements_emitted"], 0)
+        self.assertFalse(
+            any(event.get("stage") == "session_cp_sat:metric" for event in events)
+        )
+
+    def test_quality_progress_and_early_stop_share_the_same_callback(self) -> None:
+        events: list[dict[str, Any]] = []
+
+        _allocations, metrics = _solve(
+            {3},
+            early_stop_teacher_sessions=1,
+            early_stop_max_one_period_sessions=0,
+            progress=events.append,
+        )
+
+        self.assertTrue(metrics["progress_callback_enabled"])
+        self.assertTrue(metrics["early_stop_enabled"])
+        self.assertTrue(metrics["early_stop_hit"])
+        self.assertGreaterEqual(metrics["progress_improvements_emitted"], 1)
+        self.assertTrue(
+            any(event.get("stage") == "session_cp_sat:metric" for event in events)
+        )
+
+    def test_stop_file_returns_a_valid_materialized_incumbent(self) -> None:
+        events: list[dict[str, Any]] = []
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            stop_path = Path(tmp_dir) / "retain-best.stop"
+
+            def request_stop_after_first_incumbent(event: dict[str, Any]) -> None:
+                events.append(event)
+                if (
+                    event.get("stage") == "session_cp_sat:metric"
+                    and not stop_path.exists()
+                ):
+                    stop_path.write_text("stop\n", encoding="utf-8")
+                    # Keep the incumbent callback alive long enough for the
+                    # independent stop watcher to observe the control file.
+                    time.sleep(0.2)
+
+            with patch.dict(
+                os.environ,
+                {"TKB_SOLVER_STOP_FILE": str(stop_path)},
+            ):
+                allocations, metrics = _solve(
+                    {3, 4},
+                    period_minimize_teacher_gaps=True,
+                    period_teacher_gap_priority_absolute=True,
+                    progress=request_stop_after_first_incumbent,
+                )
+
+        canonical = _canonical_metrics({3, 4}, metrics)
+        self.assertTrue(metrics["best_effort_stop_requested"])
+        self.assertTrue(metrics["best_effort_stop_applied"])
+        self.assertIsNone(metrics["best_effort_stop_error"])
+        self.assertIn(metrics["status_name"], {"FEASIBLE", "OPTIMAL"})
+        self.assertEqual(sum(int(item.count) for item in allocations), 2)
+        self.assertTrue(metrics["period_bridge_materialization_complete"])
+        self.assertEqual(canonical["scheduled_periods"], canonical["expected_periods"])
+        self.assertTrue(canonical["hard_ok"])
+        self.assertEqual(canonical["app_constraint_violation_count"], 0)
+        self.assertTrue(
+            any(event.get("stage") == "session_cp_sat:metric" for event in events)
+        )
 
 
 if __name__ == "__main__":

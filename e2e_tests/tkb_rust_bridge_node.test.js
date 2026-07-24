@@ -960,7 +960,7 @@ test("result-apply progress keeps updating the visible elapsed time", () => {
   const labelStart = BRIDGE_SOURCE.indexOf("function progressLabel");
   const labelEnd = BRIDGE_SOURCE.indexOf("function stopProgressTicker", labelStart);
   const labelBody = BRIDGE_SOURCE.slice(labelStart, labelEnd);
-  assert.match(labelBody, /const elapsed = formatLiveDuration\(elapsedSeconds\);\s*return elapsed;/);
+  assert.match(labelBody, /const elapsed = formatLiveDuration\(elapsedSeconds\);[\s\S]*?metricProgressCurrentLabel\(progressState\?\.metricProgress\)/);
   assert.doesNotMatch(labelBody, /backendProgressStageLabel\(/);
 
   const tickStart = BRIDGE_SOURCE.indexOf("function tickEstimatedProgress");
@@ -2134,16 +2134,31 @@ test("desktop scheduler modes map to one focused backend contract", () => {
     2
   );
   assert.equal(quick.settings.optimization_focus, "quick_complete");
-  assert.equal(quick.settings.optimization_first_click_singleton_cleanup, true);
+  assert.equal(quick.settings.optimization_first_click_singleton_cleanup, false);
   assert.equal(quick.settings.optimization_first_click_gap_cleanup, false);
   assert.equal(quick.settings.optimization_first_click_strict_quality_gate, false);
   assert.equal(quick.settings.optimization_quick_complete_allow_gap2_debt, true);
+  assert.equal(quick.settings.optimization_quick_complete_allow_quality_debt, true);
+  assert.equal(quick.settings.optimization_benders_session_feasibility_only, true);
+  assert.equal(quick.settings.optimization_benders_minimize_one_period_sessions, false);
+  assert.equal(quick.settings.optimization_benders_minimize_period_gaps, false);
+  assert.equal(quick.settings.minimize_one_period_sessions, false);
+  assert.equal(quick.settings.minimize_sessions, false);
+  assert.equal(quick.settings.max_one_period_sessions, "off");
+  assert.equal(quick.settings.strict_one_period_sessions_cap, false);
+  assert.equal(quick.settings.enforce_max_one_period_sessions, false);
+  assert.equal(quick.settings.native_skip_teacher_optimization, true);
   assert.equal(quick.settings.ui_progress_metric_focus, "scheduled_periods");
   assert.equal(quick.settings.ui_progress_metric_current, 0);
   assert.equal(quick.settings.ui_progress_metric_target, 2);
   const effectiveFreshQuick = hooks.effectiveSettingsForSolve(quick.settings, quickData);
   assert.equal(effectiveFreshQuick.period_max_teacher_gap, "off");
   assert.equal(effectiveFreshQuick.minimize_teacher_gaps, false);
+  assert.equal(effectiveFreshQuick.minimize_one_period_sessions, false);
+  assert.equal(effectiveFreshQuick.minimize_sessions, false);
+  assert.equal(effectiveFreshQuick.max_one_period_sessions, "off");
+  assert.equal(effectiveFreshQuick.strict_one_period_sessions_cap, false);
+  assert.equal(effectiveFreshQuick.enforce_max_one_period_sessions, false);
 
   const completeQuick = hooks.applyRequestedSolveModeToPlan(
     hooks.buildAutomaticAutoSortPlan(data),
@@ -2159,15 +2174,19 @@ test("desktop scheduler modes map to one focused backend contract", () => {
   assert.equal(effectiveCompleteQuick.ui_unified_solve_kind, "refine_complete");
   assert.equal(effectiveCompleteQuick.period_max_teacher_gap, "off");
   assert.equal(effectiveCompleteQuick.minimize_teacher_gaps, false);
-  assert.equal(effectiveCompleteQuick.max_one_period_sessions, 0);
-  assert.equal(effectiveCompleteQuick.strict_one_period_sessions_cap, true);
-  assert.equal(effectiveCompleteQuick.enforce_max_one_period_sessions, true);
+  assert.equal(effectiveCompleteQuick.minimize_one_period_sessions, false);
+  assert.equal(effectiveCompleteQuick.minimize_sessions, false);
+  assert.equal(effectiveCompleteQuick.max_one_period_sessions, "off");
+  assert.equal(effectiveCompleteQuick.strict_one_period_sessions_cap, false);
+  assert.equal(effectiveCompleteQuick.enforce_max_one_period_sessions, false);
+  assert.equal(effectiveCompleteQuick.native_skip_teacher_optimization, true);
 });
 
 test("metric progress uses work quality rather than elapsed time", () => {
   const {hooks} = loadBridge(makeData(2));
   assert.equal(hooks.metricProgressPercent("scheduled_periods", 783, 1566, 1566), 50);
   assert.equal(hooks.metricProgressPercent("teacher_sessions", 470, 432, 509), 92);
+  assert.equal(hooks.metricProgressPercent("teacher_sessions", 469, 432, 509), 92);
   assert.equal(hooks.metricProgressPercent("teacher_gap2_sessions", 0, 0, 7), 100);
   assert.equal(hooks.metricProgressPercent("teacher_gap1_sessions", 34, 0, 68), 50);
 
@@ -2182,6 +2201,25 @@ test("metric progress uses work quality rather than elapsed time", () => {
   assert.equal(normalized.target, 432);
   assert.equal(normalized.baseline, 509);
   assert.equal(normalized.percent, 92);
+  assert.equal(hooks.metricProgressCurrentLabel(normalized), "470 bu\u1ed5i");
+  assert.equal(hooks.metricProgressCurrentLabel({
+    optimizationFocus:"teacher_sessions",
+    metricCurrent:469,
+    metricTarget:432,
+    metricBaseline:509
+  }), "469 bu\u1ed5i");
+  assert.equal(hooks.metricProgressCurrentLabel({
+    optimizationFocus:"one_period_teacher_sessions",
+    metricCurrent:3,
+    metricTarget:0,
+    metricBaseline:8
+  }), "3 bu\u1ed5i 1 ti\u1ebft");
+  assert.equal(hooks.metricProgressCurrentLabel({
+    optimizationFocus:"teacher_gap1_sessions",
+    metricCurrent:34,
+    metricTarget:0,
+    metricBaseline:68
+  }), "34 ti\u1ebft tr\u1ed1ng");
 });
 
 test("large unified first click uses one bounded 130-second quality-gate search", () => {
@@ -5273,7 +5311,7 @@ test("27-second unchanged refinement stays synchronized and uses concise complet
   assert.ok(progress.events.some(event => (
     event.type === "text"
     && event.id === "autoSortProgressLabel"
-    && event.value === "27 giây"
+    && event.value === "27 gi\u00e2y"
   )));
   assert.equal(progress.wrap.hidden, true);
   assert.equal(progress.pct.textContent, "0%");
@@ -5370,6 +5408,287 @@ test("cancelled solve lifecycle never paints a fake 100%", async () => {
   assert.equal(progress.events.some(event => (
     event.type === "text" && event.id === "autoSortProgressPct" && event.value === "100%"
   )), false);
+});
+
+test("focused Stop keeps polling and applies the best server incumbent", async () => {
+  const {data, payload:serverPayload} = makeLargeApplyFixture(1, 2);
+  const subject = String(data.mon[0].ten);
+  const initialLessons = [3, 4].map(period => ({
+    classId:"L1",
+    className:"10A1",
+    subject,
+    teacher:"GV01",
+    room:"R1",
+    day:2,
+    session:"AM",
+    period
+  }));
+  data.tkb = {
+    L1:{thu2:{sang:["", "", subject, subject, ""], chieu:["", "", "", "", ""]}}
+  };
+  data.tkbSolverResult = {
+    ok:true,
+    lessons:initialLessons,
+    metrics:{
+      scheduled_periods:2,
+      expected_periods:2,
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      teacher_sessions:2,
+      one_period_teacher_sessions:2,
+      gap_distribution:{"0":2}
+    },
+    validation:{hard_ok:true, violations:[]},
+    solver:{runtime_settings:{}}
+  };
+  Object.assign(serverPayload.metrics, {
+    app_constraint_violation_count:0,
+    hard_ok:true,
+    core_hard_ok:true,
+    teacher_sessions:1,
+    one_period_teacher_sessions:0,
+    teacher_gap2_sessions:0,
+    gap_distribution:{"0":1}
+  });
+  serverPayload.solver.runtime_settings = {
+    optimization_focus:"sessions",
+    auto_sort_mode:"teacher_session_opt"
+  };
+
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const progress = createProgressDocument(clock);
+  let hooksRef = null;
+  let wireJobId = "";
+  let resultSignal = null;
+  let resolveResultPoll;
+  let resolveCancelResponse;
+  let markResultPollStarted;
+  let markCancelStarted;
+  const resultPollStarted = new Promise(resolve => { markResultPollStarted = resolve; });
+  const cancelStarted = new Promise(resolve => { markCancelStarted = resolve; });
+  const cancelBodies = [];
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-data")){
+      const request = JSON.parse(options.body);
+      wireJobId = request.settings.ui_solve_run_id;
+      assert.equal(request.settings.optimization_focus, "sessions");
+      return jsonResponse({
+        ok:false,
+        running:true,
+        serverOwned:true,
+        kind:"solver_started",
+        jobId:wireJobId,
+        startedAtMs:clock.now(),
+        progressBudgetSeconds:180,
+        retryAfterMs:250
+      }, 202);
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resultSignal = options.signal;
+      markResultPollStarted();
+      return new Promise(resolve => { resolveResultPoll = resolve; });
+    }
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelBodies.push(JSON.parse(options.body));
+      assert.equal(hooksRef.readPendingBackendJob()?.jobId, wireJobId);
+      markCancelStarted();
+      return new Promise(resolve => { resolveCancelResponse = resolve; });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+    document:progress.document
+  }));
+  hooksRef = hooks;
+  window.calcSchoolTKBStats = () => ({
+    soTiet:2,
+    daXepTiet:2,
+    chuaXepTiet:0,
+    tsBuoiDay:2,
+    soBuoiDay1:2,
+    soBuoiTrong1:0,
+    soBuoiTrong2:0
+  });
+  const plan = hooks.applyRequestedSolveModeToPlan(
+    hooks.buildAutomaticAutoSortPlan(data),
+    "sessions",
+    data,
+    2
+  );
+  plan.settings.ui_skip_capacity_precheck = true;
+  plan.settings.ui_fast_auto_sort_no_capacity_precheck = true;
+  plan.settings.ui_allow_short_backend_deadline = true;
+  plan.settings.ui_client_timeout_reserve_ms = 0;
+  plan.settings.ui_skip_pre_solve_constraint_release = true;
+
+  const solving = window.TKBRustAPI.solve({
+    ask:false,
+    settings:plan.settings,
+    singlePass:true
+  });
+  await resultPollStarted;
+  assert.equal(hooks.readPendingBackendJob()?.jobId, wireJobId);
+  assert.equal(hooks.readPendingBackendJob()?.optimizationFocus, "sessions");
+
+  const firstStop = window.requestStopAutoSort();
+  await cancelStarted;
+  const secondStop = await window.requestStopAutoSort();
+
+  assert.equal(secondStop, true, "a repeated focused Stop stays idempotent");
+  assert.equal(cancelBodies.length, 1, "a repeated Stop must not send a hard cancel");
+  assert.deepEqual(cancelBodies[0], {solve_run_id:wireJobId, retainBest:true});
+  assert.equal(resultSignal?.aborted, false, "soft Stop must retain the active result poll");
+  assert.equal(window.__AUTO_SORT_STOP_REQUESTED, false);
+  assert.equal(hooks.readPendingBackendJob()?.jobId, wireJobId);
+  assert.equal(hooks.isSettledBackendJob(wireJobId), false);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.bestEffortStopPending, true);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.phase, "best_effort_stop");
+
+  resolveCancelResponse(jsonResponse({
+    ok:true,
+    cancelRequested:false,
+    bestEffortStopRequested:true,
+    jobId:wireJobId
+  }));
+  assert.equal(await firstStop, true);
+  resolveResultPoll(jsonResponse(serverPayload));
+
+  const result = await solving;
+  assert.ok(result);
+  assert.equal(hooks.countScheduledLessons(data), 2);
+  assert.equal(
+    data.tkbSolverResult.lessons.map(lesson => lesson.period).join(","),
+    "1,2",
+    "the HTTP 200 incumbent must replace the visible timetable"
+  );
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(hooks.isSettledBackendJob(wireJobId), true);
+  assert.equal(progress.nodes.get("statusMsg").textContent, "Đã xếp xong!");
+});
+
+test("singleton and gap Stop also request the best incumbent", async () => {
+  for(const focus of ["singletons", "gaps"]){
+    const data = makeData(2);
+    const jobId = `focused-${focus}-stop`;
+    let cancelBody = null;
+    const fetchImpl = async (url, options = {}) => {
+      const requestUrl = String(url);
+      if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+      if(requestUrl.endsWith("/api/solve-cancel")){
+        cancelBody = JSON.parse(options.body);
+        return jsonResponse({
+          ok:true,
+          cancelRequested:false,
+          bestEffortStopRequested:true,
+          jobId
+        });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+    const {window, hooks} = loadBridge(data, fetchImpl);
+    hooks.startProgressTicker({optimization_focus:focus}, data);
+    hooks.writePendingBackendJob(
+      jobId,
+      hooks.durableScheduleFingerprint(data),
+      {optimizationFocus:focus}
+    );
+
+    assert.equal(await window.requestStopAutoSort(), true);
+    assert.deepEqual(cancelBody, {solve_run_id:jobId, retainBest:true});
+    assert.equal(hooks.readPendingBackendJob()?.jobId, jobId);
+    assert.equal(hooks.isSettledBackendJob(jobId), false);
+    assert.notEqual(window.__AUTO_SORT_STOP_REQUESTED, true);
+  }
+});
+
+test("focused Stop flushes the Browser Agent candidate before retaining the server best", async () => {
+  const data = makeData(2);
+  const jobId = "focused-browser-best-stop";
+  const calls = [];
+  let resolveBrowserStop;
+  const browserStop = new Promise(resolve => { resolveBrowserStop = resolve; });
+  let cancelBody = null;
+  const executor = {
+    async stopAndSubmitBest(options){
+      calls.push(`browser:${options.jobId}`);
+      assert.equal(options.reason, "user_best_effort_stop");
+      assert.equal(options.timeoutMs, 32_000);
+      return browserStop;
+    }
+  };
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      calls.push("server:retain-best");
+      cancelBody = JSON.parse(options.body);
+      return jsonResponse({
+        ok:true,
+        cancelRequested:false,
+        bestEffortStopRequested:false,
+        jobId
+      });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    TKBBrowserWasmExecutor:executor
+  });
+  hooks.startProgressTicker({optimization_focus:"sessions"}, data);
+  hooks.writePendingBackendJob(
+    jobId,
+    hooks.durableScheduleFingerprint(data),
+    {optimizationFocus:"sessions"}
+  );
+
+  const stopping = window.requestStopAutoSort();
+  await Promise.resolve();
+  assert.deepEqual(calls, [`browser:${jobId}`]);
+  assert.equal(cancelBody, null, "the server stop must wait for the local candidate flush");
+
+  resolveBrowserStop({handled:true, submitted:true, jobId, candidateId:"candidate-1"});
+  assert.equal(await stopping, true);
+  assert.deepEqual(calls, [`browser:${jobId}`, "server:retain-best"]);
+  assert.deepEqual(cancelBody, {solve_run_id:jobId, retainBest:true});
+  assert.equal(hooks.readPendingBackendJob()?.jobId, jobId);
+  assert.equal(hooks.isSettledBackendJob(jobId), false);
+  assert.notEqual(window.__AUTO_SORT_STOP_REQUESTED, true);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.bestEffortStopPending, true);
+});
+
+test("Quick Stop remains a destructive cancel", async () => {
+  const data = makeData(2);
+  let cancelBody = null;
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelBody = JSON.parse(options.body);
+      return jsonResponse({ok:true, cancelRequested:true, jobId:"quick-hard-stop"});
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl);
+  hooks.startProgressTicker({optimization_focus:"quick_complete"}, data);
+  hooks.writePendingBackendJob(
+    "quick-hard-stop",
+    hooks.durableScheduleFingerprint(data),
+    {optimizationFocus:"quick_complete"}
+  );
+
+  await window.requestStopAutoSort();
+
+  assert.deepEqual(cancelBody, {
+    solve_run_id:"quick-hard-stop",
+    retainBest:false
+  });
+  assert.equal(window.__AUTO_SORT_STOP_REQUESTED, true);
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(hooks.isSettledBackendJob("quick-hard-stop"), true);
 });
 
 test("backend precheck sends the selected preset and expected-period contract", async () => {
@@ -9890,7 +10209,281 @@ test("backend admission preserves preparation percent until a metric snapshot ar
   const afterBudget = window.__TKB_RUST_PROGRESS_STATE;
   assert.equal(afterBudget.percent, 50);
   assert.equal(afterBudget.phase, "server_wait");
-  assert.equal(afterBudget.label, "1:01");
+  assert.equal(afterBudget.label, "1/2 ti\u1ebft \u00b7 1:01");
+});
+
+test("live optimization shows each raw improvement even when rounded percent is unchanged", () => {
+  const data = makeData(2);
+  const clock = createFakeClock();
+  const {window, hooks} = loadBridge(data, null, clock);
+
+  hooks.primeAutoSortStartUi();
+  hooks.startProgressTicker({
+    auto_sort_mode:"teacher_session_opt",
+    optimization_focus:"sessions",
+    progress_estimate_seconds:180,
+    overall_time_limit_seconds:180,
+    backend_deadline_ms:180_000
+  }, data);
+  clock.advance(1_000);
+  hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"session_cp_sat:metric",
+    sequence:1,
+    elapsedMs:10_000,
+    optimizationFocus:"teacher_sessions",
+    metricCurrent:470,
+    metricTarget:432,
+    metricBaseline:509
+  });
+  const first = Object.assign({}, window.__TKB_RUST_PROGRESS_STATE);
+
+  clock.advance(1_000);
+  hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"session_cp_sat:metric",
+    sequence:2,
+    elapsedMs:11_000,
+    optimizationFocus:"teacher_sessions",
+    metricCurrent:469,
+    metricTarget:432,
+    metricBaseline:509
+  });
+  const second = Object.assign({}, window.__TKB_RUST_PROGRESS_STATE);
+
+  assert.equal(first.percent, 92);
+  assert.equal(second.percent, 92);
+  assert.equal(first.metricCurrent, 470);
+  assert.equal(second.metricCurrent, 469);
+  assert.equal(first.label, "470 bu\u1ed5i \u00b7 1 gi\u00e2y");
+  assert.equal(second.label, "469 bu\u1ed5i \u00b7 2 gi\u00e2y");
+});
+
+test("a new VPS or Agent execution generation accepts progress sequence one", () => {
+  const data = makeData(2);
+  const {window, hooks} = loadBridge(data);
+  hooks.startProgressTicker({
+    auto_sort_mode:"teacher_session_opt",
+    optimization_focus:"sessions"
+  }, data);
+
+  assert.equal(hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"session_cp_sat:metric",
+    executionGeneration:2,
+    sequence:8,
+    elapsedMs:8_000,
+    optimizationFocus:"teacher_sessions",
+    metricCurrent:470,
+    metricTarget:432,
+    metricBaseline:509
+  }), true);
+  const percentBeforeHandoff = window.__TKB_RUST_PROGRESS_STATE.percent;
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.backendProgressGeneration, 2);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.backendProgressSequence, 8);
+
+  assert.equal(hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"session_cp_sat:metric",
+    executionGeneration:3,
+    sequence:1,
+    elapsedMs:1_000,
+    optimizationFocus:"teacher_sessions",
+    metricCurrent:490,
+    metricTarget:432,
+    metricBaseline:509
+  }), true);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.backendProgressGeneration, 3);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.backendProgressSequence, 1);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.metricCurrent, 490);
+  assert.equal(
+    window.__TKB_RUST_PROGRESS_STATE.percent,
+    percentBeforeHandoff,
+    "a new executor may report a rougher incumbent without moving progress backward"
+  );
+
+  assert.equal(hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"session_cp_sat:metric",
+    executionGeneration:2,
+    sequence:99,
+    elapsedMs:99_000,
+    optimizationFocus:"teacher_sessions",
+    metricCurrent:469,
+    metricTarget:432,
+    metricBaseline:509
+  }), false, "a stale executor generation must not overwrite the current one");
+});
+
+test("focused optimizers cap custom duration at three minutes through the wire payload", async () => {
+  for(const mode of ["singletons", "sessions", "gaps"]){
+    const data = makeData(2);
+    const subject = data.mon[0].ten;
+    data.tkb = {
+      L1:{
+        thu2:{sang:[subject, "", "", "", ""], chieu:["", "", "", "", ""]},
+        thu3:{sang:[subject, "", "", "", ""], chieu:["", "", "", "", ""]}
+      }
+    };
+    data.tkbSolverResult = {
+      metrics:{
+        scheduled_periods:2,
+        expected_periods:2,
+        unassigned_periods:0,
+        app_constraint_violation_count:0,
+        hard_ok:true,
+        core_hard_ok:true,
+        teacher_sessions:2,
+        one_period_teacher_sessions:2,
+        gap_distribution:{"0":2}
+      },
+      validation:{hard_ok:true},
+      solver:{runtime_settings:{}}
+    };
+    let posted = null;
+    const fetchImpl = async (url, options = {}) => {
+      const requestUrl = String(url);
+      if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+      if(requestUrl.endsWith("/api/solve-data")){
+        posted = JSON.parse(options.body);
+        return jsonResponse({
+          ok:true,
+          lessons:[],
+          unassignedLessons:[],
+          metrics:{
+            scheduled_periods:2,
+            expected_periods:2,
+            unassigned_periods:0,
+            hard_ok:true,
+            core_hard_ok:true
+          },
+          validation:{hard_ok:true},
+          solver:{runtime_settings:{}}
+        });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+    const {hooks} = loadBridge(data, fetchImpl);
+    const longPlan = hooks.buildAutomaticAutoSortPlan(data);
+    longPlan.settings.ui_custom_solve_duration_seconds = 900;
+    longPlan.settings.ui_custom_solve_duration_override = true;
+    const capped = hooks.applyRequestedSolveModeToPlan(longPlan, mode, data, 2);
+    assert.equal(capped.settings.overall_time_limit_seconds, 180);
+    assert.equal(capped.settings.optimization_time_limit_seconds, 180);
+    assert.equal(capped.settings.backend_deadline_ms, 180_000);
+    assert.equal(capped.settings.ui_custom_solve_duration_seconds, 180);
+    assert.equal(capped.settings.ui_progress_budget_seconds, 180);
+
+    const effective = hooks.effectiveSettingsForSolve(capped.settings, data);
+    assert.equal(effective.overall_time_limit_seconds, 180);
+    assert.equal(effective.integrated_time_limit, 180);
+    assert.equal(effective.optimization_time_limit_seconds, 180);
+    assert.equal(effective.optimization_adaptive_time_limit_seconds, 180);
+    assert.equal(effective.backend_deadline_ms, 180_000);
+    assert.equal(effective.native_global_deadline_ms, 180_000);
+    assert.equal(effective.ui_custom_solve_duration_seconds, 180);
+    assert.equal(effective.ui_progress_budget_seconds, 180);
+
+    await hooks.postSolve(capped.settings, data);
+    assert.ok(posted, `${mode} must reach /api/solve-data`);
+    assert.equal(posted.settings.overall_time_limit_seconds, 180);
+    assert.equal(posted.settings.integrated_time_limit, 180);
+    assert.equal(posted.settings.optimization_time_limit_seconds, 180);
+    assert.equal(posted.settings.optimization_adaptive_time_limit_seconds, 180);
+    assert.equal(posted.settings.backend_deadline_ms, 180_000);
+    assert.equal(posted.settings.native_global_deadline_ms, 180_000);
+    assert.equal(posted.settings.ui_custom_solve_duration_seconds, 180);
+    assert.equal(posted.settings.ui_progress_budget_seconds, 180);
+
+    const shortPlan = hooks.buildAutomaticAutoSortPlan(data);
+    shortPlan.settings.ui_custom_solve_duration_seconds = 30;
+    shortPlan.settings.ui_custom_solve_duration_override = true;
+    const short = hooks.applyRequestedSolveModeToPlan(shortPlan, mode, data, 2);
+    assert.equal(short.settings.overall_time_limit_seconds, 30);
+    assert.equal(short.settings.optimization_time_limit_seconds, 30);
+    assert.equal(short.settings.backend_deadline_ms, 30_000);
+    assert.equal(short.settings.ui_custom_solve_duration_seconds, 30);
+  }
+});
+
+test("focused wire deadline caps the aggregate CP-SAT budget at three minutes", async () => {
+  for(const mode of ["singletons", "sessions", "gaps"]){
+    const data = makeData(2);
+    const subject = data.mon[0].ten;
+    data.tkb = {
+      L1:{
+        thu2:{sang:[subject, "", "", "", ""], chieu:["", "", "", "", ""]},
+        thu3:{sang:[subject, "", "", "", ""], chieu:["", "", "", "", ""]}
+      }
+    };
+    data.tkbSolverResult = {
+      metrics:{
+        scheduled_periods:2,
+        expected_periods:2,
+        unassigned_periods:0,
+        app_constraint_violation_count:0,
+        hard_ok:true,
+        core_hard_ok:true,
+        teacher_sessions:2,
+        one_period_teacher_sessions:2,
+        gap_distribution:{"0":2}
+      },
+      validation:{hard_ok:true},
+      solver:{runtime_settings:{}}
+    };
+    let posted = null;
+    const fetchImpl = async (url, options = {}) => {
+      const requestUrl = String(url);
+      if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+      if(requestUrl.endsWith("/api/solve-data")){
+        posted = JSON.parse(options.body);
+        return jsonResponse({
+          ok:true,
+          lessons:[],
+          unassignedLessons:[],
+          metrics:{
+            scheduled_periods:2,
+            expected_periods:2,
+            unassigned_periods:0,
+            hard_ok:true,
+            core_hard_ok:true
+          },
+          validation:{hard_ok:true},
+          solver:{runtime_settings:{}}
+        });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+    const {window, hooks} = loadBridge(data, fetchImpl);
+    const plan = hooks.applyRequestedSolveModeToPlan(
+      hooks.buildAutomaticAutoSortPlan(data),
+      mode,
+      data,
+      2
+    );
+    delete plan.settings.ui_custom_solve_duration_seconds;
+    delete plan.settings.ui_custom_solve_duration_override;
+    plan.settings.allow_cpsat_quality_improvement = true;
+    plan.settings.native_cpsat_quality_time_limit_seconds = 140;
+    plan.settings.native_cpsat_time_limit_seconds = 140;
+    plan.settings.native_cpsat_lns_time_limit_seconds = 120;
+    plan.settings.native_cpsat_relaxed_hint_time_limit_ms = 90_000;
+    plan.settings.native_cpsat_relaxed_hint_cleanup_ms = 90_000;
+
+    await hooks.postSolve(plan.settings, data);
+
+    assert.ok(posted, `${mode} must reach /api/solve-data`);
+    assert.ok(
+      posted.settings.native_cpsat_quality_time_limit_seconds
+        + posted.settings.native_cpsat_time_limit_seconds > 180,
+      "the regression needs multiple surviving CP-SAT sub-budgets above the focused ceiling"
+    );
+    assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.budgetSeconds, 180);
+    assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.backendDeadlineMs, 180_000);
+    assert.equal(posted.settings.backend_deadline_ms, 180_000);
+    assert.equal(posted.settings.native_global_deadline_ms, 180_000);
+    assert.equal(posted.settings.ui_progress_budget_seconds, 180);
+  }
 });
 
 test("reload prime restores pending progress and timer immediately without regressing", () => {

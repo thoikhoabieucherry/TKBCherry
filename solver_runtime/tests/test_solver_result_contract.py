@@ -35,6 +35,7 @@ from tkb_new.adapter import (  # noqa: E402
     _relaxed_teacher_session_cap,
     _repair_one_period_affected_class_cluster,
     _session_cp_sat_linearization_level,
+    _settings_for_optimization_focus,
     _solve_fast_tight_fixed_off_benders,
     _solve_two_stage_concrete_refinement,
     _solve_unified_first_click_feasibility_then_quality,
@@ -6073,6 +6074,71 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertEqual(termination, "first_click_feasibility_retained")
         self.assertTrue(attempts[1]["skipped"])
         self.assertEqual(attempts[1]["reason"], "watchdog_return_reserve")
+
+    def test_quick_complete_returns_first_hard_valid_schedule_without_quality_work(self) -> None:
+        feasibility = _first_click_payload(
+            teacher_sessions=610,
+            gap1=110,
+            one_period_sessions=8,
+        )
+        feasibility["metrics"]["gap_distribution"] = {0: 490, 1: 110, 2: 10}
+        settings = _settings_for_optimization_focus(
+            {
+                "optimization_focus": "quick_complete",
+                # Stale UI quality defaults must not leak into Quick.
+                "target_teacher_sessions": 482,
+                "target_gap1_sessions": 0,
+                "max_one_period_sessions": 0,
+                "strict_one_period_sessions_cap": True,
+                "minimize_teacher_gaps": True,
+                "period_max_teacher_gap": 1,
+                "num_workers": 6,
+            }
+        )
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            return_value=feasibility,
+        ) as solve_candidate:
+            result, metrics, attempts, termination = (
+                _solve_unified_first_click_feasibility_then_quality(
+                    {},
+                    settings,
+                    bound_ctx=_context(),
+                    bounds={
+                        "lower_cap": 450,
+                        "start_cap": 466,
+                        "upper_cap": 650,
+                        "expected_periods": 1566,
+                    },
+                    profile={"expected": 1566, "class_count": 54},
+                    rules=None,
+                    progress=None,
+                    deadline=SolverDeadline(60),
+                    polish_seeds=[1],
+                    requested_random_seed=77,
+                )
+            )
+
+        self.assertIs(result, feasibility)
+        self.assertIs(metrics, feasibility["metrics"])
+        self.assertEqual(termination, "first_click_feasibility_retained")
+        self.assertEqual(solve_candidate.call_count, 1)
+        quick_call = solve_candidate.call_args_list[0]
+        quick_settings = quick_call.args[1]
+        self.assertEqual(quick_call.kwargs["cap"], 650)
+        self.assertEqual(
+            quick_settings["auto_sort_strategy"],
+            "fresh_complete_fastest_feasibility",
+        )
+        self.assertTrue(quick_settings["optimization_benders_session_feasibility_only"])
+        self.assertFalse(quick_settings["optimization_benders_minimize_one_period_sessions"])
+        self.assertFalse(quick_settings["optimization_benders_minimize_period_gaps"])
+        self.assertEqual(quick_settings["max_one_period_sessions"], "off")
+        self.assertFalse(quick_settings["strict_one_period_sessions_cap"])
+        self.assertFalse(quick_settings["minimize_teacher_gaps"])
+        self.assertEqual(quick_settings["period_max_teacher_gap"], "off")
+        self.assertTrue(attempts[0]["quality_debt_allowed"])
 
     def test_constraint_change_first_click_accepts_hard_valid_quality_debt(self) -> None:
         feasibility = _first_click_payload(

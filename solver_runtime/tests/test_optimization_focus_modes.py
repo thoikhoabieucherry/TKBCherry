@@ -53,10 +53,31 @@ def _payload(
 
 class OptimizationFocusModeTests(unittest.TestCase):
     def test_focus_settings_are_explicit_and_do_not_use_unknown_modes(self) -> None:
-        quick = _settings_for_optimization_focus({"optimization_focus": "quick"})
+        quick = _settings_for_optimization_focus(
+            {
+                "optimization_focus": "quick",
+                "target_teacher_sessions": 4,
+                "target_gap1_sessions": 0,
+                "max_one_period_sessions": 0,
+                "strict_one_period_sessions_cap": True,
+                "minimize_one_period_sessions": True,
+                "minimize_teacher_gaps": True,
+                "period_max_teacher_gap": 1,
+            }
+        )
         self.assertEqual(quick["optimization_focus"], "quick_complete")
         self.assertEqual(quick["ui_unified_solve_kind"], "fresh_complete_first")
         self.assertFalse(quick["optimization_two_stage_teacher_quality"])
+        self.assertTrue(quick["optimization_benders_session_feasibility_only"])
+        self.assertFalse(quick["minimize_one_period_sessions"])
+        self.assertFalse(quick["minimize_sessions"])
+        self.assertEqual(quick["max_one_period_sessions"], "off")
+        self.assertFalse(quick["strict_one_period_sessions_cap"])
+        self.assertFalse(quick["minimize_teacher_gaps"])
+        self.assertEqual(quick["period_max_teacher_gap"], "off")
+        self.assertTrue(quick["native_skip_teacher_optimization"])
+        self.assertNotIn("target_teacher_sessions", quick)
+        self.assertNotIn("target_gap1_sessions", quick)
 
         gaps = _settings_for_optimization_focus({"optimization_focus": "teacher-gaps"})
         self.assertEqual(gaps["optimization_focus"], "gaps")
@@ -125,6 +146,16 @@ class OptimizationFocusModeTests(unittest.TestCase):
         self.assertEqual(gaps["metricPercent"], 0.0)
         self.assertLessEqual(gaps["metricPercent"], 100.0)
 
+        gap2_improved = _optimization_metric_payload(
+            "gaps",
+            {"gap_distribution": {1: 5, 2: 2}},
+            baseline_metrics={"gap_distribution": {1: 5, 2: 4}},
+            metric_kind="gaps",
+        )
+        self.assertEqual(gap2_improved["optimizationFocus"], "teacher_gap2_sessions")
+        self.assertEqual(gap2_improved["metricCurrent"], 2)
+        self.assertEqual(gap2_improved["metricPercent"], 25.0)
+
         gap1 = _optimization_metric_payload(
             "gaps",
             {"gap_distribution": {1: 3}},
@@ -134,11 +165,27 @@ class OptimizationFocusModeTests(unittest.TestCase):
         self.assertEqual(gap1["optimizationFocus"], "teacher_gap1_sessions")
         self.assertEqual(gap1["metricCurrent"], 3)
         self.assertEqual(gap1["metricBaseline"], 5)
-        self.assertEqual(gap1["metricPercent"], 40.0)
+        self.assertEqual(gap1["metricPercent"], 70.0)
 
-    def test_quick_complete_accepts_gap2_but_not_singleton_debt(self) -> None:
+        gap1_only = _optimization_metric_payload(
+            "gaps",
+            {"gap_distribution": {1: 3}},
+            baseline_metrics={"gap_distribution": {1: 5}},
+            metric_kind="gaps",
+        )
+        self.assertEqual(gap1_only["optimizationFocus"], "teacher_gap1_sessions")
+        self.assertEqual(gap1_only["metricPercent"], 40.0)
+
+    def test_quick_complete_accepts_all_quality_debt_after_hard_completion(self) -> None:
         gap_debt = _payload(sessions=5, singletons=0, gap1=2, gap2=3)
         singleton_debt = _payload(sessions=5, singletons=1, gap1=2, gap2=0)
+        authored_constraint_violation = _payload(
+            sessions=5,
+            singletons=1,
+            gap1=2,
+            gap2=3,
+        )
+        authored_constraint_violation["metrics"]["app_constraint_violation_count"] = 1
 
         self.assertFalse(
             _unified_first_click_candidate_acceptable(gap_debt, [])
@@ -155,6 +202,20 @@ class OptimizationFocusModeTests(unittest.TestCase):
                 singleton_debt,
                 [],
                 allow_gap2_debt=True,
+            )
+        )
+        self.assertTrue(
+            _unified_first_click_candidate_acceptable(
+                singleton_debt,
+                [],
+                allow_quality_debt=True,
+            )
+        )
+        self.assertFalse(
+            _unified_first_click_candidate_acceptable(
+                authored_constraint_violation,
+                [],
+                allow_quality_debt=True,
             )
         )
 
@@ -189,6 +250,36 @@ class OptimizationFocusModeTests(unittest.TestCase):
         self.assertEqual(metrics["teacher_sessions"], 4)
         self.assertEqual(reason, "two_stage_session_compression")
         self.assertEqual(result["solver"]["two_stage_teacher_optimization"]["mode"], "sessions_only")
+
+    def test_sessions_focus_keeps_a_soft_stopped_improved_candidate(self) -> None:
+        incumbent = _payload(sessions=5, gap1=2)
+        candidate = _payload(sessions=4, gap1=3, gap2=1)
+        candidate["solver"]["session_solver"] = {
+            "best_effort_stop_requested": True,
+            "best_effort_stop_applied": True,
+        }
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            return_value=candidate,
+        ):
+            result, metrics, _attempts, reason = _solve_two_stage_concrete_refinement(
+                {},
+                {"optimization_focus": "sessions"},
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(60),
+                total_limit=60,
+                incumbent_payload=incumbent,
+                phase_seeds=[7],
+            )
+
+        self.assertEqual(metrics["teacher_sessions"], 4)
+        self.assertEqual(metrics["gap_distribution"][2], 1)
+        self.assertEqual(reason, "two_stage_session_compression")
+        self.assertTrue(
+            result["solver"]["session_solver"]["best_effort_stop_applied"]
+        )
 
     def test_sessions_focus_retries_with_the_incumbent_singleton_cap(self) -> None:
         incumbent = _payload(sessions=5, singletons=1, gap1=2)
@@ -619,6 +710,37 @@ class OptimizationFocusModeTests(unittest.TestCase):
         self.assertEqual(reason, "two_stage_gap_cleanup")
         self.assertEqual(result["solver"]["two_stage_teacher_optimization"]["mode"], "gaps_only")
 
+    def test_gaps_focus_keeps_a_soft_stopped_improved_candidate(self) -> None:
+        incumbent = _payload(sessions=5, gap1=3, gap2=1)
+        candidate = _payload(sessions=5, gap1=1, gap2=0)
+        candidate["solver"]["session_solver"] = {
+            "best_effort_stop_requested": True,
+            "best_effort_stop_applied": True,
+        }
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            return_value=candidate,
+        ):
+            result, metrics, _attempts, reason = _solve_two_stage_concrete_refinement(
+                {},
+                {"optimization_focus": "gaps"},
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(60),
+                total_limit=60,
+                incumbent_payload=incumbent,
+                phase_seeds=[7],
+            )
+
+        self.assertEqual(metrics["teacher_sessions"], 5)
+        self.assertEqual(metrics["gap_distribution"][2], 0)
+        self.assertEqual(metrics["gap_distribution"][1], 1)
+        self.assertEqual(reason, "two_stage_gap_cleanup")
+        self.assertTrue(
+            result["solver"]["session_solver"]["best_effort_stop_applied"]
+        )
+
     def test_gaps_focus_keeps_fast_repack_when_global_search_times_out(self) -> None:
         incumbent = _payload(sessions=5, gap1=2, gap2=1)
         repacked = _payload(sessions=5, gap1=1, gap2=0)
@@ -724,6 +846,9 @@ class OptimizationFocusModeTests(unittest.TestCase):
             )
 
         self.assertEqual(len(calls), 1)
+        self.assertTrue(
+            calls[0]["settings"]["optimization_benders_session_feasibility_only"]
+        )
         self.assertEqual(metrics["one_period_teacher_sessions"], 0)
         self.assertEqual(reason, "two_stage_singleton_cleanup")
         self.assertGreaterEqual(len(events), 2)
@@ -800,7 +925,7 @@ class OptimizationFocusModeTests(unittest.TestCase):
             (True, True),
         )
 
-    def test_quick_complete_goal_ignores_gap2_after_clean_complete_result(self) -> None:
+    def test_quick_complete_goal_ignores_all_teacher_quality_metrics(self) -> None:
         clean_complete = _payload(sessions=5, singletons=0, gap1=2, gap2=3)["metrics"]
         singleton_debt = _payload(sessions=5, singletons=1, gap2=0)["metrics"]
         incomplete = dict(clean_complete, unassigned_periods=1)
@@ -820,7 +945,15 @@ class OptimizationFocusModeTests(unittest.TestCase):
             ),
             (True, True),
         )
-        for metrics in (singleton_debt, incomplete, hard_invalid):
+        self.assertEqual(
+            _optimization_focus_goal_status(
+                "quick_complete",
+                singleton_debt,
+                **goal_args,
+            ),
+            (True, True),
+        )
+        for metrics in (incomplete, hard_invalid):
             self.assertEqual(
                 _optimization_focus_goal_status(
                     "quick_complete",

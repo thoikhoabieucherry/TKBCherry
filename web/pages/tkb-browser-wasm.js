@@ -1,7 +1,7 @@
 (function(root){
   "use strict";
 
-  const VERSION = "tkb-browser-wasm-executor-v5-focused-two-stage";
+  const VERSION = "tkb-browser-wasm-executor-v7-best-stop-flush";
   const AGENT_PROTOCOL = "tkb-agent-helper-v1";
   const AGENT_VERSION = "1.6.29";
   const SOLVER_PROTOCOL = "tkb-reference-solver-stdio-v1";
@@ -36,6 +36,7 @@
     activationPromise:null,
     closePromise:null,
     loopPromise:null,
+    leaseRun:null,
     pendingFetches:new Set(),
     enabledOverride:null
   };
@@ -114,6 +115,7 @@
       || typeof settings !== "object"
       || Array.isArray(settings)
     ) return false;
+    if(normalizedOptimizationFocus(settings) === "quick_complete") return false;
     const solveKind = String(settings.ui_unified_solve_kind || "")
       .trim()
       .toLowerCase()
@@ -677,7 +679,7 @@
 
   function qualityComparisonOrder(settings){
     const focus = normalizedOptimizationFocus(settings);
-    if(["quick_complete", "singletons", "sessions"].includes(focus)){
+    if(["singletons", "sessions"].includes(focus)){
       return [0, 2, 1, 3, 4];
     }
     if(focus === "gaps") return [0, 1, 3, 4, 2];
@@ -714,7 +716,8 @@
   function qualityWithinEnvelope(candidate, incumbent, settings){
     if(!candidate || !incumbent || candidate.length !== incumbent.length) return false;
     const focus = normalizedOptimizationFocus(settings);
-    if(["quick_complete", "singletons", "sessions"].includes(focus)){
+    if(focus === "quick_complete") return false;
+    if(["singletons", "sessions"].includes(focus)){
       if(candidate[0] > incumbent[0] || candidate[2] > incumbent[2]) return false;
       // Singleton/session phases may create temporary gap debt only when they
       // actually improve the dimension they own. Equal primary metrics keep
@@ -770,7 +773,9 @@
         if(!candidate.quality) return;
         validCandidateCount += 1;
         if(incumbentQuality && !qualityWithinEnvelope(candidate.quality, incumbentQuality, settings)) return;
-        if(!best || compareQuality(candidate.quality, best.quality, settings) < 0) best = candidate;
+        if(!best || compareQuality(candidate.quality, best.quality, settings) < 0){
+          best = candidate;
+        }
       }catch(_){ }
     }));
     if(best) return best;
@@ -783,6 +788,24 @@
   async function runLease(lease, generation, signal){
     lease.localExpiresAtMs = Date.now() + state.leaseMs;
     state.lease = lease;
+    const portfolioController = typeof AbortController === "function" ? new AbortController() : null;
+    const abortPortfolio = () => portfolioController?.abort();
+    if(signal?.aborted) abortPortfolio();
+    else signal?.addEventListener?.("abort", abortPortfolio, {once:true});
+    let settleLeaseRun;
+    const leaseRun = {
+      lease,
+      generation,
+      controller:portfolioController,
+      settled:false,
+      completion:new Promise(resolve => { settleLeaseRun = resolve; })
+    };
+    leaseRun.settle = outcome => {
+      if(leaseRun.settled) return;
+      leaseRun.settled = true;
+      settleLeaseRun(Object.assign({handled:true, submitted:false, jobId:String(lease.jobId || "")}, outcome || {}));
+    };
+    state.leaseRun = leaseRun;
     startHeartbeat(generation);
     try{
       const refinementRequest = browserRefinementRequest(lease.payload);
@@ -790,7 +813,11 @@
         await failLease(lease, state.workerToken, "browser_wasm_ineligible_request", false);
         return false;
       }
-      const portfolio = await runPortfolio(refinementRequest, lease, signal);
+      const portfolio = await runPortfolio(
+        refinementRequest,
+        lease,
+        portfolioController?.signal || signal
+      );
       if(!state.active || state.generation !== generation || state.lease !== lease){
         return false;
       }
@@ -812,6 +839,7 @@
         },
         {timeoutMs:30000}
       );
+      leaseRun.settle({submitted:true, candidateId:String(candidate?.candidateId || "")});
       await fetchJson(
         `/api/agent-helper/v1/leases/${encodeURIComponent(lease.leaseId)}/complete`,
         {
@@ -828,11 +856,15 @@
       );
       return true;
     }catch(_){
+      leaseRun.settle({submitted:false});
       if(state.active && state.generation === generation){
         await failLease(lease, state.workerToken, "browser_wasm_failed", false);
       }
       return false;
     }finally{
+      signal?.removeEventListener?.("abort", abortPortfolio);
+      leaseRun.settle({submitted:false});
+      if(state.leaseRun === leaseRun) state.leaseRun = null;
       clearHeartbeat();
       if(state.lease === lease) state.lease = null;
     }
@@ -974,6 +1006,43 @@
     return probed ? activateExecutor(options) : false;
   }
 
+  async function stopAndSubmitBest(options){
+    const opts = options && typeof options === "object" ? options : {};
+    const expectedJobId = String(opts.jobId || "").trim();
+    const leaseRun = state.leaseRun;
+    if(
+      !leaseRun
+      || leaseRun.settled
+      || !state.active
+      || state.lease !== leaseRun.lease
+      || state.generation !== leaseRun.generation
+      || (expectedJobId && String(leaseRun.lease?.jobId || "") !== expectedJobId)
+    ){
+      return {handled:false, submitted:false, jobId:expectedJobId};
+    }
+    try{ leaseRun.controller?.abort(); }catch(_){ }
+    rejectWorkerWaiters(new Error("browser_wasm_best_effort_stop"));
+    terminateComputeWorkers();
+
+    const timeoutMs = Math.max(1000, Math.min(35000, Number(opts.timeoutMs || 32000) || 32000));
+    let timeout = 0;
+    try{
+      return await Promise.race([
+        leaseRun.completion,
+        new Promise(resolve => {
+          timeout = root.setTimeout(() => resolve({
+            handled:true,
+            submitted:false,
+            timedOut:true,
+            jobId:String(leaseRun.lease?.jobId || expectedJobId)
+          }), timeoutMs);
+        })
+      ]);
+    }finally{
+      if(timeout) root.clearTimeout(timeout);
+    }
+  }
+
   async function closeExecutor(reason, options){
     const opts = options && typeof options === "object" ? options : {};
     if(state.closePromise) return state.closePromise;
@@ -1042,6 +1111,7 @@
     probe:probeExecutor,
     activate:activateExecutor,
     prepare:prepareExecutor,
+    stopAndSubmitBest,
     close:closeExecutor,
     stopForBackground,
     resultDigest,

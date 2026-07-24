@@ -84,12 +84,31 @@ test("desktop commands expose exactly the requested four scheduler hooks", () =>
   );
   assert.deepEqual(
     menuItems.map(item => item.replace(/<[^>]+>/g, "").trim()),
-    ["Buổi 1 tiết", "Số buổi", "Gap"]
+    ["Buổi 1 tiết", "Buổi", "Tiết trống"]
   );
   assert.match(menuItems[0], /runPlannerSchedulerMode\('optimize_singletons', event\)/);
   assert.match(menuItems[1], /runPlannerSchedulerMode\('optimize_sessions', event\)/);
   assert.match(menuItems[2], /runPlannerSchedulerMode\('optimize_gaps', event\)/);
   assert.doesNotMatch(controls, /on(?:mouse|pointer)(?:enter|over|move)=/i);
+});
+
+test("optimize menu actions share stable left-aligned geometry", () => {
+  const menuRule = plannerHtml.match(
+    /body\.planner-shell \.planner-optimize-menu > button\s*\{([^}]*)\}/s
+  );
+  assert.ok(menuRule, "optimize menu item CSS is missing");
+  const css = menuRule[1];
+
+  assert.match(css, /display:\s*flex;/);
+  assert.match(css, /align-items:\s*center;/);
+  assert.match(css, /justify-content:\s*flex-start;/);
+  assert.match(css, /box-sizing:\s*border-box;/);
+  assert.match(css, /width:\s*100%;/);
+  assert.match(css, /min-width:\s*0;/);
+  assert.match(css, /height:\s*34px;/);
+  assert.match(css, /padding:\s*0 10px;/);
+  assert.match(css, /text-align:\s*left;/);
+  assert.match(css, /white-space:\s*nowrap;/);
 });
 
 test("optimize menu toggles by click and forwards only supported modes", () => {

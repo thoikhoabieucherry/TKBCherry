@@ -326,15 +326,9 @@ impl AgentHelperCoordinator {
     ) -> Option<bool> {
         let mut state = self.state.lock().ok()?;
         prune_state(&mut state, now_ms);
-        authenticated_worker(
-            &state,
-            owner,
-            session_binding.trim(),
-            worker_token,
-            now_ms,
-        )
-        .ok()
-        .map(|(_, worker)| worker.eligible)
+        authenticated_worker(&state, owner, session_binding.trim(), worker_token, now_ms)
+            .ok()
+            .map(|(_, worker)| worker.eligible)
     }
 
     /// Authorize at most one global VPS-queue handoff for one authenticated
@@ -519,9 +513,9 @@ impl AgentHelperCoordinator {
         for token_hash in &revoked {
             state.workers.remove(token_hash);
         }
-        state.trusted_handoff_requests.retain(|_, request| {
-            !revoked.contains(&request.worker_token_hash)
-        });
+        state
+            .trusted_handoff_requests
+            .retain(|_, request| !revoked.contains(&request.worker_token_hash));
         clear_orphaned_trusted_handoff_capacity_releases(&mut state);
         release_worker_leases(&mut state.jobs, &revoked);
         !revoked.is_empty()
@@ -550,9 +544,9 @@ impl AgentHelperCoordinator {
             return false;
         }
         state.workers.remove(&token_hash);
-        state.trusted_handoff_requests.retain(|_, request| {
-            request.worker_token_hash != token_hash
-        });
+        state
+            .trusted_handoff_requests
+            .retain(|_, request| request.worker_token_hash != token_hash);
         clear_orphaned_trusted_handoff_capacity_releases(&mut state);
         let revoked = HashSet::from([token_hash]);
         release_worker_leases(&mut state.jobs, &revoked);
@@ -891,10 +885,7 @@ impl AgentHelperCoordinator {
             release_trusted_handoff_capacity_for_job(&mut state, job_id);
             return None;
         }
-        let candidate = state
-            .jobs
-            .remove(job_id)
-            .and_then(|job| job.best_candidate);
+        let candidate = state.jobs.remove(job_id).and_then(|job| job.best_candidate);
         release_trusted_handoff_capacity_for_job(&mut state, job_id);
         candidate
     }
@@ -910,10 +901,7 @@ impl AgentHelperCoordinator {
     ) -> Option<AgentJobExecution> {
         let mut state = self.state.lock().ok()?;
         prune_state(&mut state, now_ms);
-        let job = state
-            .jobs
-            .get(job_id)
-            .filter(|job| job.owner == *owner)?;
+        let job = state.jobs.get(job_id).filter(|job| job.owner == *owner)?;
         if let Some(candidate) = job.best_candidate.clone() {
             return Some(AgentJobExecution::Completed {
                 candidate: Some(candidate),
@@ -1752,6 +1740,20 @@ pub(crate) fn browser_refinement_request_eligible(request_body: &[u8]) -> bool {
     let Some(settings) = request.get("settings").and_then(Value::as_object) else {
         return false;
     };
+    let optimization_focus = settings
+        .get("optimization_focus")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase()
+        .replace(' ', "_")
+        .replace('-', "_");
+    if matches!(
+        optimization_focus.as_str(),
+        "quick" | "complete" | "quick_complete"
+    ) {
+        return false;
+    }
     if settings
         .get("ui_unified_solve_kind")
         .and_then(Value::as_str)
@@ -1906,9 +1908,9 @@ fn prune_state(state: &mut AgentHelperState, now_ms: u64) {
     state
         .workers
         .retain(|token_hash, _| !expired_workers.contains(token_hash));
-    state.trusted_handoff_requests.retain(|_, request| {
-        !expired_workers.contains(&request.worker_token_hash)
-    });
+    state
+        .trusted_handoff_requests
+        .retain(|_, request| !expired_workers.contains(&request.worker_token_hash));
     clear_orphaned_trusted_handoff_capacity_releases(state);
     for job in state.jobs.values_mut() {
         for task in &mut job.tasks {
@@ -2074,9 +2076,14 @@ mod tests {
         let request = browser_refinement_request();
         assert!(browser_refinement_request_eligible(&request));
 
+        let mut quick: Value = serde_json::from_slice(&request).unwrap();
+        quick["settings"]["optimization_focus"] = serde_json::json!("quick_complete");
+        assert!(!browser_refinement_request_eligible(
+            &serde_json::to_vec(&quick).unwrap()
+        ));
+
         let mut fresh: Value = serde_json::from_slice(&request).unwrap();
-        fresh["settings"]["ui_unified_solve_kind"] =
-            serde_json::json!("fresh_complete_first");
+        fresh["settings"]["ui_unified_solve_kind"] = serde_json::json!("fresh_complete_first");
         assert!(!browser_refinement_request_eligible(
             &serde_json::to_vec(&fresh).unwrap()
         ));
@@ -2089,12 +2096,10 @@ mod tests {
         ));
 
         let mut forged: Value = serde_json::from_slice(&request).unwrap();
-        forged["data"]["tkbSolverResult"]["lessons"] =
-            serde_json::json!([{"classId":"6A"}]);
+        forged["data"]["tkbSolverResult"]["lessons"] = serde_json::json!([{"classId":"6A"}]);
         assert!(!browser_refinement_request_eligible(
             &serde_json::to_vec(&forged).unwrap()
         ));
-
     }
 
     #[test]
@@ -2622,24 +2627,12 @@ mod tests {
             1_000,
         ));
         let worker = coordinator
-            .register_upgrade_worker(
-                &owner,
-                &binding,
-                "old-pc",
-                "Old PC",
-                1,
-                1_000,
-            )
+            .register_upgrade_worker(&owner, &binding, "old-pc", "Old PC", 1, 1_000)
             .unwrap();
 
         assert_eq!(coordinator.online_worker_count(&owner, 1_001), 0);
         assert_eq!(
-            coordinator.worker_eligibility(
-                &owner,
-                &binding,
-                &worker.worker_token,
-                1_001
-            ),
+            coordinator.worker_eligibility(&owner, &binding, &worker.worker_token, 1_001),
             Some(false)
         );
         assert!(coordinator
@@ -2674,12 +2667,7 @@ mod tests {
             .claim_work(&owner, &binding, &first.worker_token, 1_001)
             .unwrap();
 
-        assert!(coordinator.revoke_worker_identity(
-            &owner,
-            &binding,
-            "PC-1",
-            1_002
-        ));
+        assert!(coordinator.revoke_worker_identity(&owner, &binding, "PC-1", 1_002));
         assert_eq!(coordinator.online_worker_count(&owner, 1_002), 0);
         assert!(matches!(
             coordinator.job_execution("revoked-worker-job", &owner, 1_002),
@@ -2809,11 +2797,7 @@ mod tests {
         ));
         assert!(!coordinator.take_over_for_vps("handoff-job", &owner, 1_002));
         assert!(matches!(
-            coordinator.job_execution(
-                "handoff-job",
-                &owner,
-                lease.lease_expires_at_ms + 1,
-            ),
+            coordinator.job_execution("handoff-job", &owner, lease.lease_expires_at_ms + 1,),
             Some(AgentJobExecution::Queued)
         ));
         assert!(coordinator.take_over_for_vps(
@@ -2821,7 +2805,9 @@ mod tests {
             &owner,
             lease.lease_expires_at_ms + 1,
         ));
-        assert!(coordinator.job_execution("handoff-job", &owner, lease.lease_expires_at_ms + 2).is_none());
+        assert!(coordinator
+            .job_execution("handoff-job", &owner, lease.lease_expires_at_ms + 2)
+            .is_none());
     }
 
     #[test]
@@ -2847,7 +2833,12 @@ mod tests {
         // replacement Agent can still claim and finish it before takeover's
         // atomic check; that result must win over a VPS restart.
         let replacement = coordinator
-            .claim_work(&owner, &binding, &worker.worker_token, lease.lease_expires_at_ms + 1)
+            .claim_work(
+                &owner,
+                &binding,
+                &worker.worker_token,
+                lease.lease_expires_at_ms + 1,
+            )
             .unwrap();
         assert!(coordinator
             .accept_submission(
@@ -2868,9 +2859,7 @@ mod tests {
         ));
         assert!(matches!(
             coordinator.job_execution("handoff-race", &owner, lease.lease_expires_at_ms + 3),
-            Some(AgentJobExecution::Completed {
-                candidate: Some(_)
-            })
+            Some(AgentJobExecution::Completed { candidate: Some(_) })
         ));
     }
 
