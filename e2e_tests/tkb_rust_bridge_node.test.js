@@ -2080,8 +2080,108 @@ test("automatic solver ignores legacy Fast preference and starts quality complet
   assert.equal(plan.settings.ui_allow_quality_after_single_pass, false);
   assert.equal(plan.settings.target_gap1_sessions, 0);
   assert.equal(plan.settings.optimization_accept_gap1_sessions, 0);
-  assert.equal(plan.settings.quality_priority_order, "one_period_gap2_teacher_sessions_gap1");
+  assert.equal(plan.settings.quality_priority_order, "one_period_teacher_sessions_gap2_gap1");
+  assert.equal(plan.settings.optimization_two_stage_teacher_quality, true);
   assert.equal(plan.settings.optimization_benders_disable_session_early_stop, true);
+});
+
+test("desktop scheduler modes map to one focused backend contract", () => {
+  const data = makeData(2);
+  const subject = data.mon[0].ten;
+  data.tkb = {
+    L1:{
+      thu2:{sang:[subject, "", "", "", ""], chieu:["", "", "", "", ""]},
+      thu3:{sang:[subject, "", "", "", ""], chieu:["", "", "", "", ""]}
+    }
+  };
+  data.tkbSolverResult = {
+    metrics:{
+      scheduled_periods:2,
+      expected_periods:2,
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      teacher_sessions:2,
+      one_period_teacher_sessions:2,
+      gap_distribution:{"0":2}
+    },
+    validation:{hard_ok:true},
+    solver:{runtime_settings:{}}
+  };
+  const {hooks} = loadBridge(data);
+
+  const modes = {
+    optimize_singletons:"singletons",
+    optimize_sessions:"sessions",
+    optimize_gaps:"gaps"
+  };
+  Object.entries(modes).forEach(([mode, focus]) => {
+    const base = hooks.buildAutomaticAutoSortPlan(data);
+    const plan = hooks.applyRequestedSolveModeToPlan(base, mode, data, 2);
+    assert.equal(plan.kind, "refine_complete");
+    assert.equal(plan.settings.ui_requested_solve_mode, mode);
+    assert.equal(plan.settings.optimization_focus, focus);
+    assert.equal(plan.settings.ui_use_existing_complete_incumbent, true);
+    assert.equal(plan.settings.ui_return_complete_incumbent_on_existing_optimize_failure, true);
+  });
+
+  const quickData = makeData(2);
+  const quick = hooks.applyRequestedSolveModeToPlan(
+    hooks.buildAutomaticAutoSortPlan(quickData),
+    "quick_complete",
+    quickData,
+    2
+  );
+  assert.equal(quick.settings.optimization_focus, "quick_complete");
+  assert.equal(quick.settings.optimization_first_click_singleton_cleanup, true);
+  assert.equal(quick.settings.optimization_first_click_gap_cleanup, false);
+  assert.equal(quick.settings.optimization_first_click_strict_quality_gate, false);
+  assert.equal(quick.settings.optimization_quick_complete_allow_gap2_debt, true);
+  assert.equal(quick.settings.ui_progress_metric_focus, "scheduled_periods");
+  assert.equal(quick.settings.ui_progress_metric_current, 0);
+  assert.equal(quick.settings.ui_progress_metric_target, 2);
+  const effectiveFreshQuick = hooks.effectiveSettingsForSolve(quick.settings, quickData);
+  assert.equal(effectiveFreshQuick.period_max_teacher_gap, "off");
+  assert.equal(effectiveFreshQuick.minimize_teacher_gaps, false);
+
+  const completeQuick = hooks.applyRequestedSolveModeToPlan(
+    hooks.buildAutomaticAutoSortPlan(data),
+    "quick_complete",
+    data,
+    2
+  );
+  const effectiveCompleteQuick = hooks.effectiveSettingsForSolve(
+    completeQuick.settings,
+    data
+  );
+  assert.equal(completeQuick.kind, "refine_complete");
+  assert.equal(effectiveCompleteQuick.ui_unified_solve_kind, "refine_complete");
+  assert.equal(effectiveCompleteQuick.period_max_teacher_gap, "off");
+  assert.equal(effectiveCompleteQuick.minimize_teacher_gaps, false);
+  assert.equal(effectiveCompleteQuick.max_one_period_sessions, 0);
+  assert.equal(effectiveCompleteQuick.strict_one_period_sessions_cap, true);
+  assert.equal(effectiveCompleteQuick.enforce_max_one_period_sessions, true);
+});
+
+test("metric progress uses work quality rather than elapsed time", () => {
+  const {hooks} = loadBridge(makeData(2));
+  assert.equal(hooks.metricProgressPercent("scheduled_periods", 783, 1566, 1566), 50);
+  assert.equal(hooks.metricProgressPercent("teacher_sessions", 470, 432, 509), 92);
+  assert.equal(hooks.metricProgressPercent("teacher_gap2_sessions", 0, 0, 7), 100);
+  assert.equal(hooks.metricProgressPercent("teacher_gap1_sessions", 34, 0, 68), 50);
+
+  const normalized = hooks.normalizeMetricProgressSnapshot({
+    optimizationFocus:"teacher_sessions",
+    metricCurrent:470,
+    metricTarget:432,
+    metricBaseline:509
+  });
+  assert.equal(normalized.focus, "teacher_sessions");
+  assert.equal(normalized.current, 470);
+  assert.equal(normalized.target, 432);
+  assert.equal(normalized.baseline, 509);
+  assert.equal(normalized.percent, 92);
 });
 
 test("large unified first click uses one bounded 130-second quality-gate search", () => {
@@ -2529,10 +2629,10 @@ test("every complete terminal path uses the concise completion notice", () => {
   assert.match(successPath, /setStatus\(SOLVE_COMPLETE_MESSAGE,\s*"ok"\)/);
 
   const incumbentGuard = source.slice(
-    source.indexOf("shouldKeepIncumbentForTeacherQuality(payload, incumbentPayload, incumbentQualityGuard)"),
+    source.indexOf("shouldKeepIncumbentForTeacherQuality(payload, incumbentPayload, incumbentQualityGuard, settings)"),
     source.indexOf(
       "completion = payloadCompletion(payload);",
-      source.indexOf("shouldKeepIncumbentForTeacherQuality(payload, incumbentPayload, incumbentQualityGuard)")
+      source.indexOf("shouldKeepIncumbentForTeacherQuality(payload, incumbentPayload, incumbentQualityGuard, settings)")
     )
   );
   assert.match(incumbentGuard, /const message\s*=\s*SOLVE_COMPLETE_MESSAGE/);
@@ -2893,7 +2993,8 @@ test("automatic solver refines a demand-valid complete timetable as a soft incum
   assert.equal(effective.ui_incremental_refine_progress, true);
   assert.equal(effective.optimization_refine_try_lower_session_cap, true);
   assert.equal(effective.optimization_benders_lean_refinement_periods, true);
-  assert.equal(effective.quality_priority_order, "one_period_gap2_teacher_sessions_gap1");
+  assert.equal(effective.quality_priority_order, "one_period_teacher_sessions_gap2_gap1");
+  assert.equal(effective.optimization_two_stage_teacher_quality, true);
   assert.equal(effective.target_gap1_sessions, 0);
   assert.equal(effective.gap1_quality_target_explicit, true);
   assert.equal(effective.ui_unified_refine_ceiling_seconds, 180);
@@ -4717,6 +4818,38 @@ test("unified quality keeps fewer teacher sessions ahead of gap-1 polish", () =>
   assert.equal(hooks.payloadBetterOrEqualTeacherQuality(debtTradeoff, dirty), true);
 });
 
+test("two-stage quality accepts session compression then requires same-cap gap cleanup", () => {
+  const data = makeData(1000);
+  const {hooks} = loadBridge(data);
+  const priority = "one_period_teacher_sessions_gap2_gap1";
+  const payload = (teacherSessions, gap1, gap2Plus = 0) => ({
+    solver:{runtime_settings:{quality_priority_order:priority}},
+    metrics:{
+      scheduled_periods:1000,
+      expected_periods:1000,
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      teacher_sessions:teacherSessions,
+      one_period_teacher_sessions:0,
+      gap_distribution:{"0":Math.max(0, teacherSessions - gap1 - gap2Plus), "1":gap1, "2":gap2Plus}
+    },
+    validation:{hard_ok:true}
+  });
+  const incumbent = payload(509, 83, 0);
+  const phaseS = payload(488, 73, 2);
+  const phaseG = payload(488, 69, 1);
+  const sameCapRegression = payload(509, 84, 1);
+  const sessionRegression = payload(489, 0, 0);
+
+  assert.equal(hooks.payloadStrictlyBetterTeacherQuality(phaseS, incumbent), true);
+  assert.equal(hooks.shouldKeepIncumbentForTeacherQuality(phaseS, incumbent, {complete:true}), false);
+  assert.equal(hooks.payloadStrictlyBetterTeacherQuality(phaseG, phaseS), true);
+  assert.equal(hooks.payloadStrictlyBetterTeacherQuality(sameCapRegression, incumbent), false);
+  assert.equal(hooks.payloadStrictlyBetterTeacherQuality(sessionRegression, phaseS), false);
+});
+
 test("best-so-far quality rejects every visible regression regardless of runtime", () => {
   const data = makeData(1000);
   const {hooks} = loadBridge(data);
@@ -4906,7 +5039,8 @@ test("long unified sorting keeps quality strict first but accepts unavoidable de
 
   assert.equal(unified.ui_unified_auto_sort, true);
   assert.equal(unified.ui_bounded_fresh_accept_quality_debt, true);
-  assert.equal(unified.quality_priority_order, "one_period_gap2_teacher_sessions_gap1");
+  assert.equal(unified.quality_priority_order, "one_period_teacher_sessions_gap2_gap1");
+  assert.equal(unified.optimization_two_stage_teacher_quality, true);
   assert.equal(unified.require_complete_schedule, true);
   assert.equal(unified.minimize_one_period_sessions, true);
   assert.equal(unified.max_one_period_sessions, "off");
@@ -9295,7 +9429,7 @@ test("resumed progress uses server start time and excludes earlier FIFO wait", (
   assert.equal(window.__TKB_RUST_PROGRESS_STATE.label, "20 giây");
 });
 
-test("live VPS stages stay in debug state while the visible label remains time-only", () => {
+test("live VPS stages keep time visible without inventing elapsed-time percent", () => {
   const data = makeData(2);
   const clock = createFakeClock();
   const progress = createProgressDocument(clock);
@@ -9319,7 +9453,7 @@ test("live VPS stages stay in debug state while the visible label remains time-o
   clock.advance(30_000);
   hooks.tickEstimatedProgress();
   const budgetPercent = window.__TKB_RUST_PROGRESS_STATE.percent;
-  assert.ok(budgetPercent >= 25 && budgetPercent < 70);
+  assert.ok(budgetPercent >= 4 && budgetPercent <= 12);
 
   const stages = [
     [1, "input:loaded"],
@@ -9368,8 +9502,7 @@ test("live VPS stages stay in debug state while the visible label remains time-o
   hooks.tickEstimatedProgress();
   const afterTick = window.__TKB_RUST_PROGRESS_STATE;
   assert.equal(afterTick.label, "31 giây");
-  assert.ok(afterTick.percent >= budgetPercent, "a live stage update must never make the estimated ring regress");
-  assert.ok(afterTick.percent < 70, "a backend elapsedMs near the budget must not jump the ring forward");
+  assert.equal(afterTick.percent, budgetPercent, "elapsed time must not masquerade as solve completion");
 });
 
 test("pending result and solver-state responses forward their latest VPS progress snapshot", async () => {
@@ -9544,7 +9677,7 @@ test("the owner tab adopts the canonical VPS clock when FIFO state turns running
   assert.equal(state.canonicalServerProgress, true);
   assert.equal(state.phase, "running");
   assert.equal(state.label, "56 giây");
-  assert.ok(state.percent > 12, `canonical admission must advance past the queue cap: ${state.percent}`);
+  assert.equal(state.percent, 12, "canonical admission waits for a real metric snapshot");
 });
 
 test("all pending VPS response paths hand progress to the live-progress recorder", () => {
@@ -9630,7 +9763,7 @@ test("two browsers on one canonical server job converge from server start and bu
   assert.ok(desktop.percent < 24, `canonical 4-second progress must replace stale 94%, got ${desktop.percent}`);
 });
 
-test("60-second and 120-second VPS budgets both move smoothly to 99 percent", () => {
+test("60-second and 120-second VPS budgets do not manufacture percent from time", () => {
   function canonicalProgress(budgetSeconds, elapsedSeconds){
     const data = makeData(2);
     const clock = createFakeClock(1_700_000_000_000);
@@ -9659,9 +9792,9 @@ test("60-second and 120-second VPS budgets both move smoothly to 99 percent", ()
   const oneTwentyDone = canonicalProgress(120, 120);
 
   assert.equal(sixtyHalf.percent, oneTwentyHalf.percent);
-  assert.ok(sixtyHalf.percent >= 55 && sixtyHalf.percent <= 57);
-  assert.equal(sixtyDone.percent, 99);
-  assert.equal(oneTwentyDone.percent, 99);
+  assert.ok(sixtyHalf.percent >= 4 && sixtyHalf.percent <= 12);
+  assert.equal(sixtyDone.percent, sixtyHalf.percent);
+  assert.equal(oneTwentyDone.percent, oneTwentyHalf.percent);
   assert.equal(sixtyDone.phase, "server_wait");
   assert.equal(oneTwentyDone.phase, "server_wait");
 });
@@ -9699,7 +9832,7 @@ test("pre-admission preparation stays low before canonical running begins", () =
   assert.ok(window.__TKB_RUST_PROGRESS_STATE.percent < 20);
 });
 
-test("backend admission preserves a fresh click percent and advances smoothly from that anchor", () => {
+test("backend admission preserves preparation percent until a metric snapshot arrives", () => {
   const data = makeData(2);
   const clock = createFakeClock();
   const {window, hooks} = loadBridge(data, null, clock);
@@ -9738,16 +9871,24 @@ test("backend admission preserves a fresh click percent and advances smoothly fr
   hooks.tickEstimatedProgress();
   const afterOneBackendSecond = Object.assign({}, window.__TKB_RUST_PROGRESS_STATE);
   assert.equal(afterOneBackendSecond.label, "2 giây");
-  assert.ok(afterOneBackendSecond.percent > admitted.percent);
-  assert.ok(
-    afterOneBackendSecond.percent < 12,
-    `the budget curve must grow from the admitted ${admitted.percent}% anchor, got ${afterOneBackendSecond.percent}%`
-  );
+  assert.equal(afterOneBackendSecond.percent, admitted.percent);
+
+  hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"session_cp_sat:metric",
+    sequence:1,
+    elapsedMs:1_000,
+    optimizationFocus:"scheduled_periods",
+    metricCurrent:1,
+    metricTarget:2,
+    metricBaseline:2
+  });
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 50);
 
   clock.advance(59_000);
   hooks.tickEstimatedProgress();
   const afterBudget = window.__TKB_RUST_PROGRESS_STATE;
-  assert.equal(afterBudget.percent, 99);
+  assert.equal(afterBudget.percent, 50);
   assert.equal(afterBudget.phase, "server_wait");
   assert.equal(afterBudget.label, "1:01");
 });
@@ -9913,7 +10054,7 @@ test("reattached active jobs keep one stable sorting status", async () => {
   assert.doesNotMatch(statusWrites.join(" | "), /n\u1ed1i|theo d\u00f5i/iu);
 });
 
-test("queue and solver admission keep one continuous click timer and monotonic progress", () => {
+test("queue and solver admission keep one timer while percent waits for solver metrics", () => {
   const data = makeData(2);
   const clock = createFakeClock();
   const {window, hooks} = loadBridge(data, null, clock);
@@ -9947,7 +10088,18 @@ test("queue and solver admission keep one continuous click timer and monotonic p
   clock.advance(1_000);
   hooks.tickEstimatedProgress();
   assert.equal(window.__TKB_RUST_PROGRESS_STATE.label, "13 giây");
-  assert.ok(window.__TKB_RUST_PROGRESS_STATE.percent > queuedPercent);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, queuedPercent);
+  hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"teacher_session_opt:best",
+    sequence:1,
+    elapsedMs:1_000,
+    optimizationFocus:"teacher_sessions",
+    metricCurrent:470,
+    metricTarget:432,
+    metricBaseline:509
+  });
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 92);
 });
 
 test("same-click API replay preserves the visible timer and progress floor", () => {

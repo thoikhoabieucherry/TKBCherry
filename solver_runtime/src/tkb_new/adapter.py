@@ -1318,6 +1318,247 @@ def _teacher_quality_uses_balanced_envelope(settings: Mapping[str, Any]) -> bool
     return priority == "one_period_gap2_teacher_sessions_gap1"
 
 
+def _teacher_quality_uses_two_stage_sessions_first(settings: Mapping[str, Any]) -> bool:
+    priority = str(settings.get("quality_priority_order") or "").strip().casefold()
+    return priority == "one_period_teacher_sessions_gap2_gap1"
+
+
+_OPTIMIZATION_FOCUS_ALIASES = {
+    "": "automatic",
+    "auto": "automatic",
+    "automatic": "automatic",
+    "quick": "quick_complete",
+    "quick_complete": "quick_complete",
+    "quickcomplete": "quick_complete",
+    "complete": "quick_complete",
+    "singleton": "singletons",
+    "singletons": "singletons",
+    "one_period": "singletons",
+    "one_period_sessions": "singletons",
+    "one_period_teacher_sessions": "singletons",
+    "session": "sessions",
+    "sessions": "sessions",
+    "teacher_sessions": "sessions",
+    "gap": "gaps",
+    "gaps": "gaps",
+    "teacher_gaps": "gaps",
+}
+
+
+def _normalized_optimization_focus(settings: Mapping[str, Any] | None) -> str:
+    raw = str((settings or {}).get("optimization_focus") or "").strip().casefold()
+    normalized = raw.replace("-", "_").replace(" ", "_")
+    return _OPTIMIZATION_FOCUS_ALIASES.get(normalized, "automatic")
+
+
+def _settings_for_optimization_focus(settings: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Translate the UI focus contract into existing scheduler settings."""
+
+    focused = dict(settings or {})
+    focus = _normalized_optimization_focus(focused)
+    focused["optimization_focus"] = focus
+    if focus == "automatic":
+        return focused
+
+    focused["auto_sort_mode"] = "teacher_session_opt"
+    focused["ui_unified_auto_sort"] = True
+    if focus == "quick_complete":
+        focused.update(
+            {
+                "auto_sort_strategy": "fresh_complete_first",
+                "ui_unified_solve_kind": "fresh_complete_first",
+                "ui_unified_first_click_quality": True,
+                "ui_stop_after_first_complete_schedule": True,
+                "optimization_continue_quality_search": False,
+                "optimization_two_stage_teacher_quality": False,
+            }
+        )
+        focused.setdefault("optimization_first_click_quality_minimum_seconds", 12)
+        focused.setdefault("optimization_first_click_quality_time_limit_seconds", 15)
+        focused.setdefault("optimization_first_click_local_lns_time_limit_seconds", 4)
+        return focused
+
+    focused.update(
+        {
+            "auto_sort_strategy": "continue_teacher_quality_from_incumbent",
+            "ui_unified_solve_kind": "refine_complete",
+            "ui_use_existing_complete_incumbent": True,
+            "optimization_use_existing_incumbent": True,
+            "optimization_two_stage_teacher_quality": True,
+            "optimization_continue_quality_search": True,
+            "quality_priority_order": "one_period_teacher_sessions_gap2_gap1",
+        }
+    )
+    teacher_target_keys = (
+        "target_teacher_sessions",
+        "optimization_accept_teacher_sessions",
+        "optimization_default_accept_teacher_sessions",
+        "session_early_stop_teacher_sessions",
+    )
+    gap_target_keys = (
+        "target_gap1_sessions",
+        "target_gap2_plus_sessions",
+        "optimization_accept_gap1_sessions",
+        "optimization_default_accept_gap1_sessions",
+        "gap1_quality_target_explicit",
+    )
+    if focus == "sessions":
+        for key in gap_target_keys:
+            focused.pop(key, None)
+    elif focus == "gaps":
+        for key in teacher_target_keys:
+            focused.pop(key, None)
+        focused["optimization_refine_try_lower_session_cap"] = False
+        focused.setdefault("target_gap1_sessions", 0)
+    elif focus == "singletons":
+        for key in (*teacher_target_keys, *gap_target_keys):
+            focused.pop(key, None)
+        focused["target_one_period_teacher_sessions"] = 0
+    return focused
+
+
+def _clamped_percent(value: float) -> float:
+    if not math.isfinite(value):
+        return 0.0
+    return round(max(0.0, min(100.0, float(value))), 1)
+
+
+def _optimization_metric_payload(
+    optimization_focus: str,
+    metrics: Mapping[str, Any],
+    *,
+    baseline_metrics: Mapping[str, Any] | None = None,
+    session_target: int | None = None,
+    metric_kind: str | None = None,
+) -> dict[str, Any]:
+    """Return stable, goal-based progress fields for the planner UI."""
+
+    focus = _OPTIMIZATION_FOCUS_ALIASES.get(
+        str(optimization_focus or "").strip().casefold().replace("-", "_"),
+        "automatic",
+    )
+    kind = str(metric_kind or focus).strip().casefold()
+    baseline = baseline_metrics if isinstance(baseline_metrics, Mapping) else metrics
+
+    baseline_value = 0
+    if kind == "quick_complete":
+        current = max(0, _metric_int(metrics, "scheduled_periods", 0))
+        target = max(0, _metric_int(metrics, "expected_periods", current))
+        baseline_value = max(
+            current,
+            _metric_int(baseline, "scheduled_periods", current),
+        )
+        percent = 100.0 if target <= 0 else (current * 100.0 / target)
+    elif kind == "singletons":
+        current = max(0, _metric_int(metrics, "one_period_teacher_sessions", 0))
+        target = 0
+        initial = max(
+            current,
+            _metric_int(baseline, "one_period_teacher_sessions", current),
+        )
+        baseline_value = initial
+        percent = 100.0 if current == 0 else (
+            0.0 if initial <= 0 else (initial - current) * 100.0 / initial
+        )
+    elif kind == "sessions":
+        current = max(0, _metric_int(metrics, "teacher_sessions", 0))
+        target = max(0, int(session_target or 0))
+        baseline_value = max(current, _metric_int(baseline, "teacher_sessions", current))
+        if current <= 0:
+            percent = 100.0 if target <= 0 else 0.0
+        elif target <= 0:
+            percent = 0.0
+        elif current <= target:
+            percent = 100.0
+        else:
+            # A lower session count is better. For example, 432 / 470 is
+            # 91.9%, while the inverse ratio would incorrectly exceed 100%.
+            percent = target * 100.0 / current
+    else:
+        current_gap2 = max(0, _teacher_session_opt_gap2_plus(metrics))
+        current_gap1 = max(0, _teacher_session_opt_gap1(metrics))
+        baseline_gap2 = max(0, _teacher_session_opt_gap2_plus(baseline))
+        baseline_gap1 = max(0, _teacher_session_opt_gap1(baseline))
+        # Gap cleanup is explicitly staged: eliminate every severe gap first,
+        # then report the remaining one-period gaps as a fresh metric. Mixing
+        # both buckets made a visible "gap-2" counter show 107 when only six
+        # severe gaps existed on the default school.
+        if current_gap2 > 0:
+            current = current_gap2
+            initial = max(current, baseline_gap2)
+        else:
+            current = current_gap1
+            initial = max(current, baseline_gap1)
+        target = 0
+        baseline_value = initial
+        percent = 100.0 if current == 0 else (
+            0.0 if initial <= 0 else (initial - current) * 100.0 / initial
+        )
+
+    progress_focus = {
+        "quick_complete": "scheduled_periods",
+        "singletons": "one_period_teacher_sessions",
+        "sessions": "teacher_sessions",
+    }.get(focus)
+    if progress_focus is None:
+        if kind == "quick_complete":
+            progress_focus = "scheduled_periods"
+        elif kind == "singletons":
+            progress_focus = "one_period_teacher_sessions"
+        elif kind == "sessions":
+            progress_focus = "teacher_sessions"
+        else:
+            progress_focus = (
+                "teacher_gap2_sessions"
+                if _teacher_session_opt_gap2_plus(metrics) > 0
+                else "teacher_gap1_sessions"
+            )
+    return {
+        "optimizationFocus": progress_focus,
+        "metricCurrent": current,
+        "metricTarget": target,
+        "metricBaseline": baseline_value,
+        "metricPercent": _clamped_percent(percent),
+    }
+
+
+def _teacher_two_stage_gap_quality(metrics: Mapping[str, Any]) -> tuple[int, int, int, int, int, int]:
+    gap_distribution = metrics.get("gap_distribution")
+    distribution = gap_distribution if isinstance(gap_distribution, Mapping) else {}
+    severe_gap_periods = sum(
+        max(0, _to_int(gap, 0)) * max(0, _to_int(count, 0))
+        for gap, count in distribution.items()
+        if _to_int(gap, 0) >= 2
+    )
+    return (
+        _teacher_session_opt_gap2_plus(metrics),
+        severe_gap_periods,
+        _teacher_session_opt_gap1(metrics),
+        _gap_total(metrics),
+        _metric_int(metrics, "teacher_gap1_session_imbalance", 10**9),
+        _metric_int(metrics, "teacher_gap_imbalance", 10**9),
+    )
+
+
+def _teacher_two_stage_sessions_first_better(
+    candidate: Mapping[str, Any],
+    incumbent: Mapping[str, Any],
+) -> bool:
+    """Accept a complete refinement by singleton, sessions, then gap quality."""
+
+    candidate_one = _metric_int(candidate, "one_period_teacher_sessions", 10**9)
+    incumbent_one = _metric_int(incumbent, "one_period_teacher_sessions", 10**9)
+    if candidate_one > incumbent_one:
+        return False
+    candidate_sessions = _metric_int(candidate, "teacher_sessions", 10**9)
+    incumbent_sessions = _metric_int(incumbent, "teacher_sessions", 10**9)
+    if candidate_one < incumbent_one:
+        return True
+    if candidate_sessions != incumbent_sessions:
+        return candidate_sessions < incumbent_sessions
+    return _teacher_two_stage_gap_quality(candidate) < _teacher_two_stage_gap_quality(incumbent)
+
+
 def _teacher_session_opt_better(candidate: Mapping[str, Any], incumbent: Mapping[str, Any]) -> bool:
     return _teacher_session_opt_quality(candidate) < _teacher_session_opt_quality(incumbent)
 
@@ -1435,6 +1676,87 @@ def _teacher_session_opt_good_enough(
     if accept_gap1_sessions is not None and _teacher_session_opt_gap1(metrics) > accept_gap1_sessions:
         return False
     return True
+
+
+def _optimization_focus_goal_status(
+    optimization_focus: str,
+    metrics: Mapping[str, Any],
+    *,
+    target_teacher_sessions: int | None,
+    target_gap1_sessions: int | None,
+    accept_teacher_sessions: int | None,
+    accept_gap1_sessions: int | None,
+) -> tuple[bool, bool]:
+    """Evaluate only the quality dimensions owned by the requested focus."""
+
+    focus = _OPTIMIZATION_FOCUS_ALIASES.get(
+        str(optimization_focus or "").strip().casefold().replace("-", "_"),
+        "automatic",
+    )
+    complete = (
+        _complete_schedule_metrics_acceptable(metrics)
+        and _metric_int(metrics, "unassigned_periods", 0) == 0
+    )
+    if focus == "quick_complete":
+        achieved = (
+            complete
+            and _metric_int(metrics, "one_period_teacher_sessions", 10**9) == 0
+        )
+        return achieved, achieved
+    if focus == "singletons":
+        achieved = (
+            complete
+            and _metric_int(metrics, "one_period_teacher_sessions", 10**9) == 0
+        )
+        return achieved, achieved
+    if focus == "sessions":
+        base_ok = (
+            complete
+            and _metric_int(metrics, "one_period_teacher_sessions", 10**9) == 0
+        )
+        current = _metric_int(metrics, "teacher_sessions", 10**9)
+        return (
+            bool(
+                base_ok
+                and target_teacher_sessions is not None
+                and current <= target_teacher_sessions
+            ),
+            bool(
+                base_ok
+                and accept_teacher_sessions is not None
+                and current <= accept_teacher_sessions
+            ),
+        )
+    if focus == "gaps":
+        base_ok = complete and _teacher_session_opt_gap2_plus(metrics) == 0
+        current_gap1 = _teacher_session_opt_gap1(metrics)
+        target_met = bool(
+            base_ok
+            and (
+                target_gap1_sessions is None
+                or current_gap1 <= target_gap1_sessions
+            )
+        )
+        good_enough = bool(
+            base_ok
+            and (
+                accept_gap1_sessions is None
+                or current_gap1 <= accept_gap1_sessions
+            )
+        )
+        return target_met, good_enough
+    return (
+        _teacher_session_opt_target_met(
+            metrics,
+            target_teacher_sessions=target_teacher_sessions,
+            target_gap1_sessions=target_gap1_sessions,
+        ),
+        _teacher_session_opt_good_enough(
+            metrics,
+            accept_teacher_sessions=accept_teacher_sessions,
+            accept_gap1_sessions=accept_gap1_sessions,
+        ),
+    )
 
 
 def _teacher_session_opt_goal_satisfied(
@@ -5351,6 +5673,13 @@ def _normalized_auto_sort_mode(settings: Mapping[str, Any] | None) -> str:
 
 
 def _is_teacher_session_opt_mode(settings: Mapping[str, Any] | None) -> bool:
+    if _normalized_optimization_focus(settings) in {
+        "quick_complete",
+        "singletons",
+        "sessions",
+        "gaps",
+    }:
+        return True
     return _normalized_auto_sort_mode(settings) in {
         "teacher_session_opt",
         "teacher_sessions_opt",
@@ -6581,6 +6910,18 @@ def _solve_teacher_session_benders_candidate(
     stop_on_first_quality_gate_clean = _truthy_setting(
         settings.get("optimization_benders_stop_on_first_quality_gate_clean")
     )
+    allow_gap2_quality_gate = _truthy_setting(
+        settings.get("optimization_benders_allow_gap2_quality_gate")
+    )
+
+    def quality_gate_clean(metrics: Mapping[str, Any]) -> bool:
+        if not allow_gap2_quality_gate:
+            return _teacher_session_opt_quality_gates_clean(metrics)
+        return (
+            _complete_schedule_metrics_acceptable(metrics)
+            and _metric_int(metrics, "unassigned_periods", 0) == 0
+            and _metric_int(metrics, "one_period_teacher_sessions", 10**9) == 0
+        )
     disable_session_early_stop = _truthy_setting(
         settings.get("optimization_benders_disable_session_early_stop")
     ) or continue_quality_search
@@ -6611,6 +6952,9 @@ def _solve_teacher_session_benders_candidate(
     session_feasibility_only = _truthy_setting(
         settings.get("optimization_benders_session_feasibility_only")
     )
+    lock_teacher_sessions = _truthy_setting(
+        settings.get("optimization_benders_lock_teacher_sessions")
+    )
     session_minimize_one_period_sessions = _truthy_setting(
         settings.get(
             "optimization_benders_minimize_one_period_sessions",
@@ -6627,6 +6971,24 @@ def _solve_teacher_session_benders_candidate(
     )
     period_max_teacher_gap = _period_max_teacher_gap_setting(settings, default=1)
     period_minimize_teacher_gaps = _truthy_setting(settings.get("minimize_teacher_gaps", "1"))
+    period_cp_sat_minimize_teacher_gaps = _truthy_setting(
+        settings.get("optimization_benders_minimize_period_gaps")
+    )
+    period_cp_sat_gap_priority_absolute = _truthy_setting(
+        settings.get("optimization_benders_period_gap_priority_absolute")
+    )
+    period_cp_sat_max_gap_periods = _nonnegative_setting(
+        settings,
+        "optimization_benders_max_teacher_gap_periods",
+    )
+    period_cp_sat_max_gap1_sessions = _nonnegative_setting(
+        settings,
+        "optimization_benders_max_teacher_gap1_sessions",
+    )
+    period_cp_sat_max_gap2_plus_sessions = _nonnegative_setting(
+        settings,
+        "optimization_benders_max_teacher_gap2_plus_sessions",
+    )
     cut_scope = str(settings.get("optimization_benders_cut_scope") or "aggressive")
     raw_max_one_period_sessions = settings.get(
         "max_one_period_sessions",
@@ -6692,7 +7054,7 @@ def _solve_teacher_session_benders_candidate(
         isinstance(incumbent_payload, Mapping)
         and isinstance(incumbent_metrics, Mapping)
         and _complete_payload_metrics_acceptable(incumbent_payload)
-        and _teacher_session_opt_quality_gates_clean(incumbent_metrics)
+        and quality_gate_clean(incumbent_metrics)
     )
 
     def record_stagnation(
@@ -6704,7 +7066,7 @@ def _solve_teacher_session_benders_candidate(
         fallback_metrics = best_metrics if isinstance(best_metrics, Mapping) else incumbent_metrics
         fallback_is_safe = bool(
             isinstance(fallback_metrics, Mapping)
-            and _teacher_session_opt_quality_gates_clean(fallback_metrics)
+            and quality_gate_clean(fallback_metrics)
             and (best_metrics is not None or incumbent_is_safe_stagnation_fallback)
         )
         if accept_stagnant_limit <= 0 or not fallback_is_safe:
@@ -6808,8 +7170,11 @@ def _solve_teacher_session_benders_candidate(
                 ctx.school_data,
                 rules=effective_rules,
                 max_teacher_sessions=int(cap),
+                min_teacher_sessions=(int(cap) if lock_teacher_sessions else None),
                 max_one_period_sessions=max_one_period_sessions,
-                minimize_sessions=not session_feasibility_only,
+                minimize_sessions=(
+                    not session_feasibility_only and not lock_teacher_sessions
+                ),
                 minimize_one_period_sessions=session_minimize_one_period_sessions,
                 one_period_priority_absolute=not allow_complete_first_one_period_debt,
                 time_limit_seconds=session_limit,
@@ -6849,6 +7214,15 @@ def _solve_teacher_session_benders_candidate(
                 )
                 or None,
                 period_max_teacher_gap=period_max_teacher_gap,
+                period_max_teacher_gap_periods=period_cp_sat_max_gap_periods,
+                period_max_teacher_gap1_sessions=period_cp_sat_max_gap1_sessions,
+                period_max_teacher_gap2_plus_sessions=(
+                    period_cp_sat_max_gap2_plus_sessions
+                ),
+                period_minimize_teacher_gaps=period_cp_sat_minimize_teacher_gaps,
+                period_teacher_gap_priority_absolute=(
+                    period_cp_sat_gap_priority_absolute
+                ),
                 materialize_period_lessons=True,
                 # Keep a known period-feasible incumbent close when quality is
                 # tied.  Session/one-period quality remains the primary
@@ -7098,7 +7472,10 @@ def _solve_teacher_session_benders_candidate(
                 unassigned_lessons=list(unassigned_lessons),
                 original_ctx=None if fixed_existing_lessons_are_hard else original_ctx,
                 best_effort=False,
-                allow_temporary_teacher_gap_debt=allow_complete_first_one_period_debt,
+                allow_temporary_teacher_gap_debt=(
+                    allow_complete_first_one_period_debt
+                    or period_max_teacher_gap is None
+                ),
             )
             metrics = payload.get("metrics") if isinstance(payload.get("metrics"), Mapping) else {}
             new_best_this_iteration = False
@@ -7136,6 +7513,23 @@ def _solve_teacher_session_benders_candidate(
                 "contiguous_block_violation_count": _metric_int(
                     metrics, "contiguous_block_violation_count", 0
                 ),
+                "app_constraint_violation_kinds": sorted(
+                    {
+                        str(item.get("kind") or "")
+                        for item in (metrics.get("app_constraint_violations") or [])
+                        if isinstance(item, Mapping) and item.get("kind")
+                    }
+                )[:16],
+                "app_constraint_violation_examples": [
+                    dict(item)
+                    for item in (metrics.get("app_constraint_violations") or [])[:4]
+                    if isinstance(item, Mapping)
+                ],
+                "contiguous_block_violation_examples": [
+                    dict(item)
+                    for item in (metrics.get("contiguous_block_violations") or [])[:4]
+                    if isinstance(item, Mapping)
+                ],
             }
             residual_validation = solver_metrics.get("residual_validation")
             if isinstance(residual_validation, Mapping):
@@ -7220,7 +7614,7 @@ def _solve_teacher_session_benders_candidate(
                     history[-1]["new_best"] = True
                 if (
                     stop_on_first_quality_gate_clean
-                    and _teacher_session_opt_quality_gates_clean(metrics)
+                    and quality_gate_clean(metrics)
                 ):
                     history[-1]["first_quality_gate_stop"] = True
                     return best_payload or payload
@@ -8769,6 +9163,7 @@ def _unified_first_click_candidate_acceptable(
     required_lessons: list[Lesson],
     *,
     allow_quality_debt: bool = False,
+    allow_gap2_debt: bool = False,
 ) -> bool:
     metrics = payload.get("metrics") if isinstance(payload.get("metrics"), Mapping) else {}
     return (
@@ -8777,7 +9172,10 @@ def _unified_first_click_candidate_acceptable(
             allow_quality_debt
             or (
                 _metric_int(metrics, "one_period_teacher_sessions", 10**9) == 0
-                and _teacher_session_opt_gap2_plus(metrics) == 0
+                and (
+                    allow_gap2_debt
+                    or _teacher_session_opt_gap2_plus(metrics) == 0
+                )
             )
         )
         and _payload_preserves_required_lessons(payload, required_lessons)
@@ -8811,6 +9209,22 @@ def _solve_unified_first_click_feasibility_then_quality(
     requested_random_seed: int | None,
 ) -> tuple[dict[str, Any], Mapping[str, Any], list[dict[str, Any]], str]:
     """Build a mandatory feasible incumbent, then spend leftover time on quality."""
+
+    optimization_focus = _normalized_optimization_focus(settings)
+    quick_complete_allow_gap2_debt = optimization_focus == "quick_complete"
+
+    def _first_click_candidate_acceptable(
+        payload: Mapping[str, Any],
+        required: list[Lesson],
+        *,
+        allow_quality_debt: bool = False,
+    ) -> bool:
+        return _unified_first_click_candidate_acceptable(
+            payload,
+            required,
+            allow_quality_debt=allow_quality_debt,
+            allow_gap2_debt=quick_complete_allow_gap2_debt,
+        )
 
     attempts: list[dict[str, Any]] = []
     lower_cap = max(1, int(bounds.get("lower_cap") or 1))
@@ -8979,6 +9393,7 @@ def _solve_unified_first_click_feasibility_then_quality(
         large_first_click
         and period_feasibility_all_sessions
         and quality_debt_fallback_enabled
+        and not quick_complete_allow_gap2_debt
         # Subject-period rules remain hard, but combining their exact period
         # bridge with the zero-singleton/gap<=1 objective before any incumbent
         # exists is too expensive on production-size schools. It spent most of
@@ -9157,7 +9572,9 @@ def _solve_unified_first_click_feasibility_then_quality(
             "optimization_benders_lean_refinement_periods": (
                 not period_feasibility_all_sessions
             ),
-            "period_max_teacher_gap": 1,
+            "period_max_teacher_gap": (
+                "off" if quick_complete_allow_gap2_debt else 1
+            ),
             "relax_period_teacher_gap_on_failure": False,
             # A session allocation can satisfy every session-level constraint
             # and still make one period MILP infeasible.  Keep one bounded cut
@@ -9298,7 +9715,7 @@ def _solve_unified_first_click_feasibility_then_quality(
             "strict_quality_gate_first": strict_quality_gate_first,
         }
     )
-    strict_candidate_accepted = _unified_first_click_candidate_acceptable(
+    strict_candidate_accepted = _first_click_candidate_acceptable(
         feasibility_payload,
         required_lessons,
         allow_quality_debt=safe_period_feasibility_first,
@@ -9306,7 +9723,7 @@ def _solve_unified_first_click_feasibility_then_quality(
     quality_debt_safety_payload: dict[str, Any] = {}
     if (
         not strict_candidate_accepted
-        and _unified_first_click_candidate_acceptable(
+        and _first_click_candidate_acceptable(
             feasibility_payload,
             required_lessons,
             allow_quality_debt=True,
@@ -9382,7 +9799,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                 )
             except Exception as exc:  # noqa: BLE001 - the debt-allowed lane remains reserved.
                 retry_error = exc
-            retry_accepted = _unified_first_click_candidate_acceptable(
+            retry_accepted = _first_click_candidate_acceptable(
                 retry_payload,
                 required_lessons,
                 allow_quality_debt=False,
@@ -9415,7 +9832,7 @@ def _solve_unified_first_click_feasibility_then_quality(
             if retry_accepted:
                 feasibility_payload = retry_payload
                 strict_candidate_accepted = True
-            elif _unified_first_click_candidate_acceptable(
+            elif _first_click_candidate_acceptable(
                 retry_payload,
                 required_lessons,
                 allow_quality_debt=True,
@@ -9533,7 +9950,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                 )
             except Exception as exc:  # noqa: BLE001 - normalized into the final solve error below.
                 fallback_error = exc
-            fallback_accepted = _unified_first_click_candidate_acceptable(
+            fallback_accepted = _first_click_candidate_acceptable(
                 fallback_payload,
                 required_lessons,
                 allow_quality_debt=True,
@@ -9585,7 +10002,7 @@ def _solve_unified_first_click_feasibility_then_quality(
             }
         )
 
-    if not _unified_first_click_candidate_acceptable(
+    if not _first_click_candidate_acceptable(
         feasibility_payload,
         required_lessons,
         allow_quality_debt=feasibility_quality_debt_allowed,
@@ -9644,7 +10061,10 @@ def _solve_unified_first_click_feasibility_then_quality(
         )
         and (
             _metric_int(best_metrics, "one_period_teacher_sessions", 0) > 0
-            or _teacher_session_opt_gap2_plus(best_metrics) > 0
+            or (
+                not quick_complete_allow_gap2_debt
+                and _teacher_session_opt_gap2_plus(best_metrics) > 0
+            )
         )
     )
     strict_period_quality_cleanup = (
@@ -9656,6 +10076,7 @@ def _solve_unified_first_click_feasibility_then_quality(
     # explicit or diagnostic callers that do not carry this UI contract.
     automatic_large_fresh_quality = (
         large_first_click
+        and not quick_complete_allow_gap2_debt
         and _truthy_setting(settings.get("ui_unified_first_click_quality"))
         and str(settings.get("ui_unified_solve_kind") or "").strip().casefold()
         == "fresh_complete_first"
@@ -9893,6 +10314,9 @@ def _solve_unified_first_click_feasibility_then_quality(
                         )
                     )
                 ),
+                "optimization_benders_allow_gap2_quality_gate": (
+                    quick_complete_allow_gap2_debt
+                ),
                 "optimization_benders_session_feasibility_only": False,
                 # The hard zero-singleton cap below has a direct load >= 2*z
                 # formulation. Do not also create one Boolean objective var
@@ -9926,7 +10350,9 @@ def _solve_unified_first_click_feasibility_then_quality(
                 "allow_quality_debt": False,
                 "optimization_benders_allow_one_period_debt": False,
                 "optimization_continue_quality_search": quality_cleanup_required,
-                "period_max_teacher_gap": 1,
+                "period_max_teacher_gap": (
+                    "off" if quick_complete_allow_gap2_debt else 1
+                ),
                 "relax_period_teacher_gap_on_failure": False,
                 "optimization_benders_session_time_limit": quality_session_limit,
                 "period_time_limit": quality_period_limit,
@@ -9984,7 +10410,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                 else {}
             )
             quality_valid = (
-                _unified_first_click_candidate_acceptable(quality_payload, required_lessons)
+                _first_click_candidate_acceptable(quality_payload, required_lessons)
                 and _metric_int(quality_metrics, "teacher_sessions", 10**9)
                 <= quality_cap
             )
@@ -10112,7 +10538,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                         else {}
                     )
                     integrated_valid = (
-                        _unified_first_click_candidate_acceptable(
+                        _first_click_candidate_acceptable(
                             integrated_payload,
                             required_lessons,
                         )
@@ -10260,7 +10686,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                         else {}
                     )
                     relaxed_valid = (
-                        _unified_first_click_candidate_acceptable(
+                        _first_click_candidate_acceptable(
                             relaxed_payload,
                             required_lessons,
                         )
@@ -10485,7 +10911,7 @@ def _solve_unified_first_click_feasibility_then_quality(
                     else {}
                 )
                 target_probe_valid = (
-                    _unified_first_click_candidate_acceptable(target_probe_payload, required_lessons)
+                    _first_click_candidate_acceptable(target_probe_payload, required_lessons)
                     and _metric_int(target_probe_metrics, "teacher_sessions", 10**9)
                     <= int(target_probe_cap)
                 )
@@ -10581,7 +11007,10 @@ def _solve_unified_first_click_feasibility_then_quality(
         and _complete_payload_metrics_acceptable(best_payload)
         and (
             _metric_int(best_metrics, "one_period_teacher_sessions", 0) > 0
-            or _teacher_session_opt_gap2_plus(best_metrics) > 0
+            or (
+                not quick_complete_allow_gap2_debt
+                and _teacher_session_opt_gap2_plus(best_metrics) > 0
+            )
         )
     )
     # ``ui_stop_after_first_complete_schedule`` protects the first usable
@@ -10657,7 +11086,7 @@ def _solve_unified_first_click_feasibility_then_quality(
             else {}
         )
         local_better = (
-            _unified_first_click_candidate_acceptable(
+            _first_click_candidate_acceptable(
                 local_payload,
                 required_lessons,
                 allow_quality_debt=feasibility_quality_debt_allowed,
@@ -10706,6 +11135,921 @@ def _solve_unified_first_click_feasibility_then_quality(
     return best_payload, best_metrics, attempts, termination_reason
 
 
+def _two_stage_refinement_summary(metrics: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "scheduled_periods": _metric_int(metrics, "scheduled_periods", 0),
+        "expected_periods": _metric_int(metrics, "expected_periods", 0),
+        "teacher_sessions": _metric_int(metrics, "teacher_sessions", 10**9),
+        "one_period_teacher_sessions": _metric_int(
+            metrics,
+            "one_period_teacher_sessions",
+            10**9,
+        ),
+        "gap1_sessions": _teacher_session_opt_gap1(metrics),
+        "gap2_plus_sessions": _teacher_session_opt_gap2_plus(metrics),
+        "gap_distribution": dict(metrics.get("gap_distribution") or {}),
+        "hard_ok": bool(metrics.get("hard_ok")),
+        "unassigned_periods": _metric_int(metrics, "unassigned_periods", 0),
+    }
+
+
+def _two_stage_refinement_candidate_usable(
+    payload: Mapping[str, Any] | None,
+    *,
+    max_teacher_sessions: int,
+    max_one_period_teacher_sessions: int = 0,
+) -> bool:
+    if not isinstance(payload, Mapping) or not _complete_payload_metrics_acceptable(payload):
+        return False
+    metrics = payload.get("metrics") if isinstance(payload.get("metrics"), Mapping) else {}
+    return (
+        _metric_int(metrics, "one_period_teacher_sessions", 10**9)
+        <= max(0, int(max_one_period_teacher_sessions))
+        and _metric_int(metrics, "teacher_sessions", 10**9)
+        <= max(0, int(max_teacher_sessions))
+    )
+
+
+def _repack_periods_for_fixed_sessions(
+    ui_data: dict[str, Any],
+    settings: Mapping[str, Any],
+    *,
+    rules: TimetableRuleSet | None,
+    incumbent_payload: Mapping[str, Any],
+    deadline: SolverDeadline,
+    time_limit_seconds: int,
+    progress: ProgressFn | None,
+) -> dict[str, Any]:
+    """Remove gap-2 quickly without changing any assignment's half-day."""
+
+    original_ctx = build_school_data_from_ui(ui_data)
+    effective_rules = rules or original_ctx.rules
+    fixed_lessons, fixed_warnings = _extract_hard_fixed_lessons_from_tkb(
+        ui_data,
+        original_ctx,
+    )
+    original_ctx.warnings.extend(fixed_warnings)
+    fixed_lessons, released_warnings = _release_invalid_fixed_lessons(
+        original_ctx.school_data,
+        fixed_lessons,
+        effective_rules,
+        release_constraint_violations=False,
+    )
+    original_ctx.warnings.extend(released_warnings)
+    if fixed_lessons:
+        effective_rules = _rule_set_with_fixed_lesson_slots(
+            effective_rules,
+            fixed_lessons,
+        )
+
+    source_ctx = (
+        _context_without_fixed_lesson_demand(original_ctx, fixed_lessons)
+        if fixed_lessons
+        else original_ctx
+    )
+    ctx, unassigned_lessons = _trim_context_to_available_slots(
+        source_ctx,
+        effective_rules,
+        settings,
+    )
+    if unassigned_lessons:
+        raise RuntimeError("Period repack cannot preserve a capacity-limited timetable")
+
+    incumbent_lessons = _payload_lessons_to_lessons(incumbent_payload)
+    if fixed_lessons:
+        incumbent_lessons = _lessons_without_fixed_instances(
+            incumbent_lessons,
+            fixed_lessons,
+        )
+    residual_keys = {
+        (assignment.class_name, assignment.subject, assignment.teacher)
+        for assignment in ctx.school_data.assignments
+    }
+    allocations = [
+        allocation
+        for allocation in _allocations_from_lessons(incumbent_lessons)
+        if (allocation.class_name, allocation.subject, allocation.teacher)
+        in residual_keys
+    ]
+    expected_residual = sum(
+        max(0, int(assignment.periods_per_week))
+        for assignment in ctx.school_data.assignments
+    )
+    if sum(int(allocation.count) for allocation in allocations) != expected_residual:
+        raise RuntimeError("Period repack could not reconstruct the incumbent sessions")
+
+    phase_deadline = deadline.bounded(max(8, int(time_limit_seconds)))
+    per_session_limit = max(8, min(30, int(time_limit_seconds)))
+    lessons, period_metrics = allocate_periods(
+        ctx.school_data,
+        allocations,
+        rules=effective_rules,
+        fixed_lessons=fixed_lessons,
+        time_limit_seconds_per_session=per_session_limit,
+        retry_time_limit_seconds_per_session=max(8, min(20, per_session_limit)),
+        remaining_time_seconds=phase_deadline.remaining,
+        max_teacher_gap=1,
+        minimize_teacher_gaps=True,
+        best_effort=False,
+        verbose=False,
+        progress=progress,
+        max_workers=_solver_worker_count(settings),
+    )
+    solver_metrics: dict[str, Any] = {
+        "session_solver": {
+            "solver": "validated_incumbent_sessions_locked",
+            "status_name": "FIXED_SESSION_ALLOCATION",
+            "teacher_sessions": _metric_int(
+                incumbent_payload.get("metrics", {}),
+                "teacher_sessions",
+                0,
+            ),
+        },
+        "period_solver": {
+            **dict(period_metrics),
+            "solver": "period_milp_fixed_session_gap_repack",
+            "max_teacher_gap": 1,
+        },
+        "runtime_settings": {
+            "auto_sort_mode": "teacher_session_opt",
+            "optimization_focus": "gaps",
+            "fixed_session_gap_repack": True,
+            "overall_time_limit_seconds": int(time_limit_seconds),
+            "fixed_existing_lessons": len(fixed_lessons),
+        },
+    }
+    if fixed_lessons:
+        solver_metrics["residual_validation"] = compute_metrics(
+            ctx.school_data,
+            lessons,
+            rules=effective_rules,
+        )
+        lessons = _merge_fixed_lessons_into_solution(lessons, fixed_lessons)
+    payload = build_payload(
+        original_ctx if fixed_lessons else ctx,
+        lessons,
+        solver_metrics,
+        rules or original_ctx.rules,
+        unassigned_lessons=[],
+        original_ctx=None if fixed_lessons else original_ctx,
+        best_effort=False,
+    )
+    if not _complete_payload_metrics_acceptable(payload):
+        raise RuntimeError("Period repack produced a non-returnable timetable")
+    return payload
+
+
+def _solve_two_stage_concrete_refinement(
+    ui_data: dict[str, Any],
+    settings: Mapping[str, Any],
+    *,
+    rules: TimetableRuleSet | None,
+    progress: ProgressFn | None,
+    deadline: SolverDeadline,
+    total_limit: int,
+    incumbent_payload: Mapping[str, Any],
+    phase_seeds: list[int],
+    session_target: int | None = None,
+) -> tuple[dict[str, Any], Mapping[str, Any], list[dict[str, Any]], str]:
+    """Run the requested concrete-period teacher-quality phase atomically."""
+
+    optimization_focus = _normalized_optimization_focus(settings)
+    incumbent_metrics = (
+        incumbent_payload.get("metrics")
+        if isinstance(incumbent_payload.get("metrics"), Mapping)
+        else {}
+    )
+    incumbent_sessions = _metric_int(incumbent_metrics, "teacher_sessions", 10**9)
+    incumbent_singletons = _metric_int(
+        incumbent_metrics,
+        "one_period_teacher_sessions",
+        10**9,
+    )
+    session_metric_target = max(
+        0,
+        int(
+            session_target
+            or _positive_setting(settings, "optimization_metric_session_target")
+            or _positive_setting(settings, "target_teacher_sessions")
+            or _positive_setting(settings, "optimization_accept_teacher_sessions")
+            or 0
+        ),
+    )
+    attempts: list[dict[str, Any]] = []
+    final_reserve = max(
+        8,
+        min(
+            20,
+            _to_int(settings.get("optimization_two_stage_final_reserve_seconds"), 13),
+        ),
+    )
+    deadline_remaining = deadline.remaining()
+    remaining = float(total_limit if deadline_remaining is None else deadline_remaining)
+    explicit_session_focus = optimization_focus == "sessions"
+    # Automatic must leave a real second search window for exact gap cleanup.
+    # Model construction and validation add roughly 10-12 seconds per phase on
+    # the production-size default school, so a 66/34 solver split left only
+    # about 46 seconds for Phase G and frequently returned the incumbent.
+    automatic_phase_s_cap = max(
+        20,
+        min(90, max(20, total_limit - final_reserve - 55)),
+    )
+    phase_s_solver_limit = max(
+        20,
+        min(
+            (
+                max(20, total_limit - final_reserve)
+                if explicit_session_focus
+                else automatic_phase_s_cap
+            ),
+            int(
+                max(
+                    20.0,
+                    (remaining - final_reserve)
+                    * (1.0 if explicit_session_focus else 0.52),
+                )
+            ),
+        ),
+    )
+    base_settings = {
+        **dict(settings),
+        "optimization_benders_iterations": 1,
+        "optimization_benders_complete_first": False,
+        "optimization_benders_period_feasibility_all_sessions": True,
+        "optimization_benders_lean_refinement_periods": False,
+        "optimization_benders_session_feasibility_only": False,
+        "optimization_benders_disable_session_early_stop": True,
+        "optimization_benders_minimize_one_period_sessions": False,
+        "optimization_benders_minimize_hint_distance": False,
+        "optimization_benders_accept_stagnant_iterations": 0,
+        "optimization_continue_quality_search": True,
+        "max_one_period_sessions": (
+            incumbent_singletons if optimization_focus == "gaps" else 0
+        ),
+        "strict_one_period_sessions_cap": True,
+        "enforce_max_one_period_sessions": True,
+        "one_period_priority_absolute": True,
+        "period_max_teacher_gap": "off",
+        "relax_period_teacher_gap_on_failure": False,
+        # The concrete CP-SAT bridge owns both stages. A second period MILP
+        # would spend the remaining watchdog rebuilding the same timetable.
+        "minimize_teacher_gaps": False,
+    }
+
+    def emit_progress(
+        payload: Mapping[str, Any],
+        metrics: Mapping[str, Any],
+        *,
+        metric_kind: str,
+        baseline_metrics: Mapping[str, Any] = incumbent_metrics,
+    ) -> None:
+        if not progress:
+            return
+        metric_payload = _optimization_metric_payload(
+            optimization_focus,
+            metrics,
+            baseline_metrics=baseline_metrics,
+            session_target=session_metric_target,
+            metric_kind=metric_kind,
+        )
+        progress(
+            {
+                **metric_payload,
+                # A nested solver may already know a fresher metric snapshot.
+                # Never replace it with the phase-opening incumbent.
+                **dict(payload),
+            }
+        )
+
+    def phase_progress(
+        metrics: Mapping[str, Any],
+        *,
+        metric_kind: str,
+        baseline_metrics: Mapping[str, Any] = incumbent_metrics,
+    ) -> ProgressFn | None:
+        if not progress:
+            return None
+
+        live_metrics = dict(metrics)
+        live_metric_fields: dict[str, Any] = {}
+
+        def forward(payload: dict[str, Any]) -> None:
+            event = dict(payload)
+            nested_metrics = event.get("metrics")
+            if isinstance(nested_metrics, Mapping):
+                live_metrics.update(dict(nested_metrics))
+            for key in (
+                "scheduled_periods",
+                "expected_periods",
+                "unassigned_periods",
+                "teacher_sessions",
+                "one_period_teacher_sessions",
+            ):
+                if key in event:
+                    live_metrics[key] = event[key]
+            if isinstance(event.get("gap_distribution"), Mapping):
+                live_metrics["gap_distribution"] = dict(event["gap_distribution"])
+            domain_metric_changed = any(
+                key in event
+                for key in (
+                    "scheduled_periods",
+                    "expected_periods",
+                    "unassigned_periods",
+                    "teacher_sessions",
+                    "one_period_teacher_sessions",
+                    "gap_distribution",
+                )
+            )
+            if domain_metric_changed:
+                live_metric_fields.pop("metricCurrent", None)
+                live_metric_fields.pop("metricPercent", None)
+            for key in (
+                "optimizationFocus",
+                "metricCurrent",
+                "metricTarget",
+                "metricBaseline",
+                "metricPercent",
+            ):
+                if key in event:
+                    live_metric_fields[key] = event[key]
+            emit_progress(
+                {**live_metric_fields, **event},
+                live_metrics,
+                metric_kind=metric_kind,
+                baseline_metrics=baseline_metrics,
+            )
+
+        return forward
+
+    if optimization_focus in {"singletons", "quick_complete"}:
+        singleton_started = time.monotonic()
+        singleton_payload: dict[str, Any] | None = None
+        singleton_error: Exception | None = None
+        singleton_limit = max(
+            8,
+            min(
+                max(8, total_limit - final_reserve),
+                _to_int(settings.get("optimization_singleton_time_limit_seconds"), 45),
+                max(8, int(max(0.0, remaining - final_reserve))),
+            ),
+        )
+        if incumbent_singletons > 0:
+            emit_progress(
+                {
+                    "stage": "teacher_session_opt:phase_singletons",
+                    "message": "Dang loai bo buoi giao vien chi day 1 tiet",
+                    "time_limit_seconds": singleton_limit,
+                    "max_teacher_sessions": incumbent_sessions,
+                },
+                incumbent_metrics,
+                metric_kind="singletons",
+            )
+            singleton_settings = {
+                **base_settings,
+                "optimization_benders_session_time_limit": singleton_limit,
+                "optimization_benders_minimize_period_gaps": False,
+                "optimization_benders_period_gap_priority_absolute": False,
+            }
+            try:
+                singleton_payload = _solve_teacher_session_benders_candidate(
+                    ui_data,
+                    singleton_settings,
+                    cap=incumbent_sessions,
+                    time_limit_seconds=singleton_limit + 8,
+                    rules=rules,
+                    progress=phase_progress(
+                        incumbent_metrics,
+                        metric_kind="singletons",
+                    ),
+                    incumbent_payload=incumbent_payload,
+                    random_seed=(phase_seeds[0] if phase_seeds else None),
+                    deadline=deadline,
+                )
+            except Exception as exc:  # noqa: BLE001 - keep the incumbent atomically.
+                singleton_error = exc
+
+        singleton_metrics = (
+            singleton_payload.get("metrics")
+            if isinstance(singleton_payload, Mapping)
+            and isinstance(singleton_payload.get("metrics"), Mapping)
+            else {}
+        )
+        singleton_usable = _two_stage_refinement_candidate_usable(
+            singleton_payload,
+            max_teacher_sessions=incumbent_sessions,
+        )
+        singleton_improved = bool(
+            singleton_usable
+            and _metric_int(
+                singleton_metrics,
+                "one_period_teacher_sessions",
+                10**9,
+            )
+            < incumbent_singletons
+        )
+        attempts.append(
+            {
+                "ok": singleton_error is None,
+                "phase": "focused_singleton_cleanup",
+                "elapsed_seconds": round(time.monotonic() - singleton_started, 3),
+                "time_limit_seconds": singleton_limit,
+                "usable": singleton_usable,
+                "improved": singleton_improved,
+                "skipped": incumbent_singletons <= 0,
+                "candidate": _two_stage_refinement_summary(singleton_metrics),
+                "error": str(singleton_error)[:500] if singleton_error is not None else None,
+            }
+        )
+        selected: Mapping[str, Any] = (
+            singleton_payload
+            if singleton_improved and singleton_payload is not None
+            else incumbent_payload
+        )
+        selected_metrics = (
+            selected.get("metrics") if isinstance(selected.get("metrics"), Mapping) else {}
+        )
+        selected_phase = "singleton_cleanup" if singleton_improved else "incumbent"
+        emit_progress(
+            {
+                "stage": "teacher_session_opt:phase_singletons_done",
+                "message": "Da hoan tat toi uu buoi giao vien 1 tiet",
+            },
+            selected_metrics,
+            metric_kind="singletons",
+        )
+        result = dict(selected)
+        result["metrics"] = dict(selected_metrics)
+        solver = dict(result.get("solver") or {})
+        solver["two_stage_teacher_optimization"] = {
+            "mode": "singletons_only",
+            "optimization_focus": optimization_focus,
+            "selected_phase": selected_phase,
+            "incumbent": _two_stage_refinement_summary(incumbent_metrics),
+            "final": _two_stage_refinement_summary(selected_metrics),
+            "final_reserve_seconds": final_reserve,
+            "attempts": attempts,
+        }
+        result["solver"] = solver
+        return result, selected_metrics, attempts, f"two_stage_{selected_phase}"
+
+    phase_s_payload: dict[str, Any] | None = None
+    phase_s_started = time.monotonic()
+    phase_s_error: Exception | None = None
+    run_phase_s = optimization_focus in {"automatic", "sessions"}
+    if run_phase_s:
+        emit_progress(
+            {
+                "stage": "teacher_session_opt:phase_sessions",
+                "message": "Dang ep giam buoi day",
+                "time_limit_seconds": phase_s_solver_limit,
+                "max_teacher_sessions": incumbent_sessions,
+            },
+            incumbent_metrics,
+            metric_kind="sessions",
+        )
+        try:
+            phase_s_settings = {
+                **base_settings,
+                "optimization_benders_session_time_limit": phase_s_solver_limit,
+                "optimization_benders_minimize_period_gaps": False,
+                "optimization_benders_period_gap_priority_absolute": False,
+            }
+            phase_s_payload = _solve_teacher_session_benders_candidate(
+                ui_data,
+                phase_s_settings,
+                cap=incumbent_sessions,
+                time_limit_seconds=phase_s_solver_limit + 12,
+                rules=rules,
+                progress=phase_progress(
+                    incumbent_metrics,
+                    metric_kind="sessions",
+                ),
+                incumbent_payload=incumbent_payload,
+                random_seed=(phase_seeds[0] if phase_seeds else None),
+                deadline=deadline,
+            )
+        except Exception as exc:  # noqa: BLE001 - the incumbent is the atomic fallback.
+            phase_s_error = exc
+
+    phase_s_metrics = (
+        phase_s_payload.get("metrics")
+        if isinstance(phase_s_payload, Mapping)
+        and isinstance(phase_s_payload.get("metrics"), Mapping)
+        else {}
+    )
+    phase_s_usable = _two_stage_refinement_candidate_usable(
+        phase_s_payload,
+        max_teacher_sessions=incumbent_sessions,
+    )
+    phase_s_reduces_sessions = bool(
+        phase_s_usable
+        and (
+            _metric_int(phase_s_metrics, "teacher_sessions", 10**9) < incumbent_sessions
+            or (
+                optimization_focus == "sessions"
+                and incumbent_singletons > 0
+                and _metric_int(
+                    phase_s_metrics,
+                    "one_period_teacher_sessions",
+                    10**9,
+                )
+                < incumbent_singletons
+            )
+        )
+    )
+    phase_s_checkpoint: Mapping[str, Any] = (
+        phase_s_payload if phase_s_reduces_sessions and phase_s_payload is not None else incumbent_payload
+    )
+    phase_s_checkpoint_metrics = (
+        phase_s_checkpoint.get("metrics")
+        if isinstance(phase_s_checkpoint.get("metrics"), Mapping)
+        else {}
+    )
+    phase_s_checkpoint_sessions = _metric_int(
+        phase_s_checkpoint_metrics,
+        "teacher_sessions",
+        incumbent_sessions,
+    )
+    if run_phase_s:
+        attempts.append(
+            {
+                "ok": phase_s_error is None,
+                "phase": "two_stage_session_compression",
+                "elapsed_seconds": round(time.monotonic() - phase_s_started, 3),
+                "time_limit_seconds": phase_s_solver_limit,
+                "usable": phase_s_usable,
+                "reduced_sessions": phase_s_reduces_sessions,
+                "candidate": _two_stage_refinement_summary(phase_s_metrics),
+                "error": str(phase_s_error)[:500] if phase_s_error is not None else None,
+            }
+        )
+        emit_progress(
+            {
+                "stage": "teacher_session_opt:phase_sessions_done",
+                "message": "Da hoan tat toi uu so buoi day",
+            },
+            phase_s_checkpoint_metrics,
+            metric_kind="sessions",
+        )
+
+    phase_g_payload: dict[str, Any] | None = None
+    phase_g_error: Exception | None = None
+    phase_g_repack_error: Exception | None = None
+    phase_g_repack_metrics: Mapping[str, Any] = {}
+    phase_g_repack_usable = False
+    phase_g_repack_improved = False
+    phase_g_repack_elapsed = 0.0
+    phase_g_deep_limit = 0
+    phase_g_started = time.monotonic()
+    phase_g_remaining = float(deadline.remaining() or 0.0)
+    explicit_gap_focus = optimization_focus == "gaps"
+    automatic_phase_g_cap = max(
+        55,
+        min(75, max(55, int(total_limit * 0.42))),
+    )
+    phase_g_solver_limit = max(
+        0,
+        min(
+            (
+                max(0, total_limit - final_reserve)
+                if explicit_gap_focus
+                else automatic_phase_g_cap
+            ),
+            int(max(0.0, phase_g_remaining - final_reserve)),
+        ),
+    )
+    run_phase_g = optimization_focus in {"automatic", "gaps"}
+    if run_phase_g and phase_g_solver_limit >= 8:
+        emit_progress(
+                {
+                    "stage": "teacher_session_opt:phase_gaps",
+                    "message": "Da khoa so buoi, dang giam tiet trong",
+                    "time_limit_seconds": phase_g_solver_limit,
+                    "max_teacher_sessions": phase_s_checkpoint_sessions,
+                },
+                phase_s_checkpoint_metrics,
+                metric_kind="gaps",
+                baseline_metrics=phase_s_checkpoint_metrics,
+            )
+        if ui_data and _truthy_setting(
+            settings.get("optimization_fixed_session_gap_repack", "1")
+        ):
+            repack_started = time.monotonic()
+            repack_limit = max(8, min(30, phase_g_solver_limit))
+            try:
+                repack_payload = _repack_periods_for_fixed_sessions(
+                    ui_data,
+                    settings,
+                    rules=rules,
+                    incumbent_payload=phase_s_checkpoint,
+                    deadline=deadline,
+                    time_limit_seconds=repack_limit,
+                    progress=phase_progress(
+                        phase_s_checkpoint_metrics,
+                        metric_kind="gaps",
+                        baseline_metrics=phase_s_checkpoint_metrics,
+                    ),
+                )
+                phase_g_repack_metrics = (
+                    repack_payload.get("metrics")
+                    if isinstance(repack_payload.get("metrics"), Mapping)
+                    else {}
+                )
+                phase_g_repack_usable = bool(
+                    _two_stage_refinement_candidate_usable(
+                        repack_payload,
+                        max_teacher_sessions=phase_s_checkpoint_sessions,
+                        max_one_period_teacher_sessions=(
+                            incumbent_singletons if explicit_gap_focus else 0
+                        ),
+                    )
+                    and _metric_int(
+                        phase_g_repack_metrics,
+                        "teacher_sessions",
+                        10**9,
+                    )
+                    == phase_s_checkpoint_sessions
+                )
+                phase_g_repack_improved = bool(
+                    phase_g_repack_usable
+                    and _teacher_two_stage_gap_quality(phase_g_repack_metrics)
+                    < _teacher_two_stage_gap_quality(phase_s_checkpoint_metrics)
+                )
+                if phase_g_repack_usable:
+                    phase_g_payload = repack_payload
+                    emit_progress(
+                        {
+                            "stage": "teacher_session_opt:phase_gaps_repacked",
+                            "message": "Da xoa gap-2, dang giam tiep gap-1",
+                        },
+                        phase_g_repack_metrics,
+                        metric_kind="gaps",
+                        baseline_metrics=phase_s_checkpoint_metrics,
+                    )
+            except Exception as exc:  # noqa: BLE001 - global CP-SAT remains available.
+                phase_g_repack_error = exc
+            finally:
+                phase_g_repack_elapsed = time.monotonic() - repack_started
+
+        phase_g_deep_limit = max(
+            0,
+            min(
+                phase_g_solver_limit,
+                int(max(0.0, float(deadline.remaining() or 0.0) - final_reserve)),
+            ),
+        )
+        try:
+            phase_g_settings = {
+                **base_settings,
+                "optimization_benders_session_time_limit": phase_g_deep_limit,
+                "optimization_benders_minimize_period_gaps": True,
+                "optimization_benders_period_gap_priority_absolute": True,
+                "optimization_benders_lock_teacher_sessions": True,
+                # Gap cleanup is the second lexicographic phase.  Make the
+                # first gap target explicit so CP-SAT proves gap-2 zero when
+                # the authored constraints permit it, then spends the rest
+                # of the phase reducing gap-1.
+                "period_max_teacher_gap": 1,
+                "optimization_benders_max_teacher_gap2_plus_sessions": 0,
+            }
+            if phase_g_deep_limit >= 8:
+                deep_incumbent = phase_g_payload or phase_s_checkpoint
+                deep_incumbent_metrics = (
+                    deep_incumbent.get("metrics")
+                    if isinstance(deep_incumbent.get("metrics"), Mapping)
+                    else phase_s_checkpoint_metrics
+                )
+                deep_payload = _solve_teacher_session_benders_candidate(
+                    ui_data,
+                    phase_g_settings,
+                    cap=phase_s_checkpoint_sessions,
+                    time_limit_seconds=phase_g_deep_limit + 12,
+                    rules=rules,
+                    progress=phase_progress(
+                        deep_incumbent_metrics,
+                        metric_kind="gaps",
+                        baseline_metrics=phase_s_checkpoint_metrics,
+                    ),
+                    incumbent_payload=deep_incumbent,
+                    random_seed=(phase_seeds[1] if len(phase_seeds) > 1 else None),
+                    deadline=deadline,
+                )
+                deep_metrics = (
+                    deep_payload.get("metrics")
+                    if isinstance(deep_payload.get("metrics"), Mapping)
+                    else {}
+                )
+                deep_usable = bool(
+                    _two_stage_refinement_candidate_usable(
+                        deep_payload,
+                        max_teacher_sessions=phase_s_checkpoint_sessions,
+                        max_one_period_teacher_sessions=(
+                            incumbent_singletons if explicit_gap_focus else 0
+                        ),
+                    )
+                    and _metric_int(deep_metrics, "teacher_sessions", 10**9)
+                    == phase_s_checkpoint_sessions
+                )
+                selected_gap_metrics = (
+                    phase_g_payload.get("metrics")
+                    if isinstance(phase_g_payload, Mapping)
+                    and isinstance(phase_g_payload.get("metrics"), Mapping)
+                    else phase_s_checkpoint_metrics
+                )
+                if (
+                    deep_usable
+                    and (
+                        phase_g_payload is None
+                        or _teacher_two_stage_gap_quality(deep_metrics)
+                        < _teacher_two_stage_gap_quality(selected_gap_metrics)
+                    )
+                ):
+                    phase_g_payload = deep_payload
+        except Exception as exc:  # noqa: BLE001 - Phase S remains usable.
+            phase_g_error = exc
+
+    phase_g_metrics = (
+        phase_g_payload.get("metrics")
+        if isinstance(phase_g_payload, Mapping)
+        and isinstance(phase_g_payload.get("metrics"), Mapping)
+        else {}
+    )
+    phase_g_usable = _two_stage_refinement_candidate_usable(
+        phase_g_payload,
+        max_teacher_sessions=phase_s_checkpoint_sessions,
+        max_one_period_teacher_sessions=(
+            incumbent_singletons if explicit_gap_focus else 0
+        ),
+    )
+    phase_g_same_sessions = (
+        _metric_int(phase_g_metrics, "teacher_sessions", 10**9)
+        == phase_s_checkpoint_sessions
+    )
+    phase_g_singletons_improved = (
+        _metric_int(phase_g_metrics, "one_period_teacher_sessions", 10**9)
+        < _metric_int(phase_s_checkpoint_metrics, "one_period_teacher_sessions", 10**9)
+    )
+    phase_g_gap_improved = (
+        _teacher_two_stage_gap_quality(phase_g_metrics)
+        < _teacher_two_stage_gap_quality(phase_s_checkpoint_metrics)
+    )
+    phase_g_improved = bool(
+        phase_g_usable
+        # Phase G is deliberately a lexicographic second phase: once Phase S
+        # has chosen its session count, gap cleanup may not trade that count
+        # away (even when a lower count happens to be found incidentally).
+        and phase_g_same_sessions
+        and (
+            phase_g_gap_improved
+            or (
+                optimization_focus == "automatic"
+                and phase_g_singletons_improved
+            )
+        )
+    )
+    incumbent_gap2_plus = _teacher_session_opt_gap2_plus(incumbent_metrics)
+    phase_g_restored_gap2_envelope = bool(
+        phase_g_usable
+        and _teacher_session_opt_gap2_plus(phase_g_metrics)
+        <= incumbent_gap2_plus
+    )
+    automatic_coordinated_result = bool(
+        optimization_focus == "automatic"
+        and phase_g_usable
+        and phase_g_same_sessions
+        and phase_g_restored_gap2_envelope
+        and _teacher_two_stage_sessions_first_better(
+            phase_g_metrics,
+            incumbent_metrics,
+        )
+    )
+    if run_phase_g:
+        attempts.append(
+            {
+                "ok": phase_g_payload is not None,
+                "phase": "two_stage_gap_cleanup",
+                "elapsed_seconds": round(time.monotonic() - phase_g_started, 3),
+                "time_limit_seconds": phase_g_solver_limit,
+                "usable": phase_g_usable,
+                "improved": phase_g_improved,
+                "locked_teacher_sessions": (
+                    phase_s_checkpoint_sessions if explicit_gap_focus else None
+                ),
+                "same_teacher_sessions": phase_g_same_sessions,
+                "restored_incumbent_gap2_envelope": phase_g_restored_gap2_envelope,
+                "automatic_coordinated_result": automatic_coordinated_result,
+                "max_teacher_sessions": phase_s_checkpoint_sessions,
+                "candidate": _two_stage_refinement_summary(phase_g_metrics),
+                "error": str(phase_g_error)[:500] if phase_g_error is not None else None,
+                "period_repack": {
+                    "attempted": bool(ui_data),
+                    "elapsed_seconds": round(phase_g_repack_elapsed, 3),
+                    "usable": phase_g_repack_usable,
+                    "improved": phase_g_repack_improved,
+                    "candidate": _two_stage_refinement_summary(
+                        phase_g_repack_metrics
+                    ),
+                    "error": (
+                        str(phase_g_repack_error)[:500]
+                        if phase_g_repack_error is not None
+                        else None
+                    ),
+                },
+                "deep_time_limit_seconds": phase_g_deep_limit,
+            }
+        )
+        emit_progress(
+            {
+                "stage": "teacher_session_opt:phase_gaps_done",
+                "message": "Da hoan tat toi uu tiet trong",
+            },
+            phase_g_metrics if phase_g_improved else phase_s_checkpoint_metrics,
+            metric_kind="gaps",
+            baseline_metrics=phase_s_checkpoint_metrics,
+        )
+
+    selected: Mapping[str, Any]
+    selected_phase: str
+    if (
+        optimization_focus == "automatic"
+        and automatic_coordinated_result
+        and phase_g_payload is not None
+    ):
+        selected = phase_g_payload
+        selected_phase = "gap_cleanup"
+    elif optimization_focus == "automatic":
+        # Phase S is exploratory in Automatic. Its temporary gap debt must
+        # never escape when Phase G cannot restore the incumbent gap-2
+        # envelope and produce a genuinely better coordinated timetable.
+        selected = incumbent_payload
+        selected_phase = "incumbent"
+    elif run_phase_g and phase_g_improved and phase_g_payload is not None:
+        selected = phase_g_payload
+        selected_phase = "gap_cleanup"
+    elif run_phase_s and phase_s_reduces_sessions and phase_s_payload is not None:
+        selected = phase_s_payload
+        selected_phase = "session_compression"
+    else:
+        selected = incumbent_payload
+        selected_phase = "incumbent"
+    selected_metrics = (
+        selected.get("metrics") if isinstance(selected.get("metrics"), Mapping) else {}
+    )
+    candidate_accepted = True
+    if selected_phase != "incumbent" and optimization_focus == "sessions":
+        candidate_accepted = (
+            _metric_int(selected_metrics, "one_period_teacher_sessions", 10**9) == 0
+            and _metric_int(selected_metrics, "teacher_sessions", 10**9)
+            <= incumbent_sessions
+            and (
+                _metric_int(selected_metrics, "teacher_sessions", 10**9)
+                < incumbent_sessions
+                or incumbent_singletons > 0
+            )
+        )
+    elif selected_phase != "incumbent" and optimization_focus == "gaps":
+        candidate_accepted = (
+            _metric_int(selected_metrics, "one_period_teacher_sessions", 10**9)
+            <= incumbent_singletons
+            and _metric_int(selected_metrics, "teacher_sessions", 10**9)
+            == incumbent_sessions
+            and _teacher_two_stage_gap_quality(selected_metrics)
+            < _teacher_two_stage_gap_quality(incumbent_metrics)
+        )
+    elif selected_phase != "incumbent" and optimization_focus == "automatic":
+        candidate_accepted = automatic_coordinated_result
+    elif selected_phase != "incumbent":
+        candidate_accepted = _teacher_two_stage_sessions_first_better(
+            selected_metrics,
+            incumbent_metrics,
+        )
+    if not candidate_accepted:
+        selected = incumbent_payload
+        selected_metrics = incumbent_metrics
+        selected_phase = "incumbent"
+
+    result = dict(selected)
+    result["metrics"] = dict(selected_metrics)
+    solver = dict(result.get("solver") or {})
+    solver["two_stage_teacher_optimization"] = {
+        "mode": (
+            "sessions_only"
+            if optimization_focus == "sessions"
+            else ("gaps_only" if optimization_focus == "gaps" else "sessions_then_gaps")
+        ),
+        "optimization_focus": optimization_focus,
+        "selected_phase": selected_phase,
+        "incumbent": _two_stage_refinement_summary(incumbent_metrics),
+        "phase_s_checkpoint": _two_stage_refinement_summary(phase_s_checkpoint_metrics),
+        "final": _two_stage_refinement_summary(selected_metrics),
+        "final_reserve_seconds": final_reserve,
+        "attempts": attempts,
+    }
+    result["solver"] = solver
+    reason = f"two_stage_{selected_phase}"
+    return result, selected_metrics, attempts, reason
+
+
 def _solve_teacher_session_optimized_from_ui_data(
     ui_data: dict[str, Any],
     settings: Mapping[str, Any],
@@ -10718,7 +12062,8 @@ def _solve_teacher_session_optimized_from_ui_data(
     # A complete-incumbent continuation is an explicit quality-search click.
     # Its deadline is a ceiling: keep the Pareto-best candidate and stop after
     # bounded search saturation rather than waiting for a numeric threshold.
-    settings = dict(settings)
+    settings = _settings_for_optimization_focus(settings)
+    optimization_focus = _normalized_optimization_focus(settings)
     refinement_request = (
         _truthy_setting(settings.get("ui_use_existing_complete_incumbent"))
         and (
@@ -10749,7 +12094,9 @@ def _solve_teacher_session_optimized_from_ui_data(
                 # the global lower-cap portfolio as well; older clients sent
                 # only the local-LNS flags and therefore stopped after a
                 # superficially successful polish pass.
-                "optimization_refine_try_lower_session_cap": True,
+                "optimization_refine_try_lower_session_cap": (
+                    optimization_focus in {"automatic", "sessions"}
+                ),
                 # Keep the caller's period-bridge choice. Subject-period
                 # requirements explicitly disable the lean session-only lane;
                 # forcing it back on here creates attractive aggregate session
@@ -10770,11 +12117,18 @@ def _solve_teacher_session_optimized_from_ui_data(
     )
     lower_cap = max(1, int(bounds.get("lower_cap") or 1))
     upper_cap = max(lower_cap, int(bounds.get("upper_cap") or lower_cap))
+    teacher_targeting_enabled = optimization_focus in {"automatic", "sessions"}
+    gap_targeting_enabled = optimization_focus in {"automatic", "gaps"}
     target_teacher_sessions = _positive_setting(settings, "target_teacher_sessions")
     adaptive_teacher_session_opt = target_teacher_sessions is None
     target_gap1_sessions = _nonnegative_setting(settings, "target_gap1_sessions")
     balanced_quality_envelope = _teacher_quality_uses_balanced_envelope(settings)
-    if refinement_request and balanced_quality_envelope and target_gap1_sessions is None:
+    if (
+        gap_targeting_enabled
+        and refinement_request
+        and balanced_quality_envelope
+        and target_gap1_sessions is None
+    ):
         # Some complete-refinement clients omitted the zero-gap target after
         # selecting the balanced quality order. Restore it as a search signal
         # for the gap portfolio; the balanced marker still keeps session count
@@ -10787,6 +12141,13 @@ def _solve_teacher_session_optimized_from_ui_data(
     continue_quality_search = _truthy_setting(settings.get("optimization_continue_quality_search"))
     accept_teacher_sessions = _positive_setting(settings, "optimization_accept_teacher_sessions")
     accept_gap1_sessions = _nonnegative_setting(settings, "optimization_accept_gap1_sessions")
+    if not teacher_targeting_enabled:
+        target_teacher_sessions = None
+        accept_teacher_sessions = None
+    if not gap_targeting_enabled:
+        target_gap1_sessions = None
+        accept_gap1_sessions = None
+    quality_gap1_first = _teacher_quality_gap1_first(settings, target_gap1_sessions)
     explicit_quality_goal = any(
         key in settings
         for key in (
@@ -10806,7 +12167,7 @@ def _solve_teacher_session_optimized_from_ui_data(
         30,
         _to_int(settings.get("optimization_adaptive_time_limit_seconds"), 120),
     )
-    if adaptive_teacher_session_opt:
+    if adaptive_teacher_session_opt and optimization_focus == "automatic":
         total_limit = min(total_limit, adaptive_total_ceiling)
     deadline = (deadline or SolverDeadline(None)).bounded(total_limit)
     legacy_targetless_opt = (
@@ -10825,23 +12186,38 @@ def _solve_teacher_session_optimized_from_ui_data(
         lower_cap,
         int(bounds.get("start_cap") or lower_cap) - 1,
     )
-    if adaptive_teacher_session_opt and accept_teacher_sessions is None and adaptive_accept_teacher_sessions > 0:
+    if (
+        teacher_targeting_enabled
+        and adaptive_teacher_session_opt
+        and accept_teacher_sessions is None
+        and adaptive_accept_teacher_sessions > 0
+    ):
         accept_teacher_sessions = adaptive_accept_teacher_sessions
-    adaptive_gap_target_only = adaptive_teacher_session_opt and target_gap1_sessions is not None
-    if adaptive_teacher_session_opt and not adaptive_gap_target_only:
+    adaptive_gap_target_only = (
+        gap_targeting_enabled
+        and adaptive_teacher_session_opt
+        and target_gap1_sessions is not None
+    )
+    if teacher_targeting_enabled and adaptive_teacher_session_opt and not adaptive_gap_target_only:
         target_teacher_sessions = lower_cap
     if (
+        gap_targeting_enabled
+        and
         target_gap1_sessions is None
         and (accept_gap1_sessions is None or accept_gap1_sessions <= 0)
     ):
         accept_gap1_sessions = max(0, _to_int(settings.get("optimization_default_accept_gap1_sessions"), 10))
     if (
+        teacher_targeting_enabled
+        and
         accept_teacher_sessions is None
         and target_teacher_sessions is None
         and 0 < total_limit <= 180
     ):
         accept_teacher_sessions = lower_cap
     if (
+        gap_targeting_enabled
+        and
         accept_gap1_sessions is None
         and target_gap1_sessions is None
         and 0 < total_limit <= 180
@@ -11128,6 +12504,73 @@ def _solve_teacher_session_optimized_from_ui_data(
             termination_reason = "existing_good_enough_early_stop"
             search_end_reason = termination_reason
             portfolio_done = True
+        focused_refinement = optimization_focus in {"singletons", "sessions", "gaps"}
+        two_stage_refinement = (
+            unified_complete_refine
+            and refinement_request
+            and not portfolio_done
+            and total_limit >= (8 if focused_refinement else 90)
+            and _truthy_setting(
+                settings.get(
+                    "optimization_two_stage_teacher_quality",
+                    _teacher_quality_uses_two_stage_sessions_first(settings),
+                )
+            )
+        )
+        if two_stage_refinement:
+            try:
+                (
+                    two_stage_payload,
+                    two_stage_metrics,
+                    two_stage_attempts,
+                    two_stage_reason,
+                ) = _solve_two_stage_concrete_refinement(
+                    ui_data,
+                    settings,
+                    rules=rules,
+                    progress=progress,
+                    deadline=deadline,
+                    total_limit=total_limit,
+                    incumbent_payload=existing_incumbent,
+                    phase_seeds=polish_seeds,
+                    session_target=max(
+                        0,
+                        _to_int(
+                            settings.get("ui_teacher_session_progress_target"),
+                            lower_cap,
+                        ),
+                    ),
+                )
+                best_payload = two_stage_payload
+                best_metrics = two_stage_metrics
+                visible_best_payload = two_stage_payload
+                visible_best_metrics = two_stage_metrics
+                attempts.extend(two_stage_attempts)
+                termination_reason = two_stage_reason
+                search_end_reason = two_stage_reason
+                strict_existing_quality_cleanup_pending = False
+                portfolio_done = True
+                refinement_strategy_meta = {
+                    "kind": (
+                        f"focused_{optimization_focus}"
+                        if focused_refinement
+                        else "two_stage_sessions_then_gaps"
+                    ),
+                    "round": max(
+                        1,
+                        _to_int(settings.get("optimization_refinement_round"), 1),
+                    ),
+                    "terminal_for_refine_request": True,
+                }
+            except Exception as exc:  # noqa: BLE001 - legacy refinement remains available.
+                attempts.append(
+                    {
+                        "ok": False,
+                        "phase": "two_stage_orchestration",
+                        "error": str(exc)[:500],
+                        "fallback": "legacy_refinement",
+                    }
+                )
         if unified_complete_refine and not portfolio_done:
             refinement_round = max(
                 1,
@@ -13168,13 +14611,11 @@ def _solve_teacher_session_optimized_from_ui_data(
     best_teacher_sessions = _metric_int(best_metrics, "teacher_sessions", upper_cap)
     teacher_session_excess = max(0, best_teacher_sessions - lower_cap)
     teacher_session_optimal = best_teacher_sessions <= lower_cap
-    target_met = _teacher_session_opt_target_met(
+    target_met, good_enough_met = _optimization_focus_goal_status(
+        optimization_focus,
         best_metrics,
         target_teacher_sessions=target_teacher_sessions,
         target_gap1_sessions=target_gap1_sessions,
-    )
-    good_enough_met = _teacher_session_opt_good_enough(
-        best_metrics,
         accept_teacher_sessions=accept_teacher_sessions,
         accept_gap1_sessions=accept_gap1_sessions,
     )
@@ -13205,6 +14646,22 @@ def _solve_teacher_session_optimized_from_ui_data(
     solver = best_payload.setdefault("solver", {})
     runtime = solver.setdefault("runtime_settings", {})
     runtime["auto_sort_mode"] = "teacher_session_opt"
+    runtime["optimization_focus"] = optimization_focus
+    metric_session_target = (
+        max(
+            0,
+            _to_int(
+                settings.get("ui_teacher_session_progress_target"),
+                lower_cap,
+            ),
+        )
+        if teacher_targeting_enabled
+        else None
+    )
+    if metric_session_target is not None:
+        runtime["optimization_metric_session_target"] = metric_session_target
+    else:
+        runtime.pop("optimization_metric_session_target", None)
     runtime["adaptive_teacher_session_opt"] = adaptive_teacher_session_opt
     quality_priority_order = str(settings.get("quality_priority_order") or "").strip().casefold()
     if quality_priority_order:
@@ -13227,6 +14684,8 @@ def _solve_teacher_session_optimized_from_ui_data(
     )
     solver["teacher_session_optimization"] = {
         "mode": "teacher_session_opt",
+        "optimization_focus": optimization_focus,
+        "metric_session_target": metric_session_target,
         "adaptive": adaptive_teacher_session_opt,
         "quality_priority_order": quality_priority_order or None,
         "target_teacher_sessions": target_teacher_sessions,
@@ -13271,6 +14730,7 @@ def _solve_teacher_session_optimized_from_ui_data(
     payload_metrics.update(
         {
             "auto_sort_mode": "teacher_session_opt",
+            "optimization_focus": optimization_focus,
             "quality_priority_order": quality_priority_order or None,
             "teacher_session_lower_bound": lower_cap,
             "teacher_session_excess": teacher_session_excess,
@@ -13282,16 +14742,58 @@ def _solve_teacher_session_optimized_from_ui_data(
     warnings = best_payload.setdefault("warnings", [])
     validation = best_payload.setdefault("validation", {})
     validation_warnings = validation.setdefault("warnings", [])
-    if (target_teacher_sessions is not None or target_gap1_sessions is not None) and not target_met:
-        message = (
-            f"Toi uu buoi GV da tra lich day du tot nhat trong {total_limit}s: "
-            f"{best_metrics.get('teacher_sessions')} buoi GV, "
-            f"{best_metrics.get('one_period_teacher_sessions')} buoi 1 tiet, "
-            f"gap={best_metrics.get('gap_distribution')}."
-        )
-        warnings.append(message)
-        validation_warnings.append(message)
+    focus_goal_requested = (
+        optimization_focus in {"singletons", "gaps"}
+        or target_teacher_sessions is not None
+        or target_gap1_sessions is not None
+        or accept_teacher_sessions is not None
+        or accept_gap1_sessions is not None
+    )
+    if focus_goal_requested and not (target_met or good_enough_met):
+        if optimization_focus == "singletons":
+            message = (
+                "Toi uu buoi GV 1 tiet da giu lich day du tot nhat: "
+                f"con {best_metrics.get('one_period_teacher_sessions')} buoi."
+            )
+        elif optimization_focus == "sessions":
+            message = (
+                f"Toi uu so buoi GV da giu lich day du tot nhat trong {total_limit}s: "
+                f"{best_metrics.get('teacher_sessions')} buoi GV, "
+                f"{best_metrics.get('one_period_teacher_sessions')} buoi 1 tiet."
+            )
+        elif optimization_focus == "gaps":
+            message = (
+                f"Toi uu tiet trong da giu nguyen so buoi trong {total_limit}s: "
+                f"gap2={_teacher_session_opt_gap2_plus(best_metrics)}, "
+                f"gap1={_teacher_session_opt_gap1(best_metrics)}."
+            )
+        else:
+            message = (
+                f"Toi uu buoi GV da tra lich day du tot nhat trong {total_limit}s: "
+                f"{best_metrics.get('teacher_sessions')} buoi GV, "
+                f"{best_metrics.get('one_period_teacher_sessions')} buoi 1 tiet, "
+                f"gap={best_metrics.get('gap_distribution')}."
+            )
+        if message not in warnings:
+            warnings.append(message)
+        if validation_warnings is not warnings and message not in validation_warnings:
+            validation_warnings.append(message)
     if progress:
+        two_stage_meta = (
+            solver.get("two_stage_teacher_optimization")
+            if isinstance(solver.get("two_stage_teacher_optimization"), Mapping)
+            else {}
+        )
+        progress_baseline = (
+            two_stage_meta.get("incumbent")
+            if isinstance(two_stage_meta.get("incumbent"), Mapping)
+            else best_metrics
+        )
+        final_metric_kind = (
+            optimization_focus
+            if optimization_focus != "automatic"
+            else ("gaps" if two_stage_meta else "sessions")
+        )
         progress(
             {
                 "stage": "teacher_session_opt:done",
@@ -13299,6 +14801,19 @@ def _solve_teacher_session_optimized_from_ui_data(
                 "teacher_sessions": best_metrics.get("teacher_sessions"),
                 "one_period_teacher_sessions": best_metrics.get("one_period_teacher_sessions"),
                 "gap_distribution": best_metrics.get("gap_distribution"),
+                **_optimization_metric_payload(
+                    optimization_focus,
+                    best_metrics,
+                    baseline_metrics=progress_baseline,
+                    session_target=max(
+                        0,
+                        _to_int(
+                            settings.get("ui_teacher_session_progress_target"),
+                            lower_cap,
+                        ),
+                    ),
+                    metric_kind=final_metric_kind,
+                ),
             }
         )
     return best_payload
@@ -13313,7 +14828,7 @@ def solve_from_ui_data(
     out_dir: str | Path | None = None,
     _deadline: SolverDeadline | None = None,
 ) -> dict[str, Any]:
-    settings = settings or {}
+    settings = _settings_for_optimization_focus(settings)
     normalized_request_seed = normalize_cp_sat_seed(settings.get("random_seed"))
     if normalized_request_seed is not None:
         settings["random_seed"] = normalized_request_seed

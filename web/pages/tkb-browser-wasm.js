@@ -1,7 +1,7 @@
 (function(root){
   "use strict";
 
-  const VERSION = "tkb-browser-wasm-executor-v4-portfolio-toggle";
+  const VERSION = "tkb-browser-wasm-executor-v5-focused-two-stage";
   const AGENT_PROTOCOL = "tkb-agent-helper-v1";
   const AGENT_VERSION = "1.6.29";
   const SOLVER_PROTOCOL = "tkb-reference-solver-stdio-v1";
@@ -663,11 +663,51 @@
     return [onePeriod, gap2, teacherSessions, gap1, totalGap];
   }
 
-  function compareQuality(left, right){
+  function normalizedOptimizationFocus(settings){
+    const raw = String(settings?.optimization_focus || "automatic")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_");
+    if(["quick", "complete", "quick_complete"].includes(raw)) return "quick_complete";
+    if(["singleton", "singletons", "one_period_teacher_sessions"].includes(raw)) return "singletons";
+    if(["session", "sessions", "teacher_sessions"].includes(raw)) return "sessions";
+    if(["gap", "gaps", "teacher_gaps"].includes(raw)) return "gaps";
+    return "automatic";
+  }
+
+  function requestedOnePeriodCap(settings){
+    const raw = settings?.max_one_period_sessions;
+    const numeric = raw === "" || raw == null ? NaN : Number(raw);
+    if(Number.isFinite(numeric) && numeric >= 0) return Math.trunc(numeric);
+    if(
+      settings?.strict_one_period_sessions_cap === true
+      || settings?.enforce_max_one_period_sessions === true
+    ) return 0;
+    return null;
+  }
+
+  function qualityMeetsRequestedCaps(quality, settings){
+    if(!quality) return false;
+    const onePeriodCap = requestedOnePeriodCap(settings);
+    return onePeriodCap == null || quality[0] <= onePeriodCap;
+  }
+
+  function qualityComparisonOrder(settings){
+    const focus = normalizedOptimizationFocus(settings);
+    if(["quick_complete", "singletons", "sessions"].includes(focus)){
+      return [0, 2, 1, 3, 4];
+    }
+    if(focus === "gaps") return [0, 1, 3, 4, 2];
+    return [0, 2, 1, 3, 4];
+  }
+
+  function compareQuality(left, right, settings){
     if(!left && !right) return 0;
     if(!left) return 1;
     if(!right) return -1;
-    for(let index = 0; index < Math.min(left.length, right.length); index++){
+    const order = qualityComparisonOrder(settings);
+    for(const index of order){
+      if(index >= left.length || index >= right.length) continue;
       if(left[index] !== right[index]) return left[index] - right[index];
     }
     return left.length - right.length;
@@ -688,9 +728,30 @@
     return cloned;
   }
 
-  function qualityWithinEnvelope(candidate, incumbent){
+  function qualityWithinEnvelope(candidate, incumbent, settings){
     if(!candidate || !incumbent || candidate.length !== incumbent.length) return false;
-    return candidate.every((value, index) => value <= incumbent[index]);
+    if(!qualityMeetsRequestedCaps(candidate, settings)) return false;
+    const focus = normalizedOptimizationFocus(settings);
+    if(["quick_complete", "singletons", "sessions"].includes(focus)){
+      if(candidate[0] > incumbent[0] || candidate[2] > incumbent[2]) return false;
+      // Singleton/session phases may create temporary gap debt only when they
+      // actually improve the dimension they own. Equal primary metrics keep
+      // the normal lexicographic gap envelope.
+      if(candidate[0] < incumbent[0] || candidate[2] < incumbent[2]) return true;
+      return compareQuality(candidate, incumbent, settings) <= 0;
+    }
+    if(focus === "gaps"){
+      return candidate[0] <= incumbent[0]
+        && candidate[2] === incumbent[2]
+        && compareQuality(candidate, incumbent, settings) <= 0;
+    }
+    // Automatic keeps the coordinated Phase-S/Phase-G envelope: no singleton,
+    // teacher-session, or gap-2 regression, while gap-1 may move only behind
+    // a strict improvement in an earlier lexicographic dimension.
+    return candidate[0] <= incumbent[0]
+      && candidate[2] <= incumbent[2]
+      && candidate[1] <= incumbent[1]
+      && compareQuality(candidate, incumbent, settings) <= 0;
   }
 
   async function runPortfolio(refinementRequest, lease, signal){
@@ -698,6 +759,7 @@
     if(!workers.length) throw new Error("browser_wasm_worker_missing");
     const incumbent = refinementRequest?.data?.tkbSolverResult;
     const incumbentQuality = qualityTupleFromResult(incumbent);
+    const settings = refinementRequest?.settings || {};
     let best = null;
     let validCandidateCount = 0;
     await Promise.all(workers.map(async (worker, index) => {
@@ -725,12 +787,17 @@
         const candidate = {frame, status, result, quality:qualityTupleFromResult(result), index};
         if(!candidate.quality) return;
         validCandidateCount += 1;
-        if(incumbentQuality && !qualityWithinEnvelope(candidate.quality, incumbentQuality)) return;
-        if(!best || compareQuality(candidate.quality, best.quality) < 0) best = candidate;
+        if(incumbentQuality && !qualityWithinEnvelope(candidate.quality, incumbentQuality, settings)) return;
+        if(!best || compareQuality(candidate.quality, best.quality, settings) < 0) best = candidate;
       }catch(_){ }
     }));
     if(best) return best;
-    if(validCandidateCount > 0 && completeHardResult(incumbent) && incumbentQuality){
+    if(
+      validCandidateCount > 0
+      && completeHardResult(incumbent)
+      && incumbentQuality
+      && qualityMeetsRequestedCaps(incumbentQuality, settings)
+    ){
       return {status:200, result:incumbent, quality:incumbentQuality, index:workers.length};
     }
     throw new Error("browser_wasm_no_candidate");

@@ -36,6 +36,7 @@ from tkb_new.adapter import (  # noqa: E402
     _repair_one_period_affected_class_cluster,
     _session_cp_sat_linearization_level,
     _solve_fast_tight_fixed_off_benders,
+    _solve_two_stage_concrete_refinement,
     _solve_unified_first_click_feasibility_then_quality,
     _new_cuts_for_period_metrics,
     _polish_complete_incumbent_with_local_lns,
@@ -54,6 +55,7 @@ from tkb_new.adapter import (  # noqa: E402
     _teacher_session_opt_should_prioritize_gap_portfolio,
     _teacher_session_opt_should_stop,
     _teacher_session_opt_within_balanced_envelope,
+    _teacher_two_stage_sessions_first_better,
     _teacher_quality_gap1_first,
     _validated_existing_soft_incumbent_payload,
     build_payload,
@@ -147,6 +149,199 @@ def _first_click_payload(
 
 
 class SolverResultContractTests(unittest.TestCase):
+    def test_two_stage_quality_prefers_sessions_before_gap_debt(self) -> None:
+        incumbent = _first_click_payload(teacher_sessions=509, gap1=83)["metrics"]
+        compressed = _first_click_payload(teacher_sessions=488, gap1=69)["metrics"]
+        compressed["gap_distribution"] = {0: 418, 1: 69, 2: 1}
+        self.assertTrue(
+            _teacher_two_stage_sessions_first_better(compressed, incumbent)
+        )
+
+        same_sessions_worse_gaps = dict(incumbent)
+        same_sessions_worse_gaps["gap_distribution"] = {0: 423, 1: 84, 2: 2}
+        self.assertFalse(
+            _teacher_two_stage_sessions_first_better(
+                same_sessions_worse_gaps,
+                incumbent,
+            )
+        )
+
+    def test_two_stage_refinement_locks_phase_s_sessions_while_cleaning_gaps(self) -> None:
+        incumbent = _first_click_payload(teacher_sessions=509, gap1=83)
+        phase_s = _first_click_payload(teacher_sessions=488, gap1=73)
+        phase_s["metrics"]["gap_distribution"] = {0: 413, 1: 73, 2: 2}
+        phase_g = _first_click_payload(teacher_sessions=488, gap1=69)
+        phase_g["metrics"]["gap_distribution"] = {0: 419, 1: 69, 2: 0}
+        calls: list[dict] = []
+
+        def fake_benders(_data, call_settings, **kwargs):
+            calls.append({"settings": dict(call_settings), **kwargs})
+            return json.loads(json.dumps(phase_s if len(calls) == 1 else phase_g))
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=fake_benders,
+        ):
+            payload, metrics, attempts, reason = _solve_two_stage_concrete_refinement(
+                {},
+                {
+                    "quality_priority_order": "one_period_teacher_sessions_gap2_gap1",
+                },
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(180),
+                total_limit=180,
+                incumbent_payload=incumbent,
+                phase_seeds=[101, 202],
+            )
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0]["cap"], 509)
+        self.assertEqual(calls[0]["incumbent_payload"], incumbent)
+        self.assertEqual(calls[0]["settings"]["period_max_teacher_gap"], "off")
+        self.assertFalse(
+            calls[0]["settings"]["optimization_benders_minimize_period_gaps"]
+        )
+        self.assertEqual(calls[1]["cap"], 488)
+        self.assertEqual(
+            calls[1]["incumbent_payload"]["metrics"]["teacher_sessions"],
+            488,
+        )
+        self.assertTrue(
+            calls[1]["settings"]["optimization_benders_minimize_period_gaps"]
+        )
+        self.assertTrue(
+            calls[1]["settings"][
+                "optimization_benders_period_gap_priority_absolute"
+            ]
+        )
+        self.assertEqual(metrics["teacher_sessions"], 488)
+        self.assertEqual(metrics["gap_distribution"], {"0": 419, "1": 69, "2": 0})
+        self.assertEqual(reason, "two_stage_gap_cleanup")
+        self.assertEqual(
+            payload["solver"]["two_stage_teacher_optimization"]["selected_phase"],
+            "gap_cleanup",
+        )
+        self.assertEqual([item["phase"] for item in attempts], [
+            "two_stage_session_compression",
+            "two_stage_gap_cleanup",
+        ])
+
+    def test_two_stage_refinement_returns_phase_s_when_gap_cleanup_fails(self) -> None:
+        incumbent = _first_click_payload(teacher_sessions=509, gap1=83)
+        phase_s = _first_click_payload(teacher_sessions=490, gap1=76)
+        phase_s["metrics"]["gap_distribution"] = {0: 409, 1: 76, 2: 5}
+        calls = 0
+
+        def fake_benders(_data, _settings, **_kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return json.loads(json.dumps(phase_s))
+            raise RuntimeError("gap cleanup timed out")
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=fake_benders,
+        ):
+            payload, metrics, _attempts, reason = _solve_two_stage_concrete_refinement(
+                {},
+                {
+                    "quality_priority_order": "one_period_teacher_sessions_gap2_gap1",
+                },
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(180),
+                total_limit=180,
+                incumbent_payload=incumbent,
+                phase_seeds=[101, 202],
+            )
+
+        self.assertEqual(reason, "two_stage_incumbent")
+        self.assertEqual(metrics["teacher_sessions"], 509)
+        self.assertEqual(
+            payload["solver"]["two_stage_teacher_optimization"]["selected_phase"],
+            "incumbent",
+        )
+
+    def test_complete_refinement_routes_new_priority_to_two_stage_pipeline(self) -> None:
+        data = {
+            "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
+            "giaovien": [{"magv": "T1", "ten": "T1"}],
+            "monhoc": [{"ten": "Math", "ma": "M"}],
+            "mon": [{"khoi": "6", "ten": "Math", "sotiet": 4, "gioihan": 4}],
+            "pccmMatrix": {"L1|Math": "T1"},
+            "tkbConstraints": {},
+        }
+        incumbent = _first_click_payload(teacher_sessions=509, gap1=83)
+        improved = _first_click_payload(teacher_sessions=488, gap1=69)
+        improved["metrics"]["gap_distribution"] = {0: 418, 1: 69, 2: 1}
+
+        with (
+            patch(
+                "tkb_new.adapter._teacher_session_adaptive_bounds",
+                return_value={
+                    "lower_cap": 346,
+                    "start_cap": 466,
+                    "upper_cap": 1116,
+                    "expected_periods": 1566,
+                },
+            ),
+            patch(
+                "tkb_new.adapter._fast_benders_tight_fixed_off_profile",
+                return_value=None,
+            ),
+            patch(
+                "tkb_new.adapter._validated_existing_soft_incumbent_payload",
+                return_value=incumbent,
+            ),
+            patch(
+                "tkb_new.adapter._solve_two_stage_concrete_refinement",
+                return_value=(
+                    improved,
+                    improved["metrics"],
+                    [{"phase": "two_stage_gap_cleanup", "ok": True}],
+                    "two_stage_gap_cleanup",
+                ),
+            ) as two_stage,
+            patch(
+                "tkb_new.adapter._solve_teacher_session_benders_candidate",
+                side_effect=AssertionError("legacy Benders must not run"),
+            ),
+            patch(
+                "tkb_new.adapter._polish_complete_incumbent_with_local_lns",
+                side_effect=AssertionError("local LNS must not run"),
+            ),
+        ):
+            payload = _solve_teacher_session_optimized_from_ui_data(
+                data,
+                {
+                    "auto_sort_mode": "teacher_session_opt",
+                    "auto_sort_strategy": "continue_teacher_quality_from_incumbent",
+                    "ui_unified_auto_sort": True,
+                    "ui_unified_solve_kind": "refine_complete",
+                    "ui_use_existing_complete_incumbent": True,
+                    "quality_priority_order": "one_period_teacher_sessions_gap2_gap1",
+                    "optimization_two_stage_teacher_quality": True,
+                    "target_gap1_sessions": 0,
+                    "optimization_accept_teacher_sessions": 466,
+                    "optimization_accept_gap1_sessions": 53,
+                    "optimization_time_limit_seconds": 180,
+                    "optimization_adaptive_time_limit_seconds": 180,
+                    "num_workers": 6,
+                },
+                rules=None,
+                progress=None,
+                out_dir=None,
+            )
+
+        two_stage.assert_called_once()
+        self.assertEqual(payload["metrics"]["teacher_sessions"], 488)
+        self.assertEqual(
+            payload["solver"]["teacher_session_optimization"]["termination_reason"],
+            "two_stage_gap_cleanup",
+        )
+
     def test_legacy_static_hints_are_disabled_even_when_requested(self) -> None:
         self.assertFalse(_legacy_solver_hints_enabled())
         self.assertFalse(
@@ -5414,7 +5609,10 @@ class SolverResultContractTests(unittest.TestCase):
                 "tkb_new.adapter._cut_for_period_error_sparse",
                 side_effect=[[(0, {0: 2})], [(1, {0: 1})]],
             ),
-            patch("tkb_new.adapter.build_payload", return_value=payload),
+            patch(
+                "tkb_new.adapter.build_payload",
+                return_value=payload,
+            ) as build_payload_mock,
         ):
             result = _solve_teacher_session_benders_candidate(
                 {},
@@ -5437,6 +5635,9 @@ class SolverResultContractTests(unittest.TestCase):
             )
 
         self.assertIs(result, payload)
+        self.assertTrue(
+            build_payload_mock.call_args.kwargs["allow_temporary_teacher_gap_debt"]
+        )
         self.assertEqual(solve_sessions.call_count, 3)
         self.assertTrue(
             all(

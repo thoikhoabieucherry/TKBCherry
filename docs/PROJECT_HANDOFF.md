@@ -1,6 +1,6 @@
 # TKBCherry Project Handoff
 
-Last updated: 2026-07-23 (Asia/Bangkok)
+Last updated: 2026-07-24 (Asia/Bangkok)
 
 This is the persistent handoff note for future Codex sessions. Read this file
 before modifying the scheduler or deploying. Update it after every meaningful
@@ -72,6 +72,71 @@ change so a machine restart or a new conversation does not erase project context
   restore gap-2 to zero when constraints permit, and reduce gap-1. Only a final
   candidate that passes the complete hard validator and the visible Pareto
   guard may replace the incumbent.
+
+### v1.69 focused optimizer contract (backend candidate, not deployed)
+
+- Candidate markers are API
+  `tkb_new-rust-api-2026-07-24-focused-two-stage-v64`, bridge
+  `tkb-rust-api-v266-focused-two-stage`, planner cache
+  `20260724-v169-focused-two-stage-v1`, and Browser executor
+  `tkb-browser-wasm-executor-v5-focused-two-stage`.
+- `solver_runtime/src/tkb_new/adapter.py` now normalizes the request focus to
+  `automatic`, `quick_complete`, `singletons`, `sessions`, or `gaps` (including
+  the bridge aliases `one_period_teacher_sessions`, `teacher_sessions`, and
+  `teacher_gaps`). Existing CP-SAT/Benders code is reused; no alternate solver
+  is introduced.
+- Focused refinements are atomic: singleton cleanup runs one phase, session
+  cleanup runs Phase S only with a hard zero-singleton cap, and gap cleanup runs
+  Phase G only while locking the achieved session count. Automatic refinement
+  keeps Phase S then Phase G. A complete incumbent remains the fallback when a
+  focused candidate is incomplete or violates authored constraints.
+- Phase S explicitly permits temporary gap-2 debt. Its materialized period
+  candidate was previously rejected by the partial-payload guard's legacy
+  `max_gap <= 1` check even though it was complete and satisfied every authored
+  constraint. The Benders payload builder now propagates gap debt permission
+  whenever `period_max_teacher_gap` is off; strict Phase G remains unchanged.
+  A real `default` Quick -> Sessions run improved from 567 to 510 teacher
+  sessions in 93.37 seconds, retained 1,566/1,566 periods and zero singleton
+  sessions, and passed canonical validation with six temporary gap-2 sessions.
+- Quick completion now keeps `period_max_teacher_gap` off after the browser's
+  final preset normalization, including when the visible timetable is already
+  complete and Browser WASM is eligible. It requires a complete hard-valid
+  schedule with zero singleton sessions, but deliberately permits gap-2. On the
+  current `default` fixture it returned 1,566/1,566 periods in 48.79 seconds
+  with 567 teacher sessions, zero singleton sessions, 124 gap-1 sessions and
+  17 gap-2 sessions, preserving room for explicit session compression.
+- Phase G now begins with a fixed-session period repack before global CP-SAT.
+  It preserves every assignment's half-day and therefore locks the teacher
+  session count, while the parallel period MILP removes severe gaps in a few
+  seconds. On the 510-session checkpoint, a 40-second real VPS run reached
+  gap-2 zero and gap-1 85 in 37.41 seconds. The former direct CP-SAT path had
+  returned the unchanged 101 gap-1 / 6 gap-2 incumbent after 186.36 seconds.
+- A complete 180-second Automatic benchmark now performs session compression
+  followed by that fast gap checkpoint atomically: 567 -> 496 teacher sessions,
+  zero singleton sessions, gap-2 zero and gap-1 68 in 176.25 seconds. The
+  result is complete, hard-valid, has zero authored-constraint violations, and
+  passes canonical validation.
+- Phase progress emits `optimizationFocus`, `metricCurrent`, `metricTarget`,
+  `metricBaseline`, and clamped `metricPercent`. Gap progress reports gap-2
+  until it reaches zero, then switches to a fresh gap-1 baseline; it no longer
+  labels the sum of both buckets as a gap-2 count.
+- Browser Agent portfolio acceptance follows the same focus contract as VPS:
+  Quick and Singletons may take temporary gap debt only for real singleton
+  cleanup, Sessions may do so only for a real session reduction, Gaps locks the
+  session count and compares gap-2 before gap-1, and Automatic keeps its
+  coordinated singleton/session/gap-2 envelope. The Rust Agent gate proves
+  Quick accepts gap-2 with `period_max_teacher_gap=off` while still rejecting
+  singleton debt under the strict zero cap.
+- Final release review fixed the Browser Agent's multi-candidate Singleton
+  comparison: the quality-order helper no longer references out-of-scope
+  candidate variables, and the regression now exercises two valid Singleton
+  candidates before selecting the lower-session result.
+- Current verification passes full Node **329/329**, full Python **201/201**
+  with three platform skips, focused scheduler **22/22**, deployment packaging
+  **13/13**, JavaScript syntax and `git diff --check`.
+  Isolated VPS staging passes scheduler **201/201**, Agent **151/151**, trusted
+  worker **5/5**, Rust API **166/166**, and Rust Agent validator **31/31**, ending
+  with `STAGING_TESTS_OK`. The candidate is not deployed yet.
 
 ### v1.67 compact mobile history and duration control (deployed 2026-07-23)
 

@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v265-browser-portfolio-direct";
+  const VERSION = "tkb-rust-api-v266-focused-two-stage";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -24,6 +24,13 @@
     const MAX_CUSTOM_SOLVE_DURATION_SECONDS = 1800;
     const SOLVE_COMPLETE_MESSAGE = "Đã xếp xong!";
     const NO_BETTER_SCHEDULE_MESSAGE = SOLVE_COMPLETE_MESSAGE;
+    const SOLVE_REQUEST_MODES = Object.freeze({
+      automatic: "automatic",
+      quickComplete: "quick_complete",
+      singletons: "optimize_singletons",
+      sessions: "optimize_sessions",
+      gaps: "optimize_gaps"
+    });
     const SOLVER_PRESETS = {
       fast: { label: "Nhanh", bolts: 1 },
       balanced: { label: "Max", bolts: 2 }
@@ -189,6 +196,10 @@
       const preset = presetOverride
         ? normalizeSolverPreset(presetOverride)
         : solverPresetForSettings(settings);
+      const optimizationFocus = String(settings.optimization_focus || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[\s-]+/g, "_");
       settings.minimize_one_period_sessions = true;
       const boundedFreshDebt = settings.ui_bounded_fresh_accept_quality_debt === true;
       const unifiedResidualDebt = settings.ui_unified_partial_repair === true || boundedFreshDebt;
@@ -211,6 +222,13 @@
         settings.enforce_max_one_period_sessions = true;
         settings.one_period_priority_absolute = true;
         settings.allow_quality_debt = false;
+      }
+      if(optimizationFocus === "quick_complete"){
+        // Quick owns completeness and singleton cleanup only. Keep this final
+        // override after the generic preset policy so an existing complete
+        // timetable cannot silently turn gap-2 back into a hard Agent gate.
+        settings.minimize_teacher_gaps = false;
+        settings.period_max_teacher_gap = "off";
       }
       return settings;
     }
@@ -4264,12 +4282,23 @@
     progressState.backendProgressSequence = sequence;
     progressState.backendProgressElapsedMs = elapsedMs;
     progressState.backendProgressUpdatedAtMs = Date.now();
+    const metricProgress = normalizeMetricProgressSnapshot(snapshot);
+    if(metricProgress){
+      progressState.metricProgress = metricProgress;
+    }
     try{
       window.__TKB_RUST_LAST_LIVE_PROGRESS = {
         protocol:BACKEND_LIVE_PROGRESS_PROTOCOL,
         stage,
         sequence,
-        elapsedMs
+        elapsedMs,
+        ...(metricProgress ? {
+          optimizationFocus:metricProgress.focus,
+          metricCurrent:metricProgress.current,
+          metricTarget:metricProgress.target,
+          metricBaseline:metricProgress.baseline,
+          metricPercent:metricProgress.percent
+        } : {})
       };
     }catch(_){ }
     tickEstimatedProgress();
@@ -4393,9 +4422,18 @@
         )
       : Math.round(4 + preAdmissionRatio * (cap - 4));
     const lastPercent = Number(progressState.lastPercent || 0) || 0;
-    const percent = localClickTimeline
-      ? Math.min(Math.max(cap, lastPercent), Math.max(lastPercent, estimatedPercent))
-      : Math.min(cap, estimatedPercent);
+    const metricPercent = Number(progressState.metricProgress?.percent);
+    const hasMetricProgress = Number.isFinite(metricPercent);
+    // Once the solver publishes a real quality/completion metric, the ring is
+    // driven only by that metric. Time remains visible in the compact label but
+    // no longer pretends to be percent-complete.
+    const percent = hasMetricProgress
+      ? Math.max(0, Math.min(100, Math.round(metricPercent)))
+      : (canonicalServerProgress
+          ? Math.max(4, Math.min(PRE_ADMISSION_PROGRESS_CAP, lastPercent || PRE_ADMISSION_PROGRESS_CAP))
+          : (localClickTimeline
+              ? Math.min(Math.max(cap, lastPercent), Math.max(lastPercent, estimatedPercent))
+              : Math.min(cap, estimatedPercent)));
     const phase = progressState.backendQueued === true
       ? "queued"
       : (!canonicalServerProgress
@@ -4445,6 +4483,13 @@
     const calculatedEstimateSeconds = estimateSolveSeconds(settings || {}, data || getData());
     const estimatedSeconds = normalizePendingProgressSeconds(pending?.progressEstimateSeconds)
       || calculatedEstimateSeconds;
+    const configuredMetricProgress = normalizeMetricProgressSnapshot({
+      optimizationFocus:settings?.ui_progress_metric_focus,
+      metricCurrent:settings?.ui_progress_metric_current,
+      metricTarget:settings?.ui_progress_metric_target,
+      metricBaseline:settings?.ui_progress_metric_baseline,
+      metricPercent:settings?.ui_progress_metric_percent
+    });
     progressState = {
       startedAt,
       uiStartedAt,
@@ -4459,6 +4504,7 @@
         && Math.max(0, Date.now() - uiStartedAt) < FIRST_PROGRESS_PAINT_DELAY_MS,
       modeLabel: solveActionLabel(settings || {}),
       settings: Object.assign({}, settings || {}),
+      metricProgress:configuredMetricProgress,
       runIndex:normalizePendingProgressRunIndex(
         pending?.progressRunIndex
         || progressState?.runIndex
@@ -7165,12 +7211,113 @@
     return true;
   }
 
-  function candidateWithinVisibleQualityEnvelope(candidate, incumbent){
+  function usesTwoStageTeacherQuality(settings, candidate, incumbent){
+    const markers = [
+      settings?.quality_priority_order,
+      candidate?.metrics?.quality_priority_order,
+      candidate?.solver?.runtime_settings?.quality_priority_order,
+      incumbent?.metrics?.quality_priority_order,
+      incumbent?.solver?.runtime_settings?.quality_priority_order
+    ];
+    return markers.some(value => String(value || "").trim().toLowerCase()
+      === "one_period_teacher_sessions_gap2_gap1");
+  }
+
+  function normalizeSolveRequestMode(value){
+    const mode = String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+    if(["quick", "complete", "fill", "quick_fill", "quick_complete"].includes(mode)){
+      return SOLVE_REQUEST_MODES.quickComplete;
+    }
+    if(["singleton", "singletons", "one_period", "optimize_singletons"].includes(mode)){
+      return SOLVE_REQUEST_MODES.singletons;
+    }
+    if(["session", "sessions", "teacher_sessions", "optimize_sessions"].includes(mode)){
+      return SOLVE_REQUEST_MODES.sessions;
+    }
+    if(["gap", "gaps", "teacher_gaps", "optimize_gaps"].includes(mode)){
+      return SOLVE_REQUEST_MODES.gaps;
+    }
+    return SOLVE_REQUEST_MODES.automatic;
+  }
+
+  function metricProgressPercent(focus, current, target, baseline){
+    const normalizedFocus = String(focus || "").trim().toLowerCase();
+    const currentValue = Math.max(0, Number(current || 0) || 0);
+    const targetValue = Math.max(0, Number(target || 0) || 0);
+    const baselineValue = Math.max(currentValue, Number(baseline || 0) || 0);
+    if(normalizedFocus === "scheduled_periods" || normalizedFocus === "quick_complete"){
+      return targetValue > 0
+        ? Math.max(0, Math.min(100, Math.round(currentValue * 100 / targetValue)))
+        : 0;
+    }
+    if(normalizedFocus === "teacher_sessions" || normalizedFocus === "optimize_sessions"){
+      if(currentValue <= targetValue) return 100;
+      if(currentValue <= 0 || targetValue <= 0) return 0;
+      return Math.max(0, Math.min(100, Math.round(targetValue * 100 / currentValue)));
+    }
+    if(
+      normalizedFocus === "one_period_teacher_sessions"
+      || normalizedFocus === "teacher_gap2_sessions"
+      || normalizedFocus === "teacher_gap1_sessions"
+      || normalizedFocus === "optimize_singletons"
+      || normalizedFocus === "optimize_gaps"
+    ){
+      if(currentValue <= targetValue) return 100;
+      if(baselineValue <= targetValue) return 0;
+      return Math.max(0, Math.min(100, Math.round(
+        (baselineValue - currentValue) * 100 / (baselineValue - targetValue)
+      )));
+    }
+    return 0;
+  }
+
+  function normalizeMetricProgressSnapshot(snapshot){
+    if(!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return null;
+    const focus = String(
+      snapshot.optimizationFocus
+      ?? snapshot.optimization_focus
+      ?? snapshot.metricFocus
+      ?? snapshot.metric_focus
+      ?? ""
+    ).trim();
+    if(!focus || focus.length > 80 || !/^[a-z0-9_.:-]+$/i.test(focus)) return null;
+    const current = Number(snapshot.metricCurrent ?? snapshot.metric_current);
+    const target = Number(snapshot.metricTarget ?? snapshot.metric_target);
+    const baselineRaw = Number(snapshot.metricBaseline ?? snapshot.metric_baseline);
+    const reportedPercent = Number(snapshot.metricPercent ?? snapshot.metric_percent);
+    if(!Number.isFinite(current) || !Number.isFinite(target)) return null;
+    const baseline = Number.isFinite(baselineRaw) ? Math.max(0, baselineRaw) : Math.max(0, current);
+    const percent = Number.isFinite(reportedPercent)
+      ? Math.max(0, Math.min(100, Math.round(reportedPercent)))
+      : metricProgressPercent(focus, current, target, baseline);
+    return {
+      focus,
+      current:Math.max(0, current),
+      target:Math.max(0, target),
+      baseline,
+      percent
+    };
+  }
+
+  function candidateWithinVisibleQualityEnvelope(candidate, incumbent, settings){
     const next = teacherQualitySummary(candidate);
     const current = teacherQualitySummary(incumbent);
     if(next.onePeriod > current.onePeriod) return false;
-    if(next.gap2Plus > current.gap2Plus) return false;
     if(next.teacherSessions > current.teacherSessions) return false;
+    if(usesTwoStageTeacherQuality(settings, candidate, incumbent)){
+      // A strict session reduction may temporarily carry gap debt from Phase
+      // S. With the session count tied, Phase G must improve gaps instead.
+      if(next.onePeriod < current.onePeriod) return true;
+      if(next.teacherSessions < current.teacherSessions) return true;
+      if(next.gap2Plus !== current.gap2Plus){
+        return next.gap2Plus < current.gap2Plus;
+      }
+      if(next.totalGap !== current.totalGap){
+        return next.totalGap < current.totalGap;
+      }
+      return next.gap1 <= current.gap1;
+    }
+    if(next.gap2Plus > current.gap2Plus) return false;
     if(next.gap1 > current.gap1) return false;
     if(next.totalGap > current.totalGap) return false;
     // Per-teacher imbalance remains a backend tie-breaker when the five visible
@@ -7179,8 +7326,17 @@
     return true;
   }
 
-  function visibleTeacherQualityTuple(payload){
+  function visibleTeacherQualityTuple(payload, settings, candidate, incumbent){
     const quality = teacherQualitySummary(payload);
+    if(usesTwoStageTeacherQuality(settings, candidate, incumbent)){
+      return [
+        quality.onePeriod,
+        quality.teacherSessions,
+        quality.gap2Plus,
+        quality.totalGap,
+        quality.gap1
+      ];
+    }
     return [
       quality.onePeriod,
       quality.gap2Plus,
@@ -7190,10 +7346,10 @@
     ];
   }
 
-  function payloadStrictlyBetterTeacherQuality(candidate, incumbent){
-    if(!candidateWithinVisibleQualityEnvelope(candidate, incumbent)) return false;
-    const next = visibleTeacherQualityTuple(candidate);
-    const current = visibleTeacherQualityTuple(incumbent);
+  function payloadStrictlyBetterTeacherQuality(candidate, incumbent, settings){
+    if(!candidateWithinVisibleQualityEnvelope(candidate, incumbent, settings)) return false;
+    const next = visibleTeacherQualityTuple(candidate, settings, candidate, incumbent);
+    const current = visibleTeacherQualityTuple(incumbent, settings, candidate, incumbent);
     for(let index = 0; index < next.length; index += 1){
       if(next[index] < current[index]) return true;
       if(next[index] > current[index]) return false;
@@ -7201,10 +7357,10 @@
     return false;
   }
 
-  function payloadBetterOrEqualTeacherQuality(candidate, incumbent){
+  function payloadBetterOrEqualTeacherQuality(candidate, incumbent, settings){
     // Replacement candidates must make measurable progress. Equality keeps the
     // incumbent, which also prevents stale target flags from replacing it.
-    return payloadStrictlyBetterTeacherQuality(candidate, incumbent);
+    return payloadStrictlyBetterTeacherQuality(candidate, incumbent, settings);
   }
 
   function incumbentQualityGuardState(incumbentPayload, scheduleSnapshot, data, settings){
@@ -7252,11 +7408,11 @@
     };
   }
 
-  function shouldKeepIncumbentForTeacherQuality(candidate, incumbent, guardState){
+  function shouldKeepIncumbentForTeacherQuality(candidate, incumbent, guardState, settings){
     if(!guardState || !incumbent) return false;
     const candidateCompletion = payloadCompletion(candidate);
     if(!candidateCompletion.complete) return true;
-    return !payloadStrictlyBetterTeacherQuality(candidate, incumbent);
+    return !payloadStrictlyBetterTeacherQuality(candidate, incumbent, settings);
   }
 
   function shouldUseStagedExistingRepair(settings, data){
@@ -7633,7 +7789,7 @@
         "quality"
       );
       const qualityCompletion = payloadCompletion(qualityPayload);
-      if(qualityCompletion.complete && payloadStrictlyBetterTeacherQuality(qualityPayload, fillPayload)){
+      if(qualityCompletion.complete && payloadStrictlyBetterTeacherQuality(qualityPayload, fillPayload, qualitySettings)){
         return markStagedExistingPayload(qualityPayload, state, "quality", {
           ui_staged_quality_accepted: true
         });
@@ -7853,7 +8009,7 @@
         {phase: "quality"}
       );
       const optimizedCompletion = payloadCompletion(optimized);
-      if(optimizedCompletion.complete && payloadBetterOrEqualTeacherQuality(optimized, draftPayload)){
+      if(optimizedCompletion.complete && payloadBetterOrEqualTeacherQuality(optimized, draftPayload, optimizeSettings)){
         return markInitialFastDraftPayload(optimized, {
           phase: "quality",
           quality_slice_accepted: true
@@ -7937,7 +8093,7 @@
       }
       const optimized = await postSolve(settings, data);
       const optimizedCompletion = payloadCompletion(optimized);
-      if(optimizedCompletion.complete && payloadBetterOrEqualTeacherQuality(optimized, incumbent)){
+      if(optimizedCompletion.complete && payloadBetterOrEqualTeacherQuality(optimized, incumbent, settings)){
         const afterQuality = teacherSessionQuality(optimized).join("|");
         incumbent = optimized;
         noImproveAttempts = afterQuality === beforeQuality ? noImproveAttempts + 1 : 0;
@@ -8895,6 +9051,18 @@
       if(!memo.scheduledLessonCounts) memo.scheduledLessonCounts = new Map();
       memo.scheduledLessonCounts.set(memoKey, count);
     }
+    return count;
+  }
+
+  function activeStudentSessionCount(data){
+    let count = 0;
+    Object.values(data?.tkb || {}).forEach(tkb => {
+      ["thu2","thu3","thu4","thu5","thu6","thu7"].forEach(thu => {
+        ["sang","chieu"].forEach(buoi => {
+          if((tkb?.[thu]?.[buoi] || []).some(isScheduledCell)) count += 1;
+        });
+      });
+    });
     return count;
   }
 
@@ -12516,9 +12684,9 @@
       && Object.prototype.hasOwnProperty.call(metrics, "one_period_teacher_sessions");
   }
 
-  function refinementStatisticsImproved(candidate, incumbent, fingerprintChanged){
+  function refinementStatisticsImproved(candidate, incumbent, fingerprintChanged, settings){
     if(hasComparableOptimizationStats(candidate) && hasComparableOptimizationStats(incumbent)){
-      return payloadStrictlyBetterTeacherQuality(candidate, incumbent);
+      return payloadStrictlyBetterTeacherQuality(candidate, incumbent, settings);
     }
     return fingerprintChanged === true;
   }
@@ -13147,7 +13315,7 @@
             const seedCompletion = payloadCompletion(seedPayload);
             if(seedCompletion.complete){
               completeQualityAttempts += 1;
-              if(!completion.complete || payloadBetterOrEqualTeacherQuality(seedPayload, payload)){
+              if(!completion.complete || payloadBetterOrEqualTeacherQuality(seedPayload, payload, settings)){
                 payload = seedPayload;
                 completion = seedCompletion;
               }
@@ -13186,7 +13354,7 @@
             const seedPayload = await postSolve(shuffleRetrySettings);
             if(!isCurrentSolveRun(activeSolveRunId)) return null;
             const seedCompletion = payloadCompletion(seedPayload);
-            if(seedCompletion.complete && payloadBetterOrEqualTeacherQuality(seedPayload, payload)){
+            if(seedCompletion.complete && payloadBetterOrEqualTeacherQuality(seedPayload, payload, shuffleRetrySettings)){
               payload = seedPayload;
               completion = seedCompletion;
             }
@@ -13217,7 +13385,7 @@
               const seedPayload = await postSolve(portfolioSettings);
               if(!isCurrentSolveRun(activeSolveRunId)) return null;
               const seedCompletion = payloadCompletion(seedPayload);
-              if(seedCompletion.complete && payloadBetterOrEqualTeacherQuality(seedPayload, payload)){
+              if(seedCompletion.complete && payloadBetterOrEqualTeacherQuality(seedPayload, payload, portfolioSettings)){
                 payload = seedPayload;
                 completion = seedCompletion;
               }
@@ -13249,7 +13417,7 @@
             const zeroOnePayload = await postSolve(zeroOneSettings);
             if(!isCurrentSolveRun(activeSolveRunId)) return null;
             const zeroOneCompletion = payloadCompletion(zeroOnePayload);
-            if(zeroOneCompletion.complete && payloadBetterOrEqualTeacherQuality(zeroOnePayload, payload)){
+            if(zeroOneCompletion.complete && payloadBetterOrEqualTeacherQuality(zeroOnePayload, payload, zeroOneSettings)){
               payload = zeroOnePayload;
               completion = zeroOneCompletion;
             }
@@ -13287,8 +13455,8 @@
             const qualityPayload = await postSolve(retrySettings);
             if(!isCurrentSolveRun(activeSolveRunId)) return null;
             const qualityCompletion = payloadCompletion(qualityPayload);
-            if(qualityCompletion.complete && payloadBetterOrEqualTeacherQuality(qualityPayload, payload)){
-              const improved = payloadStrictlyBetterTeacherQuality(qualityPayload, payload);
+            if(qualityCompletion.complete && payloadBetterOrEqualTeacherQuality(qualityPayload, payload, retrySettings)){
+              const improved = payloadStrictlyBetterTeacherQuality(qualityPayload, payload, retrySettings);
               if(improved){
                 payload = qualityPayload;
                 completion = qualityCompletion;
@@ -13320,7 +13488,7 @@
             );
             if(!isCurrentSolveRun(activeSolveRunId)) return null;
             const optimizedCompletion = payloadCompletion(optimizedPayload);
-            if(optimizedCompletion.complete && payloadBetterOrEqualTeacherQuality(optimizedPayload, payload)){
+            if(optimizedCompletion.complete && payloadBetterOrEqualTeacherQuality(optimizedPayload, payload, settings)){
               payload = optimizedPayload;
               completion = optimizedCompletion;
             }
@@ -13590,7 +13758,7 @@
         && !releasedDuringSolve
         && incumbentSatisfiesCurrentConstraints
         && incumbentQualityGuard
-        && shouldKeepIncumbentForTeacherQuality(payload, incumbentPayload, incumbentQualityGuard)
+        && shouldKeepIncumbentForTeacherQuality(payload, incumbentPayload, incumbentQualityGuard, settings)
       ){
         inheritRefinementRound(incumbentPayload, payload);
         restoreScheduleData(dataForProgress || getData(), scheduleSnapshot);
@@ -13626,7 +13794,7 @@
         && !releasedDuringSolve
         && incumbentSatisfiesCurrentConstraints
         && incumbentQualityGuard?.complete === true
-        && shouldKeepIncumbentForTeacherQuality(payload, incumbentPayload, incumbentQualityGuard)
+        && shouldKeepIncumbentForTeacherQuality(payload, incumbentPayload, incumbentQualityGuard, settings)
       ){
         inheritRefinementRound(incumbentPayload, payload);
         restoreScheduleData(dataForProgress || getData(), scheduleSnapshot);
@@ -13886,6 +14054,11 @@
         incrementalRefineCeilingSeconds,
         friendlySolveError,
         buildAutomaticAutoSortPlan,
+        applyRequestedSolveModeToPlan,
+        normalizeSolveRequestMode,
+        normalizeMetricProgressSnapshot,
+        metricProgressPercent,
+        activeStudentSessionCount,
         buildConstraintRepairAutoSortPlan,
         stagedExistingFreshRetrySettings,
         cheapSchoolCompletionStats,
@@ -14251,9 +14424,10 @@
   }
 
   function applyUnifiedTeacherQualityPriority(settings){
-    settings.quality_priority_order = "one_period_gap2_teacher_sessions_gap1";
-    // Keep the zero-gap signal because it selects the proven complete-first
-    // Benders lane. The marker above controls candidate ranking separately.
+    settings.quality_priority_order = "one_period_teacher_sessions_gap2_gap1";
+    settings.optimization_two_stage_teacher_quality = true;
+    // Phase S may trade gaps for fewer sessions. Phase G keeps zero as its
+    // cleanup target while the achieved session count remains a hard ceiling.
     settings.target_gap1_sessions = 0;
     settings.gap1_quality_target_explicit = true;
     return settings;
@@ -14390,10 +14564,9 @@
         )
       );
       settings.ui_incremental_progress_estimate_seconds = settings.progress_estimate_seconds;
-      // Keep the zero-gap target as a search signal during refinement. The
-      // balanced priority marker still ranks teacher sessions before gap-1,
-      // while this target activates the proven same-cap/staircase portfolio
-      // instead of spending the first 50 seconds only on local cleanup.
+      // Keep zero as the Phase G search target. The two-stage priority permits
+      // Phase S to compress sessions first, then cleans gaps without raising
+      // the achieved session ceiling.
       settings.target_gap1_sessions = 0;
       settings.gap1_quality_target_explicit = true;
       // A complete incumbent starts an explicit "Xếp tiếp" search. The
@@ -14673,6 +14846,186 @@
     };
   }
 
+  function configurePlanMetricProgress(settings, focus, current, target, baseline){
+    const normalized = normalizeMetricProgressSnapshot({
+      optimizationFocus:focus,
+      metricCurrent:current,
+      metricTarget:target,
+      metricBaseline:baseline
+    });
+    if(!normalized) return settings;
+    settings.ui_progress_metric_focus = normalized.focus;
+    settings.ui_progress_metric_current = normalized.current;
+    settings.ui_progress_metric_target = normalized.target;
+    settings.ui_progress_metric_baseline = normalized.baseline;
+    settings.ui_progress_metric_percent = normalized.percent;
+    return settings;
+  }
+
+  function applyRequestedSolveModeToPlan(plan, requestedMode, data, expected){
+    if(!plan?.settings) return plan;
+    const mode = normalizeSolveRequestMode(requestedMode);
+    const safeData = data || getData();
+    const settings = plan.settings;
+    const expectedCount = Math.max(0, Number(expected || expectedLessonCount(safeData)) || 0);
+    const scheduledCount = Math.max(0, countScheduledLessons(safeData));
+    const complete = !!currentScheduleAppearsComplete(safeData);
+    settings.ui_requested_solve_mode = mode;
+
+    if(mode === SOLVE_REQUEST_MODES.automatic){
+      settings.optimization_focus = "automatic";
+      if(complete){
+        const metrics = uiTeacherQualityMetrics(safeData);
+        const currentSessions = Math.max(0, metricNumber(metrics.teacher_sessions, 0));
+        const activeStudentSessions = Math.max(1, activeStudentSessionCount(safeData));
+        configurePlanMetricProgress(
+          settings,
+          "teacher_sessions",
+          currentSessions,
+          Math.min(currentSessions || activeStudentSessions, activeStudentSessions),
+          currentSessions
+        );
+      }else{
+        configurePlanMetricProgress(
+          settings,
+          "scheduled_periods",
+          scheduledCount,
+          expectedCount,
+          expectedCount
+        );
+      }
+      return plan;
+    }
+
+    // Focused optimization starts only from a complete, validated timetable.
+    // If the user chooses it too early, complete the timetable first and keep
+    // the requested focus visible in diagnostics for the next click.
+    if(!complete && mode !== SOLVE_REQUEST_MODES.quickComplete){
+      settings.ui_deferred_optimization_focus = mode;
+      settings.ui_requested_solve_mode = SOLVE_REQUEST_MODES.quickComplete;
+      settings.optimization_focus = "quick_complete";
+      configurePlanMetricProgress(
+        settings,
+        "scheduled_periods",
+        scheduledCount,
+        expectedCount,
+        expectedCount
+      );
+      return plan;
+    }
+
+    if(mode === SOLVE_REQUEST_MODES.quickComplete){
+      settings.optimization_focus = "quick_complete";
+      settings.optimization_two_stage_teacher_quality = false;
+      settings.optimization_first_click_singleton_cleanup = true;
+      settings.optimization_first_click_gap_cleanup = false;
+      settings.optimization_first_click_strict_quality_gate = false;
+      settings.optimization_quick_complete_allow_gap2_debt = true;
+      settings.minimize_teacher_gaps = false;
+      settings.period_max_teacher_gap = "off";
+      delete settings.target_gap1_sessions;
+      delete settings.optimization_accept_gap1_sessions;
+      delete settings.optimization_default_accept_gap1_sessions;
+      configurePlanMetricProgress(
+        settings,
+        "scheduled_periods",
+        scheduledCount,
+        expectedCount,
+        expectedCount
+      );
+      return plan;
+    }
+
+    const visibleMetrics = uiTeacherQualityMetrics(safeData);
+    const currentSessions = Math.max(0, metricNumber(visibleMetrics.teacher_sessions, 0));
+    const currentSingletons = Math.max(
+      0,
+      metricNumber(visibleMetrics.one_period_teacher_sessions, 0)
+    );
+    const currentGap2 = Math.max(0, gap2PlusCount(visibleMetrics));
+    const currentGap1 = Math.max(0, gapExactCount(visibleMetrics, 1));
+    settings.auto_sort_mode = "teacher_session_opt";
+    settings.ui_unified_solve_kind = "refine_complete";
+    settings.ui_use_existing_complete_incumbent = true;
+    settings.ui_existing_incumbent_revalidated = true;
+    settings.ui_return_complete_incumbent_on_existing_optimize_failure = true;
+    settings.preserve_existing_tkb = true;
+    settings.preserve_fixed_lessons_only = true;
+    settings.allow_solver_warm_start = true;
+    settings.optimization_continue_quality_search = true;
+    settings.ui_stop_refinement_when_good_enough = false;
+    settings.max_one_period_sessions = 0;
+    settings.strict_one_period_sessions_cap = true;
+    settings.enforce_max_one_period_sessions = true;
+    settings.one_period_priority_absolute = true;
+
+    if(mode === SOLVE_REQUEST_MODES.singletons){
+      settings.optimization_focus = "singletons";
+      settings.optimization_two_stage_teacher_quality = false;
+      settings.minimize_one_period_sessions = true;
+      settings.minimize_sessions = false;
+      settings.minimize_teacher_gaps = false;
+      settings.period_max_teacher_gap = "off";
+      settings.target_one_period_teacher_sessions = 0;
+      delete settings.target_gap1_sessions;
+      configurePlanMetricProgress(
+        settings,
+        "one_period_teacher_sessions",
+        currentSingletons,
+        0,
+        currentSingletons
+      );
+      return plan;
+    }
+
+    if(mode === SOLVE_REQUEST_MODES.sessions){
+      settings.optimization_focus = "sessions";
+      settings.optimization_two_stage_teacher_quality = true;
+      settings.optimization_refine_try_lower_session_cap = true;
+      settings.minimize_sessions = true;
+      settings.minimize_teacher_gaps = false;
+      settings.period_max_teacher_gap = "off";
+      delete settings.target_gap1_sessions;
+      const activeStudentSessions = Math.max(1, activeStudentSessionCount(safeData));
+      const loadLowerBound = Math.max(1, teacherSessionLoadLowerCap(safeData));
+      const sessionTarget = Math.min(
+        currentSessions || activeStudentSessions,
+        Math.max(loadLowerBound, activeStudentSessions)
+      );
+      settings.ui_active_student_sessions = activeStudentSessions;
+      settings.ui_teacher_session_progress_target = sessionTarget;
+      configurePlanMetricProgress(
+        settings,
+        "teacher_sessions",
+        currentSessions,
+        sessionTarget,
+        currentSessions
+      );
+      return plan;
+    }
+
+    settings.optimization_focus = "gaps";
+    settings.optimization_two_stage_teacher_quality = true;
+    settings.optimization_refine_try_lower_session_cap = false;
+    settings.minimize_sessions = false;
+    settings.minimize_teacher_gaps = true;
+    settings.period_max_teacher_gap = 1;
+    settings.target_gap2_plus_sessions = 0;
+    settings.target_gap1_sessions = 0;
+    settings.gap1_quality_target_explicit = true;
+    settings.max_teacher_sessions = currentSessions;
+    settings.requested_max_teacher_sessions = currentSessions;
+    settings.strict_teacher_session_cap = true;
+    configurePlanMetricProgress(
+      settings,
+      currentGap2 > 0 ? "teacher_gap2_sessions" : "teacher_gap1_sessions",
+      currentGap2 > 0 ? currentGap2 : currentGap1,
+      0,
+      currentGap2 > 0 ? currentGap2 : currentGap1
+    );
+    return plan;
+  }
+
   function buildConstraintRepairAutoSortPlan(data, expected, releasedCount, knownConstraintViolationCount, preparedFreshPlan, knownConstraintViolations){
     const safeData = data || getData();
     const expectedCount = Math.max(0, Number(expected || expectedLessonCount(safeData)) || 0);
@@ -14865,6 +15218,7 @@
 
   window.sapXepTuDongAll = async function(options){
     const invocationOptions = options && typeof options === "object" ? options : {};
+    const requestedSolveMode = normalizeSolveRequestMode(invocationOptions.mode);
     const preflightToken = acquireAutoSortPreflight();
     if(!preflightToken){
       setStatus("Đang có lượt xếp chạy, vui lòng chờ hoàn tất.", "info");
@@ -14990,6 +15344,12 @@
             violationsForAutomaticPlan.length,
             preparedFreshPlan
           );
+      automaticPlan = applyRequestedSolveModeToPlan(
+        automaticPlan,
+        requestedSolveMode,
+        data,
+        expected
+      );
     }finally{
       endAutoSortPlanningMemo(planningMemoToken);
     }
@@ -15073,7 +15433,8 @@
       ? refinementStatisticsImproved(
           candidatePayloadAfterAutoSort,
           incumbentPayloadBeforeAutoSort,
-          fingerprintChanged
+          fingerprintChanged,
+          automaticPlan?.settings
         )
       : fingerprintChanged;
 
@@ -15120,6 +15481,12 @@
     }finally{
       releaseAutoSortPreflight(preflightToken);
     }
+  };
+  window.sapXepTheoCheDo = function(mode){
+    return window.sapXepTuDongAll({
+      mode:normalizeSolveRequestMode(mode),
+      manualAgentInvite:true
+    });
   };
   try{
     const autoSortButton = document.getElementById("btnAutoSort");

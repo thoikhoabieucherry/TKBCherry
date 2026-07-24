@@ -52,6 +52,159 @@ body.planner-shell .toolbar-actions {
   min-width: 0;
 }
 
+/* Focused solve modes are desktop-only.  The default hidden state keeps the
+   established eight/nine-slot touch toolbar unchanged on phones and tablets. */
+body.planner-shell .desktop-solve-controls {
+  display: none;
+}
+
+@media (min-width: 901px) and (hover: hover) and (pointer: fine) {
+  body.planner-shell .desktop-solve-controls {
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  body.planner-shell .desktop-solve-controls > .planner-mode-button,
+  body.planner-shell .desktop-solve-controls > .planner-optimize-wrap > .planner-mode-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    height: 36px;
+    min-height: 36px;
+    padding: 0 9px;
+    gap: 5px;
+    border: 1px solid var(--tkb-border, #e2e8f0);
+    border-radius: 8px;
+    background: #fff;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+
+  body.planner-shell .desktop-solve-controls > #btnQuickComplete {
+    width: 82px;
+  }
+
+  body.planner-shell .desktop-solve-controls > .planner-optimize-wrap > #btnOptimizeMenu {
+    width: 78px;
+  }
+
+  body.planner-shell .desktop-solve-controls .planner-mode-button:hover:not(:disabled),
+  body.planner-shell .desktop-solve-controls .planner-mode-button[aria-expanded="true"] {
+    border-color: #94a3b8;
+    background: #f8fafc;
+    color: #0f172a;
+  }
+
+  body.planner-shell .desktop-solve-controls .planner-mode-button:focus-visible,
+  body.planner-shell .planner-optimize-menu > button:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 1px;
+    box-shadow: 0 0 0 3px rgb(37 99 235 / 18%);
+  }
+
+  body.planner-shell .desktop-solve-controls .planner-mode-icon {
+    width: 15px;
+    height: 15px;
+    flex: none;
+    pointer-events: none;
+  }
+
+  body.planner-shell .planner-optimize-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+
+  body.planner-shell .planner-optimize-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 90;
+    display: grid;
+    width: 154px;
+    padding: 4px;
+    gap: 2px;
+    border: 1px solid var(--tkb-border, #e2e8f0);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 10px 28px rgb(15 23 42 / 16%);
+  }
+
+  body.planner-shell .planner-optimize-menu[hidden] {
+    display: none !important;
+  }
+
+  body.planner-shell .planner-optimize-menu > button {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    height: 34px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #1e293b;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  body.planner-shell .planner-optimize-menu > button:hover:not(:disabled) {
+    background: #f1f5f9;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1150px) and (hover: hover) and (pointer: fine) {
+  body.planner-shell .toolbar-main {
+    --planner-toolbar-button-width: 88px;
+    gap: 5px;
+  }
+
+  body.planner-shell .toolbar-actions,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap {
+    gap: 4px;
+  }
+
+  body.planner-shell .desktop-solve-controls > #btnQuickComplete {
+    width: 74px;
+    padding-inline: 7px;
+  }
+
+  body.planner-shell .desktop-solve-controls > .planner-optimize-wrap > #btnOptimizeMenu {
+    width: 70px;
+    padding-inline: 7px;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1024px) and (hover: hover) and (pointer: fine) {
+  body.planner-shell .toolbar-main {
+    --planner-toolbar-button-width: 80px;
+  }
+
+  body.planner-shell .desktop-solve-controls > #btnQuickComplete {
+    width: 70px;
+  }
+
+  body.planner-shell .desktop-solve-controls > .planner-optimize-wrap > #btnOptimizeMenu {
+    width: 64px;
+  }
+
+  body.planner-shell .desktop-solve-controls .planner-mode-icon {
+    display: none;
+  }
+}
+
 /* Legacy planner CSS assigned order values only to buttons, which pushed the
    duration field to the far left on desktop.  Keep one DOM order everywhere. */
 body.planner-shell .toolbar-actions > #btnRangBuoc,
@@ -1262,6 +1415,17 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
       <button id="btnAutoSort" class="primary icon-button" type="button" onclick="sapXepTuDongAll()" title="Bắt đầu sắp xếp" aria-label="Bắt đầu sắp xếp"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8.35 6.3c0-1.02 1.12-1.65 2-1.12l8.1 4.88a1.3 1.3 0 0 1 0 2.22l-8.1 4.88c-.88.53-2-.1-2-1.12V6.3Z" fill="currentColor"/></svg></button>
       <button type="button" id="btnStopAutoSort" class="auto-sort-stop icon-button" onclick="requestStopAutoSort()" title="Dừng sắp xếp" aria-label="Dừng sắp xếp" aria-hidden="false" disabled><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><rect x="9" y="9" width="6" height="6" rx="0.7" fill="currentColor" stroke="none"/></svg></button>
       <button id="btnDeleteAll" class="danger icon-button" type="button" onclick="deleteAllTKB()" title="Xóa toàn bộ thời khóa biểu" aria-label="Xóa toàn bộ thời khóa biểu"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 7h15"/><path d="M9 7V4.8h6V7"/><path d="m6.7 7 .8 12h9l.8-12"/><path d="M10 10.5v5.2M14 10.5v5.2"/></svg></button>
+      <div id="desktopSolveControls" class="desktop-solve-controls" aria-label="Chế độ xếp trên máy tính">
+        <button id="btnQuickComplete" class="planner-mode-button" type="button" onclick="runPlannerSchedulerMode('quick_complete', event)" title="Xếp nhanh đủ tiết" aria-label="Xếp nhanh đủ tiết"><svg class="planner-mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m13 2-9 12h8l-1 8 9-12h-8l1-8Z"/></svg><span>Xếp nhanh</span></button>
+        <div class="planner-optimize-wrap">
+          <button id="btnOptimizeMenu" class="planner-mode-button" type="button" onclick="togglePlannerOptimizeMenu(event)" title="Chọn mục tiêu tối ưu" aria-label="Chọn mục tiêu tối ưu" aria-haspopup="menu" aria-expanded="false" aria-controls="plannerOptimizeMenu"><svg class="planner-mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg><span>Tối ưu</span></button>
+          <div id="plannerOptimizeMenu" class="planner-optimize-menu" role="menu" aria-label="Mục tiêu tối ưu" hidden>
+            <button type="button" role="menuitem" data-scheduler-mode="optimize_singletons" onclick="runPlannerSchedulerMode('optimize_singletons', event)">Buổi 1 tiết</button>
+            <button type="button" role="menuitem" data-scheduler-mode="optimize_sessions" onclick="runPlannerSchedulerMode('optimize_sessions', event)">Số buổi</button>
+            <button type="button" role="menuitem" data-scheduler-mode="optimize_gaps" onclick="runPlannerSchedulerMode('optimize_gaps', event)">Gap</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="toolbar-feedback" aria-label="Trạng thái sắp xếp">
@@ -1288,6 +1452,98 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   </div>
 
 </div>
+
+<script>
+(function(){
+  const desktopModeQuery = "(min-width: 901px) and (hover: hover) and (pointer: fine)";
+  const desktopModeMedia = typeof window.matchMedia === "function"
+    ? window.matchMedia(desktopModeQuery)
+    : {matches:false};
+  const controls = document.getElementById("desktopSolveControls");
+  const toggleButton = document.getElementById("btnOptimizeMenu");
+  const menu = document.getElementById("plannerOptimizeMenu");
+  const allowedModes = new Set([
+    "quick_complete",
+    "optimize_singletons",
+    "optimize_sessions",
+    "optimize_gaps"
+  ]);
+
+  function setPlannerOptimizeMenuOpen(open, options){
+    if(!toggleButton || !menu) return false;
+    const shouldOpen = !!open && desktopModeMedia.matches === true;
+    menu.hidden = !shouldOpen;
+    toggleButton.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+    if(shouldOpen && options?.focusFirst === true){
+      menu.querySelector('[role="menuitem"]')?.focus();
+    }else if(!shouldOpen && options?.returnFocus === true){
+      toggleButton.focus();
+    }
+    return shouldOpen;
+  }
+
+  function togglePlannerOptimizeMenu(event){
+    event?.preventDefault();
+    event?.stopPropagation();
+    return setPlannerOptimizeMenuOpen(menu?.hidden !== false);
+  }
+
+  function runPlannerSchedulerMode(mode, event){
+    event?.preventDefault();
+    event?.stopPropagation();
+    const normalizedMode = String(mode || "").trim();
+    if(!allowedModes.has(normalizedMode)) return false;
+    setPlannerOptimizeMenuOpen(false);
+    if(typeof window.sapXepTheoCheDo !== "function") return false;
+    return window.sapXepTheoCheDo(normalizedMode);
+  }
+
+  toggleButton?.addEventListener("keydown", (event) => {
+    if(event.key !== "ArrowDown") return;
+    event.preventDefault();
+    event.stopPropagation();
+    setPlannerOptimizeMenuOpen(true, {focusFirst:true});
+  });
+
+  menu?.addEventListener("keydown", (event) => {
+    const items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
+    const currentIndex = items.indexOf(document.activeElement);
+    if(event.key === "Escape"){
+      event.preventDefault();
+      setPlannerOptimizeMenuOpen(false, {returnFocus:true});
+      return;
+    }
+    if(event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    const direction = event.key === "ArrowDown" ? 1 : -1;
+    const nextIndex = currentIndex < 0
+      ? (direction > 0 ? 0 : items.length - 1)
+      : (currentIndex + direction + items.length) % items.length;
+    items[nextIndex]?.focus();
+  });
+
+  document.addEventListener("click", (event) => {
+    if(menu?.hidden !== false || controls?.contains(event.target)) return;
+    setPlannerOptimizeMenuOpen(false);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if(event.key !== "Escape" || menu?.hidden !== false) return;
+    event.preventDefault();
+    setPlannerOptimizeMenuOpen(false, {returnFocus:true});
+  });
+
+  const closeForPointerChange = () => setPlannerOptimizeMenuOpen(false);
+  if(typeof desktopModeMedia.addEventListener === "function"){
+    desktopModeMedia.addEventListener("change", closeForPointerChange);
+  }else if(typeof desktopModeMedia.addListener === "function"){
+    desktopModeMedia.addListener(closeForPointerChange);
+  }
+
+  window.togglePlannerOptimizeMenu = togglePlannerOptimizeMenu;
+  window.runPlannerSchedulerMode = runPlannerSchedulerMode;
+})();
+</script>
 
 <div class="main">
   <div class="left">
@@ -1338,8 +1594,8 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="../vendor/sql-wasm.js"></script>
 <script src="../kvdb.js?v=20260707-vendor-local-v1"></script>
 <script src="tkb-engine.js?v=20260624-clean-no-solver1"></script>
-<script src="tkb-browser-wasm.js?v=20260723-v168-landscape-history-v1"></script>
-<script src="phanmon.js?v=20260723-v168-landscape-history-v1"></script>
+<script src="tkb-browser-wasm.js?v=20260724-v169-focused-two-stage-v1"></script>
+<script src="phanmon.js?v=20260724-v169-focused-two-stage-v1"></script>
 <script src="phanmon-ops.js?v=20260617-fixed-legacy1"></script>
 <script src="tkb-constraints.js?v=20260722-v163-one-session-responsive-tables-v1"></script>
 <script src="tkb-constraints-menu.js?v=20260721-v160-click-accordion-scroll-safe-v1"></script>
@@ -1347,7 +1603,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="tkb-export.js?v=20260701-excel-style-v1"></script>
 <script src="tkb-word-export.js?v=20260705-save-picker-v1"></script>
 <script src="tkb-student-excel-export.js?v=20260705-school-wide-prefix-v6"></script>
-  <script src="tkb-rust-bridge.js?v=20260723-v168-landscape-history-v1"></script>
+  <script src="tkb-rust-bridge.js?v=20260724-v169-focused-two-stage-v1"></script>
 
 </body>
 </html>

@@ -19,6 +19,8 @@ const MAX_SOLVER_DEADLINE_MS: u64 = 1_800_000;
 const DEFAULT_SOLVER_DEADLINE_MS: u64 = 180_000;
 const DEFAULT_SOLVER_RESERVE_MS: u64 = 1_500;
 const MAX_SOLVER_RESERVE_MS: u64 = 30_000;
+const QUALITY_PRIORITY_BALANCED: &str = "one_period_gap2_teacher_sessions_gap1";
+const QUALITY_PRIORITY_TWO_STAGE: &str = "one_period_teacher_sessions_gap2_gap1";
 
 pub struct NativeSolveResult {
     pub payload: String,
@@ -31,6 +33,45 @@ pub struct ValidatedAgentCandidate {
     pub quality: [i64; 4],
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OptimizationFocus {
+    Automatic,
+    QuickComplete,
+    Singletons,
+    Sessions,
+    Gaps,
+}
+
+impl OptimizationFocus {
+    fn from_settings(settings: Option<&Map<String, Value>>) -> Self {
+        let normalized = settings
+            .and_then(|value| value.get("optimization_focus"))
+            .and_then(Value::as_str)
+            .unwrap_or("automatic")
+            .trim()
+            .to_ascii_lowercase()
+            .replace('-', "_")
+            .replace(' ', "_");
+        match normalized.as_str() {
+            "quick" | "complete" | "quick_complete" => Self::QuickComplete,
+            "singleton" | "singletons" | "one_period_teacher_sessions" => Self::Singletons,
+            "session" | "sessions" | "teacher_sessions" => Self::Sessions,
+            "gap" | "gaps" | "teacher_gaps" => Self::Gaps,
+            _ => Self::Automatic,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Automatic => "automatic",
+            Self::QuickComplete => "quick_complete",
+            Self::Singletons => "singletons",
+            Self::Sessions => "sessions",
+            Self::Gaps => "gaps",
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct SolverConfig {
     backend_deadline_ms: u64,
@@ -39,6 +80,8 @@ struct SolverConfig {
     require_complete_schedule: bool,
     best_effort_on_timeout: bool,
     skip_teacher_optimization: bool,
+    two_stage_teacher_quality: bool,
+    optimization_focus: OptimizationFocus,
     random_seed: u64,
 }
 
@@ -74,6 +117,8 @@ impl SolverConfig {
                 .and_then(|value| value.get("native_skip_teacher_optimization"))
                 .map(truthy)
                 .unwrap_or(false),
+            two_stage_teacher_quality: two_stage_teacher_quality_requested(settings),
+            optimization_focus: OptimizationFocus::from_settings(settings),
             random_seed,
         }
     }
@@ -614,6 +659,32 @@ pub fn validate_agent_candidate(
     let gap_metrics = teacher_gap_metrics(&normalized_lessons);
     let one_period_sessions = count_one_period_teacher_sessions(&normalized_lessons);
     let teacher_sessions = count_teacher_sessions(&normalized_lessons);
+    let two_stage_teacher_quality = two_stage_teacher_quality_requested(request_settings);
+    let quality_priority_order = quality_priority_order(two_stage_teacher_quality);
+    let optimization_focus = OptimizationFocus::from_settings(request_settings);
+    let candidate_teacher_quality = TeacherOptimizationQuality {
+        one_period_sessions,
+        teacher_sessions,
+        gap2_plus_sessions: gap_metrics.gap2_plus_sessions,
+        gap1_sessions: gap_metrics.distribution.get("1").copied().unwrap_or(0),
+        total_gap: gap_metrics.total_gap,
+    };
+    let incumbent_lessons = collect_existing_schedule_lessons(data, &class_alias, &subject_alias);
+    if incumbent_lessons.len() as i64 == expected_periods
+        && schedule_hard_ok(&incumbent_lessons, &off_slots, &subject_limits)
+    {
+        let incumbent_quality = teacher_optimization_quality(&incumbent_lessons);
+        if !focused_agent_candidate_acceptable(
+            optimization_focus,
+            two_stage_teacher_quality,
+            &incumbent_quality,
+            &candidate_teacher_quality,
+        ) {
+            return Err(
+                "agent candidate regresses the requested optimization-focus envelope".to_string(),
+            );
+        }
+    }
     let strict_one_period = request_settings.is_some_and(|settings| {
         settings
             .get("strict_one_period_sessions_cap")
@@ -641,12 +712,21 @@ pub fn validate_agent_candidate(
             return Err("agent candidate violates the requested teacher-gap cap".to_string());
         }
     }
-    let quality = [
-        one_period_sessions,
-        gap_metrics.gap2_plus_sessions,
-        teacher_sessions,
-        gap_metrics.total_gap,
-    ];
+    let quality = if two_stage_teacher_quality {
+        [
+            one_period_sessions,
+            teacher_sessions,
+            gap_metrics.gap2_plus_sessions,
+            gap_metrics.total_gap,
+        ]
+    } else {
+        [
+            one_period_sessions,
+            gap_metrics.gap2_plus_sessions,
+            teacher_sessions,
+            gap_metrics.total_gap,
+        ]
+    };
     let class_payload = classes
         .iter()
         .map(|class| {
@@ -703,6 +783,14 @@ pub fn validate_agent_candidate(
         "teacher_gap2_sessions".to_string(),
         json!(gap_metrics.gap2_plus_sessions),
     );
+    metrics.insert(
+        "quality_priority_order".to_string(),
+        json!(quality_priority_order),
+    );
+    metrics.insert(
+        "optimization_focus".to_string(),
+        json!(optimization_focus.as_str()),
+    );
 
     let validation = payload_object
         .entry("validation".to_string())
@@ -729,6 +817,26 @@ pub fn validate_agent_candidate(
         .ok_or_else(|| "cannot normalize agent candidate solver metadata".to_string())?;
     solver.insert("agentHelperValidated".to_string(), json!(true));
     solver.insert("validationAuthority".to_string(), json!("vps"));
+    let runtime_settings = solver
+        .entry("runtime_settings".to_string())
+        .or_insert_with(|| json!({}));
+    if !runtime_settings.is_object() {
+        *runtime_settings = json!({});
+    }
+    runtime_settings
+        .as_object_mut()
+        .ok_or_else(|| "cannot normalize agent candidate runtime settings".to_string())?
+        .insert(
+            "quality_priority_order".to_string(),
+            json!(quality_priority_order),
+        );
+    runtime_settings
+        .as_object_mut()
+        .ok_or_else(|| "cannot normalize agent candidate runtime settings".to_string())?
+        .insert(
+            "optimization_focus".to_string(),
+            json!(optimization_focus.as_str()),
+        );
 
     Ok(ValidatedAgentCandidate { payload, quality })
 }
@@ -842,6 +950,8 @@ fn solve_existing_schedule(
             &subject_limits,
             run_seed,
             true,
+            config.two_stage_teacher_quality,
+            config.optimization_focus,
             clock,
         );
         if complete_incumbent(&lessons, &unassigned, &off_slots, &subject_limits).is_none() {
@@ -934,7 +1044,9 @@ fn solve_existing_schedule(
             "one_period_teacher_sessions": count_one_period_teacher_sessions(&lessons),
             "gap_total": gap_metrics.total_gap,
             "gap_distribution": gap_metrics.distribution,
-            "teacher_gap2_sessions": gap_metrics.gap2_plus_sessions
+            "teacher_gap2_sessions": gap_metrics.gap2_plus_sessions,
+            "quality_priority_order": quality_priority_order(config.two_stage_teacher_quality),
+            "optimization_focus": config.optimization_focus.as_str()
         },
         "validation": {
             "hard_ok": hard_ok,
@@ -1163,6 +1275,8 @@ fn solve_simple(
             &subject_limits,
             run_seed,
             true,
+            config.two_stage_teacher_quality,
+            config.optimization_focus,
             clock,
         );
         if complete_incumbent(&lessons, &unassigned, &off_slots, &subject_limits).is_none() {
@@ -1259,7 +1373,9 @@ fn solve_simple(
             "one_period_teacher_sessions": count_one_period_teacher_sessions(&lessons),
             "gap_total": gap_metrics.total_gap,
             "gap_distribution": gap_metrics.distribution,
-            "teacher_gap2_sessions": gap_metrics.gap2_plus_sessions
+            "teacher_gap2_sessions": gap_metrics.gap2_plus_sessions,
+            "quality_priority_order": quality_priority_order(config.two_stage_teacher_quality),
+            "optimization_focus": config.optimization_focus.as_str()
         },
         "validation": {
             "hard_ok": hard_ok,
@@ -1305,6 +1421,29 @@ fn settings_bool(settings: Option<&Map<String, Value>>, key: &str, default: bool
         .and_then(|value| value.get(key))
         .map(truthy)
         .unwrap_or(default)
+}
+
+fn two_stage_teacher_quality_requested(settings: Option<&Map<String, Value>>) -> bool {
+    settings_bool(
+        settings,
+        "optimization_two_stage_teacher_quality",
+        false,
+    ) || settings
+        .and_then(|value| value.get("quality_priority_order"))
+        .and_then(Value::as_str)
+        .is_some_and(|value| {
+            value
+                .trim()
+                .eq_ignore_ascii_case(QUALITY_PRIORITY_TWO_STAGE)
+        })
+}
+
+fn quality_priority_order(two_stage_teacher_quality: bool) -> &'static str {
+    if two_stage_teacher_quality {
+        QUALITY_PRIORITY_TWO_STAGE
+    } else {
+        QUALITY_PRIORITY_BALANCED
+    }
 }
 
 fn settings_u64(settings: Option<&Map<String, Value>>, key: &str, default: u64) -> u64 {
@@ -1374,6 +1513,9 @@ fn runtime_settings_json(
         "require_complete_schedule": config.require_complete_schedule,
         "best_effort_on_timeout": config.best_effort_on_timeout,
         "native_skip_teacher_optimization": config.skip_teacher_optimization,
+        "optimization_two_stage_teacher_quality": config.two_stage_teacher_quality,
+        "quality_priority_order": quality_priority_order(config.two_stage_teacher_quality),
+        "optimization_focus": config.optimization_focus.as_str(),
         "random_seed": config.random_seed
     })
 }
@@ -2782,6 +2924,351 @@ struct TeacherGapSession {
 }
 
 fn optimize_teacher_single_sessions(
+    lessons: &mut Vec<Value>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    deep_gap_repair: bool,
+    two_stage_teacher_quality: bool,
+    optimization_focus: OptimizationFocus,
+    clock: &SolveClock,
+) -> TeacherSessionOptStats {
+    match optimization_focus {
+        OptimizationFocus::QuickComplete | OptimizationFocus::Singletons => {
+            return optimize_teacher_singletons_focused(
+                lessons,
+                off_slots,
+                subject_limits,
+                run_seed,
+                clock,
+            );
+        }
+        OptimizationFocus::Sessions => {
+            return optimize_teacher_sessions_focused(
+                lessons,
+                off_slots,
+                subject_limits,
+                run_seed,
+                clock,
+            );
+        }
+        OptimizationFocus::Gaps => {
+            return optimize_teacher_gaps_focused(
+                lessons,
+                off_slots,
+                subject_limits,
+                run_seed,
+                deep_gap_repair,
+                clock,
+            );
+        }
+        OptimizationFocus::Automatic => {}
+    }
+
+    if !two_stage_teacher_quality {
+        return optimize_teacher_single_sessions_balanced(
+            lessons,
+            off_slots,
+            subject_limits,
+            run_seed,
+            deep_gap_repair,
+            clock,
+        );
+    }
+
+    let automatic_incumbent = lessons.clone();
+    let initial_quality = teacher_optimization_quality(lessons);
+    let initial_gap_metrics = teacher_gap_metrics(lessons);
+    let mut session_phase_moves = 0_i64;
+
+    // Phase S may take on temporary gap debt, but only a strict teacher-session
+    // reduction with the zero-singleton invariant is allowed to replace the
+    // incumbent.
+    if initial_quality.one_period_sessions == 0 && !clock.should_stop_quality() {
+        let mut candidate = lessons.clone();
+        let candidate_moves = optimize_teacher_session_reduction(
+            &mut candidate,
+            off_slots,
+            subject_limits,
+            run_seed ^ 0x5a17_9c43_d2e8_6b01_u64,
+            true,
+            clock,
+        );
+        let candidate_quality = teacher_optimization_quality(&candidate);
+        if candidate_moves > 0
+            && two_stage_session_phase_acceptable(&initial_quality, &candidate_quality)
+            && schedule_hard_ok(&candidate, off_slots, subject_limits)
+        {
+            *lessons = candidate;
+            session_phase_moves = candidate_moves;
+        }
+    }
+
+    // Phase G starts from the accepted Phase-S incumbent. The balanced cleanup
+    // may improve gaps (or reduce sessions again), but it cannot raise the
+    // achieved teacher-session ceiling or reintroduce singleton sessions.
+    let phase_s_lessons = lessons.clone();
+    let phase_s_quality = teacher_optimization_quality(&phase_s_lessons);
+    let mut cleanup_stats = optimize_teacher_single_sessions_balanced(
+        lessons,
+        off_slots,
+        subject_limits,
+        run_seed ^ 0xc361_4e92_7a05_bd8f_u64,
+        deep_gap_repair,
+        clock,
+    );
+    let cleanup_quality = teacher_optimization_quality(lessons);
+    if !schedule_hard_ok(lessons, off_slots, subject_limits)
+        || !two_stage_cleanup_acceptable(&phase_s_quality, &cleanup_quality)
+    {
+        *lessons = phase_s_lessons;
+        cleanup_stats = teacher_session_opt_snapshot(lessons);
+    }
+
+    let final_quality = teacher_optimization_quality(lessons);
+    if !schedule_hard_ok(lessons, off_slots, subject_limits)
+        || !automatic_two_stage_final_acceptable(&initial_quality, &final_quality)
+    {
+        *lessons = automatic_incumbent;
+        return teacher_session_opt_snapshot(lessons);
+    }
+    let final_gap_metrics = teacher_gap_metrics(lessons);
+    TeacherSessionOptStats {
+        initial_teacher_sessions: initial_quality.teacher_sessions,
+        final_teacher_sessions: final_quality.teacher_sessions,
+        initial_one_period_sessions: initial_quality.one_period_sessions,
+        final_one_period_sessions: final_quality.one_period_sessions,
+        initial_gap_total: initial_gap_metrics.total_gap,
+        final_gap_total: final_gap_metrics.total_gap,
+        initial_gap2_plus_sessions: initial_gap_metrics.gap2_plus_sessions,
+        final_gap2_plus_sessions: final_gap_metrics.gap2_plus_sessions,
+        single_session_moves: session_phase_moves + cleanup_stats.single_session_moves,
+        gap_moves: cleanup_stats.gap_moves,
+        single_gap_moves: cleanup_stats.single_gap_moves,
+        moves: session_phase_moves + cleanup_stats.moves,
+    }
+}
+
+fn teacher_session_opt_stats_from_focus(
+    initial: TeacherOptimizationQuality,
+    lessons: &[Value],
+    single_session_moves: i64,
+    gap_moves: i64,
+    single_gap_moves: i64,
+    moves: i64,
+) -> TeacherSessionOptStats {
+    let final_quality = teacher_optimization_quality(lessons);
+    TeacherSessionOptStats {
+        initial_teacher_sessions: initial.teacher_sessions,
+        final_teacher_sessions: final_quality.teacher_sessions,
+        initial_one_period_sessions: initial.one_period_sessions,
+        final_one_period_sessions: final_quality.one_period_sessions,
+        initial_gap_total: initial.total_gap,
+        final_gap_total: final_quality.total_gap,
+        initial_gap2_plus_sessions: initial.gap2_plus_sessions,
+        final_gap2_plus_sessions: final_quality.gap2_plus_sessions,
+        single_session_moves,
+        gap_moves,
+        single_gap_moves,
+        moves,
+    }
+}
+
+fn optimize_teacher_singletons_focused(
+    lessons: &mut Vec<Value>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    clock: &SolveClock,
+) -> TeacherSessionOptStats {
+    let initial = teacher_optimization_quality(lessons);
+    let mut moves = 0_i64;
+    for round in 0..4_u64 {
+        if clock.should_stop_quality() {
+            break;
+        }
+        let before = teacher_optimization_quality(lessons);
+        if before.one_period_sessions <= 0 {
+            break;
+        }
+        let mut candidate = lessons.clone();
+        let mut phase_moves = if round == 0 {
+            optimize_teacher_session_reduction(
+                &mut candidate,
+                off_slots,
+                subject_limits,
+                run_seed ^ 0x2b7e_4a19_93d0_6c51_u64,
+                false,
+                clock,
+            )
+        } else {
+            run_teacher_optimization_phase(
+                &mut candidate,
+                off_slots,
+                subject_limits,
+                run_seed ^ round.wrapping_mul(0x9e37_79b9_u64),
+                false,
+                TeacherOptimizationPhase::OnePeriod,
+                clock,
+            )
+        };
+        let mut after = teacher_optimization_quality(&candidate);
+        let mut acceptable = phase_moves > 0
+            && after.one_period_sessions < before.one_period_sessions
+            && after.teacher_sessions <= before.teacher_sessions
+            && schedule_hard_ok(&candidate, off_slots, subject_limits);
+        if round == 0 && !acceptable && !clock.should_stop_quality() {
+            candidate = lessons.clone();
+            phase_moves = run_teacher_optimization_phase(
+                &mut candidate,
+                off_slots,
+                subject_limits,
+                run_seed ^ 0xd18c_35a7_64e2_09bf_u64,
+                false,
+                TeacherOptimizationPhase::OnePeriod,
+                clock,
+            );
+            after = teacher_optimization_quality(&candidate);
+            acceptable = phase_moves > 0
+                && after.one_period_sessions < before.one_period_sessions
+                && after.teacher_sessions <= before.teacher_sessions
+                && schedule_hard_ok(&candidate, off_slots, subject_limits);
+        }
+        if !acceptable {
+            break;
+        }
+        *lessons = candidate;
+        moves += phase_moves;
+    }
+    teacher_session_opt_stats_from_focus(initial, lessons, moves, 0, 0, moves)
+}
+
+fn optimize_teacher_sessions_focused(
+    lessons: &mut Vec<Value>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    clock: &SolveClock,
+) -> TeacherSessionOptStats {
+    let initial = teacher_optimization_quality(lessons);
+    let mut moves = 0_i64;
+    for round in 0..3_u64 {
+        if clock.should_stop_quality() {
+            break;
+        }
+        let before = teacher_optimization_quality(lessons);
+        let mut candidate = lessons.clone();
+        let phase_moves = optimize_teacher_session_reduction(
+            &mut candidate,
+            off_slots,
+            subject_limits,
+            run_seed ^ 0x7c4d_91e2_5ab8_063f_u64 ^ round.wrapping_mul(0x517c_cc1b_u64),
+            true,
+            clock,
+        );
+        let after = teacher_optimization_quality(&candidate);
+        let singleton_improved = after.one_period_sessions < before.one_period_sessions;
+        let sessions_improved = after.teacher_sessions < before.teacher_sessions;
+        let acceptable = phase_moves > 0
+            && after.one_period_sessions <= before.one_period_sessions
+            && (sessions_improved || singleton_improved)
+            && after.teacher_sessions <= before.teacher_sessions
+            && schedule_hard_ok(&candidate, off_slots, subject_limits);
+        if !acceptable {
+            break;
+        }
+        *lessons = candidate;
+        moves += phase_moves;
+        if !sessions_improved && after.one_period_sessions > 0 {
+            break;
+        }
+    }
+    teacher_session_opt_stats_from_focus(initial, lessons, moves, 0, 0, moves)
+}
+
+fn focused_gap_candidate_acceptable(
+    before: &TeacherOptimizationQuality,
+    after: &TeacherOptimizationQuality,
+) -> bool {
+    after.one_period_sessions <= before.one_period_sessions
+        && after.teacher_sessions == before.teacher_sessions
+        && (after.gap2_plus_sessions < before.gap2_plus_sessions
+            || (after.gap2_plus_sessions == before.gap2_plus_sessions
+                && (after.gap1_sessions < before.gap1_sessions
+                    || (after.gap1_sessions == before.gap1_sessions
+                        && after.total_gap < before.total_gap))))
+}
+
+fn optimize_teacher_gaps_focused(
+    lessons: &mut Vec<Value>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    deep_gap_repair: bool,
+    clock: &SolveClock,
+) -> TeacherSessionOptStats {
+    let initial = teacher_optimization_quality(lessons);
+    let mut gap_moves = 0_i64;
+    let mut single_gap_moves = 0_i64;
+    for round in 0..3_u64 {
+        if clock.should_stop_quality() {
+            break;
+        }
+        let mut changed = false;
+        let before_large = teacher_optimization_quality(lessons);
+        let mut large_candidate = lessons.clone();
+        let large_moves = optimize_teacher_large_gaps(
+            &mut large_candidate,
+            off_slots,
+            subject_limits,
+            run_seed ^ 0xa31e_7b4c_52d9_068f_u64 ^ round,
+            deep_gap_repair,
+            clock,
+        );
+        let after_large = teacher_optimization_quality(&large_candidate);
+        if large_moves > 0
+            && focused_gap_candidate_acceptable(&before_large, &after_large)
+            && schedule_hard_ok(&large_candidate, off_slots, subject_limits)
+        {
+            *lessons = large_candidate;
+            gap_moves += large_moves;
+            changed = true;
+        }
+
+        let before_single = teacher_optimization_quality(lessons);
+        let mut single_candidate = lessons.clone();
+        let single_moves = optimize_teacher_single_gaps(
+            &mut single_candidate,
+            off_slots,
+            subject_limits,
+            run_seed ^ 0x6d2f_98a1_40c3_75be_u64 ^ round,
+            clock,
+        );
+        let after_single = teacher_optimization_quality(&single_candidate);
+        if single_moves > 0
+            && focused_gap_candidate_acceptable(&before_single, &after_single)
+            && schedule_hard_ok(&single_candidate, off_slots, subject_limits)
+        {
+            *lessons = single_candidate;
+            single_gap_moves += single_moves;
+            gap_moves += single_moves;
+            changed = true;
+        }
+        if !changed {
+            break;
+        }
+    }
+    teacher_session_opt_stats_from_focus(
+        initial,
+        lessons,
+        0,
+        gap_moves,
+        single_gap_moves,
+        gap_moves,
+    )
+}
+
+fn optimize_teacher_single_sessions_balanced(
     lessons: &mut Vec<Value>,
     off_slots: &HashSet<String>,
     subject_limits: &SubjectLimitMap,
@@ -5446,6 +5933,85 @@ fn teacher_optimization_quality(lessons: &[Value]) -> TeacherOptimizationQuality
         gap2_plus_sessions: gap_metrics.gap2_plus_sessions,
         gap1_sessions: gap_metrics.distribution.get("1").copied().unwrap_or(0),
         total_gap: gap_metrics.total_gap,
+    }
+}
+
+fn two_stage_quality_key(value: &TeacherOptimizationQuality) -> [i64; 4] {
+    [
+        value.one_period_sessions,
+        value.teacher_sessions,
+        value.gap2_plus_sessions,
+        value.total_gap,
+    ]
+}
+
+fn two_stage_session_phase_acceptable(
+    before: &TeacherOptimizationQuality,
+    after: &TeacherOptimizationQuality,
+) -> bool {
+    before.one_period_sessions == 0
+        && after.one_period_sessions == 0
+        && after.teacher_sessions < before.teacher_sessions
+}
+
+fn two_stage_cleanup_acceptable(
+    before: &TeacherOptimizationQuality,
+    after: &TeacherOptimizationQuality,
+) -> bool {
+    after.one_period_sessions <= before.one_period_sessions
+        && after.teacher_sessions <= before.teacher_sessions
+        && two_stage_quality_key(after) <= two_stage_quality_key(before)
+}
+
+fn automatic_two_stage_final_acceptable(
+    before: &TeacherOptimizationQuality,
+    after: &TeacherOptimizationQuality,
+) -> bool {
+    after.one_period_sessions <= before.one_period_sessions
+        && (before.one_period_sessions != 0 || after.one_period_sessions == 0)
+        && after.teacher_sessions <= before.teacher_sessions
+        && after.gap2_plus_sessions <= before.gap2_plus_sessions
+}
+
+fn focused_agent_candidate_acceptable(
+    focus: OptimizationFocus,
+    two_stage_teacher_quality: bool,
+    before: &TeacherOptimizationQuality,
+    after: &TeacherOptimizationQuality,
+) -> bool {
+    match focus {
+        OptimizationFocus::Automatic if two_stage_teacher_quality => {
+            automatic_two_stage_final_acceptable(before, after)
+        }
+        OptimizationFocus::Sessions => {
+            after.one_period_sessions <= before.one_period_sessions
+                && after.teacher_sessions <= before.teacher_sessions
+                && (after.one_period_sessions < before.one_period_sessions
+                    || after.teacher_sessions < before.teacher_sessions
+                    || (
+                        after.gap2_plus_sessions,
+                        after.gap1_sessions,
+                        after.total_gap,
+                    ) <= (
+                        before.gap2_plus_sessions,
+                        before.gap1_sessions,
+                        before.total_gap,
+                    ))
+        }
+        OptimizationFocus::Gaps => {
+            after.one_period_sessions <= before.one_period_sessions
+                && after.teacher_sessions == before.teacher_sessions
+                && (
+                    after.gap2_plus_sessions,
+                    after.gap1_sessions,
+                    after.total_gap,
+                ) <= (
+                    before.gap2_plus_sessions,
+                    before.gap1_sessions,
+                    before.total_gap,
+                )
+        }
+        _ => true,
     }
 }
 
@@ -8634,6 +9200,24 @@ mod tests {
         )])
     }
 
+    fn teacher_quality_test_lesson(
+        class_id: &str,
+        teacher: &str,
+        day: i64,
+        period_index: i64,
+    ) -> Value {
+        let subject = format!("Subject {class_id}");
+        lesson_json(
+            class_id,
+            class_id,
+            &subject,
+            teacher,
+            "",
+            &make_slot(day, "sang", period_index),
+            false,
+        )
+    }
+
     fn off_except(open_slots: &[(&str, &str, i64)]) -> Vec<String> {
         let open_slots = open_slots.iter().copied().collect::<HashSet<_>>();
         let mut off_slots = Vec::new();
@@ -8657,6 +9241,8 @@ mod tests {
             require_complete_schedule,
             best_effort_on_timeout,
             skip_teacher_optimization: false,
+            two_stage_teacher_quality: false,
+            optimization_focus: OptimizationFocus::Automatic,
             random_seed: 1,
         }
     }
@@ -8754,12 +9340,320 @@ mod tests {
         assert_eq!(validated.payload["metrics"]["teacher_sessions"], json!(2));
         assert_eq!(validated.payload["metrics"]["hard_ok"], json!(true));
         assert_eq!(
+            validated.payload["metrics"]["quality_priority_order"],
+            json!(QUALITY_PRIORITY_BALANCED)
+        );
+        assert_eq!(
             validated.payload["validation"]["agent_helper_vps_validated"],
             json!(true)
         );
         assert_eq!(validated.payload["lessons"][0]["className"], json!("6A"));
         assert_eq!(validated.payload["lessons"][0]["fixed"], json!(true));
         assert_eq!(validated.payload["lessons"][1]["fixed"], json!(false));
+    }
+
+    #[test]
+    fn agent_candidate_uses_and_propagates_two_stage_quality_order() {
+        let mut request = agent_candidate_request();
+        request["settings"] = json!({
+            "require_complete_schedule": true,
+            "optimization_two_stage_teacher_quality": true,
+            "quality_priority_order": QUALITY_PRIORITY_TWO_STAGE,
+            "optimization_focus": "sessions"
+        });
+        let request = serde_json::to_vec(&request).unwrap();
+        let validated = validate_agent_candidate(&request, &agent_candidate_payload())
+            .expect("valid two-stage candidate");
+
+        assert_eq!(validated.quality, [2, 2, 0, 0]);
+        assert_eq!(
+            validated.payload["metrics"]["quality_priority_order"],
+            json!(QUALITY_PRIORITY_TWO_STAGE)
+        );
+        assert_eq!(
+            validated.payload["solver"]["runtime_settings"]["quality_priority_order"],
+            json!(QUALITY_PRIORITY_TWO_STAGE)
+        );
+        assert_eq!(
+            validated.payload["metrics"]["optimization_focus"],
+            json!("sessions")
+        );
+        assert_eq!(
+            validated.payload["solver"]["runtime_settings"]["optimization_focus"],
+            json!("sessions")
+        );
+    }
+
+    #[test]
+    fn agent_candidate_rejects_automatic_gap2_regression_from_a_clean_incumbent() {
+        let mut request = agent_candidate_request();
+        request["data"]["pccmMatrix"]["6A|Literature"] = json!("Teacher 1");
+        let mut incumbent = agent_candidate_payload();
+        incumbent["lessons"][1]["teacher"] = json!("Teacher 1");
+        incumbent["lessons"][1]["period"] = json!(2);
+        request["data"]["tkbSolverResult"] = incumbent;
+        request["settings"] = json!({
+            "require_complete_schedule": true,
+            "optimization_two_stage_teacher_quality": true,
+            "quality_priority_order": QUALITY_PRIORITY_TWO_STAGE,
+            "optimization_focus": "automatic"
+        });
+
+        let mut candidate = agent_candidate_payload();
+        candidate["lessons"][1]["teacher"] = json!("Teacher 1");
+        candidate["lessons"][1]["period"] = json!(4);
+        let request = serde_json::to_vec(&request).unwrap();
+        let error = validate_agent_candidate(&request, &candidate).unwrap_err();
+
+        assert!(error.contains("optimization-focus envelope"));
+    }
+
+    #[test]
+    fn optimization_focus_parses_all_canonical_modes() {
+        for (raw, expected) in [
+            ("automatic", OptimizationFocus::Automatic),
+            ("quick_complete", OptimizationFocus::QuickComplete),
+            ("singletons", OptimizationFocus::Singletons),
+            ("sessions", OptimizationFocus::Sessions),
+            ("gaps", OptimizationFocus::Gaps),
+        ] {
+            let request = json!({"settings": {"optimization_focus": raw}});
+            assert_eq!(
+                SolverConfig::from_request(&request, 1).optimization_focus,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn two_stage_session_priority_accepts_a_strict_reduction_with_gap_debt() {
+        let before = TeacherOptimizationQuality {
+            one_period_sessions: 0,
+            teacher_sessions: 10,
+            gap2_plus_sessions: 0,
+            gap1_sessions: 1,
+            total_gap: 1,
+        };
+        let after = TeacherOptimizationQuality {
+            one_period_sessions: 0,
+            teacher_sessions: 9,
+            gap2_plus_sessions: 2,
+            gap1_sessions: 3,
+            total_gap: 7,
+        };
+
+        assert!(two_stage_session_phase_acceptable(&before, &after));
+        assert!(two_stage_quality_key(&after) < two_stage_quality_key(&before));
+        assert!(!automatic_two_stage_final_acceptable(&before, &after));
+        assert!(focused_agent_candidate_acceptable(
+            OptimizationFocus::Sessions,
+            true,
+            &before,
+            &after
+        ));
+        assert!(!focused_agent_candidate_acceptable(
+            OptimizationFocus::Automatic,
+            true,
+            &before,
+            &after
+        ));
+    }
+
+    #[test]
+    fn automatic_two_stage_final_guard_preserves_the_initial_gap2_envelope() {
+        let before = TeacherOptimizationQuality {
+            one_period_sessions: 0,
+            teacher_sessions: 10,
+            gap2_plus_sessions: 2,
+            gap1_sessions: 4,
+            total_gap: 8,
+        };
+        let inside_envelope = TeacherOptimizationQuality {
+            one_period_sessions: 0,
+            teacher_sessions: 9,
+            gap2_plus_sessions: 2,
+            gap1_sessions: 6,
+            total_gap: 10,
+        };
+        let outside_envelope = TeacherOptimizationQuality {
+            gap2_plus_sessions: 3,
+            ..inside_envelope
+        };
+
+        assert!(automatic_two_stage_final_acceptable(
+            &before,
+            &inside_envelope
+        ));
+        assert!(!automatic_two_stage_final_acceptable(
+            &before,
+            &outside_envelope
+        ));
+        assert!(focused_agent_candidate_acceptable(
+            OptimizationFocus::Automatic,
+            true,
+            &before,
+            &inside_envelope
+        ));
+        assert!(!focused_agent_candidate_acceptable(
+            OptimizationFocus::Automatic,
+            true,
+            &before,
+            &outside_envelope
+        ));
+    }
+
+    #[test]
+    fn gap_focus_rejects_a_gap_improvement_that_changes_session_count() {
+        let before = TeacherOptimizationQuality {
+            one_period_sessions: 0,
+            teacher_sessions: 10,
+            gap2_plus_sessions: 2,
+            gap1_sessions: 4,
+            total_gap: 8,
+        };
+        let fewer_sessions = TeacherOptimizationQuality {
+            one_period_sessions: 0,
+            teacher_sessions: 9,
+            gap2_plus_sessions: 0,
+            gap1_sessions: 1,
+            total_gap: 1,
+        };
+
+        assert!(!focused_gap_candidate_acceptable(
+            &before,
+            &fewer_sessions
+        ));
+        assert!(!focused_agent_candidate_acceptable(
+            OptimizationFocus::Gaps,
+            true,
+            &before,
+            &fewer_sessions
+        ));
+    }
+
+    #[test]
+    fn two_stage_optimizer_reduces_teacher_sessions_without_singletons() {
+        let mut lessons = vec![
+            teacher_quality_test_lesson("6A", "GV01", 2, 0),
+            teacher_quality_test_lesson("6B", "GV01", 2, 1),
+            teacher_quality_test_lesson("6C", "GV01", 3, 0),
+            teacher_quality_test_lesson("6D", "GV01", 3, 1),
+        ];
+        let before = teacher_optimization_quality(&lessons);
+        let mut solver_config = config(true, false);
+        solver_config.two_stage_teacher_quality = true;
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+
+        let stats = optimize_teacher_single_sessions(
+            &mut lessons,
+            &HashSet::new(),
+            &HashMap::new(),
+            17,
+            true,
+            true,
+            OptimizationFocus::Automatic,
+            &clock,
+        );
+        let after = teacher_optimization_quality(&lessons);
+
+        assert_eq!(before.one_period_sessions, 0);
+        assert_eq!(before.teacher_sessions, 2);
+        assert_eq!(before.gap2_plus_sessions, 0);
+        assert_eq!(after.one_period_sessions, 0);
+        assert_eq!(after.teacher_sessions, 1);
+        assert_eq!(after.gap2_plus_sessions, 0);
+        assert_eq!(stats.initial_teacher_sessions, 2);
+        assert_eq!(stats.final_teacher_sessions, 1);
+        assert!(schedule_hard_ok(&lessons, &HashSet::new(), &HashMap::new()));
+    }
+
+    #[test]
+    fn singleton_focus_does_not_run_session_reduction_on_a_clean_schedule() {
+        let mut lessons = vec![
+            teacher_quality_test_lesson("6A", "GV01", 2, 0),
+            teacher_quality_test_lesson("6B", "GV01", 2, 1),
+            teacher_quality_test_lesson("6C", "GV01", 3, 0),
+            teacher_quality_test_lesson("6D", "GV01", 3, 1),
+        ];
+        let mut solver_config = config(true, false);
+        solver_config.optimization_focus = OptimizationFocus::Singletons;
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+
+        optimize_teacher_single_sessions(
+            &mut lessons,
+            &HashSet::new(),
+            &HashMap::new(),
+            29,
+            true,
+            true,
+            OptimizationFocus::Singletons,
+            &clock,
+        );
+
+        assert_eq!(count_one_period_teacher_sessions(&lessons), 0);
+        assert_eq!(count_teacher_sessions(&lessons), 2);
+    }
+
+    #[test]
+    fn session_focus_runs_session_reduction_without_the_gap_phase() {
+        let mut lessons = vec![
+            teacher_quality_test_lesson("6A", "GV01", 2, 0),
+            teacher_quality_test_lesson("6B", "GV01", 2, 1),
+            teacher_quality_test_lesson("6C", "GV01", 3, 0),
+            teacher_quality_test_lesson("6D", "GV01", 3, 1),
+        ];
+        let mut solver_config = config(true, false);
+        solver_config.optimization_focus = OptimizationFocus::Sessions;
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+
+        optimize_teacher_single_sessions(
+            &mut lessons,
+            &HashSet::new(),
+            &HashMap::new(),
+            31,
+            true,
+            true,
+            OptimizationFocus::Sessions,
+            &clock,
+        );
+
+        assert_eq!(count_one_period_teacher_sessions(&lessons), 0);
+        assert_eq!(count_teacher_sessions(&lessons), 1);
+    }
+
+    #[test]
+    fn two_stage_gap_cleanup_compacts_within_the_same_teacher_session() {
+        let mut lessons = vec![
+            teacher_quality_test_lesson("6A", "GV01", 2, 0),
+            teacher_quality_test_lesson("6B", "GV01", 2, 2),
+        ];
+        let before = teacher_optimization_quality(&lessons);
+        let mut solver_config = config(true, false);
+        solver_config.two_stage_teacher_quality = true;
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+
+        optimize_teacher_single_sessions(
+            &mut lessons,
+            &HashSet::new(),
+            &HashMap::new(),
+            23,
+            true,
+            true,
+            OptimizationFocus::Gaps,
+            &clock,
+        );
+        let after = teacher_optimization_quality(&lessons);
+
+        assert_eq!(before.teacher_sessions, 1);
+        assert_eq!(before.total_gap, 1);
+        assert_eq!(after.teacher_sessions, 1);
+        assert_eq!(after.one_period_sessions, 0);
+        assert_eq!(after.total_gap, 0);
+        assert!(two_stage_cleanup_acceptable(&before, &after));
     }
 
     #[test]
@@ -8822,6 +9716,36 @@ mod tests {
         assert!(validate_agent_candidate(&gap_request, &gap_candidate)
             .unwrap_err()
             .contains("teacher-gap cap"));
+    }
+
+    #[test]
+    fn quick_agent_accepts_gap2_but_still_rejects_singleton_debt() {
+        let mut request = agent_candidate_request();
+        request["data"]["pccmMatrix"]["6A|Literature"] = json!("Teacher 1");
+        request["settings"] = json!({
+            "optimization_focus": "quick_complete",
+            "require_complete_schedule": true,
+            "max_one_period_sessions": 0,
+            "strict_one_period_sessions_cap": true,
+            "enforce_max_one_period_sessions": true,
+            "period_max_teacher_gap": "off"
+        });
+        let request = serde_json::to_vec(&request).unwrap();
+
+        let mut gap2_candidate = agent_candidate_payload();
+        gap2_candidate["lessons"][1]["teacher"] = json!("Teacher 1");
+        gap2_candidate["lessons"][1]["period"] = json!(4);
+        let validated = validate_agent_candidate(&request, &gap2_candidate)
+            .expect("quick must allow temporary gap-2 after singleton cleanup");
+        assert_eq!(validated.quality[0], 0);
+        assert_eq!(validated.quality[1], 1);
+
+        let mut singleton_candidate = gap2_candidate;
+        singleton_candidate["lessons"][1]["day"] = json!(3);
+        singleton_candidate["lessons"][1]["period"] = json!(1);
+        assert!(validate_agent_candidate(&request, &singleton_candidate)
+            .unwrap_err()
+            .contains("one-period teacher-session cap"));
     }
 
     #[test]

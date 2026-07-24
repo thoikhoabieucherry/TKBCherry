@@ -443,7 +443,7 @@ test("foreground executor probes WASM before hello and disconnects without an in
   assert.equal(context.TKBBrowserWasmExecutor.state().active, false);
   assert.deepEqual(calls.slice(0, 5), [
     "GET:/api/agent-helper/v1/status",
-    "worker:tkb-browser-wasm-worker.js?v=tkb-browser-wasm-executor-v4-portfolio-toggle",
+    "worker:tkb-browser-wasm-worker.js?v=tkb-browser-wasm-executor-v5-focused-two-stage",
     "worker-message:probe",
     "POST:/api/solve-data",
     "POST:/api/agent-helper/v1/hello",
@@ -1006,9 +1006,205 @@ test("four-worker portfolio uses distinct seeds and submits the best non-regress
   assert.ok(workerPayloads.every(payload => payload.settings.browser_portfolio_count === 4));
   assert.equal(workerPayloads[0].settings.random_seed, "base-seed");
   assert.ok(workerPayloads.slice(1).every(payload => payload.settings.random_seed.includes("job-portfolio")));
-  assert.equal(submittedResult?.candidateMarker, "best-within-envelope");
+  assert.equal(submittedResult?.candidateMarker, "fewer-sessions-but-worse-gap1");
   assert.equal(JSON.stringify(canonical), originalWire, "portfolio seeds must not mutate the canonical lease");
   await context.TKBBrowserWasmExecutor.close("test_finished", {failLease:true});
+});
+
+test("quick portfolio clears singleton debt even when the best candidate temporarily adds gap-2", async () => {
+  const canonical = completeRefinementRequest();
+  Object.assign(canonical.settings, {
+    optimization_focus:"quick_complete",
+    max_one_period_sessions:0,
+    strict_one_period_sessions_cap:true,
+    enforce_max_one_period_sessions:true,
+    period_max_teacher_gap:"off"
+  });
+  Object.assign(canonical.data.tkbSolverResult.metrics, {
+    teacher_sessions:462,
+    one_period_teacher_sessions:2,
+    teacher_gap2_sessions:0,
+    gap_distribution:{"0":460, "1":2},
+    gap_total:2
+  });
+  const sessionFirst = completePortfolioCandidate(canonical, "quick-session-first", {
+    teacher_sessions:459,
+    one_period_teacher_sessions:0,
+    teacher_gap2_sessions:4,
+    gap_distribution:{"0":455, "2":4},
+    gap_total:8
+  });
+  const gapClean = completePortfolioCandidate(canonical, "quick-gap-clean", {
+    teacher_sessions:460,
+    one_period_teacher_sessions:0,
+    teacher_gap2_sessions:0,
+    gap_distribution:{"0":460},
+    gap_total:0
+  });
+  const partialSingletonCleanup = completePortfolioCandidate(canonical, "quick-partial-singleton", {
+    teacher_sessions:458,
+    one_period_teacher_sessions:1,
+    teacher_gap2_sessions:0,
+    gap_distribution:{"0":458},
+    gap_total:0
+  });
+
+  const {submittedResult, failures} = await exercisePortfolioCandidates(
+    canonical,
+    [sessionFirst, gapClean, partialSingletonCleanup],
+    {
+      platform:"Linux x86_64",
+      userAgent:"Mozilla/5.0 (X11; Linux x86_64)",
+      hardwareConcurrency:4,
+      maxTouchPoints:0
+    }
+  );
+
+  assert.equal(submittedResult?.candidateMarker, "quick-session-first", JSON.stringify(failures));
+  assert.equal(submittedResult?.metrics?.one_period_teacher_sessions, 0);
+  assert.equal(submittedResult?.metrics?.teacher_gap2_sessions, 4);
+});
+
+test("quick portfolio never publishes a partial singleton cleanup under a strict zero cap", async () => {
+  const canonical = completeRefinementRequest();
+  Object.assign(canonical.settings, {
+    optimization_focus:"quick_complete",
+    max_one_period_sessions:0,
+    strict_one_period_sessions_cap:true,
+    enforce_max_one_period_sessions:true,
+    period_max_teacher_gap:"off"
+  });
+  Object.assign(canonical.data.tkbSolverResult.metrics, {
+    teacher_sessions:462,
+    one_period_teacher_sessions:2,
+    teacher_gap2_sessions:0,
+    gap_distribution:{"0":460, "1":2},
+    gap_total:2
+  });
+  const partialCleanup = completePortfolioCandidate(canonical, "quick-partial-only", {
+    teacher_sessions:459,
+    one_period_teacher_sessions:1,
+    teacher_gap2_sessions:0,
+    gap_distribution:{"0":459},
+    gap_total:0
+  });
+
+  const {submittedResult, failures} = await exercisePortfolioCandidates(
+    canonical,
+    [partialCleanup],
+    {
+      platform:"Linux armv8l",
+      userAgent:"Mozilla/5.0 (Linux; Android 15; Mobile)",
+      hardwareConcurrency:2,
+      maxTouchPoints:5
+    }
+  );
+
+  assert.equal(submittedResult, null);
+  assert.ok(failures.some(item => item.kind === "browser_wasm_failed"), JSON.stringify(failures));
+});
+
+test("temporary session gap debt does not relax automatic or gap-only envelopes", async () => {
+  for(const focus of ["automatic", "gaps"]){
+    const canonical = completeRefinementRequest();
+    canonical.settings.optimization_focus = focus;
+    const incumbentWire = JSON.stringify(canonical.data.tkbSolverResult);
+    const gap2Regression = completePortfolioCandidate(canonical, `${focus}-gap2-regression`, {
+      teacher_sessions:459,
+      one_period_teacher_sessions:0,
+      teacher_gap2_sessions:1,
+      gap_distribution:{"0":458, "2":1},
+      gap_total:2
+    });
+    const {submittedResult, failures} = await exercisePortfolioCandidates(
+      canonical,
+      [gap2Regression],
+      {
+        platform:"Linux armv8l",
+        userAgent:"Mozilla/5.0 (Linux; Android 15; Mobile)",
+        hardwareConcurrency:2,
+        maxTouchPoints:5
+      }
+    );
+    assert.equal(JSON.stringify(submittedResult), incumbentWire, `${focus}: ${JSON.stringify(failures)}`);
+  }
+});
+
+test("sessions portfolio accepts temporary gap debt only for a real session reduction", async () => {
+  const canonical = completeRefinementRequest();
+  canonical.settings.optimization_focus = "sessions";
+  const reducedSessions = completePortfolioCandidate(canonical, "sessions-reduced", {
+    teacher_sessions:459,
+    one_period_teacher_sessions:0,
+    teacher_gap2_sessions:2,
+    gap_distribution:{"0":457, "2":2},
+    gap_total:4
+  });
+  const equalSessions = completePortfolioCandidate(canonical, "sessions-equal", {
+    teacher_sessions:460,
+    one_period_teacher_sessions:0,
+    teacher_gap2_sessions:1,
+    gap_distribution:{"0":459, "2":1},
+    gap_total:2
+  });
+
+  const {submittedResult, failures} = await exercisePortfolioCandidates(
+    canonical,
+    [equalSessions, reducedSessions],
+    {
+      platform:"Linux x86_64",
+      userAgent:"Mozilla/5.0 (X11; Linux x86_64)",
+      hardwareConcurrency:3,
+      maxTouchPoints:0
+    }
+  );
+
+  assert.equal(submittedResult?.candidateMarker, "sessions-reduced", JSON.stringify(failures));
+  assert.equal(submittedResult?.metrics?.teacher_gap2_sessions, 2);
+});
+
+test("singleton portfolio may add gap debt only when it removes singleton debt", async () => {
+  const canonical = completeRefinementRequest();
+  Object.assign(canonical.settings, {
+    optimization_focus:"singletons",
+    max_one_period_sessions:0,
+    strict_one_period_sessions_cap:true,
+    period_max_teacher_gap:"off"
+  });
+  Object.assign(canonical.data.tkbSolverResult.metrics, {
+    teacher_sessions:460,
+    one_period_teacher_sessions:1,
+    teacher_gap2_sessions:0,
+    gap_distribution:{"0":460},
+    gap_total:0
+  });
+  const cleaned = completePortfolioCandidate(canonical, "singletons-cleaned", {
+    teacher_sessions:460,
+    one_period_teacher_sessions:0,
+    teacher_gap2_sessions:1,
+    gap_distribution:{"0":459, "2":1},
+    gap_total:2
+  });
+  const cleanedWithFewerSessions = completePortfolioCandidate(canonical, "singletons-cleaned-fewer-sessions", {
+    teacher_sessions:459,
+    one_period_teacher_sessions:0,
+    teacher_gap2_sessions:2,
+    gap_distribution:{"0":457, "2":2},
+    gap_total:4
+  });
+
+  const {submittedResult, failures} = await exercisePortfolioCandidates(
+    canonical,
+    [cleaned, cleanedWithFewerSessions],
+    {
+      platform:"Linux armv8l",
+      userAgent:"Mozilla/5.0 (Linux; Android 15; Mobile)",
+      hardwareConcurrency:3,
+      maxTouchPoints:5
+    }
+  );
+
+  assert.equal(submittedResult?.candidateMarker, "singletons-cleaned-fewer-sessions", JSON.stringify(failures));
 });
 
 test("portfolio treats an omitted gap-1 bucket as zero and derives total gap", async () => {
@@ -1112,7 +1308,7 @@ test("planner wires the browser worker only around a new canonical solve", () =>
   const bridge = fs.readFileSync(BRIDGE_PATH, "utf8");
   const page = fs.readFileSync(PAGE_PATH, "utf8");
   const server = fs.readFileSync(SERVER_PATH, "utf8");
-  assert.match(page, /tkb-browser-wasm\.js\?v=20260723-v168-landscape-history-v1/);
+  assert.match(page, /tkb-browser-wasm\.js\?v=20260724-v169-focused-two-stage-v1/);
   assert.ok(page.indexOf("tkb-browser-wasm.js") < page.indexOf("tkb-rust-bridge.js"));
   assert.match(bridge, /TKBBrowserWasmExecutor\.canHandleRequest\(browserWasmRequest\)/);
   assert.match(bridge, /!resumeExistingServerJobOnly[\s\S]*browserWasmEligible[\s\S]*TKBBrowserWasmExecutor\.probe/);

@@ -4,6 +4,8 @@ import time
 from typing import Any, Callable, Mapping
 
 from collections import Counter
+from functools import lru_cache
+from itertools import product
 
 from .models import Lesson, SchoolData, SessionAllocation
 from .random_seed import normalize_cp_sat_seed
@@ -60,6 +62,54 @@ def _count_contiguous_blocks(periods: set[int] | list[int] | tuple[int, ...], le
         if period - 1 not in period_set
         and all(period + offset in period_set for offset in range(max(1, int(length))))
     )
+
+
+@lru_cache(maxsize=None)
+def _teacher_gap_pattern_rows(capacity: int) -> tuple[tuple[int, ...], ...]:
+    """Truth table for the exact internal-gap signature of one half-day.
+
+    The canonical validator defines a teacher gap as the empty periods between
+    the first and last occupied periods.  Keeping that definition in a small
+    table (at most 32 rows for the current five-period sessions) avoids the
+    common but incorrect shortcut of counting only local ``1, 0, 1`` patterns.
+    """
+
+    cap = max(0, int(capacity))
+    rows: list[tuple[int, ...]] = []
+    for occupancy in product((0, 1), repeat=cap):
+        occupied = [index for index, value in enumerate(occupancy) if value]
+        gap_periods = (
+            occupied[-1] - occupied[0] + 1 - len(occupied)
+            if occupied
+            else 0
+        )
+        rows.append(
+            (
+                *occupancy,
+                gap_periods,
+                int(gap_periods == 1),
+                int(gap_periods >= 2),
+                gap_periods if gap_periods >= 2 else 0,
+            )
+        )
+    return tuple(rows)
+
+
+def _lexicographic_expression(
+    components: list[tuple[str, Any, int]],
+) -> tuple[Any | None, dict[str, int]]:
+    """Build a bounded integer lexicographic objective and expose its weights."""
+
+    if not components:
+        return None, {}
+    objective: Any = 0
+    multiplier = 1
+    weights: dict[str, int] = {}
+    for name, expression, upper_bound in reversed(components):
+        weights[name] = multiplier
+        objective += expression * multiplier
+        multiplier *= max(0, int(upper_bound)) + 1
+    return objective, weights
 
 
 def _day_limit_from_rule(rule: Mapping[str, Any], path: str, day: int) -> int:
@@ -158,6 +208,11 @@ def solve_session_allocation_cp_sat(
     forbidden_session_vectors: list[tuple[int, dict[int, int]]] | None = None,
     period_feasibility_session_indexes: set[int] | None = None,
     period_max_teacher_gap: int | None = None,
+    period_max_teacher_gap_periods: int | None = None,
+    period_max_teacher_gap1_sessions: int | None = None,
+    period_max_teacher_gap2_plus_sessions: int | None = None,
+    period_minimize_teacher_gaps: bool = False,
+    period_teacher_gap_priority_absolute: bool = False,
     materialize_period_lessons: bool = False,
     legacy_wednesday_pm_bridge: bool = False,
     minimize_hint_distance: bool = False,
@@ -173,8 +228,28 @@ def solve_session_allocation_cp_sat(
 
     rule_set = resolve_rule_set(rules)
     constraints = rule_set.constraints
-    cp_model = _load_cp_model()
     sessions = all_sessions()
+    period_feasibility_session_indexes = set(period_feasibility_session_indexes or set())
+    period_gap_quality_requested = bool(period_minimize_teacher_gaps) or any(
+        cap is not None
+        for cap in (
+            period_max_teacher_gap_periods,
+            period_max_teacher_gap1_sessions,
+            period_max_teacher_gap2_plus_sessions,
+        )
+    )
+    # Teacher-gap signatures use the concrete period bridge itself; optional
+    # authored constraints are not required.  The default school has a valid
+    # empty rule set (`constraints=None`) and must still be able to run Gap.
+    period_gap_model_complete = bool(
+        period_gap_quality_requested
+        and set(range(len(sessions))).issubset(period_feasibility_session_indexes)
+    )
+    if period_gap_quality_requested and not period_gap_model_complete:
+        raise ValueError(
+            "Exact teacher-gap optimization requires a normalized all-session period bridge"
+        )
+    cp_model = _load_cp_model()
     session_by_key = {(session.day, session.part): si for si, session in enumerate(sessions)}
     fixed_lessons = fixed_lessons or []
     hint_lessons = hint_lessons or []
@@ -275,6 +350,11 @@ def solve_session_allocation_cp_sat(
     lesson_block_deferred_constraints = 0
     teacher_cross_session_period_constraints = 0
     teacher_period_gap_constraints = 0
+    teacher_period_gap_signature_constraints = 0
+    teacher_period_gap_period_vars: list[Any] = []
+    teacher_period_gap1_vars: list[Any] = []
+    teacher_period_gap2_plus_vars: list[Any] = []
+    teacher_period_severe_gap_vars: list[Any] = []
     period_block_choices: dict[tuple[int, int], list[tuple[int, int, Any, tuple[int, ...]]]] = {}
     hinted_periods_by_assignment_session: dict[tuple[int, int], set[int]] = {}
     if hint_lessons:
@@ -292,8 +372,13 @@ def solve_session_allocation_cp_sat(
             hinted_periods_by_assignment_session.setdefault((ai, si), set()).add(
                 int(lesson.period)
             )
-    period_feasibility_session_indexes = set(period_feasibility_session_indexes or set())
-    if constraints is not None and constraints.active and period_feasibility_session_indexes:
+    if (
+        period_feasibility_session_indexes
+        and (
+            period_gap_quality_requested
+            or (constraints is not None and constraints.active)
+        )
+    ):
         class_period_terms: dict[tuple[str, int, int], list[Any]] = {}
         teacher_period_terms: dict[tuple[str, int, int], list[Any]] = {}
         room_period_terms: dict[tuple[str, int, int], list[Any]] = {}
@@ -328,7 +413,8 @@ def solve_session_allocation_cp_sat(
                         continue
                     combined_block_allowed = True
                     if (
-                        fixed_periods
+                        constraints is not None
+                        and fixed_periods
                         and max(combined_periods) - min(combined_periods) + 1
                         == len(combined_periods)
                     ):
@@ -403,6 +489,67 @@ def solve_session_allocation_cp_sat(
             if len(terms) > 1:
                 model.Add(sum(terms) <= 1)
 
+        if period_gap_quality_requested:
+            for teacher in data.teachers:
+                for si, session in enumerate(sessions):
+                    if si not in period_feasibility_session_indexes:
+                        continue
+                    cap = teacher_session_capacity(session)
+                    fixed_periods = fixed_teacher_session_periods.get((teacher, si), set())
+                    occupied_vars: list[Any] = []
+                    has_possible_occupancy = False
+                    for period in range(1, cap + 1):
+                        terms = teacher_period_terms.get((teacher, si, period), [])
+                        fixed = period in fixed_periods
+                        has_possible_occupancy = has_possible_occupancy or fixed or bool(terms)
+                        if fixed:
+                            if terms:
+                                # Fixed and residual lessons may never share a
+                                # teacher slot. This is normally already removed
+                                # from assignment availability, but making it
+                                # explicit keeps the gap signature binary.
+                                model.Add(sum(terms) == 0)
+                            occupied_vars.append(model.NewConstant(1))
+                        elif terms:
+                            occupied = model.NewBoolVar(
+                                f"teacher_period_occupied_{teacher}_{si}_{period}"
+                            )
+                            model.Add(occupied == sum(terms))
+                            occupied_vars.append(occupied)
+                        else:
+                            occupied_vars.append(model.NewConstant(0))
+                    if not has_possible_occupancy:
+                        continue
+
+                    max_gap = max(0, cap - 2)
+                    gap_periods = model.NewIntVar(
+                        0,
+                        max_gap,
+                        f"teacher_gap_periods_{teacher}_{si}",
+                    )
+                    gap1 = model.NewBoolVar(f"teacher_gap1_{teacher}_{si}")
+                    gap2_plus = model.NewBoolVar(f"teacher_gap2_plus_{teacher}_{si}")
+                    severe_gap_periods = model.NewIntVar(
+                        0,
+                        max_gap,
+                        f"teacher_severe_gap_periods_{teacher}_{si}",
+                    )
+                    model.AddAllowedAssignments(
+                        [
+                            *occupied_vars,
+                            gap_periods,
+                            gap1,
+                            gap2_plus,
+                            severe_gap_periods,
+                        ],
+                        _teacher_gap_pattern_rows(cap),
+                    )
+                    teacher_period_gap_signature_constraints += 1
+                    teacher_period_gap_period_vars.append(gap_periods)
+                    teacher_period_gap1_vars.append(gap1)
+                    teacher_period_gap2_plus_vars.append(gap2_plus)
+                    teacher_period_severe_gap_vars.append(severe_gap_periods)
+
         # The teacher UI can forbid the combination of morning period 5 and
         # afternoon period 1 on the same day.  This is not a half-day load
         # limit: both sessions may be used as long as those two edge periods are
@@ -413,42 +560,43 @@ def solve_session_allocation_cp_sat(
             (int(session.day), str(session.part)): si
             for si, session in enumerate(sessions)
         }
-        for teacher in data.teachers:
-            rule = constraints.teacher.get(teacher, {})
-            if not isinstance(rule, Mapping):
-                continue
-            for day in sorted({session.day for session in sessions}):
-                dk = _day_key(day)
-                forbidden_pair = _truthy(_get_path(rule, f"noMorningP5AfternoonP1.{dk}", False)) or _truthy(
-                    _get_path(rule, f"noMorningP5AfternoonP1.sang.{dk}", False)
-                )
-                if not forbidden_pair:
+        if constraints is not None:
+            for teacher in data.teachers:
+                rule = constraints.teacher.get(teacher, {})
+                if not isinstance(rule, Mapping):
                     continue
-                morning_si = session_index_by_key.get((int(day), "AM"))
-                afternoon_si = session_index_by_key.get((int(day), "PM"))
-                if (
-                    morning_si is None
-                    or afternoon_si is None
-                    or morning_si not in period_feasibility_session_indexes
-                    or afternoon_si not in period_feasibility_session_indexes
-                ):
-                    continue
-                terms = [
-                    *teacher_period_terms.get((teacher, morning_si, 5), []),
-                    *teacher_period_terms.get((teacher, afternoon_si, 1), []),
-                ]
-                fixed_count = sum(
-                    1
-                    for lesson in fixed_lessons
-                    if lesson.teacher == teacher
-                    and int(lesson.day) == int(day)
-                    and (
-                        (str(lesson.session) == "AM" and int(lesson.period) == 5)
-                        or (str(lesson.session) == "PM" and int(lesson.period) == 1)
+                for day in sorted({session.day for session in sessions}):
+                    dk = _day_key(day)
+                    forbidden_pair = _truthy(_get_path(rule, f"noMorningP5AfternoonP1.{dk}", False)) or _truthy(
+                        _get_path(rule, f"noMorningP5AfternoonP1.sang.{dk}", False)
                     )
-                )
-                model.Add(sum(terms) + fixed_count <= 1)
-                teacher_cross_session_period_constraints += 1
+                    if not forbidden_pair:
+                        continue
+                    morning_si = session_index_by_key.get((int(day), "AM"))
+                    afternoon_si = session_index_by_key.get((int(day), "PM"))
+                    if (
+                        morning_si is None
+                        or afternoon_si is None
+                        or morning_si not in period_feasibility_session_indexes
+                        or afternoon_si not in period_feasibility_session_indexes
+                    ):
+                        continue
+                    terms = [
+                        *teacher_period_terms.get((teacher, morning_si, 5), []),
+                        *teacher_period_terms.get((teacher, afternoon_si, 1), []),
+                    ]
+                    fixed_count = sum(
+                        1
+                        for lesson in fixed_lessons
+                        if lesson.teacher == teacher
+                        and int(lesson.day) == int(day)
+                        and (
+                            (str(lesson.session) == "AM" and int(lesson.period) == 5)
+                            or (str(lesson.session) == "PM" and int(lesson.period) == 1)
+                        )
+                    )
+                    model.Add(sum(terms) + fixed_count <= 1)
+                    teacher_cross_session_period_constraints += 1
 
         if period_max_teacher_gap is not None:
             max_gap = max(0, int(period_max_teacher_gap))
@@ -481,6 +629,26 @@ def solve_session_allocation_cp_sat(
                                 >= required_inside * (occupied[first] + occupied[last] - 1)
                             )
                             teacher_period_gap_constraints += 1
+
+    teacher_period_gap_penalty = sum(teacher_period_gap_period_vars)
+    teacher_period_gap1_penalty = sum(teacher_period_gap1_vars)
+    teacher_period_gap2_plus_penalty = sum(teacher_period_gap2_plus_vars)
+    teacher_period_severe_gap_penalty = sum(teacher_period_severe_gap_vars)
+    if period_max_teacher_gap_periods is not None:
+        model.Add(
+            teacher_period_gap_penalty
+            <= max(0, int(period_max_teacher_gap_periods))
+        )
+    if period_max_teacher_gap1_sessions is not None:
+        model.Add(
+            teacher_period_gap1_penalty
+            <= max(0, int(period_max_teacher_gap1_sessions))
+        )
+    if period_max_teacher_gap2_plus_sessions is not None:
+        model.Add(
+            teacher_period_gap2_plus_penalty
+            <= max(0, int(period_max_teacher_gap2_plus_sessions))
+        )
 
     shortfall_vars: dict[int, Any] = {}
     total_requested_periods = sum(max(0, int(item.periods_per_week)) for item in data.assignments)
@@ -1157,7 +1325,152 @@ def solve_session_allocation_cp_sat(
     )
     objective_mode = "none"
     objective_expr: Any | None = None
-    if minimize_sessions:
+    period_gap_objective_weights: dict[str, int] = {}
+    period_gap_objective_components: list[tuple[str, Any, int]] = []
+    if period_minimize_teacher_gaps:
+        max_gap_per_session = max(
+            (
+                max(0, teacher_session_capacity(session) - 2)
+                for session in sessions
+            ),
+            default=0,
+        )
+        gap_period_upper_bound = len(teacher_period_gap_period_vars) * max_gap_per_session
+        if period_max_teacher_gap_periods is not None:
+            gap_period_upper_bound = min(
+                gap_period_upper_bound,
+                max(0, int(period_max_teacher_gap_periods)),
+            )
+        gap1_upper_bound = len(teacher_period_gap1_vars)
+        if period_max_teacher_gap1_sessions is not None:
+            gap1_upper_bound = min(
+                gap1_upper_bound,
+                max(0, int(period_max_teacher_gap1_sessions)),
+            )
+        gap1_upper_bound = min(gap1_upper_bound, gap_period_upper_bound)
+        gap2_plus_upper_bound = len(teacher_period_gap2_plus_vars)
+        if period_max_teacher_gap2_plus_sessions is not None:
+            gap2_plus_upper_bound = min(
+                gap2_plus_upper_bound,
+                max(0, int(period_max_teacher_gap2_plus_sessions)),
+            )
+        gap2_plus_upper_bound = min(
+            gap2_plus_upper_bound,
+            gap_period_upper_bound // 2,
+        )
+        severe_gap_upper_bound = (
+            gap_period_upper_bound if gap2_plus_upper_bound > 0 else 0
+        )
+        gap_components: list[tuple[str, Any, int]] = [
+            (
+                "teacher_gap2_plus_sessions",
+                teacher_period_gap2_plus_penalty,
+                gap2_plus_upper_bound,
+            ),
+            (
+                "teacher_severe_gap_periods",
+                teacher_period_severe_gap_penalty,
+                severe_gap_upper_bound,
+            ),
+            (
+                "teacher_gap1_sessions",
+                teacher_period_gap1_penalty,
+                gap1_upper_bound,
+            ),
+        ]
+        base_components: list[tuple[str, Any, int]] = []
+        one_component = (
+            "one_period_teacher_sessions",
+            teacher_single_penalty,
+            min(
+                len(teacher_single_vars),
+                max(0, int(max_one_period_sessions)),
+            )
+            if max_one_period_sessions is not None
+            else len(teacher_single_vars),
+        )
+        session_component = (
+            "teacher_sessions",
+            teacher_session_sum,
+            min(len(z_vars), max(0, int(max_teacher_sessions)))
+            if max_teacher_sessions is not None
+            else len(z_vars),
+        )
+        hint_component = (
+            "hint_distance",
+            sum(hint_distance_terms),
+            hint_distance_upper_bound,
+        )
+        if minimize_sessions:
+            if minimize_one_period_sessions and teacher_single_vars:
+                base_components = (
+                    [one_component, session_component]
+                    if one_period_priority_absolute
+                    else [session_component, one_component]
+                )
+            else:
+                base_components = [session_component]
+        elif minimize_hint_distance and hint_distance_terms:
+            if minimize_one_period_sessions and teacher_single_vars:
+                base_components = (
+                    [one_component, hint_component]
+                    if one_period_priority_absolute
+                    else [hint_component, one_component]
+                )
+            else:
+                base_components = [hint_component]
+        elif minimize_one_period_sessions and teacher_single_vars:
+            base_components = [one_component]
+
+        if period_teacher_gap_priority_absolute:
+            if (
+                base_components
+                and base_components[0][0] == "one_period_teacher_sessions"
+                and one_period_priority_absolute
+            ):
+                period_gap_objective_components = [
+                    base_components[0],
+                    *gap_components,
+                    *base_components[1:],
+                ]
+            else:
+                period_gap_objective_components = [
+                    *gap_components,
+                    *base_components,
+                ]
+        else:
+            period_gap_objective_components = [
+                *base_components,
+                *gap_components,
+            ]
+        objective_expr, period_gap_objective_weights = _lexicographic_expression(
+            period_gap_objective_components
+        )
+        objective_mode = "minimize_" + "_then_".join(
+            name for name, _expression, _upper_bound in period_gap_objective_components
+        )
+        teacher_session_objective_weight = period_gap_objective_weights.get(
+            "teacher_sessions",
+            teacher_session_objective_weight,
+        )
+        one_period_objective_weight = period_gap_objective_weights.get(
+            "one_period_teacher_sessions",
+            one_period_objective_weight,
+        )
+        hint_distance_objective_weight = period_gap_objective_weights.get(
+            "hint_distance",
+            hint_distance_objective_weight,
+        )
+        shortfall_objective_weight = max(
+            shortfall_objective_weight,
+            sum(
+                max(0, int(upper_bound))
+                * int(period_gap_objective_weights.get(name, 0))
+                for name, _expression, upper_bound in period_gap_objective_components
+            )
+            + 1,
+        )
+    elif minimize_sessions:
         if minimize_one_period_sessions:
             if one_period_priority_absolute:
                 objective_mode = "minimize_one_period_sessions_then_teacher_sessions"
@@ -1179,6 +1492,7 @@ def solve_session_allocation_cp_sat(
         else:
             objective_mode = "minimize_hint_distance"
             objective_expr = sum(hint_distance_terms)
+    hint_distance_objective_skipped_for_integer_safety = False
     if (
         objective_expr is not None
         and minimize_sessions
@@ -1190,9 +1504,26 @@ def solve_session_allocation_cp_sat(
         # fewer single-period session).  Scale the full quality objective above
         # the maximum possible hint distance, then use distance only to break
         # equal-quality ties.
-        hint_scale = max(1, int(hint_distance_upper_bound) + 1)
-        objective_expr = objective_expr * hint_scale + sum(hint_distance_terms)
-        objective_mode = f"{objective_mode}_then_hint_distance"
+        candidate_hint_scale = max(1, int(hint_distance_upper_bound) + 1)
+        period_gap_quality_upper_bound = sum(
+            max(0, int(upper_bound))
+            * int(period_gap_objective_weights.get(name, 0))
+            for name, _expression, upper_bound in period_gap_objective_components
+        )
+        if (
+            period_gap_objective_components
+            and period_gap_quality_upper_bound * candidate_hint_scale
+            + int(hint_distance_upper_bound)
+            > (1 << 62)
+        ):
+            # Hint distance is only a final tie-break. Dropping that tie-break
+            # is safer than handing CP-SAT an overflowing integer objective.
+            hint_scale = 1
+            hint_distance_objective_skipped_for_integer_safety = True
+        else:
+            hint_scale = candidate_hint_scale
+            objective_expr = objective_expr * hint_scale + sum(hint_distance_terms)
+            objective_mode = f"{objective_mode}_then_hint_distance"
     else:
         hint_scale = 1
     if allow_unassigned:
@@ -1212,6 +1543,13 @@ def solve_session_allocation_cp_sat(
     )
     if early_stop_teacher_threshold is not None and max_teacher_sessions is not None:
         early_stop_teacher_threshold = min(early_stop_teacher_threshold, int(max_teacher_sessions))
+    period_gap_objective_suppressed_session_early_stop = bool(
+        period_minimize_teacher_gaps and early_stop_teacher_threshold is not None
+    )
+    if period_gap_objective_suppressed_session_early_stop:
+        # A session-count-only callback would stop on the first incumbent that
+        # reaches the cap, before the requested period-gap cleanup can run.
+        early_stop_teacher_threshold = None
     early_stop_one_period_threshold = (
         max(0, int(early_stop_max_one_period_sessions))
         if early_stop_max_one_period_sessions is not None
@@ -1228,6 +1566,9 @@ def solve_session_allocation_cp_sat(
                 "teacher_session_vars": len(z_vars),
                 "teacher_single_vars": len(teacher_single_vars),
                 "period_block_vars": period_block_vars,
+                "teacher_period_gap_signature_constraints": teacher_period_gap_signature_constraints,
+                "teacher_period_gap1_vars": len(teacher_period_gap1_vars),
+                "teacher_period_gap2_plus_vars": len(teacher_period_gap2_plus_vars),
                 "lesson_block_impossible_constraints": lesson_block_impossible_constraints,
                 "lesson_block_deferred_constraints": lesson_block_deferred_constraints,
                 "period_feasibility_session_indexes": sorted(period_feasibility_session_indexes),
@@ -1235,10 +1576,21 @@ def solve_session_allocation_cp_sat(
                 "objective_mode": objective_mode,
                 "teacher_session_objective_weight": teacher_session_objective_weight,
                 "one_period_objective_weight": one_period_objective_weight,
+                "period_gap_objective_weights": period_gap_objective_weights,
+                "hint_distance_objective_skipped_for_integer_safety": (
+                    hint_distance_objective_skipped_for_integer_safety
+                ),
                 "bridge_vars": len(q_vars),
                 "forbidden_session_vectors": len(forbidden_session_vectors),
                 "max_teacher_sessions": max_teacher_sessions,
                 "max_one_period_sessions": max_one_period_sessions,
+                "period_max_teacher_gap_periods": period_max_teacher_gap_periods,
+                "period_max_teacher_gap1_sessions": period_max_teacher_gap1_sessions,
+                "period_max_teacher_gap2_plus_sessions": period_max_teacher_gap2_plus_sessions,
+                "period_minimize_teacher_gaps": bool(period_minimize_teacher_gaps),
+                "period_teacher_gap_priority_absolute": bool(
+                    period_teacher_gap_priority_absolute
+                ),
                 "time_limit_seconds": time_limit_seconds,
                 "num_workers": effective_num_workers,
                 "requested_num_workers": requested_num_workers,
@@ -1246,6 +1598,9 @@ def solve_session_allocation_cp_sat(
                 "minimize_one_period_sessions": bool(minimize_one_period_sessions),
                 "early_stop_teacher_sessions": early_stop_teacher_threshold,
                 "early_stop_max_one_period_sessions": early_stop_one_period_threshold,
+                "period_gap_objective_suppressed_session_early_stop": (
+                    period_gap_objective_suppressed_session_early_stop
+                ),
             }
         )
 
@@ -1333,7 +1688,19 @@ def solve_session_allocation_cp_sat(
         "period_block_vars": period_block_vars,
         "teacher_cross_session_period_constraints": teacher_cross_session_period_constraints,
         "teacher_period_gap_constraints": teacher_period_gap_constraints,
+        "teacher_period_gap_signature_constraints": teacher_period_gap_signature_constraints,
+        "teacher_period_gap_period_vars": len(teacher_period_gap_period_vars),
+        "teacher_period_gap1_vars": len(teacher_period_gap1_vars),
+        "teacher_period_gap2_plus_vars": len(teacher_period_gap2_plus_vars),
         "period_max_teacher_gap": period_max_teacher_gap,
+        "period_max_teacher_gap_periods": period_max_teacher_gap_periods,
+        "period_max_teacher_gap1_sessions": period_max_teacher_gap1_sessions,
+        "period_max_teacher_gap2_plus_sessions": period_max_teacher_gap2_plus_sessions,
+        "period_minimize_teacher_gaps": bool(period_minimize_teacher_gaps),
+        "period_teacher_gap_priority_absolute": bool(
+            period_teacher_gap_priority_absolute
+        ),
+        "period_gap_model_complete": period_gap_model_complete,
         "lesson_block_impossible_constraints": lesson_block_impossible_constraints,
         "lesson_block_deferred_constraints": lesson_block_deferred_constraints,
         "period_feasibility_session_indexes": sorted(period_feasibility_session_indexes),
@@ -1341,9 +1708,13 @@ def solve_session_allocation_cp_sat(
         "objective_mode": objective_mode,
         "teacher_session_objective_weight": teacher_session_objective_weight,
         "one_period_objective_weight": one_period_objective_weight,
+        "period_gap_objective_weights": period_gap_objective_weights,
         "hint_distance_objective_weight": hint_distance_objective_weight,
         "hint_distance_upper_bound": hint_distance_upper_bound,
         "hint_distance_quality_scale": hint_scale,
+        "hint_distance_objective_skipped_for_integer_safety": (
+            hint_distance_objective_skipped_for_integer_safety
+        ),
         "shortfall_objective_weight": shortfall_objective_weight if allow_unassigned else None,
         "secondary_objective": "one_period_teacher_sessions" if minimize_one_period_sessions else None,
         "minimize_one_period_sessions": bool(minimize_one_period_sessions),
@@ -1359,6 +1730,9 @@ def solve_session_allocation_cp_sat(
         "early_stop_hit": bool(early_stop_callback and early_stop_callback.hit),
         "early_stop_teacher_threshold": early_stop_teacher_threshold,
         "early_stop_one_period_threshold": early_stop_one_period_threshold,
+        "period_gap_objective_suppressed_session_early_stop": (
+            period_gap_objective_suppressed_session_early_stop
+        ),
         "early_stop_teacher_sessions": (
             early_stop_callback.hit_teacher_sessions if early_stop_callback else None
         ),
@@ -1377,7 +1751,7 @@ def solve_session_allocation_cp_sat(
         ),
         "solutions_seen": early_stop_callback.solution_count if early_stop_callback else None,
     }
-    if minimize_sessions and status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+    if objective_expr is not None and status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         metrics["objective"] = float(solver.ObjectiveValue())
         metrics["best_bound"] = float(solver.BestObjectiveBound())
 
@@ -1477,6 +1851,18 @@ def solve_session_allocation_cp_sat(
     metrics["teacher_sessions"] = len(teacher_session_load)
     metrics["load_distribution"] = dict(sorted(load_dist.items()))
     metrics["one_period_teacher_sessions"] = int(load_dist.get(1, 0))
+    metrics["period_bridge_teacher_gap_periods"] = sum(
+        int(solver.Value(var)) for var in teacher_period_gap_period_vars
+    )
+    metrics["period_bridge_teacher_gap1_sessions"] = sum(
+        int(solver.Value(var)) for var in teacher_period_gap1_vars
+    )
+    metrics["period_bridge_teacher_gap2_plus_sessions"] = sum(
+        int(solver.Value(var)) for var in teacher_period_gap2_plus_vars
+    )
+    metrics["period_bridge_teacher_severe_gap_periods"] = sum(
+        int(solver.Value(var)) for var in teacher_period_severe_gap_vars
+    )
     metrics["fixed_lessons"] = len(fixed_lessons)
     metrics["fixed_teacher_sessions"] = len(fixed_teacher_session_load)
 
