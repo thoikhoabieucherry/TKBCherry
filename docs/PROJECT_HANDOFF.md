@@ -12,7 +12,7 @@ change so a machine restart or a new conversation does not erase project context
   checkpoint Stop). The public API marker is
   `tkb_new-rust-api-2026-07-24-stable-live-progress-v68`, the bridge marker is
   `tkb-rust-api-v270-stable-live-progress`, and the planner script cache is
-  `20260724-v173-stable-live-progress-v1`. The unchanged constraints marker is
+  `20260724-v173-stable-live-progress-v2`. The unchanged constraints marker is
   `constraints-ui-v38-one-session-responsive-tables`.
 - Current public Agent release: **v1.6.29** (`1.6.29`). The normal owner-Agent
   minimum lease gate remains 1.6.23, so 1.6.22 and older stay upgrade-only;
@@ -69,7 +69,7 @@ change so a machine restart or a new conversation does not erase project context
 - Candidate markers are API
   `tkb_new-rust-api-2026-07-24-stable-live-progress-v68`, bridge
   `tkb-rust-api-v270-stable-live-progress`, planner cache
-  `20260724-v173-stable-live-progress-v1`, and Browser executor
+  `20260724-v173-stable-live-progress-v2`, and Browser executor
   `tkb-browser-wasm-executor-v8-checkpoint-stop`. The packaged Agent remains
   1.6.29.
 - Repeated focused optimization now starts from the visible incumbent counter
@@ -4004,7 +4004,7 @@ changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 Latest successful deployment marker observed on 2026-07-24: `UPDATE_OK` for
 application v1.73. Public health serves
 `tkb_new-rust-api-2026-07-24-stable-live-progress-v68`; the page serves
-`20260724-v173-stable-live-progress-v1`, bridge marker
+`20260724-v173-stable-live-progress-v2`, bridge marker
 `tkb-rust-api-v270-stable-live-progress`, and Browser executor
 `tkb-browser-wasm-executor-v8-checkpoint-stop`. The public WASM is 1,031,910
 bytes and matches SHA-256
