@@ -8,11 +8,11 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.68** (orientation-aware mobile
-  history controls). The public API marker is
-  `tkb_new-rust-api-2026-07-23-browser-portfolio-direct-v63`, the bridge marker
-  is `tkb-rust-api-v265-browser-portfolio-direct`, and the planner script cache
-  is `20260723-v168-landscape-history-v1`. The unchanged constraints marker is
+- Current deployed application release: **v1.69** (focused two-stage
+  scheduler). The public API marker is
+  `tkb_new-rust-api-2026-07-24-focused-two-stage-v64`, the bridge marker is
+  `tkb-rust-api-v266-focused-two-stage`, and the planner script cache is
+  `20260724-v169-focused-two-stage-v1`. The unchanged constraints marker is
   `constraints-ui-v38-one-session-responsive-tables`.
 - Current public Agent release: **v1.6.29** (`1.6.29`). The normal owner-Agent
   minimum lease gate remains 1.6.23, so 1.6.22 and older stay upgrade-only;
@@ -73,7 +73,7 @@ change so a machine restart or a new conversation does not erase project context
   candidate that passes the complete hard validator and the visible Pareto
   guard may replace the incumbent.
 
-### v1.69 focused optimizer contract (backend candidate, not deployed)
+### v1.69 focused optimizer contract (deployed 2026-07-24)
 
 - Candidate markers are API
   `tkb_new-rust-api-2026-07-24-focused-two-stage-v64`, bridge
@@ -146,7 +146,14 @@ change so a machine restart or a new conversation does not erase project context
   **13/13**, JavaScript syntax and `git diff --check`.
   Isolated VPS staging passes scheduler **211/211**, Agent **151/151**, trusted
   worker **5/5**, Rust API **166/166**, and Rust Agent validator **31/31**, ending
-  with `STAGING_TESTS_OK`. The candidate is not deployed yet.
+  with `STAGING_TESTS_OK`.
+- Transactional production deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260724-014305.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260724-014305.tar.gz`. Public
+  health serves API v64 with zero active/queued jobs and `6/6` worker tokens.
+  Live HTML/JavaScript expose the v1.69 cache, desktop Quick/Optimize controls,
+  bridge v266 and Browser executor v5. The public WASM is 1,031,894 bytes and
+  matches SHA-256 `c34844eb7876d106a0d9e7de6a3d6a164140bcd727a56af01af7a2fca16926d2`.
 
 ### v1.67 compact mobile history and duration control (deployed 2026-07-23)
 
@@ -3805,15 +3812,15 @@ GET https://tkbcherry.com/pages/sapxep?sid=default
 Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
-Latest successful deployment marker observed on 2026-07-23: `UPDATE_OK` for
-application v1.68. Public health serves
-`tkb_new-rust-api-2026-07-23-browser-portfolio-direct-v63`; the page serves
-`20260723-v168-landscape-history-v1` and bridge marker
-`tkb-rust-api-v265-browser-portfolio-direct`. Public health was idle with zero
-active/queued jobs and `6/6` tokens available after signed-in production UI
-acceptance. Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260723-121024.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260723-121024.tar.gz`.
+Latest successful deployment marker observed on 2026-07-24: `UPDATE_OK` for
+application v1.69. Public health serves
+`tkb_new-rust-api-2026-07-24-focused-two-stage-v64`; the page serves
+`20260724-v169-focused-two-stage-v1`, bridge marker
+`tkb-rust-api-v266-focused-two-stage`, Browser executor v5, and the exact public
+WASM digest recorded above. Public health is idle with zero active/queued jobs
+and `6/6` tokens available. Transaction backups are
+`/opt/cherry-scheduler-backups/server-state-20260724-014305.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260724-014305.tar.gz`.
 Public Agent release `1.6.29` and its signed manifest are live. The 88,001,209
 byte archive SHA-256 is
 `b36e5774f7e89402f7ffbb7075eb2541e7a63a1f874558abba128fe8ecfa25f6`; the
