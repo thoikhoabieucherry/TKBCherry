@@ -86,15 +86,19 @@ change so a machine restart or a new conversation does not erase project context
   `teacher_gaps`). Existing CP-SAT/Benders code is reused; no alternate solver
   is introduced.
 - Focused refinements are atomic: singleton cleanup runs one phase, session
-  cleanup runs Phase S only with a hard zero-singleton cap, and gap cleanup runs
-  Phase G only while locking the achieved session count. Automatic refinement
-  keeps Phase S then Phase G. A complete incumbent remains the fallback when a
-  focused candidate is incomplete or violates authored constraints.
+  cleanup runs Phase S, and gap cleanup runs Phase G while locking the achieved
+  session count. Phase S first targets zero singleton sessions, then uses a
+  bounded incumbent-singleton cap only when authored constraints make zero
+  infeasible. Phase G likewise targets zero gap-2 first, then keeps the current
+  unavoidable gap-2 ceiling while reducing remaining gaps. Automatic keeps
+  Phase S then Phase G. No fallback may worsen the validated incumbent.
 - Phase S explicitly permits temporary gap-2 debt. Its materialized period
   candidate was previously rejected by the partial-payload guard's legacy
   `max_gap <= 1` check even though it was complete and satisfied every authored
   constraint. The Benders payload builder now propagates gap debt permission
-  whenever `period_max_teacher_gap` is off; strict Phase G remains unchanged.
+  whenever `period_max_teacher_gap` is off. Phase G now has the bounded debt
+  fallback described above instead of discarding all useful progress when an
+  authored constraint makes the ideal zero target infeasible.
   A real `default` Quick -> Sessions run improved from 567 to 510 teacher
   sessions in 93.37 seconds, retained 1,566/1,566 periods and zero singleton
   sessions, and passed canonical validation with six temporary gap-2 sessions.
@@ -111,9 +115,10 @@ change so a machine restart or a new conversation does not erase project context
   seconds. On the 510-session checkpoint, a 40-second real VPS run reached
   gap-2 zero and gap-1 85 in 37.41 seconds. The former direct CP-SAT path had
   returned the unchanged 101 gap-1 / 6 gap-2 incumbent after 186.36 seconds.
-- A complete 180-second Automatic benchmark now performs session compression
-  followed by that fast gap checkpoint atomically: 567 -> 496 teacher sessions,
-  zero singleton sessions, gap-2 zero and gap-1 68 in 176.25 seconds. The
+- A complete post-review 180-second Automatic benchmark performs session
+  compression followed by that fast gap checkpoint atomically: 567 -> 485
+  teacher sessions, zero singleton sessions, gap-2 zero and gap-1 50 in 176.13
+  seconds. The earlier candidate reached 496 sessions / gap-1 68 in 176.25s. The
   result is complete, hard-valid, has zero authored-constraint violations, and
   passes canonical validation.
 - Phase progress emits `optimizationFocus`, `metricCurrent`, `metricTarget`,
@@ -124,17 +129,22 @@ change so a machine restart or a new conversation does not erase project context
   Quick and Singletons may take temporary gap debt only for real singleton
   cleanup, Sessions may do so only for a real session reduction, Gaps locks the
   session count and compares gap-2 before gap-1, and Automatic keeps its
-  coordinated singleton/session/gap-2 envelope. The Rust Agent gate proves
-  Quick accepts gap-2 with `period_max_teacher_gap=off` while still rejecting
-  singleton debt under the strict zero cap.
+  coordinated singleton/session/gap-2 envelope. Quality caps are solver goals,
+  not authored hard constraints: Browser/Rust Agents may publish complete,
+  hard-valid unavoidable singleton or gap-2 debt, while incumbent refinements
+  still reject every focus-specific regression.
 - Final release review fixed the Browser Agent's multi-candidate Singleton
   comparison: the quality-order helper no longer references out-of-scope
   candidate variables, and the regression now exercises two valid Singleton
   candidates before selecting the lower-session result.
-- Current verification passes full Node **329/329**, full Python **201/201**
-  with three platform skips, focused scheduler **22/22**, deployment packaging
+- The rebuilt Browser WASM is 1,031,894 bytes with matching SHA-256
+  `c34844eb7876d106a0d9e7de6a3d6a164140bcd727a56af01af7a2fca16926d2`
+  in both public runtime locations; remote and local ABI smokes return
+  `BROWSER_WASM_ABI_OK`.
+- Current verification passes full Node **329/329**, full Python **211/211**
+  with three platform skips, focused scheduler **30/30**, deployment packaging
   **13/13**, JavaScript syntax and `git diff --check`.
-  Isolated VPS staging passes scheduler **201/201**, Agent **151/151**, trusted
+  Isolated VPS staging passes scheduler **211/211**, Agent **151/151**, trusted
   worker **5/5**, Rust API **166/166**, and Rust Agent validator **31/31**, ending
   with `STAGING_TESTS_OK`. The candidate is not deployed yet.
 

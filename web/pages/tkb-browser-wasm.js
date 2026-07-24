@@ -675,23 +675,6 @@
     return "automatic";
   }
 
-  function requestedOnePeriodCap(settings){
-    const raw = settings?.max_one_period_sessions;
-    const numeric = raw === "" || raw == null ? NaN : Number(raw);
-    if(Number.isFinite(numeric) && numeric >= 0) return Math.trunc(numeric);
-    if(
-      settings?.strict_one_period_sessions_cap === true
-      || settings?.enforce_max_one_period_sessions === true
-    ) return 0;
-    return null;
-  }
-
-  function qualityMeetsRequestedCaps(quality, settings){
-    if(!quality) return false;
-    const onePeriodCap = requestedOnePeriodCap(settings);
-    return onePeriodCap == null || quality[0] <= onePeriodCap;
-  }
-
   function qualityComparisonOrder(settings){
     const focus = normalizedOptimizationFocus(settings);
     if(["quick_complete", "singletons", "sessions"].includes(focus)){
@@ -730,7 +713,6 @@
 
   function qualityWithinEnvelope(candidate, incumbent, settings){
     if(!candidate || !incumbent || candidate.length !== incumbent.length) return false;
-    if(!qualityMeetsRequestedCaps(candidate, settings)) return false;
     const focus = normalizedOptimizationFocus(settings);
     if(["quick_complete", "singletons", "sessions"].includes(focus)){
       if(candidate[0] > incumbent[0] || candidate[2] > incumbent[2]) return false;
@@ -792,12 +774,7 @@
       }catch(_){ }
     }));
     if(best) return best;
-    if(
-      validCandidateCount > 0
-      && completeHardResult(incumbent)
-      && incumbentQuality
-      && qualityMeetsRequestedCaps(incumbentQuality, settings)
-    ){
+    if(validCandidateCount > 0 && completeHardResult(incumbent) && incumbentQuality){
       return {status:200, result:incumbent, quality:incumbentQuality, index:workers.length};
     }
     throw new Error("browser_wasm_no_candidate");

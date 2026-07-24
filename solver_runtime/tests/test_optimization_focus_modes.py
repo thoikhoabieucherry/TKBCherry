@@ -190,6 +190,44 @@ class OptimizationFocusModeTests(unittest.TestCase):
         self.assertEqual(reason, "two_stage_session_compression")
         self.assertEqual(result["solver"]["two_stage_teacher_optimization"]["mode"], "sessions_only")
 
+    def test_sessions_focus_retries_with_the_incumbent_singleton_cap(self) -> None:
+        incumbent = _payload(sessions=5, singletons=1, gap1=2)
+        relaxed = _payload(sessions=4, singletons=1, gap1=3)
+        calls: list[dict] = []
+
+        def fake_benders(_data, call_settings, **kwargs):
+            calls.append({"settings": dict(call_settings), **kwargs})
+            if len(calls) == 1:
+                raise RuntimeError("zero singleton infeasible")
+            return relaxed
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=fake_benders,
+        ):
+            result, metrics, attempts, reason = _solve_two_stage_concrete_refinement(
+                {},
+                {"optimization_focus": "sessions"},
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(90),
+                total_limit=90,
+                incumbent_payload=incumbent,
+                phase_seeds=[7, 8],
+            )
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0]["settings"]["max_one_period_sessions"], 0)
+        self.assertEqual(calls[1]["settings"]["max_one_period_sessions"], 1)
+        self.assertEqual(metrics["teacher_sessions"], 4)
+        self.assertEqual(metrics["one_period_teacher_sessions"], 1)
+        self.assertEqual(reason, "two_stage_session_compression")
+        self.assertTrue(attempts[0]["incumbent_singleton_fallback"]["selected"])
+        self.assertEqual(
+            result["solver"]["two_stage_teacher_optimization"]["selected_phase"],
+            "session_compression",
+        )
+
     def test_automatic_requires_coordinated_gap_cleanup(self) -> None:
         incumbent = _payload(sessions=5, gap1=2)
         phase_s = _payload(sessions=4, gap1=1, gap2=1)
@@ -248,7 +286,10 @@ class OptimizationFocusModeTests(unittest.TestCase):
                 phase_seeds=[7, 8],
             )
 
-        self.assertEqual(calls, [(86, 98), (75, 87)])
+        self.assertEqual(calls[0], (86, 98))
+        self.assertGreaterEqual(calls[1][0], 8)
+        self.assertLessEqual(calls[1][0], 55)
+        self.assertEqual(calls[1][1], calls[1][0] + 12)
 
     def test_automatic_discards_phase_s_gap_debt_when_phase_g_fails(self) -> None:
         incumbent = _payload(sessions=5, gap1=2)
@@ -276,6 +317,252 @@ class OptimizationFocusModeTests(unittest.TestCase):
             result["solver"]["two_stage_teacher_optimization"]["selected_phase"],
             "incumbent",
         )
+
+    def test_automatic_keeps_session_gain_with_unavoidable_baseline_gap2(self) -> None:
+        incumbent = _payload(sessions=5, gap1=3, gap2=1)
+        phase_s = _payload(sessions=4, gap1=2, gap2=1)
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=[
+                phase_s,
+                RuntimeError("zero gap2 infeasible"),
+                RuntimeError("bounded gap cleanup timed out"),
+            ],
+        ):
+            result, metrics, attempts, reason = _solve_two_stage_concrete_refinement(
+                {},
+                {"optimization_focus": "automatic"},
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(180),
+                total_limit=180,
+                incumbent_payload=incumbent,
+                phase_seeds=[7, 8],
+            )
+
+        self.assertEqual(metrics["teacher_sessions"], 4)
+        self.assertEqual(metrics["gap_distribution"][2], 1)
+        self.assertEqual(reason, "two_stage_session_compression")
+        self.assertTrue(attempts[-1]["automatic_phase_s_fallback_acceptable"])
+        self.assertEqual(
+            result["solver"]["two_stage_teacher_optimization"]["selected_phase"],
+            "session_compression",
+        )
+
+    def test_automatic_keeps_session_gain_when_authored_rules_force_gap2(self) -> None:
+        incumbent = _payload(sessions=5, gap1=4, gap2=1)
+        phase_s = _payload(sessions=4, gap1=4, gap2=1)
+        bounded_gap = _payload(sessions=4, gap1=2, gap2=1)
+        calls: list[dict] = []
+
+        def fake_benders(_data, call_settings, **kwargs):
+            calls.append({"settings": dict(call_settings), **kwargs})
+            if len(calls) == 1:
+                return phase_s
+            if call_settings["period_max_teacher_gap"] == 1:
+                raise RuntimeError("authored rule requires one gap-2 session")
+            return bounded_gap
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=fake_benders,
+        ):
+            result, metrics, attempts, reason = _solve_two_stage_concrete_refinement(
+                {},
+                {"optimization_focus": "automatic"},
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(180),
+                total_limit=180,
+                incumbent_payload=incumbent,
+                phase_seeds=[7, 8],
+            )
+
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(calls[1]["settings"]["period_max_teacher_gap"], 1)
+        self.assertEqual(
+            calls[1]["settings"]["optimization_benders_max_teacher_gap2_plus_sessions"],
+            0,
+        )
+        self.assertEqual(calls[2]["settings"]["period_max_teacher_gap"], "off")
+        self.assertEqual(
+            calls[2]["settings"]["optimization_benders_max_teacher_gap2_plus_sessions"],
+            1,
+        )
+        self.assertEqual(metrics["teacher_sessions"], 4)
+        self.assertEqual(metrics["gap_distribution"][2], 1)
+        self.assertEqual(metrics["gap_distribution"][1], 2)
+        self.assertEqual(reason, "two_stage_gap_cleanup")
+        self.assertTrue(attempts[-1]["bounded_gap2_fallback"]["attempted"])
+        self.assertEqual(
+            result["solver"]["two_stage_teacher_optimization"]["selected_phase"],
+            "gap_cleanup",
+        )
+
+    def test_automatic_retains_safe_phase_s_when_forced_gap2_cannot_improve(self) -> None:
+        incumbent = _payload(sessions=5, gap1=3, gap2=1)
+        phase_s = _payload(sessions=4, gap1=3, gap2=1)
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=[
+                phase_s,
+                RuntimeError("zero gap-2 is infeasible"),
+                RuntimeError("no bounded gap improvement exists"),
+            ],
+        ):
+            result, metrics, _attempts, reason = _solve_two_stage_concrete_refinement(
+                {},
+                {"optimization_focus": "automatic"},
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(180),
+                total_limit=180,
+                incumbent_payload=incumbent,
+                phase_seeds=[7, 8],
+            )
+
+        self.assertEqual(metrics["teacher_sessions"], 4)
+        self.assertEqual(metrics["gap_distribution"][2], 1)
+        self.assertEqual(reason, "two_stage_session_compression")
+        self.assertEqual(
+            result["solver"]["two_stage_teacher_optimization"]["selected_phase"],
+            "session_compression",
+        )
+
+    def test_gap_focus_relaxes_zero_gap_target_without_changing_sessions(self) -> None:
+        incumbent = _payload(sessions=5, gap1=4, gap2=1)
+        bounded_gap = _payload(sessions=5, gap1=2, gap2=1)
+        calls: list[dict] = []
+
+        def fake_benders(_data, call_settings, **kwargs):
+            calls.append({"settings": dict(call_settings), **kwargs})
+            if call_settings["period_max_teacher_gap"] == 1:
+                raise RuntimeError("authored rule requires one gap-2 session")
+            return bounded_gap
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=fake_benders,
+        ):
+            _result, metrics, _attempts, reason = _solve_two_stage_concrete_refinement(
+                {},
+                {"optimization_focus": "gaps"},
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(60),
+                total_limit=60,
+                incumbent_payload=incumbent,
+                phase_seeds=[7, 8],
+            )
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0]["settings"]["period_max_teacher_gap"], 1)
+        self.assertEqual(calls[1]["settings"]["period_max_teacher_gap"], "off")
+        self.assertEqual(metrics["teacher_sessions"], 5)
+        self.assertEqual(metrics["gap_distribution"][2], 1)
+        self.assertEqual(metrics["gap_distribution"][1], 2)
+        self.assertEqual(reason, "two_stage_gap_cleanup")
+
+    def test_sessions_falls_back_to_incumbent_singleton_cap(self) -> None:
+        incumbent = _payload(sessions=5, singletons=1, gap1=2)
+        candidate = _payload(sessions=4, singletons=1, gap1=3)
+        calls: list[dict] = []
+
+        def fake_benders(_data, call_settings, **kwargs):
+            calls.append({"settings": dict(call_settings), **kwargs})
+            if call_settings["max_one_period_sessions"] == 0:
+                raise RuntimeError("one singleton is forced by authored rules")
+            return candidate
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=fake_benders,
+        ):
+            _result, metrics, attempts, reason = _solve_two_stage_concrete_refinement(
+                {},
+                {"optimization_focus": "sessions"},
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(60),
+                total_limit=60,
+                incumbent_payload=incumbent,
+                phase_seeds=[7, 8],
+                session_target=3,
+            )
+
+        self.assertEqual(
+            [call["settings"]["max_one_period_sessions"] for call in calls],
+            [0, 1],
+        )
+        self.assertEqual(metrics["teacher_sessions"], 4)
+        self.assertEqual(metrics["one_period_teacher_sessions"], 1)
+        self.assertEqual(reason, "two_stage_session_compression")
+        self.assertTrue(attempts[0]["incumbent_singleton_fallback"]["selected"])
+
+    def test_sessions_singleton_fallback_never_increases_incumbent_debt(self) -> None:
+        incumbent = _payload(sessions=5, singletons=1, gap1=2)
+        regressive = _payload(sessions=4, singletons=2, gap1=1)
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=[
+                RuntimeError("zero singleton is infeasible"),
+                regressive,
+            ],
+        ):
+            _result, metrics, _attempts, reason = _solve_two_stage_concrete_refinement(
+                {},
+                {"optimization_focus": "sessions"},
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(60),
+                total_limit=60,
+                incumbent_payload=incumbent,
+                phase_seeds=[7, 8],
+                session_target=3,
+            )
+
+        self.assertEqual(metrics["teacher_sessions"], 5)
+        self.assertEqual(metrics["one_period_teacher_sessions"], 1)
+        self.assertEqual(reason, "two_stage_incumbent")
+
+    def test_automatic_carries_unavoidable_singleton_cap_into_gap_phase(self) -> None:
+        incumbent = _payload(sessions=5, singletons=1, gap1=3)
+        phase_s = _payload(sessions=4, singletons=1, gap1=3)
+        phase_g = _payload(sessions=4, singletons=1, gap1=2)
+        calls: list[dict] = []
+
+        def fake_benders(_data, call_settings, **kwargs):
+            calls.append({"settings": dict(call_settings), **kwargs})
+            if len(calls) == 1:
+                raise RuntimeError("one singleton is forced by authored rules")
+            return phase_s if len(calls) == 2 else phase_g
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=fake_benders,
+        ):
+            _result, metrics, _attempts, reason = _solve_two_stage_concrete_refinement(
+                {},
+                {"optimization_focus": "automatic"},
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(180),
+                total_limit=180,
+                incumbent_payload=incumbent,
+                phase_seeds=[7, 8],
+            )
+
+        self.assertEqual(
+            [call["settings"]["max_one_period_sessions"] for call in calls],
+            [0, 1, 1],
+        )
+        self.assertEqual(metrics["teacher_sessions"], 4)
+        self.assertEqual(metrics["one_period_teacher_sessions"], 1)
+        self.assertEqual(metrics["gap_distribution"][1], 2)
+        self.assertEqual(reason, "two_stage_gap_cleanup")
 
     def test_automatic_accepts_phase_g_confirmation_without_artificial_gap_gain(self) -> None:
         incumbent = _payload(sessions=5, gap1=2)
@@ -363,6 +650,49 @@ class OptimizationFocusModeTests(unittest.TestCase):
         self.assertEqual(reason, "two_stage_gap_cleanup")
         self.assertTrue(attempts[0]["period_repack"]["improved"])
         self.assertIn("global gap search timed out", attempts[0]["error"])
+        self.assertEqual(
+            result["solver"]["two_stage_teacher_optimization"]["selected_phase"],
+            "gap_cleanup",
+        )
+
+    def test_gaps_focus_optimizes_around_an_unavoidable_gap2(self) -> None:
+        incumbent = _payload(sessions=5, gap1=3, gap2=1)
+        bounded = _payload(sessions=5, gap1=1, gap2=1)
+        calls: list[dict] = []
+
+        def fake_benders(_data, call_settings, **kwargs):
+            calls.append({"settings": dict(call_settings), **kwargs})
+            if len(calls) == 1:
+                raise RuntimeError("zero gap2 infeasible")
+            return bounded
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=fake_benders,
+        ):
+            result, metrics, attempts, reason = _solve_two_stage_concrete_refinement(
+                {},
+                {"optimization_focus": "gaps"},
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(90),
+                total_limit=90,
+                incumbent_payload=incumbent,
+                phase_seeds=[7, 8],
+            )
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0]["settings"]["period_max_teacher_gap"], 1)
+        self.assertEqual(calls[1]["settings"]["period_max_teacher_gap"], "off")
+        self.assertEqual(
+            calls[1]["settings"]["optimization_benders_max_teacher_gap2_plus_sessions"],
+            1,
+        )
+        self.assertEqual(metrics["teacher_sessions"], 5)
+        self.assertEqual(metrics["gap_distribution"][2], 1)
+        self.assertEqual(metrics["gap_distribution"][1], 1)
+        self.assertEqual(reason, "two_stage_gap_cleanup")
+        self.assertTrue(attempts[0]["bounded_gap2_fallback"]["attempted"])
         self.assertEqual(
             result["solver"]["two_stage_teacher_optimization"]["selected_phase"],
             "gap_cleanup",
@@ -551,6 +881,54 @@ class OptimizationFocusModeTests(unittest.TestCase):
         self.assertEqual(len(payload["validation"]["warnings"]), 1)
         self.assertEqual(payload["warnings"][0], payload["validation"]["warnings"][0])
         self.assertNotIn("gap=", payload["warnings"][0])
+
+    def test_gaps_orchestration_failure_keeps_the_exact_incumbent_session_count(self) -> None:
+        data = {
+            "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
+            "giaovien": [{"magv": "T1", "ten": "T1"}],
+            "monhoc": [{"ten": "Math", "ma": "M"}],
+            "mon": [{"khoi": "6", "ten": "Math", "sotiet": 4, "gioihan": 4}],
+            "pccmMatrix": {"L1|Math": "T1"},
+            "tkbConstraints": {},
+        }
+        incumbent = _payload(sessions=5, gap1=2, gap2=1)
+
+        with (
+            patch(
+                "tkb_new.adapter._teacher_session_adaptive_bounds",
+                return_value={"lower_cap": 3, "start_cap": 4, "upper_cap": 10, "expected_periods": 4},
+            ),
+            patch("tkb_new.adapter._fast_benders_tight_fixed_off_profile", return_value=None),
+            patch("tkb_new.adapter._validated_existing_soft_incumbent_payload", return_value=incumbent),
+            patch(
+                "tkb_new.adapter._solve_two_stage_concrete_refinement",
+                side_effect=RuntimeError("focused gap orchestration failed"),
+            ),
+            patch("tkb_new.adapter._incremental_lns_profile") as legacy_profile,
+        ):
+            payload = _solve_teacher_session_optimized_from_ui_data(
+                data,
+                {
+                    "optimization_focus": "gaps",
+                    "optimization_time_limit_seconds": 90,
+                },
+                rules=None,
+                progress=None,
+                out_dir=None,
+            )
+
+        legacy_profile.assert_not_called()
+        self.assertEqual(payload["metrics"]["teacher_sessions"], 5)
+        optimization = payload["solver"]["teacher_session_optimization"]
+        self.assertEqual(
+            optimization["termination_reason"],
+            "focused_gaps_incumbent_after_orchestration_error",
+        )
+        attempt = next(
+            item for item in optimization["attempts"]
+            if item.get("phase") == "two_stage_orchestration"
+        )
+        self.assertEqual(attempt["fallback"], "incumbent_exact_session_lock")
 
 
 if __name__ == "__main__":

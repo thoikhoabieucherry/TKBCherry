@@ -685,33 +685,11 @@ pub fn validate_agent_candidate(
             );
         }
     }
-    let strict_one_period = request_settings.is_some_and(|settings| {
-        settings
-            .get("strict_one_period_sessions_cap")
-            .is_some_and(truthy)
-            || settings
-                .get("enforce_max_one_period_sessions")
-                .is_some_and(truthy)
-    });
-    let max_one_period = nonnegative_int_setting(request_settings, "max_one_period_sessions")
-        .or_else(|| strict_one_period.then_some(0));
-    if max_one_period.is_some_and(|cap| one_period_sessions > cap) {
-        return Err(
-            "agent candidate violates the requested one-period teacher-session cap"
-                .to_string(),
-        );
-    }
-    if let Some(max_gap) = nonnegative_int_setting(request_settings, "period_max_teacher_gap") {
-        let candidate_max_gap = gap_metrics
-            .distribution
-            .keys()
-            .filter_map(|gap| gap.parse::<i64>().ok())
-            .max()
-            .unwrap_or(0);
-        if candidate_max_gap > max_gap {
-            return Err("agent candidate violates the requested teacher-gap cap".to_string());
-        }
-    }
+    // These two request fields are search goals, not authored timetable
+    // constraints. A hard-valid complete Agent result must remain publishable
+    // when the user's real constraints make zero singletons or zero gap-2
+    // impossible. Complete-incumbent refinements are still protected above by
+    // the focus-specific non-regression envelope.
     let quality = if two_stage_teacher_quality {
         [
             one_period_sessions,
@@ -5949,8 +5927,7 @@ fn two_stage_session_phase_acceptable(
     before: &TeacherOptimizationQuality,
     after: &TeacherOptimizationQuality,
 ) -> bool {
-    before.one_period_sessions == 0
-        && after.one_period_sessions == 0
+    after.one_period_sessions <= before.one_period_sessions
         && after.teacher_sessions < before.teacher_sessions
 }
 
@@ -5982,6 +5959,12 @@ fn focused_agent_candidate_acceptable(
     match focus {
         OptimizationFocus::Automatic if two_stage_teacher_quality => {
             automatic_two_stage_final_acceptable(before, after)
+        }
+        OptimizationFocus::QuickComplete | OptimizationFocus::Singletons => {
+            after.one_period_sessions <= before.one_period_sessions
+                && after.teacher_sessions <= before.teacher_sessions
+                && (after.one_period_sessions < before.one_period_sessions
+                    || two_stage_quality_key(after) <= two_stage_quality_key(before))
         }
         OptimizationFocus::Sessions => {
             after.one_period_sessions <= before.one_period_sessions
@@ -9030,22 +9013,6 @@ fn int_value(value: Option<&Value>, default: i64) -> i64 {
     }
 }
 
-fn nonnegative_int_setting(settings: Option<&Map<String, Value>>, key: &str) -> Option<i64> {
-    let value = settings?.get(key)?;
-    if value
-        .as_str()
-        .is_some_and(|text| matches!(text.trim().to_ascii_lowercase().as_str(), "off" | "none"))
-    {
-        return None;
-    }
-    let parsed = match value {
-        Value::Number(number) => number.as_i64(),
-        Value::String(text) => text.trim().parse::<f64>().ok().map(|number| number as i64),
-        _ => None,
-    }?;
-    (parsed >= 0).then_some(parsed)
-}
-
 fn string_value(value: &Value) -> String {
     match value {
         Value::String(value) => value.trim().to_string(),
@@ -9687,7 +9654,7 @@ mod tests {
     }
 
     #[test]
-    fn agent_candidate_must_honor_requested_teacher_quality_floor() {
+    fn agent_quality_targets_do_not_reject_a_hard_valid_complete_candidate() {
         let mut strict_one_request = agent_candidate_request();
         strict_one_request["settings"] = json!({
             "require_complete_schedule": true,
@@ -9697,9 +9664,10 @@ mod tests {
             "period_max_teacher_gap": 1
         });
         let strict_one_request = serde_json::to_vec(&strict_one_request).unwrap();
-        assert!(validate_agent_candidate(&strict_one_request, &agent_candidate_payload())
-            .unwrap_err()
-            .contains("one-period teacher-session cap"));
+        let strict_validated =
+            validate_agent_candidate(&strict_one_request, &agent_candidate_payload())
+                .expect("quality goals must not replace authored hard constraints");
+        assert_eq!(strict_validated.quality[0], 2);
 
         let mut gap_request = agent_candidate_request();
         gap_request["data"]["pccmMatrix"]["6A|Literature"] = json!("Teacher 1");
@@ -9713,13 +9681,13 @@ mod tests {
         gap_candidate["lessons"][1]["teacher"] = json!("Teacher 1");
         gap_candidate["lessons"][1]["period"] = json!(3);
         let gap_request = serde_json::to_vec(&gap_request).unwrap();
-        assert!(validate_agent_candidate(&gap_request, &gap_candidate)
-            .unwrap_err()
-            .contains("teacher-gap cap"));
+        let gap_validated = validate_agent_candidate(&gap_request, &gap_candidate)
+            .expect("an unavoidable teacher gap must remain publishable");
+        assert!(gap_validated.quality[3] > 0);
     }
 
     #[test]
-    fn quick_agent_accepts_gap2_but_still_rejects_singleton_debt() {
+    fn quick_agent_accepts_hard_valid_gap_and_singleton_debt() {
         let mut request = agent_candidate_request();
         request["data"]["pccmMatrix"]["6A|Literature"] = json!("Teacher 1");
         request["settings"] = json!({
@@ -9743,9 +9711,9 @@ mod tests {
         let mut singleton_candidate = gap2_candidate;
         singleton_candidate["lessons"][1]["day"] = json!(3);
         singleton_candidate["lessons"][1]["period"] = json!(1);
-        assert!(validate_agent_candidate(&request, &singleton_candidate)
-            .unwrap_err()
-            .contains("one-period teacher-session cap"));
+        let singleton_validated = validate_agent_candidate(&request, &singleton_candidate)
+            .expect("quick must return a complete hard-valid timetable before quality polish");
+        assert!(singleton_validated.quality[0] > 0);
     }
 
     #[test]

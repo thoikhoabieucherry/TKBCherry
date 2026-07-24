@@ -1065,7 +1065,7 @@ test("quick portfolio clears singleton debt even when the best candidate tempora
   assert.equal(submittedResult?.metrics?.teacher_gap2_sessions, 4);
 });
 
-test("quick portfolio never publishes a partial singleton cleanup under a strict zero cap", async () => {
+test("quick portfolio keeps a hard-valid partial singleton cleanup when zero is infeasible", async () => {
   const canonical = completeRefinementRequest();
   Object.assign(canonical.settings, {
     optimization_focus:"quick_complete",
@@ -1100,8 +1100,8 @@ test("quick portfolio never publishes a partial singleton cleanup under a strict
     }
   );
 
-  assert.equal(submittedResult, null);
-  assert.ok(failures.some(item => item.kind === "browser_wasm_failed"), JSON.stringify(failures));
+  assert.equal(submittedResult?.candidateMarker, "quick-partial-only", JSON.stringify(failures));
+  assert.equal(submittedResult?.metrics?.one_period_teacher_sessions, 1);
 });
 
 test("temporary session gap debt does not relax automatic or gap-only envelopes", async () => {
