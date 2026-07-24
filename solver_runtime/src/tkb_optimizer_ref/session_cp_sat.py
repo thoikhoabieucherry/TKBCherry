@@ -14,6 +14,7 @@ from .models import Lesson, SchoolData, SessionAllocation
 from .random_seed import normalize_cp_sat_seed
 from .rules import TimetableRuleSet, one_session_per_day_mode, resolve_rule_set
 from .session_milp import (
+    AssignmentSessionDomainMemo,
     _assignment_block_allowed,
     _assignment_available_periods,
     _assignment_session_allowed,
@@ -231,6 +232,7 @@ def solve_session_allocation_cp_sat(
 
     rule_set = resolve_rule_set(rules)
     constraints = rule_set.constraints
+    domain_memo = AssignmentSessionDomainMemo(constraints)
     sessions = all_sessions()
     period_feasibility_session_indexes = set(period_feasibility_session_indexes or set())
     period_gap_quality_requested = bool(period_minimize_teacher_gaps) or any(
@@ -300,7 +302,12 @@ def solve_session_allocation_cp_sat(
             )
             if class_cap <= 0:
                 continue
-            if not _assignment_session_allowed(assignment, session, constraints):
+            if not _assignment_session_allowed(
+                assignment,
+                session,
+                constraints,
+                memo=domain_memo,
+            ):
                 continue
             fixed_assignment_load = int(
                 fixed_assignment_session_load.get(
@@ -318,7 +325,13 @@ def solve_session_allocation_cp_sat(
                 class_cap,
                 teacher_session_capacity(session),
             )
-            cap = _assignment_session_cap(assignment, session, base_cap, constraints)
+            cap = _assignment_session_cap(
+                assignment,
+                session,
+                base_cap,
+                constraints,
+                memo=domain_memo,
+            )
             if cap > 0:
                 n_vars[(ai, si)] = model.NewIntVar(0, cap, f"n_{ai}_{si}")
                 n_caps[(ai, si)] = cap
@@ -390,12 +403,26 @@ def solve_session_allocation_cp_sat(
                 continue
             assignment = data.assignments[ai]
             session = sessions[si]
-            allowed = set(_assignment_available_periods(assignment, session, constraints))
+            allowed = set(
+                _assignment_available_periods(
+                    assignment,
+                    session,
+                    constraints,
+                    memo=domain_memo,
+                )
+            )
             choices: list[tuple[int, Any, tuple[int, ...]]] = []
             for duration in range(1, int(n_caps[(ai, si)]) + 1):
                 for start in sorted(allowed):
                     block = tuple(range(start, start + duration))
-                    if not _assignment_block_allowed(assignment, session, start, duration, constraints):
+                    if not _assignment_block_allowed(
+                        assignment,
+                        session,
+                        start,
+                        duration,
+                        constraints,
+                        memo=domain_memo,
+                    ):
                         continue
                     fixed_periods = fixed_assignment_session_periods.get(
                         (
@@ -1136,7 +1163,13 @@ def solve_session_allocation_cp_sat(
                 continue
             load = sum(terms)
             total_load = load + fixed_load
-            session_cap = _teacher_session_period_capacity(data, teacher, session, constraints)
+            session_cap = _teacher_session_period_capacity(
+                data,
+                teacher,
+                session,
+                constraints,
+                memo=domain_memo,
+            )
             model.Add(load <= session_cap * z_var)
             if fixed_load > 0:
                 model.Add(z_var == 1)
@@ -1179,7 +1212,13 @@ def solve_session_allocation_cp_sat(
                 z_var = z_vars[(teacher, si)]
                 single = model.NewBoolVar(f"teacher_single_{teacher}_{si}")
                 load = sum(terms) + fixed_load
-                cap = _teacher_session_period_capacity(data, teacher, session, constraints) + fixed_load
+                cap = _teacher_session_period_capacity(
+                    data,
+                    teacher,
+                    session,
+                    constraints,
+                    memo=domain_memo,
+                ) + fixed_load
                 model.Add(single <= z_var)
                 # Allow one-period teacher sessions, but make every such occurrence
                 # visible to the objective so avoidable cases are pushed out.
@@ -1877,6 +1916,7 @@ def solve_session_allocation_cp_sat(
         "period_gap_objective_suppressed_session_early_stop": (
             period_gap_objective_suppressed_session_early_stop
         ),
+        "assignment_domain_memo": domain_memo.stats(),
         "early_stop_teacher_sessions": (
             quality_callback.hit_teacher_sessions if quality_callback else None
         ),

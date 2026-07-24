@@ -33,6 +33,7 @@ from tkb_optimizer_ref.rules import (
     one_session_per_day_mode,
 )
 from tkb_optimizer_ref.session_milp import (
+    AssignmentSessionDomainMemo,
     _assignment_available_periods,
     _assignment_session_allowed,
     _assignment_session_cap,
@@ -1559,7 +1560,14 @@ def _optimization_metric_payload(
                 if _teacher_session_opt_gap2_plus(metrics) > 0
                 else "teacher_gap1_sessions"
             )
+    solve_request_mode = {
+        "quick_complete": "quick_complete",
+        "singletons": "optimize_singletons",
+        "sessions": "optimize_sessions",
+        "gaps": "optimize_gaps",
+    }.get(focus, "automatic")
     return {
+        "solveRequestMode": solve_request_mode,
         "optimizationFocus": progress_focus,
         "metricCurrent": current,
         "metricTarget": target,
@@ -4914,6 +4922,7 @@ def _trim_context_to_available_slots(
     constraints = rules.constraints
     if constraints is None:
         return ctx, []
+    domain_memo = AssignmentSessionDomainMemo(constraints)
 
     class_by_name = {item.name: item for item in ctx.classes}
     reductions = [0 for _ in ctx.school_data.assignments]
@@ -4921,7 +4930,12 @@ def _trim_context_to_available_slots(
     for idx, assignment in enumerate(ctx.school_data.assignments):
         total_cap = 0
         for session in all_sessions():
-            if not _assignment_session_allowed(assignment, session, constraints):
+            if not _assignment_session_allowed(
+                assignment,
+                session,
+                constraints,
+                memo=domain_memo,
+            ):
                 continue
             base_cap = min(
                 assignment.max_periods_per_session,
@@ -4929,7 +4943,13 @@ def _trim_context_to_available_slots(
                 class_session_capacity_for_constraints(assignment.grade, assignment.class_name, session, constraints),
                 teacher_session_capacity(session),
             )
-            total_cap += _assignment_session_cap(assignment, session, base_cap, constraints)
+            total_cap += _assignment_session_cap(
+                assignment,
+                session,
+                base_cap,
+                constraints,
+                memo=domain_memo,
+            )
         if total_cap < assignment.periods_per_week:
             reductions[idx] = assignment.periods_per_week - total_cap
 
@@ -4990,9 +5010,21 @@ def _trim_context_to_available_slots(
                     continue
                 if assignment.periods_per_week - reductions[idx] <= 0:
                     continue
-                if not _assignment_session_allowed(assignment, session, constraints):
+                if not _assignment_session_allowed(
+                    assignment,
+                    session,
+                    constraints,
+                    memo=domain_memo,
+                ):
                     continue
-                periods.update(_assignment_available_periods(assignment, session, constraints))
+                periods.update(
+                    _assignment_available_periods(
+                        assignment,
+                        session,
+                        constraints,
+                        memo=domain_memo,
+                    )
+                )
             if periods:
                 total += min(teacher_session_capacity(session), len(periods))
         return total
@@ -5022,7 +5054,12 @@ def _trim_context_to_available_slots(
             can_drop = assignment.periods_per_week - reductions[idx]
             if can_drop <= 0:
                 continue
-            if lesson.period in _assignment_available_periods(assignment, session, constraints):
+            if lesson.period in _assignment_available_periods(
+                assignment,
+                session,
+                constraints,
+                memo=domain_memo,
+            ):
                 continue
             reductions[idx] += 1
             overflow_by_teacher[lesson.teacher] = overflow - 1

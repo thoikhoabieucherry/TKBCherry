@@ -134,6 +134,7 @@ class OptimizationFocusModeTests(unittest.TestCase):
         self.assertEqual(sessions["metricCurrent"], 470)
         self.assertEqual(sessions["metricTarget"], 432)
         self.assertEqual(sessions["metricPercent"], 91.9)
+        self.assertEqual(sessions["solveRequestMode"], "optimize_sessions")
 
         gaps = _optimization_metric_payload(
             "gaps",
@@ -142,6 +143,7 @@ class OptimizationFocusModeTests(unittest.TestCase):
             metric_kind="gaps",
         )
         self.assertEqual(gaps["optimizationFocus"], "teacher_gap2_sessions")
+        self.assertEqual(gaps["solveRequestMode"], "optimize_gaps")
         self.assertEqual(gaps["metricCurrent"], 4)
         self.assertEqual(gaps["metricPercent"], 0.0)
         self.assertLessEqual(gaps["metricPercent"], 100.0)
@@ -175,6 +177,14 @@ class OptimizationFocusModeTests(unittest.TestCase):
         )
         self.assertEqual(gap1_only["optimizationFocus"], "teacher_gap1_sessions")
         self.assertEqual(gap1_only["metricPercent"], 40.0)
+
+        automatic = _optimization_metric_payload(
+            "automatic",
+            {"teacher_sessions": 470},
+            session_target=432,
+            metric_kind="sessions",
+        )
+        self.assertEqual(automatic["solveRequestMode"], "automatic")
 
     def test_quick_complete_accepts_all_quality_debt_after_hard_completion(self) -> None:
         gap_debt = _payload(sessions=5, singletons=0, gap1=2, gap2=3)

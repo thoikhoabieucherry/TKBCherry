@@ -8,11 +8,11 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.71** (bounded progressive Stop
-  handoff). The public API marker is
-  `tkb_new-rust-api-2026-07-24-progressive-stop-flush-v66`, the bridge marker is
-  `tkb-rust-api-v268-progressive-stop-flush`, and the planner script cache is
-  `20260724-v171-progressive-stop-flush-v1`. The unchanged constraints marker is
+- Current deployed application release: **v1.73** (stable live progress and
+  checkpoint Stop). The public API marker is
+  `tkb_new-rust-api-2026-07-24-stable-live-progress-v68`, the bridge marker is
+  `tkb-rust-api-v270-stable-live-progress`, and the planner script cache is
+  `20260724-v173-stable-live-progress-v1`. The unchanged constraints marker is
   `constraints-ui-v38-one-session-responsive-tables`.
 - Current public Agent release: **v1.6.29** (`1.6.29`). The normal owner-Agent
   minimum lease gate remains 1.6.23, so 1.6.22 and older stay upgrade-only;
@@ -63,6 +63,98 @@ change so a machine restart or a new conversation does not erase project context
   mutation. Focused Stop ordering is covered deterministically by the Browser
   executor and bridge suites because the 794px acceptance viewport correctly
   keeps the desktop-only focused controls hidden.
+
+### v1.73 stable live progress and checkpoint Stop (deployed 2026-07-24)
+
+- Candidate markers are API
+  `tkb_new-rust-api-2026-07-24-stable-live-progress-v68`, bridge
+  `tkb-rust-api-v270-stable-live-progress`, planner cache
+  `20260724-v173-stable-live-progress-v1`, and Browser executor
+  `tkb-browser-wasm-executor-v8-checkpoint-stop`. The packaged Agent remains
+  1.6.29.
+- Repeated focused optimization now starts from the visible incumbent counter
+  on every click. A metric-free VPS/Agent startup frame or internal retry no
+  longer clears the current value and falls back to the 12% admission band.
+  The canonical server job is seeded from the request metric and retains that
+  metric across execution generations until a newer real counter arrives, so
+  reloads and other devices see the same baseline before the first strict
+  improvement.
+- Focused Stop immediately terminates local Browser workers and asks the server
+  to retain its latest validated checkpoint. An accepted checkpoint is
+  returned atomically; when Stop lands before the first checkpoint, the server
+  returns the already validated complete incumbent instead of starting a VPS
+  fallback. VPS Stop still uses OR-Tools `stop_search()` and materializes the
+  latest hard-valid incumbent through the normal result path.
+- Regression coverage reproduces a second Sessions run across a metric-free
+  generation startup frame, a focused internal retry, live raw-counter updates,
+  cross-device focused-mode recovery, Agent checkpoint Stop and Stop before the
+  first Agent checkpoint. Local verification passes Node **343/343**, scheduler
+  Python **216 passed / 3 skipped** plus **45** unittest subtests, deployment and
+  credential tests **25/25**, and `git diff --check`. Isolated VPS staging passes
+  scheduler **219/219**, Agent **151/151**, trusted worker **5/5**, Rust API
+  **178/178**, and validator **32/32**, ending with `STAGING_TESTS_OK`.
+- Transactional production deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260724-075341.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260724-075341.tar.gz`. A
+  concurrent earlier deployment cleanup briefly stopped `tkb-app` after the
+  successful transaction; `systemctl daemon-reload` plus a clean restart
+  restored it. Follow-up checks found no remaining deployment process or
+  service warning. Public health is idle with zero active/queued jobs and
+  `6/6` worker tokens; the v1.73 page, v270 bridge and v8 Browser executor are
+  all served publicly.
+
+### v1.72 live work progress and immediate Stop (superseded candidate; not deployed)
+
+- Candidate markers are API
+  `tkb_new-rust-api-2026-07-24-live-progress-stop-v67`, bridge
+  `tkb-rust-api-v269-live-progress-stop`, planner cache
+  `20260724-v172-live-progress-stop-v1`, and Browser executor
+  `tkb-browser-wasm-executor-v8-checkpoint-stop`. The packaged Agent remains
+  1.6.29.
+- Progress now has two explicit contracts. Automatic uses canonical elapsed
+  server time against its configured budget and stays at 99% until a valid
+  result is applied. Quick, Singletons, Sessions and Gaps use only real work
+  metrics. Their raw counter remains visible even when rounded percent is
+  unchanged, and neither same-generation nor Agent/VPS handoff progress may
+  move backward. `solveRequestMode` is carried by reference-solver and Browser
+  checkpoint frames, persisted locally, and restored during cross-device load.
+
+- The Browser Agent now uploads each newly completed strict-best portfolio
+  candidate as a validated server checkpoint while slower workers continue.
+  Checkpoints do not complete the Agent lease, but the canonical coordinator
+  atomically retains the best accepted checkpoint on focused Stop, lease loss,
+  or watchdog finalization.
+- Focused Stop terminates local Browser workers immediately and sends
+  `retainBest:true` to the server without waiting for the former 32-second
+  client flush. Quick Stop remains destructive. An in-flight candidate is not
+  considered complete until VPS validation accepts its checkpoint.
+- If focused Stop arrives before the first accepted Agent checkpoint, the
+  coordinator now returns the already validated complete incumbent directly
+  instead of starting a VPS process only to stop it and return the same
+  timetable. An accepted checkpoint still takes priority. The combined Rust
+  regression proves that this path preserves the incumbent lessons and metrics
+  byte-for-byte and leaves no active server job.
+- Accepted Browser checkpoints publish their focused raw metric to canonical
+  server progress with the canonical protocol, monotonic server sequence and
+  elapsed time, so reloads and other devices can observe counts such as
+  `136 -> 134` rather than a client-only timer.
+- Focused component verification passes Browser executor **24/24**, bridge
+  **224/224**, isolated VPS Rust API **177/177**, and validator **32/32**.
+- Quick completion now memoizes immutable assignment/session domains while
+  trimming unavailable demand and constructing the exact CP-SAT period bridge.
+  It does not relax or bypass any authored rule, fixed/off slot, teacher/room
+  conflict, or final validator. On the real 1,566-period `default` request the
+  cold stdio run completed in 11.64s protocol time (12.07s process wall time),
+  with 1,566/1,566 periods, `hard_ok=true`, and zero authored violations. The
+  matched local model-build interval fell from 4.94s to 2.52s. Scheduler
+  verification now passes **216 passed / 3 skipped** plus **45** unittest
+  subtests, including domain-answer equivalence and cache-reuse coverage.
+- Current local verification passes full Node **341/341**, scheduler Python
+  **216 passed / 3 skipped** plus **45** unittest subtests, deployment packaging
+  **13/13**, JavaScript/Python syntax, and `git diff --check`. Full isolated
+  staging passes scheduler **219/219**, Agent **151/151**, trusted worker
+  **5/5**, Rust API **176/176**, and validator **32/32**, ending with
+  `STAGING_TESTS_OK`. Transactional production deployment remains pending.
 
 ### v1.70 progressive focused optimization (deployed 2026-07-24)
 
@@ -3910,17 +4002,17 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-24: `UPDATE_OK` for
-application v1.71. Public health serves
-`tkb_new-rust-api-2026-07-24-progressive-stop-flush-v66`; the page serves
-`20260724-v171-progressive-stop-flush-v1`, bridge marker
-`tkb-rust-api-v268-progressive-stop-flush`, and Browser executor
-`tkb-browser-wasm-executor-v7-best-stop-flush`. The public WASM is 1,031,910
+application v1.73. Public health serves
+`tkb_new-rust-api-2026-07-24-stable-live-progress-v68`; the page serves
+`20260724-v173-stable-live-progress-v1`, bridge marker
+`tkb-rust-api-v270-stable-live-progress`, and Browser executor
+`tkb-browser-wasm-executor-v8-checkpoint-stop`. The public WASM is 1,031,910
 bytes and matches SHA-256
 `926d2a490a2004235d2b0b445956d1326fc614b3fd5af179b19f7af5f1e1832c`.
 Public health is idle with zero active/queued jobs and `6/6` worker tokens.
 Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260724-040943.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260724-040943.tar.gz`.
+`/opt/cherry-scheduler-backups/server-state-20260724-075341.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260724-075341.tar.gz`.
 Public Agent release `1.6.29` and its signed manifest are live. The 88,001,209
 byte archive SHA-256 is
 `b36e5774f7e89402f7ffbb7075eb2541e7a63a1f874558abba128fe8ecfa25f6`; the

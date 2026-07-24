@@ -1006,7 +1006,7 @@ impl SolverPool {
     }
 
     pub fn update_server_job_progress(&self, job_id: &str, progress: Value) -> bool {
-        self.update_server_job_progress_for_generation(job_id, None, progress)
+        self.update_server_job_progress_for_generation(job_id, None, None, progress)
     }
 
     pub fn update_server_job_progress_fenced(
@@ -1018,6 +1018,29 @@ impl SolverPool {
         self.update_server_job_progress_for_generation(
             job_id,
             Some(execution_generation),
+            None,
+            progress,
+        )
+    }
+
+    pub fn update_server_job_progress_frame_fenced(
+        &self,
+        job_id: &str,
+        execution_generation: u64,
+        protocol: &str,
+        progress: Value,
+    ) -> bool {
+        let protocol = protocol.trim();
+        if protocol.is_empty()
+            || protocol.len() > MAX_SERVER_PROGRESS_STAGE_BYTES
+            || protocol.chars().any(char::is_control)
+        {
+            return false;
+        }
+        self.update_server_job_progress_for_generation(
+            job_id,
+            Some(execution_generation),
+            Some(protocol),
             progress,
         )
     }
@@ -1026,6 +1049,7 @@ impl SolverPool {
         &self,
         job_id: &str,
         execution_generation: Option<u64>,
+        stamp_protocol: Option<&str>,
         progress: Value,
     ) -> bool {
         let Some(mut progress) = normalize_server_progress(progress) else {
@@ -1047,6 +1071,75 @@ impl SolverPool {
             return false;
         }
         if let Some(object) = progress.as_object_mut() {
+            // Lifecycle-only frames are common while a replacement VPS/Agent
+            // generation is starting. Keep the last accepted work counter on
+            // the canonical job until that executor publishes a newer metric;
+            // otherwise every observer temporarily falls back to the 12%
+            // admission band even though a complete incumbent is available.
+            if let Some(previous) = job.progress.as_ref().and_then(Value::as_object) {
+                let identity_matches = ["solveRequestMode", "optimizationFocus"]
+                    .iter()
+                    .all(|key| {
+                        object
+                            .get(*key)
+                            .zip(previous.get(*key))
+                            .is_none_or(|(current, prior)| current == prior)
+                    });
+                if identity_matches {
+                    for key in ["solveRequestMode", "optimizationFocus"] {
+                        if !object.contains_key(key) {
+                            if let Some(value) = previous.get(key) {
+                                object.insert(key.to_string(), value.clone());
+                            }
+                        }
+                    }
+                    let has_metric_update = [
+                        "metricCurrent",
+                        "metricTarget",
+                        "metricBaseline",
+                        "metricPercent",
+                    ]
+                    .iter()
+                    .any(|key| object.contains_key(*key));
+                    let retained_metric_keys: &[&str] = if has_metric_update {
+                        // A partial real update may reuse its target/baseline,
+                        // but its percentage must be recomputed from the new
+                        // current value instead of inheriting a stale percent.
+                        &["metricTarget", "metricBaseline"]
+                    } else {
+                        &[
+                            "metricCurrent",
+                            "metricTarget",
+                            "metricBaseline",
+                            "metricPercent",
+                        ]
+                    };
+                    for key in retained_metric_keys {
+                        if !object.contains_key(*key) {
+                            if let Some(value) = previous.get(*key) {
+                                object.insert((*key).to_string(), value.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(protocol) = stamp_protocol {
+                let sequence = job
+                    .progress
+                    .as_ref()
+                    .and_then(|previous| previous.get("sequence"))
+                    .and_then(Value::as_u64)
+                    .unwrap_or_default()
+                    .saturating_add(1)
+                    .max(1);
+                let started_ms = job.watchdog_started_ms.unwrap_or(job.created_ms);
+                object.insert("protocol".to_string(), Value::from(protocol));
+                object.insert("sequence".to_string(), Value::from(sequence));
+                object.insert(
+                    "elapsedMs".to_string(),
+                    Value::from(now_ms.saturating_sub(started_ms)),
+                );
+            }
             object.insert(
                 "executionGeneration".to_string(),
                 Value::from(job.execution_generation),
@@ -2316,7 +2409,13 @@ mod tests {
             json!({
                 "protocol":"tkb-reference-solver-progress-v1",
                 "stage":"session_cp_sat:metric",
-                "sequence":8
+                "sequence":8,
+                "solveRequestMode":"optimize_sessions",
+                "optimizationFocus":"teacher_sessions",
+                "metricCurrent":654,
+                "metricTarget":432,
+                "metricBaseline":654,
+                "metricPercent":66
             })
         ));
         let first = pool
@@ -2348,7 +2447,8 @@ mod tests {
             agent.generation,
             json!({
                 "protocol":"tkb-reference-solver-progress-v1",
-                "stage":"session_cp_sat:metric",
+                "stage":"runtime:loading",
+                "solveRequestMode":"optimize_sessions",
                 "sequence":1
             })
         ));
@@ -2360,6 +2460,33 @@ mod tests {
             .expect("current progress");
         assert_eq!(current["executionGeneration"], json!(agent.generation));
         assert_eq!(current["sequence"], json!(1));
+        assert_eq!(current["metricCurrent"], json!(654));
+        assert_eq!(current["metricTarget"], json!(432));
+        assert_eq!(current["metricBaseline"], json!(654));
+
+        assert!(pool.update_server_job_progress_frame_fenced(
+            "progress-generation",
+            agent.generation,
+            "tkb-reference-solver-progress-v1",
+            json!({"stage":"browser_agent:checkpoint", "metricCurrent":136})
+        ));
+        assert!(pool.update_server_job_progress_frame_fenced(
+            "progress-generation",
+            agent.generation,
+            "tkb-reference-solver-progress-v1",
+            json!({"stage":"browser_agent:checkpoint", "metricCurrent":134})
+        ));
+        let checkpoint = pool
+            .server_job_snapshots_for_owner(&owner)
+            .into_iter()
+            .next()
+            .and_then(|snapshot| snapshot.progress)
+            .expect("checkpoint progress");
+        assert_eq!(checkpoint["protocol"], json!("tkb-reference-solver-progress-v1"));
+        assert_eq!(checkpoint["sequence"], json!(3));
+        assert_eq!(checkpoint["metricCurrent"], json!(134));
+        assert!(checkpoint["elapsedMs"].as_u64().is_some());
+        assert_eq!(checkpoint["executionGeneration"], json!(agent.generation));
     }
 
     #[test]

@@ -1,7 +1,7 @@
 (function(root){
   "use strict";
 
-  const VERSION = "tkb-browser-wasm-executor-v7-best-stop-flush";
+  const VERSION = "tkb-browser-wasm-executor-v8-checkpoint-stop";
   const AGENT_PROTOCOL = "tkb-agent-helper-v1";
   const AGENT_VERSION = "1.6.29";
   const SOLVER_PROTOCOL = "tkb-reference-solver-stdio-v1";
@@ -739,7 +739,7 @@
       && compareQuality(candidate, incumbent, settings) <= 0;
   }
 
-  async function runPortfolio(refinementRequest, lease, signal){
+  async function runPortfolio(refinementRequest, lease, signal, onBestCandidate){
     const workers = state.workers.length ? state.workers.slice() : [state.worker].filter(Boolean);
     if(!workers.length) throw new Error("browser_wasm_worker_missing");
     const incumbent = refinementRequest?.data?.tkbSolverResult;
@@ -775,6 +775,7 @@
         if(incumbentQuality && !qualityWithinEnvelope(candidate.quality, incumbentQuality, settings)) return;
         if(!best || compareQuality(candidate.quality, best.quality, settings) < 0){
           best = candidate;
+          if(typeof onBestCandidate === "function") await onBestCandidate(candidate);
         }
       }catch(_){ }
     }));
@@ -783,6 +784,32 @@
       return {status:200, result:incumbent, quality:incumbentQuality, index:workers.length};
     }
     throw new Error("browser_wasm_no_candidate");
+  }
+
+  async function submitLeaseCandidate(lease, portfolio, action){
+    const {status, result} = portfolio;
+    const digest = await resultDigest(result);
+    const candidate = await fetchJson(
+      `/api/agent-helper/v1/leases/${encodeURIComponent(lease.leaseId)}/${action}`,
+      {
+        protocol:AGENT_PROTOCOL,
+        agentId:browserAgentId(),
+        workerToken:state.workerToken,
+        jobId:lease.jobId,
+        leaseId:lease.leaseId,
+        sha256:digest,
+        digestProtocol:DIGEST_PROTOCOL,
+        solverProtocol:SOLVER_PROTOCOL,
+        solverStatus:status,
+        result
+      },
+      {timeoutMs:30000}
+    );
+    return {
+      candidateId:String(candidate?.candidateId || ""),
+      sha256:String(candidate?.sha256 || digest),
+      becameBest:candidate?.becameBest === true
+    };
   }
 
   async function runLease(lease, generation, signal){
@@ -798,6 +825,10 @@
       generation,
       controller:portfolioController,
       settled:false,
+      stopRequested:false,
+      checkpointSubmitted:false,
+      checkpointCandidateId:"",
+      checkpointQuality:null,
       completion:new Promise(resolve => { settleLeaseRun = resolve; })
     };
     leaseRun.settle = outcome => {
@@ -813,33 +844,45 @@
         await failLease(lease, state.workerToken, "browser_wasm_ineligible_request", false);
         return false;
       }
+      let checkpointTail = Promise.resolve();
+      const queueCheckpoint = portfolio => {
+        checkpointTail = checkpointTail.then(async () => {
+          if(
+            leaseRun.checkpointQuality
+            && compareQuality(
+              portfolio.quality,
+              leaseRun.checkpointQuality,
+              refinementRequest.settings
+            ) >= 0
+          ) return null;
+          const checkpoint = await submitLeaseCandidate(lease, portfolio, "checkpoint");
+          leaseRun.checkpointSubmitted = true;
+          leaseRun.checkpointCandidateId = checkpoint.candidateId;
+          leaseRun.checkpointQuality = portfolio.quality;
+          return checkpoint;
+        }).catch(() => null);
+        return checkpointTail;
+      };
       const portfolio = await runPortfolio(
         refinementRequest,
         lease,
-        portfolioController?.signal || signal
+        portfolioController?.signal || signal,
+        queueCheckpoint
       );
+      await checkpointTail;
+      if(leaseRun.stopRequested){
+        leaseRun.settle({
+          submitted:leaseRun.checkpointSubmitted,
+          candidateId:leaseRun.checkpointCandidateId
+        });
+        return leaseRun.checkpointSubmitted;
+      }
       if(!state.active || state.generation !== generation || state.lease !== lease){
         return false;
       }
-      const {status, result} = portfolio;
-      const digest = await resultDigest(result);
-      const candidate = await fetchJson(
-        `/api/agent-helper/v1/leases/${encodeURIComponent(lease.leaseId)}/candidate`,
-        {
-          protocol:AGENT_PROTOCOL,
-          agentId:browserAgentId(),
-          workerToken:state.workerToken,
-          jobId:lease.jobId,
-          leaseId:lease.leaseId,
-          sha256:digest,
-          digestProtocol:DIGEST_PROTOCOL,
-          solverProtocol:SOLVER_PROTOCOL,
-          solverStatus:status,
-          result
-        },
-        {timeoutMs:30000}
-      );
-      leaseRun.settle({submitted:true, candidateId:String(candidate?.candidateId || "")});
+      const {status} = portfolio;
+      const candidate = await submitLeaseCandidate(lease, portfolio, "candidate");
+      leaseRun.settle({submitted:true, candidateId:candidate.candidateId});
       await fetchJson(
         `/api/agent-helper/v1/leases/${encodeURIComponent(lease.leaseId)}/complete`,
         {
@@ -856,8 +899,11 @@
       );
       return true;
     }catch(_){
-      leaseRun.settle({submitted:false});
-      if(state.active && state.generation === generation){
+      leaseRun.settle({
+        submitted:leaseRun.checkpointSubmitted,
+        candidateId:leaseRun.checkpointCandidateId
+      });
+      if(!leaseRun.stopRequested && state.active && state.generation === generation){
         await failLease(lease, state.workerToken, "browser_wasm_failed", false);
       }
       return false;
@@ -1006,7 +1052,7 @@
     return probed ? activateExecutor(options) : false;
   }
 
-  async function stopAndSubmitBest(options){
+  function stopAndSubmitBest(options){
     const opts = options && typeof options === "object" ? options : {};
     const expectedJobId = String(opts.jobId || "").trim();
     const leaseRun = state.leaseRun;
@@ -1020,27 +1066,16 @@
     ){
       return {handled:false, submitted:false, jobId:expectedJobId};
     }
+    leaseRun.stopRequested = true;
     try{ leaseRun.controller?.abort(); }catch(_){ }
     rejectWorkerWaiters(new Error("browser_wasm_best_effort_stop"));
     terminateComputeWorkers();
-
-    const timeoutMs = Math.max(1000, Math.min(35000, Number(opts.timeoutMs || 32000) || 32000));
-    let timeout = 0;
-    try{
-      return await Promise.race([
-        leaseRun.completion,
-        new Promise(resolve => {
-          timeout = root.setTimeout(() => resolve({
-            handled:true,
-            submitted:false,
-            timedOut:true,
-            jobId:String(leaseRun.lease?.jobId || expectedJobId)
-          }), timeoutMs);
-        })
-      ]);
-    }finally{
-      if(timeout) root.clearTimeout(timeout);
-    }
+    return {
+      handled:true,
+      submitted:leaseRun.checkpointSubmitted,
+      candidateId:leaseRun.checkpointCandidateId,
+      jobId:String(leaseRun.lease?.jobId || expectedJobId)
+    };
   }
 
   async function closeExecutor(reason, options){

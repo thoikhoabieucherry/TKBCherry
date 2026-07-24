@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v268-progressive-stop-flush";
+  const VERSION = "tkb-rust-api-v270-stable-live-progress-r2";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -1543,6 +1543,7 @@
         solverStartedAtMs:job.startedAtMs,
         progressBudgetSeconds:job.progressBudgetSeconds,
         progressRunIndex:job.progressRunIndex,
+        optimizationFocus:job.optimizationFocus,
         discoveredFromOwnerState:true,
         localClickTimeline:false
       });
@@ -1554,9 +1555,10 @@
       const pendingJob = writePendingBackendJob(job.jobId, job.scheduleFingerprint, {
         createdAt:job.createdAtMs,
         solverStartedAtMs:job.startedAtMs,
-        progressBudgetSeconds:job.progressBudgetSeconds,
-        progressRunIndex:job.progressRunIndex,
-        discoveredFromOwnerState:true,
+          progressBudgetSeconds:job.progressBudgetSeconds,
+          progressRunIndex:job.progressRunIndex,
+          optimizationFocus:job.optimizationFocus,
+          discoveredFromOwnerState:true,
         localClickTimeline:false,
         observeOnly:true
       });
@@ -3001,6 +3003,15 @@
       progressRunIndex:Number(item?.progressRunIndex || 0) > 0
         ? normalizePendingProgressRunIndex(item.progressRunIndex)
         : 0,
+      optimizationFocus:String(
+        item?.progress?.solveRequestMode
+        || item?.progress?.solve_request_mode
+        || ""
+      ).trim()
+        ? optimizationFocusForSolveRequestMode(
+            item?.progress?.solveRequestMode || item?.progress?.solve_request_mode
+          )
+        : "",
       position:Math.max(0, Number(item?.position || 0) || 0),
       matchesCurrentSchedule:durableScheduleFingerprintMatches(scheduleFingerprint, data)
     };
@@ -3104,7 +3115,8 @@
       localClickTimeline:progressState.localClickTimeline === true,
       progressEstimateSeconds:progressState.estimatedSeconds,
       progressBudgetSeconds:progressState.progressBudgetSeconds,
-      progressRunIndex:progressState.runIndex
+      progressRunIndex:progressState.runIndex,
+      optimizationFocus:progressState.settings?.optimization_focus
     });
   }
 
@@ -3370,17 +3382,21 @@
       tickEstimatedProgress();
       let browserStopResult = null;
       if(typeof window.TKBBrowserWasmExecutor?.stopAndSubmitBest === "function"){
-        // A Browser Agent may already hold a better completed portfolio
-        // candidate that has not reached the canonical server job yet. Flush
-        // it before asking the server to stop; reversing this order can close
-        // the lease and discard useful local work.
-        browserStopResult = await Promise.resolve(
-          window.TKBBrowserWasmExecutor.stopAndSubmitBest({
+        // Browser workers checkpoint each completed strict-best candidate on
+        // the canonical server job while they run. Stop local CPU immediately;
+        // never make the user wait for a slow worker or candidate upload before
+        // asking the server to atomically retain its accepted best checkpoint.
+        try{
+          const stopped = window.TKBBrowserWasmExecutor.stopAndSubmitBest({
             jobId:backendJobId,
-            reason:"user_best_effort_stop",
-            timeoutMs:32_000
-          })
-        ).catch(() => null);
+            reason:"user_best_effort_stop"
+          });
+          if(stopped && typeof stopped.then === "function"){
+            void Promise.resolve(stopped).catch(() => null);
+          }else{
+            browserStopResult = stopped;
+          }
+        }catch(_){ }
       }
       const response = await cancelBackendSolver(backendJobId, {retainBest:true});
       if(
@@ -3973,6 +3989,86 @@
     }catch(_){}
   }
 
+  function initialVisibleProgressSettings(requestedMode, data){
+    const mode = normalizeSolveRequestMode(requestedMode);
+    const settings = {
+      ui_default_fresh_sort:mode === SOLVE_REQUEST_MODES.automatic,
+      ui_requested_solve_mode:mode,
+      optimization_focus:optimizationFocusForSolveRequestMode(mode),
+      ui_progress_mode:mode === SOLVE_REQUEST_MODES.automatic ? "time" : "work"
+    };
+    if(mode === SOLVE_REQUEST_MODES.automatic) return settings;
+
+    const safeData = data || getData() || {};
+    const expected = Math.max(0, expectedLessonCount(safeData));
+    const scheduled = Math.max(0, countScheduledLessons(safeData));
+    if(mode === SOLVE_REQUEST_MODES.quickComplete || expected <= 0 || scheduled < expected){
+      settings.ui_requested_solve_mode = SOLVE_REQUEST_MODES.quickComplete;
+      settings.optimization_focus = "quick_complete";
+      configurePlanMetricProgress(
+        settings,
+        "scheduled_periods",
+        scheduled,
+        expected,
+        expected
+      );
+      return settings;
+    }
+
+    const visibleMetrics = uiTeacherQualityMetrics(safeData);
+    const savedMetrics = safeData?.tkbSolverResult?.metrics
+      || safeData?.tkbRustSolverResult?.metrics
+      || {};
+    const metrics = metricNumber(visibleMetrics?.teacher_sessions, 0) > 0
+      ? visibleMetrics
+      : savedMetrics;
+    const currentSessions = Math.max(0, metricNumber(metrics?.teacher_sessions, 0));
+    if(currentSessions <= 0) return settings;
+
+    if(mode === SOLVE_REQUEST_MODES.singletons){
+      const currentSingletons = Math.max(
+        0,
+        metricNumber(metrics?.one_period_teacher_sessions, 0)
+      );
+      configurePlanMetricProgress(
+        settings,
+        "one_period_teacher_sessions",
+        currentSingletons,
+        0,
+        currentSingletons
+      );
+      return settings;
+    }
+
+    if(mode === SOLVE_REQUEST_MODES.sessions){
+      const activeStudentSessions = Math.max(1, activeStudentSessionCount(safeData));
+      const loadLowerBound = Math.max(1, teacherSessionLoadLowerCap(safeData));
+      const target = Math.min(
+        currentSessions,
+        Math.max(loadLowerBound, activeStudentSessions)
+      );
+      configurePlanMetricProgress(
+        settings,
+        "teacher_sessions",
+        currentSessions,
+        target,
+        currentSessions
+      );
+      return settings;
+    }
+
+    const currentGap2 = Math.max(0, gap2PlusCount(metrics));
+    const currentGap1 = Math.max(0, gapExactCount(metrics, 1));
+    configurePlanMetricProgress(
+      settings,
+      currentGap2 > 0 ? "teacher_gap2_sessions" : "teacher_gap1_sessions",
+      currentGap2 > 0 ? currentGap2 : currentGap1,
+      0,
+      currentGap2 > 0 ? currentGap2 : currentGap1
+    );
+    return settings;
+  }
+
   function startInstantProgressTicker(options){
     stopProgressTicker();
     const now = Date.now();
@@ -3994,6 +4090,24 @@
       || (pending?.jobId ? normalizeBackendStartedAtMs(pending.createdAt, 0, now) : 0)
       || now;
     const canonicalServerProgress = persistedServerStartedAt > 0;
+    const instantProgressSettings = isResume
+      ? {
+          ui_default_fresh_sort:true,
+          optimization_focus:String(pending?.optimizationFocus || "")
+        }
+      : initialVisibleProgressSettings(
+          options?.requestedSolveMode,
+          options?.data || getData()
+        );
+    const instantWorkMode = progressUsesWorkMetrics(instantProgressSettings);
+    instantProgressSettings.ui_progress_mode = instantWorkMode ? "work" : "time";
+    const instantMetricProgress = normalizeMetricProgressSnapshot({
+      optimizationFocus:instantProgressSettings.ui_progress_metric_focus,
+      metricCurrent:instantProgressSettings.ui_progress_metric_current,
+      metricTarget:instantProgressSettings.ui_progress_metric_target,
+      metricBaseline:instantProgressSettings.ui_progress_metric_baseline,
+      metricPercent:instantProgressSettings.ui_progress_metric_percent
+    });
     progressState = {
       startedAt,
       uiStartedAt,
@@ -4002,14 +4116,17 @@
       serverStartedAtMs:persistedServerStartedAt,
       backendQueued:persistedServerStartedAt <= 0 && !!pending?.jobId,
       estimatedSeconds:normalizePendingProgressSeconds(pending?.progressEstimateSeconds) || INITIAL_AUTO_DURATION_SECONDS,
-      lastPercent:canonicalServerProgress && !localClickTimeline
-        ? 3
-        : Math.max(3, normalizePendingProgressPercent(pending?.lastPercent) || 3),
+      lastPercent:instantWorkMode
+        ? (instantMetricProgress?.percent ?? normalizePendingProgressPercent(pending?.lastPercent))
+        : (canonicalServerProgress && !localClickTimeline
+            ? 3
+            : Math.max(3, normalizePendingProgressPercent(pending?.lastPercent) || 3)),
       lastLabel:"",
       phase:canonicalServerProgress ? "running" : (pending?.jobId ? "queued" : "preparing"),
       deferFirstPaint:Math.max(0, now - uiStartedAt) < FIRST_PROGRESS_PAINT_DELAY_MS,
       modeLabel: "Sắp xếp",
-      settings: {ui_default_fresh_sort: true},
+      settings:instantProgressSettings,
+      metricProgress:instantWorkMode ? instantMetricProgress : null,
       progressBudgetSeconds:normalizePendingProgressSeconds(pending?.progressBudgetSeconds) || INITIAL_AUTO_DURATION_SECONDS,
       runIndex:normalizePendingProgressRunIndex(pending?.progressRunIndex || 1)
     };
@@ -4018,14 +4135,14 @@
     progressTimer = window.setInterval(tickEstimatedProgress, 1000);
   }
 
-  function primeAutoSortStartUi(){
+  function primeAutoSortStartUi(options){
     // A deliberate Play/resume owns the lifecycle from this point. Do not let
     // an older page-load discovery timer race its request or progress state.
     cancelPendingBackendResume();
     setAutoSortButtonBusy(true);
     setProgress(0, "Chuẩn bị", {replaceLocalPercent:true, phase:"preparing"});
     setStatus("Đang sắp xếp...", "info");
-    startInstantProgressTicker();
+    startInstantProgressTicker(options);
   }
 
   function releaseAutoSortButtonSoon(){
@@ -4353,6 +4470,43 @@
     return normalizedAutoSortMode(settings) === "teacher_session_opt";
   }
 
+  function progressUsesWorkMetrics(settings){
+    if(!settings || typeof settings !== "object") return false;
+    const explicitMode = String(settings.ui_progress_mode || "")
+      .trim()
+      .toLowerCase();
+    if(explicitMode === "work") return true;
+    if(explicitMode === "time") return false;
+    const requestedMode = String(settings.ui_requested_solve_mode || "").trim();
+    if(requestedMode){
+      return normalizeSolveRequestMode(requestedMode) !== SOLVE_REQUEST_MODES.automatic;
+    }
+    const focus = String(settings.optimization_focus || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_");
+    return !!focus && optimizationFocusForSolveRequestMode(focus) !== "automatic";
+  }
+
+  function optimizationFocusForSolveRequestMode(value){
+    const mode = normalizeSolveRequestMode(value);
+    if(mode === SOLVE_REQUEST_MODES.quickComplete) return "quick_complete";
+    if(mode === SOLVE_REQUEST_MODES.singletons) return "singletons";
+    if(mode === SOLVE_REQUEST_MODES.sessions) return "sessions";
+    if(mode === SOLVE_REQUEST_MODES.gaps) return "gaps";
+    return "automatic";
+  }
+
+  function clearPlanMetricProgress(settings){
+    if(!settings || typeof settings !== "object") return settings;
+    delete settings.ui_progress_metric_focus;
+    delete settings.ui_progress_metric_current;
+    delete settings.ui_progress_metric_target;
+    delete settings.ui_progress_metric_baseline;
+    delete settings.ui_progress_metric_percent;
+    return settings;
+  }
+
   function isFreshVisibleProgressSettings(settings){
     if(!settings || typeof settings !== "object") return false;
     const strategy = String(settings.auto_sort_strategy || "").toLowerCase();
@@ -4434,7 +4588,11 @@
       progressState.backendProgressSequence = 0;
       progressState.backendProgressStage = "";
       progressState.backendProgressElapsedMs = 0;
-      progressState.metricProgress = null;
+      // Keep the accepted incumbent metric visible while a new VPS/Agent
+      // generation is starting. Early lifecycle frames do not always carry a
+      // metric; clearing it here made repeated focused runs fall back to the
+      // 12% preparation band until the next strict improvement appeared.
+      // A metric-bearing frame below will replace this incumbent immediately.
     }
     const previousSequence = Math.max(0, Number(progressState.backendProgressSequence || 0) || 0);
     if(sequence <= previousSequence) return false;
@@ -4446,9 +4604,24 @@
     progressState.backendProgressSequence = sequence;
     progressState.backendProgressElapsedMs = elapsedMs;
     progressState.backendProgressUpdatedAtMs = Date.now();
+    const solveRequestMode = String(
+      snapshot.solveRequestMode
+      ?? snapshot.solve_request_mode
+      ?? ""
+    ).trim();
+    if(solveRequestMode){
+      const normalizedMode = normalizeSolveRequestMode(solveRequestMode);
+      progressState.settings = Object.assign({}, progressState.settings || {}, {
+        ui_requested_solve_mode:normalizedMode,
+        optimization_focus:optimizationFocusForSolveRequestMode(normalizedMode),
+        ui_progress_mode:normalizedMode === SOLVE_REQUEST_MODES.automatic ? "time" : "work"
+      });
+    }
     const metricProgress = normalizeMetricProgressSnapshot(snapshot);
-    if(metricProgress){
+    if(metricProgress && progressUsesWorkMetrics(progressState.settings || {})){
       progressState.metricProgress = metricProgress;
+    }else if(!progressUsesWorkMetrics(progressState.settings || {})){
+      progressState.metricProgress = null;
     }
     try{
       window.__TKB_RUST_LAST_LIVE_PROGRESS = {
@@ -4457,6 +4630,7 @@
         sequence,
         elapsedMs,
         ...(normalizedGeneration > 0 ? {executionGeneration:normalizedGeneration} : {}),
+        ...(solveRequestMode ? {solveRequestMode:normalizeSolveRequestMode(solveRequestMode)} : {}),
         ...(metricProgress ? {
           optimizationFocus:metricProgress.focus,
           metricCurrent:metricProgress.current,
@@ -4480,7 +4654,9 @@
     // Keep the compact control stable: ring, elapsed time, then statusMsg.
     // Detailed VPS stages remain available in progressState for diagnostics.
     const elapsed = formatLiveDuration(elapsedSeconds);
-    const metric = metricProgressCurrentLabel(progressState?.metricProgress);
+    const metric = progressUsesWorkMetrics(progressState?.settings || {})
+      ? metricProgressCurrentLabel(progressState?.metricProgress)
+      : "";
     return metric ? `${metric} \u00b7 ${elapsed}` : elapsed;
   }
 
@@ -4592,21 +4768,21 @@
       0,
       Number(progressState.backendProgressGenerationPercentFloor || 0) || 0
     );
+    const workMetricMode = progressUsesWorkMetrics(progressState.settings || {});
     const metricPercent = Number(progressState.metricProgress?.percent);
-    const hasMetricProgress = Number.isFinite(metricPercent);
+    const hasMetricProgress = workMetricMode && Number.isFinite(metricPercent);
     // Once the solver publishes a real quality/completion metric, the ring is
     // driven only by that metric. Time remains visible in the compact label but
     // no longer pretends to be percent-complete.
     const percent = hasMetricProgress
       ? Math.max(
+          lastPercent,
           generationPercentFloor,
           Math.max(0, Math.min(100, Math.round(metricPercent)))
         )
-      : (canonicalServerProgress
-          ? Math.max(4, Math.min(PRE_ADMISSION_PROGRESS_CAP, lastPercent || PRE_ADMISSION_PROGRESS_CAP))
-          : (localClickTimeline
-              ? Math.min(Math.max(cap, lastPercent), Math.max(lastPercent, estimatedPercent))
-              : Math.min(cap, estimatedPercent)));
+      : (!workMetricMode
+          ? Math.max(lastPercent, Math.max(4, Math.min(cap, estimatedPercent)))
+          : Math.max(0, Math.min(PRE_ADMISSION_PROGRESS_CAP, lastPercent)));
     const phase = progressState.bestEffortStopPending === true
       ? "best_effort_stop"
       : (progressState.backendQueued === true
@@ -4652,9 +4828,6 @@
       ? Math.min(...visibleStartCandidates)
       : (persistedServerStartedAt || persistedUiStartedAt || startedAt);
     const canonicalServerProgress = persistedServerStartedAt > 0;
-    const initialPercent = canonicalServerProgress && !localClickTimeline
-      ? 3
-      : Math.max(3, previousPercent, persistedPercent);
     const calculatedEstimateSeconds = estimateSolveSeconds(settings || {}, data || getData());
     const estimatedSeconds = normalizePendingProgressSeconds(pending?.progressEstimateSeconds)
       || calculatedEstimateSeconds;
@@ -4665,6 +4838,12 @@
       metricBaseline:settings?.ui_progress_metric_baseline,
       metricPercent:settings?.ui_progress_metric_percent
     });
+    const workMetricMode = progressUsesWorkMetrics(settings || {});
+    const initialPercent = workMetricMode && configuredMetricProgress
+      ? Math.max(0, Math.min(100, Math.round(configuredMetricProgress.percent)))
+      : (canonicalServerProgress && !localClickTimeline
+          ? 3
+          : Math.max(3, previousPercent, persistedPercent));
     progressState = {
       startedAt,
       uiStartedAt,
@@ -4679,7 +4858,9 @@
         && Math.max(0, Date.now() - uiStartedAt) < FIRST_PROGRESS_PAINT_DELAY_MS,
       modeLabel: solveActionLabel(settings || {}),
       settings: Object.assign({}, settings || {}),
-      metricProgress:configuredMetricProgress,
+      metricProgress:workMetricMode
+        ? configuredMetricProgress
+        : null,
       runIndex:normalizePendingProgressRunIndex(
         pending?.progressRunIndex
         || progressState?.runIndex
@@ -7403,13 +7584,27 @@
     if(["quick", "complete", "fill", "quick_fill", "quick_complete"].includes(mode)){
       return SOLVE_REQUEST_MODES.quickComplete;
     }
-    if(["singleton", "singletons", "one_period", "optimize_singletons"].includes(mode)){
+    if([
+      "singleton",
+      "singletons",
+      "one_period",
+      "one_period_sessions",
+      "one_period_teacher_sessions",
+      "optimize_singletons"
+    ].includes(mode)){
       return SOLVE_REQUEST_MODES.singletons;
     }
     if(["session", "sessions", "teacher_sessions", "optimize_sessions"].includes(mode)){
       return SOLVE_REQUEST_MODES.sessions;
     }
-    if(["gap", "gaps", "teacher_gaps", "optimize_gaps"].includes(mode)){
+    if([
+      "gap",
+      "gaps",
+      "teacher_gaps",
+      "teacher_gap1_sessions",
+      "teacher_gap2_sessions",
+      "optimize_gaps"
+    ].includes(mode)){
       return SOLVE_REQUEST_MODES.gaps;
     }
     return SOLVE_REQUEST_MODES.automatic;
@@ -8319,6 +8514,14 @@
       ? Math.max(4, Number(previous.lastPercent || 0) || 0)
       : 4;
     const estimate = estimateSolveSeconds(settings || {}, data || getData());
+    const configuredMetricProgress = normalizeMetricProgressSnapshot({
+      optimizationFocus:settings?.ui_progress_metric_focus,
+      metricCurrent:settings?.ui_progress_metric_current,
+      metricTarget:settings?.ui_progress_metric_target,
+      metricBaseline:settings?.ui_progress_metric_baseline,
+      metricPercent:settings?.ui_progress_metric_percent
+    });
+    const workMetricMode = progressUsesWorkMetrics(settings || {});
     const runIndex = normalizePendingProgressRunIndex(
       settings?.ui_progress_run_index
       || ((Number(previous.runIndex || 1) || 1) + 1)
@@ -8338,6 +8541,12 @@
       retry: true,
       modeLabel: solveActionLabel(settings || {}),
       settings: Object.assign({}, settings || {}),
+      // Internal retries are one visible optimization action. Preserve the
+      // latest real counter (for example 136 -> 134 singleton sessions) rather
+      // than dropping back to an elapsed-time-only 12% placeholder.
+      metricProgress:workMetricMode
+        ? (previous.metricProgress || configuredMetricProgress || null)
+        : null,
       runIndex
     };
     progressState.progressBudgetSeconds = progressBudgetSeconds(progressState.settings, estimate);
@@ -15166,28 +15375,12 @@
 
     if(mode === SOLVE_REQUEST_MODES.automatic){
       settings.optimization_focus = "automatic";
-      if(complete){
-        const metrics = uiTeacherQualityMetrics(safeData);
-        const currentSessions = Math.max(0, metricNumber(metrics.teacher_sessions, 0));
-        const activeStudentSessions = Math.max(1, activeStudentSessionCount(safeData));
-        configurePlanMetricProgress(
-          settings,
-          "teacher_sessions",
-          currentSessions,
-          Math.min(currentSessions || activeStudentSessions, activeStudentSessions),
-          currentSessions
-        );
-      }else{
-        configurePlanMetricProgress(
-          settings,
-          "scheduled_periods",
-          scheduledCount,
-          expectedCount,
-          expectedCount
-        );
-      }
+      settings.ui_progress_mode = "time";
+      clearPlanMetricProgress(settings);
       return plan;
     }
+
+    settings.ui_progress_mode = "work";
 
     // Focused optimization starts only from a complete, validated timetable.
     // If the user chooses it too early, complete the timetable first and keep
@@ -15578,7 +15771,7 @@
       if(!shouldContinue) return null;
     }
     prepareManualSolveIntent();
-    primeAutoSortStartUi();
+    primeAutoSortStartUi({requestedSolveMode, data:getData()});
     await waitForUiPaint();
     // The plateau check hashes all solver-relevant data. It must run after the
     // busy state, Stop button, progress ring, and timer have reached a frame.
@@ -16199,8 +16392,9 @@
         {
           createdAt:discoveredJob.createdAtMs,
           solverStartedAtMs:discoveredJob.startedAtMs,
-          progressBudgetSeconds:discoveredJob.progressBudgetSeconds,
+           progressBudgetSeconds:discoveredJob.progressBudgetSeconds,
            progressRunIndex:discoveredJob.progressRunIndex,
+           optimizationFocus:discoveredJob.optimizationFocus,
            discoveredFromOwnerState:true,
            localClickTimeline:false,
            observeOnly

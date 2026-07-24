@@ -24,7 +24,7 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-24-progressive-stop-flush-v66";
+const VERSION: &str = "tkb_new-rust-api-2026-07-24-stable-live-progress-v68";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
@@ -1511,6 +1511,167 @@ fn agent_helper_result_digest(result: &Value) -> Result<String, Vec<u8>> {
     Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
+fn agent_checkpoint_progress(request_body: &[u8], candidate: &Value) -> Option<Value> {
+    fn metric(metrics: &Value, key: &str) -> i64 {
+        metrics
+            .get(key)
+            .and_then(Value::as_i64)
+            .unwrap_or_default()
+            .max(0)
+    }
+    fn gap_count(metrics: &Value, minimum_gap: i64) -> i64 {
+        metrics
+            .get("gap_distribution")
+            .and_then(Value::as_object)
+            .map(|distribution| {
+                distribution
+                    .iter()
+                    .filter_map(|(gap, count)| {
+                        let gap = gap.parse::<i64>().ok()?;
+                        (gap >= minimum_gap)
+                            .then(|| count.as_i64().unwrap_or_default().max(0))
+                    })
+                    .sum()
+            })
+            .unwrap_or_default()
+    }
+
+    let request: Value = serde_json::from_slice(request_body).ok()?;
+    let settings = request.get("settings").and_then(Value::as_object)?;
+    let focus = settings
+        .get("optimization_focus")
+        .and_then(Value::as_str)
+        .unwrap_or("automatic")
+        .trim()
+        .to_ascii_lowercase()
+        .replace('-', "_")
+        .replace(' ', "_");
+    let focus = match focus.as_str() {
+        "singleton" | "singletons" | "one_period_teacher_sessions" => "singletons",
+        "session" | "sessions" | "teacher_sessions" => "sessions",
+        "gap" | "gaps" | "teacher_gaps" => "gaps",
+        _ => return None,
+    };
+    let metrics = candidate.get("metrics")?;
+    let baseline = request
+        .get("data")
+        .and_then(|data| data.get("tkbSolverResult"))
+        .and_then(|result| result.get("metrics"))
+        .unwrap_or(metrics);
+    let (solve_mode, progress_focus, current, target, baseline_value, percent) = match focus {
+        "singletons" => {
+            let current = metric(metrics, "one_period_teacher_sessions");
+            let baseline = metric(baseline, "one_period_teacher_sessions").max(current);
+            let percent = if current == 0 {
+                100.0
+            } else if baseline == 0 {
+                0.0
+            } else {
+                (baseline - current) as f64 * 100.0 / baseline as f64
+            };
+            (
+                "optimize_singletons",
+                "one_period_teacher_sessions",
+                current,
+                0,
+                baseline,
+                percent,
+            )
+        }
+        "sessions" => {
+            let current = metric(metrics, "teacher_sessions");
+            let baseline = metric(baseline, "teacher_sessions").max(current);
+            let target = settings
+                .get("ui_progress_metric_target")
+                .or_else(|| settings.get("target_teacher_sessions"))
+                .and_then(Value::as_i64)
+                .unwrap_or_default()
+                .max(0);
+            let percent = if target > 0 && current > target {
+                target as f64 * 100.0 / current as f64
+            } else if target > 0 {
+                100.0
+            } else if baseline > 0 {
+                (baseline - current) as f64 * 100.0 / baseline as f64
+            } else {
+                0.0
+            };
+            (
+                "optimize_sessions",
+                "teacher_sessions",
+                current,
+                target,
+                baseline,
+                percent,
+            )
+        }
+        _ => {
+            let current_gap2 = metric(metrics, "teacher_gap2_sessions")
+                .max(gap_count(metrics, 2));
+            let current_gap1 = metrics
+                .get("gap_distribution")
+                .and_then(|distribution| distribution.get("1"))
+                .and_then(Value::as_i64)
+                .unwrap_or_default()
+                .max(0);
+            let baseline_gap2 = metric(baseline, "teacher_gap2_sessions")
+                .max(gap_count(baseline, 2))
+                .max(current_gap2);
+            let baseline_gap1 = baseline
+                .get("gap_distribution")
+                .and_then(|distribution| distribution.get("1"))
+                .and_then(Value::as_i64)
+                .unwrap_or_default()
+                .max(current_gap1);
+            if current_gap2 > 0 {
+                let percent = if baseline_gap2 > 0 {
+                    (baseline_gap2 - current_gap2) as f64 * 50.0 / baseline_gap2 as f64
+                } else {
+                    0.0
+                };
+                (
+                    "optimize_gaps",
+                    "teacher_gap2_sessions",
+                    current_gap2,
+                    0,
+                    baseline_gap2,
+                    percent,
+                )
+            } else {
+                let gap1_percent = if current_gap1 == 0 {
+                    100.0
+                } else if baseline_gap1 > 0 {
+                    (baseline_gap1 - current_gap1) as f64 * 100.0 / baseline_gap1 as f64
+                } else {
+                    0.0
+                };
+                let percent = if baseline_gap2 > 0 {
+                    50.0 + gap1_percent * 0.5
+                } else {
+                    gap1_percent
+                };
+                (
+                    "optimize_gaps",
+                    "teacher_gap1_sessions",
+                    current_gap1,
+                    0,
+                    baseline_gap1,
+                    percent,
+                )
+            }
+        }
+    };
+    Some(json!({
+        "stage":"browser_agent:checkpoint",
+        "solveRequestMode":solve_mode,
+        "optimizationFocus":progress_focus,
+        "metricCurrent":current,
+        "metricTarget":target,
+        "metricBaseline":baseline_value,
+        "metricPercent":(percent.clamp(0.0, 100.0) * 10.0).round() / 10.0
+    }))
+}
+
 fn agent_helper_lease_action_json(
     app: &App,
     path: &str,
@@ -1682,7 +1843,8 @@ fn agent_helper_lease_action_json(
                 Err(error) => agent_helper_error_json(error),
             }
         }
-        "candidate" => {
+        "candidate" | "checkpoint" => {
+            let is_checkpoint = action == "checkpoint";
             let solver_status = body.get("solverStatus").and_then(Value::as_u64);
             let status_is_structured = solver_status.is_some_and(|status| {
                 (200..300).contains(&status) || matches!(status, 409 | 422 | 500)
@@ -1692,14 +1854,16 @@ fn agent_helper_lease_action_json(
                     != Some(AGENT_RESULT_DIGEST_PROTOCOL)
                 || !status_is_structured
             {
-                let _ = app.agent_helper.reject_submission(
-                    &owner,
-                    &session_binding,
-                    &worker_token,
-                    &work_id,
-                    lease_id,
-                    now_millis(),
-                );
+                if !is_checkpoint {
+                    let _ = app.agent_helper.reject_submission(
+                        &owner,
+                        &session_binding,
+                        &worker_token,
+                        &work_id,
+                        lease_id,
+                        now_millis(),
+                    );
+                }
                 return json_response(
                     422,
                     json!({
@@ -1730,14 +1894,16 @@ fn agent_helper_lease_action_json(
                         .and_then(Value::as_str)
                         .is_none_or(|value| value.trim().is_empty()))
             {
-                let _ = app.agent_helper.reject_submission(
-                    &owner,
-                    &session_binding,
-                    &worker_token,
-                    &work_id,
-                    lease_id,
-                    now_millis(),
-                );
+                if !is_checkpoint {
+                    let _ = app.agent_helper.reject_submission(
+                        &owner,
+                        &session_binding,
+                        &worker_token,
+                        &work_id,
+                        lease_id,
+                        now_millis(),
+                    );
+                }
                 return json_response(
                     422,
                     json!({
@@ -1753,14 +1919,16 @@ fn agent_helper_lease_action_json(
                 Err(response) => return response,
             };
             if body.get("sha256").and_then(Value::as_str) != Some(digest.as_str()) {
-                let _ = app.agent_helper.reject_submission(
-                    &owner,
-                    &session_binding,
-                    &worker_token,
-                    &work_id,
-                    lease_id,
-                    now_millis(),
-                );
+                if !is_checkpoint {
+                    let _ = app.agent_helper.reject_submission(
+                        &owner,
+                        &session_binding,
+                        &worker_token,
+                        &work_id,
+                        lease_id,
+                        now_millis(),
+                    );
+                }
                 return json_response(
                     422,
                     json!({
@@ -1777,14 +1945,16 @@ fn agent_helper_lease_action_json(
                     match native_solver::validate_agent_candidate(&ticket.request_body, result) {
                         Ok(value) => value,
                         Err(_) => {
-                            let _ = app.agent_helper.reject_submission(
-                                &owner,
-                                &session_binding,
-                                &worker_token,
-                                &work_id,
-                                lease_id,
-                                now_millis(),
-                            );
+                            if !is_checkpoint {
+                                let _ = app.agent_helper.reject_submission(
+                                    &owner,
+                                    &session_binding,
+                                    &worker_token,
+                                    &work_id,
+                                    lease_id,
+                                    now_millis(),
+                                );
+                            }
                             return json_response(
                                 422,
                                 json!({
@@ -1809,14 +1979,16 @@ fn agent_helper_lease_action_json(
                                 ["agent_helper_reference_validation"] = report;
                         }
                         Err(_) => {
-                            let _ = app.agent_helper.reject_submission(
-                                &owner,
-                                &session_binding,
-                                &worker_token,
-                                &work_id,
-                                lease_id,
-                                now_millis(),
-                            );
+                            if !is_checkpoint {
+                                let _ = app.agent_helper.reject_submission(
+                                    &owner,
+                                    &session_binding,
+                                    &worker_token,
+                                    &work_id,
+                                    lease_id,
+                                    now_millis(),
+                                );
+                            }
                             return json_response(
                                 422,
                                 json!({
@@ -1829,19 +2001,53 @@ fn agent_helper_lease_action_json(
                         }
                     }
                 }
-                match app.agent_helper.accept_submission(
-                    &owner,
-                    &session_binding,
-                    &worker_token,
-                    &work_id,
-                    lease_id,
-                    validated.payload,
-                    validated.quality,
-                    now_millis(),
-                ) {
+                let checkpoint_progress = is_checkpoint
+                    .then(|| agent_checkpoint_progress(&ticket.request_body, &validated.payload))
+                    .flatten();
+                let accepted = if is_checkpoint {
+                    app.agent_helper.accept_checkpoint(
+                        &owner,
+                        &session_binding,
+                        &worker_token,
+                        &work_id,
+                        lease_id,
+                        validated.payload,
+                        validated.quality,
+                        now_millis(),
+                    )
+                } else {
+                    app.agent_helper.accept_submission(
+                        &owner,
+                        &session_binding,
+                        &worker_token,
+                        &work_id,
+                        lease_id,
+                        validated.payload,
+                        validated.quality,
+                        now_millis(),
+                    )
+                };
+                let became_best = match accepted {
                     Ok(value) => value,
                     Err(error) => return agent_helper_error_json(error),
+                };
+                if is_checkpoint && became_best {
+                    if let (Some(progress), Some(snapshot)) = (
+                        checkpoint_progress,
+                        app.solver_pool
+                            .server_execution_snapshot(&ticket.job_id, &ticket.job_owner),
+                    ) {
+                        if snapshot.phase.executor() == Some(ServerExecutor::Agent) {
+                            let _ = app.solver_pool.update_server_job_progress_frame_fenced(
+                                &ticket.job_id,
+                                snapshot.generation,
+                                REFERENCE_PROGRESS_PROTOCOL,
+                                progress,
+                            );
+                        }
+                    }
                 }
+                became_best
             } else {
                 if let Err(error) = app.agent_helper.accept_structured_outcome(
                     &owner,
@@ -3201,6 +3407,64 @@ fn solver_progress_run_index(request: Option<&Value>) -> Option<u64> {
     let settings = request.map(request_settings)?;
     let run_index = setting_u64_allow_zero(settings, "ui_progress_run_index", 0);
     (run_index > 0).then(|| run_index.clamp(1, 999))
+}
+
+fn solver_initial_work_progress(request: Option<&Value>) -> Option<Value> {
+    let settings = request.map(request_settings)?;
+    let solve_mode = setting_string(settings, "ui_requested_solve_mode")?
+        .trim()
+        .to_ascii_lowercase()
+        .replace('-', "_")
+        .replace(' ', "_");
+    if !matches!(
+        solve_mode.as_str(),
+        "quick_complete" | "optimize_singletons" | "optimize_sessions" | "optimize_gaps"
+    ) {
+        return None;
+    }
+    let focus = setting_string(settings, "ui_progress_metric_focus")?
+        .trim()
+        .to_ascii_lowercase()
+        .replace('-', "_")
+        .replace(' ', "_");
+    if !matches!(
+        focus.as_str(),
+        "scheduled_periods"
+            | "quick_complete"
+            | "one_period_teacher_sessions"
+            | "teacher_sessions"
+            | "teacher_gap1_sessions"
+            | "teacher_gap2_sessions"
+    ) {
+        return None;
+    }
+    let metric = |key: &str| {
+        settings
+            .and_then(|items| items.get(key))
+            .and_then(|value| {
+                value
+                    .as_u64()
+                    .or_else(|| value.as_str()?.trim().parse::<u64>().ok())
+            })
+    };
+    let current = metric("ui_progress_metric_current")?;
+    let target = metric("ui_progress_metric_target")?;
+    let baseline = metric("ui_progress_metric_baseline")?.max(current);
+    let mut progress = json!({
+        "protocol": REFERENCE_PROGRESS_PROTOCOL,
+        "stage": "request:accepted",
+        "sequence": 1,
+        "elapsedMs": 0,
+        "solveRequestMode": solve_mode,
+        "optimizationFocus": focus,
+        "metricCurrent": current,
+        "metricTarget": target,
+        "metricBaseline": baseline
+    });
+    if let Some(percent) = metric("ui_progress_metric_percent").map(|value| value.min(100)) {
+        progress["metricPercent"] = json!(percent);
+    }
+    Some(progress)
 }
 
 fn setting_u64(settings: Option<&serde_json::Map<String, Value>>, key: &str, default: u64) -> u64 {
@@ -5220,6 +5484,30 @@ fn stop_agent_best_effort_if_requested(
         };
     }
 
+    // A focused run always starts from a complete incumbent. When Stop lands
+    // before the Browser Agent has uploaded its first checkpoint, returning
+    // that already validated incumbent is both safer and faster than starting
+    // a VPS process only for its stop-file path to return the same timetable.
+    if let Some(request) = request {
+        if let Some((status, payload)) = complete_existing_incumbent_payload(
+            request,
+            "best_effort_stop_before_checkpoint",
+            "No accepted Agent checkpoint was available; retained the complete incumbent.",
+        ) {
+            if let Ok(payload) = serde_json::from_str::<Value>(&payload) {
+                let response = json_response(status, payload);
+                return if app
+                    .solver_pool
+                    .complete_server_job_fenced(fence, job_id, owner, response)
+                {
+                    AgentBestEffortStopOutcome::Completed
+                } else {
+                    AgentBestEffortStopOutcome::Stale
+                };
+            }
+        }
+    }
+
     app.solver_pool
         .fallback_agent_to_vps(fence, job_id, owner)
         .map(AgentBestEffortStopOutcome::FallbackToVps)
@@ -5713,6 +6001,7 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
     let schedule_fingerprint = solver_schedule_fingerprint(request.as_ref());
     let progress_budget_seconds = solver_progress_budget_seconds(request.as_ref());
     let progress_run_index = solver_progress_run_index(request.as_ref());
+    let initial_work_progress = solver_initial_work_progress(request.as_ref());
     let server_watchdog_budget_ms = request
         .as_ref()
         .map(|request| reference_solver_budget(request).hard_ms);
@@ -5754,6 +6043,11 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
             server_watchdog_budget_ms,
         ) {
             ServerJobClaim::Claimed => {
+                if let Some(progress) = initial_work_progress {
+                    let _ = app
+                        .solver_pool
+                        .update_server_job_progress(&job_id, progress);
+                }
                 app.solver_pool.set_server_job_browser_wasm_eligible(
                     &job_id,
                     owner,
@@ -7380,6 +7674,30 @@ mod tests {
     }
 
     #[test]
+    fn browser_checkpoint_progress_exposes_the_latest_focused_count() {
+        let request = json!({
+            "data": {
+                "tkbSolverResult": {
+                    "metrics": {"one_period_teacher_sessions":136}
+                }
+            },
+            "settings": {"optimization_focus":"singletons"}
+        });
+        let body = serde_json::to_vec(&request).unwrap();
+        let progress = agent_checkpoint_progress(
+            &body,
+            &json!({"metrics":{"one_period_teacher_sessions":134}}),
+        )
+        .expect("focused checkpoint progress");
+        assert_eq!(progress["solveRequestMode"], json!("optimize_singletons"));
+        assert_eq!(progress["optimizationFocus"], json!("one_period_teacher_sessions"));
+        assert_eq!(progress["metricCurrent"], json!(134));
+        assert_eq!(progress["metricBaseline"], json!(136));
+        assert_eq!(progress["metricTarget"], json!(0));
+        assert_eq!(progress["metricPercent"], json!(1.5));
+    }
+
+    #[test]
     fn bootstrap_issues_a_durable_agent_only_credential() {
         let (app, session_token, owner) = agent_test_app();
         let bootstrap = agent_route(
@@ -8325,12 +8643,25 @@ mod tests {
             .expect("worker token")
             .to_string();
 
-        let request = agent_solver_request("agent-route-job");
+        let mut request = agent_solver_request("agent-route-job");
+        request["settings"]["optimization_focus"] = json!("singletons");
+        request["data"]["tkbSolverResult"] = json!({
+            "metrics":{"one_period_teacher_sessions":4}
+        });
         let request_body = Arc::new(serde_json::to_vec(&request).unwrap());
         assert_eq!(
             app.solver_pool.claim_server_job("agent-route-job", &owner),
             ServerJobClaim::Claimed
         );
+        let agent_fence = app
+            .solver_pool
+            .prepare_agent_execution("agent-route-job", &owner)
+            .expect("Agent execution fence");
+        assert!(app.solver_pool.mark_agent_execution_running(
+            agent_fence,
+            "agent-route-job",
+            &owner
+        ));
         assert!(app.agent_helper.register_job(
             "agent-route-job",
             &owner,
@@ -8408,6 +8739,44 @@ mod tests {
         assert_eq!(native.status, 200);
         let result: Value = serde_json::from_str(&native.payload).unwrap();
         let digest = agent_helper_result_digest(&result).unwrap();
+        let checkpoint = agent_route(
+            &app,
+            Some(&token),
+            &format!("/api/agent-helper/v1/leases/{lease_id}/checkpoint"),
+            agent_protocol_body(json!({
+                "workerToken":worker_token,
+                "agentId":"pc-1",
+                "jobId":"agent-route-job",
+                "leaseId":lease_id,
+                "sha256":digest,
+                "digestProtocol":AGENT_RESULT_DIGEST_PROTOCOL,
+                "solverProtocol":REFERENCE_STDIO_PROTOCOL,
+                "solverStatus":native.status,
+                "result":result.clone()
+            })),
+        );
+        assert_eq!(response_status(&checkpoint), 202);
+        assert!(matches!(
+            app.agent_helper
+                .job_execution("agent-route-job", &owner, now_millis()),
+            Some(AgentJobExecution::Leased { .. })
+        ));
+        let progress = app
+            .solver_pool
+            .server_job_snapshots_for_owner(&owner)
+            .into_iter()
+            .find(|job| job.job_id == "agent-route-job")
+            .and_then(|job| job.progress)
+            .expect("checkpoint progress");
+        assert_eq!(progress["stage"], json!("browser_agent:checkpoint"));
+        assert_eq!(progress["protocol"], json!(REFERENCE_PROGRESS_PROTOCOL));
+        assert_eq!(progress["sequence"], json!(1));
+        assert!(progress["elapsedMs"].as_u64().is_some());
+        assert_eq!(progress["solveRequestMode"], json!("optimize_singletons"));
+        assert_eq!(
+            progress["metricCurrent"],
+            result["metrics"]["one_period_teacher_sessions"]
+        );
         let candidate = agent_route(
             &app,
             Some(&token),
@@ -8744,6 +9113,162 @@ mod tests {
                     .mark_vps_execution_running(vps_fence, job_id, &owner)
             );
         }
+    }
+
+    #[test]
+    fn agent_best_effort_stop_commits_the_accepted_checkpoint_without_vps_fallback() {
+        let app = App {
+            root: PathBuf::new(),
+            web_root: PathBuf::new(),
+            sample_data: PathBuf::new(),
+            solver_pool: SolverPool::from_env(),
+            agent_helper: AgentHelperCoordinator::new(),
+            db: Arc::new(db::Db::new(PathBuf::from(":memory:")).expect("in-memory database")),
+        };
+        let owner = SolverOwner::new("agent-checkpoint-school", "admin");
+        let job_id = "agent-checkpoint-soft-stop";
+        assert_eq!(
+            app.solver_pool.claim_server_job(job_id, &owner),
+            ServerJobClaim::Claimed
+        );
+        let agent_fence = app
+            .solver_pool
+            .prepare_agent_execution(job_id, &owner)
+            .expect("Agent fence");
+        assert!(app.agent_helper.register_job(
+            job_id,
+            &owner,
+            Arc::new(br#"{"data":{},"settings":{}}"#.to_vec()),
+            1,
+            now_millis(),
+        ));
+        let binding = agent_session_binding("checkpoint-stop-session");
+        let worker = app
+            .agent_helper
+            .register_worker(&owner, &binding, "web-checkpoint", "Web checkpoint", 1, now_millis())
+            .expect("Agent worker");
+        let lease = app
+            .agent_helper
+            .claim_work(&owner, &binding, &worker.worker_token, now_millis())
+            .expect("Agent lease");
+        assert!(app
+            .agent_helper
+            .accept_checkpoint(
+                &owner,
+                &binding,
+                &worker.worker_token,
+                &lease.work_id,
+                &lease.lease_token,
+                json!({"ok":true,"marker":"accepted-checkpoint"}),
+                [0, 0, 3, 0],
+                now_millis(),
+            )
+            .expect("accepted checkpoint"));
+        assert!(app
+            .solver_pool
+            .request_best_effort_stop_for_owner(job_id, &owner));
+
+        assert!(matches!(
+            stop_agent_best_effort_if_requested(
+                &app,
+                job_id,
+                &owner,
+                agent_fence,
+                None,
+            ),
+            AgentBestEffortStopOutcome::Completed
+        ));
+        let response = app
+            .solver_pool
+            .completed_server_response_for_owner(job_id, &owner)
+            .expect("checkpoint response");
+        assert_eq!(response_payload(&response)["marker"], json!("accepted-checkpoint"));
+        assert_eq!(app.solver_pool.active_count(), 0);
+    }
+
+    #[test]
+    fn agent_best_effort_stop_before_first_checkpoint_returns_the_incumbent_immediately() {
+        let app = App {
+            root: PathBuf::new(),
+            web_root: PathBuf::new(),
+            sample_data: PathBuf::new(),
+            solver_pool: SolverPool::from_env(),
+            agent_helper: AgentHelperCoordinator::new(),
+            db: Arc::new(db::Db::new(PathBuf::from(":memory:")).expect("in-memory database")),
+        };
+        let owner = SolverOwner::new("agent-incumbent-school", "admin");
+        let job_id = "agent-incumbent-soft-stop";
+        let incumbent = json!({
+            "ok": true,
+            "lessons": [
+                {"classId":"L1", "day":2, "session":"AM", "period":1},
+                {"classId":"L1", "day":2, "session":"AM", "period":2}
+            ],
+            "unassignedLessons": [],
+            "metrics": {
+                "scheduled_periods": 2,
+                "expected_periods": 2,
+                "unassigned_periods": 0,
+                "app_constraint_violation_count": 0,
+                "hard_ok": true,
+                "core_hard_ok": true,
+                "teacher_sessions": 1,
+                "one_period_teacher_sessions": 0
+            },
+            "validation": {"hard_ok":true},
+            "solver": {"backend":"hybrid-python-reference"}
+        });
+        let request = json!({
+            "settings": {
+                "ui_unified_auto_sort": true,
+                "ui_unified_solve_kind": "refine_complete",
+                "ui_use_existing_complete_incumbent": true,
+                "require_complete_schedule": true
+            },
+            "data": {"tkbSolverResult":incumbent.clone()}
+        });
+        assert_eq!(
+            app.solver_pool.claim_server_job(job_id, &owner),
+            ServerJobClaim::Claimed
+        );
+        let agent_fence = app
+            .solver_pool
+            .prepare_agent_execution(job_id, &owner)
+            .expect("Agent fence");
+        assert!(app.agent_helper.register_job(
+            job_id,
+            &owner,
+            Arc::new(serde_json::to_vec(&request).expect("request body")),
+            1,
+            now_millis(),
+        ));
+        assert!(app
+            .solver_pool
+            .request_best_effort_stop_for_owner(job_id, &owner));
+
+        assert!(matches!(
+            stop_agent_best_effort_if_requested(
+                &app,
+                job_id,
+                &owner,
+                agent_fence,
+                Some(&request),
+            ),
+            AgentBestEffortStopOutcome::Completed
+        ));
+        let response = app
+            .solver_pool
+            .completed_server_response_for_owner(job_id, &owner)
+            .expect("incumbent response");
+        let payload = response_payload(&response);
+        assert_eq!(response_status(&response), 200);
+        assert_eq!(payload["lessons"], incumbent["lessons"]);
+        assert_eq!(payload["metrics"], incumbent["metrics"]);
+        assert_eq!(
+            payload["solver"]["runtime_settings"]["fallback_reason"],
+            json!("best_effort_stop_before_checkpoint")
+        );
+        assert_eq!(app.solver_pool.active_count(), 0);
     }
 
     #[test]
@@ -10081,6 +10606,34 @@ mod tests {
         let cached_budget = reference_solver_budget(&cached_v153_repair);
         assert_eq!(cached_budget.solver_ms, 60_000);
         assert_eq!(cached_budget.hard_ms, 70_000);
+    }
+
+    #[test]
+    fn focused_server_job_is_seeded_with_the_visible_incumbent_metric() {
+        let request = json!({
+            "settings": {
+                "ui_requested_solve_mode": "optimize_sessions",
+                "ui_progress_mode": "work",
+                "ui_progress_metric_focus": "teacher_sessions",
+                "ui_progress_metric_current": 654,
+                "ui_progress_metric_target": 432,
+                "ui_progress_metric_baseline": 654,
+                "ui_progress_metric_percent": 66
+            }
+        });
+        let progress = solver_initial_work_progress(Some(&request)).expect("focused progress");
+        assert_eq!(progress["protocol"], json!(REFERENCE_PROGRESS_PROTOCOL));
+        assert_eq!(progress["stage"], json!("request:accepted"));
+        assert_eq!(progress["solveRequestMode"], json!("optimize_sessions"));
+        assert_eq!(progress["optimizationFocus"], json!("teacher_sessions"));
+        assert_eq!(progress["metricCurrent"], json!(654));
+        assert_eq!(progress["metricTarget"], json!(432));
+        assert_eq!(progress["metricBaseline"], json!(654));
+        assert_eq!(progress["metricPercent"], json!(66));
+
+        let mut automatic = request;
+        automatic["settings"]["ui_requested_solve_mode"] = json!("automatic");
+        assert!(solver_initial_work_progress(Some(&automatic)).is_none());
     }
 
     #[test]

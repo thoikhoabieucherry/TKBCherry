@@ -434,7 +434,7 @@ test("automatic sorting paints progress and slices validation before starting th
     BRIDGE_SOURCE.indexOf("window.sapXepTuDongAll = async function"),
     BRIDGE_SOURCE.indexOf("const autoSortButton", BRIDGE_SOURCE.indexOf("window.sapXepTuDongAll = async function"))
   );
-  assert.match(body, /primeAutoSortStartUi\(\);\s*await waitForUiPaint\(\);/);
+  assert.match(body, /primeAutoSortStartUi\(\{requestedSolveMode,\s*data:getData\(\)\}\);\s*await waitForUiPaint\(\);/);
   assert.ok(body.indexOf("await waitForUiPaint()") < body.indexOf("scheduleFingerprintFromData(data)"));
   assert.match(body, /scheduleFingerprintFromData\(data\);\s*await yieldResponsiveUi\(\);/);
   assert.match(body, /snapshotScheduleData\(data\);\s*await yieldResponsiveUi\(\);/);
@@ -475,6 +475,37 @@ test("Play advances elapsed time and progress before VPS admission", () => {
   assert.equal(afterOneSecond.serverStartedAtMs, 0);
   assert.ok(afterOneSecond.percent > 3, `pre-admission progress must move after one second: ${afterOneSecond.percent}`);
   assert.equal(afterOneSecond.updatedAt, clock.now());
+});
+
+test("focused Play shows its real incumbent metric during preflight", () => {
+  const data = makeData(2);
+  const subject = data.mon[0].ten;
+  data.tkb = {
+    L1:{
+      thu2:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]}
+    }
+  };
+  const clock = createFakeClock();
+  const progress = createProgressDocument(clock);
+  const {window, hooks} = loadBridge(data, null, Object.assign({}, clock, {
+    document:progress.document,
+    enableIntervals:true
+  }));
+  window.calcTeacherTKBStats = () => ({
+    tsBuoiDay:2,
+    soBuoiDay1:0,
+    soBuoiTrong1:1,
+    soBuoiTrong2:0
+  });
+
+  hooks.primeAutoSortStartUi({requestedSolveMode:"optimize_sessions", data});
+  clock.advance(1_000);
+  const preparing = window.__TKB_RUST_PROGRESS_STATE;
+
+  assert.equal(preparing.phase, "preparing");
+  assert.equal(preparing.metricCurrent, 2);
+  assert.equal(preparing.percent, 50);
+  assert.equal(preparing.label, "2 bu\u1ed5i \u00b7 1 gi\u00e2y");
 });
 
 test("a fresh Play shows an immediate preparation frame before timed progress", () => {
@@ -2122,6 +2153,7 @@ test("desktop scheduler modes map to one focused backend contract", () => {
     assert.equal(plan.kind, "refine_complete");
     assert.equal(plan.settings.ui_requested_solve_mode, mode);
     assert.equal(plan.settings.optimization_focus, focus);
+    assert.equal(plan.settings.ui_progress_mode, "work");
     assert.equal(plan.settings.ui_use_existing_complete_incumbent, true);
     assert.equal(plan.settings.ui_return_complete_incumbent_on_existing_optimize_failure, true);
   });
@@ -2134,6 +2166,7 @@ test("desktop scheduler modes map to one focused backend contract", () => {
     2
   );
   assert.equal(quick.settings.optimization_focus, "quick_complete");
+  assert.equal(quick.settings.ui_progress_mode, "work");
   assert.equal(quick.settings.optimization_first_click_singleton_cleanup, false);
   assert.equal(quick.settings.optimization_first_click_gap_cleanup, false);
   assert.equal(quick.settings.optimization_first_click_strict_quality_gate, false);
@@ -2180,6 +2213,21 @@ test("desktop scheduler modes map to one focused backend contract", () => {
   assert.equal(effectiveCompleteQuick.strict_one_period_sessions_cap, false);
   assert.equal(effectiveCompleteQuick.enforce_max_one_period_sessions, false);
   assert.equal(effectiveCompleteQuick.native_skip_teacher_optimization, true);
+
+  const automatic = hooks.applyRequestedSolveModeToPlan(
+    hooks.buildAutomaticAutoSortPlan(data),
+    "automatic",
+    data,
+    2
+  );
+  assert.equal(automatic.settings.ui_progress_mode, "time");
+  for(const key of [
+    "ui_progress_metric_focus",
+    "ui_progress_metric_current",
+    "ui_progress_metric_target",
+    "ui_progress_metric_baseline",
+    "ui_progress_metric_percent"
+  ]) assert.equal(Object.hasOwn(automatic.settings, key), false, `${key} must not drive Automatic`);
 });
 
 test("metric progress uses work quality rather than elapsed time", () => {
@@ -5605,18 +5653,17 @@ test("singleton and gap Stop also request the best incumbent", async () => {
   }
 });
 
-test("focused Stop flushes the Browser Agent candidate before retaining the server best", async () => {
+test("focused Stop retains the server checkpoint without waiting for a slow Browser Agent", async () => {
   const data = makeData(2);
   const jobId = "focused-browser-best-stop";
   const calls = [];
-  let resolveBrowserStop;
-  const browserStop = new Promise(resolve => { resolveBrowserStop = resolve; });
+  const browserStop = new Promise(() => {});
   let cancelBody = null;
   const executor = {
     async stopAndSubmitBest(options){
       calls.push(`browser:${options.jobId}`);
       assert.equal(options.reason, "user_best_effort_stop");
-      assert.equal(options.timeoutMs, 32_000);
+      assert.equal(options.timeoutMs, undefined);
       return browserStop;
     }
   };
@@ -5629,7 +5676,7 @@ test("focused Stop flushes the Browser Agent candidate before retaining the serv
       return jsonResponse({
         ok:true,
         cancelRequested:false,
-        bestEffortStopRequested:false,
+        bestEffortStopRequested:true,
         jobId
       });
     }
@@ -5647,10 +5694,6 @@ test("focused Stop flushes the Browser Agent candidate before retaining the serv
 
   const stopping = window.requestStopAutoSort();
   await Promise.resolve();
-  assert.deepEqual(calls, [`browser:${jobId}`]);
-  assert.equal(cancelBody, null, "the server stop must wait for the local candidate flush");
-
-  resolveBrowserStop({handled:true, submitted:true, jobId, candidateId:"candidate-1"});
   assert.equal(await stopping, true);
   assert.deepEqual(calls, [`browser:${jobId}`, "server:retain-best"]);
   assert.deepEqual(cancelBody, {solve_run_id:jobId, retainBest:true});
@@ -9748,7 +9791,7 @@ test("resumed progress uses server start time and excludes earlier FIFO wait", (
   assert.equal(window.__TKB_RUST_PROGRESS_STATE.label, "20 giây");
 });
 
-test("live VPS stages keep time visible without inventing elapsed-time percent", () => {
+test("Automatic VPS progress follows its time budget while stage events stay diagnostic", () => {
   const data = makeData(2);
   const clock = createFakeClock();
   const progress = createProgressDocument(clock);
@@ -9758,6 +9801,8 @@ test("live VPS stages keep time visible without inventing elapsed-time percent",
   const jobId = "live-progress-contract";
   const settings = {
     auto_sort_mode:"fast",
+    ui_requested_solve_mode:"automatic",
+    ui_progress_mode:"time",
     overall_time_limit_seconds:120,
     backend_deadline_ms:120_000
   };
@@ -9772,7 +9817,7 @@ test("live VPS stages keep time visible without inventing elapsed-time percent",
   clock.advance(30_000);
   hooks.tickEstimatedProgress();
   const budgetPercent = window.__TKB_RUST_PROGRESS_STATE.percent;
-  assert.ok(budgetPercent >= 4 && budgetPercent <= 12);
+  assert.ok(budgetPercent > 12 && budgetPercent < 99);
 
   const stages = [
     [1, "input:loaded"],
@@ -9787,8 +9832,8 @@ test("live VPS stages keep time visible without inventing elapsed-time percent",
       protocol:"tkb-reference-solver-progress-v1",
       stage,
       sequence,
-      // Deliberately near the full budget: the event clock describes the real
-      // backend stage, but must never masquerade as an exact solve percentage.
+      // The event clock is diagnostic. Automatic keeps using the canonical
+      // server elapsed time and budget for the visible percentage.
       elapsedMs:119_000
     });
     const state = window.__TKB_RUST_PROGRESS_STATE;
@@ -9821,7 +9866,7 @@ test("live VPS stages keep time visible without inventing elapsed-time percent",
   hooks.tickEstimatedProgress();
   const afterTick = window.__TKB_RUST_PROGRESS_STATE;
   assert.equal(afterTick.label, "31 giây");
-  assert.equal(afterTick.percent, budgetPercent, "elapsed time must not masquerade as solve completion");
+  assert.ok(afterTick.percent >= budgetPercent, "Automatic must advance with elapsed budget time");
 });
 
 test("pending result and solver-state responses forward their latest VPS progress snapshot", async () => {
@@ -9974,6 +10019,8 @@ test("the owner tab adopts the canonical VPS clock when FIFO state turns running
   hooks.primeAutoSortStartUi();
   hooks.startProgressTicker({
     auto_sort_mode:"teacher_session_opt",
+    ui_requested_solve_mode:"automatic",
+    ui_progress_mode:"time",
     overall_time_limit_seconds:180,
     backend_deadline_ms:180_000
   }, data);
@@ -9996,7 +10043,7 @@ test("the owner tab adopts the canonical VPS clock when FIFO state turns running
   assert.equal(state.canonicalServerProgress, true);
   assert.equal(state.phase, "running");
   assert.equal(state.label, "56 giây");
-  assert.equal(state.percent, 12, "canonical admission waits for a real metric snapshot");
+  assert.ok(state.percent > 12, "Automatic advances from the canonical VPS clock");
 });
 
 test("all pending VPS response paths hand progress to the live-progress recorder", () => {
@@ -10082,7 +10129,7 @@ test("two browsers on one canonical server job converge from server start and bu
   assert.ok(desktop.percent < 24, `canonical 4-second progress must replace stale 94%, got ${desktop.percent}`);
 });
 
-test("60-second and 120-second VPS budgets do not manufacture percent from time", () => {
+test("60-second and 120-second Automatic budgets use the same time percentage", () => {
   function canonicalProgress(budgetSeconds, elapsedSeconds){
     const data = makeData(2);
     const clock = createFakeClock(1_700_000_000_000);
@@ -10092,6 +10139,8 @@ test("60-second and 120-second VPS budgets do not manufacture percent from time"
     const jobId = `linear-${budgetSeconds}-${elapsedSeconds}`;
     hooks.startProgressTicker({
       auto_sort_mode:"fast",
+      ui_requested_solve_mode:"automatic",
+      ui_progress_mode:"time",
       overall_time_limit_seconds:budgetSeconds,
       backend_deadline_ms:budgetSeconds * 1000
     }, data);
@@ -10111,9 +10160,9 @@ test("60-second and 120-second VPS budgets do not manufacture percent from time"
   const oneTwentyDone = canonicalProgress(120, 120);
 
   assert.equal(sixtyHalf.percent, oneTwentyHalf.percent);
-  assert.ok(sixtyHalf.percent >= 4 && sixtyHalf.percent <= 12);
-  assert.equal(sixtyDone.percent, sixtyHalf.percent);
-  assert.equal(oneTwentyDone.percent, oneTwentyHalf.percent);
+  assert.equal(sixtyHalf.percent, 56);
+  assert.equal(sixtyDone.percent, 99);
+  assert.equal(oneTwentyDone.percent, 99);
   assert.equal(sixtyDone.phase, "server_wait");
   assert.equal(oneTwentyDone.phase, "server_wait");
 });
@@ -10151,13 +10200,15 @@ test("pre-admission preparation stays low before canonical running begins", () =
   assert.ok(window.__TKB_RUST_PROGRESS_STATE.percent < 20);
 });
 
-test("backend admission preserves preparation percent until a metric snapshot arrives", () => {
+test("Automatic admission advances by time and ignores backend work metrics", () => {
   const data = makeData(2);
   const clock = createFakeClock();
   const {window, hooks} = loadBridge(data, null, clock);
   const jobId = "smooth-first-admission";
   const settings = {
     auto_sort_mode:"fast",
+    ui_requested_solve_mode:"automatic",
+    ui_progress_mode:"time",
     ui_default_fresh_sort:true,
     progress_estimate_seconds:60,
     overall_time_limit_seconds:60,
@@ -10190,26 +10241,28 @@ test("backend admission preserves preparation percent until a metric snapshot ar
   hooks.tickEstimatedProgress();
   const afterOneBackendSecond = Object.assign({}, window.__TKB_RUST_PROGRESS_STATE);
   assert.equal(afterOneBackendSecond.label, "2 giây");
-  assert.equal(afterOneBackendSecond.percent, admitted.percent);
+  assert.ok(afterOneBackendSecond.percent > admitted.percent);
 
   hooks.recordBackendLiveProgress({
     protocol:"tkb-reference-solver-progress-v1",
     stage:"session_cp_sat:metric",
     sequence:1,
     elapsedMs:1_000,
+    solveRequestMode:"automatic",
     optimizationFocus:"scheduled_periods",
     metricCurrent:1,
     metricTarget:2,
     metricBaseline:2
   });
-  assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 50);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, afterOneBackendSecond.percent);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.label, "2 giây");
 
   clock.advance(59_000);
   hooks.tickEstimatedProgress();
   const afterBudget = window.__TKB_RUST_PROGRESS_STATE;
-  assert.equal(afterBudget.percent, 50);
+  assert.equal(afterBudget.percent, 99);
   assert.equal(afterBudget.phase, "server_wait");
-  assert.equal(afterBudget.label, "1/2 ti\u1ebft \u00b7 1:01");
+  assert.equal(afterBudget.label, "1:01");
 });
 
 test("live optimization shows each raw improvement even when rounded percent is unchanged", () => {
@@ -10257,6 +10310,237 @@ test("live optimization shows each raw improvement even when rounded percent is 
   assert.equal(second.metricCurrent, 469);
   assert.equal(first.label, "470 bu\u1ed5i \u00b7 1 gi\u00e2y");
   assert.equal(second.label, "469 bu\u1ed5i \u00b7 2 gi\u00e2y");
+
+  hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"session_cp_sat:metric",
+    sequence:3,
+    elapsedMs:12_000,
+    optimizationFocus:"teacher_sessions",
+    metricCurrent:480,
+    metricTarget:432,
+    metricBaseline:509
+  });
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 92, "work progress must never move backward");
+});
+
+test("a second focused session run keeps its baseline through generation startup frames", () => {
+  const data = makeData(2);
+  const clock = createFakeClock();
+  const {window, hooks} = loadBridge(data, null, clock);
+  const focusedSettings = (current, baseline) => ({
+    auto_sort_mode:"teacher_session_opt",
+    optimization_focus:"sessions",
+    ui_requested_solve_mode:"optimize_sessions",
+    ui_progress_mode:"work",
+    ui_progress_metric_focus:"teacher_sessions",
+    ui_progress_metric_current:current,
+    ui_progress_metric_target:432,
+    ui_progress_metric_baseline:baseline
+  });
+
+  hooks.primeAutoSortStartUi();
+  hooks.startProgressTicker(focusedSettings(654, 654), data);
+  clock.advance(1_000);
+  hooks.tickEstimatedProgress();
+  hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"session_cp_sat:metric",
+    executionGeneration:1,
+    sequence:1,
+    elapsedMs:15_000,
+    solveRequestMode:"optimize_sessions",
+    optimizationFocus:"teacher_sessions",
+    metricCurrent:648,
+    metricTarget:432,
+    metricBaseline:654
+  });
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 67);
+  assert.match(window.__TKB_RUST_PROGRESS_STATE.label, /^648 bu\u1ed5i/);
+
+  // The next click owns a fresh baseline. The replacement executor may first
+  // publish only a lifecycle stage, before it finds a strict improvement.
+  hooks.primeAutoSortStartUi();
+  hooks.startProgressTicker(focusedSettings(648, 648), data);
+  clock.advance(1_000);
+  hooks.tickEstimatedProgress();
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 67);
+  assert.match(window.__TKB_RUST_PROGRESS_STATE.label, /^648 bu\u1ed5i/);
+
+  assert.equal(hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"runtime:loading",
+    executionGeneration:2,
+    sequence:1,
+    elapsedMs:500,
+    solveRequestMode:"optimize_sessions"
+  }), true);
+
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.metricCurrent, 648);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 67, "stage-only admission must not fall back to 12%");
+  assert.match(window.__TKB_RUST_PROGRESS_STATE.label, /^648 bu\u1ed5i/);
+
+  hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"session_cp_sat:metric",
+    executionGeneration:2,
+    sequence:2,
+    elapsedMs:10_000,
+    solveRequestMode:"optimize_sessions",
+    optimizationFocus:"teacher_sessions",
+    metricCurrent:640,
+    metricTarget:432,
+    metricBaseline:648
+  });
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.metricCurrent, 640);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 68);
+  assert.match(window.__TKB_RUST_PROGRESS_STATE.label, /^640 bu\u1ed5i/);
+});
+
+test("focused internal retry preserves the latest real counter", () => {
+  const data = makeData(2);
+  const clock = createFakeClock();
+  const {window, hooks} = loadBridge(data, null, clock);
+  const settings = {
+    auto_sort_mode:"teacher_session_opt",
+    optimization_focus:"singletons",
+    ui_requested_solve_mode:"optimize_singletons",
+    ui_progress_mode:"work",
+    ui_progress_metric_focus:"one_period_teacher_sessions",
+    ui_progress_metric_current:136,
+    ui_progress_metric_target:0,
+    ui_progress_metric_baseline:136,
+    ui_progress_metric_percent:0
+  };
+
+  hooks.startProgressTicker(settings, data);
+  hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"teacher_session_opt:best",
+    executionGeneration:1,
+    sequence:1,
+    elapsedMs:10_000,
+    solveRequestMode:"optimize_singletons",
+    optimizationFocus:"one_period_teacher_sessions",
+    metricCurrent:134,
+    metricTarget:0,
+    metricBaseline:136
+  });
+  clock.advance(1_000);
+  hooks.restartProgressForRetry(settings, data);
+  hooks.tickEstimatedProgress();
+
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.metricCurrent, 134);
+  assert.match(window.__TKB_RUST_PROGRESS_STATE.label, /^134 bu\u1ed5i 1 ti\u1ebft/);
+  assert.doesNotMatch(window.__TKB_RUST_PROGRESS_STATE.label, /^\d+ gi/);
+});
+
+test("a resumed focused job restores work progress mode from the VPS snapshot", () => {
+  const data = makeData(2);
+  const clock = createFakeClock();
+  const localStorage = memoryStorage();
+  const first = loadBridge(data, null, Object.assign({}, clock, {localStorage}));
+  const jobId = "resumed-singleton-work-progress";
+
+  first.hooks.startProgressTicker({
+    auto_sort_mode:"teacher_session_opt",
+    optimization_focus:"singletons",
+    ui_progress_mode:"work",
+    ui_progress_metric_focus:"one_period_teacher_sessions",
+    ui_progress_metric_current:136,
+    ui_progress_metric_target:0,
+    ui_progress_metric_baseline:136,
+    ui_progress_metric_percent:0
+  }, data);
+  first.hooks.writePendingBackendJob(jobId, first.hooks.durableScheduleFingerprint(data));
+  first.hooks.recordBackendJobStarted(jobId, clock.now(), {
+    progressBudgetSeconds:180,
+    progressRunIndex:1
+  });
+  first.hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"teacher_session_opt:best",
+    sequence:1,
+    elapsedMs:10_000,
+    solveRequestMode:"optimize_singletons",
+    optimizationFocus:"one_period_teacher_sessions",
+    metricCurrent:134,
+    metricTarget:0,
+    metricBaseline:136
+  });
+
+  assert.equal(first.window.__TKB_RUST_PROGRESS_STATE.percent, 1);
+  assert.equal(first.window.__TKB_RUST_PROGRESS_STATE.label, "134 bu\u1ed5i 1 ti\u1ebft \u00b7 0 gi\u00e2y");
+  assert.equal(first.hooks.readPendingBackendJob()?.optimizationFocus, "singletons");
+
+  const resumed = loadBridge(data, null, Object.assign({}, clock, {localStorage}));
+  resumed.hooks.startInstantProgressTicker({resumePending:true});
+  clock.advance(1_000);
+  resumed.hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"teacher_session_opt:best",
+    sequence:1,
+    elapsedMs:11_000,
+    solveRequestMode:"optimize_singletons",
+    optimizationFocus:"one_period_teacher_sessions",
+    metricCurrent:132,
+    metricTarget:0,
+    metricBaseline:136
+  });
+  assert.equal(resumed.window.__TKB_RUST_PROGRESS_STATE.percent, 3);
+  assert.match(resumed.window.__TKB_RUST_PROGRESS_STATE.label, /^132 bu\u1ed5i 1 ti\u1ebft/);
+});
+
+test("cross-device discovery restores focused mode before the first paint", () => {
+  const data = makeData(2);
+  const clock = createFakeClock();
+  const {hooks} = loadBridge(data, null, clock);
+  const fingerprint = hooks.durableScheduleFingerprint(data);
+  const selected = hooks.selectDiscoverableBackendJob({
+    ok:true,
+    jobs:[{
+      jobId:"cross-device-focused-progress",
+      serverOwned:true,
+      scheduleFingerprint:fingerprint,
+      scheduleScope:hooks.backendScheduleScope(),
+      createdAtMs:clock.now() - 2_000,
+      startedAtMs:clock.now() - 1_000,
+      progress:{solveRequestMode:"optimize_sessions"}
+    }],
+    queue:[],
+    completedJobs:[]
+  }, data, clock.now());
+  assert.equal(selected.job?.optimizationFocus, "sessions");
+});
+
+test("Quick progress follows scheduled periods and does not advance with time", () => {
+  const data = makeData(2);
+  const clock = createFakeClock();
+  const {window, hooks} = loadBridge(data, null, clock);
+  const plan = hooks.applyRequestedSolveModeToPlan(
+    hooks.buildAutomaticAutoSortPlan(data),
+    "quick_complete",
+    data,
+    2
+  );
+  hooks.startProgressTicker(plan.settings, data);
+  hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"session_cp_sat:metric",
+    sequence:1,
+    elapsedMs:1_000,
+    solveRequestMode:"quick_complete",
+    optimizationFocus:"scheduled_periods",
+    metricCurrent:1,
+    metricTarget:2,
+    metricBaseline:2
+  });
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 50);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.label, "1/2 ti\u1ebft \u00b7 0 gi\u00e2y");
+  clock.advance(30_000);
+  hooks.tickEstimatedProgress();
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 50);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.label, "1/2 ti\u1ebft \u00b7 30 gi\u00e2y");
 });
 
 test("a new VPS or Agent execution generation accepts progress sequence one", () => {
@@ -10654,7 +10938,12 @@ test("queue and solver admission keep one timer while percent waits for solver m
   const jobId = "continuous-progress-time";
 
   hooks.primeAutoSortStartUi();
-  hooks.startProgressTicker({auto_sort_mode:"fast"}, data);
+  hooks.startProgressTicker({
+    auto_sort_mode:"teacher_session_opt",
+    optimization_focus:"sessions",
+    ui_requested_solve_mode:"optimize_sessions",
+    ui_progress_mode:"work"
+  }, data);
   clock.advance(2_000);
   hooks.tickEstimatedProgress();
   const beforeQueuePercent = window.__TKB_RUST_PROGRESS_STATE.percent;

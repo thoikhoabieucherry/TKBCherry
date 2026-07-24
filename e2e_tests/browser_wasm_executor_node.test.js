@@ -146,6 +146,7 @@ async function exercisePortfolioCandidates(canonical, candidates, navigator){
   let workerIndex = 0;
   let leaseIssued = false;
   let submittedResult = null;
+  let completeSeen = false;
   class FakeWorker {
     constructor(){ this.index = workerIndex++; }
     postMessage(message){
@@ -183,12 +184,15 @@ async function exercisePortfolioCandidates(canonical, candidates, navigator){
         payload:canonical
       }});
     }
-    if(pathname.endsWith("/candidate")){
+    if(pathname.endsWith("/candidate") || pathname.endsWith("/checkpoint")){
       const candidate = JSON.parse(options.body);
       submittedResult = candidate.result;
       return response({ok:true, candidateId:"candidate-contract", sha256:candidate.sha256});
     }
-    if(pathname.endsWith("/complete")) return response({ok:true, completed:true});
+    if(pathname.endsWith("/complete")){
+      completeSeen = true;
+      return response({ok:true, completed:true});
+    }
     if(pathname.endsWith("/fail")){
       failures.push(JSON.parse(options.body));
       return response({ok:true, requeued:true});
@@ -208,9 +212,10 @@ async function exercisePortfolioCandidates(canonical, candidates, navigator){
     jobId:"job-portfolio-contract",
     request:canonical
   }), true);
-  for(let index = 0; index < 50 && !submittedResult; index += 1){
+  for(let index = 0; index < 50 && !completeSeen; index += 1){
     await new Promise(resolve => setTimeout(resolve, 1));
   }
+  assert.equal(completeSeen, true, "the portfolio must publish its final best after checkpoints");
   await context.TKBBrowserWasmExecutor.close("test_finished", {failLease:true});
   return {submittedResult, workerPayloads, failures};
 }
@@ -443,7 +448,7 @@ test("foreground executor probes WASM before hello and disconnects without an in
   assert.equal(context.TKBBrowserWasmExecutor.state().active, false);
   assert.deepEqual(calls.slice(0, 5), [
     "GET:/api/agent-helper/v1/status",
-    "worker:tkb-browser-wasm-worker.js?v=tkb-browser-wasm-executor-v7-best-stop-flush",
+    "worker:tkb-browser-wasm-worker.js?v=tkb-browser-wasm-executor-v8-checkpoint-stop",
     "worker-message:probe",
     "POST:/api/solve-data",
     "POST:/api/agent-helper/v1/hello",
@@ -963,7 +968,7 @@ test("four-worker portfolio uses distinct seeds and submits the best non-regress
         payload:canonical
       }});
     }
-    if(pathname.endsWith("/candidate")){
+    if(pathname.endsWith("/candidate") || pathname.endsWith("/checkpoint")){
       const candidate = JSON.parse(options.body);
       submittedResult = candidate.result;
       return response({ok:true, candidateId:"candidate-portfolio", sha256:candidate.sha256});
@@ -1025,6 +1030,7 @@ test("soft Stop submits the best completed Browser Agent candidate without waiti
   let leaseIssued = false;
   let submittedResult = null;
   let completeSeen = false;
+  const submissionPaths = [];
   let fastCandidateDelivered = false;
   let terminated = 0;
 
@@ -1066,7 +1072,8 @@ test("soft Stop submits the best completed Browser Agent candidate without waiti
         payload:canonical
       }});
     }
-    if(pathname.endsWith("/candidate")){
+    if(pathname.endsWith("/candidate") || pathname.endsWith("/checkpoint")){
+      submissionPaths.push(pathname);
       submittedResult = JSON.parse(options.body).result;
       return response({ok:true, candidateId:"candidate-soft-stop", sha256:"digest-soft-stop"});
     }
@@ -1103,21 +1110,29 @@ test("soft Stop submits the best completed Browser Agent candidate without waiti
     await new Promise(resolve => setTimeout(resolve, 1));
   }
   assert.equal(fastCandidateDelivered, true);
-  await new Promise(resolve => setTimeout(resolve, 0));
-  assert.equal(submittedResult, null, "the hanging worker must still be holding Promise.all open");
+  for(let index = 0; index < 20 && !submittedResult; index += 1){
+    await new Promise(resolve => setTimeout(resolve, 1));
+  }
+  assert.equal(
+    submittedResult?.candidateMarker,
+    "fast-improvement",
+    "each completed strict-best worker must checkpoint before slower workers finish"
+  );
+  assert.deepEqual(
+    submissionPaths,
+    ["/api/agent-helper/v1/leases/lease-soft-stop-portfolio/checkpoint"]
+  );
 
+  const stopStartedAt = Date.now();
   const stopped = await context.TKBBrowserWasmExecutor.stopAndSubmitBest({
-    jobId:"job-soft-stop-portfolio",
-    timeoutMs:2000
+    jobId:"job-soft-stop-portfolio"
   });
+  assert.ok(Date.now() - stopStartedAt < 100, "Stop must not wait for a hanging worker");
   assert.equal(stopped.handled, true);
   assert.equal(stopped.submitted, true);
   assert.equal(submittedResult?.candidateMarker, "fast-improvement");
   assert.equal(terminated, 2, "all portfolio workers must stop consuming CPU");
-  for(let index = 0; index < 20 && !completeSeen; index += 1){
-    await new Promise(resolve => setTimeout(resolve, 1));
-  }
-  assert.equal(completeSeen, true);
+  assert.equal(completeSeen, false, "the canonical server Stop owns terminal completion");
   await context.TKBBrowserWasmExecutor.close("test_finished", {failLease:false});
 });
 
@@ -1339,7 +1354,7 @@ test("planner wires the browser worker only around a new canonical solve", () =>
   const bridge = fs.readFileSync(BRIDGE_PATH, "utf8");
   const page = fs.readFileSync(PAGE_PATH, "utf8");
   const server = fs.readFileSync(SERVER_PATH, "utf8");
-  assert.match(page, /tkb-browser-wasm\.js\?v=20260724-v171-progressive-stop-flush-v1/);
+  assert.match(page, /tkb-browser-wasm\.js\?v=20260724-v173-stable-live-progress-v2/);
   assert.ok(page.indexOf("tkb-browser-wasm.js") < page.indexOf("tkb-rust-bridge.js"));
   assert.match(bridge, /TKBBrowserWasmExecutor\.canHandleRequest\(browserWasmRequest\)/);
   assert.match(bridge, /!resumeExistingServerJobOnly[\s\S]*browserWasmEligible[\s\S]*TKBBrowserWasmExecutor\.probe/);

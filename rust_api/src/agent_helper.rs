@@ -213,6 +213,18 @@ struct AgentJob {
     request_body: Arc<Vec<u8>>,
     tasks: Vec<AgentTask>,
     best_candidate: Option<AgentCandidate>,
+    checkpoint_candidate: Option<AgentCandidate>,
+}
+
+fn better_agent_candidate(
+    left: Option<AgentCandidate>,
+    right: Option<AgentCandidate>,
+) -> Option<AgentCandidate> {
+    match (left, right) {
+        (Some(left), Some(right)) => Some(if left.quality <= right.quality { left } else { right }),
+        (Some(candidate), None) | (None, Some(candidate)) => Some(candidate),
+        (None, None) => None,
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -841,6 +853,7 @@ impl AgentHelperCoordinator {
                 request_body,
                 tasks,
                 best_candidate: None,
+                checkpoint_candidate: None,
             },
         );
         release_trusted_handoff_capacity_for_job(&mut state, job_id);
@@ -885,7 +898,9 @@ impl AgentHelperCoordinator {
             release_trusted_handoff_capacity_for_job(&mut state, job_id);
             return None;
         }
-        let candidate = state.jobs.remove(job_id).and_then(|job| job.best_candidate);
+        let candidate = state.jobs.remove(job_id).and_then(|job| {
+            better_agent_candidate(job.best_candidate, job.checkpoint_candidate)
+        });
         release_trusted_handoff_capacity_for_job(&mut state, job_id);
         candidate
     }
@@ -912,6 +927,11 @@ impl AgentHelperCoordinator {
             _ => None,
         }) {
             return Some(AgentJobExecution::Leased { expires_at_ms });
+        }
+        if let Some(candidate) = job.checkpoint_candidate.clone() {
+            return Some(AgentJobExecution::Completed {
+                candidate: Some(candidate),
+            });
         }
         if job
             .tasks
@@ -942,7 +962,7 @@ impl AgentHelperCoordinator {
         // atomic takeover check. Preserve that candidate and let the
         // coordinator re-enter the Agent path to commit it instead of
         // discarding it and needlessly restarting on the VPS.
-        if job.best_candidate.is_some() {
+        if job.best_candidate.is_some() || job.checkpoint_candidate.is_some() {
             return false;
         }
         if job
@@ -1518,15 +1538,90 @@ impl AgentHelperCoordinator {
                 payload,
                 quality,
             };
-            let became_best = job
-                .best_candidate
+            let current_best = better_agent_candidate(
+                job.best_candidate.clone(),
+                job.checkpoint_candidate.clone(),
+            );
+            let became_best = current_best
+                .as_ref()
+                .map(|current| candidate.quality < current.quality)
+                .unwrap_or(true);
+            job.best_candidate = Some(if became_best {
+                candidate
+            } else {
+                current_best.expect("an unchanged Agent best candidate exists")
+            });
+            job.checkpoint_candidate = None;
+            task.state = AgentTaskState::Completed;
+            return Ok(became_best);
+        }
+        Err(AgentHelperError::LeaseNotFound)
+    }
+
+    /// Keep a validated strict-best candidate while its worker continues
+    /// searching. Checkpoints do not complete the lease, but Stop/watchdog
+    /// finalization can atomically take the best accepted checkpoint.
+    pub fn accept_checkpoint(
+        &self,
+        owner: &SolverOwner,
+        session_binding: &str,
+        worker_token: &str,
+        work_id: &str,
+        lease_token: &str,
+        payload: Value,
+        quality: [i64; 4],
+        now_ms: u64,
+    ) -> Result<bool, AgentHelperError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| AgentHelperError::UnauthorizedWorker)?;
+        prune_state(&mut state, now_ms);
+        let (worker_token_hash, worker) =
+            authenticated_worker(&state, owner, session_binding, worker_token, now_ms)?;
+        let lease_token_hash = secret_hash(lease_token.trim());
+        for job in state
+            .jobs
+            .values_mut()
+            .filter(|job| worker_can_access_job(&worker, job))
+        {
+            let Some(task_index) = job.tasks.iter().position(|task| task.work_id == work_id) else {
+                continue;
+            };
+            let task = &job.tasks[task_index];
+            match &task.state {
+                AgentTaskState::Leased {
+                    worker_token_hash: assigned_worker,
+                    lease_token_hash: assigned_lease,
+                    expires_at_ms,
+                    ..
+                } if assigned_worker == &worker_token_hash
+                    && assigned_lease == &lease_token_hash
+                    && *expires_at_ms > now_ms => {}
+                AgentTaskState::Completed => return Err(AgentHelperError::WorkAlreadyCompleted),
+                AgentTaskState::Leased { expires_at_ms, .. } if *expires_at_ms <= now_ms => {
+                    return Err(AgentHelperError::LeaseExpired)
+                }
+                _ => return Err(AgentHelperError::LeaseNotFound),
+            }
+            let candidate = AgentCandidate {
+                work_id: task.work_id.clone(),
+                worker_id: worker.worker_id.clone(),
+                seed: task.seed,
+                payload,
+                quality,
+            };
+            let current_best = better_agent_candidate(
+                job.best_candidate.clone(),
+                job.checkpoint_candidate.clone(),
+            );
+            let became_best = current_best
                 .as_ref()
                 .map(|current| candidate.quality < current.quality)
                 .unwrap_or(true);
             if became_best {
-                job.best_candidate = Some(candidate);
+                job.checkpoint_candidate = Some(candidate);
             }
-            task.state = AgentTaskState::Completed;
             return Ok(became_best);
         }
         Err(AgentHelperError::LeaseNotFound)
@@ -1625,13 +1720,12 @@ impl AgentHelperCoordinator {
     }
 
     pub fn best_candidate(&self, job_id: &str, owner: &SolverOwner) -> Option<AgentCandidate> {
-        self.state
-            .lock()
-            .ok()?
-            .jobs
-            .get(job_id)
-            .filter(|job| job.owner == *owner)
-            .and_then(|job| job.best_candidate.clone())
+        let state = self.state.lock().ok()?;
+        let job = state.jobs.get(job_id).filter(|job| job.owner == *owner)?;
+        better_agent_candidate(
+            job.best_candidate.clone(),
+            job.checkpoint_candidate.clone(),
+        )
     }
 
     pub fn has_active_lease(&self, job_id: &str, owner: &SolverOwner) -> bool {
@@ -2861,6 +2955,63 @@ mod tests {
             coordinator.job_execution("handoff-race", &owner, lease.lease_expires_at_ms + 3),
             Some(AgentJobExecution::Completed { candidate: Some(_) })
         ));
+    }
+
+    #[test]
+    fn checkpoint_stays_leased_and_stop_atomically_takes_the_best() {
+        let coordinator = AgentHelperCoordinator::default();
+        let owner = SolverOwner::new("school-a", "admin-a");
+        let binding = session_binding("session-a");
+        assert!(coordinator.register_job(
+            "checkpoint-stop",
+            &owner,
+            Arc::new(br#"{"data":{},"settings":{}}"#.to_vec()),
+            1,
+            1_000,
+        ));
+        let worker = coordinator
+            .register_worker(&owner, &binding, "pc-1", "PC 1", 1, 1_000)
+            .unwrap();
+        let lease = coordinator
+            .claim_work(&owner, &binding, &worker.worker_token, 1_001)
+            .unwrap();
+
+        assert!(coordinator
+            .accept_checkpoint(
+                &owner,
+                &binding,
+                &worker.worker_token,
+                &lease.work_id,
+                &lease.lease_token,
+                serde_json::json!({"marker":"first"}),
+                [0, 0, 5, 0],
+                1_002,
+            )
+            .unwrap());
+        assert!(matches!(
+            coordinator.job_execution("checkpoint-stop", &owner, 1_003),
+            Some(AgentJobExecution::Leased { .. })
+        ));
+        assert!(coordinator
+            .accept_checkpoint(
+                &owner,
+                &binding,
+                &worker.worker_token,
+                &lease.work_id,
+                &lease.lease_token,
+                serde_json::json!({"marker":"better"}),
+                [0, 0, 3, 0],
+                1_004,
+            )
+            .unwrap());
+
+        let stopped = coordinator
+            .take_candidate_and_finish_job("checkpoint-stop", &owner)
+            .expect("Stop must retain the accepted checkpoint");
+        assert_eq!(stopped.payload["marker"], serde_json::json!("better"));
+        assert!(coordinator
+            .job_execution("checkpoint-stop", &owner, 1_005)
+            .is_none());
     }
 
     #[test]

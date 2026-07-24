@@ -70,6 +70,195 @@ def _session_key(session: Session) -> str:
     return "sang" if session.part == "AM" else "chieu"
 
 
+class AssignmentSessionDomainMemo:
+    """Memoize immutable assignment/session rule-domain queries for one solve."""
+
+    __slots__ = (
+        "constraints",
+        "_available_periods",
+        "_available_period_sets",
+        "_block_allowed",
+        "_period_capacity",
+        "_session_allowed",
+        "_session_cap",
+        "_subject_rules",
+        "_subject_group_rules",
+        "_hits",
+        "_misses",
+    )
+
+    def __init__(self, constraints: TimetableConstraintRules | None) -> None:
+        self.constraints = constraints
+        self._available_periods: dict[tuple[Any, Session], list[int]] = {}
+        self._available_period_sets: dict[tuple[Any, Session], frozenset[int]] = {}
+        self._block_allowed: dict[tuple[Any, Session, int, int], bool] = {}
+        self._period_capacity: dict[tuple[Any, Session], int] = {}
+        self._session_allowed: dict[tuple[Any, Session], bool] = {}
+        self._session_cap: dict[tuple[Any, Session, int], int] = {}
+        self._subject_rules: dict[tuple[str, str], Mapping[str, Any]] = {}
+        self._subject_group_rules: dict[
+            tuple[str, str],
+            tuple[tuple[str, Mapping[str, Any]], ...],
+        ] = {}
+        self._hits: Counter[str] = Counter()
+        self._misses: Counter[str] = Counter()
+
+    def _get(self, name: str, cache: dict[Any, Any], key: Any, factory: Callable[[], Any]) -> Any:
+        if key in cache:
+            self._hits[name] += 1
+            return cache[key]
+        self._misses[name] += 1
+        value = factory()
+        cache[key] = value
+        return value
+
+    def available_periods(self, assignment: Any, session: Session) -> list[int]:
+        key = (assignment, session)
+        return self._get(
+            "available_periods",
+            self._available_periods,
+            key,
+            lambda: _assignment_available_periods_impl(
+                assignment,
+                session,
+                self.constraints,
+            ),
+        )
+
+    def block_allowed(
+        self,
+        assignment: Any,
+        session: Session,
+        start: int,
+        duration: int,
+    ) -> bool:
+        key = (assignment, session, int(start), int(duration))
+        return self._get(
+            "block_allowed",
+            self._block_allowed,
+            key,
+            lambda: _assignment_block_allowed_impl(
+                assignment,
+                session,
+                int(start),
+                int(duration),
+                self.constraints,
+                memo=self,
+            ),
+        )
+
+    def available_period_set(
+        self,
+        assignment: Any,
+        session: Session,
+    ) -> frozenset[int]:
+        key = (assignment, session)
+        return self._get(
+            "available_period_sets",
+            self._available_period_sets,
+            key,
+            lambda: frozenset(self.available_periods(assignment, session)),
+        )
+
+    def period_capacity(self, assignment: Any, session: Session) -> int:
+        key = (assignment, session)
+        return self._get(
+            "period_capacity",
+            self._period_capacity,
+            key,
+            lambda: _assignment_period_capacity_impl(
+                assignment,
+                session,
+                self.constraints,
+                memo=self,
+            ),
+        )
+
+    def session_allowed(self, assignment: Any, session: Session) -> bool:
+        key = (assignment, session)
+        return self._get(
+            "session_allowed",
+            self._session_allowed,
+            key,
+            lambda: _assignment_session_allowed_impl(
+                assignment,
+                session,
+                self.constraints,
+                memo=self,
+            ),
+        )
+
+    def session_cap(self, assignment: Any, session: Session, base_cap: int) -> int:
+        key = (assignment, session, int(base_cap))
+        return self._get(
+            "session_cap",
+            self._session_cap,
+            key,
+            lambda: _assignment_session_cap_impl(
+                assignment,
+                session,
+                int(base_cap),
+                self.constraints,
+                memo=self,
+            ),
+        )
+
+    def subject_rule(self, assignment: Any) -> Mapping[str, Any]:
+        key = (str(assignment.class_name), str(assignment.subject))
+        return self._get(
+            "subject_rules",
+            self._subject_rules,
+            key,
+            lambda: (
+                self.constraints.subject_rule_for(*key)
+                if self.constraints is not None
+                else {}
+            ),
+        )
+
+    def subject_group_rules(
+        self,
+        assignment: Any,
+    ) -> tuple[tuple[str, Mapping[str, Any]], ...]:
+        key = (str(assignment.class_name), str(assignment.subject))
+        return self._get(
+            "subject_group_rules",
+            self._subject_group_rules,
+            key,
+            lambda: (
+                self.constraints.subject_group_rules_for(*key)
+                if self.constraints is not None
+                else ()
+            ),
+        )
+
+    def stats(self) -> dict[str, Any]:
+        names = (
+            "available_periods",
+            "available_period_sets",
+            "block_allowed",
+            "period_capacity",
+            "session_allowed",
+            "session_cap",
+            "subject_rules",
+            "subject_group_rules",
+        )
+        return {
+            "hits": {name: int(self._hits[name]) for name in names},
+            "misses": {name: int(self._misses[name]) for name in names},
+            "entries": {
+                "available_periods": len(self._available_periods),
+                "available_period_sets": len(self._available_period_sets),
+                "block_allowed": len(self._block_allowed),
+                "period_capacity": len(self._period_capacity),
+                "session_allowed": len(self._session_allowed),
+                "session_cap": len(self._session_cap),
+                "subject_rules": len(self._subject_rules),
+                "subject_group_rules": len(self._subject_group_rules),
+            },
+        }
+
+
 def _truthy(value: Any) -> bool:
     return value is True or value in {1, "1", "true", "True", "on", "yes", "YES"}
 
@@ -128,6 +317,18 @@ def _assignment_available_periods(
     assignment: Any,
     session: Session,
     constraints: TimetableConstraintRules | None,
+    *,
+    memo: AssignmentSessionDomainMemo | None = None,
+) -> list[int]:
+    if memo is not None:
+        return memo.available_periods(assignment, session)
+    return _assignment_available_periods_impl(assignment, session, constraints)
+
+
+def _assignment_available_periods_impl(
+    assignment: Any,
+    session: Session,
+    constraints: TimetableConstraintRules | None,
 ) -> list[int]:
     periods = class_available_periods(assignment.grade, assignment.class_name, session, constraints)
     if constraints is None:
@@ -172,18 +373,57 @@ def _assignment_block_allowed(
     start: int,
     duration: int,
     constraints: TimetableConstraintRules | None,
+    *,
+    memo: AssignmentSessionDomainMemo | None = None,
+) -> bool:
+    if memo is not None:
+        return memo.block_allowed(assignment, session, start, duration)
+    return _assignment_block_allowed_impl(
+        assignment,
+        session,
+        start,
+        duration,
+        constraints,
+        memo=None,
+    )
+
+
+def _assignment_block_allowed_impl(
+    assignment: Any,
+    session: Session,
+    start: int,
+    duration: int,
+    constraints: TimetableConstraintRules | None,
+    *,
+    memo: AssignmentSessionDomainMemo | None,
 ) -> bool:
     if duration <= 0:
         return False
-    allowed = set(_assignment_available_periods(assignment, session, constraints))
+    allowed = (
+        memo.available_period_set(assignment, session)
+        if memo is not None
+        else set(_assignment_available_periods(assignment, session, constraints))
+    )
     if not all(period in allowed for period in range(start, start + duration)):
         return False
     if constraints is None:
         return True
-    subject_rule = constraints.subject_rule_for(assignment.class_name, assignment.subject)
+    subject_rule = (
+        memo.subject_rule(assignment)
+        if memo is not None
+        else constraints.subject_rule_for(assignment.class_name, assignment.subject)
+    )
     if isinstance(subject_rule, Mapping) and not _subject_like_block_allowed(subject_rule, session, start, duration):
         return False
-    for _group_id, group_rule in constraints.subject_group_rules_for(assignment.class_name, assignment.subject):
+    group_rules = (
+        memo.subject_group_rules(assignment)
+        if memo is not None
+        else constraints.subject_group_rules_for(
+            assignment.class_name,
+            assignment.subject,
+        )
+    )
+    for _group_id, group_rule in group_rules:
         if isinstance(group_rule, Mapping) and not _subject_like_block_allowed(group_rule, session, start, duration):
             return False
     return True
@@ -193,15 +433,46 @@ def _assignment_period_capacity(
     assignment: Any,
     session: Session,
     constraints: TimetableConstraintRules | None,
+    *,
+    memo: AssignmentSessionDomainMemo | None = None,
 ) -> int:
-    allowed = _assignment_available_periods(assignment, session, constraints)
+    if memo is not None:
+        return memo.period_capacity(assignment, session)
+    return _assignment_period_capacity_impl(
+        assignment,
+        session,
+        constraints,
+        memo=None,
+    )
+
+
+def _assignment_period_capacity_impl(
+    assignment: Any,
+    session: Session,
+    constraints: TimetableConstraintRules | None,
+    *,
+    memo: AssignmentSessionDomainMemo | None,
+) -> int:
+    allowed = _assignment_available_periods(
+        assignment,
+        session,
+        constraints,
+        memo=memo,
+    )
     if not allowed:
         return 0
     best = 0
     max_period = max(allowed)
     for start in allowed:
         for duration in range(1, max_period - start + 2):
-            if _assignment_block_allowed(assignment, session, start, duration, constraints):
+            if _assignment_block_allowed(
+                assignment,
+                session,
+                start,
+                duration,
+                constraints,
+                memo=memo,
+            ):
                 best = max(best, duration)
     return best
 
@@ -211,14 +482,28 @@ def _teacher_session_period_capacity(
     teacher: str,
     session: Session,
     constraints: TimetableConstraintRules | None,
+    *,
+    memo: AssignmentSessionDomainMemo | None = None,
 ) -> int:
     periods: set[int] = set()
     for assignment in data.assignments:
         if assignment.teacher != teacher:
             continue
-        if not _assignment_session_allowed(assignment, session, constraints):
+        if not _assignment_session_allowed(
+            assignment,
+            session,
+            constraints,
+            memo=memo,
+        ):
             continue
-        periods.update(_assignment_available_periods(assignment, session, constraints))
+        periods.update(
+            _assignment_available_periods(
+                assignment,
+                session,
+                constraints,
+                memo=memo,
+            )
+        )
     if not periods:
         return 0
     return min(teacher_session_capacity(session), len(periods))
@@ -228,18 +513,49 @@ def _assignment_session_allowed(
     assignment: Any,
     session: Session,
     constraints: TimetableConstraintRules | None,
+    *,
+    memo: AssignmentSessionDomainMemo | None = None,
+) -> bool:
+    if memo is not None:
+        return memo.session_allowed(assignment, session)
+    return _assignment_session_allowed_impl(
+        assignment,
+        session,
+        constraints,
+        memo=None,
+    )
+
+
+def _assignment_session_allowed_impl(
+    assignment: Any,
+    session: Session,
+    constraints: TimetableConstraintRules | None,
+    *,
+    memo: AssignmentSessionDomainMemo | None,
 ) -> bool:
     if constraints is None:
         return True
     session_key = _session_key(session)
-    subject_rule = constraints.subject_rule_for(assignment.class_name, assignment.subject)
+    subject_rule = (
+        memo.subject_rule(assignment)
+        if memo is not None
+        else constraints.subject_rule_for(assignment.class_name, assignment.subject)
+    )
     allowed = subject_rule.get("sessionAllowed") if isinstance(subject_rule, Mapping) else None
     if isinstance(allowed, Mapping):
         if session_key == "sang" and allowed.get("allowMorning") is False:
             return False
         if session_key == "chieu" and allowed.get("allowAfternoon") is False:
             return False
-    for _group_id, group_rule in constraints.subject_group_rules_for(assignment.class_name, assignment.subject):
+    group_rules = (
+        memo.subject_group_rules(assignment)
+        if memo is not None
+        else constraints.subject_group_rules_for(
+            assignment.class_name,
+            assignment.subject,
+        )
+    )
+    for _group_id, group_rule in group_rules:
         allowed = group_rule.get("sessionAllowed") if isinstance(group_rule, Mapping) else None
         if not isinstance(allowed, Mapping):
             continue
@@ -255,16 +571,57 @@ def _assignment_session_cap(
     session: Session,
     base_cap: int,
     constraints: TimetableConstraintRules | None,
+    *,
+    memo: AssignmentSessionDomainMemo | None = None,
+) -> int:
+    if memo is not None:
+        return memo.session_cap(assignment, session, base_cap)
+    return _assignment_session_cap_impl(
+        assignment,
+        session,
+        base_cap,
+        constraints,
+        memo=None,
+    )
+
+
+def _assignment_session_cap_impl(
+    assignment: Any,
+    session: Session,
+    base_cap: int,
+    constraints: TimetableConstraintRules | None,
+    *,
+    memo: AssignmentSessionDomainMemo | None,
 ) -> int:
     if constraints is None:
         return base_cap
     session_key = _session_key(session)
-    cap = min(base_cap, _assignment_period_capacity(assignment, session, constraints))
-    subject_rule = constraints.subject_rule_for(assignment.class_name, assignment.subject)
+    cap = min(
+        base_cap,
+        _assignment_period_capacity(
+            assignment,
+            session,
+            constraints,
+            memo=memo,
+        ),
+    )
+    subject_rule = (
+        memo.subject_rule(assignment)
+        if memo is not None
+        else constraints.subject_rule_for(assignment.class_name, assignment.subject)
+    )
     subject_cap = _to_int(_get_path(subject_rule, f"maxPeriods.{session_key}", 0), 0)
     if subject_cap > 0:
         cap = min(cap, subject_cap)
-    for _group_id, group_rule in constraints.subject_group_rules_for(assignment.class_name, assignment.subject):
+    group_rules = (
+        memo.subject_group_rules(assignment)
+        if memo is not None
+        else constraints.subject_group_rules_for(
+            assignment.class_name,
+            assignment.subject,
+        )
+    )
+    for _group_id, group_rule in group_rules:
         group_cap = _to_int(_get_path(group_rule, f"maxPeriods.{session_key}", 0), 0)
         if group_cap > 0:
             cap = min(cap, group_cap)
