@@ -3137,7 +3137,7 @@ def _solver_worker_count(settings: Mapping[str, Any] | None = None) -> int:
     cpu_count = max(1, int(os.cpu_count() or 1))
     env_cap_raw = os.environ.get("TKB_SOLVER_MAX_WORKERS")
     env_cap = _to_int(env_cap_raw, 0) if env_cap_raw not in (None, "") else 0
-    worker_cap = max(1, min(64, env_cap if env_cap > 0 else cpu_count))
+    worker_cap = max(1, min(cpu_count, env_cap if env_cap > 0 else cpu_count))
     raw = (
         settings.get("num_workers")
         if settings.get("num_workers") not in (None, "")

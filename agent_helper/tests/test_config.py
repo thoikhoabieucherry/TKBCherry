@@ -69,6 +69,16 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(requested.cpu_workers, 12)
         self.assertEqual(requested.max_memory_mb, 16 * 1024)
 
+    @patch("agent_helper.config._physical_memory_bytes", return_value=2 * 1024**4)
+    @patch("agent_helper.config.os.cpu_count", return_value=512)
+    def test_large_hosts_are_not_cut_to_legacy_cpu_or_ram_caps(
+        self, cpu_count: object, physical_memory: object
+    ) -> None:
+        del cpu_count, physical_memory
+        config = AgentConfig.from_mapping({})
+        self.assertEqual(config.cpu_workers, 512)
+        self.assertEqual(config.max_memory_mb, 2 * 1024 * 1024)
+
     def test_rejects_nonfinite_numbers_in_mapping_and_json(self) -> None:
         with self.assertRaises(ConfigError):
             AgentConfig.from_mapping({"heartbeat_seconds": float("nan")})

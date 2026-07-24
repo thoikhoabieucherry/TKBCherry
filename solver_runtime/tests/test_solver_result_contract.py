@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -36,6 +37,7 @@ from tkb_new.adapter import (  # noqa: E402
     _repair_one_period_affected_class_cluster,
     _session_cp_sat_linearization_level,
     _settings_for_optimization_focus,
+    _solver_worker_count,
     _solve_fast_tight_fixed_off_benders,
     _solve_two_stage_concrete_refinement,
     _solve_unified_first_click_feasibility_then_quality,
@@ -150,6 +152,13 @@ def _first_click_payload(
 
 
 class SolverResultContractTests(unittest.TestCase):
+    def test_solver_worker_count_uses_all_reported_cpu_without_legacy_64_cap(self) -> None:
+        with (
+            patch("tkb_new.adapter.os.cpu_count", return_value=512),
+            patch.dict(os.environ, {"TKB_SOLVER_MAX_WORKERS": "512"}, clear=False),
+        ):
+            self.assertEqual(_solver_worker_count({"num_workers": 512}), 512)
+
     def test_two_stage_quality_prefers_sessions_before_gap_debt(self) -> None:
         incumbent = _first_click_payload(teacher_sessions=509, gap1=83)["metrics"]
         compressed = _first_click_payload(teacher_sessions=488, gap1=69)["metrics"]

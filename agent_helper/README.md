@@ -62,11 +62,11 @@ python -m agent_helper --config agent-helper.json --once
 ## Cấu hình chính
 
 - `api_base`: mặc định `https://tkbcherry.com/api/agent-helper/v1`; bắt buộc HTTPS. HTTP chỉ được chấp nhận cho `localhost`/loopback khi bật rõ `allow_local_http`.
-- `cpu_workers`: mặc định cho phép tối đa toàn bộ CPU logic của máy, nhưng không ép solver dùng hết. Agent tự chọn theo tải: 2 worker cho TKB nhỏ, 4 cho lượt xếp mới cỡ phổ biến, 3 cho lượt tối ưu cùng cỡ và tối đa 6 cho dữ liệu lớn hơn. `TKB_SOLVER_MAX_WORKERS` cùng BLAS/OpenMP chặn mọi luồng ngoài mức đã chọn cho lượt đó.
+- `cpu_workers`: mặc định dùng toàn bộ CPU logic của máy cho mọi lượt xếp, không hạ Worker theo kích thước TKB và không giữ lại một lõi. Agent ghi đè cấu hình Worker cũ trong yêu cầu bằng đúng giới hạn máy đã khai báo. `TKB_SOLVER_MAX_WORKERS` chặn CP-SAT ở mức đó; BLAS/OpenMP vẫn để một luồng nhằm tránh nhân chồng số luồng ngoài CP-SAT.
 - `poll_wait_seconds`: thời gian long-poll, tối đa 60 giây.
 - `heartbeat_seconds`: chu kỳ gia hạn công việc đang chạy.
 - `solver_timeout_seconds`: trần thời gian tuyệt đối; giới hạn lease từ máy chủ có thể ngắn hơn.
-- `max_memory_mb`: mặc định cho phép đến toàn bộ RAM vật lý, nhưng đây chỉ là trần chứ không phải lượng RAM được đặt trước. Windows Job Object hoặc giới hạn địa chỉ Linux trong WSL dùng trần thích ứng 4 GB, 8 GB hoặc 16 GB theo kích thước TKB và không vượt mức người dùng cho phép.
+- `max_memory_mb`: mặc định cho phép đến toàn bộ RAM vật lý cho mọi kích thước TKB. Đây là trần an toàn chứ không phải lượng RAM được đặt trước; solver chỉ dùng phần thật sự cần. Windows Job Object hoặc giới hạn địa chỉ Linux trong WSL thực thi đúng trần toàn máy đã khai báo.
 - `max_request_bytes`, `max_result_bytes`, `max_stderr_bytes`: chặn dữ liệu hoặc log native quá lớn. stdout/stderr được hút song song qua pipe có backpressure và chỉ ghi tới giới hạn, nên tiến trình không thể làm đầy RAM hay ổ đĩa bằng log.
 
 Agent lưu một UUID vô danh tại `%LOCALAPPDATA%\TKBCherry\AgentHelper\agent-id` và token Agent đã được DPAPI bảo vệ tại file `agent-credential`; đồng thời dùng khóa hệ điều hành để không cho hai bản Agent chạy cùng lúc. Dữ liệu trường, yêu cầu xếp, kết quả và mật khẩu không được Agent lưu lâu dài. `deviceCode` chỉ tồn tại trong lúc ghép đôi; `workerToken` do `/hello` cấp chỉ tồn tại trong bộ nhớ đến khi Agent dừng hoặc đăng ký lại. Token, `workerToken` và các biến môi trường nhạy cảm bị loại khỏi môi trường solver con. stdin/stdout/stderr dùng file tạm delete-on-close và bị hệ điều hành xóa kể cả khi Agent bị đóng đột ngột; solver được chạy với `TKB_NO_LOGS=1`.

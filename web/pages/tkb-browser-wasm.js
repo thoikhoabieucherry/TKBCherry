@@ -1,9 +1,9 @@
 (function(root){
   "use strict";
 
-  const VERSION = "tkb-browser-wasm-executor-v12-full-resource-first-target";
+  const VERSION = "tkb-browser-wasm-executor-v13-native-full-resource";
   const AGENT_PROTOCOL = "tkb-agent-helper-v1";
-  const AGENT_VERSION = "1.6.29";
+  const AGENT_VERSION = "1.6.30";
   const SOLVER_PROTOCOL = "tkb-reference-solver-stdio-v1";
   const DIGEST_PROTOCOL = "tkb-json-tree-sha256-v1";
   const WORKER_URL = `tkb-browser-wasm-worker.js?v=${encodeURIComponent(VERSION)}`;

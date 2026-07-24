@@ -43,14 +43,14 @@ def make_lease(*, timeout: int = 3) -> Lease:
 
 
 class SolverRunnerTests(unittest.TestCase):
-    def test_workload_uses_only_the_workers_that_improve_search(self) -> None:
+    def test_every_workload_uses_all_workers_permitted_by_the_lease(self) -> None:
         cases = (
-            ("fresh_complete_first", 300, 2),
+            ("fresh_complete_first", 300, 1),
             ("fresh_complete_first", 1566, 4),
             ("refine_complete", 1566, 6),
-            ("fresh_complete_first", 3000, 6),
+            ("fresh_complete_first", 3000, 12),
         )
-        for solve_kind, expected, effective in cases:
+        for solve_kind, expected, requested in cases:
             with self.subTest(solve_kind=solve_kind, expected=expected):
                 lease = Lease(
                     job_id="job-adaptive",
@@ -62,23 +62,23 @@ class SolverRunnerTests(unittest.TestCase):
                         "settings": {
                             "expected_scheduled_periods": expected,
                             "ui_unified_solve_kind": solve_kind,
-                            "num_workers": 22,
+                            "num_workers": requested,
                         },
                     },
                     limits=LeaseLimits(cpu_workers=22, timeout_seconds=180),
                 )
                 request = SolverRunner._normalized_request(lease)
-                self.assertEqual(request["settings"]["num_workers"], effective)
+                self.assertEqual(request["settings"]["num_workers"], 22)
 
-    def test_workload_memory_limit_is_a_bounded_slice_of_permission(self) -> None:
-        for expected, effective_mb in ((300, 4096), (1566, 8192), (3000, 16384)):
+    def test_every_workload_can_use_all_permitted_physical_memory(self) -> None:
+        for expected in (300, 1566, 3000):
             with self.subTest(expected=expected):
                 request = {
                     "data": {},
                     "settings": {"expected_scheduled_periods": expected},
                 }
                 self.assertEqual(
-                    _effective_memory_limit_mb(request, 32 * 1024), effective_mb
+                    _effective_memory_limit_mb(request, 32 * 1024), 32 * 1024
                 )
         self.assertEqual(
             _effective_memory_limit_mb(

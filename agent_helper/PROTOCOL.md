@@ -290,7 +290,7 @@ A leased job is HTTP `200`:
 }
 ```
 
-`payload.data` and `payload.settings` must be objects. The Agent forwards the normalized payload and overwrites `settings.num_workers` with a workload-sized value that never exceeds the request, lease, local configuration, or physical CPU ceiling. Typical policies are 2 workers for a small timetable, 4 for a production-size fresh solve, 3 for its refinement, and at most 6 for a larger timetable. The configured RAM remains permission only; each Windows solver job receives an adaptive 4, 8, or 16 GB safety ceiling. The Agent also honors the smaller of `limits.timeoutSeconds`, its local timeout, and a positive `settings.reference_watchdog_deadline_ms`.
+`payload.data` and `payload.settings` must be objects. The Agent forwards the normalized payload and overwrites `settings.num_workers` with the full CPU capacity permitted by the lease and local physical-CPU configuration; stale lower request values and workload size do not reduce it. The configured physical RAM remains permission only rather than reserved memory, and every Windows or WSL solver job receives that full permitted ceiling. BLAS/OpenMP stay single-threaded so CP-SAT owns the declared parallelism without nested oversubscription. The Agent also honors the smaller of `limits.timeoutSeconds`, its local timeout, and a positive `settings.reference_watchdog_deadline_ms`.
 
 ## `POST /leases/{leaseId}/heartbeat`
 

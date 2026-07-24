@@ -25,71 +25,14 @@ from .models import Lease
 HeartbeatCallback = Callable[[float, float], bool]
 
 
-def _positive_int_value(value: Any) -> int:
-    if isinstance(value, bool):
-        return 0
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError, OverflowError):
-        return 0
-    return parsed if parsed > 0 else 0
-
-
-def _expected_period_count(request: Mapping[str, Any]) -> int:
-    settings = request.get("settings")
-    if isinstance(settings, Mapping):
-        expected = _positive_int_value(settings.get("expected_scheduled_periods"))
-        if expected:
-            return expected
-    data = request.get("data")
-    if isinstance(data, Mapping):
-        result = data.get("tkbSolverResult")
-        if isinstance(result, Mapping):
-            metrics = result.get("metrics")
-            if isinstance(metrics, Mapping):
-                return _positive_int_value(metrics.get("expected_periods"))
-    return 0
-
-
-def _recommended_cpu_workers(request: Mapping[str, Any]) -> int:
-    expected = _expected_period_count(request)
-    settings = request.get("settings")
-    solve_kind = ""
-    if isinstance(settings, Mapping):
-        solve_kind = str(settings.get("ui_unified_solve_kind") or "").strip().casefold()
-    if expected and expected <= 600:
-        return 2
-    if solve_kind == "refine_complete":
-        # Complete refinement is the expensive quality lane.  It is the
-        # Agent's exclusive executor, so reserve the same six-worker search
-        # width used by the VPS for production-sized timetables instead of
-        # spending the whole watchdog on a three-worker slice.
-        return 6
-    if not expected or expected <= 2_400:
-        return 4
-    return 6
-
-
 def _effective_cpu_workers(request: Mapping[str, Any], permitted: int) -> int:
-    ceiling = max(1, int(permitted))
-    settings = request.get("settings")
-    requested = 0
-    if isinstance(settings, Mapping):
-        requested = _positive_int_value(settings.get("num_workers"))
-    if requested <= 0:
-        requested = ceiling
-    return max(1, min(ceiling, requested, _recommended_cpu_workers(request)))
+    del request
+    return max(1, int(permitted))
 
 
 def _effective_memory_limit_mb(request: Mapping[str, Any], permitted_mb: int) -> int:
-    expected = _expected_period_count(request)
-    if expected and expected <= 600:
-        recommended_mb = 4 * 1024
-    elif not expected or expected <= 2_400:
-        recommended_mb = 8 * 1024
-    else:
-        recommended_mb = 16 * 1024
-    return max(512, min(max(512, int(permitted_mb)), recommended_mb))
+    del request
+    return max(512, int(permitted_mb))
 
 
 def _reject_json_constant(value: str) -> None:

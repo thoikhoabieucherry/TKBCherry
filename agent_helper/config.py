@@ -78,7 +78,7 @@ def _physical_memory_bytes() -> int:
 
 def _physical_memory_mb() -> int:
     detected = _physical_memory_bytes() // (1024 * 1024)
-    return max(512, min(int(detected), 1_048_576))
+    return max(512, int(detected))
 
 
 def _default_max_memory_mb() -> int:
@@ -190,11 +190,12 @@ class AgentConfig:
             raise ConfigError("token_env must be a valid environment variable name")
 
         cpu_ceiling = _detected_cpu_workers()
+        memory_ceiling = _physical_memory_mb()
         requested_cpu_workers = _integer(
             "cpu_workers",
             values.get("cpu_workers", _default_cpu_workers()),
             1,
-            256,
+            max(256, cpu_ceiling),
         )
         checked: dict[str, Any] = {
             "api_base": _validate_api_base(
@@ -231,9 +232,9 @@ class AgentConfig:
                     "max_memory_mb",
                     values.get("max_memory_mb", _default_max_memory_mb()),
                     512,
-                    1_048_576,
+                    max(1_048_576, memory_ceiling),
                 ),
-                _physical_memory_mb(),
+                memory_ceiling,
             ),
             "max_request_bytes": _integer(
                 "max_request_bytes",
