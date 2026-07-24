@@ -8,21 +8,66 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.77** (full-resource Browser Agent,
-  bounded Quick/focused execution, and truthful local-compute state). The public
-  API marker is `tkb_new-rust-api-2026-07-24-bounded-browser-agent-v70`, the
-  bridge marker is `tkb-rust-api-v277-full-resource-automatic-budget`, the
-  Browser executor is `tkb-browser-wasm-executor-v12-full-resource-first-target`,
-  and the planner cache is `20260724-v177-full-resource-agent-v1`. The unchanged
-  constraints marker is `constraints-ui-v38-one-session-responsive-tables`.
-- Current public Agent release: **v1.6.29** (`1.6.29`). The normal owner-Agent
-  minimum lease gate remains 1.6.23, so 1.6.22 and older stay upgrade-only;
+- Current deployed application release: **v1.78** (full-resource Browser and
+  native Agents). The public API marker is
+  `tkb_new-rust-api-2026-07-24-full-resource-agent-v71`, the bridge marker is
+  `tkb-rust-api-v277-full-resource-automatic-budget`, the Browser executor is
+  `tkb-browser-wasm-executor-v13-native-full-resource`, and the planner cache is
+  `20260724-v178-native-full-resource-v1`. The unchanged constraints marker is
+  `constraints-ui-v38-one-session-responsive-tables`.
+- Current public Agent release: **v1.6.30** (`1.6.30`). The normal owner-Agent
+  minimum lease gate is 1.6.30, so 1.6.29 and older stay upgrade-only;
   the operator trusted-worker source and release contract remain 1.6.24. The
-  public owner-Agent source and Windows metadata are 1.6.29.
+  public owner-Agent source and Windows metadata are 1.6.30.
 - Every deployed application or packaged Agent update must increment the
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.78 full-resource native Agent (deployed 2026-07-24)
+
+- Native Agent no longer chooses 2/4/6 CPU workers from timetable size or
+  honors a stale lower `settings.num_workers`. Every fresh, Quick, Automatic,
+  and focused lease overwrites that setting with its full physical/logical CPU
+  capacity. The Python solver runtime also removes the former 64-worker cap;
+  the environment/physical CPU count remains the real ceiling.
+- Native Agent no longer slices its permitted memory into 4/8/16 GB. Windows
+  Job Object and WSL address-space enforcement receive the full configured
+  physical-RAM ceiling. This is permission rather than eager allocation; the
+  solver still consumes only memory it needs. BLAS/OpenMP remain one-threaded
+  so CP-SAT owns parallelism without nested oversubscription.
+- CPU and RAM configuration validation now accepts hosts above the former 256
+  logical CPU and 1 TiB ceilings while still clamping explicit values to the
+  detected machine. The example config omits both fields so defaults cannot
+  accidentally cap a larger host. Browser requests retain the same uncapped
+  `navigator.hardwareConcurrency` contract introduced in v1.77.
+- Agent 1.6.30 updates both Windows metadata and the private WSL runtime marker
+  to `20260724.1`. The server and Browser worker declare minimum version 1.6.30;
+  old native Agents therefore cannot claim a job with the legacy resource
+  policy before the Browser Agent or VPS.
+- GitHub Actions run `30092921949` built and smoke-tested the Windows candidate
+  on `windows-2022`. The downloaded artifact hashes matched
+  `candidate-hashes.json`; the local public ZIP contains exactly one root entry,
+  reports File/Product version 1.6.30, passes GUI and solver protocol smokes,
+  and its manifest verifies against the existing DPAPI-backed RSA key.
+- Local verification passes Node **354/354**, Agent **152/152** with one
+  platform skip, scheduler Python **219 passed / 3 skipped** plus **49** unittest
+  subtests, Browser WASM ABI, release signature/hash checks, JavaScript/Python
+  syntax, and `git diff --check`. Isolated VPS staging passes scheduler
+  **222/222**, Agent **152/152**, trusted worker **5/5**, Rust API **186/186**,
+  and validator **38/38**, ending with `STAGING_TESTS_OK`.
+- Transactional production deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260724-124144.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260724-124144.tar.gz`. Public
+  health is idle with zero active/queued jobs and `6/6` VPS worker tokens.
+- Signed-in in-app Browser acceptance loaded v1.78 and ran focused session
+  optimization through the Browser Agent with the truthful label
+  `Agent dang toi uu bang 22 Worker tren thiet bi`; public health retained all
+  `6/6` VPS tokens. The real 1,566-period default schedule reduced the displayed
+  session baseline from 653 to 523, stayed complete, and kept one-period teacher
+  sessions at zero. Turning Agent off sent a gap run to the VPS with all `6/6`
+  tokens, Stop returned `Da xep xong!`, and Agent was turned back on. Browser
+  console had no warning or error.
 
 ### v1.77 full-resource Browser Agent (deployed 2026-07-24)
 
@@ -63,10 +108,8 @@ change so a machine restart or a new conversation does not erase project context
   health is idle with zero active/queued jobs and `6/6` VPS worker tokens. The
   public WASM remains 1,104,120 bytes with SHA-256
   `e7d4ecc1942f404e2c95d561a3909ee9e2c0901db0eacc21ea4d8feea51edd37`.
-- Native Agent 1.6.29 still has its legacy per-workload 2/4/6 CPU and 4/8/16 GB
-  runtime slices. The v1.78/Agent 1.6.30 follow-up must remove those limits,
-  upgrade the WSL runtime marker, and gate old native Agents before this
-  full-resource policy is considered complete for every executor type.
+- Native Agent 1.6.29 still had legacy per-workload 2/4/6 CPU and 4/8/16 GB
+  runtime slices; v1.78/Agent 1.6.30 above supersedes that policy.
 
 ### v1.74 responsive progress and stable Stop (deployed 2026-07-24)
 
@@ -4084,29 +4127,29 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-24: `UPDATE_OK` for
-application v1.77. Public health serves
-`tkb_new-rust-api-2026-07-24-bounded-browser-agent-v70`; the page serves
-`20260724-v177-full-resource-agent-v1`, bridge marker
+application v1.78. Public health serves
+`tkb_new-rust-api-2026-07-24-full-resource-agent-v71`; the page serves
+`20260724-v178-native-full-resource-v1`, bridge marker
 `tkb-rust-api-v277-full-resource-automatic-budget`, and Browser executor
-`tkb-browser-wasm-executor-v12-full-resource-first-target`. The public WASM is
-1,104,120 bytes and matches SHA-256
-`e7d4ecc1942f404e2c95d561a3909ee9e2c0901db0eacc21ea4d8feea51edd37`.
+`tkb-browser-wasm-executor-v13-native-full-resource`. The public WASM is
+1,106,828 bytes and matches SHA-256
+`99627656c515211a404b1148cd367284449c94b9051447b4b855ff62d70a0f8d`.
 Public health is idle with zero active/queued jobs and `6/6` worker tokens.
 Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260724-121214.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260724-121214.tar.gz`.
-Public Agent release `1.6.29` and its signed manifest are live. The 88,001,209
+`/opt/cherry-scheduler-backups/server-state-20260724-124144.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260724-124144.tar.gz`.
+Public Agent release `1.6.30` and its signed manifest are live. The 88,053,147
 byte archive SHA-256 is
-`b36e5774f7e89402f7ffbb7075eb2541e7a63a1f874558abba128fe8ecfa25f6`; the
-88,559,299 byte executable SHA-256 is
-`ed60b70fd5d6aa08d41b4c551ad1261f61bb52078ef3e98689627b855afa0671`.
-On enforced Smart App Control systems Agent 1.6.29 starts hidden, prepares its
+`20e5f973cf6af2b0bd272ce703885e47b66f2cbf79671d66b378e6120616d321`; the
+88,610,917 byte executable SHA-256 is
+`6a80b1031ebfd42a17a6e8e0356a406407413196abbe3e7f95d372006bf5c143`.
+On enforced Smart App Control systems Agent 1.6.30 starts hidden, prepares its
 private WSL runtime automatically, and stays controllable from the Win32
-notification area. The exact local 1.6.29 copy is waiting only for the single
-Windows UAC confirmation before its live WSL1 acceptance can continue.
+notification area. Its WSL runtime marker is `20260724.1` so an existing private
+runtime receives the full-resource solver update.
 Stable active-status DOM histories, iPhone/PWA reattach, No-Agent/Cancel, and
 Agent handoff regressions remain covered by the local and isolated VPS suites.
-Owner Agents older than 1.6.23 are upgrade-only at the server lease gate.
+Owner Agents older than 1.6.30 are upgrade-only at the server lease gate.
 Trusted spillover remains disabled until a separate Linux node is accepted and
 its server digest is configured.
 
