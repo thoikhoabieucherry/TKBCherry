@@ -55,12 +55,19 @@ change so a machine restart or a new conversation does not erase project context
 - Local verification passes full Node **358/358**, focused Browser/UI
   **57/57**, Agent **155/155** with one platform skip, Rust API **186/186**,
   validator **38/38**, JavaScript/Python syntax, and `git diff --check`. The
-  Windows release artifact, VPS staging, deployment, and signed-in Browser
-  acceptance are still pending.
+  VPS staging, deployment, and signed-in Browser acceptance are still pending.
 - `agent_helper/build_windows.ps1` now uses a URI-backed relative-path helper
   instead of the PowerShell 7-only `System.IO.Path.GetRelativePath`. Packaging
   can therefore run under the workstation's Windows PowerShell 5.1 as well as
   the CI runner's PowerShell 7. Packaging contract tests pass **5/5**.
+- GitHub Actions run **30101934448** built and smoke-tested the Windows 1.6.31
+  candidate on `windows-2022`. Downloaded candidate sizes and hashes matched
+  `candidate-hashes.json`; the signed public ZIP is 88,054,539 bytes with
+  SHA-256 `402f4eba12db1b31aa923e0960450855a7314729c90c796889741b31a4aaaa96`,
+  and its 88,612,442-byte EXE has SHA-256
+  `6b1ad2a224713819c5ae0be98743f48a30df3601b00ec8b3c84a2ad6f3ebaece`.
+  File/Product version are both 1.6.31, the ZIP has exactly one root EXE, and
+  the DPAPI-backed signed manifest passes packaging/updater tests **15/15**.
 
 ### v1.80 durable school-store save (deployed 2026-07-24)
 
