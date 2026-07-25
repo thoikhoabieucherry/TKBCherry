@@ -4427,6 +4427,25 @@ and in permanent regression tests.
 
 ## Local Workspace Cleanup
 
+- On 2026-07-25 a second audit removed the obsolete local Agent 1.3.0 install,
+  its AgentHelper pairing/WSL state, broken startup and notification-area
+  registry entries, every top-level TKB/Cherry Temp artifact, and every `_MEI`
+  extraction positively identified by the Agent favicon marker. Three legacy
+  `_MEI` directories with damaged ACLs required an administrator-scoped cleanup;
+  the final inventory is zero matching TKB/Cherry Temp items and zero marked
+  Agent `_MEI` directories. Twelve unrelated `_MEI` directories were left
+  untouched.
+- The same pass removed ignored `.codex_tmp`, `.pytest_cache`, `archived_logs`,
+  `rust_server_e2e.log`, and the obsolete untracked `start.exe`. The one-time
+  `TEST_READY.md` status note was removed because its 41-test snapshot and
+  pending-SQLite warning were obsolete; live regression sources and runners were
+  retained. More than 5.4 GiB was directly measured as reclaimed in this pass,
+  in addition to the earlier roughly 6.07 GB repository build/cache cleanup.
+- Preserved `%LOCALAPPDATA%\TKBCherry\secrets\vps-password.dpapi`,
+  `%LOCALAPPDATA%\TKBCherry\ReleaseSigning`, all school data, source tests, and
+  the public Agent 1.6.31 ZIP/manifest still referenced by the download API.
+  The VPS already remained lean and healthy, so this workstation-only cleanup
+  required no production redeployment.
 - On 2026-07-18 the local tree was reduced from about 3.0 GiB to about 295 MiB
   (309,663,014 bytes), without removing application source, school data, or
   the published Agent package.
