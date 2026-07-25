@@ -362,7 +362,7 @@
     }
   };
 
-  const INDUSTRY_EXPORT_VERSION = '20260725-v194-industry-export-v2';
+  const INDUSTRY_EXPORT_VERSION = '20260725-v197-industry-font8-v1';
   const INDUSTRY_DAYS = ['thu2', 'thu3', 'thu4', 'thu5', 'thu6', 'thu7'];
   const INDUSTRY_PERIODS = 5;
   const INDUSTRY_FONT = 'Times New Roman';
@@ -806,22 +806,56 @@
     return next.replace(/<\/xf>$/, '<alignment shrinkToFit="1"/></xf>');
   }
 
+  function _industryLessonFont(stylesXml){
+    const match = String(stylesXml || '').match(/<fonts\b[^>]*count="(\d+)"[^>]*>([\s\S]*?)<\/fonts>/);
+    if(!match) return { xml:stylesXml, fontId:0 };
+    const fonts = match[2].match(/<font>[\s\S]*?<\/font>/g) || [];
+    const existing = fonts.findIndex(font => (
+      /<sz\s+val="8"\/>/.test(font)
+      && /<name\s+val="Times New Roman"\/>/.test(font)
+      && !/<b\/>/.test(font)
+    ));
+    if(existing >= 0) return { xml:stylesXml, fontId:existing };
+
+    const font = `<font><sz val="8"/><name val="${INDUSTRY_FONT}"/><color rgb="${INDUSTRY_BLACK}"/></font>`;
+    const replacement = match[0]
+      .replace(/count="\d+"/, `count="${fonts.length + 1}"`)
+      .replace('</fonts>', `${font}</fonts>`);
+    return {
+      xml:String(stylesXml).replace(match[0], replacement),
+      fontId:fonts.length
+    };
+  }
+
+  function _industryLessonStyleXml(xf, fontId){
+    const withFont = String(xf || '').replace(/<xf\b([^>]*)/, (_match, attrs) => {
+      let next = String(attrs || '');
+      if(/\bfontId="\d+"/.test(next)) next = next.replace(/\bfontId="\d+"/, `fontId="${fontId}"`);
+      else next += ` fontId="${fontId}"`;
+      if(/\bapplyFont="\d+"/.test(next)) next = next.replace(/\bapplyFont="\d+"/, 'applyFont="1"');
+      else next += ' applyFont="1"';
+      return `<xf${next}`;
+    });
+    return _industryShrinkStyleXml(withFont);
+  }
+
   function _industryAppendShrinkStyles(stylesXml, sourceIds){
-    const match = String(stylesXml || '').match(/<cellXfs\b[^>]*count="(\d+)"[^>]*>([\s\S]*?)<\/cellXfs>/);
-    if(!match) return { xml:stylesXml, styleMap:new Map() };
-    const styles = match[2].match(/<xf\b[^>]*(?:\/>|>[\s\S]*?<\/xf>)/g) || [];
+    const lessonFont = _industryLessonFont(stylesXml);
+    const match = String(lessonFont.xml || '').match(/<cellXfs\b[^>]*count="(\d+)"[^>]*>([\s\S]*?)<\/cellXfs>/);
+    if(!match) return { xml:lessonFont.xml, styleMap:new Map() };
+    const styles = match[2].match(/<xf\b[^>]*\/>|<xf\b[^>]*>[\s\S]*?<\/xf>/g) || [];
     const styleMap = new Map();
     const additions = [];
     Array.from(sourceIds).sort((a, b) => a - b).forEach(sourceId => {
       if(!styles[sourceId]) return;
       styleMap.set(sourceId, styles.length + additions.length);
-      additions.push(_industryShrinkStyleXml(styles[sourceId]));
+      additions.push(_industryLessonStyleXml(styles[sourceId], lessonFont.fontId));
     });
-    if(!additions.length) return { xml:stylesXml, styleMap };
+    if(!additions.length) return { xml:lessonFont.xml, styleMap };
     const replacement = match[0]
       .replace(/count="\d+"/, `count="${styles.length + additions.length}"`)
       .replace('</cellXfs>', `${additions.join('')}</cellXfs>`);
-    return { xml:String(stylesXml).replace(match[0], replacement), styleMap };
+    return { xml:String(lessonFont.xml).replace(match[0], replacement), styleMap };
   }
 
   function _industryPatchLessonStyles(xml, styleMap){

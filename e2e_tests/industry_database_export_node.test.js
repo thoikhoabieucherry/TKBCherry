@@ -130,10 +130,36 @@ async function savedWorkbookXml(context, bytes){
   };
 }
 
-function styleXmlAt(stylesXml, styleId){
+function cellXfXmlList(stylesXml){
   const block = stylesXml.match(/<cellXfs\b[^>]*>[\s\S]*?<\/cellXfs>/)?.[0] || "";
-  const styles = block.match(/<xf\b[^>]*(?:\/>|>[\s\S]*?<\/xf>)/g) || [];
-  return styles[Number(styleId)] || "";
+  return block.match(/<xf\b[^>]*\/>|<xf\b[^>]*>[\s\S]*?<\/xf>/g) || [];
+}
+
+function styleXmlAt(stylesXml, styleId){
+  return cellXfXmlList(stylesXml)[Number(styleId)] || "";
+}
+
+function fontXmlAt(stylesXml, fontId){
+  const block = stylesXml.match(/<fonts\b[^>]*>[\s\S]*?<\/fonts>/)?.[0] || "";
+  const fonts = block.match(/<font>[\s\S]*?<\/font>/g) || [];
+  return fonts[Number(fontId)] || "";
+}
+
+function cellStyleId(sheetXml, address){
+  return String(sheetXml || "").match(new RegExp(`<c\\s+[^>]*r="${address}"[^>]*\\bs="(\\d+)"`))?.[1] || "";
+}
+
+function assertCellFont(saved, sheetXml, address, size, bold){
+  const styleId = cellStyleId(sheetXml, address);
+  assert.ok(styleId, `${address} style is missing`);
+  const style = styleXmlAt(saved.styles, styleId);
+  const fontId = style.match(/\bfontId="(\d+)"/)?.[1];
+  assert.ok(fontId, `${address} font is missing`);
+  const font = fontXmlAt(saved.styles, fontId);
+  assert.match(font, new RegExp(`<sz val="${size}"\\/>`));
+  assert.match(font, /<name val="Times New Roman"\/>/);
+  if(bold) assert.match(font, /<b\/>/);
+  else assert.doesNotMatch(font, /<b\/>/);
 }
 
 test("requirements menu exposes the industry conversion directly below Print TKB", () => {
@@ -142,7 +168,7 @@ test("requirements menu exposes the industry conversion directly below Print TKB
   assert.ok(printIndex >= 0 && industryIndex > printIndex);
   assert.match(menuSource, /Chuyển CSDL ngành/);
   assert.match(plannerSource, /key === "industry-database"[\s\S]*?exportIndustryDatabaseExcel/);
-  assert.match(plannerHtml, /tkb-export\.js\?v=20260725-v194-industry-export-v2/);
+  assert.match(plannerHtml, /tkb-export\.js\?v=20260725-v197-industry-font8-v1/);
   assert.match(plannerHtml, /tkb-constraints-menu\.js\?v=20260725-v194-industry-export-v2/);
 });
 
@@ -199,19 +225,44 @@ test("industry export matches the three-sheet sample and uses MaGV2 in timetable
   assert.match(saved.pcgd, /<pageSetup paperSize="9" orientation="landscape"\/>/);
   assert.match(saved.morning, /<col min="1" max="1"[^>]*width="4\.625"/);
   assert.match(saved.morning, /<col min="3" max="3"[^>]*width="12\.125"/);
-  const c6Style = saved.morning.match(/<c\s+[^>]*r="C6"[^>]*\bs="(\d+)"/)?.[1];
+  const declaredStyleCount = Number(saved.styles.match(/<cellXfs\b[^>]*count="(\d+)"/)?.[1] || -1);
+  const cellStyles = cellXfXmlList(saved.styles);
+  assert.equal(declaredStyleCount, cellStyles.length, "cellXfs count must match the actual style list");
+  for(const sheetXml of [saved.morning, saved.afternoon, saved.pcgd]){
+    for(const match of sheetXml.matchAll(/<c\b[^>]*\bs="(\d+)"[^>]*>/g)){
+      assert.ok(Number(match[1]) < declaredStyleCount, `cell style ${match[1]} must be inside cellXfs`);
+    }
+  }
+  const c6Style = cellStyleId(saved.morning, "C6");
   assert.ok(c6Style, "saved C6 style is missing");
-  assert.match(styleXmlAt(saved.styles, c6Style), /<alignment[^>]*shrinkToFit="1"/);
-  assert.doesNotMatch(styleXmlAt(saved.styles, c6Style), /wrapText=/);
+  const c6StyleXml = styleXmlAt(saved.styles, c6Style);
+  const c6FontId = c6StyleXml.match(/\bfontId="(\d+)"/)?.[1];
+  assert.ok(c6FontId, "saved C6 font is missing");
+  assert.match(c6StyleXml, /<alignment[^>]*shrinkToFit="1"/);
+  assert.doesNotMatch(c6StyleXml, /wrapText=/);
+  assert.match(fontXmlAt(saved.styles, c6FontId), /<sz val="8"\/>/);
+  assert.match(fontXmlAt(saved.styles, c6FontId), /<name val="Times New Roman"\/>/);
+  assert.doesNotMatch(fontXmlAt(saved.styles, c6FontId), /<b\/>/);
   const lessonStyleIds = new Set();
-  for(const match of saved.morning.matchAll(/<c\s+[^>]*r="([C-Z]+)([6-9]|[12]\d|3[0-5])"[^>]*\bs="(\d+)"/g)){
-    lessonStyleIds.add(match[3]);
+  for(const sheetXml of [saved.morning, saved.afternoon]){
+    for(const match of sheetXml.matchAll(/<c\s+[^>]*r="([A-Z]+)([6-9]|[12]\d|3[0-5])"[^>]*\bs="(\d+)"/g)){
+      if(context.XLSX.utils.decode_col(match[1]) >= 2) lessonStyleIds.add(match[3]);
+    }
   }
   assert.ok(lessonStyleIds.size > 0);
   lessonStyleIds.forEach(styleId => {
-    assert.match(styleXmlAt(saved.styles, styleId), /<alignment[^>]*shrinkToFit="1"/);
-    assert.doesNotMatch(styleXmlAt(saved.styles, styleId), /wrapText=/);
+    const styleXml = styleXmlAt(saved.styles, styleId);
+    const fontId = styleXml.match(/\bfontId="(\d+)"/)?.[1];
+    assert.ok(fontId, `lesson style ${styleId} font is missing`);
+    assert.match(styleXml, /<alignment[^>]*shrinkToFit="1"/);
+    assert.doesNotMatch(styleXml, /wrapText=/);
+    assert.match(fontXmlAt(saved.styles, fontId), /<sz val="8"\/>/);
+    assert.match(fontXmlAt(saved.styles, fontId), /<name val="Times New Roman"\/>/);
+    assert.doesNotMatch(fontXmlAt(saved.styles, fontId), /<b\/>/);
   });
+  assertCellFont(saved, saved.morning, "C5", 9, true);
+  assertCellFont(saved, saved.pcgd, "A1", 10, true);
+  assertCellFont(saved, saved.pcgd, "B2", 11, false);
   assert.match(saved.styles, /<font><sz val="24"\/><name val="Times New Roman"\/><b\/>/);
   assert.match(saved.styles, /<font><sz val="26"\/><name val="Times New Roman"\/><b\/>/);
   assert.match(saved.styles, /<font><sz val="10"\/><name val="Times New Roman"\/><b\/>/);

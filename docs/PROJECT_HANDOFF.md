@@ -8,11 +8,16 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.96** (mobile assignment controls;
+- Current deployed application release: **v1.97** (industry timetable font 8;
   deployed 2026-07-25).
   Transactional backups are
-  `/opt/cherry-scheduler-backups/server-state-20260725-131205.tar.gz` and
-  `/opt/cherry-scheduler-backups/app-release-20260725-131205.tar.gz`.
+  `/opt/cherry-scheduler-backups/server-state-20260725-140140.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260725-140140.tar.gz`.
+- v1.97 changes only the `Chuyen CSDL nganh` workbook serializer. It retains
+  the v1.96 administration UI, v1.95 desktop quick-add presentation, v1.94
+  statistics/export structure, and the v1.93 API v80 scheduler and Agent
+  routing. Public health is idle with zero active/queued jobs and all `6/6`
+  worker tokens available.
 - v1.96 changes only administration UI behavior. It retains the v1.95 desktop
   quick-add presentation, v1.94 statistics/export behavior, and the v1.93 API
   v80 scheduler, Agent routing, and immediate local Worker release. Public
@@ -43,6 +48,27 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.97 industry timetable font 8 (deployed)
+
+- Every lesson cell in `TKB_LOP_S` and `TKB_LOP_C` now has an actual normal
+  Times New Roman 8-point font in the saved XLSX. It still uses shrink-to-fit
+  for long content, but no longer relies on Excel shrinking an incorrectly
+  mapped 26-point or 11-point style.
+- The OpenXML `cellXfs` parser now handles self-closing and paired `xf` entries
+  as disjoint forms. New lesson styles are appended at their true indices,
+  `cellXfs count` equals the actual style count, and every worksheet cell style
+  reference remains in range. PCGD fonts and timetable/header fonts are
+  explicitly regression-checked and unchanged.
+- Cache marker: `20260725-v197-industry-font8-v1`. The focused industry suite
+  passes **5/5** and full local Node verification passes **396/396**. A written
+  workbook verified `cellXfs 29/29`, lesson `C6 -> style 27 -> fontId 11 ->
+  Times New Roman 8`, with PCGD retaining its separate valid styles. JavaScript
+  syntax and `git diff --check` pass.
+- Production deployment returned `UPDATE_OK` with the backups listed above.
+  The live page serves the v1.97 cache key, the deployed exporter is byte-for-
+  byte identical to the tested source, and public health is idle at `6/6`
+  Worker tokens.
 
 ### v1.96 mobile assignment controls (deployed)
 
@@ -4663,7 +4689,7 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-25: `UPDATE_OK` for
-application v1.96. Public health serves
+application v1.97. Public health serves
 `tkb_new-rust-api-2026-07-25-vps-priority-v80`; the planner serves
 `20260725-v193-vps-worker-release-v1`, bridge marker
 `tkb-rust-api-v288-vps-worker-release`, and Browser executor
@@ -4671,8 +4697,8 @@ application v1.96. Public health serves
 `20260725-v188-compact-super-admin-v2`.
 Public health is idle with zero active/queued jobs and `6/6` worker tokens.
 Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260725-131205.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260725-131205.tar.gz`.
+`/opt/cherry-scheduler-backups/server-state-20260725-140140.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260725-140140.tar.gz`.
 Public Agent release `1.6.31` and its signed manifest are live. The 88,054,539
 byte archive SHA-256 is
 `402f4eba12db1b31aa923e0960450855a7314729c90c796889741b31a4aaaa96`; the
