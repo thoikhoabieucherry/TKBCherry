@@ -166,10 +166,11 @@ test("requirements menu exposes the industry conversion directly below Print TKB
   const printIndex = menuSource.indexOf(">In TKB <");
   const industryIndex = menuSource.indexOf('data-rb-print="industry-database"');
   assert.ok(printIndex >= 0 && industryIndex > printIndex);
-  assert.match(menuSource, /Chuyển CSDL ngành/);
+  assert.match(menuSource, /Xuất CSDL ngành/);
+  assert.doesNotMatch(menuSource, /Chuyển CSDL ngành/);
   assert.match(plannerSource, /key === "industry-database"[\s\S]*?exportIndustryDatabaseExcel/);
   assert.match(plannerHtml, /tkb-export\.js\?v=20260725-v197-industry-font8-v1/);
-  assert.match(plannerHtml, /tkb-constraints-menu\.js\?v=20260725-v194-industry-export-v2/);
+  assert.match(plannerHtml, /tkb-constraints-menu\.js\?v=20260725-v198-industry-export-label-v1/);
 });
 
 test("industry export matches the three-sheet sample and uses MaGV2 in timetable cells", async () => {

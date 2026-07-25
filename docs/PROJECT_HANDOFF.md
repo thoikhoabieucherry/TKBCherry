@@ -8,11 +8,15 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.97** (industry timetable font 8;
+- Current deployed application release: **v1.98** (industry export label;
   deployed 2026-07-25).
   Transactional backups are
-  `/opt/cherry-scheduler-backups/server-state-20260725-140140.tar.gz` and
-  `/opt/cherry-scheduler-backups/app-release-20260725-140140.tar.gz`.
+  `/opt/cherry-scheduler-backups/server-state-20260725-143013.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260725-143013.tar.gz`.
+- v1.98 changes only the visible industry-export command label and menu cache
+  key. It retains the v1.97 workbook font/style fix, v1.96 administration UI,
+  and the existing API v80 scheduler and Agent routing. Public health is idle
+  with zero active/queued jobs and all `6/6` worker tokens available.
 - v1.97 changes only the `Chuyen CSDL nganh` workbook serializer. It retains
   the v1.96 administration UI, v1.95 desktop quick-add presentation, v1.94
   statistics/export structure, and the v1.93 API v80 scheduler and Agent
@@ -48,6 +52,18 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.98 industry export label (deployed)
+
+- The requirements menu now labels the command `Xuat CSDL nganh`; the former
+  `Chuyen CSDL nganh` wording is removed from both menu definitions. No XLSX,
+  scheduling, data, or Agent behavior changed.
+- Cache marker: `20260725-v198-industry-export-label-v1`. The focused export
+  suite passes **5/5**, full local Node verification passes **396/396**,
+  JavaScript syntax passes, and `git diff --check` is clean.
+- Production deployment returned `UPDATE_OK` with the backups listed above.
+  Live in-app Browser acceptance confirmed the new label, absence of the old
+  label, the v1.98 cache key, and no warning/error logs.
 
 ### v1.97 industry timetable font 8 (deployed)
 
@@ -4689,7 +4705,7 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-25: `UPDATE_OK` for
-application v1.97. Public health serves
+application v1.98. Public health serves
 `tkb_new-rust-api-2026-07-25-vps-priority-v80`; the planner serves
 `20260725-v193-vps-worker-release-v1`, bridge marker
 `tkb-rust-api-v288-vps-worker-release`, and Browser executor
@@ -4697,8 +4713,8 @@ application v1.97. Public health serves
 `20260725-v188-compact-super-admin-v2`.
 Public health is idle with zero active/queued jobs and `6/6` worker tokens.
 Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260725-140140.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260725-140140.tar.gz`.
+`/opt/cherry-scheduler-backups/server-state-20260725-143013.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260725-143013.tar.gz`.
 Public Agent release `1.6.31` and its signed manifest are live. The 88,054,539
 byte archive SHA-256 is
 `402f4eba12db1b31aa923e0960450855a7314729c90c796889741b31a4aaaa96`; the
