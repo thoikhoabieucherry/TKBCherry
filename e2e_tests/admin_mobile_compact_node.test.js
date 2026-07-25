@@ -17,7 +17,7 @@ test("admin loads the balanced data-column assets after legacy themes", () => {
   const themeIndex = appHtml.indexOf("theme-light.css");
   const runtimeIndex = appHtml.indexOf("runtime.css");
   const compactIndex = appHtml.indexOf(
-    "admin-mobile-compact.css?v=20260725-v194-balanced-data-columns-v1"
+    "admin-mobile-compact.css?v=20260725-v195-desktop-quick-wand-v1"
   );
 
   assert.ok(themeIndex >= 0 && runtimeIndex > themeIndex);
@@ -60,7 +60,11 @@ test("mobile command row uses icons without hiding accessible names", () => {
 test("data actions collapse to one icon toolbar and safe overflow menus", () => {
   assert.match(appSource, /function appUiIcon\(name\)/);
   assert.match(appSource, /function appQuickAddDetails\(content\)/);
-  assert.match(compactCss, /body\.app-shell-body \.app-quick-add-details:not\(\[open\]\) > \.quick-add-control\s*\{[\s\S]*?display:\s*inline-flex/);
+  assert.match(appSource, /appQuickAddDetails[\s\S]*?appUiIcon\("wand"\)/);
+  assert.match(compactCss, /\.app-quick-add-details\s*\{[\s\S]*?position:\s*relative[\s\S]*?display:\s*block/);
+  assert.match(compactCss, /\.app-quick-add-details > summary\s*\{[\s\S]*?display:\s*flex/);
+  assert.match(compactCss, /body\.app-shell-body \.app-quick-add-details:not\(\[open\]\) > \.quick-add-control\s*\{[\s\S]*?display:\s*none/);
+  assert.match(compactCss, /body\.app-shell-body \.app-quick-add-details\[open\] > \.quick-add-control\s*\{[\s\S]*?position:\s*absolute[\s\S]*?display:\s*inline-flex/);
   assert.match(appSource, /function appMobileDeleteMenu\(section, selectedCount\)/);
   assert.match(appSource, /class="action-bar action-bar-data\$\{quickAdd \? " has-quick-add" : ""\}"/);
   assert.match(appSource, /class="app-mobile-actions-popover"/);

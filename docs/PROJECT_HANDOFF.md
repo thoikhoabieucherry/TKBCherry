@@ -8,12 +8,16 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.94** (statistics contract,
-  balanced administration tables, restored desktop quick controls, and CSDL
-  nganh export; deployed 2026-07-25).
+- Current deployed application release: **v1.95** (desktop quick-add wand;
+  deployed 2026-07-25).
   Transactional backups are
-  `/opt/cherry-scheduler-backups/server-state-20260725-114036.tar.gz` and
-  `/opt/cherry-scheduler-backups/app-release-20260725-114036.tar.gz`.
+  `/opt/cherry-scheduler-backups/server-state-20260725-122057.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260725-122057.tar.gz`.
+- v1.95 changes only the administration quick-add presentation. It retains the
+  v1.94 statistics, export, and responsive table behavior plus the v1.93 API
+  v80 scheduler, Agent routing, and immediate local Worker release. Public
+  health is idle with zero active/queued jobs and all `6/6` worker tokens
+  available.
 - v1.94 changes only web UI, statistics, and export behavior. It retains the
   v1.93 API v80 scheduler, Agent routing, and immediate local Worker release.
   Public health is idle with zero active/queued jobs and all `6/6` worker
@@ -34,6 +38,23 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.95 desktop quick-add wand (deployed)
+
+- Desktop administration toolbars now expose the same wand icon used on
+  mobile. The icon toggles a compact anchored `Them nhanh` popover instead of
+  leaving the quick fields inline and visually unlabelled. Clicking the wand a
+  second time or clicking outside closes it. The existing mobile wand layout
+  and controls remain unchanged.
+- Cache marker: `20260725-v195-desktop-quick-wand-v1`. Full local Node
+  verification passes **395/395**; the focused administration suite passes
+  **5/5**, JavaScript syntax passes, and `git diff --check` is clean.
+- Production deployment returned `UPDATE_OK` with the backups listed above.
+  Live in-app Browser acceptance at 1280px confirmed the wand is visible, the
+  popover is closed initially, opens below the icon without horizontal
+  overflow, and closes on the second click. At 390px the existing mobile wand
+  remained visible and closed with no page overflow. Console warnings and
+  errors were empty.
 
 ### v1.94 statistics, administration tables, and industry export (deployed)
 

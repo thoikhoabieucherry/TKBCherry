@@ -1,5 +1,5 @@
 /* Compact administration controls. Loaded last so legacy theme rules cannot
-   expand the mobile toolbar again. Desktop geometry remains unchanged. */
+   expand the responsive toolbar again. */
 .app-nav-icon,
 .app-command-icon,
 .app-ui-icon {
@@ -16,20 +16,41 @@
 }
 
 .app-quick-add-details {
-  display: contents;
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
 }
 
-.app-quick-add-details > summary,
+.app-quick-add-details > summary {
+  display: flex;
+  list-style: none;
+}
+
+.app-quick-add-details > summary::-webkit-details-marker {
+  display: none;
+}
+
 .app-mobile-actions-menu {
   display: none;
 }
 
-.app-quick-add-details > .quick-add-control {
-  display: inline-flex;
+body.app-shell-body .app-quick-add-details:not([open]) > .quick-add-control {
+  display: none;
 }
 
-body.app-shell-body .app-quick-add-details:not([open]) > .quick-add-control {
+body.app-shell-body .app-quick-add-details[open] > .quick-add-control {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
   display: inline-flex;
+  width: max-content;
+  max-width: min(720px, calc(100vw - 32px));
+  padding: 8px;
+  border: 1px solid #d8e3f2;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgb(15 23 42 / 14%);
 }
 
 .app-action-button,
