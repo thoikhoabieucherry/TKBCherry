@@ -2301,6 +2301,11 @@ test("desktop scheduler modes map to one focused backend contract", () => {
       assert.equal(effective.browser_wasm_session_deep_max_waves, 16);
       assert.equal(effective.browser_wasm_session_wave_deadline_ms, 15000);
     }
+    if(focus === "gaps"){
+      assert.equal(effective.browser_wasm_gap_progressive_search, true);
+      assert.equal(effective.browser_wasm_gap_max_waves, 4);
+      assert.equal(effective.browser_wasm_gap_wave_deadline_ms, 15000);
+    }
   });
 
   const quickData = makeData(2);

@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v284-live-focused-stats";
+  const VERSION = "tkb-rust-api-v286-session-gap-quality";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -15891,6 +15891,9 @@
     settings.optimization_focus = "gaps";
     settings.optimization_two_stage_teacher_quality = true;
     settings.optimization_refine_try_lower_session_cap = false;
+    settings.browser_wasm_gap_progressive_search = true;
+    settings.browser_wasm_gap_max_waves = 4;
+    settings.browser_wasm_gap_wave_deadline_ms = 15000;
     settings.minimize_sessions = false;
     settings.minimize_teacher_gaps = true;
     settings.period_max_teacher_gap = 1;

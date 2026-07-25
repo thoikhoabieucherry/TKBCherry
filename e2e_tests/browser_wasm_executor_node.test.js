@@ -165,7 +165,7 @@ function completePortfolioCandidate(canonical, marker, metrics = {}){
   };
 }
 
-async function exercisePortfolioCandidates(canonical, candidates, navigator){
+async function exercisePortfolioCandidates(canonical, candidates, navigator, contextOverrides = {}){
   const workerPayloads = [];
   const workerMessages = [];
   const failures = [];
@@ -240,7 +240,7 @@ async function exercisePortfolioCandidates(canonical, candidates, navigator){
     if(pathname.endsWith("/lease")) return new Promise(() => {});
     throw new Error(`unexpected request ${pathname}`);
   };
-  const {context} = executorContext({navigator, fetch, Worker:FakeWorker});
+  const {context} = executorContext({...contextOverrides, navigator, fetch, Worker:FakeWorker});
   assert.equal(await context.TKBBrowserWasmExecutor.probe({
     apiBase:"https://tkbcherry.com",
     request:canonical
@@ -367,9 +367,9 @@ test("focused session Agent chains each improved wave into the next diversified 
     [0, 1, 2]
   );
   assert.ok(workerMessages.every(item => item.payload.settings.backend_deadline_ms === 1000));
-  assert.equal(workerMessages[0].payload.settings.random_seed, undefined);
-  assert.match(workerMessages[1].payload.settings.random_seed, /web-portfolio-v2:0:1/);
-  assert.match(workerMessages[2].payload.settings.random_seed, /web-portfolio-v2:0:2/);
+  assert.match(workerMessages[0].payload.settings.random_seed, /web-portfolio-v3:0:0/);
+  assert.match(workerMessages[1].payload.settings.random_seed, /web-portfolio-v3:0:1/);
+  assert.match(workerMessages[2].payload.settings.random_seed, /web-portfolio-v3:0:2/);
   assert.equal(workerMessages[1].payload.data.tkbSolverResult.candidateMarker, "session-wave-0");
   assert.equal(workerMessages[2].payload.data.tkbSolverResult.candidateMarker, "session-wave-1");
   assert.deepEqual(submittedActions.map(item => item.action), ["checkpoint", "checkpoint", "candidate"]);
@@ -415,6 +415,105 @@ test("singleton Agent publishes ten-second checkpoints, retries a failed wave, a
   assert.equal(workerMessages[1].payload.settings.backend_deadline_ms, 10000);
   assert.equal(workerMessages[2].payload.data.tkbSolverResult.candidateMarker, "singleton-45");
   assert.deepEqual(submittedActions.map(item => item.action), ["checkpoint", "checkpoint", "candidate"]);
+});
+
+test("gap Agent checkpoints strict improvements across four fifteen-second waves", async () => {
+  const canonical = completeRefinementRequest();
+  canonical.data.tkbSolverResult = completePortfolioCandidate(canonical, "gap-start", {
+    teacher_gap2_sessions:0,
+    teacher_sessions:460,
+    gap_distribution:{"0":386, "1":74},
+    gap_total:74
+  });
+  Object.assign(canonical.settings, {
+    optimization_focus:"gaps",
+    browser_wasm_gap_progressive_search:true,
+    browser_wasm_gap_max_waves:4,
+    browser_wasm_gap_wave_deadline_ms:15000,
+    backend_deadline_ms:60000,
+    native_global_deadline_ms:60000,
+    ui_progress_metric_target:0
+  });
+  const gap72 = completePortfolioCandidate(canonical, "gap-72", {
+    teacher_gap2_sessions:0,
+    teacher_sessions:460,
+    gap_distribution:{"0":388, "1":72},
+    gap_total:72
+  });
+  const gap69 = completePortfolioCandidate(canonical, "gap-69", {
+    teacher_gap2_sessions:0,
+    teacher_sessions:460,
+    gap_distribution:{"0":391, "1":69},
+    gap_total:69
+  });
+  const zero = completePortfolioCandidate(canonical, "gap-zero", {
+    teacher_gap2_sessions:0,
+    teacher_sessions:460,
+    gap_distribution:{"0":460},
+    gap_total:0
+  });
+  const {submittedResult, submittedActions, workerMessages, failures} = await exercisePortfolioCandidates(
+    canonical,
+    [["fail", gap72, gap69, zero]],
+    {
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      hardwareConcurrency:1,
+      maxTouchPoints:0
+    }
+  );
+
+  assert.equal(failures.length, 0);
+  assert.equal(submittedResult?.candidateMarker, "gap-zero");
+  assert.equal(workerMessages.length, 4);
+  assert.ok(workerMessages.every(item => item.payload.settings.backend_deadline_ms === 15000));
+  assert.match(workerMessages[0].payload.settings.random_seed, /web-portfolio-v3:0:0/);
+  assert.equal(workerMessages[1].payload.data.tkbSolverResult.candidateMarker, "gap-start");
+  assert.equal(workerMessages[2].payload.data.tkbSolverResult.candidateMarker, "gap-72");
+  assert.equal(workerMessages[3].payload.data.tkbSolverResult.candidateMarker, "gap-69");
+  assert.deepEqual(
+    submittedActions.map(item => `${item.action}:${item.marker}`),
+    ["checkpoint:gap-72", "checkpoint:gap-69", "checkpoint:gap-zero", "candidate:gap-zero"]
+  );
+});
+
+test("gap Agent retires an over-budget synchronous Worker instead of queuing more waves", async () => {
+  const canonical = completeRefinementRequest();
+  canonical.data.tkbSolverResult = completePortfolioCandidate(canonical, "gap-timeout-incumbent", {
+    teacher_gap2_sessions:0,
+    teacher_sessions:460,
+    gap_distribution:{"0":386, "1":74},
+    gap_total:74
+  });
+  Object.assign(canonical.settings, {
+    optimization_focus:"gaps",
+    browser_wasm_gap_progressive_search:true,
+    browser_wasm_gap_max_waves:4,
+    browser_wasm_gap_wave_deadline_ms:1000,
+    backend_deadline_ms:60000,
+    native_global_deadline_ms:60000
+  });
+
+  const {submittedResult, workerMessages, failures, terminated} = await exercisePortfolioCandidates(
+    canonical,
+    [[canonical.data.tkbSolverResult, "hang"]],
+    {
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      hardwareConcurrency:1,
+      maxTouchPoints:0
+    },
+    {
+      setTimeout(callback, delay){
+        return setTimeout(callback, Math.min(5, Math.max(0, Number(delay) || 0)));
+      }
+    }
+  );
+
+  assert.equal(failures.length, 0);
+  assert.equal(workerMessages.length, 2, "a timed-out Worker must not receive another queued wave");
+  assert.equal(terminated, 1, "retiring the Worker must stop its synchronous WASM call");
+  assert.equal(submittedResult?.candidateMarker, "gap-timeout-incumbent");
 });
 
 test("browser portfolio scales Quick work by timetable size and never exceeds the device ceiling", () => {
@@ -650,7 +749,7 @@ test("foreground executor probes WASM before hello and disconnects without an in
   assert.equal(context.TKBBrowserWasmExecutor.state().active, false);
   assert.deepEqual(calls.slice(0, 5), [
     "GET:/api/agent-helper/v1/status",
-    "worker:tkb-browser-wasm-worker.js?v=tkb-browser-wasm-executor-v16-live-focused-checkpoints",
+    "worker:tkb-browser-wasm-worker.js?v=tkb-browser-wasm-executor-v18-session-gap-quality",
     "worker-message:probe",
     "POST:/api/solve-data",
     "POST:/api/agent-helper/v1/hello",
@@ -1444,8 +1543,9 @@ test("four-worker portfolio uses distinct seeds and submits the best non-regress
   );
   assert.ok(workerPayloads.every(payload => payload.settings.browser_portfolio_count === 4));
   assert.ok(workerPayloads.every(payload => payload.settings.num_workers === 1));
-  assert.equal(workerPayloads[0].settings.random_seed, "base-seed");
-  assert.ok(workerPayloads.slice(1).every(payload => payload.settings.random_seed.includes("job-portfolio")));
+  assert.ok(workerPayloads.every(payload => payload.settings.random_seed.includes("job-portfolio")));
+  assert.match(workerPayloads[0].settings.random_seed, /base-seed\|web-portfolio-v3:0:0/);
+  assert.equal(new Set(workerPayloads.map(payload => payload.settings.quality_variant_seed)).size, 4);
   assert.equal(submittedResult?.candidateMarker, "fewer-sessions-but-worse-gap1");
   assert.equal(JSON.stringify(canonical), originalWire, "portfolio seeds must not mutate the canonical lease");
   await context.TKBBrowserWasmExecutor.close("test_finished", {failLease:true});
@@ -1794,7 +1894,7 @@ test("planner wires the browser worker only around a new canonical solve", () =>
   const bridge = fs.readFileSync(BRIDGE_PATH, "utf8");
   const page = fs.readFileSync(PAGE_PATH, "utf8");
   const server = fs.readFileSync(SERVER_PATH, "utf8");
-  assert.match(page, /tkb-browser-wasm\.js\?v=20260725-v187-live-focused-progress-v1/);
+  assert.match(page, /tkb-browser-wasm\.js\?v=20260725-v190-session-gap-quality-v1/);
   assert.ok(page.indexOf("tkb-browser-wasm.js") < page.indexOf("tkb-rust-bridge.js"));
   assert.match(bridge, /TKBBrowserWasmExecutor\.canHandleRequest\(browserWasmRequest\)/);
   assert.match(bridge, /!resumeExistingServerJobOnly[\s\S]*browserWasmEligible[\s\S]*TKBBrowserWasmExecutor\.probe/);

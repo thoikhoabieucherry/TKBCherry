@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from tkb_new.adapter import (  # noqa: E402
     SolverDeadline,
+    _focused_session_merge_candidate_better,
     _optimization_focus_goal_status,
     _optimization_metric_payload,
     _settings_for_optimization_focus,
@@ -52,6 +53,38 @@ def _payload(
 
 
 class OptimizationFocusModeTests(unittest.TestCase):
+    def test_focused_session_checkpoint_requires_strict_valid_reduction(self) -> None:
+        incumbent = _payload(sessions=5, gap1=1)["metrics"]
+        gap_debt = _payload(sessions=4, gap1=4, gap2=2)["metrics"]
+        self.assertTrue(
+            _focused_session_merge_candidate_better(gap_debt, incumbent)
+        )
+
+        regressions = {
+            "same_sessions": _payload(sessions=5, gap1=0)["metrics"],
+            "singleton": _payload(sessions=4, singletons=1, gap1=0)["metrics"],
+            "incomplete": {
+                **_payload(sessions=4)["metrics"],
+                "scheduled_periods": 3,
+            },
+            "hard_invalid": {
+                **_payload(sessions=4)["metrics"],
+                "hard_ok": False,
+            },
+            "app_violation": {
+                **_payload(sessions=4)["metrics"],
+                "app_constraint_violation_count": 1,
+            },
+        }
+        for label, candidate in regressions.items():
+            with self.subTest(label=label):
+                self.assertFalse(
+                    _focused_session_merge_candidate_better(
+                        candidate,
+                        incumbent,
+                    )
+                )
+
     def test_focus_settings_are_explicit_and_do_not_use_unknown_modes(self) -> None:
         quick = _settings_for_optimization_focus(
             {
@@ -329,6 +362,181 @@ class OptimizationFocusModeTests(unittest.TestCase):
             result["solver"]["two_stage_teacher_optimization"]["selected_phase"],
             "session_compression",
         )
+
+    def test_sessions_focus_runs_forced_cluster_prepass_before_global_phase(self) -> None:
+        incumbent = _payload(sessions=5, gap1=1)
+        local = _payload(sessions=4, gap1=3, gap2=2)
+        global_candidate = _payload(sessions=3, gap1=4, gap2=2)
+        order: list[str] = []
+        benders_calls: list[dict] = []
+        progress_events: list[dict] = []
+
+        def fake_local(_data, local_settings, _ctx, _incumbent, **kwargs):
+            order.append("local")
+            self.assertTrue(kwargs["focused_sessions"])
+            self.assertEqual(
+                local_settings[
+                    "optimization_existing_local_quality_lns_passes"
+                ],
+                8,
+            )
+            self.assertEqual(
+                local_settings[
+                    "optimization_existing_local_quality_lns_max_classes"
+                ],
+                10,
+            )
+            kwargs["progress"](
+                {
+                    "stage": "teacher_session_opt:phase_sessions_local_checkpoint",
+                    "teacher_sessions": 4,
+                    "one_period_teacher_sessions": 0,
+                    "gap_distribution": {1: 3, 2: 2},
+                }
+            )
+            return local, [{"pass": 1, "improved": True}]
+
+        def fake_benders(_data, call_settings, **kwargs):
+            order.append("global")
+            benders_calls.append({"settings": dict(call_settings), **kwargs})
+            return global_candidate
+
+        with (
+            patch(
+                "tkb_new.adapter.build_school_data_from_ui",
+                return_value=object(),
+            ),
+            patch(
+                "tkb_new.adapter._polish_complete_incumbent_with_local_lns",
+                side_effect=fake_local,
+            ),
+            patch(
+                "tkb_new.adapter._solve_teacher_session_benders_candidate",
+                side_effect=fake_benders,
+            ),
+        ):
+            result, metrics, attempts, reason = _solve_two_stage_concrete_refinement(
+                {"fixture": True},
+                {"optimization_focus": "sessions"},
+                rules=None,
+                progress=progress_events.append,
+                deadline=SolverDeadline(180),
+                total_limit=180,
+                incumbent_payload=incumbent,
+                phase_seeds=[7, 8],
+            )
+
+        self.assertEqual(order, ["local", "global"])
+        self.assertIs(benders_calls[0]["incumbent_payload"], local)
+        self.assertEqual(benders_calls[0]["cap"], 4)
+        self.assertEqual(metrics["teacher_sessions"], 3)
+        self.assertEqual(metrics["gap_distribution"][2], 2)
+        self.assertEqual(reason, "two_stage_session_compression")
+        local_meta = attempts[0]["local_session_merge_search"]
+        self.assertTrue(local_meta["eligible"])
+        self.assertEqual(local_meta["time_limit_seconds"], 38)
+        self.assertTrue(local_meta["usable"])
+        self.assertTrue(local_meta["improved"])
+        self.assertEqual(local_meta["forced_operator"], "session_merge")
+        self.assertEqual(local_meta["passes"], [{"pass": 1, "improved": True}])
+        checkpoints = [
+            item
+            for item in progress_events
+            if item.get("stage")
+            == "teacher_session_opt:phase_sessions_local_checkpoint"
+        ]
+        self.assertEqual(len(checkpoints), 1)
+        self.assertEqual(checkpoints[0]["metricCurrent"], 4)
+        self.assertEqual(
+            result["solver"]["two_stage_teacher_optimization"]["selected_phase"],
+            "session_compression",
+        )
+
+    def test_sessions_focus_keeps_strict_local_result_when_global_fails(self) -> None:
+        incumbent = _payload(sessions=5, gap1=1)
+        local = _payload(sessions=4, gap1=4, gap2=2)
+        calls: list[dict] = []
+
+        def failed_global(_data, _settings, **kwargs):
+            calls.append(kwargs)
+            raise RuntimeError("global timeout")
+
+        with (
+            patch(
+                "tkb_new.adapter.build_school_data_from_ui",
+                return_value=object(),
+            ),
+            patch(
+                "tkb_new.adapter._polish_complete_incumbent_with_local_lns",
+                return_value=(local, [{"pass": 1, "improved": True}]),
+            ),
+            patch(
+                "tkb_new.adapter._solve_teacher_session_benders_candidate",
+                side_effect=failed_global,
+            ),
+        ):
+            _result, metrics, attempts, reason = _solve_two_stage_concrete_refinement(
+                {"fixture": True},
+                {"optimization_focus": "sessions"},
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(180),
+                total_limit=180,
+                incumbent_payload=incumbent,
+                phase_seeds=[7, 8],
+            )
+
+        self.assertIs(calls[0]["incumbent_payload"], local)
+        self.assertEqual(calls[0]["cap"], 4)
+        self.assertEqual(metrics["teacher_sessions"], 4)
+        self.assertEqual(metrics["one_period_teacher_sessions"], 0)
+        self.assertEqual(metrics["gap_distribution"][2], 2)
+        self.assertEqual(reason, "two_stage_session_compression")
+        self.assertTrue(attempts[0]["local_session_merge_search"]["improved"])
+
+    def test_sessions_focus_rejects_regressive_local_result_before_global_phase(self) -> None:
+        incumbent = _payload(sessions=5, gap1=1)
+        singleton_regression = _payload(sessions=4, singletons=1, gap1=0)
+        global_calls: list[dict] = []
+
+        def failed_global(_data, _settings, **kwargs):
+            global_calls.append(kwargs)
+            raise RuntimeError("global timeout")
+
+        with (
+            patch(
+                "tkb_new.adapter.build_school_data_from_ui",
+                return_value=object(),
+            ),
+            patch(
+                "tkb_new.adapter._polish_complete_incumbent_with_local_lns",
+                return_value=(
+                    singleton_regression,
+                    [{"pass": 1, "improved": True}],
+                ),
+            ),
+            patch(
+                "tkb_new.adapter._solve_teacher_session_benders_candidate",
+                side_effect=failed_global,
+            ),
+        ):
+            _result, metrics, attempts, reason = _solve_two_stage_concrete_refinement(
+                {"fixture": True},
+                {"optimization_focus": "sessions"},
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(180),
+                total_limit=180,
+                incumbent_payload=incumbent,
+                phase_seeds=[7, 8],
+            )
+
+        self.assertIs(global_calls[0]["incumbent_payload"], incumbent)
+        self.assertEqual(global_calls[0]["cap"], 5)
+        self.assertEqual(metrics["teacher_sessions"], 5)
+        self.assertEqual(reason, "two_stage_incumbent")
+        self.assertFalse(attempts[0]["local_session_merge_search"]["usable"])
+        self.assertFalse(attempts[0]["local_session_merge_search"]["improved"])
 
     def test_automatic_requires_coordinated_gap_cleanup(self) -> None:
         incumbent = _payload(sessions=5, gap1=2)
@@ -690,9 +898,9 @@ class OptimizationFocusModeTests(unittest.TestCase):
         self.assertEqual(metrics["gap_distribution"][2], 0)
         self.assertEqual(reason, "two_stage_gap_cleanup")
 
-    def test_gaps_focus_locks_session_count_and_runs_only_gap_phase(self) -> None:
+    def test_gaps_focus_allows_session_reduction_and_runs_only_gap_phase(self) -> None:
         incumbent = _payload(sessions=5, gap1=2)
-        candidate = _payload(sessions=5, gap1=1)
+        candidate = _payload(sessions=4, gap1=1)
         calls: list[dict] = []
 
         def fake_benders(_data, call_settings, **kwargs):
@@ -716,10 +924,95 @@ class OptimizationFocusModeTests(unittest.TestCase):
 
         self.assertEqual(len(calls), 1)
         self.assertTrue(calls[0]["settings"]["optimization_benders_minimize_period_gaps"])
+        self.assertFalse(
+            calls[0]["settings"]["optimization_benders_lock_teacher_sessions"]
+        )
+        self.assertEqual(calls[0]["cap"], 5)
         self.assertEqual([item["phase"] for item in attempts], ["two_stage_gap_cleanup"])
+        self.assertEqual(metrics["teacher_sessions"], 4)
         self.assertEqual(metrics["gap_distribution"][1], 1)
         self.assertEqual(reason, "two_stage_gap_cleanup")
         self.assertEqual(result["solver"]["two_stage_teacher_optimization"]["mode"], "gaps_only")
+        self.assertIsNone(attempts[0]["locked_teacher_sessions"])
+        self.assertFalse(attempts[0]["same_teacher_sessions"])
+        self.assertTrue(attempts[0]["teacher_sessions_not_increased"])
+
+    def test_gaps_focus_rejects_session_increase_even_with_fewer_gaps(self) -> None:
+        incumbent = _payload(sessions=5, gap1=3)
+        regressive = _payload(sessions=6, gap1=0)
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            return_value=regressive,
+        ):
+            result, metrics, attempts, reason = _solve_two_stage_concrete_refinement(
+                {},
+                {"optimization_focus": "gaps"},
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(60),
+                total_limit=60,
+                incumbent_payload=incumbent,
+                phase_seeds=[7, 8],
+            )
+
+        self.assertEqual(metrics["teacher_sessions"], 5)
+        self.assertEqual(metrics["one_period_teacher_sessions"], 0)
+        self.assertEqual(metrics["gap_distribution"][1], 3)
+        self.assertEqual(reason, "two_stage_incumbent")
+        self.assertFalse(attempts[0]["improved"])
+        self.assertFalse(attempts[0]["teacher_sessions_not_increased"])
+        self.assertEqual(
+            result["solver"]["two_stage_teacher_optimization"]["selected_phase"],
+            "incumbent",
+        )
+
+    def test_gaps_focus_session_reduction_never_adds_singleton_or_gap2_debt(self) -> None:
+        incumbent = _payload(sessions=5, gap1=3)
+        hard_invalid = _payload(sessions=4, gap1=0)
+        hard_invalid["metrics"]["hard_ok"] = False
+        hard_invalid["validation"]["hard_ok"] = False
+        incomplete = _payload(sessions=4, gap1=0)
+        incomplete["metrics"]["scheduled_periods"] = 3
+        regressions = {
+            "singleton": _payload(sessions=4, singletons=1, gap1=0),
+            "gap2": _payload(sessions=4, gap1=0, gap2=1),
+            "hard_invalid": hard_invalid,
+            "incomplete": incomplete,
+        }
+
+        for label, regressive in regressions.items():
+            with (
+                self.subTest(label=label),
+                patch(
+                    "tkb_new.adapter._solve_teacher_session_benders_candidate",
+                    return_value=regressive,
+                ),
+            ):
+                result, metrics, attempts, reason = (
+                    _solve_two_stage_concrete_refinement(
+                        {},
+                        {"optimization_focus": "gaps"},
+                        rules=None,
+                        progress=None,
+                        deadline=SolverDeadline(60),
+                        total_limit=60,
+                        incumbent_payload=incumbent,
+                        phase_seeds=[7, 8],
+                    )
+                )
+
+            self.assertEqual(metrics["teacher_sessions"], 5)
+            self.assertEqual(metrics["one_period_teacher_sessions"], 0)
+            self.assertEqual(metrics["gap_distribution"][1], 3)
+            self.assertEqual(reason, "two_stage_incumbent")
+            self.assertFalse(attempts[0]["improved"])
+            self.assertEqual(
+                result["solver"]["two_stage_teacher_optimization"][
+                    "selected_phase"
+                ],
+                "incumbent",
+            )
 
     def test_gaps_focus_keeps_a_soft_stopped_improved_candidate(self) -> None:
         incumbent = _payload(sessions=5, gap1=3, gap2=1)
@@ -787,6 +1080,133 @@ class OptimizationFocusModeTests(unittest.TestCase):
             result["solver"]["two_stage_teacher_optimization"]["selected_phase"],
             "gap_cleanup",
         )
+
+    def test_gaps_focus_polishes_repack_before_global_search(self) -> None:
+        incumbent = _payload(sessions=5, gap1=3, gap2=1)
+        repacked = _payload(sessions=5, gap1=2, gap2=0)
+        local = _payload(sessions=4, gap1=1, gap2=0)
+        global_candidate = _payload(sessions=4, gap1=0, gap2=0)
+        order: list[str] = []
+        benders_calls: list[dict] = []
+
+        def fake_repack(*_args, **_kwargs):
+            order.append("repack")
+            return repacked
+
+        def fake_local(*_args, **kwargs):
+            order.append("local")
+            self.assertTrue(kwargs["focused_gap1"])
+            self.assertIsNone(kwargs["exact_teacher_sessions"])
+            self.assertEqual(kwargs["gap1_cleanup_cap"], 0)
+            self.assertTrue(kwargs["protected_cleanup_budget"])
+            return local, [{"pass": 1, "improved": True}]
+
+        def fake_benders(_data, call_settings, **kwargs):
+            order.append("global")
+            benders_calls.append({"settings": dict(call_settings), **kwargs})
+            return global_candidate
+
+        with (
+            patch(
+                "tkb_new.adapter._repack_periods_for_fixed_sessions",
+                side_effect=fake_repack,
+            ),
+            patch(
+                "tkb_new.adapter.build_school_data_from_ui",
+                return_value=object(),
+            ),
+            patch(
+                "tkb_new.adapter._polish_complete_incumbent_with_local_lns",
+                side_effect=fake_local,
+            ),
+            patch(
+                "tkb_new.adapter._solve_teacher_session_benders_candidate",
+                side_effect=fake_benders,
+            ),
+        ):
+            result, metrics, attempts, reason = _solve_two_stage_concrete_refinement(
+                {"fixture": True},
+                {"optimization_focus": "gaps"},
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(90),
+                total_limit=90,
+                incumbent_payload=incumbent,
+                phase_seeds=[7, 8],
+            )
+
+        self.assertEqual(order, ["repack", "local", "global"])
+        self.assertIs(benders_calls[0]["incumbent_payload"], local)
+        self.assertEqual(benders_calls[0]["cap"], 4)
+        self.assertFalse(
+            benders_calls[0]["settings"]["optimization_benders_lock_teacher_sessions"]
+        )
+        self.assertEqual(metrics["teacher_sessions"], 4)
+        self.assertEqual(metrics["one_period_teacher_sessions"], 0)
+        self.assertEqual(metrics["gap_distribution"][2], 0)
+        self.assertEqual(metrics["gap_distribution"][1], 0)
+        self.assertEqual(reason, "two_stage_gap_cleanup")
+        local_meta = attempts[0]["local_gap1_search"]
+        self.assertTrue(local_meta["eligible"])
+        self.assertEqual(local_meta["time_limit_seconds"], 30)
+        self.assertEqual(local_meta["global_tail_reserve_seconds"], 18)
+        self.assertTrue(local_meta["usable"])
+        self.assertTrue(local_meta["improved"])
+        self.assertIsNone(local_meta["exact_teacher_sessions"])
+        self.assertEqual(local_meta["max_teacher_sessions"], 5)
+        self.assertEqual(local_meta["passes"], [{"pass": 1, "improved": True}])
+        self.assertEqual(
+            result["solver"]["two_stage_teacher_optimization"]["selected_phase"],
+            "gap_cleanup",
+        )
+
+    def test_gaps_focus_rejects_regressive_local_candidate(self) -> None:
+        incumbent = _payload(sessions=5, gap1=3, gap2=1)
+        repacked = _payload(sessions=5, gap1=2, gap2=0)
+        regressive = _payload(sessions=5, singletons=1, gap1=0, gap2=1)
+        global_incumbents: list[dict] = []
+
+        def failed_global(_data, _settings, **kwargs):
+            global_incumbents.append(kwargs["incumbent_payload"])
+            raise RuntimeError("global timeout")
+
+        with (
+            patch(
+                "tkb_new.adapter._repack_periods_for_fixed_sessions",
+                return_value=repacked,
+            ),
+            patch(
+                "tkb_new.adapter.build_school_data_from_ui",
+                return_value=object(),
+            ),
+            patch(
+                "tkb_new.adapter._polish_complete_incumbent_with_local_lns",
+                return_value=(regressive, [{"pass": 1, "improved": True}]),
+            ),
+            patch(
+                "tkb_new.adapter._solve_teacher_session_benders_candidate",
+                side_effect=failed_global,
+            ),
+        ):
+            _result, metrics, attempts, reason = _solve_two_stage_concrete_refinement(
+                {"fixture": True},
+                {"optimization_focus": "gaps"},
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(90),
+                total_limit=90,
+                incumbent_payload=incumbent,
+                phase_seeds=[7, 8],
+            )
+
+        self.assertIs(global_incumbents[0], repacked)
+        self.assertEqual(metrics["teacher_sessions"], 5)
+        self.assertEqual(metrics["one_period_teacher_sessions"], 0)
+        self.assertEqual(metrics["gap_distribution"][2], 0)
+        self.assertEqual(metrics["gap_distribution"][1], 2)
+        self.assertEqual(reason, "two_stage_gap_cleanup")
+        self.assertFalse(attempts[0]["local_gap1_search"]["usable"])
+        self.assertFalse(attempts[0]["local_gap1_search"]["improved"])
 
     def test_gaps_focus_optimizes_around_an_unavoidable_gap2(self) -> None:
         incumbent = _payload(sessions=5, gap1=3, gap2=1)

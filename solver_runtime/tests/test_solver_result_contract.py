@@ -3229,6 +3229,7 @@ class SolverResultContractTests(unittest.TestCase):
             random_seed=23,
             preserve_teacher_quality=True,
             max_gap1_sessions=8,
+            exact_teacher_sessions=before["teacher_sessions"],
         )
 
         self.assertIsNotNone(result)
@@ -3236,6 +3237,7 @@ class SolverResultContractTests(unittest.TestCase):
         for lesson in fixed:
             self.assertIn(lesson, candidate)
         self.assertEqual(_teacher_session_opt_gap1(metrics), 0)
+        self.assertEqual(metrics["teacher_sessions"], before["teacher_sessions"])
         fixed_session_periods = {
             lesson.period
             for lesson in candidate
@@ -3243,6 +3245,10 @@ class SolverResultContractTests(unittest.TestCase):
         }
         self.assertEqual(fixed_session_periods, {1, 2, 3})
         self.assertIn("T", meta["fixed_gap_focus_teachers"])
+        self.assertEqual(
+            meta["teacher_quality_cluster_exact_teacher_sessions"],
+            before["teacher_sessions"],
+        )
 
     def test_cluster_repair_subtracts_fixed_demand_inside_seed_class(self) -> None:
         data = SchoolData(

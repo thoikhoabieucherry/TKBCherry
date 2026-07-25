@@ -3343,29 +3343,18 @@ fn resource_slot_key(resource: &str, slot: &Slot) -> String {
 fn solve_seed(request: &Value) -> u64 {
     let mut hash = 0xcbf29ce484222325_u64;
     let mut has_explicit_entropy = false;
-    if let Some(seed) = request
+    if let Some(seed_value) = request
         .get("settings")
         .and_then(|value| value.get("random_seed"))
-        .and_then(Value::as_u64)
     {
         has_explicit_entropy = true;
-        hash ^= seed;
-    }
-    if let Some(seed) = request
-        .get("settings")
-        .and_then(|value| value.get("random_seed"))
-        .and_then(Value::as_i64)
-    {
-        has_explicit_entropy = true;
-        hash ^= seed as u64;
-    }
-    if let Some(seed) = request
-        .get("settings")
-        .and_then(|value| value.get("random_seed"))
-        .and_then(Value::as_str)
-    {
-        has_explicit_entropy = true;
-        hash_part(&mut hash, seed);
+        if let Some(seed) = seed_value.as_u64() {
+            hash ^= seed;
+        } else if let Some(seed) = seed_value.as_i64() {
+            hash ^= seed as u64;
+        } else if let Some(seed) = seed_value.as_str() {
+            hash_part(&mut hash, seed);
+        }
     }
     if let Some(run_id) = request
         .get("settings")
@@ -3965,7 +3954,7 @@ fn focused_gap_candidate_acceptable(
     after: &TeacherOptimizationQuality,
 ) -> bool {
     after.one_period_sessions <= before.one_period_sessions
-        && after.teacher_sessions == before.teacher_sessions
+        && after.teacher_sessions <= before.teacher_sessions
         && (after.gap2_plus_sessions < before.gap2_plus_sessions
             || (after.gap2_plus_sessions == before.gap2_plus_sessions
                 && (after.gap1_sessions < before.gap1_sessions
@@ -4007,6 +3996,10 @@ fn optimize_teacher_gaps_focused(
             *lessons = large_candidate;
             gap_moves += large_moves;
             changed = true;
+        }
+
+        if clock.should_stop_quality() {
+            break;
         }
 
         let before_single = teacher_optimization_quality(lessons);
@@ -5567,6 +5560,7 @@ fn run_teacher_optimization_phase(
                 subject_limits,
                 run_seed,
                 phase,
+                clock,
             );
             consider(candidate, phase_moves);
 
@@ -5577,6 +5571,7 @@ fn run_teacher_optimization_phase(
                 subject_limits,
                 run_seed,
                 phase,
+                clock,
             );
             consider(candidate, phase_moves);
         }
@@ -5599,6 +5594,7 @@ fn run_teacher_optimization_phase(
                 subject_limits,
                 run_seed,
                 phase,
+                clock,
             );
             consider(candidate, phase_moves);
 
@@ -5609,6 +5605,7 @@ fn run_teacher_optimization_phase(
                 subject_limits,
                 run_seed,
                 phase,
+                clock,
             );
             consider(candidate, phase_moves);
         }
@@ -5641,6 +5638,7 @@ fn run_teacher_optimization_phase(
                 subject_limits,
                 run_seed,
                 phase,
+                clock,
             );
             consider(candidate, phase_moves);
 
@@ -5651,6 +5649,7 @@ fn run_teacher_optimization_phase(
                 subject_limits,
                 run_seed,
                 phase,
+                clock,
             );
             consider(candidate, phase_moves);
         }
@@ -5672,6 +5671,7 @@ fn run_teacher_optimization_phase(
                 subject_limits,
                 run_seed,
                 phase,
+                clock,
             );
             consider(candidate, phase_moves);
 
@@ -5682,6 +5682,7 @@ fn run_teacher_optimization_phase(
                 subject_limits,
                 run_seed,
                 phase,
+                clock,
             );
             consider(candidate, phase_moves);
         }
@@ -5895,10 +5896,14 @@ fn optimize_teacher_global_same_class_swaps(
     subject_limits: &SubjectLimitMap,
     run_seed: u64,
     phase: TeacherOptimizationPhase,
+    clock: &SolveClock,
 ) -> i64 {
     let mut moves = 0_i64;
     let max_moves = 24_i64;
     for _ in 0..max_moves {
+        if clock.should_stop_quality() {
+            break;
+        }
         let before = teacher_optimization_quality(lessons);
         if teacher_phase_done(phase, &before) {
             break;
@@ -5917,9 +5922,12 @@ fn optimize_teacher_global_same_class_swaps(
         }
 
         let mut best: Option<(i64, usize, usize, Slot, Slot)> = None;
-        for indices in by_class.values() {
+        'class_pairs: for indices in by_class.values() {
             for left_pos in 0..indices.len() {
                 for right_pos in (left_pos + 1)..indices.len() {
+                    if clock.should_stop_quality() {
+                        break 'class_pairs;
+                    }
                     let left = indices[left_pos];
                     let right = indices[right_pos];
                     let Some(left_slot) = lesson_slot(&lessons[left]) else {
@@ -5973,10 +5981,14 @@ fn optimize_teacher_focused_three_cycles(
     subject_limits: &SubjectLimitMap,
     run_seed: u64,
     phase: TeacherOptimizationPhase,
+    clock: &SolveClock,
 ) -> i64 {
     let mut moves = 0_i64;
     let max_moves = 6_i64;
     for _ in 0..max_moves {
+        if clock.should_stop_quality() {
+            break;
+        }
         let before = teacher_optimization_quality(lessons);
         if teacher_phase_done(phase, &before) {
             break;
@@ -6011,6 +6023,9 @@ fn optimize_teacher_focused_three_cycles(
         });
 
         for (singleton_key, singleton_index) in singletons {
+            if clock.should_stop_quality() {
+                break;
+            }
             if singleton_index >= lessons.len() || lesson_fixed(&lessons[singleton_index]) {
                 continue;
             }
@@ -6047,7 +6062,7 @@ fn optimize_teacher_focused_three_cycles(
             target_indices.truncate(12);
 
             for target_index in target_indices {
-                if checked >= check_limit {
+                if checked >= check_limit || clock.should_stop_quality() {
                     break;
                 }
                 if target_index >= lessons.len() {
@@ -6067,9 +6082,10 @@ fn optimize_teacher_focused_three_cycles(
                     &mut best,
                     &mut checked,
                     check_limit,
+                    clock,
                 );
             }
-            if checked >= check_limit {
+            if checked >= check_limit || clock.should_stop_quality() {
                 break;
             }
 
@@ -6100,7 +6116,7 @@ fn optimize_teacher_focused_three_cycles(
             source_indices.truncate(12);
 
             for source_index in source_indices {
-                if checked >= check_limit {
+                if checked >= check_limit || clock.should_stop_quality() {
                     break;
                 }
                 let source_class = lesson_class_id(&lessons[source_index]);
@@ -6108,7 +6124,7 @@ fn optimize_teacher_focused_three_cycles(
                     continue;
                 };
                 for period_index in 0..PERIODS_PER_SESSION {
-                    if checked >= check_limit {
+                    if checked >= check_limit || clock.should_stop_quality() {
                         break;
                     }
                     let target_slot = make_slot(target_day, &target_session, period_index);
@@ -6134,14 +6150,15 @@ fn optimize_teacher_focused_three_cycles(
                         &mut best,
                         &mut checked,
                         check_limit,
+                        clock,
                     );
                 }
             }
-            if checked >= check_limit {
+            if checked >= check_limit || clock.should_stop_quality() {
                 break;
             }
         }
-        if checked >= check_limit {
+        if checked >= check_limit || clock.should_stop_quality() {
             if let Some((_, best_moves)) = best {
                 for (index, slot) in best_moves {
                     set_lesson_slot(&mut lessons[index], &slot);
@@ -6169,7 +6186,7 @@ fn optimize_teacher_focused_three_cycles(
         gap_sessions.truncate(10);
 
         for gap_session in gap_sessions {
-            if checked >= check_limit {
+            if checked >= check_limit || clock.should_stop_quality() {
                 break;
             }
             let Some((target_teacher, _, _)) = parse_teacher_session_key(&gap_session.key) else {
@@ -6204,7 +6221,7 @@ fn optimize_teacher_focused_three_cycles(
             source_indices.truncate(10);
 
             for source_index in source_indices {
-                if checked >= check_limit {
+                if checked >= check_limit || clock.should_stop_quality() {
                     break;
                 }
                 if source_index >= lessons.len() || lesson_fixed(&lessons[source_index]) {
@@ -6215,7 +6232,7 @@ fn optimize_teacher_focused_three_cycles(
                     continue;
                 };
                 for target_period in &gap_session.gap_slots {
-                    if checked >= check_limit {
+                    if checked >= check_limit || clock.should_stop_quality() {
                         break;
                     }
                     let target_slot =
@@ -6242,6 +6259,7 @@ fn optimize_teacher_focused_three_cycles(
                         &mut best,
                         &mut checked,
                         check_limit,
+                        clock,
                     );
                 }
             }
@@ -6272,7 +6290,11 @@ fn consider_focused_three_cycle(
     best: &mut Option<(i64, Vec<(usize, Slot)>)>,
     checked: &mut i64,
     check_limit: i64,
+    clock: &SolveClock,
 ) {
+    if clock.should_stop_quality() {
+        return;
+    }
     if source_index >= lessons.len()
         || target_index >= lessons.len()
         || source_index == target_index
@@ -6317,7 +6339,7 @@ fn consider_focused_three_cycle(
     third_indices.truncate(8);
 
     for third_index in third_indices {
-        if *checked >= check_limit {
+        if *checked >= check_limit || clock.should_stop_quality() {
             break;
         }
         if third_index >= lessons.len()
@@ -6779,7 +6801,7 @@ fn focused_agent_candidate_acceptable(
         }
         OptimizationFocus::Gaps => {
             after.one_period_sessions <= before.one_period_sessions
-                && after.teacher_sessions == before.teacher_sessions
+                && after.teacher_sessions <= before.teacher_sessions
                 && (
                     after.gap2_plus_sessions,
                     after.gap1_sessions,
@@ -6800,9 +6822,7 @@ fn teacher_phase_done(phase: TeacherOptimizationPhase, value: &TeacherOptimizati
         TeacherOptimizationPhase::Gap2 => {
             value.one_period_sessions > 0 || value.gap2_plus_sessions <= 0
         }
-        TeacherOptimizationPhase::TeacherSessions => {
-            value.one_period_sessions > 0 || value.gap2_plus_sessions > 0
-        }
+        TeacherOptimizationPhase::TeacherSessions => value.one_period_sessions > 0,
         TeacherOptimizationPhase::Gap1 => {
             value.one_period_sessions > 0
                 || value.gap2_plus_sessions > 0
@@ -6828,7 +6848,6 @@ fn teacher_phase_improved(
         }
         TeacherOptimizationPhase::TeacherSessions => {
             after.one_period_sessions == before.one_period_sessions
-                && after.gap2_plus_sessions == before.gap2_plus_sessions
                 && after.teacher_sessions < before.teacher_sessions
         }
         TeacherOptimizationPhase::Gap1 => {
@@ -6949,7 +6968,7 @@ fn optimize_teacher_session_reduction(
             break;
         }
         if allow_small_session_merge
-            && try_merge_small_teacher_session(lessons, off_slots, subject_limits, run_seed)
+            && try_merge_small_teacher_session(lessons, off_slots, subject_limits, run_seed, clock)
         {
             moves += 1;
             continue;
@@ -7050,7 +7069,11 @@ fn try_merge_small_teacher_session(
     off_slots: &HashSet<String>,
     subject_limits: &SubjectLimitMap,
     run_seed: u64,
+    clock: &SolveClock,
 ) -> bool {
+    if clock.should_stop_quality() {
+        return false;
+    }
     let before_sessions = count_teacher_sessions(lessons);
     let before_one_period = count_one_period_teacher_sessions(lessons);
     let allowed_sessions = teacher_session_key_set(lessons);
@@ -7084,6 +7107,9 @@ fn try_merge_small_teacher_session(
     source_sessions.truncate(20);
 
     for (source_key, source_indices) in source_sessions {
+        if clock.should_stop_quality() {
+            break;
+        }
         let Some((source_teacher, _, _)) = parse_teacher_session_key(&source_key) else {
             continue;
         };
@@ -7131,6 +7157,7 @@ fn try_merge_small_teacher_session(
                 &session_index,
                 off_slots,
                 run_seed,
+                clock,
             );
             if slots.is_empty() {
                 candidate_slots.clear();
@@ -7161,6 +7188,7 @@ fn try_merge_small_teacher_session(
             &mut used_target_slots,
             &mut used_blockers,
             &mut best,
+            clock,
         );
 
         if let Some((_, best_moves)) = best {
@@ -7180,6 +7208,7 @@ fn small_session_merge_target_slots(
     session_index: &HashMap<String, Vec<usize>>,
     off_slots: &HashSet<String>,
     run_seed: u64,
+    clock: &SolveClock,
 ) -> Vec<Slot> {
     if lesson_index >= lessons.len() || lesson_fixed(&lessons[lesson_index]) {
         return Vec::new();
@@ -7193,7 +7222,10 @@ fn small_session_merge_target_slots(
     };
 
     let mut out = Vec::new();
-    for target_key in target_session_keys {
+    'target_sessions: for target_key in target_session_keys {
+        if clock.should_stop_quality() {
+            break;
+        }
         let Some((_, day, session_key)) = parse_teacher_session_key(target_key) else {
             continue;
         };
@@ -7209,6 +7241,9 @@ fn small_session_merge_target_slots(
             })
             .unwrap_or_default();
         for period_index in 0..PERIODS_PER_SESSION {
+            if clock.should_stop_quality() {
+                break 'target_sessions;
+            }
             if occupied_periods.contains(&period_index) {
                 continue;
             }
@@ -7275,7 +7310,11 @@ fn search_small_session_merge(
     used_target_slots: &mut HashSet<String>,
     used_blockers: &mut HashSet<usize>,
     best: &mut Option<(i64, Vec<(usize, Slot)>)>,
+    clock: &SolveClock,
 ) {
+    if clock.should_stop_quality() {
+        return;
+    }
     if position >= source_indices.len() {
         consider_small_session_merge_candidate(
             lessons,
@@ -7287,6 +7326,7 @@ fn search_small_session_merge(
             before_one_period,
             run_seed,
             best,
+            clock,
         );
         return;
     }
@@ -7301,6 +7341,9 @@ fn search_small_session_merge(
     };
 
     for target_slot in &candidate_slots[position] {
+        if clock.should_stop_quality() {
+            break;
+        }
         let target_key = target_slot_identity(target_slot);
         if used_target_slots.contains(&target_key) {
             continue;
@@ -7337,6 +7380,7 @@ fn search_small_session_merge(
             used_target_slots,
             used_blockers,
             best,
+            clock,
         );
 
         if blocker_index.is_some() {
@@ -7360,7 +7404,11 @@ fn consider_small_session_merge_candidate(
     before_one_period: i64,
     run_seed: u64,
     best: &mut Option<(i64, Vec<(usize, Slot)>)>,
+    clock: &SolveClock,
 ) {
+    if clock.should_stop_quality() {
+        return;
+    }
     let mut candidate = lessons.to_vec();
     for (index, slot) in moves {
         if *index >= candidate.len() {
@@ -8587,6 +8635,7 @@ fn optimize_teacher_large_gaps(
                 off_slots,
                 subject_limits,
                 run_seed,
+                clock,
             ) {
                 moves += 1;
                 moved = true;
@@ -8594,12 +8643,14 @@ fn optimize_teacher_large_gaps(
             }
         }
         if !moved
+            && !clock.should_stop_quality()
             && try_compact_teacher_gap_by_same_class_pair_swap(
                 lessons,
                 off_slots,
                 subject_limits,
                 run_seed,
                 2,
+                clock,
             )
         {
             moves += 1;
@@ -8607,7 +8658,15 @@ fn optimize_teacher_large_gaps(
         }
         if deep_gap_repair
             && !moved
-            && try_compact_teacher_gap_by_class_chain(lessons, off_slots, subject_limits, run_seed)
+            && !clock.should_stop_quality()
+            && try_compact_teacher_gap_by_class_chain(
+                lessons,
+                off_slots,
+                subject_limits,
+                run_seed,
+                2,
+                clock,
+            )
         {
             moves += 1;
             moved = true;
@@ -8653,6 +8712,7 @@ fn optimize_teacher_single_gaps(
                 off_slots,
                 subject_limits,
                 run_seed,
+                clock,
             ) {
                 moves += 1;
                 moved = true;
@@ -8660,12 +8720,28 @@ fn optimize_teacher_single_gaps(
             }
         }
         if !moved
+            && !clock.should_stop_quality()
+            && try_compact_teacher_gap_by_class_chain(
+                lessons,
+                off_slots,
+                subject_limits,
+                run_seed,
+                1,
+                clock,
+            )
+        {
+            moves += 1;
+            moved = true;
+        }
+        if !moved
+            && !clock.should_stop_quality()
             && try_compact_teacher_gap_by_same_class_pair_swap(
                 lessons,
                 off_slots,
                 subject_limits,
                 run_seed,
                 1,
+                clock,
             )
         {
             moves += 1;
@@ -8684,7 +8760,11 @@ fn try_compact_teacher_gap_session_by_class_swap(
     off_slots: &HashSet<String>,
     subject_limits: &SubjectLimitMap,
     run_seed: u64,
+    clock: &SolveClock,
 ) -> bool {
+    if clock.should_stop_quality() {
+        return false;
+    }
     let Some((target_teacher, _, _)) = parse_teacher_session_key(&gap_session.key) else {
         return false;
     };
@@ -8694,8 +8774,13 @@ fn try_compact_teacher_gap_session_by_class_swap(
     let allowed_sessions = teacher_session_key_set(lessons);
     let mut best: Option<(i64, usize, usize, Slot, Slot)> = None;
     let mut best_move: Option<(i64, usize, Slot)> = None;
+    let mut deadline_reached = false;
 
-    for source_index in &gap_session.indices {
+    'focused_sources: for source_index in &gap_session.indices {
+        if clock.should_stop_quality() {
+            deadline_reached = true;
+            break;
+        }
         let source_index = *source_index;
         if source_index >= lessons.len() || lesson_fixed(&lessons[source_index]) {
             continue;
@@ -8709,6 +8794,10 @@ fn try_compact_teacher_gap_session_by_class_swap(
         };
 
         for target_period in &gap_session.gap_slots {
+            if clock.should_stop_quality() {
+                deadline_reached = true;
+                break 'focused_sources;
+            }
             let target_slot = make_slot(gap_session.day, &gap_session.session_key, *target_period);
             if same_slot(&source_slot, &target_slot) {
                 continue;
@@ -8744,6 +8833,10 @@ fn try_compact_teacher_gap_session_by_class_swap(
                         }
                     }
                 }
+            }
+            if clock.should_stop_quality() {
+                deadline_reached = true;
+                break 'focused_sources;
             }
             let Some(blocker_index) = lessons.iter().enumerate().find_map(|(index, lesson)| {
                 if index == source_index || lesson_class_id(lesson) != source_class {
@@ -8799,7 +8892,10 @@ fn try_compact_teacher_gap_session_by_class_swap(
         }
     }
 
-    for source_index in 0..lessons.len() {
+    'teacher_sources: for source_index in 0..lessons.len() {
+        if deadline_reached || clock.should_stop_quality() {
+            break;
+        }
         if gap_session.indices.contains(&source_index)
             || lesson_fixed(&lessons[source_index])
             || lesson_teacher_key(&lessons[source_index]) != target_teacher
@@ -8814,6 +8910,9 @@ fn try_compact_teacher_gap_session_by_class_swap(
             continue;
         };
         for target_period in &gap_session.gap_slots {
+            if clock.should_stop_quality() {
+                break 'teacher_sources;
+            }
             let target_slot = make_slot(gap_session.day, &gap_session.session_key, *target_period);
             if same_slot(&source_slot, &target_slot) {
                 continue;
@@ -8849,6 +8948,10 @@ fn try_compact_teacher_gap_session_by_class_swap(
                         }
                     }
                 }
+            }
+
+            if clock.should_stop_quality() {
+                break 'teacher_sources;
             }
 
             let Some(blocker_index) = lessons.iter().enumerate().find_map(|(index, lesson)| {
@@ -8941,7 +9044,11 @@ fn try_compact_teacher_gap_by_same_class_pair_swap(
     subject_limits: &SubjectLimitMap,
     run_seed: u64,
     min_gap: i64,
+    clock: &SolveClock,
 ) -> bool {
+    if clock.should_stop_quality() {
+        return false;
+    }
     let before_gap = teacher_gap_metrics(lessons);
     if before_gap.total_gap <= 0 {
         return false;
@@ -8984,9 +9091,12 @@ fn try_compact_teacher_gap_by_same_class_pair_swap(
     let mut best: Option<(i64, usize, usize, Slot, Slot)> = None;
     let mut checked = 0_i64;
     let check_limit = (focus_indices.len() as i64 * 240).clamp(2_000, 14_000);
-    for indices in by_class.values() {
+    'class_pairs: for indices in by_class.values() {
         for left_pos in 0..indices.len() {
             for right_pos in (left_pos + 1)..indices.len() {
+                if clock.should_stop_quality() {
+                    break 'class_pairs;
+                }
                 checked += 1;
                 if checked > check_limit {
                     break;
@@ -9056,9 +9166,17 @@ fn try_compact_teacher_gap_by_class_chain(
     off_slots: &HashSet<String>,
     subject_limits: &SubjectLimitMap,
     run_seed: u64,
+    minimum_gap: i64,
+    clock: &SolveClock,
 ) -> bool {
+    if clock.should_stop_quality() {
+        return false;
+    }
     let before_gap = teacher_gap_metrics(lessons);
-    if before_gap.gap2_plus_sessions <= 0 {
+    let minimum_gap = minimum_gap.clamp(1, 2);
+    if (minimum_gap >= 2 && before_gap.gap2_plus_sessions <= 0)
+        || (minimum_gap == 1 && before_gap.total_gap <= 0)
+    {
         return false;
     }
 
@@ -9066,9 +9184,11 @@ fn try_compact_teacher_gap_by_class_chain(
     let before_one_period = count_one_period_teacher_sessions(lessons);
     let allowed_sessions = teacher_session_key_set(lessons);
     let mut best: Option<(i64, Vec<(usize, Slot)>)> = None;
+    let mut checked = 0_i64;
+    let check_limit = (lessons.len() as i64 * 4).clamp(1_200, 8_000);
     let mut gap_sessions = teacher_gap_sessions(lessons)
         .into_iter()
-        .filter(|session| session.gaps >= 2)
+        .filter(|session| session.gaps >= minimum_gap)
         .collect::<Vec<_>>();
     gap_sessions.sort_by(|a, b| {
         b.gaps
@@ -9080,12 +9200,18 @@ fn try_compact_teacher_gap_by_class_chain(
             .then_with(|| a.key.cmp(&b.key))
     });
 
-    for gap_session in gap_sessions {
+    'gap_sessions: for gap_session in gap_sessions {
+        if clock.should_stop_quality() || checked >= check_limit {
+            break;
+        }
         let Some((target_teacher, _, _)) = parse_teacher_session_key(&gap_session.key) else {
             continue;
         };
         let mut source_indices = gap_session.indices.clone();
         for (index, lesson) in lessons.iter().enumerate() {
+            if clock.should_stop_quality() {
+                break 'gap_sessions;
+            }
             if gap_session.indices.contains(&index)
                 || lesson_fixed(lesson)
                 || lesson_teacher_key(lesson) != target_teacher
@@ -9114,6 +9240,9 @@ fn try_compact_teacher_gap_by_class_chain(
         source_indices.truncate(12);
 
         for source_index in source_indices {
+            if clock.should_stop_quality() || checked >= check_limit {
+                break 'gap_sessions;
+            }
             if source_index >= lessons.len() || lesson_fixed(&lessons[source_index]) {
                 continue;
             }
@@ -9125,6 +9254,9 @@ fn try_compact_teacher_gap_by_class_chain(
                 continue;
             };
             for target_period in &gap_session.gap_slots {
+                if clock.should_stop_quality() || checked >= check_limit {
+                    break 'gap_sessions;
+                }
                 let target_slot =
                     make_slot(gap_session.day, &gap_session.session_key, *target_period);
                 if same_slot(&source_slot, &target_slot)
@@ -9156,6 +9288,9 @@ fn try_compact_teacher_gap_by_class_chain(
                         before_one_period,
                         run_seed,
                         &mut best,
+                        &mut checked,
+                        check_limit,
+                        clock,
                     );
                     continue;
                 };
@@ -9183,6 +9318,9 @@ fn try_compact_teacher_gap_by_class_chain(
                     before_one_period,
                     run_seed,
                     &mut best,
+                    &mut checked,
+                    check_limit,
+                    clock,
                 );
             }
         }
@@ -9214,7 +9352,13 @@ fn search_gap_chain_repair(
     before_one_period: i64,
     run_seed: u64,
     best: &mut Option<(i64, Vec<(usize, Slot)>)>,
+    checked: &mut i64,
+    check_limit: i64,
+    clock: &SolveClock,
 ) {
+    if clock.should_stop_quality() || *checked >= check_limit {
+        return;
+    }
     if !same_slot(current_slot, source_slot)
         && !chain_target_slot_used(moves, source_slot)
         && chain_lesson_can_target(
@@ -9238,11 +9382,14 @@ fn search_gap_chain_repair(
             before_one_period,
             run_seed,
             best,
+            checked,
+            check_limit,
+            clock,
         );
         moves.pop();
     }
 
-    if depth_remaining == 0 {
+    if depth_remaining == 0 || clock.should_stop_quality() || *checked >= check_limit {
         return;
     }
 
@@ -9254,8 +9401,12 @@ fn search_gap_chain_repair(
         off_slots,
         allowed_sessions,
         run_seed,
+        clock,
     );
     for next_slot in candidate_slots {
+        if clock.should_stop_quality() || *checked >= check_limit {
+            break;
+        }
         if same_slot(&next_slot, source_slot)
             || same_slot(&next_slot, current_slot)
             || chain_target_slot_used(moves, &next_slot)
@@ -9286,6 +9437,9 @@ fn search_gap_chain_repair(
                             before_one_period,
                             run_seed,
                             best,
+                            checked,
+                            check_limit,
+                            clock,
                         );
                         used_indices.remove(&next_index);
                     }
@@ -9303,6 +9457,9 @@ fn search_gap_chain_repair(
                     before_one_period,
                     run_seed,
                     best,
+                    checked,
+                    check_limit,
+                    clock,
                 );
             }
         }
@@ -9321,7 +9478,14 @@ fn consider_gap_chain_candidate(
     before_one_period: i64,
     run_seed: u64,
     best: &mut Option<(i64, Vec<(usize, Slot)>)>,
+    checked: &mut i64,
+    check_limit: i64,
+    clock: &SolveClock,
 ) {
+    if clock.should_stop_quality() || *checked >= check_limit {
+        return;
+    }
+    *checked += 1;
     let mut candidate = lessons.to_vec();
     for (index, slot) in moves {
         if *index >= candidate.len() {
@@ -9367,10 +9531,14 @@ fn chain_candidate_slots(
     off_slots: &HashSet<String>,
     allowed_sessions: &HashSet<String>,
     run_seed: u64,
+    clock: &SolveClock,
 ) -> Vec<Slot> {
     let mut slots = Vec::new();
     let mut seen = HashSet::new();
     for lesson in lessons {
+        if clock.should_stop_quality() {
+            break;
+        }
         if lesson_class_id(lesson) != class_id {
             continue;
         }
@@ -9390,9 +9558,12 @@ fn chain_candidate_slots(
             }
         }
     }
-    for (_, day_num) in DAYS {
+    'calendar_slots: for (_, day_num) in DAYS {
         for (session_key, _) in SESSIONS {
             for period_index in 0..PERIODS_PER_SESSION {
+                if clock.should_stop_quality() {
+                    break 'calendar_slots;
+                }
                 let slot = make_slot(day_num, session_key, period_index);
                 let key = slot_key(class_id, &slot);
                 if seen.insert(key)
@@ -10738,7 +10909,7 @@ mod tests {
     }
 
     #[test]
-    fn gap_focus_rejects_a_gap_improvement_that_changes_session_count() {
+    fn gap_focus_accepts_fewer_sessions_but_rejects_an_increase() {
         let before = TeacherOptimizationQuality {
             one_period_sessions: 0,
             teacher_sessions: 10,
@@ -10753,13 +10924,52 @@ mod tests {
             gap1_sessions: 1,
             total_gap: 1,
         };
+        let more_sessions = TeacherOptimizationQuality {
+            teacher_sessions: 11,
+            ..fewer_sessions
+        };
 
-        assert!(!focused_gap_candidate_acceptable(&before, &fewer_sessions));
-        assert!(!focused_agent_candidate_acceptable(
+        assert!(focused_gap_candidate_acceptable(&before, &fewer_sessions));
+        assert!(focused_agent_candidate_acceptable(
             OptimizationFocus::Gaps,
             true,
             &before,
             &fewer_sessions
+        ));
+        assert!(!focused_gap_candidate_acceptable(&before, &more_sessions));
+        assert!(!focused_agent_candidate_acceptable(
+            OptimizationFocus::Gaps,
+            true,
+            &before,
+            &more_sessions
+        ));
+    }
+
+    #[test]
+    fn session_phase_keeps_searching_through_gap2_debt() {
+        let before = TeacherOptimizationQuality {
+            one_period_sessions: 0,
+            teacher_sessions: 10,
+            gap2_plus_sessions: 2,
+            gap1_sessions: 4,
+            total_gap: 8,
+        };
+        let fewer_sessions_with_more_gap2 = TeacherOptimizationQuality {
+            one_period_sessions: 0,
+            teacher_sessions: 9,
+            gap2_plus_sessions: 3,
+            gap1_sessions: 5,
+            total_gap: 10,
+        };
+
+        assert!(!teacher_phase_done(
+            TeacherOptimizationPhase::TeacherSessions,
+            &before
+        ));
+        assert!(teacher_phase_improved(
+            TeacherOptimizationPhase::TeacherSessions,
+            &before,
+            &fewer_sessions_with_more_gap2
         ));
     }
 
@@ -10886,6 +11096,158 @@ mod tests {
         assert_eq!(after.one_period_sessions, 0);
         assert_eq!(after.total_gap, 0);
         assert!(two_stage_cleanup_acceptable(&before, &after));
+    }
+
+    #[test]
+    fn gap1_chain_moves_a_blocker_without_changing_teacher_sessions() {
+        let mut lessons = vec![
+            lesson_json(
+                "6A",
+                "6A",
+                "Target",
+                "GV01",
+                "",
+                &make_slot(2, "sang", 0),
+                false,
+            ),
+            lesson_json(
+                "6B",
+                "6B",
+                "Target",
+                "GV01",
+                "",
+                &make_slot(2, "sang", 2),
+                false,
+            ),
+            lesson_json(
+                "6A",
+                "6A",
+                "Blocker",
+                "GV02",
+                "",
+                &make_slot(2, "sang", 1),
+                false,
+            ),
+            lesson_json(
+                "6C",
+                "6C",
+                "Anchor A",
+                "GV02",
+                "",
+                &make_slot(2, "sang", 0),
+                false,
+            ),
+            lesson_json(
+                "6D",
+                "6D",
+                "Anchor B",
+                "GV02",
+                "",
+                &make_slot(2, "sang", 3),
+                false,
+            ),
+        ];
+        let before = teacher_optimization_quality(&lessons);
+        let mut solver_config = config(true, false);
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+
+        assert!(try_compact_teacher_gap_by_class_chain(
+            &mut lessons,
+            &HashSet::new(),
+            &HashMap::new(),
+            41,
+            1,
+            &clock,
+        ));
+
+        let after = teacher_optimization_quality(&lessons);
+        assert_eq!(before.one_period_sessions, 0);
+        assert_eq!(before.gap2_plus_sessions, 0);
+        assert!(after.gap1_sessions < before.gap1_sessions);
+        assert_eq!(after.gap2_plus_sessions, 0);
+        assert_eq!(after.teacher_sessions, before.teacher_sessions);
+        assert_eq!(after.one_period_sessions, 0);
+        assert!(schedule_hard_ok(&lessons, &HashSet::new(), &HashMap::new()));
+    }
+
+    #[test]
+    fn expired_gap_clock_skips_inner_search_without_mutating_the_incumbent() {
+        let mut lessons = vec![
+            teacher_quality_test_lesson("6A", "GV01", 2, 0),
+            teacher_quality_test_lesson("6B", "GV01", 2, 2),
+            teacher_quality_test_lesson("6A", "GV02", 2, 1),
+            teacher_quality_test_lesson("6C", "GV02", 2, 0),
+            teacher_quality_test_lesson("6D", "GV02", 2, 3),
+        ];
+        let before = lessons.clone();
+        let gap_session = teacher_gap_sessions(&lessons)
+            .into_iter()
+            .find(|session| session.gaps > 0)
+            .expect("test schedule contains a teacher gap");
+        let now = wall_clock_ms();
+        let clock = SolveClock {
+            started_at_ms: now.saturating_sub(10),
+            deadline_at_ms: now.saturating_sub(1),
+            reserve_ms: 0,
+            cancel_requested: None,
+        };
+        let started = std::time::Instant::now();
+
+        assert!(!try_compact_teacher_gap_session_by_class_swap(
+            &mut lessons,
+            &gap_session,
+            &HashSet::new(),
+            &HashMap::new(),
+            43,
+            &clock,
+        ));
+        assert!(!try_compact_teacher_gap_by_same_class_pair_swap(
+            &mut lessons,
+            &HashSet::new(),
+            &HashMap::new(),
+            43,
+            1,
+            &clock,
+        ));
+        assert!(!try_compact_teacher_gap_by_class_chain(
+            &mut lessons,
+            &HashSet::new(),
+            &HashMap::new(),
+            43,
+            1,
+            &clock,
+        ));
+
+        assert_eq!(lessons, before);
+        assert!(started.elapsed() < std::time::Duration::from_millis(250));
+    }
+
+    #[test]
+    fn expired_session_clock_skips_merge_neighborhood_without_mutating_the_incumbent() {
+        let mut lessons = vec![
+            teacher_quality_test_lesson("6A", "GV01", 2, 0),
+            teacher_quality_test_lesson("6B", "GV01", 2, 1),
+            teacher_quality_test_lesson("6C", "GV01", 3, 0),
+            teacher_quality_test_lesson("6D", "GV01", 3, 1),
+        ];
+        let before = lessons.clone();
+        let now = wall_clock_ms();
+        let clock = SolveClock {
+            started_at_ms: now.saturating_sub(10),
+            deadline_at_ms: now.saturating_sub(1),
+            reserve_ms: 0,
+            cancel_requested: None,
+        };
+
+        assert!(!try_merge_small_teacher_session(
+            &mut lessons,
+            &HashSet::new(),
+            &HashMap::new(),
+            47,
+            &clock,
+        ));
+        assert_eq!(lessons, before);
     }
 
     #[test]
@@ -11038,6 +11400,17 @@ mod tests {
         assert_eq!(config.backend_deadline_ms, MAX_SOLVER_DEADLINE_MS);
         assert_eq!(config.native_global_deadline_ms, MAX_SOLVER_DEADLINE_MS);
         assert_eq!(config.native_deadline_reserve_ms, 0);
+    }
+
+    #[test]
+    fn positive_numeric_seed_contributes_entropy_once() {
+        let base = 0xcbf29ce484222325_u64;
+        let seed_17 = solve_seed(&json!({"settings":{"random_seed":17}}));
+        let seed_18 = solve_seed(&json!({"settings":{"random_seed":18}}));
+
+        assert_eq!(seed_17, base ^ 17);
+        assert_eq!(seed_18, base ^ 18);
+        assert_ne!(seed_17, seed_18);
     }
 
     #[test]

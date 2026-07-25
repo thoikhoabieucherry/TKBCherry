@@ -1,7 +1,7 @@
 (function(root){
   "use strict";
 
-  const VERSION = "tkb-browser-wasm-executor-v16-live-focused-checkpoints";
+  const VERSION = "tkb-browser-wasm-executor-v18-session-gap-quality";
   const AGENT_PROTOCOL = "tkb-agent-helper-v1";
   const AGENT_VERSION = "1.6.31";
   const SOLVER_PROTOCOL = "tkb-reference-solver-stdio-v1";
@@ -19,6 +19,8 @@
   const DEEP_SESSION_MAX_WAVES = 16;
   const SINGLETON_WAVE_MS = 10000;
   const SINGLETON_MAX_WAVES = 6;
+  const GAP_WAVE_MS = 15000;
+  const GAP_MAX_WAVES = 4;
   const QUICK_WORKER_SETTLE_RESERVE_MS = 3000;
   const FOCUSED_WORKER_SETTLE_RESERVE_MS = 15000;
 
@@ -462,6 +464,14 @@
     state.worker = null;
   }
 
+  function retireComputeWorker(worker, error){
+    rejectWorkerWaiters(error || new Error("browser_wasm_worker_retired"), worker);
+    state.workers = state.workers.filter(candidate => candidate !== worker);
+    if(state.worker === worker) state.worker = state.workers[0] || null;
+    try{ worker?.terminate?.(); }catch(_){ }
+    publishRuntimeState();
+  }
+
   function publicRuntimeState(){
     return {
       active:state.active,
@@ -869,6 +879,11 @@
     const focus = normalizedOptimizationFocus(settings);
     if(!Array.isArray(candidate?.quality)) return false;
     if(focus === "singletons") return Number(candidate.quality[0]) === 0;
+    if(focus === "gaps"){
+      return Number(candidate.quality[1]) === 0
+        && Number(candidate.quality[3]) === 0
+        && Number(candidate.quality[4]) === 0;
+    }
     if(focus !== "sessions") return false;
     const target = nonnegativeMetric(settings, "ui_progress_metric_target");
     return target != null
@@ -920,9 +935,10 @@
       settings.browser_wasm_session_wave_deadline_ms = waveDeadlineMs;
     }
     const baseSeed = settings.random_seed == null ? "" : String(settings.random_seed);
-    if(index > 0 || wave > 0){
-      settings.random_seed = `${baseSeed}|web-portfolio-v2:${index}:${wave}|${String(lease?.jobId || "")}`;
-    }
+    settings.random_seed = `${baseSeed}|web-portfolio-v3:${index}:${wave}|${String(lease?.jobId || "")}`;
+    settings.quality_variant_seed = (
+      ((index + 1) * 1000003 + (wave + 1) * 9176) % 2147483646
+    ) + 1;
     return cloned;
   }
 
@@ -967,7 +983,11 @@
       && settings.browser_wasm_session_deep_search === true;
     const progressiveSingletonSearch = focus === "singletons"
       && settings.browser_wasm_singleton_progressive_search === true;
-    const progressiveSearch = deepSessionSearch || progressiveSingletonSearch;
+    const progressiveGapSearch = focus === "gaps"
+      && settings.browser_wasm_gap_progressive_search === true;
+    const progressiveSearch = deepSessionSearch
+      || progressiveSingletonSearch
+      || progressiveGapSearch;
     const progressiveMaxWaves = deepSessionSearch
       ? Math.max(2, Math.min(32, Math.round(
           Number(settings.browser_wasm_session_deep_max_waves || DEEP_SESSION_MAX_WAVES)
@@ -976,7 +996,11 @@
           ? Math.max(2, Math.min(16, Math.round(
               Number(settings.browser_wasm_singleton_max_waves || SINGLETON_MAX_WAVES)
             ) || SINGLETON_MAX_WAVES))
-          : 1);
+          : (progressiveGapSearch
+              ? Math.max(2, Math.min(12, Math.round(
+                  Number(settings.browser_wasm_gap_max_waves || GAP_MAX_WAVES)
+                ) || GAP_MAX_WAVES))
+              : 1));
     const progressiveWaveMs = deepSessionSearch
       ? Math.max(1000, Math.min(DEEP_SESSION_WAVE_MS, Math.round(
           Number(settings.browser_wasm_session_wave_deadline_ms || DEEP_SESSION_WAVE_MS)
@@ -985,7 +1009,11 @@
           ? Math.max(1000, Math.min(SINGLETON_WAVE_MS, Math.round(
               Number(settings.browser_wasm_singleton_wave_deadline_ms || SINGLETON_WAVE_MS)
             ) || SINGLETON_WAVE_MS))
-          : 0);
+          : (progressiveGapSearch
+              ? Math.max(1000, Math.min(GAP_WAVE_MS, Math.round(
+                  Number(settings.browser_wasm_gap_wave_deadline_ms || GAP_WAVE_MS)
+                ) || GAP_WAVE_MS))
+              : 0));
     const computeBudgetMs = Math.max(1000, workerTimeoutMs - workerSettleReserveMs);
     const incumbentQuality = quickCompletion ? null : qualityTupleFromResult(incumbent);
     let best = null;
@@ -1002,6 +1030,14 @@
           ? Math.min(progressiveWaveMs, remainingMs)
           : 0;
         let candidate;
+        const sharedBestIsBetter = wave > 0
+          && best?.result
+          && Array.isArray(best.quality)
+          && (
+            !localIncumbentQuality
+            || compareQuality(best.quality, localIncumbentQuality, settings) < 0
+          );
+        const waveIncumbent = sharedBestIsBetter ? best.result : localIncumbent;
         try{
           const message = await workerRequestOn(
             worker,
@@ -1009,7 +1045,7 @@
             {payload:portfolioRequest(refinementRequest, index, workers.length, lease, {
               wave,
               deadlineMs:waveDeadlineMs,
-              incumbent:wave > 0 ? localIncumbent : null
+              incumbent:wave > 0 ? waveIncumbent : null
             })},
             progressiveSearch
               ? waveDeadlineMs + workerSettleReserveMs
@@ -1046,6 +1082,14 @@
           }
         }catch(err){
           if(signal?.aborted) throw err;
+          const kind = String(err?.message || "");
+          if(kind === "browser_wasm_worker_timeout" || kind === "browser_wasm_worker_crashed"){
+            // A synchronous WASM call cannot be interrupted from the main
+            // thread. Retiring the whole Worker is the only way to guarantee
+            // that an over-budget trajectory stops consuming local CPU.
+            retireComputeWorker(worker, err);
+            break;
+          }
           if(!progressiveSearch) break;
           continue;
         }
@@ -1102,7 +1146,7 @@
       rejectWorkerWaiters(new Error("browser_wasm_quick_winner_selected"));
       return firstComplete;
     }
-    if(focus === "singletons"){
+    if(focus === "singletons" || focus === "gaps"){
       const saturated = await new Promise(resolve => {
         let remaining = pending.length;
         for(const promise of pending){
@@ -1123,7 +1167,7 @@
         // Zero one-period sessions is the exact terminal target. The first
         // validated checkpoint that reaches it wins; slower seeds add no value.
         terminateComputeWorkers();
-        rejectWorkerWaiters(new Error("browser_wasm_singleton_target_reached"));
+        rejectWorkerWaiters(new Error(`browser_wasm_${focus}_target_reached`));
         return saturated;
       }
     }

@@ -8,11 +8,20 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.88** (v1.87 live focused progress
-  plus the Super Admin mobile specificity fix; deployed 2026-07-25).
+- Current deployed application release: **v1.90** (strong VPS Session prepass,
+  Gap cleanup, and audited native focus guards; deployed 2026-07-25).
   Transactional backups are
-  `/opt/cherry-scheduler-backups/server-state-20260725-025221.tar.gz` and
-  `/opt/cherry-scheduler-backups/app-release-20260725-025221.tar.gz`.
+  `/opt/cherry-scheduler-backups/server-state-20260725-053158.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260725-053158.tar.gz`.
+- v1.90 runs an eight-pass class-cluster Session prepass before global
+  Phase-S, then explicit Gap cleanup may reduce gaps without increasing the
+  resulting session count. Native focused guards accept a strict Gap gain that
+  also reduces sessions, and Session search continues while temporary Gap-2
+  debt exists; Automatic retains its stricter two-stage contract. Markers:
+  `tkb-browser-wasm-executor-v18-session-gap-quality`,
+  `tkb-rust-api-v286-session-gap-quality`, and
+  `20260725-v190-session-gap-quality-v1`. Rust API marker:
+  `tkb_new-rust-api-2026-07-25-session-gap-quality-v79`.
 - Current public Agent release: **v1.6.31** (`1.6.31`). The normal owner-Agent
   minimum lease gate is 1.6.31, so 1.6.30 and older stay upgrade-only;
   the operator trusted-worker source and release contract remain 1.6.24. The
@@ -21,6 +30,115 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.90 VPS focused Gap-1 local search (deployed)
+
+- Focused `Tiet trong` keeps the fast fixed-session period repack first. When
+  that repack is usable and has removed Gap-2, the Python solver now spends up
+  to 30 seconds on short targeted Gap-1 class-neighborhood repairs before the
+  existing full-school CP-SAT search. Every accepted repair must strictly
+  improve Gap quality while never increasing the current teacher-session
+  count, one-period teacher sessions, or Gap-2, and must pass the full
+  fixed/authored hard-constraint validation. The explicit Gap Benders phase
+  uses the same teacher-session ceiling rather than an exact-count lock;
+  Automatic retains its existing atomic two-stage contract. Strict local
+  improvements emit metric progress checkpoints and become the incumbent for
+  the global tail.
+- Local budget calculation reserves 18 seconds after the normal final reserve:
+  12 seconds for the global search plus six seconds for neighborhood model
+  construction that CP-SAT's own wall-clock limit cannot cover. A failed repack,
+  remaining Gap-2 debt, local exception, regressive candidate, or local
+  timeout falls back to the existing repacked/incumbent path; no local result
+  can worsen the visible timetable.
+- On `.codex_tmp/live-default-store-latest.json`, the integrated 90-second
+  focused run improved `478 sessions / 0 singleton / Gap1 44 / Gap2 0` to
+  `478 / 0 / 40 / 0`. Repack reached Gap1 43 in 8.638 seconds; local strict
+  checkpoints reached 42, 41 and 40 at 17.009, 34.175 and 37.848 seconds.
+  The final result remained `1566/1566`, hard-valid, had zero authored
+  violations, and passed canonical validation. The later 38-second global
+  tail found no further improvement, showing why additional CPU alone did not
+  improve this incumbent without targeted neighborhoods.
+- Final verification passes local Node **387/387**, local scheduler **227**
+  with three platform skips plus **58** subtests, and focused contract tests
+  **191/191** plus **26** subtests. Isolated VPS staging passes scheduler
+  **230/230**, Agent **155/155**, trusted worker **5/5**, Rust API **201/201**,
+  and native candidate validation **43/43**, ending with `STAGING_TESTS_OK`.
+
+### v1.90 VPS focused Sessions class-cluster prepass (deployed)
+
+- Explicit `Buoi` refinement now runs a bounded eight-pass `session_merge`
+  class-cluster CP-SAT prepass before global Phase-S. Each accepted checkpoint
+  must be complete, hard-valid, app-violation-free, strictly lower in teacher
+  sessions, and no higher in one-period teacher sessions. Gap-1/Gap-2 debt is
+  allowed to rise in this phase because the following explicit `Tiet trong`
+  action owns gap cleanup. Automatic behavior is unchanged.
+- The best local checkpoint becomes the global Phase-S incumbent and lowers its
+  teacher-session cap. A timeout, exception, incomplete result, singleton
+  regression, or non-strict candidate leaves the previous incumbent untouched.
+  Progress emits every strict local checkpoint, so the user sees each reduced
+  Buoi count while the global search continues.
+- Agent-ready Sessions requests prefer the stronger VPS path when the complete
+  VPS worker allotment is free; when VPS capacity is busy they spill over to the
+  Browser Agent, matching the focused Gap routing contract. VPS selection now
+  reserves that allotment atomically instead of trusting a free-token snapshot,
+  so simultaneous requests cannot both choose VPS and leave the second queued.
+  Rust marker:
+  `tkb_new-rust-api-2026-07-25-session-gap-quality-v79`.
+- Isolated VPS benchmark on the current 1,566-period default request reduced
+  `497 sessions / 0 singleton / Gap1 69 / Gap2 0` to `477 / 0 / 60 / 4`:
+  the local prepass checkpointed `494, 492, 491, 490, 489`, then global Phase-S
+  reached `477`. Canonical validation remained `1566/1566`, hard-valid, and
+  zero authored violations. Focused Python tests pass **35 + 156** and the
+  final isolated staging suite passes scheduler **230/230**, Agent **155/155**,
+  trusted worker **5/5**, Rust API **201/201**, and native validator **43/43**,
+  ending with `STAGING_TESTS_OK`. Full local Node passes **387/387**.
+- Chaining focused Gap cleanup from that `477 / 0 / 60 / 4` result retained
+  `477 sessions`, removed Gap-2 completely, and reduced Gap-1 to `48` in
+  114.93 seconds. The final candidate remained `1566/1566`, hard-valid, and
+  zero authored violations; canonical validation passed. Against the live
+  `497 / 0 / 69 / 0` timetable, the complete sequence therefore removes 20
+  teacher sessions and 21 Gap-1 sessions while ending with zero Gap-2.
+- Transactional production deployment returned `UPDATE_OK`; public health
+  serves API v79 with zero active/queued jobs and `6/6` worker tokens. In-app
+  Browser acceptance loaded both v1.90 cache-keyed scripts, showed the enabled
+  Agent control, preserved the complete visible timetable, and reported no
+  console warning or error.
+
+### v1.89 progressive Gap release (deployed 2026-07-25)
+
+- Gap Agent work runs four chained 15-second waves with strict live
+  checkpoints, diversified trajectory seeds, and Worker retirement on timeout.
+  VPS Gap cleanup uses bounded class-neighborhood repairs and keeps the
+  teacher-session ceiling; Automatic remains atomic.
+- Markers: `tkb-browser-wasm-executor-v17-progressive-gap-search`,
+  `tkb-rust-api-v285-progressive-gap-search`, and
+  `20260725-v189-progressive-gap-v1`. Deployment returned `UPDATE_OK`; public
+  health was idle with `6/6` VPS worker tokens. Transactional backups are
+  `/opt/cherry-scheduler-backups/server-state-20260725-042908.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260725-042908.tar.gz`.
+
+### Native focused Sessions audit
+
+- The Browser/WASM focused Sessions path remains intentionally bounded. Its
+  useful neighborhood can move a two- or three-period teacher session directly
+  into existing sessions, with at most one same-class blocker swap per moved
+  lesson. It cannot rehome multiple blockers through a class chain, so repeated
+  seeds revisit the same local optimum on the current default timetable.
+- On `.codex_tmp/live-default-store-current.json`, 16 chained native waves all
+  remained at `497 sessions / 0 singleton / Gap1 69 / Gap2 0`; combined native
+  solver time was about 7.13 seconds. Enabling the full native teacher portfolio
+  also found no improvement and cost about 13.5 seconds per wave, so that
+  experiment was reverted. The VPS class-cluster prepass above is the promoted
+  quality path; a future native improvement should add only a tightly bounded
+  blocker-rehome chain near `try_merge_small_teacher_session`.
+- Native recursive merge, swap, and cycle searches now poll `SolveClock` so a
+  synchronous WASM call can stop at its quality deadline without mutating the
+  incumbent. The Gap-1 global same-class swap candidate remains enabled. The
+  post-audit remote Rust suite passes **201 + 43**, and `git diff --check` passes
+  for `rust_api/src/native_solver.rs`. The final combined WASM artifact was
+  rebuilt from the formatted audited source and copied identically to web and
+  Agent assets; SHA-256 is
+  `cb358b17a26ee1ce1c25fd5e3d90208ec9c90d7bd3f9f7090e35c5439c21fabc`.
 
 ### v1.88 Super Admin mobile specificity fix (deployed 2026-07-25)
 
@@ -4391,16 +4509,16 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-25: `UPDATE_OK` for
-application v1.88. Public health serves
-`tkb_new-rust-api-2026-07-24-focused-progress-v76`; the planner serves
-`20260725-v187-live-focused-progress-v1`, bridge marker
-`tkb-rust-api-v284-live-focused-stats`, and Browser executor
-`tkb-browser-wasm-executor-v16-live-focused-checkpoints`. Super Admin serves
+application v1.90. Public health serves
+`tkb_new-rust-api-2026-07-25-session-gap-quality-v79`; the planner serves
+`20260725-v190-session-gap-quality-v1`, bridge marker
+`tkb-rust-api-v286-session-gap-quality`, and Browser executor
+`tkb-browser-wasm-executor-v18-session-gap-quality`. Super Admin serves
 `20260725-v188-compact-super-admin-v2`.
 Public health is idle with zero active/queued jobs and `6/6` worker tokens.
 Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260725-025221.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260725-025221.tar.gz`.
+`/opt/cherry-scheduler-backups/server-state-20260725-053158.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260725-053158.tar.gz`.
 Public Agent release `1.6.31` and its signed manifest are live. The 88,054,539
 byte archive SHA-256 is
 `402f4eba12db1b31aa923e0960450855a7314729c90c796889741b31a4aaaa96`; the
