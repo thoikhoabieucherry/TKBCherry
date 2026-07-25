@@ -446,7 +446,7 @@ test("portrait planner keeps seven compact mobile slots with stacked history and
   );
   assert.match(plannerHtml, /shared\/storage\.js\?v=20260724-v180-durable-store-save-v1/);
   assert.match(plannerHtml, /phanmon\.js\?v=20260725-v1102-agent-validation-load-v1/);
-  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260725-v1102-agent-validation-load-v1/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260726-v1103-mobile-progress-admission-v1/);
 });
 
 test("landscape phones separate Undo and Redo into eight full-height slots", () => {

@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v290-executor-status";
+  const VERSION = "tkb-rust-api-v291-mobile-progress-admission";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -1513,6 +1513,52 @@
     }
   }
 
+  function classifyBackendJobState(payload, jobId){
+    const trackedJobId = String(jobId || "").trim();
+    const jobs = Array.isArray(payload?.jobs) ? payload.jobs : [];
+    const queue = Array.isArray(payload?.queue) ? payload.queue : [];
+    const completedJobs = Array.isArray(payload?.completedJobs) ? payload.completedJobs : [];
+    const matchingJob = jobs.find(item => String(item?.jobId || "") === trackedJobId) || null;
+    const matchingQueueItem = queue.find(item => String(item?.jobId || "") === trackedJobId) || null;
+    const matchingCompletedJob = completedJobs.find(item => String(item?.jobId || "") === trackedJobId) || null;
+    const requestedJobId = String(payload?.requestedJobId || "").trim();
+    const exactRequestedJob = requestedJobId === trackedJobId;
+    const requestedPhase = exactRequestedJob
+      ? String(payload?.requestedJobExecutionPhase || "").trim().toLowerCase()
+      : "";
+    const itemPhase = String(
+      matchingJob?.executionPhase
+      || matchingQueueItem?.executionPhase
+      || ""
+    ).trim().toLowerCase();
+    const phase = requestedPhase || itemPhase;
+    const terminal = !!matchingCompletedJob
+      || (exactRequestedJob && payload?.requestedJobResultReady === true)
+      || phase === "completed";
+    const queued = !terminal && (
+      !!matchingQueueItem
+      || (exactRequestedJob && payload?.requestedJobQueued === true)
+      || phase === "vps_queued"
+    );
+    const cancelling = !terminal && !queued && (
+      matchingJob?.cancelRequested === true
+      || matchingQueueItem?.cancelRequested === true
+      || phase === "cancelling"
+    );
+    const running = !terminal && !queued && !cancelling && (
+      !!matchingJob
+      || (exactRequestedJob && payload?.requestedJobActive === true)
+    );
+    return {
+      kind:terminal ? "terminal" : queued ? "queued" : cancelling ? "cancelling" : running ? "running" : "unknown",
+      matchingJob,
+      matchingQueueItem,
+      matchingCompletedJob,
+      exactRequestedJob,
+      phase
+    };
+  }
+
   async function backendSolverState(jobId){
     if(backendAuthRequired){
       return {
@@ -1546,11 +1592,16 @@
           status:Number(response.status || 0) || 0
         };
       }
-      if(trackedJobId && payload && typeof payload === "object"){
-        const matchingJob = (Array.isArray(payload.jobs) ? payload.jobs : [])
-          .find(item => String(item?.jobId || "") === trackedJobId);
-        const matchingQueueItem = (Array.isArray(payload.queue) ? payload.queue : [])
-          .find(item => String(item?.jobId || "") === trackedJobId);
+      if(
+        trackedJobId
+        && response.ok === true
+        && payload?.ok === true
+        && payload
+        && typeof payload === "object"
+      ){
+        const lifecycle = classifyBackendJobState(payload, trackedJobId);
+        const matchingJob = lifecycle.matchingJob;
+        const matchingQueueItem = lifecycle.matchingQueueItem;
         recordBackendLiveProgress(
           payload.requestedJobProgress
           || matchingJob?.progress
@@ -1572,8 +1623,7 @@
             || payload.progressRunIndex
             || payload.requestedJobProgressRunIndex
         };
-        const trackedJobIsLive = !!matchingJob
-          || payload.requestedJobActive === true;
+        const trackedJobIsLive = lifecycle.kind === "running";
         const reportedStartedAtMs = trackedJobIsLive
           ? (
             matchingJob?.startedAtMs
@@ -1581,9 +1631,12 @@
             || payload.startedAtMs
           )
           : 0;
-        if(Number(reportedStartedAtMs || 0) > 0){
-          recordBackendJobStarted(trackedJobId, reportedStartedAtMs, stateProgressMetadata);
-        }else if(matchingQueueItem || payload.requestedJobQueued === true){
+        if(trackedJobIsLive){
+          recordBackendJobStarted(trackedJobId, reportedStartedAtMs, Object.assign(
+            {authoritativeRunning:true},
+            stateProgressMetadata
+          ));
+        }else if(lifecycle.kind === "queued"){
           markBackendJobQueued(trackedJobId, stateProgressMetadata);
         }
       }
@@ -1890,6 +1943,7 @@
       }
       if(kind === "solver_started" || kind === "solver_running"){
         recordBackendJobStarted(jobId, pending?.startedAtMs, {
+          authoritativeRunning:true,
           progressBudgetSeconds:pending?.progressBudgetSeconds,
           progressRunIndex:pending?.progressRunIndex
         });
@@ -2927,7 +2981,9 @@
         : (requestedCreatedAt || Date.now());
       const requestedStartedAt = Math.max(0, Number(metadata?.solverStartedAtMs || 0) || 0)
         || (sameJob ? Math.max(0, Number(existing?.solverStartedAtMs || 0) || 0) : 0);
-      const solverStartedAtMs = normalizeBackendStartedAtMs(requestedStartedAt, createdAt);
+      const solverStartedAtMs = metadata?.clearSolverStartedAt === true
+        ? 0
+        : normalizeBackendStartedAtMs(requestedStartedAt, createdAt);
       const uiStartedAtMs = [
         metadata?.uiStartedAtMs,
         sameJob ? existing?.uiStartedAtMs : 0,
@@ -3073,7 +3129,15 @@
     if(item?.serverOwned !== true) return null;
     const itemScope = String(item?.scheduleScope || "").trim();
     if(itemScope && itemScope !== String(currentScope || "").trim()) return null;
-    if((kind === "running" || kind === "queued") && item?.cancelRequested === true) return null;
+    const executionPhase = String(item?.executionPhase || "").trim().toLowerCase();
+    if(
+      (kind === "running" || kind === "queued")
+      && (
+        item?.cancelRequested === true
+        || executionPhase === "cancelling"
+        || executionPhase === "completed"
+      )
+    ) return null;
     const now = Math.max(0, Number(nowMs || Date.now()) || Date.now());
     const createdAtMs = discoveredBackendJobTime(item, ["createdAtMs", "queuedAtMs", "startedAtMs"]);
     const startedAtMs = kind === "running"
@@ -3123,9 +3187,20 @@
     const now = Math.max(0, Number(nowMs || Date.now()) || Date.now());
     const currentScope = backendScheduleScope();
     const matchesCurrentSchedule = durableScheduleFingerprintMatcher(data);
+    const queuedJobIds = new Set(
+      (Array.isArray(state.queue) ? state.queue : [])
+        .map(item => String(item?.jobId || "").trim())
+        .filter(Boolean)
+    );
+    const completedJobIds = new Set(
+      (Array.isArray(state.completedJobs) ? state.completedJobs : [])
+        .map(item => String(item?.jobId || "").trim())
+        .filter(Boolean)
+    );
     const running = (Array.isArray(state.jobs) ? state.jobs : [])
       .map(item => discoverableBackendJobCandidate(item, "running", data, now, currentScope, matchesCurrentSchedule))
       .filter(Boolean)
+      .filter(item => !queuedJobIds.has(item.jobId) && !completedJobIds.has(item.jobId))
       .sort((left, right) => (
         right.startedAtMs - left.startedAtMs
         || right.createdAtMs - left.createdAtMs
@@ -3134,6 +3209,7 @@
     const queued = (Array.isArray(state.queue) ? state.queue : [])
       .map(item => discoverableBackendJobCandidate(item, "queued", data, now, currentScope, matchesCurrentSchedule))
       .filter(Boolean)
+      .filter(item => !completedJobIds.has(item.jobId))
       .sort((left, right) => (
         (left.position || Number.MAX_SAFE_INTEGER) - (right.position || Number.MAX_SAFE_INTEGER)
         || right.createdAtMs - left.createdAtMs
@@ -3232,6 +3308,7 @@
       : 0;
     if(pending?.jobId === value){
       writePendingBackendJob(value, pending.scheduleFingerprint, {
+        clearSolverStartedAt:true,
         progressBudgetSeconds:reportedBudgetSeconds || pending.progressBudgetSeconds,
         progressRunIndex:reportedRunIndex || pending.progressRunIndex
       });
@@ -3256,10 +3333,27 @@
   function recordBackendJobStarted(jobId, startedAtMs, metadata){
     const value = String(jobId || "").trim();
     const rawStartedAt = Math.max(0, Number(startedAtMs || 0) || 0);
-    if(!value || rawStartedAt <= 0) return 0;
+    const authoritativeRunning = metadata?.authoritativeRunning === true;
+    if(!value || (rawStartedAt <= 0 && !authoritativeRunning)) return 0;
     const now = Date.now();
     const pending = readPendingBackendJob();
-    const reportedStartedAt = normalizeBackendStartedAtMs(rawStartedAt, pending?.createdAt, now);
+    const reportedStartedAt = rawStartedAt > 0
+      ? normalizeBackendStartedAtMs(rawStartedAt, pending?.createdAt, now)
+      : 0;
+    const persistedStartedAt = pending?.jobId === value
+      ? normalizeBackendStartedAtMs(pending.solverStartedAtMs, pending.createdAt, now)
+      : 0;
+    const admittedStartedAt = progressState?.backendProgressJobId === value
+      ? normalizeBackendStartedAtMs(progressState.serverStartedAtMs, pending?.createdAt, now)
+      : 0;
+    // A concrete running/started response is authoritative even when an older
+    // backend omits its clock or a skewed timestamp fails normalization. Keep
+    // the first safe fallback stable for this job across later status polls;
+    // queued and idle responses must stay inside the pre-admission band.
+    const canonicalStartedAt = reportedStartedAt
+      || persistedStartedAt
+      || admittedStartedAt
+      || (authoritativeRunning ? now : 0);
     const localStartedAt = normalizeBackendStartedAtMs(
       progressState?.startedAt,
       pending?.createdAt,
@@ -3271,10 +3365,9 @@
       now
     );
     // Never turn a malformed/stale server timestamp into an artificial six-hour
-    // elapsed time. The server timestamp remains available for compute metrics,
-    // while the visible timer keeps the earliest valid origin so it cannot jump
-    // backwards when a live request moves from queued to running.
-    const normalizedStartedAt = reportedStartedAt
+    // elapsed time. The canonical compute clock uses the safe fallback above,
+    // while the visible timer keeps the earliest valid UI origin.
+    const normalizedStartedAt = canonicalStartedAt
       || localStartedAt
       || ((progressState || pending?.jobId === value) ? now : 0);
     if(normalizedStartedAt <= 0) return 0;
@@ -3284,7 +3377,7 @@
       : 0;
     if(pending?.jobId === value){
       writePendingBackendJob(value, pending.scheduleFingerprint, {
-        solverStartedAtMs:reportedStartedAt,
+        solverStartedAtMs:canonicalStartedAt,
         progressBudgetSeconds:reportedBudgetSeconds || pending.progressBudgetSeconds,
         progressRunIndex:reportedRunIndex || pending.progressRunIndex
       });
@@ -3304,15 +3397,15 @@
       // status cannot alternate with the normal sorting label.
       progressState.reconnecting = false;
       progressState.backendQueued = false;
-      progressState.serverStartedAtMs = reportedStartedAt;
-      progressState.startedAt = reportedStartedAt || normalizedStartedAt;
+      progressState.serverStartedAtMs = canonicalStartedAt;
+      progressState.startedAt = canonicalStartedAt || normalizedStartedAt;
       progressState.uiStartedAt = localUiStartedAt > 0
         ? Math.min(localUiStartedAt, normalizedStartedAt)
         : normalizedStartedAt;
-      progressState.phase = reportedStartedAt > 0 ? "running" : "preparing";
+      progressState.phase = canonicalStartedAt > 0 ? "running" : "preparing";
       if(reportedBudgetSeconds > 0) progressState.progressBudgetSeconds = reportedBudgetSeconds;
       if(reportedRunIndex > 0) progressState.runIndex = reportedRunIndex;
-      if(reportedStartedAt > 0) tickEstimatedProgress();
+      if(canonicalStartedAt > 0) tickEstimatedProgress();
       else persistPendingProgressState();
     }
     return normalizedStartedAt;
@@ -12825,6 +12918,7 @@
           }
           if(pendingKind === "solver_started" || pendingKind === "solver_running"){
             recordBackendJobStarted(solveRunId, queuedPayload?.startedAtMs, {
+              authoritativeRunning:true,
               progressBudgetSeconds:queuedPayload?.progressBudgetSeconds,
               progressRunIndex:queuedPayload?.progressRunIndex
             });
@@ -16880,28 +16974,28 @@
         schedulePendingBackendResume(attempt, SERVER_SOLVER_JOB_BACKGROUND_RETRY_MS);
         return false;
       }
-      const authoritativeJobs = Array.isArray(authoritativeState.jobs)
-        ? authoritativeState.jobs
-        : [];
-      const authoritativeQueue = Array.isArray(authoritativeState.queue)
-        ? authoritativeState.queue
-        : [];
-      const authoritativeRunning = authoritativeJobs.find(
-        item => String(item?.jobId || "") === authoritativeJobId
+      const authoritativeLifecycle = classifyBackendJobState(
+        authoritativeState,
+        authoritativeJobId
       );
-      const authoritativeQueued = authoritativeQueue.find(
-        item => String(item?.jobId || "") === authoritativeJobId
-      );
+      const authoritativeRunning = authoritativeLifecycle.kind === "running"
+        ? authoritativeLifecycle.matchingJob
+        : null;
+      const authoritativeQueued = authoritativeLifecycle.kind === "queued"
+        ? authoritativeLifecycle.matchingQueueItem
+        : null;
       // A mismatched schedule is never allowed to attach merely because the
       // API echoed a broad `requestedJobActive` bit. Require the concrete
       // running/queued item so an orphaned or stale id is detached promptly.
       const authoritativeLive = !!authoritativeRunning || !!authoritativeQueued;
       if(authoritativeLive){
+        const authoritativeItem = authoritativeQueued || authoritativeRunning;
         const observer = writePendingBackendJob(authoritativeJobId, pending.scheduleFingerprint, {
-          createdAt:authoritativeRunning?.createdAtMs || authoritativeQueued?.createdAtMs || pending.createdAt,
-          solverStartedAtMs:authoritativeRunning?.startedAtMs || pending.solverStartedAtMs,
-          progressBudgetSeconds:authoritativeRunning?.progressBudgetSeconds || authoritativeQueued?.progressBudgetSeconds || pending.progressBudgetSeconds,
-          progressRunIndex:authoritativeRunning?.progressRunIndex || authoritativeQueued?.progressRunIndex || pending.progressRunIndex,
+          createdAt:authoritativeItem?.createdAtMs || pending.createdAt,
+          solverStartedAtMs:authoritativeRunning?.startedAtMs || 0,
+          clearSolverStartedAt:!!authoritativeQueued,
+          progressBudgetSeconds:authoritativeItem?.progressBudgetSeconds || pending.progressBudgetSeconds,
+          progressRunIndex:authoritativeItem?.progressRunIndex || pending.progressRunIndex,
           discoveredFromOwnerState:true,
           localClickTimeline:false,
           observeOnly:true
@@ -16983,16 +17077,26 @@
       );
       if(!pending?.jobId) return false;
     }
-    const known = state.requestedJobServerOwned === true
+    const lifecycle = classifyBackendJobState(state, pending.jobId);
+    const responseRequestedJobId = String(state.requestedJobId || "").trim();
+    // Current APIs echo requestedJobId. Older APIs did not, so their scalar
+    // requestedJob* fields remain usable only when no conflicting id exists.
+    const requestedIdentityMatches = !responseRequestedJobId
+      || lifecycle.exactRequestedJob;
+    const concreteKnown = !!lifecycle.matchingJob
+      || !!lifecycle.matchingQueueItem
+      || !!lifecycle.matchingCompletedJob;
+    const requestedKnown = requestedIdentityMatches && (
+      state.requestedJobServerOwned === true
       || state.requestedJobResultReady === true
       || state.requestedJobActive === true
       || state.requestedJobQueued === true
-      || queue.some(item => String(item?.jobId || "") === pending.jobId)
-      || jobs.some(item => String(item?.jobId || "") === pending.jobId)
-      || completedJobs.some(item => String(item?.jobId || "") === pending.jobId);
+    );
+    const known = concreteKnown || requestedKnown;
     if(!known){
       const unknownAttempt = Math.max(0, Number(attempt || 0) || 0);
-      const explicitlyAbsent = state.requestedJobServerOwned === false
+      const explicitlyAbsent = requestedIdentityMatches
+        && state.requestedJobServerOwned === false
         && state.requestedJobActive !== true
         && state.requestedJobQueued !== true
         && state.requestedJobResultReady !== true;
@@ -17010,24 +17114,32 @@
       settleAuthoritativeIdleSolveUi({force:true});
       return false;
     }
-    const runningItem = jobs.find(item => String(item?.jobId || "") === pending.jobId);
-    const queuedItem = queue.find(item => String(item?.jobId || "") === pending.jobId);
+    const runningItem = lifecycle.matchingJob;
+    const queuedItem = lifecycle.matchingQueueItem;
     recordBackendLiveProgress(
       state?.requestedJobProgress
       || runningItem?.progress
       || queuedItem?.progress
     );
-    if(runningItem?.startedAtMs){
-      recordBackendJobStarted(pending.jobId, runningItem.startedAtMs, {
-        progressBudgetSeconds:runningItem.progressBudgetSeconds,
-        progressRunIndex:runningItem.progressRunIndex
-      });
-    }else if(state?.requestedJobQueued === true || queuedItem){
+    // Terminal/cancelling state blocks admission, and queue membership wins
+    // over a stale jobs entry for the same canonical id.
+    if(lifecycle.kind === "queued"){
       markBackendJobQueued(pending.jobId, {
         progressBudgetSeconds:queuedItem?.progressBudgetSeconds,
         progressRunIndex:queuedItem?.progressRunIndex
       });
+    }else if(lifecycle.kind === "running"){
+      recordBackendJobStarted(
+        pending.jobId,
+        runningItem?.startedAtMs || state?.requestedJobStartedAtMs,
+        {
+          authoritativeRunning:true,
+          progressBudgetSeconds:runningItem?.progressBudgetSeconds || state?.requestedJobProgressBudgetSeconds,
+          progressRunIndex:runningItem?.progressRunIndex || state?.requestedJobProgressRunIndex
+        }
+      );
     }
+    pending = readPendingBackendJob() || pending;
     if(window.__TKB_SOLVE_UI_BUSY === true || window.__TKB_RUST_SOLVER_RUNNING === true){
       schedulePendingBackendResume(0, 2_000);
       return false;

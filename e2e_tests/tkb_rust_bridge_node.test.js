@@ -10669,9 +10669,10 @@ test("an unknown pending job after reload is detached instead of replayed", asyn
     if(requestUrl.includes("/api/solver-state")){
       return jsonResponse({
         ok:true,
-        requestedJobServerOwned:false,
+        requestedJobId:"another-job",
+        requestedJobServerOwned:true,
         requestedJobResultReady:false,
-        requestedJobActive:false,
+        requestedJobActive:true,
         requestedJobQueued:false,
         jobs:[],
         queue:[]
@@ -11223,6 +11224,284 @@ test("the owner tab adopts the canonical VPS clock when FIFO state turns running
   assert.ok(state.percent > 12, "Automatic advances from the canonical VPS clock");
 });
 
+test("authoritative running falls back to the local clock when backend startedAt is missing or skewed", async () => {
+  for(const startedAtKind of ["missing", "deduped", "skewed"]){
+    const data = makeData(2);
+    const clock = createFakeClock();
+    const progress = createProgressDocument(clock);
+    const jobId = `authoritative-local-clock-${startedAtKind}`;
+    let backendMode = "queued";
+    const fetchImpl = async url => {
+      const requestUrl = String(url);
+      if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+      if(requestUrl.includes("/api/solver-state")){
+        if(backendMode === "queued"){
+          return jsonResponse({
+            ok:true,
+            requestedJobId:jobId,
+            requestedJobActive:true,
+            requestedJobQueued:true,
+            jobs:[{jobId, progressBudgetSeconds:120, progressRunIndex:1}],
+            queue:[{jobId, progressBudgetSeconds:120, progressRunIndex:1}],
+            completedJobs:[]
+          });
+        }
+        if(backendMode === "idle"){
+          return jsonResponse({
+            ok:true,
+            requestedJobId:jobId,
+            requestedJobActive:false,
+            requestedJobQueued:false,
+            jobs:[],
+            queue:[],
+            completedJobs:[]
+          });
+        }
+        const startedAtMs = startedAtKind === "skewed"
+          ? clock.now() - (7 * 60 * 60 * 1_000)
+          : startedAtKind === "deduped"
+            ? clock.now() - 90_000
+            : undefined;
+        return jsonResponse({
+          ok:true,
+          requestedJobId:jobId,
+          requestedJobActive:true,
+          requestedJobQueued:false,
+          ...(startedAtMs == null ? {} : {requestedJobStartedAtMs:startedAtMs}),
+          jobs:[{
+            jobId,
+            ...(startedAtMs == null ? {} : {startedAtMs}),
+            progressBudgetSeconds:120,
+            progressRunIndex:1
+          }],
+          queue:[],
+          completedJobs:[]
+        });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+    const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+      document:progress.document
+    }));
+
+    hooks.primeAutoSortStartUi();
+    hooks.startProgressTicker({
+      auto_sort_mode:"fast",
+      ui_requested_solve_mode:"automatic",
+      ui_progress_mode:"time",
+      overall_time_limit_seconds:120,
+      backend_deadline_ms:120_000
+    }, data);
+    hooks.writePendingBackendJob(jobId, hooks.durableScheduleFingerprint(data), {
+      progressBudgetSeconds:120,
+      progressRunIndex:1
+    });
+    hooks.markBackendJobQueued(jobId, {
+      progressBudgetSeconds:120,
+      progressRunIndex:1
+    });
+    clock.advance(9_000);
+    hooks.tickEstimatedProgress();
+    assert.equal(window.__TKB_RUST_PROGRESS_STATE.phase, "queued");
+    assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 12);
+
+    await window.TKBRustAPI.backendSolverState(jobId);
+    assert.equal(window.__TKB_RUST_PROGRESS_STATE.serverStartedAtMs, 0);
+    assert.equal(window.__TKB_RUST_PROGRESS_STATE.canonicalServerProgress, false);
+    assert.equal(
+      hooks.recordBackendJobStarted(jobId, 0, {progressBudgetSeconds:120}),
+      0,
+      "a missing clock without authoritative running state must not admit the job"
+    );
+
+    backendMode = "idle";
+    await window.TKBRustAPI.backendSolverState(jobId);
+    assert.equal(window.__TKB_RUST_PROGRESS_STATE.serverStartedAtMs, 0);
+    assert.equal(window.__TKB_RUST_PROGRESS_STATE.canonicalServerProgress, false);
+
+    backendMode = "running";
+    const locallyObservedStart = clock.now();
+    await window.TKBRustAPI.backendSolverState(jobId);
+    const admitted = window.__TKB_RUST_PROGRESS_STATE;
+    assert.equal(admitted.serverStartedAtMs, locallyObservedStart);
+    assert.equal(admitted.canonicalServerProgress, true);
+    assert.equal(admitted.phase, "running");
+
+    for(let pollIndex = 0; pollIndex < 2; pollIndex += 1){
+      clock.advance(5_000);
+      await window.TKBRustAPI.backendSolverState(jobId);
+      assert.equal(
+        window.__TKB_RUST_PROGRESS_STATE.serverStartedAtMs,
+        locallyObservedStart,
+        `${startedAtKind} repeated running polls must retain the first safe clock`
+      );
+    }
+    assert.ok(
+      window.__TKB_RUST_PROGRESS_STATE.percent > 12,
+      `${startedAtKind} authoritative running clock must advance beyond pre-admission`
+    );
+  }
+});
+
+test("resume keeps a duplicated jobs and queue entry queued", async () => {
+  const data = makeData(2);
+  const clock = createFakeClock();
+  const progress = createProgressDocument(clock);
+  const jobId = "resume-queue-dominance";
+  const startedAtMs = clock.now() - 10_000;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      return jsonResponse({
+        ok:true,
+        requestedJobId:jobId,
+        requestedJobServerOwned:true,
+        requestedJobActive:true,
+        requestedJobQueued:true,
+        jobs:[{
+          jobId,
+          startedAtMs,
+          progressBudgetSeconds:120,
+          progressRunIndex:1
+        }],
+        queue:[{
+          jobId,
+          progressBudgetSeconds:120,
+          progressRunIndex:1
+        }],
+        completedJobs:[]
+      });
+    }
+    if(requestUrl.includes("/api/solve-result")) throw detachedAbortError();
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+    document:progress.document
+  }));
+
+  hooks.writePendingBackendJob(jobId, hooks.durableScheduleFingerprint(data), {
+    progressBudgetSeconds:120,
+    progressRunIndex:1
+  });
+
+  assert.equal(await hooks.resumePendingBackendJobOnLoad(0), true);
+  assert.equal(hooks.readPendingBackendJob()?.solverStartedAtMs, 0);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.serverStartedAtMs, 0);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.canonicalServerProgress, false);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE.phase, "queued");
+});
+
+test("mismatched observer keeps a duplicated jobs and queue entry queued", async () => {
+  const data = makeData(2);
+  const clock = createFakeClock();
+  const progress = createProgressDocument(clock);
+  const jobId = "observer-queue-dominance";
+  let hooksRef = null;
+  let windowRef = null;
+  let observedStartedAtMs = -1;
+  let observedPhase = "";
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      return jsonResponse({
+        ok:true,
+        requestedJobId:jobId,
+        requestedJobServerOwned:true,
+        requestedJobActive:true,
+        requestedJobQueued:true,
+        jobs:[{
+          jobId,
+          startedAtMs:clock.now() - 20_000,
+          progressBudgetSeconds:120,
+          scheduleFingerprint:"v1:old-schedule"
+        }],
+        queue:[{
+          jobId,
+          progressBudgetSeconds:120,
+          scheduleFingerprint:"v1:old-schedule"
+        }],
+        completedJobs:[]
+      });
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      observedStartedAtMs = hooksRef.readPendingBackendJob()?.solverStartedAtMs ?? -1;
+      observedPhase = windowRef.__TKB_RUST_PROGRESS_STATE?.phase || "";
+      return jsonResponse({ok:true, metrics:{scheduled_periods:2, expected_periods:2}});
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const loaded = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+    document:progress.document
+  }));
+  hooksRef = loaded.hooks;
+  windowRef = loaded.window;
+  hooksRef.writePendingBackendJob(jobId, "v1:old-schedule", {
+    solverStartedAtMs:clock.now() - 10_000
+  });
+
+  assert.equal(await hooksRef.resumePendingBackendJobOnLoad(0), true);
+  assert.equal(observedStartedAtMs, 0);
+  assert.equal(observedPhase, "queued");
+});
+
+test("state admission ignores cancellation, terminal, mismatched, and failed snapshots", async () => {
+  for(const mode of ["cancelling", "terminal", "mismatched", "failed"]){
+    const data = makeData(2);
+    const clock = createFakeClock();
+    const progress = createProgressDocument(clock);
+    const jobId = `state-admission-${mode}`;
+    const fetchImpl = async url => {
+      const requestUrl = String(url);
+      if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+      if(requestUrl.includes("/api/solver-state")){
+        if(mode === "failed"){
+          return jsonResponse({ok:false, requestedJobId:jobId, requestedJobActive:true, jobs:[{jobId, startedAtMs:clock.now() - 8_000}]}, 503);
+        }
+        if(mode === "mismatched"){
+          return jsonResponse({ok:true, requestedJobId:"another-job", requestedJobActive:true, jobs:[], queue:[], completedJobs:[]});
+        }
+        const terminal = mode === "terminal";
+        return jsonResponse({
+          ok:true,
+          requestedJobId:jobId,
+          requestedJobActive:true,
+          requestedJobQueued:false,
+          requestedJobResultReady:terminal,
+          requestedJobExecutionPhase:terminal ? "completed" : "cancelling",
+          jobs:[{
+            jobId,
+            startedAtMs:clock.now() - 8_000,
+            cancelRequested:!terminal,
+            executionPhase:terminal ? "vps_running" : "cancelling"
+          }],
+          queue:[],
+          completedJobs:terminal ? [{jobId}] : []
+        });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+    const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+      document:progress.document
+    }));
+    hooks.cancelPendingBackendResume();
+    hooks.startProgressTicker({auto_sort_mode:"fast", overall_time_limit_seconds:120}, data);
+    hooks.writePendingBackendJob(jobId, hooks.durableScheduleFingerprint(data));
+    hooks.markBackendJobQueued(jobId, {progressBudgetSeconds:120, progressRunIndex:1});
+    await window.TKBRustAPI.backendSolverState(jobId);
+    clock.advance(1_000);
+    hooks.tickEstimatedProgress();
+    assert.equal(Number(hooks.readPendingBackendJob()?.solverStartedAtMs || 0), 0, mode);
+    const visibleProgress = window.__TKB_RUST_PROGRESS_STATE;
+    if(visibleProgress){
+      assert.equal(visibleProgress.serverStartedAtMs, 0, mode);
+      assert.equal(visibleProgress.canonicalServerProgress, false, mode);
+      assert.equal(visibleProgress.phase, "queued", mode);
+    }
+  }
+});
+
 test("all pending VPS response paths hand progress to the live-progress recorder", () => {
   const stateStart = BRIDGE_SOURCE.indexOf("async function backendSolverState");
   const stateEnd = BRIDGE_SOURCE.indexOf("function detachedServerJobError", stateStart);
@@ -11230,16 +11509,28 @@ test("all pending VPS response paths hand progress to the live-progress recorder
   assert.match(stateBody, /requestedJobProgress/);
   assert.match(stateBody, /\.progress/);
   assert.match(stateBody, /recordBackendLiveProgress/);
+  assert.match(
+    stateBody,
+    /recordBackendJobStarted\(trackedJobId,[\s\S]*?authoritativeRunning:true/
+  );
 
   const waitStart = BRIDGE_SOURCE.indexOf("async function waitForServerOwnedSolverResult");
   const waitEnd = BRIDGE_SOURCE.indexOf("async function cancelBackendSolver", waitStart);
   const waitBody = BRIDGE_SOURCE.slice(waitStart, waitEnd);
   assert.match(waitBody, /recordBackendLiveProgress\(pending\?\.progress\)/);
+  assert.match(
+    waitBody,
+    /recordBackendJobStarted\(jobId, pending\?\.startedAtMs, \{\s*authoritativeRunning:true/
+  );
 
   const postStart = BRIDGE_SOURCE.indexOf("async function postSolve");
   const postEnd = BRIDGE_SOURCE.indexOf("async function solveWithRustApi", postStart);
   const postBody = BRIDGE_SOURCE.slice(postStart, postEnd);
   assert.match(postBody, /recordBackendLiveProgress\(queuedPayload\?\.progress\)/);
+  assert.match(
+    postBody,
+    /recordBackendJobStarted\(solveRunId, queuedPayload\?\.startedAtMs, \{\s*authoritativeRunning:true/
+  );
 });
 
 test("two browsers on one canonical server job converge from server start and budget", () => {

@@ -1,6 +1,6 @@
 # TKBCherry Project Handoff
 
-Last updated: 2026-07-25 (Asia/Bangkok)
+Last updated: 2026-07-26 (Asia/Bangkok)
 
 This is the persistent handoff note for future Codex sessions. Read this file
 before modifying the scheduler or deploying. Update it after every meaningful
@@ -8,12 +8,17 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.102** (Agent validation load and
-  truthful executor status;
-  deployed 2026-07-25).
+- Current deployed application release: **v1.103** (stable mobile progress
+  admission and exact backend job lifecycle;
+  deployed 2026-07-26).
   Transactional backups are
-  `/opt/cherry-scheduler-backups/server-state-20260725-170815.tar.gz` and
-  `/opt/cherry-scheduler-backups/app-release-20260725-170815.tar.gz`.
+  `/opt/cherry-scheduler-backups/server-state-20260725-203929.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260725-203929.tar.gz`.
+- v1.103 fixes Automatic progress remaining at `12%` after a mobile resume or
+  an older/skewed backend start clock. Queue, cancelling, and terminal states
+  can no longer be admitted as running, and requested-job scalar flags are
+  accepted only for the matching job identity. Agent-first routing is
+  unchanged.
 - v1.102 coalesces Browser-Agent checkpoints, avoids the Python reference
   validator for metadata-only constraint models, and shows whether the active
   job is owned by the local Agent or VPS fallback. Final candidates and every
@@ -71,6 +76,34 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.103 stable mobile progress admission (deployed)
+
+- An authoritative running job with a missing, deduplicated, or clock-skewed
+  `startedAtMs` now receives one safe local admission clock. The first fallback
+  remains stable across later polls, so time-based Automatic progress advances
+  beyond the `12%` pre-admission band without jumping backwards.
+- Backend lifecycle classification now gives queue and terminal state priority
+  over stale `jobs` entries. `cancelRequested`, `cancelling`, completed, and
+  result-ready work cannot be displayed as running. Resume also gates scalar
+  `requestedJob*` fields by exact `requestedJobId`; legacy responses without an
+  echoed id remain compatible when no conflicting id exists.
+- Markers are `tkb-rust-api-v291-mobile-progress-admission` and
+  `20260726-v1103-mobile-progress-admission-v1`. Rust API stays on
+  `tkb_new-rust-api-2026-07-25-agent-validation-v82`; solver routing and search
+  behavior are unchanged.
+- Full local Node verification passes **408/408**; the focused bridge suite
+  passes **258/258**, deployment tooling **25/25**, JavaScript syntax, and
+  `git diff --check` pass. Isolated VPS staging passes scheduler **230/230**,
+  Agent **155/155**, trusted worker **5/5**, Rust API **203/203**, and native
+  validation **43/43**, ending with `STAGING_TESTS_OK`.
+- Production deployment returned `UPDATE_OK`. Live in-app Browser acceptance at
+  `390x844` observed Automatic progress advance through `42%` while the page
+  reported `Agent dang toi uu bang 22 Worker tren thiet bi`. Ten consecutive
+  VPS health samples stayed at zero active/queued solver jobs and zero allocated
+  Worker tokens with all `6/6` tokens available. The accepted timetable ended
+  with **1566/1566** assigned periods, **0** two-period gaps, and **0**
+  one-period teacher sessions.
 
 ### v1.102 Agent validation load and executor status (deployed)
 
