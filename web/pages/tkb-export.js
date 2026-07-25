@@ -362,7 +362,7 @@
     }
   };
 
-  const INDUSTRY_EXPORT_VERSION = '20260725-v197-industry-font8-v1';
+  const INDUSTRY_EXPORT_VERSION = '20260725-v1100-industry-export-queue-v1';
   const INDUSTRY_DAYS = ['thu2', 'thu3', 'thu4', 'thu5', 'thu6', 'thu7'];
   const INDUSTRY_PERIODS = 5;
   const INDUSTRY_FONT = 'Times New Roman';
@@ -456,7 +456,7 @@
     const record = _industryTeacherRecord(code);
     const maGV2 = _safeText(record?.magv2 || record?.MaGV2 || record?.maGV2);
     if(maGV2) return maGV2;
-    const maGV = _safeText(record?.magv || record?.code || code);
+    const maGV = _safeText(record?.magv || record?.MaGV || record?.code || code);
     if(maGV) return maGV;
     try{ return _safeText(getTeacherShort(code)); }catch(_){ return _safeText(code); }
   }
@@ -537,13 +537,14 @@
     title: _industryStyle(24, { bold:true, border:false, wrap:false }),
     session: _industryStyle(11, { bold:true, border:false, wrap:false }),
     date: _industryStyle(9, { bold:true, border:false, wrap:false }),
-    header: _industryStyle(9, { bold:true, fill:'FFD9D9D9' }),
-    day: _industryStyle(26, { bold:true, wrap:false }),
+    header: _industryStyle(8, { bold:true, fill:'FFD9D9D9' }),
+    day: _industryStyle(8, { bold:true, wrap:false }),
     period: _industryStyle(8, { wrap:false }),
     lesson: _industryStyle(8, { shrink:true }),
     pcgdHeader: _industryStyle(10, { bold:true, fill:'FFD9D9D9', wrap:false }),
     pcgdText: _industryStyle(11, { align:'left' }),
-    pcgdCenter: _industryStyle(11, { wrap:false })
+    pcgdCenter: _industryStyle(11, { wrap:false }),
+    pcgdAssignment: _industryStyle(8, { align:'left', wrap:false, shrink:true })
   };
 
   function _industryEnsureCell(ws, row, col){
@@ -666,6 +667,19 @@
     return Array.from(new Set(result)).join(', ');
   }
 
+  function _industrySubjectCode(mon){
+    const raw = _safeText(mon);
+    const key = raw.toLocaleLowerCase('vi-VN');
+    const rows = []
+      .concat(Array.isArray(DATA?.monhoc) ? DATA.monhoc : [])
+      .concat(Array.isArray(DATA?.mon) ? DATA.mon : []);
+    const found = rows.find(row => [row?.ten, row?.mon, row?.mamon, row?.ma, row?.ma2, row?.id, row?.key]
+      .some(value => _safeText(value).toLocaleLowerCase('vi-VN') === key));
+    const code = _safeText(found?.ma || found?.ma2 || found?.mamon || found?.code || found?.id || found?.key);
+    if(code) return code;
+    try{ return _safeText(getMonShort(raw)) || raw; }catch(_){ return raw; }
+  }
+
   function _industryPcgdRows(classes){
     const teachers = new Map();
     const order = [];
@@ -690,8 +704,7 @@
       _industryRequiredSubjects(lop).forEach(row => {
         const mon = _safeText(row?.mon || row?.ten || row?.subject);
         if(!mon) return;
-        let subject = mon;
-        try{ subject = _safeText(getMonShort(mon)) || mon; }catch(_){ }
+        const subject = _industrySubjectCode(mon);
         const required = Math.max(0, Number(row?.required ?? row?.sotiet ?? row?.periods ?? 0) || 0);
         const classCanon = _industryClassName(lop);
         let teacherValue = row?.gv || row?.teacher || '';
@@ -718,8 +731,8 @@
     order.forEach((key, index) => {
       const teacher = teachers.get(key);
       const assignment = Array.from(teacher.subjects.values())
-        .map(subject => `${subject.label} (${subject.classes.join(', ')})`)
-        .join(' + ');
+        .map(subject => `${subject.label}(${subject.classes.join(', ')});`)
+        .join('');
       rows.push([
         index + 1,
         _industryTeacherFullName(teacher.code, teacher.record),
@@ -745,7 +758,10 @@
     for(let row = 0; row < rows.length; row++){
       for(let col = 0; col < 6; col++){
         const centered = col === 0 || col === 3 || col === 5;
-        _industryStyleCell(ws, row, col, row === 0 ? INDUSTRY_STYLES.pcgdHeader : (centered ? INDUSTRY_STYLES.pcgdCenter : INDUSTRY_STYLES.pcgdText));
+        const bodyStyle = col === 4
+          ? INDUSTRY_STYLES.pcgdAssignment
+          : (centered ? INDUSTRY_STYLES.pcgdCenter : INDUSTRY_STYLES.pcgdText);
+        _industryStyleCell(ws, row, col, row === 0 ? INDUSTRY_STYLES.pcgdHeader : bodyStyle);
       }
     }
     return ws;
@@ -754,7 +770,7 @@
   function _buildIndustryDatabaseWorkbook(){
     if(!window.XLSX) throw new Error('Chưa tải được thư viện Excel XLSX.');
     const classes = _industryClasses();
-    if(!classes.length) throw new Error('Chưa có lớp để chuyển CSDL ngành.');
+    if(!classes.length) throw new Error('Chưa có lớp để xuất CSDL ngành.');
     const meta = _industryMeta();
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, _industryScheduleSheet('sang', classes, meta), 'TKB_LOP_S');
@@ -780,6 +796,16 @@
       if(Number(row) >= 6 && Number(row) <= 35 && XLSX.utils.decode_col(col) >= 2 && style){
         ids.add(Number(style[1]));
       }
+      return match;
+    });
+    return ids;
+  }
+
+  function _industryPcgdAssignmentStyleIds(xml){
+    const ids = new Set();
+    String(xml || '').replace(/<c\b([^>]*\br="E(\d+)"[^>]*)>/g, (match, attrs, row) => {
+      const style = attrs.match(/\bs="(\d+)"/);
+      if(Number(row) >= 2 && style) ids.add(Number(style[1]));
       return match;
     });
     return ids;
@@ -868,6 +894,16 @@
     });
   }
 
+  function _industryPatchPcgdAssignmentStyles(xml, styleMap){
+    return String(xml || '').replace(/<c\b([^>]*\br="E(\d+)"[^>]*)>/g, (match, attrs, row) => {
+      if(Number(row) < 2) return match;
+      const style = attrs.match(/\bs="(\d+)"/);
+      const replacement = style && styleMap.get(Number(style[1]));
+      if(replacement == null) return match;
+      return match.replace(/\bs="\d+"/, `s="${replacement}"`);
+    });
+  }
+
   function _industryPatchWorksheetXml(xml, layout){
     const view = layout.schedule
       ? '<sheetViews><sheetView workbookViewId="0"><pane xSplit="2" ySplit="5" topLeftCell="C6" activePane="bottomRight" state="frozen"/><selection pane="topRight" activeCell="C1" sqref="C1"/><selection pane="bottomLeft" activeCell="A6" sqref="A6"/><selection pane="bottomRight" activeCell="C6" sqref="C6"/></sheetView></sheetViews>'
@@ -911,51 +947,82 @@
     const zip = await window.JSZip.loadAsync(source);
     const schedulePaths = ['xl/worksheets/sheet1.xml', 'xl/worksheets/sheet2.xml'];
     const scheduleXml = [];
-    const lessonStyleIds = new Set();
+    const compactStyleIds = new Set();
     for(const path of schedulePaths){
       const file = zip.file(path);
       if(!file) throw new Error(`Thiếu bảng ${path} trong file CSDL ngành.`);
       const xml = await file.async('string');
       scheduleXml.push(xml);
-      _industryCellStyleIds(xml).forEach(id => lessonStyleIds.add(id));
+      _industryCellStyleIds(xml).forEach(id => compactStyleIds.add(id));
     }
+
+    const pcgdPath = 'xl/worksheets/sheet3.xml';
+    const pcgdFile = zip.file(pcgdPath);
+    if(!pcgdFile) throw new Error('Thiếu bảng PCGD trong file CSDL ngành.');
+    const pcgdXml = await pcgdFile.async('string');
+    _industryPcgdAssignmentStyleIds(pcgdXml).forEach(id => compactStyleIds.add(id));
 
     const stylesFile = zip.file('xl/styles.xml');
     if(!stylesFile) throw new Error('Thiếu định dạng Excel trong file CSDL ngành.');
-    const patchedStyles = _industryAppendShrinkStyles(await stylesFile.async('string'), lessonStyleIds);
+    const patchedStyles = _industryAppendShrinkStyles(await stylesFile.async('string'), compactStyleIds);
     zip.file('xl/styles.xml', patchedStyles.xml);
     schedulePaths.forEach((path, index) => {
       const styled = _industryPatchLessonStyles(scheduleXml[index], patchedStyles.styleMap);
       zip.file(path, _industryPatchWorksheetXml(styled, { schedule:true }));
     });
 
-    const pcgdPath = 'xl/worksheets/sheet3.xml';
-    const pcgdFile = zip.file(pcgdPath);
-    if(!pcgdFile) throw new Error('Thiếu bảng PCGD trong file CSDL ngành.');
-    zip.file(pcgdPath, _industryPatchWorksheetXml(await pcgdFile.async('string'), { schedule:false }));
+    const styledPcgd = _industryPatchPcgdAssignmentStyles(pcgdXml, patchedStyles.styleMap);
+    zip.file(pcgdPath, _industryPatchWorksheetXml(styledPcgd, { schedule:false }));
 
     const bytes = await zip.generateAsync({ type:'uint8array', compression:'DEFLATE' });
     _industryDownloadBytes(bytes, fileName);
     return bytes;
   }
 
-  window.exportIndustryDatabaseExcel = async function(){
+  function _industryFileDateToday(){
+    const now = new Date();
+    return `${_pad2(now.getDate())}${_pad2(now.getMonth() + 1)}${now.getFullYear()}`;
+  }
+
+  function _industryNextFile(dateStamp){
+    const key = `TKB_XLSX_EXPORT_SEQ::csdl::${dateStamp}`;
+    let sequence = 1;
     try{
-      _industrySetStatus('Đang chuyển dữ liệu sang mẫu CSDL ngành...', 'info');
+      const previous = Number(localStorage.getItem(key) || 0);
+      sequence = Math.max(1, (Number.isFinite(previous) ? previous : 0) + 1);
+    }catch(_){ }
+    return { key, sequence, fileName:`csdl${_pad2(sequence)}${dateStamp}.xlsx` };
+  }
+
+  function _industryRememberFile(file){
+    try{ localStorage.setItem(file.key, String(file.sequence)); }catch(_){ }
+  }
+
+  let industryExportQueue = Promise.resolve();
+
+  async function _industryExportDatabaseExcel(){
+    try{
+      _industrySetStatus('Đang xuất CSDL ngành...', 'info');
       try{ if(typeof saveStore === 'function') saveStore({ force:true }); }catch(_){ }
       const built = _buildIndustryDatabaseWorkbook();
-      const safeNumber = (_safeText(built.meta.scheduleNumber) || '1').replace(/[\\/:*?"<>|]+/g, '_');
-      const fileName = `CSDL_nganh_TKB_${safeNumber}.xlsx`;
-      const outputBytes = await _industryWriteWorkbook(built.wb, fileName);
-      _industrySetStatus(`Đã xuất ${fileName} gồm ${built.classes.length} lớp và 3 bảng dữ liệu.`, 'ok');
-      return { ok:true, fileName, workbook:built.wb, outputBytes };
+      const file = _industryNextFile(_industryFileDateToday());
+      const outputBytes = await _industryWriteWorkbook(built.wb, file.fileName);
+      _industryRememberFile(file);
+      _industrySetStatus(`Đã xuất ${file.fileName} gồm ${built.classes.length} lớp và 3 bảng dữ liệu.`, 'ok');
+      return { ok:true, fileName:file.fileName, workbook:built.wb, outputBytes };
     }catch(err){
-      const message = err?.message || String(err || 'Không chuyển được CSDL ngành.');
+      const message = err?.message || String(err || 'Không xuất được CSDL ngành.');
       console.error('exportIndustryDatabaseExcel failed', err);
       _industrySetStatus(message, 'error');
       alert(message);
       return null;
     }
+  }
+
+  window.exportIndustryDatabaseExcel = function(){
+    const task = industryExportQueue.then(_industryExportDatabaseExcel, _industryExportDatabaseExcel);
+    industryExportQueue = task.then(() => undefined, () => undefined);
+    return task;
   };
 
   window.__TKB_INDUSTRY_EXPORT_VERSION = INDUSTRY_EXPORT_VERSION;

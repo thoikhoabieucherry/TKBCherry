@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = 'constraints-menu-v5-industry-export-label';
+  const VERSION = 'constraints-menu-v6-industry-print-submenu';
   const MENU_ID = 'tkbConstraintsDropdownMenu';
   const STYLE_ID = 'tkbConstraintsDropdownStyle';
   let activeAnchor = null;
@@ -119,6 +119,7 @@
       </li>
       <li><button type="button" data-rb-print="school-class">TKB toàn trường theo lớp học</button></li>
       <li><button type="button" data-rb-print="school-teacher">TKB toàn trường theo giáo viên</button></li>
+      <li><button type="button" data-rb-print="industry-database">Xuất CSDL ngành</button></li>
     `;
   }
 
@@ -175,7 +176,6 @@
           <button type="button">In TKB <span class="rb-menu-arrow">›</span></button>
           <ul class="rb-menu-sub">${printRows()}</ul>
         </li>
-        <li><button type="button" data-rb-print="industry-database">Xuất CSDL ngành</button></li>
       </ul>
     `;
     return html.replace(/<li><button type="button" data-rb-open="groups"[\s\S]*?<\/li>\s*/, '');

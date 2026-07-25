@@ -21,6 +21,11 @@ function teacherList(raw){
     .filter(Boolean);
 }
 
+function todayStamp(){
+  const now = new Date();
+  return `${String(now.getDate()).padStart(2, "0")}${String(now.getMonth() + 1).padStart(2, "0")}${now.getFullYear()}`;
+}
+
 function makeContext(){
   const classes = [
     {id:"L1", ten:"6A1", gvcn:"GV1"},
@@ -55,6 +60,7 @@ function makeContext(){
   const alerts = [];
   const written = [];
   const downloads = [];
+  const storage = new Map();
   const context = {
     console,
     Uint8Array,
@@ -68,6 +74,10 @@ function makeContext(){
     URL:{
       createObjectURL(){ return "blob:industry-export"; },
       revokeObjectURL(){}
+    },
+    localStorage:{
+      getItem(key){ return storage.has(String(key)) ? storage.get(String(key)) : null; },
+      setItem(key, value){ storage.set(String(key), String(value)); }
     },
     document:{
       querySelector(){ return null; },
@@ -163,14 +173,19 @@ function assertCellFont(saved, sheetXml, address, size, bold){
 }
 
 test("requirements menu exposes the industry conversion directly below Print TKB", () => {
-  const printIndex = menuSource.indexOf(">In TKB <");
-  const industryIndex = menuSource.indexOf('data-rb-print="industry-database"');
-  assert.ok(printIndex >= 0 && industryIndex > printIndex);
+  const printRowsStart = menuSource.indexOf("function printRows()");
+  const printRowsEnd = menuSource.indexOf("function buildMenu()", printRowsStart);
+  const printRowsSource = menuSource.slice(printRowsStart, printRowsEnd);
+  const schoolTeacherIndex = printRowsSource.indexOf('data-rb-print="school-teacher"');
+  const industryIndex = printRowsSource.indexOf('data-rb-print="industry-database"');
+  assert.ok(schoolTeacherIndex >= 0 && industryIndex > schoolTeacherIndex, "industry export must be last in Print TKB");
+  const buildMenuSource = menuSource.slice(printRowsEnd, menuSource.indexOf("function closeMenu", printRowsEnd));
+  assert.doesNotMatch(buildMenuSource, /data-rb-print="industry-database"/);
   assert.match(menuSource, /Xuất CSDL ngành/);
   assert.doesNotMatch(menuSource, /Chuyển CSDL ngành/);
   assert.match(plannerSource, /key === "industry-database"[\s\S]*?exportIndustryDatabaseExcel/);
-  assert.match(plannerHtml, /tkb-export\.js\?v=20260725-v197-industry-font8-v1/);
-  assert.match(plannerHtml, /tkb-constraints-menu\.js\?v=20260725-v198-industry-export-label-v1/);
+  assert.match(plannerHtml, /tkb-export\.js\?v=20260725-v1100-industry-export-queue-v1/);
+  assert.match(plannerHtml, /tkb-constraints-menu\.js\?v=20260725-v1100-industry-export-queue-v1/);
 });
 
 test("industry export matches the three-sheet sample and uses MaGV2 in timetable cells", async () => {
@@ -178,7 +193,7 @@ test("industry export matches the three-sheet sample and uses MaGV2 in timetable
   const result = await context.exportIndustryDatabaseExcel();
 
   assert.equal(result.ok, true);
-  assert.equal(result.fileName, "CSDL_nganh_TKB_7.xlsx");
+  assert.equal(result.fileName, `csdl01${todayStamp()}.xlsx`);
   assert.equal(context.downloads.length, 1);
   assert.equal(context.downloads[0].download, result.fileName);
   assert.ok(result.outputBytes instanceof Uint8Array);
@@ -207,10 +222,10 @@ test("industry export matches the three-sheet sample and uses MaGV2 in timetable
   assert.equal(pcgd.B1.v, "Giáo viên");
   assert.equal(pcgd.B2.v, "Nguyễn Văn An");
   assert.equal(pcgd.D2.v, "6A1");
-  assert.equal(pcgd.E2.v, "Toán (6A1, 6A2)");
+  assert.equal(pcgd.E2.v, "Toán(6A1, 6A2);");
   assert.equal(pcgd.F2.v, 8);
   assert.equal(pcgd.B3.v, "Trần Thị Bình");
-  assert.equal(pcgd.E3.v, "Văn (6A1)");
+  assert.equal(pcgd.E3.v, "Văn(6A1);");
   assert.equal(pcgd.F3.v, 3);
   assert.equal(result.workbook.Workbook.Names[0].Ref, "PCGD!$1:$1");
 
@@ -261,11 +276,17 @@ test("industry export matches the three-sheet sample and uses MaGV2 in timetable
     assert.match(fontXmlAt(saved.styles, fontId), /<name val="Times New Roman"\/>/);
     assert.doesNotMatch(fontXmlAt(saved.styles, fontId), /<b\/>/);
   });
-  assertCellFont(saved, saved.morning, "C5", 9, true);
+  assertCellFont(saved, saved.morning, "A5", 8, true);
+  assertCellFont(saved, saved.morning, "C5", 8, true);
+  assertCellFont(saved, saved.morning, "A6", 8, true);
+  assertCellFont(saved, saved.morning, "B6", 8, false);
   assertCellFont(saved, saved.pcgd, "A1", 10, true);
   assertCellFont(saved, saved.pcgd, "B2", 11, false);
+  assertCellFont(saved, saved.pcgd, "E2", 8, false);
+  const pcgdAssignmentStyle = styleXmlAt(saved.styles, cellStyleId(saved.pcgd, "E2"));
+  assert.match(pcgdAssignmentStyle, /<alignment[^>]*shrinkToFit="1"/);
+  assert.doesNotMatch(pcgdAssignmentStyle, /wrapText=/);
   assert.match(saved.styles, /<font><sz val="24"\/><name val="Times New Roman"\/><b\/>/);
-  assert.match(saved.styles, /<font><sz val="26"\/><name val="Times New Roman"\/><b\/>/);
   assert.match(saved.styles, /<font><sz val="10"\/><name val="Times New Roman"\/><b\/>/);
 });
 
@@ -304,12 +325,54 @@ test("industry export keeps genuine co-teachers distinct with an unambiguous sep
   assert.equal(pcgd.F3.v, 7);
 });
 
-test("industry export sanitizes imported schedule numbers in the download name", async () => {
+test("industry export prefers MaGV2 and falls back to MaGV", async () => {
   const context = makeContext();
-  context.DATA.tkbConstraints.meta.scheduleNumber = "7/2:*";
+  context.DATA.giaovien[1].magv2 = "";
+  delete context.DATA.giaovien[1].magv;
+  context.DATA.giaovien[1].MaGV = "GV2";
 
   const result = await context.exportIndustryDatabaseExcel();
 
-  assert.equal(result.fileName, "CSDL_nganh_TKB_7_2_.xlsx");
-  assert.equal(context.downloads[0].download, result.fileName);
+  assert.equal(result.workbook.Sheets.TKB_LOP_C.C6.v, "Văn - GV2");
+});
+
+test("industry PCGD uses subject codes and compact semicolon groups", async () => {
+  const context = makeContext();
+  context.DATA.lop = [
+    {id:"H1", ten:"6A14"},
+    {id:"G1", ten:"6A1"},
+    {id:"G2", ten:"6A10"},
+    {id:"D1", ten:"9A11"}
+  ];
+  context.DATA.giaovien = [context.DATA.giaovien[0]];
+  context.DATA.monhoc = [
+    {ten:"Hoạt động trải nghiệm", ma:"HDTN", ma2:"TNHN"},
+    {ten:"Giáo dục", ma:"GD", ma2:"GDCD"},
+    {ten:"Giáo dục địa phương", ma:"GDDP", ma2:"GDĐP"}
+  ];
+  context.requiredSubjectsForClass = lop => ({
+    H1:[{mon:"TNHN", required:1, gv:"GV1"}],
+    G1:[{mon:"GDCD", required:1, gv:"GV1"}],
+    G2:[{mon:"GDCD", required:1, gv:"GV1"}],
+    D1:[{mon:"GDĐP", required:1, gv:"GV1"}]
+  })[lop.id] || [];
+
+  const result = await context.exportIndustryDatabaseExcel();
+
+  assert.equal(result.workbook.Sheets.PCGD.E2.v, "HDTN(6A14);GD(6A1, 6A10);GDDP(9A11);");
+});
+
+test("industry export uses the csdl sequence and current date", async () => {
+  const context = makeContext();
+  context.DATA.tkbConstraints.meta.scheduleNumber = "7/2:*";
+
+  const [first, second] = await Promise.all([
+    context.exportIndustryDatabaseExcel(),
+    context.exportIndustryDatabaseExcel()
+  ]);
+
+  assert.equal(first.fileName, `csdl01${todayStamp()}.xlsx`);
+  assert.equal(second.fileName, `csdl02${todayStamp()}.xlsx`);
+  assert.equal(context.downloads[0].download, first.fileName);
+  assert.equal(context.downloads[1].download, second.fileName);
 });

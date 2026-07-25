@@ -8,11 +8,20 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.98** (industry export label;
+- Current deployed application release: **v1.100** (serialized industry export;
   deployed 2026-07-25).
   Transactional backups are
-  `/opt/cherry-scheduler-backups/server-state-20260725-143013.tar.gz` and
-  `/opt/cherry-scheduler-backups/app-release-20260725-143013.tar.gz`.
+  `/opt/cherry-scheduler-backups/server-state-20260725-150312.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260725-150312.tar.gz`.
+- v1.100 serializes same-page industry export requests so rapid double clicks
+  cannot download two files with the same daily sequence. It retains the v1.99
+  workbook contract, v1.96 administration UI, and the existing API v80
+  scheduler and Agent routing. Public health is idle with zero active/queued
+  jobs and all `6/6` worker tokens available.
+- v1.99 changes only the industry workbook serializer and command placement.
+  It retains the v1.98 label, v1.96 administration UI, and the existing API
+  v80 scheduler and Agent routing. Public health is idle with zero
+  active/queued jobs and all `6/6` worker tokens available.
 - v1.98 changes only the visible industry-export command label and menu cache
   key. It retains the v1.97 workbook font/style fix, v1.96 administration UI,
   and the existing API v80 scheduler and Agent routing. Public health is idle
@@ -52,6 +61,43 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.100 serialized industry export (deployed)
+
+- Industry exports requested concurrently in one page are now processed in a
+  short promise queue. The next request reads the sequence only after the prior
+  download has committed it, preventing duplicate `csdl01...xlsx` names while
+  preserving successful daily numbering.
+- The `MaGV2` fallback regression now deletes the lowercase fixture field and
+  supplies only uppercase `MaGV`, so the exact production input shape is
+  covered rather than passing through the older lowercase alias.
+- Cache marker: `20260725-v1100-industry-export-queue-v1`. Focused export tests
+  pass **7/7**, including concurrent exports yielding `csdl01...xlsx` and
+  `csdl02...xlsx`; full local Node verification passes **398/398**. Production
+  deployment returned `UPDATE_OK` with the backups listed above. No scheduler,
+  data, authentication, or Agent behavior changed.
+
+### v1.99 industry workbook contract (deployed)
+
+- `Xuat CSDL nganh` is now the final command inside the `In TKB` submenu and
+  no longer appears as a duplicate top-level requirement-menu command.
+- Timetable day/period headers and lesson cells use Times New Roman 8. PCGD
+  assignment cells use 8-point text with actual OpenXML shrink-to-fit and no
+  wrapping so long subject/class lists remain inside the supplied template.
+- PCGD assignments use compact subject-code groups such as
+  `HDTN(6A14);GD(6A1, 6A10);GDDP(9A11);`. Subject `ma` is preferred before
+  secondary aliases. Timetable teacher codes prefer `MaGV2` and fall back to
+  `MaGV` when `MaGV2` is empty.
+- Industry files are named `csdl` plus a two-digit per-day sequence and the
+  current `DDMMYYYY` date, for example `csdl0125072026.xlsx`. The browser keeps
+  the daily sequence under `TKB_XLSX_EXPORT_SEQ::csdl::<date>`.
+- Cache marker: `20260725-v199-industry-contract-v1`. Focused export tests pass
+  **7/7** and full local Node verification passes **398/398**. Saved-file
+  OpenXML verification confirms `cellXfs 33/33`, 8-point timetable/header and
+  PCGD assignment styles, valid style references, and shrink-to-fit on long
+  content. Production deployment returned `UPDATE_OK` with the backups listed
+  above. Live in-app Browser acceptance confirmed the menu placement and both
+  v1.99 script cache keys. No scheduler or Agent behavior changed.
 
 ### v1.98 industry export label (deployed)
 
@@ -4705,7 +4751,7 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-25: `UPDATE_OK` for
-application v1.98. Public health serves
+application v1.100. Public health serves
 `tkb_new-rust-api-2026-07-25-vps-priority-v80`; the planner serves
 `20260725-v193-vps-worker-release-v1`, bridge marker
 `tkb-rust-api-v288-vps-worker-release`, and Browser executor
@@ -4713,8 +4759,8 @@ application v1.98. Public health serves
 `20260725-v188-compact-super-admin-v2`.
 Public health is idle with zero active/queued jobs and `6/6` worker tokens.
 Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260725-143013.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260725-143013.tar.gz`.
+`/opt/cherry-scheduler-backups/server-state-20260725-150312.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260725-150312.tar.gz`.
 Public Agent release `1.6.31` and its signed manifest are live. The 88,054,539
 byte archive SHA-256 is
 `402f4eba12db1b31aa923e0960450855a7314729c90c796889741b31a4aaaa96`; the
