@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v286-session-gap-quality";
+  const VERSION = "tkb-rust-api-v288-vps-worker-release";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -12711,6 +12711,9 @@
           try{ queuedPayload = await response.clone().json(); }catch(_){}
           recordBackendLiveProgress(queuedPayload?.progress);
           const pendingKind = String(queuedPayload?.kind || queuedPayload?.error || "").toLowerCase();
+          const serverExecutor = String(queuedPayload?.executor || "")
+            .trim()
+            .toLowerCase();
           const serverOwnedJob = queuedPayload?.serverOwned === true
             || pendingKind === "solver_started"
             || pendingKind === "solver_running";
@@ -12747,15 +12750,38 @@
           }
           if(serverOwnedJob){
             window.__TKB_SOLVE_BACKEND_POSTED = false;
+            try{
+              window.__TKB_RUST_LAST_REQUEST_DEBUG = Object.assign(
+                {},
+                window.__TKB_RUST_LAST_REQUEST_DEBUG || {},
+                {serverExecutor}
+              );
+            }catch(_){ }
+            if(
+              browserWasmProbed
+              && serverExecutor === "vps"
+              && typeof window.TKBBrowserWasmExecutor?.close === "function"
+            ){
+              // VPS owns this run. Release the preflight-only local pool now
+              // instead of holding its compiled workers until the remote solve
+              // finishes.
+              await Promise.resolve(window.TKBBrowserWasmExecutor.close(
+                "vps_executor_selected",
+                {failLease:false}
+              )).catch(() => null);
+              browserWasmProbed = false;
+            }
             if(
               browserWasmProbed
               && !browserWasmActivated
               && !controller.signal.aborted
+              && (!serverExecutor || serverExecutor === "agent")
               && typeof window.TKBBrowserWasmExecutor?.activate === "function"
             ){
-              // The durable job now exists. Hello advances its execution
-              // generation and requests VPS -> browser handoff; the lease is
-              // published only after the VPS child has fully exited.
+              // The durable job now exists. Activate only when the server chose
+              // Agent (or an older server omitted the executor). A focused VPS
+              // reservation is authoritative; handing it back here recreated
+              // the weak local-search path immediately after admission.
               browserWasmActivated = await window.TKBBrowserWasmExecutor.activate({
                 apiBase,
                 jobId:solveRunId,
@@ -12768,7 +12794,8 @@
                   {},
                   window.__TKB_RUST_LAST_REQUEST_DEBUG || {},
                   {
-                    browserWasmActivated,
+                   browserWasmActivated,
+                    serverExecutor,
                     browserWasmState:typeof window.TKBBrowserWasmExecutor?.state === "function"
                       ? window.TKBBrowserWasmExecutor.state()
                       : null

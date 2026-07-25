@@ -1609,6 +1609,198 @@ test("browser readiness marker is serialized only after a successful eligible WA
   }
 });
 
+test("focused VPS admission is authoritative and is not handed back to Browser Agent", async () => {
+  const data = makeData(2);
+  const subject = data.mon[0].ten;
+  data.tkb = {
+    L1:{thu2:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]}}
+  };
+  data.tkbSolverResult = {
+    ok:true,
+    lessons:[
+      {classId:"L1", subject, teacherId:"GV01", day:"thu2", session:"sang", period:0},
+      {classId:"L1", subject, teacherId:"GV01", day:"thu2", session:"sang", period:1}
+    ],
+    metrics:{
+      scheduled_periods:2,
+      expected_periods:2,
+      unassigned_periods:0,
+      teacher_sessions:1,
+      one_period_teacher_sessions:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      app_constraint_violation_count:0
+    },
+    validation:{hard_ok:true},
+    unassignedLessons:[],
+    solver:{runtime_settings:{}}
+  };
+  let activateCalls = 0;
+  let closeCalls = 0;
+  let posted = null;
+  let jobId = "";
+  const executor = {
+    isEnabled(){ return true; },
+    canHandleRequest(){ return true; },
+    async probe(){ return true; },
+    async activate(){ activateCalls += 1; return true; },
+    async close(reason, options){
+      closeCalls += 1;
+      assert.equal(reason, "vps_executor_selected");
+      assert.equal(options.failLease, false);
+      return true;
+    },
+    state(){
+      return {
+        probed:true,
+        active:false,
+        computeActive:false,
+        localComputeRuns:0,
+        localAcceptedResults:0
+      };
+    }
+  };
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-data")){
+      posted = JSON.parse(options.body);
+      jobId = posted.settings.ui_solve_run_id;
+      return jsonResponse({
+        ok:false,
+        running:true,
+        serverOwned:true,
+        kind:"solver_started",
+        jobId,
+        executor:"vps",
+        executionPhase:"vps_running",
+        requiredWorkers:6,
+        retryAfterMs:250
+      }, 202);
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      return jsonResponse(JSON.parse(JSON.stringify(data.tkbSolverResult)));
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const clock = createFakeClock();
+  const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+    TKBBrowserWasmExecutor:executor
+  }));
+  window.calcSchoolTKBStats = () => ({soTiet:2, daXepTiet:2, chuaXepTiet:0});
+  const plan = hooks.applyRequestedSolveModeToPlan(
+    hooks.buildAutomaticAutoSortPlan(data),
+    "optimize_sessions",
+    data,
+    2
+  );
+  assert.equal(plan.settings.optimization_focus, "sessions");
+
+  const payload = await hooks.postSolve(plan.settings, data);
+
+  assert.equal(payload.ok, true);
+  assert.equal(posted.settings.ui_browser_wasm_ready, true);
+  assert.equal(activateCalls, 0);
+  assert.equal(closeCalls, 1);
+  assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.serverExecutor, "vps");
+  assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserWasmActivated, false);
+});
+
+test("focused Agent admission and legacy admission still activate Browser Agent", async () => {
+  for(const executorValue of ["agent", undefined]){
+    const data = makeData(2);
+    const subject = data.mon[0].ten;
+    data.tkb = {
+      L1:{thu2:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]}}
+    };
+    data.tkbSolverResult = {
+      ok:true,
+      lessons:[
+        {classId:"L1", subject, teacherId:"GV01", day:"thu2", session:"sang", period:0},
+        {classId:"L1", subject, teacherId:"GV01", day:"thu2", session:"sang", period:1}
+      ],
+      metrics:{
+        scheduled_periods:2,
+        expected_periods:2,
+        unassigned_periods:0,
+        teacher_sessions:1,
+        one_period_teacher_sessions:0,
+        hard_ok:true,
+        core_hard_ok:true,
+        app_constraint_violation_count:0
+      },
+      validation:{hard_ok:true},
+      unassignedLessons:[],
+      solver:{runtime_settings:{}}
+    };
+    let activateCalls = 0;
+    let closeCalls = 0;
+    let jobId = "";
+    const executor = {
+      isEnabled(){ return true; },
+      canHandleRequest(){ return true; },
+      async probe(){ return true; },
+      async activate(options){
+        activateCalls += 1;
+        assert.equal(options.jobId, jobId);
+        return true;
+      },
+      async close(){ closeCalls += 1; return true; },
+      state(){
+        return {
+          probed:true,
+          active:activateCalls > 0,
+          computeActive:false,
+          localComputeRuns:0,
+          localAcceptedResults:0
+        };
+      }
+    };
+    const fetchImpl = async (url, options = {}) => {
+      const requestUrl = String(url);
+      if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+      if(requestUrl.endsWith("/api/solve-data")){
+        const posted = JSON.parse(options.body);
+        jobId = posted.settings.ui_solve_run_id;
+        const queued = {
+          ok:false,
+          running:true,
+          serverOwned:true,
+          kind:"solver_started",
+          jobId,
+          executionPhase:"agent_waiting",
+          retryAfterMs:250
+        };
+        if(executorValue !== undefined) queued.executor = executorValue;
+        return jsonResponse(queued, 202);
+      }
+      if(requestUrl.includes("/api/solve-result")){
+        return jsonResponse(JSON.parse(JSON.stringify(data.tkbSolverResult)));
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+    const clock = createFakeClock();
+    const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+      TKBBrowserWasmExecutor:executor
+    }));
+    window.calcSchoolTKBStats = () => ({soTiet:2, daXepTiet:2, chuaXepTiet:0});
+    const plan = hooks.applyRequestedSolveModeToPlan(
+      hooks.buildAutomaticAutoSortPlan(data),
+      "optimize_sessions",
+      data,
+      2
+    );
+
+    const payload = await hooks.postSolve(plan.settings, data);
+
+    assert.equal(payload.ok, true);
+    assert.equal(activateCalls, 1);
+    assert.equal(closeCalls, 1, "the activated executor closes after the server result");
+    assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.serverExecutor, executorValue || "");
+    assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserWasmActivated, true);
+  }
+});
+
 test("an empty duration field allows a 130-second first-quality gate and 180-second refinement", () => {
   const storage = memoryStorage();
   const durationInput = {

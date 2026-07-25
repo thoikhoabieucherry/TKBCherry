@@ -8,20 +8,20 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.90** (strong VPS Session prepass,
-  Gap cleanup, and audited native focus guards; deployed 2026-07-25).
+- Current deployed application release: **v1.93** (VPS executor ownership,
+  strong focused optimization, and immediate local Worker release; deployed
+  2026-07-25).
   Transactional backups are
-  `/opt/cherry-scheduler-backups/server-state-20260725-053158.tar.gz` and
-  `/opt/cherry-scheduler-backups/app-release-20260725-053158.tar.gz`.
-- v1.90 runs an eight-pass class-cluster Session prepass before global
-  Phase-S, then explicit Gap cleanup may reduce gaps without increasing the
-  resulting session count. Native focused guards accept a strict Gap gain that
-  also reduces sessions, and Session search continues while temporary Gap-2
-  debt exists; Automatic retains its stricter two-stage contract. Markers:
+  `/opt/cherry-scheduler-backups/server-state-20260725-060243.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260725-060243.tar.gz`.
+- v1.93 retains the v1.90 eight-pass Session prepass and targeted Gap cleanup,
+  but makes a free six-Worker VPS reservation authoritative. The frontend no
+  longer hands that job back to the weaker Browser Agent, and closes its
+  preflight-only local Worker pool immediately after VPS selection. Markers:
   `tkb-browser-wasm-executor-v18-session-gap-quality`,
-  `tkb-rust-api-v286-session-gap-quality`, and
-  `20260725-v190-session-gap-quality-v1`. Rust API marker:
-  `tkb_new-rust-api-2026-07-25-session-gap-quality-v79`.
+  `tkb-rust-api-v288-vps-worker-release`, and
+  `20260725-v193-vps-worker-release-v1`. Rust API marker:
+  `tkb_new-rust-api-2026-07-25-vps-priority-v80`.
 - Current public Agent release: **v1.6.31** (`1.6.31`). The normal owner-Agent
   minimum lease gate is 1.6.31, so 1.6.30 and older stay upgrade-only;
   the operator trusted-worker source and release contract remain 1.6.24. The
@@ -30,6 +30,37 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.93 authoritative VPS execution and Worker release (deployed)
+
+- Focused `Buoi` and `Tiet trong` requests atomically reserve the full VPS
+  allotment whenever all six tokens are available. The server's returned
+  `executor` is authoritative: `vps` remains on the stronger Python CP-SAT
+  path, while `agent` and legacy responses without the field may activate the
+  Browser Agent fallback. Native Agent hello can no longer override a reserved
+  VPS execution fence.
+- The Browser Agent may still compile/probe before the canonical POST so the
+  server knows that spillover is available. Once `executor:vps` is returned,
+  v1.93 closes that preflight-only pool immediately with no lease failure. This
+  avoids retaining local RAM or consuming CPU for a pool that cannot improve
+  the VPS-owned job. Activated Agent work still closes normally after result
+  handoff.
+- Full local Node verification passes **389/389**, including VPS release,
+  explicit Agent fallback, and legacy fallback regressions. Pre-deployment
+  isolated staging for the same API/scheduler candidate passes scheduler
+  **230/230**, Agent **155/155**, trusted worker **5/5**, Rust API **202/202**,
+  and native validation **43/43**, ending with `STAGING_TESTS_OK`.
+- Live browser acceptance on the 1,566-period `default` timetable started at
+  `504 sessions / 0 singleton / Gap1 69 / Gap2 0`. Focused `Buoi` used the VPS
+  with one active job and all `6/6` tokens, checkpointed down to 479 sessions,
+  and finished `479 / 0 / 58 / 3`. Chained `Tiet trong` retained 479 sessions,
+  removed Gap2, and finished `479 / 0 / 47 / 0`. Both results stayed complete
+  at `1566/1566`; the browser reported no warning or error.
+- The v1.92 executor-routing deployment first returned `UPDATE_OK` with backups
+  `server-state-20260725-055656.tar.gz` and
+  `app-release-20260725-055656.tar.gz`. v1.93 then added immediate local pool
+  release and returned `UPDATE_OK` with the current backups above. Final public
+  health is idle with zero active/queued jobs and all six tokens available.
 
 ### v1.90 VPS focused Gap-1 local search (deployed)
 
@@ -4509,16 +4540,16 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-25: `UPDATE_OK` for
-application v1.90. Public health serves
-`tkb_new-rust-api-2026-07-25-session-gap-quality-v79`; the planner serves
-`20260725-v190-session-gap-quality-v1`, bridge marker
-`tkb-rust-api-v286-session-gap-quality`, and Browser executor
+application v1.93. Public health serves
+`tkb_new-rust-api-2026-07-25-vps-priority-v80`; the planner serves
+`20260725-v193-vps-worker-release-v1`, bridge marker
+`tkb-rust-api-v288-vps-worker-release`, and Browser executor
 `tkb-browser-wasm-executor-v18-session-gap-quality`. Super Admin serves
 `20260725-v188-compact-super-admin-v2`.
 Public health is idle with zero active/queued jobs and `6/6` worker tokens.
 Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260725-053158.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260725-053158.tar.gz`.
+`/opt/cherry-scheduler-backups/server-state-20260725-060243.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260725-060243.tar.gz`.
 Public Agent release `1.6.31` and its signed manifest are live. The 88,054,539
 byte archive SHA-256 is
 `402f4eba12db1b31aa923e0960450855a7314729c90c796889741b31a4aaaa96`; the

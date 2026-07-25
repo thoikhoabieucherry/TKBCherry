@@ -24,7 +24,7 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-25-session-gap-quality-v79";
+const VERSION: &str = "tkb_new-rust-api-2026-07-25-vps-priority-v80";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
@@ -6292,14 +6292,16 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
         // trusted workers are auxiliary queue capacity and pull only jobs that
         // are actually waiting behind VPS admission; they never race a fresh
         // direct start for the same free worker slot.
-        if app
-            .agent_helper
-            .online_worker_count_for_job(owner, &job_id, now_millis())
-            > 0
+        if preferred_vps_guard.is_none()
+            && app
+                .agent_helper
+                .online_worker_count_for_job(owner, &job_id, now_millis())
+                > 0
         {
-            // A durable native Agent retains its normal priority. Release an
-            // atomic browser/VPS reservation before handing over the job.
-            drop(preferred_vps_guard.take());
+            // A durable native Agent may take ordinary work, and focused work
+            // spills here when the VPS reservation was unavailable. A focused
+            // request that already reserved the stronger VPS path must not be
+            // handed back to an idle Agent just because it is online.
             let Some(fence) = app
                 .solver_pool
                 .prepare_agent_execution(&job_id, owner)
@@ -9800,6 +9802,35 @@ mod tests {
         assert_eq!(response_status(&completed), 200);
         app.solver_pool
             .abandon_server_job("browser-ready-sessions-prefers-vps", &owner);
+    }
+
+    #[test]
+    fn focused_sessions_keep_reserved_vps_when_a_native_agent_is_online() {
+        let (app, token, owner) = agent_test_app();
+        let hello = agent_route(
+            &app,
+            Some(&token),
+            "/api/agent-helper/v1/hello",
+            agent_protocol_body(json!({
+                "agent":{"agentId":"focused-vps-pc","version":MIN_AGENT_HELPER_VERSION,"platform":"windows"},
+                "capacity":{"cpuWorkers":4,"maxConcurrentJobs":1}
+            })),
+        );
+        assert_eq!(response_status(&hello), 200);
+
+        let mut request = browser_ready_refinement_request("focused-vps-over-online-agent");
+        request["settings"]["optimization_focus"] = json!("sessions");
+        let started = solve_json(&app, request.to_string().as_bytes(), &owner);
+        let started_payload = response_payload(&started);
+        assert_eq!(response_status(&started), 202);
+        assert_eq!(started_payload["executor"], json!("vps"));
+        assert_eq!(started_payload["executionPhase"], json!("vps_running"));
+        assert!(started_payload["requiredWorkers"].as_u64().unwrap_or(0) > 0);
+
+        let completed = wait_for_server_result(&app, "focused-vps-over-online-agent", &owner);
+        assert_eq!(response_status(&completed), 200);
+        app.solver_pool
+            .abandon_server_job("focused-vps-over-online-agent", &owner);
     }
 
     #[test]
