@@ -2123,6 +2123,7 @@ function appQuickAddDetails(content){
         <details class="app-quick-add-details">
             <summary class="btn app-icon-button" title="Thêm nhanh" aria-label="Mở công cụ thêm nhanh">
                 ${appUiIcon("wand")}
+                <span class="app-quick-add-summary-label">Thêm nhanh</span>
             </summary>
             ${content}
         </details>`;
@@ -2868,16 +2869,20 @@ function renderPCCM() {
     }
 
     // ===== UI: tabs =====
-    const tabBtn = (key, text) => `
+    const tabBtn = (key, text, compactText) => `
         <button class="btn ${PCCM_TAB===key?"primary":""}"
-                onclick="setPCCMTab('${key}')">${text}</button>`;
+                aria-label="${escapeHtml(text)}"
+                onclick="setPCCMTab('${key}')">
+            <span class="pccm-tab-label-full">${escapeHtml(text)}</span>
+            <span class="pccm-tab-label-mobile">${escapeHtml(compactText || text)}</span>
+        </button>`;
 
     let html = `
     <div class="action-bar pccm-action-bar">
         <div class="pccm-tab-actions">
-            ${tabBtn("lop","Lớp học")}
-            ${tabBtn("giaovien","Giáo viên")}
-            ${tabBtn("monhoc","Môn học")}
+            ${tabBtn("lop","Lớp học","Lớp")}
+            ${tabBtn("giaovien","Giáo viên","GV")}
+            ${tabBtn("monhoc","Môn học","Môn")}
         </div>
 
         <div class="pccm-main-actions">
@@ -3000,7 +3005,8 @@ function renderTietChuanPage(){
         <div class="tietchuan-filter-list">
             ${khoiOptions.map(k=>{
                 const js = (k||"").toString().replace(/\\/g,"\\\\").replace(/'/g,"\\'");
-                return `<button class="btn ${TC_KHOI===k?"primary":""}" onclick="setTCKhoi('${js}')">${escapeHtml(k)}</button>`;
+                const compactLabel = k === "Tất cả" ? k : (extractKhoiNumber(k) || k);
+                return `<button class="btn ${TC_KHOI===k?"primary":""}" aria-label="${escapeHtml(k)}" onclick="setTCKhoi('${js}')"><span class="tietchuan-filter-label-full">${escapeHtml(k)}</span><span class="tietchuan-filter-label-mobile">${escapeHtml(compactLabel)}</span></button>`;
             }).join("")}
         </div>
         <button class="btn app-action-button" onclick="triggerExcel('mon')" title="Nhập Excel" aria-label="Nhập Excel">${appUiIcon("upload")}<span class="app-action-label">Nhập Excel</span></button>
@@ -4142,8 +4148,64 @@ function pccmTeacherMultiToggle(ev, controlId){
         if (!box) return;
         const willOpen = !box.classList.contains("open");
         pccmQuickMultiCloseAll();
-        if (willOpen) box.classList.add("open");
+        if (willOpen){
+            box.classList.add("open");
+            pccmPositionTeacherMultiMenu(box);
+        }
     }catch(e){}
+}
+function pccmResetTeacherMultiMenu(menu){
+    if (!menu) return;
+    const ownerId = menu.getAttribute("data-pccm-menu-owner") || "";
+    const owner = ownerId ? document.getElementById(ownerId) : null;
+    menu.classList.remove("pccm-mobile-floating-menu");
+    menu.removeAttribute("data-pccm-menu-owner");
+    ["top", "right", "bottom", "left", "width", "max-height"].forEach(prop=>menu.style.removeProperty(prop));
+    if (owner && menu.parentElement !== owner) owner.appendChild(menu);
+    else if (!owner && menu.parentElement === document.body) menu.remove();
+}
+function pccmTeacherMultiMenuForBox(box){
+    if (!box) return null;
+    const anchored = box.querySelector(".pccm-multi-menu");
+    if (anchored) return anchored;
+    const ownerId = box.id || "";
+    if (!ownerId) return null;
+    return Array.from(document.querySelectorAll(".pccm-mobile-floating-menu[data-pccm-menu-owner]"))
+        .find(menu=>menu.getAttribute("data-pccm-menu-owner") === ownerId) || null;
+}
+function pccmPositionTeacherMultiMenu(box){
+    try{
+        const menu = pccmTeacherMultiMenuForBox(box);
+        const button = box?.querySelector(".pccm-multi-button");
+        pccmResetTeacherMultiMenu(menu);
+        if (!menu || !button || !window.matchMedia("(max-width: 760px)").matches) return;
+
+        const rect = button.getBoundingClientRect();
+        const viewportWidth = Math.max(document.documentElement?.clientWidth || 0, window.innerWidth || 0);
+        const viewportHeight = Math.max(document.documentElement?.clientHeight || 0, window.innerHeight || 0);
+        const edge = 8;
+        const gap = 4;
+        const menuWidth = Math.min(Math.max(rect.width, 220), Math.max(0, viewportWidth - edge * 2));
+        const menuLeft = Math.min(Math.max(edge, rect.left), Math.max(edge, viewportWidth - edge - menuWidth));
+        const roomBelow = Math.max(0, viewportHeight - rect.bottom - gap - edge);
+        const roomAbove = Math.max(0, rect.top - gap - edge);
+        const openAbove = roomBelow < 160 && roomAbove > roomBelow;
+        const availableHeight = openAbove ? roomAbove : roomBelow;
+
+        menu.setAttribute("data-pccm-menu-owner", box.id);
+        menu.classList.add("pccm-mobile-floating-menu");
+        document.body.appendChild(menu);
+        menu.style.left = `${menuLeft}px`;
+        menu.style.width = `${menuWidth}px`;
+        menu.style.maxHeight = `${Math.max(96, Math.min(240, availableHeight))}px`;
+        if (openAbove){
+            menu.style.bottom = `${Math.max(edge, viewportHeight - rect.top + gap)}px`;
+        } else {
+            menu.style.top = `${Math.min(viewportHeight - edge, rect.bottom + gap)}px`;
+        }
+    }catch(e){
+        // Keep the normal anchored menu when floating placement is unavailable.
+    }
 }
 function pccmTeacherMultiApply(controlId, values){
     const list = pccmTeacherListFromValue(values);
@@ -4157,8 +4219,9 @@ function pccmTeacherMultiApply(controlId, values){
     const btn = box ? box.querySelector(".pccm-multi-button") : null;
     if (btn) btn.title = label;
     const selectedSet = new Set(list.map(x=>x.toLowerCase()));
-    if (box){
-        box.querySelectorAll(".pccm-teacher-item").forEach(item=>{
+    const menu = pccmTeacherMultiMenuForBox(box);
+    if (menu){
+        menu.querySelectorAll(".pccm-teacher-item").forEach(item=>{
             const v = _normText(item.getAttribute("data-pccm-teacher-value")).toLowerCase();
             item.classList.toggle("selected", selectedSet.has(v));
         });
@@ -4900,7 +4963,11 @@ function pccmQuickMultiToggle(ev, type){
 
 function pccmQuickMultiCloseAll(){
     try{
-        document.querySelectorAll(".pccm-multi-select.open").forEach(box=>box.classList.remove("open"));
+        document.querySelectorAll(".pccm-multi-select.open").forEach(box=>{
+            pccmResetTeacherMultiMenu(pccmTeacherMultiMenuForBox(box));
+            box.classList.remove("open");
+        });
+        document.querySelectorAll(".pccm-mobile-floating-menu").forEach(menu=>pccmResetTeacherMultiMenu(menu));
     }catch(e){
         // ignore
     }

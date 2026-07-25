@@ -23,7 +23,14 @@
 
 .app-quick-add-details > summary {
   display: flex;
+  align-items: center;
+  gap: 6px;
   list-style: none;
+}
+
+.pccm-tab-label-mobile,
+.tietchuan-filter-label-mobile {
+  display: none;
 }
 
 .app-quick-add-details > summary::-webkit-details-marker {
@@ -241,6 +248,10 @@ body.app-shell-body .app-quick-add-details[open] > .quick-add-control {
     list-style: none;
   }
 
+  body.app-shell-body .app-quick-add-summary-label {
+    display: none;
+  }
+
   body.app-shell-body .app-quick-add-details > summary::-webkit-details-marker,
   body.app-shell-body .app-mobile-actions-menu > summary::-webkit-details-marker {
     display: none;
@@ -378,9 +389,23 @@ body.app-shell-body .app-quick-add-details[open] > .quick-add-control {
   body.app-shell-body .tietchuan-filter-list .btn {
     flex: 0 0 auto;
     width: auto;
-    min-width: 72px;
+    min-width: 40px;
     max-width: none;
-    padding: 0 10px;
+    padding: 0 8px;
+  }
+
+  body.app-shell-body .tietchuan-filter-list .btn:first-child {
+    min-width: 68px;
+  }
+
+  body.app-shell-body .tietchuan-filter-label-full,
+  body.app-shell-body .pccm-tab-label-full {
+    display: none;
+  }
+
+  body.app-shell-body .tietchuan-filter-label-mobile,
+  body.app-shell-body .pccm-tab-label-mobile {
+    display: inline;
   }
 
   body.app-shell-body .pccm-action-bar {
@@ -388,7 +413,7 @@ body.app-shell-body .app-quick-add-details[open] > .quick-add-control {
     top: 0;
     z-index: 12;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) repeat(2, var(--app-mobile-control));
     gap: 6px;
     margin-bottom: 6px;
     padding: 2px 0 6px;
@@ -396,25 +421,20 @@ body.app-shell-body .app-quick-add-details[open] > .quick-add-control {
   }
 
   body.app-shell-body .pccm-tab-actions {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 4px;
+    display: contents;
   }
 
   body.app-shell-body .pccm-tab-actions .btn {
     grid-column: auto;
     width: 100%;
-    height: 38px;
-    min-height: 38px;
-    padding: 0 6px;
+    height: var(--app-mobile-control);
+    min-height: var(--app-mobile-control);
+    padding: 0 4px;
     font-size: 12px;
   }
 
   body.app-shell-body .pccm-main-actions {
-    grid-column: 1;
-    display: flex;
-    gap: 6px;
+    display: contents;
   }
 
   body.app-shell-body .pccm-main-actions .btn,
@@ -428,9 +448,10 @@ body.app-shell-body .app-quick-add-details[open] > .quick-add-control {
   }
 
   body.app-shell-body .pccm-side-actions {
-    grid-column: 2;
+    grid-column: 1 / -1;
     display: flex;
     grid-template-columns: none;
+    justify-content: flex-end;
     gap: 6px;
   }
 
@@ -543,6 +564,21 @@ body.app-shell-body .app-quick-add-details[open] > .quick-add-control {
 
   body.app-shell-body .pccm-list-table td.pccm-cell-teacher {
     overflow: visible;
+  }
+
+  body.app-shell-body > .pccm-mobile-floating-menu {
+    display: block;
+    position: fixed;
+    inset: auto;
+    z-index: 1000;
+    border-radius: 8px;
+    white-space: normal;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body.app-shell-body > .pccm-mobile-floating-menu .pccm-multi-item {
+    display: block;
   }
 
   body.app-shell-body .pccm-list-table .pccm-copy-cell .inline-edit-select,

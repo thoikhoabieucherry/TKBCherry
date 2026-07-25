@@ -8,11 +8,16 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.95** (desktop quick-add wand;
+- Current deployed application release: **v1.96** (mobile assignment controls;
   deployed 2026-07-25).
   Transactional backups are
-  `/opt/cherry-scheduler-backups/server-state-20260725-122057.tar.gz` and
-  `/opt/cherry-scheduler-backups/app-release-20260725-122057.tar.gz`.
+  `/opt/cherry-scheduler-backups/server-state-20260725-131205.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260725-131205.tar.gz`.
+- v1.96 changes only administration UI behavior. It retains the v1.95 desktop
+  quick-add presentation, v1.94 statistics/export behavior, and the v1.93 API
+  v80 scheduler, Agent routing, and immediate local Worker release. Public
+  health is idle with zero active/queued jobs and all `6/6` worker tokens
+  available.
 - v1.95 changes only the administration quick-add presentation. It retains the
   v1.94 statistics, export, and responsive table behavior plus the v1.93 API
   v80 scheduler, Agent routing, and immediate local Worker release. Public
@@ -38,6 +43,30 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.96 mobile assignment controls (deployed)
+
+- The mobile `Phan cong` toolbar now keeps `Lop`, `GV`, `Mon`, import, and
+  export in one compact top row. The total and delete controls remain together
+  on the second row. `Tiet chuan` shows compact grade filters as `Tat ca`, `6`,
+  `7`, `8`, and `9`; desktop continues to show the full grade names.
+- Teacher selection menus are portaled to `document.body` while open, positioned
+  inside the phone viewport, and restored to their owning cell on close. This
+  bypasses both the table scrollport clipping and the inherited `white-space:
+  nowrap` that previously laid all teacher choices on one invisible horizontal
+  line. Floating choices are explicitly block-stacked and remain scrollable.
+- Desktop quick-add wands now pair the icon with the visible `Them nhanh` label;
+  mobile remains icon-only. Cache marker:
+  `20260725-v196-mobile-assignment-toolbar-v1`.
+- Full local Node verification passes **396/396** and the focused administration
+  suite passes **6/6**, including a real mobile menu lifecycle/geometry test.
+  JavaScript syntax and `git diff --check` pass. Production deployment returned
+  `UPDATE_OK` with the backups listed above.
+- Live in-app Browser acceptance at `390x844` confirmed one-row assignment
+  controls without page overflow, the five compact grade filters, and a
+  94-item teacher menu rendered vertically at fixed viewport coordinates. At
+  `1280x720`, the desktop wand displayed `Them nhanh`. The v1.96 CSS/JS cache
+  keys were live and browser warning/error logs were empty.
 
 ### v1.95 desktop quick-add wand (deployed)
 
@@ -4634,7 +4663,7 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-25: `UPDATE_OK` for
-application v1.93. Public health serves
+application v1.96. Public health serves
 `tkb_new-rust-api-2026-07-25-vps-priority-v80`; the planner serves
 `20260725-v193-vps-worker-release-v1`, bridge marker
 `tkb-rust-api-v288-vps-worker-release`, and Browser executor
@@ -4642,8 +4671,8 @@ application v1.93. Public health serves
 `20260725-v188-compact-super-admin-v2`.
 Public health is idle with zero active/queued jobs and `6/6` worker tokens.
 Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260725-060243.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260725-060243.tar.gz`.
+`/opt/cherry-scheduler-backups/server-state-20260725-131205.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260725-131205.tar.gz`.
 Public Agent release `1.6.31` and its signed manifest are live. The 88,054,539
 byte archive SHA-256 is
 `402f4eba12db1b31aa923e0960450855a7314729c90c796889741b31a4aaaa96`; the
