@@ -8,12 +8,16 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.93** (VPS executor ownership,
-  strong focused optimization, and immediate local Worker release; deployed
-  2026-07-25).
+- Current deployed application release: **v1.94** (statistics contract,
+  balanced administration tables, restored desktop quick controls, and CSDL
+  nganh export; deployed 2026-07-25).
   Transactional backups are
-  `/opt/cherry-scheduler-backups/server-state-20260725-060243.tar.gz` and
-  `/opt/cherry-scheduler-backups/app-release-20260725-060243.tar.gz`.
+  `/opt/cherry-scheduler-backups/server-state-20260725-114036.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260725-114036.tar.gz`.
+- v1.94 changes only web UI, statistics, and export behavior. It retains the
+  v1.93 API v80 scheduler, Agent routing, and immediate local Worker release.
+  Public health is idle with zero active/queued jobs and all `6/6` worker
+  tokens available.
 - v1.93 retains the v1.90 eight-pass Session prepass and targeted Gap cleanup,
   but makes a free six-Worker VPS reservation authoritative. The frontend no
   longer hands that job back to the weaker Browser Agent, and closes its
@@ -30,6 +34,56 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.94 statistics, administration tables, and industry export (deployed)
+
+- The Statistics popover now defines `Tiet trong` as the number of affected
+  teacher sessions: `Trong 1 tiet + Trong 2 tiet` (where the second bucket is
+  two-or-more internal empty periods). A session with two internal empty slots
+  therefore contributes one to the total instead of two. The all-gap
+  drill-down count follows the same session-based contract.
+- `Tiet chuan` and the three five-column `Phan cong` list views now use
+  semantic columns and balanced responsive widths. Desktop numeric columns are
+  narrower; phone layouts fit all five columns without horizontal scrolling.
+  The teacher selector cell remains overflow-visible so its multi-select menu
+  is not clipped, while the legacy wide PCCM summary is excluded from the
+  fixed-width mobile override. The compact PCCM side list is shorter so the
+  remaining classes stay reachable.
+- Desktop administration pages again expose each section's inline `Them nhanh`
+  controls. Mobile retains the existing closed wand menu and opens the same
+  controls on demand.
+- The `Yeu cau` menu now exposes `Chuyen CSDL nganh` immediately below `In
+  TKB`. It exports the current school as `TKB_LOP_S`, `TKB_LOP_C`, and `PCGD`
+  using the supplied SmartScheduler workbook structure, metadata, sizing,
+  typography, merges, freeze panes, and print settings. Timetable cells use the
+  subject code plus each teacher's `MaGV2` (with `MaGV` only as a missing-data
+  fallback); PCGD groups class assignments by subject and totals weekly
+  periods. A rendered product workbook was visually checked against all three
+  supplied sheets and contained no formula or cell errors.
+- The industry exporter serializes the final workbook through JSZip so the
+  saved XLSX, not only the in-memory SheetJS object, retains the sample's raw
+  column widths, frozen panes (`C6`/`A2`), A4 landscape page setup, and lesson
+  shrink-to-fit styles. Teacher aliases (`MaGV`, `MaGV2`, code, or id) are
+  canonicalized to one primary teacher identity before timetable display and
+  PCGD aggregation, preventing duplicate names, rows, homerooms, or totals.
+  Genuine co-teachers remain distinct and use a comma separator.
+- Cache markers are `20260725-v194-gap-session-total-v1`,
+  `20260725-v194-balanced-data-columns-v1`, and
+  `20260725-v194-industry-export-v2`. Full local Node verification passes
+  **395/395**, including the session-count formula, desktop quick controls,
+  responsive PCCM safety, three-sheet export shape, `MaGV2` precedence, PCGD
+  grouping, saved-file OpenXML layout, alias deduplication, and cache wiring.
+  JavaScript syntax and `git diff --check` pass.
+- Isolated staging passes scheduler **230/230**, Agent **155/155**, trusted
+  worker **5/5**, Rust API **202/202**, and native candidate validation
+  **43/43**, ending with `STAGING_TESTS_OK`. Production deployment returned
+  `UPDATE_OK` with the backups listed above.
+- Live in-app Browser acceptance confirmed the industry command immediately
+  below `In TKB`, the current statistics equation `37 = 37 + 0`, inline desktop
+  `Them nhanh` at a 1280px viewport, and the closed wand menu plus a five-column
+  `Tiet chuan` table without horizontal overflow at 390px. All three public
+  cache markers are live. No solver, Rust API, Browser Agent, or native Agent
+  behavior changed.
 
 ### v1.93 authoritative VPS execution and Worker release (deployed)
 

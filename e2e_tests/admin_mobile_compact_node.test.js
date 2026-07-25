@@ -13,16 +13,17 @@ const compactCss = fs.readFileSync(
   "utf8"
 );
 
-test("admin loads the v187 compact stylesheet after legacy themes", () => {
+test("admin loads the balanced data-column assets after legacy themes", () => {
   const themeIndex = appHtml.indexOf("theme-light.css");
   const runtimeIndex = appHtml.indexOf("runtime.css");
   const compactIndex = appHtml.indexOf(
-    "admin-mobile-compact.css?v=20260725-v187-deep-session-admin-ui-v1"
+    "admin-mobile-compact.css?v=20260725-v194-balanced-data-columns-v1"
   );
 
   assert.ok(themeIndex >= 0 && runtimeIndex > themeIndex);
   assert.ok(compactIndex > runtimeIndex, "compact overrides must load last");
-  assert.match(appHtml, /app\.js\?v=20260725-v187-deep-session-admin-ui-v1/);
+  assert.match(appHtml, /style\.css\?v=20260725-v194-balanced-data-columns-v1/);
+  assert.match(appHtml, /app\.js\?v=20260725-v194-balanced-data-columns-v1/);
 });
 
 test("mobile admin navigation exposes six compact icon tabs", () => {
@@ -59,6 +60,7 @@ test("mobile command row uses icons without hiding accessible names", () => {
 test("data actions collapse to one icon toolbar and safe overflow menus", () => {
   assert.match(appSource, /function appUiIcon\(name\)/);
   assert.match(appSource, /function appQuickAddDetails\(content\)/);
+  assert.match(compactCss, /body\.app-shell-body \.app-quick-add-details:not\(\[open\]\) > \.quick-add-control\s*\{[\s\S]*?display:\s*inline-flex/);
   assert.match(appSource, /function appMobileDeleteMenu\(section, selectedCount\)/);
   assert.match(appSource, /class="action-bar action-bar-data\$\{quickAdd \? " has-quick-add" : ""\}"/);
   assert.match(appSource, /class="app-mobile-actions-popover"/);
@@ -79,4 +81,14 @@ test("standard, lesson, and assignment tables stay usable on narrow screens", ()
   assert.match(compactCss, /\.data-table-giaovien :is\(th, td\):nth-child\(2\)\s*\{[\s\S]*?width:\s*34%/);
   assert.match(compactCss, /\.data-table-giaovien :is\(th, td\):nth-child\(3\)\s*\{[\s\S]*?width:\s*19%/);
   assert.match(compactCss, /\.data-empty-row td\s*\{[\s\S]*?height:\s*56px/);
+  assert.match(appSource, /table class="tietchuan-table"/);
+  assert.match(appSource, /class="tc-col-grade"/);
+  assert.match(appSource, /class="pccm-col-main pccm-col-teacher"/);
+  assert.match(compactCss, /\.tietchuan-table\s*\{[\s\S]*?min-width:\s*0[\s\S]*?table-layout:\s*fixed/);
+  assert.match(compactCss, /\.tietchuan-table \.tc-col-subject\s*\{[\s\S]*?width:\s*36%/);
+  assert.match(compactCss, /\.pccm-list-table\s*\{[\s\S]*?min-width:\s*0[\s\S]*?table-layout:\s*fixed/);
+  assert.match(compactCss, /\.pccm-list-table \.pccm-col-main:nth-child\(3\)\s*\{[\s\S]*?width:\s*34%/);
+  assert.match(compactCss, /\.pccm-list-table td\.pccm-cell-teacher\s*\{[\s\S]*?overflow:\s*visible/);
+  assert.doesNotMatch(compactCss, /body\.app-shell-body \.pccm-table\s*\{[\s\S]*?min-width:\s*0/);
+  assert.match(compactCss, /\.pccm-side-list\s*\{[\s\S]*?max-height:\s*128px/);
 });

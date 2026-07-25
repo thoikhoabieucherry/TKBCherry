@@ -28,6 +28,10 @@
   display: inline-flex;
 }
 
+body.app-shell-body .app-quick-add-details:not([open]) > .quick-add-control {
+  display: inline-flex;
+}
+
 .app-action-button,
 .pccm-action-button {
   gap: 7px;
@@ -414,6 +418,122 @@
     min-height: var(--app-mobile-control);
     padding: 0 9px;
     font-size: 11px;
+  }
+
+  body.app-shell-body .tietchuan-table-wrap {
+    overflow-x: hidden;
+  }
+
+  body.app-shell-body .tietchuan-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  body.app-shell-body .tietchuan-table .tc-col-tt {
+    width: 8%;
+  }
+
+  body.app-shell-body .tietchuan-table .tc-col-grade {
+    width: 20%;
+  }
+
+  body.app-shell-body .tietchuan-table .tc-col-subject {
+    width: 36%;
+  }
+
+  body.app-shell-body .tietchuan-table .tc-col-number {
+    width: 18%;
+  }
+
+  body.app-shell-body .tietchuan-table th,
+  body.app-shell-body .tietchuan-table td {
+    min-width: 0;
+    padding: 6px 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  body.app-shell-body .tietchuan-table th:first-child,
+  body.app-shell-body .tietchuan-table td:first-child,
+  body.app-shell-body .tietchuan-table th:nth-child(2),
+  body.app-shell-body .tietchuan-table td:nth-child(2) {
+    text-align: center;
+  }
+
+  body.app-shell-body .tietchuan-table .tc-number-head,
+  body.app-shell-body .tietchuan-table .tc-cell {
+    width: auto;
+    min-width: 0;
+  }
+
+  body.app-shell-body .tietchuan-table .tc-cell {
+    height: 38px;
+    font-size: 13px;
+  }
+
+  body.app-shell-body .pccm-side-list {
+    max-height: 128px;
+  }
+
+  body.app-shell-body .pccm-side-item {
+    padding: 7px 10px;
+    line-height: 1.2;
+  }
+
+  body.app-shell-body .pccm-table-wrap {
+    overflow-x: hidden;
+  }
+
+  body.app-shell-body .pccm-list-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  body.app-shell-body .pccm-list-table .pccm-col-tt {
+    width: 8%;
+  }
+
+  body.app-shell-body .pccm-list-table .pccm-col-main:nth-child(2) {
+    width: 28%;
+  }
+
+  body.app-shell-body .pccm-list-table .pccm-col-main:nth-child(3) {
+    width: 34%;
+  }
+
+  body.app-shell-body .pccm-list-table .pccm-col-number {
+    width: 15%;
+  }
+
+  body.app-shell-body .pccm-list-table th,
+  body.app-shell-body .pccm-list-table td {
+    min-width: 0;
+    padding-right: 3px;
+    padding-left: 3px;
+    font-size: 11.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  body.app-shell-body .pccm-list-table td.pccm-cell-teacher {
+    overflow: visible;
+  }
+
+  body.app-shell-body .pccm-list-table .pccm-copy-cell .inline-edit-select,
+  body.app-shell-body .pccm-list-table .pccm-copy-cell .inline-edit-input,
+  body.app-shell-body .pccm-list-table .pccm-copy-cell .pccm-multi-button {
+    min-width: 0;
+    height: 34px;
+    min-height: 34px;
+    padding: 3px 4px;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   body.app-shell-body .data-table-wrap,

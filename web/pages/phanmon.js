@@ -1,4 +1,4 @@
-window.__PHANMON_VERSION = "updated-v10.3 (v1.43 diverse quality seed)";
+window.__PHANMON_VERSION = "20260725-v194-gap-session-total-v1";
 try{
   window.__TKB_PLANNER_DATA_READY = false;
   window.__TKB_PLANNER_REMOTE_HYDRATION_PENDING = false;
@@ -7169,9 +7169,9 @@ function calcTeacherTKBStats(){
           if(tietDay === 5) soBuoiDay5++;
 
           if(gaps > 0){
-            soTietTrong += gaps;
+            soTietTrong += 1;
             const info = {thu:d, buoi, gap:gaps, gapSlots:gapSlots.slice()};
-            _pushTeacherIssue(gapTeacherMap, code, info, gaps);
+            _pushTeacherIssue(gapTeacherMap, code, info);
             if(gaps === 1){
               soBuoiTrong1++;
               _pushTeacherIssue(gap1TeacherMap, code, info);
@@ -8189,6 +8189,10 @@ function handlePrintTKBOption(mode){
   if(key === "school-teacher"){
     if(typeof window.exportSchoolTeacherTKBExcel === "function") return window.exportSchoolTeacherTKBExcel();
     return alert("Chưa tải xong module xuất Excel toàn trường theo giáo viên.");
+  }
+  if(key === "industry-database"){
+    if(typeof window.exportIndustryDatabaseExcel === "function") return window.exportIndustryDatabaseExcel();
+    return alert("Chưa tải xong module chuyển CSDL ngành.");
   }
 }
 

@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = 'constraints-menu-v3-click-accordion-scroll-safe';
+  const VERSION = 'constraints-menu-v4-industry-export';
   const MENU_ID = 'tkbConstraintsDropdownMenu';
   const STYLE_ID = 'tkbConstraintsDropdownStyle';
   let activeAnchor = null;
@@ -55,7 +55,8 @@
     ['class', 'TKB lớp học'],
     ['teacher', 'TKB giáo viên'],
     ['school-class', 'TKB toàn trường theo lớp học'],
-    ['school-teacher', 'TKB toàn trường theo giáo viên']
+    ['school-teacher', 'TKB toàn trường theo giáo viên'],
+    ['industry-database', 'Chuyển CSDL ngành']
   ];
 
   function esc(s){
@@ -174,6 +175,7 @@
           <button type="button">In TKB <span class="rb-menu-arrow">›</span></button>
           <ul class="rb-menu-sub">${printRows()}</ul>
         </li>
+        <li><button type="button" data-rb-print="industry-database">Chuyển CSDL ngành</button></li>
       </ul>
     `;
     return html.replace(/<li><button type="button" data-rb-open="groups"[\s\S]*?<\/li>\s*/, '');

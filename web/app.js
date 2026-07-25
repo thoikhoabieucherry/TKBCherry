@@ -3008,11 +3008,18 @@ function renderTietChuanPage(){
 
     </div>
 
-    <div class="table-wrap">
-    <table>
+    <div class="table-wrap tietchuan-table-wrap">
+    <table class="tietchuan-table">
+        <colgroup>
+            <col class="tc-col-tt">
+            <col class="tc-col-grade">
+            <col class="tc-col-subject">
+            <col class="tc-col-number">
+            <col class="tc-col-number">
+        </colgroup>
         <tr>
-            <th style="width:60px">TT</th>
-            <th style="width:140px">Khối học</th>
+            <th>TT</th>
+            <th>Khối học</th>
             <th>Môn học</th>
             <th class="tc-number-head">Số tiết</th>
             <th class="tc-number-head">Giới hạn</th>
@@ -5712,8 +5719,8 @@ function renderPCCM_ByClass(classNames, monList){
         <div class="table-wrap pccm-table-wrap"><table class="pccm-table pccm-list-table">
             <colgroup>
                 <col class="pccm-col-tt">
-                <col class="pccm-col-main">
-                <col class="pccm-col-main">
+                <col class="pccm-col-main pccm-col-subject">
+                <col class="pccm-col-main pccm-col-teacher">
                 <col class="pccm-col-number">
                 <col class="pccm-col-number">
             </colgroup>
@@ -5842,8 +5849,8 @@ function renderPCCM_ByTeacher(gvs, monList, classNames){
         <div class="table-wrap pccm-table-wrap"><table class="pccm-table pccm-list-table">
             <colgroup>
                 <col class="pccm-col-tt">
-                <col class="pccm-col-main">
-                <col class="pccm-col-main">
+                <col class="pccm-col-main pccm-col-subject">
+                <col class="pccm-col-main pccm-col-class">
                 <col class="pccm-col-number">
                 <col class="pccm-col-number">
             </colgroup>
@@ -5993,8 +6000,8 @@ function renderPCCM_BySubject(classNames, monList){
         <div class="table-wrap pccm-table-wrap"><table class="pccm-table pccm-list-table">
             <colgroup>
                 <col class="pccm-col-tt">
-                <col class="pccm-col-main">
-                <col class="pccm-col-main">
+                <col class="pccm-col-main pccm-col-class">
+                <col class="pccm-col-main pccm-col-teacher">
                 <col class="pccm-col-number">
                 <col class="pccm-col-number">
             </colgroup>

@@ -292,6 +292,45 @@ test("teacher pane counts each class-subject assignment once", () => {
   );
 });
 
+test("teacher empty-period total counts affected sessions rather than empty slots", () => {
+  const start = plannerSource.indexOf("function calcTeacherTKBStats()");
+  const end = plannerSource.indexOf("/* =======================", start);
+  assert.ok(start >= 0 && end > start, "teacher timetable statistics helper is missing");
+  const source = plannerSource.slice(start, end);
+
+  const context = {
+    DAYS:["thu2"],
+    SANG:5,
+    CHIEU:5,
+    DATA:{
+      lop:[{id:"L1"}],
+      tkb:{
+        L1:{
+          thu2:{
+            sang:["A", null, "B", null, "C"],
+            chieu:["D", null, "E"]
+          }
+        }
+      }
+    },
+    _getAssignedTeacherCodes(){ return new Set(["GV"]); },
+    getLopCanonById(){ return "L1"; },
+    cellMon(value){ return value || ""; },
+    getTeacherForClassMon(){ return "GV"; },
+    getTeacherNameByCode(code){ return code; },
+    compareTeacherCodeByDataOrder(){ return 0; }
+  };
+
+  vm.runInNewContext(`${source}\nthis.readTeacherTimetableStats = calcTeacherTKBStats;`, context);
+  const stats = JSON.parse(JSON.stringify(context.readTeacherTimetableStats()));
+
+  assert.equal(stats.soBuoiTrong1, 1);
+  assert.equal(stats.soBuoiTrong2, 1);
+  assert.equal(stats.soTietTrong, 2);
+  assert.equal(stats.soTietTrong, stats.soBuoiTrong1 + stats.soBuoiTrong2);
+  assert.equal(stats.gapTeachers[0].count, 2);
+});
+
 test("portrait planner keeps seven compact mobile slots with stacked history and automatic timing", () => {
   const actionsStart = plannerHtml.indexOf('<div class="toolbar-actions"');
   const feedbackStart = plannerHtml.indexOf('<div class="toolbar-feedback"');
@@ -406,7 +445,7 @@ test("portrait planner keeps seven compact mobile slots with stacked history and
     /@media \(max-width:\s*900px\) and \(hover:\s*none\) and \(pointer:\s*coarse\),\s*\(max-width:\s*480px\)/
   );
   assert.match(plannerHtml, /shared\/storage\.js\?v=20260724-v180-durable-store-save-v1/);
-  assert.match(plannerHtml, /phanmon\.js\?v=20260725-v187-live-stats-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260725-v194-gap-session-total-v1/);
   assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260725-v193-vps-worker-release-v1/);
 });
 
