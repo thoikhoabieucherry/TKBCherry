@@ -281,8 +281,16 @@ impl AgentHelperCoordinator {
     /// identity. Expired workers are pruned before counting so the web status
     /// indicator never treats a stale process as online.
     pub fn online_worker_count(&self, owner: &SolverOwner, now_ms: u64) -> usize {
+        let (native, browser) = self.online_worker_counts(owner, now_ms);
+        native + browser
+    }
+
+    /// Split durable native Agents from job-scoped Browser Agents. A browser
+    /// tab must not mistake another tab's scoped worker for a native executor
+    /// that can claim its new job.
+    pub fn online_worker_counts(&self, owner: &SolverOwner, now_ms: u64) -> (usize, usize) {
         let Ok(mut state) = self.state.lock() else {
-            return 0;
+            return (0, 0);
         };
         prune_state(&mut state, now_ms);
         state
@@ -294,7 +302,13 @@ impl AgentHelperCoordinator {
                     && worker.eligible
                     && worker.expires_at_ms > now_ms
             })
-            .count()
+            .fold((0, 0), |(native, browser), worker| {
+                if worker.job_scope.is_some() {
+                    (native, browser + 1)
+                } else {
+                    (native + 1, browser)
+                }
+            })
     }
 
     /// Count executors that may actually claim this canonical job. Durable
@@ -1866,6 +1880,25 @@ pub(crate) fn browser_refinement_request_eligible(request_body: &[u8]) -> bool {
                     .is_some_and(|target| target > 0 && target <= i64::MAX as u64)
             });
     }
+    if optimization_focus == "automatic"
+        && settings
+            .get("ui_unified_solve_kind")
+            .and_then(Value::as_str)
+            == Some("fresh_complete_first")
+    {
+        return settings
+            .get("ui_solver_fifo_admission")
+            .and_then(Value::as_bool)
+            == Some(true)
+            && settings
+                .get("ui_solver_async_job")
+                .and_then(Value::as_bool)
+                == Some(true)
+            && settings
+                .get("require_complete_schedule")
+                .and_then(Value::as_bool)
+                == Some(true);
+    }
     if matches!(optimization_focus.as_str(), "quick" | "complete") {
         return false;
     }
@@ -2238,7 +2271,11 @@ mod tests {
         fresh["settings"]["ui_solver_fifo_admission"] = serde_json::json!(true);
         fresh["settings"]["ui_solver_async_job"] = serde_json::json!(true);
         fresh["settings"]["require_complete_schedule"] = serde_json::json!(true);
-        assert!(!browser_refinement_request_eligible(
+        fresh["data"]
+            .as_object_mut()
+            .unwrap()
+            .remove("tkbSolverResult");
+        assert!(browser_refinement_request_eligible(
             &serde_json::to_vec(&fresh).unwrap()
         ));
 
@@ -2271,8 +2308,20 @@ mod tests {
                 1_000,
             )
             .unwrap();
+        coordinator
+            .register_scoped_worker(
+                &owner,
+                &session_binding("session-browser"),
+                "web-online",
+                "Browser Online",
+                1,
+                "job-browser",
+                1_000,
+            )
+            .unwrap();
 
-        assert_eq!(coordinator.online_worker_count(&owner, 1_000), 1);
+        assert_eq!(coordinator.online_worker_count(&owner, 1_000), 2);
+        assert_eq!(coordinator.online_worker_counts(&owner, 1_000), (1, 1));
         assert_eq!(coordinator.online_worker_count(&other_owner, 1_000), 0);
         assert_eq!(
             coordinator.online_worker_count(&owner, 1_000 + AGENT_WORKER_TTL_MS),

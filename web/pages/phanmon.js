@@ -1,4 +1,4 @@
-window.__PHANMON_VERSION = "20260725-v194-gap-session-total-v1";
+window.__PHANMON_VERSION = "20260725-v1102-agent-executor-status-v1";
 try{
   window.__TKB_PLANNER_DATA_READY = false;
   window.__TKB_PLANNER_REMOTE_HYDRATION_PENDING = false;
@@ -7314,6 +7314,20 @@ function isAgentHelperSupportedDevice(deviceNavigator){
 
 const BROWSER_AGENT_UNAVAILABLE_LABEL = "Agent không khả dụng trên trình duyệt này; VPS sẽ xử lý.";
 const BROWSER_AGENT_OFF_LABEL = "Agent đã tắt; lượt xếp sẽ dùng VPS. Bấm để bật Agent.";
+const BROWSER_AGENT_VPS_FALLBACK_LABEL = "Agent đã bật; lượt hiện tại đang dùng VPS dự phòng.";
+
+function currentSolveExecutorState(){
+  const value = window.__TKB_CURRENT_SOLVE_EXECUTOR;
+  if(!value || typeof value !== "object" || value.active !== true) return null;
+  const executor = String(value.executor || "").trim().toLowerCase();
+  if(executor !== "agent" && executor !== "vps") return null;
+  return {
+    jobId:String(value.jobId || ""),
+    executor,
+    executionPhase:String(value.executionPhase || ""),
+    active:true
+  };
+}
 
 function browserAgentLabel(state){
   const workers = Math.max(1, Number(
@@ -7325,6 +7339,9 @@ function browserAgentLabel(state){
   ) || 1);
   const ceiling = Math.max(workers, Number(state?.workerCeiling || 0) || workers);
   const adaptiveNote = workers < ceiling ? ` (tối đa ${ceiling} Worker)` : "";
+  if(state?.enabled && state?.currentExecutor?.executor === "vps"){
+    return BROWSER_AGENT_VPS_FALLBACK_LABEL;
+  }
   if(state?.working) return `Agent đang tối ưu bằng ${workers} Worker${adaptiveNote} trên thiết bị. Bấm để chuyển về VPS.`;
   if(state?.active) return `Agent đã kết nối bằng ${workers} Worker${adaptiveNote} cho lượt này. Bấm để chuyển về VPS.`;
   if(state?.probed) return `Agent đã chuẩn bị ${workers} Worker${adaptiveNote} cho lượt này. Hiện chưa dùng CPU để xếp.`;
@@ -7374,6 +7391,7 @@ function browserAgentRuntimeState(deviceNavigator){
     supportedDevice,
     available,
     enabled,
+    currentExecutor:currentSolveExecutorState(),
     active:available && enabled && executorState.active === true,
     working:available && enabled && executorState.computeActive === true,
     probed:available && enabled && executorState.probed === true,
@@ -7397,14 +7415,20 @@ function renderBrowserAgentIndicator(runtimeState){
   const enabled = available && state.enabled !== false;
   const active = enabled && state.active === true;
   const working = enabled && state.working === true;
-  const name = working
-    ? "working"
-    : (active ? "active" : (state.probed ? "prepared" : (enabled ? "enabled" : (available ? "off" : "unavailable"))));
-  const label = browserAgentLabel(Object.assign({}, state, {available, enabled, active, working}));
+  const vpsFallback = enabled
+    && state.currentExecutor?.executor === "vps"
+    && state.currentExecutor?.active === true;
+  const name = vpsFallback
+    ? "fallback"
+    : (working
+        ? "working"
+        : (active ? "active" : (state.probed ? "prepared" : (enabled ? "enabled" : (available ? "off" : "unavailable")))));
+  const label = browserAgentLabel(Object.assign({}, state, {available, enabled, active, working, vpsFallback}));
   window.__TKB_BROWSER_AGENT_READY = enabled && state.probed === true;
   window.__TKB_BROWSER_AGENT_ENABLED = enabled;
   window.__TKB_BROWSER_AGENT_ACTIVE = active;
   window.__TKB_BROWSER_AGENT_WORKING = working;
+  window.__TKB_BROWSER_AGENT_VPS_FALLBACK = vpsFallback;
   const btn = document.getElementById("btnAgentHelper");
   if(!btn) return available;
   btn.dataset.agentState = name;
@@ -7470,6 +7494,15 @@ function startAgentHelperStatusPolling(){
 try{
   window.addEventListener?.("tkb-browser-agent-state", () => {
     renderBrowserAgentIndicator(browserAgentRuntimeState());
+  });
+  window.addEventListener?.("tkb:solver-executor-state", () => {
+    renderBrowserAgentIndicator(browserAgentRuntimeState());
+  });
+  window.addEventListener?.("pageshow", () => {
+    refreshAgentHelperStatus(true);
+  });
+  document.addEventListener?.("visibilitychange", () => {
+    if(document.hidden === false) refreshAgentHelperStatus(true);
   });
 }catch(_){ }
 

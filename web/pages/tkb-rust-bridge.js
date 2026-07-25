@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v288-vps-worker-release";
+  const VERSION = "tkb-rust-api-v290-executor-status";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -498,6 +498,76 @@
     let backendResumeEpoch = 0;
     let backendAuthRequired = false;
     let backendAuthFlowStarted = false;
+    const CURRENT_SOLVE_EXECUTOR_EVENT = "tkb:solver-executor-state";
+
+    function normalizedSolveExecutor(value, executionPhase){
+      const raw = String(value || "").trim().toLowerCase();
+      if(raw === "agent" || raw === "vps") return raw;
+      const phase = String(executionPhase || "").trim().toLowerCase();
+      if(phase.startsWith("agent_") || phase === "handoff_to_agent") return "agent";
+      if(phase.startsWith("vps_")) return "vps";
+      return "";
+    }
+
+    function dispatchCurrentSolveExecutorState(detail){
+      try{
+        if(
+          typeof window.dispatchEvent === "function"
+          && typeof window.CustomEvent === "function"
+        ){
+          window.dispatchEvent(new window.CustomEvent(CURRENT_SOLVE_EXECUTOR_EVENT, {detail}));
+        }
+      }catch(_){ }
+    }
+
+    function publishCurrentSolveExecutorState(payload, fallbackJobId){
+      if(!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+      const jobId = String(payload.jobId || fallbackJobId || "").trim();
+      if(!jobId) return null;
+      const previous = window.__TKB_CURRENT_SOLVE_EXECUTOR;
+      const samePrevious = previous && String(previous.jobId || "") === jobId
+        ? previous
+        : null;
+      const executionPhase = String(
+        payload.executionPhase
+        || samePrevious?.executionPhase
+        || ""
+      ).trim();
+      const executor = normalizedSolveExecutor(
+        payload.executor || samePrevious?.executor,
+        executionPhase
+      );
+      const detail = {
+        jobId,
+        executor,
+        executionPhase,
+        active:true,
+        updatedAt:Date.now()
+      };
+      window.__TKB_CURRENT_SOLVE_EXECUTOR = detail;
+      dispatchCurrentSolveExecutorState(detail);
+      return detail;
+    }
+
+    function clearCurrentSolveExecutorState(jobId){
+      const current = window.__TKB_CURRENT_SOLVE_EXECUTOR;
+      const expectedJobId = String(jobId || "").trim();
+      if(!current) return false;
+      if(
+        expectedJobId
+        && String(current.jobId || "") !== expectedJobId
+      ) return false;
+      const detail = {
+        jobId:String(current?.jobId || expectedJobId || ""),
+        executor:String(current?.executor || ""),
+        executionPhase:String(current?.executionPhase || ""),
+        active:false,
+        updatedAt:Date.now()
+      };
+      window.__TKB_CURRENT_SOLVE_EXECUTOR = null;
+      dispatchCurrentSolveExecutorState(detail);
+      return true;
+    }
     let scheduleMutationCancellationInFlight = null;
     let activeBackendResumeTarget = null;
     // A foreground wakeup can overlap the previous page's terminal callback.
@@ -1800,6 +1870,7 @@
           await sleep(Math.min(2_000, pollMs * Math.max(1, networkFailures)));
           continue;
         }
+        clearCurrentSolveExecutorState(jobId);
         try{ parsedSolverResponsePayloads.set(response, transportPayload); }catch(_){ }
         return response;
       }
@@ -1810,8 +1881,10 @@
         setBestEffortStopPending(jobId, true);
       }
       recordBackendLiveProgress(pending?.progress);
+      publishCurrentSolveExecutorState(pending, jobId);
       const kind = String(pending?.kind || pending?.error || "").toLowerCase();
       if(!["solver_started", "solver_running", "solver_queued", "solver_cancelling"].includes(kind)){
+        clearCurrentSolveExecutorState(jobId);
         try{ parsedSolverResponsePayloads.set(response, pending); }catch(_){ }
         return response;
       }
@@ -3284,6 +3357,7 @@
     if(value && bestEffortStopJobId === value){
       setBestEffortStopPending(value, false);
     }
+    clearCurrentSolveExecutorState(value);
     activeBackendJobId = "";
     window.__TKB_ACTIVE_BACKEND_JOB_ID = "";
     removePendingBackendJob(value);
@@ -3321,6 +3395,7 @@
     if(value) endServerJobReattachLease(value);
     activeBackendResumeTarget = null;
     activeServerJobReattachLeaseId = "";
+    clearCurrentSolveExecutorState(value);
     activeBackendJobId = "";
     window.__TKB_ACTIVE_BACKEND_JOB_ID = "";
     clearActiveSolveAbortController(controller);
@@ -3934,7 +4009,8 @@
         progressWrap.classList.contains("is-warning")
         || progressWrap.classList.contains("is-error")
       );
-    if(options?.force !== true && !visibleAttention) return false;
+    const hasCurrentExecutor = window.__TKB_CURRENT_SOLVE_EXECUTOR?.active === true;
+    if(options?.force !== true && !visibleAttention && !hasCurrentExecutor) return false;
     const statusText = String(document.getElementById("statusMsg")?.textContent || "").trim();
     const preserveCompletion = statusText === SOLVE_COMPLETE_MESSAGE;
     stopProgressTicker();
@@ -3953,6 +4029,7 @@
     hideAutoSortProgressDom();
     callMaybe("hideAutoSortProgress", [{preserveStopRequest:false}]);
     setAutoSortHomeHiddenState(false);
+    clearCurrentSolveExecutorState();
     if(!preserveCompletion) setStatus("", "ok");
     return true;
   }
@@ -12502,6 +12579,14 @@
     );
     effectiveSettings.ui_progress_budget_seconds = uiProgressBudgetSeconds;
     effectiveSettings.ui_progress_run_index = uiProgressRunIndex;
+    try{
+      effectiveSettings.ui_agent_preference_enabled =
+        typeof window.TKBBrowserWasmExecutor?.isEnabled === "function"
+          ? window.TKBBrowserWasmExecutor.isEnabled() !== false
+          : true;
+    }catch(_){
+      effectiveSettings.ui_agent_preference_enabled = true;
+    }
     if(progressState){
       progressState.estimatedSeconds = uiProgressEstimateSeconds;
       progressState.progressBudgetSeconds = uiProgressBudgetSeconds;
@@ -12710,6 +12795,7 @@
           let queuedPayload = {};
           try{ queuedPayload = await response.clone().json(); }catch(_){}
           recordBackendLiveProgress(queuedPayload?.progress);
+          publishCurrentSolveExecutorState(queuedPayload, solveRunId);
           const pendingKind = String(queuedPayload?.kind || queuedPayload?.error || "").toLowerCase();
           const serverExecutor = String(queuedPayload?.executor || "")
             .trim()
@@ -14963,6 +15049,8 @@
         forgetSettledBackendJob,
         isSettledBackendJob,
         clearActiveBackendJobId,
+        publishCurrentSolveExecutorState,
+        clearCurrentSolveExecutorState,
         markBackendJobQueued,
         recordBackendJobStarted,
         backendProgressStageLabel,

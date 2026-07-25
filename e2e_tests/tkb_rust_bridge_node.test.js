@@ -369,6 +369,8 @@ function loadBridge(data, fetchImpl, runtime = {}){
     requestIdleCallback(callback){ return setTimeoutImpl(callback, 0); },
     addEventListener: runtime.addEventListener || (() => {}),
     removeEventListener: runtime.removeEventListener || (() => {}),
+    dispatchEvent: runtime.dispatchEvent || (() => true),
+    CustomEvent: runtime.CustomEvent,
     matchMedia: runtime.matchMedia || (() => ({matches:false})),
     confirm: runtime.confirm || (() => true),
     alert(){},
@@ -498,6 +500,58 @@ test("watchdog and local fast finishes complete progress before releasing the bu
   );
   assert.doesNotMatch(busyButtonBody, /btn\.textContent\s*=/, "busy state must preserve the SVG Play icon");
   assert.match(busyButtonBody, /setAttribute\("aria-busy",\s*busy \? "true" : "false"\)/);
+});
+
+test("bridge publishes the canonical active executor and clears only the matching job", () => {
+  const events = [];
+  class TestCustomEvent {
+    constructor(type, options){
+      this.type = type;
+      this.detail = options?.detail;
+    }
+  }
+  const {window, hooks} = loadBridge(makeData(2), null, {
+    CustomEvent:TestCustomEvent,
+    dispatchEvent(event){ events.push(event); return true; }
+  });
+
+  const agent = hooks.publishCurrentSolveExecutorState({
+    jobId:"executor-job",
+    executor:"agent",
+    executionPhase:"agent_waiting"
+  });
+  assert.equal(agent.active, true);
+  assert.equal(window.__TKB_CURRENT_SOLVE_EXECUTOR.executor, "agent");
+  assert.equal(events.at(-1).type, "tkb:solver-executor-state");
+  assert.equal(events.at(-1).detail.executionPhase, "agent_waiting");
+
+  hooks.publishCurrentSolveExecutorState({
+    jobId:"executor-job",
+    executor:"vps",
+    executionPhase:"vps_running"
+  });
+  assert.equal(window.__TKB_CURRENT_SOLVE_EXECUTOR.executor, "vps");
+  assert.equal(hooks.clearCurrentSolveExecutorState("older-job"), false);
+  assert.equal(window.__TKB_CURRENT_SOLVE_EXECUTOR.jobId, "executor-job");
+
+  assert.equal(hooks.clearCurrentSolveExecutorState("executor-job"), true);
+  assert.equal(window.__TKB_CURRENT_SOLVE_EXECUTOR, null);
+  assert.equal(events.at(-1).detail.active, false);
+  assert.equal(events.at(-1).detail.jobId, "executor-job");
+});
+
+test("initial and polled 202 responses publish executor ownership before settlement clears it", () => {
+  const waitBody = BRIDGE_SOURCE.slice(
+    BRIDGE_SOURCE.indexOf("async function waitForServerOwnedSolverResult"),
+    BRIDGE_SOURCE.indexOf("async function observeBackendJob")
+  );
+  const postBody = BRIDGE_SOURCE.slice(
+    BRIDGE_SOURCE.indexOf("async function postSolve"),
+    BRIDGE_SOURCE.indexOf("function publishE2EState")
+  );
+  assert.match(waitBody, /publishCurrentSolveExecutorState\(pending, jobId\)/);
+  assert.match(waitBody, /clearCurrentSolveExecutorState\(jobId\)/);
+  assert.match(postBody, /publishCurrentSolveExecutorState\(queuedPayload, solveRunId\)/);
 });
 
 test("progress appears for Play and hides after a successful terminal state", () => {
@@ -1594,6 +1648,7 @@ test("browser readiness marker is serialized only after a successful eligible WA
     assert.equal(payload.ok, true);
     assert.equal(probeCalls, 1);
     assert.ok(posted);
+    assert.equal(posted.settings.ui_agent_preference_enabled, browserReady);
     assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserWasmEligible, true);
     assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserWasmProbed, browserReady);
     assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserWasmActivated, false);
@@ -1609,7 +1664,7 @@ test("browser readiness marker is serialized only after a successful eligible WA
   }
 });
 
-test("focused VPS admission is authoritative and is not handed back to Browser Agent", async () => {
+test("server VPS fallback remains authoritative after Browser Agent preflight", async () => {
   const data = makeData(2);
   const subject = data.mon[0].ten;
   data.tkb = {

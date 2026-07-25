@@ -8,11 +8,21 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.100** (serialized industry export;
+- Current deployed application release: **v1.102** (Agent validation load and
+  truthful executor status;
   deployed 2026-07-25).
   Transactional backups are
-  `/opt/cherry-scheduler-backups/server-state-20260725-150312.tar.gz` and
-  `/opt/cherry-scheduler-backups/app-release-20260725-150312.tar.gz`.
+  `/opt/cherry-scheduler-backups/server-state-20260725-170815.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260725-170815.tar.gz`.
+- v1.102 coalesces Browser-Agent checkpoints, avoids the Python reference
+  validator for metadata-only constraint models, and shows whether the active
+  job is owned by the local Agent or VPS fallback. Final candidates and every
+  model with an actual user constraint still pass canonical server validation.
+- v1.101 makes an enabled, eligible local Agent authoritative for Automatic,
+  Buoi, and Tiet trong work. VPS capacity is used only when the Agent is
+  disabled, unavailable, backgrounded on mobile, disconnected, or fails to
+  claim/finish the same job. Desktop tab switching no longer releases a live
+  Browser Agent; mobile backgrounding still yields promptly to VPS.
 - v1.100 serializes same-page industry export requests so rapid double clicks
   cannot download two files with the same daily sequence. It retains the v1.99
   workbook contract, v1.96 administration UI, and the existing API v80
@@ -61,6 +71,66 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.102 Agent validation load and executor status (deployed)
+
+- Browser Agent no longer waits for every improving Worker to finish VPS
+  validation before continuing local search. It keeps one checkpoint request
+  in flight and coalesces the waiting queue to the newest strict improvement.
+  This reduces repeated server validation and lets the remaining local Workers
+  keep exploring. Stop still keeps the latest accepted checkpoint, and the
+  final candidate remains independently validated.
+- `tkbConstraints.version`, `meta`, `groups`, and `__normalizedBy` are now
+  recognized as descriptive scaffolding rather than active rules. A normalized
+  but otherwise empty requirement model no longer starts the Python reference
+  validator for every checkpoint. Any actual class, teacher, subject, room, or
+  timetable rule still activates the independent validator.
+- The Agent indicator now consumes the canonical server `executor` and
+  `executionPhase`. Local work stays green; an active VPS fallback is amber and
+  reports `Agent da bat; luot hien tai dang dung VPS du phong.` in its accessible
+  label. The state refreshes on each server result, `pageshow`, and foreground
+  event, then clears only for the matching settled job.
+- Markers are `tkb-browser-wasm-executor-v20-checkpoint-coalescing`,
+  `tkb-rust-api-v290-executor-status`,
+  `20260725-v1102-agent-validation-load-v1`, Phanmon
+  `20260725-v1102-agent-executor-status-v1`, and Rust API
+  `tkb_new-rust-api-2026-07-25-agent-validation-v82`.
+- Full local Node verification passes **404/404**; JavaScript syntax and
+  `git diff --check` pass. Isolated VPS staging passes scheduler **230/230**,
+  Agent **155/155**, trusted worker **5/5**, Rust API **203/203**, and native
+  validation **43/43**, ending with `STAGING_TESTS_OK`.
+- Production deployment returned `UPDATE_OK`. Live acceptance used 22 local
+  Workers, completed with `Chua phan: 0`, emitted no browser warnings/errors,
+  and kept VPS solver health at zero active jobs, zero allocated Worker tokens,
+  and all `6/6` tokens available for every sample during the run.
+
+### v1.101 Agent-first execution (deployed)
+
+- An enabled local Agent now owns every eligible Automatic or focused
+  optimization before VPS admission. The API no longer reserves the six VPS
+  Worker tokens ahead of Browser Agent for Buoi or Tiet trong, and an explicit
+  Agent-off preference forces VPS even when a native Agent remains online.
+- Browser Agent status separates durable native Agents from job-scoped browser
+  tabs. A Browser Agent in another tab therefore no longer makes a new tab skip
+  its own local probe. Eligible fresh Automatic requests may use Browser Agent,
+  while all returned candidates still pass canonical server validation.
+- Desktop hidden tabs retain their local Worker pool and lease so switching
+  browser tabs does not silently hand the solve to VPS. iPhone, iPad, and
+  Android hidden pages still release immediately because mobile browsers may
+  suspend JavaScript; VPS resumes the same job as fallback. Explicit Stop,
+  Agent-off, `pagehide`, heartbeat loss, and local failure also release it.
+- Markers are `tkb-browser-wasm-executor-v19-agent-first-routing`,
+  `tkb-rust-api-v289-agent-first-routing`,
+  `20260725-v1101-agent-first-routing-v1`, and Rust API
+  `tkb_new-rust-api-2026-07-25-agent-first-v81`.
+- Full local Node verification passes **401/401**; JavaScript syntax and
+  `git diff --check` pass. Isolated VPS staging passes scheduler **230/230**,
+  Agent **155/155**, trusted worker **5/5**, Rust API **203/203**, and native
+  validation **43/43**, ending with `STAGING_TESTS_OK`.
+- Production deployment returned `UPDATE_OK`. Live acceptance used 22 local
+  Workers, completed the timetable with zero unassigned periods, and kept VPS
+  health at zero active jobs, zero allocated Worker tokens, and all `6/6`
+  tokens available throughout the local run.
 
 ### v1.100 serialized industry export (deployed)
 
@@ -4751,16 +4821,16 @@ Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
 Latest successful deployment marker observed on 2026-07-25: `UPDATE_OK` for
-application v1.100. Public health serves
-`tkb_new-rust-api-2026-07-25-vps-priority-v80`; the planner serves
-`20260725-v193-vps-worker-release-v1`, bridge marker
-`tkb-rust-api-v288-vps-worker-release`, and Browser executor
-`tkb-browser-wasm-executor-v18-session-gap-quality`. Super Admin serves
+application v1.102. Public health serves
+`tkb_new-rust-api-2026-07-25-agent-validation-v82`; the planner serves
+`20260725-v1102-agent-validation-load-v1`, bridge marker
+`tkb-rust-api-v290-executor-status`, and Browser executor
+`tkb-browser-wasm-executor-v20-checkpoint-coalescing`. Super Admin serves
 `20260725-v188-compact-super-admin-v2`.
 Public health is idle with zero active/queued jobs and `6/6` worker tokens.
 Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260725-150312.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260725-150312.tar.gz`.
+`/opt/cherry-scheduler-backups/server-state-20260725-170815.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260725-170815.tar.gz`.
 Public Agent release `1.6.31` and its signed manifest are live. The 88,054,539
 byte archive SHA-256 is
 `402f4eba12db1b31aa923e0960450855a7314729c90c796889741b31a4aaaa96`; the

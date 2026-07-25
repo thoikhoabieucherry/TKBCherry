@@ -445,8 +445,8 @@ test("portrait planner keeps seven compact mobile slots with stacked history and
     /@media \(max-width:\s*900px\) and \(hover:\s*none\) and \(pointer:\s*coarse\),\s*\(max-width:\s*480px\)/
   );
   assert.match(plannerHtml, /shared\/storage\.js\?v=20260724-v180-durable-store-save-v1/);
-  assert.match(plannerHtml, /phanmon\.js\?v=20260725-v194-gap-session-total-v1/);
-  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260725-v193-vps-worker-release-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260725-v1102-agent-validation-load-v1/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260725-v1102-agent-validation-load-v1/);
 });
 
 test("landscape phones separate Undo and Redo into eight full-height slots", () => {
@@ -532,6 +532,10 @@ test("browser Agent toggle is cross-platform and sits before Home on desktop and
   assert.match(
     plannerHtml,
     /#btnAgentHelper\[data-agent-state="active"\] \.agent-status-dot,[\s\S]*?#btnAgentHelper\[data-agent-state="working"\] \.agent-status-dot\s*\{[^}]*background:\s*#22c55e;/s
+  );
+  assert.match(
+    plannerHtml,
+    /#btnAgentHelper\[data-agent-state="fallback"\] \.agent-status-dot\s*\{[^}]*background:\s*#f59e0b;/s
   );
   assert.match(
     plannerHtml,
@@ -690,6 +694,40 @@ test("browser Agent indicator shows enabled readiness and reports real compute",
   assert.equal(context.window.__TKB_BROWSER_AGENT_ACTIVE, false);
   assert.equal(context.window.__TKB_BROWSER_AGENT_WORKING, false);
 
+  context.window.__TKB_CURRENT_SOLVE_EXECUTOR = {
+    jobId:"fallback-job",
+    executor:"vps",
+    executionPhase:"vps_running",
+    active:true
+  };
+  assert.equal(await context.refreshIndicator(true), true);
+  assert.equal(button.dataset.agentState, "fallback");
+  assert.equal(button.title, "Agent đã bật; lượt hiện tại đang dùng VPS dự phòng.");
+  assert.equal(context.window.__TKB_BROWSER_AGENT_VPS_FALLBACK, true);
+
+  executorState.active = true;
+  executorState.probed = true;
+  executorState.computeActive = true;
+  executorState.workerCount = 1;
+  context.window.__TKB_CURRENT_SOLVE_EXECUTOR = {
+    jobId:"local-job",
+    executor:"agent",
+    executionPhase:"agent_running",
+    active:true
+  };
+  assert.equal(await context.refreshIndicator(true), true);
+  assert.equal(button.dataset.agentState, "working");
+  assert.match(button.title, /^Agent đang tối ưu bằng 1 Worker/);
+  assert.equal(context.window.__TKB_BROWSER_AGENT_VPS_FALLBACK, false);
+
+  executorState.active = false;
+  executorState.probed = false;
+  executorState.computeActive = false;
+  executorState.workerCount = 0;
+  context.window.__TKB_CURRENT_SOLVE_EXECUTOR = null;
+  assert.equal(await context.refreshIndicator(true), true);
+  assert.equal(button.dataset.agentState, "enabled");
+
   assert.equal(await context.toggleIndicator(), false);
   assert.equal(agentEnabled, false);
   assert.equal(button.disabled, false);
@@ -697,6 +735,21 @@ test("browser Agent indicator shows enabled readiness and reports real compute",
   assert.equal(button.attributes["aria-pressed"], "false");
   assert.equal(button.title, "Agent đã tắt; lượt xếp sẽ dùng VPS. Bấm để bật Agent.");
   assert.deepEqual(statusEvents.at(-1), ["Agent đã tắt; các lượt xếp sẽ dùng VPS.", "info"]);
+});
+
+test("Agent indicator refreshes immediately on executor, pageshow, and foreground events", () => {
+  assert.match(
+    plannerSource,
+    /addEventListener\?\.\("tkb:solver-executor-state",\s*\(\) => \{\s*renderBrowserAgentIndicator\(browserAgentRuntimeState\(\)\)/s
+  );
+  assert.match(
+    plannerSource,
+    /addEventListener\?\.\("pageshow",\s*\(\) => \{\s*refreshAgentHelperStatus\(true\)/s
+  );
+  assert.match(
+    plannerSource,
+    /document\.addEventListener\?\.\("visibilitychange",[\s\S]*?document\.hidden === false[\s\S]*?refreshAgentHelperStatus\(true\)/
+  );
 });
 
 test("manual Play never prompts or downloads a native Agent", async () => {

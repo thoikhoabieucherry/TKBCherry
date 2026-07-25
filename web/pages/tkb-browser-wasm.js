@@ -1,7 +1,7 @@
 (function(root){
   "use strict";
 
-  const VERSION = "tkb-browser-wasm-executor-v18-session-gap-quality";
+  const VERSION = "tkb-browser-wasm-executor-v20-checkpoint-coalescing";
   const AGENT_PROTOCOL = "tkb-agent-helper-v1";
   const AGENT_VERSION = "1.6.31";
   const SOLVER_PROTOCOL = "tkb-reference-solver-stdio-v1";
@@ -70,6 +70,19 @@
       || (/MacIntel/i.test(platform) && Number(nav.maxTouchPoints || 0) > 1);
   }
 
+  function isMobileNavigator(deviceNavigator){
+    const nav = deviceNavigator || {};
+    const platform = String(nav.userAgentData?.platform || nav.platform || "");
+    const userAgent = String(nav.userAgent || "");
+    return isIOSNavigator(nav)
+      || /Android/i.test(platform)
+      || /Android|Mobile/i.test(userAgent);
+  }
+
+  function hiddenRequiresVpsFallback(){
+    return root.document?.visibilityState === "hidden" && isMobileNavigator(root.navigator);
+  }
+
   function browserAgentEnabled(){
     if(typeof state.enabledOverride === "boolean") return state.enabledOverride;
     try{ return root.localStorage?.getItem(ENABLED_STORAGE_KEY) !== "0"; }
@@ -96,7 +109,7 @@
 
   function runtimeCapable(){
     return isSupportedNavigator(root.navigator)
-      && root.document?.visibilityState !== "hidden"
+      && !hiddenRequiresVpsFallback()
       && typeof root.Worker === "function"
       && typeof root.WebAssembly === "object"
       && typeof root.BigInt === "function"
@@ -186,6 +199,20 @@
     return !!envelope && normalizedOptimizationFocus(envelope.settings) === "quick_complete";
   }
 
+  function isFreshAutomaticRequest(request){
+    const envelope = requestEnvelope(request);
+    if(!envelope || normalizedOptimizationFocus(envelope.settings) !== "automatic") return false;
+    const settings = envelope.settings;
+    const solveKind = String(settings.ui_unified_solve_kind || "")
+      .trim()
+      .toLowerCase()
+      .replace(/-/g, "_");
+    return solveKind === "fresh_complete_first"
+      && settings.ui_solver_fifo_admission === true
+      && settings.ui_solver_async_job === true
+      && settings.require_complete_schedule === true;
+  }
+
   function isCompleteRefinementRequest(request){
     const envelope = requestEnvelope(request);
     if(!envelope || normalizedOptimizationFocus(envelope.settings) === "quick_complete") return false;
@@ -227,7 +254,9 @@
   }
 
   function isBrowserAgentRequest(request){
-    return isQuickCompletionRequest(request) || isCompleteRefinementRequest(request);
+    return isQuickCompletionRequest(request)
+      || isFreshAutomaticRequest(request)
+      || isCompleteRefinementRequest(request);
   }
 
   function capLocalDeadline(settings, key, maximum){
@@ -261,6 +290,21 @@
         QUICK_LOCAL_RESERVE_MS
       );
       return isQuickCompletionRequest(cloned) ? cloned : null;
+    }
+    if(isFreshAutomaticRequest(cloned)){
+      const settings = cloned.settings;
+      settings.require_complete_schedule = true;
+      settings.best_effort_on_timeout = false;
+      settings.optimize_existing_schedule = false;
+      settings.preserve_existing_tkb = false;
+      settings.preserve_fixed_lessons_only = true;
+      settings.partial_existing_rebuild = false;
+      settings.repair_fill_first = false;
+      settings.repair_partial_existing = false;
+      settings.native_skip_teacher_optimization = false;
+      capLocalDeadline(settings, "backend_deadline_ms", FOCUSED_LOCAL_ATTEMPT_MS);
+      capLocalDeadline(settings, "native_global_deadline_ms", FOCUSED_LOCAL_ATTEMPT_MS);
+      return isFreshAutomaticRequest(cloned) ? cloned : null;
     }
     if(!isCompleteRefinementRequest(cloned)) return null;
     cloned.settings.optimize_existing_schedule = true;
@@ -1247,23 +1291,59 @@
       state.lastComputeFinishedAtMs = 0;
       publishRuntimeState();
       let checkpointTail = Promise.resolve();
-      const queueCheckpoint = portfolio => {
-        checkpointTail = checkpointTail.then(async () => {
-          if(
-            leaseRun.checkpointQuality
-            && compareQuality(
-              portfolio.quality,
-              leaseRun.checkpointQuality,
-              refinementRequest.settings
-            ) >= 0
-          ) return null;
+      let pendingCheckpoint = null;
+      let checkpointDrainActive = false;
+      const checkpointImproves = portfolio => !!(
+        portfolio?.quality
+        && (
+          !leaseRun.checkpointQuality
+          || compareQuality(
+            portfolio.quality,
+            leaseRun.checkpointQuality,
+            refinementRequest.settings
+          ) < 0
+        )
+      );
+      const drainCheckpoints = async () => {
+        while(pendingCheckpoint){
+          const portfolio = pendingCheckpoint;
+          pendingCheckpoint = null;
+          if(!checkpointImproves(portfolio)) continue;
           const checkpoint = await submitLeaseCandidate(lease, portfolio, "checkpoint");
           leaseRun.checkpointSubmitted = true;
           leaseRun.checkpointCandidateId = checkpoint.candidateId;
           leaseRun.checkpointQuality = portfolio.quality;
-          return checkpoint;
-        }).catch(() => null);
+        }
+      };
+      const startCheckpointDrain = () => {
+        if(checkpointDrainActive) return checkpointTail;
+        checkpointDrainActive = true;
+        checkpointTail = drainCheckpoints()
+          .catch(() => null)
+          .finally(() => {
+            checkpointDrainActive = false;
+            return pendingCheckpoint ? startCheckpointDrain() : null;
+          });
         return checkpointTail;
+      };
+      const queueCheckpoint = portfolio => {
+        if(!checkpointImproves(portfolio)) return Promise.resolve(null);
+        if(
+          pendingCheckpoint?.quality
+          && compareQuality(
+            portfolio.quality,
+            pendingCheckpoint.quality,
+            refinementRequest.settings
+          ) >= 0
+        ) return Promise.resolve(null);
+        // Validation runs on the VPS. Keep one request in flight and only the
+        // newest strict improvement behind it so many local Workers cannot
+        // launch the same expensive reference validator in succession.
+        pendingCheckpoint = portfolio;
+        startCheckpointDrain();
+        // Local Workers keep exploring while the server validates the current
+        // checkpoint. runLease waits for the drain before final submission.
+        return Promise.resolve(null);
       };
       const portfolio = await runPortfolio(
         refinementRequest,
@@ -1329,7 +1409,7 @@
         state.active
         && state.generation === generation
         && !signal?.aborted
-        && root.document?.visibilityState !== "hidden"
+        && !hiddenRequiresVpsFallback()
       ){
         const requestId = randomId("lease-").slice(0, 96);
         const payload = await fetchJson("/api/agent-helper/v1/lease", {
@@ -1382,10 +1462,16 @@
             timeoutMs:1800,
             signal:opts.signal
           });
-          if(status.online === true) return false;
+          const nativeOnline = status.nativeOnline === true
+            || (
+              status.nativeOnline == null
+              && status.browserAgentCount == null
+              && status.online === true
+            );
+          if(nativeOnline) return false;
         }catch(_){ }
       }
-      if(opts.signal?.aborted || root.document?.visibilityState === "hidden") return false;
+      if(opts.signal?.aborted || hiddenRequiresVpsFallback()) return false;
       if(state.workers.length) terminateComputeWorkers();
       state.workerCeiling = workerCeiling;
       state.plannedWorkerCount = plannedWorkerCount;
@@ -1419,7 +1505,7 @@
         const probed = await probeExecutor(opts);
         if(!probed) return false;
       }
-      if(root.document?.visibilityState === "hidden") return false;
+      if(hiddenRequiresVpsFallback()) return false;
       const hello = await fetchJson("/api/agent-helper/v1/hello", {
         protocol:AGENT_PROTOCOL,
         jobId,
@@ -1435,7 +1521,7 @@
         || !state.worker
         || !state.workers.length
         || !browserAgentEnabled()
-        || root.document?.visibilityState === "hidden"
+        || hiddenRequiresVpsFallback()
       ){
         // pagehide may race the hello response. Revoke the just-issued token
         // instead of resurrecting a worker after the page already yielded to
@@ -1557,7 +1643,7 @@
 
   try{
     root.document?.addEventListener?.("visibilitychange", () => {
-      if(root.document.visibilityState === "hidden") stopForBackground();
+      if(hiddenRequiresVpsFallback()) stopForBackground();
     });
     root.addEventListener?.("pagehide", stopForBackground);
   }catch(_){ }
@@ -1565,6 +1651,7 @@
   root.TKBBrowserWasmExecutor = {
     version:VERSION,
     isSupportedNavigator,
+    isMobileNavigator,
     isEnabled:browserAgentEnabled,
     setEnabled:setBrowserAgentEnabled,
     portfolioWorkerCount,

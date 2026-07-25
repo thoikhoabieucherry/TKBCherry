@@ -24,7 +24,7 @@ mod native_precheck;
 mod native_solver;
 mod solver_pool;
 
-const VERSION: &str = "tkb_new-rust-api-2026-07-25-vps-priority-v80";
+const VERSION: &str = "tkb_new-rust-api-2026-07-25-agent-validation-v82";
 const REFERENCE_STDIO_PROTOCOL: &str = "tkb-reference-solver-stdio-v1";
 const REFERENCE_PROGRESS_PROTOCOL: &str = "tkb-reference-solver-progress-v1";
 const REFERENCE_PROGRESS_PREFIX: &str = "@@TKB_PROGRESS@@";
@@ -613,7 +613,9 @@ fn agent_helper_status_json(app: &App, auth_token: Option<&str>) -> Vec<u8> {
         return auth::forbidden_response();
     };
     let checked_at_ms = now_millis();
-    let agent_count = app.agent_helper.online_worker_count(&owner, checked_at_ms);
+    let (native_agent_count, browser_agent_count) =
+        app.agent_helper.online_worker_counts(&owner, checked_at_ms);
+    let agent_count = native_agent_count + browser_agent_count;
     json_response(
         200,
         json!({
@@ -621,6 +623,10 @@ fn agent_helper_status_json(app: &App, auth_token: Option<&str>) -> Vec<u8> {
             "ok": true,
             "online": agent_count > 0,
             "agentCount": agent_count,
+            "nativeOnline": native_agent_count > 0,
+            "nativeAgentCount": native_agent_count,
+            "browserOnline": browser_agent_count > 0,
+            "browserAgentCount": browser_agent_count,
             "checkedAtMs": checked_at_ms,
             "staleAfterMs": agent_helper::AGENT_WORKER_TTL_MS
         }),
@@ -3401,42 +3407,6 @@ fn setting_string(settings: Option<&serde_json::Map<String, Value>>, key: &str) 
         .filter(|value| !value.is_empty())
 }
 
-fn is_gap_optimization_request(request: Option<&Value>) -> bool {
-    let Some(focus) = setting_string(request.and_then(request_settings), "optimization_focus")
-    else {
-        return false;
-    };
-    matches!(
-        focus
-            .to_ascii_lowercase()
-            .replace('-', "_")
-            .replace(' ', "_")
-            .as_str(),
-        "gap" | "gaps" | "teacher_gaps" | "teacher_gap_sessions"
-    )
-}
-
-fn is_session_optimization_request(request: Option<&Value>) -> bool {
-    let Some(focus) = setting_string(request.and_then(request_settings), "optimization_focus")
-    else {
-        return false;
-    };
-    matches!(
-        focus
-            .to_ascii_lowercase()
-            .replace('-', "_")
-            .replace(' ', "_")
-            .as_str(),
-        "session"
-            | "sessions"
-            | "teacher_session"
-            | "teacher_sessions"
-            | "teacher_session_opt"
-            | "teacher_sessions_opt"
-            | "optimize_teacher_sessions"
-    )
-}
-
 fn solver_schedule_fingerprint(request: Option<&Value>) -> Option<String> {
     let request = request?;
     let settings = request_settings(request);
@@ -5106,7 +5076,19 @@ fn request_has_active_tkb_constraints(request_body: &[u8]) -> bool {
         .ok()
         .and_then(|request| request.get("data").cloned())
         .and_then(|data| data.get("tkbConstraints").cloned())
-        .is_some_and(|constraints| constraint_value_active(&constraints))
+        .and_then(|constraints| constraints.as_object().cloned())
+        .is_some_and(|constraints| {
+            constraints.iter().any(|(key, value)| {
+                // Normalized UI models always carry descriptive scaffolding.
+                // It does not constrain a timetable and must not launch the
+                // Python reference validator for every Browser-Agent checkpoint.
+                !matches!(
+                    key.as_str(),
+                    "version" | "meta" | "groups" | "__normalizedBy"
+                )
+                    && constraint_value_active(value)
+            })
+        })
 }
 
 fn run_reference_candidate_validator(
@@ -6109,17 +6091,24 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
             .map(|request| setting_bool(request_settings(request), "ui_solver_async_job", false))
         .unwrap_or(false);
     let browser_wasm_eligible = agent_helper::browser_refinement_request_eligible(body);
-    let browser_gap_request = is_gap_optimization_request(request.as_ref());
-    let browser_session_request = is_session_optimization_request(request.as_ref());
-    let browser_vps_preferred_request = browser_gap_request || browser_session_request;
-    let browser_wasm_ready = browser_wasm_eligible
+    let local_agent_preference_enabled = request
+        .as_ref()
+        .map(|request| {
+            setting_bool(
+                request_settings(request),
+                "ui_agent_preference_enabled",
+                true,
+            )
+        })
+        .unwrap_or(true);
+    let browser_wasm_ready = local_agent_preference_enabled
+        && browser_wasm_eligible
         && request
             .as_ref()
             .map(|request| {
                 setting_bool(request_settings(request), "ui_browser_wasm_ready", false)
             })
             .unwrap_or(false);
-    let mut preferred_vps_guard: Option<SolverJobGuard> = None;
     let mut server_execution_fence = None;
     if server_owned {
         if let Some(response) = app
@@ -6216,19 +6205,6 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
             }
         }
 
-        // Focused Gap and Sessions have targeted VPS class-cluster passes that
-        // are materially stronger than the browser-safe heuristic. Reserve the
-        // complete VPS allotment atomically; a capacity snapshot here would let
-        // two simultaneous requests both choose VPS before either acquires it.
-        // The loser spills to Browser Agent immediately instead of entering the
-        // VPS queue behind the winner.
-        if browser_wasm_ready && browser_vps_preferred_request {
-            preferred_vps_guard = app
-                .solver_pool
-                .try_acquire_for_owner(job_id.clone(), desired_workers, owner.clone())
-                .ok();
-        }
-
         // A browser that already compiled the WASM runtime may publish this
         // bounded readiness hint with its complete, revalidated refinement
         // request. The server independently verifies eligibility above and
@@ -6236,7 +6212,7 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
         // it again after the browser receives the durable job ID. A spoofed or
         // vanished browser can only consume the existing claim grace before
         // the fenced coordinator falls back to VPS.
-        if browser_wasm_ready && preferred_vps_guard.is_none() {
+        if browser_wasm_ready {
             let Some(fence) = app.solver_pool.prepare_agent_execution(&job_id, owner) else {
                 cleanup_server_owned_job(app, &job_id, owner);
                 return json_response(
@@ -6289,19 +6265,16 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
         }
 
         // A paired owner Agent may take its own job immediately. Operator
-        // trusted workers are auxiliary queue capacity and pull only jobs that
-        // are actually waiting behind VPS admission; they never race a fresh
-        // direct start for the same free worker slot.
-        if preferred_vps_guard.is_none()
+        // trusted workers remain auxiliary queue capacity and never race a
+        // fresh direct start for the same job.
+        if local_agent_preference_enabled
             && app
                 .agent_helper
                 .online_worker_count_for_job(owner, &job_id, now_millis())
                 > 0
         {
-            // A durable native Agent may take ordinary work, and focused work
-            // spills here when the VPS reservation was unavailable. A focused
-            // request that already reserved the stronger VPS path must not be
-            // handed back to an idle Agent just because it is online.
+            // Any eligible local Agent is authoritative. VPS is fallback only
+            // after the Agent is absent, disabled, disconnected, or timed out.
             let Some(fence) = app
                 .solver_pool
                 .prepare_agent_execution(&job_id, owner)
@@ -6415,9 +6388,7 @@ fn solve_json(app: &App, body: &[u8], owner: &SolverOwner) -> Vec<u8> {
             );
         }
     }
-    let admission = if let Some(guard) = preferred_vps_guard.take() {
-        SolverAdmission::Acquired(guard)
-    } else if supports_fifo_admission {
+    let admission = if supports_fifo_admission {
         app.solver_pool
             .acquire_or_enqueue_for_owner(job_id.clone(), desired_workers, owner.clone())
     } else {
@@ -8098,7 +8069,7 @@ mod tests {
 
     #[test]
     fn browser_agent_status_is_authenticated_live_and_owner_scoped() {
-        let (app, session_token, _) = agent_test_app();
+        let (app, session_token, owner) = agent_test_app();
         let unauthorized = agent_get_route(&app, None, "/api/agent-helper/v1/status");
         assert_eq!(response_status(&unauthorized), 401);
 
@@ -8109,6 +8080,10 @@ mod tests {
         ));
         assert_eq!(offline["online"], json!(false));
         assert_eq!(offline["agentCount"], json!(0));
+        assert_eq!(offline["nativeOnline"], json!(false));
+        assert_eq!(offline["nativeAgentCount"], json!(0));
+        assert_eq!(offline["browserOnline"], json!(false));
+        assert_eq!(offline["browserAgentCount"], json!(0));
 
         let hello = agent_route(
             &app,
@@ -8129,10 +8104,35 @@ mod tests {
         assert_eq!(online["protocol"], json!(AGENT_HELPER_PROTOCOL));
         assert_eq!(online["online"], json!(true));
         assert_eq!(online["agentCount"], json!(1));
+        assert_eq!(online["nativeOnline"], json!(true));
+        assert_eq!(online["nativeAgentCount"], json!(1));
+        assert_eq!(online["browserOnline"], json!(false));
+        assert_eq!(online["browserAgentCount"], json!(0));
         assert_eq!(
             online["staleAfterMs"],
             json!(agent_helper::AGENT_WORKER_TTL_MS)
         );
+
+        app.agent_helper
+            .register_scoped_worker(
+                &owner,
+                "browser-status-binding",
+                "web-status",
+                "Web Status",
+                1,
+                "browser-status-job",
+                now_millis(),
+            )
+            .unwrap();
+        let mixed = response_payload(&agent_get_route(
+            &app,
+            Some(&session_token),
+            "/api/agent-helper/v1/status",
+        ));
+        assert_eq!(mixed["online"], json!(true));
+        assert_eq!(mixed["agentCount"], json!(2));
+        assert_eq!(mixed["nativeAgentCount"], json!(1));
+        assert_eq!(mixed["browserAgentCount"], json!(1));
 
         let other_token = auth::create_session(
             &app.db,
@@ -9639,6 +9639,19 @@ mod tests {
         request
     }
 
+    fn browser_ready_automatic_fresh_request(job_id: &str) -> Value {
+        let mut request = agent_solver_request(job_id);
+        request["settings"]["ui_solver_fifo_admission"] = json!(true);
+        request["settings"]["ui_solver_async_job"] = json!(true);
+        request["settings"]["ui_unified_solve_kind"] = json!("fresh_complete_first");
+        request["settings"]["ui_requested_solve_mode"] = json!("automatic");
+        request["settings"]["optimization_focus"] = json!("automatic");
+        request["settings"]["require_complete_schedule"] = json!(true);
+        request["settings"]["ui_browser_wasm_ready"] = json!(true);
+        request["settings"]["force_fresh_backend_solve"] = json!(true);
+        request
+    }
+
     #[test]
     fn ready_browser_quick_starts_agent_waiting_without_vps_tokens() {
         for partial in [false, true] {
@@ -9716,9 +9729,9 @@ mod tests {
     }
 
     #[test]
-    fn ready_browser_gap_prefers_the_stronger_vps_path_when_workers_are_free() {
+    fn ready_browser_gap_prefers_local_agent_when_vps_workers_are_free() {
         let (app, _token, owner) = agent_test_app();
-        let mut request = browser_ready_refinement_request("browser-ready-gap-prefers-vps");
+        let mut request = browser_ready_refinement_request("browser-ready-gap-agent-first");
         request["settings"]["optimization_focus"] = json!("gaps");
         let body = request.to_string();
         assert!(agent_helper::browser_refinement_request_eligible(
@@ -9732,14 +9745,17 @@ mod tests {
         let started = solve_json(&app, body.as_bytes(), &owner);
         let started_payload = response_payload(&started);
         assert_eq!(response_status(&started), 202);
-        assert_eq!(started_payload["executor"], json!("vps"));
-        assert_eq!(started_payload["executionPhase"], json!("vps_running"));
-        assert!(started_payload["requiredWorkers"].as_u64().unwrap_or(0) > 0);
+        assert_eq!(started_payload["executor"], json!("agent"));
+        assert_eq!(started_payload["executionPhase"], json!("agent_waiting"));
+        assert_eq!(started_payload["requiredWorkers"], json!(0));
+        assert_eq!(app.solver_pool.allocated_worker_tokens(), 0);
 
-        let completed = wait_for_server_result(&app, "browser-ready-gap-prefers-vps", &owner);
-        assert_eq!(response_status(&completed), 200);
-        app.solver_pool
-            .abandon_server_job("browser-ready-gap-prefers-vps", &owner);
+        let cancelled = solve_cancel_json(
+            &app,
+            br#"{"jobId":"browser-ready-gap-agent-first"}"#,
+            &owner,
+        );
+        assert_eq!(response_payload(&cancelled)["cancelRequested"], json!(true));
     }
 
     #[test]
@@ -9774,9 +9790,9 @@ mod tests {
     }
 
     #[test]
-    fn ready_browser_sessions_prefers_the_vps_cluster_pass_when_workers_are_free() {
+    fn ready_browser_sessions_prefers_local_agent_when_vps_workers_are_free() {
         let (app, _token, owner) = agent_test_app();
-        let mut request = browser_ready_refinement_request("browser-ready-sessions-prefers-vps");
+        let mut request = browser_ready_refinement_request("browser-ready-sessions-agent-first");
         request["settings"]["optimization_focus"] = json!("sessions");
         let body = request.to_string();
         assert!(agent_helper::browser_refinement_request_eligible(
@@ -9790,22 +9806,21 @@ mod tests {
         let started = solve_json(&app, body.as_bytes(), &owner);
         let started_payload = response_payload(&started);
         assert_eq!(response_status(&started), 202);
-        assert_eq!(started_payload["executor"], json!("vps"));
-        assert_eq!(started_payload["executionPhase"], json!("vps_running"));
-        assert!(started_payload["requiredWorkers"].as_u64().unwrap_or(0) > 0);
+        assert_eq!(started_payload["executor"], json!("agent"));
+        assert_eq!(started_payload["executionPhase"], json!("agent_waiting"));
+        assert_eq!(started_payload["requiredWorkers"], json!(0));
+        assert_eq!(app.solver_pool.allocated_worker_tokens(), 0);
 
-        let completed = wait_for_server_result(
+        let cancelled = solve_cancel_json(
             &app,
-            "browser-ready-sessions-prefers-vps",
+            br#"{"jobId":"browser-ready-sessions-agent-first"}"#,
             &owner,
         );
-        assert_eq!(response_status(&completed), 200);
-        app.solver_pool
-            .abandon_server_job("browser-ready-sessions-prefers-vps", &owner);
+        assert_eq!(response_payload(&cancelled)["cancelRequested"], json!(true));
     }
 
     #[test]
-    fn focused_sessions_keep_reserved_vps_when_a_native_agent_is_online() {
+    fn focused_sessions_prefer_online_native_agent_over_free_vps() {
         let (app, token, owner) = agent_test_app();
         let hello = agent_route(
             &app,
@@ -9818,8 +9833,41 @@ mod tests {
         );
         assert_eq!(response_status(&hello), 200);
 
-        let mut request = browser_ready_refinement_request("focused-vps-over-online-agent");
+        let mut request = browser_ready_refinement_request("focused-agent-over-free-vps");
         request["settings"]["optimization_focus"] = json!("sessions");
+        let started = solve_json(&app, request.to_string().as_bytes(), &owner);
+        let started_payload = response_payload(&started);
+        assert_eq!(response_status(&started), 202);
+        assert_eq!(started_payload["executor"], json!("agent"));
+        assert_eq!(started_payload["executionPhase"], json!("agent_waiting"));
+        assert_eq!(started_payload["requiredWorkers"], json!(0));
+        assert_eq!(app.solver_pool.allocated_worker_tokens(), 0);
+
+        let cancelled = solve_cancel_json(
+            &app,
+            br#"{"jobId":"focused-agent-over-free-vps"}"#,
+            &owner,
+        );
+        assert_eq!(response_payload(&cancelled)["cancelRequested"], json!(true));
+    }
+
+    #[test]
+    fn explicit_agent_off_uses_vps_even_when_native_agent_is_online() {
+        let (app, token, owner) = agent_test_app();
+        let hello = agent_route(
+            &app,
+            Some(&token),
+            "/api/agent-helper/v1/hello",
+            agent_protocol_body(json!({
+                "agent":{"agentId":"agent-off-pc","version":MIN_AGENT_HELPER_VERSION,"platform":"windows"},
+                "capacity":{"cpuWorkers":4,"maxConcurrentJobs":1}
+            })),
+        );
+        assert_eq!(response_status(&hello), 200);
+
+        let mut request = browser_ready_refinement_request("agent-off-vps");
+        request["settings"]["optimization_focus"] = json!("automatic");
+        request["settings"]["ui_agent_preference_enabled"] = json!(false);
         let started = solve_json(&app, request.to_string().as_bytes(), &owner);
         let started_payload = response_payload(&started);
         assert_eq!(response_status(&started), 202);
@@ -9827,10 +9875,9 @@ mod tests {
         assert_eq!(started_payload["executionPhase"], json!("vps_running"));
         assert!(started_payload["requiredWorkers"].as_u64().unwrap_or(0) > 0);
 
-        let completed = wait_for_server_result(&app, "focused-vps-over-online-agent", &owner);
+        let completed = wait_for_server_result(&app, "agent-off-vps", &owner);
         assert_eq!(response_status(&completed), 200);
-        app.solver_pool
-            .abandon_server_job("focused-vps-over-online-agent", &owner);
+        app.solver_pool.abandon_server_job("agent-off-vps", &owner);
     }
 
     #[test]
@@ -9865,30 +9912,29 @@ mod tests {
     }
 
     #[test]
-    fn forged_browser_readiness_on_automatic_fresh_request_starts_vps() {
+    fn ready_browser_automatic_fresh_starts_agent_before_vps() {
         let (app, _token, owner) = agent_test_app();
-        let mut request = browser_ready_refinement_request("browser-ready-ineligible");
-        request["settings"]["ui_unified_solve_kind"] = json!("fresh_complete_first");
-        request["settings"]["ui_requested_solve_mode"] = json!("automatic");
-        request["settings"]["optimization_focus"] = json!("automatic");
-        request["settings"]["require_complete_schedule"] = json!(true);
+        let request = browser_ready_automatic_fresh_request("browser-ready-automatic-fresh");
         let body = request.to_string();
-        assert!(!agent_helper::browser_refinement_request_eligible(
+        assert!(agent_helper::browser_refinement_request_eligible(
             body.as_bytes()
         ));
 
         let started = solve_json(&app, body.as_bytes(), &owner);
         let started_payload = response_payload(&started);
         assert_eq!(response_status(&started), 202);
-        assert_eq!(started_payload["jobId"], json!("browser-ready-ineligible"));
-        assert_eq!(started_payload["executor"], json!("vps"));
-        assert_eq!(started_payload["executionPhase"], json!("vps_running"));
-        assert!(started_payload["requiredWorkers"].as_u64().unwrap_or(0) > 0);
+        assert_eq!(started_payload["jobId"], json!("browser-ready-automatic-fresh"));
+        assert_eq!(started_payload["executor"], json!("agent"));
+        assert_eq!(started_payload["executionPhase"], json!("agent_waiting"));
+        assert_eq!(started_payload["requiredWorkers"], json!(0));
+        assert_eq!(app.solver_pool.allocated_worker_tokens(), 0);
 
-        let completed = wait_for_server_result(&app, "browser-ready-ineligible", &owner);
-        assert_eq!(response_status(&completed), 200);
-        app.solver_pool
-            .abandon_server_job("browser-ready-ineligible", &owner);
+        let cancelled = solve_cancel_json(
+            &app,
+            br#"{"jobId":"browser-ready-automatic-fresh"}"#,
+            &owner,
+        );
+        assert_eq!(response_payload(&cancelled)["cancelRequested"], json!(true));
     }
 
     #[test]
@@ -11363,6 +11409,16 @@ mod tests {
         let inactive = serde_json::to_vec(&json!({
             "data": {
                 "tkbConstraints": {
+                    "version": "constraints-ui-v38-one-session-responsive-tables",
+                    "groups": {
+                        "class": {
+                            "all-grade-6": {"name": "Khoi 6", "items": ["6A1"]}
+                        }
+                    },
+                    "meta": {
+                        "updatedAt": "2026-07-25T16:00:00.000Z",
+                        "schoolName": "Cherry"
+                    },
                     "teacher": {
                         "T1": {
                             "maxDaysSessions": {"maxDays": 0},

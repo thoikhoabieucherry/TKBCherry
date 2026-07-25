@@ -447,6 +447,9 @@ body.planner-shell #btnAgentHelper[data-agent-state="active"] .agent-status-dot,
 body.planner-shell #btnAgentHelper[data-agent-state="working"] .agent-status-dot {
   background: #22c55e;
 }
+body.planner-shell #btnAgentHelper[data-agent-state="fallback"] .agent-status-dot {
+  background: #f59e0b;
+}
 
 body.planner-shell #btnAgentHelper[data-agent-state="working"] .agent-status-dot {
   animation: planner-agent-working-pulse 1.2s ease-in-out infinite;
@@ -1576,8 +1579,8 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="../vendor/sql-wasm.js"></script>
 <script src="../kvdb.js?v=20260707-vendor-local-v1"></script>
 <script src="tkb-engine.js?v=20260624-clean-no-solver1"></script>
-<script src="tkb-browser-wasm.js?v=20260725-v190-session-gap-quality-v1"></script>
-<script src="phanmon.js?v=20260725-v194-gap-session-total-v1"></script>
+<script src="tkb-browser-wasm.js?v=20260725-v1102-agent-validation-load-v1"></script>
+<script src="phanmon.js?v=20260725-v1102-agent-validation-load-v1"></script>
 <script src="phanmon-ops.js?v=20260617-fixed-legacy1"></script>
 <script src="tkb-constraints.js?v=20260722-v163-one-session-responsive-tables-v1"></script>
 <script src="tkb-constraints-menu.js?v=20260725-v1100-industry-export-queue-v1"></script>
@@ -1585,7 +1588,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="tkb-export.js?v=20260725-v1100-industry-export-queue-v1"></script>
 <script src="tkb-word-export.js?v=20260705-save-picker-v1"></script>
 <script src="tkb-student-excel-export.js?v=20260705-school-wide-prefix-v6"></script>
-  <script src="tkb-rust-bridge.js?v=20260725-v193-vps-worker-release-v1"></script>
+  <script src="tkb-rust-bridge.js?v=20260725-v1102-agent-validation-load-v1"></script>
 
 </body>
 </html>

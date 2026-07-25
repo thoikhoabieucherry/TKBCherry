@@ -95,6 +95,23 @@ function quickCompletionRequest({partial = false} = {}){
   return request;
 }
 
+function freshAutomaticRequest(){
+  const request = quickCompletionRequest();
+  request.settings = {
+    ui_unified_solve_kind:"fresh_complete_first",
+    ui_requested_solve_mode:"automatic",
+    optimization_focus:"automatic",
+    ui_solver_fifo_admission:true,
+    ui_solver_async_job:true,
+    require_complete_schedule:true,
+    best_effort_on_timeout:true,
+    backend_deadline_ms:180000,
+    native_global_deadline_ms:180000,
+    native_deadline_reserve_ms:1500
+  };
+  return request;
+}
+
 function executorContext(overrides = {}){
   const documentListeners = new Map();
   const windowListeners = new Map();
@@ -417,7 +434,7 @@ test("singleton Agent publishes ten-second checkpoints, retries a failed wave, a
   assert.deepEqual(submittedActions.map(item => item.action), ["checkpoint", "checkpoint", "candidate"]);
 });
 
-test("gap Agent checkpoints strict improvements across four fifteen-second waves", async () => {
+test("gap Agent coalesces queued improvements while preserving zero and final candidates", async () => {
   const canonical = completeRefinementRequest();
   canonical.data.tkbSolverResult = completePortfolioCandidate(canonical, "gap-start", {
     teacher_gap2_sessions:0,
@@ -473,7 +490,7 @@ test("gap Agent checkpoints strict improvements across four fifteen-second waves
   assert.equal(workerMessages[3].payload.data.tkbSolverResult.candidateMarker, "gap-69");
   assert.deepEqual(
     submittedActions.map(item => `${item.action}:${item.marker}`),
-    ["checkpoint:gap-72", "checkpoint:gap-69", "checkpoint:gap-zero", "candidate:gap-zero"]
+    ["checkpoint:gap-72", "checkpoint:gap-zero", "candidate:gap-zero"]
   );
 });
 
@@ -749,7 +766,7 @@ test("foreground executor probes WASM before hello and disconnects without an in
   assert.equal(context.TKBBrowserWasmExecutor.state().active, false);
   assert.deepEqual(calls.slice(0, 5), [
     "GET:/api/agent-helper/v1/status",
-    "worker:tkb-browser-wasm-worker.js?v=tkb-browser-wasm-executor-v18-session-gap-quality",
+    "worker:tkb-browser-wasm-worker.js?v=tkb-browser-wasm-executor-v20-checkpoint-coalescing",
     "worker-message:probe",
     "POST:/api/solve-data",
     "POST:/api/agent-helper/v1/hello",
@@ -757,6 +774,56 @@ test("foreground executor probes WASM before hello and disconnects without an in
   assert.ok(calls.indexOf("POST:/api/agent-helper/v1/lease") > calls.indexOf("POST:/api/agent-helper/v1/hello"));
   assert.ok(calls.includes("POST:/api/agent-helper/v1/disconnect"));
   assert.doesNotMatch(EXECUTOR_SOURCE, /\bconfirm\s*\(|\balert\s*\(|downloadAgent/i);
+});
+
+test("another tab's Browser Agent does not block this tab while a native Agent still does", async () => {
+  let browserWorkerStarts = 0;
+  class ReadyWorker {
+    constructor(){ browserWorkerStarts += 1; }
+    postMessage(message){
+      if(message.type === "probe"){
+        queueMicrotask(() => this.onmessage({data:{type:"ready", requestId:message.requestId}}));
+      }
+    }
+    terminate(){}
+  }
+  const scopedBrowser = executorContext({
+    fetch:async () => response({
+      ok:true,
+      online:true,
+      agentCount:1,
+      nativeOnline:false,
+      nativeAgentCount:0,
+      browserOnline:true,
+      browserAgentCount:1
+    }),
+    Worker:ReadyWorker
+  }).context;
+  assert.equal(await scopedBrowser.TKBBrowserWasmExecutor.probe({
+    apiBase:"https://tkbcherry.com",
+    request:completeRefinementRequest()
+  }), true);
+  assert.equal(browserWorkerStarts, 1);
+  await scopedBrowser.TKBBrowserWasmExecutor.close("test_finished", {failLease:false});
+
+  let nativeWorkerStarts = 0;
+  const nativeAgent = executorContext({
+    fetch:async () => response({
+      ok:true,
+      online:true,
+      agentCount:1,
+      nativeOnline:true,
+      nativeAgentCount:1,
+      browserOnline:false,
+      browserAgentCount:0
+    }),
+    Worker:class { constructor(){ nativeWorkerStarts += 1; } }
+  }).context;
+  assert.equal(await nativeAgent.TKBBrowserWasmExecutor.probe({
+    apiBase:"https://tkbcherry.com",
+    request:completeRefinementRequest()
+  }), false);
+  assert.equal(nativeWorkerStarts, 0);
 });
 
 test("iPhone visibilitychange terminates compute, fails the exact lease, then returns it to VPS", async () => {
@@ -824,6 +891,74 @@ test("iPhone visibilitychange terminates compute, fails the exact lease, then re
   assert.ok(calls.includes("worker:terminate"));
   assert.ok(failIndex >= 0, "the exact active lease must be failed");
   assert.ok(disconnectIndex > failIndex, "worker disconnect must follow lease release");
+});
+
+test("desktop visibilitychange keeps local Agent compute and lease alive", async () => {
+  const calls = [];
+  let leaseIssued = false;
+  let terminated = 0;
+  const request = completeRefinementRequest();
+  class DesktopWorker {
+    postMessage(message){
+      if(message.type === "probe"){
+        queueMicrotask(() => this.onmessage({data:{type:"ready", requestId:message.requestId}}));
+      }
+    }
+    terminate(){ terminated += 1; }
+  }
+  const fetch = async url => {
+    const pathname = new URL(url).pathname;
+    calls.push(pathname);
+    if(pathname.endsWith("/status")) return response({ok:true, online:false, nativeOnline:false});
+    if(pathname.endsWith("/hello")) return response({ok:true, workerToken:"d".repeat(48)});
+    if(pathname.endsWith("/lease") && !leaseIssued){
+      leaseIssued = true;
+      return response({ok:true, lease:{
+        jobId:"job-desktop-background",
+        leaseId:"lease-desktop-background",
+        payload:request
+      }});
+    }
+    if(pathname.endsWith("/disconnect")) return response({ok:true, disconnected:true});
+    if(pathname.endsWith("/lease")) return new Promise(() => {});
+    if(pathname.endsWith("/fail")) return response({ok:true, requeued:true});
+    throw new Error(`unexpected request ${pathname}`);
+  };
+  const {context, documentListeners} = executorContext({
+    navigator:{
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      hardwareConcurrency:4,
+      maxTouchPoints:0
+    },
+    fetch,
+    Worker:DesktopWorker
+  });
+  assert.equal(await context.TKBBrowserWasmExecutor.probe({
+    apiBase:"https://tkbcherry.com",
+    request
+  }), true);
+  assert.equal(await context.TKBBrowserWasmExecutor.activate({
+    apiBase:"https://tkbcherry.com",
+    jobId:"job-desktop-background",
+    request
+  }), true);
+  for(let index = 0; index < 20 && !context.TKBBrowserWasmExecutor.state().hasLease; index++){
+    await new Promise(resolve => setTimeout(resolve, 1));
+  }
+  assert.equal(context.TKBBrowserWasmExecutor.state().hasLease, true);
+
+  context.document.visibilityState = "hidden";
+  documentListeners.get("visibilitychange")();
+  await new Promise(resolve => setTimeout(resolve, 1));
+  assert.equal(context.TKBBrowserWasmExecutor.state().active, true);
+  assert.equal(context.TKBBrowserWasmExecutor.state().hasLease, true);
+  assert.equal(terminated, 0);
+  assert.equal(calls.some(value => value.endsWith("/fail")), false);
+  assert.equal(calls.some(value => value.endsWith("/disconnect")), false);
+
+  await context.TKBBrowserWasmExecutor.close("test_finished", {failLease:false});
+  assert.equal(terminated, 4);
 });
 
 test("turning Agent off during compute terminates every worker and hands the lease to VPS", async () => {
@@ -1105,7 +1240,49 @@ test("local lease watchdog terminates compute before an unrenewed lease expires"
   assert.equal(context.TKBBrowserWasmExecutor.state().active, false);
 });
 
-test("automatic fresh and invalid refinement requests bypass browser WASM without starting workers", async () => {
+test("automatic fresh requests use Browser Agent with a bounded complete-quality clone", async () => {
+  let workerStarts = 0;
+  class ReadyWorker {
+    constructor(){ workerStarts += 1; }
+    postMessage(message){
+      if(message.type === "probe"){
+        queueMicrotask(() => this.onmessage({data:{type:"ready", requestId:message.requestId}}));
+      }
+    }
+    terminate(){}
+  }
+  const request = freshAutomaticRequest();
+  const originalWire = JSON.stringify(request);
+  const {context} = executorContext({
+    navigator:{
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      hardwareConcurrency:6,
+      maxTouchPoints:0
+    },
+    fetch:async () => response({ok:true, online:false, nativeOnline:false}),
+    Worker:ReadyWorker
+  });
+  assert.equal(context.TKBBrowserWasmExecutor.canHandleRequest(request), true);
+  const cloned = context.TKBBrowserWasmExecutor.refinementRequestClone(request);
+  assert.ok(cloned);
+  assert.equal(cloned.settings.optimization_focus, "automatic");
+  assert.equal(cloned.settings.backend_deadline_ms, 60000);
+  assert.equal(cloned.settings.native_global_deadline_ms, 60000);
+  assert.equal(cloned.settings.require_complete_schedule, true);
+  assert.equal(cloned.settings.best_effort_on_timeout, false);
+  assert.equal(cloned.settings.native_skip_teacher_optimization, false);
+  assert.equal(cloned.settings.preserve_existing_tkb, false);
+  assert.equal(JSON.stringify(request), originalWire);
+  assert.equal(await context.TKBBrowserWasmExecutor.probe({
+    apiBase:"https://tkbcherry.com",
+    request
+  }), true);
+  assert.equal(workerStarts, 6);
+  await context.TKBBrowserWasmExecutor.close("test_finished", {failLease:false});
+});
+
+test("invalid refinement requests bypass browser WASM without starting workers", async () => {
   let fetchCalls = 0;
   let workerStarts = 0;
   class FakeWorker {
@@ -1118,10 +1295,6 @@ test("automatic fresh and invalid refinement requests bypass browser WASM withou
     },
     Worker:FakeWorker
   });
-  const fresh = {
-    data:{},
-    settings:{ui_unified_solve_kind:"fresh_complete_first", optimization_focus:"automatic"}
-  };
   const incomplete = completeRefinementRequest();
   incomplete.data.tkbSolverResult.lessons.pop();
   incomplete.data.tkbSolverResult.metrics.scheduled_periods = 1;
@@ -1134,7 +1307,6 @@ test("automatic fresh and invalid refinement requests bypass browser WASM withou
   delete missingIncumbentLessons.data.tkbSolverResult.lessons;
 
   for(const request of [
-    fresh,
     incomplete,
     hardInvalid,
     constraintInvalid,
@@ -1151,8 +1323,8 @@ test("automatic fresh and invalid refinement requests bypass browser WASM withou
       request
     }), false);
   }
-  assert.equal(fetchCalls, 0, "VPS-only requests must not even query Agent status");
-  assert.equal(workerStarts, 0, "VPS-only requests must not compile or start WASM");
+  assert.equal(fetchCalls, 0, "invalid requests must not even query Agent status");
+  assert.equal(workerStarts, 0, "invalid requests must not compile or start WASM");
 });
 
 test("quick fresh and incomplete requests are Browser Agent eligible and run a bounded local portfolio", async () => {
@@ -1894,7 +2066,7 @@ test("planner wires the browser worker only around a new canonical solve", () =>
   const bridge = fs.readFileSync(BRIDGE_PATH, "utf8");
   const page = fs.readFileSync(PAGE_PATH, "utf8");
   const server = fs.readFileSync(SERVER_PATH, "utf8");
-  assert.match(page, /tkb-browser-wasm\.js\?v=20260725-v190-session-gap-quality-v1/);
+  assert.match(page, /tkb-browser-wasm\.js\?v=20260725-v1102-agent-validation-load-v1/);
   assert.ok(page.indexOf("tkb-browser-wasm.js") < page.indexOf("tkb-rust-bridge.js"));
   assert.match(bridge, /TKBBrowserWasmExecutor\.canHandleRequest\(browserWasmRequest\)/);
   assert.match(bridge, /!resumeExistingServerJobOnly[\s\S]*browserWasmEligible[\s\S]*TKBBrowserWasmExecutor\.probe/);
