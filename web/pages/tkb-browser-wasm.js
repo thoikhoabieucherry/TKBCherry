@@ -1,7 +1,7 @@
 (function(root){
   "use strict";
 
-  const VERSION = "tkb-browser-wasm-executor-v14-adaptive-workload";
+  const VERSION = "tkb-browser-wasm-executor-v16-live-focused-checkpoints";
   const AGENT_PROTOCOL = "tkb-agent-helper-v1";
   const AGENT_VERSION = "1.6.31";
   const SOLVER_PROTOCOL = "tkb-reference-solver-stdio-v1";
@@ -14,6 +14,11 @@
   const QUICK_LOCAL_ATTEMPT_MS = 12000;
   const QUICK_LOCAL_RESERVE_MS = 750;
   const FOCUSED_LOCAL_ATTEMPT_MS = 60000;
+  const DEEP_SESSION_LOCAL_ATTEMPT_MS = 180000;
+  const DEEP_SESSION_WAVE_MS = 15000;
+  const DEEP_SESSION_MAX_WAVES = 16;
+  const SINGLETON_WAVE_MS = 10000;
+  const SINGLETON_MAX_WAVES = 6;
   const QUICK_WORKER_SETTLE_RESERVE_MS = 3000;
   const FOCUSED_WORKER_SETTLE_RESERVE_MS = 15000;
 
@@ -267,8 +272,13 @@
     cloned.settings.require_complete_schedule = true;
     cloned.settings.best_effort_on_timeout = false;
     cloned.settings.ui_return_complete_incumbent_on_existing_optimize_failure = true;
-    capLocalDeadline(cloned.settings, "backend_deadline_ms", FOCUSED_LOCAL_ATTEMPT_MS);
-    capLocalDeadline(cloned.settings, "native_global_deadline_ms", FOCUSED_LOCAL_ATTEMPT_MS);
+    const deepSessionSearch = normalizedOptimizationFocus(cloned.settings) === "sessions"
+      && cloned.settings.browser_wasm_session_deep_search === true;
+    const focusedMaximum = deepSessionSearch
+      ? DEEP_SESSION_LOCAL_ATTEMPT_MS
+      : FOCUSED_LOCAL_ATTEMPT_MS;
+    capLocalDeadline(cloned.settings, "backend_deadline_ms", focusedMaximum);
+    capLocalDeadline(cloned.settings, "native_global_deadline_ms", focusedMaximum);
     return cloned;
   }
 
@@ -840,9 +850,11 @@
 
   function portfolioWorkerTimeoutMs(settings){
     const focus = normalizedOptimizationFocus(settings);
+    const deepSessionSearch = focus === "sessions"
+      && settings?.browser_wasm_session_deep_search === true;
     const maximum = focus === "quick_complete"
       ? QUICK_LOCAL_ATTEMPT_MS
-      : FOCUSED_LOCAL_ATTEMPT_MS;
+      : (deepSessionSearch ? DEEP_SESSION_LOCAL_ATTEMPT_MS : FOCUSED_LOCAL_ATTEMPT_MS);
     const deadlines = ["native_global_deadline_ms", "backend_deadline_ms"]
       .map(key => Number(settings?.[key]))
       .filter(value => Number.isFinite(value) && value > 0);
@@ -854,9 +866,14 @@
   }
 
   function candidateSaturatesFocus(candidate, settings){
-    return normalizedOptimizationFocus(settings) === "singletons"
-      && Array.isArray(candidate?.quality)
-      && Number(candidate.quality[0]) === 0;
+    const focus = normalizedOptimizationFocus(settings);
+    if(!Array.isArray(candidate?.quality)) return false;
+    if(focus === "singletons") return Number(candidate.quality[0]) === 0;
+    if(focus !== "sessions") return false;
+    const target = nonnegativeMetric(settings, "ui_progress_metric_target");
+    return target != null
+      && Number(candidate.quality[0]) === 0
+      && Number(candidate.quality[2]) <= target;
   }
 
   function qualityComparisonOrder(settings){
@@ -880,20 +897,31 @@
     return left.length - right.length;
   }
 
-  function portfolioRequest(request, index, count, lease){
+  function portfolioRequest(request, index, count, lease, options){
     const cloned = JSON.parse(JSON.stringify(request));
     const settings = cloned.settings && typeof cloned.settings === "object"
       ? cloned.settings
       : (cloned.settings = {});
+    const opts = options && typeof options === "object" ? options : {};
+    const wave = Math.max(0, Math.trunc(Number(opts.wave || 0) || 0));
     // One Web Worker owns one single-threaded WASM solver. The outer portfolio
     // is the CPU parallelism, so nested solver workers must stay at one.
     settings.num_workers = 1;
     settings.browser_portfolio_index = index;
     settings.browser_portfolio_count = count;
-    if(count <= 1) return cloned;
+    settings.browser_portfolio_wave = wave;
+    if(opts.incumbent && cloned.data && typeof cloned.data === "object"){
+      cloned.data.tkbSolverResult = JSON.parse(JSON.stringify(opts.incumbent));
+    }
+    const waveDeadlineMs = Math.max(0, Math.round(Number(opts.deadlineMs || 0) || 0));
+    if(waveDeadlineMs > 0){
+      capLocalDeadline(settings, "backend_deadline_ms", waveDeadlineMs);
+      capLocalDeadline(settings, "native_global_deadline_ms", waveDeadlineMs);
+      settings.browser_wasm_session_wave_deadline_ms = waveDeadlineMs;
+    }
     const baseSeed = settings.random_seed == null ? "" : String(settings.random_seed);
-    if(index > 0){
-      settings.random_seed = `${baseSeed}|web-portfolio-v1:${index}|${String(lease?.jobId || "")}`;
+    if(index > 0 || wave > 0){
+      settings.random_seed = `${baseSeed}|web-portfolio-v2:${index}:${wave}|${String(lease?.jobId || "")}`;
     }
     return cloned;
   }
@@ -932,51 +960,123 @@
     const focus = normalizedOptimizationFocus(settings);
     const quickCompletion = focus === "quick_complete";
     const workerTimeoutMs = portfolioWorkerTimeoutMs(settings);
+    const workerSettleReserveMs = focus === "quick_complete"
+      ? QUICK_WORKER_SETTLE_RESERVE_MS
+      : FOCUSED_WORKER_SETTLE_RESERVE_MS;
+    const deepSessionSearch = focus === "sessions"
+      && settings.browser_wasm_session_deep_search === true;
+    const progressiveSingletonSearch = focus === "singletons"
+      && settings.browser_wasm_singleton_progressive_search === true;
+    const progressiveSearch = deepSessionSearch || progressiveSingletonSearch;
+    const progressiveMaxWaves = deepSessionSearch
+      ? Math.max(2, Math.min(32, Math.round(
+          Number(settings.browser_wasm_session_deep_max_waves || DEEP_SESSION_MAX_WAVES)
+        ) || DEEP_SESSION_MAX_WAVES))
+      : (progressiveSingletonSearch
+          ? Math.max(2, Math.min(16, Math.round(
+              Number(settings.browser_wasm_singleton_max_waves || SINGLETON_MAX_WAVES)
+            ) || SINGLETON_MAX_WAVES))
+          : 1);
+    const progressiveWaveMs = deepSessionSearch
+      ? Math.max(1000, Math.min(DEEP_SESSION_WAVE_MS, Math.round(
+          Number(settings.browser_wasm_session_wave_deadline_ms || DEEP_SESSION_WAVE_MS)
+        ) || DEEP_SESSION_WAVE_MS))
+      : (progressiveSingletonSearch
+          ? Math.max(1000, Math.min(SINGLETON_WAVE_MS, Math.round(
+              Number(settings.browser_wasm_singleton_wave_deadline_ms || SINGLETON_WAVE_MS)
+            ) || SINGLETON_WAVE_MS))
+          : 0);
+    const computeBudgetMs = Math.max(1000, workerTimeoutMs - workerSettleReserveMs);
     const incumbentQuality = quickCompletion ? null : qualityTupleFromResult(incumbent);
     let best = null;
     let validCandidateCount = 0;
     const solveWorker = async (worker, index) => {
-      try{
-        const message = await workerRequestOn(
-          worker,
-          "solve",
-          {payload:portfolioRequest(refinementRequest, index, workers.length, lease)},
-          workerTimeoutMs,
-          signal
-        );
-        const frame = message?.frame;
-        const status = Number(frame?.status || 0);
-        const result = frame?.payload;
-        if(
-          frame?.protocol !== SOLVER_PROTOCOL
-          || !Number.isInteger(status)
-          || status < 200
-          || status >= 300
-          || !result
-          || typeof result !== "object"
-          || Array.isArray(result)
-          || !completeHardResult(result)
-        ) return null;
-        const candidate = {
-          frame,
-          status,
-          result,
-          quality:portfolioQualityFromResult(result, settings),
-          index
-        };
-        if(!candidate.quality) return null;
+      const workerStartedAt = Date.now();
+      let localIncumbent = incumbent;
+      let localIncumbentQuality = incumbentQuality;
+      let localBest = null;
+      for(let wave = 0; wave < progressiveMaxWaves; wave += 1){
+        const remainingMs = Math.max(0, computeBudgetMs - (Date.now() - workerStartedAt));
+        if(remainingMs < 1000) break;
+        const waveDeadlineMs = progressiveSearch
+          ? Math.min(progressiveWaveMs, remainingMs)
+          : 0;
+        let candidate;
+        try{
+          const message = await workerRequestOn(
+            worker,
+            "solve",
+            {payload:portfolioRequest(refinementRequest, index, workers.length, lease, {
+              wave,
+              deadlineMs:waveDeadlineMs,
+              incumbent:wave > 0 ? localIncumbent : null
+            })},
+            progressiveSearch
+              ? waveDeadlineMs + workerSettleReserveMs
+              : workerTimeoutMs,
+            signal
+          );
+          const frame = message?.frame;
+          const status = Number(frame?.status || 0);
+          const result = frame?.payload;
+          if(
+            frame?.protocol !== SOLVER_PROTOCOL
+            || !Number.isInteger(status)
+            || status < 200
+            || status >= 300
+            || !result
+            || typeof result !== "object"
+            || Array.isArray(result)
+            || !completeHardResult(result)
+          ){
+            if(!progressiveSearch) break;
+            continue;
+          }
+          candidate = {
+            frame,
+            status,
+            result,
+            quality:portfolioQualityFromResult(result, settings),
+            index,
+            wave
+          };
+          if(!candidate.quality){
+            if(!progressiveSearch) break;
+            continue;
+          }
+        }catch(err){
+          if(signal?.aborted) throw err;
+          if(!progressiveSearch) break;
+          continue;
+        }
         validCandidateCount += 1;
         if(incumbentQuality && !qualityWithinEnvelope(candidate.quality, incumbentQuality, settings)){
-          return null;
+          if(!progressiveSearch) return null;
+          continue;
         }
+        if(!localBest || compareQuality(candidate.quality, localBest.quality, settings) < 0){
+          localBest = candidate;
+        }
+        const improvedOriginal = !incumbentQuality
+          || compareQuality(candidate.quality, incumbentQuality, settings) < 0;
         if(!best || compareQuality(candidate.quality, best.quality, settings) < 0){
           best = candidate;
-          if(!quickCompletion && typeof onBestCandidate === "function") await onBestCandidate(candidate);
+          if(
+            !quickCompletion
+            && improvedOriginal
+            && typeof onBestCandidate === "function"
+          ) await onBestCandidate(candidate);
         }
-        return candidate;
-      }catch(_){
-        return null;
+        if(
+          !localIncumbentQuality
+          || compareQuality(candidate.quality, localIncumbentQuality, settings) < 0
+        ){
+          localIncumbent = candidate.result;
+          localIncumbentQuality = candidate.quality;
+        }
+        if(!progressiveSearch || candidateSaturatesFocus(candidate, settings)) break;
       }
+      return localBest;
     };
     const pending = workers.map((worker, index) => solveWorker(worker, index));
     if(quickCompletion){

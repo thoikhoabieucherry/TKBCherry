@@ -1,0 +1,469 @@
+/* Compact Super Admin controls. Loaded after the shared portal themes. */
+.portal-page-super .portal-ui-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  pointer-events: none;
+}
+
+.portal-page-super .portal-button-icon,
+.portal-page-super .portal-action-desktop .portal-ui-icon,
+.portal-page-super .portal-subusers-actions .portal-ui-icon {
+  display: none;
+}
+
+.portal-page-super .portal-action-mobile {
+  display: none;
+}
+
+.portal-visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+@media (max-width: 899px) {
+  .portal-page-super {
+    --portal-mobile-control: 44px;
+  }
+
+  .portal-page-super .portal-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: max(7px, env(safe-area-inset-top)) 8px 7px;
+  }
+
+  .portal-page-super .portal-top h1 {
+    width: auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.9rem;
+  }
+
+  .portal-page-super .portal-actions,
+  .portal-page-super .portal-card-actions {
+    display: flex;
+    width: auto;
+    gap: 4px;
+  }
+
+  .portal-page-super .portal-actions .portal-btn,
+  .portal-page-super .portal-card-actions .portal-btn,
+  .portal-page-super .portal-actions .portal-btn.danger {
+    grid-column: auto;
+    width: var(--portal-mobile-control);
+    min-width: var(--portal-mobile-control);
+    height: var(--portal-mobile-control);
+    min-height: var(--portal-mobile-control);
+    padding: 0;
+    border-radius: 8px;
+  }
+
+  .portal-page-super .portal-button-label {
+    display: none;
+  }
+
+  .portal-page-super .portal-button-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .portal-page-super .portal-main {
+    padding: 6px 8px max(8px, env(safe-area-inset-bottom));
+  }
+
+  .portal-page-super .portal-card {
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+    background: transparent;
+  }
+
+  .portal-page-super .portal-card-head {
+    min-height: 48px;
+    margin: 0;
+    padding: 2px 0 6px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background: #f7f9fc;
+    border-bottom: 0;
+  }
+
+  .portal-page-super .portal-card-head h2 {
+    min-width: 0;
+    margin: 0;
+    font-size: 0.95rem;
+  }
+
+  .portal-page-super .portal-table-wrap.portal-table-wrap-schools {
+    padding-bottom: max(6px, env(safe-area-inset-bottom));
+  }
+
+  .portal-page-super .portal-table-schools tbody {
+    gap: 8px;
+  }
+
+  .portal-page-super .portal-table-schools tr.portal-school-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "school status"
+      "email email"
+      "plan expiry"
+      "actions actions";
+    border-radius: 8px;
+    overflow: visible;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 5%);
+  }
+
+  .portal-page-super .portal-table-schools tr.portal-school-row td {
+    padding: 6px 8px;
+    border-bottom-color: #edf2f7;
+  }
+
+  .portal-page-super .portal-table-schools tr.portal-school-row td::before {
+    display: none;
+  }
+
+  .portal-page-super .portal-table-schools tr.portal-school-row .portal-cell-school {
+    padding: 8px;
+    border-bottom: 0;
+    background: #f8fafc;
+  }
+
+  .portal-page-super .portal-school-cell {
+    align-items: center;
+    gap: 6px;
+  }
+
+  .portal-page-super .portal-school-info strong {
+    display: block;
+    font-size: 0.86rem;
+    line-height: 1.25;
+  }
+
+  .portal-page-super .portal-table-schools .portal-cell-sub,
+  .portal-page-super .portal-table-schools .portal-cell-primary {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+
+  .portal-page-super .portal-table-schools .portal-cell-sub {
+    font-size: 0.7rem;
+  }
+
+  .portal-page-super .portal-table-schools .portal-cell-primary {
+    font-size: 0.76rem;
+  }
+
+  .portal-page-super .portal-table-schools tr.portal-school-row .portal-cell-status {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 6px 8px 6px 4px;
+    border-bottom: 0;
+    background: #f8fafc;
+  }
+
+  .portal-page-super .portal-table-schools .portal-status-badge {
+    height: 24px;
+    padding: 0 7px;
+    font-size: 0.66rem;
+    white-space: nowrap;
+  }
+
+  .portal-page-super .portal-table-schools tr.portal-school-row .portal-cell-email {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+  }
+
+  .portal-page-super .portal-table-schools tr.portal-school-row .portal-cell-plan,
+  .portal-page-super .portal-table-schools tr.portal-school-row .portal-cell-expiry {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 5px;
+    font-size: 0.72rem;
+  }
+
+  .portal-page-super .portal-table-schools tr.portal-school-row .portal-cell-plan::before,
+  .portal-page-super .portal-table-schools tr.portal-school-row .portal-cell-expiry::before {
+    content: attr(data-label);
+    display: inline;
+    flex: 0 0 auto;
+    margin: 0;
+    color: #64748b;
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .portal-page-super .portal-table-schools tr.portal-school-row .portal-cell-expiry {
+    justify-content: flex-end;
+    text-align: right;
+  }
+
+  .portal-page-super .portal-table-schools tr.portal-school-row .portal-cell-actions {
+    padding: 6px 8px 8px;
+  }
+
+  .portal-page-super .portal-expand-btn {
+    width: 32px;
+    height: 32px;
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .portal-page-super .portal-expand-btn .portal-ui-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .portal-page-super .portal-table-schools .portal-action-desktop {
+    display: none;
+  }
+
+  .portal-page-super .portal-action-mobile {
+    display: grid;
+    grid-template-columns: var(--portal-mobile-control) minmax(92px, 1fr) var(--portal-mobile-control);
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .portal-page-super .portal-action-mobile > .portal-btn,
+  .portal-page-super .portal-more-trigger {
+    width: var(--portal-mobile-control);
+    min-width: var(--portal-mobile-control);
+    height: var(--portal-mobile-control);
+    min-height: var(--portal-mobile-control);
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+  }
+
+  .portal-page-super .portal-mobile-schedule-select {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: var(--portal-mobile-control);
+    min-height: var(--portal-mobile-control);
+    border-radius: 8px;
+    font-size: 0.76rem;
+  }
+
+  .portal-page-super .portal-row-menu {
+    min-width: 0;
+  }
+
+  .portal-page-super .portal-more-trigger {
+    list-style: none;
+    border: 1px solid #dbe5f1;
+    background: #ffffff;
+    color: #334155;
+    cursor: pointer;
+  }
+
+  .portal-page-super .portal-more-trigger::-webkit-details-marker {
+    display: none;
+  }
+
+  .portal-page-super .portal-row-menu[open] .portal-more-trigger {
+    border-color: #93c5fd;
+    background: #eff6ff;
+    color: #1d4ed8;
+  }
+
+  .portal-page-super .portal-action-menu {
+    position: fixed;
+    left: 50%;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    z-index: 120;
+    width: min(420px, calc(100vw - 16px));
+    max-height: min(76dvh, 520px);
+    overflow-y: auto;
+    transform: translateX(-50%);
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    padding: 10px;
+    border: 1px solid #dbe4ef;
+    border-radius: 10px;
+    background: #ffffff;
+    box-shadow: 0 22px 64px rgb(15 23 42 / 24%);
+  }
+
+  .portal-page-super .portal-action-menu-head {
+    grid-column: 1 / -1;
+    min-width: 0;
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 2px 6px;
+    border-bottom: 1px solid #edf2f7;
+  }
+
+  .portal-page-super .portal-action-menu-head strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.84rem;
+  }
+
+  .portal-page-super .portal-menu-close {
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 8px;
+    background: #f1f5f9;
+    color: #475569;
+  }
+
+  .portal-page-super .portal-menu-field {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+    height: var(--portal-mobile-control);
+    padding-left: 9px;
+    border: 1px solid #dbe5f1;
+    border-radius: 8px;
+    color: #64748b;
+    font-size: 0.72rem;
+  }
+
+  .portal-page-super .portal-menu-field .portal-mobile-plan-select {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 42px;
+    border: 0;
+    border-left: 1px solid #edf2f7;
+    border-radius: 0 8px 8px 0;
+    box-shadow: none;
+  }
+
+  .portal-page-super .portal-action-menu .portal-btn {
+    width: 100%;
+    min-width: 0;
+    height: var(--portal-mobile-control);
+    min-height: var(--portal-mobile-control);
+    margin: 0;
+    padding: 0 9px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 7px;
+    font-size: 0.75rem;
+  }
+
+  .portal-page-super .portal-action-menu .portal-btn-del {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+
+  .portal-page-super .portal-subusers-panel {
+    padding: 8px;
+  }
+
+  .portal-page-super .portal-subusers-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 8px;
+    padding: 7px;
+  }
+
+  .portal-page-super .portal-subusers-id {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .portal-page-super .portal-subusers-item .portal-status-badge-sm {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .portal-page-super .portal-subusers-name {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .portal-page-super .portal-subusers-ip {
+    grid-column: 2;
+    grid-row: 2;
+    max-width: 120px;
+  }
+
+  .portal-page-super .portal-subusers-actions {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  .portal-page-super .portal-subusers-actions .portal-btn-xs {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .portal-page-super .portal-subusers-actions .portal-ui-icon {
+    display: block;
+  }
+
+  .portal-page-super .portal-subusers-actions .portal-action-label {
+    display: none;
+  }
+
+  .portal-page-super .portal-modal-dialog {
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 359px) {
+  .portal-page-super .portal-top h1 {
+    font-size: 0.82rem;
+  }
+
+  .portal-page-super .portal-table-schools tr.portal-school-row .portal-cell-email {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}

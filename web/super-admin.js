@@ -8,6 +8,38 @@
     return;
   }
 
+  const PORTAL_ICON_PATHS = Object.freeze({
+    key:'<circle cx="7.5" cy="15.5" r="3.5"/><path d="m10 13 9-9"/><path d="m15 4 3 3"/><path d="m12 7 3 3"/>',
+    layout:'<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
+    logout:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
+    plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
+    refresh:'<path d="M20 6v5h-5"/><path d="M4 18v-5h5"/><path d="M6.1 9a7 7 0 0 1 11.6-2.6L20 9M4 15l2.3 2.6A7 7 0 0 0 17.9 15"/>',
+    calendar:'<path d="M8 2v4M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/>',
+    calendarClock:'<path d="M8 2v4M16 2v4M3 10h18"/><path d="M18 14v4l2 1"/><path d="M21 12.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h7"/><circle cx="18" cy="18" r="4"/>',
+    trash:'<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/>',
+    ban:'<circle cx="12" cy="12" r="9"/><path d="m6.4 6.4 11.2 11.2"/>',
+    activate:'<circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/>',
+    pencil:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/>',
+    more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+    close:'<path d="m6 6 12 12M18 6 6 18"/>',
+    chevronDown:'<path d="m6 9 6 6 6-6"/>',
+    chevronUp:'<path d="m18 15-6-6-6 6"/>'
+  });
+
+  function portalIcon(name){
+    const paths = PORTAL_ICON_PATHS[name] || PORTAL_ICON_PATHS.more;
+    return `<svg class="portal-ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths}</svg>`;
+  }
+
+  function hydrateStaticIcons(){
+    if(!document.querySelectorAll) return;
+    document.querySelectorAll("[data-portal-icon]").forEach(slot => {
+      slot.innerHTML = portalIcon(slot.dataset.portalIcon);
+    });
+  }
+
+  hydrateStaticIcons();
+
   document.getElementById("btnLogout").onclick = () => {
     A.logout();
     window.location.href = "/";
@@ -82,13 +114,14 @@
     return Number(entry?.number) || 1;
   }
 
-  function renderScheduleSelect(school){
+  function renderScheduleSelect(school, extraClass=""){
     const list = scheduleRowsForSchool(school);
     const activeNum = activeScheduleNumberForSchool(school, list);
+    const classes = `portal-plan-select portal-tkb-select${extraClass ? " " + extraClass : ""}`;
     if(!list.length){
-      return `<select class="portal-plan-select portal-tkb-select" data-act="schedule-select" title="Chọn TKB"><option value="1">TKB 1</option></select>`;
+      return `<select class="${classes}" data-act="schedule-select" title="Chọn TKB" aria-label="Chọn thời khóa biểu"><option value="1">TKB 1</option></select>`;
     }
-    return `<select class="portal-plan-select portal-tkb-select" data-act="schedule-select" title="Chọn TKB">${
+    return `<select class="${classes}" data-act="schedule-select" title="Chọn TKB" aria-label="Chọn thời khóa biểu">${
       list.map(item => {
         const num = Number(item.number) || 1;
         return `<option value="${num}"${num === activeNum ? " selected" : ""}>TKB ${num}</option>`;
@@ -96,8 +129,9 @@
     }</select>`;
   }
 
-  function selectedScheduleNumber(row, fallbackSchool){
-    const raw = row?.querySelector?.("select[data-act=schedule-select]")?.value;
+  function selectedScheduleNumber(row, fallbackSchool, actionTarget){
+    const localScope = actionTarget?.closest?.(".portal-action-mobile") || row;
+    const raw = localScope?.querySelector?.("select[data-act=schedule-select]")?.value;
     const num = Number(raw);
     if(Number.isFinite(num) && num > 0) return num;
     return activeScheduleNumberForSchool(fallbackSchool);
@@ -135,6 +169,21 @@
 
   const tbody = document.getElementById("schoolsBody");
   const expandedSchools = new Set();
+
+  function closeSchoolActionMenus(except){
+    if(!tbody?.querySelectorAll) return;
+    tbody.querySelectorAll("details.portal-row-menu[open]").forEach(menu => {
+      if(menu !== except) menu.removeAttribute("open");
+    });
+  }
+
+  document.addEventListener("click", ev => {
+    const inside = ev.target?.closest?.("details.portal-row-menu");
+    if(!inside) closeSchoolActionMenus();
+  });
+  document.addEventListener("keydown", ev => {
+    if(ev.key === "Escape") closeSchoolActionMenus();
+  });
 
   function esc(s){
     return String(s == null ? "" : s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -197,9 +246,9 @@
                 <span class="portal-subusers-ip portal-muted" title="IP đăng nhập gần nhất">${u.lastIp ? "IP " + esc(u.lastIp) : "Chưa đăng nhập"}</span>
                 <span class="portal-status-badge portal-status-badge-sm ${active ? "is-active" : "is-blocked"}">${active ? "Hoạt động" : "Blocked"}</span>
                 <span class="portal-subusers-actions">
-                  <button type="button" class="portal-btn portal-btn-xs${active ? "" : " warn"}" data-sub-act="toggle" data-uid="${esc(u.id)}">${active ? "Block" : "Unblock"}</button>
-                  <button type="button" class="portal-btn portal-btn-xs" data-sub-act="pwd" data-uid="${esc(u.id)}" title="Đổi mật khẩu">MK</button>
-                  <button type="button" class="portal-btn portal-btn-xs danger" data-sub-act="del" data-uid="${esc(u.id)}">Xóa</button>
+                  <button type="button" class="portal-btn portal-btn-xs${active ? "" : " warn"}" data-sub-act="toggle" data-uid="${esc(u.id)}" title="${active ? "Khóa tài khoản" : "Mở khóa tài khoản"}" aria-label="${active ? "Khóa tài khoản" : "Mở khóa tài khoản"}">${portalIcon(active ? "ban" : "activate")}<span class="portal-action-label">${active ? "Block" : "Unblock"}</span></button>
+                  <button type="button" class="portal-btn portal-btn-xs" data-sub-act="pwd" data-uid="${esc(u.id)}" title="Đổi mật khẩu" aria-label="Đổi mật khẩu">${portalIcon("key")}<span class="portal-action-label">MK</span></button>
+                  <button type="button" class="portal-btn portal-btn-xs danger" data-sub-act="del" data-uid="${esc(u.id)}" title="Xóa tài khoản phụ" aria-label="Xóa tài khoản phụ">${portalIcon("trash")}<span class="portal-action-label">Xóa</span></button>
                 </span>
               </li>`;
             }).join("")}
@@ -207,6 +256,20 @@
         </div>
       </td>
     </tr>`;
+  }
+
+  function renderPlanSelect(currentPlan, extraClass=""){
+    const planOptions = [
+      ["free", "Free"],
+      ["trial", "Trial"],
+      ["plus", "Plus"],
+      ["max", "Max"],
+      ["ultra", "Ultra"]
+    ];
+    const classes = `portal-plan-select${extraClass ? " " + extraClass : ""}`;
+    return `<select class="${classes}" data-act="plan-select" title="Đổi gói" aria-label="Đổi gói dịch vụ">${
+      planOptions.map(([id, label]) => `<option value="${id}"${currentPlan === id ? " selected" : ""}>${label}</option>`).join("")
+    }</select>`;
   }
 
   function renderSchools(){
@@ -223,19 +286,12 @@
       const subCount = A.countSchoolSubUsers ? A.countSchoolSubUsers(s.id) : subs.length;
       const hasSubs = subCount > 0;
       const expanded = expandedSchools.has(s.id);
-      const planOptions = [
-        ["free", "Free"],
-        ["trial", "Trial"],
-        ["plus", "Plus"],
-        ["max", "Max"],
-        ["ultra", "Ultra"]
-      ];
-      const planSelect = `<select class="portal-plan-select" data-act="plan-select" title="Đổi gói">${
-        planOptions.map(([id, label]) => `<option value="${id}"${curPlan === id ? " selected" : ""}>${label}</option>`).join("")
-      }</select>`;
+      const planSelect = renderPlanSelect(curPlan);
+      const mobilePlanSelect = renderPlanSelect(curPlan, "portal-mobile-plan-select");
       const scheduleSelect = renderScheduleSelect(s);
+      const mobileScheduleSelect = renderScheduleSelect(s, "portal-mobile-schedule-select");
       const expandBtn = hasSubs
-        ? `<button type="button" class="portal-expand-btn${expanded ? " is-open" : ""}" data-act="expand" aria-expanded="${expanded ? "true" : "false"}" title="Tài khoản phụ (${subCount})">${expanded ? "−" : "+"}</button>`
+        ? `<button type="button" class="portal-expand-btn${expanded ? " is-open" : ""}" data-act="expand" aria-expanded="${expanded ? "true" : "false"}" title="Tài khoản phụ (${subCount})" aria-label="${expanded ? "Thu gọn" : "Mở"} ${subCount} tài khoản phụ">${portalIcon(expanded ? "chevronUp" : "chevronDown")}</button>`
         : "";
       return `<tr data-id="${esc(s.id)}" class="portal-school-row">
         <td class="portal-cell-school" data-label="Trường">
@@ -255,16 +311,36 @@
         <td class="portal-cell-expiry" data-label="Hết hạn">${esc(plan.unlimited ? "Unlimited" : A.formatDate(s.expiresAt))}</td>
         <td class="portal-cell-status" data-label="Trạng thái"><span class="portal-status-badge ${active ? "is-active" : "is-blocked"}">${active ? "Kích hoạt" : "Blocked"}</span></td>
         <td class="portal-cell-actions" data-label="Thao tác">
-          <div class="portal-action-bar">
-            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-open" data-act="open-tkb" title="Mở TKB hiện hành">TKB</button>
+          <div class="portal-action-bar portal-action-desktop">
+            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-open" data-act="open-tkb" title="Mở TKB hiện hành" aria-label="Mở TKB hiện hành">${portalIcon("calendar")}<span class="portal-action-label">TKB</span></button>
             ${scheduleSelect}
-            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot danger" data-act="del-tkb" title="Xóa TKB đang chọn">XTKB</button>
-            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-toggle${active ? "" : " warn"}" data-act="toggle">${active ? "Block" : "Unblock"}</button>
+            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot danger" data-act="del-tkb" title="Xóa TKB đang chọn" aria-label="Xóa TKB đang chọn">${portalIcon("trash")}<span class="portal-action-label">XTKB</span></button>
+            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-toggle${active ? "" : " warn"}" data-act="toggle" title="${active ? "Khóa trường" : "Mở khóa trường"}" aria-label="${active ? "Khóa trường" : "Mở khóa trường"}">${portalIcon(active ? "ban" : "activate")}<span class="portal-action-label">${active ? "Block" : "Unblock"}</span></button>
             ${planSelect}
-            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-expiry" data-act="expiry" title="Chỉnh ngày hết hạn gói">Ngày</button>
-            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-pwd" data-act="pwd" title="Đổi mật khẩu admin">MK</button>
-            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-edit" data-act="edit" title="Sửa tên trường">Sửa</button>
-            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-del danger" data-act="del">Xóa</button>
+            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-expiry" data-act="expiry" title="Chỉnh ngày hết hạn gói" aria-label="Chỉnh ngày hết hạn gói">${portalIcon("calendarClock")}<span class="portal-action-label">Ngày</span></button>
+            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-pwd" data-act="pwd" title="Đổi mật khẩu admin" aria-label="Đổi mật khẩu admin">${portalIcon("key")}<span class="portal-action-label">MK</span></button>
+            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-edit" data-act="edit" title="Sửa tên trường" aria-label="Sửa tên trường">${portalIcon("pencil")}<span class="portal-action-label">Sửa</span></button>
+            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-del danger" data-act="del" title="Xóa trường" aria-label="Xóa trường">${portalIcon("trash")}<span class="portal-action-label">Xóa</span></button>
+          </div>
+          <div class="portal-action-mobile" aria-label="Thao tác trường ${esc(s.name)}">
+            <button type="button" class="portal-btn portal-btn-sm portal-btn-open portal-mobile-open" data-act="open-tkb" title="Mở TKB hiện hành" aria-label="Mở TKB hiện hành">${portalIcon("calendar")}<span class="portal-visually-hidden">Mở TKB</span></button>
+            ${mobileScheduleSelect}
+            <details class="portal-row-menu">
+              <summary class="portal-more-trigger" title="Thao tác khác" aria-label="Thao tác khác">${portalIcon("more")}<span class="portal-visually-hidden">Thao tác khác</span></summary>
+              <div class="portal-action-menu" role="menu" aria-label="Thao tác trường ${esc(s.name)}">
+                <div class="portal-action-menu-head">
+                  <strong title="${esc(s.name)}">${esc(s.name)}</strong>
+                  <button type="button" class="portal-menu-close" data-menu-close title="Đóng" aria-label="Đóng">${portalIcon("close")}</button>
+                </div>
+                <label class="portal-menu-field"><span>Gói</span>${mobilePlanSelect}</label>
+                <button type="button" class="portal-btn portal-btn-sm portal-btn-toggle${active ? "" : " warn"}" data-act="toggle" title="${active ? "Khóa trường" : "Mở khóa trường"}" aria-label="${active ? "Khóa trường" : "Mở khóa trường"}">${portalIcon(active ? "ban" : "activate")}<span>${active ? "Khóa trường" : "Mở khóa"}</span></button>
+                <button type="button" class="portal-btn portal-btn-sm danger" data-act="del-tkb" title="Xóa TKB đang chọn" aria-label="Xóa TKB đang chọn">${portalIcon("trash")}<span>Xóa TKB</span></button>
+                <button type="button" class="portal-btn portal-btn-sm portal-btn-expiry" data-act="expiry" title="Chỉnh ngày hết hạn gói" aria-label="Chỉnh ngày hết hạn gói">${portalIcon("calendarClock")}<span>Hết hạn</span></button>
+                <button type="button" class="portal-btn portal-btn-sm portal-btn-pwd" data-act="pwd" title="Đổi mật khẩu admin" aria-label="Đổi mật khẩu admin">${portalIcon("key")}<span>Mật khẩu</span></button>
+                <button type="button" class="portal-btn portal-btn-sm portal-btn-edit" data-act="edit" title="Sửa tên trường" aria-label="Sửa tên trường">${portalIcon("pencil")}<span>Sửa tên</span></button>
+                <button type="button" class="portal-btn portal-btn-sm portal-btn-del danger" data-act="del" title="Xóa trường" aria-label="Xóa trường">${portalIcon("trash")}<span>Xóa trường</span></button>
+              </div>
+            </details>
           </div>
         </td>
       </tr>${renderSubUsersRow(s.id)}`;
@@ -300,6 +376,21 @@
   });
 
   tbody.addEventListener("click", ev => {
+    const menuClose = ev.target.closest("button[data-menu-close]");
+    if(menuClose){
+      menuClose.closest("details.portal-row-menu")?.removeAttribute("open");
+      return;
+    }
+
+    const menuTrigger = ev.target.closest("summary.portal-more-trigger");
+    if(menuTrigger && tbody.querySelectorAll){
+      const current = menuTrigger.closest("details.portal-row-menu");
+      tbody.querySelectorAll("details.portal-row-menu[open]").forEach(menu => {
+        if(menu !== current) menu.removeAttribute("open");
+      });
+      return;
+    }
+
     const expandBtn = ev.target.closest("button[data-act=expand]");
     if(expandBtn){
       const row = expandBtn.closest("tr[data-id]");
@@ -338,6 +429,7 @@
 
     const btn = ev.target.closest("button[data-act]");
     if(!btn) return;
+    btn.closest("details.portal-row-menu")?.removeAttribute("open");
     const row = btn.closest("tr[data-id]");
     const id = row?.dataset?.id;
     if(!id) return;
@@ -354,7 +446,7 @@
       return;
     }
     if(act === "del-tkb"){
-      const num = selectedScheduleNumber(row, school);
+      const num = selectedScheduleNumber(row, school, btn);
       const list = A.listSchoolSchedules ? A.listSchoolSchedules(id) : scheduleRowsForSchool(school);
       if(list.length <= 1){
         alert("Không thể xóa. Mỗi trường phải giữ ít nhất 1 TKB.");

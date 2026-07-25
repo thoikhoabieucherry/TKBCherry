@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v282-immediate-singleton-zero";
+  const VERSION = "tkb-rust-api-v284-live-focused-stats";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
@@ -4186,6 +4186,7 @@
       progressBudgetSeconds:normalizePendingProgressSeconds(pending?.progressBudgetSeconds) || INITIAL_AUTO_DURATION_SECONDS,
       runIndex:normalizePendingProgressRunIndex(pending?.progressRunIndex || 1)
     };
+    publishLiveStatsProgress(progressState.metricProgress);
     if(progressState.deferFirstPaint) scheduleFirstProgressPaint();
     else tickEstimatedProgress();
     progressTimer = window.setInterval(tickEstimatedProgress, 1000);
@@ -4263,6 +4264,23 @@
       const pop = document.getElementById("statsPopover");
       if(pop && !pop.hidden) callMaybe("renderStatsBox");
     }catch(_){}
+  }
+
+  function publishLiveStatsProgress(metricProgress){
+    const normalized = metricProgress && typeof metricProgress === "object"
+      ? {
+          focus:String(metricProgress.focus || ""),
+          current:Number(metricProgress.current),
+          target:Number(metricProgress.target),
+          baseline:Number(metricProgress.baseline),
+          percent:Number(metricProgress.percent)
+        }
+      : null;
+    try{ window.__TKB_LIVE_STATS_PROGRESS = normalized; }catch(_){ }
+    try{
+      const pop = document.getElementById("statsPopover");
+      if(pop && !pop.hidden && normalized) callMaybe("updateStatsBoxLiveProgress", [normalized]);
+    }catch(_){ }
   }
 
   function shouldAutoPlaceUnassignedFromUi(before, options){
@@ -4682,6 +4700,7 @@
     }else if(!progressUsesWorkMetrics(progressState.settings || {})){
       progressState.metricProgress = null;
     }
+    publishLiveStatsProgress(progressState.metricProgress);
     try{
       window.__TKB_RUST_LAST_LIVE_PROGRESS = {
         protocol:BACKEND_LIVE_PROGRESS_PROTOCOL,
@@ -4950,6 +4969,7 @@
         || 1
       )
     };
+    publishLiveStatsProgress(progressState.metricProgress);
     progressState.progressBudgetSeconds = normalizePendingProgressSeconds(pending?.progressBudgetSeconds)
       || progressBudgetSeconds(progressState.settings, progressState.estimatedSeconds);
     if(progressState.deferFirstPaint) scheduleFirstProgressPaint();
@@ -15818,6 +15838,9 @@
     if(mode === SOLVE_REQUEST_MODES.singletons){
       settings.optimization_focus = "singletons";
       settings.optimization_two_stage_teacher_quality = false;
+      settings.browser_wasm_singleton_progressive_search = true;
+      settings.browser_wasm_singleton_max_waves = 6;
+      settings.browser_wasm_singleton_wave_deadline_ms = 10000;
       settings.minimize_one_period_sessions = true;
       settings.minimize_sessions = false;
       settings.minimize_teacher_gaps = false;
@@ -15839,6 +15862,9 @@
       settings.optimization_focus = "sessions";
       settings.optimization_two_stage_teacher_quality = true;
       settings.optimization_refine_try_lower_session_cap = true;
+      settings.browser_wasm_session_deep_search = true;
+      settings.browser_wasm_session_deep_max_waves = 16;
+      settings.browser_wasm_session_wave_deadline_ms = 15000;
       settings.minimize_sessions = true;
       settings.minimize_teacher_gaps = false;
       settings.period_max_teacher_gap = "off";

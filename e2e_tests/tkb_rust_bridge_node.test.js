@@ -2291,6 +2291,16 @@ test("desktop scheduler modes map to one focused backend contract", () => {
     assert.equal(effective.minimize_sessions, focus === "sessions");
     assert.equal(effective.minimize_teacher_gaps, focus === "gaps");
     assert.equal(effective.period_max_teacher_gap, focus === "gaps" ? 1 : "off");
+    if(focus === "singletons"){
+      assert.equal(effective.browser_wasm_singleton_progressive_search, true);
+      assert.equal(effective.browser_wasm_singleton_max_waves, 6);
+      assert.equal(effective.browser_wasm_singleton_wave_deadline_ms, 10000);
+    }
+    if(focus === "sessions"){
+      assert.equal(effective.browser_wasm_session_deep_search, true);
+      assert.equal(effective.browser_wasm_session_deep_max_waves, 16);
+      assert.equal(effective.browser_wasm_session_wave_deadline_ms, 15000);
+    }
   });
 
   const quickData = makeData(2);
@@ -11237,6 +11247,95 @@ test("live optimization shows each raw improvement even when rounded percent is 
     metricBaseline:509
   });
   assert.equal(window.__TKB_RUST_PROGRESS_STATE.percent, 92, "work progress must never move backward");
+});
+
+test("accepted singleton progress updates the open statistics counter without mutating the timetable", () => {
+  const data = makeData(2);
+  const originalTkb = JSON.stringify(data.tkb);
+  const statsPopover = {hidden:false};
+  const document = {
+    getElementById(id){ return id === "statsPopover" ? statsPopover : null; },
+    querySelector(){ return null; },
+    querySelectorAll(){ return []; },
+    createElement(){ return {dataset:{}, classList:{add(){}, remove(){}, toggle(){}}, setAttribute(){}, appendChild(){}, remove(){}}; },
+    documentElement:{appendChild(){}},
+    body:{appendChild(){}}
+  };
+  const {window, hooks} = loadBridge(data, null, {document});
+  let liveSnapshot = null;
+  window.updateStatsBoxLiveProgress = snapshot => { liveSnapshot = Object.assign({}, snapshot); };
+
+  hooks.primeAutoSortStartUi({requestedSolveMode:"optimize_singletons", data});
+  hooks.startProgressTicker({
+    optimization_focus:"singletons",
+    ui_requested_solve_mode:"optimize_singletons",
+    ui_progress_mode:"work",
+    ui_progress_metric_focus:"one_period_teacher_sessions",
+    ui_progress_metric_current:47,
+    ui_progress_metric_target:0,
+    ui_progress_metric_baseline:47
+  }, data);
+  hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"browser_agent:checkpoint",
+    sequence:1,
+    elapsedMs:10_000,
+    solveRequestMode:"optimize_singletons",
+    optimizationFocus:"one_period_teacher_sessions",
+    metricCurrent:45,
+    metricTarget:0,
+    metricBaseline:47
+  });
+
+  assert.equal(liveSnapshot?.focus, "one_period_teacher_sessions");
+  assert.equal(liveSnapshot?.current, 45);
+  assert.equal(window.__TKB_LIVE_STATS_PROGRESS?.current, 45);
+  assert.equal(JSON.stringify(data.tkb), originalTkb, "a live checkpoint must not replace visible timetable cells");
+});
+
+test("statistics live overlay changes only the focused counter and disables stale drilldown", () => {
+  const start = PLANNER_SOURCE.indexOf("function updateStatsBoxLiveProgress(snapshot)");
+  const end = PLANNER_SOURCE.indexOf("let SCHOOL_TKB_STATS_CACHE", start);
+  assert.ok(start >= 0 && end > start, "live statistics helper must be extractable");
+
+  const value = {textContent:"47"};
+  const drilldown = {disabled:false, title:"old detail"};
+  const classes = new Set();
+  const cell = {
+    title:"",
+    classList:{add(name){ classes.add(name); }},
+    querySelector(selector){
+      if(selector === ".stats-value") return value;
+      if(selector === "button") return drilldown;
+      return null;
+    }
+  };
+  const box = {
+    querySelector(selector){
+      return selector === '[data-stat-key="onePeriodTeacherSessions"]' ? cell : null;
+    }
+  };
+  const document = {getElementById(id){ return id === "statsBox" ? box : null; }};
+  const window = {__TKB_RUST_SOLVER_RUNNING:true, __TKB_SOLVE_UI_BUSY:true};
+  const context = vm.createContext({window, document, Array, Number, String, Math});
+  vm.runInContext(PLANNER_SOURCE.slice(start, end), context);
+
+  assert.equal(context.updateStatsBoxLiveProgress({
+    focus:"one_period_teacher_sessions",
+    current:45
+  }), true);
+  assert.equal(value.textContent, "45");
+  assert.equal(classes.has("is-live-progress"), true);
+  assert.equal(drilldown.disabled, true);
+
+  window.__TKB_RUST_SOLVER_RUNNING = false;
+  window.__TKB_SOLVE_UI_BUSY = false;
+  value.textContent = "47";
+  assert.equal(context.updateStatsBoxLiveProgress({
+    focus:"one_period_teacher_sessions",
+    current:40
+  }), false);
+  assert.equal(value.textContent, "47");
 });
 
 test("a second focused session run keeps its baseline through generation startup frames", () => {

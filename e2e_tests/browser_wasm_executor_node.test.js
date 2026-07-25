@@ -167,11 +167,13 @@ function completePortfolioCandidate(canonical, marker, metrics = {}){
 
 async function exercisePortfolioCandidates(canonical, candidates, navigator){
   const workerPayloads = [];
+  const workerMessages = [];
   const failures = [];
   let workerIndex = 0;
   let terminated = 0;
   let leaseIssued = false;
   let submittedResult = null;
+  const submittedActions = [];
   let completeSeen = false;
   class FakeWorker {
     constructor(){ this.index = workerIndex++; }
@@ -182,16 +184,22 @@ async function exercisePortfolioCandidates(canonical, candidates, navigator){
       }
       if(message.type === "solve"){
         workerPayloads[this.index] = message.payload;
-        if(candidates[this.index] === "hang") return;
+        workerMessages.push({workerIndex:this.index, payload:message.payload});
+        const configured = candidates[this.index];
+        const wave = Math.max(0, Math.trunc(Number(message.payload?.settings?.browser_portfolio_wave || 0) || 0));
+        const candidate = Array.isArray(configured)
+          ? configured[Math.min(wave, configured.length - 1)]
+          : configured;
+        if(candidate === "hang") return;
         queueMicrotask(() => this.onmessage({data:{
           type:"result",
           requestId:message.requestId,
-          frame:{
-            protocol:"tkb-reference-solver-stdio-v1",
-            status:200,
-            payload:candidates[this.index]
-          }
-        }}));
+            frame:{
+              protocol:"tkb-reference-solver-stdio-v1",
+              status:candidate === "fail" ? 500 : 200,
+              payload:candidate === "fail" ? {ok:false} : candidate
+            }
+          }}));
       }
     }
     terminate(){ terminated += 1; }
@@ -214,6 +222,10 @@ async function exercisePortfolioCandidates(canonical, candidates, navigator){
     if(pathname.endsWith("/candidate") || pathname.endsWith("/checkpoint")){
       const candidate = JSON.parse(options.body);
       submittedResult = candidate.result;
+      submittedActions.push({
+        action:pathname.endsWith("/checkpoint") ? "checkpoint" : "candidate",
+        marker:candidate.result?.candidateMarker || ""
+      });
       return response({ok:true, candidateId:"candidate-contract", sha256:candidate.sha256});
     }
     if(pathname.endsWith("/complete")){
@@ -252,7 +264,7 @@ async function exercisePortfolioCandidates(canonical, candidates, navigator){
   assert.ok(evidence.lastComputeFinishedAtMs >= evidence.lastComputeStartedAtMs);
   assert.ok(evidence.lastAcceptedResultAtMs >= evidence.lastComputeStartedAtMs);
   await context.TKBBrowserWasmExecutor.close("test_finished", {failLease:true});
-  return {submittedResult, workerPayloads, failures, terminated};
+  return {submittedResult, submittedActions, workerPayloads, workerMessages, failures, terminated};
 }
 
 test("browser WASM enables Windows, macOS, Linux, Android, iPhone and every iPadOS navigator form", () => {
@@ -314,7 +326,95 @@ test("browser Worker ceiling uses every logical CPU reported by every supported 
   assert.equal(workerTimeout({optimization_focus:"quick_complete", backend_deadline_ms:12000}), 15000);
   assert.equal(workerTimeout({optimization_focus:"singletons", backend_deadline_ms:60000}), 75000);
   assert.equal(workerTimeout({optimization_focus:"sessions", backend_deadline_ms:180000}), 75000);
+  assert.equal(workerTimeout({
+    optimization_focus:"sessions",
+    browser_wasm_session_deep_search:true,
+    backend_deadline_ms:180000
+  }), 195000);
   assert.equal(workerTimeout({optimization_focus:"gaps", backend_deadline_ms:1800000}), 75000);
+});
+
+test("focused session Agent chains each improved wave into the next diversified incumbent", async () => {
+  const canonical = completeRefinementRequest();
+  Object.assign(canonical.settings, {
+    optimization_focus:"sessions",
+    browser_wasm_session_deep_search:true,
+    browser_wasm_session_deep_max_waves:3,
+    browser_wasm_session_wave_deadline_ms:1000,
+    backend_deadline_ms:180000,
+    native_global_deadline_ms:180000,
+    ui_progress_metric_target:400
+  });
+  const wave0 = completePortfolioCandidate(canonical, "session-wave-0", {teacher_sessions:455});
+  const wave1 = completePortfolioCandidate(canonical, "session-wave-1", {teacher_sessions:448});
+  const wave2 = completePortfolioCandidate(canonical, "session-wave-2", {teacher_sessions:448});
+  const {submittedResult, submittedActions, workerMessages, failures} = await exercisePortfolioCandidates(
+    canonical,
+    [[wave0, wave1, wave2]],
+    {
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      hardwareConcurrency:1,
+      maxTouchPoints:0
+    }
+  );
+
+  assert.equal(failures.length, 0);
+  assert.equal(submittedResult?.candidateMarker, "session-wave-1");
+  assert.equal(workerMessages.length, 3);
+  assert.deepEqual(
+    workerMessages.map(item => item.payload.settings.browser_portfolio_wave),
+    [0, 1, 2]
+  );
+  assert.ok(workerMessages.every(item => item.payload.settings.backend_deadline_ms === 1000));
+  assert.equal(workerMessages[0].payload.settings.random_seed, undefined);
+  assert.match(workerMessages[1].payload.settings.random_seed, /web-portfolio-v2:0:1/);
+  assert.match(workerMessages[2].payload.settings.random_seed, /web-portfolio-v2:0:2/);
+  assert.equal(workerMessages[1].payload.data.tkbSolverResult.candidateMarker, "session-wave-0");
+  assert.equal(workerMessages[2].payload.data.tkbSolverResult.candidateMarker, "session-wave-1");
+  assert.deepEqual(submittedActions.map(item => item.action), ["checkpoint", "checkpoint", "candidate"]);
+});
+
+test("singleton Agent publishes ten-second checkpoints, retries a failed wave, and stops at zero", async () => {
+  const canonical = completeRefinementRequest();
+  canonical.data.tkbSolverResult = completePortfolioCandidate(canonical, "singleton-start", {
+    one_period_teacher_sessions:47,
+    teacher_sessions:557
+  });
+  Object.assign(canonical.settings, {
+    optimization_focus:"singletons",
+    browser_wasm_singleton_progressive_search:true,
+    browser_wasm_singleton_max_waves:6,
+    browser_wasm_singleton_wave_deadline_ms:10000,
+    backend_deadline_ms:60000,
+    native_global_deadline_ms:60000,
+    ui_progress_metric_target:0
+  });
+  const improved = completePortfolioCandidate(canonical, "singleton-45", {
+    one_period_teacher_sessions:45,
+    teacher_sessions:557
+  });
+  const zero = completePortfolioCandidate(canonical, "singleton-zero", {
+    one_period_teacher_sessions:0,
+    teacher_sessions:557
+  });
+  const {submittedResult, submittedActions, workerMessages, failures} = await exercisePortfolioCandidates(
+    canonical,
+    [["fail", improved, zero]],
+    {
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      hardwareConcurrency:1,
+      maxTouchPoints:0
+    }
+  );
+
+  assert.equal(failures.length, 0);
+  assert.equal(submittedResult?.candidateMarker, "singleton-zero");
+  assert.equal(workerMessages.length, 3, "zero target must stop later singleton waves");
+  assert.equal(workerMessages[1].payload.settings.backend_deadline_ms, 10000);
+  assert.equal(workerMessages[2].payload.data.tkbSolverResult.candidateMarker, "singleton-45");
+  assert.deepEqual(submittedActions.map(item => item.action), ["checkpoint", "checkpoint", "candidate"]);
 });
 
 test("browser portfolio scales Quick work by timetable size and never exceeds the device ceiling", () => {
@@ -550,7 +650,7 @@ test("foreground executor probes WASM before hello and disconnects without an in
   assert.equal(context.TKBBrowserWasmExecutor.state().active, false);
   assert.deepEqual(calls.slice(0, 5), [
     "GET:/api/agent-helper/v1/status",
-    "worker:tkb-browser-wasm-worker.js?v=tkb-browser-wasm-executor-v14-adaptive-workload",
+    "worker:tkb-browser-wasm-worker.js?v=tkb-browser-wasm-executor-v16-live-focused-checkpoints",
     "worker-message:probe",
     "POST:/api/solve-data",
     "POST:/api/agent-helper/v1/hello",
@@ -1694,7 +1794,7 @@ test("planner wires the browser worker only around a new canonical solve", () =>
   const bridge = fs.readFileSync(BRIDGE_PATH, "utf8");
   const page = fs.readFileSync(PAGE_PATH, "utf8");
   const server = fs.readFileSync(SERVER_PATH, "utf8");
-  assert.match(page, /tkb-browser-wasm\.js\?v=20260724-v181-adaptive-browser-workers-v1/);
+  assert.match(page, /tkb-browser-wasm\.js\?v=20260725-v187-live-focused-progress-v1/);
   assert.ok(page.indexOf("tkb-browser-wasm.js") < page.indexOf("tkb-rust-bridge.js"));
   assert.match(bridge, /TKBBrowserWasmExecutor\.canHandleRequest\(browserWasmRequest\)/);
   assert.match(bridge, /!resumeExistingServerJobOnly[\s\S]*browserWasmEligible[\s\S]*TKBBrowserWasmExecutor\.probe/);

@@ -11,20 +11,30 @@
   <link rel="stylesheet" href="theme-light.css?v=20260710-premium-ui-v2" />
   <link rel="stylesheet" href="runtime.css?v=20260710-runtime-v1" />
   <link rel="stylesheet" href="super-admin.css?v=20260713-school-edit-v2" />
+  <link rel="stylesheet" href="super-admin-mobile-compact.css?v=20260725-v188-compact-super-admin-v2" />
   <script src="shared/school-context.js?v=20260708-v1"></script>
   <script src="shared/auth-api.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
   <script src="shared/auth.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
   <script src="shared/runtime.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
   <script defer src="shared/password-toggle.js?v=20260708-v1"></script>
-  <script defer src="super-admin.js?v=20260713-school-edit-v2"></script>
+  <script defer src="super-admin.js?v=20260725-v188-compact-super-admin-v2"></script>
 </head>
 <body class="portal-body portal-page-super">
   <header class="portal-top">
     <h1>Super Admin — Quản lý trường</h1>
     <div class="portal-actions">
-      <button type="button" class="portal-btn" id="btnChangePassword">Đổi mật khẩu</button>
-      <button type="button" class="portal-btn" id="btnOpenApp">Mở phần mềm</button>
-      <button type="button" class="portal-btn danger" id="btnLogout">Đăng xuất</button>
+      <button type="button" class="portal-btn portal-chrome-action" id="btnChangePassword" title="Đổi mật khẩu" aria-label="Đổi mật khẩu">
+        <span class="portal-button-icon" data-portal-icon="key" aria-hidden="true"></span>
+        <span class="portal-button-label">Đổi mật khẩu</span>
+      </button>
+      <button type="button" class="portal-btn portal-chrome-action" id="btnOpenApp" title="Mở phần mềm" aria-label="Mở phần mềm">
+        <span class="portal-button-icon" data-portal-icon="layout" aria-hidden="true"></span>
+        <span class="portal-button-label">Mở phần mềm</span>
+      </button>
+      <button type="button" class="portal-btn danger portal-chrome-action" id="btnLogout" title="Đăng xuất" aria-label="Đăng xuất">
+        <span class="portal-button-icon" data-portal-icon="logout" aria-hidden="true"></span>
+        <span class="portal-button-label">Đăng xuất</span>
+      </button>
     </div>
   </header>
 
@@ -33,8 +43,14 @@
       <div class="portal-card-head">
         <h2>Danh sách trường</h2>
         <div class="portal-card-actions">
-          <button type="button" class="portal-btn primary" id="btnAddSchool">Thêm mới</button>
-          <button type="button" class="portal-btn" id="btnReloadSchools">Tải lại danh sách</button>
+          <button type="button" class="portal-btn primary portal-chrome-action" id="btnAddSchool" title="Thêm trường mới" aria-label="Thêm trường mới">
+            <span class="portal-button-icon" data-portal-icon="plus" aria-hidden="true"></span>
+            <span class="portal-button-label">Thêm mới</span>
+          </button>
+          <button type="button" class="portal-btn portal-chrome-action" id="btnReloadSchools" title="Tải lại danh sách" aria-label="Tải lại danh sách">
+            <span class="portal-button-icon" data-portal-icon="refresh" aria-hidden="true"></span>
+            <span class="portal-button-label">Tải lại danh sách</span>
+          </button>
         </div>
       </div>
       <div class="portal-table-wrap portal-table-wrap-schools">

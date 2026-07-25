@@ -148,8 +148,8 @@ test("super admin school rows expose Edit before Delete in a stable action order
     assert.ok(index > previous, `${action} is missing or outside the expected order`);
     previous = index;
   }
-  assert.match(html, /data-act="edit"[^>]*title="Sửa tên trường"[^>]*>Sửa<\/button>/);
-  assert.match(html, /data-act="del"[^>]*>Xóa<\/button>/);
+  assert.match(html, /data-act="edit"[^>]*title="Sửa tên trường"[^>]*aria-label="Sửa tên trường"[^>]*>[\s\S]*?portal-action-label">Sửa<\/span><\/button>/);
+  assert.match(html, /data-act="del"[^>]*title="Xóa trường"[^>]*aria-label="Xóa trường"[^>]*>[\s\S]*?portal-action-label">Xóa<\/span><\/button>/);
 });
 
 test("editing a school changes only its normalized name and preserves identity", () => {

@@ -1,6 +1,6 @@
 # TKBCherry Project Handoff
 
-Last updated: 2026-07-24 (Asia/Bangkok)
+Last updated: 2026-07-25 (Asia/Bangkok)
 
 This is the persistent handoff note for future Codex sessions. Read this file
 before modifying the scheduler or deploying. Update it after every meaningful
@@ -8,13 +8,11 @@ change so a machine restart or a new conversation does not erase project context
 
 ## Release Versioning
 
-- Current deployed application release: **v1.85** (network-free zero-singleton
-  completion on top of the v1.84 focused progress UI). The
-  public API marker is `tkb_new-rust-api-2026-07-24-focused-progress-v76`, the
-  bridge marker is `tkb-rust-api-v282-immediate-singleton-zero`, the unchanged
-  Browser executor is `tkb-browser-wasm-executor-v14-adaptive-workload`, and
-  the planner cache is `20260724-v185-immediate-singleton-zero-v1`. The unchanged
-  constraints marker is `constraints-ui-v38-one-session-responsive-tables`.
+- Current deployed application release: **v1.88** (v1.87 live focused progress
+  plus the Super Admin mobile specificity fix; deployed 2026-07-25).
+  Transactional backups are
+  `/opt/cherry-scheduler-backups/server-state-20260725-025221.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260725-025221.tar.gz`.
 - Current public Agent release: **v1.6.31** (`1.6.31`). The normal owner-Agent
   minimum lease gate is 1.6.31, so 1.6.30 and older stay upgrade-only;
   the operator trusted-worker source and release contract remain 1.6.24. The
@@ -23,6 +21,52 @@ change so a machine restart or a new conversation does not erase project context
   applicable version here and add a short change note. Agent package updates
   must also update `agent_helper/__init__.py` and
   `agent_helper/windows_version_info.txt`.
+
+### v1.88 Super Admin mobile specificity fix (deployed 2026-07-25)
+
+- The compact Super Admin layout now hides the legacy desktop action grid with
+  a selector specific enough to override the older table action rule. At a
+  true `390x844` viewport, each school visually exposes only Open TKB, the
+  timetable selector, and the overflow menu; the page has no horizontal
+  overflow, and the overflow sheet opens and closes normally.
+- Cache marker: `20260725-v188-compact-super-admin-v2`. Focused Super Admin
+  tests pass **8/8** and `git diff --check` passes. Browser acceptance verified
+  the responsive DOM and menu behavior on the public page.
+- Transactional production deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260725-025221.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260725-025221.tar.gz`.
+
+### v1.87 live focused progress and compact Super Admin (deployed 2026-07-25)
+
+- Focused `Buổi 1 tiết` Browser Agent work runs six bounded 10-second waves
+  within its existing 60-second local budget. Each later wave receives the
+  best hard-valid incumbent from the prior wave with a diversified seed;
+  recoverable wave failures continue while Stop/abort still terminates
+  immediately. Session-focused Agent work retains the 16-wave, 15-second
+  search within its three-minute ceiling.
+- Agent and VPS checkpoints now update the toolbar and an open Statistics
+  popover immediately. The popover overlays only the live `Dạy 1 tiết` or
+  `Buổi dạy` counter, disables stale drill-down links while that overlay is
+  active, and never mutates visible timetable cells until the accepted final
+  result is applied.
+- Super Admin mobile uses accessible inline icons and a compact per-school
+  card: open TKB, choose version, and `...`; secondary actions are in a
+  bottom sheet. Desktop action labels/grid remain unchanged. The regular
+  admin mobile tables retain icon actions and responsive column widths.
+- Release markers: Browser executor
+  `tkb-browser-wasm-executor-v16-live-focused-checkpoints`, bridge
+  `tkb-rust-api-v284-live-focused-stats`, planner cache
+  `20260725-v187-live-focused-progress-v1`, live stats cache
+  `20260725-v187-live-stats-v1`, Super Admin cache
+  `20260725-v187-compact-super-admin-v1`, and admin cache
+  `20260725-v187-deep-session-admin-ui-v1`.
+- Local verification before deployment: full Node **385/385**, Browser/bridge
+  focused suites **279/279**, Super Admin **8/8**, optimization-focus Python
+  **27/27**, JavaScript syntax, and `git diff --check`.
+- Transactional production deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260725-022745.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260725-022745.tar.gz`. Public
+  health was idle with **6/6** VPS worker tokens after deployment.
 
 ### v1.85 network-free zero-singleton completion (deployed 2026-07-24)
 
@@ -4346,16 +4390,17 @@ GET https://tkbcherry.com/pages/sapxep?sid=default
 Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
-Latest successful deployment marker observed on 2026-07-24: `UPDATE_OK` for
-application v1.85. Public health serves
-`tkb_new-rust-api-2026-07-24-focused-progress-v76`; the page serves
-`20260724-v185-immediate-singleton-zero-v1`, bridge marker
-`tkb-rust-api-v282-immediate-singleton-zero`, and Browser executor
-`tkb-browser-wasm-executor-v14-adaptive-workload`.
+Latest successful deployment marker observed on 2026-07-25: `UPDATE_OK` for
+application v1.88. Public health serves
+`tkb_new-rust-api-2026-07-24-focused-progress-v76`; the planner serves
+`20260725-v187-live-focused-progress-v1`, bridge marker
+`tkb-rust-api-v284-live-focused-stats`, and Browser executor
+`tkb-browser-wasm-executor-v16-live-focused-checkpoints`. Super Admin serves
+`20260725-v188-compact-super-admin-v2`.
 Public health is idle with zero active/queued jobs and `6/6` worker tokens.
 Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260724-174341.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260724-174341.tar.gz`.
+`/opt/cherry-scheduler-backups/server-state-20260725-025221.tar.gz` and
+`/opt/cherry-scheduler-backups/app-release-20260725-025221.tar.gz`.
 Public Agent release `1.6.31` and its signed manifest are live. The 88,054,539
 byte archive SHA-256 is
 `402f4eba12db1b31aa923e0960450855a7314729c90c796889741b31a4aaaa96`; the

@@ -2104,6 +2104,72 @@ function exportExcel(section){
 /* ============================================================
    HIỂN THỊ DANH SÁCH DỮ LIỆU TRONG TRANG TỔNG HỢP
 ============================================================ */
+function appUiIcon(name){
+    const paths = {
+        plus: '<path d="M12 5v14M5 12h14"/>',
+        upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5M12 3v12"/>',
+        download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/>',
+        wand: '<path d="m15 4 5 5L8 21l-5-5Z"/><path d="m6 14 5 5M19 2v3M22 5h-3M5 2v2M7 4H3"/>',
+        more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+        rowsDelete: '<path d="M3 6h18M3 12h12M3 18h9"/><path d="m17 15 4 4m0-4-4 4"/>',
+        trash: '<path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5M14 11v5"/>'
+    };
+    return `<svg class="app-ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths[name] || paths.more}</svg>`;
+}
+
+function appQuickAddDetails(content){
+    if(!content) return "";
+    return `
+        <details class="app-quick-add-details">
+            <summary class="btn app-icon-button" title="Thêm nhanh" aria-label="Mở công cụ thêm nhanh">
+                ${appUiIcon("wand")}
+            </summary>
+            ${content}
+        </details>`;
+}
+
+function appMobileDeleteMenu(section, selectedCount){
+    const count = Math.max(0, Number(selectedCount || 0));
+    return `
+        <details class="app-mobile-actions-menu">
+            <summary class="btn app-icon-button" title="Tùy chọn khác" aria-label="Mở tùy chọn khác">
+                ${appUiIcon("more")}
+                ${count ? `<span class="app-selection-badge" aria-label="Đã chọn ${count} dòng">${count}</span>` : ""}
+            </summary>
+            <div class="app-mobile-actions-popover">
+                <button class="btn danger" type="button" ${count ? "" : "disabled"}
+                        onclick="this.closest('details').removeAttribute('open');deleteSelectedRows('${section}')">
+                    ${appUiIcon("rowsDelete")}<span>Xóa đã chọn${count ? ` (${count})` : ""}</span>
+                </button>
+                <button class="btn danger" type="button"
+                        onclick="this.closest('details').removeAttribute('open');deleteSection('${section}')">
+                    ${appUiIcon("trash")}<span>Xóa mục này</span>
+                </button>
+            </div>
+        </details>`;
+}
+
+function closeAppActionDetails(except){
+    document.querySelectorAll(".app-quick-add-details[open],.app-mobile-actions-menu[open]").forEach(details=>{
+        if(details !== except) details.removeAttribute("open");
+    });
+}
+
+document.addEventListener("toggle", event=>{
+    const details = event.target;
+    if(
+        details instanceof HTMLDetailsElement
+        && details.open
+        && details.matches(".app-quick-add-details,.app-mobile-actions-menu")
+    ) closeAppActionDetails(details);
+}, true);
+
+document.addEventListener("click", event=>{
+    if(!event.target.closest?.(".app-quick-add-details,.app-mobile-actions-menu")){
+        closeAppActionDetails(null);
+    }
+});
+
 function renderSectionInto(section, containerId, doc=document){
     const cfg = FORM_CONFIG[section];
     const arr = DATA[section];
@@ -2120,20 +2186,20 @@ function renderSectionInto(section, containerId, doc=document){
     const tableClass = `data-table data-table-${section}${isCompactTable ? " data-table-compact" : ""}`;
     const wrapClass = `table-wrap data-table-wrap data-table-wrap-${section}${isCompactTable ? " data-table-wrap-compact" : ""}`;
 
-    let html = `
-    <div class="action-bar action-bar-data">
-        <button class="btn primary" onclick="openModal('${section}')">Thêm mới</button>
-        ${section === "khoi" ? `
+    let quickAdd = "";
+    if(section === "khoi"){
+        quickAdd = `
         <div class="quick-add-control">
             <span class="quick-add-label">Thêm nhanh</span>
-            <select class="quick-add-select" onchange="quickAddKhoiByLevel(this.value); this.value=''">
+            <select class="quick-add-select" onchange="quickAddKhoiByLevel(this.value); this.value=''; this.closest('details')?.removeAttribute('open')">
                 <option value="">Chọn cấp học</option>
                 <option value="TH">Tiểu học</option>
                 <option value="THCS">THCS</option>
                 <option value="THPT_GDTX">THPT (GDTX)</option>
             </select>
-        </div>` : ``}
-        ${section === "lop" ? `
+        </div>`;
+    }else if(section === "lop"){
+        quickAdd = `
         <div class="quick-add-control quick-add-lop">
             <span class="quick-add-label">Thêm nhanh</span>
             <input id="quick_lop_prefix" class="quick-add-input quick-add-prefix" value="" placeholder="6" title="Tiền tố">
@@ -2142,9 +2208,10 @@ function renderSectionInto(section, containerId, doc=document){
             <select id="quick_lop_diadiem" class="quick-add-select quick-add-diadiem" title="Địa điểm">
                 ${renderDiaDiemOptions(DEFAULT_DIA_DIEM)}
             </select>
-            <button class="btn" onclick="quickAddLopFromInputs()">Tạo</button>
-        </div>` : ``}
-        ${section === "giaovien" ? `
+            <button class="btn" onclick="quickAddLopFromInputs()" title="Tạo nhanh lớp" aria-label="Tạo nhanh lớp">${appUiIcon("wand")}<span class="app-action-label">Tạo</span></button>
+        </div>`;
+    }else if(section === "giaovien"){
+        quickAdd = `
         <div class="quick-add-control quick-add-gv">
             <span class="quick-add-label">Tạo Mã:</span>
             <select id="quick_gv_magv2_rule" class="quick-add-select quick-add-gv-rule" title="Quy tắc tạo MaGV2">
@@ -2152,35 +2219,46 @@ function renderSectionInto(section, containerId, doc=document){
                 <option value="ten_holot">Tên + Ký tự đầu + Số nếu trùng</option>
                 <option value="ten">Tên + Số nếu trùng</option>
             </select>
-            <button class="btn" onclick="quickCreateMaGV2()">Tạo</button>
-        </div>` : ``}
-        ${section === "monhoc" ? `
+            <button class="btn" onclick="quickCreateMaGV2()" title="Tạo mã giáo viên" aria-label="Tạo mã giáo viên">${appUiIcon("wand")}<span class="app-action-label">Tạo</span></button>
+        </div>`;
+    }else if(section === "monhoc"){
+        quickAdd = `
         <div class="quick-add-control quick-add-monhoc">
             <span class="quick-add-label">Thêm nhanh</span>
-            <select class="quick-add-select quick-add-level" onchange="quickAddMonHocByLevel(this.value); this.value=''">
+            <select class="quick-add-select quick-add-level" onchange="quickAddMonHocByLevel(this.value); this.value=''; this.closest('details')?.removeAttribute('open')">
                 <option value="">Chọn cấp học</option>
                 <option value="TH">Tiểu học</option>
                 <option value="THCS">THCS</option>
                 <option value="THPT_GDTX">THPT (GDTX)</option>
             </select>
-        </div>` : ``}
-        <button class="btn" onclick="triggerExcel('${section}')">Nhập Excel</button>
-        <button class="btn" onclick="exportExcel('${section}')">Xuất Excel</button>
+        </div>`;
+    }
+
+    let html = `
+    <div class="action-bar action-bar-data${quickAdd ? " has-quick-add" : ""}">
+        <button class="btn primary app-action-button app-action-create" onclick="openModal('${section}')" title="Thêm mới" aria-label="Thêm mới">
+            ${appUiIcon("plus")}<span class="app-action-label">Thêm mới</span><span class="app-mobile-only-label">Thêm</span>
+        </button>
+        ${appQuickAddDetails(quickAdd)}
+        <button class="btn app-action-button" onclick="triggerExcel('${section}')" title="Nhập Excel" aria-label="Nhập Excel">${appUiIcon("upload")}<span class="app-action-label">Nhập Excel</span></button>
+        <button class="btn app-action-button" onclick="exportExcel('${section}')" title="Xuất Excel" aria-label="Xuất Excel">${appUiIcon("download")}<span class="app-action-label">Xuất Excel</span></button>
 
         ${isEditing
-            ? `<button class="btn" onclick="tableCancelEdit()">Hủy</button>`
+            ? `<button class="btn app-desktop-action" onclick="tableCancelEdit()">Hủy</button>`
             : ``
         }
 
-        <button class="btn danger" onclick="deleteSelectedRows('${section}')">
+        <button class="btn danger app-desktop-action" onclick="deleteSelectedRows('${section}')">
             Xóa đã chọn${selCount ? ` (${selCount})` : ""}
         </button>
 
         <!-- Xóa riêng mục -->
-        <button class="btn danger"
+        <button class="btn danger app-desktop-action"
                 onclick="deleteSection('${section}')">
             Xóa mục này
         </button>
+
+        ${appMobileDeleteMenu(section, selCount)}
 
     </div>
 
@@ -2803,13 +2881,13 @@ function renderPCCM() {
         </div>
 
         <div class="pccm-main-actions">
-            <button class="btn" onclick="triggerPCCMImport()">Nhập Excel</button>
-            <button class="btn" onclick="exportPCCMExcel()">Xuất Excel</button>
+            <button class="btn pccm-action-button" onclick="triggerPCCMImport()" title="Nhập Excel" aria-label="Nhập Excel">${appUiIcon("upload")}<span class="app-action-label">Nhập Excel</span></button>
+            <button class="btn pccm-action-button" onclick="exportPCCMExcel()" title="Xuất Excel" aria-label="Xuất Excel">${appUiIcon("download")}<span class="app-action-label">Xuất Excel</span></button>
         </div>
 
         <div class="pccm-side-actions pccm-summary-actions">
             ${pccmTotalInfoHtml}
-            <button class="btn danger pccm-delete-btn" title="Xóa Phân công" onclick="deleteAllPCCM()">Xóa</button>
+            <button class="btn danger pccm-delete-btn" title="Xóa Phân công" aria-label="Xóa Phân công" onclick="deleteAllPCCM()">${appUiIcon("trash")}<span class="app-action-label">Xóa</span></button>
         </div>
     </div>
     `;
@@ -2918,15 +2996,15 @@ function renderTietChuanPage(){
 
     // ===== action bar (đồng bộ với các bảng khác) =====
     let html = `
-    <div class="action-bar action-bar-data">
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+    <div class="action-bar action-bar-data action-bar-tietchuan">
+        <div class="tietchuan-filter-list">
             ${khoiOptions.map(k=>{
                 const js = (k||"").toString().replace(/\\/g,"\\\\").replace(/'/g,"\\'");
                 return `<button class="btn ${TC_KHOI===k?"primary":""}" onclick="setTCKhoi('${js}')">${escapeHtml(k)}</button>`;
             }).join("")}
-            <button class="btn" onclick="triggerExcel('mon')">Nhập Excel</button>
-            <button class="btn" onclick="exportExcel('mon')">Xuất Excel</button>
         </div>
+        <button class="btn app-action-button" onclick="triggerExcel('mon')" title="Nhập Excel" aria-label="Nhập Excel">${appUiIcon("upload")}<span class="app-action-label">Nhập Excel</span></button>
+        <button class="btn app-action-button" onclick="exportExcel('mon')" title="Xuất Excel" aria-label="Xuất Excel">${appUiIcon("download")}<span class="app-action-label">Xuất Excel</span></button>
 
     </div>
 

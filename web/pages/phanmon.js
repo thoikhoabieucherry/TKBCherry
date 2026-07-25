@@ -6227,22 +6227,22 @@ function renderStatsBox(){
     if(!Number.isFinite(num)) return "0";
     return String(Math.round(num));
   };
-  const stat = (label, value)=>(
-    `<div class="stats-pair"><span class="stats-label">${escapeHtml(label)}: </span><span class="stats-value">${escapeHtml(value)}</span></div>`
+  const stat = (label, value, key)=>(
+    `<div class="stats-pair"${key ? ` data-stat-key="${escapeHtml(key)}"` : ""}><span class="stats-label">${escapeHtml(label)}: </span><span class="stats-value">${escapeHtml(value)}</span></div>`
   );
 
   box.innerHTML =
     `<div class="stats-grid-2 stats-note-grid stats-teacher-grid">`+
-      stat("Đã xếp", school.daXepTiet)+
-      stat("Chưa xếp", school.chuaXepTiet)+
-      stat("Tiết trống", gvStats.soTietTrong)+
-      stat("Buổi dạy", gvStats.tsBuoiDay)+
-      stat("Trống 1 tiết", gvStats.soBuoiTrong1)+
-      stat("Ngày dạy", gvStats.tsNgayDay)+
-      stat("Trống 2 tiết", gvStats.soBuoiTrong2)+
-      stat("Dạy 1 tiết", gvStats.soBuoiDay1)+
-      stat("Lỗ trống HS", studentGapStats.totalGaps)+
-      stat("Dạy 5 tiết", gvStats.soBuoiDay5)+
+      stat("Đã xếp", school.daXepTiet, "scheduledPeriods")+
+      stat("Chưa xếp", school.chuaXepTiet, "unassignedPeriods")+
+      stat("Tiết trống", gvStats.soTietTrong, "teacherGapPeriods")+
+      stat("Buổi dạy", gvStats.tsBuoiDay, "teacherSessions")+
+      stat("Trống 1 tiết", gvStats.soBuoiTrong1, "teacherGap1Sessions")+
+      stat("Ngày dạy", gvStats.tsNgayDay, "teacherDays")+
+      stat("Trống 2 tiết", gvStats.soBuoiTrong2, "teacherGap2Sessions")+
+      stat("Dạy 1 tiết", gvStats.soBuoiDay1, "onePeriodTeacherSessions")+
+      stat("Lỗ trống HS", studentGapStats.totalGaps, "studentGaps")+
+      stat("Dạy 5 tiết", gvStats.soBuoiDay5, "fivePeriodTeacherSessions")+
     `</div>`;
 
   const teacherGrid = box.querySelector(".stats-teacher-grid");
@@ -6312,7 +6312,39 @@ function renderStatsBox(){
   replaceStatCell(6, "gap2", "Trống 2 tiết", gvStats.soBuoiTrong2, window.__TKB_TEACHER_STAT_ISSUES.gap2);
   replaceStatCell(7, "onePeriod", "Dạy 1 tiết", gvStats.soBuoiDay1, window.__TKB_TEACHER_STAT_ISSUES.onePeriod);
   replaceStudentGapCell(8, studentGapStats.totalGaps, window.__TKB_STUDENT_GAP_ISSUES);
+  if(isSolving) updateStatsBoxLiveProgress(window.__TKB_LIVE_STATS_PROGRESS);
 }
+
+function updateStatsBoxLiveProgress(snapshot){
+  if(!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return false;
+  const box = document.getElementById("statsBox");
+  if(!box) return false;
+  const solving = window.__TKB_RUST_SOLVER_RUNNING === true || window.__TKB_SOLVE_UI_BUSY === true;
+  if(!solving) return false;
+  const focus = String(snapshot.focus || snapshot.optimizationFocus || snapshot.optimization_focus || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  const current = Number(snapshot.current ?? snapshot.metricCurrent ?? snapshot.metric_current);
+  if(!Number.isFinite(current) || current < 0) return false;
+  const statKey = focus === "one_period_teacher_sessions" || focus === "optimize_singletons"
+    ? "onePeriodTeacherSessions"
+    : (focus === "teacher_sessions" || focus === "optimize_sessions" ? "teacherSessions" : "");
+  if(!statKey) return false;
+  const cell = box.querySelector(`[data-stat-key="${statKey}"]`);
+  const value = cell?.querySelector?.(".stats-value");
+  if(!cell || !value) return false;
+  value.textContent = String(Math.max(0, Math.round(current)));
+  cell.classList.add("is-live-progress");
+  cell.title = "Phương án tốt nhất tạm thời trong lượt tối ưu.";
+  const drilldown = cell.querySelector("button");
+  if(drilldown){
+    drilldown.disabled = true;
+    drilldown.title = "Hoàn tất tối ưu để xem chi tiết.";
+  }
+  return true;
+}
+window.updateStatsBoxLiveProgress = updateStatsBoxLiveProgress;
 
 let SCHOOL_TKB_STATS_CACHE = {sig:"", value:null};
 function schoolStatsObjectSignature(obj){

@@ -1,0 +1,505 @@
+/* Compact administration controls. Loaded last so legacy theme rules cannot
+   expand the mobile toolbar again. Desktop geometry remains unchanged. */
+.app-nav-icon,
+.app-command-icon,
+.app-ui-icon {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  pointer-events: none;
+}
+
+.app-nav-icon,
+.app-nav-label-mobile,
+.app-command-label-mobile {
+  display: none;
+}
+
+.app-quick-add-details {
+  display: contents;
+}
+
+.app-quick-add-details > summary,
+.app-mobile-actions-menu {
+  display: none;
+}
+
+.app-quick-add-details > .quick-add-control {
+  display: inline-flex;
+}
+
+.app-action-button,
+.pccm-action-button {
+  gap: 7px;
+}
+
+.app-mobile-only-label {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  body.app-shell-body {
+    --app-mobile-control: 40px;
+    --app-mobile-gap: 6px;
+  }
+
+  body.app-shell-body .app-nav {
+    align-items: stretch;
+    gap: var(--app-mobile-gap);
+    padding: max(6px, env(safe-area-inset-top)) 8px 6px;
+    overflow: visible;
+  }
+
+  body.app-shell-body .app-nav-side {
+    order: -1;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: var(--app-mobile-gap);
+    margin: 0;
+  }
+
+  body.app-shell-body .app-nav-side .school-switcher,
+  body.app-shell-body .app-nav-side .school-switcher.nav-switcher {
+    flex: 1 1 auto;
+    width: auto;
+    max-width: none;
+    min-width: 0;
+    height: var(--app-mobile-control);
+    min-height: var(--app-mobile-control);
+    padding: 0 10px;
+    border-radius: 8px;
+    font-size: 12.5px;
+  }
+
+  body.app-shell-body .app-nav-side .btn-planner,
+  body.app-shell-body .app-nav-side .btn-portal,
+  body.app-shell-body .app-nav-side .btn-logout {
+    flex: 0 0 var(--app-mobile-control);
+    width: var(--app-mobile-control);
+    min-width: var(--app-mobile-control);
+    height: var(--app-mobile-control);
+    min-height: var(--app-mobile-control);
+    padding: 0;
+    border-radius: 8px;
+  }
+
+  body.app-shell-body .app-nav-side .btn-planner {
+    flex-basis: 62px;
+    width: 62px;
+    min-width: 62px;
+    gap: 4px;
+    font-size: 11px;
+  }
+
+  body.app-shell-body .app-command-label-full,
+  body.app-shell-body .app-nav-label-full {
+    display: none;
+  }
+
+  body.app-shell-body .app-command-label-mobile,
+  body.app-shell-body .app-nav-label-mobile,
+  body.app-shell-body .app-nav-icon {
+    display: inline-flex;
+  }
+
+  body.app-shell-body .app-nav-main {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 2px;
+    width: 100%;
+    padding: 2px;
+    border: 1px solid #dbe7f7;
+    border-radius: 8px;
+    background: #f4f7fb;
+  }
+
+  body.app-shell-body .app-nav-main .btn {
+    width: 100%;
+    min-width: 0;
+    height: 46px;
+    min-height: 46px;
+    padding: 3px 1px;
+    border-color: transparent;
+    border-radius: 6px;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 10.5px;
+    line-height: 1.05;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  body.app-shell-body .app-nav-main .btn.nav-active {
+    position: relative;
+    background: #ffffff;
+    border-color: #cfe0f5;
+    color: #1d4ed8;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 5%);
+  }
+
+  body.app-shell-body .app-nav-main .btn.nav-active::after {
+    content: "";
+    position: absolute;
+    right: 10px;
+    bottom: 2px;
+    left: 10px;
+    height: 2px;
+    border-radius: 2px;
+    background: #2563eb;
+  }
+
+  body.app-shell-body #section-content {
+    padding: 6px 8px max(12px, env(safe-area-inset-bottom));
+    overflow-x: hidden;
+  }
+
+  body.app-shell-body .action-bar-data {
+    position: sticky;
+    top: 0;
+    z-index: 12;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) repeat(3, var(--app-mobile-control));
+    grid-auto-flow: column;
+    align-items: center;
+    gap: var(--app-mobile-gap);
+    width: 100%;
+    min-width: 0;
+    margin-bottom: 6px;
+    padding: 2px 0 6px;
+    background: #ffffff;
+    overflow: visible;
+  }
+
+  body.app-shell-body .action-bar-data.has-quick-add {
+    grid-template-columns: minmax(0, 1fr) repeat(4, var(--app-mobile-control));
+  }
+
+  body.app-shell-body .action-bar-data .btn,
+  body.app-shell-body .action-bar-data summary.btn {
+    grid-column: auto;
+    width: var(--app-mobile-control);
+    min-width: var(--app-mobile-control);
+    max-width: var(--app-mobile-control);
+    height: var(--app-mobile-control);
+    min-height: var(--app-mobile-control);
+    padding: 0;
+    border-radius: 8px;
+  }
+
+  body.app-shell-body .action-bar-data .app-action-create {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    justify-content: center;
+    padding: 0 10px;
+  }
+
+  body.app-shell-body .app-action-label,
+  body.app-shell-body .app-desktop-action {
+    display: none;
+  }
+
+  body.app-shell-body .app-mobile-only-label {
+    display: inline;
+  }
+
+  body.app-shell-body .app-quick-add-details {
+    position: static;
+    display: block;
+    width: var(--app-mobile-control);
+    min-width: 0;
+  }
+
+  body.app-shell-body .app-quick-add-details > summary {
+    display: flex;
+    list-style: none;
+  }
+
+  body.app-shell-body .app-quick-add-details > summary::-webkit-details-marker,
+  body.app-shell-body .app-mobile-actions-menu > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  body.app-shell-body .app-quick-add-details:not([open]) > .quick-add-control {
+    display: none;
+  }
+
+  body.app-shell-body .app-quick-add-details[open] > .quick-add-control {
+    position: absolute;
+    top: calc(100% + 2px);
+    right: 0;
+    left: 0;
+    z-index: 50;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    width: 100%;
+    min-height: 0;
+    height: auto;
+    padding: 8px;
+    border: 1px solid #d8e3f2;
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 10px 28px rgb(15 23 42 / 14%);
+  }
+
+  body.app-shell-body .app-quick-add-details[open] > .quick-add-lop {
+    grid-template-columns: 48px 48px 68px minmax(96px, 1fr) var(--app-mobile-control);
+  }
+
+  body.app-shell-body .app-quick-add-details[open] > .quick-add-gv {
+    grid-template-columns: minmax(0, 1fr) var(--app-mobile-control);
+  }
+
+  body.app-shell-body .quick-add-label {
+    display: none;
+  }
+
+  body.app-shell-body .quick-add-control .quick-add-select,
+  body.app-shell-body .quick-add-control .quick-add-input,
+  body.app-shell-body .quick-add-control .btn {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 36px;
+    min-height: 36px;
+    padding: 0 7px;
+    font-size: 12px;
+  }
+
+  body.app-shell-body .quick-add-control .btn {
+    padding: 0;
+  }
+
+  body.app-shell-body .quick-add-lop .quick-add-prefix,
+  body.app-shell-body .quick-add-lop .quick-add-letter,
+  body.app-shell-body .quick-add-lop .quick-add-count,
+  body.app-shell-body .quick-add-lop .quick-add-diadiem,
+  body.app-shell-body .quick-add-gv-rule {
+    width: 100%;
+  }
+
+  body.app-shell-body .app-mobile-actions-menu {
+    position: static;
+    display: block;
+    width: var(--app-mobile-control);
+  }
+
+  body.app-shell-body .app-mobile-actions-menu > summary {
+    position: relative;
+    display: flex;
+    list-style: none;
+  }
+
+  body.app-shell-body .app-mobile-actions-popover {
+    position: absolute;
+    top: calc(100% + 2px);
+    right: 0;
+    z-index: 55;
+    display: grid;
+    gap: 4px;
+    width: min(230px, calc(100vw - 16px));
+    padding: 6px;
+    border: 1px solid #d8e3f2;
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 10px 28px rgb(15 23 42 / 14%);
+  }
+
+  body.app-shell-body .app-mobile-actions-popover .btn {
+    width: 100%;
+    max-width: none;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 0 10px;
+  }
+
+  body.app-shell-body .app-selection-badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: #b91c1c;
+    color: #ffffff;
+    font-size: 10px;
+  }
+
+  body.app-shell-body .action-bar-tietchuan {
+    grid-template-columns: minmax(0, 1fr) repeat(2, var(--app-mobile-control));
+    grid-auto-flow: column;
+  }
+
+  body.app-shell-body .tietchuan-filter-list {
+    display: flex;
+    gap: 4px;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body.app-shell-body .tietchuan-filter-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  body.app-shell-body .tietchuan-filter-list .btn {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 72px;
+    max-width: none;
+    padding: 0 10px;
+  }
+
+  body.app-shell-body .pccm-action-bar {
+    position: sticky;
+    top: 0;
+    z-index: 12;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+    margin-bottom: 6px;
+    padding: 2px 0 6px;
+    background: #ffffff;
+  }
+
+  body.app-shell-body .pccm-tab-actions {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  body.app-shell-body .pccm-tab-actions .btn {
+    grid-column: auto;
+    width: 100%;
+    height: 38px;
+    min-height: 38px;
+    padding: 0 6px;
+    font-size: 12px;
+  }
+
+  body.app-shell-body .pccm-main-actions {
+    grid-column: 1;
+    display: flex;
+    gap: 6px;
+  }
+
+  body.app-shell-body .pccm-main-actions .btn,
+  body.app-shell-body .pccm-delete-btn {
+    width: var(--app-mobile-control);
+    min-width: var(--app-mobile-control);
+    height: var(--app-mobile-control);
+    min-height: var(--app-mobile-control);
+    padding: 0;
+    border-radius: 8px;
+  }
+
+  body.app-shell-body .pccm-side-actions {
+    grid-column: 2;
+    display: flex;
+    grid-template-columns: none;
+    gap: 6px;
+  }
+
+  body.app-shell-body .pccm-total-badge {
+    height: var(--app-mobile-control);
+    min-height: var(--app-mobile-control);
+    padding: 0 9px;
+    font-size: 11px;
+  }
+
+  body.app-shell-body .data-table-wrap,
+  body.app-shell-body .data-table-wrap-compact,
+  body.app-shell-body .table-wrap {
+    margin-top: 6px;
+    overflow-x: auto;
+    overflow-y: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body.app-shell-body .data-table-giaovien {
+    width: 100%;
+    min-width: 100%;
+    table-layout: fixed;
+  }
+
+  body.app-shell-body .data-table-giaovien :is(th, td):nth-child(1) {
+    width: 10%;
+  }
+
+  body.app-shell-body .data-table-giaovien :is(th, td):nth-child(2) {
+    width: 34%;
+  }
+
+  body.app-shell-body .data-table-giaovien :is(th, td):nth-child(3) {
+    width: 19%;
+  }
+
+  body.app-shell-body .data-table-giaovien :is(th, td):nth-child(4),
+  body.app-shell-body .data-table-giaovien :is(th, td):nth-child(5) {
+    width: 18.5%;
+  }
+
+  body.app-shell-body .data-table-giaovien th,
+  body.app-shell-body .data-table-giaovien td {
+    padding-right: 5px;
+    padding-left: 5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body.app-shell-body .data-table-compact {
+    min-width: 100%;
+  }
+
+  body.app-shell-body th,
+  body.app-shell-body td {
+    padding: 6px 8px;
+  }
+
+  body.app-shell-body th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+
+  body.app-shell-body .data-empty-row td {
+    height: 56px;
+  }
+}
+
+@media (max-width: 360px) {
+  body.app-shell-body .app-nav-side .btn-planner {
+    flex-basis: var(--app-mobile-control);
+    width: var(--app-mobile-control);
+    min-width: var(--app-mobile-control);
+  }
+
+  body.app-shell-body .app-command-label-mobile {
+    display: none;
+  }
+
+  body.app-shell-body .app-quick-add-details[open] > .quick-add-lop {
+    grid-template-columns: 44px 44px minmax(64px, 1fr) var(--app-mobile-control);
+  }
+
+  body.app-shell-body .quick-add-lop .quick-add-diadiem {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  body.app-shell-body .quick-add-lop .btn {
+    grid-column: 4;
+    grid-row: 1;
+  }
+}

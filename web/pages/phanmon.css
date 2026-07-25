@@ -4239,3 +4239,9 @@ body.planner-shell .stats-popover{
 .school-item .school-edit:hover { background: rgb(30 64 175 / 35%); }
 .school-item:hover { background: rgb(30 41 59 / 55%); }
 .school-item.active { background: rgb(37 99 235 / 22%); font-weight: 700; }
+
+.stats-popover .stats-pair.is-live-progress .stats-value,
+.stats-popover .stats-pair.is-live-progress .stats-link:disabled .stats-value {
+  color: #7c3aed;
+  font-weight: 800;
+}
