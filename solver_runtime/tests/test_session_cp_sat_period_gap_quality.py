@@ -25,6 +25,7 @@ from tkb_optimizer_ref.rules import (  # noqa: E402
 )
 from tkb_optimizer_ref.session_cp_sat import (  # noqa: E402
     SessionCpSatNoSolution,
+    _contiguous_run_lengths_by_start,
     _teacher_gap_pattern_rows,
     solve_session_allocation_cp_sat,
 )
@@ -136,6 +137,99 @@ def _canonical_metrics(
 
 
 class SessionCpSatPeriodGapQualityTests(unittest.TestCase):
+    def test_contiguous_run_lengths_match_the_legacy_domain(self) -> None:
+        cases = (
+            ([], 5),
+            ([3], 3),
+            ([5, 2, 1, 4, 4], 3),
+            ([1, 2, 3, 4, 5], 5),
+        )
+        for allowed_periods, max_duration in cases:
+            allowed = set(allowed_periods)
+            run_lengths = _contiguous_run_lengths_by_start(allowed_periods)
+            expected = [
+                (duration, start, tuple(range(start, start + duration)))
+                for duration in range(1, max_duration + 1)
+                for start in sorted(allowed)
+                if all(
+                    period in allowed
+                    for period in range(start, start + duration)
+                )
+            ]
+            with self.subTest(
+                allowed=sorted(allowed),
+                max_duration=max_duration,
+            ):
+                self.assertEqual(
+                    [
+                        (duration, start, tuple(range(start, start + duration)))
+                        for duration in range(1, max_duration + 1)
+                        for start in sorted(allowed)
+                        if run_lengths.get(start, 0) >= duration
+                    ],
+                    expected,
+                )
+
+    def test_period_bridge_prunes_only_noncontiguous_candidates(self) -> None:
+        school = SchoolData(
+            classes=[ClassInfo(name="6/1", grade="6")],
+            assignments=[Assignment("6/1", "6", "A", "T1", 2, 2)],
+            teachers=["T1"],
+            subjects=["A"],
+            periods_by_grade_subject={("6", "A"): 2},
+            limits_by_grade_subject={("6", "A"): 2},
+        )
+        all_slots = {
+            (day, part, period)
+            for day in range(2, 8)
+            for part in ("AM", "PM")
+            for period in range(1, 6)
+        }
+        allowed_slots = {
+            (2, "AM", 1),
+            (2, "AM", 2),
+            (2, "AM", 4),
+        }
+        rules = TimetableRuleSet(
+            constraints=TimetableConstraintRules(
+                groups={},
+                group_names={},
+                fixed_off={"subject": {"A": frozenset(all_slots - allowed_slots)}},
+                teacher={},
+                subject={},
+                subject_group={},
+            )
+        )
+
+        allocations, metrics = solve_session_allocation_cp_sat(
+            school,
+            rules=rules,
+            max_teacher_sessions=1,
+            max_one_period_sessions=0,
+            period_feasibility_session_indexes=set(range(len(all_sessions()))),
+            materialize_period_lessons=True,
+            time_limit_seconds=5,
+            num_workers=1,
+            random_seed=101,
+        )
+
+        self.assertEqual(sum(int(item.count) for item in allocations), 2)
+        self.assertEqual(metrics["period_block_candidate_pairs"], 6)
+        self.assertEqual(metrics["period_block_contiguous_pruned"], 2)
+        self.assertEqual(metrics["period_block_rule_or_fixed_pruned"], 0)
+        self.assertEqual(metrics["period_block_vars"], 4)
+        self.assertEqual(
+            metrics["period_block_candidate_pairs"],
+            metrics["period_block_vars"]
+            + metrics["period_block_contiguous_pruned"]
+            + metrics["period_block_rule_or_fixed_pruned"],
+        )
+        self.assertTrue(metrics["period_bridge_materialization_complete"])
+        self.assertEqual(
+            [row["period"] for row in metrics["period_bridge_lessons"]],
+            [1, 2],
+        )
+
     def test_truth_table_uses_full_internal_span_not_only_local_holes(self) -> None:
         cases = {
             (0, 0, 0, 0, 0): (0, 0, 0, 0),

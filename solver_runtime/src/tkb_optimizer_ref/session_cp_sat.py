@@ -4,7 +4,7 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from collections import Counter
 from functools import lru_cache
@@ -71,6 +71,22 @@ def _count_contiguous_blocks(periods: set[int] | list[int] | tuple[int, ...], le
         if period - 1 not in period_set
         and all(period + offset in period_set for offset in range(max(1, int(length))))
     )
+
+
+def _contiguous_run_lengths_by_start(
+    allowed_periods: Iterable[int],
+) -> dict[int, int]:
+    """Return the available contiguous-run length beginning at each period."""
+
+    ordered = sorted({int(period) for period in allowed_periods})
+    run_lengths: dict[int, int] = {}
+    next_period: int | None = None
+    run_length = 0
+    for period in reversed(ordered):
+        run_length = run_length + 1 if next_period == period + 1 else 1
+        run_lengths[period] = run_length
+        next_period = period
+    return run_lengths
 
 
 @lru_cache(maxsize=None)
@@ -388,6 +404,9 @@ def solve_session_allocation_cp_sat(
         model.Add(var >= u_var)
 
     period_block_vars = 0
+    period_block_candidate_pairs = 0
+    period_block_contiguous_pruned = 0
+    period_block_rule_or_fixed_pruned = 0
     lesson_block_impossible_constraints = 0
     lesson_block_deferred_constraints = 0
     teacher_cross_session_period_constraints = 0
@@ -437,9 +456,24 @@ def solve_session_allocation_cp_sat(
                     memo=domain_memo,
                 )
             )
+            contiguous_run_lengths = _contiguous_run_lengths_by_start(allowed)
             choices: list[tuple[int, Any, tuple[int, ...]]] = []
-            for duration in range(1, int(n_caps[(ai, si)]) + 1):
+            max_duration = int(n_caps[(ai, si)])
+            period_block_candidate_pairs += max_duration * len(allowed)
+            fixed_periods = fixed_assignment_session_periods.get(
+                (
+                    assignment.class_name,
+                    assignment.subject,
+                    assignment.teacher,
+                    si,
+                ),
+                set(),
+            )
+            for duration in range(1, max_duration + 1):
                 for start in sorted(allowed):
+                    if contiguous_run_lengths.get(start, 0) < duration:
+                        period_block_contiguous_pruned += 1
+                        continue
                     block = tuple(range(start, start + duration))
                     if not _assignment_block_allowed(
                         assignment,
@@ -449,16 +483,8 @@ def solve_session_allocation_cp_sat(
                         constraints,
                         memo=domain_memo,
                     ):
+                        period_block_rule_or_fixed_pruned += 1
                         continue
-                    fixed_periods = fixed_assignment_session_periods.get(
-                        (
-                            assignment.class_name,
-                            assignment.subject,
-                            assignment.teacher,
-                            si,
-                        ),
-                        set(),
-                    )
                     combined_periods = set(block) | set(fixed_periods)
                     if (
                         rule_set.contiguous_multi_period_assignments
@@ -466,6 +492,7 @@ def solve_session_allocation_cp_sat(
                         and max(combined_periods) - min(combined_periods) + 1
                         != len(combined_periods)
                     ):
+                        period_block_rule_or_fixed_pruned += 1
                         continue
                     combined_block_allowed = True
                     if (
@@ -505,6 +532,7 @@ def solve_session_allocation_cp_sat(
                         # A residual one-period choice can complete a block
                         # across a fixed anchor. Apply break-pair and linked-day
                         # rules to that merged block, not just the residual.
+                        period_block_rule_or_fixed_pruned += 1
                         continue
                     choice = model.NewBoolVar(f"period_block_{ai}_{si}_{duration}_{start}")
                     period_block_vars += 1
@@ -1679,6 +1707,9 @@ def solve_session_allocation_cp_sat(
                 "teacher_session_vars": len(z_vars),
                 "teacher_single_vars": len(teacher_single_vars),
                 "period_block_vars": period_block_vars,
+                "period_block_candidate_pairs": period_block_candidate_pairs,
+                "period_block_contiguous_pruned": period_block_contiguous_pruned,
+                "period_block_rule_or_fixed_pruned": period_block_rule_or_fixed_pruned,
                 "teacher_period_gap_signature_constraints": teacher_period_gap_signature_constraints,
                 "teacher_period_gap1_vars": len(teacher_period_gap1_vars),
                 "teacher_period_gap2_plus_vars": len(teacher_period_gap2_plus_vars),
@@ -2095,6 +2126,9 @@ def solve_session_allocation_cp_sat(
         "teacher_session_vars": len(z_vars),
         "teacher_single_vars": len(teacher_single_vars),
         "period_block_vars": period_block_vars,
+        "period_block_candidate_pairs": period_block_candidate_pairs,
+        "period_block_contiguous_pruned": period_block_contiguous_pruned,
+        "period_block_rule_or_fixed_pruned": period_block_rule_or_fixed_pruned,
         "teacher_cross_session_period_constraints": teacher_cross_session_period_constraints,
         "teacher_period_gap_constraints": teacher_period_gap_constraints,
         "teacher_period_gap_signature_constraints": teacher_period_gap_signature_constraints,

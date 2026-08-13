@@ -1,5 +1,33 @@
 # TKBCherry Project Handoff
 
+## 2026-08-13 solver performance tracking audit (local, not deployed)
+
+- Reviewed `tracking/SOLVER_PERFORMANCE_DIAGNOSIS.md` against the current
+  session CP-SAT source and the selected historical telemetry. The 14 rows are
+  a diagnostic sample, not a production-rate estimate. The 1,703/2,103 row
+  cannot be attributed to session CP-SAT alone: its missing periods appear in
+  the later materialization/fallback path. The scalar objective remains the
+  bounded lexicographic contract; a large raw objective/bound ratio is not by
+  itself evidence that the encoding is the root cause.
+- Added exact contiguous-run enumeration in
+  `solver_runtime/src/tkb_optimizer_ref/session_cp_sat.py`. It skips only
+  `duration × start` pairs that cannot be contiguous before calling the domain
+  memo. Variable names, candidate order, fixed-anchor/rule checks, model
+  domain and external CP-SAT protocol remain unchanged. New telemetry reports
+  raw candidates, contiguous-pruned candidates, rule/fixed-pruned candidates
+  and created `period_block` variables.
+- Added regression coverage for exhaustive candidate equivalence and bridge
+  accounting. Added the sanitized historical fixture
+  `solver_runtime/fixtures/performance/automatic_solver_observations_v1.json`
+  plus the stdlib-only guard
+  `solver_runtime/tests/test_solver_performance_regression.py`. The guard does
+  not read ignored production logs, skip missing data, or write summaries.
+- Verification: focused session-gap, domain-memo, external CP-SAT, Cloud
+  quality and performance-fixture tests pass **42/42**; Python compilation and
+  `git diff --check` pass. No VPS, Cloud Run, database, timetable, or other
+  production state changed. No runtime speed claim is made; a controlled
+  before/after benchmark remains required before further model redesign.
+
 ## 2026-08-13 canonical GitHub publication audit (local, pending PR)
 
 - Audited the complete canonical source worktree before publication to the
