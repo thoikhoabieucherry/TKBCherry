@@ -16,11 +16,29 @@ from deploy import PACKAGE_STAGING, make_tarball, new_ssh_client, run_ssh  # noq
 from vps_credentials import missing_credential_message, resolve_vps_connection  # noqa: E402
 
 
+def test_data_directory() -> Path:
+    configured = os.environ.get("TKB_TEST_DATA_DIR", "").strip()
+    return Path(configured).expanduser().resolve() if configured else ROOT / "data"
+
+
 def main() -> int:
     host, user, password = resolve_vps_connection()
     if not password:
         print(missing_credential_message(), file=sys.stderr)
         return 1
+
+    fixture_dir = test_data_directory()
+    workbooks = sorted(fixture_dir.glob("*.xlsx")) if fixture_dir.is_dir() else []
+    required = {"giaovien.xlsx", "lop.xlsx", "monhoc.xlsx", "PCCM.xlsx", "tietchuan.xlsx"}
+    missing = sorted(required.difference(workbook.name for workbook in workbooks))
+    if missing:
+        print(
+            "Staging fixture workbooks are missing: "
+            + ", ".join(missing)
+            + ". Set TKB_TEST_DATA_DIR to the non-secret demo fixture directory.",
+            file=sys.stderr,
+        )
+        return 2
 
     archive = make_tarball(PACKAGE_STAGING)
     nonce = secrets.token_hex(6)
@@ -38,7 +56,7 @@ def main() -> int:
             # so stage them separately under the isolated temporary directory.
             sftp.mkdir(remote_dir, mode=0o700)
             sftp.mkdir(f"{remote_dir}/data", mode=0o700)
-            for workbook in sorted((ROOT / "data").glob("*.xlsx")):
+            for workbook in workbooks:
                 sftp.put(str(workbook), f"{remote_dir}/data/{workbook.name}")
         finally:
             sftp.close()
@@ -55,9 +73,6 @@ def main() -> int:
             '[ ! -f "$HOME/.cargo/env" ] || . "$HOME/.cargo/env"',
             f"cd {shlex.quote(remote_dir)}",
             "python3 -m unittest discover -s solver_runtime/tests -p 'test_*.py'",
-            "python3 -m unittest discover -s agent_helper/tests -p 'test_*.py'",
-            "python3 -m unittest discover -s tools/trusted-worker/tests -p 'test_*.py'",
-            "bash -n tools/trusted-worker/install-linux.sh",
             "cd rust_api",
             "cargo test --locked",
             "echo STAGING_TESTS_OK",

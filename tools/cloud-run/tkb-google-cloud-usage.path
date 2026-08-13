@@ -1,0 +1,9 @@
+[Unit]
+Description=Refresh TKB Cherry Google Cloud usage on Super Admin request
+
+[Path]
+PathExists=/opt/cherry-scheduler/data/google-cloud-usage-refresh.request
+Unit=tkb-google-cloud-usage.service
+
+[Install]
+WantedBy=multi-user.target

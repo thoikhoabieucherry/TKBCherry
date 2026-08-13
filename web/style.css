@@ -734,6 +734,32 @@ th.sticky-col {
   font-weight:700;
 }
 
+.pccm-side-list[data-pccm-tab="monhoc"] .pccm-side-item{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pccm-side-item-name{
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pccm-side-item-status{
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border: 1px solid #f1c27d;
+  border-radius: 999px;
+  background: #fff8e8;
+  color: #9a5b00;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .pccm-panel-bar{
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -1690,4 +1716,12 @@ textarea{
   .pccm-table{
     min-width: 680px;
   }
+}
+button,
+button *,
+[role="button"],
+[role="button"] *{
+  -webkit-user-select: none;
+  user-select: none;
+  caret-color: transparent;
 }

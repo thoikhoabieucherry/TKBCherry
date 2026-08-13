@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = 'constraints-menu-v6-industry-print-submenu';
+  const VERSION = 'constraints-menu-v7-class-assignment-statistics';
   const MENU_ID = 'tkbConstraintsDropdownMenu';
   const STYLE_ID = 'tkbConstraintsDropdownStyle';
   let activeAnchor = null;
@@ -123,6 +123,12 @@
     `;
   }
 
+  function statisticsRows(){
+    return `
+      <li><button type="button" data-rb-statistics="class">Thống kê theo lớp</button></li>
+    `;
+  }
+
   function buildMenu(){
     const html = `
       <ul>
@@ -173,6 +179,11 @@
         <li><button type="button" class="rb-menu-danger" data-rb-open="clear" data-rb-title="Xóa yêu cầu TKB">Xóa yêu cầu TKB ...</button></li>
         <li class="rb-menu-sep"></li>
         <li>
+          <button type="button">Thống kê <span class="rb-menu-arrow">›</span></button>
+          <ul class="rb-menu-sub rb-menu-narrow">${statisticsRows()}</ul>
+        </li>
+        <li class="rb-menu-sep"></li>
+        <li>
           <button type="button">In TKB <span class="rb-menu-arrow">›</span></button>
           <ul class="rb-menu-sub">${printRows()}</ul>
         </li>
@@ -217,6 +228,17 @@
         const mode = printBtn.dataset.rbPrint || '';
         closeMenu();
         if(typeof window.handlePrintTKBOption === 'function') window.handlePrintTKBOption(mode);
+        return;
+      }
+      const statisticsBtn = ev.target.closest('[data-rb-statistics]');
+      if(statisticsBtn){
+        const mode = statisticsBtn.dataset.rbStatistics || '';
+        closeMenu();
+        if(mode === 'class' && typeof window.openClassAssignmentStatistics === 'function'){
+          window.openClassAssignmentStatistics();
+        }else if(mode === 'class'){
+          alert('Chưa tải xong module thống kê theo lớp.');
+        }
         return;
       }
       const btn = ev.target.closest('[data-rb-open]');

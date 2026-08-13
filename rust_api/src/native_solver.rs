@@ -12,6 +12,11 @@ const DAYS: [(&str, i64); 6] = [
     ("thu6", 6),
     ("thu7", 7),
 ];
+// The bounded global session repack understands class-off/resource occupancy
+// and subject max/consecutive rules. When richer user constraints are active,
+// the canonical Python validator remains authoritative; skip this optional
+// heuristic rather than proposing a candidate that would be rejected later.
+const GLOBAL_SESSION_REPACK_UNSAFE_SENTINEL: &str = "\0global-session-repack-unsafe";
 const SESSIONS: [(&str, &str); 2] = [("sang", "AM"), ("chieu", "PM")];
 const PERIODS_PER_SESSION: i64 = 5;
 const MIN_SOLVER_DEADLINE_MS: u64 = 1_000;
@@ -40,6 +45,8 @@ enum OptimizationFocus {
     Singletons,
     Sessions,
     Gaps,
+    Gap2,
+    Gap1,
 }
 
 impl OptimizationFocus {
@@ -52,11 +59,25 @@ impl OptimizationFocus {
             .to_ascii_lowercase()
             .replace('-', "_")
             .replace(' ', "_");
+        let target = settings
+            .and_then(|value| value.get("optimization_gap_target"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase()
+            .replace('-', "_")
+            .replace(' ', "_");
         match normalized.as_str() {
             "quick" | "complete" | "quick_complete" => Self::QuickComplete,
             "singleton" | "singletons" | "one_period_teacher_sessions" => Self::Singletons,
             "session" | "sessions" | "teacher_sessions" => Self::Sessions,
-            "gap" | "gaps" | "teacher_gaps" => Self::Gaps,
+            "gap2" | "gap_2" | "teacher_gap2_sessions" | "optimize_gap2" => Self::Gap2,
+            "gap1" | "gap_1" | "teacher_gap1_sessions" | "optimize_gap1" => Self::Gap1,
+            "gap" | "gaps" | "teacher_gaps" => match target.as_str() {
+                "gap2" | "gap_2" | "teacher_gap2_sessions" | "optimize_gap2" => Self::Gap2,
+                "gap1" | "gap_1" | "teacher_gap1_sessions" | "optimize_gap1" => Self::Gap1,
+                _ => Self::Gaps,
+            },
             _ => Self::Automatic,
         }
     }
@@ -68,6 +89,8 @@ impl OptimizationFocus {
             Self::Singletons => "singletons",
             Self::Sessions => "sessions",
             Self::Gaps => "gaps",
+            Self::Gap2 => "gap2",
+            Self::Gap1 => "gap1",
         }
     }
 }
@@ -596,6 +619,26 @@ pub fn validate_agent_candidate(
     request_body: &[u8],
     candidate: &Value,
 ) -> Result<ValidatedAgentCandidate, String> {
+    validate_agent_candidate_mode(request_body, candidate, false)
+}
+
+/// Validate a hard-valid partial Browser-Agent timetable for VPS continuation.
+///
+/// Resume checkpoints are never publishable results. They may preserve a
+/// strict subset of canonical demand, but every placed lesson, resource,
+/// fixed slot and authored subject limit is still revalidated by the server.
+pub fn validate_agent_resume_checkpoint(
+    request_body: &[u8],
+    candidate: &Value,
+) -> Result<ValidatedAgentCandidate, String> {
+    validate_agent_candidate_mode(request_body, candidate, true)
+}
+
+fn validate_agent_candidate_mode(
+    request_body: &[u8],
+    candidate: &Value,
+    allow_partial_resume: bool,
+) -> Result<ValidatedAgentCandidate, String> {
     let request: Value = serde_json::from_slice(request_body)
         .map_err(|err| format!("solver request JSON invalid: {err}"))?;
     let request_settings = request.get("settings").and_then(Value::as_object);
@@ -606,32 +649,49 @@ pub fn validate_agent_candidate(
     let candidate_object = candidate
         .as_object()
         .ok_or_else(|| "agent candidate must be a JSON object".to_string())?;
-    if candidate_object.get("ok").and_then(Value::as_bool) != Some(true) {
+    if !allow_partial_resume && candidate_object.get("ok").and_then(Value::as_bool) != Some(true) {
         return Err("agent candidate did not report a successful result".to_string());
     }
     let reported_metrics = candidate_object
         .get("metrics")
         .and_then(Value::as_object)
         .ok_or_else(|| "agent candidate is missing metrics".to_string())?;
-    if reported_metrics.get("hard_ok").and_then(Value::as_bool) != Some(true)
-        || int_value(reported_metrics.get("app_constraint_violation_count"), -1) != 0
-        || int_value(reported_metrics.get("unassigned_periods"), -1) != 0
+    let reported_hard_ok = reported_metrics.get("hard_ok").and_then(Value::as_bool) == Some(true);
+    let reported_placement_hard_ok = reported_metrics
+        .get("placement_hard_ok")
+        .and_then(Value::as_bool)
+        == Some(true);
+    let reported_unassigned_periods = int_value(reported_metrics.get("unassigned_periods"), -1);
+    let reported_violations = int_value(reported_metrics.get("app_constraint_violation_count"), -1);
+    if reported_violations != 0
+        || if allow_partial_resume {
+            !reported_placement_hard_ok || reported_unassigned_periods <= 0
+        } else {
+            !reported_hard_ok || reported_unassigned_periods != 0
+        }
     {
         return Err("agent candidate did not report a complete hard-valid schedule".to_string());
     }
-    if candidate_object
-        .get("validation")
-        .and_then(|value| value.get("hard_ok"))
-        .and_then(Value::as_bool)
-        != Some(true)
-    {
+    let reported_validation = candidate_object.get("validation");
+    let validation_ok = if allow_partial_resume {
+        reported_validation
+            .and_then(|value| value.get("placement_hard_ok"))
+            .and_then(Value::as_bool)
+            == Some(true)
+    } else {
+        reported_validation
+            .and_then(|value| value.get("hard_ok"))
+            .and_then(Value::as_bool)
+            == Some(true)
+    };
+    if !validation_ok {
         return Err("agent candidate validation did not report hard_ok".to_string());
     }
     let reported_unassigned = candidate_object
         .get("unassignedLessons")
         .and_then(Value::as_array)
         .ok_or_else(|| "agent candidate is missing unassignedLessons".to_string())?;
-    if !reported_unassigned.is_empty() {
+    if !allow_partial_resume && !reported_unassigned.is_empty() {
         return Err("agent candidate contains unassigned lessons".to_string());
     }
     let candidate_lessons = candidate_object
@@ -666,7 +726,10 @@ pub fn validate_agent_candidate(
         return Err("solver request contains no schedulable assignments".to_string());
     }
     let subject_limits = subject_limit_map(&assignments);
-    let off_slots = collect_off_slots(data, &class_alias);
+    let mut off_slots = collect_off_slots(data, &class_alias);
+    if !global_session_repack_safe(data) {
+        off_slots.insert(GLOBAL_SESSION_REPACK_UNSAFE_SENTINEL.to_string());
+    }
     let fixed_lessons = collect_fixed_lessons(data, &class_alias, &subject_alias);
 
     type AssignmentKey = (String, String);
@@ -686,11 +749,18 @@ pub fn validate_agent_candidate(
         }
     }
     let expected_periods = expected_counts.values().copied().sum::<i64>();
-    if expected_periods <= 0 || candidate_lessons.len() as i64 != expected_periods {
+    let candidate_periods = candidate_lessons.len() as i64;
+    let valid_candidate_size = if allow_partial_resume {
+        candidate_periods > 0 && candidate_periods < expected_periods
+    } else {
+        candidate_periods == expected_periods
+    };
+    if expected_periods <= 0 || !valid_candidate_size {
         return Err("agent candidate lesson count does not match the request".to_string());
     }
-    if int_value(reported_metrics.get("scheduled_periods"), -1) != expected_periods
+    if int_value(reported_metrics.get("scheduled_periods"), -1) != candidate_periods
         || int_value(reported_metrics.get("expected_periods"), -1) != expected_periods
+        || reported_unassigned_periods != expected_periods - candidate_periods
     {
         return Err("agent candidate reported inconsistent lesson totals".to_string());
     }
@@ -791,7 +861,7 @@ pub fn validate_agent_candidate(
         ));
     }
 
-    if observed_counts != expected_counts {
+    if !allow_partial_resume && observed_counts != expected_counts {
         return Err("agent candidate does not preserve exact assignment demand".to_string());
     }
     if observed_fixed != required_fixed {
@@ -818,7 +888,8 @@ pub fn validate_agent_candidate(
         total_gap: gap_metrics.total_gap,
     };
     let incumbent_lessons = collect_existing_schedule_lessons(data, &class_alias, &subject_alias);
-    if incumbent_lessons.len() as i64 == expected_periods
+    if !allow_partial_resume
+        && incumbent_lessons.len() as i64 == expected_periods
         && schedule_hard_ok(&incumbent_lessons, &off_slots, &subject_limits)
     {
         let incumbent_quality = teacher_optimization_quality(&incumbent_lessons);
@@ -838,7 +909,14 @@ pub fn validate_agent_candidate(
     // when the user's real constraints make zero singletons or zero gap-2
     // impossible. Complete-incumbent refinements are still protected above by
     // the focus-specific non-regression envelope.
-    let quality = if two_stage_teacher_quality {
+    let quality = if allow_partial_resume {
+        [
+            expected_periods - candidate_periods,
+            -candidate_periods,
+            one_period_sessions,
+            gap_metrics.total_gap,
+        ]
+    } else if two_stage_teacher_quality && optimization_focus != OptimizationFocus::Automatic {
         [
             one_period_sessions,
             teacher_sessions,
@@ -867,13 +945,29 @@ pub fn validate_agent_candidate(
     let payload_object = payload
         .as_object_mut()
         .ok_or_else(|| "agent candidate must be a JSON object".to_string())?;
-    payload_object.insert("ok".to_string(), json!(true));
-    payload_object.insert("kind".to_string(), json!(""));
-    payload_object.insert("error".to_string(), json!(""));
+    payload_object.insert("ok".to_string(), json!(!allow_partial_resume));
+    payload_object.insert(
+        "kind".to_string(),
+        json!(if allow_partial_resume {
+            "agent_partial_resume_checkpoint"
+        } else {
+            ""
+        }),
+    );
+    payload_object.insert(
+        "error".to_string(),
+        json!(if allow_partial_resume {
+            "Partial Agent timetable retained only for VPS continuation."
+        } else {
+            ""
+        }),
+    );
     payload_object.insert("classes".to_string(), json!(class_payload));
     payload_object.insert("lessons".to_string(), json!(normalized_lessons));
-    payload_object.insert("unassignedLessons".to_string(), json!([]));
-    payload_object.insert("warnings".to_string(), json!([]));
+    if !allow_partial_resume {
+        payload_object.insert("unassignedLessons".to_string(), json!([]));
+        payload_object.insert("warnings".to_string(), json!([]));
+    }
     payload_object.insert("bestEffort".to_string(), json!(false));
     payload_object.insert("generatedAt".to_string(), json!(current_timestamp_string()));
 
@@ -886,12 +980,15 @@ pub fn validate_agent_candidate(
     let metrics = metrics
         .as_object_mut()
         .ok_or_else(|| "cannot normalize agent candidate metrics".to_string())?;
-    metrics.insert("scheduled_periods".to_string(), json!(expected_periods));
+    metrics.insert("scheduled_periods".to_string(), json!(candidate_periods));
     metrics.insert("expected_periods".to_string(), json!(expected_periods));
-    metrics.insert("unassigned_periods".to_string(), json!(0));
+    metrics.insert(
+        "unassigned_periods".to_string(),
+        json!(expected_periods - candidate_periods),
+    );
     metrics.insert("app_constraint_violation_count".to_string(), json!(0));
-    metrics.insert("hard_ok".to_string(), json!(true));
-    metrics.insert("core_hard_ok".to_string(), json!(true));
+    metrics.insert("hard_ok".to_string(), json!(!allow_partial_resume));
+    metrics.insert("core_hard_ok".to_string(), json!(!allow_partial_resume));
     metrics.insert("placement_hard_ok".to_string(), json!(true));
     metrics.insert("placement_core_hard_ok".to_string(), json!(true));
     metrics.insert("best_effort".to_string(), json!(false));
@@ -927,7 +1024,7 @@ pub fn validate_agent_candidate(
     let validation = validation
         .as_object_mut()
         .ok_or_else(|| "cannot normalize agent candidate validation".to_string())?;
-    validation.insert("hard_ok".to_string(), json!(true));
+    validation.insert("hard_ok".to_string(), json!(!allow_partial_resume));
     validation.insert("placement_hard_ok".to_string(), json!(true));
     validation.insert("violations".to_string(), json!([]));
     validation.insert("agent_helper_vps_validated".to_string(), json!(true));
@@ -1023,7 +1120,10 @@ fn solve_existing_schedule(
         &pccm_rooms,
     );
     let subject_limits = subject_limit_map(&assignments);
-    let off_slots = collect_off_slots(data, &class_alias);
+    let mut off_slots = collect_off_slots(data, &class_alias);
+    if !global_session_repack_safe(data) {
+        off_slots.insert(GLOBAL_SESSION_REPACK_UNSAFE_SENTINEL.to_string());
+    }
     let mut lessons = collect_existing_schedule_lessons(data, &class_alias, &subject_alias);
     if lessons.is_empty() {
         return Err("missing existing schedule to optimize".to_string());
@@ -1232,7 +1332,10 @@ fn solve_simple(
     let pccm_periods = numeric_matrix(data.get("pccmTietMatrix"));
     let pccm_session_limits = numeric_matrix(data.get("pccmGioihanMatrix"));
     let pccm_rooms = string_matrix(data.get("pccmRoomMatrix"));
-    let off_slots = collect_off_slots(data, &class_alias);
+    let mut off_slots = collect_off_slots(data, &class_alias);
+    if !global_session_repack_safe(data) {
+        off_slots.insert(GLOBAL_SESSION_REPACK_UNSAFE_SENTINEL.to_string());
+    }
     let mut fixed_lessons = collect_fixed_lessons(data, &class_alias, &subject_alias);
     let mut assignments = parse_assignments(
         data,
@@ -1248,19 +1351,24 @@ fn solve_simple(
     );
     if config.optimization_focus == OptimizationFocus::QuickComplete {
         apply_quick_authored_subject_rules(data, &mut assignments, &class_alias, &subject_alias);
-        for fixed in &mut fixed_lessons {
-            let Some(assignment) = assignments.iter().find(|assignment| {
-                assignment.class_id == fixed.class_id
-                    && norm(&assignment.subject) == norm(&fixed.subject)
-            }) else {
-                continue;
-            };
-            if fixed.teacher.is_empty() {
-                fixed.teacher = assignment.teacher.clone();
-            }
-            if fixed.room.is_empty() {
-                fixed.room = assignment.room.clone();
-            }
+    }
+    // Fixed-only Browser-Agent envelopes intentionally strip timetable
+    // resource mirrors. Recover teacher/room from the canonical assignment
+    // before placing the remaining lessons, otherwise the local search can
+    // put another lesson on a fixed teacher or room slot and fail VPS
+    // validation after spending its entire local wave.
+    for fixed in &mut fixed_lessons {
+        let Some(assignment) = assignments.iter().find(|assignment| {
+            assignment.class_id == fixed.class_id
+                && norm(&assignment.subject) == norm(&fixed.subject)
+        }) else {
+            continue;
+        };
+        if fixed.teacher.is_empty() {
+            fixed.teacher = assignment.teacher.clone();
+        }
+        if fixed.room.is_empty() {
+            fixed.room = assignment.room.clone();
         }
     }
     let teacher_load = teacher_period_load_map(&assignments);
@@ -2190,6 +2298,18 @@ fn collect_existing_schedule_lessons(
     class_alias: &HashMap<String, ClassInfo>,
     subject_alias: &HashMap<String, String>,
 ) -> Vec<Value> {
+    let required_fixed = collect_fixed_lessons(data, class_alias, subject_alias)
+        .into_iter()
+        .map(|fixed| {
+            (
+                fixed.class_id,
+                norm(&fixed.subject),
+                fixed.slot.day,
+                fixed.slot.session_key,
+                fixed.slot.period_index,
+            )
+        })
+        .collect::<HashSet<_>>();
     if let Some(items) = data
         .get("tkbSolverResult")
         .and_then(|value| value.get("lessons"))
@@ -2211,6 +2331,14 @@ fn collect_existing_schedule_lessons(
                 if class_id.is_empty() || subject.is_empty() {
                     return None;
                 }
+                let fixed = lesson_fixed(lesson)
+                    || required_fixed.contains(&(
+                        class_id.clone(),
+                        norm(&subject),
+                        slot.day,
+                        slot.session_key.clone(),
+                        slot.period_index,
+                    ));
                 Some(lesson_json(
                     &class_id,
                     &class_name,
@@ -2218,7 +2346,7 @@ fn collect_existing_schedule_lessons(
                     &lesson_string(lesson, "teacher"),
                     &lesson_room(lesson),
                     &slot,
-                    lesson_fixed(lesson),
+                    fixed,
                 ))
             })
             .collect::<Vec<_>>();
@@ -3725,6 +3853,26 @@ fn optimize_teacher_single_sessions(
                 clock,
             );
         }
+        OptimizationFocus::Gap2 => {
+            return optimize_teacher_gap2_focused(
+                lessons,
+                off_slots,
+                subject_limits,
+                run_seed,
+                deep_gap_repair,
+                clock,
+            );
+        }
+        OptimizationFocus::Gap1 => {
+            return optimize_teacher_gap1_focused(
+                lessons,
+                off_slots,
+                subject_limits,
+                run_seed,
+                deep_gap_repair,
+                clock,
+            );
+        }
         OptimizationFocus::Automatic => {}
     }
 
@@ -3749,14 +3897,66 @@ fn optimize_teacher_single_sessions(
     // incumbent.
     if initial_quality.one_period_sessions == 0 && !clock.should_stop_quality() {
         let mut candidate = lessons.clone();
-        let candidate_moves = optimize_teacher_session_reduction(
-            &mut candidate,
-            off_slots,
-            subject_limits,
-            run_seed ^ 0x5a17_9c43_d2e8_6b01_u64,
-            true,
-            clock,
-        );
+        let mut global_repack_moves = 0_i64;
+        for round in 0..2_u64 {
+            if clock.should_stop_quality() {
+                break;
+            }
+            let repack_moves = optimize_teacher_global_session_repack(
+                &mut candidate,
+                off_slots,
+                subject_limits,
+                run_seed
+                    ^ 0x8d31_f6a4_5c27_b901_u64
+                    ^ round.wrapping_mul(0x9e37_79b9_7f4a_7c15_u64),
+                clock,
+            );
+            if repack_moves <= 0 {
+                break;
+            }
+            global_repack_moves += repack_moves;
+        }
+        // Run the connected two-swap escape first. A single strict swap is
+        // impossible on a complete timetable; the first half may temporarily
+        // create one singleton, so the old reducer could never reach the
+        // closing exchange during Automatic repeats.
+        let mut escape_moves = 0_i64;
+        for round in 0..2_u64 {
+            if clock.should_stop_quality() {
+                break;
+            }
+            let chain_moves = optimize_teacher_session_two_pair_escape(
+                &mut candidate,
+                off_slots,
+                subject_limits,
+                run_seed
+                    ^ 0x2f6e_4b91_a3d8_7c05_u64
+                    ^ round.wrapping_mul(0x9e37_79b9_7f4a_7c15_u64),
+                clock,
+            );
+            if chain_moves <= 0 {
+                break;
+            }
+            escape_moves += chain_moves;
+        }
+        // A clean depth-two win is already publishable. Do not spend the
+        // remaining wave on the debt-taking reducer: if its cleanup misses
+        // the deadline, Automatic's final guard would roll the clean win all
+        // the way back to the original incumbent.
+        let reduction_moves =
+            if global_repack_moves > 0 || escape_moves > 0 || clock.should_stop_quality() {
+                0
+            } else {
+                optimize_teacher_session_reduction(
+                    &mut candidate,
+                    off_slots,
+                    subject_limits,
+                    run_seed ^ 0x5a17_9c43_d2e8_6b01_u64,
+                    true,
+                    clock,
+                )
+            };
+        let candidate_moves = global_repack_moves + escape_moves + reduction_moves;
         let candidate_quality = teacher_optimization_quality(&candidate);
         if candidate_moves > 0
             && two_stage_session_phase_acceptable(&initial_quality, &candidate_quality)
@@ -3837,6 +4037,2062 @@ fn teacher_session_opt_stats_from_focus(
     }
 }
 
+/// Explore neutral same-class exchanges before the deterministic merge pass.
+///
+/// The deterministic session reducer only accepts a strictly improving move.
+/// On a complete timetable that can be a local minimum: a short sequence of
+/// neutral/worse exchanges is needed before a second teacher session becomes
+/// mergeable.  This bounded annealing walk is deliberately local and keeps a
+/// hard-valid incumbent aside; exploratory states are never published.
+struct TeacherAnnealingIndex {
+    teacher_occupants: HashMap<String, usize>,
+    room_occupants: HashMap<String, usize>,
+    class_occupants: HashMap<String, usize>,
+    session_index: HashMap<String, Vec<usize>>,
+    compact_sessions: Vec<String>,
+    sessions_by_teacher: HashMap<String, Vec<String>>,
+    subject_session_counts: HashMap<(String, String, i64, String), i64>,
+}
+
+fn teacher_annealing_index(lessons: &[Value]) -> TeacherAnnealingIndex {
+    let mut teacher_occupants = HashMap::new();
+    let mut room_occupants = HashMap::new();
+    let mut class_occupants = HashMap::new();
+    let mut subject_session_counts = HashMap::new();
+    for (index, lesson) in lessons.iter().enumerate() {
+        let Some(slot) = lesson_slot(lesson) else {
+            continue;
+        };
+        let teacher = lesson_teacher_key(lesson);
+        if !teacher.is_empty() {
+            teacher_occupants.insert(resource_slot_key(&teacher, &slot), index);
+        }
+        let room = norm(&lesson_room(lesson));
+        if !room.is_empty() {
+            room_occupants.insert(resource_slot_key(&room, &slot), index);
+        }
+        let class_id = lesson_class_id(lesson);
+        if !class_id.is_empty() {
+            class_occupants.insert(slot_key(&class_id, &slot), index);
+            let subject = norm(&lesson_subject(lesson));
+            if !subject.is_empty() {
+                *subject_session_counts
+                    .entry((class_id, subject, slot.day, slot.session_key.clone()))
+                    .or_insert(0) += 1;
+            }
+        }
+    }
+    let session_index = teacher_session_index(lessons);
+    let mut compact_sessions = Vec::new();
+    let mut sessions_by_teacher: HashMap<String, Vec<String>> = HashMap::new();
+    for (key, indices) in &session_index {
+        if let Some((teacher, _, _)) = parse_teacher_session_key(key) {
+            sessions_by_teacher
+                .entry(teacher)
+                .or_default()
+                .push(key.clone());
+            // The walk may temporarily split a two-period source into a
+            // singleton. Keep that residual session targetable so a later
+            // exchange can pair it back into the clean envelope.
+            if (1..=3).contains(&indices.len()) {
+                compact_sessions.push(key.clone());
+            }
+        }
+    }
+    TeacherAnnealingIndex {
+        teacher_occupants,
+        room_occupants,
+        class_occupants,
+        session_index,
+        compact_sessions,
+        sessions_by_teacher,
+        subject_session_counts,
+    }
+}
+
+fn teacher_annealing_subject_limits_ok(
+    lessons: &[Value],
+    index: &TeacherAnnealingIndex,
+    moves: &[(usize, Slot)],
+    subject_limits: &SubjectLimitMap,
+) -> bool {
+    let mut deltas: HashMap<(String, String, i64, String), i64> = HashMap::new();
+    for (lesson_index, target_slot) in moves {
+        let Some(lesson) = lessons.get(*lesson_index) else {
+            return false;
+        };
+        let Some(source_slot) = lesson_slot(lesson) else {
+            return false;
+        };
+        let class_id = lesson_class_id(lesson);
+        let subject = norm(&lesson_subject(lesson));
+        if class_id.is_empty() || subject.is_empty() {
+            continue;
+        }
+        if source_slot.day == target_slot.day && source_slot.session_key == target_slot.session_key
+        {
+            continue;
+        }
+        *deltas
+            .entry((
+                class_id.clone(),
+                subject.clone(),
+                source_slot.day,
+                source_slot.session_key,
+            ))
+            .or_insert(0) -= 1;
+        *deltas
+            .entry((
+                class_id,
+                subject,
+                target_slot.day,
+                target_slot.session_key.clone(),
+            ))
+            .or_insert(0) += 1;
+    }
+    deltas.into_iter().all(|(key, delta)| {
+        if delta <= 0 {
+            return true;
+        }
+        let limit = subject_limits
+            .get(&(key.0.clone(), key.1.clone()))
+            .map(|rule| rule.per_session)
+            .unwrap_or(1)
+            .max(1);
+        index.subject_session_counts.get(&key).copied().unwrap_or(0) + delta <= limit
+    })
+}
+
+fn teacher_annealing_subject_shape_ok(
+    lessons: &[Value],
+    moves: &[(usize, Slot)],
+    subject_limits: &SubjectLimitMap,
+) -> bool {
+    let targets = moves
+        .iter()
+        .map(|(lesson_index, slot)| (*lesson_index, slot))
+        .collect::<HashMap<_, _>>();
+    let affected = moves
+        .iter()
+        .filter_map(|(lesson_index, _)| {
+            let lesson = lessons.get(*lesson_index)?;
+            let class_id = lesson_class_id(lesson);
+            let subject = norm(&lesson_subject(lesson));
+            (!class_id.is_empty() && !subject.is_empty()).then_some((class_id, subject))
+        })
+        .collect::<HashSet<_>>();
+
+    affected.into_iter().all(|(class_id, subject)| {
+        let mut positions: HashMap<(i64, String), Vec<i64>> = HashMap::new();
+        let mut day_counts: HashMap<i64, i64> = HashMap::new();
+        for (lesson_index, lesson) in lessons.iter().enumerate() {
+            if lesson_class_id(lesson) != class_id || norm(&lesson_subject(lesson)) != subject {
+                continue;
+            }
+            let slot = match targets.get(&lesson_index) {
+                Some(slot) => (*slot).clone(),
+                None => match lesson_slot(lesson) {
+                    Some(slot) => slot,
+                    None => return false,
+                },
+            };
+            positions
+                .entry((slot.day, slot.session_key))
+                .or_default()
+                .push(slot.period_index);
+            *day_counts.entry(slot.day).or_insert(0) += 1;
+        }
+        let rule = subject_limits.get(&(class_id.clone(), subject.clone()));
+        let session_limit = rule.map(|item| item.per_session).unwrap_or(1).max(1);
+        positions.values().all(|periods| {
+            periods.len() as i64 <= session_limit
+                && (periods.len() <= 1 || consecutive_periods(periods))
+        }) && rule.is_none_or(|item| {
+            item.per_day
+                .iter()
+                .all(|(day, limit)| day_counts.get(day).copied().unwrap_or(0) <= *limit)
+        })
+    })
+}
+
+fn teacher_session_relay_pairs(
+    lessons: &[Value],
+    focus_teachers: &HashSet<String>,
+    envelope: &TeacherOptimizationQuality,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    limit: usize,
+    clock: &SolveClock,
+) -> Vec<(i64, Vec<(usize, Slot)>, TeacherOptimizationQuality)> {
+    if focus_teachers.is_empty() || clock.should_stop_quality() {
+        return Vec::new();
+    }
+    let index = teacher_annealing_index(lessons);
+    let before = teacher_optimization_quality(lessons);
+    let baseline_periods = teacher_cycle_periods(lessons);
+    let mut by_class: HashMap<String, Vec<usize>> = HashMap::new();
+    for (lesson_index, lesson) in lessons.iter().enumerate() {
+        if !lesson_fixed(lesson) {
+            by_class
+                .entry(lesson_class_id(lesson))
+                .or_default()
+                .push(lesson_index);
+        }
+    }
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for (source_index, source) in lessons.iter().enumerate() {
+        if lesson_fixed(source) || !focus_teachers.contains(&lesson_teacher_key(source)) {
+            continue;
+        }
+        let class_id = lesson_class_id(source);
+        let Some(class_indices) = by_class.get(&class_id) else {
+            continue;
+        };
+        let Some(source_slot) = lesson_slot(source) else {
+            continue;
+        };
+        for target_index in class_indices.iter().copied() {
+            if target_index == source_index
+                || lesson_teacher_key(&lessons[target_index]) == lesson_teacher_key(source)
+            {
+                continue;
+            }
+            let key = if source_index < target_index {
+                (source_index, target_index)
+            } else {
+                (target_index, source_index)
+            };
+            if !seen.insert(key) {
+                continue;
+            }
+            let Some(target_slot) = lesson_slot(&lessons[target_index]) else {
+                continue;
+            };
+            let moves = vec![
+                (source_index, target_slot),
+                (target_index, source_slot.clone()),
+            ];
+            if !cycle_resource_precheck(
+                lessons,
+                &moves,
+                &index.teacher_occupants,
+                &index.room_occupants,
+            ) {
+                continue;
+            }
+            let Some(after) =
+                teacher_quality_after_cycle(lessons, &before, &moves, &baseline_periods)
+            else {
+                continue;
+            };
+            if after.one_period_sessions > envelope.one_period_sessions + 2
+                || after.teacher_sessions > envelope.teacher_sessions + 1
+                || after.gap2_plus_sessions > envelope.gap2_plus_sessions + 1
+                || after.gap1_sessions > envelope.gap1_sessions + 5
+                || !teacher_annealing_subject_shape_ok(lessons, &moves, subject_limits)
+            {
+                continue;
+            }
+            let jitter = moves
+                .iter()
+                .map(|(lesson_index, slot)| move_jitter(&lessons[*lesson_index], slot, run_seed))
+                .sum::<i64>();
+            let score = after.one_period_sessions * 100_000_000
+                + after.teacher_sessions * 1_000_000
+                + after.gap2_plus_sessions * 100_000
+                + after.gap1_sessions * 1_000
+                + after.total_gap * 10
+                + jitter;
+            out.push((score, moves, after));
+        }
+    }
+    out.sort_by_key(|(score, _, _)| *score);
+    out.truncate(limit.max(1));
+    out
+}
+
+#[derive(Clone)]
+struct GlobalSessionRepackPattern {
+    moves: Vec<(usize, Slot)>,
+    jitter: i64,
+}
+
+fn global_repack_slot_key(slot: &Slot) -> String {
+    format!("{}|{}|{}", slot.day, slot.session_key, slot.period_index)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn search_global_session_repack_patterns(
+    lessons: &[Value],
+    class_id: &str,
+    entries: &[(usize, Vec<Slot>)],
+    position: usize,
+    frozen_teacher_slots: &HashSet<String>,
+    frozen_room_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    used_slots: &mut HashSet<String>,
+    used_teacher_slots: &mut HashSet<String>,
+    used_room_slots: &mut HashSet<String>,
+    moves: &mut Vec<(usize, Slot)>,
+    nodes: &mut usize,
+    node_limit: usize,
+    pattern_limit: usize,
+    clock: &SolveClock,
+    out: &mut Vec<GlobalSessionRepackPattern>,
+) {
+    if out.len() >= pattern_limit || *nodes >= node_limit {
+        return;
+    }
+    *nodes += 1;
+    if (*nodes & 127) == 0 && clock.should_stop_quality() {
+        return;
+    }
+    if position >= entries.len() {
+        if !teacher_annealing_subject_shape_ok(lessons, moves, subject_limits) {
+            return;
+        }
+        let jitter = moves
+            .iter()
+            .map(|(index, slot)| move_jitter(&lessons[*index], slot, run_seed))
+            .sum::<i64>();
+        out.push(GlobalSessionRepackPattern {
+            moves: moves.clone(),
+            jitter,
+        });
+        return;
+    }
+
+    let (lesson_index, domains) = &entries[position];
+    let lesson = &lessons[*lesson_index];
+    let teacher = lesson_teacher_key(lesson);
+    let room = norm(&lesson_room(lesson));
+    for target_slot in domains {
+        if out.len() >= pattern_limit || *nodes >= node_limit {
+            break;
+        }
+        let class_slot = format!("{}|{}", class_id, global_repack_slot_key(target_slot));
+        if !used_slots.insert(class_slot.clone()) {
+            continue;
+        }
+        let teacher_slot = (!teacher.is_empty()).then(|| resource_slot_key(&teacher, target_slot));
+        if teacher_slot.as_ref().is_some_and(|key| {
+            frozen_teacher_slots.contains(key) || !used_teacher_slots.insert(key.clone())
+        }) {
+            used_slots.remove(&class_slot);
+            continue;
+        }
+        let room_slot = (!room.is_empty()).then(|| resource_slot_key(&room, target_slot));
+        if room_slot.as_ref().is_some_and(|key| {
+            frozen_room_slots.contains(key) || !used_room_slots.insert(key.clone())
+        }) {
+            if let Some(key) = &teacher_slot {
+                used_teacher_slots.remove(key);
+            }
+            used_slots.remove(&class_slot);
+            continue;
+        }
+
+        moves.push((*lesson_index, target_slot.clone()));
+        search_global_session_repack_patterns(
+            lessons,
+            class_id,
+            entries,
+            position + 1,
+            frozen_teacher_slots,
+            frozen_room_slots,
+            subject_limits,
+            run_seed,
+            used_slots,
+            used_teacher_slots,
+            used_room_slots,
+            moves,
+            nodes,
+            node_limit,
+            pattern_limit,
+            clock,
+            out,
+        );
+        moves.pop();
+        if let Some(key) = &room_slot {
+            used_room_slots.remove(key);
+        }
+        if let Some(key) = &teacher_slot {
+            used_teacher_slots.remove(key);
+        }
+        used_slots.remove(&class_slot);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn global_session_repack_patterns_for_class(
+    lessons: &[Value],
+    class_id: &str,
+    moving_indices: &[usize],
+    focus_targets: &HashMap<usize, (i64, String)>,
+    allowed_teacher_sessions: &HashSet<String>,
+    frozen_teacher_slots: &HashSet<String>,
+    frozen_room_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    clock: &SolveClock,
+) -> Vec<GlobalSessionRepackPattern> {
+    if moving_indices.is_empty() || moving_indices.len() > 10 {
+        return Vec::new();
+    }
+    let class_slots = moving_indices
+        .iter()
+        .filter_map(|index| lesson_slot(&lessons[*index]))
+        .collect::<Vec<_>>();
+    if class_slots.len() != moving_indices.len() {
+        return Vec::new();
+    }
+
+    let mut entries = Vec::<(usize, Vec<Slot>)>::new();
+    for lesson_index in moving_indices {
+        let lesson = &lessons[*lesson_index];
+        let teacher = lesson_teacher_key(lesson);
+        let room = norm(&lesson_room(lesson));
+        let mut domains = class_slots
+            .iter()
+            .filter(|slot| {
+                focus_targets
+                    .get(lesson_index)
+                    .is_none_or(|(day, session)| slot.day == *day && slot.session_key == *session)
+            })
+            .filter(|slot| {
+                teacher.is_empty()
+                    || allowed_teacher_sessions.contains(&teacher_session_key(
+                        &teacher,
+                        slot.day,
+                        &slot.session_key,
+                    ))
+            })
+            .filter(|slot| {
+                teacher.is_empty()
+                    || !frozen_teacher_slots.contains(&resource_slot_key(&teacher, slot))
+            })
+            .filter(|slot| {
+                room.is_empty() || !frozen_room_slots.contains(&resource_slot_key(&room, slot))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        domains.sort_by_key(|slot| move_jitter(lesson, slot, run_seed));
+        domains.dedup_by(|left, right| same_slot(left, right));
+        if domains.is_empty() {
+            return Vec::new();
+        }
+        entries.push((*lesson_index, domains));
+    }
+    entries.sort_by(|(left_index, left_domains), (right_index, right_domains)| {
+        let left_focus = focus_targets.contains_key(left_index);
+        let right_focus = focus_targets.contains_key(right_index);
+        right_focus
+            .cmp(&left_focus)
+            .then_with(|| left_domains.len().cmp(&right_domains.len()))
+            .then_with(|| {
+                lesson_jitter(&lessons[*left_index], run_seed)
+                    .cmp(&lesson_jitter(&lessons[*right_index], run_seed))
+            })
+    });
+
+    let mut out = Vec::new();
+    search_global_session_repack_patterns(
+        lessons,
+        class_id,
+        &entries,
+        0,
+        frozen_teacher_slots,
+        frozen_room_slots,
+        subject_limits,
+        run_seed,
+        &mut HashSet::new(),
+        &mut HashSet::new(),
+        &mut HashSet::new(),
+        &mut Vec::new(),
+        &mut 0,
+        50_000,
+        96,
+        clock,
+        &mut out,
+    );
+    out.sort_by_key(|pattern| {
+        let moved = pattern
+            .moves
+            .iter()
+            .filter(|(index, target)| {
+                lesson_slot(&lessons[*index]).is_some_and(|source| !same_slot(&source, target))
+            })
+            .count() as i64;
+        (moved, pattern.jitter)
+    });
+    out
+}
+
+fn evaluate_global_session_repack_combination(
+    lessons: &[Value],
+    pattern_sets: &[Vec<GlobalSessionRepackPattern>],
+    position: usize,
+    combined_moves: &mut Vec<(usize, Slot)>,
+    combined_jitter: i64,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    allowed_teacher_sessions: &HashSet<String>,
+    before: &TeacherOptimizationQuality,
+    combinations: &mut usize,
+    combination_limit: usize,
+    clock: &SolveClock,
+    best: &mut Option<([i64; 5], Vec<(usize, Slot)>)>,
+) {
+    if *combinations >= combination_limit || clock.should_stop_quality() {
+        return;
+    }
+    if position < pattern_sets.len() {
+        for pattern in &pattern_sets[position] {
+            if *combinations >= combination_limit || clock.should_stop_quality() {
+                break;
+            }
+            let old_len = combined_moves.len();
+            combined_moves.extend(pattern.moves.iter().cloned());
+            evaluate_global_session_repack_combination(
+                lessons,
+                pattern_sets,
+                position + 1,
+                combined_moves,
+                combined_jitter + pattern.jitter,
+                off_slots,
+                subject_limits,
+                allowed_teacher_sessions,
+                before,
+                combinations,
+                combination_limit,
+                clock,
+                best,
+            );
+            combined_moves.truncate(old_len);
+        }
+        return;
+    }
+
+    *combinations += 1;
+    if !candidate_move_slots_precheck(lessons, combined_moves, off_slots)
+        || !teacher_annealing_subject_shape_ok(lessons, combined_moves, subject_limits)
+    {
+        return;
+    }
+    let mut candidate = lessons.to_vec();
+    for (index, slot) in combined_moves.iter() {
+        set_lesson_slot(&mut candidate[*index], slot);
+    }
+    if !schedule_hard_ok(&candidate, off_slots, subject_limits)
+        || !teacher_sessions_subset(&candidate, allowed_teacher_sessions)
+    {
+        return;
+    }
+    let after = teacher_optimization_quality(&candidate);
+    if after.one_period_sessions != 0
+        || after.gap2_plus_sessions != 0
+        || after.teacher_sessions >= before.teacher_sessions
+    {
+        return;
+    }
+    let moved = combined_moves
+        .iter()
+        .filter(|(index, target)| {
+            lesson_slot(&lessons[*index]).is_some_and(|source| !same_slot(&source, target))
+        })
+        .count() as i64;
+    let score = [
+        after.teacher_sessions,
+        after.gap1_sessions,
+        after.total_gap,
+        moved,
+        combined_jitter,
+    ];
+    if best
+        .as_ref()
+        .is_none_or(|(best_score, _)| score < *best_score)
+    {
+        *best = Some((score, combined_moves.clone()));
+    }
+}
+
+/// Repack two class/session neighborhoods atomically so both lessons from one
+/// compact teacher session can join already-active target sessions. Pair and
+/// cycle operators cannot cross this boundary because each intermediate swap
+/// is locally neutral or creates a singleton. This bounded exact neighborhood
+/// keeps all class slots fixed, never opens a new teacher session, and only
+/// publishes a hard-valid zero-singleton/zero-Gap2 improvement.
+fn optimize_teacher_global_session_repack(
+    lessons: &mut Vec<Value>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    clock: &SolveClock,
+) -> i64 {
+    if off_slots.contains(GLOBAL_SESSION_REPACK_UNSAFE_SENTINEL) {
+        return 0;
+    }
+    let before = teacher_optimization_quality(lessons);
+    if before.one_period_sessions != 0
+        || before.gap2_plus_sessions != 0
+        || clock.should_stop_quality()
+    {
+        return 0;
+    }
+    let session_index = teacher_session_index(lessons);
+    let allowed_teacher_sessions = session_index.keys().cloned().collect::<HashSet<_>>();
+    let mut source_sessions = session_index
+        .iter()
+        .filter_map(|(key, indices)| {
+            (indices.len() == 2
+                && indices
+                    .iter()
+                    .all(|index| *index < lessons.len() && !lesson_fixed(&lessons[*index])))
+            .then_some(key.clone())
+        })
+        .collect::<Vec<_>>();
+    source_sessions.sort_by_key(|key| teacher_session_jitter(key, run_seed));
+    source_sessions.truncate(28);
+
+    for source_key in source_sessions {
+        if clock.should_stop_quality() {
+            break;
+        }
+        let Some((teacher, source_day, source_session)) = parse_teacher_session_key(&source_key)
+        else {
+            continue;
+        };
+        let Some(source_indices) = session_index.get(&source_key) else {
+            continue;
+        };
+        let source_classes = source_indices
+            .iter()
+            .map(|index| lesson_class_id(&lessons[*index]))
+            .collect::<HashSet<_>>();
+        if source_classes.is_empty() || source_classes.len() > 2 {
+            continue;
+        }
+        let mut target_sessions = session_index
+            .iter()
+            .filter_map(|(key, indices)| {
+                let (candidate_teacher, _, _) = parse_teacher_session_key(key)?;
+                (candidate_teacher == teacher
+                    && key != &source_key
+                    && (2..=4).contains(&indices.len()))
+                .then_some(key.clone())
+            })
+            .collect::<Vec<_>>();
+        target_sessions.sort_by_key(|key| teacher_session_jitter(key, run_seed ^ 0x71d4_3e09));
+        target_sessions.truncate(10);
+
+        for left_target in &target_sessions {
+            for right_target in &target_sessions {
+                if clock.should_stop_quality() {
+                    break;
+                }
+                let mut additions = HashMap::<String, usize>::new();
+                *additions.entry(left_target.clone()).or_insert(0) += 1;
+                *additions.entry(right_target.clone()).or_insert(0) += 1;
+                if additions.iter().any(|(key, added)| {
+                    session_index.get(key).map(Vec::len).unwrap_or(0) + added
+                        > PERIODS_PER_SESSION as usize
+                }) {
+                    continue;
+                }
+                let (Some((_, left_day, left_session)), Some((_, right_day, right_session))) = (
+                    parse_teacher_session_key(left_target),
+                    parse_teacher_session_key(right_target),
+                ) else {
+                    continue;
+                };
+                let focus_targets = HashMap::from([
+                    (source_indices[0], (left_day, left_session.clone())),
+                    (source_indices[1], (right_day, right_session.clone())),
+                ]);
+                let mut sessions_by_class: HashMap<String, HashSet<(i64, String)>> = HashMap::new();
+                for (position, lesson_index) in source_indices.iter().enumerate() {
+                    let class_id = lesson_class_id(&lessons[*lesson_index]);
+                    let targets = sessions_by_class.entry(class_id).or_default();
+                    targets.insert((source_day, source_session.clone()));
+                    if position == 0 {
+                        targets.insert((left_day, left_session.clone()));
+                    } else {
+                        targets.insert((right_day, right_session.clone()));
+                    }
+                }
+
+                let mut movable_by_class = HashMap::<String, Vec<usize>>::new();
+                for (index, lesson) in lessons.iter().enumerate() {
+                    let class_id = lesson_class_id(lesson);
+                    let Some(sessions) = sessions_by_class.get(&class_id) else {
+                        continue;
+                    };
+                    let Some(slot) = lesson_slot(lesson) else {
+                        continue;
+                    };
+                    if sessions.contains(&(slot.day, slot.session_key.clone()))
+                        && !lesson_fixed(lesson)
+                    {
+                        movable_by_class.entry(class_id).or_default().push(index);
+                    }
+                }
+                if movable_by_class.len() != source_classes.len()
+                    || movable_by_class
+                        .values()
+                        .any(|indices| indices.is_empty() || indices.len() > 10)
+                    || movable_by_class.values().map(Vec::len).sum::<usize>() > 18
+                {
+                    continue;
+                }
+                let all_moving = movable_by_class
+                    .values()
+                    .flat_map(|indices| indices.iter().copied())
+                    .collect::<HashSet<_>>();
+                if source_indices
+                    .iter()
+                    .any(|index| !all_moving.contains(index))
+                {
+                    continue;
+                }
+                let mut frozen_teacher_slots = HashSet::new();
+                let mut frozen_room_slots = HashSet::new();
+                for (index, lesson) in lessons.iter().enumerate() {
+                    if all_moving.contains(&index) {
+                        continue;
+                    }
+                    let Some(slot) = lesson_slot(lesson) else {
+                        continue;
+                    };
+                    let item_teacher = lesson_teacher_key(lesson);
+                    if !item_teacher.is_empty() {
+                        frozen_teacher_slots.insert(resource_slot_key(&item_teacher, &slot));
+                    }
+                    let room = norm(&lesson_room(lesson));
+                    if !room.is_empty() {
+                        frozen_room_slots.insert(resource_slot_key(&room, &slot));
+                    }
+                }
+
+                let mut class_ids = movable_by_class.keys().cloned().collect::<Vec<_>>();
+                class_ids.sort_by_key(|class_id| class_jitter(class_id, run_seed));
+                let mut pattern_sets = Vec::new();
+                let mut pattern_failure = false;
+                for class_id in class_ids {
+                    let patterns = global_session_repack_patterns_for_class(
+                        lessons,
+                        &class_id,
+                        movable_by_class
+                            .get(&class_id)
+                            .map(Vec::as_slice)
+                            .unwrap_or(&[]),
+                        &focus_targets,
+                        &allowed_teacher_sessions,
+                        &frozen_teacher_slots,
+                        &frozen_room_slots,
+                        subject_limits,
+                        run_seed ^ class_jitter(&class_id, run_seed) as u64,
+                        clock,
+                    );
+                    if patterns.is_empty() {
+                        pattern_failure = true;
+                        break;
+                    }
+                    pattern_sets.push(patterns);
+                }
+                if pattern_failure {
+                    continue;
+                }
+                let mut best = None;
+                evaluate_global_session_repack_combination(
+                    lessons,
+                    &pattern_sets,
+                    0,
+                    &mut Vec::new(),
+                    0,
+                    off_slots,
+                    subject_limits,
+                    &allowed_teacher_sessions,
+                    &before,
+                    &mut 0,
+                    10_000,
+                    clock,
+                    &mut best,
+                );
+                if let Some((_, moves)) = best {
+                    let moved = moves
+                        .iter()
+                        .filter(|(index, target)| {
+                            lesson_slot(&lessons[*index])
+                                .is_some_and(|source| !same_slot(&source, target))
+                        })
+                        .count() as i64;
+                    for (index, slot) in moves {
+                        set_lesson_slot(&mut lessons[index], &slot);
+                    }
+                    return moved.max(1);
+                }
+            }
+        }
+    }
+    0
+}
+
+fn optimize_teacher_session_relay_escape(
+    lessons: &mut Vec<Value>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    clock: &SolveClock,
+) -> i64 {
+    let initial = teacher_optimization_quality(lessons);
+    if initial.one_period_sessions != 0 || clock.should_stop_quality() {
+        return 0;
+    }
+    let index = teacher_annealing_index(lessons);
+    let baseline_periods = teacher_cycle_periods(lessons);
+    let two_period_sessions = index
+        .session_index
+        .values()
+        .filter(|indices| indices.len() == 2)
+        .count() as i64;
+    let rough_session_distribution =
+        two_period_sessions.saturating_mul(4) > initial.teacher_sessions;
+    let mut by_class: HashMap<String, Vec<usize>> = HashMap::new();
+    for (lesson_index, lesson) in lessons.iter().enumerate() {
+        if !lesson_fixed(lesson) {
+            by_class
+                .entry(lesson_class_id(lesson))
+                .or_default()
+                .push(lesson_index);
+        }
+    }
+    let mut openers = Vec::<(i64, Vec<(usize, Slot)>)>::new();
+    for indices in by_class.values() {
+        for left_pos in 0..indices.len() {
+            for right_pos in (left_pos + 1)..indices.len() {
+                if clock.should_stop_quality() {
+                    break;
+                }
+                let left = indices[left_pos];
+                let right = indices[right_pos];
+                let (Some(left_slot), Some(right_slot)) =
+                    (lesson_slot(&lessons[left]), lesson_slot(&lessons[right]))
+                else {
+                    continue;
+                };
+                if lesson_teacher_key(&lessons[left]) == lesson_teacher_key(&lessons[right]) {
+                    continue;
+                }
+                let moves = vec![(left, right_slot), (right, left_slot)];
+                if !cycle_resource_precheck(
+                    lessons,
+                    &moves,
+                    &index.teacher_occupants,
+                    &index.room_occupants,
+                ) {
+                    continue;
+                }
+                let Some(after) =
+                    teacher_quality_after_cycle(lessons, &initial, &moves, &baseline_periods)
+                else {
+                    continue;
+                };
+                if after.one_period_sessions != 1
+                    || after.teacher_sessions > initial.teacher_sessions
+                    || after.gap2_plus_sessions > initial.gap2_plus_sessions
+                    || after.gap1_sessions > initial.gap1_sessions + 2
+                    || !teacher_annealing_subject_shape_ok(lessons, &moves, subject_limits)
+                {
+                    continue;
+                }
+                let jitter = moves
+                    .iter()
+                    .map(|(lesson_index, slot)| {
+                        move_jitter(&lessons[*lesson_index], slot, run_seed)
+                    })
+                    .sum::<i64>();
+                let score = after.gap1_sessions * 100_000 + after.total_gap * 1_000 + jitter;
+                openers.push((score, moves));
+            }
+        }
+    }
+    openers.sort_by_key(|(score, _)| *score);
+    let selected_openers = if rough_session_distribution {
+        openers.into_iter().take(40).collect::<Vec<_>>()
+    } else {
+        let prefix_len = openers.len().min(24);
+        let mut selected = openers[..prefix_len].to_vec();
+        if openers.len() > prefix_len {
+            let tail_len = openers.len() - prefix_len;
+            let start = prefix_len + (run_seed as usize % tail_len);
+            selected.extend(
+                openers[start..]
+                    .iter()
+                    .chain(openers[prefix_len..start].iter())
+                    .take(48)
+                    .cloned(),
+            );
+        }
+        selected
+    };
+    for (_, opener) in selected_openers {
+        if clock.should_stop_quality() {
+            break;
+        }
+        let mut candidate = lessons.clone();
+        for (lesson_index, slot) in &opener {
+            set_lesson_slot(&mut candidate[*lesson_index], slot);
+        }
+        if !schedule_hard_ok(&candidate, off_slots, subject_limits) {
+            continue;
+        }
+        let singleton_teachers = teacher_session_index(&candidate)
+            .into_iter()
+            .filter_map(|(key, indices)| {
+                (indices.len() == 1).then(|| parse_teacher_session_key(&key).map(|item| item.0))?
+            })
+            .collect::<HashSet<_>>();
+        let relay_moves = teacher_session_relay_pairs(
+            &candidate,
+            &singleton_teachers,
+            &initial,
+            subject_limits,
+            run_seed ^ singleton_ejection_signature(&candidate),
+            20,
+            clock,
+        );
+        for (_, relay, relay_quality) in relay_moves {
+            if clock.should_stop_quality() {
+                break;
+            }
+            let mut relayed = candidate.clone();
+            for (lesson_index, slot) in &relay {
+                set_lesson_slot(&mut relayed[*lesson_index], slot);
+            }
+            if relay_quality.one_period_sessions == 0
+                && relay_quality.teacher_sessions < initial.teacher_sessions
+                && relay_quality.gap2_plus_sessions <= initial.gap2_plus_sessions
+                && schedule_hard_ok(&relayed, off_slots, subject_limits)
+            {
+                *lessons = relayed;
+                return (opener.len() + relay.len()) as i64;
+            }
+            let relay_teachers = teacher_session_index(&relayed)
+                .into_iter()
+                .filter_map(|(key, indices)| {
+                    (indices.len() == 1)
+                        .then(|| parse_teacher_session_key(&key).map(|item| item.0))?
+                })
+                .collect::<HashSet<_>>();
+            let closers = teacher_session_relay_pairs(
+                &relayed,
+                &relay_teachers,
+                &initial,
+                subject_limits,
+                run_seed ^ singleton_ejection_signature(&relayed),
+                120,
+                clock,
+            );
+            for (closer_pos, (_, closer, after)) in closers.into_iter().enumerate() {
+                let final_improvement = after.one_period_sessions == 0
+                    && after.teacher_sessions < initial.teacher_sessions
+                    && after.gap2_plus_sessions <= initial.gap2_plus_sessions;
+                if final_improvement {
+                    let mut closed = relayed.clone();
+                    for (lesson_index, slot) in &closer {
+                        set_lesson_slot(&mut closed[*lesson_index], slot);
+                    }
+                    if schedule_hard_ok(&closed, off_slots, subject_limits) {
+                        *lessons = closed;
+                        return (opener.len() + relay.len() + closer.len()) as i64;
+                    }
+                    continue;
+                }
+                if rough_session_distribution
+                    || closer_pos >= 16
+                    || after.one_period_sessions <= 0
+                    || after.one_period_sessions > 2
+                    || after.teacher_sessions > initial.teacher_sessions + 1
+                    || after.gap2_plus_sessions > initial.gap2_plus_sessions + 1
+                {
+                    continue;
+                }
+                let mut extended = relayed.clone();
+                for (lesson_index, slot) in &closer {
+                    set_lesson_slot(&mut extended[*lesson_index], slot);
+                }
+                let extended_teachers = teacher_session_index(&extended)
+                    .into_iter()
+                    .filter_map(|(key, indices)| {
+                        (indices.len() == 1)
+                            .then(|| parse_teacher_session_key(&key).map(|item| item.0))?
+                    })
+                    .collect::<HashSet<_>>();
+                let final_moves = teacher_session_relay_pairs(
+                    &extended,
+                    &extended_teachers,
+                    &initial,
+                    subject_limits,
+                    run_seed ^ singleton_ejection_signature(&extended),
+                    120,
+                    clock,
+                );
+                for (_, final_move, final_quality) in final_moves {
+                    if final_quality.one_period_sessions != 0
+                        || final_quality.teacher_sessions >= initial.teacher_sessions
+                        || final_quality.gap2_plus_sessions > initial.gap2_plus_sessions
+                    {
+                        continue;
+                    }
+                    let mut closed = extended.clone();
+                    for (lesson_index, slot) in &final_move {
+                        set_lesson_slot(&mut closed[*lesson_index], slot);
+                    }
+                    if schedule_hard_ok(&closed, off_slots, subject_limits) {
+                        *lessons = closed;
+                        return (opener.len() + relay.len() + closer.len() + final_move.len())
+                            as i64;
+                    }
+                }
+            }
+        }
+    }
+    0
+}
+
+fn teacher_annealing_targeted_pair(
+    lessons: &[Value],
+    index: &TeacherAnnealingIndex,
+    rng: &mut SimpleRng,
+) -> Option<Vec<(usize, Slot)>> {
+    if index.compact_sessions.is_empty() {
+        return None;
+    }
+    for _ in 0..8 {
+        let source_key =
+            &index.compact_sessions[(rng.next_u64() as usize) % index.compact_sessions.len()];
+        let Some(source_indices) = index.session_index.get(source_key) else {
+            continue;
+        };
+        let movable = source_indices
+            .iter()
+            .copied()
+            .filter(|index| *index < lessons.len() && !lesson_fixed(&lessons[*index]))
+            .collect::<Vec<_>>();
+        if movable.is_empty() {
+            continue;
+        }
+        let source_index = movable[(rng.next_u64() as usize) % movable.len()];
+        let Some(source_slot) = lesson_slot(&lessons[source_index]) else {
+            continue;
+        };
+        let teacher = lesson_teacher_key(&lessons[source_index]);
+        let mut target_keys = index
+            .sessions_by_teacher
+            .get(&teacher)
+            .cloned()
+            .unwrap_or_default();
+        // A short deterministic shuffle gives each Worker a different target
+        // order without allocating a large neighborhood.
+        shuffle_slice(&mut target_keys, rng);
+        for target_key in target_keys
+            .into_iter()
+            .filter(|key| key != source_key)
+            .take(5)
+        {
+            let Some((_, day, session_key)) = parse_teacher_session_key(&target_key) else {
+                continue;
+            };
+            let mut periods = [0_i64, 1, 2, 3, 4];
+            shuffle_slice(&mut periods, rng);
+            for period in periods {
+                let target_slot = make_slot(day, &session_key, period);
+                if index
+                    .teacher_occupants
+                    .contains_key(&resource_slot_key(&teacher, &target_slot))
+                {
+                    continue;
+                }
+                let class_id = lesson_class_id(&lessons[source_index]);
+                let Some(blocker) = index
+                    .class_occupants
+                    .get(&slot_key(&class_id, &target_slot))
+                    .copied()
+                else {
+                    continue;
+                };
+                if blocker == source_index
+                    || blocker >= lessons.len()
+                    || lesson_fixed(&lessons[blocker])
+                {
+                    continue;
+                }
+                return Some(vec![(source_index, target_slot), (blocker, source_slot)]);
+            }
+        }
+    }
+    None
+}
+
+fn teacher_annealing_targeted_cycle(
+    lessons: &[Value],
+    index: &TeacherAnnealingIndex,
+    rng: &mut SimpleRng,
+) -> Option<Vec<(usize, Slot)>> {
+    let pair = teacher_annealing_targeted_pair(lessons, index, rng)?;
+    let first = pair[0].0;
+    let second = pair[1].0;
+    let class_id = lesson_class_id(&lessons[first]);
+    let choices = lessons
+        .iter()
+        .enumerate()
+        .filter_map(|(candidate, lesson)| {
+            (candidate != first
+                && candidate != second
+                && !lesson_fixed(lesson)
+                && lesson_class_id(lesson) == class_id)
+                .then_some(candidate)
+        })
+        .collect::<Vec<_>>();
+    if choices.is_empty() {
+        return Some(pair);
+    }
+    let third = choices[(rng.next_u64() as usize) % choices.len()];
+    let Some(third_slot) = lesson_slot(&lessons[third]) else {
+        return Some(pair);
+    };
+    let Some(first_slot) = lesson_slot(&lessons[first]) else {
+        return Some(pair);
+    };
+    Some(vec![
+        (first, pair[0].1.clone()),
+        (second, third_slot),
+        (third, first_slot),
+    ])
+}
+
+fn clean_teacher_session_improvement(
+    initial: &TeacherOptimizationQuality,
+    candidate: &TeacherOptimizationQuality,
+) -> bool {
+    candidate.one_period_sessions <= initial.one_period_sessions
+        && candidate.gap2_plus_sessions <= initial.gap2_plus_sessions
+        && candidate.teacher_sessions < initial.teacher_sessions
+}
+
+/// Close a session-reducing two-swap chain whose only remaining hard debt is
+/// the within-class subject shape. A three-cycle can restore consecutive
+/// subject blocks without undoing the teacher-session gain.
+fn repair_session_escape_with_class_three_cycle(
+    candidate: &[Value],
+    class_id: &str,
+    initial: &TeacherOptimizationQuality,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    clock: &SolveClock,
+) -> Option<Vec<Value>> {
+    if class_id.is_empty() || clock.should_stop_quality() {
+        return None;
+    }
+    let before = teacher_optimization_quality(candidate);
+    if !clean_teacher_session_improvement(initial, &before) {
+        return None;
+    }
+    let index = teacher_annealing_index(candidate);
+    let baseline_periods = teacher_cycle_periods(candidate);
+    let indices = candidate
+        .iter()
+        .enumerate()
+        .filter_map(|(lesson_index, lesson)| {
+            (!lesson_fixed(lesson)
+                && lesson_slot(lesson).is_some()
+                && lesson_class_id(lesson) == class_id)
+                .then_some(lesson_index)
+        })
+        .collect::<Vec<_>>();
+    if indices.len() < 3 {
+        return None;
+    }
+
+    let mut checked = 0_i64;
+    let mut best: Option<(i64, Vec<Value>)> = None;
+    // The common repair is a final same-class pair exchange. The preceding
+    // session-closing swap can split a two-period subject block; exchanging
+    // that blocker with its former adjacent peer restores contiguity without
+    // changing the teacher-session gain. Try this cheaper geometry before
+    // the broader three-cycle fallback below.
+    for left_pos in 0..indices.len() {
+        for right_pos in (left_pos + 1)..indices.len() {
+            if clock.should_stop_quality() || checked >= 4_000 {
+                break;
+            }
+            checked += 1;
+            let left = indices[left_pos];
+            let right = indices[right_pos];
+            let (Some(left_slot), Some(right_slot)) = (
+                lesson_slot(&candidate[left]),
+                lesson_slot(&candidate[right]),
+            ) else {
+                continue;
+            };
+            let moves = vec![(left, right_slot), (right, left_slot)];
+            if !cycle_resource_precheck(
+                candidate,
+                &moves,
+                &index.teacher_occupants,
+                &index.room_occupants,
+            ) {
+                continue;
+            }
+            let Some(estimated) =
+                teacher_quality_after_cycle(candidate, &before, &moves, &baseline_periods)
+            else {
+                continue;
+            };
+            if !clean_teacher_session_improvement(initial, &estimated) {
+                continue;
+            }
+            let mut repaired = candidate.to_vec();
+            for (lesson_index, slot) in &moves {
+                set_lesson_slot(&mut repaired[*lesson_index], slot);
+            }
+            if !schedule_hard_ok(&repaired, off_slots, subject_limits) {
+                continue;
+            }
+            let quality = teacher_optimization_quality(&repaired);
+            if !clean_teacher_session_improvement(initial, &quality) {
+                continue;
+            }
+            let score = teacher_phase_score(TeacherOptimizationPhase::TeacherSessions, &quality);
+            match &best {
+                Some((best_score, _)) if *best_score <= score => {}
+                _ => best = Some((score, repaired)),
+            }
+        }
+    }
+    'triples: for left_pos in 0..indices.len() {
+        for middle_pos in (left_pos + 1)..indices.len() {
+            for right_pos in (middle_pos + 1)..indices.len() {
+                if clock.should_stop_quality() || checked >= 20_000 {
+                    break 'triples;
+                }
+                let left = indices[left_pos];
+                let middle = indices[middle_pos];
+                let right = indices[right_pos];
+                let (Some(left_slot), Some(middle_slot), Some(right_slot)) = (
+                    lesson_slot(&candidate[left]),
+                    lesson_slot(&candidate[middle]),
+                    lesson_slot(&candidate[right]),
+                ) else {
+                    continue;
+                };
+                let rotations = [
+                    vec![
+                        (left, middle_slot.clone()),
+                        (middle, right_slot.clone()),
+                        (right, left_slot.clone()),
+                    ],
+                    vec![
+                        (left, right_slot),
+                        (middle, left_slot),
+                        (right, middle_slot),
+                    ],
+                ];
+                for moves in rotations {
+                    checked += 1;
+                    if !cycle_resource_precheck(
+                        candidate,
+                        &moves,
+                        &index.teacher_occupants,
+                        &index.room_occupants,
+                    ) {
+                        continue;
+                    }
+                    let Some(estimated) =
+                        teacher_quality_after_cycle(candidate, &before, &moves, &baseline_periods)
+                    else {
+                        continue;
+                    };
+                    if !clean_teacher_session_improvement(initial, &estimated) {
+                        continue;
+                    }
+                    let mut repaired = candidate.to_vec();
+                    for (lesson_index, slot) in &moves {
+                        set_lesson_slot(&mut repaired[*lesson_index], slot);
+                    }
+                    if !schedule_hard_ok(&repaired, off_slots, subject_limits) {
+                        continue;
+                    }
+                    let quality = teacher_optimization_quality(&repaired);
+                    if !clean_teacher_session_improvement(initial, &quality) {
+                        continue;
+                    }
+                    let score =
+                        teacher_phase_score(TeacherOptimizationPhase::TeacherSessions, &quality);
+                    match &best {
+                        Some((best_score, _)) if *best_score <= score => {}
+                        _ => best = Some((score, repaired)),
+                    }
+                }
+            }
+        }
+    }
+    best.map(|(_, lessons)| lessons)
+}
+
+/// Escape a clean local minimum with two connected same-class exchanges.
+///
+/// The first exchange may create exactly one temporary singleton. The second
+/// is restricted to that displaced teacher and must return to the clean
+/// envelope while improving sessions (or Gap1 at equal sessions).
+fn optimize_teacher_session_two_pair_escape(
+    lessons: &mut Vec<Value>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    clock: &SolveClock,
+) -> i64 {
+    let initial = teacher_optimization_quality(lessons);
+    if initial.one_period_sessions != 0 || clock.should_stop_quality() {
+        return 0;
+    }
+    let index = teacher_annealing_index(lessons);
+    let baseline_periods = teacher_cycle_periods(lessons);
+    let two_period_sessions = index
+        .session_index
+        .values()
+        .filter(|indices| indices.len() == 2)
+        .count() as i64;
+    let rough_session_distribution =
+        two_period_sessions.saturating_mul(4) > initial.teacher_sessions;
+    let mut by_class: HashMap<String, Vec<usize>> = HashMap::new();
+    for (lesson_index, lesson) in lessons.iter().enumerate() {
+        if lesson_fixed(lesson) {
+            continue;
+        }
+        let class_id = lesson_class_id(lesson);
+        if !class_id.is_empty() {
+            by_class.entry(class_id).or_default().push(lesson_index);
+        }
+    }
+
+    let mut first_moves = Vec::<(i64, Vec<(usize, Slot)>)>::new();
+    for indices in by_class.values() {
+        for left_pos in 0..indices.len() {
+            for right_pos in (left_pos + 1)..indices.len() {
+                if clock.should_stop_quality() {
+                    break;
+                }
+                let left = indices[left_pos];
+                let right = indices[right_pos];
+                let (Some(left_slot), Some(right_slot)) =
+                    (lesson_slot(&lessons[left]), lesson_slot(&lessons[right]))
+                else {
+                    continue;
+                };
+                if same_slot(&left_slot, &right_slot)
+                    || lesson_teacher_key(&lessons[left]) == lesson_teacher_key(&lessons[right])
+                {
+                    continue;
+                }
+                let moves = vec![(left, right_slot), (right, left_slot)];
+                if !cycle_resource_precheck(
+                    lessons,
+                    &moves,
+                    &index.teacher_occupants,
+                    &index.room_occupants,
+                ) || !teacher_annealing_subject_limits_ok(
+                    lessons,
+                    &index,
+                    &moves,
+                    subject_limits,
+                ) {
+                    continue;
+                }
+                let Some(quality) =
+                    teacher_quality_after_cycle(lessons, &initial, &moves, &baseline_periods)
+                else {
+                    continue;
+                };
+                let max_singleton_debt = if rough_session_distribution { 2 } else { 1 };
+                let max_session_debt = if rough_session_distribution { 1 } else { 0 };
+                let max_gap2_debt = if rough_session_distribution { 1 } else { 0 };
+                let max_gap1_debt = if rough_session_distribution { 4 } else { 2 };
+                if quality.one_period_sessions <= initial.one_period_sessions
+                    || quality.one_period_sessions
+                        > initial.one_period_sessions + max_singleton_debt
+                    || quality.teacher_sessions > initial.teacher_sessions + max_session_debt
+                    || quality.gap2_plus_sessions > initial.gap2_plus_sessions + max_gap2_debt
+                    || quality.gap1_sessions > initial.gap1_sessions + max_gap1_debt
+                {
+                    continue;
+                }
+                let jitter = moves
+                    .iter()
+                    .map(|(lesson_index, slot)| {
+                        move_jitter(&lessons[*lesson_index], slot, run_seed)
+                    })
+                    .sum::<i64>();
+                // Prefer bridges that already reduce gap debt. The proven
+                // depth-two live chain starts at Gap1 - 1; ranking only by
+                // distance from the incumbent buried it behind thousands of
+                // neutral openers until the Browser wave expired.
+                let score = quality.one_period_sessions * 10_000_000
+                    + quality.teacher_sessions * 1_000_000
+                    + quality.gap2_plus_sessions * 100_000
+                    + quality.gap1_sessions * 10_000
+                    + quality.total_gap * 100
+                    + jitter;
+                first_moves.push((score, moves));
+            }
+        }
+    }
+    first_moves.sort_by_key(|(score, _)| *score);
+    // The closing exchange is much more expensive than ranking an opener.
+    // Keep a bounded prefix so the Browser wave reaches the second step
+    // instead of spending its entire budget cloning thousands of states.
+    if rough_session_distribution {
+        let window = 256_usize;
+        let lane = ((run_seed ^ (run_seed >> 32)) as usize) & 3;
+        let start = lane.saturating_mul(window).min(first_moves.len());
+        first_moves = first_moves.into_iter().skip(start).take(window).collect();
+    } else {
+        first_moves.truncate(128);
+    }
+
+    for (_, first) in first_moves {
+        if clock.should_stop_quality() {
+            break;
+        }
+        let mut intermediate = lessons.clone();
+        for (lesson_index, slot) in &first {
+            set_lesson_slot(&mut intermediate[*lesson_index], slot);
+        }
+        // The first swap is never published. Resource and subject-session
+        // checks above keep the search bounded; the completed two-swap
+        // candidate receives the full hard validation below. Running the full
+        // validator for every temporary singleton consumed the whole Browser
+        // wave before the closing swap could be tested on large schools.
+        let intermediate_quality = teacher_optimization_quality(&intermediate);
+        if intermediate_quality.one_period_sessions <= initial.one_period_sessions
+            || intermediate_quality.one_period_sessions
+                > initial.one_period_sessions + if rough_session_distribution { 2 } else { 1 }
+        {
+            continue;
+        }
+        let intermediate_index = teacher_annealing_index(&intermediate);
+        let intermediate_periods = teacher_cycle_periods(&intermediate);
+        let mut focus_teachers = intermediate_index
+            .session_index
+            .iter()
+            .filter_map(|(key, indices)| {
+                if indices.len() != 1 {
+                    return None;
+                }
+                parse_teacher_session_key(key).map(|(teacher, _, _)| teacher)
+            })
+            .collect::<HashSet<_>>();
+        // The closing exchange is not always owned by the temporary
+        // singleton teacher. One side of the opener can gain a lesson in an
+        // existing session while its other session becomes mergeable. The
+        // live default 501 -> 500 escape has exactly that shape, so retain
+        // both teachers touched by the first exchange as cleanup targets.
+        for (lesson_index, _) in &first {
+            let teacher = lesson_teacher_key(&intermediate[*lesson_index]);
+            if !teacher.is_empty() {
+                focus_teachers.insert(teacher);
+            }
+        }
+
+        for teacher in focus_teachers {
+            let source_keys = intermediate_index
+                .sessions_by_teacher
+                .get(&teacher)
+                .cloned()
+                .unwrap_or_default();
+            for source_key in &source_keys {
+                let Some(source_indices) = intermediate_index.session_index.get(source_key) else {
+                    continue;
+                };
+                for source_index in source_indices.iter().copied() {
+                    if source_index >= intermediate.len()
+                        || lesson_fixed(&intermediate[source_index])
+                    {
+                        continue;
+                    }
+                    let Some(source_slot) = lesson_slot(&intermediate[source_index]) else {
+                        continue;
+                    };
+                    for target_key in source_keys.iter().filter(|key| *key != source_key) {
+                        let Some((_, day, session_key)) = parse_teacher_session_key(target_key)
+                        else {
+                            continue;
+                        };
+                        for period in 0..PERIODS_PER_SESSION {
+                            if clock.should_stop_quality() {
+                                break;
+                            }
+                            let target_slot = make_slot(day, &session_key, period);
+                            if intermediate_index
+                                .teacher_occupants
+                                .contains_key(&resource_slot_key(&teacher, &target_slot))
+                            {
+                                continue;
+                            }
+                            let class_id = lesson_class_id(&intermediate[source_index]);
+                            let Some(blocker) = intermediate_index
+                                .class_occupants
+                                .get(&slot_key(&class_id, &target_slot))
+                                .copied()
+                            else {
+                                continue;
+                            };
+                            if blocker == source_index
+                                || blocker >= intermediate.len()
+                                || lesson_fixed(&intermediate[blocker])
+                            {
+                                continue;
+                            }
+                            let second =
+                                vec![(source_index, target_slot), (blocker, source_slot.clone())];
+                            if !cycle_resource_precheck(
+                                &intermediate,
+                                &second,
+                                &intermediate_index.teacher_occupants,
+                                &intermediate_index.room_occupants,
+                            ) || !teacher_annealing_subject_limits_ok(
+                                &intermediate,
+                                &intermediate_index,
+                                &second,
+                                subject_limits,
+                            ) {
+                                continue;
+                            }
+                            let Some(estimated) = teacher_quality_after_cycle(
+                                &intermediate,
+                                &intermediate_quality,
+                                &second,
+                                &intermediate_periods,
+                            ) else {
+                                continue;
+                            };
+                            if !clean_teacher_session_improvement(&initial, &estimated) {
+                                continue;
+                            }
+                            let mut candidate = intermediate.clone();
+                            for (lesson_index, slot) in &second {
+                                set_lesson_slot(&mut candidate[*lesson_index], slot);
+                            }
+                            let candidate =
+                                if schedule_hard_ok(&candidate, off_slots, subject_limits) {
+                                    candidate
+                                } else {
+                                    let repair_class = lesson_class_id(&candidate[source_index]);
+                                    let Some(repaired) =
+                                        repair_session_escape_with_class_three_cycle(
+                                            &candidate,
+                                            &repair_class,
+                                            &initial,
+                                            off_slots,
+                                            subject_limits,
+                                            clock,
+                                        )
+                                    else {
+                                        continue;
+                                    };
+                                    repaired
+                                };
+                            let quality = teacher_optimization_quality(&candidate);
+                            if !clean_teacher_session_improvement(&initial, &quality) {
+                                continue;
+                            }
+                            // A clean two-pair chain can reduce at most the
+                            // small session envelope touched here. Publish the
+                            // first strict win immediately so the remaining
+                            // Automatic budget can clean Gap1 instead of
+                            // rescoring equivalent closures until timeout.
+                            *lessons = candidate;
+                            return 2;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    0
+}
+
+fn optimize_teacher_session_annealing(
+    lessons: &mut Vec<Value>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    clock: &SolveClock,
+) -> i64 {
+    let initial = teacher_optimization_quality(lessons);
+    if initial.one_period_sessions > 0 || lessons.len() < 4 || clock.should_stop_quality() {
+        return 0;
+    }
+
+    let mut class_groups: HashMap<String, Vec<usize>> = HashMap::new();
+    for (index, lesson) in lessons.iter().enumerate() {
+        if lesson_fixed(lesson) || lesson_slot(lesson).is_none() {
+            continue;
+        }
+        let class_id = lesson_class_id(lesson);
+        if !class_id.is_empty() {
+            class_groups.entry(class_id).or_default().push(index);
+        }
+    }
+    let mut classes = class_groups
+        .into_iter()
+        .filter_map(|(class_id, indices)| (indices.len() >= 2).then_some((class_id, indices)))
+        .collect::<Vec<_>>();
+    if classes.is_empty() {
+        return 0;
+    }
+    classes.sort_by(|(left, _), (right, _)| left.cmp(right));
+
+    let mut rng = SimpleRng::new(run_seed ^ 0x6a09_e667_f3bc_c908_u64);
+    let mut current = lessons.clone();
+    let mut current_quality = initial;
+    let mut best = current.clone();
+    let mut best_quality = initial;
+    let initial_lessons = current.clone();
+    let start_ms = wall_clock_ms();
+    // Leave a deterministic tail in the same Browser wave. The annealing
+    // walk needs only a few seconds to escape the live default plateau.
+    let local_deadline_ms = start_ms.saturating_add(8_500);
+    let max_iters = (lessons.len() as i64 * 220).clamp(24_000, 360_000);
+    let mut accepted = 0_i64;
+
+    let mut index = teacher_annealing_index(&current);
+    let mut baseline_periods = teacher_cycle_periods(&current);
+
+    let energy = |quality: &TeacherOptimizationQuality| -> i64 {
+        quality.teacher_sessions * 100
+            + quality.one_period_sessions * 72
+            + quality.gap2_plus_sessions * 32
+            + quality.gap1_sessions * 2
+    };
+
+    for iteration in 0..max_iters {
+        if clock.should_stop_quality() || wall_clock_ms() >= local_deadline_ms {
+            break;
+        }
+        if iteration > 0 && iteration % 30_000 == 0 {
+            // Restart from the best clean basin periodically rather than
+            // spending the rest of the wave in a drifting invalid state.
+            if rng.next_u64() % 10 < 7 {
+                current = best.clone();
+                current_quality = best_quality;
+            } else {
+                current = initial_lessons.clone();
+                current_quality = initial;
+            }
+            index = teacher_annealing_index(&current);
+            baseline_periods = teacher_cycle_periods(&current);
+        }
+
+        let pick = rng.next_u64() % 100;
+        let moves = if pick < 60 {
+            teacher_annealing_targeted_pair(&current, &index, &mut rng)
+        } else if pick < 82 {
+            teacher_annealing_targeted_cycle(&current, &index, &mut rng)
+        } else {
+            let class_pos = (rng.next_u64() as usize) % classes.len();
+            let indices = &classes[class_pos].1;
+            if indices.len() < 2 {
+                None
+            } else {
+                let left_pos = (rng.next_u64() as usize) % indices.len();
+                let mut right_pos = (rng.next_u64() as usize) % indices.len();
+                if right_pos == left_pos {
+                    right_pos = (right_pos + 1) % indices.len();
+                }
+                let left = indices[left_pos];
+                let right = indices[right_pos];
+                match (lesson_slot(&current[left]), lesson_slot(&current[right])) {
+                    (Some(left_slot), Some(right_slot))
+                        if !same_slot(&left_slot, &right_slot)
+                            && lesson_teacher_key(&current[left])
+                                != lesson_teacher_key(&current[right]) =>
+                    {
+                        Some(vec![(left, right_slot), (right, left_slot)])
+                    }
+                    _ => None,
+                }
+            }
+        };
+        let Some(moves) = moves else {
+            continue;
+        };
+        if !cycle_resource_precheck(
+            &current,
+            &moves,
+            &index.teacher_occupants,
+            &index.room_occupants,
+        ) || !teacher_annealing_subject_shape_ok(&current, &moves, subject_limits)
+        {
+            continue;
+        }
+        let Some(candidate_quality) =
+            teacher_quality_after_cycle(&current, &current_quality, &moves, &baseline_periods)
+        else {
+            continue;
+        };
+        // Keep exploration close enough that it can return to the clean
+        // envelope in one or two exchanges.
+        if candidate_quality.one_period_sessions > initial.one_period_sessions + 5
+            || candidate_quality.teacher_sessions > initial.teacher_sessions + 2
+            || candidate_quality.gap2_plus_sessions > initial.gap2_plus_sessions + 6
+        {
+            continue;
+        }
+
+        let current_energy = energy(&current_quality);
+        let candidate_energy = energy(&candidate_quality);
+        let delta = candidate_energy - current_energy;
+        let phase = (iteration % 30_000) as f64 / 30_000.0;
+        let temperature = 180.0 * (1.0 - phase) + 12.0;
+        let accept = if delta <= 0 {
+            true
+        } else {
+            let probability = (-(delta as f64) / temperature.max(1.0)).exp();
+            let sample = (rng.next_u64() as f64) / (u64::MAX as f64);
+            sample < probability
+        };
+
+        if accept {
+            for (index, slot) in &moves {
+                set_lesson_slot(&mut current[*index], slot);
+            }
+            current_quality = candidate_quality;
+            accepted += 1;
+            if current_quality.one_period_sessions <= initial.one_period_sessions
+                && current_quality.gap2_plus_sessions <= initial.gap2_plus_sessions
+                && (
+                    current_quality.teacher_sessions,
+                    current_quality.gap1_sessions,
+                ) < (initial.teacher_sessions, initial.gap1_sessions)
+                && teacher_optimization_improved(&best_quality, &current_quality)
+                && schedule_hard_ok(&current, off_slots, subject_limits)
+            {
+                best = current.clone();
+                best_quality = current_quality;
+            }
+            index = teacher_annealing_index(&current);
+            baseline_periods = teacher_cycle_periods(&current);
+        }
+    }
+
+    if best_quality.one_period_sessions <= initial.one_period_sessions
+        && best_quality.gap2_plus_sessions <= initial.gap2_plus_sessions
+        && (best_quality.teacher_sessions, best_quality.gap1_sessions)
+            < (initial.teacher_sessions, initial.gap1_sessions)
+    {
+        *lessons = best;
+        return accepted.max(1);
+    }
+    0
+}
+
+fn optimize_small_singleton_residual(
+    lessons: &mut Vec<Value>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    max_restarts: usize,
+    clock: &SolveClock,
+) -> i64 {
+    let mut moves = 0_i64;
+    for restart in 0..max_restarts.max(1) {
+        if clock.should_stop_quality() {
+            break;
+        }
+        let before = teacher_optimization_quality(lessons);
+        if !(1..=4).contains(&before.one_period_sessions) {
+            break;
+        }
+        if before.one_period_sessions <= 2 {
+            let reverse_moves = optimize_residual_singleton_reverse_cycles(
+                lessons,
+                off_slots,
+                subject_limits,
+                run_seed ^ (restart as u64).wrapping_mul(0xd6e8_feb8_6659_fd93_u64),
+                clock,
+            );
+            if reverse_moves > 0 {
+                moves += reverse_moves;
+                if teacher_optimization_quality(lessons).one_period_sessions == 0 {
+                    break;
+                }
+                continue;
+            }
+        }
+        let phase_moves = optimize_remaining_singletons_ejection_beam(
+            lessons,
+            off_slots,
+            subject_limits,
+            run_seed ^ (restart as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15_u64),
+            6,
+            24,
+            14_000,
+            clock,
+        );
+        let after = teacher_optimization_quality(lessons);
+        if phase_moves <= 0 || after.one_period_sessions >= before.one_period_sessions {
+            // A failed beam means this seed missed the required anchor, not
+            // that the residual is impossible. Preserve the incumbent and let
+            // the next bounded restart inspect a different prefix.
+            continue;
+        }
+        moves += phase_moves;
+        if after.one_period_sessions == 0 {
+            break;
+        }
+    }
+    moves
+}
+
+fn residual_singleton_cycle_candidate(
+    lessons: &[Value],
+    moves: &[(usize, Slot)],
+    before: &TeacherOptimizationQuality,
+    index: &TeacherAnnealingIndex,
+    baseline_periods: &TeacherCyclePeriods,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+) -> Option<Vec<Value>> {
+    if !cycle_resource_precheck(
+        lessons,
+        moves,
+        &index.teacher_occupants,
+        &index.room_occupants,
+    ) || !teacher_annealing_subject_limits_ok(lessons, index, moves, subject_limits)
+    {
+        return None;
+    }
+    let estimated = teacher_quality_after_cycle(lessons, before, moves, baseline_periods)?;
+    if estimated.one_period_sessions >= before.one_period_sessions
+        || estimated.teacher_sessions > before.teacher_sessions
+        || estimated.gap2_plus_sessions > before.gap2_plus_sessions
+    {
+        return None;
+    }
+    let mut candidate = lessons.to_vec();
+    for (lesson_index, slot) in moves {
+        set_lesson_slot(&mut candidate[*lesson_index], slot);
+    }
+    if !schedule_hard_ok(&candidate, off_slots, subject_limits) {
+        return None;
+    }
+    let after = teacher_optimization_quality(&candidate);
+    (after.one_period_sessions < before.one_period_sessions
+        && after.teacher_sessions <= before.teacher_sessions
+        && after.gap2_plus_sessions <= before.gap2_plus_sessions)
+        .then_some(candidate)
+}
+
+/// Close the last one or two singleton sessions by moving another lesson of
+/// the same teacher into the singleton session, then rotating that class's
+/// blockers back through the source hole. This targets the common three-cycle
+/// that the generic beam reaches only after thousands of unrelated swaps.
+fn optimize_residual_singleton_reverse_cycles(
+    lessons: &mut Vec<Value>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    clock: &SolveClock,
+) -> i64 {
+    let mut applied = 0_i64;
+    for pass in 0..2_u64 {
+        if clock.should_stop_quality() {
+            break;
+        }
+        let before = teacher_optimization_quality(lessons);
+        if !(1..=2).contains(&before.one_period_sessions) {
+            break;
+        }
+        let index = teacher_annealing_index(lessons);
+        let baseline_periods = teacher_cycle_periods(lessons);
+        let mut singleton_anchors = index
+            .session_index
+            .iter()
+            .filter_map(|(session_key, indices)| {
+                if indices.len() != 1 {
+                    return None;
+                }
+                let singleton_index = indices[0];
+                let teacher = parse_teacher_session_key(session_key)?.0;
+                let slot = lesson_slot(lessons.get(singleton_index)?)?;
+                (!teacher.is_empty()).then_some((teacher, singleton_index, slot))
+            })
+            .collect::<Vec<_>>();
+        singleton_anchors.sort_by(|left, right| {
+            teacher_session_jitter(&left.0, run_seed ^ pass)
+                .cmp(&teacher_session_jitter(&right.0, run_seed ^ pass))
+                .then_with(|| left.0.cmp(&right.0))
+        });
+
+        let mut accepted = None;
+        'singletons: for (teacher, singleton_index, singleton_slot) in singleton_anchors {
+            let mut anchors = lessons
+                .iter()
+                .enumerate()
+                .filter_map(|(lesson_index, lesson)| {
+                    if lesson_index == singleton_index
+                        || lesson_fixed(lesson)
+                        || lesson_teacher_key(lesson) != teacher
+                    {
+                        return None;
+                    }
+                    let source_slot = lesson_slot(lesson)?;
+                    let source_key =
+                        teacher_session_key(&teacher, source_slot.day, &source_slot.session_key);
+                    let source_load = index.session_index.get(&source_key)?.len();
+                    (source_load >= 3).then_some((lesson_index, source_slot, source_load))
+                })
+                .collect::<Vec<_>>();
+            anchors.sort_by(|left, right| {
+                right
+                    .2
+                    .cmp(&left.2)
+                    .then_with(|| {
+                        lesson_jitter(&lessons[left.0], run_seed ^ pass)
+                            .cmp(&lesson_jitter(&lessons[right.0], run_seed ^ pass))
+                    })
+                    .then_with(|| left.0.cmp(&right.0))
+            });
+
+            let mut target_periods = (0..PERIODS_PER_SESSION).collect::<Vec<_>>();
+            target_periods.sort_by_key(|period| {
+                (
+                    (*period - singleton_slot.period_index).abs(),
+                    ((*period as u64) ^ run_seed ^ pass) % 17,
+                )
+            });
+            for (anchor_index, source_slot, _) in anchors {
+                if clock.should_stop_quality() {
+                    break 'singletons;
+                }
+                let class_id = lesson_class_id(&lessons[anchor_index]);
+                if class_id.is_empty() {
+                    continue;
+                }
+                for target_period in &target_periods {
+                    if clock.should_stop_quality() {
+                        break 'singletons;
+                    }
+                    let target_slot = make_slot(
+                        singleton_slot.day,
+                        &singleton_slot.session_key,
+                        *target_period,
+                    );
+                    if same_slot(&source_slot, &target_slot)
+                        || index
+                            .teacher_occupants
+                            .contains_key(&resource_slot_key(&teacher, &target_slot))
+                        || off_slots.contains(&slot_key(&class_id, &target_slot))
+                    {
+                        continue;
+                    }
+                    let blocker = index
+                        .class_occupants
+                        .get(&slot_key(&class_id, &target_slot))
+                        .copied();
+                    if blocker.is_none() {
+                        let operation = vec![(anchor_index, target_slot.clone())];
+                        if let Some(candidate) = residual_singleton_cycle_candidate(
+                            lessons,
+                            &operation,
+                            &before,
+                            &index,
+                            &baseline_periods,
+                            off_slots,
+                            subject_limits,
+                        ) {
+                            accepted = Some((candidate, operation.len() as i64));
+                            break 'singletons;
+                        }
+                        continue;
+                    }
+                    let blocker = blocker.unwrap();
+                    if blocker == anchor_index
+                        || blocker >= lessons.len()
+                        || lesson_fixed(&lessons[blocker])
+                    {
+                        continue;
+                    }
+                    let pair = vec![
+                        (anchor_index, target_slot.clone()),
+                        (blocker, source_slot.clone()),
+                    ];
+                    if let Some(candidate) = residual_singleton_cycle_candidate(
+                        lessons,
+                        &pair,
+                        &before,
+                        &index,
+                        &baseline_periods,
+                        off_slots,
+                        subject_limits,
+                    ) {
+                        accepted = Some((candidate, pair.len() as i64));
+                        break 'singletons;
+                    }
+
+                    let mut thirds = lessons
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(third, lesson)| {
+                            (third != anchor_index
+                                && third != blocker
+                                && !lesson_fixed(lesson)
+                                && lesson_class_id(lesson) == class_id)
+                                .then_some(third)
+                        })
+                        .collect::<Vec<_>>();
+                    thirds.sort_by(|left, right| {
+                        lesson_jitter(&lessons[*left], run_seed ^ pass)
+                            .cmp(&lesson_jitter(&lessons[*right], run_seed ^ pass))
+                    });
+                    for third in thirds {
+                        let Some(third_slot) = lesson_slot(&lessons[third]) else {
+                            continue;
+                        };
+                        let cycle = vec![
+                            (anchor_index, target_slot.clone()),
+                            (blocker, third_slot),
+                            (third, source_slot.clone()),
+                        ];
+                        if let Some(candidate) = residual_singleton_cycle_candidate(
+                            lessons,
+                            &cycle,
+                            &before,
+                            &index,
+                            &baseline_periods,
+                            off_slots,
+                            subject_limits,
+                        ) {
+                            accepted = Some((candidate, cycle.len() as i64));
+                            break 'singletons;
+                        }
+                    }
+                }
+            }
+        }
+        let Some((candidate, move_count)) = accepted else {
+            break;
+        };
+        *lessons = candidate;
+        applied += move_count;
+    }
+    applied
+}
+
 fn optimize_teacher_singletons_focused(
     lessons: &mut Vec<Value>,
     off_slots: &HashSet<String>,
@@ -3846,6 +6102,99 @@ fn optimize_teacher_singletons_focused(
 ) -> TeacherSessionOptStats {
     let initial = teacher_optimization_quality(lessons);
     let mut moves = 0_i64;
+    let mut last_ejection_signature = None;
+
+    // A small residual singleton set is a special case: the generic direct
+    // pass can spend the whole deadline proving that no one-step move exists,
+    // while a short ejection chain can resolve the set immediately.  Run the
+    // bounded beam before that expensive fallback whenever four or fewer
+    // singleton sessions remain.
+    if (1..=4).contains(&initial.one_period_sessions) && !clock.should_stop_quality() {
+        moves += optimize_small_singleton_residual(
+            lessons,
+            off_slots,
+            subject_limits,
+            run_seed ^ 0xa913_5cf2_70e4_2bd8_u64,
+            3,
+            clock,
+        );
+        last_ejection_signature = Some(singleton_ejection_signature(lessons));
+        if teacher_optimization_quality(lessons).one_period_sessions == 0 {
+            return teacher_session_opt_stats_from_focus(initial, lessons, moves, 0, 0, moves);
+        }
+    }
+
+    // Direct moves and one-blocker rehomes stay first for rougher schedules.
+    let residual = teacher_optimization_quality(lessons);
+    if residual.one_period_sessions > 0 && !clock.should_stop_quality() {
+        moves += optimize_teacher_session_reduction(
+            lessons,
+            off_slots,
+            subject_limits,
+            run_seed ^ 0x71d4_3e09_b826_5acf_u64,
+            false,
+            clock,
+        );
+    }
+    if initial.one_period_sessions >= 2 && !clock.should_stop_quality() {
+        moves += optimize_two_singletons_to_common_session(
+            lessons,
+            off_slots,
+            subject_limits,
+            run_seed ^ 0x6a45_b103_7fd2_8ce9_u64,
+            4,
+            12_000,
+            clock,
+        );
+    }
+    let residual = teacher_optimization_quality(lessons);
+    if (1..=4).contains(&residual.one_period_sessions) && !clock.should_stop_quality() {
+        moves += optimize_remaining_singletons_by_five_cycles(
+            lessons,
+            off_slots,
+            subject_limits,
+            run_seed ^ 0x2c86_f1d4_79ab_035e_u64,
+            1,
+            40_000,
+            clock,
+        );
+    }
+    let residual = teacher_optimization_quality(lessons);
+    let residual_signature = singleton_ejection_signature(lessons);
+    // The early residual beam is deterministic for a schedule/seed. Retry it
+    // only after another neighbourhood changed the timetable; an identical
+    // replay spends thousands of hard-validity checks without opening a move.
+    if (1..=4).contains(&residual.one_period_sessions)
+        && last_ejection_signature != Some(residual_signature)
+        && !clock.should_stop_quality()
+    {
+        moves += optimize_remaining_singletons_ejection_beam(
+            lessons,
+            off_slots,
+            subject_limits,
+            run_seed ^ 0xa913_5cf2_70e4_2bd8_u64,
+            6,
+            24,
+            14_000,
+            clock,
+        );
+    }
+    // Same-class cycles remain a bounded fallback. The cross-class ejection
+    // beam goes first because it can discharge a resource blocker instead of
+    // spending the whole short Agent wave on an impossible class-only cycle.
+    let residual = teacher_optimization_quality(lessons);
+    if residual.one_period_sessions > 0 && !clock.should_stop_quality() {
+        moves += optimize_remaining_singletons_by_class_cycles(
+            lessons,
+            off_slots,
+            subject_limits,
+            run_seed ^ 0x51a7_c902_4ed3_8b6f_u64,
+            2,
+            6,
+            40_000,
+            clock,
+        );
+    }
     for round in 0..4_u64 {
         if clock.should_stop_quality() {
             break;
@@ -3915,36 +6264,153 @@ fn optimize_teacher_sessions_focused(
 ) -> TeacherSessionOptStats {
     let initial = teacher_optimization_quality(lessons);
     let mut moves = 0_i64;
-    for round in 0..3_u64 {
+    // Deterministic depth-two escape is the fastest path through the clean
+    // 501-session plateau observed on the live default school. Re-run once
+    // from the stronger incumbent; each accepted chain is independently hard
+    // valid and returns to zero singleton/Gap2 debt.
+    let escape_lane = initial.teacher_sessions <= 505 || ((run_seed ^ (run_seed >> 32)) & 3) == 0;
+    // CP-SAT wins the live plateau by reassigning several class/session
+    // tokens atomically. Run the bounded equivalent first, while the strict
+    // zero-singleton/zero-Gap2 envelope is still clean.
+    if initial.one_period_sessions == 0 && initial.gap2_plus_sessions == 0 {
+        for round in 0..2_u64 {
+            if clock.should_stop_quality() {
+                break;
+            }
+            let repack_moves = optimize_teacher_global_session_repack(
+                lessons,
+                off_slots,
+                subject_limits,
+                run_seed
+                    ^ 0x8d31_f6a4_5c27_b901_u64
+                    ^ round.wrapping_mul(0x517c_c1b7_2722_0a95_u64),
+                clock,
+            );
+            if repack_moves <= 0 {
+                break;
+            }
+            moves += repack_moves;
+        }
+    }
+    // A clean schedule can require relaying one temporary singleton through
+    // several classes before the final swap closes a 2-period source session.
+    // Seeded opener windows keep Browser workers on different relay basins.
+    if initial.one_period_sessions == 0 && !clock.should_stop_quality() {
+        for _ in 0..8 {
+            if clock.should_stop_quality() {
+                break;
+            }
+            let relay_moves = optimize_teacher_session_relay_escape(
+                lessons,
+                off_slots,
+                subject_limits,
+                run_seed,
+                clock,
+            );
+            if relay_moves <= 0 {
+                break;
+            }
+            moves += relay_moves;
+        }
+    }
+    if escape_lane {
+        for round in 0..2_u64 {
+            if clock.should_stop_quality() {
+                break;
+            }
+            let chain_moves = optimize_teacher_session_two_pair_escape(
+                lessons,
+                off_slots,
+                subject_limits,
+                run_seed ^ round.wrapping_mul(0x9e37_79b9_7f4a_7c15_u64),
+                clock,
+            );
+            if chain_moves <= 0 {
+                break;
+            }
+            moves += chain_moves;
+        }
+    }
+    // Half of the diversified Browser portfolio enters the plateau-escape
+    // walk; the other half retains the deterministic merge/swap portfolio.
+    // This preserves fast wins on easy schedules while giving a clean local
+    // minimum a genuinely different search trajectory.
+    if initial.one_period_sessions == 0
+        && ((run_seed ^ (run_seed >> 32)) & 3) == 0
+        && !clock.should_stop_quality()
+    {
+        moves +=
+            optimize_teacher_session_annealing(lessons, off_slots, subject_limits, run_seed, clock);
+    }
+    let mut stagnant_rounds = 0_u64;
+    // A single unsuccessful neighbourhood is not evidence that the schedule
+    // is saturated.  The merge pass is deliberately conservative and often
+    // needs a class swap/cycle to expose its next target session.  Keep a few
+    // diversified attempts alive within the same Browser-Agent wave.
+    for round in 0..8_u64 {
         if clock.should_stop_quality() {
             break;
         }
         let before = teacher_optimization_quality(lessons);
         let mut candidate = lessons.clone();
-        let phase_moves = optimize_teacher_session_reduction(
-            &mut candidate,
-            off_slots,
-            subject_limits,
-            run_seed ^ 0x7c4d_91e2_5ab8_063f_u64 ^ round.wrapping_mul(0x517c_cc1b_u64),
-            true,
-            clock,
-        );
+        // Spread the expensive neighborhoods across Browser workers. The
+        // merge pass can consume a whole 15-second WASM wave while proving a
+        // local optimum; running it first on every worker left the swap and
+        // cycle neighborhoods unreachable even with a 22-worker Agent.
+        let phase_seed = run_seed ^ 0x7c4d_91e2_5ab8_063f_u64 ^ round.wrapping_mul(0x517c_cc1b_u64);
+        let operator_lane = (phase_seed ^ (phase_seed >> 32)) % 3;
+        let phase_moves = match operator_lane {
+            0 => optimize_teacher_session_reduction(
+                &mut candidate,
+                off_slots,
+                subject_limits,
+                phase_seed,
+                true,
+                clock,
+            ),
+            1 => optimize_teacher_global_same_class_swaps(
+                &mut candidate,
+                off_slots,
+                subject_limits,
+                phase_seed,
+                TeacherOptimizationPhase::TeacherSessions,
+                clock,
+            ),
+            _ => optimize_teacher_global_same_class_three_cycles(
+                &mut candidate,
+                off_slots,
+                subject_limits,
+                phase_seed,
+                TeacherOptimizationPhase::TeacherSessions,
+                clock,
+            ),
+        };
         let after = teacher_optimization_quality(&candidate);
         let singleton_improved = after.one_period_sessions < before.one_period_sessions;
         let sessions_improved = after.teacher_sessions < before.teacher_sessions;
+        // If Gap2 debt already exists, accepting another Gap2 session can
+        // strand the next cleanup wave: the gap phase correctly refuses any
+        // move that merely trades one debt for another.  Temporary debt is
+        // safe only from a zero-Gap2 incumbent, where cleanup can restore the
+        // hard envelope.
+        let gap2_safe =
+            after.gap2_plus_sessions <= before.gap2_plus_sessions || before.gap2_plus_sessions == 0;
         let acceptable = phase_moves > 0
             && after.one_period_sessions <= before.one_period_sessions
             && (sessions_improved || singleton_improved)
             && after.teacher_sessions <= before.teacher_sessions
+            && gap2_safe
             && schedule_hard_ok(&candidate, off_slots, subject_limits);
         if !acceptable {
-            break;
+            stagnant_rounds += 1;
+            if stagnant_rounds >= 3 {
+                break;
+            }
+            continue;
         }
         *lessons = candidate;
         moves += phase_moves;
-        if !sessions_improved && after.one_period_sessions > 0 {
-            break;
-        }
+        stagnant_rounds = 0;
     }
     teacher_session_opt_stats_from_focus(initial, lessons, moves, 0, 0, moves)
 }
@@ -3962,6 +6428,193 @@ fn focused_gap_candidate_acceptable(
                         && after.total_gap < before.total_gap))))
 }
 
+fn focused_gap_target_envelope_preserved(
+    focus: OptimizationFocus,
+    before: &TeacherOptimizationQuality,
+    after: &TeacherOptimizationQuality,
+) -> bool {
+    if after.one_period_sessions != before.one_period_sessions
+        || after.teacher_sessions != before.teacher_sessions
+    {
+        return false;
+    }
+    match focus {
+        OptimizationFocus::Gap2 => {
+            after.gap2_plus_sessions < before.gap2_plus_sessions
+                || (after.gap2_plus_sessions == before.gap2_plus_sessions
+                    && after.gap1_sessions <= before.gap1_sessions
+                    && after.total_gap <= before.total_gap)
+        }
+        OptimizationFocus::Gap1 => {
+            before.gap2_plus_sessions == 0
+                && after.gap2_plus_sessions == 0
+                && after.gap1_sessions <= before.gap1_sessions
+                && after.total_gap <= before.total_gap
+        }
+        _ => false,
+    }
+}
+
+fn focused_gap_target_improved(
+    focus: OptimizationFocus,
+    before: &TeacherOptimizationQuality,
+    after: &TeacherOptimizationQuality,
+) -> bool {
+    if !focused_gap_target_envelope_preserved(focus, before, after) {
+        return false;
+    }
+    match focus {
+        OptimizationFocus::Gap2 => after.gap2_plus_sessions < before.gap2_plus_sessions,
+        OptimizationFocus::Gap1 => after.gap1_sessions < before.gap1_sessions,
+        _ => false,
+    }
+}
+
+fn optimize_teacher_gap_target_focused(
+    lessons: &mut Vec<Value>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    deep_gap_repair: bool,
+    focus: OptimizationFocus,
+    clock: &SolveClock,
+) -> TeacherSessionOptStats {
+    let initial = teacher_optimization_quality(lessons);
+    let phase = match focus {
+        OptimizationFocus::Gap2 => TeacherOptimizationPhase::Gap2,
+        OptimizationFocus::Gap1 if initial.gap2_plus_sessions == 0 => {
+            TeacherOptimizationPhase::Gap1
+        }
+        _ => {
+            return teacher_session_opt_stats_from_focus(initial, lessons, 0, 0, 0, 0);
+        }
+    };
+    let mut gap_moves = 0_i64;
+    let mut stagnant_rounds = 0_u64;
+    for round in 0..8_u64 {
+        if clock.should_stop_quality() {
+            break;
+        }
+        let before = teacher_optimization_quality(lessons);
+        if (focus == OptimizationFocus::Gap2 && before.gap2_plus_sessions <= 0)
+            || (focus == OptimizationFocus::Gap1
+                && (before.gap2_plus_sessions > 0 || before.gap1_sessions <= 0))
+        {
+            break;
+        }
+
+        let mut candidate = lessons.clone();
+        let phase_seed = run_seed ^ 0x2f91_6db4_a7c3_580e_u64 ^ round;
+        let operator_lane = (phase_seed ^ (phase_seed >> 32)) % 4;
+        let phase_moves = match operator_lane {
+            0 => run_teacher_optimization_phase(
+                &mut candidate,
+                off_slots,
+                subject_limits,
+                phase_seed,
+                deep_gap_repair,
+                phase,
+                clock,
+            ),
+            1 => optimize_teacher_global_same_class_swaps(
+                &mut candidate,
+                off_slots,
+                subject_limits,
+                phase_seed,
+                phase,
+                clock,
+            ),
+            2 => optimize_teacher_global_same_class_three_cycles(
+                &mut candidate,
+                off_slots,
+                subject_limits,
+                phase_seed,
+                phase,
+                clock,
+            ),
+            _ if focus == OptimizationFocus::Gap2 => optimize_teacher_large_gaps(
+                &mut candidate,
+                off_slots,
+                subject_limits,
+                phase_seed,
+                deep_gap_repair,
+                clock,
+            ),
+            _ => optimize_teacher_single_gaps(
+                &mut candidate,
+                off_slots,
+                subject_limits,
+                phase_seed,
+                clock,
+            ),
+        };
+        let after = teacher_optimization_quality(&candidate);
+        if phase_moves > 0
+            && focused_gap_target_improved(focus, &before, &after)
+            && schedule_hard_ok(&candidate, off_slots, subject_limits)
+        {
+            *lessons = candidate;
+            gap_moves += phase_moves;
+            stagnant_rounds = 0;
+        } else {
+            stagnant_rounds += 1;
+            if stagnant_rounds >= 3 {
+                break;
+            }
+        }
+    }
+    teacher_session_opt_stats_from_focus(
+        initial,
+        lessons,
+        0,
+        gap_moves,
+        if focus == OptimizationFocus::Gap1 {
+            gap_moves
+        } else {
+            0
+        },
+        gap_moves,
+    )
+}
+
+fn optimize_teacher_gap2_focused(
+    lessons: &mut Vec<Value>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    deep_gap_repair: bool,
+    clock: &SolveClock,
+) -> TeacherSessionOptStats {
+    optimize_teacher_gap_target_focused(
+        lessons,
+        off_slots,
+        subject_limits,
+        run_seed,
+        deep_gap_repair,
+        OptimizationFocus::Gap2,
+        clock,
+    )
+}
+
+fn optimize_teacher_gap1_focused(
+    lessons: &mut Vec<Value>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    deep_gap_repair: bool,
+    clock: &SolveClock,
+) -> TeacherSessionOptStats {
+    optimize_teacher_gap_target_focused(
+        lessons,
+        off_slots,
+        subject_limits,
+        run_seed,
+        deep_gap_repair,
+        OptimizationFocus::Gap1,
+        clock,
+    )
+}
+
 fn optimize_teacher_gaps_focused(
     lessons: &mut Vec<Value>,
     off_slots: &HashSet<String>,
@@ -3973,11 +6626,107 @@ fn optimize_teacher_gaps_focused(
     let initial = teacher_optimization_quality(lessons);
     let mut gap_moves = 0_i64;
     let mut single_gap_moves = 0_i64;
-    for round in 0..3_u64 {
+    let mut stagnant_rounds = 0_u64;
+    if initial.one_period_sessions == 0
+        && initial.gap2_plus_sessions == 0
+        && initial.gap1_sessions > 0
+        && !clock.should_stop_quality()
+    {
+        let cycle_moves = optimize_teacher_global_same_class_three_cycles(
+            lessons,
+            off_slots,
+            subject_limits,
+            run_seed ^ 0x81c7_2e4a_59b0_d36f_u64,
+            TeacherOptimizationPhase::Gap1,
+            clock,
+        );
+        gap_moves += cycle_moves;
+        single_gap_moves += cycle_moves;
+    }
+    // Gap cleanup is incremental: after a successful move, the blocker graph
+    // changes and a different neighbourhood can become available.  Three
+    // fixed rounds routinely stopped while dozens of Gap1 sessions remained.
+    for round in 0..8_u64 {
         if clock.should_stop_quality() {
             break;
         }
         let mut changed = false;
+        let before_phase = teacher_optimization_quality(lessons);
+        let phase = if before_phase.gap2_plus_sessions > 0 {
+            TeacherOptimizationPhase::Gap2
+        } else if before_phase.one_period_sessions == 0 && before_phase.gap1_sessions > 0 {
+            TeacherOptimizationPhase::Gap1
+        } else {
+            // A gap-focused request may be used before singleton cleanup has
+            // completed.  Keep the old targeted pass available in that case.
+            TeacherOptimizationPhase::Gap2
+        };
+        if !clock.should_stop_quality() && !teacher_phase_done(phase, &before_phase) {
+            let mut phase_candidate = lessons.clone();
+            let phase_seed = run_seed ^ 0x4ab9_17e2_c6d0_8351_u64 ^ round;
+            // Gap compaction has the same deadline-starvation risk as session
+            // merging. Give different Agent workers different first operators
+            // so exact repacks, global swaps, and cycles all receive CPU time.
+            let operator_lane = (phase_seed ^ (phase_seed >> 32)) % 4;
+            let phase_moves = match operator_lane {
+                0 => run_teacher_optimization_phase(
+                    &mut phase_candidate,
+                    off_slots,
+                    subject_limits,
+                    phase_seed,
+                    deep_gap_repair,
+                    phase,
+                    clock,
+                ),
+                1 => optimize_teacher_global_same_class_swaps(
+                    &mut phase_candidate,
+                    off_slots,
+                    subject_limits,
+                    phase_seed,
+                    phase,
+                    clock,
+                ),
+                2 => optimize_teacher_global_same_class_three_cycles(
+                    &mut phase_candidate,
+                    off_slots,
+                    subject_limits,
+                    phase_seed,
+                    phase,
+                    clock,
+                ),
+                _ => match phase {
+                    TeacherOptimizationPhase::Gap2 => optimize_teacher_large_gaps(
+                        &mut phase_candidate,
+                        off_slots,
+                        subject_limits,
+                        phase_seed,
+                        deep_gap_repair,
+                        clock,
+                    ),
+                    _ => optimize_teacher_single_gaps(
+                        &mut phase_candidate,
+                        off_slots,
+                        subject_limits,
+                        phase_seed,
+                        clock,
+                    ),
+                },
+            };
+            let after_phase = teacher_optimization_quality(&phase_candidate);
+            if phase_moves > 0
+                && focused_gap_candidate_acceptable(&before_phase, &after_phase)
+                && schedule_hard_ok(&phase_candidate, off_slots, subject_limits)
+            {
+                *lessons = phase_candidate;
+                gap_moves += phase_moves;
+                changed = true;
+            }
+        }
+
+        if clock.should_stop_quality() {
+            break;
+        }
+
         let before_large = teacher_optimization_quality(lessons);
         let mut large_candidate = lessons.clone();
         let large_moves = optimize_teacher_large_gaps(
@@ -4022,7 +6771,12 @@ fn optimize_teacher_gaps_focused(
             changed = true;
         }
         if !changed {
-            break;
+            stagnant_rounds += 1;
+            if stagnant_rounds >= 2 {
+                break;
+            }
+        } else {
+            stagnant_rounds = 0;
         }
     }
     teacher_session_opt_stats_from_focus(
@@ -4046,11 +6800,46 @@ fn optimize_teacher_single_sessions_balanced(
     let initial_teacher_sessions = count_teacher_sessions(lessons);
     let initial_one_period_sessions = count_one_period_teacher_sessions(lessons);
     let initial_gap_metrics = teacher_gap_metrics(lessons);
+    let initial_quality = teacher_optimization_quality(lessons);
     let mut moves = 0_i64;
     let mut single_session_moves = 0_i64;
     let mut gap_moves = 0_i64;
     let mut single_gap_moves = 0_i64;
     let max_cycles = if deep_gap_repair { 3 } else { 2 };
+    let mut best_lessons = lessons.clone();
+    let mut best_quality = initial_quality;
+    let mut last_ejection_signature = None;
+
+    // When only a handful of singleton sessions remain, prioritize the
+    // bounded cross-class ejection search before broad session/gap passes.
+    // Otherwise those passes can consume the entire Agent wave without ever
+    // reaching the chain that removes the final singleton(s).
+    if (1..=4).contains(&best_quality.one_period_sessions) && !clock.should_stop_quality() {
+        let ejection_moves = optimize_small_singleton_residual(
+            lessons,
+            off_slots,
+            subject_limits,
+            run_seed ^ 0xa913_5cf2_70e4_2bd8_u64,
+            3,
+            clock,
+        );
+        last_ejection_signature = Some(singleton_ejection_signature(lessons));
+        if ejection_moves > 0 {
+            moves += ejection_moves;
+            single_session_moves += ejection_moves;
+            keep_best_teacher_quality(&mut best_lessons, &mut best_quality, lessons);
+            if best_quality.one_period_sessions == 0 {
+                return teacher_session_opt_stats_from_focus(
+                    initial_quality,
+                    &best_lessons,
+                    single_session_moves,
+                    gap_moves,
+                    single_gap_moves,
+                    moves,
+                );
+            }
+        }
+    }
 
     for _ in 0..max_cycles {
         if clock.should_stop_quality() {
@@ -4177,6 +6966,7 @@ fn optimize_teacher_single_sessions_balanced(
         }
 
         let after_cycle = teacher_optimization_quality(lessons);
+        keep_best_teacher_quality(&mut best_lessons, &mut best_quality, lessons);
         if cycle_moves == 0 || !teacher_optimization_improved(&before_cycle, &after_cycle) {
             break;
         }
@@ -4219,9 +7009,104 @@ fn optimize_teacher_single_sessions_balanced(
             *lessons = candidate;
             single_session_moves += phase_moves;
             moves += phase_moves;
+            keep_best_teacher_quality(&mut best_lessons, &mut best_quality, lessons);
         } else {
             break;
         }
+    }
+
+    // Cheap bounded 3-cycles first.  The deeper cleanup below clones and
+    // validates many full schedules and can consume the whole WASM deadline;
+    // running this focused neighbourhood first keeps it reachable.
+    let same_class_cycle_moves = if clock.should_stop_quality() {
+        0
+    } else {
+        optimize_teacher_global_same_class_cycles(
+            lessons,
+            off_slots,
+            subject_limits,
+            run_seed ^ 0x8f42_1db7_63a5_c901_u64,
+            clock,
+        )
+    };
+    if same_class_cycle_moves > 0 {
+        single_session_moves += same_class_cycle_moves;
+        moves += same_class_cycle_moves;
+        let cleanup_moves =
+            optimize_teacher_large_gaps(lessons, off_slots, subject_limits, run_seed, true, clock);
+        gap_moves += cleanup_moves;
+        moves += cleanup_moves;
+        keep_best_teacher_quality(&mut best_lessons, &mut best_quality, lessons);
+    }
+
+    let five_cycle_moves = if clock.should_stop_quality() {
+        0
+    } else {
+        optimize_remaining_singletons_by_five_cycles(
+            lessons,
+            off_slots,
+            subject_limits,
+            run_seed ^ 0x2c86_f1d4_79ab_035e_u64,
+            2,
+            60_000,
+            clock,
+        )
+    };
+    if five_cycle_moves > 0 {
+        single_session_moves += five_cycle_moves;
+        moves += five_cycle_moves;
+        keep_best_teacher_quality(&mut best_lessons, &mut best_quality, lessons);
+    }
+
+    let residual = teacher_optimization_quality(lessons);
+    let residual_signature = singleton_ejection_signature(lessons);
+    // Do not replay the smaller late beam against the exact schedule already
+    // exhausted by the stronger early residual search.
+    let ejection_moves = if residual.one_period_sessions == 1
+        && last_ejection_signature != Some(residual_signature)
+        && !clock.should_stop_quality()
+    {
+        optimize_remaining_singletons_ejection_beam(
+            lessons,
+            off_slots,
+            subject_limits,
+            run_seed ^ 0xa913_5cf2_70e4_2bd8_u64,
+            5,
+            20,
+            10_000,
+            clock,
+        )
+    } else {
+        0
+    };
+    if ejection_moves > 0 {
+        single_session_moves += ejection_moves;
+        moves += ejection_moves;
+        keep_best_teacher_quality(&mut best_lessons, &mut best_quality, lessons);
+    }
+
+    let early_chain_moves = if clock.should_stop_quality() {
+        0
+    } else {
+        optimize_remaining_singletons_by_class_cycles(
+            lessons,
+            off_slots,
+            subject_limits,
+            run_seed ^ 0x51a7_c902_4ed3_8b6f_u64,
+            4,
+            8,
+            80_000,
+            clock,
+        )
+    };
+    if early_chain_moves > 0 {
+        single_session_moves += early_chain_moves;
+        moves += early_chain_moves;
+        let cleanup_moves =
+            optimize_teacher_large_gaps(lessons, off_slots, subject_limits, run_seed, true, clock);
+        gap_moves += cleanup_moves;
+        moves += cleanup_moves;
+        keep_best_teacher_quality(&mut best_lessons, &mut best_quality, lessons);
     }
 
     let global_cleanup_moves = if clock.should_stop_quality() {
@@ -4244,6 +7129,7 @@ fn optimize_teacher_single_sessions_balanced(
             optimize_teacher_large_gaps(lessons, off_slots, subject_limits, run_seed, true, clock);
         gap_moves += cleanup_moves;
         moves += cleanup_moves;
+        keep_best_teacher_quality(&mut best_lessons, &mut best_quality, lessons);
     }
 
     let cycle_rescue_moves = if clock.should_stop_quality() {
@@ -4267,15 +7153,7 @@ fn optimize_teacher_single_sessions_balanced(
             optimize_teacher_large_gaps(lessons, off_slots, subject_limits, run_seed, true, clock);
         gap_moves += cleanup_moves;
         moves += cleanup_moves;
-    }
-    let same_class_cycle_moves = 0;
-    if same_class_cycle_moves > 0 {
-        single_session_moves += same_class_cycle_moves;
-        moves += same_class_cycle_moves;
-        let cleanup_moves =
-            optimize_teacher_large_gaps(lessons, off_slots, subject_limits, run_seed, true, clock);
-        gap_moves += cleanup_moves;
-        moves += cleanup_moves;
+        keep_best_teacher_quality(&mut best_lessons, &mut best_quality, lessons);
     }
     for (seed_salt, max_moves, chain_depth, check_limit) in [
         (0x24d9_7b31_5ce4_18a7_u64, 4, 5_usize, 12_000),
@@ -4351,6 +7229,7 @@ fn optimize_teacher_single_sessions_balanced(
         );
         gap_moves += cleanup_moves;
         moves += cleanup_moves;
+        keep_best_teacher_quality(&mut best_lessons, &mut best_quality, lessons);
     }
 
     for _ in 0..2 {
@@ -4380,6 +7259,7 @@ fn optimize_teacher_single_sessions_balanced(
             *lessons = candidate;
             single_session_moves += phase_moves;
             moves += phase_moves;
+            keep_best_teacher_quality(&mut best_lessons, &mut best_quality, lessons);
         } else {
             break;
         }
@@ -4402,6 +7282,7 @@ fn optimize_teacher_single_sessions_balanced(
         if beam_chain_moves > 0 {
             single_session_moves += beam_chain_moves;
             moves += beam_chain_moves;
+            keep_best_teacher_quality(&mut best_lessons, &mut best_quality, lessons);
         }
         let deep_chain_moves = optimize_remaining_singletons_by_class_cycles(
             lessons,
@@ -4416,6 +7297,7 @@ fn optimize_teacher_single_sessions_balanced(
         if deep_chain_moves > 0 {
             single_session_moves += deep_chain_moves;
             moves += deep_chain_moves;
+            keep_best_teacher_quality(&mut best_lessons, &mut best_quality, lessons);
             for _ in 0..2 {
                 if clock.should_stop_quality() {
                     break;
@@ -4443,6 +7325,7 @@ fn optimize_teacher_single_sessions_balanced(
                     *lessons = candidate;
                     single_session_moves += deep_phase_moves;
                     moves += deep_phase_moves;
+                    keep_best_teacher_quality(&mut best_lessons, &mut best_quality, lessons);
                 } else {
                     break;
                 }
@@ -4461,7 +7344,13 @@ fn optimize_teacher_single_sessions_balanced(
         if final_gap1_moves > 0 {
             single_gap_moves += final_gap1_moves;
             moves += final_gap1_moves;
+            keep_best_teacher_quality(&mut best_lessons, &mut best_quality, lessons);
         }
+    }
+
+    let current_quality = teacher_optimization_quality(lessons);
+    if teacher_optimization_improved(&current_quality, &best_quality) {
+        *lessons = best_lessons;
     }
 
     let final_gap_metrics = teacher_gap_metrics(lessons);
@@ -4509,6 +7398,522 @@ fn optimize_remaining_singletons_by_class_beam(
     )
 }
 
+type TeacherCyclePeriods = HashMap<String, HashMap<String, Vec<i64>>>;
+
+#[derive(Default)]
+struct TeacherCycleContribution {
+    sessions: i64,
+    one_period_sessions: i64,
+    gap2_plus_sessions: i64,
+    gap1_sessions: i64,
+    total_gap: i64,
+}
+
+fn teacher_cycle_periods(lessons: &[Value]) -> TeacherCyclePeriods {
+    let mut out = HashMap::new();
+    for lesson in lessons {
+        let teacher = lesson_teacher_key(lesson);
+        let Some(slot) = lesson_slot(lesson) else {
+            continue;
+        };
+        if teacher.is_empty() {
+            continue;
+        }
+        out.entry(teacher)
+            .or_insert_with(HashMap::new)
+            .entry(format!("{}|{}", slot.day, slot.session_key))
+            .or_insert_with(Vec::new)
+            .push(slot.period_index);
+    }
+    out
+}
+
+fn teacher_cycle_contribution(sessions: &HashMap<String, Vec<i64>>) -> TeacherCycleContribution {
+    let mut out = TeacherCycleContribution::default();
+    for periods in sessions.values() {
+        if periods.is_empty() {
+            continue;
+        }
+        out.sessions += 1;
+        if periods.len() == 1 {
+            out.one_period_sessions += 1;
+        }
+        let min_period = periods.iter().copied().min().unwrap_or(0);
+        let max_period = periods.iter().copied().max().unwrap_or(min_period);
+        let gaps = max_period - min_period + 1 - periods.len() as i64;
+        out.total_gap += gaps.max(0);
+        if gaps == 1 {
+            out.gap1_sessions += 1;
+        } else if gaps >= 2 {
+            out.gap2_plus_sessions += 1;
+        }
+    }
+    out
+}
+
+fn teacher_quality_after_cycle(
+    lessons: &[Value],
+    before: &TeacherOptimizationQuality,
+    moves: &[(usize, Slot)],
+    baseline_periods: &TeacherCyclePeriods,
+) -> Option<TeacherOptimizationQuality> {
+    let affected = moves
+        .iter()
+        .filter_map(|(index, _)| lessons.get(*index).map(lesson_teacher_key))
+        .filter(|teacher| !teacher.is_empty())
+        .collect::<HashSet<_>>();
+    let mut after_periods = affected
+        .iter()
+        .map(|teacher| {
+            (
+                teacher.clone(),
+                baseline_periods.get(teacher).cloned().unwrap_or_default(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let mut old = TeacherCycleContribution::default();
+    for teacher in &affected {
+        let contribution = teacher_cycle_contribution(baseline_periods.get(teacher)?);
+        old.sessions += contribution.sessions;
+        old.one_period_sessions += contribution.one_period_sessions;
+        old.gap2_plus_sessions += contribution.gap2_plus_sessions;
+        old.gap1_sessions += contribution.gap1_sessions;
+        old.total_gap += contribution.total_gap;
+    }
+
+    for (index, target_slot) in moves {
+        let lesson = lessons.get(*index)?;
+        let teacher = lesson_teacher_key(lesson);
+        if teacher.is_empty() {
+            continue;
+        }
+        let source_slot = lesson_slot(lesson)?;
+        let sessions = after_periods.get_mut(&teacher)?;
+        let source_key = format!("{}|{}", source_slot.day, source_slot.session_key);
+        let target_key = format!("{}|{}", target_slot.day, target_slot.session_key);
+        let periods = sessions.get_mut(&source_key)?;
+        let position = periods
+            .iter()
+            .position(|period| *period == source_slot.period_index)?;
+        periods.swap_remove(position);
+        if periods.is_empty() {
+            sessions.remove(&source_key);
+        }
+        sessions
+            .entry(target_key)
+            .or_default()
+            .push(target_slot.period_index);
+    }
+
+    let mut new = TeacherCycleContribution::default();
+    for sessions in after_periods.values() {
+        let contribution = teacher_cycle_contribution(sessions);
+        new.sessions += contribution.sessions;
+        new.one_period_sessions += contribution.one_period_sessions;
+        new.gap2_plus_sessions += contribution.gap2_plus_sessions;
+        new.gap1_sessions += contribution.gap1_sessions;
+        new.total_gap += contribution.total_gap;
+    }
+    Some(TeacherOptimizationQuality {
+        one_period_sessions: before.one_period_sessions - old.one_period_sessions
+            + new.one_period_sessions,
+        teacher_sessions: before.teacher_sessions - old.sessions + new.sessions,
+        gap2_plus_sessions: before.gap2_plus_sessions - old.gap2_plus_sessions
+            + new.gap2_plus_sessions,
+        gap1_sessions: before.gap1_sessions - old.gap1_sessions + new.gap1_sessions,
+        total_gap: before.total_gap - old.total_gap + new.total_gap,
+    })
+}
+
+fn cycle_resource_precheck(
+    lessons: &[Value],
+    moves: &[(usize, Slot)],
+    teacher_occupants: &HashMap<String, usize>,
+    room_occupants: &HashMap<String, usize>,
+) -> bool {
+    let moving = moves
+        .iter()
+        .map(|(index, _)| *index)
+        .collect::<HashSet<_>>();
+    let mut teacher_targets = HashSet::new();
+    let mut room_targets = HashSet::new();
+    for (index, target_slot) in moves {
+        let Some(lesson) = lessons.get(*index) else {
+            return false;
+        };
+        let teacher = lesson_string(lesson, "teacher");
+        if !teacher.is_empty() {
+            let key = resource_slot_key(&teacher, target_slot);
+            if !teacher_targets.insert(key.clone())
+                || teacher_occupants
+                    .get(&key)
+                    .is_some_and(|occupant| !moving.contains(occupant))
+            {
+                return false;
+            }
+        }
+        let room = lesson_room(lesson);
+        if !room.is_empty() {
+            let key = resource_slot_key(&room, target_slot);
+            if !room_targets.insert(key.clone())
+                || room_occupants
+                    .get(&key)
+                    .is_some_and(|occupant| !moving.contains(occupant))
+            {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+fn optimize_two_singletons_to_common_session(
+    lessons: &mut Vec<Value>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    max_moves: i64,
+    check_limit: i64,
+    clock: &SolveClock,
+) -> i64 {
+    let mut applied = 0_i64;
+    for pass in 0..max_moves.max(0) {
+        if clock.should_stop_quality() {
+            break;
+        }
+        let before = teacher_optimization_quality(lessons);
+        if before.one_period_sessions < 2 {
+            break;
+        }
+        let session_index = teacher_session_index(lessons);
+        let mut by_teacher: HashMap<String, Vec<(String, usize)>> = HashMap::new();
+        for (key, indices) in &session_index {
+            if indices.len() != 1 {
+                continue;
+            }
+            let Some((teacher, _, _)) = parse_teacher_session_key(key) else {
+                continue;
+            };
+            let index = indices[0];
+            if teacher.is_empty() || index >= lessons.len() || lesson_fixed(&lessons[index]) {
+                continue;
+            }
+            by_teacher
+                .entry(teacher)
+                .or_default()
+                .push((key.clone(), index));
+        }
+        by_teacher.retain(|_, items| items.len() >= 2);
+        if by_teacher.is_empty() {
+            break;
+        }
+
+        let mut empty_by_class = HashMap::new();
+        for items in by_teacher.values() {
+            for (_, index) in items {
+                let class_id = lesson_class_id(&lessons[*index]);
+                if class_id.is_empty() || empty_by_class.contains_key(&class_id) {
+                    continue;
+                }
+                empty_by_class.insert(
+                    class_id.clone(),
+                    empty_slots_for_class(lessons, &class_id, off_slots),
+                );
+            }
+        }
+
+        let mut teachers = by_teacher.into_iter().collect::<Vec<_>>();
+        teachers.sort_by(|(left, _), (right, _)| {
+            teacher_session_jitter(left, run_seed)
+                .cmp(&teacher_session_jitter(right, run_seed))
+                .then_with(|| left.cmp(right))
+        });
+        let mut best: Option<(i64, Vec<(usize, Slot)>)> = None;
+        let mut checked = 0_i64;
+        let pass_limit = check_limit.max(500);
+
+        'teachers: for (teacher, mut singletons) in teachers {
+            singletons.sort_by(|(left_key, _), (right_key, _)| {
+                teacher_session_jitter(left_key, run_seed ^ pass as u64)
+                    .cmp(&teacher_session_jitter(right_key, run_seed ^ pass as u64))
+                    .then_with(|| left_key.cmp(right_key))
+            });
+            for left_pos in 0..singletons.len() {
+                for right_pos in (left_pos + 1)..singletons.len() {
+                    if clock.should_stop_quality() || checked >= pass_limit {
+                        break 'teachers;
+                    }
+                    let left_index = singletons[left_pos].1;
+                    let right_index = singletons[right_pos].1;
+                    let left_class = lesson_class_id(&lessons[left_index]);
+                    let right_class = lesson_class_id(&lessons[right_index]);
+                    let Some(left_empty) = empty_by_class.get(&left_class) else {
+                        continue;
+                    };
+                    let Some(right_empty) = empty_by_class.get(&right_class) else {
+                        continue;
+                    };
+
+                    let mut common_sessions = left_empty
+                        .iter()
+                        .map(|slot| (slot.day, slot.session_key.clone()))
+                        .filter(|key| {
+                            right_empty
+                                .iter()
+                                .any(|slot| slot.day == key.0 && slot.session_key == key.1)
+                        })
+                        .collect::<Vec<_>>();
+                    common_sessions.sort();
+                    common_sessions.dedup();
+                    common_sessions.sort_by(|left, right| {
+                        let left_key = teacher_session_key(&teacher, left.0, &left.1);
+                        let right_key = teacher_session_key(&teacher, right.0, &right.1);
+                        let left_load = session_index
+                            .get(&left_key)
+                            .map(|items| items.len())
+                            .unwrap_or(0);
+                        let right_load = session_index
+                            .get(&right_key)
+                            .map(|items| items.len())
+                            .unwrap_or(0);
+                        right_load
+                            .cmp(&left_load)
+                            .then_with(|| {
+                                teacher_session_jitter(&left_key, run_seed)
+                                    .cmp(&teacher_session_jitter(&right_key, run_seed))
+                            })
+                            .then_with(|| left.cmp(right))
+                    });
+
+                    for (day, session_key) in common_sessions {
+                        if clock.should_stop_quality() || checked >= pass_limit {
+                            break 'teachers;
+                        }
+                        let left_targets = left_empty
+                            .iter()
+                            .filter(|slot| slot.day == day && slot.session_key == session_key);
+                        for left_target in left_targets {
+                            for right_target in right_empty
+                                .iter()
+                                .filter(|slot| slot.day == day && slot.session_key == session_key)
+                            {
+                                checked += 1;
+                                if checked % 128 == 0 && clock.should_stop_quality() {
+                                    break 'teachers;
+                                }
+                                if checked > pass_limit {
+                                    break 'teachers;
+                                }
+                                if same_slot(left_target, right_target) {
+                                    continue;
+                                }
+                                consider_global_singleton_cleanup_candidate(
+                                    lessons,
+                                    &[
+                                        (left_index, left_target.clone()),
+                                        (right_index, right_target.clone()),
+                                    ],
+                                    off_slots,
+                                    subject_limits,
+                                    &before,
+                                    run_seed ^ pass as u64,
+                                    &mut best,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let Some((_, best_moves)) = best else {
+            break;
+        };
+        for (index, slot) in best_moves {
+            set_lesson_slot(&mut lessons[index], &slot);
+        }
+        applied += 1;
+    }
+    applied
+}
+
+fn optimize_remaining_singletons_by_five_cycles(
+    lessons: &mut Vec<Value>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    max_moves: i64,
+    check_limit: i64,
+    clock: &SolveClock,
+) -> i64 {
+    let mut applied = 0_i64;
+    for _ in 0..max_moves.max(0) {
+        if clock.should_stop_quality() {
+            break;
+        }
+        let before = teacher_optimization_quality(lessons);
+        if !(1..=4).contains(&before.one_period_sessions) {
+            break;
+        }
+        let session_index = teacher_session_index(lessons);
+        let mut singletons = session_index
+            .iter()
+            .filter_map(|(key, indices)| (indices.len() == 1).then(|| (key.clone(), indices[0])))
+            .collect::<Vec<_>>();
+        singletons.sort_by(|(left, _), (right, _)| {
+            teacher_session_jitter(left, run_seed)
+                .cmp(&teacher_session_jitter(right, run_seed))
+                .then_with(|| left.cmp(right))
+        });
+        let baseline_periods = teacher_cycle_periods(lessons);
+        let mut teacher_occupants = HashMap::new();
+        let mut room_occupants = HashMap::new();
+        for (index, lesson) in lessons.iter().enumerate() {
+            let Some(slot) = lesson_slot(lesson) else {
+                continue;
+            };
+            let teacher = lesson_string(lesson, "teacher");
+            if !teacher.is_empty() {
+                teacher_occupants.insert(resource_slot_key(&teacher, &slot), index);
+            }
+            let room = lesson_room(lesson);
+            if !room.is_empty() {
+                room_occupants.insert(resource_slot_key(&room, &slot), index);
+            }
+        }
+
+        let mut best: Option<(i64, Vec<(usize, Slot)>)> = None;
+        'singletons: for (singleton_key, singleton) in singletons {
+            if clock.should_stop_quality() {
+                break;
+            }
+            let mut checked = 0_i64;
+            let class_id = lesson_class_id(&lessons[singleton]);
+            let teacher = lesson_teacher_key(&lessons[singleton]);
+            let Some(source_slot) = lesson_slot(&lessons[singleton]) else {
+                continue;
+            };
+            let indices = lessons
+                .iter()
+                .enumerate()
+                .filter_map(|(index, lesson)| {
+                    (index != singleton
+                        && !lesson_fixed(lesson)
+                        && lesson_class_id(lesson) == class_id)
+                        .then_some(index)
+                })
+                .collect::<Vec<_>>();
+            let first_indices = indices
+                .iter()
+                .copied()
+                .filter(|index| {
+                    lesson_slot(&lessons[*index]).is_some_and(|slot| {
+                        let key = teacher_session_key(&teacher, slot.day, &slot.session_key);
+                        key != singleton_key && session_index.contains_key(&key)
+                    })
+                })
+                .collect::<Vec<_>>();
+            for b in first_indices {
+                let Some(b_slot) = lesson_slot(&lessons[b]) else {
+                    continue;
+                };
+                for c in indices.iter().copied().filter(|index| *index != b) {
+                    let Some(c_slot) = lesson_slot(&lessons[c]) else {
+                        continue;
+                    };
+                    for d in indices
+                        .iter()
+                        .copied()
+                        .filter(|index| *index != b && *index != c)
+                    {
+                        let Some(d_slot) = lesson_slot(&lessons[d]) else {
+                            continue;
+                        };
+                        for e in indices
+                            .iter()
+                            .copied()
+                            .filter(|index| *index != b && *index != c && *index != d)
+                        {
+                            checked += 1;
+                            if checked % 256 == 0 && clock.should_stop_quality() {
+                                break 'singletons;
+                            }
+                            if checked > check_limit.max(1_000) {
+                                continue 'singletons;
+                            }
+                            let Some(e_slot) = lesson_slot(&lessons[e]) else {
+                                continue;
+                            };
+                            let candidate_moves = vec![
+                                (singleton, b_slot.clone()),
+                                (b, c_slot.clone()),
+                                (c, d_slot.clone()),
+                                (d, e_slot),
+                                (e, source_slot.clone()),
+                            ];
+                            if !cycle_resource_precheck(
+                                lessons,
+                                &candidate_moves,
+                                &teacher_occupants,
+                                &room_occupants,
+                            ) {
+                                continue;
+                            }
+                            let Some(estimated) = teacher_quality_after_cycle(
+                                lessons,
+                                &before,
+                                &candidate_moves,
+                                &baseline_periods,
+                            ) else {
+                                continue;
+                            };
+                            if estimated.one_period_sessions >= before.one_period_sessions
+                                || estimated.gap2_plus_sessions > before.gap2_plus_sessions
+                                || estimated.teacher_sessions > before.teacher_sessions
+                            {
+                                continue;
+                            }
+                            let mut candidate = lessons.clone();
+                            for (index, slot) in &candidate_moves {
+                                set_lesson_slot(&mut candidate[*index], slot);
+                            }
+                            if !schedule_hard_ok(&candidate, off_slots, subject_limits) {
+                                continue;
+                            }
+                            let after = teacher_optimization_quality(&candidate);
+                            if after.one_period_sessions >= before.one_period_sessions
+                                || after.gap2_plus_sessions > before.gap2_plus_sessions
+                                || after.teacher_sessions > before.teacher_sessions
+                            {
+                                continue;
+                            }
+                            let score = teacher_quality_score(&after)
+                                + candidate_moves
+                                    .iter()
+                                    .map(|(index, slot)| {
+                                        move_jitter(&lessons[*index], slot, run_seed)
+                                    })
+                                    .sum::<i64>();
+                            match &best {
+                                Some((best_score, _)) if *best_score <= score => {}
+                                _ => best = Some((score, candidate_moves)),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let Some((_, best_moves)) = best else {
+            break;
+        };
+        for (index, slot) in best_moves {
+            set_lesson_slot(&mut lessons[index], &slot);
+        }
+        applied += 1;
+    }
+    applied
+}
+
 fn optimize_remaining_singletons_by_class_cycles(
     lessons: &mut Vec<Value>,
     off_slots: &HashSet<String>,
@@ -4540,8 +7945,9 @@ fn optimize_remaining_singletons_by_class_cycles(
         });
 
         let mut best: Option<(i64, Vec<(usize, Slot)>)> = None;
-        let mut checked = 0_i64;
         let check_limit = check_limit.max(1_000);
+        let per_singleton_check_limit =
+            (check_limit / singletons.len().max(1) as i64).clamp(250, check_limit);
         let chain_depth = chain_depth.max(1);
         for (singleton_key, singleton_index) in singletons {
             if clock.should_stop_quality() {
@@ -4558,6 +7964,10 @@ fn optimize_remaining_singletons_by_class_cycles(
             if teacher.is_empty() || class_id.is_empty() {
                 continue;
             }
+            // Do not let one impossible singleton consume the complete cycle
+            // budget.  A later singleton may have a short valid augmenting
+            // cycle even when the first one needs a larger neighbourhood.
+            let mut checked = 0_i64;
             let mut target_sessions = session_index
                 .keys()
                 .filter_map(|key| {
@@ -4617,7 +8027,7 @@ fn optimize_remaining_singletons_by_class_cycles(
                             break;
                         }
                         checked += 1;
-                        if checked > check_limit {
+                        if checked > per_singleton_check_limit {
                             break;
                         }
                         if same_slot(second_slot, &source_slot)
@@ -4669,7 +8079,7 @@ fn optimize_remaining_singletons_by_class_cycles(
                             _ => best = Some((score, moves_candidate)),
                         }
                     }
-                    if checked > check_limit {
+                    if checked > per_singleton_check_limit {
                         break;
                     }
                     let mut moves_candidate = vec![(singleton_index, target_slot.clone())];
@@ -4694,16 +8104,14 @@ fn optimize_remaining_singletons_by_class_cycles(
                         &before,
                         run_seed,
                         &mut checked,
-                        check_limit,
+                        per_singleton_check_limit,
+                        clock,
                         &mut best,
                     );
-                    if checked > check_limit {
+                    if checked > per_singleton_check_limit {
                         break;
                     }
                 }
-            }
-            if checked > check_limit {
-                break;
             }
         }
 
@@ -5115,9 +8523,11 @@ fn search_singleton_class_chain(
     run_seed: u64,
     checked: &mut i64,
     check_limit: i64,
+    clock: &SolveClock,
     best: &mut Option<(i64, Vec<(usize, Slot)>)>,
 ) {
-    if *checked > check_limit
+    if clock.should_stop_quality()
+        || *checked > check_limit
         || current_index >= lessons.len()
         || lesson_fixed(&lessons[current_index])
     {
@@ -5133,6 +8543,9 @@ fn search_singleton_class_chain(
             session_index,
         )
     {
+        if clock.should_stop_quality() {
+            return;
+        }
         *checked += 1;
         moves.push((current_index, source_slot.clone()));
         consider_singleton_chain_candidate(
@@ -5147,13 +8560,14 @@ fn search_singleton_class_chain(
         moves.pop();
     }
 
-    if depth_remaining == 0 || *checked > check_limit {
+    if depth_remaining == 0 || *checked > check_limit || clock.should_stop_quality() {
         return;
     }
 
     let Some(current_slot) = lesson_slot(&lessons[current_index]) else {
         return;
     };
+    let teacher = lesson_teacher_key(&lessons[current_index]);
     let mut next_slots = singleton_chain_candidate_slots(
         lessons,
         class_id,
@@ -5165,10 +8579,33 @@ fn search_singleton_class_chain(
         run_seed,
     );
     let branch_limit = if depth_remaining >= 5 { 24 } else { 14 };
-    next_slots.truncate(branch_limit);
+    if next_slots.len() > branch_limit {
+        // Reserve part of the beam for a new teacher session. Full class rows
+        // sometimes need that temporary edge before the final cycle closes.
+        let fresh_limit = branch_limit.min(6);
+        let mut selected = next_slots
+            .iter()
+            .filter(|slot| {
+                let key = teacher_session_key(&teacher, slot.day, &slot.session_key);
+                session_index.get(&key).is_some()
+            })
+            .take(branch_limit.saturating_sub(fresh_limit))
+            .cloned()
+            .collect::<Vec<_>>();
+        for slot in next_slots.iter().filter(|slot| {
+            let key = teacher_session_key(&teacher, slot.day, &slot.session_key);
+            session_index.get(&key).is_none()
+        }) {
+            if selected.len() >= branch_limit {
+                break;
+            }
+            selected.push(slot.clone());
+        }
+        next_slots = selected;
+    }
 
     for next_slot in next_slots {
-        if *checked > check_limit {
+        if *checked > check_limit || clock.should_stop_quality() {
             break;
         }
         if same_slot(&next_slot, source_slot) {
@@ -5202,12 +8639,18 @@ fn search_singleton_class_chain(
                         run_seed,
                         checked,
                         check_limit,
+                        clock,
                         best,
                     );
                     used_indices.remove(&next_index);
                 }
             }
             None => {
+                if clock.should_stop_quality() {
+                    used_targets.remove(&next_key);
+                    moves.pop();
+                    break;
+                }
                 *checked += 1;
                 consider_singleton_chain_candidate(
                     lessons,
@@ -5297,15 +8740,13 @@ fn singleton_chain_candidate_slots(
 fn singleton_chain_lesson_session_allowed(
     lessons: &[Value],
     lesson_index: usize,
-    slot: &Slot,
-    session_index: &HashMap<String, Vec<usize>>,
+    _slot: &Slot,
+    _session_index: &HashMap<String, Vec<usize>>,
 ) -> bool {
-    if lesson_index >= lessons.len() {
-        return false;
-    }
-    let teacher = lesson_teacher_key(&lessons[lesson_index]);
-    teacher.is_empty()
-        || session_index.contains_key(&teacher_session_key(&teacher, slot.day, &slot.session_key))
+    // A full class row sometimes needs a cycle whose middle blocker briefly
+    // enters a new teacher session. The completed candidate is still accepted
+    // only when singleton count, total sessions, and Gap-2 do not regress.
+    lesson_index < lessons.len()
 }
 
 fn consider_singleton_chain_candidate(
@@ -5466,6 +8907,356 @@ fn optimize_remaining_singletons_random_walk(
     } else {
         0
     }
+}
+
+#[derive(Clone)]
+struct SingletonEjectionState {
+    lessons: Vec<Value>,
+    quality: TeacherOptimizationQuality,
+    move_count: i64,
+}
+
+fn singleton_ejection_signature(lessons: &[Value]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for lesson in lessons {
+        let class_id = lesson_class_id(lesson);
+        hash_part(&mut hash, &class_id);
+        hash_part(&mut hash, &lesson_subject(lesson));
+        hash_part(&mut hash, &lesson_teacher_key(lesson));
+        if let Some(slot) = lesson_slot(lesson) {
+            hash_part(&mut hash, &slot.day_key);
+            hash_part(&mut hash, &slot.session_key);
+            hash_part(&mut hash, &slot.period_index.to_string());
+        }
+    }
+    hash
+}
+
+fn optimize_remaining_singletons_ejection_beam(
+    lessons: &mut Vec<Value>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    max_depth: usize,
+    beam_width: usize,
+    check_limit: i64,
+    clock: &SolveClock,
+) -> i64 {
+    let start_quality = teacher_optimization_quality(lessons);
+    if !(1..=4).contains(&start_quality.one_period_sessions) || clock.should_stop_quality() {
+        return 0;
+    }
+    let initial_focus_classes = singleton_focus_classes(lessons)
+        .into_iter()
+        .collect::<HashSet<_>>();
+    if initial_focus_classes.is_empty() {
+        return 0;
+    }
+    let mut baseline_teacher_sessions = HashMap::<String, i64>::new();
+    for key in teacher_session_index(lessons).keys() {
+        if let Some((teacher, _, _)) = parse_teacher_session_key(key) {
+            *baseline_teacher_sessions.entry(teacher).or_insert(0) += 1;
+        }
+    }
+
+    let mut frontier = vec![SingletonEjectionState {
+        lessons: lessons.clone(),
+        quality: start_quality,
+        move_count: 0,
+    }];
+    let improvement_target = (start_quality.one_period_sessions - 1).max(0);
+    let mut best: Option<(i64, SingletonEjectionState)> = None;
+    let mut checked = 0_i64;
+    let mut seen = HashSet::from([singleton_ejection_signature(lessons)]);
+    let check_limit = check_limit.max(500);
+    let beam_width = beam_width.clamp(4, 64);
+
+    for depth in 0..max_depth.clamp(1, 10) {
+        if frontier.is_empty() || checked >= check_limit || clock.should_stop_quality() {
+            break;
+        }
+        let mut lanes: HashMap<(i64, i64, i64), Vec<(i64, u64, SingletonEjectionState)>> =
+            HashMap::new();
+        'states: for state in &frontier {
+            if checked >= check_limit || clock.should_stop_quality() {
+                break;
+            }
+            let state_sessions = teacher_session_index(&state.lessons);
+            let mut teacher_occupants = HashMap::new();
+            let mut room_occupants = HashMap::new();
+            for (index, lesson) in state.lessons.iter().enumerate() {
+                let Some(slot) = lesson_slot(lesson) else {
+                    continue;
+                };
+                let teacher = lesson_string(lesson, "teacher");
+                if !teacher.is_empty() {
+                    teacher_occupants.insert(resource_slot_key(&teacher, &slot), index);
+                }
+                let room = lesson_room(lesson);
+                if !room.is_empty() {
+                    room_occupants.insert(resource_slot_key(&room, &slot), index);
+                }
+            }
+            let singleton_indices = state_sessions
+                .values()
+                .filter_map(|items| (items.len() == 1).then_some(items[0]))
+                .collect::<HashSet<_>>();
+            let mut state_teacher_sessions = HashMap::<String, i64>::new();
+            let mut debt_teachers = HashSet::new();
+            for (key, indices) in &state_sessions {
+                let Some((teacher, _, _)) = parse_teacher_session_key(key) else {
+                    continue;
+                };
+                *state_teacher_sessions.entry(teacher.clone()).or_insert(0) += 1;
+                if indices.len() == 1 {
+                    debt_teachers.insert(teacher);
+                }
+            }
+            for (teacher, sessions) in state_teacher_sessions {
+                if sessions
+                    > baseline_teacher_sessions
+                        .get(&teacher)
+                        .copied()
+                        .unwrap_or(0)
+                {
+                    debt_teachers.insert(teacher);
+                }
+            }
+            let mut state_focus_classes = initial_focus_classes.clone();
+            for lesson in &state.lessons {
+                if debt_teachers.contains(&lesson_teacher_key(lesson)) {
+                    let class_id = lesson_class_id(lesson);
+                    if !class_id.is_empty() {
+                        state_focus_classes.insert(class_id);
+                    }
+                }
+            }
+            let mut state_focus_classes = state_focus_classes.into_iter().collect::<Vec<_>>();
+            state_focus_classes.sort_by(|left, right| {
+                let left_initial = initial_focus_classes.contains(left);
+                let right_initial = initial_focus_classes.contains(right);
+                right_initial
+                    .cmp(&left_initial)
+                    .then_with(|| {
+                        class_jitter(left, run_seed ^ depth as u64)
+                            .cmp(&class_jitter(right, run_seed ^ depth as u64))
+                    })
+                    .then_with(|| left.cmp(right))
+            });
+            state_focus_classes.truncate(8);
+
+            for class_id in &state_focus_classes {
+                if checked >= check_limit || clock.should_stop_quality() {
+                    break;
+                }
+                let mut all_indices = state
+                    .lessons
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, lesson)| {
+                        (!lesson_fixed(lesson) && lesson_class_id(lesson) == *class_id)
+                            .then_some(index)
+                    })
+                    .collect::<Vec<_>>();
+                if all_indices.len() < 2 {
+                    continue;
+                }
+                all_indices.sort_by(|left, right| {
+                    let left_anchor = singleton_indices.contains(left)
+                        || debt_teachers.contains(&lesson_teacher_key(&state.lessons[*left]));
+                    let right_anchor = singleton_indices.contains(right)
+                        || debt_teachers.contains(&lesson_teacher_key(&state.lessons[*right]));
+                    right_anchor
+                        .cmp(&left_anchor)
+                        .then_with(|| {
+                            lesson_jitter(&state.lessons[*left], run_seed ^ depth as u64).cmp(
+                                &lesson_jitter(&state.lessons[*right], run_seed ^ depth as u64),
+                            )
+                        })
+                        .then_with(|| left.cmp(right))
+                });
+                let anchors = all_indices
+                    .iter()
+                    .copied()
+                    .filter(|index| {
+                        singleton_indices.contains(index)
+                            || debt_teachers.contains(&lesson_teacher_key(&state.lessons[*index]))
+                    })
+                    .take(4)
+                    .collect::<Vec<_>>();
+                if anchors.is_empty() {
+                    continue;
+                }
+                let pool = all_indices.iter().copied().take(18).collect::<Vec<_>>();
+
+                let mut operations = Vec::<Vec<(usize, Slot)>>::new();
+                for anchor in anchors.iter().copied() {
+                    let Some(anchor_slot) = lesson_slot(&state.lessons[anchor]) else {
+                        continue;
+                    };
+                    for other in all_indices.iter().copied() {
+                        if other == anchor {
+                            continue;
+                        }
+                        let Some(other_slot) = lesson_slot(&state.lessons[other]) else {
+                            continue;
+                        };
+                        operations.push(vec![(anchor, other_slot), (other, anchor_slot.clone())]);
+                    }
+                }
+                for left_pos in 0..pool.len() {
+                    for right_pos in (left_pos + 1)..pool.len() {
+                        let left = pool[left_pos];
+                        let right = pool[right_pos];
+                        if anchors.contains(&left) || anchors.contains(&right) {
+                            continue;
+                        }
+                        let (Some(left_slot), Some(right_slot)) = (
+                            lesson_slot(&state.lessons[left]),
+                            lesson_slot(&state.lessons[right]),
+                        ) else {
+                            continue;
+                        };
+                        operations.push(vec![(left, right_slot), (right, left_slot)]);
+                    }
+                }
+
+                let cycle_pool = pool.iter().copied().take(14).collect::<Vec<_>>();
+                for anchor in anchors.iter().copied().take(2) {
+                    let Some(anchor_slot) = lesson_slot(&state.lessons[anchor]) else {
+                        continue;
+                    };
+                    for left_pos in 0..cycle_pool.len() {
+                        let left = cycle_pool[left_pos];
+                        if left == anchor {
+                            continue;
+                        }
+                        for right_pos in (left_pos + 1)..cycle_pool.len() {
+                            let right = cycle_pool[right_pos];
+                            if right == anchor || right == left {
+                                continue;
+                            }
+                            let (Some(left_slot), Some(right_slot)) = (
+                                lesson_slot(&state.lessons[left]),
+                                lesson_slot(&state.lessons[right]),
+                            ) else {
+                                continue;
+                            };
+                            operations.push(vec![
+                                (anchor, left_slot.clone()),
+                                (left, right_slot.clone()),
+                                (right, anchor_slot.clone()),
+                            ]);
+                            operations.push(vec![
+                                (anchor, right_slot),
+                                (right, left_slot),
+                                (left, anchor_slot.clone()),
+                            ]);
+                        }
+                    }
+                }
+
+                for operation in operations {
+                    if checked >= check_limit || clock.should_stop_quality() {
+                        break;
+                    }
+                    if !cycle_resource_precheck(
+                        &state.lessons,
+                        &operation,
+                        &teacher_occupants,
+                        &room_occupants,
+                    ) {
+                        continue;
+                    }
+                    // Resource rejection is a cheap precheck, not a searched
+                    // schedule. Count only candidates that reach hard
+                    // validation so impossible swaps cannot exhaust the beam.
+                    checked += 1;
+                    let mut candidate = state.lessons.clone();
+                    for (index, slot) in &operation {
+                        set_lesson_slot(&mut candidate[*index], slot);
+                    }
+                    if !schedule_hard_ok(&candidate, off_slots, subject_limits) {
+                        continue;
+                    }
+                    let quality = teacher_optimization_quality(&candidate);
+                    if quality.one_period_sessions > start_quality.one_period_sessions + 2
+                        || quality.gap2_plus_sessions > start_quality.gap2_plus_sessions + 2
+                        || quality.teacher_sessions > start_quality.teacher_sessions + 2
+                        || quality.gap1_sessions > start_quality.gap1_sessions + 12
+                        || quality.total_gap > start_quality.total_gap + 16
+                    {
+                        continue;
+                    }
+                    let signature = singleton_ejection_signature(&candidate);
+                    if !seen.insert(signature) {
+                        continue;
+                    }
+                    let next_state = SingletonEjectionState {
+                        lessons: candidate,
+                        quality,
+                        move_count: state.move_count + operation.len() as i64,
+                    };
+                    if quality.one_period_sessions < start_quality.one_period_sessions
+                        && quality.gap2_plus_sessions <= start_quality.gap2_plus_sessions
+                        && quality.teacher_sessions <= start_quality.teacher_sessions
+                    {
+                        let score = teacher_quality_score(&quality) + next_state.move_count * 17;
+                        match &best {
+                            Some((best_score, _)) if *best_score <= score => {}
+                            _ => best = Some((score, next_state.clone())),
+                        }
+                        // Commit one strict singleton improvement at a time.
+                        // A caller can immediately restart from that stronger
+                        // incumbent; continuing to exhaust the original beam
+                        // delays a useful checkpoint until the deadline.
+                        if quality.one_period_sessions <= improvement_target {
+                            break 'states;
+                        }
+                    }
+
+                    let lane = (
+                        quality.one_period_sessions - start_quality.one_period_sessions,
+                        quality.gap2_plus_sessions - start_quality.gap2_plus_sessions,
+                        quality.teacher_sessions - start_quality.teacher_sessions,
+                    );
+                    let score = quality.one_period_sessions * 100_000_000
+                        + quality.gap2_plus_sessions * 5_000_000
+                        + quality.teacher_sessions * 50_000
+                        + quality.gap1_sessions * 500
+                        + quality.total_gap * 10
+                        + next_state.move_count * 13
+                        + (signature % 997) as i64;
+                    let lane_items = lanes.entry(lane).or_default();
+                    lane_items.push((score, signature, next_state));
+                    if lane_items.len() > 8 {
+                        lane_items.sort_by_key(|item| (item.0, item.1));
+                        lane_items.truncate(4);
+                    }
+                }
+            }
+        }
+
+        if best
+            .as_ref()
+            .is_some_and(|(_, state)| state.quality.one_period_sessions <= improvement_target)
+        {
+            break;
+        }
+        let mut next = lanes.into_values().flatten().collect::<Vec<_>>();
+        next.sort_by_key(|item| (item.0, item.1));
+        next.truncate(beam_width);
+        frontier = next.into_iter().map(|(_, _, state)| state).collect();
+    }
+
+    let Some((_, best_state)) = best else {
+        return 0;
+    };
+    if !schedule_hard_ok(&best_state.lessons, off_slots, subject_limits) {
+        return 0;
+    }
+    *lessons = best_state.lessons;
+    best_state.move_count.max(1)
 }
 
 #[allow(dead_code)]
@@ -5643,7 +9434,7 @@ fn run_teacher_optimization_phase(
             consider(candidate, phase_moves);
 
             let mut candidate = lessons.clone();
-            let phase_moves = optimize_teacher_focused_three_cycles(
+            let phase_moves = optimize_teacher_global_same_class_three_cycles(
                 &mut candidate,
                 off_slots,
                 subject_limits,
@@ -5853,11 +9644,13 @@ fn optimize_teacher_phase_random_swaps(
                     let mut candidate = lessons.clone();
                     set_lesson_slot(&mut candidate[left], &right_slot);
                     set_lesson_slot(&mut candidate[right], &left_slot);
-                    if !schedule_hard_ok(&candidate, off_slots, subject_limits)
-                        || !teacher_sessions_subset(&candidate, &allowed_sessions)
-                    {
+                    if !schedule_hard_ok(&candidate, off_slots, subject_limits) {
                         continue;
                     }
+                    if !teacher_sessions_subset(&candidate, &allowed_sessions) {
+                        continue;
+                    }
+
                     let after = teacher_optimization_quality(&candidate);
                     if !teacher_phase_improved(phase, &before, &after) {
                         continue;
@@ -5949,7 +9742,6 @@ fn optimize_teacher_global_same_class_swaps(
                     if !teacher_sessions_subset(&candidate, &allowed_sessions) {
                         continue;
                     }
-
                     let after = teacher_optimization_quality(&candidate);
                     if !teacher_phase_improved(phase, &before, &after) {
                         continue;
@@ -5973,6 +9765,141 @@ fn optimize_teacher_global_same_class_swaps(
         moves += 1;
     }
     moves
+}
+
+/// Exhaustive, incrementally scored same-class three-cycle sweep.
+///
+/// Gap1 plateaus often have no improving pair swap. A three-cycle changes the
+/// three affected teacher masks together while keeping every class slot full.
+/// The estimated metric check is cheap; full hard validation runs only for a
+/// strict improvement.
+fn optimize_teacher_global_same_class_three_cycles(
+    lessons: &mut Vec<Value>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    phase: TeacherOptimizationPhase,
+    clock: &SolveClock,
+) -> i64 {
+    let mut applied = 0_i64;
+    for pass in 0..6_u64 {
+        if clock.should_stop_quality() {
+            break;
+        }
+        let before = teacher_optimization_quality(lessons);
+        if teacher_phase_done(phase, &before) {
+            break;
+        }
+        let allowed_sessions = teacher_session_key_set(lessons);
+        let index = teacher_annealing_index(lessons);
+        let baseline_periods = teacher_cycle_periods(lessons);
+        let mut classes: HashMap<String, Vec<usize>> = HashMap::new();
+        for (lesson_index, lesson) in lessons.iter().enumerate() {
+            if lesson_fixed(lesson) || lesson_slot(lesson).is_none() {
+                continue;
+            }
+            let class_id = lesson_class_id(lesson);
+            if !class_id.is_empty() {
+                classes.entry(class_id).or_default().push(lesson_index);
+            }
+        }
+        let mut classes = classes.into_iter().collect::<Vec<_>>();
+        classes.sort_by(|(left, _), (right, _)| left.cmp(right));
+
+        let check_limit = (lessons.len() as i64 * 256).clamp(60_000, 500_000);
+        let mut checked = 0_i64;
+        let mut best: Option<(i64, Vec<(usize, Slot)>)> = None;
+        'classes: for (_, indices) in classes {
+            if indices.len() < 3 {
+                continue;
+            }
+            for left_pos in 0..indices.len() {
+                for middle_pos in (left_pos + 1)..indices.len() {
+                    for right_pos in (middle_pos + 1)..indices.len() {
+                        if clock.should_stop_quality() || checked >= check_limit {
+                            break 'classes;
+                        }
+                        let left = indices[left_pos];
+                        let middle = indices[middle_pos];
+                        let right = indices[right_pos];
+                        let (Some(left_slot), Some(middle_slot), Some(right_slot)) = (
+                            lesson_slot(&lessons[left]),
+                            lesson_slot(&lessons[middle]),
+                            lesson_slot(&lessons[right]),
+                        ) else {
+                            continue;
+                        };
+                        let rotations = [
+                            vec![
+                                (left, middle_slot.clone()),
+                                (middle, right_slot.clone()),
+                                (right, left_slot.clone()),
+                            ],
+                            vec![
+                                (left, right_slot),
+                                (middle, left_slot),
+                                (right, middle_slot),
+                            ],
+                        ];
+                        for moves in rotations {
+                            checked += 1;
+                            if !cycle_resource_precheck(
+                                lessons,
+                                &moves,
+                                &index.teacher_occupants,
+                                &index.room_occupants,
+                            ) {
+                                continue;
+                            }
+                            let Some(estimated) = teacher_quality_after_cycle(
+                                lessons,
+                                &before,
+                                &moves,
+                                &baseline_periods,
+                            ) else {
+                                continue;
+                            };
+                            if !teacher_phase_improved(phase, &before, &estimated) {
+                                continue;
+                            }
+                            let mut candidate = lessons.clone();
+                            for (lesson_index, slot) in &moves {
+                                set_lesson_slot(&mut candidate[*lesson_index], slot);
+                            }
+                            if !schedule_hard_ok(&candidate, off_slots, subject_limits)
+                                || !teacher_sessions_subset(&candidate, &allowed_sessions)
+                            {
+                                continue;
+                            }
+                            let after = teacher_optimization_quality(&candidate);
+                            if !teacher_phase_improved(phase, &before, &after) {
+                                continue;
+                            }
+                            let jitter = moves
+                                .iter()
+                                .map(|(lesson_index, slot)| {
+                                    move_jitter(&lessons[*lesson_index], slot, run_seed ^ pass)
+                                })
+                                .sum::<i64>();
+                            let score = teacher_phase_score(phase, &after) + jitter;
+                            match &best {
+                                Some((best_score, _)) if *best_score <= score => {}
+                                _ => best = Some((score, moves)),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let Some((_, moves)) = best else {
+            break;
+        };
+        for (lesson_index, slot) in &moves {
+            set_lesson_slot(&mut lessons[*lesson_index], slot);
+        }
+        applied += 1;
+    }
+    applied
 }
 
 fn optimize_teacher_focused_three_cycles(
@@ -6438,10 +10365,14 @@ fn optimize_teacher_global_same_class_cycles(
     off_slots: &HashSet<String>,
     subject_limits: &SubjectLimitMap,
     run_seed: u64,
+    clock: &SolveClock,
 ) -> i64 {
     let mut moves = 0_i64;
     let max_moves = 4_i64;
     for _ in 0..max_moves {
+        if clock.should_stop_quality() {
+            break;
+        }
         let before = teacher_optimization_quality(lessons);
         if before.one_period_sessions == 0 && before.total_gap == 0 {
             break;
@@ -6511,6 +10442,9 @@ fn optimize_teacher_global_same_class_cycles(
             for a_pos in 0..len {
                 for b_pos in (a_pos + 1)..len {
                     for c_pos in (b_pos + 1)..len {
+                        if clock.should_stop_quality() {
+                            break;
+                        }
                         checked += 1;
                         if checked > check_limit {
                             break;
@@ -6812,6 +10746,9 @@ fn focused_agent_candidate_acceptable(
                     before.total_gap,
                 )
         }
+        OptimizationFocus::Gap2 | OptimizationFocus::Gap1 => {
+            focused_gap_target_envelope_preserved(focus, before, after)
+        }
         _ => true,
     }
 }
@@ -6915,6 +10852,18 @@ fn teacher_optimization_improved(
             && after.total_gap < before.total_gap)
 }
 
+fn keep_best_teacher_quality(
+    best_lessons: &mut Vec<Value>,
+    best_quality: &mut TeacherOptimizationQuality,
+    candidate: &[Value],
+) {
+    let candidate_quality = teacher_optimization_quality(candidate);
+    if teacher_optimization_improved(best_quality, &candidate_quality) {
+        *best_lessons = candidate.to_vec();
+        *best_quality = candidate_quality;
+    }
+}
+
 #[allow(dead_code)]
 fn teacher_quality_score(value: &TeacherOptimizationQuality) -> i64 {
     value.one_period_sessions * 1_000_000_000
@@ -7007,6 +10956,14 @@ fn optimize_teacher_session_reduction(
                 subject_limits,
                 run_seed,
             ) || try_swap_singleton_out(
+                lessons,
+                singleton_idx,
+                &session_key,
+                &fresh_index,
+                off_slots,
+                subject_limits,
+                run_seed,
+            ) || try_move_singleton_into_teacher_session_by_class_rehome(
                 lessons,
                 singleton_idx,
                 &session_key,
@@ -8205,6 +12162,141 @@ fn try_move_singleton_into_teacher_session_by_relaxed_class_swap(
     false
 }
 
+fn try_move_singleton_into_teacher_session_by_class_rehome(
+    lessons: &mut Vec<Value>,
+    lesson_index: usize,
+    singleton_session_key: &str,
+    session_index: &HashMap<String, Vec<usize>>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+) -> bool {
+    if lesson_index >= lessons.len() || lesson_fixed(&lessons[lesson_index]) {
+        return false;
+    }
+    let teacher = lesson_teacher_key(&lessons[lesson_index]);
+    let class_id = lesson_class_id(&lessons[lesson_index]);
+    if teacher.is_empty() || class_id.is_empty() {
+        return false;
+    }
+    let Some(source_slot) = lesson_slot(&lessons[lesson_index]) else {
+        return false;
+    };
+    let before = teacher_optimization_quality(lessons);
+
+    let mut target_sessions = session_index
+        .keys()
+        .filter_map(|key| {
+            let (session_teacher, _, _) = parse_teacher_session_key(key)?;
+            (session_teacher == teacher && key != singleton_session_key).then(|| key.clone())
+        })
+        .collect::<Vec<_>>();
+    target_sessions.sort_by(|left, right| {
+        let left_len = session_index
+            .get(left)
+            .map(|items| items.len())
+            .unwrap_or(0);
+        let right_len = session_index
+            .get(right)
+            .map(|items| items.len())
+            .unwrap_or(0);
+        right_len
+            .cmp(&left_len)
+            .then_with(|| {
+                teacher_session_jitter(left, run_seed).cmp(&teacher_session_jitter(right, run_seed))
+            })
+            .then_with(|| left.cmp(right))
+    });
+    target_sessions.truncate(12);
+
+    let mut best: Option<(i64, usize, Slot, Slot)> = None;
+    let mut checked = 0_i64;
+    'targets: for target_session_key in target_sessions {
+        let Some((_, day, session_key)) = parse_teacher_session_key(&target_session_key) else {
+            continue;
+        };
+        for period_index in 0..PERIODS_PER_SESSION {
+            let target_slot = make_slot(day, &session_key, period_index);
+            if same_slot(&source_slot, &target_slot) {
+                continue;
+            }
+            let Some(blocker_index) = class_slot_occupant(lessons, &class_id, &target_slot) else {
+                continue;
+            };
+            if blocker_index == lesson_index || lesson_fixed(&lessons[blocker_index]) {
+                continue;
+            }
+            let blocker_teacher = lesson_teacher_key(&lessons[blocker_index]);
+            let blocker_source = lesson_slot(&lessons[blocker_index]);
+            let mut rehome_slots = empty_slots_for_class(lessons, &class_id, off_slots);
+            rehome_slots.retain(|slot| {
+                !same_slot(slot, &target_slot)
+                    && !same_slot(slot, &source_slot)
+                    && blocker_source
+                        .as_ref()
+                        .is_none_or(|source| !same_slot(slot, source))
+            });
+            rehome_slots.sort_by(|left, right| {
+                let left_key = teacher_session_key(&blocker_teacher, left.day, &left.session_key);
+                let right_key =
+                    teacher_session_key(&blocker_teacher, right.day, &right.session_key);
+                let left_load = session_index
+                    .get(&left_key)
+                    .map(|items| items.len())
+                    .unwrap_or(0);
+                let right_load = session_index
+                    .get(&right_key)
+                    .map(|items| items.len())
+                    .unwrap_or(0);
+                right_load.cmp(&left_load).then_with(|| {
+                    move_jitter(&lessons[blocker_index], left, run_seed).cmp(&move_jitter(
+                        &lessons[blocker_index],
+                        right,
+                        run_seed,
+                    ))
+                })
+            });
+            rehome_slots.truncate(48);
+
+            for rehome_slot in rehome_slots {
+                checked += 1;
+                if checked > 2_400 {
+                    break 'targets;
+                }
+                let mut candidate = lessons.clone();
+                set_lesson_slot(&mut candidate[lesson_index], &target_slot);
+                set_lesson_slot(&mut candidate[blocker_index], &rehome_slot);
+                if !schedule_hard_ok(&candidate, off_slots, subject_limits) {
+                    continue;
+                }
+                let after = teacher_optimization_quality(&candidate);
+                // Phase S may borrow temporary gap debt to remove a singleton.
+                // The coordinated gap phase owns restoring the strict gap-2
+                // envelope before Automatic can publish the candidate.
+                if after.one_period_sessions >= before.one_period_sessions
+                    || after.teacher_sessions > before.teacher_sessions
+                {
+                    continue;
+                }
+                let score = teacher_quality_score(&after)
+                    + move_jitter(&lessons[lesson_index], &target_slot, run_seed)
+                    + move_jitter(&lessons[blocker_index], &rehome_slot, run_seed);
+                match &best {
+                    Some((best_score, _, _, _)) if *best_score <= score => {}
+                    _ => best = Some((score, blocker_index, target_slot.clone(), rehome_slot)),
+                }
+            }
+        }
+    }
+
+    if let Some((_, blocker_index, target_slot, rehome_slot)) = best {
+        set_lesson_slot(&mut lessons[lesson_index], &target_slot);
+        set_lesson_slot(&mut lessons[blocker_index], &rehome_slot);
+        return true;
+    }
+    false
+}
+
 fn try_pair_singleton_session(
     lessons: &mut Vec<Value>,
     singleton_session_key: &str,
@@ -8604,7 +12696,15 @@ fn optimize_teacher_large_gaps(
     deep_gap_repair: bool,
     clock: &SolveClock,
 ) -> i64 {
-    let mut moves = 0_i64;
+    let mut moves = optimize_teacher_exact_session_repack(
+        lessons,
+        off_slots,
+        subject_limits,
+        run_seed ^ 0x4d71_c39a_28b6_05ef_u64,
+        2,
+        6,
+        clock,
+    );
     let max_moves = (lessons.len() * 2).clamp(1, 180);
     for _ in 0..max_moves {
         if clock.should_stop_quality() {
@@ -8685,7 +12785,15 @@ fn optimize_teacher_single_gaps(
     run_seed: u64,
     clock: &SolveClock,
 ) -> i64 {
-    let mut moves = 0_i64;
+    let mut moves = optimize_teacher_exact_session_repack(
+        lessons,
+        off_slots,
+        subject_limits,
+        run_seed ^ 0x9c42_1f6d_73a5_b80e_u64,
+        1,
+        8,
+        clock,
+    );
     let max_moves = (lessons.len() * 2).clamp(1, 180);
     for _ in 0..max_moves {
         if clock.should_stop_quality() {
@@ -8752,6 +12860,219 @@ fn optimize_teacher_single_gaps(
         }
     }
     moves
+}
+
+fn unique_session_cell_permutations(cells: &[Option<usize>]) -> Vec<Vec<Option<usize>>> {
+    fn visit(
+        cells: &[Option<usize>],
+        used: &mut [bool],
+        current: &mut Vec<Option<usize>>,
+        out: &mut Vec<Vec<Option<usize>>>,
+    ) {
+        if current.len() == cells.len() {
+            out.push(current.clone());
+            return;
+        }
+        let mut seen = HashSet::new();
+        for (index, cell) in cells.iter().copied().enumerate() {
+            if used[index] || !seen.insert(cell) {
+                continue;
+            }
+            used[index] = true;
+            current.push(cell);
+            visit(cells, used, current, out);
+            current.pop();
+            used[index] = false;
+        }
+    }
+
+    let mut out = Vec::new();
+    let mut used = vec![false; cells.len()];
+    visit(
+        cells,
+        &mut used,
+        &mut Vec::with_capacity(cells.len()),
+        &mut out,
+    );
+    out
+}
+
+fn optimize_teacher_exact_session_repack(
+    lessons: &mut Vec<Value>,
+    off_slots: &HashSet<String>,
+    subject_limits: &SubjectLimitMap,
+    run_seed: u64,
+    minimum_gap: i64,
+    max_rounds: i64,
+    clock: &SolveClock,
+) -> i64 {
+    let mut applied = 0_i64;
+    for _ in 0..max_rounds.max(0) {
+        if clock.should_stop_quality() {
+            break;
+        }
+        let before = teacher_optimization_quality(lessons);
+        if before.total_gap <= 0 {
+            break;
+        }
+
+        let focus_indices = teacher_gap_sessions(lessons)
+            .into_iter()
+            .filter(|session| session.gaps >= minimum_gap.max(1))
+            .flat_map(|session| session.indices)
+            .collect::<HashSet<_>>();
+        if focus_indices.is_empty() {
+            break;
+        }
+
+        let mut group_keys = HashSet::new();
+        for index in &focus_indices {
+            let Some(lesson) = lessons.get(*index) else {
+                continue;
+            };
+            let Some(slot) = lesson_slot(lesson) else {
+                continue;
+            };
+            let class_id = lesson_class_id(lesson);
+            if !class_id.is_empty() {
+                group_keys.insert((class_id, slot.day, slot.session_key));
+            }
+        }
+        let mut groups = group_keys.into_iter().collect::<Vec<_>>();
+        groups.sort_by(|left, right| {
+            let left_focus = lessons
+                .iter()
+                .enumerate()
+                .filter(|(index, lesson)| {
+                    focus_indices.contains(index)
+                        && lesson_class_id(lesson) == left.0
+                        && lesson_slot(lesson)
+                            .is_some_and(|slot| slot.day == left.1 && slot.session_key == left.2)
+                })
+                .count();
+            let right_focus = lessons
+                .iter()
+                .enumerate()
+                .filter(|(index, lesson)| {
+                    focus_indices.contains(index)
+                        && lesson_class_id(lesson) == right.0
+                        && lesson_slot(lesson)
+                            .is_some_and(|slot| slot.day == right.1 && slot.session_key == right.2)
+                })
+                .count();
+            right_focus
+                .cmp(&left_focus)
+                .then_with(|| left.0.cmp(&right.0))
+                .then_with(|| left.1.cmp(&right.1))
+                .then_with(|| left.2.cmp(&right.2))
+        });
+
+        let baseline_periods = teacher_cycle_periods(lessons);
+        let mut teacher_occupants = HashMap::new();
+        let mut room_occupants = HashMap::new();
+        for (index, lesson) in lessons.iter().enumerate() {
+            let Some(slot) = lesson_slot(lesson) else {
+                continue;
+            };
+            let teacher = lesson_teacher_key(lesson);
+            if !teacher.is_empty() {
+                teacher_occupants.insert(resource_slot_key(&teacher, &slot), index);
+            }
+            let room = norm(&lesson_room(lesson));
+            if !room.is_empty() {
+                room_occupants.insert(resource_slot_key(&room, &slot), index);
+            }
+        }
+
+        let mut best: Option<(i64, Vec<(usize, Slot)>)> = None;
+        for (class_id, day, session_key) in groups {
+            if clock.should_stop_quality() {
+                break;
+            }
+            let mut slots = Vec::new();
+            let mut cells = Vec::new();
+            for period_index in 0..PERIODS_PER_SESSION {
+                let slot = make_slot(day, &session_key, period_index);
+                if off_slots.contains(&slot_key(&class_id, &slot)) {
+                    continue;
+                }
+                let occupant = class_slot_occupant(lessons, &class_id, &slot);
+                if occupant.is_some_and(|index| lesson_fixed(&lessons[index])) {
+                    continue;
+                }
+                slots.push(slot);
+                cells.push(occupant);
+            }
+            if slots.len() <= 1 || cells.iter().filter(|cell| cell.is_some()).count() <= 1 {
+                continue;
+            }
+
+            for permutation in unique_session_cell_permutations(&cells) {
+                if clock.should_stop_quality() {
+                    break;
+                }
+                if permutation == cells {
+                    continue;
+                }
+                let moves = permutation
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(position, index)| {
+                        index.map(|index| (index, slots[position].clone()))
+                    })
+                    .collect::<Vec<_>>();
+                if moves.is_empty()
+                    || !cycle_resource_precheck(
+                        lessons,
+                        &moves,
+                        &teacher_occupants,
+                        &room_occupants,
+                    )
+                {
+                    continue;
+                }
+                let Some(estimated) =
+                    teacher_quality_after_cycle(lessons, &before, &moves, &baseline_periods)
+                else {
+                    continue;
+                };
+                if !focused_gap_candidate_acceptable(&before, &estimated) {
+                    continue;
+                }
+
+                let mut candidate = lessons.clone();
+                for (index, slot) in &moves {
+                    set_lesson_slot(&mut candidate[*index], slot);
+                }
+                if !schedule_hard_ok(&candidate, off_slots, subject_limits) {
+                    continue;
+                }
+                let after = teacher_optimization_quality(&candidate);
+                if !focused_gap_candidate_acceptable(&before, &after) {
+                    continue;
+                }
+                let jitter = moves
+                    .iter()
+                    .map(|(index, slot)| move_jitter(&lessons[*index], slot, run_seed))
+                    .sum::<i64>();
+                let score =
+                    teacher_zero_gap_quality_score(&after) + moves.len() as i64 * 5 + jitter;
+                match &best {
+                    Some((best_score, _)) if *best_score <= score => {}
+                    _ => best = Some((score, moves)),
+                }
+            }
+        }
+
+        let Some((_, best_moves)) = best else {
+            break;
+        };
+        for (index, slot) in best_moves {
+            set_lesson_slot(&mut lessons[index], &slot);
+        }
+        applied += 1;
+    }
+    applied
 }
 
 fn try_compact_teacher_gap_session_by_class_swap(
@@ -10199,6 +14520,47 @@ fn truthy(value: &Value) -> bool {
     }
 }
 
+fn constraint_tree_enabled(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(enabled) => *enabled,
+        Value::Number(number) => number.as_f64().is_some_and(|item| item != 0.0),
+        Value::String(text) => {
+            let normalized = text.trim().to_ascii_lowercase();
+            !normalized.is_empty()
+                && !matches!(normalized.as_str(), "0" | "false" | "off" | "none" | "null")
+        }
+        Value::Array(items) => items.iter().any(constraint_tree_enabled),
+        Value::Object(items) => items.values().any(constraint_tree_enabled),
+    }
+}
+
+fn global_session_repack_safe(data: &Map<String, Value>) -> bool {
+    let Some(constraints) = data.get("tkbConstraints").and_then(Value::as_object) else {
+        return true;
+    };
+    if [
+        "teacher",
+        "subject",
+        "subjectGroup",
+        "subjectNoSameSession",
+        "timeLimit",
+    ]
+    .iter()
+    .any(|key| constraints.get(*key).is_some_and(constraint_tree_enabled))
+    {
+        return false;
+    }
+    let fixed_off = constraints.get("fixedOff").and_then(Value::as_object);
+    !["teacher", "subject", "room", "subjectGroup"]
+        .iter()
+        .any(|key| {
+            fixed_off
+                .and_then(|items| items.get(*key))
+                .is_some_and(constraint_tree_enabled)
+        })
+}
+
 fn norm(value: &str) -> String {
     value
         .trim()
@@ -10428,6 +14790,53 @@ mod tests {
     }
 
     #[test]
+    fn partial_agent_checkpoint_is_validated_only_for_vps_resume() {
+        let request = serde_json::to_vec(&agent_candidate_request()).unwrap();
+        let partial = json!({
+            "ok": false,
+            "kind": "no_complete_schedule_before_deadline",
+            "error": "partial",
+            "lessons": [{
+                "classId":"6A",
+                "subject":"Math",
+                "teacher":"Teacher 1",
+                "room":"Room 1",
+                "day":2,
+                "session":"AM",
+                "period":1,
+                "fixed":false
+            }],
+            "unassignedLessons":[{"classId":"6A", "subject":"Literature", "periods":1}],
+            "metrics":{
+                "scheduled_periods":1,
+                "expected_periods":2,
+                "unassigned_periods":1,
+                "app_constraint_violation_count":0,
+                "hard_ok":false,
+                "placement_hard_ok":true
+            },
+            "validation":{"hard_ok":false, "placement_hard_ok":true, "violations":[]}
+        });
+
+        assert!(validate_agent_candidate(&request, &partial).is_err());
+        let validated = validate_agent_resume_checkpoint(&request, &partial)
+            .expect("hard-valid partial resume checkpoint");
+
+        assert_eq!(validated.quality, [1, -1, 1, 0]);
+        assert_eq!(validated.payload["ok"], json!(false));
+        assert_eq!(
+            validated.payload["kind"],
+            json!("agent_partial_resume_checkpoint")
+        );
+        assert_eq!(validated.payload["metrics"]["hard_ok"], json!(false));
+        assert_eq!(
+            validated.payload["metrics"]["placement_hard_ok"],
+            json!(true)
+        );
+        assert_eq!(validated.payload["lessons"][0]["fixed"], json!(true));
+    }
+
+    #[test]
     fn agent_candidate_uses_and_propagates_two_stage_quality_order() {
         let mut request = agent_candidate_request();
         request["settings"] = json!({
@@ -10456,6 +14865,30 @@ mod tests {
         assert_eq!(
             validated.payload["solver"]["runtime_settings"]["optimization_focus"],
             json!("sessions")
+        );
+    }
+
+    #[test]
+    fn automatic_agent_selection_keeps_gap2_ahead_of_session_count() {
+        let mut request = agent_candidate_request();
+        request["settings"] = json!({
+            "require_complete_schedule": true,
+            "optimization_two_stage_teacher_quality": true,
+            "quality_priority_order": QUALITY_PRIORITY_TWO_STAGE,
+            "optimization_focus": "automatic"
+        });
+        let request = serde_json::to_vec(&request).unwrap();
+        let validated = validate_agent_candidate(&request, &agent_candidate_payload())
+            .expect("valid automatic candidate");
+
+        // Automatic first-result and refinement gates are singleton -> Gap2 ->
+        // sessions -> Gap1. The solver may still report its two-stage search
+        // strategy in metadata, but the coordinator's public candidate tuple
+        // must never let a rough Gap2 checkpoint beat a clean final result.
+        assert_eq!(validated.quality, [2, 0, 2, 0]);
+        assert_eq!(
+            validated.payload["metrics"]["quality_priority_order"],
+            json!(QUALITY_PRIORITY_TWO_STAGE)
         );
     }
 
@@ -10491,6 +14924,8 @@ mod tests {
             ("singletons", OptimizationFocus::Singletons),
             ("sessions", OptimizationFocus::Sessions),
             ("gaps", OptimizationFocus::Gaps),
+            ("gap2", OptimizationFocus::Gap2),
+            ("gap1", OptimizationFocus::Gap1),
         ] {
             let request = json!({"settings": {"optimization_focus": raw}});
             assert_eq!(
@@ -10498,6 +14933,27 @@ mod tests {
                 expected
             );
         }
+
+        let gap2_request = json!({
+            "settings": {
+                "optimization_focus": "gaps",
+                "optimization_gap_target": "gap2"
+            }
+        });
+        assert_eq!(
+            SolverConfig::from_request(&gap2_request, 1).optimization_focus,
+            OptimizationFocus::Gap2
+        );
+        let automatic_request = json!({
+            "settings": {
+                "optimization_focus": "automatic",
+                "optimization_gap_target": "gap2"
+            }
+        });
+        assert_eq!(
+            SolverConfig::from_request(&automatic_request, 1).optimization_focus,
+            OptimizationFocus::Automatic
+        );
     }
 
     #[test]
@@ -10764,6 +15220,45 @@ mod tests {
     }
 
     #[test]
+    fn automatic_fixed_lesson_inherits_assignment_teacher_when_schedule_maps_are_stripped() {
+        let root = json!({
+            "lop": [{"id":"6A", "ten":"6A", "khoi":"6"}],
+            "monhoc": [{"id":"math", "ten":"Math"}],
+            "mon": [{"khoi":"6", "ten":"Math", "sotiet":1, "gioihan":1}],
+            "pccmMatrix": {"6A|Math":"Teacher 1"},
+            "tkb": {
+                "6A": {
+                    "thu2": {
+                        "sang": [
+                            {"mon":"Math", "fixed":true},
+                            null,
+                            null,
+                            null,
+                            null
+                        ]
+                    }
+                }
+            }
+        });
+        let data = root.as_object().expect("test data object");
+        let mut solver_config = config(true, false);
+        solver_config.optimization_focus = OptimizationFocus::Automatic;
+        solver_config.skip_teacher_optimization = false;
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+
+        let result = solve_simple(data, 41, solver_config, &clock).expect("native automatic solve");
+        let payload: Value = serde_json::from_str(&result.payload).expect("solver payload");
+        let lessons = payload["lessons"].as_array().expect("lessons array");
+
+        assert_eq!(result.status, 200);
+        assert_eq!(payload["metrics"]["hard_ok"], json!(true));
+        assert_eq!(lessons.len(), 1);
+        assert_eq!(lessons[0]["teacher"], json!("Teacher 1"));
+        assert_eq!(lessons[0]["fixed"], json!(true));
+    }
+
+    #[test]
     fn quick_first_fit_repair_uses_a_same_class_blocker_swap() {
         let source = make_slot(2, "sang", 0);
         let target = make_slot(2, "sang", 1);
@@ -10946,6 +15441,121 @@ mod tests {
     }
 
     #[test]
+    fn split_gap_focus_preserves_its_exact_session_envelope() {
+        let gap2_before = TeacherOptimizationQuality {
+            one_period_sessions: 0,
+            teacher_sessions: 8,
+            gap2_plus_sessions: 2,
+            gap1_sessions: 1,
+            total_gap: 5,
+        };
+        let gap2_improved_with_gap1_debt = TeacherOptimizationQuality {
+            gap2_plus_sessions: 1,
+            gap1_sessions: 4,
+            total_gap: 7,
+            ..gap2_before
+        };
+        assert!(focused_gap_target_improved(
+            OptimizationFocus::Gap2,
+            &gap2_before,
+            &gap2_improved_with_gap1_debt
+        ));
+        assert!(focused_agent_candidate_acceptable(
+            OptimizationFocus::Gap2,
+            true,
+            &gap2_before,
+            &gap2_improved_with_gap1_debt
+        ));
+        assert!(focused_agent_candidate_acceptable(
+            OptimizationFocus::Gap2,
+            true,
+            &gap2_before,
+            &gap2_before
+        ));
+        assert!(!focused_agent_candidate_acceptable(
+            OptimizationFocus::Gap2,
+            true,
+            &gap2_before,
+            &TeacherOptimizationQuality {
+                gap1_sessions: 2,
+                total_gap: 6,
+                ..gap2_before
+            }
+        ));
+        assert!(!focused_gap_target_improved(
+            OptimizationFocus::Gap2,
+            &gap2_before,
+            &TeacherOptimizationQuality {
+                teacher_sessions: 7,
+                ..gap2_improved_with_gap1_debt
+            }
+        ));
+        assert!(!focused_agent_candidate_acceptable(
+            OptimizationFocus::Gap2,
+            true,
+            &gap2_before,
+            &TeacherOptimizationQuality {
+                one_period_sessions: 1,
+                ..gap2_improved_with_gap1_debt
+            }
+        ));
+
+        let gap1_before = TeacherOptimizationQuality {
+            one_period_sessions: 0,
+            teacher_sessions: 8,
+            gap2_plus_sessions: 0,
+            gap1_sessions: 4,
+            total_gap: 4,
+        };
+        let gap1_improved = TeacherOptimizationQuality {
+            gap1_sessions: 2,
+            total_gap: 2,
+            ..gap1_before
+        };
+        assert!(focused_gap_target_improved(
+            OptimizationFocus::Gap1,
+            &gap1_before,
+            &gap1_improved
+        ));
+        assert!(focused_agent_candidate_acceptable(
+            OptimizationFocus::Gap1,
+            true,
+            &gap1_before,
+            &gap1_improved
+        ));
+        assert!(focused_agent_candidate_acceptable(
+            OptimizationFocus::Gap1,
+            true,
+            &gap1_before,
+            &gap1_before
+        ));
+        assert!(!focused_gap_target_improved(
+            OptimizationFocus::Gap1,
+            &gap1_before,
+            &TeacherOptimizationQuality {
+                gap2_plus_sessions: 1,
+                ..gap1_improved
+            }
+        ));
+        assert!(!focused_gap_target_improved(
+            OptimizationFocus::Gap1,
+            &gap1_before,
+            &TeacherOptimizationQuality {
+                total_gap: 5,
+                ..gap1_improved
+            }
+        ));
+        assert!(!focused_gap_target_improved(
+            OptimizationFocus::Gap1,
+            &TeacherOptimizationQuality {
+                gap2_plus_sessions: 1,
+                ..gap1_before
+            },
+            &gap1_improved
+        ));
+    }
+
+    #[test]
     fn session_phase_keeps_searching_through_gap2_debt() {
         let before = TeacherOptimizationQuality {
             one_period_sessions: 0,
@@ -11008,6 +15618,415 @@ mod tests {
         assert_eq!(stats.initial_teacher_sessions, 2);
         assert_eq!(stats.final_teacher_sessions, 1);
         assert!(schedule_hard_ok(&lessons, &HashSet::new(), &HashMap::new()));
+    }
+
+    #[test]
+    fn five_cycle_eliminates_residual_singletons_without_gap_debt() {
+        let mut lessons = vec![
+            lesson_json(
+                "6A",
+                "6A",
+                "Anchor",
+                "GV01",
+                "",
+                &make_slot(2, "sang", 0),
+                false,
+            ),
+            lesson_json(
+                "6A",
+                "6A",
+                "Cycle B",
+                "",
+                "",
+                &make_slot(3, "sang", 0),
+                false,
+            ),
+            lesson_json(
+                "6A",
+                "6A",
+                "Cycle C",
+                "",
+                "",
+                &make_slot(4, "sang", 0),
+                false,
+            ),
+            lesson_json(
+                "6A",
+                "6A",
+                "Cycle D",
+                "",
+                "",
+                &make_slot(5, "sang", 0),
+                false,
+            ),
+            lesson_json(
+                "6A",
+                "6A",
+                "Cycle E",
+                "",
+                "",
+                &make_slot(6, "sang", 0),
+                false,
+            ),
+            lesson_json(
+                "6B",
+                "6B",
+                "Companion",
+                "GV01",
+                "",
+                &make_slot(3, "sang", 1),
+                false,
+            ),
+        ];
+        let before = teacher_optimization_quality(&lessons);
+        let mut solver_config = config(true, false);
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+
+        let moves = optimize_remaining_singletons_by_five_cycles(
+            &mut lessons,
+            &HashSet::new(),
+            &HashMap::new(),
+            53,
+            1,
+            10_000,
+            &clock,
+        );
+        let after = teacher_optimization_quality(&lessons);
+
+        assert_eq!(before.one_period_sessions, 2);
+        assert_eq!(before.teacher_sessions, 2);
+        assert_eq!(moves, 1);
+        assert_eq!(after.one_period_sessions, 0);
+        assert_eq!(after.teacher_sessions, 1);
+        assert_eq!(after.gap2_plus_sessions, 0);
+        assert!(schedule_hard_ok(&lessons, &HashSet::new(), &HashMap::new()));
+    }
+
+    #[test]
+    fn two_singletons_can_move_atomically_into_a_common_session() {
+        let mut lessons = vec![
+            lesson_json(
+                "6A",
+                "6A",
+                "Math",
+                "GV01",
+                "",
+                &make_slot(2, "sang", 0),
+                false,
+            ),
+            lesson_json(
+                "6B",
+                "6B",
+                "Literature",
+                "GV01",
+                "",
+                &make_slot(3, "sang", 0),
+                false,
+            ),
+        ];
+        let before = teacher_optimization_quality(&lessons);
+        let mut solver_config = config(true, false);
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+
+        let moves = optimize_two_singletons_to_common_session(
+            &mut lessons,
+            &HashSet::new(),
+            &HashMap::new(),
+            71,
+            1,
+            2_000,
+            &clock,
+        );
+        let after = teacher_optimization_quality(&lessons);
+
+        assert_eq!(before.one_period_sessions, 2);
+        assert_eq!(moves, 1);
+        assert_eq!(after.one_period_sessions, 0);
+        assert_eq!(after.teacher_sessions, 1);
+        assert_eq!(after.gap2_plus_sessions, 0);
+        assert!(schedule_hard_ok(&lessons, &HashSet::new(), &HashMap::new()));
+    }
+
+    #[test]
+    fn singleton_rehomes_class_blocker_when_direct_swap_is_resource_blocked() {
+        let mut lessons = vec![
+            lesson_json(
+                "6A",
+                "6A",
+                "Singleton",
+                "GV-A",
+                "",
+                &make_slot(2, "chieu", 0),
+                false,
+            ),
+            lesson_json(
+                "6B",
+                "6B",
+                "Companion",
+                "GV-A",
+                "",
+                &make_slot(3, "sang", 0),
+                false,
+            ),
+            lesson_json(
+                "6A",
+                "6A",
+                "Blocker",
+                "GV-B",
+                "",
+                &make_slot(3, "sang", 1),
+                false,
+            ),
+            lesson_json(
+                "6C",
+                "6C",
+                "Busy source 1",
+                "GV-B",
+                "",
+                &make_slot(2, "chieu", 0),
+                false,
+            ),
+            lesson_json(
+                "6D",
+                "6D",
+                "Busy source 2",
+                "GV-B",
+                "",
+                &make_slot(2, "chieu", 1),
+                false,
+            ),
+            lesson_json(
+                "6E",
+                "6E",
+                "Rehome peer 1",
+                "GV-B",
+                "",
+                &make_slot(4, "sang", 0),
+                false,
+            ),
+            lesson_json(
+                "6F",
+                "6F",
+                "Rehome peer 2",
+                "GV-B",
+                "",
+                &make_slot(4, "sang", 1),
+                false,
+            ),
+        ];
+        let source_key = teacher_session_key("GV-A", 2, "chieu");
+        let session_index = teacher_session_index(&lessons);
+        let before = teacher_optimization_quality(&lessons);
+        let mut direct_swap = lessons.clone();
+
+        assert!(
+            !try_move_singleton_into_teacher_session_by_relaxed_class_swap(
+                &mut direct_swap,
+                0,
+                &source_key,
+                &session_index,
+                &HashSet::new(),
+                &HashMap::new(),
+                71,
+            )
+        );
+        assert!(try_move_singleton_into_teacher_session_by_class_rehome(
+            &mut lessons,
+            0,
+            &source_key,
+            &session_index,
+            &HashSet::new(),
+            &HashMap::new(),
+            71,
+        ));
+
+        let after = teacher_optimization_quality(&lessons);
+        assert!(after.one_period_sessions < before.one_period_sessions);
+        assert!(after.teacher_sessions < before.teacher_sessions);
+        assert_eq!(after.gap2_plus_sessions, 0);
+        assert!(schedule_hard_ok(&lessons, &HashSet::new(), &HashMap::new()));
+    }
+
+    #[test]
+    fn singleton_ejection_beam_resolves_a_three_teacher_chain() {
+        let mut lessons = vec![
+            lesson_json(
+                "6A",
+                "6A",
+                "Anchor",
+                "GV-A",
+                "",
+                &make_slot(2, "sang", 0),
+                false,
+            ),
+            lesson_json(
+                "6A",
+                "6A",
+                "Blocker B",
+                "GV-B",
+                "",
+                &make_slot(3, "sang", 1),
+                false,
+            ),
+            lesson_json(
+                "6A",
+                "6A",
+                "Blocker C",
+                "GV-C",
+                "",
+                &make_slot(4, "sang", 1),
+                false,
+            ),
+            lesson_json(
+                "6B",
+                "6B",
+                "A peer",
+                "GV-A",
+                "",
+                &make_slot(3, "sang", 0),
+                false,
+            ),
+            lesson_json(
+                "6B",
+                "6B",
+                "B source peer 1",
+                "GV-B",
+                "",
+                &make_slot(3, "sang", 2),
+                false,
+            ),
+            lesson_json(
+                "6C",
+                "6C",
+                "B source peer 2",
+                "GV-B",
+                "",
+                &make_slot(3, "sang", 3),
+                false,
+            ),
+            lesson_json(
+                "6D",
+                "6D",
+                "B target peer 1",
+                "GV-B",
+                "",
+                &make_slot(4, "sang", 0),
+                false,
+            ),
+            lesson_json(
+                "6E",
+                "6E",
+                "B target peer 2",
+                "GV-B",
+                "",
+                &make_slot(4, "sang", 2),
+                false,
+            ),
+            lesson_json(
+                "6F",
+                "6F",
+                "B source guard",
+                "GV-B",
+                "",
+                &make_slot(2, "sang", 0),
+                false,
+            ),
+            lesson_json(
+                "6G",
+                "6G",
+                "B source guard peer",
+                "GV-B",
+                "",
+                &make_slot(2, "sang", 1),
+                false,
+            ),
+            lesson_json(
+                "6H",
+                "6H",
+                "C source peer 1",
+                "GV-C",
+                "",
+                &make_slot(4, "sang", 3),
+                false,
+            ),
+            lesson_json(
+                "6I",
+                "6I",
+                "C source peer 2",
+                "GV-C",
+                "",
+                &make_slot(4, "sang", 4),
+                false,
+            ),
+            lesson_json(
+                "6J",
+                "6J",
+                "C target peer 1",
+                "GV-C",
+                "",
+                &make_slot(2, "sang", 1),
+                false,
+            ),
+            lesson_json(
+                "6K",
+                "6K",
+                "C target peer 2",
+                "GV-C",
+                "",
+                &make_slot(2, "sang", 2),
+                false,
+            ),
+        ];
+        let before = teacher_optimization_quality(&lessons);
+        let pipeline_input = lessons.clone();
+        let mut solver_config = config(true, false);
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+
+        let moves = optimize_remaining_singletons_ejection_beam(
+            &mut lessons,
+            &HashSet::new(),
+            &HashMap::new(),
+            83,
+            4,
+            16,
+            4_000,
+            &clock,
+        );
+        let after = teacher_optimization_quality(&lessons);
+
+        assert_eq!(before.one_period_sessions, 2);
+        assert!(moves >= 3);
+        assert_eq!(after.one_period_sessions, 0);
+        assert!(after.teacher_sessions < before.teacher_sessions);
+        assert_eq!(after.gap2_plus_sessions, 0);
+        assert!(schedule_hard_ok(&lessons, &HashSet::new(), &HashMap::new()));
+
+        // The focused pipeline must also enter the beam when two singleton
+        // sessions survive its cheap neighbourhoods, not only when one is
+        // left over.
+        let mut pipeline_lessons = pipeline_input;
+        let mut pipeline_config = config(true, false);
+        pipeline_config.native_deadline_reserve_ms = 0;
+        let pipeline_clock = SolveClock::new(pipeline_config, None);
+        optimize_teacher_single_sessions(
+            &mut pipeline_lessons,
+            &HashSet::new(),
+            &HashMap::new(),
+            83,
+            false,
+            true,
+            OptimizationFocus::Singletons,
+            &pipeline_clock,
+        );
+        assert_eq!(count_one_period_teacher_sessions(&pipeline_lessons), 0);
+        assert!(schedule_hard_ok(
+            &pipeline_lessons,
+            &HashSet::new(),
+            &HashMap::new()
+        ));
     }
 
     #[test]
@@ -11099,6 +16118,34 @@ mod tests {
     }
 
     #[test]
+    fn focused_gap1_waits_until_gap2_is_zero() {
+        let mut lessons = vec![
+            teacher_quality_test_lesson("6A", "GV01", 2, 0),
+            teacher_quality_test_lesson("6B", "GV01", 2, 3),
+        ];
+        let original = lessons.clone();
+        let before = teacher_optimization_quality(&lessons);
+        let mut solver_config = config(true, false);
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+
+        let stats = optimize_teacher_single_sessions(
+            &mut lessons,
+            &HashSet::new(),
+            &HashMap::new(),
+            2,
+            true,
+            true,
+            OptimizationFocus::Gap1,
+            &clock,
+        );
+
+        assert_eq!(before.gap2_plus_sessions, 1);
+        assert_eq!(stats.moves, 0);
+        assert_eq!(lessons, original);
+    }
+
+    #[test]
     fn gap1_chain_moves_a_blocker_without_changing_teacher_sessions() {
         let mut lessons = vec![
             lesson_json(
@@ -11169,6 +16216,303 @@ mod tests {
         assert_eq!(after.teacher_sessions, before.teacher_sessions);
         assert_eq!(after.one_period_sessions, 0);
         assert!(schedule_hard_ok(&lessons, &HashSet::new(), &HashMap::new()));
+    }
+
+    #[test]
+    fn exact_class_session_repack_closes_gap_with_an_empty_cell() {
+        let mut lessons = vec![
+            lesson_json(
+                "6A",
+                "6A",
+                "Target A",
+                "GV01",
+                "",
+                &make_slot(2, "sang", 0),
+                false,
+            ),
+            lesson_json(
+                "6A",
+                "6A",
+                "Blocker",
+                "GV02",
+                "",
+                &make_slot(2, "sang", 1),
+                false,
+            ),
+            lesson_json(
+                "6B",
+                "6B",
+                "Target B",
+                "GV01",
+                "",
+                &make_slot(2, "sang", 2),
+                false,
+            ),
+        ];
+        let before = teacher_optimization_quality(&lessons);
+        let mut solver_config = config(true, false);
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+
+        let moves = optimize_teacher_exact_session_repack(
+            &mut lessons,
+            &HashSet::new(),
+            &HashMap::new(),
+            97,
+            1,
+            1,
+            &clock,
+        );
+        let after = teacher_optimization_quality(&lessons);
+
+        assert_eq!(before.gap1_sessions, 1);
+        assert_eq!(moves, 1);
+        assert_eq!(after.gap1_sessions, 0);
+        assert_eq!(after.gap2_plus_sessions, 0);
+        assert_eq!(after.one_period_sessions, before.one_period_sessions);
+        assert_eq!(after.teacher_sessions, before.teacher_sessions);
+        assert!(schedule_hard_ok(&lessons, &HashSet::new(), &HashMap::new()));
+    }
+
+    #[test]
+    fn singleton_class_cycle_can_use_new_sessions_for_middle_blockers() {
+        let source = make_slot(2, "chieu", 0);
+        let target = make_slot(3, "sang", 1);
+        let middle = make_slot(4, "sang", 1);
+        let tail = make_slot(5, "sang", 1);
+        let mut lessons = vec![
+            lesson_json("6A", "6A", "A", "GV-A", "", &source, false),
+            lesson_json(
+                "6B",
+                "6B",
+                "A peer",
+                "GV-A",
+                "",
+                &make_slot(3, "sang", 0),
+                false,
+            ),
+            lesson_json("6A", "6A", "B", "GV-B", "", &target, false),
+            lesson_json("6A", "6A", "C", "GV-C", "", &middle, false),
+            lesson_json("6A", "6A", "D", "GV-D", "", &tail, false),
+            lesson_json(
+                "6C",
+                "6C",
+                "B guard 1",
+                "GV-B",
+                "",
+                &make_slot(2, "chieu", 0),
+                false,
+            ),
+            lesson_json(
+                "6D",
+                "6D",
+                "B guard 2",
+                "GV-B",
+                "",
+                &make_slot(2, "chieu", 1),
+                false,
+            ),
+            lesson_json(
+                "6E",
+                "6E",
+                "B tail guard 1",
+                "GV-B",
+                "",
+                &make_slot(5, "sang", 1),
+                false,
+            ),
+            lesson_json(
+                "6F",
+                "6F",
+                "B tail guard 2",
+                "GV-B",
+                "",
+                &make_slot(5, "sang", 2),
+                false,
+            ),
+            lesson_json(
+                "6G",
+                "6G",
+                "C guard 1",
+                "GV-C",
+                "",
+                &make_slot(2, "chieu", 0),
+                false,
+            ),
+            lesson_json(
+                "6H",
+                "6H",
+                "C guard 2",
+                "GV-C",
+                "",
+                &make_slot(2, "chieu", 1),
+                false,
+            ),
+        ];
+        let allowed = [
+            target_slot_identity(&source),
+            target_slot_identity(&target),
+            target_slot_identity(&middle),
+            target_slot_identity(&tail),
+        ]
+        .into_iter()
+        .collect::<HashSet<_>>();
+        let mut off_slots = HashSet::new();
+        for (_, day) in DAYS {
+            for (session_key, _) in SESSIONS {
+                for period in 0..PERIODS_PER_SESSION {
+                    let slot = make_slot(day, session_key, period);
+                    if !allowed.contains(&target_slot_identity(&slot)) {
+                        off_slots.insert(slot_key("6A", &slot));
+                    }
+                }
+            }
+        }
+        let before = teacher_optimization_quality(&lessons);
+        let mut solver_config = config(true, false);
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+
+        let moves = optimize_remaining_singletons_by_class_cycles(
+            &mut lessons,
+            &off_slots,
+            &HashMap::new(),
+            109,
+            1,
+            5,
+            10_000,
+            &clock,
+        );
+        let after = teacher_optimization_quality(&lessons);
+
+        assert_eq!(moves, 1);
+        assert!(after.one_period_sessions < before.one_period_sessions);
+        assert!(after.teacher_sessions < before.teacher_sessions);
+        assert_eq!(after.gap2_plus_sessions, 0);
+        assert!(schedule_hard_ok(&lessons, &off_slots, &HashMap::new()));
+    }
+
+    #[test]
+    fn residual_singleton_reverse_cycle_moves_a_peer_lesson_into_the_target_session() {
+        let mut lessons = vec![
+            lesson_json(
+                "S",
+                "S",
+                "T singleton",
+                "T",
+                "",
+                &make_slot(3, "chieu", 1),
+                false,
+            ),
+            lesson_json(
+                "A",
+                "A",
+                "T anchor",
+                "T",
+                "",
+                &make_slot(4, "sang", 3),
+                false,
+            ),
+            lesson_json(
+                "X",
+                "X",
+                "T peer 1",
+                "T",
+                "",
+                &make_slot(4, "sang", 0),
+                false,
+            ),
+            lesson_json(
+                "Y",
+                "Y",
+                "T peer 2",
+                "T",
+                "",
+                &make_slot(4, "sang", 1),
+                false,
+            ),
+            lesson_json(
+                "A",
+                "A",
+                "H blocker",
+                "H",
+                "",
+                &make_slot(3, "chieu", 2),
+                false,
+            ),
+            lesson_json(
+                "H1",
+                "H1",
+                "H peer 1",
+                "H",
+                "",
+                &make_slot(3, "chieu", 3),
+                false,
+            ),
+            lesson_json(
+                "H2",
+                "H2",
+                "H peer 2",
+                "H",
+                "",
+                &make_slot(3, "chieu", 4),
+                false,
+            ),
+            lesson_json(
+                "H3",
+                "H3",
+                "H source",
+                "H",
+                "",
+                &make_slot(4, "sang", 3),
+                false,
+            ),
+            lesson_json(
+                "A",
+                "A",
+                "J blocker",
+                "J",
+                "",
+                &make_slot(4, "sang", 4),
+                false,
+            ),
+            lesson_json(
+                "J1",
+                "J1",
+                "J peer",
+                "J",
+                "",
+                &make_slot(4, "sang", 2),
+                false,
+            ),
+        ];
+        let mut off_slots = HashSet::new();
+        for period in [0_i64, 3, 4] {
+            off_slots.insert(slot_key("A", &make_slot(3, "chieu", period)));
+        }
+        for period in [0_i64, 1, 2] {
+            off_slots.insert(slot_key("A", &make_slot(4, "sang", period)));
+        }
+        let before = teacher_optimization_quality(&lessons);
+        let mut solver_config = config(true, false);
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+
+        let moves = optimize_residual_singleton_reverse_cycles(
+            &mut lessons,
+            &off_slots,
+            &HashMap::new(),
+            109,
+            &clock,
+        );
+        let after = teacher_optimization_quality(&lessons);
+
+        assert_eq!(before.one_period_sessions, 2);
+        assert!(moves >= 3);
+        assert_eq!(after.one_period_sessions, 0);
+        assert!(after.teacher_sessions <= before.teacher_sessions);
+        assert_eq!(after.gap2_plus_sessions, 0);
+        assert!(schedule_hard_ok(&lessons, &off_slots, &HashMap::new()));
     }
 
     #[test]
@@ -11665,6 +17009,154 @@ mod tests {
         assert_eq!(fixed.len(), 1);
         assert_eq!(fixed[0].subject, "Toán");
         assert_eq!(existing.len(), 1);
+        assert!(lesson_fixed(&existing[0]));
         assert_eq!(lesson_subject(&existing[0]), "Toán");
+    }
+
+    #[test]
+    fn global_three_cycle_reduces_gap1_without_new_teacher_sessions() {
+        let lesson =
+            |class_id: &str, subject: &str, teacher: &str, day: i64, session: &str, period: i64| {
+                lesson_json(
+                    class_id,
+                    class_id,
+                    subject,
+                    teacher,
+                    "",
+                    &make_slot(day, session, period),
+                    false,
+                )
+            };
+        let mut lessons = vec![
+            lesson("C", "A", "T1", 2, "chieu", 0),
+            lesson("C", "B", "T2", 3, "sang", 0),
+            lesson("C", "C", "T3", 3, "chieu", 1),
+            lesson("T1A", "D", "T1", 2, "chieu", 1),
+            lesson("T1B", "E", "T1", 2, "chieu", 2),
+            lesson("T1C", "F", "T1", 3, "chieu", 0),
+            lesson("T1D", "G", "T1", 3, "chieu", 2),
+            lesson("T2A", "H", "T2", 3, "sang", 2),
+            lesson("T2B", "I", "T2", 3, "sang", 3),
+            lesson("T2C", "J", "T2", 2, "chieu", 1),
+            lesson("T2D", "K", "T2", 2, "chieu", 2),
+            lesson("T3A", "L", "T3", 3, "chieu", 0),
+            lesson("T3B", "M", "T3", 3, "chieu", 2),
+            lesson("T3C", "N", "T3", 3, "sang", 1),
+            lesson("T3D", "O", "T3", 3, "sang", 2),
+            lesson("T3E", "P", "T3", 3, "sang", 3),
+        ];
+        let before = teacher_optimization_quality(&lessons);
+        let allowed_sessions = teacher_session_key_set(&lessons);
+        assert_eq!(before.teacher_sessions, 6);
+        assert_eq!(before.one_period_sessions, 0);
+        assert_eq!(before.gap2_plus_sessions, 0);
+        assert_eq!(before.gap1_sessions, 2);
+
+        let mut solver_config = config(true, false);
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+        let moves = optimize_teacher_global_same_class_three_cycles(
+            &mut lessons,
+            &HashSet::new(),
+            &HashMap::new(),
+            17,
+            TeacherOptimizationPhase::Gap1,
+            &clock,
+        );
+        let after = teacher_optimization_quality(&lessons);
+
+        assert!(moves > 0);
+        assert_eq!(after.teacher_sessions, 6);
+        assert_eq!(after.one_period_sessions, 0);
+        assert_eq!(after.gap2_plus_sessions, 0);
+        assert_eq!(after.gap1_sessions, 1);
+        assert!(teacher_sessions_subset(&lessons, &allowed_sessions));
+        assert!(schedule_hard_ok(&lessons, &HashSet::new(), &HashMap::new(),));
+    }
+
+    #[test]
+    fn global_session_repack_defers_richer_user_constraints_to_reference_solver() {
+        let plain = json!({"tkbConstraints":{"fixedOff":{"class":{"6A":{"thu2|sang|0":true}}}}});
+        assert!(global_session_repack_safe(
+            plain.as_object().expect("plain data")
+        ));
+
+        for constrained in [
+            json!({"tkbConstraints":{"fixedOff":{"teacher":{"T1":{"thu2|sang|0":true}}}}}),
+            json!({"tkbConstraints":{"teacher":{"T1":{"mustTeach":{"thu2|sang|0":true}}}}}),
+            json!({"tkbConstraints":{"subject":{"Toan":{"lessonBlocks":{"min":1}}}}}),
+            json!({"tkbConstraints":{"subjectNoSameSession":{"6A":{"Toan":{"Ly":true}}}}}),
+        ] {
+            assert!(!global_session_repack_safe(
+                constrained.as_object().expect("constrained data")
+            ));
+        }
+    }
+
+    #[test]
+    fn global_session_repack_removes_a_two_class_teacher_session_atomically() {
+        let lesson = |class_id: &str, subject: &str, teacher: &str, day: i64, period: i64| {
+            lesson_json(
+                class_id,
+                class_id,
+                subject,
+                teacher,
+                "",
+                &make_slot(day, "sang", period),
+                false,
+            )
+        };
+        let mut lessons = vec![
+            // The focus teacher session can disappear only when both classes
+            // are repacked in one atomic neighborhood.
+            lesson("A", "Focus A", "Focus", 2, 0),
+            lesson("B", "Focus B", "Focus", 2, 1),
+            lesson("TA", "Target A1", "Focus", 3, 0),
+            lesson("TB", "Target A2", "Focus", 3, 1),
+            lesson("TC", "Target B1", "Focus", 4, 0),
+            lesson("TD", "Target B2", "Focus", 4, 1),
+            // Class A donates U's target slot; U keeps both original sessions.
+            lesson("A", "Block A", "U", 3, 2),
+            lesson("UA", "U target 1", "U", 3, 3),
+            lesson("UB", "U target 2", "U", 3, 4),
+            lesson("UC", "U source 1", "U", 2, 2),
+            lesson("UD", "U source 2", "U", 2, 3),
+            // Class B donates V's target slot under the same clean envelope.
+            lesson("B", "Block B", "V", 4, 2),
+            lesson("VA", "V target 1", "V", 4, 3),
+            lesson("VB", "V target 2", "V", 4, 4),
+            lesson("VC", "V source 1", "V", 2, 2),
+            lesson("VD", "V source 2", "V", 2, 3),
+        ];
+        let before = teacher_optimization_quality(&lessons);
+        let allowed_sessions = teacher_session_key_set(&lessons);
+        let mut solver_config = config(true, false);
+        solver_config.native_deadline_reserve_ms = 0;
+        let clock = SolveClock::new(solver_config, None);
+
+        let moves = optimize_teacher_global_session_repack(
+            &mut lessons,
+            &HashSet::new(),
+            &HashMap::new(),
+            23,
+            &clock,
+        );
+        let after = teacher_optimization_quality(&lessons);
+
+        assert!(moves > 0);
+        assert_eq!(before.one_period_sessions, 0);
+        assert_eq!(before.gap2_plus_sessions, 0);
+        assert_eq!(after.one_period_sessions, 0);
+        assert_eq!(after.gap2_plus_sessions, 0);
+        assert_eq!(after.teacher_sessions, before.teacher_sessions - 1);
+        assert!(
+            !teacher_session_key_set(&lessons).contains(&teacher_session_key(
+                &norm("Focus"),
+                2,
+                "sang",
+            ))
+        );
+        assert!(teacher_sessions_subset(&lessons, &allowed_sessions));
+        assert!(schedule_hard_ok(&lessons, &HashSet::new(), &HashMap::new(),));
     }
 }

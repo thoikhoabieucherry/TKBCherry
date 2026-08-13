@@ -121,7 +121,7 @@ fn fill_os_random(bytes: &mut [u8]) -> io::Result<()> {
 #[cfg(not(any(unix, windows)))]
 compile_error!("TKB authentication requires an operating-system CSPRNG");
 
-fn random_token() -> String {
+pub(crate) fn random_token() -> String {
     let mut bytes = [0_u8; 32];
     fill_os_random(&mut bytes).expect("operating-system CSPRNG unavailable");
     let mut token = String::with_capacity(bytes.len() * 2);
@@ -535,6 +535,7 @@ pub fn create_agent_credential(db: &Db, session: &Value) -> Option<(String, u64)
         "scope": "agent_helper",
         "userId": user_key,
         "schoolId": school_id,
+        "role": session.get("role").cloned().unwrap_or(json!("")),
         "displayName": session
             .get("displayName")
             .cloned()

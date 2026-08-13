@@ -1,19 +1,6012 @@
 # TKBCherry Project Handoff
 
-Last updated: 2026-07-26 (Asia/Bangkok)
+## 2026-08-13 canonical GitHub publication audit (local, pending PR)
+
+- Audited the complete canonical source worktree before publication to the
+  private `thoikhoabieucherry/TKBCherry` repository. No live password, token,
+  private key, bearer credential, real `.env`, database, log, or school
+  workbook was found in the publish scope. Local `.codex/`, `.codex_tmp/`,
+  caches, build outputs, and ignored runtime data remain excluded.
+- Fixed a syntax-block indentation defect in the Automatic singleton-floor
+  probe in `solver_runtime/src/tkb_new/adapter.py`. The misplaced proof call
+  sat outside its `try` block and prevented the Python solver from importing.
+- Restored Phase S for safe staged Automatic refinement when the singleton
+  floor is already reached but Gap2 debt remains. Skipping that phase discarded
+  bounded Gap2 repairs, hid the session-compression attempt telemetry, and sent
+  the first candidate through the wrong objective contract.
+- Updated the planner toolbar cache-marker assertion from the retired v1202
+  bridge marker to the current v1214 marker used by `sapxep.html`; application
+  behavior did not change for this test-only correction.
+- Verification after the fixes: Python compile and `git diff --check` pass;
+  focused scheduler/result/model-plan suites pass **277 tests + 54 subtests**
+  with four optional/environment skips; selected planner/model/constraint Node
+  suites pass **74/74**; deployment packaging passes **15/15**; JavaScript
+  syntax checks pass. The monolithic 325-test bridge process produced no output
+  before a five-minute local timeout, so it is recorded as inconclusive rather
+  than passed or failed. Rust `cargo check` could not run because this Windows
+  environment does not have the MSVC `link.exe` toolchain.
+- No VPS, Cloud Run, database, timetable, or other production state changed
+  during this audit.
+
+## 2026-08-11 progressive Automatic quality debt repair (local, pending deploy)
+
+- Root cause: the repeated Automatic refinement envelope required a candidate to
+  reach the structural `1 tiết/buổi` floor and `2 tiết trống = 0` in one click.
+  Valid partial improvements were discarded, so the next click restarted from
+  the same incumbent and appeared to do nothing.
+- Updated the backend safe-stage acceptance and singleton-local lane to retain
+  monotone intermediate reductions. Each click may now reduce singleton or
+  Gap2 debt progressively; teacher sessions, Gap1 and total gaps remain bounded
+  and hard-valid requirements remain unchanged. Frontend settlement guard now
+  mirrors this contract, so accepted backend progress is not restored away.
+- Final review fixed two additional orchestration defects. A diversified
+  hard-debt retry can no longer overwrite a better progressive checkpoint, and
+  its dedicated full-repair model now receives exactly the bounded
+  session/Gap1/total-gap headroom allowed by the publication guard. The normal
+  partial-progress model remains component-wise monotone.
+- Read-only live UI evidence for `sid=e3d7a3b21e1` is currently complete at
+  `2103/2103`, but quality is still `680` teacher sessions, singleton `14`,
+  Gap1 `139`, and Gap2 `48`. This confirms the reported defect is quality
+  continuation, not timetable completion.
+- Added regressions for partial singleton/Gap2 progress, best-candidate retry
+  retention, newly proven singleton floors and frontend settlement. Before the
+  final retry patch the Python focus file passed 77 tests. After the final
+  patch, Python compilation, six focused Rust-bridge Node contracts,
+  JavaScript syntax and `git diff --check` pass. The full Python rerun and
+  isolated production-data canary still require explicit approval to upload
+  the candidate into a temporary VPS test directory; no database write is
+  involved.
+- Not deployed to VPS or Cloud Run yet. Production behavior remains unchanged
+  until the remote test/canary and guarded rollout are explicitly approved.
+- The owner explicitly approved the scoped `/tmp` VPS test/canary and guarded
+  VPS + Cloud Run rollout on 2026-08-11, but this Codex execution environment
+  rejected the credentialed upload command under its read-only/never-approval
+  policy. No VPS, Cloud Run, database or timetable state changed. Local guarded
+  scripts are `.codex_tmp/run_progressive_remote_tests.py` and
+  `.codex_tmp/deploy_progressive_auto_quality_v346.py`; the Cloud release tree
+  is `.codex_tmp/release-progressive-auto-v346`. Its build-context validation
+  passes with 33 files, no tests, 2,305,744 bytes and candidate solver digest
+  `b1883932f69cc762ae1550e27e610f2893fe5677ff17b7bf1de870e48f9a7d6c`.
+
+## 2026-08-11 fixed-aware capacity-partial completion rescue (deployed)
+
+- Final root cause: the early advisory capacity preflight ignored all 360
+  user-fixed lessons. It therefore saw zero overflow and dispatched the request
+  to the strict complete-only teacher-session wrapper. The preflight now
+  extracts and validates hard-fixed lessons, reserves their resource slots,
+  removes their demand from the residual context, and passes them into the
+  authoritative assignment/session flow trim. A proven overflow enables only
+  the strict capacity-partial result contract.
+- Production-derived revision `1786370086444` has 72 classes, 936 PCCM rows
+  and 2,103 periods. It has no fixed class/teacher/room collision. Exact
+  physical remainder: one `6/9 - Cong nghe - CN.Nga` period and the
+  three-period `9/20 - Tieng Anh - AV.Hang` assignment. `CN.Nga` has 21
+  periods but 20 usable teacher slots; `AV.Hang` has 21 periods but 19 usable
+  slots, and the English pair rule prevents retaining an invalid one-period
+  fragment. Opening Thu 5 PM period 1 for `CN.Nga` plus Thu 6 AM periods 1-2
+  for `AV.Hang` produced a complete 2,103/2,103 isolated replay. Keeping those
+  OFF rules correctly returns 2,099 scheduled plus four `Chua phan`.
+- Verification passed: solver tests **369/369** with six optional-workbook
+  skips, Python compilation, and `git diff --check`. Exact local replay returned
+  HTTP-like 200 in 32.027 seconds with 2,099 scheduled, four
+  capacity-unassigned, zero solver-unassigned, exact accounting, hard-valid
+  placement, and zero class/teacher/room/application conflicts.
+- VPS deployed adapter SHA-256
+  `72ff4b63f5ce3edf6c72223badd97465a9b5741f1c8769237230e863d2a11e2a`;
+  validator stayed byte-identical at
+  `60f5f2af63709b914164a4ea1f433a5124f9f9139b14447c81e5f9c18b57a16f`.
+  Transaction backup:
+  `/opt/cherry-scheduler-backups/fixed-aware-capacity-partial-v133-20260810-184640`.
+  Direct post-deploy VPS replay returned HTTP 200 in 20.708 seconds with the
+  same 2,099 + 4 result and all conflict counters zero.
+- Cloud Build `71db8a22-4db9-4bc9-9702-518967fe34c5` produced the minimal
+  33-file image. Cloud Run revision `tkb-solver-00015-d89` is Ready at 100%
+  canonical traffic; image digest is
+  `sha256:7832e27ca4c75ed1d3448e1bf07cbc5084dba3b983ce984e3e05696ef47e7a2d`
+  and solver digest is
+  `77dc6c3834f381439b315569eb27e042ca2d926282faaf75daa5ec80efcaeb8e`.
+  Private ADC canary returned HTTP 200 in 31.988 seconds with the same exact
+  accounting and no hard conflict. Active `cloud-run-primary` profile was
+  repinned only after canary passed; profile backup:
+  `/opt/cherry-scheduler-backups/serverless-profile-1786403928.db`.
+- No school timetable row was written by the scan, local replay, VPS replay or
+  Cloud Run canary. Only solver source and active Cloud solver digest changed.
+
+- A live `sid=e3d7a3b21e1` replay with the current fixed-off data reached
+  `2,099/2,103` periods and zero concrete class/teacher/room/application
+  conflicts, but the completion-first coordinator discarded that capacity-only
+  incumbent and returned HTTP 422. The missing four periods are not solver
+  accounting debt: they are emitted by the authoritative fixed-off capacity
+  trim (`reason=not_enough_available_slots`).
+- Added `_capacity_partial_payload_metrics_acceptable()` in
+  `solver_runtime/src/tkb_new/adapter.py`. It requires exact accounting,
+  `capacity_unassigned_periods == unassigned_periods`, zero solver remainder,
+  zero resource/application/slot violations, and every remainder item to carry
+  the physical-capacity reason. A timeout/solver-best-effort remainder still
+  fails closed.
+- Benders now retains the best validated capacity-only incumbent while it
+  searches for a complete schedule. When the browser explicitly advertises
+  `ui_accept_incomplete_best_effort`, the unified first-click coordinator
+  returns that incumbent as `capacity_partial_fallback` instead of raising the
+  misleading “no complete schedule” error. Quality cleanup is skipped because
+  the result is already the best safe placement contract for this click.
+- Focused contract tests cover acceptance of a capacity-only payload and
+  rejection of a solver remainder; the tiny mocked Benders capacity replay
+  returns a hard-valid partial result. Python compilation and `git diff --check`
+  pass. Deployment and exact production-derived canaries are recorded above.
+
+## 2026-08-10 fixed-lesson Benders NameError hotfix (deployed)
+
+- Live browser evidence for `sid=e3d7a3b21e1` isolated the new failure to a
+  one-line production packaging defect, not an infeasible timetable. The first
+  completion-rescue attempt reached `2,099/2,103`, but both subsequent Phase-F
+  rescue branches failed immediately with
+  `NameError: name 'hard_fixed_lessons' is not defined`; the server therefore
+  returned HTTP 422 and the UI retained the 360 fixed periods already visible.
+- `_solve_teacher_session_benders_candidate()` now passes its in-scope
+  `fixed_existing_lessons` list to `_trim_context_to_available_slots()`. No
+  objective, constraint, capacity rule, validator rule or UI contract changed.
+  Python compilation passes, and the existing direct Benders regression
+  `test_complete_first_escalates_period_bridge_after_a_rejected_vector` passes
+  against the exact release tree (**1/1**); the pre-hotfix release raises the
+  observed NameError on that path.
+- VPS deployment replaced only `solver_runtime/src/tkb_new/adapter.py`; the
+  validator remained byte-identical. Adapter SHA-256 changed from
+  `90e3f9feecf2eccdb70a440cafa97a33e3540d12a94ff8e5c98ec1c8cbe2c1fb`
+  to
+  `0e5e821bb39824d404bd35763ed7d1680a065eeedb32a7be7f861c882329fd20`.
+  Transaction backup:
+  `/opt/cherry-scheduler-backups/capacity-flow-v132-20260810-154424`.
+- Cloud Build `5a38f93c-7ea5-48bc-88ce-ddc638fc25c8` produced the minimal
+  33-file image from the patched v132 release tree. Cloud Run revision
+  `tkb-solver-00014-bxk` is Ready and receives 100% canonical traffic; image
+  digest is
+  `sha256:39ec96fc32936d9b495149d0a34b9330b3908e62846f026c8073d5b8c692937a`
+  and solver digest is
+  `f58e40812b7792636a579881b65e19ca881d0cb028728b40eb0bce3cb876782b`.
+  A private canary through the VPS ADC returned HTTP 200 with
+  `2,097 scheduled + 6 capacity-unassigned + 0 solver-unassigned`, exact
+  accounting, hard-valid placement, 2,097 lesson objects and the pinned digest.
+- The active `cloud-run-primary` profile was atomically repinned to the new
+  solver digest only after the canary passed and the VPS solver pool became
+  idle. Profile backup:
+  `/opt/cherry-scheduler-backups/serverless-profile-hotfix-20260810-160043.db`.
+  Post-update VPS health is OK with no queued jobs and all worker tokens free.
+- Final browser settlement still needs one foreground verification. A hidden
+  in-app-browser test submitted the post-hotfix request and Cloud Run revision
+  `00014-bxk` returned HTTP 200 (about 25 seconds, roughly 662 KB response),
+  while VPS remained idle. The subagent-owned tab then stayed in its client
+  paint/wait path with `document.visibilityState === "hidden"`; this is not a
+  backend solve failure. The root browser session should foreground/reload the
+  SID and verify the green terminal result rather than treating this hidden-tab
+  automation artifact as a solver regression.
+
+## 2026-08-10 validator guard alignment (local patch, pending deploy)
+
+- The browser `lessonBlocks.min` feasibility guard now counts periods only
+  from PCCM rows that have an actual teacher assignment, matching the backend
+  request-local sanitizer. It no longer falls back to standard subject periods
+  for an unassigned subject, so a saved Min rule cannot create a false
+  post-solve rejection. Valid minima and authored constraint data remain
+  unchanged.
+- The synchronous and asynchronous validators share the same guard. Focused
+  planner tests pass **30/30**, including an unassigned-subject regression;
+  JavaScript syntax check passes. This patch has not been deployed yet.
+
+## 2026-08-10 impossible lesson-block sanitization and complete-result fix (deployed)
+
+- The live `e3d7a3b21e1` input had one mathematically impossible rule: class
+  `9/9`, `Văn/Ngữ văn`, 4 periods/week, but
+  `lessonBlocks["3"].min = 21`. The solver now sanitizes only impossible
+  `lessonBlocks.min` values in the request-local model. It preserves valid
+  minima and does not rewrite the school's saved data.
+- A second defect rejected an otherwise complete and conflict-free timetable
+  when only soft teacher Gap2 debt remained. Complete results are now accepted
+  when canonical validation proves all expected lessons are present and every
+  class, teacher, room, fixed-cell and application hard constraint is valid;
+  soft quality debt remains visible for later optimization but no longer turns
+  a complete timetable into a failed solve.
+- The safe-partial accounting also accepts strictly validated capacity/solver
+  remainder and the capacity lane can run the residual session-vector retry.
+  Any returned partial result must still have exact demand accounting and zero
+  hard conflicts. The UI finishes green and reports the exact `Chưa phân`
+  remainder instead of looping or reporting a false all-or-nothing failure.
+- Isolated replay of the current live data produced `2,103/2,103`, with zero
+  class/teacher/room/application violations, in about 40 seconds. Focused
+  Python result contracts and browser capacity gates passed; Python and
+  JavaScript syntax checks passed.
+- VPS deployment completed with `UPDATE_OK`. Transaction backups are
+  `/opt/cherry-scheduler-backups/server-state-20260810-121343.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260810-121343.tar.gz`.
+  Deployed Rust/API marker is
+  `tkb_new-rust-api-2026-08-10-constraint-sanitize-safe-partial-v131`;
+  bridge marker is `tkb-rust-api-v340-constraint-sanitize-safe-partial-v1`;
+  planner cache marker is
+  `20260810-v1204-constraint-sanitize-safe-partial-v1`.
+- Cloud Run revision `tkb-solver-00011-pvs` is Ready in
+  `asia-southeast2` and receives 100% of traffic. Application solver digest is
+  `b7707a45505bf9eb9922dbac241c6491ff1670309e471538f0b6f056a9ecbb44`.
+  The active `cloud-run-primary` profile pins that digest at the unchanged
+  private canonical URL; its pre-update database backup is
+  `/opt/cherry-scheduler-backups/serverless-profile-1786364482.db`.
+
+## 2026-08-10 safe partial timetable completion (deployed)
+
+- Fixed the all-or-nothing failure for zero-slack schools where a teacher's
+  OFF/fixed-slot restrictions leave some periods physically unplaceable. The
+  solver now preserves every independently hard-valid placed lesson and marks
+  the exact remainder as `unassignedLessons` for the UI's `Chua phan` list.
+  A mixed remainder (proven capacity shortage plus bounded solver shortfall)
+  is accepted only when demand accounting is exact, placement gates pass, and
+  class/teacher/room/application conflict counters are all zero. No invalid
+  placement is marked hard-valid.
+- Removed the capacity-specific 30/45/60-second fast lane from the production
+  bridge. It keeps the normal 180-second completeness budget (or an explicit
+  user custom duration), enables the residual completion retry, and uses the
+  partial contract only as the terminal fallback. This prevents avoidable
+  solver-unassigned periods such as the reported 13-period result.
+- Deployed Rust/API version
+  `tkb_new-rust-api-2026-08-10-safe-unassigned-partial-v130` to the VPS through
+  the guarded update deployer. The release was built from the verified
+  production snapshot; the update gate drained the idle solver pool and kept
+  the SQLite/credentials state intact. A private profile backup was created at
+  `/opt/cherry-scheduler-backups/serverless-profile-1786360037.db` before the
+  Cloud Run digest update.
+- Deployed Cloud Run revision `tkb-solver-00011-pvs` in
+  `asia-southeast2` at 100% traffic. The private canary health response was
+  verified before cutover. Image digest is
+  `sha256:38a97f9f68c34cf947df96218399b9321339456404a9a9c8434a54ff684cf498`;
+  application solver digest is
+  `a831ac5edb1c802d5ed11b21a0ac41ad540e3cff0f31133dd577408a4ee2bd10`.
+  The active `cloud-run-primary` profile now pins that digest and keeps the
+  canonical service URL. Cloud Run health and VPS health both returned OK;
+  active/queued solver jobs were zero at verification.
+- Static planner cache marker is
+  `20260810-v1203-safe-unassigned-partial-v1`; bridge marker is
+  `tkb-rust-api-v339-safe-unassigned-partial-v1`. Focused Node capacity tests
+  passed **6/6**, Python contract tests passed **3/3**, Python/JS syntax checks
+  passed, and the private tagged Cloud Run health check passed. No user
+  timetable row was modified by the release or canary.
+
+## 2026-08-10 capacity residual retry candidate (local, not deployed)
+
+- The production capacity lane still skipped the existing structured
+  session-vector retry whenever `capacity_excluded_lessons` was non-empty.
+  Locally, that guard is removed for the main CP-SAT path while the global
+  deadline still has its reserve. Capacity trimming remains the sole source of
+  `capacity_unassigned_periods`; any later period shortfall is treated as
+  retryable solver debt.
+- A retry candidate in this lane may bypass singleton/gap quality only when it
+  is complete and hard-valid for the already-trimmed residual problem. The
+  normal feasible lane keeps its existing quality gate. Focused mock evidence
+  changes `2 scheduled + 1 capacity + 1 solver missing` into
+  `3 scheduled + 1 capacity + 0 solver missing`, with `ok=true`.
+- Added `solver_runtime/tests/test_capacity_residual_completion.py`. The new
+  test passes **1/1**; the existing capacity/shortfall subset passes **10/10**;
+  Python compilation and `git diff --check` pass. This candidate has not been
+  deployed and did not write a database or timetable.
+- Separately, the current `e3d7a3b21e1` snapshot contains an invalid hard rule:
+  class 9/9 Văn has 4 weekly periods but `lessonBlocks["3"].min=21`. Removing
+  that one bad value in an isolated read-only replay produced the intended
+  `2,098 scheduled + 5 proven capacity-unassigned` hard-valid result in about
+  44.5 seconds. That data/preflight defect is the immediate production blocker
+  and is independent of this residual-retry candidate.
+
+## 2026-08-10 production cleanup, planner menu, and complete package
+
+- Kept the live CP-SAT/MILP and Rust solver implementation unchanged. The only
+  production update was the planner asset set (`sapxep.html`, `phanmon.css`,
+  `phanmon.js`, `tkb-constraints.js`, `tkb-constraints-menu.js`, and
+  `tkb-rust-bridge.js`). It restores the ordinary Optimize menu to exactly
+  `1 tiết/buổi`, `1 tiết trống`, and `2 tiết trống`; the generic `Buổi` action
+  is hidden and authorized only for superadmin. The transactional static backup
+  is `/opt/cherry-scheduler-backups/planner-client-cleanup-20260810-161111`.
+- Client Agent EXE/WebAssembly assets are retired. The planner no longer loads
+  `tkb-browser-wasm.js`, `tkb-cpsat-wasm.js`, or `tkb-highs-wasm.js`; the native
+  Agent installation overlay, download/pairing/protocol/polling implementation,
+  and CPU/RAM dashboard markup/styles were removed from `phanmon.js` and HTML.
+  Five fail-closed compatibility hooks remain for an older cached bridge.
+  The superadmin toolbar icon remains as the authenticated Cloud Run/VPS server
+  route control. `rust_api/src/agent_helper.rs` remains because current server
+  orchestration still imports its internal job/validation contracts; this is
+  not a client-owned solver lane.
+- Before cleanup, a sanitized source archive was created at
+  `C:\Users\Love\Documents\Codex\TKBCherry-backups\TKBCherry-pre-clean-source-20260810-152406.zip`
+  (15,968,317 bytes, SHA-256
+  `B7B852CCBC589263FA930FD34FDDE3349275F0CF12E454F1374E41E184BFA60B`). A private
+  full live snapshot was created at
+  `C:\Users\Love\Documents\Codex\TKBCherry-backups\VPS-before-clean-20260810-152609`.
+  It can contain runtime state/secrets and must never be shared or committed.
+- Local cleanup removed generated Rust/Agent build trees, Python/pytest caches,
+  logs, the standalone algorithm-research tree, old browser/Agent solver source,
+  trusted-worker/home-deploy tooling, retired release assets, and obsolete
+  one-off deploy scripts. Approximately 2.6 GB was reclaimed locally.
+- Added the fail-closed `tools/vps-deploy/cleanup-obsolete.py` audit/apply tool.
+  Production was idle before and after cleanup. Two verified passes removed 659
+  allowlisted retired items totaling 1,986,022,915 logical bytes: client Agent/browser-solver assets,
+  old directory-style R&D/Agent rollback experiments, and named `/tmp` test
+  artifacts. It did not select the live database, `.env` files, Rust binary,
+  mail runtime, Python solver source, Cloud Run configuration, archive backups,
+  or recent rollback directories. VPS backup storage is now 217,392,217 bytes
+  across 80 entries; zero matching `/tmp` artifacts and zero retired web assets
+  remain. The marked Agent download locations were also removed from nginx;
+  both former download URLs now return HTTP 404. Audit/result manifests are
+  outside the repo at `TKBCherry-backups/VPS-cleanup-audit-20260810.json` and
+  `TKBCherry-backups/VPS-cleanup-result-20260810.json`, with the final residual
+  pass recorded in `VPS-cleanup-final-audit-20260810.json` and
+  `VPS-cleanup-final-result-20260810.json`.
+- Post-clean private runtime snapshot:
+  `C:\Users\Love\Documents\Codex\TKBCherry-backups\VPS-final-clean-20260810-1642`
+  (825 files, 25,126,472 bytes). It can contain databases/secrets and is private.
+- Added `tools/package-complete.py` and generated the sanitized production
+  source package
+  `C:\Users\Love\Documents\Codex\TKBCherry-backups\TKBCherry-production-complete-20260810-1642.zip`
+  (1,946,414 bytes, 144 ZIP entries, SHA-256
+  `955D6D1FB9ED34331D9ABE0EA3BACBFB7B3B5E13FC285AAD0D2F9E89B3570AC1`). The
+  adjacent `.manifest.json` and `.sha256` files verify it. The package combines
+  the verified post-clean production runtime source with the cleaned deployment
+  tools/docs and excludes databases, workbooks, credentials, `.env`, logs,
+  dependencies, compiled binaries, Agent EXE, and browser solver WASM. This
+  handoff file stays outside the ZIP so its package checksum cannot become a
+  stale self-reference; the ZIP has its own `PACKAGE_README.md` and manifest.
+- Verification: deployment packaging `15/15`; Optimize menu `4/4`; toolbar
+  `33/33`; focused bridge authorization/replacement `2/2` plus eight focused
+  server-owned/reconnect/Stop/mobile contracts `8/8`; JS
+  syntax passed; ZIP integrity and checksum passed. The broader Python contract
+  run passed `262` tests plus `47` subtests and skipped `3` optional
+  workbook/environment cases. The complete bridge Node file did not terminate
+  within the explicit 600-second process ceiling, so it is not recorded as a
+  pass; the changed authorization/menu/replacement contracts were run
+  separately and passed.
+  Public planner/bridge/`phanmon.js` return HTTP 200, expose the three-action
+  marker and `20260810-client-agent-retired-v1`, and do not reference retired
+  Agent/WASM assets. Final health remains version
+  `tkb_new-rust-api-2026-08-03-free-5-auth-verify-resume-retain-best-v129`, idle
+  at active=0, queued=0, worker tokens 6/6. Cloud Run, Rust/Python solver source,
+  SQLite, authentication data, and school timetables were not deployed or
+  modified in this cleanup.
+
+## 2026-08-10 Queued refinement click during terminal save (local, not deployed)
+
+- Read-only production evidence for `sid=e3d7a3b21e1` showed that the latest
+  successful Cloud Run request was still fresh round `0`; no second
+  `refine_complete` request reached either Cloud Run or VPS after the user
+  clicked again. The result was complete/hard-valid at `667` teacher sessions,
+  singleton `3`, Gap1 `171`, Gap2 `0`, seed `1379757150`.
+- The browser keeps the Automatic preflight token while the terminal result is
+  being applied and persisted. A click during that window was previously
+  rejected and forgotten. The local bridge now retains one explicit
+  continuation intent only during terminal apply/save and dispatches exactly
+  one new request after persistence and preflight release. It never overlaps
+  the result save and does not queue rapid double-clicks during planning or
+  CP-SAT search.
+- Targeted Node contracts cover the original concurrent-preflight suppression,
+  delayed terminal-save queuing, exact one-time `refine_complete` dispatch at
+  refinement round `1`, and marker-only persistence (**3/3**). JavaScript
+  syntax and focused `git diff --check` pass. This UI change is local only;
+  production assets, solver sources, VPS, Cloud Run, and school data were not
+  modified.
+
+## 2026-08-10 Full-quality continuation guard (local, not deployed)
+
+- The current complete snapshot `sid=e3d7a3b21e1` is `2103/2103`, hard-valid,
+  `657` teacher sessions, singleton `0`, Gap1 `162`, Gap2 `0`, with `144/144`
+  fixed lessons preserved. The bounded clean-cycle finisher and five-seed
+  screen produced complete/hard-valid candidates at `655` sessions and
+  Gap1 `153--158` (median `154`), preserving singleton/Gap2 and all fixed
+  lessons. The isolated research witness `655/148` is canonical-valid but is
+  not a production payload and has not been copied into a user timetable.
+- Corrected the continuation gate so a Gap1-only clean-cycle improvement does
+  not skip the higher-priority teacher-session phase. Continuation now requires
+  an actual session reduction and a genuine plateau (`no_candidates` or
+  `no_accepted_candidate`), not merely an ambiguous boolean.
+- Clean-cycle telemetry now records `stop_reason`; deadline exhaustion and
+  `max_rounds` are distinct from a quality plateau. A zero remaining deadline
+  is fail-closed and cannot be replaced by the full request budget.
+- Focused tests are **99/99**, Python compilation and `git diff --check` pass.
+  A production-derived Cloud Build context was staged read-only from the live
+  VPS and validated (`33` files, no tests/workbooks/credentials); its minimal
+  solver digest is `47d41cf330adfb44811b32e95299d8dfdf243b093c7d42e28da801b8872c830e`.
+  The Cloud Run cutover was intentionally not performed because the current
+  R&D guard requires an explicit production-deploy authorization. VPS, Cloud
+  Run, SQLite, production routes, and user timetables remain unchanged.
+
+## 2026-08-10 Automatic quality continuation lane (local, not deployed)
+
+- The complete incumbent from the user's current `sid=e3d7a3b21e1` run was
+  fetched from VPS SQLite in read-only mode:
+  `2103/2103`, hard-valid, `657` teacher sessions, singleton `0`, Gap1 `162`,
+  Gap2 `0`, and `144/144` fixed lessons preserved.
+- The deterministic clean-cycle finisher reduced that exact incumbent to
+  `655` sessions / `159` Gap1 in `5.6s`, with singleton/Gap2 still zero and no
+  application violations.
+- Continued Automatic clicks now alternate after the clean incumbent reaches a
+  plateau: even refinement rounds skip the repeated session-compression phase
+  and give the remaining budget to session-locked Gap1 cleanup. The lane keeps
+  an eight-second canonical validation/serialization reserve and records the
+  round/mode in `two_stage_teacher_optimization`.
+- Three independent local round-2 replays (`120s` ceiling) produced Gap1
+  `152`, `149`, and `150` while holding `655` sessions; all finished in about
+  `99.2--100.0s`, complete/hard-valid, singleton `0`, Gap2 `0`, application
+  violations `0`, with fixed lessons preserved. Round 1 still returns the
+  cheap `655/159` checkpoint in about `26.8s`.
+- Added regression coverage for the even-round Gap1-only contract; focused
+  optimization tests are **72/72**, clean-cycle **5/5**, session-quality
+  **19/19**, Python compilation and `git diff --check` pass.
+- This is still a local candidate. VPS, Cloud Run, SQLite, production routes,
+  and user timetables were not changed or deployed.
+
+## 2026-08-10 Clean incumbent block-cycle R&D (local, not deployed)
+
+- Added a research-only lexicographic variant to
+  `tkb_algorithm_research/gap1_block_swap_v1.py`. It exchanges equal-length
+  contiguous subject/teacher blocks within a class and accepts only complete,
+  hard-valid candidates with singleton/Gap2/session/Gap1/total-gap counters
+  component-wise non-increasing. Unlike the historical Gap1-only lane, the
+  new `objective="lexicographic"` mode also accepts a strict teacher-session
+  reduction. Four-cycle enumeration is disabled for the fast pilot; pair and
+  three-block moves are enough for the measured incumbent.
+- Isolated the same guarded operator in the production-layout candidate module
+  `solver_runtime/src/tkb_optimizer_ref/clean_quality_cycles.py`, with unit
+  coverage in `solver_runtime/tests/test_clean_quality_cycles.py`. The local
+  adapter imports it behind the complete-incumbent gates; the deployed VPS and
+  Cloud Run sources remain unchanged.
+- On read-only `.codex_tmp/sid-e3d7a3b21e1-current-readonly.json`
+  (`2103/2103`, hard-valid, `662/0/152/0` sessions/singleton/Gap1/Gap2), the
+  fast lane ran for `10.229s` and produced `655/0/148/0`; canonical
+  revalidation passed, all `144/144` fixed slots were preserved, and there were
+  zero application violations. Re-running from that result found no safe move
+  and stopped in `1.503s` without changing it.
+- On the independent clean `.codex_tmp/school-e3d7-live-audit.json` fixture,
+  the same lane produced `657/0/161/0` from `662/0/167/0` in `11.859s`, with
+  complete/hard-valid output and zero application violations. A second click
+  stopped in `1.784s` with no accepted move.
+- On the independent 1,566-period d58 fixture, it reduced Gap1 `47 -> 44`
+  while keeping sessions/singleton/Gap2 `466/0/0` in `3.474s`; the repeat
+  stopped unchanged in `1.188s`. All `108/108` fixed slots were retained.
+- Baseline safe-staged CP-SAT on the first fixture produced `662/0/151/0` in
+  `111.579s` at a 120-second budget and `661/0/147/0` in `171.774s` at a
+  180-second budget. These are comparison measurements only; no production
+  route, VPS, Cloud Run, database, or user timetable was changed.
+- Added unit coverage in
+  `tkb_algorithm_research/test_clean_quality_block_cycles_v1.py` and the
+  production-layout helper suite (**7/7** combined).
+- The production-layout cycle helper now retains at most **12** diagnostic
+  history entries (aggregate candidate/round counters remain intact), keeping
+  repeated solver-result payloads bounded. Cap-contract tests now explicitly
+  cover the intentional singleton/Gap2 repair headroom (`522 -> 533` and
+  `634 -> 647`). The two-stage summary keeps aggregate cycle metadata only;
+  the per-move history is no longer embedded twice. Focused
+  clean-quality/optimization/session suites pass;
+  the only remaining solver-contract errors are the known missing optional
+  `lop.xlsx` fixture files. No deployment was performed.
+  The pilot remains research-only pending multi-fixture/seed screening and a
+  reviewed adapter integration; it has not been deployed.
+
+Last updated: 2026-08-10 (Asia/Bangkok)
+
+## 2026-08-10 Priority-zero Automatic hard-debt repair (local, not deployed)
+
+- Automatic quality is explicitly lexicographic: first reach the canonically
+  proven floor for `one_period_teacher_sessions` (normally `0`), then force
+  Gap2-plus to `0`, then reduce teacher sessions, then reduce Gap1. A positive
+  singleton floor is accepted only when the backend supplies valid structural
+  evidence; missing or malformed evidence remains fail-closed at zero.
+- Continued Automatic clicks now alternate two CP-SAT hard-debt trajectories:
+  odd refinement rounds use the session-aware objective model with a wider
+  search-only neighborhood; even rounds use feasibility-first. The published
+  result is still limited to the smaller `8..24`/about-2% session headroom and
+  a bounded Gap1/total-gap headroom. This lets CP-SAT explore enough space to
+  clear singleton/Gap2 debt without allowing an old or mismatched executor to
+  publish an arbitrarily worse lower-priority timetable.
+- Fixed `uiTeacherQualityMetrics()` using an undeclared `safeData` variable.
+  The swallowed `ReferenceError` made the browser think a timetable with hard
+  quality debt was clean and incorrectly reduced its next-click ceiling from
+  180 seconds to 60 seconds. A dirty complete timetable now receives 180
+  seconds; a timetable already at the singleton floor with Gap2 zero keeps the
+  economical 60-second refinement slice.
+- Clearing optimization-plateau metadata now uses the same metadata-safe save
+  options as setting it (`trustedSolverApply`, suppressed Undo history, replace
+  current history, skip unchanged), so quality telemetry cannot create an
+  invisible Undo entry or trigger an unrelated sanitizer pass.
+- If a continued Automatic click clears singleton/Gap2 debt using the bounded
+  repair headroom but the later Gap1 phase times out, the repaired Phase-S
+  checkpoint is now publishable through the same safe-stage predicate. A later
+  click can then reduce the temporary session debt. Candidates outside the
+  bounded headroom (for example `654 -> 1000` sessions) remain fail-closed to
+  the incumbent.
+- Browser settlement now uses the same public lexicographic order as the
+  backend (`singleton floor`, Gap2 zero, teacher sessions, Gap1). It therefore
+  retains a bounded Gap2 repair even when that higher-priority repair needs a
+  small temporary session increase, while still rejecting unbounded debt.
+- Read-only isolated staging benchmark on
+  `.codex_tmp/sid-e3d7a3b21e1-live-20260809-readonly.json` (2,103/2,103,
+  hard-valid, initial sessions/singleton/Gap1/Gap2 `654/1/167/0`):
+  round-1 objective-first seed `1721471290` returned
+  `657/0/153/0` in `167.025s`; round-2 feasibility-first seed `5903`
+  returned `657/0/155/0` in `121.447s`. Failed seed trajectories retained the
+  original complete hard-valid timetable atomically. A separate 300-second
+  run provided no extra gain, so the product does not blindly extend every
+  request beyond 180 seconds; it stops early on a publishable result and uses
+  a new trajectory on a later click.
+- Verification: isolated VPS Python suites **66/66**, **19/19**, and **5/5**;
+  current optimization-focus suite **69/69 + 28 subtests**, singleton-floor
+  contracts **5/5**, focused bridge contracts **7/7**, and scheduler-mode
+  contracts **4/4**; cache
+  contract, Python/JavaScript syntax and `git diff --check` pass. Static markers
+  are `20260810-v1201-hard-debt-checkpoint-v1` and
+  `tkb-rust-api-v337-hard-debt-checkpoint-v1`.
+- Nothing was deployed, no production route/database/user timetable was
+  changed, and the live Cloud Run revision remains `tkb-solver-00012-yoq`.
+
+## 2026-08-09 Progressive Automatic clicks + ordinary Gap1-only menu (local, not deployed)
+
+- Removed the ordinary-user two-successful-click admission stop from the web
+  bridge. A complete timetable may now receive any number of explicit
+  `Tự động` clicks; each click remains one bounded `refine_complete` job, keeps
+  the busy/preflight locks, randomizes the next refinement seed, and retains
+  the canonical incumbent when the candidate is incomplete, invalid, or not
+  better. The durable click counter remains telemetry/history and no longer
+  disables or short-circuits Play.
+- The ordinary Optimize menu now exposes only `1 tiết trống`
+  (`optimize_gap1`). `1 tiết/buổi`, `Buổi`, and `2 tiết trống` are fail-closed,
+  hidden and non-invocable for ordinary roles; they remain available to an
+  authenticated `superadmin` for operations/diagnostics. Auth-ready role
+  changes resynchronize visibility, and hidden menu items are excluded from
+  keyboard navigation. Busy-state locking is unchanged.
+- Changed only `web/pages/sapxep.html`, `web/pages/tkb-rust-bridge.js`, focused
+  Node contracts and this handoff. Cache/bridge markers are
+  `20260809-v1198-safe-auto-60s-v1` and
+  `tkb-rust-api-v334-safe-auto-60s-v1`. No solver, VPS, Cloud Run,
+  database, or user timetable was changed or deployed.
+- Verification: scheduler-mode UI contracts **4/4**, progressive-click bridge
+  contracts **3/3**, JavaScript syntax and `git diff --check` pass. The broader
+  toolbar file is **46/48** after synchronizing its already-stale `phanmon.js`
+  cache-key assertion; its two remaining statistics-extraction fixture errors
+  predate and are unrelated to this contract.
+
+## 2026-08-09 Safe staged Automatic refinement candidate (local, not deployed)
+
+- Complete Automatic re-clicks now opt into
+  `optimization_safe_staged_reclick`. The backend canonically rebuilds the
+  complete/hard-valid incumbent and skips fresh Phase F. Every publishable
+  checkpoint keeps `one_period_teacher_sessions=0` and Gap2-plus `=0`.
+- Stage S minimizes teacher sessions with the incumbent Gap1/total-gap values
+  as hard no-regression ceilings. Stage G then locks the achieved teacher
+  session count and minimizes Gap1 only. A timeout, invalid result, Gap1
+  regression, or no strict gain returns the incumbent atomically with
+  `status=no_improvement`.
+- A bounded fingerprinted trajectory history records the round/request seed,
+  phase seeds, input/output schedule fingerprints and outcome. A repeated
+  no-improvement click excludes the failed same-incumbent phase seeds; the
+  bridge also continues to increment the refinement round and random seed.
+- The bridge settlement repeats the safe envelope (singleton `0`, Gap2-plus
+  `0`, and non-increasing Gap1/sessions/total gap), and rejects operations-only
+  modes for ordinary roles even when a caller bypasses the HTML menu. Plateau
+  metadata replaces the current history snapshot without creating an Undo
+  entry. Optional phase diagnostics keep defined defaults when the deadline
+  skips Gap1 cleanup; orchestration failures fail closed without Phase F.
+- A local three-click replay on the read-only `2,103`-period snapshot produced
+  `662 -> 661 -> 659 -> 659` teacher sessions in about 20 seconds per click,
+  with `2103/2103`, hard-valid, application violations `0`, singleton `0`,
+  Gap2-plus `0`, and canonical validation passing on every click. The third
+  click returned `status=no_improvement` and the unchanged incumbent.
+- Continued Automatic clicks now use a 60-second ceiling instead of another
+  180-second request; the fresh first click keeps its existing 130/180-second
+  completeness-and-quality budget. A measured 60-second local slice finished
+  in `50.258s`, reduced sessions `662 -> 661` and Gap1 `152 -> 150`, and kept
+  `2103/2103`, hard-valid, singleton `0`, Gap2-plus `0`, application violations
+  `0`, and canonical validation clean. Its Stage S/Stage G timings were about
+  `23.8s/25.4s`, which is why 60 seconds was selected over a 30-second
+  sessions-only slice.
+- Changed locally: `solver_runtime/src/tkb_new/adapter.py`, focused Python
+  contracts, the bridge setting/contract, and this handoff. Nothing was
+  deployed and no database/user timetable was written. Verification: focused
+  optimization suite **59/59**, legacy two-stage contracts **5/5**, targeted
+  bridge contracts **14/14**, scheduler-mode UI **4/4**, responsive toolbar
+  marker/geometry **2/2**, Python/JavaScript syntax, and `git diff --check`.
+  The orchestration-error regression also confirms that a failed safe-staged
+  lane returns the incumbent without falling through to Phase F.
+- The monolithic Rust-bridge Node file did not finish inside a 300-second local
+  command ceiling because its timer-heavy reattach/polling cases keep the test
+  process alive; it emitted no failure result before timeout. Focused contracts
+  covering every changed path pass independently. The full toolbar file remains
+  **46/48** with the two pre-existing statistics fixture errors documented above.
+
+## 2026-08-09 Direct Gap1 fixed-hint candidate (staging-only, not deployed)
+
+- Added the research-only `direct-gap1-fixed-hint` variant to
+  `tools/vps-deploy/benchmark-algorithm-rnd.py`. It reuses the direct Gap1
+  contract (Gap1 is the sole objective; singleton, Gap2, teacher-session and
+  incumbent Gap1 ceilings remain hard) and applies an in-memory session-core
+  overlay before staging.
+- The overlay augments only `hinted_teacher_sessions`,
+  `hinted_class_sessions`, and `hinted_teacher_days` from the corresponding
+  `fixed_*_load` counters. Fixed lessons remain outside `n_vars` and
+  `hinted_counts`; no production solver source, VPS, Cloud Run, database, or
+  user timetable was changed.
+- Focused contracts are in
+  `tkb_algorithm_research/test_direct_gap1_fixed_hint_v1.py` (**3/3**). The
+  harness and composed telemetry/session candidate compile successfully.
+- On the current read-only `2,103`-period incumbent (snapshot SHA-256
+  `dd5e0ca641588b495921cb212418b320388b57e081d0aac89d92cb5e0fe3f411`,
+  baseline Gap1 `152`), the corrected 60-second direct contract without the
+  fixed-hint overlay reached Gap1 `150`. The same-seed fixed-hint A/B reached
+  `148` and moved first improvement from about `47.3s` to `29.9s`.
+- The fixed-hint 60-second five-seed screen was **5/5** complete/hard-valid,
+  `2103/2103`, singleton `0`, Gap2 `0`, sessions `662`; final Gap1 was
+  `150,147,151,149,148` (p50 `149`). A 180-second seed-5801 measurement reached
+  canonical Gap1 **138**, with model checkpoints `143` at `83.6s`, `140` at
+  `100.7s`, `139` at `119.9s`, and `138` at `142.0s`.
+- A separate exact 120-second replay of seed 5801 finished canonical at Gap1
+  `147`, not `139`; multi-worker CP-SAT is variable and model-only checkpoints
+  from the 180-second run cannot be treated as a shorter-budget guarantee. A
+  two-lane `3+3` worker portfolio was also rejected: it finished Gap1 `150` in
+  about `131s` (RSS about `1.43 GiB`) versus the single-lane replay's `147`.
+  The rejected portfolio code was removed. Nothing has been deployed.
+- A 300-second staging replay of the same seed was complete/hard-valid with
+  singleton `0`, Gap2-plus `0`, sessions `662`, and canonical Gap1 `140`.
+  It improved steadily through Gap1 `144` at about `188s`, `142` at `220s`,
+  and `140` at `300s`, but was worse than the independent 180-second result
+  (`138`). This confirms that extending one multi-worker click is not a
+  deterministic quality win; independent incumbent-preserving clicks with new
+  seeds are the safer product strategy.
+
+## 2026-08-09 Gap1 block-swap/ejection R&D (not deployed)
+
+- Added the isolated research prototype
+  `tkb_algorithm_research/gap1_block_swap_v1.py` and report
+  `tkb_algorithm_research/GAP1_BLOCK_SWAP_V1.md`. It groups contiguous
+  subject/teacher blocks, tries equal-length same-class swaps and three-block
+  ejection cycles, then canonical-validates every candidate. Fixed cells,
+  complete coverage, singleton, Gap2 and the incumbent teacher-session ceiling
+  are fail-closed gates. The prototype never enters a production import path
+  and never writes VPS, Cloud Run, SQLite or a user timetable.
+- On read-only snapshot `.codex_tmp/sid-e3d7a3b21e1-latest-readonly.json`
+  (SHA-256 `9f69d4e1f5aa53f2f09a52e91fce61e2721c6a9ac7b7d6d0804a434c5788fc5b`),
+  canonical quality improved from `2103/2103`, hard-valid, singleton `0`,
+  Gap2 `0`, sessions `662`, Gap1 `167` to the same complete/hard-valid
+  `2103/2103`, singleton `0`, Gap2 `0`, sessions `662`, Gap1 **158** in
+  13.739 seconds. Independent revalidation found zero class/teacher/room
+  conflicts, zero contiguous-block/application violations, and all `144/144`
+  fixed cells unchanged. The result is fixture evidence only; it has not been
+  promoted or deployed.
+- A staging-only `hybrid-local-finisher` follow-up on that candidate (seed
+  5801, 30-second cap, no Phase F) kept Gap1 `158`, singleton/Gap2 `0`, and
+  reduced sessions `662→660` in 25.523 seconds. This secondary result was not
+  merged into the artifact and was not deployed. VPS health remained idle with
+  no leftover `/tmp/tkb-rnd-algorithm-*` directory.
+- On the newer Gap1-152 incumbent, pair + three-block search reached `148` in
+  `6.306s`. Adding four-block cycles reached `147` in `25.187s`, still
+  complete/hard-valid with singleton/Gap2 `0`, sessions `662`, and all
+  `144/144` fixed slots unchanged. The same four-block form reached only `159`
+  from the older Gap1-167 incumbent within 30 seconds, versus v1's `158`, so it
+  remains an incumbent-sensitive experiment and is not a promotion candidate.
+
+## 2026-08-09 Planner statistics responsiveness + teacher preflight (deployed)
+
+- Fixed the visible freeze when opening `Thống kê`: the planner now paints the
+  popover first, performs the whole-school scan from an idle/deferred callback,
+  coalesces repeated refreshes, caches the PCCM teacher lookup and reuses one
+  timetable signature for the statistics views. The bridge uses the same
+  deferred refresh after solver result application. Live verification on the
+  2,103-period timetable opened the popover in about **319 ms** and displayed
+  `Đã xếp 2103`, `Chưa xếp 0`, `Trống 2 tiết 0`, `Dạy 1 tiết 3`.
+- Static cache-busted release `20260809-v1195-planner-stats-paint-first-v1`
+  changed only `web/pages/phanmon.js`, `web/pages/tkb-rust-bridge.js` and the
+  corresponding planner cache keys in `web/pages/sapxep.html`. Live hashes are
+  `864c2231e3770cb77c83749b442e15002d17c188204a1ed0b35c58a5a27dfdaa`,
+  `e2548b30005446cbc61ec926a7f932d2e082c585222ea16040aa28b556b93c17` and
+  `b8a56f283eec843a969125fba7a4ce690817627f5d0c311f7983b586bd13f746`.
+  Rollback backup: `/opt/cherry-scheduler-backups/planner-stats-paint-first-v1195-20260809-103858`.
+- Added the guarded teacher-constraint preflight to the exact live VPS adapter.
+  It relaxes only must-teach slots whose conservative capacity upper bound is
+  insufficient and raises `maxSessions` only when a disjoint AM/PM lower bound
+  proves the configured cap impossible. VPS adapter SHA is
+  `519eb688d456d6f273ac4097177851e7500b8b97a7c5bdcae4b95bd6c0c42f01`;
+  backup: `/opt/cherry-scheduler-backups/teacher-constraint-preflight-v1-20260809-101729`.
+  Rust binary, session core and database were not changed.
+- The same adapter overlay is live on Cloud Run revision `tkb-solver-00012-yoq`
+  at 100% traffic, image digest
+  `sha256:413e870982e39986d9706e8213dbf9255a04f28c45e1d9bcb7df227cb503916d`.
+  The existing solver/profile digest remains unchanged for routing compatibility.
+  A private canary with an intentionally impossible 10-slot `mustTeach` rule
+  returned `6/6`, hard-valid, zero unassigned, and warnings retaining six
+  reachable anchors while relaxing four impossible slots. Cloud and VPS health
+  both report zero active and queued jobs. No user timetable or database row
+  was written by the canaries or deploys.
+
+## 2026-08-09 Large-result planner responsiveness (local, not deployed)
+
+- Audited the completed 72-class/2,103-period `sid=e3d7a3b21e1` planner UI
+  after reports of lag while the Statistics popover was open. The result is
+  complete (`2,103/2,103`); its visible quality is singleton sessions `3`,
+  Gap2 `0`, teacher sessions `678`, and Gap1 `234`. This means the first solve
+  did perform its higher-priority quality cleanup, but did not eliminate the
+  lower-priority session/Gap1 debt inside the same bounded job.
+- The concrete UI hotspot was `refreshStatsPopoverIfOpen()` calling
+  `renderStatsBox()` synchronously in the terminal result-apply turn. It now
+  uses the planner's existing coalescing post-paint `scheduleStatsBoxRender`
+  path, with a direct fallback only for older pages. This keeps the completed
+  result responsive before the whole-school statistics scan runs.
+- PCCM-only teacher resolution used by school/teacher/unassigned statistics is
+  now memoized per data snapshot. Repeated lessons in the same class/subject no
+  longer rebuild class aliases and subject aliases for every timetable cell;
+  replacing the PCCM or catalog data invalidates the cache.
+- Changed only `web/pages/tkb-rust-bridge.js`, `web/pages/phanmon.js`, two Node
+  regression files, and this handoff. No solver, Cloud Run, VPS, database, or
+  user timetable was changed or deployed.
+- Verification: JavaScript syntax and `git diff --check` pass; new focused
+  regressions pass **2/2**; statistics-popover tests pass **2/2**; class
+  statistics behavior passes **4/4** with the sole full-file failure being the
+  already-known stale HTML cache-buster assertion. The full Rust bridge Node
+  suite exceeded the local 120-second command budget; its focused new contract
+  passed independently.
+
+## 2026-08-09 Focused Optimize objective isolation (local, not deployed)
+
+- The four named Optimize actions now have independent objective contracts:
+  `1 tiet/buoi` minimizes only `one_period_teacher_sessions`; `Buoi` minimizes
+  only `teacher_sessions`; `2 tiet trong` minimizes only Gap2-plus and stops at
+  the first complete zero-Gap2 checkpoint; and `1 tiet trong` minimizes only
+  Gap1. Every other visible quality metric is an incumbent-derived hard
+  no-regression ceiling (including total gap where available).
+- The session adapter exposes an explicit
+  `optimization_benders_minimize_teacher_sessions` switch, passes the exact
+  `period_gap_objective_target` (`gap1` or `gap2`) to CP-SAT, disables hint
+  distance for focused requests, and fails closed to the canonical incumbent
+  on focused orchestration errors. Gap1 no longer requires Gap2=0 first, and
+  Gap2 does not continue into Gap1 cleanup after reaching zero. Automatic's
+  coordinated multi-objective path remains unchanged.
+- The CP-SAT session core now materializes singleton indicator variables even
+  when `1 tiet/buoi` intentionally disables both the teacher-session and hint
+  objectives. Its objective is therefore genuinely
+  `minimize_one_period_sessions`, not a constant feasibility objective. A core
+  contract test also pins the standalone `Buoi` objective to
+  `minimize_teacher_sessions`; the split Gap1/Gap2 tests pin each gap objective
+  to its selected counter only.
+- Browser Agent settings, worker comparison, settlement, polling, and
+  reattach preserve the selected mode/Gap target. Focused worker comparisons
+  use only the owned metric; non-target metrics are checked only as safety
+  ceilings. Automatic replay clears stale focused markers without removing
+  caller-authored Automatic targets.
+- Changed source/tests include `solver_runtime/src/tkb_new/adapter.py`,
+  `solver_runtime/src/tkb_optimizer_ref/session_cp_sat.py`,
+  `web/pages/tkb-rust-bridge.js`, `web/pages/tkb-browser-wasm.js`, and their
+  focused Python/Node contract suites. No VPS, Cloud Run, database, or user
+  timetable was changed or deployed in this work session.
+- Verification: Python focused suites **72/72**; session period-gap core
+  **19/19**; targeted bridge/browser isolation regressions **4/4** and **7/7**;
+  the frozen 2,031-period Automatic contract passes. The full Browser suite is
+  still **78/79** (the sole failure is an existing stale HTML cache-buster
+  expectation). Python/Node syntax and `git diff --check` pass. The full
+  solver-result suite passed **164/166**; its only two errors are the unrelated
+  missing `lop.xlsx` workbook fixtures. Stdio contracts passed **8/8** with one
+  environment-dependent test skipped.
+
+## 2026-08-09 Assigned-only Phan cong and independent standards (deployed)
+
+- The `Phan cong > Mon hoc` side list now shows only subjects that have at
+  least one teacher assignment in the current PCCM matrix. A subject assigned
+  through a class/subject alias remains visible; subjects with no teacher in
+  any class are omitted, and an explicit empty state is shown when none remain.
+  This is display-only: PCCM data is not deleted, and the `Lop hoc` and
+  `Giao vien` tabs retain their complete positive-standard-period subject list.
+- `So tiet` and `Gioi han` in Phan cong now use Tiet chuan only as a one-time
+  initializer when a teacher assignment exists and that class/subject has no
+  authored PCCM value. The initialized values are persisted in
+  `pccmTietMatrix` / `pccmGioihanMatrix`; later Tiet chuan edits cannot rewrite
+  them. Explicit PCCM values are retained even when numerically equal to the
+  current standard, and the planner sanitizer no longer removes them as
+  redundant. The v2 follow-up snapshots the values immediately when a teacher
+  is assigned (including direct and same-session edits), and blank fields in
+  `Them nhanh` now preserve an existing authored value instead of deleting it.
+- Focused verification passes: assignment visibility/independence **7/7**,
+  app integrity **18/18**, and planner subject semantics **28/28**. JavaScript
+  syntax and `git diff --check` also pass.
+- Deployed the cache-busted static release
+  `20260809-pccm-independent-standard-v2`. The guarded deployer is
+  `tools/vps-deploy/deploy-pccm-independent-standard-v2.py`; rollback backup:
+  `/opt/cherry-scheduler-backups/pccm-independent-standard-v2-20260809-065631`.
+  Live SHA-256 is
+  `0717ebf6fd3199e0133c6c167786b44a03286451112ccac8922c9c04476b78cd`
+  for `app.js`,
+  `20d7b081d4bd2f1f3f6993ce0e34991a2070bc164d6a5fa24bcc53892fbda2b8`
+  for `app.html`, and the already-live planner SHA remains
+  `feb1b6a96d5de5f73a2f76be125945f7d9eac15cf0d48efd4ce5fc93e50856ed`
+  for `phanmon.js`. Public fetch-back matched the v2 `app.js` hash and both
+  behavior markers; `/api/health` returned `ok=true`, zero active/queued jobs,
+  and six available worker tokens. No solver, Rust API, database, service, or
+  user timetable was changed by this static release.
+
+## 2026-08-09 Cloud Run quality lexicographic v1 (deployed)
+
+- The Cloud-Run-only quality policy is live on revision
+  `tkb-solver-00010-zul` at 100% traffic. Image digest is
+  `sha256:63d20366a900188d0aa567f02d19d17bfba50344b057734c526c1558a5fd644e`;
+  solver/profile digest is
+  `9be037c444215c6388cd74eb056f0e33132e1ac2c0d27a65a8fd3b2ffb8cefff`.
+  The VPS profile was synchronized to that digest but routing remains
+  `mode=vps_only`, `fallback=vps`; the VPS solver algorithm was not changed.
+- After a complete Phase-F incumbent, Cloud Run uses a bounded strict quality
+  probe followed by a concrete-period lexicographic tail. Publication remains
+  fail-closed: only complete, hard-valid, zero-unassigned, fixed-lesson-
+  preserving and component-wise safe candidates can replace the incumbent.
+- The production canary on the 72-class/2,031-period snapshot returned
+  `2031/2031`, hard-valid, zero application violations, and preserved all
+  `144/144` fixed periods in 109 seconds. Canonical quality was: singleton
+  sessions `2`, Gap2 `0`, teacher sessions `686`, and Gap1 `115`. A subsequent
+  singleton-focused attempt could not safely improve while preserving the
+  fixed periods and therefore returned the incumbent unchanged.
+- Rollback backup:
+  `/opt/cherry-scheduler-backups/cloud-quality-priority-v1-20260809-061701`.
+  Focused quality contracts, Cloud Run transport/deployment checks, canonical
+  canary validation, and post-cutover health checks passed.
+
+## 2026-08-09 Focused `1 tiết/buổi` optimization (deployed VPS-only)
+
+- Restored `1 tiết/buổi` as the first shared desktop/mobile item in the
+  `Tối ưu` menu, ahead of `Buổi`, `2 tiết trống`, and `1 tiết trống`.  The
+  stable request mode is `optimize_singletons`.  Static UI deploy backup:
+  `/opt/cherry-scheduler-backups/singleton-optimize-menu-20260809-043538`;
+  live `sapxep.html` SHA-256 is
+  `08be07d6d2dc4271b746d3dd4d5c6c08138a07c1e1e5528cd251dd7217da234a`.
+  Live in-app Browser verification required one reload of the previously open
+  cached tab, then showed exactly the four requested items in order with no
+  console warnings/errors.
+- The former VPS focused branch demanded singleton=0 as a hard constraint.
+  On the 72-class/2,031-period `default` timetable that target is sometimes
+  infeasible or cannot be proved inside its bounded search, so the click often
+  returned the incumbent unchanged.  The VPS branch now treats singleton count
+  as the primary soft objective while keeping `period_max_teacher_gap=1` and
+  `relax_period_teacher_gap_on_failure=false`.  Gap1 remains the separate
+  focused action; combining it into this model timed out without a publishable
+  singleton improvement.
+- Publication is fail-closed: a candidate must remain complete and hard-valid,
+  use no more teacher sessions, strictly reduce singleton sessions, and not
+  increase Gap2.  Otherwise the existing timetable is returned atomically.
+  The session CP-SAT core, Rust API, database, Cloud Run, and all other solver
+  modes were left unchanged.
+- Isolated five-seed refinement screen on frozen snapshot SHA
+  `bee6f0104acc50ed2859854c5b301823086d6ccf05681b7cba36339065a0663d`
+  kept **5/5** results at `2031/2031`, hard-valid, zero application violations.
+  Four seeds reduced singleton `136` to `63,78,77,57`, reduced sessions from
+  `767` to `754,751,754,743`, and produced Gap2=0; seed 5801 found no safe
+  improvement and correctly retained `136/767/Gap2 6`.  Successful focused
+  candidates can increase Gap1 because this action intentionally owns only the
+  singleton goal; users can run the separate `1 tiết trống` action afterward.
+- Guarded deployer:
+  `tools/vps-deploy/deploy-singleton-soft-focus.py`.  It pinned the exact live
+  source, staged and smoke-tested the candidate, gated only `/api/solve-data`,
+  drained active/queued work, backed up and changed only `adapter.py`, then
+  verified the one-file source diff with automatic rollback.  Backup:
+  `/opt/cherry-scheduler-backups/singleton-soft-focus-v1-20260809-053618`.
+  Live adapter SHA-256 is now
+  `7e7edecf1dd9b6a1281516e30cdb98f15f371aa87a7ba826ed50db58e35f9a36`;
+  session CP-SAT and Rust binary remain
+  `46f5560feead236b58b8915e42dd2f9a5fbcce88b185fbc55a35a3fd1f04cb46`
+  and `dad6ed0d9ee33094b7f53af2320541fe0061aa0b4760984eb55c65b390f4f918`.
+  Post-deploy health is `ok=true`, active/queued `0/0`, worker tokens `6/6`.
+- Verification: deployer tests **5/5**, focused R&D contracts **5/5**, menu UI
+  tests **4/4**, candidate smoke before and after cutover, Python compilation,
+  and `git diff --check`.  Cloud Run is intentionally pending until the
+  VPS-only behavior has been observed on real focused clicks.
+
+## 2026-08-09 Quality-debt recovery R&D (staging-only, not deployed)
+
+- Added the research-only `zero-slack-quality-recovery-v1` overlay to
+  `tools/vps-deploy/benchmark-algorithm-rnd.py` and two focused contract tests
+  in `tkb_algorithm_research/test_zero_slack_quality_recovery_v1.py`. The
+  overlay is applied in memory to the pinned live adapter; it never writes the
+  VPS runtime, Cloud Run, database, or timetable.
+- The overlay retries a complete incumbent after strict Phase Q returns an
+  error, using the remaining deadline for a debt-tolerant all-period objective.
+  Publication still requires complete/hard-valid, fixed-lesson-preserving and
+  Automatic component-wise non-regression.
+- Replay on frozen `default` snapshot SHA
+  `df5b97689af5f35c4063976b10d2b0bb6b5ad89a4dc536b9d613f51c3c3aaf80` (72
+  classes, 2,031 periods, seed 1,721,471,290) was safe but not useful:
+  `2031/2031`, hard-valid, zero unassigned/application violations, yet the
+  recovery model returned `UNKNOWN` after 48 seconds and no quality
+  improvement. Total wall was 159.266 seconds. Keep this lane rejected.
+- In the same isolated snapshot, the separate `zero-slack-quality-headroom`
+  overlay reduced one-period sessions `247→166`, Gap2 `63→0`, and Gap1
+  `135→51` in 160.183 seconds while remaining complete/hard-valid. This is a
+  one-seed result from the superseded cap-headroom form of the overlay.
+- The follow-up form keeps the Phase-F session cap, relaxes only the impossible
+  hard singleton-zero constraint into the highest-priority objective, and keeps
+  Gap2 zero as a hard concrete-period envelope. Its frozen 5-seed screen was
+  **5/5** complete/hard-valid with zero application violations and Gap2=0.
+  Final singleton counts were `71,61,109,40,1` (p50 `61`), walls
+  `160.172,159.967,160.851,160.339,159.851s` (p50 `160.172`, p95 `160.851`),
+  sessions p50 `806`, and Gap1 p50 `93`. Every seed reduced singleton, Gap2,
+  and teacher sessions versus its own Phase-F incumbent, but seed 5801 traded
+  the higher-priority gains for Gap1 `147→281`. The candidate is therefore a
+  strong progressive cleanup signal, not evidence of universal singleton=0 or
+  balanced final quality; do not deploy from this screen alone.
+- Focused overlay tests pass **2/2** and both candidate sources compile. Live
+  adapter/session hashes were verified as `58ba49cba4d47535a1cbecf9c4104d537d56f920656dcacf2445eab4a354a016`
+  and `46f5560feead236b58b8915e42dd2f9a5fbcce88b185fbc55a35a3fd1f04cb46`;
+  no production files were changed.
+
+## 2026-08-09 Default zero-slack terminal/policy fix (deployed VPS-only)
+
+- Root cause of the `sid=default` "Chưa đủ" incident was two independent
+  server-side contracts: cached Automatic requests could retain a 60-second
+  compute window plus the old 20-second transport reserve, and a complete
+  hard-valid zero-slack result was rejected solely because singleton/Gap2 soft
+  debt was non-zero. The CP-SAT/Python algorithm itself was not changed.
+- Rust now derives large demand from `pccmTietMatrix` when
+  `expected_scheduled_periods` is missing. A numeric cached duration is treated
+  as authoritative only when `ui_custom_solve_duration_override=true` and its
+  value is positive; stale cached `60` values therefore receive the canonical
+  180-second solver window plus 20-second watchdog reserve. Explicit user
+  durations remain unchanged.
+- When the first Automatic request is a large zero-slack profile (expected
+  periods equal available class slots), the server reconstructs missing profile
+  metadata from the two fixed-off stores. It publishes only a complete,
+  canonical hard-valid result; singleton/Gap2 debt is retained as telemetry
+  (`quality_debt_retained=true`) for the next Optimize click. Partial,
+  hard-invalid, non-zero-slack, and refinement responses keep the existing
+  rejection/quality gates.
+- Guarded deployer: `tools/vps-deploy/deploy-default-zero-slack-terminal.py`.
+  It stages the exact live Rust tree, runs five focused Rust tests plus a
+  release build, drains the solve route, and has automatic rollback. Backup:
+  `/opt/cherry-scheduler-backups/default-zero-slack-20260809-034755`.
+- Production hashes after cutover: Rust source
+  `674214b25da05cfbffe3d56fa895f8b79e06cfa4a096e737e70542bed56e2710`, binary
+  `dad6ed0d9ee33094b7f53af2320541fe0061aa0b4760984eb55c65b390f4f918`.
+  Adapter and CP-SAT session hashes remain
+  `58ba49cba4d47535a1cbecf9c4104d537d56f920656dcacf2445eab4a354a016` and
+  `46f5560feead236b58b8915e42dd2f9a5fbcce88b185fbc55a35a3fd1f04cb46`.
+- Live Browser verification on `sid=default` completed with `Đã xếp xong!`,
+  `2,031/2,031` scheduled and `Chưa phân: 0`. The persisted runtime reports
+  `backend_deadline_ms=180000`, `reference_watchdog_deadline_ms=199996`,
+  `display_elapsed_seconds=79.6`, `hard_ok=true`, and phase
+  `zero_slack_complete_quality_debt_terminal`; the first result retained
+  singleton `244` / Gap2 `56` as expected for this zero-slack profile.
+- Health after release is `ok=true`, VPS-only, active/queued `0/0`, and worker
+  tokens `6/6`. No Python solver, Cloud Run service, web asset, database
+  schema, or serverless profile was modified by this release.
+
+## 2026-08-08 Assigned-only solve-demand frontend contract (local, not deployed)
+
+- Audited the read-only `sid=default` snapshot after reports that Automatic did
+  not produce a timetable.  The snapshot has 72 classes, 865 non-empty PCCM
+  assignments, no teacherless PCCM values, no per-class period overrides, and
+  canonical UI/Python demand of 2,032 periods.  Its visible timetable has 144
+  placed periods while the saved 1,566/1,566 solver result belongs to an older
+  54-class fingerprint.  The bridge correctly resets that stale click state
+  and plans `fresh_complete_first`; the local class/teacher capacity scanners
+  report no shortage.  Thus this contract fix is regression hardening, not the
+  direct explanation for the current `default` solver terminal.
+- `expectedLessonCountUncached()` now ignores a legacy/imported PCCM key whose
+  teacher value is empty, matching the Python adapter.  Previously a backend
+  payload that correctly completed the assigned 2/2 periods could be
+  normalized by the UI to 2/5 and rejected with
+  `apply_payload_candidate_contract_rejected`.
+- `pccmAssignmentRows()` applies the same assigned-teacher rule before alias
+  de-duplication.  Period/limit/room metadata left behind after clearing a
+  teacher can no longer create a false class-capacity shortage, and a later
+  assigned alias remains eligible to contribute the real row.
+- Added focused regressions for complete-payload application/refinement routing
+  and assigned-only class capacity.  Verification passed `node --check` for
+  both changed browser scripts, the full Rust bridge Node suite **305/305**, the
+  full subject/constraint semantics suite **28/28**, and `git diff --check` for
+  the four source/test files.  No production, VPS, Cloud Run, database, or user
+  timetable was changed.
+
+## 2026-08-08 Assigned-only compact statistics (deployed v1192)
+
+- Supersedes the v1190 missing-assignment behavior. Periods now contribute to
+  class totals, subject columns, the outer school popover, per-class progress,
+  the `Chưa xếp` drilldown, teacher-pane totals, and teacher timetable quality
+  statistics only when the class/subject has at least one teacher in the
+  current `DATA.pccmMatrix`. Stale `tkbLessonTeachers`, timetable cells, and
+  legacy row fallbacks cannot resurrect an unassigned period.
+- `Tiết ghép` still means at least two distinct PCCM teachers and counts the
+  subject periods once. Every class row keeps the invariant
+  `Tiết đơn + Tiết ghép = Cộng = sum(subject columns)`. Subjects without a PCCM
+  teacher are absent rather than yellow, and the modal note states the rule.
+- Compacted the desktop table to 64px summary cells, 68px subject headers,
+  104px class cells and 42px index cells (with smaller mobile values). Live
+  1280px browser measurement fell from about 1832px to 1227px, with zero
+  `.class-stats-missing` cells; 6/1 visibly changed from 31 to the assigned-only
+  total 28. The outer popover likewise showed 144 placed + 1887 missing, and
+  browser console error/warning inspection was empty.
+- Verification passed `node --check web/pages/phanmon.js`, the focused class,
+  export and complete toolbar suites **59/59**, Python deployer compilation,
+  `git diff --check`, guarded live-vs-local diff review, public fetch-back for
+  all four static assets, and `/api/health` (`ok=true`, active/queued `0/0`).
+- Deployed only `web/pages/phanmon.js`, `web/pages/phanmon.css`,
+  `web/pages/tkb-constraints-menu.js`, and `web/pages/sapxep.html`; no Rust,
+  solver, Cloud Run, database, service restart, or timetable write occurred.
+  Cache key: `20260808-v1192-assigned-only-all-statistics-v1`. Rollback backup:
+  `/opt/cherry-scheduler-backups/class-assignment-statistics-v1192-20260808-152235`.
+  Live SHA-256 values are `f2ee1760c63b89b1b039f2a283d356e1b944e42fea47058ba79d8a61ba27a271`,
+  `dc5efc2646be409b176a736a860795c489b5e9591e5a72b6872df2d728272f92`,
+  `3ac8703c203ab2167296180a412c3b803e76a770f6a090a042c73866cfa7731b`, and
+  `13168bb6e9f71e307af89286d4bfe3b64b743370abd9977e85210f310751b535`.
+  Rust and solver-tree hashes stayed `6443e323e549c36971d54cc63b31f638ed955b1124a80a6c9715423579b5b93c`
+  and `a743be485ee6664666b13eb9cc87239ca13d5290cfc3dc35d16e3888a40f8442`.
+
+## 2026-08-08 Thống kê theo lớp (deployed v1190; superseded by v1192)
+
+- Added Thống kê > Thống kê theo lớp immediately above In TKB in the
+  requirements menu. It opens a full-width, horizontally scrollable table
+  with the two-level header Tổng số -> Tiết đơn / Tiết ghép / Cộng, followed
+  by subject columns in DATA.monhoc order.
+- The model reads class/standard-period/PCCM data only: per-class overrides
+  take precedence over grade standards; a subject with more than one distinct
+  teacher contributes its periods once to Tiết ghép; all other periods
+  contribute to Tiết đơn; Cộng always equals the sum of subject columns.
+  Subjects without a teacher remain visible, are counted as non-merged for
+  arithmetic, and are highlighted yellow for correction. Solver timetable
+  cells and tkbLessonTeachers are intentionally not used for classification.
+- Added e2e_tests/planner_class_assignment_statistics_node.test.js with
+  **3/3** tests, plus the industry-export regression update. Syntax checks and
+  focused menu/export tests pass **10/10**. Live browser smoke showed 72 class
+  rows, 15 subject columns, a horizontally overflowing table, fixed class
+  column behavior, correct menu order, and clean close/escape behavior.
+- Deployed only these static files:
+  web/pages/phanmon.js, web/pages/phanmon.css,
+  web/pages/tkb-constraints-menu.js, and web/pages/sapxep.html.
+  Rollback backup:
+  /opt/cherry-scheduler-backups/class-assignment-statistics-v1190-20260808-144157.
+  Live hashes are f36a0a1f841b854d12b6948d033d48ed5600643e0ead02ab281545892439ef8c,
+  f1f4875d69c53521c2dffac66e9cf9ce10b52a0aebb50252e8ca51cb3ae33d21,
+  3ac8703c203ab2167296180a412c3b803e76a770f6a090a042c73866cfa7731b, and
+  44ecedc1f60bc3ad9806bd148dc961a002b30f7d94d75e6300c46d1194b0873e.
+  Public fetch-back matched all four hashes. Rust and solver assets were not
+  changed or restarted; health remained ok with 0/0 active/queued jobs and
+  6/6 worker tokens.
+
+## 2026-08-08 Phân công tab-render performance fix (deployed)
+
+- Investigated the visible pause when switching between the `Lớp`, `Giáo viên`
+  and `Môn học` tabs. The old renderer scanned every class/teacher/standard row
+  for each cell and eagerly emitted the complete teacher menu for every row.
+  A synthetic 80-class/120-teacher/25-subject case rendered the subject tab as
+  4.2 MB of HTML and took about 3.2 s locally; the teacher tab took about 4.8 s.
+- Added a render-scoped PCCM lookup index (class aliases, teacher codes/names,
+  and standard-period rows) and invalidate it on `saveStore()`. This preserves
+  lookup order/semantics while removing the repeated scans. Teacher multi-select
+  menus now contain only the clear action in the initial HTML and hydrate their
+  options on first open, including legacy selected codes not in the teacher
+  dictionary. The same synthetic case rendered in roughly 10–55 ms per tab and
+  the subject HTML fell below 0.6 MB.
+- Added Node regressions for indexed lookup equivalence and lazy menu hydration;
+  `node --check web/app.js` and `node --test e2e_tests/app_data_integrity_node.test.js`
+  pass **18/18**. Cache key is `20260808-pccm-tab-render-v1`.
+- Deployed only `web/app.js` and `web/app.html`; rollback backup is
+  `/opt/cherry-scheduler-backups/pccm-tab-render-20260808-142101`. Live hashes
+  are `a4367cc54b694183479e7687c627daffbb3505f86b953eec1f75226a459051f6`
+  and `60303034990b66758d8a41fc9ffeb1f7470f07af28a627eeb8f35d156c333968`.
+  Rust (`6443e323...`) and the solver tree (`a743be48...`) were verified
+  unchanged; no service restart, Cloud Run, database, or timetable write was
+  performed. Public fetch-back matched both candidate hashes and `/api/health`
+  remained `ok=true`, API `rust`, active/queued jobs `0/0`, tokens `6/6`.
+- Live signed-in browser verification kept the same 72-class/73-row subject
+  view while reducing its generated HTML from 3,312,811 to 415,433 characters
+  and eager multi-select items from 9,415 to 271. The class view fell from
+  584,445 to 104,131 characters. Opening one teacher chooser hydrated only that
+  menu (0 to 127 teacher items; one hydrated menu), confirming the deferred
+  interaction path works after release.
+
+## 2026-08-08 Zero-slack completion-first candidate (not deployed)
+
+- A large fresh timetable whose class demand exactly equals its available
+  class cells now runs Phase F as pure completion: the teacher-session ceiling
+  is the adaptive theoretical upper bound, singleton/Gap objectives and caps
+  are disabled, and the all-period bridge remains active. Quality work starts
+  only after a complete, hard-valid incumbent is retained.
+- Read-only A/B on frozen `default` (72 classes, 2,031 periods, 144 hard-fixed
+  periods, seed 8421) kept both lanes complete and hard-valid. Baseline returned
+  in 117.394s; the candidate produced its complete Phase-F incumbent in 22.127s
+  and returned in 103.310s. The follow-up five-seed candidate screen passed
+  **5/5** strict-fresh/no-hint runs: all scheduled 2,031/2,031, `hard_ok=true`,
+  zero unassigned and zero application violations. Phase-F p50/p95 was
+  21.582/21.798s and total wall p50/p95 was 100.348/100.653s. Later Phase Q/LNS
+  still owns singleton and gap cleanup; this gate proves completion reliability,
+  not final quality parity.
+- Added a focused contract regression proving zero-slack Phase F uses the
+  non-binding cap and disables every teacher-quality constraint/objective. The
+  full contract module has **162 passes + 17 subtests** and only the two known
+  missing-`lop.xlsx` fixture errors. No VPS, Cloud Run, database, deployment,
+  or user timetable was changed.
+
+## 2026-08-08 Capacity-partial strict-first cap candidate (not deployed)
+
+- In the proven capacity-partial lane, a non-strict requested teacher-session
+  cap is now raised to a data-derived non-binding ceiling (`upper_cap`, with
+  hard-fixed teacher sessions and the absolute teacher/session ceiling handled
+  safely). The requested cap remains in telemetry; the ceiling only prevents a
+  quality target from making the residual complete problem infeasible.
+- The primary residual session call explicitly uses `allow_unassigned=False`.
+  The old relaxed-cap retry is skipped for this lane; `allow_unassigned=True`
+  remains an optional fallback only after the strict call fails. Feasible and
+  strict-cap requests keep their existing routing.
+- Added two contract regressions covering strict-first/non-binding-cap and
+  optional-fallback-after-failure. Capacity-focused contract tests pass **8/8**;
+  the full contract module has **162 passes + 17 subtests** and only its two
+  known missing-`lop.xlsx` fixture errors. Python compilation and
+  `git diff --check` pass. No `session_cp_sat.py`, VPS, Cloud Run, database,
+  deployment, or user timetable was changed.
+
+## 2026-08-08 Fixed-class assignment-total UI correction (deployed v1188)
+
+- Corrected the `Tổng số tiết` header in the class fixed-requirement grid. The
+  prior helper switched to counting timetable cells as soon as any lesson was
+  present, so fixing two HĐTN cells changed a class's assigned-period total to
+  `2`. The header now prefers the complete PCCM assignment demand and uses the
+  visible schedule count only as a legacy fallback when no assignment row
+  exists at all. This keeps the total stable while fixed/off cells are edited.
+- Added a regression with two assigned subjects totaling seven periods: before
+  and after fixing two HĐTN cells, the fixed-class header source remains seven.
+  The focused constraint suite passes **26/26**; JavaScript/Python syntax and
+  `git diff --check` pass.
+- Deployed only `web/pages/tkb-constraints.js` plus the matching cache-key line
+  in `web/pages/sapxep.html`. Rust, CP-SAT, Cloud Run, Agent, database, services,
+  and user timetables were not changed. The guarded deployer is
+  `tools/vps-deploy/deploy-fixed-class-assignment-total-ui.py`; rollback backup:
+  `/opt/cherry-scheduler-backups/fixed-class-assignment-total-v1188-20260808-122826`.
+- Live markers are `constraints-ui-v41-fixed-class-assignment-total` and
+  `20260808-v1188-fixed-class-assignment-total-v1`. Expected public SHA-256 is
+  `3158f7450801551fe16711fa5f32f87be42316d273b5b081a692b94afddec590`
+  for `tkb-constraints.js` and
+  `2c79b3123d056a165cfb453a86d13c087936a6b6694d008001eaf8e13eeec61b`
+  for `sapxep.html`. The live Rust and solver-tree hashes remained
+  `9fc8fb10142d95b245fe62bffaaf4294513e90be25c6c593d2157e3ce14f384f`
+  and `f84cf039d26300ec4d9760f2b4ebed04583c8c44778c00f2cfea629a73ac05b7`.
+
+## 2026-08-08 Fixed-lesson multiplicity UI hotfix (deployed v1187)
+
+- Fixed the class fixed-lesson editor case where a subject whose per-class
+  `pccmTietMatrix` override had been pruned (because it equalled the standard
+  grade period count) was treated as having zero required periods. Selecting a
+  second fixed HĐTN slot could therefore consume the first fixed slot instead
+  of preserving both. `classSubjectRequiredCount()` now uses the shared
+  `assignmentPeriodsForFast()` resolution path, which includes the standard
+  period and assignment fallbacks used elsewhere in the planner.
+- A fixed placement may move only an ordinary occurrence of the same subject;
+  it never consumes an existing fixed anchor. It also refuses an unknown or
+  over-limit extra anchor when no ordinary source exists. An occupied target
+  containing another subject, including another hard anchor, is rejected
+  rather than overwritten, so the operation cannot reduce another subject's
+  lesson total.
+- Added focused regression coverage for three fixed slots of one three-period
+  subject across two classes without a redundant PCCM period override, moving
+  only ordinary lessons, rejecting the fourth anchor, preserving occupied
+  ordinary/fixed targets, and preventing unbounded anchors when demand is
+  unknown. The constraint suite passes **25/25**; Node syntax and
+  `git diff --check` pass. Backend contract review confirms that CP-SAT already
+  preserves multiple fixed instances by slot; its suite had **159 passed** and
+  only the two known local fixture errors caused by missing `lop.xlsx`.
+- Deployed only `web/pages/tkb-constraints.js` and the matching cache-key line
+  in `web/pages/sapxep.html`. No Rust API, solver source/objective, Cloud Run,
+  Agent, database, service restart, or user timetable was changed. The guarded
+  read-only-by-default deployer is
+  `tools/vps-deploy/deploy-fixed-lesson-ui.py`; rollback backup:
+  `/opt/cherry-scheduler-backups/fixed-lesson-multiplicity-v1187-20260808-121648`.
+- Live cache/version markers are
+  `20260808-v1187-fixed-lesson-multiplicity-v1` and
+  `constraints-ui-v40-fixed-lesson-multiplicity`. Public fetch-back hashes are
+  `7edde9434a3a126b3155ab9dac6b07315ec0861aa5c8ad73ae9456fa49fd7a9c`
+  for `tkb-constraints.js` and
+  `350ee110441af9a43e064529fd16f3002d290394d2b73ca3e2584a6f03cc00de`
+  for `sapxep.html`. Post-deploy health is `ok=true`, API `rust`, with zero
+  active and zero queued solver jobs. The live Rust and solver-tree hashes
+  remained `9fc8fb10142d95b245fe62bffaaf4294513e90be25c6c593d2157e3ce14f384f`
+  and `f84cf039d26300ec4d9760f2b4ebed04583c8c44778c00f2cfea629a73ac05b7`.
+
+## 2026-08-08 Capacity-partial scheduling hotfix candidate (not deployed)
+
+- The scheduler now treats a proven physical capacity overflow as a
+  best-possible timetable instead of allowing one impossible assignment to
+  discard every otherwise schedulable lesson. Excess periods are removed with
+  lesson-block-safe reductions, reported as `not_enough_available_slots`, and
+  returned to the UI through `unassignedLessons` / `capacity_unassigned_periods`.
+  Feasible inputs retain the existing strict solver and quality contract.
+- Reachable teacher `mustTeach` cells remain anchored. Only structurally
+  unreachable anchors are relaxed in the capacity lane and retained as
+  warnings. The partial publication gate still rejects class, teacher, room,
+  contiguous-block, session-limit and application-constraint violations; it
+  treats temporary teacher-gap debt as quality telemetry only for a proven
+  capacity shortfall.
+- Read-only replay of the affected 2,091-period snapshot completed in 34.188s:
+  2,075 scheduled, 16 capacity-unassigned, 0 solver-unassigned, exact
+  accounting, `ok=true`, and zero class/teacher/room/application conflicts.
+  Four focused capacity/partial-contract tests pass. The full 161-test contract
+  module has 159 passes and two fixture-environment errors because local
+  `lop.xlsx` is absent; no assertion failed. Python compilation and
+  `git diff --check` pass. No VPS, Cloud Run, database, or user timetable was
+  modified during this validation.
+
+## 2026-08-06 Refine local-branching R&D (not deployed)
+
+- Added the research-only `refine-local-branching-v1` journey to
+  `tools/vps-deploy/benchmark-algorithm-rnd.py`. The initial stage uses the
+  measured current strict-fresh path with a 60-second ceiling. Each later click
+  canonical-validates a complete/hard-valid incumbent and directly calls the
+  compact class-cluster CP-SAT repair; it never calls `solve_from_ui_data()` or
+  reruns Phase F. Production adapter/session source, routes, database, services
+  and Cloud Run remained unchanged.
+- The candidate computes per-teacher session/Gap1 debt, builds a lesson ↔
+  teacher/class/room/timeslot incidence graph, selects the highest aggregate-
+  debt bounded class component, freezes every outside/hard-fixed lesson, then
+  tries period-weighted local-branching neighborhoods `k=10`, `k=25`, `k=50`
+  and expanded `k=50`. Each solver slice is bounded to 5.5 seconds; the click
+  has an absolute 30-second deadline and reserves at least four seconds before
+  final canonical validation/serialization.
+- Acceptance is fail-closed: complete/hard-valid only; global singleton, Gap2,
+  teacher sessions, Gap1 and total gaps cannot regress; aggregate component and
+  every touched teacher debt vector cannot regress; outside/fixed multisets
+  must remain identical; canonical changed periods must stay within `k`; and a
+  real canonical improvement is required. Failed neighborhoods are remembered
+  by incumbent/component/`k` fingerprint; deadline-retryable attempts are not
+  permanently blacklisted. No-improvement returns the exact incumbent.
+- The corrected five-seed gate on frozen d58 passed: 5/5 complete/hard-valid,
+  singleton=Gap2=0 at every checkpoint, p95 Optimize clicks 21.48/20.64/
+  21.02/24.62 seconds, and 4/5 journeys improved canonically. This authorized
+  the requested 20-seed screen only; it was not a deployment gate.
+- The primary 20-seed candidate batch produced 19/20 usable fresh timetables;
+  seed 5903 failed in the initial fresh feasibility phase before any local
+  click. An isolated retry succeeded, proving nondeterminism but not erasing the
+  1/20 primary failure. All 19 valid primary rows were complete/hard-valid with
+  singleton=Gap2=0; 76 clicks stayed below 30 seconds, no `changed_periods > k`
+  or unmapped incumbent occurred, Phase-F click telemetry stayed zero, and
+  no history signature repeated.
+- A separate same-snapshot/same-20-seed legacy-180 lane was 20/20 usable and
+  actually returned in p50/p95 42.72/52.71 seconds with median 519 sessions /
+  Gap1 91. Using the 19 primary candidate rows plus the explicit 5903 retry for
+  quality-only pairing, candidate median at 180 seconds was 519.5/91; paired
+  outcomes were 10 candidate-dominates, 6 legacy-dominates and 4 trade-offs.
+  At 60 seconds legacy dominated 13 seeds versus six candidate wins. Therefore
+  `refine-local-branching-v1` remains R&D and is not ready to replace legacy.
+- Canonical artifacts and limitations are documented in
+  `tkb_algorithm_research/refine-local-branching-v1-report.md`; primary data are
+  `refine-local-branching-v1-screen-d58-20seed-v2.jsonl`, the explicit retry,
+  legacy 20-seed comparison and smoke-v3 contract artifact beside it. Final
+  read-only VPS health was idle (`active=0`, `queued=0`, tokens `6/6`); pinned
+  live hashes were unchanged and disposable staging was removed.
+
+## 2026-08-06 Historical black-box and hint/warm-start R&D (not deployed)
+
+- Added the research-only harnesses
+  `tools/vps-deploy/benchmark-historical-rnd.py` and the hint A/B extensions
+  in `tools/vps-deploy/benchmark-algorithm-rnd.py`. They use only frozen input
+  or disposable `/tmp/tkb-rnd-*` staging, fail closed when the VPS is busy,
+  pin `PYTHONHASHSEED=0`, and never call a public solve route or write a school
+  database. No production source, route, service, Cloud Run revision, or user
+  timetable changed.
+- Exact Git trees `0012947`, `71efb4d`, and `5877c01` were black-box replayed
+  again on the same strict-fresh d58 input (54 classes/1,566 periods, six workers).
+  The hardened v2 harness pre-extracted every ref, alternated seed→ref, checked
+  VPS health before each process, and recomputed canonical Sessions/Gap1 as well
+  as hard validity. All 9 runs were complete/hard-valid/singleton=0/Gap2=0;
+  reported quality matched canonical in 9/9. New p50/p95 wall and canonical
+  median sessions/Gap1: v1.46 `35.06/49.20s`, `520/95`; v1.56
+  `41.85/48.72s`, `519/97`; v1.69 `40.86/51.40s`, `520/96`. The new raw
+  artifact is
+  `tkb_algorithm_research/historical-blackbox-alternating-canonical-3refs-3seeds.jsonl`;
+  `historical-rerun-manifest.json` stores its SHA, environment and invariants;
+  the v1 artifact remains beside it for traceability. A same-seed smoke still
+  differs slightly, confirming residual CP-SAT multi-worker nondeterminism; no
+  single-seed timing claim is promoted. With n=3, p95 is the observed maximum,
+  not a tail-SLA estimate.
+- Replay environment is recorded per row (and summarized in
+  `tkb_algorithm_research/historical-environment-d58.json`): remote Linux
+  6.8/Python 3.12.3/OR-Tools 9.15.6755/6 vCPU; current canonical payload
+  validation ran locally on Windows/Python 3.13.14 and did not invoke a solver.
+  The harness fingerprints period/integrated/gap0/Rust/pool/web paths too; a
+  missing path at an old ref is recorded as `null`, never silently treated as
+  current code. Rust/web remain static fingerprints, not a full-stack replay.
+- Refine hint A/B on the live source pin, 30 seconds, seeds
+  5801/5903/6007/6101/6203: current canonical incumbent hint p50/p95
+  `29.439/29.607s`, no-initial-hint `29.103/29.540s`; both returned the same
+  canonical incumbent `466/47`, 5/5 hard-valid, 0/5 accepted improvements. A
+  confirmation at 35 seconds/3 seed also tested no-hint/no-within-click-warm
+  (`34.476/34.959s`) with the same result. The hint lane produced model
+  checkpoints, but they worsened Gap1 or Gap2 and were correctly rejected. No
+  persistent domain cache or validated solution bank exists; static/legacy
+  banks remain disabled. Evidence and fingerprint contract are in
+  `HINT_CACHE_WARM_START_D58.md`.
+- The follow-up all-warm-off lane (`hint-all-warm-off-candidate-d58-5seed.jsonl`)
+  had p50/p95 `29.114/31.654s`, the same `466/47` incumbent and 0/5 accepted
+  improvements. Both no-hint lanes exhausted after one Benders iteration, so
+  this is evidence about the initial incumbent hint only; it does not isolate
+  the marginal value of warm state from iteration 1 to iteration 2. The R&D
+  switch is scoped to Benders session CP-SAT; rescue/probe hint paths were not
+  reached and must not be described as globally disabled.
+- Progressive B (60 + 6x20 seconds) now has a completed 3-seed pilot. Every
+  final result is 1,566/1,566, hard-valid, singleton=0 and Gap2=0, but no
+  optimization click improved the incumbent. P50/p95 cumulative wall is
+  `93.135/93.456s`, median final `519/88`; clicks after all three failed
+  objectives are marked `exhausted` and consume 0 solver seconds. This rejects
+  full-model 20-second clicks, not the Progressive A 30-second policy. Details
+  are in `TIME_TO_QUALITY_D58.md` and the two Progressive B JSONL artifacts.
+- Updated all Vietnamese R&D reports (`HISTORICAL_PERFORMANCE_AUDIT.md`,
+  `NGHIEN_CUU_THUAT_TOAN_HIEN_DAI.md`, `DANH_SACH_THUAT_TOAN_UU_TIEN.md`,
+  `MA_TRAN_THI_NGHIEM.md`, `TIME_TO_QUALITY_D58.md`,
+  `FAILED_EXPERIMENTS.md`, `BAO_CAO_RND_TKBCHERRY.md`,
+  `adaptive-lex-pilot-d58-report.md`, `progressive-journey-d58-report.md`)
+  and appended structured
+  rows to `rnd-benchmark-summary.jsonl`. Exact proof semantics are documented:
+  only `OPTIMAL`/objective-bound or a correctly fingerprinted `INFEASIBLE`
+  cap probe can certify no further improvement; `UNKNOWN` is merely unproven.
+- Final R&D verification passed: outer Python compile, embedded runner AST
+  compile, patched hint-lane compile, 67 JSON/JSONL artifacts (484 JSONL lines)
+  parse, historical-v2 invariants (9/9 canonical hard-valid and reported=canonical),
+  hint/warm/Progressive B invariants, and trailing-space audit. The final VPS
+  read-only check remained `active=0`, `queued=0`, worker tokens `6/6`; remote
+  live adapter/session hashes still equal the pinned hashes
+  (`f942483d…`/`46f5560f…`). No `/tmp/tkb-rnd-*` staging directory remains.
+
+## 2026-08-06 Progressive user-journey optimizer pilot (not deployed)
+
+- Corrected the R&D product strategy: the first click no longer has to equal a
+  deep 180-second refine result. New harness variant `progressive-journey`
+  performs strict fresh/no-hint construction with a 60-second budget, then
+  three canonical incumbent-preserving Optimize clicks with 30 seconds each.
+  Later clicks attach the last canonical payload as `tkbSolverResult`, preserve
+  only original `fixed:true` cells as hard locks, and never rerun Phase F.
+- Each click computes the full canonical debt vector and selects one primary
+  optimizer. The selected policy continues integrated Gap1 Benders while Gap1
+  remains above 35 and the same fingerprint has not just failed; a failed
+  fingerprint changes objective on the next click. Session LNS and Balance/
+  hard-cleanup guards plus a partial-repair routing/guard scaffold exist in the
+  R&D harness. The publication
+  guard is active-objective monotonic and retains the exact incumbent on no
+  improvement. History records input/result fingerprints, canonical vectors,
+  optimizer, seed, runtime, acceptance, failed caps, neighborhoods and reason.
+- Five selected journeys on frozen fixture `d58abcb...` used seeds
+  5801/5903/6007/6101/6203. All 20 visible checkpoints were 1,566/1,566,
+  hard-valid, singleton=0 and Gap2=0; no sessions/Gap1 regression occurred.
+  Initial cumulative p50/p95 was 44.966/46.040s. Each Gap1 click had p95
+  25.974-26.054s and improved 5/5 seeds. Median quality progressed
+  `515/65 -> 515/61 -> 515/59 -> 515/57`; total p50/p95 was
+  123.890/124.871s. Initial strict-fresh no-hint and no-repeat-Phase-F checks
+  passed 5/5.
+- Same-seed legacy one-shot with a configured 180-second ceiling actually
+  returned in p50/p95 34.883/46.058s at median 519 sessions / Gap1 86.
+  Progressive final dominated legacy on four seeds and was a trade-off on one;
+  its median 515/57 component-wise dominates legacy median 519/86. Progressive
+  peak RSS p50/p95 was 1,101.3/1,139.0 MiB versus legacy 671.1/708.5 MiB.
+- An exploratory `Gap1 -> Session -> Gap1` policy proved Session LNS
+  unproductive on these incumbents (0/5 accepted session reductions). The
+  selected gap-first policy therefore follows the measured primary debt; a
+  selector self-check proves that a failed Gap1 on the same fingerprint moves
+  the next click to Session rather than repeating work.
+- This is a passed five-seed algorithmic product-strategy pilot, not a strict
+  Cloud/HTTP end-to-end SLA and not deployment approval.
+  P95 uses nearest-rank and is therefore the observed maximum with only five
+  samples. The full journey used about 3.55x legacy's actual median wall and
+  64% more median peak RSS, while improving median sessions/Gap1 from 519/86 to
+  515/57. Compact artifacts retain initial summary/gate values but not the full
+  initial validation row; the no-repeat-Phase-F field is a source-path contract
+  marker rather than independent call telemetry.
+  No production source/route, Cloud Run revision, database, service or user
+  timetable changed. Before integration, run 20 alternating journeys, exercise
+  Session/Balance/partial repair, validate a real anonymized 70-80-class
+  fixture, and measure Cloud Run billable seconds/cold starts/RSS. Full evidence
+  is in `tkb_algorithm_research/progressive-journey-d58-report.md`.
+
+## 2026-08-05 Adaptive/lexicographic 60-second pilot (not deployed)
+
+- Continued solver R&D only in `tools/vps-deploy/benchmark-algorithm-rnd.py`;
+  no public solve call, database write, production source change, VPS restart,
+  Cloud Run revision or deployment occurred. Every run pinned live
+  `adapter.py=f942483d...` and `session_cp_sat.py=46f5560f...`, used disposable
+  staging and removed its `/tmp/tkb-rnd-algorithm-*` directory.
+- The original requested fixture `d01e80ab...` (469 sessions / Gap1 36) is no
+  longer available as a complete snapshot. The newly frozen fixture is
+  `d58abcb45237cf30b6795c38c7384646c51aff0dd6cd9192b204dc1ee428bd40`:
+  1,566/1,566, hard-valid, singleton 0, Gap2 0, 466 sessions / Gap1 47. Its
+  PCCM and incumbent fingerprints differ, so old and new rows were not mixed.
+- The old 20-seed telemetry proves session reduction originates in session
+  CP-SAT, then Benders materialization: model-only 468 appeared in 7/20 seeds
+  (earliest 35.248s), 467 once (86.003s), but materialized checkpoints arrived
+  around 95-96s and no new canonical improvement arrived within 60s. Only
+  9203=468/34, 9509=468/35 and 10709=468/35 were final Pareto-safe session
+  improvements against 469/36.
+- On `d58abcb...`, matched-seed sequential five-seed results
+  (9101/9203/9301/9403/9509) were:
+  legacy p50/p95 175.590/175.754s, median 466/35, RSS p50/p95
+  1,249.8/1,283.1 MiB; adaptive 3+3 then 6 p50/p95 57.138/57.279s, median
+  466/40, RSS 1,051.2/1,085.7 MiB; integrated weighted lex p50/p95
+  58.275/58.422s, median 466/41, RSS 1,021.8/1,043.1 MiB. All were 5/5
+  complete/hard-valid with singleton=Gap2=0, but both candidates were dominated
+  by legacy on all five seeds and neither reduced sessions below 466.
+- The adaptive Lane S cap-465 probe returned `UNKNOWN` on 5/5 seeds. This met
+  the futility gate, so no misleading 20-seed promotion batch was run.
+  Candidate A and weighted Candidate B are rejected as replacements. A true
+  same-model two-slice Candidate B remains unimplemented and should be tested
+  only after recovering a fixture with measurable session debt.
+- Harness-only corrections now derive targets from input, apply a hard Gap1
+  safety cap, cap workers at six, start the global deadline before validation,
+  collect adaptive canonical/model telemetry, remove nested payloads, validate
+  threshold rows, add input-relative thresholds and align publication safety
+  with the specified sessions/Gap1 components (imbalance is only a tie-break).
+  Outer and embedded runner compilation and `git diff --check` pass.
+- Detailed evidence is in
+  `tkb_algorithm_research/adaptive-lex-pilot-d58-report.md`, the per-seed
+  `legacy-pilot-d58-*`, `adaptive-pilot-d58-v2-*`,
+  `integrated-pilot-d58-v2-*`, and v3 smoke JSONL files. Keep production legacy
+  unchanged; `direct-gap1` remains only a fast refine option. A real complete
+  anonymized 70-80-class refine fixture is still required before promotion.
+
+## 2026-08-05 Frozen-input 60-second candidate comparison (not deployed)
+
+- Hardened the isolated harness before the final comparison. It now takes one
+  read-only `school_default` snapshot for the whole batch, pins its canonical
+  SHA-256 (`d01e80ab449fa55d335001d1a56bffbaa254f65b5b5a1169a31dbbba0d19024f`),
+  records PCCM/fixed-cell/incumbent fingerprints, adds request-relative
+  accepted/model-only telemetry, canonical rows before/after validation, peak
+  RSS, and a process-level timeout. Missing metric values cannot compare as
+  zero. The live solver files were checked against the pinned hashes before
+  every batch and were only copied to disposable staging directories.
+- The frozen input is the current `refine-complete` school, not the historical
+  screenshot state: 1,566/1,566 periods, hard-valid, singleton = 0, Gap2 = 0,
+  469 teacher sessions and Gap1 = 36. Therefore the required absolute
+  time-to-first-complete/zero-singleton/zero-Gap2/<=474/<=58 thresholds are
+  all `0.0s` for this category: the incumbent already satisfies them. The
+  meaningful comparison is time-to-a-new Pareto-safe improvement.
+- A 20-seed alternating baseline/candidate batch used exactly the same frozen
+  input (seeds 9101, 9203, 9301, 9403, 9509, 9601, 9703, 9809, 9901, 10007,
+  10103, 10211, 10301, 10427, 10501, 10613, 10709, 10831, 10903, 11027).
+  Legacy 180-second results were 20/20 complete and hard-valid, with median
+  wall 176.110s, p95 176.366s, median 469 sessions / Gap1 35, best 467 / 31,
+  and median peak RSS 1,268.28 MiB. The required 3+3 in-request portfolio
+  (Sessions lane + Gap1 lane + shared ALNS) was 20/20 hard-valid but selected
+  the input incumbent on all 20 seeds: median 43.019s, p95 43.457s, 469 / 36,
+  and no accepted ALNS improvement. It is rejected for quality promotion even
+  though it is fast and uses less memory.
+- A second candidate, `--variant direct-gap1`, was rerun candidate-only on the
+  same frozen snapshot and the same 20 seeds (the legacy rows above were reused;
+  this follow-up was not a second alternating baseline run). It moves the same integrated
+  Benders/CP-SAT period-gap model to the front, locks teacher sessions at 469,
+  keeps singleton and Gap2 caps at zero, and gives the gap objective a bounded
+  50-second slice. On the same 20 seeds it was 20/20 complete/hard-valid,
+  median wall 54.133s, p95 54.289s, median 469 / Gap1 35, best Gap1 31, and
+  median peak RSS 1,001.67 MiB. It produced a Pareto-safe improvement on
+  13/20 seeds and retained the input on 7/20; 14/20 runs reached a new Gap1
+  <=35 checkpoint, with p50 54.082s and p95 54.317s. No run changed sessions,
+  singleton count, or Gap2. Relative to legacy's final canonical result, the
+  direct candidate dominated 4 seeds, tied 2, was a trade-off on 5, and was
+  dominated on 9; this is a latency/quality Pareto candidate, not a universal
+  quality win.
+- Telemetry identifies the reason for the speed gap: legacy often spends the
+  first ~90-120 seconds on session/Benders phases and only then starts the
+  integrated period-gap CP-SAT; the useful Gap1 improvements arrive around
+  120-176 seconds. The direct candidate starts that productive model at once
+  and reaches its accepted canonical row around 54 seconds. `session_cp_sat`
+  callback rows remain explicitly `model_only` and are not used as publishable
+  quality evidence.
+- A 75-class/2,175-period direct-gap1 stress probe was intentionally rejected
+  before solving because the synthetic scaled input was not a complete,
+  globally publishable incumbent. This preserves the large-school gate: no
+  70-80-class promotion claim is made until a real complete anonymized fixture
+  passes the same 100% hard-valid test.
+- Research outputs are retained in `tkb_algorithm_research/`:
+  `quality-portfolio-20-paired-final.jsonl`,
+  `direct-gap1-20-candidate-final.jsonl`, and the pilot/stress files. No Cloud
+  Run revision, VPS live source, database row, or user timetable was changed.
+  The direct-gap1 candidate is not deployed; next promotion requires a real
+  large-school fixture and a decision on whether the observed session-count
+  trade-offs are acceptable.
+- Verification completed with outer `py_compile`, embedded `RUNNER` AST/compile,
+  and `git diff --check`. The local environment has no `pytest` module, so the
+  packaging pytest suite was not claimed as passed.
+
+## 2026-08-05 Fresh ALNS and 75-class algorithm research (not deployed)
+
+- The isolated R&D harness `tools/vps-deploy/benchmark-algorithm-rnd.py` now
+  supports interleaved/alternating A/B order, compact batch summaries, Phase-F /
+  Phase-Q / local-ALNS telemetry, official OR-Tools subsolver experiments and a
+  deterministic in-memory scale fixture. It still pins the exact two live VPS
+  source hashes, reads `school_default` through SQLite `mode=ro`, never calls a
+  public solve endpoint, removes each `/tmp/tkb-rnd-*` tree and never writes a
+  timetable or database. The harness is an untracked research file, not a
+  production runtime change.
+- The strongest current-size candidate is `fresh-long-lns`: keep the existing
+  clean Phase-F constructor, skip exact Phase Q when there is no explicit
+  quality target, and increase the Pareto-guarded local ALNS slice from 16 to
+  30 seconds. It does not use a stored timetable, cache, learning bank or
+  external hint. Each pass starts from the incumbent created in the same
+  request; worse neighborhoods are rejected.
+- Twenty paired fresh/no-existing-hint seeds
+  (5801, 5903, 6007, 6101, 6203, 6301, 6407, 6503, 6607, 6701, 6803, 6907,
+  7001, 7103, 7207, 7301, 7403, 7507, 7601, 7703) all returned 1,566/1,566,
+  hard-valid, singleton = 0 and Gap2 = 0 in both lanes. Every result verified
+  `fresh_soft_hint_keys=[]`, `soft_existing_hint_lessons=0` and no forbidden
+  incumbent marker.
+
+  | Algorithm | Median wall | P95 wall | Max wall | Median sessions | Median Gap1 |
+  |---|---:|---:|---:|---:|---:|
+  | Current fresh baseline | 31.142 s | 38.505 s | 39.257 s | 519 | 84.5 |
+  | Fresh 30-second ALNS | 45.471 s | 53.169 s | 53.397 s | 513 | 71 |
+
+  Paired quality had 18 candidate Pareto wins, one exact tie, one trade-off
+  (three more sessions but three fewer Gap1) and zero baseline Pareto wins.
+  The candidate therefore buys a median reduction of six teacher sessions and
+  13.5 Gap1 for 14.329 additional wall seconds while remaining below the
+  58-60-second envelope on this real 54-class / 1,566-period fixture.
+- A 24-second ALNS profile was rejected. It reduced wall time to about 38-40
+  seconds in the two-seed probe but lost much of the 30-second profile's
+  quality: seed 6007 reached 516/76 instead of 507/65, and seed 6407 reached
+  520/83 instead of 513/73. Telemetry explains why: successful 30-second lanes
+  were still accepting improvements at pass 17-20, commonly 28.3-30.1 seconds
+  into ALNS. An unconditional earlier stop would discard measured gains.
+- Official OR-Tools tuning did not beat this result. `quick_restart_no_lp`
+  produced a latency-neutral session/Gap1 trade-off in its retained pilot.
+  Lowering `lb_relax_num_workers_threshold` to six was tested on six strict
+  fresh seeds: it improved or traded positively on four but was worse in both
+  metrics on two, with effectively unchanged median wall time. Neither should
+  be promoted. An aggressive target-490 Phase-Q run was worse in both metrics;
+  target 500 often improved sessions but sometimes spent 33-34 seconds on an
+  inconclusive exact Phase Q and starved local LNS. A Phase-F-duration gate
+  rescued slow seeds but remained a session/Gap1 trade-off on fast seeds.
+- The in-memory large fixture now contains 75 classes, 2,175 requested periods
+  and 182 active teachers. It samples all four grades, remaps cloned class and
+  teacher identities, copies PCCM/off/fixed-anchor structure, and pools only
+  synthetic one-period teacher demand. The audit is
+  `one_period_synthetic_demand_teachers=0`; earlier runs before this correction
+  are invalid and must not be cited.
+- The corrected 75-class fixture exposes the current hard limit. On seed 8603,
+  both the current baseline and `fresh-long-lns` exhausted Phase F at about
+  58 seconds without a complete publishable result, so ALNS never started.
+  On seed 8501 the monolithic baseline also failed, and the graph-component
+  sequential prototype could not drive the 609-period component to zero
+  singleton debt inside its 24-second slice. A 3+3-worker parallel component
+  portfolio and an all-session exact period bridge also failed their pilots.
+  Therefore the 30-second ALNS candidate is promising for the current real
+  school but is **not ready for 70-80-class rollout or Cloud Run promotion**.
+- The next large-school algorithm must improve incumbent construction before
+  post-optimization: retain a complete quality-debt schedule early, then run a
+  dedicated singleton/Gap2 cleanup that does not rebuild the full exact model;
+  alternatively improve resource-graph decomposition with a feasible
+  per-component constructor and a strict global merge validator. Benchmark on
+  a real anonymized 70-80-class school as well as the synthetic fixture. Do not
+  tune or deploy `fresh-long-lns` globally until that gate passes.
+- No production source, VPS service, Cloud Run revision, database or user
+  timetable was changed. Live solver hashes remain
+  `adapter.py=f942483d576ab15bf1a03fdc71c329bedc879bec38b29d638f8ebc3dbfffeb20`
+  and
+  `session_cp_sat.py=46f5560feead236b58b8915e42dd2f9a5fbcce88b185fbc55a35a3fd1f04cb46`.
+
+## 2026-08-05 60-second CP-SAT research (not deployed)
+
+- A strict no-existing-hint fresh benchmark was added after confirming that
+  the production school JSON contained solver result, refinement/adaptive
+  learning, auto-sort-cycle and off-restore artifacts. The harness now removes
+  all known soft schedule/learning/cache fields in memory, preserves only
+  explicit `fixed:true` cells as hard constraints, disables backend/native
+  hint banks and warm starts, sets both random seeds, and verifies
+  `fresh_soft_hint_keys=[]`, `soft_existing_hint_lessons=0` and no incumbent
+  runtime marker for every result.
+- Ten strict fresh seeds (2003, 2101, 2203, 2309, 2411, 2503, 2609, 2707,
+  2801, 2903) all returned 1,566/1,566, hard-valid, singleton = 0 and Gap2 = 0
+  in both lanes. Current baseline median was 31.862 s, 520 teacher sessions and
+  Gap1 90. The 2x3-worker portfolio median was 30.819 s, 518.5 teacher
+  sessions and Gap1 99.5. Portfolio therefore saved only about 1.04 s at the
+  median while trading roughly 1.5 fewer sessions for about 9.5 more Gap1.
+  Paired lexicographic quality split 5/5; Pareto analysis had baseline dominate
+  four seeds, portfolio dominate one and five trade-offs. Two of twenty
+  individual portfolio lanes missed fresh feasibility, although the sibling
+  lane kept all ten portfolio requests successful.
+- Fresh/no-hint conclusion: do not replace the current fresh solver with the
+  portfolio. Its tail latency was steadier (max 32.029 s versus baseline
+  44.862 s), but median latency/cost improvement is too small for the extra
+  parallel model memory and its Gap1 regression. The earlier ten-run batch
+  before strict removal of every learning/cache field is reference-only and
+  must not be used for promotion.
+- The R&D runner now records lane failures instead of aborting the whole batch,
+  validates completeness/session count independently, and treats Gap1 = 0
+  correctly. Strict-run backups are
+  `/opt/cherry-scheduler-backups/rnd-algorithm-20260805-063236-c13db0cb`
+  and `/opt/cherry-scheduler-backups/rnd-algorithm-20260805-064101-01dadbe1`.
+- A controlled comparison on fresh seeds 613/719/823 used the same real
+  1,566-period incumbent and six-worker envelope. Median wall times were
+  73.951 s for the current 60-second baseline, 51.985 s for
+  `fast-two-stage`, and 33.307 s for the in-request 2x3-worker portfolio.
+  Every baseline, fast-two-stage and portfolio result was complete,
+  hard-valid, singleton = 0 and Gap2 = 0. Fast-two-stage and portfolio were
+  identical on published quality for all three seeds (468 sessions, Gap1 26),
+  so portfolio dominates fast-two-stage on latency. Baseline sometimes found
+  fewer sessions (median 467) but had less stable Gap1 (median 27, max 39), so
+  baseline versus portfolio remains a Pareto trade-off rather than a universal
+  quality win.
+- A 60-second six-worker sessions-only candidate was rejected: although its
+  median wall time was 51.487 s, seed 823 returned Gap2 = 1. It therefore
+  violates the Automatic zero-Gap2 publication gate.
+- Fixed two R&D benchmark-selector defects before the portfolio comparison:
+  independent validation now reports completeness, unassigned periods and
+  teacher sessions, and a true Gap1 = 0 no longer maps to the missing-value
+  sentinel. These fixes affect only `benchmark-algorithm-rnd.py`.
+- Cloud Run is currently 6 vCPU, 4 GiB, concurrency 1. Keeping both 3-worker
+  lanes inside one request/process means the 33.307 s median would reduce the
+  same allocated-instance envelope by about 36% versus the 51.985 s single
+  lane. Do not split the two lanes into separate Cloud Run requests, which
+  could allocate two full 6-vCPU instances and increase cost. A canary must
+  still measure billable instance seconds, CPU/RSS and cold-start latency.
+- Extended `tools/vps-deploy/benchmark-algorithm-rnd.py` with benchmark-only
+  `--time-limit` and `--workers` controls. These settings are injected only
+  into disposable remote source trees; production settings remain unchanged.
+- Baseline at a 60-second solver budget still returned complete hard-valid
+  schedules, but wall time was about 68.2–69.8 seconds because model build,
+  materialization and validation sit outside the CP-SAT slice. Across seeds
+  101/203/307/401/503, the baseline had singleton = 0 and Gap2 = 0, with
+  teacher sessions 462–468 and Gap1 26–40.
+- Candidate `fast-two-stage` lowered the existing two-stage session-then-gap
+  admission threshold from 90 to 45 seconds. It returned 1,566/1,566,
+  hard-valid schedules with singleton = 0 and Gap2 = 0 on all five seeds;
+  elapsed times were 52.091/51.850/51.830/34.735/51.487 seconds. Its
+  quality was stable near 468 teacher sessions and Gap1 = 26, but it did not
+  consistently dominate the baseline's lower session counts. It is promising
+  for latency, not yet a drop-in replacement.
+- A two-seed run with 8 workers showed similar candidate latency (52.182 and
+  51.778 seconds) and mixed quality. More workers therefore are not yet
+  evidence of a win on the six-CPU VPS; do not change production worker count.
+- Two follow-up candidates were also rejected for now: a larger Phase-S slice
+  produced 37.464/52.668/51.818 seconds with sessions 468/468/467 and Gap1
+  26/26/31; the lean-period bridge produced 51.976/53.946/51.617 seconds
+  with sessions 468/467/468 and Gap1 26/32/26. Neither consistently improved
+  the session/Gap1 Pareto over `fast-two-stage`.
+- A new R&D `portfolio` variant ran two 3-worker lanes concurrently (one
+  sessions-focused and one automatic) with 36 seconds per lane. Across seeds
+  101/203/307/401/503 it completed in 30.991–33.604 seconds, always
+  1,566/1,566, hard-valid, singleton = 0, Gap2 = 0 and Gap1 = 26. It still
+  retained 468 teacher sessions, so it is a strong latency candidate but not
+  yet a proven quality replacement. A forced 466-session target did not reduce
+  sessions within the short budget. The two-lane approach also consumes the
+  full six-CPU envelope concurrently; cost must be measured before rollout.
+- The live VPS stayed idle after each run; all staging directories were
+  removed. Backups were made under
+  `/opt/cherry-scheduler-backups/rnd-algorithm-*`. No VPS source, Cloud Run
+  revision, database or timetable was changed.
+- Next candidate: retain the fast two-stage portfolio but add an acceptance
+  gate that prioritizes the existing session count before spending the gap
+  phase, then benchmark on five seeds plus 2,000–3,000-period synthetic
+  cases. Promotion requires no hard-valid regression and a consistent
+  session/Gap1 Pareto win.
+
+## 2026-08-05 Algorithm R&D A/B benchmark (not deployed)
+
+- Added the isolated benchmark runner
+  `tools/vps-deploy/benchmark-algorithm-rnd.py`. It verifies the pinned live
+  VPS solver hashes, reads only `school_default` through SQLite `mode=ro`,
+  clones the JSON in memory, and runs the production source beside a temporary
+  candidate source. It never calls `/api/solve-data`, never writes a school
+  store, and removes the staging directory after every run.
+- Candidate A (`min-remaining`) adds only the opt-in setting
+  `optimization_benders_min_remaining_seconds`: after a validated incumbent
+  exists, Benders skips a new cap when less than the configured reserve remains
+  for CP-SAT plus period validation. The production VPS source and settings
+  remain unchanged. Candidate B (`stagnation`) only enables the already
+  implemented quality-plateau callback with
+  `optimization_refinement_quality_stagnation_enabled=true`; it also was not
+  deployed.
+- Five paired Automatic `refine_complete` runs on the real 1,566-period,
+  54-class dataset used 6 workers, the same 180-second ceiling and seeds
+  101/203/307/401/503. Every result in both lanes was 1,566/1,566,
+  hard-valid, zero authored violations, zero one-period teacher sessions and
+  Gap2 = 0. Baseline times were 112.300/111.864/112.003/111.867/111.879 s;
+  candidate A times were 111.763/100.814/111.923/111.649/112.035 s. The
+  candidate's median speed difference was only about -0.22 s and its quality
+  tuple was mixed: it won two seeds, tied one, and lost two when ordered by
+  teacher sessions then Gap1. It is therefore not a replacement candidate.
+- Candidate B was tested on seeds 601/701. Both results stayed hard-valid and
+  complete; times were 100.318/111.700 s baseline versus 99.376/111.643 s with
+  a 25-second plateau. One seed traded one fewer teacher session for higher
+  Gap1 and the other increased Gap1 without a meaningful speed gain. It is
+  also not ready for rollout.
+- Remote source backups created for the experiments are
+  `/opt/cherry-scheduler-backups/rnd-algorithm-20260804-170233-b6148bd7`,
+  `/opt/cherry-scheduler-backups/rnd-algorithm-20260804-171030-d7216635` and
+  `/opt/cherry-scheduler-backups/rnd-algorithm-20260804-172309-168c3311`.
+  Public health after testing was idle (`0 active`, `0 queued`, `6/6` tokens);
+  no Cloud Run revision, VPS live source, database or timetable was changed.
+- Current conclusion: the dominant cost is repeated CP-SAT/Benders quality
+  search and model rebuild, not VPS admission. The next safe experiments are
+  focused Gap1 early return when Gap2 = 0 and Gap1 = 0, lean-first Phase S
+  with a validated fallback, and phase telemetry (`first_complete`, zero
+  singleton, zero Gap2, last improvement, materialize/validate and stop
+  reason). Any promotion still requires at least five seeds on the 1,566-period
+  fixture plus larger 2,000–3,000-period synthetic data, with no hard-valid or
+  quality regression.
+
+## 2026-08-03 VPS focused Gap2 zero-target early return (deployed)
+
+- VPS now matches the focused Cloud Run behavior for the `2 tiet trong`
+  action. Only a request with `optimization_focus=gaps` and
+  `optimization_gap_target=gap2` enables this path. The fixed-session repack
+  enforces `max_teacher_gap=1` but no longer spends time minimizing Gap1; once
+  a complete, hard-valid candidate reports Gap2 = 0, the outer refinement
+  skips its deep retry. If the native period-bridge CP-SAT path is used, its
+  incumbent callback also stops on the first complete Gap2 = 0 solution even
+  when Gap1 is still positive. `1 tiet trong` remains owned by the separate
+  Gap1 action.
+- The early-return predicate does not use `K_SERVICE` and does not require the
+  one-period-teacher-session metric as an additional target. Existing session
+  and singleton caps/acceptance checks still prevent a focused Gap2 result from
+  regressing the input timetable. Automatic, Buoi, Gap1, solver objectives,
+  Rust routing and Cloud Run were not changed.
+- The production candidate was generated from the two live VPS files, not from
+  the much newer dirty local solver tree. Only
+  `solver_runtime/src/tkb_new/adapter.py` and
+  `solver_runtime/src/tkb_optimizer_ref/session_cp_sat.py` changed. Their new
+  SHA-256 values are
+  `f942483d576ab15bf1a03fdc71c329bedc879bec38b29d638f8ebc3dbfffeb20`
+  and
+  `46f5560feead236b58b8915e42dd2f9a5fbcce88b185fbc55a35a3fd1f04cb46`;
+  the complete VPS solver source-tree hash is now
+  `014e1cfeb8d408d8fa5512ef26d86ede982415147d508e0517c3c4dc3b4321a2`.
+- Guarded deployer:
+  `tools/vps-deploy/deploy-gap2-zero-stop.py`. It is read-only by default,
+  recognizes both the pinned pre-release and deployed states, and requires
+  `--confirm-deployment` for cutover. It tests an isolated production-based
+  candidate, gates `/api/solve-data`, drains three consecutive `0 active / 0
+  queued` samples, creates a backup, verifies that exactly the two allowlisted
+  files changed, restarts the API and rolls back automatically on failure.
+  Rollback snapshot:
+  `/opt/cherry-scheduler-backups/vps-gap2-zero-stop-v1-20260803-092254`.
+- Verification passed the two focused local suites **68/68**, candidate and
+  post-install CP-SAT smoke tests, and a separate live smoke proving Gap2 = 0
+  skips deep retry while Gap2 > 0 continues. The real bridge smoke returned a
+  complete hard-valid schedule with Gap2 = 0 and Gap1 = 1, confirming that it
+  does not polish the separate Gap1 target. Public health is idle with 0 active,
+  0 queued and 6/6 VPS worker tokens free. The temporary nginx gate is absent.
+  Rust remains v129 with binary
+  `9fc8fb10142d95b245fe62bffaaf4294513e90be25c6c593d2157e3ce14f384f`;
+  Cloud Run remains digest
+  `f7e2a71e22792897bb05b04dad3529a8036deedb846defaf789aa1b5b0155cf2`
+  under `mode=auto`, `fallback=vps`.
+
+## 2026-08-03 Concise Max labels in Super Admin (deployed)
+
+- The plan selector now renders exactly `Max 1` and `Max 2`; the explanatory
+  suffixes about class counts were removed from this compact dropdown only.
+  Max 1 still permits at most 39 classes and Max 2 remains unlimited; pricing,
+  admission rules and portal plan-card descriptions are unchanged.
+- Cache marker: `20260803-max-plan-labels-v1`. Static backup:
+  `/opt/cherry-scheduler-backups/super-admin-max-labels-v1-20260802-181012`.
+  Production hashes are
+  `super-admin.html=08d032c9374c01962cbb16c60c97dc354891782fd6b3ae7559324bcf21692468`
+  and
+  `super-admin.js=6d1e553f6ab709ee661e8ca8645b1f9452f02427219021654d76e18d2c598771`.
+- Verification passed the focused pricing/mobile/usage suites **23/23**,
+  JavaScript syntax, public fetch-back and hash checks. This was a two-file
+  static rollout: Rust v129, Cloud Run and the VPS solver were not restarted or
+  changed; the VPS solver tree remains
+  `478247d4fceb878d05cec6a8c101d8a2765c9e6e05a92c537c0b3e3ec2104f8c`.
+
+## 2026-08-03 Free-5 quota, durable email verification, resume and retained Stop (deployed)
+
+- The Free plan now has one lifetime pool of **5 accepted solver jobs per
+  school**, shared by Automatic Xếp and all focused Optimize actions. Every
+  account at the school shares the same counter. Trial remains 50, Plus remains
+  100 per activation cycle, and Max 1/Max 2/Ultra/Super Admin remain unlimited.
+  Reload/adoption and Cloud Run -> VPS fallback retain the canonical job id and
+  cannot double-charge the quota. Job 6 returns the non-retryable HTTP 429 kind
+  `free_solve_quota_exhausted`. Claims rejected before any executor accepts the
+  job are released. Expired Trial/Plus/Max 1 records are resolved as Free by
+  the backend, matching the browser's effective-plan rule.
+- The plan catalog now exposes `PLANS.free.solveLimit = 5`; the existing portal
+  renderer shows `Giới hạn 5 lượt Xếp / Tối ưu`. Auth cache key is
+  `20260803-free-5-solve-quota-v1` on app, index, portal, Super Admin and planner.
+- Leaving the planner through Home no longer cancels an active server job. The
+  canonical job continues on Cloud Run/VPS and the same account + SID reconnects
+  by GET polling when the planner is opened again. Delete/data invalidation still
+  cancels obsolete work because its result can no longer be applied safely.
+- User Stop for focused `singletons`, `sessions` and `gaps` is retain-best: the
+  browser keeps polling and applies/saves the nearest complete hard-valid result
+  after the mandatory zero-singleton/zero-Gap2 envelope is available. Automatic,
+  Quick and Fresh Stop remain destructive. Cloud Run now receives the same soft
+  stop through a per-job random token and the authenticated internal
+  `/api/internal/solver-stop-probe`; callback URLs are restricted to the public
+  production endpoint (or explicitly enabled localhost tests).
+- Root cause of email verification disappearing was server/client divergence:
+  the browser cached `emailVerified=true`, but the school-admin registry merge
+  deliberately ignored that field, so the next authoritative refresh restored
+  `false`. The backend now permits only the signed-in school administrator's own
+  `false -> true` transition, never permits `true -> false`, propagates school
+  verification, marks an existing Trial as used, and accepts the one-time
+  Free -> Trial transition only with a future expiry no more than 31 days away.
+  Stale Super Admin snapshots also preserve existing `emailVerified`, `verified`
+  and `trialUsed=true`. The affected account was repaired transactionally after
+  a SQLite backup at
+  `/opt/cherry-scheduler-backups/email-verification-repair-20260802-180123.db`.
+- Production API is
+  `tkb_new-rust-api-2026-08-03-free-5-auth-verify-resume-retain-best-v129`;
+  binary SHA-256 is
+  `9fc8fb10142d95b245fe62bffaaf4294513e90be25c6c593d2157e3ce14f384f`.
+  Planner cache/marker are
+  `20260803-v1185-free-5-resume-retain-best-v1` and
+  `tkb-rust-api-v330-free-5-resume-retain-best`.
+- Cloud Run revision `tkb-solver-00005-5x8` serves 100% traffic with pinned
+  digest `f7e2a71e22792897bb05b04dad3529a8036deedb846defaf789aa1b5b0155cf2`.
+  Routing remains `auto` with VPS fallback. The new Free table had zero rows at
+  rollout, so existing Free schools start at 0/5; historical executor telemetry
+  was not backfilled because one canonical job can have both Cloud and VPS rows.
+- Guarded rollback/cutover backup:
+  `/opt/cherry-scheduler-backups/free-5-auth-verify-resume-retain-best-v129-20260802-175458`.
+  Deployer:
+  `tools/cloud-run/deploy-free-5-resume-retain-best.py` (read-only by default).
+  It builds from the pinned v126 production archive plus only the three Rust
+  overlays and installs a 12-file allowlist. A broad updater was inadvertently
+  invoked while probing its CLI during this session; it was detected by hash,
+  then fully replaced by this guarded cutover. The final VPS solver source is
+  restored byte-for-byte to
+  `478247d4fceb878d05cec6a8c101d8a2765c9e6e05a92c537c0b3e3ec2104f8c`;
+  no accidental solver/objective change remains and the database was preserved.
+- Verification passed Rust API **337/337**, frontend bridge/toolbar/pricing
+  **361/361**, Cloud Run transport/deploy assets **25/25**, JavaScript/Python
+  syntax, deployment dry-run idempotency, public fetch-back and live health.
+  Final health was idle: 0 active, 0 queued, 6/6 VPS worker tokens available.
+
+## 2026-08-02 Compact Trial banner and white account badge (deployed)
+
+- The oversized Trial notice was caused by the notice sharing
+  `.plan-cards { grid-auto-rows: 1fr; }` with the much taller Max card. When a
+  notice exists, `school-portal.js` now adds `has-plan-banner`; its first grid
+  row is explicitly `auto` while the following card rows retain `1fr`. The
+  notice therefore hugs its one-line content on desktop and grows naturally
+  only when its text wraps on a narrow screen. Its padding is `9px 14px`.
+- The plan badge inside the account dropdown now has a white background with
+  its text and border using `--plan-color`. The selector is scoped to
+  `.portal-account-modal-sub`, so Super Admin table badges and other shared
+  badge contexts are unchanged.
+- Cache marker: `20260802-trial-banner-v7`. The static-only guarded rollout did
+  not restart the application or modify Rust, CP-SAT, Cloud Run or VPS solver
+  code. Rollback snapshot:
+  `/opt/cherry-scheduler-backups/trial-banner-ui-v7-20260802-165941`.
+- Production hashes are
+  `school-portal.html=4ac027891aac1ea7204d733004f75d70aa92affcd471c8116437aaf55c4504e5`,
+  `school-portal.js=f0bd1dccd73056e35b625da6bd3399cb07f50e112fe71b395ce6153121c069c2`,
+  `auth.css=f82f6013a2da0b90d035922898e865b3e212c121af9d1c7837aa6bc911b518b8`
+  and
+  `theme-light.css=d4352811755cf724f24a4b2664b447cc59d41555de9d4710ed927a2f74622a39`.
+  Verification passed the portal contract **12/12**, deployer checks **2/2**,
+  JavaScript/Python syntax and public fetch-back. Public health remains v126,
+  idle with all 6/6 VPS worker tokens free. Rust remains
+  `8a066835a0d9cbf819762361db4717f64840c5fb8b367c783fba8169f6466097`
+  and the solver tree remains
+  `478247d4fceb878d05cec6a8c101d8a2765c9e6e05a92c537c0b3e3ec2104f8c`.
+
+## 2026-08-02 Plus/Max plan contract (deployed)
+
+- Plus is now `300.000 VND / 30 days` with one shared `100`-request Xếp/Tối ưu
+  allowance per activation cycle. Each purchase or renewal records a fresh
+  `plusQuotaCycleId`; the authoritative admission counter is implemented in the
+  coordinated Rust portion of this release.
+- Max is represented by two explicit assignable plan IDs: `max1` costs
+  `1.000.000 VND/year`, permits at most 39 classes and has unlimited solver
+  requests; `max2` costs `1.500.000 VND/year` and has no class or solver-request
+  limit. Super Admin assigns `max1` and `max2` directly. Legacy `max` records are
+  mapped by their saved tier/class metadata, while a record without metadata is
+  treated as Max 2 so an existing customer cannot unexpectedly lose capacity.
+- The school portal keeps Free, Plus, Max and managed-service as four peer cards;
+  the Max card contains the two real Max choices. Desktop/tablet rows stretch
+  all peer cards to equal height, with natural height restored on mobile. The
+  redundant managed-service sentence `Liên hệ trực tiếp để đặt dịch vụ xếp hộ
+  TKB.` is no longer rendered; the price label and `Liên hệ Zalo` CTA remain.
+- Max 1 is blocked before mutation in all current class-creation paths: manual
+  add, quick bulk add and Excel import. The remote-store 409 rejection is also
+  non-retryable and displays the backend message for an older cached client.
+- Remote schedule copy and SID migration now preserve the source SID/data and do
+  not append destination registry metadata when the destination POST fails.
+  Cache markers are `20260802-plus-max-plans-v6`,
+  `20260802-max1-class-limit-v1` and `20260802-max1-store-guard-v2`.
+- The coordinated guarded rollout completed on 2026-08-02 with rollback snapshot
+  `/opt/cherry-scheduler-backups/plus-100-max-plans-v126-20260802-163345`.
+  Rust API production version is
+  `tkb_new-rust-api-2026-08-02-plus-100-max-plans-v126`; the rebuilt binary is
+  `8a066835a0d9cbf819762361db4717f64840c5fb8b367c783fba8169f6466097`.
+  The new Plus quota table exists with zero rows immediately after migration.
+- Production hashes are
+  `main.rs=807bed3523feffcec513c8937ec1db0f00ada66e855d50c8b1ed650a6dcdf42c`,
+  `serverless.rs=0e8d64c13f8adfc5f8f8e314f61613da6ff4865866d6fa4779585378f3fecc85`,
+  `auth.js=457883a8d180e1dda3578996b8ec84ae4016c6a97de0756a84478b1c571aa8b2`,
+  `storage.js=cb51f002516cd956aeda73b6919116997a0c4c22526f494ef779c68ac4c3700e`,
+  `app.html=afbfbdec57e467a8f3720283c0df6b6fff784a1efd5c2d43f1d290444cd59489`,
+  `app.js=4d79ae2a8b0e121f4c7ff1dae6414bef3680aa5497f70115f9c47e336815984c`,
+  `school-portal.html=ca2ac392015a8f7669ea4071cfe92968e9a035e343c69e673d4cef47bf913d53`,
+  `school-portal.js=ad2d8d0617dc5cdbe17e155a31cc46bdcabfa1981a49bf1efbd2f95a2bd6ef0f`,
+  `super-admin.html=7c8cd0c3d42bc73e30d8443c593bdabacfc125e7a26aef1fb36bdfbd2ddc9180`,
+  `super-admin.js=faaa57ee2676cc3295ac76dfb24faff907c5114ea48e79f72cfcc9bac32a1f97`,
+  `auth.css=d8508e7e5dc98cc4d1571d5c9e043a0c357638ecc034e6bbaf47f6d475d849ec`,
+  `sapxep.html=e18bda4c35f77eb46e5ddc5a65d2103c90ce013ffff629d39cd2179055690015`
+  and
+  `index.html=d3cbc8a5029e0de3926a83d5f7b24f1edf9571aa3011ba04570189b2911ea6dc`.
+- Verification passed Rust API **333/333**, native validator **58/58**, focused
+  frontend/bridge/admin suites **342/342**, deployer **3/3**, JavaScript/Python
+  syntax, diff checks and remote nginx syntax. Public fetch-back confirms v126,
+  all 13 production hashes, and absence of the removed sentence. The VPS solver
+  tree remains byte-identical at
+  `478247d4fceb878d05cec6a8c101d8a2765c9e6e05a92c537c0b3e3ec2104f8c`;
+  no CP-SAT, Python solver, VPS solver or solver objective was changed.
+
+## 2026-08-02 Managed-service peer card and account-menu cleanup (deployed)
+
+- `Dịch vụ xếp hộ TKB` is now a fourth independent card beside Free, Plus and
+  Max inside the same service-plan grid. It is not nested inside Max. The grid
+  uses four columns on wide screens, two on medium screens and one on mobile.
+- Max keeps its normal selected-tier registration/renewal button and transfer
+  dialog. The managed-service card alone renders `Liên hệ Zalo`; its CTA opens
+  the shared `TKBAuth.MANAGED_SERVICE.zaloUrl` in a new tab and has no
+  `data-plan` attribute, so it cannot open a subscription-payment modal.
+- The account dropdown no longer repeats `Gói hiện tại` and its second plan
+  badge. The plan badge, remaining days and expiry date remain visible in the
+  dropdown header, while `Hết hạn gói` remains in the account details.
+- Cache marker: `20260802-managed-service-card-v5`. The peer service card has
+  matching dark/light styles, and the old standalone `portal-contact-box` CSS
+  remains removed.
+- Static production backup:
+  `/opt/cherry-scheduler-backups/service-plans-cost-ui-20260802-153326`.
+  Production hashes are
+  `school-portal.html=460141044540b9c13ba800afa4916521875ebdb10b3c8f5e97ed0af5e43f42b0`,
+  `school-portal.js=d520bea142647f92d618268462e2d3f1fb85d24fb0265f8031ed9fa799c3f3da`,
+  `auth.css=7292e56d1f0d1259986c07a4bb4daccb2ea6e991c84f2f7a0b350a3f0ed86ee9`
+  and
+  `theme-light.css=474e40bed96e215a8aefad4c81f3c1093069b6d8bd63b99e068b8bc4f6f52f22`.
+- Verification passed the focused portal/pricing suite **17/17**, JavaScript
+  syntax and diff checks. Public fetch-back confirms the new cache marker,
+  independent managed-service card, restored Max registration, direct Zalo CTA
+  and removal of the duplicate plan row. The release was static-only: Rust remains
+  `72a95c5ebf8384766ec8fc0d97b8f59677cb468e87caa79f8788e45f28857b60`
+  and the solver tree remains
+  `478247d4fceb878d05cec6a8c101d8a2765c9e6e05a92c537c0b3e3ec2104f8c`.
+
+## 2026-08-02 Trial shared 50-solve quota and hard Stop (deployed)
+
+- A school whose authenticated registry plan is `trial` now has one lifetime
+  pool of **50 accepted solver jobs**. Automatic Xếp and all focused Optimize
+  modes (Buổi, 2 tiết trống and 1 tiết trống) pass through the same admission
+  gate. The total is counted by normalized `school_id`, so the school admin and
+  every sub-user consume the same pool. Plus/Max/Ultra and Super Admin are
+  explicitly exempt; an authenticated school whose plan cannot be resolved is
+  rejected fail-closed instead of silently bypassing quota.
+- Quota identity is server-authoritative. The browser's former
+  `ui_solve_action_id` is no longer trusted or sent. SQLite stores canonical
+  jobs in `solver_trial_solve_usage` with primary key
+  `(school_id, account_id, job_id)` while `COUNT(*)` is taken across the whole
+  school. Reposting the same canonical async job and Cloud Run -> VPS fallback
+  stay inside one job and therefore consume one unit. A reused stale job id is
+  rejected rather than opening another solver. `BEGIN IMMEDIATE` serializes the
+  50th admission across independent SQLite connections; concurrent requests at
+  49 allow exactly one job to become number 50.
+- Job 51 returns HTTP 429 `trial_solve_quota_exhausted` with `limit=50`,
+  `used=50`, `remaining=0`, `retryable=false` and a Vietnamese upgrade
+  message. Quota-storage and unknown-plan failures are also structured,
+  non-retryable responses. The planner detects these before its generic 5xx
+  retry/reconnect path, makes one POST only, clears the pending wire id and
+  displays `payload.message`; it cannot leave a phantom job to poll.
+- Stop is now destructive for every mode even if an older cached browser sends
+  `retainBest:true`. Rust ignores that legacy preference, persists Cloud
+  cancellation, closes external CP-SAT streams and releases an undispatched
+  reservation. Planner v1184 always sends `retainBest:false`; the retained-stop
+  label and the automatic browser cancel at Gap2 zero were removed. This
+  supersedes the v1183 retained-stop UI below.
+- Focused Gap2 work now stops inside CP-SAT itself on Cloud Run only. The
+  callback is enabled only for focused `gaps + gap2` with `K_SERVICE`, a
+  complete period-gap model and no external solver. The first complete
+  incumbent with one-period teacher sessions = 0 and Gap2 = 0 calls
+  `StopSearch()` and is returned normally. Cloud Run Gap2 repack does not spend
+  more time polishing Gap1 after that target. The `K_SERVICE` fence leaves the
+  VPS Python solver algorithm and behavior unchanged.
+- Cloud Run revision `tkb-solver-00004-rt7` was deployed from the 32-file
+  allowlisted build context and serves 100% traffic at 6 vCPU / 4 GiB,
+  concurrency 1. Solver digest
+  `a6350b7e3a0535e19ad3904e6d30458bbb9291eb4f5fd2084066df1d654bdd01`
+  is pinned in the active `cloud-run-primary` profile; routing remains `auto`
+  with `vps` fallback.
+- The guarded VPS overlay changed only `rust_api/src/main.rs`,
+  `rust_api/src/serverless.rs`, `web/pages/sapxep.html` and
+  `web/pages/tkb-rust-bridge.js`, plus the rebuilt Rust binary and the single
+  profile digest. It built from the live Rust tree, gated `/api/solve-data`,
+  drained three consecutive 0/0 health samples, backed up source/static/binary
+  and SQLite, ran release tests, then cut over atomically. Rollback snapshot:
+  `/opt/cherry-scheduler-backups/trial-50-hard-stop-v125-20260802-141708`.
+- Production hashes are
+  `main.rs=d928c3269aa6cc78daa6bcfa95576292f951121ca64ecf7a4d277fca7877c3c1`,
+  `serverless.rs=921b58e68033886616a32f78bf675f431f52d7b34f3f2e076b9ca1529e1dc2a2`,
+  `sapxep.html=43134c1ab0cd2d71cb767eb0f2a963b2a60a002e9929b63f6b85989c7c7d9a6d`,
+  `tkb-rust-bridge.js=1bebc60b5a6ed90f4093b3bdc1e1a5f350fd97e8a52e86dcb5adfd16bfab8e15`
+  and Rust binary
+  `72a95c5ebf8384766ec8fc0d97b8f59677cb468e87caa79f8788e45f28857b60`.
+  The VPS solver tree remains byte-identical at
+  `478247d4fceb878d05cec6a8c101d8a2765c9e6e05a92c537c0b3e3ec2104f8c`.
+- Verification passed bridge **300/300**, Rust API **327/327**, native candidate
+  validator **58/58**, focused Python solver **66/66**, JavaScript syntax and
+  diff checks. Public fetch-back matched both static hashes and confirmed the
+  v1184/v329 markers, hard Stop and absence of retained-stop UI. Public health
+  reports `v125`, zero active/queued jobs and all 6/6 VPS worker tokens free.
+  The reusable guarded deployer is
+  `tools/cloud-run/deploy-trial-50-hard-stop.py`; its default mode is read-only.
+
+## 2026-08-02 Cloud Run Gap2 zero-target retained stop (deployed)
+
+- A focused `optimize_gap2` job now sends the existing retain-best Stop as soon
+  as authoritative Cloud Run progress reports
+  `teacher_gap2_sessions: current=0, target=0`. Repeated progress frames are
+  idempotent, so one job sends at most one automatic Stop request. Browser
+  Agent checkpoint behavior remains supported; VPS progress is deliberately
+  excluded from this follow-up.
+- The request is non-destructive: polling continues and applies the accepted
+  incumbent returned by the server. The Python soft-stop gate still refuses to
+  terminate CP-SAT until the timetable is complete, one-period teacher sessions
+  are zero and Gap2 is zero. This saves Cloud Run quota without publishing an
+  unsafe or incomplete timetable and does not change any solver objective.
+- Static-only backup:
+  `/opt/cherry-scheduler-backups/gap2-cloud-early-stop-v1183-20260802-122811`.
+  Current planner hashes are
+  `sapxep.html=7598fa1d54e2b987cf1d68605b6028ba439214ccdb5a8b67221ac4f52b63b838`
+  and
+  `tkb-rust-bridge.js=6e3634100efe4338625f5f614eda2ed4cc51cb09f2b27ed933b2d8ae3f58da2e`.
+  `phanmon.js`, Rust and the solver tree remain byte-identical. Verification
+  passed bridge **299/299**, toolbar **45/45**, and the focused browser wiring
+  contract **1/1**.
+
+## 2026-08-02 Event-driven solver usage refresh (deployed)
+
+- Removed the fixed 30-second Super Admin usage poll. The planner bridge now
+  publishes one `tkb:solver-usage-route` signal per authoritative
+  `(jobId, executor)` when a server response identifies `serverless`/Cloud Run
+  or VPS. It mirrors the signal through `TKB_SOLVER_USAGE_ROUTE_V1` so another
+  same-origin tab refreshes immediately; repeated status polls for the same
+  route are deduplicated. A genuine Cloud Run-to-VPS fallback emits one signal
+  for each executor because the ledger counts both requests.
+- The usage card loads once on entry, reloads only for that route signal, and
+  reconciles once when its tab regains focus or becomes visible. It no longer
+  owns a periodic timer. Cloud Run reservations are persisted before the 202
+  admission response, so the event-triggered GET sees the new row immediately.
+- Static-only production backup:
+  `/opt/cherry-scheduler-backups/event-driven-usage-v1182-20260802-115014`.
+  Current hashes are
+  `super-admin.html=a997e074b6d62e7672cacef0e744c06a7859bf21419f188015827416c9ef77da`,
+  `super-admin.js=9cb5de8816dacc18db8df8f6fed22d6e6c6a107b70e9b03e8fd902d533b7a4a0`,
+  `sapxep.html=d7179a0db26bf7b172fb06027a8c3c6c02d9f89f576bcc8ee00621e45b8f3311`
+  and
+  `tkb-rust-bridge.js=58456d44e3ccb7e80135fb127dde8a53366ccfe40627a88b2bbce93a572d6154`.
+  Relevant verification passed usage portal **6/6** and bridge **298/298**.
+  The rollout did not restart or alter Rust, CP-SAT, `phanmon.js`, the VPS
+  solver or the VPS execution lane.
+
+## 2026-08-02 Cloud Run usage audit and compact Super Admin header (deployed)
+
+- The redundant outer `Thống kê lượt gọi` heading and its explanatory line
+  `Theo dõi số lần từng tài khoản gửi yêu cầu xếp thời khóa biểu.` were removed
+  from the Super Admin card. The per-user Cloud Run/VPS table remains the sole
+  usage view, and its `aria-labelledby` now points to the table heading.
+- A read-only production audit found five persisted rows, all
+  `executor=cloud_run`, `status=completed`, account `suadmin`, with no active
+  reservations. The latest logged solve admissions occurred at 09:18–09:27
+  UTC, while the owner-scoped ledger migration service restarted at 10:29:47
+  UTC. Those earlier requests were rejected by the legacy primary-key conflict
+  and cannot be backfilled safely because the access log has no authenticated
+  school/account identity. The next Cloud Run reservation will be recorded by
+  the deployed four-column ledger. The event-driven refresh above replaces the
+  earlier 30-second polling behavior.
+- Static UI backup:
+  `/opt/cherry-scheduler-backups/service-plans-cost-ui-20260802-104810`.
+  Current `super-admin.html` SHA-256 is
+  `9bc98ae3b91213449d7e68c15de46ccb2572ac3d6fd9dd302f50ab80e3ed87e7`.
+  The static rollout did not restart or alter the Rust service, VPS solver,
+  CP-SAT objectives, or any VPS execution lane. Rust remains
+  `5d0f0ddbac82eb5b323009f07261c36dc44f0ac76e7925b88cd0f83ccf50e4d2` and the
+  solver tree remains `478247d4fceb878d05cec6a8c101d8a2765c9e6e05a92c537c0b3e3ec2104f8c`.
+
+## 2026-08-02 Solver execution-count ledger migration (deployed)
+
+- A read-only production audit explained why the Super Admin request count
+  remained at five even though the planner sent new focused Optimize requests.
+  Nginx recorded successful `POST /api/solve-data` admissions for the new
+  `v326` planner jobs, but SQLite retained only the five older `v321`/`v325`
+  Cloud Run rows.
+- Production previously had the first ledger schema with
+  `PRIMARY KEY(job_id, executor)`. The current owner-scoped upsert targets
+  `(job_id, executor, school_id, account_id)`. `CREATE TABLE IF NOT EXISTS`
+  cannot change an existing primary key, so SQLite rejected every new ledger
+  insert with an unmatched conflict target. A Cloud Run reservation rolls back
+  on that error and Auto falls back to VPS; the best-effort VPS telemetry write
+  then fails for the same reason. This caused both the frozen counter and
+  unintended post-restart VPS execution while the routing indicator still
+  showed the configured Cloud policy.
+- `rust_api/src/serverless.rs` now detects the legacy primary key during
+  coordinator startup and transactionally rebuilds only
+  `solver_execution_usage` with the four-column owner key, preserving all old
+  rows and recreating its indexes. A regression starts from the exact legacy
+  schema, verifies migration, and proves the same client job ID can be counted
+  independently for two school accounts.
+- Isolated VPS verification passed the complete Rust API suite **323/323** and
+  candidate-validator suite **58/58**. The guarded deployment completed on
+  2026-08-02. A post-deploy schema read confirmed the four-column primary key
+  `job_id,executor,school_id,account_id` and preserved all five historical
+  rows. The deployed Rust binary is
+  `5d0f0ddbac82eb5b323009f07261c36dc44f0ac76e7925b88cd0f83ccf50e4d2`.
+  This change does not touch a scheduler objective, CP-SAT settings, Cloud Run
+  solver image, or VPS solver source; the solver tree remains
+  `478247d4fceb878d05cec6a8c101d8a2765c9e6e05a92c537c0b3e3ec2104f8c`.
+
+## 2026-08-02 Super Admin per-user usage-only cleanup (deployed)
+
+- Removed the complete Google cost, Billing Export, Cloud Monitoring and hidden
+  Cloud Run profile/configuration markup from the Super Admin page. The card now
+  contains only the authenticated per-user request ledger: school, account,
+  total requests, Cloud Run requests and VPS requests. School portals remain
+  unable to see this Super Admin-only ledger.
+- The production-facing JavaScript calls only
+  `GET /api/admin/solver-usage` in the `data-usage-only` branch. This release
+  originally refreshed every 30 seconds; the event-driven release above has
+  superseded that timer. Google billing/monitoring fields that may still be
+  present in the backward-compatible API response are ignored by this view.
+- Candidate marker: `20260802-user-usage-only-v9`. The guarded static deployer
+  now rejects any candidate that still renders cost controls, Google cost IDs,
+  technical profile fields or the legacy infrastructure form.
+- The same guarded rollout disables and stops
+  `tkb-google-cloud-usage.timer` and `tkb-google-cloud-usage.path`, removes a
+  pending refresh marker, and verifies both triggers are disabled. Unit files,
+  environment configuration and the last snapshot are retained for rollback;
+  rollback restores the previous enabled/active states. This prevents unused
+  Google Billing/Monitoring polling after the portal has moved to direct Google
+  Cloud Console cost review.
+- No CP-SAT, Cloud Run solver, VPS solver or routing behavior was modified.
+  Focused verification passed the usage portal suite **6/6**, the combined
+  portal/mobile/pricing suite **22/22** and deployer regression suite **3/3**,
+  plus JavaScript/Python syntax checks. The static rollout completed with backup
+  `/opt/cherry-scheduler-backups/service-plans-cost-ui-20260802-103203`.
+  Production hashes are
+  `super-admin.html=9bc98ae3b91213449d7e68c15de46ccb2572ac3d6fd9dd302f50ab80e3ed87e7`,
+  `super-admin.css=0e9717d710f1d913af906f408155e7944bb0a2533a505c698f8d99ae415b0a96`
+  and
+  `super-admin.js=3bd1c48dc66f6d281e65dc4264c3ff53d14196cb2bbc6b7b2f5d1e3e4eb50d0a`.
+  Both Google cost-sync triggers are now disabled; their rollback files remain
+  on the server.
+
+## 2026-08-02 Visible Agent route dot while planner controls are locked (deployed)
+
+- While a solve is active, the Agent route control remains non-interactive and
+  its label/icon stay dimmed, but the colored status dot now explicitly keeps
+  full opacity and no CSS filter so the Super Admin can still identify the
+  active Cloud Run/VPS route.
+- This is an HTML/CSS-only follow-up. `phanmon.js`, the bridge, Rust service and
+  VPS solver were not uploaded by this rollout. The guarded deployer was
+  repinned to the already-deployed usage-ledger Rust hash before release.
+- Production backup:
+  `/opt/cherry-scheduler-backups/planner-agent-status-dot-v1181-20260802-103419`.
+  Current hashes are
+  `sapxep.html=6f1ae67a009a48aec59ce9dab5230ab79ae58d640eaf6cb39822c8773976fd04`,
+  `phanmon.js=c45631173338eda50b4450d5d585cb3cf6a3a5f088d2f10c46e263d00b837d5f`
+  and
+  `tkb-rust-bridge.js=f22428a516d0e7a4d7c829a262b6bf0b196ec723ba423862b578a0c517cd1486`.
+
+## 2026-08-02 Focused Optimize menu, busy lock, and normal mobile sleep (deployed)
+
+- Restored one responsive `Tối ưu` menu to the planner toolbar with exactly
+  three focused server-owned actions: `Buổi` (`optimize_sessions`),
+  `2 tiết trống` (`optimize_gap2`) and `1 tiết trống` (`optimize_gap1`). The
+  existing Automatic button and its two-click quality contract are unchanged.
+- While any solve is preparing, running, queued, reattaching or applying its
+  result, both the Super Admin Agent/route indicator and `Tối ưu` are disabled,
+  marked `aria-disabled=true`, dimmed to 45%, and ignore pointer/touch input.
+  An open Optimize menu closes immediately and resets `aria-expanded=false`.
+  Their previous enabled state is restored only after the canonical solve is
+  idle. The primary lock lives in `phanmon.js`; the bridge has an equivalent
+  fallback for partially cached planner documents.
+- Removed the obsolete mobile Screen Wake Lock and iOS NoSleep video lifecycle.
+  Serverless work is owned by the backend, so iPhone/Android may now dim or
+  sleep normally without the planner requesting `navigator.wakeLock`, creating
+  hidden media, or reacquiring a lock on foreground events. Polling, Stop,
+  durable reattachment and server-owned execution are unchanged.
+- Release key: `20260802-v1180-optimize-menu-busy-lock-v1`; bridge marker:
+  `tkb-rust-api-v326-serverless-mobile-screen-sleep`. The guarded static
+  deployer uploads only `web/pages/sapxep.html`, `web/pages/phanmon.js` and
+  `web/pages/tkb-rust-bridge.js`, verifies hashes and JavaScript syntax, creates
+  an atomic rollback, and requires the Rust binary and solver-source tree to
+  remain byte-identical.
+- Production backup:
+  `/opt/cherry-scheduler-backups/planner-optimize-menu-v1180-20260802-090905`.
+  Production SHA-256 values are
+  `sapxep.html=f762347ad2e08bff7390eb700e730e0eaa836c4ad9709edc1eb71e06441a8f94`,
+  `phanmon.js=c45631173338eda50b4450d5d585cb3cf6a3a5f088d2f10c46e263d00b837d5f`
+  and
+  `tkb-rust-bridge.js=f22428a516d0e7a4d7c829a262b6bf0b196ec723ba423862b578a0c517cd1486`.
+  The unchanged Rust binary remains
+  `dc6f9798f3e89fb25f02a62a270c378df42bb55f1266182a7bb8546de0438367`
+  and the unchanged VPS solver tree remains
+  `478247d4fceb878d05cec6a8c101d8a2765c9e6e05a92c537c0b3e3ec2104f8c`.
+- Verification passed planner modes **4/4**, toolbar/responsive/busy-state
+  **45/45**, Browser WASM **79/79**, subject semantics **21/21**, and the full
+  bridge suite **297/297**. Public fetch-back matched all three production
+  hashes and confirmed the release marker, menu contract, both busy locks,
+  bridge marker and absence of Wake Lock code. Public health remained `ok=true`.
+
+## 2026-08-02 Per-school execution statistics and 30-second cost sync (deployed)
+
+- Restored a visible Super Admin-only `Thống kê sử dụng theo trường` table.
+  Multiple accounts belonging to the same `schoolId` are grouped into one row;
+  columns show total requests, Cloud Run, VPS, completed, failed and active.
+  School-admin jobs retain their authenticated school identity. Historical
+  Super Admin test runs whose session had no `schoolId` remain honestly labeled
+  `(không xác định)` instead of being assigned to a school by guesswork.
+- The reconciled Google amount remains a single Billing Export total. The
+  per-school table deliberately reports execution counts rather than allocating
+  that invoice with an estimate and presenting it as exact school cost.
+- The systemd Google usage timer now requests a refresh every 30 seconds with
+  `AccuracySec=1s` and no randomized delay. Production snapshots completed at
+  04:11:12 and 04:11:43 UTC (31 seconds apart); the helper exited successfully
+  and solver requests remain independent from the Google APIs.
+- Static production backups:
+  `/opt/cherry-scheduler-backups/service-plans-cost-ui-20260802-040802`
+  (table rollout) and
+  `/opt/cherry-scheduler-backups/service-plans-cost-ui-20260802-041604`
+  (30-second table auto-refresh follow-up).
+  Timer production backup:
+  `/opt/cherry-scheduler-backups/google-usage-timer-20260802-041036`.
+- Production hashes are
+  `super-admin.html=438290191d27d66840730a12f450bed9794f75dc6aeafefa4bc7e182c0b226ef`,
+  `super-admin.css=1843de807b13589ee76d9b33a4233a016d8a17d32f2dff2be4969b11996dfc81`,
+  `super-admin.js=700f447eb1fc37f467712aed6e3161f3bc0994a656628367cfe831b5de7454ab`
+  and
+  `tkb-google-cloud-usage.timer=ccd3bbedefcd3f9d59b0abe2ad182cf635c4fd258986df040b36984e8739ff94`.
+  The Rust binary remains
+  `dc6f9798f3e89fb25f02a62a270c378df42bb55f1266182a7bb8546de0438367`
+  and the solver tree remains
+  `478247d4fceb878d05cec6a8c101d8a2765c9e6e05a92c537c0b3e3ec2104f8c`.
+- Browser verification after reload showed one grouped historical row:
+  5 total, 5 Cloud Run, 0 VPS, 5 completed, 0 failed and 0 active. The manual
+  cost refresh still succeeds, and every 30-second usage poll also refreshes
+  the per-school rows without an F5. Billing is still
+  `billing_export_pending` because Google has not exported its first billing
+  row. Verification passed the portal suite 9/9, Google sync 7/7, Cloud deploy
+  assets 12/12 and integration deployer 3/3. Public health remained healthy
+  with 0 active, 0 queued and 6/6 VPS worker tokens available.
+
+## 2026-08-02 Exact Google cost refresh and provider-neutral handoff (deployed)
+
+- The Super Admin cost button now sends POST
+  /api/admin/solver-usage/refresh and receives HTTP 202. Rust writes only a
+  timestamp marker; a systemd Path unit starts the separate Google helper, and
+  the browser polls the existing authenticated usage endpoint until a newer
+  snapshot is available. Solver requests never wait on Google APIs.
+- Billing reconciliation is scoped to the exact Detailed Billing Export
+  resource for project project-61ee7855-507e-40a3-879, region
+  asia-southeast2, service tkb-solver. Standard export tables are rejected
+  because they cannot identify the service safely. The query uses named
+  parameters and resource.name/resource.global_name; unrelated Cloud Run
+  services are not added to TKB cost.
+- A transient BigQuery failure no longer erases a previously reconciled amount:
+  the last same-scope invoice is retained with billing.stale=true,
+  refreshStatus and a warning. The UI labels the date as the time Google
+  exported the invoice (latestExportAtMs), not the helper polling time.
+- Rust compares the sanitized snapshot with the active Cloud Run profile. A
+  project/region/service mismatch produces google_usage_scope_mismatch and
+  hides money instead of showing a cost from the wrong Google account.
+- New operational contract and future-provider guidance (Microsoft/Azure and
+  Cloudflare adapters) is in docs/CLOUD_COST_SYNC.md. Credentials remain
+  outside the repository; no solver/VPS/Cloud Run objective was changed.
+- Production overlay deployed atomically with backup
+  /opt/cherry-scheduler-backups/cloud-run-integration-20260802-033306.tar.gz.
+  The new tkb-google-cloud-usage.path is enabled and active; the timer and app
+  are healthy. A live marker test removed the marker and advanced the snapshot.
+  Billing remains truthfully billing_export_pending because the BigQuery table
+  still has zero rows; this is Google export lag, not an API connection failure.
+- Production verification: Rust 322/322, Python Google sync 7/7, Super Admin
+  portal 9/9, deploy integration 3/3, public health ok=true, active/queued jobs
+  0/0, VPS tokens 6/6, unauthenticated refresh 401. Browser verification after
+  reload showed the compact cost-only card and a successful manual-sync message.
+- Production solver tree hash remains
+  478247d4fceb878d05cec6a8c101d8a2765c9e6e05a92c537c0b3e3ec2104f8c.
+  The Rust binary is
+  dc6f9798f3e89fb25f02a62a270c378df42bb55f1266182a7bb8546de0438367;
+  helper 6c1045ad065644e48243efd13b2cc96dc46861bbe0e2841058cf2c95ed3fce15;
+  Super Admin HTML
+  0e24bea810d9cba9ad12f57ac6a15e3e43efc3d483161164ef157a9c5decbc4f;
+  Super Admin JS
+  9e11031e945dd8b21c5138ea8eb8c17f522d7a38d875e0f510ae2e6407dbc0fc;
+  Path unit source
+  3da033110580f6b6d90d365f39f5c52bc224922c1172fa85a29051733052d49f.
+
+## 2026-08-02 Max pricing by class count and cost-view cleanup (deployed)
+
+- Max is now priced by the number of classes, not by student count:
+  - **Dưới 40 lớp (1–39): 1.000.000 VND/năm**.
+  - **Từ 40 lớp trở lên: 1.500.000 VND/năm**.
+- The school portal shows a compact two-choice selector with the boundary,
+  annual price, selected-state styling, and a clear note that the price is
+  based on classes. Registration and renewal update the amount immediately;
+  the transfer dialog repeats the selected tier and exact amount.
+- Super Admin activation asks for class count and records the computed tier,
+  class count, and payment amount. Legacy student-count records remain
+  readable only for rollout compatibility; new records use the class tier.
+- The school portal does not expose infrastructure, VPS/Cloud Run routing, or
+  Google cost controls. Those controls and Google gross/credit/net telemetry
+  remain Super Admin-only. Internal legacy budget/estimate fields were removed
+  from public health, job-start responses, and portal API responses; Google
+  Billing Export remains the source of reconciled cost and may be delayed.
+- This release does not modify CP-SAT, the VPS solver, Cloud Run solver
+  objective, or routing behavior. The guarded deployer is
+  `tools/cloud-run/deploy-google-cost-max-pricing.py`.
+- Production backup: `/opt/cherry-scheduler-backups/google-cost-max-20260802-021406`.
+  The deployed Rust binary is `521c24c0382a5c0c5d1b500596dbcada872282617205e5525342b0b096e5c18e`;
+  the solver tree remains `478247d4fceb878d05cec6a8c101d8a2765c9e6e05a92c537c0b3e3ec2104f8c`.
+  Production static hashes are:
+  `super-admin.html=12d7e92b84351d8f1162fcee040313b934ef8b37c9b308481580a37a467a5ed0`,
+  `super-admin.css=812c88815669d8a4c11b44fd4312b8e0e079c0bf4487a9e834ea71a448cd5aac`,
+  `super-admin.js=e5ef74746d2cdf80b8f787c6c00442deb70256fc93ae87d4708a5a6c079007ea`,
+  `school-portal.html=7514034175db4667665861bfcc2b83c1eabd3b7dc5e6b9647ab7d861ea59c9ed`,
+  `school-portal.js=38f38ef66457f834146edad769ebb17194826d41bb01f54ace39423c39d4534d`,
+  `shared/auth.js=29f66691bbf59647059579d2b58a82437b59fdf2aae83b4398ac3f52ee37d2b0`,
+  `auth.css=8b76700fc86d7a8641b9a1f344448f78fc3c65ff9f3b2f846ffbea238816a6d9`,
+  and
+  `theme-light.css=75e9e5dc107814a0ca0e21c029186183832be3ec40ade3ccf5c0f856d6feb37a`.
+- Verification after deployment: focused pricing/portal/mobile suite **25/25**;
+  public fetch-back matches the production assets and contains both tier
+  labels. Press `Ctrl + F5` if an older cached pricing card is still visible.
+
+## 2026-08-02 Super Admin-only infrastructure visibility (deployed in combined rollout)
+
+- Removed the complete Cloud Run/VPS infrastructure card from
+  `web/school-portal.html`, including its dependency on `super-admin.css`.
+  School administrators and ordinary school users no longer see routing,
+  Google-cost, execution-count, or profile controls.
+- Removed the matching initializer and authenticated
+  `/api/admin/solver-infrastructure` / `/api/admin/solver-usage` calls from
+  `web/school-portal.js`. The infrastructure and actual Google billing view
+  remains available in the Super Admin/Sub Admin portal only.
+- This is a portal visibility/UI-contract change only; scheduler, CP-SAT,
+  Cloud Run, and VPS solver behavior are unchanged. Verification: school
+  portal JavaScript syntax plus focused infrastructure portal suite **9/9**.
+
+## 2026-08-02 Compact Super Admin infrastructure and cost view (deployed)
+
+- The Super Admin `Hạ tầng xếp thời khóa biểu` card now keeps only the daily
+  routing mode and Save action in its primary controls. A compact overview
+  shows the effective Cloud Run/VPS route, immediate application estimate,
+  Google gross charge, remaining warning credit, CPU/RAM and Google snapshot
+  time. `Đồng bộ chi phí` is available in the card header; the server-side
+  Google helper still refreshes every minute and the authenticated portal polls
+  every 30 seconds.
+- Google-reconciled cost and the application's immediate estimate are kept
+  separate. Gross Google charge is used for promotion-credit tracking, while
+  post-credit net cost remains in the detailed view. A null-safe numeric guard
+  prevents absent Google values from being rendered as a false `0 US$`.
+  Production currently records five completed Cloud Run executions, zero
+  failures and an immediate estimate of `$0.1278`; BigQuery Billing Export is
+  still waiting for its first row, so the `7₫` visible in Google Console is not
+  yet represented as a reconciled portal charge. This is Google billing-export
+  lag, not a failed local request ledger.
+- Account/project selection, the safe `TKB_CLOUD_PROFILE` importer, technical
+  profile fields, detailed telemetry and per-account execution table are inside
+  a collapsed `Tài khoản Google và số liệu chi tiết` section. Selecting a new
+  project or encountering a hidden-field validation error opens the relevant
+  sections automatically. The normal view does not ask the operator to enter
+  Project ID, region, URL or digest.
+- A true one-click Google login is not fabricated. Switching cloud ownership
+  still requires the trusted deployment tool once because a Google browser
+  session cannot authorize the VPS. A future OAuth flow needs a deliberately
+  configured Google OAuth client, callback, privileged scopes and encrypted
+  refresh-token storage; no token, client secret or Google cookie is accepted
+  by the current portal.
+- Mobile Super Admin now grows and scrolls as a normal page instead of sharing
+  one viewport height between the infrastructure and school-list cards. Live
+  responsive QA at `390x844` confirmed that the complete overview and collapsed
+  details appear before the school list with no clipping; desktop QA also
+  passed.
+- The guarded static deployer is
+  `tools/cloud-run/deploy-compact-super-admin.py`. It pins the prior production
+  hashes, uploads only `web/super-admin.html`, `web/super-admin.css` and
+  `web/super-admin.js`, backs up/rolls back atomically, and asserts that the Rust
+  binary and solver-source tree do not change. The pre-change backup is
+  `/opt/cherry-scheduler-backups/compact-super-admin-20260802-010416`; the
+  mobile-follow-up backup is
+  `/opt/cherry-scheduler-backups/compact-super-admin-20260802-010920`, and the
+  final manual-sync-feedback backup is
+  `/opt/cherry-scheduler-backups/compact-super-admin-20260802-011355`.
+- Production SHA-256 values are
+  `0d4b749abb83ba8759ea97d9a586d3cbf116ad0a1e54618bed397d9ae0afb431`
+  (`super-admin.html`),
+  `525abce54aac96e44687f0fb32bfec8bd7b0e9e389aa2615874054942ff79ddf`
+  (`super-admin.css`) and
+  `0a27eb584299e9d88bb745610b3ba0a90b9a4e20611af161d734b47ebf0adbc8`
+  (`super-admin.js`). The unchanged production Rust binary hash is
+  `9152054d7b3ff54097c8428a6137768ee5c998371d204cba0a06c96430aef260`;
+  the unchanged solver tree hash is
+  `478247d4fceb878d05cec6a8c101d8a2765c9e6e05a92c537c0b3e3ec2104f8c`.
+  Verification: focused portal/mobile suites **15/15**, JavaScript/Python
+  syntax, targeted diff checks, public fetch-back hashes and public health with
+  zero active/queued jobs and all `6/6` VPS tokens available.
+
+## 2026-08-02 Refinement quality-stagnation guard (Cloud Run revision 00003 deployed)
+
+- Added an opt-in native CP-SAT quality-stagnation watcher for the second
+  complete-incumbent Automatic refinement. It arms only after the exact period
+  bridge has produced a complete hard-valid incumbent with zero one-period
+  teacher sessions and zero Gap2, then requires a strict secondary-objective
+  improvement before starting a 25-second default plateau timer. When the timer
+  expires, `StopSearch` retains CP-SAT's best feasible incumbent; the existing
+  two-stage Pareto/validator gates still decide publication.
+- The guard is enabled by default only inside Cloud Run (`K_SERVICE` is set), or
+  when `optimization_refinement_quality_stagnation_enabled=true` is explicitly
+  supplied. VPS requests without that flag remain on the prior full quality
+  search. Browser/external CP-SAT runs cannot use the local watcher and are
+  unchanged. No objective, hard constraint, routing policy, or VPS algorithm was
+  modified.
+- New session metrics include the guard's enabled/armed/applied state, timer,
+  improvement count, and final objective. Tests cover mandatory-gate safety,
+  Cloud Run opt-in, VPS-off default, and external-runtime compatibility.
+- Production-size local replay (1,566 periods, 6 workers, same complete
+  incumbent) baseline at 180 seconds returned complete/hard-valid,
+  singleton=0, Gap2=0, 483 teacher sessions and Gap1=47 in 184.5 seconds.
+  Short fixed ceilings returned 488/51 in 122.4 seconds (120s), 493/47 in
+  80.9 seconds (90s), and 489/54 in 148.0 seconds (150s). A watcher-enabled
+  180-second replay applied the guard and returned complete/hard-valid,
+  singleton=0, Gap2=0, 483 sessions and Gap1=40 in 169.9 seconds; CP-SAT
+  trajectories are randomized across six workers, so this is evidence of the
+  guard's safe application, not a deterministic quality guarantee. The captured
+  baseline progress showed a 43-second Gap1 plateau, where a 25-second guard
+  would have stopped around 145-150 seconds while retaining 483/51.
+- Cloud Run revision `tkb-solver-00003-skq` now receives 100% of service
+  traffic. Its solver digest is
+  `ddfad3484e7715f3197e7b9b2247d88465bee3d0f0ff6fe25db4e7260919b3db`;
+  the image digest is
+  `sha256:68c6c26255f3af05782222e98ebb6013352d583c644d933bffa677058def26ac`.
+  The VPS `cloud-run-primary` profile was atomically repinned to that digest;
+  its URL, `auto` mode, `$300` application ceiling and VPS fallback were kept.
+  The pre-change SQLite snapshot is
+  `/opt/cherry-scheduler-backups/cloud-run-quality-profile-20260801-174517.db`.
+- A production Cloud Run replay of the same 1,566-period request returned in
+  189.733 seconds with 1,566/1,566 scheduled, hard-valid, singleton=0, Gap2=0,
+  475 teacher sessions and Gap1=41. The guard was enabled at 25 seconds but did
+  not fire because CP-SAT found nine continuing improvements. This is the
+  intended quality-first behavior: plateau runs may finish early, while a run
+  that is still improving keeps its 180-second ceiling.
+- Verification: session CP-SAT/result-contract suites **170 passed + 23
+  subtests**, with the two workbook-dependent tests deliberately deselected
+  because `lop.xlsx` is absent. The focused pre-deploy suite was **71/71**.
+
+## 2026-08-02 Google Cloud usage synchronization (deployed)
+
+- Added the read-only `solver_runtime/scripts/google_cloud_usage_sync.py` timer
+  helper. It uses ADC/keyless service-account impersonation and writes an
+  atomic, mode-0600 snapshot; it never stores credentials or raw Google errors.
+  Cloud Monitoring metrics (request count/5xx rate, p95 latency, CPU/RAM,
+  instances, billable instance time) are labelled near-real-time and may lag
+  one to three minutes. Optional BigQuery Billing Export is explicitly marked
+  delayed/non-real-time and reports gross cost, credits, promotion credits,
+  currency, and an application warning ceiling.
+- Added `rust_api/src/google_cloud_usage.rs` and Super Admin-only fields on
+  `/api/admin/solver-usage` and `/api/admin/solver-infrastructure`. The Rust
+  module allowlists snapshot fields, computes freshness server-side, rejects
+  future snapshot timestamps from suppressing freshness alarms, adds a stale
+  warning, and never exposes the snapshot to school administrators. The Super
+  Admin portal polls the existing `/api/admin/solver-usage` route, maps the
+  exact `googleCloud.monitoring`, `capacity`, `billing`, and `warnings` schema,
+  and formats reconciled charges in the billing currency (currently VND).
+  Solver/VPS/Cloud Run algorithms are unchanged.
+- The invoker service account now has project-level read-only
+  `roles/monitoring.viewer`, `roles/run.viewer`, and
+  `roles/bigquery.jobUser`, plus dataset-level BigQuery `READER` access only on
+  `tkb_billing_export`. No service-account key was created; the VPS continues
+  to use the existing X.509 Workload Identity Federation credential.
+- The narrow transactional overlay deployed with backup
+  `/opt/cherry-scheduler-backups/cloud-run-integration-20260801-172539.tar.gz`.
+  It did not upload `solver_runtime/src`, planner pages, or Agent files. The
+  systemd timer is enabled/active and refreshes the mode-0600 snapshot every
+  minute. `/etc/tkb-google-cloud-usage.env` and
+  `/opt/cherry-scheduler/data/google-cloud-usage.json` are both mode 0600. The
+  installer is mode 0755; the deployer now preserves that executable mode.
+- A forced live refresh returned status `ok`, Cloud Run capacity 6 vCPU/4 GiB,
+  concurrency 1/max 3, and near-real-time request, billable-second, CPU, RAM,
+  instance and p95-latency metrics. The values are a rolling one-hour window
+  and normally trail Google by one to three minutes.
+- Detailed Billing Export is configured at
+  `project-61ee7855-507e-40a3-879.tkb_billing_export.gcp_billing_export_resource_v1_0106E4_FC8666_B2FF00`
+  in `US`. It still contains zero rows, so the portal truthfully shows
+  `billing_export_pending` instead of a fake zero charge. Google's first export
+  may take several hours or more than 24 hours; gross cost, credits and net cost
+  will appear automatically after the first rows arrive.
+- The Google Console screenshot showing `0 / ₫7,897,351 credits used` is the
+  promotional-credit ledger, not a real-time Cloud Run meter. Cloud Run also
+  has a monthly free allowance, so a small number of requests may legitimately
+  leave promotional credits unchanged even after Billing Export becomes
+  populated. The Super Admin panel therefore separates near-real-time resource
+  usage, internal reservations, gross billed cost, credits/discounts and net
+  reconciled cost.
+- Production Super Admin assets use cache marker
+  `20260801-google-usage-billing-breakdown-v2`. Exact SHA-256 values are
+  `6f6800dc8b64f3da51c93704901d25f0c9d7a352adc532717fa11eb06827d5ff`
+  (`super-admin.js`),
+  `da757d0eaa3a2d7847003d4adc55fc259d509e4aaba6d4c461b726358bdfef81`
+  (`super-admin.html`) and
+  `af94c362e5ed99faba2b946fa1c7aa36f19f7b397715ac3a5fe11bbaae167bcc`
+  (`super-admin.css`). School admins still receive no global Google telemetry.
+- Verification: Google sync **6/6**, portal/mobile **13/13**, Cloud deploy
+  assets **11/11**, integration deployer **3/3**, and remote Rust API
+  **320/320 + 58/58**. Public health finished idle with zero active/queued jobs
+  and all 6/6 VPS tokens available.
+
+## 2026-08-02 Max pricing by class count (deployed in combined rollout)
+
+- Max has two annual public tiers based only on class count: schools below 40
+  classes (1-39) pay 1,000,000 VND/year, while schools with 40 or more classes
+  pay 1,500,000 VND/year. The retired student-count tiers and 2,000,000 VND Max
+  price are no longer presented or selected by current assets.
+- `web/shared/auth.js` remains the canonical source and exports the immutable
+  tier table plus `maxPlanTierForClasses` / `maxPlanPriceForClasses`. Max
+  activation records the exact `classCount`, selected pricing-tier ID and
+  payment amount. Deprecated student helpers and legacy `studentCount` input
+  remain readable only so an older cached portal cannot fail during rollout.
+- The school portal uses two compact selectable price rows with clear boundary
+  labels, an immediately updated registration/renewal amount, and the selected
+  class-size tier in the transfer dialog. Super Admin now asks for the exact
+  number of classes and confirms the computed annual amount before activation.
+- This is subscription UI/account metadata only. It does not modify CP-SAT,
+  Cloud Run, VPS routing, solver runtime or timetable behavior. Cache marker is
+  `20260802-max-class-pricing-v2`. Verification passes the dedicated Max suite
+  **5/5**, the related portal/mobile suites **25/25**, JavaScript syntax and
+  targeted `git diff --check`.
+
+## 2026-08-01 Two-click Automatic cycle with strong second refinement (deployed v1177)
+
+- The planner keeps a single `Xếp tự động` action. The first successful click
+  must produce a complete hard-valid timetable and still runs the internal
+  singleton, Gap2, teacher-session, and Gap1 quality phases; it is not a rough
+  completion-only pass.
+- A second click on that complete timetable runs a randomized, incumbent-safe
+  quality-only refinement burst with a 180-second maximum. Because it starts
+  from a complete timetable, the full slice is available for quality work. The
+  existing Pareto guard restores the previous timetable if the candidate does
+  not improve the ordered quality statistics, and accepted quality may still
+  finish before the ceiling.
+- Ordinary users receive at most two successful Automatic clicks for the same
+  durable timetable fingerprint. A third click does not submit a solver job and
+  reports `TKB đã tối ưu`. `superadmin` remains unlimited. Failed or incomplete
+  results do not consume a click; deleting, manually editing, or changing the
+  timetable inputs starts a new cycle, and the cycle marker is saved with the
+  timetable so it follows the durable school data instead of one browser tab.
+  The same client fence also covers retained legacy/direct JavaScript solve
+  entry points, so hiding the old optimization UI does not leave a third client
+  submission path.
+- The cycle marker is embedded in the compact solver result before the trusted
+  timetable save, so the result and its click count share one serialized remote
+  payload. A matching embedded marker repairs an interrupted/stale top-level
+  marker after reload, but a real timetable edit changes the fingerprint and
+  still starts a new cycle. Marker-only fallback saves are awaited, suppress a
+  separate history entry, and replace the current history snapshot; Undo can no
+  longer restore the identical timetable with an older click count.
+- Agent Web/EXE remain disabled and the superadmin Cloud Run/VPS routing control
+  remains unchanged. No CP-SAT objective, VPS algorithm, Cloud Run solver, or
+  server routing policy was changed for this click-cycle contract.
+- Planner markers are `tkb-rust-api-v325-two-click-atomic-cycle` and
+  `20260801-v1177-two-click-atomic-cycle-v1`. Verification passes bridge
+  **303/303**, one-action scheduler UI **3/3**, toolbar **45/45**, subject-limit
+  semantics **21/21**, JavaScript syntax, and targeted `git diff --check`.
+- A live-hash-pinned deployment replaced only `web/pages/sapxep.html`,
+  `web/pages/phanmon.js`, and `web/pages/tkb-rust-bridge.js`; it did not restart
+  a service, replace the Rust API, or upload any solver source. The first
+  transaction intentionally rolled back after an over-strict Unicode grep
+  failed, and a fresh dry-run proved all three original production hashes were
+  restored before the corrected transaction ran. The successful backup is
+  `/opt/cherry-scheduler-backups/two-click-auto-v1177-20260801-161938`.
+- Production SHA-256 values are
+  `b9a12e981f21c123576814966a6f287682ea100588de0be68dfe56cf6a563720`
+  (`sapxep.html`),
+  `73036b296b2fbe1756690431ea25f170bcd645ea8d391b2ddf550b98814e8c36`
+  (`phanmon.js`), and
+  `3df80c4248fd54daf710e71937ac658c7a7a2c791021ffefc1d5c1609c0fe156`
+  (`tkb-rust-bridge.js`). The unchanged production Rust binary hash is
+  `9853d75a743237cd115daf1603af6cc012b8ab3841ecbbc5a5d0a757d262da45`;
+  the unchanged solver-source tree hash is
+  `478247d4fceb878d05cec6a8c101d8a2765c9e6e05a92c537c0b3e3ec2104f8c`.
+- Public fetch-back confirmed the exact JavaScript hashes, v1177/v325 markers,
+  one `btnAutoSort`, no `btnOptimizeMore`, and the client-Agent-disabled gate.
+  Public health remained idle with zero active/queued jobs, zero allocated VPS
+  tokens, all `6/6` tokens available, and zero active reference helpers. The
+  reusable guarded deployer is `tools/cloud-run/deploy-two-click-auto.py`.
+
+## 2026-08-01 One-click Automatic planner UI (included in deployed v1177)
+
+- Removed the separate focused-optimization control and its four menu actions
+  from the planner DOM. Users now have one scheduling entry point: the existing
+  Automatic Play button. Stop remains available only as the running-job control.
+- This is a presentation/UI-contract change only. Automatic still performs its
+  internal completeness and teacher-quality phases, including singleton, Gap2,
+  teacher-session, and Gap1 improvement. Focused solver modes remain implemented
+  internally for compatibility but are no longer exposed as user actions.
+- The client Agent lanes remain disabled. The superadmin Agent icon is still the
+  cross-platform Cloud Run/VPS routing toggle, and no server routing policy,
+  Cloud profile, VPS solver, CP-SAT objective, or Agent package was changed.
+- Planner cache marker: `20260801-v1174-one-click-auto-ui-v1` for `phanmon.js`.
+  Verification: scheduler-mode UI contract **3/3**, planner toolbar **45/45**,
+  JavaScript syntax, and targeted `git diff --check`. This intermediate v1174
+  marker was not deployed independently; its behavior was later included in the
+  deployed v1177 static bundle above.
+
+## 2026-08-01 Adaptive one-click quality window and acceptance-aware Stop (local, not deployed)
+
+- Automatic scheduling now uses an adaptive ceiling instead of forcing every
+  timetable to consume 300 seconds. Requests below 900 expected periods keep
+  the established 60/130-second fresh path and 180-second refinement ceiling;
+  requests at or above 900 periods receive one uninterrupted 300-second
+  completeness-plus-quality ceiling. The exact threshold is inclusive at 900.
+  Explicit user durations and focused optimization modes remain authoritative.
+- The 300-second value is only a maximum. The solver may finish earlier after a
+  complete hard-valid timetable reaches all automatic acceptance gates: zero
+  one-period teacher sessions, zero Gap2, an accepted teacher-session count,
+  and an accepted Gap1 count. Zero/zero alone is not an early-stop condition
+  for Automatic; sessions and one-period gaps continue to be optimized.
+- Automatic now uses the retain-best Stop contract. A user Stop does not take a
+  rough incumbent: the local CP-SAT soft-stop watcher defers the stop until the
+  concrete period model has proven the mandatory zero-singleton/zero-Gap2
+  envelope. If the envelope is not ready, computation continues; once ready,
+  the nearest accepted incumbent is returned. Quick Complete remains a hard
+  cancel. The server-side terminal gate also rejects a rough fresh/refinement
+  Automatic response.
+- No solver objective, VPS routing policy, or Cloud Run profile was changed by
+  this local adjustment. The Cloud Run synchronous transport cannot be
+  interrupted remotely mid-request; its solver still honors the same early
+  quality gates and returns the terminal accepted result. A future cancellable
+  Cloud endpoint would be required to reclaim an in-flight remote container
+  before its next quality checkpoint.
+- Verification after this change: planner bridge **297/297**; filtered solver
+  contract/focus/period-gap suite **217/217** (the two excluded fixture tests
+  require absent `lop.xlsx` workbooks); targeted soft-stop suite **15/15**;
+  JavaScript/Python syntax and targeted `git diff --check` pass. Changes are
+  local only and have not been deployed.
+
+## 2026-08-01 Superadmin Serverless/VPS toolbar toggle (local, not deployed)
+
+- The retained planner Agent icon is now repurposed as a server-routing toggle
+  only while `__TKB_CLIENT_AGENT_LANES_ENABLED=false`. It is visible to the
+  `superadmin` role on desktop and mobile without any platform check; every
+  other role remains hidden and continues to use the configured server-owned
+  Cloud Run/VPS policy.
+- This does **not** re-enable WebAgent or the Windows Agent EXE. The superadmin
+  button reads `/api/admin/solver-infrastructure` with `TKBAuthApi` headers and
+  PATCHes the complete current public configuration so profiles, budgets, and
+  the selected Cloud Run profile are preserved. ON writes `auto` with
+  `fallback=vps` (Cloud Run first, VPS automatic fallback); OFF writes
+  `vps_only` with `fallback=vps`.
+- The obsolete local-Agent CPU/RAM dashboard stays closed for this routing
+  control. The icon shows Cloud/serverless as pressed and VPS-only as unpressed,
+  while an existing `auto` policy is described accurately as Cloud Run followed
+  by VPS fallback until the superadmin changes it.
+- Planner cache marker: `20260801-v1173-superadmin-server-route-toggle-v1` for
+  `phanmon.js`; the bridge and its client-Agent-disabled routing fence are
+  unchanged. No solver, VPS algorithm, Python/CP-SAT objective, Agent package,
+  or Rust routing implementation was modified. Focused toolbar verification is
+  **45/45** (`node --test e2e_tests/planner_toolbar_layout_node.test.js`).
+
+## 2026-08-01 Server execution/account usage ledger (deployed v123)
+
+- Added a telemetry-only `solver_execution_usage` SQLite ledger. It records one
+  row per `jobId + executor + school + account` (`cloud_run` or `vps`), preserving
+  the normalized login/account ID and making retries/callbacks idempotent even
+  if two schools reuse a client job ID.
+- Cloud reservations now attach the account and update the execution row at
+  dispatch/reconciliation. VPS starts and terminal responses are recorded
+  separately. A Cloud failure followed by an early VPS rescue therefore shows
+  two execution attempts without changing either solver or objective.
+- `/api/admin/solver-usage` and the infrastructure response now include
+  `accountRequests` and `accountRequestTotals`; Super Admin sees all schools,
+  while a school administrator sees only its school. The portal cards render
+  total, Cloud Run, VPS, completed, failed, and active counts. Google Billing
+  remains explicitly estimate-only (`billingReconciled=false`) until a Billing
+  Export/API source is configured; no credentials were added.
+- Schema migration creates the ledger/indexes and backfills active Cloud
+  reservations. Production v123 created the schema on service startup; account
+  history begins with this deployment because older profile-only totals cannot
+  be attributed safely after the fact. The backend deployment backup is
+  `/opt/cherry-scheduler-backups/cloud-run-integration-20260801-141357.tar.gz`.
+  Verification: remote temporary Rust compile/tests **316/316 + 58/58**,
+  portal/mobile infrastructure suites **18/18**, JS syntax, and targeted
+  `git diff --check`.
 
 This is the persistent handoff note for future Codex sessions. Read this file
 before modifying the scheduler or deploying. Update it after every meaningful
 change so a machine restart or a new conversation does not erase project context.
 
+## 2026-08-01 Cloud Run acceptance: client Agent lanes disabled (deployed v123/v1172)
+
+- The planner now publishes `__TKB_CLIENT_AGENT_LANES_ENABLED=false` before
+  loading planner/bridge code. This temporarily hides and disables both the
+  WebAgent and Windows Agent EXE for every role, including old
+  `webAgentTrial=mac` URLs, while retaining their source and release artifacts
+  for rollback.
+- `phanmon.js` honors the explicit switch before role checks, so it does not
+  show Agent controls/dashboard, poll presence, open the custom protocol, pair,
+  or download Agent. The manual Play preflight therefore cannot require or
+  invite the Windows Agent.
+- `tkb-rust-bridge.js` independently honors the same switch. New planner
+  requests are `server_owned`/`server`, carry both Agent-required flags as
+  false, clear native IDs and Browser-WASM readiness, and do not call either
+  native-Agent policy or Browser-WASM admission. Backend Cloud Run/VPS policy
+  remains the sole executor decision.
+- The Rust `/api/solve-data` router also treats every Auto request that is
+  eligible for the configured Cloud profile as Cloud-owned before evaluating
+  stale `native_required` or `web_agent_required` fields. This is a defensive
+  server-side fence for old cached clients: Cloud reservation is attempted
+  first, exhausted/unavailable reservation still goes directly to the existing
+  VPS lane, and an early Cloud transport/runtime failure retains the existing
+  fenced VPS fallback. Explicit privileged VPS mode and `serverless_only`
+  semantics are unchanged.
+- Production was patched from the accepted live files rather than uploading the
+  dirty planner worktree. `sapxep.html`, `phanmon.js`, and the bridge are the
+  only static files replaced; their cache key is
+  `20260801-v1172-cloud-run-agent-disabled-v1`. The transactional static backup
+  is `/opt/cherry-scheduler-backups/cloud-agent-disabled-planner-20260801-141709`.
+  Production SHA-256 values are `5ada6d2b63b513bd7e998f11776d319af87a688294040960692c61d3e44c0e14`
+  (`sapxep.html`), `2743c7da202c70b8e6fef8019115711db16038600be70a64403ded3823979b22`
+  (`phanmon.js`) and `f7c1fc46a539ccb3b51b2405566055d147241746aacce4931512a7cd3c2ea078`
+  (bridge). Browser executor remains unchanged at
+  `1613cc571dc1d04f978c2f330440a76cd3a1576768f66cff2e3aa62605c0849c`.
+  No Agent source/package, solver algorithm, VPS objective, or Cloud solver was
+  removed or modified.
+- Verification: combined production-facing planner/bridge/portal Node suites
+  **349/349**, Browser executor **79/79**, isolated Rust API **316/316**, native
+  candidate validator **58/58**, Cloud transport/deploy **21/21**, JavaScript
+  syntax, live-hash-pinned static dry run, and targeted `git diff --check` pass.
+  Authenticated In-App Browser verification showed no Agent control, popup or
+  dashboard on the planner and showed the new per-account table in Super Admin.
+
+## 2026-08-01 Cloud Run serverless deployment (production v123)
+
+- The Cloud Run lane runs the unchanged `solver_runtime/scripts/solve_stdio.py`
+  Python/OR-Tools reference solver inside a private container. The CP-SAT core
+  remains OR-Tools' native C++ engine; no VPS objective or solver algorithm was
+  changed.
+- Google project `project-61ee7855-507e-40a3-879` has active billing. The live
+  private service is `tkb-solver` in `asia-southeast2`, canonical URL
+  `https://tkb-solver-tys7xrhbca-et.a.run.app`, revision
+  `tkb-solver-00002-fvg`, image digest
+  `sha256:59e8b6abf95d857be36eb0ca0252597267788dac1d21e7bf4ee1baf5a41aa39e`,
+  and pinned solver-source digest
+  `4f550c0de31633d1de76f0ebf7b33ee5cf8b47bdf4891e7ff2895255a94c2117`.
+  The unsuccessful first Singapore route was deleted after Jakarta became
+  Ready, so there is one production service.
+- `tools/cloud-run/deploy.ps1` uses remote Cloud Build and an explicit minimal
+  allowlist (requirements, Cloud wrapper, `solve_stdio.py`, and solver `src`)
+  instead of uploading the repository. It rejects sensitive extensions and
+  prints a deterministic SHA-256 solver digest. The reproducible default is now
+  Jakarta, private IAM, 6 vCPU/4 GiB, concurrency 1, 360-second HTTP timeout,
+  330-second solver cap, min 0 and max 3 instances. Three is the safe ceiling
+  under the project's initial 20-vCPU regional quota; increase only after a
+  quota approval.
+- Runtime and caller identities are separated. `tkb-cloud-run-runtime` has zero
+  project roles and runs inside the container. `tkb-cloud-run-invoker` has only
+  `roles/run.invoker` on this service. The default Compute service account keeps
+  only the Cloud Build/Artifact Registry roles required to build images and is
+  not the runtime identity.
+- The VPS authenticates without a Google service-account key. X.509 Workload
+  Identity Federation pool `tkb-vps`, provider `tkb-vps-x509`, maps and restricts
+  the exact subject `tkb-cherry-vps`. Root/intermediate/90-day leaf material and
+  external-account ADC stay under `/root/.config/tkb-cherry/wif`; key/config
+  modes are `0600`. The systemd drop-in sets
+  `GOOGLE_APPLICATION_CREDENTIALS` and `TKB_CLOUD_RUN_SERVICE_ACCOUNT`.
+  Organization policy correctly blocks service-account key creation and was not
+  weakened. The temporary human Token Creator binding used for bootstrap testing
+  was removed.
+- Rust routing now derives the effective mode/profile from server-side policy:
+  superadmin manages global Cloud profiles, while school_admin can only select
+  an approved mode/profile for its own school. Ordinary users cannot force VPS
+  or WebAgent through request JSON. `serverless_only` fails closed when no valid
+  profile exists; Auto falls back to VPS only for early Cloud transport/runtime
+  failures, avoiding a late double-watchdog run.
+- Reservations are stored per job/profile in SQLite tables with `BEGIN
+  IMMEDIATE`, timestamps and expiry. Restart does not zero live reservations;
+  pre-dispatch cancellation releases the hold, running cancellation is recorded
+  separately, and an expired dispatched row is conservatively counted as failed
+  billable work. The minimum application reservation is $0.06 per request for
+  the 6-vCPU/4-GiB/330-second envelope; this is an internal guard, not Google's
+  invoice. No automatic rotation of Google trial accounts is implemented.
+- Every Cloud request/response carries an exact service-URL audience and a
+  pinned solver digest/protocol; Rust independently validates the terminal
+  metadata. `cloud_run_client.py` first supports conventional service-account or
+  metadata ID tokens, then keyless external-account ADC by exchanging a short
+  STS access token through IAM Credentials with `includeEmail=true`.
+- The Super Admin profile `cloud-run-primary` is live with mode `auto`, internal
+  budget `$300`, `$0.06` minimum reservation and fallback `vps`. Health reports
+  `configured=true`, `mode=auto`, `fallback=vps`, and routing-agent-off v123. Ordinary clients
+  cannot override server policy; school admins can select only an approved
+  profile/mode. WebAgent fallback remains unavailable and is not advertised.
+- Google Billing budget `TKB Cherry Cloud Run 7.8M VND trial` covers only this
+  project from 2026-08-01 through 2026-10-30, tracks gross spend before credits,
+  and alerts at 50/80/90/100%. The billing account uses VND, so 7.8M VND is the
+  operational approximation of the $300 promotional credit. Google alerts do
+  not stop requests; application reservations are the actual Auto-to-VPS gate.
+- Selective VPS deployment changed exactly 13 reviewed Cloud/Rust/admin files,
+  compiled the candidate from the live Rust tree, drained jobs, backed up to
+  `/opt/cherry-scheduler-backups/cloud-run-integration-20260801-131531.tar.gz`,
+  and left the scheduler planner files untouched. Post-deploy hashes are still
+  the accepted v1170 values for `sapxep.html`
+  (`f70c9a9625ec0bb11ce3431177062414299ae5dc15e2bf93614d432c7940a073`),
+  Browser executor
+  (`1613cc571dc1d04f978c2f330440a76cd3a1576768f66cff2e3aa62605c0849c`)
+  and bridge
+  (`780db6f5dc4dd85dbd104c058b5d35247c0074ead001e2cf5306b9c25b1e0781`).
+  All **27/27** algorithm files under `solver_runtime/src` plus
+  `solve_stdio.py` are byte-identical to production.
+- Acceptance evidence: authenticated Cloud `/health` returns protocol v1,
+  pinned digest and revision `00002-fvg`; a real 4-period solve through the
+  exact deployed VPS WIF client returned 4/4, zero unassigned, `hard_ok=true`,
+  correct digest/revision, in about 3.5 seconds. Post-hardening WIF health still
+  returns HTTP 200 after removing the human impersonation grant. A read-only
+  production-size parity benchmark then ran the exact same stored 1,566-period
+  request without applying either result to a school. VPS completed in 175s at
+  1,566/1,566, hard-valid, one-period=0, Gap2=0, 482 teacher sessions and Gap1
+  46. Cloud completed in 190s at 1,566/1,566, hard-valid, one-period=0, Gap2=0,
+  477 teacher sessions and Gap1 44, with the pinned digest and revision. Cloud
+  was 15 seconds slower but slightly better on both secondary quality measures
+  in this run. Browser Use blocked the optional click on the `tbktest`
+  timetable, so it was not bypassed and no school timetable was changed by that
+  attempted UI acceptance.
+- Verification: remote Rust API **313/313** and candidate validator **58/58**;
+  Cloud transport/deploy **21/21**; selective deployment **2/2**; current admin,
+  superadmin and infrastructure portals **17/17**; Python/PowerShell/Node syntax
+  and targeted `git diff --check` pass. `tools/cloud-run/deploy-vps-integration.py`
+  is the reusable hash-checked, backup/rollback overlay path and intentionally
+  excludes solver source, planner pages and Agent files.
+
+## 2026-08-01 WebAgent absolute-deadline hardening (deployed v1170; EXE retained)
+
+- A third authenticated In-App Browser Automatic refinement was run from the
+  production `1566/1566`, 538-session / Gap1-84 / Gap2-0 / one-period-0
+  timetable. The page reported six WebAssembly Workers and progressed through
+  25% at 0:54, 42% at 1:52, and 57% at 2:42, but ended in `Lỗi` at about 3:30.
+  Transactional restore kept the complete incumbent unchanged. The browser log
+  ended in the generic detached-result path; no result was applied.
+- A separate authenticated **pre-v1169** Fresh check on the currently loaded
+  small school
+  started from two fixed lessons and 27 unassigned periods. It stayed on six
+  WebAssembly Workers, reached 10% at 18 seconds and later 24%, 34%, and 49%,
+  then returned to idle without publishing a timetable. Solver health again
+  stayed at zero active/queued jobs and zero allocated tokens. Loading the
+  normal Windows route afterward confirmed the persisted complete timetable was
+  still intact at 29/29, so the failed trial did not leave the school deleted.
+- Public health throughout and after the run stayed at zero active jobs, zero
+  queued jobs, zero allocated solver tokens, and 6/6 tokens free. Only one
+  lightweight model-builder helper was briefly active, then all helpers returned
+  to zero. This proves the failed click did not silently fall back to the VPS
+  solver or use the Windows EXE.
+- Therefore the replacement condition is not met: keep Windows on the native
+  Agent, keep the Windows Browser trial administrator/query-only, and do not
+  enable WebAgent as the universal default. The unchanged VPS/native reference
+  remains materially faster and better at about 497 sessions / Gap1 54.
+- Local Browser-executor hardening now carries one absolute production watchdog
+  through exact CP-SAT, Worker recreation, heuristic recovery, final response
+  exchange, checkpoint validation, and `/complete`; recovery cannot receive a
+  fresh budget after cold Worker startup. Tiny synthetic/focused test budgets
+  retain their intentional per-phase contract, and an already-valid incumbent
+  is retained if exact compute reaches its local boundary.
+- The v1170 follow-up gives non-absolute short/focused
+  phases only a 250 ms dispatch grace so
+  their advertised Worker slice is not lost to synchronous setup, and exact
+  CP-SAT retains its existing settlement reserve for uploading a response that
+  finishes at the compute boundary. Production Automatic requests supply the
+  canonical absolute deadline, receive neither extension, and remain bounded by
+  the original 180/300-second watchdog. Its Browser-executor SHA-256 is
+  `1613cc571dc1d04f978c2f330440a76cd3a1576768f66cff2e3aa62605c0849c`
+  (`tkb-browser-wasm-executor-v70-settlement-grace`).
+- `qualityTupleFromResult()` independently derives Gap2 from
+  `gap_distribution` and rejects an explicit scalar that contradicts the
+  distribution. This prevents a false scalar zero from ending Automatic early.
+- A clean 0/0 complete incumbent no longer loses 45--90 seconds to an unused
+  heuristic-rescue reservation. Qualified desktop CP-SAT receives the full
+  remaining bounded quality window; the recovery reservation remains only while
+  mandatory singleton or Gap2 debt still exists.
+- Verification of the v1170 follow-up: Browser Agent **78/78** in ten
+  consecutive repetitions plus one final clean run; Rust bridge
+  **295/295**, toolbar **43/43**, scheduler modes **4/4**, subject semantics
+  **21/21**, CP-SAT wrapper **9/9**, HiGHS wrapper **4/4**, model-plan **3/3**,
+  JavaScript syntax, and targeted `git diff --check`.
+- Targeted static deployment replaced only `sapxep.html` and
+  `tkb-browser-wasm.js`; it did not restart Rust or upload any Python,
+  `solver_runtime/**`, Agent EXE, or VPS objective file. Backup:
+  `/opt/cherry-scheduler-backups/webagent-absolute-deadline-v1169-20260801-161155-a853f7295a41`.
+  Production SHA-256 values are
+  `83c92c72aad5518bb2996a91f87702abfc98f59d701756895408e5e0e07bbd82`
+  (`sapxep.html`) and
+  `e71aed9d53827904dacb7a4b55bded5c35f98778f3d2f74c45e1c8b7aebafc1e`
+  (`tkb-browser-wasm.js`). The unchanged bridge hash is
+  `780db6f5dc4dd85dbd104c058b5d35247c0074ead001e2cf5306b9c25b1e0781`;
+  the unchanged Rust binary and solver-runtime tree hashes were also asserted
+  before the deployment command returned `STATIC_DEPLOY_OK`. The public cache
+  key is `20260801-v1169-webagent-absolute-deadline-v1`, with executor marker
+  `tkb-browser-wasm-executor-v69-absolute-deadline-quality`. This v1169 release
+  is retained as the first accepted rollback point.
+- Two consecutive authenticated post-deployment Automatic refinements ran on
+  six WebAssembly Workers with no EXE or VPS solver. The first completed in
+  about 3:30 at `1566/1566`, 538 sessions, Gap1 79, Gap2 0, and one-period 0,
+  improving Gap1 from 84. The second completed in about 4:10 and retained the
+  same `538/79/0/0` incumbent. Health throughout and afterward remained at zero
+  active/queued VPS jobs, zero allocated solver tokens, and 6/6 tokens free;
+  model-builder helpers returned to zero. This proves the v1169 deadline fix
+  prevents the prior detached failure for repeated complete-incumbent runs.
+- The final v1170 static refresh then replaced only the same two planner files,
+  did not restart Rust, and asserted the bridge, Rust binary, and complete
+  `solver_runtime/**` tree remained unchanged. Backup:
+  `/opt/cherry-scheduler-backups/webagent-settlement-grace-v1170-20260801-163333-b9a70ded9803`.
+  Production hashes are
+  `f70c9a9625ec0bb11ce3431177062414299ae5dc15e2bf93614d432c7940a073`
+  (`sapxep.html`) and
+  `1613cc571dc1d04f978c2f330440a76cd3a1576768f66cff2e3aa62605c0849c`
+  (`tkb-browser-wasm.js`). The public cache key is
+  `20260801-v1170-webagent-settlement-grace-v1`, with executor marker
+  `tkb-browser-wasm-executor-v70-settlement-grace`.
+- Direct authenticated v1170 acceptance loaded that cache key before Play and
+  completed in about 4:20 on six WebAssembly Workers. It retained
+  `1566/1566`, 538 sessions, Gap1 79, Gap2 0, and one-period 0. VPS health
+  stayed at zero active/queued jobs and zero allocated solver tokens with 6/6
+  free; the lightweight model-builder helper returned to zero.
+- Python OR-Tools is not embedded in the page because its CP-SAT binding needs
+  native C++ extensions that normal browsers cannot import. The deployed
+  equivalent uses the same OR-Tools 9.15 C++ CP-SAT engine compiled to
+  WebAssembly (plus HiGHS where required). macOS/Linux use that exact WASM lane;
+  iOS/Android keep the lower-memory Rust-WASM heuristic lane because loading the
+  desktop CP-SAT/HiGHS heaps can make mobile browsers reload. Python remains a
+  lightweight server helper for model construction, materialization, and
+  validation, not for the client-owned search.
+- Keep the Windows native Agent as the default. v1170 is the deployed WebAgent
+  path for browsers on platforms that cannot run the EXE, but it is still not
+  quality-equivalent to the VPS/native `497/54` reference and still uses the
+  lightweight Python backend for model construction/materialization/validation.
+
+## 2026-08-01 Browser Automatic full-reference recovery (deployed trial; EXE retained)
+
+- The failed production-size Fresh trial after v1167 was traced to the quality
+  request retaining `fresh_complete_first` after the Browser had already built a
+  complete seed. That disabled the qualified desktop full-reference refinement,
+  let exact CP-SAT consume nearly the entire five-minute clock, and left less
+  than one second for the six-worker heuristic recovery.
+- Browser executor v68 promotes a revalidated complete Fresh seed to
+  `refine_complete`, advertises `fullReferenceRefine=true` only on qualified
+  desktop trials, and reserves 45--90 seconds of the original wall-clock budget
+  for heuristic recovery. The recovery clone receives the actual canonical
+  remaining budget. Mobile remains on the conservative heuristic path and is
+  never promoted to the desktop exact-memory tier.
+- Bridge v321 makes the Browser-required Automatic contract fail closed for
+  Fresh, constraint repair, and complete-incumbent refinement. It synchronizes
+  effective request settings into settlement, retains the strict flag across
+  reload, and refuses success when completeness/hard validity or the explicit
+  one-period/Gap2 metrics are missing, inconsistent, or nonzero. Rough retained
+  incumbents and `skipFurtherRetries` cannot bypass this gate.
+- The Rust coordinator source has the same defensive metric/lifecycle gate for
+  a later server release, but the production acceptance deployment is limited
+  to the three static planner assets. It does not rebuild Rust, upload
+  `solver_runtime/**`, change Python/CP-SAT objectives, or modify the VPS solver
+  algorithm.
+- Verification before deployment: Browser Agent **77/77**, Rust bridge
+  **295/295**, toolbar **43/43**, scheduler modes **4/4**, subject semantics
+  **21/21**, CP-SAT wrapper **9/9**, HiGHS wrapper **4/4**, model-plan **3/3**,
+  Ubuntu Rust **293/293** plus validator **58/58**, JavaScript syntax, and
+  `git diff --check`.
+- Targeted static deployment completed without a service restart. It replaced
+  only `sapxep.html`, `tkb-browser-wasm.js`, and `tkb-rust-bridge.js`; the Rust
+  API remains v121 and every `solver_runtime/**`/Python/CP-SAT objective file is
+  untouched. Backup:
+  `/opt/cherry-scheduler-backups/webagent-browser-quality-recovery-v1168-20260801-151107-07be5557`.
+  Deployed SHA-256 values are `77c97402aa4744b7bf8d89b67e1978819425a086be365235418104ca6baa1c9c`
+  (`sapxep.html`), `c2ad130f146c50d2fe579a4f19db28aa7e7b24a6047308c143dd90322cf84d8f`
+  (`tkb-browser-wasm.js`), and
+  `780db6f5dc4dd85dbd104c058b5d35247c0074ead001e2cf5306b9c25b1e0781`
+  (`tkb-rust-bridge.js`).
+- Two authenticated In-App Browser runs were performed from the fixed-only
+  state. Fresh WebAgent (about six minutes) stayed local on six workers (one
+  worker later retired), reached `1566/1566`, hard-valid through the normal
+  apply/validation contract, one-period `0`, Gap2 `0`, and produced
+  `549` teacher sessions / Gap1 `97`. A second Automatic refinement (about five
+  minutes, six workers) preserved all mandatory zeros and improved the result to
+  `538` sessions / Gap1 `84`. The page explicitly reported WebAssembly on this
+  machine; no EXE or VPS solver was used. No browser console errors were seen.
+- Throughout both runs public health stayed at `solverActiveJobs=0`,
+  `solverQueuedJobs=0`, `solverWorkerTokensAllocated=0`, and `6/6` tokens free.
+  Lightweight model-builder activity peaked at two helpers and returned to zero.
+  This confirms client-side search and the intended VPS load reduction.
+- The unchanged VPS/native reference for this school is about `497` sessions /
+  Gap1 `54`. The WebAgent result is complete and satisfies the two mandatory
+  zero targets, but its quality and latency are not yet VPS-equivalent
+  (`538/84` after the second click). Therefore **do not replace the Windows
+  Agent EXE and do not enable WebAgent by default**. Keep v1168/v1165 as the
+  administrator/query-only trial; a future replacement requires repeated Fresh
+  runs at or near the VPS quality envelope and a bounded absolute deadline.
+
+## 2026-08-01 Browser Automatic zero/zero terminal contract (deployed v1167/v1164)
+
+- A direct authenticated production run on the 1,566-period school exposed a
+  real acceptance bug. The Windows macOS-style WebAgent trial stayed on six
+  local WebAssembly Workers and VPS health remained at zero active/queued jobs
+  with all 6/6 solver tokens free, but the page reported success at
+  `1566/1566`, 559 teacher sessions, Gap1 70, Gap2 11, and 34 one-period
+  teacher sessions. The preceding Delete click had opened a JavaScript confirm
+  dialog but was not accepted, so this was a complete-incumbent
+  `refine_complete` run rather than a fresh empty-timetable run.
+- Root cause: the Browser settlement gate required one-period=0 and Gap2=0 only
+  for `fresh_complete_first`. Browser-required Automatic `refine_complete`
+  remained an incremental checkpoint lane, and the UI bridge deliberately
+  treated its remaining quality debt as terminally acceptable.
+- Browser executor v67 now applies the mandatory Automatic quality gate to
+  Browser-required Fresh, constraint repair, and complete-incumbent refinement.
+  A rough result cannot call `/complete`; exact CP-SAT output that remains rough
+  may use the remaining original job budget for the six-worker heuristic
+  recovery. The five-minute desktop budget keeps a terminal-upload reserve, so
+  recovery cannot silently extend the server-owned clock.
+- Bridge v320 independently rejects Browser-required Automatic results whose
+  `one_period_teacher_sessions` or Gap2 count is nonzero, including the old
+  mobile soft-debt marker. This changes only the WebAgent/UI acceptance
+  contract. Focused optimization checkpoints and ordinary VPS/native result
+  policy remain unchanged. Teacher sessions and Gap1 are still secondary
+  optimization objectives after the two mandatory zero targets.
+- Verification passes Browser Agent **77/77**, Rust bridge **293/293**, toolbar
+  **43/43**, scheduler modes **4/4**, CP-SAT wrapper **9/9**, HiGHS wrapper
+  **4/4**, model-plan **3/3**, JavaScript syntax, and `git diff --check`.
+- Targeted deployment replaced only `sapxep.html`, `tkb-browser-wasm.js`, and
+  `tkb-rust-bridge.js`; no service restart, Agent EXE, Rust server binary,
+  `solver_runtime/**`, Python/CP-SAT objective, or VPS solver algorithm changed.
+  Backup:
+  `/opt/cherry-scheduler-backups/webagent-automatic-quality-v1167-20260801-063721`.
+  Production SHA-256 values are
+  `1d978e887d231f6d84858e862ae8d4fa4ae3b1dd94699f958d03c62aab1859da`
+  (`sapxep.html`),
+  `7e5bba63450f3941f306e1accfc08f054c47dd2e9052731cf922c8cd40673989`
+  (`tkb-browser-wasm.js`), and
+  `8f1ec5fefb24b7e518046768914321457acebb8fa21e8febefe0e33d0dc9fd2c`
+  (`tkb-rust-bridge.js`). Public health after deployment is idle with zero
+  active/queued solver jobs, zero model builders, and 6/6 VPS tokens free.
+- Post-deployment fresh acceptance was rerun directly in the authenticated
+  In-App Browser after explicitly pressing **OK** on the Delete confirmation;
+  only the two fixed lessons remained before Play. The WebAgent trial reached
+  27% at 1:13, 69% at 3:26, and 93% at 4:41, then ended at about five minutes
+  with `Local lỗi` / `browser_agent_failed` and transactionally restored the
+  fixed-only timetable. Public health stayed at zero active/queued VPS solver
+  jobs, zero allocated solver tokens, and 6/6 tokens free; lightweight helper
+  starts increased from 20 to 25 and returned idle. This proves the failed run
+  stayed in the Browser lane rather than falling back to VPS, but fresh Browser
+  Automatic is still not reliable enough to replace the native Agent EXE or be
+  enabled by default. Keep it administrator-only/query-only until a fresh run
+  completes at 1,566/1,566 with one-period sessions=0 and Gap2=0.
+
+## 2026-08-01 C++ CP-SAT WebAssembly parity probe (local, not deployed)
+
+- A real cross-origin-isolated In-App Browser probe now confirms the vendored
+  OR-Tools 9.15 C++/WebAssembly runtime, not a JavaScript heuristic or VPS
+  solve. The 101-byte golden CP-SAT model returned `OPTIMAL`, solution `[1, 0]`,
+  objective/bound `1.0`, and a 73-byte canonical `CpSolverResponse` in about
+  207 ms. Native Python/OR-Tools on the identical wire model and parameters
+  returned the same status, solution, and objective; `[1, 0]` is correct because
+  the fixture constrains the two Boolean variables to sum to one.
+- A production-size LNS wire model was then solved through the same Browser
+  Worker: 1,225,223 model bytes, 9,363 variables, 23,777 constraints, and the
+  unchanged 7.880-second/22-worker parameter protobuf. Browser C++/WASM returned
+  `FEASIBLE` in 7.937 seconds with objective `9,852,041` and bound `8,370,831`.
+  Native Python/OR-Tools returned `FEASIBLE` in 7.923 seconds with objective
+  `10,036,330` and bound `8,698,146`. This is a minimization model, so the
+  Browser incumbent was about 1.84% better in this one randomized multi-worker
+  run; exact incumbents are not expected to be deterministic across runtimes.
+- This proves the C++ search engine is viable and competitive in the browser.
+  It does **not** by itself prove whole-pipeline VPS quality parity: Python still
+  owns model construction, phase orchestration, incumbent flow, materialization,
+  and validation unless those layers are ported to Rust/C++/WASM or retained as
+  the lightweight server-side model-plan stream.
+- The vendored browser package was completed with its original
+  `ortools_worker.js` and `worker_routing.js` bridge files from
+  `or-tools-wasm@0.9.1`; no VPS, Rust API, `solver_runtime/**`, objective, or
+  deployed asset was changed. Wrapper verification passes **9/9**, both added
+  modules pass `node --check`, and `git diff --check` passes. No deployment was
+  performed.
+
+## 2026-08-01 Direct Web C++ vs native/VPS-mode acceptance (local, not deployed)
+
+- The same authenticated In-App Browser default dataset was used for the
+  comparison. It contains **1,566** expected periods; the native automatic
+  reference produced a complete baseline in about **113.5 seconds**:
+  `1566/1566`, **497** teacher sessions, **54** Gap1, **0** Gap2, and **0**
+  one-period teacher sessions. The native Agent uses the unchanged Python +
+  OR-Tools solver contract used by the VPS, so this is the algorithm/reference
+  lane rather than a different JavaScript heuristic.
+- Focused native/reference modes from that baseline were:
+
+  | mode | time | scheduled | sessions | Gap1 | Gap2 | one-period |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | Buổi 1 tiết | 2.8 s | 1,566 | 497 | 54 | 0 | 0 |
+  | Trống 2 tiết | 2.8 s | 1,566 | 497 | 54 | 0 | 0 |
+  | Buổi | 205.1 s | 1,566 | 471 | 55 | 1 | 0 |
+  | Trống 1 tiết | 210.0 s | 1,566 | 497 | 35 | 0 | 0 |
+
+- The Web C++/WASM focused modes were then run from the same `497/54/0/0`
+  baseline. `Buổi 1 tiết` and `Trống 2 tiết` also stopped in about **2.8 s**.
+  `Buổi` completed in **206.4 s** at `1566/1566`, **484** sessions, **46**
+  Gap1, **0** Gap2, and **0** one-period sessions. This is a better balanced
+  result than the native `Buổi` run because it preserved Gap2=0. `Trống 1
+  tiết` ran for **216.1 s** and ended in `Local lỗi` without publishing a
+  candidate; the baseline timetable remained intact. During both Web runs the
+  public health endpoint stayed at `0` VPS active/queued jobs and **6/6** VPS
+  tokens free (the lightweight model-builder helper briefly reached 1).
+- A fresh Web automatic run from the empty starting state is not publishable in
+  this acceptance: after about **274 s** it exposed only **108/1,566** periods
+  and **1,458** unassigned periods. This is a Browser orchestration/timeout or
+  model-stream reliability failure, not evidence that the C++ CP-SAT kernel is
+  weak. Keep the Windows WebAgent trial query-only until the incomplete and
+  Gap1-local-error paths are diagnosed.
+- To prepare the VPS comparison, the native Agent solver child was stopped while
+  trying to force the hidden tray GUI into OFF. The GUI parent also exited,
+  rather than leaving a paused `enabled:false` presence. Do not use child-process
+  termination as the normal VPS toggle; the packaged GUI/tray OFF path still
+  needs a real user gesture or a dedicated test harness. The Agent was restarted
+  afterward. No production deployment or VPS/objective change was made.
+
+## 2026-08-01 Fresh-device completed WebAgent result no longer blocks Play (deployed v1161)
+
+- Root cause of the post-v1160 report: a fresh tab/device could discover a
+  matching completed WebAgent result retained by the server from another
+  browser. The Local-only fence correctly refused to poll/apply that foreign
+  result, but then returned from Play instead of continuing with a new Local
+  request. This appeared as a run that stopped/errored even though Browser WASM
+  itself was healthy.
+- The trial now marks the completed foreign result settled locally, removes its
+  pending row, and continues immediately into a brand-new
+  `web_agent_required` POST. It still never polls the old result, never invokes
+  native Agent preflight, and never opens VPS fallback. Live same-browser
+  reproduction on v1160 independently completed from 11% to terminal using six
+  WebAssembly Workers; the new regression covers the fresh-device completed
+  result that the same browser could not naturally reproduce.
+- Final verification: bridge **291/291**, Browser WASM **74/74**, toolbar
+  **43/43**, JavaScript syntax, and `git diff --check` pass. Targeted deployment
+  replaced only `sapxep.html` and `tkb-rust-bridge.js`; no Rust/API restart,
+  Agent EXE, or `solver_runtime/**` file changed. Backup:
+  `/opt/cherry-scheduler-backups/windows-web-trial-completed-skip-v1161-20260801-014931-fe6b85ec`.
+  Final hashes are
+  `a61694caa613e2166790382d88a8f3ac84c476d9182420cab06566167e3ececb`
+  (`sapxep.html`) and
+  `64ab1168e62d49cbc5776e90a600d2d5962503eae6618eb7f3dfdf28f5228d69`
+  (`tkb-rust-bridge.js`). Public cache key is
+  `20260801-v1161-windows-web-trial-completed-skip-v1`; health is idle with
+  zero active/queued jobs and all **6/6** VPS tokens free.
+
+## Recommended client Local Solver Service direction (design, not implemented)
+
+- Exact VPS-quality desktop offload should evolve the current Agent into a
+  background **Local Solver Service** that embeds the unchanged Python
+  `solver_runtime`, OR-Tools CP-SAT, model builder, materializer, objectives,
+  hints, and validation. The web remains a thin client and talks to the local
+  service through a narrowly authenticated localhost/relay protocol. This
+  removes both search and model-builder CPU from the VPS and can preserve
+  algorithmic parity instead of approximating it in JavaScript.
+- Ship separate self-updating native bundles for Windows, macOS arm64/x64, and
+  Linux, supervised by a small Rust launcher/service. This is still installed
+  native software even if it has no GUI. Browser-only execution cannot run the
+  existing Python/OR-Tools stack unchanged.
+- iPhone requires either a native iOS app containing a C++/Swift solver bridge
+  or a complete port of the Python orchestration/model/materialization layers
+  to Rust/C++/WASM. Safari WebAssembly can remain an optional light lane, but
+  background suspension, memory, and thread limits mean it cannot currently be
+  promised VPS-equivalent reliability. Keep VPS as the mobile/failure fallback
+  and keep the query-only WebAgent as a load/quality experiment.
+
+## 2026-08-01 Windows macOS-style WebAgent query trial (deployed)
+
+- Windows administrators can run the opt-in trial at
+  `?sid=default&webAgentTrial=mac`. The gate requires a Windows navigator and
+  client role `school_admin` or `superadmin`; ordinary Windows traffic remains
+  on the native-Agent contract. The trial ignores a stale saved OFF toggle for
+  this page only, locks the control ON, skips native status/protocol/download,
+  and sends `web_agent_required` + `ui_execution_mode=local`.
+- The bridge fails closed before POST when Browser-WASM probing is unavailable
+  and cancels/rejects a server response that claims VPS ownership. Durable jobs
+  created by the current trial carry a non-secret `trialLocal` marker. Reload
+  may resume only that row (or a future explicitly Browser-required row);
+  cross-device observers, pre-existing native/VPS rows, and executor-unknown
+  rows are removed before any result-poll request. The server Browser-required
+  lease fence remains authoritative.
+- Targeted static deployment replaced only the four planner assets, followed by
+  a two-file cache/hardening refresh. No Rust service restart, Agent EXE,
+  `solver_runtime/**`, CP-SAT objective, native solver, or VPS algorithm was
+  changed. Backups:
+  `/opt/cherry-scheduler-backups/windows-web-trial-v1159-20260801-011345-9c99db93`
+  and
+  `/opt/cherry-scheduler-backups/windows-web-trial-resume-v1160-20260801-012554-62ce715c`.
+  Final SHA-256 values are
+  `1d3d217813352576c2434ad294b3369325d3474e9a6529b497e7039419d0f36f`
+  (`sapxep.html`),
+  `ee38d6b3f580ffe95cfc0f16f380013c264fa09c465a44875fc75a1583a2e63f`
+  (`phanmon.js`),
+  `5c2541bf77ddb67fe4f225282d5a722cc1abc16bf5de74d3ef64b961df5203e5`
+  (`tkb-browser-wasm.js`), and
+  `434b07ff173e25ddaed05d63ff7d47c65a98284f33b22d0ad6e4f5339e3d449d`
+  (`tkb-rust-bridge.js`). The final bridge cache key is
+  `20260801-v1160-windows-web-trial-resume-v1`, with runtime marker
+  `tkb-rust-api-v316-windows-web-trial-resume`.
+- Direct authenticated In-App Browser acceptance ran one complete production
+  refinement. The toolbar stayed on **6 Browser WebAssembly Workers** throughout
+  and reached terminal success in the observed **about 130-145 second** window.
+  Final visible statistics were **1,566/1,566**, **510** teacher sessions,
+  **62** Gap1, **0** Gap2, **0** one-period teacher sessions, **368** teacher
+  days, and **0** student holes. During the run public health remained
+  `solverActiveJobs=0`, `solverQueuedJobs=0`, and **6/6 VPS tokens free**.
+  `agentReferenceHelpers.modelBuildersActive` briefly reached 1 and cumulative
+  helper starts rose from 33 to 35, then returned to 0: CP-SAT/HiGHS search was
+  local, but Python model building/materialization still used small backend CPU.
+- The result is functionally complete and proves the Windows browser really can
+  own the solve without EXE or VPS solver. Quality is not yet equivalent to the
+  historical native-Agent/VPS reference (about 478 sessions and Gap1 39), so
+  the feature remains query-only and must not be enabled by default.
+- Final verification: bridge **290/290**, Browser WASM **74/74**, toolbar
+  **43/43**, scheduler modes **4/4**, CP-SAT wrapper **9/9**, HiGHS wrapper
+  **4/4**, model-plan **3/3**, JavaScript syntax, and `git diff --check` pass.
+  Public health is idle with zero active/queued solver jobs and all **6/6** VPS
+  tokens available; the Rust API version remains v121.
+
+## 2026-08-01 Fresh-browser Agent binding deadlock (deployed)
+
+- Root cause: on a new Windows browser profile, the status API could return a
+  live native Agent ID while the browser had no local non-secret presence marker.
+  The frontend then forced `online=false`, but only wrote the marker after an
+  online state was accepted. This left the page stuck in the missing/checking
+  state and could prevent a valid Agent sort.
+- `web/pages/phanmon.js` now records a short, explicit binding window only after
+  the user invokes the registered `tkbcherry-agent://open` protocol from Play,
+  Check, or the Agent control. A unique owner-scoped Agent ID returned during
+  that window is bound and stored as a non-secret marker; passive polling never
+  adopts an owner-wide Agent. No credential or token enters browser storage.
+- A follow-up race audit found that the first status frame can report the GUI
+  as `stopped` before the named-event ON command is processed. A fresh browser
+  now treats that frame only as intermediate presence, continues polling until
+  `nativeOnline=true`, and never binds it or chooses VPS. This also prevents an
+  OFF Agent on another machine from being adopted during the launch window.
+- `web/pages/sapxep.html` cache-busts the frontend as
+  `20260801-v1158-agent-launch-wait-v1`. Only `phanmon.js` and `sapxep.html` were
+  deployed; no EXE, Rust API, `solver_runtime/**`, CP-SAT model, or VPS solver
+  objective was changed. Final backup:
+  `/opt/cherry-scheduler-backups/agent-launch-wait-v1-20260801-064033`
+  (first-pass backup:
+  `/opt/cherry-scheduler-backups/agent-fresh-bind-v1-20260801-062732`).
+- Verification: toolbar **42/42**, Browser Agent **74/74**, Rust bridge
+  **285/285**, CP-SAT wrapper **9/9**, HiGHS wrapper **4/4**, Agent Windows
+  **146 tests / 1 expected platform skip**, scheduler modes **4/4**, and
+  JavaScript/diff checks passed. Public health after deployment: `0` active,
+  `0` queued, `6/6` VPS tokens free. The published final asset is
+  `phanmon.js?v=20260801-v1158-agent-launch-wait-v1`.
+- A custom URL may still be blocked by an automated browser click; the real
+  Windows user gesture and packaged Agent protocol remain the authoritative
+  launch path. If no handler responds, the existing download/open panel remains
+  the safe fallback.
+
+## 2026-07-31 Agent OFF-vs-exited presence and auto-open (deployed v121)
+
+- The native Agent now has an explicit OFF presence lane. `AgentPresence` sends
+  `/hello` with `enabled:false` and heartbeat-only updates while the Windows GUI
+  remains open but its switch is OFF. Rust records this as `explicitly_paused`:
+  it is never eligible for a lease, never starts a solver, and does not alter
+  the VPS objective or solver algorithm. The paused marker has a 15-second
+  crash TTL (normal eligible workers retain the existing 90-second TTL).
+- Browser status now returns `nativeRunning` and `nativeState` (`online`,
+  `stopped`, `missing`) while preserving `nativeOnline`/`nativeAgentCount` as
+  eligible executor counts. A Windows sort may use VPS only when the server
+  confirms `nativeRunning=true` and `nativeOnline=false` (the GUI is open and
+  explicitly OFF). A stale localStorage install marker is no longer enough to
+  authorize VPS on the new API.
+- The status request carries the paired non-secret `agentId` when the browser
+  has one. Rust returns the matching native state and binds native-required
+  jobs to that exact Agent ID. Windows OFF requests use the distinct
+  `native_paused_vps` policy and are rejected unless that exact live process
+  has registered `enabled:false`; ordinary mobile `vps_only` requests are
+  unchanged. This closes the same-account/different-machine and forged
+  VPS-only routing holes without changing the VPS solver or CP-SAT objective.
+- `web/pages/phanmon.js` invokes `tkbcherry-agent://open` when the server says
+  the process is not running. The packaged Agent registers that current-user
+  protocol and uses a fixed `--web-launch` command plus an auto-reset named
+  event; an existing OFF GUI is signaled to turn ON, while a fresh launch uses
+  its normal auto-ON path. If no handler responds after bounded polling, the
+  page shows/downloads the Agent requirement modal. `sapxep.html` cache keys
+  are `20260731-v1156-agent-launch-presence-v1` and
+  `20260731-v1156-gap2-target-stop-v1`.
+- The focused Gap2 bridge checkpoint (`browser_agent:checkpoint`, target
+  `teacher_gap2_sessions=0`) now requests a soft stop with `retainBest:true`,
+  preventing the UI from continuing after `0 trống 2 tiết`; it is guarded
+  against duplicate cancel calls and does not change VPS/CP-SAT behavior.
+- Verification: Agent suite **146 tests, 1 expected skip**; toolbar **39/39**;
+  Rust bridge **285/285**; deployment package **16/16**; Rust live-source
+  compatibility **293/293** (including 58 validator tests). The released
+  Agent EXE is 86,419,159 bytes (`cd87381a…308a597`) and its one-entry ZIP is
+  85,827,549 bytes (`3ef7d205…3e2bc7`), protected by the RSA manifest.
+- Targeted deployment completed without `update-deploy.py`: Rust API v121,
+  `phanmon.js`, `tkb-rust-bridge.js`, `sapxep.html`, Agent 1.6.38 ZIP and
+  manifest. Backup: `/opt/cherry-scheduler-backups/agent-launch-presence-v121-20260801-003443`.
+  The complete `solver_runtime/**` tree and Rust `native_solver.rs` /
+  `solver_pool.rs` hashes were identical before and after. Public health is
+  idle with `0` active/queued jobs and `6/6` VPS tokens free.
+- Direct In-App Browser acceptance after reload served cache keys
+  `20260731-v1156-agent-launch-presence-v1` and
+  `20260731-v1156-gap2-target-stop-v1`; with no local Agent process it showed
+  the missing/open/download state and kept sorting blocked. The browser
+  security policy blocked activating the custom URI from an automated click,
+  so the real Windows launch path remains covered by the Win32 event smoke and
+  packaged Agent tests; do not substitute Chrome for this acceptance.
+
+## 2026-07-31 Windows Agent custom URL activation (deployed in Agent 1.6.38)
+
+- Added `agent_helper/web_launch.py` for a current-user `tkbcherry-agent:` URL
+  protocol. A normal frozen Windows GUI launch idempotently registers
+  `HKCU\Software\Classes\tkbcherry-agent` and its
+  `shell\open\command` value as the current stable EXE plus the fixed
+  `--web-launch` switch. The command intentionally omits `%1`; no URL, token,
+  file path, or arbitrary argument can reach the Agent process.
+- The installed GUI owns an auto-reset named event derived from the persisted
+  Agent ID (`Local\TKBCherry.AgentHelper.WebLaunch.<sha256-prefix>`). A browser
+  protocol launch first opens/signals that event and exits without loading the
+  config, pairing, or solver. The GUI polls the event on its Tk loop and queues
+  the same `on` action used by the tray, so an existing OFF Agent turns ON; a
+  fresh launch already follows the normal auto-ON path. Event and registry
+  helpers are no-ops off Windows/source builds and tolerate registry/event
+  failures without blocking the Agent.
+- `agent_helper/__main__.py` accepts the hidden `--web-launch` switch, retries
+  the event briefly if a duplicate launch races GUI startup, and passes the
+  listener through `run_toggle_window`. `agent_helper/gui.py` closes the event
+  handle during shutdown. No VPS solver, Rust API, CP-SAT model, or web
+  execution policy was changed; no deployment or Agent rebuild was performed.
+- Integration review caught two OFF-presence edge cases before release. The
+  real presence client now passes the paired credential loaded from the
+  current-user DPAPI state instead of incorrectly relying on an environment
+  variable, and an unexpected worker stop/update transition notifies presence
+  that the GUI is OFF. This changes status reporting only, never solver routing
+  eligibility or the VPS algorithm.
+- Verification: `python -m unittest discover -s agent_helper/tests -t .` passed
+  **146 tests, 1 expected platform skip** after the companion OFF-presence
+  integration; focused web-launch/main/GUI tests passed **36/36**; a real Win32
+  event smoke observed
+  `idle -> signal=true -> one poll=true -> next poll=false`; Python compilation
+  checks and `git diff --check` passed.
+- Web integration should invoke `tkbcherry-agent://open` from an explicit user
+  gesture, then continue polling native Agent status. Custom URI handlers can
+  be blocked by browser policy or absent when the EXE was removed; after a
+  bounded wait the page must show the existing download/open instructions.
+
+## 2026-07-31 Agent 1.6.37 graceful OFF and narrow-desktop optimization menu (deployed)
+
+- Fixed a real native Agent lifecycle race. Choosing Exit could destroy the Tk
+  process immediately after setting its worker stop event. Because the worker
+  thread is a daemon, the process could terminate before its bounded
+  `/disconnect` request reached the API, leaving the browser green until the
+  crash-only 90-second server TTL expired. `AgentToggleApp.close()` now keeps
+  the process alive for at most 3.5 seconds so the existing 3-second
+  best-effort disconnect can finish; shutdown remains bounded even if a socket
+  or long-poll is stuck. Forced Task Manager termination still relies on the
+  server TTL, as no process can send cleanup after it has been killed.
+- The four focused optimization commands were already wired end to end:
+  `Buổi 1 tiết` (`optimize_singletons`), `Buổi` (`optimize_sessions`),
+  `Trống 2 tiết` (`optimize_gap2`), and `Trống 1 tiết` (`optimize_gap1`). The
+  apparent omission was a responsive CSS hole: a fine-pointer desktop window
+  481-900 px wide matched neither the wide desktop nor touch layout. The shared
+  control now appears there as a compact 64 px button while retaining the same
+  four menu actions. No optimization objective, Python solver, Rust scheduler,
+  or VPS behavior was changed.
+- Public Agent release is now `1.6.37`. The unsigned EXE is 86,410,598 bytes,
+  SHA-256 `245ebb9a689eeec19bfb51f94c5ddc0c295cb819ac12853aedb9d49c9b288a09`;
+  the one-entry ZIP is 85,818,069 bytes, SHA-256
+  `c832f29c7993628d224a58876ecfae22dbdae338360e8b98858db07cf73717b6`.
+  The RSA-signed manifest is 980 bytes, SHA-256
+  `2cf4787c272bb47d81941adce9c6de85672565135e8dd43f114583d45b334ed1`.
+  Authenticode remains intentionally absent under the owner's existing release
+  policy; the manifest/hash/update safety checks remain enforced.
+- Targeted atomic deployment replaced only `web/pages/phanmon.js`,
+  `web/pages/sapxep.html`, the Agent ZIP, and its release manifest. It did not
+  run `update-deploy.py`, rebuild Rust, restart a service, or upload
+  `solver_runtime/**`. Remote backup:
+  `/opt/cherry-scheduler-backups/web-agent-1.6.37-graceful-off-20260731-225556-2cf4787c272b`.
+  Live hashes are `9cc2ec4f3bb5a1c447affb0daa1280a54fde90eb141c9f69fe1f681f6ce8fd95`
+  (`phanmon.js`) and
+  `ddc5ba8ce025c46bb0d84b84f69796012df223be8710e0dc1e6c99ba9a5b21ba`
+  (`sapxep.html`). The phanmon cache key is
+  `20260731-v1155-agent-graceful-off-v1`; Browser executor v62, bridge v313,
+  and Rust API v120 are unchanged.
+- Verification passed the complete Agent suite `133` tests with one expected
+  platform skip, bridge `284/284`, Browser executor `74/74`, and toolbar/mode
+  `41/41`, plus GUI, solver-child, native-inventory, version, manifest signature,
+  one-entry ZIP, public download hash, syntax, and whitespace checks. Direct
+  In-App Browser acceptance at 794 px reported the optimization control visible
+  at 64x36 with all four modes. With no Agent process, it reported
+  `data-agent-state=fallback`, `aria-pressed=false`, and
+  `AGENT TẮT · DÙNG VPS`; a real `1.6.37 --check` registration disconnected and
+  returned to that OFF state on the next status poll. Post-deploy health was
+  idle with zero active/queued jobs and all `6/6` VPS tokens free.
+
+## 2026-07-31 Browser Agent strict Local-required hardening (deployed)
+
+- Browser devices now keep an explicit two-mode contract:
+  Agent ON sends `web_agent_required` and must remain Local; Agent OFF sends
+  `vps_only`. A mobile focused `singletons`/`sessions`/`gaps` request that has
+  rules outside the compact heuristic contract is admitted only when both
+  CP-SAT and HiGHS WASM runtimes probe successfully. If exact probing fails,
+  the executor returns a terminal Local-unavailable result without starting a
+  heuristic Worker or registering a lease.
+- The bridge now fails closed if an older server/cache replies with VPS
+  ownership to a `web_agent_required` request. It cancels that stale VPS job,
+  reports `web_agent_required`, disables the retained-incumbent success shortcut
+  for Browser-Agent terminal errors, and never polls/applies the VPS result.
+  The server-side fence is authoritative and terminal Local failure, pagehide,
+  disconnect, timeout, Stop, quality miss, or lost lease cannot open a VPS
+  generation for a required Browser job. The VPS solver/objective was not
+  changed by this pass.
+- Live source markers are Browser Executor
+  `tkb-browser-wasm-executor-v62-strict-local-required`, bridge
+  `tkb-rust-api-v313-strict-local-required`, and page cache key
+  `20260731-v1154-strict-local-required-v1`. The Rust API reports
+  `tkb_new-rust-api-2026-07-31-strict-local-required-v120`.
+- Verification in this workspace: the complete Node E2E set **495/495**,
+  Browser executor **74/74**, bridge **284/284**, and CP-SAT + HiGHS wrappers
+  **13/13** pass; JavaScript syntax and `git diff --check` also pass. Isolated
+  Ubuntu Rust verification passed API **290/290** and validator **58/58**.
+- Before cutover, the full production allowlist was compared to live: 122 files,
+  zero missing, and exactly seven intentional differences (three Rust
+  coordinator sources and four Agent web files). The post-deploy comparison is
+  **122/122 identical**. Every `solver_runtime/**` production hash was identical
+  before and after deployment, so the Python CP-SAT/MILP algorithm was not
+  altered.
+- The owner-requested full rollback snapshot is
+  `/opt/cherry-scheduler-backups/Cherry_OLD` (126 MiB). Its old Rust binary is
+  SHA-256 `ba623ce59716a02ea4b627de4cc0dce4c1a06fd355c5d77fda42441d3f701e29`.
+  The official transactional deployment also created
+  `/opt/cherry-scheduler-backups/server-state-20260731-143518.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260731-143518.tar.gz`.
+- Deployment completed with `UPDATE_OK`. The new Rust binary SHA-256 is
+  `af7f1c16b51e9b1887a84eda576c2c69214cf96e113af77d4bce75b733ff9790`.
+  Live web SHA-256 values are
+  `6e554f99e041059de13a16114490e16c51259c39887c6fb31478c16014f92ae0`
+  (`tkb-browser-wasm.js`),
+  `2ffa7fcca32a90a3cee131b45ec9c81f5a4848cff9881a961ad56617a163f6c2`
+  (`tkb-rust-bridge.js`),
+  `92e7299a9dbbf0ae2c7aed2623c429720f46e6728bef930d06c04fef338e6bb7`
+  (`phanmon.js`), and
+  `6d181d8201e15fec067688adad847997ee490bddff7411b75cbbcb3b4841fe00`
+  (`sapxep.html`). Public health is idle with zero active/queued jobs and all
+  `6/6` VPS Worker tokens free.
+- Remaining acceptance is one authenticated In-App Browser Agent-ON run and a
+  real iPhone run after refreshing the old PWA cache. The current Codex
+  In-App Browser is still at the login screen; do not substitute the desktop
+  browser for this acceptance.
+
+## 2026-07-31 Windows Agent three-state policy (deployed)
+
+- Windows now has three explicit UI/execution states. A freshly confirmed
+  native Agent is green and sends a `native_required` job. An Agent previously
+  detected by this browser but currently offline is orange, reports
+  `aria-pressed="false"`, and sends one explicit `vps_only` job with
+  `ui_agent_preference_enabled=false`; Browser WASM flags are removed so a late
+  Agent or Web Worker cannot reclaim that click. A device never detected by the
+  browser remains gray and Play is blocked behind the download/open/check
+  panel.
+- Successful native status or device pairing stores only a non-secret local
+  presence marker (optional anonymous `agentId` and timestamp), never the Agent
+  credential. This lets a later OFF transition remain orange across reloads.
+  Clicking the orange control opens instructions with `Tải Agent Windows`,
+  `Đã mở Agent – kiểm tra lại`, and `Tiếp tục dùng VPS`; starting a sort while
+  orange goes directly to VPS without opening the blocking panel. Dashboard
+  rendering prioritizes the offline device state over a stale Agent executor,
+  so it cannot continue saying `ĐANG DÙNG AGENT` after the status turns OFF.
+- Browser security cannot inspect an EXE or the Windows registry. Therefore an
+  Agent installed before this release must be opened once after the new page is
+  loaded so the browser can establish its local presence marker; before that
+  one-time migration it correctly offers both `Tải Agent Windows` and the
+  already-installed `Mở Agent`/check path rather than claiming local presence.
+  Exact zero-touch legacy detection or a true one-click EXE launch would require
+  a future Agent release with a local presence channel/custom URI protocol.
+- Targeted static release marker is
+  `20260731-v1153-agent-three-state-v2` (`phanmon`) with bridge runtime
+  `tkb-rust-api-v312-agent-three-state`. The final atomic deployment replaced
+  only `web/pages/phanmon.js`, `web/pages/sapxep.html`, and
+  `web/pages/tkb-rust-bridge.js`; it did not run `update-deploy.py`, rebuild
+  Rust, restart services, change the Agent EXE, or upload `solver_runtime/**`.
+  Final backup:
+  `/opt/cherry-scheduler-backups/web-agent-three-state-v2-20260731-140231-65727ad2442c`
+  (the superseded first-pass backup is
+  `/opt/cherry-scheduler-backups/web-agent-three-state-20260731-135600-793fbd980233`).
+- Live SHA-256 values are
+  `b20e5b3c9d68fbf7ee66513a23811573f880287b36d633412970cd928bdc79c2`
+  (`phanmon.js`),
+  `a637ca6df9ecf265852758e76bada237feae80877a78fe38d33043fdf520a4f9`
+  (`sapxep.html`), and
+  `98c94264af5befc2dca2634950a5d108d02b0782b0c252d84555e9fdc66443dc`
+  (`tkb-rust-bridge.js`). Public cache-busted downloads matched all three.
+  The Rust binary remained
+  `ba623ce59716a02ea4b627de4cc0dce4c1a06fd355c5d77fda42441d3f701e29`
+  and the source-only solver fingerprint remained
+  `8e923631119d20ba85ab677d6ac97cebb6ff6063699bb413370fbb5e70389e98`.
+  Post-deploy health was idle with zero active/queued jobs and the unchanged
+  backend version `tkb_new-rust-api-2026-07-29-mobile-terminal-tiebreak-v119`.
+- Verification passed toolbar `37/37`, Rust bridge `283/283`, Browser Agent
+  `73/73`, scheduler modes `4/4`, focused cache wiring, JavaScript syntax, and
+  diff whitespace checks. The new regressions cover missing download gating,
+  online native-required submission, installed/OFF orange state, orange
+  instruction/close flow, VPS-only wire settings, stale-dashboard suppression,
+  and the guarantee that Windows VPS-only never activates Browser WASM.
+
+## 2026-07-31 Restore `Buổi 1 tiết` optimization action (deployed)
+
+- The shared desktop/mobile `Tối ưu` menu again exposes `Buổi 1 tiết` as its
+  first action, followed by `Buổi`, `Trống 2 tiết`, and `Trống 1 tiết`.
+  The restored action forwards the already-supported
+  `optimize_singletons` request and targets the visible count of teacher
+  sessions containing exactly one lesson. No solver policy or VPS algorithm
+  was changed.
+- Only `web/pages/sapxep.html` was deployed atomically. No Rust rebuild,
+  service restart, `update-deploy.py`, Agent package change, or
+  `solver_runtime/**` upload was performed. Remote backup:
+  `/opt/cherry-scheduler-backups/web-optimize-singletons-20260731-010952-696795b4b0e2`.
+  The live HTML changed from SHA-256
+  `c4b29e29968ff69ff1dea40ed3db846fe7fceb2186508de681d1172c7d32ee44`
+  to `696795b4b0e2119504805ea364a10ea454981e133c51b0d9642cbee64769733e`;
+  the Rust binary remained
+  `ba623ce59716a02ea4b627de4cc0dce4c1a06fd355c5d77fda42441d3f701e29`.
+- Verification passed scheduler modes `4/4`, toolbar `36/36`, and bridge
+  `282/282`, plus JavaScript syntax and focused diff checks. A fresh production
+  browser tab opened the menu and reported exactly four items in the intended
+  order with modes `optimize_singletons`, `optimize_sessions`,
+  `optimize_gap2`, and `optimize_gap1`.
+
+## 2026-07-30 Agent 1.6.36 offline indicator and required Windows gate (deployed)
+
+- The Windows Agent button now defaults to `data-agent-state="off"` with
+  `aria-pressed="false"` and a gray status dot. Only confirmed
+  `enabled`/`active`/`working` native states can paint the dot green. A normal
+  Agent OFF/Exit revokes its server registration immediately instead of leaving
+  the browser green until the worker TTL expires.
+- Agent `1.6.36` performs one best-effort `/disconnect` request during normal
+  shutdown even when its main loop is blocked in a lease long-poll. The same
+  cleanup now applies to `--check` and `--once`; the request is bounded to at
+  most three seconds and never blocks process exit indefinitely. A process
+  forcibly killed by Task Manager cannot send this final request, so the
+  server's existing worker TTL remains the crash-only safety net.
+- On Windows, Play is now native-required. When no native Agent is freshly
+  confirmed, the browser starts the Agent ZIP download from the user gesture,
+  keeps a required-Agent instruction panel open, and does not create a solver
+  job or fall back to VPS. A server-side `native_agent_required` rejection
+  reopens that panel and also remains terminal for the click.
+- Public artifacts: EXE `86,410,921` bytes, SHA-256
+  `70416fe1ae351d1c33af0eec9d643fe8edf62d0038bceb3e00c35bc95c403fb2`;
+  one-entry ZIP `85,818,253` bytes, SHA-256
+  `34637b64cd7203760acbf78e77b8fb41a935c0c6b981a801bd0b62f148f9ebdd`.
+  The RSA-signed public manifest is version `1.6.36`; the EXE remains unsigned
+  by the owner's explicit release choice.
+- The targeted static deployment replaced only `web/pages/phanmon.js`,
+  `web/pages/sapxep.html`, `web/pages/tkb-rust-bridge.js`, the Agent ZIP, and
+  its release manifest. It did not run `update-deploy.py`, restart services,
+  rebuild Rust, upload `solver_runtime/**`, or alter the VPS algorithm. Remote
+  backup: `/opt/cherry-scheduler-backups/web-agent-required-20260730-165017-210974e2733f`.
+  The solver fingerprint remained
+  `67cf2eb83b07af0fd2ba04dfd11e188b23003ad3b2a4fe084299c57ed5c00086` and
+  the Rust binary remained
+  `ba623ce59716a02ea4b627de4cc0dce4c1a06fd355c5d77fda42441d3f701e29`.
+- Verification passed the full Agent suite (`133` passed, one expected skip),
+  toolbar suite (`36/36`), Rust bridge suite (`282/282`), Browser executor
+  suite (`73/73`), scheduler modes (`4/4`), GUI/version/solver-child probes,
+  manifest signature and archive parity checks, JavaScript syntax, and focused
+  diff checks. With no `TKBCherryAgent` process running, the production browser
+  reported `data-agent-state="off"`, `aria-pressed="false"`, and gray
+  `rgb(148, 163, 184)`; with the Agent connected it reported enabled/green.
+
+## 2026-07-30 Agent 1.6.35 and targeted static release (deployed)
+
+- The VPS scheduling algorithm was deliberately left untouched. A read-only
+  comparison found all 31 production runtime files under `solver_runtime/scripts`,
+  `solver_runtime/src`, and `requirements.txt` identical to the live VPS source;
+  the only local-only file is the obsolete `requirements-wsl.txt`, which the
+  native Agent packaging gate excludes. The Agent runtime identity remains
+  `20260729.1` / `91d56f56d684b6361bcd27e6aeb809ddf29c0c45035600487b4b68f904922d7e`.
+- Agent source was bumped to `1.6.35`. The updater now permits an unsigned EXE
+  by default when the RSA-signed manifest, HTTPS/origin, one-entry ZIP,
+  declared sizes, SHA-256 hashes, smoke test, version probe, and post-probe
+  hash checks all pass. `require_trusted_authenticode=True` remains available
+  for a deployment that requires the Windows trust gate. This policy change is
+  intentionally user-authorized; the public EXE is `NotSigned`, while the
+  manifest remains RSA-SHA256 signed.
+- Exact release artifact: EXE `86,409,883` bytes,
+  SHA-256 `dd87259d1805f890e5db376d8f5b94b59577b363dfc0d415ef0bc3628bea1abc`;
+  one-entry ZIP `85,816,894` bytes,
+  SHA-256 `9072b0b6abe4b2c7463d7741aa99ef5d0d59f8d80d8a3db86ac814e1ecc03342`.
+  Public manifest is `1.6.35` at `/downloads/TKBCherryAgent-release.json`.
+- A targeted, atomic static deployment replaced only these five files:
+  `web/downloads/TKBCherryAgent-Windows.zip`,
+  `web/downloads/TKBCherryAgent-release.json`, `web/app.js`,
+  `web/admin-mobile-compact.css`, and `web/app.html`. No `update-deploy.py`,
+  Rust rebuild, service restart, or `solver_runtime/**` upload was performed.
+  Remote backup: `/opt/cherry-scheduler-backups/web-agent-ui-20260730-153029-6b41b228cd09`.
+  The deployment verified solver fingerprint unchanged (`0050f9e4c99dc2c6271fa3fb4bb0136631270ba67912e640f273f95398e66675`)
+  and Rust binary SHA-256 unchanged (`ba623ce59716a02ea4b627de4cc0dce4c1a06fd355c5d77fda42441d3f701e29`).
+- Local acceptance: Agent full suite `126` passed with one expected platform
+  skip; GUI/solver-child/version/check probes passed; opening the candidate
+  stopped the exact old installed process tree and atomically installed
+  `1.6.35`. Public download was fetched back and its manifest, ZIP entry and
+  executable hashes were verified. Browser checks found the new responsive
+  cache marker, two desktop delete buttons with labels, two mobile icon-only
+  buttons, desktop `Tổng: 29` and mobile value `29`; the production scheduler
+  showed `Agent đã bật` and emitted no console errors.
+- Compatibility boundary: this unsigned release runs on ordinary supported
+  64-bit Windows 10/11 machines after the normal SmartScreen acknowledgement.
+  Smart App Control/WDAC can block an unsigned EXE or native DLL/PYD before the
+  Agent starts; no application code can guarantee execution on those policies.
+  A genuinely universal Windows release therefore still requires a trusted
+  Authenticode/Azure Artifact Signing certificate (including native payload
+  signing as needed). No such certificate/account is configured locally.
+
+## 2026-07-30 Responsive admin delete controls (deployed with Agent 1.6.35)
+
+- The data-section toolbar now renders one shared pair of delete buttons. Each
+  button includes its icon and accessible full label on desktop; the existing
+  compact mobile CSS hides `.app-action-label` so the same buttons become
+  icon-only on narrow screens. The duplicate desktop/mobile delete controls and
+  their obsolete menu CSS were removed.
+- PCCM's assignment total now renders `Tổng: N` on desktop through separate
+  prefix/value spans. The prefix is hidden at the mobile breakpoint, preserving
+  the compact numeric badge; live refresh updates the value span without
+  replacing the responsive prefix.
+- Cache markers are `20260730-v1148-admin-responsive-actions-v1` for `app.js`
+  and `admin-mobile-compact.css`. No `solver_runtime/**` or VPS algorithm file
+  was changed by this UI-only pass.
+- Verification: `node --test e2e_tests/admin_mobile_compact_node.test.js`
+  passes 6/6; `node --check web/app.js` and focused `git diff --check` pass.
+  A browser harness using the actual CSS confirmed two delete buttons with
+  visible labels at 1280px and two icon-only buttons plus a `29` badge at
+  390px. The targeted 1.6.35 static release above deployed this source.
+
+## 2026-07-30 Agent self-update process handoff (historical 1.6.34 candidate)
+
+- `agent_helper/relocation.py` now stops the exact installed Agent process tree
+  even when a newly opened/downloaded EXE has byte-identical content. This
+  removes the remaining single-instance collision when the user opens a fresh
+  copy of the same Agent version.
+- The signed-release updater already performs the complete self-update flow:
+  manifest/hash/signature validation, safe staging, Authenticode check,
+  startup smoke, version probe, staged launch, exact-path stop, atomic install,
+  and restart. The user does not need to manually copy an EXE. Failed checks
+  leave the current Agent untouched.
+- Local acceptance on 2026-07-30: exact current candidate `1.6.34` returned
+  `--version` and hidden `--gui-smoke` successfully; `--check` validated the
+  credential/server registration and solver probe (`400`). A production-size
+  direct EXE solve returned `1566/1566`, zero unassigned/violations,
+  `hard_ok=true`, zero one-period sessions in about 178.6 seconds; the same
+  candidate result passed the canonical validator. The installed Agent was
+  stopped by its verified exact path and restarted; its two observed processes
+  are the normal PyInstaller bootloader/application pair.
+- This candidate remains unsigned (`NotSigned`) and the current worktree has
+  unrelated uncommitted `solver_runtime/**` changes. Do not publish/deploy the
+  Agent until the exact final EXE is Authenticode-signed/timestamped, its ZIP
+  and manifest are recreated, and the solver-runtime source boundary is
+  reconciled. VPS code/algorithm was not changed in this Agent-only pass.
+- Fresh post-handoff candidate directory:
+  `.codex_tmp\agent-1.6.34-self-update`. EXE is `86,408,046` bytes with SHA-256
+  `193a6f9af59df14b87fd4a54c28303c82d8c349b6f638d8065992df78a87278f`;
+  ZIP is `85,815,935` bytes and contains one root EXE. Build-time GUI,
+  solver-child and native-inventory gates passed. Direct post-build probes
+  returned version `1.6.34`, GUI smoke success, and the expected structured
+  solver-child `400` for an empty request. A final exact-candidate `--check`
+  exited `0`, validated the server credential/registration, and reported the
+  expected solver probe `400` before the installed Agent was restarted.
+- Real Windows handoff acceptance passed twice. With the old installed process
+  tree running, the external candidate replaced the installed file with the
+  exact candidate hash and restarted it. A second launch with byte-identical
+  source/destination stopped old installed PIDs `36168/24036`; new installed
+  PIDs `16240/23856` had no PID overlap. The two live processes are one normal
+  PyInstaller parent/child instance, not duplicate Agents.
+- Post-change focused suites pass relocation/updater/packaging `27/27` and
+  GUI/main/Windows-security `31/31`; Python compilation and focused
+  `git diff --check` pass. The full immediately preceding Agent audit passed
+  `124` tests with one expected platform skip, plus the relevant web routing
+  suites `394/394`.
+- Release finalization was attempted against the exact new candidate and
+  correctly failed closed because neither Windows certificate store contains a
+  private-key Code Signing certificate. The EXE hash remained unchanged and no
+  release manifest was created. Do not bypass this gate with a self-signed or
+  manifest-only signature.
+- A signed-in GitHub repository-settings audit confirmed there is currently no
+  `agent-release` Environment, no repository Actions variables, and no Actions
+  secrets. The signing workflow is also still local/untracked rather than
+  present on any remote branch. Azure Artifact Signing therefore cannot be
+  dispatched until an Azure signing account/profile and OIDC identity are
+  created and their six required non-secret values are added to the protected
+  environment. Creating a paid cloud signing resource is an owner decision and
+  was not inferred from the Agent release request.
+
+## 2026-07-30 Windows Agent direct-native release path (source/candidate only, not deployed)
+
+- The user explicitly froze the VPS algorithm: this work changed only the
+  Windows Agent, Agent packaging/tests/docs, and its CI workflow. No
+  `solver_runtime/**` file was edited in this pass and nothing was deployed to
+  the VPS. The pre-existing `git diff --binary -- solver_runtime` identity stayed
+  exactly `9958020e3816c57315e8075ddebba394414388bd` before and after the work.
+  Native solver identity also remains `20260729.1` with digest
+  `91d56f56d684b6361bcd27e6aeb809ddf29c0c45035600487b4b68f904922d7e`.
+- Windows Agent now has one execution path only:
+  `TKBCherryAgent.exe --solver-child` runs the bundled Python + OR-Tools runtime
+  directly on Windows. `__main__.py` no longer exposes the WSL setup CLI, imports
+  a WSL runner, discovers a WSL distro, or offers an elevated setup callback.
+  If Smart App Control blocks an unsigned/untrusted native runtime, GUI mode
+  truthfully stays `AGENT CHƯA SẴN SÀNG`, never registers for a lease, and can
+  offer a signed update; headless/check mode exits with a clear error. There is
+  no WebAgent, WSL, alternate solver, or VPS fallback inside the Agent.
+- The one-file build no longer stages the Linux-source payload or
+  `requirements-wsl.txt`. It also removes `wsl_solve.py`, `wsl_cancel.py`, and
+  stale `__pycache__` content from the copied Agent runtime without changing the
+  canonical solver tree. A post-build PyInstaller inventory gate rejects any
+  WSL module, relay script, or runtime payload. The Windows Agent CI no longer
+  builds or uploads the unrelated Browser-WASM artifact. The obsolete
+  `agent_helper.wsl_setup`/`agent_helper.wsl_solver` modules, their historical
+  tests, and the unused WSL restart-marker state contract have now also been
+  removed from source; they are absent from both the Agent entry point and the
+  actual EXE inventory. The inventory gate also rejects
+  `tkb_native_solver.wasm`, so a future packaging regression cannot reintroduce
+  a Browser/WASM execution path into the Windows EXE.
+- Packaging now uses a unique PyInstaller work/spec directory per invocation
+  and creates the one-entry ZIP through a bounded .NET retry. This handles the
+  short read lock Windows Security can retain after EXE smoke tests while always
+  archiving the same immutable EXE and never producing a partial release.
+- Before the dead-source cleanup, candidate verification passed the complete
+  Agent suite `165` with one expected platform skip, PowerShell parse, Python
+  syntax, changed-file
+  `git diff --check`, GUI smoke, solver-child protocol smoke, one-entry ZIP
+  validation, and an actual recursive EXE inventory with no WSL/Ubuntu entries.
+  A direct packaged/source parity solve on the same deterministic two-period
+  request returned status `200` from both, `2/2` scheduled, zero unassigned,
+  `hard_ok=true`, and byte-equivalent normalized lesson assignments.
+- After removing the unused WSL source and obsolete GUI/tray setup states,
+  runner/setup/restart tests were removed with the code they exclusively
+  covered. The current full Agent suite passes `124` tests, one expected
+  platform skip, and `37` subtests. The relevant web/platform/native-routing
+  suites pass `394/394`; PowerShell parse, Python compilation, and changed-file
+  `git diff --check` pass.
+- Fresh exact-current-source unsigned candidate directory:
+  `.codex_tmp\agent-1.6.34-native-direct-release-gate2`. EXE is
+  `86,408,343` bytes, SHA-256
+  `f3b09296a3eefcd19059ddcbfd4d8acc31041f87222757b54cc70912114d48ef`;
+  ZIP is `85,816,169` bytes, SHA-256
+  `2933bdcacc8e25e3c5c779171416085df23cdb9ef911bca9cdf18b0e194caade`.
+  `--version` reports `1.6.34`; hidden Tk GUI smoke and solver-child protocol
+  smoke pass. The ZIP contains exactly one root `TKBCherryAgent.exe`. Recursive
+  PyInstaller inspection found `3,533` entries, zero WSL/WASM/onedir forbidden
+  entries, and the expected Python/OR-Tools/protobuf runtime. A fresh
+  source-versus-packaged deterministic solve returned status `200` from both,
+  `2/2` periods scheduled, zero unassigned, `hard_ok=true`, and identical
+  normalized lessons.
+- `build_windows.ps1` now has exactly one outcome: an explicitly unsigned
+  candidate EXE/ZIP with any stale manifest removed. It can no longer create a
+  signed manifest around an unsigned EXE. The operator-only
+  `tools/agent-release/finalize_windows_release.ps1` requires a valid private-key
+  Code Signing certificate, SHA-256 signing through `signtool`, RFC3161 SHA-256
+  timestamping, a final `Valid` Authenticode result with timestamp, a recreated
+  one-entry ZIP, and a DPAPI-RSA manifest whose sizes/hashes match the final
+  bytes. With an invalid/missing certificate, its acceptance test exits nonzero
+  while leaving EXE/ZIP hashes unchanged and creates no manifest.
+- A separate manual-only `.github/workflows/sign-agent-windows.yml` is ready for
+  Azure Artifact Signing through OIDC. It is pinned to full action commits,
+  requires the protected `agent-release` GitHub Environment, signs every
+  EXE/DLL/PYD in the isolated Python/OR-Tools build environment, rebuilds the
+  one-file executable from those signed dependencies, then signs/timestamps the
+  outer EXE. It uploads only the signed EXE plus verification metadata; the
+  DPAPI manifest key never enters GitHub. The local finalizer now supports
+  `-UseExistingSignature`, independently verifies trust, Code Signing EKU and
+  timestamp, then creates the ZIP and manifest. An unsigned pre-signed input is
+  rejected without changing EXE/ZIP or creating a manifest.
+- The local signing tool prerequisite is now available without a system-wide
+  install: official NuGet package `Microsoft.Windows.SDK.BuildTools`
+  `10.0.26100.4188` was downloaded under `.codex_tmp`, verified against NuGet's
+  catalog SHA-512
+  `OkiRhdDr0ngD6+wm0Ezdu1mgV8ZuknXdHwjzeHVZjYSXi9bCkYkq9Ns/X/ab9BoHb+Tq/5/RmXbdNWtC0qHipQ==`,
+  and its x64 `signtool.exe /?` succeeds. Pass that executable through the
+  finalizer's `-SignTool` parameter if local certificate-store signing is used.
+- The Agent updater now verifies trusted Authenticode immediately after
+  extracting and hashing a downloaded EXE, before GUI smoke, version probing,
+  or process launch. A regression test proves an untrusted update is deleted
+  without invoking any executable.
+- Authenticode remains `NotSigned`, and neither
+  CurrentUser nor LocalMachine has a Code Signing certificate with a private
+  key; `signtool` is also absent on this workstation. Do not install, publish,
+  update the manifest, or deploy server/web
+  native-required behavior from this candidate. First Authenticode-sign the
+  exact final EXE with a trusted timestamp, recreate the ZIP and signed release
+  manifest from those final bytes, then rerun inventory/parity and isolated
+  staging. The one-file inventory also contains native DLL/PYD dependencies;
+  acceptance on a real Smart App Control enforcing Windows machine remains
+  required to prove the trusted outer signature is sufficient before public
+  rollout.
+
+## 2026-07-30 Native Agent telemetry dashboard (source only, not deployed)
+
+- Native idle and lease heartbeats now optionally report bounded,
+  non-identifying whole-machine `systemCpuPercent` and `systemRamPercent`
+  samples. The Python client uses the existing Win32-only sampler, clamps and
+  rounds to one decimal, and silently omits unavailable counters so telemetry
+  can never interrupt a lease renewal.
+- The Rust coordinator authenticates the worker before retaining telemetry,
+  stores percentages internally as integer tenths, and exposes only the
+  freshest eligible owner-scoped native sample. Browser-WASM workers, trusted
+  infrastructure, upgrade-only workers, and other owners cannot populate or
+  read it; normal worker TTL pruning removes the sample.
+- Browser-session `GET /api/agent-helper/v1/status` is backward-compatible and
+  now also returns `executionSource`/`executionPhase` from the server-owned job
+  fence plus nullable `nativeTelemetry` with server receipt time/sample age.
+  This lets the web UI distinguish real Agent/VPS execution without inferring
+  VPS from an idle Agent.
+- The desktop planner now exposes a read-only Agent dashboard when the Agent
+  button is hovered or keyboard-focused. It renders two bounded 48-sample SVG
+  histories for real whole-machine CPU/RAM percentages and an explicit
+  `ĐANG DÙNG AGENT`, `ĐANG DÙNG VPS`, waiting, or offline badge. The dashboard
+  is hidden on coarse/mobile layouts, where system telemetry is unavailable and
+  the existing compact Agent control remains unchanged. Cache marker is
+  `20260730-v1147-agent-telemetry-v1`.
+- The native Tk panel also shows live CPU/RAM histories. Setup/offline states no
+  longer claim that VPS is running; only the owner-scoped server execution fence
+  may produce a VPS label. Native source is bumped to `1.6.34` because the
+  installed `1.6.33` bytes predate telemetry.
+- Verification passes Agent Helper `168` (one expected skip), toolbar/dashboard
+  `35/35`, Browser executor `73/73`, bridge `282/282`, JavaScript/Python syntax,
+  and changed-file `git diff --check`. Isolated VPS Rust verification passed API
+  `283` and native validator `58`. The in-app Browser inspected the current live
+  planner (which has only the old Agent dot) and visually verified the real local
+  v1147 dashboard layout with CPU `48%`, RAM `63%`, and `ĐANG DÙNG AGENT`.
+- This contract/dashboard is local source only and has not been deployed or
+  published. Public Agent remains signed `1.6.32`; installed owner Agent remains
+  the older `1.6.33` build. The exact `1.6.34` candidate must pass final parity,
+  receive an Authenticode signature, then have its ZIP/manifest recreated and
+  signed before server and v1147 web are deployed
+  together. Do not deploy the dashboard first: old Agent bytes cannot supply the
+  real telemetry and public `1.6.32` is not eligible for native-required jobs.
+- A fresh unsigned one-file `1.6.34` candidate was built in the isolated local
+  directory `.codex_tmp\agent-1.6.34` and passed `--version`, hidden Tk GUI
+  smoke, solver-child protocol `400`, and one-entry ZIP validation. Candidate
+  EXE is `87,761,176` bytes, SHA-256
+  `9a541fd83ab58a879ecd473a4c3352d92249d69495af45f36fd19943c38e6f21`; ZIP is
+  `87,163,808` bytes, SHA-256
+  `6c6b5b552e78c030b90d7616f4590cd2dbf8002badad06d0020e76c7f842018e`.
+  Authenticode status is `NotSigned`; it was not installed or published.
+
+## 2026-07-30 Native Agent orange fallback diagnosis and local 1.6.33 acceptance
+
+- The orange Agent indicator was a real VPS fallback, not a cosmetic status
+  error. Nginx evidence showed public Agent `1.6.32` receiving the owner's lease,
+  returning a candidate/failure within seconds, and the VPS then completing the
+  same canonical job.
+- Direct packaged-runtime reproduction found that `1.6.32` omitted the
+  `google.protobuf` and OR-Tools generated protobuf modules. CP-SAT import failed
+  with `OR-Tools is required for CP-SAT session solving`, so the coordinator
+  correctly rejected the failed Agent attempt and retained the VPS quality gate.
+- `agent_helper/build_windows.ps1` now collects `google.protobuf`,
+  `google._upb._message`, `ortools.sat.cp_model_pb2`, and
+  `ortools.sat.sat_parameters_pb2`, and smoke-tests both the onedir and onefile
+  solver child. The current-source `1.6.33` candidate is
+  `87,753,606` bytes with SHA-256
+  `37db9e29a2119cbeb3db78874850b1ec864aeb36169ec391f041aac66092c352`;
+  its ZIP is `87,156,116` bytes with SHA-256
+  `d37ac9a966f54b665ccde97938e23d7a08872aa80025a82235be00be4f233834`.
+- Do not publish the older CI artifact whose EXE SHA-256 starts
+  `936b33ef...`: although its CP-SAT solve passed in isolation, it predates the
+  server's required native runtime identity `20260729.1` and is lease-ineligible.
+- The current-source candidate was installed only on the owner's workstation at
+  `C:\TKBCherryAgent\TKBCherryAgent.exe`; public `1.6.32` remains unchanged.
+  The former executable is preserved as
+  `C:\TKBCherryAgent\TKBCherryAgent-1.6.32.exe.bak`. The installed file version
+  and SHA-256 match `1.6.33` and the current-source candidate. `--check` exits
+  `0`, validates the stored server credential, and reports solver probe status
+  `400` as expected. Production nginx then recorded `1.6.33` hello and heartbeat
+  requests returning HTTP 200.
+- The later `Failed to load Python DLL
+  C:\TKBCherryAgent\_internal\python313.dll` popup came from copying/running the
+  14,751,777-byte PyInstaller `onedir` launcher without its `_internal`
+  directory. It was not a solver failure. The installed file is now the correct
+  87,753,606-byte `onefile` candidate. A clean stop/start acceptance passed
+  `--version`, real hidden-Tk `--gui-smoke`, and `--check` with exit code `0`;
+  the latter validated the stored server credential and the packaged solver
+  probe, then the normal `--startup` launch restored the expected two-process
+  bootloader/application pair.
+- `agent_helper/build_windows.ps1` now creates and tests only the public
+  PyInstaller `onefile` EXE and its one-entry ZIP. It no longer creates an
+  `onedir` directory or diagnostics ZIP that could be mistaken for a portable
+  single EXE, and it safely removes those two exact legacy artifacts from the
+  selected output directory before building. It refuses either normal Agent
+  install directory as an output target before any legacy cleanup. Packaging
+  tests and Agent README/protocol documentation enforce this invariant. This
+  source change does not authorize publication: rebuilding
+  changes the candidate bytes and the exact rebuilt EXE still requires the full
+  signing and parity gate below.
+- Verification for the one-file-only guard passes PowerShell parser validation,
+  packaging unit tests `6/6`, the full Agent suite `159` with one expected skip,
+  VPS deployment-packaging tests `16/16`, and changed-file `git diff --check`.
+- A local production-size solver-child run stayed active for roughly 176 seconds
+  instead of failing after about seven seconds, confirming that the missing
+  import path is repaired. Its final frame was not retained because the
+  diagnostic PowerShell parser used an unsupported `ConvertFrom-Json -Depth`
+  switch; final acceptance is still one fresh authenticated web solve proving
+  the current-source candidate receives the lease and completes without an
+  orange VPS transition.
+- The candidate and native dependencies are not Authenticode-signed. This
+  workstation-only acceptance is reversible and is not permission to publish.
+  Public release still requires a trusted Code Signing certificate/toolchain,
+  a ZIP recreated from the exact signed EXE, a DPAPI RSA-signed manifest for
+  those final bytes, packaging/staging verification, and a live parity solve.
+
+## 2026-07-30 Browser Agent control visibility (v1145, deployed and live-verified)
+
+- The planner's Browser Agent control is now role-gated at the UI boundary:
+  only the existing `superadmin` role (the application's sub-admin/operator
+  account) can see and operate the Agent button and status indicator.
+- `school_admin`, `school_user`, missing, or unknown roles receive a hidden,
+  non-focusable control on every supported device. The underlying Browser-WASM
+  executor and server/VPS routing are unchanged; this is a presentation/control
+  gate, not a solver behavior change. It is not an API authorization boundary;
+  a future requirement to prohibit local execution for those roles must also
+  gate `/hello` and `/lease` on the server.
+- `phanmon.js` cache marker is
+  `20260730-v1145-agent-superadmin-visibility-v1`. The role check fails closed
+  when authentication context is unavailable. Regression coverage verifies all
+  non-superadmin roles stay hidden and `superadmin` remains visible.
+- Verification: toolbar/role regression `33/33`, full Node/UI suite `487/487`,
+  JavaScript syntax and `git diff --check` pass. The transactional update
+  completed at `2026-07-30 05:52:49Z`, with backups
+  `/opt/cherry-scheduler-backups/server-state-20260730-055249.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260730-055249.tar.gz`;
+  services are active and the deployment lock is free. Public HTML serves
+  `phanmon.js?v=20260730-v1145-agent-superadmin-visibility-v1`; a hard reload
+  in the authenticated Super Admin Browser tab shows Agent, while the test
+  matrix keeps all ordinary roles hidden. A hash comparison against the
+  transaction's pre-update release backup confirms exactly two runtime files
+  changed: `web/pages/phanmon.js` and `web/pages/sapxep.html`; there were no
+  other added, removed, or changed production files.
+- A same-incumbent live A/B was also completed before the UI deployment. With
+  Agent enabled, the Browser showed `Agent đang tối ưu bằng 6 Worker ... trên
+  thiết bị`, VPS health stayed at `0` solver jobs and `6/6` free tokens, and
+  the terminal result was `[Buổi=494, Gap1=55]`. With Agent disabled, health
+  showed `1` VPS solver job using `6/6` tokens; the terminal result was the
+  same `[494,55]`. This proves the browser lane is real local compute, but it
+  did not beat VPS on this incumbent. Existing multi-run evidence still makes
+  VPS the preferred deepest-quality lane; no new EXE was built because the
+  signed native Windows Agent `1.6.32` already exists and VPS already runs
+  the full native solver stack.
+
+## 2026-07-29 Mobile quality pool widening (v60/v1144, deployed and live-verified)
+
+- The first real iPhone run after the v119 terminal tie-break fix stayed entirely
+  on the Browser Agent for `168.456 s` and returned a complete, hard-valid
+  `1,566/1,566` timetable, but retained quality tuple
+  `[one-period=1, Gap2=11, teacher-sessions=553, Gap1=108]`. There was no VPS
+  handoff (`executionGeneration=1`). This proves the remaining issue is local
+  heuristic breadth, not another ownership or reload failure.
+- A controlled four-Rust-WASM-Worker benchmark on the same 1,566-period fixture
+  reached one-period `0` after about `25 s`, Gap2 `0` after about `78 s`, and
+  finished near `[0, 0, 531, 80]` within the existing roughly 180-second mobile
+  budget. The two-Worker production run found its final improvement early and
+  then left both Workers in stagnant trajectories.
+- Browser executor `tkb-browser-wasm-executor-v60-mobile-quality-pool` therefore
+  keeps the memory-safe mobile construction seed at two lightweight heuristic
+  Workers. Only after a complete recovery checkpoint is acknowledged does a
+  production-size mobile Automatic quality/refinement request widen the existing
+  pool to at most four Workers. CP-SAT and HiGHS remain forbidden on mobile, so
+  this does not restore the exact-WASM heaps that previously made WebKit reload.
+  Small workloads retain their adaptive one/two-Worker plan.
+- `startComputeWorker` can now grow an already-probed heuristic pool instead of
+  returning early. `mobileQualityWorkerCount` caps mobile quality at four while
+  retaining the normal workload tiers and device logical-CPU ceiling. The
+  planner cache marker is `20260729-v1144-mobile-quality-pool-v1`.
+- Regression coverage now includes the real 1,566-period workload contract:
+  mobile Fresh starts with two seed Workers and widens to four only for quality;
+  tiny Fresh and second-click fixtures correctly stay at two; exact mobile
+  runtime probes remain zero. Browser executor passes `73/73`, toolbar passes
+  `32/32`, all Node/UI suites pass `486/486`, JavaScript syntax checks pass.
+- Isolated VPS staging now ends `STAGING_TESTS_OK`: scheduler `266` (one
+  expected skip), Agent `159`, trusted worker `5`, Rust API `276`, and native
+  validator `58`.
+- Transactional production deployment returned `UPDATE_OK` at `2026-07-29
+  15:26:31` and created backups
+  `/opt/cherry-scheduler-backups/server-state-20260729-152631.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260729-152631.tar.gz`.
+- Public health now serves API v119 with `0` active/queued jobs, zero active or
+  waiting helper processes, and all `6/6` VPS worker tokens free. Direct public
+  reads confirm four v1144 script URLs, Browser v60, the four-Worker quality
+  widening helper, and absence of the old v1143 cache key. The in-app Browser
+  tab currently displays the login screen, so no solve was started during this
+  post-deploy check; authenticated device acceptance remains a real iPhone run
+  after signing in/reopening the PWA.
+
+## 2026-07-30 Mobile quality strategy experiment (no production change)
+
+- The user requested an experiment before any stronger quality algorithm was
+  enabled. All A/B runs used the same 1,566-period input, four Worker slots,
+  paired random seed/job id, and equal bounded budgets. Candidate acceptance was
+  judged by the unchanged tuple `[one-period, Gap2, teacher-sessions, Gap1,
+  total-gap]`; a one-metric tradeoff was not counted as a win.
+- An early split-lane candidate (Sessions/Gap1 before strict debt was clean)
+  lost badly: `[5,0,545,96]` versus baseline `[2,12,542,89]`. It is rejected.
+- A post-clean candidate using two Sessions, one native Automatic, and one
+  dedicated Gap1 lane sometimes improved teacher sessions (for example
+  `[0,0,543,98]` versus `[0,0,546,99]`) but did not improve both soft metrics
+  consistently. A sequential `Automatic -> Gap1` tail also traded one metric
+  for the other in full portfolio runs.
+- The strongest isolated one-Worker microbenchmark, starting from a clean
+  incumbent, reached `[0,0,523,71]` after four 10-second sessions/Gap1 waves and
+  remained hard-valid. However, on the actual current production school
+  incumbent `[0,0,512,67]`, the unchanged portfolio reached `[0,0,512,55]`
+  while the sequential candidate reached `[0,0,512,58]`; the candidate lost.
+- Therefore no scheduler, Browser executor, WASM, cache marker, or production
+  deployment was changed for this experiment. The current live contract remains
+  Browser v60/cache v1144: two Worker construction seed, then up to four
+  lightweight quality Workers. The current-source WASM used for experiments is
+  isolated under `rust_api/target` and is not live. Future work should first
+  produce multi-seed, no-tradeoff wins on real incumbents before integration.
+
+## 2026-07-29 Mobile terminal tie-break hotfix (v119, deployed and live-verified)
+
+- Production evidence from two iPhone runs showed a complete local terminal
+  candidate arriving with the same four-number quality tuple as the preceding
+  unmarked checkpoint. The coordinator's strict quality comparison retained the
+  checkpoint, discarded `mobile_local_quality_terminal=true`, and opened a
+  second VPS quality window. This was a state-selection bug, not an iPhone CPU
+  limitation.
+- `rust_api/src/agent_helper.rs` now prefers a mobile-local terminal candidate
+  only on an equal-quality tie when the current candidate is unmarked. The marker
+  is accepted at the payload root or under
+  `solver.runtime_settings.mobile_local_quality_terminal`. Strict route-side
+  completeness, hard-validation, and constraint checks are unchanged.
+- Both `accept_checkpoint` and `accept_submission` use the same tie-break, and
+  `better_agent_candidate` preserves the marker during terminal/checkpoint
+  recovery. A regression covers equal-quality marked checkpoint and submission
+  candidates, including both marker locations. The API lifecycle regression now
+  reproduces an unmarked checkpoint followed by the equal-quality marked mobile
+  terminal and asserts local HTTP 200 completion while all VPS capacity is held
+  by the test blocker.
+- API marker is `tkb_new-rust-api-2026-07-29-mobile-terminal-tiebreak-v119`.
+  Focused remote Rust verification and the full isolated VPS staging gate pass.
+  Staging ends `STAGING_TESTS_OK` with scheduler `266` (one expected skip),
+  Agent `159`, trusted worker `5`, Rust API `276`, and native validator `58`.
+- Transactional production deployment returned `UPDATE_OK` and created backups
+  `/opt/cherry-scheduler-backups/server-state-20260729-144203.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260729-144203.tar.gz`.
+  Public health serves v119 with `0` active/queued jobs, zero allocated worker
+  tokens, all `6/6` tokens free, and zero active/waiting helper validators.
+- The authenticated in-app Browser planner remains ready with Agent enabled and
+  no captured warning/error. No solve was started because its selected persisted
+  class is partial (`27` unassigned). The final acceptance is one real iPhone
+  run after reopening/refreshing the PWA: a terminal local timetable should now
+  return at about the three-minute boundary without the Agent dot turning orange.
+  The phone's `3:26` total and a desktop observer's `26`-second VPS phase are the
+  same job viewed with different clocks; that prior orange transition at about
+  minute three is exactly the tie-break incident fixed here.
+
+## 2026-07-29 Mobile local terminal + iOS PWA wake fallback (deployed and live-verified)
+
+- Browser executor v59 admits only heuristic-compatible mobile Automatic
+  `refine_complete` requests. Phones keep the bounded two-Worker pool and never
+  probe/load CP-SAT or HiGHS for that second click; rich constraints and focused
+  optimization remain VPS-owned.
+- When a mobile Fresh quality run exhausts its local budget with a complete,
+  hard-valid timetable, the executor persists a terminal checkpoint, then sends
+  the same payload as `candidate` + `complete`. It removes the intermediate
+  `browser_mobile_checkpoint_vps_refine` marker and adds
+  `mobile_local_quality_terminal=true` and `quality_debt_retained=true` (and
+  `deadline_hit` only when the local canonical deadline was actually reached).
+- Rust API v118 recognizes that marker only after strict completeness,
+  assignment-count, app-constraint, metrics-hard, validation-hard, and lesson
+  checks. It bypasses only the soft Fresh 0/0 quality gate, including the final
+  watchdog publishability check. If `/candidate` or `/complete` is lost after
+  the terminal checkpoint was accepted, coordinator checkpoint recovery can
+  publish it instead of starting a second VPS rescue. Ordinary rough
+  checkpoints and malformed/partial markers still follow the VPS path.
+- Bridge v309 adds an iOS standalone/PWA fallback for WebKit's pre-18.4 no-op
+  Wake Lock sentinel: a silent looping NoSleep.js 0.12.0 MP4 is attached and
+  played synchronously from Play, with native Wake Lock retained where useful.
+  It is paused/removed on hidden, terminal, error, hard Stop, and pagehide, and
+  resumed on visibility/pageshow. Diagnostics are exposed in
+  `window.__TKB_MOBILE_SCREEN_WAKE_LOCK`; desktop never creates the video.
+  Attribution/license is in `web/vendor/nosleep/LICENSE`.
+- Cache marker is `20260729-v1143-mobile-local-terminal-nosleep-v1`; Browser
+  marker is `tkb-browser-wasm-executor-v59-mobile-local-terminal`; bridge marker
+  is `tkb-rust-api-v309-ios-nosleep-mobile-local-terminal`.
+- Verification before deployment: all Node/UI suites `486/486`; bridge suite
+  `281/281`; Browser executor `73/73`; isolated VPS staging ends
+  `STAGING_TESTS_OK` with scheduler `266` (one expected skip), Agent `159`,
+  trusted worker `5`, Rust API `275`, and native validator `58`.
+- Transactional production deployment ended `UPDATE_OK` and created backups
+  `/opt/cherry-scheduler-backups/server-state-20260729-121330.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260729-121330.tar.gz`.
+- Public health serves API v118 with `0` active/queued jobs, zero active/waiting
+  helper validators, and all `6/6` worker tokens free. Direct production reads
+  confirm all four v1143 script URLs, Browser v59, bridge v309, the mobile
+  terminal marker, and the NoSleep fallback; the old v1142 cache is absent.
+- The authenticated in-app Browser planner was reloaded without starting a
+  solve. It serves v1143, Agent remains enabled, Play is available, and captured
+  warning/error logs are empty. Its currently loaded persisted timetable is
+  partial (`27` unassigned for the selected class), so no optimization click was
+  made during delivery verification.
+- Remaining acceptance is a real iPhone/PWA run. Desktop in-app Browser verifies
+  delivery and ordinary lifecycle state but cannot emulate iOS display sleep or
+  WebKit's standalone Wake Lock bug. Reopen/hard-refresh the iPhone once, keep
+  Agent enabled, start Automatic, and let it reach terminal without manually
+  locking/backgrounding the app.
+
+## 2026-07-29 Mobile screen Wake Lock (deployed and live-verified)
+
+- The planner bridge now acquires the standard Screen Wake Lock on iPhone,
+  iPadOS, and Android as soon as a real Play lifecycle begins. One tokenized
+  owner set covers visible preflight, local Browser-Agent execution, direct
+  solver entry points, observer mode, and poll-only VPS reattachment. Nested
+  phases share a single `navigator.wakeLock.request("screen")` sentinel rather
+  than issuing duplicate requests.
+- A normal terminal result or error releases the lock. Destructive Stop and
+  schedule mutation release it immediately before waiting for remote cancel;
+  focused Stop intentionally keeps it while the server returns the best
+  incumbent. Hidden/pagehide releases the sentinel, while foreground
+  `visibilitychange`/`pageshow` reacquires only if that exact solve lifecycle is
+  still active. Unsupported or rejected Wake Lock calls are non-fatal.
+- Token identity prevents a late finalizer from an older stopped run from
+  releasing a newer run. The bridge publishes only boolean diagnostic state in
+  `window.__TKB_MOBILE_SCREEN_WAKE_LOCK`; it stores no permission or user data.
+- This prevents ordinary display sleep while the planner stays visible; it
+  cannot keep Safari executing after the user manually backgrounds the app.
+  Existing mobile background/reload behavior therefore remains the safe
+  one-way, GET-only VPS recovery path.
+- The second Automatic click on an already-complete timetable remains a deep
+  refinement request and is intentionally VPS-owned on mobile. Exact
+  CP-SAT/HiGHS WASM is still excluded from phones because its 512 MiB-to-2 GiB
+  memory envelope caused the earlier WebKit reloads; the Wake Lock does not
+  weaken that memory boundary.
+- Runtime markers are bridge `tkb-rust-api-v308-mobile-screen-wake-lock-safe-finally` and
+  planner/WASM cache `20260729-v1142-mobile-screen-wake-lock-v2`. Browser
+  executor v58 and API v117 are unchanged.
+- New regressions cover mobile success, terminal failure, immediate hard Stop,
+  focused retain-best Stop, hidden/visible VPS polling, terminal/no-idle
+  reacquisition, unsupported and rejected APIs, and desktop exclusion. Bridge
+  tests pass `274/274`; all Node/UI suites pass `478/478`; JavaScript syntax and
+  changed-file `git diff --check` pass. Isolated VPS staging now passes
+  scheduler `266` (one expected skip), Agent `159`, trusted worker `5`, Rust API
+  `275`, and native validator `58`, ending with `STAGING_TESTS_OK`.
+- The final transactional production deployment returned `UPDATE_OK` and made
+  backups `/opt/cherry-scheduler-backups/server-state-20260729-105243.tar.gz`
+  and `/opt/cherry-scheduler-backups/app-release-20260729-105243.tar.gz`.
+  Public health remains API v117 with `0` active/queued jobs, zero active/waiting
+  reference helpers, and all `6/6` VPS worker tokens free. Direct production
+  reads confirm bridge v308, all four v1142 script URLs, the Wake Lock request,
+  and unchanged Browser executor v58.
+- The existing authenticated in-app Browser planner was confirmed idle before
+  reload. After reload it serves bridge v308 and v1142 assets, Agent remains
+  enabled, Play remains available, no solve was started, and captured console
+  logs are empty. This desktop browser can verify delivery and lifecycle state
+  but cannot emulate iPhone display sleep; final device acceptance is to reopen
+  or hard-refresh the real iPhone once, leave the planner visible, then start
+  Automatic and allow it to continue without manually locking/backgrounding
+  Safari.
+
+## 2026-07-29 Mobile local heuristic quality (deployed and live-verified)
+
+- The user's 7.4-second iPhone recording showed the Browser Agent dot staying
+  green only through the initial completion seed, then turning orange at about
+  second 4; the user pressed Stop at second 6. This matched v57 exactly: a rough
+  mobile seed was checkpointed and deliberately surrendered to VPS immediately.
+  The handoff was not a crash or loss of ownership, but it did not meet the
+  product expectation that an enabled phone Agent should spend meaningful time
+  optimizing on the device.
+- Browser executor v58 keeps a rough Fresh seed on the iPhone/Android/iPadOS
+  Agent and runs the remaining Automatic quality phases locally with the same
+  bounded two Rust-WASM Workers. The normal 180-second canonical clock and its
+  terminal reserve give this quality phase more than 120 seconds on an ordinary
+  blank-duration run instead of only the three-to-four-second seed. A clean seed
+  still completes immediately; a locally cleaned seed also completes without
+  VPS. Only local budget exhaustion, a runtime/transport failure, backgrounding,
+  or explicit Agent disable hands the best validated checkpoint to VPS.
+- Mobile local quality never probes or loads CP-SAT/HiGHS. Their 512 MiB-to-2 GiB
+  heap envelopes caused the earlier WebKit reloads; the extended phase reuses
+  only the already-loaded lightweight heuristic Workers. Every improved-but-
+  still-rough mobile checkpoint inherits
+  `browser_mobile_checkpoint_vps_refine=true`, so a later handoff retains the
+  v117 terminal fallback rather than replacing it with an unmarked checkpoint.
+- Runtime markers are Browser executor
+  `tkb-browser-wasm-executor-v58-mobile-local-quality` and planner/WASM cache
+  `20260729-v1140-mobile-local-quality-v1`. API v117 and bridge v306 are unchanged.
+- Verification before deployment passes both new mobile contracts (local clean
+  completion and quality-exhaustion handoff), Browser executor `72/72`, planner
+  toolbar `32/32`, and all Node/UI suites `475/475`. JavaScript syntax and
+  changed-file `git diff --check` pass. Isolated VPS staging again passes
+  scheduler `266` (one expected skip), Agent `159`, trusted worker `5`, Rust API
+  `275`, and native validator `58`, ending with `STAGING_TESTS_OK`.
+- Transactional production deployment returned `UPDATE_OK` and created backups
+  `/opt/cherry-scheduler-backups/server-state-20260729-091708.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260729-091708.tar.gz`. Public
+  health remains API v117, idle with `0` active/queued jobs and all `6/6` VPS
+  tokens free; direct checks serve Browser v58 and cache v1140.
+- The existing idle authenticated in-app Browser planner tab was reloaded without
+  starting a solve. All four CP-SAT/HiGHS/Browser/bridge script URLs moved to
+  v1140, the Agent control remained enabled, Play remained available, and no
+  console warning/error was captured. Final acceptance still requires the real
+  iPhone: refresh/reopen once, start Automatic, and do not press Stop merely
+  because elapsed time advances; the Agent dot should remain green through the
+  local quality phase instead of turning orange after the seed.
+
+## 2026-07-29 Mobile VPS terminal fallback (deployed and live-verified)
+
+- The production iPhone incident was traced to a valid Browser Agent checkpoint
+  being handed to VPS successfully, followed by a normal VPS quality timeout that
+  returned HTTP `422` with no `lessons`. The phone kept polling; it did not lose
+  the job or cause the failure. The new one-way rescue policy still gives VPS its
+  full bounded quality window and keeps the strict `singleton=0` / `Gap2=0`
+  quality gate. Only when that VPS run times out, returns a non-200 response, or
+  errors does the API return the server-validated mobile checkpoint as HTTP `200`
+  with `solver.runtime_settings.quality_debt_retained=true` and a warning. The
+  checkpoint is never used to bypass VPS quality search, and desktop checkpoints
+  retain the previous strict `422` behavior.
+- A raw mobile checkpoint is marked
+  `browser_mobile_checkpoint_vps_refine=true` at both payload and runtime levels.
+  `/fail` recognizes only that marker, atomically disables Agent reclaim, arms the
+  same-job VPS rescue, and completes the Agent task to close the reclaim race.
+  Mobile reload/foreground recovery remains GET-only polling; the bridge also
+  rebases its wait clock while the rescue is `vps_queued`, not just after it is
+  `vps_running`. The Browser executor rejects mobile `resumeKnownJob` as defense
+  in depth.
+- Runtime markers are API
+  `tkb_new-rust-api-2026-07-29-mobile-vps-fallback-v117`, Browser executor
+  `tkb-browser-wasm-executor-v57-mobile-vps-fallback`, bridge
+  `tkb-rust-api-v306-mobile-vps-fallback`, and planner/WASM cache
+  `20260729-v1139-mobile-vps-fallback-v1`.
+- Verification before deployment: Browser executor `72/72`, bridge `271/271`,
+  planner toolbar `32/32`, all Node/UI suites `475/475`, JavaScript syntax checks,
+  and changed-file `git diff --check` all pass. Isolated VPS staging passed
+  scheduler `266` (one expected skip), Agent `159`, trusted worker `5`, Rust API
+  `275`, and native validator `58`, ending with `STAGING_TESTS_OK`. The staging
+  checkpoint regression uses a real native-solver result from the leased request;
+  it does not weaken candidate validation.
+- The first production upload was closed by the remote host before the update
+  script ran; public health confirmed v116 remained idle and unchanged. A fresh
+  transactional retry returned `UPDATE_OK` and created backups
+  `/opt/cherry-scheduler-backups/server-state-20260729-071508.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260729-071508.tar.gz`. Public
+  health now serves API v117 with `0` active/queued jobs, zero active/waiting
+  helpers, and all `6/6` VPS tokens free. Direct asset checks serve Browser v57,
+  bridge v306, and cache v1139.
+- The existing authenticated in-app Browser planner tab was intentionally
+  reloaded after confirming it was idle. It moved from cache v1138 to all four
+  v1139 WASM/bridge URLs, returned to the ready state with Agent enabled, and
+  produced no captured console warnings or errors. The in-app Browser cannot
+  emulate an actual iPhone/WebKit process, so final acceptance is a retry from a
+  real iPhone; the mobile handoff, queued/running wait-clock, reload poll-only,
+  and terminal checkpoint fallback paths are locked by the regressions above.
+
+## 2026-07-29 Mobile WebKit reload and one-way VPS rescue (deployed and live-verified)
+
+- Production diagnostics reproduced the reported phone failure. An iPhone
+  successfully uploaded a timetable checkpoint, then the page loaded the heavy
+  CP-SAT/HiGHS exact WASM portfolio. WebKit discarded and reloaded the tab under
+  memory pressure; the new page reclaimed the same job from VPS, loaded exact
+  WASM again, and the repeated rescue ended in CP-SAT HTTP 502 followed by a
+  terminal 422 instead of an applied timetable. The risky envelope combined a
+  `512/256 MiB` CP-SAT mobile heap, up to six exact Workers for the 1,566-period
+  school, and a vendored HiGHS module whose embedded maximum is still 2 GiB.
+- Mobile Browser Agent admission is now deliberately lightweight. Only simple
+  Fresh/Repair requests that the Rust-WASM heuristic can honor are admitted,
+  their completion seed uses at most two Workers, and phones never promote that
+  seed to CP-SAT/HiGHS or run complete/focused refinement. A clean seed may
+  settle locally; a rough Fresh seed remains a durable checkpoint and sends
+  `/fail` with `browser_wasm_mobile_checkpoint_vps_refine` so VPS performs the
+  quality phase. Rich Fresh/Repair requests go directly to VPS. Desktop exact
+  Browser Agent behavior, including the qualified 300-second full-reference
+  lane, is unchanged.
+- Mobile reload/foreground recovery is poll-only. It does not probe or activate
+  Browser WASM, POST a replacement solve, cancel the canonical job, or invoke a
+  Browser fallback reclaim. The executor itself also rejects every mobile
+  `resumeKnownJob` call as defense in depth; the first same-page mobile
+  admission is a normal request-backed activation. The terminal VPS payload is
+  still applied and saved by the reloaded page.
+- VPS rescue ownership is monotonic in Rust. Arming a no-checkpoint/rough-
+  checkpoint rescue now atomically sets `agent_preference_enabled=false` before
+  checkpoint serialization. Owner, scoped Browser, and trusted-worker handoff,
+  `prepare_agent_execution`, and attempts to re-enable preference all reject a
+  requested or granted rescue. `fallback_agent_to_vps` advances the canonical
+  generation and retains the existing one-shot bounded watchdog rebase.
+- Runtime markers are API
+  `tkb_new-rust-api-2026-07-29-mobile-vps-one-way-v116`, Browser executor
+  `tkb-browser-wasm-executor-v56-mobile-vps-one-way`, bridge
+  `tkb-rust-api-v305-mobile-vps-one-way`, and planner cache
+  `20260729-v1138-mobile-vps-one-way-v1`.
+- Verification passes Browser executor `72/72`, bridge `270/270`, planner
+  toolbar `32/32`, and all Node/UI suites `474/474`; both changed JavaScript
+  files pass `node --check`, and `git diff --check` has no content errors.
+  Isolated VPS staging passes scheduler `266` (one expected skip), Agent `159`,
+  trusted worker `5`, Rust API `274`, and native validator `58`, ending with
+  `STAGING_TESTS_OK`. Transactional production deployment returned `UPDATE_OK`
+  with backups
+  `/opt/cherry-scheduler-backups/server-state-20260729-044054.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260729-044054.tar.gz`. Public
+  health now serves API v116 with zero active/queued jobs, zero active/waiting
+  helpers, and all `6/6` VPS worker tokens free. The page and all four relevant
+  WASM/bridge assets serve cache v1138 and the markers above.
+- Live in-app Browser verification after an intentional reload loaded v1138
+  without console warnings/errors. A temporary `390x844` responsive viewport
+  retained the Agent control and Play control across reload; the in-app Browser
+  cannot spoof an iPhone user-agent or reproduce WebKit's OS tab kill, so the
+  native mobile navigator/reclaim contract remains covered by the `72` Browser
+  and `270` bridge regressions. A desktop Agent run stayed local at six Workers,
+  completed and applied `1566/1566` with `0` unassigned, `503` teacher sessions,
+  Gap1 `60`, Gap2 `0`, one-period sessions `0`, and student holes `0`; VPS stayed
+  at `0` active jobs and `6/6` free tokens throughout and after the run.
+
+## 2026-07-29 Desktop full-reference 300-second reserve (deployed and live-verified)
+
+- The live A/B showed why the previous Agent attempt handed off to VPS: the
+  qualified Browser full-reference stream was real, but the canonical 180 s
+  client/solver deadline expired before the second large model response could
+  be materialized and settled. The browser sent `/fail`; VPS then produced the
+  retained `486` teacher-session / `52` Gap1 result.
+- The new bridge gate runs only after Browser CP-SAT/HiGHS probing and only for
+  a new desktop `refine_complete` Automatic request that passes the existing
+  full-reference capability check. It raises the unified/adaptive/overall/
+  integrated/progress ceilings to `300 s`, backend/native deadlines to
+  `300000 ms`, and the client timeout to `330000 ms` (the server's unified
+  watchdog adds its normal `20 s` settlement reserve). Explicit custom-duration
+  requests, mobile/Fresh/focused lanes, and poll-only/resumed jobs do not get
+  this extension.
+- Browser executor v55 lets only that same qualified full-reference exact
+  portfolio consume the 300 s compute budget; all other lanes retain the 180 s
+  cap. Production now serves page cache key
+  `20260729-v1137-full-reference-300s-v1`; bridge marker is v304. Rust/API and
+  solver-runtime markers do not change because their 300 s watchdog envelope
+  already supports this request.
+- Verification passed all Node/UI suites `473/473`, Browser executor `72/72`,
+  bridge `269/269`, planner toolbar `32/32`, and staging ended with
+  `STAGING_TESTS_OK` (`266` solver, `159` Agent, `5` trusted worker, `274` Rust
+  API, `58` validator). `git diff --check` has no content errors.
+- Transactional production update completed with a fresh backup pair:
+  `/opt/cherry-scheduler-backups/server-state-20260728-185920.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260728-185920.tar.gz`. Post-cutover
+  health is idle (`0` active/queued jobs, `0` active builders, `6/6` VPS tokens).
+- Live authenticated Browser test on the deployed v1137 page stayed on the
+  local Agent for about `237 s` (UI elapsed; canonical candidate/complete landed
+  at about `210 s`), visibly reported `6 Worker (maximum 22)`, and never
+  allocated a VPS solver token. Access logs show the large full-reference model
+  exchanges (`3.6 MB` and `5.1 MB`) followed by `/candidate` and `/complete`,
+  with no `/fail`. From the pre-click baseline `499` sessions / Gap1 `53`, the
+  Agent result reached hard-valid `1566/1566`, `498` sessions / Gap1 `49`,
+  singleton `0`, Gap2 `0`, one-period sessions `0`, and student holes `0`.
+  Undo/Redo comparison confirmed the improved Agent result was retained.
+
+## 2026-07-29 Desktop Heavy Browser Agent baseline (v54, historical A/B)
+
+- The second desktop **Automatic** click can now request the full-reference
+  CP-SAT/HiGHS refinement stream in Browser WASM. The gate is deliberately
+  narrow: `refine_complete`, Automatic focus, a complete/revalidated incumbent,
+  exact runtimes ready, at least six active device workers, and CP-SAT shared
+  memory of at least `1024 MiB`. Sessions, Gaps, Singletons, Fresh first-click,
+  mobile/iPadOS/Android, smaller worker pools, and lower memory stay on the
+  conservative/compact or VPS path.
+- Desktop CP-SAT memory ceilings are lazy fallbacks
+  `1536 → 1024 → 512 → 256 MiB`; the WASM heap starts at `16 MiB` and grows on
+  demand. This is an address-space ceiling, not an eager 1.5 GB allocation.
+  Mobile remains `512 → 256 MiB`. iPad desktop-mode and Android
+  `userAgentData.platform` are classified as mobile in both executors.
+- The expensive model construction/materialization compatibility helper is still
+  bounded Python on the VPS; the large exact search itself runs in Browser
+  CP-SAT/HiGHS WASM. A Python-free whole-school port remains a separate,
+  substantially larger migration.
+- Browser terminal submissions carry `browser_full_reference_refine=true/false`
+  and the authoritative result stores the same boolean in
+  `solver.runtime_settings`, alongside `execution_runtime` and
+  `external_cp_sat_steps`. Live proof requires both the boolean `true` and a
+  positive step count. Current markers: API
+  `tkb_new-rust-api-2026-07-29-desktop-full-reference-v115`, Browser executor
+  `tkb-browser-wasm-executor-v54-desktop-full-reference`, CP-SAT executor
+  `tkb-cpsat-wasm-executor-v5-desktop-heavy-memory`, planner cache
+  `20260729-v1136-desktop-full-reference-v2`, and solver runtime
+  `20260729.1` with digest
+  `91d56f56d684b6361bcd27e6aeb809ddf29c0c45035600487b4b68f904922d7e`.
+- Verification in this work session: all Node/UI suites `473/473`; focused
+  Browser/CP-SAT/HiGHS/model-plan `88/88`; focused Python `74 passed, 1
+  expected skip, 22 subtests`; Agent packaging `6/6`; `git diff --check` has no
+  content errors (only the checkout's existing LF→CRLF warnings). A prior real
+  in-app Browser CP-SAT run on the 2.711 MB full model completed in `86.26 s`
+  with `crossOriginIsolated=true` and a `1536 MiB` ceiling. The private
+  full-reference parity run remained hard-valid `1566/1566` and improved the
+  captured incumbent from `501/57` to `480/42` teacher sessions/Gap1 in ten
+  external steps (`171.66 s`).
+- Staging attempt 1 ran solver `266` tests (one expected skip), then correctly
+  stopped at the Agent packaging digest fence because the new solver marker had
+  not yet been updated. The digest/version fence is now synchronized; rerun the
+  PowerShell commands below and require `STAGING_TESTS_OK` before deployment.
+  No production files or schedules were changed by the failed run.
+
+  ```powershell
+  $env:TKB_TEST_DATA_DIR = (Resolve-Path '.codex_tmp\staging-fixtures-canonical-20260728').Path
+  python tools/vps-deploy/stage-tests.py
+  ```
+- Staging attempt 2 passed: solver `266` (one expected skip), Agent `159`,
+  trusted worker `5`, Rust API `274`, and native validator `58`; output ended
+  with `STAGING_TESTS_OK`.
+- Transactional production deployment ended with `UPDATE_OK`. Backups are
+  `/opt/cherry-scheduler-backups/server-state-20260728-175721.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260728-175721.tar.gz`. Public
+  health serves API v115 with zero active/queued jobs, zero active/waiting model
+  builders, and all `6/6` VPS worker tokens free. The planner serves cache v1136
+  with `Cache-Control: no-store`, COOP `same-origin`, and COEP `require-corp`.
+- Live verification uses the terminal result markers
+  `solver.runtime_settings.browser_full_reference_refine === true` and
+  `external_cp_sat_steps > 0`, plus VPS worker-token pressure and an Undo-based
+  VPS-only comparison from the same baseline.
+- Live authenticated in-app Browser A/B completed on 2026-07-29. From a fresh
+  fixed-only state, the first Automatic produced `1566/1566` in about `207 s`
+  and established a `515`-session / `92`-Gap1 baseline. The second click with
+  Agent enabled showed **working, 6 Worker (maximum 22)**; VPS stayed at
+  `6/6` free solver tokens while one bounded Python model helper peaked at about
+  `190 MB RSS` and `11% CPU`. It completed in about `194 s`, hard-valid
+  `1566/1566`, singleton `0`, Gap2 `0`, one-period sessions `0`, student holes
+  `0`, with `515` sessions / `92` Gap1. After Undo, the identical VPS-only
+  second click used `6/6` VPS tokens and completed in about `195 s` at
+  `486` sessions / `52` Gap1, with the same hard-valid/zero-debt tuple. The VPS
+  result was retained because the objective ranks session count before Gap1;
+  Agent preference was restored to on and health returned idle with `6/6` free.
+  The persisted store therefore contains the better VPS terminal marker rather
+  than the superseded Agent candidate; authoritative Browser-lane marker checks
+  remain covered by the Node/Rust/Python wire tests above.
+
+## 2026-07-28 exact-seed fallback, bounded apply, and live refine parity (deployed)
+
+- Browser Agent now reserves 90 seconds for the exact seed. If the exact quality
+  step returns structured `UNKNOWN`, the rough checkpoint is discarded and the
+  same canonical job restarts fresh on VPS instead of warm-starting from the
+  unusable checkpoint.
+- The terminal browser apply/save watchdog described below was included in this
+  deployment: the accepted result is materialized first, remote save waits at
+  most 45 seconds, Play is unlocked, and the canonical result remains available
+  for bounded recovery if persistence is late or fails.
+- Runtime markers are API
+  `tkb_new-rust-api-2026-07-28-agent-quality-settlement-v114`, Browser executor
+  `tkb-browser-wasm-executor-v52-exact-seed-budget`, bridge
+  `tkb-rust-api-v303-terminal-apply-save-watchdog`, Browser cache v1133, and
+  bridge cache v1134.
+- Verification passed all local Node/UI `470/470`, Browser Agent `71/71`, bridge
+  `269/269`, scheduler `265` with one expected skip, Agent `159/159`, trusted
+  worker `5/5`, Rust API `273/273`, and native validator `58/58`. Isolated
+  staging ended with `STAGING_TESTS_OK`; transactional production deployment
+  ended with `UPDATE_OK`. Transaction backups are
+  `/opt/cherry-scheduler-backups/server-state-20260728-164519.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260728-164519.tar.gz`.
+- Authenticated in-app Browser A/B tested a second `refine_complete` click from
+  the identical live baseline `1566/1566`, singleton `0`, Gap2 `0`, teacher
+  sessions `514`, and Gap1 `102`. Agent stayed local with six device workers and
+  returned `501` teacher sessions / Gap1 `50` in about `199 s`; after Undo, Agent
+  was disabled and VPS returned `486` teacher sessions / Gap1 `52` in about
+  `197 s`. Both stayed complete with singleton `0`, Gap2 `0`, and zero student
+  holes. Because the ordered objective ranks teacher sessions before Gap1, the
+  VPS candidate is better overall in this live run despite two additional Gap1
+  gaps. The VPS result was retained, and Agent preference was restored to on.
+- Operational conclusion: a second Agent click performs a real bounded polish
+  from the current timetable and is regression-safe, but its compact local LNS
+  is not guaranteed to match the broader VPS reference search. For the deepest
+  final polish, use VPS; use Agent for device-owned first attempts and safe
+  iterative improvement.
+
+## 2026-07-28 bounded terminal apply persistence (no deploy)
+
+- Fixed a browser lifecycle stall after a server-owned solve had already
+  returned its terminal HTTP 200 candidate. A trusted solver apply still asks
+  `saveStore` for an awaited remote save, but that wait now has a bounded
+  45-second reserve. If remote persistence remains suspended, the already
+  materialized timetable is shown and Play is unlocked while the canonical
+  server result stays durable for reload recovery.
+- The same page suppresses duplicate poll-only reapply while that late save is
+  pending. A later save success settles the canonical job exactly once; a late
+  failure keeps the result recoverable and schedules the normal bounded resume
+  path instead of rolling back the accepted in-memory timetable.
+- Production access logs that motivated the fix showed one VPS-only job polling
+  the same canonical id through HTTP 202, receiving a 372,721-byte HTTP 200 at
+  15:43:02Z, and issuing no further result poll while the UI remained busy.
+- Regression coverage uses a 54-class / 1,566-period terminal payload and an
+  intentionally unresolved `saveStore` promise. The apply returns after the
+  test watchdog, preserves all 1,566 periods and the pending recovery id, then
+  settles without rollback when the delayed save resolves. The complete bridge
+  suite passes `269/269`; the Browser Agent suite, including the updated cache
+  contract, passes `71/71`. Changed-file whitespace checking reports no content
+  errors (this Windows checkout still emits the existing LF-to-CRLF warning).
+- Bridge diagnostics now identify this build as
+  `tkb-rust-api-v303-terminal-apply-save-watchdog`; the planner loads it with
+  cache key `20260728-v1134-terminal-apply-save-watchdog-v1` so browsers cannot
+  retain the pre-watchdog bridge after deployment.
+- No production deployment was performed for this change.
+
+## 2026-07-28 Agent quality checkpoint recovery parity (deployed)
+
+- Fixed the remaining PC/mobile Agent quality regression after a lease loss,
+  iOS page reload, or local runtime interruption. A complete but rough Fresh
+  Automatic checkpoint is retained only as a warm start; it cannot settle as a
+  successful first timetable while either one-period teacher sessions or Gap2
+  is nonzero. VPS recovery continues from that validated checkpoint and remains
+  bound by the same `0/0` first-result contract.
+- Automatic candidate ordering is now identical across Browser and native
+  settlement: singleton debt, Gap2, teacher sessions, then total gaps. The old
+  native order placed teacher sessions before Gap2 and could therefore select a
+  rough checkpoint over the clean final candidate.
+- Browser Fresh Automatic no longer stops at the first clean `0/0` candidate.
+  It keeps the remaining bounded device budget for teacher-session and Gap1
+  polishing, while every publishable candidate preserves singleton `0` and
+  Gap2 `0`.
+- Runtime markers for the final package are API
+  `tkb_new-rust-api-2026-07-28-agent-quality-settlement-v113`, Browser executor
+  `tkb-browser-wasm-executor-v51-quality-settlement-v2`, and planner cache
+  `20260728-v1132-agent-quality-settlement-v2`.
+- Regression coverage adds strict Fresh Automatic checkpoint settlement,
+  native Gap2-first candidate ordering, and an iPhone run that continues
+  polishing after its first clean `0/0`. Verification passes Browser Agent
+  `70/70`, all Node/UI `468/468`, isolated staging scheduler `265` with one
+  expected skip, Agent `159/159`, trusted worker `5/5`, Rust API `272/272`, and
+  native validator `58/58`; staging ended with `STAGING_TESTS_OK`. A focused
+  local Python run executed 215 tests and encountered only the two known missing
+  `data/lop.xlsx` fixture errors. Final production deployment returned
+  `UPDATE_OK`; live health is idle with `6/6` VPS worker tokens available.
+  Transaction backups are
+  `/opt/cherry-scheduler-backups/server-state-20260728-103817.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260728-103817.tar.gz`.
+- The retained canonical 1,566-period parity capture remains hard-valid on both
+  execution lanes with the same seed and six-worker budget: native Agent
+  `1566/1566`, singleton `0`, Gap2 `0`, teacher sessions `482`, Gap1 `50` in
+  `174.825 s`; VPS reference `1566/1566`, singleton `0`, Gap2 `0`, teacher
+  sessions `488`, Gap1 `50` in `173.569 s`. The Browser exact/mobile navigator
+  contract and fallback behavior are covered by the 70 Browser Agent tests.
+- A live production Play was not run in this session because the persistent
+  in-app Browser tab was unauthenticated at the login screen. No user TKB or
+  server schedule was mutated; run the same PC/mobile verification after the
+  owner signs in and refreshes the v1132 page.
+
+## 2026-07-28 Browser Agent first-result quality gate (deployed)
+
+- Fixed an Agent-only regression in `web/pages/tkb-browser-wasm.js`: a rough
+  complete seed may still be uploaded as a recovery checkpoint, but it can no
+  longer be sent through `/complete` for a fresh `fresh_complete_first`
+  Automatic request. Terminal settlement now requires quality tuple
+  `[one_period_teacher_sessions, teacher_gap2_sessions]` to be `[0, 0]`.
+- If local quality search expires, restarts, or fails before that gate, the
+  Browser Agent calls `/fail`; the coordinator resumes the same validated
+  checkpoint on VPS. The rough checkpoint is never presented as a successful
+  first timetable. A clean `0/0` result can settle immediately.
+- Fresh Automatic phase order is now completion, singleton cleanup, Gap2
+  cleanup, then optional session/Gap1 polishing. `refine_complete` keeps its
+  existing incumbent envelope and cannot reintroduce singleton or Gap2 debt.
+- Added regressions for rough mobile seed/quality expiry, rough runtime restart,
+  clean exact checkpoint settlement, strict fresh phase order, and second-click
+  session/Gap1 refinement. Browser executor marker is v49 and page cache marker
+  is `20260728-v1130-agent-first-quality-gate-v1`.
+- Verification before deployment: Browser Agent `67/67`; all local Node/UI
+  tests `465/465`; Python scheduler `265` with two known missing-workbook
+  fixture errors when run without `TKB_TEST_DATA_DIR`; isolated staging
+  `STAGING_TESTS_OK` (scheduler `265`, Agent `159`, trusted worker `5`, Rust
+  API `268`, validator `57`).
+- Transactional production deployment returned `UPDATE_OK` at 07:52 UTC. Backups
+  are `/opt/cherry-scheduler-backups/server-state-20260728-075209.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260728-075209.tar.gz`.
+- Live verification returned API v111, zero active/queued jobs, `6/6` VPS worker
+  tokens available, page cache v1130, Browser executor v49, and no browser
+  console warnings/errors. The live TKB was not mutated during verification.
+
+## 2026-07-28 native HTTP Agent ownership regression (no deploy)
+
+- Added Rust API regression
+  `healthy_native_http_agent_owns_solve_without_vps_capacity`. A healthy
+  Windows/native Agent registers through `/hello`, leases the canonical
+  Automatic solve through `/lease`, renews it through the HTTP heartbeat, and
+  remains the sole `agent_running` executor. The fixture explicitly disables
+  the Browser-ready shortcut, so only the online native worker can select the
+  initial Agent route.
+- The regression records the Agent execution generation plus total, allocated,
+  and available VPS worker tokens before the solve. It requires the generation
+  and every token counter to remain unchanged, with no active or queued VPS
+  work. This also excludes a transient VPS start: every Agent-to-VPS transition
+  increments the execution generation before server capacity can be acquired.
+- This is test-only coverage in `rust_api/src/main.rs`; it changes no scheduler
+  objective, Play behavior, routing rule, or deployment. Changed-file
+  `git diff --check` passes. Isolated staging compiles the new test and ends in
+  `STAGING_TESTS_OK`: scheduler `265` with one expected skip, Agent `159`,
+  trusted worker `5`, Rust API `268/268`, and native validator `57/57`.
+
+## 2026-07-28 local model-plan fence and result attestation (deployed in v111)
+
+- The production Agent-first ownership contract remains unchanged. A healthy
+  native or Browser Agent leases the canonical job, performs the expensive
+  search with device CPU/RAM, and uploads checkpoints/results. The VPS does not
+  start a competing solver while that lease is healthy. It coordinates,
+  validates, persists, and takes over only after explicit Agent disable,
+  disconnect/lease expiry, OS/browser suspension, or a terminal Agent failure.
+- `tkb-model-plan-v1` now crosses Python, Rust API, and Browser exact requests as
+  a version fence. The deployed contract carries canonical model/result hashes,
+  a contiguous variable map and quality envelope, so each future Rust/WASM
+  builder phase can be compared with the Python reference before server model
+  construction is removed. Model LNS construction was made deterministic across
+  `PYTHONHASHSEED` values by removing unordered `set`/`dict` iteration from the
+  emitted variable/model order. Workers also infer workload from the timetable
+  matrix when `expected_scheduled_periods` is absent.
+- External exact-stream results receive a one-use attestation bound to lease,
+  worker, canonical job and result SHA-256. Candidate settlement consumes that
+  attestation and skips the redundant Python `validate-candidate` run for the
+  same server-materialized result; the authoritative Rust validator still runs
+  for every submitted candidate. This reduces transient VPS CPU/RAM without
+  weakening acceptance.
+- Runtime markers are API
+  `tkb_new-rust-api-2026-07-28-local-model-plan-v111`, Browser executor
+  `tkb-browser-wasm-executor-v48-local-model-plan-v1`, planner cache
+  `20260728-v1129-local-model-plan-v1`, and native solver runtime
+  `20260728.7` with digest
+  `c993721131897f5560451d662f7021d87ff414e81817199b8c10eb2ce1d57c43`.
+  The public signed Agent remains `1.6.32`; source `1.6.33` must not be published
+  until the exact candidate bytes receive a trusted Authenticode signature and
+  pass the packaged parity smoke.
+- Verification passes Node/UI/Browser `464/464`, scheduler runtime `265` with
+  one expected platform skip, Agent `159/159`, trusted worker `5/5`, Rust API
+  `267/267`, native validator `57/57`, and packaging `16/16`. The private
+  1,566-period golden remains `1566/1566`, zero violations, zero one-period
+  teacher sessions, Gap2 `0`, `482` teacher sessions and Gap1 `50`.
+  Isolated staging ended with `STAGING_TESTS_OK`; the transactional production
+  update ended with `UPDATE_OK`.
+- Public post-deploy health is idle: zero active/queued solver jobs, zero active
+  reference helpers, zero allocated VPS worker tokens and all `6/6` tokens
+  available. Public HTML serves v1129 and Browser v48 with
+  `Cache-Control: no-store, max-age=0`. Transaction backups are
+  `/opt/cherry-scheduler-backups/server-state-20260728-060523.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260728-060523.tar.gz`.
+- Browser/mobile is not yet coordination-only: CP-SAT/HiGHS search is local,
+  but `/cpsat-step` still uses a bounded VPS Python helper for roughly 2-5
+  seconds to build/materialize the exact model. Keep that compatibility fallback
+  until completion seed, session LNS, period repack and materialization have
+  been ported to shared Rust/WASM and pass the 1,566-period model-plan parity
+  gate. Native desktop Agent already builds, solves and materializes the full
+  Python + OR-Tools pipeline on the local machine.
+
+## 2026-07-28 Browser local-builder model-plan contract v1 (no deploy)
+
+- Added the verification-only `tkb-model-plan-v1` wire as the first safe gate
+  for porting Python model construction to a shared Rust/native/WASM builder.
+  It binds canonical request JSON, solver model and parameter bytes, the current
+  stale-response model digest, a contiguous variable map, model statistics,
+  canonical result JSON, and a hard-valid quality envelope. Strict key checking
+  rejects unversioned fields; any schema change requires a new protocol version.
+  This contract is not called by Play and changes no scheduler objective,
+  deadline, executor ownership, or candidate selection.
+- The language-neutral schema is
+  `solver_runtime/contracts/tkb-model-plan-v1.schema.json`; canonicalization,
+  validation, artifact verification, quality extraction, and digest helpers are
+  isolated in `tkb_optimizer_ref.model_plan`. Full semantics and the migration
+  gate are documented in `docs/MODEL_PLAN_CONTRACT.md`.
+- `small-cp-sat-v1` commits a complete synthetic request/model/parameters/
+  variable-map/result bundle. Its test verifies every hash, decodes and solves
+  the CP-SAT model, and requires the exact optimal solution vector. Golden index
+  digest is `2aa7f320ccb906a3b60845613e708ac1c0893e2c9ee8be7fc96a332d36cd4fcb`.
+- `automatic-refinement-1566-v1` commits only non-sensitive fingerprints and
+  aggregates. The exact current request produced first quality model digest
+  `b385f8268b29ba64acb040d4e2780e3b7e85f2e3a1993a23d9efb9422f4ccd72`:
+  2,711,451 model bytes, 38,665 variables, 32,093 constraints, and a 38,665-entry
+  expanded variable map. Accepted quality is `1566/1566`, zero violations,
+  singleton `0`, Gap2 `0`, `482` teacher sessions, and Gap1 `50`; the parity
+  envelope permits at most `488 / 0 / 50 / 0`. Plan digest is
+  `67386388a87472d6195a4c5caf2633f3b3490028f4c6acec736088ab09c677e7`.
+- Raw 1,566-period request/model/result files remain under `.codex_tmp` and are
+  deliberately not committed because they contain school data. The verifier
+  `solver_runtime/scripts/verify_model_plan_golden.py` checks such private
+  captures against the committed manifest without printing their contents.
+- Focused contract, external CP-SAT, and stdio regression runs `24` tests with
+  one expected platform skip. The private 1,566 capture verifier independently
+  passed all request/model/parameter/map/result fingerprints and the quality
+  envelope. Browser-side canonical digest, committed-artifact, and quality-drift
+  coverage passes `3/3`, proving JavaScript and Python produce the same plan
+  hashes. Full runtime discovery ran `265` tests: all executable tests passed,
+  with three expected skips and the two known workbook-layout tests unavailable
+  because this checkout has no `data/lop.xlsx`. Python compilation and
+  changed-file `git diff --check` pass. No deployment or runtime feature flag
+  changed.
+
+## 2026-07-28 exact Agent-source/VPS payload parity audit (no deploy)
+
+- The retained 1,566-period fixture was passed through the current
+  `agent_helper_claim_payload` contract with deterministic job id
+  `parity-1566-current-contract`, reported device capacity `22`, and the full
+  initial `200,000 ms` canonical watchdog. The resulting canonical seed is
+  `7468003012237438084`; adaptive width is `6`; solver/watchdog/reserve are
+  `180,000 / 200,000 / 20,000 ms`. Both backend/native deadlines and the three
+  Python time limits remain `180,000 ms` / `180 s`; async/FIFO flags are false.
+  The request carries `tkb-reference-solver-contract-v1`.
+- The deterministic claim is retained locally at
+  `.codex_tmp/parity-1566-current-claim.json` (SHA-256
+  `d357f89fe8e1393e70f8af44ac7a6d4e5168d40c80778f169edf9a4ea348b632`);
+  its extracted solver request is
+  `.codex_tmp/parity-1566-normalized-request.json` (SHA-256
+  `be61316892ffc2ceef162a7e88ec1aa932efec31c2a459c4dcd72325930b09fe`).
+  This Windows checkout has no Cargo toolchain, so a line-for-line diagnostic
+  harness mirrored the current Rust normalizer and was cross-checked against
+  its source branches and existing contract assertions; the production Rust
+  test still remains part of the normal CI/staging gate.
+- Sequential same-request runs used the source Agent `SolverRunner` and the VPS
+  reference command `solve_stdio.py solve`, with identical seed, six workers,
+  180-second solver budget and 200-second watchdog. VPS reference returned
+  `1566/1566`, zero unassigned/violations, zero one-period sessions, Gap2 `0`,
+  Gap1 `50`, `488` teacher sessions in `173.569 s`. Source Agent returned the
+  same hard envelope with Gap1 `50`, `482` teacher sessions in `174.825 s`.
+  Independent `validate-candidate` calls accepted both with zero violations.
+- Worker-width controls used the same claim and budget. Four workers returned
+  `489` teacher sessions / Gap1 `52` in `173.308 s`; six returned `482 / 50`
+  in `174.825 s`; eight returned `483 / 53` in `173.997 s`. More CP-SAT
+  workers did not improve runtime and reduced ordered quality on this fixture,
+  while four workers lacked search breadth. Six remains the production choice
+  for a 1,566-period Automatic refinement; `22` is only this device's ceiling.
+  Observed six-worker solver working set was roughly `700-802 MiB`; physical
+  RAM is a safety ceiling, not memory that should be allocated without need.
+- Multi-worker CP-SAT is not bit-for-bit deterministic even with the same seed;
+  parity therefore means equal completeness/hard constraints and no worse
+  ordered quality, not identical lesson bytes. The Agent passed that criterion
+  in this run. One earlier run overlapped another six-worker benchmark and was
+  discarded after a protocol-frame failure; it is not acceptance evidence.
+- This fixture already contains an older complete incumbent at `501` teacher
+  sessions, Gap1 `57`, Gap2 `0`, singleton `0`. It is suitable for executor
+  parity, but it is not the same starting request as the known production
+  `470 / Gap1 31` result and cannot establish a new global quality ceiling.
+  No scheduler, Play behavior, deployment, or public Agent artifact changed.
+
+## 2026-07-28 Agent reconnect final VPS-start fence (deployed in v110)
+
+- An ownership audit found one narrow reconnect race after an expired Agent
+  task was atomically removed but before `fallback_agent_to_vps` committed the
+  VPS generation. A Browser/native hello in that interval still saw
+  `agent_running`, so its ordinary handoff request had no effect; without a
+  later hello, the newly queued VPS generation could start despite the healthy
+  reconnected device.
+- `spawn_server_owned_solver` now performs a final owner-worker check before
+  acquiring or starting any VPS child. A live eligible native or job-scoped
+  Browser worker fences the queued VPS generation and receives the same
+  canonical job through `handoff_to_agent`. The existing generation fence still
+  handles hellos that arrive after this check and before `mark_vps_execution_running`.
+- Explicit `/fail` remains a legitimate VPS fallback: both the native
+  `failure.kind` wire shape and Browser top-level `kind` are recognized, and an
+  explicit failure disables Agent preference only for that canonical job. A
+  terminal structured Agent outcome without a publishable candidate does the
+  same, preventing the final reconnect gate from retrying a failed generation.
+- Regression `reconnect_before_vps_start_returns_the_canonical_job_to_agent`
+  reproduces hello-before-fallback ordering, proves the stale VPS fence is
+  invalidated, and proves the canonical job returns to `agent_waiting`.
+  `git diff --check` and a Tree-sitter parse of `rust_api/src/main.rs` pass.
+  Native HTTP client coverage passes `agent_helper/tests/test_api.py` at `7`
+  tests plus `3` subtests. Full isolated staging passes scheduler `260/260`,
+  Agent `159/159`, trusted worker `5/5`, the complete Rust API suite including
+  the new reconnect regression, and native validator `57/57`, ending with
+  `STAGING_TESTS_OK`.
+- Transactional production deployment ended with `UPDATE_OK`. Public health
+  serves `tkb_new-rust-api-2026-07-28-agent-reconnect-final-fence-v110`, with
+  zero active/queued VPS jobs, zero active reference helpers, and all `6/6`
+  VPS worker tokens free. Browser assets remain v1128/v47 and are served with
+  `Cache-Control: no-store, max-age=0`. In-app Browser verification loaded the
+  live scheduler with `Agent da bat`, one enabled Play control, the expected
+  v1128 Browser/bridge assets, and no console errors. Transaction backups are
+  `/opt/cherry-scheduler-backups/server-state-20260728-051018.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260728-051018.tar.gz`.
+
+## 2026-07-28 Native Agent 1.6.33 release-candidate preparation
+
+- The accepted execution contract is explicit: a healthy paired device is the
+  primary outbound HTTP worker. It leases the canonical job, runs the expensive
+  scheduler with local CPU/RAM, uploads checkpoints and the final candidate,
+  and keeps ownership while heartbeats renew the lease. VPS work is limited to
+  authentication, coordination, authoritative validation, persistence, and
+  genuine disconnect/failure takeover.
+- Native Agent source `1.6.33` already executes the complete Python + OR-Tools
+  runtime locally and does not call the Browser `/cpsat-step` model stream. The
+  public artifact is still `1.6.32`, so parity cannot be claimed until the new
+  artifact is built, smoked, signed and published.
+- An isolated worktree at `C:\Users\Love\Documents\Codex\TKBCherry-agent-ci`
+  on branch `codex/agent-1.6.33-ci` now contains the exact current solver source
+  tree. Its runtime digest matches `20260728.6` /
+  `3bb1157e70c6e4ed8c4e6e041e32e6d882bf2dc02a51a98ba314b2c2f116030d`.
+  Digest protocol v2 canonicalizes CRLF to LF before hashing, so the same Git
+  source has one identity on Windows, Linux and the CI runner.
+  `WSL_RUNTIME_VERSION` is derived from the same runtime constant so an older
+  private WSL environment cannot be silently reused after upgrade.
+- Local release-candidate verification passes Agent `158/158` with one expected
+  platform skip, the main-tree digest contract test, and `git diff --check`.
+  The first GitHub Windows run `30327410952` built both PyInstaller forms and
+  passed both GUI smokes, but the standalone solver-child did not return within
+  the old 120-second smoke timeout. The build gate now tests the onedir solver
+  separately, reports bounded stdout/stderr tails and exact cold-start time,
+  and gives the one-file form a diagnostic 300-second ceiling. This is an
+  artifact-startup investigation, not permission to accept a five-minute user
+  startup. Rerun `30327973033` localized the failure before request parsing:
+  the packaged sourceless adapter imported `external_cp_sat.pyc`, but PyInstaller
+  had not collected `google.protobuf`; the traceback was emitted while the
+  frozen process failed to tear down, which looked like a 120-second hang.
+  Both build forms now explicitly collect `google.protobuf` plus the OR-Tools
+  CP-SAT protobuf schemas and the native `google._upb._message` extension, with
+  packaging regression assertions. The solver-child boundary also converts any
+  future import/startup exception into an immediate structured 503 so the
+  coordinator can fail over instead of leaving a hidden modal dialog; the smoke
+  probe now requires the expected status 400 rather than accepting any matching
+  protocol frame. Agent tests pass `159/159` with one expected platform skip.
+  Corrected Windows CI run `30328768102` passed both packaged solver smokes and
+  produced artifact `8676680136`. Source-runtime 1,566-period parity now passes
+  as recorded above, but the exact EXE remains unsigned and is blocked by this
+  machine's Windows Code Integrity policy. Do not publish or raise the server
+  minimum Agent version until a real Authenticode Code Signing certificate is
+  used and the signed exact bytes pass the same parity smoke.
+- Production is API v110 and Browser v1128; the public Agent remains `1.6.32`.
+  No physical mobile request has
+  exercised v1128 yet; the last observed iPhone failure was an old v1122 tab
+  reloading under WebKit memory pressure before any checkpoint upload.
+
+## 2026-07-28 Agent HTTP ownership and helper load cap (deployed)
+
+- The Agent contract is now explicit: native and Browser Agents are
+  outbound-only pull workers. They lease one canonical job over HTTPS, compute
+  with local CPU/RAM, and upload checkpoints/results. A heartbeat-renewed lease
+  remains the sole authoritative executor even after the ordinary compute
+  watchdog reaches zero; VPS takeover requires explicit disable, genuine
+  disconnect/lease expiry, OS/browser suspension, or terminal protocol failure.
+  `agent_helper/PROTOCOL.md` documents Browser session authentication and the
+  temporary server-assisted exact-model caveat instead of claiming fake
+  coordination-only behavior.
+- Every remaining Python helper process now shares one process admission pool.
+  Long-lived external CP-SAT/HiGHS model streams retain a model-builder permit
+  until their child exits, and rich candidate validators retain a validator
+  permit for their whole bounded run. Production explicitly allows two external
+  model streams and at most three total reference helper processes, preventing
+  simultaneous schools from spawning unbounded validator memory/CPU while
+  preserving one validation lane beside two builders.
+- `/api/health` exposes only aggregate, non-tenant telemetry under
+  `agentReferenceHelpers`: configured limit, active builders/validators,
+  waiting callers, peak activity, starts, and admission timeouts. The limiter
+  does not change timetable objectives or falsely count server model building
+  as local work. API marker is
+  `tkb_new-rust-api-2026-07-28-agent-local-helper-cap-v109`; Browser assets
+  remain the deployed v1128 checkpoint/exact settlement build.
+- Regression `healthy_agent_lease_survives_watchdog_boundary_until_real_disconnect`
+  drives the real Agent HTTP lifecycle past a two-second canonical watchdog,
+  proves the job remains `agent_running` with zero watchdog budget, then proves
+  only `/disconnect` hands it to `vps_queued`. A separate process-pool test
+  proves builders and validators share capacity, time out when saturated, and
+  reuse released permits. Deployment-package coverage keeps the same explicit
+  limits in `solver-pool.conf`, full install, and repair paths.
+- Verification passes packaging `16/16`, scheduler `260/260`, Agent `158/158`,
+  trusted worker `5/5`, Rust API `263/263`, and native validator `57/57`.
+  Isolated staging ended with `STAGING_TESTS_OK`; transactional production
+  deployment ended with `UPDATE_OK`. Public health serves v109 with zero
+  active/queued solver jobs, `0/3` active reference helpers, zero admission
+  timeouts, zero allocated VPS worker tokens, and all `6/6` worker tokens free.
+  Transaction backups are
+  `/opt/cherry-scheduler-backups/server-state-20260728-033639.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260728-033639.tar.gz`.
+
+## 2026-07-28 Browser exact VPS-load audit (investigation, no deploy)
+
+- Browser Agent v1128 does not yet make the VPS coordination-only. The device
+  runs the CP-SAT/HiGHS search, but the VPS still launches one
+  `solve_stdio.py external-cp-sat-stream` Python process per seed or quality
+  stream. That process parses the school request, builds the school/rule
+  context, creates CP-SAT protobufs or SciPy MILP matrices, applies LNS
+  scoping, base64-encodes the model, waits in memory while the device solves,
+  decodes and validates the response, then materializes lessons and metrics.
+  Rich candidate submission also launches `validate-candidate` after the Rust
+  validator; auth, lease, checkpoint storage, and final persistence remain in
+  Rust as intended.
+- Measured locally with the retained 1,566-period production fixture and the
+  exact v1128 wire. First quality model construction took about 2.05 seconds of
+  helper runtime, 2.13 CPU seconds, 154 MiB peak working set, and emitted a
+  1.33 MiB CP-SAT model. Fresh completion construction took about 5.38 seconds
+  before emitting a 1.20 MiB HiGHS model and peaked near 120 MiB. Reference
+  validation of one complete rich candidate took about 0.93 seconds inside the
+  helper, 1.05 CPU seconds, and 108 MiB peak. The external builder limit is two,
+  so model-building bursts are bounded to roughly two Python cores and about
+  240-308 MiB for builders, but reference validator processes are a separate
+  transient load.
+- No scheduler change was made. A browser-only switch to all-local construction
+  is not a small safe patch: the parity surface spans the Python adapter plus
+  CP-SAT/MILP builders, about 27,000 source lines, and Pyodide cannot run the
+  native OR-Tools/SciPy stack with acceptable iOS memory. CP-SAT alone already
+  needs the measured 256/512 MiB mobile memory tiers, so co-resident Python model
+  construction would recreate the WebKit reload failure.
+- Safe migration: define a versioned model-plan wire and golden model/candidate
+  fixtures, port completion seed, session LNS, and period repack builders into
+  one Rust crate compiled both native and WASM, and return a compact variable
+  map with each model. On mobile, run a builder Worker, persist the model/map,
+  terminate it, then start the CP-SAT/HiGHS Worker; restart a small materializer
+  only after solve so builder and solver heaps never overlap. Keep current
+  server-built stream behind a per-phase feature flag until the 1,566-period
+  fixture matches completeness, hard constraints, and quality. The native
+  desktop Agent can reach full local parity sooner by bundling the existing
+  Python/OR-Tools runtime, but a website alone cannot execute that native stack.
+- Smallest safe operational follow-up is telemetry and admission control, not a
+  fake local-builder claim: expose active external builders/model-build time and
+  globally cap rich reference validators. This protects the VPS while the WASM
+  builder port is developed, but does not change the fact that v1128 still uses
+  VPS CPU/RAM for model construction.
+
+## 2026-07-28 healthy Agent lease watchdog ownership fix (deployed in v109)
+
+- A real HTTP/coordinator integration test exposed a remaining ownership race:
+  the canonical watchdog-expired arm ran before `AgentJobExecution::Leased`.
+  The server could therefore terminate or replace an actively renewed Browser
+  Agent merely because the ordinary per-attempt deadline elapsed, even though
+  lease heartbeats still proved that the device was the sole healthy executor.
+- The coordinator now gives a live renewed lease priority over the elapsed
+  compute watchdog. It continues waiting with `agent_running` and allocates no
+  VPS work. When the lease is actually disconnected or expires,
+  `job_execution` prunes it and the existing fenced takeover transfers that
+  same canonical job to VPS. Complete validated candidates/checkpoints still
+  win their boundary races, and unclaimed work remains watchdog-bounded.
+- Regression `healthy_agent_lease_survives_watchdog_boundary_until_real_disconnect`
+  creates a real asynchronous Fresh Automatic job with a two-second watchdog,
+  claims it through the Agent HTTP routes, renews its lease until reported
+  watchdog remaining time reaches zero, and proves it remains
+  `agent_running`. Only an explicit `/disconnect` may then move it to
+  `vps_queued`; the one-time no-checkpoint rescue remains bounded and keeps the
+  original job id.
+- The focused lifecycle revision originally passed Rust API `262/262` and
+  native validator `57/57`; the combined v109 release above supersedes it with
+  Rust API `263/263` and is deployed.
+
+## 2026-07-28 checkpoint-fed exact and mobile timeout fix (deployed)
+
+- Root cause of the remaining long first-Play phone failure was confirmed in
+  the Browser CP-SAT handoff. The device first produced and uploaded a complete
+  timetable, but `/cpsat-step` rebuilt the external stream from the original
+  empty Fresh request. CP-SAT therefore started the whole timetable again
+  instead of refining the accepted device checkpoint and could consume the
+  180-second watchdog before returning a result.
+- The API now takes only its own server-validated complete Agent checkpoint,
+  injects it as `data.tkbSolverResult`, and changes the external request to
+  `refine_complete` with a revalidated incumbent. Partial, malformed, or
+  metrics-only candidates are never injected. Browser-supplied timetable data
+  is not trusted for this transformation.
+- Fresh/Repair requests with teacher, subject, group, room, or richer fixed-off
+  constraints no longer use the compact Rust constructor that cannot model
+  those rules. They run a bounded exact `completion_seed` stream first,
+  checkpoint the hard-valid complete result, then start a separate `quality`
+  stream from that checkpoint. Stream-kind identity is included in both the
+  replay key and live stream owner so seed step zero can never replay as quality
+  step zero.
+- Once the server has accepted a complete checkpoint, recoverable local runtime,
+  deadline, or terminal-upload errors settle it with bounded `candidate` and
+  `/complete` retries and do not call `/fail`. If WebKit suspends before the
+  terminal request, the coordinator publishes that checkpoint while Agent
+  preference remains enabled. Explicit Agent OFF still hands the same job to
+  VPS as before.
+- Candidate markers are API
+  `tkb_new-rust-api-2026-07-28-agent-checkpoint-exact-v108`, Browser executor
+  `tkb-browser-wasm-executor-v47-checkpoint-exact-settlement`, and planner cache
+  key `20260728-v1128-checkpoint-exact-settlement-v1`.
+- Local verification passes Browser Agent `66/66`, bridge/modes/toolbar
+  `304/304`, JavaScript syntax, and `git diff --check`. The focused Python run
+  passes `165` tests plus `17` subtests; its two known workbook-layout tests are
+  unavailable locally because this checkout has no `data/lop.xlsx`. Isolated
+  VPS staging passes scheduler `260/260`, Agent `158/158`, trusted worker `5/5`,
+  Rust API `261/261`, and native validator `57/57`, ending with
+  `STAGING_TESTS_OK`.
+- A concurrent transactional production deployment completed while a redundant
+  update attempt correctly exited with lock status 75. Public health now serves
+  API v108 with zero active/queued jobs and all `6/6` VPS worker tokens free;
+  public HTML and Browser assets serve v1128/v47 with
+  `Cache-Control: no-store, max-age=0`. The deployed Rust source was inspected
+  and contains the exact completion-seed fixed-only transformation. Transaction
+  backups are `/opt/cherry-scheduler-backups/server-state-20260728-030100.tar.gz`
+  and `/opt/cherry-scheduler-backups/app-release-20260728-030100.tar.gz`.
+- A real production Play on v1128 stayed on the Browser Agent with six local
+  Workers for the full run. VPS health remained at zero active/queued solver
+  jobs, zero allocated worker tokens, and all `6/6` tokens free. The result was
+  `1566/1566`, zero unassigned, `470` teacher sessions, zero one-period
+  sessions, Gap1 `31`, and Gap2 `0`, improving the v1127 production result of
+  472 sessions and Gap1 32.
+- The user's ambient phone URL still identified v1122 after deployment. Safari
+  must close that live tab and reopen the base scheduler URL before a physical
+  device run can confirm v1128; JavaScript already resident in an old tab cannot
+  be replaced by server cache headers alone. Physical-device confirmation is
+  the only remaining acceptance item.
+
+## 2026-07-28 mobile checkpoint-first worker lifecycle fix (deployed)
+
+- The stale-phone audit below did not see a new production request, but a deeper
+  lifecycle audit found two remaining defects that could reproduce the user's
+  long iPhone timeout. Preflight could create the normal six-Worker Rust pool
+  before a mobile Fresh/Repair completion seed requested two Workers, and
+  `startComputeWorker()` retained that oversized pool. Exact CP-SAT/HiGHS
+  probing also happened before the server held any recoverable complete
+  timetable, so a WebKit memory reload could erase the entire attempt.
+- Mobile Fresh and Repair Automatic now begin with at most two Rust Workers,
+  create a complete timetable, and require the server to acknowledge that
+  checkpoint. Only then are the Rust Workers released and CP-SAT/HiGHS loaded
+  for exact quality work. If exact WASM is unavailable, mobile stays on the
+  conservative two-Worker heuristic path. A failed asynchronous checkpoint
+  upload receives one synchronous retry before quality may start.
+- Seed, heuristic, and exact capacity are tracked independently. An existing
+  oversized Worker pool is rebuilt when a smaller seed envelope is requested;
+  after the checkpoint, a 1,566-period exact solve restores its measured
+  six-Worker quality capacity instead of inheriting the two-Worker seed cap.
+- Candidate markers are Browser executor
+  `tkb-browser-wasm-executor-v46-mobile-checkpoint-first` and planner cache key
+  `20260728-v1127-mobile-checkpoint-first-v1`. Regression coverage proves an
+  eight-core iPhone creates no more than two pre-checkpoint Workers, exact
+  probes occur after checkpoint acknowledgement, and non-exact Fresh/Repair
+  attempts complete without VPS fallback. Focused Browser Agent and CP-SAT
+  tests pass `70/70`; combined Agent, bridge, toolbar, and scheduler-mode tests
+  pass `374/374`; JavaScript syntax and `git diff --check` pass.
+- Isolated VPS staging passes scheduler `260/260`, Agent `158/158`, trusted
+  worker `5/5`, Rust API `256/256`, and native validator `57/57`, ending with
+  `STAGING_TESTS_OK`. Transactional deployment returned `UPDATE_OK`; backups
+  are `/opt/cherry-scheduler-backups/server-state-20260728-020436.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260728-020436.tar.gz`.
+- Public HTML and Browser executor serve v1127/v46 with
+  `Cache-Control: no-store, max-age=0`. A real production refinement stayed on
+  the Browser Agent with six local Workers for its entire run while health
+  remained at zero VPS active/queued jobs, zero allocated tokens, and all
+  `6/6` tokens free. It completed `1566/1566`, zero unassigned, `472` teacher
+  sessions, zero one-period sessions, Gap1 `32`, and Gap2 `0`, improving the
+  prior v1126 control result of 477 sessions and Gap1 38. A fresh physical
+  iPhone v1127 construction run remains the final device confirmation.
+
+## 2026-07-28 post-deployment stale-phone audit (no new deploy)
+
+- The follow-up report that iPhone still ended with `khong du thoi gian` did
+  not exercise v1126. Production access logs through 01:36 UTC contain zero
+  iPhone, iPad, Android, Mobile, or mobile Safari page/Agent requests after the
+  01:19 UTC v1126 deployment. The latest real iPhone page load remained the
+  pre-deployment v1123 tab at 23:49 UTC; its auth-registry request returned 401
+  and it never created a solve job. A live browser URL supplied with the report
+  also still identified v1122/v1125. The physical phone must fully close that
+  live Safari tab, reopen the base scheduler URL, and authenticate before its
+  next attempt can confirm this release.
+- A fresh production tab was opened explicitly on planner v1126 and confirmed
+  that every scheduler script used the v1126 cache key. Its real 1,566-period
+  refinement progressed normally from 15 to 28 to 59 percent, remained on the
+  Browser Agent for the full attempt, and finished with `1566/1566`, zero
+  unassigned, `477` teacher sessions, zero one-period sessions, Gap1 `38`, and
+  Gap2 `0`. This improved the previous 482-session incumbent by five sessions.
+- During that run `/api/health` reported zero active/queued VPS jobs, zero
+  allocated VPS worker tokens, and all `6/6` tokens available. The served HTML,
+  bridge, and Browser executor also return `Cache-Control: no-store, max-age=0`;
+  a new navigation receives v1126, while JavaScript already resident in an old
+  Safari tab cannot be replaced without reloading that tab.
+- Focused production-contract regressions pass `70/70`, including mobile
+  complete-checkpoint-before-quality, expired-quality settlement, iPhone
+  foreground/background handoff, full local lease retention, 512/256 MiB
+  CP-SAT fallback, and exact-runtime cleanup. There was no code or deployment
+  change in this audit because the latest path passed and no v1126 phone request
+  existed to support another scheduler modification.
+
+## 2026-07-28 iOS exact-memory and checkpoint settlement fix (deployed)
+
+- Production access logs proved the reported post-v1125 phone failure was still
+  an old live tab: after the v1125 deployment there was no iPhone/iPad solve or
+  Agent request. The last phone load used v1123 and its auth-registry calls
+  returned 401. Historical iPhone traces still exposed a real defect: exact
+  Agent heartbeats stayed healthy for about 60 seconds, then WebKit reloaded the
+  page without candidate, checkpoint, complete, fail, or disconnect requests.
+- The vendored OR-Tools Emscripten runtime defaulted to a 2 GiB shared-memory
+  maximum. CP-SAT now probes fresh Workers with device memory tiers: iOS and
+  Android use 512 then 256 MiB; desktop uses 1 GiB, 512 MiB, then 256 MiB. The
+  selected `WebAssembly.Memory` is pinned in the Worker and forwarded through
+  the OR-Tools runtime loader instead of letting generated glue allocate 2 GiB.
+- Mobile exact probes are sequential. After both CP-SAT and HiGHS capability
+  probes pass, their cold runtimes are released. A fresh Automatic construction
+  seed then uses at most two Rust Workers, uploads its complete checkpoint, and
+  terminates that pool before CP-SAT or HiGHS is recreated lazily for quality.
+  This removes the previous CP-SAT + HiGHS + six-Rust-Worker memory peak.
+- If WebKit still kills a fresh Automatic tab after a complete validated seed
+  reached the server, the coordinator now returns that checkpoint immediately.
+  It no longer starts a late VPS refinement that can exhaust the remaining
+  watchdog and replace a valid timetable with `no_complete_schedule_before_deadline`.
+- A real cross-origin-isolated browser run solved the stored 2.756 MiB CP-SAT
+  model at both 512 MiB (30.39 s, 39,512 response bytes) and 256 MiB (30.29 s,
+  same response). The same model failed at 128 MiB, so that unsafe tier was
+  removed from production selection rather than being advertised as exact.
+- Candidate markers are API
+  `tkb_new-rust-api-2026-07-28-mobile-checkpoint-settlement-v107`, Browser
+  executor `tkb-browser-wasm-executor-v45-ios-memory-settlement`, CP-SAT
+  executor `tkb-cpsat-wasm-executor-v3-mobile-memory-tiers`, and planner cache
+  key `20260728-v1126-ios-memory-settlement-v1`.
+- Focused verification passes CP-SAT/HiGHS `11/11`, Browser Agent `63/63`,
+  toolbar/modes `36/36`, JavaScript syntax, and `git diff --check`. Isolated VPS
+  staging passes scheduler `260/260`, Agent `158/158`, trusted worker `5/5`,
+  Rust API `256/256`, and native validator `57/57`, ending with
+  `STAGING_TESTS_OK`.
+- Transactional deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260728-011946.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260728-011946.tar.gz`. Public
+  assets serve v1126/v45/v3 and health reports API v107 with all `6/6` VPS
+  solver tokens free.
+- A production Browser Agent refinement on the real 1,566-period school stayed
+  local for the full attempt while `/api/health` continued to report zero VPS
+  active/queued jobs and all six VPS tokens available. It completed normally
+  with `1566/1566`, `0` unassigned, `482` teacher sessions, `0` one-period
+  sessions, Gap1 `38`, and Gap2 `0`. A fresh physical-iPhone v1126 run is still
+  the final device confirmation because the user's reported phone attempt was
+  demonstrably an authenticated-stale v1123 tab rather than this release.
+
+## 2026-07-28 mobile completion-first settlement fix (deployed)
+
+- A user-confirmed iPhone Automatic attempt still ended with
+  `no_complete_schedule_before_deadline` on production v1124. The remaining
+  gap was the non-exact mobile lane: only an exact CP-SAT/HiGHS Browser runtime
+  received the explicit Rust `quick_complete` checkpoint before quality. An
+  iPhone without the exact runtime could spend its entire quality window on a
+  partial construction and then surrender to an already-expired VPS fallback.
+- Fresh Automatic and constraint repair now always run a device-local
+  `quick_complete` phase before quality, regardless of exact-runtime support.
+  The internal seed gets up to 30 seconds on a slow device (ordinary Quick
+  behavior remains capped at 12 seconds), is uploaded immediately, and becomes
+  the incumbent for either exact or heuristic local quality work.
+- Once a complete checkpoint is accepted, a quality error or abort settles that
+  checkpoint as the canonical result instead of failing the lease. The seed and
+  quality phases also share the original Automatic watchdog; normal 180-second
+  attempts reserve the final 8% (5-15 seconds) for digest, validation and
+  `/complete`, preventing the extended seed from pushing settlement past the
+  browser timer.
+- Regression coverage includes non-exact iPhone Fresh and Repair flows, ordered
+  `checkpoint -> candidate -> complete` submission, abort immediately after an
+  accepted checkpoint, partial-422 handoff, and shared remaining-budget bounds.
+  Browser Agent tests pass `63/63`; the real 1,566-period local benchmark with
+  two workers completed `1566/1566` and reached `1` one-period session,
+  `0` Gap2, `557` teacher sessions and `101` Gap1 in 179.7 seconds. The complete
+  seed is therefore reliable on the tested workload; low-core heuristic quality
+  still remains below the six-worker/VPS reference and is an open optimizer
+  investigation rather than a completion failure.
+- Verification passes Browser Agent `63/63`, Rust bridge `268/268`, mobile
+  toolbar/mode `36/36`, CP-SAT/HiGHS wrappers `7/7`, deployment packaging
+  `15/15`, JavaScript syntax and `git diff --check`.
+- Candidate markers are Browser executor
+  `tkb-browser-wasm-executor-v44-mobile-completion-first` and planner cache key
+  `20260728-v1125-mobile-completion-first-v1`. Production deployment returned
+  `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260728-003439.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260728-003439.tar.gz`. Public
+  HTML was verified to serve v1125 script URLs and the Browser executor v44.
+  Production health is `ok`, with `0` active/queued jobs and `6/6` VPS tokens
+  available. The API release remains
+  `tkb_new-rust-api-2026-07-28-agent-balanced-quality-v106`.
+
+## 2026-07-28 device-checkpoint-first mobile completion fix (deployed)
+
+- The user-confirmed iPhone failure was still running production `v1123`, whose
+  first iOS construction deliberately bypassed the Browser Agent and entered
+  the VPS. Under a full quality request that path could spend the canonical
+  watchdog without producing a complete timetable, so the phone waited and
+  finally showed `khong du thoi gian`.
+- Fresh Automatic construction is again Browser-Agent eligible on iPhone and
+  iPad. A healthy exact Browser Agent first runs the local Rust WASM
+  `quick_complete` lane and uploads the complete, hard-valid device timetable
+  as a server-validated checkpoint. It then spends the remaining attempt on
+  local HiGHS/CP-SAT WASM quality work. If the exact exchange fails or reaches
+  the watchdog boundary, the accepted device checkpoint is returned instead of
+  starting an ordinary VPS solve or returning an empty timeout.
+- The local 1,566-period production fixture completed the checkpoint at
+  `1566/1566`, `0` unassigned, `hard_ok=true`, and zero application violations.
+  Repeated mobile-width (one/two worker) seeds took about `0.60-2.96s`; the
+  authoritative Python validator accepted the seed in about `1.77s`. The raw
+  completion quality was `564` teacher sessions, `51` one-period sessions,
+  Gap1 `66`, and Gap2 `10`; this is the guaranteed completion fallback, while
+  the following exact Agent phase remains responsible for quality.
+- Release markers are Browser executor
+  `tkb-browser-wasm-executor-v43-device-checkpoint-first` and planner cache key
+  `20260728-v1124-device-checkpoint-first-v1`. Production API remains
+  `tkb_new-rust-api-2026-07-28-agent-balanced-quality-v106`.
+- Verification passes Browser Agent `61/61`, bridge `268/268`, mobile/UI
+  `42/42`, CP-SAT/HiGHS wrappers `7/7`, deployment packaging `15/15`, native
+  Agent `158/158`, JavaScript syntax, and `git diff --check`. Full isolated VPS
+  staging passes scheduler `260/260`, Agent `158/158`, trusted worker `5/5`,
+  Rust API `256/256`, and native validator `57/57`, ending with
+  `STAGING_TESTS_OK`. The broader local Python suite passes `212` tests plus
+  `36` subtests; its two known workbook-layout tests remain unavailable because
+  this checkout has no `data/lop.xlsx`.
+- Transactional production deployment returned `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260727-235921.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260727-235921.tar.gz`. Public
+  HTML and Browser assets serve v1124/v43. Production health is idle with
+  `0` active, `0` queued, and all `6/6` VPS solver tokens available.
+
+## 2026-07-28 iOS first-sort completion fix (deployed)
+
+- The mobile failure was a two-epoch timeout, not a timetable feasibility
+  failure. A fresh iPhone/iPad Automatic click first spent its full Browser
+  Agent window trying to construct the school-wide timetable. iOS WebKit could
+  suspend that work or return no complete checkpoint, then the one-shot VPS
+  rescue started after the client was already close to its original deadline.
+  The user therefore saw a long run followed by `khong du thoi gian` even while
+  the canonical VPS job was still valid.
+- Fresh/quick Automatic construction and constraint repair now bypass the
+  Browser Agent on iPhone/iPad and enter the native VPS solver immediately.
+  This is intentionally limited to iOS construction reliability: once a
+  timetable is complete, repeated Automatic refinement remains Browser-Agent
+  eligible and continues to offload optimization from the VPS. Android,
+  Windows, macOS, and Linux retain their existing Agent eligibility.
+- `waitForServerOwnedSolverResult` now treats a later authoritative server
+  `startedAtMs` as the start of a new rescue execution epoch. When a one-shot
+  no-checkpoint VPS rescue is admitted, the browser follows that new clock and
+  extends its result deadline instead of timing out against the expired Agent
+  epoch.
+- Release markers are Browser executor
+  `tkb-browser-wasm-executor-v42-ios-first-solve-vps`, Rust bridge
+  `tkb-rust-api-v302-rescue-execution-clock`, and planner cache key
+  `20260728-v1123-ios-first-solve-vps-v1`. Production API remains
+  `tkb_new-rust-api-2026-07-28-agent-balanced-quality-v106`; synchronized
+  native runtime is `20260728.6` with digest
+  `3bb1157e70c6e4ed8c4e6e041e32e6d882bf2dc02a51a98ba314b2c2f116030d`.
+- Local verification passes Browser Agent `60/60`, Rust bridge and planner
+  modes `272/272`, deployment packaging `15/15`, JavaScript syntax, and
+  `git diff --check`. Transactional production deployment returned
+  `UPDATE_OK`; backups are
+  `/opt/cherry-scheduler-backups/server-state-20260727-225808.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260727-225808.tar.gz`.
+  Public HTML serves `v1123`, Browser serves v42, bridge serves v302, and
+  production health is idle with `0` active, `0` queued, and all `6/6` VPS
+  solver tokens available.
+
+## 2026-07-28 Agent quality-settlement and period-repack fix (deployed)
+
+- Acceptance on the 1,566-period school proved that `509 buổi / 68 trống 1`
+  is only the complete incumbent/hint, not a target: the VPS continued from
+  that exact payload and reached `475 / 46` while retaining `dạy 1 tiết = 0`,
+  `trống 2 = 0`, and `1566/1566` completeness.
+- Root cause for Browser Agent returning `509/68`: complete-incumbent Browser
+  work intentionally uses compact local LNS rather than the VPS-wide Benders
+  pipeline. The external CP-SAT adapter then applied a second LNS freeze to an
+  already bounded class cluster, forced each 8-10 second pass to run for at
+  least 60 seconds, and the Browser deadline path retained the original hint
+  before uploading the final CP-SAT response. Work completed inside the stream
+  could therefore be discarded at the 180-second boundary.
+- Fixes in `external_cp_sat.py`, `adapter.py`, and `tkb-browser-wasm.js`: keep
+  the caller's per-pass CP-SAT budget, mark complete-incumbent clusters as
+  already scoped so they are not frozen twice, and use the settlement reserve
+  to submit the last response before retaining the incumbent. Added regression
+  coverage for all three behaviors.
+- Automatic Browser session-compression now models an exact Gap2-plus indicator
+  for each movable teacher/session and includes that debt after session count
+  (but before Gap1) in the local CP-SAT objective. The old model allowed Gap2
+  to grow without bound, so the cleanup phase could not repair the temporary
+  timetable and the visible result fell back to `509/68`.
+- Browser Gap phases now repack concrete periods with each teacher/session
+  assignment fixed before running local Gap1 LNS. The repack uses the external
+  HiGHS wire, so it runs on the Agent device and does not allocate a VPS solver
+  token. It accepts only complete candidates with the exact session and
+  one-period envelope and rolls back when the visible Gap2 envelope is not
+  restored.
+- A same-wire local acceptance using `.codex_tmp/live-v1109-cp180-request.json`
+  (1,566 periods, incumbent `509/0/58/0`) improved to
+  `488/0/40/0` in 181.2 seconds, complete and hard-valid. A second refinement
+  from that incumbent reached `478/0/38/0` in 177.9 seconds. The VPS reference
+  remains `475/0/46/0`; Agent now reaches a lower Gap1 count while staying close
+  on teacher sessions, and repeated clicks continue from the best incumbent.
+- The period-repack source tree is synchronized as runtime `20260728.3` with
+  digest `c2141c51ad9691bec3e996d804ce93e32043f138e21877e598f47b8bf4a275d5`
+  across the packaged Agent identity and Rust lease contract.
+- Candidate markers are API
+  `tkb_new-rust-api-2026-07-28-agent-period-repack-v104`, Browser executor
+  `tkb-browser-wasm-executor-v41-quality-settlement`, and planner cache key
+  `20260728-v1122-agent-quality-settlement-v1`. Synchronized native runtime
+  identity is `20260728.3` with digest
+  `c2141c51ad9691bec3e996d804ce93e32043f138e21877e598f47b8bf4a275d5`.
+  This digest includes the final quality-settlement and period-repack edits and
+  matches the packaged Agent source tree and Rust lease contract. Production
+  deployment returned `UPDATE_OK`; latest backups are
+  `/opt/cherry-scheduler-backups/server-state-20260727-195032.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260727-195032.tar.gz`.
+- Verification: focused Python `59 passed` plus `17` subtests; Browser Agent
+  Node `59/59`; Rust bridge and planner Node `271/271`; packaging `6/6`;
+  JavaScript/Python syntax and `git diff --check` pass. Full result-contract
+  suite adds `215 passed`; two workbook-layout tests remain unavailable because
+  this checkout has no `data/lop.xlsx`. Production health is `ok`, active jobs
+  `0`, queued jobs `0`, and VPS solver tokens `6/6` available.
+
 ## Release Versioning
 
-- Current deployed application release: **v1.103** (stable mobile progress
-  admission and exact backend job lifecycle;
-  deployed 2026-07-26).
+### Post-v1.110 focused Gap controls and adaptive Agent workers (deployed 2026-07-27)
+
+- A pre-change archive exists outside the repository at
+  `C:\Users\Love\Documents\Codex\TKBCherry-backups\before-split-gap-optimization-20260727-232515.zip`.
+  Its SHA-256 is
+  `06d018383a39e20c2bd7f7721e4f8a15170fccb0a0d2026a9c33eb8e3813deeb`.
+- The archive was compared file-by-file with the current tree. Automatic Play
+  still calls `sapXepTuDongAll()` and retains the pre-split complete-first,
+  singleton-zero, Gap2-zero, teacher-session, then Gap1 quality pipeline. The
+  bridge still sets `optimization_focus=automatic` and time-based progress.
+  The only new Automatic guard removes a stale `optimization_gap_target` so a
+  previous focused click cannot leak into Play.
+- The visible `Xếp nhanh` and `Buổi 1 tiết` commands are removed. The shared
+  desktop/mobile optimization menu now contains exactly `Buổi`, `Trống 2 tiết`,
+  and `Trống 1 tiết`. Legacy request names remain accepted internally for old
+  cached clients.
+- `Trống 2 tiết` and `Trống 1 tiết` carry independent progress baselines and
+  counters across Browser Agent, bridge, Python, Rust API, and server progress.
+  Gap2 may convert severe gaps into Gap1 but must keep the exact teacher-session
+  and one-period-session counts. Gap1 runs only after Gap2 reaches zero, keeps
+  the exact teacher-session/one-period/Gap2 envelope, reduces Gap1 strictly,
+  and cannot increase total gap. Already-zero targets return immediately
+  without starting Agent or VPS work.
+- A release-blocking native compile audit found that the first split dispatch
+  referenced two undefined functions. `optimize_teacher_gap_target_focused`
+  and its Gap2/Gap1 wrappers now implement the target envelopes, and Agent
+  candidate validation enforces the same rules. Automatic/native Play branches
+  were not changed.
+- The one-shot no-checkpoint VPS rescue is now server-scoped to fresh Automatic
+  Browser work only. Quick, focused refinement, constraint repair, ordinary
+  Agent disconnect, Stop, and checkpoint handoff retain their original
+  monotonic watchdog. This fixed three Rust lifecycle regressions caught by
+  isolated staging.
+- Solver runtime identity is `20260727.3` with digest
+  `039c15b165fca95ebf0b5bf98636efb051cf1dcdda2577a2b6b190e6500c5cac`.
+  Deployed release markers are API
+  `tkb_new-rust-api-2026-07-27-adaptive-worker-tier-v100`, Browser executor
+  `tkb-browser-wasm-executor-v39-adaptive-worker-tier`, bridge
+  `tkb-rust-api-v300-adaptive-worker-tier`, and planner cache key
+  `20260727-v1119-adaptive-worker-tier-v1`.
+- Browser exact CP-SAT and native Agent leases use the same workload-aware
+  width policy without changing Automatic Play objectives or phases: up to
+  `128` periods uses `2` workers, up to `512` uses `4`, up to `2,000` uses `6`,
+  `2,001-4,000` uses `8`, and larger work may use up to `12`. Every tier is
+  capped by the device's reported CPU allowance. Thus the current `1,566`
+  period school intentionally uses `6` workers, while an approximately `3,300`
+  period school uses `8`; the VPS pool remains fixed at `6`.
+- Local verification passes all Node suites `447/447`, bridge `266/266`,
+  Browser Agent `58/58`, local Agent `157 passed, 1 skipped`, JavaScript syntax,
+  Python compile, packaging identity, and `git diff --check`. Full local Python
+  verification passes `199` tests; two fixture-layout checks cannot run because
+  this checkout has no `data/lop.xlsx`. The final isolated VPS release gate
+  passes scheduler `254/254`, Agent `158/158`, trusted worker `5/5`, Rust API
+  `256/256`, and native validator `57/57`, ending with `STAGING_TESTS_OK`.
+- Transactional production deployment returned `UPDATE_OK`. Backups are
+  `/opt/cherry-scheduler-backups/server-state-20260727-180004.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260727-180004.tar.gz`. Public
+  health is idle with zero active/queued jobs, zero allocated VPS solver tokens,
+  and all `6/6` tokens available. The public signed Windows Agent remains
+  `1.6.32`; local `1.6.33` runtime source is synchronized but no new EXE/ZIP was
+  published by this release.
+
+### Post-v1.110 no-checkpoint Browser fallback rescue (local, not deployed)
+
+- Browser WASM failure requests now mark the narrow case where local execution
+  ended before any complete checkpoint was uploaded. The authenticated server
+  verifies that no accepted checkpoint exists and arms a one-shot VPS rescue
+  window using the canonical job's original, globally capped watchdog budget.
+- The rescue only rebases the watchdog start when the Agent-to-VPS fence is
+  advanced. It cannot be granted twice, while ordinary handoffs, accepted
+  checkpoint resumes, best-effort Stop, and cancellation retain their existing
+  monotonic deadline behavior. The fail response exposes
+  `freshVpsRescueArmed` for Agent diagnostics.
+- A suspended mobile tab that cannot deliver `/fail` receives the same bounded
+  treatment when the coordinator atomically takes over an Agent job with no
+  checkpoint. This prevents Python from inheriting less than its eight-second
+  first-click feasibility minimum after a long local attempt.
+- Browser executor tests pass `56/56`; JavaScript syntax checks and changed-file
+  `git diff --check` pass. Rust pool/API regressions cover one-shot rebasing,
+  ordinary deadline monotonicity, explicit fail diagnostics, and partial
+  checkpoint exclusion; they still require a Rust toolchain/staging run on this
+  Windows checkout.
+
+### Post-v1.110 unified first-click quality continuation (local, not deployed)
+
+- Fresh Automatic Play now keeps the first complete hard-valid timetable as an
+  atomic fallback and continues singleton, Gap2, teacher-session, and Gap1
+  cleanup inside the same canonical job. The bridge no longer sets the
+  first-complete stop or skips global quality on the first click.
+- The Python result contract can retain monotone hard-valid progress before the
+  strict singleton/Gap2 zero targets are reached. When singleton and Gap2 are
+  tied, it rejects candidates that increase Gap1 or total gap debt, so reducing
+  teacher sessions cannot make the visible timetable worse in another metric.
+- Browser external CP-SAT LNS accepts a complete hard-valid incumbent with
+  quality debt and carries that debt forward as hard caps instead of disabling
+  the local quality path.
+- Focused verification passes the bridge suite `264/264`, Python compile, and
+  changed-file `git diff --check`. Result-contract plus external CP-SAT tests
+  pass `164` tests and `17` subtests; two fixture-layout tests remain unavailable
+  because this checkout has no `data/lop.xlsx`, matching the existing fixture
+  limitation. No deployment or Agent artifact publication has been performed.
+
+### Post-v1.110 native Agent 1.6.33 parity candidate (local, not published)
+
+- Windows Agent `1.6.33` identifies the packaged solver snapshot as runtime
+  `20260727.2` with digest
+  `a40a1fb4a3621e5a4b8b83012e6e6af8ba67dc7616772f5f2cbbf3777f87cf6e`.
+  Current leases use `tkb-reference-solver-contract-v1`, so VPS fallback and
+  native Agent receive the same canonical job seed, worker width, compute
+  deadline, watchdog, and serialization reserve. The native Agent applies the
+  server contract under its local CPU ceiling; old unmarked leases keep the
+  previous size-tier behavior.
+- Runtime identity is all-or-nothing and is checked against the server snapshot
+  before a native worker can solve. The public native floor intentionally stays
+  at `1.6.32` during transition, so the existing signed release still connects;
+  parity can be required only after a signed `1.6.33` ZIP/manifest is published.
+- Isolated VPS staging passed scheduler `251/251`, Agent `158/158`, trusted
+  worker `5/5`, Rust API `246/246`, and native validation `55/55`, ending with
+  `STAGING_TESTS_OK`. Python compile and changed-file `git diff --check` also
+  pass. A separate `cargo fmt --all -- --check` still reports formatting drift
+  in the shared modified Rust files and must be resolved before release.
+- No `1.6.33` EXE has replaced the public `1.6.32` artifact. The Windows build
+  already embeds the Cherry icon, tray/GUI/autostart behavior, Python, OR-Tools,
+  and the same solver runtime used by VPS. Build the candidate on Windows CI,
+  smoke-test its real EXE on the 1,566-period fixture, sign the exact ZIP/EXE
+  manifest, and only then raise the native minimum version and publish it.
+
+### Post-v1.110 incremental Browser refinement acceptance (deployed 2026-07-27)
+
+- Production serves API
+  `tkb_new-rust-api-2026-07-27-agent-parity-v97`, Browser executor
+  `tkb-browser-wasm-executor-v36-retain-incumbent`, bridge
+  `tkb-rust-api-v297-incremental-refinement`, and planner cache key
+  `20260727-v1116-retain-incumbent-v1`.
+- Browser activation retries its authenticated `hello` up to three times inside
+  the server's 8-second claim grace. Transient lease transport failures reuse
+  the same `leaseRequestId`, while authentication/ineligibility errors, Stop,
+  and pagehide fail closed without a duplicate claim. Runtime diagnostics expose
+  `lastActivationError` and `lastClaimError`.
+- When Browser CP-SAT reaches its local deadline or step limit without a better
+  solution, it submits the complete hard-valid incumbent instead of reporting a
+  failed lease. This removes the brief orange VPS handoff and preserves the
+  visible timetable at the terminal boundary.
+- Signed-in production acceptance on the 1,566-period default school started at
+  `612 / 108 / 80 / 16`, reached `557 / 10 / 81 / 0` on the first Browser
+  refinement, then reached `509 / 0 / 55 / 0` on the next refinement (teacher
+  sessions / one-period teacher sessions / Gap1 / Gap2). Every accepted result
+  remained complete at `1566/1566` with `0` unassigned periods.
+- The Browser Agent owned these refinement runs end to end. While it computed,
+  the VPS reported zero active jobs, zero solver tokens in use, and all `6/6`
+  tokens available. Worker, OR-Tools, HiGHS, and WASM responses now carry the
+  isolation headers required for the exact local pipeline.
+- A complete hard-valid refinement is now retained as the next incumbent when
+  it improves ordered teacher quality even if the zero-singleton target has not
+  been reached yet. Equal or worse candidates still restore the previous
+  incumbent, and the remaining singleton target stays active for the next
+  refinement click.
+- Focused verification passes the bridge suite `263/263`, `node --check`, and
+  changed-file `git diff --check`. Full verification passes Browser + bridge
+  `326/326`, Python `165 passed, 2 skipped` plus `41` subtests, native Agent
+  `158/158`, trusted worker `5/5`, and isolated VPS staging scheduler `251/251`,
+  Rust API `246/246`, validator `55/55`, ending with `STAGING_TESTS_OK`.
+- Final signed-in production acceptance on a fresh 1,566-period run completed
+  `1566/1566` with `0` unassigned. Initial Browser quality was
+  `589 / 89 / 84 / 13`; one local refinement reached `536 / 6 / 72 / 0`
+  (teacher sessions / one-period teacher sessions / Gap1 / Gap2). The Browser
+  stayed local through `99%`, returned directly to enabled/success without a
+  fallback state, and production health remained idle at zero active jobs,
+  zero allocated solver tokens, and all `6/6` tokens available.
+- Deployment backups are
+  `/opt/cherry-scheduler-backups/server-state-20260727-153807.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260727-153807.tar.gz`.
+
+### Post-v1.110 stateful Browser exact two-stage acceptance (superseded history)
+
+- The Browser Agent now owns the exact two-stage pipeline without consuming a
+  VPS solver token while its lease is healthy. A single stateful Python model
+  builder remains alive for the lease: Browser HiGHS WASM completes the first
+  timetable, then Browser CP-SAT WASM solves bounded LNS models around the
+  incumbent. The VPS coordinates and validates each digest-bound step, but
+  does not solve it. Disconnect, cancellation, deadline, or protocol failure
+  kills the stream and permits the existing VPS fallback.
+- Real cross-origin-isolated Browser acceptance on the 1,566-period default
+  school produced a complete, hard-valid first timetable in 55.7 seconds with
+  zero application violations and quality `589 / 89 / 84 / 13` (teacher
+  sessions / one-period teacher sessions / Gap1 / Gap2). The first refinement
+  used 22 CP-SAT LNS models in 176.1 seconds and reached `515 / 0 / 47 / 0`.
+  A second refinement used six CP-SAT LNS models in 237.3 seconds and reached
+  `506 / 0 / 42 / 0`. Every result remained `1566/1566`, hard-valid, and used
+  zero VPS solve responses.
+- A strict fresh full-school CP-SAT model still returns `UNKNOWN` in Browser
+  WASM at 34-150 seconds. Complete-first HiGHS followed by incumbent CP-SAT
+  LNS is therefore the supported path: first click guarantees a timetable;
+  later Automatic/Optimize clicks improve quality without rebuilding the
+  entire solve or reintroducing one-period sessions and Gap2.
+- Release markers are API
+  `tkb_new-rust-api-2026-07-27-browser-exact-stream-hardened-v95`, Browser executor
+  `tkb-browser-wasm-executor-v33-browser-exact-stream`, bridge
+  `tkb-rust-api-v295-browser-exact-stream`, and planner cache key
+  `20260727-v1112-browser-exact-stream-v1`. The cache bump is required so
+  existing desktop and mobile tabs do not retain the older executor.
+- Verification passes stateful Python `20/20` with one Windows-only skip,
+  focused Browser/HiGHS/CP-SAT `60/60`, all Node suites `438/438`, scheduler
+  `251/251`, Agent `155/155`, trusted worker `5/5`, Rust API `242/242`, and
+  native validator `55/55`, ending with `STAGING_TESTS_OK`. The canonical
+  `stage-tests.py` command now accepts `TKB_TEST_DATA_DIR` and fails closed with
+  a clear missing-fixture error because this checkout intentionally has no
+  `data/*.xlsx`. The final isolated run used the known non-secret demo fixture
+  directory through that environment variable and uploaded it only into the
+  remote `/tmp` staging tree.
+- A local Windows Agent `1.6.33` experiment was blocked by the machine's
+  Application Control policy. No Code Signing certificate with an accessible
+  private key is installed, so the blocked candidate was deleted and was not
+  published. The public Agent release remains `1.6.32`; the effective Browser
+  exact path means a new EXE is not required for this release.
+- A pre-deploy lifecycle audit blocked the first v94 deployment attempt while
+  production still served v92. The hardened v95 coordinator releases streams
+  on job cancel, worker disconnect, lease TTL, canonical deadline, and blocked
+  pipe timeout; child spawn/write/kill never holds the global registry mutex.
+  HTTP bodies and cumulative Base64 responses are bounded before hashing.
+  Deployment packaging now fails closed unless the public Agent ZIP, manifest,
+  sizes, archive digest, single EXE member, and EXE digest all agree. HiGHS and
+  OR-Tools license/notice files are explicitly included in the web package.
+
+### Post-v1.110 mobile optimization toolbar (local, not deployed)
+
+- The planner toolbar removes the visible `Xếp nhanh` command. Automatic Play
+  remains the primary full-sort action; the existing `Tối ưu` menu keeps its
+  three actions (`Buổi 1 tiết`, `Buổi`, `Tiết trống`) and now sits immediately
+  after Play in the shared DOM order.
+- The optimization menu is available on touch/mobile browsers as well as
+  desktop. On portrait touch layouts the toolbar reserves eight equal slots;
+  landscape reserves nine so Play, Tối ưu, Stop/Delete, Agent, Home, and
+  Statistics never overlap. Mobile shows the optimization icon while retaining
+  the accessible Vietnamese label and touch-sized menu items.
+- `phanmon.js` no longer queries the removed `btnQuickComplete` during busy
+  locking. Focused UI tests pass `36/36`; `node --check web/pages/phanmon.js`
+  and changed-file `git diff --check` pass. No scheduler or solver behavior
+  changed. The frontend cache marker is
+  `phanmon.js?v=20260727-mobile-optimize-toolbar-v1`; this change is local and
+  requires staging/deployment before production acceptance.
+
+### v1.110 native CP-SAT Agent first (deployed 2026-07-27)
+
+- Windows Agent `1.6.32` packages the current Python `solver_runtime`, OR-Tools,
+  and its native dependencies. Normal Windows runs the full CP-SAT solver in
+  `TKBCherryAgent.exe --solver-child`; Smart App Control systems use the same
+  solver through the private WSL runtime marker `20260727.1`. Browser/iOS Agent
+  remains the Rust/WASM heuristic and is not represented as CP-SAT.
+- A registered, free native Agent is authoritative for its canonical job while
+  it remains online. Browser-WASM cannot take that lease after an arbitrary
+  three-second delay. Executor type is read from the authenticated server
+  registration, replaying a Browser lease does not deadlock behind native
+  priority, and the lease receives the remaining canonical watchdog when it is
+  actually claimed. VPS remains the failure/offline fallback.
+- Browser-WASM routes rich teacher, subject, resource, and unsupported
+  constraints to native CP-SAT/VPS. Its global two-class session repack is used
+  only inside the independently validated local constraint envelope. On the
+  default fixture the repack improved `509/0/58/0` to `508/0/57/0` while
+  retaining completeness and hard validity.
+- Native CP-SAT benchmark on the stored 1,566-period default dataset completed
+  `1566/1566`, reduced teacher sessions from `509` to `471`, and retained zero
+  one-period teacher sessions. Gap2 temporarily rose to `4`, consistent with
+  the requested sessions-first objective; the later gap phase remains
+  responsible for cleanup.
+- Unified CP-SAT keeps the full 180-second compute ceiling and now reserves a
+  separate 20 seconds for JSON serialization, Agent upload, and the server's
+  up-to-15-second canonical validation. The browser keeps its 210-second wait,
+  so a valid terminal result near the compute boundary is not discarded. The
+  server overwrites stale 5-10 second reserve hints from cached clients in both
+  VPS and Agent payloads; a late handoff contracts the reserve against its
+  remaining watchdog while preserving at least one second of solver time.
+- Agent release workflow now watches `solver_runtime/**`. Minimum accepted
+  native Agent version is `1.6.32`. API marker is
+  `tkb_new-rust-api-2026-07-27-native-cpsat-reserve-v91`, Browser executor marker
+  is `tkb-browser-wasm-executor-v29-native-cpsat-first`, and planner cache key is
+  `20260727-v1110-native-cpsat-first-v1`.
+- Candidate Browser WASM is 1,817,161 bytes with SHA-256
+  `4792b1f2ad86a046fef4d9782d9650f20e6c0e6c22e9950b5ca185b40c0457e5` and
+  passes the ABI smoke test. Candidate Agent ZIP is 86,290,145 bytes with
+  SHA-256 `13e44ca5bc2b7dfefa8bee6f045fa7b95dacc4cc272364c5f769357cc0d9543c`;
+  its one EXE is 86,882,889 bytes with SHA-256
+  `89f9862aba2a78fa2a175b7c34584bef0b4138721fc45dc12fa70c64b0c37e21`.
+  Build-time GUI and solver-child smoke tests pass, and local Node verification
+  passes `430/430`.
+- Final isolated VPS staging passed scheduler `231/231`, Agent `155/155`, trusted
+  worker `5/5`, Rust API `230/230`, and native validator `55/55`, ending with
+  `STAGING_TESTS_OK`. Production deployment ended with `UPDATE_OK`; public
+  health serves `tkb_new-rust-api-2026-07-27-native-cpsat-reserve-v91`, is idle
+  at zero active/queued jobs, and exposes all `6/6` VPS worker tokens. Public
+  Agent manifest serves `1.6.32` and the expected signed archive digest.
+  Transaction backups are
+  `/opt/cherry-scheduler-backups/server-state-20260727-071958.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260727-071958.tar.gz`.
+- Signed-in browser acceptance is pending because the in-app Browser currently
+  redirects the default scheduler to the login page. Native CP-SAT still submits
+  its full candidate at terminal completion rather than streaming complete
+  intermediate schedules; the larger upload reserve prevents the observed
+  boundary loss, while true checkpoint streaming remains a future resilience
+  improvement.
+
+### Post-v1.110 Browser CP-SAT builder admission (local, not deployed)
+
+- External Browser CP-SAT steps now admit at most two Python model builders by
+  default (`TKB_EXTERNAL_CP_SAT_BUILDERS` may set `1..8`). The coordinator keeps
+  one in-flight step per authenticated lease, rejects a different concurrent
+  payload, and briefly caches the completed HTTP response by canonical response
+  digest. A dropped/retried request therefore replays the same model/result
+  instead of multiplying roughly 179 MB Python builders on the VPS. Replay
+  storage is bounded to 64 MiB and expires after two minutes.
+- Isolated VPS staging passes scheduler `236/236`, Agent `155/155`, trusted
+  worker `5/5`, Rust API `233/233` (including admission/replay regressions), and
+  native validator `55/55`, ending with `STAGING_TESTS_OK`. Focused Browser
+  CP-SAT/heuristic Node tests pass `56/56`; external Python CP-SAT tests pass
+  `5/5`; changed-file `git diff --check` passes.
+
+### Post-v1.110 Browser CP-SAT quality audit (local, not deployed)
+
+- Real Chrome CP-SAT WASM works under COOP/COEP on a small model, but the full
+  default fixture (`42,067` variables, `34,022` constraints, 2.95 MB model)
+  returned CP-SAT `UNKNOWN` after about 45.6 seconds. The old external response
+  installer accepted that status, so Python materialized its hard-valid fallback
+  (`522` sessions, `28` one-period sessions, `88` Gap1, `8` Gap2) as Agent
+  success. Native CP-SAT on the same request completed in about 15.3 seconds
+  with `0` one-period sessions. More Browser workers cannot fix this protocol
+  and model-quality failure.
+- External response installation now accepts only `FEASIBLE` or `OPTIMAL` and
+  rejects `UNKNOWN`/`MODEL_INVALID` before materialization. Browser CP-SAT also
+  applies the regular incumbent quality envelope, so a complete but worse Agent
+  candidate is surrendered to the canonical VPS fallback instead of replacing
+  the visible timetable.
+- Focused verification passes Browser executor `53/53`, external CP-SAT Python
+  `6/6`, JavaScript syntax, and changed-file `git diff --check`. A lean/LNS
+  Browser model around a feasible incumbent is still required before full-model
+  Browser CP-SAT can claim native/VPS quality parity on production-size data.
+
+### Post-v1.110 exact Browser CP-SAT claim routing (local, not deployed)
+
+- Root cause of an immediate orange `VPS du phong` state was capability
+  collapse: a successful OR-Tools Browser probe still registered as generic
+  `web-wasm`, so the server applied the restricted heuristic constraint
+  envelope. Fresh Automatic requests with teacher/subject/resource rules were
+  marked VPS-owned before the exact runtime could claim them.
+- A proven exact tab now posts `ui_browser_cpsat_ready`, registers as
+  `web-cpsat-wasm`, and is checked against a separate server-owned CP-SAT
+  eligibility bit. The generic `web-wasm` path retains its restricted envelope
+  and cannot claim rich jobs. A rich fresh Automatic request starts at
+  `agent_waiting`, becomes `agent_running` after the scoped claim, renews the
+  same lease, and allocates zero VPS worker tokens. VPS remains the fallback
+  after disconnect/lease loss or an exact CP-SAT `UNKNOWN`/failed result.
+- Local markers are API
+  `tkb_new-rust-api-2026-07-27-browser-cpsat-claim-v93`, Browser executor
+  `tkb-browser-wasm-executor-v31-exact-cpsat-claim`, bridge
+  `tkb-rust-api-v294-browser-cpsat-claim`, and planner cache key
+  `20260727-v1111-browser-cpsat-claim-v2`. Full isolated staging passes Python
+  scheduler `237/237`, Agent `155/155`, trusted worker `5/5`, Rust API
+  `234/234`, and validator `55/55`, ending with `STAGING_TESTS_OK`. Focused
+  Browser/bridge/layout Node suites pass `347/347`; external CP-SAT Python
+  passes `6/6`; syntax and `git diff --check` pass.
+
+### Post-v1.110 Browser CP-SAT incumbent LNS (local, not deployed)
+
+- Production-size Browser CP-SAT no longer sends the unconstrained 38k-42k
+  variable quality model when a complete hard-valid incumbent already has zero
+  one-period teacher sessions and zero Gap2. The external adapter now builds a
+  deterministic request-scoped LNS: it selects low-load teacher pairs, expands
+  their connected assignments/classes, freezes every outside primary decision,
+  preserves the zero-singleton/zero-Gap2 envelope, and caps total teacher
+  sessions at the incumbent value. Inconsistent derived session-model hints are
+  discarded while the feasible primary `n_*` and `period_block_*` warm start is
+  retained.
+- Serialized `cluster_p_*` quality models are transformed too. Most hinted
+  cluster patterns are fixed outside a bounded connected neighborhood, Gap2 is
+  prohibited for released teachers, the incumbent session cap remains hard,
+  and the transformed cluster solve receives at least 60 seconds. This branch
+  produced the best live-fixture result: `501/0/57/0` became `495/0/43/0`
+  (teacher sessions / one-period sessions / Gap1 / Gap2), with `1566/1566`
+  periods and hard validity preserved. The full transformed cluster pipeline
+  took about 78.6 seconds. The lower-level session LNS alone reached
+  `497/0/60/0` and proved `OPTIMAL` in 11.33 seconds on one native worker.
+- Exact external-protocol replay emitted a 1,279,039-byte first model, accepted
+  its native response, and deterministically emitted the next model. Real
+  cross-origin-isolated Chrome/Browser WASM solved that model to `OPTIMAL` in
+  27.6 seconds and returned a 10,199-byte `CpSolverResponse`; this verifies the
+  Agent runtime rather than only native Python. Focused Browser executor tests
+  pass `56/56`; external CP-SAT plus result-contract Python tests pass
+  `165/165`; Python compile and changed-file `git diff --check` pass.
+- This LNS change is model-only. It does not alter Agent/VPS claim routing and
+  has not been staged or deployed.
+
+### Post-v1.110 stateful Browser exact stream (local, not deployed)
+
+- Browser exact fresh solving now keeps one `solve_stdio.py
+  external-cp-sat-stream` child alive for the authenticated lease. Python emits
+  one newline-delimited model wrapper, blocks for the digest-bound Browser
+  response, and resumes the same in-memory `solve_from_ui_data` call. The VPS
+  builds and validates models/results but does not solve them. This removes the
+  previous O(n^2) behavior where every HTTP step launched Python and replayed
+  all prior HiGHS/CP-SAT responses from step zero.
+- Rust retains the existing per-step admission/replay cache in front of the
+  stream, verifies the unchanged cumulative-response prefix plus the newest
+  step/model digest, and advances Python only once. At most
+  `TKB_EXTERNAL_CP_SAT_BUILDERS` live streams exist (default two, clamped to
+  1..8). Fail, cancel, worker disconnect, pipe failure, per-step timeout, or the
+  canonical absolute deadline signals cancellation, kills/reaps the child, and
+  releases capacity. The API marker is
+  `tkb_new-rust-api-2026-07-27-browser-exact-stream-hardened-v95`.
+- A fresh Automatic Browser-exact request with no complete incumbent is scoped
+  internally to the established `quick_complete` backend focus. This avoids
+  discarding a complete timetable when the later optional zero-singleton model
+  returns CP-SAT `UNKNOWN`. Explicit Singletons/Sessions/Gaps requests and
+  complete-incumbent Browser LNS keep their requested quality focus. This is a
+  deliberate complete-first tradeoff: quality debt may remain on the first
+  timetable and can be reduced by a later optimization/refinement run.
+- Real cross-origin-isolated headless Chrome on
+  `.codex_tmp/agent-fresh-after-delete-request.json` completed in 59.5 seconds.
+  The Browser solved 31 HiGHS models and one hinted CP-SAT model, returned
+  `1566/1566`, `hard_ok=true`, and zero application-constraint violations, with
+  zero VPS solve responses. First-result quality was `591/91/87/13` (teacher
+  sessions / one-period sessions / Gap1 / Gap2). For comparison, retaining the
+  strict Automatic fresh quality gate reached its optional 956,449-byte CP-SAT
+  model after 30 HiGHS steps and returned `UNKNOWN` at 115.7 seconds.
+- Focused Python verification passes 20 tests with one Windows-only skip,
+  including a 24-model assertion that the solver is invoked exactly once and
+  wrong step/digest rejection. Isolated VPS Rust verification passes `237/237`
+  plus native validator `55/55`; focused Browser/HiGHS/CP-SAT Node verification
+  passes `60/60`; changed-file `git diff --check` passes. No deployment was
+  performed.
+
+### v1.105 Agent-first quality, reclaim, and mobile administration (deployed 2026-07-26)
+
+- Fixed the first Automatic lease falling straight back to VPS after a healthy
+  Browser Agent had already probed successfully. `agent_helper_claim_payload`
+  intentionally clears the outer async/FIFO admission flags on its execution
+  copy; that made the Browser executor reject fresh and `repair_constraints`
+  leases. Browser leases now carry the internal-only
+  `browser_wasm_server_lease` marker. Initial `/api/solve-data` admission stays
+  strict, and native Agent payloads do not receive this marker.
+- Browser WASM no longer abandons its local seed probe when `/status` reports a
+  Native Agent online. That signal can be stale or describe a busy packaged
+  Agent; both local executors may wait, while the canonical server lease still
+  permits only one of them to own the job.
+- A fresh or resumed browser that receives `vps_queued`/`vps_running` now sends
+  a scoped `hello(jobId)` and reclaims that same canonical job. The ready local
+  pool is not closed merely because a deduplicated or transient response says
+  VPS. Polling allows one reclaim per Agent-to-VPS transition, so mobile
+  background/offline fallback returns to the device after foreground/network
+  recovery without creating another solve or repeatedly calling `hello`.
+- Verification: full local Node **423/423**; Browser Agent **45/45**;
+  isolated VPS scheduler **230/230**, Agent **155/155**, trusted worker **5/5**,
+  Rust staging passed, and native validator **50/50**, ending with
+  `STAGING_TESTS_OK`. JavaScript syntax, WASM ABI, and `git diff --check` pass.
+
+- Current deployed application release: **v1.109** (full-attempt Agent routing,
+  residual-singleton sharing, multi-session relay quality, and fresh VPS
+  recovery only after a real Agent failure; deployed 2026-07-27).
   Transactional backups are
-  `/opt/cherry-scheduler-backups/server-state-20260725-203929.tar.gz` and
-  `/opt/cherry-scheduler-backups/app-release-20260725-203929.tar.gz`.
+  `/opt/cherry-scheduler-backups/server-state-20260727-031209.tar.gz` and
+  `/opt/cherry-scheduler-backups/app-release-20260727-031209.tar.gz`.
+
+### v1.105 mobile administration actions (deployed)
+
+- On mobile administration pages for Khoi, Lop, Giao vien, and Mon, the Add
+  command is now a compact plus-icon button and both delete actions are visible
+  as separate icon buttons. The former three-dot overflow menu is removed, and
+  every icon retains a full accessible name.
+- The mobile navigation spells out `Giao vien` instead of `GV`. The Phan cong
+  numeric total explicitly centers its content on iPhone, overriding the older
+  mobile left-alignment rule.
+- Cache marker: `20260726-v1105-mobile-admin-actions-v1`. Focused mobile
+  administration verification passes **6/6**. This UI-only change does not
+  modify scheduler behavior.
+
+### v1.105 scheduler quality-wave hardening (deployed)
+
+- Focused teacher-session refinement now retries diversified neighborhoods
+  instead of stopping after the first stagnant merge pass. It invokes the
+  global same-class swap and focused cycle portfolio, and never accepts a
+  session reduction that increases existing Gap2 debt.
+- Focused gap refinement now alternates Gap2/Gap1 phase portfolios with the
+  targeted compaction passes for up to eight bounded rounds, retaining the
+  zero-singleton/zero-Gap2 envelope while the incumbent improves.
+- Automatic Browser portfolio keeps Gap2 cleanup sticky after a session wave
+  until the strict publishable envelope is restored. Browser regression suite
+  passes **45/45**. Local WASM benchmark (1,566 periods, six 10-second waves)
+  improved `501/0/70/0` to `499/0/67/0` (sessions/one-period/Gap1/Gap2);
+  the second fixture improved `514/1/107/1` to `509/1/87/0` across five
+  alternating plus four cleanup waves with diversified seeds. The deployed
+  WASM is
+  1,460,474 bytes with SHA-256
+  `1fdef2ea51b96044f0814014f568bf13d52f5dba280d3fcd4df7fc6a72248b13`.
+- Automatic no longer converts its wall-clock budget into a pessimistic fixed
+  15-second-wave count. Fast session waves can continue up to a bounded
+  36-wave guard while the real 180-second clock remains authoritative; twelve
+  stagnant waves stop at a cleanup boundary. Exploratory incumbents are shared
+  by session-first search quality, while checkpoints/final results still use
+  the public one-period, Gap2, sessions, Gap1 order. Full local Node passes
+  **423/423** and JavaScript syntax plus `git diff --check` pass. The browser
+  now switches to Gap cleanup by remaining wall-clock budget as well as the
+  bounded wave guard, so fast waves cannot leave the final third unused.
+
+### Post-v1.105 automatic plateau escape (local, not deployed)
+
+- The exact reconstructed `default` incumbent is `1566/1566`, hard valid,
+  `501` teacher sessions, `0` one-period sessions, `57` Gap1, and `0` Gap2.
+  The prior deterministic merge/swap portfolio used an entire Agent wave but
+  returned this incumbent unchanged because the next session reduction needs
+  two connected same-class exchanges with one temporary singleton.
+- Native focused Sessions and Automatic now run a bounded two-pair escape. The
+  closing search follows the temporary singleton plus both teachers touched by
+  the opener, accepts only a strict session reduction that returns to the
+  zero-singleton/zero-Gap2 envelope, and publishes the first hard-valid win.
+  The opener beam is capped at 128 so the second exchange is reached before the
+  Browser deadline. Automatic preserves a clean escape instead of running the
+  debt-taking reducer and risking a final rollback.
+- Exact WASM acceptance is stable across seeds: 15-second Sessions and
+  Automatic runs both improve `501/0/57/0` to `499/0/58/0`. Re-running from
+  `499/0/58/0` remains unchanged at 15 and 30 seconds, which is now an honest
+  local plateau rather than the previous missed `501 -> 500 -> 499` chain.
+- Verification: Browser WASM ABI passes; isolated Rust passes **219/219** plus
+  native validator **50/50**; `git diff --check` passes. Current local WASM is
+  1,547,381 bytes with SHA-256
+  `8934e3b2384e2febdc98d782ca058d1c108395383371d190d0903880f7c87f61`.
+  Production still serves v1.105 and has not received this plateau fix.
+
+### v1.106 partial Agent continuation (deployed 2026-07-26)
+
+- Fresh Automatic Browser-Agent work reserves a bounded VPS continuation
+  window. A hard-valid
+  partial result is never publishable; the browser uploads its best partial
+  timetable as a resume checkpoint, fails the exact lease, and returns the same
+  canonical `jobId` to VPS instead of reporting a false complete schedule.
+- The server independently validates that every partial lesson is a canonical
+  demand subset, retains all fixed lessons, has no resource/user-rule conflict,
+  and reports consistent totals. Resume checkpoints cannot win candidate
+  selection, Stop, or terminal Agent completion. They are exposed only to the
+  same-job VPS takeover path.
+- VPS continuation distinguishes complete refinement from partial repair. The
+  Python adapter recognizes `agent_partial_resume_checkpoint` as a soft
+  incumbent, so it continues from the Browser Agent placements rather than
+  falling back to stale UI cells or an empty hint.
+- Regression coverage includes the observed `108/1566` incomplete result:
+  Browser Agent **46/46**, Python result contract **157/157** plus **17**
+  subtests, isolated Rust **222/222**, native validator **52/52**, JavaScript
+  syntax, Browser WASM ABI, and `git diff --check` pass. The rebuilt local WASM
+  is 1,547,381 bytes with SHA-256
+  `8934e3b2384e2febdc98d782ca058d1c108395383371d190d0903880f7c87f61`.
+  Production serves v1.106 with API marker
+  `tkb_new-rust-api-2026-07-26-incomplete-agent-handoff-v85`, Browser executor
+  `tkb-browser-wasm-executor-v23-incomplete-handoff`, and the same WASM hash.
+
+### v1.107 safe partial Agent fallback (deployed 2026-07-26)
+
+- An incomplete Browser-Agent result can no longer become terminal. Partial
+  checkpoints remain scoped to the same canonical job, cannot be reclaimed by
+  another Agent after `/fail`, and are handed to VPS on timeout, explicit Stop,
+  checkpoint-upload failure, or Agent disconnect. A complete incumbent always
+  beats a partial HTTP 422 result.
+- Fresh Automatic reserves 65% of the canonical attempt for VPS fallback,
+  clamped to 75-100 seconds. The local compute deadline separately charges a
+  37-second envelope for pool scale, synchronous Worker settling, partial
+  checkpoint upload, lease fail, and miscellaneous handoff work. A 180-second
+  request splits into `43 local + 37 handoff + 100 VPS`; a 130-second request
+  splits into `15 + 37 + 78`.
+- Status-422 partial checkpoint uploads use a five-second client timeout. If a
+  checkpoint contains only the original fixed lessons, VPS ignores that
+  non-progressing repair seed and starts a fresh completion-first solve with
+  teacher optimization deferred. The exact `default` fixture then completed
+  `1566/1566` in about 51 seconds with zero one-period teacher sessions.
+- Production markers are
+  `tkb_new-rust-api-2026-07-26-safe-partial-fallback-v86`,
+  `tkb-browser-wasm-executor-v24-safe-partial-fallback`, and
+  `20260726-v1107-safe-partial-fallback-v1`. Local and deployed Browser JS,
+  WASM, and bridge files are byte-identical. Their SHA-256 values are
+  `f3c32107cdc5ee6b05d9fbfbbcdbabc931afa4c09fd2a9871cdddf8dc0175191`,
+  `8934e3b2384e2febdc98d782ca058d1c108395383371d190d0903880f7c87f61`,
+  and `69fdcc4529cb3362add6d566a28966a9792883ad934db27dd515313133791eb4`.
+- Verification passes full Node **425/425**, isolated VPS scheduler **231/231**,
+  Agent **155/155**, trusted worker **5/5**, Rust **224/224**, and native
+  validator **52/52**, ending with `STAGING_TESTS_OK`. Deployment returned
+  `UPDATE_OK`; public health is idle with zero active/queued jobs and all `6/6`
+  VPS Worker tokens free.
+
+### v1.108 full-attempt staged Agent (deployed 2026-07-26)
+
+- Removed the routine `43s Agent + 37s handoff + 100s VPS` split introduced in
+  v1.107. A healthy foreground Browser Agent now owns the complete requested
+  130- or 180-second attempt. VPS takes over only after Agent disable,
+  background/pagehide, disconnect or heartbeat loss, explicit Stop, Worker
+  failure, or a genuinely incomplete full local attempt.
+- Fresh Automatic now runs two stages on the device. Every local Worker first
+  uses the bounded MRV `quick_complete` lane to obtain a complete hard-valid
+  timetable, immediately uploads that complete timetable as a checkpoint, then
+  continues incremental singleton, session, and gap waves from the complete
+  incumbent. Stop or a later Worker failure therefore cannot lose the complete
+  timetable and return the visible fixed-only schedule.
+- The exact `default` fixture reproduced the old bug: the v1.107 43-second
+  Automatic trajectory stopped at `1536/1566`; even 130 seconds on that greedy
+  trajectory stopped at `1548/1566`. The staged completion lane reached
+  `1566/1566` in 0.7-5.5 seconds. A one-Worker 125-second staged replay retained
+  `1566/1566`, reached zero one-period teacher sessions, one Gap2 session, and
+  548 teacher sessions; Browser production runs diversified device Workers and
+  shares their best complete incumbent.
+- A partial checkpoint from a fresh Automatic or constraint-repair request is
+  no longer sent to VPS as `repair_partial`. If the Agent really fails before
+  producing its complete checkpoint, VPS discards the partial placement and
+  runs `fresh_complete_first` from canonical fixed lessons. An explicitly
+  partial-repair request still keeps the repair path.
+- Production markers are
+  `tkb_new-rust-api-2026-07-26-agent-full-staged-v87`,
+  `tkb-browser-wasm-executor-v25-agent-full-staged`, and
+  `20260726-v1108-agent-full-staged-v1`. The deployed Browser executor SHA-256
+  matches local at
+  `5af5eed1753e4b56d39ef900ce6deac2370d8788e26cdefdb72485f14d1d66c3`.
+- Verification passes full Node **426/426**, Browser Agent **48/48**, isolated
+  VPS scheduler **231/231**, Agent **155/155**, trusted worker **5/5**, Rust
+  **224/224**, and native validator **52/52**, ending with
+  `STAGING_TESTS_OK`. Deployment returned `UPDATE_OK`; public health is idle
+  with zero active/queued jobs and all `6/6` VPS Worker tokens free.
+
+### v1.109 residual-singleton sharing and multi-session relay (deployed 2026-07-27)
+
+- The Browser Agent quality gap was a search-neighborhood problem, not a CPU or
+  RAM shortage. Once the default 1,566-period fixture reached
+  `526 sessions / 0 one-period / 91 Gap1 / 0 Gap2`, the former swap/cycle
+  portfolio could not cross the local plateau even with more Workers.
+- Native focused Sessions now uses a bounded multi-session relay: an opener may
+  temporarily move through connected class/teacher sessions, intermediate
+  relay moves repair the displaced lesson, and a closer must restore a complete
+  hard-valid timetable. A candidate is committed only when one-period sessions
+  and Gap2 do not increase and total teacher sessions strictly decrease. Up to
+  eight bounded relay attempts can run in one Sessions wave.
+- On the frozen plateau, eight parallel 15-second WASM seeds now return
+  `518-523` teacher sessions; every result remains `1566/1566`, hard-valid,
+  with zero one-period sessions and zero Gap2. Chained relay waves reached
+  `504-507`, and the earlier default incumbent crosses `501 -> 498` without
+  introducing one-period sessions or Gap2.
+- Fresh Automatic now shares a cross-Worker incumbent only when it strictly
+  lowers residual one-period sessions. Zero-singleton candidates carrying
+  Gap2 debt remain local until cleanup; a clean `0/0` incumbent may be shared
+  normally. This shortened the expensive singleton stage and let the exact
+  six-Worker, 130-second replay reach
+  `510 sessions / 0 one-period / 75 Gap1 / 0 Gap2`. Eight Workers regressed to
+  `521/0/84/0` through CPU contention, confirming the adaptive six-Worker
+  choice for this 1,566-period workload.
+- Full local Node verification passes **430/430**, including the final strict
+  residual-sharing regression. Isolated VPS staging passes
+  scheduler **231/231**, Agent **155/155**, trusted worker **5/5**, Rust
+  **225/225**, and native validator **53/53**, ending with
+  `STAGING_TESTS_OK`. Browser WASM validation independently confirmed both the
+  `518/0/75/0` and `498/0/58/0` incumbents as complete and hard-valid;
+  `git diff --check` passes.
+- Release markers are
+  `tkb_new-rust-api-2026-07-27-adaptive-agent-quality-v88`,
+  `tkb-browser-wasm-executor-v27-residual-singleton-share`, and
+  `20260727-v1109-residual-singleton-share-v1`. Planner bridge and constraint
+  cache keys are `20260727-v1109-agent-quality-v1`, preventing mobile browsers
+  from retaining the older Agent routing after deployment.
+- Current local WASM is 1,654,462 bytes with SHA-256
+  `3cb7428bc48de751cd320116f70e1dbc8946c4744573132b84b17d36afb2be5a`.
+- Production deployment returned `UPDATE_OK` twice (scheduler build and the
+  cache-key refresh). Live health reports API marker
+  `tkb_new-rust-api-2026-07-27-adaptive-agent-quality-v88`, zero active/queued
+  jobs, and `6/6` VPS Worker tokens free. Live page serves cache keys
+  `20260727-v1109-residual-singleton-share-v1` and
+  `20260727-v1109-agent-quality-v1`; live WASM byte hash matches the local
+  `3cb7428b...afb2be5a` digest.
+- Browser acceptance on the stored `default` school: a pre-deploy VPS run
+  finished complete at `1566/1566`, `0` one-period, `0` Gap2. After cache-key
+  refresh, two foreground Chrome runs stayed Agent-owned for the full attempt
+  with six local Workers and VPS `0` allocated tokens. The first improved
+  `529/81` to `515/58` (sessions/Gap1); the second retained that incumbent
+  without regression. Final UI metrics: `1566/1566`, `515` teacher sessions,
+  `58` Gap1, `0` Gap2, `0` one-period, `0` unassigned.
+  The web and packaged-Agent copies are byte-identical. Production now serves
+  v1.109; acceptance was completed in the public Chrome session.
+
+### v1.104 Agent-first quality and mobile assignment toolbar (deployed)
+
+- A healthy, enabled Browser Agent is authoritative for Automatic, constraint
+  repair, Buoi, and Tiet trong work. The server admits VPS only when Agent is
+  disabled, unavailable, hidden/suspended on mobile, disconnected, or unable to
+  claim/finish the fenced job. A seed WASM worker is compiled before the new
+  POST, then the device pool expands in the background up to its reported
+  logical CPU ceiling. No VPS worker token is reserved while local Agent owns
+  the job.
+- Automatic `repair_constraints` requests now use the same Agent-first route.
+  The local clone strips flexible timetable state and keeps only fixed cells;
+  the canonical server still validates every demand, resource, hard rule, and
+  fixed lesson before accepting checkpoints/results. Fixed lessons recover
+  teacher/room from canonical assignments even when schedule resource mirrors
+  are stripped.
+- Browser checkpoints are incumbents, not terminal results. Stop keeps the
+  newest accepted checkpoint. If mobile backgrounding, heartbeat loss, or Agent
+  failure yields to VPS, the fallback resumes from that checkpoint with the
+  same canonical clock and fenced generation. When the same mobile page returns
+  to foreground, a scoped hello can reclaim a running VPS job; the indicator
+  remains amber through `handoff_to_agent` and turns green only at an Agent
+  phase.
+- Native quality search prioritizes one-period teacher sessions, Gap2, teacher
+  sessions, then Gap1. Small singleton/ejection/cycle neighborhoods run before
+  broad expensive passes, retain the best hard-valid incumbent, and stop on
+  live improvements instead of replaying an exhausted signature. On the
+  default 1,566-period residual benchmark, `2/0` (one-period/Gap2) reached
+  `0/0` in about 22 seconds without moving fixed lessons.
+- Mobile Phan cong now puts `Lop / GV / Mon / Nhap / Xuat / Tong / Xoa` in one
+  compact row; the total badge shows only the number and keeps an accessible
+  label. At a 390px viewport the three tabs remain usable at roughly 59px each.
+- Cache/version markers: `20260726-v1104-agent-first-quality-v1`,
+  `20260726-v1104-mobile-assignment-toolbar-v2`,
+  `tkb-browser-wasm-executor-v21-agent-first-quality`,
+  `tkb-rust-api-v292-agent-first-quality`,
+  `tkb_new-rust-api-2026-07-26-agent-first-quality-v83`, and
+  `20260726-v1104-agent-first-quality-v1`.
+- Verification: full local Node **418/418**; isolated VPS scheduler **230/230**,
+  Agent **155/155**, trusted worker **5/5**, Rust **218/218**, native validator
+  **50/50**, Browser WASM ABI `BROWSER_WASM_ABI_OK`, JavaScript syntax, and
+  `git diff --check` pass. WASM is 1,458,541 bytes with SHA-256
+  `b0fb637987a65310e7b6fe9bcd37248786461ceab1f3d09e4a1884e552a51feb`.
+- Production update returned `UPDATE_OK`; the live health endpoint reports
+  zero active/queued jobs, zero allocated VPS Worker tokens, and all `6/6`
+  tokens available immediately after restart.
 - v1.103 fixes Automatic progress remaining at `12%` after a mobile resume or
   an older/skewed backend start clock. Queue, cancelling, and terminal states
   can no longer be admitted as running, and requested-job scalar flags are
@@ -4722,6 +10715,11 @@ and in permanent regression tests.
 
 ## Local Workspace Cleanup
 
+- On 2026-07-26 the Agent/quality investigation cleanup removed 300 ignored
+  `.codex_tmp` benchmark, extracted legacy audit, and harness files totaling
+  51,191,806 bytes. Windows ACLs retain 32 empty directory shells under one
+  extracted legacy `.git` tree; they contain zero files/bytes and remain
+  excluded from tests and deployment.
 - On 2026-07-25 a second audit removed the obsolete local Agent 1.3.0 install,
   its AgentHelper pairing/WSL state, broken startup and notification-area
   registry entries, every top-level TKB/Cherry Temp artifact, and every `_MEI`
@@ -4853,31 +10851,202 @@ GET https://tkbcherry.com/pages/sapxep?sid=default
 Also verify the served cache key and the relevant version marker inside each
 changed JS asset. Ask the user to press `Ctrl + F5` after a frontend deployment.
 
-Latest successful deployment marker observed on 2026-07-25: `UPDATE_OK` for
-application v1.102. Public health serves
-`tkb_new-rust-api-2026-07-25-agent-validation-v82`; the planner serves
-`20260725-v1102-agent-validation-load-v1`, bridge marker
-`tkb-rust-api-v290-executor-status`, and Browser executor
-`tkb-browser-wasm-executor-v20-checkpoint-coalescing`. Super Admin serves
-`20260725-v188-compact-super-admin-v2`.
-Public health is idle with zero active/queued jobs and `6/6` worker tokens.
-Transaction backups are
-`/opt/cherry-scheduler-backups/server-state-20260725-170815.tar.gz` and
-`/opt/cherry-scheduler-backups/app-release-20260725-170815.tar.gz`.
-Public Agent release `1.6.31` and its signed manifest are live. The 88,054,539
-byte archive SHA-256 is
-`402f4eba12db1b31aa923e0960450855a7314729c90c796889741b31a4aaaa96`; the
-88,612,442-byte executable SHA-256 is
-`6b1ad2a224713819c5ae0be98743f48a30df3601b00ec8b3c84a2ad6f3ebaece`.
-On enforced Smart App Control systems Agent 1.6.31 starts hidden, prepares its
-private WSL runtime automatically, and stays controllable from the Win32
-notification area. Its WSL runtime marker is `20260724.2` so an existing private
-runtime receives the adaptive CPU policy.
-Stable active-status DOM histories, iPhone/PWA reattach, No-Agent/Cancel, and
-Agent handoff regressions remain covered by the local and isolated VPS suites.
-Owner Agents older than 1.6.31 are upgrade-only at the server lease gate.
-Trusted spillover remains disabled until a separate Linux node is accepted and
-its server digest is configured.
+Latest successful state: Rust API `v123` keeps the per-account Cloud/VPS ledger
+and Cloud-first/VPS-fallback routing; the narrow Google telemetry overlay is
+live; the planner is the responsive Optimize-menu release `v1180` while
+retaining the targeted two-click Automatic contract; and
+Cloud Run revision `tkb-solver-00003-skq` with quality-stagnation guard receives
+100% of Cloud traffic. The 2026-08-02 combined rollout also publishes the
+class-count Max pricing card and the Super Admin-only infrastructure view.
+Public health still serves
+`tkb_new-rust-api-2026-08-01-cloud-run-routing-agent-off-v123`; the deployed
+Rust binary hash is
+`dc6f9798f3e89fb25f02a62a270c378df42bb55f1266182a7bb8546de0438367`. The VPS
+solver source and objective were not redeployed or modified.
+
+Current rollback points are:
+
+- Google usage/Rust portal overlay:
+  `/opt/cherry-scheduler-backups/cloud-run-integration-20260801-172539.tar.gz`.
+- Cloud profile before revision-00003 repin:
+  `/opt/cherry-scheduler-backups/cloud-run-quality-profile-20260801-174517.db`.
+- Two-click planner:
+  `/opt/cherry-scheduler-backups/two-click-auto-v1177-20260801-161938`.
+- Optimize menu/mobile-sleep planner:
+  `/opt/cherry-scheduler-backups/planner-optimize-menu-v1180-20260802-090905`.
+- Combined cost/Max-pricing/static rollout:
+  `/opt/cherry-scheduler-backups/google-cost-max-20260802-021406`.
+
+The planner serves `20260802-v1180-optimize-menu-busy-lock-v1`; exact hashes are
+recorded in the v1180 section above. Client-owned Agent lanes remain disabled;
+the Super Admin server-route indicator and its source remain available, and
+both it and Optimize are locked during solves. Google Monitoring now reconciles rolling operational usage each
+minute. Detailed Billing Export is configured but its table is still empty, so
+actual gross/credit/net charges remain `billing_export_pending` until Google
+publishes the first rows. Final verification includes Rust API **320/320**,
+validator **58/58**, Google sync **6/6**, portal/mobile **13/13**, Cloud assets
+**11/11**, integration deployer **3/3**, quality contracts **170 passed + 23
+subtests**, live Cloud `/health`, and a production-size Cloud replay. Public
+health was idle with zero active/queued jobs and all 6/6 VPS tokens free.
+
+## R&D Deep Refine d58 — 2026-08-07
+
+- Không deploy và không sửa production trong vòng nghiên cứu này. Snapshot khóa là
+  `.codex_tmp/frozen-current.json` với SHA
+  `d58abcb45237cf30b6795c38c7384646c51aff0dd6cd9192b204dc1ee428bd40`; source
+  pins live vẫn giữ nguyên adapter `f942483d…` và session CP-SAT `46f5560f…`.
+- Đã thêm vào harness R&D hai lane staging-only: `deep-refine-short-probe` và
+  `deep-refine-gap-early`. Probe cap 465 chạy session model trực tiếp, phân biệt
+  `FEASIBLE`/`INFEASIBLE`/`UNKNOWN`; witness model-only không được publish.
+- Legacy timeline 5 seed cho thấy canonical publishable 466/40 chỉ xuất hiện
+  khoảng 175,1–175,4 giây; model-only Gap1 tốt hơn xuất hiện sớm nhưng chưa là
+  TKB. Chi tiết ở `tkb_algorithm_research/DEEP_REFINE_TIMELINE_D58.md`.
+  - Candidate `deep-refine-gap-early`: 90 giây đạt 5/5 hard-valid, median 466/39;
+    120 giây đạt 5/5 hard-valid, median 466/38. Cả hai fail quality gate ≤36,
+    không chạy 20 seed và không promote. Candidate short-probe 120 giây cũng đạt
+    5/5 hard-valid nhưng median 466/38, 0/5 đạt Gap1≤36; lần bị dừng trước đó không
+    được trộn vào batch hoàn tất.
+- Các artifact chính: `DEEP_REFINE_SPEEDUP_REPORT.md`,
+  `deep-refine-speedup-gap-early-pilot90-d58.jsonl`,
+    `deep-refine-speedup-gap-early-pilot120-d58.jsonl`, năm file per-seed
+    `deep-refine-speedup-short-probe-pilot120-d58-*.jsonl` và
+    `deep-refine-speedup-short-probe-interrupted-20260807.jsonl`.
+  - Benchmark dùng `--staging-only`, keepalive SSH, snapshot local và remote
+    `/tmp` artifact để khôi phục output khi kênh SSH rớt; sau khi dừng/chạy xong,
+  VPS health xác nhận `solverActiveJobs=0`, `solverQueuedJobs=0`, worker tokens
+  `6/6`, không còn `/tmp/tkb-rnd-algorithm-*`. Không có database/TKB người dùng bị
+  ghi.
+- Quyết định hiện tại: giữ nguyên legacy production. Hướng R&D còn mở là giảm
+  khoảng trễ model-only→canonical bằng streaming/incremental materialization hoặc
+  neighborhood repair; không tự động đưa lên Cloud Run/VPS.
+
+## R&D hybrid JS pre-analysis d58 — 2026-08-07
+
+- Thêm prototype độc lập `tkb_algorithm_research/hybrid-js-preanalyzer/` (Node
+  client analyzer + Python backend-equivalent verifier). Prototype chỉ đọc
+  `.codex_tmp/frozen-current.json`, không import production, không gọi solve
+  route và không sửa database/VPS/Cloud Run.
+- Trên fixture d58, analyzer tính đúng 1,566/1,566 periods, 466 teacher
+  sessions và Gap1=47; xếp hạng debt theo teacher và chọn component đóng theo
+  lớp với giới hạn 4 lớp/64 teacher/160 lesson/256 cạnh. Request fingerprint
+  tách input, assignments, PCCM, fixed cells, constraints và model version;
+  incumbent/client fingerprint được recompute bằng canonical JSON.
+- Benchmark 300 vòng local ghi tại
+  `tkb_algorithm_research/hybrid-js-preanalyzer-benchmark-d58.json`: payload
+  24,059 bytes so với snapshot minified 466,459 bytes (giảm 94.842%); JS p50
+  13.453 ms, backend-equivalent build p50 26.645 ms, verify p50 26.265 ms.
+  Independent verifier accept payload hợp lệ và reject stale revision,
+  stale incumbent/constraint, tamper giữ fingerprint hoặc tamper tự rehash.
+- Báo cáo tiếng Việt: `tkb_algorithm_research/HYBRID_JS_PREANALYZER_D58.md`.
+  Đây là bằng chứng pre-analysis/payload, chưa phải solver speedup, SLA hay
+  quyết định thay legacy production.
+
+## R&D hybrid streaming coordinator d58 — 2026-08-07
+
+- Added the standalone research-only prototype at
+  `tkb_algorithm_research/hybrid-streaming-coordinator-v1/`. It models the
+  global deadline/reserve, bounded candidate queue, semantic fingerprint and
+  deduplication, generation-fenced cancellation, canonical publication guard,
+  history telemetry, and next-objective selection.
+- The three requested allocation baselines are executable in the token model:
+  `4 search + 2 materialize`, `3 search + 3 materialize`, and `4 search + 1
+  materialize + 1 local repair`. The invariant is total <= 6; `6 + 6` is
+  rejected. Session infeasibility evidence is accepted only after binding the
+  exact model fingerprint; `UNKNOWN` remains unproven.
+- Contract and measurement limits are in the crate `README.md` and
+  `PROTOCOL.md`. Production Rust/Python, routes, database, Cloud Run/VPS and
+  user timetables were not changed. No solver quality, contention, RSS or
+  end-to-end SLA claim is made.
+- `cargo fmt` and GNU-target Rust test metadata type-check passed. Full
+  `cargo test` could not link on this workstation because MSVC `link.exe` and
+  the Windows SDK are absent; this is an environment limitation, not a solver
+  gate.
+
+## R&D hybrid solver gate results — 2026-08-08
+
+- Added the staging-only `hybrid-streaming-coordinator-v1` lane to
+  `tools/vps-deploy/benchmark-algorithm-rnd.py`. It uses the existing
+  cooperative stop hook, canonical bridge and strict publication guard; live
+  adapter/session hashes stayed pinned and no production file was changed.
+- H2 d58 5-seed result: 5/5 complete/hard-valid, singleton=Gap2=0, sessions
+  466, Gap1 `36,39,38,38,39`, wall p50/p95 `111.976/112.220s`. It fails the
+  required median Gap1≤36 gate; no 20-seed batch was run.
+- Added H5 staging probes `hybrid-local-finisher`, `hybrid-local-pipeline` and
+  v2. H5 v1 improved canonical Gap1 on 3/5 seeds but finished
+  `39,39,41,40,40` (median 40); v2 smoke finished 466/40 in 90.311s. Both
+  remain rejected and undeployed.
+- Added immutable metadata cache prototype
+  `tkb_algorithm_research/hybrid-preprocess-cache/`. It never caches a
+  timetable. Local d58 p50 was 23.12ms cold vs 3.15ms hit; this is too small
+  to explain solver wall and is not in the solve path.
+- Hybrid reports/artifacts:
+  `HYBRID_REFINE_TIMELINE.md`, `HYBRID_ARCHITECTURE_RESEARCH.md`,
+  `HYBRID_SPEEDUP_REPORT.md`, `hybrid-refine-summary-d58.jsonl` and the
+  `hybrid-*.jsonl` raw lanes. H0 Legacy remains production; H1/H2/H5 are
+  research-only, and H3/H4 are support prototypes.
+- Final read-only VPS health after all runs: active jobs 0, queued jobs 0,
+  worker tokens 6/6. Snapshot and live source pins were rechecked.
+
+## Numeric cell editing hotfix — 2026-08-08
+
+- Fixed spreadsheet-style numeric entry in both `Phân công` and `Tiết chuẩn`:
+  a selected `Số tiết`/`Giới hạn` cell now starts editing on the first digit;
+  Enter/F2 also opens the editor, and direct clicks on existing assignment
+  number inputs are no longer blocked by the selection handler.
+- Added Node regression coverage in
+  `e2e_tests/app_data_integrity_node.test.js`; `node --check web/app.js` and all
+  13 tests pass. The browser cache key is
+  `20260808-numeric-cell-edit-v1`.
+- Deployed only `web/app.js` and `web/app.html` to the VPS. No solver,
+  database, Rust API, Cloud Run configuration, or user timetable was changed.
+  Public-origin verification returned HTTP 200 for both assets; health stayed
+  idle at active=0, queued=0 and 6/6 worker tokens.
+- Live SHA-256 after deployment: `web/app.js`
+  `2e1572b629033db17fedea87235fde6008b2e695a6c13931acadf96d4b9705ce` and
+  `web/app.html`
+  `9111772d7b858d54e6e66b241327ddf20c8264e52e13462b2a029779702244a3`.
+  Rollback backup:
+  `/opt/cherry-scheduler-backups/numeric-cell-edit-20260808-171733`.
+
+## Capacity-best-possible and numeric tap follow-up - 2026-08-08
+
+- Deployed VPS-only, never Cloud Run and never the school database. The adapter
+  candidate was rebuilt from the pinned live adapter (`f942483d...`) and only
+  these capacity changes were overlaid: lesson-block-safe trimming,
+  unreachable `mustTeach` relaxation for a proven capacity shortage, and early
+  routing into the best-possible lane. No R&D quality/session implementation
+  was copied into production.
+- Isolated snapshot used for every solver run:
+  `/tmp/tkb-isolated-e3d7-4cad7d403e55/snapshot.json`, SHA-256
+  `e2d8d293c43bcf61fb6627a2ede31998bee5f995af25b47a6cbaaabb28c34033`.
+  Linux candidate SHA-256 is
+  `cf2595ee14cfbf2c28414182a3368948529198e9dcc8ef90d0bf004b590feb2e`.
+  The full isolated run passed the publication gate in 123.38 seconds:
+  `2091 expected = 2075 scheduled + 16 capacity-unassigned`, solver-unassigned
+  `0`, accounting/hard/core-hard `true`, class/teacher/room conflicts `0`, and
+  application constraint violations `0`.
+- The VPS cutover used an nginx solve drain gate, three consecutive idle health
+  samples, an atomic allowlist install, service restart, post-install capacity
+  preflight smoke, and automatic rollback. Backup:
+  `/opt/cherry-scheduler-backups/capacity-partial-numeric-v2-20260808-115016`.
+  Final health is idle (`active=0`, `queued=0`, worker tokens `6/6`).
+  Current live SHA-256 values: adapter `cf2595ee14cf...`, `web/app.js`
+  `65f346d5459a...`, `web/app.html` `f31d324d1770...`, bridge
+  `331ebd272fac...`, and planner HTML `46d428a57f69...`.
+- Deployed web follow-up fixes the remaining tap/focus path: a single click/tap
+  on a `Tiết chuẩn` numeric cell opens the editor; `Phân công` numeric cells
+  focus/select their existing input (including mobile keyboard); changing from
+  cell A to cell B commits A before B receives the next digit. Ctrl/Shift range
+  selection remains available. Cache keys are
+  `20260808-numeric-cell-edit-v2` and
+  `20260808-v1186-capacity-partial-safe-v1`; bridge marker is
+  `tkb-rust-api-v331-capacity-partial-safe`.
+- Verification: `app_data_integrity_node.test.js` 16/16, Rust bridge Node suite
+  304/304, targeted capacity Python contracts 4/4, remote post-restart smoke
+  passed, and public assets/health returned HTTP 200/OK. The broader Python
+  contract run had 159 passed and 2 fixture-layout failures because this local
+  checkout does not contain the optional Excel workbooks; those failures are
+  unrelated to this change.
 
 ## Security And Repository Notes
 

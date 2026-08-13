@@ -5,7 +5,6 @@
 **/.env
 **/.env.*
 !**/.env.example
-tools/trusted-worker/*.env*
 tools/vps-deploy/super-admin.conf
 *.pem
 *.key
@@ -25,14 +24,12 @@ archived_logs/
 # Dependencies and build outputs
 node_modules/
 .agents/
+.codex/
 rust_api/target/
 rust_api/target-*/
-agent_helper/.build-windows/
-agent_helper/dist/
 start.exe
 TKB DEMO*.rar
 upx-5.2.0-win64/
-web/downloads/*.zip
 .codex_tmp/
 .pytest_cache/
 .ruff_cache/

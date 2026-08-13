@@ -1,4 +1,4 @@
-window.__PHANMON_VERSION = "20260725-v1102-agent-executor-status-v1";
+window.__PHANMON_VERSION = "20260810-client-agent-retired-v1";
 try{
   window.__TKB_PLANNER_DATA_READY = false;
   window.__TKB_PLANNER_REMOTE_HYDRATION_PENDING = false;
@@ -656,47 +656,10 @@ function normalizeClassSubjectMatrixByAliases(matrix, classAliasMap){
 }
 
 function pruneRedundantPccmPeriodMatrices(){
-  if(!DATA || typeof DATA !== "object") return false;
-  const periodMatrix = DATA.pccmTietMatrix;
-  const limitMatrix = DATA.pccmGioihanMatrix;
-  if((!periodMatrix || typeof periodMatrix !== "object") && (!limitMatrix || typeof limitMatrix !== "object")) return false;
-
-  const classToKhoi = new Map();
-  (DATA.lop || []).forEach(lop=>{
-    const canon = classCanonFromLop(lop);
-    const khoi = extractKhoiNumber(lop?.khoi) || extractKhoiNumber(lop?.ten2) || extractKhoiNumber(lop?.ten) || extractKhoiNumber(canon);
-    if(canon && khoi) classToKhoi.set(canon, khoi);
-  });
-
-  const sameNumber = (left, right) => {
-    const a = Number(left);
-    const b = Number(right);
-    return Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) < 0.000001;
-  };
-  const keys = new Set([
-    ...Object.keys(periodMatrix || {}),
-    ...Object.keys(limitMatrix || {})
-  ]);
-  let changed = false;
-  keys.forEach(key=>{
-    const parts = String(key || "").split("|");
-    if(parts.length < 2) return;
-    const cls = parts.shift().trim();
-    const monKey = parts.join("|").trim();
-    const khoiNum = classToKhoi.get(cls) || extractKhoiNumber(cls);
-    if(!cls || !monKey || !khoiNum) return;
-    const row = _findTietChuanRow(khoiNum, monKey);
-    if(!row) return;
-    if(periodMatrix && Object.prototype.hasOwnProperty.call(periodMatrix, key) && sameNumber(periodMatrix[key], row.sotiet)){
-      delete periodMatrix[key];
-      changed = true;
-    }
-    if(limitMatrix && Object.prototype.hasOwnProperty.call(limitMatrix, key) && sameNumber(limitMatrix[key], row.gioihan || 1)){
-      delete limitMatrix[key];
-      changed = true;
-    }
-  });
-  return changed;
+  // Kept as a compatibility hook for older callers.  Explicit PCCM periods
+  // are now an authored snapshot, even when they equal Tiết chuẩn. Removing
+  // them here would make a later Tiết chuẩn edit silently rewrite Phân công.
+  return false;
 }
 
 function remapPlannerClassObjectMap(obj, idRemap, validIds){
@@ -1406,6 +1369,15 @@ function __tkbUpdateHistoryButtons(){
 
 function __tkbRecordHistoryAfterSave(payload, options, usedStable){
   const opts = options || {};
+  if(opts.replaceHistoryCurrent === true && payload && !usedStable){
+    // Metadata that belongs to the current timetable (for example the
+    // two-click Automatic cycle) must travel with that history entry without
+    // becoming a separate Undo step. Otherwise Undo can restore the identical
+    // visible timetable with stale metadata and accidentally repeat a solve.
+    TKB_HISTORY_CURRENT = payload;
+    __tkbUpdateHistoryButtons();
+    return;
+  }
   if(TKB_HISTORY_APPLYING || opts.beforeUnload || opts.suppressHistory || usedStable){
     __tkbUpdateHistoryButtons();
     return;
@@ -2383,13 +2355,111 @@ function positionStatsPopover(){
   pop.style.zIndex = "15000";
 }
 
+let STATS_BOX_RENDER_REQUEST = 0;
+let STATS_BOX_RENDER_FRAME = 0;
+let STATS_BOX_RENDER_TIMER = 0;
+let STATS_BOX_RENDER_IDLE = 0;
+
+function renderStatsBoxLoading(){
+  const box = document.getElementById("statsBox");
+  if(!box) return;
+  box.classList.add("is-loading");
+  box.setAttribute("aria-live", "polite");
+  box.innerHTML = '<div class="stats-loading" role="status"><span class="stats-loading-dot" aria-hidden="true"></span><span>Đang cập nhật thống kê…</span></div>';
+}
+
+function cancelScheduledStatsBoxRender(){
+  STATS_BOX_RENDER_REQUEST++;
+  if(STATS_BOX_RENDER_FRAME){
+    try{ cancelAnimationFrame(STATS_BOX_RENDER_FRAME); }catch(_){ }
+    STATS_BOX_RENDER_FRAME = 0;
+  }
+  if(STATS_BOX_RENDER_TIMER){
+    try{ clearTimeout(STATS_BOX_RENDER_TIMER); }catch(_){ }
+    STATS_BOX_RENDER_TIMER = 0;
+  }
+  if(STATS_BOX_RENDER_IDLE){
+    try{ cancelIdleCallback(STATS_BOX_RENDER_IDLE); }catch(_){ }
+    STATS_BOX_RENDER_IDLE = 0;
+  }
+}
+
+function scheduleStatsBoxRender(options={}){
+  cancelScheduledStatsBoxRender();
+  const requestId = STATS_BOX_RENDER_REQUEST;
+  const run = ()=>{
+    STATS_BOX_RENDER_TIMER = 0;
+    if(requestId !== STATS_BOX_RENDER_REQUEST) return;
+    const pop = document.getElementById("statsPopover");
+    if(options.onlyIfOpen !== false && (!pop || pop.hidden)) return;
+    try{ renderStatsBox(); }catch(err){
+      console.warn("renderStatsBox failed", err);
+      const box = document.getElementById("statsBox");
+      if(box){
+        box.classList.remove("is-loading");
+        box.innerHTML = '<div class="stats-loading stats-loading-error">Chưa thể cập nhật thống kê.</div>';
+      }
+    }finally{
+      pop?.removeAttribute("aria-busy");
+    }
+  };
+  const afterVisiblePaint = ()=>{
+    STATS_BOX_RENDER_FRAME = 0;
+    if(typeof requestIdleCallback === "function"){
+      STATS_BOX_RENDER_IDLE = requestIdleCallback(()=>{
+        STATS_BOX_RENDER_IDLE = 0;
+        run();
+      }, {timeout:750});
+    }else{
+      // Keep the expensive whole-school scan outside the input event and at
+      // least one committed paint. A zero-delay timer can still run before the
+      // popover becomes visible on slower phones and makes the button feel
+      // frozen even though the work was technically deferred.
+      STATS_BOX_RENDER_TIMER = setTimeout(run, 120);
+    }
+  };
+  const afterFirstPaint = ()=>{
+    STATS_BOX_RENDER_FRAME = 0;
+    if(typeof requestAnimationFrame === "function"){
+      STATS_BOX_RENDER_FRAME = requestAnimationFrame(afterVisiblePaint);
+    }else{
+      afterVisiblePaint();
+    }
+  };
+  if(typeof requestAnimationFrame === "function"){
+    STATS_BOX_RENDER_FRAME = requestAnimationFrame(afterFirstPaint);
+  }else{
+    STATS_BOX_RENDER_TIMER = setTimeout(run, 0);
+  }
+  return requestId;
+}
+
+function refreshStatsBoxIfOpen(){
+  const pop = document.getElementById("statsPopover");
+  if(!pop || pop.hidden) return false;
+  pop.setAttribute("aria-busy", "true");
+  scheduleStatsBoxRender({onlyIfOpen:true});
+  return true;
+}
+
 function setStatsPopoverOpen(open){
   const pop = document.getElementById("statsPopover");
   const btn = document.getElementById("statsToggle");
   if(!pop || !btn) return;
   const shouldOpen = !!open;
   if(shouldOpen){
-    try{ renderStatsBox(); }catch(_){ }
+    // Paint the popover first.  On a large timetable the detailed teacher and
+    // student scans can take several seconds; doing them inside the click
+    // handler made the button look dead (and left a text caret in the focused
+    // button).  Keep the last rendered values when available and refresh them
+    // in a macrotask after the browser has had a chance to paint.
+    pop.hidden = false;
+    pop.setAttribute("aria-busy", "true");
+    const box = document.getElementById("statsBox");
+    if(box && !box.innerHTML.trim()) renderStatsBoxLoading();
+    scheduleStatsBoxRender({onlyIfOpen:true});
+  }else{
+    cancelScheduledStatsBoxRender();
   }
   pop.hidden = !shouldOpen;
   btn.classList.toggle("is-open", shouldOpen);
@@ -2411,10 +2481,11 @@ window.toggleStatsPopover = toggleStatsPopover;
 window.closeStatsPopover = closeStatsPopover;
 window.setStatsPopoverOpen = setStatsPopoverOpen;
 window.positionStatsPopover = positionStatsPopover;
+window.scheduleStatsBoxRender = scheduleStatsBoxRender;
+window.refreshStatsBoxIfOpen = refreshStatsBoxIfOpen;
 
 function openStatsPopoverDuringSolve(){
   setStatsPopoverOpen(true);
-  try{ renderStatsBox(); }catch(_){ }
 }
 window.openStatsPopoverDuringSolve = openStatsPopoverDuringSolve;
 
@@ -3604,7 +3675,7 @@ function restorePendingOffDisplacedLessons(options={}){
     if(options.render !== false){
       try{ renderCurrentView(); }catch(e){ console.error("renderCurrentView failed", e); }
       try{ loadMonList(); }catch(e){ console.error("loadMonList failed", e); }
-      try{ renderStatsBox(); }catch(_){ }
+      try{ refreshStatsBoxIfOpen(); }catch(_){ }
       try{ applyCellSelectionStyles(); }catch(_){ }
     }
   }
@@ -5073,6 +5144,14 @@ function collectUnassignedTasks(options={}){
   if(hasOnlyClass && !onlyClassId) return [];
 
   const useKhoiFilter = options?.useKhoiFilter === true;
+  const cacheEligible = !hasOnlyClass && !useKhoiFilter;
+  const cacheSig = cacheEligible
+    ? String(options?.cacheSignature || schoolStatsTkbSignature())
+    : "";
+  const taskCache = window.__TKB_UNASSIGNED_TASKS_CACHE || {sig:"", value:null};
+  if(cacheEligible && cacheSig && taskCache.sig === cacheSig && Array.isArray(taskCache.value)){
+    return taskCache.value.map(item=>Object.assign({}, item));
+  }
   const khoiSel = document.getElementById("chonKhoi")?.value || "";
   const kFilter = useKhoiFilter ? extractKhoiNumber(khoiSel) : "";
   const lops = Array.isArray(DATA.lop)
@@ -5099,7 +5178,13 @@ function collectUnassignedTasks(options={}){
     subjects.forEach(s=>{
       const mon = (s?.mon || s?.ten || "").toString().trim();
       if(!mon) return;
-      const gv = String(s?.gv || getTeacherForClassMon(classCanon, mon) || "").trim();
+      // Count only teacher assignments that exist in the current PCCM data.
+      // Timetable cells and legacy subject rows must not create phantom work.
+      const pccmTeachers = teacherListFromValue(
+        classAssignmentStatisticsTeacherForClassMon(classCanon, mon)
+      );
+      if(!pccmTeachers.length) return;
+      const gv = pccmTeachers.join(", ");
       const required = Number(s?.required ?? s?.sotiet ?? 0);
       if(!Number.isFinite(required) || required <= 0) return;
       const used = countMonFromTkbCountMap(tkbMonCounts, mon);
@@ -5124,13 +5209,20 @@ function collectUnassignedTasks(options={}){
     else map.get(k).remain += Number(t.remain || 0);
   });
 
-  return Array.from(map.values()).sort((a,b)=>{
+  const result = Array.from(map.values()).sort((a,b)=>{
     const c = (a.className||"").localeCompare((b.className||""),'vi');
     if(c) return c;
     const m = compareMonByHiddenCode(a.mon,b.mon);
     if(m) return m;
     return Number(b.remain || 0) - Number(a.remain || 0);
   });
+  if(cacheEligible && cacheSig){
+    window.__TKB_UNASSIGNED_TASKS_CACHE = {
+      sig:cacheSig,
+      value:result.map(item=>Object.assign({}, item))
+    };
+  }
+  return result;
 }
 
 // giữ API cũ (đếm trên lớp đang chọn)
@@ -5515,7 +5607,7 @@ function tkbAutoPlaceUnassignedLessons(options={}){
     if(options.render !== false){
       try{ renderCurrentView(); }catch(e){ console.error("renderCurrentView failed", e); }
       try{ loadMonList(); }catch(e){ console.error("loadMonList failed", e); }
-      try{ renderStatsBox(); }catch(_){ }
+      try{ refreshStatsBoxIfOpen(); }catch(_){ }
       try{ applyCellSelectionStyles(); }catch(_){ }
     }
   }
@@ -5541,6 +5633,7 @@ function calcClassTKBPeriodStats(classId){
   if(!id) return {total:0, assigned:0, missing:0};
 
   const lop = (DATA.lop||[]).find(x=>String(x.id) === id);
+  const classCanon = getLopCanonById(id);
   const tkb = DATA.tkb?.[id];
   const tkbMonCounts = buildTkbMonCountMap(tkb);
   const mons = requiredSubjectsForClass(lop || {id});
@@ -5551,19 +5644,12 @@ function calcClassTKBPeriodStats(classId){
     const monName = (m?.mon || m?.ten || "").toString().trim();
     const req = Number(m?.required ?? m?.sotiet ?? 0);
     if(!monName || !Number.isFinite(req) || req <= 0) continue;
+    if(!teacherListFromValue(
+      classAssignmentStatisticsTeacherForClassMon(classCanon, monName)
+    ).length) continue;
     const used = countMonFromTkbCountMap(tkbMonCounts, monName);
     total += req;
     assigned += Math.min(req, Math.max(0, used));
-  }
-
-  if(total <= 0 && tkb){
-    for(const d of DAYS){
-      for(const buoi of ["sang","chieu"]){
-        (tkb?.[d]?.[buoi] || []).forEach(v=>{
-          if(v && v !== "OFF" && cellMon(v)) assigned++;
-        });
-      }
-    }
   }
 
   return {
@@ -5906,7 +5992,7 @@ function loadMonList(){
   // The full-school teacher statistics live inside a popover and can be
   // expensive on a large timetable. Opening the popover renders on demand.
   const statsPopover = document.getElementById("statsPopover");
-  if(statsPopover && !statsPopover.hidden) renderStatsBox();
+  if(statsPopover && !statsPopover.hidden) scheduleStatsBoxRender({onlyIfOpen:true});
 }
 
 
@@ -6035,6 +6121,12 @@ function renderOtherUnassignedList(kFilter){
 ============================================================== */
 
 function calcStudentTimetableGapStats(){
+  const cacheSignature = arguments[0];
+  const cacheSig = String(cacheSignature || schoolStatsTkbSignature());
+  const statsCache = window.__TKB_STUDENT_TKB_GAP_STATS_CACHE || {sig:"", value:null};
+  if(statsCache.sig === cacheSig && statsCache.value){
+    return statsCache.value;
+  }
   let totalGaps = 0;
   const byClass = [];
   const lops = Array.isArray(DATA.lop) ? DATA.lop : [];
@@ -6076,7 +6168,9 @@ function calcStudentTimetableGapStats(){
   }
 
   byClass.sort((a,b)=>Number(b.gaps||0)-Number(a.gaps||0) || String(a.name||"").localeCompare(String(b.name||""), "vi"));
-  return {totalGaps, byClass};
+  const result = {totalGaps, byClass};
+  window.__TKB_STUDENT_TKB_GAP_STATS_CACHE = {sig:cacheSig, value:result};
+  return result;
 }
 
 function classTeacherCodesForStudentGap(classId){
@@ -6197,16 +6291,266 @@ function studentGapTargetKey(target){
   return `${target.classId}|${target.thu}|${target.buoi}|${Number(target.ti)}`;
 }
 
+const CLASS_ASSIGNMENT_STATS_MODAL_ID = "classAssignmentStatsModal";
+
+function classAssignmentStatisticsSubjectMeta(mon){
+  const raw = String(mon || "").trim();
+  if(!raw) return null;
+  const key = monCanonicalKey(raw) || normKey(raw);
+  if(!key) return null;
+  const record = findMonHoc(raw);
+  const fullName = String(record?.ten || raw).trim() || raw;
+  const label = String(getMonShort(raw) || raw).trim() || raw;
+  return {key, label, fullName, source:raw};
+}
+
+let CLASS_ASSIGNMENT_TEACHER_CACHE = {
+  pccmRef: null,
+  monRef: null,
+  monhocRef: null,
+  lopRef: null,
+  values: new Map()
+};
+
+function ensureClassAssignmentTeacherCache(){
+  if(CLASS_ASSIGNMENT_TEACHER_CACHE.pccmRef === DATA.pccmMatrix &&
+     CLASS_ASSIGNMENT_TEACHER_CACHE.monRef === DATA.mon &&
+     CLASS_ASSIGNMENT_TEACHER_CACHE.monhocRef === DATA.monhoc &&
+     CLASS_ASSIGNMENT_TEACHER_CACHE.lopRef === DATA.lop){
+    return CLASS_ASSIGNMENT_TEACHER_CACHE.values;
+  }
+  CLASS_ASSIGNMENT_TEACHER_CACHE = {
+    pccmRef: DATA.pccmMatrix,
+    monRef: DATA.mon,
+    monhocRef: DATA.monhoc,
+    lopRef: DATA.lop,
+    values: new Map()
+  };
+  return CLASS_ASSIGNMENT_TEACHER_CACHE.values;
+}
+
+function classAssignmentStatisticsTeacherForClassMon(classCanon, mon){
+  const cls = String(classCanon || "").trim();
+  const rawMon = String(mon || "").trim();
+  if(!cls || !rawMon) return "";
+  const cache = ensureClassAssignmentTeacherCache();
+  const cacheKey = `${cls}|${rawMon}`;
+  if(cache.has(cacheKey)) return cache.get(cacheKey);
+  const mh = findMonHoc(rawMon);
+  const subjects = [];
+  const addSubject = value=>{
+    const text = String(value || "").trim();
+    if(text && !subjects.includes(text)) subjects.push(text);
+  };
+  addSubject(rawMon);
+  [mh?.ten, mh?.ma, mh?.ma2, mh?.id].forEach(addSubject);
+  const classKeys = classKeyCandidates(cls);
+  for(const classKey of classKeys){
+    for(const subject of subjects){
+      const value = DATA.pccmMatrix?.[classKey + "|" + subject];
+      if(value != null && String(value).trim()){
+        const result = String(value).trim();
+        cache.set(cacheKey, result);
+        return result;
+      }
+    }
+  }
+  cache.set(cacheKey, "");
+  return "";
+}
+
+function classAssignmentStatisticsPeriodForClassMon(lop, classCanon, mon, fallback){
+  const override = Number(getSoTietForClassMon(classCanon, mon) || 0);
+  if(Number.isFinite(override) && override > 0) return Math.round(override);
+  const grade = extractKhoiNumber(lop?.khoi) || extractKhoiNumber(lop?.ten2) || extractKhoiNumber(lop?.ten) || "";
+  const standard = _findTietChuanRow(grade, mon);
+  const value = Number(standard?.sotiet ?? fallback ?? 0);
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
+}
+
+function buildClassAssignmentStatistics(){
+  const lops = Array.isArray(DATA.lop) ? DATA.lop : [];
+  const subjectCatalog = new Map();
+  const rows = lops.map((lop, index)=>{
+    const classId = String(lop?.id || "").trim();
+    const classCanon = classId ? getLopCanonById(classId) : "";
+    const className = String(classCanon || classCanonFromLop(lop) || lop?.ten2 || lop?.ten || classId).trim();
+    const grade = String(
+      extractKhoiNumber(lop?.khoi)
+      || extractKhoiNumber(lop?.ten2)
+      || extractKhoiNumber(lop?.ten)
+      || ""
+    );
+    const bySubject = new Map();
+
+    const addSubject = (mon, fallbackPeriods)=>{
+      const raw = String(mon || "").trim();
+      if(!raw) return;
+      const meta = classAssignmentStatisticsSubjectMeta(raw);
+      if(!meta) return;
+      const periods = classAssignmentStatisticsPeriodForClassMon(lop, classCanon, raw, fallbackPeriods);
+      if(!(periods > 0)) return;
+      const teacherRaw = classAssignmentStatisticsTeacherForClassMon(classCanon, raw);
+      // A subject without a PCCM teacher is not an assigned period and must
+      // stay out of both the subject total and the class total.
+      if(!teacherListFromValue(teacherRaw).length) return;
+      const current = bySubject.get(meta.key);
+      if(!current || periods > current.periods){
+        bySubject.set(meta.key, {meta, periods, teacherRaw});
+      }else if(!current.teacherRaw && teacherRaw){
+        current.teacherRaw = teacherRaw;
+      }
+      if(!subjectCatalog.has(meta.key)) subjectCatalog.set(meta.key, meta);
+    };
+
+    (DATA.mon || []).forEach(standard=>{
+      const standardGrade = extractKhoiNumber(standard?.khoi);
+      if(String(standardGrade || "") !== grade) return;
+      addSubject(standard?.ten, standard?.sotiet);
+    });
+    _collectPCCMSubjectKeysForClass(classCanon).forEach(monKey=>addSubject(monKey, 0));
+
+    const subjectPeriods = Object.create(null);
+    let singlePeriods = 0;
+    let combinedPeriods = 0;
+    bySubject.forEach(item=>{
+      subjectPeriods[item.meta.key] = item.periods;
+      const teachers = teacherListFromValue(item.teacherRaw);
+      if(teachers.length > 1) combinedPeriods += item.periods;
+      else singlePeriods += item.periods;
+    });
+
+    return {
+      index:index + 1,
+      classId,
+      className,
+      grade,
+      singlePeriods,
+      combinedPeriods,
+      totalPeriods:singlePeriods + combinedPeriods,
+      subjectPeriods
+    };
+  });
+
+  const subjects = [];
+  const added = new Set();
+  const addSubjectToOrder = value=>{
+    const meta = classAssignmentStatisticsSubjectMeta(value);
+    if(!meta || added.has(meta.key) || !subjectCatalog.has(meta.key)) return;
+    added.add(meta.key);
+    subjects.push(subjectCatalog.get(meta.key));
+  };
+  (Array.isArray(DATA.monhoc) ? DATA.monhoc : []).forEach(record=>{
+    [record?.ten, record?.ma, record?.ma2, record?.id].forEach(addSubjectToOrder);
+  });
+  Array.from(subjectCatalog.values())
+    .filter(meta=>!added.has(meta.key))
+    .sort((a,b)=>compareMonByHiddenCode(a.source, b.source))
+    .forEach(meta=>{
+      added.add(meta.key);
+      subjects.push(meta);
+    });
+  return {subjects, rows};
+}
+
+function renderClassAssignmentStatisticsTable(model){
+  const subjects = Array.isArray(model?.subjects) ? model.subjects : [];
+  const rows = Array.isArray(model?.rows) ? model.rows : [];
+  if(!rows.length){
+    return '<div class="class-assignment-stats-empty">Chưa có dữ liệu lớp học để thống kê.</div>';
+  }
+  const html = [];
+  html.push('<div class="class-assignment-stats-table-wrap"><table class="class-assignment-stats-table"><thead>');
+  html.push('<tr>');
+  html.push('<th class="class-stats-index-col" rowspan="2" scope="col">TT</th>');
+  html.push('<th class="class-stats-class-col" rowspan="2" scope="col">Lớp học</th>');
+  html.push('<th class="class-stats-total-group" colspan="3" scope="colgroup">Tổng số</th>');
+  subjects.forEach(subject=>{
+    html.push('<th class="class-stats-subject-col" rowspan="2" scope="col" title="'
+      + escapeHtml(subject.fullName || subject.label || "") + '">'
+      + escapeHtml(subject.label || subject.fullName || "") + '</th>');
+  });
+  html.push('</tr><tr>');
+  html.push('<th scope="col">Tiết đơn</th><th scope="col">Tiết ghép</th>');
+  html.push('<th class="class-stats-total-col" scope="col">Cộng</th>');
+  html.push('</tr></thead><tbody>');
+  rows.forEach((row, index)=>{
+    const previousGrade = index > 0 ? String(rows[index - 1]?.grade || "") : "";
+    const gradeStart = index > 0 && String(row?.grade || "") !== previousGrade;
+    html.push('<tr' + (gradeStart ? ' class="class-stats-grade-start"' : "")
+      + ' data-class-id="' + escapeHtml(row.classId || "") + '">');
+    html.push('<td class="class-stats-index-col">' + escapeHtml(row.index) + '</td>');
+    html.push('<th class="class-stats-class-col" scope="row">' + escapeHtml(row.className || row.classId || "") + '</th>');
+    html.push('<td>' + escapeHtml(row.singlePeriods) + '</td>');
+    html.push('<td>' + escapeHtml(row.combinedPeriods) + '</td>');
+    html.push('<td class="class-stats-total-col">' + escapeHtml(row.totalPeriods) + '</td>');
+    subjects.forEach(subject=>{
+      const periods = Number(row.subjectPeriods?.[subject.key] || 0);
+      html.push('<td data-subject-key="' + escapeHtml(subject.key || "")
+        + '">' + (periods > 0 ? escapeHtml(Math.round(periods)) : "") + '</td>');
+    });
+    html.push('</tr>');
+  });
+  html.push('</tbody></table></div>');
+  return html.join("");
+}
+
+function closeClassAssignmentStatistics(){
+  const modal = document.getElementById(CLASS_ASSIGNMENT_STATS_MODAL_ID);
+  if(modal) modal.remove();
+  document.body?.classList?.remove("class-assignment-stats-open");
+}
+
+function openClassAssignmentStatistics(){
+  try{ closeStatsPopover(); }catch(_){ }
+  try{ closePrintTKBMenu(); }catch(_){ }
+  closeClassAssignmentStatistics();
+  const model = buildClassAssignmentStatistics();
+  const modal = document.createElement("div");
+  modal.id = CLASS_ASSIGNMENT_STATS_MODAL_ID;
+  modal.className = "class-assignment-stats-overlay";
+  modal.innerHTML = '<section class="class-assignment-stats-dialog" role="dialog" aria-modal="true" aria-labelledby="classAssignmentStatsTitle">'
+    + '<header class="class-assignment-stats-header"><div>'
+    + '<h2 id="classAssignmentStatsTitle">Thống kê theo lớp</h2>'
+    + '<p>Tiết ghép là môn có từ 2 giáo viên; chỉ tính các môn đã có phân công giáo viên.</p>'
+    + '</div><button type="button" class="class-assignment-stats-close" aria-label="Đóng thống kê">×</button></header>'
+    + renderClassAssignmentStatisticsTable(model) + '</section>';
+  document.body.appendChild(modal);
+  document.body.classList.add("class-assignment-stats-open");
+  modal.querySelector(".class-assignment-stats-close")?.addEventListener("click", closeClassAssignmentStatistics);
+  modal.addEventListener("pointerdown", ev=>{
+    if(ev.target === modal) closeClassAssignmentStatistics();
+  });
+  window.setTimeout(()=>modal.querySelector(".class-assignment-stats-close")?.focus(), 0);
+  return model;
+}
+
+if(!window.__TKB_CLASS_ASSIGNMENT_STATS_BOUND){
+  window.__TKB_CLASS_ASSIGNMENT_STATS_BOUND = true;
+  document.addEventListener("keydown", ev=>{
+    if(ev.key === "Escape" && document.getElementById(CLASS_ASSIGNMENT_STATS_MODAL_ID)){
+      closeClassAssignmentStatistics();
+    }
+  });
+}
+window.buildClassAssignmentStatistics = buildClassAssignmentStatistics;
+window.renderClassAssignmentStatisticsTable = renderClassAssignmentStatisticsTable;
+window.openClassAssignmentStatistics = openClassAssignmentStatistics;
+window.closeClassAssignmentStatistics = closeClassAssignmentStatistics;
+
 function renderStatsBox(){
   const box = document.getElementById("statsBox");
   if(!box) return;
   const isSolving = window.__TKB_RUST_SOLVER_RUNNING === true || window.__TKB_SOLVE_UI_BUSY === true;
   box.classList.toggle("is-solving", isSolving);
 
-  const school = calcSchoolTKBStats();
-  const gvStats = calcTeacherTKBStats();
-  const studentGapStats = calcStudentTimetableGapStats();
-  const unassignedIssues = getUnassignedIssuesFromStats();
+  // One content signature is enough for the four views below.  Previously
+  // each view rescanned the entire timetable just to build its own cache key.
+  const cacheSignature = schoolStatsTkbSignature();
+  const school = calcSchoolTKBStats(cacheSignature);
+  const gvStats = calcTeacherTKBStats(cacheSignature);
+  const studentGapStats = calcStudentTimetableGapStats(cacheSignature);
+  const unassignedIssues = getUnassignedIssuesFromStats(cacheSignature);
   window.__TKB_UNASSIGNED_STAT_ISSUES = unassignedIssues;
   window.__TKB_STUDENT_GAP_ISSUES = Array.isArray(studentGapStats.byClass) ? studentGapStats.byClass : [];
   const onePeriodTeachers = Array.isArray(gvStats.onePeriodTeachers) ? gvStats.onePeriodTeachers : [];
@@ -6313,6 +6657,9 @@ function renderStatsBox(){
   replaceStatCell(7, "onePeriod", "Dạy 1 tiết", gvStats.soBuoiDay1, window.__TKB_TEACHER_STAT_ISSUES.onePeriod);
   replaceStudentGapCell(8, studentGapStats.totalGaps, window.__TKB_STUDENT_GAP_ISSUES);
   if(isSolving) updateStatsBoxLiveProgress(window.__TKB_LIVE_STATS_PROGRESS);
+  box.classList.remove("is-loading");
+  box.dataset.statsReady = "1";
+  box.removeAttribute("aria-live");
 }
 
 function updateStatsBoxLiveProgress(snapshot){
@@ -6329,7 +6676,13 @@ function updateStatsBoxLiveProgress(snapshot){
   if(!Number.isFinite(current) || current < 0) return false;
   const statKey = focus === "one_period_teacher_sessions" || focus === "optimize_singletons"
     ? "onePeriodTeacherSessions"
-    : (focus === "teacher_sessions" || focus === "optimize_sessions" ? "teacherSessions" : "");
+    : (focus === "teacher_sessions" || focus === "optimize_sessions"
+        ? "teacherSessions"
+        : (focus === "teacher_gap2_sessions" || focus === "optimize_gap2"
+            ? "teacherGap2Sessions"
+            : (focus === "teacher_gap1_sessions" || focus === "optimize_gap1"
+                ? "teacherGap1Sessions"
+                : "")));
   if(!statKey) return false;
   const cell = box.querySelector(`[data-stat-key="${statKey}"]`);
   const value = cell?.querySelector?.(".stats-value");
@@ -6371,7 +6724,8 @@ function schoolStatsTkbSignature(){
 }
 
 function calcSchoolTKBStats(){
-  const cacheSig = schoolStatsTkbSignature();
+  const cacheSignature = arguments[0];
+  const cacheSig = String(cacheSignature || schoolStatsTkbSignature());
   if(SCHOOL_TKB_STATS_CACHE.sig === cacheSig && SCHOOL_TKB_STATS_CACHE.value){
     return Object.assign({}, SCHOOL_TKB_STATS_CACHE.value);
   }
@@ -6416,6 +6770,11 @@ function calcSchoolTKBStats(){
       const monName = (m?.mon || m?.ten || "").toString().trim();
       if(!monName) continue;
 
+      const pccmTeachers = teacherListFromValue(
+        classAssignmentStatisticsTeacherForClassMon(classCanon, monName)
+      );
+      if(!pccmTeachers.length) continue;
+
       const req = Number(m?.required ?? m?.sotiet ?? 0);
       if(!Number.isFinite(req) || req <= 0) continue;
 
@@ -6426,12 +6785,11 @@ function calcSchoolTKBStats(){
       chuaXepTiet += rem;
       remainForClass += rem;
 
-      const gv = String(m?.gv || getTeacherForClassMon(classCanon, monName) || "").trim();
-      if(gv){
+      pccmTeachers.forEach(gv=>{
         teacherSet.add(gv);
         teacherMissing.set(gv, (teacherMissing.get(gv)||0) + rem);
         teacherRequired.set(gv, (teacherRequired.get(gv)||0) + req);
-      }
+      });
 
       const room = m?.room || getRoomForClassMon(classCanon, monName);
       if(room) roomFromAssign.add(room);
@@ -6560,8 +6918,8 @@ function getStudentGapIssuesFromStats(){
   return Array.isArray(st.byClass) ? st.byClass : [];
 }
 
-function getUnassignedIssuesFromStats(){
-  return collectUnassignedTasks();
+function getUnassignedIssuesFromStats(cacheSignature){
+  return collectUnassignedTasks(cacheSignature ? {cacheSignature} : {});
 }
 
 function unassignedIssueCount(item){
@@ -7061,6 +7419,12 @@ function highlightOnePeriodTeacherSessions(code){
 }
 
 function calcTeacherTKBStats(){
+  const cacheSignature = arguments[0];
+  const cacheSig = String(cacheSignature || schoolStatsTkbSignature());
+  const statsCache = window.__TKB_TEACHER_TKB_STATS_CACHE || {sig:"", value:null};
+  if(statsCache.sig === cacheSig && statsCache.value){
+    return statsCache.value;
+  }
   const teacherCodes = Array.from(_getAssignedTeacherCodes());
   const occ = {}; // code -> day -> buoi -> boolean[]
 
@@ -7090,8 +7454,12 @@ function calcTeacherTKBStats(){
         if(!v || v === "OFF") continue;
         const mon = cellMon(v);
         if(!mon) continue;
-        const gv = getTeacherForClassMon(classCanon, mon);
-        if(gv && occ[gv]) occ[gv][d].sang[i] = true;
+        const teachers = teacherListFromValue(
+          classAssignmentStatisticsTeacherForClassMon(classCanon, mon)
+        );
+        teachers.forEach(gv=>{
+          if(occ[gv]) occ[gv][d].sang[i] = true;
+        });
       }
       // chiều
       const ac = (tkb?.[d]?.chieu || []);
@@ -7100,8 +7468,12 @@ function calcTeacherTKBStats(){
         if(!v || v === "OFF") continue;
         const mon = cellMon(v);
         if(!mon) continue;
-        const gv = getTeacherForClassMon(classCanon, mon);
-        if(gv && occ[gv]) occ[gv][d].chieu[i] = true;
+        const teachers = teacherListFromValue(
+          classAssignmentStatisticsTeacherForClassMon(classCanon, mon)
+        );
+        teachers.forEach(gv=>{
+          if(occ[gv]) occ[gv][d].chieu[i] = true;
+        });
       }
     }
   }
@@ -7193,7 +7565,7 @@ function calcTeacherTKBStats(){
   const sortTeacherIssues = (map)=>Array.from(map.values())
     .sort(compareTeacherCodeByDataOrder);
 
-  return {
+  const result = {
     soTietTrong,
     soBuoiTrong1,
     soBuoiTrong2,
@@ -7206,6 +7578,8 @@ function calcTeacherTKBStats(){
     gap1Teachers: sortTeacherIssues(gap1TeacherMap),
     gap2Teachers: sortTeacherIssues(gap2TeacherMap)
   };
+  window.__TKB_TEACHER_TKB_STATS_CACHE = {sig:cacheSig, value:result};
+  return result;
 }
 
 /* ======================= XÓA TKB (INLINE MENU) =======================
@@ -7295,240 +7669,279 @@ function setAutoSortControlLocked(control, locked){
   return true;
 }
 
-function isAgentHelperSupportedDevice(deviceNavigator){
-  const nav = deviceNavigator || {};
-  const uaData = nav.userAgentData && typeof nav.userAgentData === "object"
-    ? nav.userAgentData
-    : {};
-  const platform = String(uaData.platform || nav.platform || "");
-  const userAgent = String(nav.userAgent || "");
-  const isIPadDesktopMode = /MacIntel/i.test(platform) && Number(nav.maxTouchPoints || 0) > 1;
-  const isWindows = /Windows/i.test(platform) || /Windows NT/i.test(userAgent);
-  const isAndroid = uaData.platform === "Android" || /Android/i.test(userAgent);
-  const isIOS = /iPhone|iPad|iPod/i.test(userAgent) || isIPadDesktopMode;
-  const isMacOS = (/Mac/i.test(platform) || /Macintosh|Mac OS X/i.test(userAgent))
-    && !isIPadDesktopMode;
-  const isLinux = /Linux/i.test(platform) || /Linux|X11/i.test(userAgent);
-  return isWindows || isAndroid || isIOS || isMacOS || (isLinux && !isAndroid);
+// Retired local-solver names remain as inert hooks for an older cached bridge.
+// They never detect a device or enable a client-owned executor.
+if(typeof window !== "undefined"){
+  window.__TKB_CLIENT_AGENT_LANES_ENABLED = false;
+  window.__TKB_AGENT_ROLE_ALLOWED = false;
+  window.__TKB_WINDOWS_WEB_AGENT_TRIAL = false;
+}
+function isAgentHelperSupportedDevice(){ return false; }
+function isWindowsNativeAgentDevice(){ return false; }
+function plannerAgentRoleAllowed(){ return false; }
+function isAgentHelperVisibleForCurrentUser(){
+  return plannerServerRouteToggleAllowed();
 }
 
-const BROWSER_AGENT_UNAVAILABLE_LABEL = "Agent không khả dụng trên trình duyệt này; VPS sẽ xử lý.";
-const BROWSER_AGENT_OFF_LABEL = "Agent đã tắt; lượt xếp sẽ dùng VPS. Bấm để bật Agent.";
-const BROWSER_AGENT_VPS_FALLBACK_LABEL = "Agent đã bật; lượt hiện tại đang dùng VPS dự phòng.";
-
-function currentSolveExecutorState(){
-  const value = window.__TKB_CURRENT_SOLVE_EXECUTOR;
-  if(!value || typeof value !== "object" || value.active !== true) return null;
-  const executor = String(value.executor || "").trim().toLowerCase();
-  if(executor !== "agent" && executor !== "vps") return null;
-  return {
-    jobId:String(value.jobId || ""),
-    executor,
-    executionPhase:String(value.executionPhase || ""),
-    active:true
-  };
-}
-
-function browserAgentLabel(state){
-  const workers = Math.max(1, Number(
-    state?.workerCount
-    || state?.lastComputeWorkerCount
-    || state?.plannedWorkerCount
-    || state?.workerCeiling
-    || 1
-  ) || 1);
-  const ceiling = Math.max(workers, Number(state?.workerCeiling || 0) || workers);
-  const adaptiveNote = workers < ceiling ? ` (tối đa ${ceiling} Worker)` : "";
-  if(state?.enabled && state?.currentExecutor?.executor === "vps"){
-    return BROWSER_AGENT_VPS_FALLBACK_LABEL;
+// The existing toolbar icon is retained for superadmin only and controls the
+// server-side Cloud Run/VPS routing policy. This gate cannot enable local code.
+function plannerServerRouteToggleAllowed(){
+  if(typeof window === "undefined" || window.__TKB_CLIENT_AGENT_LANES_ENABLED !== false){
+    return false;
   }
-  if(state?.working) return `Agent đang tối ưu bằng ${workers} Worker${adaptiveNote} trên thiết bị. Bấm để chuyển về VPS.`;
-  if(state?.active) return `Agent đã kết nối bằng ${workers} Worker${adaptiveNote} cho lượt này. Bấm để chuyển về VPS.`;
-  if(state?.probed) return `Agent đã chuẩn bị ${workers} Worker${adaptiveNote} cho lượt này. Hiện chưa dùng CPU để xếp.`;
-  if(state?.available && state?.enabled){
-    return "Agent đã bật";
-  }
-  return state?.available ? BROWSER_AGENT_OFF_LABEL : BROWSER_AGENT_UNAVAILABLE_LABEL;
-}
-
-function browserAgentRuntimeState(deviceNavigator){
-  const nav = deviceNavigator || (typeof navigator !== "undefined" ? navigator : {});
-  const executor = window.TKBBrowserWasmExecutor;
-  const supportedDevice = isAgentHelperSupportedDevice(nav);
-  const available = supportedDevice
-    && !!executor
-    && typeof executor.isSupportedNavigator === "function"
-    && executor.isSupportedNavigator(nav) === true
-    && typeof executor.prepare === "function"
-    && typeof executor.state === "function"
-    && typeof window.Worker === "function"
-    && typeof window.WebAssembly === "object"
-    && typeof window.BigInt === "function"
-    && typeof window.TextEncoder === "function"
-    && !!window.crypto?.subtle
-    && typeof window.fetch === "function";
-  let executorState = {};
-  if(available){
-    try{
-      executorState = executor.state() || {};
-    }catch(_){
-      executorState = {};
-    }
-  }
-  const enabled = available && (typeof executor.isEnabled !== "function" || executor.isEnabled() !== false);
-  const workerCount = Math.max(0, Number(executorState.workerCount || 0) || 0);
-  let workerCeiling = Math.max(0, Number(executorState.workerCeiling || 0) || 0);
   try{
-    if(workerCeiling <= 0){
-      workerCeiling = Math.max(1, Number(executor.portfolioWorkerCount?.(nav) || 1) || 1);
-    }
-  }catch(_){ }
-  const plannedWorkerCount = Math.max(
-    0,
-    Number(executorState.plannedWorkerCount || workerCount || 0) || 0
-  );
-  return {
-    supportedDevice,
-    available,
-    enabled,
-    currentExecutor:currentSolveExecutorState(),
-    active:available && enabled && executorState.active === true,
-    working:available && enabled && executorState.computeActive === true,
-    probed:available && enabled && executorState.probed === true,
-    workerCount,
-    workerCeiling,
-    plannedWorkerCount,
-    localComputeRuns:Math.max(0, Number(executorState.localComputeRuns || 0) || 0),
-    localAcceptedResults:Math.max(0, Number(executorState.localAcceptedResults || 0) || 0),
-    lastComputeWorkerCount:Math.max(0, Number(executorState.lastComputeWorkerCount || 0) || 0),
-    lastComputeStartedAtMs:Math.max(0, Number(executorState.lastComputeStartedAtMs || 0) || 0),
-    lastComputeFinishedAtMs:Math.max(0, Number(executorState.lastComputeFinishedAtMs || 0) || 0),
-    lastAcceptedResultAtMs:Math.max(0, Number(executorState.lastAcceptedResultAtMs || 0) || 0)
-  };
+    const role = String(window.TKBAuth?.currentUser?.()?.user?.role || "")
+      .trim()
+      .toLowerCase();
+    return role === "superadmin";
+  }catch(_){
+    return false;
+  }
 }
 
-function renderBrowserAgentIndicator(runtimeState){
-  const state = runtimeState && typeof runtimeState === "object"
-    ? runtimeState
-    : browserAgentRuntimeState();
-  const available = state.available === true;
-  const enabled = available && state.enabled !== false;
-  const active = enabled && state.active === true;
-  const working = enabled && state.working === true;
-  const vpsFallback = enabled
-    && state.currentExecutor?.executor === "vps"
-    && state.currentExecutor?.active === true;
-  const name = vpsFallback
-    ? "fallback"
-    : (working
-        ? "working"
-        : (active ? "active" : (state.probed ? "prepared" : (enabled ? "enabled" : (available ? "off" : "unavailable")))));
-  const label = browserAgentLabel(Object.assign({}, state, {available, enabled, active, working, vpsFallback}));
-  window.__TKB_BROWSER_AGENT_READY = enabled && state.probed === true;
-  window.__TKB_BROWSER_AGENT_ENABLED = enabled;
-  window.__TKB_BROWSER_AGENT_ACTIVE = active;
-  window.__TKB_BROWSER_AGENT_WORKING = working;
-  window.__TKB_BROWSER_AGENT_VPS_FALLBACK = vpsFallback;
+const solverInfrastructureRouteToggleState = {
+  payload:null,
+  pending:null,
+  loading:false,
+  error:""
+};
+
+function solverInfrastructureRouteMode(payload){
+  const mode = String(payload?.config?.mode || "").trim().toLowerCase();
+  return ["auto", "serverless_only", "vps_only"].includes(mode) ? mode : "";
+}
+
+function solverInfrastructureRouteLabel(mode, options){
+  const loading = options?.loading === true;
+  const error = String(options?.error || "").trim();
+  if(loading) return "Đang tải trạng thái Serverless/VPS…";
+  if(error) return `Không đọc được trạng thái Serverless/VPS: ${error}. Bấm để thử lại.`;
+  if(mode === "serverless_only"){
+    return "Serverless đang bật: chỉ Cloud Run. Bấm để chuyển sang chỉ VPS.";
+  }
+  if(mode === "auto"){
+    return "Serverless đang bật: Cloud Run → VPS dự phòng. Bấm để chuyển sang chỉ VPS.";
+  }
+  if(mode === "vps_only"){
+    return "Serverless đang tắt: chỉ VPS. Bấm để chuyển sang Cloud Run → VPS dự phòng.";
+  }
+  return "Chưa xác định tuyến Serverless/VPS. Bấm để tải lại.";
+}
+
+function renderSolverInfrastructureRouteToggle(){
   const btn = document.getElementById("btnAgentHelper");
-  if(!btn) return available;
-  btn.dataset.agentState = name;
+  if(!btn) return false;
+  const allowed = plannerServerRouteToggleAllowed();
+  if(!allowed){
+    btn.hidden = true;
+    btn.setAttribute("aria-hidden", "true");
+    return false;
+  }
+  const mode = solverInfrastructureRouteMode(solverInfrastructureRouteToggleState.payload);
+  const cloudEnabled = mode === "auto" || mode === "serverless_only";
+  const loading = solverInfrastructureRouteToggleState.loading === true;
+  const error = solverInfrastructureRouteToggleState.error;
+  const label = solverInfrastructureRouteLabel(mode, {loading, error});
+  btn.hidden = false;
+  btn.setAttribute("aria-hidden", "false");
+  btn.dataset.agentState = loading
+    ? "working"
+    : (error ? "error" : (cloudEnabled ? "enabled" : (mode === "vps_only" ? "fallback" : "off")));
+  btn.dataset.solverRouteMode = mode || "unknown";
   btn.title = label;
   btn.setAttribute("aria-label", label);
-  btn.setAttribute("aria-pressed", enabled ? "true" : "false");
-  btn.disabled = !available;
-  btn.setAttribute("aria-disabled", available ? "false" : "true");
-  return available;
+  btn.setAttribute("aria-pressed", cloudEnabled ? "true" : "false");
+  const autoSortLocked = btn.dataset.autoSortLock === "1"
+    || window.__TKB_RUST_SOLVER_RUNNING === true
+    || window.__TKB_SOLVE_UI_BUSY === true;
+  btn.disabled = loading || autoSortLocked;
+  btn.setAttribute("aria-disabled", loading || autoSortLocked ? "true" : "false");
+  window.__TKB_SOLVER_ROUTE_MODE = mode;
+  window.__TKB_SOLVER_ROUTE_SERVERLESS_ENABLED = cloudEnabled;
+  return true;
 }
 
+async function requestSolverInfrastructure(method, body){
+  const api = window.TKBAuthApi;
+  if(!api || typeof api.getAuthHeaders !== "function"){
+    throw new Error("Phiên đăng nhập chưa sẵn sàng");
+  }
+  const headers = api.getAuthHeaders(body === undefined
+    ? undefined
+    : {"Content-Type":"application/json"});
+  const response = await window.fetch("/api/admin/solver-infrastructure", {
+    method:method || "GET",
+    headers,
+    body:body === undefined ? undefined : JSON.stringify(body),
+    cache:"no-store"
+  });
+  const payload = await response.json().catch(() => ({}));
+  if(!response.ok || payload?.ok !== true){
+    throw new Error(payload?.message || payload?.detail || payload?.error || `HTTP ${response.status}`);
+  }
+  return payload;
+}
+
+async function refreshSolverInfrastructureRouteToggle(){
+  if(!plannerServerRouteToggleAllowed()){
+    renderSolverInfrastructureRouteToggle();
+    return null;
+  }
+  if(solverInfrastructureRouteToggleState.pending){
+    return solverInfrastructureRouteToggleState.pending;
+  }
+  solverInfrastructureRouteToggleState.loading = true;
+  solverInfrastructureRouteToggleState.error = "";
+  renderSolverInfrastructureRouteToggle();
+  const pending = requestSolverInfrastructure("GET")
+    .then(payload => {
+      solverInfrastructureRouteToggleState.payload = payload;
+      return payload;
+    })
+    .catch(error => {
+      solverInfrastructureRouteToggleState.error = String(error?.message || error || "Không xác định");
+      return null;
+    })
+    .finally(() => {
+      solverInfrastructureRouteToggleState.loading = false;
+      solverInfrastructureRouteToggleState.pending = null;
+      renderSolverInfrastructureRouteToggle();
+    });
+  solverInfrastructureRouteToggleState.pending = pending;
+  return pending;
+}
+
+function solverInfrastructureToggleConfig(payload, targetMode){
+  const config = payload?.config && typeof payload.config === "object"
+    ? payload.config
+    : null;
+  if(!config) throw new Error("Chưa tải được cấu hình Serverless/VPS");
+  const profiles = Array.isArray(config.profiles)
+    ? config.profiles.map(profile => Object.assign({}, profile))
+    : [];
+  const selectedProfileId = String(
+    config.activeProfileId
+    || payload?.selectedProfileId
+    || profiles.find(profile => profile?.enabled !== false && String(profile?.id || "").trim())?.id
+    || ""
+  ).trim();
+  if(targetMode === "auto" && !selectedProfileId){
+    throw new Error("Chưa có Cloud Run profile đang hoạt động");
+  }
+  return Object.assign({}, config, {
+    mode:targetMode,
+    fallback:"vps",
+    activeProfileId:selectedProfileId || null,
+    profiles
+  });
+}
+
+async function toggleSolverInfrastructureRoute(){
+  if(!plannerServerRouteToggleAllowed()) return false;
+  if(solverInfrastructureRouteToggleState.pending){
+    await solverInfrastructureRouteToggleState.pending;
+  }
+  if(!solverInfrastructureRouteToggleState.payload){
+    await refreshSolverInfrastructureRouteToggle();
+  }
+  try{
+    const currentMode = solverInfrastructureRouteMode(solverInfrastructureRouteToggleState.payload);
+    if(!currentMode) throw new Error("Chưa xác định được tuyến hiện tại");
+    const targetMode = currentMode === "vps_only" ? "auto" : "vps_only";
+    const config = solverInfrastructureToggleConfig(
+      solverInfrastructureRouteToggleState.payload,
+      targetMode
+    );
+    solverInfrastructureRouteToggleState.loading = true;
+    solverInfrastructureRouteToggleState.error = "";
+    renderSolverInfrastructureRouteToggle();
+    const saved = await requestSolverInfrastructure("PATCH", config);
+    solverInfrastructureRouteToggleState.payload = Object.assign({}, saved, {
+      selectedProfileId:config.activeProfileId,
+      effectiveMode:targetMode
+    });
+    _setStatus(
+      targetMode === "auto"
+        ? "Đã bật Serverless: các lượt xếp mới sẽ dùng Cloud Run, nếu lỗi sẽ tự chuyển VPS."
+        : "Đã tắt Serverless: các lượt xếp mới sẽ chỉ dùng VPS.",
+      targetMode === "auto" ? "ok" : "info"
+    );
+    try{
+      window.dispatchEvent?.(new CustomEvent("tkb:solver-infrastructure-changed", {
+        detail:{mode:targetMode, config:saved.config}
+      }));
+    }catch(_){ }
+    return targetMode === "auto";
+  }catch(error){
+    solverInfrastructureRouteToggleState.error = String(error?.message || error || "Không xác định");
+    _setStatus(`Không chuyển được tuyến Serverless/VPS: ${solverInfrastructureRouteToggleState.error}`, "error");
+    return false;
+  }finally{
+    solverInfrastructureRouteToggleState.loading = false;
+    renderSolverInfrastructureRouteToggle();
+  }
+}
+
+// Fail-closed compatibility API for bridge code cached before client Agent retirement.
+function nativeAgentStatusSnapshot(){
+  return {
+    known:false, online:false, nativeRunning:false, nativeRunningKnown:false,
+    installedKnown:false, agentId:"", state:"retired", error:"client_agent_retired"
+  };
+}
+function nativeAgentSortPolicy(){
+  return {mode:"server", allowSort:true, nativeRequired:false, installedKnown:false, agentId:""};
+}
+async function checkNativeAgentNow(){ return false; }
 function syncAgentHelperVisibility(){
   const btn = document.getElementById("btnAgentHelper");
   if(!btn) return false;
-  const visible = isAgentHelperSupportedDevice(
-    typeof navigator !== "undefined" ? navigator : {}
-  );
-  btn.hidden = !visible;
-  btn.setAttribute("aria-hidden", visible ? "false" : "true");
-  if(visible) renderBrowserAgentIndicator(browserAgentRuntimeState());
-  return visible;
+  if(plannerServerRouteToggleAllowed()) return renderSolverInfrastructureRouteToggle();
+  btn.hidden = true;
+  btn.setAttribute("aria-hidden", "true");
+  btn.disabled = true;
+  btn.setAttribute("aria-disabled", "true");
+  return false;
 }
-
 async function toggleBrowserAgent(){
-  const executor = window.TKBBrowserWasmExecutor;
-  if(!executor || typeof executor.setEnabled !== "function") return false;
-  const next = !(typeof executor.isEnabled === "function" ? executor.isEnabled() : true);
-  const enabled = await executor.setEnabled(next);
-  renderBrowserAgentIndicator(browserAgentRuntimeState());
-  _setStatus(
-    enabled
-      ? "Agent đã bật; thiết bị sẽ hỗ trợ các lượt tối ưu phù hợp."
-      : "Agent đã tắt; các lượt xếp sẽ dùng VPS.",
-    enabled ? "ok" : "info"
-  );
-  return enabled;
-}
-
-function setAgentHelperOnlineState(){
-  // Compatibility name retained for older cached bridge code. The indicator
-  // deliberately ignores native-Agent server status and reads only local WASM.
-  return renderBrowserAgentIndicator(browserAgentRuntimeState());
-}
-
-async function refreshAgentHelperStatus(force){
-  void force;
-  if(!syncAgentHelperVisibility()) return null;
-  return setAgentHelperOnlineState();
-}
-
-function startAgentHelperStatusPolling(){
-  if(!syncAgentHelperVisibility()) return false;
-  refreshAgentHelperStatus(true);
-  if(!window.__TKB_BROWSER_AGENT_STATUS_TIMER){
-    window.__TKB_BROWSER_AGENT_STATUS_TIMER = window.setInterval(
-      () => refreshAgentHelperStatus(true),
-      750
-    );
+  if(window.__TKB_RUST_SOLVER_RUNNING === true || window.__TKB_SOLVE_UI_BUSY === true){
+    return false;
   }
-  return true;
+  return plannerServerRouteToggleAllowed()
+    ? toggleSolverInfrastructureRoute()
+    : false;
 }
-
-try{
-  window.addEventListener?.("tkb-browser-agent-state", () => {
-    renderBrowserAgentIndicator(browserAgentRuntimeState());
-  });
-  window.addEventListener?.("tkb:solver-executor-state", () => {
-    renderBrowserAgentIndicator(browserAgentRuntimeState());
-  });
-  window.addEventListener?.("pageshow", () => {
-    refreshAgentHelperStatus(true);
-  });
-  document.addEventListener?.("visibilitychange", () => {
-    if(document.hidden === false) refreshAgentHelperStatus(true);
-  });
-}catch(_){ }
-
-async function maybeInviteAgentBeforeSort(options){
-  void options;
-  return true;
-}
+async function maybeInviteAgentBeforeSort(){ return true; }
 
 function setAutoSortHomeHidden(hidden){
   const shouldLock = !!hidden;
   const btn = document.getElementById("btnHome");
   const agentBtn = document.getElementById("btnAgentHelper");
-  if(!btn && !agentBtn) return false;
-  // Keep Home in the toolbar so controls do not shift while sorting.
+  const optimizeBtn = document.getElementById("btnOptimizeMenu");
+  const optimizeMenu = document.getElementById("plannerOptimizeMenu");
+  if(!btn && !agentBtn && !optimizeBtn) return false;
+  // A server-owned solve survives this page. Keep Home usable so the user can
+  // leave the planner; the durable job id will be reattached on the next visit.
   if(btn){
     btn.hidden = false;
     btn.setAttribute("aria-hidden", "false");
-    setAutoSortControlLocked(btn, shouldLock);
+    setAutoSortControlLocked(btn, false);
   }
-  // The status indicator keeps its desktop slot while sorting so it can show
-  // when the browser executor actually owns a lease.
+  // The superadmin infrastructure status dot stays visible while the route
+  // control itself is dimmed and disabled for the server-owned sort.
   if(agentBtn){
     const agentVisible = syncAgentHelperVisibility();
     agentBtn.hidden = !agentVisible;
     agentBtn.setAttribute("aria-hidden", agentVisible ? "false" : "true");
-    agentBtn.classList.remove("is-auto-sort-disabled");
+    setAutoSortControlLocked(agentBtn, shouldLock);
+    if(!shouldLock) syncAgentHelperVisibility();
+  }
+  if(optimizeBtn){
+    setAutoSortControlLocked(optimizeBtn, shouldLock);
+    if(shouldLock){
+      if(optimizeMenu) optimizeMenu.hidden = true;
+      optimizeBtn.setAttribute("aria-expanded", "false");
+    }
   }
   return true;
 }
@@ -7545,23 +7958,21 @@ function setAutoSortBusyControls(locked){
   const solverStillRunning = window.__TKB_RUST_SOLVER_RUNNING === true
     || window.__TKB_SOLVE_UI_BUSY === true;
   const shouldLock = !!locked || solverStillRunning;
-  const optimizeMenu = document.getElementById("plannerOptimizeMenu");
-  const optimizeToggle = document.getElementById("btnOptimizeMenu");
   const controls = [
     document.getElementById("btnDeleteAll"),
     document.getElementById("btnRangBuoc"),
     document.getElementById("btnUndoTKB"),
     document.getElementById("btnRedoTKB"),
-    document.getElementById("btnQuickComplete"),
-    optimizeToggle,
+    document.getElementById("btnOptimizeMenu"),
     document.getElementById("solveDurationSeconds"),
-    ...Array.from(document.querySelectorAll("#plannerOptimizeMenu [role='menuitem']")),
     ...Array.from(document.querySelectorAll(".solver-preset-btn[data-preset]"))
   ].filter(Boolean);
   controls.forEach(el => setAutoSortControlLocked(el, shouldLock));
-  if(shouldLock && optimizeMenu){
-    optimizeMenu.hidden = true;
-    optimizeToggle?.setAttribute("aria-expanded", "false");
+  if(shouldLock){
+    const optimizeMenu = document.getElementById("plannerOptimizeMenu");
+    const optimizeBtn = document.getElementById("btnOptimizeMenu");
+    if(optimizeMenu) optimizeMenu.hidden = true;
+    if(optimizeBtn) optimizeBtn.setAttribute("aria-expanded", "false");
   }
   const presetGroup = document.getElementById("solverPresetGroup");
   if(presetGroup) presetGroup.setAttribute("aria-disabled", shouldLock ? "true" : "false");
@@ -7604,53 +8015,21 @@ function requestStopAutoSort(){
   try{ _setStatus("Đang dừng xếp...", "info"); }catch(_){ }
 }
 
-async function downloadAgentHelper(){
-  return toggleBrowserAgent();
-}
-
-async function approveAgentPairFromUrl(){
-  const params = new URLSearchParams(window.location.search || "");
-  const userCode = String(params.get("agentPair") || "").trim().toUpperCase();
-  if(!/^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(userCode)) return false;
-  const accepted = window.confirm(
-    `Cho phép Agent mã ${userCode} dùng CPU máy tính này để hỗ trợ các lượt xếp của tài khoản hiện tại?`
-  );
-  if(!accepted) return false;
-  try{
-    const headers = window.TKBAuthApi?.getAuthHeaders
-      ? window.TKBAuthApi.getAuthHeaders({"Content-Type":"application/json"})
-      : {"Content-Type":"application/json", "Accept":"application/json"};
-    const response = await fetch("/api/agent-helper/v1/pair/approve", {
-      method:"POST",
-      headers,
-      body:JSON.stringify({protocol:"tkb-agent-helper-v1", userCode}),
-      cache:"no-store"
-    });
-    const payload = await response.json().catch(() => ({}));
-    if(!response.ok || payload?.ok !== true){
-      throw new Error(response.status === 401
-        ? "Phiên đăng nhập đã hết hạn. Hãy đăng nhập rồi mở Agent lại."
-        : "Mã ghép nối đã hết hạn. Hãy mở Agent lại để nhận mã mới.");
-    }
-    params.delete("agentPair");
-    const nextQuery = params.toString();
-    window.history.replaceState({}, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
-    _setStatus("Agent đã kết nối an toàn với tài khoản này.", "ok");
-    window.setTimeout(() => refreshAgentHelperStatus(true), 1800);
-    window.setTimeout(() => refreshAgentHelperStatus(true), 4500);
-    window.alert("Agent đã kết nối thành công. Bạn có thể quay lại trang Xếp.");
-    return true;
-  }catch(error){
-    _setStatus(error?.message || "Không kết nối được Agent.", "error");
-    return false;
-  }
-}
-
 window.setTimeout(() => {
   syncAgentHelperVisibility();
-  startAgentHelperStatusPolling();
-  approveAgentPairFromUrl();
+  if(plannerServerRouteToggleAllowed()) refreshSolverInfrastructureRouteToggle();
 }, 0);
+
+try{
+  window.addEventListener?.("tkb:auth-ready", () => {
+    syncAgentHelperVisibility();
+    if(plannerServerRouteToggleAllowed()) refreshSolverInfrastructureRouteToggle();
+  });
+  window.addEventListener?.("pageshow", () => {
+    syncAgentHelperVisibility();
+    if(plannerServerRouteToggleAllowed()) refreshSolverInfrastructureRouteToggle();
+  });
+}catch(_){ }
 
 try{
   window.setAutoSortStopVisible = setAutoSortStopVisible;
@@ -7658,11 +8037,17 @@ try{
   window.setAutoSortHomeHidden = setAutoSortHomeHidden;
   window.resetAutoSortStopRequest = resetAutoSortStopRequest;
   window.requestStopAutoSort = requestStopAutoSort;
-  window.downloadAgentHelper = downloadAgentHelper;
   window.isAgentHelperSupportedDevice = isAgentHelperSupportedDevice;
+  window.isAgentHelperVisibleForCurrentUser = isAgentHelperVisibleForCurrentUser;
+  window.plannerAgentRoleAllowed = plannerAgentRoleAllowed;
+  window.plannerServerRouteToggleAllowed = plannerServerRouteToggleAllowed;
+  window.refreshSolverInfrastructureRouteToggle = refreshSolverInfrastructureRouteToggle;
+  window.toggleSolverInfrastructureRoute = toggleSolverInfrastructureRoute;
+  window.isWindowsNativeAgentDevice = isWindowsNativeAgentDevice;
+  window.nativeAgentStatusSnapshot = nativeAgentStatusSnapshot;
+  window.nativeAgentSortPolicy = nativeAgentSortPolicy;
+  window.checkNativeAgentNow = checkNativeAgentNow;
   window.syncAgentHelperVisibility = syncAgentHelperVisibility;
-  window.setAgentHelperOnlineState = setAgentHelperOnlineState;
-  window.refreshAgentHelperStatus = refreshAgentHelperStatus;
   window.toggleBrowserAgent = toggleBrowserAgent;
   window.maybeInviteAgentBeforeSort = maybeInviteAgentBeforeSort;
   window.hideAutoSortProgress = hideAutoSortProgress;
@@ -7727,7 +8112,8 @@ function setAutoSortProgress(percent, label, details){
   window.clearTimeout(window.__autoSortProgressHideTimer);
   setAutoSortStopVisible(true);
   wrap.classList.remove("is-idle", "is-error", "is-warning", "is-complete");
-  if(!window.__AUTO_SORT_STOP_REQUESTED && n < 100){
+  const bestEffortStopPending = window.__TKB_RUST_PROGRESS_STATE?.bestEffortStopPending === true;
+  if(!window.__AUTO_SORT_STOP_REQUESTED && !bestEffortStopPending && n < 100){
     const btn = document.getElementById("btnStopAutoSort");
     if(btn){
       btn.disabled = false;
@@ -8068,19 +8454,7 @@ function saveTKB(){ saveStore({force:true}); }
 function isAutoSortRunningForNavigation(){
   return window.__TKB_RUST_SOLVER_RUNNING === true
     || window.__TKB_SOLVE_UI_BUSY === true
-    || window.__AUTO_SORT_STOP_REQUESTED === true;
-}
-
-async function stopAutoSortBeforeHome(){
-  try{ _setStatus("Đang dừng xếp để về Home...", "info"); }catch(_){ }
-  try{
-    const stopResult = typeof window.requestStopAutoSort === "function"
-      ? window.requestStopAutoSort()
-      : null;
-    if(stopResult && typeof stopResult.then === "function") await stopResult;
-  }catch(err){
-    console.warn("stop before home failed", err);
-  }
+    || !!String(window.__TKB_ACTIVE_BACKEND_JOB_ID || "").trim();
 }
 
 async function saveAndBack(){
@@ -8089,9 +8463,9 @@ async function saveAndBack(){
   let navigating = false;
   try{
     if(isAutoSortRunningForNavigation()){
-      const ok = window.confirm("Đang sắp xếp. Bạn muốn dừng lượt xếp hiện tại và về Home?");
-      if(!ok) return;
-      await stopAutoSortBeforeHome();
+      try{
+        _setStatus("Lượt xếp vẫn tiếp tục trên máy chủ; khi quay lại hệ thống sẽ tự nối lại.", "info");
+      }catch(_){ }
     }
     if(btn) btn.disabled = true;
     __tkbNavigatingHome = true;
@@ -8457,8 +8831,10 @@ function backToMain(){
       let total = 0;
       const lops = getFilteredLops();
       for(const l of lops){
+        const classCanon = getLopCanonById(l?.id);
         for(const row of requiredSubjectsForClass(l)){
-          const teacher = String(row?.gv || "").trim();
+          const monName = String(row?.mon || row?.ten || "").trim();
+          const teacher = classAssignmentStatisticsTeacherForClassMon(classCanon, monName);
           const required = Number(row?.required || 0);
           if(teacherValueHas(teacher, code) && Number.isFinite(required) && required > 0){
             total += required;

@@ -9,6 +9,10 @@ use crate::solver_pool::SolverOwner;
 
 pub const AGENT_WORKER_HEARTBEAT_MS: u64 = 10_000;
 pub const AGENT_WORKER_TTL_MS: u64 = 90_000;
+/// A GUI that is explicitly OFF sends a lightweight presence heartbeat. Keep
+/// its crash-only marker short so a killed process is not mistaken for an
+/// intentionally OFF Agent for the full solver-worker TTL.
+pub const AGENT_PRESENCE_TTL_MS: u64 = 15_000;
 pub const AGENT_WORK_LEASE_MS: u64 = 30_000;
 pub const AGENT_IDLE_RETRY_MS: u64 = 2_000;
 pub const AGENT_PAIR_TTL_MS: u64 = 5 * 60 * 1_000;
@@ -23,6 +27,22 @@ const MAX_AGENT_SEEDS_PER_JOB: usize = 16;
 const MAX_WORKER_ID_BYTES: usize = 80;
 const MAX_WORKER_NAME_BYTES: usize = 120;
 const MAX_JOB_SCOPE_BYTES: usize = 256;
+const EXTERNAL_CP_SAT_REPLAY_TTL_MS: u64 = 2 * 60 * 1_000;
+const MAX_EXTERNAL_CP_SAT_REPLAY_BYTES: usize = 64 * 1024 * 1024;
+
+#[cfg(test)]
+fn external_cp_sat_builder_limit() -> usize {
+    2
+}
+
+#[cfg(not(test))]
+fn external_cp_sat_builder_limit() -> usize {
+    std::env::var("TKB_EXTERNAL_CP_SAT_BUILDERS")
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .unwrap_or(2)
+        .clamp(1, 8)
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AgentHelperError {
@@ -132,6 +152,47 @@ pub struct AgentHeartbeatResult {
     pub worker_expires_at_ms: u64,
 }
 
+/// Non-identifying whole-machine usage reported by a native Agent. Values are
+/// stored as tenths of one percent so the coordinator never retains arbitrary
+/// client floating-point data.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AgentResourceTelemetry {
+    pub system_cpu_tenths: Option<u16>,
+    pub system_ram_tenths: Option<u16>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AgentResourceTelemetrySnapshot {
+    pub system_cpu_tenths: Option<u16>,
+    pub system_ram_tenths: Option<u16>,
+    pub sampled_at_ms: u64,
+}
+
+/// Browser-facing state of the durable native Agent process. `Stopped` is
+/// intentionally reserved for a live worker that explicitly registered with
+/// Agent execution disabled; an upgrade-only worker is not enough evidence to
+/// infer the user's ON/OFF choice.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AgentNativeState {
+    Online,
+    Stopped,
+    Missing,
+}
+
+impl AgentNativeState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Online => "online",
+            Self::Stopped => "stopped",
+            Self::Missing => "missing",
+        }
+    }
+
+    pub fn is_running(self) -> bool {
+        !matches!(self, Self::Missing)
+    }
+}
+
 #[derive(Clone)]
 pub struct AgentWorkLease {
     pub work_id: String,
@@ -155,6 +216,70 @@ pub struct AgentSubmissionTicket {
 }
 
 #[derive(Clone, Debug)]
+pub struct ExternalCpSatReplay {
+    pub status: u16,
+    pub payload: Value,
+}
+
+#[derive(Clone, Debug)]
+enum ExternalCpSatStepState {
+    InFlight,
+    Cached(ExternalCpSatReplay),
+}
+
+#[derive(Clone, Debug)]
+struct ExternalCpSatStepEntry {
+    key: String,
+    state: ExternalCpSatStepState,
+    updated_at_ms: u64,
+    cached_bytes: usize,
+}
+
+pub enum ExternalCpSatAdmission<'a> {
+    Acquired(ExternalCpSatAdmissionGuard<'a>),
+    Replay(ExternalCpSatReplay),
+    Busy,
+    Conflict,
+}
+
+pub struct ExternalCpSatAdmissionGuard<'a> {
+    coordinator: &'a AgentHelperCoordinator,
+    lease_id: String,
+    key: String,
+    active: bool,
+}
+
+impl ExternalCpSatAdmissionGuard<'_> {
+    pub fn complete(mut self, replay: ExternalCpSatReplay, now_ms: u64) -> ExternalCpSatReplay {
+        // Model payloads can be large. Size and clone outside the shared Agent
+        // state mutex so heartbeats never wait on JSON serialization.
+        let cached_bytes = serde_json::to_vec(&replay.payload)
+            .map(|bytes| bytes.len())
+            .unwrap_or(MAX_EXTERNAL_CP_SAT_REPLAY_BYTES.saturating_add(1));
+        let cached_replay =
+            (cached_bytes <= MAX_EXTERNAL_CP_SAT_REPLAY_BYTES).then(|| replay.clone());
+        self.coordinator.finish_external_cp_sat_step(
+            &self.lease_id,
+            &self.key,
+            cached_replay,
+            cached_bytes,
+            now_ms,
+        );
+        self.active = false;
+        replay
+    }
+}
+
+impl Drop for ExternalCpSatAdmissionGuard<'_> {
+    fn drop(&mut self) {
+        if self.active {
+            self.coordinator
+                .abort_external_cp_sat_step(&self.lease_id, &self.key);
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct AgentCandidate {
     pub work_id: String,
     pub worker_id: String,
@@ -167,7 +292,21 @@ pub struct AgentCandidate {
 pub enum AgentJobExecution {
     Queued,
     Leased { expires_at_ms: u64 },
+    Checkpoint { candidate: AgentCandidate },
     Completed { candidate: Option<AgentCandidate> },
+}
+
+#[derive(Clone, Debug)]
+pub enum AgentVpsTakeover {
+    Retry,
+    Taken(Option<AgentCandidate>),
+}
+
+#[derive(Clone, Debug)]
+pub enum AgentStopTakeover {
+    Terminal(AgentCandidate),
+    Resume(AgentCandidate),
+    Empty,
 }
 
 #[derive(Clone, Debug)]
@@ -179,9 +318,11 @@ struct AgentWorker {
     _name: String,
     job_scope: Option<String>,
     eligible: bool,
+    explicitly_paused: bool,
     max_parallel: usize,
     last_seen_ms: u64,
     expires_at_ms: u64,
+    resource_telemetry: Option<AgentResourceTelemetrySnapshot>,
 }
 
 #[derive(Clone, Debug)]
@@ -209,11 +350,43 @@ struct AgentJob {
     job_id: String,
     owner: SolverOwner,
     trusted_global_eligible: bool,
+    // Only a scoped Browser worker may lease this canonical job. Native and
+    // trusted-global workers intentionally have no browser job scope.
+    browser_agent_required: bool,
+    // A Windows native-required request may be bound to the exact paired
+    // Agent ID on the current machine.
+    native_agent_id: Option<String>,
     created_at_ms: u64,
     request_body: Arc<Vec<u8>>,
     tasks: Vec<AgentTask>,
     best_candidate: Option<AgentCandidate>,
     checkpoint_candidate: Option<AgentCandidate>,
+    // Hard-valid partial timetable used only to seed a same-job VPS resume.
+    // It is deliberately excluded from terminal Agent results and Stop.
+    resume_checkpoint_candidate: Option<AgentCandidate>,
+}
+
+fn mobile_local_quality_terminal_marker(payload: &Value) -> bool {
+    payload
+        .get("mobile_local_quality_terminal")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || payload
+            .get("solver")
+            .and_then(|solver| solver.get("runtime_settings"))
+            .and_then(|runtime| runtime.get("mobile_local_quality_terminal"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+}
+
+fn agent_candidate_strictly_preferred(
+    candidate: &AgentCandidate,
+    current: &AgentCandidate,
+) -> bool {
+    candidate.quality < current.quality
+        || (candidate.quality == current.quality
+            && mobile_local_quality_terminal_marker(&candidate.payload)
+            && !mobile_local_quality_terminal_marker(&current.payload))
 }
 
 fn better_agent_candidate(
@@ -221,7 +394,11 @@ fn better_agent_candidate(
     right: Option<AgentCandidate>,
 ) -> Option<AgentCandidate> {
     match (left, right) {
-        (Some(left), Some(right)) => Some(if left.quality <= right.quality { left } else { right }),
+        (Some(left), Some(right)) => Some(if agent_candidate_strictly_preferred(&right, &left) {
+            right
+        } else {
+            left
+        }),
         (Some(candidate), None) | (None, Some(candidate)) => Some(candidate),
         (None, None) => None,
     }
@@ -265,6 +442,9 @@ struct AgentHelperState {
     pairings: HashMap<String, AgentPairing>,
     trusted_handoff_requests: HashMap<String, TrustedHandoffRequest>,
     trusted_handoff_capacity_releases: VecDeque<String>,
+    external_cp_sat_steps: HashMap<String, ExternalCpSatStepEntry>,
+    external_cp_sat_active_builders: usize,
+    external_cp_sat_cached_bytes: usize,
 }
 
 #[derive(Default)]
@@ -275,6 +455,118 @@ pub struct AgentHelperCoordinator {
 impl AgentHelperCoordinator {
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
+    }
+
+    /// Admit at most a small bounded number of Python model builders. The
+    /// latest completed response for a lease is retained briefly so a dropped
+    /// HTTP response can be replayed without rebuilding the same CP-SAT model.
+    pub fn try_begin_external_cp_sat_step<'a>(
+        &'a self,
+        lease_id: &str,
+        key: &str,
+        now_ms: u64,
+    ) -> ExternalCpSatAdmission<'a> {
+        let Ok(mut state) = self.state.lock() else {
+            return ExternalCpSatAdmission::Busy;
+        };
+        prune_external_cp_sat_steps(&mut state, now_ms);
+
+        if let Some(existing) = state.external_cp_sat_steps.get(lease_id) {
+            if existing.key == key {
+                return match &existing.state {
+                    ExternalCpSatStepState::InFlight => ExternalCpSatAdmission::Busy,
+                    ExternalCpSatStepState::Cached(replay) => {
+                        ExternalCpSatAdmission::Replay(replay.clone())
+                    }
+                };
+            }
+            if matches!(&existing.state, ExternalCpSatStepState::InFlight) {
+                return ExternalCpSatAdmission::Conflict;
+            }
+        }
+
+        if state.external_cp_sat_active_builders >= external_cp_sat_builder_limit() {
+            return ExternalCpSatAdmission::Busy;
+        }
+        if let Some(replaced) = state.external_cp_sat_steps.remove(lease_id) {
+            state.external_cp_sat_cached_bytes = state
+                .external_cp_sat_cached_bytes
+                .saturating_sub(replaced.cached_bytes);
+        }
+        state.external_cp_sat_steps.insert(
+            lease_id.to_string(),
+            ExternalCpSatStepEntry {
+                key: key.to_string(),
+                state: ExternalCpSatStepState::InFlight,
+                updated_at_ms: now_ms,
+                cached_bytes: 0,
+            },
+        );
+        state.external_cp_sat_active_builders += 1;
+        ExternalCpSatAdmission::Acquired(ExternalCpSatAdmissionGuard {
+            coordinator: self,
+            lease_id: lease_id.to_string(),
+            key: key.to_string(),
+            active: true,
+        })
+    }
+
+    fn finish_external_cp_sat_step(
+        &self,
+        lease_id: &str,
+        key: &str,
+        replay: Option<ExternalCpSatReplay>,
+        cached_bytes: usize,
+        now_ms: u64,
+    ) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        let matches_active = state
+            .external_cp_sat_steps
+            .get(lease_id)
+            .is_some_and(|entry| {
+                entry.key == key && matches!(&entry.state, ExternalCpSatStepState::InFlight)
+            });
+        if !matches_active {
+            return;
+        }
+        state.external_cp_sat_active_builders =
+            state.external_cp_sat_active_builders.saturating_sub(1);
+        let Some(replay) = replay else {
+            state.external_cp_sat_steps.remove(lease_id);
+            return;
+        };
+        prune_external_cp_sat_steps_for_bytes(&mut state, cached_bytes);
+        state.external_cp_sat_cached_bytes = state
+            .external_cp_sat_cached_bytes
+            .saturating_add(cached_bytes);
+        state.external_cp_sat_steps.insert(
+            lease_id.to_string(),
+            ExternalCpSatStepEntry {
+                key: key.to_string(),
+                state: ExternalCpSatStepState::Cached(replay),
+                updated_at_ms: now_ms,
+                cached_bytes,
+            },
+        );
+    }
+
+    fn abort_external_cp_sat_step(&self, lease_id: &str, key: &str) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        let matches_active = state
+            .external_cp_sat_steps
+            .get(lease_id)
+            .is_some_and(|entry| {
+                entry.key == key && matches!(&entry.state, ExternalCpSatStepState::InFlight)
+            });
+        if matches_active {
+            state.external_cp_sat_steps.remove(lease_id);
+            state.external_cp_sat_active_builders =
+                state.external_cp_sat_active_builders.saturating_sub(1);
+        }
     }
 
     /// Return the number of live Agent sessions owned by the current browser
@@ -289,9 +581,141 @@ impl AgentHelperCoordinator {
     /// tab must not mistake another tab's scoped worker for a native executor
     /// that can claim its new job.
     pub fn online_worker_counts(&self, owner: &SolverOwner, now_ms: u64) -> (usize, usize) {
+        let (native, browser, _) = self.online_worker_counts_with_native_state(owner, now_ms);
+        (native, browser)
+    }
+
+    /// Return one coherent browser-facing worker snapshot. Counts retain their
+    /// historical eligible-only meaning while the state also recognizes a live
+    /// native process that explicitly registered as paused.
+    pub fn online_worker_counts_with_native_state(
+        &self,
+        owner: &SolverOwner,
+        now_ms: u64,
+    ) -> (usize, usize, AgentNativeState) {
         let Ok(mut state) = self.state.lock() else {
-            return (0, 0);
+            return (0, 0, AgentNativeState::Missing);
         };
+        prune_state(&mut state, now_ms);
+        let mut native = 0;
+        let mut browser = 0;
+        let mut explicitly_paused = false;
+        for worker in state.workers.values().filter(|worker| {
+            !worker.trusted_global && worker.owner == *owner && worker.expires_at_ms > now_ms
+        }) {
+            if worker.eligible {
+                if worker.job_scope.is_some() {
+                    browser += 1;
+                } else {
+                    native += 1;
+                }
+            } else if worker.job_scope.is_none() && worker.explicitly_paused {
+                explicitly_paused = true;
+            }
+        }
+        let native_state = if native > 0 {
+            AgentNativeState::Online
+        } else if explicitly_paused {
+            AgentNativeState::Stopped
+        } else {
+            AgentNativeState::Missing
+        };
+        (native, browser, native_state)
+    }
+
+    /// Distinguish an eligible native executor from a live native process that
+    /// explicitly declared itself OFF. Upgrade-only registrations remain
+    /// absent from this state contract unless their hello also carried that
+    /// explicit paused marker.
+    pub fn native_worker_state(&self, owner: &SolverOwner, now_ms: u64) -> AgentNativeState {
+        self.online_worker_counts_with_native_state(owner, now_ms).2
+    }
+
+    /// Return the native status for one paired Agent ID. With no requested ID
+    /// this keeps the owner-wide compatibility snapshot and returns an ID only
+    /// when all live native presence belongs to one Agent.
+    pub fn native_worker_status_for_id(
+        &self,
+        owner: &SolverOwner,
+        requested_worker_id: Option<&str>,
+        now_ms: u64,
+    ) -> (
+        usize,
+        AgentNativeState,
+        Option<String>,
+        Option<AgentResourceTelemetrySnapshot>,
+    ) {
+        let requested_worker_id = match requested_worker_id {
+            Some(value) => match normalize_worker_id(value) {
+                Ok(value) => Some(value),
+                Err(_) => return (0, AgentNativeState::Missing, None, None),
+            },
+            None => None,
+        };
+        let Ok(mut state) = self.state.lock() else {
+            return (0, AgentNativeState::Missing, None, None);
+        };
+        prune_state(&mut state, now_ms);
+        let mut native_count = 0;
+        let mut explicitly_paused = false;
+        let mut live_ids = HashSet::new();
+        let mut telemetry: Option<AgentResourceTelemetrySnapshot> = None;
+        for worker in state.workers.values().filter(|worker| {
+            !worker.trusted_global
+                && worker.owner == *owner
+                && worker.job_scope.is_none()
+                && worker.expires_at_ms > now_ms
+                && requested_worker_id
+                    .as_deref()
+                    .is_none_or(|worker_id| worker.worker_id == worker_id)
+        }) {
+            if worker.eligible {
+                native_count += 1;
+                live_ids.insert(worker.worker_id.clone());
+                if worker.resource_telemetry.is_some_and(|sample| {
+                    telemetry.is_none_or(|current| sample.sampled_at_ms > current.sampled_at_ms)
+                }) {
+                    telemetry = worker.resource_telemetry;
+                }
+            } else if worker.explicitly_paused {
+                explicitly_paused = true;
+                live_ids.insert(worker.worker_id.clone());
+            }
+        }
+        let native_state = if native_count > 0 {
+            AgentNativeState::Online
+        } else if explicitly_paused {
+            AgentNativeState::Stopped
+        } else {
+            AgentNativeState::Missing
+        };
+        let worker_id = if live_ids.len() == 1 {
+            live_ids.into_iter().next()
+        } else {
+            None
+        };
+        (native_count, native_state, worker_id, telemetry)
+    }
+
+    pub fn native_worker_state_for_id(
+        &self,
+        owner: &SolverOwner,
+        worker_id: &str,
+        now_ms: u64,
+    ) -> AgentNativeState {
+        self.native_worker_status_for_id(owner, Some(worker_id), now_ms)
+            .1
+    }
+
+    /// Return only the freshest eligible native Agent sample for this owner.
+    /// Browser workers and trusted infrastructure never contribute to this
+    /// browser-facing telemetry view.
+    pub fn latest_native_resource_telemetry(
+        &self,
+        owner: &SolverOwner,
+        now_ms: u64,
+    ) -> Option<AgentResourceTelemetrySnapshot> {
+        let mut state = self.state.lock().ok()?;
         prune_state(&mut state, now_ms);
         state
             .workers
@@ -299,16 +723,59 @@ impl AgentHelperCoordinator {
             .filter(|worker| {
                 !worker.trusted_global
                     && worker.owner == *owner
+                    && worker.job_scope.is_none()
                     && worker.eligible
                     && worker.expires_at_ms > now_ms
             })
-            .fold((0, 0), |(native, browser), worker| {
-                if worker.job_scope.is_some() {
-                    (native, browser + 1)
-                } else {
-                    (native + 1, browser)
-                }
-            })
+            .filter_map(|worker| worker.resource_telemetry)
+            .max_by_key(|sample| sample.sampled_at_ms)
+    }
+
+    /// Keep a healthy, free durable Agent authoritative for this task. The
+    /// durable Agent runs the full native CP-SAT portfolio; Browser WASM is a
+    /// fallback only when the native process is busy, disabled, or its
+    /// heartbeat expires. Do not use a short wall-clock grace here: a slow
+    /// poll or a cold Windows process must not silently downgrade a CP-SAT
+    /// solve to the weaker Browser heuristic.
+    pub fn native_worker_priority_available(
+        &self,
+        owner: &SolverOwner,
+        job_id: &str,
+        now_ms: u64,
+    ) -> bool {
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        prune_state(&mut state, now_ms);
+        let Some(job) = state.jobs.get(job_id).filter(|job| job.owner == *owner) else {
+            return false;
+        };
+        state.workers.iter().any(|(worker_token_hash, worker)| {
+            if worker.trusted_global
+                || worker.owner != *owner
+                || worker.job_scope.is_some()
+                || !worker.eligible
+                || worker.expires_at_ms <= now_ms
+                || !worker_can_access_job(worker, job)
+            {
+                return false;
+            }
+            let active_leases = state
+                .jobs
+                .values()
+                .flat_map(|candidate| candidate.tasks.iter())
+                .filter(|task| {
+                    matches!(
+                        &task.state,
+                        AgentTaskState::Leased {
+                            worker_token_hash: assigned,
+                            ..
+                        } if assigned == worker_token_hash
+                    )
+                })
+                .count();
+            active_leases < worker.max_parallel
+        })
     }
 
     /// Count executors that may actually claim this canonical job. Durable
@@ -324,20 +791,36 @@ impl AgentHelperCoordinator {
             return 0;
         };
         prune_state(&mut state, now_ms);
-        state
-            .workers
-            .values()
-            .filter(|worker| {
-                !worker.trusted_global
-                    && worker.owner == *owner
-                    && worker.eligible
-                    && worker.expires_at_ms > now_ms
-                    && worker
-                        .job_scope
-                        .as_deref()
-                        .is_none_or(|scope| scope == job_id)
-            })
-            .count()
+        if let Some(job) = state.jobs.get(job_id).filter(|job| job.owner == *owner) {
+            state
+                .workers
+                .values()
+                .filter(|worker| {
+                    !worker.trusted_global
+                        && worker.eligible
+                        && worker.expires_at_ms > now_ms
+                        && worker_can_access_job(worker, job)
+                })
+                .count()
+        } else {
+            // The coordinator asks this probe before registering the new
+            // Agent job. Preserve the pre-registration owner-wide admission
+            // result; the exact Agent-ID fence is applied once the job exists.
+            state
+                .workers
+                .values()
+                .filter(|worker| {
+                    !worker.trusted_global
+                        && worker.owner == *owner
+                        && worker.eligible
+                        && worker.expires_at_ms > now_ms
+                        && worker
+                            .job_scope
+                            .as_deref()
+                            .is_none_or(|scope| scope == job_id)
+                })
+                .count()
+        }
     }
 
     /// Return whether an exact live worker token may receive canonical work.
@@ -355,6 +838,68 @@ impl AgentHelperCoordinator {
         authenticated_worker(&state, owner, session_binding.trim(), worker_token, now_ms)
             .ok()
             .map(|(_, worker)| worker.eligible)
+    }
+
+    /// Return the server-recorded job scope for an authenticated worker.
+    /// `Some(None)` is a durable native Agent and `Some(Some(job_id))` is a
+    /// Browser-WASM worker. The lease route must derive executor kind from
+    /// this registration instead of trusting the platform repeated by a
+    /// client on every poll.
+    pub fn worker_job_scope(
+        &self,
+        owner: &SolverOwner,
+        session_binding: &str,
+        worker_token: &str,
+        now_ms: u64,
+    ) -> Option<Option<String>> {
+        let mut state = self.state.lock().ok()?;
+        prune_state(&mut state, now_ms);
+        authenticated_worker(&state, owner, session_binding.trim(), worker_token, now_ms)
+            .ok()
+            .map(|(_, worker)| worker.job_scope)
+    }
+
+    /// A dropped HTTP response must not let native-first routing hide the
+    /// exact Browser lease from its idempotent retry. This read-only probe
+    /// mirrors the replay branch at the start of `claim_work_with_request_id`.
+    pub fn has_active_lease_request(
+        &self,
+        owner: &SolverOwner,
+        session_binding: &str,
+        worker_token: &str,
+        lease_request_id: &str,
+        now_ms: u64,
+    ) -> bool {
+        let Ok(lease_request_id) = normalize_lease_request_id(lease_request_id) else {
+            return false;
+        };
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        prune_state(&mut state, now_ms);
+        let Ok((worker_token_hash, worker)) =
+            authenticated_worker(&state, owner, session_binding.trim(), worker_token, now_ms)
+        else {
+            return false;
+        };
+        state
+            .jobs
+            .values()
+            .filter(|job| worker_can_access_job(&worker, job))
+            .flat_map(|job| job.tasks.iter())
+            .any(|task| {
+                matches!(
+                    &task.state,
+                    AgentTaskState::Leased {
+                        worker_token_hash: assigned_worker,
+                        lease_request_id: assigned_request,
+                        expires_at_ms,
+                        ..
+                    } if assigned_worker == &worker_token_hash
+                        && assigned_request == &lease_request_id
+                        && *expires_at_ms > now_ms
+                )
+            })
     }
 
     /// Authorize at most one global VPS-queue handoff for one authenticated
@@ -832,6 +1377,27 @@ impl AgentHelperCoordinator {
         trusted_global_eligible: bool,
         now_ms: u64,
     ) -> bool {
+        self.register_job_with_execution_policy(
+            job_id,
+            owner,
+            request_body,
+            seed_count,
+            trusted_global_eligible,
+            false,
+            now_ms,
+        )
+    }
+
+    pub fn register_job_with_execution_policy(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+        request_body: Arc<Vec<u8>>,
+        seed_count: usize,
+        trusted_global_eligible: bool,
+        browser_agent_required: bool,
+        now_ms: u64,
+    ) -> bool {
         let job_id = job_id.trim();
         if job_id.is_empty() || request_body.is_empty() {
             return false;
@@ -849,6 +1415,16 @@ impl AgentHelperCoordinator {
             return owned;
         }
         let seed_count = seed_count.clamp(1, MAX_AGENT_SEEDS_PER_JOB);
+        let native_agent_id = serde_json::from_slice::<Value>(&request_body)
+            .ok()
+            .and_then(|request| {
+                request
+                    .get("settings")
+                    .and_then(Value::as_object)
+                    .and_then(|settings| settings.get("ui_native_agent_id"))
+                    .and_then(Value::as_str)
+                    .and_then(|value| normalize_worker_id(value).ok())
+            });
         let tasks = (0..seed_count)
             .map(|index| AgentTask {
                 work_id: format!("{job_id}:seed:{:02}", index + 1),
@@ -863,11 +1439,14 @@ impl AgentHelperCoordinator {
                 job_id: job_id.to_string(),
                 owner: owner.clone(),
                 trusted_global_eligible,
+                browser_agent_required,
+                native_agent_id,
                 created_at_ms: now_ms,
                 request_body,
                 tasks,
                 best_candidate: None,
                 checkpoint_candidate: None,
+                resume_checkpoint_candidate: None,
             },
         );
         release_trusted_handoff_capacity_for_job(&mut state, job_id);
@@ -912,11 +1491,49 @@ impl AgentHelperCoordinator {
             release_trusted_handoff_capacity_for_job(&mut state, job_id);
             return None;
         }
-        let candidate = state.jobs.remove(job_id).and_then(|job| {
-            better_agent_candidate(job.best_candidate, job.checkpoint_candidate)
-        });
+        let candidate = state
+            .jobs
+            .remove(job_id)
+            .and_then(|job| better_agent_candidate(job.best_candidate, job.checkpoint_candidate));
         release_trusted_handoff_capacity_for_job(&mut state, job_id);
         candidate
+    }
+
+    /// Atomically close an Agent job for owner Stop without confusing a
+    /// partial resume checkpoint with a publishable terminal candidate.
+    pub fn take_for_best_effort_stop(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+    ) -> AgentStopTakeover {
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(_) => return AgentStopTakeover::Empty,
+        };
+        let owned = state
+            .jobs
+            .get(job_id)
+            .is_some_and(|job| job.owner == *owner);
+        if !owned {
+            release_trusted_handoff_capacity_for_job(&mut state, job_id);
+            return AgentStopTakeover::Empty;
+        }
+        let outcome = state
+            .jobs
+            .remove(job_id)
+            .map_or(AgentStopTakeover::Empty, |job| {
+                if let Some(candidate) =
+                    better_agent_candidate(job.best_candidate, job.checkpoint_candidate)
+                {
+                    AgentStopTakeover::Terminal(candidate)
+                } else if let Some(candidate) = job.resume_checkpoint_candidate {
+                    AgentStopTakeover::Resume(candidate)
+                } else {
+                    AgentStopTakeover::Empty
+                }
+            });
+        release_trusted_handoff_capacity_for_job(&mut state, job_id);
+        outcome
     }
 
     /// Return one coherent snapshot of the canonical Agent task. Calling this
@@ -942,10 +1559,12 @@ impl AgentHelperCoordinator {
         }) {
             return Some(AgentJobExecution::Leased { expires_at_ms });
         }
-        if let Some(candidate) = job.checkpoint_candidate.clone() {
-            return Some(AgentJobExecution::Completed {
-                candidate: Some(candidate),
-            });
+        if let Some(candidate) = job
+            .checkpoint_candidate
+            .clone()
+            .or_else(|| job.resume_checkpoint_candidate.clone())
+        {
+            return Some(AgentJobExecution::Checkpoint { candidate });
         }
         if job
             .tasks
@@ -958,37 +1577,52 @@ impl AgentHelperCoordinator {
         }
     }
 
-    /// Atomically remove an Agent job only when no lease is still active. This
-    /// closes the expiry/reclaim race: a worker that manages to reclaim a task
-    /// just as the watchdog notices an old lease cannot be killed underneath a
-    /// running solver while the VPS starts a replacement.
-    pub fn take_over_for_vps(&self, job_id: &str, owner: &SolverOwner, now_ms: u64) -> bool {
+    /// Atomically remove an Agent job only when no lease is still active and
+    /// return its accepted checkpoint to the VPS coordinator. A checkpoint is
+    /// an incumbent, not a terminal Agent result: expiry/failure continues the
+    /// same canonical job from that timetable on the fallback executor.
+    pub fn take_over_for_vps_with_checkpoint(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+        now_ms: u64,
+    ) -> AgentVpsTakeover {
         let mut state = match self.state.lock() {
             Ok(state) => state,
-            Err(_) => return false,
+            Err(_) => return AgentVpsTakeover::Retry,
         };
         prune_state(&mut state, now_ms);
         let Some(job) = state.jobs.get(job_id).filter(|job| job.owner == *owner) else {
             release_trusted_handoff_capacity_for_job(&mut state, job_id);
-            return true;
+            return AgentVpsTakeover::Taken(None);
         };
-        // A candidate may complete between the watchdog's snapshot and this
-        // atomic takeover check. Preserve that candidate and let the
-        // coordinator re-enter the Agent path to commit it instead of
-        // discarding it and needlessly restarting on the VPS.
-        if job.best_candidate.is_some() || job.checkpoint_candidate.is_some() {
-            return false;
+        // A terminal candidate may complete between the watchdog's snapshot
+        // and this atomic takeover check. Let the coordinator re-enter the
+        // Agent path so that candidate wins the generation boundary.
+        if job.best_candidate.is_some() {
+            return AgentVpsTakeover::Retry;
         }
         if job
             .tasks
             .iter()
             .any(|task| matches!(&task.state, AgentTaskState::Leased { .. }))
         {
-            return false;
+            return AgentVpsTakeover::Retry;
         }
-        state.jobs.remove(job_id);
+        let checkpoint = state
+            .jobs
+            .remove(job_id)
+            .and_then(|job| job.checkpoint_candidate.or(job.resume_checkpoint_candidate));
         release_trusted_handoff_capacity_for_job(&mut state, job_id);
-        true
+        AgentVpsTakeover::Taken(checkpoint)
+    }
+
+    #[cfg(test)]
+    pub fn take_over_for_vps(&self, job_id: &str, owner: &SolverOwner, now_ms: u64) -> bool {
+        matches!(
+            self.take_over_for_vps_with_checkpoint(job_id, owner, now_ms),
+            AgentVpsTakeover::Taken(_)
+        )
     }
 
     pub fn register_worker(
@@ -1007,6 +1641,7 @@ impl AgentHelperCoordinator {
             name,
             max_parallel,
             true,
+            false,
             false,
             None,
             now_ms,
@@ -1034,6 +1669,7 @@ impl AgentHelperCoordinator {
             max_parallel,
             true,
             false,
+            false,
             Some(job_id),
             now_ms,
         )
@@ -1059,6 +1695,7 @@ impl AgentHelperCoordinator {
             name,
             max_parallel,
             true,
+            false,
             true,
             None,
             now_ms,
@@ -1085,6 +1722,33 @@ impl AgentHelperCoordinator {
             max_parallel,
             false,
             false,
+            false,
+            None,
+            now_ms,
+        )
+    }
+
+    /// Register a live native process whose user-facing Agent switch is OFF.
+    /// The token remains heartbeat-capable so browser status can distinguish a
+    /// stopped Agent from a missing process, but it can never lease work.
+    pub fn register_paused_worker(
+        &self,
+        owner: &SolverOwner,
+        session_binding: &str,
+        worker_id: &str,
+        name: &str,
+        max_parallel: usize,
+        now_ms: u64,
+    ) -> Result<AgentWorkerRegistration, AgentHelperError> {
+        self.register_worker_with_eligibility(
+            owner,
+            session_binding,
+            worker_id,
+            name,
+            max_parallel,
+            false,
+            true,
+            false,
             None,
             now_ms,
         )
@@ -1098,6 +1762,7 @@ impl AgentHelperCoordinator {
         name: &str,
         max_parallel: usize,
         eligible: bool,
+        explicitly_paused: bool,
         trusted_global: bool,
         job_scope: Option<&str>,
         now_ms: u64,
@@ -1153,7 +1818,11 @@ impl AgentHelperCoordinator {
 
         let worker_token = make_secret();
         let worker_token_hash = secret_hash(&worker_token);
-        let expires_at_ms = now_ms.saturating_add(AGENT_WORKER_TTL_MS);
+        let expires_at_ms = now_ms.saturating_add(if explicitly_paused {
+            AGENT_PRESENCE_TTL_MS
+        } else {
+            AGENT_WORKER_TTL_MS
+        });
         state.workers.insert(
             worker_token_hash,
             AgentWorker {
@@ -1164,9 +1833,11 @@ impl AgentHelperCoordinator {
                 _name: name,
                 job_scope,
                 eligible,
+                explicitly_paused,
                 max_parallel,
                 last_seen_ms: now_ms,
                 expires_at_ms,
+                resource_telemetry: None,
             },
         );
         Ok(AgentWorkerRegistration {
@@ -1186,6 +1857,18 @@ impl AgentHelperCoordinator {
         leases: &[AgentLeaseHeartbeat],
         now_ms: u64,
     ) -> Result<AgentHeartbeatResult, AgentHelperError> {
+        self.heartbeat_with_telemetry(owner, session_binding, worker_token, leases, None, now_ms)
+    }
+
+    pub fn heartbeat_with_telemetry(
+        &self,
+        owner: &SolverOwner,
+        session_binding: &str,
+        worker_token: &str,
+        leases: &[AgentLeaseHeartbeat],
+        resource_telemetry: Option<AgentResourceTelemetry>,
+        now_ms: u64,
+    ) -> Result<AgentHeartbeatResult, AgentHelperError> {
         let mut state = self
             .state
             .lock()
@@ -1193,10 +1876,25 @@ impl AgentHelperCoordinator {
         prune_state(&mut state, now_ms);
         let (worker_token_hash, worker) =
             authenticated_worker(&state, owner, session_binding, worker_token, now_ms)?;
-        let expires_at_ms = now_ms.saturating_add(AGENT_WORKER_TTL_MS);
+        let expires_at_ms = now_ms.saturating_add(if worker.explicitly_paused {
+            AGENT_PRESENCE_TTL_MS
+        } else {
+            AGENT_WORKER_TTL_MS
+        });
         if let Some(stored) = state.workers.get_mut(&worker_token_hash) {
             stored.last_seen_ms = now_ms;
             stored.expires_at_ms = expires_at_ms;
+            if !stored.trusted_global && stored.job_scope.is_none() && stored.eligible {
+                if let Some(telemetry) = resource_telemetry.filter(|telemetry| {
+                    telemetry.system_cpu_tenths.is_some() || telemetry.system_ram_tenths.is_some()
+                }) {
+                    stored.resource_telemetry = Some(AgentResourceTelemetrySnapshot {
+                        system_cpu_tenths: telemetry.system_cpu_tenths,
+                        system_ram_tenths: telemetry.system_ram_tenths,
+                        sampled_at_ms: now_ms,
+                    });
+                }
+            }
         }
         let mut result = AgentHeartbeatResult {
             worker_expires_at_ms: expires_at_ms,
@@ -1558,7 +2256,7 @@ impl AgentHelperCoordinator {
             );
             let became_best = current_best
                 .as_ref()
-                .map(|current| candidate.quality < current.quality)
+                .map(|current| agent_candidate_strictly_preferred(&candidate, current))
                 .unwrap_or(true);
             job.best_candidate = Some(if became_best {
                 candidate
@@ -1566,6 +2264,7 @@ impl AgentHelperCoordinator {
                 current_best.expect("an unchanged Agent best candidate exists")
             });
             job.checkpoint_candidate = None;
+            job.resume_checkpoint_candidate = None;
             task.state = AgentTaskState::Completed;
             return Ok(became_best);
         }
@@ -1631,10 +2330,75 @@ impl AgentHelperCoordinator {
             );
             let became_best = current_best
                 .as_ref()
-                .map(|current| candidate.quality < current.quality)
+                .map(|current| agent_candidate_strictly_preferred(&candidate, current))
                 .unwrap_or(true);
             if became_best {
                 job.checkpoint_candidate = Some(candidate);
+            }
+            return Ok(became_best);
+        }
+        Err(AgentHelperError::LeaseNotFound)
+    }
+
+    /// Keep a server-validated partial timetable solely as a VPS warm start.
+    /// This checkpoint never competes with publishable candidates and is never
+    /// returned by Stop or terminal Agent completion.
+    pub fn accept_resume_checkpoint(
+        &self,
+        owner: &SolverOwner,
+        session_binding: &str,
+        worker_token: &str,
+        work_id: &str,
+        lease_token: &str,
+        payload: Value,
+        quality: [i64; 4],
+        now_ms: u64,
+    ) -> Result<bool, AgentHelperError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| AgentHelperError::UnauthorizedWorker)?;
+        prune_state(&mut state, now_ms);
+        let (worker_token_hash, worker) =
+            authenticated_worker(&state, owner, session_binding, worker_token, now_ms)?;
+        let lease_token_hash = secret_hash(lease_token.trim());
+        for job in state
+            .jobs
+            .values_mut()
+            .filter(|job| worker_can_access_job(&worker, job))
+        {
+            let Some(task) = job.tasks.iter().find(|task| task.work_id == work_id) else {
+                continue;
+            };
+            match &task.state {
+                AgentTaskState::Leased {
+                    worker_token_hash: assigned_worker,
+                    lease_token_hash: assigned_lease,
+                    expires_at_ms,
+                    ..
+                } if assigned_worker == &worker_token_hash
+                    && assigned_lease == &lease_token_hash
+                    && *expires_at_ms > now_ms => {}
+                AgentTaskState::Completed => return Err(AgentHelperError::WorkAlreadyCompleted),
+                AgentTaskState::Leased { expires_at_ms, .. } if *expires_at_ms <= now_ms => {
+                    return Err(AgentHelperError::LeaseExpired)
+                }
+                _ => return Err(AgentHelperError::LeaseNotFound),
+            }
+            let candidate = AgentCandidate {
+                work_id: task.work_id.clone(),
+                worker_id: worker.worker_id.clone(),
+                seed: task.seed,
+                payload,
+                quality,
+            };
+            let became_best = job
+                .resume_checkpoint_candidate
+                .as_ref()
+                .map(|current| candidate.quality < current.quality)
+                .unwrap_or(true);
+            if became_best {
+                job.resume_checkpoint_candidate = Some(candidate);
             }
             return Ok(became_best);
         }
@@ -1733,13 +2497,70 @@ impl AgentHelperCoordinator {
         Err(AgentHelperError::LeaseNotFound)
     }
 
+    /// Requeue a failed Browser task while discarding its complete-but-rough
+    /// checkpoint.  This is used only when the exact quality stream reports
+    /// CP-SAT UNKNOWN: the checkpoint is valid for recovery, but feeding it
+    /// back into the strict Fresh Automatic VPS optimizer has been observed to
+    /// consume the whole watchdog without finding the required 0/0 envelope.
+    /// Keeping the operation under the same coordinator lock prevents a new
+    /// worker from claiming the task between requeue and checkpoint removal.
+    pub fn reject_submission_and_discard_checkpoints(
+        &self,
+        owner: &SolverOwner,
+        session_binding: &str,
+        worker_token: &str,
+        work_id: &str,
+        lease_token: &str,
+        now_ms: u64,
+    ) -> Result<(), AgentHelperError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| AgentHelperError::UnauthorizedWorker)?;
+        prune_state(&mut state, now_ms);
+        let (worker_token_hash, worker) =
+            authenticated_worker(&state, owner, session_binding, worker_token, now_ms)?;
+        let lease_token_hash = secret_hash(lease_token.trim());
+        for job in state
+            .jobs
+            .values_mut()
+            .filter(|job| worker_can_access_job(&worker, job))
+        {
+            let Some(task_index) = job.tasks.iter().position(|task| task.work_id == work_id) else {
+                continue;
+            };
+            let task = &mut job.tasks[task_index];
+            if matches!(
+                &task.state,
+                AgentTaskState::Leased {
+                    worker_token_hash: assigned_worker,
+                    lease_token_hash: assigned_lease,
+                    expires_at_ms,
+                    ..
+                } if assigned_worker == &worker_token_hash
+                    && assigned_lease == &lease_token_hash
+                    && *expires_at_ms > now_ms
+            ) {
+                job.checkpoint_candidate = None;
+                job.resume_checkpoint_candidate = None;
+                task.state = AgentTaskState::Queued;
+                return Ok(());
+            }
+            return match &task.state {
+                AgentTaskState::Completed => Err(AgentHelperError::WorkAlreadyCompleted),
+                AgentTaskState::Leased { expires_at_ms, .. } if *expires_at_ms <= now_ms => {
+                    Err(AgentHelperError::LeaseExpired)
+                }
+                _ => Err(AgentHelperError::LeaseNotFound),
+            };
+        }
+        Err(AgentHelperError::LeaseNotFound)
+    }
+
     pub fn best_candidate(&self, job_id: &str, owner: &SolverOwner) -> Option<AgentCandidate> {
         let state = self.state.lock().ok()?;
         let job = state.jobs.get(job_id).filter(|job| job.owner == *owner)?;
-        better_agent_candidate(
-            job.best_candidate.clone(),
-            job.checkpoint_candidate.clone(),
-        )
+        better_agent_candidate(job.best_candidate.clone(), job.checkpoint_candidate.clone())
     }
 
     pub fn has_active_lease(&self, job_id: &str, owner: &SolverOwner) -> bool {
@@ -1747,6 +2568,21 @@ impl AgentHelperCoordinator {
             self.job_execution(job_id, owner, crate::now_millis()),
             Some(AgentJobExecution::Leased { .. })
         )
+    }
+
+    /// Return whether this canonical Agent task has ever been claimed. This
+    /// closes the short fail/requeue race where the coordinator can observe a
+    /// queued task before its previous lease was sampled as `Leased`.
+    pub fn job_has_claimed_task(&self, job_id: &str, owner: &SolverOwner, now_ms: u64) -> bool {
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        prune_state(&mut state, now_ms);
+        state
+            .jobs
+            .get(job_id)
+            .filter(|job| job.owner == *owner)
+            .is_some_and(|job| job.tasks.iter().any(|task| task.attempt > 0))
     }
 }
 
@@ -1825,6 +2661,19 @@ fn normalize_device_code(value: &str) -> Result<&str, AgentPairError> {
 }
 
 fn worker_can_access_job(worker: &AgentWorker, job: &AgentJob) -> bool {
+    // Browser-required work is deliberately invisible to durable native and
+    // trusted-global workers. Only the browser hello path can establish the
+    // exact scoped registration used here.
+    if job.browser_agent_required && worker.job_scope.as_deref() != Some(job.job_id.as_str()) {
+        return false;
+    }
+    if job.native_agent_id.as_ref().is_some_and(|required_agent_id| {
+        worker.trusted_global
+            || worker.job_scope.is_some()
+            || worker.worker_id.as_str() != required_agent_id.as_str()
+    }) {
+        return false;
+    }
     let owner_allowed = if worker.trusted_global {
         job.trusted_global_eligible
     } else {
@@ -1842,9 +2691,31 @@ fn worker_can_access_job(worker: &AgentWorker, job: &AgentJob) -> bool {
 /// envelope; any client-supplied partial incumbent remains untrusted and the
 /// submitted candidate must still pass the server's complete validator.
 pub(crate) fn browser_refinement_request_eligible(request_body: &[u8]) -> bool {
+    browser_agent_request_eligible(request_body, false)
+}
+
+/// The cross-origin-isolated Browser CP-SAT runtime executes the same serialized
+/// OR-Tools models as the reference solver. It may therefore accept the rich
+/// teacher/subject/resource envelope that the heuristic Browser WASM rejects.
+/// Every returned timetable still passes the canonical server validator.
+pub(crate) fn browser_cp_sat_request_eligible(request_body: &[u8]) -> bool {
+    browser_agent_request_eligible(request_body, true)
+}
+
+fn browser_agent_request_eligible(
+    request_body: &[u8],
+    supports_reference_constraints: bool,
+) -> bool {
     let Ok(request) = serde_json::from_slice::<Value>(request_body) else {
         return false;
     };
+    // Browser WASM is a bounded heuristic, not the authoritative CP-SAT
+    // constraint engine. Keep custom teacher/subject/resource rules on the
+    // native Agent or VPS reference path; class-off cells remain supported by
+    // the local placement validator.
+    if !supports_reference_constraints && browser_request_has_unsupported_constraints(&request) {
+        return false;
+    }
     let Some(settings) = request.get("settings").and_then(Value::as_object) else {
         return false;
     };
@@ -1861,10 +2732,7 @@ pub(crate) fn browser_refinement_request_eligible(request_body: &[u8]) -> bool {
             .get("ui_solver_fifo_admission")
             .and_then(Value::as_bool)
             != Some(true)
-            || settings
-                .get("ui_solver_async_job")
-                .and_then(Value::as_bool)
-                != Some(true)
+            || settings.get("ui_solver_async_job").and_then(Value::as_bool) != Some(true)
             || settings
                 .get("require_complete_schedule")
                 .and_then(Value::as_bool)
@@ -1880,20 +2748,25 @@ pub(crate) fn browser_refinement_request_eligible(request_body: &[u8]) -> bool {
                     .is_some_and(|target| target > 0 && target <= i64::MAX as u64)
             });
     }
+    let automatic_solve_kind = settings
+        .get("ui_unified_solve_kind")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .replace(' ', "_")
+        .replace('-', "_");
     if optimization_focus == "automatic"
-        && settings
-            .get("ui_unified_solve_kind")
-            .and_then(Value::as_str)
-            == Some("fresh_complete_first")
+        && matches!(
+            automatic_solve_kind.as_str(),
+            "fresh_complete_first" | "repair_constraints"
+        )
     {
         return settings
             .get("ui_solver_fifo_admission")
             .and_then(Value::as_bool)
             == Some(true)
-            && settings
-                .get("ui_solver_async_job")
-                .and_then(Value::as_bool)
-                == Some(true)
+            && settings.get("ui_solver_async_job").and_then(Value::as_bool) == Some(true)
             && settings
                 .get("require_complete_schedule")
                 .and_then(Value::as_bool)
@@ -1961,6 +2834,54 @@ pub(crate) fn browser_refinement_request_eligible(request_body: &[u8]) -> bool {
             .and_then(|validation| validation.get("hard_ok"))
             .and_then(Value::as_bool)
             == Some(true)
+}
+
+fn browser_constraint_enabled(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(enabled) => *enabled,
+        Value::Number(number) => number.as_f64().is_some_and(|item| item != 0.0),
+        Value::String(text) => {
+            let normalized = text.trim().to_ascii_lowercase();
+            !normalized.is_empty()
+                && !matches!(normalized.as_str(), "0" | "false" | "off" | "none" | "null")
+        }
+        Value::Array(items) => items.iter().any(browser_constraint_enabled),
+        Value::Object(items) => items.values().any(browser_constraint_enabled),
+    }
+}
+
+fn browser_request_has_unsupported_constraints(request: &Value) -> bool {
+    let Some(constraints) = request
+        .get("data")
+        .and_then(|data| data.get("tkbConstraints"))
+        .and_then(Value::as_object)
+    else {
+        return false;
+    };
+    if [
+        "teacher",
+        "subject",
+        "subjectGroup",
+        "subjectNoSameSession",
+        "timeLimit",
+    ]
+    .iter()
+    .any(|key| {
+        constraints
+            .get(*key)
+            .is_some_and(browser_constraint_enabled)
+    }) {
+        return true;
+    }
+    let fixed_off = constraints.get("fixedOff").and_then(Value::as_object);
+    ["teacher", "subject", "room", "subjectGroup"]
+        .iter()
+        .any(|key| {
+            fixed_off
+                .and_then(|items| items.get(*key))
+                .is_some_and(browser_constraint_enabled)
+        })
 }
 
 fn trusted_handoff_marker(worker_token_hash: &str, lease_request_id: &str) -> String {
@@ -2040,7 +2961,51 @@ fn authenticated_worker(
     Ok((worker_token_hash, worker))
 }
 
+fn prune_external_cp_sat_steps_for_bytes(state: &mut AgentHelperState, incoming_bytes: usize) {
+    while state
+        .external_cp_sat_cached_bytes
+        .saturating_add(incoming_bytes)
+        > MAX_EXTERNAL_CP_SAT_REPLAY_BYTES
+    {
+        let Some(oldest_lease) = state
+            .external_cp_sat_steps
+            .iter()
+            .filter(|(_, entry)| matches!(&entry.state, ExternalCpSatStepState::Cached(_)))
+            .min_by_key(|(_, entry)| entry.updated_at_ms)
+            .map(|(lease_id, _)| lease_id.clone())
+        else {
+            break;
+        };
+        if let Some(removed) = state.external_cp_sat_steps.remove(&oldest_lease) {
+            state.external_cp_sat_cached_bytes = state
+                .external_cp_sat_cached_bytes
+                .saturating_sub(removed.cached_bytes);
+        }
+    }
+}
+
+fn prune_external_cp_sat_steps(state: &mut AgentHelperState, now_ms: u64) {
+    let expired = state
+        .external_cp_sat_steps
+        .iter()
+        .filter(|(_, entry)| {
+            matches!(&entry.state, ExternalCpSatStepState::Cached(_))
+                && now_ms.saturating_sub(entry.updated_at_ms) > EXTERNAL_CP_SAT_REPLAY_TTL_MS
+        })
+        .map(|(lease_id, _)| lease_id.clone())
+        .collect::<Vec<_>>();
+    for lease_id in expired {
+        if let Some(removed) = state.external_cp_sat_steps.remove(&lease_id) {
+            state.external_cp_sat_cached_bytes = state
+                .external_cp_sat_cached_bytes
+                .saturating_sub(removed.cached_bytes);
+        }
+    }
+    prune_external_cp_sat_steps_for_bytes(state, 0);
+}
+
 fn prune_state(state: &mut AgentHelperState, now_ms: u64) {
+    prune_external_cp_sat_steps(state, now_ms);
     state
         .pairings
         .retain(|_, pairing| pairing.expires_at_ms > now_ms);
@@ -2107,6 +3072,10 @@ fn seed_for(job_id: &str, index: usize) -> u64 {
     hasher.update((index as u64).to_le_bytes());
     let digest = hasher.finalize();
     u64::from_le_bytes(digest[..8].try_into().unwrap_or([0; 8])).max(1)
+}
+
+pub fn canonical_job_seed(job_id: &str) -> u64 {
+    seed_for(job_id, 0)
 }
 
 #[cfg(unix)]
@@ -2241,8 +3210,7 @@ mod tests {
         ));
 
         let mut quick_partial = quick.clone();
-        quick_partial["data"]["tkbSolverResult"]["lessons"] =
-            serde_json::json!([{"classId":"6A"}]);
+        quick_partial["data"]["tkbSolverResult"]["lessons"] = serde_json::json!([{"classId":"6A"}]);
         quick_partial["data"]["tkbSolverResult"]["metrics"]["scheduled_periods"] =
             serde_json::json!(1);
         quick_partial["data"]["tkbSolverResult"]["metrics"]["unassigned_periods"] =
@@ -2259,8 +3227,7 @@ mod tests {
         ));
 
         let mut quick_with_invalid_target = quick.clone();
-        quick_with_invalid_target["settings"]["ui_progress_metric_target"] =
-            serde_json::json!(0);
+        quick_with_invalid_target["settings"]["ui_progress_metric_target"] = serde_json::json!(0);
         assert!(!browser_refinement_request_eligible(
             &serde_json::to_vec(&quick_with_invalid_target).unwrap()
         ));
@@ -2291,6 +3258,69 @@ mod tests {
         assert!(!browser_refinement_request_eligible(
             &serde_json::to_vec(&forged).unwrap()
         ));
+    }
+
+    #[test]
+    fn browser_worker_accepts_complete_automatic_constraint_repair_jobs() {
+        let mut repair: Value = serde_json::from_slice(&browser_refinement_request()).unwrap();
+        repair["settings"]["ui_unified_solve_kind"] = serde_json::json!("repair_constraints");
+        repair["settings"]["optimization_focus"] = serde_json::json!("automatic");
+        repair["settings"]["ui_solver_fifo_admission"] = serde_json::json!(true);
+        repair["settings"]["ui_solver_async_job"] = serde_json::json!(true);
+        repair["settings"]["require_complete_schedule"] = serde_json::json!(true);
+        assert!(browser_refinement_request_eligible(
+            &serde_json::to_vec(&repair).unwrap()
+        ));
+
+        for required in [
+            "ui_solver_fifo_admission",
+            "ui_solver_async_job",
+            "require_complete_schedule",
+        ] {
+            let mut invalid = repair.clone();
+            invalid["settings"][required] = serde_json::json!(false);
+            assert!(!browser_refinement_request_eligible(
+                &serde_json::to_vec(&invalid).unwrap()
+            ));
+        }
+
+        let mut non_automatic = repair;
+        non_automatic["settings"]["optimization_focus"] = serde_json::json!("sessions");
+        assert!(!browser_refinement_request_eligible(
+            &serde_json::to_vec(&non_automatic).unwrap()
+        ));
+    }
+
+    #[test]
+    fn heuristic_browser_defers_rich_constraints_but_browser_cp_sat_accepts_them() {
+        let base: Value = serde_json::from_slice(&browser_refinement_request()).unwrap();
+        let mut class_off = base.clone();
+        class_off["data"]["tkbConstraints"] = serde_json::json!({
+            "version":"constraints-ui-v39-lower-bound-routing",
+            "fixedOff":{"class":{"6A":{"thu2|sang|0":true}}}
+        });
+        assert!(browser_refinement_request_eligible(
+            &serde_json::to_vec(&class_off).unwrap()
+        ));
+        assert!(browser_cp_sat_request_eligible(
+            &serde_json::to_vec(&class_off).unwrap()
+        ));
+
+        for constraints in [
+            serde_json::json!({"fixedOff":{"teacher":{"T1":{"thu2|sang|0":true}}}}),
+            serde_json::json!({"teacher":{"T1":{"mustTeach":{"thu2|sang|0":true}}}}),
+            serde_json::json!({"subject":{"Toan":{"lessonBlocks":{"min":1}}}}),
+            serde_json::json!({"subjectNoSameSession":{"byClass":{"6A":{"Toan":{"Ly":true}}}}}),
+        ] {
+            let mut request = base.clone();
+            request["data"]["tkbConstraints"] = constraints;
+            assert!(!browser_refinement_request_eligible(
+                &serde_json::to_vec(&request).unwrap()
+            ));
+            assert!(browser_cp_sat_request_eligible(
+                &serde_json::to_vec(&request).unwrap()
+            ));
+        }
     }
 
     #[test]
@@ -2327,6 +3357,130 @@ mod tests {
             coordinator.online_worker_count(&owner, 1_000 + AGENT_WORKER_TTL_MS),
             0
         );
+    }
+
+    #[test]
+    fn native_worker_state_requires_an_explicit_pause_and_heartbeat_refreshes_it() {
+        let coordinator = AgentHelperCoordinator::default();
+        let owner = SolverOwner::new("school-native-state", "admin");
+        let binding = session_binding("native-state-session");
+        assert_eq!(
+            coordinator.native_worker_state(&owner, 1_000),
+            AgentNativeState::Missing
+        );
+
+        let upgrade = coordinator
+            .register_upgrade_worker(&owner, &binding, "native-state-pc", "Old PC", 1, 1_000)
+            .expect("upgrade-only worker");
+        assert_eq!(
+            coordinator.native_worker_state(&owner, 1_001),
+            AgentNativeState::Missing,
+            "an upgrade-only worker is not proof that Agent was explicitly stopped"
+        );
+        assert!(coordinator
+            .heartbeat(&owner, &binding, &upgrade.worker_token, &[], 1_002)
+            .is_ok());
+
+        let paused_at = 2_000;
+        let paused = coordinator
+            .register_paused_worker(
+                &owner,
+                &binding,
+                "native-state-pc",
+                "Paused PC",
+                1,
+                paused_at,
+            )
+            .expect("paused worker");
+        assert_eq!(coordinator.online_worker_count(&owner, paused_at), 0);
+        assert_eq!(
+            coordinator.native_worker_state(&owner, paused_at),
+            AgentNativeState::Stopped
+        );
+        assert_eq!(
+            coordinator.worker_eligibility(&owner, &binding, &paused.worker_token, paused_at,),
+            Some(false)
+        );
+        assert!(matches!(
+            coordinator.claim_work(&owner, &binding, &paused.worker_token, paused_at),
+            Err(AgentHelperError::NoWork)
+        ));
+
+        let heartbeat_at = paused_at + AGENT_PRESENCE_TTL_MS - 1;
+        coordinator
+            .heartbeat(&owner, &binding, &paused.worker_token, &[], heartbeat_at)
+            .expect("paused heartbeat");
+        assert_eq!(
+            coordinator.native_worker_state(&owner, paused_at + AGENT_PRESENCE_TTL_MS + 1),
+            AgentNativeState::Stopped,
+            "the paused marker follows the refreshed presence TTL"
+        );
+        assert_eq!(
+            coordinator.native_worker_state(&owner, heartbeat_at + AGENT_PRESENCE_TTL_MS),
+            AgentNativeState::Missing
+        );
+
+        coordinator
+            .register_worker(
+                &owner,
+                &binding,
+                "native-state-pc",
+                "Online PC",
+                1,
+                heartbeat_at + AGENT_WORKER_TTL_MS + 1,
+            )
+            .expect("online worker");
+        assert_eq!(
+            coordinator.native_worker_state(&owner, heartbeat_at + AGENT_WORKER_TTL_MS + 1,),
+            AgentNativeState::Online
+        );
+    }
+
+    #[test]
+    fn browser_required_job_is_visible_only_to_its_scoped_browser_worker() {
+        let coordinator = AgentHelperCoordinator::default();
+        let owner = SolverOwner::new("school-browser-only", "admin");
+        let native_binding = session_binding("browser-only-native");
+        let native = coordinator
+            .register_worker(
+                &owner,
+                &native_binding,
+                "browser-only-native",
+                "Native worker",
+                1,
+                1_000,
+            )
+            .expect("native worker");
+        let browser_binding = session_binding("browser-only-scoped");
+        let browser = coordinator
+            .register_scoped_worker(
+                &owner,
+                &browser_binding,
+                "browser-only-scoped",
+                "Browser worker",
+                1,
+                "browser-only-job",
+                1_000,
+            )
+            .expect("scoped browser worker");
+        assert!(coordinator.register_job_with_execution_policy(
+            "browser-only-job",
+            &owner,
+            Arc::new(br#"{"data":{},"settings":{}}"#.to_vec()),
+            1,
+            false,
+            true,
+            1_001,
+        ));
+
+        assert!(matches!(
+            coordinator.claim_work(&owner, &native_binding, &native.worker_token, 1_002,),
+            Err(AgentHelperError::NoWork)
+        ));
+        let lease = coordinator
+            .claim_work(&owner, &browser_binding, &browser.worker_token, 1_003)
+            .expect("browser-only lease");
+        assert_eq!(lease.job_id, "browser-only-job");
     }
 
     #[test]
@@ -2852,6 +4006,77 @@ mod tests {
     }
 
     #[test]
+    fn native_resource_telemetry_is_owner_scoped_bounded_state() {
+        let coordinator = AgentHelperCoordinator::default();
+        let owner = SolverOwner::new("school-a", "admin-a");
+        let other_owner = SolverOwner::new("school-b", "admin-b");
+        let binding = session_binding("session-a");
+        let native = coordinator
+            .register_worker(&owner, &binding, "pc-1", "PC 1", 1, 1_000)
+            .unwrap();
+        coordinator
+            .heartbeat_with_telemetry(
+                &owner,
+                &binding,
+                &native.worker_token,
+                &[],
+                Some(AgentResourceTelemetry {
+                    system_cpu_tenths: Some(713),
+                    system_ram_tenths: Some(630),
+                }),
+                1_010,
+            )
+            .unwrap();
+        assert_eq!(
+            coordinator.latest_native_resource_telemetry(&owner, 1_011),
+            Some(AgentResourceTelemetrySnapshot {
+                system_cpu_tenths: Some(713),
+                system_ram_tenths: Some(630),
+                sampled_at_ms: 1_010,
+            })
+        );
+        assert_eq!(
+            coordinator.latest_native_resource_telemetry(&other_owner, 1_011),
+            None
+        );
+
+        let browser = coordinator
+            .register_scoped_worker(
+                &owner,
+                "browser-binding",
+                "browser-1",
+                "Browser 1",
+                1,
+                "job-1",
+                1_020,
+            )
+            .unwrap();
+        coordinator
+            .heartbeat_with_telemetry(
+                &owner,
+                "browser-binding",
+                &browser.worker_token,
+                &[],
+                Some(AgentResourceTelemetry {
+                    system_cpu_tenths: Some(999),
+                    system_ram_tenths: Some(999),
+                }),
+                1_030,
+            )
+            .unwrap();
+        assert_eq!(
+            coordinator
+                .latest_native_resource_telemetry(&owner, 1_031)
+                .map(|sample| sample.sampled_at_ms),
+            Some(1_010)
+        );
+        assert_eq!(
+            coordinator.latest_native_resource_telemetry(&owner, 1_010 + AGENT_WORKER_TTL_MS + 1,),
+            None
+        );
+    }
+
+    #[test]
     fn revoking_worker_identity_or_token_requeues_its_active_lease() {
         let coordinator = AgentHelperCoordinator::default();
         let owner = SolverOwner::new("school-a", "admin-a");
@@ -3121,6 +4346,206 @@ mod tests {
         assert!(coordinator
             .job_execution("checkpoint-stop", &owner, 1_005)
             .is_none());
+    }
+
+    #[test]
+    fn equal_quality_mobile_terminal_marker_replaces_an_unmarked_checkpoint() {
+        for (job_id, terminal_payload, submit_terminal) in [
+            (
+                "terminal-checkpoint-tie",
+                serde_json::json!({
+                    "marker":"terminal-checkpoint",
+                    "mobile_local_quality_terminal":true
+                }),
+                false,
+            ),
+            (
+                "terminal-submission-tie",
+                serde_json::json!({
+                    "marker":"terminal-submission",
+                    "solver":{"runtime_settings":{"mobile_local_quality_terminal":true}}
+                }),
+                true,
+            ),
+        ] {
+            let coordinator = AgentHelperCoordinator::default();
+            let owner = SolverOwner::new("school-a", "admin-a");
+            let binding = session_binding("session-a");
+            assert!(coordinator.register_job(
+                job_id,
+                &owner,
+                Arc::new(br#"{"data":{},"settings":{}}"#.to_vec()),
+                1,
+                1_000,
+            ));
+            let worker = coordinator
+                .register_worker(&owner, &binding, "phone-1", "Phone 1", 1, 1_000)
+                .unwrap();
+            let lease = coordinator
+                .claim_work(&owner, &binding, &worker.worker_token, 1_001)
+                .unwrap();
+
+            assert!(coordinator
+                .accept_checkpoint(
+                    &owner,
+                    &binding,
+                    &worker.worker_token,
+                    &lease.work_id,
+                    &lease.lease_token,
+                    serde_json::json!({"marker":"unmarked-checkpoint"}),
+                    [6, 6, 546, 112],
+                    1_002,
+                )
+                .unwrap());
+            let terminal_became_best = if submit_terminal {
+                coordinator.accept_submission(
+                    &owner,
+                    &binding,
+                    &worker.worker_token,
+                    &lease.work_id,
+                    &lease.lease_token,
+                    terminal_payload,
+                    [6, 6, 546, 112],
+                    1_003,
+                )
+            } else {
+                coordinator.accept_checkpoint(
+                    &owner,
+                    &binding,
+                    &worker.worker_token,
+                    &lease.work_id,
+                    &lease.lease_token,
+                    terminal_payload,
+                    [6, 6, 546, 112],
+                    1_003,
+                )
+            }
+            .expect("equal-quality marked terminal must be accepted as the new best");
+            assert!(terminal_became_best);
+
+            let terminal = coordinator
+                .take_candidate_and_finish_job(job_id, &owner)
+                .expect("marked terminal must survive candidate selection");
+            assert_ne!(
+                terminal.payload["marker"],
+                serde_json::json!("unmarked-checkpoint")
+            );
+            assert!(mobile_local_quality_terminal_marker(&terminal.payload));
+        }
+    }
+
+    #[test]
+    fn expired_checkpoint_is_taken_for_vps_resume_instead_of_terminal_completion() {
+        let coordinator = AgentHelperCoordinator::default();
+        let owner = SolverOwner::new("school-a", "admin-a");
+        let binding = session_binding("session-a");
+        assert!(coordinator.register_job(
+            "checkpoint-vps-resume",
+            &owner,
+            Arc::new(br#"{"data":{},"settings":{}}"#.to_vec()),
+            1,
+            1_000,
+        ));
+        let worker = coordinator
+            .register_worker(&owner, &binding, "pc-1", "PC 1", 1, 1_000)
+            .unwrap();
+        let lease = coordinator
+            .claim_work(&owner, &binding, &worker.worker_token, 1_001)
+            .unwrap();
+        assert!(coordinator
+            .accept_checkpoint(
+                &owner,
+                &binding,
+                &worker.worker_token,
+                &lease.work_id,
+                &lease.lease_token,
+                serde_json::json!({"marker":"resume-me"}),
+                [0, 0, 2, 1],
+                1_002,
+            )
+            .unwrap());
+
+        assert!(matches!(
+            coordinator.job_execution(
+                "checkpoint-vps-resume",
+                &owner,
+                lease.lease_expires_at_ms + 1,
+            ),
+            Some(AgentJobExecution::Checkpoint { .. })
+        ));
+        match coordinator.take_over_for_vps_with_checkpoint(
+            "checkpoint-vps-resume",
+            &owner,
+            lease.lease_expires_at_ms + 1,
+        ) {
+            AgentVpsTakeover::Taken(Some(candidate)) => {
+                assert_eq!(candidate.payload["marker"], serde_json::json!("resume-me"));
+            }
+            other => panic!("expected checkpoint takeover, got {other:?}"),
+        }
+        assert!(coordinator
+            .job_execution(
+                "checkpoint-vps-resume",
+                &owner,
+                lease.lease_expires_at_ms + 2,
+            )
+            .is_none());
+    }
+
+    #[test]
+    fn partial_resume_checkpoint_never_becomes_a_terminal_agent_candidate() {
+        let coordinator = AgentHelperCoordinator::default();
+        let owner = SolverOwner::new("school-a", "admin-a");
+        let binding = session_binding("session-a");
+        assert!(coordinator.register_job(
+            "partial-checkpoint-vps-resume",
+            &owner,
+            Arc::new(br#"{"data":{},"settings":{}}"#.to_vec()),
+            1,
+            1_000,
+        ));
+        let worker = coordinator
+            .register_worker(&owner, &binding, "phone-1", "iPhone", 1, 1_000)
+            .unwrap();
+        let lease = coordinator
+            .claim_work(&owner, &binding, &worker.worker_token, 1_001)
+            .unwrap();
+        assert!(coordinator
+            .accept_resume_checkpoint(
+                &owner,
+                &binding,
+                &worker.worker_token,
+                &lease.work_id,
+                &lease.lease_token,
+                serde_json::json!({"marker":"partial-resume-only"}),
+                [12, -108, 0, 0],
+                1_002,
+            )
+            .unwrap());
+        assert!(coordinator
+            .best_candidate("partial-checkpoint-vps-resume", &owner)
+            .is_none());
+        coordinator
+            .reject_submission(
+                &owner,
+                &binding,
+                &worker.worker_token,
+                &lease.work_id,
+                &lease.lease_token,
+                1_003,
+            )
+            .unwrap();
+        match coordinator.take_over_for_vps_with_checkpoint(
+            "partial-checkpoint-vps-resume",
+            &owner,
+            1_004,
+        ) {
+            AgentVpsTakeover::Taken(Some(candidate)) => assert_eq!(
+                candidate.payload["marker"],
+                serde_json::json!("partial-resume-only")
+            ),
+            other => panic!("expected partial resume takeover, got {other:?}"),
+        }
     }
 
     #[test]
@@ -3425,6 +4850,102 @@ mod tests {
             ),
             Err(AgentHelperError::InvalidLeaseRequest)
         ));
+    }
+
+    #[test]
+    fn external_cp_sat_step_replays_once_and_rejects_parallel_payloads_per_lease() {
+        let coordinator = AgentHelperCoordinator::default();
+        let first = match coordinator.try_begin_external_cp_sat_step("lease-a", "0:digest-a", 1_000)
+        {
+            ExternalCpSatAdmission::Acquired(permit) => permit,
+            _ => panic!("first CP-SAT step must be admitted"),
+        };
+        assert!(matches!(
+            coordinator.try_begin_external_cp_sat_step("lease-a", "0:digest-a", 1_001),
+            ExternalCpSatAdmission::Busy
+        ));
+        assert!(matches!(
+            coordinator.try_begin_external_cp_sat_step("lease-a", "1:digest-b", 1_001),
+            ExternalCpSatAdmission::Conflict
+        ));
+
+        first.complete(
+            ExternalCpSatReplay {
+                status: 200,
+                payload: serde_json::json!({"ok":true,"kind":"external_cp_sat_model"}),
+            },
+            1_002,
+        );
+        match coordinator.try_begin_external_cp_sat_step("lease-a", "0:digest-a", 1_003) {
+            ExternalCpSatAdmission::Replay(replay) => {
+                assert_eq!(replay.status, 200);
+                assert_eq!(replay.payload["kind"], "external_cp_sat_model");
+            }
+            _ => panic!("completed CP-SAT step must replay"),
+        }
+
+        let next = match coordinator.try_begin_external_cp_sat_step("lease-a", "1:digest-b", 1_004)
+        {
+            ExternalCpSatAdmission::Acquired(permit) => permit,
+            _ => panic!("next CP-SAT step must replace the prior replay"),
+        };
+        drop(next);
+        assert!(matches!(
+            coordinator.try_begin_external_cp_sat_step("lease-a", "1:digest-b", 1_005),
+            ExternalCpSatAdmission::Acquired(_)
+        ));
+    }
+
+    #[test]
+    fn external_cp_sat_seed_and_quality_step_zero_never_share_a_replay() {
+        let coordinator = AgentHelperCoordinator::default();
+        let seed = match coordinator.try_begin_external_cp_sat_step(
+            "lease-two-streams",
+            "completion_seed:0:same-response-digest",
+            1_000,
+        ) {
+            ExternalCpSatAdmission::Acquired(permit) => permit,
+            _ => panic!("completion seed step zero must be admitted"),
+        };
+        seed.complete(
+            ExternalCpSatReplay {
+                status: 200,
+                payload: serde_json::json!({"ok":true,"kind":"external_cp_sat_model"}),
+            },
+            1_001,
+        );
+
+        assert!(matches!(
+            coordinator.try_begin_external_cp_sat_step(
+                "lease-two-streams",
+                "quality:0:same-response-digest",
+                1_002,
+            ),
+            ExternalCpSatAdmission::Acquired(_)
+        ));
+    }
+
+    #[test]
+    fn external_cp_sat_builder_admission_is_globally_bounded() {
+        let coordinator = AgentHelperCoordinator::default();
+        let first = match coordinator.try_begin_external_cp_sat_step("lease-a", "0:a", 1_000) {
+            ExternalCpSatAdmission::Acquired(permit) => permit,
+            _ => panic!("first builder must be admitted"),
+        };
+        let second = match coordinator.try_begin_external_cp_sat_step("lease-b", "0:b", 1_000) {
+            ExternalCpSatAdmission::Acquired(permit) => permit,
+            _ => panic!("second builder must be admitted"),
+        };
+        assert!(matches!(
+            coordinator.try_begin_external_cp_sat_step("lease-c", "0:c", 1_001),
+            ExternalCpSatAdmission::Busy
+        ));
+        drop(first);
+        assert!(matches!(
+            coordinator.try_begin_external_cp_sat_step("lease-c", "0:c", 1_002),
+            ExternalCpSatAdmission::Acquired(_)
+        ));
+        drop(second);
     }
 
     #[test]

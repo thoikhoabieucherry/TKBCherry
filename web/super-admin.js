@@ -263,7 +263,8 @@
       ["free", "Free"],
       ["trial", "Trial"],
       ["plus", "Plus"],
-      ["max", "Max"],
+      ["max1", "Max 1"],
+      ["max2", "Max 2"],
       ["ultra", "Ultra"]
     ];
     const classes = `portal-plan-select${extraClass ? " " + extraClass : ""}`;
@@ -281,7 +282,7 @@
     tbody.innerHTML = schools.map(s => {
       const plan = A.effectivePlan(s);
       const active = s.active !== false;
-      const curPlan = String(s.plan || "free").toLowerCase();
+      const curPlan = String(plan.id || "free").toLowerCase();
       const subs = listSubUsers(s.id);
       const subCount = A.countSchoolSubUsers ? A.countSchoolSubUsers(s.id) : subs.length;
       const hasSubs = subCount > 0;
@@ -368,6 +369,14 @@
     const id = row?.dataset?.id;
     if(!id) return;
     const planId = sel.value;
+    if(planId === "max1" || planId === "max2"){
+      const selectedPlan = A.PLANS[planId];
+      const scope = planId === "max1" ? "tối đa 39 lớp" : "không giới hạn số lớp";
+      if(!confirm(`Kích hoạt ${selectedPlan.label} (${scope}) — ${A.formatMoney(selectedPlan.price)}/năm?`)){
+        renderSchools();
+        return;
+      }
+    }
     const res = A.activatePlan(id, planId, planId !== "free" && planId !== "trial");
     if(!res || !res.ok){
       alert((res && res.message) || "Không đổi được gói.");
@@ -527,6 +536,650 @@
     }
   });
 
+  function initSolverInfrastructureCard(){
+    const card = document.getElementById("solverInfrastructureCard");
+    const api = window.TKBAuthApi;
+    if(!card || !api || typeof api.getAuthHeaders !== "function" || typeof window.fetch !== "function") return;
+
+    const byId = id => document.getElementById(id);
+    const form = byId("solverInfrastructureForm");
+    const reloadButton = byId("btnReloadSolverInfrastructure");
+    const modeInput = byId("solverInfrastructureMode");
+    const activeProfileInput = byId("solverActiveProfileId");
+    const profileIdInput = byId("solverProfileId");
+    const projectIdInput = byId("solverProfileProjectId");
+    const regionInput = byId("solverProfileRegion");
+    const urlInput = byId("solverProfileUrl");
+    const digestInput = byId("solverProfileDigest");
+    const profileBundleInput = byId("solverProfileBundle");
+    const importProfileButton = byId("btnImportSolverProfile");
+    const refreshGoogleButton = byId("btnRefreshGoogleUsage");
+    const infrastructureDetails = byId("solverInfrastructureDetails");
+    const accountSwitcher = byId("solverAccountSwitcher");
+    const status = byId("solverInfrastructureStatus");
+    let currentConfig = { mode:"auto", fallback:"vps", profiles:[] };
+    let selectedProfileId = "";
+    let googleUsageLoading = false;
+
+    // The portal is intentionally usage-only. Keep the old infrastructure
+    // helpers below for rollback/source compatibility, but never enter them
+    // from a live card (the deployer also requires this data attribute).
+    if(card.dataset?.usageOnly !== "true") return;
+    {
+      const usageRouteEvent = "tkb:solver-usage-route";
+      const usageRouteStorageKey = "TKB_SOLVER_USAGE_ROUTE_V1";
+      let usageLoadPromise = null;
+      let usageReloadRequested = false;
+      const loadUserUsage = () => {
+        if(usageLoadPromise){
+          usageReloadRequested = true;
+          return usageLoadPromise;
+        }
+        setStatus("Đang tải lượt gọi theo tài khoản…", "");
+        usageLoadPromise = (async () => {
+          try{
+            const payload = await requestJson("/api/admin/solver-usage", {
+              headers:api.getAuthHeaders()
+            });
+            renderAccountUsage(payload?.usage || {});
+            setStatus("Đã đồng bộ theo trạng thái luồng xếp.", "success");
+          }catch(error){
+            setStatus("Không tải được thống kê lượt gọi: " + String(error?.message || error), "error");
+          }
+        })().finally(() => {
+          usageLoadPromise = null;
+          if(usageReloadRequested){
+            usageReloadRequested = false;
+            loadUserUsage();
+          }
+        });
+        return usageLoadPromise;
+      };
+      const requestUserUsageReload = () => {
+        if(usageLoadPromise){
+          usageReloadRequested = true;
+          return;
+        }
+        loadUserUsage();
+      };
+      window.addEventListener?.(usageRouteEvent, requestUserUsageReload);
+      window.addEventListener?.("storage", event => {
+        if(event?.key === usageRouteStorageKey) requestUserUsageReload();
+      });
+      window.addEventListener?.("focus", requestUserUsageReload);
+      document.addEventListener?.("visibilitychange", () => {
+        if(document.visibilityState !== "hidden") requestUserUsageReload();
+      });
+      loadUserUsage();
+      return;
+    }
+
+    function setStatus(message, kind){
+      if(!status) return;
+      status.textContent = String(message || "");
+      status.classList.toggle("is-error", kind === "error");
+      status.classList.toggle("is-success", kind === "success");
+    }
+
+    function revealAccountConfiguration(){
+      if(infrastructureDetails) infrastructureDetails.open = true;
+      if(accountSwitcher) accountSwitcher.open = true;
+    }
+
+    function setBusy(busy){
+      card.classList.toggle("is-busy", busy);
+      card.setAttribute("aria-busy", busy ? "true" : "false");
+      card.querySelectorAll("input, select, textarea, button").forEach(control => { control.disabled = !!busy; });
+    }
+
+    function finiteNumber(value, fallback){
+      if(value === null || value === undefined || value === "") return fallback;
+      const number = Number(value);
+      return Number.isFinite(number) ? number : fallback;
+    }
+
+    function formatUsd(value){
+      return "$" + finiteNumber(value, 0).toLocaleString("en-US", {
+        minimumFractionDigits:2,
+        maximumFractionDigits:4
+      });
+    }
+
+    function formatBillingAmount(value, currency){
+      const amount = finiteNumber(value, NaN);
+      if(!Number.isFinite(amount)) return "—";
+      const code = String(currency || "USD").toUpperCase();
+      try{
+        if(/^[A-Z]{3}$/.test(code)){
+          return new Intl.NumberFormat("vi-VN", {
+            style:"currency",
+            currency:code,
+            maximumFractionDigits:code === "VND" ? 0 : 2
+          }).format(amount);
+        }
+      }catch(_){ /* keep the USD-safe fallback */ }
+      return formatUsd(amount);
+    }
+
+    function formatPercent(value, mode){
+      const number = finiteNumber(value, NaN);
+      if(!Number.isFinite(number)) return "—";
+      // The sanitized Rust snapshot names percentage metrics with a `Pct`
+      // suffix and already returns 0..100.  Only legacy/ratio-shaped fields
+      // need the 0..1 conversion.  Treating a real 0.5% value as a ratio would
+      // incorrectly render it as 50% and could trigger a false warning.
+      const percent = mode === "ratio" ? number * 100 : number;
+      return Math.max(0, percent).toLocaleString("vi-VN", {maximumFractionDigits:1}) + "%";
+    }
+
+    function formatUpdatedAt(value){
+      const raw = typeof value === "number" ? value : Date.parse(String(value || ""));
+      if(!Number.isFinite(raw)) return "—";
+      try{
+        return new Date(raw).toLocaleString("vi-VN", {
+          hour:"2-digit",
+          minute:"2-digit",
+          second:"2-digit",
+          day:"2-digit",
+          month:"2-digit"
+        });
+      }catch(_){
+        return "—";
+      }
+    }
+
+    function setGoogleWarning(message, level){
+      const warning = byId("solverGoogleWarning");
+      if(!warning) return;
+      warning.textContent = String(message || "");
+      ["is-success", "is-warning", "is-danger", "is-error"].forEach(name => warning.classList.toggle(name, false));
+      if(level) warning.classList.toggle(`is-${level}`, true);
+    }
+
+    function renderGoogleUsage(payload){
+      // `/api/admin/solver-usage` returns the sanitized snapshot under
+      // `googleCloud`; accept the snapshot itself as well for future callers.
+      const snapshot = payload?.googleCloud || payload?.google || payload || {};
+      const monitoring = snapshot?.monitoring || {};
+      const metrics = monitoring?.metrics || snapshot?.metrics || snapshot?.usage || {};
+      const capacity = snapshot?.capacity || {};
+      const billing = snapshot?.billing || {};
+      const connection = byId("solverGoogleConnection");
+      const setConnection = (message, kind) => {
+        if(!connection) return;
+        connection.textContent = String(message || "");
+        connection.classList.toggle("is-error", kind === "error");
+        connection.classList.toggle("is-warning", kind === "warning");
+        connection.classList.toggle("is-success", kind === "success");
+      };
+      const hasGoogleSource = snapshot?.status === "ok"
+        || snapshot?.configured === true
+        || monitoring?.available === true
+        || billing?.configured === true;
+      const scopeMismatch = snapshot?.scopeMatchesActiveProfile === false
+        || billing?.status === "google_usage_scope_mismatch";
+      setConnection(
+        scopeMismatch
+          ? "Sai phạm vi dự án"
+          : hasGoogleSource
+          ? (snapshot?.stale === true || snapshot?.status === "stale" ? "Đã kết nối · số liệu chậm" : "Đã kết nối tự động")
+          : "Chưa có kết nối Google",
+        scopeMismatch
+          ? "error"
+          : hasGoogleSource
+            ? (snapshot?.stale === true || snapshot?.status === "stale" ? "warning" : "success")
+            : "error"
+      );
+      const requestCount = metrics.requests60m ?? metrics.requestCount60m ?? metrics.requestCount;
+      const instances = metrics.activeInstances
+        ?? metrics.instanceCount
+        ?? metrics.instances
+        ?? metrics.instanceCountLatest
+        ?? capacity.instanceCount;
+      const cpuIsRatio = metrics.cpuP95Pct === undefined && metrics.cpuPercent === undefined;
+      const memoryIsRatio = metrics.memoryP95Pct === undefined && metrics.memoryPercent === undefined;
+      const errorIsRatio = metrics.errorRatePct === undefined;
+      const cpu = metrics.maxCpuUtilization ?? metrics.cpuMaxUtilization ?? metrics.cpuPercent ?? metrics.cpuP95Pct;
+      const memory = metrics.maxMemoryUtilization ?? metrics.memoryMaxUtilization ?? metrics.memoryPercent ?? metrics.memoryP95Pct;
+      const errorRate = metrics.errorRate ?? metrics.errorRatio ?? metrics.errorRatePct;
+      const setText = (id, value) => {
+        const element = byId(id);
+        if(element) element.textContent = String(value ?? "");
+      };
+      setText("solverGoogleRequests", Number.isFinite(Number(requestCount))
+        ? Math.max(0, Math.trunc(Number(requestCount))).toLocaleString("vi-VN")
+        : "—");
+      setText("solverGoogleInstances", Number.isFinite(Number(instances))
+        ? Math.max(0, Number(instances)).toLocaleString("vi-VN", {maximumFractionDigits:1})
+        : "—");
+      setText("solverGoogleCpu", formatPercent(cpu, cpuIsRatio ? "ratio" : "percent"));
+      setText("solverGoogleMemory", formatPercent(memory, memoryIsRatio ? "ratio" : "percent"));
+      setText("solverGoogleErrorRate", formatPercent(errorRate, errorIsRatio ? "ratio" : "percent"));
+      const reconciled = billing.reconciled === true || snapshot?.billingReconciled === true;
+      const currency = String(billing.currency || "USD").toUpperCase();
+      const grossCost = finiteNumber(billing.grossCost, NaN);
+      const rawCredits = finiteNumber(billing.credits, NaN);
+      const netCost = finiteNumber(billing.netCost, NaN);
+      setText(
+        "solverGoogleUpdatedAt",
+        reconciled
+          ? formatUpdatedAt(billing.latestExportAtMs)
+          : billing.status === "billing_export_pending"
+            ? "Chưa có dòng chi phí"
+            : "—"
+      );
+      setText("solverGoogleGrossCost", reconciled ? formatBillingAmount(grossCost, currency) : "Chờ Google");
+      setText("solverGoogleCreditsApplied", reconciled
+        ? formatBillingAmount(Number.isFinite(rawCredits) ? Math.max(0, -rawCredits) : NaN, currency)
+        : "Chờ Google");
+      setText("solverGoogleNetCost", reconciled ? formatBillingAmount(netCost, currency) : "Chờ Google");
+
+      const warnings = Array.isArray(snapshot?.warnings) ? snapshot.warnings : [];
+      const severity = item => String(item?.severity || item?.level || "").toLowerCase();
+      const strongest = warnings.find(item => severity(item) === "critical" || severity(item) === "danger" || severity(item) === "error")
+        || warnings.find(item => severity(item) === "warning")
+        || warnings[0];
+      if(strongest){
+        const level = severity(strongest) === "critical" || severity(strongest) === "danger"
+          ? "danger"
+          : severity(strongest) === "error" ? "error" : "warning";
+        setGoogleWarning(strongest.message || strongest.code || "Google Cloud đang có cảnh báo.", level);
+        return;
+      }
+      if(snapshot?.available === false || snapshot?.status === "error" || snapshot?.status === "invalid"){
+        setGoogleWarning("Chưa có số liệu vận hành Google Cloud; hãy kiểm tra bộ đồng bộ ADC.", "error");
+        return;
+      }
+      if(snapshot?.stale === true || snapshot?.status === "stale" || monitoring?.available === false){
+        setGoogleWarning("Số liệu Google Cloud đang chậm hoặc chưa đủ mới; hệ thống vẫn giữ cảnh báo an toàn.", "warning");
+        return;
+      }
+      const cpuNumber = finiteNumber(cpu, 0);
+      const memoryNumber = finiteNumber(memory, 0);
+      const errorNumber = finiteNumber(errorRate, 0);
+      const normalizedCpu = cpuIsRatio ? cpuNumber : cpuNumber / 100;
+      const normalizedMemory = memoryIsRatio ? memoryNumber : memoryNumber / 100;
+      const normalizedError = errorIsRatio ? errorNumber : errorNumber / 100;
+      if(normalizedCpu >= 0.85 || normalizedMemory >= 0.85 || normalizedError >= 0.1){
+        setGoogleWarning("Tải Cloud Run đang cao; nên kiểm tra quota và lỗi dịch vụ.", "danger");
+      }else if(normalizedCpu >= 0.7 || normalizedMemory >= 0.7 || normalizedError >= 0.03){
+        setGoogleWarning("Cloud Run đang tiến gần ngưỡng cảnh báo. Hệ thống vẫn tiếp tục theo dõi.", "warning");
+      }else{
+        setGoogleWarning("Cloud Run đang ổn định. Dữ liệu vận hành được tự tải lại mỗi 30 giây.", "success");
+      }
+    }
+
+    async function waitForGoogleRefresh(delayMs){
+      if(typeof window.setTimeout !== "function") return;
+      await new Promise(resolve => window.setTimeout(resolve, delayMs));
+    }
+
+    async function loadGoogleUsage(manual = false){
+      if(googleUsageLoading) return;
+      googleUsageLoading = true;
+      if(refreshGoogleButton) refreshGoogleButton.disabled = true;
+      if(manual) setStatus("Đang đồng bộ số liệu Google…", "");
+      setGoogleWarning("Đang đồng bộ số liệu từ Google Cloud…", "");
+      try{
+        const headers = api.getAuthHeaders();
+        let requestedAtMs = 0;
+        let payload = null;
+        if(manual){
+          const accepted = await requestJson("/api/admin/solver-usage/refresh", {
+            method:"POST",
+            headers
+          });
+          requestedAtMs = finiteNumber(accepted?.refreshRequestedAtMs, 0);
+          payload = accepted;
+          renderGoogleUsage(accepted?.googleCloud || accepted);
+        }
+
+        const attempts = manual && typeof window.setTimeout === "function" ? 20 : 1;
+        for(let attempt = 0; attempt < attempts; attempt += 1){
+          if(manual) await waitForGoogleRefresh(attempt === 0 ? 750 : 1_500);
+          payload = await requestJson("/api/admin/solver-usage", {headers});
+          const snapshot = payload?.googleCloud || payload;
+          renderGoogleUsage(snapshot);
+          if(Array.isArray(payload?.usage?.accountRequests)){
+            renderAccountUsage(payload.usage);
+          }
+          const sampledAtMs = finiteNumber(snapshot?.sampledAtMs, 0);
+          if(!manual || requestedAtMs <= 0 || sampledAtMs >= requestedAtMs) break;
+        }
+        if(manual){
+          const snapshot = payload?.googleCloud || payload || {};
+          const billing = snapshot?.billing || {};
+          if(billing.status === "billing_export_pending"){
+            setStatus("Đã kiểm tra Google. Billing Export chưa có dòng chi phí đầu tiên; hệ thống sẽ tự cập nhật khi Google xuất dữ liệu.", "success");
+          }else if(billing.reconciled === true){
+            setStatus("Đã đồng bộ số tiền Google ghi nhận mới nhất.", "success");
+          }else{
+            setStatus("Đã gửi yêu cầu đồng bộ; bản mới sẽ tiếp tục tự cập nhật trên máy chủ.", "success");
+          }
+        }
+      }catch(error){
+        const connection = byId("solverGoogleConnection");
+        if(connection){
+          connection.textContent = "Chưa đồng bộ được";
+          connection.classList.toggle("is-error", true);
+          connection.classList.toggle("is-warning", false);
+          connection.classList.toggle("is-success", false);
+        }
+        const updatedAt = byId("solverGoogleUpdatedAt");
+        if(updatedAt) updatedAt.textContent = "Chưa kết nối";
+        ["solverGoogleGrossCost", "solverGoogleCreditsApplied", "solverGoogleNetCost"].forEach(id => {
+          const element = byId(id);
+          if(element) element.textContent = "Chờ Google";
+        });
+        setGoogleWarning("Chưa đồng bộ được Google Cloud: " + String(error?.message || error), "error");
+        if(manual) setStatus("Không đồng bộ được Google: " + String(error?.message || error), "error");
+      }finally{
+        googleUsageLoading = false;
+        if(refreshGoogleButton) refreshGoogleButton.disabled = false;
+      }
+    }
+
+    function selectedProfile(config, preferredId){
+      const profiles = Array.isArray(config?.profiles) ? config.profiles : [];
+      const preferred = profiles.find(profile => String(profile?.id || "") === String(preferredId || ""));
+      if(preferred) return preferred;
+      return profiles
+        .filter(profile => profile && profile.enabled !== false)
+        .sort((a, b) => finiteNumber(b.priority, 0) - finiteNumber(a.priority, 0))[0] || profiles[0] || null;
+    }
+
+    function fillProfileEditor(profile){
+      profileIdInput.value = profile?.id || "";
+      projectIdInput.value = profile?.projectId || "";
+      regionInput.value = profile?.region || "";
+      urlInput.value = profile?.url || "";
+      digestInput.value = profile?.solverDigest || "";
+      const title = byId("solverProfileEditorTitle");
+      if(title) title.textContent = profile ? `Thông tin profile: ${profile.id}` : "Thêm Cloud Run profile mới";
+    }
+
+    function syncProfileChoices(profiles, activeId){
+      if(!activeProfileInput) return;
+      activeProfileInput.textContent = "";
+      const automatic = document.createElement("option");
+      automatic.value = "";
+      automatic.textContent = "Tự động theo ưu tiên";
+      activeProfileInput.appendChild(automatic);
+      profiles
+        .filter(profile => profile && profile.enabled !== false && String(profile.id || ""))
+        .forEach(profile => {
+          const option = document.createElement("option");
+          option.value = String(profile.id);
+          const projectLabel = String(profile.projectId || profile.id);
+          option.textContent = profile.region ? `${projectLabel} · ${profile.region}` : projectLabel;
+          activeProfileInput.appendChild(option);
+        });
+      const addNew = document.createElement("option");
+      addNew.value = "__new__";
+      addNew.textContent = "+ Kết nối dự án mới";
+      activeProfileInput.appendChild(addNew);
+      activeProfileInput.value = String(activeId || "");
+    }
+
+    function hasForbiddenProfileKey(value){
+      if(!value || typeof value !== "object") return false;
+      return Object.entries(value).some(([key, child]) => {
+        if(/(?:token|secret|password|credential|cookie|private.?key|service.?account)/i.test(key)) return true;
+        return child && typeof child === "object" && hasForbiddenProfileKey(child);
+      });
+    }
+
+    function parseProfileBundle(raw){
+      const text = String(raw || "").trim();
+      if(!text) throw new Error("Hãy dán mã TKB_CLOUD_PROFILE do công cụ triển khai in ra.");
+      const markerLine = text.split(/\r?\n/).find(line => /^\s*TKB_CLOUD_PROFILE\s*=/.test(line));
+      const jsonText = (markerLine || text).replace(/^\s*TKB_CLOUD_PROFILE\s*=\s*/, "").trim();
+      let decoded;
+      try{
+        decoded = JSON.parse(jsonText);
+      }catch(_){
+        throw new Error("Mã cấu hình không phải JSON hợp lệ.");
+      }
+      if(hasForbiddenProfileKey(decoded)){
+        throw new Error("Mã cấu hình có trường bí mật hoặc thông tin xác thực; hệ thống đã từ chối nhập.");
+      }
+      const source = decoded?.profile && typeof decoded.profile === "object" ? decoded.profile : decoded;
+      const profile = {
+        id:String(source?.id || "").trim(),
+        projectId:String(source?.projectId || source?.project_id || "").trim(),
+        region:String(source?.region || "").trim(),
+        url:String(source?.url || source?.serviceUrl || "").trim().replace(/\/+$/, ""),
+        solverDigest:String(source?.solverDigest || source?.solver_digest || "").trim().toLowerCase()
+      };
+      if(!profile.id || !/^[a-z0-9][a-z0-9._-]{0,79}$/i.test(profile.id)) throw new Error("Mã profile trong gói cấu hình không hợp lệ.");
+      if(!profile.projectId) throw new Error("Gói cấu hình thiếu Google Cloud Project ID.");
+      if(!/^[a-z0-9][a-z0-9-]{0,78}$/i.test(profile.region)) throw new Error("Region trong gói cấu hình không hợp lệ.");
+      if(!/^https:\/\/[^\s\/@?#]+\/?$/.test(profile.url)) throw new Error("Service URL trong gói cấu hình không hợp lệ.");
+      if(!/^[0-9a-f]{64}$/.test(profile.solverDigest)) throw new Error("Solver digest trong gói cấu hình phải đủ 64 ký tự SHA-256.");
+      return { profile };
+    }
+
+    function importProfileBundle(){
+      try{
+        const imported = parseProfileBundle(profileBundleInput?.value);
+        selectedProfileId = "";
+        if(activeProfileInput) activeProfileInput.value = "__new__";
+        modeInput.value = "auto";
+        fillProfileEditor(imported.profile);
+        byId("solverSelectedProfile").textContent = imported.profile.id;
+        setStatus(`Đã nhận cấu hình ${imported.profile.projectId}. Kiểm tra rồi bấm Lưu.`, "success");
+      }catch(error){
+        setStatus("Không nhập được profile: " + String(error?.message || error), "error");
+      }
+    }
+
+    function modeSummary(mode, profile, effectiveMode){
+      if(effectiveMode === "vps_only" && mode !== "vps_only") return "Cloud Run chưa sẵn sàng — đang dùng VPS";
+      if(mode === "vps_only") return "Đang định tuyến: chỉ VPS";
+      if(mode === "serverless_only") return `Đang định tuyến: chỉ Cloud Run${profile ? " (" + profile.id + ")" : ""}`;
+      return `Đang định tuyến: Cloud Run${profile ? " (" + profile.id + ")" : ""} → VPS dự phòng`;
+    }
+
+    function renderAccountUsage(usage){
+      const body = byId("solverAccountUsageBody");
+      if(!body) return;
+      const rows = Array.isArray(usage?.accountRequests) ? usage.accountRequests : [];
+      if(!rows.length){
+        body.innerHTML = '<tr><td colspan="5" class="portal-muted">Chưa có dữ liệu.</td></tr>';
+        return;
+      }
+      const count = value => String(Math.max(0, Math.trunc(finiteNumber(value, 0))));
+      const safe = value => String(value).replace(/[&<>"']/g, character => ({
+        "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+      })[character]);
+      body.innerHTML = rows
+        .slice()
+        .sort((a, b) => finiteNumber(b?.totalRequests, 0) - finiteNumber(a?.totalRequests, 0))
+        .map(row => {
+        const schoolId = String(row?.schoolId || "").trim() || "(chưa gắn trường)";
+        const accountId = String(row?.accountId || "").trim() || "(không xác định)";
+        return `<tr>
+          <td>${safe(schoolId)}</td>
+          <td>${safe(accountId)}</td>
+          <td>${count(row?.totalRequests)}</td>
+          <td>${count(row?.cloudRun?.requests)}</td>
+          <td>${count(row?.vps?.requests)}</td>
+        </tr>`;
+      }).join("");
+    }
+
+    function renderInfrastructure(payload, usagePayload){
+      const config = payload?.config && typeof payload.config === "object" ? payload.config : {};
+      currentConfig = {
+        mode:String(config.mode || "auto"),
+        fallback:String(config.fallback || "vps"),
+        activeProfileId:String(config.activeProfileId || payload?.selectedProfileId || ""),
+        profiles:Array.isArray(config.profiles) ? config.profiles.map(profile => Object.assign({}, profile)) : []
+      };
+      const activeChoice = currentConfig.activeProfileId;
+      const profile = selectedProfile(currentConfig, activeChoice || payload?.selectedProfileId);
+      selectedProfileId = String(profile?.id || "");
+      if(!selectedProfileId && profile) selectedProfileId = String(profile.id || "");
+      const usage = usagePayload?.usage || payload?.usage || {};
+      const profileUsage = profile && usage?.profiles && typeof usage.profiles === "object"
+        ? (usage.profiles[profile.id] || {})
+        : {};
+      renderAccountUsage(usage);
+
+      modeInput.value = ["auto", "serverless_only", "vps_only"].includes(currentConfig.mode) ? currentConfig.mode : "auto";
+      syncProfileChoices(currentConfig.profiles, activeChoice);
+      fillProfileEditor(profile);
+
+      byId("solverSelectedProfile").textContent = profile?.id || "Chưa cấu hình";
+      byId("solverCompletedJobs").textContent = String(Math.max(0, Math.trunc(finiteNumber(profileUsage.completedJobs, usage.completedJobs || 0))));
+      byId("solverFailedJobs").textContent = String(Math.max(0, Math.trunc(finiteNumber(profileUsage.failedJobs, usage.failedJobs || 0))));
+      byId("solverInfrastructureEffective").textContent = modeSummary(
+        currentConfig.mode,
+        profile,
+        String(payload?.effectiveMode || currentConfig.mode)
+      );
+    }
+
+    async function requestJson(url, options){
+      const response = await window.fetch(url, Object.assign({cache:"no-store"}, options || {}));
+      const data = await response.json().catch(() => ({}));
+      if(!response.ok || data?.ok !== true){
+        throw new Error(data?.message || data?.detail || data?.error || `HTTP ${response.status}`);
+      }
+      return data;
+    }
+
+    async function loadInfrastructure(successMessage){
+      setBusy(true);
+      setStatus("Đang tải cấu hình Cloud Run…", "");
+      try{
+        const headers = api.getAuthHeaders();
+        const [infrastructure, usage] = await Promise.all([
+          requestJson("/api/admin/solver-infrastructure", {headers}),
+          requestJson("/api/admin/solver-usage", {headers})
+        ]);
+        renderInfrastructure(infrastructure, usage);
+        loadGoogleUsage();
+        setStatus(successMessage || "", successMessage ? "success" : "");
+      }catch(error){
+        setStatus("Không tải được cấu hình hạ tầng: " + String(error?.message || error), "error");
+      }finally{
+        setBusy(false);
+      }
+    }
+
+    function configFromForm(){
+      const mode = String(modeInput.value || "auto");
+      const activeChoice = String(activeProfileInput?.value || "").trim();
+      const profileFields = {
+        id:String(profileIdInput.value || "").trim(),
+        projectId:String(projectIdInput.value || "").trim(),
+        region:String(regionInput.value || "").trim(),
+        url:String(urlInput.value || "").trim().replace(/\/+$/, ""),
+        solverDigest:String(digestInput.value || "").trim().toLowerCase()
+      };
+      const needsCloud = mode !== "vps_only";
+      const hasProfileInput = Object.values(profileFields).some(Boolean);
+      if(needsCloud || hasProfileInput){
+        if(!profileFields.id) throw new Error("Cần nhập mã Cloud Run profile.");
+        if(!/^https:\/\/[^\s\/@?#]+\/?$/.test(profileFields.url)){
+          throw new Error("Service URL phải là địa chỉ HTTPS gốc, không có path, query hoặc thông tin đăng nhập.");
+        }
+        if(!/^[0-9a-f]{64}$/.test(profileFields.solverDigest)) throw new Error("Solver digest phải đủ 64 ký tự SHA-256.");
+      }
+
+      const profiles = currentConfig.profiles.map(profile => Object.assign({}, profile));
+      if(needsCloud || hasProfileInput){
+        let index = activeChoice === "__new__"
+          ? -1
+          : profiles.findIndex(profile => String(profile?.id || "") === selectedProfileId);
+        if(index < 0){
+          const active = selectedProfile(currentConfig, selectedProfileId);
+          index = active ? profiles.indexOf(active) : -1;
+        }
+        const duplicateIndex = profiles.findIndex((profile, profileIndex) => profileIndex !== index && String(profile?.id || "") === profileFields.id);
+        if(duplicateIndex >= 0) throw new Error("Mã profile đã tồn tại trong cấu hình.");
+        const maxPriority = profiles.reduce((highest, profile) => Math.max(highest, finiteNumber(profile?.priority, 0)), 0);
+        const existing = index >= 0 ? profiles[index] : {};
+        const profile = Object.assign({
+          enabled:true,
+          priority:maxPriority + 1,
+          vcpu:6,
+          memoryGiB:4,
+          maxConcurrency:1
+        }, existing, profileFields, {enabled:true});
+        if(index >= 0) profiles[index] = profile;
+        else profiles.push(profile);
+      }
+
+      return {
+        mode,
+        fallback:mode === "serverless_only" ? "none" : "vps",
+        activeProfileId:activeChoice === "__new__"
+          ? (profileFields.id || null)
+          : (activeChoice
+              ? (activeChoice === selectedProfileId ? (profileFields.id || activeChoice) : activeChoice)
+              : null),
+        profiles
+      };
+    }
+
+    activeProfileInput?.addEventListener("change", () => {
+      const choice = String(activeProfileInput.value || "");
+      if(choice === "__new__"){
+        revealAccountConfiguration();
+        selectedProfileId = "";
+        fillProfileEditor(null);
+        setStatus("Hãy dùng mã kết nối do công cụ Cloud Run tạo, sau đó bấm Lưu.", "");
+        return;
+      }
+      const profile = selectedProfile(currentConfig, choice);
+      selectedProfileId = String(profile?.id || "");
+      fillProfileEditor(profile);
+      byId("solverSelectedProfile").textContent = profile?.id || "Chưa cấu hình";
+      byId("solverInfrastructureEffective").textContent = modeSummary(modeInput.value, profile, modeInput.value);
+    });
+
+    importProfileButton?.addEventListener("click", importProfileBundle);
+    refreshGoogleButton?.addEventListener("click", () => loadGoogleUsage(true));
+
+    form?.addEventListener("submit", async event => {
+      event.preventDefault();
+      try{
+        const config = configFromForm();
+        setBusy(true);
+        setStatus("Đang lưu cấu hình hạ tầng…", "");
+        const saved = await requestJson("/api/admin/solver-infrastructure", {
+          method:"POST",
+          headers:api.getAuthHeaders({"Content-Type":"application/json"}),
+          body:JSON.stringify(config)
+        });
+        const usage = await requestJson("/api/admin/solver-usage", {headers:api.getAuthHeaders()});
+        renderInfrastructure({
+          config:saved.config,
+          usage:saved.usage,
+          selectedProfileId:selectedProfile(saved.config, profileIdInput.value)?.id || "",
+          effectiveMode:saved.config?.mode
+        }, usage);
+        loadGoogleUsage();
+        setStatus("Đã lưu cấu hình. Các lượt xếp mới sẽ dùng chính sách này.", "success");
+      }catch(error){
+        revealAccountConfiguration();
+        setStatus("Không lưu được cấu hình: " + String(error?.message || error), "error");
+      }finally{
+        setBusy(false);
+      }
+    });
+
+    reloadButton?.addEventListener("click", () => loadInfrastructure());
+    loadInfrastructure();
+    if(typeof window.setInterval === "function"){
+      const googleUsageTimer = window.setInterval(loadGoogleUsage, 30_000);
+      window.addEventListener?.("beforeunload", () => window.clearInterval?.(googleUsageTimer), {once:true});
+    }
+  }
+
+  initSolverInfrastructureCard();
   renderSchools();
   document.getElementById("btnReloadSchools")?.addEventListener("click", () => {
     if(A.rebuildSchoolsFromAllSources) A.rebuildSchoolsFromAllSources();

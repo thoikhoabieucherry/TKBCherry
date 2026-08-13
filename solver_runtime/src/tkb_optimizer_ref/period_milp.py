@@ -12,6 +12,8 @@ import numpy as np
 from scipy.optimize import Bounds, LinearConstraint, milp
 from scipy.sparse import coo_matrix
 
+from .external_cp_sat import active_external_solver
+from .external_milp import solve_milp_with_external_runtime
 from .models import Lesson, SchoolData, Session, SessionAllocation
 from .rules import TimetableRuleSet, resolve_rule_set
 from .template import all_sessions, class_available_periods, class_sort_key, teacher_session_capacity
@@ -797,6 +799,20 @@ def _allocate_periods_sequential(
                 c[vid] = (_gap_penalty(pattern) * 1000) + fairness_penalty
 
         def solve_session_milp(limit_seconds: int):
+            external_result = solve_milp_with_external_runtime(
+                c,
+                np.ones(var_count, dtype=int),
+                np.zeros(var_count),
+                np.ones(var_count),
+                A,
+                np.array(lb),
+                np.array(ub),
+                time_limit_seconds=limit_seconds,
+                threads=1,
+                mip_rel_gap=0.0,
+            )
+            if external_result is not None:
+                return external_result
             return milp(
                 c,
                 integrality=np.ones(var_count, dtype=int),
@@ -969,6 +985,12 @@ def allocate_periods(
     # module import. Refresh this exact filter once, before any worker starts.
     _suppress_highs_threads_option_warning()
     worker_limit = max(1, int(max_workers or 1))
+    # Context variables carrying the Browser CP-SAT wire callback do not cross
+    # ThreadPoolExecutor workers. Keep external runs sequential so every
+    # half-day model is handed to the same Agent instead of silently falling
+    # back to a VPS-local HiGHS thread.
+    if active_external_solver() is not None:
+        worker_limit = 1
     if worker_limit <= 1:
         return _allocate_periods_sequential(
             data,

@@ -802,6 +802,85 @@ body.portal-body {
   color: #ffffff;
 }
 
+.max-plan-pricing {
+  border-color: color-mix(in srgb, var(--plan-color, #a855f7) 32%, #e2e8f0);
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--plan-color, #a855f7) 12%, transparent), transparent 48%),
+    #faf8ff;
+}
+
+.max-plan-base-price > span,
+.max-plan-base-price > small,
+.max-plan-tier-copy small,
+.max-plan-tier-price small {
+  color: #64748b;
+}
+
+.max-plan-pricing-head strong,
+.max-plan-tier-copy strong {
+  color: #172033;
+}
+
+.max-plan-pricing-kicker {
+  color: color-mix(in srgb, var(--plan-color, #a855f7) 72%, #475569);
+}
+
+.max-plan-pricing-badge {
+  border-color: color-mix(in srgb, var(--plan-color, #a855f7) 34%, #e2e8f0);
+  background: color-mix(in srgb, var(--plan-color, #a855f7) 10%, #ffffff);
+  color: color-mix(in srgb, var(--plan-color, #a855f7) 72%, #334155);
+}
+
+.max-plan-tier-option {
+  border-color: #e2e8f0;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 3%);
+}
+
+.max-plan-tier-option:hover {
+  border-color: color-mix(in srgb, var(--plan-color, #a855f7) 42%, #d8e1ee);
+}
+
+.max-plan-tier-option.is-selected {
+  border-color: color-mix(in srgb, var(--plan-color, #a855f7) 62%, #cbd5e1);
+  background: color-mix(in srgb, var(--plan-color, #a855f7) 7%, #ffffff);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--plan-color, #a855f7) 10%, transparent);
+}
+
+.max-plan-tier-check {
+  border-color: #94a3b8;
+  background: #ffffff;
+}
+
+.max-plan-tier-option.is-selected .max-plan-tier-check {
+  box-shadow: inset 0 0 0 4px #ffffff, inset 0 0 0 9px var(--plan-color, #a855f7);
+}
+
+.max-plan-tier-price strong {
+  color: color-mix(in srgb, var(--plan-color, #a855f7) 74%, #1e293b);
+}
+
+.managed-service-card {
+  border-color: color-mix(in srgb, var(--plan-color, #f43f5e) 28%, #e2e8f0);
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--plan-color, #f43f5e) 8%, transparent), transparent 48%),
+    #ffffff;
+}
+
+.managed-service-badge {
+  border-color: color-mix(in srgb, var(--plan-color, #f43f5e) 34%, #e2e8f0);
+  color: color-mix(in srgb, var(--plan-color, #f43f5e) 72%, #334155);
+  background: color-mix(in srgb, var(--plan-color, #f43f5e) 8%, #ffffff);
+}
+
+.managed-service-price {
+  color: #172033;
+}
+
+.managed-service-description {
+  color: #64748b;
+}
+
 .portal-btn.danger,
 .portal-user-actions .portal-btn.warn {
   background: #fff7f7;
@@ -950,13 +1029,6 @@ body.portal-body {
   color: #c2410c;
 }
 
-.portal-contact-box {
-  border: 1px solid #fed7aa;
-  background: #fff7ed;
-  color: #7c2d12;
-}
-
-.portal-contact-box a,
 .portal-transfer-zalo a,
 .portal-topup-ref {
   color: #1d4ed8;
@@ -999,10 +1071,31 @@ body.portal-body {
   box-shadow: none;
 }
 
+.portal-account-modal-sub .tkb-plan-badge {
+  color: var(--plan-color);
+  background: #ffffff;
+  border-color: var(--plan-color);
+}
+
+.portal-trial-banner.is-active {
+  background: #ffffff;
+}
+
+.tkb-plan-free {
+  color: #334155;
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
 .plan-card.is-current {
   border-color: color-mix(in srgb, var(--plan-color, #2563eb) 38%, #dfe7f2);
   background: color-mix(in srgb, var(--plan-color, #2563eb) 7%, #ffffff);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--plan-color, #2563eb) 12%, transparent);
+}
+
+.plan-card[data-plan-card="plus"],
+.plan-card[data-plan-card="max"] {
+  border-color: color-mix(in srgb, var(--plan-color, #2563eb) 62%, #dfe7f2);
 }
 
 .plan-current-badge {

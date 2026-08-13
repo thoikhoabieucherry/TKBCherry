@@ -1,0 +1,62 @@
+{
+  "protocol": "tkb-model-plan-v1",
+  "schemaVersion": 1,
+  "fixtureId": "automatic-refinement-1566-v1",
+  "phase": "quality",
+  "request": {
+    "encoding": "canonical-json-v1",
+    "sha256": "82cea67bf02bec629352c291ffb9f6b564ee0b7639296ded56d247a0672c4d10",
+    "bytes": 463208
+  },
+  "model": {
+    "kind": "external_cp_sat_model",
+    "runtime": "ortools-cp-sat-9.15-wire-v1",
+    "encoding": "cp-sat-proto-v1",
+    "digest": "b385f8268b29ba64acb040d4e2780e3b7e85f2e3a1993a23d9efb9422f4ccd72",
+    "sha256": "7f19416048f124d192abb455e195e0ad6b8d78d98b2ec8c382405459ab724b49",
+    "bytes": 2711451,
+    "parameters": {
+      "encoding": "sat-parameters-proto-v1",
+      "sha256": "3de3c1015e9f9b4177c9b0c4b4295a5af6f09c9fe8c2596403a3c4e76dfc50df",
+      "bytes": 35
+    },
+    "statistics": {
+      "variables": 38665,
+      "constraints": 32093,
+      "objectiveVariables": 1116,
+      "hintVariables": 38664
+    }
+  },
+  "variableMap": {
+    "encoding": "tkb-variable-map-json-v1",
+    "sha256": "cae26ef14c8838f82823df6724a5bf9322eb2ee9d5772b51f8499641a2e61694",
+    "bytes": 2604913,
+    "entries": 38665
+  },
+  "result": {
+    "encoding": "canonical-json-v1",
+    "sha256": "1203b1947604e4b5465a6668ddb5cd9621ad0eb0db22a9ac22f64dfd238c9caa",
+    "bytes": 365761,
+    "quality": {
+      "hardValid": true,
+      "violations": 0,
+      "expectedPeriods": 1566,
+      "scheduledPeriods": 1566,
+      "unassignedPeriods": 0,
+      "teacherSessions": 482,
+      "onePeriodTeacherSessions": 0,
+      "gap1": 50,
+      "gap2": 0
+    },
+    "qualityEnvelope": {
+      "requireHardValid": true,
+      "maximumViolations": 0,
+      "minimumScheduledPeriods": 1566,
+      "maximumUnassignedPeriods": 0,
+      "maximumTeacherSessions": 488,
+      "maximumOnePeriodTeacherSessions": 0,
+      "maximumGap1": 50,
+      "maximumGap2": 0
+    }
+  }
+}

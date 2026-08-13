@@ -49,6 +49,15 @@ impl SolverOwner {
     pub fn anonymous() -> Self {
         Self::default()
     }
+
+    pub fn school_id(&self) -> &str {
+        &self.school_id
+    }
+
+    pub fn login_id(&self) -> &str {
+        &self.login_id
+    }
+
 }
 
 pub struct SolverJob {
@@ -79,6 +88,12 @@ struct ServerOwnedSolverJob {
     owner: SolverOwner,
     trusted_worker_eligible: bool,
     browser_wasm_eligible: bool,
+    browser_cp_sat_eligible: bool,
+    agent_preference_enabled: bool,
+    native_agent_required: bool,
+    // Browser-local is a hard execution contract, not merely a preference.
+    // Keep it independent so a failed lease cannot silently enable VPS.
+    browser_agent_required: bool,
     schedule_scope: Option<String>,
     created_ms: u64,
     schedule_fingerprint: Option<String>,
@@ -88,6 +103,8 @@ struct ServerOwnedSolverJob {
     progress_updated_ms: Option<u64>,
     watchdog_budget_ms: Option<u64>,
     watchdog_started_ms: Option<u64>,
+    no_checkpoint_vps_rescue_requested: bool,
+    no_checkpoint_vps_rescue_granted: bool,
     cancel_requested: bool,
     best_effort_stop_requested: bool,
     execution_phase: ServerExecutionPhase,
@@ -100,6 +117,8 @@ struct ServerOwnedSolverJob {
 pub enum ServerExecutor {
     Vps,
     Agent,
+    /// A Cloud Run service running the unchanged reference Python solver.
+    Serverless,
 }
 
 impl ServerExecutor {
@@ -107,6 +126,7 @@ impl ServerExecutor {
         match self {
             Self::Vps => "vps",
             Self::Agent => "agent",
+            Self::Serverless => "serverless",
         }
     }
 }
@@ -114,6 +134,8 @@ impl ServerExecutor {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ServerExecutionPhase {
     Pending,
+    ServerlessQueued,
+    ServerlessRunning,
     VpsQueued,
     VpsRunning,
     HandoffToAgent,
@@ -127,6 +149,8 @@ impl ServerExecutionPhase {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Pending => "pending",
+            Self::ServerlessQueued => "serverless_queued",
+            Self::ServerlessRunning => "serverless_running",
             Self::VpsQueued => "vps_queued",
             Self::VpsRunning => "vps_running",
             Self::HandoffToAgent => "handoff_to_agent",
@@ -139,6 +163,7 @@ impl ServerExecutionPhase {
 
     pub fn executor(self) -> Option<ServerExecutor> {
         match self {
+            Self::ServerlessQueued | Self::ServerlessRunning => Some(ServerExecutor::Serverless),
             Self::VpsQueued | Self::VpsRunning => Some(ServerExecutor::Vps),
             Self::AgentWaiting | Self::AgentRunning => Some(ServerExecutor::Agent),
             _ => None,
@@ -180,6 +205,8 @@ pub struct ServerJobSnapshot {
     pub execution_phase: ServerExecutionPhase,
     pub execution_generation: u64,
     pub best_effort_stop_requested: bool,
+    pub native_agent_required: bool,
+    pub browser_agent_required: bool,
 }
 
 struct QueuedSolverJob {
@@ -522,6 +549,10 @@ impl SolverPool {
                 owner: owner.clone(),
                 trusted_worker_eligible: false,
                 browser_wasm_eligible: false,
+                browser_cp_sat_eligible: false,
+                agent_preference_enabled: true,
+                native_agent_required: false,
+                browser_agent_required: false,
                 schedule_scope: normalized_schedule_scope,
                 created_ms: now_ms,
                 schedule_fingerprint: normalized_schedule_fingerprint,
@@ -531,6 +562,8 @@ impl SolverPool {
                 progress_updated_ms: None,
                 watchdog_budget_ms: normalized_watchdog_budget_ms,
                 watchdog_started_ms: None,
+                no_checkpoint_vps_rescue_requested: false,
+                no_checkpoint_vps_rescue_granted: false,
                 cancel_requested: false,
                 best_effort_stop_requested: false,
                 execution_phase: ServerExecutionPhase::Pending,
@@ -576,11 +609,7 @@ impl SolverPool {
         true
     }
 
-    pub fn server_job_browser_wasm_eligible(
-        &self,
-        job_id: &str,
-        owner: &SolverOwner,
-    ) -> bool {
+    pub fn server_job_browser_wasm_eligible(&self, job_id: &str, owner: &SolverOwner) -> bool {
         self.state
             .lock()
             .ok()
@@ -590,6 +619,178 @@ impl SolverPool {
                     .get(job_id)
                     .filter(|job| &job.owner == owner && job.completed_ms.is_none())
                     .map(|job| job.browser_wasm_eligible)
+            })
+            .unwrap_or(false)
+    }
+
+    pub fn set_server_job_browser_cp_sat_eligible(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+        eligible: bool,
+    ) -> bool {
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(_) => return false,
+        };
+        let Some(job) = state
+            .server_jobs
+            .get_mut(job_id)
+            .filter(|job| &job.owner == owner && job.completed_ms.is_none())
+        else {
+            return false;
+        };
+        job.browser_cp_sat_eligible = eligible;
+        true
+    }
+
+    pub fn server_job_browser_cp_sat_eligible(&self, job_id: &str, owner: &SolverOwner) -> bool {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|state| {
+                state
+                    .server_jobs
+                    .get(job_id)
+                    .filter(|job| &job.owner == owner && job.completed_ms.is_none())
+                    .map(|job| job.browser_cp_sat_eligible)
+            })
+            .unwrap_or(false)
+    }
+
+    pub fn set_server_job_agent_preference(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+        enabled: bool,
+    ) -> bool {
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(_) => return false,
+        };
+        let Some(job) = state
+            .server_jobs
+            .get_mut(job_id)
+            .filter(|job| &job.owner == owner && job.completed_ms.is_none())
+        else {
+            return false;
+        };
+        if enabled
+            && (job.no_checkpoint_vps_rescue_requested || job.no_checkpoint_vps_rescue_granted)
+        {
+            return false;
+        }
+        job.agent_preference_enabled = enabled;
+        true
+    }
+
+    pub fn server_job_agent_preference_enabled(&self, job_id: &str, owner: &SolverOwner) -> bool {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|state| {
+                state
+                    .server_jobs
+                    .get(job_id)
+                    .filter(|job| &job.owner == owner && job.completed_ms.is_none())
+                    .map(|job| job.agent_preference_enabled)
+            })
+            .unwrap_or(false)
+    }
+
+    pub fn set_server_job_native_agent_required(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+        required: bool,
+    ) -> bool {
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(_) => return false,
+        };
+        let Some(job) = state
+            .server_jobs
+            .get_mut(job_id)
+            .filter(|job| &job.owner == owner && job.completed_ms.is_none())
+        else {
+            return false;
+        };
+        if required
+            && (job.execution_phase.executor() == Some(ServerExecutor::Vps)
+                || job.browser_agent_required)
+        {
+            return false;
+        }
+        job.native_agent_required = required;
+        if required {
+            job.agent_preference_enabled = true;
+            job.trusted_worker_eligible = false;
+            job.no_checkpoint_vps_rescue_requested = false;
+            job.no_checkpoint_vps_rescue_granted = false;
+        }
+        true
+    }
+
+    pub fn server_job_native_agent_required(&self, job_id: &str, owner: &SolverOwner) -> bool {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|state| {
+                state
+                    .server_jobs
+                    .get(job_id)
+                    .filter(|job| &job.owner == owner && job.completed_ms.is_none())
+                    .map(|job| job.native_agent_required)
+            })
+            .unwrap_or(false)
+    }
+
+    /// Mark a server-owned request as Browser-Agent-only. This contract
+    /// survives lease failure even if `agent_preference_enabled` is cleared.
+    /// A canonical job already owned by VPS cannot be upgraded to Local mode.
+    pub fn set_server_job_browser_agent_required(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+        required: bool,
+    ) -> bool {
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(_) => return false,
+        };
+        let Some(job) = state
+            .server_jobs
+            .get_mut(job_id)
+            .filter(|job| &job.owner == owner && job.completed_ms.is_none())
+        else {
+            return false;
+        };
+        if required
+            && (job.execution_phase.executor() == Some(ServerExecutor::Vps)
+                || job.native_agent_required)
+        {
+            return false;
+        }
+        job.browser_agent_required = required;
+        if required {
+            job.agent_preference_enabled = true;
+            job.trusted_worker_eligible = false;
+            job.no_checkpoint_vps_rescue_requested = false;
+            job.no_checkpoint_vps_rescue_granted = false;
+        }
+        true
+    }
+
+    pub fn server_job_browser_agent_required(&self, job_id: &str, owner: &SolverOwner) -> bool {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|state| {
+                state
+                    .server_jobs
+                    .get(job_id)
+                    .filter(|job| &job.owner == owner && job.completed_ms.is_none())
+                    .map(|job| job.browser_agent_required)
             })
             .unwrap_or(false)
     }
@@ -674,6 +875,10 @@ impl SolverPool {
                     && job.completed_ms.is_none()
                     && !job.cancel_requested
                     && !job.best_effort_stop_requested
+                    && job.agent_preference_enabled
+                    && !job.browser_agent_required
+                    && !job.no_checkpoint_vps_rescue_requested
+                    && !job.no_checkpoint_vps_rescue_granted
                     && matches!(
                         job.execution_phase,
                         ServerExecutionPhase::Pending
@@ -718,6 +923,12 @@ impl SolverPool {
                 && job.completed_ms.is_none()
                 && !job.cancel_requested
                 && !job.best_effort_stop_requested
+                && job.agent_preference_enabled
+                // A one-shot rescue is deliberately VPS-only.  A browser
+                // reconnect must not fence the rescued generation back to the
+                // same memory-constrained tab.
+                && !job.no_checkpoint_vps_rescue_requested
+                && !job.no_checkpoint_vps_rescue_granted
                 && matches!(
                     job.execution_phase,
                     ServerExecutionPhase::Pending
@@ -763,6 +974,10 @@ impl SolverPool {
                         job.completed_ms.is_none()
                             && !job.cancel_requested
                             && !job.best_effort_stop_requested
+                            && job.agent_preference_enabled
+                            && !job.browser_agent_required
+                            && !job.no_checkpoint_vps_rescue_requested
+                            && !job.no_checkpoint_vps_rescue_granted
                             && job.execution_phase == ServerExecutionPhase::VpsQueued
                     })
             })
@@ -793,10 +1008,14 @@ impl SolverPool {
         owner: &SolverOwner,
     ) -> Option<ServerExecutionFence> {
         let mut state = self.state.lock().ok()?;
-        let job = state
-            .server_jobs
-            .get_mut(job_id)
-            .filter(|job| &job.owner == owner && !job.cancel_requested && job.completed_ms.is_none())?;
+        let job = state.server_jobs.get_mut(job_id).filter(|job| {
+            &job.owner == owner
+                && !job.cancel_requested
+                && job.completed_ms.is_none()
+                && job.agent_preference_enabled
+                && !job.no_checkpoint_vps_rescue_requested
+                && !job.no_checkpoint_vps_rescue_granted
+        })?;
         match job.execution_phase {
             ServerExecutionPhase::Pending => {
                 job.execution_generation = job.execution_generation.saturating_add(1);
@@ -842,7 +1061,12 @@ impl SolverPool {
         })
     }
 
-    pub fn mark_agent_execution_running(&self, fence: ServerExecutionFence, job_id: &str, owner: &SolverOwner) -> bool {
+    pub fn mark_agent_execution_running(
+        &self,
+        fence: ServerExecutionFence,
+        job_id: &str,
+        owner: &SolverOwner,
+    ) -> bool {
         self.transition_execution(
             job_id,
             owner,
@@ -852,16 +1076,107 @@ impl SolverPool {
         )
     }
 
+    /// Reserve a canonical job for Cloud Run without consuming the VPS worker
+    /// token pool. The watchdog is still shared with later fallback executors.
+    pub fn prepare_serverless_execution(
+        &self,
+        job_id: &str,
+        owner: &SolverOwner,
+    ) -> Option<ServerExecutionFence> {
+        let mut state = self.state.lock().ok()?;
+        let job = state.server_jobs.get_mut(job_id).filter(|job| {
+            &job.owner == owner
+                && !job.cancel_requested
+                && job.completed_ms.is_none()
+                && !job.native_agent_required
+                && !job.browser_agent_required
+        })?;
+        match job.execution_phase {
+            ServerExecutionPhase::Pending => {
+                job.execution_generation = job.execution_generation.saturating_add(1);
+                job.execution_phase = ServerExecutionPhase::ServerlessQueued;
+                job.trusted_worker_eligible = false;
+                // A serverless-owned generation must not be interrupted by a
+                // late owner Agent hello. Fallback policy is decided by the
+                // serverless coordinator, not by browser-supplied hints.
+                job.agent_preference_enabled = false;
+                start_server_watchdog(job, crate::now_millis());
+            }
+            ServerExecutionPhase::ServerlessQueued => {
+                start_server_watchdog(job, crate::now_millis());
+            }
+            _ => return None,
+        }
+        Some(ServerExecutionFence {
+            generation: job.execution_generation,
+            executor: ServerExecutor::Serverless,
+        })
+    }
+
+    pub fn mark_serverless_execution_running(
+        &self,
+        fence: ServerExecutionFence,
+        job_id: &str,
+        owner: &SolverOwner,
+    ) -> bool {
+        self.transition_execution(
+            job_id,
+            owner,
+            fence,
+            ServerExecutionPhase::ServerlessQueued,
+            ServerExecutionPhase::ServerlessRunning,
+        )
+    }
+
+    /// Fence a failed Cloud Run attempt and reserve the same canonical request
+    /// for the existing VPS path. No Agent generation is introduced here.
+    pub fn fallback_serverless_to_vps(
+        &self,
+        fence: ServerExecutionFence,
+        job_id: &str,
+        owner: &SolverOwner,
+    ) -> Option<ServerExecutionFence> {
+        let mut state = self.state.lock().ok()?;
+        let job = state.server_jobs.get_mut(job_id).filter(|job| {
+            &job.owner == owner
+                && !job.cancel_requested
+                && job.completed_ms.is_none()
+                && !job.native_agent_required
+                && !job.browser_agent_required
+        })?;
+        if job.execution_generation != fence.generation
+            || fence.executor != ServerExecutor::Serverless
+            || !matches!(
+                job.execution_phase,
+                ServerExecutionPhase::ServerlessQueued
+                    | ServerExecutionPhase::ServerlessRunning
+            )
+        {
+            return None;
+        }
+        job.execution_generation = job.execution_generation.saturating_add(1);
+        job.execution_phase = ServerExecutionPhase::VpsQueued;
+        job.trusted_worker_eligible = false;
+        job.agent_preference_enabled = false;
+        Some(ServerExecutionFence {
+            generation: job.execution_generation,
+            executor: ServerExecutor::Vps,
+        })
+    }
+
     pub fn prepare_vps_execution(
         &self,
         job_id: &str,
         owner: &SolverOwner,
     ) -> Option<ServerExecutionFence> {
         let mut state = self.state.lock().ok()?;
-        let job = state
-            .server_jobs
-            .get_mut(job_id)
-            .filter(|job| &job.owner == owner && !job.cancel_requested && job.completed_ms.is_none())?;
+        let job = state.server_jobs.get_mut(job_id).filter(|job| {
+            &job.owner == owner
+                && !job.cancel_requested
+                && job.completed_ms.is_none()
+                && !job.native_agent_required
+                && !job.browser_agent_required
+        })?;
         match job.execution_phase {
             ServerExecutionPhase::Pending => {
                 job.execution_generation = job.execution_generation.saturating_add(1);
@@ -881,7 +1196,12 @@ impl SolverPool {
         })
     }
 
-    pub fn mark_vps_execution_running(&self, fence: ServerExecutionFence, job_id: &str, owner: &SolverOwner) -> bool {
+    pub fn mark_vps_execution_running(
+        &self,
+        fence: ServerExecutionFence,
+        job_id: &str,
+        owner: &SolverOwner,
+    ) -> bool {
         self.transition_execution(
             job_id,
             owner,
@@ -889,6 +1209,42 @@ impl SolverPool {
             ServerExecutionPhase::VpsQueued,
             ServerExecutionPhase::VpsRunning,
         )
+    }
+
+    /// Arm one bounded VPS rescue window after a Browser Agent reports that
+    /// local execution failed before any complete checkpoint was accepted.
+    /// The original server watchdog remains the upper bound, and a canonical
+    /// job can consume this exception at most once.
+    pub fn request_no_checkpoint_vps_rescue(&self, job_id: &str, owner: &SolverOwner) -> bool {
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(_) => return false,
+        };
+        let Some(job) = state.server_jobs.get_mut(job_id).filter(|job| {
+            &job.owner == owner
+                && !job.cancel_requested
+                && !job.best_effort_stop_requested
+                && job.completed_ms.is_none()
+                && job.watchdog_budget_ms.is_some()
+                && !job.native_agent_required
+                && !job.browser_agent_required
+                && matches!(
+                    job.execution_phase,
+                    ServerExecutionPhase::AgentWaiting | ServerExecutionPhase::AgentRunning
+                )
+        }) else {
+            return false;
+        };
+        if job.no_checkpoint_vps_rescue_granted {
+            return false;
+        }
+        job.no_checkpoint_vps_rescue_requested = true;
+        // Fence Agent ownership at the moment rescue is requested, not only
+        // when the coordinator later advances the execution generation. A
+        // browser hello can arrive while a checkpoint is being serialized;
+        // it must not reclaim this same memory-constrained job in that gap.
+        job.agent_preference_enabled = false;
+        true
     }
 
     /// Release an Agent lease after expiry/failure and reserve the same
@@ -901,10 +1257,13 @@ impl SolverPool {
         owner: &SolverOwner,
     ) -> Option<ServerExecutionFence> {
         let mut state = self.state.lock().ok()?;
-        let job = state
-            .server_jobs
-            .get_mut(job_id)
-            .filter(|job| &job.owner == owner && !job.cancel_requested && job.completed_ms.is_none())?;
+        let job = state.server_jobs.get_mut(job_id).filter(|job| {
+            &job.owner == owner
+                && !job.cancel_requested
+                && job.completed_ms.is_none()
+                && !job.native_agent_required
+                && !job.browser_agent_required
+        })?;
         if job.execution_generation != fence.generation
             || fence.executor != ServerExecutor::Agent
             || !matches!(
@@ -917,6 +1276,18 @@ impl SolverPool {
         job.execution_generation = job.execution_generation.saturating_add(1);
         job.execution_phase = ServerExecutionPhase::VpsQueued;
         job.trusted_worker_eligible = false;
+        if job.no_checkpoint_vps_rescue_requested && !job.no_checkpoint_vps_rescue_granted {
+            // Rebase only the start instant. The normalized original budget is
+            // already capped by MAX_SERVER_WATCHDOG_MS, so this cannot create
+            // an unbounded retry or alter ordinary handoff semantics.
+            job.watchdog_started_ms = Some(crate::now_millis());
+            job.no_checkpoint_vps_rescue_granted = true;
+            // Make the monotonic ownership decision explicit in the job state;
+            // this also protects older/browser reconnect paths that race the
+            // VPS start gate before the normal preference check observes it.
+            job.agent_preference_enabled = false;
+        }
+        job.no_checkpoint_vps_rescue_requested = false;
         Some(ServerExecutionFence {
             generation: job.execution_generation,
             executor: ServerExecutor::Vps,
@@ -1065,8 +1436,7 @@ impl SolverPool {
         };
         if job.completed_ms.is_some()
             || job.cancel_requested
-            || execution_generation
-                .is_some_and(|generation| generation != job.execution_generation)
+            || execution_generation.is_some_and(|generation| generation != job.execution_generation)
         {
             return false;
         }
@@ -1086,9 +1456,8 @@ impl SolverPool {
                         object.insert(key.to_string(), value.clone());
                     }
                 }
-                let identity_matches = ["solveRequestMode", "optimizationFocus"]
-                    .iter()
-                    .all(|key| {
+                let identity_matches =
+                    ["solveRequestMode", "optimizationFocus"].iter().all(|key| {
                         object
                             .get(*key)
                             .zip(previous.get(*key))
@@ -1143,8 +1512,9 @@ impl SolverPool {
                         .is_some_and(|(mode, focus)| {
                             (mode == "optimize_singletons"
                                 && focus == "one_period_teacher_sessions")
-                                || (mode == "optimize_gaps"
-                                    && focus == "teacher_gap_sessions")
+                                || (mode == "optimize_gaps" && focus == "teacher_gap_sessions")
+                                || (mode == "optimize_gap2" && focus == "teacher_gap2_sessions")
+                                || (mode == "optimize_gap1" && focus == "teacher_gap1_sessions")
                         });
                     if countdown_progress {
                         if let Some(baseline) = previous.get("metricBaseline") {
@@ -1291,6 +1661,8 @@ impl SolverPool {
                 execution_phase: job.execution_phase,
                 execution_generation: job.execution_generation,
                 best_effort_stop_requested: job.best_effort_stop_requested,
+                native_agent_required: job.native_agent_required,
+                browser_agent_required: job.browser_agent_required,
             })
             .collect::<Vec<_>>();
         snapshots.sort_unstable_by(|left, right| {
@@ -1594,20 +1966,14 @@ impl SolverPool {
         cancelled || state.queue.len() != before
     }
 
-    pub fn request_best_effort_stop_for_owner(
-        &self,
-        job_id: &str,
-        owner: &SolverOwner,
-    ) -> bool {
+    pub fn request_best_effort_stop_for_owner(&self, job_id: &str, owner: &SolverOwner) -> bool {
         let mut state = match self.state.lock() {
             Ok(state) => state,
             Err(_) => return false,
         };
-        let requested = if let Some(job) = state
-            .server_jobs
-            .get_mut(job_id)
-            .filter(|job| &job.owner == owner && job.completed_ms.is_none() && !job.cancel_requested)
-        {
+        let requested = if let Some(job) = state.server_jobs.get_mut(job_id).filter(|job| {
+            &job.owner == owner && job.completed_ms.is_none() && !job.cancel_requested
+        }) {
             job.best_effort_stop_requested = true;
             true
         } else {
@@ -1615,8 +1981,7 @@ impl SolverPool {
         };
         if requested {
             if let Some(job) = state.jobs.get(job_id).filter(|job| &job.owner == owner) {
-                job.best_effort_stop_requested
-                    .store(true, Ordering::SeqCst);
+                job.best_effort_stop_requested.store(true, Ordering::SeqCst);
             }
         }
         requested
@@ -1794,8 +2159,7 @@ fn normalize_schedule_scope(value: Option<&str>) -> Option<String> {
     if value.is_empty()
         || value.len() > MAX_SCHEDULE_SCOPE_BYTES
         || !value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric()
-                || matches!(byte, b':' | b'.' | b'_' | b'-' | b'/')
+            byte.is_ascii_alphanumeric() || matches!(byte, b':' | b'.' | b'_' | b'-' | b'/')
         })
     {
         return None;
@@ -1812,9 +2176,9 @@ fn normalize_progress_run_index(value: Option<u64>) -> Option<u64> {
 }
 
 fn normalize_server_watchdog_budget_ms(value: Option<u64>) -> Option<u64> {
-    value.filter(|budget_ms| *budget_ms > 0).map(|budget_ms| {
-        budget_ms.min(MAX_SERVER_WATCHDOG_MS)
-    })
+    value
+        .filter(|budget_ms| *budget_ms > 0)
+        .map(|budget_ms| budget_ms.min(MAX_SERVER_WATCHDOG_MS))
 }
 
 fn start_server_watchdog(job: &mut ServerOwnedSolverJob, now_ms: u64) {
@@ -2481,10 +2845,7 @@ mod tests {
             .expect("first progress");
         assert_eq!(first["executionGeneration"], json!(vps.generation));
 
-        assert!(pool.request_agent_handoff_for_job(
-            "progress-generation",
-            &owner
-        ));
+        assert!(pool.request_agent_handoff_for_job("progress-generation", &owner));
         let agent = pool
             .prepare_agent_execution("progress-generation", &owner)
             .expect("Agent generation");
@@ -2537,7 +2898,10 @@ mod tests {
             .next()
             .and_then(|snapshot| snapshot.progress)
             .expect("checkpoint progress");
-        assert_eq!(checkpoint["protocol"], json!("tkb-reference-solver-progress-v1"));
+        assert_eq!(
+            checkpoint["protocol"],
+            json!("tkb-reference-solver-progress-v1")
+        );
         assert_eq!(checkpoint["sequence"], json!(3));
         assert_eq!(checkpoint["metricCurrent"], json!(134));
         assert!(checkpoint["elapsedMs"].as_u64().is_some());
@@ -2594,7 +2958,10 @@ mod tests {
             .next()
             .and_then(|snapshot| snapshot.progress)
             .expect("canonical gap progress");
-        assert_eq!(progress["optimizationFocus"], json!("teacher_gap1_sessions"));
+        assert_eq!(
+            progress["optimizationFocus"],
+            json!("teacher_gap1_sessions")
+        );
         assert_eq!(progress["gap1Baseline"], json!(10));
         assert_eq!(progress["gap2Baseline"], json!(4));
     }
@@ -2707,6 +3074,65 @@ mod tests {
     }
 
     #[test]
+    fn canonical_split_gap_baselines_survive_executor_checkpoints() {
+        for (suffix, mode, focus, baseline, current, percent) in [
+            ("gap2", "optimize_gap2", "teacher_gap2_sessions", 4, 2, 50.0),
+            ("gap1", "optimize_gap1", "teacher_gap1_sessions", 8, 5, 37.5),
+        ] {
+            let pool = test_pool();
+            let school_id = format!("split-{suffix}-school");
+            let owner = SolverOwner::new(&school_id, "admin");
+            let job_id = format!("split-{suffix}-progress");
+            assert_eq!(
+                pool.claim_server_job(&job_id, &owner),
+                ServerJobClaim::Claimed
+            );
+            let vps = pool
+                .prepare_vps_execution(&job_id, &owner)
+                .expect("VPS generation");
+            assert!(pool.update_server_job_progress_fenced(
+                &job_id,
+                vps.generation,
+                json!({
+                    "protocol":"tkb-reference-solver-progress-v1",
+                    "stage":"request:accepted",
+                    "sequence":1,
+                    "solveRequestMode":mode,
+                    "optimizationFocus":focus,
+                    "metricCurrent":baseline,
+                    "metricTarget":0,
+                    "metricBaseline":baseline,
+                    "metricPercent":0
+                })
+            ));
+            assert!(pool.update_server_job_progress_frame_fenced(
+                &job_id,
+                vps.generation,
+                "tkb-reference-solver-progress-v1",
+                json!({
+                    "stage":"browser_agent:checkpoint",
+                    "solveRequestMode":mode,
+                    "optimizationFocus":focus,
+                    "metricCurrent":current,
+                    "metricTarget":0,
+                    "metricBaseline":current,
+                    "metricPercent":0
+                })
+            ));
+
+            let progress = pool
+                .server_job_snapshots_for_owner(&owner)
+                .into_iter()
+                .next()
+                .and_then(|snapshot| snapshot.progress)
+                .expect("canonical split gap progress");
+            assert_eq!(progress["metricCurrent"], json!(current));
+            assert_eq!(progress["metricBaseline"], json!(baseline));
+            assert_eq!(progress["metricPercent"], json!(percent));
+        }
+    }
+
+    #[test]
     fn exclusive_executor_handoff_fences_vps_and_agent_writers() {
         let pool = test_pool();
         let owner = SolverOwner::new("school-handoff", "admin");
@@ -2714,7 +3140,10 @@ mod tests {
 
         // No Agent: the canonical job is reserved for the VPS and can commit
         // exactly once.
-        assert_eq!(pool.claim_server_job("handoff-job", &owner), ServerJobClaim::Claimed);
+        assert_eq!(
+            pool.claim_server_job("handoff-job", &owner),
+            ServerJobClaim::Claimed
+        );
         let vps = pool
             .prepare_vps_execution("handoff-job", &owner)
             .expect("VPS fence");
@@ -2730,18 +3159,17 @@ mod tests {
         let agent = pool
             .prepare_agent_execution("handoff-job", &owner)
             .expect("Agent fence after VPS reaping");
-        assert!(!pool.trusted_worker_eligible_for_agent_execution(
-            agent,
-            "handoff-job",
-            &owner
-        ));
+        assert!(!pool.trusted_worker_eligible_for_agent_execution(agent, "handoff-job", &owner));
         assert!(pool.mark_agent_execution_running(agent, "handoff-job", &owner));
         assert!(pool.complete_server_job_fenced(agent, "handoff-job", &owner, response.clone()));
         assert!(!pool.complete_server_job_fenced(vps, "handoff-job", &owner, response.clone()));
 
         // A fresh canonical job demonstrates abrupt Agent loss: expiry/failure
         // advances the generation and hands the same job back to the VPS.
-        assert_eq!(pool.claim_server_job("agent-loss", &owner), ServerJobClaim::Claimed);
+        assert_eq!(
+            pool.claim_server_job("agent-loss", &owner),
+            ServerJobClaim::Claimed
+        );
         let agent = pool
             .prepare_agent_execution("agent-loss", &owner)
             .expect("initial Agent fence");
@@ -2752,6 +3180,150 @@ mod tests {
         assert!(!pool.complete_server_job_fenced(agent, "agent-loss", &owner, response.clone()));
         assert!(pool.mark_vps_execution_running(vps, "agent-loss", &owner));
         assert!(pool.complete_server_job_fenced(vps, "agent-loss", &owner, response));
+    }
+
+    #[test]
+    fn serverless_execution_does_not_consume_vps_tokens_and_falls_back_fenced() {
+        let pool = test_pool();
+        let owner = SolverOwner::new("school-cloud", "admin");
+        let response = b"HTTP/1.1 200 OK\r\n\r\n{}".to_vec();
+        assert_eq!(
+            pool.claim_server_job("cloud-job", &owner),
+            ServerJobClaim::Claimed
+        );
+        let cloud = pool
+            .prepare_serverless_execution("cloud-job", &owner)
+            .expect("Cloud Run fence");
+        assert_eq!(cloud.executor, ServerExecutor::Serverless);
+        assert_eq!(pool.allocated_worker_tokens(), 0);
+        assert!(pool.mark_serverless_execution_running(cloud, "cloud-job", &owner));
+
+        let vps = pool
+            .fallback_serverless_to_vps(cloud, "cloud-job", &owner)
+            .expect("VPS fallback fence");
+        assert_eq!(vps.executor, ServerExecutor::Vps);
+        assert!(!pool.complete_server_job_fenced(
+            cloud,
+            "cloud-job",
+            &owner,
+            response.clone()
+        ));
+        assert!(pool.mark_vps_execution_running(vps, "cloud-job", &owner));
+        assert!(pool.complete_server_job_fenced(vps, "cloud-job", &owner, response));
+    }
+
+    #[test]
+    fn cancelling_serverless_generation_rejects_late_result() {
+        let pool = test_pool();
+        let owner = SolverOwner::new("school-cloud-cancel", "admin");
+        assert_eq!(
+            pool.claim_server_job("cloud-cancel", &owner),
+            ServerJobClaim::Claimed
+        );
+        let cloud = pool
+            .prepare_serverless_execution("cloud-cancel", &owner)
+            .expect("Cloud Run fence");
+        assert!(pool.mark_serverless_execution_running(
+            cloud,
+            "cloud-cancel",
+            &owner
+        ));
+        assert!(pool.cancel_job_for_owner("cloud-cancel", &owner));
+        assert!(!pool.complete_server_job_fenced(
+            cloud,
+            "cloud-cancel",
+            &owner,
+            b"HTTP/1.1 200 OK\r\n\r\n{}".to_vec()
+        ));
+    }
+
+    #[test]
+    fn native_required_job_rejects_vps_rescue_and_fallback_fences() {
+        let pool = test_pool();
+        let owner = SolverOwner::new("school-native-required", "admin");
+        let job_id = "native-required-pool-contract";
+        assert_eq!(
+            pool.claim_server_job(job_id, &owner),
+            ServerJobClaim::Claimed
+        );
+        assert!(pool.set_server_job_native_agent_required(job_id, &owner, true));
+        assert!(pool.server_job_native_agent_required(job_id, &owner));
+        assert!(pool.prepare_vps_execution(job_id, &owner).is_none());
+
+        let agent = pool
+            .prepare_agent_execution(job_id, &owner)
+            .expect("native-required Agent fence");
+        assert!(pool.mark_agent_execution_running(agent, job_id, &owner));
+        assert!(!pool.request_no_checkpoint_vps_rescue(job_id, &owner));
+        assert!(pool.fallback_agent_to_vps(agent, job_id, &owner).is_none());
+
+        let snapshot = pool
+            .server_job_snapshots_for_owner(&owner)
+            .into_iter()
+            .find(|snapshot| snapshot.job_id == job_id)
+            .expect("native-required snapshot");
+        assert!(snapshot.native_agent_required);
+        assert_eq!(snapshot.execution_phase, ServerExecutionPhase::AgentRunning);
+        assert_eq!(snapshot.execution_generation, agent.generation);
+        assert_eq!(pool.active_count(), 0);
+        assert_eq!(pool.queued_count(), 0);
+    }
+
+    #[test]
+    fn browser_required_job_rejects_every_vps_entry_point() {
+        let pool = test_pool();
+        let owner = SolverOwner::new("school-browser-required", "admin");
+        let job_id = "browser-required-pool-contract";
+        assert_eq!(
+            pool.claim_server_job(job_id, &owner),
+            ServerJobClaim::Claimed
+        );
+        assert!(pool.set_server_job_browser_agent_required(job_id, &owner, true));
+        assert!(pool.server_job_browser_agent_required(job_id, &owner));
+        assert!(!pool.set_server_job_native_agent_required(job_id, &owner, true));
+        assert!(pool.prepare_vps_execution(job_id, &owner).is_none());
+
+        let agent = pool
+            .prepare_agent_execution(job_id, &owner)
+            .expect("browser-required Agent fence");
+        assert!(pool.mark_agent_execution_running(agent, job_id, &owner));
+        assert!(!pool.request_no_checkpoint_vps_rescue(job_id, &owner));
+        assert!(pool.fallback_agent_to_vps(agent, job_id, &owner).is_none());
+
+        let snapshot = pool
+            .server_job_snapshots_for_owner(&owner)
+            .into_iter()
+            .find(|snapshot| snapshot.job_id == job_id)
+            .expect("browser-required snapshot");
+        assert!(snapshot.browser_agent_required);
+        assert!(!snapshot.native_agent_required);
+        assert_eq!(snapshot.execution_phase, ServerExecutionPhase::AgentRunning);
+        assert_eq!(snapshot.execution_generation, agent.generation);
+        assert_eq!(pool.active_count(), 0);
+        assert_eq!(pool.queued_count(), 0);
+    }
+
+    #[test]
+    fn explicit_vps_preference_blocks_late_agent_handoffs() {
+        let pool = test_pool();
+        let owner = SolverOwner::new("school-vps-only", "admin");
+        assert_eq!(
+            pool.claim_server_job("vps-only-job", &owner),
+            ServerJobClaim::Claimed
+        );
+        assert!(pool.set_server_job_agent_preference("vps-only-job", &owner, false));
+        assert!(!pool.server_job_agent_preference_enabled("vps-only-job", &owner));
+        let vps = pool
+            .prepare_vps_execution("vps-only-job", &owner)
+            .expect("VPS fence");
+
+        assert!(pool.request_agent_handoff_for_owner(&owner).is_empty());
+        assert!(!pool.request_agent_handoff_for_job("vps-only-job", &owner));
+        assert!(pool.request_agent_handoff_for_trusted_worker(1).is_empty());
+        assert!(pool.execution_fence_current(vps, "vps-only-job", &owner));
+        assert!(pool
+            .prepare_agent_execution("vps-only-job", &owner)
+            .is_none());
     }
 
     #[test]
@@ -2767,11 +3339,7 @@ mod tests {
             .expect("fresh VPS fence");
 
         assert!(pool.request_agent_handoff_for_trusted_worker(1).is_empty());
-        assert!(pool.execution_fence_current(
-            fence,
-            "fresh-vps-reservation",
-            &owner
-        ));
+        assert!(pool.execution_fence_current(fence, "fresh-vps-reservation", &owner));
     }
 
     #[test]
@@ -2790,17 +3358,9 @@ mod tests {
             .expect("VPS CPU guard");
 
         assert!(pool.request_agent_handoff_for_trusted_worker(1).is_empty());
-        assert!(pool.mark_vps_execution_running(
-            fence,
-            "acquired-before-running",
-            &owner
-        ));
+        assert!(pool.mark_vps_execution_running(fence, "acquired-before-running", &owner));
         assert!(pool.request_agent_handoff_for_trusted_worker(1).is_empty());
-        assert!(pool.execution_fence_current(
-            fence,
-            "acquired-before-running",
-            &owner
-        ));
+        assert!(pool.execution_fence_current(fence, "acquired-before-running", &owner));
         drop(guard);
     }
 
@@ -2851,11 +3411,7 @@ mod tests {
             pool.request_agent_handoff_for_trusted_worker(1),
             vec!["queued-for-trusted-first".to_string()]
         );
-        assert!(!pool.execution_fence_current(
-            first_vps,
-            "queued-for-trusted-first",
-            &first_owner
-        ));
+        assert!(!pool.execution_fence_current(first_vps, "queued-for-trusted-first", &first_owner));
         assert_eq!(pool.queue_snapshot_for_owner(&second_owner)[0].2, 1);
         assert_eq!(
             pool.server_execution_snapshot("queued-for-trusted-second", &second_owner)
@@ -2945,6 +3501,101 @@ mod tests {
             .server_job_watchdog_snapshot("pending-watchdog", &owner)
             .and_then(|(_, started)| started)
             .is_some());
+    }
+
+    #[test]
+    fn browser_failure_without_checkpoint_gets_one_bounded_vps_rescue_window() {
+        let pool = test_pool();
+        let owner = SolverOwner::new("school-rescue", "admin");
+        assert_eq!(
+            pool.claim_server_job_with_scope_progress_and_watchdog(
+                "no-checkpoint-rescue",
+                &owner,
+                None,
+                None,
+                None,
+                None,
+                Some(10_000),
+            ),
+            ServerJobClaim::Claimed
+        );
+        let agent = pool
+            .prepare_agent_execution("no-checkpoint-rescue", &owner)
+            .expect("initial Agent fence");
+        let (budget, first_started) = pool
+            .server_job_watchdog_snapshot("no-checkpoint-rescue", &owner)
+            .expect("initial watchdog");
+        assert_eq!(budget, Some(10_000));
+        let first_started = first_started.expect("watchdog start");
+
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        assert!(pool.request_no_checkpoint_vps_rescue("no-checkpoint-rescue", &owner));
+        assert!(
+            !pool.server_job_agent_preference_enabled("no-checkpoint-rescue", &owner),
+            "rescue request must fence Agent ownership before the fallback transition"
+        );
+        assert_eq!(
+            pool.request_agent_handoff_for_owner(&owner),
+            Vec::<String>::new()
+        );
+        assert!(!pool.request_agent_handoff_for_job("no-checkpoint-rescue", &owner));
+        assert_eq!(
+            pool.request_agent_handoff_for_trusted_worker(1),
+            Vec::<String>::new()
+        );
+        assert!(
+            pool.prepare_agent_execution("no-checkpoint-rescue", &owner)
+                .is_none(),
+            "a rescue-requested generation must not be reclaimed by an Agent"
+        );
+        assert!(
+            !pool.set_server_job_agent_preference("no-checkpoint-rescue", &owner, true),
+            "rescue fencing cannot be re-enabled before VPS takes ownership"
+        );
+        pool.fallback_agent_to_vps(agent, "no-checkpoint-rescue", &owner)
+            .expect("VPS rescue fence");
+        let (rescued_budget, rescued_started) = pool
+            .server_job_watchdog_snapshot("no-checkpoint-rescue", &owner)
+            .expect("rescued watchdog");
+        let rescued_started = rescued_started.expect("rescued watchdog start");
+        assert_eq!(rescued_budget, Some(10_000));
+        assert!(rescued_started > first_started);
+        assert_eq!(
+            pool.server_job_watchdog_remaining_ms(
+                "no-checkpoint-rescue",
+                &owner,
+                rescued_started + 2_500,
+            ),
+            Some(7_500)
+        );
+
+        assert!(
+            !pool.server_job_agent_preference_enabled("no-checkpoint-rescue", &owner),
+            "a granted rescue must become VPS-only"
+        );
+        assert_eq!(
+            pool.request_agent_handoff_for_owner(&owner),
+            Vec::<String>::new()
+        );
+        assert!(!pool.request_agent_handoff_for_job("no-checkpoint-rescue", &owner));
+        assert_eq!(
+            pool.request_agent_handoff_for_trusted_worker(1),
+            Vec::<String>::new()
+        );
+        assert!(
+            pool.prepare_agent_execution("no-checkpoint-rescue", &owner)
+                .is_none(),
+            "a reconnecting Agent must not receive the rescued generation"
+        );
+        assert!(
+            !pool.request_no_checkpoint_vps_rescue("no-checkpoint-rescue", &owner),
+            "a canonical job may receive the rescue budget only once"
+        );
+        assert_eq!(
+            pool.server_job_watchdog_snapshot("no-checkpoint-rescue", &owner),
+            Some((Some(10_000), Some(rescued_started))),
+            "a reconnect attempt must not alter the rescued deadline"
+        );
     }
 
     #[test]
@@ -3190,12 +3841,10 @@ mod tests {
 
         assert!(!pool.request_best_effort_stop_for_owner("best-effort-stop", &other_owner));
         assert!(pool.request_best_effort_stop_for_owner("best-effort-stop", &owner));
-        assert!(
-            running
-                .job
-                .best_effort_stop_requested
-                .load(Ordering::SeqCst)
-        );
+        assert!(running
+            .job
+            .best_effort_stop_requested
+            .load(Ordering::SeqCst));
         assert!(!running.job.cancel_requested.load(Ordering::SeqCst));
         let snapshot = pool
             .server_job_snapshots_for_owner(&owner)
@@ -3206,10 +3855,7 @@ mod tests {
         assert!(pool.server_job_known_for_owner("best-effort-stop", &owner));
         assert!(pool.execution_fence_current(fence, "best-effort-stop", &owner));
         assert!(pool.request_agent_handoff_for_owner(&owner).is_empty());
-        assert!(!pool.request_agent_handoff_for_job(
-            "best-effort-stop",
-            &owner
-        ));
+        assert!(!pool.request_agent_handoff_for_job("best-effort-stop", &owner));
         assert!(pool.complete_server_job_fenced(
             fence,
             "best-effort-stop",
@@ -3228,7 +3874,10 @@ mod tests {
             } else {
                 "agent-waiting-stop"
             };
-            assert_eq!(pool.claim_server_job(job_id, &owner), ServerJobClaim::Claimed);
+            assert_eq!(
+                pool.claim_server_job(job_id, &owner),
+                ServerJobClaim::Claimed
+            );
             let agent_fence = pool
                 .prepare_agent_execution(job_id, &owner)
                 .expect("Agent fence");
@@ -3244,12 +3893,10 @@ mod tests {
             let running = pool
                 .try_acquire_for_owner(job_id.to_string(), 2, owner.clone())
                 .expect("VPS receives the stopped Agent job");
-            assert!(
-                running
-                    .job
-                    .best_effort_stop_requested
-                    .load(Ordering::SeqCst)
-            );
+            assert!(running
+                .job
+                .best_effort_stop_requested
+                .load(Ordering::SeqCst));
             assert!(pool.mark_vps_execution_running(vps_fence, job_id, &owner));
             assert!(pool.complete_server_job_fenced(
                 vps_fence,

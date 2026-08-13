@@ -654,37 +654,41 @@ function syncDerivedDataIntegrity(){
         }) || { key: monKey, ten: monKey, ma: "", ma2: "" };
     };
 
-    const sameNumber = (left, right) => {
-        const a = Number(left);
-        const b = Number(right);
-        return Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) < 0.000001;
-    };
-
-    const pruneRedundantPccmPeriods = () => {
+    const initializeAssignedPccmPeriods = () => {
         const periodMatrix = DATA.pccmTietMatrix;
         const limitMatrix = DATA.pccmGioihanMatrix;
-        if ((!periodMatrix || typeof periodMatrix !== "object") && (!limitMatrix || typeof limitMatrix !== "object")) return false;
+        const teacherMatrix = DATA.pccmMatrix;
+        if (!teacherMatrix || typeof teacherMatrix !== "object") return false;
         let ch = false;
-        const keys = new Set([
-            ...Object.keys(periodMatrix || {}),
-            ...Object.keys(limitMatrix || {})
-        ]);
-        keys.forEach(key => {
+        Object.entries(teacherMatrix).forEach(([key, teacherValue]) => {
+            if (!pccmTeacherListFromValue(teacherValue).length) return;
             const parts = String(key).split("|");
             if (parts.length < 2) return;
-            const cls = _normText(parts.shift());
+            const rawClass = _normText(parts.shift());
             const monKey = _normText(parts.join("|"));
+            const cls = classAliasToCanon.get(rawClass.toLowerCase()) || rawClass;
             const khoiName = classCanonToKhoi.get(cls);
             if (!cls || !monKey || !khoiName) return;
-            const tc = lookupTietChuan(khoiName, findPccmMonObj(monKey));
+            const monObj = findPccmMonObj(monKey);
+            const tc = lookupTietChuan(khoiName, monObj);
             if (!tc) return;
-            if (periodMatrix && Object.prototype.hasOwnProperty.call(periodMatrix, key) && sameNumber(periodMatrix[key], tc.sotiet)){
-                delete periodMatrix[key];
-                ch = true;
+
+            // Tiết chuẩn is only the initial seed.  Once a teacher assignment
+            // exists, persist an explicit class/subject value so later edits
+            // to DATA.mon cannot silently rewrite an already agreed PCCM row.
+            if (pccmGetNumberFromMatrix(periodMatrix, cls, monObj) == null){
+                const periods = _normText(tc.sotiet);
+                if (_toPositiveNumberOrZero(periods) > 0){
+                    periodMatrix[key] = periods;
+                    ch = true;
+                }
             }
-            if (limitMatrix && Object.prototype.hasOwnProperty.call(limitMatrix, key) && sameNumber(limitMatrix[key], tc.gioihan || 1)){
-                delete limitMatrix[key];
-                ch = true;
+            if (pccmGetNumberFromMatrix(limitMatrix, cls, monObj) == null){
+                const limit = _normText(tc.gioihan || "1");
+                if (_toPositiveNumberOrZero(limit) > 0){
+                    limitMatrix[key] = limit;
+                    ch = true;
+                }
             }
         });
         return ch;
@@ -719,7 +723,6 @@ function syncDerivedDataIntegrity(){
         changed = normalizeClassSubjectKeys(DATA.pccmRoomMatrix) || changed;
         changed = normalizeClassSubjectKeys(DATA.pccmTietMatrix) || changed;
         changed = normalizeClassSubjectKeys(DATA.pccmGioihanMatrix) || changed;
-        changed = pruneRedundantPccmPeriods() || changed;
 
         changed = pruneObj(DATA.pccmMatrix, (k, v) => {
             if (!keepKeyByClassMon(k)) return false;
@@ -727,6 +730,8 @@ function syncDerivedDataIntegrity(){
             if (!teachers.length) return false; // rỗng thì coi như chưa phân công → xoá key
             return teachers.every(gv => gvCodeSet.has(_normText(gv).toUpperCase()));
         }) || changed;
+
+        changed = initializeAssignedPccmPeriods() || changed;
 
         changed = pruneObj(DATA.pccmRoomMatrix, (k, v) => {
             if (!keepKeyByClassMon(k)) return false;
@@ -787,6 +792,10 @@ function syncDerivedDataIntegrity(){
 
 function saveStore(options){
     const opts = options || {};
+    // DATA is mutated in place throughout the app. Drop PCCM's derived lookup
+    // indexes before serializing so an autosave followed by a badge refresh or
+    // tab switch always sees the just-edited values.
+    try{ pccmInvalidateLookupCache(); }catch(_){ /* PCCM module not initialized yet */ }
     // Luôn backup vào localStorage theo trường để tránh mất dữ liệu khi KVDB/sql.js/IndexedDB lỗi.
     const sid = CTX.schoolId || getSchoolId();
     const json = JSON.stringify(DATA);
@@ -1055,6 +1064,48 @@ function ensureKhoiNameExists(khoiName){
     return true;
 }
 
+const MAX1_CLASS_LIMIT = 39;
+
+function schoolRecordForCurrentStore(){
+    try{
+        const A = window.TKBAuth;
+        if(!A || typeof A.loadRegistry !== "function") return null;
+        const ctx = typeof A.currentUser === "function" ? A.currentUser() : null;
+        const reg = ctx?.registry || A.loadRegistry() || {};
+        const schools = reg.schools || {};
+        const sessionSchoolId = String(ctx?.session?.schoolId || ctx?.user?.schoolId || "").trim();
+        if(sessionSchoolId && schools[sessionSchoolId]) return schools[sessionSchoolId];
+        const clean = value => _sanitizeSchoolId(value || "");
+        const target = clean(CTX.schoolId || getSchoolId());
+        return Object.entries(schools).find(([id, school]) => {
+            if(clean(id) === target || clean(school?.id) === target) return true;
+            if(clean(school?.shortId) === target) return true;
+            return (Array.isArray(school?.schedules) ? school.schedules : [])
+                .some(entry => clean(entry?.sid) === target);
+        })?.[1] || null;
+    }catch(_){
+        return null;
+    }
+}
+
+function max1ClassLimitForCurrentStore(){
+    try{
+        const A = window.TKBAuth;
+        const school = schoolRecordForCurrentStore();
+        const plan = school && typeof A?.effectivePlan === "function" ? A.effectivePlan(school) : null;
+        return plan?.id === "max1" ? MAX1_CLASS_LIMIT : null;
+    }catch(_){
+        return null;
+    }
+}
+
+function ensureClassCapacity(nextCount){
+    const limit = max1ClassLimitForCurrentStore();
+    if(!limit || Number(nextCount || 0) <= limit) return true;
+    alert("Gói Max 1 hỗ trợ tối đa 39 lớp. Vui lòng nâng cấp Max 2 để tạo hoặc import từ 40 lớp.");
+    return false;
+}
+
 function quickAddLopFromInputs(){
     const prefix = _normText(document.getElementById("quick_lop_prefix")?.value || "");
     const letter = _normText(document.getElementById("quick_lop_letter")?.value || "").replace(/\s+/g, "").toUpperCase();
@@ -1080,7 +1131,7 @@ function quickAddLopFromInputs(){
             .filter(Boolean)
     );
     const khoiName = `Khối ${khoiNum}`;
-    let added = 0;
+    const candidates = [];
     let skipped = 0;
 
     for (let i = 1; i <= count; i++){
@@ -1090,21 +1141,28 @@ function quickAddLopFromInputs(){
             skipped++;
             continue;
         }
-        DATA.lop.push({
-            id: autoID("lop"),
+        candidates.push({
             ten: className,
             ten2: className,
             khoi: khoiName,
             diadiem: diaDiem
         });
         existing.add(classKey);
-        added++;
     }
 
-    if (!added){
+    if (!candidates.length){
         showBottomPopup("Các lớp này đã có sẵn.", "info");
         return;
     }
+    if(!ensureClassCapacity(DATA.lop.length + candidates.length)) return;
+    // Generate each ID only when the preceding candidate is already present.
+    // `autoID()` scans DATA.lop, so assigning IDs while merely collecting the
+    // candidates would give every row in the batch the same ID.
+    candidates.forEach(candidate => {
+        candidate.id = autoID("lop");
+        DATA.lop.push(candidate);
+    });
+    const added = candidates.length;
 
     const addedKhoi = ensureKhoiNameExists(khoiName);
     saveStore();
@@ -1498,6 +1556,16 @@ function classLookupCandidates(name){
     };
     rawAliases.forEach(add);
 
+    // Fast path used by the Phân công renderer. The indexed lists retain DATA.lop
+    // order and the same alias order as the legacy scan below.
+    if (PCCM_LOOKUP_CACHE){
+        rawAliases.forEach(alias=>{
+            const own = PCCM_LOOKUP_CACHE.classAliases.get(String(alias || "").toLowerCase());
+            (own || []).forEach(add);
+        });
+        return out;
+    }
+
     const rawSet = new Set(rawAliases.map(a => a.toLowerCase()));
     (DATA.lop || []).forEach(lop=>{
         const vals = [
@@ -1632,7 +1700,7 @@ function readExcel(e){
 
     const reader = new FileReader();
 
-    reader.onload = (evt)=>{
+    reader.onload = async (evt)=>{
         try{
             const data = evt.target.result;
 
@@ -1644,11 +1712,14 @@ function readExcel(e){
                 wb = XLSX.read(data, { type: "binary" });
             }
 
-            if (IS_PCCM_IMPORT) importPCCMFromExcel(wb);
-            else importFromExcel(wb);
+            if (IS_PCCM_IMPORT) await importPCCMFromExcel(wb);
+            else await importFromExcel(wb);
         }catch(err){
             console.error(err);
-            alert("❌ Không đọc được file Excel. Vui lòng kiểm tra định dạng .xlsx/.xls hoặc thử lưu lại file rồi nhập lại.");
+            const detail = String(err?.message || "").trim();
+            alert(detail
+                ? `❌ Không thể nhập Excel: ${detail}`
+                : "❌ Không đọc được file Excel. Vui lòng kiểm tra định dạng .xlsx/.xls hoặc thử lưu lại file rồi nhập lại.");
         }finally{
             // reset input để có thể chọn lại cùng 1 file
             e.target.value = "";
@@ -1688,6 +1759,8 @@ function importFromExcel(wb){
    IMPORT LỚP (Chuẩn Excel)
 ============================================================ */
 function importExcel_Lop(rows){
+    if(!Array.isArray(DATA.lop)) DATA.lop = [];
+    if(!ensureClassCapacity(DATA.lop.length + (Array.isArray(rows) ? rows.length : 0))) return;
     // Nếu danh sách lớp đang trống, dọn ngay yêu cầu nghỉ cũ trước khi ID/tên lớp
     // từ file mới có thể tái sử dụng cùng alias.
     syncClassAvailabilityIntegrity();
@@ -2129,29 +2202,8 @@ function appQuickAddDetails(content){
         </details>`;
 }
 
-function appMobileDeleteMenu(section, selectedCount){
-    const count = Math.max(0, Number(selectedCount || 0));
-    return `
-        <details class="app-mobile-actions-menu">
-            <summary class="btn app-icon-button" title="Tùy chọn khác" aria-label="Mở tùy chọn khác">
-                ${appUiIcon("more")}
-                ${count ? `<span class="app-selection-badge" aria-label="Đã chọn ${count} dòng">${count}</span>` : ""}
-            </summary>
-            <div class="app-mobile-actions-popover">
-                <button class="btn danger" type="button" ${count ? "" : "disabled"}
-                        onclick="this.closest('details').removeAttribute('open');deleteSelectedRows('${section}')">
-                    ${appUiIcon("rowsDelete")}<span>Xóa đã chọn${count ? ` (${count})` : ""}</span>
-                </button>
-                <button class="btn danger" type="button"
-                        onclick="this.closest('details').removeAttribute('open');deleteSection('${section}')">
-                    ${appUiIcon("trash")}<span>Xóa mục này</span>
-                </button>
-            </div>
-        </details>`;
-}
-
 function closeAppActionDetails(except){
-    document.querySelectorAll(".app-quick-add-details[open],.app-mobile-actions-menu[open]").forEach(details=>{
+    document.querySelectorAll(".app-quick-add-details[open]").forEach(details=>{
         if(details !== except) details.removeAttribute("open");
     });
 }
@@ -2161,12 +2213,12 @@ document.addEventListener("toggle", event=>{
     if(
         details instanceof HTMLDetailsElement
         && details.open
-        && details.matches(".app-quick-add-details,.app-mobile-actions-menu")
+        && details.matches(".app-quick-add-details")
     ) closeAppActionDetails(details);
 }, true);
 
 document.addEventListener("click", event=>{
-    if(!event.target.closest?.(".app-quick-add-details,.app-mobile-actions-menu")){
+    if(!event.target.closest?.(".app-quick-add-details")){
         closeAppActionDetails(null);
     }
 });
@@ -2249,17 +2301,20 @@ function renderSectionInto(section, containerId, doc=document){
             : ``
         }
 
-        <button class="btn danger app-desktop-action" onclick="deleteSelectedRows('${section}')">
-            Xóa đã chọn${selCount ? ` (${selCount})` : ""}
+        <button class="btn danger app-action-button app-delete-action" type="button" ${selCount ? "" : "disabled"}
+                title="Xóa đã chọn" aria-label="Xóa đã chọn${selCount ? ` (${selCount})` : ""}"
+                onclick="deleteSelectedRows('${section}')">
+            ${appUiIcon("rowsDelete")}
+            <span class="app-action-label">Xóa đã chọn${selCount ? ` (${selCount})` : ""}</span>
+            ${selCount ? `<span class="app-selection-badge" aria-hidden="true">${selCount}</span>` : ""}
         </button>
 
         <!-- Xóa riêng mục -->
-        <button class="btn danger app-desktop-action"
+        <button class="btn danger app-action-button app-delete-action" type="button"
+                title="Xóa mục này" aria-label="Xóa mục này"
                 onclick="deleteSection('${section}')">
-            Xóa mục này
+            ${appUiIcon("trash")}<span class="app-action-label">Xóa mục này</span>
         </button>
-
-        ${appMobileDeleteMenu(section, selCount)}
 
     </div>
 
@@ -2429,6 +2484,7 @@ function saveData(){
     }
 
     if (EDIT_INDEX === -1){
+        if(section === "lop" && !ensureClassCapacity((DATA.lop || []).length + 1)) return;
         obj.id = autoID(section);
         DATA[section].push(obj);
     } else {
@@ -2720,6 +2776,75 @@ let PCCM_SELECTED_CLASS = ""; // vd "10A1"
 let PCCM_SELECTED_GV = "";    // tên GV
 let PCCM_SIDE_SCROLL = { lop: 0, giaovien: 0, monhoc: 0 };
 
+// Lookup indexes used while rendering the Phân công tabs.  The old helpers
+// deliberately scanned every class/teacher/standard row on each lookup.  That
+// was harmless for small imports, but made a tab switch quadratic for a real
+// school (the teacher and subject tabs call those helpers once per cell).  The
+// index is rebuilt at the beginning of every PCCM render and invalidated by
+// saveStore(), so edits never observe stale values.
+let PCCM_LOOKUP_CACHE = null;
+
+function pccmInvalidateLookupCache(){
+    PCCM_LOOKUP_CACHE = null;
+}
+
+function pccmBuildLookupCache(){
+    const classAliases = new Map();
+    const addClassAlias = (alias, ownAliases) => {
+        const key = String(alias || "").trim().toLowerCase();
+        if (!key) return;
+        let list = classAliases.get(key);
+        if (!list){ list = []; classAliases.set(key, list); }
+        (ownAliases || []).forEach(value=>{
+            const text = String(value || "").trim();
+            if (text && !list.includes(text)) list.push(text);
+        });
+    };
+
+    (DATA.lop || []).forEach(lop=>{
+        const values = [classCanonFromLop(lop), lop?.ten, lop?.ten2, lop?.id]
+            .filter(Boolean);
+        const ownAliases = [];
+        values.forEach(value=>legacyClassNameAliases(value).forEach(alias=>{
+            if (alias && !ownAliases.includes(alias)) ownAliases.push(alias);
+        }));
+        ownAliases.forEach(alias=>addClassAlias(alias, ownAliases));
+    });
+
+    const teacherByCode = new Map();
+    const teacherByName = new Map();
+    const teacherNames = new Map();
+    (DATA.giaovien || []).forEach(g=>{
+        const code = _normText(g?.magv);
+        if (!code) return;
+        const codeKey = code.toLowerCase();
+        if (!teacherByCode.has(codeKey)) teacherByCode.set(codeKey, code);
+        if (!teacherNames.has(codeKey)){
+            teacherNames.set(codeKey, `${_normText(g?.hodem)} ${_normText(g?.ten)}`.trim());
+        }
+        const full = `${_normText(g?.hodem)} ${_normText(g?.ten)}`.trim();
+        if (full && !teacherByName.has(full.toLowerCase())) teacherByName.set(full.toLowerCase(), code);
+    });
+
+    // lookupTietChuan() compares the standard row's subject name with one of
+    // the subject aliases. Keep the first row to preserve Array.find order.
+    const standards = new Map();
+    (DATA.mon || []).forEach(row=>{
+        const grade = extractKhoiNumber(_normText(row?.khoi));
+        const subject = _normText(row?.ten).toLowerCase();
+        if (!grade || !subject) return;
+        const key = `${grade}|${subject}`;
+        if (!standards.has(key)) standards.set(key, row);
+    });
+
+    return {classAliases, teacherByCode, teacherByName, teacherNames, standards};
+}
+
+function pccmEnsureLookupCache(){
+    if (!PCCM_LOOKUP_CACHE) PCCM_LOOKUP_CACHE = pccmBuildLookupCache();
+    return PCCM_LOOKUP_CACHE;
+}
+
 // Cache chỉnh sửa PCCM (tab Lớp) để nút Lưu có thể đọc DOM
 let PCCM_CLASS_EDIT_CACHE = { cls:"", khoiName:"", mons:[] };
 
@@ -2745,6 +2870,7 @@ let TC_CELL_SELECTION = new Set(); // key "r,c"
 let TC_CELL_ANCHOR = null;         // {r,c}
 let TC_CELL_DRAGGING = false;
 let TC_CELL_DRAG_START = null;
+let TC_CELL_DRAG_MOVED = false;
 
 // Thêm nhanh PCCM: chọn nhiều lớp trong tab Lớp.
 let PCCM_QUICK_SELECTED_CLASSES = [];
@@ -2807,6 +2933,9 @@ function pccmSideListAttrs(tab){
 }
 
 function renderPCCM() {
+    // Always rebuild once per visible render. This also covers test/import code
+    // that replaces DATA directly without going through saveStore().
+    PCCM_LOOKUP_CACHE = pccmBuildLookupCache();
     try{
         PCCM_CELL_SELECTION = new Set();
         PCCM_CELL_ANCHOR = null;
@@ -2844,6 +2973,18 @@ function renderPCCM() {
     // ở ít nhất 1 khối. (Môn không có tiết sẽ không hiển thị trong Phân công.)
     const pccmMonsBase = pccmMonsAll.filter(m => monHasPositiveTietChuanAnyKhoi(m));
 
+    // Tab Môn học vẫn phải giữ toàn bộ danh mục môn để người dùng có thể
+    // chọn nhanh và phân công từ chính danh sách này.  Môn chưa có giáo viên
+    // chỉ được đánh dấu trạng thái "Chưa phân công"; không được loại khỏi
+    // danh sách (loại khỏi bảng sẽ khiến người dùng không có chỗ để phân).
+    const pccmMonsBySubject = pccmMonsBase;
+    if (PCCM_TAB === "monhoc") {
+        const visibleKeys = new Set(pccmMonsBySubject.map(m=>_normText(m.key || m.ten)));
+        if (!visibleKeys.has(_normText(PCCM_SUBJ))) {
+            PCCM_SUBJ = _normText(pccmMonsBySubject[0]?.key || pccmMonsBySubject[0]?.ten);
+        }
+    }
+
     // ===== Giáo viên: ưu tiên lấy từ bảng Giáo viên (mã GV), fallback từ PCCM nếu bảng GV trống =====
     let gvs = (DATA.giaovien || [])
         .map(g=>_normText(g?.magv))
@@ -2860,11 +3001,14 @@ function renderPCCM() {
 
     // Tổng số tiết đã phân công theo tab hiện tại.
     let pccmTotalInfoHtml = "";
-    const pccmTotal = pccmComputeTotalTietForCurrentTab(classNames, pccmMonsBase);
+    const currentTabMons = PCCM_TAB === "monhoc" ? pccmMonsBySubject : pccmMonsBase;
+    const pccmTotal = pccmComputeTotalTietForCurrentTab(classNames, currentTabMons);
     if (pccmTotal){
         pccmTotalInfoHtml = `
-            <span class="pccm-total-badge" title="${escapeHtml(pccmTotal.title || "")}">
-                Tổng tiết: ${pccmTotal.assigned}
+            <span class="pccm-total-badge"
+                  title="${escapeHtml(pccmTotal.title || "")}"
+                  aria-label="Tổng tiết: ${pccmTotal.assigned}">
+                <span class="pccm-total-prefix">Tổng: </span><span class="pccm-total-value">${pccmTotal.assigned}</span>
             </span>`;
     }
 
@@ -2928,7 +3072,7 @@ function renderPCCM() {
     if (PCCM_TAB === "giaovien") {
         html += renderPCCM_ByTeacher(gvs, pccmMonsBase, classNames);
     } else if (PCCM_TAB === "monhoc") {
-        html += renderPCCM_BySubject(classNames, pccmMonsBase);
+        html += renderPCCM_BySubject(classNames, pccmMonsBySubject);
     } else {
         // mặc định = tab Lớp
         html += renderPCCM_ByClass(classNames, pccmMonsBase);
@@ -3042,11 +3186,13 @@ function renderTietChuanPage(){
                 data-rowid="${escapeHtml(rid)}" data-field="sotiet" data-val="${escapeHtml(r.sotiet)}"
                 data-r="${i}" data-c="0"
                 onmousedown="tcCellMouseDown(event,this)" onmouseover="tcCellMouseOver(event,this)"
+                onclick="tcCellClick(event,this)"
                 ondblclick="tcBeginCellEdit(this)">${escapeHtml(r.sotiet)}</td>
             <td class="tc-cell" style="text-align:center;cursor:cell" 
                 data-rowid="${escapeHtml(rid)}" data-field="gioihan" data-val="${escapeHtml(r.gioihan)}"
                 data-r="${i}" data-c="1"
                 onmousedown="tcCellMouseDown(event,this)" onmouseover="tcCellMouseOver(event,this)"
+                onclick="tcCellClick(event,this)"
                 ondblclick="tcBeginCellEdit(this)">${escapeHtml(r.gioihan)}</td>
         </tr>`;
     });
@@ -3101,6 +3247,7 @@ function pccmRefreshTotalBadge(){
     try{
         const badge = document.querySelector(".pccm-summary-actions .pccm-total-badge");
         if (!badge) return;
+        pccmEnsureLookupCache();
         const lopObjs = (DATA.lop || []).map(l=>({
             ten2: canonTen2FromLop(l)
         })).filter(x=>x.ten2);
@@ -3108,7 +3255,10 @@ function pccmRefreshTotalBadge(){
         const pccmMonsBase = buildPCCMMonList().filter(m => monHasPositiveTietChuanAnyKhoi(m));
         const pccmTotal = pccmComputeTotalTietForCurrentTab(classNames, pccmMonsBase);
         if (!pccmTotal) return;
-        badge.textContent = `Tổng tiết: ${pccmTotal.assigned}`;
+        const value = badge.querySelector(".pccm-total-value");
+        if (value) value.textContent = String(pccmTotal.assigned);
+        else badge.textContent = `Tổng: ${pccmTotal.assigned}`;
+        badge.setAttribute("aria-label", `Tổng tiết: ${pccmTotal.assigned}`);
         badge.title = pccmTotal.title || "";
     }catch(e){
         // ignore
@@ -3219,7 +3369,27 @@ function pccmCellMouseDown(ev, td){
         }
         PCCM_CELL_DRAGGING = true;
         PCCM_CELL_DRAG_START = {r,c};
-        const opensControl = ev.target && ev.target.closest && ev.target.closest(".pccm-multi-button, select.inline-edit-select");
+        // Numeric PCCM cells behave like spreadsheet cells: a normal click
+        // selects the cell without entering the input. Double-click/Enter/F2
+        // remains available for explicit editing, while a typed digit is
+        // applied and saved directly by pccmGlobalKeyDown().
+        const kind = String(td.dataset?.kind || "").toLowerCase();
+        const numericInput = (kind === "periods" || kind === "limit")
+            ? td.querySelector("input.inline-edit-input")
+            : null;
+        if(numericInput){
+            try{
+                const active = document.activeElement;
+                if(active && active !== document.body && typeof active.blur === "function") active.blur();
+            }catch(_){ }
+            ev.preventDefault();
+            return;
+        }
+        // Selects/buttons keep their native focus. Other cells cancel native
+        // text selection so drag-selection remains spreadsheet-like.
+        const opensControl = ev.target && ev.target.closest && ev.target.closest(
+            ".pccm-multi-button, select.inline-edit-select, input.inline-edit-input"
+        );
         if (!opensControl){
             ev.preventDefault();
         }
@@ -3396,6 +3566,50 @@ function pccmClearSelectedCells(){
     pccmUpdateSelectionUI();
 }
 
+function pccmSelectedNumericCell(){
+    const candidates = [];
+    if(PCCM_CELL_ANCHOR){
+        candidates.push(pccmGetCell(PCCM_CELL_ANCHOR.r, PCCM_CELL_ANCHOR.c));
+    }
+    for(const key of (PCCM_CELL_SELECTION || [])){
+        const [r,c] = String(key || "").split(",").map(Number);
+        candidates.push(pccmGetCell(r,c));
+    }
+    return candidates.find(td=>{
+        if(!td) return false;
+        const kind = String(td.dataset?.kind || "").toLowerCase();
+        return (kind === "periods" || kind === "limit")
+            && !!td.querySelector("input.inline-edit-input");
+    }) || null;
+}
+
+function pccmBeginSelectedNumericEdit(initialValue){
+    const td = pccmSelectedNumericCell();
+    const input = td?.querySelector("input.inline-edit-input");
+    if(!input) return false;
+    try{ input.focus({preventScroll:true}); }catch(_){ try{ input.focus(); }catch(__){} }
+    if(initialValue !== undefined && initialValue !== null){
+        input.value = String(initialValue);
+        try{
+            const end = input.value.length;
+            input.setSelectionRange?.(end, end);
+        }catch(_){ }
+    }else{
+        try{ input.select(); }catch(_){ }
+    }
+    return true;
+}
+
+function pccmSetSelectedNumericValue(value){
+    const td = pccmSelectedNumericCell();
+    const input = td?.querySelector("input.inline-edit-input");
+    if(!input) return false;
+    input.value = String(value ?? "").trim();
+    pccmAutoSaveActive();
+    pccmUpdateSelectionUI();
+    return true;
+}
+
 function pccmGlobalKeyDown(ev){
     try{
         if(!pccmIsActive()) return;
@@ -3416,6 +3630,21 @@ function pccmGlobalKeyDown(ev){
             if(isTyping) return;
             pccmClearSelection();
             return;
+        }
+
+        // Spreadsheet-style entry: a digit changes and saves the selected
+        // Số tiết/Giới hạn cell immediately without focusing its input.
+        if(!isTyping && !isCmd && !ev.altKey && /^[0-9]$/.test(String(ev.key || ""))){
+            if(pccmSetSelectedNumericValue(ev.key)){
+                ev.preventDefault();
+                return;
+            }
+        }
+        if(!isTyping && !isCmd && !ev.altKey && (key === "enter" || key === "f2")){
+            if(pccmBeginSelectedNumericEdit()){
+                ev.preventDefault();
+                return;
+            }
         }
 
         if((key === "delete" || key === "backspace") && !isTyping){
@@ -4050,6 +4279,9 @@ function pccmTeacherName(code){
     const value = _normText(code);
     if (!value) return "";
     const low = value.toLowerCase();
+    if (PCCM_LOOKUP_CACHE){
+        return PCCM_LOOKUP_CACHE.teacherNames.get(low) || "";
+    }
     const found = (DATA.giaovien || []).find(g => _normText(g?.magv).toLowerCase() === low);
     if (!found) return "";
     return `${_normText(found.hodem)} ${_normText(found.ten)}`.trim();
@@ -4117,17 +4349,12 @@ function pccmRenderTeacherMultiItem(controlId, code, label, selected){
 }
 function pccmRenderTeacherMulti(controlId, selectedRaw, teacherItems){
     const selected = pccmTeacherListFromValue(selectedRaw);
-    const selectedSet = new Set(selected.map(x=>x.toLowerCase()));
-    const items = (teacherItems || [])
-        .map(x => typeof x === "string" ? {code:x, label:x} : {code:_normText(x?.code), label:_normText(x?.code)})
-        .filter(x=>x.code);
-    const itemSet = new Set(items.map(x=>x.code.toLowerCase()));
-    const missing = selected
-        .filter(code=>!itemSet.has(code.toLowerCase()))
-        .map(code=>({code, label:`(Đang lưu) ${code}`}));
-    const allItems = missing.concat(items);
     const label = pccmTeacherLabel(selected);
     const hiddenValue = pccmNormalizeTeacherValue(selected);
+    // Teacher lists can contain 100+ entries and are repeated for every row
+    // in the class/subject views. Render only the clear action initially; the
+    // full menu is hydrated on first open. Selected legacy codes are added by
+    // the hydrator, so no value is lost when the data dictionary is incomplete.
     return `
         <div id="${controlId}_box" class="pccm-multi-select pccm-teacher-multi">
             <input id="${controlId}" type="hidden" value="${escapeHtml(hiddenValue)}">
@@ -4135,12 +4362,41 @@ function pccmRenderTeacherMulti(controlId, selectedRaw, teacherItems){
                 <span id="${controlId}_text">${escapeHtml(label || "(Chưa phân)")}</span>
                 <span class="pccm-multi-arrow">▾</span>
             </button>
-            <div class="pccm-multi-menu">
+            <div class="pccm-multi-menu" data-pccm-menu-lazy="1">
                 <button type="button" class="pccm-multi-item pccm-teacher-clear" onclick="pccmTeacherMultiClear(event,'${controlId}')">(Chưa phân)</button>
-                ${allItems.map(item=>pccmRenderTeacherMultiItem(controlId, item.code, item.label, selectedSet.has(item.code.toLowerCase()))).join("")}
             </div>
         </div>`;
 }
+
+function pccmEnsureTeacherMultiMenu(box){
+    try{
+        if (!box) return null;
+        const menu = pccmTeacherMultiMenuForBox(box);
+        if (!menu) return null;
+        if (menu.getAttribute("data-pccm-menu-hydrated") === "1") return menu;
+
+        const controlId = (box.id || "").replace(/_box$/, "");
+        const selected = pccmTeacherListFromValue(document.getElementById(controlId)?.value || "");
+        const selectedSet = new Set(selected.map(x=>x.toLowerCase()));
+        const items = (DATA.giaovien || [])
+            .map(g=>_normText(g?.magv))
+            .filter(Boolean)
+            .map(code=>({code, label:code}));
+        const itemSet = new Set(items.map(x=>x.code.toLowerCase()));
+        const missing = selected
+            .filter(code=>!itemSet.has(code.toLowerCase()))
+            .map(code=>({code, label:`(Đang lưu) ${code}`}));
+        const allItems = missing.concat(items);
+        menu.innerHTML = `
+            <button type="button" class="pccm-multi-item pccm-teacher-clear" onclick="pccmTeacherMultiClear(event,'${controlId}')">(Chưa phân)</button>
+            ${allItems.map(item=>pccmRenderTeacherMultiItem(controlId, item.code, item.label, selectedSet.has(item.code.toLowerCase()))).join("")}`;
+        menu.setAttribute("data-pccm-menu-hydrated", "1");
+        return menu;
+    }catch(_){
+        return null;
+    }
+}
+
 function pccmTeacherMultiToggle(ev, controlId){
     try{
         if (ev) ev.stopPropagation();
@@ -4149,6 +4405,7 @@ function pccmTeacherMultiToggle(ev, controlId){
         const willOpen = !box.classList.contains("open");
         pccmQuickMultiCloseAll();
         if (willOpen){
+            pccmEnsureTeacherMultiMenu(box);
             box.classList.add("open");
             pccmPositionTeacherMultiMenu(box);
         }
@@ -4367,8 +4624,14 @@ function pccmSetTeachersNoSave(lopCanon, monObj, rawTeachers){
     const primaryKey = pccmTeacherPrimaryKey(lopCanon, monObj);
     const value = pccmNormalizeTeacherValue(rawTeachers);
     if (!primaryKey) return;
-    if (value) DATA.pccmMatrix[primaryKey] = value;
-    else delete DATA.pccmMatrix[primaryKey];
+    if (value){
+        DATA.pccmMatrix[primaryKey] = value;
+        // A teacher assignment starts an authored PCCM row.  Materialize the
+        // current standard immediately when the row has no explicit periods
+        // or limit yet, so a later edit to Tiết chuẩn cannot change it during
+        // the same session (before the next integrity-sync/app reload).
+        try{ pccmInitializeAssignedPccmNumbersNoSave(lopCanon, monObj); }catch(_){ /* keep teacher edit usable */ }
+    }else delete DATA.pccmMatrix[primaryKey];
     pccmTeacherLegacyKeys(lopCanon, monObj).forEach(k=>{
         if (DATA.pccmMatrix && DATA.pccmMatrix[k]) delete DATA.pccmMatrix[k];
     });
@@ -4418,6 +4681,38 @@ function pccmGetTiet(lopCanon, monObj){
 }
 function pccmGetGioihan(lopCanon, monObj){
     return pccmGetNumberFromMatrix(DATA.pccmGioihanMatrix || {}, lopCanon, monObj);
+}
+
+// Snapshot the grade standard at the moment a class/subject first receives a
+// teacher.  The migration in syncDerivedDataIntegrity covers legacy rows; this
+// hook covers live edits and direct/quick assignment paths immediately.
+function pccmInitializeAssignedPccmNumbersNoSave(lopCanon, monObj, khoiNameOverride){
+    if (!lopCanon || !monObj) return false;
+    if (!DATA.pccmTietMatrix || typeof DATA.pccmTietMatrix !== "object") DATA.pccmTietMatrix = {};
+    if (!DATA.pccmGioihanMatrix || typeof DATA.pccmGioihanMatrix !== "object") DATA.pccmGioihanMatrix = {};
+
+    const khoiName = _normText(khoiNameOverride || pccmGetKhoiNameForClass(lopCanon));
+    const tc = lookupTietChuan(khoiName, monObj);
+    if (!tc) return false;
+    const key = pccmTeacherPrimaryKey(lopCanon, monObj);
+    if (!key) return false;
+    let changed = false;
+
+    if (pccmGetNumberFromMatrix(DATA.pccmTietMatrix, lopCanon, monObj) == null){
+        const periods = _normText(tc.sotiet);
+        if (_toPositiveNumberOrZero(periods) > 0){
+            DATA.pccmTietMatrix[key] = periods;
+            changed = true;
+        }
+    }
+    if (pccmGetNumberFromMatrix(DATA.pccmGioihanMatrix, lopCanon, monObj) == null){
+        const limit = _normText(tc.gioihan || "1");
+        if (_toPositiveNumberOrZero(limit) > 0){
+            DATA.pccmGioihanMatrix[key] = limit;
+            changed = true;
+        }
+    }
+    return changed;
 }
 function pccmGetTietDisplay(lopCanon, monObj, khoiName){
     const ov = pccmGetTiet(lopCanon, monObj);
@@ -4488,6 +4783,11 @@ function pccmComputeTotalTietForTeacher(teacherCode, classNames, monList){
         });
     });
     return { assigned, title: `Tổng số tiết đã phân công cho ${teacher}` };
+}
+
+function pccmSubjectHasAssignedTeacher(monObj, classNames){
+    if (!monObj) return false;
+    return (classNames || []).some(cls=>pccmGetTeachers(cls, monObj).length > 0);
 }
 
 function pccmComputeTotalTietForSubject(monKey, classNames, monList){
@@ -4610,6 +4910,14 @@ function lookupTietChuan(khoiName, monObj){
     const m2 = (monObj.key||"").toLowerCase();
     const m3 = (monObj.ma2||"").toLowerCase();
 
+    if (PCCM_LOOKUP_CACHE){
+        const standards = PCCM_LOOKUP_CACHE.standards;
+        return standards.get(`${kNum}|${m1}`)
+            || standards.get(`${kNum}|${m2}`)
+            || (m3 ? standards.get(`${kNum}|${m3}`) : null)
+            || null;
+    }
+
     return (DATA.mon || []).find(r=>{
         const rk = extractKhoiNumber(_normText(r.khoi));
         if (rk !== kNum) return false;
@@ -4675,6 +4983,12 @@ function resolveTeacherCode(input){
     if (!raw) return "";
     const lower = raw.toLowerCase();
 
+    if (PCCM_LOOKUP_CACHE){
+        return PCCM_LOOKUP_CACHE.teacherByCode.get(lower)
+            || PCCM_LOOKUP_CACHE.teacherByName.get(lower)
+            || raw;
+    }
+
     // Ưu tiên match theo mã GV
     const byCode = (DATA.giaovien || []).find(g => _normText(g.magv).toLowerCase() === lower);
     if (byCode && byCode.magv) return _normText(byCode.magv);
@@ -4712,7 +5026,11 @@ function pccmSetTeacherQuickNoSave(lopCanon, monObj, val){
 function pccmQuickUpdateTietChuanForClass(cls, monObj, sotietVal, gioihanVal){
     // PCCM is class-specific; do not write these values back to DATA.mon,
     // because DATA.mon is the standard period table for the whole grade.
-    pccmSetTietGioihanNoSave(cls, monObj, sotietVal, gioihanVal);
+    // Empty quick-edit fields mean "keep the current/default assignment";
+    // they must never erase an already-authored PCCM snapshot.
+    const periods = _normText(sotietVal) || pccmGetTiet(cls, monObj);
+    const limit = _normText(gioihanVal) || pccmGetGioihan(cls, monObj);
+    pccmSetTietGioihanNoSave(cls, monObj, periods == null ? "" : periods, limit == null ? "" : limit);
 }
 
 function pccmQuickPickTeacher(teachers, classIndex, subjectIndex){
@@ -6007,9 +6325,19 @@ function renderPCCM_BySubject(classNames, monList){
             key: _normText(m.key || m.ten),
             code: pccmSubjectCode(m),
             name: pccmSubjectName(m),
-            hint: pccmSubjectHint(m)
+            hint: pccmSubjectHint(m),
+            assigned: pccmSubjectHasAssignedTeacher(m, classNames)
         }))
         .filter(s=>s.key);
+
+    if (!subjects.length) {
+        PCCM_SUBJ = "";
+        PCCM_SUBJECT_EDIT_CACHE = null;
+        return `
+        <div style="padding:14px;background:#fff;border-radius:8px;border:1px solid #e3e8f3;margin-top:10px">
+            Chưa có <b>môn học</b>.
+        </div>`;
+    }
 
     if (!PCCM_SUBJ && subjects.length) PCCM_SUBJ = subjects[0].key;
     if (PCCM_SUBJ && !subjects.some(s=>s.key===PCCM_SUBJ) && subjects.length) PCCM_SUBJ = subjects[0].key;
@@ -6025,9 +6353,10 @@ function renderPCCM_BySubject(classNames, monList){
                 const js = (s.key||"").replace(/\\/g,"\\\\").replace(/'/g,"\\'");
                 return `
                 <div onclick="setPCCMSelectedSubject('${js}')"
-                     class="pccm-side-item ${s.key===PCCM_SUBJ?"active":""}"
+                     class="pccm-side-item ${s.key===PCCM_SUBJ?"active":""} ${s.assigned?"":"pccm-side-item-unassigned"}"
                      title="${escapeHtml(s.hint || s.name || s.code)}">
-                    ${escapeHtml(s.code || s.name)}
+                    <span class="pccm-side-item-name">${escapeHtml(s.code || s.name)}</span>
+                    ${s.assigned ? "" : '<span class="pccm-side-item-status">Chưa phân công</span>'}
                 </div>`;
             }).join("")}
         </div>
@@ -6380,6 +6709,21 @@ function tcResetSelection(){
     TC_CELL_ANCHOR = null;
     TC_CELL_DRAGGING = false;
     TC_CELL_DRAG_START = null;
+    TC_CELL_DRAG_MOVED = false;
+}
+
+function tcCommitActiveEditor(exceptTd){
+    try{
+        const ownInput = exceptTd?.querySelector?.("input.tc-edit, input.inline-edit-input");
+        let active = document.activeElement;
+        if(!active || !active.matches?.("input.tc-edit, input.inline-edit-input")){
+            active = document.querySelector?.(".tc-cell input.tc-edit, .tc-cell input.inline-edit-input");
+        }
+        if(active && active !== ownInput) active.blur?.();
+    }catch(_){
+        // A missing activeElement in an embedded/legacy browser must not block
+        // selecting another cell.
+    }
 }
 
 function tcClearSelection(){
@@ -6423,6 +6767,11 @@ function tcCellMouseDown(ev, td){
         if(ev.button !== 0) return;
         if(td.querySelector("input")) return;
 
+        // Commit the previous cell before moving focus. Otherwise the old
+        // editor keeps keyboard focus and a digit typed for the new cell is
+        // silently sent to the previous row.
+        tcCommitActiveEditor(td);
+
         const r = Number(td.dataset.r);
         const c = Number(td.dataset.c);
         if(!Number.isFinite(r) || !Number.isFinite(c)) return;
@@ -6437,6 +6786,9 @@ function tcCellMouseDown(ev, td){
 
         TC_CELL_DRAGGING = true;
         TC_CELL_DRAG_START = {r,c};
+        TC_CELL_DRAG_MOVED = false;
+        // Keep the click as a pure spreadsheet selection. Explicit editing is
+        // still available through double-click, Enter, or F2.
         ev.preventDefault();
     }catch(e){
         // ignore
@@ -6452,6 +6804,9 @@ function tcCellMouseOver(ev, td){
         const c = Number(td.dataset.c);
         if(!Number.isFinite(r) || !Number.isFinite(c)) return;
 
+        if(Number(TC_CELL_DRAG_START.r) !== r || Number(TC_CELL_DRAG_START.c) !== c){
+            TC_CELL_DRAG_MOVED = true;
+        }
         tcSelectRange(TC_CELL_DRAG_START, {r,c}, true);
         if(ev) ev.preventDefault();
     }catch(e){
@@ -6459,7 +6814,7 @@ function tcCellMouseOver(ev, td){
     }
 }
 
-// Click vào ô (không tự bật edit) để chọn giống Excel
+// Một click/chạm chỉ chọn ô, không tự mở trình sửa số.
 function tcCellClick(ev, td){
     try{
         if(!ev || !td) return;
@@ -6473,15 +6828,14 @@ function tcCellClick(ev, td){
         const isCmd = !!(ev.ctrlKey || ev.metaKey);
         const isShift = !!ev.shiftKey;
 
-        if(isShift && TC_CELL_ANCHOR){
-            tcSelectRange(TC_CELL_ANCHOR, {r,c});
-        } else if(isCmd){
-            tcToggleSelection(r,c);
-        } else {
+        if(isShift || isCmd || TC_CELL_DRAG_MOVED || TC_CELL_SELECTION.size !== 1){
+            TC_CELL_DRAG_MOVED = false;
+            ev.preventDefault();
+            return;
+        }
+        if(!TC_CELL_SELECTION.has(tcKey(r,c))){
             tcSetSingleSelection(r,c);
         }
-
-        // tránh bôi đen chữ khi shift-click
         ev.preventDefault();
     }catch(e){
         // ignore
@@ -6596,6 +6950,35 @@ function tcClearSelectedCells(){
     tcAutoSaveEdits();
 }
 
+function tcSelectedNumericCell(){
+    if(TC_CELL_ANCHOR){
+        const anchor = tcGetCell(TC_CELL_ANCHOR.r, TC_CELL_ANCHOR.c);
+        if(anchor) return anchor;
+    }
+    for(const key of (TC_CELL_SELECTION || [])){
+        const [r,c] = String(key || "").split(",").map(Number);
+        const td = tcGetCell(r,c);
+        if(td) return td;
+    }
+    return null;
+}
+
+function tcBeginSelectedNumericEdit(initialValue){
+    const td = tcSelectedNumericCell();
+    if(!td) return false;
+    tcBeginCellEdit(td, initialValue);
+    return !!td.querySelector("input.inline-edit-input");
+}
+
+function tcSetSelectedNumericValue(value){
+    const td = tcSelectedNumericCell();
+    if(!td) return false;
+    tcSetCellValue(td, value);
+    tcAutoSaveEdits();
+    tcUpdateSelectionUI();
+    return true;
+}
+
 // Lắng nghe Ctrl/Cmd+C và Delete/Backspace (toàn trang)
 function tcGlobalKeyDown(ev){
     try{
@@ -6620,6 +7003,21 @@ function tcGlobalKeyDown(ev){
             if(isTyping) return;
             tcClearSelection();
             return;
+        }
+
+        // Typing a digit updates and saves the selected Tiết chuẩn cell
+        // directly; the cell remains selected and no editor is opened.
+        if(!isTyping && !isCmd && !ev.altKey && /^[0-9]$/.test(String(ev.key || ""))){
+            if(tcSetSelectedNumericValue(ev.key)){
+                ev.preventDefault();
+                return;
+            }
+        }
+        if(!isTyping && !isCmd && !ev.altKey && (key === "enter" || key === "f2")){
+            if(tcBeginSelectedNumericEdit()){
+                ev.preventDefault();
+                return;
+            }
         }
 
         if((key === "delete" || key === "backspace") && !isTyping){
@@ -6658,7 +7056,7 @@ function tcGlobalPaste(ev){
 }
 
 // Tiết chuẩn: click vào ô để sửa (input chỉ xuất hiện khi cần)
-function tcBeginCellEdit(td){
+function tcBeginCellEdit(td, initialValue){
     try{
         if (!td) return;
         if (td.querySelector("input")) return; // đang sửa
@@ -6673,8 +7071,18 @@ function tcBeginCellEdit(td){
                             value="${escapeHtml(cur)}" style="text-align:center">`;
         const inp = td.querySelector("input");
         if (!inp) return;
+        if(initialValue !== undefined && initialValue !== null){
+            inp.value = String(initialValue);
+        }
         inp.focus();
-        inp.select();
+        if(initialValue === undefined || initialValue === null){
+            inp.select();
+        }else{
+            try{
+                const end = inp.value.length;
+                inp.setSelectionRange?.(end, end);
+            }catch(_){ }
+        }
 
         inp.onkeydown = (ev)=>{
             const k = (ev.key || "");
@@ -6827,7 +7235,7 @@ function triggerPCCMImport(){
    IMPORT PCCM EXCEL — AUTO FIX LỖI + BỔ SUNG LỚP/MÔN
 ============================================================ */
 
-function importPCCMFromExcel(wb){
+async function importPCCMFromExcel(wb){
     // Hỗ trợ 2 dạng:
     // (A) Dạng ma trận (như file pccm.xlsx): hàng 1 là mã/tên môn, cột A là lớp, các ô là GV
     // (B) Dạng 3 cột: Lớp | Môn học | Giáo viên
@@ -6843,6 +7251,12 @@ function importPCCMFromExcel(wb){
         alert("❌ Sheet rỗng.");
         return;
     }
+
+    const yieldImportUi = ()=>new Promise(resolve=>{
+        if(typeof requestAnimationFrame === "function") requestAnimationFrame(()=>setTimeout(resolve, 0));
+        else setTimeout(resolve, 0);
+    });
+    let importedAssignments = 0;
 
     // helpers
     function looksLikeCode(s){
@@ -6895,6 +7309,30 @@ function importPCCMFromExcel(wb){
         return normalizeClassName(raw) || raw;
     }
 
+    // Import có thể chứa hàng nghìn ô.  Chuẩn bị index lớp một lần để không
+    // quét toàn bộ DATA.lop cho từng ô Excel.
+    const importClassCanonByAlias = new Map();
+    (DATA.lop || []).forEach(lop=>{
+        const canon = classCanonFromLop(lop);
+        if(!canon) return;
+        const aliases = legacyClassNameAliases(canon)
+            .concat(legacyClassNameAliases(lop?.ten2 || ""))
+            .concat(legacyClassNameAliases(lop?.id || ""));
+        aliases.forEach(alias=>{
+            const key = String(alias || "").trim().toLowerCase();
+            if(key && !importClassCanonByAlias.has(key)) importClassCanonByAlias.set(key, canon);
+        });
+    });
+    const canonLopFast = (value)=>{
+        const raw = String(value || "").trim();
+        if(!raw) return "";
+        for(const alias of legacyClassNameAliases(raw)){
+            const found = importClassCanonByAlias.get(String(alias || "").trim().toLowerCase());
+            if(found) return found;
+        }
+        return normalizeClassName(raw) || raw;
+    };
+
     // ---- Detect long format (3 columns) ----
     // Nếu hàng đầu có chứa "Lớp" và "Môn" => long format
     const header0 = rows[0].map(x=>String(x||"").trim().toLowerCase());
@@ -6904,15 +7342,20 @@ function importPCCMFromExcel(wb){
 
     if (hasLop && hasMon && hasGV){
         const objs = XLSX.utils.sheet_to_json(sheet,{defval:""});
-        objs.forEach(r=>{
-            const lop = canonLop(r["Lớp"] || r["lop"] || r["Tên lớp"] || r["ten lop"] || "");
+        for(let rowIndex = 0; rowIndex < objs.length; rowIndex++){
+            const r = objs[rowIndex];
+            const lop = canonLopFast(r["Lớp"] || r["lop"] || r["Tên lớp"] || r["ten lop"] || "");
             const mon = resolveMon(r["Môn học"] || r["Mon hoc"] || r["Môn"] || r["Mon"] || "");
             const gv  = _normText(r["Giáo viên"] || r["Giao vien"] || r["GV"] || r["gv"] || "");
-            if (!lop || !mon) return;
-            if (gv) pccmSetTeacher(lop, mon, gv);
-        });
-        saveStore();
-        alert("✔ Đã nhập PCCM từ Excel (dạng 3 cột).");
+            if (lop && mon && gv){
+                pccmSetTeachersNoSave(lop, mon, gv);
+                importedAssignments++;
+            }
+            if(rowIndex > 0 && rowIndex % 120 === 0) await yieldImportUi();
+        }
+        const saved = await saveStore();
+        if(saved === false) throw new Error("Không thể đồng bộ dữ liệu Phân công lên máy chủ.");
+        alert(`✔ Đã nhập PCCM từ Excel (dạng 3 cột): ${importedAssignments} phân công.`);
         const sc = document.getElementById("section-content");
         if (sc && typeof renderPCCM === "function") pccmRenderCurrent(sc);
         return;
@@ -6937,7 +7380,7 @@ function importPCCMFromExcel(wb){
         const line = rows[i];
         if (!line || !line.length) continue;
 
-        const lop = canonLop(line[0]);
+        const lop = canonLopFast(line[0]);
         if (!lop) continue;
 
         for (let j=0;j<monObjs.length;j++){
@@ -6945,13 +7388,16 @@ function importPCCMFromExcel(wb){
             if (!mon) continue;
             const gv = _normText(line[j+1] || "");
             if (gv){
-                pccmSetTeacher(lop, mon, gv);
+                pccmSetTeachersNoSave(lop, mon, gv);
+                importedAssignments++;
             }
         }
+        if(i > headerRow + 1 && (i - headerRow) % 30 === 0) await yieldImportUi();
     }
 
-    saveStore();
-    alert("✔ Đã nhập PCCM từ Excel (dạng ma trận).");
+    const saved = await saveStore();
+    if(saved === false) throw new Error("Không thể đồng bộ dữ liệu Phân công lên máy chủ.");
+    alert(`✔ Đã nhập PCCM từ Excel (dạng ma trận): ${importedAssignments} phân công.`);
     const sc = document.getElementById("section-content");
     if (sc && typeof renderPCCM === "function") pccmRenderCurrent(sc);
 }

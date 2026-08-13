@@ -18,13 +18,13 @@ test("admin loads the balanced data-column assets after legacy themes", () => {
   const themeIndex = appHtml.indexOf("theme-light.css");
   const runtimeIndex = appHtml.indexOf("runtime.css");
   const compactIndex = appHtml.indexOf(
-    "admin-mobile-compact.css?v=20260725-v196-mobile-assignment-toolbar-v1"
+    "admin-mobile-compact.css?v=20260730-v1148-admin-responsive-actions-v1"
   );
 
   assert.ok(themeIndex >= 0 && runtimeIndex > themeIndex);
   assert.ok(compactIndex > runtimeIndex, "compact overrides must load last");
   assert.match(appHtml, /style\.css\?v=20260725-v194-balanced-data-columns-v1/);
-  assert.match(appHtml, /app\.js\?v=20260725-v196-mobile-assignment-toolbar-v1/);
+  assert.match(appHtml, /app\.js\?v=20260802-max1-class-limit-v1/);
 });
 
 test("mobile admin navigation exposes six compact icon tabs", () => {
@@ -44,6 +44,7 @@ test("mobile admin navigation exposes six compact icon tabs", () => {
   assert.match(compactCss, /grid-template-columns:\s*repeat\(6, minmax\(0, 1fr\)\)/);
   assert.match(compactCss, /body\.app-shell-body \.app-nav-side\s*\{[\s\S]*?order:\s*-1/);
   assert.match(compactCss, /height:\s*46px/);
+  assert.match(appHtml, /data-page="giaovien"[\s\S]*?app-nav-label-mobile">Giáo viên<\/span>/);
 });
 
 test("mobile command row uses icons without hiding accessible names", () => {
@@ -58,7 +59,7 @@ test("mobile command row uses icons without hiding accessible names", () => {
   assert.match(compactCss, /--app-mobile-control:\s*40px/);
 });
 
-test("data actions collapse to one icon toolbar and safe overflow menus", () => {
+test("data actions reuse one responsive pair of direct delete buttons", () => {
   assert.match(appSource, /function appUiIcon\(name\)/);
   assert.match(appSource, /function appQuickAddDetails\(content\)/);
   assert.match(appSource, /appQuickAddDetails[\s\S]*?appUiIcon\("wand"\)/);
@@ -68,13 +69,22 @@ test("data actions collapse to one icon toolbar and safe overflow menus", () => 
   assert.match(compactCss, /\.app-quick-add-details > summary\s*\{[\s\S]*?display:\s*flex/);
   assert.match(compactCss, /body\.app-shell-body \.app-quick-add-details:not\(\[open\]\) > \.quick-add-control\s*\{[\s\S]*?display:\s*none/);
   assert.match(compactCss, /body\.app-shell-body \.app-quick-add-details\[open\] > \.quick-add-control\s*\{[\s\S]*?position:\s*absolute[\s\S]*?display:\s*inline-flex/);
-  assert.match(appSource, /function appMobileDeleteMenu\(section, selectedCount\)/);
   assert.match(appSource, /class="action-bar action-bar-data\$\{quickAdd \? " has-quick-add" : ""\}"/);
-  assert.match(appSource, /class="app-mobile-actions-popover"/);
-  assert.match(appSource, /\$\{count \? "" : "disabled"\}/);
-  assert.match(compactCss, /\.action-bar-data\.has-quick-add\s*\{[\s\S]*?repeat\(4, var\(--app-mobile-control\)\)/);
+  assert.match(appSource, /class="btn danger app-action-button app-delete-action"[\s\S]*?appUiIcon\("rowsDelete"\)[\s\S]*?class="app-action-label">Xóa đã chọn/);
+  assert.match(appSource, /class="btn danger app-action-button app-delete-action"[\s\S]*?appUiIcon\("trash"\)[\s\S]*?class="app-action-label">Xóa mục này/);
+  assert.match(appSource, /\$\{selCount \? "" : "disabled"\}/);
+  const renderStart = appSource.indexOf("function renderSectionInto");
+  const toolbarEnd = appSource.indexOf("// Thêm các column header", renderStart);
+  const toolbarSource = appSource.slice(renderStart, toolbarEnd);
+  assert.equal((toolbarSource.match(/deleteSelectedRows\('\$\{section\}'\)/g) || []).length, 1);
+  assert.equal((toolbarSource.match(/deleteSection\('\$\{section\}'\)/g) || []).length, 1);
+  assert.match(compactCss, /\.action-bar-data\.has-quick-add\s*\{[\s\S]*?repeat\(6, var\(--app-mobile-control\)\)/);
+  assert.match(compactCss, /\.app-action-create\s*\{[\s\S]*?width:\s*var\(--app-mobile-control\)/);
+  assert.match(compactCss, /\.app-delete-action\s*\{[\s\S]*?position:\s*relative/);
+  assert.doesNotMatch(appSource, /appMobileDeleteActions|app-mobile-delete-action/);
+  assert.doesNotMatch(compactCss, /app-mobile-delete-action/);
+  assert.doesNotMatch(appSource, /app-mobile-actions-(?:menu|popover)/);
   assert.match(compactCss, /\.app-quick-add-details:not\(\[open\]\) > \.quick-add-control\s*\{[\s\S]*?display:\s*none/);
-  assert.match(compactCss, /\.app-mobile-actions-popover\s*\{[\s\S]*?position:\s*absolute/);
 });
 
 test("standard, lesson, and assignment tables stay usable on narrow screens", () => {
@@ -84,9 +94,14 @@ test("standard, lesson, and assignment tables stay usable on narrow screens", ()
   assert.match(appSource, /tabBtn\("giaovien","Giáo viên","GV"\)/);
   assert.match(appSource, /pccm-action-button[\s\S]*?appUiIcon\("upload"\)/);
   assert.match(appSource, /pccm-delete-btn[\s\S]*?appUiIcon\("trash"\)/);
-  assert.match(compactCss, /\.pccm-action-bar\s*\{[\s\S]*?repeat\(3, minmax\(0, 1fr\)\) repeat\(2, var\(--app-mobile-control\)\)/);
+  assert.match(compactCss, /\.pccm-action-bar\s*\{[\s\S]*?repeat\(3, minmax\(0, 1fr\)\) repeat\(4, var\(--app-mobile-control\)\)/);
   assert.match(compactCss, /\.pccm-tab-actions\s*\{[\s\S]*?display:\s*contents/);
   assert.match(compactCss, /\.pccm-main-actions\s*\{[\s\S]*?display:\s*contents/);
+  assert.match(compactCss, /\.pccm-side-actions\s*\{[\s\S]*?display:\s*contents/);
+  assert.match(appSource, /aria-label="Tổng tiết: \$\{pccmTotal\.assigned\}"[\s\S]*?class="pccm-total-prefix">Tổng: <\/span>[\s\S]*?class="pccm-total-value">\$\{pccmTotal\.assigned\}/);
+  assert.match(appSource, /badge\.querySelector\("\.pccm-total-value"\)/);
+  assert.match(compactCss, /\.pccm-total-badge\s*\{[\s\S]*?align-items:\s*center[\s\S]*?justify-content:\s*center/);
+  assert.match(compactCss, /\.pccm-total-prefix\s*\{[\s\S]*?display:\s*none/);
   assert.match(compactCss, /\.tietchuan-filter-list \.btn\s*\{[\s\S]*?min-width:\s*40px/);
   assert.match(compactCss, /\.data-table-wrap-compact,[\s\S]*?overflow-x:\s*auto/);
   assert.match(compactCss, /\.data-table-giaovien\s*\{[\s\S]*?min-width:\s*100%[\s\S]*?table-layout:\s*fixed/);

@@ -1,6 +1,6 @@
-# TKB DEMO — Phần mềm xếp thời khóa biểu local
+# TKBCherry — Phần mềm xếp thời khóa biểu
 
-Ứng dụng web local cho trường học: nhập danh mục, phân công (PCCM), ràng buộc, sắp xếp TKB tự động, chỉnh tay, xuất Excel/Word.
+Ứng dụng web cho trường học: nhập danh mục, phân công (PCCM), ràng buộc, sắp xếp TKB tự động, chỉnh tay, xuất Excel/Word. Production chạy solver trên Cloud Run và tự dự phòng qua VPS; trình duyệt chỉ gửi dữ liệu, theo dõi job và nhận kết quả.
 
 ## Chạy ứng dụng
 
@@ -27,9 +27,13 @@ http://127.0.0.1:1010/
 | `web/` | Giao diện: quản lý dữ liệu, planner TKB, ràng buộc, import/export |
 | `rust_api/` | HTTP API Rust (port 1010), phục vụ static files + solve + export |
 | `solver_runtime/` | Python optimizer tham chiếu (CP-SAT / MILP qua `ortools`) |
-| `web/vendor/` | Thư viện JS/WASM local (xlsx, jszip, sql.js) — không cần CDN |
+| `web/vendor/` | Thư viện giao diện/dữ liệu local (xlsx, jszip, sql.js) — không chứa solver trình duyệt |
 | `data/` | File Excel mẫu (nếu có) |
 | `start.py` | Launcher: build Rust nếu cần, khởi động API, mở trình duyệt |
+
+Tài liệu tái tạo Cloud Run, Billing Export, API đồng bộ chi phí và hợp đồng để
+mở rộng sang Microsoft/Azure hoặc Cloudflare:
+[docs/CLOUD_COST_SYNC.md](docs/CLOUD_COST_SYNC.md).
 
 ### Luồng sắp xếp tự động
 
@@ -40,11 +44,13 @@ UI (một nút Sắp xếp) → POST /api/solve-precheck
      ├─ repair_partial: chỉ thiếu ít tiết → sửa phần còn thiếu từ incumbent mềm
      └─ refine_complete: lịch đã đủ và hợp lệ → tối ưu tiếp từ incumbent mềm
   → POST /api/solve-data
-  → Hybrid Python CP-SAT/MILP (solver_mode: auto)
-  → Rust native fallback/repair khi Python không sẵn sàng hoặc trả lỗi
+  → Cloud Run Python CP-SAT/MILP (mặc định)
+  → VPS Hybrid Python CP-SAT/MILP + Rust native fallback khi Cloud Run lỗi
 ```
 
 Người dùng không phải chọn Nhanh/Max. Bridge tự chọn nhánh theo nhu cầu tiết từ PCCM và trạng thái TKB hiện tại. Lịch hiện có chỉ là **incumbent mềm**: solver được phép dời các tiết để thoát nghiệm cục bộ; chỉ ô có `fixed: true` mới là khóa cứng. Trước khi tái sử dụng incumbent, backend dựng lại giáo viên theo PCCM hiện tại và kiểm tra ràng buộc cứng để không khôi phục lịch cũ sai phân công.
+
+Client Agent EXE và solver WebAssembly đã ngừng sử dụng. Tài khoản thường không thấy điều khiển hạ tầng. Superadmin vẫn có biểu tượng hạ tầng để chuyển tuyến Cloud Run/VPS khi vận hành; biểu tượng này không chạy solver trên thiết bị người dùng.
 
 Chất lượng được so sánh theo thứ tự ưu tiên (lexicographic), không dùng một mốc số buổi/tiết trống cố định cho mọi trường:
 
@@ -112,15 +118,7 @@ Cần: `numpy`, `scipy`, `openpyxl`, `ortools`. Nếu thiếu, app vẫn chạy 
 
 `start.py` tự build `rust_api/target/release/tkb_rust_api.exe` nếu source mới hơn exe.
 
-**Không build được (thiếu MSVC)?** Đặt file build sẵn vào `rust_api/prebuilt/tkb_rust_api.exe` hoặc chạy:
-
-```powershell
-.\scripts\setup.ps1
-```
-
-Setup script kiểm tra Python deps, MSVC linker, và hướng dẫn cài Build Tools nếu thiếu.
-
-Cần Rust toolchain (`cargo`) hoặc MSVC Build Tools trên Windows.
+**Không build được (thiếu MSVC)?** Cài Rust toolchain và Visual Studio Build Tools có workload C++, sau đó build lại bằng Cargo.
 
 Build thủ công:
 
@@ -134,12 +132,6 @@ cargo build --release
 ```powershell
 python -m pip install --user pyinstaller
 python -m PyInstaller --onefile --windowed --name start .\start.py
-```
-
-Hoặc chạy setup tự động:
-
-```powershell
-.\scripts\setup.ps1
 ```
 
 `start.exe` và `tkb_rust_api.exe` là **artifact build** — có thể không có sẵn trong repo clone mới.
@@ -161,8 +153,10 @@ Xem [docs/REGRESSION_CHECKLIST.md](docs/REGRESSION_CHECKLIST.md) để test th�
 - **Bấm lại khi lịch đã đủ:** dùng lịch hiện tại đã tái kiểm định làm incumbent và tối ưu tiếp; không trả về metrics cũ nếu incumbent không còn hợp lệ.
 - Mỗi lần chạy có thể tìm nghiệm khác. Solver không khóa cứng lịch cũ và không lấy cache/hint chưa kiểm định làm kết quả.
 
+Menu **Tối ưu** tách ba mục tiêu cho người dùng thường: **1 tiết/buổi**, **1 tiết trống**, **2 tiết trống**. Mỗi lệnh chỉ tập trung vào đúng chỉ số đã chọn. Mục **Buổi** tổng quát chỉ hiện với superadmin để phục vụ vận hành và chẩn đoán.
+
 ## Ghi chú kỹ thuật
 
-- Thuật toán sắp xếp trên trình duyệt đã gỡ (`tkb-engine.js` chỉ tạo shell TKB trống)
+- Thuật toán sắp xếp trên trình duyệt và Agent EXE đã gỡ (`tkb-engine.js` chỉ tạo shell TKB trống)
 - Ràng buộc: `web/pages/tkb-constraints.js`
 - Bridge solver UI: `web/pages/tkb-rust-bridge.js`

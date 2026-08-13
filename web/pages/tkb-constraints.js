@@ -13,7 +13,7 @@
 (function(){
   'use strict';
 
-  const VERSION = 'constraints-ui-v38-one-session-responsive-tables';
+  const VERSION = 'constraints-ui-v44-assigned-demand-lesson-block-min-guard';
   const PANEL_ID = 'tkbConstraintsFullPanel';
   const STYLE_ID = 'tkbConstraintsFullStyle';
   const DAY_KEYS_DEFAULT = ['thu2','thu3','thu4','thu5','thu6','thu7'];
@@ -495,7 +495,10 @@
     const map = new Map();
     (D().giaovien || []).forEach(g=>{ const id=String(g.magv || g.ma || g.code || g.id || g.ten || '').trim(); if(id) map.set(id,{id,name:teacherName(id)}); });
     Object.values(D().pccmMatrix || {}).forEach(v=>{ splitTeacherValues(v).forEach(id=>{ if(id && !map.has(id)) map.set(id,{id,name:teacherName(id)}); }); });
-    __cache.teacherList = Array.from(map.values()).sort(teacherItemCompare);
+    // Preserve the teacher sequence used by Phân công: DATA.giaovien first in
+    // its stored order, then any legacy teachers found only in PCCM. The fixed
+    // requirement list must not silently alphabetize this sequence.
+    __cache.teacherList = Array.from(map.values());
     __cache.teacherListSig = sig;
     return __cache.teacherList;
   }
@@ -1253,14 +1256,24 @@
           if(!on) return;
           const p=parseSlotKey(sk);
           const ok=cells.some(x=>String(x.thu)===String(p.thu)&&String(x.buoi)===String(p.buoi)&&Number(x.ti)===Number(p.ti));
-          if(!ok) add({lopId:'',className:'',mon:'',thu:p.thu,buoi:p.buoi,ti:p.ti,message:`${teacherName(tid)||tid}: vị trí phải có tiết dạy nhưng chưa được xếp.`});
+          if(!ok) add({
+            kind:'teacher.mustTeach.missing',
+            teacherId:String(tid),
+            lopId:'',
+            className:'',
+            mon:'',
+            thu:p.thu,
+            buoi:p.buoi,
+            ti:p.ti,
+            message:`${teacherName(tid)||tid}: vị trí phải có tiết dạy nhưng chưa được xếp.`
+          });
         });
       });
     }catch(e){ console.warn('[tkb-constraints] teacher must-teach validate failed', e); }
     // hậu kiểm Min số buổi/cụm xếp liền cho môn học
     try{
       const c=model();
-      Object.keys(c.subject||{}).forEach(sk=>{ const sobj=c.subject[sk]; Object.keys(sobj.byClass||{}).forEach(lopId=>{ const r=sobj.byClass[lopId]; if(!r.lessonBlocks) return; const cells=subjectCellsAfterPlace(lopId,sk,{lopId,mon:sk}); for(const len of [2,3,4,5]){ const min=toInt(r.lessonBlocks?.[len]?.min,0); if(min>0){ let blocks=0; for(const d of days()) for(const b of SESSION_KEYS) blocks += countConsecutiveBlocks(indexesInSession(cells,d,b),len); if(blocks<min) add({kind:'subject.lessonBlocks.min',lopId,className:classNameOf(lopId),mon:sk,message:`${classNameOf(lopId)} - ${sk}: số buổi/cụm có ${len} tiết xếp liền ${blocks}, chưa đạt Min ${min}.`}); } } }); });
+      Object.keys(c.subject||{}).forEach(sk=>{ const sobj=c.subject[sk]; Object.keys(sobj.byClass||{}).forEach(lopId=>{ const r=sobj.byClass[lopId]; if(!r.lessonBlocks) return; const cells=subjectCellsAfterPlace(lopId,sk,{lopId,mon:sk}); for(const len of [2,3,4,5]){ const min=toInt(r.lessonBlocks?.[len]?.min,0); const maxBound=toInt(r.lessonBlocks?.[len]?.max,0); if(min>0 && !impossibleLessonBlockMinimum(lopId,sk,len,min,maxBound)){ let blocks=0; for(const d of days()) for(const b of SESSION_KEYS) blocks += countConsecutiveBlocks(indexesInSession(cells,d,b),len); if(blocks<min) add({kind:'subject.lessonBlocks.min',lopId,className:classNameOf(lopId),mon:sk,message:`${classNameOf(lopId)} - ${sk}: số buổi/cụm có ${len} tiết xếp liền ${blocks}, chưa đạt Min ${min}.`}); } } }); });
     }catch(e){ console.warn('[tkb-constraints] post validate failed', e); }
     return out;
   }
@@ -1365,7 +1378,17 @@
           if(!on) continue;
           const p=parseSlotKey(sk);
           const ok=cells.some(x=>String(x.thu)===String(p.thu)&&String(x.buoi)===String(p.buoi)&&Number(x.ti)===Number(p.ti));
-          if(!ok) add({lopId:'',className:'',mon:'',thu:p.thu,buoi:p.buoi,ti:p.ti,message:`${teacherName(tid)||tid}: v\u1ecb tr\u00ed ph\u1ea3i c\u00f3 ti\u1ebft d\u1ea1y nh\u01b0ng ch\u01b0a \u0111\u01b0\u1ee3c x\u1ebfp.`});
+          if(!ok) add({
+            kind:'teacher.mustTeach.missing',
+            teacherId:String(tid),
+            lopId:'',
+            className:'',
+            mon:'',
+            thu:p.thu,
+            buoi:p.buoi,
+            ti:p.ti,
+            message:`${teacherName(tid)||tid}: v\u1ecb tr\u00ed ph\u1ea3i c\u00f3 ti\u1ebft d\u1ea1y nh\u01b0ng ch\u01b0a \u0111\u01b0\u1ee3c x\u1ebfp.`
+          });
           if(out.length>=max) return out;
         }
         const interruption=await maybeYield();
@@ -1383,7 +1406,8 @@
           const cells=subjectCellsAfterPlace(lopId,sk,{lopId,mon:sk});
           for(const len of [2,3,4,5]){
             const min=toInt(r.lessonBlocks?.[len]?.min,0);
-            if(min<=0) continue;
+            const maxBound=toInt(r.lessonBlocks?.[len]?.max,0);
+            if(min<=0 || impossibleLessonBlockMinimum(lopId,sk,len,min,maxBound)) continue;
             let blocks=0;
             for(const d of days()) for(const b of SESSION_KEYS) blocks += countConsecutiveBlocks(indexesInSession(cells,d,b),len);
             if(blocks<min) add({kind:'subject.lessonBlocks.min',lopId,className:classNameOf(lopId),mon:sk,message:`${classNameOf(lopId)} - ${sk}: s\u1ed1 bu\u1ed5i/c\u1ee5m c\u00f3 ${len} ti\u1ebft x\u1ebfp li\u1ec1n ${blocks}, ch\u01b0a \u0111\u1ea1t Min ${min}.`});
@@ -3081,6 +3105,32 @@ function buildMenuPopup(items, left, top, level){
     }
     return monWeeklyPeriods(mon);
   }
+
+  // Keep browser validation aligned with the solver's request-local
+  // sanitization: an impossible lower bound cannot reject a complete result.
+  function assignedPeriodsForConstraint(lopId, mon){
+    const target=String(mon || '').trim();
+    if(!target) return 0;
+    let total=0;
+    try{
+      const targetLop=findClassObject(lopId);
+      const rows=pccmAssignmentRows();
+      for(const row of rows){
+        if(!subjectMatches(row?.mon, target)) continue;
+        if(!classMatchesAssignment(lopId, row?.classId || row?.cls, targetLop, row?.lop)) continue;
+        const count=toInt(row?.count,0);
+        if(count>0) total+=count;
+      }
+    }catch(_){ return 0; }
+    return Math.max(0,total);
+  }
+  function impossibleLessonBlockMinimum(lopId, mon, length, minimum, maximum){
+    const len=toInt(length,0), min=toInt(minimum,0), max=toInt(maximum,0);
+    if(len<=0 || min<=0) return false;
+    if(max>0 && min>max) return true;
+    const available=assignedPeriodsForConstraint(lopId,mon);
+    return min>Math.floor(available/len);
+  }
   function findClassObject(cls){
     const raw=String(cls || '').trim();
     if(!raw) return null;
@@ -3111,10 +3161,15 @@ function buildMenuPopup(items, left, top, level){
       const lop=findClassObject(cls);
       const subject=subjectKey(mon);
       const classId=String(lop?.id || cls).trim();
+      const teacher=teacherOf(cls, mon);
+      // pccmTiet/Gioihan/Room can retain a legacy key after its teacher is
+      // cleared.  Such a row is configuration metadata, not class demand.
+      // Filter it before de-duplication so a later assigned alias can still
+      // contribute the real row.
+      if(!splitTeacherValues(teacher).length) continue;
       const uniq=normalizeClassLike(classId || cls)+'|'+norm(subject);
       if(seen.has(uniq)) continue;
       seen.add(uniq);
-      const teacher=teacherOf(cls, mon);
       rows.push({
         classId,
         className:String((lop && (lop.ten || lop.ten2 || lop.id)) || cls).trim(),
@@ -3954,42 +4009,11 @@ function gradeListText(grades){
   function classSubjectRequiredCount(lopId, mon){
     const subject=String(mon || '').trim();
     if(!lopId || !subject) return 0;
-    try{
-      const direct=matrixNumberForClassSubject(D().pccmTietMatrix || {}, lopId, subject, findClassObject(lopId));
-      if(direct != null) return Math.max(0, Number(direct || 0));
-    }catch(_){ }
     const lop=findClassObject(lopId);
-    const classKeys=arrUnique(classKeyCandidates(lopId, lop).map(x=>String(x || '').trim()).filter(Boolean));
-    const subjectKeys=arrUnique([subject, subjectKey(subject)].map(x=>String(x || '').trim()).filter(Boolean));
     try{
-      if(typeof getSoTietForClassMon === 'function'){
-        for(const cls of classKeys){
-          for(const sub of subjectKeys){
-            const n=Number(getSoTietForClassMon(cls, sub) || 0);
-            if(Number.isFinite(n) && n>0) return Math.max(0,n);
-          }
-        }
-      }
-    }catch(_){ }
-    try{
-      if(typeof window.getSoTietForClassMon === 'function'){
-        for(const cls of classKeys){
-          for(const sub of subjectKeys){
-            const n=Number(window.getSoTietForClassMon(cls, sub) || 0);
-            if(Number.isFinite(n) && n>0) return Math.max(0,n);
-          }
-        }
-      }
-    }catch(_){ }
-    const aliases=classAliasSet(lopId, lop);
-    let best=0;
-    Object.entries(D().pccmTietMatrix || {}).forEach(([key,value])=>{
-      const parts=splitPccmKey(key);
-      if(!parts.cls || !parts.mon || !classAliasSetHas(aliases, parts.cls) || !subjectMatches(parts.mon, subject)) return;
-      const n=Number(value);
-      if(Number.isFinite(n) && n>best) best=n;
-    });
-    return Math.max(0,best);
+      const required=assignmentPeriodsForFast(lopId, subject, lop, subjectPeriodMap());
+      return Math.max(0, Number(required || 0));
+    }catch(_){ return 0; }
   }
   function countClassSubjectPlaced(lopId, mon){
     let count=0;
@@ -4002,10 +4026,13 @@ function gradeListText(grades){
     const candidates=[];
     forEachClassTkbCell(lopId, cell=>{
       if(!cell.mon || !subjectMatches(cell.mon, mon)) return;
+      // A new fixed placement may move only an ordinary timetable cell.
+      // Existing fixed lessons are independent hard anchors and must never be
+      // silently consumed to make room for another fixed slot of the same subject.
+      if(cell.fixed) return;
       if(except && String(cell.thu)===String(except.thu) && String(cell.buoi)===String(except.buoi) && Number(cell.ti)===Number(except.ti)) return;
       candidates.push(cell);
     });
-    candidates.sort((a,b)=>Number(!!a.fixed)-Number(!!b.fixed));
     return candidates[0] || null;
   }
   function setClassFixedLesson(lopId, thu, buoi, ti, mon){
@@ -4014,12 +4041,18 @@ function gradeListText(grades){
     const idx=Number(ti);
     const arr=ensureTkbSession(lopId,thu,buoi);
     const currentMon=cellMonSafe(arr[idx]);
+    // Never overwrite another lesson (especially another hard anchor). Fixed
+    // placement is allowed on an empty/OFF slot or on the same subject only.
+    if(currentMon && !subjectMatches(currentMon, subject)) return false;
     const fixedSubject=currentMon && subjectMatches(currentMon, subject) ? currentMon : subject;
     if(!currentMon || !subjectMatches(currentMon, subject)){
       const required=classSubjectRequiredCount(lopId, subject);
       const placed=countClassSubjectPlaced(lopId, subject);
       const source=findClassSubjectPlacedSlot(lopId, subject, {thu,buoi,ti:idx});
-      if(source && (!required || placed >= required)) source.arr[source.ti]='';
+      if(placed >= required){
+        if(source) source.arr[source.ti]='';
+        else return false;
+      }
     }
     arr[idx]={mon:fixedSubject,fixed:true};
     setFixedOffFlag('class',lopId,thu,buoi,idx,false);
@@ -5746,7 +5779,7 @@ function gradeListText(grades){
     }
     return isFixedOff(type,id,thu,buoi,ti);
   }
-  function fixedOffTopRows(type,id){
+  function scheduledTopRowsForType(type,id){
     const idx=buildScheduleIndex();
     let cells=[];
     if(type==='class') cells=(idx.classCells.get(String(id))||[]).slice();
@@ -5811,18 +5844,12 @@ function gradeListText(grades){
     return {rows,total:rows.reduce((sum,r)=>sum+Number(r.count || 0),0),s,c:ch,sc};
   }
   function fixedOffTopRows(type,id){
-    const idx=buildScheduleIndex();
-    let cells=[];
-    if(type==='class') cells=(idx.classCells.get(String(id))||[]).slice();
-    else if(type==='teacher') cells=(idx.byTeacher.get(String(id))||[]).slice();
-    else if(type==='subject') cells=(idx.allCells||[]).filter(c=>subjectMatches(c.mon,id));
-    else if(type==='room') cells=(idx.allCells||[]).filter(c=>norm(c.room)===norm(id));
-    else if(type==='subjectGroup'){
-      const items=model().groups.subject?.[id]?.items||[];
-      cells=(idx.allCells||[]).filter(c=>items.some(it=>subjectMatches(c.mon,it)));
-    }
-    if(cells.length) return summarizeFixedOffCells(type,cells);
-    return assignmentTopRowsForType(type,id);
+    // "Tổng số tiết" is the assignment demand, not the number of lessons
+    // already visible/fixed in the timetable. Keep a schedule-only fallback
+    // solely for legacy data that has no PCCM assignment rows at all.
+    const assignment=assignmentTopRowsForType(type,id);
+    if(assignment.rows.length) return assignment;
+    return scheduledTopRowsForType(type,id);
   }
   function fixedOffTopTable(type,id){
     const meta=fixedOffTopRows(type,id);
@@ -7025,7 +7052,11 @@ function gradeListText(grades){
         getSubjectList,
         subjectOptionsForClasses,
         applyClassFixedLessonToSelection,
+        classSubjectRequiredCount,
+        countClassSubjectPlaced,
+        setClassFixedLesson,
         fixedLessonAt,
+        fixedOffTopRows,
         fixedOffSelectedClassIds,
         setFixedOffSingleClass,
         toggleFixedOffClass,

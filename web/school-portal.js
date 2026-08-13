@@ -263,7 +263,6 @@
       <div><span class="portal-muted">Email</span><div>${esc(user.email || school.ownerEmail)} · ${emailStatus}</div></div>
       <div><span class="portal-muted">Số điện thoại</span><div>${esc(A.formatPhone ? A.formatPhone(user.phone || school.ownerPhone) : (user.phone || school.ownerPhone || "-"))}</div></div>
       <div><span class="portal-muted">Mã trường</span><div>${esc(schoolId)}</div></div>
-      <div><span class="portal-muted">Gói hiện tại</span><div>${A.planBadgeHtml(school.plan, school)}</div></div>
       <div><span class="portal-muted">Hết hạn gói</span><div>${esc(A.effectivePlan(school).unlimited ? "Unlimited" : A.formatDate(school.expiresAt))}</div></div>
     `;
   }
@@ -329,12 +328,97 @@
     renderAccountInfo();
   });
 
-  const PLAN_RANK = { free: 0, plus: 1, max: 2, ultra: 3 };
+  const PLAN_RANK = { free: 0, plus: 1, max: 2, max1: 2, max2: 3, ultra: 4 };
+  const MAX_PLAN_PRICING_FALLBACK = [
+    { id:"under-40-classes", planId:"max1", minClasses:1, maxClasses:39, label:"Max 1 · Dưới 40 lớp", detail:"Từ 1 đến 39 lớp", price:1000000 },
+    { id:"from-40-classes", planId:"max2", minClasses:40, maxClasses:null, label:"Max 2 · Từ 40 lớp", detail:"Không giới hạn số lớp", price:1500000 }
+  ];
 
   let transferContentText = "";
 
-  function openTransferModal(plan, isRenew){
+  function maxPlanPricingTiers(){
+    const tiers = A.MAX_PLAN_PRICING?.tiers;
+    return Array.isArray(tiers) && tiers.length ? tiers : MAX_PLAN_PRICING_FALLBACK;
+  }
+
+  function selectedMaxPlanTier(value){
+    const planId = String(value || "").trim().toLowerCase();
+    const byPlan = maxPlanPricingTiers().find(tier => tier.planId === planId);
+    if(byPlan) return byPlan;
+    if(typeof A.maxPlanTierForClasses === "function") return A.maxPlanTierForClasses(value);
+    const count = Math.max(1, Math.floor(Number(value) || 39));
+    const tiers = maxPlanPricingTiers();
+    return tiers.find(tier => tier.maxClasses == null || count <= Number(tier.maxClasses)) || tiers[tiers.length - 1];
+  }
+
+  function maxPlanClassCountFromSchool(){
+    const currentPlanId = A.effectivePlan(school)?.id;
+    if(currentPlanId === "max1") return 39;
+    if(currentPlanId === "max2") return 40;
+    const storedClassCount = Number(school?.classCount);
+    if(Number.isFinite(storedClassCount) && storedClassCount > 0) return Math.floor(storedClassCount);
+    const legacyStudentCount = Number(school?.studentCount);
+    return Number.isFinite(legacyStudentCount) && legacyStudentCount > 1000 ? 40 : 39;
+  }
+
+  function maxPlanPricingHtml(){
+    const tiers = maxPlanPricingTiers();
+    const selectedTier = selectedMaxPlanTier(maxPlanClassCountFromSchool());
+    return `<div class="max-plan-pricing" role="group" aria-labelledby="maxPlanPricingTitle">
+      <div class="max-plan-pricing-head">
+        <div>
+          <span class="max-plan-pricing-kicker">Giá 12 tháng</span>
+          <strong id="maxPlanPricingTitle">Chọn theo số lớp</strong>
+        </div>
+        <span class="max-plan-pricing-badge">Max</span>
+      </div>
+      <div class="max-plan-tier-options">
+        ${tiers.map(tier => {
+          const value = Number(tier.minClasses || tier.maxClasses || 1);
+          const selected = tier.id === selectedTier?.id;
+          return `<label class="max-plan-tier-option${selected ? " is-selected" : ""}">
+            <input type="radio" name="max-plan-class-tier" value="${esc(tier.planId || (value >= 40 ? "max2" : "max1"))}" data-max-plan${selected ? " checked" : ""}>
+            <span class="max-plan-tier-check" aria-hidden="true"></span>
+            <span class="max-plan-tier-copy">
+              <strong>${esc(tier.label)}</strong>
+              <small>${esc(tier.detail || "Theo quy mô lớp học")}</small>
+            </span>
+            <span class="max-plan-tier-price">
+              <strong>${esc(A.formatMoney(tier.price))}</strong>
+              <small>/ năm</small>
+            </span>
+          </label>`;
+        }).join("")}
+      </div>
+    </div>`;
+  }
+
+  function managedServiceCardHtml(){
+    const service = A.MANAGED_SERVICE || {};
+    const zaloUrl = service.zaloUrl || "https://zalo.me/0352261815";
+    const contact = service.contact || "Zalo Thầy Ân";
+    const phone = A.formatPhone ? A.formatPhone(service.phone || "0352261815") : (service.phone || "0352261815");
+    return `<article class="plan-card managed-service-card" data-plan-card="managed-service" style="--plan-color:#f43f5e">
+      <div class="plan-card-head">
+        <h3>Dịch vụ xếp hộ TKB</h3>
+        <span class="managed-service-badge">Xếp hộ</span>
+      </div>
+      <div class="price managed-service-price">Liên hệ trực tiếp</div>
+      <ul>
+        <li>${esc(contact)}</li>
+        <li>${esc(phone)}</li>
+      </ul>
+      <a class="portal-btn primary managed-service-zalo" href="${esc(zaloUrl)}" target="_blank" rel="noopener">Liên hệ Zalo</a>
+    </article>`;
+  }
+
+  function openTransferModal(plan, isRenew, selectedPricing){
     const bank = A.BANK_TRANSFER;
+    const price = Number(selectedPricing?.price);
+    const paymentPrice = Number.isFinite(price) && price > 0 ? price : Number(plan.price || 0);
+    const tierLabel = plan.id === "max1" || plan.id === "max2"
+      ? String(selectedPricing?.tier?.label || plan.label || "").trim()
+      : "";
     transferContentText = A.transferContentForSchool(school);
     const title = document.getElementById("transferModalTitle");
     const body = document.getElementById("transferModalBody");
@@ -346,7 +430,8 @@
           <div><dt>Ngân hàng</dt><dd>${esc(bank.bank)}</dd></div>
           <div><dt>Số tài khoản</dt><dd><strong>${esc(bank.accountNumber)}</strong></dd></div>
           <div><dt>Chủ tài khoản</dt><dd>${esc(bank.accountName)}</dd></div>
-          <div><dt>Số tiền</dt><dd><strong class="portal-topup-amount">${esc(A.formatMoney(plan.price))}</strong></dd></div>
+          ${tierLabel ? `<div><dt>Số lớp</dt><dd>${esc(tierLabel)}</dd></div>` : ""}
+          <div><dt>Số tiền</dt><dd><strong class="portal-topup-amount">${esc(A.formatMoney(paymentPrice))}</strong></dd></div>
         </dl>
         <p class="portal-transfer-zalo">Sau khi chuyển khoản, gửi ảnh xác nhận qua <a href="${esc(bank.zaloUrl)}" target="_blank" rel="noopener">Zalo ${esc(bank.zaloPhone)}</a> để kích hoạt.</p>`;
     }
@@ -372,37 +457,80 @@
     }else if(current === "free" && !user.emailVerified && !school.trialUsed){
       banner = `<div class="portal-trial-banner is-active">Xác thực email để nhận ngay <strong>30 ngày miễn phí</strong> đầy đủ tính năng.</div>`;
     }
-    root.innerHTML = banner + ["free", "plus", "max"].map(id => A.PLANS[id]).filter(Boolean).map(p => {
-      const isCurrent = current === p.id;
-      const targetRank = PLAN_RANK[p.id] ?? 0;
+    root.classList.toggle("has-plan-banner", Boolean(banner));
+    const planCards = ["free", "plus", "max"].map(id => A.PLANS[id]).filter(Boolean).map(p => {
+      const isMaxCard = p.id === "max";
+      const selectedMaxTier = isMaxCard ? selectedMaxPlanTier(current === "max1" || current === "max2" ? current : maxPlanClassCountFromSchool()) : null;
+      const targetPlanId = isMaxCard ? (selectedMaxTier?.planId || "max1") : p.id;
+      const targetPlan = A.PLANS[targetPlanId] || p;
+      const isCurrent = isMaxCard ? (current === "max1" || current === "max2") : current === p.id;
+      const selectedIsCurrent = current === targetPlanId;
+      const targetRank = PLAN_RANK[targetPlanId] ?? 0;
       const isDowngrade = targetRank < currentRank;
       let btn = "";
       if(p.id !== "free"){
-        if(isCurrent){
-          if(!p.unlimited){
-            btn = `<button type="button" class="portal-btn primary" data-plan="${p.id}" data-renew="1">Gia hạn · ${A.formatMoney(p.price)}</button>`;
+        if(selectedIsCurrent){
+          if(!targetPlan.unlimited){
+            btn = `<button type="button" class="portal-btn primary" data-plan="${targetPlanId}"${isMaxCard ? " data-max-action" : ""} data-renew="1">Gia hạn · ${A.formatMoney(targetPlan.price)}</button>`;
           }
         }else if(isDowngrade){
-          btn = `<button type="button" class="portal-btn" disabled>Đăng ký</button>`;
+          btn = `<button type="button" class="portal-btn"${isMaxCard ? " data-max-action" : ""} disabled>Đăng ký</button>`;
         }else{
-          btn = `<button type="button" class="portal-btn primary" data-plan="${p.id}">Đăng ký · ${A.formatMoney(p.price)}</button>`;
+          btn = `<button type="button" class="portal-btn primary" data-plan="${targetPlanId}"${isMaxCard ? " data-max-action" : ""}>Đăng ký · ${A.formatMoney(targetPlan.price)}</button>`;
         }
       }
       const usage = isCurrent ? planUsageText() : "";
-      return `<article class="plan-card${isCurrent ? " is-current" : ""}" style="--plan-color:${p.color}">
+      const maxPricing = p.id === "max" ? maxPlanPricingHtml() : "";
+      return `<article class="plan-card${isCurrent ? " is-current" : ""}" data-plan-card="${esc(p.id)}" style="--plan-color:${p.color}">
         <div class="plan-card-head">
           <h3>${esc(p.label)}</h3>
           ${isCurrent ? '<span class="plan-current-badge">Đang dùng</span>' : ""}
         </div>
-        <div class="price">${p.price ? A.formatMoney(p.price) : "Miễn phí"}</div>
+        <div class="price${p.id === "max" ? " max-plan-base-price" : ""}">${p.price ? (p.id === "max" ? `<span>Từ</span><strong>${esc(A.formatMoney(p.price))}</strong><small>/ năm</small>` : A.formatMoney(p.price)) : "Miễn phí"}</div>
         <ul>
+          ${p.id === "max" ? "<li>Hỗ trợ xếp TKB đầu tiên</li>" : ""}
+          ${p.solveLimit ? `<li>Giới hạn ${esc(p.solveLimit)} lượt Xếp / Tối ưu</li>` : ""}
+          ${p.id === "max" ? "<li>Không giới hạn lượt Xếp / Tối ưu</li>" : ""}
           <li>${p.print ? "Được in / xuất TKB" : "Chỉ xếp TKB, không in"}</li>
           <li>${A.planDurationLabel ? A.planDurationLabel(p) : (p.durationDays ? p.durationDays + " ngày sử dụng" : "Không giới hạn thời gian")}</li>
         </ul>
+        ${maxPricing}
         ${usage ? `<div class="plan-usage">${esc(usage)}</div>` : ""}
         ${btn}
       </article>`;
     }).join("");
+    root.innerHTML = banner + planCards + managedServiceCardHtml();
+
+    root.querySelectorAll('.plan-card[data-plan-card="max"]').forEach(card => {
+      const tierInputs = Array.from(card.querySelectorAll("[data-max-plan]"));
+      const actionButton = card.querySelector("[data-max-action]");
+      const syncSelectedPrice = () => {
+        const selectedInput = tierInputs.find(input => input.checked) || tierInputs[0];
+        const tier = selectedMaxPlanTier(selectedInput?.value);
+        card.querySelectorAll(".max-plan-tier-option").forEach(option => {
+          option.classList.toggle("is-selected", option.contains(selectedInput));
+        });
+        if(actionButton){
+          const planId = tier?.planId || "max1";
+          const isSamePlan = current === planId;
+          const isDowngrade = (PLAN_RANK[planId] ?? 0) < currentRank;
+          actionButton.disabled = isDowngrade;
+          actionButton.classList.toggle("primary", !isDowngrade);
+          if(isDowngrade){
+            delete actionButton.dataset.plan;
+            delete actionButton.dataset.renew;
+            actionButton.textContent = "Đăng ký";
+          }else{
+            actionButton.dataset.plan = planId;
+            if(isSamePlan) actionButton.dataset.renew = "1";
+            else delete actionButton.dataset.renew;
+            actionButton.textContent = `${isSamePlan ? "Gia hạn" : "Đăng ký"} · ${A.formatMoney(tier.price)}`;
+          }
+        }
+      };
+      tierInputs.forEach(input => input.addEventListener("change", syncSelectedPrice));
+      syncSelectedPrice();
+    });
 
     root.querySelectorAll("[data-plan]").forEach(btn => {
       btn.onclick = () => {
@@ -411,7 +539,9 @@
         if(!plan) return;
         const isRenew = btn.dataset.renew === "1";
         if(!isRenew && (PLAN_RANK[planId] ?? 0) <= currentRank) return;
-        openTransferModal(plan, isRenew);
+        const tierInput = btn.closest(".plan-card")?.querySelector("[data-max-plan]:checked");
+        const tier = planId === "max1" || planId === "max2" ? selectedMaxPlanTier(tierInput?.value) : null;
+        openTransferModal(plan, isRenew, tier ? { tier, price:tier.price } : null);
       };
     });
   }

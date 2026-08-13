@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tkbcherry.com/contracts/tkb-model-plan-v1.schema.json",
+  "title": "TKBCherry model-plan wire v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol",
+    "schemaVersion",
+    "fixtureId",
+    "phase",
+    "request",
+    "model",
+    "variableMap",
+    "result"
+  ],
+  "properties": {
+    "protocol": { "const": "tkb-model-plan-v1" },
+    "schemaVersion": { "const": 1 },
+    "fixtureId": { "type": "string", "minLength": 1 },
+    "phase": {
+      "enum": ["completion_seed", "quality", "sessions", "gap2", "gap1"]
+    },
+    "request": { "$ref": "#/$defs/canonicalArtifact" },
+    "model": { "$ref": "#/$defs/model" },
+    "variableMap": { "$ref": "#/$defs/variableMap" },
+    "result": { "$ref": "#/$defs/result" }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["encoding", "sha256", "bytes"],
+      "properties": {
+        "encoding": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "bytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "canonicalArtifact": {
+      "allOf": [
+        { "$ref": "#/$defs/artifact" },
+        {
+          "type": "object",
+          "properties": {
+            "encoding": { "const": "canonical-json-v1" }
+          }
+        }
+      ]
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "runtime",
+        "encoding",
+        "digest",
+        "sha256",
+        "bytes",
+        "parameters",
+        "statistics"
+      ],
+      "properties": {
+        "kind": {
+          "enum": ["external_cp_sat_model", "external_highs_model"]
+        },
+        "runtime": { "type": "string", "minLength": 1 },
+        "encoding": { "type": "string", "minLength": 1 },
+        "digest": { "$ref": "#/$defs/sha256" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "parameters": { "$ref": "#/$defs/artifact" },
+        "statistics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "variables",
+            "constraints",
+            "objectiveVariables",
+            "hintVariables"
+          ],
+          "properties": {
+            "variables": { "type": "integer", "minimum": 0 },
+            "constraints": { "type": "integer", "minimum": 0 },
+            "objectiveVariables": { "type": "integer", "minimum": 0 },
+            "hintVariables": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "variableMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["encoding", "sha256", "bytes", "entries"],
+      "properties": {
+        "encoding": { "const": "tkb-variable-map-json-v1" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "entries": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hardValid",
+        "violations",
+        "expectedPeriods",
+        "scheduledPeriods",
+        "unassignedPeriods",
+        "teacherSessions",
+        "onePeriodTeacherSessions",
+        "gap1",
+        "gap2"
+      ],
+      "properties": {
+        "hardValid": { "type": "boolean" },
+        "violations": { "type": "integer", "minimum": 0 },
+        "expectedPeriods": { "type": "integer", "minimum": 0 },
+        "scheduledPeriods": { "type": "integer", "minimum": 0 },
+        "unassignedPeriods": { "type": "integer", "minimum": 0 },
+        "teacherSessions": { "type": "integer", "minimum": 0 },
+        "onePeriodTeacherSessions": { "type": "integer", "minimum": 0 },
+        "gap1": { "type": "integer", "minimum": 0 },
+        "gap2": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "qualityEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requireHardValid",
+        "maximumViolations",
+        "minimumScheduledPeriods",
+        "maximumUnassignedPeriods",
+        "maximumTeacherSessions",
+        "maximumOnePeriodTeacherSessions",
+        "maximumGap1",
+        "maximumGap2"
+      ],
+      "properties": {
+        "requireHardValid": { "const": true },
+        "maximumViolations": { "type": "integer", "minimum": 0 },
+        "minimumScheduledPeriods": { "type": "integer", "minimum": 0 },
+        "maximumUnassignedPeriods": { "type": "integer", "minimum": 0 },
+        "maximumTeacherSessions": { "type": "integer", "minimum": 0 },
+        "maximumOnePeriodTeacherSessions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maximumGap1": { "type": "integer", "minimum": 0 },
+        "maximumGap2": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "encoding",
+        "sha256",
+        "bytes",
+        "quality",
+        "qualityEnvelope"
+      ],
+      "properties": {
+        "encoding": { "const": "canonical-json-v1" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "quality": { "$ref": "#/$defs/quality" },
+        "qualityEnvelope": { "$ref": "#/$defs/qualityEnvelope" }
+      }
+    }
+  }
+}

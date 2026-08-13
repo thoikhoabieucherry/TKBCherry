@@ -20,7 +20,6 @@ NGINX_SITE_CONFIG="${TKB_NGINX_SITE_CONFIG:-/etc/nginx/sites-enabled/tkbcherry}"
 NGINX_GATE_BACKUP=""
 NGINX_GATE_SITE=""
 NGINX_GATE_ENABLED=0
-AGENT_ROLLBACK_STAGE=""
 CANDIDATE_RUST_BINARY=""
 CANDIDATE_MAIL_NODE_MODULES=""
 MAIL_RUNTIME_ROLLBACK_STAGE=""
@@ -52,70 +51,6 @@ if ! flock -n 9; then
   echo "Another Cherry Scheduler deployment is already running." >&2
   exit 75
 fi
-
-ensure_agent_download_location() {
-  local site backup
-  site="$(readlink -f "$NGINX_SITE_CONFIG")"
-  [ -f "$site" ] || {
-    echo "Nginx site config not found: $NGINX_SITE_CONFIG" >&2
-    return 1
-  }
-  backup="$(mktemp)"
-  cp -p "$site" "$backup"
-  python3 - "$site" "$APP_DIR" <<'PY'
-from pathlib import Path
-import sys
-
-path = Path(sys.argv[1])
-app_dir = Path(sys.argv[2])
-source = path.read_text(encoding="utf-8")
-begin = "# TKB_AGENT_DOWNLOAD_BEGIN"
-end = "# TKB_AGENT_DOWNLOAD_END"
-if source.count(begin) != source.count(end):
-    raise SystemExit("Agent download location markers are incomplete")
-if source.count(begin) > 1:
-    raise SystemExit("Agent download location markers are duplicated")
-if begin in source:
-    block_start = source.rfind("\n", 0, source.index(begin)) + 1
-    marker_end = source.find(end, block_start)
-    block_end = source.find("\n", marker_end)
-    block_end = len(source) if block_end < 0 else block_end + 1
-    if source[block_end:block_end + 1] == "\n":
-        block_end += 1
-    source = source[:block_start] + source[block_end:]
-needle = "    location / {"
-if needle not in source:
-    raise SystemExit("cannot find the primary Nginx proxy location")
-download = app_dir / "web" / "downloads" / "TKBCherryAgent-Windows.zip"
-manifest = app_dir / "web" / "downloads" / "TKBCherryAgent-release.json"
-block = f'''    {begin}
-    location = /downloads/TKBCherryAgent-Windows.zip {{
-        alias {download};
-        default_type application/zip;
-        add_header Content-Disposition 'attachment; filename="TKBCherryAgent-Windows.zip"' always;
-        add_header X-Content-Type-Options nosniff always;
-    }}
-
-    location = /downloads/TKBCherryAgent-release.json {{
-        alias {manifest};
-        default_type application/json;
-        add_header Cache-Control 'no-store' always;
-        add_header X-Content-Type-Options nosniff always;
-    }}
-    {end}
-
-'''
-path.write_text(source.replace(needle, block + needle, 1), encoding="utf-8")
-PY
-  if ! nginx -t; then
-    cp -p "$backup" "$site"
-    nginx -t || true
-    rm -f "$backup"
-    return 1
-  fi
-  systemctl reload nginx
-  rm -f "$backup"
-}
 
 enable_solver_admission_gate() {
   NGINX_GATE_SITE="$(readlink -f "$NGINX_SITE_CONFIG")"
@@ -181,37 +116,6 @@ disable_solver_admission_gate() {
   rm -f "$NGINX_GATE_BACKUP"
   NGINX_GATE_BACKUP=""
   NGINX_GATE_ENABLED=0
-}
-
-capture_agent_rollback_files() {
-  local filename source
-  AGENT_ROLLBACK_STAGE="$(mktemp -d)"
-  for filename in TKBCherryAgent-Windows.zip TKBCherryAgent-release.json; do
-    source="$APP_DIR/web/downloads/$filename"
-    [ ! -f "$source" ] || cp -a "$source" "$AGENT_ROLLBACK_STAGE/$filename"
-  done
-}
-
-restore_agent_rollback_files() {
-  local downloads filename source
-  downloads="$APP_DIR/web/downloads"
-  install -d -m 0755 "$downloads"
-  rm -f -- \
-    "$downloads/TKBCherryAgent-Windows.zip" \
-    "$downloads/TKBCherryAgent-release.json"
-  [ -n "$AGENT_ROLLBACK_STAGE" ] || return 0
-  for filename in TKBCherryAgent-Windows.zip TKBCherryAgent-release.json; do
-    source="$AGENT_ROLLBACK_STAGE/$filename"
-    if [ -f "$source" ]; then
-      cp -a "$source" "$downloads/$filename"
-      chmod 0644 "$downloads/$filename"
-    fi
-  done
-}
-
-cleanup_agent_rollback_stage() {
-  [ -z "$AGENT_ROLLBACK_STAGE" ] || rm -rf -- "$AGENT_ROLLBACK_STAGE"
-  AGENT_ROLLBACK_STAGE=""
 }
 
 cleanup_mail_runtime_rollback_stage() {
@@ -294,7 +198,6 @@ backup_server_state() {
 
 backup_release() {
   [ -d "$APP_DIR" ] || return 0
-  capture_agent_rollback_files
   BACKUP_STAGE="$(mktemp -d)"
   mkdir -p "$BACKUP_STAGE/app" "$BACKUP_STAGE/systemd"
   rsync -a \
@@ -307,8 +210,6 @@ backup_release() {
     --exclude='rust_api/target/' \
     --exclude='rust_api/target-*/' \
     --exclude='solver_runtime/logs/' \
-    --exclude='web/downloads/TKBCherryAgent-Windows.zip' \
-    --exclude='web/downloads/TKBCherryAgent-release.json' \
     "$APP_DIR/" "$BACKUP_STAGE/app/"
   if [ -f "$APP_DIR/rust_api/target/release/tkb_rust_api" ]; then
     mkdir -p "$BACKUP_STAGE/app/rust_api/target/release"
@@ -346,7 +247,6 @@ restore_release() {
     cp -a "$restore_dir/app/rust_api/target/release/tkb_rust_api" \
       "$APP_DIR/rust_api/target/release/tkb_rust_api"
   fi
-  restore_agent_rollback_files
   restore_mail_runtime
   if [ -f "$restore_dir/systemd/tkb-app.service" ]; then
     cp -a "$restore_dir/systemd/tkb-app.service" /etc/systemd/system/tkb-app.service
@@ -387,7 +287,6 @@ rollback_and_exit() {
     echo "$reason; restoring $RELEASE_BACKUP" >&2
     restore_release || echo "Automatic rollback failed" >&2
   fi
-  cleanup_agent_rollback_stage
   cleanup_mail_runtime_rollback_stage
   disable_solver_admission_gate || echo "Failed to remove solver admission gate" >&2
   cleanup_deploy_artifacts
@@ -535,7 +434,6 @@ trap 'rollback_on_signal TERM 143' TERM
 install -d -m 0700 "$BACKUP_DIR"
 find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.tar.gz' -exec chmod 0600 {} +
 prepare_candidate_runtime
-ensure_agent_download_location
 enable_solver_admission_gate
 wait_for_solver_idle
 install_candidate_python_requirements
@@ -553,13 +451,6 @@ rsync -a --delete \
   --exclude='rust_api/target/' \
   "$UPLOAD_DIR/" "$APP_DIR/"
 install_candidate_runtime
-if [ -f "$APP_DIR/web/downloads/TKBCherryAgent-Windows.zip" ]; then
-  chmod 0755 "$APP_DIR" "$APP_DIR/web" "$APP_DIR/web/downloads"
-  chmod 0644 "$APP_DIR/web/downloads/TKBCherryAgent-Windows.zip"
-fi
-if [ -f "$APP_DIR/web/downloads/TKBCherryAgent-release.json" ]; then
-  chmod 0644 "$APP_DIR/web/downloads/TKBCherryAgent-release.json"
-fi
 if [ -f "$HOME/.cargo/env" ]; then
   # shellcheck disable=SC1091
   source "$HOME/.cargo/env"
@@ -583,7 +474,6 @@ wait_for_health
 prune_runtime_artifacts
 disable_solver_admission_gate
 UPDATE_STARTED=0
-cleanup_agent_rollback_stage
 cleanup_mail_runtime_rollback_stage
 prune_old_backups || echo "Warning: could not prune old deployment backups" >&2
 trap - EXIT ERR HUP INT TERM

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import io
 import json
 import os
 import subprocess
@@ -203,6 +205,150 @@ class StdioProtocolTests(unittest.TestCase):
 
             self.assertEqual(completed.returncode, 0, completed.stderr.decode("utf-8", errors="replace"))
             self.assertFalse((Path(temp_dir) / "logs").exists())
+
+    def test_external_cp_sat_stream_keeps_one_solver_invocation_for_24_models(self) -> None:
+        child_code = "\n".join(
+            [
+                "import base64",
+                "import io",
+                "import json",
+                "import sys",
+                "from scripts import solve_stdio as protocol",
+                "from tkb_optimizer_ref.external_cp_sat import active_external_solver",
+                "protocol._install_stdout_protocol_guard()",
+                "models = [(f'model-{index}'.encode(), f'params-{index}'.encode()) for index in range(24)]",
+                "lines = [json.dumps({'request': {'data': {}, 'settings': {'browser_wasm_full_reference_refine': True}}})]",
+                "for index, (model, parameters) in enumerate(models):",
+                "    lines.append(json.dumps({",
+                "        'stepIndex': index,",
+                "        'modelDigest': protocol.external_model_digest(model, parameters),",
+                "        'responseBase64': base64.b64encode(f'response-{index}'.encode()).decode('ascii'),",
+                "    }))",
+                "sys.stdin = io.TextIOWrapper(io.BytesIO(('\\n'.join(lines) + '\\n').encode()), encoding='utf-8')",
+                "solve_calls = 0",
+                "def solve(data, settings, progress=None):",
+                "    global solve_calls",
+                "    solve_calls += 1",
+                "    external_solver = active_external_solver()",
+                "    assert external_solver is not None",
+                "    for index, (model, parameters) in enumerate(models):",
+                "        assert external_solver(model, parameters) == f'response-{index}'.encode()",
+                "    return {",
+                "        'ok': True,",
+                "        'solveCalls': solve_calls,",
+                "        'metrics': {",
+                "            'scheduled_periods': 1,",
+                "            'expected_periods': 1,",
+                "            'unassigned_periods': 0,",
+                "            'solver_unassigned_periods': 0,",
+                "        },",
+                "        'solver': {},",
+                "    }",
+                "protocol.solve_from_ui_data = solve",
+                "sys.argv = ['solve_stdio.py', 'external-cp-sat-stream']",
+                "raise SystemExit(protocol.main())",
+            ]
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", child_code],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=RUNTIME_ROOT,
+            check=False,
+            timeout=30,
+        )
+
+        self.assertEqual(
+            completed.returncode,
+            0,
+            completed.stderr.decode("utf-8", errors="replace"),
+        )
+        wrappers = [json.loads(line) for line in completed.stdout.splitlines()]
+        self.assertEqual(len(wrappers), 25)
+        self.assertEqual([wrapper["status"] for wrapper in wrappers[:-1]], [209] * 24)
+        self.assertEqual(
+            [wrapper["payload"]["stepIndex"] for wrapper in wrappers[:-1]],
+            list(range(24)),
+        )
+        self.assertEqual(
+            {
+                wrapper["payload"]["modelPlanVersion"]
+                for wrapper in wrappers[:-1]
+            },
+            {"tkb-model-plan-v1"},
+        )
+        self.assertEqual(wrappers[-1]["status"], 200)
+        self.assertEqual(wrappers[-1]["payload"]["solveCalls"], 1)
+        self.assertEqual(
+            wrappers[-1]["payload"]["solver"]["runtime_settings"]["external_cp_sat_steps"],
+            24,
+        )
+        self.assertIs(
+            wrappers[-1]["payload"]["solver"]["runtime_settings"]["browser_full_reference_refine"],
+            True,
+        )
+
+    def test_external_cp_sat_stream_rejects_wrong_step_or_digest(self) -> None:
+        sys.path.insert(0, str(RUNTIME_ROOT))
+        from scripts import solve_stdio as protocol
+
+        model = b"stream-model"
+        parameters = b"stream-parameters"
+        digest = protocol.external_model_digest(model, parameters)
+        encoded_response = base64.b64encode(b"solver-response").decode("ascii")
+        invalid_records = (
+            (
+                {
+                    "stepIndex": 1,
+                    "modelDigest": digest,
+                    "responseBase64": encoded_response,
+                },
+                "wrong step index",
+            ),
+            (
+                {
+                    "stepIndex": 0,
+                    "modelDigest": "0" * 64,
+                    "responseBase64": encoded_response,
+                },
+                "does not match the emitted model",
+            ),
+        )
+
+        for record, expected_error in invalid_records:
+            with self.subTest(expected_error=expected_error):
+                pending = []
+                stream = io.BytesIO((json.dumps(record) + "\n").encode("utf-8"))
+                solver = protocol._StreamingExternalCpSatSolver(
+                    input_stream=stream,
+                    write_pending=pending.append,
+                )
+                with self.assertRaisesRegex(
+                    protocol.ExternalCpSatProtocolError,
+                    expected_error,
+                ):
+                    solver(model, parameters)
+                self.assertEqual(len(pending), 1)
+                self.assertEqual(pending[0].index, 0)
+
+    def test_external_cp_sat_replay_keeps_legacy_record_shape(self) -> None:
+        sys.path.insert(0, str(RUNTIME_ROOT))
+        from scripts import solve_stdio as protocol
+
+        model = b"replay-model"
+        parameters = b"replay-parameters"
+        response = b"legacy-response"
+        solver = protocol._ReplayExternalCpSatSolver(
+            [
+                {
+                    "modelDigest": protocol.external_model_digest(model, parameters),
+                    "responseBase64": base64.b64encode(response).decode("ascii"),
+                }
+            ]
+        )
+
+        self.assertEqual(solver(model, parameters), response)
+        self.assertEqual(solver.calls, 1)
 
 
 if __name__ == "__main__":

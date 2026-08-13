@@ -94,14 +94,6 @@ rsync -a --delete \
   --exclude='mail-server/.env' \
   "$UPLOAD_DIR/" "$APP_DIR/"
 
-if [ -f "$APP_DIR/web/downloads/TKBCherryAgent-Windows.zip" ]; then
-  chmod 0755 "$APP_DIR" "$APP_DIR/web" "$APP_DIR/web/downloads"
-  chmod 0644 "$APP_DIR/web/downloads/TKBCherryAgent-Windows.zip"
-fi
-if [ -f "$APP_DIR/web/downloads/TKBCherryAgent-release.json" ]; then
-  chmod 0644 "$APP_DIR/web/downloads/TKBCherryAgent-release.json"
-fi
-
 python3 -m pip install --break-system-packages -r "$APP_DIR/solver_runtime/requirements.txt"
 
 cd "$APP_DIR/rust_api"
@@ -152,6 +144,8 @@ Environment=TKB_SOLVER_MAX_CONCURRENT=3
 Environment=TKB_SOLVER_CPU_TOKENS=6
 Environment=TKB_SOLVER_MIN_WORKERS=2
 Environment=TKB_SOLVER_MAX_WORKERS=6
+Environment=TKB_EXTERNAL_CP_SAT_BUILDERS=2
+Environment=TKB_REFERENCE_HELPER_PROCESSES=3
 Environment=TKB_SOLVER_REQUIRE_AUTH=1
 Environment=TKB_SESSION_CP_SAT_LINEARIZATION_LEVEL=1
 Environment=OMP_NUM_THREADS=1
@@ -187,22 +181,6 @@ server {
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
-
-    # TKB_AGENT_DOWNLOAD_BEGIN
-    location = /downloads/TKBCherryAgent-Windows.zip {
-        alias ${APP_DIR}/web/downloads/TKBCherryAgent-Windows.zip;
-        default_type application/zip;
-        add_header Content-Disposition 'attachment; filename="TKBCherryAgent-Windows.zip"' always;
-        add_header X-Content-Type-Options nosniff always;
-    }
-
-    location = /downloads/TKBCherryAgent-release.json {
-        alias ${APP_DIR}/web/downloads/TKBCherryAgent-release.json;
-        default_type application/json;
-        add_header Cache-Control 'no-store' always;
-        add_header X-Content-Type-Options nosniff always;
-    }
-    # TKB_AGENT_DOWNLOAD_END
 
     location / {
         proxy_pass http://127.0.0.1:${APP_PORT};

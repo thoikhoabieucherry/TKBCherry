@@ -16,7 +16,7 @@
 <meta name="theme-color" content="#ffffff">
 
 <link rel="stylesheet" href="../tokens.css?v=20260710-light-v1">
-<link rel="stylesheet" href="phanmon.css?v=20260725-v187-live-stats-v1">
+<link rel="stylesheet" href="phanmon.css?v=20260808-v1192-assigned-only-all-statistics-v1">
 <link rel="stylesheet" href="../admin-shell.css?v=20260710-app-nav-right-v1">
 <link rel="stylesheet" href="../theme-light.css?v=20260710-stats-zfix-v1">
 <link rel="stylesheet" href="../runtime.css?v=20260710-runtime-v1">
@@ -52,127 +52,113 @@ body.planner-shell .toolbar-actions {
   min-width: 0;
 }
 
-/* Focused solve modes are desktop-only. The touch toolbar stays compact on
-   phones and tablets. */
-body.planner-shell .desktop-solve-controls {
-  display: none;
+body.planner-shell .toolbar-actions > .planner-optimize-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 var(--planner-toolbar-button-width);
+  width: var(--planner-toolbar-button-width);
+  min-width: var(--planner-toolbar-button-width);
+  max-width: var(--planner-toolbar-button-width);
+  height: 36px;
+  min-height: 36px;
 }
 
-@media (min-width: 901px) and (hover: hover) and (pointer: fine) {
-  body.planner-shell .desktop-solve-controls {
-    position: relative;
-    display: inline-flex;
-    flex: 0 0 auto;
-    align-items: center;
-    gap: 4px;
-    min-width: 0;
-  }
+body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 9px;
+  gap: 5px;
+  border: 1px solid var(--tkb-border, #e2e8f0);
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
 
-  body.planner-shell .desktop-solve-controls > .planner-mode-button,
-  body.planner-shell .desktop-solve-controls > .planner-optimize-wrap > .planner-mode-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    box-sizing: border-box;
-    height: 36px;
-    min-height: 36px;
-    padding: 0 9px;
-    gap: 5px;
-    border: 1px solid var(--tkb-border, #e2e8f0);
-    border-radius: 8px;
-    background: #fff;
-    color: #334155;
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1;
-    letter-spacing: 0;
-    white-space: nowrap;
-  }
+body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu:hover:not(:disabled),
+body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu[aria-expanded="true"] {
+  border-color: #94a3b8;
+  background: #f8fafc;
+  color: #0f172a;
+}
 
-  body.planner-shell .desktop-solve-controls > #btnQuickComplete {
-    width: 82px;
-  }
+body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu.is-auto-sort-disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  filter: grayscale(.2) saturate(.6);
+  pointer-events: none;
+}
 
-  body.planner-shell .desktop-solve-controls > .planner-optimize-wrap > #btnOptimizeMenu {
-    width: 78px;
-  }
+body.planner-shell .planner-mode-icon {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  pointer-events: none;
+}
 
-  body.planner-shell .desktop-solve-controls .planner-mode-button:hover:not(:disabled),
-  body.planner-shell .desktop-solve-controls .planner-mode-button[aria-expanded="true"] {
-    border-color: #94a3b8;
-    background: #f8fafc;
-    color: #0f172a;
-  }
+body.planner-shell .planner-optimize-menu {
+  position: absolute;
+  z-index: 1400;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  width: 164px;
+  padding: 4px;
+  gap: 2px;
+  border: 1px solid var(--tkb-border, #e2e8f0);
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgb(15 23 42 / 18%);
+}
 
-  body.planner-shell .desktop-solve-controls .planner-mode-button.is-auto-sort-disabled,
-  body.planner-shell .planner-optimize-menu > button.is-auto-sort-disabled {
-    opacity: .45;
-    cursor: default;
-    filter: saturate(.6);
-  }
+body.planner-shell .planner-optimize-menu[hidden] {
+  display: none !important;
+}
 
-  body.planner-shell .desktop-solve-controls .planner-mode-button:focus-visible,
-  body.planner-shell .planner-optimize-menu > button:focus-visible {
-    outline: 2px solid #2563eb;
-    outline-offset: 1px;
-    box-shadow: 0 0 0 3px rgb(37 99 235 / 18%);
-  }
+body.planner-shell .planner-optimize-menu > button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #1e293b;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  text-align: left;
+  white-space: nowrap;
+}
 
-  body.planner-shell .desktop-solve-controls .planner-mode-icon {
-    width: 15px;
-    height: 15px;
-    flex: none;
-    pointer-events: none;
-  }
+body.planner-shell .planner-optimize-menu > button[hidden] {
+  display: none !important;
+}
 
-  body.planner-shell .planner-optimize-wrap {
-    position: relative;
-    display: inline-flex;
-  }
+body.planner-shell .planner-optimize-menu > button:hover:not(:disabled) {
+  background: #f1f5f9;
+}
 
-  body.planner-shell .planner-optimize-menu {
-    position: absolute;
-    top: calc(100% + 6px);
-    right: 0;
-    z-index: 90;
-    display: grid;
-    width: 154px;
-    padding: 4px;
-    gap: 2px;
-    border: 1px solid var(--tkb-border, #e2e8f0);
-    border-radius: 8px;
-    background: #fff;
-    box-shadow: 0 10px 28px rgb(15 23 42 / 16%);
-  }
-
-  body.planner-shell .planner-optimize-menu[hidden] {
-    display: none !important;
-  }
-
-  body.planner-shell .planner-optimize-menu > button {
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    box-sizing: border-box;
-    width: 100%;
-    min-width: 0;
-    height: 34px;
-    padding: 0 10px;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: #1e293b;
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1;
-    letter-spacing: 0;
-    text-align: left;
-    white-space: nowrap;
-  }
-
-  body.planner-shell .planner-optimize-menu > button:hover:not(:disabled) {
-    background: #f1f5f9;
-  }
+body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu:focus-visible,
+body.planner-shell .planner-optimize-menu > button:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 18%);
 }
 
 @media (min-width: 901px) and (max-width: 1150px) and (hover: hover) and (pointer: fine) {
@@ -186,15 +172,6 @@ body.planner-shell .desktop-solve-controls {
     gap: 4px;
   }
 
-  body.planner-shell .desktop-solve-controls > #btnQuickComplete {
-    width: 74px;
-    padding-inline: 7px;
-  }
-
-  body.planner-shell .desktop-solve-controls > .planner-optimize-wrap > #btnOptimizeMenu {
-    width: 70px;
-    padding-inline: 7px;
-  }
 }
 
 @media (min-width: 901px) and (max-width: 1024px) and (hover: hover) and (pointer: fine) {
@@ -202,17 +179,6 @@ body.planner-shell .desktop-solve-controls {
     --planner-toolbar-button-width: 80px;
   }
 
-  body.planner-shell .desktop-solve-controls > #btnQuickComplete {
-    width: 70px;
-  }
-
-  body.planner-shell .desktop-solve-controls > .planner-optimize-wrap > #btnOptimizeMenu {
-    width: 64px;
-  }
-
-  body.planner-shell .desktop-solve-controls .planner-mode-icon {
-    display: none;
-  }
 }
 
 /* Keep one DOM order everywhere. */
@@ -220,6 +186,7 @@ body.planner-shell .toolbar-actions > #btnRangBuoc,
 body.planner-shell .toolbar-actions > #btnUndoTKB,
 body.planner-shell .toolbar-actions > #btnRedoTKB,
 body.planner-shell .toolbar-actions > #btnAutoSort,
+body.planner-shell .toolbar-actions > .planner-optimize-wrap,
 body.planner-shell .toolbar-actions > #btnStopAutoSort,
 body.planner-shell .toolbar-actions > #btnDeleteAll {
   order: initial;
@@ -495,10 +462,23 @@ body.planner-shell #btnAgentHelper .agent-ai-icon {
   filter: drop-shadow(0 1px 2px rgb(109 40 217 / 18%));
 }
 
-body.planner-shell #btnHome.is-auto-sort-disabled {
+body.planner-shell #btnAgentHelper.is-auto-sort-disabled {
+  opacity: 1;
+  cursor: not-allowed;
+  filter: none;
+  pointer-events: none;
+}
+
+body.planner-shell #btnAgentHelper.is-auto-sort-disabled .agent-ai-icon,
+body.planner-shell #btnAgentHelper.is-auto-sort-disabled .agent-button-label {
   opacity: .45;
-  cursor: default;
-  filter: saturate(.6);
+  filter: grayscale(.35) saturate(.55);
+}
+
+body.planner-shell #btnAgentHelper.is-auto-sort-disabled .agent-status-dot {
+  z-index: 2;
+  opacity: 1;
+  filter: none;
 }
 
 body.planner-shell .toolbar-feedback {
@@ -578,7 +558,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   }
 
   body.planner-shell .toolbar-main {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: repeat(8, minmax(0, 1fr));
     grid-template-rows: 44px var(--planner-mobile-feedback-h);
     align-items: stretch;
     gap: 4px 2px;
@@ -589,6 +569,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   }
 
   body.planner-shell .toolbar-actions > button,
+  body.planner-shell .toolbar-actions > .planner-optimize-wrap > .planner-mode-button,
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button,
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button,
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
@@ -661,9 +642,43 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     grid-row: 1;
   }
 
+  body.planner-shell .toolbar-actions > .planner-optimize-wrap {
+    grid-column: 4;
+    grid-row: 1;
+    display: inline-flex;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 44px;
+    min-height: 44px;
+  }
+
+  body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu {
+    width: 100%;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    font-size: 0;
+    border-radius: var(--tkb-radius, 10px);
+    touch-action: manipulation;
+  }
+
+  body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu .planner-mode-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  body.planner-shell .planner-optimize-menu {
+    top: calc(100% + 5px);
+    right: auto;
+    left: 50%;
+    width: min(164px, calc(100vw - 12px));
+    transform: translateX(-50%);
+  }
+
   body.planner-shell .toolbar-actions > #btnStopAutoSort,
   body.planner-shell .toolbar-actions > #btnDeleteAll {
-    grid-column: 4 !important;
+    grid-column: 5 !important;
     grid-row: 1 !important;
   }
 
@@ -841,7 +856,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   }
 
   body.planner-shell #btnAgentHelper {
-    grid-column: 5;
+    grid-column: 6;
     grid-row: 1;
     display: inline-flex !important;
     width: 100%;
@@ -870,13 +885,13 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   }
 
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button {
-    grid-column: 6;
+    grid-column: 7;
     grid-row: 1;
     padding-inline: 3px;
   }
 
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
-    grid-column: 7;
+    grid-column: 8;
     grid-row: 1;
     height: 44px;
     min-height: 44px;
@@ -913,7 +928,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 /* Landscape phones have enough width for separate full-size history buttons. */
 @media (orientation: landscape) and (max-height: 540px) and (any-pointer: coarse) {
   body.planner-shell .toolbar-main {
-    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-template-columns: repeat(9, minmax(0, 1fr));
   }
 
   body.planner-shell .toolbar-actions > #btnUndoTKB {
@@ -937,21 +952,25 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     grid-column: 4;
   }
 
+  body.planner-shell .toolbar-actions > .planner-optimize-wrap {
+    grid-column: 5;
+  }
+
   body.planner-shell .toolbar-actions > #btnStopAutoSort,
   body.planner-shell .toolbar-actions > #btnDeleteAll {
-    grid-column: 5 !important;
+    grid-column: 6 !important;
   }
 
   body.planner-shell #btnAgentHelper {
-    grid-column: 6;
-  }
-
-  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button {
     grid-column: 7;
   }
 
-  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button {
     grid-column: 8;
+  }
+
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
+    grid-column: 9;
   }
 }
 
@@ -1397,19 +1416,18 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
       <button id="btnUndoTKB" class="icon-button" type="button" onclick="tkbUndo()" title="Hoàn tác" aria-label="Hoàn tác" disabled><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 14-4-4 4-4"/><path d="M5 10h11a4 4 0 1 1 0 8h-1"/></svg></button>
       <button id="btnRedoTKB" class="icon-button" type="button" onclick="tkbRedo()" title="Làm lại" aria-label="Làm lại" disabled><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 14 4-4-4-4"/><path d="M19 10H8a4 4 0 1 0 0 8h1"/></svg></button>
       <button id="btnAutoSort" class="primary icon-button" type="button" onclick="sapXepTuDongAll()" title="Bắt đầu sắp xếp" aria-label="Bắt đầu sắp xếp"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8.35 6.3c0-1.02 1.12-1.65 2-1.12l8.1 4.88a1.3 1.3 0 0 1 0 2.22l-8.1 4.88c-.88.53-2-.1-2-1.12V6.3Z" fill="currentColor"/></svg></button>
-      <button type="button" id="btnStopAutoSort" class="auto-sort-stop icon-button" onclick="requestStopAutoSort()" title="Dừng sắp xếp" aria-label="Dừng sắp xếp" aria-hidden="false" disabled><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><rect x="9" y="9" width="6" height="6" rx="0.7" fill="currentColor" stroke="none"/></svg></button>
-      <button id="btnDeleteAll" class="danger icon-button" type="button" onclick="deleteAllTKB()" title="Xóa toàn bộ thời khóa biểu" aria-label="Xóa toàn bộ thời khóa biểu"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 7h15"/><path d="M9 7V4.8h6V7"/><path d="m6.7 7 .8 12h9l.8-12"/><path d="M10 10.5v5.2M14 10.5v5.2"/></svg></button>
-      <div id="desktopSolveControls" class="desktop-solve-controls" aria-label="Chế độ xếp trên máy tính">
-        <button id="btnQuickComplete" class="planner-mode-button" type="button" onclick="runPlannerSchedulerMode('quick_complete', event)" title="Xếp nhanh đủ tiết" aria-label="Xếp nhanh đủ tiết"><svg class="planner-mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m13 2-9 12h8l-1 8 9-12h-8l1-8Z"/></svg><span>Xếp nhanh</span></button>
-        <div class="planner-optimize-wrap">
-          <button id="btnOptimizeMenu" class="planner-mode-button" type="button" onclick="togglePlannerOptimizeMenu(event)" title="Chọn mục tiêu tối ưu" aria-label="Chọn mục tiêu tối ưu" aria-haspopup="menu" aria-expanded="false" aria-controls="plannerOptimizeMenu"><svg class="planner-mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg><span>Tối ưu</span></button>
-          <div id="plannerOptimizeMenu" class="planner-optimize-menu" role="menu" aria-label="Mục tiêu tối ưu" hidden>
-            <button type="button" role="menuitem" data-scheduler-mode="optimize_singletons" onclick="runPlannerSchedulerMode('optimize_singletons', event)">Buổi 1 tiết</button>
-            <button type="button" role="menuitem" data-scheduler-mode="optimize_sessions" onclick="runPlannerSchedulerMode('optimize_sessions', event)">Buổi</button>
-            <button type="button" role="menuitem" data-scheduler-mode="optimize_gaps" onclick="runPlannerSchedulerMode('optimize_gaps', event)">Tiết trống</button>
-          </div>
+      <div id="plannerOptimizeWrap" class="planner-optimize-wrap">
+        <button id="btnOptimizeMenu" class="planner-mode-button" type="button" onclick="togglePlannerOptimizeMenu(event)" title="Chọn mục tiêu tối ưu" aria-label="Chọn mục tiêu tối ưu" aria-haspopup="menu" aria-expanded="false" aria-controls="plannerOptimizeMenu"><svg class="planner-mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg><span class="planner-mode-label">Tối ưu</span></button>
+        <div id="plannerOptimizeMenu" class="planner-optimize-menu" role="menu" aria-label="Mục tiêu tối ưu" hidden>
+          <!-- optimize-three-user-menu-v1: generic sessions remains superadmin-only -->
+          <button type="button" role="menuitem" data-scheduler-mode="optimize_singletons" onclick="runPlannerSchedulerMode('optimize_singletons', event)">1 tiết/buổi</button>
+          <button type="button" role="menuitem" data-scheduler-mode="optimize_gap1" onclick="runPlannerSchedulerMode('optimize_gap1', event)">1 tiết trống</button>
+          <button type="button" role="menuitem" data-scheduler-mode="optimize_gap2" onclick="runPlannerSchedulerMode('optimize_gap2', event)">2 tiết trống</button>
+          <button type="button" role="menuitem" data-scheduler-mode="optimize_sessions" data-superadmin-only="true" aria-hidden="true" tabindex="-1" hidden onclick="runPlannerSchedulerMode('optimize_sessions', event)">Buổi</button>
         </div>
       </div>
+      <button type="button" id="btnStopAutoSort" class="auto-sort-stop icon-button" onclick="requestStopAutoSort()" title="Dừng sắp xếp" aria-label="Dừng sắp xếp" aria-hidden="false" disabled><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><rect x="9" y="9" width="6" height="6" rx="0.7" fill="currentColor" stroke="none"/></svg></button>
+      <button id="btnDeleteAll" class="danger icon-button" type="button" onclick="deleteAllTKB()" title="Xóa toàn bộ thời khóa biểu" aria-label="Xóa toàn bộ thời khóa biểu"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 7h15"/><path d="M9 7V4.8h6V7"/><path d="m6.7 7 .8 12h9l.8-12"/><path d="M10 10.5v5.2M14 10.5v5.2"/></svg></button>
     </div>
 
     <div class="toolbar-feedback" aria-label="Trạng thái sắp xếp">
@@ -1426,7 +1444,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
     <div class="toolbar-secondary-actions" aria-label="Điều hướng và thống kê">
       <div class="stats-popover-wrap">
-        <button id="btnAgentHelper" class="agent-helper-button" type="button" title="Agent đã bật" aria-label="Agent đã bật" aria-pressed="true" onclick="toggleBrowserAgent()" data-agent-state="unavailable" hidden aria-hidden="true" aria-disabled="true" disabled><span class="agent-status-dot" aria-hidden="true"></span><svg class="toolbar-icon agent-ai-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v2"/><rect x="4" y="6" width="16" height="14" rx="4"/><path d="M8 11h.01M16 11h.01M8.5 16c1 .8 2.15 1.2 3.5 1.2s2.5-.4 3.5-1.2"/><path d="m18.5 2 .45 1.05L20 3.5l-1.05.45L18.5 5l-.45-1.05L17 3.5l1.05-.45L18.5 2Z"/></svg><span class="agent-button-label">Agent</span></button>
+        <button id="btnAgentHelper" class="agent-helper-button" type="button" title="Hạ tầng xếp thời khóa biểu" aria-label="Hạ tầng xếp thời khóa biểu" aria-pressed="false" onclick="toggleBrowserAgent()" data-agent-state="off" hidden aria-hidden="true" aria-disabled="true" disabled><span class="agent-status-dot" aria-hidden="true"></span><svg class="toolbar-icon agent-ai-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v2"/><rect x="4" y="6" width="16" height="14" rx="4"/><path d="M8 11h.01M16 11h.01M8.5 16c1 .8 2.15 1.2 3.5 1.2s2.5-.4 3.5-1.2"/><path d="m18.5 2 .45 1.05L20 3.5l-1.05.45L18.5 5l-.45-1.05L17 3.5l1.05-.45L18.5 2Z"/></svg><span class="agent-button-label">Agent</span></button>
         <button id="btnHome" class="primary save-button" type="button" title="Về trang chủ" aria-label="Về trang chủ" onclick="saveAndBack()">Home</button>
         <button id="statsToggle" class="stats-toggle" type="button" onclick="toggleStatsPopover(event)" title="Thống kê thời khóa biểu" aria-label="Thống kê thời khóa biểu" aria-expanded="false"><span class="toolbar-label-full" aria-hidden="true">Thống kê</span><span class="toolbar-label-compact" aria-hidden="true"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M4 20V13h4v7M10 20V9h4v11M16 20V5h4v15M3 20h18"/></svg></span></button>
         <div id="statsPopover" class="stats-popover" hidden>
@@ -1440,45 +1458,81 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
 <script>
 (function(){
-  const desktopModeQuery = "(min-width: 901px) and (hover: hover) and (pointer: fine)";
-  const desktopModeMedia = typeof window.matchMedia === "function"
-    ? window.matchMedia(desktopModeQuery)
-    : {matches:false};
-  const controls = document.getElementById("desktopSolveControls");
+  const optimizeWrap = document.getElementById("plannerOptimizeWrap");
   const toggleButton = document.getElementById("btnOptimizeMenu");
   const menu = document.getElementById("plannerOptimizeMenu");
-  const allowedModes = new Set([
-    "quick_complete",
+  const ordinaryModes = new Set([
     "optimize_singletons",
-    "optimize_sessions",
-    "optimize_gaps"
+    "optimize_gap1",
+    "optimize_gap2"
   ]);
+  const superadminOnlyModes = new Set(["optimize_sessions"]);
+
+  function plannerOptimizeUserIsSuperadmin(){
+    try{
+      return String(window.TKBAuth?.currentUser?.()?.user?.role || "")
+        .trim()
+        .toLowerCase() === "superadmin";
+    }catch(_){
+      return false;
+    }
+  }
+
+  function visibleOptimizeMenuItems(){
+    return Array.from(menu?.querySelectorAll('[role="menuitem"]') || [])
+      .filter(item => item.hidden !== true && item.getAttribute?.("aria-hidden") !== "true");
+  }
+
+  function syncPlannerOptimizeRoleAccess(){
+    const superadmin = plannerOptimizeUserIsSuperadmin();
+    for(const item of menu?.querySelectorAll('[data-superadmin-only="true"]') || []){
+      item.hidden = !superadmin;
+      item.setAttribute("aria-hidden", superadmin ? "false" : "true");
+      if(superadmin) item.removeAttribute?.("tabindex");
+      else item.setAttribute("tabindex", "-1");
+    }
+    return superadmin;
+  }
+
+  function plannerOptimizeModeAllowed(mode){
+    return ordinaryModes.has(mode)
+      || (superadminOnlyModes.has(mode) && plannerOptimizeUserIsSuperadmin());
+  }
+
+  function optimizeControlBusy(){
+    return !toggleButton
+      || toggleButton.disabled === true
+      || toggleButton.getAttribute("aria-disabled") === "true"
+      || window.__TKB_RUST_SOLVER_RUNNING === true
+      || window.__TKB_SOLVE_UI_BUSY === true;
+  }
 
   function setPlannerOptimizeMenuOpen(open, options){
     if(!toggleButton || !menu) return false;
-    const shouldOpen = !!open && desktopModeMedia.matches === true;
+    const shouldOpen = !!open && !optimizeControlBusy();
     menu.hidden = !shouldOpen;
     toggleButton.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
     if(shouldOpen && options?.focusFirst === true){
-      menu.querySelector('[role="menuitem"]')?.focus();
-    }else if(!shouldOpen && options?.returnFocus === true){
+      visibleOptimizeMenuItems()[0]?.focus();
+    }else if(!shouldOpen && options?.returnFocus === true && !toggleButton.disabled){
       toggleButton.focus();
     }
     return shouldOpen;
   }
 
   function togglePlannerOptimizeMenu(event){
-    event?.preventDefault();
-    event?.stopPropagation();
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if(optimizeControlBusy()) return setPlannerOptimizeMenuOpen(false);
     return setPlannerOptimizeMenuOpen(menu?.hidden !== false);
   }
 
   function runPlannerSchedulerMode(mode, event){
-    event?.preventDefault();
-    event?.stopPropagation();
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
     const normalizedMode = String(mode || "").trim();
-    if(!allowedModes.has(normalizedMode)) return false;
     setPlannerOptimizeMenuOpen(false);
+    if(optimizeControlBusy() || !plannerOptimizeModeAllowed(normalizedMode)) return false;
     if(typeof window.sapXepTheoCheDo !== "function") return false;
     return window.sapXepTheoCheDo(normalizedMode);
   }
@@ -1491,7 +1545,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   });
 
   menu?.addEventListener("keydown", (event) => {
-    const items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
+    const items = visibleOptimizeMenuItems();
     const currentIndex = items.indexOf(document.activeElement);
     if(event.key === "Escape"){
       event.preventDefault();
@@ -1508,7 +1562,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   });
 
   document.addEventListener("click", (event) => {
-    if(menu?.hidden !== false || controls?.contains(event.target)) return;
+    if(menu?.hidden !== false || optimizeWrap?.contains(event.target)) return;
     setPlannerOptimizeMenuOpen(false);
   });
 
@@ -1518,15 +1572,12 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     setPlannerOptimizeMenuOpen(false, {returnFocus:true});
   });
 
-  const closeForPointerChange = () => setPlannerOptimizeMenuOpen(false);
-  if(typeof desktopModeMedia.addEventListener === "function"){
-    desktopModeMedia.addEventListener("change", closeForPointerChange);
-  }else if(typeof desktopModeMedia.addListener === "function"){
-    desktopModeMedia.addListener(closeForPointerChange);
-  }
-
+  window.setPlannerOptimizeMenuOpen = setPlannerOptimizeMenuOpen;
   window.togglePlannerOptimizeMenu = togglePlannerOptimizeMenu;
   window.runPlannerSchedulerMode = runPlannerSchedulerMode;
+  window.syncPlannerOptimizeRoleAccess = syncPlannerOptimizeRoleAccess;
+  syncPlannerOptimizeRoleAccess();
+  window.addEventListener?.("tkb:auth-ready", syncPlannerOptimizeRoleAccess);
 })();
 </script>
 
@@ -1545,10 +1596,10 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
 <script src="../shared/school-context.js?v=20260708-sid-only-v3"></script>
 <script src="../shared/auth-api.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
-<script src="../shared/auth.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
+<script src="../shared/auth.js?v=20260803-free-5-solve-quota-v1"></script>
 <script src="../shared/runtime.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
 <script src="../shared/school-switcher.js?v=20260708-v1"></script>
-<script src="../shared/storage.js?v=20260724-v180-durable-store-save-v1"></script>
+<script src="../shared/storage.js?v=20260802-max1-store-guard-v2"></script>
 <script src="../shared/tkb-constants.js?v=20260708-v1"></script>
 <script src="../shared/constraints-meta.js?v=20260709-v2"></script>
 <script>
@@ -1572,6 +1623,25 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 })();
 </script>
 
+<script>
+(function(){
+  function syncPlannerAgentRoleAccess(){
+    // Client-owned Agent modes were retired after Cloud Run acceptance. The
+    // toolbar icon is now only a superadmin Cloud Run/VPS route switch.
+    window.__TKB_CLIENT_AGENT_LANES_ENABLED = false;
+    window.__TKB_AGENT_ROLE_GATE_ENFORCED = true;
+    window.__TKB_AGENT_ROLE_ALLOWED = false;
+    window.__TKB_WINDOWS_WEB_AGENT_TRIAL = false;
+    delete document.documentElement.dataset.windowsWebAgentTrial;
+    return false;
+  }
+
+  syncPlannerAgentRoleAccess();
+  window.syncPlannerOptimizeRoleAccess?.();
+  window.addEventListener?.("tkb:auth-ready", syncPlannerAgentRoleAccess);
+})();
+</script>
+
 <script src="../no-logs.js?v=20260707-no-logs-v2"></script>
 <script src="../vendor/xlsx.min.js"></script>
 <script src="../vendor/jszip.min.js"></script>
@@ -1579,16 +1649,15 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="../vendor/sql-wasm.js"></script>
 <script src="../kvdb.js?v=20260707-vendor-local-v1"></script>
 <script src="tkb-engine.js?v=20260624-clean-no-solver1"></script>
-<script src="tkb-browser-wasm.js?v=20260725-v1102-agent-validation-load-v1"></script>
-<script src="phanmon.js?v=20260725-v1102-agent-validation-load-v1"></script>
+<script src="phanmon.js?v=20260810-client-agent-retired-v1"></script>
 <script src="phanmon-ops.js?v=20260617-fixed-legacy1"></script>
-<script src="tkb-constraints.js?v=20260722-v163-one-session-responsive-tables-v1"></script>
-<script src="tkb-constraints-menu.js?v=20260725-v1100-industry-export-queue-v1"></script>
+<script src="tkb-constraints.js?v=20260810-v1206-assigned-demand-lesson-block-min-guard-v1"></script>
+<script src="tkb-constraints-menu.js?v=20260808-v1192-assigned-only-all-statistics-v1"></script>
 <script src="tkb-gv-template.js"></script>
 <script src="tkb-export.js?v=20260725-v1100-industry-export-queue-v1"></script>
 <script src="tkb-word-export.js?v=20260705-save-picker-v1"></script>
 <script src="tkb-student-excel-export.js?v=20260705-school-wide-prefix-v6"></script>
-  <script src="tkb-rust-bridge.js?v=20260726-v1103-mobile-progress-admission-v1"></script>
+<script src="tkb-rust-bridge.js?v=20260811-v1214-holistic-hard-debt-270-v1"></script>
 
 </body>
 </html>

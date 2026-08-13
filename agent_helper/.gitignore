@@ -1,4 +1,0 @@
-.build-windows/
-dist/
-__pycache__/
-*.py[cod]

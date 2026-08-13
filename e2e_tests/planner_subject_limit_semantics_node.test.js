@@ -6,7 +6,9 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
-const PHANMON_PATH = path.resolve(__dirname, "..", "web", "pages", "phanmon.js");
+const PHANMON_PATH = process.env.TKB_PHANMON_PATH
+  ? path.resolve(process.env.TKB_PHANMON_PATH)
+  : path.resolve(__dirname, "..", "web", "pages", "phanmon.js");
 const CONSTRAINTS_PATH = path.resolve(__dirname, "..", "web", "pages", "tkb-constraints.js");
 const PHANMON_SOURCE = fs.readFileSync(PHANMON_PATH, "utf8");
 const CONSTRAINTS_SOURCE = fs.readFileSync(CONSTRAINTS_PATH, "utf8");
@@ -158,9 +160,51 @@ test("async full validation preserves results and yields between short slices", 
     asyncResult.some(item => item.kind === "subject.lessonBlocks.min"),
     "lesson-block Min debt needs a stable machine-readable kind"
   );
+  const missingMustTeach = asyncResult.find(item => item.kind === "teacher.mustTeach.missing");
+  assert.ok(missingMustTeach, "missing must-teach slots need a stable machine-readable kind");
+  assert.equal(missingMustTeach.teacherId, "GV1");
 
   const cancelledResult = await api.validateAllAsync(100, {shouldCancel(){ return true; }});
   assert.equal(cancelledResult.cancelled, true);
+});
+
+test("full validation ignores only mathematically impossible lesson-block minima", async () => {
+  const data = constraintData(null);
+  data.tkbConstraints.subject.Toan.byClass.L1.lessonBlocks = {
+    2:{min:1},
+    3:{min:21}
+  };
+  const api = loadConstraints(data);
+
+  const syncDebt = api.validateAll(100).filter(item => item.kind === "subject.lessonBlocks.min");
+  const asyncDebt = (await api.validateAllAsync(100)).filter(item => item.kind === "subject.lessonBlocks.min");
+
+  assert.equal(syncDebt.length, 1, "the feasible 2-period minimum must remain enforced");
+  assert.equal(asyncDebt.length, 1, "sync and async validation must use the same feasibility guard");
+  assert.match(syncDebt[0].message, /2 ti(?:ết|áº¿t|ÃƒÂ¡Ã‚ÂºÃ‚Â¿t)/i);
+  assert.doesNotMatch(syncDebt[0].message, /Min 21/);
+  assert.equal(JSON.stringify(asyncDebt), JSON.stringify(syncDebt));
+});
+
+test("lesson-block minima use assigned PCCM periods, not standard periods", async () => {
+  const data = constraintData(null);
+  data.monhoc.push({id:"Van", ma:"Van", ten:"Van"});
+  data.mon.push({id:"Van", khoi:"1", ten:"Van", sotiet:"59", gioihan:"1"});
+  data.pccmMatrix["L1|Van"] = "   ";
+  data.pccmTietMatrix["L1|Van"] = "59";
+  data.tkbConstraints.subject.Van = {byClass:{L1:{lessonBlocks:{3:{min:1}}}}};
+  const api = loadConstraints(data);
+
+  assert.equal(
+    api.validateAll(100).filter(item => item.kind === "subject.lessonBlocks.min").length,
+    0,
+    "an unassigned subject must not create a false lesson-block violation"
+  );
+  assert.equal(
+    (await api.validateAllAsync(100)).filter(item => item.kind === "subject.lessonBlocks.min").length,
+    0,
+    "sync and async guards must agree for an unassigned subject"
+  );
 });
 
 test("async full validation honors cancellation at entry", async () => {
@@ -746,6 +790,143 @@ test("fixed requirement popup stays inside the visual viewport", () => {
   assert.equal(popup.style.maxHeight,"472px");
 });
 
+function fixedLessonMultiplicityData({filled = false} = {}){
+  const subject = "HDTN";
+  const schedule = () => oneDayTkb(filled ? [subject,subject,subject] : [], []);
+  return {
+    lop:[
+      {id:"L1", ten:"7/1", khoi:"7"},
+      {id:"L2", ten:"7/2", khoi:"7"}
+    ],
+    monhoc:[{id:subject, ma:subject, ten:"Hoat dong trai nghiem huong nghiep"}],
+    mon:[{id:subject, ma:subject, ten:"Hoat dong trai nghiem huong nghiep", khoi:"7", sotiet:"3"}],
+    pccmMatrix:{"L1|HDTN":"GV1", "L2|HDTN":"GV2"},
+    // Redundant per-class overrides are intentionally pruned in production
+    // when they equal the grade's standard-period value.
+    pccmTietMatrix:{},
+    tkb:{L1:schedule(), L2:schedule()},
+    tkbConstraints:{}
+  };
+}
+
+function fixedSubjectSlots(data, classId, subject = "HDTN"){
+  const out=[];
+  Object.entries(data.tkb[classId] || {}).forEach(([thu,day])=>{
+    ["sang","chieu"].forEach(buoi=>{
+      (day?.[buoi] || []).forEach((cell,ti)=>{
+        if(cell && typeof cell === "object" && cell.fixed === true && cell.mon === subject){
+          out.push(`${thu}|${buoi}|${ti}`);
+        }
+      });
+    });
+  });
+  return out.sort();
+}
+
+test("three fixed slots of one subject survive when redundant PCCM period overrides are absent", () => {
+  const data = fixedLessonMultiplicityData();
+  const hooks = loadConstraints(data).__testHooks;
+
+  assert.equal(hooks.classSubjectRequiredCount("L1","HDTN"), 3);
+  assert.equal(hooks.classSubjectRequiredCount("L2","HDTN"), 3);
+  for(const classId of ["L1","L2"]){
+    assert.equal(hooks.setClassFixedLesson(classId,"thu2","sang",0,"HDTN"), true);
+    assert.equal(hooks.setClassFixedLesson(classId,"thu2","sang",1,"HDTN"), true);
+    assert.equal(hooks.setClassFixedLesson(classId,"thu2","sang",2,"HDTN"), true);
+    assert.deepEqual(
+      fixedSubjectSlots(data,classId),
+      ["thu2|sang|0","thu2|sang|1","thu2|sang|2"],
+      "placing the next fixed lesson must not erase an earlier fixed slot"
+    );
+  }
+});
+
+test("fixed placement moves only ordinary lessons and refuses a fourth fixed anchor", () => {
+  const data = fixedLessonMultiplicityData({filled:true});
+  const hooks = loadConstraints(data).__testHooks;
+
+  assert.equal(hooks.setClassFixedLesson("L1","thu2","chieu",0,"HDTN"), true);
+  assert.equal(hooks.setClassFixedLesson("L1","thu2","chieu",1,"HDTN"), true);
+  assert.equal(hooks.setClassFixedLesson("L1","thu2","chieu",2,"HDTN"), true);
+  assert.equal(hooks.countClassSubjectPlaced("L1","HDTN"), 3, "moving ordinary lessons must preserve demand");
+  assert.deepEqual(
+    fixedSubjectSlots(data,"L1"),
+    ["thu2|chieu|0","thu2|chieu|1","thu2|chieu|2"]
+  );
+
+  assert.equal(hooks.setClassFixedLesson("L1","thu2","chieu",3,"HDTN"), false);
+  assert.equal(hooks.countClassSubjectPlaced("L1","HDTN"), 3);
+  assert.deepEqual(
+    fixedSubjectSlots(data,"L1"),
+    ["thu2|chieu|0","thu2|chieu|1","thu2|chieu|2"],
+    "a rejected fourth anchor must leave all three existing fixed lessons intact"
+  );
+  assert.equal(data.tkb.L1.thu2.chieu[3], "");
+});
+
+test("fixed placement never overwrites another lesson or hard anchor", () => {
+  const data = fixedLessonMultiplicityData({filled:true});
+  data.tkb.L1.thu2.chieu[0] = "TOAN";
+  data.tkb.L1.thu2.chieu[1] = {mon:"VAN", fixed:true};
+  const hooks = loadConstraints(data).__testHooks;
+
+  assert.equal(hooks.setClassFixedLesson("L1","thu2","chieu",0,"HDTN"), false);
+  assert.equal(hooks.setClassFixedLesson("L1","thu2","chieu",1,"HDTN"), false);
+  assert.equal(data.tkb.L1.thu2.chieu[0], "TOAN");
+  assert.deepEqual(data.tkb.L1.thu2.chieu[1], {mon:"VAN", fixed:true});
+  assert.equal(hooks.countClassSubjectPlaced("L1","HDTN"), 3);
+});
+
+test("unknown subject demand cannot create unbounded fixed lessons", () => {
+  const data = fixedLessonMultiplicityData();
+  data.mon = [];
+  const hooks = loadConstraints(data).__testHooks;
+
+  assert.equal(hooks.classSubjectRequiredCount("L1","HDTN"), 0);
+  for(let ti=0; ti<5; ti++){
+    assert.equal(hooks.setClassFixedLesson("L1","thu2","sang",ti,"HDTN"), false);
+  }
+  assert.deepEqual(fixedSubjectSlots(data,"L1"), []);
+});
+
+test("fixed-class header total stays on assigned periods after lessons are fixed", () => {
+  const data = fixedLessonMultiplicityData();
+  data.monhoc.push({id:"TOAN", ma:"TOAN", ten:"Toan"});
+  data.mon.push({id:"TOAN", ma:"TOAN", ten:"Toan", khoi:"7", sotiet:"4"});
+  data.pccmMatrix["L1|TOAN"] = "GV3";
+  const hooks = loadConstraints(data).__testHooks;
+
+  assert.equal(hooks.fixedOffTopRows("class","L1").total, 7);
+  assert.equal(hooks.setClassFixedLesson("L1","thu2","sang",0,"HDTN"), true);
+  assert.equal(hooks.setClassFixedLesson("L1","thu2","sang",1,"HDTN"), true);
+  assert.equal(fixedSubjectSlots(data,"L1").length, 2);
+  assert.equal(
+    hooks.fixedOffTopRows("class","L1").total,
+    7,
+    "the title must show PCCM demand rather than the two currently fixed cells"
+  );
+});
+
+test("fixed teacher requirements preserve the teacher order used by assignments", () => {
+  const data = fixedLessonMultiplicityData();
+  data.giaovien = [
+    {magv:"GV-Z", ten:"Teacher Z"},
+    {magv:"GV-A", ten:"Teacher A"},
+    {magv:"GV-M", ten:"Teacher M"}
+  ];
+  data.pccmMatrix = {
+    "L1|HDTN":"GV-A",
+    "L2|HDTN":"GV-LEGACY"
+  };
+  const hooks = loadConstraints(data).__testHooks;
+
+  assert.deepEqual(
+    hooks.getTeacherList().map(item=>item.id),
+    ["GV-Z","GV-A","GV-M","GV-LEGACY"],
+    "fixed teacher requirements must follow Phan cong order before legacy-only teachers"
+  );
+});
+
 test("fixed-off long press preserves a multi-selection, applies X, and suppresses the touch menu", () => {
   const harness = loadConstraintGridGestureHarness();
   const slotA = "thu2|sang|0";
@@ -784,6 +965,22 @@ function constraintData(dayLimit){
     }
   };
 }
+
+test("class capacity ignores period metadata for subjects without an assigned teacher", () => {
+  const data = constraintData(null);
+  data.monhoc.push({id:"Van", ma:"Van", ten:"Van"});
+  data.mon.push({id:"Van", khoi:"1", ten:"Van", sotiet:"59", gioihan:"1"});
+  data.pccmMatrix["L1|Van"] = "   ";
+  data.pccmTietMatrix["L1|Van"] = "59";
+
+  const api = loadConstraints(data);
+
+  assert.equal(
+    api.classFixedOffCapacityWarnings().length,
+    0,
+    "an unassigned subject must not create a false class-capacity shortage"
+  );
+});
 
 test("Phan cong gioihan is enforced per session, not across the whole day", () => {
   const acrossSessions = loadValidateDrop({
@@ -919,14 +1116,14 @@ test("class and teacher drops confirm then persist a class-subject session overr
   assert.match(teacherDrop, /maybeRaiseSessionLimitForDrop\(td,\s*info\.mon,\s*res\)[\s\S]*res\s*=\s*pvValidateSupportDrop/);
 });
 
-test("standalone pccmGioihanMatrix overrides survive redundant-period pruning", () => {
+test("planner sanitizer preserves authored PCCM periods even when they equal standards", () => {
   const pruneStart = PHANMON_SOURCE.indexOf("function pruneRedundantPccmPeriodMatrices");
   const pruneEnd = PHANMON_SOURCE.indexOf("function remapPlannerClassObjectMap", pruneStart);
   assert.ok(pruneStart >= 0 && pruneEnd > pruneStart);
   const data = {
     lop:[{id:"10A1", ten:"10A1", khoi:"Khoi 10"}],
-    pccmTietMatrix:{},
-    pccmGioihanMatrix:{"10A1|Toan":"2"}
+    pccmTietMatrix:{"10A1|Toan":"4"},
+    pccmGioihanMatrix:{"10A1|Toan":"1"}
   };
   const context = {
     DATA:data,
@@ -936,14 +1133,10 @@ test("standalone pccmGioihanMatrix overrides survive redundant-period pruning", 
   };
   vm.runInNewContext(PHANMON_SOURCE.slice(pruneStart, pruneEnd), context, {filename:PHANMON_PATH});
   assert.equal(context.pruneRedundantPccmPeriodMatrices(), false);
-  assert.equal(data.pccmGioihanMatrix["10A1|Toan"], "2");
+  assert.equal(data.pccmTietMatrix["10A1|Toan"], "4");
+  assert.equal(data.pccmGioihanMatrix["10A1|Toan"], "1");
 
   const appSource = fs.readFileSync(path.resolve(__dirname, "..", "web", "app.js"), "utf8");
-  const appPruneStart = appSource.indexOf("const pruneRedundantPccmPeriods");
-  const appPruneEnd = appSource.indexOf("const clearObjIfNotEmpty", appPruneStart);
-  const appPrune = appSource.slice(appPruneStart, appPruneEnd);
-  assert.doesNotMatch(
-    appPrune,
-    /!periodMatrix\s*\|\|\s*!Object\.prototype\.hasOwnProperty\.call\(periodMatrix,\s*key\)/
-  );
+  assert.doesNotMatch(appSource, /const pruneRedundantPccmPeriods/);
+  assert.match(appSource, /const initializeAssignedPccmPeriods/);
 });

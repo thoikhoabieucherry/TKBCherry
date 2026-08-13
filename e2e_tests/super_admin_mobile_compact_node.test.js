@@ -8,6 +8,7 @@ const test = require("node:test");
 const root = path.resolve(__dirname, "..");
 const html = fs.readFileSync(path.join(root, "web", "super-admin.html"), "utf8");
 const source = fs.readFileSync(path.join(root, "web", "super-admin.js"), "utf8");
+const legacyCss = fs.readFileSync(path.join(root, "web", "super-admin.css"), "utf8");
 const compactCss = fs.readFileSync(
   path.join(root, "web", "super-admin-mobile-compact.css"),
   "utf8"
@@ -23,7 +24,32 @@ test("super admin compact stylesheet loads last with a matching script cache mar
   assert.ok(themeIndex >= 0);
   assert.ok(legacyIndex > themeIndex);
   assert.ok(compactIndex > legacyIndex);
-  assert.match(html, /super-admin\.js\?v=20260725-v188-compact-super-admin-v2/);
+  assert.match(html, /super-admin\.css\?v=20260802-user-usage-only-v9/);
+  assert.match(html, /super-admin\.js\?v=20260803-max-plan-labels-v1/);
+  assert.doesNotMatch(html, /solverInfrastructureBudget|solverInfrastructureEstimate|solverProfileBudget/);
+});
+
+test("the per-user request table stays usable on narrow Super Admin screens", () => {
+  const tabletStart = legacyCss.indexOf("@media (max-width: 899px)");
+  const narrowStart = legacyCss.indexOf("@media (max-width: 560px)");
+  assert.ok(tabletStart >= 0);
+  assert.ok(narrowStart >= 0);
+  const tabletCss = legacyCss.slice(tabletStart, narrowStart);
+  const narrowCss = legacyCss.slice(narrowStart);
+  assert.match(
+    tabletCss,
+    /body\.portal-body\.portal-page-super\s*\{[\s\S]*?height:\s*auto;[\s\S]*?overflow-y:\s*auto/
+  );
+  assert.match(
+    tabletCss,
+    /\.portal-page-super \.portal-main > \.portal-card\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?overflow:\s*visible/
+  );
+  assert.match(html, /id="solverAccountUsageBody"/);
+  assert.match(legacyCss, /\.solver-account-usage-table\s*\{[\s\S]*?min-width:\s*760px/);
+  assert.match(legacyCss, /\.solver-school-usage\s*\{[\s\S]*?margin-top:\s*14px/);
+  assert.match(narrowCss, /\.solver-account-usage-table\s*\{[\s\S]*?min-width:\s*620px/);
+  assert.doesNotMatch(html, /solverGoogleGrossCost|solverInfrastructureDetails|btnRefreshGoogleUsage/);
+  assert.match(source, /if\(card\.dataset\?\.usageOnly !== "true"\) return;/);
 });
 
 test("top-level super admin commands keep text on desktop and accessible icons on mobile", () => {

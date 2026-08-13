@@ -271,8 +271,12 @@ test("teacher pane counts each class-subject assignment once", () => {
   assert.match(source, /requiredSubjectsForClass/);
 
   const context = {
+    window:{},
     DAYS:["thu2"],
     getFilteredLops(){ return [{id:"L1"}, {id:"L2"}]; },
+    getLopCanonById(id){ return String(id || ""); },
+    classAssignmentStatisticsTeacherForClassMon(){ return "GV1"; },
+    teacherListFromValue(value){ return String(value || "").split(/[,+;]/).map(item => item.trim()).filter(Boolean); },
     requiredSubjectsForClass(lop){
       return lop.id === "L1"
         ? [{gv:"GV1", required:10}]
@@ -299,6 +303,7 @@ test("teacher empty-period total counts affected sessions rather than empty slot
   const source = plannerSource.slice(start, end);
 
   const context = {
+    window:{},
     DAYS:["thu2"],
     SANG:5,
     CHIEU:5,
@@ -316,9 +321,11 @@ test("teacher empty-period total counts affected sessions rather than empty slot
     _getAssignedTeacherCodes(){ return new Set(["GV"]); },
     getLopCanonById(){ return "L1"; },
     cellMon(value){ return value || ""; },
-    getTeacherForClassMon(){ return "GV"; },
+    classAssignmentStatisticsTeacherForClassMon(){ return "GV"; },
+    teacherListFromValue(value){ return String(value || "").split(/[,+;]/).map(item => item.trim()).filter(Boolean); },
     getTeacherNameByCode(code){ return code; },
-    compareTeacherCodeByDataOrder(){ return 0; }
+    compareTeacherCodeByDataOrder(){ return 0; },
+    schoolStatsTkbSignature(){ return "fixture"; }
   };
 
   vm.runInNewContext(`${source}\nthis.readTeacherTimetableStats = calcTeacherTKBStats;`, context);
@@ -331,7 +338,33 @@ test("teacher empty-period total counts affected sessions rather than empty slot
   assert.equal(stats.gapTeachers[0].count, 2);
 });
 
-test("portrait planner keeps seven compact mobile slots with stacked history and automatic timing", () => {
+test("teacher timetable statistics ignore stale lessons without a PCCM assignment", () => {
+  const start = plannerSource.indexOf("function calcTeacherTKBStats()");
+  const end = plannerSource.indexOf("/* =======================", start);
+  const source = plannerSource.slice(start, end);
+  const context = {
+    window:{},
+    DAYS:["thu2"],
+    SANG:5,
+    CHIEU:5,
+    DATA:{lop:[{id:"L1"}], tkb:{L1:{thu2:{sang:["A", null, "STALE"], chieu:[]}}}},
+    _getAssignedTeacherCodes(){ return new Set(["GV"]); },
+    getLopCanonById(){ return "L1"; },
+    cellMon(value){ return value || ""; },
+    classAssignmentStatisticsTeacherForClassMon(_className, mon){ return mon === "A" ? "GV" : ""; },
+    teacherListFromValue(value){ return String(value || "").split(/[,+;]/).map(item => item.trim()).filter(Boolean); },
+    getTeacherNameByCode(code){ return code; },
+    compareTeacherCodeByDataOrder(){ return 0; },
+    schoolStatsTkbSignature(){ return "fixture"; }
+  };
+  vm.runInNewContext(`${source}\nthis.readTeacherTimetableStats = calcTeacherTKBStats;`, context);
+  const stats = JSON.parse(JSON.stringify(context.readTeacherTimetableStats()));
+  assert.equal(stats.soTietTrong, 0, "the stale lesson must not create a false Gap1");
+  assert.equal(stats.soBuoiDay1, 1);
+  assert.equal(stats.onePeriodTeachers[0].count, 1);
+});
+
+test("portrait planner keeps eight compact mobile slots including Optimize", () => {
   const actionsStart = plannerHtml.indexOf('<div class="toolbar-actions"');
   const feedbackStart = plannerHtml.indexOf('<div class="toolbar-feedback"');
   const secondaryStart = plannerHtml.indexOf('<div class="toolbar-secondary-actions"', feedbackStart);
@@ -345,6 +378,7 @@ test("portrait planner keeps seven compact mobile slots with stacked history and
     "btnUndoTKB",
     "btnRedoTKB",
     "btnAutoSort",
+    "btnOptimizeMenu",
     "btnStopAutoSort",
     "btnDeleteAll"
   ];
@@ -380,6 +414,25 @@ test("portrait planner keeps seven compact mobile slots with stacked history and
   assert.doesNotMatch(stopSvg, /<line\b|[Mm][^"]*[Vv][^"]*[Mm][^"]*[Vv]/);
   assert.doesNotMatch(stopButton, />\s*(?:Dừng|Đang dừng)\s*</);
   assert.doesNotMatch(actions, /<span[^>]*>s<\/span>/i);
+  assert.doesNotMatch(actions, /id="desktopSolveControls"/);
+  assert.match(actions, /id="btnOptimizeMenu"[^>]*aria-haspopup="menu"[^>]*aria-expanded="false"/);
+  assert.match(actions, /id="plannerOptimizeMenu"[^>]*role="menu"[^>]*hidden/);
+  assert.equal((actions.match(/data-scheduler-mode=/g) || []).length, 4);
+  assert.equal((actions.match(/data-superadmin-only="true"/g) || []).length, 1);
+  for(const [mode, label] of [
+    ["optimize_singletons", "1 tiết/buổi"],
+    ["optimize_gap1", "1 tiết trống"],
+    ["optimize_gap2", "2 tiết trống"]
+  ]){
+    assert.match(
+      actions,
+      new RegExp(`data-scheduler-mode="${mode}"(?![^>]*data-superadmin-only)[^>]*>${label}<\\/button>`)
+    );
+  }
+  assert.match(
+    actions,
+    /data-scheduler-mode="optimize_sessions"[^>]*data-superadmin-only="true"[^>]*>Buổi<\/button>/
+  );
   assert.doesNotMatch(actions, /id="autoSortProgress"|id="statusMsg"|id="statsToggle"|>Home<\/button>/);
   assert.doesNotMatch(actions, /solveDurationSeconds|solve-duration-control/);
 
@@ -396,7 +449,7 @@ test("portrait planner keeps seven compact mobile slots with stacked history and
     inlineSvgMarkup(statsButton),
     "requirements and statistics must use distinct clipboard-check and chart glyphs"
   );
-  assert.match(plannerHtml, /\.toolbar-main\s*\{[^}]*grid-template-columns:\s*repeat\(7, minmax\(0, 1fr\)\);[^}]*grid-template-rows:\s*44px var\(--planner-mobile-feedback-h\);/s);
+  assert.match(plannerHtml, /\.toolbar-main\s*\{[^}]*grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);[^}]*grid-template-rows:\s*44px var\(--planner-mobile-feedback-h\);/s);
   assert.match(plannerHtml, /\.toolbar-actions\s*\{[^}]*display:\s*contents;/s);
   for(const [id, column] of [
     ["btnRangBuoc", "1"],
@@ -414,13 +467,15 @@ test("portrait planner keeps seven compact mobile slots with stacked history and
   assert.match(plannerHtml, /#btnUndoTKB,[^}]*#btnRedoTKB\s*\{[^}]*height:\s*22px;[^}]*min-height:\s*22px;/s);
   assert.match(
     plannerHtml,
-    /\.toolbar-actions\s*>\s*#btnRangBuoc,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnUndoTKB,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnRedoTKB,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnAutoSort,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnStopAutoSort,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnDeleteAll\s*\{[^}]*order:\s*initial;/s,
+    /\.toolbar-actions\s*>\s*#btnRangBuoc,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnUndoTKB,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnRedoTKB,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnAutoSort,\s*body\.planner-shell \.toolbar-actions\s*>\s*\.planner-optimize-wrap,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnStopAutoSort,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnDeleteAll\s*\{[^}]*order:\s*initial;/s,
     "all direct toolbar items must neutralize legacy order rules"
   );
-  assert.match(plannerHtml, /#btnDeleteAll\s*\{[^}]*grid-column:\s*4 !important;[^}]*grid-row:\s*1 !important;/s);
-  assert.match(plannerHtml, /#btnAgentHelper\s*\{[^}]*grid-column:\s*5;[^}]*grid-row:\s*1;[^}]*height:\s*44px;/s);
-  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*6;[^}]*grid-row:\s*1;/s);
-  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*7;[^}]*grid-row:\s*1;/s);
+  assert.doesNotMatch(plannerHtml, /desktop-solve-controls/);
+  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*\.planner-optimize-wrap\s*\{[^}]*grid-column:\s*4;[^}]*grid-row:\s*1;/s);
+  assert.match(plannerHtml, /#btnDeleteAll\s*\{[^}]*grid-column:\s*5 !important;[^}]*grid-row:\s*1 !important;/s);
+  assert.match(plannerHtml, /#btnAgentHelper\s*\{[^}]*grid-column:\s*6;[^}]*grid-row:\s*1;[^}]*height:\s*44px;/s);
+  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*7;[^}]*grid-row:\s*1;/s);
+  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*8;[^}]*grid-row:\s*1;/s);
   assert.match(plannerHtml, /\.toolbar-icon\s*\{[^}]*width:\s*19px;[^}]*height:\s*19px;[^}]*transition:\s*transform \.16s ease;/s);
   assert.match(plannerHtml, /#btnAutoSort \.toolbar-icon\s*\{[^}]*width:\s*18px;[^}]*height:\s*18px;[^}]*transform:\s*translateX\(1px\);/s);
   assert.match(plannerHtml, /\.toolbar-label-compact\s*\{[^}]*display:\s*none;/s);
@@ -431,9 +486,9 @@ test("portrait planner keeps seven compact mobile slots with stacked history and
   assert.doesNotMatch(plannerHtml, /#btnHome\[hidden\]\s*\{[^}]*display:\s*none !important;/s);
   assert.match(plannerHtml, /\.toolbar-main\s*\{[^}]*gap:\s*4px 2px;/s);
   assert.equal(
-    (plannerHtml.match(/grid-template-columns:\s*repeat\(7, minmax\(0, 1fr\)\);/g) || []).length,
+    (plannerHtml.match(/grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);/g) || []).length,
     1,
-    "the mobile toolbar must use one inherited set of seven equal tracks"
+    "the mobile toolbar must use one inherited set of eight equal tracks"
   );
   assert.doesNotMatch(
     plannerHtml,
@@ -444,29 +499,74 @@ test("portrait planner keeps seven compact mobile slots with stacked history and
     plannerHtml,
     /@media \(max-width:\s*900px\) and \(hover:\s*none\) and \(pointer:\s*coarse\),\s*\(max-width:\s*480px\)/
   );
-  assert.match(plannerHtml, /shared\/storage\.js\?v=20260724-v180-durable-store-save-v1/);
-  assert.match(plannerHtml, /phanmon\.js\?v=20260725-v1102-agent-validation-load-v1/);
-  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260726-v1103-mobile-progress-admission-v1/);
+  assert.match(plannerHtml, /shared\/storage\.js\?v=20260802-max1-store-guard-v2/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260810-client-agent-retired-v1/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260811-v1214-holistic-hard-debt-270-v1/);
+  assert.doesNotMatch(plannerHtml, /tkb-(?:browser|cpsat|highs)-wasm\.js/);
 });
 
-test("landscape phones separate Undo and Redo into eight full-height slots", () => {
+test("landscape phones keep nine full-height slots including Optimize", () => {
   const start = plannerHtml.indexOf("@media (orientation: landscape) and (max-height: 540px) and (any-pointer: coarse)");
   const end = plannerHtml.indexOf("@media (min-width: 481px)", start);
   assert.ok(start >= 0 && end > start, "landscape toolbar override is missing");
   const landscapeCss = plannerHtml.slice(start, end);
 
-  assert.match(landscapeCss, /\.toolbar-main\s*\{[^}]*grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);/s);
+  assert.match(landscapeCss, /\.toolbar-main\s*\{[^}]*grid-template-columns:\s*repeat\(9, minmax\(0, 1fr\)\);/s);
   assert.match(landscapeCss, /#btnUndoTKB\s*\{[^}]*grid-column:\s*2;[^}]*align-self:\s*stretch;/s);
   assert.match(landscapeCss, /#btnRedoTKB\s*\{[^}]*grid-column:\s*3;[^}]*align-self:\s*stretch;/s);
   assert.match(landscapeCss, /#btnUndoTKB,[^}]*#btnRedoTKB\s*\{[^}]*height:\s*44px;[^}]*min-height:\s*44px;[^}]*border-radius:\s*var\(--tkb-radius, 10px\);/s);
   assert.match(landscapeCss, /#btnAutoSort\s*\{[^}]*grid-column:\s*4;/s);
-  assert.match(landscapeCss, /#btnStopAutoSort,[^}]*#btnDeleteAll\s*\{[^}]*grid-column:\s*5 !important;/s);
-  assert.match(landscapeCss, /#btnAgentHelper\s*\{[^}]*grid-column:\s*6;/s);
-  assert.match(landscapeCss, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*7;/s);
-  assert.match(landscapeCss, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*8;/s);
+  assert.match(landscapeCss, /\.toolbar-actions\s*>\s*\.planner-optimize-wrap\s*\{[^}]*grid-column:\s*5;/s);
+  assert.match(landscapeCss, /#btnStopAutoSort,[^}]*#btnDeleteAll\s*\{[^}]*grid-column:\s*6 !important;/s);
+  assert.match(landscapeCss, /#btnAgentHelper\s*\{[^}]*grid-column:\s*7;/s);
+  assert.match(landscapeCss, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*8;/s);
+  assert.match(landscapeCss, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*9;/s);
 });
 
-test("browser Agent toggle is cross-platform and sits before Home on desktop and mobile", () => {
+test("Cloud Run acceptance disables Agent Web and EXE for every role and query", () => {
+  const marker = "function syncPlannerAgentRoleAccess()";
+  const start = plannerHtml.lastIndexOf("<script>", plannerHtml.indexOf(marker));
+  const end = plannerHtml.indexOf("</script>", start);
+  assert.ok(start >= 0 && end > start, "the trial bootstrap script is missing");
+  const source = plannerHtml.slice(start + "<script>".length, end);
+
+  function run({role, search, platform, userAgent}){
+    const documentElement = {dataset:{}};
+    const context = {
+      window:{
+        location:{search},
+        navigator:{platform, userAgent},
+        TKBAuth:{currentUser(){ return {user:{role}}; }},
+        addEventListener(){}
+      },
+      document:{documentElement},
+      URLSearchParams
+    };
+    vm.runInNewContext(source, context);
+    return {
+      lanesEnabled:context.window.__TKB_CLIENT_AGENT_LANES_ENABLED,
+      roleAllowed:context.window.__TKB_AGENT_ROLE_ALLOWED,
+      enabled:context.window.__TKB_WINDOWS_WEB_AGENT_TRIAL === true,
+      dataset:documentElement.dataset.windowsWebAgentTrial || ""
+    };
+  }
+
+  for(const role of ["superadmin", "school_admin", "school_user", "", null]){
+    const state = run({
+      role,
+      search:"?sid=default&webAgentTrial=mac",
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    });
+    assert.deepEqual(
+      state,
+      {lanesEnabled:false, roleAllowed:false, enabled:false, dataset:""},
+      `${role || "missing"} must stay on the server-owned lane`
+    );
+  }
+});
+
+test("superadmin infrastructure control stays before Home after client lanes are retired", () => {
   const secondaryStart = plannerHtml.indexOf('<div class="toolbar-secondary-actions"');
   const secondaryEnd = plannerHtml.indexOf("\n  </div>\n\n</div>", secondaryStart);
   const secondary = plannerHtml.slice(secondaryStart, secondaryEnd);
@@ -475,374 +575,197 @@ test("browser Agent toggle is cross-platform and sits before Home on desktop and
   const statsIndex = secondary.indexOf('id="statsToggle"');
   const helperButton = buttonMarkup(secondary, "btnAgentHelper");
 
-  assert.ok(helperIndex >= 0, "Agent button is missing");
-  assert.ok(homeIndex > helperIndex, "Agent must sit immediately before Home");
-  assert.ok(statsIndex > homeIndex, "Statistics must stay after Home");
-  assert.match(
-    secondary,
-    /id="btnAgentHelper"[\s\S]*?<\/button>\s*<button id="btnHome"[\s\S]*?>Home<\/button>/,
-    "Agent must be the toolbar button immediately before Home"
-  );
+  assert.ok(helperIndex >= 0, "infrastructure control is missing");
+  assert.ok(homeIndex > helperIndex, "infrastructure control must precede Home");
+  assert.ok(statsIndex > homeIndex, "Statistics must follow Home");
+  assert.match(secondary, /id="btnAgentHelper"[\s\S]*?<\/button>\s*<button id="btnHome"[\s\S]*?>Home<\/button>/);
   assert.match(helperButton, /class="agent-helper-button"[^>]*type="button"/);
-  assert.match(helperButton, /title="Agent đã bật"/);
-  assert.match(helperButton, /aria-label="Agent đã bật"/);
-  assert.match(helperButton, /data-agent-state="unavailable"/);
-  assert.match(helperButton, /class="agent-status-dot"[^>]*aria-hidden="true"/);
+  assert.match(helperButton, /title="H[^\"]+"[^>]*aria-label="H[^\"]+"/);
+  assert.match(helperButton, /data-agent-state="off"/);
   assert.match(helperButton, /onclick="toggleBrowserAgent\(\)"/);
-  assert.match(helperButton, /aria-pressed="true"/);
+  assert.match(helperButton, /class="agent-status-dot"[^>]*aria-hidden="true"/);
   assert.match(helperButton, /\sdisabled(?:\s|>)/);
-  assert.match(helperButton, /aria-disabled="true"/);
-  assert.match(helperButton, /class="toolbar-icon agent-ai-icon"[\s\S]*<span class="agent-button-label">Agent<\/span><\/button>/);
   assert.match(helperButton, /\shidden(?:\s|>)/);
-  assert.match(helperButton, /aria-hidden="true"/);
-  assert.match(plannerSource, /async function downloadAgentHelper\(\)/);
-  assert.doesNotMatch(plannerSource, /anchor\.href\s*=\s*"\/downloads\/TKBCherryAgent-Windows\.zip/);
-  assert.doesNotMatch(plannerSource, /anchor\.download\s*=\s*"TKBCherryAgent-Windows\.zip"/);
-  assert.doesNotMatch(plannerSource, /Giải nén ZIP rồi mở TKBCherryAgent\.exe/);
-  assert.match(plannerSource, /async function approveAgentPairFromUrl\(\)/);
-  assert.match(plannerSource, /fetch\("\/api\/agent-helper\/v1\/pair\/approve"/);
-  assert.match(plannerSource, /function isAgentHelperSupportedDevice\(deviceNavigator\)/);
-  assert.match(plannerSource, /function browserAgentRuntimeState\(deviceNavigator\)/);
-  assert.match(plannerSource, /window\.TKBBrowserWasmExecutor/);
-  assert.match(plannerSource, /function syncAgentHelperVisibility\(\)/);
-  assert.match(plannerSource, /async function maybeInviteAgentBeforeSort\(options\)/);
-  assert.match(
-    bridgeSource,
-    /manualAgentInvite[\s\S]*?maybeInviteAgentBeforeSort[\s\S]*?prepareManualSolveIntent\(\)/,
-    "manual Play keeps the non-blocking compatibility hook before sorting"
-  );
-  assert.match(
-    bridgeSource,
-    /window\.sapXepTuDongAll\(\{manualAgentInvite:true\}\)/,
-    "the Play button must mark the sort as a manual Agent-invite opportunity"
-  );
-  assert.match(
-    bridgeSource,
-    /maybeInviteAgentBeforeSort\(\{\s*preferVpsFallback:true\s*\}\)/,
-    "manual Play must start through the VPS without a blocking Agent dialog"
-  );
-  assert.match(
-    plannerHtml,
-    /#btnAgentHelper \.agent-status-dot\s*\{[^}]*top:\s*3px;[^}]*left:\s*3px;[^}]*background:\s*#94a3b8;/s
-  );
-  assert.match(
-    plannerHtml,
-    /#btnAgentHelper\[data-agent-state="enabled"\] \.agent-status-dot,[\s\S]*?#btnAgentHelper\[data-agent-state="prepared"\] \.agent-status-dot\s*\{[^}]*background:\s*#16a34a;/s
-  );
-  assert.match(
-    plannerHtml,
-    /#btnAgentHelper\[data-agent-state="active"\] \.agent-status-dot,[\s\S]*?#btnAgentHelper\[data-agent-state="working"\] \.agent-status-dot\s*\{[^}]*background:\s*#22c55e;/s
-  );
-  assert.match(
-    plannerHtml,
-    /#btnAgentHelper\[data-agent-state="fallback"\] \.agent-status-dot\s*\{[^}]*background:\s*#f59e0b;/s
-  );
-  assert.match(
-    plannerHtml,
-    /#btnAgentHelper\[data-agent-state="working"\] \.agent-status-dot\s*\{[^}]*animation:\s*planner-agent-working-pulse 1\.2s ease-in-out infinite;/s
-  );
-  assert.match(plannerHtml, /@keyframes planner-agent-working-pulse\s*\{/);
-  assert.match(
-    plannerHtml,
-    /#btnAgentHelper\[data-agent-state="error"\] \.agent-status-dot\s*\{[^}]*background:\s*#dc2626;/s
-  );
-  assert.match(plannerHtml, /#btnAgentHelper:disabled\s*\{[^}]*opacity:\s*1;[^}]*cursor:\s*default;/s);
-  assert.doesNotMatch(plannerSource, /EncodedCommand|powershell\.exe|Cai-TKBCherry-Agent\.cmd/);
-
-  const supportStart = plannerSource.indexOf("function isAgentHelperSupportedDevice");
-  const supportEnd = plannerSource.indexOf("function syncAgentHelperVisibility", supportStart);
-  const supportSource = plannerSource.slice(supportStart, supportEnd);
-  const supportsAgent = Function(`${supportSource}; return isAgentHelperSupportedDevice;`)();
-  assert.equal(supportsAgent({platform:"Win32", userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}), true);
-  assert.equal(supportsAgent({userAgentData:{platform:"Windows", mobile:false}, userAgent:""}), true);
-  assert.equal(supportsAgent({platform:"MacIntel", maxTouchPoints:0, userAgent:"Mozilla/5.0 (Macintosh)"}), true);
-  assert.equal(supportsAgent({platform:"MacIntel", maxTouchPoints:5, userAgent:"Mozilla/5.0 (Macintosh)"}), true);
-  assert.equal(supportsAgent({platform:"Linux armv8l", userAgent:"Mozilla/5.0 (Linux; Android 15; Tablet)"}), true);
-  assert.equal(supportsAgent({platform:"Linux x86_64", userAgent:"Mozilla/5.0 (X11; Linux x86_64)"}), true);
-  assert.equal(supportsAgent({platform:"iPhone", userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0)"}), true);
-  assert.match(
-    plannerHtml,
-    /\.stats-popover-wrap\s*>\s*\.save-button,\s*body\.planner-shell \.toolbar-secondary-actions \.stats-popover-wrap\s*>\s*\.agent-helper-button,\s*body\.planner-shell \.toolbar-secondary-actions \.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*flex:\s*0 0 var\(--planner-toolbar-button-width\);[^}]*width:\s*var\(--planner-toolbar-button-width\);[^}]*min-width:\s*var\(--planner-toolbar-button-width\);[^}]*max-width:\s*var\(--planner-toolbar-button-width\);[^}]*height:\s*36px;[^}]*min-height:\s*36px;/s,
-    "Agent must share the rectangular desktop toolbar dimensions"
-  );
-  assert.match(
-    plannerHtml,
-    /\.toolbar-actions\s*>\s*button:focus-visible,\s*body\.planner-shell \.toolbar-secondary-actions \.stats-popover-wrap\s*>\s*button:focus-visible\s*\{[^}]*outline:\s*2px solid #2563eb;/s,
-    "Agent must inherit the visible keyboard focus ring"
-  );
-
-  const mobileStart = plannerHtml.indexOf("@media (max-width: 900px) and (hover: none) and (pointer: coarse)");
-  const mobileEnd = plannerHtml.indexOf("@media (min-width: 481px)", mobileStart);
-  const mobileCss = plannerHtml.slice(mobileStart, mobileEnd);
-  assert.match(
-    mobileCss,
-    /#btnAgentHelper\s*\{[^}]*grid-column:\s*5;[^}]*grid-row:\s*1;[^}]*display:\s*inline-flex !important;[^}]*height:\s*44px;/s
-  );
-  assert.match(
-    mobileCss,
-    /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*6;[^}]*grid-row:\s*1;/s
-  );
-  assert.match(
-    mobileCss,
-    /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*7;[^}]*grid-row:\s*1;[^}]*height:\s*44px;/s
-  );
-  assert.match(
-    plannerHtml,
-    /\.stats-popover-wrap\s*>\s*\.agent-helper-button\[hidden\]\s*\{[^}]*display:\s*none !important;/s,
-    "the initial hidden attribute must beat the mobile inline-flex rule before JavaScript hydrates"
-  );
+  assert.doesNotMatch(plannerHtml, /id="agentDashboard"|id="nativeAgentRequiredOverlay"|TKBCherryAgent/);
+  assert.doesNotMatch(plannerHtml, /tkb-(?:browser|cpsat|highs)-wasm\.js/);
+  assert.match(plannerHtml, /window\.__TKB_CLIENT_AGENT_LANES_ENABLED = false/);
+  assert.match(plannerHtml, /window\.__TKB_WINDOWS_WEB_AGENT_TRIAL = false/);
 });
 
-test("browser Agent indicator shows enabled readiness and reports real compute", async () => {
+test("retired client lanes stay fail-closed without status, protocol, download, or preflight", async () => {
   const start = plannerSource.indexOf("function isAgentHelperSupportedDevice");
-  const end = plannerSource.indexOf("function startAgentHelperStatusPolling", start);
-  assert.ok(start >= 0 && end > start, "browser Agent status renderer is missing");
-  const indicatorSource = plannerSource.slice(start, end);
-  assert.doesNotMatch(indicatorSource, /\/api\/agent-helper\/v1\/status|\bfetch\s*\(/);
+  const end = plannerSource.indexOf("function setAutoSortHomeHidden", start);
+  assert.ok(start >= 0 && end > start, "Agent role-gate helpers are missing");
+  const source = plannerSource.slice(start, end);
+  let fetchCalls = 0;
   const button = {
-    dataset:{agentState:"unavailable"},
-    hidden:true,
+    hidden:false,
     disabled:false,
-    title:"",
-    attributes:{},
-    setAttribute(name, value){ this.attributes[name] = value; }
+    dataset:{},
+    setAttribute(name, value){ this[name] = String(value); }
   };
-  const executorState = {
-    active:false,
-    probed:false,
-    hasWorker:false,
-    hasLease:false,
-    computeActive:false,
-    workerCount:0,
-    localComputeRuns:0,
-    localAcceptedResults:0,
-    workerCeiling:4,
-    plannedWorkerCount:0,
-    lastComputeWorkerCount:0
-  };
-  let agentEnabled = true;
-  const statusEvents = [];
-  const windowsNavigator = {
+  const navigator = {
     platform:"Win32",
     userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
   };
-  const context = {
-    navigator:windowsNavigator,
-    window:{
-      Worker:function Worker(){},
-      WebAssembly:{},
-      BigInt,
-      TextEncoder,
-      crypto:{subtle:{}},
-      fetch:async () => { throw new Error("status indicator must stay local"); },
-      TKBBrowserWasmExecutor:{
-        isSupportedNavigator(){ return true; },
-        isEnabled(){ return agentEnabled; },
-        async setEnabled(next){ agentEnabled = next !== false; return agentEnabled; },
-        portfolioWorkerCount(){ return 4; },
-        prepare(){},
-        state(){ return executorState; }
+  const window = {
+    __TKB_CLIENT_AGENT_LANES_ENABLED:false,
+    __TKB_AGENT_ROLE_GATE_ENFORCED:true,
+    __TKB_AGENT_ROLE_ALLOWED:true,
+    navigator,
+    TKBAuth:{currentUser(){ return {user:{role:"school_admin"}}; }},
+    fetch:async () => { fetchCalls += 1; throw new Error("retired lanes must not fetch local status"); },
+    addEventListener(){},
+    dispatchEvent(){}
+  };
+  window.window = window;
+  const document = {
+    hidden:false,
+    getElementById(id){
+      if(id === "btnAgentHelper") return button;
+      return null;
+    },
+    addEventListener(){}
+  };
+  const context = {window, document, navigator, _setStatus(){}};
+  vm.runInNewContext(
+    `${source}\nthis.visible = isAgentHelperVisibleForCurrentUser; this.sync = syncAgentHelperVisibility; this.nativeDevice = isWindowsNativeAgentDevice; this.nativeStatus = nativeAgentStatusSnapshot; this.nativePolicy = nativeAgentSortPolicy; this.checkNative = checkNativeAgentNow; this.toggle = toggleBrowserAgent; this.invite = maybeInviteAgentBeforeSort;`,
+    context
+  );
+
+  assert.equal(context.visible(), false);
+  assert.equal(context.sync(), false);
+  assert.equal(button.hidden, true);
+  assert.equal(button["aria-hidden"], "true");
+  assert.equal(button.disabled, true);
+  assert.equal(context.nativeDevice(navigator), false);
+  assert.equal(context.nativeStatus().error, "client_agent_retired");
+  assert.equal(context.nativePolicy().mode, "server");
+  assert.equal(await context.checkNative(), false);
+  assert.equal(await context.toggle(), false);
+  assert.equal(await context.invite({nativeRequired:true, requestDownload:true}), true);
+  assert.equal(fetchCalls, 0);
+  assert.doesNotMatch(source, /TKBBrowserWasmExecutor|agent-helper\/v1|tkbcherry-agent:|TKBCherryAgent-Windows/);
+});
+
+test("the cross-platform superadmin icon is an authenticated server route toggle", async () => {
+  const start = plannerSource.indexOf("function isAgentHelperSupportedDevice");
+  const end = plannerSource.indexOf("function setAutoSortHomeHidden", start);
+  assert.ok(start >= 0 && end > start, "server route toggle helpers are missing");
+  const source = plannerSource.slice(start, end);
+  const button = {
+    hidden:true,
+    disabled:true,
+    dataset:{},
+    title:"",
+    attributes:{},
+    classList:{remove(){}},
+    setAttribute(name, value){ this.attributes[name] = String(value); }
+  };
+  let role = "superadmin";
+  let serverConfig = {
+    mode:"auto",
+    fallback:"vps",
+    budgetUsd:300,
+    estimatedCostUsd:0.06,
+    activeProfileId:"cloud-run-primary",
+    profiles:[{
+      id:"cloud-run-primary",
+      url:"https://solver.example.run.app",
+      solverDigest:"a".repeat(64),
+      enabled:true,
+      priority:1
+    }]
+  };
+  const requests = [];
+  const statuses = [];
+  const window = {
+    __TKB_CLIENT_AGENT_LANES_ENABLED:false,
+    TKBAuth:{currentUser(){ return {user:{role}}; }},
+    TKBAuthApi:{
+      getAuthHeaders(extra){
+        return Object.assign({Accept:"application/json", Authorization:"Bearer test-session"}, extra || {});
       }
     },
-    document:{getElementById(id){ return id === "btnAgentHelper" ? button : null; }},
-    _setStatus(message, kind){ statusEvents.push([message, kind]); }
-  };
-  vm.runInNewContext(
-    `${indicatorSource}\nthis.syncIndicator = syncAgentHelperVisibility; this.refreshIndicator = refreshAgentHelperStatus; this.toggleIndicator = toggleBrowserAgent;`,
-    context
-  );
-
-  assert.equal(context.syncIndicator(), true);
-  assert.equal(button.hidden, false);
-  assert.equal(button.disabled, false);
-  assert.equal(button.attributes["aria-hidden"], "false");
-  assert.equal(button.dataset.agentState, "enabled");
-  assert.equal(button.title, "Agent đã bật");
-  assert.equal(button.attributes["aria-label"], button.title);
-  assert.equal(button.attributes["aria-pressed"], "true");
-  assert.equal(button.attributes["aria-disabled"], "false");
-  assert.equal(context.window.__TKB_BROWSER_AGENT_READY, false);
-  assert.equal(context.window.__TKB_BROWSER_AGENT_WORKING, false);
-
-  executorState.active = true;
-  executorState.probed = true;
-  executorState.hasWorker = true;
-  executorState.hasLease = true;
-  executorState.computeActive = true;
-  executorState.localComputeRuns = 1;
-  executorState.workerCount = 1;
-  executorState.plannedWorkerCount = 1;
-  assert.equal(await context.refreshIndicator(true), true);
-  assert.equal(button.dataset.agentState, "working");
-  assert.equal(button.title, "Agent đang tối ưu bằng 1 Worker (tối đa 4 Worker) trên thiết bị. Bấm để chuyển về VPS.");
-  assert.equal(context.window.__TKB_BROWSER_AGENT_ACTIVE, true);
-  assert.equal(context.window.__TKB_BROWSER_AGENT_WORKING, true);
-  assert.equal(context.window.__TKB_BROWSER_AGENT_READY, true);
-
-  executorState.active = false;
-  executorState.probed = false;
-  executorState.hasWorker = false;
-  executorState.hasLease = false;
-  executorState.computeActive = false;
-  executorState.workerCount = 0;
-  executorState.plannedWorkerCount = 0;
-  executorState.localAcceptedResults = 1;
-  executorState.lastComputeWorkerCount = 1;
-  assert.equal(await context.refreshIndicator(true), true);
-  assert.equal(button.dataset.agentState, "enabled");
-  assert.equal(button.title, "Agent đã bật");
-  assert.equal(context.window.__TKB_BROWSER_AGENT_ACTIVE, false);
-  assert.equal(context.window.__TKB_BROWSER_AGENT_WORKING, false);
-
-  context.window.__TKB_CURRENT_SOLVE_EXECUTOR = {
-    jobId:"fallback-job",
-    executor:"vps",
-    executionPhase:"vps_running",
-    active:true
-  };
-  assert.equal(await context.refreshIndicator(true), true);
-  assert.equal(button.dataset.agentState, "fallback");
-  assert.equal(button.title, "Agent đã bật; lượt hiện tại đang dùng VPS dự phòng.");
-  assert.equal(context.window.__TKB_BROWSER_AGENT_VPS_FALLBACK, true);
-
-  executorState.active = true;
-  executorState.probed = true;
-  executorState.computeActive = true;
-  executorState.workerCount = 1;
-  context.window.__TKB_CURRENT_SOLVE_EXECUTOR = {
-    jobId:"local-job",
-    executor:"agent",
-    executionPhase:"agent_running",
-    active:true
-  };
-  assert.equal(await context.refreshIndicator(true), true);
-  assert.equal(button.dataset.agentState, "working");
-  assert.match(button.title, /^Agent đang tối ưu bằng 1 Worker/);
-  assert.equal(context.window.__TKB_BROWSER_AGENT_VPS_FALLBACK, false);
-
-  executorState.active = false;
-  executorState.probed = false;
-  executorState.computeActive = false;
-  executorState.workerCount = 0;
-  context.window.__TKB_CURRENT_SOLVE_EXECUTOR = null;
-  assert.equal(await context.refreshIndicator(true), true);
-  assert.equal(button.dataset.agentState, "enabled");
-
-  assert.equal(await context.toggleIndicator(), false);
-  assert.equal(agentEnabled, false);
-  assert.equal(button.disabled, false);
-  assert.equal(button.dataset.agentState, "off");
-  assert.equal(button.attributes["aria-pressed"], "false");
-  assert.equal(button.title, "Agent đã tắt; lượt xếp sẽ dùng VPS. Bấm để bật Agent.");
-  assert.deepEqual(statusEvents.at(-1), ["Agent đã tắt; các lượt xếp sẽ dùng VPS.", "info"]);
-});
-
-test("Agent indicator refreshes immediately on executor, pageshow, and foreground events", () => {
-  assert.match(
-    plannerSource,
-    /addEventListener\?\.\("tkb:solver-executor-state",\s*\(\) => \{\s*renderBrowserAgentIndicator\(browserAgentRuntimeState\(\)\)/s
-  );
-  assert.match(
-    plannerSource,
-    /addEventListener\?\.\("pageshow",\s*\(\) => \{\s*refreshAgentHelperStatus\(true\)/s
-  );
-  assert.match(
-    plannerSource,
-    /document\.addEventListener\?\.\("visibilitychange",[\s\S]*?document\.hidden === false[\s\S]*?refreshAgentHelperStatus\(true\)/
-  );
-});
-
-test("manual Play never prompts or downloads a native Agent", async () => {
-  const start = plannerSource.indexOf("async function maybeInviteAgentBeforeSort");
-  const end = plannerSource.indexOf("function setAutoSortHomeHidden", start);
-  assert.ok(start >= 0 && end > start, "Agent invitation helper is missing");
-  const invitationSource = plannerSource.slice(start, end);
-  let prompts = 0;
-  let downloads = 0;
-  let statusChecks = 0;
-  const context = {
-    window:{confirm(){ prompts += 1; return true; }},
-    async refreshAgentHelperStatus(){ statusChecks += 1; return false; },
-    async downloadAgentHelper(){ downloads += 1; return true; }
-  };
-  vm.runInNewContext(
-    `${invitationSource}\nthis.inviteBeforeSort = maybeInviteAgentBeforeSort;`,
-    context
-  );
-
-  assert.equal(await context.inviteBeforeSort({preferVpsFallback:true}), true);
-  assert.equal(await context.inviteBeforeSort(), true);
-  assert.equal(prompts, 0);
-  assert.equal(downloads, 0);
-  assert.equal(statusChecks, 0);
-});
-
-test("manual Play bypasses native Agent status checks entirely", async () => {
-  const start = plannerSource.indexOf("async function refreshAgentHelperStatus");
-  const end = plannerSource.indexOf("function setAutoSortHomeHidden", start);
-  assert.ok(start >= 0 && end > start, "Agent preflight helpers are missing");
-  const preflightSource = plannerSource.slice(start, end);
-  let timeoutMs = 0;
-  let timeoutClears = 0;
-  let prompts = 0;
-  let signal = null;
-  const context = {
-    AbortController,
-    navigator:{platform:"Win32", userAgent:""},
-    window:{
-      __TKB_AGENT_INVITE_SHOWN:false,
-      confirm(){ prompts += 1; return false; },
-      setTimeout(callback, delay){
-        timeoutMs = Number(delay || 0);
-        Promise.resolve().then(callback);
-        return 1;
-      },
-      clearTimeout(){ timeoutClears += 1; }
+    async fetch(url, options){
+      requests.push({url, options:Object.assign({}, options)});
+      if(options?.method === "PATCH") serverConfig = JSON.parse(options.body);
+      return {
+        ok:true,
+        status:200,
+        async json(){
+          return {
+            ok:true,
+            config:JSON.parse(JSON.stringify(serverConfig)),
+            selectedProfileId:"cloud-run-primary",
+            effectiveMode:serverConfig.mode
+          };
+        }
+      };
     },
-    Date,
-    syncAgentHelperVisibility(){ return true; },
-    setAgentHelperOnlineState(){ return false; },
-    isAgentHelperSupportedDevice(){ return true; },
-    async downloadAgentHelper(){ throw new Error("a failed status check must not download"); },
-    _setStatus(){},
-    fetch(_url, options){
-      signal = options.signal;
-      return new Promise((resolve, reject) => {
-        options.signal.addEventListener("abort", () => {
-          const error = new Error("status timeout");
-          error.name = "AbortError";
-          reject(error);
-        }, {once:true});
-      });
-    }
+    dispatchEvent(){},
+    addEventListener(){}
   };
-  context.window.window = context.window;
-  vm.runInNewContext(
-    `${preflightSource}\nthis.inviteBeforeSort = maybeInviteAgentBeforeSort;`,
-    context
-  );
-
-  assert.equal(await context.inviteBeforeSort(), true);
-  assert.equal(timeoutMs, 0);
-  assert.equal(signal, null);
-  assert.equal(timeoutClears, 0);
-  assert.equal(prompts, 0);
-});
-
-test("legacy Agent action delegates to the integrated browser toggle without downloading", async () => {
-  const start = plannerSource.indexOf("async function downloadAgentHelper");
-  const end = plannerSource.indexOf("async function approveAgentPairFromUrl", start);
-  assert.ok(start >= 0 && end > start, "Agent download helper is missing");
-  let toggles = 0;
+  window.window = window;
   const context = {
-    async toggleBrowserAgent(){ toggles += 1; return true; }
+    window,
+    navigator:{platform:"iPhone", userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)"},
+    document:{
+      hidden:false,
+      getElementById(id){
+        if(id === "btnAgentHelper") return button;
+        return null;
+      },
+      addEventListener(){}
+    },
+    _setStatus(message, kind){ statuses.push([message, kind]); }
   };
   vm.runInNewContext(
-    `${plannerSource.slice(start, end)}\nthis.downloadConnectedAgent = downloadAgentHelper;`,
+    `${source}\nthis.routeAllowed = plannerServerRouteToggleAllowed; this.visible = isAgentHelperVisibleForCurrentUser; this.sync = syncAgentHelperVisibility; this.refresh = refreshSolverInfrastructureRouteToggle; this.toggle = toggleBrowserAgent;`,
     context
   );
-  assert.equal(await context.downloadConnectedAgent(), true);
-  assert.equal(toggles, 1);
+
+  assert.equal(context.routeAllowed(), true);
+  assert.equal(context.visible(), true);
+  assert.equal(context.sync(), true, "the icon must also be visible on iPhone");
+  assert.equal(button.hidden, false);
+
+  await context.refresh(true);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, "/api/admin/solver-infrastructure");
+  assert.equal(requests[0].options.method, "GET");
+  assert.equal(requests[0].options.headers.Authorization, "Bearer test-session");
+  assert.equal(button.dataset.agentState, "enabled");
+  assert.equal(button.dataset.solverRouteMode, "auto");
+  assert.equal(button.attributes["aria-pressed"], "true");
+  assert.match(button.title, /Cloud Run .* VPS d\u1ef1 ph\u00f2ng/);
+
+  assert.equal(await context.toggle(), false, "Cloud/Auto switches off to VPS-only");
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].options.method, "PATCH");
+  assert.equal(requests[1].options.headers.Authorization, "Bearer test-session");
+  assert.equal(requests[1].options.headers["Content-Type"], "application/json");
+  const vpsBody = JSON.parse(requests[1].options.body);
+  assert.equal(vpsBody.mode, "vps_only");
+  assert.equal(vpsBody.fallback, "vps");
+  assert.equal(vpsBody.activeProfileId, "cloud-run-primary");
+  assert.equal(vpsBody.profiles.length, 1, "the PATCH must preserve the active Cloud Run profile");
+  assert.equal(button.dataset.agentState, "fallback");
+  assert.equal(button.attributes["aria-pressed"], "false");
+
+  assert.equal(await context.toggle(), true, "VPS-only switches on to Cloud Run with VPS fallback");
+  const cloudBody = JSON.parse(requests[2].options.body);
+  assert.equal(cloudBody.mode, "auto");
+  assert.equal(cloudBody.fallback, "vps");
+  assert.equal(cloudBody.activeProfileId, "cloud-run-primary");
+  assert.equal(button.dataset.agentState, "enabled");
+  assert.equal(button.attributes["aria-pressed"], "true");
+  assert.deepEqual(statuses.at(-1), ["\u0110\u00e3 b\u1eadt Serverless: c\u00e1c l\u01b0\u1ee3t x\u1ebfp m\u1edbi s\u1ebd d\u00f9ng Cloud Run, n\u1ebfu l\u1ed7i s\u1ebd t\u1ef1 chuy\u1ec3n VPS.", "ok"]);
+
+  role = "school_admin";
+  assert.equal(context.routeAllowed(), false);
+  assert.equal(context.sync(), false);
+  assert.equal(button.hidden, true, "every non-superadmin role must lose the icon");
 });
 
 test("toolbar status messages hide after five seconds", () => {
@@ -869,8 +792,8 @@ test("toolbar status messages hide after five seconds", () => {
     `${plannerSource.slice(statusStart, statusEnd)}\nthis.setPlannerStatus = _setStatus;`,
     context
   );
-  context.setPlannerStatus("Đã tải Agent.", "ok");
-  assert.equal(element.textContent, "Đã tải Agent.");
+  context.setPlannerStatus("Đã lưu dữ liệu.", "ok");
+  assert.equal(element.textContent, "Đã lưu dữ liệu.");
   assert.equal(element.style.display, "inline-block");
   assert.equal(delay, 5000);
   assert.equal(context.window.__TKB_STATUS_HIDE_TIMER, 41);
@@ -986,7 +909,7 @@ test("mobile Play matches the other controls and centers its white glyph", () =>
     /#btnAutoSort:hover:not\(:disabled\) \.toolbar-icon\s*\{[^}]*transform:\s*translateX\(1px\) scale\(1\.06\);/s
   );
   assert.equal(
-    (mobileCss.match(/grid-template-columns:\s*repeat\(7, minmax\(0, 1fr\)\);/g) || []).length,
+    (mobileCss.match(/grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);/g) || []).length,
     1
   );
   assert.doesNotMatch(mobileCss, /#btnAutoSort\s*\{[^}]*(?:border-radius:\s*50%|aspect-ratio|width:\s*min\(42px)/s);
@@ -1046,7 +969,7 @@ test("cross-device observer progress locks Play and exposes the owner cancel act
   const progressEnd = plannerSource.indexOf("\nfunction ", progressStart + 10);
   const body = plannerSource.slice(progressStart, progressEnd);
   assert.match(body, /setAutoSortStopVisible\(true\)/);
-  assert.match(body, /if\(!window\.__AUTO_SORT_STOP_REQUESTED && n < 100\)/);
+  assert.match(body, /if\(!window\.__AUTO_SORT_STOP_REQUESTED && !bestEffortStopPending && n < 100\)/);
   assert.doesNotMatch(body, /__TKB_BACKEND_JOB_OBSERVER_ONLY|observingOnly/);
 });
 
@@ -1277,7 +1200,7 @@ test("landscape phones show a full session in both panes and scroll the remainde
   assert.ok(paneBodyHeight >= 18 + (5 * 20));
 });
 
-test("sorting keeps Home and the browser Agent indicator in stable slots", () => {
+test("sorting keeps Home and the superadmin route indicator in stable slots", () => {
   const homeControl = plannerSource.slice(
     plannerSource.indexOf("function setAutoSortHomeHidden"),
     plannerSource.indexOf("function setAutoSortBusyControls")
@@ -1288,31 +1211,36 @@ test("sorting keeps Home and the browser Agent indicator in stable slots", () =>
   );
 
   assert.match(homeControl, /btn\.hidden\s*=\s*false/);
-  assert.match(homeControl, /setAutoSortControlLocked\(btn,\s*shouldLock\)/);
+  assert.match(homeControl, /setAutoSortControlLocked\(btn,\s*false\)/);
   assert.doesNotMatch(homeControl, /btn\.hidden\s*=\s*!!hidden/);
   assert.match(homeControl, /getElementById\("btnAgentHelper"\)/);
   assert.match(homeControl, /const agentVisible\s*=\s*syncAgentHelperVisibility\(\)/);
   assert.match(homeControl, /agentBtn\.hidden\s*=\s*!agentVisible/);
   assert.match(homeControl, /agentBtn\.setAttribute\("aria-hidden",\s*agentVisible \? "false" : "true"\)/);
-  assert.doesNotMatch(homeControl, /agentBtn\.disabled\s*=\s*true/);
-  assert.match(homeControl, /agentBtn\.classList\.remove\("is-auto-sort-disabled"\)/);
+  assert.match(homeControl, /setAutoSortControlLocked\(agentBtn,\s*shouldLock\)/);
+  assert.doesNotMatch(plannerHtml, /#btnHome\.is-auto-sort-disabled/);
   assert.match(
     plannerHtml,
-    /#btnHome\.is-auto-sort-disabled\s*\{[^}]*opacity:\s*\.45;[^}]*filter:\s*saturate\(\.6\);/s
+    /#btnAgentHelper\.is-auto-sort-disabled\s*\{[^}]*opacity:\s*1;[^}]*filter:\s*none;[^}]*pointer-events:\s*none;/s
   );
   assert.match(
     plannerHtml,
-    /\.desktop-solve-controls \.planner-mode-button\.is-auto-sort-disabled,[\s\S]*?\.planner-optimize-menu > button\.is-auto-sort-disabled\s*\{[^}]*opacity:\s*\.45;[^}]*filter:\s*saturate\(\.6\);/s
+    /#btnAgentHelper\.is-auto-sort-disabled \.agent-ai-icon,[\s\S]*?#btnAgentHelper\.is-auto-sort-disabled \.agent-button-label\s*\{[^}]*opacity:\s*\.45;/s
   );
-  assert.doesNotMatch(plannerHtml, /#btnAgentHelper\.is-auto-sort-disabled/);
+  assert.match(
+    plannerHtml,
+    /#btnAgentHelper\.is-auto-sort-disabled \.agent-status-dot\s*\{[^}]*opacity:\s*1;[^}]*filter:\s*none;/s
+  );
+  assert.match(
+    plannerHtml,
+    /#btnOptimizeMenu\.is-auto-sort-disabled\s*\{[^}]*opacity:\s*\.45;[^}]*pointer-events:\s*none;/s
+  );
   assert.match(busyControls, /getElementById\("btnUndoTKB"\)/);
   assert.match(busyControls, /getElementById\("btnRedoTKB"\)/);
-  assert.match(busyControls, /getElementById\("btnQuickComplete"\)/);
+  assert.doesNotMatch(busyControls, /getElementById\("btnQuickComplete"\)/);
   assert.match(busyControls, /getElementById\("btnOptimizeMenu"\)/);
-  assert.match(busyControls, /querySelectorAll\("#plannerOptimizeMenu \[role='menuitem'\]"\)/);
+  assert.match(busyControls, /plannerOptimizeMenu/);
   assert.doesNotMatch(busyControls, /getElementById\("btnStopAutoSort"\)/);
-  assert.match(busyControls, /optimizeMenu\.hidden\s*=\s*true/);
-  assert.match(busyControls, /optimizeToggle\?\.setAttribute\("aria-expanded",\s*"false"\)/);
   assert.match(busyControls, /getElementById\("solveDurationSeconds"\)/);
   assert.match(busyControls, /setAutoSortControlLocked\(el,\s*shouldLock\)/);
 
@@ -1337,44 +1265,29 @@ test("sorting keeps Home and the browser Agent indicator in stable slots", () =>
   const controls = {
     btnHome:makeControl(false),
     btnAgentHelper:makeControl(false),
+    btnOptimizeMenu:makeControl(false),
+    plannerOptimizeMenu:makeControl(false),
     btnUndoTKB:makeControl(false),
     btnRedoTKB:makeControl(true),
     btnDeleteAll:makeControl(false),
     btnRangBuoc:makeControl(false),
-    btnQuickComplete:makeControl(false),
-    btnOptimizeMenu:makeControl(false),
-    plannerOptimizeMenu:makeControl(false),
     solveDurationSeconds:makeControl(false)
   };
-  controls.plannerOptimizeMenu.hidden = false;
-  controls.btnOptimizeMenu.setAttribute("aria-expanded", "true");
-  const optimizeItems = [makeControl(false), makeControl(false), makeControl(false)];
   let historyRefreshes = 0;
   const context = {
     navigator:{platform:"Win32", userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
     window:{
+      __TKB_CLIENT_AGENT_LANES_ENABLED:false,
       __TKB_RUST_SOLVER_RUNNING:false,
       __TKB_SOLVE_UI_BUSY:false,
-      Worker:function Worker(){},
-      WebAssembly:{},
-      BigInt,
-      TextEncoder,
-      crypto:{subtle:{}},
-      fetch:async () => ({}),
-      TKBBrowserWasmExecutor:{
-        isSupportedNavigator(){ return true; },
-        prepare(){},
-        state(){ return {active:false, hasLease:false, probed:false}; }
+      TKBAuth:{
+        currentUser(){ return {user:{role:"superadmin"}}; }
       }
     },
     document:{
       getElementById(id){ return controls[id] || null; },
-      querySelectorAll(selector){
-        if(selector === "#plannerOptimizeMenu [role='menuitem']") return optimizeItems;
-        return [];
-      }
+      querySelectorAll(){ return []; }
     },
-    syncAgentHelperVisibility(){ return true; },
     __tkbUpdateHistoryButtons(){ historyRefreshes += 1; }
   };
   vm.runInNewContext(`${plannerSource.slice(
@@ -1384,17 +1297,19 @@ test("sorting keeps Home and the browser Agent indicator in stable slots", () =>
 
   context.lockBusyControls(true);
   assert.equal(controls.btnHome.hidden, false);
-  assert.equal(controls.btnHome.disabled, true);
+  assert.equal(controls.btnHome.disabled, false);
   assert.equal(controls.btnAgentHelper.hidden, false);
-  assert.equal(controls.btnAgentHelper.disabled, false);
+  assert.equal(controls.btnAgentHelper.disabled, true);
+  assert.equal(controls.btnAgentHelper.getAttribute("aria-disabled"), "true");
+  assert.equal(controls.btnAgentHelper.classList.contains("is-auto-sort-disabled"), true);
   assert.equal(controls.btnAgentHelper.getAttribute("aria-hidden"), "false");
-  assert.equal(controls.btnUndoTKB.disabled, true);
-  assert.equal(controls.btnRedoTKB.disabled, true);
-  assert.equal(controls.btnQuickComplete.disabled, true);
   assert.equal(controls.btnOptimizeMenu.disabled, true);
+  assert.equal(controls.btnOptimizeMenu.getAttribute("aria-disabled"), "true");
+  assert.equal(controls.btnOptimizeMenu.classList.contains("is-auto-sort-disabled"), true);
   assert.equal(controls.plannerOptimizeMenu.hidden, true);
   assert.equal(controls.btnOptimizeMenu.getAttribute("aria-expanded"), "false");
-  assert.equal(optimizeItems.every(item => item.disabled), true);
+  assert.equal(controls.btnUndoTKB.disabled, true);
+  assert.equal(controls.btnRedoTKB.disabled, true);
   assert.equal(controls.solveDurationSeconds.disabled, true);
 
   context.lockBusyControls(false);
@@ -1402,13 +1317,37 @@ test("sorting keeps Home and the browser Agent indicator in stable slots", () =>
   assert.equal(controls.btnHome.disabled, false);
   assert.equal(controls.btnAgentHelper.hidden, false);
   assert.equal(controls.btnAgentHelper.disabled, false);
+  assert.equal(controls.btnAgentHelper.getAttribute("aria-disabled"), "false");
+  assert.equal(controls.btnAgentHelper.classList.contains("is-auto-sort-disabled"), false);
+  assert.equal(controls.btnOptimizeMenu.disabled, false);
+  assert.equal(controls.btnOptimizeMenu.getAttribute("aria-disabled"), null);
+  assert.equal(controls.btnOptimizeMenu.classList.contains("is-auto-sort-disabled"), false);
   assert.equal(controls.btnUndoTKB.disabled, false);
   assert.equal(controls.btnRedoTKB.disabled, true);
-  assert.equal(controls.btnQuickComplete.disabled, false);
-  assert.equal(controls.btnOptimizeMenu.disabled, false);
-  assert.equal(optimizeItems.every(item => item.disabled === false), true);
   assert.equal(controls.solveDurationSeconds.disabled, false);
   assert.equal(historyRefreshes, 1);
+});
+
+test("leaving the planner detaches from an active server job instead of cancelling it", () => {
+  const navigation = plannerSource.slice(
+    plannerSource.indexOf("function isAutoSortRunningForNavigation"),
+    plannerSource.indexOf("function printTKB")
+  );
+
+  assert.match(navigation, /__TKB_ACTIVE_BACKEND_JOB_ID/);
+  assert.match(navigation, /Lượt xếp vẫn tiếp tục trên máy chủ/);
+  assert.match(navigation, /backToMain\(\)/);
+  assert.doesNotMatch(navigation, /requestStopAutoSort|stopAutoSortBeforeHome|hardCancel|window\.confirm/);
+});
+
+test("soft Stop remains disabled while later progress frames arrive", () => {
+  const progress = plannerSource.slice(
+    plannerSource.indexOf("function setAutoSortProgress"),
+    plannerSource.indexOf("function finishAutoSortProgress")
+  );
+
+  assert.match(progress, /__TKB_RUST_PROGRESS_STATE\?\.bestEffortStopPending === true/);
+  assert.match(progress, /!bestEffortStopPending && n < 100/);
 });
 
 test("desktop keeps controls, feedback, and navigation in one toolbar row", () => {
@@ -1498,7 +1437,7 @@ test("mobile reserves one stable feedback row so sorting never shifts the timeta
   assert.match(feedback, /id="autoSortProgressMetric" class="auto-sort-metric" hidden/);
   assert.match(feedback, /id="autoSortProgress" class="auto-sort-progress is-idle"[^>]*aria-hidden="true"[^>]*\shidden(?:\s|>)/);
   assert.match(plannerHtml, /body\.planner-shell\s*\{[^}]*--planner-mobile-feedback-h:\s*46px;[^}]*padding-bottom:\s*0;[^}]*overflow:\s*hidden;/s);
-  assert.match(plannerHtml, /\.toolbar-main\s*\{[^}]*grid-template-columns:\s*repeat\(7, minmax\(0, 1fr\)\);[^}]*grid-template-rows:\s*44px var\(--planner-mobile-feedback-h\);/s);
+  assert.match(plannerHtml, /\.toolbar-main\s*\{[^}]*grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);[^}]*grid-template-rows:\s*44px var\(--planner-mobile-feedback-h\);/s);
   assert.match(plannerHtml, /\.toolbar-feedback\s*\{[^}]*grid-column:\s*1 \/ -1;[^}]*grid-row:\s*2;[^}]*display:\s*grid;[^}]*grid-template-rows:\s*var\(--planner-mobile-feedback-h\);[^}]*height:\s*var\(--planner-mobile-feedback-h\);[^}]*min-height:\s*var\(--planner-mobile-feedback-h\);[^}]*max-height:\s*var\(--planner-mobile-feedback-h\);[^}]*overflow:\s*hidden;/s);
   assert.doesNotMatch(plannerHtml, /\.toolbar-feedback:has\(> #autoSortProgress\.is-active\)/);
   assert.match(plannerHtml, /\.toolbar-feedback\s*>\s*#autoSortProgress\s*\{[^}]*grid-row:\s*1;/s);
@@ -1522,7 +1461,7 @@ test("mobile reserves one stable feedback row so sorting never shifts the timeta
   );
 });
 
-test("Agent, Home, and Statistics occupy mobile columns five through seven", () => {
+test("Optimize, Agent, Home, and Statistics occupy mobile columns four through eight", () => {
   const feedbackStart = plannerHtml.indexOf('<div class="toolbar-feedback"');
   const secondaryStart = plannerHtml.indexOf('<div class="toolbar-secondary-actions"');
   const secondary = plannerHtml.slice(secondaryStart, plannerHtml.indexOf("\n  </div>\n\n</div>", secondaryStart));
@@ -1532,7 +1471,8 @@ test("Agent, Home, and Statistics occupy mobile columns five through seven", () 
   assert.match(secondary, /id="statsToggle"[^>]*>[\s\S]*?toolbar-label-compact[^>]*>\s*<svg class="toolbar-icon"[^>]*>[\s\S]*?<\/svg>\s*<\/span><\/button>/);
   assert.match(plannerHtml, /\.toolbar-secondary-actions\s*\{[^}]*display:\s*contents;/s);
   assert.match(plannerHtml, /\.toolbar-secondary-actions \.stats-popover-wrap\s*\{[^}]*display:\s*contents;/s);
-  assert.match(plannerHtml, /#btnAgentHelper\s*\{[^}]*grid-column:\s*5;[^}]*height:\s*44px;/s);
-  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*6;/s);
-  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*7;[^}]*height:\s*44px;/s);
+  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*\.planner-optimize-wrap\s*\{[^}]*grid-column:\s*4;[^}]*height:\s*44px;/s);
+  assert.match(plannerHtml, /#btnAgentHelper\s*\{[^}]*grid-column:\s*6;[^}]*height:\s*44px;/s);
+  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*7;/s);
+  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*8;[^}]*height:\s*44px;/s);
 });

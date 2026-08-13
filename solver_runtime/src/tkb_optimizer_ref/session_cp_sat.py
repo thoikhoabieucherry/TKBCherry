@@ -11,6 +11,11 @@ from functools import lru_cache
 from itertools import product
 
 from .models import Lesson, SchoolData, SessionAllocation
+from .external_cp_sat import (
+    ExternalCpSatSolver,
+    active_external_solver,
+    solve_cp_sat_model,
+)
 from .random_seed import normalize_cp_sat_seed
 from .rules import TimetableRuleSet, one_session_per_day_mode, resolve_rule_set
 from .session_milp import (
@@ -217,10 +222,15 @@ def solve_session_allocation_cp_sat(
     period_max_teacher_gap2_plus_sessions: int | None = None,
     period_minimize_teacher_gaps: bool = False,
     period_teacher_gap_priority_absolute: bool = False,
+    period_gap_objective_target: str | None = None,
     materialize_period_lessons: bool = False,
     legacy_wednesday_pm_bridge: bool = False,
     minimize_hint_distance: bool = False,
+    quality_stagnation_seconds: float | None = None,
+    quality_stagnation_min_improvements: int = 1,
+    cloud_run_stop_when_gap2_zero: bool = False,
     progress: ProgressFn | None = None,
+    external_solver: ExternalCpSatSolver | None = None,
 ) -> tuple[list[SessionAllocation], dict[str, Any]]:
     """Solve the half-day compaction model with OR-Tools CP-SAT.
 
@@ -235,7 +245,17 @@ def solve_session_allocation_cp_sat(
     domain_memo = AssignmentSessionDomainMemo(constraints)
     sessions = all_sessions()
     period_feasibility_session_indexes = set(period_feasibility_session_indexes or set())
-    period_gap_quality_requested = bool(period_minimize_teacher_gaps) or any(
+    normalized_gap_objective_target = str(period_gap_objective_target or "").strip().casefold().replace("-", "_")
+    if normalized_gap_objective_target in {"gap_2", "teacher_gap2_sessions", "optimize_gap2"}:
+        normalized_gap_objective_target = "gap2"
+    elif normalized_gap_objective_target in {"gap_1", "teacher_gap1_sessions", "optimize_gap1"}:
+        normalized_gap_objective_target = "gap1"
+    elif normalized_gap_objective_target != "gap2":
+        normalized_gap_objective_target = "" if normalized_gap_objective_target != "gap1" else "gap1"
+    # An explicit split target is itself a request for the concrete period
+    # bridge/objective. Callers do not need to redundantly enable the legacy
+    # aggregate ``period_minimize_teacher_gaps`` flag.
+    period_gap_caps_requested = any(
         cap is not None
         for cap in (
             period_max_teacher_gap_periods,
@@ -243,9 +263,15 @@ def solve_session_allocation_cp_sat(
             period_max_teacher_gap2_plus_sessions,
         )
     )
+    period_gap_objective_requested = bool(period_minimize_teacher_gaps) or bool(
+        normalized_gap_objective_target
+    )
     # Teacher-gap signatures use the concrete period bridge itself; optional
     # authored constraints are not required.  The default school has a valid
     # empty rule set (`constraints=None`) and must still be able to run Gap.
+    period_gap_quality_requested = (
+        period_gap_objective_requested or period_gap_caps_requested
+    )
     period_gap_model_complete = bool(
         period_gap_quality_requested
         and set(range(len(sessions))).issubset(period_feasibility_session_indexes)
@@ -940,13 +966,27 @@ def solve_session_allocation_cp_sat(
                         fixed_blocks = int(fixed_blocks_by_length.get(length, 0))
                         block_expr = sum(block_terms) + fixed_blocks
                         if minimum > 0:
-                            if allow_unassigned and fixed_scheduled_for_rule <= 0:
-                                target_active = model.NewBoolVar(
-                                    f"subject_block_active_{scope}_{assignment.class_name}_{target_id}_{length}"
+                            if allow_unassigned:
+                                # A partial/best-effort solve may legitimately
+                                # leave this subject short. Enforce a block
+                                # minimum only once the residual demand for
+                                # this class/subject is fully scheduled; a
+                                # hard-fixed lesson next to OFF/fixed cells
+                                # must not make the whole partial model
+                                # globally INFEASIBLE.
+                                residual_required = sum(
+                                    max(0, int(candidate.periods_per_week))
+                                    for candidate in data.assignments
+                                    if matcher(candidate)
                                 )
-                                model.Add(scheduled_expr_for_rule >= 1).OnlyEnforceIf(target_active)
-                                model.Add(scheduled_expr_for_rule == 0).OnlyEnforceIf(target_active.Not())
-                                model.Add(block_expr >= minimum).OnlyEnforceIf(target_active)
+                                complete_subject = model.NewBoolVar(
+                                    f"subject_block_complete_{scope}_{assignment.class_name}_{target_id}_{length}"
+                                )
+                                model.Add(scheduled_expr_for_rule == residual_required).OnlyEnforceIf(complete_subject)
+                                model.Add(scheduled_expr_for_rule <= max(0, residual_required - 1)).OnlyEnforceIf(
+                                    complete_subject.Not()
+                                )
+                                model.Add(block_expr >= minimum).OnlyEnforceIf(complete_subject)
                             elif block_terms or fixed_blocks > 0:
                                 model.Add(block_expr >= minimum)
                             else:
@@ -1195,7 +1235,10 @@ def solve_session_allocation_cp_sat(
         and (
             max_one_period_sessions is not None
             or early_stop_max_one_period_sessions is not None
-            or (minimize_one_period_sessions and (minimize_sessions or minimize_hint_distance))
+            # A focused singleton solve deliberately disables the session and
+            # hint-distance objectives. It still needs the indicator variables
+            # that make the standalone singleton objective meaningful.
+            or minimize_one_period_sessions
         )
     )
     if need_teacher_single_vars:
@@ -1369,7 +1412,7 @@ def solve_session_allocation_cp_sat(
     objective_expr: Any | None = None
     period_gap_objective_weights: dict[str, int] = {}
     period_gap_objective_components: list[tuple[str, Any, int]] = []
-    if period_minimize_teacher_gaps:
+    if period_gap_objective_requested:
         max_gap_per_session = max(
             (
                 max(0, teacher_session_capacity(session) - 2)
@@ -1403,23 +1446,45 @@ def solve_session_allocation_cp_sat(
         severe_gap_upper_bound = (
             gap_period_upper_bound if gap2_plus_upper_bound > 0 else 0
         )
-        gap_components: list[tuple[str, Any, int]] = [
-            (
-                "teacher_gap2_plus_sessions",
-                teacher_period_gap2_plus_penalty,
-                gap2_plus_upper_bound,
-            ),
-            (
-                "teacher_severe_gap_periods",
-                teacher_period_severe_gap_penalty,
-                severe_gap_upper_bound,
-            ),
-            (
-                "teacher_gap1_sessions",
-                teacher_period_gap1_penalty,
-                gap1_upper_bound,
-            ),
-        ]
+        if normalized_gap_objective_target == "gap2":
+            # Gap2 focus owns the count of sessions with >=2 internal holes.
+            # Severe-gap and Gap1 terms are deliberately omitted; the caller
+            # supplies incumbent caps for those counters as safety fences.
+            gap_components = [
+                (
+                    "teacher_gap2_plus_sessions",
+                    teacher_period_gap2_plus_penalty,
+                    gap2_plus_upper_bound,
+                )
+            ]
+        elif normalized_gap_objective_target == "gap1":
+            # Gap1 owns one-hole sessions independently. Gap2 is represented
+            # only by the incumbent safety cap supplied by the caller.
+            gap_components = [
+                (
+                    "teacher_gap1_sessions",
+                    teacher_period_gap1_penalty,
+                    gap1_upper_bound,
+                )
+            ]
+        else:
+            gap_components = [
+                (
+                    "teacher_gap2_plus_sessions",
+                    teacher_period_gap2_plus_penalty,
+                    gap2_plus_upper_bound,
+                ),
+                (
+                    "teacher_severe_gap_periods",
+                    teacher_period_severe_gap_penalty,
+                    severe_gap_upper_bound,
+                ),
+                (
+                    "teacher_gap1_sessions",
+                    teacher_period_gap1_penalty,
+                    gap1_upper_bound,
+                ),
+            ]
         base_components: list[tuple[str, Any, int]] = []
         one_component = (
             "one_period_teacher_sessions",
@@ -1523,8 +1588,8 @@ def solve_session_allocation_cp_sat(
         else:
             objective_mode = "minimize_teacher_sessions"
             objective_expr = teacher_session_sum
-    elif minimize_hint_distance and hint_distance_terms:
-        if minimize_one_period_sessions:
+    elif minimize_one_period_sessions:
+        if minimize_hint_distance and hint_distance_terms:
             if one_period_priority_absolute:
                 objective_mode = "minimize_one_period_sessions_then_hint_distance"
                 objective_expr = teacher_single_penalty * one_period_objective_weight + sum(hint_distance_terms)
@@ -1532,8 +1597,14 @@ def solve_session_allocation_cp_sat(
                 objective_mode = "minimize_hint_distance_then_one_period_sessions"
                 objective_expr = sum(hint_distance_terms) * hint_distance_objective_weight + teacher_single_penalty
         else:
-            objective_mode = "minimize_hint_distance"
-            objective_expr = sum(hint_distance_terms)
+            # Focused `1 tiet/buoi` disables teacher-session and hint-distance
+            # objectives.  Keep the singleton count as a real standalone
+            # objective instead of silently turning the model into feasibility.
+            objective_mode = "minimize_one_period_sessions"
+            objective_expr = teacher_single_penalty
+    elif minimize_hint_distance and hint_distance_terms:
+        objective_mode = "minimize_hint_distance"
+        objective_expr = sum(hint_distance_terms)
     hint_distance_objective_skipped_for_integer_safety = False
     if (
         objective_expr is not None
@@ -1586,7 +1657,7 @@ def solve_session_allocation_cp_sat(
     if early_stop_teacher_threshold is not None and max_teacher_sessions is not None:
         early_stop_teacher_threshold = min(early_stop_teacher_threshold, int(max_teacher_sessions))
     period_gap_objective_suppressed_session_early_stop = bool(
-        period_minimize_teacher_gaps and early_stop_teacher_threshold is not None
+        period_gap_objective_requested and early_stop_teacher_threshold is not None
     )
     if period_gap_objective_suppressed_session_early_stop:
         # A session-count-only callback would stop on the first incumbent that
@@ -1629,7 +1700,9 @@ def solve_session_allocation_cp_sat(
                 "period_max_teacher_gap_periods": period_max_teacher_gap_periods,
                 "period_max_teacher_gap1_sessions": period_max_teacher_gap1_sessions,
                 "period_max_teacher_gap2_plus_sessions": period_max_teacher_gap2_plus_sessions,
-                "period_minimize_teacher_gaps": bool(period_minimize_teacher_gaps),
+                "period_gap_objective_target": normalized_gap_objective_target or None,
+                "period_minimize_teacher_gaps": bool(period_gap_objective_requested),
+                "period_gap_objective_requested": bool(period_gap_objective_requested),
                 "period_teacher_gap_priority_absolute": bool(
                     period_teacher_gap_priority_absolute
                 ),
@@ -1658,12 +1731,58 @@ def solve_session_allocation_cp_sat(
         solver.parameters.fix_variables_to_their_hinted_value = bool(fix_hint)
         solver.parameters.repair_hint = False
 
+    # A user soft-Stop is acceptance-aware. It may return the nearest complete
+    # incumbent only after the two mandatory Automatic gates are proven by the
+    # concrete period model: no one-period teacher session and no Gap2. A
+    # request received earlier remains pending while CP-SAT keeps improving.
+    soft_stop_quality_ready = threading.Event()
+    soft_stop_done = threading.Event()
+    soft_stop_observed = threading.Event()
+    soft_stop_applied = threading.Event()
+    soft_stop_errors: list[str] = []
+    try:
+        normalized_quality_stagnation_seconds = max(
+            0.0,
+            float(quality_stagnation_seconds or 0.0),
+        )
+    except (TypeError, ValueError):
+        normalized_quality_stagnation_seconds = 0.0
+    try:
+        normalized_quality_stagnation_min_improvements = max(
+            1,
+            int(quality_stagnation_min_improvements or 1),
+        )
+    except (TypeError, ValueError):
+        normalized_quality_stagnation_min_improvements = 1
+    quality_stagnation_ready = threading.Event()
+    quality_stagnation_applied = threading.Event()
+    quality_stagnation_errors: list[str] = []
+    quality_stagnation_enabled = bool(
+        normalized_quality_stagnation_seconds >= 0.1
+        and objective_expr is not None
+        and period_gap_model_complete
+        and external_solver is None
+        and active_external_solver() is None
+    )
+    cloud_run_gap2_zero_stop_applied = threading.Event()
+    cloud_run_gap2_zero_stop_enabled = bool(
+        cloud_run_stop_when_gap2_zero
+        and period_gap_model_complete
+        and external_solver is None
+        and active_external_solver() is None
+    )
+
     quality_callback = None
     early_stop_enabled = early_stop_teacher_threshold is not None
     # Feasibility-only Quick runs keep the lightest possible solver path. Live
     # incumbent reporting is useful only when CP-SAT has a quality objective.
     progress_callback_enabled = progress is not None and objective_expr is not None
-    if early_stop_enabled or progress_callback_enabled:
+    if (
+        early_stop_enabled
+        or progress_callback_enabled
+        or quality_stagnation_enabled
+        or cloud_run_gap2_zero_stop_enabled
+    ):
         teacher_session_indexes = tuple(var.index for var in z_vars.values())
         one_period_indexes = tuple(var.index for var in teacher_single_vars)
         unassigned_indexes = tuple(var.index for var in shortfall_vars.values())
@@ -1686,6 +1805,10 @@ def solve_session_allocation_cp_sat(
                 self.hit_seconds: float | None = None
                 self.hit_teacher_sessions: int | None = None
                 self.hit_one_period_sessions: int | None = None
+                self.quality_ready_best_objective: int | None = None
+                self.quality_ready_best_signature: tuple[int, ...] | None = None
+                self.quality_ready_improvements = 0
+                self.last_quality_improvement_monotonic: float | None = None
 
             def on_solution_callback(self) -> None:
                 self.solution_count += 1
@@ -1777,6 +1900,69 @@ def solve_session_allocation_cp_sat(
                             }
                         )
                     progress(progress_event)
+                manual_stop_quality_ready = (
+                    unassigned_periods == 0
+                    and one_period_sessions == 0
+                    and period_gap_model_complete
+                    and gap2_plus_sessions == 0
+                )
+                focused_gap2_target_ready = (
+                    unassigned_periods == 0
+                    and period_gap_model_complete
+                    and gap2_plus_sessions == 0
+                )
+                if manual_stop_quality_ready:
+                    soft_stop_quality_ready.set()
+                    if strict_objective_improvement and objective_value is not None:
+                        quality_signature = (
+                            gap2_plus_sessions,
+                            severe_gap_periods,
+                            gap1_sessions,
+                            gap_periods,
+                            teacher_sessions,
+                            one_period_sessions,
+                        )
+                        if self.quality_ready_best_objective is None:
+                            self.quality_ready_best_objective = objective_value
+                            self.quality_ready_best_signature = quality_signature
+                            self.last_quality_improvement_monotonic = time.monotonic()
+                        elif (
+                            objective_value < self.quality_ready_best_objective
+                            and (
+                                self.quality_ready_best_signature is None
+                                or quality_signature < self.quality_ready_best_signature
+                            )
+                        ):
+                            self.quality_ready_best_objective = objective_value
+                            self.quality_ready_best_signature = quality_signature
+                            self.quality_ready_improvements += 1
+                            self.last_quality_improvement_monotonic = time.monotonic()
+                            if (
+                                quality_stagnation_enabled
+                                and self.quality_ready_improvements
+                                >= normalized_quality_stagnation_min_improvements
+                            ):
+                                # The first accepted 0/0 incumbent is only a
+                                # baseline. Arm the plateau timer after a real
+                                # secondary-objective improvement so a hard-gate
+                                # cleanup cannot terminate the quality phase by
+                                # itself.
+                                quality_stagnation_ready.set()
+                    if soft_stop_observed.is_set() and not soft_stop_applied.is_set():
+                        # The stop request arrived before the mandatory 0/0
+                        # envelope. Stop only now, with this accepted incumbent.
+                        soft_stop_applied.set()
+                        self.stop_search()
+                if (
+                    cloud_run_gap2_zero_stop_enabled
+                    and focused_gap2_target_ready
+                    and not cloud_run_gap2_zero_stop_applied.is_set()
+                ):
+                    # Focused Gap2 work has exactly one requested target. A
+                    # one-period teacher session belongs to a different
+                    # optimization action and must not delay this result.
+                    cloud_run_gap2_zero_stop_applied.set()
+                    self.stop_search()
                 one_period_ok = (
                     early_stop_one_period_threshold is None
                     or one_period_sessions <= early_stop_one_period_threshold
@@ -1796,12 +1982,8 @@ def solve_session_allocation_cp_sat(
         quality_callback = SessionQualityCallback()
 
     soft_stop_file = str(os.environ.get("TKB_SOLVER_STOP_FILE") or "").strip()
-    soft_stop_done = threading.Event()
-    soft_stop_observed = threading.Event()
-    soft_stop_applied = threading.Event()
-    soft_stop_errors: list[str] = []
     soft_stop_watcher: threading.Thread | None = None
-    if soft_stop_file:
+    if soft_stop_file and external_solver is None:
         stop_path = Path(soft_stop_file)
 
         def watch_soft_stop() -> None:
@@ -1813,15 +1995,16 @@ def solve_session_allocation_cp_sat(
                 if not requested:
                     continue
                 soft_stop_observed.set()
-                try:
-                    # OR-Tools supports StopSearch from another thread. This
-                    # returns the best incumbent through the normal result path
-                    # instead of discarding it like a hard process kill.
-                    solver.stop_search()
-                except Exception as exc:  # pragma: no cover - defensive API guard.
-                    soft_stop_errors.append(str(exc)[:500])
-                else:
-                    soft_stop_applied.set()
+                if soft_stop_quality_ready.is_set():
+                    try:
+                        # OR-Tools supports StopSearch from another thread.
+                        # This returns the accepted 0/0 incumbent through the
+                        # normal result path instead of discarding it.
+                        solver.stop_search()
+                    except Exception as exc:  # pragma: no cover - defensive API guard.
+                        soft_stop_errors.append(str(exc)[:500])
+                    else:
+                        soft_stop_applied.set()
                 return
 
         soft_stop_watcher = threading.Thread(
@@ -1831,17 +2014,67 @@ def solve_session_allocation_cp_sat(
         )
         soft_stop_watcher.start()
 
+    quality_stagnation_watcher: threading.Thread | None = None
+    quality_stagnation_started = time.monotonic()
+    if quality_stagnation_enabled and quality_callback is not None:
+
+        def watch_quality_stagnation() -> None:
+            while not soft_stop_done.wait(0.1):
+                if not quality_stagnation_ready.is_set():
+                    continue
+                last_improvement = quality_callback.last_quality_improvement_monotonic
+                if last_improvement is None:
+                    continue
+                if (
+                    time.monotonic() - last_improvement
+                    < normalized_quality_stagnation_seconds
+                ):
+                    continue
+                # Re-read after the threshold check. A callback may have found
+                # a fresher incumbent while this watcher was waking up.
+                if last_improvement != quality_callback.last_quality_improvement_monotonic:
+                    continue
+                try:
+                    # StopSearch keeps CP-SAT's best feasible incumbent. The
+                    # adapter still performs its complete/hard-valid/Pareto
+                    # gates before the candidate can replace the timetable.
+                    solver.stop_search()
+                except Exception as exc:  # pragma: no cover - defensive API guard.
+                    quality_stagnation_errors.append(str(exc)[:500])
+                else:
+                    quality_stagnation_applied.set()
+                return
+
+        quality_stagnation_watcher = threading.Thread(
+            target=watch_quality_stagnation,
+            name="tkb-cp-sat-quality-stagnation",
+            daemon=True,
+        )
+        quality_stagnation_watcher.start()
+
     started = time.time()
     try:
-        status = solver.Solve(model, quality_callback)
+        status = solve_cp_sat_model(
+            model,
+            solver,
+            quality_callback,
+            external_solver=external_solver,
+        )
     finally:
         soft_stop_done.set()
         if soft_stop_watcher is not None:
             soft_stop_watcher.join(timeout=0.5)
+        if quality_stagnation_watcher is not None:
+            quality_stagnation_watcher.join(timeout=0.5)
     elapsed = time.time() - started
     status_name = solver.StatusName(status)
     metrics: dict[str, Any] = {
         "solver": "ortools_cp_sat_session",
+        "execution_runtime": (
+            "python_native"
+            if external_solver is None and active_external_solver() is None
+            else "external_cp_sat"
+        ),
         "status": int(status),
         "status_name": status_name,
         "objective": None,
@@ -1872,7 +2105,9 @@ def solve_session_allocation_cp_sat(
         "period_max_teacher_gap_periods": period_max_teacher_gap_periods,
         "period_max_teacher_gap1_sessions": period_max_teacher_gap1_sessions,
         "period_max_teacher_gap2_plus_sessions": period_max_teacher_gap2_plus_sessions,
-        "period_minimize_teacher_gaps": bool(period_minimize_teacher_gaps),
+        "period_gap_objective_target": normalized_gap_objective_target or None,
+        "period_minimize_teacher_gaps": bool(period_gap_objective_requested),
+        "period_gap_objective_requested": bool(period_gap_objective_requested),
         "period_teacher_gap_priority_absolute": bool(
             period_teacher_gap_priority_absolute
         ),
@@ -1910,7 +2145,52 @@ def solve_session_allocation_cp_sat(
         ),
         "best_effort_stop_requested": soft_stop_observed.is_set(),
         "best_effort_stop_applied": soft_stop_applied.is_set(),
+        "best_effort_stop_quality_ready": soft_stop_quality_ready.is_set(),
+        "best_effort_stop_deferred_for_quality": (
+            soft_stop_observed.is_set() and not soft_stop_applied.is_set()
+        ),
         "best_effort_stop_error": soft_stop_errors[0] if soft_stop_errors else None,
+        "quality_stagnation_stop_enabled": quality_stagnation_enabled,
+        "quality_stagnation_stop_seconds": (
+            normalized_quality_stagnation_seconds
+            if quality_stagnation_enabled
+            else None
+        ),
+        "quality_stagnation_min_improvements": (
+            normalized_quality_stagnation_min_improvements
+            if quality_stagnation_enabled
+            else None
+        ),
+        "quality_stagnation_stop_ready": quality_stagnation_ready.is_set(),
+        "quality_stagnation_stop_applied": quality_stagnation_applied.is_set(),
+        "quality_stagnation_stop_elapsed_seconds": (
+            round(time.monotonic() - quality_stagnation_started, 3)
+            if quality_stagnation_applied.is_set()
+            else None
+        ),
+        "quality_stagnation_improvements": (
+            quality_callback.quality_ready_improvements
+            if quality_callback is not None
+            else 0
+        ),
+        "quality_stagnation_best_objective": (
+            quality_callback.quality_ready_best_objective
+            if quality_callback is not None
+            else None
+        ),
+        "quality_stagnation_best_signature": (
+            list(quality_callback.quality_ready_best_signature)
+            if quality_callback is not None
+            and quality_callback.quality_ready_best_signature is not None
+            else None
+        ),
+        "cloud_run_gap2_zero_stop_enabled": cloud_run_gap2_zero_stop_enabled,
+        "cloud_run_gap2_zero_stop_applied": (
+            cloud_run_gap2_zero_stop_applied.is_set()
+        ),
+        "quality_stagnation_stop_error": (
+            quality_stagnation_errors[0] if quality_stagnation_errors else None
+        ),
         "early_stop_teacher_threshold": early_stop_teacher_threshold,
         "early_stop_one_period_threshold": early_stop_one_period_threshold,
         "period_gap_objective_suppressed_session_early_stop": (

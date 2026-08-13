@@ -185,7 +185,7 @@ test("requirements menu exposes the industry conversion directly below Print TKB
   assert.doesNotMatch(menuSource, /Chuyển CSDL ngành/);
   assert.match(plannerSource, /key === "industry-database"[\s\S]*?exportIndustryDatabaseExcel/);
   assert.match(plannerHtml, /tkb-export\.js\?v=20260725-v1100-industry-export-queue-v1/);
-  assert.match(plannerHtml, /tkb-constraints-menu\.js\?v=20260725-v1100-industry-export-queue-v1/);
+  assert.match(plannerHtml, /tkb-constraints-menu\.js\?v=20260808-v1192-assigned-only-all-statistics-v1/);
 });
 
 test("industry export matches the three-sheet sample and uses MaGV2 in timetable cells", async () => {

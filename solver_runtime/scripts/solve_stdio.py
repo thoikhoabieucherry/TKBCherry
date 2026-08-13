@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 import sys
@@ -103,9 +105,200 @@ from tkb_new.adapter import (  # noqa: E402
 )
 from tkb_new.fixture import build_ui_fixture_from_workbooks  # noqa: E402
 from tkb_optimizer_ref.period_milp import PeriodAllocationError  # noqa: E402
+from tkb_optimizer_ref.external_cp_sat import (  # noqa: E402
+    EXTERNAL_HIGHS_MODEL_MAGIC,
+    EXTERNAL_MODEL_PLAN_VERSION,
+    ExternalCpSatPending,
+    ExternalCpSatProtocolError,
+    ExternalCpSatUnusableResponse,
+    external_cp_sat_lns_policy_from_request,
+    external_model_digest,
+    external_solver_scope,
+)
 
 
 CURRENT_REQUEST_BODY: bytes | None = None
+MAX_EXTERNAL_CP_SAT_STEPS = 64
+MAX_EXTERNAL_CP_SAT_MODEL_BYTES = 64 * 1024 * 1024
+MAX_EXTERNAL_CP_SAT_PARAMETER_BYTES = 1024 * 1024
+MAX_EXTERNAL_CP_SAT_RESPONSE_BYTES = 32 * 1024 * 1024
+MAX_EXTERNAL_CP_SAT_STREAM_REQUEST_BYTES = 64 * 1024 * 1024
+MAX_EXTERNAL_CP_SAT_STREAM_RESPONSE_LINE_BYTES = (
+    ((MAX_EXTERNAL_CP_SAT_RESPONSE_BYTES + 2) // 3) * 4 + 4096
+)
+
+
+def _external_cp_sat_pending(
+    model_bytes: bytes,
+    parameter_bytes: bytes,
+    index: int,
+) -> ExternalCpSatPending:
+    if not model_bytes or len(model_bytes) > MAX_EXTERNAL_CP_SAT_MODEL_BYTES:
+        raise ExternalCpSatProtocolError("External CP-SAT model size is invalid")
+    if len(parameter_bytes) > MAX_EXTERNAL_CP_SAT_PARAMETER_BYTES:
+        raise ExternalCpSatProtocolError("External CP-SAT parameters are too large")
+    if index >= MAX_EXTERNAL_CP_SAT_STEPS:
+        raise ExternalCpSatProtocolError("External CP-SAT step limit exceeded")
+
+    digest = external_model_digest(model_bytes, parameter_bytes)
+    is_highs_model = model_bytes.startswith(EXTERNAL_HIGHS_MODEL_MAGIC)
+    return ExternalCpSatPending(
+        (
+            model_bytes[len(EXTERNAL_HIGHS_MODEL_MAGIC) :]
+            if is_highs_model
+            else model_bytes
+        ),
+        parameter_bytes,
+        index,
+        digest,
+        kind=("external_highs_model" if is_highs_model else "external_cp_sat_model"),
+        runtime=(
+            "highs-wasm-1.15-lp-v1"
+            if is_highs_model
+            else "ortools-cp-sat-9.15-wire-v1"
+        ),
+    )
+
+
+def _decode_external_cp_sat_response(
+    record: object,
+    index: int,
+    digest: str,
+    *,
+    require_step_index: bool,
+) -> bytes:
+    if not isinstance(record, dict):
+        if not require_step_index:
+            raise ExternalCpSatProtocolError(
+                f"External CP-SAT response {index} does not match the rebuilt model"
+            )
+        raise ExternalCpSatProtocolError(
+            f"External CP-SAT response {index} is not an object"
+        )
+    if require_step_index:
+        step_index = record.get("stepIndex")
+        if (
+            not isinstance(step_index, int)
+            or isinstance(step_index, bool)
+            or step_index != index
+        ):
+            raise ExternalCpSatProtocolError(
+                f"External CP-SAT response {index} has the wrong step index"
+            )
+    if record.get("modelDigest") != digest:
+        raise ExternalCpSatProtocolError(
+            f"External CP-SAT response {index} does not match the "
+            f"{'emitted' if require_step_index else 'rebuilt'} model"
+        )
+    encoded = record.get("responseBase64")
+    if not isinstance(encoded, str) or not encoded:
+        raise ExternalCpSatProtocolError(
+            f"External CP-SAT response {index} is empty"
+        )
+    try:
+        response = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ExternalCpSatProtocolError(
+            f"External CP-SAT response {index} is not valid base64"
+        ) from exc
+    if not response or len(response) > MAX_EXTERNAL_CP_SAT_RESPONSE_BYTES:
+        raise ExternalCpSatProtocolError(
+            f"External CP-SAT response {index} size is invalid"
+        )
+    return response
+
+
+class _ReplayExternalCpSatSolver:
+    """Replay accepted responses, then yield the next exact CP-SAT model."""
+
+    def __init__(self, responses: object) -> None:
+        if not isinstance(responses, list) or len(responses) > MAX_EXTERNAL_CP_SAT_STEPS:
+            raise ExternalCpSatProtocolError("External CP-SAT response list is invalid")
+        self._responses = responses
+        self.calls = 0
+
+    def __call__(self, model_bytes: bytes, parameter_bytes: bytes) -> bytes:
+        index = self.calls
+        self.calls += 1
+        pending = _external_cp_sat_pending(model_bytes, parameter_bytes, index)
+        if index >= len(self._responses):
+            raise pending
+        return _decode_external_cp_sat_response(
+            self._responses[index],
+            index,
+            pending.digest,
+            require_step_index=False,
+        )
+
+
+class _StreamingExternalCpSatSolver:
+    """Exchange models and responses without rebuilding the Python solve."""
+
+    def __init__(self, input_stream=None, write_pending=None) -> None:
+        self._input_stream = input_stream if input_stream is not None else sys.stdin.buffer
+        self._write_pending = (
+            write_pending if write_pending is not None else _write_external_cp_sat_pending
+        )
+        self.calls = 0
+
+    def __call__(self, model_bytes: bytes, parameter_bytes: bytes) -> bytes:
+        index = self.calls
+        self.calls += 1
+        pending = _external_cp_sat_pending(model_bytes, parameter_bytes, index)
+        self._write_pending(pending)
+
+        raw = self._input_stream.readline(MAX_EXTERNAL_CP_SAT_STREAM_RESPONSE_LINE_BYTES + 1)
+        if not raw:
+            raise ExternalCpSatProtocolError(
+                f"External CP-SAT response stream closed at step {index}"
+            )
+        if not isinstance(raw, (bytes, bytearray)):
+            raise ExternalCpSatProtocolError("External CP-SAT response stream is not binary")
+        if len(raw) > MAX_EXTERNAL_CP_SAT_STREAM_RESPONSE_LINE_BYTES:
+            raise ExternalCpSatProtocolError(
+                f"External CP-SAT response {index} line is too large"
+            )
+        try:
+            record = json.loads(bytes(raw).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ExternalCpSatProtocolError(
+                f"External CP-SAT response {index} is not valid JSON"
+            ) from exc
+        return _decode_external_cp_sat_response(
+            record,
+            index,
+            pending.digest,
+            require_step_index=True,
+        )
+
+
+def _write_external_cp_sat_pending(pending: ExternalCpSatPending) -> None:
+    _write_protocol_value(
+        {
+            "protocol": STDIO_PROTOCOL,
+            "status": 209,
+            "payload": {
+                "ok": True,
+                "kind": pending.kind,
+                "stepIndex": pending.index,
+                "modelDigest": pending.digest,
+                "modelBase64": base64.b64encode(pending.model_bytes).decode("ascii"),
+                "parameterBase64": base64.b64encode(pending.parameter_bytes).decode("ascii"),
+                "modelBytes": len(pending.model_bytes),
+                "parameterBytes": len(pending.parameter_bytes),
+                "runtime": pending.runtime,
+                "modelPlanVersion": pending.model_plan_version,
+            },
+        }
+    )
+    emit_progress(
+        {
+            "stage": "external_cp_sat:model_ready",
+            "message": "Da chuyen mo hinh CP-SAT sang Agent",
+            "stepIndex": pending.index,
+            "modelBytes": len(pending.model_bytes),
+        }
+    )
 
 
 def _setting_enabled(settings: dict | None, key: str, *, default: bool) -> bool:
@@ -186,6 +379,75 @@ def write_json(payload: dict, status: int = 200) -> None:
     _save_solve_artifacts(payload, status)
 
 
+def _safe_accounted_capacity_partial(payload: dict) -> bool:
+    """Return true when only the explicitly unassigned remainder is incomplete.
+
+    Global ``hard_ok`` is intentionally false when solver-unassigned periods
+    exist.  Publication therefore relies on the independent placement gates,
+    exact demand accounting, and zero concrete conflicts/violations.
+    """
+
+    metrics = payload.get("metrics") if isinstance(payload.get("metrics"), dict) else {}
+    scheduled = _metric_number(payload, "scheduled_periods", 0)
+    expected = _metric_number(payload, "expected_periods", 0)
+    unassigned = _metric_number(payload, "unassigned_periods", 0)
+    capacity_unassigned = _metric_number(payload, "capacity_unassigned_periods", 0)
+    solver_unassigned = _metric_number(payload, "solver_unassigned_periods", 0)
+    if (
+        expected <= 0
+        or scheduled <= 0
+        or scheduled >= expected
+        or unassigned <= 0
+        or solver_unassigned < 0
+        or capacity_unassigned + solver_unassigned != unassigned
+        or scheduled + unassigned != expected
+        or metrics.get("accounting_ok") is not True
+        or metrics.get("placement_hard_ok") is not True
+        or metrics.get("placement_core_hard_ok") is not True
+    ):
+        return False
+    for key in (
+        "class_slot_conflicts",
+        "teacher_slot_conflicts",
+        "room_slot_conflicts",
+        "app_constraint_violation_count",
+    ):
+        if _metric_number(payload, key, 0) != 0:
+            return False
+    if isinstance(metrics.get("app_constraint_violations"), list) and metrics[
+        "app_constraint_violations"
+    ]:
+        return False
+    validation = payload.get("validation")
+    if isinstance(validation, dict) and isinstance(validation.get("violations"), list):
+        if validation["violations"]:
+            return False
+    lessons = payload.get("lessons")
+    if isinstance(lessons, list) and len(lessons) != scheduled:
+        return False
+    unassigned_lessons = payload.get("unassignedLessons")
+    if isinstance(unassigned_lessons, list):
+        item_total = 0
+        item_capacity = 0
+        for item in unassigned_lessons:
+            if not isinstance(item, dict):
+                return False
+            try:
+                periods = int(item.get("periods", item.get("count", 0)))
+            except (TypeError, ValueError):
+                return False
+            if periods <= 0:
+                return False
+            item_total += periods
+            if str(item.get("reason") or "").strip() == "not_enough_available_slots":
+                item_capacity += periods
+        if item_total != unassigned or item_capacity != capacity_unassigned:
+            return False
+        if item_total - item_capacity != solver_unassigned:
+            return False
+    return True
+
+
 def _finalize_solve_status(payload: dict, settings: dict | None) -> int:
     """Enforce the HTTP-style contract for incomplete solver results."""
 
@@ -207,6 +469,20 @@ def _finalize_solve_status(payload: dict, settings: dict | None) -> int:
         payload["ok"] = False
         metrics["hard_ok"] = False
         metrics["core_hard_ok"] = False
+    if (
+        not zero_schedule
+        and solver_unassigned > 0
+        and _safe_accounted_capacity_partial(payload)
+    ):
+        # A capacity proof means a complete timetable is impossible under the
+        # current OFF/fixed constraints. Keep every independently validated
+        # placement and expose the exact remainder through ``Chua phan``.
+        payload["ok"] = True
+        payload["bestEffort"] = True
+        payload["kind"] = "best_effort_unassigned_accepted"
+        payload["error"] = ""
+        metrics["best_effort"] = True
+        return 200
     if not zero_schedule and not (require_complete and solver_unassigned > 0):
         return 200
 
@@ -304,15 +580,117 @@ def main() -> int:
                 "message": "Dang doc du lieu sap xep",
             }
         )
-        raw = sys.stdin.buffer.read()
+        if mode == "external-cp-sat-stream":
+            raw = sys.stdin.buffer.readline(MAX_EXTERNAL_CP_SAT_STREAM_REQUEST_BYTES + 1)
+        else:
+            raw = sys.stdin.buffer.read()
         global CURRENT_REQUEST_BODY
         CURRENT_REQUEST_BODY = raw
         if not raw:
             write_json({"error": "Request body trong."}, status=400)
             return 0
+        if (
+            mode == "external-cp-sat-stream"
+            and len(raw) > MAX_EXTERNAL_CP_SAT_STREAM_REQUEST_BYTES
+        ):
+            CURRENT_REQUEST_BODY = None
+            write_json(
+                {
+                    "ok": False,
+                    "kind": "external_cp_sat_request_invalid",
+                    "error": "Request CP-SAT cua Agent vuot qua gioi han kich thuoc.",
+                },
+                status=413,
+            )
+            return 0
         request = json.loads(raw.decode("utf-8"))
         if not isinstance(request, dict):
             write_json({"error": "JSON payload phai la object."}, status=400)
+            return 0
+        if mode in {"external-cp-sat-step", "external-cp-sat-stream"}:
+            solver_request = request.get("request")
+            if not isinstance(solver_request, dict):
+                CURRENT_REQUEST_BODY = None
+                write_json(
+                    {
+                        "ok": False,
+                        "kind": "external_cp_sat_request_invalid",
+                        "error": "Thieu request de dung mo hinh CP-SAT cho Agent.",
+                    },
+                    status=400,
+                )
+                return 0
+            external_ui_data = solver_request.get("data")
+            external_settings = solver_request.get("settings")
+            if not isinstance(external_ui_data, dict) or not isinstance(external_settings, dict):
+                CURRENT_REQUEST_BODY = None
+                write_json(
+                    {
+                        "ok": False,
+                        "kind": "external_cp_sat_request_invalid",
+                        "error": "Request CP-SAT cua Agent khong co data/settings hop le.",
+                    },
+                    status=400,
+                )
+                return 0
+            external_solver = (
+                _StreamingExternalCpSatSolver()
+                if mode == "external-cp-sat-stream"
+                else _ReplayExternalCpSatSolver(request.get("responses", []))
+            )
+            lns_policy = external_cp_sat_lns_policy_from_request(
+                external_ui_data,
+                external_settings,
+            )
+            CURRENT_REQUEST_BODY = None
+            try:
+                with external_solver_scope(external_solver, lns_policy=lns_policy):
+                    result = solve_from_ui_data(
+                        external_ui_data,
+                        external_settings,
+                        progress=emit_progress,
+                    )
+            except ExternalCpSatPending as pending:
+                _write_external_cp_sat_pending(pending)
+                return 0
+            except ExternalCpSatProtocolError as protocol_error:
+                if mode != "external-cp-sat-stream":
+                    raise
+                write_json(
+                    {
+                        "ok": False,
+                        "kind": "external_cp_sat_protocol_error",
+                        "error": str(protocol_error),
+                    },
+                    status=400,
+                )
+                return 0
+            except ExternalCpSatUnusableResponse as unusable:
+                write_json(
+                    {
+                        "ok": False,
+                        "kind": "external_cp_sat_no_solution",
+                        "error": str(unusable),
+                        "cpSatStatus": unusable.status,
+                        "cpSatStatusName": unusable.status_name,
+                    },
+                    status=422,
+                )
+                return 0
+            result.setdefault("solver", {}).setdefault("runtime_settings", {}).update(
+                {
+                    "execution_runtime": "browser_cp_sat_wasm",
+                    "browser_full_reference_refine": (
+                        external_settings.get("browser_wasm_full_reference_refine") is True
+                    ),
+                    "external_cp_sat_steps": external_solver.calls,
+                    "external_model_plan_version": EXTERNAL_MODEL_PLAN_VERSION,
+                }
+            )
+            write_json(
+                result,
+                status=_finalize_solve_status(result, external_settings),
+            )
             return 0
         if mode == "validate-candidate":
             solver_request = request.get("request")

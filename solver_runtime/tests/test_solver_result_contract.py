@@ -5,6 +5,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 
@@ -20,7 +21,9 @@ from tkb_new.adapter import (  # noqa: E402
     _add_at_most_one_internal_gap_constraints,
     _bounded_soft_incumbent_residual_completion,
     _complete_first_teacher_session_cap,
+    _capacity_partial_payload_metrics_acceptable,
     _cut_for_one_period_teacher_sessions,
+    _extract_fixed_lessons_from_tkb,
     _extract_hard_fixed_lessons_from_tkb,
     _fast_benders_tight_fixed_off_profile,
     _fast_quality_warmup_direct_settings,
@@ -28,15 +31,21 @@ from tkb_new.adapter import (  # noqa: E402
     _incremental_lns_profile,
     _incremental_refinement_candidate_better,
     _legacy_solver_hints_enabled,
+    _assignment_lesson_block_minimum_periods,
+    _anchor_teacher_must_teach_lessons,
+    _preflight_teacher_constraint_feasibility,
+    _teacher_session_lower_bound_by_disjoint_parts,
     _merge_refinement_learning,
     _refinement_learning_from_payload,
     _refinement_gap_priority_attempts,
     _refinement_request_seed,
     _release_invalid_fixed_lessons,
+    _relax_unanchored_must_teach_for_capacity,
     _relaxed_teacher_session_cap,
     _repair_one_period_affected_class_cluster,
     _session_cp_sat_linearization_level,
     _settings_for_optimization_focus,
+    _singleton_repair_session_headroom,
     _solver_worker_count,
     _solve_fast_tight_fixed_off_benders,
     _solve_two_stage_concrete_refinement,
@@ -59,8 +68,10 @@ from tkb_new.adapter import (  # noqa: E402
     _teacher_session_opt_should_stop,
     _teacher_session_opt_within_balanced_envelope,
     _teacher_two_stage_sessions_first_better,
+    _trim_context_to_available_slots,
     _teacher_quality_gap1_first,
     _validated_existing_soft_incumbent_payload,
+    _validated_client_fast_seed_lessons,
     build_payload,
     build_school_data_from_ui,
     solve_from_ui_data,
@@ -152,6 +163,178 @@ def _first_click_payload(
 
 
 class SolverResultContractTests(unittest.TestCase):
+    @staticmethod
+    def _client_fast_seed_data(periods: int = 2) -> dict[str, Any]:
+        return {
+            "lop": [{"id": "L1", "ten": "7A", "ten2": "7A", "khoi": "7"}],
+            "giaovien": [
+                {"id": "G1", "magv": "GV01", "hodem": "Nguyen", "ten": "An"}
+            ],
+            "monhoc": [{"id": "M1", "ma": "M", "ten": "Math"}],
+            "mon": [
+                {
+                    "khoi": "7",
+                    "ten": "Math",
+                    "sotiet": periods,
+                    "gioihan": min(5, periods),
+                }
+            ],
+            "pccmMatrix": {"L1|M": "GV01"},
+            "pccmTietMatrix": {"L1|M": periods},
+            "pccmGioihanMatrix": {"L1|M": min(5, periods)},
+            "pccmRoomMatrix": {},
+            "tkbConstraints": {},
+        }
+
+    def test_client_fast_seed_is_canonicalized_without_trusting_client_metrics(self) -> None:
+        data = self._client_fast_seed_data(2)
+        data["__tkbClientFastSeedV1"] = {
+            "version": "tkb-fast-seed-v1",
+            "quality": {"hard_ok": True, "teacher_sessions": -999},
+            "lessons": [
+                {
+                    "classId": "L1",
+                    "subject": "M",
+                    "teacher": "Nguyen An",
+                    "room": "forged-room",
+                    "day": 2,
+                    "session": "AM",
+                    "period": period,
+                }
+                for period in (1, 2)
+            ],
+        }
+        ctx = build_school_data_from_ui(data)
+
+        lessons, meta = _validated_client_fast_seed_lessons(
+            data,
+            ctx,
+            ctx.rules,
+        )
+
+        self.assertTrue(meta["accepted"])
+        self.assertTrue(meta["complete_hard_valid"])
+        self.assertEqual(len(lessons), 2)
+        self.assertEqual({item.class_name for item in lessons}, {"7A"})
+        self.assertEqual({item.subject for item in lessons}, {"Math"})
+        self.assertEqual({item.teacher for item in lessons}, {"GV01"})
+        self.assertEqual({item.room for item in lessons}, {""})
+
+    def test_client_fast_seed_rejects_over_assignment_and_resource_collision(self) -> None:
+        data = self._client_fast_seed_data(1)
+        lesson = {
+            "classId": "L1",
+            "subject": "M",
+            "teacher": "GV01",
+            "day": 2,
+            "session": "AM",
+            "period": 1,
+        }
+        data["__tkbClientFastSeedV1"] = {
+            "version": "tkb-fast-seed-v1",
+            "lessons": [lesson, {**lesson, "period": 2}],
+        }
+        ctx = build_school_data_from_ui(data)
+        lessons, meta = _validated_client_fast_seed_lessons(data, ctx, ctx.rules)
+        self.assertEqual(lessons, [])
+        self.assertEqual(meta["reason"], "over_assignment_or_empty_demand")
+
+        data = self._client_fast_seed_data(1)
+        data["lop"].append({"id": "L2", "ten": "7B", "ten2": "7B", "khoi": "7"})
+        data["pccmMatrix"]["L2|M"] = "GV01"
+        data["pccmTietMatrix"]["L2|M"] = 1
+        data["pccmGioihanMatrix"]["L2|M"] = 1
+        data["__tkbClientFastSeedV1"] = {
+            "version": "tkb-fast-seed-v1",
+            "lessons": [
+                lesson,
+                {**lesson, "classId": "L2"},
+            ],
+        }
+        ctx = build_school_data_from_ui(data)
+        lessons, meta = _validated_client_fast_seed_lessons(data, ctx, ctx.rules)
+        self.assertEqual(lessons, [])
+        self.assertEqual(meta["reason"], "resource_collision")
+
+    def test_client_fast_seed_accepts_near_complete_soft_hint_only(self) -> None:
+        data = self._client_fast_seed_data(10)
+        slots = [
+            (2, "AM", period) for period in range(1, 6)
+        ] + [
+            (2, "PM", period) for period in range(1, 5)
+        ]
+        data["__tkbClientFastSeedV1"] = {
+            "version": "tkb-fast-seed-v1",
+            "lessons": [
+                {
+                    "classId": "L1",
+                    "subject": "M",
+                    "teacher": "GV01",
+                    "day": day,
+                    "session": session,
+                    "period": period,
+                }
+                for day, session, period in slots
+            ],
+        }
+        ctx = build_school_data_from_ui(data)
+
+        lessons, meta = _validated_client_fast_seed_lessons(data, ctx, ctx.rules)
+
+        self.assertEqual(len(lessons), 9)
+        self.assertTrue(meta["accepted"])
+        self.assertFalse(meta["complete_hard_valid"])
+        self.assertEqual(meta["coverage"], 0.9)
+
+    def test_agent_partial_resume_checkpoint_is_kept_as_soft_incumbent(self) -> None:
+        data = {
+            "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
+            "giaovien": [{"magv": "T1", "ten": "T1"}],
+            "monhoc": [{"ten": "Math", "ma": "M"}],
+            "mon": [{"khoi": "6", "ten": "Math", "sotiet": 2, "gioihan": 2}],
+            "pccmMatrix": {"L1|Math": "T1"},
+            "tkb": {
+                "L1": {
+                    "thu3": {
+                        "sang": ["Math", "", "", "", ""],
+                    }
+                }
+            },
+            "tkbSolverResult": {
+                "kind": "agent_partial_resume_checkpoint",
+                "lessons": [
+                    {
+                        "classId": "L1",
+                        "className": "6/1",
+                        "grade": "6",
+                        "day": 2,
+                        "session": "AM",
+                        "period": 1,
+                        "subject": "Math",
+                        "teacher": "T1",
+                        "room": "",
+                    }
+                ],
+            },
+        }
+        ctx = build_school_data_from_ui(data)
+
+        lessons, warnings = _extract_fixed_lessons_from_tkb(data, ctx)
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(lessons), 1)
+        self.assertEqual(
+            (
+                lessons[0].class_name,
+                lessons[0].subject,
+                lessons[0].teacher,
+                lessons[0].day,
+                lessons[0].session,
+                lessons[0].period,
+            ),
+            ("6/1", "Math", "T1", 2, "AM", 1),
+        )
+
     def test_solver_worker_count_uses_all_reported_cpu_without_legacy_64_cap(self) -> None:
         with (
             patch("tkb_new.adapter.os.cpu_count", return_value=512),
@@ -188,9 +371,12 @@ class SolverResultContractTests(unittest.TestCase):
             calls.append({"settings": dict(call_settings), **kwargs})
             return json.loads(json.dumps(phase_s if len(calls) == 1 else phase_g))
 
-        with patch(
-            "tkb_new.adapter._solve_teacher_session_benders_candidate",
-            side_effect=fake_benders,
+        with (
+            patch.dict(os.environ, {"K_SERVICE": "tkb-solver"}, clear=False),
+            patch(
+                "tkb_new.adapter._solve_teacher_session_benders_candidate",
+                side_effect=fake_benders,
+            ),
         ):
             payload, metrics, attempts, reason = _solve_two_stage_concrete_refinement(
                 {},
@@ -224,6 +410,16 @@ class SolverResultContractTests(unittest.TestCase):
             calls[1]["settings"][
                 "optimization_benders_period_gap_priority_absolute"
             ]
+        )
+        self.assertEqual(
+            calls[1]["settings"]["session_quality_stagnation_seconds"],
+            25.0,
+        )
+        self.assertEqual(
+            calls[1]["settings"][
+                "session_quality_stagnation_min_improvements"
+            ],
+            1,
         )
         self.assertEqual(metrics["teacher_sessions"], 488)
         self.assertEqual(metrics["gap_distribution"], {"0": 419, "1": 69, "2": 0})
@@ -273,6 +469,37 @@ class SolverResultContractTests(unittest.TestCase):
             payload["solver"]["two_stage_teacher_optimization"]["selected_phase"],
             "incumbent",
         )
+
+    def test_two_stage_quality_stagnation_is_not_enabled_on_vps_by_default(self) -> None:
+        incumbent = _first_click_payload(teacher_sessions=509, gap1=83)
+        phase_s = _first_click_payload(teacher_sessions=488, gap1=73)
+        phase_g = _first_click_payload(teacher_sessions=488, gap1=69)
+        calls: list[dict[str, Any]] = []
+
+        def fake_benders(_data, call_settings, **_kwargs):
+            calls.append(dict(call_settings))
+            return json.loads(json.dumps(phase_s if len(calls) == 1 else phase_g))
+
+        with (
+            patch.dict(os.environ, {"K_SERVICE": ""}, clear=False),
+            patch(
+                "tkb_new.adapter._solve_teacher_session_benders_candidate",
+                side_effect=fake_benders,
+            ),
+        ):
+            _solve_two_stage_concrete_refinement(
+                {},
+                {"quality_priority_order": "one_period_teacher_sessions_gap2_gap1"},
+                rules=None,
+                progress=None,
+                deadline=SolverDeadline(180),
+                total_limit=180,
+                incumbent_payload=incumbent,
+                phase_seeds=[101, 202],
+            )
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[1]["session_quality_stagnation_seconds"], 0.0)
 
     def test_complete_refinement_routes_new_priority_to_two_stage_pipeline(self) -> None:
         data = {
@@ -935,6 +1162,84 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertEqual(len(allocations), 1)
         self.assertEqual(metrics["lesson_block_impossible_constraints"], 0)
         self.assertGreaterEqual(metrics["lesson_block_deferred_constraints"], 1)
+
+    def test_session_best_effort_drops_residual_when_fixed_pair_cannot_be_completed(self) -> None:
+        # Production regression: one hard-fixed PE lesson was surrounded by a
+        # different fixed subject and OFF cells.  The remaining PE period could
+        # not complete the required pair, but best-effort must return that one
+        # period as unassigned instead of making the entire school model
+        # INFEASIBLE.
+        data = SchoolData(
+            classes=[ClassInfo(name="9/6", grade="9")],
+            assignments=[
+                Assignment(
+                    class_name="9/6",
+                    grade="9",
+                    subject="PE",
+                    teacher="T1",
+                    periods_per_week=1,
+                    max_periods_per_session=2,
+                )
+            ],
+            teachers=["T1"],
+            subjects=["PE"],
+            periods_by_grade_subject={("9", "PE"): 1},
+            limits_by_grade_subject={("9", "PE"): 2},
+        )
+        rules = TimetableRuleSet(
+            constraints=TimetableConstraintRules(
+                groups={},
+                group_names={},
+                fixed_off={
+                    "class": {
+                        "9/6": frozenset(
+                            {
+                                (5, "PM", 1),
+                                (5, "PM", 2),
+                                (5, "PM", 4),
+                                (5, "PM", 5),
+                            }
+                        )
+                    }
+                },
+                teacher={},
+                subject={
+                    "PE": {
+                        "byClass": {"9/6": {"lessonBlocks": {"2": {"min": 1}}}}
+                    }
+                },
+                subject_group={},
+            )
+        )
+        fixed = Lesson(
+            class_name="9/6",
+            grade="9",
+            day=5,
+            session="PM",
+            period=3,
+            subject="PE",
+            teacher="T1",
+        )
+
+        allocations, metrics = solve_session_allocation_cp_sat(
+            data,
+            rules=rules,
+            fixed_lessons=[fixed],
+            max_teacher_sessions=None,
+            max_one_period_sessions=None,
+            allow_unassigned=True,
+            minimize_sessions=False,
+            minimize_one_period_sessions=False,
+            one_period_priority_absolute=False,
+            time_limit_seconds=5,
+            num_workers=1,
+            period_feasibility_session_indexes=set(range(12)),
+        )
+
+        self.assertEqual(allocations, [])
+        self.assertEqual(metrics["scheduled_periods"], 0)
+        self.assertEqual(metrics["unassigned_periods"], 1)
+        self.assertEqual(metrics["lesson_block_impossible_constraints"], 0)
 
     def test_session_milp_counts_fixed_morning_against_teacher_limit(self) -> None:
         data = SchoolData(
@@ -1787,6 +2092,66 @@ class SolverResultContractTests(unittest.TestCase):
         kept = captured["tkb"]["L1"]["thu2"]["sang"]  # type: ignore[index]
         self.assertEqual(kept[0], {"mon": "Math", "fixed": True})
         self.assertEqual(kept[1], "")
+
+    def test_fixed_aware_capacity_preflight_skips_strict_teacher_session_wrapper(self) -> None:
+        ctx = _context()
+        fixed = Lesson("6/1", "Khá»‘i 6", 2, "AM", 1, "ToÃ¡n", "GV1")
+        overflow = [
+            {
+                "classId": "L001",
+                "className": "6/1",
+                "grade": "Khá»‘i 6",
+                "subject": "ToÃ¡n",
+                "teacher": "GV1",
+                "room": "",
+                "periods": 1,
+                "reason": "not_enough_available_slots",
+            }
+        ]
+
+        def fake_trim(_ctx, _rules, _settings, *, fixed_lessons=None):
+            return _ctx, overflow if fixed_lessons else []
+
+        with (
+            patch("tkb_new.adapter._singleton_structural_lower_bound", return_value=(0, [])),
+            patch(
+                "tkb_new.adapter.build_school_data_from_ui",
+                side_effect=[ctx, RuntimeError("entered capacity main lane")],
+            ),
+            patch(
+                "tkb_new.adapter._extract_hard_fixed_lessons_from_tkb",
+                return_value=([fixed], []),
+            ),
+            patch(
+                "tkb_new.adapter._release_invalid_fixed_lessons",
+                return_value=([fixed], []),
+            ),
+            patch(
+                "tkb_new.adapter._rule_set_with_fixed_lesson_slots",
+                return_value=ctx.rules,
+            ),
+            patch(
+                "tkb_new.adapter._context_without_fixed_lesson_demand",
+                return_value=ctx,
+            ),
+            patch("tkb_new.adapter._trim_context_to_available_slots", side_effect=fake_trim) as trim,
+            patch(
+                "tkb_new.adapter._solve_teacher_session_optimized_from_ui_data",
+                side_effect=RuntimeError("entered strict teacher-session wrapper"),
+            ) as strict_wrapper,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "entered capacity main lane"):
+                solve_from_ui_data(
+                    {"__tkbRequestFixedScheduleOnly": True},
+                    {
+                        "auto_sort_mode": "teacher_session_opt",
+                        "auto_sort_strategy": "fresh_teacher_session_opt",
+                        "preserve_fixed_lessons_only": True,
+                    },
+                )
+
+        strict_wrapper.assert_not_called()
+        self.assertEqual(trim.call_args.kwargs["fixed_lessons"], [fixed])
 
     def test_complete_first_cap_scales_from_school_shape(self) -> None:
         bounds = {
@@ -3514,8 +3879,10 @@ class SolverResultContractTests(unittest.TestCase):
                 data,
                 {
                     "auto_sort_mode": "teacher_session_opt",
+                    "auto_sort_strategy": "continue_teacher_quality_from_incumbent",
                     "ui_unified_auto_sort": True,
                     "ui_unified_solve_kind": "refine_complete",
+                    "ui_use_existing_complete_incumbent": True,
                     "ui_stop_refinement_when_good_enough": True,
                     "optimization_accept_teacher_sessions": 3,
                     "optimization_accept_gap1_sessions": 1,
@@ -3537,7 +3904,7 @@ class SolverResultContractTests(unittest.TestCase):
             "good_enough_incumbent",
         )
 
-    def test_complete_incumbent_continuation_uses_saturation_not_fixed_threshold(self) -> None:
+    def test_complete_incumbent_does_not_stop_before_session_and_gap1_acceptance(self) -> None:
         data = {
             "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
             "giaovien": [{"magv": "T1", "ten": "T1"}],
@@ -3583,8 +3950,8 @@ class SolverResultContractTests(unittest.TestCase):
                     "optimization_continue_quality_search": False,
                     "optimization_stop_on_stagnation": True,
                     "optimization_benders_accept_stagnant_iterations": 2,
-                    "optimization_accept_teacher_sessions": 3,
-                    "optimization_accept_gap1_sessions": 1,
+                    "optimization_accept_teacher_sessions": 2,
+                    "optimization_accept_gap1_sessions": 0,
                     "optimization_time_limit_seconds": 30,
                     "optimization_adaptive_time_limit_seconds": 30,
                     "num_workers": 1,
@@ -3597,7 +3964,7 @@ class SolverResultContractTests(unittest.TestCase):
         local_lns.assert_called_once()
         normalized_settings = local_lns.call_args.args[1]
         self.assertTrue(normalized_settings["optimization_continue_quality_search"])
-        self.assertFalse(normalized_settings["ui_stop_refinement_when_good_enough"])
+        self.assertTrue(normalized_settings["ui_stop_refinement_when_good_enough"])
         self.assertTrue(normalized_settings["optimization_stop_on_stagnation"])
         self.assertGreaterEqual(
             normalized_settings["optimization_benders_accept_stagnant_iterations"],
@@ -3651,8 +4018,11 @@ class SolverResultContractTests(unittest.TestCase):
                     "ui_unified_auto_sort": True,
                     "ui_unified_solve_kind": "refine_complete",
                     "ui_use_existing_complete_incumbent": True,
+                    "ui_stop_refinement_when_good_enough": False,
                     "optimization_continue_quality_search": True,
                     "optimization_stop_on_stagnation": True,
+                    "optimization_accept_teacher_sessions": 3,
+                    "optimization_accept_gap1_sessions": 2,
                     "optimization_adaptive_stagnant_attempts": 1,
                     "optimization_adaptive_stagnant_seconds": 10,
                     "optimization_use_benders": False,
@@ -3748,6 +4118,7 @@ class SolverResultContractTests(unittest.TestCase):
                     "ui_unified_auto_sort": True,
                     "ui_unified_solve_kind": "refine_complete",
                     "ui_use_existing_complete_incumbent": True,
+                    "ui_stop_refinement_when_good_enough": False,
                     "quality_priority_order": "one_period_gap2_teacher_sessions_gap1",
                     "optimization_accept_teacher_sessions": 482,
                     "optimization_accept_gap1_sessions": 53,
@@ -4094,6 +4465,7 @@ class SolverResultContractTests(unittest.TestCase):
                     "ui_unified_auto_sort": True,
                     "ui_unified_solve_kind": "refine_complete",
                     "ui_use_existing_complete_incumbent": True,
+                    "ui_stop_refinement_when_good_enough": False,
                     "quality_priority_order": "one_period_gap2_teacher_sessions_gap1",
                     "target_gap1_sessions": 0,
                     "optimization_accept_teacher_sessions": 466,
@@ -4188,6 +4560,7 @@ class SolverResultContractTests(unittest.TestCase):
                     "ui_unified_auto_sort": True,
                     "ui_unified_solve_kind": "refine_complete",
                     "ui_use_existing_complete_incumbent": True,
+                    "ui_stop_refinement_when_good_enough": False,
                     "quality_priority_order": "one_period_gap2_teacher_sessions_gap1",
                     "target_gap1_sessions": 0,
                     "optimization_accept_teacher_sessions": 460,
@@ -4291,6 +4664,7 @@ class SolverResultContractTests(unittest.TestCase):
                     "ui_unified_auto_sort": True,
                     "ui_unified_solve_kind": "refine_complete",
                     "ui_use_existing_complete_incumbent": True,
+                    "ui_stop_refinement_when_good_enough": False,
                     "quality_priority_order": "one_period_gap2_teacher_sessions_gap1",
                     "target_gap1_sessions": 0,
                     "optimization_accept_teacher_sessions": 466,
@@ -4387,6 +4761,7 @@ class SolverResultContractTests(unittest.TestCase):
                     "ui_unified_auto_sort": True,
                     "ui_unified_solve_kind": "refine_complete",
                     "ui_use_existing_complete_incumbent": True,
+                    "ui_stop_refinement_when_good_enough": False,
                     "quality_priority_order": "one_period_gap2_teacher_sessions_gap1",
                     "target_gap1_sessions": 0,
                     "optimization_accept_teacher_sessions": 466,
@@ -4483,6 +4858,7 @@ class SolverResultContractTests(unittest.TestCase):
                     "ui_unified_auto_sort": True,
                     "ui_unified_solve_kind": "refine_complete",
                     "ui_use_existing_complete_incumbent": True,
+                    "ui_stop_refinement_when_good_enough": False,
                     "quality_priority_order": "one_period_gap2_teacher_sessions_gap1",
                     "target_gap1_sessions": 0,
                     "optimization_accept_teacher_sessions": 466,
@@ -6200,6 +6576,67 @@ class SolverResultContractTests(unittest.TestCase):
                 self.assertIn("retained_after_quality", termination)
                 self.assertTrue(attempts[1]["incumbent_retained"])
 
+    def test_automatic_first_click_retains_monotone_quality_debt_progress(self) -> None:
+        feasibility = _first_click_payload(
+            teacher_sessions=612,
+            gap1=80,
+            one_period_sessions=118,
+        )
+        feasibility["metrics"]["gap_distribution"] = {0: 521, 1: 80, 2: 11}
+        improved = _first_click_payload(
+            teacher_sessions=590,
+            gap1=70,
+            one_period_sessions=64,
+        )
+        improved["metrics"]["gap_distribution"] = {0: 515, 1: 70, 2: 5}
+        settings = {
+            "optimization_focus": "automatic",
+            "ui_unified_solve_kind": "fresh_complete_first",
+            "ui_unified_first_click_quality": True,
+            "ui_bounded_fresh_accept_quality_debt": True,
+            "browser_wasm_external_cp_sat": True,
+            "target_teacher_sessions": 500,
+            "optimization_accept_teacher_sessions": 500,
+            "optimization_first_click_local_lns_time_limit_seconds": 0,
+            "optimization_first_click_target_probe_enabled": False,
+            "num_workers": 6,
+        }
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=[feasibility, feasibility, improved],
+        ) as solve_candidate:
+            result, metrics, attempts, termination = (
+                _solve_unified_first_click_feasibility_then_quality(
+                    {},
+                    settings,
+                    bound_ctx=_context(),
+                    bounds={
+                        "lower_cap": 450,
+                        "start_cap": 500,
+                        "upper_cap": 650,
+                        "expected_periods": 1566,
+                    },
+                    profile={"expected": 1566, "class_count": 54},
+                    rules=None,
+                    progress=None,
+                    deadline=SolverDeadline(130),
+                    polish_seeds=[1],
+                    requested_random_seed=77,
+                )
+            )
+
+        self.assertIs(result, improved)
+        self.assertIs(metrics, improved["metrics"])
+        self.assertEqual(solve_candidate.call_count, 3)
+        self.assertEqual(termination, "first_click_strict_quality_improved")
+        quality_attempt = next(
+            item for item in attempts if item.get("attempt_key") == "fresh:phase_q"
+        )
+        self.assertTrue(quality_attempt["accepted"])
+        self.assertTrue(quality_attempt["new_best"])
+        self.assertTrue(quality_attempt["quality_debt_progress_retained"])
+
     def test_first_click_skips_quality_when_return_reserve_would_be_consumed(self) -> None:
         feasibility = _first_click_payload(teacher_sessions=520, gap1=84)
         settings = {
@@ -6492,7 +6929,9 @@ class SolverResultContractTests(unittest.TestCase):
         )
 
         self.assertEqual(strict["metrics"]["gap_distribution"], {2: 1})
-        self.assertFalse(strict["metrics"]["hard_ok"])
+        # Teacher Gap2 is a soft quality debt on a complete timetable; it must
+        # not invalidate an otherwise conflict-free result.
+        self.assertTrue(strict["metrics"]["hard_ok"])
         self.assertTrue(relaxed["metrics"]["core_hard_ok"])
         self.assertTrue(relaxed["metrics"]["hard_ok"])
         self.assertEqual(relaxed["metrics"]["scheduled_periods"], 2)
@@ -6755,6 +7194,110 @@ class SolverResultContractTests(unittest.TestCase):
             )
         )
 
+    def test_zero_slack_large_fresh_builds_complete_before_teacher_quality(self) -> None:
+        data = {
+            "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
+            "giaovien": [{"magv": "T1", "ten": "T1"}],
+            "monhoc": [{"ten": "Math", "ma": "M"}],
+            "mon": [{"khoi": "6", "ten": "Math", "sotiet": 2, "gioihan": 2}],
+            "pccmMatrix": {"L1|Math": "T1"},
+            "tkbConstraints": {
+                "fixedOff": {
+                    "class": {"L1": {"thu2|sang|0": True}},
+                }
+            },
+        }
+        ctx = build_school_data_from_ui(data)
+        complete_with_quality_debt = _first_click_payload(
+            teacher_sessions=865,
+            gap1=128,
+            one_period_sessions=238,
+        )
+        complete_with_quality_debt["metrics"].update(
+            {
+                "scheduled_periods": 2031,
+                "expected_periods": 2031,
+                "unassigned_periods": 0,
+                "gap_distribution": {
+                    "0": 674,
+                    "1": 128,
+                    "2": 47,
+                    "3": 16,
+                },
+            }
+        )
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            return_value=complete_with_quality_debt,
+        ) as solve_candidate:
+            result, metrics, attempts, termination = (
+                _solve_unified_first_click_feasibility_then_quality(
+                    data,
+                    {
+                        "target_teacher_sessions": 677,
+                        "optimization_accept_teacher_sessions": 677,
+                        "optimization_first_click_local_lns_time_limit_seconds": 0,
+                        "overall_time_limit_seconds": 30,
+                        "ui_bounded_fresh_accept_quality_debt": True,
+                        "ui_unified_first_click_quality": True,
+                        "ui_unified_solve_kind": "fresh_complete_first",
+                        "ui_stop_after_first_complete_schedule": True,
+                        "num_workers": 6,
+                    },
+                    bound_ctx=ctx,
+                    bounds={
+                        "lower_cap": 450,
+                        "start_cap": 677,
+                        "upper_cap": 1440,
+                        "expected_periods": 2031,
+                    },
+                    profile={
+                        "expected": 2031,
+                        "class_count": 72,
+                        "available_slots": 2031,
+                        "slack": 0,
+                    },
+                    rules=ctx.rules,
+                    progress=None,
+                    deadline=SolverDeadline(30),
+                    polish_seeds=[1],
+                    requested_random_seed=8421,
+                )
+            )
+
+        self.assertIs(result, complete_with_quality_debt)
+        self.assertIs(metrics, complete_with_quality_debt["metrics"])
+        self.assertEqual(termination, "first_click_feasibility_retained")
+        solve_candidate.assert_called_once()
+        phase_f_call = solve_candidate.call_args
+        phase_f_settings = phase_f_call.args[1]
+        self.assertEqual(phase_f_call.kwargs["cap"], 1440)
+        self.assertEqual(
+            phase_f_settings["auto_sort_strategy"],
+            "fresh_complete_zero_slack_period_safe",
+        )
+        self.assertEqual(phase_f_settings["max_teacher_sessions"], 1440)
+        self.assertEqual(phase_f_settings["max_one_period_sessions"], "off")
+        self.assertFalse(phase_f_settings["strict_one_period_sessions_cap"])
+        self.assertTrue(
+            phase_f_settings["optimization_benders_session_feasibility_only"]
+        )
+        self.assertFalse(
+            phase_f_settings["optimization_benders_minimize_one_period_sessions"]
+        )
+        self.assertFalse(
+            phase_f_settings["optimization_benders_minimize_period_gaps"]
+        )
+        self.assertEqual(phase_f_settings["period_max_teacher_gap"], "off")
+        self.assertTrue(attempts[0]["zero_slack_completion_first"])
+        self.assertEqual(
+            attempts[0]["attempt_key"],
+            "fresh:phase_f:zero_slack_complete",
+        )
+        self.assertTrue(attempts[0]["quality_debt_allowed"])
+        self.assertTrue(attempts[0]["accepted"])
+
     def test_subject_period_requirements_build_wide_complete_then_run_strict_quality(self) -> None:
         data = {
             "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
@@ -6865,7 +7408,11 @@ class SolverResultContractTests(unittest.TestCase):
         )
         phase_q_call = solve_candidate.call_args_list[1]
         phase_q_settings = phase_q_call.args[1]
-        self.assertEqual(phase_q_call.kwargs["cap"], 522)
+        # Strict singleton/Gap2 cleanup is intentionally allowed a small,
+        # bounded session expansion.  This avoids pinning the repair model to
+        # the rough Phase-F session vector.
+        expected_quality_cap = 522 + _singleton_repair_session_headroom({}, 522)
+        self.assertEqual(phase_q_call.kwargs["cap"], expected_quality_cap)
         self.assertIs(phase_q_call.kwargs["incumbent_payload"], wide_complete)
         self.assertEqual(
             phase_q_settings["auto_sort_strategy"],
@@ -6994,7 +7541,8 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertTrue(cleanup_attempt["incumbent_retained"])
         self.assertTrue(cleanup_attempt["soft_hint_used"])
         cleanup_call = solve_candidate.call_args_list[1]
-        self.assertEqual(cleanup_call.kwargs["cap"], 522)
+        expected_quality_cap = 522 + _singleton_repair_session_headroom({}, 522)
+        self.assertEqual(cleanup_call.kwargs["cap"], expected_quality_cap)
         self.assertIs(cleanup_call.kwargs["incumbent_payload"], hard_valid)
         self.assertEqual(cleanup_call.args[1]["max_one_period_sessions"], 0)
         self.assertEqual(cleanup_call.args[1]["period_max_teacher_gap"], 1)
@@ -7104,10 +7652,11 @@ class SolverResultContractTests(unittest.TestCase):
         fallback_call = solve_candidate.call_args_list[1]
         cleanup_call = solve_candidate.call_args_list[2]
         self.assertEqual(fallback_call.kwargs["cap"], 1116)
-        self.assertEqual(cleanup_call.kwargs["cap"], 634)
+        expected_quality_cap = 634 + _singleton_repair_session_headroom({}, 634)
+        self.assertEqual(cleanup_call.kwargs["cap"], expected_quality_cap)
         self.assertIs(cleanup_call.kwargs["incumbent_payload"], rough)
         cleanup_settings = cleanup_call.args[1]
-        self.assertEqual(cleanup_settings["max_teacher_sessions"], 634)
+        self.assertEqual(cleanup_settings["max_teacher_sessions"], expected_quality_cap)
         self.assertEqual(cleanup_settings["max_one_period_sessions"], 0)
         self.assertEqual(cleanup_settings["period_max_teacher_gap"], 1)
         self.assertEqual(cleanup_settings["session_cp_sat_linearization_level"], 0)
@@ -7117,7 +7666,7 @@ class SolverResultContractTests(unittest.TestCase):
         cleanup_attempt = next(
             item for item in attempts if item.get("attempt_key") == "fresh:phase_q"
         )
-        self.assertEqual(cleanup_attempt["quality_cap"], 634)
+        self.assertEqual(cleanup_attempt["quality_cap"], expected_quality_cap)
         self.assertTrue(cleanup_attempt["soft_hint_used"])
         self.assertTrue(cleanup_attempt["new_best"])
 
@@ -7381,6 +7930,72 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertEqual(solve_candidate.call_args_list[1].kwargs["random_seed"], 101)
         self.assertIs(solve_candidate.call_args_list[1].kwargs["incumbent_payload"], strict_clean)
         self.assertTrue(attempts[1]["concrete_periods_materialized"])
+
+    def test_unified_long_click_protects_quality_time_from_phase_f(self) -> None:
+        phase_f = _first_click_payload(
+            teacher_sessions=700,
+            gap1=120,
+            one_period_sessions=20,
+        )
+        phase_f["metrics"]["gap_distribution"] = {0: 540, 1: 120, 2: 20}
+        improved = _first_click_payload(
+            teacher_sessions=650,
+            gap1=90,
+            one_period_sessions=0,
+        )
+        improved["metrics"]["gap_distribution"] = {0: 560, 1: 90}
+
+        with patch(
+            "tkb_new.adapter._solve_teacher_session_benders_candidate",
+            side_effect=[phase_f, improved],
+        ) as solve_candidate:
+            result, metrics, attempts, termination = (
+                _solve_unified_first_click_feasibility_then_quality(
+                    {},
+                    {
+                        "target_teacher_sessions": 650,
+                        "optimization_accept_teacher_sessions": 650,
+                        "optimization_first_click_feasibility_time_limit_seconds": 105,
+                        "optimization_first_click_quality_time_limit_seconds": 185,
+                        "optimization_first_click_local_lns_time_limit_seconds": 0,
+                        "optimization_first_click_target_probe_enabled": False,
+                        "overall_time_limit_seconds": 300,
+                        "ui_bounded_fresh_accept_quality_debt": True,
+                        "ui_unified_first_click_quality": True,
+                        "ui_unified_solve_kind": "fresh_complete_first",
+                        "ui_unified_reference_watchdog_reserve_ms": 20_000,
+                        "ui_stop_after_first_complete_schedule": False,
+                        "optimization_first_click_skip_global_quality": False,
+                        "optimization_first_click_lean_global_quality": False,
+                        "optimization_first_click_strict_quality_gate": False,
+                        "num_workers": 6,
+                    },
+                    bound_ctx=_context(),
+                    bounds={
+                        "lower_cap": 500,
+                        "start_cap": 650,
+                        "upper_cap": 900,
+                        "expected_periods": 1566,
+                    },
+                    profile={"expected": 1566, "class_count": 54, "slack": 0},
+                    rules=None,
+                    progress=None,
+                    deadline=SolverDeadline(300),
+                    polish_seeds=[1],
+                    requested_random_seed=101,
+                )
+            )
+
+        self.assertIs(result, improved)
+        self.assertIs(metrics, improved["metrics"])
+        self.assertEqual(termination, "first_click_strict_quality_improved")
+        self.assertEqual(solve_candidate.call_count, 2)
+        phase_f_call, quality_call = solve_candidate.call_args_list
+        self.assertEqual(phase_f_call.kwargs["time_limit_seconds"], 105)
+        self.assertGreaterEqual(quality_call.kwargs["time_limit_seconds"], 180)
+        self.assertEqual(attempts[0]["configured_phase_f_seconds"], 105)
+        self.assertEqual(attempts[0]["effective_phase_f_seconds"], 105.0)
+        self.assertTrue(attempts[0]["quality_tail_protected"])
 
     def test_plain_large_fresh_period_safe_cleanup_failure_retains_phase_f(self) -> None:
         data = {
@@ -8566,10 +9181,13 @@ class SolverResultContractTests(unittest.TestCase):
         self.assertEqual(optimization["time_limit_seconds"], 300)
 
     def test_fixture_resolves_current_workspace_data_layout(self) -> None:
-        fixture = build_ui_fixture_from_workbooks(
-            RUNTIME_ROOT / "web",
-            include_fixed_off_excel=True,
-        )
+        try:
+            fixture = build_ui_fixture_from_workbooks(
+                RUNTIME_ROOT / "web",
+                include_fixed_off_excel=True,
+            )
+        except FileNotFoundError as error:
+            self.skipTest(f"optional school workbooks are not present: {error}")
 
         self.assertEqual(len(fixture["lop"]), 22)
         self.assertEqual(len(fixture["giaovien"]), 43)
@@ -8587,10 +9205,13 @@ class SolverResultContractTests(unittest.TestCase):
         )
 
     def test_fast_direct_profile_promotes_to_bounded_quality_warmup(self) -> None:
-        fixture = build_ui_fixture_from_workbooks(
-            RUNTIME_ROOT / "web",
-            include_fixed_off_excel=True,
-        )
+        try:
+            fixture = build_ui_fixture_from_workbooks(
+                RUNTIME_ROOT / "web",
+                include_fixed_off_excel=True,
+            )
+        except FileNotFoundError as error:
+            self.skipTest(f"optional school workbooks are not present: {error}")
         promoted, bounds = _fast_quality_warmup_direct_settings(
             fixture,
             {
@@ -9124,6 +9745,294 @@ class SolverResultContractTests(unittest.TestCase):
             _finalize_solve_status(payload, {"require_complete_schedule": True}),
             200,
         )
+        self.assertTrue(_capacity_partial_payload_metrics_acceptable(payload))
+
+    def test_capacity_partial_predicate_rejects_solver_remainder(self) -> None:
+        ctx = _context()
+        lesson = Lesson(
+            class_name="6/1",
+            grade="Khối 6",
+            day=2,
+            session="AM",
+            period=1,
+            subject="ToÃ¡n",
+            teacher="GV1",
+        )
+        payload = build_payload(
+            ctx,
+            [lesson],
+            {"validation": {}},
+            unassigned_lessons=[
+                {
+                    "className": "6/1",
+                    "subject": "ToÃ¡n",
+                    "teacher": "GV1",
+                    "periods": 1,
+                    "reason": "session_constraints_best_effort",
+                }
+            ],
+            original_ctx=ctx,
+            best_effort=True,
+            deadline_exhausted=True,
+        )
+        self.assertFalse(_capacity_partial_payload_metrics_acceptable(payload))
+
+    def test_mixed_capacity_and_solver_remainder_keeps_safe_placed_lessons(self) -> None:
+        payload = {
+            "ok": False,
+            "lessons": [{"classId": "L1"}],
+            "unassignedLessons": [
+                {
+                    "classId": "L1",
+                    "periods": 1,
+                    "reason": "not_enough_available_slots",
+                },
+                {
+                    "classId": "L2",
+                    "periods": 1,
+                    "reason": "session_constraints_best_effort",
+                },
+            ],
+            "metrics": {
+                "scheduled_periods": 1,
+                "expected_periods": 3,
+                "unassigned_periods": 2,
+                "capacity_unassigned_periods": 1,
+                "solver_unassigned_periods": 1,
+                "accounted_periods": 3,
+                "accounting_ok": True,
+                "hard_ok": False,
+                "core_hard_ok": False,
+                "placement_hard_ok": True,
+                "placement_core_hard_ok": True,
+                "class_slot_conflicts": 0,
+                "teacher_slot_conflicts": 0,
+                "room_slot_conflicts": 0,
+                "app_constraint_violation_count": 0,
+                "app_constraint_violations": [],
+            },
+            "validation": {"hard_ok": False, "violations": []},
+        }
+        solver_only = json.loads(json.dumps(payload))
+        solver_only["unassignedLessons"][0]["reason"] = "session_constraints_best_effort"
+        solver_only["metrics"]["capacity_unassigned_periods"] = 0
+        solver_only["metrics"]["solver_unassigned_periods"] = 2
+
+        self.assertEqual(
+            _finalize_solve_status(payload, {"require_complete_schedule": True}),
+            200,
+        )
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["bestEffort"])
+        self.assertEqual(payload["kind"], "best_effort_unassigned_accepted")
+        self.assertFalse(payload["metrics"]["hard_ok"])
+        self.assertEqual(
+            _finalize_solve_status(solver_only, {"require_complete_schedule": True}),
+            200,
+        )
+        self.assertTrue(solver_only["ok"])
+        self.assertTrue(solver_only["bestEffort"])
+
+    def test_complete_schedule_keeps_soft_gap_debt_out_of_hard_validity(self) -> None:
+        data = SchoolData(
+            classes=[
+                ClassInfo(name="6/1", grade="Khối 6"),
+                ClassInfo(name="6/2", grade="Khối 6"),
+            ],
+            assignments=[
+                Assignment("6/1", "Khối 6", "Math", "GV1", 1, 1),
+                Assignment("6/2", "Khối 6", "Science", "GV1", 1, 1),
+            ],
+            teachers=["GV1"],
+            subjects=["Math", "Science"],
+            periods_by_grade_subject={
+                ("Khối 6", "Math"): 1,
+                ("Khối 6", "Science"): 1,
+            },
+            limits_by_grade_subject={
+                ("Khối 6", "Math"): 1,
+                ("Khối 6", "Science"): 1,
+            },
+        )
+        entries = [
+            ClassEntry("L1", "6/1", "Khối 6", ("L1", "6/1")),
+            ClassEntry("L2", "6/2", "Khối 6", ("L2", "6/2")),
+        ]
+        ctx = UiDataContext(
+            school_data=data,
+            classes=entries,
+            class_by_name={entry.name: entry for entry in entries},
+            rules=TimetableRuleSet(),
+            warnings=[],
+        )
+        lessons = [
+            Lesson("6/1", "Khối 6", 2, "AM", 1, "Math", "GV1"),
+            Lesson("6/2", "Khối 6", 2, "AM", 4, "Science", "GV1"),
+        ]
+
+        payload = build_payload(ctx, lessons, {"validation": {}}, original_ctx=ctx)
+
+        self.assertEqual(payload["metrics"]["scheduled_periods"], 2)
+        self.assertGreater(payload["metrics"]["gap_distribution"].get(2, 0), 0)
+        self.assertTrue(payload["metrics"]["core_hard_ok"])
+        self.assertTrue(payload["metrics"]["hard_ok"])
+        self.assertTrue(payload["ok"])
+
+    def test_capacity_partial_uses_strict_first_with_nonbinding_session_cap(self) -> None:
+        allowed = {(2, "AM", 1), (2, "AM", 2)}
+        fixed_off = {}
+        for day in range(2, 8):
+            for session, ui_session in (("AM", "sang"), ("PM", "chieu")):
+                for period in range(1, 6):
+                    if (day, session, period) not in allowed:
+                        fixed_off[f"thu{day}|{ui_session}|{period - 1}"] = True
+        data = {
+            "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
+            "giaovien": [{"magv": "GV1", "ten": "GV1"}],
+            "monhoc": [{"ten": "Math", "ma": "M"}],
+            "mon": [{"khoi": "6", "ten": "Math", "sotiet": 3, "gioihan": 2}],
+            "pccmMatrix": {"L1|Math": "GV1"},
+            "pccmTietMatrix": {"L1|Math": 3},
+            "tkbConstraints": {"fixedOff": {"class": {"L1": fixed_off}}},
+        }
+        allocations = [
+            SessionAllocation(
+                class_name="6/1",
+                grade="6",
+                subject="Math",
+                teacher="GV1",
+                session=Session(day=2, part="AM"),
+                count=2,
+            )
+        ]
+        lessons = [
+            Lesson("6/1", "6", 2, "AM", 1, "Math", "GV1"),
+            Lesson("6/1", "6", 2, "AM", 2, "Math", "GV1"),
+        ]
+        session_calls: list[dict[str, Any]] = []
+
+        def strict_session(_data: Any, **kwargs: Any) -> tuple[list[SessionAllocation], dict[str, Any]]:
+            session_calls.append(dict(kwargs))
+            return allocations, {
+                "solver": "test_strict_capacity",
+                "status_name": "FEASIBLE",
+                "teacher_sessions": 1,
+                "one_period_teacher_sessions": 0,
+                "unassigned_periods": 0,
+            }
+
+        with (
+            patch("tkb_new.adapter.solve_session_allocation_cp_sat", side_effect=strict_session),
+            patch(
+                "tkb_new.adapter.allocate_periods",
+                return_value=(lessons, {"solver": "test_period", "best_effort_failed_sessions": []}),
+            ),
+        ):
+            result = solve_from_ui_data(
+                data,
+                {
+                    "solver_mode": "session_cp_sat",
+                    "max_teacher_sessions": 1,
+                    "requested_max_teacher_sessions": 1,
+                    "strict_teacher_session_cap": False,
+                    "best_effort_on_timeout": True,
+                    "overall_time_limit_seconds": 30,
+                    "session_time_limit": 10,
+                    "period_time_limit": 5,
+                    "period_retry_time_limit": 3,
+                    "num_workers": 1,
+                },
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["metrics"]["capacity_unassigned_periods"], 1)
+        self.assertEqual(result["metrics"]["solver_unassigned_periods"], 0)
+        self.assertEqual(len(session_calls), 1)
+        self.assertFalse(session_calls[0]["allow_unassigned"])
+        # Two residual periods and one teacher give two possible sessions in
+        # the visible timetable; the requested cap of one must not bind this
+        # capacity-partial strict attempt.
+        self.assertEqual(session_calls[0]["max_teacher_sessions"], 2)
+
+    def test_capacity_partial_uses_optional_fallback_only_after_strict_failure(self) -> None:
+        allowed = {(2, "AM", 1), (2, "AM", 2)}
+        fixed_off = {}
+        for day in range(2, 8):
+            for session, ui_session in (("AM", "sang"), ("PM", "chieu")):
+                for period in range(1, 6):
+                    if (day, session, period) not in allowed:
+                        fixed_off[f"thu{day}|{ui_session}|{period - 1}"] = True
+        data = {
+            "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
+            "giaovien": [{"magv": "GV1", "ten": "GV1"}],
+            "monhoc": [{"ten": "Math", "ma": "M"}],
+            "mon": [{"khoi": "6", "ten": "Math", "sotiet": 3, "gioihan": 2}],
+            "pccmMatrix": {"L1|Math": "GV1"},
+            "pccmTietMatrix": {"L1|Math": 3},
+            "tkbConstraints": {"fixedOff": {"class": {"L1": fixed_off}}},
+        }
+        allocations = [
+            SessionAllocation(
+                class_name="6/1",
+                grade="6",
+                subject="Math",
+                teacher="GV1",
+                session=Session(day=2, part="AM"),
+                count=2,
+            )
+        ]
+        lessons = [
+            Lesson("6/1", "6", 2, "AM", 1, "Math", "GV1"),
+            Lesson("6/1", "6", 2, "AM", 2, "Math", "GV1"),
+        ]
+        session_calls: list[dict[str, Any]] = []
+
+        def strict_then_optional(_data: Any, **kwargs: Any) -> tuple[list[SessionAllocation], dict[str, Any]]:
+            session_calls.append(dict(kwargs))
+            if not kwargs.get("allow_unassigned"):
+                raise SessionCpSatNoSolution(
+                    "strict capacity probe failed",
+                    {"status_name": "INFEASIBLE"},
+                )
+            return allocations, {
+                "solver": "test_optional_capacity",
+                "status_name": "FEASIBLE",
+                "teacher_sessions": 1,
+                "one_period_teacher_sessions": 0,
+                "unassigned_periods": 0,
+            }
+
+        with (
+            patch("tkb_new.adapter.solve_session_allocation_cp_sat", side_effect=strict_then_optional),
+            patch(
+                "tkb_new.adapter.allocate_periods",
+                return_value=(lessons, {"solver": "test_period", "best_effort_failed_sessions": []}),
+            ),
+        ):
+            result = solve_from_ui_data(
+                data,
+                {
+                    "solver_mode": "session_cp_sat",
+                    "max_teacher_sessions": 1,
+                    "requested_max_teacher_sessions": 1,
+                    "strict_teacher_session_cap": False,
+                    "best_effort_on_timeout": True,
+                    "overall_time_limit_seconds": 30,
+                    "session_time_limit": 10,
+                    "period_time_limit": 5,
+                    "period_retry_time_limit": 3,
+                    "num_workers": 1,
+                },
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(session_calls), 2)
+        self.assertFalse(session_calls[0]["allow_unassigned"])
+        self.assertTrue(session_calls[1]["allow_unassigned"])
+        self.assertEqual(
+            [call["max_teacher_sessions"] for call in session_calls],
+            [2, 2],
+        )
 
     def test_zero_schedule_is_422_even_when_partial_results_are_allowed(self) -> None:
         payload = {
@@ -9176,6 +10085,309 @@ class SolverResultContractTests(unittest.TestCase):
             200,
         )
         self.assertTrue(capacity_only["ok"])
+
+    def test_capacity_trim_never_leaves_a_broken_lesson_block_residual(self) -> None:
+        allowed = {(2, "AM", period) for period in range(1, 5)} | {(3, "AM", period) for period in range(1, 3)}
+        fixed_off = {}
+        for day in range(2, 8):
+            for session, ui_session in (("AM", "sang"), ("PM", "chieu")):
+                for period in range(1, 6):
+                    if (day, session, period) not in allowed:
+                        fixed_off[f"thu{day}|{ui_session}|{period - 1}"] = True
+        data = {
+            "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
+            "giaovien": [
+                {"magv": "GVA", "ten": "GVA"},
+                {"magv": "GVV", "ten": "GVV"},
+            ],
+            "monhoc": [{"ten": "Anh", "ma": "A"}, {"ten": "Van", "ma": "V"}],
+            "mon": [
+                {"khoi": "6", "ten": "Anh", "sotiet": 3, "gioihan": 3},
+                {"khoi": "6", "ten": "Van", "sotiet": 4, "gioihan": 2},
+            ],
+            "pccmMatrix": {"L1|Anh": "GVA", "L1|Van": "GVV"},
+            "pccmTietMatrix": {"L1|Anh": 3, "L1|Van": 4},
+            "tkbConstraints": {
+                "fixedOff": {"class": {"L1": fixed_off}},
+                "subject": {
+                    "Van": {"byClass": {"L1": {"lessonBlocks": {"2": {"min": 2}}}}}
+                },
+            },
+        }
+        ctx = build_school_data_from_ui(data)
+        self.assertEqual(
+            _assignment_lesson_block_minimum_periods(
+                ctx.rules.constraints,
+                next(item for item in ctx.school_data.assignments if item.subject == "Van"),
+            ),
+            4,
+        )
+        trimmed, unassigned = _trim_context_to_available_slots(ctx, ctx.rules, {})
+        kept = {item.subject: item.periods_per_week for item in trimmed.school_data.assignments}
+        self.assertEqual(kept, {"Anh": 2, "Van": 4})
+        self.assertEqual(sum(item["periods"] for item in unassigned), 1)
+        self.assertEqual(unassigned[0]["subject"], "Anh")
+
+    def test_capacity_trim_uses_teacher_session_flow_instead_of_aggregate_slots(self) -> None:
+        class_specs = [
+            ("A1", "6/A1", 2, {1}),
+            ("A2", "6/A2", 2, {1}),
+            ("B1", "6/B1", 3, {1, 2}),
+            ("B2", "6/B2", 3, {1, 2}),
+        ]
+        fixed_off_by_class: dict[str, dict[str, bool]] = {}
+        for class_id, _class_name, allowed_day, allowed_periods in class_specs:
+            fixed_off: dict[str, bool] = {}
+            for day in range(2, 8):
+                for session, ui_session in (("AM", "sang"), ("PM", "chieu")):
+                    for period in range(1, 6):
+                        if not (
+                            day == allowed_day
+                            and session == "AM"
+                            and period in allowed_periods
+                        ):
+                            fixed_off[f"thu{day}|{ui_session}|{period - 1}"] = True
+            fixed_off_by_class[class_id] = fixed_off
+
+        data = {
+            "lop": [
+                {"id": class_id, "ten": class_name, "khoi": "6"}
+                for class_id, class_name, _day, _periods in class_specs
+            ],
+            "giaovien": [{"magv": "T", "ten": "T"}],
+            "monhoc": [{"ten": "M", "ma": "M"}],
+            "mon": [{"khoi": "6", "ten": "M", "sotiet": 1, "gioihan": 1}],
+            "pccmMatrix": {
+                f"{class_id}|M": "T"
+                for class_id, _class_name, _day, _periods in class_specs
+            },
+            "pccmTietMatrix": {
+                f"{class_id}|M": 1
+                for class_id, _class_name, _day, _periods in class_specs
+            },
+            "tkbConstraints": {"fixedOff": {"class": fixed_off_by_class}},
+        }
+
+        ctx = build_school_data_from_ui(data)
+        trimmed, unassigned = _trim_context_to_available_slots(ctx, ctx.rules, {})
+
+        # Total teacher capacity is 1 + 2 = 3. A greedy aggregate trim used to
+        # drop B2, leaving A1 and A2 competing for the same single slot and an
+        # instantly infeasible residual model. The flow cut drops one A lesson
+        # and preserves all three actually schedulable periods.
+        self.assertEqual(
+            [item.class_name for item in trimmed.school_data.assignments],
+            ["6/A1", "6/B1", "6/B2"],
+        )
+        self.assertEqual(sum(item["periods"] for item in unassigned), 1)
+        self.assertEqual(unassigned[0]["className"], "6/A2")
+
+    def test_assignment_session_limit_overrides_standard_table_during_validation(self) -> None:
+        data = SchoolData(
+            classes=[ClassInfo(name="6/1", grade="6")],
+            assignments=[
+                Assignment(
+                    class_name="6/1",
+                    grade="6",
+                    subject="History",
+                    teacher="T",
+                    periods_per_week=3,
+                    max_periods_per_session=3,
+                )
+            ],
+            teachers=["T"],
+            subjects=["History"],
+            periods_by_grade_subject={("6", "History"): 3},
+            # The standard table is intentionally stale. PCCM above has
+            # already been finalized with a limit of three.
+            limits_by_grade_subject={("6", "History"): 2},
+        )
+        lessons = [
+            Lesson("6/1", "6", 2, "AM", period, "History", "T")
+            for period in (1, 2, 3)
+        ]
+
+        metrics = compute_metrics(data, lessons)
+
+        self.assertEqual(metrics["subject_session_limit_violations"], [])
+        self.assertTrue(metrics["core_hard_ok"])
+
+    def test_impossible_lesson_block_min_is_ignored_without_dropping_valid_min(self) -> None:
+        data = {
+            "lop": [{"id": "L1", "ten": "9/9", "khoi": "9"}],
+            "giaovien": [{"magv": "GVV", "ten": "GVV"}],
+            "monhoc": [{"ten": "Van", "ma": "V"}],
+            "mon": [{"khoi": "9", "ten": "Van", "sotiet": 4, "gioihan": 3}],
+            "pccmMatrix": {"L1|Van": "GVV"},
+            "pccmTietMatrix": {"L1|Van": 4},
+            "tkbConstraints": {
+                "subject": {
+                    "Van": {
+                        "byClass": {
+                            "L1": {
+                                "lessonBlocks": {
+                                    "2": {"min": 1},
+                                    "3": {"min": 21},
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+        }
+
+        ctx = build_school_data_from_ui(data)
+        assignment = ctx.school_data.assignments[0]
+        rule = ctx.rules.constraints.subject_rule_for("9/9", "Van")
+
+        self.assertEqual(rule["lessonBlocks"]["2"]["min"], 1)
+        self.assertNotIn("min", rule["lessonBlocks"]["3"])
+        self.assertEqual(
+            _assignment_lesson_block_minimum_periods(ctx.rules.constraints, assignment),
+            2,
+        )
+        self.assertTrue(any("Min 21" in warning for warning in ctx.warnings))
+
+    def test_capacity_must_teach_keeps_reachable_anchors_and_relaxes_unreachable_slots(self) -> None:
+        allowed = {(3, "PM", period) for period in range(1, 5)}
+        fixed_off = {}
+        for day in range(2, 8):
+            for session, ui_session in (("AM", "sang"), ("PM", "chieu")):
+                for period in range(1, 6):
+                    if (day, session, period) not in allowed:
+                        fixed_off[f"thu{day}|{ui_session}|{period - 1}"] = True
+        must_teach = {
+            f"thu{day}|{ui_session}|{period - 1}": True
+            for day, ui_session, period in (
+                [(3, "chieu", period) for period in range(1, 6)]
+                + [(5, "chieu", period) for period in range(1, 6)]
+            )
+        }
+        data = {
+            "lop": [{"id": "L1", "ten": "6/1", "khoi": "6"}],
+            "giaovien": [{"magv": "GV1", "ten": "GV1"}],
+            "monhoc": [{"ten": "Math", "ma": "M"}],
+            "mon": [{"khoi": "6", "ten": "Math", "sotiet": 4, "gioihan": 4}],
+            "pccmMatrix": {"L1|Math": "GV1"},
+            "pccmTietMatrix": {"L1|Math": 4},
+            "tkbConstraints": {
+                "fixedOff": {"class": {"L1": fixed_off}},
+                "teacher": {"GV1": {"mustTeach": must_teach}},
+            },
+        }
+        ctx = build_school_data_from_ui(data)
+        anchors, warnings = _anchor_teacher_must_teach_lessons(ctx, ctx.rules, [])
+        self.assertEqual(len(anchors), 4)
+        self.assertTrue(any("khong tao duoc tiet neo" in item.casefold() for item in warnings))
+        relaxed, dropped = _relax_unanchored_must_teach_for_capacity(ctx.rules, anchors)
+        self.assertEqual(dropped, 6)
+        self.assertEqual(len(relaxed.constraints.teacher_must_teach["GV1"]), 4)
+
+    def test_teacher_preflight_relaxes_proven_must_teach_capacity_shortage_for_normal_solve(self) -> None:
+        must_teach = {
+            f"thu{day}|chieu|{period - 1}": True
+            for day in (3, 5)
+            for period in range(1, 6)
+        }
+        data = {
+            "lop": [
+                {"id": "L1", "ten": "6/1", "khoi": "6"},
+                {"id": "L2", "ten": "8/1", "khoi": "8"},
+            ],
+            "giaovien": [{"magv": "GV1", "ten": "GV1"}],
+            "monhoc": [{"ten": "Science", "ma": "S"}, {"ten": "Local", "ma": "L"}],
+            "mon": [
+                {"khoi": "6", "ten": "Science", "sotiet": 4, "gioihan": 2},
+                {"khoi": "8", "ten": "Local", "sotiet": 2, "gioihan": 1},
+            ],
+            "pccmMatrix": {"L1|Science": "GV1", "L2|Local": "GV1"},
+            "pccmTietMatrix": {"L1|Science": 4, "L2|Local": 2},
+            "tkbConstraints": {
+                "subject": {
+                    "Science": {"byClass": {"L1": {"sessionAllowed": {"allowMorning": False}}}},
+                    "Local": {"byClass": {"L2": {"sessionAllowed": {"allowMorning": False}}}},
+                },
+                "teacher": {"GV1": {"mustTeach": must_teach}},
+            },
+        }
+        ctx = build_school_data_from_ui(data)
+        anchors, _warnings = _anchor_teacher_must_teach_lessons(ctx, ctx.rules, [])
+        self.assertEqual(len(anchors), 6)
+        effective, warnings = _preflight_teacher_constraint_feasibility(
+            ctx,
+            ctx.rules,
+            anchors,
+        )
+        self.assertEqual(len(effective.constraints.teacher_must_teach["GV1"]), 6)
+        self.assertTrue(any("mustTeach" in item and "6 o da neo" in item for item in warnings))
+
+    def test_teacher_preflight_raises_impossible_max_sessions_from_disjoint_shifts(self) -> None:
+        fixed_off_am = {
+            f"thu{day}|sang|{period - 1}": True
+            for day in range(2, 8)
+            for period in range(1, 6)
+        }
+        fixed_off_pm = {
+            f"thu{day}|chieu|{period - 1}": True
+            for day in range(2, 8)
+            for period in range(1, 6)
+        }
+        data = {
+            "lop": [
+                {"id": "LPM", "ten": "6/1", "khoi": "6"},
+                {"id": "LAM", "ten": "9/1", "khoi": "9"},
+                {"id": "LAM2", "ten": "9/2", "khoi": "9"},
+            ],
+            "giaovien": [{"magv": "GV1", "ten": "GV1"}],
+            "monhoc": [{"ten": "Literature", "ma": "V"}, {"ten": "Activity", "ma": "A"}],
+            "mon": [
+                {"khoi": "6", "ten": "Literature", "sotiet": 4, "gioihan": 2},
+                {"khoi": "9", "ten": "Literature", "sotiet": 4, "gioihan": 2},
+                {"khoi": "9", "ten": "Activity", "sotiet": 3, "gioihan": 2},
+            ],
+            "pccmMatrix": {
+                "LPM|Literature": "GV1",
+                "LAM|Literature": "GV1",
+                "LAM|Activity": "GV1",
+                "LAM2|Literature": "GV1",
+            },
+            "pccmTietMatrix": {
+                "LPM|Literature": 4,
+                "LAM|Literature": 4,
+                "LAM|Activity": 3,
+                "LAM2|Literature": 4,
+            },
+            "tkbConstraints": {
+                "fixedOff": {
+                    "class": {
+                        "LPM": fixed_off_am,
+                        "LAM": fixed_off_pm,
+                        "LAM2": fixed_off_pm,
+                    }
+                },
+                "teacher": {
+                    "GV1": {"maxDaysSessions": {"maxDays": 3, "maxSessions": 4}}
+                },
+            },
+        }
+        ctx = build_school_data_from_ui(data)
+        lower_bound, evidence = _teacher_session_lower_bound_by_disjoint_parts(
+            ctx,
+            ctx.rules,
+            "GV1",
+        )
+        self.assertEqual(lower_bound, 5)
+        self.assertEqual([item["component_bound"] for item in evidence], [3, 2])
+        effective, warnings = _preflight_teacher_constraint_feasibility(
+            ctx,
+            ctx.rules,
+            [],
+        )
+        self.assertEqual(
+            effective.constraints.teacher["GV1"]["maxDaysSessions"]["maxSessions"],
+            5,
+        )
+        self.assertTrue(any("tu 4 len 5" in item for item in warnings))
 
 
 if __name__ == "__main__":

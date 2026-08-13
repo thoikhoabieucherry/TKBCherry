@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .models import Lesson, SchoolData
+from .external_cp_sat import solve_cp_sat_model
 from .random_seed import normalize_cp_sat_seed
 from .period_milp import (
     LessonEvent,
@@ -568,7 +569,7 @@ def solve_gap0_cp_sat(
         solver.parameters.randomize_search = True
 
     started = time.time()
-    status = solver.Solve(model)
+    status = solve_cp_sat_model(model, solver)
     elapsed = time.time() - started
     status_name = solver.StatusName(status)
     metrics: dict[str, Any] = {

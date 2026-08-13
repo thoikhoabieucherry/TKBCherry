@@ -123,7 +123,20 @@ def main() -> int:
 
         if destination_is_empty:
             destination.rmdir()
-        staging.replace(destination)
+        try:
+            staging.replace(destination)
+        except PermissionError:
+            # Windows Defender/indexing can briefly hold a freshly extracted
+            # child open and make the otherwise atomic directory rename fail
+            # with WinError 5. A verified copy fallback still leaves the caller
+            # with a complete snapshot and the finally block removes staging.
+            shutil.copytree(staging, destination, copy_function=shutil.copy2)
+            copied_files = [path for path in destination.rglob("*") if path.is_file()]
+            copied_count = len(copied_files)
+            copied_bytes = sum(path.stat().st_size for path in copied_files)
+            if copied_count != file_count or copied_bytes != byte_count:
+                shutil.rmtree(destination, ignore_errors=True)
+                raise RuntimeError("Copied snapshot does not match extracted staging data")
         print(
             f"BACKUP_OK destination={destination} files={file_count} bytes={byte_count}",
             flush=True,

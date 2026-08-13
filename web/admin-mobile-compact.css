@@ -37,7 +37,7 @@
   display: none;
 }
 
-.app-mobile-actions-menu {
+.app-selection-badge {
   display: none;
 }
 
@@ -191,7 +191,7 @@ body.app-shell-body .app-quick-add-details[open] > .quick-add-control {
     top: 0;
     z-index: 12;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) repeat(3, var(--app-mobile-control));
+    grid-template-columns: repeat(5, var(--app-mobile-control));
     grid-auto-flow: column;
     align-items: center;
     gap: var(--app-mobile-gap);
@@ -204,7 +204,7 @@ body.app-shell-body .app-quick-add-details[open] > .quick-add-control {
   }
 
   body.app-shell-body .action-bar-data.has-quick-add {
-    grid-template-columns: minmax(0, 1fr) repeat(4, var(--app-mobile-control));
+    grid-template-columns: repeat(6, var(--app-mobile-control));
   }
 
   body.app-shell-body .action-bar-data .btn,
@@ -220,11 +220,11 @@ body.app-shell-body .app-quick-add-details[open] > .quick-add-control {
   }
 
   body.app-shell-body .action-bar-data .app-action-create {
-    width: 100%;
-    min-width: 0;
-    max-width: none;
+    width: var(--app-mobile-control);
+    min-width: var(--app-mobile-control);
+    max-width: var(--app-mobile-control);
     justify-content: center;
-    padding: 0 10px;
+    padding: 0;
   }
 
   body.app-shell-body .app-action-label,
@@ -233,7 +233,7 @@ body.app-shell-body .app-quick-add-details[open] > .quick-add-control {
   }
 
   body.app-shell-body .app-mobile-only-label {
-    display: inline;
+    display: none;
   }
 
   body.app-shell-body .app-quick-add-details {
@@ -252,8 +252,7 @@ body.app-shell-body .app-quick-add-details[open] > .quick-add-control {
     display: none;
   }
 
-  body.app-shell-body .app-quick-add-details > summary::-webkit-details-marker,
-  body.app-shell-body .app-mobile-actions-menu > summary::-webkit-details-marker {
+  body.app-shell-body .app-quick-add-details > summary::-webkit-details-marker {
     display: none;
   }
 
@@ -316,39 +315,8 @@ body.app-shell-body .app-quick-add-details[open] > .quick-add-control {
     width: 100%;
   }
 
-  body.app-shell-body .app-mobile-actions-menu {
-    position: static;
-    display: block;
-    width: var(--app-mobile-control);
-  }
-
-  body.app-shell-body .app-mobile-actions-menu > summary {
+  body.app-shell-body .app-delete-action {
     position: relative;
-    display: flex;
-    list-style: none;
-  }
-
-  body.app-shell-body .app-mobile-actions-popover {
-    position: absolute;
-    top: calc(100% + 2px);
-    right: 0;
-    z-index: 55;
-    display: grid;
-    gap: 4px;
-    width: min(230px, calc(100vw - 16px));
-    padding: 6px;
-    border: 1px solid #d8e3f2;
-    border-radius: 8px;
-    background: #ffffff;
-    box-shadow: 0 10px 28px rgb(15 23 42 / 14%);
-  }
-
-  body.app-shell-body .app-mobile-actions-popover .btn {
-    width: 100%;
-    max-width: none;
-    justify-content: flex-start;
-    gap: 8px;
-    padding: 0 10px;
   }
 
   body.app-shell-body .app-selection-badge {
@@ -413,7 +381,7 @@ body.app-shell-body .app-quick-add-details[open] > .quick-add-control {
     top: 0;
     z-index: 12;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr)) repeat(2, var(--app-mobile-control));
+    grid-template-columns: repeat(3, minmax(0, 1fr)) repeat(4, var(--app-mobile-control));
     gap: 6px;
     margin-bottom: 6px;
     padding: 2px 0 6px;
@@ -448,18 +416,24 @@ body.app-shell-body .app-quick-add-details[open] > .quick-add-control {
   }
 
   body.app-shell-body .pccm-side-actions {
-    grid-column: 1 / -1;
-    display: flex;
-    grid-template-columns: none;
-    justify-content: flex-end;
-    gap: 6px;
+    display: contents;
   }
 
   body.app-shell-body .pccm-total-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--app-mobile-control);
     height: var(--app-mobile-control);
     min-height: var(--app-mobile-control);
-    padding: 0 9px;
-    font-size: 11px;
+    padding: 0;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+  }
+
+  body.app-shell-body .pccm-total-prefix {
+    display: none;
   }
 
   body.app-shell-body .tietchuan-table-wrap {

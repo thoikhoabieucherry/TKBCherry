@@ -13,7 +13,11 @@ ROOT = Path(__file__).resolve().parents[1]
 DEPLOY_PATH = ROOT / "tools" / "vps-deploy" / "deploy.py"
 UPDATE_SERVER_PATH = ROOT / "tools" / "vps-deploy" / "update-server.sh"
 UPDATE_DEPLOY_PATH = ROOT / "tools" / "vps-deploy" / "update-deploy.py"
+STAGE_TESTS_PATH = ROOT / "tools" / "vps-deploy" / "stage-tests.py"
 INSTALL_SERVER_PATH = ROOT / "tools" / "vps-deploy" / "install-server.sh"
+SOLVER_POOL_CONFIG_PATH = ROOT / "tools" / "vps-deploy" / "solver-pool.conf"
+FIX_PYTHON_PATH = ROOT / "tools" / "vps-deploy" / "fix-python.py"
+BACKUP_FULL_PATH = ROOT / "tools" / "vps-deploy" / "backup-full.py"
 
 
 def load_deploy_module():
@@ -22,6 +26,16 @@ def load_deploy_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_reference_helper_process_limit_is_consistent_across_install_paths() -> None:
+    required = [
+        "Environment=TKB_EXTERNAL_CP_SAT_BUILDERS=2",
+        "Environment=TKB_REFERENCE_HELPER_PROCESSES=3",
+    ]
+    for path in (SOLVER_POOL_CONFIG_PATH, INSTALL_SERVER_PATH, FIX_PYTHON_PATH):
+        text = path.read_text(encoding="utf-8")
+        assert all(line in text for line in required), path
 
 
 def test_sensitive_and_build_paths_are_excluded() -> None:
@@ -60,27 +74,40 @@ def test_sensitive_and_build_paths_are_excluded() -> None:
         "solver_runtime/tests/test_solver_result_contract.py",
         "tests/test_vps_deploy_packaging.py",
         "upx-5.2.0-win64/upx.exe",
+        "web/downloads/TKBCherryAgent-Windows.zip",
+        "web/downloads/TKBCherryAgent-release.json",
+        "web/pages/tkb-browser-wasm.js",
+        "web/pages/tkb-browser-wasm-worker.js",
+        "web/pages/tkb_native_solver.wasm",
+        "web/vendor/highs/LICENSE",
+        "web/vendor/or-tools-wasm/LICENSE",
+        "web/vendor/or-tools-wasm/NOTICE.md",
     ]
     assert all(deploy.should_skip(path) for path in excluded)
     assert not deploy.should_skip("rust_api/src/main.rs")
     assert not deploy.should_skip("web/index.html")
-    assert not deploy.should_skip("web/downloads/TKBCherryAgent-release.json")
     assert not deploy.should_skip("solver_runtime/src/tkb_new/adapter.py")
     assert not deploy.should_skip("tools/vps-deploy/solver-pool.conf")
+    assert not deploy.should_skip("tools/cloud-run/tkb-google-cloud-usage.timer")
+    assert not deploy.should_skip("tools/cloud-run/tkb-google-cloud-usage.path")
+
+
+def test_staging_fixture_source_is_explicit_and_fails_closed() -> None:
+    script = STAGE_TESTS_PATH.read_text(encoding="utf-8")
+    assert 'os.environ.get("TKB_TEST_DATA_DIR"' in script
+    assert 'return Path(configured).expanduser().resolve()' in script
+    assert 'Staging fixture workbooks are missing' in script
+    assert 'return 2' in script
 
 
 def test_staging_profile_keeps_only_the_release_test_sources() -> None:
     deploy = load_deploy_module()
 
     included = [
-        ".github/workflows/build-agent-windows.yml",
-        "agent_helper/api.py",
-        "agent_helper/tests/test_api.py",
         "rust_api/fixtures/sample-data-with-class-off.json",
+        "solver_runtime/contracts/tkb-model-plan-v1.schema.json",
+        "solver_runtime/fixtures/model_plan_v1/golden-index.json",
         "solver_runtime/tests/test_solver_result_contract.py",
-        "tools/agent-release/sign_release.py",
-        "tools/trusted-worker/install-linux.sh",
-        "tools/trusted-worker/tests/test_trusted_worker_ops.py",
     ]
     excluded = [
         ".github/workflows/test.yml",
@@ -90,6 +117,10 @@ def test_staging_profile_keeps_only_the_release_test_sources() -> None:
         "e2e_tests/test_suite.py",
         "tests/test_vps_deploy_packaging.py",
         "upx-5.2.0-win64/upx.exe",
+        ".github/workflows/build-agent-windows.yml",
+        "agent_helper/api.py",
+        "tools/agent-release/sign_release.py",
+        "tools/trusted-worker/install-linux.sh",
     ]
 
     assert all(
@@ -106,12 +137,21 @@ def test_tarball_contains_no_sensitive_or_build_files() -> None:
             names = archive.getnames()
         assert "rust_api/src/main.rs" in names
         assert "web/index.html" in names
-        assert "web/downloads/TKBCherryAgent-Windows.zip" in names
-        assert "web/downloads/TKBCherryAgent-release.json" in names
+        assert "web/downloads/TKBCherryAgent-Windows.zip" not in names
+        assert "web/downloads/TKBCherryAgent-release.json" not in names
+        assert "web/pages/tkb-browser-wasm.js" not in names
+        assert "web/pages/tkb-browser-wasm-worker.js" not in names
+        assert "web/pages/tkb_native_solver.wasm" not in names
+        assert "web/vendor/highs/LICENSE" not in names
+        assert "web/vendor/or-tools-wasm/LICENSE" not in names
         assert "solver_runtime/scripts/solve_stdio.py" in names
         assert "solver_runtime/src/tkb_optimizer_ref/base_184_hint.json" in names
         assert "mail-server/server.js" in names
         assert "tools/vps-deploy/solver-pool.conf" in names
+        assert "tools/cloud-run/install-google-cloud-usage-sync.sh" in names
+        assert "tools/cloud-run/tkb-google-cloud-usage.service" in names
+        assert "tools/cloud-run/tkb-google-cloud-usage.timer" in names
+        assert "tools/cloud-run/tkb-google-cloud-usage.path" in names
         assert {name.split("/", 1)[0] for name in names} == {
             "mail-server",
             "rust_api",
@@ -130,14 +170,15 @@ def test_staging_tarball_contains_release_suites_without_local_junk() -> None:
     try:
         with tarfile.open(tarball, "r:gz") as archive:
             names = set(archive.getnames())
-        assert "agent_helper/api.py" in names
-        assert "agent_helper/tests/test_api.py" in names
-        assert ".github/workflows/build-agent-windows.yml" in names
+        assert "solver_runtime/contracts/tkb-model-plan-v1.schema.json" in names
+        assert "solver_runtime/fixtures/model_plan_v1/golden-index.json" in names
+        assert "solver_runtime/fixtures/model_plan_v1/small-cp-sat.bundle.json" in names
         assert "solver_runtime/tests/test_solver_result_contract.py" in names
         assert "rust_api/fixtures/sample-data-with-class-off.json" in names
-        assert "tools/agent-release/sign_release.py" in names
-        assert "tools/trusted-worker/install-linux.sh" in names
-        assert "tools/trusted-worker/tests/test_trusted_worker_ops.py" in names
+        assert "agent_helper/api.py" not in names
+        assert ".github/workflows/build-agent-windows.yml" not in names
+        assert "tools/agent-release/sign_release.py" not in names
+        assert "tools/trusted-worker/install-linux.sh" not in names
         assert "agent_helper/dist/TKBCherryAgent.exe" not in names
         assert "e2e_tests/test_suite.py" not in names
         assert "tests/test_vps_deploy_packaging.py" not in names
@@ -258,19 +299,21 @@ def test_production_and_staging_entrypoints_select_explicit_profiles() -> None:
     assert "make_tarball(PACKAGE_STAGING)" in stage
 
 
-def test_release_backup_avoids_agent_archive_duplication_and_keeps_rollback_pair() -> None:
+def test_full_backup_has_verified_windows_copy_fallback() -> None:
+    script = BACKUP_FULL_PATH.read_text(encoding="utf-8")
+    assert "except PermissionError:" in script
+    assert "shutil.copytree(staging, destination, copy_function=shutil.copy2)" in script
+    assert "copied_count != file_count or copied_bytes != byte_count" in script
+    assert 'raise RuntimeError("Copied snapshot does not match extracted staging data")' in script
+
+
+def test_release_backup_has_no_retired_agent_rollback_stage() -> None:
     script = UPDATE_SERVER_PATH.read_text(encoding="utf-8")
 
-    assert "capture_agent_rollback_files\n" in script
-    assert "restore_agent_rollback_files\n" in script
-    assert "cleanup_agent_rollback_stage\n" in script
-    assert "--exclude='web/downloads/TKBCherryAgent-Windows.zip'" in script
-    assert "--exclude='web/downloads/TKBCherryAgent-release.json'" in script
-    assert 'source="$AGENT_ROLLBACK_STAGE/$filename"' in script
-    assert 'cp -a "$source" "$downloads/$filename"' in script
-    assert script.index("restore_agent_rollback_files\n") < script.index(
-        "systemctl restart tkb-mail tkb-app", script.index("restore_release()")
-    )
+    assert "capture_agent_rollback_files" not in script
+    assert "restore_agent_rollback_files" not in script
+    assert "cleanup_agent_rollback_stage" not in script
+    assert "TKBCherryAgent" not in script
 
 
 def test_runtime_cleanup_preserves_only_the_linux_release_binary() -> None:
@@ -334,74 +377,11 @@ def test_backup_retention_keeps_limits_manual_archives_and_current_backups() -> 
         assert manual_state.exists()
 
 
-def test_nginx_serves_only_the_named_agent_release_files_directly() -> None:
+def test_install_and_update_have_no_retired_agent_download_route() -> None:
     update_script = UPDATE_SERVER_PATH.read_text(encoding="utf-8")
     install_script = INSTALL_SERVER_PATH.read_text(encoding="utf-8")
     for script in (update_script, install_script):
-        assert "location = /downloads/TKBCherryAgent-Windows.zip" in script
-        assert "application/zip" in script
-        assert 'filename="TKBCherryAgent-Windows.zip"' in script
-        assert "location = /downloads/TKBCherryAgent-release.json" in script
-        assert "application/json" in script
-        assert "Cache-Control 'no-store'" in script
-        assert "TKB_AGENT_DOWNLOAD_BEGIN" in script
+        assert "TKBCherryAgent" not in script
+        assert "TKB_AGENT_DOWNLOAD_BEGIN" not in script
         assert "location /downloads/" not in script
-        assert (
-            'chmod 0644 "$APP_DIR/web/downloads/TKBCherryAgent-Windows.zip"'
-            in script
-        )
-        assert 'chmod 0644 "$APP_DIR/web/downloads/TKBCherryAgent-release.json"' in script
-        assert "location = /downloads/TKBCherryAgent.exe" not in script
         assert "application/vnd.microsoft.portable-executable" not in script
-    assert 'if begin in source:\n    raise SystemExit(0)' not in update_script
-    assert 'source = source[:block_start] + source[block_end:]' in update_script
-    assert update_script.index("ensure_agent_download_location\n") < update_script.index(
-        "enable_solver_admission_gate\n"
-    )
-
-
-def test_update_replaces_the_existing_marked_agent_executable_route() -> None:
-    script = UPDATE_SERVER_PATH.read_text(encoding="utf-8")
-    heredoc = 'python3 - "$site" "$APP_DIR" <<\'PY\'\n'
-    rewrite_start = script.index(heredoc) + len(heredoc)
-    rewrite_end = script.index("\nPY\n", rewrite_start)
-    rewriter = script[rewrite_start:rewrite_end]
-    old_config = '''server {
-    # TKB_AGENT_DOWNLOAD_BEGIN
-    location = /downloads/TKBCherryAgent.exe {
-        alias /opt/cherry-scheduler/web/downloads/TKBCherryAgent.exe;
-        default_type application/vnd.microsoft.portable-executable;
-        add_header Content-Disposition 'attachment; filename="TKBCherryAgent.exe"' always;
-    }
-    # TKB_AGENT_DOWNLOAD_END
-
-    location / {
-        proxy_pass http://127.0.0.1:1010;
-    }
-}
-'''
-
-    with tempfile.TemporaryDirectory() as temp_dir:
-        site = Path(temp_dir) / "tkbcherry"
-        site.write_text(old_config, encoding="utf-8")
-        subprocess.run(
-            [sys.executable, "-c", rewriter, str(site), "/opt/cherry-scheduler"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        rewritten = site.read_text(encoding="utf-8")
-
-    assert rewritten.count("# TKB_AGENT_DOWNLOAD_BEGIN") == 1
-    assert rewritten.count("# TKB_AGENT_DOWNLOAD_END") == 1
-    assert "location = /downloads/TKBCherryAgent.exe" not in rewritten
-    assert rewritten.count("location = /downloads/TKBCherryAgent-Windows.zip") == 1
-    assert rewritten.count("location = /downloads/TKBCherryAgent-release.json") == 1
-    assert (
-        "alias /opt/cherry-scheduler/web/downloads/TKBCherryAgent-Windows.zip;"
-        in rewritten.replace("\\", "/")
-    )
-    assert "default_type application/zip;" in rewritten
-    assert 'filename="TKBCherryAgent-Windows.zip"' in rewritten
-    assert "default_type application/json;" in rewritten
-    assert "Cache-Control 'no-store'" in rewritten

@@ -7,17 +7,17 @@
   <link rel="icon" type="image/png" href="assets/favicon-cherry.png?v=2" />
   <meta name="theme-color" content="#ffffff" />
   <link rel="stylesheet" href="tokens.css?v=20260710-light-v1" />
-  <link rel="stylesheet" href="auth.css?v=20260710-super-mobile-light-v1" />
-  <link rel="stylesheet" href="theme-light.css?v=20260710-premium-ui-v2" />
+  <link rel="stylesheet" href="auth.css?v=20260802-plus-max-plans-v6" />
+  <link rel="stylesheet" href="theme-light.css?v=20260802-service-plans-compact-v3" />
   <link rel="stylesheet" href="runtime.css?v=20260710-runtime-v1" />
-  <link rel="stylesheet" href="super-admin.css?v=20260713-school-edit-v2" />
+  <link rel="stylesheet" href="super-admin.css?v=20260802-user-usage-only-v9" />
   <link rel="stylesheet" href="super-admin-mobile-compact.css?v=20260725-v188-compact-super-admin-v2" />
   <script src="shared/school-context.js?v=20260708-v1"></script>
   <script src="shared/auth-api.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
-  <script src="shared/auth.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
+  <script src="shared/auth.js?v=20260803-free-5-solve-quota-v1"></script>
   <script src="shared/runtime.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
   <script defer src="shared/password-toggle.js?v=20260708-v1"></script>
-  <script defer src="super-admin.js?v=20260725-v188-compact-super-admin-v2"></script>
+  <script defer src="super-admin.js?v=20260803-max-plan-labels-v1"></script>
 </head>
 <body class="portal-body portal-page-super">
   <header class="portal-top">
@@ -39,6 +39,20 @@
   </header>
 
   <main class="portal-main portal-main-wide" id="portalRoot">
+    <section class="portal-card solver-infrastructure-card" id="solverInfrastructureCard" aria-labelledby="solverAccountUsageTitle" data-usage-only="true">
+      <section class="solver-account-usage solver-school-usage" aria-labelledby="solverAccountUsageTitle">
+        <h3 id="solverAccountUsageTitle">Lượt gọi theo người dùng</h3>
+        <p class="portal-muted">Mỗi dòng là một tài khoản và số lượt đã gửi tới Cloud Run hoặc VPS.</p>
+        <div class="portal-table-wrap">
+          <table class="portal-table solver-account-usage-table">
+            <thead><tr><th>Trường</th><th>Tài khoản</th><th>Tổng lượt</th><th>Cloud Run</th><th>VPS</th></tr></thead>
+            <tbody id="solverAccountUsageBody"><tr><td colspan="5" class="portal-muted">Đang tải…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+      <p class="solver-infrastructure-status portal-muted" id="solverInfrastructureStatus" role="status" aria-live="polite"></p>
+    </section>
+
     <section class="portal-card">
       <div class="portal-card-head">
         <h2>Danh sách trường</h2>

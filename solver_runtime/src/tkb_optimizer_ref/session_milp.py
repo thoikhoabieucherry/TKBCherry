@@ -12,6 +12,7 @@ import numpy as np
 from scipy.optimize import Bounds, LinearConstraint, milp
 from scipy.sparse import coo_matrix
 
+from .external_milp import solve_milp_with_external_runtime
 from .models import Lesson, SchoolData, Session, SessionAllocation
 from .rules import (
     TimetableConstraintRules,
@@ -652,6 +653,7 @@ def solve_session_allocation(
     fixed_lessons: list[Lesson] | None = None,
     max_teacher_sessions: int | None = 200,
     minimize_sessions: bool = False,
+    forbidden_session_vectors: list[tuple[int, dict[int, int]]] | None = None,
     time_limit_seconds: int = 60,
     verbose: bool = True,
     progress: Callable[[dict[str, Any]], None] | None = None,
@@ -781,7 +783,38 @@ def solve_session_allocation(
                             same_day_subject_start + len(same_day_subject_vars)
                         )
 
-    n_total = same_day_subject_start + len(same_day_subject_vars)
+    forbidden_session_vectors = list(forbidden_session_vectors or [])
+    cut_direction_start = same_day_subject_start + len(same_day_subject_vars)
+    cut_direction_vars: list[tuple[int, int, int, int, int]] = []
+    cut_direction_groups: list[list[tuple[int, int]]] = []
+    for si, counts_by_assignment in forbidden_session_vectors:
+        group: list[tuple[int, int]] = []
+        redundant = False
+        for ai, value in sorted(counts_by_assignment.items()):
+            key = (int(ai), int(si))
+            if key not in n_vars:
+                if int(value) != 0:
+                    redundant = True
+                    break
+                continue
+            cap = int(n_caps[key])
+            target = int(value)
+            if target < 0 or target > cap:
+                redundant = True
+                break
+            less_var = cut_direction_start + len(cut_direction_vars) * 2
+            greater_var = less_var + 1
+            cut_direction_vars.append((n_vars[key], target, cap, less_var, greater_var))
+            group.append((less_var, greater_var))
+        if redundant:
+            # The forbidden vector is already outside this MILP's domain.
+            for _ in range(len(group)):
+                cut_direction_vars.pop()
+            continue
+        if group:
+            cut_direction_groups.append(group)
+
+    n_total = cut_direction_start + len(cut_direction_vars) * 2
     rows: list[int] = []
     cols: list[int] = []
     vals: list[float] = []
@@ -790,6 +823,28 @@ def solve_session_allocation(
 
     def add(coeffs: dict[int, float], lo: float, hi: float) -> None:
         _add_sparse_row(rows, cols, vals, lb, ub, coeffs, lo, hi)
+
+    cut_var_index = 0
+    for group in cut_direction_groups:
+        for less_var, greater_var in group:
+            n_var, target, cap, expected_less, expected_greater = cut_direction_vars[cut_var_index]
+            cut_var_index += 1
+            if (less_var, greater_var) != (expected_less, expected_greater):
+                raise RuntimeError("Forbidden session vector variable mapping is inconsistent")
+            big_m = cap + 1
+            # less=1 forces n <= target-1; greater=1 forces n >= target+1.
+            add({n_var: 1, less_var: big_m}, -np.inf, target - 1 + big_m)
+            add({n_var: 1, greater_var: -big_m}, target + 1 - big_m, np.inf)
+            add({less_var: 1, greater_var: 1}, 0, 1)
+        add(
+            {
+                direction_var: 1
+                for pair in group
+                for direction_var in pair
+            },
+            1,
+            np.inf,
+        )
 
     # Assignment exact weekly periods.
     for ai, assignment in enumerate(data.assignments):
@@ -1220,6 +1275,7 @@ def solve_session_allocation(
             f"d={len(d_vars)}",
             f"u={len(u_vars)}",
             f"q={len(q_vars)}",
+            f"cuts={len(cut_direction_groups)}",
             f"rows={len(lb)}",
             f"nnz={len(vals)}",
             f"max_teacher_sessions={max_teacher_sessions}",
@@ -1237,6 +1293,7 @@ def solve_session_allocation(
                 "teacher_day_vars": len(d_vars),
                 "assignment_session_vars": len(u_vars),
                 "bridge_vars": len(q_vars),
+                "forbidden_session_vectors": len(cut_direction_groups),
                 "rows": len(lb),
                 "non_zero": len(vals),
                 "max_teacher_sessions": max_teacher_sessions,
@@ -1255,18 +1312,34 @@ def solve_session_allocation(
             }
         )
     _suppress_highs_threads_option_warning()
-    result = milp(
+    integrality = np.ones(n_total, dtype=int)
+    constraint_lower = np.array(lb)
+    constraint_upper = np.array(ub)
+    result = solve_milp_with_external_runtime(
         c,
-        integrality=np.ones(n_total, dtype=int),
-        bounds=Bounds(lower_bounds, upper_bounds),
-        constraints=LinearConstraint(A, np.array(lb), np.array(ub)),
-        options={
-            "time_limit": time_limit_seconds,
-            "mip_rel_gap": 0.0,
-            "disp": verbose,
-            "threads": 1,
-        },
+        integrality,
+        lower_bounds,
+        upper_bounds,
+        A,
+        constraint_lower,
+        constraint_upper,
+        time_limit_seconds=time_limit_seconds,
+        threads=1,
+        mip_rel_gap=0.0,
     )
+    if result is None:
+        result = milp(
+            c,
+            integrality=integrality,
+            bounds=Bounds(lower_bounds, upper_bounds),
+            constraints=LinearConstraint(A, constraint_lower, constraint_upper),
+            options={
+                "time_limit": time_limit_seconds,
+                "mip_rel_gap": 0.0,
+                "disp": verbose,
+                "threads": 1,
+            },
+        )
 
     if result.x is None:
         if progress:
@@ -1379,6 +1452,7 @@ def solve_session_allocation(
         "fixed_lessons": len(fixed_lessons),
         "fixed_teacher_sessions": len(fixed_teacher_session_load),
         "session_keys": session_keys,
+        "forbidden_session_vectors": len(cut_direction_groups),
     }
     if progress:
         progress(

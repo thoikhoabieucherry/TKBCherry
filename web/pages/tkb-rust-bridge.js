@@ -1,17 +1,29 @@
 (function(){
   "use strict";
 
-  const VERSION = "tkb-rust-api-v291-mobile-progress-admission";
+  const VERSION = "tkb-rust-api-v348-holistic-hard-debt-270-v1";
     const SOLVER_PRESET_KEY = "TKB_SOLVER_PRESET";
     const CUSTOM_SOLVE_DURATION_KEY = "TKB_SOLVE_DURATION_SECONDS_V2";
     const INITIAL_AUTO_DURATION_SECONDS = 60;
     const FIRST_QUALITY_GATE_CEILING_SECONDS = 130;
     const ROBUST_AUTO_DURATION_SECONDS = 180;
     const DEEP_AUTO_DURATION_SECONDS = 180;
+    const REFINEMENT_AUTO_DURATION_SECONDS = 60;
+    const HARD_DEBT_REFINEMENT_DURATION_SECONDS = 270;
+    // Fresh merged timetables keep one uninterrupted completeness + quality
+    // ceiling. Each later Auto click gets a bounded quality-only burst
+    // from the complete incumbent. These are ceilings only; proven/accepted
+    // results still return earlier, and the incumbent guard rejects regressions.
+    const MEDIUM_AUTOMATIC_LESSON_THRESHOLD = 900;
+    const LARGE_AUTOMATIC_LESSON_THRESHOLD = 2000;
+    const MEDIUM_AUTOMATIC_DURATION_SECONDS = 180;
+    const LARGE_AUTOMATIC_DURATION_SECONDS = 270;
+    const DESKTOP_FULL_REFERENCE_REFINE_SECONDS = 270;
     const FOCUSED_OPTIMIZATION_CEILING_SECONDS = 180;
     const MANUAL_FRESH_RETRY_STEP_SECONDS = 5;
     const MANUAL_FRESH_RETRY_DATA_KEY = "tkbManualFreshRetryBudget";
     const REFINEMENT_LEARNING_DATA_KEY = "tkbRefinementLearning";
+    const AUTO_SORT_CYCLE_DATA_KEY = "tkbAutoSortCycle";
     const REFINEMENT_OPERATOR_NAMES = [
       "one_period",
       "gap2",
@@ -30,6 +42,8 @@
       quickComplete: "quick_complete",
       singletons: "optimize_singletons",
       sessions: "optimize_sessions",
+      gap2: "optimize_gap2",
+      gap1: "optimize_gap1",
       gaps: "optimize_gaps"
     });
     const GAP_PROGRESS_BASELINE_DATA_KEY = "tkbGapProgressBaseline";
@@ -41,6 +55,13 @@
     const CLIENT_TIMEOUT_BACKEND_RESERVE_MS = 90_000;
     const BACKEND_STATE_TIMEOUT_MS = 2_500;
     const BACKEND_RESULT_POLL_TIMEOUT_MS = 8_000;
+    // A terminal result must not leave the Play lifecycle held forever while
+    // the remote timetable persistence request is suspended (for example when
+    // the in-app browser tab is backgrounded).  The candidate is already
+    // materialized in DATA before this wait, so after this bounded reserve we
+    // let the UI finish and keep the durable server result recoverable until
+    // the save promise settles.
+    const TERMINAL_APPLY_SAVE_WATCHDOG_MS = 45_000;
     const DEFAULT_SOLVER_QUEUE_TIMEOUT_MS = 180_000;
     const SERVER_SOLVER_JOB_STORAGE_KEY = "TKB_SERVER_SOLVER_JOB_V1";
     const SERVER_SOLVER_JOB_SETTLED_KEY = "TKB_SERVER_SOLVER_JOB_SETTLED_V1";
@@ -89,7 +110,7 @@
       max_teacher_sessions: 190,
       target_teacher_sessions: null,
       target_gap1_sessions: null,
-      optimization_time_limit_seconds: 300,
+      optimization_time_limit_seconds: 270,
       optimization_accept_teacher_sessions: null,
       optimization_accept_gap1_sessions: null,
       optimization_first_cap_time_limit_seconds: 210,
@@ -146,6 +167,7 @@
     };
     function enforceCompleteScheduleForUi(settings){
       if(!settings || typeof settings !== "object") return settings;
+      if(settings.ui_capacity_safe_fresh_probe === true) return settings;
       const requirePresetComplete = shouldRequireCompletePresetResult(settings);
       if(settings.ui_capacity_shortage_accepted === true && !requirePresetComplete){
         settings.ui_capacity_shortage_confirmed = true;
@@ -196,6 +218,7 @@
     }
     function applySolverPresetQualityPolicy(settings, presetOverride){
       if(!settings || typeof settings !== "object") return settings;
+      if(settings.ui_capacity_safe_fresh_probe === true) return settings;
       const preset = presetOverride
         ? normalizeSolverPreset(presetOverride)
         : solverPresetForSettings(settings);
@@ -203,6 +226,62 @@
         .trim()
         .toLowerCase()
         .replace(/[\s-]+/g, "_");
+      if(["singletons", "sessions", "gaps"].includes(optimizationFocus)){
+        // Focused commands bypass the generic Fast/Max quality bundle. The
+        // plan already carries incumbent-derived safety caps; applying the
+        // preset here used to re-enable all three quality objectives after
+        // the user selected only one.
+        settings.optimization_focused_objective_only = true;
+        settings.optimization_two_stage_teacher_quality = false;
+        settings.optimization_benders_minimize_hint_distance = false;
+        settings.optimization_benders_session_feasibility_only = false;
+        settings.optimization_benders_minimize_teacher_sessions = (
+          optimizationFocus === "sessions"
+        );
+        settings.optimization_benders_minimize_one_period_sessions = (
+          optimizationFocus === "singletons"
+        );
+        settings.optimization_benders_minimize_period_gaps = (
+          optimizationFocus === "gaps"
+        );
+        settings.minimize_one_period_sessions = optimizationFocus === "singletons";
+        settings.minimize_sessions = optimizationFocus === "sessions";
+        settings.minimize_teacher_gaps = optimizationFocus === "gaps";
+        settings.one_period_priority_absolute = optimizationFocus === "singletons";
+        // Focused gap commands use their explicit Gap1/Gap2 objective.  A
+        // generic max-gap=1 policy would turn Gap1 into an implicit Gap2
+        // cleanup and would require Gap2=0 before a partial Gap2 improvement
+        // can be retained.
+        settings.period_max_teacher_gap = "off";
+        settings.relax_period_teacher_gap_on_failure = false;
+        // This marker belongs to Automatic's coordinated Phase-S/Phase-G
+        // policy.  Leaving it on a focused click changes both comparison order
+        // and backend orchestration, even when the boolean objective flags are
+        // otherwise correct.
+        delete settings.quality_priority_order;
+        if(optimizationFocus === "singletons"){
+          settings.max_one_period_sessions = "off";
+          settings.strict_one_period_sessions_cap = false;
+          settings.enforce_max_one_period_sessions = false;
+          settings.allow_quality_debt = true;
+          settings.optimization_benders_allow_one_period_debt = true;
+        }else{
+          const incumbentSingletonCap = Number(
+            settings.optimization_incumbent_one_period_sessions
+          );
+          if(Number.isFinite(incumbentSingletonCap) && incumbentSingletonCap >= 0){
+            settings.max_one_period_sessions = Math.round(incumbentSingletonCap);
+            settings.session_early_stop_max_one_period_sessions = Math.round(
+              incumbentSingletonCap
+            );
+          }
+          settings.strict_one_period_sessions_cap = true;
+          settings.enforce_max_one_period_sessions = true;
+          settings.allow_quality_debt = Number.isFinite(incumbentSingletonCap)
+            && incumbentSingletonCap > 0;
+        }
+        return settings;
+      }
       settings.minimize_one_period_sessions = true;
       const boundedFreshDebt = settings.ui_bounded_fresh_accept_quality_debt === true;
       const unifiedResidualDebt = settings.ui_unified_partial_repair === true || boundedFreshDebt;
@@ -244,32 +323,6 @@
         settings.optimization_benders_minimize_one_period_sessions = false;
         settings.optimization_benders_minimize_period_gaps = false;
         settings.native_skip_teacher_optimization = true;
-      }else if(optimizationFocus === "singletons"){
-        // A focused singleton pass may temporarily trade session/gap quality
-        // while it removes one-period teacher sessions. The server's focused
-        // checkpoint envelope decides whether that trade is acceptable.
-        settings.minimize_one_period_sessions = true;
-        settings.minimize_sessions = false;
-        settings.minimize_teacher_gaps = false;
-        settings.period_max_teacher_gap = "off";
-        settings.relax_period_teacher_gap_on_failure = true;
-      }else if(optimizationFocus === "sessions"){
-        // Session compression owns teacher-session count. Gap cleanup is a
-        // separate command and must not prevent an improved checkpoint from
-        // being returned when the user presses Stop.
-        settings.minimize_one_period_sessions = true;
-        settings.minimize_sessions = true;
-        settings.minimize_teacher_gaps = false;
-        settings.period_max_teacher_gap = "off";
-        settings.relax_period_teacher_gap_on_failure = true;
-      }else if(optimizationFocus === "gaps"){
-        // Gap cleanup preserves the current teacher-session cap instead of
-        // starting another session-reduction phase.
-        settings.minimize_one_period_sessions = true;
-        settings.minimize_sessions = false;
-        settings.minimize_teacher_gaps = true;
-        settings.period_max_teacher_gap = 1;
-        settings.relax_period_teacher_gap_on_failure = false;
       }
       return settings;
     }
@@ -283,10 +336,17 @@
     }
     function shouldRequireCompletePresetResult(settings){
       const preset = solverPresetForSettings(settings);
-      return (preset === "fast" || preset === "balanced") && !isInternalIncompleteSolve(settings);
+      // A capacity preflight is a proof that the requested workload cannot fit
+      // in the user's allowed cells.  Keep the schedulable portion instead of
+      // applying the normal all-or-nothing preset contract; ordinary feasible
+      // requests still require a complete result.
+      return (preset === "fast" || preset === "balanced")
+        && !isInternalIncompleteSolve(settings)
+        && !isCapacityShortageAccepted(settings);
     }
     function enforceCompletePresetSolveSettings(settings){
       if(!settings || typeof settings !== "object") return settings;
+      if(settings.ui_capacity_safe_fresh_probe === true) return settings;
       if(!shouldRequireCompletePresetResult(settings)) return settings;
       settings.require_complete_schedule = true;
       settings.best_effort_on_timeout = false;
@@ -311,6 +371,7 @@
     }
     function enforceRustRuntimeSafetySettings(settings){
       if(!settings || typeof settings !== "object") return settings;
+      if(settings.ui_capacity_safe_fresh_probe === true) return settings;
       const allowValidatedQualityBank = false;
       settings.allow_validated_quality_bank = false;
       settings.allow_solver_warm_start = false;
@@ -485,9 +546,11 @@
     let progressState = null;
     const parsedSolverResponsePayloads = new WeakMap();
     const deferredBackendResultPayloads = new WeakMap();
+    const deferredBackendSavePromises = new WeakMap();
     let activeSolveAbortController = null;
     let activeBackendJobId = "";
     let deferredBackendResultJobId = "";
+    let deferredBackendSavePendingJobId = "";
     let pendingBackendResumeTimer = 0;
     let pendingBackendResumeDueAt = 0;
   let pendingBackendResumeTimerGeneration = 0;
@@ -499,13 +562,21 @@
     let backendAuthRequired = false;
     let backendAuthFlowStarted = false;
     const CURRENT_SOLVE_EXECUTOR_EVENT = "tkb:solver-executor-state";
+    const SOLVER_USAGE_ROUTE_EVENT = "tkb:solver-usage-route";
+    const SOLVER_USAGE_ROUTE_STORAGE_KEY = "TKB_SOLVER_USAGE_ROUTE_V1";
+    const announcedSolverUsageRoutes = new Set();
 
     function normalizedSolveExecutor(value, executionPhase){
+      const phase = String(executionPhase || "").trim().toLowerCase();
+      // Handoff is still VPS-owned until the Agent reaches its waiting/running
+      // phase. Showing green during the stop boundary made mobile users think
+      // local CPU had already taken over while the VPS child was still being
+      // fenced.
+      if(phase === "handoff_to_agent") return "vps";
+      if(phase.startsWith("agent_")) return "agent";
+      if(phase.startsWith("vps_")) return "vps";
       const raw = String(value || "").trim().toLowerCase();
       if(raw === "agent" || raw === "vps") return raw;
-      const phase = String(executionPhase || "").trim().toLowerCase();
-      if(phase.startsWith("agent_") || phase === "handoff_to_agent") return "agent";
-      if(phase.startsWith("vps_")) return "vps";
       return "";
     }
 
@@ -518,6 +589,45 @@
           window.dispatchEvent(new window.CustomEvent(CURRENT_SOLVE_EXECUTOR_EVENT, {detail}));
         }
       }catch(_){ }
+    }
+
+    function normalizedUsageExecutor(payload, executionPhase){
+      const phase = String(executionPhase || "").trim().toLowerCase();
+      const raw = String(payload?.executor || "").trim().toLowerCase();
+      if(phase.startsWith("serverless_") || ["serverless", "cloud_run", "cloud"].includes(raw)){
+        return "cloud_run";
+      }
+      if(phase.startsWith("vps_") || raw === "vps") return "vps";
+      return "";
+    }
+
+    function announceSolverUsageRoute(payload, jobId, executionPhase){
+      const executor = normalizedUsageExecutor(payload, executionPhase);
+      if(!executor || !jobId) return false;
+      const routeKey = `${jobId}|${executor}`;
+      if(announcedSolverUsageRoutes.has(routeKey)) return false;
+      announcedSolverUsageRoutes.add(routeKey);
+      const detail = {
+        jobId,
+        executor,
+        executionPhase:String(executionPhase || ""),
+        updatedAt:Date.now()
+      };
+      try{
+        if(
+          typeof window.dispatchEvent === "function"
+          && typeof window.CustomEvent === "function"
+        ){
+          window.dispatchEvent(new window.CustomEvent(SOLVER_USAGE_ROUTE_EVENT, {detail}));
+        }
+      }catch(_){ }
+      try{
+        window.localStorage?.setItem?.(
+          SOLVER_USAGE_ROUTE_STORAGE_KEY,
+          JSON.stringify(detail)
+        );
+      }catch(_){ }
+      return true;
     }
 
     function publishCurrentSolveExecutorState(payload, fallbackJobId){
@@ -537,15 +647,18 @@
         payload.executor || samePrevious?.executor,
         executionPhase
       );
+      const serverExecutor = normalizedUsageExecutor(payload, executionPhase);
       const detail = {
         jobId,
         executor,
+        serverExecutor,
         executionPhase,
         active:true,
         updatedAt:Date.now()
       };
       window.__TKB_CURRENT_SOLVE_EXECUTOR = detail;
       dispatchCurrentSolveExecutorState(detail);
+      announceSolverUsageRoute(payload, jobId, executionPhase);
       return detail;
     }
 
@@ -583,6 +696,9 @@
     let autoSortPlanningMemo = null;
     let autoSortPreflightToken = null;
     let autoSortPreflightCounter = 0;
+    let autoSortTerminalSettlementActive = false;
+    let queuedAutoSortContinuation = null;
+    let queuedAutoSortContinuationTimer = 0;
     const SOLVE_TIMING_KEY = "TKB_RUST_SOLVE_TIMING_V1";
 
   function acquireAutoSortPreflight(){
@@ -600,11 +716,66 @@
     if(!token || autoSortPreflightToken !== token) return false;
     autoSortPreflightToken = null;
     window.__TKB_AUTO_SORT_PREFLIGHT_ACTIVE = false;
+    scheduleQueuedAutoSortContinuation();
     return true;
   }
 
   function autoSortPreflightActive(){
     return !!autoSortPreflightToken;
+  }
+
+  function queueAutoSortContinuationAfterSettlement(options){
+    if(autoSortTerminalSettlementActive !== true) return false;
+    const source = options && typeof options === "object" ? options : {};
+    queuedAutoSortContinuation = {
+      options:{
+        mode:normalizeSolveRequestMode(source.mode),
+        manualAgentInvite:source.manualAgentInvite === true
+      },
+      queuedAt:Date.now()
+    };
+    window.__TKB_AUTO_SORT_CONTINUATION_QUEUED = true;
+    setStatus(
+      "Đã nhận lệnh tối ưu tiếp; sẽ chạy ngay sau khi lưu TKB hiện tại.",
+      "info"
+    );
+    return true;
+  }
+
+  function scheduleQueuedAutoSortContinuation(){
+    if(!queuedAutoSortContinuation) return false;
+    if(autoSortTerminalSettlementActive === true || autoSortPreflightToken) return false;
+    if(window.__TKB_RUST_SOLVER_RUNNING === true || window.__TKB_SOLVE_UI_BUSY === true) return false;
+    if(window.__TKB_SOLVER_SAVE_PENDING === true) return false;
+    if(queuedAutoSortContinuationTimer) return true;
+    const queued = queuedAutoSortContinuation;
+    queuedAutoSortContinuation = null;
+    window.__TKB_AUTO_SORT_CONTINUATION_QUEUED = false;
+    queuedAutoSortContinuationTimer = window.setTimeout(() => {
+      queuedAutoSortContinuationTimer = 0;
+      if(
+        autoSortTerminalSettlementActive === true
+        || autoSortPreflightToken
+        || window.__TKB_RUST_SOLVER_RUNNING === true
+        || window.__TKB_SOLVE_UI_BUSY === true
+        || window.__TKB_SOLVER_SAVE_PENDING === true
+      ){
+        queuedAutoSortContinuation = queued;
+        window.__TKB_AUTO_SORT_CONTINUATION_QUEUED = true;
+        return;
+      }
+      try{
+        const replay = window.sapXepTuDongAll?.(queued.options);
+        if(replay && typeof replay.catch === "function"){
+          replay.catch(err => {
+            try{ console.warn(`[${VERSION}] queued refinement failed`, err); }catch(_){ }
+          });
+        }
+      }catch(err){
+        try{ console.warn(`[${VERSION}] queued refinement failed`, err); }catch(_){ }
+      }
+    }, 0);
+    return true;
   }
 
   function activeAutoSortPlanningMemo(data){
@@ -638,6 +809,83 @@
       ? Math.max(1, Math.floor(cores))
       : 1;
   }
+
+  function isMobileBrowserAgentNavigator(deviceNavigator){
+    const nav = deviceNavigator || window.navigator || {};
+    try{
+      if(typeof window.TKBBrowserWasmExecutor?.isMobileNavigator === "function"){
+        return window.TKBBrowserWasmExecutor.isMobileNavigator(nav) === true;
+      }
+    }catch(_){ }
+    const platform = String(nav.userAgentData?.platform || nav.platform || "");
+    const userAgent = String(nav.userAgent || "");
+    return /iPhone|iPad|iPod|Android|Mobile/i.test(`${platform} ${userAgent}`)
+      || (/MacIntel/i.test(platform) && Number(nav.maxTouchPoints || 0) > 1);
+  }
+
+  function isWindowsNativeAgentNavigator(deviceNavigator){
+    if(window.__TKB_WINDOWS_WEB_AGENT_TRIAL === true) return false;
+    const nav = deviceNavigator || window.navigator || {};
+    try{
+      if(typeof window.isWindowsNativeAgentDevice === "function"){
+        if(window.isWindowsNativeAgentDevice(nav) === true) return true;
+      }
+    }catch(_){ }
+    const platform = String(nav.userAgentData?.platform || nav.platform || "");
+    const userAgent = String(nav.userAgent || "");
+    return /Windows/i.test(platform) || /Windows NT/i.test(userAgent);
+  }
+
+  function localAgentRoleAllowed(){
+    // Temporary Cloud Run acceptance switch.  The planner owns this explicit
+    // flag so Agent Web/EXE source can stay intact for rollback while every
+    // current click remains server-owned.
+    if(window.__TKB_CLIENT_AGENT_LANES_ENABLED === false) return false;
+    if(window.__TKB_AGENT_ROLE_GATE_ENFORCED === true){
+      return window.__TKB_AGENT_ROLE_ALLOWED === true;
+    }
+    try{
+      if(window.TKBAuth && typeof window.TKBAuth.currentUser === "function"){
+        const role = String(window.TKBAuth.currentUser()?.user?.role || "")
+          .trim()
+          .toLowerCase();
+        return role === "school_admin" || role === "superadmin";
+      }
+    }catch(_){ }
+    // sapxep.html always publishes the explicit gate before this bridge. The
+    // fallback preserves compatibility for isolated tests and older embeds.
+    return true;
+  }
+
+  function currentUserIsSuperadmin(){
+    try{
+      if(window.TKBAuth && typeof window.TKBAuth.currentUser === "function"){
+        return String(window.TKBAuth.currentUser()?.user?.role || "")
+          .trim()
+          .toLowerCase() === "superadmin";
+      }
+    }catch(_){ }
+    // The authenticated planner always provides TKBAuth. Preserve compatibility
+    // for isolated bridge tests/legacy embeds that intentionally omit auth.
+    return window.__TKB_E2E_EXPOSE_TEST_HOOKS === true && !window.TKBAuth;
+  }
+
+  function solveRequestModeAllowedForCurrentUser(mode){
+    if(currentUserIsSuperadmin()) return true;
+    const normalized = normalizeSolveRequestMode(mode);
+    // Ordinary users get Automatic plus the three visible focused actions.
+    // Keep quick_complete available as an internal incomplete-timetable
+    // fallback. Generic session optimization and the legacy combined-gaps
+    // alias remain operations-only.
+    return [
+      SOLVE_REQUEST_MODES.automatic,
+      SOLVE_REQUEST_MODES.quickComplete,
+      SOLVE_REQUEST_MODES.singletons,
+      SOLVE_REQUEST_MODES.gap1,
+      SOLVE_REQUEST_MODES.gap2,
+    ].includes(normalized);
+  }
+
 
   function isFalseSetting(value){
     return String(value == null ? "" : value).trim().toLowerCase() === "false" || String(value).trim() === "0";
@@ -1693,6 +1941,11 @@
         progressBudgetSeconds:job.progressBudgetSeconds,
         progressRunIndex:job.progressRunIndex,
         optimizationFocus:job.optimizationFocus,
+        optimizationGapTarget:job.optimizationGapTarget,
+        solveRequestMode:job.solveRequestMode,
+        executor:job.executor,
+        executionPhase:job.executionPhase,
+        serverOwned:job.serverOwned === true,
         discoveredFromOwnerState:true,
         localClickTimeline:false
       });
@@ -1707,11 +1960,22 @@
           progressBudgetSeconds:job.progressBudgetSeconds,
           progressRunIndex:job.progressRunIndex,
           optimizationFocus:job.optimizationFocus,
+          optimizationGapTarget:job.optimizationGapTarget,
+          solveRequestMode:job.solveRequestMode,
+          executor:job.executor,
+          executionPhase:job.executionPhase,
+          serverOwned:job.serverOwned === true,
           discoveredFromOwnerState:true,
         localClickTimeline:false,
         observeOnly:true
       });
-      if(pendingJob?.jobId) return {kind:"observe", job:pendingJob};
+      if(pendingJob?.jobId){
+        // Keep the authoritative executor/phase on the immediate manual-Play
+        // result. The durable pending record deliberately stays compact, but
+        // a Local-only trial must still be able to reject an observed VPS job
+        // before entering its result-poll loop.
+        return {kind:"observe", job:Object.assign({}, job, pendingJob)};
+      }
     }
     const live = liveBackendJobForScheduleScope(state);
     if(live){
@@ -1790,13 +2054,101 @@
 
   function terminalServerJobFailure(status, payload){
     const value = Number(status || 0) || 0;
-    if(value < 500) return false;
     const kind = String(payload?.kind || "").trim().toLowerCase();
     if(!kind) return false;
+    if(payload?.retryable === false) return true;
+    if(value < 500) return false;
     return kind.startsWith("solver_worker_")
       || kind.startsWith("reference_solver_")
       || kind.startsWith("native_solver_")
       || kind === "simple_solver_failed";
+  }
+
+  function serverPayloadIsVpsOwned(payload){
+    if(!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+    const phase = String(payload.executionPhase || "").trim().toLowerCase();
+    const executor = normalizedSolveExecutor(payload.executor, phase);
+    const kind = String(payload.kind || payload.error || "").trim().toLowerCase();
+    return executor === "vps"
+      || phase === "handoff_to_vps"
+      || phase.startsWith("vps_")
+      || kind === "vps_queued"
+      || kind === "vps_running"
+      || kind === "solver_vps_queued"
+      || kind === "solver_vps_running";
+  }
+
+  // A Windows WebAgent trial is deliberately stricter than the ordinary
+  // browser resume path.  A pending row created by an older page can describe
+  // a native-Agent or VPS solve (or have no executor metadata at all).  Such a
+  // row must never enter an observer/poll loop while the trial is active.  New
+  // trial requests mark their own durable row with `trialLocal`; that marker
+  // is local, non-secret state and is only an admission hint.  The server
+  // executor/phase fence remains authoritative for the actual job.
+  function trialBackendJobCanResume(payload){
+    if(window.__TKB_WINDOWS_WEB_AGENT_TRIAL !== true) return true;
+    if(!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+    const phase = String(payload.executionPhase || payload.phase || "").trim().toLowerCase();
+    const executor = normalizedSolveExecutor(
+      payload.executor || payload.executionSource,
+      phase
+    );
+    if(
+      executor === "vps"
+      || phase === "handoff_to_vps"
+      || phase.startsWith("vps_")
+    ) return false;
+    // A future state endpoint may expose the required-executor flags.  Permit
+    // only an explicitly Browser-required row; native/unknown rows fail closed.
+    const browserRequired = payload.browserAgentRequired === true
+      || payload.browser_agent_required === true
+      || payload.ui_browser_agent_required === true;
+    const nativeRequired = payload.nativeAgentRequired === true
+      || payload.native_agent_required === true
+      || payload.ui_native_agent_required === true;
+    if(nativeRequired) return false;
+    if(payload.trialLocal === true) return true;
+    return browserRequired && !nativeRequired;
+  }
+
+  function discardTrialBackendJob(job){
+    const jobId = String(job?.jobId || "").trim();
+    if(jobId){
+      rememberSettledBackendJob(jobId);
+      removePendingBackendJob(jobId);
+    }
+    return !!jobId;
+  }
+
+  function trialRejectExistingBackendJob(job, message){
+    if(window.__TKB_WINDOWS_WEB_AGENT_TRIAL !== true) return false;
+    discardTrialBackendJob(job);
+    releaseAutoSortButtonSoon();
+    setStatus(
+      message
+        || "Chế độ thử nghiệm chỉ nhận lượt Local mới; lượt cũ không được nhận lại.",
+      "info"
+    );
+    return true;
+  }
+
+  function localRequiredVpsError(status, payload){
+    const error = new Error(
+      "Agent đang bật nhưng máy chủ đã trả quyền chạy VPS cho lượt Local; lượt này đã dừng để không trộn hai chế độ."
+    );
+    error.kind = "web_agent_required";
+    error.status = Number(status || 0) || 0;
+    const serverPayload = payload && typeof payload === "object" ? payload : null;
+    error.payload = serverPayload
+      ? Object.assign({}, serverPayload, {
+          serverKind:String(serverPayload.kind || serverPayload.error || ""),
+          kind:"web_agent_required"
+        })
+      : {kind:"web_agent_required"};
+    error.backendUnavailable = false;
+    error.localModeRequired = true;
+    error.executionMode = "local";
+    return error;
   }
 
   function serverOwnedResultWaitMs(timeoutMs, metadata){
@@ -1830,7 +2182,18 @@
     return Math.max(1_000, boundedTimeoutMs - elapsedMs);
   }
 
-  async function waitForServerOwnedSolverResult(apiBase, jobId, runId, maxMs, retryAfterMs, signal){
+  async function waitForServerOwnedSolverResult(
+    apiBase,
+    jobId,
+    runId,
+    maxMs,
+    retryAfterMs,
+    signal,
+    options
+  ){
+    const waitOptions = options && typeof options === "object" ? options : {};
+    const localModeRequired = waitOptions.localModeRequired === true;
+    let vpsReclaimAttempted = waitOptions.vpsReclaimAttempted === true;
     const pending = readPendingBackendJob();
     const pendingAgeMs = pending?.jobId === String(jobId || "") && pending.createdAt > 0
       ? Math.max(0, Date.now() - pending.createdAt)
@@ -1841,10 +2204,43 @@
       requestedWaitMs,
       Math.max(1_000, SERVER_SOLVER_JOB_RETENTION_MAX_AGE_MS - pendingAgeMs)
     );
-    const deadline = Date.now() + Math.min(
+    const waitStartedAtMs = Date.now();
+    const retentionDeadline = waitStartedAtMs + Math.max(
+      1_000,
+      SERVER_SOLVER_JOB_RETENTION_MAX_AGE_MS - pendingAgeMs
+    );
+    const hardWaitDeadline = Math.min(
+      waitStartedAtMs + SERVER_SOLVER_ACTIVE_WAIT_MAX_MS,
+      retentionDeadline
+    );
+    let deadline = waitStartedAtMs + Math.min(
       SERVER_SOLVER_ACTIVE_WAIT_MAX_MS,
       boundedWaitMs
     );
+    let observedExecutionStartedAtMs = epochMillisFromBackend(
+      pending?.solverStartedAtMs
+    );
+    const observeExecutionEpoch = payload => {
+      const reportedExecutionStartedAtMs = epochMillisFromBackend(
+        payload?.startedAtMs
+      );
+      if(reportedExecutionStartedAtMs <= 0) return false;
+      if(observedExecutionStartedAtMs <= 0){
+        observedExecutionStartedAtMs = reportedExecutionStartedAtMs;
+        return false;
+      }
+      if(reportedExecutionStartedAtMs <= observedExecutionStartedAtMs) return false;
+      // Agent -> VPS rescue creates a new execution epoch on the same job.
+      // The first authoritative state can be queued or running depending on
+      // VPS capacity, so both phases must rebase the client wait window.
+      observedExecutionStartedAtMs = reportedExecutionStartedAtMs;
+      const rescuedWaitMs = serverOwnedResultWaitMs(0, payload);
+      deadline = Math.min(
+        hardWaitDeadline,
+        Math.max(deadline, Date.now() + rescuedWaitMs)
+      );
+      return true;
+    };
     let pollMs = Math.max(250, Math.min(2_000, Number(retryAfterMs || 700) || 700));
     let networkFailures = 0;
     while(Date.now() < deadline){
@@ -1902,6 +2298,10 @@
         if(transportPayload?.bestEffortStopRequested === true){
           setBestEffortStopPending(jobId, true);
         }
+        if(localModeRequired && serverPayloadIsVpsOwned(transportPayload)){
+          await cancelBackendSolver(jobId).catch(() => null);
+          throw localRequiredVpsError(responseStatus, transportPayload);
+        }
         recordBackendLiveProgress(transportPayload?.progress);
         const transportKind = String(transportPayload?.kind || transportPayload?.error || "").toLowerCase();
         if(transientServerJobStatus(responseStatus) && !terminalServerJobFailure(responseStatus, transportPayload)){
@@ -1934,7 +2334,27 @@
         setBestEffortStopPending(jobId, true);
       }
       recordBackendLiveProgress(pending?.progress);
-      publishCurrentSolveExecutorState(pending, jobId);
+      const executorState = publishCurrentSolveExecutorState(pending, jobId);
+      const executionPhase = String(
+        pending?.executionPhase || executorState?.executionPhase || ""
+      ).trim().toLowerCase();
+      if(localModeRequired && serverPayloadIsVpsOwned(pending)){
+        await cancelBackendSolver(jobId).catch(() => null);
+        throw localRequiredVpsError(responseStatus, pending);
+      }
+      if(executionPhase.startsWith("agent_")){
+        // A later lease loss creates a new VPS epoch. Permit exactly one local
+        // reclaim attempt for that transition without hammering hello on every
+        // result poll.
+        vpsReclaimAttempted = false;
+      }else if(
+        !vpsReclaimAttempted
+        && (executionPhase === "vps_queued" || executionPhase === "vps_running")
+        && typeof waitOptions.onVpsFallback === "function"
+      ){
+        vpsReclaimAttempted = true;
+        await Promise.resolve(waitOptions.onVpsFallback(pending)).catch(() => false);
+      }
       const kind = String(pending?.kind || pending?.error || "").toLowerCase();
       if(!["solver_started", "solver_running", "solver_queued", "solver_cancelling"].includes(kind)){
         clearCurrentSolveExecutorState(jobId);
@@ -1947,7 +2367,9 @@
           progressBudgetSeconds:pending?.progressBudgetSeconds,
           progressRunIndex:pending?.progressRunIndex
         });
+        observeExecutionEpoch(pending);
       }else if(kind === "solver_queued"){
+        observeExecutionEpoch(pending);
         markBackendJobQueued(jobId, {
           progressBudgetSeconds:pending?.progressBudgetSeconds,
           progressRunIndex:pending?.progressRunIndex
@@ -1968,6 +2390,13 @@
     const metadata = jobMetadata && typeof jobMetadata === "object" ? jobMetadata : {};
     const jobId = String(metadata.jobId || readPendingBackendJob()?.jobId || "").trim();
     if(!jobId) return false;
+    if(window.__TKB_WINDOWS_WEB_AGENT_TRIAL === true){
+      // This path is reserved for cross-device/server observation. A Browser
+      // trial never observes another executor; doing so would poll a VPS
+      // result without the normal Local-required fence.
+      trialRejectExistingBackendJob(metadata);
+      return false;
+    }
     let pending = readPendingBackendJob();
     if(pending?.jobId !== jobId || pending.observeOnly !== true){
       pending = writePendingBackendJob(
@@ -2088,6 +2517,7 @@
   async function reattachExistingServerJobPollOnly(jobMetadata){
     const metadata = jobMetadata && typeof jobMetadata === "object" ? jobMetadata : {};
     const jobId = String(metadata.jobId || "").trim();
+    const foregroundAgentHandoff = metadata.foregroundAgentHandoff === true;
     const data = getData();
     if(!jobId || !data) return false;
     if(backendAuthRequired) return false;
@@ -2120,7 +2550,11 @@
       solverStartedAtMs:metadata.startedAtMs || metadata.solverStartedAtMs,
       progressBudgetSeconds:metadata.progressBudgetSeconds,
       progressRunIndex:metadata.progressRunIndex,
+      optimizationFocus:metadata.optimizationFocus,
+      optimizationGapTarget:metadata.optimizationGapTarget,
+      solveRequestMode:metadata.solveRequestMode,
       discoveredFromOwnerState:metadata.discoveredFromOwnerState === true,
+      strictBrowserAutomatic:metadata.strictBrowserAutomatic === true,
       localClickTimeline:false,
       observeOnly:false,
       allowSettledReplay:true
@@ -2152,13 +2586,58 @@
     try{
       const apiBase = await rustApiBase();
       if(!apiBase) throw detachedServerJobError("solver_resume_backend_unavailable", 0);
+      let browserWasmReactivated = false;
+      const allowBrowserWasmReactivation = localAgentRoleAllowed()
+        && !isMobileBrowserAgentNavigator(window.navigator);
+      const reactivateKnownBrowserAgent = async () => {
+        if(
+          !allowBrowserWasmReactivation
+          ||
+          controller.signal.aborted
+          || typeof window.TKBBrowserWasmExecutor?.activate !== "function"
+        ) return false;
+        browserWasmReactivated = await window.TKBBrowserWasmExecutor.activate({
+          apiBase,
+          jobId,
+          resumeKnownJob:true,
+          preferNativeAgent:true,
+          signal:controller.signal
+        }).catch(() => false);
+        return browserWasmReactivated;
+      };
+      if(
+        allowBrowserWasmReactivation
+        &&
+        foregroundAgentHandoff
+        && !controller.signal.aborted
+        && typeof window.TKBBrowserWasmExecutor?.activate === "function"
+      ){
+        // A desktop reload may reclaim the immutable canonical job. Mobile is
+        // deliberately poll-only after any reload/reattach: reclaiming a VPS
+        // rescue used to cold-start exact WASM again, repeat the OS tab kill,
+        // and consume the only bounded rescue epoch without a terminal TKB.
+        await reactivateKnownBrowserAgent();
+        try{
+          window.__TKB_RUST_LAST_REQUEST_DEBUG = Object.assign(
+            {},
+            window.__TKB_RUST_LAST_REQUEST_DEBUG || {},
+            {browserWasmForegroundReactivated:browserWasmReactivated}
+          );
+        }catch(_){ }
+      }
       const response = await waitForServerOwnedSolverResult(
         apiBase,
         jobId,
         runId,
         serverOwnedResultWaitMs(0, effectiveMetadata),
         700,
-        controller.signal
+        controller.signal,
+        {
+          vpsReclaimAttempted:browserWasmReactivated || !allowBrowserWasmReactivation,
+          onVpsFallback:allowBrowserWasmReactivation
+            ? reactivateKnownBrowserAgent
+            : undefined
+        }
       );
       const terminal = await reattachTerminalPayloadFromResponse(response, data);
       const status = terminal.status;
@@ -2190,6 +2669,34 @@
           "solver_resume_terminal_invalid",
           payload
         );
+      }
+      const persistedContractSettings = settingsForPersistedOptimizationContract(
+        effectiveMetadata,
+        payload
+      );
+      const strictReattachSettings = effectiveMetadata.strictBrowserAutomatic === true
+        ? {
+            optimization_focus:"automatic",
+            ui_unified_solve_kind:"refine_complete",
+            ui_use_existing_complete_incumbent:true,
+            ui_existing_incumbent_revalidated:true,
+            require_complete_schedule:true,
+            ui_agent_execution_policy:"web_agent_required",
+            ui_execution_mode:"local",
+            ui_browser_agent_required:true
+          }
+        : null;
+      const strictReattachMessage = strictReattachSettings
+        ? strictBrowserAutomaticQualityMessage(payload, strictReattachSettings)
+        : "";
+      if(strictReattachMessage){
+        const qualityError = reattachTerminalPayloadError(
+          strictReattachMessage,
+          "browser_agent_quality_unmet",
+          payload
+        );
+        qualityError.localModeRequired = true;
+        throw qualityError;
       }
       if(
         applyGuardFingerprint
@@ -2223,15 +2730,26 @@
             incumbentPayload,
             snapshot,
             data,
-            {ui_keep_better_existing_on_resort:true}
+            Object.assign(
+              {ui_keep_better_existing_on_resort:true},
+              persistedContractSettings
+            )
           )
         : null;
       if(
         retainedQualityGuard?.complete === true
+        && (
+          !strictReattachSettings
+          || !strictBrowserAutomaticQualityMessage(
+            incumbentPayload,
+            strictReattachSettings
+          )
+        )
         && shouldKeepIncumbentForTeacherQuality(
           payload,
           incumbentPayload,
-          retainedQualityGuard
+          retainedQualityGuard,
+          strictReattachSettings || persistedContractSettings
         )
       ){
         inheritRefinementRound(incumbentPayload, payload);
@@ -2257,7 +2775,10 @@
       }
       let applied;
       try{
-        applied = await applyPayload(payload);
+        applied = await applyPayload(
+          payload,
+          strictReattachSettings || persistedContractSettings
+        );
       }catch(err){
         restoreScheduleData(data, snapshot);
         throw err;
@@ -2305,7 +2826,14 @@
         // a red error after an iPhone reload/background resume.
         const friendly = friendlySolveError(err);
         const retainedState = completeScheduleStateForExistingOptimize(data);
-        const retainedCompleteTerminal = !!retainedState;
+        const terminalKind = String(err?.kind || err?.payload?.kind || "")
+          .trim()
+          .toLowerCase();
+        const localModeTerminalFailure = err?.localModeRequired === true
+          || terminalKind === "web_agent_required"
+          || terminalKind === "local_agent_unavailable"
+          || terminalKind.startsWith("browser_agent_");
+        const retainedCompleteTerminal = !!retainedState && !localModeTerminalFailure;
         if(retainedCompleteTerminal){
           const retainedPayload = visibleCompleteIncumbentQualityPayload(
             data,
@@ -2943,6 +3471,8 @@
         qualityDebtFreshRebuild:item?.qualityDebtFreshRebuild === true,
         discoveredFromOwnerState:item?.discoveredFromOwnerState === true,
         observeOnly:item?.observeOnly === true,
+        trialLocal:item?.trialLocal === true,
+        strictBrowserAutomatic:item?.strictBrowserAutomatic === true,
         localClickTimeline:item?.localClickTimeline === true,
         solverStartedAtMs,
         uiStartedAtMs,
@@ -2950,7 +3480,12 @@
         progressEstimateSeconds,
         progressBudgetSeconds,
         progressRunIndex,
-        optimizationFocus:String(item?.optimizationFocus || "")
+        optimizationFocus:String(item?.optimizationFocus || ""),
+        optimizationGapTarget:String(item?.optimizationGapTarget || ""),
+        solveRequestMode:String(item?.solveRequestMode || ""),
+        executor:String(item?.executor || "").trim().toLowerCase(),
+        executionPhase:String(item?.executionPhase || "").trim().toLowerCase(),
+        serverOwned:item?.serverOwned === true
       };
     }catch(_){
       return null;
@@ -3023,8 +3558,12 @@
         ? false
         : (
             metadata?.observeOnly === true
-            || (sameJob && existing?.observeOnly === true)
+          || (sameJob && existing?.observeOnly === true)
           );
+      const trialLocal = metadata?.trialLocal === true
+        || (sameJob && existing?.trialLocal === true);
+      const strictBrowserAutomatic = metadata?.strictBrowserAutomatic === true
+        || (sameJob && existing?.strictBrowserAutomatic === true);
       const qualityDebtFreshRebuild = metadata?.qualityDebtFreshRebuild === true
         || (sameJob && existing?.qualityDebtFreshRebuild === true);
       const optimizationFocus = String(
@@ -3033,6 +3572,34 @@
         || progressState?.settings?.optimization_focus
         || ""
       ).trim().toLowerCase().replace(/[\s-]+/g, "_");
+      const rawSolveRequestMode = String(
+        metadata?.solveRequestMode
+        || (sameJob ? existing?.solveRequestMode : "")
+        || progressState?.settings?.ui_requested_solve_mode
+        || ""
+      ).trim();
+      const solveRequestMode = rawSolveRequestMode
+        ? normalizeSolveRequestMode(rawSolveRequestMode)
+        : "";
+      const optimizationGapTarget = normalizedGapOptimizationTarget({
+        optimization_gap_target:
+          metadata?.optimizationGapTarget
+          || (sameJob ? existing?.optimizationGapTarget : "")
+          || progressState?.settings?.optimization_gap_target
+          || gapOptimizationTargetForSolveRequestMode(solveRequestMode)
+      });
+      const executor = String(
+        metadata?.executor
+        || (sameJob ? existing?.executor : "")
+        || ""
+      ).trim().toLowerCase();
+      const executionPhase = String(
+        metadata?.executionPhase
+        || (sameJob ? existing?.executionPhase : "")
+        || ""
+      ).trim().toLowerCase();
+      const serverOwned = metadata?.serverOwned === true
+        || (sameJob && existing?.serverOwned === true);
       safeMap[scope] = {
         jobId:value,
         createdAt,
@@ -3045,6 +3612,8 @@
         discoveredFromOwnerState:metadata?.discoveredFromOwnerState === true
           || (sameJob && existing?.discoveredFromOwnerState === true),
         observeOnly,
+        trialLocal,
+        strictBrowserAutomatic,
         localClickTimeline,
         solverStartedAtMs,
         uiStartedAtMs,
@@ -3052,7 +3621,12 @@
         progressEstimateSeconds,
         progressBudgetSeconds,
         progressRunIndex,
-        optimizationFocus
+        optimizationFocus,
+        optimizationGapTarget,
+        solveRequestMode,
+        executor,
+        executionPhase,
+        serverOwned
       };
       if(
         legacyScope !== scope
@@ -3154,6 +3728,14 @@
         || now - completedAtMs > SERVER_SOLVER_RESULT_MAX_AGE_MS
       )
     ) return null;
+    const reportedSolveRequestMode = String(
+      item?.progress?.solveRequestMode
+      || item?.progress?.solve_request_mode
+      || ""
+    ).trim();
+    const solveRequestMode = reportedSolveRequestMode
+      ? normalizeSolveRequestMode(reportedSolveRequestMode)
+      : "";
     return {
       jobId,
       kind,
@@ -3162,19 +3744,18 @@
       startedAtMs,
       completedAtMs,
       scheduleScope:itemScope,
+      executor:String(item?.executor || "").trim().toLowerCase(),
+      executionPhase,
+      serverOwned:item?.serverOwned === true,
       progressBudgetSeconds:normalizePendingProgressSeconds(item?.progressBudgetSeconds),
       progressRunIndex:Number(item?.progressRunIndex || 0) > 0
         ? normalizePendingProgressRunIndex(item.progressRunIndex)
         : 0,
-      optimizationFocus:String(
-        item?.progress?.solveRequestMode
-        || item?.progress?.solve_request_mode
-        || ""
-      ).trim()
-        ? optimizationFocusForSolveRequestMode(
-            item?.progress?.solveRequestMode || item?.progress?.solve_request_mode
-          )
+      optimizationFocus:solveRequestMode
+        ? optimizationFocusForSolveRequestMode(solveRequestMode)
         : "",
+      optimizationGapTarget:gapOptimizationTargetForSolveRequestMode(solveRequestMode),
+      solveRequestMode,
       position:Math.max(0, Number(item?.position || 0) || 0),
       matchesCurrentSchedule:typeof matchesCurrentSchedule === "function"
         ? matchesCurrentSchedule(scheduleFingerprint)
@@ -3277,7 +3858,12 @@
     window.__TKB_ACTIVE_BACKEND_JOB_ID = value;
     if(value) writePendingBackendJob(value, scheduleFingerprint, {
       allowSettledReplay:activeServerJobReattachLeaseId === value,
-      qualityDebtFreshRebuild:metadata?.qualityDebtFreshRebuild === true
+      qualityDebtFreshRebuild:metadata?.qualityDebtFreshRebuild === true,
+      trialLocal:metadata?.trialLocal === true,
+      strictBrowserAutomatic:metadata?.strictBrowserAutomatic === true,
+      optimizationFocus:metadata?.optimizationFocus,
+      optimizationGapTarget:metadata?.optimizationGapTarget,
+      solveRequestMode:metadata?.solveRequestMode
     });
     return value;
   }
@@ -3294,7 +3880,9 @@
       progressEstimateSeconds:progressState.estimatedSeconds,
       progressBudgetSeconds:progressState.progressBudgetSeconds,
       progressRunIndex:progressState.runIndex,
-      optimizationFocus:progressState.settings?.optimization_focus
+      optimizationFocus:progressState.settings?.optimization_focus,
+      optimizationGapTarget:progressState.settings?.optimization_gap_target,
+      solveRequestMode:progressState.settings?.ui_requested_solve_mode
     });
   }
 
@@ -3464,10 +4052,124 @@
     return true;
   }
 
+  function terminalApplySaveWatchdogMs(){
+    let override = 0;
+    try{
+      override = Number(window.__TKB_TERMINAL_APPLY_SAVE_WATCHDOG_MS || 0) || 0;
+    }catch(_){ }
+    return override > 0
+      ? Math.max(50, Math.min(120_000, Math.round(override)))
+      : TERMINAL_APPLY_SAVE_WATCHDOG_MS;
+  }
+
+  function deferredBackendJobIdForPayload(payload){
+    try{
+      return String(deferredBackendResultPayloads.get(payload) || "").trim();
+    }catch(_){
+      return "";
+    }
+  }
+
+  function deferredBackendSavePendingFor(jobId){
+    const value = String(jobId || "").trim();
+    return !!value && deferredBackendSavePendingJobId === value;
+  }
+
+  function markDeferredBackendSavePending(payload){
+    const jobId = deferredBackendJobIdForPayload(payload);
+    if(!jobId) return "";
+    deferredBackendSavePendingJobId = jobId;
+    try{
+      window.__TKB_DEFERRED_BACKEND_SAVE_PENDING_JOB_ID = jobId;
+    }catch(_){ }
+    return jobId;
+  }
+
+  function clearDeferredBackendSavePending(jobId){
+    const value = String(jobId || "").trim();
+    if(value && deferredBackendSavePendingJobId !== value) return false;
+    deferredBackendSavePendingJobId = "";
+    try{
+      window.__TKB_DEFERRED_BACKEND_SAVE_PENDING_JOB_ID = "";
+      if(
+        !value
+        || !window.__TKB_SOLVER_SAVE_PENDING_JOB_ID
+        || String(window.__TKB_SOLVER_SAVE_PENDING_JOB_ID) === value
+      ){
+        window.__TKB_SOLVER_SAVE_PENDING = false;
+        window.__TKB_SOLVER_SAVE_PENDING_JOB_ID = "";
+      }
+    }catch(_){ }
+    scheduleQueuedAutoSortContinuation();
+    return true;
+  }
+
+  function reportDeferredBackendSaveFailure(payload, error){
+    const jobId = deferredBackendJobIdForPayload(payload)
+      || deferredBackendSavePendingJobId;
+    clearDeferredBackendSavePending(jobId);
+    const message = String(error?.message || error || "remote timetable save failed");
+    try{
+      window.__TKB_SOLVER_LAST_SAVE_ERROR = message;
+      window.__TKB_SOLVER_LAST_SAVE_ERROR_JOB_ID = jobId;
+    }catch(_){ }
+    // Do not roll back the already-materialized timetable.  Retain the exact
+    // server result and let the normal poll-only recovery path retry its apply
+    // after the transient storage failure.
+    if(jobId && readPendingBackendJob()?.jobId === jobId){
+      schedulePendingBackendResume(0, SERVER_SOLVER_JOB_BACKGROUND_RETRY_MS);
+    }
+  }
+
+  async function awaitTrustedSolverApplySave(saveStoreFn, options, payload){
+    if(typeof saveStoreFn !== "function"){
+      return {timedOut:false, value:false};
+    }
+    const requested = saveStoreFn.call(window, options);
+    if(!requested || typeof requested.then !== "function"){
+      return {timedOut:false, value:requested};
+    }
+
+    let timer = 0;
+    const tracked = Promise.resolve(requested).then(
+      value => ({ok:true, value}),
+      error => ({ok:false, error})
+    );
+    const timeout = new Promise(resolve => {
+      timer = window.setTimeout(
+        () => resolve({timedOut:true}),
+        terminalApplySaveWatchdogMs()
+      );
+    });
+    const outcome = await Promise.race([tracked, timeout]);
+    if(outcome?.timedOut !== true){
+      window.clearTimeout(timer);
+      if(outcome?.ok !== true) throw outcome?.error;
+      return {timedOut:false, value:outcome.value};
+    }
+
+    const jobId = markDeferredBackendSavePending(payload);
+    const pending = tracked.then(final => {
+      if(final?.ok === true){
+        clearDeferredBackendSavePending(jobId);
+        settleDeferredBackendResultForPayload(payload);
+      }else{
+        reportDeferredBackendSaveFailure(payload, final?.error);
+      }
+      return final;
+    }).catch(error => {
+      reportDeferredBackendSaveFailure(payload, error);
+      return {ok:false, error};
+    });
+    try{ deferredBackendSavePromises.set(payload, pending); }catch(_){ }
+    return {timedOut:true, pending:true, jobId};
+  }
+
   function settleDeferredBackendResult(jobId){
     const value = String(jobId || deferredBackendResultJobId || "").trim();
     if(!value) return false;
     if(deferredBackendResultJobId === value) deferredBackendResultJobId = "";
+    clearDeferredBackendSavePending(value);
     clearActiveBackendJobId(value, {force:true});
     return true;
   }
@@ -3562,27 +4264,26 @@
     if(stopButton) stopButton.disabled = pending === true;
   }
 
-  async function requestStopActiveSolve(){
+  async function requestStopActiveSolve(options){
     const backendJobId = String(
       activeBackendJobId
       || window.__TKB_ACTIVE_BACKEND_JOB_ID
       || readPendingBackendJob()?.jobId
       || ""
     ).trim();
-    if(backendJobId && activeFocusedOptimizationSupportsBestStop()){
-      // A second tap while the server is returning its incumbent is still the
-      // same soft Stop. It must never fall through to the destructive cancel
-      // branch and discard work already found by a focused optimizer.
+    const retainBest = options?.retainBest !== false
+      && options?.hardCancel !== true
+      && activeFocusedOptimizationSupportsBestStop();
+    if(backendJobId && retainBest){
+      // A repeated tap while the server is materializing its incumbent is the
+      // same soft Stop. Never fall through to hard cancellation and discard a
+      // focused improvement already accepted by CP-SAT.
       if(bestEffortStopPendingFor(backendJobId)) return true;
       setBestEffortStopPending(backendJobId, true);
       setStatus("\u0110ang nh\u1eadn ph\u01b0\u01a1ng \u00e1n t\u1ed1t nh\u1ea5t...", "info");
       tickEstimatedProgress();
       let browserStopResult = null;
       if(typeof window.TKBBrowserWasmExecutor?.stopAndSubmitBest === "function"){
-        // Browser workers checkpoint each completed strict-best candidate on
-        // the canonical server job while they run. Stop local CPU immediately;
-        // never make the user wait for a slow worker or candidate upload before
-        // asking the server to atomically retain its accepted best checkpoint.
         try{
           const stopped = window.TKBBrowserWasmExecutor.stopAndSubmitBest({
             jobId:backendJobId,
@@ -3613,6 +4314,9 @@
       setStatus("\u0110ang s\u1eafp x\u1ebfp...", "info");
       return false;
     }
+    // Quick/Fresh Stop and schedule-mutation cancellation remain destructive.
+    // Ordinary page navigation never enters this path; it keeps the durable
+    // job id so a later planner visit can reattach without spending a new job.
     rememberPersistentAutoResumeSuppression();
     window.__TKB_AUTO_RESUME_SUPPRESSED = true;
     window.__AUTO_SORT_STOP_REQUESTED = true;
@@ -3633,9 +4337,6 @@
     if(controller){
       try{ controller.abort(); }catch(_){}
     }
-    // Stop is a user-facing terminal action. Unlock immediately even when the
-    // current poll is between abort-aware fetches; the lifecycle `finally` and
-    // server cancellation remain idempotent background cleanup.
     settleStoppedSolveUi(backendJobId, controller);
     try{
       if(backendJobId){
@@ -4136,40 +4837,34 @@
   }
 
   function setAutoSortHomeHiddenState(hidden){
-    const shouldHide = !!hidden
+    const shouldLock = !!hidden
       || window.__TKB_RUST_SOLVER_RUNNING === true
       || window.__TKB_SOLVE_UI_BUSY === true
       || !!readPendingBackendJob()?.jobId;
-    const handled = callMaybe("setAutoSortHomeHidden", [shouldHide]);
+    const handled = callMaybe("setAutoSortHomeHidden", [shouldLock]);
     if(handled === true) return;
     const btn = document.getElementById("btnHome");
     const agentBtn = document.getElementById("btnAgentHelper");
+    const optimizeBtn = document.getElementById("btnOptimizeMenu");
+    const optimizeMenu = document.getElementById("plannerOptimizeMenu");
     if(btn){
       btn.hidden = false;
       btn.setAttribute("aria-hidden", "false");
-      if(shouldHide){
-        if(!btn.dataset.autoSortLock){
-          btn.dataset.autoSortLock = "1";
-          btn.dataset.autoSortPrevDisabled = btn.disabled ? "1" : "0";
-        }
-        btn.disabled = true;
-        btn.setAttribute("aria-disabled", "true");
-        btn.classList.add("is-auto-sort-disabled");
-      }else{
-        if(btn.dataset.autoSortLock){
-          btn.disabled = btn.dataset.autoSortPrevDisabled === "1";
-          delete btn.dataset.autoSortLock;
-          delete btn.dataset.autoSortPrevDisabled;
-        }
-        if(btn.disabled) btn.setAttribute("aria-disabled", "true");
-        else btn.removeAttribute?.("aria-disabled");
-        btn.classList.remove("is-auto-sort-disabled");
+      // Leaving the planner only detaches this browser poll. The server job
+      // keeps running and its durable id is recovered on the next page load.
+      if(btn.dataset.autoSortLock){
+        btn.disabled = btn.dataset.autoSortPrevDisabled === "1";
+        delete btn.dataset.autoSortLock;
+        delete btn.dataset.autoSortPrevDisabled;
       }
+      if(btn.disabled) btn.setAttribute("aria-disabled", "true");
+      else btn.removeAttribute?.("aria-disabled");
+      btn.classList.remove("is-auto-sort-disabled");
     }
     if(agentBtn){
       agentBtn.hidden = false;
       agentBtn.setAttribute("aria-hidden", "false");
-      if(shouldHide){
+      if(shouldLock){
         if(!agentBtn.dataset.autoSortLock){
           agentBtn.dataset.autoSortLock = "1";
           agentBtn.dataset.autoSortPrevDisabled = agentBtn.disabled ? "1" : "0";
@@ -4186,6 +4881,28 @@
         if(agentBtn.disabled) agentBtn.setAttribute("aria-disabled", "true");
         else agentBtn.removeAttribute?.("aria-disabled");
         agentBtn.classList.remove("is-auto-sort-disabled");
+      }
+    }
+    if(optimizeBtn){
+      if(shouldLock){
+        if(!optimizeBtn.dataset.autoSortLock){
+          optimizeBtn.dataset.autoSortLock = "1";
+          optimizeBtn.dataset.autoSortPrevDisabled = optimizeBtn.disabled ? "1" : "0";
+        }
+        optimizeBtn.disabled = true;
+        optimizeBtn.setAttribute("aria-disabled", "true");
+        optimizeBtn.setAttribute("aria-expanded", "false");
+        optimizeBtn.classList.add("is-auto-sort-disabled");
+        if(optimizeMenu) optimizeMenu.hidden = true;
+      }else{
+        if(optimizeBtn.dataset.autoSortLock){
+          optimizeBtn.disabled = optimizeBtn.dataset.autoSortPrevDisabled === "1";
+          delete optimizeBtn.dataset.autoSortLock;
+          delete optimizeBtn.dataset.autoSortPrevDisabled;
+        }
+        if(optimizeBtn.disabled) optimizeBtn.setAttribute("aria-disabled", "true");
+        else optimizeBtn.removeAttribute?.("aria-disabled");
+        optimizeBtn.classList.remove("is-auto-sort-disabled");
       }
     }
   }
@@ -4215,6 +4932,8 @@
       optimization_focus:optimizationFocusForSolveRequestMode(mode),
       ui_progress_mode:mode === SOLVE_REQUEST_MODES.automatic ? "time" : "work"
     };
+    const gapTarget = gapOptimizationTargetForSolveRequestMode(mode);
+    if(gapTarget) settings.optimization_gap_target = gapTarget;
     if(mode === SOLVE_REQUEST_MODES.automatic) return settings;
 
     const safeData = data || getData() || {};
@@ -4248,11 +4967,12 @@
         0,
         metricNumber(metrics?.one_period_teacher_sessions, 0)
       );
+      const singletonTarget = onePeriodTeacherSessionLowerBound(metrics);
       configurePlanMetricProgress(
         settings,
         "one_period_teacher_sessions",
         currentSingletons,
-        0,
+        singletonTarget,
         currentSingletons
       );
       return settings;
@@ -4282,6 +5002,26 @@
     const gap1Baseline = gapBaseline ? gapBaseline.gap1 : currentGap1;
     settings.ui_progress_gap1_baseline = gap1Baseline;
     settings.ui_progress_gap2_baseline = gap2Baseline;
+    if(mode === SOLVE_REQUEST_MODES.gap2){
+      configurePlanMetricProgress(
+        settings,
+        "teacher_gap2_sessions",
+        currentGap2,
+        0,
+        gap2Baseline
+      );
+      return settings;
+    }
+    if(mode === SOLVE_REQUEST_MODES.gap1){
+      configurePlanMetricProgress(
+        settings,
+        "teacher_gap1_sessions",
+        currentGap1,
+        0,
+        gap1Baseline
+      );
+      return settings;
+    }
     configurePlanMetricProgress(
       settings,
       "teacher_gap_sessions",
@@ -4314,10 +5054,17 @@
       || now;
     const canonicalServerProgress = persistedServerStartedAt > 0;
     const instantProgressSettings = isResume
-      ? {
-          ui_default_fresh_sort:true,
-          optimization_focus:String(pending?.optimizationFocus || "")
-        }
+      ? Object.assign(
+          initialVisibleProgressSettings(
+            solveRequestModeForOptimizationContract(
+              pending?.solveRequestMode,
+              pending?.optimizationFocus,
+              pending?.optimizationGapTarget
+            ),
+            getData()
+          ),
+          {ui_default_fresh_sort:true}
+        )
       : initialVisibleProgressSettings(
           options?.requestedSolveMode,
           options?.data || getData()
@@ -4432,7 +5179,18 @@
   function refreshStatsPopoverIfOpen(){
     try{
       const pop = document.getElementById("statsPopover");
-      if(pop && !pop.hidden) callMaybe("renderStatsBox");
+      if(!pop || pop.hidden) return;
+      // A complete solve can contain thousands of placed periods.  Rendering
+      // the whole-school teacher/student scan synchronously here blocks the
+      // result-apply turn and makes the terminal UI feel frozen.  The planner
+      // already exposes a coalescing, post-paint scheduler for this exact
+      // workload; use it when available and retain the direct call only for
+      // older pages that do not have the scheduler yet.
+      if(typeof window.scheduleStatsBoxRender === "function"){
+        window.scheduleStatsBoxRender({onlyIfOpen:true});
+      }else{
+        callMaybe("renderStatsBox");
+      }
     }catch(_){}
   }
 
@@ -4737,8 +5495,65 @@
     if(mode === SOLVE_REQUEST_MODES.quickComplete) return "quick_complete";
     if(mode === SOLVE_REQUEST_MODES.singletons) return "singletons";
     if(mode === SOLVE_REQUEST_MODES.sessions) return "sessions";
-    if(mode === SOLVE_REQUEST_MODES.gaps) return "gaps";
+    if([
+      SOLVE_REQUEST_MODES.gap2,
+      SOLVE_REQUEST_MODES.gap1,
+      SOLVE_REQUEST_MODES.gaps
+    ].includes(mode)) return "gaps";
     return "automatic";
+  }
+
+  function gapOptimizationTargetForSolveRequestMode(value){
+    const mode = normalizeSolveRequestMode(value);
+    if(mode === SOLVE_REQUEST_MODES.gap2) return "gap2";
+    if(mode === SOLVE_REQUEST_MODES.gap1) return "gap1";
+    return "";
+  }
+
+  function solveRequestModeForOptimizationContract(requestedMode, focus, gapTarget){
+    const explicit = String(requestedMode || "").trim();
+    if(explicit) return normalizeSolveRequestMode(explicit);
+    const normalizedGapTarget = normalizedGapOptimizationTarget({
+      optimization_gap_target:gapTarget
+    });
+    if(normalizedGapTarget === "gap2") return SOLVE_REQUEST_MODES.gap2;
+    if(normalizedGapTarget === "gap1") return SOLVE_REQUEST_MODES.gap1;
+    const normalizedFocus = optimizationFocusForSolveRequestMode(focus);
+    if(normalizedFocus === "singletons") return SOLVE_REQUEST_MODES.singletons;
+    if(normalizedFocus === "sessions") return SOLVE_REQUEST_MODES.sessions;
+    if(normalizedFocus === "gaps") return SOLVE_REQUEST_MODES.gaps;
+    if(normalizedFocus === "quick_complete") return SOLVE_REQUEST_MODES.quickComplete;
+    return SOLVE_REQUEST_MODES.automatic;
+  }
+
+  function settingsForPersistedOptimizationContract(metadata, payload){
+    const source = metadata && typeof metadata === "object" ? metadata : {};
+    const runtime = payload?.solver?.runtime_settings
+      && typeof payload.solver.runtime_settings === "object"
+      ? payload.solver.runtime_settings
+      : {};
+    const mode = solveRequestModeForOptimizationContract(
+      source.solveRequestMode || runtime.ui_requested_solve_mode,
+      source.optimizationFocus || runtime.optimization_focus,
+      source.optimizationGapTarget || runtime.optimization_gap_target
+    );
+    const settings = {
+      ui_requested_solve_mode:mode,
+      optimization_focus:optimizationFocusForSolveRequestMode(mode)
+    };
+    const gapTarget = gapOptimizationTargetForSolveRequestMode(mode)
+      || normalizedGapOptimizationTarget({
+        optimization_gap_target:
+          source.optimizationGapTarget || runtime.optimization_gap_target
+      });
+    if(gapTarget) settings.optimization_gap_target = gapTarget;
+    if(["singletons", "sessions", "gaps"].includes(settings.optimization_focus)){
+      settings.optimization_focused_objective_only = true;
+      settings.optimization_two_stage_teacher_quality = false;
+      settings.ui_keep_better_existing_on_resort = true;
+      settings.ui_return_complete_incumbent_on_existing_optimize_failure = true;
+    }
+    return settings;
   }
 
   function clearPlanMetricProgress(settings){
@@ -4857,11 +5672,15 @@
     ).trim();
     if(solveRequestMode){
       const normalizedMode = normalizeSolveRequestMode(solveRequestMode);
-      progressState.settings = Object.assign({}, progressState.settings || {}, {
+      const nextProgressSettings = Object.assign({}, progressState.settings || {}, {
         ui_requested_solve_mode:normalizedMode,
         optimization_focus:optimizationFocusForSolveRequestMode(normalizedMode),
         ui_progress_mode:normalizedMode === SOLVE_REQUEST_MODES.automatic ? "time" : "work"
       });
+      const gapTarget = gapOptimizationTargetForSolveRequestMode(normalizedMode);
+      if(gapTarget) nextProgressSettings.optimization_gap_target = gapTarget;
+      else delete nextProgressSettings.optimization_gap_target;
+      progressState.settings = nextProgressSettings;
     }
     const canonicalProgressSnapshot = canonicalizeGapProgressSnapshot(snapshot, getData());
     const metricProgress = normalizeMetricProgressSnapshot(canonicalProgressSnapshot);
@@ -5453,15 +6272,22 @@
       delete requestSource.solverMetrics;
     }else if(requestSource.tkbSolverResult){
       const incumbent = requestSource.tkbSolverResult;
-      const compactIncumbent = compactSolverResultForSnapshot(incumbent);
+      let compactIncumbent = compactSolverResultForSnapshot(incumbent);
       if(
         carryCompleteIncumbentLessons
         && compactIncumbent
         && typeof compactIncumbent === "object"
       ){
-        const incumbentLessons = Array.isArray(incumbent.lessons) && incumbent.lessons.length
-          ? incumbent.lessons
-          : visibleScheduleLessonsFromData(data);
+        // The visible timetable is authoritative after apply-time fixed-lock
+        // restoration.  An older solver payload may still contain the
+        // pre-restoration slots; sending those lessons back to the Agent makes
+        // every improved checkpoint fail canonical fixed-lesson validation.
+        const visibleIncumbentLessons = visibleScheduleLessonsFromData(data);
+        const incumbentLessons = Array.isArray(visibleIncumbentLessons) && visibleIncumbentLessons.length
+          ? visibleIncumbentLessons
+          : incumbent.lessons;
+        compactIncumbent = visibleCompleteIncumbentQualityPayload(data, compactIncumbent)
+          || compactIncumbent;
         if(Array.isArray(incumbentLessons) && incumbentLessons.length){
           compactIncumbent.lessons = incumbentLessons;
         }
@@ -5480,7 +6306,9 @@
     const preserveExisting = isTruthySetting(settings?.preserve_existing_tkb)
       || ["preserve_existing", "preserve-existing", "preserve"].includes(String(settings?.auto_sort_strategy || "").trim().toLowerCase());
     if(!preserveExisting){
-      const fixedOnlyTkb = fixedOnlyTkbForSolverRequest(data);
+      const fixedOnlyTkb = fixedOnlyTkbForSolverRequest(data, {
+        includeOff:settings?.ui_preserve_off_cells_in_solver_request === true
+      });
       const mustTeachAnchorCount = addMustTeachAnchorsToFixedOnlyTkb(data, fixedOnlyTkb);
       if(Object.keys(fixedOnlyTkb).length){
         next.tkb = fixedOnlyTkb;
@@ -5494,6 +6322,86 @@
       next.__tkbRequestStrippedSchedule = true;
     }
     return next;
+  }
+
+  function shouldBuildClientFastSeed(data, settings){
+    if(!data || !settings) return false;
+    if(typeof window.Worker !== "function") return false;
+    if(settings.ui_resume_existing_server_job_only === true) return false;
+    if(settings.optimize_existing_schedule === true || isTruthySetting(settings.preserve_existing_tkb)) return false;
+    if(String(settings.optimization_focus || "automatic").trim().toLowerCase() !== "automatic") return false;
+    const solveKind = String(settings.ui_unified_solve_kind || "").trim().toLowerCase().replace(/-/g, "_");
+    if(solveKind !== "fresh_complete_first") return false;
+    const expected = expectedLessonCount(data);
+    const scheduled = countScheduledLessons(data);
+    return expected >= 300 && scheduled < expected;
+  }
+
+  function compactClientFastSeed(result){
+    if(!result || result.ok !== true || !Array.isArray(result.lessons)) return null;
+    const expected = Math.max(0, Number(result.expectedPeriods || 0) || 0);
+    const scheduled = result.lessons.length;
+    if(expected <= 0 || scheduled <= 0 || scheduled > expected) return null;
+    if(scheduled / expected < 0.85) return null;
+    return {
+      version:String(result.version || "tkb-fast-seed-v1"),
+      lessons:result.lessons.map(item => ({
+        classId:String(item?.classId || ""),
+        className:String(item?.className || ""),
+        subject:String(item?.subject || ""),
+        teacher:String(item?.teacher || ""),
+        room:String(item?.room || ""),
+        day:Number(item?.day || 0),
+        session:String(item?.session || ""),
+        period:Number(item?.period || 0)
+      })),
+      elapsedMs:Math.max(0, Number(result.elapsedMs || 0) || 0),
+      attempts:Math.max(0, Number(result.attempts || 0) || 0),
+      seed:Math.max(1, Number(result.seed || 1) || 1),
+      clientExpectedPeriods:expected,
+      clientScheduledPeriods:scheduled
+    };
+  }
+
+  function buildClientFastSeed(data, settings, signal){
+    if(!shouldBuildClientFastSeed(data, settings)) return Promise.resolve(null);
+    const expected = expectedLessonCount(data);
+    const maxMs = expected >= 2000 ? 4_500 : 2_800;
+    const workerUrl = "tkb-fast-seed-worker.js?v=20260811-hybrid-fast-seed-v1";
+    return new Promise(resolve => {
+      let settled = false;
+      let worker = null;
+      let timer = 0;
+      const finish = value => {
+        if(settled) return;
+        settled = true;
+        if(timer) window.clearTimeout(timer);
+        try{ worker?.terminate?.(); }catch(_){ }
+        resolve(value || null);
+      };
+      try{
+        worker = new window.Worker(workerUrl);
+        worker.onmessage = event => finish(
+          event?.data?.ok === true ? compactClientFastSeed(event.data.result) : null
+        );
+        worker.onerror = () => finish(null);
+        timer = window.setTimeout(() => finish(null), maxMs + 1_500);
+        if(signal){
+          if(signal.aborted) return finish(null);
+          signal.addEventListener("abort", () => finish(null), {once:true});
+        }
+        worker.postMessage({
+          data,
+          options:{
+            maxMs,
+            attempts:24,
+            seed:Math.max(1, Number(settings.random_seed || makeRandomSeed()) || 1)
+          }
+        });
+      }catch(_){
+        finish(null);
+      }
+    });
   }
 
   function classAliasIdsForFixedOff(data, classId){
@@ -5678,20 +6586,22 @@
     return removed;
   }
 
-  function fixedOnlyTkbForSolverRequest(data){
+  function fixedOnlyTkbForSolverRequest(data, options){
+    const includeOff = options?.includeOff === true;
     const out = {};
     Object.entries(data?.tkb || {}).forEach(([classId, tkb]) => {
       let classTkb = null;
       ["thu2","thu3","thu4","thu5","thu6","thu7"].forEach(thu => {
         ["sang","chieu"].forEach(buoi => {
           (tkb?.[thu]?.[buoi] || []).forEach((value, ti) => {
-            if(!isFixedScheduledCell(value)) return;
             const subject = cellSubjectText(value);
-            if(!subject || subject === "OFF") return;
+            const keepOff = includeOff && subject === "OFF";
+            if(!keepOff && !isFixedScheduledCell(value)) return;
+            if(!subject) return;
             if(!classTkb) classTkb = makeEmptyTKB();
             const arr = classTkb?.[thu]?.[buoi];
             if(arr && ti >= 0 && ti < arr.length){
-              arr[ti] = {mon: subject, fixed: true};
+              arr[ti] = keepOff ? "OFF" : {mon: subject, fixed: true};
             }
           });
         });
@@ -6033,9 +6943,13 @@
   function visibleScheduleLessonsFromData(data){
     const rows = [];
     const source = data?.tkb && typeof data.tkb === "object" ? data.tkb : {};
+    const grades = classGradeLookup(data);
     Object.entries(source).forEach(([classId, tkb]) => {
       const className = rescueClassCanon(data, classId) || String(classId || "").trim();
       if(!className) return;
+      const grade = grades.get(String(classId || "").trim())
+        || grades.get(className)
+        || "";
       ["thu2","thu3","thu4","thu5","thu6","thu7"].forEach(thu => {
         const day = Number(String(thu).replace(/\D+/g, ""));
         ["sang","chieu"].forEach(buoi => {
@@ -6049,12 +6963,14 @@
               class: className,
               className,
               classId: String(classId || ""),
+              grade,
               subject,
               teacher,
               room,
               day,
               session,
-              period: Number(ti) + 1
+              period: Number(ti) + 1,
+              fixed:isFixedScheduledCell(value)
             });
           });
         });
@@ -6127,6 +7043,34 @@
     return c.expected > 0 && (c.scheduled > 0 || lessons > 0);
   }
 
+  function payloadIsMobileLocalQualityTerminal(payload){
+    const runtime = payload?.solver?.runtime_settings || {};
+    const marked = payload?.browser_local_quality_terminal === true
+      || runtime.browser_local_quality_terminal === true
+      || payload?.mobile_local_quality_terminal === true
+      || runtime.mobile_local_quality_terminal === true;
+    if(!marked) return false;
+    const metrics = payload?.metrics || {};
+    const completion = payloadCompletion(payload);
+    // This marker relaxes only soft quality targets. Completeness, server hard
+    // validation, zero application violations, and the normal apply contract
+    // remain mandatory before a phone's bounded local best can be displayed.
+    return payload?.ok === true
+      && completion.complete
+      && Number.isSafeInteger(Number(metrics.expected_periods))
+      && Number(metrics.expected_periods) > 0
+      && Number(metrics.scheduled_periods) === Number(metrics.expected_periods)
+      && Number(metrics.unassigned_periods) === 0
+      && Number(metrics.app_constraint_violation_count) === 0
+      && metrics.hard_ok === true
+      && metrics.core_hard_ok !== false
+      && payload?.validation?.hard_ok === true
+      && Array.isArray(payload?.lessons)
+      && payload.lessons.length === Number(metrics.expected_periods)
+      && Array.isArray(payload?.unassignedLessons)
+      && payload.unassignedLessons.length === 0;
+  }
+
   function payloadUnassignedPeriods(payload){
     const metricValue = metricNumber(payload?.metrics?.unassigned_periods, NaN);
     if(Number.isFinite(metricValue)) return metricValue;
@@ -6156,6 +7100,61 @@
     return payloadHasUsableSchedule(payload) && metricNumber(metrics.capacity_unassigned_periods, 0) > 0;
   }
 
+  function payloadIsSafeCapacityPartial(payload){
+    const metrics = payload?.metrics || {};
+    const c = payloadCompletion(payload);
+    const unassigned = Math.max(c.unassigned, payloadUnassignedPeriods(payload));
+    const capacityUnassigned = metricNumber(metrics.capacity_unassigned_periods, 0);
+    const solverUnassigned = metricNumber(metrics.solver_unassigned_periods, 0);
+    const scheduled = Math.max(c.scheduled, Array.isArray(payload?.lessons) ? payload.lessons.length : 0);
+    const expected = c.expected;
+    const accounted = scheduled + unassigned;
+    const declaredUnassigned = capacityUnassigned + solverUnassigned;
+    const validationViolations = Array.isArray(payload?.validation?.violations)
+      ? payload.validation.violations.length
+      : 0;
+    const applicationViolations = Array.isArray(metrics.app_constraint_violations)
+      ? metrics.app_constraint_violations.length
+      : 0;
+    const lessons = Array.isArray(payload?.lessons) ? payload.lessons : null;
+    const unassignedLessons = Array.isArray(payload?.unassignedLessons)
+      ? payload.unassignedLessons
+      : null;
+    let itemTotal = 0;
+    let itemCapacity = 0;
+    if(lessons && lessons.length !== scheduled) return false;
+    if(!unassignedLessons) return false;
+    for(const item of unassignedLessons){
+      const periods = metricNumber(item?.periods ?? item?.count, NaN);
+      if(!Number.isFinite(periods) || periods <= 0) return false;
+      itemTotal += periods;
+      if(String(item?.reason || '').trim() === 'not_enough_available_slots'){
+        itemCapacity += periods;
+      }
+    }
+    return (
+      scheduled > 0
+      && expected > 0
+      && unassigned > 0
+      && capacityUnassigned >= 0
+      && solverUnassigned >= 0
+      && unassigned === declaredUnassigned
+      && accounted === expected
+      && itemTotal === unassigned
+      && itemCapacity === capacityUnassigned
+      && itemTotal - itemCapacity === solverUnassigned
+      && metrics.accounting_ok === true
+      && metrics.placement_hard_ok === true
+      && metrics.placement_core_hard_ok === true
+      && metricNumber(metrics.class_slot_conflicts, 0) === 0
+      && metricNumber(metrics.teacher_slot_conflicts, 0) === 0
+      && metricNumber(metrics.room_slot_conflicts, 0) === 0
+      && c.violations === 0
+      && validationViolations === 0
+      && applicationViolations === 0
+    );
+  }
+
   function payloadAcceptableWithUnassigned(payload){
     const c = payloadCompletion(payload);
     const unassigned = Math.max(c.unassigned, payloadUnassignedPeriods(payload));
@@ -6178,9 +7177,145 @@
     );
   }
 
+  function strictBrowserAutomaticRequired(settings){
+    // Native/Web client solver lanes are retired.  The Super Admin Agent icon
+    // now selects the server route (Cloud Run or VPS); it must never turn an
+    // otherwise safe server-owned capacity result into a BrowserAgent-only
+    // completeness failure.
+    if(window.__TKB_CLIENT_AGENT_LANES_ENABLED === false) return false;
+    const focus = optimizationFocusForSolveRequestMode(settings?.optimization_focus);
+    const solveKind = String(settings?.ui_unified_solve_kind || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_");
+    const policy = String(settings?.ui_agent_execution_policy || "")
+      .trim()
+      .toLowerCase();
+    return focus === "automatic"
+      && settings?.require_complete_schedule === true
+      && ["fresh_complete_first", "repair_constraints", "refine_complete"].includes(solveKind)
+      && (
+        settings?.ui_browser_agent_required === true
+        || policy === "web_agent_required"
+        || policy === "browser_required"
+      );
+  }
+
+  function strictBrowserAutomaticQualityState(payload){
+    const metrics = payload?.metrics;
+    const distribution = metrics?.gap_distribution;
+    const ownMetric = key => {
+      if(!metrics || !Object.prototype.hasOwnProperty.call(metrics, key)) return null;
+      const value = Number(metrics[key]);
+      return Number.isSafeInteger(value) && value >= 0 ? value : null;
+    };
+    const onePeriod = ownMetric("one_period_teacher_sessions");
+    const onePeriodLowerBound = onePeriodTeacherSessionLowerBound(metrics);
+    const explicitGap2 = ownMetric("teacher_gap2_sessions");
+    let distributionGap2 = null;
+    let distributionValid = !!distribution
+      && typeof distribution === "object"
+      && !Array.isArray(distribution);
+    if(distributionValid){
+      distributionGap2 = 0;
+      for(const [gapKey, rawCount] of Object.entries(distribution)){
+        const gap = Number(gapKey);
+        const count = Number(rawCount);
+        if(
+          !Number.isSafeInteger(gap)
+          || gap < 0
+          || !Number.isSafeInteger(count)
+          || count < 0
+        ){
+          distributionValid = false;
+          distributionGap2 = null;
+          break;
+        }
+        if(gap >= 2) distributionGap2 += count;
+      }
+    }
+    const completion = payloadCompletion(payload);
+    const lessons = payload?.lessons;
+    const unassignedLessons = payload?.unassignedLessons;
+    const completeHard = payload?.ok === true
+      && completion.complete === true
+      && completion.hardOk === true
+      && metrics?.hard_ok === true
+      && payload?.validation?.hard_ok === true
+      && ownMetric("app_constraint_violation_count") === 0
+      && Array.isArray(lessons)
+      && lessons.length === completion.expected
+      && Array.isArray(unassignedLessons)
+      && unassignedLessons.length === 0;
+    const metricsPresent = onePeriod != null
+      && explicitGap2 != null
+      && distributionValid
+      && distributionGap2 != null;
+    const metricsConsistent = metricsPresent && explicitGap2 === distributionGap2;
+    return {
+      completeHard,
+      metricsPresent,
+      metricsConsistent,
+      onePeriod,
+      onePeriodLowerBound,
+      explicitGap2,
+      distributionGap2,
+      met:completeHard
+        && metricsConsistent
+        && onePeriod <= onePeriodLowerBound
+        && explicitGap2 === 0
+    };
+  }
+
+  function strictBrowserAutomaticQualityMessage(payload, settings){
+    if(!strictBrowserAutomaticRequired(settings)) return "";
+    const state = strictBrowserAutomaticQualityState(payload);
+    const reasons = [];
+    if(!state.completeHard) reasons.push("lịch chưa đầy đủ hoặc chưa hard-valid");
+    if(!state.metricsPresent) reasons.push("thiếu chỉ số chất lượng bắt buộc");
+    else if(!state.metricsConsistent){
+      reasons.push(
+        `chỉ số Trống 2 tiết mâu thuẫn (${state.explicitGap2}/${state.distributionGap2})`
+      );
+    }
+    if(state.metricsPresent && state.onePeriod > state.onePeriodLowerBound){
+      reasons.push(
+        `Dạy 1 tiết/buổi = ${state.onePeriod}, mục tiêu ${state.onePeriodLowerBound}`
+      );
+    }
+    if(state.metricsPresent && state.explicitGap2 > 0){
+      reasons.push(`Trống 2 tiết = ${state.explicitGap2}, yêu cầu 0`);
+    }
+    return reasons.length
+      ? `WebAgent chưa đạt chuẩn bắt buộc: ${reasons.join("; ")}.`
+      : "";
+  }
+
+  function synchronizeBrowserSettlementSettings(target, source){
+    if(!target || !source) return target;
+    for(const key of [
+      "optimization_focus",
+      "ui_unified_solve_kind",
+      "ui_use_existing_complete_incumbent",
+      "ui_existing_incumbent_revalidated",
+      "require_complete_schedule",
+      "ui_agent_execution_policy",
+      "ui_execution_mode",
+      "ui_browser_agent_required",
+      "ui_native_agent_required",
+      "ui_agent_preference_enabled"
+    ]){
+      if(Object.prototype.hasOwnProperty.call(source, key)) target[key] = source[key];
+      else delete target[key];
+    }
+    return target;
+  }
+
   function hardQualityViolationMessage(payload, settings){
     const metrics = payload?.metrics || {};
     const reasons = [];
+    const strictBrowserMessage = strictBrowserAutomaticQualityMessage(payload, settings);
+    if(strictBrowserMessage) return strictBrowserMessage;
     const violations = metricNumber(metrics.app_constraint_violation_count, 0);
     const hardOk = metrics.hard_ok !== false && metrics.core_hard_ok !== false && payload?.validation?.hard_ok !== false;
     const acceptableWithUnassigned = payloadAcceptableWithUnassigned(payload);
@@ -6194,17 +7329,42 @@
       if(unassigned > 0) reasons.push(`chưa xếp = ${unassigned}`);
       if(expected > 0 && scheduled < expected) reasons.push(`tiết đã xếp = ${scheduled}/${expected}`);
     }
-    const focusedOptimization = ["singletons", "sessions", "gaps"].includes(
-      optimizationFocusForSolveRequestMode(settings?.optimization_focus)
-    );
-    const enforceOnePeriodCap = !focusedOptimization && (
+    const optimizationFocus = optimizationFocusForSolveRequestMode(settings?.optimization_focus);
+    const focusedOptimization = ["singletons", "sessions", "gaps"].includes(optimizationFocus);
+    const browserExecutionPolicy = String(settings?.ui_agent_execution_policy || "")
+      .trim()
+      .toLowerCase();
+    const strictBrowserAutomatic = optimizationFocus === "automatic"
+      && (
+        settings?.ui_browser_agent_required === true
+        || browserExecutionPolicy === "web_agent_required"
+        || browserExecutionPolicy === "browser_required"
+      );
+    const incrementalAutomaticRefinement =
+      optimizationFocus === "automatic"
+      && String(settings?.ui_unified_solve_kind || "").trim().toLowerCase() === "refine_complete"
+      && settings?.ui_use_existing_complete_incumbent === true
+      && settings?.ui_existing_incumbent_revalidated === true;
+    // A refinement candidate is a durable next incumbent, not a claim that
+    // every quality target has already reached zero. The Pareto guard below
+    // still rejects regressions; accepting a hard-valid 108 -> 4 singleton
+    // result lets the next click finish the remaining four instead of throwing
+    // away three minutes of local CP-SAT work.
+    const mobileLocalQualityTerminal = payloadIsMobileLocalQualityTerminal(payload);
+    const incrementalQualityCheckpoint = focusedOptimization
+      || (!strictBrowserAutomatic && (
+        incrementalAutomaticRefinement
+        || mobileLocalQualityTerminal
+      ));
+    const enforceOnePeriodCap = !incrementalQualityCheckpoint && (
       settings?.strict_one_period_sessions_cap === true
       || settings?.enforce_max_one_period_sessions === true
       || settings?.strict_quality_targets === true
       || settings?.enforce_quality_targets === true
     );
+    const configuredMaxOne = nonnegativeNumberSetting(settings?.max_one_period_sessions);
     const maxOne = enforceOnePeriodCap
-      ? (nonnegativeNumberSetting(settings?.max_one_period_sessions) ?? 0)
+      ? onePeriodTeacherSessionTarget(metrics, configuredMaxOne)
       : null;
     const onePeriod = metricNumber(metrics.one_period_teacher_sessions, 0);
     if(maxOne != null && onePeriod > maxOne){
@@ -6212,7 +7372,7 @@
     }
     const maxTeacherGap = nonnegativeNumberSetting(settings?.period_max_teacher_gap);
     const gap2Plus = gap2PlusCount(metrics);
-    if(!focusedOptimization && maxTeacherGap != null && maxTeacherGap <= 1 && gap2Plus > 0){
+    if(!incrementalQualityCheckpoint && maxTeacherGap != null && maxTeacherGap <= 1 && gap2Plus > 0){
       reasons.push(`buổi GV có từ 2 tiết trống: ${gap2Plus}, mục tiêu 0`);
     }
     return reasons.length
@@ -6226,8 +7386,11 @@
     let practicalTargets = null;
     try{ practicalTargets = practicalTeacherQualityTargets(getData()); }catch(_){}
     const parts = [];
-    const maxOne = nonnegativeNumberSetting(settings?.max_one_period_sessions)
+    const configuredMaxOne = nonnegativeNumberSetting(settings?.max_one_period_sessions)
       ?? (settings?.one_period_priority_absolute === true || settings?.strict_quality_targets === true || settings?.enforce_quality_targets === true ? 0 : null);
+    const maxOne = configuredMaxOne == null
+      ? null
+      : onePeriodTeacherSessionTarget(metrics, configuredMaxOne);
     const onePeriod = metricNumber(metrics.one_period_teacher_sessions ?? debt.one_period_teacher_sessions, 0);
     if(maxOne != null && onePeriod > maxOne) parts.push(`buổi GV chỉ dạy 1 tiết: ${onePeriod}, mục tiêu ${maxOne}`);
     const maxGap = nonnegativeNumberSetting(settings?.period_max_teacher_gap);
@@ -6473,58 +7636,37 @@
       }
     })();
     const shortageFastThreshold = Math.max(8, Math.round(Math.max(1, expected) * 0.015));
-    const useShortCapacityBudget = shortageTotal > 0 && shortageTotal >= shortageFastThreshold;
-    const fastLaneSeconds = expected >= 900 ? 60 : (expected >= 600 ? 45 : 30);
+    const explicitCustomSeconds = Number(settings.ui_custom_solve_duration_seconds);
+    const solveBudgetSeconds = Number.isFinite(explicitCustomSeconds) && explicitCustomSeconds > 0
+      ? normalizeOverallTimeLimit(explicitCustomSeconds)
+      : Math.max(
+          ROBUST_AUTO_DURATION_SECONDS,
+          normalizeOverallTimeLimit(settings.overall_time_limit_seconds || ROBUST_AUTO_DURATION_SECONDS)
+        );
     settings.ui_capacity_shortage_confirmed = true;
     settings.ui_accept_incomplete_best_effort = true;
     settings.best_effort_on_timeout = true;
     settings.ui_allow_best_effort_on_timeout = true;
-    settings.capacity_limited_fast_lane = "auto";
-    settings.capacity_limited_overall_time_limit_seconds = fastLaneSeconds;
-    settings.capacity_limited_session_time_limit = expected >= 600 ? 24 : 12;
-    settings.capacity_limited_period_time_limit = expected >= 600 ? 30 : 14;
-    settings.capacity_limited_period_retry_time_limit = expected >= 600 ? 12 : 8;
-    if(useShortCapacityBudget){
-      settings.ui_allow_short_backend_deadline = true;
-      settings.overall_time_limit_seconds = Math.min(
-        fastLaneSeconds,
-        normalizeOverallTimeLimit(settings.overall_time_limit_seconds || fastLaneSeconds)
-      );
-      settings.integrated_time_limit = Math.min(
-        fastLaneSeconds,
-        Math.max(10, Number(settings.integrated_time_limit || fastLaneSeconds) || fastLaneSeconds)
-      );
-      settings.progress_estimate_seconds = fastLaneSeconds;
-      settings.session_time_limit = Math.min(
-        expected >= 600 ? 24 : 12,
-        Math.max(4, Number(settings.session_time_limit || (expected >= 600 ? 24 : 12)) || (expected >= 600 ? 24 : 12))
-      );
-      settings.period_time_limit = Math.min(
-        expected >= 600 ? 30 : 14,
-        Math.max(4, Number(settings.period_time_limit || (expected >= 600 ? 30 : 14)) || (expected >= 600 ? 30 : 14))
-      );
-      settings.period_fast_time_limit = settings.period_time_limit;
-      settings.period_retry_time_limit = Math.min(
-        expected >= 600 ? 12 : 8,
-        Math.max(2, Number(settings.period_retry_time_limit || (expected >= 600 ? 12 : 8)) || (expected >= 600 ? 12 : 8))
-      );
-      settings.fast_quality_retry_time_limit_seconds = Math.min(
-        20,
-        Math.max(6, Number(settings.fast_quality_retry_time_limit_seconds || 12) || 12)
-      );
-      settings.native_global_deadline_ms = fastLaneSeconds * 1000;
-      settings.backend_deadline_ms = fastLaneSeconds * 1000;
-      settings.native_deadline_reserve_ms = 750;
-    }else{
-      delete settings.ui_allow_short_backend_deadline;
-      delete settings.backend_deadline_ms;
-      delete settings.native_global_deadline_ms;
-    }
-    settings.ui_allow_incomplete_retry_after_single_pass = false;
-    settings.complete_schedule_seed_retry = false;
-    settings.allow_zero_one_quality_retry = false;
-    settings.allow_teacher_session_deep_retry = false;
-    settings.allow_teacher_session_fast_portfolio = false;
+    // A proven shortage changes only the terminal contract: the safely placed
+    // portion may be returned with an explicit remainder.  It must not reduce
+    // the normal completeness budget to the old 30/45/60-second fast lane,
+    // because that manufactured avoidable solver-unassigned debt.
+    settings.capacity_limited_fast_lane = false;
+    delete settings.capacity_limited_overall_time_limit_seconds;
+    delete settings.capacity_limited_session_time_limit;
+    delete settings.capacity_limited_period_time_limit;
+    delete settings.capacity_limited_period_retry_time_limit;
+    settings.ui_allow_short_backend_deadline = true;
+    settings.overall_time_limit_seconds = solveBudgetSeconds;
+    settings.integrated_time_limit = Math.max(
+      solveBudgetSeconds,
+      Number(settings.integrated_time_limit || 0) || 0
+    );
+    settings.progress_estimate_seconds = solveBudgetSeconds;
+    settings.native_global_deadline_ms = solveBudgetSeconds * 1000;
+    settings.backend_deadline_ms = solveBudgetSeconds * 1000;
+    settings.ui_allow_incomplete_retry_after_single_pass = true;
+    settings.complete_schedule_seed_retry = true;
     settings.ui_skip_final_existing_teacher_gap_optimize = true;
     settings.allow_native_reference_fallback = true;
     settings.capacity_shortage_total = shortageTotal;
@@ -6552,35 +7694,21 @@
     if(settings?.ui_capacity_precheck_warning_only === true){
       return {ok: true, warning: warning || "", capacityShortage: false};
     }
-    const requireComplete = shouldRequireCompletePresetResult(settings)
-      || (settings?.require_complete_schedule === true && !isInternalIncompleteSolve(settings));
-    if(requireComplete){
-      const detail = capacityPrecheckPopupMessage(8);
-      const classWarnings = detail.warnings.filter(item => item.kind === "class.fixedOff.capacity");
-      const teacherWarnings = detail.warnings.filter(item => item.kind !== "class.fixedOff.capacity");
-      const selectedWarnings = classWarnings.length && teacherWarnings.length
-        ? [...classWarnings.slice(0, 4), ...teacherWarnings.slice(0, 4)]
-        : detail.warnings.slice(0, 8);
-      const parts = selectedWarnings.map(item => {
-        const isClass = item.kind === "class.fixedOff.capacity";
-        const name = isClass
-          ? (item.className || item.classId || "Lớp")
-          : (item.teacherName || item.teacherId || "Giáo viên");
-        const required = Number(item.required || 0);
-        const capacity = Number(item.capacity || 0);
-        const shortage = Number(item.shortage || Math.max(0, required - capacity));
-        return `${isClass ? "Lớp" : "Giáo viên"} ${name}: cần ${required}, tối đa ${capacity}, thiếu ${shortage}`;
-      });
-      const more = detail.warnings.length > selectedWarnings.length
-        ? `; còn ${detail.warnings.length - selectedWarnings.length} mục khác`
-        : "";
+    // A proven shortage is not a reason to abort the whole run.  Continue
+    // automatically and let the backend's optional-demand lane put only the
+    // excess in Chưa phân.  The warning remains available for status/diagnostic
+    // UI, but no confirmation dialog can discard the rest of the timetable.
+    if(shouldRequireCompletePresetResult(settings) && strictBrowserAutomaticRequired(settings)){
       return {
-        ok: false,
+        ok:false,
         warning,
-        capacityShortage: true,
-        blocked: true,
-        blockingMessage: `Không thể xếp lịch đầy đủ vì thiếu ô hợp lệ: ${parts.join("; ")}${more}. Hãy mở bớt tiết nghỉ hoặc nới yêu cầu rồi xếp lại.`
+        capacityShortage:true,
+        blocked:true,
+        blockingMessage:"Chế độ Agent trình duyệt chỉ nhận lịch đầy đủ. Hãy tắt Agent để VPS xếp phần khả thi và đưa tiết dư vào Chưa phân."
       };
+    }
+    if(shouldRequireCompletePresetResult(settings)){
+      return {ok:true, warning, capacityShortage:true, autoAccepted:true};
     }
     if(settings?.ui_skip_capacity_precheck_confirm === true || settings?.ui_skip_capacity_confirm === true){
       return {ok: true, warning, capacityShortage: true};
@@ -6662,6 +7790,43 @@
     const backendDetail = String(err?.payload?.error || err?.payload?.detail || "").trim();
     const text = `${kind} ${backendDetail} ${raw}`.toLowerCase();
     const normalizedKind = kind.toLowerCase();
+    if(
+      normalizedKind === "local_agent_unavailable"
+      || normalizedKind === "browser_agent_required"
+      || normalizedKind === "browser_agent_requires_async_job"
+      || normalizedKind === "web_agent_required"
+      || normalizedKind === "browser_agent_start_failed"
+      || normalizedKind === "browser_agent_disconnected"
+      || normalizedKind === "browser_agent_stopped"
+      || normalizedKind === "browser_agent_failed"
+      || normalizedKind === "browser_agent_quality_unmet"
+    ){
+      return {
+        title: "Solver Local chưa chạy được",
+        message: "Agent đang bật nhưng thiết bị này chưa chạy được lượt Local. Không tự chuyển sang VPS; hãy tắt Agent rồi bấm Xếp lại nếu muốn dùng VPS.",
+        level: "warning",
+        statusLevel: "warning",
+        statusMessage: "Local thất bại; tắt Agent rồi bấm Xếp lại để dùng VPS.",
+        progressLabel: "Local lỗi"
+      };
+    }
+    if(
+      normalizedKind === "native_agent_required"
+      || normalizedKind === "native_agent_requires_async_job"
+      || normalizedKind === "native_agent_start_failed"
+      || normalizedKind === "native_agent_disconnected"
+      || normalizedKind === "native_agent_quality_unmet"
+      || normalizedKind === "native_agent_stopped"
+    ){
+      return {
+        title: "Cần TKBCherry Agent Windows",
+        message: "Lượt này chỉ chạy bằng TKBCherry Agent trên máy Windows. Hãy mở/cập nhật Agent rồi bấm Xếp lại; hệ thống không tự chuyển sang VPS.",
+        level: "warning",
+        statusLevel: "warning",
+        statusMessage: "Hãy mở/cập nhật TKBCherry Agent Windows rồi bấm Xếp lại.",
+        progressLabel: "Mở Agent"
+      };
+    }
     if(normalizedKind === "solver_result_auth_required" || err?.authRequired === true){
       return {
         title: "Phi\u00ean \u0111\u0103ng nh\u1eadp h\u1ebft h\u1ea1n",
@@ -7184,14 +8349,15 @@
     const gap1 = metricNumber((metrics.gap_distribution || {})["1"], 0);
     const gap2Plus = gap2PlusCount(metrics);
     const onePeriodSessions = metricNumber(metrics.one_period_teacher_sessions, 0);
+    const onePeriodTarget = onePeriodTeacherSessionLowerBound(metrics);
     const gapTarget = teacherSessionGapQualityTarget(settings);
     const needsTeacher = teacherTarget > 0 && teacherSessions > teacherTarget;
     const softGapMayRemainDebt = settings?.allow_quality_debt === true
       && shouldUseFixedOffValidatedQualityBank(data, settings);
     const needsSoftGap = !softGapMayRemainDebt && gapTarget != null && gap1 > gapTarget;
-    const needsGap = onePeriodSessions > 0 || gap2Plus > 0 || needsSoftGap;
+    const needsGap = onePeriodSessions > onePeriodTarget || gap2Plus > 0 || needsSoftGap;
     if(!needsTeacher && !needsGap) return null;
-    const hardGap = onePeriodSessions > 0 || gap2Plus > 0;
+    const hardGap = onePeriodSessions > onePeriodTarget || gap2Plus > 0;
     let effectiveTeacherTarget = teacherSessions;
     if(needsTeacher && teacherTarget > 0){
       if(hardGap){
@@ -7242,7 +8408,7 @@
     const c = payloadCompletion(payload);
     if(!c.complete) return false;
     const metrics = payload?.metrics || {};
-    return metricNumber(metrics.one_period_teacher_sessions, 0) > 0 || gap2PlusCount(metrics) > 0;
+    return !onePeriodTeacherSessionFloorReached(metrics) || gap2PlusCount(metrics) > 0;
   }
 
   function zeroOneQualityRetrySettings(baseSettings, data, payload, seed, runIndex){
@@ -7554,7 +8720,9 @@
     if(gap1Target == null) gap1Target = nonnegativeNumberSetting(practical.gap1Target);
     const q = teacherQualitySummary(payload);
     const needsTeacher = teacherTarget > 0 && q.teacherSessions > teacherTarget;
-    const needsGap = q.onePeriod > 0 || q.gap2Plus > 0 || (gap1Target != null && q.gap1 > gap1Target);
+    const needsGap = !onePeriodTeacherSessionFloorReached(payload?.metrics || {})
+      || q.gap2Plus > 0
+      || (gap1Target != null && q.gap1 > gap1Target);
     if(!needsTeacher && !needsGap) return null;
     const teacherSlack = expected >= 900 ? 8 : 5;
     const gapSlack = expected >= 900 ? 1 : 0;
@@ -7571,7 +8739,8 @@
 
   function fastTeacherSessionPortfolioSatisfied(payload, plan){
     const q = teacherQualitySummary(payload);
-    if(q.onePeriod > 0 || q.gap2Plus > 0) return false;
+    const metrics = payload?.metrics || {};
+    if(!onePeriodTeacherSessionFloorReached(metrics) || q.gap2Plus > 0) return false;
     if(plan.teacherStop > 0 && q.teacherSessions > plan.teacherStop) return false;
     if(plan.gap1Stop != null && q.gap1 > plan.gap1Stop) return false;
     return true;
@@ -7665,6 +8834,7 @@
       unassigned: metricNumber(metrics.unassigned_periods, 0),
       teacherSessions: metricNumber(metrics.teacher_sessions, 0),
       onePeriod: metricNumber(metrics.one_period_teacher_sessions, 0),
+      onePeriodLowerBound: onePeriodTeacherSessionLowerBound(metrics),
       gap1: gapExactCount(metrics, 1),
       gap2Plus: gap2PlusCount(metrics),
       totalGap: metricGapTotal(metrics)
@@ -7721,19 +8891,22 @@
     }
 
     const q = teacherQualitySummary(payload);
+    const metrics = payload?.metrics || {};
+    const singletonFloorMessage = onePeriodTeacherSessionFloorMessage(payload);
     let targets = {teacherTarget:0, gap1Target:null};
     try{ targets = practicalTeacherQualityTargets(data || getData()); }catch(_){ }
     const teacherDebt = Number(targets.teacherTarget || 0) > 0
       && q.teacherSessions > Number(targets.teacherTarget || 0);
     const gap1Debt = targets.gap1Target != null
       && q.gap1 > Number(targets.gap1Target);
-    const hardQualityDebt = q.onePeriod > 0 || q.gap2Plus > 0;
+    const hardQualityDebt = !onePeriodTeacherSessionFloorReached(metrics)
+      || q.gap2Plus > 0;
     const needsMore = hardQualityDebt || teacherDebt || gap1Debt;
     if(needsMore){
       return {
         level:"ok",
         progressLabel:"Hoàn tất",
-        message:SOLVE_COMPLETE_MESSAGE,
+        message:singletonFloorMessage || SOLVE_COMPLETE_MESSAGE,
         targetMet:false,
         quality:q,
         targets
@@ -7742,7 +8915,7 @@
     return {
       level:"ok",
       progressLabel:"Hoàn tất",
-      message:SOLVE_COMPLETE_MESSAGE,
+      message:singletonFloorMessage || SOLVE_COMPLETE_MESSAGE,
       targetMet:true,
       quality:q,
       targets
@@ -7772,9 +8945,10 @@
     const visibleQualityUsable = metricNumber(visibleMetrics.teacher_sessions, 0) > 0;
     const payloadQualityUsable = payloadComplete && hasVisibleTeacherQualityMetrics(payload);
     if(!visibleQualityUsable && !payloadQualityUsable) return false;
-    const quality = teacherQualitySummary({
-      metrics:visibleQualityUsable ? visibleMetrics : payload.metrics
-    });
+    const qualityMetrics = visibleQualityUsable
+      ? Object.assign({}, payload?.metrics || {}, visibleMetrics)
+      : payload.metrics;
+    const quality = teacherQualitySummary({metrics:qualityMetrics});
     const targets = qualityTargets || practicalTeacherQualityTargets(safeData);
     const teacherTarget = positiveNumberSetting(targets?.teacherTarget);
     const teacherDebt = teacherTarget > 0
@@ -7788,7 +8962,8 @@
     // visible schedule still carries hard quality debt; that is the case where
     // the incumbent neighbourhood is genuinely too rough (for example the
     // former 612-session/75-singleton result).
-    const hasHardQualityDebt = quality.onePeriod > 0 || quality.gap2Plus > 0;
+    const hasHardQualityDebt = !onePeriodTeacherSessionFloorReached(qualityMetrics)
+      || quality.gap2Plus > 0;
     if(!hasHardQualityDebt) return false;
     if(expected < 900) return true;
     const severeSingletonDebt = quality.onePeriod >= Math.max(
@@ -7802,22 +8977,143 @@
   }
 
   function noBetterScheduleStatus(payload){
-    void payload;
-    return NO_BETTER_SCHEDULE_MESSAGE;
+    return onePeriodTeacherSessionFloorMessage(payload)
+      || NO_BETTER_SCHEDULE_MESSAGE;
   }
 
   function onePeriodTeacherSessionCount(metrics){
     return metricNumber(metrics?.one_period_teacher_sessions, 0);
   }
 
+  function onePeriodTeacherSessionLowerBound(metrics){
+    if(!metrics || typeof metrics !== "object") return 0;
+    if(!Object.prototype.hasOwnProperty.call(metrics, "one_period_teacher_sessions_lower_bound")){
+      return 0;
+    }
+    const current = Math.max(0, onePeriodTeacherSessionCount(metrics));
+    const reported = Number(metrics.one_period_teacher_sessions_lower_bound);
+    if(!Number.isSafeInteger(reported) || reported < 0 || reported > current) return 0;
+    if(reported === 0) return 0;
+    const evidence = metrics.one_period_teacher_sessions_lower_bound_evidence;
+    if(!Array.isArray(evidence) || evidence.length === 0) return 0;
+    if(
+      evidence.length === 1
+      && evidence[0]
+      && typeof evidence[0] === "object"
+      && !Array.isArray(evidence[0])
+      && String(evidence[0].kind || "") === "cp_sat_global_singleton_optimum"
+    ){
+      const proof = evidence[0];
+      const objective = Number(proof.objective);
+      const bestBound = Number(proof.best_bound);
+      const proofFloor = Number(proof.one_period_teacher_sessions);
+      const upperCap = Number(proof.nonbinding_teacher_session_cap);
+      const problemFingerprint = String(proof.problem_fingerprint || "").toLowerCase();
+      const metricFingerprint = String(
+        metrics.one_period_teacher_sessions_lower_bound_problem_fingerprint || ""
+      ).toLowerCase();
+      return Number(proof.version) === 1
+        && String(proof.status_name || "").toUpperCase() === "OPTIMAL"
+        && String(proof.objective_mode || "") === "minimize_one_period_sessions"
+        && Number.isSafeInteger(objective)
+        && Number.isSafeInteger(bestBound)
+        && objective === bestBound
+        && objective === reported
+        && Number.isSafeInteger(proofFloor)
+        && proofFloor === reported
+        && Number.isSafeInteger(upperCap)
+        && upperCap > 0
+        && typeof proof.fixed_aware === "boolean"
+        && /^[0-9a-f]{64}$/.test(problemFingerprint)
+        && metricFingerprint === problemFingerprint
+          ? reported
+          : 0;
+    }
+    const seen = new Set();
+    let provenTotal = 0;
+    for(const raw of evidence){
+      if(!raw || typeof raw !== "object" || Array.isArray(raw)) return 0;
+      const teacher = String(raw.teacher || "").trim();
+      const part = String(raw.part || "").trim();
+      const className = String(raw.class || "").trim();
+      const subject = String(raw.subject || "").trim();
+      const periods = Number(raw.periods_per_week);
+      const maxPerSession = Number(raw.max_periods_per_session);
+      const minimumSessions = Number(raw.minimum_sessions);
+      const forcedSingletons = Number(raw.forced_singletons);
+      const key = `${teacher}\u0000${part}`;
+      if(
+        !teacher || !className || !subject
+        || !["AM", "PM"].includes(part)
+        || seen.has(key)
+        || !Number.isSafeInteger(periods) || periods <= 0
+        || !Number.isSafeInteger(maxPerSession) || maxPerSession <= 0
+        || !Number.isSafeInteger(minimumSessions) || minimumSessions <= 0
+        || !Number.isSafeInteger(forcedSingletons) || forcedSingletons <= 0
+      ) return 0;
+      const expectedSessions = Math.ceil(periods / maxPerSession);
+      const expectedSingletons = Math.max(0, 2 * expectedSessions - periods);
+      if(
+        minimumSessions !== expectedSessions
+        || forcedSingletons !== expectedSingletons
+      ) return 0;
+      seen.add(key);
+      provenTotal += forcedSingletons;
+      if(!Number.isSafeInteger(provenTotal) || provenTotal > reported) return 0;
+    }
+    return provenTotal === reported ? reported : 0;
+  }
+
+  function onePeriodTeacherSessionTarget(metrics, configuredTarget){
+    const configured = Number(configuredTarget);
+    const target = Number.isFinite(configured) && configured >= 0
+      ? Math.round(configured)
+      : 0;
+    return Math.max(target, onePeriodTeacherSessionLowerBound(metrics));
+  }
+
+  function onePeriodTeacherSessionFloorReached(metrics){
+    return onePeriodTeacherSessionCount(metrics)
+      <= onePeriodTeacherSessionLowerBound(metrics);
+  }
+
+  function onePeriodTeacherSessionFloorMessage(payload){
+    const metrics = payload?.metrics || {};
+    const floor = onePeriodTeacherSessionLowerBound(metrics);
+    const current = onePeriodTeacherSessionCount(metrics);
+    if(floor <= 0 || current > floor) return "";
+    const evidence = Array.isArray(
+      metrics.one_period_teacher_sessions_lower_bound_evidence
+    )
+      ? metrics.one_period_teacher_sessions_lower_bound_evidence
+      : [];
+    const item = evidence.find(row => row && typeof row === "object") || null;
+    const exactCpSatFloor = String(item?.kind || "") === "cp_sat_global_singleton_optimum";
+    const headline = exactCpSatFloor
+      ? `Đã chứng minh mức tối ưu: Dạy 1 tiết/buổi thấp nhất là ${floor}.`
+      : `Đã tối ưu theo phân công: Dạy 1 tiết/buổi thấp nhất là ${floor}.`;
+    if(!item) return headline;
+    const teacher = String(item.teacher || "").trim();
+    const subject = String(item.subject || "").trim();
+    const className = String(item.class || "").trim();
+    const periods = Math.max(0, Math.round(metricNumber(item.periods_per_week, 0)));
+    const maximum = Math.max(
+      0,
+      Math.round(metricNumber(item.max_periods_per_session, 0))
+    );
+    if(!teacher || periods <= 0 || maximum <= 0) return headline;
+    const assignment = [subject, className].filter(Boolean).join(" · ");
+    return `${headline} ${teacher}${assignment ? ` (${assignment})` : ""} có ${periods} tiết/tuần, tối đa ${maximum} tiết/buổi nên bắt buộc còn ${floor}.`;
+  }
+
   function needsTeacherQualityCleanup(payload){
     const metrics = payload?.metrics || {};
-    return onePeriodTeacherSessionCount(metrics) > 0 || metricGapTotal(metrics) > 0;
+    return !onePeriodTeacherSessionFloorReached(metrics) || metricGapTotal(metrics) > 0;
   }
 
   function needsStrictTeacherQualityCleanup(payload){
     const metrics = payload?.metrics || {};
-    return onePeriodTeacherSessionCount(metrics) > 0 || gap2PlusCount(metrics) > 0;
+    return !onePeriodTeacherSessionFloorReached(metrics) || gap2PlusCount(metrics) > 0;
   }
 
   function teacherQualityTargetsSatisfied(payload, settings){
@@ -7825,7 +9121,7 @@
     const acceptTeacher = positiveNumberSetting(settings?.optimization_accept_teacher_sessions ?? settings?.target_teacher_sessions);
     const acceptGap1 = nonnegativeNumberSetting(settings?.optimization_accept_gap1_sessions ?? settings?.target_gap1_sessions);
     if(!acceptTeacher && acceptGap1 == null) return false;
-    if(onePeriodTeacherSessionCount(metrics) !== 0) return false;
+    if(!onePeriodTeacherSessionFloorReached(metrics)) return false;
     if(gap2PlusCount(metrics) !== 0) return false;
     if(acceptTeacher && metricNumber(metrics.teacher_sessions, 1e9) > acceptTeacher) return false;
     if(acceptGap1 != null && gapExactCount(metrics, 1) > acceptGap1) return false;
@@ -7836,7 +9132,7 @@
     if(!payloadCompletion(payload).complete) return false;
     if(teacherQualityTargetsSatisfied(payload, settings || {})) return false;
     const metrics = payload?.metrics || {};
-    if(onePeriodTeacherSessionCount(metrics) > 0 || gap2PlusCount(metrics) > 0) return true;
+    if(!onePeriodTeacherSessionFloorReached(metrics) || gap2PlusCount(metrics) > 0) return true;
     if(teacherSessionQualityTarget(settings || {}, data || getData(), payload) > 0) return true;
     const gapTarget = teacherSessionGapQualityTarget(settings || {});
     if(gapTarget != null && gapExactCount(metrics, 1) > gapTarget) return true;
@@ -7854,7 +9150,7 @@
     const opt = solver.teacher_session_optimization || {};
     const completion = payloadCompletion(payload);
     if(!completion.complete || completion.hardOk === false) return false;
-    if(metricNumber(metrics.one_period_teacher_sessions, 1e9) !== 0) return false;
+    if(!onePeriodTeacherSessionFloorReached(metrics)) return false;
     if(gap2PlusCount(metrics) !== 0) return false;
     if(opt.target_met === true || opt.good_enough_met === true) return true;
     const runtime = solver.runtime_settings || {};
@@ -7882,6 +9178,20 @@
       === "one_period_teacher_sessions_gap2_gap1");
   }
 
+  function normalizedGapOptimizationTarget(settings){
+    const raw = String(settings?.optimization_gap_target || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_");
+    if(["gap2", "gap_2", "teacher_gap2_sessions", "optimize_gap2"].includes(raw)){
+      return "gap2";
+    }
+    if(["gap1", "gap_1", "teacher_gap1_sessions", "optimize_gap1"].includes(raw)){
+      return "gap1";
+    }
+    return "";
+  }
+
   function normalizeSolveRequestMode(value){
     const mode = String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
     if(["quick", "complete", "fill", "quick_fill", "quick_complete"].includes(mode)){
@@ -7900,13 +9210,17 @@
     if(["session", "sessions", "teacher_sessions", "optimize_sessions"].includes(mode)){
       return SOLVE_REQUEST_MODES.sessions;
     }
+    if(["gap2", "gap_2", "teacher_gap2_sessions", "optimize_gap2"].includes(mode)){
+      return SOLVE_REQUEST_MODES.gap2;
+    }
+    if(["gap1", "gap_1", "teacher_gap1_sessions", "optimize_gap1"].includes(mode)){
+      return SOLVE_REQUEST_MODES.gap1;
+    }
     if([
       "gap",
       "gaps",
       "teacher_gaps",
       "teacher_gap_sessions",
-      "teacher_gap1_sessions",
-      "teacher_gap2_sessions",
       "optimize_gaps"
     ].includes(mode)){
       return SOLVE_REQUEST_MODES.gaps;
@@ -7997,12 +9311,9 @@
     ){
       return `${current} bu\u1ed5i 1 ti\u1ebft`;
     }
-    if(focus === "teacher_gap2_sessions") return `${current} tr\u1ed1ng 2+`;
-    if(
-      focus === "teacher_gap_sessions"
-      || focus === "teacher_gap1_sessions"
-      || focus === "optimize_gaps"
-    ){
+    if(focus === "teacher_gap2_sessions") return `${current} tr\u1ed1ng 2 ti\u1ebft`;
+    if(focus === "teacher_gap1_sessions") return `${current} tr\u1ed1ng 1 ti\u1ebft`;
+    if(focus === "teacher_gap_sessions" || focus === "optimize_gaps"){
       return `${current} ti\u1ebft tr\u1ed1ng`;
     }
     return "";
@@ -8011,6 +9322,111 @@
   function candidateWithinVisibleQualityEnvelope(candidate, incumbent, settings){
     const next = teacherQualitySummary(candidate);
     const current = teacherQualitySummary(incumbent);
+    const focus = optimizationFocusForSolveRequestMode(settings?.optimization_focus);
+    const gapTarget = normalizedGapOptimizationTarget(settings);
+    const safeStagedAutomatic = focus === "automatic"
+      && settings?.optimization_safe_staged_reclick === true;
+
+    if(safeStagedAutomatic){
+      // Repeated Automatic clicks may cross a small lower-priority valley only
+      // while singleton/Gap2 debt is measurably shrinking. The backend enforces
+      // the same bounded envelope; repeat it at settlement so an older or
+      // mismatched executor can never publish arbitrary quality debt.
+      // Candidate may carry a newly proven structural floor that the saved
+      // incumbent did not know yet. Validate both evidence bundles and honor
+      // the stronger proof during settlement.
+      const singletonTarget = Math.max(
+        onePeriodTeacherSessionTarget(incumbent?.metrics, 0),
+        onePeriodTeacherSessionTarget(candidate?.metrics, 0)
+      );
+      const hardQualityDebt = current.onePeriod > singletonTarget || current.gap2Plus > 0;
+      const singletonProgress = next.onePeriod < current.onePeriod;
+      const gap2Progress = next.gap2Plus < current.gap2Plus;
+      const hardQualityProgress = hardQualityDebt
+        && (singletonProgress || gap2Progress);
+      const legacySessionHeadroom = Math.max(
+        8,
+        Math.min(
+          24,
+          current.teacherSessions >= 600
+            ? 24
+            : Math.ceil(Math.max(1, current.teacherSessions) * 0.02)
+        )
+      );
+      const legacyGap1Headroom = Math.max(
+        8,
+        Math.min(24, Math.ceil(Math.max(1, current.gap1) * 0.10))
+      );
+      const legacyTotalGapHeadroom = Math.max(
+        8,
+        Math.min(24, Math.ceil(Math.max(1, current.totalGap) * 0.10))
+      );
+      const boundedRepairCap = (field, currentValue, legacyHeadroom) => {
+        const incumbentCap = Number(incumbent?.metrics?.[field]);
+        const candidateCap = Number(candidate?.metrics?.[field]);
+        // Once an incumbent carries a lineage cap, keep it even if an older
+        // client bug already left the visible timetable above that cap. Using
+        // the candidate's larger cap in that case would legitimize a ratchet
+        // (for example 654 -> 678 -> 702). A candidate cap is considered only
+        // on the first repair click, before the incumbent owns one.
+        const carried = Number.isSafeInteger(incumbentCap) && incumbentCap >= 0
+          ? incumbentCap
+          : candidateCap;
+        if(!Number.isSafeInteger(carried) || carried < 0){
+          return currentValue + legacyHeadroom;
+        }
+        return Math.min(currentValue + 120, carried);
+      };
+      const sessionCap = boundedRepairCap(
+        "automatic_quality_repair_session_cap",
+        current.teacherSessions,
+        legacySessionHeadroom
+      );
+      const gap1Cap = boundedRepairCap(
+        "automatic_quality_repair_gap1_cap",
+        current.gap1,
+        legacyGap1Headroom
+      );
+      const totalGapCap = boundedRepairCap(
+        "automatic_quality_repair_total_gap_cap",
+        current.totalGap,
+        legacyTotalGapHeadroom
+      );
+      return next.onePeriod <= current.onePeriod
+        && next.gap2Plus <= current.gap2Plus
+        && (
+          !hardQualityDebt
+          || singletonProgress
+          || gap2Progress
+        )
+        && (
+          next.teacherSessions <= current.teacherSessions
+          || (hardQualityProgress && next.teacherSessions <= sessionCap)
+        )
+        && (
+          next.gap1 <= current.gap1
+          || (hardQualityProgress && next.gap1 <= gap1Cap)
+        )
+        && (
+          next.totalGap <= current.totalGap
+          || (hardQualityProgress && next.totalGap <= totalGapCap)
+        );
+    }
+
+    // Every focused button owns exactly one visible objective.  The remaining
+    // counters are safety envelopes only: a solver may incidentally improve
+    // them, but it may never pay for the requested gain by making another
+    // visible quality counter worse.
+    if([
+      "singletons",
+      "sessions"
+    ].includes(focus) || gapTarget){
+      return next.onePeriod <= current.onePeriod
+        && next.teacherSessions <= current.teacherSessions
+        && next.gap2Plus <= current.gap2Plus
+        && next.gap1 <= current.gap1
+        && next.totalGap <= current.totalGap;
+    }
     if(next.onePeriod > current.onePeriod) return false;
     if(next.teacherSessions > current.teacherSessions) return false;
     if(usesTwoStageTeacherQuality(settings, candidate, incumbent)){
@@ -8037,6 +9453,22 @@
 
   function visibleTeacherQualityTuple(payload, settings, candidate, incumbent){
     const quality = teacherQualitySummary(payload);
+    const focus = optimizationFocusForSolveRequestMode(settings?.optimization_focus);
+    if(
+      focus === "automatic"
+      && settings?.optimization_safe_staged_reclick === true
+    ){
+      // Zero singleton/Gap2 are portfolio targets before final compaction. The
+      // envelope above bounds every temporary trade-off; this tuple keeps useful
+      // progress even when escaping the local minimum needs a few extra sessions.
+      return [
+        quality.onePeriod,
+        quality.gap2Plus,
+        quality.teacherSessions,
+        quality.gap1,
+        quality.totalGap
+      ];
+    }
     if(usesTwoStageTeacherQuality(settings, candidate, incumbent)){
       return [
         quality.onePeriod,
@@ -8057,6 +9489,21 @@
 
   function payloadStrictlyBetterTeacherQuality(candidate, incumbent, settings){
     if(!candidateWithinVisibleQualityEnvelope(candidate, incumbent, settings)) return false;
+    const focus = optimizationFocusForSolveRequestMode(settings?.optimization_focus);
+    const gapTarget = normalizedGapOptimizationTarget(settings);
+    const nextFocused = teacherQualitySummary(candidate);
+    const currentFocused = teacherQualitySummary(incumbent);
+    if(focus === "singletons"){
+      return nextFocused.onePeriod < currentFocused.onePeriod;
+    }
+    if(focus === "sessions"){
+      return nextFocused.teacherSessions < currentFocused.teacherSessions;
+    }
+    if(gapTarget){
+      return gapTarget === "gap2"
+        ? nextFocused.gap2Plus < currentFocused.gap2Plus
+        : nextFocused.gap1 < currentFocused.gap1;
+    }
     const next = visibleTeacherQualityTuple(candidate, settings, candidate, incumbent);
     const current = visibleTeacherQualityTuple(incumbent, settings, candidate, incumbent);
     for(let index = 0; index < next.length; index += 1){
@@ -8530,6 +9977,113 @@
     return flexibleScheduled <= 6 && flexibleScheduled / Math.max(1, expected) <= 0.02;
   }
 
+  function shouldUseCapacitySafeFreshProbe(settings, data){
+    if(!data || settings?.ui_capacity_safe_fresh_probe_attempted === true) return false;
+    if(settings?.ui_capacity_safe_fresh_probe === true) return false;
+    if(settings?.ui_unified_solve_kind !== "fresh_complete_first") return false;
+    if(!isTeacherSessionOptSettings(settings)) return false;
+    const expected = expectedLessonCount(data);
+    if(expected <= 0 || countScheduledLessons(data) >= expected) return false;
+    const fixedScheduled = countFixedScheduledLessons(data);
+    if(fixedScheduled <= 0) return false;
+    // Some large schools have ample class slots but a teacher-specific OFF
+    // bottleneck. Their class-slack profile is therefore null even though the
+    // backend can prove an exact capacity remainder. Route these heavy
+    // fixed/OFF inputs through the same bounded capacity probe instead of
+    // spending the whole 180s completeness lane first.
+    if(
+      expected >= 1200
+      && fixedScheduled >= 20
+      && hasFixedOffPressure(data)
+    ) return true;
+    const profile = settings?.tight_class_fixed_off_profile;
+    if(!profile || typeof profile !== "object") return false;
+    const profileExpected = Number(profile.expected || 0);
+    const profileAvailable = Number(profile.availableSlots || 0);
+    const profileSlack = Number(profile.slack);
+    return Number.isFinite(profileExpected)
+      && profileExpected === expected
+      && Number.isFinite(profileAvailable)
+      && profileAvailable <= expected
+      && Number.isFinite(profileSlack)
+      && profileSlack <= 0;
+  }
+
+  function capacitySafeFreshProbeSettings(baseSettings, data, runId){
+    const workers = Math.max(2, Math.min(6, Number(baseSettings?.num_workers || 6) || 6));
+    // The Cloud Run coordinator needs a little headroom to serialize and
+    // publish a hard-valid capacity partial. A 30s watchdog can expire while
+    // the solver has already found the safe 2097/2103 result (~25–28s).
+    const seconds = 60;
+    return {
+      solver_mode: "auto",
+      auto_sort_mode: "fresh",
+      ui_requested_solve_mode: "automatic",
+      ui_unified_solve_kind: "fresh_complete_first",
+      ui_capacity_safe_fresh_probe: true,
+      ui_capacity_shortage_confirmed: true,
+      ui_accept_incomplete_best_effort: true,
+      ui_allow_best_effort_on_timeout: true,
+      ui_allow_short_backend_deadline: true,
+      ui_internal_allow_incomplete: true,
+      ui_preserve_off_cells_in_solver_request: true,
+      ui_skip_capacity_precheck: true,
+      ui_skip_pre_solve_constraint_release: true,
+      ui_disable_automatic_retry: true,
+      require_complete_schedule: false,
+      best_effort_on_timeout: true,
+      force_fresh_backend_solve: true,
+      allow_backend_cache: false,
+      allow_solver_warm_start: false,
+      preserve_existing_tkb: false,
+      fresh_randomize: true,
+      randomize_search: true,
+      num_workers: workers,
+      session_time_limit: 12,
+      period_time_limit: 12,
+      period_retry_time_limit: 8,
+      integrated_time_limit: seconds,
+      overall_time_limit_seconds: seconds,
+      optimization_time_limit_seconds: seconds,
+      backend_deadline_ms: seconds * 1000,
+      native_global_deadline_ms: seconds * 1000,
+      reference_watchdog_deadline_ms: seconds * 1000,
+      native_deadline_reserve_ms: 500,
+      progress_estimate_seconds: seconds,
+      solve_run_id: `${runId || makeSolveRunId()}-capacity-fresh-probe-${Date.now()}`
+    };
+  }
+
+  async function solveCapacitySafeFreshProbe(baseSettings, baseData, runId){
+    if(!shouldUseCapacitySafeFreshProbe(baseSettings, baseData)) return null;
+    const probeSettings = capacitySafeFreshProbeSettings(baseSettings, baseData, runId);
+    probeSettings.ui_capacity_safe_fresh_probe_attempted = true;
+    const probeData = clonePlain(baseData || getData() || {});
+    setStatus("Đang xếp phần dữ liệu có ô nghỉ...", "info");
+    restartProgressForRetry(probeSettings, probeData);
+    try{
+      const payload = await postSolve(probeSettings, probeData);
+      const completion = payloadCompletion(payload);
+      if(
+        (completion.complete && completion.hardOk)
+        || payloadIsSafeCapacityPartial(payload)
+      ){
+        payload.solver = payload.solver && typeof payload.solver === "object" ? payload.solver : {};
+        payload.solver.runtime_settings = payload.solver.runtime_settings && typeof payload.solver.runtime_settings === "object"
+          ? payload.solver.runtime_settings
+          : {};
+        payload.solver.runtime_settings.ui_capacity_safe_fresh_probe = true;
+        return payload;
+      }
+    }catch(err){
+      rethrowCancelledSolve(err, runId);
+      rethrowAuthRequiredSolve(err);
+      if(err?.kind === "solver_busy") throw err;
+      console.warn(`[${VERSION}] capacity-safe fresh probe skipped`, err);
+    }
+    return null;
+  }
+
   function initialFastDraftSettings(baseSettings, data, runId){
     const expected = expectedLessonCount(data);
     const budgets = speedFirstBudgets(expected);
@@ -8765,7 +10319,8 @@
       const currentMetrics = incumbent?.metrics || {};
       const currentTeacherSessions = metricNumber(currentMetrics.teacher_sessions, 0);
       const currentGap1 = gapExactCount(currentMetrics, 1);
-      const currentHardGap = onePeriodTeacherSessionCount(currentMetrics) > 0 || gap2PlusCount(currentMetrics) > 0;
+      const currentHardGap = !onePeriodTeacherSessionFloorReached(currentMetrics)
+        || gap2PlusCount(currentMetrics) > 0;
       const finalTeacherTarget = positiveNumberSetting(
         settings.optimization_accept_teacher_sessions ?? settings.target_teacher_sessions
       );
@@ -9480,8 +11035,31 @@
         && (text.includes("tiet xep lien") || text.includes("cum"));
     }
 
+    function isDeferredIncompleteMustTeachViolation(item){
+      const kind = String(item?.kind || "").trim().toLowerCase();
+      if(
+        kind === "teacher.mustteach.missing"
+        || kind === "teacher.must_teach.missing"
+      ) return true;
+      const text = normalizedConstraintViolationText(item);
+      return text.includes("vi tri phai co tiet day")
+        && (text.includes("chua duoc xep") || text.includes("chua co tiet"));
+    }
+
+    function isDeferredIncompleteLowerBoundViolation(item){
+      return isDeferredIncompleteLessonBlockMinimumViolation(item)
+        || isDeferredIncompleteMustTeachViolation(item);
+    }
+
     function effectiveSettingsForSolve(settings, data){
       const next = Object.assign({}, settings || {});
+      if(next.ui_capacity_safe_fresh_probe === true){
+        // This is a bounded feasibility checkpoint for a zero-slack,
+        // fixed-off schedule. Keep the deliberately small fresh contract;
+        // the normal teacher-session policy can turn a hard-valid partial
+        // incumbent into a 180-second all-or-nothing failure.
+        return next;
+      }
       const mode = String(next.solver_mode || "auto").toLowerCase();
       const teacherSessionOpt = isTeacherSessionOptSettings(next);
       const search = String(next.search_teacher_sessions ?? "1").toLowerCase() !== "false" && String(next.search_teacher_sessions ?? "1") !== "0";
@@ -10243,6 +11821,12 @@
       const periods = periodLookupByGradeSubject(data);
       let total = 0;
       Object.keys(data?.pccmMatrix || {}).forEach(rawKey => {
+        // A period override is only scheduling demand after the subject has an
+        // assigned teacher.  Legacy/imported data can retain a PCCM key whose
+        // value is blank; the Python adapter intentionally skips that row.
+        // Keep the UI completion contract aligned so a complete backend
+        // result is not rejected as "scheduled < expected" after apply.
+        if(rescueTeacherList(data?.pccmMatrix?.[rawKey]).length === 0) return;
         const parts = String(rawKey).split("|");
         const classId = String(parts.shift() || "").trim();
         const subject = String(parts.join("|") || "").trim();
@@ -10986,6 +12570,7 @@
   }
 
   function applyFixedLessonPreserveSettings(settings, data){
+    if(settings?.ui_capacity_safe_fresh_probe === true) return 0;
     const fixedCount = countFixedScheduledLessons(data);
     if(fixedCount <= 0 || isTruthySetting(settings?.preserve_existing_tkb)) return 0;
     const keepRandomSearch = settings?.zero_one_quality_retry === true
@@ -12223,24 +13808,61 @@
     }
     syncOffLocksToData(data, offLocks);
     await yieldApplySlice(true);
-    const teacherIndexResult = await buildTeacherReleaseCellIndexAsync(data, {
-      sliceBudgetMs:8,
-      shouldCancel:() => false
-    });
-    const postApplyValidation = await currentConstraintViolationsAsync(3000, {
-      allowSyncFallback:false,
-      ignoreStop:true
-    });
-    const postApplyViolations = Array.isArray(postApplyValidation) ? postApplyValidation : [];
-    const postApplyReleasedCells = [];
-    const postApplyReleased = releaseConstraintViolatingLessons(data, {
-      violations:postApplyViolations,
-      teacherCellIndex:teacherIndexResult?.index,
-      releasedCells:postApplyReleasedCells,
-      persist:false,
-      refresh:false,
-      silent:true
-    });
+    // Cloud Run/VPS server-owned capacity results already carry the canonical
+    // accounting, placement and hard-conflict proof. Re-running the complete
+    // browser constraint scanner over a 2,000+ period timetable here can block
+    // the main thread for minutes and prevent the trusted result from being
+    // saved. Keep the full defensive UI validation for every other candidate;
+    // this narrow fast path is guarded by the server proof (or the explicit
+    // capacity probe marker) and the unchanged-schedule apply fence above.
+    const trustedServerOwnedCapacityPartial = (
+      payloadIsSafeCapacityPartial(payload)
+      && (
+        String(solveSettings?.ui_agent_execution_policy || "").trim().toLowerCase() === "server_owned"
+        || payload?.solver?.runtime_settings?.ui_capacity_safe_fresh_probe === true
+      )
+    );
+    let teacherIndexResult = {index:new Map(), cancelled:false};
+    let postApplyValidation = [];
+    let postApplyViolations = [];
+    let postApplyReleasedCells = [];
+    let postApplyReleased = 0;
+    if(!trustedServerOwnedCapacityPartial){
+      teacherIndexResult = await buildTeacherReleaseCellIndexAsync(data, {
+        sliceBudgetMs:8,
+        shouldCancel:() => false
+      });
+      postApplyValidation = await currentConstraintViolationsAsync(3000, {
+        allowSyncFallback:false,
+        ignoreStop:true
+      });
+      postApplyViolations = Array.isArray(postApplyValidation) ? postApplyValidation : [];
+      postApplyReleasedCells = [];
+      postApplyReleased = releaseConstraintViolatingLessons(data, {
+        violations:postApplyViolations,
+        teacherCellIndex:teacherIndexResult?.index,
+        releasedCells:postApplyReleasedCells,
+        persist:false,
+        refresh:false,
+        silent:true
+      });
+      try{
+        payload.solver = payload.solver && typeof payload.solver === "object" ? payload.solver : {};
+        payload.solver.runtime_settings = payload.solver.runtime_settings && typeof payload.solver.runtime_settings === "object"
+          ? payload.solver.runtime_settings
+          : {};
+        payload.solver.runtime_settings.ui_post_apply_validation_skipped = false;
+      }catch(_){ }
+    }else{
+      try{
+        payload.solver = payload.solver && typeof payload.solver === "object" ? payload.solver : {};
+        payload.solver.runtime_settings = payload.solver.runtime_settings && typeof payload.solver.runtime_settings === "object"
+          ? payload.solver.runtime_settings
+          : {};
+        payload.solver.runtime_settings.ui_post_apply_validation_skipped = true;
+        payload.solver.runtime_settings.ui_post_apply_validation_reason = "server_owned_capacity_proof";
+      }catch(_){ }
+    }
     if(postApplyReleased > 0){
       payload.warnings = Array.isArray(payload.warnings) ? payload.warnings : [];
       payload.warnings.push({
@@ -12329,6 +13951,18 @@
     if(postApplyReleased > 0){
       data.tkbSolverResult.constraintReleasedAfterApply = postApplyReleased;
     }
+    const automaticCycleIntent = automaticSortCycleIntentFromSettings(solveSettings)
+      || automaticSortCycleIntentFromSettings(payload?.solver?.runtime_settings);
+    if(automaticCycleIntent){
+      // Commit the click marker into DATA and the compact solver payload before
+      // the trusted timetable save. Result and click count therefore share one
+      // serialized remote payload instead of racing as two independent writes.
+      rememberAutomaticSortSuccess(
+        data,
+        automaticCycleIntent.previousState,
+        automaticCycleIntent.planKind
+      );
+    }
     const quickResult = isQuickCompleteResult(payload, solveSettings);
     const quickCompletion = payloadCompletion(data.tkbSolverResult);
     const previousGapBaseline = Object.prototype.hasOwnProperty.call(data, GAP_PROGRESS_BASELINE_DATA_KEY)
@@ -12341,18 +13975,23 @@
     const appliedMetrics = payload?.metrics || {};
     const applySaveStartedAt = Date.now();
     const saveStoreFn = window.saveStore;
+    let applySaveOutcome = {timedOut:false};
     try{
       if(typeof saveStoreFn === "function"){
-        await Promise.resolve(saveStoreFn.call(window, {
-        force:true,
-        awaitRemote:true,
-        trustedSolverApply:true,
-        knownStats:{
-          total:metricNumber(appliedMetrics.expected_periods),
-          assigned:metricNumber(appliedMetrics.scheduled_periods),
-          missing:metricNumber(appliedMetrics.unassigned_periods)
-        }
-        }));
+        applySaveOutcome = await awaitTrustedSolverApplySave(
+          saveStoreFn,
+          {
+            force:true,
+            awaitRemote:true,
+            trustedSolverApply:true,
+            knownStats:{
+              total:metricNumber(appliedMetrics.expected_periods),
+              assigned:metricNumber(appliedMetrics.scheduled_periods),
+              missing:metricNumber(appliedMetrics.unassigned_periods)
+            }
+          },
+          payload
+        );
       }
     }catch(err){
       if(shouldRememberQuickBaseline){
@@ -12362,13 +14001,32 @@
       throw err;
     }
     traceSolveStep("solve:apply-save-done", {
-      elapsedMs:Math.max(0, Date.now() - applySaveStartedAt)
+      elapsedMs:Math.max(0, Date.now() - applySaveStartedAt),
+      deferred:applySaveOutcome?.timedOut === true
     });
+    if(applySaveOutcome?.timedOut === true){
+      const runtime = data.tkbSolverResult?.solver?.runtime_settings;
+      if(runtime && typeof runtime === "object"){
+        runtime.ui_terminal_apply_save_pending = true;
+        runtime.ui_terminal_apply_save_watchdog_ms = terminalApplySaveWatchdogMs();
+      }
+      try{
+        window.__TKB_SOLVER_SAVE_PENDING = true;
+        window.__TKB_SOLVER_SAVE_PENDING_JOB_ID = String(applySaveOutcome.jobId || "");
+      }catch(_){ }
+    }else{
+      try{
+        window.__TKB_SOLVER_SAVE_PENDING = false;
+        window.__TKB_SOLVER_SAVE_PENDING_JOB_ID = "";
+      }catch(_){ }
+    }
     // Keep the canonical result recoverable until validation, DATA mutation,
     // and persistence have all succeeded. Mobile Safari may terminate the PWA
     // at any await above; settling before this commit point leaves a blank grid
     // while also hiding the completed server result on the next launch.
-    settleDeferredBackendResultForPayload(payload);
+    if(applySaveOutcome?.timedOut !== true){
+      settleDeferredBackendResultForPayload(payload);
+    }
     scheduleUiRefresh();
     await yieldApplySlice(true);
     traceSolveStep("solve:apply-done", {
@@ -12495,7 +14153,9 @@
     const effectiveSettings = effectiveSettingsForSolve(settings, data);
     await yieldResponsiveUi();
     enforceCompleteScheduleForUi(effectiveSettings);
-    if(!shouldRequireCompletePresetResult(effectiveSettings) && (isCapacityShortageAccepted(settings) || isCapacityShortageAccepted(effectiveSettings))){
+    if(!effectiveSettings.ui_capacity_safe_fresh_probe
+      && !shouldRequireCompletePresetResult(effectiveSettings)
+      && (isCapacityShortageAccepted(settings) || isCapacityShortageAccepted(effectiveSettings))){
       applyCapacityShortageAcceptedSettings(effectiveSettings);
     }
     enforceCompletePresetSolveSettings(effectiveSettings);
@@ -12639,14 +14299,14 @@
     // CP-SAT owns several internal phase budgets. Their sum is useful for the
     // general solver, but a focused action owns one absolute wall-clock budget:
     // no combination of non-zero sub-budgets may extend it beyond three minutes.
-    const budgetSeconds = focusedCeilingSeconds > 0
+    let budgetSeconds = focusedCeilingSeconds > 0
       ? Math.min(focusedCeilingSeconds, rawBudgetSeconds)
       : rawBudgetSeconds;
     if(optimizationSeconds > overallSeconds){
       effectiveSettings.overall_time_limit_seconds = optimizationSeconds;
     }
     const minBackendDeadlineMs = allowShortBackendDeadline ? 1_000 : 20_000;
-    const backendDeadlineMs = budgetSeconds > 0
+    let backendDeadlineMs = budgetSeconds > 0
       ? Math.max(minBackendDeadlineMs, Math.min(1_800_000, Math.round(budgetSeconds * 1000)))
       : 1_800_000;
     effectiveSettings.backend_deadline_ms = backendDeadlineMs;
@@ -12660,8 +14320,8 @@
     if(isNoHintSmartFreshSettings(effectiveSettings)){
       enforceNoHintFreshSolveSettings(effectiveSettings);
     }
-    const uiProgressEstimateSeconds = estimateSolveSeconds(effectiveSettings, data);
-    const uiProgressBudgetSeconds = progressBudgetSeconds(
+    let uiProgressEstimateSeconds = estimateSolveSeconds(effectiveSettings, data);
+    let uiProgressBudgetSeconds = progressBudgetSeconds(
       effectiveSettings,
       uiProgressEstimateSeconds
     );
@@ -12672,25 +14332,126 @@
     );
     effectiveSettings.ui_progress_budget_seconds = uiProgressBudgetSeconds;
     effectiveSettings.ui_progress_run_index = uiProgressRunIndex;
-    try{
-      effectiveSettings.ui_agent_preference_enabled =
-        typeof window.TKBBrowserWasmExecutor?.isEnabled === "function"
-          ? window.TKBBrowserWasmExecutor.isEnabled() !== false
-          : true;
-    }catch(_){
+    const localAgentAllowed = window.__TKB_CLIENT_AGENT_LANES_ENABLED !== false
+      && localAgentRoleAllowed();
+    const windowsWebAgentTrial = localAgentAllowed
+      && window.__TKB_WINDOWS_WEB_AGENT_TRIAL === true;
+    const windowsNativeAgentDevice = localAgentAllowed
+      && isWindowsNativeAgentNavigator(window.navigator);
+    const windowsAgentPolicy = windowsNativeAgentDevice
+      && typeof window.nativeAgentSortPolicy === "function"
+      ? window.nativeAgentSortPolicy()
+      : null;
+    if(!localAgentAllowed){
+      // Ordinary school users never pair, probe, or hand a job to a native or
+      // Browser Agent. Submit a normal asynchronous, server-owned request and
+      // let the backend select Cloud Run/VPS according to its policy.
+      effectiveSettings.ui_agent_execution_policy = "server_owned";
+      effectiveSettings.ui_execution_mode = "server";
+      effectiveSettings.ui_browser_agent_required = false;
+      effectiveSettings.ui_native_agent_required = false;
+      effectiveSettings.ui_agent_preference_enabled = false;
+      delete effectiveSettings.ui_native_agent_id;
+      delete effectiveSettings.ui_browser_wasm_ready;
+      delete effectiveSettings.ui_browser_cpsat_ready;
+    }else if(windowsNativeAgentDevice && windowsAgentPolicy?.mode === "vps"){
+      // A Windows Agent previously seen on this device is intentionally OFF.
+      // Keep Browser WASM out of the request and make this click explicitly
+      // VPS-only; the native worker must not reclaim it if it comes online late.
+      // The distinct policy lets the server verify that this exact paired
+      // Windows Agent is alive but explicitly OFF before spending VPS CPU.
+      effectiveSettings.ui_agent_execution_policy = "native_paused_vps";
+      effectiveSettings.ui_execution_mode = "vps";
+      effectiveSettings.ui_browser_agent_required = false;
+      effectiveSettings.ui_native_agent_required = false;
+      effectiveSettings.ui_agent_preference_enabled = false;
+      const nativeAgentId = String(
+        windowsAgentPolicy.agentId
+          || window.nativeAgentStatusSnapshot?.().agentId
+          || ""
+      ).trim().slice(0, 80);
+      if(nativeAgentId) effectiveSettings.ui_native_agent_id = nativeAgentId;
+      else delete effectiveSettings.ui_native_agent_id;
+      delete effectiveSettings.ui_browser_wasm_ready;
+      delete effectiveSettings.ui_browser_cpsat_ready;
+    }else if(windowsNativeAgentDevice){
+      // Online Windows jobs are native-Agent-only. Missing/checking states are
+      // blocked by the UI preflight; this defensive server fence prevents an
+      // older cached planner from silently creating a VPS job.
+      effectiveSettings.ui_agent_execution_policy = "native_required";
+      effectiveSettings.ui_execution_mode = "local";
+      effectiveSettings.ui_browser_agent_required = false;
+      effectiveSettings.ui_native_agent_required = true;
       effectiveSettings.ui_agent_preference_enabled = true;
+      const nativeAgentId = String(
+        windowsAgentPolicy?.agentId
+          || window.nativeAgentStatusSnapshot?.().agentId
+          || ""
+      ).trim().slice(0, 80);
+      if(nativeAgentId) effectiveSettings.ui_native_agent_id = nativeAgentId;
+      else delete effectiveSettings.ui_native_agent_id;
+      delete effectiveSettings.ui_browser_wasm_ready;
+      delete effectiveSettings.ui_browser_cpsat_ready;
+    }else{
+      // Browser devices use a strict two-mode contract. With Agent enabled the
+      // current click must remain on the device; with Agent disabled it skips
+      // every WASM probe and is explicitly VPS-only.
+      effectiveSettings.ui_agent_execution_policy = "web_agent_required";
+      effectiveSettings.ui_execution_mode = "local";
+      effectiveSettings.ui_browser_agent_required = true;
+      effectiveSettings.ui_native_agent_required = false;
+      delete effectiveSettings.ui_native_agent_id;
+      try{
+        effectiveSettings.ui_agent_preference_enabled = windowsWebAgentTrial
+          ? true
+          : (
+              typeof window.TKBBrowserWasmExecutor?.isEnabled === "function"
+                ? window.TKBBrowserWasmExecutor.isEnabled() !== false
+                : true
+            );
+      }catch(_){
+        effectiveSettings.ui_agent_preference_enabled = true;
+      }
+      if(
+        !windowsWebAgentTrial
+        && effectiveSettings.ui_agent_preference_enabled !== true
+      ){
+        effectiveSettings.ui_agent_execution_policy = "vps_only";
+        effectiveSettings.ui_execution_mode = "vps";
+        effectiveSettings.ui_browser_agent_required = false;
+      }
     }
+    const browserLocalModeRequired =
+      effectiveSettings.ui_agent_execution_policy === "web_agent_required"
+      && effectiveSettings.ui_agent_preference_enabled === true;
+    const browserRequiredCompleteResult = browserLocalModeRequired
+      && effectiveSettings.require_complete_schedule === true
+      && !isCapacityShortageAccepted(effectiveSettings);
+    if(browserRequiredCompleteResult){
+      // Internal draft/repair calls may use best-effort payloads as private
+      // checkpoints, but a Browser-required terminal response must never expose
+      // or apply an incomplete timetable. A failed quality pass may retain a
+      // complete incumbent; it may not turn a partial payload into success.
+      effectiveSettings.best_effort_on_timeout = false;
+      effectiveSettings.ui_allow_best_effort_on_timeout = false;
+      effectiveSettings.ui_accept_incomplete_best_effort = false;
+    }
+    // The final foreground settlement runs after postSolve() returns and uses
+    // the caller's settings object. Keep the effective execution/quality
+    // contract on that object too; otherwise a non-Windows request can be sent
+    // as web_agent_required but later be accepted as ordinary VPS output.
+    synchronizeBrowserSettlementSettings(settings, effectiveSettings);
     if(progressState){
       progressState.estimatedSeconds = uiProgressEstimateSeconds;
       progressState.progressBudgetSeconds = uiProgressBudgetSeconds;
       progressState.runIndex = uiProgressRunIndex;
     }
     await yieldResponsiveUi();
-    const clientReserveMs = Math.max(
+    let clientReserveMs = Math.max(
       0,
       Number(effectiveSettings.ui_client_timeout_reserve_ms ?? CLIENT_TIMEOUT_BACKEND_RESERVE_MS) || 0
     );
-    const timeoutMs = backendDeadlineMs > 0
+    let timeoutMs = backendDeadlineMs > 0
       ? Math.max(
           allowShortBackendDeadline ? 5_000 : 20_000,
           Math.min(1_890_000, backendDeadlineMs + clientReserveMs)
@@ -12710,7 +14471,7 @@
       storeKey: window.__TKB_SCHOOL_CONTEXT?.storeKey || "",
       href: window.location.href
     };
-    const queueTimeoutMs = Math.max(
+    let queueTimeoutMs = Math.max(
       5_000,
       Math.min(
         SERVER_SOLVER_ACTIVE_WAIT_MAX_MS,
@@ -12743,24 +14504,122 @@
       });
       await yieldResponsiveUi();
       const requestData = dataForSolverRequest(data, effectiveSettings);
+      const clientFastSeed = await buildClientFastSeed(
+        requestData,
+        effectiveSettings,
+        controller.signal
+      );
+      if(clientFastSeed){
+        requestData.__tkbClientFastSeedV1 = clientFastSeed;
+        effectiveSettings.client_fast_seed_hint = true;
+        traceSolveStep("postSolve:client-fast-seed", {
+          scheduled:clientFastSeed.clientScheduledPeriods,
+          expected:clientFastSeed.clientExpectedPeriods,
+          elapsedMs:clientFastSeed.elapsedMs,
+          attempts:clientFastSeed.attempts
+        });
+      }else{
+        delete requestData.__tkbClientFastSeedV1;
+        delete effectiveSettings.client_fast_seed_hint;
+      }
       await yieldResponsiveUi();
       if(!cacheEligible) requestData.__tkbSolverRequestNonce = solveRunId;
       const browserWasmRequest = {data: requestData, settings: effectiveSettings};
       let body = "";
       await yieldResponsiveUi();
       const browserWasmEligible = !!(
+        localAgentAllowed
+        && !windowsNativeAgentDevice
+        && effectiveSettings.ui_agent_preference_enabled === true
+        &&
         window.TKBBrowserWasmExecutor
         && typeof window.TKBBrowserWasmExecutor.canHandleRequest === "function"
         && window.TKBBrowserWasmExecutor.canHandleRequest(browserWasmRequest) === true
       );
+      let browserWasmReclaimPromise = null;
+      const reclaimBrowserWasmJob = async (jobId, reclaimOptions) => {
+        const canonicalJobId = String(jobId || "").trim();
+        if(
+          !canonicalJobId
+          || !browserWasmEligible
+          || effectiveSettings.ui_agent_preference_enabled !== true
+          || controller.signal.aborted
+          || typeof window.TKBBrowserWasmExecutor?.probe !== "function"
+          || typeof window.TKBBrowserWasmExecutor?.activate !== "function"
+        ) return false;
+        const mobileBrowserAgent = isMobileBrowserAgentNavigator(window.navigator);
+        if(mobileBrowserAgent && reclaimOptions?.allowMobile !== true) return false;
+        // The phone's first same-page admission is a normal request-backed
+        // activation, not a reload-style resume. Desktop may reclaim a known
+        // canonical job; mobile must never cross back from VPS ownership.
+        const resumeKnownJob = !mobileBrowserAgent;
+        let runtimeState = {};
+        try{ runtimeState = window.TKBBrowserWasmExecutor.state?.() || {}; }
+        catch(_){ runtimeState = {}; }
+        if(runtimeState.active === true && String(runtimeState.jobId || "") === canonicalJobId){
+          browserWasmActivated = true;
+          return true;
+        }
+        if(browserWasmReclaimPromise) return browserWasmReclaimPromise;
+        browserWasmReclaimPromise = (async () => {
+          let ready = browserWasmProbed === true || (
+            runtimeState.probed === true
+            && (
+              runtimeState.cpSatReady === true
+              || (
+                runtimeState.hasWorker !== false
+                && Number(runtimeState.workerCount || 0) > 0
+              )
+            )
+          );
+          if(!ready){
+            ready = await window.TKBBrowserWasmExecutor.probe({
+              apiBase,
+              jobId:canonicalJobId,
+              resumeKnownJob,
+              preferNativeAgent:true,
+              request:browserWasmRequest,
+              signal:controller.signal
+            }).catch(() => false);
+          }
+          if(!ready) return false;
+          browserWasmProbed = true;
+          const activated = await window.TKBBrowserWasmExecutor.activate({
+            apiBase,
+            jobId:canonicalJobId,
+            resumeKnownJob,
+            preferNativeAgent:true,
+            request:browserWasmRequest,
+            signal:controller.signal
+          }).catch(() => false);
+          browserWasmActivated = activated === true;
+          try{
+            window.__TKB_RUST_LAST_REQUEST_DEBUG = Object.assign(
+              {},
+              window.__TKB_RUST_LAST_REQUEST_DEBUG || {},
+              {
+                browserWasmActivated,
+                browserWasmReclaimJobId:canonicalJobId,
+                browserWasmState:typeof window.TKBBrowserWasmExecutor?.state === "function"
+                  ? window.TKBBrowserWasmExecutor.state()
+                  : null
+              }
+            );
+          }catch(_){ }
+          return browserWasmActivated;
+        })().finally(() => {
+          browserWasmReclaimPromise = null;
+        });
+        return browserWasmReclaimPromise;
+      };
       if(
-        !resumeExistingServerJobOnly
-        && effectiveSettings.ui_solver_async_job === true
+        effectiveSettings.ui_solver_async_job === true
+        && effectiveSettings.ui_agent_preference_enabled === true
         && browserWasmEligible
         && typeof window.TKBBrowserWasmExecutor.probe === "function"
       ){
-        // Compile the WASM module before the canonical POST, but do not send
-        // hello yet: there is no server job to hand off at this point.
+        // Compile before a new POST. For poll-only reconnect, the canonical
+        // job already exists and can be handed back to the foreground Agent.
         browserWasmProbed = await window.TKBBrowserWasmExecutor.probe({
           apiBase,
           preferNativeAgent:true,
@@ -12768,10 +14627,126 @@
           signal:controller.signal
         }).catch(() => false);
       }
+      let exactBrowserCpSatReady = false;
       if(browserWasmProbed){
         effectiveSettings.ui_browser_wasm_ready = true;
+        try{
+          const exactState = window.TKBBrowserWasmExecutor?.state?.() || {};
+          exactBrowserCpSatReady = exactState.cpSatReady === true
+            && exactState.highsReady === true;
+        }catch(_){ }
+        if(exactBrowserCpSatReady){
+          effectiveSettings.ui_browser_cpsat_ready = true;
+        }else{
+          delete effectiveSettings.ui_browser_cpsat_ready;
+        }
       }else{
         delete effectiveSettings.ui_browser_wasm_ready;
+        delete effectiveSettings.ui_browser_cpsat_ready;
+      }
+      if(
+        effectiveSettings.ui_agent_execution_policy === "web_agent_required"
+        && effectiveSettings.ui_agent_preference_enabled === true
+        && (!browserWasmEligible || !browserWasmProbed)
+      ){
+        const localError = new Error(
+          !browserWasmEligible
+            ? "Lượt này không phù hợp với solver Local trên trình duyệt hiện tại."
+            : "Không khởi động được solver Local trên thiết bị này trước khi gửi lượt xếp."
+        );
+        localError.kind = "local_agent_unavailable";
+        localError.backendUnavailable = false;
+        localError.localModeRequired = true;
+        localError.executionMode = "local";
+        throw localError;
+      }
+      const pollOnlyServerJob = pendingBackendJob?.jobId === solveRunId
+        && (
+          pendingBackendJob?.discoveredFromOwnerState === true
+          || resumeExistingServerJobOnly
+        );
+      let browserFullReferenceDeadlineExtended = false;
+      let browserStrictAutomaticDeadlineExtended = false;
+      if(
+        browserWasmProbed
+        && !pollOnlyServerJob
+        && effectiveSettings.ui_custom_solve_duration_override !== true
+        && typeof window.TKBBrowserWasmExecutor?.fullReferenceRefineCapable === "function"
+      ){
+        try{
+          browserFullReferenceDeadlineExtended =
+            window.TKBBrowserWasmExecutor.fullReferenceRefineCapable(browserWasmRequest) === true;
+        }catch(_){
+          browserFullReferenceDeadlineExtended = false;
+        }
+      }
+      if(
+        browserWasmProbed
+        && exactBrowserCpSatReady
+        && browserLocalModeRequired
+        && !pollOnlyServerJob
+        && effectiveSettings.ui_custom_solve_duration_override !== true
+        && typeof window.TKBBrowserWasmExecutor?.strictFreshAutomaticCapable === "function"
+      ){
+        try{
+          browserStrictAutomaticDeadlineExtended =
+            window.TKBBrowserWasmExecutor.strictFreshAutomaticCapable(browserWasmRequest) === true;
+        }catch(_){
+          browserStrictAutomaticDeadlineExtended = false;
+        }
+      }
+      if(browserFullReferenceDeadlineExtended || browserStrictAutomaticDeadlineExtended){
+        // This gate is evaluated only after CP-SAT/HiGHS probing, so mobile,
+        // Fresh, focused commands, small worker pools, and sub-1-GiB runtimes
+        // retain the ordinary 180-second ceiling. Extend the canonical wire
+        // before serialization so the server watchdog and local exact stream
+        // share one honest 270-second compute budget.
+        budgetSeconds = browserStrictAutomaticDeadlineExtended
+          ? applyDesktopStrictAutomaticCeiling(effectiveSettings)
+          : applyDesktopFullReferenceRefineCeiling(effectiveSettings);
+        backendDeadlineMs = effectiveSettings.backend_deadline_ms;
+        uiProgressEstimateSeconds = effectiveSettings.progress_estimate_seconds;
+        uiProgressBudgetSeconds = effectiveSettings.ui_progress_budget_seconds;
+        clientReserveMs = Math.max(
+          0,
+          Number(
+            effectiveSettings.ui_client_timeout_reserve_ms
+              ?? CLIENT_TIMEOUT_BACKEND_RESERVE_MS
+          ) || 0
+        );
+        timeoutMs = Math.max(
+          20_000,
+          Math.min(1_890_000, backendDeadlineMs + clientReserveMs)
+        );
+        queueTimeoutMs = Math.max(
+          5_000,
+          Math.min(
+            SERVER_SOLVER_ACTIVE_WAIT_MAX_MS,
+            Number(
+              effectiveSettings.ui_solver_queue_timeout_ms
+                ?? DEFAULT_SOLVER_QUEUE_TIMEOUT_MS
+            ) || DEFAULT_SOLVER_QUEUE_TIMEOUT_MS,
+            timeoutMs
+          )
+        );
+        if(progressState){
+          progressState.estimatedSeconds = uiProgressEstimateSeconds;
+          progressState.progressBudgetSeconds = uiProgressBudgetSeconds;
+        }
+        try{
+          window.__TKB_RUST_LAST_REQUEST_DEBUG = Object.assign(
+            {},
+            window.__TKB_RUST_LAST_REQUEST_DEBUG || {},
+            {
+              timeoutMs,
+              backendDeadlineMs,
+              budgetSeconds,
+              browserFullReferenceDeadlineExtended:true,
+              browserStrictAutomaticDeadlineExtended,
+              settings:effectiveSettings
+            }
+          );
+        }catch(_){ }
       }
       body = JSON.stringify(browserWasmRequest);
       traceSolveStep("postSolve:before-fetch", {
@@ -12795,8 +14770,11 @@
           qualityVariantSeed: effectiveSettings.quality_variant_seed || "",
           browserWasmEligible,
           browserWasmProbed,
+          browserFullReferenceDeadlineExtended,
+          browserCpSatReady:effectiveSettings.ui_browser_cpsat_ready === true,
           browserWasmActivated:false,
-          browserWasmState:typeof window.TKBBrowserWasmExecutor?.state === "function"
+          browserWasmState:localAgentAllowed
+            && typeof window.TKBBrowserWasmExecutor?.state === "function"
             ? window.TKBBrowserWasmExecutor.state()
             : null,
           strippedSolverResult: !!data?.tkbSolverResult,
@@ -12809,7 +14787,12 @@
       // pre-admission Stop cannot leave an unknown job that F5 would replay.
       throwIfStopRequested(activeSolveRunId);
       setActiveBackendJobId(solveRunId, sourceScheduleFingerprint, {
-        qualityDebtFreshRebuild:effectiveSettings.ui_quality_debt_fresh_rebuild === true
+        qualityDebtFreshRebuild:effectiveSettings.ui_quality_debt_fresh_rebuild === true,
+        trialLocal:browserLocalModeRequired && windowsWebAgentTrial,
+        strictBrowserAutomatic:strictBrowserAutomaticRequired(effectiveSettings),
+        optimizationFocus:effectiveSettings.optimization_focus,
+        optimizationGapTarget:effectiveSettings.optimization_gap_target,
+        solveRequestMode:effectiveSettings.ui_requested_solve_mode
       });
       let queueDeadline = Date.now() + queueTimeoutMs;
       let lastFetchError = null;
@@ -12817,17 +14800,14 @@
       let knownRequiredWorkers = 0;
       let transientPostFailures = 0;
       let queueWaitExtensions = 0;
-      if(
-        pendingBackendJob?.jobId === solveRunId
-        && (
-          pendingBackendJob?.discoveredFromOwnerState === true
-          || resumeExistingServerJobOnly
-        )
-      ){
+      if(pollOnlyServerJob){
         // Every reload/cross-device resume is poll-only, including a job first
         // created by this same tab. Re-POSTing a locally-created pending job
         // used to start a brand-new solve after the previous result completed.
         window.__TKB_SOLVE_BACKEND_POSTED = false;
+        if(browserWasmProbed && !browserWasmActivated){
+          await reclaimBrowserWasmJob(solveRunId);
+        }
         setStatus("Äang sáº¯p xáº¿p...", "info");
         response = await waitForServerOwnedSolverResult(
           apiBase,
@@ -12835,7 +14815,14 @@
           activeSolveRunId,
           serverOwnedResultWaitMs(timeoutMs, pendingBackendJob),
           700,
-          controller.signal
+          controller.signal,
+          {
+            localModeRequired:browserLocalModeRequired,
+            vpsReclaimAttempted:browserWasmActivated,
+            onVpsFallback:browserLocalModeRequired
+              ? null
+              : () => reclaimBrowserWasmJob(solveRunId)
+          }
         );
       }else{
         while(Date.now() < queueDeadline){
@@ -12844,6 +14831,7 @@
         window.__TKB_SOLVE_BACKEND_POSTED = true;
         response = null;
         lastFetchError = null;
+        let nonRetryablePostPayload = null;
         for(let attempt = 1; attempt <= 2; attempt++){
           try{
             armClientTimeout();
@@ -12861,6 +14849,21 @@
               attempts.push({queueAttempt, attempt, status: response.status, at: new Date().toISOString()});
               window.__TKB_RUST_LAST_REQUEST_DEBUG = Object.assign({}, window.__TKB_RUST_LAST_REQUEST_DEBUG || {}, {attempts});
             }catch(_){}
+            if([502, 503].includes(Number(response.status || 0))){
+              let structuredPayload = null;
+              try{ structuredPayload = await response.clone().json(); }catch(_){ }
+              const structuredKind = String(
+                structuredPayload?.kind || structuredPayload?.error || ""
+              ).trim().toLowerCase();
+              if(
+                structuredPayload?.retryable === false
+                || structuredKind === "trial_solve_quota_unavailable"
+                || structuredKind === "solver_plan_unavailable"
+              ){
+                nonRetryablePostPayload = structuredPayload || {};
+                break;
+              }
+            }
             if(attempt === 1 && [502, 503].includes(Number(response.status || 0))){
               await sleep(800);
               continue;
@@ -12884,15 +14887,37 @@
           }
         }
         if(!response && lastFetchError) throw lastFetchError;
+        if(nonRetryablePostPayload){
+          clearActiveBackendJobId(solveRunId);
+          const nonRetryableError = new Error(
+            nonRetryablePostPayload.message
+            || nonRetryablePostPayload.error
+            || `HTTP ${Number(response?.status || 503) || 503}`
+          );
+          nonRetryableError.kind = String(
+            nonRetryablePostPayload.kind || nonRetryablePostPayload.error || "solver_post_rejected"
+          );
+          nonRetryableError.payload = nonRetryablePostPayload;
+          nonRetryableError.status = Number(response?.status || 503) || 503;
+          nonRetryableError.backendUnavailable = false;
+          nonRetryableError.retryable = false;
+          throw nonRetryableError;
+        }
         if(Number(response?.status || 0) === 202){
           let queuedPayload = {};
           try{ queuedPayload = await response.clone().json(); }catch(_){}
+          if(browserLocalModeRequired && serverPayloadIsVpsOwned(queuedPayload)){
+            const rejectedJobId = String(queuedPayload?.jobId || solveRunId || "").trim();
+            if(rejectedJobId) await cancelBackendSolver(rejectedJobId).catch(() => null);
+            throw localRequiredVpsError(response.status, queuedPayload);
+          }
           recordBackendLiveProgress(queuedPayload?.progress);
           publishCurrentSolveExecutorState(queuedPayload, solveRunId);
           const pendingKind = String(queuedPayload?.kind || queuedPayload?.error || "").toLowerCase();
-          const serverExecutor = String(queuedPayload?.executor || "")
-            .trim()
-            .toLowerCase();
+          const serverExecutor = normalizedSolveExecutor(
+            queuedPayload?.executor,
+            queuedPayload?.executionPhase
+          );
           const serverOwnedJob = queuedPayload?.serverOwned === true
             || pendingKind === "solver_started"
             || pendingKind === "solver_running";
@@ -12902,7 +14927,11 @@
             removePendingBackendJob(duplicateRequestJobId);
             solveRunId = responseJobId;
             setActiveBackendJobId(solveRunId, sourceScheduleFingerprint, {
-              qualityDebtFreshRebuild:effectiveSettings.ui_quality_debt_fresh_rebuild === true
+              qualityDebtFreshRebuild:effectiveSettings.ui_quality_debt_fresh_rebuild === true,
+              trialLocal:browserLocalModeRequired && windowsWebAgentTrial,
+              optimizationFocus:effectiveSettings.optimization_focus,
+              optimizationGapTarget:effectiveSettings.optimization_gap_target,
+              solveRequestMode:effectiveSettings.ui_requested_solve_mode
             });
             try{
               window.__TKB_RUST_LAST_REQUEST_DEBUG = Object.assign(
@@ -12938,50 +14967,19 @@
               );
             }catch(_){ }
             if(
-              browserWasmProbed
-              && serverExecutor === "vps"
-              && typeof window.TKBBrowserWasmExecutor?.close === "function"
-            ){
-              // VPS owns this run. Release the preflight-only local pool now
-              // instead of holding its compiled workers until the remote solve
-              // finishes.
-              await Promise.resolve(window.TKBBrowserWasmExecutor.close(
-                "vps_executor_selected",
-                {failLease:false}
-              )).catch(() => null);
-              browserWasmProbed = false;
-            }
-            if(
-              browserWasmProbed
-              && !browserWasmActivated
+              !browserWasmActivated
               && !controller.signal.aborted
-              && (!serverExecutor || serverExecutor === "agent")
-              && typeof window.TKBBrowserWasmExecutor?.activate === "function"
+              && (!serverExecutor || serverExecutor === "agent" || serverExecutor === "vps")
             ){
-              // The durable job now exists. Activate only when the server chose
-              // Agent (or an older server omitted the executor). A focused VPS
-              // reservation is authoritative; handing it back here recreated
-              // the weak local-search path immediately after admission.
-              browserWasmActivated = await window.TKBBrowserWasmExecutor.activate({
-                apiBase,
-                jobId:solveRunId,
-                preferNativeAgent:true,
-                request:browserWasmRequest,
-                signal:controller.signal
-              }).catch(() => false);
-              try{
-                window.__TKB_RUST_LAST_REQUEST_DEBUG = Object.assign(
-                  {},
-                  window.__TKB_RUST_LAST_REQUEST_DEBUG || {},
-                  {
-                   browserWasmActivated,
-                    serverExecutor,
-                    browserWasmState:typeof window.TKBBrowserWasmExecutor?.state === "function"
-                      ? window.TKBBrowserWasmExecutor.state()
-                      : null
-                  }
-                );
-              }catch(_){ }
+              // A VPS response can be a deduplicated older job, a transient
+              // lease loss, or a stale Native-Agent observation. Reclaim that
+              // exact canonical job instead of closing the ready local pool.
+              await reclaimBrowserWasmJob(solveRunId, {
+                // Initial Agent admission may activate the phone's bounded
+                // completion seed. Once the server reports VPS ownership the
+                // transition is one-way on mobile.
+                allowMobile:serverExecutor !== "vps"
+              });
             }
             knownRequiredWorkers = Math.max(
               knownRequiredWorkers,
@@ -13002,7 +15000,14 @@
               activeSolveRunId,
               serverOwnedResultWaitMs(timeoutMs, queuedPayload),
               Number(queuedPayload?.retryAfterMs || 700) || 700,
-              controller.signal
+              controller.signal,
+              {
+                localModeRequired:browserLocalModeRequired,
+                vpsReclaimAttempted:serverExecutor === "vps" && browserWasmActivated,
+                onVpsFallback:browserLocalModeRequired
+                  ? null
+                  : () => reclaimBrowserWasmJob(solveRunId)
+              }
             );
             break;
           }
@@ -13098,7 +15103,10 @@
             ){
               window.__TKB_SOLVE_BACKEND_POSTED = false;
               setActiveBackendJobId(existingJobId, existingFingerprint, {
-                qualityDebtFreshRebuild:effectiveSettings.ui_quality_debt_fresh_rebuild === true
+                qualityDebtFreshRebuild:effectiveSettings.ui_quality_debt_fresh_rebuild === true,
+                optimizationFocus:effectiveSettings.optimization_focus,
+                optimizationGapTarget:effectiveSettings.optimization_gap_target,
+                solveRequestMode:effectiveSettings.ui_requested_solve_mode
               });
               setStatus("\u0110ang s\u1eafp x\u1ebfp...", "info");
               response = await waitForServerOwnedSolverResult(
@@ -13162,7 +15170,8 @@
           responseStatus: response.status,
           responseOk: response.ok,
           browserWasmActivated,
-          browserWasmFinalState:typeof window.TKBBrowserWasmExecutor?.state === "function"
+          browserWasmFinalState:localAgentAllowed
+            && typeof window.TKBBrowserWasmExecutor?.state === "function"
             ? window.TKBBrowserWasmExecutor.state()
             : null,
           finishedAt: new Date().toISOString()
@@ -13197,6 +15206,28 @@
         throw err;
       }
       if(err?.kind === "solver_queue_timeout"){
+        throw err;
+      }
+      if(err?.retryable === false && err?.backendUnavailable === false){
+        throw err;
+      }
+      if(
+        err?.localModeRequired === true
+        || [
+          "local_agent_unavailable",
+          "browser_agent_required",
+          "browser_agent_requires_async_job",
+          "web_agent_required",
+          "browser_agent_start_failed",
+          "browser_agent_disconnected",
+          "browser_agent_stopped",
+          "browser_agent_failed",
+          "browser_agent_quality_unmet"
+        ].includes(String(err?.kind || "").trim().toLowerCase())
+      ){
+        // This is an intentional Local-mode terminal result, not a failed VPS
+        // POST. Preserve its kind so the UI can explain that no silent VPS
+        // fallback occurred and the user may explicitly turn Agent off.
         throw err;
       }
       if(err?.keepPendingServerJob === true){
@@ -13274,6 +15305,16 @@
       rawPayload = await response.json().catch(() => ({}));
     }
     const payload = normalizePayloadForUiConstraints(data, rawPayload);
+    if(payloadIsSafeCapacityPartial(payload) && !browserRequiredCompleteResult){
+      // The backend is authoritative for capacity analysis.  This also covers
+      // large/async requests where the browser deliberately skipped its local
+      // scan: accept and apply every hard-valid placed lesson, while the
+      // reported remainder stays in Chưa phân.
+      applyCapacityShortageAcceptedSettings(settings);
+      applyCapacityShortageAcceptedSettings(effectiveSettings);
+      settings.ui_capacity_shortage_accepted_after_solve = true;
+      effectiveSettings.ui_capacity_shortage_accepted_after_solve = true;
+    }
     if(response?.status === 401 || response?.status === 403){
       suspendBackendResumeForAuth(response.status, payload, "solve-response");
       throw serverJobAuthRequiredError(response.status, payload);
@@ -13295,17 +15336,29 @@
       clearActiveBackendJobId(solveRunId, {force:resumeExistingServerJobOnly});
       window.__TKB_SOLVER_LAST_ERROR_PAYLOAD = payload;
       const busy = Number(response.status || 0) === 409 && String(payload?.error || "") === "solver_busy";
+      const incompleteKind = String(payload?.kind || "").toLowerCase();
       const noComplete = Number(response.status || 0) === 422
-        && String(payload?.kind || "").toLowerCase() === "no_complete_schedule_before_deadline";
+        && (
+          incompleteKind === "no_complete_schedule_before_deadline"
+          || incompleteKind === "incomplete_schedule"
+        );
       const partialScheduled = metricNumber(payload?.metrics?.scheduled_periods, 0) > 0
         || (Array.isArray(payload?.lessons) && payload.lessons.length > 0);
-      const allowIncompleteBestEffort = !shouldRequireCompletePresetResult(settings)
+      const capacityBestEffortRequested = payloadHasCapacityShortage(payload)
+        || settings?.ui_capacity_shortage_confirmed === true
+        || settings?.ui_capacity_shortage_accepted === true
+        || settings?.ui_capacity_shortage_accepted_after_solve === true;
+      const allowIncompleteBestEffort = !browserRequiredCompleteResult
+        && !shouldRequireCompletePresetResult(settings)
         && (
-          isCapacityShortageAccepted(settings)
+          capacityBestEffortRequested
           || settings?.ui_staged_existing_repair === true
           || settings?.ui_accept_incomplete_best_effort === true
         );
-      if(noComplete && allowIncompleteBestEffort && (partialScheduled || payloadAcceptableWithUnassigned(payload) || payloadAcceptableForUiCleanup(payload))){
+      const acceptableIncompleteBestEffort = capacityBestEffortRequested
+        ? payloadIsSafeCapacityPartial(payload)
+        : (partialScheduled || payloadAcceptableWithUnassigned(payload) || payloadAcceptableForUiCleanup(payload));
+      if(noComplete && allowIncompleteBestEffort && acceptableIncompleteBestEffort){
         payload.ok = true;
         payload.kind = partialScheduled ? "best_effort_partial_before_deadline" : "best_effort_unassigned_accepted";
         payload.warnings = Array.isArray(payload.warnings) ? payload.warnings : [];
@@ -13321,10 +15374,11 @@
         ? "Đang có lượt xếp khác, vui lòng chờ lượt hiện tại hoàn tất rồi bấm Sắp xếp lại."
         : (noComplete
           ? (payload.error || incompleteSolveMessage(payload, { requireComplete: true }))
-          : (payload.error || `HTTP ${response.status}`)));
+          : (payload.message || payload.error || `HTTP ${response.status}`)));
       err.payload = payload;
       err.status = response.status;
       err.settings = settings;
+      if(payload?.retryable === false) err.retryable = false;
       if(payload && payload.kind) err.kind = String(payload.kind);
       if(busy) err.kind = "solver_busy";
       if(noComplete) err.kind = "no_complete_schedule_before_deadline";
@@ -13332,6 +15386,15 @@
       throw err;
     }
     const completion = payloadCompletion(payload);
+    if(browserRequiredCompleteResult && !completion.complete){
+      clearActiveBackendJobId(solveRunId, {force:resumeExistingServerJobOnly});
+      const err = new Error(incompleteSolveMessage(payload, {requireComplete:true}));
+      err.kind = "no_complete_schedule_before_deadline";
+      err.payload = payload;
+      err.settings = effectiveSettings;
+      err.backendUnavailable = false;
+      throw err;
+    }
     const deferSettlement = window.__TKB_DEFER_SERVER_RESULT_SETTLEMENT_UNTIL_APPLY === true
       && effectiveSettings.ui_solver_async_job === true
       && completion.complete
@@ -13577,6 +15640,197 @@
     return state;
   }
 
+  function automaticSortRefinementRound(data){
+    const payload = data?.tkbSolverResult || data?.tkbRustSolverResult || null;
+    return Math.max(
+      0,
+      Math.round(metricNumber(payload?.metrics?.optimization_refinement_round, 0)),
+      Math.round(metricNumber(
+        payload?.solver?.runtime_settings?.optimization_refinement_round,
+        0
+      ))
+    );
+  }
+
+  function embeddedAutomaticSortCycleState(data, fingerprint){
+    const safeData = data || getData();
+    const currentFingerprint = String(fingerprint || durableScheduleFingerprint(safeData));
+    const payload = safeData?.tkbSolverResult || safeData?.tkbRustSolverResult || null;
+    const embedded = payload?.solver?.runtime_settings?.ui_automatic_sort_cycle;
+    if(!embedded || typeof embedded !== "object") return null;
+    if(!currentFingerprint || String(embedded.fingerprint || "") !== currentFingerprint) return null;
+    return {
+      version:1,
+      fingerprint:currentFingerprint,
+      successfulClicks:Math.max(
+        0,
+        Math.round(Number(embedded.successfulClicks || 0) || 0)
+      ),
+      updatedAt:String(embedded.updatedAt || "")
+    };
+  }
+
+  function attachAutomaticSortCycleToPayload(data, state){
+    const safeData = data || getData();
+    const payload = safeData?.tkbSolverResult || safeData?.tkbRustSolverResult || null;
+    if(!payload || typeof payload !== "object" || !state) return false;
+    payload.solver = payload.solver && typeof payload.solver === "object"
+      ? payload.solver
+      : {};
+    payload.solver.runtime_settings = payload.solver.runtime_settings
+      && typeof payload.solver.runtime_settings === "object"
+      ? payload.solver.runtime_settings
+      : {};
+    payload.solver.runtime_settings.ui_automatic_sort_cycle = {
+      version:1,
+      fingerprint:String(state.fingerprint || ""),
+      successfulClicks:Math.max(0, Math.round(Number(state.successfulClicks || 0) || 0)),
+      updatedAt:String(state.updatedAt || "")
+    };
+    return true;
+  }
+
+  function automaticSortCycleState(data){
+    const safeData = data || getData();
+    const fingerprint = durableScheduleFingerprint(safeData);
+    const complete = !!currentScheduleAppearsComplete(safeData);
+    const saved = safeData?.[AUTO_SORT_CYCLE_DATA_KEY];
+    const embedded = embeddedAutomaticSortCycleState(safeData, fingerprint);
+    if(saved && typeof saved === "object"){
+      if(fingerprint && String(saved.fingerprint || "") === fingerprint){
+        return {
+          fingerprint,
+          successfulClicks:Math.max(
+            0,
+            Math.round(Number(saved.successfulClicks || 0) || 0),
+            Math.round(Number(embedded?.successfulClicks || 0) || 0)
+          ),
+          complete,
+          inferred:false
+        };
+      }
+      if(embedded){
+        return Object.assign({}, embedded, {
+          complete,
+          inferred:true,
+          recoveredFromPayload:true
+        });
+      }
+      // A delete, manual edit, or changed requirement starts a new cycle. A
+      // still-complete edited timetable is treated as the first successful
+      // state, so the user receives one new optimization click.
+      return {
+        fingerprint,
+        successfulClicks:complete ? 1 : 0,
+        complete,
+        inferred:true,
+        resetByFingerprint:true
+      };
+    }
+    if(!complete){
+      return {fingerprint, successfulClicks:0, complete:false, inferred:true};
+    }
+    if(embedded){
+      return Object.assign({}, embedded, {
+        complete:true,
+        inferred:true,
+        recoveredFromPayload:true
+      });
+    }
+    // Backward-compatible inference for schedules saved before the cycle marker
+    // existed: a completed refinement round means the first two clicks already
+    // happened; a fresh complete result has consumed only the first click.
+    return {
+      fingerprint,
+      successfulClicks:automaticSortRefinementRound(safeData) >= 1 ? 2 : 1,
+      complete:true,
+      inferred:true
+    };
+  }
+
+  function ordinaryAutomaticSortLimitReached(data, requestedMode){
+    // Retained as a compatibility hook for cached callers/tests. Automatic is
+    // now a progressive optimizer: every click on a complete, hard-valid
+    // incumbent may request another bounded, fail-closed refinement slice.
+    void data;
+    void requestedMode;
+    return false;
+  }
+
+  function rememberAutomaticSortSuccess(data, previousState, planKind){
+    const safeData = data || getData();
+    if(!safeData || !currentScheduleAppearsComplete(safeData)) return null;
+    const previousClicks = Math.max(
+      0,
+      Math.round(Number(previousState?.successfulClicks || 0) || 0)
+    );
+    const refining = String(planKind || "").trim().toLowerCase() === "refine_complete";
+    const successfulClicks = refining
+      ? Math.max(2, previousClicks + 1)
+      : 1;
+    const previousSaved = safeData?.[AUTO_SORT_CYCLE_DATA_KEY];
+    const sameSavedState = previousSaved
+      && typeof previousSaved === "object"
+      && String(previousSaved.fingerprint || "") === durableScheduleFingerprint(safeData)
+      && Math.max(0, Math.round(Number(previousSaved.successfulClicks || 0) || 0)) === successfulClicks;
+    const state = {
+      version:1,
+      fingerprint:durableScheduleFingerprint(safeData),
+      successfulClicks,
+      updatedAt:sameSavedState && previousSaved.updatedAt
+        ? String(previousSaved.updatedAt)
+        : new Date().toISOString()
+    };
+    safeData[AUTO_SORT_CYCLE_DATA_KEY] = state;
+    attachAutomaticSortCycleToPayload(safeData, state);
+    return state;
+  }
+
+  function automaticSortCycleIntentFromSettings(settings){
+    if(!settings || settings.ui_track_automatic_sort_cycle !== true) return null;
+    return {
+      previousState:{
+        successfulClicks:Math.max(
+          0,
+          Math.round(Number(settings.ui_automatic_sort_previous_successful_clicks || 0) || 0)
+        )
+      },
+      planKind:String(settings.ui_automatic_sort_plan_kind || "")
+    };
+  }
+
+  async function persistAutomaticSortSuccess(data, previousState, planKind){
+    const safeData = data || getData();
+    if(!safeData) return null;
+    const before = JSON.stringify({
+      state:safeData[AUTO_SORT_CYCLE_DATA_KEY] || null,
+      embedded:safeData?.tkbSolverResult?.solver?.runtime_settings?.ui_automatic_sort_cycle || null
+    });
+    const state = rememberAutomaticSortSuccess(safeData, previousState, planKind);
+    if(!state) return null;
+    const after = JSON.stringify({
+      state:safeData[AUTO_SORT_CYCLE_DATA_KEY] || null,
+      embedded:safeData?.tkbSolverResult?.solver?.runtime_settings?.ui_automatic_sort_cycle || null
+    });
+    if(before === after) return state;
+    try{
+      const saveStoreFn = window.saveStore;
+      if(typeof saveStoreFn === "function"){
+        await Promise.resolve(saveStoreFn.call(window, {
+          force:true,
+          awaitRemote:true,
+          trustedSolverApply:true,
+          suppressHistory:true,
+          replaceHistoryCurrent:true,
+          skipIfUnchanged:true
+        }));
+      }
+    }catch(err){
+      try{ console.warn(`[${VERSION}] automatic sort cycle persistence failed`, err); }catch(_){ }
+    }
+    return state;
+  }
+
   function setOptimizationLockedUi(locked){
     const btn = document.getElementById("btnAutoSort");
     if(!btn) return;
@@ -13638,7 +15892,15 @@
     delete safeData.tkbOptimizationPlateau;
     setOptimizationLockedUi(false);
     if(persist !== false){
-      try{ callMaybe("saveStore", [{force:true}]); }catch(_){}
+      try{
+        callMaybe("saveStore", [{
+          force:true,
+          trustedSolverApply:true,
+          suppressHistory:true,
+          replaceHistoryCurrent:true,
+          skipIfUnchanged:true
+        }]);
+      }catch(_){}
     }
     return true;
   }
@@ -13657,7 +15919,15 @@
     };
     safeData.tkbOptimizationPlateau = state;
     setOptimizationLockedUi(state.locked === true && !customSolveDurationOverrideActive());
-    try{ callMaybe("saveStore", [{force:true}]); }catch(_){}
+    try{
+      callMaybe("saveStore", [{
+        force:true,
+        trustedSolverApply:true,
+        suppressHistory:true,
+        replaceHistoryCurrent:true,
+        skipIfUnchanged:true
+      }]);
+    }catch(_){}
     return state;
   }
 
@@ -13779,7 +16049,8 @@
   }
 
   function uiTeacherQualityMetrics(data){
-    const memo = activeAutoSortPlanningMemo(data || getData());
+    const safeData = data || getData();
+    const memo = activeAutoSortPlanningMemo(safeData);
     if(memo?.uiTeacherQualityMetrics){
       return Object.assign({}, memo.uiTeacherQualityMetrics, {
         gap_distribution:Object.assign({}, memo.uiTeacherQualityMetrics.gap_distribution || {})
@@ -13805,6 +16076,29 @@
           "2": gap2
         }
       };
+      const savedMetrics = safeData?.tkbSolverResult?.metrics
+        || safeData?.tkbRustSolverResult?.metrics
+        || {};
+      if(Object.prototype.hasOwnProperty.call(
+        savedMetrics,
+        "one_period_teacher_sessions_lower_bound"
+      )){
+        result.one_period_teacher_sessions_lower_bound = Math.max(
+          0,
+          Math.min(
+            onePeriod,
+            Math.round(metricNumber(
+              savedMetrics.one_period_teacher_sessions_lower_bound,
+              0
+            ))
+          )
+        );
+        if(Array.isArray(savedMetrics.one_period_teacher_sessions_lower_bound_evidence)){
+          result.one_period_teacher_sessions_lower_bound_evidence = clonePlain(
+            savedMetrics.one_period_teacher_sessions_lower_bound_evidence
+          );
+        }
+      }
       if(memo) memo.uiTeacherQualityMetrics = clonePlain(result);
       return result;
     }catch(_){
@@ -14119,7 +16413,7 @@
       reportAutoSortPreparationChanged();
       return null;
     }
-    if(capacityPrecheck.capacityShortage && !shouldRequireCompletePresetResult(settings)){
+    if(capacityPrecheck.capacityShortage){
       applyCapacityShortageAcceptedSettings(settings);
     }
     await yieldResponsiveUi();
@@ -14186,6 +16480,37 @@
     const stagedExistingRepairState = shouldUseStagedExistingRepair(settings, dataForProgress);
     try{
       let payload;
+      let acceptedCapacityPartial = false;
+      const acceptSafeCapacityPartial = candidate => {
+        // The zero-slack probe is a server-owned, canonical capacity proof.
+        // Its result has already passed accounting, placement and hard
+        // validation, so a stale browser-Agent requirement inherited by the
+        // outer click must not discard it and start the 180-second fallback.
+        // Keep the strict browser gate for ordinary incomplete candidates.
+        const serverCapacityProbe = candidate?.solver?.runtime_settings
+          ?.ui_capacity_safe_fresh_probe === true;
+        const safe = (serverCapacityProbe || !strictBrowserAutomaticRequired(settings))
+          && payloadIsSafeCapacityPartial(candidate);
+        acceptedCapacityPartial = safe;
+        if(!safe) return false;
+        applyCapacityShortageAcceptedSettings(settings);
+        try{
+          candidate.solver = candidate.solver && typeof candidate.solver === "object" ? candidate.solver : {};
+          candidate.solver.runtime_settings = candidate.solver.runtime_settings && typeof candidate.solver.runtime_settings === "object"
+            ? candidate.solver.runtime_settings
+            : {};
+          candidate.solver.runtime_settings.ui_capacity_shortage_detected_from_payload = true;
+          candidate.solver.runtime_settings.ui_capacity_shortage_accepted_after_solve = true;
+        }catch(_){}
+        candidate.warnings = Array.isArray(candidate.warnings) ? candidate.warnings : [];
+        if(!candidate.warnings.some(item => item?.kind === "capacity_shortage_best_effort_accepted")){
+          candidate.warnings.push({
+            kind: "capacity_shortage_best_effort_accepted",
+            message: "Hệ thống áp dụng phần lịch xếp được vì số ô học hợp lệ không đủ; tiết dư nằm trong Tiết chưa phân."
+          });
+        }
+        return true;
+      };
       let firstCompleteSeedAttemptsUsed = 0;
       try{
         if(stagedExistingRepairState){
@@ -14196,7 +16521,14 @@
             activeSolveRunId
           );
         }else{
-          payload = await solveInitialFastDraft(settings, dataForProgress, activeSolveRunId);
+          payload = await solveCapacitySafeFreshProbe(
+            settings,
+            dataForProgress,
+            activeSolveRunId
+          );
+          if(!payload){
+            payload = await solveInitialFastDraft(settings, dataForProgress, activeSolveRunId);
+          }
           if(!payload){
             if(settings?.ui_unified_initial_fast_draft === true){
               delete settings.ui_unified_initial_fast_draft;
@@ -14227,20 +16559,10 @@
           if(!isCurrentSolveRun(activeSolveRunId)) return null;
         }
       }
-      if(payloadHasCapacityShortage(payload) && !shouldRequireCompletePresetResult(settings)){
-        applyCapacityShortageAcceptedSettings(settings);
-        try{
-          payload.solver = payload.solver && typeof payload.solver === "object" ? payload.solver : {};
-          payload.solver.runtime_settings = payload.solver.runtime_settings && typeof payload.solver.runtime_settings === "object"
-            ? payload.solver.runtime_settings
-            : {};
-          payload.solver.runtime_settings.ui_capacity_shortage_detected_from_payload = true;
-        }catch(_){}
-      }
+      acceptSafeCapacityPartial(payload);
       let completion = payloadCompletion(payload);
       let skipFurtherRetries = completion.complete && payloadReturnedCompleteIncumbentNearDeadline(payload);
-      const capacityShortageRun = !shouldRequireCompletePresetResult(settings)
-        && (isCapacityShortageAccepted(settings) || payloadIsPureCapacityShortage(payload) || payloadHasCapacityShortage(payload));
+      let capacityShortageRun = acceptedCapacityPartial;
       let skipRetryLoops = (
           singlePassAutoSort
           && (
@@ -14262,6 +16584,8 @@
         payload = retried.payload;
         firstCompleteSeedAttemptsUsed = retried.seedAttemptsUsed;
         if(!isCurrentSolveRun(activeSolveRunId)) return null;
+        acceptSafeCapacityPartial(payload);
+        capacityShortageRun = acceptedCapacityPartial;
         completion = payloadCompletion(payload);
         skipFurtherRetries = completion.complete && payloadReturnedCompleteIncumbentNearDeadline(payload);
         skipRetryLoops = (
@@ -14306,11 +16630,15 @@
               if(!completion.complete || payloadBetterOrEqualTeacherQuality(seedPayload, payload, settings)){
                 payload = seedPayload;
                 completion = seedCompletion;
+                acceptSafeCapacityPartial(payload);
+                capacityShortageRun = acceptedCapacityPartial;
               }
               if(settings?.ui_stop_after_first_complete_schedule === true) break;
             }else if(!completion.complete && payloadBetterIncompleteSchedule(seedPayload, payload)){
               payload = seedPayload;
               completion = seedCompletion;
+              acceptSafeCapacityPartial(payload);
+              capacityShortageRun = acceptedCapacityPartial;
             }
           }catch(seedErr){
             rethrowCancelledSolve(seedErr, activeSolveRunId);
@@ -14579,34 +16907,11 @@
       );
       const releasedDuringSolve = Number(window.__TKB_SOLVE_RELEASED_CONSTRAINT_VIOLATIONS || 0) > 0;
       if(!completion.complete){
-        const shouldScanCapacityAfterSolve = !shouldRequireCompletePresetResult(settings)
-          && settings?.ui_capacity_precheck_warning_only !== true;
-        const capacityWarningAfterSolve = shouldScanCapacityAfterSolve
-          ? teacherCapacityPrecheckMessage(2)
-          : "";
-        let capacityShortageAccepted = isCapacityShortageAccepted(settings);
-        if(
-          shouldScanCapacityAfterSolve
-          &&
-          !capacityShortageAccepted
-          && capacityWarningAfterSolve
-          && payloadHasUsableSchedule(payload)
-        ){
-          applyCapacityShortageAcceptedSettings(settings);
-          capacityShortageAccepted = true;
-          try{
-            payload.solver = payload.solver && typeof payload.solver === "object" ? payload.solver : {};
-            payload.solver.runtime_settings = payload.solver.runtime_settings && typeof payload.solver.runtime_settings === "object"
-              ? payload.solver.runtime_settings
-              : {};
-            payload.solver.runtime_settings.ui_capacity_shortage_accepted_after_solve = true;
-          }catch(_){}
-          payload.warnings = Array.isArray(payload.warnings) ? payload.warnings : [];
-          payload.warnings.push({
-            kind: "capacity_shortage_best_effort_accepted",
-            message: "Hệ thống áp dụng phần lịch xếp được vì số ô học hợp lệ không đủ; tiết dư nằm trong Tiết chưa phân."
-          });
-        }
+        const capacityWasClaimed = isCapacityShortageAccepted(settings)
+          || payloadHasCapacityShortage(payload);
+        const capacityShortageAccepted = acceptSafeCapacityPartial(payload);
+        capacityShortageRun = capacityShortageAccepted;
+        const unsafeCapacityPartial = capacityWasClaimed && !capacityShortageAccepted;
         const incumbentPayloadForIncomplete = scheduleSnapshot?.tkbSolverResult || null;
         const incumbentExpectedForIncomplete = expectedLessonCount(dataForProgress || getData());
         const incumbentScheduledForIncomplete = snapshotScheduledLessonCount(scheduleSnapshot);
@@ -14616,7 +16921,13 @@
           !releasedDuringSolve
           && incumbentVisibleComplete
           && incumbentSatisfiesCurrentConstraints
-          && !capacityShortageAccepted
+          && (
+            !strictBrowserAutomaticRequired(settings)
+            || !strictBrowserAutomaticQualityMessage(
+              incumbentPayloadForIncomplete,
+              settings
+            )
+          )
         ){
           const restoredData = dataForProgress || getData();
           restoreScheduleData(restoredData, scheduleSnapshot);
@@ -14646,9 +16957,30 @@
         });
         const acceptableWithUnassigned = payloadAcceptableWithUnassigned(payload);
         const acceptableForUiCleanup = payloadAcceptableForUiCleanup(payload);
+        if(unsafeCapacityPartial){
+          if(!releasedDuringSolve) restoreScheduleData(dataForProgress || getData(), scheduleSnapshot);
+          window.__TKB_SOLVER_LAST_PAYLOAD = payload;
+          window.__TKB_SOLVER_LAST_RESULT = null;
+          window.__TKB_SOLVER_LAST_ERROR = message;
+          const displayedPercent = completion.expected > 0
+            ? Math.round((completion.scheduled / completion.expected) * 100)
+            : 99;
+          finishProgress(`${Math.max(1, Math.min(99, displayedPercent))}%`, "warning");
+          window.__TKB_RUST_SOLVER_RUNNING = false;
+          window.__TKB_SOLVE_UI_BUSY = false;
+          setStatus(message, "warning");
+          publishE2EState("incomplete", payload, {
+            message,
+            rejectedIncomplete:true,
+            unsafeCapacityPartial:true
+          });
+          showCompletionPopup(message, "info");
+          refreshStatsPopoverIfOpen();
+          return null;
+        }
         if(
           settings?.require_complete_schedule === true
-          && !isCapacityShortageAccepted(settings)
+          && !capacityShortageAccepted
           && !settings?.ui_staged_existing_repair
           && !acceptableWithUnassigned
           && !acceptableForUiCleanup
@@ -14712,7 +17044,7 @@
         }
         if(
           settings?.require_complete_schedule === true
-          && !isCapacityShortageAccepted(settings)
+          && !capacityShortageAccepted
           && !settings?.ui_staged_existing_repair
         ){
           if(!releasedDuringSolve) restoreScheduleData(dataForProgress || getData(), scheduleSnapshot);
@@ -14746,6 +17078,10 @@
         && !releasedDuringSolve
         && incumbentSatisfiesCurrentConstraints
         && incumbentQualityGuard
+        && (
+          !strictBrowserAutomaticRequired(settings)
+          || !strictBrowserAutomaticQualityMessage(incumbentPayload, settings)
+        )
         && shouldKeepIncumbentForTeacherQuality(payload, incumbentPayload, incumbentQualityGuard, settings)
       ){
         inheritRefinementRound(incumbentPayload, payload);
@@ -14782,6 +17118,10 @@
         && !releasedDuringSolve
         && incumbentSatisfiesCurrentConstraints
         && incumbentQualityGuard?.complete === true
+        && (
+          !strictBrowserAutomaticRequired(settings)
+          || !strictBrowserAutomaticQualityMessage(incumbentPayload, settings)
+        )
         && shouldKeepIncumbentForTeacherQuality(payload, incumbentPayload, incumbentQualityGuard, settings)
       ){
         inheritRefinementRound(incumbentPayload, payload);
@@ -14825,7 +17165,10 @@
         refreshStatsPopoverIfOpen();
         return null;
       }
-      const hardQualityMessage = skipFurtherRetries ? "" : hardQualityViolationMessage(payload, settings);
+      const strictBrowserAutomatic = strictBrowserAutomaticRequired(settings);
+      const hardQualityMessage = skipFurtherRetries && !strictBrowserAutomatic
+        ? ""
+        : hardQualityViolationMessage(payload, settings);
       if(hardQualityMessage){
         if(!releasedDuringSolve) restoreScheduleData(dataForProgress || getData(), scheduleSnapshot);
         window.__TKB_SOLVER_LAST_PAYLOAD = payload;
@@ -14843,6 +17186,8 @@
       setStatus("Đang sắp xếp...", "info");
       await sleep(0);
       let result;
+      autoSortTerminalSettlementActive = true;
+      window.__TKB_AUTO_SORT_TERMINAL_SETTLEMENT_ACTIVE = true;
       try{
         result = await applyPayload(payload, settings);
       }catch(applyErr){
@@ -14913,18 +17258,45 @@
       window.__TKB_SOLVER_LAST_PAYLOAD = payload;
       window.__TKB_SOLVER_LAST_RESULT = result;
       const finalQualityStatus = completionQualityStatus(payload, dataForProgress || getData());
+      const visibleAfterApply = cheapSchoolCompletionStats(dataForProgress || getData());
+      const finalScheduled = Math.max(
+        0,
+        Math.round(Number(visibleAfterApply?.scheduled ?? completion.scheduled) || 0)
+      );
+      const finalExpected = Math.max(
+        0,
+        Math.round(Number(visibleAfterApply?.expected ?? completion.expected) || 0)
+      );
+      const finalUnassigned = Math.max(
+        0,
+        Math.round(Number(
+          visibleAfterApply?.unassigned
+          ?? completion.unassigned
+          ?? payloadUnassignedPeriods(payload)
+        ) || 0)
+      );
+      const acceptedPartialTerminal = acceptedCapacityPartial
+        && finalExpected > 0
+        && (finalScheduled < finalExpected || finalUnassigned > 0);
+      const terminalMessage = acceptedPartialTerminal
+        ? `Hoàn tất: đã xếp ${finalScheduled}/${finalExpected} tiết, còn ${finalUnassigned} tiết ở Chưa phân.`
+        : SOLVE_COMPLETE_MESSAGE;
       finishProgress("100%", "ok");
-      window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = SOLVE_COMPLETE_MESSAGE;
-      setStatus(SOLVE_COMPLETE_MESSAGE, "ok");
+      window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = terminalMessage;
+      setStatus(terminalMessage, "ok");
       window.__TKB_RUST_SOLVER_RUNNING = false;
       window.__TKB_SOLVE_UI_BUSY = false;
       schedulePostSolveUi(payload, result);
       clearManualFreshRetryBudget(dataForProgress || getData(), true);
       publishE2EState("done", payload, {
+        message:terminalMessage,
+        acceptedCapacityPartial:acceptedPartialTerminal,
+        unassignedPeriods:finalUnassigned,
         scheduleUnchanged: unchangedSchedule,
         qualityDebt: qualityDebtMessage(payload, payload?.solver?.runtime_settings || settings),
         qualityTargetMet: finalQualityStatus.targetMet
       });
+      if(acceptedPartialTerminal) showCompletionPopup(terminalMessage, "success");
       return result;
     }catch(err){
       if(!isCurrentSolveRun(activeSolveRunId)) return null;
@@ -14943,6 +17315,14 @@
         window.__TKB_SOLVER_LAST_ERROR_PAYLOAD = err.payload;
       }
       const failedKind = String(err?.kind || err?.payload?.kind || "").trim().toLowerCase();
+      if(localAgentRoleAllowed() && failedKind.startsWith("native_agent_")){
+        try{
+          const refreshRequiredAgent = window.checkNativeAgentNow?.();
+          if(refreshRequiredAgent && typeof refreshRequiredAgent.catch === "function"){
+            refreshRequiredAgent.catch(() => {});
+          }
+        }catch(_){ }
+      }
       if(failedKind === "solver_result_auth_required" || err?.authRequired === true){
         const authMessage = "Phi\u00ean \u0111\u0103ng nh\u1eadp \u0111\u00e3 h\u1ebft h\u1ea1n. L\u01b0\u1ee3t x\u1ebfp v\u1eabn \u0111\u01b0\u1ee3c gi\u1eef tr\u00ean m\u00e1y ch\u1ee7.";
         suspendBackendResumeForAuth(err?.status, err?.payload, "solver-ui");
@@ -14979,25 +17359,46 @@
       const level = friendly.level || "error";
       const statusLevel = friendly.statusLevel || level;
       const statusMessage = friendly.statusMessage || (friendly.title ? `${friendly.title}: ${friendly.message}` : friendly.message);
+      const retainedPayloadForFailure = (dataForProgress || getData())?.tkbSolverResult
+        || window.__TKB_SOLVER_LAST_PAYLOAD
+        || null;
+      const strictRetainedMessage = strictBrowserAutomaticQualityMessage(
+        retainedPayloadForFailure,
+        settings
+      );
       const retainedCompleteTerminal = statusLevel === "ok"
         && statusMessage === SOLVE_COMPLETE_MESSAGE
-        && !!completeScheduleStateForExistingOptimize(dataForProgress || getData());
+        && !!completeScheduleStateForExistingOptimize(dataForProgress || getData())
+        && !strictRetainedMessage;
+      const finalStatusMessage = strictRetainedMessage && !retainedCompleteTerminal
+        ? strictRetainedMessage
+        : statusMessage;
+      const finalStatusLevel = strictRetainedMessage && !retainedCompleteTerminal
+        ? "error"
+        : statusLevel;
       if(retainedCompleteTerminal){
         window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = SOLVE_COMPLETE_MESSAGE;
       }
       finishProgress(
         retainedCompleteTerminal
           ? "100%"
-          : (level === "warning" ? (friendly.progressLabel || "Chưa đủ") : "Lỗi"),
-        retainedCompleteTerminal ? "ok" : level
+          : (strictRetainedMessage
+              ? "Lỗi"
+              : (level === "warning" ? (friendly.progressLabel || "Chưa đủ") : "Lỗi")),
+        retainedCompleteTerminal ? "ok" : (strictRetainedMessage ? "error" : level)
       );
-      setStatus(statusMessage, statusLevel);
+      setStatus(finalStatusMessage, finalStatusLevel);
       publishE2EState(
         retainedCompleteTerminal ? "done" : (level === "warning" ? "incomplete" : "error"),
         retainedCompleteTerminal
-          ? ((dataForProgress || getData())?.tkbSolverResult || window.__TKB_SOLVER_LAST_PAYLOAD || null)
+          ? retainedPayloadForFailure
           : (err?.payload || null),
-        {title: friendly.title, message: friendly.message, rawError, keptIncumbent:retainedCompleteTerminal}
+        {
+          title:friendly.title,
+          message:strictRetainedMessage || friendly.message,
+          rawError,
+          keptIncumbent:retainedCompleteTerminal
+        }
       );
       if(Number(window.__TKB_SOLVE_RELEASED_CONSTRAINT_VIOLATIONS || 0) <= 0){
         restoreScheduleData(dataForProgress || getData(), scheduleSnapshot);
@@ -15007,6 +17408,8 @@
       return null;
     }finally{
       window.__TKB_DEFER_SERVER_RESULT_SETTLEMENT_UNTIL_APPLY = false;
+      autoSortTerminalSettlementActive = false;
+      window.__TKB_AUTO_SORT_TERMINAL_SETTLEMENT_ACTIVE = false;
       if(isCurrentSolveRun(activeSolveRunId)){
         stopProgressTicker();
         window.__TKB_RUST_SOLVER_RUNNING = false;
@@ -15022,6 +17425,7 @@
     if(window.__TKB_E2E_EXPOSE_TEST_HOOKS === true){
       window.__TKB_RUST_BRIDGE_TEST_HOOKS = {
         hardwareWorkerCount,
+        localAgentRoleAllowed,
         settingsForAutoSort,
         settingsForFastQualityAutoSort,
         settingsForTeacherSessionOpt,
@@ -15044,6 +17448,7 @@
         friendlySolveError,
         buildAutomaticAutoSortPlan,
         applyRequestedSolveModeToPlan,
+        settingsForPersistedOptimizationContract,
         normalizeSolveRequestMode,
         normalizeMetricProgressSnapshot,
         metricProgressPercent,
@@ -15057,6 +17462,15 @@
         stagedExistingFreshRetrySettings,
         cheapSchoolCompletionStats,
         hardQualityViolationMessage,
+        strictBrowserAutomaticRequired,
+        strictBrowserAutomaticQualityState,
+        strictBrowserAutomaticQualityMessage,
+        payloadIsMobileLocalQualityTerminal,
+        payloadIsSafeCapacityPartial,
+        shouldUseCapacitySafeFreshProbe,
+        capacitySafeFreshProbeSettings,
+        solveCapacitySafeFreshProbe,
+        applyCapacityShortageAcceptedSettings,
         maybeRunBackendPrecheck,
         confirmCapacityPrecheckBeforeSolve,
         currentConstraintViolationsAsync,
@@ -15064,6 +17478,15 @@
         optimizationPlateauState,
         rememberOptimizationPlateau,
         clearOptimizationPlateau,
+        currentUserIsSuperadmin,
+        solveRequestModeAllowedForCurrentUser,
+        embeddedAutomaticSortCycleState,
+        attachAutomaticSortCycleToPayload,
+        automaticSortCycleState,
+        ordinaryAutomaticSortLimitReached,
+        rememberAutomaticSortSuccess,
+        automaticSortCycleIntentFromSettings,
+        persistAutomaticSortSuccess,
         refinementStatisticsImproved,
         syncOptimizationLockState,
         readSettings,
@@ -15077,6 +17500,9 @@
         rememberSolveTiming,
         teacherSessionGapQualityTarget,
         teacherSessionQuality,
+        onePeriodTeacherSessionLowerBound,
+        onePeriodTeacherSessionFloorReached,
+        onePeriodTeacherSessionFloorMessage,
         completionQualityStatus,
         completeScheduleNeedsFreshQualityRebuild,
         uiTeacherQualityMetrics,
@@ -15101,6 +17527,9 @@
         mergeRefinementLearning,
         rememberRefinementLearning,
         dataForSolverRequest,
+        shouldBuildClientFastSeed,
+        compactClientFastSeed,
+        buildClientFastSeed,
         incumbentQualityGuardState,
         shouldKeepIncumbentForTeacherQuality,
         snapshotScheduleData,
@@ -15149,9 +17578,12 @@
         recordBackendJobStarted,
         backendProgressStageLabel,
         recordBackendLiveProgress,
-        waitForServerOwnedSolverResult,
-        startInstantProgressTicker,
-        primeAutoSortStartUi,
+         waitForServerOwnedSolverResult,
+         terminalApplySaveWatchdogMs,
+         deferredBackendSavePendingFor,
+         awaitTrustedSolverApplySave,
+         startInstantProgressTicker,
+         primeAutoSortStartUi,
         startProgressTicker,
         restartProgressForRetry,
         tickEstimatedProgress,
@@ -15333,26 +17765,68 @@
   }
 
   function automaticSolverCeilingSeconds(expected, data){
-    void expected;
-    return manualFreshRetryBudgetSeconds(data);
+    return Math.max(
+      manualFreshRetryBudgetSeconds(data),
+      Number(expected || 0) >= LARGE_AUTOMATIC_LESSON_THRESHOLD
+        ? LARGE_AUTOMATIC_DURATION_SECONDS
+        : (Number(expected || 0) >= MEDIUM_AUTOMATIC_LESSON_THRESHOLD
+            ? MEDIUM_AUTOMATIC_DURATION_SECONDS
+            : 0)
+    );
+  }
+
+  function browserAgentEnabledForAutomaticBudget(){
+    if(!localAgentRoleAllowed()) return false;
+    if(isWindowsNativeAgentNavigator(window.navigator)) return true;
+    try{
+      const executor = window.TKBBrowserWasmExecutor;
+      if(!executor || typeof executor.isEnabled !== "function") return false;
+      return executor.isEnabled() !== false;
+    }catch(_){ return false; }
   }
 
   function initialAutomaticSolverCeilingSeconds(expected, data){
     const subjectPeriodCeiling = hasSubjectPeriodRequirements(data)
       ? ROBUST_AUTO_DURATION_SECONDS
       : 0;
+    // Browser Agent owns the heavy solve when enabled. Give its exact local
+    // pipeline the same adaptive quality window as a refinement click; the
+    // old 130-second first gate left slow iPhone runs with only a few seconds
+    // for quality, then handed an exhausted job to VPS.
+    const firstQualityCeiling = browserAgentEnabledForAutomaticBudget()
+      ? ROBUST_AUTO_DURATION_SECONDS
+      : FIRST_QUALITY_GATE_CEILING_SECONDS;
     return Math.max(
-      FIRST_QUALITY_GATE_CEILING_SECONDS,
+      firstQualityCeiling,
       manualFreshRetryBudgetSeconds(data),
-      subjectPeriodCeiling
+      subjectPeriodCeiling,
+      Number(expected || 0) >= LARGE_AUTOMATIC_LESSON_THRESHOLD
+        ? LARGE_AUTOMATIC_DURATION_SECONDS
+        : (Number(expected || 0) >= MEDIUM_AUTOMATIC_LESSON_THRESHOLD
+            ? MEDIUM_AUTOMATIC_DURATION_SECONDS
+            : 0)
     );
   }
 
   function incrementalRefineCeilingSeconds(expected, data, refinementRound){
-    void expected;
-    void data;
     void refinementRound;
-    return DEEP_AUTO_DURATION_SECONDS;
+    const quality = uiTeacherQualityMetrics(data || getData());
+    const singletonTarget = onePeriodTeacherSessionTarget(quality, 0);
+    const hardQualityDebt = onePeriodTeacherSessionCount(quality) > singletonTarget
+      || gap2PlusCount(quality) > 0;
+    // Keep ordinary compaction clicks short. A complete timetable that still
+    // has singleton/Gap2 debt needs one wider exact slice: local singleton
+    // repair, progressive hard-debt CP-SAT, full floor/zero retry, then the
+    // session-locked Gap1 tail all need independent room on a 2,000+ period
+    // school. The backend still stops on accepted targets/plateau, so this is
+    // a ceiling rather than a forced wait.
+    if(hardQualityDebt && Number(expected || 0) >= LARGE_AUTOMATIC_LESSON_THRESHOLD){
+      return HARD_DEBT_REFINEMENT_DURATION_SECONDS;
+    }
+    if(hardQualityDebt && Number(expected || 0) >= MEDIUM_AUTOMATIC_LESSON_THRESHOLD){
+      return ROBUST_AUTO_DURATION_SECONDS;
+    }
+    return REFINEMENT_AUTO_DURATION_SECONDS;
   }
 
   function applyIncrementalRefineCeiling(settings, expected, data, refinementRound){
@@ -15363,7 +17837,7 @@
     settings.integrated_time_limit = seconds;
     settings.backend_deadline_ms = seconds * 1000;
     settings.native_global_deadline_ms = seconds * 1000;
-    settings.ui_allow_short_backend_deadline = false;
+    settings.ui_allow_short_backend_deadline = true;
     return seconds;
   }
 
@@ -15407,13 +17881,18 @@
       ? requested
       : Math.max(
           FIRST_QUALITY_GATE_CEILING_SECONDS,
-          hasSubjectPeriodRequirements(data) ? ROBUST_AUTO_DURATION_SECONDS : 0
+          hasSubjectPeriodRequirements(data) ? ROBUST_AUTO_DURATION_SECONDS : 0,
+          Number(expected || 0) >= LARGE_AUTOMATIC_LESSON_THRESHOLD
+            ? LARGE_AUTOMATIC_DURATION_SECONDS
+            : (Number(expected || 0) >= MEDIUM_AUTOMATIC_LESSON_THRESHOLD
+                ? MEDIUM_AUTOMATIC_DURATION_SECONDS
+                : 0)
         );
     return applyUnifiedInitialCeiling(settings, expected, data, seconds);
   }
 
   function applyUnifiedReferenceWatchdogReserve(settings){
-    settings.ui_unified_reference_watchdog_reserve_ms = 10000;
+    settings.ui_unified_reference_watchdog_reserve_ms = 20000;
     // Keep the solver watchdog handoff tight, while giving the browser an
     // additional bounded window to receive and decode the terminal payload.
     settings.ui_client_timeout_reserve_ms = 30_000;
@@ -15459,9 +17938,10 @@
     settings.ui_solver_preset = "balanced";
     settings.ui_unified_auto_sort = true;
     settings.ui_allow_quality_after_single_pass = false;
-    // One user click owns one bounded solve. A fresh click starts at 60 seconds
-    // and returns as soon as its strict usable-quality gate is met; a complete
-    // incumbent refinement receives 180 seconds. Never chain hidden retries.
+    // One user click owns one bounded solve. A fresh click first secures a
+    // complete hard-valid incumbent, then continues its quality phases inside
+    // that same canonical job. Later user clicks each spend one bounded slice
+    // on quality from that incumbent. Never chain hidden retry jobs.
     settings.ui_disable_initial_fast_draft = true;
     settings.ui_disable_automatic_retry = true;
     settings.ui_allow_incomplete_retry_after_single_pass = false;
@@ -15477,6 +17957,13 @@
     settings.optimization_benders_disable_session_early_stop = true;
     applyUnifiedSafetyCeiling(settings, expectedCount, safeData);
     applyUnifiedTeacherQualityPriority(settings);
+    // A clean block-cycle checkpoint is only a warm start, not the final
+    // timetable.  Returning immediately here used to leave the remaining
+    // watchdog budget unused, which is exactly why large schools still showed
+    // many Buổi/Gap1 entries after a successful first refinement.  Let the
+    // bounded CP-SAT tail consume the same click budget; its atomic publication
+    // guard retains the incumbent whenever the tail cannot improve it.
+    settings.optimization_clean_quality_cycles_early_return = false;
 
     const knownViolations = Number(knownConstraintViolationCount);
     const hasKnownConstraintViolations = Number.isFinite(knownViolations) && knownViolations >= 0;
@@ -15513,6 +18000,16 @@
       // successful result and must be returned instead of an empty 422.
       settings.ui_existing_incumbent_revalidated = true;
       settings.ui_return_complete_incumbent_on_existing_optimize_failure = true;
+      const incumbentQualityMetrics = uiTeacherQualityMetrics(safeData);
+      const incumbentSingletonFloor = onePeriodTeacherSessionLowerBound(
+        incumbentQualityMetrics
+      );
+      settings.one_period_teacher_sessions_lower_bound = incumbentSingletonFloor;
+      // Continued Automatic clicks use the canonical incumbent directly. The
+      // backend skips fresh Phase F, keeps singleton/Gap2 at zero as hard
+      // gates, then reduces sessions without increasing Gap1 before a
+      // session-locked Gap1 stage. A failed trajectory returns the incumbent.
+      settings.optimization_safe_staged_reclick = true;
       settings.auto_sort_mode = "teacher_session_opt";
       settings.auto_sort_strategy = "continue_teacher_quality_from_incumbent";
       settings.preserve_existing_tkb = true;
@@ -15561,16 +18058,17 @@
         )
       );
       settings.ui_incremental_progress_estimate_seconds = settings.progress_estimate_seconds;
-      // Keep zero as the Phase G search target. The two-stage priority permits
-      // Phase S to compress sessions first, then cleans gaps without raising
-      // the achieved session ceiling.
+      // Keep zero as the final Gap1 search target. The safe staged backend
+      // fences Gap1 during session compression, then locks the achieved
+      // session count while it continues Gap1 cleanup.
       settings.target_gap1_sessions = 0;
       settings.gap1_quality_target_explicit = true;
       // A complete incumbent starts an explicit "Xếp tiếp" search. The
-      // 180-second value is only a ceiling: keep the best candidate and stop
-      // after the search saturates instead of waiting for a numeric threshold.
+      // adaptive ceiling is only a maximum: keep the best candidate and stop
+      // as soon as the complete acceptance envelope is reached. That envelope
+      // includes sessions and Gap1; zero singleton/Gap2 alone is not enough.
       settings.optimization_continue_quality_search = true;
-      settings.ui_stop_refinement_when_good_enough = false;
+      settings.ui_stop_refinement_when_good_enough = true;
       settings.optimization_refine_try_lower_session_cap = true;
       const subjectPeriodRefinement = hasSubjectPeriodRequirements(safeData);
       settings.optimization_refine_strict_integrated_period_bridge =
@@ -15601,7 +18099,7 @@
         : settings.ui_unified_refine_ceiling_seconds;
       settings.optimization_unbounded_quality_search = false;
       settings.optimization_continue_quality_search = true;
-      settings.ui_stop_refinement_when_good_enough = false;
+      settings.ui_stop_refinement_when_good_enough = true;
       settings.optimization_stop_on_stagnation = true;
       settings.optimization_benders_accept_stagnant_iterations = 2;
       void refineBudgetSeconds;
@@ -15616,6 +18114,20 @@
     }
 
     settings.ui_unified_solve_kind = "fresh_complete_first";
+    // Large fresh schools with subject-period rules need a proven
+    // completion-first lane.  The quality objectives are soft and are
+    // continued from the returned incumbent; making them a prerequisite for
+    // the first publication can turn a feasible timetable into a 422.
+    // Keep this opt-in marker server-owned by requiring the backend to
+    // revalidate the resulting complete payload before publication.
+    if(expectedCount >= 900 || hasSubjectPeriodRequirements(safeData)){
+      settings.ui_completion_first_rescue = true;
+      settings.ui_completion_first_rescue_seed = 17;
+    }else{
+      delete settings.ui_completion_first_rescue;
+      delete settings.ui_completion_first_rescue_seed;
+    }
+    delete settings.one_period_teacher_sessions_lower_bound;
     if(qualityDebtFreshRebuild){
       settings.ui_quality_debt_fresh_rebuild = true;
       settings.ui_keep_better_existing_on_resort = true;
@@ -15644,6 +18156,16 @@
     delete settings.ui_unified_initial_draft_ceiling_seconds;
     if(useInitialFastStage){
       settings.ui_unified_initial_fast_stage = true;
+      settings.ui_unified_initial_ceiling_seconds = applyUnifiedInitialCeiling(
+        settings,
+        expectedCount,
+        safeData
+      );
+    }else if(!qualityDebtFreshRebuild && browserAgentEnabledForAutomaticBudget()){
+      // A partial timetable is still a fresh completeness problem. Previously
+      // only an entirely empty timetable received the Browser Agent's full
+      // quality window, so resumed mobile/desktop attempts were normalized
+      // back to 60 seconds and could expire before finding a complete seed.
       settings.ui_unified_initial_ceiling_seconds = applyUnifiedInitialCeiling(
         settings,
         expectedCount,
@@ -15705,27 +18227,27 @@
     settings.optimization_first_click_strict_quality_gate_seconds = subjectPeriodFirstClick
       ? 105
       : 55;
-    // The first automatic click has one explicit quality gate: complete and
-    // hard-valid, with no avoidable one-period teacher session or gap of two
-    // or more. Return as soon as that gate is met. The next manual click owns
-    // the deeper 180-second session/gap-1 compaction search.
+    // Automatic is one complete-first pipeline. Phase F retains the first
+    // hard-valid timetable as an atomic fallback; the same job then spends
+    // its remaining budget on singleton, Gap2, session and Gap1 cleanup. Do
+    // not make users click Play again merely to enter the quality phases.
     // Subject-period rules need one uninterrupted all-period strict search.
     // A plain school keeps the faster v1.44 lean Phase-Q path, which has already
     // produced complete zero-singleton/zero-gap2 schedules for diverse seeds in
     // roughly one minute. Both paths retain a complete hard-valid safety result.
-    settings.ui_unified_return_first_complete = true;
-    settings.ui_stop_after_first_complete_schedule = true;
-    settings.optimization_first_click_continue_local_after_complete = false;
-    settings.optimization_first_click_skip_global_quality = true;
+    settings.ui_unified_return_first_complete = false;
+    settings.ui_stop_after_first_complete_schedule = false;
+    settings.optimization_first_click_continue_local_after_complete = true;
+    settings.optimization_first_click_skip_global_quality = false;
     // Backend marker: keep the public first-click contract stable while routing
     // plain schools through the proven lean Phase-Q path. Subject-period rows
     // deliberately omit this shortcut and use the exact all-period gate.
     settings.ui_plain_first_click_lean_quality = !subjectPeriodFirstClick;
-    settings.optimization_first_click_lean_global_quality = boundedFirstComplete;
-    settings.optimization_first_click_quality_stop_at_cap = boundedFirstComplete;
-    settings.optimization_continue_quality_search = !boundedFirstComplete;
-    settings.optimization_first_click_feasibility_time_limit_seconds = automaticFirstGood
-      ? firstClickCeiling
+    settings.optimization_first_click_lean_global_quality = false;
+    settings.optimization_first_click_quality_stop_at_cap = false;
+    settings.optimization_continue_quality_search = true;
+    settings.optimization_first_click_feasibility_time_limit_seconds = subjectPeriodFirstClick
+      ? Math.min(105, firstClickCeiling)
       : Math.min(70, firstClickCeiling);
     // An explicit first-run budget owns the whole click. After the complete
     // feasibility phase, give nearly all remaining time to quality instead of
@@ -15739,8 +18261,18 @@
             - 10
         )
       : 0;
+    const automaticFirstClickQualitySeconds = automaticFirstGood && firstClickCeiling >= 120
+      ? Math.max(
+          30,
+          firstClickCeiling
+            - settings.optimization_first_click_feasibility_time_limit_seconds
+            - 10
+        )
+      : 0;
     settings.optimization_first_click_quality_time_limit_seconds = explicitFirstClickQualitySeconds > 0
       ? explicitFirstClickQualitySeconds
+      : automaticFirstClickQualitySeconds > 0
+        ? automaticFirstClickQualitySeconds
       : (boundedFirstComplete && expectedCount >= 900
           ? 35
           : Math.max(30, Math.min(85, firstClickCeiling - 90)));
@@ -15770,8 +18302,7 @@
     settings.optimization_first_click_target_probe_convergence_ceiling_seconds = expectedCount >= 900
       ? Math.min(120, firstClickCeiling)
       : 60;
-    settings.optimization_first_click_target_probe_enabled = !automaticFirstGood
-      && firstClickCeiling >= 180;
+    settings.optimization_first_click_target_probe_enabled = firstClickCeiling >= 180;
     settings.optimization_first_click_local_lns_time_limit_seconds = boundedFirstComplete
       ? (expectedCount >= 900 ? 30 : 18)
       : (useInitialFastStage ? 12 : (firstClickCeiling >= 150 ? 45 : 10));
@@ -15805,7 +18336,9 @@
     // Only an explicit long custom budget opts into deep quality search. The
     // automatic lane returns the first complete result that clears its strict
     // quality gate, while retaining 180 seconds for genuinely difficult data.
-    settings.optimization_unbounded_quality_search = effectiveCustomDurationSeconds >= 120;
+    settings.optimization_unbounded_quality_search = (
+      automaticFirstGood && firstClickCeiling >= 120
+    ) || effectiveCustomDurationSeconds >= 120;
     if(settings.optimization_unbounded_quality_search){
       // Keep searching while quality improves; the backend's Benders lane
       // stops only after its convergence threshold is reached.
@@ -15827,7 +18360,7 @@
       settings.ui_custom_fresh_continue_quality = true;
       settings.ui_unified_return_first_complete = false;
       settings.ui_stop_after_first_complete_schedule = false;
-      settings.optimization_first_click_continue_local_after_complete = false;
+      settings.optimization_first_click_continue_local_after_complete = true;
       settings.optimization_first_click_skip_global_quality = false;
       settings.optimization_first_click_lean_global_quality = false;
       settings.optimization_first_click_quality_stop_at_cap = false;
@@ -15857,6 +18390,47 @@
     settings.ui_progress_metric_baseline = normalized.baseline;
     settings.ui_progress_metric_percent = normalized.percent;
     return settings;
+  }
+
+  function applyDesktopFullReferenceRefineCeiling(settings){
+    const seconds = DESKTOP_FULL_REFERENCE_REFINE_SECONDS;
+    settings.optimization_time_limit_seconds = seconds;
+    settings.optimization_adaptive_time_limit_seconds = seconds;
+    settings.overall_time_limit_seconds = seconds;
+    settings.integrated_time_limit = seconds;
+    settings.backend_deadline_ms = seconds * 1000;
+    settings.native_global_deadline_ms = seconds * 1000;
+    settings.progress_estimate_seconds = seconds;
+    settings.ui_unified_refine_ceiling_seconds = seconds;
+    settings.ui_incremental_progress_estimate_seconds = seconds;
+    settings.ui_progress_budget_seconds = seconds;
+    settings.ui_client_timeout_reserve_ms = Math.max(
+      30_000,
+      Number(settings.ui_client_timeout_reserve_ms || 0) || 0
+    );
+    settings.ui_allow_short_backend_deadline = false;
+    settings.ui_browser_full_reference_refine_deadline_extended = true;
+    return seconds;
+  }
+
+  function applyDesktopStrictAutomaticCeiling(settings){
+    const seconds = DESKTOP_FULL_REFERENCE_REFINE_SECONDS;
+    settings.optimization_time_limit_seconds = seconds;
+    settings.optimization_adaptive_time_limit_seconds = seconds;
+    settings.overall_time_limit_seconds = seconds;
+    settings.integrated_time_limit = seconds;
+    settings.backend_deadline_ms = seconds * 1000;
+    settings.native_global_deadline_ms = seconds * 1000;
+    settings.progress_estimate_seconds = seconds;
+    settings.ui_incremental_progress_estimate_seconds = seconds;
+    settings.ui_progress_budget_seconds = seconds;
+    settings.ui_client_timeout_reserve_ms = Math.max(
+      30_000,
+      Number(settings.ui_client_timeout_reserve_ms || 0) || 0
+    );
+    settings.ui_allow_short_backend_deadline = false;
+    settings.ui_browser_strict_automatic_deadline_extended = true;
+    return seconds;
   }
 
   function focusedOptimizationCeilingSeconds(settings){
@@ -15938,6 +18512,54 @@
     return settings;
   }
 
+  function clearInheritedFocusedQualityPolicy(settings){
+    if(!settings || typeof settings !== "object") return settings;
+    for(const key of [
+      "quality_priority_order",
+      "target_one_period_teacher_sessions",
+      "target_teacher_sessions",
+      "target_gap1_sessions",
+      "target_gap2_plus_sessions",
+      "optimization_accept_teacher_sessions",
+      "optimization_default_accept_teacher_sessions",
+      "optimization_accept_gap1_sessions",
+      "optimization_default_accept_gap1_sessions",
+      "session_early_stop_teacher_sessions",
+      "session_early_stop_max_one_period_sessions",
+      "optimization_benders_gap_objective_target",
+      "optimization_benders_lock_teacher_sessions",
+      "optimization_benders_minimize_hint_distance",
+      "browser_wasm_singleton_progressive_search",
+      "browser_wasm_singleton_max_waves",
+      "browser_wasm_singleton_wave_deadline_ms",
+      "browser_wasm_session_deep_search",
+      "browser_wasm_session_deep_max_waves",
+      "browser_wasm_session_wave_deadline_ms",
+      "browser_wasm_gap_progressive_search",
+      "browser_wasm_gap_max_waves",
+      "browser_wasm_gap_wave_deadline_ms",
+      "optimization_refine_try_lower_session_cap",
+      "native_skip_teacher_optimization"
+    ]) delete settings[key];
+    settings.optimization_two_stage_teacher_quality = false;
+    settings.optimization_first_click_singleton_cleanup = false;
+    settings.optimization_first_click_gap_cleanup = false;
+    settings.optimization_first_click_strict_quality_gate = false;
+    settings.optimization_first_click_continue_local_after_complete = false;
+    settings.optimization_first_click_skip_global_quality = true;
+    settings.optimization_benders_minimize_teacher_sessions = false;
+    settings.optimization_benders_minimize_one_period_sessions = false;
+    settings.optimization_benders_minimize_period_gaps = false;
+    settings.optimization_benders_minimize_hint_distance = false;
+    settings.minimize_one_period_sessions = false;
+    settings.minimize_sessions = false;
+    settings.minimize_teacher_gaps = false;
+    settings.period_max_teacher_gap = "off";
+    settings.teacher_session_target_explicit = false;
+    settings.gap1_quality_target_explicit = false;
+    return settings;
+  }
+
   function applyRequestedSolveModeToPlan(plan, requestedMode, data, expected){
     if(!plan?.settings) return plan;
     const mode = normalizeSolveRequestMode(requestedMode);
@@ -15949,7 +18571,41 @@
     settings.ui_requested_solve_mode = mode;
 
     if(mode === SOLVE_REQUEST_MODES.automatic){
+      const inheritedFocusedPolicy = settings.optimization_focused_objective_only === true
+        || String(settings.quality_priority_order || "").trim().toLowerCase().startsWith("focused_")
+        || [
+          SOLVE_REQUEST_MODES.singletons,
+          SOLVE_REQUEST_MODES.sessions,
+          SOLVE_REQUEST_MODES.gap1,
+          SOLVE_REQUEST_MODES.gap2,
+          SOLVE_REQUEST_MODES.gaps
+        ].includes(normalizeSolveRequestMode(settings.ui_deferred_optimization_focus));
       settings.optimization_focus = "automatic";
+      delete settings.optimization_gap_target;
+      delete settings.optimization_benders_gap_objective_target;
+      delete settings.optimization_focused_objective_only;
+      if(inheritedFocusedPolicy){
+        for(const key of [
+          "target_one_period_teacher_sessions",
+          "target_teacher_sessions",
+          "target_gap1_sessions",
+          "target_gap2_plus_sessions",
+          "optimization_accept_teacher_sessions",
+          "optimization_default_accept_teacher_sessions",
+          "optimization_accept_gap1_sessions",
+          "optimization_default_accept_gap1_sessions",
+          "session_early_stop_teacher_sessions",
+          "session_early_stop_max_one_period_sessions",
+          "optimization_benders_lock_teacher_sessions",
+          "optimization_benders_minimize_teacher_sessions",
+          "optimization_benders_minimize_one_period_sessions",
+          "optimization_benders_minimize_period_gaps",
+          "optimization_benders_minimize_hint_distance"
+        ]) delete settings[key];
+        if(String(settings.quality_priority_order || "").trim().toLowerCase().startsWith("focused_")){
+          delete settings.quality_priority_order;
+        }
+      }
       settings.ui_progress_mode = "time";
       clearPlanMetricProgress(settings);
       return plan;
@@ -15978,6 +18634,7 @@
 
     if(mode === SOLVE_REQUEST_MODES.quickComplete){
       settings.optimization_focus = "quick_complete";
+      delete settings.optimization_gap_target;
       settings.optimization_two_stage_teacher_quality = false;
       settings.optimization_first_click_singleton_cleanup = false;
       settings.optimization_first_click_gap_cleanup = false;
@@ -16027,8 +18684,12 @@
       0,
       metricNumber(visibleMetrics.one_period_teacher_sessions, 0)
     );
+    const currentSingletonTarget = onePeriodTeacherSessionLowerBound(
+      visibleMetrics
+    );
     const currentGap2 = Math.max(0, gap2PlusCount(visibleMetrics));
     const currentGap1 = Math.max(0, gapExactCount(visibleMetrics, 1));
+    const currentTotalGap = Math.max(0, metricGapTotal(visibleMetrics));
     settings.auto_sort_mode = "teacher_session_opt";
     settings.ui_unified_solve_kind = "refine_complete";
     settings.ui_use_existing_complete_incumbent = true;
@@ -16039,28 +18700,56 @@
     settings.allow_solver_warm_start = true;
     settings.optimization_continue_quality_search = true;
     settings.ui_stop_refinement_when_good_enough = false;
-    settings.max_one_period_sessions = 0;
+    settings.optimization_focused_objective_only = true;
+    settings.optimization_incumbent_one_period_sessions = currentSingletons;
+    settings.optimization_incumbent_teacher_sessions = currentSessions;
+    settings.optimization_incumbent_gap1_sessions = currentGap1;
+    settings.optimization_incumbent_gap2_plus_sessions = currentGap2;
+    settings.optimization_incumbent_gap_periods = currentTotalGap;
+    clearInheritedFocusedQualityPolicy(settings);
+    settings.max_one_period_sessions = mode === SOLVE_REQUEST_MODES.automatic
+      ? currentSingletonTarget
+      : currentSingletons;
     settings.strict_one_period_sessions_cap = true;
     settings.enforce_max_one_period_sessions = true;
-    settings.one_period_priority_absolute = true;
+    settings.one_period_priority_absolute = false;
+    settings.max_teacher_sessions = currentSessions;
+    settings.requested_max_teacher_sessions = currentSessions;
+    settings.strict_teacher_session_cap = true;
+    settings.optimization_benders_max_teacher_gap1_sessions = currentGap1;
+    settings.optimization_benders_max_teacher_gap2_plus_sessions = currentGap2;
+    settings.optimization_benders_max_teacher_gap_periods = currentTotalGap;
+    settings.allow_quality_debt = true;
+    settings.optimization_benders_allow_one_period_debt =
+      currentSingletons > currentSingletonTarget;
 
     if(mode === SOLVE_REQUEST_MODES.singletons){
       settings.optimization_focus = "singletons";
-      settings.optimization_two_stage_teacher_quality = false;
+      delete settings.optimization_gap_target;
       settings.browser_wasm_singleton_progressive_search = true;
-      settings.browser_wasm_singleton_max_waves = 6;
-      settings.browser_wasm_singleton_wave_deadline_ms = 10000;
+      settings.browser_wasm_singleton_max_waves = 7;
+      settings.browser_wasm_singleton_wave_deadline_ms = 25000;
       settings.minimize_one_period_sessions = true;
       settings.minimize_sessions = false;
       settings.minimize_teacher_gaps = false;
       settings.period_max_teacher_gap = "off";
-      settings.target_one_period_teacher_sessions = 0;
-      delete settings.target_gap1_sessions;
+      settings.optimization_benders_session_feasibility_only = false;
+      settings.optimization_benders_minimize_teacher_sessions = false;
+      settings.optimization_benders_minimize_one_period_sessions = true;
+      settings.optimization_benders_minimize_period_gaps = false;
+      settings.optimization_benders_period_gap_priority_absolute = false;
+      settings.max_one_period_sessions = "off";
+      settings.strict_one_period_sessions_cap = false;
+      settings.enforce_max_one_period_sessions = false;
+      settings.one_period_priority_absolute = true;
+      settings.allow_quality_debt = true;
+      settings.optimization_benders_allow_one_period_debt = true;
+      settings.target_one_period_teacher_sessions = currentSingletonTarget;
       configurePlanMetricProgress(
         settings,
         "one_period_teacher_sessions",
         currentSingletons,
-        0,
+        currentSingletonTarget,
         currentSingletons
       );
       applyFocusedOptimizationCeiling(settings);
@@ -16069,15 +18758,21 @@
 
     if(mode === SOLVE_REQUEST_MODES.sessions){
       settings.optimization_focus = "sessions";
-      settings.optimization_two_stage_teacher_quality = true;
+      delete settings.optimization_gap_target;
       settings.optimization_refine_try_lower_session_cap = true;
       settings.browser_wasm_session_deep_search = true;
       settings.browser_wasm_session_deep_max_waves = 16;
       settings.browser_wasm_session_wave_deadline_ms = 15000;
       settings.minimize_sessions = true;
+      settings.minimize_one_period_sessions = false;
       settings.minimize_teacher_gaps = false;
       settings.period_max_teacher_gap = "off";
-      delete settings.target_gap1_sessions;
+      settings.optimization_benders_session_feasibility_only = false;
+      settings.optimization_benders_minimize_teacher_sessions = true;
+      settings.optimization_benders_minimize_one_period_sessions = false;
+      settings.optimization_benders_minimize_period_gaps = false;
+      settings.optimization_benders_period_gap_priority_absolute = false;
+      settings.session_early_stop_max_one_period_sessions = currentSingletons;
       const activeStudentSessions = Math.max(1, activeStudentSessionCount(safeData));
       const loadLowerBound = Math.max(1, teacherSessionLoadLowerCap(safeData));
       const sessionTarget = Math.min(
@@ -16086,6 +18781,8 @@
       );
       settings.ui_active_student_sessions = activeStudentSessions;
       settings.ui_teacher_session_progress_target = sessionTarget;
+      settings.target_teacher_sessions = sessionTarget;
+      settings.teacher_session_target_explicit = true;
       configurePlanMetricProgress(
         settings,
         "teacher_sessions",
@@ -16097,26 +18794,59 @@
       return plan;
     }
 
+    const gapTarget = gapOptimizationTargetForSolveRequestMode(mode);
     settings.optimization_focus = "gaps";
-    settings.optimization_two_stage_teacher_quality = true;
+    if(gapTarget) settings.optimization_gap_target = gapTarget;
+    else delete settings.optimization_gap_target;
     settings.optimization_refine_try_lower_session_cap = false;
     settings.browser_wasm_gap_progressive_search = true;
-    settings.browser_wasm_gap_max_waves = 4;
+    settings.browser_wasm_gap_max_waves = 12;
     settings.browser_wasm_gap_wave_deadline_ms = 15000;
     settings.minimize_sessions = false;
+    settings.minimize_one_period_sessions = false;
     settings.minimize_teacher_gaps = true;
-    settings.period_max_teacher_gap = 1;
-    settings.target_gap2_plus_sessions = 0;
-    settings.target_gap1_sessions = 0;
-    settings.gap1_quality_target_explicit = true;
-    settings.max_teacher_sessions = currentSessions;
-    settings.requested_max_teacher_sessions = currentSessions;
-    settings.strict_teacher_session_cap = true;
+    settings.period_max_teacher_gap = "off";
+    settings.optimization_benders_session_feasibility_only = false;
+    settings.optimization_benders_minimize_teacher_sessions = false;
+    settings.optimization_benders_minimize_one_period_sessions = false;
+    settings.optimization_benders_minimize_period_gaps = true;
+    settings.optimization_benders_period_gap_priority_absolute = true;
+    settings.optimization_benders_gap_objective_target = gapTarget || "";
+    settings.session_early_stop_max_one_period_sessions = currentSingletons;
+    if(gapTarget === "gap2"){
+      settings.target_gap2_plus_sessions = 0;
+      settings.gap1_quality_target_explicit = false;
+    }else{
+      settings.target_gap1_sessions = 0;
+      settings.gap1_quality_target_explicit = true;
+    }
     const gapBaseline = readGapProgressBaseline(safeData);
     const gap2Baseline = gapBaseline ? gapBaseline.gap2Plus : currentGap2;
     const gap1Baseline = gapBaseline ? gapBaseline.gap1 : currentGap1;
     settings.ui_progress_gap1_baseline = gap1Baseline;
     settings.ui_progress_gap2_baseline = gap2Baseline;
+    if(gapTarget === "gap2"){
+      configurePlanMetricProgress(
+        settings,
+        "teacher_gap2_sessions",
+        currentGap2,
+        0,
+        gap2Baseline
+      );
+      applyFocusedOptimizationCeiling(settings);
+      return plan;
+    }
+    if(gapTarget === "gap1"){
+      configurePlanMetricProgress(
+        settings,
+        "teacher_gap1_sessions",
+        currentGap1,
+        0,
+        gap1Baseline
+      );
+      applyFocusedOptimizationCeiling(settings);
+      return plan;
+    }
     configurePlanMetricProgress(
       settings,
       "teacher_gap_sessions",
@@ -16134,27 +18864,37 @@
     const knownViolationItems = Array.isArray(knownConstraintViolations)
       ? knownConstraintViolations
       : [];
-    const deferredIncompleteMinimums = knownViolationItems.length > 0
-      && knownViolationItems.every(isDeferredIncompleteLessonBlockMinimumViolation);
+    const deferredIncompleteLowerBounds = knownViolationItems.length > 0
+      && knownViolationItems.every(isDeferredIncompleteLowerBoundViolation);
     if(
       expectedCount > 0
       && countScheduledLessons(safeData) < expectedCount
-      && isFixedOnlySeedSchedule(safeData)
-      && hasSubjectPeriodRequirements(safeData)
-      && deferredIncompleteMinimums
+      && deferredIncompleteLowerBounds
     ){
-      // A lessonBlocks Min is evaluated over the completed week. A fixed-only
-      // seed naturally violates it before the first sort, so treating that as
-      // an existing-schedule repair incorrectly launches the 70-second Fast
-      // draft. Keep the requirement in the request, but plan this click as a
-      // real fixed-anchor fresh solve with the subject-period quality budget.
+      // Lower-bound rules such as lessonBlocks Min and teacher mustTeach are
+      // expected to be unsatisfied while periods are still unassigned. They do
+      // not make an incomplete timetable an existing-schedule repair. Keep all
+      // fixed anchors and requirements, but use the complete-first fresh lane
+      // so an eligible Browser Agent can own the first Automatic click.
       const freshBase = buildAutomaticAutoSortPlan(
         safeData,
         expectedCount,
         0,
         preparedFreshPlan
       );
-      freshBase.settings.ui_deferred_incomplete_lesson_block_minimum_count = knownViolationItems.length;
+      const lessonBlockMinimumCount = knownViolationItems.filter(
+        isDeferredIncompleteLessonBlockMinimumViolation
+      ).length;
+      const mustTeachCount = knownViolationItems.filter(
+        isDeferredIncompleteMustTeachViolation
+      ).length;
+      freshBase.settings.ui_deferred_incomplete_lower_bound_count = knownViolationItems.length;
+      if(lessonBlockMinimumCount > 0){
+        freshBase.settings.ui_deferred_incomplete_lesson_block_minimum_count = lessonBlockMinimumCount;
+      }
+      if(mustTeachCount > 0){
+        freshBase.settings.ui_deferred_incomplete_must_teach_count = mustTeachCount;
+      }
       freshBase.settings.ui_preflight_constraint_violation_count = 0;
       freshBase.settings.ui_disable_initial_fast_draft = true;
       freshBase.settings.ui_force_initial_fast_draft = false;
@@ -16321,8 +19061,13 @@
   window.sapXepTuDongAll = async function(options){
     const invocationOptions = options && typeof options === "object" ? options : {};
     const requestedSolveMode = normalizeSolveRequestMode(invocationOptions.mode);
+    if(!solveRequestModeAllowedForCurrentUser(requestedSolveMode)){
+      setStatus("Mục tối ưu này chỉ dành cho superadmin.", "warning");
+      return null;
+    }
     const preflightToken = acquireAutoSortPreflight();
     if(!preflightToken){
+      if(queueAutoSortContinuationAfterSettlement(invocationOptions)) return null;
       setStatus("Đang có lượt xếp chạy, vui lòng chờ hoàn tất.", "info");
       return null;
     }
@@ -16332,6 +19077,7 @@
       return null;
     }
     const currentData = getData();
+    const autoSortCycleBeforeSolve = automaticSortCycleState(currentData);
     if(
       requestedSolveMode === SOLVE_REQUEST_MODES.singletons
       && currentScheduleAppearsComplete(currentData)
@@ -16343,7 +19089,7 @@
       );
       if(
         hasVisibleSingletonMetric
-        && metricNumber(visibleMetrics.one_period_teacher_sessions, 1) === 0
+        && onePeriodTeacherSessionFloorReached(visibleMetrics)
       ){
         const retainedPayload = visibleCompleteIncumbentQualityPayload(
           currentData,
@@ -16362,8 +19108,86 @@
         return retainedPayload;
       }
     }
-    const existingBackendJob = await inspectExistingBackendJobForManualSolve(currentData);
+    if(
+      [SOLVE_REQUEST_MODES.gap2, SOLVE_REQUEST_MODES.gap1].includes(requestedSolveMode)
+      && currentScheduleAppearsComplete(currentData)
+    ){
+      const visibleMetrics = uiTeacherQualityMetrics(currentData);
+      const currentGap = requestedSolveMode === SOLVE_REQUEST_MODES.gap2
+        ? gap2PlusCount(visibleMetrics)
+        : gapExactCount(visibleMetrics, 1);
+      if(Number.isFinite(currentGap) && currentGap === 0){
+        const retainedPayload = visibleCompleteIncumbentQualityPayload(
+          currentData,
+          currentData?.tkbSolverResult || currentData?.tkbRustSolverResult || null
+        );
+        const message = requestedSolveMode === SOLVE_REQUEST_MODES.gap2
+          ? "Kh\u00f4ng c\u00f2n tr\u1ed1ng 2 ti\u1ebft."
+          : "Kh\u00f4ng c\u00f2n tr\u1ed1ng 1 ti\u1ebft.";
+        window.__TKB_SOLVER_LAST_PAYLOAD = retainedPayload;
+        window.__TKB_SOLVER_LAST_RESULT = retainedPayload;
+        window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = message;
+        finishProgress("100%", "ok");
+        setStatus(message, "ok");
+        publishE2EState("done", retainedPayload, {
+          message,
+          gapOptimizationAlreadySatisfied:true,
+          gapTarget:gapOptimizationTargetForSolveRequestMode(requestedSolveMode)
+        });
+        releaseAutoSortButtonSoon();
+        return retainedPayload;
+      }
+    }
+    let existingBackendJob = await inspectExistingBackendJobForManualSolve(currentData);
     if(existingBackendJob?.kind === "auth_required") return null;
+    if(window.__TKB_WINDOWS_WEB_AGENT_TRIAL === true && existingBackendJob?.job){
+      const existingJob = existingBackendJob.job;
+      if(String(existingJob.kind || "").trim().toLowerCase() === "completed"){
+        // A completed result discovered from another page/device is not this
+        // click's Local work. Ignore it, then continue into a brand-new
+        // Browser-required POST instead of leaving Play apparently broken.
+        discardTrialBackendJob(existingJob);
+        existingBackendJob = null;
+      }else if(existingBackendJob.kind === "observe"){
+        // Observer rows are discovered from another click/device and do not
+        // carry a proof that the canonical executor is this Browser trial.
+        // Never enter the observer poll loop in Local-only mode.
+        trialRejectExistingBackendJob(existingJob);
+        return null;
+      }
+      if(existingBackendJob){
+        if(
+          (existingBackendJob.kind === "pending" || existingBackendJob.kind === "attached")
+          && !trialBackendJobCanResume(existingJob)
+        ){
+          trialRejectExistingBackendJob(existingJob);
+          return null;
+        }
+        const existingPhase = String(
+          existingJob.executionPhase
+          || existingJob.phase
+          || ""
+        ).trim().toLowerCase();
+        const existingExecutor = normalizedSolveExecutor(
+          existingJob.executor || existingJob.executionSource,
+          existingPhase
+        );
+        if(
+          serverPayloadIsVpsOwned(existingJob)
+          || existingExecutor === "vps"
+          || existingPhase === "handoff_to_vps"
+          || existingPhase.startsWith("vps_")
+        ){
+          removePendingBackendJob(existingJob.jobId);
+          releaseAutoSortButtonSoon();
+          setStatus(
+            "Ch\u1ebf \u0111\u1ed9 th\u1eed nghi\u1ec7m ch\u1ec9 nh\u1eadn l\u01b0\u1ee3t Local m\u1edbi; l\u01b0\u1ee3t VPS hi\u1ec7n c\u00f3 s\u1ebd kh\u00f4ng \u0111\u01b0\u1ee3c nh\u1eadn l\u1ea1i.",
+            "info"
+          );
+          return null;
+        }
+      }
+    }
     if(existingBackendJob?.kind === "observe"){
       return await observeBackendJob(existingBackendJob.job);
     }
@@ -16383,15 +19207,28 @@
       );
       return null;
     }
-    if(requestedSolveMode === SOLVE_REQUEST_MODES.gaps){
+    if([
+      SOLVE_REQUEST_MODES.gap2,
+      SOLVE_REQUEST_MODES.gap1,
+      SOLVE_REQUEST_MODES.gaps
+    ].includes(requestedSolveMode)){
       await refreshGapProgressBaselineFromRemote(getData());
     }
+    const agentControlsAllowed = localAgentRoleAllowed();
+    const windowsNativeAgentRequired = agentControlsAllowed
+      && isWindowsNativeAgentNavigator(window.navigator);
     if(
-      invocationOptions.manualAgentInvite === true
-      && typeof window.maybeInviteAgentBeforeSort === "function"
+      agentControlsAllowed
+      &&
+      typeof window.maybeInviteAgentBeforeSort === "function"
+      && (
+        invocationOptions.manualAgentInvite === true
+        || windowsNativeAgentRequired
+      )
     ){
       const shouldContinue = await window.maybeInviteAgentBeforeSort({
-        preferVpsFallback:true
+        nativeRequired:windowsNativeAgentRequired,
+        requestDownload:invocationOptions.manualAgentInvite === true
       });
       if(!shouldContinue) return null;
     }
@@ -16556,6 +19393,14 @@
       return null;
     }
     const settings = automaticPlan.settings;
+    if(requestedSolveMode === SOLVE_REQUEST_MODES.automatic){
+      settings.ui_track_automatic_sort_cycle = true;
+      settings.ui_automatic_sort_previous_successful_clicks = Math.max(
+        0,
+        Math.round(Number(autoSortCycleBeforeSolve?.successfulClicks || 0) || 0)
+      );
+      settings.ui_automatic_sort_plan_kind = String(automaticPlan.kind || "");
+    }
     const backendPrecheckOk = await maybeRunBackendPrecheck(data, "balanced");
     if(!autoSortPreparationMatches(data, planningScheduleFingerprint)){
       reportAutoSortPreparationChanged();
@@ -16648,6 +19493,18 @@
       && !!result
       && completeAfterSolve
       && !statisticsImproved;
+
+    if(
+      requestedSolveMode === SOLVE_REQUEST_MODES.automatic
+      && !!result
+      && completeAfterSolve
+    ){
+      await persistAutomaticSortSuccess(
+        getData(),
+        autoSortCycleBeforeSolve,
+        automaticPlan.kind
+      );
+    }
 
     if(refinementUnchanged){
       rememberOptimizationPlateau(getData(), plateauBeforeSolve, false);
@@ -16921,6 +19778,11 @@
     }
     let pending = readPendingBackendJob();
     if(pendingBackendResumeBlocked(pending?.jobId)) return false;
+    // The terminal candidate is already visible while its remote timetable
+    // save is still settling. Do not start a second poll-only apply on this
+    // same page; a reload will intentionally rediscover the durable result if
+    // the save ultimately fails.
+    if(pending?.jobId && deferredBackendSavePendingFor(pending.jobId)) return false;
     if(!plannerDataReady()){
       // A blank page has no canonical session to recover while the planner is
       // still hydrating. Do not start a hidden two-second probe loop here: it
@@ -16990,6 +19852,18 @@
       const authoritativeLive = !!authoritativeRunning || !!authoritativeQueued;
       if(authoritativeLive){
         const authoritativeItem = authoritativeQueued || authoritativeRunning;
+        if(
+          window.__TKB_WINDOWS_WEB_AGENT_TRIAL === true
+          && !trialBackendJobCanResume(Object.assign({}, authoritativeItem, {
+            trialLocal:pending?.trialLocal === true
+          }))
+        ){
+          trialRejectExistingBackendJob(pending);
+          clearActiveBackendJobId(authoritativeJobId, {force:true});
+          endServerJobReattachLease(authoritativeJobId);
+          settleAuthoritativeIdleSolveUi({force:true});
+          return false;
+        }
         const observer = writePendingBackendJob(authoritativeJobId, pending.scheduleFingerprint, {
           createdAt:authoritativeItem?.createdAtMs || pending.createdAt,
           solverStartedAtMs:authoritativeRunning?.startedAtMs || 0,
@@ -17070,6 +19944,11 @@
            progressBudgetSeconds:discoveredJob.progressBudgetSeconds,
            progressRunIndex:discoveredJob.progressRunIndex,
            optimizationFocus:discoveredJob.optimizationFocus,
+           optimizationGapTarget:discoveredJob.optimizationGapTarget,
+           solveRequestMode:discoveredJob.solveRequestMode,
+           executor:discoveredJob.executor,
+           executionPhase:discoveredJob.executionPhase,
+           serverOwned:discoveredJob.serverOwned === true,
            discoveredFromOwnerState:true,
            localClickTimeline:false,
            observeOnly
@@ -17145,13 +20024,82 @@
       return false;
     }
     if(automaticBackendResumeSuppressed()) return false;
+    if(
+      window.__TKB_WINDOWS_WEB_AGENT_TRIAL === true
+      && (
+        pending.observeOnly === true
+        || !trialBackendJobCanResume(pending)
+      )
+    ){
+      // A trial may resume only a durable row created by this same Local
+      // request (or an explicitly Browser-required row from a future API).
+      // Existing native/VPS/unknown rows are discarded before any result poll.
+      trialRejectExistingBackendJob(pending);
+      clearActiveBackendJobId(pending.jobId, {force:true});
+      endServerJobReattachLease(pending.jobId);
+      settleAuthoritativeIdleSolveUi({force:true});
+      return false;
+    }
+    const trialExecutionPhase = String(
+      lifecycle.matchingJob?.executionPhase
+      || lifecycle.matchingQueueItem?.executionPhase
+      || lifecycle.matchingCompletedJob?.executionPhase
+      || state.requestedJobExecutionPhase
+      || ""
+    ).trim().toLowerCase();
+    const trialExecutor = normalizedSolveExecutor(
+      lifecycle.matchingJob?.executor
+      || lifecycle.matchingQueueItem?.executor
+      || lifecycle.matchingCompletedJob?.executor
+      || state.requestedJobExecutor,
+      trialExecutionPhase
+    );
+    if(
+      window.__TKB_WINDOWS_WEB_AGENT_TRIAL === true
+      && (
+        trialExecutor === "vps"
+        || trialExecutionPhase === "handoff_to_vps"
+        || trialExecutionPhase.startsWith("vps_")
+      )
+    ){
+      removePendingBackendJob(pending.jobId);
+      clearActiveBackendJobId(pending.jobId, {force:true});
+      releaseAutoSortButtonSoon();
+      setStatus(
+        "Ch\u1ebf \u0111\u1ed9 th\u1eed nghi\u1ec7m kh\u00f4ng nh\u1eadn l\u1ea1i l\u01b0\u1ee3t VPS; b\u1ecf webAgentTrial=mac \u0111\u1ec3 xem l\u01b0\u1ee3t \u0111\u00f3.",
+        "info"
+      );
+      return false;
+    }
     if(pending.observeOnly === true){
       return await observeBackendJob(pending);
     }
     // Every foreground recovery is the same immutable poll-only operation,
     // whether the canonical job is queued, active, or already terminal. The
     // normal Play/preflight/planning pipeline is never entered from here.
-    activeBackendResumeTarget = Object.assign({}, pending);
+    const requestedExecutionPhase = String(
+      lifecycle.matchingJob?.executionPhase
+      || lifecycle.matchingQueueItem?.executionPhase
+      || state.requestedJobExecutionPhase
+      || ""
+    ).trim().toLowerCase();
+    const requestedExecutor = normalizedSolveExecutor(
+      lifecycle.matchingJob?.executor
+      || lifecycle.matchingQueueItem?.executor
+      || state.requestedJobExecutor,
+      requestedExecutionPhase
+    );
+    const foregroundAgentHandoff = (
+      (lifecycle.kind === "running" || lifecycle.kind === "queued")
+      && requestedExecutor === "vps"
+      && !isMobileBrowserAgentNavigator(window.navigator)
+      && (typeof document === "undefined" || document.visibilityState !== "hidden")
+    );
+    activeBackendResumeTarget = Object.assign({}, pending, {
+      foregroundAgentHandoff,
+      requestedExecutor,
+      requestedExecutionPhase
+    });
     try{
       return await reattachExistingServerJobPollOnly(activeBackendResumeTarget);
     }finally{

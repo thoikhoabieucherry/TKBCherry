@@ -12,14 +12,14 @@
   <link rel="stylesheet" href="admin-shell.css?v=20260710-app-nav-right-v1" />
   <link rel="stylesheet" href="theme-light.css?v=20260710-premium-ui-v2" />
   <link rel="stylesheet" href="runtime.css?v=20260710-runtime-v1" />
-  <link rel="stylesheet" href="admin-mobile-compact.css?v=20260725-v196-mobile-assignment-toolbar-v1" />
+  <link rel="stylesheet" href="admin-mobile-compact.css?v=20260730-v1148-admin-responsive-actions-v1" />
 
   <script src="no-logs.js?v=20260708-no-logs-v2"></script>
   <script src="shared/school-context.js?v=20260708-sid-only-v3"></script>
   <script src="shared/auth-api.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
-  <script src="shared/auth.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
+  <script src="shared/auth.js?v=20260803-free-5-solve-quota-v1"></script>
   <script src="shared/runtime.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
-  <script src="shared/storage.js?v=20260724-v180-durable-store-save-v1"></script>
+  <script src="shared/storage.js?v=20260802-max1-store-guard-v2"></script>
   <script src="shared/tkb-constants.js?v=20260708-v1"></script>
   <script src="vendor/xlsx.min.js"></script>
   <script src="vendor/jszip.min.js"></script>
@@ -28,7 +28,7 @@
   <script src="kvdb.js"></script>
   <script src="quick-subject-presets.js?v=20260709-quick-subject-v3"></script>
   <script src="modules/admin-nav.js?v=20260710-admin-nav-v1"></script>
-  <script defer src="app.js?v=20260725-v196-mobile-assignment-toolbar-v1"></script>
+  <script defer src="app.js?v=20260809-pccm-independent-standard-v2"></script>
 </head>
 
 <body class="app-shell-body">
@@ -36,7 +36,7 @@
     <div class="app-nav-main">
       <button class="btn" data-page="khoi" onclick="loadPage('khoi')" aria-label="Khối học"><svg class="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12.8 2.3 8.3 4.1a1 1 0 0 1 0 1.8l-8.3 4.1a1.8 1.8 0 0 1-1.6 0L2.9 8.2a1 1 0 0 1 0-1.8l8.3-4.1a1.8 1.8 0 0 1 1.6 0Z"/><path d="m22 12.5-9.2 4.6a1.8 1.8 0 0 1-1.6 0L2 12.5"/><path d="m22 17-9.2 4.6a1.8 1.8 0 0 1-1.6 0L2 17"/></svg><span class="app-nav-label-full">Khối học</span><span class="app-nav-label-mobile">Khối</span></button>
       <button class="btn" data-page="lop" onclick="loadPage('lop')" aria-label="Lớp học"><svg class="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 10 10-5 10 5-10 5Z"/><path d="M6 12.5V17c3 2 9 2 12 0v-4.5"/><path d="M22 10v6"/></svg><span class="app-nav-label-full">Lớp học</span><span class="app-nav-label-mobile">Lớp</span></button>
-      <button class="btn" data-page="giaovien" onclick="loadPage('giaovien')" aria-label="Giáo viên"><svg class="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg><span class="app-nav-label-full">Giáo viên</span><span class="app-nav-label-mobile">GV</span></button>
+      <button class="btn" data-page="giaovien" onclick="loadPage('giaovien')" aria-label="Giáo viên"><svg class="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg><span class="app-nav-label-full">Giáo viên</span><span class="app-nav-label-mobile">Giáo viên</span></button>
       <button class="btn" data-page="mon" onclick="loadPage('mon')" aria-label="Môn học"><svg class="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 4.5A2.5 2.5 0 0 1 4.5 2H11v18H4.5A2.5 2.5 0 0 0 2 22Z"/><path d="M22 4.5A2.5 2.5 0 0 0 19.5 2H13v18h6.5A2.5 2.5 0 0 1 22 22Z"/></svg><span class="app-nav-label-full">Môn học</span><span class="app-nav-label-mobile">Môn</span></button>
       <button class="btn" data-page="tietchuan" onclick="loadPage('tietchuan')" aria-label="Tiết chuẩn"><svg class="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="app-nav-label-full">Tiết chuẩn</span><span class="app-nav-label-mobile">Tiết</span></button>
       <button class="btn" data-page="pccm" onclick="loadPage('pccm')" aria-label="Phân công"><svg class="app-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3.5h6V7H9zM9 12h6M9 16h6"/></svg><span class="app-nav-label-full">Phân công</span><span class="app-nav-label-mobile">Phân công</span></button>

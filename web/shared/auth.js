@@ -97,12 +97,72 @@
 
   if(REMOTE_ONLY_AUTH) purgeLocalAppData();
 
+  const MAX_PLAN_PRICING = Object.freeze({
+    periodLabel: "1 năm",
+    dimension: "classes",
+    thresholdClasses: 40,
+    tiers: Object.freeze([
+      Object.freeze({
+        id: "under-40-classes",
+        planId: "max1",
+        minClasses: 1,
+        maxClasses: 39,
+        label: "Max 1 · Dưới 40 lớp",
+        detail: "Từ 1 đến 39 lớp",
+        price: 1000000
+      }),
+      Object.freeze({
+        id: "from-40-classes",
+        planId: "max2",
+        minClasses: 40,
+        maxClasses: null,
+        label: "Max 2 · Từ 40 lớp",
+        detail: "Không giới hạn số lớp",
+        price: 1500000
+      })
+    ])
+  });
+
+  function maxPlanTierForClasses(value){
+    const parsed = Number(value);
+    const classCount = Number.isFinite(parsed) && parsed > 0
+      ? Math.floor(parsed)
+      : MAX_PLAN_PRICING.tiers[0].maxClasses;
+    return MAX_PLAN_PRICING.tiers.find(tier => (
+      tier.maxClasses == null || classCount <= tier.maxClasses
+    )) || MAX_PLAN_PRICING.tiers[MAX_PLAN_PRICING.tiers.length - 1];
+  }
+
+  function maxPlanPriceForClasses(value){
+    return maxPlanTierForClasses(value).price;
+  }
+
+  function maxPlanIdForClasses(value){
+    return maxPlanTierForClasses(value).planId;
+  }
+
+  // Transitional aliases keep an older cached portal from failing while the
+  // class-based assets roll out. Values from the retired student selector are
+  // mapped to the nearest new tier; all current code must use the class APIs.
+  function maxPlanTierForStudents(value){
+    const legacyStudentCount = Number(value);
+    const equivalentClassCount = Number.isFinite(legacyStudentCount) && legacyStudentCount > 1000
+      ? MAX_PLAN_PRICING.thresholdClasses
+      : MAX_PLAN_PRICING.tiers[0].maxClasses;
+    return maxPlanTierForClasses(equivalentClassCount);
+  }
+
+  function maxPlanPriceForStudents(value){
+    return maxPlanTierForStudents(value).price;
+  }
+
   const PLANS = {
     free: {
       id: "free",
       label: "Free",
       price: 0,
       durationDays: 0,
+      solveLimit: 5,
       print: false,
       color: "#94a3b8",
       glow: "0 0 12px rgb(148 163 184 / 45%)"
@@ -120,20 +180,46 @@
     plus: {
       id: "plus",
       label: "Plus",
-      price: 100000,
+      price: 300000,
       durationDays: 30,
+      solveLimit: 100,
       print: true,
       color: "#22d3ee",
       glow: "0 0 16px rgb(34 211 238 / 55%)"
     },
+    max1: {
+      id: "max1",
+      label: "Max 1",
+      price: 1000000,
+      durationDays: 365,
+      classLimit: 39,
+      unlimitedSolves: true,
+      print: true,
+      color: "#a855f7",
+      glow: "0 0 18px rgb(168 85 247 / 58%)"
+    },
+    max2: {
+      id: "max2",
+      label: "Max 2",
+      price: 1500000,
+      durationDays: 365,
+      unlimitedClasses: true,
+      unlimitedSolves: true,
+      print: true,
+      color: "#7c3aed",
+      glow: "0 0 20px rgb(124 58 237 / 62%)"
+    },
     max: {
       id: "max",
       label: "Max",
-      price: 800000,
+      price: MAX_PLAN_PRICING.tiers[0].price,
+      priceByClasses: true,
       durationDays: 365,
+      unlimitedSolves: true,
       print: true,
       color: "#c084fc",
-      glow: "0 0 18px rgb(192 132 252 / 60%)"
+      glow: "0 0 18px rgb(192 132 252 / 60%)",
+      legacyAlias: true
     },
     ultra: {
       id: "ultra",
@@ -830,9 +916,24 @@
     return "Không giới hạn thời gian";
   }
 
+  function normalizedPlanId(planId, school){
+    const raw = String(planId || school?.plan || "free").trim().toLowerCase();
+    if(raw !== "max") return PLANS[raw] ? raw : "free";
+    const savedTier = String(school?.maxPlanPricingTier || "").trim().toLowerCase();
+    if(savedTier === "under-40-classes") return "max1";
+    if(savedTier === "from-40-classes") return "max2";
+    const classCount = Number(school?.classCount);
+    if(Number.isFinite(classCount) && classCount > 0){
+      return classCount < MAX_PLAN_PRICING.thresholdClasses ? "max1" : "max2";
+    }
+    // A legacy Max record without class metadata must not unexpectedly lose
+    // capacity when the two explicit plans roll out.
+    return "max2";
+  }
+
   function effectivePlan(school){
     if(!school) return PLANS.free;
-    const planId = String(school.plan || "free");
+    const planId = normalizedPlanId(school.plan, school);
     const base = PLANS[planId] || PLANS.free;
     if(planId === "free" || base.unlimited) return base;
     const exp = school.expiresAt ? Date.parse(school.expiresAt) : 0;
@@ -844,7 +945,7 @@
 
   function canAddSchoolUsers(school){
     const plan = effectivePlan(school);
-    return plan.id === "plus" || plan.id === "max" || plan.id === "ultra" || plan.id === "trial";
+    return plan.id === "plus" || plan.id === "max1" || plan.id === "max2" || plan.id === "ultra" || plan.id === "trial";
   }
 
   function canPrintForSchool(school){
@@ -864,7 +965,7 @@
   function planBadgeHtml(planId, school){
     const plan = school ? effectivePlan(school) : (PLANS[planId] || PLANS.free);
     const id = plan.id || planId || "free";
-    const icon = id === "ultra" ? "&#9733;" : id === "max" ? "&#9733;" : id === "plus" ? "&#9670;" : id === "trial" ? "&#9678;" : "&#9675;";
+    const icon = id === "ultra" ? "&#9733;" : (id === "max" || id === "max1" || id === "max2") ? "&#9733;" : id === "plus" ? "&#9670;" : id === "trial" ? "&#9678;" : "&#9675;";
     return `<span class="tkb-plan-badge tkb-plan-${id}" style="--plan-color:${plan.color};--plan-glow:${plan.glow}"><span class="tkb-plan-icon" aria-hidden="true">${icon}</span>${plan.label}</span>`;
   }
 
@@ -1529,25 +1630,57 @@
     return { ok: true, active: on };
   }
 
-  function activatePlan(schoolId, planId, demoPaid){
+  function activatePlan(schoolId, planId, demoPaid, options){
     const reg = loadRegistry();
     const school = reg.schools[schoolId];
-    const plan = PLANS[planId];
     if(!school) return { ok: false, message: "Không tìm thấy trường." };
-    if(!plan || planId === "free"){
+    const requestedPlanId = String(planId || "free").trim().toLowerCase();
+    const explicitClassCount = Number(options?.classCount);
+    const hasExplicitClassCount = Number.isFinite(explicitClassCount) && explicitClassCount > 0;
+    // Super Admin assigns Max 1/Max 2 directly. Do not let stale metadata from
+    // the previous Max tier prevent that explicit assignment; the API still
+    // enforces the real 39-class ceiling on every store write and solve.
+    const requestedClassCount = hasExplicitClassCount
+      ? explicitClassCount
+      : requestedPlanId === "max1"
+        ? MAX_PLAN_PRICING.tiers[0].maxClasses
+        : requestedPlanId === "max2"
+          ? MAX_PLAN_PRICING.thresholdClasses
+          : Number(school.classCount);
+    const legacyStudentCount = Number(options?.studentCount ?? school.studentCount);
+    const hasClassCount = Number.isFinite(requestedClassCount) && requestedClassCount > 0;
+    const classCount = hasClassCount
+      ? Math.floor(requestedClassCount)
+      : (Number.isFinite(legacyStudentCount) && legacyStudentCount > 1000
+          ? MAX_PLAN_PRICING.thresholdClasses
+          : MAX_PLAN_PRICING.tiers[0].maxClasses);
+    const maxPricingTier = maxPlanTierForClasses(classCount);
+    const resolvedPlanId = requestedPlanId === "max"
+      ? maxPricingTier.planId
+      : normalizedPlanId(requestedPlanId, school);
+    const plan = PLANS[resolvedPlanId];
+    if(resolvedPlanId === "max1" && classCount > 39){
+      return {
+        ok: false,
+        kind: "max1_class_limit_exceeded",
+        message: "Gói Max 1 hỗ trợ tối đa 39 lớp. Vui lòng chọn Max 2 cho trường từ 40 lớp."
+      };
+    }
+    const paymentAmount = Number(plan?.price || 0);
+    if(!plan || resolvedPlanId === "free"){
       school.plan = "free";
       school.expiresAt = "";
     }else if(plan.unlimited){
-      school.plan = planId;
+      school.plan = resolvedPlanId;
       school.expiresAt = "";
       school.lastPaymentAt = nowIso();
-      school.lastPaymentAmount = plan.price;
+      school.lastPaymentAmount = paymentAmount;
       school.lastPaymentDemo = !!demoPaid;
     }else{
       const days = Number(plan.durationDays || 0);
       const now = new Date();
-      const currentPlan = String(school.plan || "free").toLowerCase();
-      const isSamePlanRenewal = currentPlan === planId;
+      const currentPlan = normalizedPlanId(school.plan, school);
+      const isSamePlanRenewal = currentPlan === resolvedPlanId;
       let base = now;
       if(isSamePlanRenewal && school.expiresAt){
         const cur = new Date(school.expiresAt);
@@ -1555,15 +1688,40 @@
       }
       const exp = new Date(base);
       exp.setDate(exp.getDate() + days);
-      school.plan = planId;
+      school.plan = resolvedPlanId;
       school.expiresAt = exp.toISOString();
       school.lastPaymentAt = nowIso();
-      school.lastPaymentAmount = plan.price;
+      school.lastPaymentAmount = paymentAmount;
       school.lastPaymentDemo = !!demoPaid;
+    }
+    if(resolvedPlanId === "plus"){
+      school.plusQuotaCycleId = `${Date.now().toString(36)}-${generateShortId()}`;
+    }
+    if(resolvedPlanId === "max1" || resolvedPlanId === "max2"){
+      school.classCount = classCount;
+      school.maxPlanPricingTier = resolvedPlanId === "max1"
+        ? "under-40-classes"
+        : "from-40-classes";
+      // Do not discard metadata submitted by an older cached portal.
+      if(Number.isFinite(legacyStudentCount) && legacyStudentCount > 0){
+        school.studentCount = Math.floor(legacyStudentCount);
+      }
     }
     school.updatedAt = nowIso();
     if(!saveRegistry(reg)) return remoteSaveError();
-    return { ok: true, expiresAt: school.expiresAt, plan: planId };
+    return {
+      ok: true,
+      expiresAt: school.expiresAt,
+      plan: resolvedPlanId,
+      paymentAmount,
+      classCount:(resolvedPlanId === "max1" || resolvedPlanId === "max2") ? classCount : null,
+      pricingTierId:resolvedPlanId === "max1"
+        ? "under-40-classes"
+        : resolvedPlanId === "max2" ? "from-40-classes" : null,
+      studentCount:(resolvedPlanId === "max1" || resolvedPlanId === "max2") && Number.isFinite(legacyStudentCount) && legacyStudentCount > 0
+        ? Math.floor(legacyStudentCount)
+        : null
+    };
   }
 
   async function superCreateSchool(data){
@@ -1894,11 +2052,18 @@
       const newSid = scheduleEntrySid(school, n);
       const oldSid = entry.sid;
       if(oldSid && oldSid !== newSid){
+        let migrated = true;
         if(REMOTE_ONLY_AUTH){
           const data = loadRemoteSchoolStoreSync(oldSid);
-          if(data && typeof data === "object" && Object.keys(data).length){
-            saveRemoteSchoolStoreSync(newSid, data);
-            saveRemoteSchoolStoreSync(oldSid, {});
+          // A failed source read is not an empty timetable. Keep the old SID so
+          // a temporary backend problem cannot orphan the only persisted copy.
+          if(data == null){
+            migrated = false;
+          }else if(typeof data === "object" && Object.keys(data).length){
+            // The destination must exist before the source can be cleared or
+            // the registry can point at the new SID.
+            migrated = saveRemoteSchoolStoreSync(newSid, data);
+            if(migrated) saveRemoteSchoolStoreSync(oldSid, {});
           }
         }else{
           try{
@@ -1909,6 +2074,7 @@
             }
           }catch(_){}
         }
+        if(!migrated) return;
         if(!REMOTE_ONLY_AUTH && window.TKBSchool && window.TKBSchool.setSchoolName){
           window.TKBSchool.setSchoolName(newSid, school.name);
         }
@@ -2046,7 +2212,10 @@
     };
 
     if(REMOTE_ONLY_AUTH){
-      const data = loadRemoteSchoolStoreSync(src.sid) || {};
+      const data = loadRemoteSchoolStoreSync(src.sid);
+      if(data == null){
+        return { ok: false, message: "Không đọc được dữ liệu TKB nguồn. Vui lòng kiểm tra kết nối rồi thử lại." };
+      }
       data.tkbConstraints = data.tkbConstraints || {};
       data.tkbConstraints.meta = Object.assign({}, data.tkbConstraints.meta || {}, {
         schoolName: school.name,
@@ -2054,7 +2223,9 @@
         effectiveDate: entry.effectiveDate,
         updatedAt: nowIso()
       });
-      saveRemoteSchoolStoreSync(entry.sid, data);
+      if(!saveRemoteSchoolStoreSync(entry.sid, data)){
+        return { ok: false, message: "Không lưu được bản sao TKB. Dữ liệu và TKB nguồn vẫn được giữ nguyên." };
+      }
     }else{
       const srcKey = schoolStoreKey(src.sid);
       const destKey = schoolStoreKey(entry.sid);
@@ -2228,6 +2399,7 @@
 
   window.TKBAuth = {
     PLANS,
+    MAX_PLAN_PRICING,
     MANAGED_SERVICE,
     BANK_TRANSFER,
     MAX_SCHOOL_USERS,
@@ -2281,6 +2453,12 @@
     canAddSchoolUsers,
     planBadgeHtml,
     planDurationLabel,
+    maxPlanTierForClasses,
+    maxPlanPriceForClasses,
+    maxPlanIdForClasses,
+    normalizedPlanId,
+    maxPlanTierForStudents,
+    maxPlanPriceForStudents,
     requireAuth,
     redirectAfterLogin,
     formatMoney,

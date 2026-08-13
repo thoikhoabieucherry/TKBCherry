@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import re
 import secrets
@@ -42,18 +43,20 @@ PRODUCTION_FILES = {
     "rust_api/Cargo.toml",
     "rust_api/fixtures/sample-data.json",
     "solver_runtime/requirements.txt",
+    "tools/cloud-run/google-cloud-usage.env.example",
+    "tools/cloud-run/install-google-cloud-usage-sync.sh",
+    "tools/cloud-run/tkb-google-cloud-usage.service",
+    "tools/cloud-run/tkb-google-cloud-usage.timer",
+    "tools/cloud-run/tkb-google-cloud-usage.path",
     "tools/vps-deploy/solver-pool.conf",
 }
 STAGING_SUBTREES = {
-    "agent_helper",
+    "solver_runtime/contracts",
+    "solver_runtime/fixtures",
     "solver_runtime/tests",
-    "tools/trusted-worker",
 }
 STAGING_FILES = {
-    ".github/workflows/build-agent-windows.yml",
     "rust_api/fixtures/sample-data-with-class-off.json",
-    "solver_runtime/requirements-wsl.txt",
-    "tools/agent-release/sign_release.py",
 }
 WEB_RUNTIME_EXTENSIONS = {
     ".css",
@@ -68,9 +71,7 @@ WEB_RUNTIME_EXTENSIONS = {
     ".webmanifest",
     ".zip",
 }
-WEB_RUNTIME_FILES = {
-    "web/downloads/TKBCherryAgent-release.json",
-}
+WEB_RUNTIME_FILES: set[str] = set()
 EXCLUDES = {
     ".git",
     ".agents",
@@ -79,8 +80,6 @@ EXCLUDES = {
     "node_modules",
     "mail-server/node_modules",
     "rust_api/target",
-    "agent_helper/.build-windows",
-    "agent_helper/dist",
     "solver_runtime/logs",
     "archived_logs",
     "latest_logs",
@@ -95,6 +94,19 @@ EXCLUDES = {
     ".pytest_cache",
     ".ruff_cache",
 }
+
+# These client-owned solver lanes are retired. Keep them out of every package
+# even if an old checkout or copied release artifact puts the files back under
+# ``web/``, whose normal extension allowlist intentionally accepts JS/WASM/ZIP.
+RETIRED_RUNTIME_PREFIXES = (
+    "web/downloads/TKBCherryAgent",
+    "web/pages/tkb-browser-wasm",
+    "web/pages/tkb-cpsat-wasm",
+    "web/pages/tkb-highs-wasm",
+    "web/pages/tkb_native_solver.wasm",
+    "web/vendor/highs",
+    "web/vendor/or-tools-wasm",
+)
 
 
 def new_ssh_client() -> paramiko.SSHClient:
@@ -138,6 +150,9 @@ def _profile_allows(rel: str, profile: str) -> bool:
 
 
 def should_skip(rel: str, profile: str = PACKAGE_PRODUCTION) -> bool:
+    normalized = Path(rel).as_posix()
+    if any(normalized.startswith(prefix) for prefix in RETIRED_RUNTIME_PREFIXES):
+        return True
     parts = Path(rel).parts
     if not parts:
         return False
@@ -166,7 +181,7 @@ def should_skip(rel: str, profile: str = PACKAGE_PRODUCTION) -> bool:
         return True
     if len(parts) == 1 and Path(rel).suffix.lower() in {".exe", ".rar"}:
         return True
-    return not _profile_allows(Path(rel).as_posix(), profile)
+    return not _profile_allows(normalized, profile)
 
 
 def make_tarball(profile: str = PACKAGE_PRODUCTION) -> Path:

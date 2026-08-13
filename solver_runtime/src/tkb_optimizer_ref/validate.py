@@ -604,11 +604,26 @@ def compute_metrics(data: SchoolData, lessons: list[Lesson], *, rules: Timetable
 
     subject_session_violations = []
     by_class_subject_session = Counter((x.class_name, x.subject, x.day, x.session) for x in lessons)
+    assignment_session_limits: dict[tuple[str, str], int] = {}
+    for assignment in data.assignments:
+        key = (assignment.class_name, assignment.subject)
+        configured = max(1, int(assignment.max_periods_per_session))
+        assignment_session_limits[key] = max(
+            configured,
+            int(assignment_session_limits.get(key, 0)),
+        )
     for (class_name, subject, day, part), actual in by_class_subject_session.items():
         grade = class_grade.get(class_name)
         if grade is None:
             continue
-        limit = data.limits_by_grade_subject.get((grade, subject), 99)
+        # Once PCCM has its own per-class/session limit, that value is the
+        # authoritative scheduling contract. Falling back to the standard
+        # grade/subject table here made validation reject a valid result after
+        # the user intentionally changed PCCM from 2 to 3 periods/session.
+        limit = assignment_session_limits.get(
+            (class_name, subject),
+            data.limits_by_grade_subject.get((grade, subject), 99),
+        )
         if actual > limit:
             subject_session_violations.append(
                 {"class": class_name, "grade": grade, "subject": subject, "day": day, "session": part, "actual": actual, "limit": limit}

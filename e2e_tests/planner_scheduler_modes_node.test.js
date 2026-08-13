@@ -10,114 +10,69 @@ const plannerHtml = fs.readFileSync(
   path.resolve(__dirname, "..", "web", "pages", "sapxep.html"),
   "utf8"
 );
+const bridgeSource = fs.readFileSync(
+  path.resolve(__dirname, "..", "web", "pages", "tkb-rust-bridge.js"),
+  "utf8"
+);
 
 function buttonMarkup(source, id){
   return (source.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) || [])
     .find(markup => markup.includes(`id="${id}"`)) || "";
 }
 
-function schedulerModeScript(){
-  const marker = "(function(){\n  const desktopModeQuery";
+function optimizeScript(){
+  const marker = '  const optimizeWrap = document.getElementById("plannerOptimizeWrap");';
   const start = plannerHtml.indexOf(marker);
+  const scriptStart = plannerHtml.lastIndexOf("<script>", start);
   const end = plannerHtml.indexOf("</script>", start);
-  assert.ok(start >= 0 && end > start, "scheduler-mode script is missing");
-  return plannerHtml.slice(start, end);
+  assert.ok(scriptStart >= 0 && end > start, "optimize menu script is missing");
+  return plannerHtml.slice(scriptStart + "<script>".length, end);
 }
 
-test("automatic Play remains available while focused commands are desktop-only", () => {
+test("ordinary Optimize exposes exactly singleton, Gap1, and Gap2 actions", () => {
   const play = buttonMarkup(plannerHtml, "btnAutoSort");
   assert.ok(play, "automatic Play button is missing");
   assert.match(play, /onclick="sapXepTuDongAll\(\)"/);
-  assert.doesNotMatch(play, /\shidden(?:\s|>)/);
 
-  assert.match(
-    plannerHtml,
-    /\.desktop-solve-controls\s*\{[^}]*display:\s*none;/s,
-    "focused commands must default to hidden"
-  );
-  assert.match(
-    plannerHtml,
-    /@media \(min-width:\s*901px\) and \(hover:\s*hover\) and \(pointer:\s*fine\)\s*\{[\s\S]*?\.desktop-solve-controls\s*\{[^}]*display:\s*inline-flex;/s,
-    "only a wide fine-pointer desktop may reveal focused commands"
-  );
-  assert.equal(
-    (plannerHtml.match(/\.desktop-solve-controls\s*\{[^}]*display:\s*inline-flex;/gs) || []).length,
-    1,
-    "no phone, tablet, or coarse-pointer override may reveal focused commands"
-  );
+  const optimize = buttonMarkup(plannerHtml, "btnOptimizeMenu");
+  assert.ok(optimize, "optimize button is missing");
+  assert.match(optimize, /onclick="togglePlannerOptimizeMenu\(event\)"/);
+  assert.match(optimize, /aria-haspopup="menu"/);
+  assert.match(optimize, /aria-expanded="false"/);
+  assert.match(optimize, />[\s\S]*<span class="planner-mode-label">Tối ưu<\/span>/);
 
-  assert.match(
-    plannerHtml,
-    /@media \(max-width:\s*900px\)[\s\S]*?grid-template-columns:\s*repeat\(7, minmax\(0, 1fr\)\);/,
-    "portrait touch geometry must retain seven slots"
-  );
-  assert.match(
-    plannerHtml,
-    /@media \(orientation:\s*landscape\) and \(max-height:\s*540px\)[\s\S]*?grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);/,
-    "landscape touch geometry must retain eight slots"
-  );
-});
-
-test("desktop commands expose exactly the requested four scheduler hooks", () => {
-  const controlsStart = plannerHtml.indexOf('<div id="desktopSolveControls"');
-  const controlsEnd = plannerHtml.indexOf("\n    </div>", controlsStart);
-  assert.ok(controlsStart >= 0 && controlsEnd > controlsStart, "desktop solve controls are missing");
-  const controls = plannerHtml.slice(controlsStart, controlsEnd);
-
-  const quick = buttonMarkup(controls, "btnQuickComplete");
-  const optimizeToggle = buttonMarkup(controls, "btnOptimizeMenu");
-  assert.match(quick, /onclick="runPlannerSchedulerMode\('quick_complete', event\)"/);
-  assert.match(quick, /<span>Xếp nhanh<\/span>/);
-  assert.match(optimizeToggle, /onclick="togglePlannerOptimizeMenu\(event\)"/);
-  assert.match(optimizeToggle, /aria-haspopup="menu"/);
-  assert.match(optimizeToggle, /aria-expanded="false"/);
-  assert.match(optimizeToggle, /<span>Tối ưu<\/span>/);
-
-  const menuStart = controls.indexOf('<div id="plannerOptimizeMenu"');
-  assert.ok(menuStart >= 0, "optimize menu is missing");
-  const menu = controls.slice(menuStart);
-  const menuItems = menu.match(/<button\b[^>]*role="menuitem"[^>]*>[\s\S]*?<\/button>/g) || [];
-  assert.equal(menuItems.length, 3, "optimize menu must contain exactly three actions");
+  const menuStart = plannerHtml.indexOf('<div id="plannerOptimizeMenu"');
+  const menuEnd = plannerHtml.indexOf("</div>", menuStart);
+  assert.ok(menuStart >= 0 && menuEnd > menuStart, "optimize menu is missing");
+  const menu = plannerHtml.slice(menuStart, menuEnd);
+  const items = menu.match(/<button\b[^>]*role="menuitem"[^>]*>[\s\S]*?<\/button>/g) || [];
+  assert.equal(items.length, 4);
   assert.deepEqual(
-    menuItems.map(item => item.match(/data-scheduler-mode="([^"]+)"/)?.[1]),
-    ["optimize_singletons", "optimize_sessions", "optimize_gaps"]
+    items.map(item => item.match(/data-scheduler-mode="([^"]+)"/)?.[1]),
+    ["optimize_singletons", "optimize_gap1", "optimize_gap2", "optimize_sessions"]
   );
   assert.deepEqual(
-    menuItems.map(item => item.replace(/<[^>]+>/g, "").trim()),
-    ["Buổi 1 tiết", "Buổi", "Tiết trống"]
+    items.map(item => item.replace(/<[^>]+>/g, "").trim()),
+    ["1 tiết/buổi", "1 tiết trống", "2 tiết trống", "Buổi"]
   );
-  assert.match(menuItems[0], /runPlannerSchedulerMode\('optimize_singletons', event\)/);
-  assert.match(menuItems[1], /runPlannerSchedulerMode\('optimize_sessions', event\)/);
-  assert.match(menuItems[2], /runPlannerSchedulerMode\('optimize_gaps', event\)/);
-  assert.doesNotMatch(controls, /on(?:mouse|pointer)(?:enter|over|move)=/i);
+  assert.match(items[0], /runPlannerSchedulerMode\('optimize_singletons', event\)/);
+  assert.match(items[1], /runPlannerSchedulerMode\('optimize_gap1', event\)/);
+  assert.match(items[2], /runPlannerSchedulerMode\('optimize_gap2', event\)/);
+  assert.match(items[3], /runPlannerSchedulerMode\('optimize_sessions', event\)/);
+  for(const ordinary of items.slice(0, 3)){
+    assert.doesNotMatch(ordinary, /data-superadmin-only|\shidden(?:\s|>)/);
+  }
+  assert.match(items[3], /data-superadmin-only="true"/);
+  assert.match(items[3], /aria-hidden="true"/);
+  assert.match(items[3], /\shidden(?:\s|>)/);
+  assert.match(
+    plannerHtml,
+    /\.planner-optimize-menu\s*>\s*button\[hidden\]\s*\{[^}]*display:\s*none !important;/s
+  );
 });
 
-test("optimize menu actions share stable left-aligned geometry", () => {
-  const menuRule = plannerHtml.match(
-    /body\.planner-shell \.planner-optimize-menu > button\s*\{([^}]*)\}/s
-  );
-  assert.ok(menuRule, "optimize menu item CSS is missing");
-  const css = menuRule[1];
-
-  assert.match(css, /display:\s*flex;/);
-  assert.match(css, /align-items:\s*center;/);
-  assert.match(css, /justify-content:\s*flex-start;/);
-  assert.match(css, /box-sizing:\s*border-box;/);
-  assert.match(css, /width:\s*100%;/);
-  assert.match(css, /min-width:\s*0;/);
-  assert.match(css, /height:\s*34px;/);
-  assert.match(css, /padding:\s*0 10px;/);
-  assert.match(css, /text-align:\s*left;/);
-  assert.match(css, /white-space:\s*nowrap;/);
-});
-
-test("optimize menu toggles by click and forwards only supported modes", () => {
+test("optimization menu opens, forwards supported modes, and refuses busy state", () => {
   const documentListeners = new Map();
-  const mediaListeners = new Map();
-  const media = {
-    matches:true,
-    addEventListener(type, listener){ mediaListeners.set(type, listener); }
-  };
   const elements = {};
   const document = {
     activeElement:null,
@@ -125,62 +80,124 @@ test("optimize menu toggles by click and forwards only supported modes", () => {
     addEventListener(type, listener){ documentListeners.set(type, listener); }
   };
   function element(extra = {}){
-    const attributes = {};
+    const attributes = new Map();
     const listeners = new Map();
     return Object.assign({
       hidden:false,
-      attributes,
-      setAttribute(name, value){ attributes[name] = String(value); },
+      disabled:false,
+      setAttribute(name, value){ attributes.set(String(name), String(value)); },
+      getAttribute(name){ return attributes.get(String(name)) ?? null; },
+      removeAttribute(name){ attributes.delete(String(name)); },
       addEventListener(type, listener){ listeners.set(type, listener); },
       contains(){ return false; },
       focus(){ document.activeElement = this; },
+      querySelector(){ return null; },
+      querySelectorAll(){ return []; },
       listeners
     }, extra);
   }
-  const menuItems = [element(), element(), element()];
-  elements.desktopSolveControls = element({contains(target){ return target === this; }});
+  const menuItems = [element(), element(), element(), element()];
+  const advancedItems = menuItems.slice(3);
+  elements.plannerOptimizeWrap = element({contains(){ return false; }});
   elements.btnOptimizeMenu = element();
   elements.plannerOptimizeMenu = element({
     hidden:true,
-    querySelector(selector){ return selector === '[role="menuitem"]' ? menuItems[0] : null; },
-    querySelectorAll(selector){ return selector === '[role="menuitem"]' ? menuItems : []; }
+    querySelectorAll(selector){
+      if(selector === '[role="menuitem"]') return menuItems;
+      if(selector === '[data-superadmin-only="true"]') return advancedItems;
+      return [];
+    }
   });
 
   const receivedModes = [];
+  let role = "school_user";
+  const windowListeners = new Map();
   const window = {
-    matchMedia(query){
-      assert.equal(query, "(min-width: 901px) and (hover: hover) and (pointer: fine)");
-      return media;
-    },
+    __TKB_RUST_SOLVER_RUNNING:false,
+    __TKB_SOLVE_UI_BUSY:false,
+    TKBAuth:{currentUser(){ return {user:{role}}; }},
+    addEventListener(type, listener){ windowListeners.set(type, listener); },
     sapXepTheoCheDo(mode){ receivedModes.push(mode); return `started:${mode}`; }
   };
-  vm.runInNewContext(schedulerModeScript(), {window, document});
+  vm.runInNewContext(optimizeScript(), {window, document});
 
-  const clickEvent = {
-    prevented:0,
-    stopped:0,
-    preventDefault(){ this.prevented += 1; },
-    stopPropagation(){ this.stopped += 1; }
+  const event = {
+    preventDefault(){},
+    stopPropagation(){}
   };
-  assert.equal(window.togglePlannerOptimizeMenu(clickEvent), true);
+  assert.equal(window.togglePlannerOptimizeMenu(event), true);
   assert.equal(elements.plannerOptimizeMenu.hidden, false);
-  assert.equal(elements.btnOptimizeMenu.attributes["aria-expanded"], "true");
-  assert.equal(window.togglePlannerOptimizeMenu(clickEvent), false);
+  assert.equal(elements.btnOptimizeMenu.getAttribute("aria-expanded"), "true");
+  assert.equal(document.activeElement, null);
+
+  const keyEvent = {
+    key:"ArrowDown",
+    preventDefault(){},
+    stopPropagation(){}
+  };
+  elements.btnOptimizeMenu.listeners.get("keydown")(keyEvent);
+  assert.equal(document.activeElement, menuItems[0]);
+  elements.plannerOptimizeMenu.listeners.get("keydown")(keyEvent);
+  assert.equal(document.activeElement, menuItems[1]);
+  elements.plannerOptimizeMenu.listeners.get("keydown")(keyEvent);
+  assert.equal(document.activeElement, menuItems[2]);
+  elements.plannerOptimizeMenu.listeners.get("keydown")(keyEvent);
+  assert.equal(document.activeElement, menuItems[0], "hidden Buổi must be skipped");
+
+  assert.equal(window.runPlannerSchedulerMode("optimize_sessions", event), false);
+  assert.deepEqual(receivedModes, []);
   assert.equal(elements.plannerOptimizeMenu.hidden, true);
-  assert.equal(elements.btnOptimizeMenu.attributes["aria-expanded"], "false");
 
-  assert.equal(
-    window.runPlannerSchedulerMode("optimize_sessions", clickEvent),
-    "started:optimize_sessions"
-  );
-  assert.deepEqual(receivedModes, ["optimize_sessions"]);
-  assert.equal(window.runPlannerSchedulerMode("unknown_mode", clickEvent), false);
-  assert.deepEqual(receivedModes, ["optimize_sessions"], "unsupported modes must not reach the solver hook");
+  assert.equal(window.runPlannerSchedulerMode("unknown_mode", event), false);
+  assert.deepEqual(receivedModes, []);
 
-  media.matches = false;
-  assert.equal(window.togglePlannerOptimizeMenu(clickEvent), false);
-  assert.equal(elements.plannerOptimizeMenu.hidden, true, "touch/tablet mode cannot open the desktop menu");
+  for(const mode of ["optimize_singletons", "optimize_gap1", "optimize_gap2"]){
+    assert.equal(window.runPlannerSchedulerMode(mode, event), `started:${mode}`);
+  }
+  assert.deepEqual(receivedModes, ["optimize_singletons", "optimize_gap1", "optimize_gap2"]);
+  assert.ok(advancedItems.every(item => item.hidden === true));
+
+  role = "superadmin";
+  assert.equal(window.syncPlannerOptimizeRoleAccess(), true);
+  assert.ok(advancedItems.every(item => item.hidden === false));
+  assert.equal(advancedItems[0].getAttribute("aria-hidden"), "false");
+  assert.equal(advancedItems[0].getAttribute("tabindex"), null);
+  assert.equal(window.runPlannerSchedulerMode("optimize_sessions", event), "started:optimize_sessions");
+  assert.deepEqual(receivedModes, ["optimize_singletons", "optimize_gap1", "optimize_gap2", "optimize_sessions"]);
+
+  elements.btnOptimizeMenu.disabled = true;
+  assert.equal(window.togglePlannerOptimizeMenu(event), false);
+  assert.equal(window.runPlannerSchedulerMode("optimize_gap2", event), false);
+  assert.deepEqual(receivedModes, ["optimize_singletons", "optimize_gap1", "optimize_gap2", "optimize_sessions"]);
+
+  elements.btnOptimizeMenu.disabled = false;
+  window.__TKB_RUST_SOLVER_RUNNING = true;
+  assert.equal(window.togglePlannerOptimizeMenu(event), false);
+  assert.equal(window.runPlannerSchedulerMode("optimize_gap1", event), false);
+  assert.deepEqual(receivedModes, ["optimize_singletons", "optimize_gap1", "optimize_gap2", "optimize_sessions"]);
   assert.equal(typeof documentListeners.get("click"), "function");
   assert.equal(typeof documentListeners.get("keydown"), "function");
-  assert.equal(typeof mediaListeners.get("change"), "function");
+  assert.equal(typeof windowListeners.get("tkb:auth-ready"), "function");
+});
+
+test("portrait and landscape retain responsive toolbar slots for the optimize control", () => {
+  assert.match(
+    plannerHtml,
+    /grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);/,
+    "portrait touch geometry must include Optimize"
+  );
+  assert.match(
+    plannerHtml,
+    /grid-template-columns:\s*repeat\(9, minmax\(0, 1fr\)\);/,
+    "landscape touch geometry must include Optimize"
+  );
+  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*\.planner-optimize-wrap\s*\{[^}]*grid-column:\s*4;/s);
+  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*\.planner-optimize-wrap\s*\{[^}]*grid-column:\s*5;/s);
+});
+
+test("one-click Automatic still carries the internal quality-optimization contract", () => {
+  assert.match(bridgeSource, /settings\.optimization_focus\s*=\s*"automatic"/);
+  assert.match(bridgeSource, /settings\.optimization_continue_quality_search\s*=\s*true/);
+  assert.match(bridgeSource, /settings\.optimization_first_click_strict_quality_gate\s*=\s*true/);
+  assert.match(bridgeSource, /settings\.optimization_accept_gap1_sessions/);
 });

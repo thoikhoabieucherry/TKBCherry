@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .models import Lesson, SchoolData
+from .external_cp_sat import solve_cp_sat_model
 from .rules import TimetableRuleSet, resolve_rule_set
 from .template import all_sessions, class_allowed_periods, teacher_session_capacity
 
@@ -236,7 +237,7 @@ def solve_integrated_timetable(
         )
 
     start = time.time()
-    status = solver.Solve(model)
+    status = solve_cp_sat_model(model, solver)
     runtime = time.time() - start
     status_name = solver.StatusName(status)
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):

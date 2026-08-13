@@ -41,6 +41,51 @@ function makeData(expectedPeriods, options = {}){
   };
 }
 
+function installCompleteSinglePeriodSchedule(data, refinementRound = 0){
+  const subject = String(data.mon[0].ten);
+  data.tkb = {
+    L1:{
+      thu2:{sang:[subject, "", "", "", ""], chieu:["", "", "", "", ""]},
+      thu3:{sang:["", "", "", "", ""], chieu:["", "", "", "", ""]},
+      thu4:{sang:["", "", "", "", ""], chieu:["", "", "", "", ""]},
+      thu5:{sang:["", "", "", "", ""], chieu:["", "", "", "", ""]},
+      thu6:{sang:["", "", "", "", ""], chieu:["", "", "", "", ""]},
+      thu7:{sang:["", "", "", "", ""], chieu:["", "", "", "", ""]}
+    }
+  };
+  data.tkbLessonTeachers = {L1:{[subject]:"GV01"}};
+  data.tkbLessonRooms = {};
+  data.tkbSolverResult = {
+    ok:true,
+    lessons:[{
+      classId:"L1",
+      className:"10A1",
+      subject,
+      teacher:"GV01",
+      room:"",
+      day:2,
+      session:"AM",
+      period:1
+    }],
+    metrics:{
+      expected_periods:1,
+      scheduled_periods:1,
+      unassigned_periods:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      app_constraint_violation_count:0,
+      teacher_sessions:1,
+      one_period_teacher_sessions:0,
+      gap_distribution:{"1":0,"2":0},
+      optimization_refinement_round:refinementRound
+    },
+    validation:{hard_ok:true, violations:[]},
+    solver:{runtime_settings:{optimization_refinement_round:refinementRound}},
+    unassignedLessons:[]
+  };
+  return data;
+}
+
 function makeLargeApplyFixture(classCount = 40, lessonsPerClass = 29){
   const data = makeData(lessonsPerClass);
   const subject = String(data.mon[0].ten);
@@ -315,6 +360,17 @@ function loadBridge(data, fetchImpl, runtime = {}){
     : (() => {});
   const DateImpl = runtime.Date || Date;
   const MathImpl = runtime.Math || Math;
+  // Most bridge tests exercise the VPS request/response contract rather than
+  // Browser Agent admission. Model that ordinary baseline as an explicitly
+  // disabled Browser Agent so the new strict Local mode does not accidentally
+  // turn unrelated fixtures into Local-preflight tests. A test that needs to
+  // simulate a missing runtime can still pass `TKBBrowserWasmExecutor:null`.
+  const browserWasmExecutor = Object.prototype.hasOwnProperty.call(
+    runtime,
+    "TKBBrowserWasmExecutor"
+  )
+    ? runtime.TKBBrowserWasmExecutor
+    : {isEnabled(){ return false; }};
   const legacyDurationInput = {
     value:"",
     dataset:{},
@@ -344,6 +400,9 @@ function loadBridge(data, fetchImpl, runtime = {}){
   const window = {
     DATA: data,
     __TKB_E2E_EXPOSE_TEST_HOOKS: true,
+    __TKB_CLIENT_AGENT_LANES_ENABLED: runtime.clientAgentLanesEnabled,
+    __TKB_AGENT_ROLE_GATE_ENFORCED: runtime.agentRoleGateEnforced === true,
+    __TKB_AGENT_ROLE_ALLOWED: runtime.agentRoleAllowed === true,
     TKBAuth: runtime.TKBAuth,
     TKBAuthApi: runtime.TKBAuthApi,
     TKBRuntime: runtime.TKBRuntime,
@@ -352,7 +411,8 @@ function loadBridge(data, fetchImpl, runtime = {}){
     localStorage,
     sessionStorage,
     navigator: Object.assign({hardwareConcurrency: 8}, runtime.navigator || {}),
-    TKBBrowserWasmExecutor: runtime.TKBBrowserWasmExecutor,
+    Worker: runtime.Worker,
+    TKBBrowserWasmExecutor: browserWasmExecutor,
     location: Object.assign({
       protocol: "http:",
       hostname: "127.0.0.1",
@@ -411,6 +471,159 @@ function jsonResponse(payload, status = 200){
     status,
     async json(){ return payload; },
     clone(){ return jsonResponse(payload, status); }
+  };
+}
+
+function createScreenWakeLockSpy(options = {}){
+  const requests = [];
+  const sentinels = [];
+  let releaseCalls = 0;
+  const wakeLock = {
+    request(type){
+      requests.push(String(type));
+      if(options.reject === true){
+        return Promise.reject(new Error("screen wake lock rejected by test"));
+      }
+      const listeners = new Map();
+      const sentinel = {
+        released:false,
+        addEventListener(name, listener){
+          const key = String(name);
+          const rows = listeners.get(key) || [];
+          rows.push(listener);
+          listeners.set(key, rows);
+        },
+        release(){
+          if(this.released) return Promise.resolve();
+          this.released = true;
+          releaseCalls += 1;
+          for(const listener of listeners.get("release") || []) listener({type:"release"});
+          return Promise.resolve();
+        }
+      };
+      sentinels.push(sentinel);
+      return Promise.resolve(sentinel);
+    }
+  };
+  return {
+    wakeLock,
+    requests,
+    sentinels,
+    releaseCalls(){ return releaseCalls; }
+  };
+}
+
+function createWakeFallbackDocument(options = {}){
+  const nodes = new Map();
+  const documentListeners = new Map();
+  const videos = [];
+  let hidden = false;
+  let visibilityState = "visible";
+
+  function makeNode(id = ""){
+    const attributes = new Map();
+    const node = {
+      id:String(id || ""),
+      dataset:{},
+      style:{},
+      className:"",
+      textContent:"",
+      hidden:false,
+      disabled:false,
+      children:[],
+      classList:{add(){}, remove(){}, toggle(){ return false; }, contains(){ return false; }},
+      setAttribute(name, value){ attributes.set(String(name), String(value)); },
+      getAttribute(name){ return attributes.get(String(name)) ?? null; },
+      removeAttribute(name){ attributes.delete(String(name)); },
+      appendChild(child){ this.children.push(child); return child; },
+      addEventListener(){},
+      removeEventListener(){},
+      querySelector(){ return null; },
+      querySelectorAll(){ return []; },
+      remove(){ this.removed = true; }
+    };
+    if(node.id) nodes.set(node.id, node);
+    return node;
+  }
+
+  const duration = makeNode("solveDurationSeconds");
+  duration.value = "";
+  makeNode("statusMsg");
+
+  function makeVideo(){
+    const video = makeNode("");
+    const mediaListeners = new Map();
+    Object.assign(video, {
+      tagName:"VIDEO",
+      paused:true,
+      currentTime:0,
+      playCalls:0,
+      pauseCalls:0,
+      loadCalls:0,
+      removeCalls:0,
+      attached:false,
+      play(){
+        this.playCalls += 1;
+        if(options.throwPlay === true) throw new Error("video play threw by test");
+        if(options.rejectPlay === true){
+          return Promise.reject(new Error("video play rejected by test"));
+        }
+        this.paused = false;
+        return Promise.resolve();
+      },
+      pause(){ this.pauseCalls += 1; this.paused = true; },
+      load(){ this.loadCalls += 1; },
+      remove(){ this.removeCalls += 1; this.removed = true; this.attached = false; },
+      addEventListener(name, listener){
+        const key = String(name);
+        const rows = mediaListeners.get(key) || [];
+        rows.push(listener);
+        mediaListeners.set(key, rows);
+      },
+      dispatch(name){
+        for(const listener of mediaListeners.get(String(name)) || []) listener({type:String(name)});
+      }
+    });
+    videos.push(video);
+    return video;
+  }
+
+  const attach = child => {
+    if(child){
+      child.attached = true;
+      if(child.id) nodes.set(String(child.id), child);
+    }
+    return child;
+  };
+  const document = {
+    getElementById(id){ return nodes.get(String(id)) || null; },
+    querySelector(){ return null; },
+    querySelectorAll(){ return []; },
+    createElement(tag){ return String(tag).toLowerCase() === "video" ? makeVideo() : makeNode(""); },
+    addEventListener(name, listener){
+      const key = String(name);
+      const rows = documentListeners.get(key) || [];
+      rows.push(listener);
+      documentListeners.set(key, rows);
+    },
+    removeEventListener(){},
+    body:{appendChild:attach},
+    documentElement:{appendChild:attach}
+  };
+  Object.defineProperty(document, "hidden", {get(){ return hidden; }});
+  Object.defineProperty(document, "visibilityState", {get(){ return visibilityState; }});
+
+  return {
+    document,
+    videos,
+    dispatch(name){
+      for(const listener of documentListeners.get(String(name)) || []) listener({type:String(name)});
+    },
+    setVisible(value){
+      hidden = !value;
+      visibilityState = value ? "visible" : "hidden";
+      this.dispatch("visibilitychange");
+    }
   };
 }
 
@@ -473,6 +686,78 @@ test("browser solve settings always use every reported logical CPU", () => {
   assert.equal(fallback.hooks.hardwareWorkerCount(), 1);
 });
 
+test("fresh automatic builds an isolated browser seed without mutating timetable data", async () => {
+  const data = makeData(300);
+  let posted = null;
+  let terminated = 0;
+  class FakeWorker {
+    constructor(url){ this.url = url; }
+    postMessage(message){
+      posted = message;
+      const lessons = Array.from({length:255}, (_, index) => ({
+        classId:"L1",
+        className:"10A1",
+        subject:"ToÃ¡n",
+        teacher:"GV01",
+        room:"",
+        day:2 + Math.floor(index / 50),
+        session:index % 10 < 5 ? "AM" : "PM",
+        period:(index % 5) + 1
+      }));
+      Promise.resolve().then(() => this.onmessage({
+        data:{
+          ok:true,
+          result:{
+            ok:true,
+            version:"tkb-fast-seed-v1",
+            expectedPeriods:300,
+            lessons,
+            elapsedMs:321,
+            attempts:8,
+            seed:17
+          }
+        }
+      }));
+    }
+    terminate(){ terminated += 1; }
+  }
+  const {hooks} = loadBridge(data, null, {Worker:FakeWorker});
+  const before = JSON.stringify(data);
+  const seed = await hooks.buildClientFastSeed(data, {
+    optimization_focus:"automatic",
+    ui_unified_solve_kind:"fresh_complete_first",
+    random_seed:17
+  });
+
+  assert.ok(posted);
+  assert.equal(posted.data, data);
+  assert.equal(seed.lessons.length, 255);
+  assert.equal(seed.clientScheduledPeriods, 255);
+  assert.equal(seed.clientExpectedPeriods, 300);
+  assert.equal(JSON.stringify(data), before);
+  assert.equal(Object.prototype.hasOwnProperty.call(data, "__tkbClientFastSeedV1"), false);
+  assert.equal(terminated, 1);
+});
+
+test("browser seed is ignored below canonical warm-start coverage", () => {
+  const data = makeData(300);
+  const {hooks} = loadBridge(data, null, {Worker:function Worker(){}});
+  const seed = hooks.compactClientFastSeed({
+    ok:true,
+    version:"tkb-fast-seed-v1",
+    expectedPeriods:300,
+    lessons:Array.from({length:254}, () => ({
+      className:"10A1",
+      subject:"ToÃ¡n",
+      teacher:"GV01",
+      day:2,
+      session:"AM",
+      period:1
+    }))
+  });
+  assert.equal(seed, null);
+});
+
 test("watchdog and local fast finishes complete progress before releasing the button", () => {
   const forceBody = BRIDGE_SOURCE.slice(
     BRIDGE_SOURCE.indexOf("function forceFinishSolveUi"),
@@ -531,6 +816,20 @@ test("bridge publishes the canonical active executor and clears only the matchin
     executionPhase:"vps_running"
   });
   assert.equal(window.__TKB_CURRENT_SOLVE_EXECUTOR.executor, "vps");
+  hooks.publishCurrentSolveExecutorState({
+    jobId:"executor-job",
+    executionPhase:"handoff_to_agent"
+  });
+  assert.equal(
+    window.__TKB_CURRENT_SOLVE_EXECUTOR.executor,
+    "vps",
+    "handoff stays amber until Agent waiting/running is authoritative"
+  );
+  hooks.publishCurrentSolveExecutorState({
+    jobId:"executor-job",
+    executionPhase:"agent_waiting"
+  });
+  assert.equal(window.__TKB_CURRENT_SOLVE_EXECUTOR.executor, "agent");
   assert.equal(hooks.clearCurrentSolveExecutorState("older-job"), false);
   assert.equal(window.__TKB_CURRENT_SOLVE_EXECUTOR.jobId, "executor-job");
 
@@ -538,6 +837,59 @@ test("bridge publishes the canonical active executor and clears only the matchin
   assert.equal(window.__TKB_CURRENT_SOLVE_EXECUTOR, null);
   assert.equal(events.at(-1).detail.active, false);
   assert.equal(events.at(-1).detail.jobId, "executor-job");
+});
+
+test("bridge announces each Cloud Run or VPS route once for event-driven usage refresh", () => {
+  const events = [];
+  const storage = memoryStorage();
+  class TestCustomEvent {
+    constructor(type, options){
+      this.type = type;
+      this.detail = options?.detail;
+    }
+  }
+  const {hooks} = loadBridge(makeData(2), null, {
+    localStorage:storage,
+    CustomEvent:TestCustomEvent,
+    dispatchEvent(event){ events.push(event); return true; }
+  });
+
+  hooks.publishCurrentSolveExecutorState({
+    jobId:"usage-route-job",
+    executor:"serverless",
+    executionPhase:"serverless_queued"
+  });
+  let marker = JSON.parse(storage.getItem("TKB_SOLVER_USAGE_ROUTE_V1"));
+  assert.equal(marker.executor, "cloud_run");
+  assert.equal(marker.jobId, "usage-route-job");
+  assert.equal(
+    events.filter(event => event.type === "tkb:solver-usage-route").length,
+    1
+  );
+
+  hooks.publishCurrentSolveExecutorState({
+    jobId:"usage-route-job",
+    executor:"serverless",
+    executionPhase:"serverless_running"
+  });
+  assert.equal(
+    events.filter(event => event.type === "tkb:solver-usage-route").length,
+    1,
+    "polling the same Cloud route must not trigger duplicate usage reloads"
+  );
+
+  hooks.publishCurrentSolveExecutorState({
+    jobId:"usage-route-job",
+    executor:"vps",
+    executionPhase:"vps_running"
+  });
+  marker = JSON.parse(storage.getItem("TKB_SOLVER_USAGE_ROUTE_V1"));
+  assert.equal(marker.executor, "vps");
+  assert.equal(
+    events.filter(event => event.type === "tkb:solver-usage-route").length,
+    2,
+    "a real Cloud-to-VPS fallback is a second executor request"
+  );
 });
 
 test("initial and polled 202 responses publish executor ownership before settlement clears it", () => {
@@ -1075,6 +1427,84 @@ test("a completed result stays recoverable until the remote timetable save resol
   assert.equal(hooks.isSettledBackendJob(jobId), true);
 });
 
+test("a large terminal HTTP 200 unlocks after the bounded save watchdog without losing its candidate", async () => {
+  const {data, payload:serverPayload} = makeLargeApplyFixture(54, 29);
+  const storage = memoryStorage();
+  let jobId = "";
+  let resultPolls = 0;
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-data")){
+      jobId = JSON.parse(options.body).settings.ui_solve_run_id;
+      return jsonResponse({
+        ok:false,
+        running:true,
+        serverOwned:true,
+        kind:"solver_started",
+        jobId,
+        startedAtMs:Date.now(),
+        progressBudgetSeconds:60,
+        retryAfterMs:250
+      }, 202);
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      return jsonResponse(serverPayload);
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    localStorage:storage
+  });
+  window.__TKB_DEFER_SERVER_RESULT_SETTLEMENT_UNTIL_APPLY = true;
+  window.__TKB_TERMINAL_APPLY_SAVE_WATCHDOG_MS = 50;
+
+  const decoded = await hooks.postSolve({
+    solver_mode:"auto",
+    auto_sort_mode:"fast",
+    ui_solver_preset:"fast",
+    ui_internal_allow_incomplete:true,
+    ui_allow_short_backend_deadline:true,
+    overall_time_limit_seconds:1,
+    optimization_time_limit_seconds:1,
+    ui_skip_pre_solve_constraint_release:true
+  }, data);
+
+  let releaseRemoteSave;
+  let saveOptions = null;
+  window.saveStore = options => {
+    saveOptions = options;
+    return new Promise(resolve => { releaseRemoteSave = resolve; });
+  };
+  const applyStartedAt = Date.now();
+  const applied = await window.TKBRustAPI.applyPayload(decoded);
+
+  assert.ok(applied);
+  assert.equal(resultPolls, 1);
+  assert.equal(hooks.countScheduledLessons(data), 1566);
+  assert.equal(applied.metrics.scheduled_periods, 1566);
+  assert.equal(saveOptions?.awaitRemote, true);
+  assert.ok(Date.now() - applyStartedAt < 5_000, "a stalled remote save must not hold the terminal UI indefinitely");
+  assert.equal(window.__TKB_SOLVER_SAVE_PENDING, true);
+  assert.equal(window.__TKB_SOLVER_SAVE_PENDING_JOB_ID, jobId);
+  assert.equal(hooks.deferredBackendSavePendingFor(jobId), true);
+  assert.equal(hooks.readPendingBackendJob()?.jobId, jobId, "reload recovery must retain the canonical result while save is pending");
+  assert.equal(hooks.isSettledBackendJob(jobId), false);
+  assert.equal(await hooks.resumePendingBackendJobOnLoad(0), false, "the same page must not start a duplicate apply while its save is pending");
+  assert.equal(resultPolls, 1);
+
+  releaseRemoteSave(true);
+  for(let attempt = 0; attempt < 8 && hooks.readPendingBackendJob(); attempt += 1){
+    await Promise.resolve();
+  }
+  assert.equal(window.__TKB_SOLVER_SAVE_PENDING, false);
+  assert.equal(hooks.deferredBackendSavePendingFor(jobId), false);
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(hooks.isSettledBackendJob(jobId), true);
+  assert.equal(hooks.countScheduledLessons(data), 1566, "late save settlement must not roll back the accepted candidate");
+});
+
 test("hidden timetable statistics stay lazy while opening the popover still renders them", () => {
   const loadStart = PLANNER_SOURCE.indexOf("function loadMonList(){");
   const loadEnd = PLANNER_SOURCE.indexOf("/* ======================= CH", loadStart);
@@ -1085,7 +1515,11 @@ test("hidden timetable statistics stay lazy while opening the popover still rend
     appendChild(){},
     querySelectorAll(){ return []; }
   };
-  const statsPopover = {hidden:true};
+  const statsPopover = {
+    hidden:true,
+    setAttribute(){},
+    removeAttribute(){}
+  };
   let renderCalls = 0;
   const loadContext = {
     TKB_LOAD_MON_LIST_TIMER:0,
@@ -1129,12 +1563,23 @@ test("hidden timetable statistics stay lazy while opening the popover still rend
       }
     },
     renderStatsBox(){ renderCalls += 1; },
+    scheduleStatsBoxRender(){ renderCalls += 1; },
     requestAnimationFrame(){},
     positionStatsPopover(){}
   };
   vm.runInNewContext(`${openBody}\nsetStatsPopoverOpen(true);`, openContext);
   assert.equal(statsPopover.hidden, false);
   assert.equal(renderCalls, 1, "opening the statistics popover must render its current values on demand");
+});
+
+test("bridge defers an open statistics refresh until after the solve-apply turn", () => {
+  const start = BRIDGE_SOURCE.indexOf("function refreshStatsPopoverIfOpen()");
+  const end = BRIDGE_SOURCE.indexOf("function publishLiveStatsProgress", start);
+  assert.ok(start >= 0 && end > start, "statistics refresh helper must be present");
+  const body = BRIDGE_SOURCE.slice(start, end);
+  assert.match(body, /scheduleStatsBoxRender\(\{onlyIfOpen:true\}\)/);
+  assert.match(body, /typeof window\.scheduleStatsBoxRender === "function"/);
+  assert.match(body, /callMaybe\("renderStatsBox"\)/, "legacy pages retain a safe fallback");
 });
 
 test("result-apply progress keeps updating the visible elapsed time", () => {
@@ -1251,6 +1696,71 @@ test("a second automatic-sort call is suppressed while the first preflight is yi
   assert.equal(hooks.localSolveLifecycleActive(), false);
 });
 
+test("a click during terminal timetable persistence is queued and dispatched once after save", async () => {
+  const data = makeData(1);
+  const candidateData = installCompleteSinglePeriodSchedule(makeData(1), 0);
+  const firstCandidate = JSON.parse(JSON.stringify(candidateData.tkbSolverResult));
+  const secondCandidate = JSON.parse(JSON.stringify(firstCandidate));
+  secondCandidate.metrics.optimization_refinement_round = 1;
+  secondCandidate.solver.runtime_settings.optimization_refinement_round = 1;
+  let solvePosts = 0;
+  const posted = [];
+  let resolveFirstSave = null;
+  let saveCalls = 0;
+  const {window, hooks} = loadBridge(data, async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      return jsonResponse({ok:true, jobs:[], queue:[], completedJobs:[]});
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      posted.push(JSON.parse(String(options.body || "{}")));
+      return jsonResponse(JSON.parse(JSON.stringify(
+        solvePosts === 1 ? firstCandidate : secondCandidate
+      )));
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  });
+  window.saveStore = () => {
+    saveCalls += 1;
+    if(saveCalls === 1){
+      return new Promise(resolve => { resolveFirstSave = resolve; });
+    }
+    return Promise.resolve(true);
+  };
+  const waitUntil = async predicate => {
+    for(let attempt = 0; attempt < 500; attempt += 1){
+      if(predicate()) return true;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    return false;
+  };
+
+  const first = window.sapXepTuDongAll();
+  assert.equal(
+    await waitUntil(() => typeof resolveFirstSave === "function"),
+    true,
+    `first save not reached: posts=${solvePosts}, saves=${saveCalls}, status=${String(window.__TKB_SOLVER_LAST_ERROR || "")}`
+  );
+  assert.equal(solvePosts, 1);
+  assert.equal(window.__TKB_AUTO_SORT_TERMINAL_SETTLEMENT_ACTIVE, true);
+
+  const queuedResult = await window.sapXepTuDongAll();
+  assert.equal(queuedResult, null);
+  assert.equal(solvePosts, 1, "the queued click must not overlap the result save");
+  assert.equal(window.__TKB_AUTO_SORT_CONTINUATION_QUEUED, true);
+
+  resolveFirstSave(true);
+  assert.ok(await first);
+  assert.equal(await waitUntil(() => solvePosts === 2), true);
+  assert.equal(await waitUntil(() => hooks.autoSortPreflightActive() === false), true);
+  assert.equal(posted[1].settings.ui_unified_solve_kind, "refine_complete");
+  assert.equal(posted[1].settings.optimization_refinement_round, 1);
+  assert.equal(window.__TKB_AUTO_SORT_CONTINUATION_QUEUED, false);
+  assert.equal(solvePosts, 2, "one queued click must dispatch exactly one refinement");
+});
+
 test("automatic-sort preflight lock is released by an early busy exit", async () => {
   const data = makeData(2);
   const {window, hooks} = loadBridge(data);
@@ -1264,13 +1774,329 @@ test("automatic-sort preflight lock is released by an early busy exit", async ()
   assert.equal(hooks.localSolveLifecycleActive(), false);
 });
 
-test("dismissing the offline Agent invitation starts exactly one VPS solve", async () => {
+test("planner bridge contains no screen-awake implementation", () => {
+  assert.doesNotMatch(
+    BRIDGE_SOURCE,
+    /navigator\??\.?wakeLock|__TKB_MOBILE_SCREEN_WAKE_LOCK|NoSleep|MobileSortWake|IOS_STANDALONE_WAKE_VIDEO_SRC/
+  );
+});
+
+test("mobile serverless sort never requests Wake Lock or creates NoSleep media", async () => {
+  for(const device of [
+    {
+      name:"iOS Home Screen",
+      navigator:{
+        platform:"iPhone",
+        userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) Version/17.6 Mobile/15E148 Safari/604.1",
+        maxTouchPoints:5,
+        standalone:true
+      }
+    },
+    {
+      name:"Android",
+      navigator:{
+        platform:"Linux armv8l",
+        userAgent:"Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36",
+        maxTouchPoints:5
+      }
+    }
+  ]){
+    const {data, payload} = makeLargeApplyFixture(1, 2);
+    const media = createWakeFallbackDocument();
+    let wakeLockCalls = 0;
+    const fetchImpl = async url => {
+      const requestUrl = String(url);
+      if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+      if(requestUrl.includes("/api/solver-state")){
+        return jsonResponse({ok:true, jobs:[], queue:[], completedJobs:[]});
+      }
+      if(requestUrl.endsWith("/api/solve-data")){
+        return jsonResponse(JSON.parse(JSON.stringify(payload)));
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+    const {window} = loadBridge(data, fetchImpl, {
+      document:media.document,
+      navigator:Object.assign({}, device.navigator, {
+        wakeLock:{
+          request(){
+            wakeLockCalls += 1;
+            throw new Error("Wake Lock must not be requested");
+          }
+        }
+      })
+    });
+
+    const result = await window.sapXepTuDongAll();
+    await Promise.resolve();
+
+    assert.ok(result, `${device.name} must still apply the timetable`);
+    assert.equal(wakeLockCalls, 0, `${device.name} must not call navigator.wakeLock.request`);
+    assert.equal(media.videos.length, 0, `${device.name} must not create a NoSleep video`);
+    assert.equal(window.__TKB_MOBILE_SCREEN_WAKE_LOCK, undefined);
+  }
+});
+
+test("school users submit one ordinary server-owned job on Windows macOS and iPhone without any Agent path", async () => {
+  const navigators = [
+    {
+      name:"Windows",
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      maxTouchPoints:0
+    },
+    {
+      name:"macOS",
+      platform:"MacIntel",
+      userAgent:"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)",
+      maxTouchPoints:0
+    },
+    {
+      name:"iPhone",
+      platform:"iPhone",
+      userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X)",
+      maxTouchPoints:5
+    }
+  ];
+
+  for(const navigator of navigators){
+    const {data, payload} = makeLargeApplyFixture(1, 2);
+    let solveRequest = null;
+    let agentCalls = 0;
+    const agentCallNames = [];
+    const {window, hooks} = loadBridge(data, async (url, options = {}) => {
+      const requestUrl = String(url);
+      if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+      if(requestUrl.endsWith("/api/solve-data")){
+        solveRequest = JSON.parse(String(options.body || "{}"));
+        return jsonResponse(JSON.parse(JSON.stringify(payload)));
+      }
+      throw new Error(`${navigator.name}: unexpected URL ${url}`);
+    }, {
+      navigator,
+      agentRoleGateEnforced:true,
+      agentRoleAllowed:false,
+      TKBBrowserWasmExecutor:{
+        isEnabled(){ agentCalls += 1; agentCallNames.push("isEnabled"); return true; },
+        canHandleRequest(){ agentCalls += 1; agentCallNames.push("canHandleRequest"); return true; },
+        async probe(){ agentCalls += 1; agentCallNames.push("probe"); return true; },
+        async activate(){ agentCalls += 1; agentCallNames.push("activate"); return true; },
+        async close(){ agentCalls += 1; agentCallNames.push("close"); return true; },
+        state(){ agentCalls += 1; agentCallNames.push("state"); return {}; }
+      }
+    });
+    window.nativeAgentSortPolicy = () => {
+      agentCalls += 1;
+      throw new Error("school_user must not inspect native Agent policy");
+    };
+
+    const plan = hooks.buildAutomaticAutoSortPlan(data);
+    const result = await hooks.postSolve(plan.settings, data);
+
+    assert.ok(result, navigator.name);
+    assert.equal(hooks.localAgentRoleAllowed(), false, navigator.name);
+    assert.equal(agentCalls, 0, `${navigator.name}: no native/WebAgent call is allowed (${agentCallNames.join(",")})`);
+    assert.equal(solveRequest?.settings?.ui_solver_async_job, true, navigator.name);
+    assert.equal(solveRequest?.settings?.ui_solver_fifo_admission, true, navigator.name);
+    assert.equal(solveRequest?.settings?.ui_agent_execution_policy, "server_owned", navigator.name);
+    assert.equal(solveRequest?.settings?.ui_execution_mode, "server", navigator.name);
+    assert.equal(solveRequest?.settings?.ui_browser_agent_required, false, navigator.name);
+    assert.equal(solveRequest?.settings?.ui_native_agent_required, false, navigator.name);
+    assert.equal(solveRequest?.settings?.ui_agent_preference_enabled, false, navigator.name);
+    assert.equal("ui_browser_wasm_ready" in solveRequest.settings, false, navigator.name);
+    assert.equal("ui_browser_cpsat_ready" in solveRequest.settings, false, navigator.name);
+  }
+});
+
+test("the temporary client-Agent switch keeps administrator requests server-owned", async () => {
+  const {data, payload} = makeLargeApplyFixture(1, 2);
+  let solveRequest = null;
+  let agentCalls = 0;
+  let inviteCalls = 0;
+  const {window, hooks} = loadBridge(data, async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      return jsonResponse({ok:true, jobs:[], queue:[], completedJobs:[]});
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solveRequest = JSON.parse(String(options.body || "{}"));
+      return jsonResponse(JSON.parse(JSON.stringify(payload)));
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  }, {
+    clientAgentLanesEnabled:false,
+    agentRoleGateEnforced:true,
+    agentRoleAllowed:true,
+    navigator:{
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      maxTouchPoints:0
+    },
+    TKBBrowserWasmExecutor:{
+      isEnabled(){ agentCalls += 1; return true; },
+      canHandleRequest(){ agentCalls += 1; return true; },
+      async probe(){ agentCalls += 1; return true; },
+      async activate(){ agentCalls += 1; return true; },
+      state(){ agentCalls += 1; return {}; }
+    }
+  });
+  window.nativeAgentSortPolicy = () => {
+    agentCalls += 1;
+    throw new Error("disabled Agent lane must not inspect native Agent policy");
+  };
+  window.maybeInviteAgentBeforeSort = async () => {
+    inviteCalls += 1;
+    throw new Error("disabled Agent lane must not block Play with an Agent invitation");
+  };
+
+  const result = await window.sapXepTuDongAll({manualAgentInvite:true});
+
+  assert.ok(result);
+  assert.equal(hooks.localAgentRoleAllowed(), false);
+  assert.equal(agentCalls, 0);
+  assert.equal(inviteCalls, 0);
+  assert.equal(solveRequest?.settings?.ui_agent_execution_policy, "server_owned");
+  assert.equal(solveRequest?.settings?.ui_execution_mode, "server");
+  assert.equal(solveRequest?.settings?.ui_browser_agent_required, false);
+  assert.equal(solveRequest?.settings?.ui_native_agent_required, false);
+  assert.equal(solveRequest?.settings?.ui_agent_preference_enabled, false);
+  assert.equal("ui_native_agent_id" in solveRequest.settings, false);
+  assert.equal("ui_browser_wasm_ready" in solveRequest.settings, false);
+  assert.equal("ui_browser_cpsat_ready" in solveRequest.settings, false);
+});
+
+test("retired client-Agent lanes keep superadmin macOS and iPhone server-owned and accept a safe capacity partial", async () => {
+  const devices = [
+    {
+      name:"macOS",
+      platform:"MacIntel",
+      userAgent:"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)",
+      maxTouchPoints:0
+    },
+    {
+      name:"iPhone",
+      platform:"iPhone",
+      userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X)",
+      maxTouchPoints:5
+    }
+  ];
+
+  for(const device of devices){
+    const data = makeData(2);
+    const subject = String(data.mon[0].ten);
+    let solveRequest = null;
+    let agentCalls = 0;
+    const partialPayload = {
+      ok:true,
+      classes:[{id:"L1", name:"10A1"}],
+      lessons:[{
+        classId:"L1",
+        className:"10A1",
+        subject,
+        teacher:"GV01",
+        room:"",
+        day:2,
+        session:"AM",
+        period:1
+      }],
+      unassignedLessons:[{
+        classId:"L1",
+        className:"10A1",
+        subject,
+        teacher:"GV01",
+        periods:1,
+        reason:"not_enough_available_slots"
+      }],
+      metrics:{
+        scheduled_periods:1,
+        expected_periods:2,
+        unassigned_periods:1,
+        capacity_unassigned_periods:1,
+        solver_unassigned_periods:0,
+        accounting_ok:true,
+        placement_hard_ok:true,
+        placement_core_hard_ok:true,
+        class_slot_conflicts:0,
+        teacher_slot_conflicts:0,
+        room_slot_conflicts:0,
+        app_constraint_violation_count:0,
+        hard_ok:true,
+        core_hard_ok:true
+      },
+      validation:{hard_ok:true, violations:[]},
+      solver:{runtime_settings:{}}
+    };
+    const {window, hooks} = loadBridge(data, async (url, options = {}) => {
+      const requestUrl = String(url);
+      if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+      if(requestUrl.endsWith("/api/solve-data")){
+        solveRequest = JSON.parse(String(options.body || "{}"));
+        return jsonResponse(JSON.parse(JSON.stringify(partialPayload)));
+      }
+      throw new Error(`${device.name}: unexpected URL ${url}`);
+    }, {
+      clientAgentLanesEnabled:false,
+      agentRoleGateEnforced:true,
+      agentRoleAllowed:true,
+      TKBAuth:{currentUser(){ return {user:{role:"superadmin"}}; }},
+      navigator:device,
+      TKBBrowserWasmExecutor:{
+        isEnabled(){ agentCalls += 1; return true; },
+        canHandleRequest(){ agentCalls += 1; return true; },
+        async probe(){ agentCalls += 1; return true; },
+        async activate(){ agentCalls += 1; return true; },
+        async close(){ agentCalls += 1; return true; },
+        state(){ agentCalls += 1; return {}; }
+      }
+    });
+
+    const plan = hooks.buildAutomaticAutoSortPlan(data);
+    assert.equal(
+      hooks.strictBrowserAutomaticRequired({
+        ...plan.settings,
+        ui_browser_agent_required:true,
+        ui_agent_execution_policy:"web_agent_required"
+      }),
+      false,
+      `${device.name}: retired client lanes must disable the strict BrowserAgent gate`
+    );
+
+    const result = await hooks.postSolve(plan.settings, data);
+
+    assert.ok(result, `${device.name}: safe capacity partial must be accepted`);
+    assert.equal(hooks.payloadIsSafeCapacityPartial(result), true, device.name);
+    assert.equal(solveRequest?.settings?.ui_agent_execution_policy, "server_owned", device.name);
+    assert.equal(solveRequest?.settings?.ui_execution_mode, "server", device.name);
+    assert.equal(solveRequest?.settings?.ui_browser_agent_required, false, device.name);
+    assert.equal(solveRequest?.settings?.ui_native_agent_required, false, device.name);
+    assert.equal(hooks.strictBrowserAutomaticRequired(solveRequest.settings), false, device.name);
+    assert.equal(agentCalls, 0, `${device.name}: no retired client Agent call is allowed`);
+    let duplicateValidationCalls = 0;
+    window.TKBConstraints = {
+      async validateAllAsync(){
+        duplicateValidationCalls += 1;
+        throw new Error("server-owned capacity proof must skip duplicate browser validation");
+      }
+    };
+    const applied = await window.TKBRustAPI.applyPayload(result, plan.settings);
+    assert.ok(applied, `${device.name}: safe capacity partial must be applicable`);
+    assert.equal(duplicateValidationCalls, 0, `${device.name}: trusted server result must use fast apply`);
+    assert.equal(
+      result.solver.runtime_settings.ui_post_apply_validation_reason,
+      "server_owned_capacity_proof",
+      device.name
+    );
+    assert.equal(hooks.countScheduledLessons(data), 1, `${device.name}: placed lesson must be applied`);
+  }
+});
+
+test("an offline Windows Agent blocks Play before creating a solver job", async () => {
   const {data, payload} = makeLargeApplyFixture(1, 2);
   let inviteCalls = 0;
   let stateCalls = 0;
   let solvePosts = 0;
   let cancelPosts = 0;
-  let confirmCalls = 0;
   let inviteOptions = null;
   const fetchImpl = async (url) => {
     const requestUrl = String(url);
@@ -1290,38 +2116,576 @@ test("dismissing the offline Agent invitation starts exactly one VPS solve", asy
     throw new Error(`Unexpected URL: ${url}`);
   };
   const {window, hooks} = loadBridge(data, fetchImpl, {
-    confirm(){
-      confirmCalls += 1;
-      return false;
+    navigator:{
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    }
+  });
+  // The bridge must keep its own Windows UA fence even if an older cached
+  // planner helper reports a false negative.
+  window.isWindowsNativeAgentDevice = () => false;
+  window.maybeInviteAgentBeforeSort = async options => {
+    inviteCalls += 1;
+    inviteOptions = options;
+    return false;
+  };
+
+  const result = await window.sapXepTuDongAll({manualAgentInvite:true});
+
+  assert.equal(result, null);
+  assert.equal(inviteCalls, 1);
+  assert.equal(inviteOptions?.nativeRequired, true);
+  assert.equal(stateCalls, 1);
+  assert.equal(solvePosts, 0);
+  assert.equal(cancelPosts, 0);
+  assert.equal(hooks.countScheduledLessons(data), 0);
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(hooks.autoSortPreflightActive(), false);
+});
+
+test("an online Windows Agent posts one native-required job without probing Browser WASM", async () => {
+  const {data, payload} = makeLargeApplyFixture(1, 2);
+  let solvePosts = 0;
+  let inviteCalls = 0;
+  let inviteOptions = null;
+  let solveRequest = null;
+  let browserCalls = 0;
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      return jsonResponse({ok:true, jobs:[], queue:[], completedJobs:[]});
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      solveRequest = JSON.parse(String(options.body || "{}"));
+      return jsonResponse(JSON.parse(JSON.stringify(payload)));
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    navigator:{
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    },
+    TKBBrowserWasmExecutor:{
+      canHandleRequest(){ browserCalls += 1; return true; },
+      async probe(){ browserCalls += 1; return true; },
+      async activate(){ browserCalls += 1; return true; },
+      async close(){ browserCalls += 1; return true; },
+      state(){ return {}; }
     }
   });
   window.maybeInviteAgentBeforeSort = async options => {
     inviteCalls += 1;
     inviteOptions = options;
-    // The real planner helper returns true when the user presses Cancel/Hủy;
-    // model that branch here so this bridge test covers the full handoff.
-    return window.confirm("Agent offline") === false;
+    return true;
   };
 
   const result = await window.sapXepTuDongAll({manualAgentInvite:true});
 
   assert.ok(result);
   assert.equal(inviteCalls, 1);
-  assert.equal(inviteOptions?.preferVpsFallback, true);
-  assert.equal(confirmCalls, 1);
-  assert.equal(stateCalls, 1);
+  assert.equal(inviteOptions?.nativeRequired, true);
   assert.equal(solvePosts, 1);
-  assert.equal(cancelPosts, 0);
+  assert.equal(solveRequest?.settings?.ui_agent_execution_policy, "native_required");
+  assert.equal(solveRequest?.settings?.ui_native_agent_required, true);
+  assert.equal(solveRequest?.settings?.ui_agent_preference_enabled, true);
+  assert.equal("ui_browser_wasm_ready" in solveRequest.settings, false);
+  assert.equal("ui_browser_cpsat_ready" in solveRequest.settings, false);
+  assert.equal(browserCalls, 0);
   assert.equal(hooks.countScheduledLessons(data), 2);
   assert.equal(hooks.readPendingBackendJob(), null);
-  assert.equal(hooks.autoSortPreflightActive(), false);
 });
 
-test("an unresolved offline Agent check cannot delay the single VPS solve POST", async () => {
+test("Windows macOS-style trial posts a Browser-required Local job even after a stale OFF toggle", async () => {
   const {data, payload} = makeLargeApplyFixture(1, 2);
   let solvePosts = 0;
-  let inviteCalls = 0;
-  let confirmCalls = 0;
+  let browserProbeCalls = 0;
+  let nativeStatusCalls = 0;
+  let nativeInviteCalls = 0;
+  let solveRequest = null;
+  const browserExecutor = {
+    isEnabled(){ return false; },
+    canHandleRequest(){ return true; },
+    async probe(){ browserProbeCalls += 1; return true; },
+    fullReferenceRefineCapable(){ return false; },
+    async activate(){ throw new Error("trial must not activate before server admission"); },
+    async close(){ return true; },
+    state(){ return {probed:true, cpSatReady:false, highsReady:false, computeActive:false}; }
+  };
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      solveRequest = JSON.parse(String(options.body || "{}"));
+      return jsonResponse(JSON.parse(JSON.stringify(payload)));
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    navigator:{
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    },
+    TKBBrowserWasmExecutor:browserExecutor
+  });
+  window.__TKB_WINDOWS_WEB_AGENT_TRIAL = true;
+  window.nativeAgentSortPolicy = () => {
+    nativeStatusCalls += 1;
+    throw new Error("the Windows trial must not query native Agent status");
+  };
+  window.maybeInviteAgentBeforeSort = async () => {
+    nativeInviteCalls += 1;
+    throw new Error("the Windows trial must not open/download an EXE");
+  };
+
+  const plan = hooks.buildAutomaticAutoSortPlan(data);
+  const result = await hooks.postSolve(plan.settings, data);
+
+  assert.ok(result);
+  assert.equal(solvePosts, 1);
+  assert.equal(browserProbeCalls, 1);
+  assert.equal(nativeStatusCalls, 0);
+  assert.equal(nativeInviteCalls, 0);
+  assert.equal(solveRequest?.settings?.ui_agent_execution_policy, "web_agent_required");
+  assert.equal(solveRequest?.settings?.ui_execution_mode, "local");
+  assert.equal(solveRequest?.settings?.ui_browser_agent_required, true);
+  assert.equal(solveRequest?.settings?.ui_native_agent_required, false);
+  assert.equal(solveRequest?.settings?.ui_agent_preference_enabled, true);
+  assert.equal("ui_native_agent_id" in solveRequest.settings, false);
+});
+
+test("Windows WebAgent trial rejects incomplete 200 and 422 terminal payloads", async () => {
+  for(const responseStatus of [200, 422]){
+    const {data, payload} = makeLargeApplyFixture(1, 2);
+    const partial = JSON.parse(JSON.stringify(payload));
+    partial.ok = responseStatus === 200;
+    partial.kind = "no_complete_schedule_before_deadline";
+    partial.error = "No complete schedule before deadline";
+    partial.lessons = partial.lessons.slice(0, 1);
+    partial.metrics.scheduled_periods = 1;
+    partial.metrics.expected_periods = 2;
+    partial.metrics.unassigned_periods = 1;
+    partial.unassignedLessons = [{classId:"L1", subject:"Toan", periods:1}];
+    let solveRequest = null;
+    const browserExecutor = {
+      isEnabled(){ return true; },
+      canHandleRequest(){ return true; },
+      async probe(){ return true; },
+      async close(){ return true; },
+      state(){ return {probed:true, active:false, computeActive:false}; }
+    };
+    const fetchImpl = async (url, options = {}) => {
+      const requestUrl = String(url);
+      if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+      if(requestUrl.endsWith("/api/solve-data")){
+        solveRequest = JSON.parse(String(options.body || "{}"));
+        return jsonResponse(JSON.parse(JSON.stringify(partial)), responseStatus);
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+    const {window, hooks} = loadBridge(data, fetchImpl, {
+      navigator:{
+        platform:"Win32",
+        userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+      },
+      TKBBrowserWasmExecutor:browserExecutor
+    });
+    window.__TKB_WINDOWS_WEB_AGENT_TRIAL = true;
+    const plan = hooks.buildAutomaticAutoSortPlan(data);
+    plan.settings.ui_staged_existing_repair = true;
+
+    await assert.rejects(
+      hooks.postSolve(plan.settings, data),
+      error => error?.kind === "no_complete_schedule_before_deadline"
+        && error?.payload?.metrics?.scheduled_periods === 1
+    );
+    assert.equal(solveRequest.settings.ui_agent_execution_policy, "web_agent_required");
+    assert.equal(solveRequest.settings.ui_browser_agent_required, true);
+    assert.equal(solveRequest.settings.require_complete_schedule, true);
+    assert.equal(solveRequest.settings.best_effort_on_timeout, false);
+    assert.equal(solveRequest.settings.ui_accept_incomplete_best_effort, false);
+    assert.equal(hooks.readPendingBackendJob(), null);
+  }
+});
+
+test("Windows WebAgent trial probe failure is terminal and never creates a VPS job", async () => {
+  const data = makeData(2);
+  let solvePosts = 0;
+  let probeCalls = 0;
+  const {window, hooks} = loadBridge(data, async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      return jsonResponse({ok:false, kind:"unexpected_vps_post"}, 500);
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  }, {
+    navigator:{
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    },
+    TKBBrowserWasmExecutor:{
+      isEnabled(){ return false; },
+      canHandleRequest(){ return true; },
+      async probe(){ probeCalls += 1; return false; },
+      state(){ return {probed:false, active:false, computeActive:false}; }
+    }
+  });
+  window.__TKB_WINDOWS_WEB_AGENT_TRIAL = true;
+  const plan = hooks.buildAutomaticAutoSortPlan(data);
+
+  await assert.rejects(
+    hooks.postSolve(plan.settings, data),
+    error => error?.kind === "local_agent_unavailable"
+      && error?.localModeRequired === true
+      && error?.executionMode === "local"
+  );
+  assert.equal(probeCalls, 1);
+  assert.equal(solvePosts, 0);
+  assert.equal(
+    window.__TKB_RUST_LAST_REQUEST_DEBUG.settings.ui_agent_execution_policy,
+    "web_agent_required"
+  );
+  assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.settings.ui_execution_mode, "local");
+  assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.settings.ui_agent_preference_enabled, true);
+});
+
+test("Windows WebAgent trial refuses to adopt a pre-existing VPS job", async () => {
+  const data = makeData(2);
+  let stateCalls = 0;
+  let solvePosts = 0;
+  let resultPolls = 0;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      stateCalls += 1;
+      return jsonResponse({
+        ok:true,
+        jobs:[{
+          jobId:"pre-existing-vps-job",
+          serverOwned:true,
+          scheduleScope:"default",
+          scheduleFingerprint:"v1:other-input",
+          executor:"vps",
+          executionPhase:"vps_running",
+          createdAtMs:Date.now() - 5_000,
+          startedAtMs:Date.now() - 4_000
+        }],
+        queue:[],
+        completedJobs:[]
+      });
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      return jsonResponse({ok:false, kind:"unexpected_post"}, 500);
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      return jsonResponse({ok:false, kind:"unexpected_poll"}, 500);
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    navigator:{
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    },
+    location:{
+      search:"?sid=default&webAgentTrial=mac",
+      pathname:"/pages/sapxep",
+      href:"http://127.0.0.1:1010/pages/sapxep?sid=default&webAgentTrial=mac"
+    }
+  });
+  window.__TKB_WINDOWS_WEB_AGENT_TRIAL = true;
+  window.TKBAuth = {getSession:() => ({userId:"same-owner"})};
+  window.maybeInviteAgentBeforeSort = async () => {
+    throw new Error("trial must reject the VPS job before native preflight");
+  };
+
+  const result = await window.sapXepTuDongAll({manualAgentInvite:true});
+
+  assert.equal(result, null);
+  assert.equal(stateCalls, 1);
+  assert.equal(solvePosts, 0);
+  assert.equal(resultPolls, 0);
+  assert.equal(
+    hooks.readPendingBackendJob(),
+    null,
+    "the rejected VPS job must not remain pending and trigger hidden polling"
+  );
+});
+
+test("Windows WebAgent trial refuses pre-existing native and unknown jobs", async () => {
+  for(const [label, metadata] of [
+    ["native", {executor:"agent", executionPhase:"agent_running"}],
+    ["unknown", {executionPhase:"pending"}]
+  ]){
+    const data = makeData(2);
+    let stateCalls = 0;
+    let resultPolls = 0;
+    const fetchImpl = async url => {
+      const requestUrl = String(url);
+      if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+      if(requestUrl.includes("/api/solver-state")){
+        stateCalls += 1;
+        return jsonResponse({
+          ok:true,
+          jobs:[Object.assign({
+            jobId:`pre-existing-${label}-job`,
+            serverOwned:true,
+            scheduleScope:"default",
+            scheduleFingerprint:"v1:other-input",
+            createdAtMs:Date.now() - 5_000,
+            startedAtMs:Date.now() - 4_000
+          }, metadata)],
+          queue:[],
+          completedJobs:[]
+        });
+      }
+      if(requestUrl.includes("/api/solve-result")){
+        resultPolls += 1;
+        return jsonResponse({ok:false, kind:"unexpected_poll"}, 500);
+      }
+      if(requestUrl.endsWith("/api/solve-data")){
+        throw new Error("trial must reject an old non-Browser job before POST");
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+    const {window, hooks} = loadBridge(data, fetchImpl, {
+      navigator:{
+        platform:"Win32",
+        userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+      },
+      location:{
+        search:"?sid=default&webAgentTrial=mac",
+        pathname:"/pages/sapxep",
+        href:"http://127.0.0.1:1010/pages/sapxep?sid=default&webAgentTrial=mac"
+      }
+    });
+    window.__TKB_WINDOWS_WEB_AGENT_TRIAL = true;
+    window.TKBAuth = {getSession:() => ({userId:"same-owner"})};
+    window.maybeInviteAgentBeforeSort = async () => {
+      throw new Error("trial must reject the old executor before native preflight");
+    };
+
+    const result = await window.sapXepTuDongAll({manualAgentInvite:true});
+
+    assert.equal(result, null, `${label} old job must be rejected`);
+    assert.equal(stateCalls, 1, `${label} state should be checked once`);
+    assert.equal(resultPolls, 0, `${label} old job must never be polled`);
+    assert.equal(hooks.readPendingBackendJob(), null);
+  }
+});
+
+test("Windows WebAgent trial skips a completed foreign result and starts a new Local job", async () => {
+  const {data, payload} = makeLargeApplyFixture(1, 2);
+  Object.assign(payload.metrics, {
+    app_constraint_violation_count:0,
+    teacher_sessions:1,
+    one_period_teacher_sessions:0,
+    teacher_gap2_sessions:0,
+    gap_distribution:{"0":1, "1":0, "2":0}
+  });
+  let oldFingerprint = "";
+  let stateCalls = 0;
+  let solvePosts = 0;
+  let resultPolls = 0;
+  let probeCalls = 0;
+  let solveRequest = null;
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      stateCalls += 1;
+      return jsonResponse({
+        ok:true,
+        jobs:[],
+        queue:[],
+        completedJobs:[{
+          jobId:"completed-other-browser-trial",
+          serverOwned:true,
+          scheduleScope:"default",
+          scheduleFingerprint:oldFingerprint,
+          executor:"agent",
+          executionPhase:"completed",
+          browserAgentRequired:true,
+          createdAtMs:Date.now() - 10_000,
+          completedAtMs:Date.now() - 1_000
+        }]
+      });
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      solveRequest = JSON.parse(String(options.body || "{}"));
+      return jsonResponse(JSON.parse(JSON.stringify(payload)));
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      return jsonResponse({ok:false, kind:"unexpected_old_result_poll"}, 500);
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    navigator:{
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    },
+    location:{
+      search:"?sid=default&webAgentTrial=mac",
+      pathname:"/pages/sapxep",
+      href:"http://127.0.0.1:1010/pages/sapxep?sid=default&webAgentTrial=mac"
+    },
+    TKBBrowserWasmExecutor:{
+      isEnabled(){ return false; },
+      canHandleRequest(){ return true; },
+      async probe(){ probeCalls += 1; return true; },
+      fullReferenceRefineCapable(){ return false; },
+      async activate(){ throw new Error("terminal fixture must not activate a lease"); },
+      async close(){ return true; },
+      state(){ return {probed:true, cpSatReady:false, highsReady:false, computeActive:false}; }
+    }
+  });
+  window.__TKB_WINDOWS_WEB_AGENT_TRIAL = true;
+  window.TKBAuth = {getSession:() => ({userId:"same-owner"})};
+  window.maybeInviteAgentBeforeSort = async () => {
+    throw new Error("the Windows trial must not invoke native Agent preflight");
+  };
+  oldFingerprint = hooks.durableScheduleFingerprint(data);
+
+  const result = await window.sapXepTuDongAll();
+
+  assert.ok(result);
+  assert.equal(stateCalls, 1);
+  assert.equal(solvePosts, 1);
+  assert.equal(resultPolls, 0);
+  assert.equal(probeCalls, 1);
+  assert.equal(solveRequest?.settings?.ui_agent_execution_policy, "web_agent_required");
+  assert.equal(solveRequest?.settings?.ui_execution_mode, "local");
+  assert.equal(hooks.countScheduledLessons(data), 2);
+  assert.equal(hooks.readPendingBackendJob(), null);
+});
+
+test("Windows WebAgent trial rejects a stale pending observer before any poll", async () => {
+  const data = makeData(2);
+  const oldJobId = "stale-trial-native-job";
+  let stateCalls = 0;
+  let resultPolls = 0;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      stateCalls += 1;
+      return jsonResponse({
+        ok:true,
+        jobs:[{
+          jobId:oldJobId,
+          serverOwned:true,
+          scheduleScope:"default",
+          scheduleFingerprint:"v1:old-schedule",
+          executor:"agent",
+          executionPhase:"agent_running",
+          createdAtMs:Date.now() - 5_000,
+          startedAtMs:Date.now() - 4_000
+        }],
+        queue:[],
+        completedJobs:[]
+      });
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      return jsonResponse({ok:false, kind:"unexpected_poll"}, 500);
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    navigator:{
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    },
+    location:{
+      search:"?sid=default&webAgentTrial=mac",
+      pathname:"/pages/sapxep",
+      href:"http://127.0.0.1:1010/pages/sapxep?sid=default&webAgentTrial=mac"
+    }
+  });
+  window.__TKB_WINDOWS_WEB_AGENT_TRIAL = true;
+  window.TKBAuth = {getSession:() => ({userId:"same-owner"})};
+  hooks.writePendingBackendJob(oldJobId, "v1:old-schedule", {
+    observeOnly:false,
+    localClickTimeline:false
+  });
+
+  const result = await hooks.resumePendingBackendJobOnLoad(0);
+
+  assert.equal(result, false);
+  assert.equal(stateCalls, 1);
+  assert.equal(resultPolls, 0);
+  assert.equal(hooks.readPendingBackendJob(), null);
+});
+
+test("an intentionally OFF installed Windows Agent posts one VPS-only job without Browser WASM", async () => {
+  const {data, payload} = makeLargeApplyFixture(1, 2);
+  let solvePosts = 0;
+  let solveRequest = null;
+  let browserCalls = 0;
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      return jsonResponse({ok:true, jobs:[], queue:[], completedJobs:[]});
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      solveRequest = JSON.parse(String(options.body || "{}"));
+      return jsonResponse(JSON.parse(JSON.stringify(payload)));
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    navigator:{
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    },
+    TKBBrowserWasmExecutor:{
+      canHandleRequest(){ browserCalls += 1; return true; },
+      async probe(){ browserCalls += 1; return true; },
+      async activate(){ browserCalls += 1; return true; },
+      async close(){ browserCalls += 1; return true; },
+      state(){ return {}; }
+    }
+  });
+  window.maybeInviteAgentBeforeSort = async () => true;
+  window.nativeAgentSortPolicy = () => ({
+    mode:"vps",
+    allowSort:true,
+    nativeRequired:false,
+    installedKnown:true,
+    agentId:"desktop-test-agent"
+  });
+
+  const result = await window.sapXepTuDongAll({manualAgentInvite:true});
+
+  assert.ok(result);
+  assert.equal(solvePosts, 1);
+  assert.equal(solveRequest?.settings?.ui_agent_execution_policy, "native_paused_vps");
+  assert.equal(solveRequest?.settings?.ui_native_agent_id, "desktop-test-agent");
+  assert.equal(solveRequest?.settings?.ui_native_agent_required, false);
+  assert.equal(solveRequest?.settings?.ui_agent_preference_enabled, false);
+  assert.equal("ui_browser_wasm_ready" in solveRequest.settings, false);
+  assert.equal("ui_browser_cpsat_ready" in solveRequest.settings, false);
+  assert.equal(browserCalls, 0);
+  assert.equal(hooks.countScheduledLessons(data), 2);
+  assert.equal(hooks.readPendingBackendJob(), null);
+});
+
+test("a native-required server rejection ends the Windows click without a VPS retry", async () => {
+  const {data} = makeLargeApplyFixture(1, 2);
+  let solvePosts = 0;
   const fetchImpl = async url => {
     const requestUrl = String(url);
     if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
@@ -1330,47 +2694,38 @@ test("an unresolved offline Agent check cannot delay the single VPS solve POST",
     }
     if(requestUrl.endsWith("/api/solve-data")){
       solvePosts += 1;
-      return jsonResponse(JSON.parse(JSON.stringify(payload)));
+      return jsonResponse({
+        ok:false,
+        kind:"native_agent_required",
+        error:"native Agent unavailable"
+      }, 428);
     }
     throw new Error(`Unexpected URL: ${url}`);
   };
+  const quietConsole = {log(){}, info(){}, warn(){}, error(){}};
   const {window, hooks} = loadBridge(data, fetchImpl, {
-    confirm(){
-      confirmCalls += 1;
-      throw new Error("manual Play must not open a native Agent dialog");
+    console:quietConsole,
+    navigator:{
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
     }
   });
-  const unresolvedAgentStatus = new Promise(() => {});
-  window.maybeInviteAgentBeforeSort = async options => {
-    inviteCalls += 1;
-    if(options?.preferVpsFallback === true){
-      Promise.resolve(unresolvedAgentStatus).catch(() => null);
-      return true;
-    }
-    return unresolvedAgentStatus;
+  let requiredAgentPanelChecks = 0;
+  window.maybeInviteAgentBeforeSort = async () => true;
+  window.checkNativeAgentNow = async () => {
+    requiredAgentPanelChecks += 1;
+    return false;
   };
 
-  let promptDeadline = 0;
-  let result;
-  try{
-    result = await Promise.race([
-      window.sapXepTuDongAll({manualAgentInvite:true}),
-      new Promise((_, reject) => {
-        promptDeadline = setTimeout(
-          () => reject(new Error("manual Play did not reach the VPS promptly")),
-          2_000
-        );
-      })
-    ]);
-  }finally{
-    clearTimeout(promptDeadline);
-  }
+  const result = await window.sapXepTuDongAll({manualAgentInvite:true});
 
-  assert.ok(result);
-  assert.equal(inviteCalls, 1);
-  assert.equal(confirmCalls, 0);
+  assert.equal(result, null);
   assert.equal(solvePosts, 1);
-  assert.equal(hooks.countScheduledLessons(data), 2);
+  assert.equal(requiredAgentPanelChecks, 1);
+  assert.equal(window.__TKB_SOLVER_LAST_ERROR_PAYLOAD?.kind, "native_agent_required");
+  assert.match(String(window.__TKB_SOLVER_LAST_ERROR || ""), /Agent/i);
+  assert.match(String(window.__TKB_SOLVER_LAST_ERROR || ""), /VPS/i);
+  assert.equal(hooks.countScheduledLessons(data), 0);
   assert.equal(hooks.readPendingBackendJob(), null);
 });
 
@@ -1473,7 +2828,13 @@ test("empty timetable planning does not call whole-school UI statistics", () => 
 
 test("expectedLessonCount observes same-length PCCM period edits", () => {
   const data = makeData(2);
-  const {hooks} = loadBridge(data);
+  const {window, hooks} = loadBridge(data);
+  window.calcTeacherTKBStats = () => ({
+    tsBuoiDay:2,
+    soBuoiDay1:2,
+    soBuoiTrong1:1,
+    soBuoiTrong2:0
+  });
   assert.equal(hooks.expectedLessonCount(data), 2);
 
   data.pccmTietMatrix["L1|Toán"] = 3;
@@ -1481,6 +2842,27 @@ test("expectedLessonCount observes same-length PCCM period edits", () => {
 
   const plan = hooks.buildFreshQualityAutoSortSettings(data, undefined, "fast");
   assert.equal(plan.settings.expected_scheduled_periods, 3);
+});
+
+test("teacherless PCCM rows do not inflate completion or reject a complete payload", async () => {
+  const {data, payload} = makeLargeApplyFixture(1, 2);
+  data.mon.push({ten:"Văn", khoi:"10", sotiet:3});
+  data.monhoc.push({ten:"Văn", ma:"VAN"});
+  data.pccmMatrix["L1|Văn"] = "   ";
+  data.pccmTietMatrix["L1|Văn"] = 3;
+  const {window, hooks} = loadBridge(data);
+  window.TKBConstraints = {
+    async validateAllAsync(){ return []; }
+  };
+  window.saveStore = () => true;
+
+  assert.equal(hooks.expectedLessonCount(data), 2);
+  const applied = await window.TKBRustAPI.applyPayload(payload);
+
+  assert.equal(applied.metrics.expected_periods, 2);
+  assert.equal(applied.metrics.scheduled_periods, 2);
+  assert.equal(applied.metrics.unassigned_periods, 0);
+  assert.equal(hooks.buildAutomaticAutoSortPlan(data).kind, "refine_complete");
 });
 
 test("planner exposes one automatic arrange button and no manual duration input", () => {
@@ -1583,8 +2965,21 @@ test("iPhone and iPad keep an explicit custom duration while blank remains autom
   }
 });
 
-test("browser readiness marker is serialized only after a successful eligible WASM probe", async () => {
-  for(const browserReady of [true, false]){
+test("browser readiness and qualified desktop full-reference deadline are serialized after probing", async () => {
+  for(const {
+    browserReady,
+    cpSatReady,
+    highsReady,
+    fullReferenceDeadline = false,
+    customSeconds = 0
+  } of [
+    {browserReady:true, cpSatReady:true, highsReady:true, fullReferenceDeadline:true},
+    {browserReady:true, cpSatReady:true, highsReady:true, fullReferenceDeadline:true, customSeconds:120},
+    {browserReady:true, cpSatReady:true, highsReady:true},
+    {browserReady:true, cpSatReady:true, highsReady:false},
+    {browserReady:true, cpSatReady:false, highsReady:true},
+    {browserReady:false, cpSatReady:false, highsReady:false}
+  ]){
     const data = makeData(2);
     const subject = data.mon[0].ten;
     data.tkb = {
@@ -1610,16 +3005,25 @@ test("browser readiness marker is serialized only after a successful eligible WA
     };
     let posted = null;
     let probeCalls = 0;
+    let fullReferenceGateCalls = 0;
     let closeCalls = 0;
     const executor = {
       isEnabled(){ return browserReady; },
       canHandleRequest(){ return true; },
       async probe(){ probeCalls += 1; return browserReady; },
+      fullReferenceRefineCapable(request){
+        fullReferenceGateCalls += 1;
+        assert.equal(probeCalls, 1, "the heavy deadline gate must run after the exact probe");
+        assert.equal(request.settings.ui_unified_solve_kind, "refine_complete");
+        return fullReferenceDeadline;
+      },
       async activate(){ throw new Error("a direct test response must not activate a lease"); },
       async close(){ closeCalls += 1; return true; },
       state(){
         return {
           probed:browserReady,
+          cpSatReady,
+          highsReady,
           active:false,
           computeActive:false,
           localComputeRuns:0,
@@ -1642,29 +3046,205 @@ test("browser readiness marker is serialized only after a successful eligible WA
     window.calcSchoolTKBStats = () => ({soTiet:2, daXepTiet:2, chuaXepTiet:0});
     const plan = hooks.buildAutomaticAutoSortPlan(data);
     assert.equal(plan.kind, "refine_complete");
+    if(customSeconds > 0){
+      plan.settings.ui_custom_solve_duration_seconds = customSeconds;
+      plan.settings.ui_custom_solve_duration_override = true;
+    }
 
     const payload = await hooks.postSolve(plan.settings, data);
 
     assert.equal(payload.ok, true);
-    assert.equal(probeCalls, 1);
+    assert.equal(probeCalls, browserReady ? 1 : 0);
     assert.ok(posted);
+    assert.equal(
+      posted.settings.ui_agent_execution_policy,
+      browserReady ? "web_agent_required" : "vps_only"
+    );
+    assert.equal(posted.settings.ui_execution_mode, browserReady ? "local" : "vps");
+    assert.equal(posted.settings.ui_browser_agent_required, browserReady);
+    assert.equal(posted.settings.ui_native_agent_required, false);
     assert.equal(posted.settings.ui_agent_preference_enabled, browserReady);
-    assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserWasmEligible, true);
+    assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserWasmEligible, browserReady);
     assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserWasmProbed, browserReady);
     assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserWasmActivated, false);
     assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserWasmFinalState.computeActive, false);
     assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserWasmFinalState.localAcceptedResults, 0);
     if(browserReady){
+      const exactReady = cpSatReady && highsReady;
       assert.equal(posted.settings.ui_browser_wasm_ready, true);
+      assert.equal(posted.settings.ui_browser_cpsat_ready === true, exactReady);
+      assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserCpSatReady, exactReady);
       assert.equal(closeCalls, 1);
+      assert.equal(fullReferenceGateCalls, customSeconds > 0 ? 0 : 1);
     }else{
       assert.equal(Object.hasOwn(posted.settings, "ui_browser_wasm_ready"), false);
+      assert.equal(Object.hasOwn(posted.settings, "ui_browser_cpsat_ready"), false);
       assert.equal(closeCalls, 0);
+      assert.equal(fullReferenceGateCalls, 0);
+    }
+    if(fullReferenceDeadline && customSeconds <= 0){
+      assert.equal(posted.settings.optimization_time_limit_seconds, 270);
+      assert.equal(posted.settings.optimization_adaptive_time_limit_seconds, 270);
+      assert.equal(posted.settings.overall_time_limit_seconds, 270);
+      assert.equal(posted.settings.integrated_time_limit, 270);
+      assert.equal(posted.settings.progress_estimate_seconds, 270);
+      assert.equal(posted.settings.ui_unified_refine_ceiling_seconds, 270);
+      assert.equal(posted.settings.ui_incremental_progress_estimate_seconds, 270);
+      assert.equal(posted.settings.ui_progress_budget_seconds, 270);
+      assert.equal(posted.settings.backend_deadline_ms, 270000);
+      assert.equal(posted.settings.native_global_deadline_ms, 270000);
+      assert.equal(posted.settings.ui_browser_full_reference_refine_deadline_extended, true);
+      assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.budgetSeconds, 270);
+      assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.backendDeadlineMs, 270000);
+      assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.timeoutMs, 300000);
+      assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserFullReferenceDeadlineExtended, true);
+    }else{
+      const expectedSeconds = customSeconds > 0 ? customSeconds : 60;
+      assert.equal(posted.settings.backend_deadline_ms, expectedSeconds * 1000);
+      assert.equal(posted.settings.native_global_deadline_ms, expectedSeconds * 1000);
+      assert.equal(
+        Object.hasOwn(posted.settings, "ui_browser_full_reference_refine_deadline_extended"),
+        false
+      );
+      assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserFullReferenceDeadlineExtended, false);
     }
   }
 });
 
-test("server VPS fallback remains authoritative after Browser Agent preflight", async () => {
+test("qualified desktop Browser Automatic gets one honest 270-second zero/zero window", async () => {
+  const data = makeData(2);
+  const subject = data.mon[0].ten;
+  const result = {
+    ok:true,
+    classes:[{id:"L1", name:"10A1"}],
+    lessons:[
+      {classId:"L1", subject, teacher:"GV01", day:2, session:"AM", period:1},
+      {classId:"L1", subject, teacher:"GV01", day:2, session:"AM", period:2}
+    ],
+    metrics:{
+      scheduled_periods:2,
+      expected_periods:2,
+      unassigned_periods:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      app_constraint_violation_count:0,
+      one_period_teacher_sessions:0,
+      teacher_gap2_sessions:0,
+      teacher_sessions:1,
+      gap_distribution:{"0":1},
+      gap_total:0
+    },
+    validation:{hard_ok:true, violations:[]},
+    solver:{runtime_settings:{}},
+    unassignedLessons:[],
+    warnings:[]
+  };
+  let posted = null;
+  let probeCalls = 0;
+  let strictGateCalls = 0;
+  const executor = {
+    isEnabled(){ return true; },
+    canHandleRequest(){ return true; },
+    async probe(){ probeCalls += 1; return true; },
+    fullReferenceRefineCapable(){ return false; },
+    strictFreshAutomaticCapable(request){
+      strictGateCalls += 1;
+      assert.equal(probeCalls, 1);
+      assert.equal(request.settings.ui_unified_solve_kind, "fresh_complete_first");
+      return true;
+    },
+    async activate(){ throw new Error("a direct test response must not activate a lease"); },
+    async close(){ return true; },
+    state(){
+      return {
+        probed:true,
+        cpSatReady:true,
+        highsReady:true,
+        active:false,
+        computeActive:false,
+        localComputeRuns:0,
+        localAcceptedResults:0
+      };
+    }
+  };
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-data")){
+      posted = JSON.parse(options.body);
+      return jsonResponse(result);
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {hooks, window} = loadBridge(data, fetchImpl, {TKBBrowserWasmExecutor:executor});
+  const plan = hooks.buildAutomaticAutoSortPlan(data);
+  assert.equal(plan.kind, "fresh_complete_first");
+
+  const payload = await hooks.postSolve(plan.settings, data);
+
+  assert.equal(payload.ok, true);
+  assert.equal(strictGateCalls, 1);
+  assert.ok(posted);
+  assert.equal(posted.settings.ui_agent_execution_policy, "web_agent_required");
+  assert.equal(posted.settings.overall_time_limit_seconds, 270);
+  assert.equal(posted.settings.backend_deadline_ms, 270000);
+  assert.equal(posted.settings.native_global_deadline_ms, 270000);
+  assert.equal(posted.settings.ui_browser_strict_automatic_deadline_extended, true);
+  assert.equal(
+    Object.hasOwn(posted.settings, "ui_browser_full_reference_refine_deadline_extended"),
+    false
+  );
+  assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserStrictAutomaticDeadlineExtended, true);
+  assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.timeoutMs, 300000);
+});
+
+test("enabled Browser Agent preflight failure is terminal before any VPS job is posted", async () => {
+  const data = makeData(2);
+  let solvePosts = 0;
+  let canHandleCalls = 0;
+  let probeCalls = 0;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      return jsonResponse({ok:true, jobs:[], queue:[], completedJobs:[]});
+    }
+    if(requestUrl.endsWith("/api/solve-data")){
+      solvePosts += 1;
+      return jsonResponse({ok:false, kind:"unexpected_vps_post"}, 500);
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    TKBBrowserWasmExecutor:{
+      isEnabled(){ return true; },
+      canHandleRequest(){ canHandleCalls += 1; return true; },
+      async probe(){ probeCalls += 1; return false; },
+      state(){ return {probed:false, active:false, computeActive:false}; }
+    }
+  });
+  window.calcSchoolTKBStats = () => ({soTiet:2, daXepTiet:0, chuaXepTiet:2});
+  const plan = hooks.buildAutomaticAutoSortPlan(data);
+
+  await assert.rejects(
+    hooks.postSolve(plan.settings, data),
+    error => error?.kind === "local_agent_unavailable"
+      && error?.localModeRequired === true
+      && error?.executionMode === "local"
+  );
+
+  assert.equal(canHandleCalls, 1);
+  assert.equal(probeCalls, 1);
+  assert.equal(solvePosts, 0, "Local preflight failure must not create a VPS job");
+  assert.equal(hooks.readPendingBackendJob(), null);
+  assert.equal(
+    window.__TKB_RUST_LAST_REQUEST_DEBUG.settings.ui_agent_execution_policy,
+    "web_agent_required"
+  );
+  assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.settings.ui_execution_mode, "local");
+});
+
+test("a VPS admission is rejected by a Browser-required job on the same job", async () => {
   const data = makeData(2);
   const subject = data.mon[0].ten;
   data.tkb = {
@@ -1692,17 +3272,23 @@ test("server VPS fallback remains authoritative after Browser Agent preflight", 
   };
   let activateCalls = 0;
   let closeCalls = 0;
+  let cancelCalls = 0;
+  let activationOptions = null;
   let posted = null;
   let jobId = "";
   const executor = {
     isEnabled(){ return true; },
     canHandleRequest(){ return true; },
     async probe(){ return true; },
-    async activate(){ activateCalls += 1; return true; },
+    async activate(options){
+      activateCalls += 1;
+      activationOptions = options;
+      return true;
+    },
     async close(reason, options){
       closeCalls += 1;
-      assert.equal(reason, "vps_executor_selected");
-      assert.equal(options.failLease, false);
+      assert.equal(reason, "solve_finished");
+      assert.equal(options.failLease, true);
       return true;
     },
     state(){
@@ -1733,6 +3319,10 @@ test("server VPS fallback remains authoritative after Browser Agent preflight", 
         retryAfterMs:250
       }, 202);
     }
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelCalls += 1;
+      return jsonResponse({ok:true, cancelRequested:true});
+    }
     if(requestUrl.includes("/api/solve-result")){
       return jsonResponse(JSON.parse(JSON.stringify(data.tkbSolverResult)));
     }
@@ -1751,14 +3341,145 @@ test("server VPS fallback remains authoritative after Browser Agent preflight", 
   );
   assert.equal(plan.settings.optimization_focus, "sessions");
 
-  const payload = await hooks.postSolve(plan.settings, data);
-
-  assert.equal(payload.ok, true);
+  await assert.rejects(
+    hooks.postSolve(plan.settings, data),
+    error => error?.kind === "web_agent_required"
+      && error?.localModeRequired === true
+  );
   assert.equal(posted.settings.ui_browser_wasm_ready, true);
-  assert.equal(activateCalls, 0);
+  assert.equal(activateCalls, 0, "a VPS response must not reclaim Browser Agent");
   assert.equal(closeCalls, 1);
-  assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.serverExecutor, "vps");
+  assert.equal(cancelCalls, 1, "a stale VPS job must be cancelled before Local failure");
+  assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.serverExecutor, undefined);
   assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserWasmActivated, false);
+});
+
+test("a connected Browser-required solve rejects one later VPS transition", async () => {
+  const data = makeData(2);
+  const subject = data.mon[0].ten;
+  data.tkb = {
+    L1:{thu2:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]}}
+  };
+  data.tkbSolverResult = {
+    ok:true,
+    lessons:[
+      {classId:"L1", subject, teacherId:"GV01", day:"thu2", session:"sang", period:0},
+      {classId:"L1", subject, teacherId:"GV01", day:"thu2", session:"sang", period:1}
+    ],
+    metrics:{
+      scheduled_periods:2,
+      expected_periods:2,
+      unassigned_periods:0,
+      teacher_sessions:1,
+      one_period_teacher_sessions:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      app_constraint_violation_count:0
+    },
+    validation:{hard_ok:true},
+    unassignedLessons:[],
+    solver:{runtime_settings:{}}
+  };
+  let jobId = "";
+  let resultPolls = 0;
+  let cancelCalls = 0;
+  let executorActive = false;
+  const activationJobIds = [];
+  const executor = {
+    isEnabled(){ return true; },
+    canHandleRequest(){ return true; },
+    async probe(){ return true; },
+    async activate(options){
+      activationJobIds.push(options.jobId);
+      executorActive = true;
+      return true;
+    },
+    async close(){ executorActive = false; return true; },
+    state(){
+      return {
+        probed:true,
+        hasWorker:true,
+        workerCount:1,
+        active:executorActive,
+        jobId:executorActive ? jobId : "",
+        computeActive:false,
+        localComputeRuns:0,
+        localAcceptedResults:0
+      };
+    }
+  };
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-data")){
+      const posted = JSON.parse(options.body);
+      jobId = posted.settings.ui_solve_run_id;
+      return jsonResponse({
+        ok:false,
+        running:true,
+        serverOwned:true,
+        kind:"solver_started",
+        jobId,
+        executor:"agent",
+        executionPhase:"agent_waiting",
+        retryAfterMs:250
+      }, 202);
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      if(resultPolls === 1){
+        return jsonResponse({
+          ok:false,
+          running:true,
+          serverOwned:true,
+          kind:"solver_running",
+          jobId,
+          executor:"agent",
+          executionPhase:"agent_running",
+          retryAfterMs:250
+        }, 202);
+      }
+      if(resultPolls === 2){
+        executorActive = false;
+        return jsonResponse({
+          ok:false,
+          running:true,
+          serverOwned:true,
+          kind:"solver_running",
+          jobId,
+          executor:"vps",
+          executionPhase:"vps_running",
+          retryAfterMs:250
+        }, 202);
+      }
+      return jsonResponse(JSON.parse(JSON.stringify(data.tkbSolverResult)));
+    }
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelCalls += 1;
+      return jsonResponse({ok:true, cancelRequested:true});
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const clock = createFakeClock();
+  const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+    TKBBrowserWasmExecutor:executor
+  }));
+  window.calcSchoolTKBStats = () => ({soTiet:2, daXepTiet:2, chuaXepTiet:0});
+  const plan = hooks.applyRequestedSolveModeToPlan(
+    hooks.buildAutomaticAutoSortPlan(data),
+    "optimize_sessions",
+    data,
+    2
+  );
+
+  await assert.rejects(
+    hooks.postSolve(plan.settings, data),
+    error => error?.kind === "web_agent_required"
+      && error?.localModeRequired === true
+  );
+  assert.equal(resultPolls, 2);
+  assert.equal(cancelCalls, 1);
+  assert.deepEqual(activationJobIds, [jobId]);
 });
 
 test("focused Agent admission and legacy admission still activate Browser Agent", async () => {
@@ -1851,12 +3572,12 @@ test("focused Agent admission and legacy admission still activate Browser Agent"
     assert.equal(payload.ok, true);
     assert.equal(activateCalls, 1);
     assert.equal(closeCalls, 1, "the activated executor closes after the server result");
-    assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.serverExecutor, executorValue || "");
+    assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.serverExecutor, "agent");
     assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.browserWasmActivated, true);
   }
 });
 
-test("an empty duration field allows a 130-second first-quality gate and 180-second refinement", () => {
+test("an empty duration field spends the remaining 130-second job on first-click quality", () => {
   const storage = memoryStorage();
   const durationInput = {
     value:"",
@@ -1885,16 +3606,16 @@ test("an empty duration field allows a 130-second first-quality gate and 180-sec
   assert.equal(first.settings.overall_time_limit_seconds, 130);
   assert.equal(first.settings.backend_deadline_ms, 130000);
   assert.equal(first.settings.native_global_deadline_ms, 130000);
-  assert.equal(first.settings.optimization_continue_quality_search, false);
-  assert.equal(first.settings.optimization_first_click_quality_time_limit_seconds, 40);
+  assert.equal(first.settings.optimization_continue_quality_search, true);
+  assert.equal(first.settings.optimization_first_click_quality_time_limit_seconds, 50);
   assert.equal(first.settings.ui_allow_incomplete_retry_after_single_pass, false);
-  assert.equal(first.settings.ui_stop_after_first_complete_schedule, true);
-  assert.equal(first.settings.optimization_first_click_continue_local_after_complete, false);
-  assert.equal(first.settings.optimization_first_click_skip_global_quality, true);
+  assert.equal(first.settings.ui_stop_after_first_complete_schedule, false);
+  assert.equal(first.settings.optimization_first_click_continue_local_after_complete, true);
+  assert.equal(first.settings.optimization_first_click_skip_global_quality, false);
   assert.equal(first.settings.optimization_first_click_strict_quality_gate, true);
   assert.equal(first.settings.optimization_first_click_strict_quality_gate_seconds, 55);
-  assert.equal(first.settings.optimization_first_click_lean_global_quality, true);
-  assert.equal(first.settings.optimization_first_click_quality_stop_at_cap, true);
+  assert.equal(first.settings.optimization_first_click_lean_global_quality, false);
+  assert.equal(first.settings.optimization_first_click_quality_stop_at_cap, false);
   assert.equal(first.settings.optimization_first_click_local_lns_time_limit_seconds, 18);
   assert.equal(first.settings.ui_disable_automatic_retry, true);
   assert.equal(first.settings.complete_schedule_seed_retry_max_runs, 0);
@@ -1912,12 +3633,12 @@ test("an empty duration field allows a 130-second first-quality gate and 180-sec
   assert.equal(second.kind, "refine_complete");
   assert.equal(second.settings.optimization_refinement_round, 1);
   assert.equal(durationInput.value, "");
-  assert.equal(second.settings.overall_time_limit_seconds, 180);
-  assert.equal(second.settings.backend_deadline_ms, 180000);
-  assert.equal(second.settings.native_global_deadline_ms, 180000);
+  assert.equal(second.settings.overall_time_limit_seconds, 60);
+  assert.equal(second.settings.backend_deadline_ms, 60000);
+  assert.equal(second.settings.native_global_deadline_ms, 60000);
   assert.equal(second.settings.optimization_benders_lean_refinement_periods, true);
   assert.equal(second.settings.optimization_continue_quality_search, true);
-  assert.equal(second.settings.ui_stop_refinement_when_good_enough, false);
+  assert.equal(second.settings.ui_stop_refinement_when_good_enough, true);
   assert.equal(second.settings.optimization_stop_on_stagnation, true);
   assert.equal(second.settings.optimization_benders_accept_stagnant_iterations, 2);
   assert.equal(second.settings.ui_existing_incumbent_revalidated, true);
@@ -1928,16 +3649,16 @@ test("an empty duration field allows a 130-second first-quality gate and 180-sec
   const third = hooks.buildAutomaticAutoSortPlan(data);
   assert.equal(third.settings.optimization_refinement_round, 2);
   assert.equal(durationInput.value, "");
-  assert.equal(third.settings.overall_time_limit_seconds, 180);
-  assert.equal(third.settings.backend_deadline_ms, 180000);
-  assert.equal(third.settings.native_global_deadline_ms, 180000);
+  assert.equal(third.settings.overall_time_limit_seconds, 60);
+  assert.equal(third.settings.backend_deadline_ms, 60000);
+  assert.equal(third.settings.native_global_deadline_ms, 60000);
 
   data.tkbSolverResult.metrics.optimization_refinement_round = 2;
   data.tkbSolverResult.solver.runtime_settings.optimization_refinement_round = 2;
   const later = hooks.buildAutomaticAutoSortPlan(data);
   assert.equal(later.settings.optimization_refinement_round, 3);
   assert.equal(durationInput.value, "");
-  assert.equal(later.settings.overall_time_limit_seconds, 180);
+  assert.equal(later.settings.overall_time_limit_seconds, 60);
 });
 
 test("a severely rough complete timetable enters strict wide-cap incumbent refinement", () => {
@@ -1987,12 +3708,12 @@ test("a severely rough complete timetable enters strict wide-cap incumbent refin
   assert.equal(plan.qualityDebtFreshRebuild, false);
   assert.equal(plan.settings.ui_unified_solve_kind, "refine_complete");
   assert.notEqual(plan.settings.ui_quality_debt_fresh_rebuild, true);
-  assert.equal(plan.settings.overall_time_limit_seconds, 180);
-  assert.equal(plan.settings.backend_deadline_ms, 180000);
+  assert.equal(plan.settings.overall_time_limit_seconds, 60);
+  assert.equal(plan.settings.backend_deadline_ms, 60000);
   assert.equal(
     effective.backend_deadline_ms,
-    180000,
-    "the final wire normalization must preserve the 180-second refinement ceiling"
+    60000,
+    "the final wire normalization must preserve the 60-second continued-refinement slice"
   );
   assert.equal(plan.settings.preserve_existing_tkb, true);
   assert.equal(plan.settings.allow_solver_warm_start, true);
@@ -2194,6 +3915,197 @@ test("normal refinement compares candidates with physical quality instead of sta
   assert.equal(data.tkbSolverResult.solver.runtime_settings.optimization_refinement_round, 2);
 });
 
+test("direct Browser Agent refinement applies only zero-zero progress and rejects rough incumbents", async () => {
+  const incumbentQuality = {
+    teacherSessions:612,
+    onePeriod:108,
+    gap1:80,
+    gap2:16
+  };
+  const scenarios = [
+    {
+      name:"better",
+      quality:{teacherSessions:538, onePeriod:0, gap1:69, gap2:0},
+      applied:true
+    },
+    {
+      name:"equal",
+      quality:{...incumbentQuality},
+      applied:false
+    },
+    {
+      name:"worse",
+      quality:{teacherSessions:613, onePeriod:109, gap1:81, gap2:17},
+      applied:false
+    }
+  ];
+
+  const metricsFor = quality => ({
+    scheduled_periods:2,
+    expected_periods:2,
+    unassigned_periods:0,
+    app_constraint_violation_count:0,
+    hard_ok:true,
+    core_hard_ok:true,
+    teacher_sessions:quality.teacherSessions,
+    one_period_teacher_sessions:quality.onePeriod,
+    teacher_gap2_sessions:quality.gap2,
+    gap_distribution:{
+      "0":Math.max(0, quality.teacherSessions - quality.gap1 - quality.gap2),
+      "1":quality.gap1,
+      "2":quality.gap2
+    },
+    quality_priority_order:"one_period_teacher_sessions_gap2_gap1"
+  });
+
+  for(const scenario of scenarios){
+    const {data, payload:basePayload} = makeLargeApplyFixture(1, 2);
+    const subject = String(data.mon[0].ten);
+    const incumbentLessons = JSON.parse(JSON.stringify(basePayload.lessons));
+    data.tkb = {
+      L1:{thu2:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]}}
+    };
+    data.tkbLessonTeachers = {[`L1|${subject}`]:"GV01"};
+    data.tkbLessonRooms = {[`L1|${subject}`]:"R1"};
+    data.tkbSolverResult = {
+      ...JSON.parse(JSON.stringify(basePayload)),
+      lessons:incumbentLessons,
+      metrics:{...basePayload.metrics, ...metricsFor(incumbentQuality)},
+      validation:{hard_ok:true, violations:[]},
+      solver:{
+        runtime_settings:{
+          auto_sort_mode:"teacher_session_opt",
+          quality_priority_order:"one_period_teacher_sessions_gap2_gap1",
+          optimization_refinement_round:1
+        }
+      }
+    };
+
+    const candidate = JSON.parse(JSON.stringify(basePayload));
+    candidate.lessons = candidate.lessons.map(lesson => ({...lesson, day:3}));
+    candidate.metrics = {...candidate.metrics, ...metricsFor(scenario.quality)};
+    candidate.validation = {hard_ok:true, violations:[]};
+    candidate.solver = {
+      runtime_settings:{
+        auto_sort_mode:"teacher_session_opt",
+        quality_priority_order:"one_period_teacher_sessions_gap2_gap1",
+        optimization_refinement_round:2
+      }
+    };
+
+    const clock = createFakeClock();
+    let posted = null;
+    let jobId = "";
+    let executorActive = false;
+    let activationCalls = 0;
+    let closeCalls = 0;
+    let resultPolls = 0;
+    const executor = {
+      isEnabled(){ return true; },
+      canHandleRequest(){ return true; },
+      async probe(){ return true; },
+      async activate(options){
+        activationCalls += 1;
+        executorActive = true;
+        assert.equal(options.jobId, jobId, scenario.name);
+        return true;
+      },
+      async close(){
+        closeCalls += 1;
+        executorActive = false;
+        return true;
+      },
+      state(){
+        return {
+          probed:true,
+          cpSatReady:true,
+          highsReady:true,
+          hasWorker:true,
+          workerCount:6,
+          active:executorActive,
+          jobId:executorActive ? jobId : "",
+          computeActive:executorActive,
+          localComputeRuns:activationCalls,
+          localAcceptedResults:0
+        };
+      }
+    };
+    const fetchImpl = async (url, options = {}) => {
+      const requestUrl = String(url);
+      if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+      if(requestUrl.endsWith("/api/solve-data")){
+        posted = JSON.parse(options.body);
+        jobId = posted.settings.ui_solve_run_id;
+        return jsonResponse({
+          ok:false,
+          running:true,
+          serverOwned:true,
+          kind:"solver_started",
+          jobId,
+          executor:"agent",
+          executionPhase:"agent_waiting",
+          retryAfterMs:250
+        }, 202);
+      }
+      if(requestUrl.includes("/api/solve-result")){
+        resultPolls += 1;
+        return jsonResponse(JSON.parse(JSON.stringify(candidate)));
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+    const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+      TKBBrowserWasmExecutor:executor
+    }));
+    window.calcSchoolTKBStats = () => ({soTiet:2, daXepTiet:2, chuaXepTiet:0});
+    window.calcTeacherTKBStats = () => ({
+      tsBuoiDay:incumbentQuality.teacherSessions,
+      soBuoiDay1:incumbentQuality.onePeriod,
+      soBuoiTrong1:incumbentQuality.gap1,
+      soBuoiTrong2:incumbentQuality.gap2
+    });
+    const plan = hooks.buildAutomaticAutoSortPlan(data, 2, 0);
+    const timetableBefore = JSON.stringify(data.tkb);
+
+    assert.equal(plan.kind, "refine_complete", scenario.name);
+    assert.equal(plan.settings.ui_use_existing_complete_incumbent, true, scenario.name);
+    assert.equal(plan.settings.ui_existing_incumbent_revalidated, true, scenario.name);
+    const result = await window.TKBRustAPI.solve({
+      ask:false,
+      settings:plan.settings,
+      singlePass:true
+    });
+
+    if(scenario.applied) assert.ok(result, scenario.name);
+    else assert.equal(result, null, scenario.name);
+    assert.ok(posted, scenario.name);
+    assert.equal(posted.settings.ui_unified_solve_kind, "refine_complete", scenario.name);
+    assert.equal(posted.settings.ui_use_existing_complete_incumbent, true, scenario.name);
+    assert.equal(posted.settings.ui_existing_incumbent_revalidated, true, scenario.name);
+    assert.equal(posted.settings.ui_browser_cpsat_ready, true, scenario.name);
+    assert.equal(activationCalls, 1, scenario.name);
+    assert.equal(closeCalls, 1, scenario.name);
+    assert.equal(resultPolls, 1, scenario.name);
+
+    if(scenario.applied){
+      assert.notEqual(JSON.stringify(data.tkb), timetableBefore, scenario.name);
+      assert.equal(data.tkb.L1.thu3.sang[0], subject, scenario.name);
+      assert.equal(result.metrics.teacher_sessions, 538, scenario.name);
+      assert.equal(result.metrics.one_period_teacher_sessions, 0, scenario.name);
+      assert.equal(data.tkbSolverResult.metrics.one_period_teacher_sessions, 0, scenario.name);
+    }else{
+      assert.equal(JSON.stringify(data.tkb), timetableBefore, scenario.name);
+      assert.equal(data.tkbSolverResult.metrics.teacher_sessions, incumbentQuality.teacherSessions, scenario.name);
+      assert.equal(data.tkbSolverResult.metrics.one_period_teacher_sessions, incumbentQuality.onePeriod, scenario.name);
+      assert.equal(data.tkbSolverResult.metrics.one_period_teacher_sessions, incumbentQuality.onePeriod, scenario.name);
+    }
+    assert.equal(
+      data.tkbSolverResult.solver.runtime_settings.optimization_refinement_round,
+      scenario.applied ? 2 : 1,
+      scenario.name
+    );
+  }
+});
+
 test("failed blank fresh clicks add five seconds without changing the user input", () => {
   const storage = memoryStorage();
   const durationInput = {
@@ -2268,9 +4180,9 @@ test("a complete timetable starts only one blank-field adaptive refinement witho
 
   const plan = hooks.buildAutomaticAutoSortPlan(data);
   assert.equal(plan.kind, "refine_complete");
-  assert.equal(plan.settings.overall_time_limit_seconds, 180);
-  assert.equal(plan.settings.backend_deadline_ms, 180000);
-  assert.equal(plan.settings.native_global_deadline_ms, 180000);
+  assert.equal(plan.settings.overall_time_limit_seconds, 60);
+  assert.equal(plan.settings.backend_deadline_ms, 60000);
+  assert.equal(plan.settings.native_global_deadline_ms, 60000);
   assert.deepEqual(prompts, []);
 
   const body = BRIDGE_SOURCE.slice(
@@ -2364,7 +4276,7 @@ test("custom seconds duration overrides every refinement round without weakening
   assert.equal(effective.ui_keep_better_existing_on_resort, true);
   assert.equal(effective.require_complete_schedule, true);
   assert.equal(effective.optimization_continue_quality_search, true);
-  assert.equal(effective.ui_stop_refinement_when_good_enough, false);
+  assert.equal(effective.ui_stop_refinement_when_good_enough, true);
   assert.equal(effective.optimization_stop_on_stagnation, true);
   assert.equal(effective.optimization_benders_accept_stagnant_iterations, 2);
 });
@@ -2483,7 +4395,7 @@ test("automatic solver ignores legacy Fast preference and starts quality complet
   assert.equal(plan.settings.ui_solver_preset, "balanced");
   assert.equal(plan.settings.auto_sort_mode, "teacher_session_opt");
   assert.equal(plan.settings.optimization_time_limit_seconds, 130);
-  assert.equal(plan.settings.ui_unified_reference_watchdog_reserve_ms, 10000);
+  assert.equal(plan.settings.ui_unified_reference_watchdog_reserve_ms, 20000);
   assert.equal(plan.settings.ui_client_timeout_reserve_ms, 30000);
   assert.equal(plan.settings.ui_allow_quality_after_single_pass, false);
   assert.equal(plan.settings.target_gap1_sessions, 0);
@@ -2520,37 +4432,55 @@ test("desktop scheduler modes map to one focused backend contract", () => {
   const {hooks} = loadBridge(data);
 
   const modes = {
-    optimize_singletons:"singletons",
-    optimize_sessions:"sessions",
-    optimize_gaps:"gaps"
+    optimize_singletons:{focus:"singletons", gapTarget:"", metric:"one_period_teacher_sessions"},
+    optimize_sessions:{focus:"sessions", gapTarget:"", metric:"teacher_sessions"},
+    optimize_gap2:{focus:"gaps", gapTarget:"gap2", metric:"teacher_gap2_sessions"},
+    optimize_gap1:{focus:"gaps", gapTarget:"gap1", metric:"teacher_gap1_sessions"}
   };
-  Object.entries(modes).forEach(([mode, focus]) => {
+  Object.entries(modes).forEach(([mode, contract]) => {
+    const {focus, gapTarget, metric} = contract;
     const base = hooks.buildAutomaticAutoSortPlan(data);
     const plan = hooks.applyRequestedSolveModeToPlan(base, mode, data, 2);
     const effective = hooks.effectiveSettingsForSolve(plan.settings, data);
     assert.equal(plan.kind, "refine_complete");
     assert.equal(plan.settings.ui_requested_solve_mode, mode);
     assert.equal(plan.settings.optimization_focus, focus);
+    assert.equal(plan.settings.optimization_gap_target || "", gapTarget);
+    assert.equal(plan.settings.ui_progress_metric_focus, metric);
     assert.equal(plan.settings.ui_progress_mode, "work");
     assert.equal(plan.settings.ui_use_existing_complete_incumbent, true);
     assert.equal(plan.settings.ui_return_complete_incumbent_on_existing_optimize_failure, true);
     assert.equal(effective.optimization_focus, focus);
+    assert.equal(effective.optimization_two_stage_teacher_quality, false);
+    assert.equal(effective.quality_priority_order, undefined);
+    assert.equal(effective.minimize_one_period_sessions, focus === "singletons");
     assert.equal(effective.minimize_sessions, focus === "sessions");
     assert.equal(effective.minimize_teacher_gaps, focus === "gaps");
-    assert.equal(effective.period_max_teacher_gap, focus === "gaps" ? 1 : "off");
-    if(focus === "singletons"){
-      assert.equal(effective.browser_wasm_singleton_progressive_search, true);
-      assert.equal(effective.browser_wasm_singleton_max_waves, 6);
-      assert.equal(effective.browser_wasm_singleton_wave_deadline_ms, 10000);
-    }
+    assert.equal(effective.period_max_teacher_gap, "off");
+    assert.equal(effective.optimization_benders_minimize_one_period_sessions, focus === "singletons");
+    assert.equal(effective.optimization_benders_minimize_teacher_sessions, focus === "sessions");
+    assert.equal(effective.optimization_benders_minimize_period_gaps, focus === "gaps");
+    assert.equal(effective.optimization_benders_minimize_hint_distance, false);
+    assert.equal(effective.target_one_period_teacher_sessions, focus === "singletons" ? 0 : undefined);
+    assert.equal(
+      effective.target_teacher_sessions == null,
+      focus !== "sessions"
+    );
+    assert.equal(effective.target_gap2_plus_sessions, gapTarget === "gap2" ? 0 : undefined);
+    assert.equal(effective.target_gap1_sessions, gapTarget === "gap1" ? 0 : undefined);
+    assert.equal(effective.optimization_benders_lock_teacher_sessions, undefined);
+    assert.equal(effective.optimization_benders_max_teacher_gap1_sessions, 0);
+    assert.equal(effective.optimization_benders_max_teacher_gap2_plus_sessions, 0);
+    assert.equal(effective.optimization_benders_max_teacher_gap_periods, 0);
     if(focus === "sessions"){
       assert.equal(effective.browser_wasm_session_deep_search, true);
       assert.equal(effective.browser_wasm_session_deep_max_waves, 16);
       assert.equal(effective.browser_wasm_session_wave_deadline_ms, 15000);
     }
     if(focus === "gaps"){
+      assert.equal(effective.optimization_benders_lock_teacher_sessions, undefined);
       assert.equal(effective.browser_wasm_gap_progressive_search, true);
-      assert.equal(effective.browser_wasm_gap_max_waves, 4);
+      assert.equal(effective.browser_wasm_gap_max_waves, 12);
       assert.equal(effective.browser_wasm_gap_wave_deadline_ms, 15000);
     }
   });
@@ -2618,6 +4548,46 @@ test("desktop scheduler modes map to one focused backend contract", () => {
     2
   );
   assert.equal(automatic.settings.ui_progress_mode, "time");
+  assert.equal(automatic.settings.ui_requested_solve_mode, "automatic");
+  assert.equal(automatic.settings.optimization_focus, "automatic");
+  assert.equal(Object.hasOwn(automatic.settings, "optimization_gap_target"), false);
+
+  const staleFocusedPlan = hooks.buildAutomaticAutoSortPlan(data);
+  Object.assign(staleFocusedPlan.settings, {
+    optimization_focus:"gaps",
+    optimization_gap_target:"gap1",
+    optimization_focused_objective_only:true,
+    quality_priority_order:"focused_gap1_only",
+    target_gap1_sessions:0,
+    optimization_benders_minimize_period_gaps:true,
+    optimization_benders_minimize_hint_distance:false
+  });
+  const replayedAutomatic = hooks.applyRequestedSolveModeToPlan(
+    staleFocusedPlan,
+    "automatic",
+    data,
+    2
+  );
+  assert.equal(replayedAutomatic.settings.optimization_focus, "automatic");
+  assert.equal(replayedAutomatic.settings.optimization_focused_objective_only, undefined);
+  assert.equal(replayedAutomatic.settings.quality_priority_order, undefined);
+  assert.equal(replayedAutomatic.settings.target_gap1_sessions, undefined);
+  assert.equal(replayedAutomatic.settings.optimization_benders_minimize_period_gaps, undefined);
+  assert.equal(replayedAutomatic.settings.optimization_benders_minimize_hint_distance, undefined);
+  const freshData = makeData(2);
+  const freshAutomatic = hooks.applyRequestedSolveModeToPlan(
+    hooks.buildAutomaticAutoSortPlan(freshData),
+    "automatic",
+    freshData,
+    2
+  );
+  assert.equal(freshAutomatic.settings.ui_unified_return_first_complete, false);
+  assert.equal(freshAutomatic.settings.ui_stop_after_first_complete_schedule, false);
+  assert.equal(freshAutomatic.settings.optimization_first_click_continue_local_after_complete, true);
+  assert.equal(freshAutomatic.settings.optimization_first_click_skip_global_quality, false);
+  assert.equal(freshAutomatic.settings.optimization_continue_quality_search, true);
+  assert.equal(freshAutomatic.settings.max_one_period_sessions, 0);
+  assert.equal(freshAutomatic.settings.target_gap1_sessions, 0);
   for(const key of [
     "ui_progress_metric_focus",
     "ui_progress_metric_current",
@@ -2785,7 +4755,7 @@ test("gap optimization refreshes a newer Quick baseline from the remote school s
   assert.equal(data.tkbGapProgressBaseline.updatedAt, "2026-07-24T09:00:00.000Z");
   assert.match(
     BRIDGE_SOURCE,
-    /requestedSolveMode === SOLVE_REQUEST_MODES\.gaps[\s\S]*refreshGapProgressBaselineFromRemote\(getData\(\)\)/
+    /SOLVE_REQUEST_MODES\.gap2,[\s\S]*SOLVE_REQUEST_MODES\.gap1,[\s\S]*SOLVE_REQUEST_MODES\.gaps[\s\S]*\.includes\(requestedSolveMode\)[\s\S]*refreshGapProgressBaselineFromRemote\(getData\(\)\)/
   );
 });
 
@@ -3274,7 +5244,64 @@ test("singleton optimization at zero finishes before Agent invitation or VPS sol
   assert.equal(hooks.autoSortPreflightActive(), false);
 });
 
-test("large unified first click uses one bounded 130-second quality-gate search", () => {
+test("satisfied or out-of-order gap optimization reports immediately without Agent or VPS", async () => {
+  for(const [mode, gap1, gap2, message] of [
+    ["optimize_gap2", 4, 0, "Kh\u00f4ng c\u00f2n tr\u1ed1ng 2 ti\u1ebft."],
+    ["optimize_gap1", 0, 0, "Kh\u00f4ng c\u00f2n tr\u1ed1ng 1 ti\u1ebft."],
+    ["optimize_gap1", 3, 2, "H\u00e3y t\u1ed1i \u01b0u Tr\u1ed1ng 2 ti\u1ebft tr\u01b0\u1edbc."]
+  ]){
+    const data = makeData(2);
+    const subject = data.mon[0].ten;
+    data.tkb = {
+      L1:{thu2:{sang:[subject, subject, "", "", ""], chieu:["", "", "", "", ""]}}
+    };
+    data.tkbSolverResult = {
+      ok:true,
+      metrics:{
+        scheduled_periods:2,
+        expected_periods:2,
+        unassigned_periods:0,
+        app_constraint_violation_count:0,
+        hard_ok:true,
+        core_hard_ok:true,
+        teacher_sessions:1,
+        one_period_teacher_sessions:0,
+        gap_distribution:{"1":gap1, "2":gap2}
+      },
+      validation:{hard_ok:true, violations:[]},
+      solver:{runtime_settings:{}}
+    };
+    const clock = createFakeClock(1_700_000_000_000, 0);
+    const progress = createProgressDocument(clock);
+    let inviteCalls = 0;
+    const {window, hooks} = loadBridge(data, async url => {
+      throw new Error(`zero ${mode} must not reach backend: ${url}`);
+    }, {
+      ...clock,
+      document:progress.document
+    });
+    window.maybeInviteAgentBeforeSort = async () => {
+      inviteCalls += 1;
+      return true;
+    };
+    window.calcTeacherTKBStats = () => ({
+      tsBuoiDay:1,
+      soBuoiDay1:0,
+      soBuoiTrong1:gap1,
+      soBuoiTrong2:gap2
+    });
+
+    const result = await window.sapXepTheoCheDo(mode);
+
+    assert.ok(result);
+    assert.equal(inviteCalls, 0);
+    assert.equal(progress.nodes.get("statusMsg").textContent, message);
+    assert.equal(progress.button.disabled, false);
+    assert.equal(hooks.autoSortPreflightActive(), false);
+  }
+});
+
+test("ordinary production first click uses one bounded 180-second completeness and quality search", () => {
   const data = makeData(1500);
   const {hooks} = loadBridge(data);
   const plan = hooks.buildAutomaticAutoSortPlan(data);
@@ -3282,36 +5309,36 @@ test("large unified first click uses one bounded 130-second quality-gate search"
 
   assert.equal(plan.kind, "fresh_complete_first");
   assert.equal(effective.ui_unified_initial_fast_stage, true);
-  assert.equal(effective.ui_unified_initial_ceiling_seconds, 130);
-  assert.equal(effective.overall_time_limit_seconds, 130);
-  assert.equal(effective.integrated_time_limit, 130);
-  assert.equal(effective.optimization_time_limit_seconds, 130);
-  assert.equal(effective.backend_deadline_ms, 130000);
-  assert.equal(effective.native_global_deadline_ms, 130000);
-  assert.equal(effective.optimization_first_click_feasibility_time_limit_seconds, 130);
-  assert.equal(effective.optimization_first_click_quality_time_limit_seconds, 35);
+  assert.equal(effective.ui_unified_initial_ceiling_seconds, 180);
+  assert.equal(effective.overall_time_limit_seconds, 180);
+  assert.equal(effective.integrated_time_limit, 180);
+  assert.equal(effective.optimization_time_limit_seconds, 180);
+  assert.equal(effective.backend_deadline_ms, 180000);
+  assert.equal(effective.native_global_deadline_ms, 180000);
+  assert.equal(effective.optimization_first_click_feasibility_time_limit_seconds, 70);
+  assert.equal(effective.optimization_first_click_quality_time_limit_seconds, 100);
   assert.equal(effective.optimization_first_click_quality_minimum_seconds, 12);
   assert.equal(effective.optimization_first_click_local_lns_time_limit_seconds, 30);
   assert.equal(effective.target_gap1_sessions, 50);
   assert.equal(effective.optimization_first_click_quality_cap_headroom, 16);
   assert.equal(effective.optimization_first_click_target_probe_step, 2);
-  assert.equal(effective.optimization_first_click_target_probe_time_limit_seconds, 30);
+  assert.equal(effective.optimization_first_click_target_probe_time_limit_seconds, 100);
   assert.equal(effective.optimization_first_click_target_probe_convergence_ceiling_seconds, 120);
-  assert.equal(effective.optimization_first_click_target_probe_enabled, false);
-  assert.equal(effective.optimization_unbounded_quality_search, false);
+  assert.equal(effective.optimization_first_click_target_probe_enabled, true);
+  assert.equal(effective.optimization_unbounded_quality_search, true);
   assert.equal(effective.ui_bounded_fresh_accept_quality_debt, true);
   assert.equal(effective.optimization_first_click_strict_quality_gate, true);
   assert.equal(effective.optimization_first_click_strict_quality_gate_seconds, 55);
-  assert.equal(effective.ui_stop_after_first_complete_schedule, true);
-  assert.equal(effective.optimization_first_click_continue_local_after_complete, false);
-  assert.equal(effective.optimization_first_click_skip_global_quality, true);
+  assert.equal(effective.ui_stop_after_first_complete_schedule, false);
+  assert.equal(effective.optimization_first_click_continue_local_after_complete, true);
+  assert.equal(effective.optimization_first_click_skip_global_quality, false);
   assert.equal(effective.allow_quality_debt, true);
   assert.equal(effective.max_one_period_sessions, "off");
   assert.equal(effective.strict_one_period_sessions_cap, false);
   assert.equal(effective.enforce_max_one_period_sessions, false);
   assert.equal(effective.period_max_teacher_gap, "off");
   assert.equal(effective.optimization_stop_on_stagnation, true);
-  assert.equal(effective.optimization_benders_accept_stagnant_iterations, undefined);
+  assert.equal(effective.optimization_benders_accept_stagnant_iterations, 2);
   assert.equal(effective.optimization_existing_local_quality_lns_passes, 16);
   assert.equal(effective.optimization_existing_local_quality_lns_pass_seconds, 3);
   assert.equal(effective.optimization_existing_local_quality_lns_stagnant_passes, 5);
@@ -3323,7 +5350,7 @@ test("large unified first click uses one bounded 130-second quality-gate search"
   assert.ok(Number.isInteger(effective.random_seed));
   assert.ok(effective.random_seed > 0);
   assert.equal(effective.quality_variant_seed, effective.random_seed);
-  assert.equal(effective.ui_unified_reference_watchdog_reserve_ms, 10000);
+  assert.equal(effective.ui_unified_reference_watchdog_reserve_ms, 20000);
   assert.equal(effective.ui_client_timeout_reserve_ms, 30000);
 });
 
@@ -3352,18 +5379,81 @@ test("ten no-hint fresh plans use ten distinct positive search trajectories", ()
   assert.equal(new Set(seeds).size, 10);
 });
 
-test("automatic duration keeps a 130-second quality gate and 180-second refinement", () => {
+test("automatic duration keeps clean clicks short and large fresh work below Cloud 300s", () => {
   const data = makeData(1500);
   const {hooks} = loadBridge(data);
 
-  assert.equal(hooks.initialAutomaticSolverCeilingSeconds(1500, data), 130);
-  assert.equal(hooks.incrementalRefineCeilingSeconds(1500, data, 1), 180);
-  assert.equal(hooks.incrementalRefineCeilingSeconds(1500, data, 2), 180);
-  assert.equal(hooks.incrementalRefineCeilingSeconds(1500, data, 3), 180);
-  assert.equal(hooks.incrementalRefineCeilingSeconds(1500, data, 8), 180);
+  assert.equal(hooks.initialAutomaticSolverCeilingSeconds(899, data), 130);
+  assert.equal(hooks.incrementalRefineCeilingSeconds(899, data, 1), 60);
+  assert.equal(hooks.initialAutomaticSolverCeilingSeconds(900, data), 180);
+  assert.equal(hooks.initialAutomaticSolverCeilingSeconds(1999, data), 180);
+  assert.equal(hooks.incrementalRefineCeilingSeconds(1500, data, 1), 60);
+  assert.equal(hooks.initialAutomaticSolverCeilingSeconds(2000, data), 270);
+  assert.equal(hooks.incrementalRefineCeilingSeconds(2000, data, 8), 60);
 });
 
-test("subject period requirements may use the 180-second first-click ceiling", () => {
+test("continued Automatic expands large hard-quality debt to a 270-second ceiling", () => {
+  const data = makeData(2103);
+  const {window, hooks} = loadBridge(data);
+  window.calcTeacherTKBStats = () => ({
+    tsBuoiDay:654,
+    soBuoiDay1:1,
+    soBuoiTrong1:167,
+    soBuoiTrong2:0
+  });
+
+  assert.equal(hooks.incrementalRefineCeilingSeconds(2103, data, 2), 270);
+
+  window.calcTeacherTKBStats = () => ({
+    tsBuoiDay:657,
+    soBuoiDay1:0,
+    soBuoiTrong1:156,
+    soBuoiTrong2:0
+  });
+  assert.equal(hooks.incrementalRefineCeilingSeconds(2103, data, 3), 60);
+});
+
+test("enabled Browser Agent keeps the 180-second ordinary-production quality window", () => {
+  const data = makeData(1500);
+  const {hooks} = loadBridge(data, null, {
+    TKBBrowserWasmExecutor:{isEnabled(){ return true; }}
+  });
+
+  assert.equal(hooks.initialAutomaticSolverCeilingSeconds(1500, data), 180);
+  const plan = hooks.buildAutomaticAutoSortPlan(data);
+  assert.equal(plan.settings.overall_time_limit_seconds, 180);
+  assert.equal(plan.settings.backend_deadline_ms, 180000);
+  assert.equal(plan.settings.ui_stop_after_first_complete_schedule, false);
+  assert.equal(plan.settings.optimization_continue_quality_search, true);
+});
+
+test("enabled Browser Agent keeps 180 seconds when resuming an ordinary partial timetable", () => {
+  const data = makeData(1500);
+  const subject = data.mon[0].ten;
+  data.tkb = {
+    L1:{
+      thu2:{
+        sang:[subject, "", "", "", ""],
+        chieu:["", "", "", "", ""]
+      }
+    }
+  };
+  const {hooks} = loadBridge(data, null, {
+    TKBBrowserWasmExecutor:{isEnabled(){ return true; }}
+  });
+
+  const plan = hooks.buildAutomaticAutoSortPlan(data);
+  const effective = hooks.effectiveSettingsForSolve(plan.settings, data);
+
+  assert.equal(plan.kind, "fresh_complete_first");
+  assert.notEqual(plan.settings.ui_unified_initial_fast_stage, true);
+  assert.equal(plan.settings.ui_unified_initial_ceiling_seconds, 180);
+  assert.equal(plan.settings.overall_time_limit_seconds, 180);
+  assert.equal(effective.backend_deadline_ms, 180000);
+  assert.equal(effective.native_global_deadline_ms, 180000);
+});
+
+test("ordinary subject-period requirements use the 180-second first-click ceiling", () => {
   const data = makeData(1500);
   data.tkbConstraints = {
     subject:{
@@ -3495,8 +5585,8 @@ test("a blank first Play owns one adaptive pass without hidden retries", async (
 
   assert.equal(plan.settings.ui_disable_initial_fast_draft, true);
   assert.equal(plan.settings.ui_allow_incomplete_retry_after_single_pass, false);
-  assert.equal(plan.settings.ui_stop_after_first_complete_schedule, true);
-  assert.equal(plan.settings.optimization_first_click_continue_local_after_complete, false);
+  assert.equal(plan.settings.ui_stop_after_first_complete_schedule, false);
+  assert.equal(plan.settings.optimization_first_click_continue_local_after_complete, true);
   assert.equal(plan.settings.ui_disable_automatic_retry, true);
   assert.equal(plan.settings.complete_schedule_seed_retry_max_runs, 0);
   assert.equal(plan.settings.overall_time_limit_seconds, 130);
@@ -3535,8 +5625,8 @@ test("an explicit duration remains one exact solver budget when no complete sche
   const plan = hooks.buildAutomaticAutoSortPlan(data);
 
   assert.equal(plan.settings.ui_allow_incomplete_retry_after_single_pass, false);
-  assert.equal(plan.settings.ui_stop_after_first_complete_schedule, true);
-  assert.equal(plan.settings.optimization_first_click_continue_local_after_complete, false);
+  assert.equal(plan.settings.ui_stop_after_first_complete_schedule, false);
+  assert.equal(plan.settings.optimization_first_click_continue_local_after_complete, true);
   assert.equal(plan.settings.overall_time_limit_seconds, 90);
   assert.equal(await window.TKBRustAPI.solve({ask:false, settings:plan.settings, singlePass:true}), null);
   assert.equal(solvePosts, 1);
@@ -3754,6 +5844,104 @@ test("refinement replacement is decided by ordered quality statistics", () => {
   assert.equal(hooks.refinementStatisticsImproved(payload(7, 1), incumbent, true), true);
 });
 
+test("split gap replacement requires target improvement without regressing any visible metric", () => {
+  const {hooks} = loadBridge(makeData(10));
+  const payload = (teacherSessions, gap1, gap2) => ({
+    metrics:{
+      scheduled_periods:10,
+      expected_periods:10,
+      unassigned_periods:0,
+      hard_ok:true,
+      one_period_teacher_sessions:0,
+      teacher_sessions:teacherSessions,
+      gap_distribution:{"0":Math.max(0, teacherSessions - gap1 - gap2), "1":gap1, "2":gap2}
+    },
+    validation:{hard_ok:true}
+  });
+  const gap2Incumbent = payload(7, 1, 2);
+  assert.equal(hooks.payloadStrictlyBetterTeacherQuality(
+    payload(7, 3, 0),
+    gap2Incumbent,
+    {optimization_focus:"gaps", optimization_gap_target:"gap2"}
+  ), false, "Gap2 may not be paid for by creating more Gap1 sessions");
+  assert.equal(hooks.payloadStrictlyBetterTeacherQuality(
+    payload(7, 1, 0),
+    gap2Incumbent,
+    {optimization_focus:"gaps", optimization_gap_target:"gap2"}
+  ), true);
+
+  const gap1Incumbent = payload(7, 3, 0);
+  assert.equal(hooks.payloadStrictlyBetterTeacherQuality(
+    payload(7, 1, 0),
+    gap1Incumbent,
+    {optimization_focus:"gaps", optimization_gap_target:"gap1"}
+  ), true);
+  assert.equal(hooks.payloadStrictlyBetterTeacherQuality(
+    payload(7, 1, 1),
+    gap1Incumbent,
+    {optimization_focus:"gaps", optimization_gap_target:"gap1"}
+  ), false, "Gap1 mode must keep Gap2 at zero");
+});
+
+test("all four focused replacement contracts require only their target to improve", () => {
+  const {hooks} = loadBridge(makeData(10));
+  const payload = ({one = 4, sessions = 10, gap1 = 3, gap2 = 2} = {}) => ({
+    metrics:{
+      scheduled_periods:10,
+      expected_periods:10,
+      unassigned_periods:0,
+      hard_ok:true,
+      one_period_teacher_sessions:one,
+      teacher_sessions:sessions,
+      teacher_gap2_sessions:gap2,
+      gap_distribution:{"0":Math.max(0, sessions - gap1 - gap2), "1":gap1, "2":gap2}
+    },
+    validation:{hard_ok:true}
+  });
+  const incumbent = payload();
+  const contracts = [
+    {
+      settings:{optimization_focus:"singletons"},
+      good:payload({one:3}),
+      nonTargetOnly:payload({sessions:9}),
+      regressed:payload({one:3, gap1:4})
+    },
+    {
+      settings:{optimization_focus:"sessions"},
+      good:payload({sessions:9}),
+      nonTargetOnly:payload({one:3}),
+      regressed:payload({sessions:9, gap2:3})
+    },
+    {
+      settings:{optimization_focus:"gaps", optimization_gap_target:"gap2"},
+      good:payload({gap2:1}),
+      nonTargetOnly:payload({gap1:2}),
+      regressed:payload({gap2:1, gap1:4})
+    },
+    {
+      settings:{optimization_focus:"gaps", optimization_gap_target:"gap1"},
+      good:payload({gap1:2}),
+      nonTargetOnly:payload({sessions:9}),
+      regressed:payload({gap1:2, gap2:3})
+    }
+  ];
+
+  for(const contract of contracts){
+    assert.equal(
+      hooks.payloadStrictlyBetterTeacherQuality(contract.good, incumbent, contract.settings),
+      true
+    );
+    assert.equal(
+      hooks.payloadStrictlyBetterTeacherQuality(contract.nonTargetOnly, incumbent, contract.settings),
+      false
+    );
+    assert.equal(
+      hooks.payloadStrictlyBetterTeacherQuality(contract.regressed, incumbent, contract.settings),
+      false
+    );
+  }
+});
+
 test("a recorded no-improvement slice never blocks blank-duration sorting", () => {
   const storage = memoryStorage();
   const data = makeData(1);
@@ -3771,16 +5959,31 @@ test("a recorded no-improvement slice never blocks blank-duration sorting", () =
     validation:{hard_ok:true}
   };
   const {window, hooks} = loadBridge(data, null, {localStorage:storage});
+  const metadataSaves = [];
+  window.saveStore = options => metadataSaves.push(options || {});
   const locked = hooks.rememberOptimizationPlateau(data, null, true);
   assert.equal(locked.locked, true);
   assert.equal(locked.noImprovementSlices, 1);
+  assert.equal(metadataSaves.length, 1);
+  assert.equal(metadataSaves[0].trustedSolverApply, true);
+  assert.equal(metadataSaves[0].suppressHistory, true);
+  assert.equal(metadataSaves[0].replaceHistoryCurrent, true);
+  assert.equal(metadataSaves[0].skipIfUnchanged, true);
   assert.equal(hooks.optimizationPlateauState(data).locked, true);
+  assert.equal(hooks.clearOptimizationPlateau(data), true);
+  assert.equal(metadataSaves.length, 2);
+  assert.equal(metadataSaves[1].trustedSolverApply, true);
+  assert.equal(metadataSaves[1].suppressHistory, true);
+  assert.equal(metadataSaves[1].replaceHistoryCurrent, true);
+  assert.equal(metadataSaves[1].skipIfUnchanged, true);
+  const relocked = hooks.rememberOptimizationPlateau(data, null, true);
+  assert.equal(relocked.locked, true);
   const automaticUnlock = hooks.syncOptimizationLockState();
   assert.equal(automaticUnlock.locked, false);
   assert.equal(automaticUnlock.rerunAllowed, true);
   const automaticPlan = hooks.buildAutomaticAutoSortPlan(data);
-  assert.equal(automaticPlan.settings.overall_time_limit_seconds, 180);
-  assert.equal(automaticPlan.settings.backend_deadline_ms, 180000);
+  assert.equal(automaticPlan.settings.overall_time_limit_seconds, 60);
+  assert.equal(automaticPlan.settings.backend_deadline_ms, 60000);
 
   assert.equal(hooks.writeCustomSolveDurationSeconds(125), 125);
   const customUnlock = hooks.syncOptimizationLockState();
@@ -3826,7 +6029,26 @@ test("complete refinement request carries incumbent lessons while other requests
     ui_existing_incumbent_revalidated:true
   });
   assert.equal(refine.tkbSolverResult.lessons.length, 2);
-  assert.equal(JSON.stringify(refine.tkbSolverResult.lessons), JSON.stringify(lessons));
+  assert.equal(
+    JSON.stringify(refine.tkbSolverResult.lessons.map(item => ({
+      classId:item.classId,
+      subject:item.subject,
+      teacher:item.teacher,
+      day:item.day,
+      session:item.session,
+      period:item.period,
+      fixed:item.fixed
+    }))),
+    JSON.stringify(lessons.map(item => ({
+      classId:item.classId,
+      subject:item.subject,
+      teacher:item.teacher,
+      day:item.day,
+      session:item.session,
+      period:item.period,
+      fixed:false
+    })))
+  );
   assert.equal(refine.tkbSolverResult.metrics.gap_sessions, undefined);
 
   delete data.tkbSolverResult.lessons;
@@ -3849,6 +6071,55 @@ test("complete refinement request carries incumbent lessons while other requests
     ui_unified_solve_kind:"fresh_complete_first"
   });
   assert.equal(fresh.tkbSolverResult, undefined);
+});
+
+test("complete refinement rebuilds a stale incumbent from visible fixed lessons", () => {
+  const data = makeData(2);
+  const math = data.mon[0].ten;
+  const literature = "Literature";
+  data.monhoc.push({ten:literature, ma:"VAN"});
+  data.pccmMatrix[`L1|${literature}`] = "GV02";
+  data.tkb = {
+    L1:{thu2:{sang:[{mon:math, fixed:true}, literature, "", "", ""], chieu:["", "", "", "", ""]}}
+  };
+  data.tkbSolverResult = {
+    lessons:[
+      {classId:"L1", className:"10A1", subject:literature, teacher:"GV02", day:2, session:"AM", period:1},
+      {classId:"L1", className:"10A1", subject:math, teacher:"GV01", day:2, session:"AM", period:2}
+    ],
+    metrics:{scheduled_periods:2, expected_periods:2, unassigned_periods:0, hard_ok:true},
+    validation:{hard_ok:true},
+    unassignedLessons:[]
+  };
+  const {window, hooks} = loadBridge(data);
+  window.calcTeacherTKBStats = () => ({
+    tsBuoiDay:2,
+    soBuoiDay1:2,
+    soBuoiTrong1:1,
+    soBuoiTrong2:0
+  });
+
+  const request = hooks.dataForSolverRequest(data, {
+    allow_solver_warm_start:true,
+    preserve_existing_tkb:true,
+    ui_unified_solve_kind:"refine_complete",
+    ui_use_existing_complete_incumbent:true,
+    ui_existing_incumbent_revalidated:true
+  });
+
+  assert.equal(
+    JSON.stringify(request.tkbSolverResult.lessons.map(item => ({subject:item.subject, period:item.period, fixed:item.fixed}))),
+    JSON.stringify([
+      {subject:math, period:1, fixed:true},
+      {subject:literature, period:2, fixed:false}
+    ])
+  );
+  assert.equal(request.tkbSolverResult.metrics.teacher_sessions, 2);
+  assert.equal(request.tkbSolverResult.metrics.one_period_teacher_sessions, 2);
+  assert.equal(
+    JSON.stringify(request.tkbSolverResult.metrics.gap_distribution),
+    JSON.stringify({"1":1, "2":0})
+  );
 });
 
 test("a persisted custom duration unlocks an optimized timetable immediately after reload", () => {
@@ -4059,7 +6330,7 @@ test("automatic solver sends a small residual through full quality instead of fa
   assert.equal(effective.strict_one_period_sessions_cap, false);
   assert.equal(effective.allow_quality_debt, true);
   assert.equal(effective.period_max_teacher_gap, "off");
-  assert.equal(effective.ui_unified_reference_watchdog_reserve_ms, 10000);
+  assert.equal(effective.ui_unified_reference_watchdog_reserve_ms, 20000);
   assert.equal(effective.ui_client_timeout_reserve_ms, 30000);
 });
 
@@ -4079,6 +6350,8 @@ test("automatic solver refines a demand-valid complete timetable as a soft incum
   assert.equal(effective.ui_use_existing_complete_incumbent, true);
   assert.equal(effective.ui_existing_incumbent_revalidated, true);
   assert.equal(effective.ui_return_complete_incumbent_on_existing_optimize_failure, true);
+  assert.equal(effective.optimization_safe_staged_reclick, true);
+  assert.equal(effective.optimization_clean_quality_cycles_early_return, false);
   assert.equal(effective.optimization_refinement_round, 1);
   assert.equal(effective.ui_incremental_refine_progress, true);
   assert.equal(effective.optimization_refine_try_lower_session_cap, true);
@@ -4087,14 +6360,14 @@ test("automatic solver refines a demand-valid complete timetable as a soft incum
   assert.equal(effective.optimization_two_stage_teacher_quality, true);
   assert.equal(effective.target_gap1_sessions, 0);
   assert.equal(effective.gap1_quality_target_explicit, true);
-  assert.equal(effective.ui_unified_refine_ceiling_seconds, 180);
-  assert.equal(effective.optimization_time_limit_seconds, 180);
-  assert.equal(effective.overall_time_limit_seconds, 180);
-  assert.equal(effective.backend_deadline_ms, 180000);
-  assert.equal(effective.ui_allow_short_backend_deadline, false);
+  assert.equal(effective.ui_unified_refine_ceiling_seconds, 60);
+  assert.equal(effective.optimization_time_limit_seconds, 60);
+  assert.equal(effective.overall_time_limit_seconds, 60);
+  assert.equal(effective.backend_deadline_ms, 60000);
+  assert.equal(effective.ui_allow_short_backend_deadline, true);
   assert.equal(effective.progress_estimate_seconds, 30);
-  assert.equal(hooks.progressBudgetSeconds(effective, hooks.estimateSolveSeconds(effective, data)), 180);
-  assert.equal(effective.ui_unified_reference_watchdog_reserve_ms, 10000);
+  assert.equal(hooks.progressBudgetSeconds(effective, hooks.estimateSolveSeconds(effective, data)), 60);
+  assert.equal(effective.ui_unified_reference_watchdog_reserve_ms, 20000);
   assert.equal(effective.ui_client_timeout_reserve_ms, 30000);
   assert.notEqual(effective.ui_no_hint_fresh_solve, true);
   assert.equal(effective.allow_solver_warm_start, true);
@@ -4120,7 +6393,7 @@ test("automatic solver refines a demand-valid complete timetable as a soft incum
   assert.equal(learned.settings.progress_estimate_seconds, 24);
   assert.equal(
     hooks.progressBudgetSeconds(learned.settings, hooks.estimateSolveSeconds(learned.settings, data)),
-    180
+    60
   );
 });
 
@@ -4475,6 +6748,63 @@ test("localized fixed-only Min debt without a structured kind stays on the fresh
   assert.equal(plan.settings.ui_deferred_incomplete_lesson_block_minimum_count, 1);
   assert.equal(effective.overall_time_limit_seconds, 180);
   assert.equal(effective.backend_deadline_ms, 180000);
+});
+
+test("incomplete must-teach lower-bound debt stays on the fresh Automatic lane", () => {
+  const data = makeData(4);
+  data.tkbConstraints = {
+    teacher:{GV01:{mustTeach:{"thu2|sang|0":true}}}
+  };
+  const {hooks} = loadBridge(data);
+  const plan = hooks.buildConstraintRepairAutoSortPlan(
+    data,
+    4,
+    0,
+    1,
+    null,
+    [{
+      kind:"teacher.mustTeach.missing",
+      teacherId:"GV01",
+      thu:"thu2",
+      buoi:"sang",
+      ti:0,
+      message:"Giáo viên 01: vị trí phải có tiết dạy nhưng chưa được xếp."
+    }]
+  );
+  hooks.applyRequestedSolveModeToPlan(plan, "automatic", data, 4);
+  const effective = hooks.effectiveSettingsForSolve(plan.settings, data);
+  const requestData = hooks.dataForSolverRequest(data, effective);
+
+  assert.equal(plan.kind, "fresh_complete_first");
+  assert.equal(plan.settings.ui_unified_solve_kind, "fresh_complete_first");
+  assert.equal(plan.settings.optimization_focus, "automatic");
+  assert.equal(plan.settings.ui_deferred_incomplete_lower_bound_count, 1);
+  assert.equal(plan.settings.ui_deferred_incomplete_must_teach_count, 1);
+  assert.equal(plan.settings.ui_preflight_constraint_violation_count, 0);
+  assert.equal(plan.settings.ui_force_staged_existing_repair, undefined);
+  assert.equal(requestData.__tkbRequestStrippedSchedule, true);
+  assert.equal(hooks.countScheduledLessons(requestData), 0);
+  assert.equal(JSON.stringify(requestData.tkbConstraints), JSON.stringify(data.tkbConstraints));
+});
+
+test("localized incomplete must-teach debt remains fresh for cached validators", () => {
+  const data = makeData(4);
+  data.tkbConstraints = {
+    teacher:{GV01:{mustTeach:{"thu2|sang|0":true}}}
+  };
+  const {hooks} = loadBridge(data);
+  const plan = hooks.buildConstraintRepairAutoSortPlan(
+    data,
+    4,
+    0,
+    1,
+    null,
+    [{message:"Giáo viên 01: vị trí phải có tiết dạy nhưng chưa được xếp."}]
+  );
+
+  assert.equal(plan.kind, "fresh_complete_first");
+  assert.equal(plan.settings.ui_deferred_incomplete_lower_bound_count, 1);
+  assert.equal(plan.settings.ui_deferred_incomplete_must_teach_count, 1);
 });
 
 test("Play sends one fixed-only 180-second rebuild for a complete subject-period violation", async () => {
@@ -5208,7 +7538,7 @@ test("a tightened teacher constraint stops after one staged fill and one fresh f
   );
 });
 
-test("large fixed-off fresh fallback preserves the automatic 130-second quality-gate ceiling", async () => {
+test("ordinary fixed-off fresh fallback receives the same 180-second one-click quality ceiling", async () => {
   const fixture = makeLargeApplyFixture(54, 29);
   const {data} = fixture;
   const subject = String(data.mon[0].ten);
@@ -5277,12 +7607,12 @@ test("large fixed-off fresh fallback preserves the automatic 130-second quality-
   assert.equal(postedSettings.length, 2);
   const fallback = postedSettings[1];
   assert.equal(fallback.ui_constraint_change_fresh_retry, true);
-  assert.equal(fallback.ui_constraint_change_fresh_ceiling_seconds, 130);
-  assert.equal(fallback.overall_time_limit_seconds, 130);
-  assert.equal(fallback.optimization_time_limit_seconds, 130);
-  assert.equal(fallback.integrated_time_limit, 130);
-  assert.equal(fallback.backend_deadline_ms, 130000);
-  assert.equal(fallback.native_global_deadline_ms, 130000);
+  assert.equal(fallback.ui_constraint_change_fresh_ceiling_seconds, 180);
+  assert.equal(fallback.overall_time_limit_seconds, 180);
+  assert.equal(fallback.optimization_time_limit_seconds, 180);
+  assert.equal(fallback.integrated_time_limit, 180);
+  assert.equal(fallback.backend_deadline_ms, 180000);
+  assert.equal(fallback.native_global_deadline_ms, 180000);
   assert.equal(fallback.ui_allow_short_backend_deadline, true);
 });
 
@@ -5431,6 +7761,201 @@ test("a completed solve returns its result without scheduling an optimize-more q
   assert.doesNotMatch(body, /scheduleOptimizeAfterCompletePrompt|B\u1ea1n c\u00f3 mu\u1ed1n t\u1ed1i \u01b0u th\u00eam kh\u00f4ng\?|window\.confirm/);
 });
 
+test("ordinary users may continue Automatic refinement after the former third-click boundary", async () => {
+  const data = installCompleteSinglePeriodSchedule(makeData(1), 1);
+  let fetchCalls = 0;
+  let posted = null;
+  const candidate = JSON.parse(JSON.stringify(data.tkbSolverResult));
+  candidate.metrics.optimization_refinement_round = 2;
+  candidate.solver.runtime_settings.optimization_refinement_round = 2;
+  const {window, hooks} = loadBridge(data, async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-data")){
+      fetchCalls += 1;
+      posted = JSON.parse(options.body);
+      return jsonResponse(candidate);
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  }, {
+    TKBAuth:{currentUser(){ return {user:{role:"school_user"}}; }}
+  });
+  data.tkbAutoSortCycle = {
+    version:1,
+    fingerprint:hooks.durableScheduleFingerprint(data),
+    successfulClicks:2
+  };
+
+  const result = await window.sapXepTuDongAll();
+
+  assert.ok(result);
+  assert.equal(fetchCalls, 1);
+  assert.equal(posted.settings.ui_unified_solve_kind, "refine_complete");
+  assert.equal(posted.settings.ui_automatic_sort_previous_successful_clicks, 2);
+  assert.equal(hooks.automaticSortCycleState(data).successfulClicks, 3);
+  assert.notEqual(window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE, "TKB đã tối ưu");
+  assert.equal(hooks.autoSortPreflightActive(), false);
+  assert.doesNotMatch(BRIDGE_SOURCE, /automaticSortClickLimitReached|reportAutomaticSortLimitReached/);
+});
+
+test("ordinary bridge authorization allows three focused modes but keeps generic sessions operations-only", async () => {
+  const data = installCompleteSinglePeriodSchedule(makeData(1), 0);
+  let fetchCalls = 0;
+  const {window, hooks} = loadBridge(
+    data,
+    async () => {
+      fetchCalls += 1;
+      throw new Error("an operations-only mode must be rejected before transport");
+    },
+    {TKBAuth:{currentUser(){ return {user:{role:"school_user"}}; }}}
+  );
+
+  for(const mode of ["optimize_singletons", "optimize_gap1", "optimize_gap2"]){
+    assert.equal(hooks.solveRequestModeAllowedForCurrentUser(mode), true);
+  }
+  assert.equal(hooks.solveRequestModeAllowedForCurrentUser("optimize_sessions"), false);
+  assert.equal(hooks.solveRequestModeAllowedForCurrentUser("optimize_gaps"), false);
+
+  const result = await window.sapXepTheoCheDo("optimize_sessions");
+
+  assert.equal(result, null);
+  assert.equal(fetchCalls, 0);
+  assert.notEqual(window.__TKB_RUST_SOLVER_RUNNING, true);
+
+  const superadmin = loadBridge(data, null, {
+    TKBAuth:{currentUser(){ return {user:{role:"superadmin"}}; }}
+  });
+  assert.equal(superadmin.hooks.solveRequestModeAllowedForCurrentUser("optimize_sessions"), true);
+  assert.equal(superadmin.hooks.solveRequestModeAllowedForCurrentUser("optimize_gaps"), true);
+});
+
+test("all roles keep progressive Auto clicks while cycle state still resets after a timetable edit", () => {
+  const data = installCompleteSinglePeriodSchedule(makeData(1), 1);
+  const ordinary = loadBridge(data, null, {
+    TKBAuth:{currentUser(){ return {user:{role:"school_user"}}; }}
+  });
+  data.tkbAutoSortCycle = {
+    version:1,
+    fingerprint:ordinary.hooks.durableScheduleFingerprint(data),
+    successfulClicks:2
+  };
+  assert.equal(
+    ordinary.hooks.ordinaryAutomaticSortLimitReached(data, "automatic"),
+    false
+  );
+
+  const superadmin = loadBridge(data, null, {
+    TKBAuth:{currentUser(){ return {user:{role:"superadmin"}}; }}
+  });
+  assert.equal(
+    superadmin.hooks.ordinaryAutomaticSortLimitReached(data, "automatic"),
+    false
+  );
+
+  data.tkb.L1.thu2.sang[0] = {mon:data.mon[0].ten, fixed:true};
+  const reset = ordinary.hooks.automaticSortCycleState(data);
+  assert.equal(reset.resetByFingerprint, true);
+  assert.equal(reset.successfulClicks, 1);
+  assert.equal(
+    ordinary.hooks.ordinaryAutomaticSortLimitReached(data, "automatic"),
+    false
+  );
+});
+
+test("successful Auto results persist every progressive refinement click", () => {
+  const data = installCompleteSinglePeriodSchedule(makeData(1), 0);
+  const {hooks} = loadBridge(data);
+  const first = hooks.rememberAutomaticSortSuccess(
+    data,
+    {successfulClicks:0},
+    "fresh_complete_first"
+  );
+  assert.equal(first.successfulClicks, 1);
+  assert.equal(hooks.automaticSortCycleState(data).successfulClicks, 1);
+
+  const second = hooks.rememberAutomaticSortSuccess(data, first, "refine_complete");
+  assert.equal(second.successfulClicks, 2);
+  assert.equal(hooks.automaticSortCycleState(data).successfulClicks, 2);
+  const third = hooks.rememberAutomaticSortSuccess(data, second, "refine_complete");
+  assert.equal(third.successfulClicks, 3);
+  assert.equal(hooks.automaticSortCycleState(data).successfulClicks, 3);
+  assert.deepEqual(
+    data.tkbSolverResult.solver.runtime_settings.ui_automatic_sort_cycle,
+    third,
+    "the durable result carries the same cycle marker as DATA"
+  );
+});
+
+test("cycle state recovers from the atomic result marker but resets after a real timetable edit", () => {
+  const data = installCompleteSinglePeriodSchedule(makeData(1), 0);
+  const {hooks} = loadBridge(data);
+  const first = hooks.rememberAutomaticSortSuccess(
+    data,
+    {successfulClicks:0},
+    "fresh_complete_first"
+  );
+  const second = hooks.rememberAutomaticSortSuccess(data, first, "refine_complete");
+
+  data.tkbAutoSortCycle = Object.assign({}, first, {
+    fingerprint:"v3:stale-result-write:0",
+    successfulClicks:1
+  });
+  const recovered = hooks.automaticSortCycleState(data);
+  assert.equal(recovered.successfulClicks, 2);
+  assert.equal(recovered.recoveredFromPayload, true);
+
+  data.tkb.L1.thu2.sang[0] = {mon:data.mon[0].ten, fixed:true};
+  const edited = hooks.automaticSortCycleState(data);
+  assert.equal(edited.resetByFingerprint, true);
+  assert.equal(edited.successfulClicks, 1);
+  assert.notEqual(second.fingerprint, edited.fingerprint);
+});
+
+test("marker-only fallback persistence is awaited and replaces history without adding Undo", async () => {
+  const data = installCompleteSinglePeriodSchedule(makeData(1), 0);
+  const saves = [];
+  const {window, hooks} = loadBridge(data);
+  window.saveStore = options => {
+    saves.push(Object.assign({}, options));
+    return Promise.resolve(true);
+  };
+
+  const beforeRefinement = {successfulClicks:1};
+  const state = await hooks.persistAutomaticSortSuccess(
+    data,
+    beforeRefinement,
+    "refine_complete"
+  );
+  assert.equal(state.successfulClicks, 2);
+  assert.equal(saves.length, 1);
+  assert.equal(saves[0].awaitRemote, true);
+  assert.equal(saves[0].trustedSolverApply, true);
+  assert.equal(saves[0].suppressHistory, true);
+  assert.equal(saves[0].replaceHistoryCurrent, true);
+  assert.equal(saves[0].skipIfUnchanged, true);
+
+  await hooks.persistAutomaticSortSuccess(data, beforeRefinement, "refine_complete");
+  assert.equal(saves.length, 1, "an already atomic marker does not write twice");
+});
+
+test("Automatic commits its cycle marker before the trusted timetable save", () => {
+  const applyStart = BRIDGE_SOURCE.indexOf("async function applyPayload");
+  const applyEnd = BRIDGE_SOURCE.indexOf("async function postSolve", applyStart);
+  const applyBody = BRIDGE_SOURCE.slice(applyStart, applyEnd);
+  assert.ok(applyStart >= 0 && applyEnd > applyStart);
+  assert.ok(
+    applyBody.indexOf("rememberAutomaticSortSuccess(")
+      < applyBody.indexOf("awaitTrustedSolverApplySave("),
+    "the serialized solver result must already contain the click marker"
+  );
+
+  assert.match(
+    PLANNER_SOURCE,
+    /opts\.replaceHistoryCurrent === true[\s\S]*?TKB_HISTORY_CURRENT = payload;/,
+    "metadata-only persistence must replace the current history snapshot"
+  );
+});
+
 test("a completed fast-repair result is always refined from its incumbent", () => {
   const data = makeData(2);
   data.tkb = {L1:{thu2:{sang:[{mon:"Toán"}, {mon:"Toán"}, "", "", ""]}}};
@@ -5457,11 +7982,11 @@ test("a completed fast-repair result is always refined from its incumbent", () =
   assert.notEqual(plan.settings.ui_default_fresh_sort, true);
   assert.equal(plan.settings.auto_sort_mode, "teacher_session_opt");
   assert.equal(plan.settings.auto_sort_strategy, "continue_teacher_quality_from_incumbent");
-  assert.equal(plan.settings.overall_time_limit_seconds, 180);
-  assert.equal(plan.settings.backend_deadline_ms, 180000);
+  assert.equal(plan.settings.overall_time_limit_seconds, 60);
+  assert.equal(plan.settings.backend_deadline_ms, 60000);
   assert.equal(plan.settings.optimization_unbounded_quality_search, false);
   assert.equal(plan.settings.optimization_continue_quality_search, true);
-  assert.equal(plan.settings.ui_stop_refinement_when_good_enough, false);
+  assert.equal(plan.settings.ui_stop_refinement_when_good_enough, true);
   assert.equal(plan.settings.optimization_stop_on_stagnation, true);
   assert.equal(plan.settings.optimization_benders_accept_stagnant_iterations, 2);
   assert.equal(plan.settings.optimization_adaptive_stagnant_attempts, 2);
@@ -5598,13 +8123,20 @@ test("refinement operator learning survives a rejected timetable and enters the 
   assert.equal(data.tkbRefinementLearning.total_attempts, 4);
 });
 
-test("automatic budgets do not change with timetable size", () => {
+test("automatic budgets keep fresh quality strong and split continued refinement into 60-second slices", () => {
   const data = makeData(1500);
   const {hooks} = loadBridge(data);
 
-  assert.equal(hooks.automaticSolverCeilingSeconds(1500, data), 60);
-  assert.equal(hooks.incrementalRefineCeilingSeconds(1500, data), 180);
-  assert.equal(hooks.incrementalRefineCeilingSeconds(600, data), 180);
+  assert.equal(hooks.automaticSolverCeilingSeconds(899, data), 60);
+  assert.equal(hooks.automaticSolverCeilingSeconds(900, data), 180);
+  assert.equal(hooks.automaticSolverCeilingSeconds(1500, data), 180);
+  assert.equal(hooks.automaticSolverCeilingSeconds(1999, data), 180);
+  assert.equal(hooks.automaticSolverCeilingSeconds(2000, data), 270);
+  assert.equal(hooks.incrementalRefineCeilingSeconds(1500, data), 60);
+  assert.equal(hooks.incrementalRefineCeilingSeconds(2000, data), 60);
+  assert.equal(hooks.incrementalRefineCeilingSeconds(900, data), 60);
+  assert.equal(hooks.incrementalRefineCeilingSeconds(899, data), 60);
+  assert.equal(hooks.incrementalRefineCeilingSeconds(600, data), 60);
 });
 
 test("refinement round survives POST, result application, and the next plan", async () => {
@@ -5940,6 +8472,379 @@ test("two-stage quality accepts session compression then requires same-cap gap c
   assert.equal(hooks.payloadStrictlyBetterTeacherQuality(sessionRegression, phaseS), false);
 });
 
+test("safe staged Automatic settlement rejects every singleton, Gap2, and Gap1 regression", () => {
+  const data = makeData(1000);
+  const {hooks} = loadBridge(data);
+  const settings = {
+    optimization_focus:"automatic",
+    optimization_two_stage_teacher_quality:true,
+    optimization_safe_staged_reclick:true
+  };
+  const payload = (teacherSessions, gap1, gap2Plus = 0, onePeriod = 0) => ({
+    solver:{runtime_settings:{...settings}},
+    metrics:{
+      scheduled_periods:1000,
+      expected_periods:1000,
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      teacher_sessions:teacherSessions,
+      one_period_teacher_sessions:onePeriod,
+      gap_distribution:{"0":Math.max(0, teacherSessions - gap1 - gap2Plus), "1":gap1, "2":gap2Plus}
+    },
+    validation:{hard_ok:true}
+  });
+  const incumbent = payload(509, 83);
+  const safeSessionWin = payload(508, 83);
+  const gap2Regression = payload(488, 73, 2);
+  const gap1Regression = payload(488, 84);
+  const singletonRegression = payload(488, 73, 0, 1);
+
+  assert.equal(hooks.candidateWithinVisibleQualityEnvelope(safeSessionWin, incumbent, settings), true);
+  assert.equal(hooks.candidateWithinVisibleQualityEnvelope(gap2Regression, incumbent, settings), false);
+  assert.equal(hooks.candidateWithinVisibleQualityEnvelope(gap1Regression, incumbent, settings), false);
+  assert.equal(hooks.candidateWithinVisibleQualityEnvelope(singletonRegression, incumbent, settings), false);
+});
+
+test("safe staged Automatic permits bounded lower-priority debt only to clear hard quality debt", () => {
+  const data = makeData(1000);
+  const {hooks} = loadBridge(data);
+  const settings = {
+    optimization_focus:"automatic",
+    optimization_two_stage_teacher_quality:true,
+    optimization_safe_staged_reclick:true
+  };
+  const payload = (teacherSessions, gap1, gap2Plus = 0, onePeriod = 0) => ({
+    solver:{runtime_settings:{...settings}},
+    metrics:{
+      scheduled_periods:1000,
+      expected_periods:1000,
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      teacher_sessions:teacherSessions,
+      one_period_teacher_sessions:onePeriod,
+      gap_distribution:{"0":Math.max(0, teacherSessions - gap1 - gap2Plus), "1":gap1, "2":gap2Plus}
+    },
+    validation:{hard_ok:true}
+  });
+  const singletonDebt = payload(654, 167, 0, 1);
+  const singletonRepair = payload(662, 170, 0, 0);
+  const excessiveSessionRepair = payload(679, 170, 0, 0);
+  const excessiveGapRepair = payload(662, 192, 0, 0);
+  const incompleteRepair = payload(662, 170, 1, 0);
+  const cleanIncumbent = payload(654, 167, 0, 0);
+  const unjustifiedRegression = payload(662, 170, 0, 0);
+  const gap2Debt = payload(654, 167, 1, 0);
+  const gap2Repair = payload(662, 170, 0, 0);
+  const singletonProgressDebt = payload(654, 167, 0, 2);
+  const singletonPartial = payload(654, 167, 0, 1);
+  const singletonPartialTradeoff = payload(656, 168, 0, 1);
+  const singletonPartialUnbounded = payload(679, 168, 0, 1);
+  const firstCumulativeRepair = payload(678, 170, 0, 1);
+  firstCumulativeRepair.metrics.automatic_quality_repair_session_cap = 678;
+  firstCumulativeRepair.metrics.automatic_quality_repair_gap1_cap = 184;
+  firstCumulativeRepair.metrics.automatic_quality_repair_total_gap_cap = 184;
+  const ratchetedRepair = payload(702, 170, 0, 0);
+  const gap2ProgressDebt = payload(654, 167, 3, 0);
+  const gap2Partial = payload(654, 167, 2, 0);
+  const floorUnknownIncumbent = payload(654, 167, 0, 1);
+  const newlyProvenFloorCandidate = payload(653, 166, 0, 1);
+  newlyProvenFloorCandidate.metrics.one_period_teacher_sessions_lower_bound = 1;
+  newlyProvenFloorCandidate.metrics.one_period_teacher_sessions_lower_bound_evidence = [{
+    teacher:"GV01",
+    part:"PM",
+    class:"10A1",
+    subject:"Toán",
+    periods_per_week:3,
+    max_periods_per_session:2,
+    minimum_sessions:2,
+    forced_singletons:1
+  }];
+
+  assert.equal(
+    hooks.candidateWithinVisibleQualityEnvelope(singletonRepair, singletonDebt, settings),
+    true
+  );
+  assert.equal(
+    hooks.payloadStrictlyBetterTeacherQuality(singletonRepair, singletonDebt, settings),
+    true
+  );
+  assert.equal(
+    hooks.candidateWithinVisibleQualityEnvelope(gap2Repair, gap2Debt, settings),
+    true
+  );
+  assert.equal(
+    hooks.payloadStrictlyBetterTeacherQuality(gap2Repair, gap2Debt, settings),
+    true
+  );
+  assert.equal(
+    hooks.candidateWithinVisibleQualityEnvelope(
+      singletonPartial,
+      singletonProgressDebt,
+      settings
+    ),
+    true
+  );
+  assert.equal(
+    hooks.payloadStrictlyBetterTeacherQuality(
+      singletonPartial,
+      singletonProgressDebt,
+      settings
+    ),
+    true
+  );
+  assert.equal(
+    hooks.candidateWithinVisibleQualityEnvelope(
+      singletonPartialTradeoff,
+      singletonProgressDebt,
+      settings
+    ),
+    true
+  );
+  assert.equal(
+    hooks.candidateWithinVisibleQualityEnvelope(
+      singletonPartialUnbounded,
+      singletonProgressDebt,
+      settings
+    ),
+    false
+  );
+  assert.equal(
+    hooks.candidateWithinVisibleQualityEnvelope(
+      firstCumulativeRepair,
+      singletonProgressDebt,
+      settings
+    ),
+    true
+  );
+  assert.equal(
+    hooks.candidateWithinVisibleQualityEnvelope(
+      ratchetedRepair,
+      firstCumulativeRepair,
+      settings
+    ),
+    false
+  );
+  assert.equal(
+    hooks.candidateWithinVisibleQualityEnvelope(
+      gap2Partial,
+      gap2ProgressDebt,
+      settings
+    ),
+    true
+  );
+  assert.equal(
+    hooks.payloadStrictlyBetterTeacherQuality(
+      gap2Partial,
+      gap2ProgressDebt,
+      settings
+    ),
+    true
+  );
+  assert.equal(
+    hooks.candidateWithinVisibleQualityEnvelope(
+      newlyProvenFloorCandidate,
+      floorUnknownIncumbent,
+      settings
+    ),
+    true
+  );
+  assert.equal(
+    hooks.payloadStrictlyBetterTeacherQuality(
+      newlyProvenFloorCandidate,
+      floorUnknownIncumbent,
+      settings
+    ),
+    true
+  );
+  assert.equal(
+    hooks.candidateWithinVisibleQualityEnvelope(excessiveSessionRepair, singletonDebt, settings),
+    false
+  );
+  assert.equal(
+    hooks.candidateWithinVisibleQualityEnvelope(excessiveGapRepair, singletonDebt, settings),
+    false
+  );
+  assert.equal(
+    hooks.candidateWithinVisibleQualityEnvelope(incompleteRepair, singletonDebt, settings),
+    false
+  );
+  assert.equal(
+    hooks.candidateWithinVisibleQualityEnvelope(unjustifiedRegression, cleanIncumbent, settings),
+    false
+  );
+  assert.equal(
+    hooks.payloadStrictlyBetterTeacherQuality(excessiveSessionRepair, singletonDebt, settings),
+    false
+  );
+});
+
+test("Automatic repair lineage survives apply and blocks a second-click cap ratchet", async () => {
+  const {data, payload:firstRepair} = makeLargeApplyFixture(1, 2);
+  const settings = {
+    allow_solver_warm_start:true,
+    ui_unified_solve_kind:"refine_complete",
+    ui_use_existing_complete_incumbent:true,
+    ui_existing_incumbent_revalidated:true,
+    optimization_focus:"automatic",
+    optimization_two_stage_teacher_quality:true,
+    optimization_safe_staged_reclick:true
+  };
+  firstRepair.lessons.forEach(lesson => { lesson.grade = "10"; });
+  Object.assign(firstRepair.metrics, {
+    teacher_sessions:678,
+    one_period_teacher_sessions:1,
+    gap_distribution:{"0":507, "1":170, "2":1},
+    automatic_quality_repair_session_cap:678,
+    automatic_quality_repair_gap1_cap:184,
+    automatic_quality_repair_total_gap_cap:184
+  });
+  firstRepair.solver.runtime_settings = {
+    automatic_quality_repair_baseline:{
+      version:1,
+      baseline_sessions:654,
+      baseline_gap1:167,
+      baseline_total_gap:169,
+      session_cap:678,
+      gap1_cap:184,
+      total_gap_cap:184,
+      input_fingerprint:"a".repeat(64),
+      output_fingerprint:"b".repeat(64),
+      problem_fingerprint:"c".repeat(64)
+    }
+  };
+
+  const {window, hooks} = loadBridge(data);
+  window.saveStore = () => true;
+  await window.TKBRustAPI.applyPayload(firstRepair, settings);
+
+  const nextRequest = hooks.dataForSolverRequest(data, settings);
+  const incumbent = nextRequest.tkbSolverResult;
+  assert.ok(incumbent);
+  assert.equal(
+    incumbent.metrics.automatic_quality_repair_session_cap,
+    678
+  );
+  assert.equal(
+    incumbent.solver.runtime_settings.automatic_quality_repair_baseline.session_cap,
+    678
+  );
+  assert.ok(incumbent.lessons.length > 0);
+  assert.ok(incumbent.lessons.every(lesson => lesson.grade === "10"));
+
+  const ratcheted = JSON.parse(JSON.stringify(incumbent));
+  Object.assign(ratcheted.metrics, {
+    teacher_sessions:702,
+    one_period_teacher_sessions:0,
+    gap_distribution:{"0":532, "1":170},
+    automatic_quality_repair_session_cap:702
+  });
+  ratcheted.solver.runtime_settings.automatic_quality_repair_baseline.session_cap = 702;
+  assert.equal(
+    hooks.candidateWithinVisibleQualityEnvelope(ratcheted, incumbent, settings),
+    false
+  );
+});
+
+test("safe staged Automatic accepts a proven singleton floor and explains it", () => {
+  const data = makeData(1000);
+  const {hooks} = loadBridge(data);
+  const settings = {
+    optimization_focus:"automatic",
+    optimization_two_stage_teacher_quality:true,
+    optimization_safe_staged_reclick:true
+  };
+  const payload = teacherSessions => ({
+    ok:true,
+    solver:{runtime_settings:{...settings}},
+    metrics:{
+      scheduled_periods:1000,
+      expected_periods:1000,
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      teacher_sessions:teacherSessions,
+      one_period_teacher_sessions:1,
+      one_period_teacher_sessions_lower_bound:1,
+      one_period_teacher_sessions_lower_bound_evidence:[{
+        teacher:"SĐ.Phương",
+        part:"PM",
+        subject:"Lịch sử và Địa lý",
+        class:"6/3",
+        periods_per_week:3,
+        max_periods_per_session:2,
+        minimum_sessions:2,
+        forced_singletons:1
+      }],
+      gap_distribution:{"0":teacherSessions - 1, "1":1, "2":0}
+    },
+    validation:{hard_ok:true},
+    unassignedLessons:[]
+  });
+  const incumbent = payload(509);
+  const safeSessionWin = payload(508);
+
+  assert.equal(hooks.onePeriodTeacherSessionLowerBound(incumbent.metrics), 1);
+  assert.equal(hooks.onePeriodTeacherSessionFloorReached(incumbent.metrics), true);
+  assert.equal(
+    hooks.candidateWithinVisibleQualityEnvelope(
+      safeSessionWin,
+      incumbent,
+      settings
+    ),
+    true
+  );
+  const status = hooks.completionQualityStatus(incumbent, data);
+  assert.match(status.message, /Đã tối ưu theo phân công/u);
+  assert.match(status.message, /SĐ\.Phương/u);
+  assert.match(status.message, /thấp nhất là 1/u);
+});
+
+test("CP-SAT singleton floor requires exact bound and matching problem fingerprint", () => {
+  const data = makeData(1000);
+  const {hooks} = loadBridge(data);
+  const fingerprint = "a".repeat(64);
+  const metrics = {
+    scheduled_periods:1000,
+    expected_periods:1000,
+    hard_ok:true,
+    app_constraint_violation_count:0,
+    teacher_sessions:774,
+    one_period_teacher_sessions:3,
+    one_period_teacher_sessions_lower_bound:3,
+    one_period_teacher_sessions_lower_bound_problem_fingerprint:fingerprint,
+    one_period_teacher_sessions_lower_bound_evidence:[{
+      kind:"cp_sat_global_singleton_optimum",
+      version:1,
+      status_name:"OPTIMAL",
+      objective_mode:"minimize_one_period_sessions",
+      objective:3,
+      best_bound:3,
+      one_period_teacher_sessions:3,
+      nonbinding_teacher_session_cap:1464,
+      fixed_aware:true,
+      problem_fingerprint:fingerprint
+    }],
+    gap_distribution:{"0":662,"1":106,"2":6}
+  };
+  assert.equal(hooks.onePeriodTeacherSessionLowerBound(metrics), 3);
+
+  for(const mutate of [
+    proof => { proof.status_name = "FEASIBLE"; },
+    proof => { proof.best_bound = 2; },
+    proof => { proof.objective_mode = "minimize_teacher_sessions"; },
+    proof => { proof.problem_fingerprint = "b".repeat(64); }
+  ]){
+    const candidate = structuredClone(metrics);
+    mutate(candidate.one_period_teacher_sessions_lower_bound_evidence[0]);
+    assert.equal(hooks.onePeriodTeacherSessionLowerBound(candidate), 0);
+  }
+});
+
 test("best-so-far quality rejects every visible regression regardless of runtime", () => {
   const data = makeData(1000);
   const {hooks} = loadBridge(data);
@@ -6132,6 +9037,28 @@ test("focused checkpoints treat unfinished quality targets as progress, not hard
   };
 
   assert.match(hooks.hardQualityViolationMessage(payload, strictAutomatic), /ràng buộc cứng/u);
+  assert.equal(
+    hooks.hardQualityViolationMessage(payload, {
+      ...strictAutomatic,
+      ui_unified_solve_kind:"refine_complete",
+      ui_use_existing_complete_incumbent:true,
+      ui_existing_incumbent_revalidated:true
+    }),
+    "",
+    "a hard-valid automatic refinement must become the next incumbent"
+  );
+  assert.match(
+    hooks.hardQualityViolationMessage(payload, {
+      ...strictAutomatic,
+      ui_unified_solve_kind:"refine_complete",
+      ui_use_existing_complete_incumbent:true,
+      ui_existing_incumbent_revalidated:true,
+      ui_agent_execution_policy:"web_agent_required",
+      ui_browser_agent_required:true
+    }),
+    /1 ti\u1ebft/u,
+    "Browser-required Automatic must not finish before singleton and Gap2 both reach zero"
+  );
   for(const focus of ["singletons", "sessions", "gaps"]){
     assert.equal(
       hooks.hardQualityViolationMessage(payload, {...strictAutomatic, optimization_focus:focus}),
@@ -6150,6 +9077,191 @@ test("focused checkpoints treat unfinished quality targets as progress, not hard
   assert.match(
     hooks.hardQualityViolationMessage(hardInvalid, {...strictAutomatic, optimization_focus:"singletons"}),
     /ràng buộc cứng/u
+  );
+});
+
+test("Browser Automatic quality gate is fail-closed for every lifecycle kind", () => {
+  const {hooks} = loadBridge(makeData(2));
+  const clean = {
+    ok:true,
+    lessons:[{}, {}],
+    unassignedLessons:[],
+    metrics:{
+      scheduled_periods:2,
+      expected_periods:2,
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      one_period_teacher_sessions:0,
+      teacher_gap2_sessions:0,
+      teacher_sessions:2,
+      gap_distribution:{"0":2, "1":0, "2":0}
+    },
+    validation:{hard_ok:true}
+  };
+  for(const solveKind of ["fresh_complete_first", "repair_constraints", "refine_complete"]){
+    const settings = {
+      optimization_focus:"automatic",
+      ui_unified_solve_kind:solveKind,
+      ui_use_existing_complete_incumbent:solveKind === "refine_complete",
+      ui_existing_incumbent_revalidated:solveKind === "refine_complete",
+      require_complete_schedule:true,
+      ui_agent_execution_policy:"web_agent_required",
+      ui_browser_agent_required:true
+    };
+    assert.equal(hooks.strictBrowserAutomaticRequired(settings), true);
+    assert.equal(hooks.strictBrowserAutomaticQualityState(clean).met, true);
+    assert.equal(hooks.hardQualityViolationMessage(clean, settings), "");
+
+    const missing = structuredClone(clean);
+    delete missing.metrics.teacher_gap2_sessions;
+    assert.match(
+      hooks.hardQualityViolationMessage(missing, settings),
+      /thiếu chỉ số chất lượng bắt buộc/u
+    );
+
+    const conflicting = structuredClone(clean);
+    conflicting.metrics.teacher_gap2_sessions = 1;
+    assert.match(
+      hooks.hardQualityViolationMessage(conflicting, settings),
+      /mâu thuẫn/u
+    );
+
+    const rough = structuredClone(clean);
+    rough.metrics.one_period_teacher_sessions = 2;
+    rough.metrics.teacher_gap2_sessions = 1;
+    rough.metrics.gap_distribution["2"] = 1;
+    assert.match(hooks.hardQualityViolationMessage(rough, settings), /Dạy 1 tiết\/buổi = 2/u);
+    assert.match(hooks.hardQualityViolationMessage(rough, settings), /Trống 2 tiết = 1/u);
+
+    const structuralFloor = structuredClone(clean);
+    structuralFloor.metrics.one_period_teacher_sessions = 1;
+    structuralFloor.metrics.one_period_teacher_sessions_lower_bound = 1;
+    structuralFloor.metrics.one_period_teacher_sessions_lower_bound_evidence = [{
+      teacher:"SĐ.Phương",
+      part:"PM",
+      class:"6/3",
+      subject:"Lịch sử và Địa lý",
+      periods_per_week:3,
+      max_periods_per_session:2,
+      minimum_sessions:2,
+      forced_singletons:1
+    }];
+    assert.equal(
+      hooks.strictBrowserAutomaticQualityState(structuralFloor).met,
+      true
+    );
+    assert.equal(hooks.hardQualityViolationMessage(structuralFloor, settings), "");
+
+    const missingFloorEvidence = structuredClone(structuralFloor);
+    delete missingFloorEvidence.metrics.one_period_teacher_sessions_lower_bound_evidence;
+    assert.equal(
+      hooks.onePeriodTeacherSessionLowerBound(missingFloorEvidence.metrics),
+      0
+    );
+    assert.equal(
+      hooks.strictBrowserAutomaticQualityState(missingFloorEvidence).met,
+      false
+    );
+
+    const malformedFloorEvidence = structuredClone(structuralFloor);
+    malformedFloorEvidence.metrics.one_period_teacher_sessions_lower_bound_evidence[0]
+      .forced_singletons = 2;
+    assert.equal(
+      hooks.onePeriodTeacherSessionLowerBound(malformedFloorEvidence.metrics),
+      0
+    );
+    assert.equal(
+      hooks.strictBrowserAutomaticQualityState(malformedFloorEvidence).met,
+      false
+    );
+  }
+});
+
+test("pending Browser Automatic job preserves its strict gate across reload metadata", () => {
+  const storage = memoryStorage();
+  const {hooks} = loadBridge(makeData(2), null, {localStorage:storage});
+  hooks.writePendingBackendJob("strict-browser-job", "v1:strict", {
+    strictBrowserAutomatic:true,
+    optimizationFocus:"automatic"
+  });
+  const pending = hooks.readPendingBackendJob();
+  assert.equal(pending.strictBrowserAutomatic, true);
+  assert.equal(pending.optimizationFocus, "automatic");
+  hooks.writePendingBackendJob("strict-browser-job", "v1:strict", {lastPercent:42});
+  assert.equal(hooks.readPendingBackendJob().strictBrowserAutomatic, true);
+});
+
+test("mobile local terminal accepts only soft quality debt and never bypasses hard completeness", () => {
+  const {hooks} = loadBridge(makeData(2));
+  const strictAutomatic = {
+    optimization_focus:"automatic",
+    require_complete_schedule:true,
+    strict_one_period_sessions_cap:true,
+    enforce_max_one_period_sessions:true,
+    max_one_period_sessions:0,
+    period_max_teacher_gap:1
+  };
+  const roughMobileTerminal = {
+    ok:true,
+    mobile_local_quality_terminal:true,
+    metrics:{
+      scheduled_periods:2,
+      expected_periods:2,
+      unassigned_periods:0,
+      app_constraint_violation_count:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      one_period_teacher_sessions:134,
+      teacher_gap2_sessions:20,
+      gap_distribution:{"2":20}
+    },
+    validation:{hard_ok:true},
+    lessons:[{}, {}],
+    unassignedLessons:[],
+    solver:{runtime_settings:{
+      mobile_local_quality_terminal:true,
+      quality_debt_retained:true,
+      deadline_hit:true
+    }}
+  };
+
+  assert.equal(hooks.payloadIsMobileLocalQualityTerminal(roughMobileTerminal), true);
+  assert.equal(
+    hooks.hardQualityViolationMessage(roughMobileTerminal, strictAutomatic),
+    "",
+    "the phone's server-validated bounded best must pass the quality-only bridge gate"
+  );
+  assert.match(
+    hooks.hardQualityViolationMessage(roughMobileTerminal, {
+      ...strictAutomatic,
+      ui_agent_execution_policy:"web_agent_required",
+      ui_browser_agent_required:true
+    }),
+    /1 ti\u1ebft/u,
+    "Automatic WebAgent may not use the mobile debt marker to bypass the zero/zero contract"
+  );
+
+  const unmarked = structuredClone(roughMobileTerminal);
+  delete unmarked.mobile_local_quality_terminal;
+  delete unmarked.solver.runtime_settings.mobile_local_quality_terminal;
+  assert.equal(hooks.payloadIsMobileLocalQualityTerminal(unmarked), false);
+  assert.match(hooks.hardQualityViolationMessage(unmarked, strictAutomatic), /r\u00e0ng bu\u1ed9c c\u1ee9ng/u);
+
+  const hardInvalid = structuredClone(roughMobileTerminal);
+  hardInvalid.lessons = [];
+  hardInvalid.metrics.scheduled_periods = 0;
+  hardInvalid.metrics.unassigned_periods = 2;
+  hardInvalid.metrics.app_constraint_violation_count = 1;
+  hardInvalid.metrics.hard_ok = false;
+  hardInvalid.metrics.core_hard_ok = false;
+  hardInvalid.validation.hard_ok = false;
+  assert.equal(hooks.payloadIsMobileLocalQualityTerminal(hardInvalid), false);
+  assert.match(
+    hooks.hardQualityViolationMessage(hardInvalid, strictAutomatic),
+    /r\u00e0ng bu\u1ed9c c\u1ee9ng/u,
+    "the marker must not relax completeness, app constraints, or hard validation"
   );
 });
 
@@ -6291,12 +9403,12 @@ test("bounded unified lifecycle applies a complete schedule with unavoidable qua
   assert.equal(progress.button.disabled, false);
   assert.equal(progress.home.hidden, false);
   assert.equal(progress.home.disabled, false);
-  assert.ok(progress.events.some(event => (
+  assert.equal(progress.events.some(event => (
     event.type === "attribute"
     && event.id === "btnHome"
     && event.name === "aria-disabled"
     && event.value === "true"
-  )), "Home must be locked while sorting");
+  )), false, "Home must remain usable while a server job runs");
   assert.equal(progress.events.some(event => (
     event.type === "hidden" && event.id === "btnHome" && event.value === true
   )), false, "Home must keep its toolbar slot while sorting");
@@ -6432,8 +9544,15 @@ test("failed solve lifecycle never paints a fake 100%", async () => {
   const data = makeData(1);
   const clock = createFakeClock(1_700_000_000_000, 0);
   const progress = createProgressDocument(clock);
+  const wakeLock = createScreenWakeLockSpy();
   clock.document = progress.document;
   clock.console = Object.assign({}, console, {error(){}});
+  clock.navigator = {
+    platform:"iPhone",
+    userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)",
+    maxTouchPoints:5,
+    wakeLock:wakeLock.wakeLock
+  };
   const fetchImpl = async url => {
     const requestUrl = String(url);
     if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
@@ -6448,14 +9567,16 @@ test("failed solve lifecycle never paints a fake 100%", async () => {
   const result = await window.TKBRustAPI.solve({ask:false, settings:plan.settings, singlePass:true});
 
   assert.equal(result, null);
+  assert.deepEqual(wakeLock.requests, [], "mobile failure must not request a screen wake lock");
+  assert.equal(wakeLock.releaseCalls(), 0);
   assert.equal(progress.home.hidden, false);
   assert.equal(progress.home.disabled, false);
-  assert.ok(progress.events.some(event => (
+  assert.equal(progress.events.some(event => (
     event.type === "attribute"
     && event.id === "btnHome"
     && event.name === "aria-disabled"
     && event.value === "true"
-  )), "Home must be locked during a failed solve");
+  )), false, "Home must remain usable during a failed server request");
   assert.equal(progress.events.some(event => (
     event.type === "hidden" && event.id === "btnHome" && event.value === true
   )), false, "Home must remain in place during a failed solve");
@@ -6470,14 +9591,26 @@ test("cancelled solve lifecycle never paints a fake 100%", async () => {
   const data = makeData(1);
   const clock = createFakeClock(1_700_000_000_000, 0);
   const progress = createProgressDocument(clock);
+  const wakeLock = createScreenWakeLockSpy();
   clock.document = progress.document;
+  clock.navigator = {
+    platform:"iPhone",
+    userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)",
+    maxTouchPoints:5,
+    wakeLock:wakeLock.wakeLock
+  };
   let markSolveStarted;
   const solveStarted = new Promise(resolve => { markSolveStarted = resolve; });
+  let markCancelStarted;
+  const cancelStarted = new Promise(resolve => { markCancelStarted = resolve; });
+  let finishCancel;
+  const cancelResponse = new Promise(resolve => { finishCancel = resolve; });
   const fetchImpl = (url, options = {}) => {
     const requestUrl = String(url);
     if(requestUrl.endsWith("/api/health")) return Promise.resolve(jsonResponse({ok:true, api:"rust"}));
     if(requestUrl.endsWith("/api/solve-cancel")){
-      return Promise.resolve(jsonResponse({ok:true, cancelRequested:true}));
+      markCancelStarted();
+      return cancelResponse;
     }
     if(requestUrl.endsWith("/api/solve-data")){
       markSolveStarted();
@@ -6495,11 +9628,19 @@ test("cancelled solve lifecycle never paints a fake 100%", async () => {
   const plan = hooks.buildAutomaticAutoSortPlan(data);
   const solvePromise = window.TKBRustAPI.solve({ask:false, settings:plan.settings, singlePass:true});
   await solveStarted;
+  await Promise.resolve();
+  assert.deepEqual(wakeLock.requests, []);
   window.__AUTO_SORT_STOP_REQUESTED = true;
-  await window.requestStopAutoSort();
+  const stopPromise = window.requestStopAutoSort();
+  await cancelStarted;
+  assert.equal(wakeLock.releaseCalls(), 0);
+  finishCancel(jsonResponse({ok:true, cancelRequested:true}));
+  await stopPromise;
 
   const result = await solvePromise;
   assert.equal(result, null);
+  assert.deepEqual(wakeLock.requests, [], "Stop must not acquire a screen wake lock");
+  assert.equal(wakeLock.releaseCalls(), 0);
   assert.equal(progress.home.hidden, false);
   assert.equal(progress.home.disabled, false);
   assert.equal(progress.home.hidden, false, "Home must unlock with Stop");
@@ -6511,7 +9652,7 @@ test("cancelled solve lifecycle never paints a fake 100%", async () => {
   )), false);
 });
 
-test("focused Stop keeps polling and applies the best server incumbent", async () => {
+test("focused Stop requests the safe incumbent and applies it before settling", async () => {
   const {data, payload:serverPayload} = makeLargeApplyFixture(1, 2);
   const subject = String(data.mon[0].ten);
   const initialLessons = [3, 4].map(period => ({
@@ -6550,8 +9691,8 @@ test("focused Stop keeps polling and applies the best server incumbent", async (
     core_hard_ok:true,
     teacher_sessions:1,
     one_period_teacher_sessions:0,
-    teacher_gap2_sessions:1,
-    gap_distribution:{"2":1}
+    teacher_gap2_sessions:0,
+    gap_distribution:{"0":1}
   });
   serverPayload.solver.runtime_settings = {
     optimization_focus:"sessions",
@@ -6560,11 +9701,11 @@ test("focused Stop keeps polling and applies the best server incumbent", async (
 
   const clock = createFakeClock(1_700_000_000_000, 0);
   const progress = createProgressDocument(clock);
+  const wakeLock = createScreenWakeLockSpy();
   let hooksRef = null;
   let wireJobId = "";
   let resultSignal = null;
-  let resolveResultPoll;
-  let resolveCancelResponse;
+  let resolveResultResponse;
   let markResultPollStarted;
   let markCancelStarted;
   const resultPollStarted = new Promise(resolve => { markResultPollStarted = resolve; });
@@ -6591,18 +9732,28 @@ test("focused Stop keeps polling and applies the best server incumbent", async (
     if(requestUrl.includes("/api/solve-result")){
       resultSignal = options.signal;
       markResultPollStarted();
-      return new Promise(resolve => { resolveResultPoll = resolve; });
+      return new Promise(resolve => { resolveResultResponse = resolve; });
     }
     if(requestUrl.endsWith("/api/solve-cancel")){
       cancelBodies.push(JSON.parse(options.body));
-      assert.equal(hooksRef.readPendingBackendJob()?.jobId, wireJobId);
       markCancelStarted();
-      return new Promise(resolve => { resolveCancelResponse = resolve; });
+      return jsonResponse({
+        ok:true,
+        cancelRequested:false,
+        bestEffortStopRequested:true,
+        jobId:wireJobId
+      });
     }
     throw new Error(`Unexpected URL: ${url}`);
   };
   const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
-    document:progress.document
+    document:progress.document,
+    navigator:{
+      platform:"iPhone",
+      userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)",
+      maxTouchPoints:5,
+      wakeLock:wakeLock.wakeLock
+    }
   }));
   hooksRef = hooks;
   window.calcSchoolTKBStats = () => ({
@@ -6632,52 +9783,39 @@ test("focused Stop keeps polling and applies the best server incumbent", async (
     singlePass:true
   });
   await resultPollStarted;
+  await Promise.resolve();
+  assert.deepEqual(wakeLock.requests, []);
+  assert.equal(wakeLock.releaseCalls(), 0);
   assert.equal(hooks.readPendingBackendJob()?.jobId, wireJobId);
   assert.equal(hooks.readPendingBackendJob()?.optimizationFocus, "sessions");
 
   const firstStop = window.requestStopAutoSort();
-  assert.match(
-    progress.nodes.get("statusMsg").textContent,
-    /phương án tốt nhất/u,
-    "soft Stop feedback must not flicker back to the running label"
-  );
+  assert.equal(progress.nodes.get("statusMsg").textContent, "Đang nhận phương án tốt nhất...");
   await cancelStarted;
-  const secondStop = await window.requestStopAutoSort();
-
-  assert.equal(secondStop, true, "a repeated focused Stop stays idempotent");
-  assert.equal(cancelBodies.length, 1, "a repeated Stop must not send a hard cancel");
+  assert.equal(cancelBodies.length, 1);
   assert.deepEqual(cancelBodies[0], {solve_run_id:wireJobId, retainBest:true});
-  assert.equal(resultSignal?.aborted, false, "soft Stop must retain the active result poll");
+  assert.equal(resultSignal?.aborted, false, "soft Stop must keep the result poll alive");
   assert.equal(window.__AUTO_SORT_STOP_REQUESTED, false);
   assert.equal(hooks.readPendingBackendJob()?.jobId, wireJobId);
   assert.equal(hooks.isSettledBackendJob(wireJobId), false);
-  assert.equal(window.__TKB_RUST_PROGRESS_STATE.bestEffortStopPending, true);
-  assert.equal(window.__TKB_RUST_PROGRESS_STATE.phase, "best_effort_stop");
-
-  resolveCancelResponse(jsonResponse({
-    ok:true,
-    cancelRequested:false,
-    bestEffortStopRequested:true,
-    jobId:wireJobId
-  }));
-  assert.equal(await firstStop, true);
-  resolveResultPoll(jsonResponse(serverPayload));
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE?.bestEffortStopPending, true);
+  await firstStop;
+  resolveResultResponse(jsonResponse(serverPayload));
 
   const result = await solving;
   assert.ok(result);
+  assert.equal(wakeLock.releaseCalls(), 0);
   assert.equal(hooks.countScheduledLessons(data), 2);
-  assert.equal(
-    data.tkbSolverResult.lessons.map(lesson => lesson.period).join(","),
-    "1,2",
-    "the HTTP 200 incumbent must replace the visible timetable"
-  );
+  assert.notEqual(data.tkbSolverResult.lessons.map(lesson => lesson.period).join(","), "3,4");
+  assert.equal(data.tkbSolverResult.metrics.one_period_teacher_sessions, 0);
+  assert.equal(data.tkbSolverResult.metrics.teacher_gap2_sessions, 0);
   assert.equal(hooks.readPendingBackendJob(), null);
   assert.equal(hooks.isSettledBackendJob(wireJobId), true);
   assert.equal(progress.nodes.get("statusMsg").textContent, "Đã xếp xong!");
 });
 
-test("singleton and gap Stop also request the best incumbent", async () => {
-  for(const focus of ["singletons", "gaps"]){
+test("Automatic Stop stays destructive while focused singleton and gap Stop retain best", async () => {
+  for(const focus of ["automatic", "singletons", "gaps"]){
     const data = makeData(2);
     const jobId = `focused-${focus}-stop`;
     let cancelBody = null;
@@ -6688,8 +9826,8 @@ test("singleton and gap Stop also request the best incumbent", async () => {
         cancelBody = JSON.parse(options.body);
         return jsonResponse({
           ok:true,
-          cancelRequested:false,
-          bestEffortStopRequested:true,
+          cancelRequested:focus === "automatic",
+          bestEffortStopRequested:focus !== "automatic",
           jobId
         });
       }
@@ -6703,15 +9841,20 @@ test("singleton and gap Stop also request the best incumbent", async () => {
       {optimizationFocus:focus}
     );
 
-    assert.equal(await window.requestStopAutoSort(), true);
-    assert.deepEqual(cancelBody, {solve_run_id:jobId, retainBest:true});
-    assert.equal(hooks.readPendingBackendJob()?.jobId, jobId);
-    assert.equal(hooks.isSettledBackendJob(jobId), false);
-    assert.notEqual(window.__AUTO_SORT_STOP_REQUESTED, true);
+    await window.requestStopAutoSort();
+    const retainBest = focus !== "automatic";
+    assert.deepEqual(cancelBody, {solve_run_id:jobId, retainBest});
+    assert.equal(hooks.readPendingBackendJob()?.jobId || null, retainBest ? jobId : null);
+    assert.equal(hooks.isSettledBackendJob(jobId), !retainBest);
+    assert.equal(window.__AUTO_SORT_STOP_REQUESTED === true, !retainBest);
+    assert.equal(
+      window.__TKB_RUST_PROGRESS_STATE?.bestEffortStopPending === true,
+      retainBest
+    );
   }
 });
 
-test("focused Stop retains the server checkpoint without waiting for a slow Browser Agent", async () => {
+test("focused Stop asks Browser and server to retain their best checkpoint", async () => {
   const data = makeData(2);
   const jobId = "focused-browser-best-stop";
   const calls = [];
@@ -6729,7 +9872,7 @@ test("focused Stop retains the server checkpoint without waiting for a slow Brow
     const requestUrl = String(url);
     if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
     if(requestUrl.endsWith("/api/solve-cancel")){
-      calls.push("server:retain-best");
+      calls.push("server:cancel");
       cancelBody = JSON.parse(options.body);
       return jsonResponse({
         ok:true,
@@ -6752,13 +9895,153 @@ test("focused Stop retains the server checkpoint without waiting for a slow Brow
 
   const stopping = window.requestStopAutoSort();
   await Promise.resolve();
-  assert.equal(await stopping, true);
-  assert.deepEqual(calls, [`browser:${jobId}`, "server:retain-best"]);
+  await stopping;
+  assert.deepEqual(calls, ["browser:focused-browser-best-stop", "server:cancel"]);
   assert.deepEqual(cancelBody, {solve_run_id:jobId, retainBest:true});
   assert.equal(hooks.readPendingBackendJob()?.jobId, jobId);
   assert.equal(hooks.isSettledBackendJob(jobId), false);
-  assert.notEqual(window.__AUTO_SORT_STOP_REQUESTED, true);
-  assert.equal(window.__TKB_RUST_PROGRESS_STATE.bestEffortStopPending, true);
+  assert.equal(window.__AUTO_SORT_STOP_REQUESTED === true, false);
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE?.bestEffortStopPending, true);
+});
+
+test("zero Gap2 progress never asks the browser to retain or cancel a result", async () => {
+  const data = makeData(2);
+  const jobId = "focused-gap2-auto-target-stop";
+  const calls = [];
+  const cancelBodies = [];
+  const executor = {
+    stopAndSubmitBest(options){
+      calls.push(`browser:${options.jobId}`);
+      return {handled:true, submitted:true};
+    }
+  };
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      calls.push("server:retain-best");
+      cancelBodies.push(JSON.parse(options.body));
+      return jsonResponse({
+        ok:true,
+        cancelRequested:false,
+        bestEffortStopRequested:true,
+        jobId
+      });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const progress = createProgressDocument();
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    document:progress.document,
+    TKBBrowserWasmExecutor:executor
+  });
+  hooks.startProgressTicker({
+    optimization_focus:"gaps",
+    optimization_gap_target:"gap2",
+    ui_requested_solve_mode:"optimize_gap2",
+    ui_progress_mode:"work",
+    ui_progress_metric_focus:"teacher_gap2_sessions",
+    ui_progress_metric_current:2,
+    ui_progress_metric_target:0,
+    ui_progress_metric_baseline:2
+  }, data);
+  hooks.writePendingBackendJob(
+    jobId,
+    hooks.durableScheduleFingerprint(data),
+    {optimizationFocus:"gaps"}
+  );
+
+  const checkpoint = {
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"browser_agent:checkpoint",
+    sequence:2,
+    solveRequestMode:"optimize_gap2",
+    optimizationFocus:"teacher_gap2_sessions",
+    metricCurrent:0,
+    metricTarget:0,
+    metricBaseline:2,
+    metricPercent:100
+  };
+  assert.equal(hooks.recordBackendLiveProgress({
+    ...checkpoint,
+    stage:"teacher_session_opt:best",
+    sequence:1
+  }), true);
+  await Promise.resolve();
+  assert.deepEqual(calls, [], "a non-Agent progress estimate must not stop the solver");
+  assert.equal(hooks.recordBackendLiveProgress(checkpoint), true);
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.deepEqual(calls, []);
+  assert.deepEqual(cancelBodies, []);
+  assert.equal(hooks.readPendingBackendJob()?.jobId, jobId);
+
+  assert.equal(hooks.recordBackendLiveProgress({...checkpoint, sequence:3}), true);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(calls, []);
+});
+
+test("zero Gap2 Cloud Run progress waits for the container terminal result", async () => {
+  const data = makeData(2);
+  const jobId = "focused-gap2-cloud-auto-target-stop";
+  const calls = [];
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      calls.push(JSON.parse(options.body));
+      return jsonResponse({
+        ok:true,
+        cancelRequested:false,
+        bestEffortStopRequested:true,
+        jobId
+      });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl);
+  hooks.startProgressTicker({
+    optimization_focus:"gaps",
+    optimization_gap_target:"gap2",
+    ui_requested_solve_mode:"optimize_gap2",
+    ui_progress_mode:"work",
+    ui_progress_metric_focus:"teacher_gap2_sessions",
+    ui_progress_metric_current:2,
+    ui_progress_metric_target:0,
+    ui_progress_metric_baseline:2
+  }, data);
+  hooks.writePendingBackendJob(
+    jobId,
+    hooks.durableScheduleFingerprint(data),
+    {optimizationFocus:"gaps"}
+  );
+  hooks.publishCurrentSolveExecutorState({
+    jobId,
+    executor:"serverless",
+    executionPhase:"serverless_running"
+  });
+
+  assert.equal(hooks.recordBackendLiveProgress({
+    protocol:"tkb-reference-solver-progress-v1",
+    stage:"session_cp_sat:metric",
+    sequence:1,
+    solveRequestMode:"optimize_gap2",
+    optimizationFocus:"teacher_gap2_sessions",
+    metricCurrent:0,
+    metricTarget:0,
+    metricBaseline:2,
+    metricPercent:100
+  }), true);
+  await Promise.resolve();
+  await Promise.resolve();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(calls, []);
+  assert.notEqual(window.__TKB_RUST_PROGRESS_STATE.bestEffortStopPending, true);
+  assert.equal(hooks.readPendingBackendJob()?.jobId, jobId);
 });
 
 test("Quick Stop remains a destructive cancel", async () => {
@@ -6901,7 +10184,7 @@ test("default fresh capacity flags skip the synchronous local scanner", async ()
   assert.equal(result.warning, "");
 });
 
-test("capacity precheck without skip flags still blocks a real shortage", async () => {
+test("capacity precheck without skip flags accepts a real VPS shortage", async () => {
   const data = makeData(29);
   const {window, hooks} = loadBridge(data);
   let scannerCalls = 0;
@@ -6935,12 +10218,257 @@ test("capacity precheck without skip flags still blocks a real shortage", async 
     require_complete_schedule:true
   });
   assert.ok(scannerCalls > 0);
+  assert.equal(result.ok, true);
+  assert.equal(result.autoAccepted, true);
+  assert.equal(result.blocked, undefined);
+  assert.equal(result.capacityShortage, true);
+  assert.equal(result.localScanSkipped, undefined);
+});
+
+test("capacity partial gate accepts exact solver remainder and rejects unsafe accounting", () => {
+  const data = makeData(2);
+  const {hooks} = loadBridge(data);
+  const base = {
+    ok:true,
+    lessons:[{classId:"L1", subject:"Toán", teacher:"GV01", day:2, session:"AM", period:1}],
+    unassignedLessons:[{
+      classId:"L1",
+      subject:"Toán",
+      periods:1,
+      reason:"not_enough_available_slots"
+    }],
+    metrics:{
+      scheduled_periods:1,
+      expected_periods:2,
+      unassigned_periods:1,
+      capacity_unassigned_periods:1,
+      solver_unassigned_periods:0,
+      accounting_ok:true,
+      placement_hard_ok:true,
+      placement_core_hard_ok:true,
+      class_slot_conflicts:0,
+      teacher_slot_conflicts:0,
+      room_slot_conflicts:0,
+      app_constraint_violation_count:0
+    },
+    validation:{hard_ok:true, violations:[]}
+  };
+  assert.equal(hooks.payloadIsSafeCapacityPartial(base), true);
+  assert.equal(hooks.payloadIsSafeCapacityPartial({
+    ...base,
+    metrics:{...base.metrics, teacher_slot_conflicts:1}
+  }), false);
+  assert.equal(hooks.payloadIsSafeCapacityPartial({
+    ...base,
+    metrics:{...base.metrics, accounting_ok:false}
+  }), false);
+  assert.equal(hooks.payloadIsSafeCapacityPartial({
+    ...base,
+    unassignedLessons:[
+      ...base.unassignedLessons,
+      {
+        classId:"L2",
+        subject:"Văn",
+        periods:1,
+        reason:"session_constraints_best_effort"
+      }
+    ],
+    metrics:{
+      ...base.metrics,
+      expected_periods:3,
+      unassigned_periods:2,
+      capacity_unassigned_periods:1,
+      solver_unassigned_periods:1
+    },
+    validation:{hard_ok:false, violations:[]}
+  }), true);
+  assert.equal(hooks.payloadIsSafeCapacityPartial({
+    ...base,
+    metrics:{...base.metrics, solver_unassigned_periods:1}
+  }), false);
+  assert.equal(hooks.payloadIsSafeCapacityPartial({
+    ...base,
+    unassignedLessons:[{
+      classId:"L1",
+      subject:"Toán",
+      periods:1,
+      reason:"session_constraints_best_effort"
+    }],
+    metrics:{
+      ...base.metrics,
+      capacity_unassigned_periods:0,
+      solver_unassigned_periods:1,
+      capacity_limited:false
+    },
+    validation:{hard_ok:false, violations:[]}
+  }), true);
+});
+
+test("zero-slack fixed timetable uses a bounded fresh probe and keeps explicit OFF cells", () => {
+  const data = makeData(2);
+  const subject = data.mon[0].ten;
+  data.tkb = {
+    L1:{
+      thu2:{sang:[{mon:subject, fixed:true}, "OFF", "", "", ""], chieu:["", "", "", "", ""]},
+      thu3:{sang:["", "", "", "", ""], chieu:["", "", "", "", ""]},
+      thu4:{sang:["", "", "", "", ""], chieu:["", "", "", "", ""]},
+      thu5:{sang:["", "", "", "", ""], chieu:["", "", "", "", ""]},
+      thu6:{sang:["", "", "", "", ""], chieu:["", "", "", "", ""]},
+      thu7:{sang:["", "", "", "", ""], chieu:["", "", "", "", ""]}
+    }
+  };
+  const {hooks} = loadBridge(data);
+  const settings = {
+    auto_sort_mode:"teacher_session_opt",
+    ui_unified_solve_kind:"fresh_complete_first",
+    tight_class_fixed_off_profile:{expected:2, availableSlots:2, fixedSlots:1, slack:0},
+    num_workers:6
+  };
+
+  assert.equal(hooks.shouldUseCapacitySafeFreshProbe(settings, data), true);
+  const probe = hooks.capacitySafeFreshProbeSettings(settings, data, "probe-run");
+  assert.equal(probe.auto_sort_mode, "fresh");
+  assert.equal(probe.overall_time_limit_seconds, 60);
+  assert.equal(probe.require_complete_schedule, false);
+  assert.equal(probe.ui_capacity_shortage_confirmed, true);
+  assert.equal(probe.ui_preserve_off_cells_in_solver_request, true);
+
+  const request = hooks.dataForSolverRequest(data, probe);
+  assert.equal(request.__tkbRequestStrippedSchedule, true);
+  assert.equal(request.tkb.L1.thu2.sang[0].mon, subject);
+  assert.equal(request.tkb.L1.thu2.sang[0].fixed, true);
+  assert.equal(request.tkb.L1.thu2.sang[1], "OFF");
+
+  const ordinary = hooks.dataForSolverRequest(data, {allow_solver_warm_start:false});
+  assert.notEqual(ordinary.tkb.L1.thu2.sang[1], "OFF");
+});
+
+test("large fixed OFF timetable uses the capacity probe without a tight class-slack profile", () => {
+  const data = makeData(1200);
+  const subject = data.mon[0].ten;
+  data.tkb = {L1:{}};
+  let fixedCount = 0;
+  for(const thu of ["thu2", "thu3", "thu4", "thu5", "thu6", "thu7"]){
+    data.tkb.L1[thu] = {
+      sang:Array.from({length:5}, () => fixedCount++ < 20 ? {mon:subject, fixed:true} : ""),
+      chieu:Array.from({length:5}, () => fixedCount++ < 20 ? {mon:subject, fixed:true} : "")
+    };
+  }
+  data.tkbUserOff = {L1:{"thu7|chieu|4":true}};
+  const {hooks} = loadBridge(data);
+
+  assert.equal(hooks.countScheduledLessons(data), 20);
+  assert.equal(hooks.shouldUseCapacitySafeFreshProbe({
+    auto_sort_mode:"teacher_session_opt",
+    ui_unified_solve_kind:"fresh_complete_first"
+  }, data), true);
+});
+
+test("bounded capacity probe keeps its 60-second contract through postSolve", async () => {
+  const data = makeData(2);
+  const subject = data.mon[0].ten;
+  data.tkb = {
+    L1:{
+      thu2:{sang:[{mon:subject, fixed:true}, "OFF", "", "", ""], chieu:["", "", "", "", ""]},
+      thu3:{sang:["", "", "", "", ""], chieu:["", "", "", "", ""]},
+      thu4:{sang:["", "", "", "", ""], chieu:["", "", "", "", ""]},
+      thu5:{sang:["", "", "", "", ""], chieu:["", "", "", "", ""]},
+      thu6:{sang:["", "", "", "", ""], chieu:["", "", "", "", ""]},
+      thu7:{sang:["", "", "", "", ""], chieu:["", "", "", "", ""]}
+    }
+  };
+  let posted = null;
+  const fetchImpl = async (url, options = {}) => {
+    if(String(url).endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(String(url).endsWith("/api/solve-data")){
+      posted = JSON.parse(options.body);
+      return jsonResponse({
+        ok:true,
+        classes:[{id:"L1", name:"10A1"}],
+        lessons:[{classId:"L1", className:"10A1", subject, teacher:"GV01", day:2, session:"AM", period:1}],
+        unassignedLessons:[{classId:"L1", className:"10A1", subject, teacher:"GV01", periods:1, reason:"not_enough_available_slots"}],
+        metrics:{
+          scheduled_periods:1,
+          expected_periods:2,
+          unassigned_periods:1,
+          capacity_unassigned_periods:1,
+          solver_unassigned_periods:0,
+          accounting_ok:true,
+          placement_hard_ok:true,
+          placement_core_hard_ok:true,
+          class_slot_conflicts:0,
+          teacher_slot_conflicts:0,
+          room_slot_conflicts:0,
+          app_constraint_violation_count:0,
+          hard_ok:true,
+          core_hard_ok:true
+        },
+        validation:{hard_ok:true, violations:[]},
+        solver:{runtime_settings:{}}
+      });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {hooks} = loadBridge(data, fetchImpl);
+  const probe = hooks.capacitySafeFreshProbeSettings({num_workers:6}, data, "probe-post");
+  const payload = await hooks.postSolve(probe, data);
+
+  assert.equal(hooks.payloadIsSafeCapacityPartial(payload), true);
+  assert.ok(posted);
+  assert.equal(posted.settings.ui_capacity_safe_fresh_probe, true);
+  assert.equal(posted.settings.auto_sort_mode, "fresh");
+  assert.equal(posted.settings.overall_time_limit_seconds, 60);
+  assert.equal(posted.settings.backend_deadline_ms, 60000);
+  assert.equal(posted.settings.native_global_deadline_ms, 60000);
+  assert.equal(posted.settings.require_complete_schedule, false);
+  assert.equal(posted.data.tkb.L1.thu2.sang[1], "OFF");
+});
+
+test("capacity shortage keeps the normal completion budget instead of the old fast lane", () => {
+  const data = makeData(2);
+  const {hooks} = loadBridge(data);
+  const settings = {
+    overall_time_limit_seconds:60,
+    integrated_time_limit:60,
+    ui_capacity_shortage_accepted:true
+  };
+
+  hooks.applyCapacityShortageAcceptedSettings(settings);
+
+  assert.equal(settings.capacity_limited_fast_lane, false);
+  assert.equal(settings.overall_time_limit_seconds, 180);
+  assert.equal(settings.integrated_time_limit, 180);
+  assert.equal(settings.backend_deadline_ms, 180000);
+  assert.equal(settings.native_global_deadline_ms, 180000);
+  assert.equal(settings.ui_allow_incomplete_retry_after_single_pass, true);
+  assert.equal(settings.complete_schedule_seed_retry, true);
+
+  const custom = {ui_custom_solve_duration_seconds:90};
+  hooks.applyCapacityShortageAcceptedSettings(custom);
+  assert.equal(custom.overall_time_limit_seconds, 90);
+  assert.equal(custom.backend_deadline_ms, 90000);
+});
+
+test("strict Browser Agent still blocks a capacity-short fresh request", async () => {
+  const data = makeData(2);
+  const {window, hooks} = loadBridge(data);
+  window.TKBConstraints = {
+    teacherFixedOffCapacityWarnings(){
+      return [{kind:"teacher.fixedOff.capacity", teacherId:"GV01", required:2, capacity:1, shortage:1}];
+    },
+    classFixedOffCapacityWarnings(){ return []; }
+  };
+  const result = await hooks.confirmCapacityPrecheckBeforeSolve({
+    ui_solver_preset:"balanced",
+    optimization_focus:"automatic",
+    ui_unified_solve_kind:"fresh_complete_first",
+    ui_browser_agent_required:true,
+    require_complete_schedule:true
+  });
   assert.equal(result.ok, false);
   assert.equal(result.blocked, true);
   assert.equal(result.capacityShortage, true);
-  assert.equal(result.localScanSkipped, undefined);
-  assert.match(result.blockingMessage, /6\/1/);
-  assert.match(result.blockingMessage, /GV 01/);
+  assert.match(result.blockingMessage, /Agent trình duyệt/);
 });
 
 test("cancel request uses the tracked backend wire job id", async () => {
@@ -7166,7 +10694,7 @@ test("server-owned solve posts once and polls the durable result", async () => {
   assert.equal(window.__TKB_ACTIVE_BACKEND_JOB_ID, "");
 });
 
-test("a 180-second server result after 190 seconds is applied before the 210-second client deadline", async () => {
+test("a 180-second server result after 200 seconds is applied before the 210-second client deadline", async () => {
   const data = makeData(2);
   const subject = data.mon[0].ten;
   const clock = createFakeClock();
@@ -7191,7 +10719,7 @@ test("a 180-second server result after 190 seconds is applied before the 210-sec
     }
     if(requestUrl.includes("/api/solve-result")){
       resultPolls += 1;
-      if(clock.now() - startedAtMs < 195_000){
+      if(clock.now() - startedAtMs < 205_000){
         return jsonResponse({
           ok:false,
           running:true,
@@ -7245,8 +10773,8 @@ test("a 180-second server result after 190 seconds is applied before the 210-sec
   assert.ok(payload);
   assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.backendDeadlineMs, 180_000);
   assert.equal(window.__TKB_RUST_LAST_REQUEST_DEBUG.timeoutMs, 210_000);
-  assert.ok(resultPolls > 270, `expected polling past 190 seconds, got ${resultPolls}`);
-  assert.ok(clock.now() - startedAtMs > 190_000);
+  assert.ok(resultPolls > 285, `expected polling past 200 seconds, got ${resultPolls}`);
+  assert.ok(clock.now() - startedAtMs > 200_000);
   assert.ok(clock.now() - startedAtMs < 210_000);
   assert.equal(hooks.countScheduledLessons(data), 2);
   assert.equal(data.tkbSolverResult.metrics.scheduled_periods, 2);
@@ -7268,6 +10796,115 @@ test("automatic server result wait honors its explicit thirty-second response re
 
   assert.equal(liveWait, 210_000);
   assert.equal(reloadFallback, 270_000);
+});
+
+test("server result wait follows a later no-checkpoint VPS rescue clock", async () => {
+  const data = makeData(2);
+  const clock = createFakeClock();
+  const jobId = "fresh-mobile-vps-rescue-clock";
+  const runId = "fresh-mobile-vps-rescue-run";
+  const agentStartedAtMs = clock.now();
+  const rescueStartedAtMs = agentStartedAtMs + 700;
+  let resultPolls = 0;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      if(resultPolls < 4){
+        return jsonResponse({
+          ok:false,
+          running:true,
+          serverOwned:true,
+          kind:"solver_running",
+          jobId,
+          executor:resultPolls === 1 ? "agent" : "vps",
+          executionPhase:resultPolls === 1 ? "agent_running" : "vps_running",
+          startedAtMs:resultPolls === 1 ? agentStartedAtMs : rescueStartedAtMs,
+          progressBudgetSeconds:2,
+          retryAfterMs:700
+        }, 202);
+      }
+      return jsonResponse({ok:true, result:"rescued"});
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, clock);
+  window.__TKB_ACTIVE_SOLVE_RUN_ID = runId;
+  hooks.writePendingBackendJob(jobId, hooks.durableScheduleFingerprint(data), {
+    solverStartedAtMs:agentStartedAtMs,
+    progressBudgetSeconds:2
+  });
+
+  const response = await hooks.waitForServerOwnedSolverResult(
+    "http://127.0.0.1:1010",
+    jobId,
+    runId,
+    2_000,
+    700,
+    new AbortController().signal
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(resultPolls, 4);
+  assert.ok(clock.now() - agentStartedAtMs > 2_000);
+  assert.equal(hooks.readPendingBackendJob().solverStartedAtMs, rescueStartedAtMs);
+  assert.equal(clock.pendingTimers(), 0);
+});
+
+test("server result wait rebases a queued VPS rescue clock", async () => {
+  const data = makeData(2);
+  const clock = createFakeClock();
+  const jobId = "fresh-mobile-vps-rescue-queued-clock";
+  const runId = "fresh-mobile-vps-rescue-queued-run";
+  const agentStartedAtMs = clock.now();
+  const rescueStartedAtMs = agentStartedAtMs + 700;
+  let resultPolls = 0;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      if(resultPolls < 4){
+        return jsonResponse({
+          ok:false,
+          running:true,
+          queued:true,
+          serverOwned:true,
+          kind:"solver_queued",
+          jobId,
+          executor:"vps",
+          executionPhase:"vps_queued",
+          startedAtMs:rescueStartedAtMs,
+          progressBudgetSeconds:2,
+          retryAfterMs:700
+        }, 202);
+      }
+      return jsonResponse({ok:true, result:"queued-rescued"});
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, clock);
+  window.__TKB_ACTIVE_SOLVE_RUN_ID = runId;
+  hooks.writePendingBackendJob(jobId, hooks.durableScheduleFingerprint(data), {
+    solverStartedAtMs:agentStartedAtMs,
+    progressBudgetSeconds:2
+  });
+
+  const response = await hooks.waitForServerOwnedSolverResult(
+    "http://127.0.0.1:1010",
+    jobId,
+    runId,
+    2_000,
+    700,
+    new AbortController().signal
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(resultPolls, 4);
+  assert.ok(clock.now() - agentStartedAtMs > 2_000);
+  assert.equal(hooks.readPendingBackendJob().solverStartedAtMs, 0);
+  assert.equal(clock.pendingTimers(), 0);
 });
 
 test("a simultaneous duplicate POST adopts and polls the canonical owner job", async () => {
@@ -7404,6 +11041,9 @@ test("a resumed owner job polls by id without reposting or recreating it", async
   const jobId = "owner-job-discovered-on-device-b";
   let solvePosts = 0;
   let resultPolls = 0;
+  let agentProbes = 0;
+  let agentActivations = 0;
+  let activatedJobId = "";
   const fetchImpl = async url => {
     const requestUrl = String(url);
     if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
@@ -7425,7 +11065,20 @@ test("a resumed owner job polls by id without reposting or recreating it", async
     }
     throw new Error(`Unexpected URL: ${url}`);
   };
-  const {hooks} = loadBridge(data, fetchImpl, clock);
+  const {hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+    TKBBrowserWasmExecutor:{
+      isEnabled(){ return true; },
+      canHandleRequest(){ return true; },
+      async probe(){ agentProbes += 1; return true; },
+      async activate(options){
+        agentActivations += 1;
+        activatedJobId = String(options?.jobId || "");
+        return true;
+      },
+      async close(){ return true; },
+      state(){ return {active:true, computeActive:true}; }
+    }
+  }));
   hooks.writePendingBackendJob(jobId, hooks.durableScheduleFingerprint(data), {
     createdAt:clock.now() - 5_000,
     solverStartedAtMs:clock.now() - 4_000,
@@ -7446,6 +11099,9 @@ test("a resumed owner job polls by id without reposting or recreating it", async
   assert.equal(payload.ok, true);
   assert.equal(solvePosts, 0);
   assert.equal(resultPolls, 1);
+  assert.equal(agentProbes, 1);
+  assert.equal(agentActivations, 1);
+  assert.equal(activatedJobId, jobId);
   assert.equal(hooks.readPendingBackendJob(), null);
   assert.equal(hooks.isSettledBackendJob(jobId), true);
 });
@@ -8075,7 +11731,7 @@ test("iOS poll-only reattach keeps a complete incumbent when the server returns 
   const reattachBody = BRIDGE_SOURCE.slice(reattachStart, reattachEnd);
   assert.match(
     reattachBody,
-    /const retainedState = completeScheduleStateForExistingOptimize\(data\);\s*const retainedCompleteTerminal = !!retainedState;/,
+    /const localModeTerminalFailure = [\s\S]*?const retainedCompleteTerminal = !!retainedState && !localModeTerminalFailure;/,
     "any terminal reattach failure must keep a complete hard-valid incumbent green"
   );
 });
@@ -8533,7 +12189,7 @@ test("pending jobs are scoped by sid and can auto-resume after reload", async ()
   }));
   hooks.writePendingBackendJob("job-school-a", "");
   assert.equal(progress.home.hidden, false);
-  assert.equal(progress.home.disabled, true);
+  assert.equal(progress.home.disabled, false);
   window.location.search = "?sid=school-b";
   window.location.href = "http://127.0.0.1:1010/pages/sapxep.html?sid=school-b";
   hooks.writePendingBackendJob("job-school-b", "");
@@ -8574,7 +12230,7 @@ test("local pending storage does not paint a running session before VPS confirma
   assert.equal(reloaded.hooks.readPendingBackendJob()?.jobId, "reload-running-job");
   assert.equal(progress.button.disabled, false);
   assert.equal(progress.home.hidden, false);
-  assert.equal(progress.home.disabled, true, "Home may stay locked during the authoritative state probe");
+  assert.equal(progress.home.disabled, false, "Home remains usable during the authoritative state probe");
 
   reloaded.hooks.removePendingBackendJob("reload-running-job");
   assert.equal(progress.home.hidden, false);
@@ -8869,6 +12525,7 @@ test("PWA foreground wake adopts one concrete VPS job and applies its result", a
   const jobId = "foreground-wake-canonical";
   let stateCalls = 0;
   let resultCalls = 0;
+  const agentReactivations = [];
   let resolveResult;
   const resultPromise = new Promise(resolve => { resolveResult = resolve; });
   let fingerprint = "";
@@ -8909,7 +12566,13 @@ test("PWA foreground wake adopts one concrete VPS job and applies its result", a
     localStorage,
     document:progress.document,
     setTimeout,
-    clearTimeout
+    clearTimeout,
+    TKBBrowserWasmExecutor:{
+      async activate(options){
+        agentReactivations.push(options);
+        return true;
+      }
+    }
   });
   fingerprint = hooks.durableScheduleFingerprint(data);
   hooks.writePendingBackendJob(jobId, fingerprint, {
@@ -8925,6 +12588,9 @@ test("PWA foreground wake adopts one concrete VPS job and applies its result", a
   }
   assert.equal(stateCalls, 1);
   assert.equal(resultCalls, 1);
+  assert.equal(agentReactivations.length, 1);
+  assert.equal(agentReactivations[0].jobId, jobId);
+  assert.equal(agentReactivations[0].resumeKnownJob, true);
   assert.equal(progress.button.disabled, true);
   resolveResult(jsonResponse(payload));
   const applied = await wake;
@@ -10238,9 +13904,72 @@ test("school-store save retries transient deployment outages until the VPS is av
   );
   assert.equal(storePosts, 3);
   assert.deepEqual(delays, [250, 100]);
-  assert.equal(window.TKBStorage.version, "remote-save-retry-v1");
+  assert.equal(window.TKBStorage.version, "remote-save-retry-v2");
   assert.equal(window.__TKB_REMOTE_STORE_LAST_SAVE?.ok, true);
   assert.equal(window.__TKB_REMOTE_STORE_LAST_SAVE?.attempts, 3);
+});
+
+test("school-store Max 1 rejection is shown once and is never retried", async () => {
+  let storePosts = 0;
+  const alerts = [];
+  const events = [];
+  class TestCustomEvent {
+    constructor(type, options){
+      this.type = type;
+      this.detail = options?.detail;
+    }
+  }
+  const fetchImpl = async (_url, options = {}) => {
+    assert.equal(options.method, "POST");
+    storePosts += 1;
+    return jsonResponse({
+      ok:false,
+      kind:"max1_class_limit_exceeded",
+      message:"Gói Max 1 hỗ trợ tối đa 39 lớp. Vui lòng nâng cấp Max 2.",
+      retryable:false
+    }, 409);
+  };
+  const {window} = loadStorageModule(fetchImpl, {
+    window:{
+      CustomEvent:TestCustomEvent,
+      alert(message){ alerts.push(String(message)); },
+      dispatchEvent(event){ events.push(event); return true; }
+    }
+  });
+
+  assert.equal(await window.TKBStorage.saveRemoteSchoolData("default", "{\"lop\":[]}"), false);
+  assert.equal(storePosts, 1);
+  assert.deepEqual(alerts, ["Gói Max 1 hỗ trợ tối đa 39 lớp. Vui lòng nâng cấp Max 2."]);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].type, "tkb:school-store-save-rejected");
+  assert.equal(events[0].detail.kind, "max1_class_limit_exceeded");
+  assert.equal(window.__TKB_REMOTE_STORE_LAST_SAVE?.status, 409);
+  assert.equal(window.__TKB_REMOTE_STORE_LAST_SAVE?.retryable, false);
+  assert.equal(window.__TKB_REMOTE_STORE_LAST_SAVE?.attempts, 1);
+});
+
+test("school-store plan resolution failure honors retryable false on HTTP 503", async () => {
+  let storePosts = 0;
+  const alerts = [];
+  const fetchImpl = async () => {
+    storePosts += 1;
+    return jsonResponse({
+      ok:false,
+      kind:"school_plan_unavailable",
+      message:"Chưa xác định được gói dịch vụ của trường.",
+      retryable:false
+    }, 503);
+  };
+  const {window} = loadStorageModule(fetchImpl, {
+    window:{alert(message){ alerts.push(String(message)); }}
+  });
+
+  assert.equal(await window.TKBStorage.saveRemoteSchoolData("default", "{\"lop\":[]}"), false);
+  assert.equal(storePosts, 1);
+  assert.deepEqual(alerts, ["Chưa xác định được gói dịch vụ của trường."]);
+  assert.equal(window.__TKB_REMOTE_STORE_LAST_SAVE?.kind, "school_plan_unavailable");
+  assert.equal(window.__TKB_REMOTE_STORE_LAST_SAVE?.retryable, false);
+  assert.equal(window.__TKB_REMOTE_STORE_LAST_SAVE?.attempts, 1);
 });
 
 test("school-store saves are serialized and identical concurrent payloads share one POST", async () => {
@@ -10317,6 +14046,86 @@ test("server-owned capacity 429 waits and reposts the same stable job id", async
   assert.equal(new Set(wireJobIds).size, 1);
   assert.ok(postTimes[1] - postTimes[0] >= 700);
   assert.equal(hooks.readPendingBackendJob(), null);
+});
+
+test("non-retryable plan and quota rejections do not retry or leave a phantom backend job", async () => {
+  const cases = [
+    {
+      status:429,
+      kind:"free_solve_quota_exhausted",
+      message:"Gói Free đã dùng hết 5 lượt Xếp và Tối ưu."
+    },
+    {
+      status:503,
+      kind:"free_solve_quota_unavailable",
+      message:"Chưa kiểm tra được số lượt Free."
+    },
+    {
+      status:429,
+      kind:"trial_solve_quota_exhausted",
+      message:"Gói Trial đã dùng hết 50 lượt Xếp và Tối ưu."
+    },
+    {
+      status:503,
+      kind:"trial_solve_quota_unavailable",
+      message:"Chưa kiểm tra được số lượt Trial."
+    },
+    {
+      status:429,
+      kind:"plus_solve_quota_exhausted",
+      message:"Gói Plus đã dùng hết 100 lượt Xếp và Tối ưu trong kỳ hiện tại."
+    },
+    {
+      status:503,
+      kind:"plus_solve_quota_unavailable",
+      message:"Chưa kiểm tra được số lượt Plus."
+    },
+    {
+      status:409,
+      kind:"max1_class_limit_exceeded",
+      message:"Gói Max 1 hỗ trợ tối đa 39 lớp. Vui lòng nâng cấp Max 2."
+    }
+  ];
+  for(const item of cases){
+    const data = makeData(2);
+    let solvePosts = 0;
+    const fetchImpl = async url => {
+      const requestUrl = String(url);
+      if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+      if(requestUrl.endsWith("/api/solve-data")){
+        solvePosts += 1;
+        return jsonResponse({
+          ok:false,
+          kind:item.kind,
+          error:item.kind,
+          retryable:false,
+          message:item.message
+        }, item.status);
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+    const {hooks} = loadBridge(data, fetchImpl);
+    await assert.rejects(
+      hooks.postSolve({
+        solver_mode:"auto",
+        auto_sort_mode:"fast",
+        ui_solver_preset:"fast",
+        ui_internal_allow_incomplete:true,
+        ui_allow_short_backend_deadline:true,
+        overall_time_limit_seconds:1,
+        optimization_time_limit_seconds:1,
+        ui_skip_pre_solve_constraint_release:true
+      }, data),
+      error => {
+        assert.equal(error.kind, item.kind);
+        assert.equal(error.message, item.message);
+        assert.equal(error.retryable, false);
+        return true;
+      }
+    );
+    assert.equal(solvePosts, 1);
+    assert.equal(hooks.readPendingBackendJob(), null);
+  }
 });
 
 test("explicit Stop clears persistence even when the cancel response is lost", async () => {
@@ -11842,6 +15651,8 @@ test("statistics live overlay changes only the focused counter and disables stal
   assert.ok(start >= 0 && end > start, "live statistics helper must be extractable");
 
   const value = {textContent:"47"};
+  const gap2Value = {textContent:"4"};
+  const gap1Value = {textContent:"8"};
   const drilldown = {disabled:false, title:"old detail"};
   const classes = new Set();
   const cell = {
@@ -11853,9 +15664,30 @@ test("statistics live overlay changes only the focused counter and disables stal
       return null;
     }
   };
+  const gap2Cell = {
+    title:"",
+    classList:{add(name){ classes.add(name); }},
+    querySelector(selector){
+      if(selector === ".stats-value") return gap2Value;
+      if(selector === "button") return drilldown;
+      return null;
+    }
+  };
+  const gap1Cell = {
+    title:"",
+    classList:{add(name){ classes.add(name); }},
+    querySelector(selector){
+      if(selector === ".stats-value") return gap1Value;
+      if(selector === "button") return drilldown;
+      return null;
+    }
+  };
   const box = {
     querySelector(selector){
-      return selector === '[data-stat-key="onePeriodTeacherSessions"]' ? cell : null;
+      if(selector === '[data-stat-key="onePeriodTeacherSessions"]') return cell;
+      if(selector === '[data-stat-key="teacherGap2Sessions"]') return gap2Cell;
+      if(selector === '[data-stat-key="teacherGap1Sessions"]') return gap1Cell;
+      return null;
     }
   };
   const document = {getElementById(id){ return id === "statsBox" ? box : null; }};
@@ -11870,6 +15702,16 @@ test("statistics live overlay changes only the focused counter and disables stal
   assert.equal(value.textContent, "45");
   assert.equal(classes.has("is-live-progress"), true);
   assert.equal(drilldown.disabled, true);
+  assert.equal(context.updateStatsBoxLiveProgress({
+    focus:"teacher_gap2_sessions",
+    current:2
+  }), true);
+  assert.equal(gap2Value.textContent, "2");
+  assert.equal(context.updateStatsBoxLiveProgress({
+    focus:"teacher_gap1_sessions",
+    current:5
+  }), true);
+  assert.equal(gap1Value.textContent, "5");
 
   window.__TKB_RUST_SOLVER_RUNNING = false;
   window.__TKB_SOLVE_UI_BUSY = false;
@@ -12029,6 +15871,7 @@ test("a resumed focused job restores work progress mode from the VPS snapshot", 
   assert.equal(first.window.__TKB_RUST_PROGRESS_STATE.percent, 1);
   assert.equal(first.window.__TKB_RUST_PROGRESS_STATE.label, "134 bu\u1ed5i 1 ti\u1ebft \u00b7 0 gi\u00e2y");
   assert.equal(first.hooks.readPendingBackendJob()?.optimizationFocus, "singletons");
+  assert.equal(first.hooks.readPendingBackendJob()?.solveRequestMode, "optimize_singletons");
 
   const resumed = loadBridge(data, null, Object.assign({}, clock, {localStorage}));
   resumed.hooks.startInstantProgressTicker({resumePending:true});
@@ -12046,6 +15889,36 @@ test("a resumed focused job restores work progress mode from the VPS snapshot", 
   });
   assert.equal(resumed.window.__TKB_RUST_PROGRESS_STATE.percent, 3);
   assert.match(resumed.window.__TKB_RUST_PROGRESS_STATE.label, /^132 bu\u1ed5i 1 ti\u1ebft/);
+});
+
+test("pending and reattach settings preserve the split Gap1 contract", () => {
+  const data = makeData(2);
+  const clock = createFakeClock();
+  const localStorage = memoryStorage();
+  const {hooks} = loadBridge(data, null, Object.assign({}, clock, {localStorage}));
+  const jobId = "resumed-gap1-contract";
+
+  hooks.startProgressTicker({
+    optimization_focus:"gaps",
+    optimization_gap_target:"gap1",
+    ui_requested_solve_mode:"optimize_gap1",
+    ui_progress_mode:"work",
+    ui_progress_metric_focus:"teacher_gap1_sessions",
+    ui_progress_metric_current:8,
+    ui_progress_metric_target:0,
+    ui_progress_metric_baseline:8
+  }, data);
+  hooks.writePendingBackendJob(jobId, hooks.durableScheduleFingerprint(data));
+
+  const pending = hooks.readPendingBackendJob();
+  assert.equal(pending.optimizationFocus, "gaps");
+  assert.equal(pending.optimizationGapTarget, "gap1");
+  assert.equal(pending.solveRequestMode, "optimize_gap1");
+  const restored = hooks.settingsForPersistedOptimizationContract(pending, null);
+  assert.equal(restored.optimization_focus, "gaps");
+  assert.equal(restored.optimization_gap_target, "gap1");
+  assert.equal(restored.ui_requested_solve_mode, "optimize_gap1");
+  assert.equal(restored.optimization_two_stage_teacher_quality, false);
 });
 
 test("cross-device discovery restores focused mode before the first paint", () => {
@@ -12541,6 +16414,189 @@ test("reattached active jobs keep one stable sorting status", async () => {
     `reattach status history must stay stable: ${statusWrites.join(" | ")}`
   );
   assert.doesNotMatch(statusWrites.join(" | "), /n\u1ed1i|theo d\u00f5i/iu);
+});
+
+test("mobile reload reattaches to a VPS rescue as poll-only for iPhone and Android", async () => {
+  for(const navigator of [
+    {platform:"iPhone", userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)", maxTouchPoints:5},
+    {platform:"Linux armv8l", userAgent:"Mozilla/5.0 (Linux; Android 15; Mobile)", maxTouchPoints:5}
+  ]){
+    const {data, payload} = makeLargeApplyFixture(1, 2);
+    const storage = memoryStorage();
+    const jobId = `mobile-vps-rescue-${navigator.platform}`;
+    const clock = createFakeClock(1_700_000_250_000, 0);
+    let resultPolls = 0;
+    let solvePosts = 0;
+    let cancelPosts = 0;
+    let activateCalls = 0;
+    let probeCalls = 0;
+    const fetchImpl = async (url) => {
+      const requestUrl = String(url);
+      if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+      if(requestUrl.includes("/api/solve-result")){
+        resultPolls += 1;
+        if(resultPolls === 1){
+          return jsonResponse({
+            ok:false,
+            running:true,
+            serverOwned:true,
+            kind:"solver_running",
+            executor:"vps",
+            executionPhase:"vps_running",
+            jobId,
+            startedAtMs:clock.now() - 31_000,
+            progressBudgetSeconds:180,
+            retryAfterMs:250
+          }, 202);
+        }
+        return jsonResponse(payload, 200);
+      }
+      if(requestUrl.endsWith("/api/solve-data")){ solvePosts += 1; throw new Error("mobile reload must not POST a replacement solve"); }
+      if(requestUrl.endsWith("/api/solve-cancel")){ cancelPosts += 1; throw new Error("mobile reload must not cancel the VPS rescue"); }
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+    const {hooks} = loadBridge(data, fetchImpl, {
+      localStorage:storage,
+      sessionStorage:memoryStorage(),
+      navigator,
+      document:{
+        visibilityState:"visible",
+        getElementById(){ return null; },
+        querySelector(){ return null; },
+        querySelectorAll(){ return []; },
+        createElement(){ return {classList:{add(){}, remove(){}, toggle(){}}, setAttribute(){}, appendChild(){}, remove(){}}; },
+        documentElement:{appendChild(){}},
+        body:{appendChild(){}}
+      },
+      TKBBrowserWasmExecutor:{
+        isMobileNavigator(){ return true; },
+        probe(){ probeCalls += 1; return Promise.resolve(true); },
+        activate(){ activateCalls += 1; return Promise.resolve(true); },
+        state(){ return {}; }
+      }
+    });
+    const fingerprint = hooks.durableScheduleFingerprint(data);
+    await hooks.reattachExistingServerJobPollOnly({
+      jobId,
+      scheduleFingerprint:fingerprint,
+      createdAt:clock.now() - 31_000,
+      startedAtMs:clock.now() - 31_000,
+      progressBudgetSeconds:180,
+      foregroundAgentHandoff:true,
+      discoveredFromOwnerState:true
+    });
+    assert.equal(activateCalls, 0, `${navigator.platform} must never reclaim VPS rescue`);
+    assert.equal(probeCalls, 0, `${navigator.platform} must not probe Browser WASM on reload`);
+    assert.equal(solvePosts, 0);
+    assert.equal(cancelPosts, 0);
+    assert.equal(resultPolls, 2);
+    assert.equal(hooks.countScheduledLessons(data), 2);
+    assert.equal(hooks.readPendingBackendJob(), null);
+    assert.equal(hooks.isSettledBackendJob(jobId), true);
+  }
+});
+
+test("mobile VPS polling and visibility changes never request a screen wake lock", async () => {
+  const {data, payload} = makeLargeApplyFixture(1, 2);
+  const wakeLock = createScreenWakeLockSpy();
+  const documentListeners = new Map();
+  const windowListeners = new Map();
+  const document = {
+    hidden:false,
+    visibilityState:"visible",
+    addEventListener(name, listener){
+      const key = String(name);
+      const rows = documentListeners.get(key) || [];
+      rows.push(listener);
+      documentListeners.set(key, rows);
+    },
+    getElementById(){ return null; },
+    querySelector(){ return null; },
+    querySelectorAll(){ return []; },
+    createElement(){
+      return {
+        dataset:{},
+        classList:{add(){}, remove(){}, toggle(){}},
+        setAttribute(){},
+        appendChild(){},
+        remove(){}
+      };
+    },
+    documentElement:{appendChild(){}},
+    body:{appendChild(){}}
+  };
+  let markResultPollStarted;
+  const resultPollStarted = new Promise(resolve => { markResultPollStarted = resolve; });
+  let finishResultPoll;
+  const terminalResult = new Promise(resolve => { finishResultPoll = resolve; });
+  let resultPolls = 0;
+  const fetchImpl = async url => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.includes("/api/solver-state")){
+      return jsonResponse({ok:true, jobs:[], queue:[], completedJobs:[]});
+    }
+    if(requestUrl.includes("/api/solve-result")){
+      resultPolls += 1;
+      markResultPollStarted();
+      return terminalResult;
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, {
+    document,
+    navigator:{
+      platform:"iPhone",
+      userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)",
+      maxTouchPoints:5,
+      wakeLock:wakeLock.wakeLock
+    },
+    addEventListener(name, listener){
+      const key = String(name);
+      const rows = windowListeners.get(key) || [];
+      rows.push(listener);
+      windowListeners.set(key, rows);
+    }
+  });
+  const jobId = "mobile-screen-sleep-vps-poll";
+  const reattach = hooks.reattachExistingServerJobPollOnly({
+    jobId,
+    scheduleFingerprint:hooks.durableScheduleFingerprint(data),
+    createdAt:Date.now(),
+    startedAtMs:Date.now(),
+    progressBudgetSeconds:180,
+    foregroundAgentHandoff:true
+  });
+
+  await resultPollStarted;
+  await Promise.resolve();
+  assert.equal(resultPolls, 1);
+  assert.deepEqual(wakeLock.requests, []);
+  assert.equal(wakeLock.releaseCalls(), 0);
+
+  document.hidden = true;
+  document.visibilityState = "hidden";
+  documentListeners.get("visibilitychange")[0]();
+  await Promise.resolve();
+  assert.equal(wakeLock.releaseCalls(), 0);
+
+  document.hidden = false;
+  document.visibilityState = "visible";
+  documentListeners.get("visibilitychange")[0]();
+  await Promise.resolve();
+  assert.deepEqual(wakeLock.requests, []);
+  windowListeners.get("pageshow")[0]();
+  await Promise.resolve();
+  assert.deepEqual(wakeLock.requests, []);
+
+  finishResultPoll(jsonResponse(JSON.parse(JSON.stringify(payload)), 200));
+  assert.ok(await reattach);
+  await Promise.resolve();
+  assert.equal(wakeLock.releaseCalls(), 0);
+
+  windowListeners.get("pageshow")[0]();
+  await Promise.resolve();
+  assert.deepEqual(wakeLock.requests, []);
 });
 
 test("queue and solver admission keep one timer while percent waits for solver metrics", () => {
@@ -13064,6 +17120,50 @@ test("complete hard-valid async completion keeps success ok and progress hidden 
   assert.equal(progress.nodes.get("statusMsg").textContent, "Đã xếp xong!");
   assert.equal(progress.wrap.hidden, true);
   assert.equal(progress.wrap.classList.contains("is-warning"), false);
+});
+
+test("large fresh Automatic leaves a 30-second Cloud request reserve", () => {
+  const data = makeData(2031);
+  const {hooks} = loadBridge(data);
+  const plan = hooks.buildAutomaticAutoSortPlan(data, undefined, 0);
+  hooks.applyRequestedSolveModeToPlan(plan, "automatic", data, 6);
+  const settings = hooks.effectiveSettingsForSolve(plan.settings, data);
+
+  assert.equal(plan.kind, "fresh_complete_first");
+  assert.equal(settings.ui_unified_auto_sort, true);
+  assert.equal(settings.ui_unified_solve_kind, "fresh_complete_first");
+  assert.equal(settings.expected_scheduled_periods, 2031);
+  assert.equal(settings.backend_deadline_ms, 270_000);
+  assert.equal(settings.native_global_deadline_ms, 270_000);
+  assert.equal(settings.overall_time_limit_seconds, 270);
+});
+
+test("large hard-quality refinement gets 270 seconds while medium and clean clicks stay bounded", () => {
+  const data = makeData(1);
+  data.tkbSolverResult = {
+    metrics:{
+      scheduled_periods:2103,
+      expected_periods:2103,
+      unassigned_periods:0,
+      hard_ok:true,
+      core_hard_ok:true,
+      app_constraint_violation_count:0,
+      teacher_sessions:680,
+      one_period_teacher_sessions:14,
+      gap_distribution:{"0":493, "1":139, "2":48}
+    },
+    validation:{hard_ok:true, violations:[]},
+    solver:{runtime_settings:{}}
+  };
+  let quality = {tsBuoiDay:680, soBuoiDay1:14, soBuoiTrong1:139, soBuoiTrong2:48};
+  const {window, hooks} = loadBridge(data);
+  window.calcTeacherTKBStats = () => quality;
+
+  assert.equal(hooks.incrementalRefineCeilingSeconds(2103, data, 1), 270);
+  assert.equal(hooks.incrementalRefineCeilingSeconds(1566, data, 1), 180);
+
+  quality = {tsBuoiDay:680, soBuoiDay1:0, soBuoiTrong1:139, soBuoiTrong2:0};
+  assert.equal(hooks.incrementalRefineCeilingSeconds(2103, data, 2), 60);
 });
 
 test("routine sorting status cycles one two three dots and stops on terminal success", () => {
