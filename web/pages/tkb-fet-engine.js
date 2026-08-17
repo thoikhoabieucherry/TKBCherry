@@ -1434,10 +1434,12 @@
         if(currentP.length === 0){
           // Opening a new session for teacher t:
           // Discourage creating an isolated 1-period session (Tối thiểu 1 buổi 2 tiết)
-          penalty += 350;
+          // Mức phạt cực lớn để báo hiệu là vi phạm nghiêm trọng (Severe Penalty)
+          penalty += 2000;
           if(dayTaught === 0 && (act.duration || 1) === 1){
             // Creating an isolated 1-period day across entire day (Tối thiểu 1 ngày 2 tiết)
-            penalty += 450;
+            // Lỗi nặng nhất, phạt tột đỉnh
+            penalty += 5000;
           }
         }else{
           // Joining existing session (d, b) -> Helps reach >= 2 periods!
@@ -1585,6 +1587,13 @@
       }
 
       evaluated.sort((a, b) => {
+        // Tối thiểu buổi phải dạy 2 tiết:
+        // Đẩy các slot vi phạm (tạo ra buổi 1 tiết -> penalty cực lớn >= 1999) xuống cuối cùng,
+        // cho dù có phải đẩy văng nhiều tiết học (conflict) hơn!
+        const aSevere = a.penalty >= 1999;
+        const bSevere = b.penalty >= 1999;
+        if(aSevere !== bSevere) return aSevere ? 1 : -1;
+
         if(a.conflictCount !== b.conflictCount) return a.conflictCount - b.conflictCount;
         return a.penalty - b.penalty;
       });
