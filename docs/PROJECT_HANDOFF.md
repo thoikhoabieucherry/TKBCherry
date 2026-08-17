@@ -6,6 +6,13 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-17 Fix F5 Reload Overwriting Optimized Timetables (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - When reloading the page (F5), `phanmon.js` compared local `DATA` vs remote server `/api/school/store`. Because `saveStore` did not stamp `DATA._lastModified = Date.now()` and day counting checked only `"T2"..` instead of `"thu2"..`, `remoteTs > localTs` evaluated to true and `localPlaced` evaluated to 0. This caused the startup remote sync to falsely overwrite the local optimized timetable with an older server copy.
+  - Fixed timestamp stamping (`DATA._lastModified = Date.now(); DATA._updatedAt = Date.now()`), enabled synchronous remote sync on solver apply (`syncRemote: true`), and updated day counting across all possible key formats (`thu2..thu7` and `T2..T7`).
+  - Deployed to VPS `165.101.47.133`.
+
 ## 2026-08-17 Direct Free Slot Placement in Singleton Consolidation & Session Vacating (DEPLOYED & VERIFIED)
 
 - **Issues addressed**:

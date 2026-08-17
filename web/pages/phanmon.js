@@ -372,33 +372,26 @@ if (typeof schoolParam !== "undefined" && schoolParam && !(window.TKBStorage && 
     if (hasRemote) {
       const localHasData = !!(DATA && (DATA.lop?.length > 0 || DATA.mon?.length > 0 || (DATA.tkb && Object.keys(DATA.tkb).length > 0)));
 
-      const remoteTs = Number(remoteData._lastModified || remoteData._updatedAt || 0);
-      const localTs = Number(DATA._lastModified || DATA._updatedAt || 0);
+      const countTkbPlaced = (tkbObj) => {
+        if(!tkbObj || typeof tkbObj !== "object") return 0;
+        let count = 0;
+        const allDays = ["thu2","thu3","thu4","thu5","thu6","thu7","T2","T3","T4","T5","T6","T7"];
+        for(const c in tkbObj){
+          for(const d of allDays){
+            const dayObj = tkbObj[c]?.[d];
+            if(dayObj){
+              for(const p of ["sang","chieu"]){
+                const arr = dayObj[p] || [];
+                for(const cell of arr) if(cell && cell !== "OFF") count++;
+              }
+            }
+          }
+        }
+        return count;
+      };
 
-      let remotePlaced = 0;
-      let localPlaced = 0;
-      try {
-        if (remoteData.tkb) {
-          for (const c in remoteData.tkb) {
-            for (const d of ["T2","T3","T4","T5","T6","T7"]) {
-              for (const p of ["sang","chieu"]) {
-                const arr = remoteData.tkb[c]?.[d]?.[p] || [];
-                for (const cell of arr) if (cell && cell !== "OFF") remotePlaced++;
-              }
-            }
-          }
-        }
-        if (DATA.tkb) {
-          for (const c in DATA.tkb) {
-            for (const d of ["T2","T3","T4","T5","T6","T7"]) {
-              for (const p of ["sang","chieu"]) {
-                const arr = DATA.tkb[c]?.[d]?.[p] || [];
-                for (const cell of arr) if (cell && cell !== "OFF") localPlaced++;
-              }
-            }
-          }
-        }
-      } catch(_) {}
+      const remotePlaced = countTkbPlaced(remoteData.tkb);
+      const localPlaced = countTkbPlaced(DATA.tkb);
 
       const acceptRemote = !localHasData || (remoteTs > localTs && remotePlaced >= localPlaced) || (localPlaced === 0 && remotePlaced > 0);
 
@@ -1527,6 +1520,10 @@ function __tkbRememberStablePayload(payload, stats, reason){
 }
 function __tkbPayloadForSave(options){
   const opts = options || {};
+  if(typeof DATA === "object" && DATA){
+    DATA._lastModified = Date.now();
+    DATA._updatedAt = Date.now();
+  }
   const payload = JSON.stringify(DATA);
   const knownStats = opts.trustedSolverApply === true
     && opts.knownStats
@@ -6444,6 +6441,11 @@ function nextPlannerPaint(){
 async function applyValidatedFetCandidate(data, candidateTkb, options = {}){
   const startedAt = fetTelemetryNowMs();
   data.tkb = candidateTkb;
+  if(typeof DATA !== "undefined" && DATA) {
+    DATA.tkb = candidateTkb;
+    DATA._lastModified = Date.now();
+    DATA._updatedAt = Date.now();
+  }
   window.__TKB_GLOBAL_DATA_VERSION = (window.__TKB_GLOBAL_DATA_VERSION || 0) + 1;
   window.__TKB_TEACHER_TKB_STATS_CACHE = null;
   window.__TKB_UNASSIGNED_TASKS_CACHE = null;
@@ -6455,9 +6457,8 @@ async function applyValidatedFetCandidate(data, candidateTkb, options = {}){
 
   let saveError = null;
   try{
-    // Local persistence is synchronous; remote sync remains the existing
-    // asynchronous save promise and must not delay the first visible paint.
-    saveStore({force:true, trustedSolverApply:true});
+    // Local persistence is synchronous; syncRemote sends to server synchronously if possible
+    saveStore({force:true, trustedSolverApply:true, syncRemote:true});
   }catch(err){
     saveError = err;
     console.warn("Schedule candidate persistence failed", err);
