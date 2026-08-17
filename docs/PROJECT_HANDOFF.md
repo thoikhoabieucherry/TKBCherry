@@ -6,6 +6,20 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-17 Strict Max Gap <= 1 Invariant Across All FET Construction & Optimization (DEPLOYED & VERIFIED)
+
+- **Issues addressed & Root Cause**:
+  - The user observed that after running automatic sorting / optimization on large school datasets (e.g. `sid=default`), certain teachers (such as `V.Vy`) still had sessions with 2 consecutive gap periods (`soBuoiTrong2 > 0`).
+  - Analysis revealed that while the initial construction loop strictly enforced `strictFetGaps = true`, several downstream optimization and consolidation operators (`tryConsolidateTeacherSingletons`, `tryReinforceTeacherSingletons`, `obliterateAllTeacherSingletons`, `obliterateAllThinTeacherSessions`, `tryVacateTeacherSessions`, `tryLnsRuinAndRecreate`, `tryRelatedClusterRuin`) defaulted `maxGap2Limit` to `Infinity` or passed `Infinity` as the gap budget to reduce singletons/sessions at the expense of creating 2-period gaps. Furthermore, `compareMetrics` for `optimize_sessions` did not enforce `soBuoiTrong2` as a strict upper-bound invariant.
+- **Key Changes**:
+  - Set `maxGap2Limit = 0` as the strict invariant default across all singleton consolidation, reinforcement, obliteration, thinning, session vacating, and LNS ruin-and-recreate routines.
+  - Enforced `a.soBuoiTrong2 !== b.soBuoiTrong2` as the top hard-quality invariant in `compareMetrics` across all optimization modes (`optimize_singletons`, `optimize_sessions`, `optimize_gap1`, `optimize_gap2`, `optimize_all`).
+  - Guarded `tryAugmentingSingletonSwap` and `tryAugmentingSingletonEjectionChain` to reject moves that increase `soBuoiTrong2`.
+  - Added full multi-period duration offset support to `getPlacementPenalty` to prevent multi-period lessons from creating gaps.
+  - Verified across multiple real school benchmarks (`default_school_0117.json`, `default_school_0317.json`, `dongkhoi_1566.json`): **`soBuoiTrong2 = 0`** maintained from initial solve through all 5 `optimizeAll()` stages with 0 gap $\ge 2$ across all teachers.
+  - Bumped version query string in `web/pages/sapxep.html` (`v=20260817-strict-fet-max-gap1-v1`).
+  - Deployed to live VPS `165.101.47.133`.
+
 ## 2026-08-17 Comprehensive Subject Alias Matching to Prevent Fixed Cell Overlaps (DEPLOYED & VERIFIED)
 
 - **Issues addressed & Root Cause**:

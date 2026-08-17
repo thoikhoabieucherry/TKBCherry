@@ -1442,7 +1442,9 @@
             penalty -= 10;
           }
 
-          const newP = currentP.concat([p]).sort((x, y) => x - y);
+          const occupiedOffsets = [];
+          for(let d = 0; d < (act.duration || 1); d++) occupiedOffsets.push(p + d);
+          const newP = currentP.concat(occupiedOffsets).sort((x, y) => x - y);
           const k = newP.length;
           const span = newP[k - 1] - newP[0] + 1;
           const totalGaps = span - k;
@@ -2247,7 +2249,7 @@
     // Same-Teacher Same-Class Pair Merging: consolidates single-period activities of the same teacher in the same class
     // Intra-Class Same-Teacher Consolidation: Merges multiple single periods of the same teacher in the same class into the same session
     // Intra-Teacher Singleton Consolidation: Merges single periods of a teacher across sessions into active sessions
-    tryConsolidateTeacherSingletons(bestMetrics, initialMetrics, maxGap2Limit = Infinity, onProgress = null){
+    tryConsolidateTeacherSingletons(bestMetrics, initialMetrics, maxGap2Limit = 0, onProgress = null){
       const DAYS = DAYS_LIST.length;
       const SESSIONS = SESSIONS_LIST.length;
       const PERIODS = PERIODS_PER_SESSION;
@@ -2422,7 +2424,7 @@
     }
 
     // Inbound Singleton Reinforcement: pulls lessons from multi-period sessions into 1-period sessions to reach >= 2 periods
-    tryReinforceTeacherSingletons(bestMetrics, initialMetrics, maxGap2Limit = Infinity, onProgress = null){
+    tryReinforceTeacherSingletons(bestMetrics, initialMetrics, maxGap2Limit = 0, onProgress = null){
       const DAYS = DAYS_LIST.length;
       const SESSIONS = SESSIONS_LIST.length;
       const PERIODS = PERIODS_PER_SESSION;
@@ -2580,7 +2582,7 @@
     }
 
     // Comprehensive Singleton Obliterator: thoroughly merges 1-period teaching sessions across the whole school using 2-way and 3-way cycles
-    obliterateAllTeacherSingletons(maxPasses = 15, maxGap2Limit = Infinity, onProgress = null){
+    obliterateAllTeacherSingletons(maxPasses = 15, maxGap2Limit = 0, onProgress = null){
       const DAYS = DAYS_LIST.length;
       const SESSIONS = SESSIONS_LIST.length;
       const PERIODS = PERIODS_PER_SESSION;
@@ -2828,8 +2830,8 @@
                   this.jrnPlace(act2.id, s1);
 
                   const candM = this.evaluateMetrics();
-                  const isBetter = candM.soBuoiDay1 < currentBest.soBuoiDay1
-                    || (candM.soBuoiDay1 === currentBest.soBuoiDay1 && candM.soBuoiTrong2 < currentBest.soBuoiTrong2);
+                  const isBetter = (candM.soBuoiTrong2 <= currentBest.soBuoiTrong2) &&
+                    (candM.soBuoiDay1 < currentBest.soBuoiDay1 || (candM.soBuoiDay1 === currentBest.soBuoiDay1 && candM.soBuoiTrong2 < currentBest.soBuoiTrong2));
 
                   if(isBetter){
                     currentBest = candM;
@@ -2961,9 +2963,8 @@
                       this.jrnPlace(act2.id, s3);
                       this.jrnPlace(act3.id, s1);
 
-                      const candM = this.evaluateMetrics();
-                      const isBetter = candM.soBuoiDay1 < currentBest.soBuoiDay1
-                        || (candM.soBuoiDay1 === currentBest.soBuoiDay1 && candM.soBuoiTrong2 < currentBest.soBuoiTrong2);
+                      const isBetter = (candM.soBuoiTrong2 <= currentBest.soBuoiTrong2) &&
+                        (candM.soBuoiDay1 < currentBest.soBuoiDay1 || (candM.soBuoiDay1 === currentBest.soBuoiDay1 && candM.soBuoiTrong2 < currentBest.soBuoiTrong2));
 
                       if(isBetter){
                         currentBest = candM;
@@ -2995,7 +2996,7 @@
       return anyImproved ? currentBest : null;
     }
 
-    obliterateAllThinTeacherSessions(maxPasses = 8, targetSizes = [1, 2], maxGap2Limit = Infinity, onProgress = null){
+    obliterateAllThinTeacherSessions(maxPasses = 8, targetSizes = [1, 2], maxGap2Limit = 0, onProgress = null){
       let currentBest = this.evaluateMetrics();
       let anyImproved = false;
 
@@ -3218,7 +3219,7 @@
     }
 
     // Session Vacater for optimize_sessions: compacts teaching days/sessions to reduce total sessions and eliminate 2-3 period sessions
-    tryVacateTeacherSessions(bestMetrics, initialMetrics, maxGap2Limit = Infinity, onProgress = null){
+    tryVacateTeacherSessions(bestMetrics, initialMetrics, maxGap2Limit = 0, onProgress = null){
       const DAYS = DAYS_LIST.length;
       const SESSIONS = SESSIONS_LIST.length;
       const PERIODS = PERIODS_PER_SESSION;
@@ -5997,12 +5998,11 @@
       if(!a) return 1;
       if(!b) return -1;
 
+      // 0. BẤT BIẾN TOÀN CỤC: Không bao giờ được làm tăng số buổi trống >= 2 tiết (soBuoiTrong2 = 0)
+      if(a.soBuoiTrong2 !== b.soBuoiTrong2) return a.soBuoiTrong2 - b.soBuoiTrong2;
+
       if(mode === "optimize_singletons"){
-        // Thứ tự ưu tiên toàn cục của chủ dự án: 1t/buổi -> TRỐNG-2 -> buổi.
-        // Nút 1t không được phép "bán" trống-2 để mua bớt buổi (lỗi thấy trên
-        // bản 0917: s1 giữ nguyên nhưng g2 4->6 vì đổi lấy -2 buổi).
         if(a.soBuoiDay1 !== b.soBuoiDay1) return a.soBuoiDay1 - b.soBuoiDay1;
-        if(a.soBuoiTrong2 !== b.soBuoiTrong2) return a.soBuoiTrong2 - b.soBuoiTrong2;
         if(a.tsBuoiDay !== b.tsBuoiDay) return a.tsBuoiDay - b.tsBuoiDay;
         return a.tsNgayDay - b.tsNgayDay;
       }
@@ -6017,14 +6017,6 @@
       }
 
       if(mode === "optimize_gap2"){
-        // Uu tien toi thuong cua optimize_gap2: soBuoiTrong2 phai giam manh ve 0!
-        if(a.soBuoiTrong2 !== b.soBuoiTrong2){
-          const initSingle = this.initialMetricsSnapshot?.soBuoiDay1 ?? 999;
-          const aSingleExceed = Math.max(0, a.soBuoiDay1 - initSingle);
-          const bSingleExceed = Math.max(0, b.soBuoiDay1 - initSingle);
-          if(aSingleExceed !== bSingleExceed) return aSingleExceed - bSingleExceed;
-          return a.soBuoiTrong2 - b.soBuoiTrong2;
-        }
         if(a.soBuoiDay1 !== b.soBuoiDay1) return a.soBuoiDay1 - b.soBuoiDay1;
         if(a.tsBuoiDay !== b.tsBuoiDay) return a.tsBuoiDay - b.tsBuoiDay;
         if(a.soBuoiTrong1 !== b.soBuoiTrong1) return a.soBuoiTrong1 - b.soBuoiTrong1;
@@ -6032,15 +6024,12 @@
       }
 
       if(mode === "optimize_gap1"){
-        // Đồng bộ với thứ tự toàn cục: gap2 đứng TRÊN tổng buổi — nước đi
-        // giảm trống-1 mà tiện tay giảm/giữ trống-2 luôn được ưu tiên.
         if(a.soBuoiDay1 !== b.soBuoiDay1) return a.soBuoiDay1 - b.soBuoiDay1;
-        if(a.soBuoiTrong2 !== b.soBuoiTrong2) return a.soBuoiTrong2 - b.soBuoiTrong2;
         if(a.tsBuoiDay !== b.tsBuoiDay) return a.tsBuoiDay - b.tsBuoiDay;
         return a.soBuoiTrong1 - b.soBuoiTrong1;
       }
 
-      return (a.soBuoiDay1 - b.soBuoiDay1) || (a.soBuoiTrong2 - b.soBuoiTrong2) || (a.tsBuoiDay - b.tsBuoiDay);
+      return (a.soBuoiTrong2 - b.soBuoiTrong2) || (a.soBuoiDay1 - b.soBuoiDay1) || (a.tsBuoiDay - b.tsBuoiDay);
     }
 
     // Incremental Single-Teacher Evaluation (ANTIGRAVITY_KHU_1_TIET_BUOI.md Section 4.4)
@@ -6136,7 +6125,7 @@
     }
 
     // LNS Ruin-and-Recreate Perturbation (ANTIGRAVITY_KHU_1_TIET_BUOI.md Section 4.2)
-    tryLnsRuinAndRecreate(targetTeacherKeys, bestMetrics, mode = "optimize_singletons", maxGap2Limit = Infinity, onProgress = null){
+    tryLnsRuinAndRecreate(targetTeacherKeys, bestMetrics, mode = "optimize_singletons", maxGap2Limit = 0, onProgress = null){
       const snapPlacement = this.actPlacement.slice();
       const snapClass = new Map();
       this.classGrid.forEach((arr, cid) => snapClass.set(cid, arr.slice()));
@@ -6301,7 +6290,7 @@
     }
 
     // Direction 2: Related-Cluster Ruin & Recreate (Phá bỏ & Tái cấu trúc cụm giáo viên liên đới)
-    tryRelatedClusterRuin(targetTeachers, bestMetrics, mode = "optimize_singletons", maxGap2Limit = Infinity, onProgress = null){
+    tryRelatedClusterRuin(targetTeachers, bestMetrics, mode = "optimize_singletons", maxGap2Limit = 0, onProgress = null){
       const relatedTeachers = new Set(targetTeachers);
       targetTeachers.forEach(tKey => {
         const grid = this.teacherGrid.get(tKey);
@@ -6685,7 +6674,7 @@
 
         // 1. Primary Downhill Optimization Passes
         if(mode === "optimize_singletons"){
-          const oblitM = this.obliterateAllTeacherSingletons(12, Infinity, notifyLiveProgress);
+          const oblitM = this.obliterateAllTeacherSingletons(12, 0, notifyLiveProgress);
           if(oblitM && this.compareMetrics(oblitM, bestMetrics, mode) < 0){
             bestMetrics = { ...oblitM };
             saveBestSnapshot();
@@ -6709,7 +6698,7 @@
             destroyStrength = 1;
           }
 
-          const resReinforce = this.tryReinforceTeacherSingletons(bestMetrics, initialMetrics, Infinity, notifyLiveProgress);
+          const resReinforce = this.tryReinforceTeacherSingletons(bestMetrics, initialMetrics, 0, notifyLiveProgress);
           if(resReinforce && this.compareMetrics(resReinforce, bestMetrics, mode) < 0){
             bestMetrics = { ...resReinforce };
             saveBestSnapshot();
@@ -6717,7 +6706,7 @@
             destroyStrength = 1;
           }
 
-          const resSingle = this.tryConsolidateTeacherSingletons(bestMetrics, initialMetrics, Infinity, notifyLiveProgress);
+          const resSingle = this.tryConsolidateTeacherSingletons(bestMetrics, initialMetrics, 0, notifyLiveProgress);
           if(resSingle && this.compareMetrics(resSingle, bestMetrics, mode) < 0){
             bestMetrics = { ...resSingle };
             saveBestSnapshot();
@@ -6740,7 +6729,7 @@
         }
 
         if(mode === "optimize_sessions"){
-          const resVacate = this.tryVacateTeacherSessions(bestMetrics, initialMetrics, Infinity, notifyLiveProgress);
+          const resVacate = this.tryVacateTeacherSessions(bestMetrics, initialMetrics, 0, notifyLiveProgress);
           if(resVacate && this.compareMetrics(resVacate, bestMetrics, mode) < 0){
             bestMetrics = { ...resVacate };
             saveBestSnapshot();
@@ -6774,21 +6763,21 @@
             }
           }
 
-          const oblitThin = this.obliterateAllThinTeacherSessions(8, [1, 2], Infinity, notifyLiveProgress);
+          const oblitThin = this.obliterateAllThinTeacherSessions(8, [1, 2], 0, notifyLiveProgress);
           if(oblitThin && this.compareMetrics(oblitThin, bestMetrics, mode) < 0){
             bestMetrics = { ...oblitThin };
             saveBestSnapshot();
             improvedInRound = true;
           }
 
-          const oblitM = this.obliterateAllTeacherSingletons(8, Infinity, notifyLiveProgress);
+          const oblitM = this.obliterateAllTeacherSingletons(8, 0, notifyLiveProgress);
           if(oblitM && this.compareMetrics(oblitM, bestMetrics, mode) < 0){
             bestMetrics = { ...oblitM };
             saveBestSnapshot();
             improvedInRound = true;
           }
 
-          const resSingle = this.tryConsolidateTeacherSingletons(bestMetrics, initialMetrics, Infinity, notifyLiveProgress);
+          const resSingle = this.tryConsolidateTeacherSingletons(bestMetrics, initialMetrics, 0, notifyLiveProgress);
           if(resSingle && this.compareMetrics(resSingle, bestMetrics, mode) < 0){
             bestMetrics = { ...resSingle };
             saveBestSnapshot();
@@ -7087,7 +7076,7 @@
           // ESCAPE DIRECTION C: Related-Cluster Ruin & Recreate (Phá bỏ & Tái cấu trúc cụm liên đới)
           if(!improvedInRound && (consecutiveUnimprovedRounds % 4 === 3 || consecutiveUnimprovedRounds >= 6)){
             if(bottleneckTeachers.length > 0){
-              const resCluster = this.tryRelatedClusterRuin(bottleneckTeachers.slice(0, 4), bestMetrics, mode, Infinity, notifyLiveProgress);
+              const resCluster = this.tryRelatedClusterRuin(bottleneckTeachers.slice(0, 4), bestMetrics, mode, 0, notifyLiveProgress);
               if(resCluster && this.compareMetrics(resCluster, bestMetrics, mode) < 0){
                 bestMetrics = { ...resCluster };
                 saveBestSnapshot();
