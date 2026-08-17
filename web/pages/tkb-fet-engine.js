@@ -2991,22 +2991,23 @@
                 const cOccupant = cGridDonor[targetSlot];
 
                 if(cOccupant === -1){
-                  if(!this.isLessonBlockSafe(actDonor) || !this.isDailySubjectLimitSafe(actDonor, targetSlot)) continue;
-
                   const srcSlot = donorItem.slot;
                   this.unplaceActivity(actDonor.id);
-                  this.placeActivityDirect(actDonor.id, targetSlot);
-
-                  const m = this.evaluateMetrics();
-                  if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
-                    currentBest = { ...m };
-                    anyImproved = true;
-                    if(onProgress) onProgress(currentBest);
-                    break;
-                  }else{
+                  const r1 = this.getConflictsForSlot(actDonor, targetSlot);
+                  if(r1.possible && r1.conflicts.length === 0){
+                    this.placeActivityDirect(actDonor.id, targetSlot);
+                    if(this.isLessonBlockSafe(actDonor) && this.isDailySubjectLimitSafe(actDonor, targetSlot)){
+                      const m = this.evaluateMetrics();
+                      if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
+                        currentBest = { ...m };
+                        anyImproved = true;
+                        if(onProgress) onProgress(currentBest);
+                        break;
+                      }
+                    }
                     this.unplaceActivity(actDonor.id);
-                    this.placeActivityDirect(actDonor.id, srcSlot);
                   }
+                  this.placeActivityDirect(actDonor.id, srcSlot);
                 }else if(cOccupant >= 0 && cOccupant !== actDonor.id){
                   const displacedAct = this.activities[cOccupant];
                   if(!displacedAct || displacedAct.isFixed || displacedAct.duration !== 1) continue;
@@ -3018,26 +3019,32 @@
                   if(dispTGrid && dispTGrid[srcSlot] !== -1) continue;
                   if(this.teacherOffSlots.has(`${dispTKey}|${srcSlot}`)) continue;
 
-                  if(!this.isLessonBlockSafe(actDonor) || !this.isLessonBlockSafe(displacedAct)) continue;
-                  if(!this.isDailySubjectLimitSafe(actDonor, targetSlot) || !this.isDailySubjectLimitSafe(displacedAct, srcSlot)) continue;
-
                   this.unplaceActivity(actDonor.id);
                   this.unplaceActivity(displacedAct.id);
-                  this.placeActivityDirect(actDonor.id, targetSlot);
-                  this.placeActivityDirect(displacedAct.id, srcSlot);
 
-                  const m = this.evaluateMetrics();
-                  if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
-                    currentBest = { ...m };
-                    anyImproved = true;
-                    if(onProgress) onProgress(currentBest);
-                    break;
-                  }else{
+                  const r1 = this.getConflictsForSlot(actDonor, targetSlot);
+                  const r2 = this.getConflictsForSlot(displacedAct, srcSlot);
+
+                  if(r1.possible && r1.conflicts.length === 0 && r2.possible && r2.conflicts.length === 0){
+                    this.placeActivityDirect(actDonor.id, targetSlot);
+                    this.placeActivityDirect(displacedAct.id, srcSlot);
+
+                    if(this.isLessonBlockSafe(actDonor, displacedAct) &&
+                       this.isDailySubjectLimitSafe(actDonor, targetSlot) &&
+                       this.isDailySubjectLimitSafe(displacedAct, srcSlot)){
+                      const m = this.evaluateMetrics();
+                      if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
+                        currentBest = { ...m };
+                        anyImproved = true;
+                        if(onProgress) onProgress(currentBest);
+                        break;
+                      }
+                    }
                     this.unplaceActivity(actDonor.id);
                     this.unplaceActivity(displacedAct.id);
-                    this.placeActivityDirect(actDonor.id, srcSlot);
-                    this.placeActivityDirect(displacedAct.id, targetSlot);
                   }
+                  this.placeActivityDirect(actDonor.id, srcSlot);
+                  this.placeActivityDirect(displacedAct.id, targetSlot);
                 }
               }
               if(anyImproved) break;

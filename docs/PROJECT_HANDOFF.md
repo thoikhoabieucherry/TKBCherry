@@ -6,6 +6,15 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-17 Fix State Check Timing in Lesson Sharing & Web Cache Busting (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - `tryShareLessonFromRichSessionToSingleton` previously checked `isLessonBlockSafe` and `isDailySubjectLimitSafe` before unplacing and placing candidate activities, which caused the checks to evaluate the pre-swap state instead of the post-swap state.
+  - Corrected validation timing to evaluate candidate state post-placement and verify contiguity before accepting.
+  - Bumped script version query strings in `web/pages/sapxep.html` (`v=20260817-goal-v5`) to prevent stale browser caching.
+  - Verified on live test dataset: `soBuoiTrong2` reduced to 0, `soBuoiDay1` reduced to 0 (and $\le 2$ as requested).
+  - Deployed to VPS `165.101.47.133`.
+
 ## 2026-08-17 Verification on New Timetable Export tonggv0917082026.xlsx (VERIFIED & DEPLOYED)
 
 - **Audit & Evaluation on Fresh Export**:
