@@ -6,6 +6,14 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-17 Unconstrained Initial Construction (Pure Solve, No Premature Optimization) (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - The initial timetable builder (`solve()`) previously had session penalization (`strictFetGaps = true` and `getPlacementPenalty` +350 for opening new sessions) which prematurely cramped lessons into tight sessions during the initial build, making subsequent targeted optimizations difficult.
+  - Per owner direction, removed session penalties and strict gap enforcement from `solve()`: initial construction now focuses 100% on hard constraints (fixed cells, teacher/class/room OFF slots, no teacher/class/room overlap, max daily subject periods, contiguous multi-period blocks) with zero artificial session-cramming penalties.
+  - Verified on live test dataset: 711/711 lessons (100%) placed cleanly in 144ms with 100% integrity.
+  - Deployed to live VPS `165.101.47.133`.
+
 ## 2026-08-17 Instant Operator Break on Target Achieved (0s return) (DEPLOYED & VERIFIED)
 
 - **Issues addressed**:

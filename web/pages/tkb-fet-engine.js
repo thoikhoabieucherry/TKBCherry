@@ -1357,9 +1357,9 @@
     // Evaluates penalty for placing an activity at a slot to satisfy user constraints:
     // 1. Số tiết nghỉ liên tục tối đa là 1 (ConstraintTeachersMaxConsecutiveGaps = 1)
     // 2. Tối đa 1 buổi là 1 tiết nghỉ (ConstraintTeachersMaxGapsPerMorningAndAfternoon = 1)
-    // 3. Tối thiểu 1 buổi dạy 2 tiết (ConstraintTeachersMinHoursDaily = 2 / No singletons)
-    // (Bỏ ưu tiên ngày dạy)
     getPlacementPenalty(act, slot){
+      // Sắp xếp ban đầu: xếp tự do, không tối ưu buổi/tiết trống để giữ không gian thoáng cho các bước tối ưu sau
+      if(!this.isOptimizeMode) return 0;
       if(!act.gv) return 0;
       const tList = parseTeacherList(act.gv);
       if(tList.length === 0) return 0;
@@ -1742,7 +1742,8 @@
 
     solve(progressCallback = null){
       this.init();
-      this.strictFetGaps = true;
+      this.isOptimizeMode = false;
+      this.strictFetGaps = false;
       this.computeDifficultiesAndSort();
 
       let totalActivities = this.activities.length;
