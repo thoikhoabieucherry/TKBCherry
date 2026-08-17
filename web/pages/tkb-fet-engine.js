@@ -6111,6 +6111,9 @@
     // Powerful, time-budgeted asynchronous multi-pass optimizer with Multi-Directional Escape Architecture
     async optimize(mode = "optimize_singletons", progressCallback = null){
       this.loadExistingSchedule();
+      // Sửa trùng lịch/tiết đè ô cố định TRƯỚC khi đo đạc: dữ liệu vào hỏng sẽ
+      // làm integrity gate (đã mở rộng) từ chối mọi nước đi của operator.
+      this.repairHardConflicts();
       const initialMetrics = this.evaluateMetrics();
       this.initialMetricsSnapshot = { ...initialMetrics };
       const initialStateSnap = this.captureStateSnapshot(); // gốc cho restart đa dạng hóa
@@ -6222,8 +6225,14 @@
       // Mốc dừng của portfolio: nút 1 tiết/buổi mặc định dừng ở sàn 2 (trừ khi
       // pushToZero) — không xoay vòng vô ích khi đã chạm sàn.
       const restartTargetVal = (mode === "optimize_singletons" && !this.pushToZero) ? 2 : 0;
-      const restartBudgetMs = Number(this.options.optimizeRestartBudgetMs) || 90000;
-      const maxRestarts = Number(this.options.optimizeMaxRestarts) || 14;
+      const restartBudgetMs = Number(this.options.optimizeRestartBudgetMs) || 180000;
+      const maxRestarts = Number(this.options.optimizeMaxRestarts) || 20;
+      // TRẦN THỜI GIAN CỨNG cho một lần bấm nút: một số operator quét brute-force
+      // rất nặng — không có trần, một lượt 45 vòng có thể chạy hàng giờ. Trần này
+      // chém giữa các vòng VÀ chặn operator mới khởi động khi quá hạn (opDeadlineMs
+      // được wrapper integrity kiểm tra). Kết quả luôn là best đã qua kiểm định.
+      const hardCapMs = Number(this.options.optimizeHardCapMs) || 240000;
+      this.opDeadlineMs = this.stageDeadlineMs || (optStartMs + hardCapMs);
       let restartCount = 0;
       let portfolioDone = false;
 
@@ -6233,6 +6242,7 @@
       for(round = 0; round < MAX_ROUNDS; round++){
         if(typeof window !== "undefined" && window.__AUTO_SORT_STOP_REQUESTED) break;
         if(this.stageDeadlineMs && Date.now() > this.stageDeadlineMs) break;
+        if(Date.now() - optStartMs > hardCapMs) break;
 
         let improvedInRound = false;
         // Breathing room only matters on the UI thread; workers pass 0.
@@ -6324,67 +6334,69 @@
         }
 
         if(mode === "optimize_gap2"){
-          // Unconditional open session budget for aggressive gap2 -> 0 reduction
-          this.gap2SessionBudget = this.options.gap2SessionBudget || 20;
+          // Ngân sách buổi ĐỘNG (khôi phục kỷ luật cũ, giữ mức trần 20 của bản
+          // hợp nhất): vòng đầu chưa được tiêu buổi — ép các nước hoán vị rẻ
+          // trước; mở ngân sách khi qua 30% vòng hoặc kẹt 3 vòng liên tiếp.
+          if(round >= Math.floor(MAX_ROUNDS * 0.3) || consecutiveUnimprovedRounds >= 3){
+            this.gap2SessionBudget = this.options.gap2SessionBudget || 20;
+          }else{
+            this.gap2SessionBudget = 0;
+          }
 
-          // Priority 1: Borrow lessons from rich sessions to fill holes
-          
-          
-          
+          // 8 operator quét-nặng (bản AI thứ hai) chỉ chạy Ở TÀN CUỘC (gap2 đã
+          // nhỏ): lúc gap2 còn lớn chúng ngốn cả phút mỗi vòng làm portfolio
+          // không xoay pha được — các operator rẻ phía dưới hạ 35 -> ~5 trong
+          // vài giây, rồi bộ nặng vào kết liễu phần đuôi.
+          const heavyOpsOn = (bestMetrics.soBuoiTrong2 || 0) <= 6;
+          if(heavyOpsOn){
           const resBlockSwap = this.tryIntraClassSingleDoubleBlockSwap(bestMetrics, initialMetrics, "optimize_gap2", notifyLiveProgress);
           if(resBlockSwap && this.compareMetrics(resBlockSwap, bestMetrics, mode) < 0){
             bestMetrics = { ...resBlockSwap };
             saveBestSnapshot();
             improvedInRound = true;
           }
-const resRelaxRepair = this.tryRelaxAndRepairGapGaps(bestMetrics, initialMetrics, "optimize_gap2", notifyLiveProgress);
+          const resRelaxRepair = this.tryRelaxAndRepairGapGaps(bestMetrics, initialMetrics, "optimize_gap2", notifyLiveProgress);
           if(resRelaxRepair && this.compareMetrics(resRelaxRepair, bestMetrics, mode) < 0){
             bestMetrics = { ...resRelaxRepair };
             saveBestSnapshot();
             improvedInRound = true;
           }
-const resCrushExtreme = this.tryCrushExtremeSpanGaps(bestMetrics, initialMetrics, "optimize_gap2", notifyLiveProgress);
+          const resCrushExtreme = this.tryCrushExtremeSpanGaps(bestMetrics, initialMetrics, "optimize_gap2", notifyLiveProgress);
           if(resCrushExtreme && this.compareMetrics(resCrushExtreme, bestMetrics, mode) < 0){
             bestMetrics = { ...resCrushExtreme };
             saveBestSnapshot();
             improvedInRound = true;
           }
-
           const resMergeSplit = this.tryMergeSameTeacherSplitPeriodsInSession(bestMetrics, initialMetrics, "optimize_gap2", notifyLiveProgress);
           if(resMergeSplit && this.compareMetrics(resMergeSplit, bestMetrics, mode) < 0){
             bestMetrics = { ...resMergeSplit };
             saveBestSnapshot();
             improvedInRound = true;
           }
-const resBorrowEarly = this.tryBorrowLessonFromRichSessions(bestMetrics, initialMetrics, "optimize_gap2", notifyLiveProgress);
+          const resBorrowEarly = this.tryBorrowLessonFromRichSessions(bestMetrics, initialMetrics, "optimize_gap2", notifyLiveProgress);
           if(resBorrowEarly && this.compareMetrics(resBorrowEarly, bestMetrics, mode) < 0){
             bestMetrics = { ...resBorrowEarly };
             saveBestSnapshot();
             improvedInRound = true;
           }
-
-          // Priority 2: Inter-day relocation of gap lessons
           const resInterDayEarly = this.tryInterDayRelocateGapLesson(bestMetrics, initialMetrics, "optimize_gap2", notifyLiveProgress);
           if(resInterDayEarly && this.compareMetrics(resInterDayEarly, bestMetrics, mode) < 0){
             bestMetrics = { ...resInterDayEarly };
             saveBestSnapshot();
             improvedInRound = true;
           }
-
-          // Priority 3: Block-shift & intra-class swap
           const resBlockShiftEarly = this.tryBlockShiftAndGapResolution(bestMetrics, initialMetrics, "optimize_gap2", notifyLiveProgress);
           if(resBlockShiftEarly && this.compareMetrics(resBlockShiftEarly, bestMetrics, mode) < 0){
             bestMetrics = { ...resBlockShiftEarly };
             saveBestSnapshot();
             improvedInRound = true;
           }
-
-          // Priority 4: Cross-class chain
           const resChainEarly = this.tryIntraSessionCrossClassChain(bestMetrics, initialMetrics, "optimize_gap2", notifyLiveProgress);
           if(resChainEarly && this.compareMetrics(resChainEarly, bestMetrics, mode) < 0){
             bestMetrics = { ...resChainEarly };
             saveBestSnapshot();
             improvedInRound = true;
+          }
           }
 
           // 1. Forward Gap Crusher
@@ -6685,7 +6697,7 @@ const resBorrowEarly = this.tryBorrowLessonFromRichSessions(bestMetrics, initial
       // best (thâm canh). Kết quả cuối luôn là global best qua mọi lượt.
       const globalVal = this.__globalBestM ? getMetricVal(this.__globalBestM) : getMetricVal(bestMetrics);
       if(canRestart && globalVal > restartTargetVal && restartCount < maxRestarts &&
-         (Date.now() - optStartMs) < restartBudgetMs &&
+         (Date.now() - optStartMs) < Math.min(restartBudgetMs, hardCapMs) &&
          !(typeof window !== "undefined" && window.__AUTO_SORT_STOP_REQUESTED) &&
          !(this.stageDeadlineMs && Date.now() > this.stageDeadlineMs)){
         restartCount++;
@@ -6724,6 +6736,7 @@ const resBorrowEarly = this.tryBorrowLessonFromRichSessions(bestMetrics, initial
       this.checkpointGuard = null;
       this.__globalBestSnap = null;
       this.__globalBestM = null;
+      this.opDeadlineMs = 0;
 
       if(progressCallback){
         progressCallback({
@@ -6766,6 +6779,78 @@ const resBorrowEarly = this.tryBorrowLessonFromRichSessions(bestMetrics, initial
     // <-> teacherGrid. Một operator làm hỏng lưới (xếp đè, mất tiết) sẽ bị
     // khôi phục snapshot và coi như "không cải thiện" thay vì im lặng phá lịch.
     // =========================================================================
+    // =========================================================================
+    // SỬA TRÙNG LỊCH & TIẾT ĐÈ Ô CỐ ĐỊNH (yêu cầu chủ dự án 17/08)
+    // Dữ liệu vào có thể đã hỏng sẵn (2 tiết cùng ô giáo viên, tiết nằm trên ô
+    // OFF/cố định của lớp, giáo viên bị xếp vào buổi OFF của họ). Chạy NGAY khi
+    // vào optimize/optimizeAll: nhấc toàn bộ tiết vi phạm ra rồi đặt lại bằng
+    // recursive swapping (luôn qua getConflictsForSlot — không thể tái phạm).
+    // =========================================================================
+    repairHardConflicts(){
+      const offenders = new Set();
+      const teacherSeen = new Map();
+      for(let id = 0; id < this.activities.length; id++){
+        const act = this.activities[id];
+        const slot = this.actPlacement[id];
+        if(slot < 0) continue;
+        for(let d = 0; d < (act.duration || 1); d++){
+          const s = slot + d;
+          if(this.offSlots.has(`${act.classId}|${s}`) || this.fixedSlots.has(`${act.classId}|${s}`)){
+            if(!act.isFixed) offenders.add(id);
+            continue;
+          }
+          if(act.gv){
+            const tList = parseTeacherList(act.gv);
+            for(const t of tList){
+              if(this.teacherOffSlots && this.teacherOffSlots.has(`${t}|${s}`)){
+                if(!act.isFixed) offenders.add(id);
+                continue;
+              }
+              const tk = `${t}|${s}`;
+              const prev = teacherSeen.get(tk);
+              if(prev !== undefined && prev !== id){
+                // trùng giáo viên: giữ tiết đứng trước (hoặc tiết cố định), nhấc tiết sau
+                const prevAct = this.activities[prev];
+                if(act.isFixed && prevAct && !prevAct.isFixed){ offenders.add(prev); }
+                else if(!act.isFixed){ offenders.add(id); }
+              }else{
+                teacherSeen.set(tk, id);
+              }
+            }
+          }
+        }
+      }
+      // Tiết CHƯA PHÂN cũng phải xử lý ở đây: một tiết trùng lịch bị loader bỏ
+      // qua sẽ nằm ở "chưa phân" — và chỉ MỘT tiết chưa phân đã làm integrity
+      // gate từ chối mọi nước đi của optimizer (tê liệt toàn bộ nút Tối ưu).
+      const unplaced = [];
+      for(let id = 0; id < this.activities.length; id++){
+        if(this.actPlacement[id] < 0 && !this.activities[id].isFixed) unplaced.push(id);
+      }
+      if(!offenders.size && !unplaced.length) return { repaired: 0, unresolved: 0 };
+
+      // Nhấc hết vi phạm trước (giải phóng chỗ), rồi đặt lại từng tiết.
+      for(const id of offenders) this.unplaceActivity(id);
+      let repaired = 0, unresolved = 0;
+      const savedCalls = this.limitCalls;
+      const toPlace = Array.from(offenders).concat(unplaced.filter(id => !offenders.has(id)));
+      for(const id of toPlace){
+        if(this.actPlacement[id] >= 0) continue;
+        this.limitCalls = Math.max(savedCalls || 0, 30000);
+        this.nCalls = 0;
+        if(this.randomSwap(id, 0)){
+          repaired++;
+        }else if(typeof this.tryEjectionChain === "function" && this.tryEjectionChain(id) && this.actPlacement[id] >= 0){
+          repaired++;
+        }else{
+          unresolved++;
+        }
+      }
+      this.limitCalls = savedCalls;
+      this.repairReport = { repaired, unresolved };
+      return this.repairReport;
+    }
+
     // ILS shake: n nước đi HỢP LỆ ngẫu nhiên (recursive swapping — ràng buộc
     // cứng luôn giữ) để thoát lòng chảo cực tiểu trước khi đổ dốc lại.
     perturbForRestart(nMoves){
@@ -6811,6 +6896,11 @@ const resBorrowEarly = this.tryBorrowLessonFromRichSessions(bestMetrics, initial
     }
 
     verifyPlacementIntegrity(){
+      // Lưới an toàn mở rộng 17/08: ngoài nhất quán lớp, soi cả (1) TRÙNG GIÁO
+      // VIÊN (2 tiết khác nhau cùng ô giáo viên — placeActivityDirect ghi đè
+      // teacherGrid nên lỗi này trước đây vô hình với gate), (2) tiết nằm trên
+      // Ô CỐ ĐỊNH/OFF của lớp, (3) giáo viên bị xếp vào ô OFF của chính họ.
+      const teacherSeen = new Map();
       for(let id = 0; id < this.activities.length; id++){
         const act = this.activities[id];
         const slot = this.actPlacement[id];
@@ -6818,7 +6908,20 @@ const resBorrowEarly = this.tryBorrowLessonFromRichSessions(bestMetrics, initial
         const cg = this.classGrid.get(act.classId);
         if(!cg) return false;
         for(let d = 0; d < act.duration; d++){
-          if(cg[slot + d] !== id) return false;
+          const s = slot + d;
+          if(cg[s] !== id) return false;
+          if(this.offSlots.has(`${act.classId}|${s}`)) return false;    // đè ô OFF lớp
+          if(this.fixedSlots.has(`${act.classId}|${s}`)) return false;  // đè ô cố định lớp
+          if(act.gv){
+            const tList = parseTeacherList(act.gv);
+            for(const t of tList){
+              if(this.teacherOffSlots && this.teacherOffSlots.has(`${t}|${s}`)) return false;
+              const tk = `${t}|${s}`;
+              const prev = teacherSeen.get(tk);
+              if(prev !== undefined && prev !== id) return false;       // TRÙNG GIÁO VIÊN
+              teacherSeen.set(tk, id);
+            }
+          }
         }
       }
       const seen = new Map();
@@ -6877,6 +6980,7 @@ const resBorrowEarly = this.tryBorrowLessonFromRichSessions(bestMetrics, initial
       };
 
       this.loadExistingSchedule();
+      this.repairHardConflicts(); // sửa trùng lịch/tiết đè ô cố định trước khi đo
       const initialMetrics = this.evaluateMetrics();
       const initialTkb = this.getSnapshotTKB();
       let bestMetrics = { ...initialMetrics };
@@ -7076,6 +7180,9 @@ const resBorrowEarly = this.tryBorrowLessonFromRichSessions(bestMetrics, initial
     const impl = FetTimetableEngine.prototype[opName];
     if(typeof impl !== "function") continue;
     FetTimetableEngine.prototype[opName] = function(...args){
+      // Quá hạn trần thời gian: không khởi động operator mới (operator nặng
+      // không tự kiểm tra giờ bên trong — chặn từ ngoài là đủ an toàn).
+      if(this.opDeadlineMs && Date.now() > this.opDeadlineMs) return null;
       const snap = this.captureStateSnapshot();
       let result = null;
       try{
