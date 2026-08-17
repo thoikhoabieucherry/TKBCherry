@@ -1482,6 +1482,9 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
     <div class="toolbar-secondary-actions" aria-label="Điều hướng và thống kê">
       <div class="stats-popover-wrap">
+        <button id="btnTrialFullPipeline" class="primary save-button" type="button" hidden aria-hidden="true"
+          title="Thử nghiệm (superadmin): Xếp mới + tối ưu trọn gói — mục tiêu 0 buổi 1 tiết, 0 buổi trống ≥2 tiết, giảm tối đa trống 1 tiết và tổng buổi"
+          aria-label="Xếp và tối ưu trọn gói (thử nghiệm)" onclick="runTrialFullPipeline(event)">Trọn gói ★</button>
         <button id="btnHome" class="primary save-button" type="button" title="Về trang chủ" aria-label="Về trang chủ" onclick="saveAndBack()">Home</button>
         <button id="statsToggle" class="stats-toggle" type="button" onclick="toggleStatsPopover(event)" title="Thống kê thời khóa biểu" aria-label="Thống kê thời khóa biểu" aria-expanded="false"><span class="toolbar-label-full" aria-hidden="true">Thống kê</span><span class="toolbar-label-compact" aria-hidden="true"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M4 20V13h4v7M10 20V9h4v11M16 20V5h4v15M3 20h18"/></svg></span></button>
         <div id="statsPopover" class="stats-popover" hidden>
@@ -1617,6 +1620,72 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   syncPlannerOptimizeRoleAccess();
   window.addEventListener?.("tkb:auth-ready", syncPlannerOptimizeRoleAccess);
 })();
+
+/* ============ NÚT THỬ NGHIỆM "TRỌN GÓI" (chỉ superadmin) ============
+   Chuỗi: (1) luồng Sắp xếp hiện tại (giữ nguyên, không đụng) →
+          (2) Tối ưu tất cả trong FET worker (mục tiêu 0 buổi 1 tiết,
+              0 buổi trống ≥2, giảm trống 1 + tổng buổi).
+   Tính năng xếp hiện tại trên web KHÔNG thay đổi; nút này chỉ để
+   superadmin thử nghiệm pipeline trọn gói trước khi phổ cập. */
+(function(){
+  const btn = document.getElementById("btnTrialFullPipeline");
+  if(!btn) return;
+
+  function trialUserIsSuperadmin(){
+    try{
+      return String(window.TKBAuth?.currentUser?.()?.user?.role || "")
+        .trim()
+        .toLowerCase() === "superadmin";
+    }catch(_){
+      return false;
+    }
+  }
+
+  function syncTrialButtonVisibility(){
+    const on = trialUserIsSuperadmin();
+    btn.hidden = !on;
+    btn.setAttribute("aria-hidden", on ? "false" : "true");
+  }
+
+  function solveBusy(){
+    return window.__TKB_RUST_SOLVER_RUNNING === true || window.__TKB_SOLVE_UI_BUSY === true;
+  }
+
+  async function waitForSolveIdle(maxMs){
+    const t0 = Date.now();
+    while(solveBusy() && (Date.now() - t0) < maxMs){
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    return !solveBusy();
+  }
+
+  async function runTrialFullPipeline(event){
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if(btn.disabled || solveBusy() || !trialUserIsSuperadmin()) return false;
+    btn.disabled = true;
+    try{
+      // Bước 1: đúng luồng Sắp xếp hiện tại (server-owned unified solve).
+      if(typeof window.sapXepTuDongAll === "function"){
+        await window.sapXepTuDongAll();
+      }
+      // Job server-owned có thể nhả cờ bận sau khi promise resolve — chờ hẳn.
+      const idle = await waitForSolveIdle(30 * 60 * 1000);
+      if(!idle || window.__AUTO_SORT_STOP_REQUESTED) return false;
+      // Bước 2: tối ưu trọn gói cục bộ trong FET worker.
+      if(typeof window.sapXepTheoCheDo === "function"){
+        await window.sapXepTheoCheDo("optimize_all");
+      }
+      return true;
+    }finally{
+      btn.disabled = false;
+    }
+  }
+
+  window.runTrialFullPipeline = runTrialFullPipeline;
+  syncTrialButtonVisibility();
+  window.addEventListener?.("tkb:auth-ready", syncTrialButtonVisibility);
+})();
 </script>
 
 <div class="main">
@@ -1667,7 +1736,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="../excel-style.js?v=20260701-excel-style-v2"></script>
 <script src="../vendor/sql-wasm.js"></script>
 <script src="../kvdb.js?v=20260707-vendor-local-v1"></script>
-<script src="tkb-fet-engine.js?v=20260817-strict-fet-max-gap1-v1"></script>
+<script src="tkb-fet-engine.js?v=20260817-revert-strict-sort-v1"></script>
 <script src="phanmon.js?v=20260817-strict-fet-max-gap1-v1"></script>
 <script src="tkb-constraints.js?v=20260810-v1206-assigned-demand-lesson-block-min-guard-v1"></script>
 <script src="tkb-constraints-menu.js?v=20260808-v1192-assigned-only-all-statistics-v1"></script>
