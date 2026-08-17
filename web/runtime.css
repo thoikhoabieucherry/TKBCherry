@@ -1,0 +1,61 @@
+/* Global runtime status pill */
+.tkb-runtime-status {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 9999;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--tkb-border, #e2e8f0);
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--tkb-text, #0f172a);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
+.tkb-runtime-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+  flex-shrink: 0;
+}
+
+.tkb-runtime-status.is-checking .tkb-runtime-dot {
+  animation: tkb-runtime-pulse 1s ease-in-out infinite;
+}
+
+.tkb-runtime-status.is-online .tkb-runtime-dot {
+  background: #16a34a;
+  box-shadow: 0 0 0 4px rgb(22 163 74 / 18%);
+}
+
+.tkb-runtime-status.is-offline .tkb-runtime-dot {
+  background: #dc2626;
+  box-shadow: 0 0 0 4px rgb(220 38 38 / 16%);
+}
+
+.tkb-runtime-status.is-offline {
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+@keyframes tkb-runtime-pulse {
+  0%, 100% { opacity: 0.45; transform: scale(0.92); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@media (max-width: 640px) {
+  .tkb-runtime-status {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    justify-content: center;
+  }
+}

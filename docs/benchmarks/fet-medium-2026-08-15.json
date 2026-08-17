@@ -1,0 +1,363 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-15T16:06:36.635Z",
+  "fixture": {
+    "name": "fet-anonymized-medium-v1",
+    "classes": 24,
+    "teachers": 64,
+    "rooms": 15,
+    "requiredPeriods": 432,
+    "activityCountEstimate": 384,
+    "anonymized": true,
+    "synthetic": true,
+    "structuralFloors": {},
+    "activeConstraintCounts": {
+      "classSession": 16,
+      "lessonBlocks": 2,
+      "spacingDays": 0,
+      "noSameSession": 0,
+      "noSameDay": 0
+    }
+  },
+  "seeds": [
+    101
+  ],
+  "modes": [
+    "auto"
+  ],
+  "fixtureVariant": "medium",
+  "budgets": {
+    "autoBudgetMs": 12000,
+    "optimizerTimeoutMs": 20000
+  },
+  "summary": {
+    "auto": {
+      "runs": 1,
+      "completeValidRate": 0,
+      "hardValidRate": 0,
+      "targetReachedRate": null,
+      "runtimeMs": {
+        "avg": 12064.98,
+        "p50": 12064.98,
+        "p95": 12064.98
+      },
+      "metricAverage": {
+        "soBuoiDay1": null,
+        "tsBuoiDay": null,
+        "tsNgayDay": null,
+        "soBuoiTrong1": null,
+        "soBuoiTrong2": null,
+        "unplacedCount": null
+      },
+      "validationRejections": 0,
+      "failureKinds": {
+        "fet_time_budget_exhausted": 1
+      }
+    }
+  },
+  "records": [
+    {
+      "fixture": "fet-anonymized-medium-v1",
+      "seed": 101,
+      "mode": "auto",
+      "runtimeMs": 12064.98,
+      "executor": "fet_worker",
+      "ok": false,
+      "applied": false,
+      "complete": false,
+      "valid": false,
+      "completeValid": false,
+      "unassigned": 96,
+      "placed": 0,
+      "lessonCount": 24,
+      "expectedLessonCount": 432,
+      "initialMetrics": null,
+      "metrics": null,
+      "targetMetric": null,
+      "initialTarget": null,
+      "finalTarget": null,
+      "targetDelta": null,
+      "targetReached": null,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": "fet_time_budget_exhausted",
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {
+        "activityCount": 312,
+        "blockedSlotCount": 9460,
+        "minDomainActivity": {
+          "activityId": 13,
+          "classId": "S002",
+          "subject": "Môn 01",
+          "teacher": "FIX002",
+          "duration": 2,
+          "allowedSlots": 15,
+          "blockedSlots": 45,
+          "constraintCategory": "hard_domain"
+        },
+        "minDomainSize": 15,
+        "zeroDomainActivities": [],
+        "capacityShortages": [],
+        "structuralFloor": {
+          "provenInfeasible": false,
+          "minimumUnplacedPeriods": 0,
+          "note": "FET only reports proven infeasibility here; it does not claim a global quality optimum."
+        },
+        "hardConstraintCoverage": [
+          "fixed",
+          "off",
+          "teacher_collision",
+          "class_collision",
+          "room_collision",
+          "paired_block",
+          "subject_session_limit"
+        ],
+        "blockedActivities": [
+          {
+            "activityId": 24,
+            "classId": "S002",
+            "subject": "Môn 11",
+            "teacher": "GV004",
+            "duration": 1,
+            "allowedSlots": 22,
+            "blockedSlots": 38,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 96,
+            "classId": "S008",
+            "subject": "Môn 06",
+            "teacher": "GV007",
+            "duration": 1,
+            "allowedSlots": 22,
+            "blockedSlots": 38,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 174,
+            "classId": "S014",
+            "subject": "Môn 06",
+            "teacher": "GV005",
+            "duration": 1,
+            "allowedSlots": 22,
+            "blockedSlots": 38,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 258,
+            "classId": "S020",
+            "subject": "Môn 11",
+            "teacher": "GV038",
+            "duration": 1,
+            "allowedSlots": 22,
+            "blockedSlots": 38,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 93,
+            "classId": "S008",
+            "subject": "Môn 03",
+            "teacher": "GV026",
+            "duration": 1,
+            "allowedSlots": 22,
+            "blockedSlots": 38,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 180,
+            "classId": "S014",
+            "subject": "Môn 11",
+            "teacher": "GV040",
+            "duration": 1,
+            "allowedSlots": 22,
+            "blockedSlots": 38,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 219,
+            "classId": "S017",
+            "subject": "Môn 11",
+            "teacher": "GV039",
+            "duration": 1,
+            "allowedSlots": 22,
+            "blockedSlots": 38,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 281,
+            "classId": "S022",
+            "subject": "Môn 08",
+            "teacher": "GV003",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 4,
+            "classId": "S001",
+            "subject": "Môn 05",
+            "teacher": "GV029",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 5,
+            "classId": "S001",
+            "subject": "Môn 06",
+            "teacher": "GV036",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 8,
+            "classId": "S001",
+            "subject": "Môn 08",
+            "teacher": "GV010",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 59,
+            "classId": "S005",
+            "subject": "Môn 07",
+            "teacher": "GV015",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 61,
+            "classId": "S005",
+            "subject": "Môn 09",
+            "teacher": "GV029",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 64,
+            "classId": "S005",
+            "subject": "Môn 12",
+            "teacher": "GV010",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 90,
+            "classId": "S007",
+            "subject": "Môn 12",
+            "teacher": "GV036",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 248,
+            "classId": "S020",
+            "subject": "Môn 02",
+            "teacher": "GV015",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 251,
+            "classId": "S020",
+            "subject": "Môn 05",
+            "teacher": "GV036",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 254,
+            "classId": "S020",
+            "subject": "Môn 07",
+            "teacher": "GV010",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 278,
+            "classId": "S022",
+            "subject": "Môn 06",
+            "teacher": "GV029",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 282,
+            "classId": "S022",
+            "subject": "Môn 09",
+            "teacher": "GV010",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 1,
+            "classId": "S001",
+            "subject": "Môn 02",
+            "teacher": "GV008",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 9,
+            "classId": "S001",
+            "subject": "Môn 09",
+            "teacher": "GV017",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 17,
+            "classId": "S002",
+            "subject": "Môn 05",
+            "teacher": "GV002",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 20,
+            "classId": "S002",
+            "subject": "Môn 07",
+            "teacher": "GV016",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          }
+        ],
+        "deadlineReached": true
+      },
+      "originalTimetablePreservedOnFailure": true
+    }
+  ]
+}

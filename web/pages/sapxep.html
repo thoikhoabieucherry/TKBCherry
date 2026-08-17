@@ -1,0 +1,1683 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>TKB Cherry</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TKB Cherry">
+<meta name="application-name" content="TKB Cherry">
+<link rel="icon" type="image/png" href="../assets/favicon-cherry.png?v=2">
+<link rel="apple-touch-icon" sizes="128x128" href="../assets/favicon-cherry.png?v=3">
+<link rel="apple-touch-icon-precomposed" sizes="128x128" href="../assets/favicon-cherry.png?v=3">
+<link rel="manifest" href="planner.webmanifest?v=20260714-cherry-icon-v2">
+<meta name="theme-color" content="#ffffff">
+
+<link rel="stylesheet" href="../tokens.css?v=20260710-light-v1">
+<link rel="stylesheet" href="phanmon.css?v=20260808-v1192-assigned-only-all-statistics-v1">
+<link rel="stylesheet" href="../admin-shell.css?v=20260710-app-nav-right-v1">
+<link rel="stylesheet" href="../theme-light.css?v=20260710-stats-zfix-v1">
+<link rel="stylesheet" href="../runtime.css?v=20260710-runtime-v1">
+
+<style>
+/* In standalone mode, keep controls clear of the iPhone status/home areas.
+   Horizontal timetable space intentionally stays edge-to-edge. */
+body.planner-shell {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Keep feedback inline on desktop and below the compact mobile commands. */
+body.planner-shell .toolbar-main {
+  --planner-toolbar-button-width: clamp(96px, 7.2vw, 104px);
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding-right: 0;
+}
+
+body.planner-shell .toolbar-actions {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  min-width: 0;
+}
+
+body.planner-shell .toolbar-actions > .planner-optimize-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 var(--planner-toolbar-button-width);
+  width: var(--planner-toolbar-button-width);
+  min-width: var(--planner-toolbar-button-width);
+  max-width: var(--planner-toolbar-button-width);
+  height: 36px;
+  min-height: 36px;
+}
+
+body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 9px;
+  gap: 5px;
+  border: 1px solid var(--tkb-border, #e2e8f0);
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu:hover:not(:disabled),
+body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu[aria-expanded="true"] {
+  border-color: #94a3b8;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu.is-auto-sort-disabled,
+body.planner-shell .toolbar-actions > button.is-auto-sort-disabled,
+body.planner-shell .toolbar-secondary-actions button.is-auto-sort-disabled,
+body.planner-shell #btnRangBuoc.is-auto-sort-disabled,
+body.planner-shell #btnAutoSort.is-auto-sort-disabled,
+body.planner-shell #btnHome.is-auto-sort-disabled,
+body.planner-shell #btnUndoTKB.is-auto-sort-disabled,
+body.planner-shell #btnRedoTKB.is-auto-sort-disabled,
+body.planner-shell #btnStatsPopover.is-auto-sort-disabled,
+body.planner-shell #btnAgentHelper.is-auto-sort-disabled {
+  opacity: .42 !important;
+  cursor: not-allowed !important;
+  filter: grayscale(.3) saturate(.5) !important;
+  pointer-events: none !important;
+}
+
+body.planner-shell .planner-mode-icon {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  pointer-events: none;
+}
+
+body.planner-shell .planner-optimize-menu {
+  position: absolute;
+  z-index: 1400;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  width: 164px;
+  padding: 4px;
+  gap: 2px;
+  border: 1px solid var(--tkb-border, #e2e8f0);
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgb(15 23 42 / 18%);
+}
+
+body.planner-shell .planner-optimize-menu[hidden] {
+  display: none !important;
+}
+
+body.planner-shell .planner-optimize-menu > button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #1e293b;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  text-align: left;
+  white-space: nowrap;
+}
+
+body.planner-shell .planner-optimize-menu > button[hidden] {
+  display: none !important;
+}
+
+body.planner-shell .planner-optimize-menu > button:hover:not(:disabled) {
+  background: #f1f5f9;
+}
+
+body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu:focus-visible,
+body.planner-shell .planner-optimize-menu > button:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 18%);
+}
+
+@media (min-width: 901px) and (max-width: 1150px) and (hover: hover) and (pointer: fine) {
+  body.planner-shell .toolbar-main {
+    --planner-toolbar-button-width: 88px;
+    gap: 5px;
+  }
+
+  body.planner-shell .toolbar-actions,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap {
+    gap: 4px;
+  }
+
+}
+
+@media (min-width: 901px) and (max-width: 1024px) and (hover: hover) and (pointer: fine) {
+  body.planner-shell .toolbar-main {
+    --planner-toolbar-button-width: 80px;
+  }
+
+}
+
+/* Keep one DOM order everywhere. */
+body.planner-shell .toolbar-actions > #btnRangBuoc,
+body.planner-shell .toolbar-actions > #btnUndoTKB,
+body.planner-shell .toolbar-actions > #btnRedoTKB,
+body.planner-shell .toolbar-actions > #btnAutoSort,
+body.planner-shell .toolbar-actions > .planner-optimize-wrap,
+body.planner-shell .toolbar-actions > #btnStopAutoSort,
+body.planner-shell .toolbar-actions > #btnDeleteAll {
+  order: initial;
+}
+
+body.planner-shell .toolbar-actions > button {
+  flex: 0 0 var(--planner-toolbar-button-width);
+  box-sizing: border-box;
+  width: var(--planner-toolbar-button-width);
+  min-width: var(--planner-toolbar-button-width);
+  max-width: var(--planner-toolbar-button-width);
+  height: 36px;
+  min-height: 36px;
+  border-radius: 8px;
+}
+
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button,
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button,
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
+  border-radius: 8px;
+}
+
+body.planner-shell #btnRangBuoc {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding-inline: 11px;
+  border-color: #4d9b2c;
+  background: #58ad32;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 3px 10px rgb(77 155 44 / 22%);
+}
+
+body.planner-shell #btnRangBuoc:hover:not(:disabled) {
+  border-color: #3f8623;
+  background: #479827;
+}
+
+body.planner-shell #btnRangBuoc .toolbar-requirement-icon {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.8;
+}
+
+body.planner-shell .toolbar-actions > button.icon-button {
+  display: inline-flex;
+  flex: 0 0 var(--planner-toolbar-button-width);
+  align-items: center;
+  justify-content: center;
+  width: var(--planner-toolbar-button-width);
+  min-width: var(--planner-toolbar-button-width);
+  max-width: var(--planner-toolbar-button-width);
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 8px;
+  line-height: 1;
+}
+
+body.planner-shell .toolbar-icon {
+  display: block;
+  width: 19px;
+  height: 19px;
+  flex: none;
+  pointer-events: none;
+  transition: transform .16s ease;
+}
+
+body.planner-shell #btnUndoTKB .toolbar-icon,
+body.planner-shell #btnRedoTKB .toolbar-icon {
+  width: 20px;
+  height: 20px;
+}
+
+body.planner-shell #btnAutoSort .toolbar-icon {
+  width: 18px;
+  height: 18px;
+  transform: translateX(1px);
+}
+
+body.planner-shell #btnStopAutoSort .toolbar-icon {
+  width: 20px;
+  height: 20px;
+}
+
+body.planner-shell #btnDeleteAll .toolbar-icon {
+  width: 20px;
+  height: 20px;
+}
+
+body.planner-shell #btnDeleteAll {
+  border-color: #dc2626;
+  background: #dc2626;
+  color: #fff;
+  box-shadow: 0 3px 10px rgb(185 28 28 / 22%);
+}
+
+body.planner-shell #btnDeleteAll:hover:not(:disabled) {
+  border-color: #b91c1c;
+  background: #b91c1c;
+}
+
+body.planner-shell #btnStopAutoSort.is-active {
+  border-color: #ef9a9a !important;
+  background: #fff5f5 !important;
+  color: #c62828 !important;
+  box-shadow: 0 3px 10px rgb(198 40 40 / 14%);
+}
+
+body.planner-shell #btnStopAutoSort.is-active:hover:not(:disabled) {
+  border-color: #e57373 !important;
+  background: #ffebee !important;
+  color: #b71c1c !important;
+}
+
+body.planner-shell .toolbar-actions > button.icon-button:hover:not(:disabled) .toolbar-icon {
+  transform: scale(1.06);
+}
+
+body.planner-shell #btnAutoSort:hover:not(:disabled) .toolbar-icon {
+  transform: translateX(1px) scale(1.06);
+}
+
+body.planner-shell .toolbar-label-compact {
+  display: none;
+}
+
+body.planner-shell .toolbar-actions > button:focus-visible,
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > button:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 18%);
+}
+
+/* Keep the high-specificity history controls on the shared button width. */
+body.planner-shell .toolbar-actions > #btnUndoTKB,
+body.planner-shell .toolbar-actions > #btnRedoTKB {
+  display: inline-flex;
+  flex: 0 0 var(--planner-toolbar-button-width);
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--planner-toolbar-button-width);
+  min-width: var(--planner-toolbar-button-width);
+  max-width: var(--planner-toolbar-button-width);
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+body.planner-shell .toolbar-actions > #btnStopAutoSort:not(.is-active) {
+  display: none !important;
+}
+
+body.planner-shell .toolbar-actions > #btnStopAutoSort.is-active + #btnDeleteAll {
+  display: none !important;
+}
+
+body.planner-shell .toolbar-secondary-actions {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 0;
+}
+
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap {
+  position: relative;
+  inset: auto;
+  display: inline-flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  min-width: 0;
+}
+
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button,
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button,
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
+  flex: 0 0 var(--planner-toolbar-button-width);
+  box-sizing: border-box;
+  width: var(--planner-toolbar-button-width);
+  min-width: var(--planner-toolbar-button-width);
+  max-width: var(--planner-toolbar-button-width);
+  height: 36px;
+  min-height: 36px;
+}
+
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button {
+  order: initial;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding-inline: 8px 10px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  color: #1e293b;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .16s ease;
+}
+
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
+body.planner-shell #btnAgentHelper .agent-status-dot {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  background: #94a3b8;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 16%);
+  pointer-events: none;
+  transition: background-color .16s ease, box-shadow .16s ease;
+}
+
+body.planner-shell #btnAgentHelper[data-agent-state="enabled"] .agent-status-dot,
+body.planner-shell #btnAgentHelper[data-agent-state="prepared"] .agent-status-dot {
+  background: #16a34a;
+}
+
+body.planner-shell #btnAgentHelper[data-agent-state="active"] .agent-status-dot,
+body.planner-shell #btnAgentHelper[data-agent-state="working"] .agent-status-dot {
+  background: #22c55e;
+}
+body.planner-shell #btnAgentHelper[data-agent-state="fallback"] .agent-status-dot {
+  background: #f59e0b;
+}
+
+body.planner-shell #btnAgentHelper[data-agent-state="working"] .agent-status-dot {
+  animation: planner-agent-working-pulse 1.2s ease-in-out infinite;
+}
+
+body.planner-shell #btnAgentHelper[data-agent-state="error"] .agent-status-dot {
+  background: #dc2626;
+}
+
+@keyframes planner-agent-working-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgb(34 197 94 / 30%), 0 1px 3px rgb(15 23 42 / 24%);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgb(34 197 94 / 12%), 0 1px 3px rgb(15 23 42 / 24%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.planner-shell #btnAgentHelper[data-agent-state="working"] .agent-status-dot {
+    animation: none;
+    box-shadow: 0 0 0 3px rgb(34 197 94 / 18%), 0 1px 3px rgb(15 23 42 / 24%);
+  }
+}
+
+body.planner-shell #btnAgentHelper:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button[hidden] {
+  display: none !important;
+}
+
+body.planner-shell #btnAgentHelper[hidden] {
+  display: none !important;
+}
+
+body.planner-shell #btnAgentHelper .agent-ai-icon {
+  width: 16px;
+  height: 16px;
+  color: #7c3aed;
+  stroke: #7c3aed;
+  stroke-width: 2;
+  fill: none;
+  filter: drop-shadow(0 1px 2px rgb(124 58 237 / 18%));
+  transition: all .16s ease;
+}
+
+body.planner-shell #btnAgentHelper.is-auto-sort-disabled {
+  opacity: 1;
+  cursor: not-allowed;
+  filter: none;
+  pointer-events: none;
+}
+
+body.planner-shell #btnAgentHelper.is-auto-sort-disabled .agent-ai-icon,
+body.planner-shell #btnAgentHelper.is-auto-sort-disabled .agent-button-label {
+  opacity: .45;
+  filter: grayscale(.35) saturate(.55);
+}
+
+body.planner-shell #btnAgentHelper.is-auto-sort-disabled .agent-status-dot {
+  z-index: 2;
+  opacity: 1;
+  filter: none;
+}
+
+body.planner-shell .toolbar-feedback {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+body.planner-shell .toolbar-feedback > #autoSortProgress {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+}
+
+body.planner-shell .toolbar-feedback > #autoSortProgress .auto-sort-label {
+  flex: 0 0 auto;
+  color: #475569;
+  font-variant-numeric: tabular-nums;
+}
+
+body.planner-shell .toolbar-feedback > #autoSortProgress .auto-sort-metric {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content !important;
+  min-width: max-content !important;
+  max-width: none !important;
+  overflow: visible;
+  background: #f0fdf4;
+  border: 1.5px solid #86efac;
+  border-radius: 9999px;
+  padding: 3px 14px;
+  color: #15803d;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+body.planner-shell .toolbar-feedback > #autoSortProgress .auto-sort-metric[hidden] {
+  display: none !important;
+}
+
+body.planner-shell .toolbar-feedback > #statusMsg {
+  flex: 1 1 180px;
+  width: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
+  min-inline-size: 14ch;
+}
+
+/* A narrow desktop remains a desktop toolbar; coarse-pointer devices use mobile rows. */
+@media (max-width: 900px) and (hover: none) and (pointer: coarse),
+       (max-width: 480px),
+       (orientation: landscape) and (max-height: 540px) and (any-pointer: coarse) {
+  html {
+    height: var(--tkb-mobile-viewport-h, 100dvh);
+    min-height: var(--tkb-mobile-viewport-h, 100dvh);
+  }
+
+  body.planner-shell {
+    --planner-mobile-feedback-h: 46px;
+    height: var(--tkb-mobile-viewport-h, 100dvh);
+    min-height: var(--tkb-mobile-viewport-h, 100dvh);
+    max-height: var(--tkb-mobile-viewport-h, 100dvh);
+    padding-bottom: 0;
+    overflow: hidden;
+  }
+
+  body.planner-shell .toolbar {
+    padding: 5px;
+    gap: 0;
+  }
+
+  body.planner-shell .toolbar-main {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-template-rows: 44px var(--planner-mobile-feedback-h);
+    align-items: stretch;
+    gap: 4px 2px;
+  }
+
+  body.planner-shell .toolbar-actions {
+    display: contents;
+  }
+
+  body.planner-shell .toolbar-actions > button,
+  body.planner-shell .toolbar-actions > .planner-optimize-wrap > .planner-mode-button,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
+    flex: 0 1 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 44px;
+    min-height: 44px;
+    padding: 0 6px;
+    border: 1px solid var(--tkb-border, #e2e8f0);
+    border-radius: var(--tkb-radius, 10px);
+    box-shadow: var(--tkb-shadow, 0 1px 3px rgb(15 23 42 / 6%));
+    font-size: clamp(11px, 3.05vw, 13px);
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color .16s ease, border-color .16s ease, box-shadow .12s ease, transform .12s ease;
+  }
+
+  body.planner-shell .toolbar-actions > button:active:not(:disabled),
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button:active:not(:disabled),
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button:active:not(:disabled),
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle:active:not(:disabled) {
+    transform: translateY(1px);
+    box-shadow: 0 1px 1px rgb(15 23 42 / 8%);
+  }
+
+  body.planner-shell .toolbar-actions > #btnRangBuoc {
+    grid-column: 1;
+    grid-row: 1;
+    gap: 0;
+    padding: 0;
+  }
+
+  body.planner-shell .toolbar-actions > #btnUndoTKB {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+  }
+
+  body.planner-shell .toolbar-actions > #btnRedoTKB {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
+  }
+
+  body.planner-shell .toolbar-actions > #btnUndoTKB,
+  body.planner-shell .toolbar-actions > #btnRedoTKB {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    height: 22px;
+    min-height: 22px;
+  }
+
+  body.planner-shell .toolbar-actions > #btnRedoTKB {
+    border-radius: var(--tkb-radius, 10px) var(--tkb-radius, 10px) 0 0;
+  }
+
+  body.planner-shell .toolbar-actions > #btnUndoTKB {
+    border-radius: 0 0 var(--tkb-radius, 10px) var(--tkb-radius, 10px);
+  }
+
+  body.planner-shell .toolbar-actions > #btnAutoSort {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  body.planner-shell .toolbar-actions > .planner-optimize-wrap {
+    grid-column: 4;
+    grid-row: 1;
+    display: inline-flex;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 44px;
+    min-height: 44px;
+  }
+
+  body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu {
+    width: 100%;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    font-size: 0;
+    border-radius: var(--tkb-radius, 10px);
+    touch-action: manipulation;
+  }
+
+  body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu .planner-mode-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  body.planner-shell .planner-optimize-menu {
+    top: calc(100% + 5px);
+    right: auto;
+    left: 50%;
+    width: min(164px, calc(100vw - 12px));
+    transform: translateX(-50%);
+  }
+
+  body.planner-shell .toolbar-actions > #btnStopAutoSort,
+  body.planner-shell .toolbar-actions > #btnDeleteAll {
+    grid-column: 5 !important;
+    grid-row: 1 !important;
+  }
+
+  body.planner-shell .toolbar-actions > button.icon-button {
+    flex: 0 1 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+
+  body.planner-shell .toolbar-actions > #btnDeleteAll {
+    padding: 0;
+  }
+
+  body.planner-shell .toolbar-actions > #btnAutoSort {
+    padding: 0 !important;
+  }
+
+  body.planner-shell .toolbar-actions > #btnAutoSort .toolbar-icon {
+    margin: 0;
+    transform: translateX(1px);
+  }
+
+  body.planner-shell .toolbar-actions > #btnAutoSort:hover:not(:disabled) .toolbar-icon {
+    transform: translateX(1px) scale(1.06);
+  }
+
+  body.planner-shell .toolbar-label-full {
+    display: none;
+  }
+
+  body.planner-shell .toolbar-label-compact {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  body.planner-shell .toolbar-label-compact .toolbar-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  body.planner-shell .toolbar-actions > #btnStopAutoSort {
+    padding: 0;
+  }
+
+  body.planner-shell .toolbar-actions > #btnDeleteAll {
+    padding-inline: 0;
+  }
+
+  body.planner-shell .tkb-support-table td {
+    padding-inline: 2px;
+  }
+
+  body.planner-shell .tkb-support-table .tkb-gv-cell,
+  body.planner-shell .tkb-support-table .tkb-cell-line {
+    font-size: clamp(9px, 2.6vw, 10px);
+    line-height: 1.05;
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: normal;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-mobile-stack-line {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    width: 100%;
+    min-width: 0;
+    text-align: center;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-mobile-stack-line > .tkb-cell-primary,
+  body.planner-shell #tkb.tkb-pair-stack .tkb-mobile-stack-line > .tkb-cell-secondary {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    line-height: 1.02;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-mobile-stack-line > .tkb-cell-primary {
+    font-weight: 600;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-mobile-stack-line > .tkb-cell-secondary {
+    color: #526173;
+    font-weight: 500;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-fixed .tkb-mobile-stack-line > .tkb-cell-secondary {
+    color: #1d4ed8;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-mobile-stack-line > .tkb-cell-separator,
+  body.planner-shell #tkb.tkb-pair-stack .tkb-support-table .tkb-room-line {
+    display: none;
+  }
+
+  body.planner-shell .toolbar-feedback {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(92px, max-content);
+    grid-template-rows: var(--planner-mobile-feedback-h);
+    align-items: center;
+    gap: 0 8px;
+    width: 100%;
+    min-width: 0;
+    height: var(--planner-mobile-feedback-h);
+    min-height: var(--planner-mobile-feedback-h);
+    max-height: var(--planner-mobile-feedback-h);
+    overflow: hidden;
+  }
+
+  body.planner-shell .toolbar-feedback > #autoSortProgress {
+    grid-column: 1;
+    grid-row: 1;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    overflow: hidden;
+  }
+
+  body.planner-shell .toolbar-feedback > #autoSortProgress.is-idle {
+    display: none;
+  }
+
+  body.planner-shell .toolbar-feedback > #autoSortProgress .auto-sort-label {
+    flex: 0 0 auto;
+    min-width: 4ch;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    font-variant-numeric: tabular-nums;
+  }
+
+  body.planner-shell .toolbar-feedback > #autoSortProgress .auto-sort-metric {
+    flex: 0 0 auto !important;
+    width: max-content !important;
+    min-width: max-content !important;
+    max-width: none !important;
+  }
+
+  body.planner-shell .toolbar-feedback > #statusMsg {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding-inline-start: 0;
+    align-self: center;
+    max-height: 2.4em;
+    overflow: hidden;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    transform: none !important;
+  }
+
+  body.planner-shell .toolbar-secondary-actions {
+    display: contents;
+  }
+
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap {
+    display: contents;
+  }
+
+  body.planner-shell #btnAgentHelper {
+    grid-column: 6;
+    grid-row: 1;
+    display: inline-flex !important;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    gap: 0;
+    border-radius: var(--tkb-radius, 10px);
+    font-size: 0;
+    touch-action: manipulation;
+  }
+
+  body.planner-shell #btnAgentHelper .agent-ai-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  body.planner-shell #btnAgentHelper .agent-status-dot {
+    top: 3px;
+    left: 3px;
+    width: 8px;
+    height: 8px;
+    border-width: 2px;
+  }
+
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button {
+    grid-column: 7;
+    grid-row: 1;
+    padding-inline: 3px;
+  }
+
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
+    grid-column: 8;
+    grid-row: 1;
+    height: 44px;
+    min-height: 44px;
+    padding-inline: 3px;
+    border-radius: var(--tkb-radius, 10px);
+  }
+
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle .toolbar-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-popover {
+    position: fixed;
+    grid-column: auto;
+    order: initial;
+    width: auto;
+    margin-top: 0;
+  }
+
+  body.planner-shell .toolbar-feedback > #statusMsg {
+    font-size: 12px;
+    line-height: 1.2;
+    letter-spacing: 0;
+  }
+
+  /* Keep the functional unassigned dropdown, but omit duplicated pane totals
+     on phones so both timetable bodies receive the available height. */
+  body.planner-shell #tkb.tkb-pair-stack .tkb-pair-class-stats {
+    display: none !important;
+  }
+}
+
+/* Landscape phones have enough width for separate full-size history buttons. */
+@media (orientation: landscape) and (max-height: 540px) and (any-pointer: coarse) {
+  body.planner-shell .toolbar-main {
+    grid-template-columns: repeat(9, minmax(0, 1fr));
+  }
+
+  body.planner-shell .toolbar-actions > #btnUndoTKB {
+    grid-column: 2;
+    align-self: stretch;
+  }
+
+  body.planner-shell .toolbar-actions > #btnRedoTKB {
+    grid-column: 3;
+    align-self: stretch;
+  }
+
+  body.planner-shell .toolbar-actions > #btnUndoTKB,
+  body.planner-shell .toolbar-actions > #btnRedoTKB {
+    height: 44px;
+    min-height: 44px;
+    border-radius: var(--tkb-radius, 10px);
+  }
+
+  body.planner-shell .toolbar-actions > #btnAutoSort {
+    grid-column: 4;
+  }
+
+  body.planner-shell .toolbar-actions > .planner-optimize-wrap {
+    grid-column: 5;
+  }
+
+  body.planner-shell .toolbar-actions > #btnStopAutoSort,
+  body.planner-shell .toolbar-actions > #btnDeleteAll {
+    grid-column: 6 !important;
+  }
+
+  body.planner-shell #btnAgentHelper {
+    grid-column: 7;
+  }
+
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button {
+    grid-column: 8;
+  }
+
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
+    grid-column: 9;
+  }
+}
+
+@media (min-width: 481px) and (max-width: 900px) and (hover: hover) and (pointer: fine) {
+  body.planner-shell .toolbar {
+    padding: 5px 6px;
+  }
+
+  body.planner-shell .toolbar-main {
+    --planner-toolbar-button-width: 64px;
+    grid-template-columns: max-content minmax(0, 1fr) auto;
+    gap: 4px;
+  }
+
+  body.planner-shell .toolbar-actions,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap {
+    gap: 4px;
+  }
+
+  body.planner-shell .toolbar-actions > button,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
+    flex: 0 0 var(--planner-toolbar-button-width);
+    width: var(--planner-toolbar-button-width);
+    min-width: var(--planner-toolbar-button-width);
+    max-width: var(--planner-toolbar-button-width);
+    height: 34px;
+    min-height: 34px;
+    padding: 0 7px;
+    border-radius: 6px;
+    font-size: 11.5px;
+  }
+
+  body.planner-shell .toolbar-actions > button.icon-button {
+    width: var(--planner-toolbar-button-width);
+    min-width: var(--planner-toolbar-button-width);
+    max-width: var(--planner-toolbar-button-width);
+    padding: 0;
+  }
+
+  body.planner-shell #btnAgentHelper {
+    padding-inline: 3px;
+    font-size: 9.5px;
+  }
+
+  body.planner-shell .toolbar-label-full {
+    display: none;
+  }
+
+  body.planner-shell .toolbar-label-compact {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  body.planner-shell .toolbar-feedback {
+    overflow: hidden;
+  }
+
+  body.planner-shell .toolbar-feedback > #autoSortProgress {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    overflow: hidden;
+  }
+
+  body.planner-shell .toolbar-feedback > #autoSortProgress .auto-sort-label {
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+
+}
+
+@media (max-width: 410px) {
+  body.planner-shell .toolbar-actions > #btnRangBuoc,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
+    padding-inline: 4px;
+    font-size: 10.5px;
+  }
+}
+
+@media (max-width: 360px) {
+  body.planner-shell .toolbar {
+    padding-inline: 4px;
+  }
+
+  body.planner-shell .toolbar-actions > #btnRangBuoc,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button,
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
+    padding-inline: 2px;
+    font-size: 9px;
+  }
+}
+
+/* Portrait phones: show all six weekdays and all ten periods in both panes. */
+@media (max-width: 480px) and (orientation: portrait) {
+  body.planner-shell .center {
+    padding: 2px;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack {
+    --tkb-pair-toolbar-h: 28px;
+    --tkb-pair-head-h: 20px;
+    --tkb-pair-row-h: clamp(21px, calc((var(--tkb-mobile-viewport-h, 100dvh) - 198px) / 22), 32px);
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    width: 100%;
+    max-width: 100%;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-pair-pane,
+  body.planner-shell #tkb.tkb-pair-stack > #tkbPairSupport,
+  body.planner-shell #tkb.tkb-pair-stack .tkb-pair-body {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-pair-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(86px, 32%);
+    grid-template-rows: 26px;
+    align-items: center;
+    height: var(--tkb-pair-toolbar-h);
+    min-height: var(--tkb-pair-toolbar-h);
+    padding: 1px 2px;
+    gap: 1px 2px;
+    overflow: visible;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-pair-tools {
+    grid-column: 1;
+    grid-row: 1;
+    width: 100%;
+    min-width: 0;
+    flex-wrap: nowrap;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-pair-pane.support .tkb-pair-tools,
+  body.planner-shell #tkb.tkb-pair-gv-phong .tkb-pair-pane.main .tkb-pair-tools {
+    grid-column: 1 / -1;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-pair-summary {
+    display: contents;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-pair-select {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-pair-select-btn,
+  body.planner-shell #tkb.tkb-pair-stack .unassigned-dropdown-btn {
+    height: 26px;
+    min-height: 26px;
+    padding-inline: 5px;
+    border-radius: 4px;
+    font-size: 10px;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .unassigned-dropdown {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    min-width: 86px;
+    max-width: none;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .table {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 100% !important;
+    table-layout: fixed !important;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .table th,
+  body.planner-shell #tkb.tkb-pair-stack .table td {
+    width: auto !important;
+    min-width: 0;
+    padding: 0 1px !important;
+    overflow: hidden;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .table th {
+    height: var(--tkb-pair-head-h);
+    font-size: clamp(8.5px, 2.45vw, 9.5px);
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .table td {
+    height: var(--tkb-pair-row-h);
+    font-size: clamp(8px, 2.35vw, 9.5px);
+    line-height: 1.02;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-cell-stack,
+  body.planner-shell #tkb.tkb-pair-stack .tkb-gv-cell {
+    height: calc(var(--tkb-pair-row-h) - 1px);
+    max-height: calc(var(--tkb-pair-row-h) - 1px);
+    min-height: 0;
+    gap: 0;
+    line-height: 1.02;
+    overflow: hidden;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tkb-cell-line,
+  body.planner-shell #tkb.tkb-pair-stack .tkb-class-line,
+  body.planner-shell #tkb.tkb-pair-stack .tkb-teacher-line {
+    max-width: 100%;
+    font-size: inherit;
+    line-height: 1.02;
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: normal;
+  }
+
+  body.planner-shell #tkb.tkb-pair-stack .tiet-number {
+    top: 0;
+    right: 1px;
+    font-size: 6.5px;
+    line-height: 1;
+  }
+}
+
+/* Phone landscape: show one complete session in both panes; swipe for the rest. */
+@media (orientation: landscape) and (max-height: 540px) and (any-pointer: coarse) {
+  body.planner-shell {
+    --planner-mobile-feedback-h: 34px;
+    width: 100%;
+    max-width: none;
+    height: var(--tkb-mobile-viewport-h, 100dvh);
+    min-height: var(--tkb-mobile-viewport-h, 100dvh);
+    max-height: var(--tkb-mobile-viewport-h, 100dvh);
+    overflow: hidden;
+  }
+
+  body.planner-shell .toolbar {
+    padding-top: 2px;
+    padding-left: max(5px, env(safe-area-inset-left));
+    padding-right: max(5px, env(safe-area-inset-right));
+    padding-bottom: 2px;
+  }
+
+  body.planner-shell .toolbar-main {
+    grid-template-rows: 44px var(--planner-mobile-feedback-h);
+    row-gap: 2px;
+  }
+
+  body.planner-shell .toolbar-feedback {
+    display: grid;
+    grid-template-rows: var(--planner-mobile-feedback-h);
+    height: var(--planner-mobile-feedback-h);
+    min-height: var(--planner-mobile-feedback-h);
+    max-height: var(--planner-mobile-feedback-h);
+  }
+
+  body.planner-shell .toolbar-feedback > #autoSortProgress {
+    gap: 4px;
+    font-size: 10.5px;
+  }
+
+  body.planner-shell .toolbar-feedback .auto-sort-track {
+    width: 18px;
+    height: 18px;
+    flex-basis: 18px;
+  }
+
+  body.planner-shell .toolbar-feedback .auto-sort-pct {
+    font-size: 6.5px;
+  }
+
+  body.planner-shell .toolbar-feedback > #statusMsg {
+    max-height: 2.2em;
+    font-size: 10.5px;
+    line-height: 1.1;
+  }
+
+  body.planner-shell .center {
+    width: 100%;
+    max-width: none;
+    padding: 1px;
+    padding-left: 2px;
+    padding-right: 2px;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv {
+    --tkb-pair-toolbar-h: 25px;
+    --tkb-pair-head-h: 18px;
+    --tkb-pair-row-h: clamp(20px, calc((var(--tkb-mobile-viewport-h, 100dvh) - 160px) / 10), 28px);
+    display: grid;
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv > .tkb-pair-pane.main,
+  body.planner-shell #tkb.tkb-pair-lop-gv > #tkbPairSupport,
+  body.planner-shell #tkb.tkb-pair-lop-gv > #tkbPairSupport > .tkb-pair-pane.support {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .tkb-pair-toolbar {
+    display: flex;
+    align-items: center;
+    height: var(--tkb-pair-toolbar-h);
+    min-height: var(--tkb-pair-toolbar-h);
+    padding: 1px 3px;
+    gap: 2px;
+    overflow: visible;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .tkb-pair-tools {
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    flex: 1 1 180px;
+    flex-wrap: nowrap;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .tkb-pair-select {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    flex-wrap: nowrap;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .tkb-pair-select-btn {
+    height: 23px;
+    min-height: 23px;
+    padding-inline: 6px;
+    border-radius: 4px;
+    font-size: 10.5px;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .tkb-pair-summary {
+    min-width: 0;
+    display: flex;
+    flex: 0 1 auto;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+    gap: 4px;
+    overflow: hidden;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .unassigned-dropdown {
+    flex: 0 1 132px;
+    min-width: 104px;
+    max-width: 142px;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .tkb-pair-body {
+    height: auto;
+    min-width: 0;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .table {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: auto !important;
+    table-layout: fixed !important;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .table th,
+  body.planner-shell #tkb.tkb-pair-lop-gv .table td {
+    width: auto !important;
+    min-width: 0;
+    padding: 0 2px !important;
+    overflow: hidden;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .table th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    height: var(--tkb-pair-head-h);
+    font-size: 10.5px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .table td {
+    height: var(--tkb-pair-row-h);
+    min-height: var(--tkb-pair-row-h);
+    font-size: clamp(9px, 1.65vw, 10.5px);
+    line-height: 1.02;
+  }
+
+  body.planner-shell #tkb.tkb-pair-lop-gv .tkb-cell-stack,
+  body.planner-shell #tkb.tkb-pair-lop-gv .tkb-gv-cell {
+    height: calc(var(--tkb-pair-row-h) - 1px);
+    max-height: calc(var(--tkb-pair-row-h) - 1px);
+    min-height: 0;
+    gap: 0;
+    overflow: hidden;
+  }
+}
+
+/* Extra-short landscape phones need two readable lines inside a 20px period. */
+@media (orientation: landscape) and (max-height: 370px) and (any-pointer: coarse) {
+  body.planner-shell #tkb.tkb-pair-lop-gv .table td {
+    font-size: 9px;
+    line-height: 1;
+  }
+}
+</style>
+
+</head>
+
+<body class="planner-shell">
+
+<div class="toolbar">
+  <div class="toolbar-main">
+    <div class="toolbar-actions" role="toolbar" aria-label="Công cụ thời khóa biểu">
+      <select id="chonKhoi" onchange="loadLopList()" hidden></select>
+
+      <button id="btnRangBuoc" type="button" onclick="if(window.openRangBuocMenu)window.openRangBuocMenu(this);" title="Yêu cầu xếp thời khóa biểu" aria-label="Yêu cầu xếp thời khóa biểu"><svg class="toolbar-icon toolbar-requirement-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5.5 12.5 4.2 4.2L18.7 7.7"/></svg><span class="toolbar-label-full" aria-hidden="true">Yêu cầu</span></button>
+      <button id="btnUndoTKB" class="icon-button" type="button" onclick="tkbUndo()" title="Hoàn tác" aria-label="Hoàn tác" disabled><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 14-4-4 4-4"/><path d="M5 10h11a4 4 0 1 1 0 8h-1"/></svg></button>
+      <button id="btnRedoTKB" class="icon-button" type="button" onclick="tkbRedo()" title="Làm lại" aria-label="Làm lại" disabled><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 14 4-4-4-4"/><path d="M19 10H8a4 4 0 1 0 0 8h1"/></svg></button>
+      <button id="btnAutoSort" class="primary icon-button" type="button" onclick="sapXepTuDongAll()" title="Bắt đầu sắp xếp" aria-label="Bắt đầu sắp xếp"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8.35 6.3c0-1.02 1.12-1.65 2-1.12l8.1 4.88a1.3 1.3 0 0 1 0 2.22l-8.1 4.88c-.88.53-2-.1-2-1.12V6.3Z" fill="currentColor"/></svg></button>
+      <div id="plannerOptimizeWrap" class="planner-optimize-wrap">
+        <button id="btnOptimizeMenu" class="planner-mode-button" type="button" onclick="togglePlannerOptimizeMenu(event)" title="Chọn mục tiêu tối ưu" aria-label="Chọn mục tiêu tối ưu" aria-haspopup="menu" aria-expanded="false" aria-controls="plannerOptimizeMenu"><svg class="planner-mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg><span class="planner-mode-label">Tối ưu</span></button>
+        <div id="plannerOptimizeMenu" class="planner-optimize-menu" role="menu" aria-label="Mục tiêu tối ưu" hidden>
+          <button type="button" role="menuitem" data-scheduler-mode="optimize_all" onclick="runPlannerSchedulerMode('optimize_all', event)">Tối ưu tất cả</button>
+          <button type="button" role="menuitem" data-scheduler-mode="optimize_singletons" onclick="runPlannerSchedulerMode('optimize_singletons', event)">1 tiết/buổi</button>
+          <button type="button" role="menuitem" data-scheduler-mode="optimize_sessions" onclick="runPlannerSchedulerMode('optimize_sessions', event)">Buổi dạy</button>
+          <button type="button" role="menuitem" data-scheduler-mode="optimize_gap2" onclick="runPlannerSchedulerMode('optimize_gap2', event)">2 tiết trống</button>
+          <button type="button" role="menuitem" data-scheduler-mode="optimize_gap1" onclick="runPlannerSchedulerMode('optimize_gap1', event)">1 tiết trống</button>
+        </div>
+      </div>
+      <button type="button" id="btnStopAutoSort" class="auto-sort-stop icon-button" onclick="requestStopAutoSort()" title="Dừng tối ưu" aria-label="Dừng tối ưu" aria-hidden="true" style="display:none;"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" stroke="currentColor"/><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" stroke="none"/></svg></button>
+      <button id="btnDeleteAll" class="danger icon-button" type="button" onclick="deleteAllTKB()" title="Xóa toàn bộ thời khóa biểu" aria-label="Xóa toàn bộ thời khóa biểu"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 7h15"/><path d="M9 7V4.8h6V7"/><path d="m6.7 7 .8 12h9l.8-12"/><path d="M10 10.5v5.2M14 10.5v5.2"/></svg></button>
+    </div>
+
+    <div class="toolbar-feedback" aria-label="Trạng thái sắp xếp">
+      <div id="autoSortProgress" class="auto-sort-progress is-idle" aria-live="polite" aria-hidden="true" hidden>
+        <!-- Stopwatch Elapsed Timer -->
+        <div id="autoSortTimer" class="auto-sort-timer" title="Thời gian thực thi">
+          <svg class="auto-sort-timer-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span id="autoSortTimerVal">00:00</span>
+        </div>
+        <!-- Clean Live Metric Badge -->
+        <span id="autoSortProgressMetric" class="auto-sort-metric" hidden></span>
+      </div>
+      <span id="statusMsg" aria-live="polite"></span>
+    </div>
+
+    <div class="toolbar-secondary-actions" aria-label="Điều hướng và thống kê">
+      <div class="stats-popover-wrap">
+        <button id="btnHome" class="primary save-button" type="button" title="Về trang chủ" aria-label="Về trang chủ" onclick="saveAndBack()">Home</button>
+        <button id="statsToggle" class="stats-toggle" type="button" onclick="toggleStatsPopover(event)" title="Thống kê thời khóa biểu" aria-label="Thống kê thời khóa biểu" aria-expanded="false"><span class="toolbar-label-full" aria-hidden="true">Thống kê</span><span class="toolbar-label-compact" aria-hidden="true"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M4 20V13h4v7M10 20V9h4v11M16 20V5h4v15M3 20h18"/></svg></span></button>
+        <div id="statsPopover" class="stats-popover" hidden>
+          <div id="statsBox" class="stats-box"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  const optimizeWrap = document.getElementById("plannerOptimizeWrap");
+  const toggleButton = document.getElementById("btnOptimizeMenu");
+  const menu = document.getElementById("plannerOptimizeMenu");
+  const ordinaryModes = new Set([
+    "optimize_all",
+    "optimize_singletons",
+    "optimize_sessions",
+    "optimize_gap2",
+    "optimize_gap1"
+  ]);
+  const superadminOnlyModes = new Set([]);
+
+  function plannerOptimizeUserIsSuperadmin(){
+    try{
+      return String(window.TKBAuth?.currentUser?.()?.user?.role || "")
+        .trim()
+        .toLowerCase() === "superadmin";
+    }catch(_){
+      return false;
+    }
+  }
+
+  function visibleOptimizeMenuItems(){
+    return Array.from(menu?.querySelectorAll('[role="menuitem"]') || [])
+      .filter(item => item.hidden !== true && item.getAttribute?.("aria-hidden") !== "true");
+  }
+
+  function syncPlannerOptimizeRoleAccess(){
+    const superadmin = plannerOptimizeUserIsSuperadmin();
+    for(const item of menu?.querySelectorAll('[data-superadmin-only="true"]') || []){
+      item.hidden = !superadmin;
+      item.setAttribute("aria-hidden", superadmin ? "false" : "true");
+      if(superadmin) item.removeAttribute?.("tabindex");
+      else item.setAttribute("tabindex", "-1");
+    }
+    return superadmin;
+  }
+
+  function plannerOptimizeModeAllowed(mode){
+    return ordinaryModes.has(mode)
+      || (superadminOnlyModes.has(mode) && plannerOptimizeUserIsSuperadmin());
+  }
+
+  function optimizeControlBusy(){
+    return !toggleButton
+      || toggleButton.disabled === true
+      || toggleButton.getAttribute("aria-disabled") === "true"
+      || window.__TKB_RUST_SOLVER_RUNNING === true
+      || window.__TKB_SOLVE_UI_BUSY === true;
+  }
+
+  function setPlannerOptimizeMenuOpen(open, options){
+    if(!toggleButton || !menu) return false;
+    const shouldOpen = !!open && !optimizeControlBusy();
+    menu.hidden = !shouldOpen;
+    toggleButton.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+    if(shouldOpen && options?.focusFirst === true){
+      visibleOptimizeMenuItems()[0]?.focus();
+    }else if(!shouldOpen && options?.returnFocus === true && !toggleButton.disabled){
+      toggleButton.focus();
+    }
+    return shouldOpen;
+  }
+
+  function togglePlannerOptimizeMenu(event){
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if(optimizeControlBusy()) return setPlannerOptimizeMenuOpen(false);
+    return setPlannerOptimizeMenuOpen(menu?.hidden !== false);
+  }
+
+  function runPlannerSchedulerMode(mode, event){
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    const normalizedMode = String(mode || "").trim();
+    setPlannerOptimizeMenuOpen(false);
+    if(optimizeControlBusy() || !plannerOptimizeModeAllowed(normalizedMode)) return false;
+    if(typeof window.sapXepTheoCheDo !== "function") return false;
+    return window.sapXepTheoCheDo(normalizedMode);
+  }
+
+  toggleButton?.addEventListener("keydown", (event) => {
+    if(event.key !== "ArrowDown") return;
+    event.preventDefault();
+    event.stopPropagation();
+    setPlannerOptimizeMenuOpen(true, {focusFirst:true});
+  });
+
+  menu?.addEventListener("keydown", (event) => {
+    const items = visibleOptimizeMenuItems();
+    const currentIndex = items.indexOf(document.activeElement);
+    if(event.key === "Escape"){
+      event.preventDefault();
+      setPlannerOptimizeMenuOpen(false, {returnFocus:true});
+      return;
+    }
+    if(event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    const direction = event.key === "ArrowDown" ? 1 : -1;
+    const nextIndex = currentIndex < 0
+      ? (direction > 0 ? 0 : items.length - 1)
+      : (currentIndex + direction + items.length) % items.length;
+    items[nextIndex]?.focus();
+  });
+
+  document.addEventListener("click", (event) => {
+    if(menu?.hidden !== false || optimizeWrap?.contains(event.target)) return;
+    setPlannerOptimizeMenuOpen(false);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if(event.key !== "Escape" || menu?.hidden !== false) return;
+    event.preventDefault();
+    setPlannerOptimizeMenuOpen(false, {returnFocus:true});
+  });
+
+  window.setPlannerOptimizeMenuOpen = setPlannerOptimizeMenuOpen;
+  window.togglePlannerOptimizeMenu = togglePlannerOptimizeMenu;
+  window.runPlannerSchedulerMode = runPlannerSchedulerMode;
+  window.syncPlannerOptimizeRoleAccess = syncPlannerOptimizeRoleAccess;
+  syncPlannerOptimizeRoleAccess();
+  window.addEventListener?.("tkb:auth-ready", syncPlannerOptimizeRoleAccess);
+})();
+</script>
+
+<div class="main">
+  <div class="left">
+    <h3 id="leftTitle">Lớp</h3>
+    <div id="listLop"></div>
+  </div>
+
+  <div class="center">
+    <div id="tkb"></div>
+  </div>
+</div>
+
+<div id="tooltip" class="tooltip"></div>
+
+<script src="../shared/school-context.js?v=20260708-sid-only-v3"></script>
+<script src="../shared/auth-api.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
+<script src="../shared/auth.js?v=20260803-free-5-solve-quota-v1"></script>
+<script src="../shared/runtime.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
+<script src="../shared/school-switcher.js?v=20260708-v1"></script>
+<script src="../shared/storage.js?v=20260802-max1-store-guard-v2"></script>
+<script src="../shared/tkb-constants.js?v=20260708-v1"></script>
+<script src="../shared/constraints-meta.js?v=20260709-v2"></script>
+<script>
+(function(){
+  const roles = ["school_admin","school_user","superadmin"];
+  if(window.TKBAuth){
+    const auth = window.TKBAuth.requireAuth(roles);
+    if(!auth || !auth.ok){
+      window.location.replace("/");
+      return;
+    }
+  }
+  if(window.TKBRuntime && typeof window.TKBRuntime.guardProtectedPage === "function"){
+    window.TKBRuntime.guardProtectedPage(roles).catch(() => {
+      window.location.replace("/");
+    });
+  }
+  if(window.TKBSchool && window.TKBSchool.bootstrapPlannerFromUrl){
+    window.TKBSchool.bootstrapPlannerFromUrl();
+  }
+})();
+</script>
+
+<script src="../no-logs.js?v=20260707-no-logs-v2"></script>
+<script src="../vendor/xlsx.min.js"></script>
+<script src="../vendor/jszip.min.js"></script>
+<script src="../excel-style.js?v=20260701-excel-style-v2"></script>
+<script src="../vendor/sql-wasm.js"></script>
+<script src="../kvdb.js?v=20260707-vendor-local-v1"></script>
+<script src="tkb-fet-engine.js?v=20260816-fet-only-v1"></script>
+<script src="phanmon.js?v=1786935711"></script>
+<script src="tkb-constraints.js?v=20260810-v1206-assigned-demand-lesson-block-min-guard-v1"></script>
+<script src="tkb-constraints-menu.js?v=20260808-v1192-assigned-only-all-statistics-v1"></script>
+<script src="tkb-gv-template.js"></script>
+<script src="tkb-export.js?v=20260725-v1100-industry-export-queue-v1"></script>
+<script src="tkb-word-export.js?v=20260705-save-picker-v1"></script>
+<script src="tkb-student-excel-export.js?v=20260705-school-wide-prefix-v6"></script>
+<script src="tkb-rust-bridge.js?v=20260816-fet-only-v1"></script>
+
+</body>
+</html>

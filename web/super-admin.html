@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Super Admin — TKB</title>
+  <link rel="icon" type="image/png" href="assets/favicon-cherry.png?v=2" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="stylesheet" href="tokens.css?v=20260710-light-v1" />
+  <link rel="stylesheet" href="auth.css?v=20260802-plus-max-plans-v6" />
+  <link rel="stylesheet" href="theme-light.css?v=20260802-service-plans-compact-v3" />
+  <link rel="stylesheet" href="runtime.css?v=20260710-runtime-v1" />
+  <link rel="stylesheet" href="super-admin.css?v=20260816-solver-telemetry-v1" />
+  <link rel="stylesheet" href="super-admin-mobile-compact.css?v=20260725-v188-compact-super-admin-v2" />
+  <script src="shared/school-context.js?v=20260708-v1"></script>
+  <script src="shared/auth-api.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
+  <script src="shared/auth.js?v=20260803-free-5-solve-quota-v1"></script>
+  <script src="shared/runtime.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
+  <script defer src="shared/password-toggle.js?v=20260708-v1"></script>
+  <script defer src="super-admin.js?v=20260816-solver-telemetry-v1"></script>
+</head>
+<body class="portal-body portal-page-super">
+  <header class="portal-top">
+    <h1>Super Admin — Quản lý trường</h1>
+    <div class="portal-actions">
+      <button type="button" class="portal-btn portal-chrome-action" id="btnChangePassword" title="Đổi mật khẩu" aria-label="Đổi mật khẩu">
+        <span class="portal-button-icon" data-portal-icon="key" aria-hidden="true"></span>
+        <span class="portal-button-label">Đổi mật khẩu</span>
+      </button>
+      <button type="button" class="portal-btn portal-chrome-action" id="btnOpenApp" title="Mở phần mềm" aria-label="Mở phần mềm">
+        <span class="portal-button-icon" data-portal-icon="layout" aria-hidden="true"></span>
+        <span class="portal-button-label">Mở phần mềm</span>
+      </button>
+      <button type="button" class="portal-btn danger portal-chrome-action" id="btnLogout" title="Đăng xuất" aria-label="Đăng xuất">
+        <span class="portal-button-icon" data-portal-icon="logout" aria-hidden="true"></span>
+        <span class="portal-button-label">Đăng xuất</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="portal-main portal-main-wide" id="portalRoot">
+    <section class="portal-card solver-infrastructure-card" id="solverInfrastructureCard" aria-labelledby="solverAccountUsageTitle" data-usage-only="true">
+      <section class="solver-account-usage solver-school-usage" aria-labelledby="solverAccountUsageTitle">
+        <h3 id="solverAccountUsageTitle">Lượt gọi theo người dùng</h3>
+        <p class="portal-muted">Mỗi dòng là một tài khoản và số lượt đã gửi tới Cloud Run hoặc VPS.</p>
+        <div class="portal-table-wrap">
+          <table class="portal-table solver-account-usage-table">
+            <thead><tr><th>Trường</th><th>Tài khoản</th><th>Tổng lượt</th><th>Cloud Run</th><th>VPS</th></tr></thead>
+            <tbody id="solverAccountUsageBody"><tr><td colspan="5" class="portal-muted">Đang tải…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+      <p class="solver-infrastructure-status portal-muted" id="solverInfrastructureStatus" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="portal-card solver-telemetry-card" id="solverTelemetryCard" aria-labelledby="solverTelemetryTitle" data-aggregate-only="true">
+      <div class="portal-card-head solver-telemetry-head">
+        <div>
+          <h2 id="solverTelemetryTitle">Vận hành solver</h2>
+          <p class="portal-muted">Số liệu tổng hợp ẩn danh theo executor, mục tiêu và ngân sách. Không hiển thị thời khóa biểu, mã job, trường, tài khoản hay lỗi thô.</p>
+        </div>
+        <div class="solver-telemetry-controls">
+          <label class="solver-telemetry-window-label" for="solverTelemetryWindow">Khoảng xem
+            <select id="solverTelemetryWindow" aria-label="Khoảng thời gian telemetry solver">
+              <option value="24h">24 giờ</option>
+              <option value="7d" selected>7 ngày</option>
+              <option value="30d">30 ngày</option>
+            </select>
+          </label>
+          <button type="button" class="portal-btn portal-chrome-action" id="btnReloadSolverTelemetry" title="Tải lại telemetry" aria-label="Tải lại telemetry">
+            <span class="portal-button-icon" data-portal-icon="refresh" aria-hidden="true"></span>
+            <span class="portal-button-label">Tải lại</span>
+          </button>
+        </div>
+      </div>
+      <div class="solver-telemetry-overview" id="solverTelemetrySummary" aria-live="polite">
+        <div class="solver-telemetry-stat"><span>Lượt chạy</span><strong>Đang tải…</strong></div>
+      </div>
+      <div class="portal-table-wrap">
+        <table class="portal-table solver-telemetry-table">
+          <thead><tr><th>Nhóm</th><th>Lượt</th><th>Hoàn tất</th><th>Không cải thiện</th><th>Lỗi / hủy</th><th>p50 / p95</th><th>Đạt mục tiêu</th><th>Δ metric TB</th><th>Chi phí ước tính</th></tr></thead>
+          <tbody id="solverTelemetryBody"><tr><td colspan="9" class="portal-muted">Đang tải…</td></tr></tbody>
+        </table>
+      </div>
+      <details class="solver-telemetry-provenance" id="solverTelemetryProvenance">
+        <summary>Cloud Run revision / digest tổng hợp</summary>
+        <div id="solverTelemetryProvenanceBody" class="solver-telemetry-provenance-body">Đang tải…</div>
+      </details>
+      <p class="solver-telemetry-status portal-muted" id="solverTelemetryStatus" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="portal-card">
+      <div class="portal-card-head">
+        <h2>Danh sách trường</h2>
+        <div class="portal-card-actions">
+          <button type="button" class="portal-btn primary portal-chrome-action" id="btnAddSchool" title="Thêm trường mới" aria-label="Thêm trường mới">
+            <span class="portal-button-icon" data-portal-icon="plus" aria-hidden="true"></span>
+            <span class="portal-button-label">Thêm mới</span>
+          </button>
+          <button type="button" class="portal-btn portal-chrome-action" id="btnReloadSchools" title="Tải lại danh sách" aria-label="Tải lại danh sách">
+            <span class="portal-button-icon" data-portal-icon="refresh" aria-hidden="true"></span>
+            <span class="portal-button-label">Tải lại danh sách</span>
+          </button>
+        </div>
+      </div>
+      <div class="portal-table-wrap portal-table-wrap-schools">
+        <table class="portal-table portal-table-schools" id="schoolsTable">
+          <colgroup>
+            <col class="col-school" />
+            <col class="col-email" />
+            <col class="col-plan" />
+            <col class="col-expiry" />
+            <col class="col-status" />
+            <col class="col-actions" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Trường</th>
+              <th>Email</th>
+              <th class="portal-th-compact">Gói</th>
+              <th class="portal-th-compact">Hết hạn</th>
+              <th class="portal-th-status">Trạng thái</th>
+              <th class="portal-th-actions">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody id="schoolsBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div class="portal-modal" id="addSchoolModal" hidden>
+    <div class="portal-modal-backdrop" data-close-modal></div>
+    <div class="portal-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="addSchoolTitle">
+      <div class="portal-modal-header">
+        <h2 id="addSchoolTitle">Thêm trường mới</h2>
+        <button type="button" class="portal-modal-close" id="btnCloseAddSchool" aria-label="Đóng">&times;</button>
+      </div>
+      <form id="addSchoolForm" class="portal-grid-2">
+        <div class="portal-field"><label>Tên trường<input name="name" required /></label></div>
+        <div class="portal-field"><label>Tên đăng nhập<input name="loginId" required autocomplete="username" /></label></div>
+        <div class="portal-field"><label>Email admin<input type="email" name="email" required /></label></div>
+        <div class="portal-field"><label>Số điện thoại<input type="tel" name="phone" required /></label></div>
+        <div class="portal-field"><label>Mật khẩu<input type="password" name="password" required minlength="6" /></label></div>
+        <div class="portal-field"><label>TKB số<input type="number" name="scheduleNumber" value="1" readonly /></label></div>
+        <div class="portal-field"><label>Ngày áp dụng<input type="date" name="effectiveDate" required /></label></div>
+        <div class="portal-field portal-modal-actions">
+          <button type="button" class="portal-btn" id="btnCancelAddSchool">Hủy</button>
+          <button type="submit" class="portal-btn primary">Thêm trường</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

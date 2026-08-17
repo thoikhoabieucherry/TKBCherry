@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cherry Scheduler — Đăng nhập</title>
+  <link rel="icon" type="image/png" href="assets/favicon-cherry.png?v=2" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="stylesheet" href="tokens.css?v=20260710-light-v1" />
+  <link rel="stylesheet" href="auth.css?v=20260724-mobile-brand-center-v1" />
+  <link rel="stylesheet" href="theme-light.css?v=20260710-premium-ui-v2" />
+  <link rel="stylesheet" href="runtime.css?v=20260710-runtime-v1" />
+  <script src="shared/school-context.js?v=20260708-v1"></script>
+  <script src="shared/auth-api.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
+  <script src="shared/auth.js?v=20260803-free-5-solve-quota-v1"></script>
+  <script src="shared/runtime.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
+  <script defer src="shared/password-toggle.js?v=20260708-v1"></script>
+  <script defer src="auth.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
+</head>
+<body class="auth-body auth-home">
+  <main class="auth-shell" id="authApp">
+    <div class="auth-bg" aria-hidden="true">
+      <div class="auth-orb auth-orb-a"></div>
+      <div class="auth-orb auth-orb-b"></div>
+      <div class="auth-grid"></div>
+    </div>
+
+    <section class="auth-panel auth-panel-brand">
+      <div class="auth-brand-inner">
+        <div class="auth-brand-copy">
+          <img class="auth-logo-img" src="assets/cherry-scheduler-logo.png?v=2" width="128" height="128" alt="Cherry Scheduler" />
+          <h1>Cherry Scheduler</h1>
+          <p class="auth-brand-tagline">Xếp nhanh, chuẩn xác – Nhàn hơn mỗi ngày.</p>
+        </div>
+        <figure class="auth-brand-visual" aria-label="Minh họa thời khóa biểu Cherry Scheduler">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 340" fill="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="tkbHeroCardBg" x1="40" y1="20" x2="480" y2="320" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="#1e3a8a" stop-opacity="0.55"/>
+                <stop offset="1" stop-color="#581c87" stop-opacity="0.35"/>
+              </linearGradient>
+              <linearGradient id="tkbHeroAccent" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#2563eb"/>
+                <stop offset="1" stop-color="#7c3aed"/>
+              </linearGradient>
+              <linearGradient id="tkbHeroShine" x1="80" y1="0" x2="420" y2="300" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="#ffffff" stop-opacity="0.14"/>
+                <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+              </linearGradient>
+              <filter id="tkbHeroGlow" x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur stdDeviation="18" result="blur"/>
+                <feMerge>
+                  <feMergeNode in="blur"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+            </defs>
+            <ellipse cx="260" cy="300" rx="190" ry="24" fill="#0f172a" opacity="0.55"/>
+            <g filter="url(#tkbHeroGlow)">
+              <rect x="72" y="42" width="376" height="252" rx="28" fill="url(#tkbHeroCardBg)" stroke="rgba(255,255,255,0.12)" stroke-width="1.5"/>
+              <rect x="72" y="42" width="376" height="252" rx="28" fill="url(#tkbHeroShine)"/>
+            </g>
+            <rect x="98" y="68" width="324" height="200" rx="18" fill="rgba(15,23,42,0.72)" stroke="rgba(255,255,255,0.08)"/>
+            <rect x="118" y="88" width="72" height="28" rx="8" fill="url(#tkbHeroAccent)" opacity="0.95"/>
+            <text x="154" y="107" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="13" font-weight="700">TKB Pro</text>
+            <g stroke="rgba(148,163,184,0.22)" stroke-width="1.2">
+              <line x1="118" y1="132" x2="402" y2="132"/>
+              <line x1="118" y1="162" x2="402" y2="162"/>
+              <line x1="118" y1="192" x2="402" y2="192"/>
+              <line x1="118" y1="222" x2="402" y2="222"/>
+              <line x1="178" y1="124" x2="178" y2="248"/>
+              <line x1="238" y1="124" x2="238" y2="248"/>
+              <line x1="298" y1="124" x2="298" y2="248"/>
+              <line x1="358" y1="124" x2="358" y2="248"/>
+            </g>
+            <rect x="124" y="138" width="46" height="18" rx="5" fill="#2563eb" opacity="0.9"/>
+            <rect x="184" y="138" width="46" height="18" rx="5" fill="#22d3ee" opacity="0.85"/>
+            <rect x="244" y="138" width="46" height="18" rx="5" fill="#a78bfa" opacity="0.9"/>
+            <rect x="304" y="138" width="46" height="18" rx="5" fill="#34d399" opacity="0.88"/>
+            <rect x="124" y="168" width="46" height="18" rx="5" fill="#f59e0b" opacity="0.88"/>
+            <rect x="184" y="168" width="46" height="18" rx="5" fill="#2563eb" opacity="0.75"/>
+            <rect x="304" y="168" width="46" height="18" rx="5" fill="#22d3ee" opacity="0.8"/>
+            <rect x="184" y="198" width="46" height="18" rx="5" fill="#34d399" opacity="0.85"/>
+            <rect x="244" y="198" width="46" height="18" rx="5" fill="#f59e0b" opacity="0.85"/>
+            <rect x="364" y="198" width="30" height="18" rx="5" fill="#a78bfa" opacity="0.8"/>
+            <rect x="124" y="228" width="46" height="14" rx="4" fill="#64748b" opacity="0.45"/>
+            <rect x="244" y="228" width="46" height="14" rx="4" fill="#64748b" opacity="0.45"/>
+            <circle cx="404" cy="92" r="22" fill="rgba(34,211,238,0.16)" stroke="rgba(34,211,238,0.45)" stroke-width="1.5"/>
+            <path d="M396 92l6 6 12-14" stroke="#22d3ee" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            <g opacity="0.9">
+              <rect x="88" y="24" width="54" height="54" rx="16" fill="url(#tkbHeroAccent)"/>
+              <path d="M104 18v12M126 18v12" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/>
+              <rect x="98" y="34" width="34" height="28" rx="6" fill="rgba(255,255,255,0.95)"/>
+              <path d="M98 44h34M110 34v28M120 34v28" stroke="#dbeafe" stroke-width="1.5"/>
+              <rect x="101" y="48" width="6" height="6" rx="1.5" fill="#2563eb"/>
+              <rect x="113" y="48" width="6" height="6" rx="1.5" fill="#f59e0b"/>
+              <rect x="125" y="48" width="6" height="6" rx="1.5" fill="#14b8a6"/>
+            </g>
+          </svg>
+        </figure>
+      </div>
+    </section>
+
+    <section class="auth-panel auth-panel-form">
+      <div class="auth-card" id="authCard">
+        <div class="auth-tabs" role="tablist">
+          <button type="button" class="auth-tab is-active" data-tab="login" role="tab" aria-selected="true">Đăng nhập</button>
+          <button type="button" class="auth-tab" data-tab="register" role="tab" aria-selected="false">Đăng ký trường</button>
+        </div>
+
+        <div class="auth-pane is-active" data-pane="login">
+          <h2>Đăng nhập</h2>
+          <form id="loginForm" class="auth-form" novalidate>
+            <label>Tên đăng nhập
+              <input type="text" name="loginId" autocomplete="username" placeholder="Nhập tên đăng nhập" required />
+            </label>
+            <label>Mật khẩu
+              <input type="password" name="password" autocomplete="current-password" placeholder="Nhập mật khẩu" required />
+            </label>
+            <div class="auth-login-options">
+              <label class="auth-remember">
+                <input type="checkbox" name="remember" id="rememberMe" />
+                <span>Ghi nhớ đăng nhập</span>
+              </label>
+              <button type="button" class="auth-link-btn" id="btnForgotPassword">Quên mật khẩu?</button>
+            </div>
+            <button type="submit" class="auth-submit">Đăng nhập</button>
+          </form>
+        </div>
+
+        <div class="auth-pane" data-pane="forgot" hidden>
+          <h2>Quên mật khẩu</h2>
+          <p class="auth-sub">Nhập tên đăng nhập hoặc email đã đăng ký. Hệ thống gửi mã xác thực, sau đó gửi mật khẩu mới về email.</p>
+          <form id="forgotForm" class="auth-form" novalidate>
+            <label>Tài khoản hoặc email
+              <input type="text" name="loginOrEmail" autocomplete="username" placeholder="Nhập tài khoản hoặc email" required />
+            </label>
+            <button type="button" class="auth-btn-secondary" id="btnSendResetOtp">Gửi mã xác thực</button>
+            <div class="auth-otp-demo" id="resetOtpDemo" hidden>
+              <span>Mã xác thực: <strong id="resetOtpCode"></strong></span>
+            </div>
+            <label>Mã 6 số
+              <input type="text" name="code" inputmode="numeric" maxlength="6" placeholder="Nhập mã 6 số" />
+            </label>
+            <div class="auth-otp-demo is-success" id="resetPwdDemo" hidden>
+              <span>Mật khẩu mới: <strong id="resetNewPassword"></strong></span>
+            </div>
+            <button type="submit" class="auth-submit">Xác nhận &amp; nhận mật khẩu mới</button>
+            <button type="button" class="auth-link-btn" id="btnBackLogin">Quay lại đăng nhập</button>
+          </form>
+        </div>
+
+        <div class="auth-pane" data-pane="register" hidden>
+          <h2>Đăng ký trường</h2>
+          <form id="registerForm" class="auth-form auth-form-register" novalidate>
+            <div class="auth-form-row">
+              <label>Tên đăng nhập
+                <input type="text" name="loginId" autocomplete="username" placeholder="Nhập tên đăng nhập" required minlength="3" />
+              </label>
+              <label>Mật khẩu
+                <input type="password" name="password" autocomplete="new-password" placeholder="Nhập mật khẩu" required />
+              </label>
+            </div>
+            <div class="auth-form-row">
+              <label>Email
+                <input type="email" name="email" autocomplete="email" placeholder="Nhập email" required />
+              </label>
+              <label>Số điện thoại
+                <input type="tel" name="phone" autocomplete="tel" placeholder="Nhập số điện thoại" required />
+              </label>
+            </div>
+            <label>Tên trường
+              <input type="text" name="schoolName" placeholder="Nhập tên trường" required />
+            </label>
+            <button type="submit" class="auth-submit">Đăng ký trường</button>
+          </form>
+        </div>
+
+        <div class="auth-alert" id="authAlert" role="alert" hidden></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="auth-site-footer auth-site-footer--compact">
+    <div class="auth-site-footer-inner">
+      <span>Bản quyền <strong>Cherry Scheduler</strong></span>
+      <span>Địa chỉ: 424, đường Nhuận Đức, xã Nhuận Đức, TP.HCM</span>
+      <span><a href="tel:+84352261815">0352261815</a> · <a href="https://zalo.me/0352261815" target="_blank" rel="noopener">Zalo</a></span>
+    </div>
+  </footer>
+</body>
+</html>

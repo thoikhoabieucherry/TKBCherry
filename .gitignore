@@ -1,0 +1,50 @@
+# Local secrets and environment overrides
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+tools/vps-deploy/super-admin.conf
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Runtime databases, logs, and generated solver artifacts
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.log
+solver_runtime/logs/
+archived_logs/
+
+# Dependencies and build outputs
+node_modules/
+.agents/
+.codex/
+rust_api/target/
+rust_api/target-*/
+start.exe
+TKB DEMO*.rar
+upx-5.2.0-win64/
+.codex_tmp/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+
+# Session-local scratch (files staged for manual deletion)
+_to_delete/
+
+# School workbooks may contain teacher/class personal data. Keep them out of
+# source backup unless an explicitly encrypted data archive is requested.
+data/*.xlsx
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

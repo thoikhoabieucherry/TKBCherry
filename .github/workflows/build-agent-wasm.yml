@@ -1,0 +1,78 @@
+name: Build Agent WASM runtime
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-agent-wasm.yml"
+      - "agent_wasm_solver/**"
+      - "rust_api/src/native_solver.rs"
+      - "tools/test-browser-wasm-abi.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-agent-wasm-main
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build browser-safe local solver
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: main
+
+      - name: Build WASM solver
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add wasm32-unknown-unknown
+          cargo build \
+            --manifest-path agent_wasm_solver/Cargo.toml \
+            --target wasm32-unknown-unknown \
+            --release
+          node tools/test-browser-wasm-abi.mjs \
+            agent_wasm_solver/target/wasm32-unknown-unknown/release/tkb_agent_wasm_solver.wasm
+          install -D -m 0644 \
+            agent_wasm_solver/target/wasm32-unknown-unknown/release/tkb_agent_wasm_solver.wasm \
+            agent_helper/assets/tkb_native_solver.wasm
+          install -D -m 0644 \
+            agent_wasm_solver/target/wasm32-unknown-unknown/release/tkb_agent_wasm_solver.wasm \
+            web/pages/tkb_native_solver.wasm
+          test "$(stat -c %s agent_helper/assets/tkb_native_solver.wasm)" -ge 100000
+          cmp agent_helper/assets/tkb_native_solver.wasm web/pages/tkb_native_solver.wasm
+
+      - name: Commit reproducible runtime
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "TKBCherry Build"
+          git config user.email "thoikhoabieucherry@users.noreply.github.com"
+          git add \
+            agent_wasm_solver/Cargo.lock \
+            agent_helper/assets/tkb_native_solver.wasm \
+            web/pages/tkb_native_solver.wasm
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Build Agent WASM runtime [skip ci]"
+          git push origin HEAD:main
+
+      - name: Upload runtime diagnostics
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: TKBCherry-Agent-WASM-${{ github.sha }}
+          path: |
+            agent_helper/assets/tkb_native_solver.wasm
+            web/pages/tkb_native_solver.wasm
+            agent_wasm_solver/Cargo.lock
+          if-no-files-found: error
+          retention-days: 3

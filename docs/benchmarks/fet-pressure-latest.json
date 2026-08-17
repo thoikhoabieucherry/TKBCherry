@@ -1,0 +1,1895 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-15T17:09:38.325Z",
+  "fixture": {
+    "name": "fet-anonymized-pressure-v1",
+    "classes": 6,
+    "teachers": 10,
+    "rooms": 5,
+    "requiredPeriods": 51,
+    "activityCountEstimate": 29,
+    "anonymized": true,
+    "synthetic": false,
+    "structuralFloors": {
+      "soBuoiTrong2": 1
+    },
+    "activeConstraintCounts": {
+      "classSession": 4,
+      "lessonBlocks": 4,
+      "spacingDays": 0,
+      "noSameSession": 0,
+      "noSameDay": 0
+    }
+  },
+  "seeds": [
+    101,
+    202,
+    303
+  ],
+  "modes": [
+    "auto",
+    "optimize_singletons",
+    "optimize_sessions",
+    "optimize_gap2",
+    "optimize_gap1"
+  ],
+  "fixtureVariant": "pressure",
+  "budgets": {
+    "autoBudgetMs": 12000,
+    "optimizerTimeoutMs": 20000
+  },
+  "summary": {
+    "auto": {
+      "runs": 3,
+      "completeValidRate": 1,
+      "hardValidRate": 1,
+      "targetReachedRate": null,
+      "structuralFloorReachedRate": null,
+      "runtimeMs": {
+        "avg": 115.17,
+        "p50": 97.25,
+        "p95": 163.8
+      },
+      "metricAverage": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "validationRejections": 0,
+      "failureKinds": {}
+    },
+    "optimize_singletons": {
+      "runs": 3,
+      "completeValidRate": 1,
+      "hardValidRate": 1,
+      "targetReachedRate": 1,
+      "structuralFloorReachedRate": 1,
+      "runtimeMs": {
+        "avg": 226.07666666666663,
+        "p50": 209.54,
+        "p95": 294.78
+      },
+      "metricAverage": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "validationRejections": 0,
+      "failureKinds": {}
+    },
+    "optimize_sessions": {
+      "runs": 3,
+      "completeValidRate": 1,
+      "hardValidRate": 1,
+      "targetReachedRate": 0,
+      "structuralFloorReachedRate": 0,
+      "runtimeMs": {
+        "avg": 1013.18,
+        "p50": 1020.84,
+        "p95": 1293.66
+      },
+      "metricAverage": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 17,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "validationRejections": 0,
+      "failureKinds": {}
+    },
+    "optimize_gap2": {
+      "runs": 3,
+      "completeValidRate": 1,
+      "hardValidRate": 1,
+      "targetReachedRate": 0,
+      "structuralFloorReachedRate": 1,
+      "runtimeMs": {
+        "avg": 200.93999999999997,
+        "p50": 202.27,
+        "p95": 217
+      },
+      "metricAverage": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "validationRejections": 0,
+      "failureKinds": {}
+    },
+    "optimize_gap1": {
+      "runs": 3,
+      "completeValidRate": 1,
+      "hardValidRate": 1,
+      "targetReachedRate": 1,
+      "structuralFloorReachedRate": 1,
+      "runtimeMs": {
+        "avg": 223.64666666666668,
+        "p50": 240.61,
+        "p95": 249.99
+      },
+      "metricAverage": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "validationRejections": 0,
+      "failureKinds": {}
+    }
+  },
+  "records": [
+    {
+      "fixture": "fet-anonymized-pressure-v1",
+      "seed": 101,
+      "mode": "auto",
+      "runtimeMs": 163.8,
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 51,
+      "lessonCount": 51,
+      "expectedLessonCount": 51,
+      "initialMetrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "targetMetric": null,
+      "initialTarget": null,
+      "finalTarget": null,
+      "targetDelta": null,
+      "targetReached": null,
+      "knownLowerBound": null,
+      "floorReached": null,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {
+        "activityCount": 41,
+        "blockedSlotCount": 1253,
+        "minDomainActivity": {
+          "activityId": 0,
+          "classId": "C01",
+          "subject": "Toán",
+          "teacher": "GV01",
+          "duration": 2,
+          "allowedSlots": 14,
+          "blockedSlots": 46,
+          "constraintCategory": "hard_domain"
+        },
+        "minDomainSize": 14,
+        "zeroDomainActivities": [],
+        "capacityShortages": [],
+        "fixedLocationViolations": [],
+        "locationConstraintViolations": [],
+        "structuralFloor": {
+          "provenInfeasible": false,
+          "minimumUnplacedPeriods": 0,
+          "metricLowerBounds": {
+            "soBuoiDay1": 0,
+            "tsBuoiDay": 5,
+            "tsNgayDay": 5,
+            "soBuoiTrong1": 0,
+            "soBuoiTrong2": 1
+          },
+          "metricLowerBoundEvidence": [
+            {
+              "metric": "soBuoiTrong2",
+              "teacher": "gv10",
+              "thu": "thu2",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0,
+                4
+              ],
+              "gapPeriods": [
+                1,
+                2,
+                3
+              ],
+              "fillableGapPeriods": [],
+              "reason": "fixed_gap_cannot_be_reduced_by_compiled_domains"
+            }
+          ],
+          "note": "FET reports only proven capacity/fixed-domain lower bounds here; it does not claim a global quality optimum."
+        },
+        "hardConstraintCoverage": [
+          "fixed",
+          "off",
+          "subject_fixed_off",
+          "teacher_collision",
+          "class_collision",
+          "room_collision",
+          "paired_block",
+          "subject_session_limit",
+          "teacher_limits",
+          "subject_limits",
+          "subject_group_limits",
+          "no_same_day",
+          "no_same_session",
+          "spacing_days",
+          "must_teach",
+          "time_limit",
+          "teacher_one_location_per_session",
+          "teacher_gap_between_locations",
+          "teacher_max_one_move_per_session"
+        ]
+      },
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-pressure-v1",
+      "seed": 101,
+      "mode": "optimize_singletons",
+      "runtimeMs": 294.78,
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 51,
+      "lessonCount": 51,
+      "expectedLessonCount": 51,
+      "initialMetrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "targetMetric": "soBuoiDay1",
+      "initialTarget": 0,
+      "finalTarget": 0,
+      "targetDelta": 0,
+      "targetReached": true,
+      "knownLowerBound": 0,
+      "floorReached": true,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {
+        "activityCount": 41,
+        "blockedSlotCount": 1253,
+        "minDomainActivity": {
+          "activityId": 0,
+          "classId": "C01",
+          "subject": "Toán",
+          "teacher": "GV01",
+          "duration": 2,
+          "allowedSlots": 14,
+          "blockedSlots": 46,
+          "constraintCategory": "hard_domain"
+        },
+        "minDomainSize": 14,
+        "zeroDomainActivities": [],
+        "capacityShortages": [],
+        "fixedLocationViolations": [],
+        "locationConstraintViolations": [],
+        "structuralFloor": {
+          "provenInfeasible": false,
+          "minimumUnplacedPeriods": 0,
+          "metricLowerBounds": {
+            "soBuoiDay1": 0,
+            "tsBuoiDay": 5,
+            "tsNgayDay": 5,
+            "soBuoiTrong1": 0,
+            "soBuoiTrong2": 1
+          },
+          "metricLowerBoundEvidence": [
+            {
+              "metric": "soBuoiTrong2",
+              "teacher": "gv10",
+              "thu": "thu2",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0,
+                4
+              ],
+              "gapPeriods": [
+                1,
+                2,
+                3
+              ],
+              "fillableGapPeriods": [],
+              "reason": "fixed_gap_cannot_be_reduced_by_compiled_domains"
+            }
+          ],
+          "note": "FET reports only proven capacity/fixed-domain lower bounds here; it does not claim a global quality optimum."
+        },
+        "hardConstraintCoverage": [
+          "fixed",
+          "off",
+          "subject_fixed_off",
+          "teacher_collision",
+          "class_collision",
+          "room_collision",
+          "paired_block",
+          "subject_session_limit",
+          "teacher_limits",
+          "subject_limits",
+          "subject_group_limits",
+          "no_same_day",
+          "no_same_session",
+          "spacing_days",
+          "must_teach",
+          "time_limit",
+          "teacher_one_location_per_session",
+          "teacher_gap_between_locations",
+          "teacher_max_one_move_per_session"
+        ]
+      },
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-pressure-v1",
+      "seed": 101,
+      "mode": "optimize_sessions",
+      "runtimeMs": 1020.84,
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 51,
+      "lessonCount": 51,
+      "expectedLessonCount": 51,
+      "initialMetrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 17,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "targetMetric": "tsBuoiDay",
+      "initialTarget": 22,
+      "finalTarget": 22,
+      "targetDelta": 0,
+      "targetReached": false,
+      "knownLowerBound": 0,
+      "floorReached": false,
+      "stagnated": true,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {
+        "activityCount": 41,
+        "blockedSlotCount": 1253,
+        "minDomainActivity": {
+          "activityId": 0,
+          "classId": "C01",
+          "subject": "Toán",
+          "teacher": "GV01",
+          "duration": 2,
+          "allowedSlots": 14,
+          "blockedSlots": 46,
+          "constraintCategory": "hard_domain"
+        },
+        "minDomainSize": 14,
+        "zeroDomainActivities": [],
+        "capacityShortages": [],
+        "fixedLocationViolations": [],
+        "locationConstraintViolations": [],
+        "structuralFloor": {
+          "provenInfeasible": false,
+          "minimumUnplacedPeriods": 0,
+          "metricLowerBounds": {
+            "soBuoiDay1": 0,
+            "tsBuoiDay": 5,
+            "tsNgayDay": 5,
+            "soBuoiTrong1": 0,
+            "soBuoiTrong2": 1
+          },
+          "metricLowerBoundEvidence": [
+            {
+              "metric": "soBuoiTrong2",
+              "teacher": "gv10",
+              "thu": "thu2",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0,
+                4
+              ],
+              "gapPeriods": [
+                1,
+                2,
+                3
+              ],
+              "fillableGapPeriods": [],
+              "reason": "fixed_gap_cannot_be_reduced_by_compiled_domains"
+            }
+          ],
+          "note": "FET reports only proven capacity/fixed-domain lower bounds here; it does not claim a global quality optimum."
+        },
+        "hardConstraintCoverage": [
+          "fixed",
+          "off",
+          "subject_fixed_off",
+          "teacher_collision",
+          "class_collision",
+          "room_collision",
+          "paired_block",
+          "subject_session_limit",
+          "teacher_limits",
+          "subject_limits",
+          "subject_group_limits",
+          "no_same_day",
+          "no_same_session",
+          "spacing_days",
+          "must_teach",
+          "time_limit",
+          "teacher_one_location_per_session",
+          "teacher_gap_between_locations",
+          "teacher_max_one_move_per_session"
+        ]
+      },
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-pressure-v1",
+      "seed": 101,
+      "mode": "optimize_gap2",
+      "runtimeMs": 202.27,
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 51,
+      "lessonCount": 51,
+      "expectedLessonCount": 51,
+      "initialMetrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "targetMetric": "soBuoiTrong2",
+      "initialTarget": 1,
+      "finalTarget": 1,
+      "targetDelta": 0,
+      "targetReached": false,
+      "knownLowerBound": 1,
+      "floorReached": true,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {
+        "activityCount": 41,
+        "blockedSlotCount": 1253,
+        "minDomainActivity": {
+          "activityId": 0,
+          "classId": "C01",
+          "subject": "Toán",
+          "teacher": "GV01",
+          "duration": 2,
+          "allowedSlots": 14,
+          "blockedSlots": 46,
+          "constraintCategory": "hard_domain"
+        },
+        "minDomainSize": 14,
+        "zeroDomainActivities": [],
+        "capacityShortages": [],
+        "fixedLocationViolations": [],
+        "locationConstraintViolations": [],
+        "structuralFloor": {
+          "provenInfeasible": false,
+          "minimumUnplacedPeriods": 0,
+          "metricLowerBounds": {
+            "soBuoiDay1": 0,
+            "tsBuoiDay": 5,
+            "tsNgayDay": 5,
+            "soBuoiTrong1": 0,
+            "soBuoiTrong2": 1
+          },
+          "metricLowerBoundEvidence": [
+            {
+              "metric": "soBuoiTrong2",
+              "teacher": "gv10",
+              "thu": "thu2",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0,
+                4
+              ],
+              "gapPeriods": [
+                1,
+                2,
+                3
+              ],
+              "fillableGapPeriods": [],
+              "reason": "fixed_gap_cannot_be_reduced_by_compiled_domains"
+            }
+          ],
+          "note": "FET reports only proven capacity/fixed-domain lower bounds here; it does not claim a global quality optimum."
+        },
+        "hardConstraintCoverage": [
+          "fixed",
+          "off",
+          "subject_fixed_off",
+          "teacher_collision",
+          "class_collision",
+          "room_collision",
+          "paired_block",
+          "subject_session_limit",
+          "teacher_limits",
+          "subject_limits",
+          "subject_group_limits",
+          "no_same_day",
+          "no_same_session",
+          "spacing_days",
+          "must_teach",
+          "time_limit",
+          "teacher_one_location_per_session",
+          "teacher_gap_between_locations",
+          "teacher_max_one_move_per_session"
+        ]
+      },
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-pressure-v1",
+      "seed": 101,
+      "mode": "optimize_gap1",
+      "runtimeMs": 240.61,
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 51,
+      "lessonCount": 51,
+      "expectedLessonCount": 51,
+      "initialMetrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "targetMetric": "soBuoiTrong1",
+      "initialTarget": 0,
+      "finalTarget": 0,
+      "targetDelta": 0,
+      "targetReached": true,
+      "knownLowerBound": 0,
+      "floorReached": true,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {
+        "activityCount": 41,
+        "blockedSlotCount": 1253,
+        "minDomainActivity": {
+          "activityId": 0,
+          "classId": "C01",
+          "subject": "Toán",
+          "teacher": "GV01",
+          "duration": 2,
+          "allowedSlots": 14,
+          "blockedSlots": 46,
+          "constraintCategory": "hard_domain"
+        },
+        "minDomainSize": 14,
+        "zeroDomainActivities": [],
+        "capacityShortages": [],
+        "fixedLocationViolations": [],
+        "locationConstraintViolations": [],
+        "structuralFloor": {
+          "provenInfeasible": false,
+          "minimumUnplacedPeriods": 0,
+          "metricLowerBounds": {
+            "soBuoiDay1": 0,
+            "tsBuoiDay": 5,
+            "tsNgayDay": 5,
+            "soBuoiTrong1": 0,
+            "soBuoiTrong2": 1
+          },
+          "metricLowerBoundEvidence": [
+            {
+              "metric": "soBuoiTrong2",
+              "teacher": "gv10",
+              "thu": "thu2",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0,
+                4
+              ],
+              "gapPeriods": [
+                1,
+                2,
+                3
+              ],
+              "fillableGapPeriods": [],
+              "reason": "fixed_gap_cannot_be_reduced_by_compiled_domains"
+            }
+          ],
+          "note": "FET reports only proven capacity/fixed-domain lower bounds here; it does not claim a global quality optimum."
+        },
+        "hardConstraintCoverage": [
+          "fixed",
+          "off",
+          "subject_fixed_off",
+          "teacher_collision",
+          "class_collision",
+          "room_collision",
+          "paired_block",
+          "subject_session_limit",
+          "teacher_limits",
+          "subject_limits",
+          "subject_group_limits",
+          "no_same_day",
+          "no_same_session",
+          "spacing_days",
+          "must_teach",
+          "time_limit",
+          "teacher_one_location_per_session",
+          "teacher_gap_between_locations",
+          "teacher_max_one_move_per_session"
+        ]
+      },
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-pressure-v1",
+      "seed": 202,
+      "mode": "auto",
+      "runtimeMs": 97.25,
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 51,
+      "lessonCount": 51,
+      "expectedLessonCount": 51,
+      "initialMetrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "targetMetric": null,
+      "initialTarget": null,
+      "finalTarget": null,
+      "targetDelta": null,
+      "targetReached": null,
+      "knownLowerBound": null,
+      "floorReached": null,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {
+        "activityCount": 41,
+        "blockedSlotCount": 1253,
+        "minDomainActivity": {
+          "activityId": 0,
+          "classId": "C01",
+          "subject": "Toán",
+          "teacher": "GV01",
+          "duration": 2,
+          "allowedSlots": 14,
+          "blockedSlots": 46,
+          "constraintCategory": "hard_domain"
+        },
+        "minDomainSize": 14,
+        "zeroDomainActivities": [],
+        "capacityShortages": [],
+        "fixedLocationViolations": [],
+        "locationConstraintViolations": [],
+        "structuralFloor": {
+          "provenInfeasible": false,
+          "minimumUnplacedPeriods": 0,
+          "metricLowerBounds": {
+            "soBuoiDay1": 0,
+            "tsBuoiDay": 5,
+            "tsNgayDay": 5,
+            "soBuoiTrong1": 0,
+            "soBuoiTrong2": 1
+          },
+          "metricLowerBoundEvidence": [
+            {
+              "metric": "soBuoiTrong2",
+              "teacher": "gv10",
+              "thu": "thu2",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0,
+                4
+              ],
+              "gapPeriods": [
+                1,
+                2,
+                3
+              ],
+              "fillableGapPeriods": [],
+              "reason": "fixed_gap_cannot_be_reduced_by_compiled_domains"
+            }
+          ],
+          "note": "FET reports only proven capacity/fixed-domain lower bounds here; it does not claim a global quality optimum."
+        },
+        "hardConstraintCoverage": [
+          "fixed",
+          "off",
+          "subject_fixed_off",
+          "teacher_collision",
+          "class_collision",
+          "room_collision",
+          "paired_block",
+          "subject_session_limit",
+          "teacher_limits",
+          "subject_limits",
+          "subject_group_limits",
+          "no_same_day",
+          "no_same_session",
+          "spacing_days",
+          "must_teach",
+          "time_limit",
+          "teacher_one_location_per_session",
+          "teacher_gap_between_locations",
+          "teacher_max_one_move_per_session"
+        ]
+      },
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-pressure-v1",
+      "seed": 202,
+      "mode": "optimize_singletons",
+      "runtimeMs": 209.54,
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 51,
+      "lessonCount": 51,
+      "expectedLessonCount": 51,
+      "initialMetrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "targetMetric": "soBuoiDay1",
+      "initialTarget": 0,
+      "finalTarget": 0,
+      "targetDelta": 0,
+      "targetReached": true,
+      "knownLowerBound": 0,
+      "floorReached": true,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {
+        "activityCount": 41,
+        "blockedSlotCount": 1253,
+        "minDomainActivity": {
+          "activityId": 0,
+          "classId": "C01",
+          "subject": "Toán",
+          "teacher": "GV01",
+          "duration": 2,
+          "allowedSlots": 14,
+          "blockedSlots": 46,
+          "constraintCategory": "hard_domain"
+        },
+        "minDomainSize": 14,
+        "zeroDomainActivities": [],
+        "capacityShortages": [],
+        "fixedLocationViolations": [],
+        "locationConstraintViolations": [],
+        "structuralFloor": {
+          "provenInfeasible": false,
+          "minimumUnplacedPeriods": 0,
+          "metricLowerBounds": {
+            "soBuoiDay1": 0,
+            "tsBuoiDay": 5,
+            "tsNgayDay": 5,
+            "soBuoiTrong1": 0,
+            "soBuoiTrong2": 1
+          },
+          "metricLowerBoundEvidence": [
+            {
+              "metric": "soBuoiTrong2",
+              "teacher": "gv10",
+              "thu": "thu2",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0,
+                4
+              ],
+              "gapPeriods": [
+                1,
+                2,
+                3
+              ],
+              "fillableGapPeriods": [],
+              "reason": "fixed_gap_cannot_be_reduced_by_compiled_domains"
+            }
+          ],
+          "note": "FET reports only proven capacity/fixed-domain lower bounds here; it does not claim a global quality optimum."
+        },
+        "hardConstraintCoverage": [
+          "fixed",
+          "off",
+          "subject_fixed_off",
+          "teacher_collision",
+          "class_collision",
+          "room_collision",
+          "paired_block",
+          "subject_session_limit",
+          "teacher_limits",
+          "subject_limits",
+          "subject_group_limits",
+          "no_same_day",
+          "no_same_session",
+          "spacing_days",
+          "must_teach",
+          "time_limit",
+          "teacher_one_location_per_session",
+          "teacher_gap_between_locations",
+          "teacher_max_one_move_per_session"
+        ]
+      },
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-pressure-v1",
+      "seed": 202,
+      "mode": "optimize_sessions",
+      "runtimeMs": 1293.66,
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 51,
+      "lessonCount": 51,
+      "expectedLessonCount": 51,
+      "initialMetrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 16,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "targetMetric": "tsBuoiDay",
+      "initialTarget": 22,
+      "finalTarget": 22,
+      "targetDelta": 0,
+      "targetReached": false,
+      "knownLowerBound": 0,
+      "floorReached": false,
+      "stagnated": true,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {
+        "activityCount": 41,
+        "blockedSlotCount": 1253,
+        "minDomainActivity": {
+          "activityId": 0,
+          "classId": "C01",
+          "subject": "Toán",
+          "teacher": "GV01",
+          "duration": 2,
+          "allowedSlots": 14,
+          "blockedSlots": 46,
+          "constraintCategory": "hard_domain"
+        },
+        "minDomainSize": 14,
+        "zeroDomainActivities": [],
+        "capacityShortages": [],
+        "fixedLocationViolations": [],
+        "locationConstraintViolations": [],
+        "structuralFloor": {
+          "provenInfeasible": false,
+          "minimumUnplacedPeriods": 0,
+          "metricLowerBounds": {
+            "soBuoiDay1": 0,
+            "tsBuoiDay": 5,
+            "tsNgayDay": 5,
+            "soBuoiTrong1": 0,
+            "soBuoiTrong2": 1
+          },
+          "metricLowerBoundEvidence": [
+            {
+              "metric": "soBuoiTrong2",
+              "teacher": "gv10",
+              "thu": "thu2",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0,
+                4
+              ],
+              "gapPeriods": [
+                1,
+                2,
+                3
+              ],
+              "fillableGapPeriods": [],
+              "reason": "fixed_gap_cannot_be_reduced_by_compiled_domains"
+            }
+          ],
+          "note": "FET reports only proven capacity/fixed-domain lower bounds here; it does not claim a global quality optimum."
+        },
+        "hardConstraintCoverage": [
+          "fixed",
+          "off",
+          "subject_fixed_off",
+          "teacher_collision",
+          "class_collision",
+          "room_collision",
+          "paired_block",
+          "subject_session_limit",
+          "teacher_limits",
+          "subject_limits",
+          "subject_group_limits",
+          "no_same_day",
+          "no_same_session",
+          "spacing_days",
+          "must_teach",
+          "time_limit",
+          "teacher_one_location_per_session",
+          "teacher_gap_between_locations",
+          "teacher_max_one_move_per_session"
+        ]
+      },
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-pressure-v1",
+      "seed": 202,
+      "mode": "optimize_gap2",
+      "runtimeMs": 217,
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 51,
+      "lessonCount": 51,
+      "expectedLessonCount": 51,
+      "initialMetrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "targetMetric": "soBuoiTrong2",
+      "initialTarget": 1,
+      "finalTarget": 1,
+      "targetDelta": 0,
+      "targetReached": false,
+      "knownLowerBound": 1,
+      "floorReached": true,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {
+        "activityCount": 41,
+        "blockedSlotCount": 1253,
+        "minDomainActivity": {
+          "activityId": 0,
+          "classId": "C01",
+          "subject": "Toán",
+          "teacher": "GV01",
+          "duration": 2,
+          "allowedSlots": 14,
+          "blockedSlots": 46,
+          "constraintCategory": "hard_domain"
+        },
+        "minDomainSize": 14,
+        "zeroDomainActivities": [],
+        "capacityShortages": [],
+        "fixedLocationViolations": [],
+        "locationConstraintViolations": [],
+        "structuralFloor": {
+          "provenInfeasible": false,
+          "minimumUnplacedPeriods": 0,
+          "metricLowerBounds": {
+            "soBuoiDay1": 0,
+            "tsBuoiDay": 5,
+            "tsNgayDay": 5,
+            "soBuoiTrong1": 0,
+            "soBuoiTrong2": 1
+          },
+          "metricLowerBoundEvidence": [
+            {
+              "metric": "soBuoiTrong2",
+              "teacher": "gv10",
+              "thu": "thu2",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0,
+                4
+              ],
+              "gapPeriods": [
+                1,
+                2,
+                3
+              ],
+              "fillableGapPeriods": [],
+              "reason": "fixed_gap_cannot_be_reduced_by_compiled_domains"
+            }
+          ],
+          "note": "FET reports only proven capacity/fixed-domain lower bounds here; it does not claim a global quality optimum."
+        },
+        "hardConstraintCoverage": [
+          "fixed",
+          "off",
+          "subject_fixed_off",
+          "teacher_collision",
+          "class_collision",
+          "room_collision",
+          "paired_block",
+          "subject_session_limit",
+          "teacher_limits",
+          "subject_limits",
+          "subject_group_limits",
+          "no_same_day",
+          "no_same_session",
+          "spacing_days",
+          "must_teach",
+          "time_limit",
+          "teacher_one_location_per_session",
+          "teacher_gap_between_locations",
+          "teacher_max_one_move_per_session"
+        ]
+      },
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-pressure-v1",
+      "seed": 202,
+      "mode": "optimize_gap1",
+      "runtimeMs": 249.99,
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 51,
+      "lessonCount": 51,
+      "expectedLessonCount": 51,
+      "initialMetrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "targetMetric": "soBuoiTrong1",
+      "initialTarget": 0,
+      "finalTarget": 0,
+      "targetDelta": 0,
+      "targetReached": true,
+      "knownLowerBound": 0,
+      "floorReached": true,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {
+        "activityCount": 41,
+        "blockedSlotCount": 1253,
+        "minDomainActivity": {
+          "activityId": 0,
+          "classId": "C01",
+          "subject": "Toán",
+          "teacher": "GV01",
+          "duration": 2,
+          "allowedSlots": 14,
+          "blockedSlots": 46,
+          "constraintCategory": "hard_domain"
+        },
+        "minDomainSize": 14,
+        "zeroDomainActivities": [],
+        "capacityShortages": [],
+        "fixedLocationViolations": [],
+        "locationConstraintViolations": [],
+        "structuralFloor": {
+          "provenInfeasible": false,
+          "minimumUnplacedPeriods": 0,
+          "metricLowerBounds": {
+            "soBuoiDay1": 0,
+            "tsBuoiDay": 5,
+            "tsNgayDay": 5,
+            "soBuoiTrong1": 0,
+            "soBuoiTrong2": 1
+          },
+          "metricLowerBoundEvidence": [
+            {
+              "metric": "soBuoiTrong2",
+              "teacher": "gv10",
+              "thu": "thu2",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0,
+                4
+              ],
+              "gapPeriods": [
+                1,
+                2,
+                3
+              ],
+              "fillableGapPeriods": [],
+              "reason": "fixed_gap_cannot_be_reduced_by_compiled_domains"
+            }
+          ],
+          "note": "FET reports only proven capacity/fixed-domain lower bounds here; it does not claim a global quality optimum."
+        },
+        "hardConstraintCoverage": [
+          "fixed",
+          "off",
+          "subject_fixed_off",
+          "teacher_collision",
+          "class_collision",
+          "room_collision",
+          "paired_block",
+          "subject_session_limit",
+          "teacher_limits",
+          "subject_limits",
+          "subject_group_limits",
+          "no_same_day",
+          "no_same_session",
+          "spacing_days",
+          "must_teach",
+          "time_limit",
+          "teacher_one_location_per_session",
+          "teacher_gap_between_locations",
+          "teacher_max_one_move_per_session"
+        ]
+      },
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-pressure-v1",
+      "seed": 303,
+      "mode": "auto",
+      "runtimeMs": 84.46,
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 51,
+      "lessonCount": 51,
+      "expectedLessonCount": 51,
+      "initialMetrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "targetMetric": null,
+      "initialTarget": null,
+      "finalTarget": null,
+      "targetDelta": null,
+      "targetReached": null,
+      "knownLowerBound": null,
+      "floorReached": null,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {
+        "activityCount": 41,
+        "blockedSlotCount": 1253,
+        "minDomainActivity": {
+          "activityId": 0,
+          "classId": "C01",
+          "subject": "Toán",
+          "teacher": "GV01",
+          "duration": 2,
+          "allowedSlots": 14,
+          "blockedSlots": 46,
+          "constraintCategory": "hard_domain"
+        },
+        "minDomainSize": 14,
+        "zeroDomainActivities": [],
+        "capacityShortages": [],
+        "fixedLocationViolations": [],
+        "locationConstraintViolations": [],
+        "structuralFloor": {
+          "provenInfeasible": false,
+          "minimumUnplacedPeriods": 0,
+          "metricLowerBounds": {
+            "soBuoiDay1": 0,
+            "tsBuoiDay": 5,
+            "tsNgayDay": 5,
+            "soBuoiTrong1": 0,
+            "soBuoiTrong2": 1
+          },
+          "metricLowerBoundEvidence": [
+            {
+              "metric": "soBuoiTrong2",
+              "teacher": "gv10",
+              "thu": "thu2",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0,
+                4
+              ],
+              "gapPeriods": [
+                1,
+                2,
+                3
+              ],
+              "fillableGapPeriods": [],
+              "reason": "fixed_gap_cannot_be_reduced_by_compiled_domains"
+            }
+          ],
+          "note": "FET reports only proven capacity/fixed-domain lower bounds here; it does not claim a global quality optimum."
+        },
+        "hardConstraintCoverage": [
+          "fixed",
+          "off",
+          "subject_fixed_off",
+          "teacher_collision",
+          "class_collision",
+          "room_collision",
+          "paired_block",
+          "subject_session_limit",
+          "teacher_limits",
+          "subject_limits",
+          "subject_group_limits",
+          "no_same_day",
+          "no_same_session",
+          "spacing_days",
+          "must_teach",
+          "time_limit",
+          "teacher_one_location_per_session",
+          "teacher_gap_between_locations",
+          "teacher_max_one_move_per_session"
+        ]
+      },
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-pressure-v1",
+      "seed": 303,
+      "mode": "optimize_singletons",
+      "runtimeMs": 173.91,
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 51,
+      "lessonCount": 51,
+      "expectedLessonCount": 51,
+      "initialMetrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "targetMetric": "soBuoiDay1",
+      "initialTarget": 0,
+      "finalTarget": 0,
+      "targetDelta": 0,
+      "targetReached": true,
+      "knownLowerBound": 0,
+      "floorReached": true,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {
+        "activityCount": 41,
+        "blockedSlotCount": 1253,
+        "minDomainActivity": {
+          "activityId": 0,
+          "classId": "C01",
+          "subject": "Toán",
+          "teacher": "GV01",
+          "duration": 2,
+          "allowedSlots": 14,
+          "blockedSlots": 46,
+          "constraintCategory": "hard_domain"
+        },
+        "minDomainSize": 14,
+        "zeroDomainActivities": [],
+        "capacityShortages": [],
+        "fixedLocationViolations": [],
+        "locationConstraintViolations": [],
+        "structuralFloor": {
+          "provenInfeasible": false,
+          "minimumUnplacedPeriods": 0,
+          "metricLowerBounds": {
+            "soBuoiDay1": 0,
+            "tsBuoiDay": 5,
+            "tsNgayDay": 5,
+            "soBuoiTrong1": 0,
+            "soBuoiTrong2": 1
+          },
+          "metricLowerBoundEvidence": [
+            {
+              "metric": "soBuoiTrong2",
+              "teacher": "gv10",
+              "thu": "thu2",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0,
+                4
+              ],
+              "gapPeriods": [
+                1,
+                2,
+                3
+              ],
+              "fillableGapPeriods": [],
+              "reason": "fixed_gap_cannot_be_reduced_by_compiled_domains"
+            }
+          ],
+          "note": "FET reports only proven capacity/fixed-domain lower bounds here; it does not claim a global quality optimum."
+        },
+        "hardConstraintCoverage": [
+          "fixed",
+          "off",
+          "subject_fixed_off",
+          "teacher_collision",
+          "class_collision",
+          "room_collision",
+          "paired_block",
+          "subject_session_limit",
+          "teacher_limits",
+          "subject_limits",
+          "subject_group_limits",
+          "no_same_day",
+          "no_same_session",
+          "spacing_days",
+          "must_teach",
+          "time_limit",
+          "teacher_one_location_per_session",
+          "teacher_gap_between_locations",
+          "teacher_max_one_move_per_session"
+        ]
+      },
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-pressure-v1",
+      "seed": 303,
+      "mode": "optimize_sessions",
+      "runtimeMs": 725.04,
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 51,
+      "lessonCount": 51,
+      "expectedLessonCount": 51,
+      "initialMetrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 18,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "targetMetric": "tsBuoiDay",
+      "initialTarget": 22,
+      "finalTarget": 22,
+      "targetDelta": 0,
+      "targetReached": false,
+      "knownLowerBound": 0,
+      "floorReached": false,
+      "stagnated": true,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {
+        "activityCount": 41,
+        "blockedSlotCount": 1253,
+        "minDomainActivity": {
+          "activityId": 0,
+          "classId": "C01",
+          "subject": "Toán",
+          "teacher": "GV01",
+          "duration": 2,
+          "allowedSlots": 14,
+          "blockedSlots": 46,
+          "constraintCategory": "hard_domain"
+        },
+        "minDomainSize": 14,
+        "zeroDomainActivities": [],
+        "capacityShortages": [],
+        "fixedLocationViolations": [],
+        "locationConstraintViolations": [],
+        "structuralFloor": {
+          "provenInfeasible": false,
+          "minimumUnplacedPeriods": 0,
+          "metricLowerBounds": {
+            "soBuoiDay1": 0,
+            "tsBuoiDay": 5,
+            "tsNgayDay": 5,
+            "soBuoiTrong1": 0,
+            "soBuoiTrong2": 1
+          },
+          "metricLowerBoundEvidence": [
+            {
+              "metric": "soBuoiTrong2",
+              "teacher": "gv10",
+              "thu": "thu2",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0,
+                4
+              ],
+              "gapPeriods": [
+                1,
+                2,
+                3
+              ],
+              "fillableGapPeriods": [],
+              "reason": "fixed_gap_cannot_be_reduced_by_compiled_domains"
+            }
+          ],
+          "note": "FET reports only proven capacity/fixed-domain lower bounds here; it does not claim a global quality optimum."
+        },
+        "hardConstraintCoverage": [
+          "fixed",
+          "off",
+          "subject_fixed_off",
+          "teacher_collision",
+          "class_collision",
+          "room_collision",
+          "paired_block",
+          "subject_session_limit",
+          "teacher_limits",
+          "subject_limits",
+          "subject_group_limits",
+          "no_same_day",
+          "no_same_session",
+          "spacing_days",
+          "must_teach",
+          "time_limit",
+          "teacher_one_location_per_session",
+          "teacher_gap_between_locations",
+          "teacher_max_one_move_per_session"
+        ]
+      },
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-pressure-v1",
+      "seed": 303,
+      "mode": "optimize_gap2",
+      "runtimeMs": 183.55,
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 51,
+      "lessonCount": 51,
+      "expectedLessonCount": 51,
+      "initialMetrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "targetMetric": "soBuoiTrong2",
+      "initialTarget": 1,
+      "finalTarget": 1,
+      "targetDelta": 0,
+      "targetReached": false,
+      "knownLowerBound": 1,
+      "floorReached": true,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {
+        "activityCount": 41,
+        "blockedSlotCount": 1253,
+        "minDomainActivity": {
+          "activityId": 0,
+          "classId": "C01",
+          "subject": "Toán",
+          "teacher": "GV01",
+          "duration": 2,
+          "allowedSlots": 14,
+          "blockedSlots": 46,
+          "constraintCategory": "hard_domain"
+        },
+        "minDomainSize": 14,
+        "zeroDomainActivities": [],
+        "capacityShortages": [],
+        "fixedLocationViolations": [],
+        "locationConstraintViolations": [],
+        "structuralFloor": {
+          "provenInfeasible": false,
+          "minimumUnplacedPeriods": 0,
+          "metricLowerBounds": {
+            "soBuoiDay1": 0,
+            "tsBuoiDay": 5,
+            "tsNgayDay": 5,
+            "soBuoiTrong1": 0,
+            "soBuoiTrong2": 1
+          },
+          "metricLowerBoundEvidence": [
+            {
+              "metric": "soBuoiTrong2",
+              "teacher": "gv10",
+              "thu": "thu2",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0,
+                4
+              ],
+              "gapPeriods": [
+                1,
+                2,
+                3
+              ],
+              "fillableGapPeriods": [],
+              "reason": "fixed_gap_cannot_be_reduced_by_compiled_domains"
+            }
+          ],
+          "note": "FET reports only proven capacity/fixed-domain lower bounds here; it does not claim a global quality optimum."
+        },
+        "hardConstraintCoverage": [
+          "fixed",
+          "off",
+          "subject_fixed_off",
+          "teacher_collision",
+          "class_collision",
+          "room_collision",
+          "paired_block",
+          "subject_session_limit",
+          "teacher_limits",
+          "subject_limits",
+          "subject_group_limits",
+          "no_same_day",
+          "no_same_session",
+          "spacing_days",
+          "must_teach",
+          "time_limit",
+          "teacher_one_location_per_session",
+          "teacher_gap_between_locations",
+          "teacher_max_one_move_per_session"
+        ]
+      },
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-pressure-v1",
+      "seed": 303,
+      "mode": "optimize_gap1",
+      "runtimeMs": 180.34,
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 51,
+      "lessonCount": 51,
+      "expectedLessonCount": 51,
+      "initialMetrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soBuoiDay1": 0,
+        "tsBuoiDay": 22,
+        "tsNgayDay": 21,
+        "soBuoiTrong1": 0,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "targetMetric": "soBuoiTrong1",
+      "initialTarget": 0,
+      "finalTarget": 0,
+      "targetDelta": 0,
+      "targetReached": true,
+      "knownLowerBound": 0,
+      "floorReached": true,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {
+        "activityCount": 41,
+        "blockedSlotCount": 1253,
+        "minDomainActivity": {
+          "activityId": 0,
+          "classId": "C01",
+          "subject": "Toán",
+          "teacher": "GV01",
+          "duration": 2,
+          "allowedSlots": 14,
+          "blockedSlots": 46,
+          "constraintCategory": "hard_domain"
+        },
+        "minDomainSize": 14,
+        "zeroDomainActivities": [],
+        "capacityShortages": [],
+        "fixedLocationViolations": [],
+        "locationConstraintViolations": [],
+        "structuralFloor": {
+          "provenInfeasible": false,
+          "minimumUnplacedPeriods": 0,
+          "metricLowerBounds": {
+            "soBuoiDay1": 0,
+            "tsBuoiDay": 5,
+            "tsNgayDay": 5,
+            "soBuoiTrong1": 0,
+            "soBuoiTrong2": 1
+          },
+          "metricLowerBoundEvidence": [
+            {
+              "metric": "soBuoiTrong2",
+              "teacher": "gv10",
+              "thu": "thu2",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0,
+                4
+              ],
+              "gapPeriods": [
+                1,
+                2,
+                3
+              ],
+              "fillableGapPeriods": [],
+              "reason": "fixed_gap_cannot_be_reduced_by_compiled_domains"
+            }
+          ],
+          "note": "FET reports only proven capacity/fixed-domain lower bounds here; it does not claim a global quality optimum."
+        },
+        "hardConstraintCoverage": [
+          "fixed",
+          "off",
+          "subject_fixed_off",
+          "teacher_collision",
+          "class_collision",
+          "room_collision",
+          "paired_block",
+          "subject_session_limit",
+          "teacher_limits",
+          "subject_limits",
+          "subject_group_limits",
+          "no_same_day",
+          "no_same_session",
+          "spacing_days",
+          "must_teach",
+          "time_limit",
+          "teacher_one_location_per_session",
+          "teacher_gap_between_locations",
+          "teacher_max_one_move_per_session"
+        ]
+      },
+      "originalTimetablePreservedOnFailure": null
+    }
+  ]
+}

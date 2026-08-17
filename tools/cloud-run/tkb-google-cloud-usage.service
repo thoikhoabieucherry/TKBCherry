@@ -1,0 +1,20 @@
+[Unit]
+Description=TKB Cherry Google Cloud usage snapshot
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/cherry-scheduler
+EnvironmentFile=-/etc/tkb-google-cloud-usage.env
+Environment=GOOGLE_APPLICATION_CREDENTIALS=/root/.config/tkb-cherry/wif/credentials.json
+ExecStart=/usr/bin/python3 /opt/cherry-scheduler/solver_runtime/scripts/google_cloud_usage_sync.py --output /opt/cherry-scheduler/data/google-cloud-usage.json
+ExecStartPost=-/usr/bin/rm -f /opt/cherry-scheduler/data/google-cloud-usage-refresh.request
+UMask=0077
+TimeoutStartSec=240
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/cherry-scheduler/data
+RestrictSUIDSGID=true

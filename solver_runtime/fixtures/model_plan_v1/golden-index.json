@@ -1,0 +1,18 @@
+{
+  "protocol": "tkb-model-plan-golden-index-v1",
+  "digestProtocol": "tkb-model-plan-sha256-v1",
+  "fixtures": [
+    {
+      "fixtureId": "small-cp-sat-v1",
+      "path": "small-cp-sat.bundle.json",
+      "planSha256": "2aa7f320ccb906a3b60845613e708ac1c0893e2c9ee8be7fc96a332d36cd4fcb",
+      "artifactsCommitted": true
+    },
+    {
+      "fixtureId": "automatic-refinement-1566-v1",
+      "path": "automatic-1566.plan.json",
+      "planSha256": "67386388a87472d6195a4c5caf2633f3b3490028f4c6acec736088ab09c677e7",
+      "artifactsCommitted": false
+    }
+  ]
+}

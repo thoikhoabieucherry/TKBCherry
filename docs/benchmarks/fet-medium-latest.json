@@ -1,0 +1,629 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-15T17:09:59.287Z",
+  "fixture": {
+    "name": "fet-anonymized-medium-v1",
+    "classes": 24,
+    "teachers": 64,
+    "rooms": 15,
+    "requiredPeriods": 432,
+    "activityCountEstimate": 384,
+    "anonymized": true,
+    "synthetic": true,
+    "structuralFloors": {},
+    "activeConstraintCounts": {
+      "classSession": 16,
+      "lessonBlocks": 2,
+      "spacingDays": 0,
+      "noSameSession": 0,
+      "noSameDay": 0
+    }
+  },
+  "seeds": [
+    101
+  ],
+  "modes": [
+    "auto"
+  ],
+  "fixtureVariant": "medium",
+  "budgets": {
+    "autoBudgetMs": 12000,
+    "optimizerTimeoutMs": 20000
+  },
+  "summary": {
+    "auto": {
+      "runs": 1,
+      "completeValidRate": 0,
+      "hardValidRate": 0,
+      "targetReachedRate": null,
+      "structuralFloorReachedRate": null,
+      "runtimeMs": {
+        "avg": 12362.35,
+        "p50": 12362.35,
+        "p95": 12362.35
+      },
+      "metricAverage": {
+        "soBuoiDay1": null,
+        "tsBuoiDay": null,
+        "tsNgayDay": null,
+        "soBuoiTrong1": null,
+        "soBuoiTrong2": null,
+        "unplacedCount": null
+      },
+      "validationRejections": 0,
+      "failureKinds": {
+        "fet_time_budget_exhausted": 1
+      }
+    }
+  },
+  "records": [
+    {
+      "fixture": "fet-anonymized-medium-v1",
+      "seed": 101,
+      "mode": "auto",
+      "runtimeMs": 12362.35,
+      "executor": "fet_worker",
+      "ok": false,
+      "applied": false,
+      "complete": false,
+      "valid": false,
+      "completeValid": false,
+      "unassigned": 254,
+      "placed": 0,
+      "lessonCount": 24,
+      "expectedLessonCount": 432,
+      "initialMetrics": null,
+      "metrics": null,
+      "targetMetric": null,
+      "initialTarget": null,
+      "finalTarget": null,
+      "targetDelta": null,
+      "targetReached": null,
+      "knownLowerBound": null,
+      "floorReached": null,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": "fet_time_budget_exhausted",
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {
+        "activityCount": 312,
+        "blockedSlotCount": 9460,
+        "minDomainActivity": {
+          "activityId": 13,
+          "classId": "S002",
+          "subject": "Môn 01",
+          "teacher": "FIX002",
+          "duration": 2,
+          "allowedSlots": 15,
+          "blockedSlots": 45,
+          "constraintCategory": "hard_domain"
+        },
+        "minDomainSize": 15,
+        "zeroDomainActivities": [],
+        "capacityShortages": [],
+        "fixedLocationViolations": [],
+        "locationConstraintViolations": [],
+        "structuralFloor": {
+          "provenInfeasible": false,
+          "minimumUnplacedPeriods": 0,
+          "metricLowerBounds": {
+            "soBuoiDay1": 24,
+            "tsBuoiDay": 24,
+            "tsNgayDay": 24,
+            "soBuoiTrong1": 0,
+            "soBuoiTrong2": 0
+          },
+          "metricLowerBoundEvidence": [
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix001",
+              "thu": "thu2",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix002",
+              "thu": "thu3",
+              "buoi": "chieu",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix003",
+              "thu": "thu4",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix004",
+              "thu": "thu5",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix005",
+              "thu": "thu6",
+              "buoi": "chieu",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix006",
+              "thu": "thu7",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix007",
+              "thu": "thu2",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix008",
+              "thu": "thu3",
+              "buoi": "chieu",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix009",
+              "thu": "thu4",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix010",
+              "thu": "thu5",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix011",
+              "thu": "thu6",
+              "buoi": "chieu",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix012",
+              "thu": "thu7",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix013",
+              "thu": "thu2",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix014",
+              "thu": "thu3",
+              "buoi": "chieu",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix015",
+              "thu": "thu4",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix016",
+              "thu": "thu5",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix017",
+              "thu": "thu6",
+              "buoi": "chieu",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix018",
+              "thu": "thu7",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix019",
+              "thu": "thu2",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix020",
+              "thu": "thu3",
+              "buoi": "chieu",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix021",
+              "thu": "thu4",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix022",
+              "thu": "thu5",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix023",
+              "thu": "thu6",
+              "buoi": "chieu",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            },
+            {
+              "metric": "soBuoiDay1",
+              "teacher": "fix024",
+              "thu": "thu7",
+              "buoi": "sang",
+              "fixedPeriods": [
+                0
+              ],
+              "reason": "no_compiled_activity_can_join_fixed_singleton"
+            }
+          ],
+          "note": "FET reports only proven capacity/fixed-domain lower bounds here; it does not claim a global quality optimum."
+        },
+        "hardConstraintCoverage": [
+          "fixed",
+          "off",
+          "subject_fixed_off",
+          "teacher_collision",
+          "class_collision",
+          "room_collision",
+          "paired_block",
+          "subject_session_limit",
+          "teacher_limits",
+          "subject_limits",
+          "subject_group_limits",
+          "no_same_day",
+          "no_same_session",
+          "spacing_days",
+          "must_teach",
+          "time_limit",
+          "teacher_one_location_per_session",
+          "teacher_gap_between_locations",
+          "teacher_max_one_move_per_session"
+        ],
+        "blockedActivities": [
+          {
+            "activityId": 24,
+            "classId": "S002",
+            "subject": "Môn 11",
+            "teacher": "GV004",
+            "duration": 1,
+            "allowedSlots": 22,
+            "blockedSlots": 38,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 96,
+            "classId": "S008",
+            "subject": "Môn 06",
+            "teacher": "GV007",
+            "duration": 1,
+            "allowedSlots": 22,
+            "blockedSlots": 38,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 174,
+            "classId": "S014",
+            "subject": "Môn 06",
+            "teacher": "GV005",
+            "duration": 1,
+            "allowedSlots": 22,
+            "blockedSlots": 38,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 258,
+            "classId": "S020",
+            "subject": "Môn 11",
+            "teacher": "GV038",
+            "duration": 1,
+            "allowedSlots": 22,
+            "blockedSlots": 38,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 93,
+            "classId": "S008",
+            "subject": "Môn 03",
+            "teacher": "GV026",
+            "duration": 1,
+            "allowedSlots": 22,
+            "blockedSlots": 38,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 180,
+            "classId": "S014",
+            "subject": "Môn 11",
+            "teacher": "GV040",
+            "duration": 1,
+            "allowedSlots": 22,
+            "blockedSlots": 38,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 219,
+            "classId": "S017",
+            "subject": "Môn 11",
+            "teacher": "GV039",
+            "duration": 1,
+            "allowedSlots": 22,
+            "blockedSlots": 38,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 245,
+            "classId": "S019",
+            "subject": "Môn 11",
+            "teacher": "GV025",
+            "duration": 1,
+            "allowedSlots": 22,
+            "blockedSlots": 38,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 7,
+            "classId": "S001",
+            "subject": "Môn 07",
+            "teacher": "GV003",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 60,
+            "classId": "S005",
+            "subject": "Môn 08",
+            "teacher": "GV022",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 196,
+            "classId": "S016",
+            "subject": "Môn 02",
+            "teacher": "GV003",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 277,
+            "classId": "S022",
+            "subject": "Môn 05",
+            "teacher": "GV022",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 281,
+            "classId": "S022",
+            "subject": "Môn 08",
+            "teacher": "GV003",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 2,
+            "classId": "S001",
+            "subject": "Môn 03",
+            "teacher": "GV015",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 4,
+            "classId": "S001",
+            "subject": "Môn 05",
+            "teacher": "GV029",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 5,
+            "classId": "S001",
+            "subject": "Môn 06",
+            "teacher": "GV036",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 8,
+            "classId": "S001",
+            "subject": "Môn 08",
+            "teacher": "GV010",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 59,
+            "classId": "S005",
+            "subject": "Môn 07",
+            "teacher": "GV015",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 61,
+            "classId": "S005",
+            "subject": "Môn 09",
+            "teacher": "GV029",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 64,
+            "classId": "S005",
+            "subject": "Môn 12",
+            "teacher": "GV010",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 87,
+            "classId": "S007",
+            "subject": "Môn 09",
+            "teacher": "GV015",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 89,
+            "classId": "S007",
+            "subject": "Môn 11",
+            "teacher": "GV029",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 90,
+            "classId": "S007",
+            "subject": "Môn 12",
+            "teacher": "GV036",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          },
+          {
+            "activityId": 197,
+            "classId": "S016",
+            "subject": "Môn 03",
+            "teacher": "GV010",
+            "duration": 1,
+            "allowedSlots": 23,
+            "blockedSlots": 37,
+            "constraintCategory": "hard_domain"
+          }
+        ],
+        "deadlineReached": true
+      },
+      "originalTimetablePreservedOnFailure": true
+    }
+  ]
+}

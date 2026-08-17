@@ -1,0 +1,33 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /mail-server
+    schedule:
+      interval: weekly
+    groups:
+      mail-server-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: cargo
+    directory: /rust_api
+    schedule:
+      interval: weekly
+    groups:
+      rust-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directory: /solver_runtime
+    schedule:
+      interval: weekly
+    groups:
+      solver-runtime-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]

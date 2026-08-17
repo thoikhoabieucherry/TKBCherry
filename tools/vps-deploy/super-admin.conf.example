@@ -1,0 +1,4 @@
+[Service]
+# Copy to /etc/systemd/system/tkb-app.service.d/super-admin.conf on VPS
+# and set your password (do not commit real secrets):
+Environment=TKB_SUPER_PASSWORD=your-secure-password-here

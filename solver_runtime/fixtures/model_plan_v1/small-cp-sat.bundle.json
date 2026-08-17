@@ -1,0 +1,125 @@
+{
+  "plan": {
+    "protocol": "tkb-model-plan-v1",
+    "schemaVersion": 1,
+    "fixtureId": "small-cp-sat-v1",
+    "phase": "quality",
+    "request": {
+      "encoding": "canonical-json-v1",
+      "sha256": "ea506a46e41828cd01ce2e7e9b89d0d677c136191c0048900c9b33a04e1e188a",
+      "bytes": 237
+    },
+    "model": {
+      "kind": "external_cp_sat_model",
+      "runtime": "ortools-cp-sat-9.15-wire-v1",
+      "encoding": "cp-sat-proto-v1",
+      "digest": "fbfa26289e5d7b9475a20aa7eda0624e3c2a61d516ecf354ba655ed1f949a161",
+      "sha256": "85f6509c3c48a4fde334244ebee8554c253ead45af60efdce02412ae3fb9cc68",
+      "bytes": 101,
+      "parameters": {
+        "encoding": "sat-parameters-proto-v1",
+        "sha256": "8eadbb4a1bc8db86422cac6e928fa2e350c996491cb42667dc324afec786a5dd",
+        "bytes": 16
+      },
+      "statistics": {
+        "variables": 2,
+        "constraints": 1,
+        "objectiveVariables": 2,
+        "hintVariables": 2
+      }
+    },
+    "variableMap": {
+      "encoding": "tkb-variable-map-json-v1",
+      "sha256": "12fdd7b08f1a31c178ec4dc92b85425f7c1cfc0f35b738dd7ab7fc07cb74ccde",
+      "bytes": 115,
+      "entries": 2
+    },
+    "result": {
+      "encoding": "canonical-json-v1",
+      "sha256": "bee1f55e344a45a6ecaeb99dc02eca2491b0c21f7f407467435babf99708bd0e",
+      "bytes": 297,
+      "quality": {
+        "hardValid": true,
+        "violations": 0,
+        "expectedPeriods": 2,
+        "scheduledPeriods": 2,
+        "unassignedPeriods": 0,
+        "teacherSessions": 1,
+        "onePeriodTeacherSessions": 0,
+        "gap1": 0,
+        "gap2": 0
+      },
+      "qualityEnvelope": {
+        "requireHardValid": true,
+        "maximumViolations": 0,
+        "minimumScheduledPeriods": 2,
+        "maximumUnassignedPeriods": 0,
+        "maximumTeacherSessions": 1,
+        "maximumOnePeriodTeacherSessions": 0,
+        "maximumGap1": 0,
+        "maximumGap2": 0
+      }
+    }
+  },
+  "artifacts": {
+    "request": {
+      "data": {
+        "assignments": [
+          {
+            "classId": "C1",
+            "periods": 2,
+            "subjectId": "MATH",
+            "teacherId": "T1"
+          }
+        ],
+        "classes": [
+          {
+            "id": "C1",
+            "grade": "6"
+          }
+        ]
+      },
+      "settings": {
+        "expected_scheduled_periods": 2,
+        "num_workers": 1,
+        "optimization_focus": "automatic",
+        "random_seed": 17
+      }
+    },
+    "modelBase64": "EhoKFHNsb3RfQzFfTUFUSF9UMV9BTV8xEgIAARIaChRzbG90X0MxX01BVEhfVDFfQU1fMhICAAEaDmIMCgIAARICAQEaAgEBIhEKAgABGQAAAAAAAPA/IgIBAjIICgIAARICAQA=",
+    "parameterBase64": "+AERoQIAAAAAAAAUQKAGAQ==",
+    "variableMap": [
+      {
+        "index": 0,
+        "key": "C1|MATH|T1|AM|1",
+        "role": "lesson_slot"
+      },
+      {
+        "index": 1,
+        "key": "C1|MATH|T1|AM|2",
+        "role": "lesson_slot"
+      }
+    ],
+    "result": {
+      "metrics": {
+        "app_constraint_violation_count": 0,
+        "expected_periods": 2,
+        "gap_distribution": {
+          "1": 0,
+          "2": 0
+        },
+        "hard_ok": true,
+        "one_period_teacher_sessions": 0,
+        "scheduled_periods": 2,
+        "teacher_gap2_sessions": 0,
+        "teacher_sessions": 1,
+        "unassigned_periods": 0
+      },
+      "ok": true,
+      "validation": {
+        "hard_ok": true,
+        "violations": []
+      }
+    }
+  }
+}

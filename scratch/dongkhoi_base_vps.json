@@ -1,0 +1,7388 @@
+{
+  "lop": [
+    {
+      "id": "6/1",
+      "ten": "6/1",
+      "ten2": "6/1"
+    },
+    {
+      "id": "6/2",
+      "ten": "6/2",
+      "ten2": "6/2"
+    },
+    {
+      "id": "6/3",
+      "ten": "6/3",
+      "ten2": "6/3"
+    },
+    {
+      "id": "6/4",
+      "ten": "6/4",
+      "ten2": "6/4"
+    },
+    {
+      "id": "6/5",
+      "ten": "6/5",
+      "ten2": "6/5"
+    },
+    {
+      "id": "6/6",
+      "ten": "6/6",
+      "ten2": "6/6"
+    },
+    {
+      "id": "6/7",
+      "ten": "6/7",
+      "ten2": "6/7"
+    },
+    {
+      "id": "6/8",
+      "ten": "6/8",
+      "ten2": "6/8"
+    },
+    {
+      "id": "6/9",
+      "ten": "6/9",
+      "ten2": "6/9"
+    },
+    {
+      "id": "6/10",
+      "ten": "6/10",
+      "ten2": "6/10"
+    },
+    {
+      "id": "6/11",
+      "ten": "6/11",
+      "ten2": "6/11"
+    },
+    {
+      "id": "6/12",
+      "ten": "6/12",
+      "ten2": "6/12"
+    },
+    {
+      "id": "6/13",
+      "ten": "6/13",
+      "ten2": "6/13"
+    },
+    {
+      "id": "6/14",
+      "ten": "6/14",
+      "ten2": "6/14"
+    },
+    {
+      "id": "6/15",
+      "ten": "6/15",
+      "ten2": "6/15"
+    },
+    {
+      "id": "7/1",
+      "ten": "7/1",
+      "ten2": "7/1"
+    },
+    {
+      "id": "7/2",
+      "ten": "7/2",
+      "ten2": "7/2"
+    },
+    {
+      "id": "7/3",
+      "ten": "7/3",
+      "ten2": "7/3"
+    },
+    {
+      "id": "7/4",
+      "ten": "7/4",
+      "ten2": "7/4"
+    },
+    {
+      "id": "7/5",
+      "ten": "7/5",
+      "ten2": "7/5"
+    },
+    {
+      "id": "7/6",
+      "ten": "7/6",
+      "ten2": "7/6"
+    },
+    {
+      "id": "7/7",
+      "ten": "7/7",
+      "ten2": "7/7"
+    },
+    {
+      "id": "7/8",
+      "ten": "7/8",
+      "ten2": "7/8"
+    },
+    {
+      "id": "7/9",
+      "ten": "7/9",
+      "ten2": "7/9"
+    },
+    {
+      "id": "7/10",
+      "ten": "7/10",
+      "ten2": "7/10"
+    },
+    {
+      "id": "8/1",
+      "ten": "8/1",
+      "ten2": "8/1"
+    },
+    {
+      "id": "8/2",
+      "ten": "8/2",
+      "ten2": "8/2"
+    },
+    {
+      "id": "8/3",
+      "ten": "8/3",
+      "ten2": "8/3"
+    },
+    {
+      "id": "8/4",
+      "ten": "8/4",
+      "ten2": "8/4"
+    },
+    {
+      "id": "8/5",
+      "ten": "8/5",
+      "ten2": "8/5"
+    },
+    {
+      "id": "8/6",
+      "ten": "8/6",
+      "ten2": "8/6"
+    },
+    {
+      "id": "8/7",
+      "ten": "8/7",
+      "ten2": "8/7"
+    },
+    {
+      "id": "8/8",
+      "ten": "8/8",
+      "ten2": "8/8"
+    },
+    {
+      "id": "8/9",
+      "ten": "8/9",
+      "ten2": "8/9"
+    },
+    {
+      "id": "8/10",
+      "ten": "8/10",
+      "ten2": "8/10"
+    },
+    {
+      "id": "8/11",
+      "ten": "8/11",
+      "ten2": "8/11"
+    },
+    {
+      "id": "8/12",
+      "ten": "8/12",
+      "ten2": "8/12"
+    },
+    {
+      "id": "8/13",
+      "ten": "8/13",
+      "ten2": "8/13"
+    },
+    {
+      "id": "8/14",
+      "ten": "8/14",
+      "ten2": "8/14"
+    },
+    {
+      "id": "8/15",
+      "ten": "8/15",
+      "ten2": "8/15"
+    },
+    {
+      "id": "8/16",
+      "ten": "8/16",
+      "ten2": "8/16"
+    },
+    {
+      "id": "9/1",
+      "ten": "9/1",
+      "ten2": "9/1"
+    },
+    {
+      "id": "9/2",
+      "ten": "9/2",
+      "ten2": "9/2"
+    },
+    {
+      "id": "9/3",
+      "ten": "9/3",
+      "ten2": "9/3"
+    },
+    {
+      "id": "9/4",
+      "ten": "9/4",
+      "ten2": "9/4"
+    },
+    {
+      "id": "9/5",
+      "ten": "9/5",
+      "ten2": "9/5"
+    },
+    {
+      "id": "9/6",
+      "ten": "9/6",
+      "ten2": "9/6"
+    },
+    {
+      "id": "9/7",
+      "ten": "9/7",
+      "ten2": "9/7"
+    },
+    {
+      "id": "9/8",
+      "ten": "9/8",
+      "ten2": "9/8"
+    },
+    {
+      "id": "9/9",
+      "ten": "9/9",
+      "ten2": "9/9"
+    },
+    {
+      "id": "9/10",
+      "ten": "9/10",
+      "ten2": "9/10"
+    },
+    {
+      "id": "9/11",
+      "ten": "9/11",
+      "ten2": "9/11"
+    },
+    {
+      "id": "9/12",
+      "ten": "9/12",
+      "ten2": "9/12"
+    },
+    {
+      "id": "9/13",
+      "ten": "9/13",
+      "ten2": "9/13"
+    }
+  ],
+  "giaovien": [
+    {
+      "id": "B.Công",
+      "ten": "B.Công",
+      "magv": "B.Công"
+    },
+    {
+      "id": "B.Trang",
+      "ten": "B.Trang",
+      "magv": "B.Trang"
+    },
+    {
+      "id": "B.Tặng",
+      "ten": "B.Tặng",
+      "magv": "B.Tặng"
+    },
+    {
+      "id": "C.Toàn",
+      "ten": "C.Toàn",
+      "magv": "C.Toàn"
+    },
+    {
+      "id": "CN",
+      "ten": "CN",
+      "magv": "CN"
+    },
+    {
+      "id": "CĐ",
+      "ten": "CĐ",
+      "magv": "CĐ"
+    },
+    {
+      "id": "D.Quyên",
+      "ten": "D.Quyên",
+      "magv": "D.Quyên"
+    },
+    {
+      "id": "G.Lâm",
+      "ten": "G.Lâm",
+      "magv": "G.Lâm"
+    },
+    {
+      "id": "H.Dung",
+      "ten": "H.Dung",
+      "magv": "H.Dung"
+    },
+    {
+      "id": "H.Hoàng",
+      "ten": "H.Hoàng",
+      "magv": "H.Hoàng"
+    },
+    {
+      "id": "H.Nam",
+      "ten": "H.Nam",
+      "magv": "H.Nam"
+    },
+    {
+      "id": "H.Thủy",
+      "ten": "H.Thủy",
+      "magv": "H.Thủy"
+    },
+    {
+      "id": "H.Trinh",
+      "ten": "H.Trinh",
+      "magv": "H.Trinh"
+    },
+    {
+      "id": "H.Ân",
+      "ten": "H.Ân",
+      "magv": "H.Ân"
+    },
+    {
+      "id": "H.Đức",
+      "ten": "H.Đức",
+      "magv": "H.Đức"
+    },
+    {
+      "id": "K.Phát",
+      "ten": "K.Phát",
+      "magv": "K.Phát"
+    },
+    {
+      "id": "L.Thùy",
+      "ten": "L.Thùy",
+      "magv": "L.Thùy"
+    },
+    {
+      "id": "M.Tuấn",
+      "ten": "M.Tuấn",
+      "magv": "M.Tuấn"
+    },
+    {
+      "id": "N.Châu",
+      "ten": "N.Châu",
+      "magv": "N.Châu"
+    },
+    {
+      "id": "N.Duyên",
+      "ten": "N.Duyên",
+      "magv": "N.Duyên"
+    },
+    {
+      "id": "N.Hương",
+      "ten": "N.Hương",
+      "magv": "N.Hương"
+    },
+    {
+      "id": "N.Kiên",
+      "ten": "N.Kiên",
+      "magv": "N.Kiên"
+    },
+    {
+      "id": "N.Thu",
+      "ten": "N.Thu",
+      "magv": "N.Thu"
+    },
+    {
+      "id": "P.My",
+      "ten": "P.My",
+      "magv": "P.My"
+    },
+    {
+      "id": "P.Thảo",
+      "ten": "P.Thảo",
+      "magv": "P.Thảo"
+    },
+    {
+      "id": "Q.Thúc",
+      "ten": "Q.Thúc",
+      "magv": "Q.Thúc"
+    },
+    {
+      "id": "Q.Vi",
+      "ten": "Q.Vi",
+      "magv": "Q.Vi"
+    },
+    {
+      "id": "Q.Vương",
+      "ten": "Q.Vương",
+      "magv": "Q.Vương"
+    },
+    {
+      "id": "T.Anh.1",
+      "ten": "T.Anh.1",
+      "magv": "T.Anh.1"
+    },
+    {
+      "id": "T.Anh.2",
+      "ten": "T.Anh.2",
+      "magv": "T.Anh.2"
+    },
+    {
+      "id": "T.Bình.1",
+      "ten": "T.Bình.1",
+      "magv": "T.Bình.1"
+    },
+    {
+      "id": "T.Bình.2",
+      "ten": "T.Bình.2",
+      "magv": "T.Bình.2"
+    },
+    {
+      "id": "T.Bảo",
+      "ten": "T.Bảo",
+      "magv": "T.Bảo"
+    },
+    {
+      "id": "T.Chi",
+      "ten": "T.Chi",
+      "magv": "T.Chi"
+    },
+    {
+      "id": "T.Cúc",
+      "ten": "T.Cúc",
+      "magv": "T.Cúc"
+    },
+    {
+      "id": "T.Cường",
+      "ten": "T.Cường",
+      "magv": "T.Cường"
+    },
+    {
+      "id": "T.Dinh",
+      "ten": "T.Dinh",
+      "magv": "T.Dinh"
+    },
+    {
+      "id": "T.Hiếu",
+      "ten": "T.Hiếu",
+      "magv": "T.Hiếu"
+    },
+    {
+      "id": "T.Hiền.1",
+      "ten": "T.Hiền.1",
+      "magv": "T.Hiền.1"
+    },
+    {
+      "id": "T.Hiền.2",
+      "ten": "T.Hiền.2",
+      "magv": "T.Hiền.2"
+    },
+    {
+      "id": "T.Hoài",
+      "ten": "T.Hoài",
+      "magv": "T.Hoài"
+    },
+    {
+      "id": "T.Hoàng",
+      "ten": "T.Hoàng",
+      "magv": "T.Hoàng"
+    },
+    {
+      "id": "T.Huyền.1",
+      "ten": "T.Huyền.1",
+      "magv": "T.Huyền.1"
+    },
+    {
+      "id": "T.Huyền.2",
+      "ten": "T.Huyền.2",
+      "magv": "T.Huyền.2"
+    },
+    {
+      "id": "T.Hà",
+      "ten": "T.Hà",
+      "magv": "T.Hà"
+    },
+    {
+      "id": "T.Hương.1",
+      "ten": "T.Hương.1",
+      "magv": "T.Hương.1"
+    },
+    {
+      "id": "T.Hương.2",
+      "ten": "T.Hương.2",
+      "magv": "T.Hương.2"
+    },
+    {
+      "id": "T.Hương.3",
+      "ten": "T.Hương.3",
+      "magv": "T.Hương.3"
+    },
+    {
+      "id": "T.Hải",
+      "ten": "T.Hải",
+      "magv": "T.Hải"
+    },
+    {
+      "id": "T.Hằng",
+      "ten": "T.Hằng",
+      "magv": "T.Hằng"
+    },
+    {
+      "id": "T.Hồng",
+      "ten": "T.Hồng",
+      "magv": "T.Hồng"
+    },
+    {
+      "id": "T.Khơ",
+      "ten": "T.Khơ",
+      "magv": "T.Khơ"
+    },
+    {
+      "id": "T.Kiệt",
+      "ten": "T.Kiệt",
+      "magv": "T.Kiệt"
+    },
+    {
+      "id": "T.Lan",
+      "ten": "T.Lan",
+      "magv": "T.Lan"
+    },
+    {
+      "id": "T.Linh",
+      "ten": "T.Linh",
+      "magv": "T.Linh"
+    },
+    {
+      "id": "T.Loan.1",
+      "ten": "T.Loan.1",
+      "magv": "T.Loan.1"
+    },
+    {
+      "id": "T.Loan.2",
+      "ten": "T.Loan.2",
+      "magv": "T.Loan.2"
+    },
+    {
+      "id": "T.Long",
+      "ten": "T.Long",
+      "magv": "T.Long"
+    },
+    {
+      "id": "T.Mai",
+      "ten": "T.Mai",
+      "magv": "T.Mai"
+    },
+    {
+      "id": "T.Nga",
+      "ten": "T.Nga",
+      "magv": "T.Nga"
+    },
+    {
+      "id": "T.Nguyệt.1",
+      "ten": "T.Nguyệt.1",
+      "magv": "T.Nguyệt.1"
+    },
+    {
+      "id": "T.Nguyệt.2",
+      "ten": "T.Nguyệt.2",
+      "magv": "T.Nguyệt.2"
+    },
+    {
+      "id": "T.Ngọc",
+      "ten": "T.Ngọc",
+      "magv": "T.Ngọc"
+    },
+    {
+      "id": "T.Oanh.1",
+      "ten": "T.Oanh.1",
+      "magv": "T.Oanh.1"
+    },
+    {
+      "id": "T.Oanh.2",
+      "ten": "T.Oanh.2",
+      "magv": "T.Oanh.2"
+    },
+    {
+      "id": "T.Quỳnh",
+      "ten": "T.Quỳnh",
+      "magv": "T.Quỳnh"
+    },
+    {
+      "id": "T.Sương",
+      "ten": "T.Sương",
+      "magv": "T.Sương"
+    },
+    {
+      "id": "T.Thanh",
+      "ten": "T.Thanh",
+      "magv": "T.Thanh"
+    },
+    {
+      "id": "T.Thúy",
+      "ten": "T.Thúy",
+      "magv": "T.Thúy"
+    },
+    {
+      "id": "T.Thư",
+      "ten": "T.Thư",
+      "magv": "T.Thư"
+    },
+    {
+      "id": "T.Thảo.1",
+      "ten": "T.Thảo.1",
+      "magv": "T.Thảo.1"
+    },
+    {
+      "id": "T.Thảo.2",
+      "ten": "T.Thảo.2",
+      "magv": "T.Thảo.2"
+    },
+    {
+      "id": "T.Thảo.3",
+      "ten": "T.Thảo.3",
+      "magv": "T.Thảo.3"
+    },
+    {
+      "id": "T.Thắm",
+      "ten": "T.Thắm",
+      "magv": "T.Thắm"
+    },
+    {
+      "id": "T.Thủy",
+      "ten": "T.Thủy",
+      "magv": "T.Thủy"
+    },
+    {
+      "id": "T.Trang",
+      "ten": "T.Trang",
+      "magv": "T.Trang"
+    },
+    {
+      "id": "T.Trường",
+      "ten": "T.Trường",
+      "magv": "T.Trường"
+    },
+    {
+      "id": "T.Tuyết",
+      "ten": "T.Tuyết",
+      "magv": "T.Tuyết"
+    },
+    {
+      "id": "T.Tín",
+      "ten": "T.Tín",
+      "magv": "T.Tín"
+    },
+    {
+      "id": "T.Vy",
+      "ten": "T.Vy",
+      "magv": "T.Vy"
+    },
+    {
+      "id": "T.Vân.1",
+      "ten": "T.Vân.1",
+      "magv": "T.Vân.1"
+    },
+    {
+      "id": "T.Vân.2",
+      "ten": "T.Vân.2",
+      "magv": "T.Vân.2"
+    },
+    {
+      "id": "T.Yên",
+      "ten": "T.Yên",
+      "magv": "T.Yên"
+    },
+    {
+      "id": "T.Yến.1",
+      "ten": "T.Yến.1",
+      "magv": "T.Yến.1"
+    },
+    {
+      "id": "T.Yến.2",
+      "ten": "T.Yến.2",
+      "magv": "T.Yến.2"
+    },
+    {
+      "id": "T.Đoan",
+      "ten": "T.Đoan",
+      "magv": "T.Đoan"
+    },
+    {
+      "id": "V.Hiệp",
+      "ten": "V.Hiệp",
+      "magv": "V.Hiệp"
+    },
+    {
+      "id": "V.Hải",
+      "ten": "V.Hải",
+      "magv": "V.Hải"
+    },
+    {
+      "id": "V.Quang",
+      "ten": "V.Quang",
+      "magv": "V.Quang"
+    },
+    {
+      "id": "V.Thiện",
+      "ten": "V.Thiện",
+      "magv": "V.Thiện"
+    },
+    {
+      "id": "X.Huy",
+      "ten": "X.Huy",
+      "magv": "X.Huy"
+    },
+    {
+      "id": "Á.Quyên",
+      "ten": "Á.Quyên",
+      "magv": "Á.Quyên"
+    },
+    {
+      "id": "Đ.Duy",
+      "ten": "Đ.Duy",
+      "magv": "Đ.Duy"
+    },
+    {
+      "id": "Đ.Hoa",
+      "ten": "Đ.Hoa",
+      "magv": "Đ.Hoa"
+    },
+    {
+      "id": "Đ.Kiếm",
+      "ten": "Đ.Kiếm",
+      "magv": "Đ.Kiếm"
+    }
+  ],
+  "monhoc": [
+    {
+      "id": "CN",
+      "ten": "CN",
+      "ten2": "CN"
+    },
+    {
+      "id": "ChCờ",
+      "ten": "ChCờ",
+      "ten2": "ChCờ"
+    },
+    {
+      "id": "GDCD",
+      "ten": "GDCD",
+      "ten2": "GDCD"
+    },
+    {
+      "id": "GDTC",
+      "ten": "GDTC",
+      "ten2": "GDTC"
+    },
+    {
+      "id": "GDĐP",
+      "ten": "GDĐP",
+      "ten2": "GDĐP"
+    },
+    {
+      "id": "KHTN",
+      "ten": "KHTN",
+      "ten2": "KHTN"
+    },
+    {
+      "id": "MT",
+      "ten": "MT",
+      "ten2": "MT"
+    },
+    {
+      "id": "NNgữ",
+      "ten": "NNgữ",
+      "ten2": "NNgữ"
+    },
+    {
+      "id": "Nhạc",
+      "ten": "Nhạc",
+      "ten2": "Nhạc"
+    },
+    {
+      "id": "SĐ",
+      "ten": "SĐ",
+      "ten2": "SĐ"
+    },
+    {
+      "id": "TNHN",
+      "ten": "TNHN",
+      "ten2": "TNHN"
+    },
+    {
+      "id": "Tin",
+      "ten": "Tin",
+      "ten2": "Tin"
+    },
+    {
+      "id": "Toán",
+      "ten": "Toán",
+      "ten2": "Toán"
+    },
+    {
+      "id": "Văn",
+      "ten": "Văn",
+      "ten2": "Văn"
+    }
+  ],
+  "pccmMatrix": {
+    "6/1|ChCờ": "P.My",
+    "6/2|ChCờ": "T.Thắm",
+    "6/3|ChCờ": "T.Hồng",
+    "6/4|ChCờ": "B.Tặng",
+    "6/5|ChCờ": "T.Thư",
+    "6/6|ChCờ": "T.Hương.2",
+    "6/7|ChCờ": "T.Bảo",
+    "6/8|ChCờ": "T.Loan.1",
+    "6/9|ChCờ": "T.Thảo.3",
+    "6/10|ChCờ": "T.Ngọc",
+    "6/11|ChCờ": "P.Thảo",
+    "6/12|ChCờ": "T.Thúy",
+    "6/13|ChCờ": "T.Vy",
+    "6/14|ChCờ": "Đ.Hoa",
+    "6/15|ChCờ": "T.Huyền.1",
+    "7/1|ChCờ": "T.Hiền.2",
+    "7/2|ChCờ": "N.Duyên",
+    "7/3|ChCờ": "Q.Vi",
+    "7/4|ChCờ": "T.Tuyết",
+    "7/5|ChCờ": "T.Anh.1",
+    "7/6|ChCờ": "T.Hoàng",
+    "7/7|ChCờ": "T.Oanh.1",
+    "7/8|ChCờ": "T.Hương.3",
+    "7/9|ChCờ": "T.Huyền.2",
+    "7/10|ChCờ": "H.Ân",
+    "8/1|ChCờ": "L.Thùy",
+    "8/2|ChCờ": "N.Thu",
+    "8/3|ChCờ": "B.Công",
+    "8/4|ChCờ": "T.Hải",
+    "8/5|ChCờ": "V.Hải",
+    "8/6|ChCờ": "T.Cường",
+    "8/7|ChCờ": "T.Chi",
+    "8/8|ChCờ": "V.Thiện",
+    "8/9|ChCờ": "T.Thảo.1",
+    "8/10|ChCờ": "H.Trinh",
+    "8/11|ChCờ": "T.Yên",
+    "8/12|ChCờ": "T.Mai",
+    "8/13|ChCờ": "T.Hương.1",
+    "8/14|ChCờ": "Á.Quyên",
+    "8/15|ChCờ": "T.Thanh",
+    "8/16|ChCờ": "H.Dung",
+    "9/1|ChCờ": "T.Trang",
+    "9/2|ChCờ": "H.Nam",
+    "9/3|ChCờ": "T.Yến.1",
+    "9/4|ChCờ": "T.Khơ",
+    "9/5|ChCờ": "T.Yến.2",
+    "9/6|ChCờ": "T.Nga",
+    "9/7|ChCờ": "T.Sương",
+    "9/8|ChCờ": "T.Hằng",
+    "9/9|ChCờ": "D.Quyên",
+    "9/10|ChCờ": "T.Thủy",
+    "9/11|ChCờ": "T.Oanh.2",
+    "9/12|ChCờ": "T.Bình.1",
+    "9/13|ChCờ": "T.Đoan",
+    "6/1|Văn": "T.Thúy",
+    "6/2|Toán": "T.Thảo.2",
+    "6/3|NNgữ": "T.Hồng",
+    "6/4|MT": "B.Tặng",
+    "6/5|GDTC": "H.Hoàng",
+    "6/6|GDTC": "T.Trường",
+    "6/7|KHTN": "N.Hương",
+    "6/8|NNgữ": "T.Loan.1",
+    "6/9|TNHN": "CN",
+    "6/10|SĐ": "H.Thủy",
+    "6/11|KHTN": "T.Ngọc",
+    "6/12|Toán": "T.Vy",
+    "6/13|SĐ": "T.Huyền.1",
+    "6/14|Toán": "T.Oanh.2",
+    "6/15|NNgữ": "T.Yến.1",
+    "7/1|CN": "M.Tuấn",
+    "7/2|Văn": "T.Hương.3",
+    "7/3|NNgữ": "Q.Vi",
+    "7/4|KHTN": "N.Duyên",
+    "7/5|SĐ": "T.Sương",
+    "7/6|GDCD": "T.Oanh.1",
+    "7/7|Văn": "T.Anh.1",
+    "7/8|Toán": "X.Huy",
+    "7/9|KHTN": "T.Hà",
+    "7/10|MT": "H.Ân",
+    "8/1|NNgữ": "L.Thùy",
+    "8/2|KHTN": "T.Hoàng",
+    "8/3|Văn": "N.Kiên",
+    "8/4|KHTN": "T.Nga",
+    "8/5|GDĐP": "Q.Thúc",
+    "8/6|Toán": "N.Châu",
+    "8/7|MT": "K.Phát",
+    "8/8|Văn": "N.Thu",
+    "8/9|Văn": "T.Thảo.1",
+    "8/10|Văn": "H.Trinh",
+    "8/11|Toán": "V.Hải",
+    "8/12|Văn": "Đ.Hoa",
+    "8/13|Toán": "T.Hương.1",
+    "8/14|Tin": "T.Hiền.1",
+    "8/15|Toán": "H.Dung",
+    "8/16|KHTN": "G.Lâm",
+    "9/1|GDTC": "T.Kiệt",
+    "9/2|Văn": "T.Khơ",
+    "9/3|SĐ": "V.Quang",
+    "9/4|Nhạc": "T.Tuyết",
+    "9/5|CN": "T.Tín",
+    "9/6|NNgữ": "T.Vân.1",
+    "9/7|KHTN": "C.Toàn",
+    "9/8|Văn": "T.Hằng",
+    "9/9|NNgữ": "Đ.Duy",
+    "9/10|NNgữ": "T.Bình.1",
+    "9/11|SĐ": "T.Đoan",
+    "9/12|GDTC": "T.Long",
+    "9/13|KHTN": "T.Bình.2",
+    "6/4|KHTN": "T.Dinh",
+    "6/5|GDCD": "P.My",
+    "6/6|SĐ": "V.Thiện",
+    "6/7|Toán": "T.Bảo",
+    "6/9|Văn": "T.Thảo.3",
+    "6/10|GDĐP": "T.Quỳnh",
+    "6/13|Văn": "T.Nguyệt.2",
+    "6/14|KHTN": "Đ.Kiếm",
+    "7/1|GDTC": "T.Long",
+    "7/2|SĐ": "T.Hiền.2",
+    "7/6|GDTC": "H.Hoàng",
+    "7/9|GDTC": "T.Trường",
+    "7/10|Nhạc": "H.Ân",
+    "8/2|MT": "K.Phát",
+    "8/4|TNHN": "CĐ",
+    "8/5|CN": "T.Tín",
+    "8/7|GDĐP": "Q.Thúc",
+    "8/8|GDTC": "T.Anh.2",
+    "8/13|KHTN": "T.Yên",
+    "8/14|GDCD": "T.Oanh.1",
+    "8/16|Tin": "T.Hiền.1",
+    "9/1|Nhạc": "T.Tuyết",
+    "9/4|Toán": "H.Nam",
+    "9/5|TNHN": "CN",
+    "9/10|KHTN": "T.Bình.2",
+    "9/12|KHTN": "T.Nga",
+    "9/13|GDCD": "T.Thanh",
+    "6/1|TNHN": "CĐ",
+    "6/2|KHTN": "G.Lâm",
+    "6/3|TNHN": "CĐ",
+    "6/5|TNHN": "CN",
+    "6/6|Toán": "T.Bảo",
+    "6/7|Tin": "T.Lan",
+    "6/8|GDTC": "V.Hiệp",
+    "6/10|TNHN": "CN",
+    "6/11|TNHN": "CĐ",
+    "6/12|Văn": "T.Thúy",
+    "6/13|Toán": "T.Vy",
+    "6/15|Toán": "T.Thảo.2",
+    "7/1|Nhạc": "T.Tuyết",
+    "7/3|KHTN": "N.Duyên",
+    "7/4|Toán": "H.Đức",
+    "7/5|KHTN": "T.Hoàng",
+    "7/6|Văn": "T.Anh.1",
+    "7/7|SĐ": "T.Đoan",
+    "7/8|GDTC": "T.Trường",
+    "7/9|TNHN": "CĐ",
+    "7/10|GDTC": "H.Hoàng",
+    "8/1|SĐ": "Á.Quyên",
+    "8/2|SĐ": "V.Thiện",
+    "8/3|GDTC": "T.Long",
+    "8/4|Nhạc": "K.Phát",
+    "8/5|Văn": "H.Trinh",
+    "8/6|GDCD": "T.Oanh.1",
+    "8/7|KHTN": "T.Chi",
+    "8/8|KHTN": "T.Yên",
+    "8/9|KHTN": "T.Bình.2",
+    "8/10|TNHN": "CN",
+    "8/11|Văn": "Đ.Hoa",
+    "8/12|TNHN": "CĐ",
+    "8/13|TNHN": "CN",
+    "8/14|KHTN": "T.Trang",
+    "8/15|MT": "H.Ân",
+    "8/16|CN": "B.Công",
+    "9/1|GDĐP": "Q.Thúc",
+    "9/2|GDCD": "T.Thanh",
+    "9/3|NNgữ": "T.Yến.1",
+    "9/4|Văn": "T.Khơ",
+    "9/5|Toán": "T.Yến.2",
+    "9/6|KHTN": "T.Nga",
+    "9/7|GDTC": "Q.Vương",
+    "9/8|GDĐP": "T.Nguyệt.2",
+    "9/9|KHTN": "C.Toàn",
+    "9/10|Văn": "T.Hằng",
+    "9/11|Nhạc": "B.Trang",
+    "9/12|Toán": "T.Thủy",
+    "9/13|NNgữ": "T.Hương.2",
+    "6/1|GDTC": "T.Trường",
+    "6/2|NNgữ": "Đ.Duy",
+    "6/3|Văn": "T.Hoài",
+    "6/4|TNHN": "CĐ",
+    "6/5|KHTN": "T.Dinh",
+    "6/6|Tin": "T.Lan",
+    "6/7|SĐ": "V.Thiện",
+    "6/8|Nhạc": "B.Tặng",
+    "6/9|KHTN": "T.Ngọc",
+    "6/10|Toán": "T.Vy",
+    "6/11|SĐ": "T.Huyền.1",
+    "6/12|GDCD": "P.My",
+    "6/15|Văn": "T.Thảo.3",
+    "7/1|SĐ": "T.Hiền.2",
+    "7/4|TNHN": "CN",
+    "7/5|NNgữ": "Q.Vi",
+    "7/6|KHTN": "T.Hoàng",
+    "7/7|TNHN": "CĐ",
+    "7/8|CN": "M.Tuấn",
+    "7/10|NNgữ": "T.Huyền.2",
+    "8/1|Văn": "T.Thảo.1",
+    "8/2|GDTC": "T.Long",
+    "8/3|SĐ": "H.Thủy",
+    "8/4|Toán": "H.Dung",
+    "8/6|SĐ": "T.Cường",
+    "8/7|GDCD": "T.Oanh.1",
+    "8/9|NNgữ": "T.Mai",
+    "8/10|GDTC": "T.Anh.2",
+    "8/12|KHTN": "T.Yên",
+    "8/13|NNgữ": "T.Hải",
+    "8/14|SĐ": "Á.Quyên",
+    "8/15|KHTN": "G.Lâm",
+    "8/16|NNgữ": "L.Thùy",
+    "9/1|SĐ": "T.Sương",
+    "9/4|Tin": "T.Cúc",
+    "9/5|KHTN": "T.Chi",
+    "9/7|Tin": "T.Hiền.1",
+    "9/8|CN": "T.Tín",
+    "9/9|Văn": "D.Quyên",
+    "9/11|KHTN": "C.Toàn",
+    "9/12|MT": "B.Trang",
+    "6/1|GDCD": "P.My",
+    "6/3|SĐ": "T.Thắm",
+    "6/4|Tin": "T.Cúc",
+    "6/6|MT": "B.Trang",
+    "6/8|Toán": "X.Huy",
+    "6/12|Tin": "T.Lan",
+    "6/14|MT": "B.Tặng",
+    "7/2|Toán": "H.Đức",
+    "7/3|GDTC": "T.Long",
+    "7/4|Văn": "T.Hương.3",
+    "7/7|GDĐP": "T.Quỳnh",
+    "8/2|Toán": "N.Châu",
+    "8/5|GDTC": "H.Hoàng",
+    "8/7|TNHN": "CĐ",
+    "8/8|CN": "M.Tuấn",
+    "8/9|GDĐP": "Q.Thúc",
+    "8/11|NNgữ": "L.Thùy",
+    "8/16|GDTC": "T.Anh.2",
+    "9/1|Văn": "T.Loan.2",
+    "9/2|KHTN": "T.Trang",
+    "9/7|MT": "T.Tuyết",
+    "9/8|Tin": "T.Hiền.1",
+    "9/12|NNgữ": "T.Bình.1",
+    "9/13|SĐ": "T.Đoan",
+    "6/2|GDCD": "P.My",
+    "6/3|GDTC": "V.Hiệp",
+    "6/5|SĐ": "T.Thắm",
+    "6/6|Văn": "T.Hoài",
+    "6/8|Văn": "T.Nguyệt.2",
+    "6/9|CN": "T.Thư",
+    "6/10|NNgữ": "T.Vân.1",
+    "6/12|KHTN": "T.Ngọc",
+    "6/13|GDTC": "T.Trường",
+    "6/14|SĐ": "T.Huyền.1",
+    "6/15|Nhạc": "P.Thảo",
+    "7/1|Văn": "T.Anh.1",
+    "7/2|KHTN": "N.Duyên",
+    "7/3|Văn": "T.Hương.3",
+    "7/6|Toán": "X.Huy",
+    "7/7|Tin": "T.Lan",
+    "7/8|GDĐP": "T.Quỳnh",
+    "7/9|Toán": "T.Bảo",
+    "7/10|KHTN": "T.Hà",
+    "8/1|GDTC": "H.Hoàng",
+    "8/2|TNHN": "CĐ",
+    "8/3|CN": "B.Công",
+    "8/4|GDCD": "T.Thanh",
+    "8/5|Nhạc": "K.Phát",
+    "8/7|GDTC": "T.Anh.2",
+    "8/8|SĐ": "V.Thiện",
+    "8/9|Nhạc": "H.Ân",
+    "8/10|GDCD": "T.Oanh.1",
+    "8/11|SĐ": "H.Thủy",
+    "8/12|GDĐP": "Q.Thúc",
+    "8/14|Toán": "T.Hương.1",
+    "8/15|SĐ": "Á.Quyên",
+    "8/16|Văn": "T.Thảo.1",
+    "9/1|Tin": "T.Cúc",
+    "9/2|CN": "T.Tín",
+    "9/3|TNHN": "CĐ",
+    "9/4|KHTN": "T.Chi",
+    "9/5|GDĐP": "T.Thảo.2",
+    "9/6|SĐ": "V.Quang",
+    "9/7|NNgữ": "Đ.Duy",
+    "9/8|SĐ": "T.Cường",
+    "9/9|Toán": "T.Linh",
+    "9/10|Toán": "T.Thủy",
+    "9/11|TNHN": "CĐ",
+    "6/1|GDĐP": "T.Vân.2",
+    "6/2|GDTC": "V.Hiệp",
+    "6/3|GDĐP": "T.Dinh",
+    "6/4|Văn": "T.Thúy",
+    "6/6|Nhạc": "B.Trang",
+    "6/8|TNHN": "CN",
+    "6/9|Toán": "X.Huy",
+    "6/11|GDĐP": "T.Quỳnh",
+    "6/13|CN": "T.Thư",
+    "6/15|Tin": "T.Lan",
+    "7/2|MT": "P.Thảo",
+    "7/5|Tin": "T.Hiền.1",
+    "7/6|CN": "M.Tuấn",
+    "7/7|KHTN": "T.Hà",
+    "7/8|SĐ": "T.Đoan",
+    "7/9|MT": "B.Tặng",
+    "7/10|Toán": "T.Bảo",
+    "8/1|Nhạc": "K.Phát",
+    "8/2|GDĐP": "Q.Thúc",
+    "8/3|TNHN": "CN",
+    "8/4|GDTC": "H.Hoàng",
+    "8/5|Toán": "V.Hải",
+    "8/6|Văn": "N.Kiên",
+    "8/7|Toán": "N.Châu",
+    "8/8|TNHN": "CN",
+    "8/9|GDCD": "T.Oanh.1",
+    "8/10|MT": "H.Ân",
+    "8/13|Tin": "T.Cúc",
+    "8/15|TNHN": "CN",
+    "9/2|SĐ": "T.Sương",
+    "9/3|KHTN": "T.Bình.2",
+    "9/6|TNHN": "CN",
+    "9/8|TNHN": "CN",
+    "9/11|Văn": "T.Loan.2",
+    "9/12|CN": "T.Tín",
+    "9/13|GDĐP": "T.Nguyệt.2",
+    "6/1|Toán": "T.Thảo.2",
+    "6/2|Văn": "Đ.Hoa",
+    "6/3|GDCD": "P.My",
+    "6/4|SĐ": "T.Thắm",
+    "6/5|GDĐP": "T.Vân.2",
+    "6/6|NNgữ": "T.Hương.2",
+    "6/7|NNgữ": "T.Loan.1",
+    "6/9|GDTC": "V.Hiệp",
+    "6/11|Văn": "T.Thảo.3",
+    "6/12|MT": "B.Tặng",
+    "6/14|GDĐP": "T.Quỳnh",
+    "6/15|CN": "T.Thư",
+    "7/1|GDĐP": "T.Nguyệt.1",
+    "7/3|Toán": "H.Đức",
+    "7/4|Tin": "T.Hiền.1",
+    "7/5|TNHN": "CN",
+    "7/6|SĐ": "T.Đoan",
+    "7/7|NNgữ": "T.Hồng",
+    "7/8|Văn": "T.Hương.3",
+    "7/10|Tin": "T.Lan",
+    "8/1|Toán": "V.Hải",
+    "8/3|GDCD": "T.Oanh.1",
+    "8/4|CN": "B.Công",
+    "8/6|GDĐP": "Q.Thúc",
+    "8/7|CN": "M.Tuấn",
+    "8/8|Tin": "T.Cúc",
+    "8/9|SĐ": "V.Thiện",
+    "8/10|SĐ": "H.Thủy",
+    "8/11|GDTC": "T.Anh.2",
+    "8/12|Nhạc": "H.Ân",
+    "8/13|Văn": "N.Thu",
+    "8/14|Văn": "T.Thảo.1",
+    "8/16|Toán": "H.Dung",
+    "9/1|TNHN": "CN",
+    "9/2|NNgữ": "T.Vân.1",
+    "9/3|CN": "T.Tín",
+    "9/4|MT": "T.Tuyết",
+    "9/5|GDTC": "Q.Vương",
+    "9/8|Toán": "T.Thủy",
+    "9/9|MT": "B.Trang",
+    "9/10|SĐ": "V.Quang",
+    "9/13|TNHN": "CĐ",
+    "6/3|KHTN": "N.Hương",
+    "6/4|NNgữ": "T.Hồng",
+    "6/5|MT": "B.Tặng",
+    "6/10|GDCD": "P.My",
+    "6/14|Tin": "T.Hiếu",
+    "6/15|GDTC": "T.Trường",
+    "7/1|Toán": "H.Đức",
+    "7/3|MT": "P.Thảo",
+    "7/4|CN": "M.Tuấn",
+    "7/7|GDTC": "H.Hoàng",
+    "7/8|TNHN": "CĐ",
+    "8/4|GDĐP": "Q.Thúc",
+    "8/6|TNHN": "CĐ",
+    "8/8|NNgữ": "Q.Vi",
+    "8/12|CN": "B.Công",
+    "8/14|GDTC": "T.Anh.2",
+    "9/2|GDTC": "Q.Vương",
+    "9/3|MT": "T.Tuyết",
+    "9/4|TNHN": "CN",
+    "9/6|GDCD": "T.Thanh",
+    "9/13|MT": "B.Trang",
+    "6/1|SĐ": "T.Thắm",
+    "6/6|TNHN": "CĐ",
+    "6/7|Văn": "T.Nguyệt.2",
+    "6/9|NNgữ": "T.Loan.1",
+    "6/11|NNgữ": "T.Vân.1",
+    "6/12|SĐ": "T.Huyền.1",
+    "6/13|TNHN": "CĐ",
+    "6/14|Văn": "Đ.Hoa",
+    "6/15|GDCD": "P.My",
+    "7/1|NNgữ": "T.Bình.1",
+    "7/2|TNHN": "CN",
+    "7/4|GDTC": "T.Long",
+    "7/5|Toán": "H.Đức",
+    "7/8|MT": "P.Thảo",
+    "7/9|Tin": "T.Lan",
+    "7/10|SĐ": "T.Hiền.2",
+    "8/1|TNHN": "CN",
+    "8/3|KHTN": "T.Nga",
+    "8/5|Tin": "T.Cúc",
+    "8/6|KHTN": "T.Trang",
+    "8/8|GDĐP": "Q.Thúc",
+    "8/10|KHTN": "T.Bình.2",
+    "8/11|TNHN": "CN",
+    "8/12|GDCD": "T.Oanh.1",
+    "8/14|MT": "H.Ân",
+    "8/15|Văn": "H.Trinh",
+    "9/1|NNgữ": "T.Yến.1",
+    "9/2|MT": "K.Phát",
+    "9/3|GDTC": "T.Kiệt",
+    "9/4|SĐ": "V.Quang",
+    "9/5|Văn": "T.Loan.2",
+    "9/6|GDTC": "Q.Vương",
+    "9/9|Tin": "T.Hiền.1",
+    "9/10|MT": "B.Trang",
+    "9/11|CN": "T.Tín",
+    "9/12|Văn": "T.Hằng",
+    "9/13|Toán": "T.Oanh.2",
+    "6/2|CN": "T.Thư",
+    "6/3|Tin": "T.Cúc",
+    "6/4|Toán": "T.Linh",
+    "6/5|Toán": "T.Thảo.2",
+    "6/6|KHTN": "T.Dinh",
+    "6/10|GDTC": "T.Trường",
+    "6/11|Toán": "T.Vy",
+    "6/13|KHTN": "Đ.Kiếm",
+    "7/3|GDCD": "P.My",
+    "7/4|NNgữ": "T.Huyền.2",
+    "7/5|Văn": "T.Anh.1",
+    "7/6|TNHN": "CN",
+    "7/7|GDCD": "T.Oanh.1",
+    "7/8|KHTN": "T.Hà",
+    "7/9|Văn": "N.Kiên",
+    "8/1|Tin": "T.Hiền.1",
+    "8/3|NNgữ": "T.Mai",
+    "8/5|TNHN": "CN",
+    "8/7|Văn": "N.Thu",
+    "8/8|Nhạc": "K.Phát",
+    "8/12|Tin": "T.Hiếu",
+    "8/13|GDTC": "T.Anh.2",
+    "9/1|MT": "T.Tuyết",
+    "9/3|Toán": "T.Yến.2",
+    "9/5|GDCD": "T.Thanh",
+    "9/6|Toán": "H.Nam",
+    "9/7|TNHN": "CN",
+    "9/10|TNHN": "CN",
+    "9/13|CN": "T.Tín",
+    "6/1|CN": "T.Thư",
+    "6/2|Tin": "T.Cúc",
+    "6/3|Toán": "T.Linh",
+    "6/10|MT": "B.Tặng",
+    "6/11|GDTC": "V.Hiệp",
+    "6/12|GDTC": "T.Trường",
+    "6/13|Tin": "T.Lan",
+    "6/15|GDĐP": "H.Thủy",
+    "7/1|MT": "T.Tuyết",
+    "7/2|GDTC": "T.Long",
+    "7/3|SĐ": "T.Sương",
+    "8/1|KHTN": "T.Chi",
+    "8/2|Văn": "N.Thu",
+    "8/4|Văn": "H.Trinh",
+    "8/5|MT": "K.Phát",
+    "8/6|NNgữ": "T.Quỳnh",
+    "8/8|GDCD": "T.Oanh.1",
+    "8/10|Toán": "V.Hải",
+    "8/11|GDĐP": "Q.Thúc",
+    "8/12|Toán": "T.Hương.1",
+    "8/16|Nhạc": "H.Ân",
+    "9/1|Toán": "T.Yến.2",
+    "9/3|GDCD": "T.Thanh",
+    "9/4|CN": "T.Tín",
+    "9/5|Tin": "T.Hiền.1",
+    "9/6|Văn": "T.Khơ",
+    "9/8|NNgữ": "T.Bình.1",
+    "9/9|SĐ": "T.Cường",
+    "9/11|NNgữ": "T.Hương.2",
+    "9/12|SĐ": "V.Quang",
+    "6/1|NNgữ": "Đ.Duy",
+    "6/2|Nhạc": "B.Trang",
+    "6/10|CN": "T.Thư",
+    "6/12|GDĐP": "T.Quỳnh",
+    "6/13|GDCD": "P.My",
+    "6/15|SĐ": "T.Huyền.1",
+    "7/1|Tin": "T.Lan",
+    "7/2|Nhạc": "P.Thảo",
+    "7/9|GDCD": "T.Oanh.1",
+    "7/10|Văn": "N.Kiên",
+    "8/5|NNgữ": "T.Mai",
+    "8/6|GDTC": "H.Hoàng",
+    "8/14|GDĐP": "Q.Thúc",
+    "8/15|Nhạc": "H.Ân",
+    "9/4|NNgữ": "T.Vân.1",
+    "9/5|NNgữ": "T.Yến.1",
+    "9/7|CN": "T.Tín",
+    "9/8|KHTN": "C.Toàn",
+    "9/10|GDCD": "T.Thanh",
+    "6/4|GDCD": "P.My",
+    "6/5|NNgữ": "T.Hương.2",
+    "6/6|GDĐP": "T.Quỳnh",
+    "6/7|TNHN": "CN",
+    "6/11|MT": "P.Thảo",
+    "6/13|MT": "B.Tặng",
+    "7/1|KHTN": "N.Duyên",
+    "7/2|Tin": "T.Hiền.1",
+    "7/4|GDĐP": "N.Hương",
+    "7/7|CN": "M.Tuấn",
+    "8/3|Toán": "T.Hương.1",
+    "8/4|SĐ": "Á.Quyên",
+    "8/5|SĐ": "T.Cường",
+    "8/6|MT": "K.Phát",
+    "8/9|Tin": "T.Cúc",
+    "8/11|Nhạc": "H.Ân",
+    "8/12|NNgữ": "T.Mai",
+    "8/13|SĐ": "H.Thủy",
+    "8/14|NNgữ": "T.Hải",
+    "8/15|GDTC": "T.Anh.2",
+    "9/1|KHTN": "T.Trang",
+    "9/5|MT": "T.Tuyết",
+    "9/7|Văn": "D.Quyên",
+    "9/10|GDTC": "Q.Vương",
+    "9/11|GDCD": "T.Thanh",
+    "9/12|TNHN": "CĐ",
+    "9/13|GDTC": "T.Long",
+    "6/1|KHTN": "G.Lâm",
+    "6/2|TNHN": "CN",
+    "6/4|GDĐP": "T.Vân.2",
+    "6/7|MT": "P.Thảo",
+    "6/10|KHTN": "T.Ngọc",
+    "6/11|GDCD": "P.My",
+    "6/13|Nhạc": "B.Tặng",
+    "6/15|TNHN": "CĐ",
+    "7/2|GDĐP": "N.Hương",
+    "7/4|SĐ": "T.Hiền.2",
+    "7/5|CN": "M.Tuấn",
+    "8/2|CN": "B.Công",
+    "8/5|GDCD": "T.Oanh.1",
+    "8/7|NNgữ": "T.Quỳnh",
+    "8/8|MT": "K.Phát",
+    "8/9|Toán": "N.Châu",
+    "8/11|Tin": "T.Cúc",
+    "8/15|GDCD": "T.Thanh",
+    "8/16|SĐ": "Á.Quyên",
+    "9/5|Nhạc": "T.Tuyết",
+    "9/7|GDĐP": "T.Thảo.2",
+    "9/8|GDTC": "Q.Vương",
+    "9/10|Nhạc": "B.Trang",
+    "9/12|Tin": "T.Hiền.1",
+    "6/2|MT": "B.Trang",
+    "6/4|GDTC": "H.Hoàng",
+    "6/5|Văn": "T.Thảo.3",
+    "6/7|CN": "T.Thư",
+    "6/8|SĐ": "T.Huyền.1",
+    "6/9|GDCD": "P.My",
+    "6/10|Văn": "T.Hoài",
+    "6/14|TNHN": "CN",
+    "6/15|KHTN": "N.Hương",
+    "7/3|CN": "M.Tuấn",
+    "7/4|MT": "T.Tuyết",
+    "7/8|GDCD": "T.Oanh.1",
+    "7/9|NNgữ": "T.Huyền.2",
+    "8/1|GDCD": "T.Thanh",
+    "8/3|GDĐP": "Q.Thúc",
+    "8/4|NNgữ": "T.Hải",
+    "8/10|CN": "T.Tín",
+    "8/11|KHTN": "T.Yên",
+    "8/12|SĐ": "H.Thủy",
+    "8/14|TNHN": "CĐ",
+    "9/5|SĐ": "V.Quang",
+    "9/7|SĐ": "T.Sương",
+    "9/10|GDĐP": "T.Nguyệt.2",
+    "9/11|Toán": "T.Oanh.2",
+    "9/13|Văn": "D.Quyên",
+    "6/5|Nhạc": "B.Tặng",
+    "6/7|GDCD": "P.My",
+    "6/8|CN": "T.Thư",
+    "6/9|Tin": "T.Lan",
+    "6/11|Nhạc": "P.Thảo",
+    "6/13|GDĐP": "T.Quỳnh",
+    "6/14|GDTC": "T.Trường",
+    "7/4|Nhạc": "T.Tuyết",
+    "7/10|GDĐP": "T.Hiền.2",
+    "8/6|Nhạc": "K.Phát",
+    "8/13|CN": "B.Công",
+    "8/15|Tin": "T.Hiền.1",
+    "9/2|Tin": "T.Cúc",
+    "9/3|GDĐP": "Q.Thúc",
+    "9/6|CN": "T.Tín",
+    "6/5|CN": "T.Thư",
+    "6/7|Nhạc": "P.Thảo",
+    "6/8|KHTN": "N.Hương",
+    "6/14|GDCD": "P.My",
+    "7/1|TNHN": "CĐ",
+    "7/3|GDĐP": "T.Nguyệt.1",
+    "7/8|NNgữ": "T.Huyền.2",
+    "8/2|Nhạc": "K.Phát",
+    "8/8|Toán": "N.Châu",
+    "8/16|TNHN": "CN",
+    "9/2|GDĐP": "Q.Thúc",
+    "9/3|Tin": "T.Cúc",
+    "9/4|GDTC": "Q.Vương",
+    "9/6|GDĐP": "T.Thảo.2",
+    "9/7|Toán": "T.Linh",
+    "9/9|Nhạc": "B.Trang",
+    "6/3|MT": "B.Trang",
+    "6/6|GDCD": "P.My",
+    "6/7|GDTC": "Q.Vương",
+    "6/11|CN": "T.Thư",
+    "6/14|Nhạc": "B.Tặng",
+    "7/1|GDCD": "T.Oanh.1",
+    "7/5|GDTC": "H.Hoàng",
+    "8/1|GDĐP": "Q.Thúc",
+    "8/2|GDCD": "T.Thanh",
+    "8/3|MT": "K.Phát",
+    "8/5|KHTN": "T.Hoàng",
+    "8/6|Tin": "T.Cúc",
+    "8/14|CN": "B.Công",
+    "8/16|MT": "H.Ân",
+    "9/2|Toán": "H.Nam",
+    "9/3|Văn": "T.Loan.2",
+    "9/6|MT": "T.Tuyết",
+    "9/9|TNHN": "CĐ"
+  },
+  "pccmTietMatrix": {
+    "6/1|ChCờ": 1,
+    "6/2|ChCờ": 1,
+    "6/3|ChCờ": 1,
+    "6/4|ChCờ": 1,
+    "6/5|ChCờ": 1,
+    "6/6|ChCờ": 1,
+    "6/7|ChCờ": 1,
+    "6/8|ChCờ": 1,
+    "6/9|ChCờ": 1,
+    "6/10|ChCờ": 1,
+    "6/11|ChCờ": 1,
+    "6/12|ChCờ": 1,
+    "6/13|ChCờ": 1,
+    "6/14|ChCờ": 1,
+    "6/15|ChCờ": 1,
+    "7/1|ChCờ": 1,
+    "7/2|ChCờ": 1,
+    "7/3|ChCờ": 1,
+    "7/4|ChCờ": 1,
+    "7/5|ChCờ": 1,
+    "7/6|ChCờ": 1,
+    "7/7|ChCờ": 1,
+    "7/8|ChCờ": 1,
+    "7/9|ChCờ": 1,
+    "7/10|ChCờ": 1,
+    "8/1|ChCờ": 1,
+    "8/2|ChCờ": 1,
+    "8/3|ChCờ": 1,
+    "8/4|ChCờ": 1,
+    "8/5|ChCờ": 1,
+    "8/6|ChCờ": 1,
+    "8/7|ChCờ": 1,
+    "8/8|ChCờ": 1,
+    "8/9|ChCờ": 1,
+    "8/10|ChCờ": 1,
+    "8/11|ChCờ": 1,
+    "8/12|ChCờ": 1,
+    "8/13|ChCờ": 1,
+    "8/14|ChCờ": 1,
+    "8/15|ChCờ": 1,
+    "8/16|ChCờ": 1,
+    "9/1|ChCờ": 1,
+    "9/2|ChCờ": 1,
+    "9/3|ChCờ": 1,
+    "9/4|ChCờ": 1,
+    "9/5|ChCờ": 1,
+    "9/6|ChCờ": 1,
+    "9/7|ChCờ": 1,
+    "9/8|ChCờ": 1,
+    "9/9|ChCờ": 1,
+    "9/10|ChCờ": 1,
+    "9/11|ChCờ": 1,
+    "9/12|ChCờ": 1,
+    "9/13|ChCờ": 1,
+    "6/1|Văn": 2,
+    "6/2|Toán": 4,
+    "6/3|NNgữ": 3,
+    "6/4|MT": 1,
+    "6/5|GDTC": 2,
+    "6/6|GDTC": 1,
+    "6/7|KHTN": 4,
+    "6/8|NNgữ": 3,
+    "6/9|TNHN": 1,
+    "6/10|SĐ": 3,
+    "6/11|KHTN": 4,
+    "6/12|Toán": 4,
+    "6/13|SĐ": 3,
+    "6/14|Toán": 4,
+    "6/15|NNgữ": 3,
+    "7/1|CN": 1,
+    "7/2|Văn": 2,
+    "7/3|NNgữ": 2,
+    "7/4|KHTN": 2,
+    "7/5|SĐ": 3,
+    "7/6|GDCD": 1,
+    "7/7|Văn": 3,
+    "7/8|Toán": 4,
+    "7/9|KHTN": 3,
+    "7/10|MT": 1,
+    "8/1|NNgữ": 2,
+    "8/2|KHTN": 3,
+    "8/3|Văn": 4,
+    "8/4|KHTN": 2,
+    "8/5|GDĐP": 1,
+    "8/6|Toán": 4,
+    "8/7|MT": 1,
+    "8/8|Văn": 2,
+    "8/9|Văn": 4,
+    "8/10|Văn": 3,
+    "8/11|Toán": 4,
+    "8/12|Văn": 3,
+    "8/13|Toán": 4,
+    "8/14|Tin": 1,
+    "8/15|Toán": 2,
+    "8/16|KHTN": 4,
+    "9/1|GDTC": 2,
+    "9/2|Văn": 4,
+    "9/3|SĐ": 3,
+    "9/4|Nhạc": 1,
+    "9/5|CN": 1,
+    "9/6|NNgữ": 3,
+    "9/7|KHTN": 4,
+    "9/8|Văn": 3,
+    "9/9|NNgữ": 3,
+    "9/10|NNgữ": 1,
+    "9/11|SĐ": 3,
+    "9/12|GDTC": 2,
+    "9/13|KHTN": 4,
+    "6/4|KHTN": 4,
+    "6/5|GDCD": 1,
+    "6/6|SĐ": 1,
+    "6/7|Toán": 1,
+    "6/9|Văn": 4,
+    "6/10|GDĐP": 1,
+    "6/13|Văn": 4,
+    "6/14|KHTN": 4,
+    "7/1|GDTC": 1,
+    "7/2|SĐ": 2,
+    "7/6|GDTC": 2,
+    "7/9|GDTC": 1,
+    "7/10|Nhạc": 1,
+    "8/2|MT": 1,
+    "8/4|TNHN": 1,
+    "8/5|CN": 1,
+    "8/7|GDĐP": 1,
+    "8/8|GDTC": 2,
+    "8/13|KHTN": 4,
+    "8/14|GDCD": 1,
+    "8/16|Tin": 1,
+    "9/1|Nhạc": 1,
+    "9/4|Toán": 4,
+    "9/5|TNHN": 2,
+    "9/10|KHTN": 1,
+    "9/12|KHTN": 4,
+    "9/13|GDCD": 1,
+    "6/1|TNHN": 2,
+    "6/2|KHTN": 1,
+    "6/3|TNHN": 1,
+    "6/5|TNHN": 1,
+    "6/6|Toán": 4,
+    "6/7|Tin": 1,
+    "6/8|GDTC": 2,
+    "6/10|TNHN": 2,
+    "6/11|TNHN": 2,
+    "6/12|Văn": 3,
+    "6/13|Toán": 2,
+    "6/15|Toán": 1,
+    "7/1|Nhạc": 1,
+    "7/3|KHTN": 2,
+    "7/4|Toán": 3,
+    "7/5|KHTN": 2,
+    "7/6|Văn": 4,
+    "7/7|SĐ": 3,
+    "7/8|GDTC": 2,
+    "7/9|TNHN": 2,
+    "7/10|GDTC": 1,
+    "8/1|SĐ": 1,
+    "8/2|SĐ": 3,
+    "8/3|GDTC": 1,
+    "8/4|Nhạc": 1,
+    "8/5|Văn": 4,
+    "8/6|GDCD": 1,
+    "8/7|KHTN": 1,
+    "8/8|KHTN": 2,
+    "8/9|KHTN": 4,
+    "8/10|TNHN": 2,
+    "8/11|Văn": 2,
+    "8/12|TNHN": 2,
+    "8/13|TNHN": 1,
+    "8/14|KHTN": 2,
+    "8/15|MT": 1,
+    "8/16|CN": 1,
+    "9/1|GDĐP": 1,
+    "9/2|GDCD": 1,
+    "9/3|NNgữ": 3,
+    "9/4|Văn": 2,
+    "9/5|Toán": 2,
+    "9/6|KHTN": 4,
+    "9/7|GDTC": 2,
+    "9/8|GDĐP": 1,
+    "9/9|KHTN": 3,
+    "9/10|Văn": 4,
+    "9/11|Nhạc": 1,
+    "9/12|Toán": 1,
+    "9/13|NNgữ": 1,
+    "6/1|GDTC": 1,
+    "6/2|NNgữ": 3,
+    "6/3|Văn": 3,
+    "6/4|TNHN": 1,
+    "6/5|KHTN": 4,
+    "6/6|Tin": 1,
+    "6/7|SĐ": 2,
+    "6/8|Nhạc": 1,
+    "6/9|KHTN": 3,
+    "6/10|Toán": 4,
+    "6/11|SĐ": 2,
+    "6/12|GDCD": 1,
+    "6/15|Văn": 3,
+    "7/1|SĐ": 2,
+    "7/4|TNHN": 1,
+    "7/5|NNgữ": 3,
+    "7/6|KHTN": 3,
+    "7/7|TNHN": 1,
+    "7/8|CN": 1,
+    "7/10|NNgữ": 3,
+    "8/1|Văn": 3,
+    "8/2|GDTC": 2,
+    "8/3|SĐ": 2,
+    "8/4|Toán": 4,
+    "8/6|SĐ": 3,
+    "8/7|GDCD": 1,
+    "8/9|NNgữ": 3,
+    "8/10|GDTC": 2,
+    "8/12|KHTN": 3,
+    "8/13|NNgữ": 2,
+    "8/14|SĐ": 3,
+    "8/15|KHTN": 3,
+    "8/16|NNgữ": 3,
+    "9/1|SĐ": 1,
+    "9/4|Tin": 1,
+    "9/5|KHTN": 3,
+    "9/7|Tin": 1,
+    "9/8|CN": 1,
+    "9/9|Văn": 3,
+    "9/11|KHTN": 4,
+    "9/12|MT": 1,
+    "6/1|GDCD": 1,
+    "6/3|SĐ": 1,
+    "6/4|Tin": 1,
+    "6/6|MT": 1,
+    "6/8|Toán": 3,
+    "6/12|Tin": 1,
+    "6/14|MT": 1,
+    "7/2|Toán": 4,
+    "7/3|GDTC": 2,
+    "7/4|Văn": 2,
+    "7/7|GDĐP": 1,
+    "8/2|Toán": 2,
+    "8/5|GDTC": 1,
+    "8/7|TNHN": 1,
+    "8/8|CN": 1,
+    "8/9|GDĐP": 1,
+    "8/11|NNgữ": 3,
+    "8/16|GDTC": 1,
+    "9/1|Văn": 3,
+    "9/2|KHTN": 4,
+    "9/7|MT": 1,
+    "9/8|Tin": 1,
+    "9/12|NNgữ": 3,
+    "9/13|SĐ": 2,
+    "6/2|GDCD": 1,
+    "6/3|GDTC": 2,
+    "6/5|SĐ": 2,
+    "6/6|Văn": 4,
+    "6/8|Văn": 4,
+    "6/9|CN": 1,
+    "6/10|NNgữ": 2,
+    "6/12|KHTN": 4,
+    "6/13|GDTC": 2,
+    "6/14|SĐ": 2,
+    "6/15|Nhạc": 1,
+    "7/1|Văn": 2,
+    "7/2|KHTN": 4,
+    "7/3|Văn": 3,
+    "7/6|Toán": 3,
+    "7/7|Tin": 1,
+    "7/8|GDĐP": 1,
+    "7/9|Toán": 4,
+    "7/10|KHTN": 4,
+    "8/1|GDTC": 1,
+    "8/2|TNHN": 2,
+    "8/3|CN": 1,
+    "8/4|GDCD": 1,
+    "8/5|Nhạc": 1,
+    "8/7|GDTC": 2,
+    "8/8|SĐ": 1,
+    "8/9|Nhạc": 1,
+    "8/10|GDCD": 1,
+    "8/11|SĐ": 2,
+    "8/12|GDĐP": 1,
+    "8/14|Toán": 1,
+    "8/15|SĐ": 3,
+    "8/16|Văn": 3,
+    "9/1|Tin": 1,
+    "9/2|CN": 1,
+    "9/3|TNHN": 2,
+    "9/4|KHTN": 3,
+    "9/5|GDĐP": 1,
+    "9/6|SĐ": 1,
+    "9/7|NNgữ": 3,
+    "9/8|SĐ": 3,
+    "9/9|Toán": 4,
+    "9/10|Toán": 4,
+    "9/11|TNHN": 1,
+    "6/1|GDĐP": 1,
+    "6/2|GDTC": 1,
+    "6/3|GDĐP": 1,
+    "6/4|Văn": 3,
+    "6/6|Nhạc": 1,
+    "6/8|TNHN": 2,
+    "6/9|Toán": 3,
+    "6/11|GDĐP": 1,
+    "6/13|CN": 1,
+    "6/15|Tin": 1,
+    "7/2|MT": 1,
+    "7/5|Tin": 1,
+    "7/6|CN": 1,
+    "7/7|KHTN": 3,
+    "7/8|SĐ": 1,
+    "7/9|MT": 1,
+    "7/10|Toán": 1,
+    "8/1|Nhạc": 1,
+    "8/2|GDĐP": 1,
+    "8/3|TNHN": 1,
+    "8/4|GDTC": 1,
+    "8/5|Toán": 2,
+    "8/6|Văn": 1,
+    "8/7|Toán": 4,
+    "8/8|TNHN": 1,
+    "8/9|GDCD": 1,
+    "8/10|MT": 1,
+    "8/13|Tin": 1,
+    "8/15|TNHN": 2,
+    "9/2|SĐ": 3,
+    "9/3|KHTN": 1,
+    "9/6|TNHN": 1,
+    "9/8|TNHN": 2,
+    "9/11|Văn": 4,
+    "9/12|CN": 1,
+    "9/13|GDĐP": 1,
+    "6/1|Toán": 4,
+    "6/2|Văn": 4,
+    "6/3|GDCD": 1,
+    "6/4|SĐ": 3,
+    "6/5|GDĐP": 1,
+    "6/6|NNgữ": 2,
+    "6/7|NNgữ": 2,
+    "6/9|GDTC": 2,
+    "6/11|Văn": 2,
+    "6/12|MT": 1,
+    "6/14|GDĐP": 1,
+    "6/15|CN": 1,
+    "7/1|GDĐP": 1,
+    "7/3|Toán": 4,
+    "7/4|Tin": 1,
+    "7/5|TNHN": 2,
+    "7/6|SĐ": 3,
+    "7/7|NNgữ": 3,
+    "7/8|Văn": 2,
+    "7/10|Tin": 1,
+    "8/1|Toán": 4,
+    "8/3|GDCD": 1,
+    "8/4|CN": 1,
+    "8/6|GDĐP": 1,
+    "8/7|CN": 1,
+    "8/8|Tin": 1,
+    "8/9|SĐ": 3,
+    "8/10|SĐ": 3,
+    "8/11|GDTC": 1,
+    "8/12|Nhạc": 1,
+    "8/13|Văn": 1,
+    "8/14|Văn": 3,
+    "8/16|Toán": 2,
+    "9/1|TNHN": 2,
+    "9/2|NNgữ": 1,
+    "9/3|CN": 1,
+    "9/4|MT": 1,
+    "9/5|GDTC": 1,
+    "9/8|Toán": 3,
+    "9/9|MT": 1,
+    "9/10|SĐ": 2,
+    "9/13|TNHN": 1,
+    "6/3|KHTN": 2,
+    "6/4|NNgữ": 2,
+    "6/5|MT": 1,
+    "6/10|GDCD": 1,
+    "6/14|Tin": 1,
+    "6/15|GDTC": 2,
+    "7/1|Toán": 1,
+    "7/3|MT": 1,
+    "7/4|CN": 1,
+    "7/7|GDTC": 2,
+    "7/8|TNHN": 1,
+    "8/4|GDĐP": 1,
+    "8/6|TNHN": 2,
+    "8/8|NNgữ": 3,
+    "8/12|CN": 1,
+    "8/14|GDTC": 2,
+    "9/2|GDTC": 1,
+    "9/3|MT": 1,
+    "9/4|TNHN": 2,
+    "9/6|GDCD": 1,
+    "9/13|MT": 1,
+    "6/1|SĐ": 2,
+    "6/6|TNHN": 1,
+    "6/7|Văn": 3,
+    "6/9|NNgữ": 3,
+    "6/11|NNgữ": 1,
+    "6/12|SĐ": 3,
+    "6/13|TNHN": 1,
+    "6/14|Văn": 2,
+    "6/15|GDCD": 1,
+    "7/1|NNgữ": 3,
+    "7/2|TNHN": 1,
+    "7/4|GDTC": 2,
+    "7/5|Toán": 3,
+    "7/8|MT": 1,
+    "7/9|Tin": 1,
+    "7/10|SĐ": 3,
+    "8/1|TNHN": 1,
+    "8/3|KHTN": 2,
+    "8/5|Tin": 1,
+    "8/6|KHTN": 2,
+    "8/8|GDĐP": 1,
+    "8/10|KHTN": 4,
+    "8/11|TNHN": 2,
+    "8/12|GDCD": 1,
+    "8/14|MT": 1,
+    "8/15|Văn": 3,
+    "9/1|NNgữ": 1,
+    "9/2|MT": 1,
+    "9/3|GDTC": 1,
+    "9/4|SĐ": 2,
+    "9/5|Văn": 1,
+    "9/6|GDTC": 2,
+    "9/9|Tin": 1,
+    "9/10|MT": 1,
+    "9/11|CN": 1,
+    "9/12|Văn": 2,
+    "9/13|Toán": 3,
+    "6/2|CN": 1,
+    "6/3|Tin": 1,
+    "6/4|Toán": 1,
+    "6/5|Toán": 3,
+    "6/6|KHTN": 1,
+    "6/10|GDTC": 1,
+    "6/11|Toán": 1,
+    "6/13|KHTN": 1,
+    "7/3|GDCD": 1,
+    "7/4|NNgữ": 3,
+    "7/5|Văn": 3,
+    "7/6|TNHN": 2,
+    "7/7|GDCD": 1,
+    "7/8|KHTN": 3,
+    "7/9|Văn": 4,
+    "8/1|Tin": 1,
+    "8/3|NNgữ": 1,
+    "8/5|TNHN": 1,
+    "8/7|Văn": 4,
+    "8/8|Nhạc": 1,
+    "8/12|Tin": 1,
+    "8/13|GDTC": 2,
+    "9/1|MT": 1,
+    "9/3|Toán": 3,
+    "9/5|GDCD": 1,
+    "9/6|Toán": 2,
+    "9/7|TNHN": 1,
+    "9/10|TNHN": 1,
+    "9/13|CN": 1,
+    "6/1|CN": 1,
+    "6/2|Tin": 1,
+    "6/3|Toán": 3,
+    "6/10|MT": 1,
+    "6/11|GDTC": 2,
+    "6/12|GDTC": 1,
+    "6/13|Tin": 1,
+    "6/15|GDĐP": 1,
+    "7/1|MT": 1,
+    "7/2|GDTC": 2,
+    "7/3|SĐ": 2,
+    "8/1|KHTN": 3,
+    "8/2|Văn": 2,
+    "8/4|Văn": 2,
+    "8/5|MT": 1,
+    "8/6|NNgữ": 1,
+    "8/8|GDCD": 1,
+    "8/10|Toán": 2,
+    "8/11|GDĐP": 1,
+    "8/12|Toán": 2,
+    "8/16|Nhạc": 1,
+    "9/1|Toán": 2,
+    "9/3|GDCD": 1,
+    "9/4|CN": 1,
+    "9/5|Tin": 1,
+    "9/6|Văn": 2,
+    "9/8|NNgữ": 3,
+    "9/9|SĐ": 2,
+    "9/11|NNgữ": 2,
+    "9/12|SĐ": 3,
+    "6/1|NNgữ": 3,
+    "6/2|Nhạc": 1,
+    "6/10|CN": 1,
+    "6/12|GDĐP": 1,
+    "6/13|GDCD": 1,
+    "6/15|SĐ": 2,
+    "7/1|Tin": 1,
+    "7/2|Nhạc": 1,
+    "7/9|GDCD": 1,
+    "7/10|Văn": 3,
+    "8/5|NNgữ": 1,
+    "8/6|GDTC": 1,
+    "8/14|GDĐP": 1,
+    "8/15|Nhạc": 1,
+    "9/4|NNgữ": 1,
+    "9/5|NNgữ": 3,
+    "9/7|CN": 1,
+    "9/8|KHTN": 1,
+    "9/10|GDCD": 1,
+    "6/4|GDCD": 1,
+    "6/5|NNgữ": 1,
+    "6/6|GDĐP": 1,
+    "6/7|TNHN": 1,
+    "6/11|MT": 1,
+    "6/13|MT": 1,
+    "7/1|KHTN": 3,
+    "7/2|Tin": 1,
+    "7/4|GDĐP": 1,
+    "7/7|CN": 1,
+    "8/3|Toán": 4,
+    "8/4|SĐ": 3,
+    "8/5|SĐ": 3,
+    "8/6|MT": 1,
+    "8/9|Tin": 1,
+    "8/11|Nhạc": 1,
+    "8/12|NNgữ": 3,
+    "8/13|SĐ": 3,
+    "8/14|NNgữ": 2,
+    "8/15|GDTC": 2,
+    "9/1|KHTN": 4,
+    "9/5|MT": 1,
+    "9/7|Văn": 1,
+    "9/10|GDTC": 2,
+    "9/11|GDCD": 1,
+    "9/12|TNHN": 1,
+    "9/13|GDTC": 2,
+    "6/1|KHTN": 2,
+    "6/2|TNHN": 1,
+    "6/4|GDĐP": 1,
+    "6/7|MT": 1,
+    "6/10|KHTN": 2,
+    "6/11|GDCD": 1,
+    "6/13|Nhạc": 1,
+    "6/15|TNHN": 1,
+    "7/2|GDĐP": 1,
+    "7/4|SĐ": 1,
+    "7/5|CN": 1,
+    "8/2|CN": 1,
+    "8/5|GDCD": 1,
+    "8/7|NNgữ": 3,
+    "8/8|MT": 1,
+    "8/9|Toán": 1,
+    "8/11|Tin": 1,
+    "8/15|GDCD": 1,
+    "8/16|SĐ": 1,
+    "9/5|Nhạc": 1,
+    "9/7|GDĐP": 1,
+    "9/8|GDTC": 1,
+    "9/10|Nhạc": 1,
+    "9/12|Tin": 1,
+    "6/2|MT": 1,
+    "6/4|GDTC": 1,
+    "6/5|Văn": 1,
+    "6/7|CN": 1,
+    "6/8|SĐ": 1,
+    "6/9|GDCD": 1,
+    "6/10|Văn": 1,
+    "6/14|TNHN": 1,
+    "6/15|KHTN": 2,
+    "7/3|CN": 1,
+    "7/4|MT": 1,
+    "7/8|GDCD": 1,
+    "7/9|NNgữ": 2,
+    "8/1|GDCD": 1,
+    "8/3|GDĐP": 1,
+    "8/4|NNgữ": 2,
+    "8/10|CN": 1,
+    "8/11|KHTN": 2,
+    "8/12|SĐ": 1,
+    "8/14|TNHN": 1,
+    "9/5|SĐ": 1,
+    "9/7|SĐ": 2,
+    "9/10|GDĐP": 1,
+    "9/11|Toán": 2,
+    "9/13|Văn": 2,
+    "6/5|Nhạc": 1,
+    "6/7|GDCD": 1,
+    "6/8|CN": 1,
+    "6/9|Tin": 1,
+    "6/11|Nhạc": 1,
+    "6/13|GDĐP": 1,
+    "6/14|GDTC": 1,
+    "7/4|Nhạc": 1,
+    "7/10|GDĐP": 1,
+    "8/6|Nhạc": 1,
+    "8/13|CN": 1,
+    "8/15|Tin": 1,
+    "9/2|Tin": 1,
+    "9/3|GDĐP": 1,
+    "9/6|CN": 1,
+    "6/5|CN": 1,
+    "6/7|Nhạc": 1,
+    "6/8|KHTN": 2,
+    "6/14|GDCD": 1,
+    "7/1|TNHN": 1,
+    "7/3|GDĐP": 1,
+    "7/8|NNgữ": 2,
+    "8/2|Nhạc": 1,
+    "8/8|Toán": 2,
+    "8/16|TNHN": 1,
+    "9/2|GDĐP": 1,
+    "9/3|Tin": 1,
+    "9/4|GDTC": 1,
+    "9/6|GDĐP": 1,
+    "9/7|Toán": 2,
+    "9/9|Nhạc": 1,
+    "6/3|MT": 1,
+    "6/6|GDCD": 1,
+    "6/7|GDTC": 1,
+    "6/11|CN": 1,
+    "6/14|Nhạc": 1,
+    "7/1|GDCD": 1,
+    "7/5|GDTC": 1,
+    "8/1|GDĐP": 1,
+    "8/2|GDCD": 1,
+    "8/3|MT": 1,
+    "8/5|KHTN": 1,
+    "8/6|Tin": 1,
+    "8/14|CN": 1,
+    "8/16|MT": 1,
+    "9/2|Toán": 1,
+    "9/3|Văn": 1,
+    "9/6|MT": 1,
+    "9/9|TNHN": 1
+  },
+  "tkb": {
+    "6/1": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Văn",
+          "Văn",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "GDTC",
+          "GDCD",
+          "TNHN",
+          "GDĐP",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Toán",
+          "Toán",
+          "SĐ",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "CN",
+          "NNgữ",
+          "Toán",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "NNgữ",
+          "NNgữ",
+          "KHTN",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "6/2": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Toán",
+          "Toán",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "NNgữ",
+          "NNgữ",
+          "GDCD",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "Toán",
+          "CN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Tin",
+          "Nhạc",
+          "Văn",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "MT",
+          "Toán",
+          "NNgữ",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "6/3": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "NNgữ",
+          "NNgữ",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Văn",
+          "SĐ",
+          "GDTC",
+          "GDĐP",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "GDCD",
+          "KHTN",
+          "KHTN",
+          "Tin",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Toán",
+          "Toán",
+          "Văn",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Toán",
+          "GDTC",
+          "NNgữ",
+          "MT",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "6/4": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "MT",
+          "KHTN",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "TNHN",
+          "Tin",
+          "KHTN",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "SĐ",
+          "NNgữ",
+          "NNgữ",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "GDCD",
+          "GDĐP",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDTC",
+          "KHTN",
+          "SĐ",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "6/5": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "GDTC",
+          "GDCD",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "SĐ",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "GDĐP",
+          "MT",
+          "KHTN",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Toán",
+          "Toán",
+          "NNgữ",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Văn",
+          "Nhạc",
+          "CN",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "6/6": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "GDTC",
+          "SĐ",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Tin",
+          "MT",
+          "Văn",
+          "Nhạc",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "NNgữ",
+          "NNgữ",
+          "TNHN",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "GDĐP",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Toán",
+          "Toán",
+          "Văn",
+          "GDCD",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "6/7": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "KHTN",
+          "Toán",
+          "Tin",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "SĐ",
+          "SĐ",
+          "KHTN",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "NNgữ",
+          "NNgữ",
+          "Văn",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Văn",
+          "KHTN",
+          "TNHN",
+          "MT",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "CN",
+          "GDCD",
+          "Nhạc",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "6/8": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "NNgữ",
+          "NNgữ",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Nhạc",
+          "Toán",
+          "Văn",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "Toán",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "TNHN",
+          "GDTC",
+          "Văn",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "SĐ",
+          "CN",
+          "KHTN",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "6/9": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "TNHN",
+          "Văn",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "CN",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "GDTC",
+          "KHTN",
+          "NNgữ",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Toán",
+          "Toán",
+          "Văn",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDCD",
+          "Tin",
+          "GDTC",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "6/10": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "SĐ",
+          "GDĐP",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Toán",
+          "Toán",
+          "NNgữ",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Toán",
+          "GDCD",
+          "TNHN",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "MT",
+          "CN",
+          "Toán",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Văn",
+          "SĐ",
+          "SĐ",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "6/11": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "KHTN",
+          "KHTN",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "SĐ",
+          "SĐ",
+          "TNHN",
+          "GDĐP",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "NNgữ",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "GDTC",
+          "KHTN",
+          "MT",
+          "GDCD",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDTC",
+          "Nhạc",
+          "KHTN",
+          "CN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "6/12": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Toán",
+          "Toán",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "GDCD",
+          "Tin",
+          "KHTN",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "MT",
+          "Toán",
+          "SĐ",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "GDTC",
+          "GDĐP",
+          "KHTN",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "Văn",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "6/13": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "SĐ",
+          "Văn",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "GDTC",
+          "CN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "SĐ",
+          "SĐ",
+          "TNHN",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Tin",
+          "GDCD",
+          "MT",
+          "Nhạc",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDTC",
+          "GDĐP",
+          "Toán",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "6/14": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Toán",
+          "KHTN",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Toán",
+          "MT",
+          "SĐ",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "GDĐP",
+          "Tin",
+          "Văn",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "Toán",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "TNHN",
+          "GDTC",
+          "GDCD",
+          "Nhạc",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "6/15": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "NNgữ",
+          "NNgữ",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "Nhạc",
+          "Tin",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "CN",
+          "GDTC",
+          "GDCD",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "GDĐP",
+          "SĐ",
+          "SĐ",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "Văn",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "7/1": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "CN",
+          "GDTC",
+          "Nhạc",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "SĐ",
+          "SĐ",
+          "Văn",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "GDĐP",
+          "Toán",
+          "NNgữ",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "MT",
+          "Tin",
+          "KHTN",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "KHTN",
+          "NNgữ",
+          "TNHN",
+          "GDCD",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "7/2": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Văn",
+          "SĐ",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Văn",
+          "Toán",
+          "KHTN",
+          "MT",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "TNHN",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "GDTC",
+          "Nhạc",
+          "Tin",
+          "GDĐP",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDTC",
+          "KHTN",
+          "Toán",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "7/3": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "NNgữ",
+          "NNgữ",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "KHTN",
+          "GDTC",
+          "Văn",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Toán",
+          "MT",
+          "Văn",
+          "GDCD",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "SĐ",
+          "SĐ",
+          "Toán",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "CN",
+          "Toán",
+          "GDĐP",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "7/4": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "KHTN",
+          "KHTN",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "TNHN",
+          "Văn",
+          "Toán",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Tin",
+          "CN",
+          "GDTC",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "NNgữ",
+          "NNgữ",
+          "GDĐP",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "MT",
+          "Nhạc",
+          "GDTC",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "7/5": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "SĐ",
+          "SĐ",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "NNgữ",
+          "NNgữ",
+          "KHTN",
+          "Tin",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "TNHN",
+          "TNHN",
+          "Toán",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Toán",
+          "Toán",
+          "NNgữ",
+          "CN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "SĐ",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "7/6": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "GDCD",
+          "GDTC",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "Toán",
+          "CN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "SĐ",
+          "SĐ",
+          "Văn",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "GDTC",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "SĐ",
+          "TNHN",
+          "Toán",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "7/7": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Văn",
+          "Văn",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "TNHN",
+          "GDĐP",
+          "Tin",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "NNgữ",
+          "GDTC",
+          "GDTC",
+          "GDCD",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "NNgữ",
+          "NNgữ",
+          "CN",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "SĐ",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "7/8": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Toán",
+          "Toán",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "CN",
+          "GDTC",
+          "GDĐP",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Văn",
+          "TNHN",
+          "MT",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "Toán",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDCD",
+          "Toán",
+          "NNgữ",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "7/9": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "KHTN",
+          "GDTC",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "Toán",
+          "MT",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Toán",
+          "Toán",
+          "Tin",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Toán",
+          "GDCD",
+          "TNHN",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "NNgữ",
+          "NNgữ",
+          "Văn",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "7/10": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "MT",
+          "Nhạc",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "NNgữ",
+          "NNgữ",
+          "KHTN",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Tin",
+          "KHTN",
+          "SĐ",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "SĐ",
+          "Văn",
+          "Văn",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Văn",
+          "GDĐP",
+          "KHTN",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "8/1": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "NNgữ",
+          "NNgữ",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "GDTC",
+          "Nhạc",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Toán",
+          "Văn",
+          "TNHN",
+          "Tin",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "Toán",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDCD",
+          "Toán",
+          "KHTN",
+          "GDĐP",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "8/2": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "KHTN",
+          "MT",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "GDTC",
+          "Toán",
+          "TNHN",
+          "GDĐP",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "TNHN",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "Toán",
+          "CN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "SĐ",
+          "SĐ",
+          "Nhạc",
+          "GDCD",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "8/3": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Văn",
+          "Văn",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "SĐ",
+          "SĐ",
+          "CN",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "GDCD",
+          "Văn",
+          "KHTN",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Văn",
+          "KHTN",
+          "Toán",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDĐP",
+          "Toán",
+          "Toán",
+          "MT",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "8/4": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "KHTN",
+          "TNHN",
+          "Nhạc",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Toán",
+          "Toán",
+          "GDCD",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "CN",
+          "GDĐP",
+          "Toán",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "SĐ",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "NNgữ",
+          "NNgữ",
+          "SĐ",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "8/5": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "GDĐP",
+          "CN",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Văn",
+          "GDTC",
+          "Nhạc",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "Tin",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "MT",
+          "NNgữ",
+          "SĐ",
+          "GDCD",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "SĐ",
+          "SĐ",
+          "Toán",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "8/6": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Toán",
+          "Toán",
+          "GDCD",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "SĐ",
+          "SĐ",
+          "Toán",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "GDĐP",
+          "TNHN",
+          "KHTN",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "NNgữ",
+          "GDTC",
+          "MT",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "KHTN",
+          "Nhạc",
+          "SĐ",
+          "Tin",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "8/7": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "MT",
+          "GDĐP",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "GDCD",
+          "TNHN",
+          "GDTC",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "CN",
+          "Toán",
+          "GDTC",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Toán",
+          "Toán",
+          "Văn",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "NNgữ",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "8/8": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Văn",
+          "GDTC",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Văn",
+          "CN",
+          "SĐ",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Tin",
+          "NNgữ",
+          "GDĐP",
+          "Nhạc",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "GDCD",
+          "GDTC",
+          "KHTN",
+          "MT",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "NNgữ",
+          "NNgữ",
+          "Toán",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "8/9": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Văn",
+          "Văn",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "NNgữ",
+          "GDĐP",
+          "Nhạc",
+          "GDCD",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "SĐ",
+          "SĐ",
+          "Văn",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "Tin",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "KHTN",
+          "NNgữ",
+          "NNgữ",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "8/10": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Văn",
+          "Văn",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "GDTC",
+          "TNHN",
+          "GDCD",
+          "MT",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "SĐ",
+          "SĐ",
+          "KHTN",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Toán",
+          "SĐ",
+          "KHTN",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "CN",
+          "KHTN",
+          "Văn",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "8/11": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Toán",
+          "Toán",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Văn",
+          "NNgữ",
+          "SĐ",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "GDTC",
+          "Toán",
+          "TNHN",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "GDĐP",
+          "Toán",
+          "Nhạc",
+          "Tin",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "NNgữ",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "8/12": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Văn",
+          "Văn",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "GDĐP",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Nhạc",
+          "CN",
+          "GDCD",
+          "Tin",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Toán",
+          "Toán",
+          "NNgữ",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "SĐ",
+          "Văn",
+          "KHTN",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "8/13": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Toán",
+          "KHTN",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "NNgữ",
+          "NNgữ",
+          "KHTN",
+          "Tin",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Văn",
+          "Toán",
+          "Toán",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "SĐ",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Toán",
+          "CN",
+          "GDTC",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "8/14": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Tin",
+          "GDCD",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "SĐ",
+          "SĐ",
+          "Toán",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Văn",
+          "GDTC",
+          "MT",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "GDTC",
+          "GDĐP",
+          "NNgữ",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "TNHN",
+          "Văn",
+          "Văn",
+          "CN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "8/15": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Toán",
+          "Toán",
+          "MT",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "SĐ",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "SĐ",
+          "SĐ",
+          "Văn",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "KHTN",
+          "Nhạc",
+          "GDTC",
+          "GDCD",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Văn",
+          "Tin",
+          "TNHN",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "8/16": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "KHTN",
+          "Tin",
+          "CN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "NNgữ",
+          "GDTC",
+          "Văn",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Toán",
+          "Toán",
+          "KHTN",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Nhạc",
+          "KHTN",
+          "Văn",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "NNgữ",
+          "NNgữ",
+          "TNHN",
+          "MT",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "9/1": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "GDTC",
+          "Nhạc",
+          "GDĐP",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "SĐ",
+          "Văn",
+          "Tin",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "TNHN",
+          "TNHN",
+          "NNgữ",
+          "MT",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Toán",
+          "Toán",
+          "KHTN",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "KHTN",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "9/2": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Văn",
+          "Văn",
+          "GDCD",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Văn",
+          "KHTN",
+          "CN",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "NNgữ",
+          "GDTC",
+          "MT",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "SĐ",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Văn",
+          "Tin",
+          "GDĐP",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "9/3": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "SĐ",
+          "SĐ",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "NNgữ",
+          "NNgữ",
+          "TNHN",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "CN",
+          "MT",
+          "GDTC",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "GDCD",
+          "SĐ",
+          "Toán",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "TNHN",
+          "GDĐP",
+          "Tin",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "9/4": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Nhạc",
+          "Toán",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Tin",
+          "Toán",
+          "KHTN",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "MT",
+          "TNHN",
+          "SĐ",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "CN",
+          "NNgữ",
+          "KHTN",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Toán",
+          "Toán",
+          "GDTC",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "9/5": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "CN",
+          "TNHN",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "GDĐP",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "GDTC",
+          "Toán",
+          "Văn",
+          "GDCD",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Tin",
+          "NNgữ",
+          "MT",
+          "Nhạc",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "SĐ",
+          "NNgữ",
+          "NNgữ",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "9/6": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "NNgữ",
+          "NNgữ",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "SĐ",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "KHTN",
+          "GDCD",
+          "GDTC",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "NNgữ",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDTC",
+          "CN",
+          "GDĐP",
+          "MT",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "9/7": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "KHTN",
+          "KHTN",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Tin",
+          "MT",
+          "NNgữ",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "NNgữ",
+          "NNgữ",
+          "KHTN",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "KHTN",
+          "CN",
+          "Văn",
+          "GDĐP",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "SĐ",
+          "SĐ",
+          "Toán",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "9/8": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "Văn",
+          "Văn",
+          "GDĐP",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "CN",
+          "Tin",
+          "SĐ",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Toán",
+          "Toán",
+          "SĐ",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "NNgữ",
+          "KHTN",
+          "TNHN",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Toán",
+          "Văn",
+          "NNgữ",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "9/9": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "NNgữ",
+          "NNgữ",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "Toán",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "MT",
+          "Văn",
+          "Tin",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "SĐ",
+          "SĐ",
+          "Toán",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "Nhạc",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "9/10": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "NNgữ",
+          "KHTN",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "Toán",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "SĐ",
+          "SĐ",
+          "MT",
+          "TNHN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Toán",
+          "GDCD",
+          "GDTC",
+          "Nhạc",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDĐP",
+          "GDTC",
+          "Toán",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "9/11": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "SĐ",
+          "SĐ",
+          "Nhạc",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "TNHN",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "CN",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "NNgữ",
+          "NNgữ",
+          "GDCD",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Toán",
+          "Toán",
+          "Văn",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "9/12": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "GDTC",
+          "KHTN",
+          "Toán",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "MT",
+          "NNgữ",
+          "KHTN",
+          "CN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "NNgữ",
+          "NNgữ",
+          "Văn",
+          "Văn",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "SĐ",
+          "GDTC",
+          "TNHN",
+          "Tin",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "KHTN",
+          "KHTN",
+          "SĐ",
+          "SĐ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    },
+    "9/13": {
+      "thu2": {
+        "sang": [
+          "ChCờ",
+          "KHTN",
+          "GDCD",
+          "NNgữ",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "KHTN",
+          "SĐ",
+          "SĐ",
+          "GDĐP",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "TNHN",
+          "MT",
+          "Toán",
+          "CN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Toán",
+          "Toán",
+          "GDTC",
+          "GDTC",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Văn",
+          "Văn",
+          "KHTN",
+          "KHTN",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ],
+        "chieu": [
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF",
+          "OFF"
+        ]
+      }
+    }
+  },
+  "tkbConstraints": {}
+}

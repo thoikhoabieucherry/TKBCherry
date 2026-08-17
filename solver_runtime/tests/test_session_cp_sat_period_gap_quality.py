@@ -1,0 +1,740 @@
+from __future__ import annotations
+
+import os
+import sys
+import tempfile
+import time
+import unittest
+from pathlib import Path
+from typing import Any, Mapping
+from unittest.mock import patch
+
+
+RUNTIME_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(RUNTIME_ROOT / "src"))
+
+from tkb_optimizer_ref.models import (  # noqa: E402
+    Assignment,
+    ClassInfo,
+    Lesson,
+    SchoolData,
+)
+from tkb_optimizer_ref.rules import (  # noqa: E402
+    TimetableConstraintRules,
+    TimetableRuleSet,
+)
+from tkb_optimizer_ref.session_cp_sat import (  # noqa: E402
+    SessionCpSatNoSolution,
+    _contiguous_run_lengths_by_start,
+    _teacher_gap_pattern_rows,
+    solve_session_allocation_cp_sat,
+)
+from tkb_optimizer_ref.template import all_sessions  # noqa: E402
+from tkb_optimizer_ref.validate import compute_metrics  # noqa: E402
+
+
+def _gap_signature(occupancy: tuple[int, ...]) -> tuple[int, int, int, int]:
+    row = next(
+        candidate
+        for candidate in _teacher_gap_pattern_rows(len(occupancy))
+        if candidate[: len(occupancy)] == occupancy
+    )
+    return row[-4:]
+
+
+def _two_lesson_school() -> SchoolData:
+    return SchoolData(
+        classes=[
+            ClassInfo(name="6/1", grade="6"),
+            ClassInfo(name="6/2", grade="6"),
+        ],
+        assignments=[
+            Assignment("6/1", "6", "A", "T1", 1, 1),
+            Assignment("6/2", "6", "B", "T1", 1, 1),
+        ],
+        teachers=["T1"],
+        subjects=["A", "B"],
+        periods_by_grade_subject={("6", "A"): 1, ("6", "B"): 1},
+        limits_by_grade_subject={("6", "A"): 1, ("6", "B"): 1},
+    )
+
+
+def _rules_for_subject_periods(
+    second_subject_periods: set[int],
+) -> TimetableRuleSet:
+    all_slots = {
+        (day, part, period)
+        for day in range(2, 8)
+        for part in ("AM", "PM")
+        for period in range(1, 6)
+    }
+    allowed_by_subject = {
+        "A": {(2, "AM", 1)},
+        "B": {(2, "AM", period) for period in second_subject_periods},
+    }
+    return TimetableRuleSet(
+        constraints=TimetableConstraintRules(
+            groups={},
+            group_names={},
+            fixed_off={
+                "subject": {
+                    subject: frozenset(all_slots - allowed)
+                    for subject, allowed in allowed_by_subject.items()
+                }
+            },
+            teacher={},
+            subject={},
+            subject_group={},
+        )
+    )
+
+
+def _empty_normalized_rules() -> TimetableRuleSet:
+    return TimetableRuleSet(
+        constraints=TimetableConstraintRules(
+            groups={},
+            group_names={},
+            fixed_off={},
+            teacher={},
+            subject={},
+            subject_group={},
+        )
+    )
+
+
+def _solve(second_subject_periods: set[int], **kwargs: object):
+    return solve_session_allocation_cp_sat(
+        _two_lesson_school(),
+        rules=_rules_for_subject_periods(second_subject_periods),
+        max_teacher_sessions=1,
+        max_one_period_sessions=0,
+        period_feasibility_session_indexes=set(range(len(all_sessions()))),
+        materialize_period_lessons=True,
+        time_limit_seconds=5,
+        num_workers=1,
+        random_seed=101,
+        **kwargs,
+    )
+
+
+def _canonical_metrics(
+    second_subject_periods: set[int],
+    bridge_metrics: Mapping[str, Any],
+) -> dict[str, Any]:
+    rows = bridge_metrics.get("period_bridge_lessons")
+    if not isinstance(rows, list):
+        raise AssertionError("Expected complete period-bridge lessons")
+    lessons = [
+        Lesson(**dict(item))
+        for item in rows
+        if isinstance(item, Mapping)
+    ]
+    return compute_metrics(
+        _two_lesson_school(),
+        lessons,
+        rules=_rules_for_subject_periods(second_subject_periods),
+    )
+
+
+class SessionCpSatPeriodGapQualityTests(unittest.TestCase):
+    def test_contiguous_run_lengths_match_the_legacy_domain(self) -> None:
+        cases = (
+            ([], 5),
+            ([3], 3),
+            ([5, 2, 1, 4, 4], 3),
+            ([1, 2, 3, 4, 5], 5),
+        )
+        for allowed_periods, max_duration in cases:
+            allowed = set(allowed_periods)
+            run_lengths = _contiguous_run_lengths_by_start(allowed_periods)
+            expected = [
+                (duration, start, tuple(range(start, start + duration)))
+                for duration in range(1, max_duration + 1)
+                for start in sorted(allowed)
+                if all(
+                    period in allowed
+                    for period in range(start, start + duration)
+                )
+            ]
+            with self.subTest(
+                allowed=sorted(allowed),
+                max_duration=max_duration,
+            ):
+                self.assertEqual(
+                    [
+                        (duration, start, tuple(range(start, start + duration)))
+                        for duration in range(1, max_duration + 1)
+                        for start in sorted(allowed)
+                        if run_lengths.get(start, 0) >= duration
+                    ],
+                    expected,
+                )
+
+    def test_period_bridge_prunes_only_noncontiguous_candidates(self) -> None:
+        school = SchoolData(
+            classes=[ClassInfo(name="6/1", grade="6")],
+            assignments=[Assignment("6/1", "6", "A", "T1", 2, 2)],
+            teachers=["T1"],
+            subjects=["A"],
+            periods_by_grade_subject={("6", "A"): 2},
+            limits_by_grade_subject={("6", "A"): 2},
+        )
+        all_slots = {
+            (day, part, period)
+            for day in range(2, 8)
+            for part in ("AM", "PM")
+            for period in range(1, 6)
+        }
+        allowed_slots = {
+            (2, "AM", 1),
+            (2, "AM", 2),
+            (2, "AM", 4),
+        }
+        rules = TimetableRuleSet(
+            constraints=TimetableConstraintRules(
+                groups={},
+                group_names={},
+                fixed_off={"subject": {"A": frozenset(all_slots - allowed_slots)}},
+                teacher={},
+                subject={},
+                subject_group={},
+            )
+        )
+
+        allocations, metrics = solve_session_allocation_cp_sat(
+            school,
+            rules=rules,
+            max_teacher_sessions=1,
+            max_one_period_sessions=0,
+            period_feasibility_session_indexes=set(range(len(all_sessions()))),
+            materialize_period_lessons=True,
+            time_limit_seconds=5,
+            num_workers=1,
+            random_seed=101,
+        )
+
+        self.assertEqual(sum(int(item.count) for item in allocations), 2)
+        self.assertEqual(metrics["period_block_candidate_pairs"], 6)
+        self.assertEqual(metrics["period_block_contiguous_pruned"], 2)
+        self.assertEqual(metrics["period_block_rule_or_fixed_pruned"], 0)
+        self.assertEqual(metrics["period_block_vars"], 4)
+        self.assertEqual(
+            metrics["period_block_candidate_pairs"],
+            metrics["period_block_vars"]
+            + metrics["period_block_contiguous_pruned"]
+            + metrics["period_block_rule_or_fixed_pruned"],
+        )
+        self.assertTrue(metrics["period_bridge_materialization_complete"])
+        self.assertEqual(
+            [row["period"] for row in metrics["period_bridge_lessons"]],
+            [1, 2],
+        )
+
+    def test_truth_table_uses_full_internal_span_not_only_local_holes(self) -> None:
+        cases = {
+            (0, 0, 0, 0, 0): (0, 0, 0, 0),
+            (1, 1, 0, 0, 0): (0, 0, 0, 0),
+            (1, 0, 1, 1, 0): (1, 1, 0, 0),
+            (1, 0, 0, 1, 0): (2, 0, 1, 2),
+            (1, 0, 0, 0, 1): (3, 0, 1, 3),
+            (0, 1, 0, 1, 0): (1, 1, 0, 0),
+        }
+        for occupancy, expected in cases.items():
+            with self.subTest(occupancy=occupancy):
+                self.assertEqual(_gap_signature(occupancy), expected)
+
+    def test_gap_caps_require_a_complete_period_bridge(self) -> None:
+        with self.assertRaisesRegex(ValueError, "all-session period bridge"):
+            solve_session_allocation_cp_sat(
+                _two_lesson_school(),
+                rules=_rules_for_subject_periods({3}),
+                max_teacher_sessions=1,
+                period_feasibility_session_indexes={0},
+                period_max_teacher_gap1_sessions=1,
+                time_limit_seconds=1,
+                num_workers=1,
+            )
+
+    def test_gap_model_supports_a_school_without_optional_constraints(self) -> None:
+        _allocations, metrics = solve_session_allocation_cp_sat(
+            _two_lesson_school(),
+            rules=_empty_normalized_rules(),
+            max_teacher_sessions=1,
+            max_one_period_sessions=0,
+            period_feasibility_session_indexes=set(range(len(all_sessions()))),
+            period_minimize_teacher_gaps=True,
+            period_teacher_gap_priority_absolute=True,
+            materialize_period_lessons=True,
+            time_limit_seconds=5,
+            num_workers=1,
+            random_seed=101,
+        )
+        self.assertTrue(metrics["period_gap_model_complete"])
+        self.assertEqual(metrics["teacher_sessions"], 1)
+        self.assertEqual(metrics["period_bridge_teacher_gap_periods"], 0)
+
+    def test_gap_model_supports_the_default_rule_set(self) -> None:
+        _allocations, metrics = solve_session_allocation_cp_sat(
+            _two_lesson_school(),
+            rules=None,
+            max_teacher_sessions=1,
+            max_one_period_sessions=0,
+            period_feasibility_session_indexes=set(range(len(all_sessions()))),
+            period_minimize_teacher_gaps=True,
+            period_teacher_gap_priority_absolute=True,
+            materialize_period_lessons=True,
+            time_limit_seconds=5,
+            num_workers=1,
+            random_seed=101,
+        )
+        self.assertTrue(metrics["period_gap_model_complete"])
+        self.assertEqual(metrics["teacher_sessions"], 1)
+        self.assertEqual(metrics["period_bridge_teacher_gap_periods"], 0)
+
+    def test_exact_gap1_ceiling_accepts_one_and_rejects_zero(self) -> None:
+        _allocations, metrics = _solve(
+            {3},
+            period_max_teacher_gap1_sessions=1,
+            period_max_teacher_gap2_plus_sessions=0,
+        )
+        self.assertEqual(metrics["teacher_sessions"], 1)
+        self.assertEqual(metrics["period_bridge_teacher_gap_periods"], 1)
+        self.assertEqual(metrics["period_bridge_teacher_gap1_sessions"], 1)
+        self.assertEqual(metrics["period_bridge_teacher_gap2_plus_sessions"], 0)
+        self.assertEqual(_canonical_metrics({3}, metrics)["gap_distribution"], {1: 1})
+
+        with self.assertRaises(SessionCpSatNoSolution):
+            _solve({3}, period_max_teacher_gap1_sessions=0)
+
+    def test_gap2_plus_and_total_gap_ceilings_are_exact(self) -> None:
+        _allocations, metrics = _solve(
+            {4},
+            period_max_teacher_gap_periods=2,
+            period_max_teacher_gap2_plus_sessions=1,
+        )
+        self.assertEqual(metrics["period_bridge_teacher_gap_periods"], 2)
+        self.assertEqual(metrics["period_bridge_teacher_severe_gap_periods"], 2)
+        self.assertEqual(metrics["period_bridge_teacher_gap1_sessions"], 0)
+        self.assertEqual(metrics["period_bridge_teacher_gap2_plus_sessions"], 1)
+        self.assertEqual(_canonical_metrics({4}, metrics)["gap_distribution"], {2: 1})
+
+        with self.assertRaises(SessionCpSatNoSolution):
+            _solve({4}, period_max_teacher_gap2_plus_sessions=0)
+        with self.assertRaises(SessionCpSatNoSolution):
+            _solve({4}, period_max_teacher_gap_periods=1)
+
+    def test_cleanup_objective_prefers_gap1_over_gap2_without_more_sessions(self) -> None:
+        _allocations, metrics = _solve(
+            {3, 4},
+            period_minimize_teacher_gaps=True,
+            period_teacher_gap_priority_absolute=True,
+            early_stop_teacher_sessions=1,
+        )
+        self.assertEqual(metrics["teacher_sessions"], 1)
+        self.assertEqual(metrics["period_bridge_teacher_gap2_plus_sessions"], 0)
+        self.assertEqual(metrics["period_bridge_teacher_gap1_sessions"], 1)
+        self.assertTrue(metrics["period_gap_objective_suppressed_session_early_stop"])
+        self.assertFalse(metrics["early_stop_enabled"])
+        self.assertIn(
+            "teacher_gap2_plus_sessions_then_teacher_severe_gap_periods_then_teacher_gap1_sessions",
+            metrics["objective_mode"],
+        )
+        selected = {
+            int(item["period"])
+            for item in metrics["period_bridge_lessons"]
+            if item["subject"] == "B"
+        }
+        self.assertEqual(selected, {3})
+
+    def test_split_gap_objectives_contain_only_the_requested_metric(self) -> None:
+        cases = {
+            "gap2": "teacher_gap2_plus_sessions",
+            "gap1": "teacher_gap1_sessions",
+        }
+        for target, metric_name in cases.items():
+            with self.subTest(target=target):
+                _allocations, metrics = _solve(
+                    {3, 4},
+                    minimize_sessions=False,
+                    minimize_one_period_sessions=False,
+                    period_teacher_gap_priority_absolute=True,
+                    period_gap_objective_target=target,
+                )
+
+                self.assertEqual(
+                    metrics["objective_mode"],
+                    f"minimize_{metric_name}",
+                )
+                self.assertEqual(
+                    set(metrics["period_gap_objective_weights"]),
+                    {metric_name},
+                )
+                self.assertEqual(metrics["period_gap_objective_target"], target)
+
+    def test_standalone_session_objectives_contain_only_the_requested_metric(self) -> None:
+        cases = {
+            "singletons": {
+                "minimize_sessions": False,
+                "minimize_one_period_sessions": True,
+                "objective_mode": "minimize_one_period_sessions",
+            },
+            "sessions": {
+                "minimize_sessions": True,
+                "minimize_one_period_sessions": False,
+                "objective_mode": "minimize_teacher_sessions",
+            },
+        }
+        for target, settings in cases.items():
+            with self.subTest(target=target):
+                _allocations, metrics = solve_session_allocation_cp_sat(
+                    _two_lesson_school(),
+                    rules=None,
+                    max_teacher_sessions=2,
+                    time_limit_seconds=5,
+                    num_workers=1,
+                    random_seed=101,
+                    minimize_sessions=settings["minimize_sessions"],
+                    minimize_one_period_sessions=settings[
+                        "minimize_one_period_sessions"
+                    ],
+                    minimize_hint_distance=False,
+                )
+
+                self.assertEqual(metrics["objective_mode"], settings["objective_mode"])
+                self.assertFalse(metrics["period_gap_objective_requested"])
+                if target == "singletons":
+                    self.assertGreater(metrics["teacher_single_vars"], 0)
+                    self.assertEqual(metrics["one_period_teacher_sessions"], 0)
+                else:
+                    self.assertEqual(metrics["teacher_single_vars"], 0)
+
+    def test_quality_progress_emits_best_metrics_without_publishing_a_timetable(self) -> None:
+        events: list[dict[str, Any]] = []
+
+        _allocations, metrics = _solve(
+            {3, 4},
+            period_minimize_teacher_gaps=True,
+            period_teacher_gap_priority_absolute=True,
+            progress=events.append,
+        )
+
+        improvements = [
+            event
+            for event in events
+            if event.get("stage") == "session_cp_sat:metric"
+        ]
+        self.assertTrue(metrics["progress_callback_enabled"])
+        self.assertEqual(
+            metrics["progress_improvements_emitted"],
+            len(improvements),
+        )
+        self.assertGreaterEqual(len(improvements), 1)
+        self.assertEqual(
+            improvements[-1]["teacher_sessions"],
+            metrics["teacher_sessions"],
+        )
+        self.assertEqual(
+            improvements[-1]["one_period_teacher_sessions"],
+            metrics["one_period_teacher_sessions"],
+        )
+        self.assertEqual(
+            improvements[-1]["gap_distribution"],
+            {
+                1: metrics["period_bridge_teacher_gap1_sessions"],
+                2: metrics["period_bridge_teacher_gap2_plus_sessions"],
+            },
+        )
+        objectives = [
+            float(event["objective"])
+            for event in improvements
+            if event.get("objective") is not None
+        ]
+        self.assertTrue(
+            all(current < previous for previous, current in zip(objectives, objectives[1:]))
+        )
+        for event in improvements:
+            self.assertNotIn("period_bridge_lessons", event)
+            self.assertNotIn("lessons", event)
+            self.assertNotIn("tkb", event)
+
+    def test_feasibility_only_solve_does_not_install_a_progress_callback(self) -> None:
+        events: list[dict[str, Any]] = []
+
+        _allocations, metrics = _solve(
+            {3},
+            minimize_sessions=False,
+            minimize_one_period_sessions=False,
+            progress=events.append,
+        )
+
+        self.assertFalse(metrics["progress_callback_enabled"])
+        self.assertEqual(metrics["progress_improvements_emitted"], 0)
+        self.assertFalse(
+            any(event.get("stage") == "session_cp_sat:metric" for event in events)
+        )
+
+    def test_quality_progress_and_early_stop_share_the_same_callback(self) -> None:
+        events: list[dict[str, Any]] = []
+
+        _allocations, metrics = _solve(
+            {3},
+            early_stop_teacher_sessions=1,
+            early_stop_max_one_period_sessions=0,
+            progress=events.append,
+        )
+
+        self.assertTrue(metrics["progress_callback_enabled"])
+        self.assertTrue(metrics["early_stop_enabled"])
+        self.assertTrue(metrics["early_stop_hit"])
+        self.assertGreaterEqual(metrics["progress_improvements_emitted"], 1)
+        self.assertTrue(
+            any(event.get("stage") == "session_cp_sat:metric" for event in events)
+        )
+
+    def test_quality_stagnation_never_stops_before_a_secondary_improvement(self) -> None:
+        allocations, metrics = _solve(
+            {3},
+            period_minimize_teacher_gaps=True,
+            period_teacher_gap_priority_absolute=True,
+            quality_stagnation_seconds=0.1,
+            quality_stagnation_min_improvements=1,
+        )
+
+        canonical = _canonical_metrics({3}, metrics)
+        self.assertTrue(metrics["quality_stagnation_stop_enabled"])
+        self.assertFalse(metrics["quality_stagnation_stop_ready"])
+        self.assertFalse(metrics["quality_stagnation_stop_applied"])
+        self.assertEqual(metrics["quality_stagnation_improvements"], 0)
+        self.assertEqual(sum(int(item.count) for item in allocations), 2)
+        self.assertTrue(canonical["hard_ok"])
+        self.assertEqual(canonical["one_period_teacher_sessions"], 0)
+        self.assertEqual(
+            sum(
+                int(count)
+                for gap, count in canonical["gap_distribution"].items()
+                if int(gap) >= 2
+            ),
+            0,
+        )
+
+    def test_gap2_focus_stops_on_the_first_complete_zero_target(self) -> None:
+        allocations, metrics = _solve(
+            {3, 4},
+            period_minimize_teacher_gaps=True,
+            period_teacher_gap_priority_absolute=True,
+            cloud_run_stop_when_gap2_zero=True,
+        )
+
+        canonical = _canonical_metrics({3, 4}, metrics)
+        self.assertTrue(metrics["cloud_run_gap2_zero_stop_enabled"])
+        self.assertTrue(metrics["cloud_run_gap2_zero_stop_applied"])
+        self.assertIn(metrics["status_name"], {"FEASIBLE", "OPTIMAL"})
+        self.assertEqual(sum(int(item.count) for item in allocations), 2)
+        self.assertEqual(canonical["scheduled_periods"], canonical["expected_periods"])
+        self.assertTrue(canonical["hard_ok"])
+        self.assertEqual(canonical["one_period_teacher_sessions"], 0)
+        self.assertEqual(
+            sum(
+                int(count)
+                for gap, count in canonical["gap_distribution"].items()
+                if int(gap) >= 2
+            ),
+            0,
+        )
+
+    def test_gap2_focus_zero_target_does_not_wait_for_singleton_cleanup(self) -> None:
+        school = SchoolData(
+            classes=[ClassInfo(name="6/1", grade="6")],
+            assignments=[Assignment("6/1", "6", "A", "T1", 1, 1)],
+            teachers=["T1"],
+            subjects=["A"],
+            periods_by_grade_subject={("6", "A"): 1},
+            limits_by_grade_subject={("6", "A"): 1},
+        )
+        allocations, metrics = solve_session_allocation_cp_sat(
+            school,
+            rules=None,
+            max_teacher_sessions=1,
+            max_one_period_sessions=1,
+            period_feasibility_session_indexes=set(range(len(all_sessions()))),
+            period_minimize_teacher_gaps=True,
+            period_teacher_gap_priority_absolute=True,
+            materialize_period_lessons=True,
+            time_limit_seconds=5,
+            num_workers=1,
+            random_seed=101,
+            cloud_run_stop_when_gap2_zero=True,
+        )
+
+        lessons = [Lesson(**dict(item)) for item in metrics["period_bridge_lessons"]]
+        canonical = compute_metrics(school, lessons, rules=None)
+        self.assertTrue(metrics["cloud_run_gap2_zero_stop_enabled"])
+        self.assertTrue(metrics["cloud_run_gap2_zero_stop_applied"])
+        self.assertEqual(sum(int(item.count) for item in allocations), 1)
+        self.assertEqual(canonical["scheduled_periods"], canonical["expected_periods"])
+        self.assertTrue(canonical["hard_ok"])
+        self.assertEqual(canonical["one_period_teacher_sessions"], 1)
+        self.assertEqual(
+            sum(
+                int(count)
+                for gap, count in canonical["gap_distribution"].items()
+                if int(gap) >= 2
+            ),
+            0,
+        )
+
+    def test_gap2_focus_does_not_stop_for_nonzero_or_incomplete_incumbents(self) -> None:
+        _allocations, nonzero_metrics = _solve(
+            {4},
+            period_minimize_teacher_gaps=True,
+            period_teacher_gap_priority_absolute=True,
+            cloud_run_stop_when_gap2_zero=True,
+        )
+        self.assertTrue(nonzero_metrics["cloud_run_gap2_zero_stop_enabled"])
+        self.assertFalse(nonzero_metrics["cloud_run_gap2_zero_stop_applied"])
+        self.assertEqual(nonzero_metrics["period_bridge_teacher_gap2_plus_sessions"], 1)
+
+        blocked_rules = TimetableRuleSet(
+            constraints=TimetableConstraintRules(
+                groups={},
+                group_names={},
+                fixed_off={
+                    "subject": {
+                        "A": frozenset(
+                            (day, part, period)
+                            for day in range(2, 8)
+                            for part in ("AM", "PM")
+                            for period in range(1, 6)
+                        )
+                    }
+                },
+                teacher={},
+                subject={},
+                subject_group={},
+            )
+        )
+        _allocations, incomplete_metrics = solve_session_allocation_cp_sat(
+            _two_lesson_school(),
+            rules=blocked_rules,
+            max_teacher_sessions=1,
+            max_one_period_sessions=2,
+            allow_unassigned=True,
+            period_feasibility_session_indexes=set(range(len(all_sessions()))),
+            period_minimize_teacher_gaps=True,
+            period_teacher_gap_priority_absolute=True,
+            materialize_period_lessons=True,
+            time_limit_seconds=5,
+            num_workers=1,
+            random_seed=101,
+            cloud_run_stop_when_gap2_zero=True,
+        )
+        self.assertTrue(incomplete_metrics["cloud_run_gap2_zero_stop_enabled"])
+        self.assertFalse(incomplete_metrics["cloud_run_gap2_zero_stop_applied"])
+        self.assertGreater(incomplete_metrics["unassigned_periods"], 0)
+
+    def test_vps_applies_the_same_gap2_zero_stop_option(self) -> None:
+        with patch.dict(os.environ, {"K_SERVICE": ""}):
+            _allocations, metrics = _solve(
+                {3, 4},
+                period_minimize_teacher_gaps=True,
+                period_teacher_gap_priority_absolute=True,
+                cloud_run_stop_when_gap2_zero=True,
+            )
+
+        self.assertTrue(metrics["cloud_run_gap2_zero_stop_enabled"])
+        self.assertTrue(metrics["cloud_run_gap2_zero_stop_applied"])
+
+    def test_stop_file_returns_a_valid_materialized_incumbent(self) -> None:
+        events: list[dict[str, Any]] = []
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            stop_path = Path(tmp_dir) / "retain-best.stop"
+
+            def request_stop_after_first_incumbent(event: dict[str, Any]) -> None:
+                events.append(event)
+                if (
+                    event.get("stage") == "session_cp_sat:metric"
+                    and not stop_path.exists()
+                ):
+                    stop_path.write_text("stop\n", encoding="utf-8")
+                    # Keep the incumbent callback alive long enough for the
+                    # independent stop watcher to observe the control file.
+                    time.sleep(0.2)
+
+            with patch.dict(
+                os.environ,
+                {"TKB_SOLVER_STOP_FILE": str(stop_path)},
+            ):
+                allocations, metrics = _solve(
+                    {3, 4},
+                    period_minimize_teacher_gaps=True,
+                    period_teacher_gap_priority_absolute=True,
+                    progress=request_stop_after_first_incumbent,
+                )
+
+        canonical = _canonical_metrics({3, 4}, metrics)
+        self.assertTrue(metrics["best_effort_stop_requested"])
+        self.assertTrue(metrics["best_effort_stop_applied"])
+        self.assertTrue(metrics["best_effort_stop_quality_ready"])
+        self.assertFalse(metrics["best_effort_stop_deferred_for_quality"])
+        self.assertIsNone(metrics["best_effort_stop_error"])
+        self.assertIn(metrics["status_name"], {"FEASIBLE", "OPTIMAL"})
+        self.assertEqual(sum(int(item.count) for item in allocations), 2)
+        self.assertTrue(metrics["period_bridge_materialization_complete"])
+        self.assertEqual(canonical["scheduled_periods"], canonical["expected_periods"])
+        self.assertTrue(canonical["hard_ok"])
+        self.assertEqual(canonical["app_constraint_violation_count"], 0)
+        self.assertEqual(canonical["one_period_teacher_sessions"], 0)
+        self.assertEqual(
+            sum(
+                int(count)
+                for gap, count in canonical["gap_distribution"].items()
+                if int(gap) >= 2
+            ),
+            0,
+        )
+        self.assertTrue(
+            any(event.get("stage") == "session_cp_sat:metric" for event in events)
+        )
+
+    def test_stop_file_waits_when_the_mandatory_gap2_gate_is_not_ready(self) -> None:
+        events: list[dict[str, Any]] = []
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            stop_path = Path(tmp_dir) / "defer-until-quality.stop"
+
+            def request_stop_after_first_incumbent(event: dict[str, Any]) -> None:
+                events.append(event)
+                if (
+                    event.get("stage") == "session_cp_sat:metric"
+                    and not stop_path.exists()
+                ):
+                    stop_path.write_text("stop\n", encoding="utf-8")
+                    time.sleep(0.2)
+
+            with patch.dict(os.environ, {"TKB_SOLVER_STOP_FILE": str(stop_path)}):
+                _allocations, metrics = _solve(
+                    {4},
+                    period_minimize_teacher_gaps=True,
+                    period_teacher_gap_priority_absolute=True,
+                    progress=request_stop_after_first_incumbent,
+                )
+
+        canonical = _canonical_metrics({4}, metrics)
+        self.assertTrue(metrics["best_effort_stop_requested"])
+        self.assertFalse(metrics["best_effort_stop_applied"])
+        self.assertFalse(metrics["best_effort_stop_quality_ready"])
+        self.assertTrue(metrics["best_effort_stop_deferred_for_quality"])
+        self.assertEqual(canonical["one_period_teacher_sessions"], 0)
+        self.assertGreater(
+            sum(
+                int(count)
+                for gap, count in canonical["gap_distribution"].items()
+                if int(gap) >= 2
+            ),
+            0,
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

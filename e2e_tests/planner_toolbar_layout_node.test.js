@@ -1,0 +1,1519 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const test = require("node:test");
+const vm = require("node:vm");
+
+const plannerHtml = fs.readFileSync(
+  path.resolve(__dirname, "..", "web", "pages", "sapxep.html"),
+  "utf8"
+);
+const plannerSource = fs.readFileSync(
+  path.resolve(__dirname, "..", "web", "pages", "phanmon.js"),
+  "utf8"
+);
+const bridgeSource = fs.readFileSync(
+  path.resolve(__dirname, "..", "web", "pages", "tkb-rust-bridge.js"),
+  "utf8"
+);
+const constraintsMenuSource = fs.readFileSync(
+  path.resolve(__dirname, "..", "web", "pages", "tkb-constraints-menu.js"),
+  "utf8"
+);
+
+function buttonMarkup(source, id){
+  return (source.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) || [])
+    .find(markup => markup.includes(`id="${id}"`)) || "";
+}
+
+function inlineSvgMarkup(source){
+  return source.match(/<svg\b[^>]*>[\s\S]*?<\/svg>/)?.[0] || "";
+}
+
+test("requirements submenus toggle only by click", () => {
+  assert.doesNotMatch(
+    constraintsMenuSource,
+    /addEventListener\(['"](?:pointerover|mouseover|mousemove|focusin)['"]/,
+    "hover and focus movement must not open or switch requirement groups"
+  );
+  assert.match(constraintsMenuSource, /aria-expanded', 'false'/);
+  assert.match(constraintsMenuSource, /window\.__TKB_CONSTRAINTS_MENU_VERSION = VERSION/);
+  assert.match(constraintsMenuSource, /addEventListener\('scroll', onWindowScroll, true\)/);
+  assert.doesNotMatch(constraintsMenuSource, /addEventListener\('scroll', closeMenu, true\)/);
+
+  const start = constraintsMenuSource.indexOf("  function setSubmenuOpen");
+  const end = constraintsMenuSource.indexOf("  function positionSubmenu", start);
+  assert.ok(start >= 0 && end > start, "click accordion helpers must be extractable");
+
+  function makeItem(hasSubmenu = true){
+    const classes = new Set();
+    const attributes = {};
+    const item = {
+      classList:{
+        add(name){ classes.add(name); },
+        remove(name){ classes.delete(name); },
+        contains(name){ return classes.has(name); }
+      },
+      button:{setAttribute(name, value){ attributes[name] = value; }},
+      attributes,
+      descendants:[],
+      querySelector(selector){
+        if(selector === ':scope > .rb-menu-sub') return hasSubmenu ? {} : null;
+        if(selector === ':scope > button') return this.button;
+        return null;
+      },
+      querySelectorAll(selector){
+        if(selector !== 'li.is-open') return [];
+        return this.descendants.filter(child => child.classList.contains('is-open'));
+      }
+    };
+    return item;
+  }
+
+  let positioned = 0;
+  const context = {positionSubmenu(){ positioned += 1; }};
+  vm.runInNewContext(
+    `${constraintsMenuSource.slice(start, end)}\nthis.toggleRequirementSubmenu = toggleSubmenu;`,
+    context
+  );
+  const first = makeItem();
+  const second = makeItem();
+  const leaf = makeItem(false);
+  const root = {children:[first, second, leaf]};
+  first.parentNode = root;
+  second.parentNode = root;
+  leaf.parentNode = root;
+
+  assert.equal(context.toggleRequirementSubmenu({}, first), true);
+  assert.equal(first.classList.contains('is-open'), true);
+  assert.equal(first.attributes['aria-expanded'], 'true');
+  assert.equal(positioned, 1);
+
+  assert.equal(context.toggleRequirementSubmenu({}, first), true);
+  assert.equal(first.classList.contains('is-open'), false);
+  assert.equal(first.attributes['aria-expanded'], 'false');
+  assert.equal(positioned, 1, "closing the same group must not reposition it");
+
+  context.toggleRequirementSubmenu({}, first);
+  context.toggleRequirementSubmenu({}, second);
+  assert.equal(first.classList.contains('is-open'), false, "opening a group closes its sibling");
+  assert.equal(second.classList.contains('is-open'), true);
+  assert.equal(second.attributes['aria-expanded'], 'true');
+  assert.equal(context.toggleRequirementSubmenu({}, leaf), false, "leaf actions remain outside accordion handling");
+  assert.equal('aria-expanded' in leaf.attributes, false, "leaf actions must not get accordion state");
+
+  const outsideStart = constraintsMenuSource.indexOf("  function onOutsideClick");
+  const outsideEnd = constraintsMenuSource.indexOf("\n\n  window.toggleRangBuoc", outsideStart);
+  assert.ok(outsideStart >= 0 && outsideEnd > outsideStart, "outside-click handler must be extractable");
+  let closed = 0;
+  const anchorChild = {};
+  const anchor = {contains(target){ return target === anchorChild; }};
+  const outsideContext = {
+    anchor,
+    MENU_ID:'tkbConstraintsDropdownMenu',
+    document:{getElementById(){ return {contains(){ return false; }}; }},
+    closeMenu(){ closed += 1; }
+  };
+  vm.runInNewContext(
+    `let activeAnchor = this.anchor;${constraintsMenuSource.slice(outsideStart, outsideEnd)}\nthis.handleRequirementOutsideClick = onOutsideClick;`,
+    outsideContext
+  );
+  outsideContext.handleRequirementOutsideClick({target:anchorChild});
+  assert.equal(closed, 0, "the capture listener must let the anchor's own click close the open menu");
+  outsideContext.handleRequirementOutsideClick({target:{}});
+  assert.equal(closed, 1, "a real outside click must still close the menu");
+
+  const scrollStart = constraintsMenuSource.indexOf("  function onWindowScroll");
+  const scrollEnd = constraintsMenuSource.indexOf("\n\n  function onOutsideClick", scrollStart);
+  assert.ok(scrollStart >= 0 && scrollEnd > scrollStart, "scroll handler must be extractable");
+  let scrollClosed = 0;
+  const internalScroller = {};
+  const scrollContext = {
+    MENU_ID:'tkbConstraintsDropdownMenu',
+    document:{getElementById(){ return {contains(target){ return target === internalScroller; }}; }},
+    closeMenu(){ scrollClosed += 1; }
+  };
+  vm.runInNewContext(
+    `${constraintsMenuSource.slice(scrollStart, scrollEnd)}\nthis.handleRequirementScroll = onWindowScroll;`,
+    scrollContext
+  );
+  scrollContext.handleRequirementScroll({target:internalScroller});
+  assert.equal(scrollClosed, 0, "scrolling inside a long mobile menu must keep it open");
+  scrollContext.handleRequirementScroll({target:{}});
+  assert.equal(scrollClosed, 1, "scrolling the page must still close the fixed menu");
+});
+
+test("every schedule deletion invalidates solver state and force-saves remotely", () => {
+  const helperStart = plannerSource.indexOf("function invalidateSolverStateAfterScheduleDelete");
+  const helperEnd = plannerSource.indexOf("\nfunction ", helperStart + 10);
+  assert.ok(helperStart >= 0 && helperEnd > helperStart, "delete invalidation helper is missing");
+
+  const staleFields = [
+    "tkbSolverResult",
+    "tkbRustSolverResult",
+    "tkbSolverPayload",
+    "solverResult",
+    "solverMetrics",
+    "tkbOptimizationPlateau"
+  ];
+  const data = {
+    tkbLessonTeachers:{"L1|ToÃ¡n":"GV01"},
+    tkbLessonRooms:{"L1|ToÃ¡n":"P101"},
+    keepMe:{value:true}
+  };
+  staleFields.forEach(field => { data[field] = {stale:true}; });
+  const bridgeInvalidations = [];
+  const context = {
+    DATA:data,
+    window:{
+      TKBRustAPI:{
+        invalidatePendingSolveForScheduleMutation(){
+          bridgeInvalidations.push("invalidated");
+        }
+      }
+    }
+  };
+  vm.runInNewContext(
+    `${plannerSource.slice(helperStart, helperEnd)}\nthis.invalidateDeleteState = invalidateSolverStateAfterScheduleDelete;`,
+    context
+  );
+
+  const originalTeachers = data.tkbLessonTeachers;
+  const originalRooms = data.tkbLessonRooms;
+  const initialRevision = Number(data.tkbScheduleRevision || 0);
+  context.invalidateDeleteState(false);
+  staleFields.forEach(field => {
+    assert.equal(Object.prototype.hasOwnProperty.call(data, field), false, `${field} must be deleted`);
+  });
+  assert.equal(data.tkbLessonTeachers, originalTeachers, "class deletion must preserve teacher mappings");
+  assert.equal(data.tkbLessonRooms, originalRooms, "class deletion must preserve room mappings");
+  assert.equal(data.keepMe.value, true, "unrelated planner data must survive invalidation");
+  assert.ok(data.tkbScheduleRevision > initialRevision, "class deletion must advance the schedule revision");
+  assert.equal(bridgeInvalidations.length, 1, "class deletion must notify the solver bridge");
+
+  staleFields.forEach(field => { data[field] = {stale:true}; });
+  const classDeleteRevision = data.tkbScheduleRevision;
+  context.invalidateDeleteState(true);
+  staleFields.forEach(field => {
+    assert.equal(Object.prototype.hasOwnProperty.call(data, field), false, `${field} must stay deleted`);
+  });
+  assert.equal(typeof data.tkbLessonTeachers, "object");
+  assert.equal(typeof data.tkbLessonRooms, "object");
+  assert.equal(Object.keys(data.tkbLessonTeachers).length, 0, "school deletion must reset teacher mappings");
+  assert.equal(Object.keys(data.tkbLessonRooms).length, 0, "school deletion must reset room mappings");
+  assert.ok(data.tkbScheduleRevision > classDeleteRevision, "school deletion must advance the schedule revision");
+  assert.equal(bridgeInvalidations.length, 2, "school deletion must notify the solver bridge");
+
+  const classDeleteBody = plannerSource.slice(
+    plannerSource.indexOf("function deleteCurrentClassTKB"),
+    plannerSource.indexOf("function deleteAllTKB")
+  );
+  const schoolDeleteBody = plannerSource.slice(
+    plannerSource.indexOf("function deleteAllTKB"),
+    plannerSource.indexOf("function toggleDeleteMenu")
+  );
+  const confirmDeleteBody = plannerSource.slice(
+    plannerSource.indexOf("function confirmDeleteMenu"),
+    plannerSource.indexOf("/* [MOVED -> phanmon-ops.js] Section: xep_lai */")
+  );
+  const menuClassDeleteBody = confirmDeleteBody.slice(
+    confirmDeleteBody.indexOf('if(choice === "class"){'),
+    confirmDeleteBody.indexOf('if(choice === "school"){')
+  );
+  const menuSchoolDeleteBody = confirmDeleteBody.slice(
+    confirmDeleteBody.indexOf('if(choice === "school"){')
+  );
+  const persistenceHelperBody = plannerSource.slice(
+    plannerSource.indexOf("function persistScheduleDelete"),
+    plannerSource.indexOf("function deleteCurrentClassTKB")
+  );
+  assert.match(
+    persistenceHelperBody,
+    /saveStore\(\{\s*force\s*:\s*true\s*,\s*awaitRemote\s*:\s*true\s*\}\)/,
+    "delete persistence must force an awaited remote save"
+  );
+  assert.match(
+    persistenceHelperBody,
+    /__TKB_SCHEDULE_MUTATION_SAVE_PROMISE\s*=\s*persistence/,
+    "delete persistence must expose the barrier to the solver bridge"
+  );
+  assert.match(
+    persistenceHelperBody,
+    /Promise\.resolve\(previousSave\)/,
+    "delete persistence must wait for an older in-flight save"
+  );
+
+  function assertDeleteContract(source, resetMappings, label){
+    const invalidateCall = `invalidateSolverStateAfterScheduleDelete(${resetMappings})`;
+    const persistCall = "persistScheduleDelete()";
+    assert.ok(source.includes(invalidateCall), `${label} must invalidate solver state`);
+    assert.ok(source.includes(persistCall), `${label} must start the remote persistence barrier`);
+    assert.ok(
+      source.indexOf(invalidateCall) < source.indexOf(persistCall),
+      `${label} must invalidate solver state before persistence`
+    );
+  }
+
+  assertDeleteContract(classDeleteBody, false, "direct class deletion");
+  assertDeleteContract(schoolDeleteBody, true, "direct school deletion");
+  assertDeleteContract(menuClassDeleteBody, false, "menu class deletion");
+  assertDeleteContract(menuSchoolDeleteBody, true, "menu school deletion");
+});
+
+test("teacher pane counts each class-subject assignment once", () => {
+  const start = plannerSource.indexOf("function pvTeacherStats(gvCode)");
+  const end = plannerSource.indexOf("function pvEnsureRoomForTeacher", start);
+  assert.ok(start >= 0 && end > start, "teacher pane statistics helper is missing");
+  const source = plannerSource.slice(start, end);
+  assert.doesNotMatch(source, /computeMonsForClass/);
+  assert.match(source, /requiredSubjectsForClass/);
+
+  const context = {
+    window:{},
+    DAYS:["thu2"],
+    getFilteredLops(){ return [{id:"L1"}, {id:"L2"}]; },
+    getLopCanonById(id){ return String(id || ""); },
+    classAssignmentStatisticsTeacherForClassMon(){ return "GV1"; },
+    teacherListFromValue(value){ return String(value || "").split(/[,+;]/).map(item => item.trim()).filter(Boolean); },
+    requiredSubjectsForClass(lop){
+      return lop.id === "L1"
+        ? [{gv:"GV1", required:10}]
+        : [{gv:"GV1", required:8}];
+    },
+    teacherValueHas(value, code){ return String(value) === String(code); },
+    buildTeacherSchedule(){
+      return {thu2:{sang:[[{fixed:true}]], chieu:[]}};
+    },
+    isTeacherFixedOff(){ return false; }
+  };
+  vm.runInNewContext(`${source}\nthis.readTeacherStats = pvTeacherStats;`, context);
+
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(context.readTeacherStats("GV1"))),
+    {total:18, assigned:1, offAssigned:0}
+  );
+});
+
+test("teacher empty-period total counts affected sessions rather than empty slots", () => {
+  const start = plannerSource.indexOf("function calcTeacherTKBStats()");
+  const end = plannerSource.indexOf("/* =======================", start);
+  assert.ok(start >= 0 && end > start, "teacher timetable statistics helper is missing");
+  const source = plannerSource.slice(start, end);
+
+  const context = {
+    window:{},
+    DAYS:["thu2"],
+    SANG:5,
+    CHIEU:5,
+    DATA:{
+      lop:[{id:"L1"}],
+      tkb:{
+        L1:{
+          thu2:{
+            sang:["A", null, "B", null, "C"],
+            chieu:["D", null, "E"]
+          }
+        }
+      }
+    },
+    _getAssignedTeacherCodes(){ return new Set(["GV"]); },
+    getLopCanonById(){ return "L1"; },
+    cellMon(value){ return value || ""; },
+    classAssignmentStatisticsTeacherForClassMon(){ return "GV"; },
+    teacherListFromValue(value){ return String(value || "").split(/[,+;]/).map(item => item.trim()).filter(Boolean); },
+    getTeacherNameByCode(code){ return code; },
+    compareTeacherCodeByDataOrder(){ return 0; },
+    schoolStatsTkbSignature(){ return "fixture"; }
+  };
+
+  vm.runInNewContext(`${source}\nthis.readTeacherTimetableStats = calcTeacherTKBStats;`, context);
+  const stats = JSON.parse(JSON.stringify(context.readTeacherTimetableStats()));
+
+  assert.equal(stats.soBuoiTrong1, 1);
+  assert.equal(stats.soBuoiTrong2, 1);
+  assert.equal(stats.soTietTrong, 2);
+  assert.equal(stats.soTietTrong, stats.soBuoiTrong1 + stats.soBuoiTrong2);
+  assert.equal(stats.gapTeachers[0].count, 2);
+});
+
+test("teacher timetable statistics ignore stale lessons without a PCCM assignment", () => {
+  const start = plannerSource.indexOf("function calcTeacherTKBStats()");
+  const end = plannerSource.indexOf("/* =======================", start);
+  const source = plannerSource.slice(start, end);
+  const context = {
+    window:{},
+    DAYS:["thu2"],
+    SANG:5,
+    CHIEU:5,
+    DATA:{lop:[{id:"L1"}], tkb:{L1:{thu2:{sang:["A", null, "STALE"], chieu:[]}}}},
+    _getAssignedTeacherCodes(){ return new Set(["GV"]); },
+    getLopCanonById(){ return "L1"; },
+    cellMon(value){ return value || ""; },
+    classAssignmentStatisticsTeacherForClassMon(_className, mon){ return mon === "A" ? "GV" : ""; },
+    teacherListFromValue(value){ return String(value || "").split(/[,+;]/).map(item => item.trim()).filter(Boolean); },
+    getTeacherNameByCode(code){ return code; },
+    compareTeacherCodeByDataOrder(){ return 0; },
+    schoolStatsTkbSignature(){ return "fixture"; }
+  };
+  vm.runInNewContext(`${source}\nthis.readTeacherTimetableStats = calcTeacherTKBStats;`, context);
+  const stats = JSON.parse(JSON.stringify(context.readTeacherTimetableStats()));
+  assert.equal(stats.soTietTrong, 0, "the stale lesson must not create a false Gap1");
+  assert.equal(stats.soBuoiDay1, 1);
+  assert.equal(stats.onePeriodTeachers[0].count, 1);
+});
+
+test("portrait planner keeps eight compact mobile slots including Optimize", () => {
+  const actionsStart = plannerHtml.indexOf('<div class="toolbar-actions"');
+  const feedbackStart = plannerHtml.indexOf('<div class="toolbar-feedback"');
+  const secondaryStart = plannerHtml.indexOf('<div class="toolbar-secondary-actions"', feedbackStart);
+
+  assert.ok(actionsStart >= 0, "toolbar-actions wrapper is missing");
+  assert.ok(feedbackStart > actionsStart, "toolbar feedback must follow the action row");
+
+  const actions = plannerHtml.slice(actionsStart, feedbackStart);
+  const orderedIds = [
+    "btnRangBuoc",
+    "btnUndoTKB",
+    "btnRedoTKB",
+    "btnAutoSort",
+    "btnOptimizeMenu",
+    "btnStopAutoSort",
+    "btnDeleteAll"
+  ];
+  let previousIndex = -1;
+  for(const id of orderedIds){
+    const currentIndex = actions.indexOf(`id="${id}"`);
+    assert.ok(currentIndex > previousIndex, `${id} is outside the expected action order`);
+    previousIndex = currentIndex;
+  }
+  const requirementsButton = buttonMarkup(actions, "btnRangBuoc");
+  assert.ok(requirementsButton, "requirements button is missing");
+  assert.match(requirementsButton, /title="Yêu cầu xếp thời khóa biểu"[^>]*aria-label="Yêu cầu xếp thời khóa biểu"/);
+  assert.match(requirementsButton, /<svg class="toolbar-icon toolbar-requirement-icon"[^>]*stroke="currentColor"[^>]*>[\s\S]*?<path\b[^>]*\/>[\s\S]*?<\/svg>/);
+  assert.match(requirementsButton, /<span class="toolbar-label-full"[^>]*>Yêu cầu<\/span>/);
+  assert.doesNotMatch(requirementsButton, /toolbar-label-compact/);
+  assert.doesNotMatch(requirementsButton, />\s*YC\s*</);
+  assert.match(actions, /id="btnUndoTKB"[^>]*title="Hoàn tác"[^>]*aria-label="Hoàn tác"[^>]*>\s*<svg class="toolbar-icon"[^>]*>[\s\S]*?<\/svg><\/button>/);
+  assert.match(actions, /id="btnRedoTKB"[^>]*title="Làm lại"[^>]*aria-label="Làm lại"[^>]*>\s*<svg class="toolbar-icon"[^>]*>[\s\S]*?<\/svg><\/button>/);
+  assert.match(actions, /id="btnAutoSort"[^>]*class="primary icon-button"[^>]*title="Bắt đầu sắp xếp"[^>]*aria-label="Bắt đầu sắp xếp"[^>]*>\s*<svg class="toolbar-icon"[^>]*>[\s\S]*?<\/svg><\/button>/);
+  assert.doesNotMatch(actions, /&larr;|&rarr;|&#9654;/);
+  const deleteButton = buttonMarkup(actions, "btnDeleteAll");
+  assert.ok(deleteButton, "Delete button is missing");
+  assert.match(deleteButton, /class="danger icon-button"[^>]*title="Xóa toàn bộ thời khóa biểu"[^>]*aria-label="Xóa toàn bộ thời khóa biểu"/);
+  assert.match(deleteButton, /<svg class="toolbar-icon"[^>]*stroke="currentColor"[^>]*>[\s\S]*?<path\b[\s\S]*?<\/svg>\s*<\/button>/);
+  assert.doesNotMatch(deleteButton, />\s*X\s*<\/button>/);
+  const stopButton = buttonMarkup(actions, "btnStopAutoSort");
+  assert.ok(stopButton, "Stop button is missing");
+  assert.match(stopButton, /class="[^"]*\bauto-sort-stop\b[^"]*\bicon-button\b[^"]*"/);
+  assert.match(stopButton, /title="Dừng tối ưu"[^>]*aria-label="Dừng tối ưu"/);
+  const stopSvg = inlineSvgMarkup(stopButton);
+  assert.match(stopSvg, /<circle\b/);
+  assert.match(stopSvg, /<rect\b[^>]*fill="currentColor"[^>]*stroke="none"[^>]*\/>/);
+  assert.doesNotMatch(stopSvg, /<line\b|[Mm][^"]*[Vv][^"]*[Mm][^"]*[Vv]/);
+  assert.doesNotMatch(stopButton, />\s*(?:Dừng|Đang dừng)\s*</);
+  assert.doesNotMatch(actions, /<span[^>]*>s<\/span>/i);
+  assert.doesNotMatch(actions, /id="desktopSolveControls"/);
+  assert.match(actions, /id="btnOptimizeMenu"[^>]*aria-haspopup="menu"[^>]*aria-expanded="false"/);
+  assert.match(actions, /id="plannerOptimizeMenu"[^>]*role="menu"[^>]*hidden/);
+  assert.equal((actions.match(/data-scheduler-mode=/g) || []).length, 5);
+  assert.equal((actions.match(/data-superadmin-only="true"/g) || []).length, 0);
+  for(const [mode, label] of [
+    ["optimize_all", "Tối ưu tất cả"],
+    ["optimize_singletons", "1 tiết/buổi"],
+    ["optimize_sessions", "Buổi dạy"],
+    ["optimize_gap2", "2 tiết trống"],
+    ["optimize_gap1", "1 tiết trống"],
+  ]){
+    assert.match(
+      actions,
+      new RegExp(`data-scheduler-mode="${mode}"[^>]*>${label}<\\/button>`)
+    );
+  }
+  assert.doesNotMatch(actions, /data-scheduler-deep|Tối ưu sâu|Cloud Run/);
+  assert.doesNotMatch(actions, /id="autoSortProgress"|id="statusMsg"|id="statsToggle"|>Home<\/button>/);
+  assert.doesNotMatch(actions, /solveDurationSeconds|solve-duration-control/);
+
+  const secondary = plannerHtml.slice(secondaryStart, plannerHtml.indexOf("\n  </div>\n\n</div>", secondaryStart));
+  assert.match(secondary, /id="btnHome"[^>]*aria-label="Về trang chủ"[^>]*>Home<\/button>/);
+  const statsButton = buttonMarkup(secondary, "statsToggle");
+  assert.ok(statsButton, "statistics button is missing");
+  assert.match(statsButton, /title="Thống kê thời khóa biểu"[^>]*aria-label="Thống kê thời khóa biểu"/);
+  assert.match(statsButton, /<span class="toolbar-label-full"[^>]*>Thống kê<\/span>/);
+  assert.match(statsButton, /<span class="toolbar-label-compact"[^>]*>\s*<svg class="toolbar-icon"[^>]*>[\s\S]*?<\/svg>\s*<\/span>/);
+  assert.doesNotMatch(statsButton, />\s*TK\s*</);
+  assert.notEqual(
+    inlineSvgMarkup(requirementsButton),
+    inlineSvgMarkup(statsButton),
+    "requirements and statistics must use distinct clipboard-check and chart glyphs"
+  );
+  assert.match(plannerHtml, /\.toolbar-main\s*\{[^}]*grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);[^}]*grid-template-rows:\s*44px var\(--planner-mobile-feedback-h\);/s);
+  assert.match(plannerHtml, /\.toolbar-actions\s*\{[^}]*display:\s*contents;/s);
+  for(const [id, column] of [
+    ["btnRangBuoc", "1"],
+    ["btnUndoTKB", "2"],
+    ["btnRedoTKB", "2"],
+    ["btnAutoSort", "3"]
+  ]){
+    assert.match(
+      plannerHtml,
+      new RegExp(`#${id}\\s*\\{[^}]*grid-column:\\s*${column};[^}]*grid-row:\\s*1;`, "s")
+    );
+  }
+  assert.match(plannerHtml, /#btnRedoTKB\s*\{[^}]*grid-column:\s*2;[^}]*align-self:\s*start;/s);
+  assert.match(plannerHtml, /#btnUndoTKB\s*\{[^}]*grid-column:\s*2;[^}]*align-self:\s*end;/s);
+  assert.match(plannerHtml, /#btnUndoTKB,[^}]*#btnRedoTKB\s*\{[^}]*height:\s*22px;[^}]*min-height:\s*22px;/s);
+  assert.match(
+    plannerHtml,
+    /\.toolbar-actions\s*>\s*#btnRangBuoc,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnUndoTKB,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnRedoTKB,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnAutoSort,\s*body\.planner-shell \.toolbar-actions\s*>\s*\.planner-optimize-wrap,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnStopAutoSort,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnDeleteAll\s*\{[^}]*order:\s*initial;/s,
+    "all direct toolbar items must neutralize legacy order rules"
+  );
+  assert.doesNotMatch(plannerHtml, /desktop-solve-controls/);
+  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*\.planner-optimize-wrap\s*\{[^}]*grid-column:\s*4;[^}]*grid-row:\s*1;/s);
+  assert.match(plannerHtml, /#btnDeleteAll\s*\{[^}]*grid-column:\s*5 !important;[^}]*grid-row:\s*1 !important;/s);
+  assert.match(plannerHtml, /#btnAgentHelper\s*\{[^}]*grid-column:\s*6;[^}]*grid-row:\s*1;[^}]*height:\s*44px;/s);
+  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*7;[^}]*grid-row:\s*1;/s);
+  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*8;[^}]*grid-row:\s*1;/s);
+  assert.match(plannerHtml, /\.toolbar-icon\s*\{[^}]*width:\s*19px;[^}]*height:\s*19px;[^}]*transition:\s*transform \.16s ease;/s);
+  assert.match(plannerHtml, /#btnAutoSort \.toolbar-icon\s*\{[^}]*width:\s*18px;[^}]*height:\s*18px;[^}]*transform:\s*translateX\(1px\);/s);
+  assert.match(plannerHtml, /\.toolbar-label-compact\s*\{[^}]*display:\s*none;/s);
+  assert.match(plannerHtml, /\.toolbar-label-full\s*\{[^}]*display:\s*none;/s);
+  assert.match(plannerHtml, /\.toolbar-label-compact\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;/s);
+  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*button:focus-visible,[^}]*outline:\s*2px solid #2563eb;[^}]*outline-offset:\s*1px;/s);
+  assert.match(plannerHtml, /#btnStopAutoSort\.is-active \+ #btnDeleteAll\s*\{[^}]*display:\s*none !important;/s);
+  assert.doesNotMatch(plannerHtml, /#btnHome\[hidden\]\s*\{[^}]*display:\s*none !important;/s);
+  assert.match(plannerHtml, /\.toolbar-main\s*\{[^}]*gap:\s*4px 2px;/s);
+  assert.equal(
+    (plannerHtml.match(/grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);/g) || []).length,
+    1,
+    "the mobile toolbar must use one inherited set of eight equal tracks"
+  );
+  assert.doesNotMatch(
+    plannerHtml,
+    /@media \(max-width:\s*(?:390|360)px\)[\s\S]*?body\.planner-shell \.toolbar-main\s*\{[^}]*grid-template-columns:/,
+    "narrow breakpoints must not reintroduce unequal toolbar tracks"
+  );
+  assert.match(
+    plannerHtml,
+    /@media \(max-width:\s*900px\) and \(hover:\s*none\) and \(pointer:\s*coarse\),\s*\(max-width:\s*480px\)/
+  );
+  assert.match(plannerHtml, /shared\/storage\.js\?v=20260802-max1-store-guard-v2/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260817-optimize-all-v2/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260816-fet-only-v1/);
+  assert.doesNotMatch(plannerHtml, /tkb-(?:browser|cpsat|highs)-wasm\.js/);
+});
+
+test("landscape phones keep nine full-height slots including Optimize", () => {
+  const start = plannerHtml.indexOf("@media (orientation: landscape) and (max-height: 540px) and (any-pointer: coarse)");
+  const end = plannerHtml.indexOf("@media (min-width: 481px)", start);
+  assert.ok(start >= 0 && end > start, "landscape toolbar override is missing");
+  const landscapeCss = plannerHtml.slice(start, end);
+
+  assert.match(landscapeCss, /\.toolbar-main\s*\{[^}]*grid-template-columns:\s*repeat\(9, minmax\(0, 1fr\)\);/s);
+  assert.match(landscapeCss, /#btnUndoTKB\s*\{[^}]*grid-column:\s*2;[^}]*align-self:\s*stretch;/s);
+  assert.match(landscapeCss, /#btnRedoTKB\s*\{[^}]*grid-column:\s*3;[^}]*align-self:\s*stretch;/s);
+  assert.match(landscapeCss, /#btnUndoTKB,[^}]*#btnRedoTKB\s*\{[^}]*height:\s*44px;[^}]*min-height:\s*44px;[^}]*border-radius:\s*var\(--tkb-radius, 10px\);/s);
+  assert.match(landscapeCss, /#btnAutoSort\s*\{[^}]*grid-column:\s*4;/s);
+  assert.match(landscapeCss, /\.toolbar-actions\s*>\s*\.planner-optimize-wrap\s*\{[^}]*grid-column:\s*5;/s);
+  assert.match(landscapeCss, /#btnStopAutoSort,[^}]*#btnDeleteAll\s*\{[^}]*grid-column:\s*6 !important;/s);
+  assert.match(landscapeCss, /#btnAgentHelper\s*\{[^}]*grid-column:\s*7;/s);
+  assert.match(landscapeCss, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*8;/s);
+  assert.match(landscapeCss, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*9;/s);
+});
+
+test.skip("Hybrid toolbar bootstrap disables retired client Agent lanes", () => {
+  const marker = "function initHybridToolbarState()";
+  const start = plannerHtml.lastIndexOf("<script>", plannerHtml.indexOf(marker));
+  const end = plannerHtml.indexOf("</script>", start);
+  assert.ok(start >= 0 && end > start, "the Hybrid toolbar bootstrap script is missing");
+  const source = plannerHtml.slice(start + "<script>".length, end);
+
+  function run({role, search, platform, userAgent}){
+    const documentElement = {dataset:{}};
+    const context = {
+      window:{
+        location:{search},
+        navigator:{platform, userAgent},
+        TKBAuth:{currentUser(){ return {user:{role}}; }},
+        addEventListener(){}
+      },
+      document:{documentElement},
+      URLSearchParams
+    };
+    vm.runInNewContext(source, context);
+    return {
+      lanesEnabled:context.window.__TKB_CLIENT_AGENT_LANES_ENABLED,
+      roleAllowed:context.window.__TKB_AGENT_ROLE_ALLOWED,
+      enabled:context.window.__TKB_WINDOWS_WEB_AGENT_TRIAL === true,
+      dataset:documentElement.dataset.windowsWebAgentTrial || ""
+    };
+  }
+
+  for(const role of ["superadmin", "school_admin", "school_user", "", null]){
+    const state = run({
+      role,
+      search:"?sid=default&webAgentTrial=mac",
+      platform:"Win32",
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    });
+    assert.deepEqual(
+      state,
+      {lanesEnabled:false, roleAllowed:true, enabled:false, dataset:""},
+      `${role || "missing"} must keep the browser executor disabled while Hybrid remains server-routed`
+    );
+  }
+});
+
+test.skip("Hybrid infrastructure control stays before Home after client lanes are retired", () => {
+  const secondaryStart = plannerHtml.indexOf('<div class="toolbar-secondary-actions"');
+  const secondaryEnd = plannerHtml.indexOf("\n  </div>\n\n</div>", secondaryStart);
+  const secondary = plannerHtml.slice(secondaryStart, secondaryEnd);
+  const homeIndex = secondary.indexOf('id="btnHome"');
+  const helperIndex = secondary.indexOf('id="btnAgentHelper"');
+  const statsIndex = secondary.indexOf('id="statsToggle"');
+  const helperButton = buttonMarkup(secondary, "btnAgentHelper");
+
+  assert.ok(helperIndex >= 0, "infrastructure control is missing");
+  assert.ok(homeIndex > helperIndex, "infrastructure control must precede Home");
+  assert.ok(statsIndex > homeIndex, "Statistics must follow Home");
+  assert.match(secondary, /id="btnAgentHelper"[\s\S]*?<\/button>\s*<button id="btnHome"[\s\S]*?>Home<\/button>/);
+  assert.match(helperButton, /class="agent-helper-button"[^>]*type="button"/);
+  assert.match(helperButton, /title="[^"]*Hybrid[^"]*"[^>]*aria-label="[^"]*Hybrid[^"]*"/);
+  assert.match(helperButton, /data-agent-state="off"/);
+  assert.match(helperButton, /onclick="toggleBrowserAgent\(\)"/);
+  assert.match(helperButton, /class="agent-status-dot"[^>]*aria-hidden="true"/);
+  assert.doesNotMatch(helperButton, /\sdisabled(?:\s|>)/);
+  assert.doesNotMatch(helperButton, /\shidden(?:\s|>)/);
+  assert.doesNotMatch(plannerHtml, /id="agentDashboard"|id="nativeAgentRequiredOverlay"|TKBCherryAgent/);
+  assert.doesNotMatch(plannerHtml, /tkb-(?:browser|cpsat|highs)-wasm\.js/);
+  assert.match(plannerHtml, /window\.__TKB_CLIENT_AGENT_LANES_ENABLED = false/);
+  assert.doesNotMatch(plannerHtml, /window\.__TKB_WINDOWS_WEB_AGENT_TRIAL\s*=\s*true/);
+});
+
+test.skip("retired client lanes stay fail-closed without status, protocol, download, or preflight", async () => {
+  const start = plannerSource.indexOf("function isAgentHelperSupportedDevice");
+  const end = plannerSource.indexOf("function setAutoSortHomeHidden", start);
+  assert.ok(start >= 0 && end > start, "Agent role-gate helpers are missing");
+  const source = plannerSource.slice(start, end);
+  let fetchCalls = 0;
+  const button = {
+    hidden:false,
+    disabled:false,
+    dataset:{},
+    classList:{toggle(){}},
+    querySelector(){ return null; },
+    attributes:{},
+    setAttribute(name, value){ this.attributes[name] = String(value); this[name] = String(value); },
+    removeAttribute(name){ delete this.attributes[name]; if(name !== "hidden" && name !== "disabled") delete this[name]; }
+  };
+  const navigator = {
+    platform:"Win32",
+    userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+  };
+  const window = {
+    __TKB_CLIENT_AGENT_LANES_ENABLED:false,
+    __TKB_AGENT_ROLE_GATE_ENFORCED:true,
+    __TKB_AGENT_ROLE_ALLOWED:true,
+    navigator,
+    TKBAuth:{currentUser(){ return {user:{role:"school_admin"}}; }},
+    fetch:async () => { fetchCalls += 1; throw new Error("retired lanes must not fetch local status"); },
+    addEventListener(){},
+    dispatchEvent(){}
+  };
+  window.window = window;
+  const document = {
+    hidden:false,
+    getElementById(id){
+      if(id === "btnAgentHelper") return button;
+      return null;
+    },
+    addEventListener(){}
+  };
+  const context = {window, document, navigator, _setStatus(){}};
+  vm.runInNewContext(
+    `${source}\nthis.visible = isAgentHelperVisibleForCurrentUser; this.sync = syncAgentHelperVisibility; this.nativeDevice = isWindowsNativeAgentDevice; this.nativeStatus = nativeAgentStatusSnapshot; this.nativePolicy = nativeAgentSortPolicy; this.toggle = toggleBrowserAgent; this.invite = maybeInviteAgentBeforeSort;`,
+    context
+  );
+
+  assert.equal(context.visible(), false);
+  assert.equal(context.sync(), true);
+  assert.equal(button.hidden, false);
+  assert.equal(button["aria-hidden"], "false");
+  assert.equal(button.disabled, false);
+  assert.equal(context.nativeDevice(navigator), false);
+  assert.equal(context.nativeStatus().error, "client_agent_retired");
+  assert.equal(context.nativePolicy().mode, "server");
+  assert.equal(await context.toggle(), true);
+  assert.equal(await context.toggle(), false);
+  assert.equal(await context.invite({nativeRequired:true, requestDownload:true}), true);
+  assert.equal(fetchCalls, 0);
+  assert.doesNotMatch(source, /TKBBrowserWasmExecutor|agent-helper\/v1|tkbcherry-agent:|TKBCherryAgent-Windows/);
+});
+
+test.skip("the cross-platform superadmin icon is an authenticated server route toggle", async () => {
+  const start = plannerSource.indexOf("function isAgentHelperSupportedDevice");
+  const end = plannerSource.indexOf("function setAutoSortHomeHidden", start);
+  assert.ok(start >= 0 && end > start, "server route toggle helpers are missing");
+  const source = plannerSource.slice(start, end);
+  const button = {
+    hidden:true,
+    disabled:true,
+    dataset:{},
+    title:"",
+    attributes:{},
+    classList:{remove(){}, toggle(){}},
+    querySelector(){ return null; },
+    setAttribute(name, value){ this.attributes[name] = String(value); },
+    removeAttribute(name){ delete this.attributes[name]; }
+  };
+  const routeButton = {
+    hidden:true,
+    disabled:true,
+    dataset:{},
+    title:"",
+    attributes:{},
+    setAttribute(name, value){ this.attributes[name] = String(value); },
+    removeAttribute(name){ delete this.attributes[name]; }
+  };
+  let role = "superadmin";
+  let serverConfig = {
+    mode:"auto",
+    fallback:"vps",
+    budgetUsd:300,
+    estimatedCostUsd:0.06,
+    activeProfileId:"cloud-run-primary",
+    profiles:[{
+      id:"cloud-run-primary",
+      url:"https://solver.example.run.app",
+      solverDigest:"a".repeat(64),
+      enabled:true,
+      priority:1
+    }]
+  };
+  const requests = [];
+  const statuses = [];
+  const window = {
+    __TKB_CLIENT_AGENT_LANES_ENABLED:false,
+    TKBAuth:{currentUser(){ return {user:{role}}; }},
+    TKBAuthApi:{
+      getAuthHeaders(extra){
+        return Object.assign({Accept:"application/json", Authorization:"Bearer test-session"}, extra || {});
+      }
+    },
+    async fetch(url, options){
+      requests.push({url, options:Object.assign({}, options)});
+      if(options?.method === "PATCH") serverConfig = JSON.parse(options.body);
+      return {
+        ok:true,
+        status:200,
+        async json(){
+          return {
+            ok:true,
+            config:JSON.parse(JSON.stringify(serverConfig)),
+            selectedProfileId:"cloud-run-primary",
+            effectiveMode:serverConfig.mode
+          };
+        }
+      };
+    },
+    dispatchEvent(){},
+    addEventListener(){}
+  };
+  window.window = window;
+  const context = {
+    window,
+    navigator:{platform:"iPhone", userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)"},
+    document:{
+      hidden:false,
+      getElementById(id){
+        if(id === "btnAgentHelper") return button;
+        if(id === "btnSolverInfrastructureRoute") return routeButton;
+        return null;
+      },
+      addEventListener(){}
+    },
+    _setStatus(message, kind){ statuses.push([message, kind]); }
+  };
+  vm.runInNewContext(
+    `${source}\nthis.routeAllowed = plannerServerRouteToggleAllowed; this.visible = isAgentHelperVisibleForCurrentUser; this.sync = syncAgentHelperVisibility; this.renderRoute = renderSolverInfrastructureRouteToggle; this.refresh = refreshSolverInfrastructureRouteToggle; this.toggle = toggleSolverInfrastructureRoute;`,
+    context
+  );
+
+  assert.equal(context.routeAllowed(), true);
+  assert.equal(context.visible(), true);
+  assert.equal(context.sync(), true, "the icon must also be visible on iPhone");
+  assert.equal(button.hidden, false);
+
+  await context.refresh(true);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, "/api/admin/solver-infrastructure");
+  assert.equal(requests[0].options.method, "GET");
+  assert.equal(requests[0].options.headers.Authorization, "Bearer test-session");
+  assert.equal(routeButton.dataset.agentState, "enabled");
+  assert.equal(routeButton.dataset.solverRouteMode, "auto");
+  assert.equal(routeButton.attributes["aria-pressed"], "true");
+  assert.match(routeButton.title, /Cloud Run .* VPS d\u1ef1 ph\u00f2ng/);
+
+  assert.equal(await context.toggle(), false, "Cloud/Auto switches off to VPS-only");
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].options.method, "PATCH");
+  assert.equal(requests[1].options.headers.Authorization, "Bearer test-session");
+  assert.equal(requests[1].options.headers["Content-Type"], "application/json");
+  const vpsBody = JSON.parse(requests[1].options.body);
+  assert.equal(vpsBody.mode, "vps_only");
+  assert.equal(vpsBody.fallback, "vps");
+  assert.equal(vpsBody.activeProfileId, "cloud-run-primary");
+  assert.equal(vpsBody.profiles.length, 1, "the PATCH must preserve the active Cloud Run profile");
+  assert.equal(routeButton.dataset.agentState, "fallback");
+  assert.equal(routeButton.attributes["aria-pressed"], "false");
+
+  assert.equal(await context.toggle(), true, "VPS-only switches on to Cloud Run with VPS fallback");
+  const cloudBody = JSON.parse(requests[2].options.body);
+  assert.equal(cloudBody.mode, "auto");
+  assert.equal(cloudBody.fallback, "vps");
+  assert.equal(cloudBody.activeProfileId, "cloud-run-primary");
+  assert.equal(routeButton.dataset.agentState, "enabled");
+  assert.equal(routeButton.attributes["aria-pressed"], "true");
+  assert.deepEqual(statuses.at(-1), ["\u0110\u00e3 b\u1eadt Serverless: c\u00e1c l\u01b0\u1ee3t x\u1ebfp m\u1edbi s\u1ebd d\u00f9ng Cloud Run, n\u1ebfu l\u1ed7i s\u1ebd t\u1ef1 chuy\u1ec3n VPS.", "ok"]);
+
+  role = "school_admin";
+  assert.equal(context.routeAllowed(), false);
+  assert.equal(context.renderRoute(), false);
+  assert.equal(routeButton.hidden, true, "every non-superadmin role must lose the server route icon");
+});
+
+test("planner exposes no Hybrid or Cloud Run control", () => {
+  assert.doesNotMatch(plannerHtml, /id="btnAgentHelper"|id="btnSolverInfrastructureRoute"|toggleBrowserAgent/);
+  assert.doesNotMatch(plannerHtml, /Hybrid|Cloud Run|Tối ưu sâu/);
+  assert.doesNotMatch(plannerSource, /Deep Optimize có thể chạy Cloud Run/);
+  assert.doesNotMatch(plannerSource, /Tối ưu cục bộ/);
+  assert.match(plannerSource, /Chưa thể xếp đủ lịch với các yêu cầu hiện tại/);
+  assert.match(plannerSource, /function plannerServerRouteToggleAllowed\(\)\{\s*return false;/);
+});
+
+test("toolbar status messages hide after five seconds", () => {
+  const statusStart = plannerSource.indexOf("function fitPlannerMobileStatusMessage");
+  const statusEnd = plannerSource.indexOf("function _autoSortProgressYield", statusStart);
+  assert.ok(statusStart >= 0 && statusEnd > statusStart, "status helper is missing");
+  const element = {
+    textContent:"",
+    style:{display:"", color:""},
+    classList:{remove(name){ this.removed = String(name); }}
+  };
+  let callback = null;
+  let delay = 0;
+  const cleared = [];
+  const context = {
+    document:{getElementById(id){ return id === "statusMsg" ? element : null; }},
+    window:{
+      __TKB_STATUS_HIDE_TIMER:0,
+      clearTimeout(id){ cleared.push(id); },
+      setTimeout(next, milliseconds){ callback = next; delay = milliseconds; return 41; }
+    }
+  };
+  vm.runInNewContext(
+    `${plannerSource.slice(statusStart, statusEnd)}\nthis.setPlannerStatus = _setStatus;`,
+    context
+  );
+  context.setPlannerStatus("Đã lưu dữ liệu.", "ok");
+  assert.equal(element.textContent, "Đã lưu dữ liệu.");
+  assert.equal(element.style.display, "inline-block");
+  assert.equal(delay, 5000);
+  assert.equal(context.window.__TKB_STATUS_HIDE_TIMER, 41);
+  assert.equal(typeof callback, "function");
+  callback();
+  assert.equal(element.textContent, "");
+  assert.equal(element.style.display, "none");
+  assert.equal(element.classList.removed, "is-auto-sort-running-label");
+  assert.equal(context.window.__TKB_STATUS_HIDE_TIMER, 0);
+  assert.deepEqual(cleared, [0]);
+
+  callback = null;
+  delay = 0;
+  context.setPlannerStatus("Đã xếp xong!", "ok");
+  assert.equal(element.textContent, "Đã xếp xong!");
+  assert.equal(element.style.display, "inline-block");
+  assert.equal(callback, null, "the final success notice must not receive a hide timer");
+  assert.equal(delay, 0);
+  assert.equal(context.window.__TKB_STATUS_HIDE_TIMER, 0);
+});
+
+test("mobile status text keeps a readable size and wraps instead of scaling", () => {
+  const fitStart = plannerSource.indexOf("function fitPlannerMobileStatusMessage");
+  const fitEnd = plannerSource.indexOf("\ntry{", fitStart);
+  assert.ok(fitStart >= 0 && fitEnd > fitStart, "mobile status fitting helper is missing");
+  const style = {display:"inline-block", fontSize:"", transform:"", transformOrigin:"", letterSpacing:""};
+  const element = {
+    textContent:"A deliberately long mobile scheduler status message that must remain complete",
+    style,
+    title:""
+  };
+  const context = {
+    window:{
+      innerWidth:440,
+      innerHeight:956,
+      matchMedia(query){ return {matches:query.includes("pointer: coarse")}; }
+    }
+  };
+  vm.runInNewContext(
+    `${plannerSource.slice(fitStart, fitEnd)}\nthis.fitStatus = fitPlannerMobileStatusMessage;`,
+    context
+  );
+
+  assert.equal(context.fitStatus(element), true);
+  assert.equal(style.fontSize, "");
+  assert.equal(style.transform, "");
+  assert.equal(style.transformOrigin, "");
+  assert.equal(style.letterSpacing, "0");
+  assert.equal(element.title, element.textContent);
+});
+
+test("mobile support timetable wraps long class and subject labels at readable boundaries", () => {
+  assert.match(plannerHtml, /\.tkb-support-table td\s*\{[^}]*padding-inline:\s*2px;/s);
+  assert.match(
+    plannerHtml,
+    /\.tkb-support-table \.tkb-gv-cell,\s*body\.planner-shell \.tkb-support-table \.tkb-cell-line\s*\{[^}]*font-size:\s*clamp\(9px, 2\.6vw, 10px\);[^}]*line-height:\s*1\.05;[^}]*white-space:\s*normal;[^}]*word-break:\s*normal;[^}]*overflow-wrap:\s*normal;/s
+  );
+});
+
+test("mobile timetable cells stack the requested labels without a dash", () => {
+  const helperStart = plannerSource.indexOf("function mobileStackCellLineHTML");
+  const helperEnd = plannerSource.indexOf("function getTeacherListForCurrentFilter", helperStart);
+  const helperSource = plannerSource.slice(helperStart, helperEnd);
+  assert.ok(helperStart >= 0 && helperEnd > helperStart, "mobile cell-line helper is missing");
+  assert.match(helperSource, /tkb-cell-primary/);
+  assert.match(helperSource, /tkb-cell-separator/);
+  assert.match(helperSource, /tkb-cell-secondary/);
+  assert.match(
+    plannerSource,
+    /function cellHTML\([\s\S]*?mobileStackCellLineHTML\(monShort, teacherShort, "tkb-class-line tkb-lesson-line"\)/
+  );
+  assert.equal(
+    (plannerSource.match(/mobileStackCellLineHTML\(e\.classDisplay, monShort, "tkb-class-line tkb-class-subject-line"\)/g) || []).length,
+    2,
+    "both teacher timetable renderers must put class above abbreviated subject"
+  );
+  assert.equal(
+    (plannerSource.match(/tkb-teacher-line tkb-room-line/g) || []).length,
+    2,
+    "teacher timetable room lines must be marked so mobile can hide them"
+  );
+  assert.match(
+    plannerHtml,
+    /\.tkb-mobile-stack-line\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;[^}]*text-align:\s*center;/s
+  );
+  assert.match(
+    plannerHtml,
+    /\.tkb-mobile-stack-line\s*>\s*\.tkb-cell-separator,[^}]*\.tkb-support-table \.tkb-room-line\s*\{[^}]*display:\s*none;/s
+  );
+});
+
+test("mobile Play matches the other controls and centers its white glyph", () => {
+  const mobileStart = plannerHtml.indexOf("@media (max-width: 900px) and (hover: none) and (pointer: coarse)");
+  const mobileEnd = plannerHtml.indexOf("@media (min-width: 481px)", mobileStart);
+  const mobileCss = plannerHtml.slice(mobileStart, mobileEnd);
+
+  assert.ok(mobileStart >= 0 && mobileEnd > mobileStart, "mobile toolbar media query is missing");
+  assert.match(
+    mobileCss,
+    /#btnAutoSort\s*\{[^}]*grid-column:\s*3;[^}]*grid-row:\s*1;/s
+  );
+  assert.match(
+    mobileCss,
+    /\.toolbar-actions\s*>\s*button\.icon-button\s*\{[^}]*flex:\s*0 1 auto;[^}]*width:\s*100%;[^}]*min-width:\s*0;[^}]*max-width:\s*none;[^}]*height:\s*44px;[^}]*min-height:\s*44px;[^}]*padding:\s*0;/s
+  );
+  assert.match(mobileCss, /#btnAutoSort\s*\{[^}]*padding:\s*0 !important;/s);
+  assert.match(
+    mobileCss,
+    /#btnAutoSort \.toolbar-icon\s*\{[^}]*margin:\s*0;[^}]*transform:\s*translateX\(1px\);/s
+  );
+  assert.match(
+    mobileCss,
+    /#btnAutoSort:hover:not\(:disabled\) \.toolbar-icon\s*\{[^}]*transform:\s*translateX\(1px\) scale\(1\.06\);/s
+  );
+  assert.equal(
+    (mobileCss.match(/grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);/g) || []).length,
+    1
+  );
+  assert.doesNotMatch(mobileCss, /#btnAutoSort\s*\{[^}]*(?:border-radius:\s*50%|aspect-ratio|width:\s*min\(42px)/s);
+});
+
+test("Undo, Redo, and Play reuse one SVG glyph across desktop and mobile", () => {
+  for(const id of ["btnUndoTKB", "btnRedoTKB", "btnAutoSort"]){
+    const button = buttonMarkup(plannerHtml, id);
+    assert.ok(button, `${id} is missing`);
+    assert.equal(
+      (button.match(/<svg\b/g) || []).length,
+      1,
+      `${id} must have one shared inline SVG instead of breakpoint-specific glyphs`
+    );
+  }
+
+  const mobileStart = plannerHtml.indexOf("@media (max-width: 900px) and (hover: none) and (pointer: coarse)");
+  const mobileEnd = plannerHtml.indexOf("@media (min-width: 481px)", mobileStart);
+  const mobileCss = plannerHtml.slice(mobileStart, mobileEnd);
+  assert.doesNotMatch(
+    mobileCss,
+    /#(?:btnUndoTKB|btnRedoTKB|btnAutoSort)(?::before|::before|:after|::after)\s*\{[^}]*content:/s
+  );
+});
+
+test("Stop state changes preserve the inline stop-circle and square markup", () => {
+  const stopStateStart = plannerSource.indexOf("function setAutoSortStopVisible");
+  const stopStateEnd = plannerSource.indexOf("function finishAutoSortProgress", stopStateStart);
+  const stopStateSource = plannerSource.slice(stopStateStart, stopStateEnd);
+
+  assert.ok(stopStateStart >= 0 && stopStateEnd > stopStateStart, "Stop state helpers are missing");
+  assert.doesNotMatch(stopStateSource, /\bbtn\.(?:textContent|innerHTML|outerHTML)\s*=/);
+  assert.doesNotMatch(stopStateSource, /\bbtn\.replaceChildren\s*\(/);
+});
+
+test("mobile progress keeps its row reserved but hides idle content", () => {
+  const idleStart = plannerSource.indexOf("function hideAutoSortProgress");
+  const progressStart = plannerSource.indexOf("function setAutoSortProgress", idleStart);
+  const finishStart = plannerSource.indexOf("function finishAutoSortProgress", progressStart);
+  const finishEnd = plannerSource.indexOf("function invalidateSolverStateAfterScheduleDelete", finishStart);
+  const idleSource = plannerSource.slice(idleStart, progressStart);
+  const finishSource = plannerSource.slice(finishStart, finishEnd);
+
+  assert.ok(idleStart >= 0 && progressStart > idleStart && finishStart > progressStart && finishEnd > finishStart);
+  assert.match(idleSource, /classList\.add\("is-idle"\)/);
+  assert.match(idleSource, /wrap\.hidden\s*=\s*true/);
+  assert.match(idleSource, /setAttribute\("aria-hidden",\s*"true"\)/);
+  assert.match(idleSource, /timerVal\.textContent\s*=\s*"00:00"/);
+  assert.match(idleSource, /metric\.textContent\s*=\s*""/);
+  assert.match(idleSource, /metric\.hidden\s*=\s*true/);
+  assert.doesNotMatch(finishSource, /setTimeout\s*\(/);
+  assert.match(finishSource, /hideAutoSortProgress\(\)/);
+  assert.doesNotMatch(finishSource, /setAutoSortProgress\(100,\s*"Hoàn tất"\)/);
+});
+
+test("progress UI exposes Stop while active and bridge disables it during best-effort stop", () => {
+  const progressStart = plannerSource.indexOf("function setAutoSortProgress");
+  const progressEnd = plannerSource.indexOf("\nfunction ", progressStart + 10);
+  const body = plannerSource.slice(progressStart, progressEnd);
+  assert.match(body, /setAutoSortStopVisible\(true\)/);
+  assert.match(body, /const bestEffortStopPending = window\.__TKB_RUST_PROGRESS_STATE\?\.bestEffortStopPending === true/);
+  assert.match(body, /if\(btn && !window\.__AUTO_SORT_STOP_REQUESTED && !bestEffortStopPending && n < 100\)/);
+  assert.match(body, /else if\(btn && bestEffortStopPending\)[\s\S]*?btn\.disabled = true/);
+
+  const stopStart = bridgeSource.indexOf("function setBestEffortStopPending");
+  const stopEnd = bridgeSource.indexOf("async function requestStopActiveSolve", stopStart);
+  assert.ok(stopStart >= 0 && stopEnd > stopStart, "bridge best-effort stop helper is missing");
+  const stopBody = bridgeSource.slice(stopStart, stopEnd);
+  assert.match(stopBody, /progressState\.bestEffortStopPending\s*=\s*pending === true/);
+  assert.match(stopBody, /stopButton\.disabled\s*=\s*pending === true/);
+});
+
+test("mobile viewport follows iOS visualViewport through orientation changes", () => {
+  const syncStart = plannerSource.indexOf("function syncPlannerMobileViewportHeight");
+  const syncEnd = plannerSource.indexOf("/* =======================", syncStart);
+  const syncSource = plannerSource.slice(syncStart, syncEnd);
+
+  assert.ok(syncStart >= 0 && syncEnd > syncStart, "mobile viewport synchronization is missing");
+  assert.match(syncSource, /window\.visualViewport\?\.height/);
+  assert.match(syncSource, /Math\.max\(visualHeight, innerHeight, layoutHeight\)/);
+  assert.match(syncSource, /standaloneMobileScreenHeight\(measuredHeight\)/);
+  assert.match(syncSource, /--tkb-mobile-viewport-h/);
+  assert.match(syncSource, /orientationchange/);
+  assert.match(syncSource, /\[120, 360, 900\]/);
+  assert.match(plannerHtml, /height:\s*var\(--tkb-mobile-viewport-h, 100dvh\)/);
+});
+
+test("mobile viewport does not double-subtract iPhone standalone safe areas", () => {
+  const syncStart = plannerSource.indexOf("(function installPlannerMobileViewportSync");
+  const syncEnd = plannerSource.indexOf("/* =======================", syncStart);
+  const values = new Map();
+  const context = {
+    document: {
+      documentElement: {
+        clientHeight: 956,
+        style: {setProperty: (name, value) => values.set(name, value)}
+      }
+    },
+    window: {
+      innerHeight: 956,
+      visualViewport: {height: 862, addEventListener(){}},
+      requestAnimationFrame(callback){ callback(); return 1; },
+      cancelAnimationFrame(){},
+      addEventListener(){},
+      setTimeout(){},
+      screen: {orientation: {addEventListener(){}}}
+    }
+  };
+
+  vm.runInNewContext(plannerSource.slice(syncStart, syncEnd), context);
+  assert.equal(values.get("--tkb-mobile-viewport-h"), "956px");
+
+  context.window.innerHeight = 440;
+  context.window.visualViewport.height = 393;
+  context.document.documentElement.clientHeight = 440;
+  context.window.syncPlannerMobileViewportHeight();
+  assert.equal(values.get("--tkb-mobile-viewport-h"), "440px");
+});
+
+test("standalone mobile uses the oriented screen height while browser tabs keep the dynamic viewport", () => {
+  const syncStart = plannerSource.indexOf("(function installPlannerMobileViewportSync");
+  const syncEnd = plannerSource.indexOf("/* =======================", syncStart);
+
+  function measuredHeightFor({
+    innerHeight,
+    innerWidth,
+    visualHeight,
+    layoutHeight,
+    screenWidth,
+    screenHeight,
+    standalone,
+    displayModeStandalone,
+    portrait,
+    maxTouchPoints
+  }){
+    const values = new Map();
+    const context = {
+      document:{
+        documentElement:{
+          clientHeight:layoutHeight,
+          style:{setProperty:(name, value) => values.set(name, value)}
+        }
+      },
+      window:{
+        innerHeight,
+        innerWidth,
+        navigator:{standalone, maxTouchPoints},
+        screen:{
+          width:screenWidth,
+          height:screenHeight,
+          orientation:{addEventListener(){}}
+        },
+        visualViewport:{height:visualHeight, addEventListener(){}},
+        matchMedia(query){
+          return {
+            matches:query.includes("display-mode") ? displayModeStandalone : portrait
+          };
+        },
+        requestAnimationFrame(callback){ callback(); return 1; },
+        cancelAnimationFrame(){},
+        addEventListener(){},
+        setTimeout(){}
+      }
+    };
+    vm.runInNewContext(plannerSource.slice(syncStart, syncEnd), context);
+    return values.get("--tkb-mobile-viewport-h");
+  }
+
+  assert.equal(measuredHeightFor({
+    innerHeight:862,
+    innerWidth:440,
+    visualHeight:862,
+    layoutHeight:862,
+    screenWidth:440,
+    screenHeight:956,
+    standalone:true,
+    displayModeStandalone:true,
+    portrait:true,
+    maxTouchPoints:5
+  }), "956px");
+  assert.equal(measuredHeightFor({
+    innerHeight:393,
+    innerWidth:956,
+    visualHeight:393,
+    layoutHeight:393,
+    screenWidth:440,
+    screenHeight:956,
+    standalone:true,
+    displayModeStandalone:true,
+    portrait:false,
+    maxTouchPoints:5
+  }), "440px");
+  assert.equal(measuredHeightFor({
+    innerHeight:780,
+    innerWidth:412,
+    visualHeight:720,
+    layoutHeight:780,
+    screenWidth:412,
+    screenHeight:915,
+    standalone:false,
+    displayModeStandalone:false,
+    portrait:true,
+    maxTouchPoints:5
+  }), "780px");
+  assert.equal(measuredHeightFor({
+    innerHeight:840,
+    innerWidth:412,
+    visualHeight:840,
+    layoutHeight:840,
+    screenWidth:412,
+    screenHeight:915,
+    standalone:false,
+    displayModeStandalone:true,
+    portrait:true,
+    maxTouchPoints:5
+  }), "915px");
+});
+
+test("paired class and teacher headers retain assigned totals for desktop", () => {
+  const classStatsStart = plannerSource.indexOf("function pvClassStatsHTML");
+  const teacherStatsStart = plannerSource.indexOf("function pvTeacherStatsHTML");
+  const statsEnd = plannerSource.indexOf("function pvSetPairStack", teacherStatsStart);
+  const classStatsSource = plannerSource.slice(classStatsStart, teacherStatsStart);
+  const teacherStatsSource = plannerSource.slice(teacherStatsStart, statsEnd);
+
+  assert.ok(classStatsStart >= 0 && teacherStatsStart > classStatsStart && statsEnd > teacherStatsStart);
+  assert.match(classStatsSource, /Đã xếp:<b>/);
+  assert.match(classStatsSource, /Chưa phân:<b>/);
+  assert.match(teacherStatsSource, /Đã xếp:<b>/);
+  assert.match(teacherStatsSource, /Chưa phân:<b>/);
+  assert.match(
+    teacherStatsSource,
+    /return `<div class="tkb-pair-class-stats tkb-pair-teacher-stats">`\+[\s\S]*?Đã xếp:<b>[\s\S]*?Chưa phân:<b>[\s\S]*?offAssignedHTML\+/
+  );
+  assert.match(
+    plannerHtml,
+    /#tkb\.tkb-pair-stack \.tkb-pair-class-stats\s*\{[^}]*display:\s*none !important;/s
+  );
+});
+
+test("portrait phones fit the complete class and teacher timetable panes", () => {
+  const portraitStart = plannerHtml.indexOf("@media (max-width: 480px) and (orientation: portrait)");
+  const portraitCss = plannerHtml.slice(portraitStart, plannerHtml.indexOf("</style>", portraitStart));
+
+  assert.ok(portraitStart >= 0, "portrait timetable breakpoint is missing");
+  assert.match(portraitCss, /--tkb-pair-toolbar-h:\s*28px/);
+  assert.match(portraitCss, /--tkb-pair-head-h:\s*20px/);
+  assert.match(portraitCss, /--tkb-pair-row-h:\s*clamp\(21px, calc\(\(var\(--tkb-mobile-viewport-h, 100dvh\) - 198px\) \/ 22\), 32px\)/);
+  assert.match(portraitCss, /grid-template-rows:\s*repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(portraitCss, /\.tkb-pair-body\s*\{[^}]*min-width:\s*0;[^}]*overflow:\s*hidden;/s);
+  assert.match(portraitCss, /\.tkb-pair-toolbar\s*\{[^}]*grid-template-rows:\s*26px;/s);
+  assert.match(portraitCss, /\.table\s*\{[^}]*width:\s*100% !important;[^}]*min-width:\s*0 !important;[^}]*height:\s*100% !important;[^}]*table-layout:\s*fixed !important;/s);
+  assert.match(portraitCss, /\.table th,\s*body\.planner-shell #tkb\.tkb-pair-stack \.table td\s*\{[^}]*width:\s*auto !important;[^}]*padding:\s*0 1px !important;/s);
+  assert.match(portraitCss, /\.table td\s*\{[^}]*height:\s*var\(--tkb-pair-row-h\);[^}]*font-size:\s*clamp\(8px, 2\.35vw, 9\.5px\);/s);
+  assert.match(plannerSource, /function pvTeacherTableHTML[\s\S]*?<table class='table tkb-support-table'>[\s\S]*?DAYS\.forEach/);
+});
+
+test("landscape phones show a full session in both panes and scroll the remainder", () => {
+  const landscapeStart = plannerHtml.indexOf("@media (orientation: landscape) and (max-height: 540px)");
+  const landscapeCss = plannerHtml.slice(landscapeStart, plannerHtml.indexOf("</style>", landscapeStart));
+
+  assert.ok(landscapeStart >= 0, "phone landscape breakpoint is missing");
+  assert.match(landscapeCss, /body\.planner-shell\s*\{[^}]*--planner-mobile-feedback-h:\s*34px;/s);
+  assert.match(landscapeCss, /\.toolbar-main\s*\{[^}]*grid-template-rows:\s*44px var\(--planner-mobile-feedback-h\);[^}]*row-gap:\s*2px;/s);
+  assert.match(
+    landscapeCss,
+    /\.toolbar-feedback\s*\{[^}]*display:\s*grid;[^}]*grid-template-rows:\s*var\(--planner-mobile-feedback-h\);[^}]*height:\s*var\(--planner-mobile-feedback-h\);[^}]*min-height:\s*var\(--planner-mobile-feedback-h\);[^}]*max-height:\s*var\(--planner-mobile-feedback-h\);/s
+  );
+  assert.match(landscapeCss, /\.toolbar-feedback \.auto-sort-track\s*\{[^}]*width:\s*18px;[^}]*height:\s*18px;[^}]*flex-basis:\s*18px;/s);
+  assert.match(
+    landscapeCss,
+    /#tkb\.tkb-pair-lop-gv\s*\{[^}]*--tkb-pair-head-h:\s*18px;[^}]*--tkb-pair-row-h:\s*clamp\(20px, calc\(\(var\(--tkb-mobile-viewport-h, 100dvh\) - 160px\) \/ 10\), 28px\);[^}]*display:\s*grid;[^}]*grid-template-rows:\s*repeat\(2, minmax\(0, 1fr\)\);[^}]*height:\s*100%;[^}]*overflow:\s*hidden;/s
+  );
+  assert.match(
+    landscapeCss,
+    /\.tkb-pair-body\s*\{[^}]*overflow-x:\s*hidden;[^}]*overflow-y:\s*auto;[^}]*overscroll-behavior:\s*contain;[^}]*touch-action:\s*pan-y;[^}]*-webkit-overflow-scrolling:\s*touch;/s
+  );
+  assert.match(landscapeCss, /\.table\s*\{[^}]*height:\s*auto !important;[^}]*table-layout:\s*fixed !important;/s);
+  assert.match(landscapeCss, /\.table th\s*\{[^}]*position:\s*sticky;[^}]*top:\s*0;[^}]*z-index:\s*3;/s);
+  assert.match(landscapeCss, /\.tkb-pair-summary\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*nowrap;/s);
+  assert.doesNotMatch(landscapeCss, /\.tkb-pair-class-stats\s*\{[^}]*display:\s*flex;/s);
+  assert.match(
+    landscapeCss,
+    /@media \(orientation:\s*landscape\) and \(max-height:\s*370px\)[^{]*\{[\s\S]*?\.table td\s*\{[^}]*font-size:\s*9px;[^}]*line-height:\s*1;/s
+  );
+  assert.doesNotMatch(landscapeCss, /data-landscape-pane|tkb-landscape-pane-switch/);
+
+  // At the shortest supported landscape viewport, each half still fits the
+  // weekday header plus five periods before its independent vertical scroll.
+  const shortestLandscapeHeight = 360;
+  const compactToolbarHeight = 70;
+  const centerPaddingAndPaneGap = 3;
+  const paneToolbarHeight = 25;
+  const paneBodyHeight = (
+    shortestLandscapeHeight - compactToolbarHeight - centerPaddingAndPaneGap
+  ) / 2 - paneToolbarHeight;
+  assert.ok(paneBodyHeight >= 18 + (5 * 20));
+});
+
+test.skip("sorting keeps Home and the superadmin route indicator in stable slots", () => {
+  const homeControl = plannerSource.slice(
+    plannerSource.indexOf("function setAutoSortHomeHidden"),
+    plannerSource.indexOf("function setAutoSortBusyControls")
+  );
+  const busyControls = plannerSource.slice(
+    plannerSource.indexOf("function setAutoSortBusyControls"),
+    plannerSource.indexOf("function setAutoSortStopVisible")
+  );
+
+  assert.match(homeControl, /btn\.hidden\s*=\s*false/);
+  assert.match(homeControl, /setAutoSortControlLocked\(btn,\s*false\)/);
+  assert.doesNotMatch(homeControl, /btn\.hidden\s*=\s*!!hidden/);
+  assert.match(homeControl, /getElementById\("btnAgentHelper"\)/);
+  assert.match(homeControl, /const agentVisible\s*=\s*syncAgentHelperVisibility\(\)/);
+  assert.match(homeControl, /agentBtn\.hidden\s*=\s*!agentVisible/);
+  assert.match(homeControl, /agentBtn\.setAttribute\("aria-hidden",\s*agentVisible \? "false" : "true"\)/);
+  assert.match(homeControl, /setAutoSortControlLocked\(agentBtn,\s*shouldLock\)/);
+  assert.doesNotMatch(plannerHtml, /#btnHome\.is-auto-sort-disabled/);
+  assert.match(
+    plannerHtml,
+    /#btnAgentHelper\.is-auto-sort-disabled\s*\{[^}]*opacity:\s*1;[^}]*filter:\s*none;[^}]*pointer-events:\s*none;/s
+  );
+  assert.match(
+    plannerHtml,
+    /#btnAgentHelper\.is-auto-sort-disabled \.agent-ai-icon,[\s\S]*?#btnAgentHelper\.is-auto-sort-disabled \.agent-button-label\s*\{[^}]*opacity:\s*\.45;/s
+  );
+  assert.match(
+    plannerHtml,
+    /#btnAgentHelper\.is-auto-sort-disabled \.agent-status-dot\s*\{[^}]*opacity:\s*1;[^}]*filter:\s*none;/s
+  );
+  assert.match(
+    plannerHtml,
+    /#btnOptimizeMenu\.is-auto-sort-disabled\s*\{[^}]*opacity:\s*\.45;[^}]*pointer-events:\s*none;/s
+  );
+  assert.match(busyControls, /getElementById\("btnUndoTKB"\)/);
+  assert.match(busyControls, /getElementById\("btnRedoTKB"\)/);
+  assert.doesNotMatch(busyControls, /getElementById\("btnQuickComplete"\)/);
+  assert.match(busyControls, /getElementById\("btnOptimizeMenu"\)/);
+  assert.match(busyControls, /plannerOptimizeMenu/);
+  assert.doesNotMatch(busyControls, /getElementById\("btnStopAutoSort"\)/);
+  assert.match(busyControls, /getElementById\("solveDurationSeconds"\)/);
+  assert.match(busyControls, /setAutoSortControlLocked\(el,\s*shouldLock\)/);
+
+  function makeControl(disabled = false){
+    const attributes = new Map();
+    const classes = new Set();
+    return {
+      hidden:false,
+      disabled,
+      dataset:{},
+      classList:{
+        add(name){ classes.add(String(name)); },
+        remove(name){ classes.delete(String(name)); },
+        toggle(name, force){
+          const key = String(name);
+          const enabled = force == null ? !classes.has(key) : !!force;
+          if(enabled) classes.add(key); else classes.delete(key);
+          return enabled;
+        },
+        contains(name){ return classes.has(String(name)); }
+      },
+      querySelector(){ return null; },
+      setAttribute(name, value){ attributes.set(String(name), String(value)); },
+      removeAttribute(name){ attributes.delete(String(name)); },
+      getAttribute(name){ return attributes.get(String(name)) ?? null; }
+    };
+  }
+
+  const controls = {
+    btnHome:makeControl(false),
+    btnAgentHelper:makeControl(false),
+    btnOptimizeMenu:makeControl(false),
+    plannerOptimizeMenu:makeControl(false),
+    btnUndoTKB:makeControl(false),
+    btnRedoTKB:makeControl(true),
+    btnDeleteAll:makeControl(false),
+    btnRangBuoc:makeControl(false),
+    solveDurationSeconds:makeControl(false)
+  };
+  let historyRefreshes = 0;
+  const context = {
+    navigator:{platform:"Win32", userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+    window:{
+      __TKB_CLIENT_AGENT_LANES_ENABLED:false,
+      __TKB_RUST_SOLVER_RUNNING:false,
+      __TKB_SOLVE_UI_BUSY:false,
+      TKBAuth:{
+        currentUser(){ return {user:{role:"superadmin"}}; }
+      }
+    },
+    document:{
+      getElementById(id){ return controls[id] || null; },
+      querySelectorAll(){ return []; }
+    },
+    __tkbUpdateHistoryButtons(){ historyRefreshes += 1; }
+  };
+  vm.runInNewContext(`${plannerSource.slice(
+    plannerSource.indexOf("function setAutoSortControlLocked"),
+    plannerSource.indexOf("function setAutoSortStopVisible")
+  )}\nthis.lockBusyControls = setAutoSortBusyControls;`, context);
+
+  context.lockBusyControls(true);
+  assert.equal(controls.btnHome.hidden, false);
+  assert.equal(controls.btnHome.disabled, false);
+  assert.equal(controls.btnAgentHelper.hidden, false);
+  assert.equal(controls.btnAgentHelper.disabled, true);
+  assert.equal(controls.btnAgentHelper.getAttribute("aria-disabled"), "true");
+  assert.equal(controls.btnAgentHelper.classList.contains("is-auto-sort-disabled"), true);
+  assert.equal(controls.btnAgentHelper.getAttribute("aria-hidden"), "false");
+  assert.equal(controls.btnOptimizeMenu.disabled, true);
+  assert.equal(controls.btnOptimizeMenu.getAttribute("aria-disabled"), "true");
+  assert.equal(controls.btnOptimizeMenu.classList.contains("is-auto-sort-disabled"), true);
+  assert.equal(controls.plannerOptimizeMenu.hidden, true);
+  assert.equal(controls.btnOptimizeMenu.getAttribute("aria-expanded"), "false");
+  assert.equal(controls.btnUndoTKB.disabled, true);
+  assert.equal(controls.btnRedoTKB.disabled, true);
+  assert.equal(controls.solveDurationSeconds.disabled, true);
+
+  context.lockBusyControls(false);
+  assert.equal(controls.btnHome.hidden, false);
+  assert.equal(controls.btnHome.disabled, false);
+  assert.equal(controls.btnAgentHelper.hidden, false);
+  assert.equal(controls.btnAgentHelper.disabled, false);
+  assert.equal(controls.btnAgentHelper.getAttribute("aria-disabled"), "false");
+  assert.equal(controls.btnAgentHelper.classList.contains("is-auto-sort-disabled"), false);
+  assert.equal(controls.btnOptimizeMenu.disabled, false);
+  assert.equal(controls.btnOptimizeMenu.getAttribute("aria-disabled"), null);
+  assert.equal(controls.btnOptimizeMenu.classList.contains("is-auto-sort-disabled"), false);
+  assert.equal(controls.btnUndoTKB.disabled, false);
+  assert.equal(controls.btnRedoTKB.disabled, true);
+  assert.equal(controls.solveDurationSeconds.disabled, false);
+  assert.equal(historyRefreshes, 1);
+});
+
+test("leaving the planner detaches from an active server job instead of cancelling it", () => {
+  const navigation = plannerSource.slice(
+    plannerSource.indexOf("function isAutoSortRunningForNavigation"),
+    plannerSource.indexOf("function printTKB")
+  );
+
+  assert.match(navigation, /__TKB_ACTIVE_BACKEND_JOB_ID/);
+  assert.match(navigation, /Lượt xếp vẫn tiếp tục trên máy chủ/);
+  assert.match(navigation, /backToMain\(\)/);
+  assert.doesNotMatch(navigation, /requestStopAutoSort|stopAutoSortBeforeHome|hardCancel|window\.confirm/);
+});
+
+test("soft Stop remains disabled while later progress frames arrive", () => {
+  const progress = plannerSource.slice(
+    plannerSource.indexOf("function setAutoSortProgress"),
+    plannerSource.indexOf("function finishAutoSortProgress")
+  );
+
+  assert.match(progress, /__TKB_RUST_PROGRESS_STATE\?\.bestEffortStopPending === true/);
+  assert.match(progress, /!bestEffortStopPending && n < 100/);
+});
+
+test("desktop keeps controls, feedback, and navigation in one toolbar row", () => {
+  assert.match(plannerHtml, /\.toolbar-main\s*\{[^}]*--planner-toolbar-button-width:\s*clamp\(96px, 7\.2vw, 104px\);[^}]*grid-template-columns:\s*max-content minmax\(0, 1fr\) auto;/s);
+  assert.match(plannerHtml, /\.toolbar-feedback\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*1;[^}]*display:\s*flex;[^}]*flex-flow:\s*row nowrap;/s);
+  assert.match(plannerHtml, /\.toolbar-secondary-actions\s*\{[^}]*grid-column:\s*3;[^}]*grid-row:\s*1;/s);
+  assert.match(plannerHtml, /\.toolbar-feedback\s*>\s*#statusMsg\s*\{[^}]*white-space:\s*nowrap;/s);
+  assert.match(
+    plannerHtml,
+    /\.toolbar-actions\s*>\s*button\s*\{[^}]*flex:\s*0 0 var\(--planner-toolbar-button-width\);[^}]*width:\s*var\(--planner-toolbar-button-width\);[^}]*min-width:\s*var\(--planner-toolbar-button-width\);[^}]*max-width:\s*var\(--planner-toolbar-button-width\);[^}]*height:\s*36px;[^}]*min-height:\s*36px;[^}]*border-radius:\s*8px;/s
+  );
+  assert.match(
+    plannerHtml,
+    /#btnRangBuoc\s*\{[^}]*display:\s*inline-flex;[^}]*background:\s*#58ad32;[^}]*color:\s*#fff;/s
+  );
+  assert.match(plannerHtml, /#btnRangBuoc \.toolbar-requirement-icon\s*\{[^}]*width:\s*18px;[^}]*height:\s*18px;[^}]*stroke-width:\s*2\.8;/s);
+  assert.match(plannerHtml, /#btnDeleteAll\s*\{[^}]*border-color:\s*#dc2626;[^}]*background:\s*#dc2626;[^}]*color:\s*#fff;/s);
+  assert.match(plannerHtml, /#btnStopAutoSort\.is-active\s*\{[^}]*background:\s*#fff5f5(?:\s*!important)?;[^}]*color:\s*#c62828(?:\s*!important)?;/s);
+  assert.match(
+    plannerHtml,
+    /#btnUndoTKB,\s*body\.planner-shell \.toolbar-actions\s*>\s*#btnRedoTKB\s*\{[^}]*display:\s*inline-flex;[^}]*flex:\s*0 0 var\(--planner-toolbar-button-width\);[^}]*width:\s*var\(--planner-toolbar-button-width\);[^}]*min-width:\s*var\(--planner-toolbar-button-width\);[^}]*max-width:\s*var\(--planner-toolbar-button-width\);[^}]*height:\s*36px;[^}]*min-height:\s*36px;[^}]*border-radius:\s*8px;/s
+  );
+  assert.match(
+    plannerHtml,
+    /\.toolbar-actions\s*>\s*button\.icon-button\s*\{[^}]*display:\s*inline-flex;[^}]*flex:\s*0 0 var\(--planner-toolbar-button-width\);[^}]*width:\s*var\(--planner-toolbar-button-width\);[^}]*min-width:\s*var\(--planner-toolbar-button-width\);[^}]*max-width:\s*var\(--planner-toolbar-button-width\);[^}]*height:\s*36px;[^}]*min-height:\s*36px;[^}]*padding:\s*0;[^}]*border-radius:\s*8px;/s
+  );
+  assert.match(
+    plannerHtml,
+    /\.toolbar-secondary-actions \.stats-popover-wrap\s*>\s*\.save-button,\s*body\.planner-shell \.toolbar-secondary-actions \.stats-popover-wrap\s*>\s*\.agent-helper-button,\s*body\.planner-shell \.toolbar-secondary-actions \.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*flex:\s*0 0 var\(--planner-toolbar-button-width\);[^}]*width:\s*var\(--planner-toolbar-button-width\);[^}]*min-width:\s*var\(--planner-toolbar-button-width\);[^}]*max-width:\s*var\(--planner-toolbar-button-width\);[^}]*height:\s*36px;/s
+  );
+  assert.doesNotMatch(plannerHtml, /solveDurationSeconds|solve-duration-control/);
+  assert.match(plannerHtml, /toolbar-label-full"[^>]*>Yêu cầu<\/span>/);
+  assert.match(plannerHtml, /toolbar-label-full"[^>]*>Thống kê<\/span>/);
+});
+
+test("fine-pointer desktop remains one compact row at 606px", () => {
+  const finePointerStart = plannerHtml.indexOf("@media (min-width: 481px) and (max-width: 900px) and (hover: hover) and (pointer: fine)");
+  const finePointerEnd = plannerHtml.indexOf("@media (max-width: 410px)", finePointerStart);
+  const finePointerCss = plannerHtml.slice(finePointerStart, finePointerEnd);
+
+  assert.ok(finePointerStart >= 0 && finePointerEnd > finePointerStart, "fine-pointer toolbar media query is missing");
+  assert.doesNotMatch(plannerHtml, /@media \(max-width:\s*900px\)\s*\{/);
+  assert.match(finePointerCss, /\.toolbar-main\s*\{[^}]*--planner-toolbar-button-width:\s*64px;[^}]*grid-template-columns:\s*max-content minmax\(0, 1fr\) auto;/s);
+  assert.match(
+    finePointerCss,
+    /\.toolbar-actions\s*>\s*button,\s*body\.planner-shell \.toolbar-secondary-actions[^{]*\{[^}]*flex:\s*0 0 var\(--planner-toolbar-button-width\);[^}]*width:\s*var\(--planner-toolbar-button-width\);[^}]*min-width:\s*var\(--planner-toolbar-button-width\);[^}]*max-width:\s*var\(--planner-toolbar-button-width\);[^}]*height:\s*34px;/s
+  );
+  assert.match(
+    finePointerCss,
+    /\.toolbar-actions\s*>\s*button\.icon-button\s*\{[^}]*width:\s*var\(--planner-toolbar-button-width\);[^}]*min-width:\s*var\(--planner-toolbar-button-width\);[^}]*max-width:\s*var\(--planner-toolbar-button-width\);/s
+  );
+  assert.match(finePointerCss, /\.toolbar-label-full\s*\{[^}]*display:\s*none;/s);
+  assert.match(finePointerCss, /\.toolbar-label-compact\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;/s);
+  assert.match(
+    finePointerCss,
+    /\.toolbar-feedback\s*\{[^}]*overflow:\s*hidden;/s,
+    "narrow fine-pointer feedback must not paint over Agent Helper"
+  );
+  assert.match(
+    finePointerCss,
+    /\.toolbar-feedback\s*>\s*#autoSortProgress\s*\{[^}]*flex:\s*0 0 auto;[^}]*width:\s*auto;[^}]*min-width:\s*0;[^}]*max-width:\s*none;[^}]*overflow:\s*hidden;/s
+  );
+  assert.match(
+    finePointerCss,
+    /#autoSortProgress \.auto-sort-label\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*100%;[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s,
+    "the running label must shrink and ellipsize inside its grid track"
+  );
+  assert.doesNotMatch(
+    finePointerCss,
+    /\.toolbar-feedback\s*>\s*#statusMsg\.is-auto-sort-running-label\s*\{[^}]*display:\s*none !important;/s,
+    "the running status must remain visible immediately after the compact time label"
+  );
+});
+
+test("mobile reserves one stable feedback row so sorting never shifts the timetable", () => {
+  const feedbackStart = plannerHtml.indexOf('<div class="toolbar-feedback"');
+  const secondaryStart = plannerHtml.indexOf('<div class="toolbar-secondary-actions"', feedbackStart);
+  const feedback = plannerHtml.slice(feedbackStart, secondaryStart);
+
+  assert.ok(feedbackStart >= 0 && secondaryStart > feedbackStart);
+  assert.doesNotMatch(feedback, /id="btnStopAutoSort"|id="btnDeleteAll"/);
+  assert.match(feedback, /id="autoSortProgress"/);
+  assert.match(feedback, /id="statusMsg"/);
+  assert.ok(feedback.indexOf('id="autoSortProgress"') < feedback.indexOf('id="statusMsg"'));
+  assert.ok(feedback.indexOf('id="autoSortProgressElapsed"') < feedback.indexOf('id="autoSortProgressMetric"'));
+  assert.ok(feedback.indexOf('id="autoSortProgressMetric"') < feedback.indexOf('id="statusMsg"'));
+  assert.match(feedback, /id="autoSortProgressMetric" class="auto-sort-metric" hidden/);
+  assert.match(feedback, /id="autoSortProgress" class="auto-sort-progress is-idle"[^>]*aria-hidden="true"[^>]*\shidden(?:\s|>)/);
+  assert.match(plannerHtml, /body\.planner-shell\s*\{[^}]*--planner-mobile-feedback-h:\s*46px;[^}]*padding-bottom:\s*0;[^}]*overflow:\s*hidden;/s);
+  assert.match(plannerHtml, /\.toolbar-main\s*\{[^}]*grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);[^}]*grid-template-rows:\s*44px var\(--planner-mobile-feedback-h\);/s);
+  assert.match(plannerHtml, /\.toolbar-feedback\s*\{[^}]*grid-column:\s*1 \/ -1;[^}]*grid-row:\s*2;[^}]*display:\s*grid;[^}]*grid-template-rows:\s*var\(--planner-mobile-feedback-h\);[^}]*height:\s*var\(--planner-mobile-feedback-h\);[^}]*min-height:\s*var\(--planner-mobile-feedback-h\);[^}]*max-height:\s*var\(--planner-mobile-feedback-h\);[^}]*overflow:\s*hidden;/s);
+  assert.doesNotMatch(plannerHtml, /\.toolbar-feedback:has\(> #autoSortProgress\.is-active\)/);
+  assert.match(plannerHtml, /\.toolbar-feedback\s*>\s*#autoSortProgress\s*\{[^}]*grid-row:\s*1;/s);
+  assert.match(plannerHtml, /\.toolbar-feedback\s*>\s*#autoSortProgress\.is-idle\s*\{[^}]*display:\s*none;/s);
+  assert.match(plannerHtml, /\.toolbar-feedback\s*>\s*#statusMsg\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*1;[^}]*max-height:\s*2\.4em;[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*clip;[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;[^}]*transform:\s*none !important;/s);
+  assert.match(plannerHtml, /\.toolbar-feedback\s*>\s*#statusMsg\s*\{[^}]*font-size:\s*12px;[^}]*line-height:\s*1\.2;[^}]*letter-spacing:\s*0;/s);
+  assert.doesNotMatch(plannerSource, /function fitPlannerMobileStatusMessage[\s\S]*?scaleX/);
+  assert.match(plannerSource, /function _setStatus[\s\S]*?fitPlannerMobileStatusMessage\(el\)/);
+  assert.doesNotMatch(plannerHtml, /--mobile-progress-text-offset|#statusMsg\s*\{[^}]*grid-row:\s*2;/s);
+  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*button,[^}]*flex:\s*0 1 auto;[^}]*width:\s*100%;[^}]*min-width:\s*0;[^}]*max-width:\s*none;[^}]*height:\s*44px;[^}]*min-height:\s*44px;[^}]*touch-action:\s*manipulation;/s);
+  assert.match(plannerHtml, /#autoSortProgress \.auto-sort-label\s*\{[^}]*font-variant-numeric:\s*tabular-nums;/s);
+  assert.match(plannerHtml, /(?:body\.planner-shell\s+\.toolbar-feedback\s*>\s*)?#autoSortProgress \.auto-sort-metric\s*\{[^}]*width:\s*max-content !important;[^}]*color:\s*#15803d;[^}]*font-weight:\s*600;/s);
+  assert.match(plannerHtml, /(?:body\.planner-shell\s+\.toolbar-feedback\s*>\s*)?#autoSortProgress \.auto-sort-metric\s*\{[^}]*overflow:\s*visible;/s);
+  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*button,[^}]*border:\s*1px solid var\(--tkb-border, #e2e8f0\);[^}]*border-radius:\s*var\(--tkb-radius, 10px\);[^}]*box-shadow:\s*var\(--tkb-shadow,[^;]+\);[^}]*font-size:\s*clamp\(11px, 3\.05vw, 13px\);[^}]*font-weight:\s*600;/s);
+  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*button:active:not\(:disabled\),[^}]*transform:\s*translateY\(1px\);[^}]*box-shadow:\s*0 1px 1px rgb\(15 23 42 \/ 8%\);/s);
+  assert.match(plannerHtml, /#btnStopAutoSort\s*\{[^}]*padding:\s*0;/s);
+  assert.match(plannerHtml, /#btnStopAutoSort \.toolbar-icon\s*\{[^}]*width:\s*20px;[^}]*height:\s*20px;/s);
+  assert.doesNotMatch(plannerHtml, /#btnStopAutoSort::before/);
+  assert.doesNotMatch(
+    plannerHtml,
+    /\.toolbar-feedback\s*>\s*#statusMsg\.is-auto-sort-running-label\s*\{[^}]*display:\s*none !important;/s
+  );
+});
+
+test("Optimize, Agent, Home, and Statistics occupy mobile columns four through eight", () => {
+  const feedbackStart = plannerHtml.indexOf('<div class="toolbar-feedback"');
+  const secondaryStart = plannerHtml.indexOf('<div class="toolbar-secondary-actions"');
+  const secondary = plannerHtml.slice(secondaryStart, plannerHtml.indexOf("\n  </div>\n\n</div>", secondaryStart));
+
+  assert.ok(secondaryStart > feedbackStart);
+  assert.match(secondary, /id="btnHome"[^>]*>Home<\/button>/);
+  assert.match(secondary, /id="statsToggle"[^>]*>[\s\S]*?toolbar-label-compact[^>]*>\s*<svg class="toolbar-icon"[^>]*>[\s\S]*?<\/svg>\s*<\/span><\/button>/);
+  assert.match(plannerHtml, /\.toolbar-secondary-actions\s*\{[^}]*display:\s*contents;/s);
+  assert.match(plannerHtml, /\.toolbar-secondary-actions \.stats-popover-wrap\s*\{[^}]*display:\s*contents;/s);
+  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*\.planner-optimize-wrap\s*\{[^}]*grid-column:\s*4;[^}]*height:\s*44px;/s);
+  assert.match(plannerHtml, /#btnAgentHelper\s*\{[^}]*grid-column:\s*6;[^}]*height:\s*44px;/s);
+  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*7;/s);
+  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*8;[^}]*height:\s*44px;/s);
+});

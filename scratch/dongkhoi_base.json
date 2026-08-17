@@ -1,0 +1,9222 @@
+{
+  "id": "dongkhoi",
+  "name": "THCS Đồng Khởi",
+  "classes": [
+    "6/1",
+    "6/2",
+    "6/3",
+    "6/4",
+    "6/5",
+    "6/6",
+    "6/7",
+    "6/8",
+    "6/9",
+    "6/10",
+    "6/11",
+    "6/12",
+    "6/13",
+    "6/14",
+    "6/15",
+    "7/1",
+    "7/2",
+    "7/3",
+    "7/4",
+    "7/5",
+    "7/6",
+    "7/7",
+    "7/8",
+    "7/9",
+    "7/10",
+    "8/1",
+    "8/2",
+    "8/3",
+    "8/4",
+    "8/5",
+    "8/6",
+    "8/7",
+    "8/8",
+    "8/9",
+    "8/10",
+    "8/11",
+    "8/12",
+    "8/13",
+    "8/14",
+    "8/15",
+    "8/16",
+    "9/1",
+    "9/2",
+    "9/3",
+    "9/4",
+    "9/5",
+    "9/6",
+    "9/7",
+    "9/8",
+    "9/9",
+    "9/10",
+    "9/11",
+    "9/12",
+    "9/13"
+  ],
+  "teachers": [
+    "B.Công",
+    "B.Trang",
+    "B.Tặng",
+    "C.Toàn",
+    "CN",
+    "CĐ",
+    "D.Quyên",
+    "G.Lâm",
+    "H.Dung",
+    "H.Hoàng",
+    "H.Nam",
+    "H.Thủy",
+    "H.Trinh",
+    "H.Ân",
+    "H.Đức",
+    "K.Phát",
+    "L.Thùy",
+    "M.Tuấn",
+    "N.Châu",
+    "N.Duyên",
+    "N.Hương",
+    "N.Kiên",
+    "N.Thu",
+    "P.My",
+    "P.Thảo",
+    "Q.Thúc",
+    "Q.Vi",
+    "Q.Vương",
+    "T.Anh.1",
+    "T.Anh.2",
+    "T.Bình.1",
+    "T.Bình.2",
+    "T.Bảo",
+    "T.Chi",
+    "T.Cúc",
+    "T.Cường",
+    "T.Dinh",
+    "T.Hiếu",
+    "T.Hiền.1",
+    "T.Hiền.2",
+    "T.Hoài",
+    "T.Hoàng",
+    "T.Huyền.1",
+    "T.Huyền.2",
+    "T.Hà",
+    "T.Hương.1",
+    "T.Hương.2",
+    "T.Hương.3",
+    "T.Hải",
+    "T.Hằng",
+    "T.Hồng",
+    "T.Khơ",
+    "T.Kiệt",
+    "T.Lan",
+    "T.Linh",
+    "T.Loan.1",
+    "T.Loan.2",
+    "T.Long",
+    "T.Mai",
+    "T.Nga",
+    "T.Nguyệt.1",
+    "T.Nguyệt.2",
+    "T.Ngọc",
+    "T.Oanh.1",
+    "T.Oanh.2",
+    "T.Quỳnh",
+    "T.Sương",
+    "T.Thanh",
+    "T.Thúy",
+    "T.Thư",
+    "T.Thảo.1",
+    "T.Thảo.2",
+    "T.Thảo.3",
+    "T.Thắm",
+    "T.Thủy",
+    "T.Trang",
+    "T.Trường",
+    "T.Tuyết",
+    "T.Tín",
+    "T.Vy",
+    "T.Vân.1",
+    "T.Vân.2",
+    "T.Yên",
+    "T.Yến.1",
+    "T.Yến.2",
+    "T.Đoan",
+    "V.Hiệp",
+    "V.Hải",
+    "V.Quang",
+    "V.Thiện",
+    "X.Huy",
+    "Á.Quyên",
+    "Đ.Duy",
+    "Đ.Hoa",
+    "Đ.Kiếm"
+  ],
+  "subjects": [
+    "CN",
+    "ChCờ",
+    "GDCD",
+    "GDTC",
+    "GDĐP",
+    "KHTN",
+    "MT",
+    "NNgữ",
+    "Nhạc",
+    "SĐ",
+    "TNHN",
+    "Tin",
+    "Toán",
+    "Văn"
+  ],
+  "tkb": {
+    "6/1": [
+      {
+        "mon": "ChCờ",
+        "gv": "P.My",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thúy",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thúy",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDTC",
+        "gv": "T.Trường",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "P.My",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "T.Vân.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "T.Thảo.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Thảo.2",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Thắm",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Thắm",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "CN",
+        "gv": "T.Thư",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "Đ.Duy",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Thảo.2",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "G.Lâm",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "Đ.Duy",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "Đ.Duy",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "G.Lâm",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Thảo.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "6/2": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Thắm",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Thảo.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Thảo.2",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "G.Lâm",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "Đ.Duy",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "Đ.Duy",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "P.My",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "V.Hiệp",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "Đ.Hoa",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "Đ.Hoa",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Thảo.2",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "T.Thư",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Tin",
+        "gv": "T.Cúc",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "B.Trang",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "Đ.Hoa",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "MT",
+        "gv": "B.Trang",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Thảo.2",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "Đ.Duy",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "Đ.Hoa",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "6/3": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Hồng",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hồng",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hồng",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Hoài",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Thắm",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "V.Hiệp",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "T.Dinh",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDCD",
+        "gv": "P.My",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "N.Hương",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "N.Hương",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Cúc",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "T.Linh",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Linh",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hoài",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hoài",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "T.Linh",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "V.Hiệp",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hồng",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "B.Trang",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "6/4": [
+      {
+        "mon": "ChCờ",
+        "gv": "B.Tặng",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "B.Tặng",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Dinh",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Dinh",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Cúc",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Dinh",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thúy",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "T.Thắm",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hồng",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hồng",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Linh",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Thúy",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thúy",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "P.My",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "T.Vân.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDTC",
+        "gv": "H.Hoàng",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Dinh",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Thắm",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Thắm",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "6/5": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Thư",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "H.Hoàng",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "P.My",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Dinh",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Dinh",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Thắm",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Thắm",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDĐP",
+        "gv": "T.Vân.2",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "B.Tặng",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Dinh",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Thảo.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "T.Thảo.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Thảo.2",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hương.2",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "H.Hoàng",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.3",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "B.Tặng",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "T.Thư",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Dinh",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "6/6": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Hương.2",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Trường",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "V.Thiện",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Bảo",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Tin",
+        "gv": "T.Lan",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "B.Trang",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hoài",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "B.Trang",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hương.2",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hương.2",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Dinh",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Hoài",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hoài",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "T.Quỳnh",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Bảo",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "T.Bảo",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Bảo",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hoài",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "P.My",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "6/7": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Bảo",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "N.Hương",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Bảo",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Lan",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "V.Thiện",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "V.Thiện",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "N.Hương",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "N.Hương",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "T.Loan.1",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Loan.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Nguyệt.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Nguyệt.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Nguyệt.2",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "N.Hương",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "P.Thảo",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "CN",
+        "gv": "T.Thư",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "P.My",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "P.Thảo",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "Q.Vương",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "6/8": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Loan.1",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Loan.1",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Loan.1",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "V.Hiệp",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Nhạc",
+        "gv": "B.Tặng",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "X.Huy",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Nguyệt.2",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Nguyệt.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Nguyệt.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "X.Huy",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "X.Huy",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "V.Hiệp",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Nguyệt.2",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Loan.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "T.Huyền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "T.Thư",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "N.Hương",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "N.Hương",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "6/9": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Thảo.3",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.3",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.3",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Ngọc",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Ngọc",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "T.Thư",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "X.Huy",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDTC",
+        "gv": "V.Hiệp",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Ngọc",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Loan.1",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Loan.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "X.Huy",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "X.Huy",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.3",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.3",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDCD",
+        "gv": "P.My",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Lan",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "V.Hiệp",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Loan.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "6/10": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Ngọc",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "H.Thủy",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "T.Quỳnh",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "T.Vy",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Vy",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Vân.1",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Vân.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "T.Vy",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "P.My",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Trường",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "MT",
+        "gv": "B.Tặng",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "T.Thư",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Vy",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Ngọc",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Hoài",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "H.Thủy",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "H.Thủy",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Ngọc",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "6/11": [
+      {
+        "mon": "ChCờ",
+        "gv": "P.Thảo",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Ngọc",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Ngọc",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "T.Huyền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Huyền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "T.Quỳnh",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.3",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.3",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Vân.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Vy",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDTC",
+        "gv": "V.Hiệp",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Ngọc",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "P.Thảo",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "P.My",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDTC",
+        "gv": "V.Hiệp",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "P.Thảo",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Ngọc",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "T.Thư",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "6/12": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Thúy",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Vy",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Vy",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thúy",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDCD",
+        "gv": "P.My",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Lan",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Ngọc",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Vy",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "MT",
+        "gv": "B.Tặng",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Vy",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Huyền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Huyền.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDTC",
+        "gv": "T.Trường",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "T.Quỳnh",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Ngọc",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Huyền.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Ngọc",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Ngọc",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thúy",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thúy",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "6/13": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Vy",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Huyền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Nguyệt.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Vy",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Nguyệt.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Nguyệt.2",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Trường",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "T.Thư",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "T.Huyền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Huyền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "Đ.Kiếm",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Tin",
+        "gv": "T.Lan",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "P.My",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "B.Tặng",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "B.Tặng",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDTC",
+        "gv": "T.Trường",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "T.Quỳnh",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Vy",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Nguyệt.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "6/14": [
+      {
+        "mon": "ChCờ",
+        "gv": "Đ.Hoa",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Oanh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "Đ.Kiếm",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "Đ.Kiếm",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "T.Oanh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "B.Tặng",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Huyền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Huyền.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDĐP",
+        "gv": "T.Quỳnh",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Hiếu",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "Đ.Hoa",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "Đ.Hoa",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "Đ.Kiếm",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "Đ.Kiếm",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Oanh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Oanh.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Trường",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "P.My",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "B.Tặng",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "6/15": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Huyền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Yến.1",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Yến.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Thảo.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.3",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.3",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "P.Thảo",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Lan",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "CN",
+        "gv": "T.Thư",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Trường",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "P.My",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Yến.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDĐP",
+        "gv": "H.Thủy",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Huyền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Huyền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "N.Hương",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "N.Hương",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.3",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Trường",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "7/1": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Hiền.2",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "M.Tuấn",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Long",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "T.Tuyết",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "T.Hiền.2",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Hiền.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Anh.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Anh.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDĐP",
+        "gv": "T.Nguyệt.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Đức",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Bình.1",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Bình.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "MT",
+        "gv": "T.Tuyết",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Lan",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "N.Duyên",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "N.Duyên",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "N.Duyên",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Bình.1",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "T.Oanh.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "7/2": [
+      {
+        "mon": "ChCờ",
+        "gv": "N.Duyên",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hương.3",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Hiền.2",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Hiền.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Hương.3",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Đức",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "N.Duyên",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "P.Thảo",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "N.Duyên",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "N.Duyên",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Đức",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDTC",
+        "gv": "T.Long",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "P.Thảo",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Hiền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "N.Hương",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDTC",
+        "gv": "T.Long",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "N.Duyên",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Đức",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Đức",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "7/3": [
+      {
+        "mon": "ChCờ",
+        "gv": "Q.Vi",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "Q.Vi",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "Q.Vi",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "N.Duyên",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "N.Duyên",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Long",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hương.3",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hương.3",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "H.Đức",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "P.Thảo",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hương.3",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "P.My",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "T.Sương",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Sương",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Đức",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Đức",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "CN",
+        "gv": "M.Tuấn",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Đức",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "T.Nguyệt.1",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Long",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "7/4": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Tuyết",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "N.Duyên",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "N.Duyên",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Đức",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hương.3",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Đức",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Đức",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Tin",
+        "gv": "T.Hiền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "M.Tuấn",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Long",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Huyền.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "T.Huyền.2",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Huyền.2",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "N.Hương",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Hiền.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "MT",
+        "gv": "T.Tuyết",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "T.Tuyết",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Long",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hương.3",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "7/5": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Anh.1",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Sương",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Sương",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Hoàng",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "Q.Vi",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "Q.Vi",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Hoàng",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Hiền.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Đức",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Anh.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "H.Đức",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Đức",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "Q.Vi",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "M.Tuấn",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Anh.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Anh.1",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Sương",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "H.Hoàng",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "7/6": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Hoàng",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "T.Oanh.1",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "H.Hoàng",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Anh.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Hoàng",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Hoàng",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "X.Huy",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "M.Tuấn",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "T.Đoan",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Đoan",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Anh.1",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Anh.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Anh.1",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "H.Hoàng",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Hoàng",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "T.Đoan",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "X.Huy",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "X.Huy",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "7/7": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Oanh.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Anh.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Anh.1",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Đoan",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "T.Quỳnh",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Lan",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Hà",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hồng",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "H.Hoàng",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "H.Hoàng",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "T.Oanh.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hồng",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hồng",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "M.Tuấn",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Anh.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Hà",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Hà",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Đoan",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Đoan",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "7/8": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Hương.3",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "X.Huy",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "X.Huy",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Trường",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "CN",
+        "gv": "M.Tuấn",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Trường",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "T.Quỳnh",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Đoan",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Hương.3",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "P.Thảo",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Hà",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Hà",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Hà",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "X.Huy",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hương.3",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDCD",
+        "gv": "T.Oanh.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "X.Huy",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Huyền.2",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Huyền.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "7/9": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Huyền.2",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Hà",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Trường",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Hà",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Hà",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Bảo",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "B.Tặng",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "T.Bảo",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Bảo",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Lan",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "N.Kiên",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "T.Bảo",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "T.Oanh.1",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "N.Kiên",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "T.Huyền.2",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Huyền.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "N.Kiên",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "N.Kiên",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "7/10": [
+      {
+        "mon": "ChCờ",
+        "gv": "H.Ân",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "H.Ân",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "H.Ân",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "H.Hoàng",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "T.Huyền.2",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Huyền.2",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Hà",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Bảo",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Tin",
+        "gv": "T.Lan",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Hà",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Hiền.2",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Hiền.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "T.Hiền.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "N.Kiên",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "N.Kiên",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Huyền.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "N.Kiên",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "T.Hiền.2",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Hà",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Hà",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "8/1": [
+      {
+        "mon": "ChCờ",
+        "gv": "L.Thùy",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "L.Thùy",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "L.Thùy",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "Á.Quyên",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.1",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "H.Hoàng",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "K.Phát",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "V.Hải",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.1",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Hiền.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Chi",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Chi",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "V.Hải",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "V.Hải",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDCD",
+        "gv": "T.Thanh",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "V.Hải",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Chi",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "Q.Thúc",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "8/2": [
+      {
+        "mon": "ChCờ",
+        "gv": "N.Thu",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Hoàng",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "K.Phát",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "V.Thiện",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDTC",
+        "gv": "T.Long",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "N.Châu",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "Q.Thúc",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Hoàng",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Hoàng",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Long",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "N.Thu",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "N.Thu",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "N.Châu",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "B.Công",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "V.Thiện",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "V.Thiện",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "K.Phát",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "T.Thanh",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "8/3": [
+      {
+        "mon": "ChCờ",
+        "gv": "B.Công",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "N.Kiên",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "N.Kiên",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Long",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "H.Thủy",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "H.Thủy",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "B.Công",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDCD",
+        "gv": "T.Oanh.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "N.Kiên",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Nga",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Mai",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "N.Kiên",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Nga",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Hương.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Hương.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDĐP",
+        "gv": "Q.Thúc",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Hương.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Hương.1",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "K.Phát",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "8/4": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Hải",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Nga",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "K.Phát",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "H.Dung",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Dung",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "T.Thanh",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "H.Hoàng",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "CN",
+        "gv": "B.Công",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "Q.Thúc",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Dung",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Dung",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "H.Trinh",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "H.Trinh",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "Á.Quyên",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Nga",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hải",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hải",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "Á.Quyên",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "Á.Quyên",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "8/5": [
+      {
+        "mon": "ChCờ",
+        "gv": "V.Hải",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "Q.Thúc",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "T.Tín",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "H.Trinh",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "H.Trinh",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "H.Hoàng",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "K.Phát",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "V.Hải",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "H.Trinh",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "H.Trinh",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Cúc",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "MT",
+        "gv": "K.Phát",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Mai",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Cường",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "T.Oanh.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "T.Cường",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Cường",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "V.Hải",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Hoàng",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "8/6": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Cường",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "N.Châu",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "N.Châu",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "T.Oanh.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "T.Cường",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Cường",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "N.Châu",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "N.Kiên",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDĐP",
+        "gv": "Q.Thúc",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Trang",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "N.Châu",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "T.Quỳnh",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "H.Hoàng",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "K.Phát",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Trang",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "K.Phát",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Cường",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Cúc",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "8/7": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Chi",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "K.Phát",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "Q.Thúc",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Chi",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDCD",
+        "gv": "T.Oanh.1",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Anh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "N.Châu",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "CN",
+        "gv": "M.Tuấn",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "N.Châu",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Anh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "N.Thu",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "N.Châu",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "N.Châu",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "N.Thu",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Quỳnh",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "N.Thu",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "N.Thu",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Quỳnh",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Quỳnh",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "8/8": [
+      {
+        "mon": "ChCờ",
+        "gv": "V.Thiện",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "N.Thu",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Anh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Yên",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "N.Thu",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "M.Tuấn",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "V.Thiện",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Tin",
+        "gv": "T.Cúc",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "Q.Vi",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "Q.Thúc",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "K.Phát",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDCD",
+        "gv": "T.Oanh.1",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Anh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Yên",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "K.Phát",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "Q.Vi",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "Q.Vi",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "N.Châu",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "N.Châu",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "8/9": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Thảo.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.1",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Bình.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "T.Mai",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "Q.Thúc",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "H.Ân",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "T.Oanh.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "V.Thiện",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "V.Thiện",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Bình.2",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Bình.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Cúc",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "N.Châu",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Bình.2",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Mai",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Mai",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "V.Thiện",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "8/10": [
+      {
+        "mon": "ChCờ",
+        "gv": "H.Trinh",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "H.Trinh",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "H.Trinh",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDTC",
+        "gv": "T.Anh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "T.Oanh.1",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "H.Ân",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "H.Thủy",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "H.Thủy",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Bình.2",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Bình.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "V.Hải",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "H.Thủy",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Bình.2",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Anh.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "CN",
+        "gv": "T.Tín",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Bình.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "H.Trinh",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "V.Hải",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "8/11": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Yên",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "V.Hải",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "V.Hải",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "Đ.Hoa",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "Đ.Hoa",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "L.Thùy",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "H.Thủy",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "H.Thủy",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDTC",
+        "gv": "T.Anh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "V.Hải",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDĐP",
+        "gv": "Q.Thúc",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "V.Hải",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "H.Ân",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Cúc",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Yên",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Yên",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "L.Thùy",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "L.Thùy",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "8/12": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Mai",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "Đ.Hoa",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "Đ.Hoa",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Yên",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Yên",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "Q.Thúc",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Nhạc",
+        "gv": "H.Ân",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "B.Công",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "T.Oanh.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Hiếu",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "T.Hương.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Hương.1",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Mai",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Mai",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "H.Thủy",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "Đ.Hoa",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Yên",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Mai",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "8/13": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Hương.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Hương.1",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Yên",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hải",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hải",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Yên",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Cúc",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "N.Thu",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Hương.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Hương.1",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Anh.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Yên",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Yên",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "H.Thủy",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "H.Thủy",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "T.Hương.1",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "B.Công",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Anh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "H.Thủy",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "8/14": [
+      {
+        "mon": "ChCờ",
+        "gv": "Á.Quyên",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Hiền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "T.Oanh.1",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Trang",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "Á.Quyên",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "Á.Quyên",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Hương.1",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Trang",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.1",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Anh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "H.Ân",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "Á.Quyên",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDTC",
+        "gv": "T.Anh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "Q.Thúc",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hải",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hải",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.1",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "B.Công",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "8/15": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Thanh",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Dung",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Dung",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "H.Ân",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "G.Lâm",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "G.Lâm",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "Á.Quyên",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "Á.Quyên",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "Á.Quyên",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "H.Trinh",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "H.Trinh",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "G.Lâm",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "H.Ân",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Anh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "T.Thanh",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "H.Trinh",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Hiền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Anh.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "8/16": [
+      {
+        "mon": "ChCờ",
+        "gv": "H.Dung",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "G.Lâm",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Hiền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "B.Công",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "L.Thùy",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Anh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "H.Dung",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Dung",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "G.Lâm",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "G.Lâm",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Nhạc",
+        "gv": "H.Ân",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "G.Lâm",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Thảo.1",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "Á.Quyên",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "L.Thùy",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "L.Thùy",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "H.Ân",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "9/1": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Trang",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Kiệt",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "T.Tuyết",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "Q.Thúc",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "T.Sương",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Loan.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Cúc",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Kiệt",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Yến.1",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "T.Tuyết",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "T.Yến.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Yến.2",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Trang",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Trang",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Loan.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Loan.2",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Trang",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Trang",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "9/2": [
+      {
+        "mon": "ChCờ",
+        "gv": "H.Nam",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Khơ",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Khơ",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "T.Thanh",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Khơ",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Trang",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "T.Tín",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Sương",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "T.Vân.1",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "Q.Vương",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "K.Phát",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Trang",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Trang",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Trang",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Sương",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Sương",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Khơ",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Cúc",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "Q.Thúc",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Nam",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "9/3": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Yến.1",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "V.Quang",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "V.Quang",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Yến.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "T.Yến.1",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Yến.1",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Bình.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "CN",
+        "gv": "T.Tín",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "T.Tuyết",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Kiệt",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Yến.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDCD",
+        "gv": "T.Thanh",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "V.Quang",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Yến.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Yến.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "Q.Thúc",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Cúc",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Loan.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "9/4": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Khơ",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "T.Tuyết",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Nam",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Khơ",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Tin",
+        "gv": "T.Cúc",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Nam",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Chi",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Chi",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "MT",
+        "gv": "T.Tuyết",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "V.Quang",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "V.Quang",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "CN",
+        "gv": "T.Tín",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Vân.1",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Chi",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "H.Nam",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Nam",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "Q.Vương",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Khơ",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "9/5": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Yến.2",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "T.Tín",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Yến.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Chi",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Chi",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "T.Thảo.2",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDTC",
+        "gv": "Q.Vương",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Yến.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Loan.2",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "T.Thanh",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Tin",
+        "gv": "T.Hiền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Yến.1",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "T.Tuyết",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "T.Tuyết",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "V.Quang",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Yến.1",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Yến.1",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Chi",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "9/6": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Nga",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Vân.1",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Vân.1",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Nga",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Nga",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Nga",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "V.Quang",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Nga",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "T.Thanh",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "Q.Vương",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Nam",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Khơ",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Khơ",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Vân.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "H.Nam",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDTC",
+        "gv": "Q.Vương",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "T.Tín",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "T.Thảo.2",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "T.Tuyết",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "9/7": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Sương",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "C.Toàn",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "C.Toàn",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "Q.Vương",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Tin",
+        "gv": "T.Hiền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "T.Tuyết",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "Đ.Duy",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "Q.Vương",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "Đ.Duy",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "Đ.Duy",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "C.Toàn",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "C.Toàn",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "T.Tín",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "D.Quyên",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "T.Thảo.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "T.Sương",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Sương",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Linh",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Linh",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "9/8": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Hằng",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hằng",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hằng",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "T.Nguyệt.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "CN",
+        "gv": "T.Tín",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Hiền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Cường",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "T.Thủy",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Thủy",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Cường",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Cường",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "T.Bình.1",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "C.Toàn",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "Q.Vương",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "T.Thủy",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hằng",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Bình.1",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Bình.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "9/9": [
+      {
+        "mon": "ChCờ",
+        "gv": "D.Quyên",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "Đ.Duy",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "Đ.Duy",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "C.Toàn",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "D.Quyên",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "D.Quyên",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Linh",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Linh",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "MT",
+        "gv": "B.Trang",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "D.Quyên",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Hiền.1",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "Đ.Duy",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "T.Cường",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Cường",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Linh",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Linh",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "C.Toàn",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "C.Toàn",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "B.Trang",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "9/10": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Thủy",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Bình.1",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Bình.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hằng",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Hằng",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hằng",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Thủy",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Thủy",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "V.Quang",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "V.Quang",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "B.Trang",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CN",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "T.Thủy",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "T.Thanh",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "Q.Vương",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "B.Trang",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "GDĐP",
+        "gv": "T.Nguyệt.2",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "Q.Vương",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Thủy",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hằng",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "9/11": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Oanh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Đoan",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Đoan",
+        "isFixed": false
+      },
+      {
+        "mon": "Nhạc",
+        "gv": "B.Trang",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "C.Toàn",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "C.Toàn",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Loan.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "T.Loan.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Loan.2",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "T.Tín",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Đoan",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hương.2",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hương.2",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "T.Thanh",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "C.Toàn",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "T.Oanh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Oanh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Loan.2",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "C.Toàn",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "9/12": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Bình.1",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Long",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Nga",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Thủy",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "MT",
+        "gv": "B.Trang",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Bình.1",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Nga",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "T.Tín",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "NNgữ",
+        "gv": "T.Bình.1",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Bình.1",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hằng",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "T.Hằng",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "SĐ",
+        "gv": "V.Quang",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Long",
+        "isFixed": false
+      },
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "Tin",
+        "gv": "T.Hiền.1",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Nga",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Nga",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "V.Quang",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "V.Quang",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "9/13": [
+      {
+        "mon": "ChCờ",
+        "gv": "T.Đoan",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Bình.2",
+        "isFixed": false
+      },
+      {
+        "mon": "GDCD",
+        "gv": "T.Thanh",
+        "isFixed": false
+      },
+      {
+        "mon": "NNgữ",
+        "gv": "T.Hương.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "KHTN",
+        "gv": "T.Bình.2",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Đoan",
+        "isFixed": false
+      },
+      {
+        "mon": "SĐ",
+        "gv": "T.Đoan",
+        "isFixed": false
+      },
+      {
+        "mon": "GDĐP",
+        "gv": "T.Nguyệt.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "TNHN",
+        "gv": "CĐ",
+        "isFixed": false
+      },
+      {
+        "mon": "MT",
+        "gv": "B.Trang",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Oanh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "CN",
+        "gv": "T.Tín",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Toán",
+        "gv": "T.Oanh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "Toán",
+        "gv": "T.Oanh.2",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Long",
+        "isFixed": false
+      },
+      {
+        "mon": "GDTC",
+        "gv": "T.Long",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "mon": "Văn",
+        "gv": "D.Quyên",
+        "isFixed": false
+      },
+      {
+        "mon": "Văn",
+        "gv": "D.Quyên",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Bình.2",
+        "isFixed": false
+      },
+      {
+        "mon": "KHTN",
+        "gv": "T.Bình.2",
+        "isFixed": false
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "pccmMatrix": {
+    "6/1": {
+      "ChCờ": 1,
+      "Văn": 2,
+      "TNHN": 2,
+      "GDTC": 1,
+      "GDCD": 1,
+      "GDĐP": 1,
+      "Toán": 4,
+      "SĐ": 2,
+      "CN": 1,
+      "NNgữ": 3,
+      "KHTN": 2
+    },
+    "6/2": {
+      "ChCờ": 1,
+      "Toán": 4,
+      "KHTN": 1,
+      "NNgữ": 3,
+      "GDCD": 1,
+      "GDTC": 1,
+      "Văn": 4,
+      "CN": 1,
+      "Tin": 1,
+      "Nhạc": 1,
+      "TNHN": 1,
+      "MT": 1
+    },
+    "6/3": {
+      "ChCờ": 1,
+      "NNgữ": 3,
+      "TNHN": 1,
+      "Văn": 3,
+      "SĐ": 1,
+      "GDTC": 2,
+      "GDĐP": 1,
+      "GDCD": 1,
+      "KHTN": 2,
+      "Tin": 1,
+      "Toán": 3,
+      "MT": 1
+    },
+    "6/4": {
+      "ChCờ": 1,
+      "MT": 1,
+      "KHTN": 4,
+      "TNHN": 1,
+      "Tin": 1,
+      "Văn": 3,
+      "SĐ": 3,
+      "NNgữ": 2,
+      "Toán": 1,
+      "GDCD": 1,
+      "GDĐP": 1,
+      "GDTC": 1
+    },
+    "6/5": {
+      "ChCờ": 1,
+      "GDTC": 2,
+      "GDCD": 1,
+      "TNHN": 1,
+      "KHTN": 4,
+      "SĐ": 2,
+      "GDĐP": 1,
+      "MT": 1,
+      "Toán": 3,
+      "NNgữ": 1,
+      "Văn": 1,
+      "Nhạc": 1,
+      "CN": 1
+    },
+    "6/6": {
+      "ChCờ": 1,
+      "GDTC": 1,
+      "SĐ": 1,
+      "Toán": 4,
+      "Tin": 1,
+      "MT": 1,
+      "Văn": 4,
+      "Nhạc": 1,
+      "NNgữ": 2,
+      "TNHN": 1,
+      "KHTN": 1,
+      "GDĐP": 1,
+      "GDCD": 1
+    },
+    "6/7": {
+      "ChCờ": 1,
+      "KHTN": 4,
+      "Toán": 1,
+      "Tin": 1,
+      "SĐ": 2,
+      "NNgữ": 2,
+      "Văn": 3,
+      "TNHN": 1,
+      "MT": 1,
+      "CN": 1,
+      "GDCD": 1,
+      "Nhạc": 1,
+      "GDTC": 1
+    },
+    "6/8": {
+      "ChCờ": 1,
+      "NNgữ": 3,
+      "GDTC": 2,
+      "Nhạc": 1,
+      "Toán": 3,
+      "Văn": 4,
+      "TNHN": 2,
+      "SĐ": 1,
+      "CN": 1,
+      "KHTN": 2
+    },
+    "6/9": {
+      "ChCờ": 1,
+      "TNHN": 1,
+      "Văn": 4,
+      "KHTN": 3,
+      "CN": 1,
+      "Toán": 3,
+      "GDTC": 2,
+      "NNgữ": 3,
+      "GDCD": 1,
+      "Tin": 1
+    },
+    "6/10": {
+      "ChCờ": 1,
+      "SĐ": 3,
+      "GDĐP": 1,
+      "TNHN": 2,
+      "Toán": 4,
+      "NNgữ": 2,
+      "GDCD": 1,
+      "GDTC": 1,
+      "MT": 1,
+      "CN": 1,
+      "KHTN": 2,
+      "Văn": 1
+    },
+    "6/11": {
+      "ChCờ": 1,
+      "KHTN": 4,
+      "TNHN": 2,
+      "SĐ": 2,
+      "GDĐP": 1,
+      "Văn": 2,
+      "NNgữ": 1,
+      "Toán": 1,
+      "GDTC": 2,
+      "MT": 1,
+      "GDCD": 1,
+      "Nhạc": 1,
+      "CN": 1
+    },
+    "6/12": {
+      "ChCờ": 1,
+      "Toán": 4,
+      "Văn": 3,
+      "GDCD": 1,
+      "Tin": 1,
+      "KHTN": 4,
+      "MT": 1,
+      "SĐ": 3,
+      "GDTC": 1,
+      "GDĐP": 1
+    },
+    "6/13": {
+      "ChCờ": 1,
+      "SĐ": 3,
+      "Văn": 4,
+      "Toán": 2,
+      "GDTC": 2,
+      "CN": 1,
+      "TNHN": 1,
+      "KHTN": 1,
+      "Tin": 1,
+      "GDCD": 1,
+      "MT": 1,
+      "Nhạc": 1,
+      "GDĐP": 1
+    },
+    "6/14": {
+      "ChCờ": 1,
+      "Toán": 4,
+      "KHTN": 4,
+      "MT": 1,
+      "SĐ": 2,
+      "GDĐP": 1,
+      "Tin": 1,
+      "Văn": 2,
+      "TNHN": 1,
+      "GDTC": 1,
+      "GDCD": 1,
+      "Nhạc": 1
+    },
+    "6/15": {
+      "ChCờ": 1,
+      "NNgữ": 3,
+      "Toán": 1,
+      "Văn": 3,
+      "Nhạc": 1,
+      "Tin": 1,
+      "CN": 1,
+      "GDTC": 2,
+      "GDCD": 1,
+      "GDĐP": 1,
+      "SĐ": 2,
+      "TNHN": 1,
+      "KHTN": 2
+    },
+    "7/1": {
+      "ChCờ": 1,
+      "CN": 1,
+      "GDTC": 1,
+      "Nhạc": 1,
+      "SĐ": 2,
+      "Văn": 2,
+      "GDĐP": 1,
+      "Toán": 1,
+      "NNgữ": 3,
+      "MT": 1,
+      "Tin": 1,
+      "KHTN": 3,
+      "TNHN": 1,
+      "GDCD": 1
+    },
+    "7/2": {
+      "ChCờ": 1,
+      "Văn": 2,
+      "SĐ": 2,
+      "Toán": 4,
+      "KHTN": 4,
+      "MT": 1,
+      "TNHN": 1,
+      "GDTC": 2,
+      "Nhạc": 1,
+      "Tin": 1,
+      "GDĐP": 1
+    },
+    "7/3": {
+      "ChCờ": 1,
+      "NNgữ": 2,
+      "KHTN": 2,
+      "GDTC": 2,
+      "Văn": 3,
+      "Toán": 4,
+      "MT": 1,
+      "GDCD": 1,
+      "SĐ": 2,
+      "CN": 1,
+      "GDĐP": 1
+    },
+    "7/4": {
+      "ChCờ": 1,
+      "KHTN": 2,
+      "Toán": 3,
+      "TNHN": 1,
+      "Văn": 2,
+      "Tin": 1,
+      "CN": 1,
+      "GDTC": 2,
+      "NNgữ": 3,
+      "GDĐP": 1,
+      "SĐ": 1,
+      "MT": 1,
+      "Nhạc": 1
+    },
+    "7/5": {
+      "ChCờ": 1,
+      "SĐ": 3,
+      "KHTN": 2,
+      "NNgữ": 3,
+      "Tin": 1,
+      "TNHN": 2,
+      "Toán": 3,
+      "Văn": 3,
+      "CN": 1,
+      "GDTC": 1
+    },
+    "7/6": {
+      "ChCờ": 1,
+      "GDCD": 1,
+      "GDTC": 2,
+      "Văn": 4,
+      "KHTN": 3,
+      "Toán": 3,
+      "CN": 1,
+      "SĐ": 3,
+      "TNHN": 2
+    },
+    "7/7": {
+      "ChCờ": 1,
+      "Văn": 3,
+      "SĐ": 3,
+      "TNHN": 1,
+      "GDĐP": 1,
+      "Tin": 1,
+      "KHTN": 3,
+      "NNgữ": 3,
+      "GDTC": 2,
+      "GDCD": 1,
+      "CN": 1
+    },
+    "7/8": {
+      "ChCờ": 1,
+      "Toán": 4,
+      "GDTC": 2,
+      "CN": 1,
+      "GDĐP": 1,
+      "SĐ": 1,
+      "Văn": 2,
+      "TNHN": 1,
+      "MT": 1,
+      "KHTN": 3,
+      "GDCD": 1,
+      "NNgữ": 2
+    },
+    "7/9": {
+      "ChCờ": 1,
+      "KHTN": 3,
+      "GDTC": 1,
+      "TNHN": 2,
+      "Toán": 4,
+      "MT": 1,
+      "Tin": 1,
+      "Văn": 4,
+      "GDCD": 1,
+      "NNgữ": 2
+    },
+    "7/10": {
+      "ChCờ": 1,
+      "MT": 1,
+      "Nhạc": 1,
+      "GDTC": 1,
+      "NNgữ": 3,
+      "KHTN": 4,
+      "Toán": 1,
+      "Tin": 1,
+      "SĐ": 3,
+      "Văn": 3,
+      "GDĐP": 1
+    },
+    "8/1": {
+      "ChCờ": 1,
+      "NNgữ": 2,
+      "SĐ": 1,
+      "Văn": 3,
+      "GDTC": 1,
+      "Nhạc": 1,
+      "Toán": 4,
+      "TNHN": 1,
+      "Tin": 1,
+      "KHTN": 3,
+      "GDCD": 1,
+      "GDĐP": 1
+    },
+    "8/2": {
+      "ChCờ": 1,
+      "KHTN": 3,
+      "MT": 1,
+      "SĐ": 3,
+      "GDTC": 2,
+      "Toán": 2,
+      "TNHN": 2,
+      "GDĐP": 1,
+      "Văn": 2,
+      "CN": 1,
+      "Nhạc": 1,
+      "GDCD": 1
+    },
+    "8/3": {
+      "ChCờ": 1,
+      "Văn": 4,
+      "GDTC": 1,
+      "SĐ": 2,
+      "CN": 1,
+      "TNHN": 1,
+      "GDCD": 1,
+      "KHTN": 2,
+      "NNgữ": 1,
+      "Toán": 4,
+      "GDĐP": 1,
+      "MT": 1
+    },
+    "8/4": {
+      "ChCờ": 1,
+      "KHTN": 2,
+      "TNHN": 1,
+      "Nhạc": 1,
+      "Toán": 4,
+      "GDCD": 1,
+      "GDTC": 1,
+      "CN": 1,
+      "GDĐP": 1,
+      "Văn": 2,
+      "SĐ": 3,
+      "NNgữ": 2
+    },
+    "8/5": {
+      "ChCờ": 1,
+      "GDĐP": 1,
+      "CN": 1,
+      "Văn": 4,
+      "GDTC": 1,
+      "Nhạc": 1,
+      "Toán": 2,
+      "Tin": 1,
+      "TNHN": 1,
+      "MT": 1,
+      "NNgữ": 1,
+      "SĐ": 3,
+      "GDCD": 1,
+      "KHTN": 1
+    },
+    "8/6": {
+      "ChCờ": 1,
+      "Toán": 4,
+      "GDCD": 1,
+      "SĐ": 3,
+      "Văn": 1,
+      "GDĐP": 1,
+      "TNHN": 2,
+      "KHTN": 2,
+      "NNgữ": 1,
+      "GDTC": 1,
+      "MT": 1,
+      "Nhạc": 1,
+      "Tin": 1
+    },
+    "8/7": {
+      "ChCờ": 1,
+      "MT": 1,
+      "GDĐP": 1,
+      "KHTN": 1,
+      "GDCD": 1,
+      "TNHN": 1,
+      "GDTC": 2,
+      "Toán": 4,
+      "CN": 1,
+      "Văn": 4,
+      "NNgữ": 3
+    },
+    "8/8": {
+      "ChCờ": 1,
+      "Văn": 2,
+      "GDTC": 2,
+      "KHTN": 2,
+      "CN": 1,
+      "SĐ": 1,
+      "TNHN": 1,
+      "Tin": 1,
+      "NNgữ": 3,
+      "GDĐP": 1,
+      "Nhạc": 1,
+      "GDCD": 1,
+      "MT": 1,
+      "Toán": 2
+    },
+    "8/9": {
+      "ChCờ": 1,
+      "Văn": 4,
+      "KHTN": 4,
+      "NNgữ": 3,
+      "GDĐP": 1,
+      "Nhạc": 1,
+      "GDCD": 1,
+      "SĐ": 3,
+      "Tin": 1,
+      "Toán": 1
+    },
+    "8/10": {
+      "ChCờ": 1,
+      "Văn": 3,
+      "TNHN": 2,
+      "GDTC": 2,
+      "GDCD": 1,
+      "MT": 1,
+      "SĐ": 3,
+      "KHTN": 4,
+      "Toán": 2,
+      "CN": 1
+    },
+    "8/11": {
+      "ChCờ": 1,
+      "Toán": 4,
+      "Văn": 2,
+      "NNgữ": 3,
+      "SĐ": 2,
+      "GDTC": 1,
+      "TNHN": 2,
+      "GDĐP": 1,
+      "Nhạc": 1,
+      "Tin": 1,
+      "KHTN": 2
+    },
+    "8/12": {
+      "ChCờ": 1,
+      "Văn": 3,
+      "TNHN": 2,
+      "KHTN": 3,
+      "GDĐP": 1,
+      "Nhạc": 1,
+      "CN": 1,
+      "GDCD": 1,
+      "Tin": 1,
+      "Toán": 2,
+      "NNgữ": 3,
+      "SĐ": 1
+    },
+    "8/13": {
+      "ChCờ": 1,
+      "Toán": 4,
+      "KHTN": 4,
+      "TNHN": 1,
+      "NNgữ": 2,
+      "Tin": 1,
+      "Văn": 1,
+      "GDTC": 2,
+      "SĐ": 3,
+      "CN": 1
+    },
+    "8/14": {
+      "ChCờ": 1,
+      "Tin": 1,
+      "GDCD": 1,
+      "KHTN": 2,
+      "SĐ": 3,
+      "Toán": 1,
+      "Văn": 3,
+      "GDTC": 2,
+      "MT": 1,
+      "GDĐP": 1,
+      "NNgữ": 2,
+      "TNHN": 1,
+      "CN": 1
+    },
+    "8/15": {
+      "ChCờ": 1,
+      "Toán": 2,
+      "MT": 1,
+      "KHTN": 3,
+      "SĐ": 3,
+      "TNHN": 2,
+      "Văn": 3,
+      "Nhạc": 1,
+      "GDTC": 2,
+      "GDCD": 1,
+      "Tin": 1
+    },
+    "8/16": {
+      "ChCờ": 1,
+      "KHTN": 4,
+      "Tin": 1,
+      "CN": 1,
+      "NNgữ": 3,
+      "GDTC": 1,
+      "Văn": 3,
+      "Toán": 2,
+      "Nhạc": 1,
+      "SĐ": 1,
+      "TNHN": 1,
+      "MT": 1
+    },
+    "9/1": {
+      "ChCờ": 1,
+      "GDTC": 2,
+      "Nhạc": 1,
+      "GDĐP": 1,
+      "SĐ": 1,
+      "Văn": 3,
+      "Tin": 1,
+      "TNHN": 2,
+      "NNgữ": 1,
+      "MT": 1,
+      "Toán": 2,
+      "KHTN": 4
+    },
+    "9/2": {
+      "ChCờ": 1,
+      "Văn": 4,
+      "GDCD": 1,
+      "KHTN": 4,
+      "CN": 1,
+      "SĐ": 3,
+      "NNgữ": 1,
+      "GDTC": 1,
+      "MT": 1,
+      "Tin": 1,
+      "GDĐP": 1,
+      "Toán": 1
+    },
+    "9/3": {
+      "ChCờ": 1,
+      "SĐ": 3,
+      "NNgữ": 3,
+      "TNHN": 2,
+      "KHTN": 1,
+      "CN": 1,
+      "MT": 1,
+      "GDTC": 1,
+      "Toán": 3,
+      "GDCD": 1,
+      "GDĐP": 1,
+      "Tin": 1,
+      "Văn": 1
+    },
+    "9/4": {
+      "ChCờ": 1,
+      "Nhạc": 1,
+      "Toán": 4,
+      "Văn": 2,
+      "Tin": 1,
+      "KHTN": 3,
+      "MT": 1,
+      "TNHN": 2,
+      "SĐ": 2,
+      "CN": 1,
+      "NNgữ": 1,
+      "GDTC": 1
+    },
+    "9/5": {
+      "ChCờ": 1,
+      "CN": 1,
+      "TNHN": 2,
+      "Toán": 2,
+      "KHTN": 3,
+      "GDĐP": 1,
+      "GDTC": 1,
+      "Văn": 1,
+      "GDCD": 1,
+      "Tin": 1,
+      "NNgữ": 3,
+      "MT": 1,
+      "Nhạc": 1,
+      "SĐ": 1
+    },
+    "9/6": {
+      "ChCờ": 1,
+      "NNgữ": 3,
+      "KHTN": 4,
+      "SĐ": 1,
+      "TNHN": 1,
+      "GDCD": 1,
+      "GDTC": 2,
+      "Toán": 2,
+      "Văn": 2,
+      "CN": 1,
+      "GDĐP": 1,
+      "MT": 1
+    },
+    "9/7": {
+      "ChCờ": 1,
+      "KHTN": 4,
+      "GDTC": 2,
+      "Tin": 1,
+      "MT": 1,
+      "NNgữ": 3,
+      "TNHN": 1,
+      "CN": 1,
+      "Văn": 1,
+      "GDĐP": 1,
+      "SĐ": 2,
+      "Toán": 2
+    },
+    "9/8": {
+      "ChCờ": 1,
+      "Văn": 3,
+      "GDĐP": 1,
+      "CN": 1,
+      "Tin": 1,
+      "SĐ": 3,
+      "TNHN": 2,
+      "Toán": 3,
+      "NNgữ": 3,
+      "KHTN": 1,
+      "GDTC": 1
+    },
+    "9/9": {
+      "ChCờ": 1,
+      "NNgữ": 3,
+      "KHTN": 3,
+      "Văn": 3,
+      "Toán": 4,
+      "MT": 1,
+      "Tin": 1,
+      "SĐ": 2,
+      "Nhạc": 1,
+      "TNHN": 1
+    },
+    "9/10": {
+      "ChCờ": 1,
+      "NNgữ": 1,
+      "KHTN": 1,
+      "Văn": 4,
+      "Toán": 4,
+      "SĐ": 2,
+      "MT": 1,
+      "TNHN": 1,
+      "GDCD": 1,
+      "GDTC": 2,
+      "Nhạc": 1,
+      "GDĐP": 1
+    },
+    "9/11": {
+      "ChCờ": 1,
+      "SĐ": 3,
+      "Nhạc": 1,
+      "KHTN": 4,
+      "TNHN": 1,
+      "Văn": 4,
+      "CN": 1,
+      "NNgữ": 2,
+      "GDCD": 1,
+      "Toán": 2
+    },
+    "9/12": {
+      "ChCờ": 1,
+      "GDTC": 2,
+      "KHTN": 4,
+      "Toán": 1,
+      "MT": 1,
+      "NNgữ": 3,
+      "CN": 1,
+      "Văn": 2,
+      "SĐ": 3,
+      "TNHN": 1,
+      "Tin": 1
+    },
+    "9/13": {
+      "ChCờ": 1,
+      "KHTN": 4,
+      "GDCD": 1,
+      "NNgữ": 1,
+      "SĐ": 2,
+      "GDĐP": 1,
+      "TNHN": 1,
+      "MT": 1,
+      "Toán": 3,
+      "CN": 1,
+      "GDTC": 2,
+      "Văn": 2
+    }
+  },
+  "pccmTeachers": {
+    "6/1|ChCờ": "P.My",
+    "6/2|ChCờ": "T.Thắm",
+    "6/3|ChCờ": "T.Hồng",
+    "6/4|ChCờ": "B.Tặng",
+    "6/5|ChCờ": "T.Thư",
+    "6/6|ChCờ": "T.Hương.2",
+    "6/7|ChCờ": "T.Bảo",
+    "6/8|ChCờ": "T.Loan.1",
+    "6/9|ChCờ": "T.Thảo.3",
+    "6/10|ChCờ": "T.Ngọc",
+    "6/11|ChCờ": "P.Thảo",
+    "6/12|ChCờ": "T.Thúy",
+    "6/13|ChCờ": "T.Vy",
+    "6/14|ChCờ": "Đ.Hoa",
+    "6/15|ChCờ": "T.Huyền.1",
+    "7/1|ChCờ": "T.Hiền.2",
+    "7/2|ChCờ": "N.Duyên",
+    "7/3|ChCờ": "Q.Vi",
+    "7/4|ChCờ": "T.Tuyết",
+    "7/5|ChCờ": "T.Anh.1",
+    "7/6|ChCờ": "T.Hoàng",
+    "7/7|ChCờ": "T.Oanh.1",
+    "7/8|ChCờ": "T.Hương.3",
+    "7/9|ChCờ": "T.Huyền.2",
+    "7/10|ChCờ": "H.Ân",
+    "8/1|ChCờ": "L.Thùy",
+    "8/2|ChCờ": "N.Thu",
+    "8/3|ChCờ": "B.Công",
+    "8/4|ChCờ": "T.Hải",
+    "8/5|ChCờ": "V.Hải",
+    "8/6|ChCờ": "T.Cường",
+    "8/7|ChCờ": "T.Chi",
+    "8/8|ChCờ": "V.Thiện",
+    "8/9|ChCờ": "T.Thảo.1",
+    "8/10|ChCờ": "H.Trinh",
+    "8/11|ChCờ": "T.Yên",
+    "8/12|ChCờ": "T.Mai",
+    "8/13|ChCờ": "T.Hương.1",
+    "8/14|ChCờ": "Á.Quyên",
+    "8/15|ChCờ": "T.Thanh",
+    "8/16|ChCờ": "H.Dung",
+    "9/1|ChCờ": "T.Trang",
+    "9/2|ChCờ": "H.Nam",
+    "9/3|ChCờ": "T.Yến.1",
+    "9/4|ChCờ": "T.Khơ",
+    "9/5|ChCờ": "T.Yến.2",
+    "9/6|ChCờ": "T.Nga",
+    "9/7|ChCờ": "T.Sương",
+    "9/8|ChCờ": "T.Hằng",
+    "9/9|ChCờ": "D.Quyên",
+    "9/10|ChCờ": "T.Thủy",
+    "9/11|ChCờ": "T.Oanh.2",
+    "9/12|ChCờ": "T.Bình.1",
+    "9/13|ChCờ": "T.Đoan",
+    "6/1|Văn": "T.Thúy",
+    "6/2|Toán": "T.Thảo.2",
+    "6/3|NNgữ": "T.Hồng",
+    "6/4|MT": "B.Tặng",
+    "6/5|GDTC": "H.Hoàng",
+    "6/6|GDTC": "T.Trường",
+    "6/7|KHTN": "N.Hương",
+    "6/8|NNgữ": "T.Loan.1",
+    "6/9|TNHN": "CN",
+    "6/10|SĐ": "H.Thủy",
+    "6/11|KHTN": "T.Ngọc",
+    "6/12|Toán": "T.Vy",
+    "6/13|SĐ": "T.Huyền.1",
+    "6/14|Toán": "T.Oanh.2",
+    "6/15|NNgữ": "T.Yến.1",
+    "7/1|CN": "M.Tuấn",
+    "7/2|Văn": "T.Hương.3",
+    "7/3|NNgữ": "Q.Vi",
+    "7/4|KHTN": "N.Duyên",
+    "7/5|SĐ": "T.Sương",
+    "7/6|GDCD": "T.Oanh.1",
+    "7/7|Văn": "T.Anh.1",
+    "7/8|Toán": "X.Huy",
+    "7/9|KHTN": "T.Hà",
+    "7/10|MT": "H.Ân",
+    "8/1|NNgữ": "L.Thùy",
+    "8/2|KHTN": "T.Hoàng",
+    "8/3|Văn": "N.Kiên",
+    "8/4|KHTN": "T.Nga",
+    "8/5|GDĐP": "Q.Thúc",
+    "8/6|Toán": "N.Châu",
+    "8/7|MT": "K.Phát",
+    "8/8|Văn": "N.Thu",
+    "8/9|Văn": "T.Thảo.1",
+    "8/10|Văn": "H.Trinh",
+    "8/11|Toán": "V.Hải",
+    "8/12|Văn": "Đ.Hoa",
+    "8/13|Toán": "T.Hương.1",
+    "8/14|Tin": "T.Hiền.1",
+    "8/15|Toán": "H.Dung",
+    "8/16|KHTN": "G.Lâm",
+    "9/1|GDTC": "T.Kiệt",
+    "9/2|Văn": "T.Khơ",
+    "9/3|SĐ": "V.Quang",
+    "9/4|Nhạc": "T.Tuyết",
+    "9/5|CN": "T.Tín",
+    "9/6|NNgữ": "T.Vân.1",
+    "9/7|KHTN": "C.Toàn",
+    "9/8|Văn": "T.Hằng",
+    "9/9|NNgữ": "Đ.Duy",
+    "9/10|NNgữ": "T.Bình.1",
+    "9/11|SĐ": "T.Đoan",
+    "9/12|GDTC": "T.Long",
+    "9/13|KHTN": "T.Bình.2",
+    "6/4|KHTN": "T.Dinh",
+    "6/5|GDCD": "P.My",
+    "6/6|SĐ": "V.Thiện",
+    "6/7|Toán": "T.Bảo",
+    "6/9|Văn": "T.Thảo.3",
+    "6/10|GDĐP": "T.Quỳnh",
+    "6/13|Văn": "T.Nguyệt.2",
+    "6/14|KHTN": "Đ.Kiếm",
+    "7/1|GDTC": "T.Long",
+    "7/2|SĐ": "T.Hiền.2",
+    "7/6|GDTC": "H.Hoàng",
+    "7/9|GDTC": "T.Trường",
+    "7/10|Nhạc": "H.Ân",
+    "8/2|MT": "K.Phát",
+    "8/4|TNHN": "CĐ",
+    "8/5|CN": "T.Tín",
+    "8/7|GDĐP": "Q.Thúc",
+    "8/8|GDTC": "T.Anh.2",
+    "8/13|KHTN": "T.Yên",
+    "8/14|GDCD": "T.Oanh.1",
+    "8/16|Tin": "T.Hiền.1",
+    "9/1|Nhạc": "T.Tuyết",
+    "9/4|Toán": "H.Nam",
+    "9/5|TNHN": "CN",
+    "9/10|KHTN": "T.Bình.2",
+    "9/12|KHTN": "T.Nga",
+    "9/13|GDCD": "T.Thanh",
+    "6/1|TNHN": "CĐ",
+    "6/2|KHTN": "G.Lâm",
+    "6/3|TNHN": "CĐ",
+    "6/5|TNHN": "CN",
+    "6/6|Toán": "T.Bảo",
+    "6/7|Tin": "T.Lan",
+    "6/8|GDTC": "V.Hiệp",
+    "6/10|TNHN": "CN",
+    "6/11|TNHN": "CĐ",
+    "6/12|Văn": "T.Thúy",
+    "6/13|Toán": "T.Vy",
+    "6/15|Toán": "T.Thảo.2",
+    "7/1|Nhạc": "T.Tuyết",
+    "7/3|KHTN": "N.Duyên",
+    "7/4|Toán": "H.Đức",
+    "7/5|KHTN": "T.Hoàng",
+    "7/6|Văn": "T.Anh.1",
+    "7/7|SĐ": "T.Đoan",
+    "7/8|GDTC": "T.Trường",
+    "7/9|TNHN": "CĐ",
+    "7/10|GDTC": "H.Hoàng",
+    "8/1|SĐ": "Á.Quyên",
+    "8/2|SĐ": "V.Thiện",
+    "8/3|GDTC": "T.Long",
+    "8/4|Nhạc": "K.Phát",
+    "8/5|Văn": "H.Trinh",
+    "8/6|GDCD": "T.Oanh.1",
+    "8/7|KHTN": "T.Chi",
+    "8/8|KHTN": "T.Yên",
+    "8/9|KHTN": "T.Bình.2",
+    "8/10|TNHN": "CN",
+    "8/11|Văn": "Đ.Hoa",
+    "8/12|TNHN": "CĐ",
+    "8/13|TNHN": "CN",
+    "8/14|KHTN": "T.Trang",
+    "8/15|MT": "H.Ân",
+    "8/16|CN": "B.Công",
+    "9/1|GDĐP": "Q.Thúc",
+    "9/2|GDCD": "T.Thanh",
+    "9/3|NNgữ": "T.Yến.1",
+    "9/4|Văn": "T.Khơ",
+    "9/5|Toán": "T.Yến.2",
+    "9/6|KHTN": "T.Nga",
+    "9/7|GDTC": "Q.Vương",
+    "9/8|GDĐP": "T.Nguyệt.2",
+    "9/9|KHTN": "C.Toàn",
+    "9/10|Văn": "T.Hằng",
+    "9/11|Nhạc": "B.Trang",
+    "9/12|Toán": "T.Thủy",
+    "9/13|NNgữ": "T.Hương.2",
+    "6/1|GDTC": "T.Trường",
+    "6/2|NNgữ": "Đ.Duy",
+    "6/3|Văn": "T.Hoài",
+    "6/4|TNHN": "CĐ",
+    "6/5|KHTN": "T.Dinh",
+    "6/6|Tin": "T.Lan",
+    "6/7|SĐ": "V.Thiện",
+    "6/8|Nhạc": "B.Tặng",
+    "6/9|KHTN": "T.Ngọc",
+    "6/10|Toán": "T.Vy",
+    "6/11|SĐ": "T.Huyền.1",
+    "6/12|GDCD": "P.My",
+    "6/15|Văn": "T.Thảo.3",
+    "7/1|SĐ": "T.Hiền.2",
+    "7/4|TNHN": "CN",
+    "7/5|NNgữ": "Q.Vi",
+    "7/6|KHTN": "T.Hoàng",
+    "7/7|TNHN": "CĐ",
+    "7/8|CN": "M.Tuấn",
+    "7/10|NNgữ": "T.Huyền.2",
+    "8/1|Văn": "T.Thảo.1",
+    "8/2|GDTC": "T.Long",
+    "8/3|SĐ": "H.Thủy",
+    "8/4|Toán": "H.Dung",
+    "8/6|SĐ": "T.Cường",
+    "8/7|GDCD": "T.Oanh.1",
+    "8/9|NNgữ": "T.Mai",
+    "8/10|GDTC": "T.Anh.2",
+    "8/12|KHTN": "T.Yên",
+    "8/13|NNgữ": "T.Hải",
+    "8/14|SĐ": "Á.Quyên",
+    "8/15|KHTN": "G.Lâm",
+    "8/16|NNgữ": "L.Thùy",
+    "9/1|SĐ": "T.Sương",
+    "9/4|Tin": "T.Cúc",
+    "9/5|KHTN": "T.Chi",
+    "9/7|Tin": "T.Hiền.1",
+    "9/8|CN": "T.Tín",
+    "9/9|Văn": "D.Quyên",
+    "9/11|KHTN": "C.Toàn",
+    "9/12|MT": "B.Trang",
+    "6/1|GDCD": "P.My",
+    "6/3|SĐ": "T.Thắm",
+    "6/4|Tin": "T.Cúc",
+    "6/6|MT": "B.Trang",
+    "6/8|Toán": "X.Huy",
+    "6/12|Tin": "T.Lan",
+    "6/14|MT": "B.Tặng",
+    "7/2|Toán": "H.Đức",
+    "7/3|GDTC": "T.Long",
+    "7/4|Văn": "T.Hương.3",
+    "7/7|GDĐP": "T.Quỳnh",
+    "8/2|Toán": "N.Châu",
+    "8/5|GDTC": "H.Hoàng",
+    "8/7|TNHN": "CĐ",
+    "8/8|CN": "M.Tuấn",
+    "8/9|GDĐP": "Q.Thúc",
+    "8/11|NNgữ": "L.Thùy",
+    "8/16|GDTC": "T.Anh.2",
+    "9/1|Văn": "T.Loan.2",
+    "9/2|KHTN": "T.Trang",
+    "9/7|MT": "T.Tuyết",
+    "9/8|Tin": "T.Hiền.1",
+    "9/12|NNgữ": "T.Bình.1",
+    "9/13|SĐ": "T.Đoan",
+    "6/2|GDCD": "P.My",
+    "6/3|GDTC": "V.Hiệp",
+    "6/5|SĐ": "T.Thắm",
+    "6/6|Văn": "T.Hoài",
+    "6/8|Văn": "T.Nguyệt.2",
+    "6/9|CN": "T.Thư",
+    "6/10|NNgữ": "T.Vân.1",
+    "6/12|KHTN": "T.Ngọc",
+    "6/13|GDTC": "T.Trường",
+    "6/14|SĐ": "T.Huyền.1",
+    "6/15|Nhạc": "P.Thảo",
+    "7/1|Văn": "T.Anh.1",
+    "7/2|KHTN": "N.Duyên",
+    "7/3|Văn": "T.Hương.3",
+    "7/6|Toán": "X.Huy",
+    "7/7|Tin": "T.Lan",
+    "7/8|GDĐP": "T.Quỳnh",
+    "7/9|Toán": "T.Bảo",
+    "7/10|KHTN": "T.Hà",
+    "8/1|GDTC": "H.Hoàng",
+    "8/2|TNHN": "CĐ",
+    "8/3|CN": "B.Công",
+    "8/4|GDCD": "T.Thanh",
+    "8/5|Nhạc": "K.Phát",
+    "8/7|GDTC": "T.Anh.2",
+    "8/8|SĐ": "V.Thiện",
+    "8/9|Nhạc": "H.Ân",
+    "8/10|GDCD": "T.Oanh.1",
+    "8/11|SĐ": "H.Thủy",
+    "8/12|GDĐP": "Q.Thúc",
+    "8/14|Toán": "T.Hương.1",
+    "8/15|SĐ": "Á.Quyên",
+    "8/16|Văn": "T.Thảo.1",
+    "9/1|Tin": "T.Cúc",
+    "9/2|CN": "T.Tín",
+    "9/3|TNHN": "CĐ",
+    "9/4|KHTN": "T.Chi",
+    "9/5|GDĐP": "T.Thảo.2",
+    "9/6|SĐ": "V.Quang",
+    "9/7|NNgữ": "Đ.Duy",
+    "9/8|SĐ": "T.Cường",
+    "9/9|Toán": "T.Linh",
+    "9/10|Toán": "T.Thủy",
+    "9/11|TNHN": "CĐ",
+    "6/1|GDĐP": "T.Vân.2",
+    "6/2|GDTC": "V.Hiệp",
+    "6/3|GDĐP": "T.Dinh",
+    "6/4|Văn": "T.Thúy",
+    "6/6|Nhạc": "B.Trang",
+    "6/8|TNHN": "CN",
+    "6/9|Toán": "X.Huy",
+    "6/11|GDĐP": "T.Quỳnh",
+    "6/13|CN": "T.Thư",
+    "6/15|Tin": "T.Lan",
+    "7/2|MT": "P.Thảo",
+    "7/5|Tin": "T.Hiền.1",
+    "7/6|CN": "M.Tuấn",
+    "7/7|KHTN": "T.Hà",
+    "7/8|SĐ": "T.Đoan",
+    "7/9|MT": "B.Tặng",
+    "7/10|Toán": "T.Bảo",
+    "8/1|Nhạc": "K.Phát",
+    "8/2|GDĐP": "Q.Thúc",
+    "8/3|TNHN": "CN",
+    "8/4|GDTC": "H.Hoàng",
+    "8/5|Toán": "V.Hải",
+    "8/6|Văn": "N.Kiên",
+    "8/7|Toán": "N.Châu",
+    "8/8|TNHN": "CN",
+    "8/9|GDCD": "T.Oanh.1",
+    "8/10|MT": "H.Ân",
+    "8/13|Tin": "T.Cúc",
+    "8/15|TNHN": "CN",
+    "9/2|SĐ": "T.Sương",
+    "9/3|KHTN": "T.Bình.2",
+    "9/6|TNHN": "CN",
+    "9/8|TNHN": "CN",
+    "9/11|Văn": "T.Loan.2",
+    "9/12|CN": "T.Tín",
+    "9/13|GDĐP": "T.Nguyệt.2",
+    "6/1|Toán": "T.Thảo.2",
+    "6/2|Văn": "Đ.Hoa",
+    "6/3|GDCD": "P.My",
+    "6/4|SĐ": "T.Thắm",
+    "6/5|GDĐP": "T.Vân.2",
+    "6/6|NNgữ": "T.Hương.2",
+    "6/7|NNgữ": "T.Loan.1",
+    "6/9|GDTC": "V.Hiệp",
+    "6/11|Văn": "T.Thảo.3",
+    "6/12|MT": "B.Tặng",
+    "6/14|GDĐP": "T.Quỳnh",
+    "6/15|CN": "T.Thư",
+    "7/1|GDĐP": "T.Nguyệt.1",
+    "7/3|Toán": "H.Đức",
+    "7/4|Tin": "T.Hiền.1",
+    "7/5|TNHN": "CN",
+    "7/6|SĐ": "T.Đoan",
+    "7/7|NNgữ": "T.Hồng",
+    "7/8|Văn": "T.Hương.3",
+    "7/10|Tin": "T.Lan",
+    "8/1|Toán": "V.Hải",
+    "8/3|GDCD": "T.Oanh.1",
+    "8/4|CN": "B.Công",
+    "8/6|GDĐP": "Q.Thúc",
+    "8/7|CN": "M.Tuấn",
+    "8/8|Tin": "T.Cúc",
+    "8/9|SĐ": "V.Thiện",
+    "8/10|SĐ": "H.Thủy",
+    "8/11|GDTC": "T.Anh.2",
+    "8/12|Nhạc": "H.Ân",
+    "8/13|Văn": "N.Thu",
+    "8/14|Văn": "T.Thảo.1",
+    "8/16|Toán": "H.Dung",
+    "9/1|TNHN": "CN",
+    "9/2|NNgữ": "T.Vân.1",
+    "9/3|CN": "T.Tín",
+    "9/4|MT": "T.Tuyết",
+    "9/5|GDTC": "Q.Vương",
+    "9/8|Toán": "T.Thủy",
+    "9/9|MT": "B.Trang",
+    "9/10|SĐ": "V.Quang",
+    "9/13|TNHN": "CĐ",
+    "6/3|KHTN": "N.Hương",
+    "6/4|NNgữ": "T.Hồng",
+    "6/5|MT": "B.Tặng",
+    "6/10|GDCD": "P.My",
+    "6/14|Tin": "T.Hiếu",
+    "6/15|GDTC": "T.Trường",
+    "7/1|Toán": "H.Đức",
+    "7/3|MT": "P.Thảo",
+    "7/4|CN": "M.Tuấn",
+    "7/7|GDTC": "H.Hoàng",
+    "7/8|TNHN": "CĐ",
+    "8/4|GDĐP": "Q.Thúc",
+    "8/6|TNHN": "CĐ",
+    "8/8|NNgữ": "Q.Vi",
+    "8/12|CN": "B.Công",
+    "8/14|GDTC": "T.Anh.2",
+    "9/2|GDTC": "Q.Vương",
+    "9/3|MT": "T.Tuyết",
+    "9/4|TNHN": "CN",
+    "9/6|GDCD": "T.Thanh",
+    "9/13|MT": "B.Trang",
+    "6/1|SĐ": "T.Thắm",
+    "6/6|TNHN": "CĐ",
+    "6/7|Văn": "T.Nguyệt.2",
+    "6/9|NNgữ": "T.Loan.1",
+    "6/11|NNgữ": "T.Vân.1",
+    "6/12|SĐ": "T.Huyền.1",
+    "6/13|TNHN": "CĐ",
+    "6/14|Văn": "Đ.Hoa",
+    "6/15|GDCD": "P.My",
+    "7/1|NNgữ": "T.Bình.1",
+    "7/2|TNHN": "CN",
+    "7/4|GDTC": "T.Long",
+    "7/5|Toán": "H.Đức",
+    "7/8|MT": "P.Thảo",
+    "7/9|Tin": "T.Lan",
+    "7/10|SĐ": "T.Hiền.2",
+    "8/1|TNHN": "CN",
+    "8/3|KHTN": "T.Nga",
+    "8/5|Tin": "T.Cúc",
+    "8/6|KHTN": "T.Trang",
+    "8/8|GDĐP": "Q.Thúc",
+    "8/10|KHTN": "T.Bình.2",
+    "8/11|TNHN": "CN",
+    "8/12|GDCD": "T.Oanh.1",
+    "8/14|MT": "H.Ân",
+    "8/15|Văn": "H.Trinh",
+    "9/1|NNgữ": "T.Yến.1",
+    "9/2|MT": "K.Phát",
+    "9/3|GDTC": "T.Kiệt",
+    "9/4|SĐ": "V.Quang",
+    "9/5|Văn": "T.Loan.2",
+    "9/6|GDTC": "Q.Vương",
+    "9/9|Tin": "T.Hiền.1",
+    "9/10|MT": "B.Trang",
+    "9/11|CN": "T.Tín",
+    "9/12|Văn": "T.Hằng",
+    "9/13|Toán": "T.Oanh.2",
+    "6/2|CN": "T.Thư",
+    "6/3|Tin": "T.Cúc",
+    "6/4|Toán": "T.Linh",
+    "6/5|Toán": "T.Thảo.2",
+    "6/6|KHTN": "T.Dinh",
+    "6/10|GDTC": "T.Trường",
+    "6/11|Toán": "T.Vy",
+    "6/13|KHTN": "Đ.Kiếm",
+    "7/3|GDCD": "P.My",
+    "7/4|NNgữ": "T.Huyền.2",
+    "7/5|Văn": "T.Anh.1",
+    "7/6|TNHN": "CN",
+    "7/7|GDCD": "T.Oanh.1",
+    "7/8|KHTN": "T.Hà",
+    "7/9|Văn": "N.Kiên",
+    "8/1|Tin": "T.Hiền.1",
+    "8/3|NNgữ": "T.Mai",
+    "8/5|TNHN": "CN",
+    "8/7|Văn": "N.Thu",
+    "8/8|Nhạc": "K.Phát",
+    "8/12|Tin": "T.Hiếu",
+    "8/13|GDTC": "T.Anh.2",
+    "9/1|MT": "T.Tuyết",
+    "9/3|Toán": "T.Yến.2",
+    "9/5|GDCD": "T.Thanh",
+    "9/6|Toán": "H.Nam",
+    "9/7|TNHN": "CN",
+    "9/10|TNHN": "CN",
+    "9/13|CN": "T.Tín",
+    "6/1|CN": "T.Thư",
+    "6/2|Tin": "T.Cúc",
+    "6/3|Toán": "T.Linh",
+    "6/10|MT": "B.Tặng",
+    "6/11|GDTC": "V.Hiệp",
+    "6/12|GDTC": "T.Trường",
+    "6/13|Tin": "T.Lan",
+    "6/15|GDĐP": "H.Thủy",
+    "7/1|MT": "T.Tuyết",
+    "7/2|GDTC": "T.Long",
+    "7/3|SĐ": "T.Sương",
+    "8/1|KHTN": "T.Chi",
+    "8/2|Văn": "N.Thu",
+    "8/4|Văn": "H.Trinh",
+    "8/5|MT": "K.Phát",
+    "8/6|NNgữ": "T.Quỳnh",
+    "8/8|GDCD": "T.Oanh.1",
+    "8/10|Toán": "V.Hải",
+    "8/11|GDĐP": "Q.Thúc",
+    "8/12|Toán": "T.Hương.1",
+    "8/16|Nhạc": "H.Ân",
+    "9/1|Toán": "T.Yến.2",
+    "9/3|GDCD": "T.Thanh",
+    "9/4|CN": "T.Tín",
+    "9/5|Tin": "T.Hiền.1",
+    "9/6|Văn": "T.Khơ",
+    "9/8|NNgữ": "T.Bình.1",
+    "9/9|SĐ": "T.Cường",
+    "9/11|NNgữ": "T.Hương.2",
+    "9/12|SĐ": "V.Quang",
+    "6/1|NNgữ": "Đ.Duy",
+    "6/2|Nhạc": "B.Trang",
+    "6/10|CN": "T.Thư",
+    "6/12|GDĐP": "T.Quỳnh",
+    "6/13|GDCD": "P.My",
+    "6/15|SĐ": "T.Huyền.1",
+    "7/1|Tin": "T.Lan",
+    "7/2|Nhạc": "P.Thảo",
+    "7/9|GDCD": "T.Oanh.1",
+    "7/10|Văn": "N.Kiên",
+    "8/5|NNgữ": "T.Mai",
+    "8/6|GDTC": "H.Hoàng",
+    "8/14|GDĐP": "Q.Thúc",
+    "8/15|Nhạc": "H.Ân",
+    "9/4|NNgữ": "T.Vân.1",
+    "9/5|NNgữ": "T.Yến.1",
+    "9/7|CN": "T.Tín",
+    "9/8|KHTN": "C.Toàn",
+    "9/10|GDCD": "T.Thanh",
+    "6/4|GDCD": "P.My",
+    "6/5|NNgữ": "T.Hương.2",
+    "6/6|GDĐP": "T.Quỳnh",
+    "6/7|TNHN": "CN",
+    "6/11|MT": "P.Thảo",
+    "6/13|MT": "B.Tặng",
+    "7/1|KHTN": "N.Duyên",
+    "7/2|Tin": "T.Hiền.1",
+    "7/4|GDĐP": "N.Hương",
+    "7/7|CN": "M.Tuấn",
+    "8/3|Toán": "T.Hương.1",
+    "8/4|SĐ": "Á.Quyên",
+    "8/5|SĐ": "T.Cường",
+    "8/6|MT": "K.Phát",
+    "8/9|Tin": "T.Cúc",
+    "8/11|Nhạc": "H.Ân",
+    "8/12|NNgữ": "T.Mai",
+    "8/13|SĐ": "H.Thủy",
+    "8/14|NNgữ": "T.Hải",
+    "8/15|GDTC": "T.Anh.2",
+    "9/1|KHTN": "T.Trang",
+    "9/5|MT": "T.Tuyết",
+    "9/7|Văn": "D.Quyên",
+    "9/10|GDTC": "Q.Vương",
+    "9/11|GDCD": "T.Thanh",
+    "9/12|TNHN": "CĐ",
+    "9/13|GDTC": "T.Long",
+    "6/1|KHTN": "G.Lâm",
+    "6/2|TNHN": "CN",
+    "6/4|GDĐP": "T.Vân.2",
+    "6/7|MT": "P.Thảo",
+    "6/10|KHTN": "T.Ngọc",
+    "6/11|GDCD": "P.My",
+    "6/13|Nhạc": "B.Tặng",
+    "6/15|TNHN": "CĐ",
+    "7/2|GDĐP": "N.Hương",
+    "7/4|SĐ": "T.Hiền.2",
+    "7/5|CN": "M.Tuấn",
+    "8/2|CN": "B.Công",
+    "8/5|GDCD": "T.Oanh.1",
+    "8/7|NNgữ": "T.Quỳnh",
+    "8/8|MT": "K.Phát",
+    "8/9|Toán": "N.Châu",
+    "8/11|Tin": "T.Cúc",
+    "8/15|GDCD": "T.Thanh",
+    "8/16|SĐ": "Á.Quyên",
+    "9/5|Nhạc": "T.Tuyết",
+    "9/7|GDĐP": "T.Thảo.2",
+    "9/8|GDTC": "Q.Vương",
+    "9/10|Nhạc": "B.Trang",
+    "9/12|Tin": "T.Hiền.1",
+    "6/2|MT": "B.Trang",
+    "6/4|GDTC": "H.Hoàng",
+    "6/5|Văn": "T.Thảo.3",
+    "6/7|CN": "T.Thư",
+    "6/8|SĐ": "T.Huyền.1",
+    "6/9|GDCD": "P.My",
+    "6/10|Văn": "T.Hoài",
+    "6/14|TNHN": "CN",
+    "6/15|KHTN": "N.Hương",
+    "7/3|CN": "M.Tuấn",
+    "7/4|MT": "T.Tuyết",
+    "7/8|GDCD": "T.Oanh.1",
+    "7/9|NNgữ": "T.Huyền.2",
+    "8/1|GDCD": "T.Thanh",
+    "8/3|GDĐP": "Q.Thúc",
+    "8/4|NNgữ": "T.Hải",
+    "8/10|CN": "T.Tín",
+    "8/11|KHTN": "T.Yên",
+    "8/12|SĐ": "H.Thủy",
+    "8/14|TNHN": "CĐ",
+    "9/5|SĐ": "V.Quang",
+    "9/7|SĐ": "T.Sương",
+    "9/10|GDĐP": "T.Nguyệt.2",
+    "9/11|Toán": "T.Oanh.2",
+    "9/13|Văn": "D.Quyên",
+    "6/5|Nhạc": "B.Tặng",
+    "6/7|GDCD": "P.My",
+    "6/8|CN": "T.Thư",
+    "6/9|Tin": "T.Lan",
+    "6/11|Nhạc": "P.Thảo",
+    "6/13|GDĐP": "T.Quỳnh",
+    "6/14|GDTC": "T.Trường",
+    "7/4|Nhạc": "T.Tuyết",
+    "7/10|GDĐP": "T.Hiền.2",
+    "8/6|Nhạc": "K.Phát",
+    "8/13|CN": "B.Công",
+    "8/15|Tin": "T.Hiền.1",
+    "9/2|Tin": "T.Cúc",
+    "9/3|GDĐP": "Q.Thúc",
+    "9/6|CN": "T.Tín",
+    "6/5|CN": "T.Thư",
+    "6/7|Nhạc": "P.Thảo",
+    "6/8|KHTN": "N.Hương",
+    "6/14|GDCD": "P.My",
+    "7/1|TNHN": "CĐ",
+    "7/3|GDĐP": "T.Nguyệt.1",
+    "7/8|NNgữ": "T.Huyền.2",
+    "8/2|Nhạc": "K.Phát",
+    "8/8|Toán": "N.Châu",
+    "8/16|TNHN": "CN",
+    "9/2|GDĐP": "Q.Thúc",
+    "9/3|Tin": "T.Cúc",
+    "9/4|GDTC": "Q.Vương",
+    "9/6|GDĐP": "T.Thảo.2",
+    "9/7|Toán": "T.Linh",
+    "9/9|Nhạc": "B.Trang",
+    "6/3|MT": "B.Trang",
+    "6/6|GDCD": "P.My",
+    "6/7|GDTC": "Q.Vương",
+    "6/11|CN": "T.Thư",
+    "6/14|Nhạc": "B.Tặng",
+    "7/1|GDCD": "T.Oanh.1",
+    "7/5|GDTC": "H.Hoàng",
+    "8/1|GDĐP": "Q.Thúc",
+    "8/2|GDCD": "T.Thanh",
+    "8/3|MT": "K.Phát",
+    "8/5|KHTN": "T.Hoàng",
+    "8/6|Tin": "T.Cúc",
+    "8/14|CN": "B.Công",
+    "8/16|MT": "H.Ân",
+    "9/2|Toán": "H.Nam",
+    "9/3|Văn": "T.Loan.2",
+    "9/6|MT": "T.Tuyết",
+    "9/9|TNHN": "CĐ"
+  },
+  "tkbConstraints": {}
+}

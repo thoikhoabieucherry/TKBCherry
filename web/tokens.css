@@ -1,0 +1,33 @@
+/* TKB design tokens — shared admin + planner (light theme) */
+:root {
+  --tkb-font: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --tkb-primary: #2563eb;
+  --tkb-primary-hover: #1d4ed8;
+  --tkb-primary-soft: #eff6ff;
+  --tkb-primary-border: #bfdbfe;
+  --tkb-accent: #f43f5e;
+  --tkb-accent-soft: #fff1f2;
+  --tkb-surface: #ffffff;
+  --tkb-bg: #f8fafc;
+  --tkb-border: #e2e8f0;
+  --tkb-text: #0f172a;
+  --tkb-muted: #64748b;
+  --tkb-radius: 10px;
+  --tkb-shadow: 0 1px 3px rgb(15 23 42 / 6%);
+  --tkb-control-h: 36px;
+  --tkb-control-h-touch: 42px;
+  --tkb-gap: 8px;
+  --tkb-danger-bg: #fef2f2;
+  --tkb-danger-border: #fecaca;
+  --tkb-danger-text: #b91c1c;
+  --tkb-success: #15803d;
+  --tkb-focus-ring: 0 0 0 3px rgb(37 99 235 / 18%);
+  --tkb-action-control-height: var(--tkb-control-h);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

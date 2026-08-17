@@ -1,0 +1,17 @@
+{
+  "name": "tkb-mail-server",
+  "version": "1.0.0",
+  "description": "Backend nhỏ gửi email OTP cho TKB qua Gmail SMTP",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "nodemailer": "^9.0.3"
+  }
+}

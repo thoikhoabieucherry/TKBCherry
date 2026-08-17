@@ -1,0 +1,2376 @@
+from __future__ import annotations
+
+import os
+import threading
+import time
+from pathlib import Path
+from typing import Any, Callable, Iterable, Mapping
+
+from collections import Counter
+from functools import lru_cache
+from itertools import product
+
+from .models import Lesson, SchoolData, SessionAllocation
+from .external_cp_sat import (
+    ExternalCpSatSolver,
+    active_external_solver,
+    solve_cp_sat_model,
+)
+from .random_seed import normalize_cp_sat_seed
+from .rules import TimetableRuleSet, one_session_per_day_mode, resolve_rule_set
+from .session_milp import (
+    AssignmentSessionDomainMemo,
+    _assignment_block_allowed,
+    _assignment_available_periods,
+    _assignment_session_allowed,
+    _assignment_session_cap,
+    _day_key,
+    _get_path,
+    _session_key,
+    _subject_like_block_allowed,
+    _teacher_session_period_capacity,
+    _truthy,
+)
+from .template import LOWER_GRADES, all_sessions, class_available_periods, class_session_capacity_for_constraints, teacher_session_capacity
+
+ProgressFn = Callable[[dict[str, Any]], None]
+
+
+class SessionCpSatNoSolution(RuntimeError):
+    def __init__(self, message: str, metrics: dict[str, Any]):
+        super().__init__(message)
+        self.metrics = metrics
+
+
+def _load_cp_model():
+    try:
+        from ortools.sat.python import cp_model  # type: ignore
+    except ImportError as exc:  # pragma: no cover - exercised only when deps are missing.
+        raise RuntimeError(
+            "OR-Tools is required for CP-SAT session solving. "
+            "Install requirements.txt before running solver_mode=auto."
+        ) from exc
+    return cp_model
+
+
+def _to_int(value: Any, default: int = 0) -> int:
+    if value is None or value == "":
+        return default
+    try:
+        return int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return default
+
+
+def _count_contiguous_blocks(periods: set[int] | list[int] | tuple[int, ...], length: int) -> int:
+    ordered = sorted({int(period) for period in periods})
+    period_set = set(ordered)
+    return sum(
+        1
+        for period in ordered
+        if period - 1 not in period_set
+        and all(period + offset in period_set for offset in range(max(1, int(length))))
+    )
+
+
+def _contiguous_run_lengths_by_start(
+    allowed_periods: Iterable[int],
+) -> dict[int, int]:
+    """Return the available contiguous-run length beginning at each period."""
+
+    ordered = sorted({int(period) for period in allowed_periods})
+    run_lengths: dict[int, int] = {}
+    next_period: int | None = None
+    run_length = 0
+    for period in reversed(ordered):
+        run_length = run_length + 1 if next_period == period + 1 else 1
+        run_lengths[period] = run_length
+        next_period = period
+    return run_lengths
+
+
+@lru_cache(maxsize=None)
+def _teacher_gap_pattern_rows(capacity: int) -> tuple[tuple[int, ...], ...]:
+    """Truth table for the exact internal-gap signature of one half-day.
+
+    The canonical validator defines a teacher gap as the empty periods between
+    the first and last occupied periods.  Keeping that definition in a small
+    table (at most 32 rows for the current five-period sessions) avoids the
+    common but incorrect shortcut of counting only local ``1, 0, 1`` patterns.
+    """
+
+    cap = max(0, int(capacity))
+    rows: list[tuple[int, ...]] = []
+    for occupancy in product((0, 1), repeat=cap):
+        occupied = [index for index, value in enumerate(occupancy) if value]
+        gap_periods = (
+            occupied[-1] - occupied[0] + 1 - len(occupied)
+            if occupied
+            else 0
+        )
+        rows.append(
+            (
+                *occupancy,
+                gap_periods,
+                int(gap_periods == 1),
+                int(gap_periods >= 2),
+                gap_periods if gap_periods >= 2 else 0,
+            )
+        )
+    return tuple(rows)
+
+
+def _lexicographic_expression(
+    components: list[tuple[str, Any, int]],
+) -> tuple[Any | None, dict[str, int]]:
+    """Build a bounded integer lexicographic objective and expose its weights."""
+
+    if not components:
+        return None, {}
+    objective: Any = 0
+    multiplier = 1
+    weights: dict[str, int] = {}
+    for name, expression, upper_bound in reversed(components):
+        weights[name] = multiplier
+        objective += expression * multiplier
+        multiplier *= max(0, int(upper_bound)) + 1
+    return objective, weights
+
+
+def _day_limit_from_rule(rule: Mapping[str, Any], path: str, day: int) -> int:
+    raw = _get_path(rule, path, 0)
+    if isinstance(raw, Mapping):
+        return _to_int(raw.get(_day_key(day)), 0)
+    return _to_int(raw, 0)
+
+
+def _limit_for_slot(rule: Mapping[str, Any], field: str, session: Any) -> int:
+    by_session = rule.get("perSlotBySession", {}) if isinstance(rule.get("perSlotBySession"), Mapping) else {}
+    session_key = _session_key(session)
+    day_key = _day_key(session.day)
+    value: Any = None
+    field_map = by_session.get(field) if isinstance(by_session, Mapping) else None
+    if isinstance(field_map, Mapping):
+        value = _get_path(field_map, f"{session_key}.{day_key}", None)
+    if value is None and isinstance(by_session, Mapping):
+        value = _get_path(by_session, f"{session_key}.{day_key}", None)
+    limit = _to_int(value, 0)
+    if limit > 0:
+        return limit
+    per_slot = rule.get("perSlot", {}) if isinstance(rule.get("perSlot"), Mapping) else {}
+    return _to_int(per_slot.get(field), 0)
+
+
+def _iter_limit_rules(constraints: Any | None) -> list[Mapping[str, Any]]:
+    if constraints is None:
+        return []
+    out: list[Mapping[str, Any]] = [rule for rule in constraints.time_limit if isinstance(rule, Mapping)]
+    for subject, root in constraints.subject.items():
+        if not isinstance(root, Mapping):
+            continue
+        for base in ("globalLimit", "groupLimit"):
+            conf = root.get(base)
+            if isinstance(conf, Mapping) and conf:
+                item = dict(conf)
+                item.setdefault("name", f"{subject} {base}")
+                item["targetType"] = "subject"
+                item["targetId"] = subject
+                out.append(item)
+    for group_id, root in constraints.subject_group.items():
+        if not isinstance(root, Mapping):
+            continue
+        for base in ("globalLimit", "groupLimit"):
+            conf = root.get(base)
+            if isinstance(conf, Mapping) and conf:
+                item = dict(conf)
+                item.setdefault("name", f"{constraints.group_name('subject', group_id)} {base}")
+                item["targetType"] = "subjectGroup"
+                item["targetId"] = group_id
+                out.append(item)
+    return out
+
+
+def _assignment_matches_limit(assignment: Any, rule: Mapping[str, Any], constraints: Any | None) -> bool:
+    if constraints is None:
+        return False
+    target_type = str(rule.get("targetType") or "")
+    target_id = str(rule.get("targetId") or "")
+    if target_type == "subject":
+        return assignment.subject == target_id
+    if target_type == "subjectGroup":
+        return constraints.subject_in_group(assignment.subject, target_id)
+    if target_type == "teacherGroup":
+        return assignment.teacher in constraints.group_items("teacher", target_id)
+    if target_type == "classGroup":
+        return assignment.class_name in constraints.group_items("class", target_id)
+    if target_type == "roomGroup":
+        return bool(assignment.room) and assignment.room in constraints.group_items("room", target_id)
+    return False
+
+
+def solve_session_allocation_cp_sat(
+    data: SchoolData,
+    *,
+    rules: TimetableRuleSet | None = None,
+    max_teacher_sessions: int | None = 180,
+    min_teacher_sessions: int | None = None,
+    max_one_period_sessions: int | None = None,
+    allow_unassigned: bool = False,
+    minimize_sessions: bool = True,
+    minimize_one_period_sessions: bool = True,
+    one_period_priority_absolute: bool = True,
+    time_limit_seconds: int = 60,
+    early_stop_teacher_sessions: int | None = None,
+    early_stop_max_one_period_sessions: int | None = None,
+    linearization_level: int = 1,
+    num_workers: int = 8,
+    random_seed: int | None = None,
+    hint_allocations: list[SessionAllocation] | None = None,
+    hint_lessons: list[Lesson] | None = None,
+    fixed_lessons: list[Lesson] | None = None,
+    fix_hint: bool = False,
+    repair_hint: bool = False,
+    forbidden_session_vectors: list[tuple[int, dict[int, int]]] | None = None,
+    period_feasibility_session_indexes: set[int] | None = None,
+    period_max_teacher_gap: int | None = None,
+    period_max_teacher_gap_periods: int | None = None,
+    period_max_teacher_gap1_sessions: int | None = None,
+    period_max_teacher_gap2_plus_sessions: int | None = None,
+    period_minimize_teacher_gaps: bool = False,
+    period_teacher_gap_priority_absolute: bool = False,
+    period_gap_objective_target: str | None = None,
+    materialize_period_lessons: bool = False,
+    legacy_wednesday_pm_bridge: bool = False,
+    minimize_hint_distance: bool = False,
+    quality_stagnation_seconds: float | None = None,
+    quality_stagnation_min_improvements: int = 1,
+    cloud_run_stop_when_gap2_zero: bool = False,
+    progress: ProgressFn | None = None,
+    external_solver: ExternalCpSatSolver | None = None,
+) -> tuple[list[SessionAllocation], dict[str, Any]]:
+    """Solve the half-day compaction model with OR-Tools CP-SAT.
+
+    This mirrors the base session MILP constraints but gives much better primal
+    discovery on the bundled workbook. Concrete periods are still placed by
+    ``allocate_periods`` and validated afterward.
+    """
+    random_seed = normalize_cp_sat_seed(random_seed)
+
+    rule_set = resolve_rule_set(rules)
+    constraints = rule_set.constraints
+    domain_memo = AssignmentSessionDomainMemo(constraints)
+    sessions = all_sessions()
+    period_feasibility_session_indexes = set(period_feasibility_session_indexes or set())
+    normalized_gap_objective_target = str(period_gap_objective_target or "").strip().casefold().replace("-", "_")
+    if normalized_gap_objective_target in {"gap_2", "teacher_gap2_sessions", "optimize_gap2"}:
+        normalized_gap_objective_target = "gap2"
+    elif normalized_gap_objective_target in {"gap_1", "teacher_gap1_sessions", "optimize_gap1"}:
+        normalized_gap_objective_target = "gap1"
+    elif normalized_gap_objective_target != "gap2":
+        normalized_gap_objective_target = "" if normalized_gap_objective_target != "gap1" else "gap1"
+    # An explicit split target is itself a request for the concrete period
+    # bridge/objective. Callers do not need to redundantly enable the legacy
+    # aggregate ``period_minimize_teacher_gaps`` flag.
+    period_gap_caps_requested = any(
+        cap is not None
+        for cap in (
+            period_max_teacher_gap_periods,
+            period_max_teacher_gap1_sessions,
+            period_max_teacher_gap2_plus_sessions,
+        )
+    )
+    period_gap_objective_requested = bool(period_minimize_teacher_gaps) or bool(
+        normalized_gap_objective_target
+    )
+    # Teacher-gap signatures use the concrete period bridge itself; optional
+    # authored constraints are not required.  The default school has a valid
+    # empty rule set (`constraints=None`) and must still be able to run Gap.
+    period_gap_quality_requested = (
+        period_gap_objective_requested or period_gap_caps_requested
+    )
+    period_gap_model_complete = bool(
+        period_gap_quality_requested
+        and set(range(len(sessions))).issubset(period_feasibility_session_indexes)
+    )
+    if period_gap_quality_requested and not period_gap_model_complete:
+        raise ValueError(
+            "Exact teacher-gap optimization requires a normalized all-session period bridge"
+        )
+    cp_model = _load_cp_model()
+    session_by_key = {(session.day, session.part): si for si, session in enumerate(sessions)}
+    fixed_lessons = fixed_lessons or []
+    hint_lessons = hint_lessons or []
+    fixed_teacher_session_load: Counter[tuple[str, int]] = Counter()
+    fixed_teacher_day_load: Counter[tuple[str, int]] = Counter()
+    fixed_class_session_load: Counter[tuple[str, int]] = Counter()
+    fixed_assignment_session_load: Counter[tuple[str, str, str, int]] = Counter()
+    fixed_assignment_session_periods: dict[
+        tuple[str, str, str, int], set[int]
+    ] = {}
+    fixed_teacher_class_session_load: Counter[tuple[str, str, int]] = Counter()
+    fixed_teacher_class_day_load: Counter[tuple[str, str, int]] = Counter()
+    fixed_teacher_session_periods: dict[tuple[str, int], set[int]] = {}
+    for lesson in fixed_lessons:
+        si = session_by_key.get((int(lesson.day), str(lesson.session)))
+        if si is None:
+            continue
+        fixed_teacher_session_load[(lesson.teacher, si)] += 1
+        fixed_teacher_day_load[(lesson.teacher, int(lesson.day))] += 1
+        fixed_class_session_load[(lesson.class_name, si)] += 1
+        fixed_assignment_session_load[(lesson.class_name, lesson.subject, lesson.teacher, si)] += 1
+        fixed_assignment_session_periods.setdefault(
+            (lesson.class_name, lesson.subject, lesson.teacher, si), set()
+        ).add(int(lesson.period))
+        fixed_teacher_class_session_load[(lesson.teacher, lesson.class_name, si)] += 1
+        fixed_teacher_class_day_load[(lesson.teacher, lesson.class_name, int(lesson.day))] += 1
+        fixed_teacher_session_periods.setdefault((lesson.teacher, si), set()).add(int(lesson.period))
+    model = cp_model.CpModel()
+    requested_num_workers = max(1, int(num_workers))
+    effective_num_workers = requested_num_workers
+    if hint_allocations and fix_hint:
+        # Keep fixed hints deterministic; repaired hints are left as soft hints
+        # because OR-Tools can hit native fixed-search assertions with repair_hint.
+        effective_num_workers = 1
+
+    n_vars: dict[tuple[int, int], Any] = {}
+    n_caps: dict[tuple[int, int], int] = {}
+    for ai, assignment in enumerate(data.assignments):
+        for si, session in enumerate(sessions):
+            class_cap = class_session_capacity_for_constraints(
+                assignment.grade,
+                assignment.class_name,
+                session,
+                constraints,
+            )
+            if class_cap <= 0:
+                continue
+            if not _assignment_session_allowed(
+                assignment,
+                session,
+                constraints,
+                memo=domain_memo,
+            ):
+                continue
+            fixed_assignment_load = int(
+                fixed_assignment_session_load.get(
+                    (assignment.class_name, assignment.subject, assignment.teacher, si),
+                    0,
+                )
+            )
+            # Weekly demand has already had fixed lessons removed by the
+            # adapter.  Only the original per-session ceiling needs its fixed
+            # load removed here; subtracting from the minimum also subtracts
+            # the same lesson from residual weekly demand a second time.
+            base_cap = min(
+                assignment.periods_per_week,
+                max(0, int(assignment.max_periods_per_session) - fixed_assignment_load),
+                class_cap,
+                teacher_session_capacity(session),
+            )
+            cap = _assignment_session_cap(
+                assignment,
+                session,
+                base_cap,
+                constraints,
+                memo=domain_memo,
+            )
+            if cap > 0:
+                n_vars[(ai, si)] = model.NewIntVar(0, cap, f"n_{ai}_{si}")
+                n_caps[(ai, si)] = cap
+
+    z_vars: dict[tuple[str, int], Any] = {
+        (teacher, si): model.NewBoolVar(f"z_{teacher}_{si}")
+        for teacher in data.teachers
+        for si, _session in enumerate(sessions)
+    }
+    c_vars: dict[tuple[str, int], Any] = {
+        (class_info.name, si): model.NewBoolVar(f"c_{class_info.name}_{si}")
+        for class_info in data.classes
+        for si, _session in enumerate(sessions)
+    }
+    u_vars: dict[tuple[int, int], Any] = {
+        key: model.NewBoolVar(f"u_{key[0]}_{key[1]}")
+        for key in n_vars
+    }
+    d_vars: dict[tuple[str, int], Any] = {
+        (teacher, day): model.NewBoolVar(f"d_{teacher}_{day}")
+        for teacher in data.teachers
+        for day in sorted({session.day for session in sessions})
+    }
+
+    for key, var in n_vars.items():
+        u_var = u_vars[key]
+        model.Add(var <= n_caps[key] * u_var)
+        model.Add(var >= u_var)
+
+    period_block_vars = 0
+    period_block_candidate_pairs = 0
+    period_block_contiguous_pruned = 0
+    period_block_rule_or_fixed_pruned = 0
+    lesson_block_impossible_constraints = 0
+    lesson_block_deferred_constraints = 0
+    teacher_cross_session_period_constraints = 0
+    teacher_period_gap_constraints = 0
+    teacher_period_gap_signature_constraints = 0
+    teacher_period_gap_period_vars: list[Any] = []
+    teacher_period_gap1_vars: list[Any] = []
+    teacher_period_gap2_plus_vars: list[Any] = []
+    teacher_period_severe_gap_vars: list[Any] = []
+    period_block_choices: dict[tuple[int, int], list[tuple[int, int, Any, tuple[int, ...]]]] = {}
+    hinted_periods_by_assignment_session: dict[tuple[int, int], set[int]] = {}
+    if hint_lessons:
+        assignment_index_by_key = {
+            (assignment.class_name, assignment.subject, assignment.teacher): ai
+            for ai, assignment in enumerate(data.assignments)
+        }
+        for lesson in hint_lessons:
+            ai = assignment_index_by_key.get(
+                (lesson.class_name, lesson.subject, lesson.teacher)
+            )
+            si = session_by_key.get((int(lesson.day), str(lesson.session)))
+            if ai is None or si is None:
+                continue
+            hinted_periods_by_assignment_session.setdefault((ai, si), set()).add(
+                int(lesson.period)
+            )
+    if (
+        period_feasibility_session_indexes
+        and (
+            period_gap_quality_requested
+            or (constraints is not None and constraints.active)
+        )
+    ):
+        class_period_terms: dict[tuple[str, int, int], list[Any]] = {}
+        teacher_period_terms: dict[tuple[str, int, int], list[Any]] = {}
+        room_period_terms: dict[tuple[str, int, int], list[Any]] = {}
+        for (ai, si), n_var in n_vars.items():
+            if si not in period_feasibility_session_indexes:
+                continue
+            assignment = data.assignments[ai]
+            session = sessions[si]
+            allowed = set(
+                _assignment_available_periods(
+                    assignment,
+                    session,
+                    constraints,
+                    memo=domain_memo,
+                )
+            )
+            contiguous_run_lengths = _contiguous_run_lengths_by_start(allowed)
+            choices: list[tuple[int, Any, tuple[int, ...]]] = []
+            max_duration = int(n_caps[(ai, si)])
+            period_block_candidate_pairs += max_duration * len(allowed)
+            fixed_periods = fixed_assignment_session_periods.get(
+                (
+                    assignment.class_name,
+                    assignment.subject,
+                    assignment.teacher,
+                    si,
+                ),
+                set(),
+            )
+            for duration in range(1, max_duration + 1):
+                for start in sorted(allowed):
+                    if contiguous_run_lengths.get(start, 0) < duration:
+                        period_block_contiguous_pruned += 1
+                        continue
+                    block = tuple(range(start, start + duration))
+                    if not _assignment_block_allowed(
+                        assignment,
+                        session,
+                        start,
+                        duration,
+                        constraints,
+                        memo=domain_memo,
+                    ):
+                        period_block_rule_or_fixed_pruned += 1
+                        continue
+                    combined_periods = set(block) | set(fixed_periods)
+                    if (
+                        rule_set.contiguous_multi_period_assignments
+                        and fixed_periods
+                        and max(combined_periods) - min(combined_periods) + 1
+                        != len(combined_periods)
+                    ):
+                        period_block_rule_or_fixed_pruned += 1
+                        continue
+                    combined_block_allowed = True
+                    if (
+                        constraints is not None
+                        and fixed_periods
+                        and max(combined_periods) - min(combined_periods) + 1
+                        == len(combined_periods)
+                    ):
+                        combined_start = min(combined_periods)
+                        combined_duration = len(combined_periods)
+                        subject_rule = constraints.subject_rule_for(
+                            assignment.class_name,
+                            assignment.subject,
+                        )
+                        if isinstance(subject_rule, Mapping):
+                            combined_block_allowed = _subject_like_block_allowed(
+                                subject_rule,
+                                session,
+                                combined_start,
+                                combined_duration,
+                            )
+                        if combined_block_allowed:
+                            combined_block_allowed = all(
+                                not isinstance(group_rule, Mapping)
+                                or _subject_like_block_allowed(
+                                    group_rule,
+                                    session,
+                                    combined_start,
+                                    combined_duration,
+                                )
+                                for _group_id, group_rule in constraints.subject_group_rules_for(
+                                    assignment.class_name,
+                                    assignment.subject,
+                                )
+                            )
+                    if not combined_block_allowed:
+                        # A residual one-period choice can complete a block
+                        # across a fixed anchor. Apply break-pair and linked-day
+                        # rules to that merged block, not just the residual.
+                        period_block_rule_or_fixed_pruned += 1
+                        continue
+                    choice = model.NewBoolVar(f"period_block_{ai}_{si}_{duration}_{start}")
+                    period_block_vars += 1
+                    choices.append((duration, choice, block))
+                    period_block_choices.setdefault((ai, si), []).append(
+                        (duration, start, choice, block)
+                    )
+                    for period in block:
+                        class_period_terms.setdefault((assignment.class_name, si, period), []).append(choice)
+                        teacher_period_terms.setdefault((assignment.teacher, si, period), []).append(choice)
+                        if assignment.room:
+                            room_period_terms.setdefault((assignment.room, si, period), []).append(choice)
+            if choices:
+                model.Add(sum(choice for _duration, choice, _block in choices) <= 1)
+                model.Add(n_var == sum(duration * choice for duration, choice, _block in choices))
+                hinted_periods = hinted_periods_by_assignment_session.get((ai, si), set())
+                hinted_block = tuple(sorted(hinted_periods))
+                matching_hint = bool(hinted_block) and any(
+                    tuple(block) == hinted_block
+                    for _duration, _choice, block in choices
+                )
+                if not hinted_block or matching_hint:
+                    for _duration, choice, block in choices:
+                        model.AddHint(
+                            choice,
+                            1 if matching_hint and tuple(block) == hinted_block else 0,
+                        )
+            else:
+                model.Add(n_var == 0)
+
+        for terms in class_period_terms.values():
+            if len(terms) > 1:
+                model.Add(sum(terms) <= 1)
+        for terms in teacher_period_terms.values():
+            if len(terms) > 1:
+                model.Add(sum(terms) <= 1)
+        for terms in room_period_terms.values():
+            if len(terms) > 1:
+                model.Add(sum(terms) <= 1)
+
+        if period_gap_quality_requested:
+            for teacher in data.teachers:
+                for si, session in enumerate(sessions):
+                    if si not in period_feasibility_session_indexes:
+                        continue
+                    cap = teacher_session_capacity(session)
+                    fixed_periods = fixed_teacher_session_periods.get((teacher, si), set())
+                    occupied_vars: list[Any] = []
+                    has_possible_occupancy = False
+                    for period in range(1, cap + 1):
+                        terms = teacher_period_terms.get((teacher, si, period), [])
+                        fixed = period in fixed_periods
+                        has_possible_occupancy = has_possible_occupancy or fixed or bool(terms)
+                        if fixed:
+                            if terms:
+                                # Fixed and residual lessons may never share a
+                                # teacher slot. This is normally already removed
+                                # from assignment availability, but making it
+                                # explicit keeps the gap signature binary.
+                                model.Add(sum(terms) == 0)
+                            occupied_vars.append(model.NewConstant(1))
+                        elif terms:
+                            occupied = model.NewBoolVar(
+                                f"teacher_period_occupied_{teacher}_{si}_{period}"
+                            )
+                            model.Add(occupied == sum(terms))
+                            occupied_vars.append(occupied)
+                        else:
+                            occupied_vars.append(model.NewConstant(0))
+                    if not has_possible_occupancy:
+                        continue
+
+                    max_gap = max(0, cap - 2)
+                    gap_periods = model.NewIntVar(
+                        0,
+                        max_gap,
+                        f"teacher_gap_periods_{teacher}_{si}",
+                    )
+                    gap1 = model.NewBoolVar(f"teacher_gap1_{teacher}_{si}")
+                    gap2_plus = model.NewBoolVar(f"teacher_gap2_plus_{teacher}_{si}")
+                    severe_gap_periods = model.NewIntVar(
+                        0,
+                        max_gap,
+                        f"teacher_severe_gap_periods_{teacher}_{si}",
+                    )
+                    model.AddAllowedAssignments(
+                        [
+                            *occupied_vars,
+                            gap_periods,
+                            gap1,
+                            gap2_plus,
+                            severe_gap_periods,
+                        ],
+                        _teacher_gap_pattern_rows(cap),
+                    )
+                    teacher_period_gap_signature_constraints += 1
+                    teacher_period_gap_period_vars.append(gap_periods)
+                    teacher_period_gap1_vars.append(gap1)
+                    teacher_period_gap2_plus_vars.append(gap2_plus)
+                    teacher_period_severe_gap_vars.append(severe_gap_periods)
+
+        # The teacher UI can forbid the combination of morning period 5 and
+        # afternoon period 1 on the same day.  This is not a half-day load
+        # limit: both sessions may be used as long as those two edge periods are
+        # not used together.  Model it whenever both sessions participate in
+        # the concrete-period bridge so the session solver cannot hand an
+        # inherently invalid vector to the period allocator.
+        session_index_by_key = {
+            (int(session.day), str(session.part)): si
+            for si, session in enumerate(sessions)
+        }
+        if constraints is not None:
+            for teacher in data.teachers:
+                rule = constraints.teacher.get(teacher, {})
+                if not isinstance(rule, Mapping):
+                    continue
+                for day in sorted({session.day for session in sessions}):
+                    dk = _day_key(day)
+                    forbidden_pair = _truthy(_get_path(rule, f"noMorningP5AfternoonP1.{dk}", False)) or _truthy(
+                        _get_path(rule, f"noMorningP5AfternoonP1.sang.{dk}", False)
+                    )
+                    if not forbidden_pair:
+                        continue
+                    morning_si = session_index_by_key.get((int(day), "AM"))
+                    afternoon_si = session_index_by_key.get((int(day), "PM"))
+                    if (
+                        morning_si is None
+                        or afternoon_si is None
+                        or morning_si not in period_feasibility_session_indexes
+                        or afternoon_si not in period_feasibility_session_indexes
+                    ):
+                        continue
+                    terms = [
+                        *teacher_period_terms.get((teacher, morning_si, 5), []),
+                        *teacher_period_terms.get((teacher, afternoon_si, 1), []),
+                    ]
+                    fixed_count = sum(
+                        1
+                        for lesson in fixed_lessons
+                        if lesson.teacher == teacher
+                        and int(lesson.day) == int(day)
+                        and (
+                            (str(lesson.session) == "AM" and int(lesson.period) == 5)
+                            or (str(lesson.session) == "PM" and int(lesson.period) == 1)
+                        )
+                    )
+                    model.Add(sum(terms) + fixed_count <= 1)
+                    teacher_cross_session_period_constraints += 1
+
+        if period_max_teacher_gap is not None:
+            max_gap = max(0, int(period_max_teacher_gap))
+            for teacher in data.teachers:
+                for si, session in enumerate(sessions):
+                    if si not in period_feasibility_session_indexes:
+                        continue
+                    cap = teacher_session_capacity(session)
+                    fixed_periods = fixed_teacher_session_periods.get((teacher, si), set())
+                    occupied = {
+                        period: (
+                            sum(teacher_period_terms.get((teacher, si, period), []))
+                            + (1 if period in fixed_periods else 0)
+                        )
+                        for period in range(1, cap + 1)
+                    }
+                    possible_periods = {
+                        period
+                        for period in range(1, cap + 1)
+                        if teacher_period_terms.get((teacher, si, period))
+                        or period in fixed_periods
+                    }
+                    for first in sorted(possible_periods):
+                        for last in sorted(period for period in possible_periods if period > first):
+                            required_inside = (last - first - 1) - max_gap
+                            if required_inside <= 0:
+                                continue
+                            model.Add(
+                                sum(occupied[period] for period in range(first + 1, last))
+                                >= required_inside * (occupied[first] + occupied[last] - 1)
+                            )
+                            teacher_period_gap_constraints += 1
+
+    teacher_period_gap_penalty = sum(teacher_period_gap_period_vars)
+    teacher_period_gap1_penalty = sum(teacher_period_gap1_vars)
+    teacher_period_gap2_plus_penalty = sum(teacher_period_gap2_plus_vars)
+    teacher_period_severe_gap_penalty = sum(teacher_period_severe_gap_vars)
+    if period_max_teacher_gap_periods is not None:
+        model.Add(
+            teacher_period_gap_penalty
+            <= max(0, int(period_max_teacher_gap_periods))
+        )
+    if period_max_teacher_gap1_sessions is not None:
+        model.Add(
+            teacher_period_gap1_penalty
+            <= max(0, int(period_max_teacher_gap1_sessions))
+        )
+    if period_max_teacher_gap2_plus_sessions is not None:
+        model.Add(
+            teacher_period_gap2_plus_penalty
+            <= max(0, int(period_max_teacher_gap2_plus_sessions))
+        )
+
+    shortfall_vars: dict[int, Any] = {}
+    total_requested_periods = sum(max(0, int(item.periods_per_week)) for item in data.assignments)
+    for ai, assignment in enumerate(data.assignments):
+        terms = [n_vars[(ai, si)] for si in range(len(sessions)) if (ai, si) in n_vars]
+        if allow_unassigned:
+            shortfall = model.NewIntVar(0, max(0, int(assignment.periods_per_week)), f"shortfall_{ai}")
+            shortfall_vars[ai] = shortfall
+            model.Add(sum(terms) + shortfall == assignment.periods_per_week)
+        else:
+            model.Add(sum(terms) == assignment.periods_per_week)
+
+    for class_info in data.classes:
+        for si, session in enumerate(sessions):
+            cap = class_session_capacity_for_constraints(
+                class_info.grade,
+                class_info.name,
+                session,
+                constraints,
+            )
+            if cap <= 0:
+                continue
+            terms = [
+                n_vars[(ai, si)]
+                for ai, assignment in enumerate(data.assignments)
+                if assignment.class_name == class_info.name and (ai, si) in n_vars
+            ]
+            fixed_load = int(fixed_class_session_load.get((class_info.name, si), 0))
+            load = sum(terms)
+            c_var = c_vars[(class_info.name, si)]
+            if not terms:
+                model.Add(c_var == (1 if fixed_load > 0 else 0))
+                continue
+            model.Add(load <= cap * c_var)
+            if fixed_load > 0:
+                model.Add(c_var == 1)
+            else:
+                model.Add(load >= c_var)
+
+    if constraints is not None:
+        for limit_rule in _iter_limit_rules(constraints):
+            for si, session in enumerate(sessions):
+                for field in ("classes", "teachers", "rooms", "subjects"):
+                    limit = _limit_for_slot(limit_rule, field, session)
+                    if limit <= 0:
+                        continue
+                    terms = [
+                        n_vars[(ai, si)]
+                        for ai, assignment in enumerate(data.assignments)
+                        if (ai, si) in n_vars and _assignment_matches_limit(assignment, limit_rule, constraints)
+                    ]
+                    if terms:
+                        model.Add(sum(terms) <= teacher_session_capacity(session) * limit)
+
+        processed_subject_like: set[tuple[str, str, str]] = set()
+        for ai, assignment in enumerate(data.assignments):
+            subject_rule = constraints.subject_rule_for(assignment.class_name, assignment.subject)
+            rule_sets: list[tuple[str, str, Mapping[str, Any], Any]] = [
+                (
+                    "subject",
+                    assignment.subject,
+                    subject_rule,
+                    lambda candidate, assignment=assignment: (
+                        candidate.class_name == assignment.class_name
+                        and candidate.subject == assignment.subject
+                    ),
+                )
+            ]
+            for group_id, group_rule in constraints.subject_group_rules_for(assignment.class_name, assignment.subject):
+                rule_sets.append(
+                    (
+                        "subjectGroup",
+                        str(group_id),
+                        group_rule,
+                        lambda candidate, group_id=group_id, assignment=assignment: (
+                            candidate.class_name == assignment.class_name
+                            and constraints.subject_in_group(candidate.subject, str(group_id))
+                        ),
+                    )
+                )
+
+            for scope, target_id, rule_obj, matcher in rule_sets:
+                if not isinstance(rule_obj, Mapping) or not rule_obj:
+                    continue
+                rule_key = (scope, assignment.class_name, target_id)
+                if rule_key in processed_subject_like:
+                    continue
+                processed_subject_like.add(rule_key)
+
+                def matching_terms_for_sessions(session_indexes: list[int], *, use_u: bool = False) -> list[Any]:
+                    var_map = u_vars if use_u else n_vars
+                    return [
+                        var_map[(bi, si)]
+                        for bi, candidate in enumerate(data.assignments)
+                        if matcher(candidate)
+                        for si in session_indexes
+                        if (bi, si) in var_map
+                    ]
+
+                morning_week = _to_int(_get_path(rule_obj, "weeklySessionPeriods.morning", 0), 0)
+                if morning_week > 0:
+                    terms = matching_terms_for_sessions([si for si, s in enumerate(sessions) if s.part == "AM"])
+                    if terms:
+                        model.Add(sum(terms) <= morning_week)
+                afternoon_week = _to_int(_get_path(rule_obj, "weeklySessionPeriods.afternoon", 0), 0)
+                if afternoon_week > 0:
+                    terms = matching_terms_for_sessions([si for si, s in enumerate(sessions) if s.part == "PM"])
+                    if terms:
+                        model.Add(sum(terms) <= afternoon_week)
+
+                max_morning_sessions = _to_int(_get_path(rule_obj, "maxSessions.morning", 0), 0)
+                if max_morning_sessions > 0:
+                    terms = matching_terms_for_sessions([si for si, s in enumerate(sessions) if s.part == "AM"], use_u=True)
+                    if terms:
+                        model.Add(sum(terms) <= max_morning_sessions)
+                max_afternoon_sessions = _to_int(_get_path(rule_obj, "maxSessions.afternoon", 0), 0)
+                if max_afternoon_sessions > 0:
+                    terms = matching_terms_for_sessions([si for si, s in enumerate(sessions) if s.part == "PM"], use_u=True)
+                    if terms:
+                        model.Add(sum(terms) <= max_afternoon_sessions)
+                max_all_sessions = _to_int(_get_path(rule_obj, "maxSessions.day", 0), 0)
+                if max_all_sessions > 0:
+                    terms = matching_terms_for_sessions(list(range(len(sessions))), use_u=True)
+                    if terms:
+                        model.Add(sum(terms) <= max_all_sessions)
+
+                if _truthy(_get_path(rule_obj, "sessionAllowed.oneSessionPerDay", False)):
+                    for day in sorted({s.day for s in sessions}):
+                        terms = matching_terms_for_sessions(
+                            [si for si, s in enumerate(sessions) if s.day == day],
+                            use_u=True,
+                        )
+                        if terms:
+                            model.Add(sum(terms) <= 1)
+
+                spacing = _to_int(_get_path(rule_obj, "spacingDays.days", 0), 0)
+                if spacing > 0 and scope == "subject":
+                    day_values = sorted({s.day for s in sessions})
+                    for left_index, left_day in enumerate(day_values):
+                        for right_day in day_values[left_index + 1 :]:
+                            if right_day - left_day > spacing:
+                                continue
+                            terms = matching_terms_for_sessions(
+                                [si for si, s in enumerate(sessions) if s.day in {left_day, right_day}],
+                                use_u=True,
+                            )
+                            if terms:
+                                model.Add(sum(terms) <= 1)
+
+                for day in sorted({s.day for s in sessions}):
+                    day_indexes = [si for si, s in enumerate(sessions) if s.day == day]
+                    day_limit = _day_limit_from_rule(rule_obj, "maxPeriods.day", day)
+                    if day_limit > 0:
+                        terms = matching_terms_for_sessions(day_indexes)
+                        if terms:
+                            model.Add(sum(terms) <= day_limit)
+                for si, session in enumerate(sessions):
+                    session_limit = _to_int(_get_path(rule_obj, f"maxPeriods.{_session_key(session)}", 0), 0)
+                    if session_limit > 0:
+                        terms = matching_terms_for_sessions([si])
+                        if terms:
+                            model.Add(sum(terms) <= session_limit)
+
+                if scope == "subjectGroup":
+                    for si, session in enumerate(sessions):
+                        subject_limit = _to_int(_get_path(rule_obj, f"maxSubjects.{_session_key(session)}", 0), 0)
+                        if subject_limit > 0:
+                            terms = matching_terms_for_sessions([si], use_u=True)
+                            if terms:
+                                model.Add(sum(terms) <= subject_limit)
+                    day_subject_limit = _to_int(_get_path(rule_obj, "maxSubjects.day", 0), 0)
+                    if day_subject_limit > 0:
+                        for day in sorted({s.day for s in sessions}):
+                            terms = matching_terms_for_sessions(
+                                [si for si, s in enumerate(sessions) if s.day == day],
+                                use_u=True,
+                            )
+                            if terms:
+                                model.Add(sum(terms) <= day_subject_limit)
+
+                lesson_blocks = rule_obj.get("lessonBlocks") if isinstance(rule_obj.get("lessonBlocks"), Mapping) else {}
+                if scope == "subject" and lesson_blocks:
+                    block_terms_by_length: dict[int, list[Any]] = {length: [] for length in (2, 3, 4, 5)}
+                    fixed_blocks_by_length: dict[int, int] = {length: 0 for length in (2, 3, 4, 5)}
+                    unmodeled_fixed_residual_by_length: dict[int, bool] = {
+                        length: False for length in (2, 3, 4, 5)
+                    }
+                    scheduled_terms_for_rule = matching_terms_for_sessions(list(range(len(sessions))))
+                    scheduled_expr_for_rule = sum(scheduled_terms_for_rule)
+                    fixed_scheduled_for_rule = 0
+                    for bi, candidate in enumerate(data.assignments):
+                        if not matcher(candidate):
+                            continue
+                        for si, _session in enumerate(sessions):
+                            fixed_periods = fixed_assignment_session_periods.get(
+                                (
+                                    candidate.class_name,
+                                    candidate.subject,
+                                    candidate.teacher,
+                                    si,
+                                ),
+                                set(),
+                            )
+                            fixed_scheduled_for_rule += len(fixed_periods)
+                            key = (bi, si)
+                            for length in (2, 3, 4, 5):
+                                conf = lesson_blocks.get(str(length)) or lesson_blocks.get(length)
+                                if not isinstance(conf, Mapping):
+                                    continue
+                                fixed_blocks = _count_contiguous_blocks(fixed_periods, length)
+                                fixed_blocks_by_length[length] += fixed_blocks
+                                if key not in n_vars:
+                                    continue
+                                choices = period_block_choices.get(key, [])
+                                if choices:
+                                    # The concrete-period bridge can count a
+                                    # pair formed by one hard-fixed lesson and
+                                    # one residual lesson. Counting n_var alone
+                                    # misses that valid Min=1 case because fixed
+                                    # demand was already removed upstream.
+                                    for _duration, _start, choice, block in choices:
+                                        combined_blocks = _count_contiguous_blocks(
+                                            set(fixed_periods) | set(block),
+                                            length,
+                                        )
+                                        block_delta = combined_blocks - fixed_blocks
+                                        if block_delta:
+                                            block_terms_by_length[length].append(
+                                                block_delta * choice
+                                            )
+                                    continue
+                                # Subject-period requirements normally enable
+                                # the concrete-period bridge. If a legacy lane
+                                # omits it, do not guess how residual periods
+                                # interact with fixed periods. Defer the whole
+                                # bound for this length to merged validation;
+                                # adding an "impossible" contradiction here
+                                # would reject a valid fixed+flexible pair.
+                                if fixed_periods:
+                                    unmodeled_fixed_residual_by_length[length] = True
+                                    continue
+                                n_var = n_vars[key]
+                                cap = int(n_caps.get(key, 0))
+                                if cap < length:
+                                    continue
+                                block_var = model.NewBoolVar(f"subject_block_{scope}_{bi}_{si}_{length}")
+                                model.Add(n_var >= length).OnlyEnforceIf(block_var)
+                                model.Add(n_var <= length - 1).OnlyEnforceIf(block_var.Not())
+                                block_terms_by_length[length].append(block_var)
+                    for length, block_terms in block_terms_by_length.items():
+                        conf = lesson_blocks.get(str(length)) or lesson_blocks.get(length)
+                        if not isinstance(conf, Mapping):
+                            continue
+                        if unmodeled_fixed_residual_by_length.get(length):
+                            lesson_block_deferred_constraints += 1
+                            continue
+                        minimum = _to_int(conf.get("min"), 0)
+                        maximum = _to_int(conf.get("max"), 0)
+                        fixed_blocks = int(fixed_blocks_by_length.get(length, 0))
+                        block_expr = sum(block_terms) + fixed_blocks
+                        if minimum > 0:
+                            if allow_unassigned:
+                                # A partial/best-effort solve may legitimately
+                                # leave this subject short. Enforce a block
+                                # minimum only once the residual demand for
+                                # this class/subject is fully scheduled; a
+                                # hard-fixed lesson next to OFF/fixed cells
+                                # must not make the whole partial model
+                                # globally INFEASIBLE.
+                                residual_required = sum(
+                                    max(0, int(candidate.periods_per_week))
+                                    for candidate in data.assignments
+                                    if matcher(candidate)
+                                )
+                                complete_subject = model.NewBoolVar(
+                                    f"subject_block_complete_{scope}_{assignment.class_name}_{target_id}_{length}"
+                                )
+                                model.Add(scheduled_expr_for_rule == residual_required).OnlyEnforceIf(complete_subject)
+                                model.Add(scheduled_expr_for_rule <= max(0, residual_required - 1)).OnlyEnforceIf(
+                                    complete_subject.Not()
+                                )
+                                model.Add(block_expr >= minimum).OnlyEnforceIf(complete_subject)
+                            elif block_terms or fixed_blocks > 0:
+                                model.Add(block_expr >= minimum)
+                            else:
+                                impossible = model.NewBoolVar(f"impossible_subject_block_{scope}_{target_id}_{length}")
+                                model.Add(impossible == 0)
+                                model.Add(impossible == 1)
+                                lesson_block_impossible_constraints += 1
+                        if maximum > 0:
+                            model.Add(block_expr <= maximum)
+
+        for class_name, groups in (constraints.subject_no_same_session or {}).items():
+            if not isinstance(groups, Mapping):
+                continue
+            for group_id, subjects in groups.items():
+                if len(subjects) < 2:
+                    continue
+                subject_set = set(subjects)
+                for si, _session in enumerate(sessions):
+                    terms = [
+                        u_vars[(ai, si)]
+                        for ai, assignment in enumerate(data.assignments)
+                        if assignment.class_name == class_name
+                        and assignment.subject in subject_set
+                        and (ai, si) in u_vars
+                    ]
+                    if len(terms) > 1:
+                        model.Add(sum(terms) <= 1)
+        for class_name, groups in (constraints.subject_no_same_day or {}).items():
+            if not isinstance(groups, Mapping):
+                continue
+            for group_id, subjects in groups.items():
+                if len(subjects) < 2:
+                    continue
+                subject_set = set(subjects)
+                for day in sorted({s.day for s in sessions}):
+                    active_subjects = []
+                    for subject in sorted(subject_set):
+                        terms = [
+                            u_vars[(ai, si)]
+                            for ai, assignment in enumerate(data.assignments)
+                            if assignment.class_name == class_name
+                            and assignment.subject == subject
+                            for si, session in enumerate(sessions)
+                            if session.day == day and (ai, si) in u_vars
+                        ]
+                        if not terms:
+                            continue
+                        active = model.NewBoolVar(f"subject_no_same_day_{class_name}_{group_id}_{subject}_{day}")
+                        for term in terms:
+                            model.Add(term <= active)
+                        model.Add(active <= sum(terms))
+                        active_subjects.append(active)
+                    if len(active_subjects) > 1:
+                        model.Add(sum(active_subjects) <= 1)
+
+        for teacher in data.teachers:
+            rule = constraints.teacher.get(teacher, {})
+            if not isinstance(rule, Mapping):
+                rule = {}
+            teacher_sessions = [si for si, _session in enumerate(sessions)]
+            teacher_days = sorted({session.day for session in sessions})
+            for si, session in enumerate(sessions):
+                model.Add(z_vars[(teacher, si)] <= d_vars[(teacher, session.day)])
+                required_periods = constraints.teacher_must_teach_periods(teacher, session.day, session.part)
+                if required_periods:
+                    fixed_required = sum(
+                        1
+                        for period in required_periods
+                        if int(period) in fixed_teacher_session_periods.get((teacher, si), set())
+                    )
+                    remaining_required = max(0, len(required_periods) - fixed_required)
+                    terms = [
+                        n_vars[(ai, si)]
+                        for ai, assignment in enumerate(data.assignments)
+                        if assignment.teacher == teacher and (ai, si) in n_vars
+                    ]
+                    if remaining_required > 0:
+                        model.Add(sum(terms) >= remaining_required)
+
+            max_days = _to_int(_get_path(rule, "maxDaysSessions.maxDays", 0), 0)
+            if max_days > 0:
+                model.Add(sum(d_vars[(teacher, day)] for day in teacher_days) <= max_days)
+            max_sessions = _to_int(_get_path(rule, "maxDaysSessions.maxSessions", 0), 0)
+            if max_sessions > 0:
+                model.Add(sum(z_vars[(teacher, si)] for si in teacher_sessions) <= max_sessions)
+            max_morning = _to_int(_get_path(rule, "maxMorningAfternoon.morning", 0), 0)
+            if max_morning > 0:
+                model.Add(sum(z_vars[(teacher, si)] for si, session in enumerate(sessions) if session.part == "AM") <= max_morning)
+            max_afternoon = _to_int(_get_path(rule, "maxMorningAfternoon.afternoon", 0), 0)
+            if max_afternoon > 0:
+                model.Add(sum(z_vars[(teacher, si)] for si, session in enumerate(sessions) if session.part == "PM") <= max_afternoon)
+
+            for day in teacher_days:
+                dk = _day_key(day)
+                session_indexes = [si for si, session in enumerate(sessions) if session.day == day]
+                session_mode = one_session_per_day_mode(
+                    _get_path(rule, f"oneSessionPerDay.{dk}", False)
+                )
+                if session_mode == "morning":
+                    model.Add(
+                        sum(
+                            z_vars[(teacher, si)]
+                            for si in session_indexes
+                            if sessions[si].part == "PM"
+                        )
+                        == 0
+                    )
+                elif session_mode == "afternoon":
+                    model.Add(
+                        sum(
+                            z_vars[(teacher, si)]
+                            for si in session_indexes
+                            if sessions[si].part == "AM"
+                        )
+                        == 0
+                    )
+                elif session_mode == "either":
+                    model.Add(sum(z_vars[(teacher, si)] for si in session_indexes) <= 1)
+
+            day_limit = _to_int(_get_path(rule, f"maxPeriods.day.{dk}", 0), 0)
+            if day_limit > 0:
+                terms = [
+                    n_vars[(ai, si)]
+                    for ai, assignment in enumerate(data.assignments)
+                        if assignment.teacher == teacher
+                    for si in session_indexes
+                    if (ai, si) in n_vars
+                ]
+                fixed_load = int(fixed_teacher_day_load.get((teacher, day), 0))
+                if terms or fixed_load > 0:
+                    model.Add(sum(terms) + fixed_load <= day_limit)
+
+            for si, session in enumerate(sessions):
+                sk = _session_key(session)
+                dk = _day_key(session.day)
+                limit = _to_int(_get_path(rule, f"maxPeriods.{sk}.{dk}", 0), 0)
+                if limit <= 0:
+                    continue
+                terms = [
+                    n_vars[(ai, si)]
+                    for ai, assignment in enumerate(data.assignments)
+                    if assignment.teacher == teacher and (ai, si) in n_vars
+                ]
+                fixed_load = int(fixed_teacher_session_load.get((teacher, si), 0))
+                if terms or fixed_load > 0:
+                    model.Add(sum(terms) + fixed_load <= limit)
+
+        for teacher in data.teachers:
+            rule = constraints.teacher.get(teacher, {})
+            mpc = rule.get("maxPeriodsClass", {}) if isinstance(rule, Mapping) else {}
+            if not isinstance(mpc, Mapping):
+                continue
+            configs: list[tuple[str, Mapping[str, Any]]] = []
+            by_group = mpc.get("bySubjectGroup")
+            if isinstance(by_group, Mapping):
+                configs.extend((str(group_id), conf) for group_id, conf in by_group.items() if isinstance(conf, Mapping))
+            else:
+                configs.append(("__all__", mpc))
+            for group_id, conf in configs:
+                per_session = _to_int(conf.get("perSession"), 0)
+                per_day = _to_int(conf.get("perDay"), 0)
+                if per_session <= 0 and per_day <= 0:
+                    continue
+                for class_info in data.classes:
+                    def matches(assignment: Any) -> bool:
+                        return (
+                            assignment.teacher == teacher
+                            and assignment.class_name == class_info.name
+                            and (group_id in {"__all__", "all"} or constraints.subject_in_group(assignment.subject, group_id))
+                        )
+
+                    if per_session > 0:
+                        for si, _session in enumerate(sessions):
+                            terms = [
+                                n_vars[(ai, si)]
+                                for ai, assignment in enumerate(data.assignments)
+                                if matches(assignment) and (ai, si) in n_vars
+                            ]
+                            fixed_load = int(fixed_teacher_class_session_load.get((teacher, class_info.name, si), 0))
+                            if terms or fixed_load > 0:
+                                model.Add(sum(terms) + fixed_load <= per_session)
+                    if per_day > 0:
+                        for day in sorted({session.day for session in sessions}):
+                            session_indexes = [si for si, session in enumerate(sessions) if session.day == day]
+                            terms = [
+                                n_vars[(ai, si)]
+                                for ai, assignment in enumerate(data.assignments)
+                                if matches(assignment)
+                                for si in session_indexes
+                                if (ai, si) in n_vars
+                            ]
+                            fixed_load = int(fixed_teacher_class_day_load.get((teacher, class_info.name, day), 0))
+                            if terms or fixed_load > 0:
+                                model.Add(sum(terms) + fixed_load <= per_day)
+
+    direct_zero_single_cap = (
+        max_one_period_sessions is not None
+        and int(max_one_period_sessions) == 0
+        and not minimize_one_period_sessions
+    )
+    for teacher in data.teachers:
+        for si, session in enumerate(sessions):
+            terms = [
+                n_vars[(ai, si)]
+                for ai, assignment in enumerate(data.assignments)
+                if assignment.teacher == teacher and (ai, si) in n_vars
+            ]
+            z_var = z_vars[(teacher, si)]
+            fixed_load = int(fixed_teacher_session_load.get((teacher, si), 0))
+            if not terms:
+                model.Add(z_var == (1 if fixed_load > 0 else 0))
+                if direct_zero_single_cap:
+                    model.Add(fixed_load >= 2 * z_var)
+                continue
+            load = sum(terms)
+            total_load = load + fixed_load
+            session_cap = _teacher_session_period_capacity(
+                data,
+                teacher,
+                session,
+                constraints,
+                memo=domain_memo,
+            )
+            model.Add(load <= session_cap * z_var)
+            if fixed_load > 0:
+                model.Add(z_var == 1)
+            else:
+                model.Add(load >= z_var)
+            if direct_zero_single_cap:
+                model.Add(total_load >= 2 * z_var)
+
+    rooms = sorted({assignment.room for assignment in data.assignments if assignment.room})
+    for room in rooms:
+        for si, session in enumerate(sessions):
+            terms = [
+                n_vars[(ai, si)]
+                for ai, assignment in enumerate(data.assignments)
+                if assignment.room == room and (ai, si) in n_vars
+            ]
+            if terms:
+                model.Add(sum(terms) <= teacher_session_capacity(session))
+
+    teacher_single_vars: list[Any] = []
+    need_teacher_single_vars = (
+        not direct_zero_single_cap
+        and (
+            max_one_period_sessions is not None
+            or early_stop_max_one_period_sessions is not None
+            # A focused singleton solve deliberately disables the session and
+            # hint-distance objectives. It still needs the indicator variables
+            # that make the standalone singleton objective meaningful.
+            or minimize_one_period_sessions
+        )
+    )
+    if need_teacher_single_vars:
+        for teacher in data.teachers:
+            for si, session in enumerate(sessions):
+                terms = [
+                    n_vars[(ai, si)]
+                    for ai, assignment in enumerate(data.assignments)
+                    if assignment.teacher == teacher and (ai, si) in n_vars
+                ]
+                fixed_load = int(fixed_teacher_session_load.get((teacher, si), 0))
+                if not terms and fixed_load <= 0:
+                    continue
+                z_var = z_vars[(teacher, si)]
+                single = model.NewBoolVar(f"teacher_single_{teacher}_{si}")
+                load = sum(terms) + fixed_load
+                cap = _teacher_session_period_capacity(
+                    data,
+                    teacher,
+                    session,
+                    constraints,
+                    memo=domain_memo,
+                ) + fixed_load
+                model.Add(single <= z_var)
+                # Allow one-period teacher sessions, but make every such occurrence
+                # visible to the objective so avoidable cases are pushed out.
+                model.Add(load >= 2 * z_var - single)
+                model.Add(load <= 1 + cap * (1 - single))
+                teacher_single_vars.append(single)
+
+    q_vars: dict[int, Any] = {}
+    if legacy_wednesday_pm_bridge:
+        wpm_si = next((i for i, session in enumerate(sessions) if session.day == 4 and session.part == "PM"), None)
+        if wpm_si is not None:
+            wpm_session = sessions[wpm_si]
+            for ai, assignment in enumerate(data.assignments):
+                if assignment.grade not in LOWER_GRADES and (ai, wpm_si) in n_vars:
+                    q_vars[ai] = model.NewBoolVar(f"wpm_bridge_q_{ai}")
+                    model.Add(q_vars[ai] <= n_vars[(ai, wpm_si)])
+
+            for class_info in data.classes:
+                if class_info.grade in LOWER_GRADES:
+                    continue
+                if 3 not in class_available_periods(class_info.grade, class_info.name, wpm_session, constraints):
+                    continue
+                terms = [
+                    q_vars[ai]
+                    for ai, assignment in enumerate(data.assignments)
+                    if assignment.class_name == class_info.name and ai in q_vars
+                ]
+                if terms:
+                    model.Add(sum(terms) == 1)
+
+            for teacher in data.teachers:
+                q_terms = [
+                    q_vars[ai]
+                    for ai, assignment in enumerate(data.assignments)
+                    if assignment.teacher == teacher and ai in q_vars
+                ]
+                if q_terms:
+                    model.Add(sum(q_terms) <= 1)
+                wpm_terms = [
+                    n_vars[(ai, wpm_si)]
+                    for ai, assignment in enumerate(data.assignments)
+                    if assignment.teacher == teacher and (ai, wpm_si) in n_vars
+                ]
+                if wpm_terms or q_terms:
+                    model.Add(sum(wpm_terms) - sum(q_terms) >= 0)
+                    model.Add(sum(wpm_terms) - sum(q_terms) <= 2)
+
+    teacher_session_sum = sum(z_vars.values())
+    if max_teacher_sessions is not None:
+        model.Add(teacher_session_sum <= max_teacher_sessions)
+    if min_teacher_sessions is not None:
+        model.Add(teacher_session_sum >= min_teacher_sessions)
+
+    forbidden_session_vectors = forbidden_session_vectors or []
+    forbidden_eq_vars = 0
+    for cut_index, (si, counts_by_assignment) in enumerate(forbidden_session_vectors):
+        eq_terms = []
+        for ai, value in counts_by_assignment.items():
+            key = (int(ai), int(si))
+            if key not in n_vars:
+                continue
+            var = n_vars[key]
+            eq = model.NewBoolVar(f"forbid_{cut_index}_{ai}_{si}")
+            model.Add(var == int(value)).OnlyEnforceIf(eq)
+            model.Add(var != int(value)).OnlyEnforceIf(eq.Not())
+            eq_terms.append(eq)
+        if eq_terms:
+            model.Add(sum(eq_terms) <= len(eq_terms) - 1)
+            forbidden_eq_vars += len(eq_terms)
+
+    hint_metrics: dict[str, Any] = {"used": False, "fixed": False, "repair": False}
+    hint_distance_terms: list[Any] = []
+    hint_distance_upper_bound = 0
+    if hint_allocations:
+        assignment_by_key = {
+            (assignment.class_name, assignment.subject, assignment.teacher): ai
+            for ai, assignment in enumerate(data.assignments)
+        }
+        session_by_key = {(session.day, session.part): si for si, session in enumerate(sessions)}
+        hinted_counts: dict[tuple[int, int], int] = {}
+        unmapped = 0
+        for allocation in hint_allocations:
+            ai = assignment_by_key.get((allocation.class_name, allocation.subject, allocation.teacher))
+            si = session_by_key.get((allocation.session.day, allocation.session.part))
+            if ai is None or si is None or (ai, si) not in n_vars:
+                unmapped += 1
+                continue
+            hinted_counts[(ai, si)] = hinted_counts.get((ai, si), 0) + int(allocation.count)
+
+        hinted_teacher_sessions = {
+            (data.assignments[ai].teacher, si)
+            for (ai, si), count in hinted_counts.items()
+            if count > 0
+        }
+        for key, var in n_vars.items():
+            hinted_value = int(hinted_counts.get(key, 0))
+            model.AddHint(var, hinted_value)
+            if minimize_hint_distance:
+                diff_cap = max(teacher_session_capacity(sessions[key[1]]), hinted_value)
+                diff = model.NewIntVar(0, diff_cap, f"hint_diff_{key[0]}_{key[1]}")
+                model.AddAbsEquality(diff, var - hinted_value)
+                hint_distance_terms.append(diff)
+                hint_distance_upper_bound += diff_cap
+        for key, var in z_vars.items():
+            model.AddHint(var, 1 if key in hinted_teacher_sessions else 0)
+        hinted_class_sessions = {
+            (data.assignments[ai].class_name, si)
+            for (ai, si), count in hinted_counts.items()
+            if count > 0
+        }
+        hinted_teacher_days = {
+            (teacher, sessions[si].day)
+            for teacher, si in hinted_teacher_sessions
+        }
+        for key, var in u_vars.items():
+            model.AddHint(var, 1 if hinted_counts.get(key, 0) > 0 else 0)
+        for key, var in c_vars.items():
+            model.AddHint(var, 1 if key in hinted_class_sessions else 0)
+        for key, var in d_vars.items():
+            model.AddHint(var, 1 if key in hinted_teacher_days else 0)
+        solver_hint_session_count = len(hinted_teacher_sessions)
+        hint_metrics = {
+            "used": True,
+            "fixed": bool(fix_hint),
+            "repair": bool(repair_hint),
+            "unmapped_allocations": unmapped,
+            "hinted_assignment_sessions": len(hinted_counts),
+            "hinted_teacher_sessions": solver_hint_session_count,
+            "hinted_period_lessons": len(hint_lessons),
+            "hinted_period_assignment_sessions": len(
+                hinted_periods_by_assignment_session
+            ),
+            "minimize_distance": bool(minimize_hint_distance),
+        }
+
+    teacher_single_penalty = sum(teacher_single_vars)
+    shortfall_penalty = sum(shortfall_vars.values()) if shortfall_vars else 0
+    if max_one_period_sessions is not None:
+        model.Add(teacher_single_penalty <= int(max_one_period_sessions))
+    teacher_session_objective_weight = len(teacher_single_vars) + 1
+    one_period_objective_weight = len(z_vars) + sum(int(cap) for cap in n_caps.values()) + 1
+    hint_distance_objective_weight = len(teacher_single_vars) + 1
+    shortfall_objective_weight = max(
+        1_000_000,
+        (len(z_vars) + len(n_vars) + len(teacher_single_vars) + sum(int(cap) for cap in n_caps.values()) + 1) ** 3,
+    )
+    objective_mode = "none"
+    objective_expr: Any | None = None
+    period_gap_objective_weights: dict[str, int] = {}
+    period_gap_objective_components: list[tuple[str, Any, int]] = []
+    if period_gap_objective_requested:
+        max_gap_per_session = max(
+            (
+                max(0, teacher_session_capacity(session) - 2)
+                for session in sessions
+            ),
+            default=0,
+        )
+        gap_period_upper_bound = len(teacher_period_gap_period_vars) * max_gap_per_session
+        if period_max_teacher_gap_periods is not None:
+            gap_period_upper_bound = min(
+                gap_period_upper_bound,
+                max(0, int(period_max_teacher_gap_periods)),
+            )
+        gap1_upper_bound = len(teacher_period_gap1_vars)
+        if period_max_teacher_gap1_sessions is not None:
+            gap1_upper_bound = min(
+                gap1_upper_bound,
+                max(0, int(period_max_teacher_gap1_sessions)),
+            )
+        gap1_upper_bound = min(gap1_upper_bound, gap_period_upper_bound)
+        gap2_plus_upper_bound = len(teacher_period_gap2_plus_vars)
+        if period_max_teacher_gap2_plus_sessions is not None:
+            gap2_plus_upper_bound = min(
+                gap2_plus_upper_bound,
+                max(0, int(period_max_teacher_gap2_plus_sessions)),
+            )
+        gap2_plus_upper_bound = min(
+            gap2_plus_upper_bound,
+            gap_period_upper_bound // 2,
+        )
+        severe_gap_upper_bound = (
+            gap_period_upper_bound if gap2_plus_upper_bound > 0 else 0
+        )
+        if normalized_gap_objective_target == "gap2":
+            # Gap2 focus owns the count of sessions with >=2 internal holes.
+            # Severe-gap and Gap1 terms are deliberately omitted; the caller
+            # supplies incumbent caps for those counters as safety fences.
+            gap_components = [
+                (
+                    "teacher_gap2_plus_sessions",
+                    teacher_period_gap2_plus_penalty,
+                    gap2_plus_upper_bound,
+                )
+            ]
+        elif normalized_gap_objective_target == "gap1":
+            # Gap1 owns one-hole sessions independently. Gap2 is represented
+            # only by the incumbent safety cap supplied by the caller.
+            gap_components = [
+                (
+                    "teacher_gap1_sessions",
+                    teacher_period_gap1_penalty,
+                    gap1_upper_bound,
+                )
+            ]
+        else:
+            gap_components = [
+                (
+                    "teacher_gap2_plus_sessions",
+                    teacher_period_gap2_plus_penalty,
+                    gap2_plus_upper_bound,
+                ),
+                (
+                    "teacher_severe_gap_periods",
+                    teacher_period_severe_gap_penalty,
+                    severe_gap_upper_bound,
+                ),
+                (
+                    "teacher_gap1_sessions",
+                    teacher_period_gap1_penalty,
+                    gap1_upper_bound,
+                ),
+            ]
+        base_components: list[tuple[str, Any, int]] = []
+        one_component = (
+            "one_period_teacher_sessions",
+            teacher_single_penalty,
+            min(
+                len(teacher_single_vars),
+                max(0, int(max_one_period_sessions)),
+            )
+            if max_one_period_sessions is not None
+            else len(teacher_single_vars),
+        )
+        session_component = (
+            "teacher_sessions",
+            teacher_session_sum,
+            min(len(z_vars), max(0, int(max_teacher_sessions)))
+            if max_teacher_sessions is not None
+            else len(z_vars),
+        )
+        hint_component = (
+            "hint_distance",
+            sum(hint_distance_terms),
+            hint_distance_upper_bound,
+        )
+        if minimize_sessions:
+            if minimize_one_period_sessions and teacher_single_vars:
+                base_components = (
+                    [one_component, session_component]
+                    if one_period_priority_absolute
+                    else [session_component, one_component]
+                )
+            else:
+                base_components = [session_component]
+        elif minimize_hint_distance and hint_distance_terms:
+            if minimize_one_period_sessions and teacher_single_vars:
+                base_components = (
+                    [one_component, hint_component]
+                    if one_period_priority_absolute
+                    else [hint_component, one_component]
+                )
+            else:
+                base_components = [hint_component]
+        elif minimize_one_period_sessions and teacher_single_vars:
+            base_components = [one_component]
+
+        if period_teacher_gap_priority_absolute:
+            if (
+                base_components
+                and base_components[0][0] == "one_period_teacher_sessions"
+                and one_period_priority_absolute
+            ):
+                period_gap_objective_components = [
+                    base_components[0],
+                    *gap_components,
+                    *base_components[1:],
+                ]
+            else:
+                period_gap_objective_components = [
+                    *gap_components,
+                    *base_components,
+                ]
+        else:
+            period_gap_objective_components = [
+                *base_components,
+                *gap_components,
+            ]
+        objective_expr, period_gap_objective_weights = _lexicographic_expression(
+            period_gap_objective_components
+        )
+        objective_mode = "minimize_" + "_then_".join(
+            name for name, _expression, _upper_bound in period_gap_objective_components
+        )
+        teacher_session_objective_weight = period_gap_objective_weights.get(
+            "teacher_sessions",
+            teacher_session_objective_weight,
+        )
+        one_period_objective_weight = period_gap_objective_weights.get(
+            "one_period_teacher_sessions",
+            one_period_objective_weight,
+        )
+        hint_distance_objective_weight = period_gap_objective_weights.get(
+            "hint_distance",
+            hint_distance_objective_weight,
+        )
+        shortfall_objective_weight = max(
+            shortfall_objective_weight,
+            sum(
+                max(0, int(upper_bound))
+                * int(period_gap_objective_weights.get(name, 0))
+                for name, _expression, upper_bound in period_gap_objective_components
+            )
+            + 1,
+        )
+    elif minimize_sessions:
+        if minimize_one_period_sessions:
+            if one_period_priority_absolute:
+                objective_mode = "minimize_one_period_sessions_then_teacher_sessions"
+                objective_expr = teacher_single_penalty * one_period_objective_weight + teacher_session_sum
+            else:
+                objective_mode = "minimize_teacher_sessions_then_one_period_sessions"
+                objective_expr = teacher_session_sum * teacher_session_objective_weight + teacher_single_penalty
+        else:
+            objective_mode = "minimize_teacher_sessions"
+            objective_expr = teacher_session_sum
+    elif minimize_one_period_sessions:
+        if minimize_hint_distance and hint_distance_terms:
+            if one_period_priority_absolute:
+                objective_mode = "minimize_one_period_sessions_then_hint_distance"
+                objective_expr = teacher_single_penalty * one_period_objective_weight + sum(hint_distance_terms)
+            else:
+                objective_mode = "minimize_hint_distance_then_one_period_sessions"
+                objective_expr = sum(hint_distance_terms) * hint_distance_objective_weight + teacher_single_penalty
+        else:
+            # Focused `1 tiet/buoi` disables teacher-session and hint-distance
+            # objectives.  Keep the singleton count as a real standalone
+            # objective instead of silently turning the model into feasibility.
+            objective_mode = "minimize_one_period_sessions"
+            objective_expr = teacher_single_penalty
+    elif minimize_hint_distance and hint_distance_terms:
+        objective_mode = "minimize_hint_distance"
+        objective_expr = sum(hint_distance_terms)
+    hint_distance_objective_skipped_for_integer_safety = False
+    if (
+        objective_expr is not None
+        and minimize_sessions
+        and minimize_hint_distance
+        and hint_distance_terms
+        and not allow_unassigned
+    ):
+        # Warm starts must never outweigh one fewer teacher session (or one
+        # fewer single-period session).  Scale the full quality objective above
+        # the maximum possible hint distance, then use distance only to break
+        # equal-quality ties.
+        candidate_hint_scale = max(1, int(hint_distance_upper_bound) + 1)
+        period_gap_quality_upper_bound = sum(
+            max(0, int(upper_bound))
+            * int(period_gap_objective_weights.get(name, 0))
+            for name, _expression, upper_bound in period_gap_objective_components
+        )
+        if (
+            period_gap_objective_components
+            and period_gap_quality_upper_bound * candidate_hint_scale
+            + int(hint_distance_upper_bound)
+            > (1 << 62)
+        ):
+            # Hint distance is only a final tie-break. Dropping that tie-break
+            # is safer than handing CP-SAT an overflowing integer objective.
+            hint_scale = 1
+            hint_distance_objective_skipped_for_integer_safety = True
+        else:
+            hint_scale = candidate_hint_scale
+            objective_expr = objective_expr * hint_scale + sum(hint_distance_terms)
+            objective_mode = f"{objective_mode}_then_hint_distance"
+    else:
+        hint_scale = 1
+    if allow_unassigned:
+        if objective_expr is None:
+            objective_mode = "minimize_unassigned_periods"
+            objective_expr = shortfall_penalty * shortfall_objective_weight
+        else:
+            objective_mode = f"minimize_unassigned_periods_then_{objective_mode}"
+            objective_expr = shortfall_penalty * shortfall_objective_weight + objective_expr
+    if objective_expr is not None:
+        model.Minimize(objective_expr)
+
+    early_stop_teacher_threshold = (
+        max(1, int(early_stop_teacher_sessions))
+        if early_stop_teacher_sessions is not None and int(early_stop_teacher_sessions) > 0
+        else None
+    )
+    if early_stop_teacher_threshold is not None and max_teacher_sessions is not None:
+        early_stop_teacher_threshold = min(early_stop_teacher_threshold, int(max_teacher_sessions))
+    period_gap_objective_suppressed_session_early_stop = bool(
+        period_gap_objective_requested and early_stop_teacher_threshold is not None
+    )
+    if period_gap_objective_suppressed_session_early_stop:
+        # A session-count-only callback would stop on the first incumbent that
+        # reaches the cap, before the requested period-gap cleanup can run.
+        early_stop_teacher_threshold = None
+    early_stop_one_period_threshold = (
+        max(0, int(early_stop_max_one_period_sessions))
+        if early_stop_max_one_period_sessions is not None
+        else (int(max_one_period_sessions) if max_one_period_sessions is not None else None)
+    )
+    effective_linearization_level = max(0, min(2, int(linearization_level)))
+
+    if progress:
+        progress(
+            {
+                "stage": "session_cp_sat:model",
+                "message": "Dựng mô hình CP-SAT cấp buổi",
+                "assignment_session_vars": len(n_vars),
+                "teacher_session_vars": len(z_vars),
+                "teacher_single_vars": len(teacher_single_vars),
+                "period_block_vars": period_block_vars,
+                "period_block_candidate_pairs": period_block_candidate_pairs,
+                "period_block_contiguous_pruned": period_block_contiguous_pruned,
+                "period_block_rule_or_fixed_pruned": period_block_rule_or_fixed_pruned,
+                "teacher_period_gap_signature_constraints": teacher_period_gap_signature_constraints,
+                "teacher_period_gap1_vars": len(teacher_period_gap1_vars),
+                "teacher_period_gap2_plus_vars": len(teacher_period_gap2_plus_vars),
+                "lesson_block_impossible_constraints": lesson_block_impossible_constraints,
+                "lesson_block_deferred_constraints": lesson_block_deferred_constraints,
+                "period_feasibility_session_indexes": sorted(period_feasibility_session_indexes),
+                "legacy_wednesday_pm_bridge": bool(legacy_wednesday_pm_bridge),
+                "objective_mode": objective_mode,
+                "teacher_session_objective_weight": teacher_session_objective_weight,
+                "one_period_objective_weight": one_period_objective_weight,
+                "period_gap_objective_weights": period_gap_objective_weights,
+                "hint_distance_objective_skipped_for_integer_safety": (
+                    hint_distance_objective_skipped_for_integer_safety
+                ),
+                "bridge_vars": len(q_vars),
+                "forbidden_session_vectors": len(forbidden_session_vectors),
+                "max_teacher_sessions": max_teacher_sessions,
+                "max_one_period_sessions": max_one_period_sessions,
+                "period_max_teacher_gap_periods": period_max_teacher_gap_periods,
+                "period_max_teacher_gap1_sessions": period_max_teacher_gap1_sessions,
+                "period_max_teacher_gap2_plus_sessions": period_max_teacher_gap2_plus_sessions,
+                "period_gap_objective_target": normalized_gap_objective_target or None,
+                "period_minimize_teacher_gaps": bool(period_gap_objective_requested),
+                "period_gap_objective_requested": bool(period_gap_objective_requested),
+                "period_teacher_gap_priority_absolute": bool(
+                    period_teacher_gap_priority_absolute
+                ),
+                "time_limit_seconds": time_limit_seconds,
+                "num_workers": effective_num_workers,
+                "requested_num_workers": requested_num_workers,
+                "linearization_level": effective_linearization_level,
+                "minimize_one_period_sessions": bool(minimize_one_period_sessions),
+                "early_stop_teacher_sessions": early_stop_teacher_threshold,
+                "early_stop_max_one_period_sessions": early_stop_one_period_threshold,
+                "period_gap_objective_suppressed_session_early_stop": (
+                    period_gap_objective_suppressed_session_early_stop
+                ),
+            }
+        )
+
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = float(time_limit_seconds)
+    solver.parameters.num_search_workers = effective_num_workers
+    solver.parameters.cp_model_presolve = True
+    solver.parameters.linearization_level = effective_linearization_level
+    if random_seed is not None:
+        solver.parameters.random_seed = int(random_seed)
+        solver.parameters.randomize_search = True
+    if hint_allocations:
+        solver.parameters.fix_variables_to_their_hinted_value = bool(fix_hint)
+        solver.parameters.repair_hint = False
+
+    # A user soft-Stop is acceptance-aware. It may return the nearest complete
+    # incumbent only after the two mandatory Automatic gates are proven by the
+    # concrete period model: no one-period teacher session and no Gap2. A
+    # request received earlier remains pending while CP-SAT keeps improving.
+    soft_stop_quality_ready = threading.Event()
+    soft_stop_done = threading.Event()
+    soft_stop_observed = threading.Event()
+    soft_stop_applied = threading.Event()
+    soft_stop_errors: list[str] = []
+    try:
+        normalized_quality_stagnation_seconds = max(
+            0.0,
+            float(quality_stagnation_seconds or 0.0),
+        )
+    except (TypeError, ValueError):
+        normalized_quality_stagnation_seconds = 0.0
+    try:
+        normalized_quality_stagnation_min_improvements = max(
+            1,
+            int(quality_stagnation_min_improvements or 1),
+        )
+    except (TypeError, ValueError):
+        normalized_quality_stagnation_min_improvements = 1
+    quality_stagnation_ready = threading.Event()
+    quality_stagnation_applied = threading.Event()
+    quality_stagnation_errors: list[str] = []
+    quality_stagnation_enabled = bool(
+        normalized_quality_stagnation_seconds >= 0.1
+        and objective_expr is not None
+        and period_gap_model_complete
+        and external_solver is None
+        and active_external_solver() is None
+    )
+    cloud_run_gap2_zero_stop_applied = threading.Event()
+    cloud_run_gap2_zero_stop_enabled = bool(
+        cloud_run_stop_when_gap2_zero
+        and period_gap_model_complete
+        and external_solver is None
+        and active_external_solver() is None
+    )
+
+    quality_callback = None
+    early_stop_enabled = early_stop_teacher_threshold is not None
+    # Feasibility-only Quick runs keep the lightest possible solver path. Live
+    # incumbent reporting is useful only when CP-SAT has a quality objective.
+    progress_callback_enabled = progress is not None and objective_expr is not None
+    if (
+        early_stop_enabled
+        or progress_callback_enabled
+        or quality_stagnation_enabled
+        or cloud_run_gap2_zero_stop_enabled
+    ):
+        teacher_session_indexes = tuple(var.index for var in z_vars.values())
+        one_period_indexes = tuple(var.index for var in teacher_single_vars)
+        unassigned_indexes = tuple(var.index for var in shortfall_vars.values())
+        gap_period_indexes = tuple(var.index for var in teacher_period_gap_period_vars)
+        gap1_indexes = tuple(var.index for var in teacher_period_gap1_vars)
+        gap2_plus_indexes = tuple(var.index for var in teacher_period_gap2_plus_vars)
+        severe_gap_indexes = tuple(var.index for var in teacher_period_severe_gap_vars)
+
+        class SessionQualityCallback(cp_model.CpSolverSolutionCallback):
+            def __init__(self) -> None:
+                super().__init__()
+                self.solution_count = 0
+                self.progress_improvements_emitted = 0
+                self.best_objective_value: int | None = None
+                self.last_progress_signature: tuple[int, ...] | None = None
+                self.hit = False
+                self.first_solution_seconds: float | None = None
+                self.first_teacher_sessions: int | None = None
+                self.first_one_period_sessions: int | None = None
+                self.hit_seconds: float | None = None
+                self.hit_teacher_sessions: int | None = None
+                self.hit_one_period_sessions: int | None = None
+                self.quality_ready_best_objective: int | None = None
+                self.quality_ready_best_signature: tuple[int, ...] | None = None
+                self.quality_ready_improvements = 0
+                self.last_quality_improvement_monotonic: float | None = None
+
+            def on_solution_callback(self) -> None:
+                self.solution_count += 1
+                # Read one response vector and sum indexes in Python instead of
+                # crossing the Python/C++ boundary once per model variable.
+                solution = self.response_proto.solution
+                teacher_sessions = sum(solution[index] for index in teacher_session_indexes)
+                one_period_sessions = sum(solution[index] for index in one_period_indexes)
+                unassigned_periods = sum(solution[index] for index in unassigned_indexes)
+                gap_periods = sum(solution[index] for index in gap_period_indexes)
+                gap1_sessions = sum(solution[index] for index in gap1_indexes)
+                gap2_plus_sessions = sum(solution[index] for index in gap2_plus_indexes)
+                severe_gap_periods = sum(solution[index] for index in severe_gap_indexes)
+                if self.first_solution_seconds is None:
+                    self.first_solution_seconds = float(self.wall_time)
+                    self.first_teacher_sessions = teacher_sessions
+                    self.first_one_period_sessions = one_period_sessions
+
+                objective_value = (
+                    int(self.value(objective_expr))
+                    if objective_expr is not None
+                    else None
+                )
+                strict_objective_improvement = (
+                    self.best_objective_value is None
+                    or (
+                        objective_value is not None
+                        and objective_value < self.best_objective_value
+                    )
+                )
+                if strict_objective_improvement and objective_value is not None:
+                    self.best_objective_value = objective_value
+
+                # CP-SAT callbacks are incumbent callbacks. Emit only when the
+                # strict objective incumbent also changes a user-visible quality
+                # metric; hint-distance-only improvements must not make the UI
+                # flicker. No lesson cells are materialized or published here.
+                progress_signature = (
+                    unassigned_periods,
+                    one_period_sessions,
+                    teacher_sessions,
+                    gap2_plus_sessions,
+                    severe_gap_periods,
+                    gap1_sessions,
+                    gap_periods,
+                )
+                if (
+                    progress_callback_enabled
+                    and progress is not None
+                    and strict_objective_improvement
+                    and progress_signature != self.last_progress_signature
+                ):
+                    self.last_progress_signature = progress_signature
+                    self.progress_improvements_emitted += 1
+                    progress_event: dict[str, Any] = {
+                        "stage": "session_cp_sat:metric",
+                        "message": (
+                            "Dang toi uu: "
+                            f"{teacher_sessions} buoi, "
+                            f"{one_period_sessions} buoi 1 tiet"
+                        ),
+                        "unassigned_periods": unassigned_periods,
+                        "teacher_sessions": teacher_sessions,
+                        "one_period_teacher_sessions": one_period_sessions,
+                        "objective": objective_value,
+                        "best_bound": float(self.best_objective_bound),
+                        "wall_time_seconds": float(self.wall_time),
+                        "solutions_seen": self.solution_count,
+                    }
+                    if period_gap_model_complete:
+                        progress_event.update(
+                            {
+                                "message": (
+                                    f"{progress_event['message']}, "
+                                    f"{gap2_plus_sessions} tiet trong nang, "
+                                    f"{gap1_sessions} tiet trong don"
+                                ),
+                                # Gap 2+ is one visible bucket here. The final
+                                # canonical timetable computes every exact gap
+                                # length after the solve returns.
+                                "gap_distribution": {
+                                    1: gap1_sessions,
+                                    2: gap2_plus_sessions,
+                                },
+                                "teacher_gap_periods": gap_periods,
+                                "teacher_gap1_sessions": gap1_sessions,
+                                "teacher_gap2_plus_sessions": gap2_plus_sessions,
+                                "teacher_severe_gap_periods": severe_gap_periods,
+                            }
+                        )
+                    progress(progress_event)
+                manual_stop_quality_ready = (
+                    unassigned_periods == 0
+                    and one_period_sessions == 0
+                    and period_gap_model_complete
+                    and gap2_plus_sessions == 0
+                )
+                focused_gap2_target_ready = (
+                    unassigned_periods == 0
+                    and period_gap_model_complete
+                    and gap2_plus_sessions == 0
+                )
+                if manual_stop_quality_ready:
+                    soft_stop_quality_ready.set()
+                    if strict_objective_improvement and objective_value is not None:
+                        quality_signature = (
+                            gap2_plus_sessions,
+                            severe_gap_periods,
+                            gap1_sessions,
+                            gap_periods,
+                            teacher_sessions,
+                            one_period_sessions,
+                        )
+                        if self.quality_ready_best_objective is None:
+                            self.quality_ready_best_objective = objective_value
+                            self.quality_ready_best_signature = quality_signature
+                            self.last_quality_improvement_monotonic = time.monotonic()
+                        elif (
+                            objective_value < self.quality_ready_best_objective
+                            and (
+                                self.quality_ready_best_signature is None
+                                or quality_signature < self.quality_ready_best_signature
+                            )
+                        ):
+                            self.quality_ready_best_objective = objective_value
+                            self.quality_ready_best_signature = quality_signature
+                            self.quality_ready_improvements += 1
+                            self.last_quality_improvement_monotonic = time.monotonic()
+                            if (
+                                quality_stagnation_enabled
+                                and self.quality_ready_improvements
+                                >= normalized_quality_stagnation_min_improvements
+                            ):
+                                # The first accepted 0/0 incumbent is only a
+                                # baseline. Arm the plateau timer after a real
+                                # secondary-objective improvement so a hard-gate
+                                # cleanup cannot terminate the quality phase by
+                                # itself.
+                                quality_stagnation_ready.set()
+                    if soft_stop_observed.is_set() and not soft_stop_applied.is_set():
+                        # The stop request arrived before the mandatory 0/0
+                        # envelope. Stop only now, with this accepted incumbent.
+                        soft_stop_applied.set()
+                        self.stop_search()
+                if (
+                    cloud_run_gap2_zero_stop_enabled
+                    and focused_gap2_target_ready
+                    and not cloud_run_gap2_zero_stop_applied.is_set()
+                ):
+                    # Focused Gap2 work has exactly one requested target. A
+                    # one-period teacher session belongs to a different
+                    # optimization action and must not delay this result.
+                    cloud_run_gap2_zero_stop_applied.set()
+                    self.stop_search()
+                one_period_ok = (
+                    early_stop_one_period_threshold is None
+                    or one_period_sessions <= early_stop_one_period_threshold
+                )
+                if (
+                    early_stop_enabled
+                    and unassigned_periods == 0
+                    and one_period_ok
+                    and teacher_sessions <= early_stop_teacher_threshold
+                ):
+                    self.hit = True
+                    self.hit_seconds = float(self.wall_time)
+                    self.hit_teacher_sessions = teacher_sessions
+                    self.hit_one_period_sessions = one_period_sessions
+                    self.stop_search()
+
+        quality_callback = SessionQualityCallback()
+
+    soft_stop_file = str(os.environ.get("TKB_SOLVER_STOP_FILE") or "").strip()
+    soft_stop_watcher: threading.Thread | None = None
+    if soft_stop_file and external_solver is None:
+        stop_path = Path(soft_stop_file)
+
+        def watch_soft_stop() -> None:
+            while not soft_stop_done.wait(0.1):
+                try:
+                    requested = stop_path.is_file()
+                except OSError:
+                    requested = False
+                if not requested:
+                    continue
+                soft_stop_observed.set()
+                if soft_stop_quality_ready.is_set():
+                    try:
+                        # OR-Tools supports StopSearch from another thread.
+                        # This returns the accepted 0/0 incumbent through the
+                        # normal result path instead of discarding it.
+                        solver.stop_search()
+                    except Exception as exc:  # pragma: no cover - defensive API guard.
+                        soft_stop_errors.append(str(exc)[:500])
+                    else:
+                        soft_stop_applied.set()
+                return
+
+        soft_stop_watcher = threading.Thread(
+            target=watch_soft_stop,
+            name="tkb-cp-sat-soft-stop",
+            daemon=True,
+        )
+        soft_stop_watcher.start()
+
+    quality_stagnation_watcher: threading.Thread | None = None
+    quality_stagnation_started = time.monotonic()
+    if quality_stagnation_enabled and quality_callback is not None:
+
+        def watch_quality_stagnation() -> None:
+            while not soft_stop_done.wait(0.1):
+                if not quality_stagnation_ready.is_set():
+                    continue
+                last_improvement = quality_callback.last_quality_improvement_monotonic
+                if last_improvement is None:
+                    continue
+                if (
+                    time.monotonic() - last_improvement
+                    < normalized_quality_stagnation_seconds
+                ):
+                    continue
+                # Re-read after the threshold check. A callback may have found
+                # a fresher incumbent while this watcher was waking up.
+                if last_improvement != quality_callback.last_quality_improvement_monotonic:
+                    continue
+                try:
+                    # StopSearch keeps CP-SAT's best feasible incumbent. The
+                    # adapter still performs its complete/hard-valid/Pareto
+                    # gates before the candidate can replace the timetable.
+                    solver.stop_search()
+                except Exception as exc:  # pragma: no cover - defensive API guard.
+                    quality_stagnation_errors.append(str(exc)[:500])
+                else:
+                    quality_stagnation_applied.set()
+                return
+
+        quality_stagnation_watcher = threading.Thread(
+            target=watch_quality_stagnation,
+            name="tkb-cp-sat-quality-stagnation",
+            daemon=True,
+        )
+        quality_stagnation_watcher.start()
+
+    started = time.time()
+    try:
+        status = solve_cp_sat_model(
+            model,
+            solver,
+            quality_callback,
+            external_solver=external_solver,
+        )
+    finally:
+        soft_stop_done.set()
+        if soft_stop_watcher is not None:
+            soft_stop_watcher.join(timeout=0.5)
+        if quality_stagnation_watcher is not None:
+            quality_stagnation_watcher.join(timeout=0.5)
+    elapsed = time.time() - started
+    status_name = solver.StatusName(status)
+    metrics: dict[str, Any] = {
+        "solver": "ortools_cp_sat_session",
+        "execution_runtime": (
+            "python_native"
+            if external_solver is None and active_external_solver() is None
+            else "external_cp_sat"
+        ),
+        "status": int(status),
+        "status_name": status_name,
+        "objective": None,
+        "best_bound": None,
+        "wall_time_seconds": float(solver.WallTime()),
+        "elapsed_seconds": elapsed,
+        "branches": int(solver.NumBranches()),
+        "conflicts": int(solver.NumConflicts()),
+        "max_teacher_sessions": max_teacher_sessions,
+        "min_teacher_sessions": min_teacher_sessions,
+        "max_one_period_sessions": max_one_period_sessions,
+        "allow_unassigned": bool(allow_unassigned),
+        "total_requested_periods": total_requested_periods,
+        "minimize_sessions": minimize_sessions,
+        "random_seed": random_seed,
+        "hint": hint_metrics,
+        "assignment_session_vars": len(n_vars),
+        "teacher_session_vars": len(z_vars),
+        "teacher_single_vars": len(teacher_single_vars),
+        "period_block_vars": period_block_vars,
+        "period_block_candidate_pairs": period_block_candidate_pairs,
+        "period_block_contiguous_pruned": period_block_contiguous_pruned,
+        "period_block_rule_or_fixed_pruned": period_block_rule_or_fixed_pruned,
+        "teacher_cross_session_period_constraints": teacher_cross_session_period_constraints,
+        "teacher_period_gap_constraints": teacher_period_gap_constraints,
+        "teacher_period_gap_signature_constraints": teacher_period_gap_signature_constraints,
+        "teacher_period_gap_period_vars": len(teacher_period_gap_period_vars),
+        "teacher_period_gap1_vars": len(teacher_period_gap1_vars),
+        "teacher_period_gap2_plus_vars": len(teacher_period_gap2_plus_vars),
+        "period_max_teacher_gap": period_max_teacher_gap,
+        "period_max_teacher_gap_periods": period_max_teacher_gap_periods,
+        "period_max_teacher_gap1_sessions": period_max_teacher_gap1_sessions,
+        "period_max_teacher_gap2_plus_sessions": period_max_teacher_gap2_plus_sessions,
+        "period_gap_objective_target": normalized_gap_objective_target or None,
+        "period_minimize_teacher_gaps": bool(period_gap_objective_requested),
+        "period_gap_objective_requested": bool(period_gap_objective_requested),
+        "period_teacher_gap_priority_absolute": bool(
+            period_teacher_gap_priority_absolute
+        ),
+        "period_gap_model_complete": period_gap_model_complete,
+        "lesson_block_impossible_constraints": lesson_block_impossible_constraints,
+        "lesson_block_deferred_constraints": lesson_block_deferred_constraints,
+        "period_feasibility_session_indexes": sorted(period_feasibility_session_indexes),
+        "legacy_wednesday_pm_bridge": bool(legacy_wednesday_pm_bridge),
+        "objective_mode": objective_mode,
+        "teacher_session_objective_weight": teacher_session_objective_weight,
+        "one_period_objective_weight": one_period_objective_weight,
+        "period_gap_objective_weights": period_gap_objective_weights,
+        "hint_distance_objective_weight": hint_distance_objective_weight,
+        "hint_distance_upper_bound": hint_distance_upper_bound,
+        "hint_distance_quality_scale": hint_scale,
+        "hint_distance_objective_skipped_for_integer_safety": (
+            hint_distance_objective_skipped_for_integer_safety
+        ),
+        "shortfall_objective_weight": shortfall_objective_weight if allow_unassigned else None,
+        "secondary_objective": "one_period_teacher_sessions" if minimize_one_period_sessions else None,
+        "minimize_one_period_sessions": bool(minimize_one_period_sessions),
+        "one_period_priority_absolute": bool(one_period_priority_absolute),
+        "num_workers": effective_num_workers,
+        "requested_num_workers": requested_num_workers,
+        "linearization_level": effective_linearization_level,
+        "bridge_vars": len(q_vars),
+        "forbidden_session_vectors": len(forbidden_session_vectors),
+        "forbidden_eq_vars": forbidden_eq_vars,
+        "minimize_hint_distance": bool(minimize_hint_distance),
+        "early_stop_enabled": early_stop_enabled,
+        "early_stop_hit": bool(quality_callback and quality_callback.hit),
+        "progress_callback_enabled": progress_callback_enabled,
+        "progress_improvements_emitted": (
+            quality_callback.progress_improvements_emitted if quality_callback else 0
+        ),
+        "best_effort_stop_requested": soft_stop_observed.is_set(),
+        "best_effort_stop_applied": soft_stop_applied.is_set(),
+        "best_effort_stop_quality_ready": soft_stop_quality_ready.is_set(),
+        "best_effort_stop_deferred_for_quality": (
+            soft_stop_observed.is_set() and not soft_stop_applied.is_set()
+        ),
+        "best_effort_stop_error": soft_stop_errors[0] if soft_stop_errors else None,
+        "quality_stagnation_stop_enabled": quality_stagnation_enabled,
+        "quality_stagnation_stop_seconds": (
+            normalized_quality_stagnation_seconds
+            if quality_stagnation_enabled
+            else None
+        ),
+        "quality_stagnation_min_improvements": (
+            normalized_quality_stagnation_min_improvements
+            if quality_stagnation_enabled
+            else None
+        ),
+        "quality_stagnation_stop_ready": quality_stagnation_ready.is_set(),
+        "quality_stagnation_stop_applied": quality_stagnation_applied.is_set(),
+        "quality_stagnation_stop_elapsed_seconds": (
+            round(time.monotonic() - quality_stagnation_started, 3)
+            if quality_stagnation_applied.is_set()
+            else None
+        ),
+        "quality_stagnation_improvements": (
+            quality_callback.quality_ready_improvements
+            if quality_callback is not None
+            else 0
+        ),
+        "quality_stagnation_best_objective": (
+            quality_callback.quality_ready_best_objective
+            if quality_callback is not None
+            else None
+        ),
+        "quality_stagnation_best_signature": (
+            list(quality_callback.quality_ready_best_signature)
+            if quality_callback is not None
+            and quality_callback.quality_ready_best_signature is not None
+            else None
+        ),
+        "cloud_run_gap2_zero_stop_enabled": cloud_run_gap2_zero_stop_enabled,
+        "cloud_run_gap2_zero_stop_applied": (
+            cloud_run_gap2_zero_stop_applied.is_set()
+        ),
+        "quality_stagnation_stop_error": (
+            quality_stagnation_errors[0] if quality_stagnation_errors else None
+        ),
+        "early_stop_teacher_threshold": early_stop_teacher_threshold,
+        "early_stop_one_period_threshold": early_stop_one_period_threshold,
+        "period_gap_objective_suppressed_session_early_stop": (
+            period_gap_objective_suppressed_session_early_stop
+        ),
+        "assignment_domain_memo": domain_memo.stats(),
+        "early_stop_teacher_sessions": (
+            quality_callback.hit_teacher_sessions if quality_callback else None
+        ),
+        "early_stop_one_period_sessions": (
+            quality_callback.hit_one_period_sessions if quality_callback else None
+        ),
+        "early_stop_wall_time_seconds": quality_callback.hit_seconds if quality_callback else None,
+        "first_solution_wall_time_seconds": (
+            quality_callback.first_solution_seconds if quality_callback else None
+        ),
+        "first_solution_teacher_sessions": (
+            quality_callback.first_teacher_sessions if quality_callback else None
+        ),
+        "first_solution_one_period_sessions": (
+            quality_callback.first_one_period_sessions if quality_callback else None
+        ),
+        "solutions_seen": quality_callback.solution_count if quality_callback else None,
+    }
+    if objective_expr is not None and status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        metrics["objective"] = float(solver.ObjectiveValue())
+        metrics["best_bound"] = float(solver.BestObjectiveBound())
+
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        raise SessionCpSatNoSolution(f"No CP-SAT session solution found: status={status_name}", metrics)
+
+    allocations: list[SessionAllocation] = []
+    for (ai, si), var in n_vars.items():
+        count = int(solver.Value(var))
+        if count <= 0:
+            continue
+        assignment = data.assignments[ai]
+        allocations.append(
+            SessionAllocation(
+                class_name=assignment.class_name,
+                grade=assignment.grade,
+                subject=assignment.subject,
+                teacher=assignment.teacher,
+                session=sessions[si],
+                count=count,
+                room=assignment.room,
+            )
+        )
+
+    materialized_period_lessons: list[dict[str, Any]] = []
+    materialized_periods_complete = bool(materialize_period_lessons) and set(
+        range(len(sessions))
+    ).issubset(period_feasibility_session_indexes)
+    if materialized_periods_complete:
+        for (ai, si), var in n_vars.items():
+            count = int(solver.Value(var))
+            if count <= 0:
+                continue
+            selected = [
+                (duration, start, block)
+                for duration, start, choice, block in period_block_choices.get((ai, si), [])
+                if int(solver.Value(choice)) > 0
+            ]
+            if len(selected) != 1 or int(selected[0][0]) != count:
+                materialized_periods_complete = False
+                materialized_period_lessons = []
+                break
+            _duration, _start, block = selected[0]
+            assignment = data.assignments[ai]
+            session = sessions[si]
+            materialized_period_lessons.extend(
+                {
+                    "class_name": assignment.class_name,
+                    "grade": assignment.grade,
+                    "day": int(session.day),
+                    "session": str(session.part),
+                    "period": int(period),
+                    "subject": assignment.subject,
+                    "teacher": assignment.teacher,
+                    "room": assignment.room,
+                }
+                for period in block
+            )
+    metrics["period_bridge_materialized_periods"] = len(materialized_period_lessons)
+    metrics["period_bridge_materialization_complete"] = materialized_periods_complete
+    if materialized_periods_complete:
+        metrics["period_bridge_lessons"] = materialized_period_lessons
+
+    if allow_unassigned:
+        unassigned_by_assignment: list[dict[str, Any]] = []
+        total_unassigned = 0
+        for ai, var in shortfall_vars.items():
+            missing = int(solver.Value(var))
+            if missing <= 0:
+                continue
+            assignment = data.assignments[ai]
+            total_unassigned += missing
+            unassigned_by_assignment.append(
+                {
+                    "class": assignment.class_name,
+                    "grade": assignment.grade,
+                    "subject": assignment.subject,
+                    "teacher": assignment.teacher,
+                    "room": assignment.room,
+                    "periods": missing,
+                }
+            )
+        metrics["scheduled_periods"] = sum(item.count for item in allocations)
+        metrics["unassigned_periods"] = total_unassigned
+        metrics["unassigned_by_assignment"] = unassigned_by_assignment
+
+    teacher_session_load: dict[tuple[str, int], int] = {}
+    for allocation in allocations:
+        si = sessions.index(allocation.session)
+        key = (allocation.teacher, si)
+        teacher_session_load[key] = teacher_session_load.get(key, 0) + allocation.count
+    for key, fixed_load in fixed_teacher_session_load.items():
+        teacher_session_load[key] = teacher_session_load.get(key, 0) + int(fixed_load)
+    load_dist: dict[int, int] = {}
+    for load in teacher_session_load.values():
+        load_dist[load] = load_dist.get(load, 0) + 1
+    metrics["teacher_sessions"] = len(teacher_session_load)
+    metrics["load_distribution"] = dict(sorted(load_dist.items()))
+    metrics["one_period_teacher_sessions"] = int(load_dist.get(1, 0))
+    metrics["period_bridge_teacher_gap_periods"] = sum(
+        int(solver.Value(var)) for var in teacher_period_gap_period_vars
+    )
+    metrics["period_bridge_teacher_gap1_sessions"] = sum(
+        int(solver.Value(var)) for var in teacher_period_gap1_vars
+    )
+    metrics["period_bridge_teacher_gap2_plus_sessions"] = sum(
+        int(solver.Value(var)) for var in teacher_period_gap2_plus_vars
+    )
+    metrics["period_bridge_teacher_severe_gap_periods"] = sum(
+        int(solver.Value(var)) for var in teacher_period_severe_gap_vars
+    )
+    metrics["fixed_lessons"] = len(fixed_lessons)
+    metrics["fixed_teacher_sessions"] = len(fixed_teacher_session_load)
+
+    if progress:
+        progress(
+            {
+                "stage": "session_cp_sat:done",
+                "message": f"Hoàn tất CP-SAT cấp buổi: {len(teacher_session_load)} buổi giáo viên",
+                "teacher_sessions": len(teacher_session_load),
+                "load_distribution": metrics["load_distribution"],
+            }
+        )
+    return allocations, metrics
