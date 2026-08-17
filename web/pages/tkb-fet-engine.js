@@ -1434,12 +1434,10 @@
         if(currentP.length === 0){
           // Opening a new session for teacher t:
           // Discourage creating an isolated 1-period session (Tối thiểu 1 buổi 2 tiết)
-          // Mức phạt cực lớn để báo hiệu là vi phạm nghiêm trọng (Severe Penalty)
-          penalty += 2000;
+          penalty += 350;
           if(dayTaught === 0 && (act.duration || 1) === 1){
             // Creating an isolated 1-period day across entire day (Tối thiểu 1 ngày 2 tiết)
-            // Lỗi nặng nhất, phạt tột đỉnh
-            penalty += 5000;
+            penalty += 450;
           }
         }else{
           // Joining existing session (d, b) -> Helps reach >= 2 periods!
