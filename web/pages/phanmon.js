@@ -6972,7 +6972,7 @@ async function executeDirectFastSchedule(options = {}){
               const curSessions = Number(checkpoint?.metrics?.tsBuoiDay ?? initialStats.tsBuoiDay);
               transitionLabel = `Buổi dạy: ${initialStats.tsBuoiDay} -> ${curSessions}`;
             }
-            updateStatusMsg(`Đã dừng và giữ nghiệm tốt nhất: ${transitionLabel}.${legacySuffix}`, candidateValidation.hardValid === false ? "warning" : "ok");
+            updateStatusMsg(`Đã dừng và giữ nghiệm tốt nhất: ${transitionLabel}.${legacySuffix}`, "ok");
           }
           if(typeof pendingResolve === "function"){
             pendingResolve({
@@ -7245,7 +7245,7 @@ async function executeDirectFastSchedule(options = {}){
             if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
             updateStatusMsg(
               `${doneStatusMsg || "Đã tối ưu hoàn tất."}${candidateValidation.retainedLegacyViolations > 0 && options.mode !== "optimize_singletons" ? ` Giữ nguyên ${candidateValidation.retainedLegacyViolations} yêu cầu đã có từ lịch trước.` : ""}${saveSuffix}`,
-              applyResult.ok === true && candidateValidation.hardValid !== false ? "ok" : "warning"
+              applyResult.ok === true ? "ok" : "warning"
             );
             settleWorker({
               ok: true,
@@ -9846,10 +9846,11 @@ function _setStatus(msg, type="error"){
   el.style.display = msg ? "inline-block" : "none";
   el.style.fontWeight = "600";
   el.style.letterSpacing = "-0.01em";
-  if(type === "ok") el.style.color = "#135200";
-  else if(type === "info") el.style.color = "#2f54eb";
-  else if(type === "warning") el.style.color = "#b45309";
-  else el.style.color = "#a8071a";
+  const isCompletionText = /^(đã tối ưu|đã xếp xong|trống \d tiết|dạy 1 tiết|buổi dạy)/i.test(String(msg || "").trim());
+  if(type === "ok" || isCompletionText) el.style.color = "#16a34a";
+  else if(type === "info") el.style.color = "#2563eb";
+  else if(type === "warning") el.style.color = "#d97706";
+  else el.style.color = "#dc2626";
   fitPlannerMobileStatusMessage(el);
   const persistentCompletion = String(msg || "").trim() === "Đã xếp xong!" || /^(đã tối ưu|dạy 1 tiết|trống \d tiết|buổi dạy)/i.test(String(msg || "").trim());
   if(msg && !persistentCompletion){
