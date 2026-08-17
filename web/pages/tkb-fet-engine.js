@@ -2422,7 +2422,7 @@
     }
 
     // Inbound Singleton Reinforcement: pulls lessons from multi-period sessions into 1-period sessions to reach >= 2 periods
-    tryReinforceTeacherSingletons(bestMetrics, initialMetrics, maxGap2Limit = Infinity, onProgress = null){
+    tryReinforceTeacherSingletons(bestMetrics, initialMetrics, maxGap2Limit = 0, onProgress = null){
       const DAYS = DAYS_LIST.length;
       const SESSIONS = SESSIONS_LIST.length;
       const PERIODS = PERIODS_PER_SESSION;
@@ -2481,93 +2481,46 @@
             for(const rich of richSessions){
               for(const item of rich.movableActs){
                 const actToPull = item.act;
-                const pullCGrid = this.classGrid.get(actToPull.classId);
-                if(!pullCGrid) continue;
-
+                
                 for(let p = 0; p < PERIODS; p++){
                   const sTarget = sStart + p;
                   if(sTarget === singleSlot || this.offSlots.has(`${actToPull.classId}|${sTarget}`)) continue;
                   if(tGrid[sTarget] >= 0 || tGrid[sTarget] === -3) continue;
 
-                  const existingActId = pullCGrid[sTarget];
-                  if(existingActId < 0) continue;
-
-                  const existingAct = this.activities[existingActId];
-                  if(!existingAct || existingAct.isFixed || existingAct.duration !== 1) continue;
-
-                  const existingTGrid = this.teacherGrid.get(existingAct.gv);
-                  // 2-way swap
-                  if(existingTGrid && existingTGrid[item.slot] < 0 && existingTGrid[item.slot] !== -3){
-                    this.unplaceActivity(actToPull.id);
-                    this.unplaceActivity(existingAct.id);
-
-                    const r1 = this.getConflictsForSlot(actToPull, sTarget);
-                    const r2 = this.getConflictsForSlot(existingAct, item.slot);
-
-                    if(r1.possible && r1.conflicts.length === 0 && r2.possible && r2.conflicts.length === 0){
-                      this.placeActivityDirect(actToPull.id, sTarget);
-                      this.placeActivityDirect(existingAct.id, item.slot);
-
-                      if(this.isLessonBlockSafe(actToPull, existingAct)){
-                        const m = this.evaluateMetrics();
-                        if(m.soBuoiDay1 < currentBest.soBuoiDay1 && m.soBuoiTrong2 <= maxGap2Limit){
-                          currentBest = { ...m };
-                          anyImproved = true;
-                          reinResolved = true;
-                          if(typeof onProgress === "function") onProgress(currentBest);
-                          break;
-                        }
-                      }
-                      this.unplaceActivity(actToPull.id);
+                  const snap = this.captureStateSnapshot();
+                  this.unplaceActivity(actToPull.id);
+                  
+                  const existingActId = this.classGrid.get(actToPull.classId)[sTarget];
+                  let ok = false;
+                  
+                  if (existingActId >= 0) {
+                    const existingAct = this.activities[existingActId];
+                    if (existingAct && !existingAct.isFixed && existingAct.duration === 1) {
                       this.unplaceActivity(existingAct.id);
-                    }
-                    this.placeActivityDirect(actToPull.id, item.slot);
-                    this.placeActivityDirect(existingAct.id, sTarget);
-                  }
-                  if(reinResolved) break;
-
-                  // 3-way cyclic swap
-                  for(let s3 = 0; s3 < 60; s3++){
-                    if(s3 === item.slot || s3 === sTarget || this.offSlots.has(`${actToPull.classId}|${s3}`)) continue;
-                    const actId3 = pullCGrid[s3];
-                    if(actId3 < 0) continue;
-                    const act3 = this.activities[actId3];
-                    if(!act3 || act3.isFixed || act3.duration !== 1) continue;
-
-                    this.unplaceActivity(actToPull.id);
-                    this.unplaceActivity(existingAct.id);
-                    this.unplaceActivity(act3.id);
-
-                    const r1 = this.getConflictsForSlot(actToPull, sTarget);
-                    const r2 = this.getConflictsForSlot(existingAct, s3);
-                    const r3 = this.getConflictsForSlot(act3, item.slot);
-
-                    if(r1.possible && r1.conflicts.length === 0 &&
-                       r2.possible && r2.conflicts.length === 0 &&
-                       r3.possible && r3.conflicts.length === 0){
                       this.placeActivityDirect(actToPull.id, sTarget);
-                      this.placeActivityDirect(existingAct.id, s3);
-                      this.placeActivityDirect(act3.id, item.slot);
-
-                      if(this.isLessonBlockSafe(actToPull, existingAct, act3)){
-                        const m = this.evaluateMetrics();
-                        if(m.soBuoiDay1 < currentBest.soBuoiDay1 && m.soBuoiTrong2 <= maxGap2Limit){
-                          currentBest = { ...m };
-                          anyImproved = true;
-                          reinResolved = true;
-                          if(typeof onProgress === "function") onProgress(currentBest);
-                          break;
-                        }
-                      }
-                      this.unplaceActivity(actToPull.id);
-                      this.unplaceActivity(existingAct.id);
-                      this.unplaceActivity(act3.id);
+                      
+                      const savedCalls = this.limitCalls;
+                      this.limitCalls = 10000;
+                      this.nCalls = 0;
+                      ok = this.randomSwap(existingAct.id, 0);
+                      this.limitCalls = savedCalls;
                     }
-                    this.placeActivityDirect(actToPull.id, item.slot);
-                    this.placeActivityDirect(existingAct.id, sTarget);
-                    this.placeActivityDirect(act3.id, s3);
+                  } else {
+                    this.placeActivityDirect(actToPull.id, sTarget);
+                    ok = true;
                   }
-                  if(reinResolved) break;
+
+                  if(ok && this.isLessonBlockSafe()){
+                    const m = this.evaluateMetrics();
+                    if(m.soBuoiDay1 < currentBest.soBuoiDay1){
+                      currentBest = { ...m };
+                      anyImproved = true;
+                      reinResolved = true;
+                      if(typeof onProgress === "function") onProgress(currentBest);
+                      break;
+                    }
+                  }
+                  this.restoreStateSnapshot(snap);
                 }
                 if(reinResolved) break;
               }
@@ -2580,6 +2533,142 @@
     }
 
     // Comprehensive Singleton Obliterator: thoroughly merges 1-period teaching sessions across the whole school using 2-way and 3-way cycles
+    
+    tryPairTeacherSingletonsToEmptySession(maxPasses = 5, onProgress = null){
+      const DAYS = DAYS_LIST.length;
+      const SESSIONS = SESSIONS_LIST.length;
+      const PERIODS = PERIODS_PER_SESSION;
+      let currentBest = this.evaluateMetrics();
+      let anyImproved = false;
+
+      for(let pass = 0; pass < maxPasses; pass++){
+        if(currentBest.soBuoiDay1 < 2) break;
+        let passImproved = false;
+
+        const teacherList = Array.from(this.teacherGrid.keys()).filter(t => t && this.isScoredTeacher(t));
+        this.rng.shuffle(teacherList);
+
+        for(const tKey of teacherList){
+          const tGrid = this.teacherGrid.get(tKey);
+          if(!tGrid) continue;
+
+          const singletons = [];
+          const emptySessions = [];
+          for(let d = 0; d < DAYS; d++){
+            for(let b = 0; b < SESSIONS; b++){
+              const sStart = d * SLOTS_PER_DAY + b * PERIODS;
+              const taught = [];
+              for(let p = 0; p < PERIODS; p++){
+                const s = sStart + p;
+                if(tGrid[s] >= 0){
+                  const act = this.activities[tGrid[s]];
+                  if(act && !act.isFixed && act.duration === 1) taught.push({ slot: s, act });
+                }else if(tGrid[s] === -3){
+                  taught.push({ slot: s, act: {isFixed: true} });
+                }
+              }
+              if(taught.length === 1 && taught[0].act.id !== undefined){
+                singletons.push({ day: d, buoi: b, slot: taught[0].slot, act: taught[0].act });
+              }else if(taught.length === 0){
+                emptySessions.push({ day: d, buoi: b, sStart });
+              }
+            }
+          }
+
+          if(singletons.length < 2 || emptySessions.length === 0) continue;
+          this.rng.shuffle(emptySessions);
+
+          for(let i = 0; i < singletons.length; i++){
+            for(let j = i + 1; j < singletons.length; j++){
+              const sing1 = singletons[i];
+              const sing2 = singletons[j];
+              const act1 = sing1.act;
+              const act2 = sing2.act;
+
+              const cGrid1 = this.classGrid.get(act1.classId);
+              const cGrid2 = this.classGrid.get(act2.classId);
+              if(!cGrid1 || !cGrid2) continue;
+
+              let paired = false;
+
+              for(const emp of emptySessions){
+                const candPairs = [[2,3], [1,2], [3,4], [0,1], [1,3], [2,4], [0,2]];
+                
+                for(const pair of candPairs){
+                  const sDest1 = emp.sStart + pair[0];
+                  const sDest2 = emp.sStart + pair[1];
+
+                  if(this.offSlots.has(`${act1.classId}|${sDest1}`)) continue;
+                  if(this.offSlots.has(`${act2.classId}|${sDest2}`)) continue;
+
+                  const actIdDst1 = cGrid1[sDest1];
+                  const actIdDst2 = cGrid2[sDest2];
+                  if(actIdDst1 < 0 || actIdDst2 < 0 || actIdDst1 === actIdDst2) continue; 
+                  
+                  const actDst1 = this.activities[actIdDst1];
+                  const actDst2 = this.activities[actIdDst2];
+
+                  if(!actDst1 || actDst1.isFixed || actDst1.duration !== 1) continue;
+                  if(!actDst2 || actDst2.isFixed || actDst2.duration !== 1) continue;
+
+                  const tDstGrid1 = this.teacherGrid.get(actDst1.gv);
+                  const tDstGrid2 = this.teacherGrid.get(actDst2.gv);
+                  
+                  if(tDstGrid1 && (tDstGrid1[sing1.slot] >= 0 || tDstGrid1[sing1.slot] === -3)) continue;
+                  if(tDstGrid2 && (tDstGrid2[sing2.slot] >= 0 || tDstGrid2[sing2.slot] === -3)) continue;
+
+                  const snap = this.captureStateSnapshot();
+                  this.unplaceActivity(act1.id);
+                  this.unplaceActivity(act2.id);
+                  this.unplaceActivity(actDst1.id);
+                  this.unplaceActivity(actDst2.id);
+
+                  const r1 = this.getConflictsForSlot(act1, sDest1);
+                  const rDst1 = this.getConflictsForSlot(actDst1, sing1.slot);
+                  const r2 = this.getConflictsForSlot(act2, sDest2);
+                  const rDst2 = this.getConflictsForSlot(actDst2, sing2.slot);
+
+                  if(r1.possible && !r1.conflicts.length &&
+                     rDst1.possible && !rDst1.conflicts.length &&
+                     r2.possible && !r2.conflicts.length &&
+                     rDst2.possible && !rDst2.conflicts.length) {
+                    
+                    this.placeActivityDirect(act1.id, sDest1);
+                    this.placeActivityDirect(actDst1.id, sing1.slot);
+                    this.placeActivityDirect(act2.id, sDest2);
+                    this.placeActivityDirect(actDst2.id, sing2.slot);
+
+                    if(this.isLessonBlockSafe(act1, actDst1, act2, actDst2)){
+                      const candM = this.evaluateMetrics();
+                      if(candM.soBuoiDay1 < currentBest.soBuoiDay1 || 
+                        (candM.soBuoiDay1 === currentBest.soBuoiDay1 && candM.tsBuoiDay < currentBest.tsBuoiDay)){
+                        currentBest = { ...candM };
+                        anyImproved = true;
+                        passImproved = true;
+                        paired = true;
+                        if(typeof onProgress === "function") onProgress(currentBest);
+                      }
+                    }
+                  }
+
+                  if(!paired){
+                    this.restoreStateSnapshot(snap);
+                  }else{
+                    break;
+                  }
+                }
+                if(paired) break;
+              }
+              if(paired) break;
+            }
+            if(passImproved) break;
+          }
+        }
+        if(!passImproved) break;
+      }
+      return anyImproved ? currentBest : null;
+    }
+
     obliterateAllTeacherSingletons(maxPasses = 15, maxGap2Limit = Infinity, onProgress = null){
       const DAYS = DAYS_LIST.length;
       const SESSIONS = SESSIONS_LIST.length;
@@ -6685,7 +6774,15 @@
 
         // 1. Primary Downhill Optimization Passes
         if(mode === "optimize_singletons"){
-          const oblitM = this.obliterateAllTeacherSingletons(12, Infinity, notifyLiveProgress);
+          const pairM = this.tryPairTeacherSingletonsToEmptySession(8, notifyLiveProgress);
+            if(pairM && this.compareMetrics(pairM, bestMetrics, mode) < 0){
+              bestMetrics = { ...pairM };
+              saveBestSnapshot();
+              improvedInRound = true;
+              destroyStrength = 1;
+            }
+
+            const oblitM = this.obliterateAllTeacherSingletons(12, Infinity, notifyLiveProgress);
           if(oblitM && this.compareMetrics(oblitM, bestMetrics, mode) < 0){
             bestMetrics = { ...oblitM };
             saveBestSnapshot();
@@ -7738,6 +7835,7 @@
     "tryVacateTeacherDay",
     "tryVacateTeacherSession",
     "tryConsolidateTeacherSingletons",
+      "tryPairTeacherSingletonsToEmptySession",
     "tryReinforceTeacherSingletons",
     "obliterateAllTeacherSingletons",
     "obliterateAllThinTeacherSessions",

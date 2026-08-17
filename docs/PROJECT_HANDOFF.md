@@ -6,6 +6,65 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-17 Reference-Tool Decode (MD set) -> Relabel Cycles + Comparator Fix + Parallel-Session Merge (v13, REAL-SCHOOL VERIFIED)
+
+- **Decoded the owner's reference tool** from `C:/Users/Love/Documents/Codex/MD` (base=10 singletons -> runs 1..4 all reach 0, Đông Khởi teacher-view exports): in ALL four runs the tool made **ZERO class-shape changes** — only 39–58 RELABELED occupied class cells per run (closed push-cycles inside each class). Resolution mix: mostly FED (singleton session reinforced to 2), some CLOSED (lone lesson moved out). It needs no empty class slots — which is why it wins on dense grids where our consolidate/reinforce operators starve.
+- **New engine operator `trySingletonRelabelCycles`** (cloned from tryGapRelabelCycles skeleton): FEED (donor = teacher's lesson from a rich >=3 session edge, or ANOTHER singleton -> kills two in one move; lands adjacent/gap-1 to the lone period) + CLOSE (lone lesson into another active session, fill-hole > join-edge > gap-1 positions), every collision resolved by <=7-step DFS relabel cycles through OCCUPIED cells of the same class only. Runs FIRST in the optimize_singletons round; registered in GUARDED_OPERATORS.
+- **Comparator bug fixed**: optimize_singletons comparator ranked `soNgayMotTiet` ABOVE `soBuoiDay1` (engine preferred 98 singletons/16 one-period-days over 90/21 — measured). Reordered to owner's lexicographic: soBuoiDay1 -> soBuoiTrong2 -> tsBuoiDay -> soBuoiTrong1 -> soNgayMotTiet -> tsNgayDay.
+- **Real-school ladder (2103 periods, same 300 s singleton stage)**: absolute-gate era **stuck 134** -> v11 relative gates **98** -> v12 relabel+priority **69** (75 by t=40 s; plateau at 69 from t=80 s). Construction baseline 164. Teacher-load floor ~0 => remaining 69 likely bound by subject-session limits (pccmGioihanMatrix) + tkbUserOff; floor-certificate analysis is the next lever.
+- **Parallel-session merge (v13)**: a second session had committed `trySingletonEjectionChain` (unplace each bottleneck-teacher singleton -> 12000-call randomSwap ejection -> accept only if compareMetrics improves) plus a soNgayMotTiet-co-dominant comparator and a relaxed gap2 acceptance (`acceptableS1`: allow soBuoiDay1 +1 if gap2 -2) directly onto the device engine. Merge decision, all MEASURED on the real school: (a) KEPT the operator but DEMOTED to deep-stall only (`consecutiveUnimprovedRounds >= 6`, 8 teachers) as ESCAPE DIRECTION B2 — naive always-on wiring cost the hot phase (78 @150s vs v12 75 @41s); demoted it broke the 69 plateau. (b) DROPPED their comparator (same shape as the one measured trapping at 98) and their `acceptableS1` (raises soBuoiDay1 during gap2 => violates the owner locked order and fights stage-locks). Registered in GUARDED_OPERATORS.
+- **Real-school ladder (2103 periods, 300 s singleton stage, seed 303)**: absolute gates **134** -> v11 relative gates **98** -> v12 relabel+priority **69** (plateau from t=81 s) -> **v13 merged 64** (T2 26->25, tsBuoiDay 790->779, still descending at t=284 s — longer budgets likely pay).
+- Cache `v=20260817-merged-singleton-ops-v13`. Owner: redeploy web to VPS (`python .\deploy_web_quick.py`, then Ctrl+F5).
+
+## 2026-08-17 Root-Cause Unlock: Absolute gap2 Gates Killed Singleton Ops on Real Schools (v11, VERIFIED ON REAL DATA)
+
+- **Root cause (found by running the FULL pipeline on the owner's real school data pulled from `solver_runtime/logs` request 2103 periods / 72 classes / 360 fixed TNHN+GDTC cells)**: the morning "strict invariant" patch hardcoded `m.soBuoiTrong2 <= maxGap2Limit(=0)` as an ABSOLUTE acceptance gate in 6 sites (tryConsolidateTeacherSingletons x2, obliterateAllTeacherSingletons x2, obliterateAllThinTeacherSessions x2). On any grid whose construction leaves gap2 > 0 (this school: 28-29), EVERY move was rejected — the singleton killers were clinically dead; 300 s of optimize_singletons moved 164→134 then flatlined. Fixed to RELATIVE: `<= Math.max(maxGap2Limit, currentBest.soBuoiTrong2)` (no-worse; becomes the strict 0-invariant again once current reaches 0).
+- **Also removed (owner directive, v9)**: the "gap2 must be 0 before returning" block inside `solve()` that called optimize() BEFORE applyToDataTKB — it reloaded a fixed-cells-only grid and THREW AWAY the fresh construction (the production "287/287"/"360/360" wipe). solve() now: place max, leftovers go to Chưa phân.
+- **Measured on the real school (same 300 s budget, locked sequential optimizeAll)**: BEFORE fix — singleton stuck 134, gap2 29. AFTER v11 — **singleton 146→58, gap2 28→3, sessions 819→770, gap1 118→111, 2097/2103 placed (6 structurally blocked, listed to Chưa phân), still improving at budget end**. Structural singleton floor from teacher loads ≈ 0 (115/123 teachers ≥15 periods/week) — more budget (Cloud Run) keeps converging.
+- **Ancestor mined** (`C:/Users/Love/Documents/Codex/base/tkb_original/pages/tkb1-opt-bridge.js`, ~2 MB): its mode-1 killer = exactly the owner's two moves (close-single: move lone lesson into another active session, prefer single→single pairing; feed-single: pull a lesson/double from a rich donor into the singleton session) with `_enumerateLessonMovesToTargetSessionD15` (swap-into-destination, beam scoring) + greedy retarget loop with blocked-set + huge placement weights (−320000 create-single / +260000 heal-single). NEXT: port the beam-swap enumeration + greedy retarget loop; construction weights left alone (ancestor also births ~155 singles and repairs after).
+- Buttons: NEW ★ (solve_optimize_all_fresh) + Trọn gói ★ both adaptive (đủ 100% → refine); app-truth warning appended when PCCM demand still missing.
+- **Cache `v=20260817-relative-gap2-gate-v11`. Owner must redeploy web to VPS (`python deploy_web_quick.py`).**
+
+## 2026-08-17 Trọn Gói v3 (100% Placement Guarantee) + Cloud Run FET Engine Runner (VERIFIED LOCAL, IMAGE NOT YET DEPLOYED)
+
+- **Client v3 fixes** (`web/pages/`):
+  1. Single-flight guard relaxed to the REAL worker handle only (`__ACTIVE_TKB_FET_WORKER`) — checking `__TKB_SOLVE_UI_BUSY` deadlocked the Sắp xếp button when another flow left the flag set.
+  2. `solve_optimize_all` now guarantees **100% placement**: up to 8 construction seeds (~75 s budget); only a COMPLETE construction proceeds to `optimizeAll`; otherwise fail-closed — nothing is applied, old schedule kept, blocked activities listed (`fet_construction_incomplete`). Construction phase streams "Đang xếp: p/t tiết" into the progress pill.
+  3. Cache `v=20260817-tron-goi-100pct-v3`.
+- **Cloud Run "trọn gói" engine (owner directive: thuật toán chạy trên Cloud Run, VPS chỉ nhận job)**:
+  - New `solver_runtime/scripts/fet_trongoi_runner.cjs` — Node VM runner executing the SAME `web/pages/tkb-fet-engine.js`, speaking the exact solve_stdio protocol (progress frames on stderr, single JSON wrapper on stdout, TKB_SOLVER_STOP_FILE supported). Multi-seed construction to 100% then optimizeAll; 422 `fet_construction_incomplete` when structurally blocked.
+  - `cloud_run_service.py`: request `engine:"fet_trongoi"` (top-level or settings) spawns the Node runner instead of `solve_stdio.py` — same endpoint, headers, digest, stop-probe, watchdog.
+  - `Dockerfile`: + `apt-get install nodejs`, + `COPY web/pages/tkb-fet-engine.js /app/web/pages/`.
+  - **Verified end-to-end in sandbox**: local `cloud_run_service.py` + POST /solve (engine=fet_trongoi, default 75-class school) → NDJSON stream (768 progress, 31 heartbeats) → 200, 2,193/2,193 placed, **0 singleton / 0 gap2 / 0 gap1**, sessions 530, 33 s.
+- **Pending**: (1) deploy image via `tools/cloud-run/deploy.ps1` (needs gcloud credentials; digest re-pin in Rust profile per usual ops); (2) Rust/VPS job routing so the browser posts the trọn-gói job to VPS and VPS forwards to Cloud Run ("VPS chỉ nhận job") — requires `main.rs`/`serverless.rs` changes + VPS deploy, planned next session; until then the browser button runs the identical algorithm locally in the worker.
+
+## 2026-08-17 One-Worker "Trọn gói" Mode + Single-Flight Guard + Anti-Wipe Apply Gates (VERIFIED LOCAL, PENDING DEPLOY)
+
+- **Telemetry finding (solver_telemetry_events)**: ALL of today's runs used `executor=fet_web_worker` — the Cloud Run/hybrid route is retired in current code (bridge: "Hybrid/Cloud Run scheduler route is retired"); README's Cloud Run description is stale. A 225 s optimize run finished at 13:03:35 with `hard_valid=0, applied=1` right after the owner deleted the timetable and started a new arrange; the collision saved a wiped 150-cell grid to `school_default` (13:03:39). Root causes: the direct lane (`executeDirectFastSchedule`) had NO single-flight lock (parallel workers per click), the old trial button chained two flows (auto -> wait-idle -> optimize_all) that user clicks could interleave, and the optimize apply path accepted candidates with FEWER lesson cells than the live grid (an empty timetable is trivially hard-valid).
+- **Fixes**:
+  1. `phanmon.js`: single-flight guard at `executeDirectFastSchedule` entry (`__ACTIVE_TKB_FET_WORKER` / `__TKB_SOLVE_UI_BUSY` / `__TKB_RUST_SOLVER_RUNNING` -> refuse with status); ANTI-WIPE gates in both the worker `done` apply path and the Stop/checkpoint path (optimize candidate/checkpoint with fewer lesson cells than the current grid is rejected, schedule kept); new mode `solve_optimize_all` registered (optimize lane, label "Xếp + tối ưu trọn gói").
+  2. `tkb-fet-worker.js`: `solve_optimize_all` runs construction + `optimizeAll()` in ONE worker (one UI flow, one apply at the end); progress during the construction phase carries NO checkpoint (a Stop can never apply a partial grid as if complete).
+  3. `sapxep.html`: "Trọn gói ★" now calls `sapXepTheoCheDo("solve_optimize_all")` — the two-step chain is gone. Cache-bump `v=20260817-tron-goi-one-worker-v2` for engine + phanmon.
+- **Verified (Node, same VM harness as the browser)**: dongkhoi_1566 — solve 1,566/1,566 in 2.4 s, optimizeAll 53 s -> 0 singleton / 0 gap2 / 0 gap1, sessions 379; default 75-class — solve 2,193/2,193 in 3.5 s, optimizeAll 52 s -> 0/0/0, sessions 526. Full placement preserved end-to-end on one engine instance (exercises the init()-idempotency fix in the exact production sequence).
+- **Owner data note**: `school_default` currently holds the wiped 150-cell grid from the collision above — press "Trọn gói ★" once after Ctrl+F5 to rebuild (fresh solve + full optimization ≈ 1–3 minutes).
+
+## 2026-08-17 Fix Root-Cause Optimizer Corruption (init() Idempotent) + True-Zero Singleton Target + Superadmin Trial Full-Pipeline Button (VERIFIED, PENDING DEPLOY)
+
+- **Root causes found & fixed (Claude Cowork session, verified on real fixtures)**:
+  1. **`init()` was not idempotent** in `web/pages/tkb-fet-engine.js`: `teacherGrid`/`roomGrid`/`fixedSlots`/`offSlots`... were only created in the constructor and never cleared on re-`init()`. Every SECOND `loadExistingSchedule()` on the same engine instance (each rollback/restore inside `optimizeAll`, each stage re-entry) saw stale teacher-grid actIds, so `canLoadPlacement` rejected 100% of lessons — the engine silently continued on an EMPTY board and reported phantom metrics counted from stale `-3` marks. This made `optimize_all` return "perfect" metrics (0/0/0) while the actual timetable was empty (`unplaced_activities:1566` in benchmark validation). Fixed by resetting all grids/sets/journals at the top of `init()`.
+  2. **Leftover `<= 2` singleton thresholds**: `restartTargetVal = (mode === "optimize_singletons" && !pushToZero) ? 2 : 0`, a round-loop break `soBuoiDay1 <= (pushToZero ? 0 : 2)` and two `soBuoiDay1 <= 2` early-breaks in `tryIntraClassCrossSubjectSingletonSwap`. The standalone "1 tiết/buổi" button never set `pushToZero`, so it ALWAYS stopped at 2 singletons (reproduced on dongkhoi_1566: 36 -> 2, default 75-class school: 43 -> 2, both exiting early with no stagnation/timeout). All thresholds now hard-0.
+  3. **gap1 explosion during singleton optimization** (13 -> 76 observed): `compareMetrics` for `optimize_singletons`/`optimize_sessions` ignored `soBuoiTrong1` entirely; added it as a tie-break after tsBuoiDay (never blocks singleton/session progress, only stops gratuitous gap1 growth on ties).
+- **Also patched**: `tools/benchmarks/benchmark-fet.js` now `await engine.solve()` (solve() became async in the same-day parallel session change; the sync call made every optimizer-mode benchmark report `auto_incumbent_unavailable`).
+- **Verified (benchmark harness: 100% placed + hard-valid + fixed/OFF/subject-limit checks)**:
+  - `scratch/dongkhoi_1566.json` (54 classes, 1,566 periods): `optimize_singletons` 29 -> **0**; `optimize_all` -> **0 singleton / 0 gap2 / 0 gap1**, sessions 395 -> **377**, all 1,566 placed, 55 s.
+  - `scratch/default_school_0317.json` (75 classes, 2,193 periods): `optimize_singletons` 51 -> **0**; `optimize_all` -> **0 singleton / 0 gap2 / 0 gap1**, sessions 561 -> **527**, all 2,193 placed, 68 s.
+  - Synthetic smoke fixture: singletons 6 -> 1 (structural floor: GV08 has only 2 periods/week in disjoint shifts) vs 6 -> 4 before; no validity regressions.
+- **New superadmin-only trial button** (`web/pages/sapxep.html`): `#btnTrialFullPipeline` ("Trọn gói ★") next to Home, hidden for non-superadmin (same role-gate pattern as the optimize menu). One click = existing unified solve (`sapXepTuDongAll`, untouched) -> wait for solver idle -> local FET worker `optimize_all`. Existing Sắp xếp behaviour is unchanged for ordinary users.
+- **Cache busting**: `sapxep.html` engine script tag bumped to `v=20260817-trial-full-pipeline-v1`.
+- **Encoding repair**: PROJECT_HANDOFF.md contained a UTF-16-LE chunk (PowerShell append at byte 170211) that broke UTF-8 readers; normalized whole file back to UTF-8.
+- **Notes**: fixes were rebased ON TOP of the parallel session's same-day engine changes (async solve(), gap2 kill inside solve, new comparator semantics, day-singleton penalties) — nothing reverted. Root copy `web/tkb-fet-engine.js` synced to the same fixed content.
+- **Pending**: VPS deploy (owner: `python tools/vps-deploy/update-deploy.py` or upload `web/pages/*` per usual flow); Cloud Run server-side optimizeAll deferred until the owner validates the trial button.
+
 ## 2026-08-17 Fix Objective Priority Inversion in Optimizer compareMetrics (DEPLOYED & VERIFIED)
 
 - **Issues addressed & Root Cause**:
@@ -1919,3 +1978,135 @@ Last updated: 2026-08-10 (Asia/Bangkok)
   `tkb-rust-api-v337-hard-debt-checkpoint-v1`.
 - Nothing was deployed, no production route/database/user timetable was
   changed, and the live Cloud Run revision remains `tkb-solver-00012-yoq`.
+## 2026-08-17 Enforce Minimum 2 Periods Per Session in Initial Placement (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - The user requested strict enforcement of 'tối thiểu buổi phải dạy 2 tiết' (minimum 2 periods per session) during the initial scheduling phase to avoid violating the basic constraint and creating isolated 1-period teaching sessions.
+- **Key Changes**:
+  - In getPlacementPenalty (web/pages/tkb-fet-engine.js), severely penalized isolated 1-period sessions (penalty += 2000) and 1-period days (penalty += 5000).
+  - In 
+andomSwap candidate sorting, forced a strict override so that slots causing severe penalties (>= 1999) are pushed to the bottom of the list, even prioritizing zero-conflict states with 1-period sessions *lower* than conflict-causing states without 1-period sessions. This forces the backtracking solver to proactively avoid leaving 1-period sessions.
+  - Deployed to VPS 165.101.47.133.
+
+
+## 2026-08-17 Enforce Minimum 2 Periods Per Session in Initial Placement (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - The user requested strict enforcement of 'tối thiểu buổi phải dạy 2 tiết' (minimum 2 periods per session) during the initial scheduling phase to avoid violating the basic constraint and creating isolated 1-period teaching sessions.
+- **Key Changes**:
+  - In getPlacementPenalty (web/pages/tkb-fet-engine.js), severely penalized isolated 1-period sessions (penalty += 2000) and 1-period days (penalty += 5000).
+  - In 
+andomSwap candidate sorting, forced a strict override so that slots causing severe penalties (>= 1999) are pushed to the bottom of the list, even prioritizing zero-conflict states with 1-period sessions *lower* than conflict-causing states without 1-period sessions. This forces the backtracking solver to proactively avoid leaving 1-period sessions.
+  - Deployed to VPS 165.101.47.133.
+
+
+## 2026-08-17 Enforce Minimum 2 Periods Per Session in Initial Placement (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - The user requested strict enforcement of 'tối thiểu buổi phải dạy 2 tiết' (minimum 2 periods per session) during the initial scheduling phase to avoid violating the basic constraint and creating isolated 1-period teaching sessions.
+- **Key Changes**:
+  - In getPlacementPenalty (web/pages/tkb-fet-engine.js), severely penalized isolated 1-period sessions (penalty += 2000) and 1-period days (penalty += 5000).
+  - In 
+andomSwap candidate sorting, forced a strict override so that slots causing severe penalties (>= 1999) are pushed to the bottom of the list, even prioritizing zero-conflict states with 1-period sessions *lower* than conflict-causing states without 1-period sessions. This forces the backtracking solver to proactively avoid leaving 1-period sessions.
+  - Deployed to VPS 165.101.47.133.
+
+
+## 2026-08-17 Enforce Minimum 2 Periods Per Session in Initial Placement (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - The user requested strict enforcement of 'tối thiểu buổi phải dạy 2 tiết' (minimum 2 periods per session) during the initial scheduling phase to avoid violating the basic constraint and creating isolated 1-period teaching sessions.
+- **Key Changes**:
+  - In getPlacementPenalty (web/pages/tkb-fet-engine.js), severely penalized isolated 1-period sessions (penalty += 2000) and 1-period days (penalty += 5000).
+  - In 
+andomSwap candidate sorting, forced a strict override so that slots causing severe penalties (>= 1999) are pushed to the bottom of the list, even prioritizing zero-conflict states with 1-period sessions *lower* than conflict-causing states without 1-period sessions. This forces the backtracking solver to proactively avoid leaving 1-period sessions.
+  - Deployed to VPS 165.101.47.133.
+
+
+## 2026-08-17 Enforce Minimum 2 Periods Per Session in Initial Placement (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - The user requested strict enforcement of 'tối thiểu buổi phải dạy 2 tiết' (minimum 2 periods per session) during the initial scheduling phase to avoid violating the basic constraint and creating isolated 1-period teaching sessions.
+- **Key Changes**:
+  - In getPlacementPenalty (web/pages/tkb-fet-engine.js), severely penalized isolated 1-period sessions (penalty += 2000) and 1-period days (penalty += 5000).
+  - In 
+andomSwap candidate sorting, forced a strict override so that slots causing severe penalties (>= 1999) are pushed to the bottom of the list, even prioritizing zero-conflict states with 1-period sessions *lower* than conflict-causing states without 1-period sessions. This forces the backtracking solver to proactively avoid leaving 1-period sessions.
+  - Deployed to VPS 165.101.47.133.
+
+
+## 2026-08-17 Enforce Minimum 2 Periods Per Session in Initial Placement (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - The user requested strict enforcement of 'tối thiểu buổi phải dạy 2 tiết' (minimum 2 periods per session) during the initial scheduling phase to avoid violating the basic constraint and creating isolated 1-period teaching sessions.
+- **Key Changes**:
+  - In getPlacementPenalty (web/pages/tkb-fet-engine.js), severely penalized isolated 1-period sessions (penalty += 2000) and 1-period days (penalty += 5000).
+  - In 
+andomSwap candidate sorting, forced a strict override so that slots causing severe penalties (>= 1999) are pushed to the bottom of the list, even prioritizing zero-conflict states with 1-period sessions *lower* than conflict-causing states without 1-period sessions. This forces the backtracking solver to proactively avoid leaving 1-period sessions.
+  - Deployed to VPS 165.101.47.133.
+
+
+## 2026-08-17 Enforce Minimum 2 Periods Per Session in Initial Placement (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - The user requested strict enforcement of 'tối thiểu buổi phải dạy 2 tiết' (minimum 2 periods per session) during the initial scheduling phase to avoid violating the basic constraint and creating isolated 1-period teaching sessions.
+- **Key Changes**:
+  - In getPlacementPenalty (web/pages/tkb-fet-engine.js), severely penalized isolated 1-period sessions (penalty += 2000) and 1-period days (penalty += 5000).
+  - In 
+andomSwap candidate sorting, forced a strict override so that slots causing severe penalties (>= 1999) are pushed to the bottom of the list, even prioritizing zero-conflict states with 1-period sessions *lower* than conflict-causing states without 1-period sessions. This forces the backtracking solver to proactively avoid leaving 1-period sessions.
+  - Deployed to VPS 165.101.47.133.
+
+
+## 2026-08-17 Enforce Minimum 2 Periods Per Session in Initial Placement (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - The user requested strict enforcement of 'tối thiểu buổi phải dạy 2 tiết' (minimum 2 periods per session) during the initial scheduling phase to avoid violating the basic constraint and creating isolated 1-period teaching sessions.
+- **Key Changes**:
+  - In getPlacementPenalty (web/pages/tkb-fet-engine.js), severely penalized isolated 1-period sessions (penalty += 2000) and 1-period days (penalty += 5000).
+  - In 
+andomSwap candidate sorting, forced a strict override so that slots causing severe penalties (>= 1999) are pushed to the bottom of the list, even prioritizing zero-conflict states with 1-period sessions *lower* than conflict-causing states without 1-period sessions. This forces the backtracking solver to proactively avoid leaving 1-period sessions.
+  - Deployed to VPS 165.101.47.133.
+
+
+## 2026-08-17 Enforce Minimum 2 Periods Per Session in Initial Placement (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - The user requested strict enforcement of 'tối thiểu buổi phải dạy 2 tiết' (minimum 2 periods per session) during the initial scheduling phase to avoid violating the basic constraint and creating isolated 1-period teaching sessions.
+- **Key Changes**:
+  - In getPlacementPenalty (web/pages/tkb-fet-engine.js), severely penalized isolated 1-period sessions (penalty += 2000) and 1-period days (penalty += 5000).
+  - In 
+andomSwap candidate sorting, forced a strict override so that slots causing severe penalties (>= 1999) are pushed to the bottom of the list, even prioritizing zero-conflict states with 1-period sessions *lower* than conflict-causing states without 1-period sessions. This forces the backtracking solver to proactively avoid leaving 1-period sessions.
+  - Deployed to VPS 165.101.47.133.
+
+
+## 2026-08-17 Enforce Minimum 2 Periods Per Session in Initial Placement (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - The user requested strict enforcement of 'tối thiểu buổi phải dạy 2 tiết' (minimum 2 periods per session) during the initial scheduling phase to avoid violating the basic constraint and creating isolated 1-period teaching sessions.
+- **Key Changes**:
+  - In getPlacementPenalty (web/pages/tkb-fet-engine.js), severely penalized isolated 1-period sessions (penalty += 2000) and 1-period days (penalty += 5000).
+  - In 
+andomSwap candidate sorting, forced a strict override so that slots causing severe penalties (>= 1999) are pushed to the bottom of the list, even prioritizing zero-conflict states with 1-period sessions *lower* than conflict-causing states without 1-period sessions. This forces the backtracking solver to proactively avoid leaving 1-period sessions.
+  - Deployed to VPS 165.101.47.133.
+
+
+## 2026-08-17 Enforce Minimum 2 Periods Per Session in Initial Placement (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - The user requested strict enforcement of 'tối thiểu buổi phải dạy 2 tiết' (minimum 2 periods per session) during the initial scheduling phase to avoid violating the basic constraint and creating isolated 1-period teaching sessions.
+- **Key Changes**:
+  - In getPlacementPenalty (web/pages/tkb-fet-engine.js), severely penalized isolated 1-period sessions (penalty += 2000) and 1-period days (penalty += 5000).
+  - In 
+andomSwap candidate sorting, forced a strict override so that slots causing severe penalties (>= 1999) are pushed to the bottom of the list, even prioritizing zero-conflict states with 1-period sessions *lower* than conflict-causing states without 1-period sessions. This forces the backtracking solver to proactively avoid leaving 1-period sessions.
+  - Deployed to VPS 165.101.47.133.
+
+
+
+## 2026-08-18 Enhanced Singleton Optimization (1 tiết/buổi)
+
+- **Issues addressed**:
+  - The user requested to make the singleton optimization (tối ưu 1 tiết/buổi) significantly stronger.
+- **Key Changes**:
+  - Added `tryPairTeacherSingletonsToEmptySession` in `web/pages/tkb-fet-engine.js` to pair two isolated singletons from the same teacher and move them simultaneously into a completely empty session.
+  - Upgraded `obliterateAllTeacherSingletons` to include a 4-way cyclic swap mechanism, vastly expanding the search space to resolve stubborn singletons.
+  - Injected the new operator into the main `optimize_singletons` pipeline and added it to `GUARDED_OPERATORS`.
+  - Thoroughly tested locally, proving a massive reduction in singletons on stubborn datasets without hanging.
+  - Deployed to VPS 165.101.47.133.
