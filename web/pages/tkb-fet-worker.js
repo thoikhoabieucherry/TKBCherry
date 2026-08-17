@@ -71,12 +71,13 @@ self.onmessage = async function(e) {
         return;
       }
       currentEngine = new self.FetTimetableEngine(data, options);
-      const res = currentEngine.solve((prog) => {
+      const res = await currentEngine.solve((prog) => {
         self.postMessage({
           type: 'progress',
           percent: prog.percent,
           placed: prog.placed,
-          total: prog.total
+          total: prog.total,
+          message: prog.message || null
         });
       });
 

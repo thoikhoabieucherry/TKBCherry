@@ -7344,8 +7344,8 @@ async function executeDirectFastSchedule(options = {}){
           }
         });
       }else{
-        res = engine.solve((prog) => {
-          const msg = `Đang sắp xếp: ${prog.percent}% (${prog.placed}/${prog.total} tiết)...`;
+        res = await engine.solve((prog) => {
+          const msg = prog.message || `Đang sắp xếp: ${prog.percent}% (${prog.placed || 0}/${prog.total || 0} tiết)...`;
           if(typeof setStatus === "function") setStatus(msg, "info");
           else if(typeof _setStatus === "function") _setStatus(msg, "info");
         });

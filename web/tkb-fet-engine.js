@@ -1323,7 +1323,7 @@
             const sCheck = sessionStart + pi;
             if(sCheck >= slot && sCheck < slot + act.duration){
               curP.push(pi);
-            }else if((tGrid[sCheck] >= 0 && !conflictsSet.has(tGrid[sCheck])) || tGrid[sCheck] === -3){
+            }else if((tGrid[sCheck] >= 0 && tGrid[sCheck] !== act.id && !conflictsSet.has(tGrid[sCheck])) || tGrid[sCheck] === -3){
               curP.push(pi);
             }
           }
@@ -1798,7 +1798,7 @@
       return false;
     }
 
-    solve(progressCallback = null){
+    async solve(progressCallback = null){
       this.init();
       this.strictFetGaps = true;
       this.computeDifficultiesAndSort();
@@ -1825,13 +1825,11 @@
         }
       }
 
-      // Keep 2-period blocks intact!
-
       // Multi-pass exhaustive placement for remaining activities
       for(let pass = 0; pass < 20; pass++){
         const unplacedActs = this.activities.filter(a => this.actPlacement[a.id] < 0);
         if(unplacedActs.length === 0) break;
-        this.strictFetGaps = true; // Always strictly enforce max consecutive gap <= 1 and max gaps per session <= 1
+        this.strictFetGaps = true;
 
         this.limitCalls = Math.max(8000, 10 * this.activities.length);
         for(const uAct of unplacedActs){
@@ -1843,11 +1841,25 @@
           const placedNow = this.actPlacement.filter(s => s >= 0).reduce((sum, s, idx) => sum + (this.activities[idx]?.duration || 1), 0);
           const totalLessons = this.activities.reduce((sum, a) => sum + a.duration, 0);
           progressCallback({
-            percent: 100,
+            percent: 90,
             placed: placedNow,
             total: totalLessons
           });
         }
+      }
+
+      // KHÓA CỨNG: 2 TIẾT TRỐNG (soBuoiTrong2) BẮT BUỘC = 0 MỚI TRẢ LỊCH!
+      let curM = this.evaluateMetrics();
+      if(curM.soBuoiTrong2 > 0){
+        if(typeof progressCallback === "function"){
+          try{
+            progressCallback({
+              percent: 95,
+              message: "Đang khử hoàn toàn 2 tiết trống về 0..."
+            });
+          }catch(_){}
+        }
+        await this.optimize("optimize_gap2");
       }
 
       this.applyToDataTKB();
