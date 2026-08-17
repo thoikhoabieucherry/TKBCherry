@@ -6,6 +6,15 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-17 Immediate Termination on Zero/Floor + Daily Constraint Safety (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  1. Optimizer reached target (gap2 = 0 or singletons <= 2) but didn't stop immediately: the inner round loop broke out, but `portfolioDone` remained `false`, causing unnecessary portfolio restart attempts. Fixed by setting `portfolioDone = true; break;` immediately upon reaching target.
+  2. Constraint violation post-validation rejection: `isDailySubjectLimitSafe` checked `act.subject` (which was undefined; activities store `act.mon`), bypassing max-daily subject period limits during swap operations. Fixed `isDailySubjectLimitSafe` to check `act.mon || act.subject`, and wired it into `tryConsolidatePairSingletons`.
+- **Verified**:
+  - Live Node.js test confirmed `soBuoiDay1` reduced 4 -> 2 with `Placement Integrity OK: true`.
+  - Quick deployed to VPS `165.101.47.133`.
+
 ## 2026-08-17 Automatic Singletons Resolution (4 -> 2) via `tryConsolidatePairSingletons` (DEPLOYED & VERIFIED)
 
 - **Problem diagnosed**:

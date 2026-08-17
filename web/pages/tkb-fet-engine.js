@@ -3022,7 +3022,11 @@
 
                             const safeBlock = this.isLessonBlockSafe(actA, actB) &&
                               (!actC || this.isLessonBlockSafe(actC)) &&
-                              (!actD || this.isLessonBlockSafe(actD));
+                              (!actD || this.isLessonBlockSafe(actD)) &&
+                              this.isDailySubjectLimitSafe(actA, s1) &&
+                              this.isDailySubjectLimitSafe(actB, s2) &&
+                              (!actC || this.isDailySubjectLimitSafe(actC, destC)) &&
+                              (!actD || this.isDailySubjectLimitSafe(actD, destD));
 
                             if(safeBlock){
                               const m = this.evaluateMetrics();
@@ -5459,7 +5463,8 @@
     }
 
     isDailySubjectLimitSafe(act, targetSlot) {
-      if(!act || !act.classId || !act.subject) return true;
+      const subj = act?.mon || act?.subject;
+      if(!act || !act.classId || !subj) return true;
       const details = slotToDetails(targetSlot);
       if(!details || details.dayIdx < 0) return true;
       const targetDayIdx = details.dayIdx;
@@ -5472,13 +5477,14 @@
         const aId = cg[dayStart + p];
         if(aId >= 0 && aId !== act.id){
           const a = this.activities[aId];
-          if(a && this.getCanonMonKey(a.subject) === this.getCanonMonKey(act.subject)){
+          const aSubj = a?.mon || a?.subject;
+          if(a && this.getCanonMonKey(aSubj) === this.getCanonMonKey(subj)){
             count += a.duration || 1;
           }
         }
       }
 
-      const maxLimit = this.getMaxDailyPeriodsForSubject(act.classId, act.subject);
+      const maxLimit = this.getMaxDailyPeriodsForSubject(act.classId, subj);
       return (count + (act.duration || 1)) <= maxLimit;
     }
 
@@ -7225,6 +7231,7 @@
               metrics: bestMetrics
             });
           }
+          portfolioDone = true;
           break;
         }
 
@@ -7237,6 +7244,7 @@
               metrics: bestMetrics
             });
           }
+          portfolioDone = true;
           break;
         }
 
