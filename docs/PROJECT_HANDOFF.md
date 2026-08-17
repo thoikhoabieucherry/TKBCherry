@@ -6,11 +6,11 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
-## 2026-08-17 Clean Optimization Status Text (No Confusing Suffix) (DEPLOYED & VERIFIED)
+## 2026-08-17 Clean Optimization Status Text (No Confusing Suffix on Done or Stop) (DEPLOYED & VERIFIED)
 
 - **Issues addressed**:
-  - Optimization completion previously appended `"Giữ nguyên X yêu cầu đã có từ lịch trước."` to status text, causing confusion and looking like an error.
-  - Removed internal diagnostic suffix and standardized all 4 completion messages (`Đã tối ưu Trống 2 tiết: X ➔ Y`, `Đã tối ưu Dạy 1 tiết/buổi: X ➔ Y`, `Đã tối ưu Buổi dạy: X ➔ Y`, `Đã tối ưu Trống 1 tiết: X ➔ Y`) in clean green.
+  - Optimization completion and manual stop previously appended `"Giữ nguyên X yêu cầu đã có từ lịch trước."` to status text, causing confusion and looking like an error.
+  - Removed internal diagnostic suffix from both completion (`updateStatusMsg`) and manual stop handlers (`Đã dừng và giữ nghiệm tốt nhất: Buổi dạy: 422 ➔ 420`) in clean green.
   - Deployed to VPS `165.101.47.133`.
 
 ## 2026-08-17 Green Status Message Styling for Successful Optimizations (DEPLOYED & VERIFIED)

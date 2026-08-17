@@ -6952,27 +6952,24 @@ async function executeDirectFastSchedule(options = {}){
           if(applied.ok !== true){
             updateStatusMsg("Đã dừng tối ưu; nghiệm tốt nhất đã hiển thị nhưng không lưu được ngay. Hãy kiểm tra kết nối rồi lưu lại.", "warning");
           }else{
-            const legacySuffix = candidateValidation.retainedLegacyViolations > 0
-              ? ` Giữ nguyên ${candidateValidation.retainedLegacyViolations} yêu cầu đã có từ lịch trước.`
-              : "";
             let transitionLabel = `[${label}]`;
             if(options?.mode === "optimize_all"){
               const mAll = checkpoint?.metrics || {};
-              transitionLabel = `1 tiết/buổi: ${initialStats.soBuoiDay1} -> ${mAll.soBuoiDay1 ?? "?"}, Trống 2: ${initialStats.soBuoiTrong2} -> ${mAll.soBuoiTrong2 ?? "?"}, Buổi: ${initialStats.tsBuoiDay} -> ${mAll.tsBuoiDay ?? "?"}, Trống 1: ${initialStats.soBuoiTrong1} -> ${mAll.soBuoiTrong1 ?? "?"}`;
+              transitionLabel = `1 tiết/buổi: ${initialStats.soBuoiDay1} ➔ ${mAll.soBuoiDay1 ?? "?"}, Trống 2: ${initialStats.soBuoiTrong2} ➔ ${mAll.soBuoiTrong2 ?? "?"}, Buổi: ${initialStats.tsBuoiDay} ➔ ${mAll.tsBuoiDay ?? "?"}, Trống 1: ${initialStats.soBuoiTrong1} ➔ ${mAll.soBuoiTrong1 ?? "?"}`;
             }else if(options?.mode === "optimize_gap2"){
               const curGap2 = Number(checkpoint?.metrics?.soBuoiTrong2 ?? initialStats.soBuoiTrong2);
-              transitionLabel = `Trống 2 tiết: ${initialStats.soBuoiTrong2} -> ${curGap2}`;
+              transitionLabel = `Trống 2 tiết: ${initialStats.soBuoiTrong2} ➔ ${curGap2}`;
             }else if(options?.mode === "optimize_singletons"){
               const curSingle = Number(checkpoint?.metrics?.soBuoiDay1 ?? initialStats.soBuoiDay1);
-              transitionLabel = `Dạy 1 tiết: ${initialStats.soBuoiDay1} -> ${curSingle}`;
+              transitionLabel = `Dạy 1 tiết/buổi: ${initialStats.soBuoiDay1} ➔ ${curSingle}`;
             }else if(options?.mode === "optimize_gap1"){
               const curGap1 = Number(checkpoint?.metrics?.soBuoiTrong1 ?? initialStats.soBuoiTrong1);
-              transitionLabel = `Trống 1 tiết: ${initialStats.soBuoiTrong1} -> ${curGap1}`;
+              transitionLabel = `Trống 1 tiết: ${initialStats.soBuoiTrong1} ➔ ${curGap1}`;
             }else if(options?.mode === "optimize_sessions"){
               const curSessions = Number(checkpoint?.metrics?.tsBuoiDay ?? initialStats.tsBuoiDay);
-              transitionLabel = `Buổi dạy: ${initialStats.tsBuoiDay} -> ${curSessions}`;
+              transitionLabel = `Buổi dạy: ${initialStats.tsBuoiDay} ➔ ${curSessions}`;
             }
-            updateStatusMsg(`Đã dừng và giữ nghiệm tốt nhất: ${transitionLabel}.${legacySuffix}`, "ok");
+            updateStatusMsg(`Đã dừng và giữ nghiệm tốt nhất: ${transitionLabel}`, "ok");
           }
           if(typeof pendingResolve === "function"){
             pendingResolve({
