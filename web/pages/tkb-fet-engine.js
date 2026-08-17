@@ -297,6 +297,7 @@
       this.restoreStack = [];
       this.moveJournal = [];
       this.swappedInBranch = new Set();
+      this.strictFetGaps = true; // FET Constraint: Max consecutive gap <= 1 & Max gaps per session <= 1 ALWAYS
     }
 
     // Parse data from TKBCherry DATA object
@@ -1773,7 +1774,7 @@
       for(let pass = 0; pass < 20; pass++){
         const unplacedActs = this.activities.filter(a => this.actPlacement[a.id] < 0);
         if(unplacedActs.length === 0) break;
-        if(pass >= 6) this.strictFetGaps = false; // Relax in late fallback passes to guarantee 100% full placement
+        this.strictFetGaps = true; // Always strictly enforce max consecutive gap <= 1 and max gaps per session <= 1
 
         this.limitCalls = Math.max(8000, 10 * this.activities.length);
         for(const uAct of unplacedActs){
@@ -2700,6 +2701,260 @@
       return anyImproved ? currentBest : null;
     }
 
+
+    // Cross-Subject Intra-Class Singleton Crusher: finds complementary cross-subject swaps in the same class
+    tryIntraClassCrossSubjectSingletonSwap(maxPasses = 10, onProgress = null){
+      const DAYS = DAYS_LIST.length;
+      const SESSIONS = SESSIONS_LIST.length;
+      const PERIODS = PERIODS_PER_SESSION;
+      let currentBest = this.evaluateMetrics();
+      let anyImproved = false;
+
+      for(let pass = 0; pass < maxPasses; pass++){
+        if(currentBest.soBuoiDay1 <= 2 && !this.pushToZero) break;
+        if(currentBest.soBuoiDay1 === 0) break;
+        let passImproved = false;
+
+        const teacherList = Array.from(this.teacherGrid.keys()).filter(t => t && this.isScoredTeacher(t));
+        this.rng.shuffle(teacherList);
+
+        for(const tKey of teacherList){
+          const tGrid = this.teacherGrid.get(tKey);
+          if(!tGrid) continue;
+
+          for(let d = 0; d < DAYS; d++){
+            for(let b = 0; b < SESSIONS; b++){
+              const sStart = d * SLOTS_PER_DAY + b * PERIODS;
+              const taught = [];
+              for(let p = 0; p < PERIODS; p++){
+                const s = sStart + p;
+                if(tGrid[s] >= 0){
+                  const act = this.activities[tGrid[s]];
+                  if(act && !act.isFixed && act.duration === 1){
+                    taught.push({ slot: s, actId: tGrid[s], p });
+                  }
+                }else if(tGrid[s] === -3){
+                  taught.push({ slot: s, actId: -3, p });
+                }
+              }
+
+              if(taught.length !== 1 || taught[0].actId < 0) continue;
+
+              const s1 = taught[0].slot;
+              const act1 = this.activities[taught[0].actId];
+              if(!act1) continue;
+              const cGrid = this.classGrid.get(act1.classId);
+              if(!cGrid) continue;
+
+              const targetSessions = [];
+              for(let d2 = 0; d2 < DAYS; d2++){
+                if(d2 === d) continue;
+                const sStart2 = d2 * SLOTS_PER_DAY + b * PERIODS;
+                let cnt = 0;
+                for(let p2 = 0; p2 < PERIODS; p2++){
+                  if(tGrid[sStart2 + p2] >= 0 || tGrid[sStart2 + p2] === -3) cnt++;
+                }
+                if(cnt >= 1 && cnt < 5){
+                  targetSessions.push({ d: d2, b: b, sStart: sStart2, cnt });
+                }
+              }
+              targetSessions.sort((x, y) => y.cnt - x.cnt);
+
+              for(const tgt of targetSessions){
+                for(let p2 = 0; p2 < PERIODS; p2++){
+                  const s2 = tgt.sStart + p2;
+                  const actId2 = cGrid[s2];
+                  if(actId2 < 0) continue;
+                  const act2 = this.activities[actId2];
+                  if(!act2 || act2.isFixed || act2.duration !== 1) continue;
+
+                  const tKey2 = act2.gv || act2.teacherId;
+                  if(!tKey2 || tKey2 === tKey) continue;
+                  const tGrid2 = this.teacherGrid.get(tKey2);
+                  if(!tGrid2) continue;
+
+                  if(tGrid[s2] >= 0 && tGrid[s2] !== act1.id) continue;
+                  if(tGrid[s2] === -3) continue;
+
+                  if(tGrid2[s1] >= 0 && tGrid2[s1] !== act2.id) continue;
+                  if(tGrid2[s1] === -3) continue;
+
+                  if(this.offSlots && this.offSlots.has(`${tKey}|${s2}`)) continue;
+                  if(this.offSlots && this.offSlots.has(`${tKey2}|${s1}`)) continue;
+
+                  this.jrnUnplace(act1.id);
+                  this.jrnUnplace(act2.id);
+                  this.jrnPlace(act1.id, s2);
+                  this.jrnPlace(act2.id, s1);
+
+                  const candM = this.evaluateMetrics();
+                  const isBetter = candM.soBuoiDay1 < currentBest.soBuoiDay1
+                    || (candM.soBuoiDay1 === currentBest.soBuoiDay1 && candM.soBuoiTrong2 < currentBest.soBuoiTrong2);
+
+                  if(isBetter){
+                    currentBest = candM;
+                    passImproved = true;
+                    anyImproved = true;
+                    if(typeof onProgress === "function") onProgress(currentBest);
+                    break;
+                  }else{
+                    this.jrnUnplace(act1.id);
+                    this.jrnUnplace(act2.id);
+                    this.jrnPlace(act1.id, s1);
+                    this.jrnPlace(act2.id, s2);
+                  }
+                }
+                if(passImproved) break;
+              }
+            }
+            if(passImproved) break;
+          }
+        }
+        if(!passImproved) break;
+      }
+      return anyImproved ? currentBest : null;
+    }
+
+    // Multi-hop Augmenting Singleton Ejection Chain
+    tryAugmentingSingletonEjectionChain(maxPasses = 6, onProgress = null){
+      const DAYS = DAYS_LIST.length;
+      const SESSIONS = SESSIONS_LIST.length;
+      const PERIODS = PERIODS_PER_SESSION;
+      let currentBest = this.evaluateMetrics();
+      let anyImproved = false;
+
+      for(let pass = 0; pass < maxPasses; pass++){
+        if(currentBest.soBuoiDay1 <= 2 && !this.pushToZero) break;
+        if(currentBest.soBuoiDay1 === 0) break;
+        let passImproved = false;
+
+        const teacherList = Array.from(this.teacherGrid.keys()).filter(t => t && this.isScoredTeacher(t));
+        this.rng.shuffle(teacherList);
+
+        for(const tKey of teacherList){
+          const tGrid = this.teacherGrid.get(tKey);
+          if(!tGrid) continue;
+
+          for(let d = 0; d < DAYS; d++){
+            for(let b = 0; b < SESSIONS; b++){
+              const sStart = d * SLOTS_PER_DAY + b * PERIODS;
+              const taught = [];
+              for(let p = 0; p < PERIODS; p++){
+                const s = sStart + p;
+                if(tGrid[s] >= 0){
+                  const act = this.activities[tGrid[s]];
+                  if(act && !act.isFixed && act.duration === 1){
+                    taught.push({ slot: s, actId: tGrid[s], p });
+                  }
+                }else if(tGrid[s] === -3){
+                  taught.push({ slot: s, actId: -3, p });
+                }
+              }
+
+              if(taught.length !== 1 || taught[0].actId < 0) continue;
+
+              const s1 = taught[0].slot;
+              const act1 = this.activities[taught[0].actId];
+              if(!act1) continue;
+              const cGrid1 = this.classGrid.get(act1.classId);
+              if(!cGrid1) continue;
+
+              const targetSessions = [];
+              for(let d2 = 0; d2 < DAYS; d2++){
+                if(d2 === d) continue;
+                const sStart2 = d2 * SLOTS_PER_DAY + b * PERIODS;
+                let cnt = 0;
+                for(let p2 = 0; p2 < PERIODS; p2++){
+                  if(tGrid[sStart2 + p2] >= 0 || tGrid[sStart2 + p2] === -3) cnt++;
+                }
+                if(cnt >= 1 && cnt < 5){
+                  targetSessions.push({ d: d2, b: b, sStart: sStart2 });
+                }
+              }
+
+              for(const tgt of targetSessions){
+                for(let p2 = 0; p2 < PERIODS; p2++){
+                  const s2 = tgt.sStart + p2;
+                  const actId2 = cGrid1[s2];
+                  if(actId2 < 0) continue;
+                  const act2 = this.activities[actId2];
+                  if(!act2 || act2.isFixed || act2.duration !== 1) continue;
+                  const tKey2 = act2.gv || act2.teacherId;
+                  if(!tKey2 || tKey2 === tKey) continue;
+                  const tGrid2 = this.teacherGrid.get(tKey2);
+                  if(!tGrid2) continue;
+
+                  if(tGrid[s2] >= 0 && tGrid[s2] !== act1.id) continue;
+                  if(tGrid[s2] === -3) continue;
+                  if(this.offSlots && this.offSlots.has(`${tKey}|${s2}`)) continue;
+
+                  const otherClasses = Array.from(this.classGrid.keys()).filter(c => c !== act1.classId);
+                  this.rng.shuffle(otherClasses);
+
+                  for(const cId3 of otherClasses.slice(0, 10)){
+                    const cGrid3 = this.classGrid.get(cId3);
+                    if(!cGrid3) continue;
+
+                    for(let s3 = 0; s3 < TOTAL_SLOTS; s3++){
+                      if(s3 === s1 || s3 === s2) continue;
+                      const actId3 = cGrid3[s3];
+                      if(actId3 < 0) continue;
+                      const act3 = this.activities[actId3];
+                      if(!act3 || act3.isFixed || act3.duration !== 1) continue;
+                      const tKey3 = act3.gv || act3.teacherId;
+                      if(!tKey3 || tKey3 === tKey || tKey3 === tKey2) continue;
+                      const tGrid3 = this.teacherGrid.get(tKey3);
+                      if(!tGrid3) continue;
+
+                      if(tGrid3[s1] >= 0 && tGrid3[s1] !== act3.id) continue;
+                      if(tGrid3[s1] === -3) continue;
+                      if(this.offSlots && this.offSlots.has(`${tKey3}|${s1}`)) continue;
+
+                      if(tGrid2[s3] >= 0 && tGrid2[s3] !== act2.id) continue;
+                      if(tGrid2[s3] === -3) continue;
+                      if(this.offSlots && this.offSlots.has(`${tKey2}|${s3}`)) continue;
+
+                      this.jrnUnplace(act1.id);
+                      this.jrnUnplace(act2.id);
+                      this.jrnUnplace(act3.id);
+                      this.jrnPlace(act1.id, s2);
+                      this.jrnPlace(act2.id, s3);
+                      this.jrnPlace(act3.id, s1);
+
+                      const candM = this.evaluateMetrics();
+                      const isBetter = candM.soBuoiDay1 < currentBest.soBuoiDay1
+                        || (candM.soBuoiDay1 === currentBest.soBuoiDay1 && candM.soBuoiTrong2 < currentBest.soBuoiTrong2);
+
+                      if(isBetter){
+                        currentBest = candM;
+                        passImproved = true;
+                        anyImproved = true;
+                        if(typeof onProgress === "function") onProgress(currentBest);
+                        break;
+                      }else{
+                        this.jrnUnplace(act1.id);
+                        this.jrnUnplace(act2.id);
+                        this.jrnUnplace(act3.id);
+                        this.jrnPlace(act1.id, s1);
+                        this.jrnPlace(act2.id, s2);
+                        this.jrnPlace(act3.id, s3);
+                      }
+                    }
+                    if(passImproved) break;
+                  }
+                  if(passImproved) break;
+                }
+                if(passImproved) break;
+              }
+            }
+            if(passImproved) break;
+          }
+        }
+        if(!passImproved) break;
+      }
+      return anyImproved ? currentBest : null;
+    }
+
     obliterateAllThinTeacherSessions(maxPasses = 8, targetSizes = [1, 2], maxGap2Limit = Infinity, onProgress = null){
       let currentBest = this.evaluateMetrics();
       let anyImproved = false;
@@ -3005,7 +3260,7 @@
 
                       if(this.isLessonBlockSafe(act1, act2)){
                         const m = this.evaluateMetrics();
-                        if(m.soBuoiDay1 <= bestMetrics.soBuoiDay1 && m.soNgayMotTiet <= bestMetrics.soNgayMotTiet){
+                        if(m.soBuoiDay1 <= bestMetrics.soBuoiDay1 ){
                           if(m.tsBuoiDay < currentBest.tsBuoiDay || (m.tsBuoiDay === currentBest.tsBuoiDay && ((m.soBuoiDay2||0)*2 + (m.soBuoiDay3||0) < (currentBest.soBuoiDay2||0)*2 + (currentBest.soBuoiDay3||0) || m.tsNgayDay < currentBest.tsNgayDay))){
                             currentBest = { ...m };
                             anyImproved = true;
@@ -3074,7 +3329,7 @@
 
                       if(this.isLessonBlockSafe(act1, act2, actA, actB)){
                         const m = this.evaluateMetrics();
-                        if(m.soBuoiDay1 <= bestMetrics.soBuoiDay1 && m.soNgayMotTiet <= bestMetrics.soNgayMotTiet){
+                        if(m.soBuoiDay1 <= bestMetrics.soBuoiDay1 ){
                           if(m.tsBuoiDay < currentBest.tsBuoiDay || (m.tsBuoiDay === currentBest.tsBuoiDay && ((m.soBuoiDay2||0)*2 + (m.soBuoiDay3||0) < (currentBest.soBuoiDay2||0)*2 + (currentBest.soBuoiDay3||0) || m.tsNgayDay < currentBest.tsNgayDay))){
                             currentBest = { ...m };
                             anyImproved = true;
@@ -6305,20 +6560,6 @@
         this.classGrid.forEach((arr, cid) => bestClassGrid.set(cid, arr.slice()));
         bestTeacherGrid = new Map();
         this.teacherGrid.forEach((arr, gv) => bestTeacherGrid.set(gv, arr.slice()));
-        bestRoomGrid = new Map();
-        this.roomGrid.forEach((arr, rm) => bestRoomGrid.set(rm, arr.slice()));
-
-        // Keep up to 3 elite snapshots
-        if(eliteArchive.length < 3 || this.compareMetrics(bestMetrics, eliteArchive[0].metrics, mode) < 0){
-          eliteArchive.unshift({
-            metrics: { ...bestMetrics },
-            placement: bestPlacement.slice(),
-            classGrid: new Map(Array.from(bestClassGrid.entries()).map(([k, v]) => [k, v.slice()])),
-            teacherGrid: new Map(Array.from(bestTeacherGrid.entries()).map(([k, v]) => [k, v.slice()])),
-            roomGrid: new Map(Array.from(bestRoomGrid.entries()).map(([k, v]) => [k, v.slice()]))
-          });
-          if(eliteArchive.length > 3) eliteArchive.pop();
-        }
 
         // Gấp best của lượt chạy vào GLOBAL BEST (xuyên các restart) + neo
         // checkpoint: mọi snapshot gửi ra ngoài từ đây là global best.
@@ -6379,20 +6620,11 @@
       // từ best với pha mới trong cùng một lần bấm sẽ gộp chiến quả của nhiều
       // seed: ca nào từng có lời giải ở một pha nào đó rồi sẽ được giữ qua best.
       const optStartMs = Date.now();
-      // Trong optimizeAll các lát cắt stage ngắn — portfolio sẽ phí lát vào
-      // bước đa dạng hóa rồi bị deadline chém; ở đó tắt portfolio (optimizeAll
-      // tự chạy quét gap2 trọn ngân sách ở bước chốt).
       const canRestart = !this.__inOptimizeAll &&
         (mode === "optimize_gap2" || mode === "optimize_gap1" || mode === "optimize_singletons");
-      // Mốc dừng của portfolio: nút 1 tiết/buổi mặc định dừng ở sàn 2 (trừ khi
-      // pushToZero) — không xoay vòng vô ích khi đã chạm sàn.
       const restartTargetVal = (mode === "optimize_singletons" && !this.pushToZero) ? 2 : 0;
       const restartBudgetMs = Number(this.options.optimizeRestartBudgetMs) || 180000;
       const maxRestarts = Number(this.options.optimizeMaxRestarts) || 20;
-      // TRẦN THỜI GIAN CỨNG cho một lần bấm nút: một số operator quét brute-force
-      // rất nặng — không có trần, một lượt 45 vòng có thể chạy hàng giờ. Trần này
-      // chém giữa các vòng VÀ chặn operator mới khởi động khi quá hạn (opDeadlineMs
-      // được wrapper integrity kiểm tra). Kết quả luôn là best đã qua kiểm định.
       const hardCapMs = Number(this.options.optimizeHardCapMs) || 240000;
       this.opDeadlineMs = this.stageDeadlineMs || (optStartMs + hardCapMs);
       let restartCount = 0;
@@ -6421,6 +6653,22 @@
             destroyStrength = 1;
           }
 
+          const resCross = this.tryIntraClassCrossSubjectSingletonSwap(10, notifyLiveProgress);
+          if(resCross && this.compareMetrics(resCross, bestMetrics, mode) < 0){
+            bestMetrics = { ...resCross };
+            saveBestSnapshot();
+            improvedInRound = true;
+            destroyStrength = 1;
+          }
+
+          const resAugmenting = this.tryAugmentingSingletonEjectionChain(8, notifyLiveProgress);
+          if(resAugmenting && this.compareMetrics(resAugmenting, bestMetrics, mode) < 0){
+            bestMetrics = { ...resAugmenting };
+            saveBestSnapshot();
+            improvedInRound = true;
+            destroyStrength = 1;
+          }
+
           const resReinforce = this.tryReinforceTeacherSingletons(bestMetrics, initialMetrics, Infinity, notifyLiveProgress);
           if(resReinforce && this.compareMetrics(resReinforce, bestMetrics, mode) < 0){
             bestMetrics = { ...resReinforce };
@@ -6435,6 +6683,19 @@
             saveBestSnapshot();
             improvedInRound = true;
             destroyStrength = 1;
+          }
+
+          if(bestMetrics.soBuoiDay1 <= restartTargetVal){
+            if(progressCallback){
+              progressCallback({
+                percent: 100,
+                currentMetric: bestMetrics.soBuoiDay1,
+                initialMetric: Math.max(1, getMetricVal(initialMetrics)),
+                metrics: bestMetrics
+              });
+            }
+            portfolioDone = true;
+            break;
           }
         }
 

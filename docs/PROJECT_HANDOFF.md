@@ -6,6 +6,16 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-17 Strict Maximum 1 Gap Enforced in Initial FET Construction (DEPLOYED & VERIFIED)
+
+- **Issues addressed & Requirements**:
+  - The owner directed that the initial schedule construction algorithm (`FetTimetableEngine.prototype.solve`) must strictly enforce that the maximum number of interleaved/intermediate gaps in a session is at most 1 at all times (`this.strictFetGaps = true` always, never relaxed).
+  - Initialized `this.strictFetGaps = true` in the `FetTimetableEngine` constructor and ensured all passes in `solve()` maintain `this.strictFetGaps = true` so no placement with $\ge 2$ consecutive gaps or $>1$ total gap per session is ever accepted (`soBuoiTrong2 = 0` invariant).
+  - Synchronized `web/pages/tkb-fet-engine.js` with `web/tkb-fet-engine.js`.
+  - Bumped script query strings in `web/pages/sapxep.html` (`v=20260817-strict-gaps-v1`) to prevent stale browser caching.
+  - Verified on multiple school datasets (`default_school_0117.json`, `default_school_0317.json`, `dongkhoi_1566.json`): 100% full placement with 0 unassigned activities, 0 hard constraint violations, and strictly `soBuoiTrong2 = 0`.
+  - Successfully deployed to live VPS `165.101.47.133`.
+
 ## 2026-08-17 Fix State Check Timing in Lesson Sharing & Web Cache Busting (DEPLOYED & VERIFIED)
 
 - **Issues addressed**:
