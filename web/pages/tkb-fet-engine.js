@@ -1587,13 +1587,6 @@
       }
 
       evaluated.sort((a, b) => {
-        // Tối thiểu buổi phải dạy 2 tiết:
-        // Đẩy các slot vi phạm (tạo ra buổi 1 tiết -> penalty cực lớn >= 1999) xuống cuối cùng,
-        // cho dù có phải đẩy văng nhiều tiết học (conflict) hơn!
-        const aSevere = a.penalty >= 1999;
-        const bSevere = b.penalty >= 1999;
-        if(aSevere !== bSevere) return aSevere ? 1 : -1;
-
         if(a.conflictCount !== b.conflictCount) return a.conflictCount - b.conflictCount;
         return a.penalty - b.penalty;
       });
