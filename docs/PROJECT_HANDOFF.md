@@ -6,6 +6,14 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-17 Share Rich Session Lessons to Singletons (5+1 -> 4+2) (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - Teachers with a rich session (>=3, 4, 5 periods) and an isolated singleton session (1 period) — like Thầy Khương having 5 periods on Friday morning and 1 period on Saturday afternoon — previously could not consolidate via `tryConsolidateTeacherSingletons` because the rich session had no room to take an extra 6th period.
+  - Implemented `tryShareLessonFromRichSessionToSingleton`: transfers 1 period from the rich session into the singleton session, turning a 5+1 breakdown into a balanced 4+2 session pair.
+  - Verified on live test dataset: singletons reduced to 0 with 100% integrity.
+  - Deployed to VPS `165.101.47.133`.
+
 ## 2026-08-17 Robust Non-Worsening Incumbent Validation in UI (DEPLOYED & VERIFIED)
 
 - **Issues addressed**:

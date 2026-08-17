@@ -2892,6 +2892,142 @@
       return anyImproved ? currentBest : null;
     }
 
+    tryShareLessonFromRichSessionToSingleton(bestMetrics, initialMetrics, deadlineMs = Infinity, onProgress = null) {
+      let currentBest = { ...bestMetrics };
+      let anyImproved = false;
+
+      const teacherList = Array.from(this.teacherGrid.keys()).filter(t => t && this.isScoredTeacher(t));
+      this.rng.shuffle(teacherList);
+
+      const DAYS = 6;
+      const SESSIONS = 2;
+      const PERIODS = 5;
+
+      for(const tKey of teacherList){
+        if(Date.now() > deadlineMs) break;
+        const tGrid = this.teacherGrid.get(tKey);
+        if(!tGrid) continue;
+
+        const singleSessions = [];
+        const richSessions = [];
+
+        for(let d = 0; d < DAYS; d++){
+          for(let b = 0; b < SESSIONS; b++){
+            const sStart = d * 10 + b * 5;
+            const taught = [];
+            for(let p = 0; p < PERIODS; p++){
+              const s = sStart + p;
+              if(tGrid[s] >= 0){
+                const act = this.activities[tGrid[s]];
+                if(act && !act.isFixed && act.duration === 1){
+                  taught.push({ slot: s, actId: tGrid[s], p });
+                }
+              }else if(tGrid[s] === -3){
+                taught.push({ slot: s, actId: -3, p });
+              }
+            }
+            if(taught.length === 1 && taught[0].actId >= 0){
+              singleSessions.push({ day: d, buoi: b, sStart, item: taught[0] });
+            }else if(taught.length >= 3){
+              richSessions.push({ day: d, buoi: b, sStart, cnt: taught.length, items: taught.filter(x => x.actId >= 0) });
+            }
+          }
+        }
+
+        if(singleSessions.length === 0 || richSessions.length === 0) continue;
+        richSessions.sort((a, b) => b.cnt - a.cnt);
+
+        for(const single of singleSessions){
+          const pSing = single.item.p;
+          const sStartSing = single.sStart;
+
+          const candidateTargetPeriods = [];
+          if(pSing > 0 && tGrid[sStartSing + pSing - 1] === -1) candidateTargetPeriods.push(pSing - 1);
+          if(pSing < 4 && tGrid[sStartSing + pSing + 1] === -1) candidateTargetPeriods.push(pSing + 1);
+          for(let p = 0; p < PERIODS; p++){
+            if(p !== pSing && !candidateTargetPeriods.includes(p) && tGrid[sStartSing + p] === -1){
+              candidateTargetPeriods.push(p);
+            }
+          }
+
+          for(const rich of richSessions){
+            if(rich.day === single.day && rich.buoi === single.buoi) continue;
+
+            for(const donorItem of rich.items){
+              const actDonor = this.activities[donorItem.actId];
+              if(!actDonor || actDonor.isFixed || actDonor.duration !== 1) continue;
+              if(this.actPlacement[actDonor.id] !== donorItem.slot) continue;
+
+              const cGridDonor = this.classGrid.get(actDonor.classId);
+              if(!cGridDonor) continue;
+
+              for(const pTarget of candidateTargetPeriods){
+                const targetSlot = sStartSing + pTarget;
+
+                if(tGrid[targetSlot] !== -1) continue;
+                if(this.teacherOffSlots.has(`${tKey}|${targetSlot}`)) continue;
+
+                const cOccupant = cGridDonor[targetSlot];
+
+                if(cOccupant === -1){
+                  if(!this.isLessonBlockSafe(actDonor) || !this.isDailySubjectLimitSafe(actDonor, targetSlot)) continue;
+
+                  const srcSlot = donorItem.slot;
+                  this.unplaceActivity(actDonor.id);
+                  this.placeActivityDirect(actDonor.id, targetSlot);
+
+                  const m = this.evaluateMetrics();
+                  if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
+                    currentBest = { ...m };
+                    anyImproved = true;
+                    if(onProgress) onProgress(currentBest);
+                    break;
+                  }else{
+                    this.unplaceActivity(actDonor.id);
+                    this.placeActivityDirect(actDonor.id, srcSlot);
+                  }
+                }else if(cOccupant >= 0 && cOccupant !== actDonor.id){
+                  const displacedAct = this.activities[cOccupant];
+                  if(!displacedAct || displacedAct.isFixed || displacedAct.duration !== 1) continue;
+
+                  const srcSlot = donorItem.slot;
+                  const dispTKey = String(displacedAct.gv || "").trim().toLowerCase();
+                  const dispTGrid = this.teacherGrid.get(dispTKey);
+
+                  if(dispTGrid && dispTGrid[srcSlot] !== -1) continue;
+                  if(this.teacherOffSlots.has(`${dispTKey}|${srcSlot}`)) continue;
+
+                  if(!this.isLessonBlockSafe(actDonor) || !this.isLessonBlockSafe(displacedAct)) continue;
+                  if(!this.isDailySubjectLimitSafe(actDonor, targetSlot) || !this.isDailySubjectLimitSafe(displacedAct, srcSlot)) continue;
+
+                  this.unplaceActivity(actDonor.id);
+                  this.unplaceActivity(displacedAct.id);
+                  this.placeActivityDirect(actDonor.id, targetSlot);
+                  this.placeActivityDirect(displacedAct.id, srcSlot);
+
+                  const m = this.evaluateMetrics();
+                  if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
+                    currentBest = { ...m };
+                    anyImproved = true;
+                    if(onProgress) onProgress(currentBest);
+                    break;
+                  }else{
+                    this.unplaceActivity(actDonor.id);
+                    this.unplaceActivity(displacedAct.id);
+                    this.placeActivityDirect(actDonor.id, srcSlot);
+                    this.placeActivityDirect(displacedAct.id, targetSlot);
+                  }
+                }
+              }
+              if(anyImproved) break;
+            }
+            if(anyImproved) break;
+          }
+        }
+      }
+      return anyImproved ? currentBest : null;
+    }
+
     tryConsolidatePairSingletons(bestMetrics, initialMetrics, maxGap2Limit = Infinity, onProgress = null){
       let currentBest = { ...bestMetrics };
       let anyImproved = false;
@@ -6779,6 +6915,15 @@
         if(mode === "optimize_singletons"){
           if(isTargetDone()) { portfolioDone = true; break; }
 
+          const resShare = this.tryShareLessonFromRichSessionToSingleton(bestMetrics, initialMetrics, Infinity, notifyLiveProgress);
+          if(resShare && this.compareMetrics(resShare, bestMetrics, mode) < 0){
+            bestMetrics = { ...resShare };
+            saveBestSnapshot();
+            improvedInRound = true;
+            destroyStrength = 1;
+            if(isTargetDone()) { portfolioDone = true; break; }
+          }
+
           const resPair = this.tryConsolidatePairSingletons(bestMetrics, initialMetrics, Infinity, notifyLiveProgress);
           if(resPair && this.compareMetrics(resPair, bestMetrics, mode) < 0){
             bestMetrics = { ...resPair };
@@ -7758,6 +7903,7 @@
   // thì khôi phục snapshot trước đó và trả về null ("không cải thiện").
   // randomSwap không cần bọc — đã có moveJournal replay ngược chính xác.
   const GUARDED_OPERATORS = [
+    "tryShareLessonFromRichSessionToSingleton",
     "tryVacateTeacherDay",
     "tryVacateTeacherSession",
     "tryConsolidateTeacherSingletons",
