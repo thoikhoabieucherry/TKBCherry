@@ -6586,6 +6586,19 @@ function postFetTerminalTelemetry(options, startedAtMs, result, details = {}){
 
 async function executeDirectFastSchedule(options = {}){
   try{
+    // SINGLE-FLIGHT GUARD (sua 17/08): duong goi truc tiep (menu Toi uu, nut
+    // Tron goi) truoc day KHONG co khoa nhu nut Sap xep (preflight token o
+    // bridge), nen bam chong len nhau tao NHIEU worker song song; ket qua
+    // muon cua worker cu ap de trang thai moi (da tai hien: luot optimize 225s
+    // ket thuc sau khi nguoi dung xoa lich + bam xep lai -> luu lich rong).
+    // Chi khoa theo WORKER THAT SU dang chay — khong dua vao co UI
+    // (__TKB_SOLVE_UI_BUSY co the bi luong khac bat roi khong tat -> truoc
+    // day lam nut Sap xep bi khoa vinh vien; sua 17/08 v2).
+    if(window.__ACTIVE_TKB_FET_WORKER){
+      const busyMsg = "Đang có lượt xếp/tối ưu chạy — hãy chờ xong hoặc bấm Dừng trước khi chạy lượt mới.";
+      if(typeof setStatus === "function") setStatus(busyMsg, "info");
+      return { ok:false, applied:false, failureKind:"solver_busy", error:busyMsg };
+    }
     clearFetDiagnosticPanel();
     const data = (typeof window !== "undefined" && window.DATA) ? window.DATA : ((typeof DATA !== "undefined") ? DATA : null);
     if(!data) return { ok: false, error: "no_data" };
@@ -6600,7 +6613,27 @@ async function executeDirectFastSchedule(options = {}){
     let totalPlaced = 0;
     let totalUnplaced = 0;
     let directFetResult = null;
-    const isOptimizeMode = ["optimize_singletons", "optimize_sessions", "optimize_gap2", "optimize_gap1", "optimize_all"].includes(options?.mode);
+    // CHE DO THICH UNG cua nut Tron goi (yeu cau chu du an 17/08):
+    // lich DA DU 100% tiet (Chua xep = 0) -> khong xay lai tu dau, chuyen
+    // sang TOI UU TIEP tu lich hien tai (optimize_all tren incumbent).
+    if(["solve_optimize_all", "solve_optimize_all_fresh"].includes(String(options?.mode || ""))){ // NEW ★ cung adaptive (yeu cau 17/08)
+      let __missing = -1, __totalReq = 0;
+      try{
+        __missing = 0;
+        for(const lop of (Array.isArray(data.lop) ? data.lop : [])){
+          const st = calcClassTKBPeriodStats(lop.id);
+          __missing += Number(st.missing) || 0;
+          __totalReq += Number(st.total) || 0;
+        }
+      }catch(_){ __missing = -1; }
+      if(__missing === 0 && __totalReq > 0){
+        options = Object.assign({}, options, { mode: "optimize_all", __trongoiRefine: true });
+        if(typeof setStatus === "function"){
+          setStatus("Lịch đã đủ 100% tiết — Trọn gói chuyển sang tối ưu tiếp từ lịch hiện tại.", "info");
+        }
+      }
+    }
+    const isOptimizeMode = ["optimize_singletons", "optimize_sessions", "optimize_gap2", "optimize_gap1", "optimize_all", "solve_optimize_all", "solve_optimize_all_fresh"].includes(options?.mode);
     // FAIL-CLOSED: mode tối ưu không nhận diện được (JS cũ bị cache, mode lạ…)
     // tuyệt đối không được rơi xuống nhánh XẾP MỚI — nhánh đó đập lịch hiện tại
     // và xây lại từ đầu. Từ chối ngay để bảo vệ lịch của người dùng.
@@ -6615,9 +6648,12 @@ async function executeDirectFastSchedule(options = {}){
       "optimize_sessions": "Buổi",
       "optimize_gap2": "2 tiết trống",
       "optimize_gap1": "1 tiết trống",
-      "optimize_all": "Tất cả"
+      "optimize_all": "Tất cả",
+      "solve_optimize_all": "Xếp + tối ưu trọn gói",
+      "solve_optimize_all_fresh": "NEW – xếp mới + khóa tuần tự"
     };
-    const label = modeLabelMap[options.mode] || options.mode || "Tự động";
+    let label = modeLabelMap[options.mode] || options.mode || "Tự động";
+    if(options.__trongoiRefine === true) label = "Trọn gói – tối ưu tiếp";
     const preparationMessage = isOptimizeMode
       ? (options?.fallbackFromCloudRun
           ? `Tối ưu trên máy này (Cloud Run không khả dụng) — ${label}…`
@@ -6646,7 +6682,7 @@ async function executeDirectFastSchedule(options = {}){
       } : {});
     };
     let initialDetail = "";
-    if(options?.mode === "optimize_all"){
+    if(["optimize_all","solve_optimize_all","solve_optimize_all_fresh"].includes(options?.mode)){
       initialDetail = `1 tiết/buổi: ${initialStats.soBuoiDay1} • Trống 2: ${initialStats.soBuoiTrong2} • Buổi: ${initialStats.tsBuoiDay} • Trống 1: ${initialStats.soBuoiTrong1}`;
     }else if(options?.mode === "optimize_sessions"){
       initialDetail = `Buổi dạy: ${initialStats.tsBuoiDay}`;
@@ -6926,6 +6962,42 @@ async function executeDirectFastSchedule(options = {}){
           }
 
           updateStatusMsg("Đã dừng; đang kiểm tra nghiệm tốt nhất để giữ lại…", "info");
+          {
+            // ANTI-WIPE GATE cho checkpoint khi bấm Dừng (sua 17/08)
+            let ckCells = 0, curCells = 0;
+            try{
+              const cnt = (tkbObj) => {
+                let n = 0;
+                for(const cid of Object.keys(tkbObj || {})){
+                  const byDay = tkbObj[cid]; if(!byDay || typeof byDay !== "object") continue;
+                  for(const thu of Object.keys(byDay)){
+                    const byBuoi = byDay[thu]; if(!byBuoi || typeof byBuoi !== "object") continue;
+                    for(const buoi of Object.keys(byBuoi)){
+                      const arr = byBuoi[buoi]; if(!Array.isArray(arr)) continue;
+                      for(const cell of arr){
+                        if(!cell || cell === "OFF") continue;
+                        if(typeof cell === "object" && (cell.off === true || String(cell.val || cell.mon || "").trim() === "")) continue;
+                        n++;
+                      }
+                    }
+                  }
+                }
+                return n;
+              };
+              ckCells = cnt(checkpoint.tkb); curCells = cnt(data.tkb || {});
+            }catch(_){ }
+            if(ckCells < curCells){
+              window.__LATEST_OPTIMIZE_TKB = null;
+              window.__LATEST_OPTIMIZE_CHECKPOINT = null;
+              if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
+              else setAutoSortStopVisible(false);
+              updateStatusMsg("Đã dừng; checkpoint thiếu tiết nên lịch hiện tại được giữ nguyên.", "warning");
+              if(typeof pendingResolve === "function"){
+                pendingResolve({ ok:false, applied:false, cancelled:true, executor:"fet_worker", failureKind:"fet_checkpoint_fewer_lessons_rejected" });
+              }
+              return;
+            }
+          }
           const candidateValidation = await validateLocalFetCandidate(checkpoint.tkb);
           if(candidateValidation.ok !== true){
             window.__LATEST_OPTIMIZE_TKB = null;
@@ -6947,6 +7019,16 @@ async function executeDirectFastSchedule(options = {}){
           }
 
           const applied = await applyValidatedFetCandidate(data, checkpoint.tkb, options);
+          // Sau khi ap checkpoint: tinh lai chi so TU LUOI DA AP de thong bao
+          // va bang Thong ke luon khop voi nhau (sua 17/08 — truoc day nhan
+          // "19 -> 3" lay tu checkpoint.metrics nhung neu co lech voi luoi
+          // thi nguoi dung thay so lieu mau thuan).
+          let appliedStats = null;
+          try{
+            window.__TKB_TEACHER_TKB_STATS_CACHE = null;
+            appliedStats = (typeof calcTeacherTKBStats === "function") ? calcTeacherTKBStats() : null;
+          }catch(_){ appliedStats = null; }
+          try{ if(typeof refreshStatsBoxIfOpen === "function") refreshStatsBoxIfOpen(); }catch(_){ }
           window.__LATEST_OPTIMIZE_TKB = null;
           window.__LATEST_OPTIMIZE_CHECKPOINT = null;
           if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
@@ -6955,20 +7037,20 @@ async function executeDirectFastSchedule(options = {}){
             updateStatusMsg("Đã dừng tối ưu; nghiệm tốt nhất đã hiển thị nhưng không lưu được ngay. Hãy kiểm tra kết nối rồi lưu lại.", "warning");
           }else{
             let transitionLabel = `[${label}]`;
-            if(options?.mode === "optimize_all"){
-              const mAll = checkpoint?.metrics || {};
+            if(["optimize_all","solve_optimize_all","solve_optimize_all_fresh"].includes(options?.mode)){
+              const mAll = appliedStats || checkpoint?.metrics || {};
               transitionLabel = `1 tiết/buổi: ${initialStats.soBuoiDay1} ➔ ${mAll.soBuoiDay1 ?? "?"}, Trống 2: ${initialStats.soBuoiTrong2} ➔ ${mAll.soBuoiTrong2 ?? "?"}, Buổi: ${initialStats.tsBuoiDay} ➔ ${mAll.tsBuoiDay ?? "?"}, Trống 1: ${initialStats.soBuoiTrong1} ➔ ${mAll.soBuoiTrong1 ?? "?"}`;
             }else if(options?.mode === "optimize_gap2"){
-              const curGap2 = Number(checkpoint?.metrics?.soBuoiTrong2 ?? initialStats.soBuoiTrong2);
+              const curGap2 = Number(appliedStats?.soBuoiTrong2 ?? checkpoint?.metrics?.soBuoiTrong2 ?? initialStats.soBuoiTrong2);
               transitionLabel = `Trống 2 tiết: ${initialStats.soBuoiTrong2} ➔ ${curGap2}`;
             }else if(options?.mode === "optimize_singletons"){
-              const curSingle = Number(checkpoint?.metrics?.soBuoiDay1 ?? initialStats.soBuoiDay1);
+              const curSingle = Number(appliedStats?.soBuoiDay1 ?? checkpoint?.metrics?.soBuoiDay1 ?? initialStats.soBuoiDay1);
               transitionLabel = `Dạy 1 tiết/buổi: ${initialStats.soBuoiDay1} ➔ ${curSingle}`;
             }else if(options?.mode === "optimize_gap1"){
-              const curGap1 = Number(checkpoint?.metrics?.soBuoiTrong1 ?? initialStats.soBuoiTrong1);
+              const curGap1 = Number(appliedStats?.soBuoiTrong1 ?? checkpoint?.metrics?.soBuoiTrong1 ?? initialStats.soBuoiTrong1);
               transitionLabel = `Trống 1 tiết: ${initialStats.soBuoiTrong1} ➔ ${curGap1}`;
             }else if(options?.mode === "optimize_sessions"){
-              const curSessions = Number(checkpoint?.metrics?.tsBuoiDay ?? initialStats.tsBuoiDay);
+              const curSessions = Number(appliedStats?.tsBuoiDay ?? checkpoint?.metrics?.tsBuoiDay ?? initialStats.tsBuoiDay);
               transitionLabel = `Buổi dạy: ${initialStats.tsBuoiDay} ➔ ${curSessions}`;
             }
             updateStatusMsg(`Đã dừng và giữ nghiệm tốt nhất: ${transitionLabel}`, "ok");
@@ -7034,7 +7116,15 @@ async function executeDirectFastSchedule(options = {}){
             let detail = "";
             const initVal = msg.initialMetric;
             const curVal = msg.currentMetric;
-            if(options.mode === "optimize_all" && msg.metrics){
+            if(msg.stage === "construction"){
+              // Pha XEP MOI cua mode tron goi: hien tien do dat tiet truc tiep
+              const done = Number(msg.currentMetric) || 0;
+              const total = Number(msg.initialMetric) || 0;
+              window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = total > 0
+                ? `Đang xếp: ${done}/${total} tiết`
+                : `Đang xếp lịch mới…`;
+            }
+            if(["optimize_all","solve_optimize_all","solve_optimize_all_fresh"].includes(options.mode) && msg.metrics){
               const stageLabelMap = {
                 "optimize_singletons": "1 tiết/buổi",
                 "optimize_gap2": "Trống 2 tiết",
@@ -7129,7 +7219,9 @@ async function executeDirectFastSchedule(options = {}){
                 || msg?.diagnostics?.zeroDomainActivities?.[0]
                 || msg?.diagnostics?.minDomainActivity;
               const detail = diagnostic
-                ? ` Hoạt động kẹt: ${diagnostic.subject || "?"} (${diagnostic.allowedSlots ?? 0} slot hợp lệ).`
+                ? (Number.isFinite(Number(diagnostic.allowedSlots))
+                  ? ` Hoạt động kẹt: ${diagnostic.subject || "?"} (${Number(diagnostic.allowedSlots)} slot hợp lệ).`
+                  : ` Hoạt động kẹt: ${diagnostic.subject || "?"}.`)
                 : "";
               updateStatusMsg(
                 `Chưa thể xếp đủ lịch với các yêu cầu hiện tại.${detail} Lịch hiện tại được giữ nguyên. Bạn có thể kiểm tra tiết nghỉ, tiết cố định hoặc giới hạn rồi thử lại.`,
@@ -7150,6 +7242,56 @@ async function executeDirectFastSchedule(options = {}){
               return;
             }
 
+            // ANTI-WIPE GATE (sua 17/08): mot ket qua toi uu KHONG BAO GIO duoc
+            // co it o tiet hon luoi hien tai — chan moi ket qua muon/rong ap de
+            // lich (nguon goc vu luu lich 150 o luc 13:03).
+            const __countLessonCells = (tkbObj) => {
+              let n = 0;
+              try{
+                for(const cid of Object.keys(tkbObj || {})){
+                  const byDay = tkbObj[cid];
+                  if(!byDay || typeof byDay !== "object") continue;
+                  for(const thu of Object.keys(byDay)){
+                    const byBuoi = byDay[thu];
+                    if(!byBuoi || typeof byBuoi !== "object") continue;
+                    for(const buoi of Object.keys(byBuoi)){
+                      const arr = byBuoi[buoi];
+                      if(!Array.isArray(arr)) continue;
+                      for(const cell of arr){
+                        if(!cell || cell === "OFF") continue;
+                        if(typeof cell === "object" && (cell.off === true || String(cell.val || cell.mon || "").trim() === "")) continue;
+                        n++;
+                      }
+                    }
+                  }
+                }
+              }catch(_){ }
+              return n;
+            };
+            if(isOptimizeMode){
+              const __candCells = __countLessonCells(msg.tkb);
+              const __curCells = __countLessonCells(data.tkb || {});
+              if(__candCells < __curCells){
+                if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
+                else setAutoSortStopVisible(false);
+                updateStatusMsg(
+                  `Kết quả tối ưu bị loại vì thiếu tiết (${__candCells}/${__curCells} ô) — lịch hiện tại được giữ nguyên.`,
+                  "warning"
+                );
+                settleWorker({
+                  ok:false,
+                  applied:false,
+                  executor:"fet_worker",
+                  failureKind:"fet_candidate_fewer_lessons_rejected",
+                  error:"Optimize candidate has fewer lesson cells than the current grid."
+                }, {
+                  initialMetrics:msg.initialMetrics || initialStats,
+                  metrics:msg.metrics || null,
+                  hardValid:false
+                });
+                return;
+              }
+            }
             let candidateValidation = { ok: true };
             if(isOptimizeMode){
               candidateValidation = await validateFetCandidateHardConstraints(data, msg.tkb, {
@@ -7200,7 +7342,9 @@ async function executeDirectFastSchedule(options = {}){
               const initM = msg.initialMetrics;
               const bestM = msg.metrics;
               if(initM && bestM){
-                if(options.mode === "optimize_all"){
+                if(options.mode === "solve_optimize_all" || options.mode === "solve_optimize_all_fresh"){
+                  doneStatusMsg = `Đã xếp mới + tối ưu trọn gói — 1 tiết/buổi: ${bestM.soBuoiDay1}, Trống 2: ${bestM.soBuoiTrong2}, Trống 1: ${bestM.soBuoiTrong1}, Buổi: ${bestM.tsBuoiDay}`;
+                }else if(options.mode === "optimize_all"){
                   doneStatusMsg = `Đã tối ưu tất cả — 1 tiết/buổi: ${initM.soBuoiDay1} ➔ ${bestM.soBuoiDay1}, Trống 2: ${initM.soBuoiTrong2} ➔ ${bestM.soBuoiTrong2}, Buổi: ${initM.tsBuoiDay} ➔ ${bestM.tsBuoiDay}, Trống 1: ${initM.soBuoiTrong1} ➔ ${bestM.soBuoiTrong1}`;
                 }else if(options.mode === "optimize_gap2"){
                   doneStatusMsg = `Đã tối ưu Trống 2 tiết: ${initM.soBuoiTrong2} ➔ ${bestM.soBuoiTrong2}`;
@@ -7236,6 +7380,23 @@ async function executeDirectFastSchedule(options = {}){
               }
             }
 
+            if(isOptimizeMode && Number(msg.unassigned) > 0){
+              doneStatusMsg = `${doneStatusMsg} Còn ${Number(msg.unassigned)} tiết chưa xếp được do ràng buộc — kiểm tra tiết nghỉ/cố định rồi chạy lại.`.trim();
+            }
+            // BAO CAO TRUNG THUC THEO GOC NHIN APP (sua 17/08): engine chi xep
+            // duoc nhung hoat dong no TAO RA duoc tu PCCM; neu app van thay
+            // thieu tiet (vd mon alias chua khop phan cong -> muc "Chua phan")
+            // thi phai noi ro thay vi bao "xong toan bo".
+            try{
+              let __appMissing = 0;
+              for(const lop of (Array.isArray(data.lop) ? data.lop : [])){
+                const st = calcClassTKBPeriodStats(lop.id);
+                __appMissing += Number(st.missing) || 0;
+              }
+              if(__appMissing > 0){
+                doneStatusMsg = (doneStatusMsg + " ⚠ Theo phân công, còn " + __appMissing + " tiết chưa xếp được (xem mục Chưa phân — thường do môn chưa gán giáo viên hoặc tên môn/GV không khớp PCCM).").trim();
+              }
+            }catch(_){ }
             window.__TKB_IS_HYBRID_ACTIVE = false;
             window.__TKB_TEACHER_TKB_STATS_CACHE = null;
             const saveSuffix = applyResult.ok === true

@@ -157,6 +157,22 @@ def _solver_script() -> Path:
     return path
 
 
+def _fet_runner_script() -> Path:
+    configured = os.environ.get("TKB_FET_TRONGOI_RUNNER", "").strip()
+    if configured:
+        path = Path(configured)
+    else:
+        path = Path(__file__).resolve().with_name("fet_trongoi_runner.cjs")
+    if not path.is_file():
+        raise RuntimeError("fet_trongoi_runner.cjs is missing from the Cloud Run image")
+    return path
+
+
+def _request_engine(request: dict) -> str:
+    settings = request.get("settings") if isinstance(request.get("settings"), dict) else {}
+    return str(request.get("engine") or settings.get("engine") or "").strip().lower()
+
+
 def _request_timeout_seconds(request: dict) -> float:
     settings = request.get("settings") if isinstance(request.get("settings"), dict) else {}
     raw_ms = settings.get("reference_watchdog_deadline_ms") or settings.get(
@@ -368,7 +384,9 @@ class CloudSolverHandler(BaseHTTPRequestHandler):
         stop_probe_thread: threading.Thread | None = None
         stop_probe_directory = ""
         try:
-            script = _solver_script()
+            engine_kind = _request_engine(request)
+            use_fet_trongoi = engine_kind == "fet_trongoi"
+            script = _fet_runner_script() if use_fet_trongoi else _solver_script()
             workers = _request_workers(request)
             environment = os.environ.copy()
             environment.update(
@@ -389,8 +407,13 @@ class CloudSolverHandler(BaseHTTPRequestHandler):
                 stop_probe_directory = tempfile.mkdtemp(prefix="tkb-cloud-stop-")
                 stop_file = Path(stop_probe_directory) / "stop.flag"
                 environment["TKB_SOLVER_STOP_FILE"] = str(stop_file)
+            if use_fet_trongoi:
+                node_bin = os.environ.get("TKB_NODE_BIN", "node").strip() or "node"
+                solver_command = [node_bin, str(script)]
+            else:
+                solver_command = [sys.executable, str(script), "solve"]
             process = subprocess.Popen(
-                [sys.executable, str(script), "solve"],
+                solver_command,
                 cwd=str(script.parent.parent),
                 env=environment,
                 stdin=subprocess.PIPE,

@@ -302,6 +302,28 @@
 
     // Parse data from TKBCherry DATA object
     init(){
+      // IDEMPOTENT RESET (sua 17/08): init() duoc goi lai moi lan
+      // loadExistingSchedule() (rollback/restart trong optimizeAll, nap lai
+      // snapshot). Truoc day teacherGrid/roomGrid/fixedSlots/offSlots KHONG
+      // duoc xoa o day (chi tao trong constructor) nen lan nap thu hai thay
+      // luoi giao vien con nguyen actId cu -> canLoadPlacement tu choi 100%
+      // tiet -> engine chay tiep tren trang thai rong va metrics chi dem o ma.
+      // Day la loi goc lam "Toi uu tat ca" tra lich rong du metrics rat dep.
+      this.fixedSlots = new Map();
+      this.fixedRawCells = new Map();
+      this.offSlots = new Set();
+      this.teacherOffSlots = new Set();
+      this.roomOffSlots = new Set();
+      this.subjectOffSlots = new Set();
+      this.classGrid = new Map();
+      this.teacherGrid = new Map();
+      this.roomGrid = new Map();
+      this.actPlacement = [];
+      this.tabuMap = new Map();
+      this.restoreStack = [];
+      this.moveJournal = [];
+      this.swappedInBranch = new Set();
+
       const data = this.data;
       const rawLop = Array.isArray(data.lop) ? data.lop : [];
       this.classes = rawLop.filter(l => l && (l.id || l.ten));
@@ -1848,19 +1870,13 @@
         }
       }
 
-      // KHÓA CỨNG: 2 TIẾT TRỐNG (soBuoiTrong2) BẮT BUỘC = 0 MỚI TRẢ LỊCH!
-      let curM = this.evaluateMetrics();
-      if(curM.soBuoiTrong2 > 0){
-        if(typeof progressCallback === "function"){
-          try{
-            progressCallback({
-              percent: 95,
-              message: "Đang khử hoàn toàn 2 tiết trống về 0..."
-            });
-          }catch(_){}
-        }
-        await this.optimize("optimize_gap2");
-      }
+      // (GO BO 17/08 — theo chi dao chu du an) Buoc "KHOA CUNG gap2=0 moi tra
+      // lich" cu goi this.optimize() NGAY TRONG solve() ma chua applyToDataTKB
+      // -> loadExistingSchedule cua optimize nap lai luoi CHI CON O CO DINH va
+      // VUT TOAN BO lich vua xep (chinh la loi "287/287"/"360/360" tren app).
+      // Nguyen tac moi: solve() CHI lo xep DU 100% (khong du cho thi lap toi
+      // da, phan du tra ve Chua phan); chat luong gap2/1t-buoi la viec cua
+      // pipeline toi uu (Tron goi/NEW) chay SAU khi lich da ap.
 
       this.applyToDataTKB();
 
@@ -2382,7 +2398,7 @@
 
                   if(this.isLessonBlockSafe(act1, act2)){
                     const m = this.evaluateMetrics();
-                    if(m.soBuoiDay1 < currentBest.soBuoiDay1 && m.soBuoiTrong2 <= maxGap2Limit){
+                    if(m.soBuoiDay1 < currentBest.soBuoiDay1 && m.soBuoiTrong2 <= Math.max(maxGap2Limit, currentBest.soBuoiTrong2)){
                       currentBest = { ...m };
                       anyImproved = true;
                       consResolved = true;
@@ -2424,7 +2440,7 @@
 
                   if(this.isLessonBlockSafe(act1, act2, act3)){
                     const m = this.evaluateMetrics();
-                    if(m.soBuoiDay1 < currentBest.soBuoiDay1 && m.soBuoiTrong2 <= maxGap2Limit){
+                    if(m.soBuoiDay1 < currentBest.soBuoiDay1 && m.soBuoiTrong2 <= Math.max(maxGap2Limit, currentBest.soBuoiTrong2)){
                       currentBest = { ...m };
                       anyImproved = true;
                       consResolved = true;
@@ -2539,7 +2555,7 @@
 
                       if(this.isLessonBlockSafe(actToPull, existingAct)){
                         const m = this.evaluateMetrics();
-                        if(m.soBuoiDay1 < currentBest.soBuoiDay1 && m.soBuoiTrong2 <= maxGap2Limit){
+                        if(m.soBuoiDay1 < currentBest.soBuoiDay1 && m.soBuoiTrong2 <= Math.max(maxGap2Limit, currentBest.soBuoiTrong2)){
                           currentBest = { ...m };
                           anyImproved = true;
                           reinResolved = true;
@@ -2580,7 +2596,7 @@
 
                       if(this.isLessonBlockSafe(actToPull, existingAct, act3)){
                         const m = this.evaluateMetrics();
-                        if(m.soBuoiDay1 < currentBest.soBuoiDay1 && m.soBuoiTrong2 <= maxGap2Limit){
+                        if(m.soBuoiDay1 < currentBest.soBuoiDay1 && m.soBuoiTrong2 <= Math.max(maxGap2Limit, currentBest.soBuoiTrong2)){
                           currentBest = { ...m };
                           anyImproved = true;
                           reinResolved = true;
@@ -2696,7 +2712,7 @@
 
                       if(this.isLessonBlockSafe(act1, act2)){
                         const m = this.evaluateMetrics();
-                        if((m.soBuoiDay1 < currentBest.soBuoiDay1 || (m.soBuoiDay1 === currentBest.soBuoiDay1 && m.tsBuoiDay < currentBest.tsBuoiDay)) && m.soBuoiTrong2 <= maxGap2Limit){
+                        if((m.soBuoiDay1 < currentBest.soBuoiDay1 || (m.soBuoiDay1 === currentBest.soBuoiDay1 && m.tsBuoiDay < currentBest.tsBuoiDay)) && m.soBuoiTrong2 <= Math.max(maxGap2Limit, currentBest.soBuoiTrong2)){
                           currentBest = { ...m };
                           anyImproved = true;
                           passImproved = true;
@@ -2740,7 +2756,7 @@
 
                       if(this.isLessonBlockSafe(act1, act2, act3)){
                         const m = this.evaluateMetrics();
-                        if((m.soBuoiDay1 < currentBest.soBuoiDay1 || (m.soBuoiDay1 === currentBest.soBuoiDay1 && m.tsBuoiDay < currentBest.tsBuoiDay)) && m.soBuoiTrong2 <= maxGap2Limit){
+                        if((m.soBuoiDay1 < currentBest.soBuoiDay1 || (m.soBuoiDay1 === currentBest.soBuoiDay1 && m.tsBuoiDay < currentBest.tsBuoiDay)) && m.soBuoiTrong2 <= Math.max(maxGap2Limit, currentBest.soBuoiTrong2)){
                           currentBest = { ...m };
                           anyImproved = true;
                           passImproved = true;
@@ -2780,8 +2796,7 @@
       let anyImproved = false;
 
       for(let pass = 0; pass < maxPasses; pass++){
-        if(currentBest.soBuoiDay1 <= 2 && !this.pushToZero) break;
-        if(currentBest.soBuoiDay1 === 0) break;
+        if(currentBest.soBuoiDay1 === 0) break; // muc tieu luon la 0 tuyet doi (sua 17/08)
         let passImproved = false;
 
         const teacherList = Array.from(this.teacherGrid.keys()).filter(t => t && this.isScoredTeacher(t));
@@ -2893,8 +2908,7 @@
       let anyImproved = false;
 
       for(let pass = 0; pass < maxPasses; pass++){
-        if(currentBest.soBuoiDay1 <= 2 && !this.pushToZero) break;
-        if(currentBest.soBuoiDay1 === 0) break;
+        if(currentBest.soBuoiDay1 === 0) break; // muc tieu luon la 0 tuyet doi (sua 17/08)
         let passImproved = false;
 
         const teacherList = Array.from(this.teacherGrid.keys()).filter(t => t && this.isScoredTeacher(t));
@@ -6025,6 +6039,12 @@
       if(!a) return 1;
       if(!b) return -1;
 
+      // KHOA stage (optimizeAll): khong nuoc di nao duoc vuot cap da khoa.
+      {
+        const la = this.lockViolations(a), lb = this.lockViolations(b);
+        if(la !== lb) return la - lb;
+      }
+
       if(mode === "optimize_singletons"){
         // 1. MỤC TIÊU TỐI THƯỢNG: soBuoiDay1 & soNgayMotTiet PHẢI GIẢM
         if(a.soBuoiDay1 !== b.soBuoiDay1 || a.soNgayMotTiet !== b.soNgayMotTiet){
@@ -6037,6 +6057,9 @@
         // Khi 1t/buổi bằng nhau: ưu tiên giảm trống 2 tiết -> giảm tổng buổi
         if(a.soBuoiTrong2 !== b.soBuoiTrong2) return a.soBuoiTrong2 - b.soBuoiTrong2;
         if(a.tsBuoiDay !== b.tsBuoiDay) return a.tsBuoiDay - b.tsBuoiDay;
+        // Han che trong-1 (sua 17/08): hoa het thi it gap1 hon thang — chan
+        // kieu "khu singleton nhung tha gap1 tang vo toi va" (13->76 truoc khi sua).
+        if(a.soBuoiTrong1 !== b.soBuoiTrong1) return a.soBuoiTrong1 - b.soBuoiTrong1;
         return a.tsNgayDay - b.tsNgayDay;
       }
 
@@ -6061,6 +6084,7 @@
         const a23 = (a.soBuoiDay2 || 0) * 2 + (a.soBuoiDay3 || 0);
         const b23 = (b.soBuoiDay2 || 0) * 2 + (b.soBuoiDay3 || 0);
         if(a23 !== b23) return a23 - b23;
+        if(a.soBuoiTrong1 !== b.soBuoiTrong1) return a.soBuoiTrong1 - b.soBuoiTrong1;
         return a.tsNgayDay - b.tsNgayDay;
       }
 
@@ -6206,9 +6230,9 @@
         return cA - cB;
       });
 
-      // Re-place activities using penalty-guided randomSwap
+      // Re-place activities using penalty-guided randomSwap with massive scope
       let allPlaced = true;
-      this.limitCalls = 6000;
+      this.limitCalls = Math.min(80000, 2000 * unplacedActs.length);
 
       for(const act of unplacedActs){
         this.nCalls = 0;
@@ -6365,11 +6389,69 @@
 
       const chosen = Array.from(relatedTeachers);
       this.rng.shuffle(chosen);
-      const sample = chosen.slice(0, Math.min(3, chosen.length));
+      const sample = chosen.slice(0, Math.min(15, chosen.length));
       return this.tryLnsRuinAndRecreate(sample, bestMetrics, mode, maxGap2Limit, onProgress);
     }
 
     // Direction 3: Deep 4-Way Ejection Chain (Chuỗi đẩy 4 cấp tối ưu tốc độ)
+    
+    // FET-Style Deep Ejection Chain for Singletons (Triệt tiêu 1 tiết có chủ đích)
+    trySingletonEjectionChain(targetTeachers, bestMetrics, mode = "optimize_singletons", onProgress = null) {
+      let currentBest = { ...bestMetrics };
+      let anyImproved = false;
+
+      for(const tKey of targetTeachers){
+        const grid = this.teacherGrid.get(tKey);
+        if(!grid) continue;
+
+        // Find singleton slots (1-tiet)
+        const tSlots = [];
+        let totalWeeklyPeriods = 0;
+        for(let s = 0; s < TOTAL_SLOTS; s++){
+          if(grid[s] >= 0 || grid[s] === -3) totalWeeklyPeriods++;
+        }
+        for(let d = 0; d < DAYS_LIST.length; d++){
+          for(let b = 0; b < SESSIONS_LIST.length; b++){
+            const sStart = d * SLOTS_PER_DAY + b * PERIODS_PER_SESSION;
+            const taught = [];
+            for(let p = 0; p < PERIODS_PER_SESSION; p++){
+              const s = sStart + p;
+              if(grid[s] >= 0 || grid[s] === -3) taught.push({ s, actId: grid[s] });
+            }
+            if(taught.length === 1 && taught[0].actId >= 0){
+              const act = this.activities[taught[0].actId];
+              if(act && !act.isFixed && act.duration === 1) tSlots.push(act);
+            }
+          }
+        }
+
+        for(const act of tSlots){
+          const snap = this.captureStateSnapshot();
+          this.unplaceActivity(act.id);
+          
+          // Use randomSwap as a Deep Ejection Chain (similar to FET's swapActivity)
+          const savedCalls = this.limitCalls;
+          this.limitCalls = 12000; // Deep but bounded recursive search
+          this.nCalls = 0;
+          
+          const ok = this.randomSwap(act.id, 0);
+          this.limitCalls = savedCalls;
+
+          if(ok && this.isLessonBlockSafe()){
+            const m = this.evaluateMetrics();
+            if(this.compareMetrics(m, currentBest, mode) < 0){
+              currentBest = { ...m };
+              anyImproved = true;
+              if(typeof onProgress === "function") onProgress(currentBest);
+              continue; // keep it
+            }
+          }
+          this.restoreStateSnapshot(snap); // Rollback immediately if not strictly better
+        }
+      }
+      return anyImproved ? currentBest : null;
+    }
+
     tryDeepEjectionChain(targetTeachers, bestMetrics, mode = "optimize_singletons", onProgress = null){
       let currentBest = { ...bestMetrics };
       let anyImproved = false;
@@ -6647,6 +6729,12 @@
             roomGrid: bestRoomGrid
           };
           this.checkpointGuard = this.__globalBestSnap;
+          // DUNG NGAY KHI CHAM 0 (yeu cau 17/08): muc tieu cua mode ve 0 la
+          // ngat toan bo operator con lai (opDeadlineMs het han -> vo guard
+          // chan moi operator moi), vong round thoat tuc thi, khong restart.
+          if(getMetricVal(this.__globalBestM) === 0){
+            this.opDeadlineMs = Date.now() - 1;
+          }
         }
       };
 
@@ -6697,7 +6785,7 @@
       const optStartMs = Date.now();
       const canRestart = !this.__inOptimizeAll &&
         (mode === "optimize_gap2" || mode === "optimize_gap1" || mode === "optimize_singletons");
-      const restartTargetVal = (mode === "optimize_singletons" && !this.pushToZero) ? 2 : 0;
+      const restartTargetVal = 0; // "1 tiet/buoi" phai ve 0 that su, khong dung o 2 (sua 17/08)
       const restartBudgetMs = Number(this.options.optimizeRestartBudgetMs) || 180000;
       const maxRestarts = Number(this.options.optimizeMaxRestarts) || 20;
       const hardCapMs = Number(this.options.optimizeHardCapMs) || 240000;
@@ -6723,6 +6811,38 @@
           const resDay = this.fixDaySingletons(bestMetrics, notifyLiveProgress);
           if(resDay && this.compareMetrics(resDay, bestMetrics, mode) < 0){
             bestMetrics = { ...resDay };
+            saveBestSnapshot();
+            improvedInRound = true;
+            destroyStrength = 1;
+          }
+
+
+          // [FET PRIMARY OPERATOR] Ejection Chain ngắm bắn trực tiếp 1 tiết
+          const bottleneckTeachersPrimary = Array.from(this.teacherGrid.keys())
+            .filter(t => t && this.isScoredTeacher(t))
+            .sort((a, b) => {
+               const gA = this.teacherGrid.get(a), gB = this.teacherGrid.get(b);
+               let cA = 0, cB = 0;
+               for(let i=0; i<60; i++){
+                 if(gA && gA[i]>=0) cA++;
+                 if(gB && gB[i]>=0) cB++;
+               }
+               return cB - cA;
+            });
+            
+          const resFET = this.trySingletonEjectionChain(bottleneckTeachersPrimary.slice(0, 10), bestMetrics, mode, notifyLiveProgress);
+          if(resFET && this.compareMetrics(resFET, bestMetrics, mode) < 0){
+            bestMetrics = { ...resFET };
+            saveBestSnapshot();
+            improvedInRound = true;
+            destroyStrength = 1;
+          }
+
+
+          // [MASSIVE CLUSTER RUIN] Phá hủy diện rộng 15 giáo viên liên đới để thoát bẫy cục bộ sâu
+          const resMassive = this.tryRelatedClusterRuin(bottleneckTeachersPrimary.slice(0, 3), bestMetrics, mode, 0, notifyLiveProgress);
+          if(resMassive && this.compareMetrics(resMassive, bestMetrics, mode) < 0){
+            bestMetrics = { ...resMassive };
             saveBestSnapshot();
             improvedInRound = true;
             destroyStrength = 1;
@@ -6822,6 +6942,38 @@
             bestMetrics = { ...oblitThin };
             saveBestSnapshot();
             improvedInRound = true;
+          }
+
+
+          // [FET PRIMARY OPERATOR] Ejection Chain ngắm bắn trực tiếp 1 tiết
+          const bottleneckTeachersPrimary = Array.from(this.teacherGrid.keys())
+            .filter(t => t && this.isScoredTeacher(t))
+            .sort((a, b) => {
+               const gA = this.teacherGrid.get(a), gB = this.teacherGrid.get(b);
+               let cA = 0, cB = 0;
+               for(let i=0; i<60; i++){
+                 if(gA && gA[i]>=0) cA++;
+                 if(gB && gB[i]>=0) cB++;
+               }
+               return cB - cA;
+            });
+            
+          const resFET = this.trySingletonEjectionChain(bottleneckTeachersPrimary.slice(0, 10), bestMetrics, mode, notifyLiveProgress);
+          if(resFET && this.compareMetrics(resFET, bestMetrics, mode) < 0){
+            bestMetrics = { ...resFET };
+            saveBestSnapshot();
+            improvedInRound = true;
+            destroyStrength = 1;
+          }
+
+
+          // [MASSIVE CLUSTER RUIN] Phá hủy diện rộng 15 giáo viên liên đới để thoát bẫy cục bộ sâu
+          const resMassive = this.tryRelatedClusterRuin(bottleneckTeachersPrimary.slice(0, 3), bestMetrics, mode, 0, notifyLiveProgress);
+          if(resMassive && this.compareMetrics(resMassive, bestMetrics, mode) < 0){
+            bestMetrics = { ...resMassive };
+            saveBestSnapshot();
+            improvedInRound = true;
+            destroyStrength = 1;
           }
 
           const oblitM = this.obliterateAllTeacherSingletons(8, 0, notifyLiveProgress);
@@ -7117,6 +7269,15 @@
           // ESCAPE DIRECTION B: Deep 4-Way Ejection Chains (Chuỗi đẩy liên hoàn 4 cấp)
           if(!improvedInRound && (consecutiveUnimprovedRounds % 4 === 2 || consecutiveUnimprovedRounds >= 5)){
             if(bottleneckTeachers.length > 0){
+              
+              const resSing = this.trySingletonEjectionChain(bottleneckTeachers.slice(0, 10), bestMetrics, mode, notifyLiveProgress);
+              if(resSing && this.compareMetrics(resSing, bestMetrics, mode) < 0){
+                bestMetrics = { ...resSing };
+                saveBestSnapshot();
+                improvedInRound = true;
+                consecutiveUnimprovedRounds = 0;
+              }
+
               const resChain = this.tryDeepEjectionChain(bottleneckTeachers.slice(0, 5), bestMetrics, mode, notifyLiveProgress);
               if(resChain && this.compareMetrics(resChain, bestMetrics, mode) < 0){
                 bestMetrics = { ...resChain };
@@ -7177,7 +7338,7 @@
           });
         }
 
-        if(mode === "optimize_singletons" && bestMetrics.soBuoiDay1 <= (this.pushToZero ? 0 : 2)){
+        if(mode === "optimize_singletons" && bestMetrics.soBuoiDay1 <= 0){
           if(progressCallback){
             progressCallback({
               percent: 100,
@@ -7345,18 +7506,21 @@
         }
         const tkbA = JSON.parse(JSON.stringify(this.data.tkb));
 
-        // Pha B: VAY 1 suất (25%)
+        // Pha B: VAY SÂU 3 suất (25% ngân sách) - Deep Simulated Annealing
         await runPhase("optimize_gap2", 0.25, { singletonSlack: 1 }, 2);
-        // Pha C: TRẢ NỢ 1t/buổi (10%)
-        await runPhase("optimize_singletons", 0.1, { singletonSlack: 0, __pushToZero: true }, 3);
-        // Pha D: quét gap2 chốt không vay
-        const rD = await runPhase("optimize_gap2", 0.15, { singletonSlack: 0 }, 4);
+        // Pha C: TRẢ NỢ 1t/buổi (15% ngân sách) - Ép trả nợ
+        await runPhase("optimize_singletons", 0.15, { singletonSlack: 0, __pushToZero: true }, 3);
+        // Pha D: quét gap2 chết không vay (10%)
+        const rD = await runPhase("optimize_gap2", 0.10, { singletonSlack: 0 }, 4);
         const fin = { ...rD.metrics };
 
-        // Nghiệm thu: s1 không vượt lúc bấm nút VÀ tuple tốt hơn phương án không-vay
+        // Nghiệm thu (Rollback nới lỏng):
         const okS1 = fin.soBuoiDay1 <= initialMetrics.soBuoiDay1;
+        // Chấp nhận s1 tăng nhẹ (+1) NHƯNG gap2 giảm mạnh (>= 2)
+        const acceptableS1 = fin.soBuoiDay1 <= initialMetrics.soBuoiDay1 + 1 && fin.soBuoiTrong2 <= tupleA.soBuoiTrong2 - 2;
         const better = this.compareTuple(fin, tupleA) < 0;
-        if(okS1 && better){
+
+        if((okS1 && better) || acceptableS1){
           this.loadExistingSchedule();
           return { ...rD, initialMetrics, borrowed: true };
         }
@@ -7582,175 +7746,121 @@
     // compareTuple la "dinh nghia tot hon" chung; optimizeAll la controller
     // round-robin co ngan sach tung stage + stagnation detection + early-exit.
     // =========================================================================
+    // Vi pham KHOA stage (see optimizeAll): trang thai vuot cap da khoa luon
+    // bi coi la XAU HON bat ke cac chi so khac.
+    lockViolations(m){
+      const L = this.__stageLocks;
+      if(!L || !m) return 0;
+      let v = 0;
+      if(Number.isFinite(L.soBuoiDay1) && m.soBuoiDay1 > L.soBuoiDay1) v++;
+      if(Number.isFinite(L.soBuoiTrong2) && m.soBuoiTrong2 > L.soBuoiTrong2) v++;
+      return v;
+    }
+
     compareTuple(a, b){
       if(!a) return 1;
       if(!b) return -1;
-      return (a.soBuoiTrong2 - b.soBuoiTrong2)
-        || (a.soBuoiDay1 - b.soBuoiDay1)
+      const la = this.lockViolations(a), lb = this.lockViolations(b);
+      if(la !== lb) return la - lb;
+      // Thu tu uu tien chu du an chot 17/08: 1 tiet/buoi -> trong >=2 ->
+      // tong buoi -> trong 1 -> ngay day.
+      return (a.soBuoiDay1 - b.soBuoiDay1)
+        || (a.soBuoiTrong2 - b.soBuoiTrong2)
         || (a.tsBuoiDay - b.tsBuoiDay)
         || (a.soBuoiTrong1 - b.soBuoiTrong1)
         || (a.tsNgayDay - b.tsNgayDay);
     }
 
     async optimizeAll(progressCallback = null){
-      const STAGES = ["optimize_singletons", "optimize_gap2", "optimize_sessions", "optimize_gap1"];
+      // ================= TRON GOI: TUAN TU + KHOA (chot 17/08) ================
+      // Yeu cau chu du an: 1 tiet/buoi ve thap nhat -> KHOA -> trong >=2 ve 0
+      // -> KHOA -> giam tong buoi -> giam trong 1. Moi stage co dieu kien dung
+      // rieng (dat 0 / lat khong cai thien / het ngan sach) va KHONG BAO GIO
+      // mo lai stage truoc — cac khoa (lockViolations trong compareMetrics/
+      // compareTuple) bao dam moi nuoc di ve sau khong the pha chi so da chot.
       const totalBudgetMs = Math.max(20_000, Number(this.options.optimizeAllBudgetMs) || 150_000);
-      const minStageSliceMs = Math.max(3_000, Number(this.options.optimizeAllMinStageMs) || 8_000);
-      const MAX_CYCLES = Math.max(1, Number(this.options.optimizeAllMaxCycles) || 3);
       const startedAt = Date.now();
       const deadline = startedAt + totalBudgetMs;
-      // Dành riêng phần cuối ngân sách cho BƯỚC QUÉT GAP2 CHỐT (portfolio đầy
-      // đủ của nút "2 tiết trống") — các stage không được ăn hết thời gian.
-      const sweepReserveMs = Math.min(90_000, Math.floor(totalBudgetMs * 0.35));
-      const stagesDeadline = deadline - sweepReserveMs;
-
       const stopRequested = () => typeof window !== "undefined" && window.__AUTO_SORT_STOP_REQUESTED;
-      const focusValue = (m, mode) => {
-        if(mode === "optimize_singletons") return m.soBuoiDay1;
-        if(mode === "optimize_gap2") return m.soBuoiTrong2;
-        if(mode === "optimize_sessions") return m.tsBuoiDay;
-        return m.soBuoiTrong1;
-      };
 
       this.loadExistingSchedule();
-      this.repairHardConflicts(); // sửa trùng lịch/tiết đè ô cố định trước khi đo
+      this.repairHardConflicts(); // sua trung lich/tiet de o co dinh truoc khi do
       const initialMetrics = this.evaluateMetrics();
-      const initialTkb = this.getSnapshotTKB();
       let bestMetrics = { ...initialMetrics };
       let bestTkb = this.getSnapshotTKB();
       const stages = [];
-      this.__inOptimizeAll = true; // tắt portfolio trong các lát stage
-      // Multi-restart portfolio: different rng seeds explore very different
-      // basins (observed spread e.g. 410 vs 482 sessions on the same input).
-      // Extra restarts run only while budget remains.
-      const maxRestarts = Math.max(1, Number(this.options.optimizeAllRestarts) || 1);
-      const baseSeed = Number(this.options.seed) || 12345;
+      this.__inOptimizeAll = true; // tat portfolio noi bo cua tung stage
+      this.__stageLocks = null;
 
-      restartLoop:
-      for(let restart = 0; restart < maxRestarts; restart++){
+      const PHASES = [
+        { mode: "optimize_singletons", share: 0.40, lockKey: "soBuoiDay1" },
+        { mode: "optimize_gap2",       share: 0.30, lockKey: "soBuoiTrong2" },
+        { mode: "optimize_sessions",   share: 0.15, lockKey: null },
+        { mode: "optimize_gap1",       share: 1.00, lockKey: null } // an het phan con lai
+      ];
+
+      for(let si = 0; si < PHASES.length; si++){
         if(stopRequested()) break;
-        if(restart > 0){
-          // Need enough budget for a meaningful second pass.
-          if(stagesDeadline - Date.now() < Math.max(30_000, totalBudgetMs * 0.25)) break;
-          this.data.tkb = JSON.parse(JSON.stringify(initialTkb));
-          this.loadExistingSchedule();
-          this.rng = new FetPRNG(baseSeed + restart * 7919);
-        }
-        const settled = new Set();
-        let restartBest = { ...this.evaluateMetrics() };
-        let restartBestTkb = this.getSnapshotTKB();
-
-        outer:
-        for(let cycle = 0; cycle < MAX_CYCLES; cycle++){
-          let improvedInCycle = false;
-          for(let si = 0; si < STAGES.length; si++){
-            const mode = STAGES[si];
-            if(settled.has(mode)) continue;
-            if(stopRequested()) break outer;
-            const remainingMs = stagesDeadline - Date.now();
-            if(remainingMs <= minStageSliceMs / 2) break outer;
-            const stagesLeft = STAGES.slice(si).filter(m => !settled.has(m)).length;
-            const restartShare = maxRestarts - restart;
-            const stageWeight = mode === "optimize_sessions" ? 0.5 : 1; // chủ dự án: hạ 1 tiết/buổi + trống-2 trước, giảm buổi sau
-            const sliceMs = Math.max(minStageSliceMs, Math.floor(stageWeight * remainingMs / Math.max(1, restartShare * (stagesLeft + (MAX_CYCLES - 1 - cycle) * STAGES.length * 0.5))));
-
-            this.stageDeadlineMs = Math.min(stagesDeadline, Date.now() + sliceMs);
-            this.pushToZero = true;
-            const before = { ...restartBest };
-            const t0 = Date.now();
-            let res = null;
-            try{
-              res = await this.optimize(mode, progressCallback ? (p) => {
-                progressCallback({ ...p, stage: mode, stageIndex: si, cycle, restart, totalStages: STAGES.length });
-              } : null);
-            }finally{
-              this.stageDeadlineMs = 0;
-            }
-            const after = res && res.metrics ? { ...res.metrics } : this.evaluateMetrics();
-
-            let exitReason = "stagnation-or-budget";
-            const cmp = this.compareTuple(after, restartBest);
-            if(cmp < 0){
-              restartBest = { ...after };
-              restartBestTkb = this.getSnapshotTKB();
-              improvedInCycle = true;
-              exitReason = "improved";
-            }else if(cmp > 0){
-              this.data.tkb = JSON.parse(JSON.stringify(restartBestTkb));
-              exitReason = "rolled-back";
-            }
-            // Track the global best across restarts.
-            if(this.compareTuple(restartBest, bestMetrics) < 0){
-              bestMetrics = { ...restartBest };
-              bestTkb = JSON.parse(JSON.stringify(restartBestTkb));
-            }
-            if((mode === "optimize_singletons" || mode === "optimize_gap2") && focusValue(restartBest, mode) === 0){
-              settled.add(mode);
-              exitReason = "target-zero";
-            }
-            // Re-open settled zero-target stages if a later stage reintroduced
-            // their metric (e.g. session compaction creating a fresh gap2).
-            if(settled.has("optimize_gap2") && restartBest.soBuoiTrong2 > 0) settled.delete("optimize_gap2");
-            if(settled.has("optimize_singletons") && restartBest.soBuoiDay1 > 0) settled.delete("optimize_singletons");
-            stages.push({ mode, cycle, restart, ms: Date.now() - t0, before, after: { ...restartBest }, exitReason });
-          }
-          if(!improvedInCycle) break;
-        }
-      }
-
-      // ============ BƯỚC CHỐT: QUÉT XEN KẼ 1TIẾT → GAP2 HẾT NGÂN SÁCH =========
-      // Các stage đã hội tụ → dùng trọn thời gian còn dư chạy đúng cỗ máy của
-      // các NÚT lẻ (portfolio đa dạng hóa/thâm canh): ưu tiên 1 tiết/buổi về
-      // cực tiểu trước, rồi trống-2 về 0 (mode gap2 giữ nguyên 1 tiết/buổi).
-      this.__inOptimizeAll = false;
-      const runSweep = async (sweepMode, budgetMs) => {
-        this.data.tkb = JSON.parse(JSON.stringify(bestTkb));
-        this.loadExistingSchedule();
-        const savedBudget = this.options.optimizeRestartBudgetMs;
-        const savedRestarts = this.options.optimizeMaxRestarts;
-        this.options.optimizeRestartBudgetMs = budgetMs;
-        this.options.optimizeMaxRestarts = 24;
-        this.pushToZero = true;
-        const t0 = Date.now();
-        let sweepRes = null;
-        try{
-          sweepRes = await this.optimize(sweepMode, progressCallback ? (p) => {
-            progressCallback({ ...p, stage: sweepMode, stageIndex: Math.max(0, STAGES.indexOf(sweepMode)), cycle: MAX_CYCLES, restart: maxRestarts, totalStages: STAGES.length });
-          } : null);
-        }finally{
-          this.options.optimizeRestartBudgetMs = savedBudget;
-          this.options.optimizeMaxRestarts = savedRestarts;
-        }
-        const after = sweepRes && sweepRes.metrics ? { ...sweepRes.metrics } : this.evaluateMetrics();
-        let took = false;
-        if(this.compareTuple(after, bestMetrics) < 0){
-          bestMetrics = { ...after };
-          bestTkb = this.getSnapshotTKB();
-          took = true;
-        }
-        stages.push({ mode: sweepMode, cycle: -1, restart: -1, ms: Date.now() - t0, before: null, after: { ...bestMetrics }, exitReason: took ? "final-sweep" : "final-sweep-nogain" });
-        return took;
-      };
-      for(let sweepPass = 0; sweepPass < 6; sweepPass++){
+        const ph = PHASES[si];
         const remainMs = deadline - Date.now();
-        if(remainMs < 15_000 || stopRequested()) break;
-        const needSingle = bestMetrics.soBuoiDay1 > 0;
-        const needGap2 = bestMetrics.soBuoiTrong2 > 0;
-        if(!needSingle && !needGap2) break;
-        let any = false;
-        if(needSingle){
-          any = (await runSweep("optimize_singletons", Math.max(15_000, Math.floor(remainMs * 0.4)))) || any;
+        if(remainMs < 5_000) break;
+
+        // Stage da dat 0 san thi chi can KHOA roi di tiep.
+        if(ph.lockKey && Number(bestMetrics[ph.lockKey]) === 0){
+          this.__stageLocks = Object.assign({}, this.__stageLocks || {}, { [ph.lockKey]: 0 });
+          stages.push({ mode: ph.mode, ms: 0, before: { ...bestMetrics }, after: { ...bestMetrics }, exitReason: "already-zero-locked" });
+          continue;
         }
-        const remain2 = deadline - Date.now();
-        if(bestMetrics.soBuoiTrong2 > 0 && remain2 > 10_000 && !stopRequested()){
-          any = (await runSweep("optimize_gap2", remain2)) || any;
+
+        const sliceMs = ph.mode === "optimize_gap1"
+          ? remainMs
+          : Math.max(10_000, Math.min(remainMs, Math.floor(totalBudgetMs * ph.share)));
+
+        // Toi da 3 lat cho stage: dung ngay khi cham 0 hoac lat khong cai thien.
+        for(let latIdx = 0; latIdx < 3; latIdx++){
+          if(stopRequested()) break;
+          if(ph.lockKey && Number(bestMetrics[ph.lockKey]) === 0) break;
+          const latRemain = Math.min(deadline - Date.now(), Math.floor(sliceMs / (latIdx === 0 ? 1 : 2)));
+          if(latRemain < 4_000) break;
+          const before = { ...bestMetrics };
+          this.stageDeadlineMs = Date.now() + latRemain;
+          this.pushToZero = true;
+          let res = null;
+          const t0 = Date.now();
+          try{
+            res = await this.optimize(ph.mode, progressCallback ? (p) => {
+              progressCallback({ ...p, stage: ph.mode, stageIndex: si, cycle: latIdx, totalStages: PHASES.length });
+            } : null);
+          }finally{
+            this.stageDeadlineMs = 0;
+          }
+          const after = res && res.metrics ? { ...res.metrics } : this.evaluateMetrics();
+          let exitReason = "no-gain";
+          if(this.compareTuple(after, bestMetrics) < 0){
+            bestMetrics = { ...after };
+            bestTkb = this.getSnapshotTKB();
+            exitReason = "improved";
+          }else if(this.compareTuple(after, bestMetrics) > 0){
+            this.data.tkb = JSON.parse(JSON.stringify(bestTkb));
+            this.loadExistingSchedule();
+            exitReason = "rolled-back";
+          }
+          stages.push({ mode: ph.mode, cycle: latIdx, ms: Date.now() - t0, before, after: { ...bestMetrics }, exitReason });
+          if(exitReason !== "improved") break; // DIEU KIEN DUNG: lat khong cai thien -> chot stage
         }
-        if(!any) break;
+
+        // KHOA chi so cua stage vua xong — tu day khong nuoc di nao lam tang no.
+        if(ph.lockKey){
+          this.__stageLocks = Object.assign({}, this.__stageLocks || {}, { [ph.lockKey]: Number(bestMetrics[ph.lockKey]) || 0 });
+          stages.push({ mode: ph.mode, ms: 0, after: { ...bestMetrics }, exitReason: "locked:" + ph.lockKey + "=" + bestMetrics[ph.lockKey] });
+        }
       }
 
+      this.__inOptimizeAll = false;
       this.data.tkb = JSON.parse(JSON.stringify(bestTkb));
       this.loadExistingSchedule();
       this.pushToZero = false;
+      this.__stageLocks = null;
 
       let placed = 0;
       this.activities.forEach((act, idx) => {

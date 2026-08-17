@@ -22,11 +22,17 @@ WORKDIR /app
 ARG TKB_SOLVER_DIGEST=unverified
 ENV TKB_CLOUD_RUN_SOLVER_DIGEST=${TKB_SOLVER_DIGEST}
 
+# Node.js for the FET "tron goi" engine runner (fet_trongoi_runner.cjs)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY solver_runtime/requirements.txt /app/solver_runtime/requirements.txt
 RUN python -m pip install --upgrade pip \
     && python -m pip install -r /app/solver_runtime/requirements.txt
 
 COPY solver_runtime /app/solver_runtime
+COPY web/pages/tkb-fet-engine.js /app/web/pages/tkb-fet-engine.js
 
 RUN useradd --create-home --uid 10001 tkb \
     && chown -R tkb:tkb /app

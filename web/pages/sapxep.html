@@ -1482,6 +1482,9 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
     <div class="toolbar-secondary-actions" aria-label="Điều hướng và thống kê">
       <div class="stats-popover-wrap">
+        <button id="btnNewLockedPipeline" class="primary save-button" type="button" hidden aria-hidden="true"
+          title="NEW (superadmin): thiếu tiết thì xếp mới + pipeline khóa; ĐỦ 100% thì tối ưu tiếp từ lịch hiện tại — 1 tiết/buổi thấp nhất → KHÓA → trống ≥2 về 0 → KHÓA → giảm buổi → giảm trống 1"
+          aria-label="NEW: xếp mới + pipeline khóa tuần tự" onclick="runNewLockedPipeline(event)">NEW ★</button>
         <button id="btnTrialFullPipeline" class="primary save-button" type="button" hidden aria-hidden="true"
           title="Thử nghiệm (superadmin): Xếp mới + tối ưu trọn gói — mục tiêu 0 buổi 1 tiết, 0 buổi trống ≥2 tiết, giảm tối đa trống 1 tiết và tổng buổi"
           aria-label="Xếp và tối ưu trọn gói (thử nghiệm)" onclick="runTrialFullPipeline(event)">Trọn gói ★</button>
@@ -1665,26 +1668,47 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     if(btn.disabled || solveBusy() || !trialUserIsSuperadmin()) return false;
     btn.disabled = true;
     try{
-      // Bước 1: đúng luồng Sắp xếp hiện tại (server-owned unified solve).
-      if(typeof window.sapXepTuDongAll === "function"){
-        await window.sapXepTuDongAll();
-      }
-      // Job server-owned có thể nhả cờ bận sau khi promise resolve — chờ hẳn.
-      const idle = await waitForSolveIdle(30 * 60 * 1000);
-      if(!idle || window.__AUTO_SORT_STOP_REQUESTED) return false;
-      // Bước 2: tối ưu trọn gói cục bộ trong FET worker.
+      // MỘT worker duy nhất: xếp mới + tối ưu trọn gói (mode solve_optimize_all)
+      // — một luồng UI, một lần apply, Dừng hoạt động xuyên suốt; không còn
+      // chuỗi hai bước có thể bị lượt khác chen ngang (sửa 17/08).
       if(typeof window.sapXepTheoCheDo === "function"){
-        await window.sapXepTheoCheDo("optimize_all");
+        return await window.sapXepTheoCheDo("solve_optimize_all");
       }
-      return true;
+      return false;
     }finally{
       btn.disabled = false;
     }
   }
 
   window.runTrialFullPipeline = runTrialFullPipeline;
-  syncTrialButtonVisibility();
-  window.addEventListener?.("tkb:auth-ready", syncTrialButtonVisibility);
+
+  // ============ NÚT "NEW ★" (superadmin): LUÔN xếp mới + pipeline KHÓA ======
+  const btnNew = document.getElementById("btnNewLockedPipeline");
+  function syncNewButtonVisibility(){
+    if(!btnNew) return;
+    const on = trialUserIsSuperadmin();
+    btnNew.hidden = !on;
+    btnNew.setAttribute("aria-hidden", on ? "false" : "true");
+  }
+  async function runNewLockedPipeline(event){
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if(!btnNew || btnNew.disabled || solveBusy() || !trialUserIsSuperadmin()) return false;
+    btnNew.disabled = true;
+    try{
+      if(typeof window.sapXepTheoCheDo === "function"){
+        return await window.sapXepTheoCheDo("solve_optimize_all_fresh");
+      }
+      return false;
+    }finally{
+      btnNew.disabled = false;
+    }
+  }
+  window.runNewLockedPipeline = runNewLockedPipeline;
+
+  const syncBoth = () => { syncTrialButtonVisibility(); syncNewButtonVisibility(); };
+  syncBoth();
+  window.addEventListener?.("tkb:auth-ready", syncBoth);
 })();
 </script>
 
@@ -1736,8 +1760,8 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="../excel-style.js?v=20260701-excel-style-v2"></script>
 <script src="../vendor/sql-wasm.js"></script>
 <script src="../kvdb.js?v=20260707-vendor-local-v1"></script>
-<script src="tkb-fet-engine.js?v=20260817-revert-strict-sort-v1"></script>
-<script src="phanmon.js?v=20260817-strict-fet-max-gap1-v1"></script>
+<script src="tkb-fet-engine.js?v=20260818-singleton-v1"></script>
+<script src="phanmon.js?v=20260818-singleton-v1"></script>
 <script src="tkb-constraints.js?v=20260810-v1206-assigned-demand-lesson-block-min-guard-v1"></script>
 <script src="tkb-constraints-menu.js?v=20260808-v1192-assigned-only-all-statistics-v1"></script>
 <script src="tkb-gv-template.js"></script>
