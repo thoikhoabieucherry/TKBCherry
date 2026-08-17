@@ -9619,15 +9619,23 @@ function calcTeacherTKBStats(){
   const teacherCodes = Array.from(_getAssignedTeacherCodes());
   const occ = {}; // code -> day -> buoi -> boolean[]
 
-  teacherCodes.forEach(code=>{
-    occ[code] = {};
-    DAYS.forEach(d=>{
-      occ[code][d] = {
-        sang: Array.from({length:SANG}, ()=>false),
-        chieu: Array.from({length:CHIEU}, ()=>false)
-      };
-    });
-  });
+  const _ensureTeacherOcc = (rawCode) => {
+    if(!rawCode) return null;
+    const key = resolveTeacherCode(rawCode) || String(rawCode).trim();
+    if(!key) return null;
+    if(!occ[key]){
+      occ[key] = {};
+      DAYS.forEach(d=>{
+        occ[key][d] = {
+          sang: Array.from({length:SANG}, ()=>false),
+          chieu: Array.from({length:CHIEU}, ()=>false)
+        };
+      });
+    }
+    return { key, obj: occ[key] };
+  };
+
+  teacherCodes.forEach(code => _ensureTeacherOcc(code));
 
   // Scan toàn bộ TKB để đánh dấu tiết dạy cho từng GV
   const lops = Array.isArray(DATA.lop) ? DATA.lop : [];
@@ -9657,7 +9665,8 @@ function calcTeacherTKBStats(){
           );
         }
         teachers.forEach(gv=>{
-          if(occ[gv]) occ[gv][d].sang[i] = true;
+          const tRes = _ensureTeacherOcc(gv);
+          if(tRes && tRes.obj) tRes.obj[d].sang[i] = true;
         });
       }
       // chiều
@@ -9679,7 +9688,8 @@ function calcTeacherTKBStats(){
           );
         }
         teachers.forEach(gv=>{
-          if(occ[gv]) occ[gv][d].chieu[i] = true;
+          const tRes = _ensureTeacherOcc(gv);
+          if(tRes && tRes.obj) tRes.obj[d].chieu[i] = true;
         });
       }
     }
@@ -9726,7 +9736,8 @@ function calcTeacherTKBStats(){
     return {tietDay, gaps, gapSlots};
   };
 
-  for(const code of teacherCodes){
+  const allTrackedTeachers = Array.from(new Set([...teacherCodes, ...Object.keys(occ)]));
+  for(const code of allTrackedTeachers){
     let dayCounted = 0;
     for(const d of DAYS){
       let dayHas = false;

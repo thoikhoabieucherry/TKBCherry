@@ -6,6 +6,13 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-17 Robust Teacher Stats Counting & Alias Resolution (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - `calcTeacherTKBStats` in `phanmon.js` previously initialized `occ[code]` only for codes found in `_getAssignedTeacherCodes()`. If a cell text contained teacher aliases or variations (e.g. `Lan(NT)`, `N Phước`), `occ[gv]` was undefined, causing lessons to be omitted from the teacher's weekly matrix and resulting in inaccurate "Dạy 1 tiết" or total session stats.
+  - Implemented `_ensureTeacherOcc(rawCode)` to dynamically resolve canonical teacher codes and track all teachers found across all class timetables without omission.
+  - Deployed to VPS `165.101.47.133`.
+
 ## 2026-08-17 Immediate Termination on Zero/Floor + Daily Constraint Safety (DEPLOYED & VERIFIED)
 
 - **Issues addressed**:
