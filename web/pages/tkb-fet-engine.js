@@ -3084,6 +3084,211 @@
       return anyImproved ? currentBest : null;
     }
 
+    tryTargetedDeepSingletonChain(bestMetrics, mode = "optimize_singletons", onProgress = null){
+      if(mode !== "optimize_singletons") return null;
+      let currentBest = { ...bestMetrics };
+      let anyImproved = false;
+      const PERIODS = PERIODS_PER_SESSION;
+
+      const singletons = [];
+      this.teacherGrid.forEach((tGrid, tKey) => {
+        if(!tKey || !this.isScoredTeacher(tKey)) return;
+        for(let d = 0; d < DAYS_LIST.length; d++){
+          for(let b = 0; b < SESSIONS_LIST.length; b++){
+            const sStart = d * SLOTS_PER_DAY + b * PERIODS;
+            const taught = [];
+            for(let p = 0; p < PERIODS; p++){
+              const s = sStart + p;
+              if(tGrid[s] >= 0){
+                const act = this.activities[tGrid[s]];
+                if(act && !act.isFixed && act.duration === 1) taught.push({ slot: s, act });
+              }else if(tGrid[s] === -3){
+                taught.push({ slot: s, act: {isFixed: true} });
+              }
+            }
+            if(taught.length === 1 && taught[0].act.id !== undefined){
+              singletons.push({ tKey, act: taught[0].act, sourceSlot: taught[0].slot });
+            }
+          }
+        }
+      });
+
+      if(singletons.length === 0) return null;
+      this.rng.shuffle(singletons);
+
+      for(const sing of singletons){
+        const { tKey, act, sourceSlot } = sing;
+        const cGrid = this.classGrid.get(act.classId);
+        if(!cGrid) continue;
+
+        const targetSlots = [];
+        const tGrid = this.teacherGrid.get(tKey);
+        
+        for(let d = 0; d < DAYS_LIST.length; d++){
+          for(let b = 0; b < SESSIONS_LIST.length; b++){
+            const sStart = d * SLOTS_PER_DAY + b * PERIODS;
+            let tCount = 0;
+            for(let p = 0; p < PERIODS; p++){
+              if(tGrid[sStart + p] >= 0 || tGrid[sStart + p] === -3) tCount++;
+            }
+            if(tCount > 0){
+              for(let p = 0; p < PERIODS; p++){
+                const s = sStart + p;
+                if(s === sourceSlot) continue;
+                if(tGrid[s] >= 0 || tGrid[s] === -3) continue;
+                if(this.offSlots && this.offSlots.has(`${act.classId}|${s}`)) continue;
+                targetSlots.push(s);
+              }
+            }
+          }
+        }
+        
+        if(targetSlots.length === 0) continue;
+        this.rng.shuffle(targetSlots);
+
+        let resolved = false;
+        for(const sTarget of targetSlots){
+           const displacedActId = cGrid[sTarget];
+           if(displacedActId < 0){
+               const snap = this.captureStateSnapshot();
+               this.unplaceActivity(act.id);
+               this.placeActivityDirect(act.id, sTarget);
+               if(this.isLessonBlockSafe(act) && this.isLessonBlockSafe()){
+                  const m = this.evaluateMetrics();
+                  if(this.compareMetrics(m, currentBest, mode) < 0){
+                     currentBest = { ...m };
+                     resolved = true;
+                     anyImproved = true;
+                     if(typeof onProgress === "function") onProgress(currentBest);
+                  }
+               }
+               if(!resolved) this.restoreStateSnapshot(snap);
+               else break;
+           } else {
+               const displacedAct = this.activities[displacedActId];
+               if(!displacedAct || displacedAct.isFixed || displacedAct.duration !== 1) continue;
+               
+               const tG2 = this.teacherGrid.get(displacedAct.gv || displacedAct.teacherId);
+               if(tG2){
+                   let t2Count = 0;
+                   const sStart2 = Math.floor(sTarget / PERIODS) * PERIODS;
+                   for(let p = 0; p < PERIODS; p++){
+                      if(tG2[sStart2 + p] >= 0 || tG2[sStart2 + p] === -3) t2Count++;
+                   }
+                   if(t2Count === 2) continue; // Ejecting would create a singleton
+               }
+               
+               const maxDepth = 4;
+               const unplacedActs = [ { act: displacedAct, originalSlot: sTarget } ];
+               const snap = this.captureStateSnapshot();
+               
+               this.unplaceActivity(act.id);
+               this.unplaceActivity(displacedAct.id);
+               this.placeActivityDirect(act.id, sTarget);
+               
+               const dfs = (depth, actsToPlace) => {
+                   if(actsToPlace.length === 0){
+                       if(this.isLessonBlockSafe()){
+                          const m = this.evaluateMetrics();
+                          if(this.compareMetrics(m, currentBest, mode) < 0){
+                              currentBest = { ...m };
+                              return true;
+                          }
+                       }
+                       return false;
+                   }
+                   if(depth >= maxDepth) return false;
+                   
+                   const currentItem = actsToPlace[0];
+                   const actToPlace = currentItem.act;
+                   const cG = this.classGrid.get(actToPlace.classId);
+                   const tG = this.teacherGrid.get(actToPlace.gv || actToPlace.teacherId);
+                   if(!cG) return false;
+                   
+                   const cands = [];
+                   for(let d = 0; d < DAYS_LIST.length; d++){
+                      for(let b = 0; b < SESSIONS_LIST.length; b++){
+                         const sS = d * SLOTS_PER_DAY + b * PERIODS;
+                         let tCount = 0;
+                         if(tG){
+                             for(let p = 0; p < PERIODS; p++){
+                               if(tG[sS + p] >= 0 || tG[sS + p] === -3) tCount++;
+                             }
+                         }
+                         if(!tG || tCount >= 1){
+                             for(let p = 0; p < PERIODS; p++){
+                               const sl = sS + p;
+                               if(cG[sl] === actToPlace.id) continue;
+                               if(tG && (tG[sl] >= 0 || tG[sl] === -3)) continue;
+                               if(this.offSlots && this.offSlots.has(`${actToPlace.classId}|${sl}`)) continue;
+                               if(tG && this.offSlots && this.offSlots.has(`${actToPlace.gv || actToPlace.teacherId}|${sl}`)) continue;
+                               cands.push(sl);
+                             }
+                         }
+                      }
+                   }
+                   
+                   this.rng.shuffle(cands);
+                   const maxBranches = depth === 0 ? 6 : (depth === 1 ? 3 : 2);
+                   let branches = 0;
+                   
+                   for(const sl of cands){
+                       if(branches >= maxBranches) break;
+                       
+                       const existingId = cG[sl];
+                       if(existingId < 0){
+                           branches++;
+                           this.placeActivityDirect(actToPlace.id, sl);
+                           if(this.isLessonBlockSafe(actToPlace)){
+                               if(dfs(depth + 1, actsToPlace.slice(1))) return true;
+                           }
+                           this.unplaceActivity(actToPlace.id);
+                       } else {
+                           if(depth + 1 >= maxDepth) continue;
+                           const existingAct = this.activities[existingId];
+                           if(!existingAct || existingAct.isFixed || existingAct.duration !== 1) continue;
+                           
+                           const eTG = this.teacherGrid.get(existingAct.gv || existingAct.teacherId);
+                           if(eTG){
+                               let eTCount = 0;
+                               const sStartE = Math.floor(sl / PERIODS) * PERIODS;
+                               for(let p = 0; p < PERIODS; p++){
+                                  if(eTG[sStartE + p] >= 0 || eTG[sStartE + p] === -3) eTCount++;
+                               }
+                               if(eTCount === 2) continue; // Unsafe eject
+                           }
+                           
+                           branches++;
+                           this.unplaceActivity(existingAct.id);
+                           this.placeActivityDirect(actToPlace.id, sl);
+                           
+                           if(this.isLessonBlockSafe(actToPlace)){
+                               const nextActs = actsToPlace.slice(1);
+                               nextActs.push({ act: existingAct, originalSlot: sl });
+                               if(dfs(depth + 1, nextActs)) return true;
+                           }
+                           
+                           this.unplaceActivity(actToPlace.id);
+                           this.placeActivityDirect(existingAct.id, sl);
+                       }
+                   }
+                   return false;
+               };
+               
+               if(dfs(0, unplacedActs)){
+                   resolved = true;
+                   anyImproved = true;
+                   if(typeof onProgress === "function") onProgress(currentBest);
+               } else {
+                   this.restoreStateSnapshot(snap);
+               }
+           }
+           if(resolved) break;
+        }
+      }
+      return anyImproved ? currentBest : null;
+    }
+
     obliterateAllThinTeacherSessions(maxPasses = 8, targetSizes = [1, 2], maxGap2Limit = Infinity, onProgress = null){
       let currentBest = this.evaluateMetrics();
       let anyImproved = false;
@@ -6801,6 +7006,14 @@
           const resAugmenting = this.tryAugmentingSingletonEjectionChain(8, notifyLiveProgress);
           if(resAugmenting && this.compareMetrics(resAugmenting, bestMetrics, mode) < 0){
             bestMetrics = { ...resAugmenting };
+            saveBestSnapshot();
+            improvedInRound = true;
+            destroyStrength = 1;
+          }
+
+          const resDeepSingle = this.tryTargetedDeepSingletonChain(bestMetrics, mode, notifyLiveProgress);
+          if(resDeepSingle && this.compareMetrics(resDeepSingle, bestMetrics, mode) < 0){
+            bestMetrics = { ...resDeepSingle };
             saveBestSnapshot();
             improvedInRound = true;
             destroyStrength = 1;
