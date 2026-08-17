@@ -5998,17 +5998,36 @@
       if(!a) return 1;
       if(!b) return -1;
 
-      // 0. BẤT BIẾN TOÀN CỤC: Không bao giờ được làm tăng số buổi trống >= 2 tiết (soBuoiTrong2 = 0)
-      if(a.soBuoiTrong2 !== b.soBuoiTrong2) return a.soBuoiTrong2 - b.soBuoiTrong2;
-
       if(mode === "optimize_singletons"){
-        if(a.soBuoiDay1 !== b.soBuoiDay1) return a.soBuoiDay1 - b.soBuoiDay1;
+        // 1. MỤC TIÊU TỐI THƯỢNG: soBuoiDay1 PHẢI GIẢM, tuyệt đối KHÔNG ĐƯỢC TĂNG
+        if(a.soBuoiDay1 !== b.soBuoiDay1){
+          // Nếu giảm 1t/buổi nhưng lại làm tăng trống 2 tiết thì không chấp nhận
+          if(a.soBuoiDay1 < b.soBuoiDay1 && a.soBuoiTrong2 > b.soBuoiTrong2) return 1;
+          return a.soBuoiDay1 - b.soBuoiDay1;
+        }
+        // Khi 1t/buổi bằng nhau: ưu tiên giảm trống 2 tiết -> giảm tổng buổi
+        if(a.soBuoiTrong2 !== b.soBuoiTrong2) return a.soBuoiTrong2 - b.soBuoiTrong2;
         if(a.tsBuoiDay !== b.tsBuoiDay) return a.tsBuoiDay - b.tsBuoiDay;
         return a.tsNgayDay - b.tsNgayDay;
       }
 
-      if(mode === "optimize_sessions"){
+      if(mode === "optimize_gap2"){
+        // 1. MỤC TIÊU TỐI THƯỢNG: soBuoiTrong2 PHẢI GIẢM về 0, không được tăng 1t/buổi
+        if(a.soBuoiTrong2 !== b.soBuoiTrong2){
+          if(a.soBuoiTrong2 < b.soBuoiTrong2 && a.soBuoiDay1 > b.soBuoiDay1) return 1;
+          return a.soBuoiTrong2 - b.soBuoiTrong2;
+        }
         if(a.soBuoiDay1 !== b.soBuoiDay1) return a.soBuoiDay1 - b.soBuoiDay1;
+        if(a.tsBuoiDay !== b.tsBuoiDay) return a.tsBuoiDay - b.tsBuoiDay;
+        if(a.soBuoiTrong1 !== b.soBuoiTrong1) return a.soBuoiTrong1 - b.soBuoiTrong1;
+        return a.tsNgayDay - b.tsNgayDay;
+      }
+
+      if(mode === "optimize_sessions"){
+        // Không được làm tăng 1t/buổi hoặc trống 2 tiết
+        if(a.soBuoiDay1 > b.soBuoiDay1 || a.soBuoiTrong2 > b.soBuoiTrong2) return 1;
+        if(a.soBuoiDay1 < b.soBuoiDay1) return -1;
+        if(a.soBuoiTrong2 < b.soBuoiTrong2) return -1;
         if(a.tsBuoiDay !== b.tsBuoiDay) return a.tsBuoiDay - b.tsBuoiDay;
         const a23 = (a.soBuoiDay2 || 0) * 2 + (a.soBuoiDay3 || 0);
         const b23 = (b.soBuoiDay2 || 0) * 2 + (b.soBuoiDay3 || 0);
@@ -6016,20 +6035,18 @@
         return a.tsNgayDay - b.tsNgayDay;
       }
 
-      if(mode === "optimize_gap2"){
-        if(a.soBuoiDay1 !== b.soBuoiDay1) return a.soBuoiDay1 - b.soBuoiDay1;
-        if(a.tsBuoiDay !== b.tsBuoiDay) return a.tsBuoiDay - b.tsBuoiDay;
-        if(a.soBuoiTrong1 !== b.soBuoiTrong1) return a.soBuoiTrong1 - b.soBuoiTrong1;
-        return a.tsNgayDay - b.tsNgayDay;
-      }
-
       if(mode === "optimize_gap1"){
-        if(a.soBuoiDay1 !== b.soBuoiDay1) return a.soBuoiDay1 - b.soBuoiDay1;
+        // Không được làm tăng 1t/buổi hoặc trống 2 tiết
+        if(a.soBuoiDay1 > b.soBuoiDay1 || a.soBuoiTrong2 > b.soBuoiTrong2) return 1;
+        if(a.soBuoiDay1 < b.soBuoiDay1) return -1;
+        if(a.soBuoiTrong2 < b.soBuoiTrong2) return -1;
         if(a.tsBuoiDay !== b.tsBuoiDay) return a.tsBuoiDay - b.tsBuoiDay;
         return a.soBuoiTrong1 - b.soBuoiTrong1;
       }
 
-      return (a.soBuoiTrong2 - b.soBuoiTrong2) || (a.soBuoiDay1 - b.soBuoiDay1) || (a.tsBuoiDay - b.tsBuoiDay);
+      if(a.soBuoiDay1 !== b.soBuoiDay1) return a.soBuoiDay1 - b.soBuoiDay1;
+      if(a.soBuoiTrong2 !== b.soBuoiTrong2) return a.soBuoiTrong2 - b.soBuoiTrong2;
+      return a.tsBuoiDay - b.tsBuoiDay;
     }
 
     // Incremental Single-Teacher Evaluation (ANTIGRAVITY_KHU_1_TIET_BUOI.md Section 4.4)

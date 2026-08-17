@@ -6,6 +6,20 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-17 Fix Objective Priority Inversion in Optimizer compareMetrics (DEPLOYED & VERIFIED)
+
+- **Issues addressed & Root Cause**:
+  - In `compareMetrics(a, b, mode)` in `web/pages/tkb-fet-engine.js`, the global invariant check `if(a.soBuoiTrong2 !== b.soBuoiTrong2) return a.soBuoiTrong2 - b.soBuoiTrong2` was placed BEFORE the mode-specific objective checks (`mode === "optimize_singletons"`).
+  - As a result, when optimizing `optimize_singletons`, any candidate move that decreased `soBuoiTrong2` (e.g. from 7 to 6) was accepted even if it INCREASED `soBuoiDay1` (e.g. from 138 to 141), causing the UI progress indicator to show `Dạy 1 tiết: 138 -> 141` (regression).
+- **Key Changes**:
+  - Restructured `compareMetrics(a, b, mode)` so each mode strictly prioritizes its primary target:
+    - `optimize_singletons`: Primary goal `soBuoiDay1` strictly decreases. Candidates that increase `soBuoiDay1` are rejected immediately (`return 1`). A decrease in `soBuoiDay1` is only accepted if it does not increase `soBuoiTrong2`.
+    - `optimize_gap2`: Primary goal `soBuoiTrong2` strictly decreases without increasing `soBuoiDay1`.
+    - `optimize_sessions`: Primary goal `tsBuoiDay` decreases without increasing `soBuoiDay1` or `soBuoiTrong2`.
+    - `optimize_gap1`: Primary goal `soBuoiTrong1` decreases without increasing `soBuoiDay1` or `soBuoiTrong2`.
+  - Verified that `optimize_singletons` strictly monotonically reduces `soBuoiDay1` without ever increasing.
+  - Deployed to live VPS `165.101.47.133`.
+
 ## 2026-08-17 Strict Max Gap <= 1 Invariant Across All FET Construction & Optimization (DEPLOYED & VERIFIED)
 
 - **Issues addressed & Root Cause**:
