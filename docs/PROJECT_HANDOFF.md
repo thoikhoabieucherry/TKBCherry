@@ -6,6 +6,14 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-17 Pure Zero Target for Singletons (1 -> 0) (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - `web/pages/tkb-fet-engine.js` had a hardcoded `restartTargetVal = 2` and `bestMetrics.soBuoiDay1 <= 2` which prevented the optimizer from solving singleton sessions when starting with 1 singleton (e.g. Cô Hiền teaching `6/10 - KHTN` on Saturday morning).
+  - Changed target to strictly `0` so `optimize_singletons` continues search until all singletons are completely eliminated (1 -> 0).
+  - Verified on live Excel dataset (`temp/tonggv0917082026.xlsx` / 51 classes, 95 teachers): `soBuoiDay1` successfully reduced from **1 -> 0** with 0 residual singletons and 100% placement integrity.
+  - Deployed to live VPS `165.101.47.133`.
+
 ## 2026-08-17 Robust Teacher Stats Counting & Alias Resolution (DEPLOYED & VERIFIED)
 
 - **Issues addressed**:

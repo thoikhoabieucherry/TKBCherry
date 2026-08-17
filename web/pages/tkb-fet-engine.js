@@ -6741,9 +6741,8 @@
       // tự chạy quét gap2 trọn ngân sách ở bước chốt).
       const canRestart = !this.__inOptimizeAll &&
         (mode === "optimize_gap2" || mode === "optimize_gap1" || mode === "optimize_singletons");
-      // Mốc dừng của portfolio: nút 1 tiết/buổi mặc định dừng ở sàn 2 (trừ khi
-      // pushToZero) — không xoay vòng vô ích khi đã chạm sàn.
-      const restartTargetVal = (mode === "optimize_singletons" && !this.pushToZero) ? 2 : 0;
+      // Mốc dừng của portfolio: luôn hướng tới 0 để triệt tiêu toàn bộ tiết lẻ.
+      const restartTargetVal = 0;
       const restartBudgetMs = Number(this.options.optimizeRestartBudgetMs) || 180000;
       const maxRestarts = Number(this.options.optimizeMaxRestarts) || 20;
       // TRẦN THỜI GIAN CỨNG cho một lần bấm nút: một số operator quét brute-force
@@ -7222,7 +7221,7 @@
           });
         }
 
-        if(mode === "optimize_singletons" && bestMetrics.soBuoiDay1 <= (this.pushToZero ? 0 : 2)){
+        if(mode === "optimize_singletons" && bestMetrics.soBuoiDay1 <= 0){
           if(progressCallback){
             progressCallback({
               percent: 100,
