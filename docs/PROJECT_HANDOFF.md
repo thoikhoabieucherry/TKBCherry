@@ -6,6 +6,19 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-17 Comprehensive Subject Alias Matching to Prevent Fixed Cell Overlaps (DEPLOYED & VERIFIED)
+
+- **Issues addressed & Root Cause**:
+  - In timetable sid `95671c41791`, certain fixed cells were defined using full subject names (e.g. `Tin học quốc tế`, `Giáo dục STEM`, `Tiếng Anh tăng cường`) while assignment matrices used abbreviations/codes (e.g. `TinQT`, `STEM`, `TATC`).
+  - Previously, `getCanonMonKey` only contained basic hardcoded mappings and did not resolve compound/specialized subject variants or dynamically inspect `data.monhoc` (`ma` <-> `ten`).
+  - Consequently, `getTeacherForClassMon` returned an empty string for fixed cells with variant subject names (e.g. `8/1 - Tin học quốc tế`), so the teacher was not registered as occupied (`-3`) in `teacherGrid`. The solver then scheduled movable lessons (e.g. `9/13 - Tin`) directly onto the teacher's fixed periods. Furthermore, fixed periods were not decremented from assignment demand, creating redundant unassigned activities.
+- **Key Changes**:
+  - Dynamically constructed `this._monhocCanonMap` in `init()` from `data.monhoc` and `data.mon` mapping codes to full names and canonical keys.
+  - Expanded `getCanonMonKey` with comprehensive mappings for all Vietnamese school subject aliases: `tinqt` (`Tin học quốc tế`, `TinQT`), `tatc` (`Tiếng Anh tăng cường`), `tabn` (`Tiếng Anh bản ngữ`), `tatk` (`Tiếng Anh TK`), `kns` (`Kỹ năng sống`), `stem` (`Giáo dục STEM`), `hdtn` (`Hoạt động trải nghiệm hướng nghiệp`, `TNHN`), `lsdl`, `khtn`, `gdtc`, `gdcd`, `gddp`, `mt`, `nhac`, `van`, `anh`, `toan`.
+  - Verified on `school_95671c41791.json`: **0 class overlaps on fixed cells**, **0 teacher overlaps on fixed cells**, all fixed periods correctly mapped to teachers and classes.
+  - Bumped script cache query strings in `web/pages/sapxep.html` (`v=20260817-fix-fixed-overlap-v1`).
+  - Deployed to live VPS `165.101.47.133`.
+
 ## 2026-08-17 Strict Maximum 1 Gap Enforced in Initial FET Construction (DEPLOYED & VERIFIED)
 
 - **Issues addressed & Requirements**:

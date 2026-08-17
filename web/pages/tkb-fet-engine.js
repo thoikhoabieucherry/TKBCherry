@@ -317,6 +317,24 @@
 
       this.initLessonBlockRules();
 
+      // Build dynamic canonical map from data.monhoc and data.mon
+      this._monhocCanonMap = new Map();
+      const allMon = [
+        ...(Array.isArray(data.monhoc) ? data.monhoc : []),
+        ...(Array.isArray(data.mon) ? data.mon : [])
+      ];
+      allMon.forEach(m => {
+        const ma = String(m?.ma || m?.mamon || m?.mon || "").trim();
+        const ten = String(m?.ten || "").trim();
+        if(ma && ten && ma.toLowerCase() !== ten.toLowerCase()){
+          const normMa = this.removeDiacritics(ma).toLowerCase().replace(/[\s\-_,]+/g, " ").trim();
+          const normTen = this.removeDiacritics(ten).toLowerCase().replace(/[\s\-_,]+/g, " ").trim();
+          const canon = this.getCanonMonKey(ma) || this.getCanonMonKey(ten) || normMa;
+          if(normMa) this._monhocCanonMap.set(normMa, canon);
+          if(normTen) this._monhocCanonMap.set(normTen, canon);
+        }
+      });
+
       // ================= SCORED TEACHER UNIVERSE (metric alignment) ==========
       // UI statistics (calcTeacherTKBStats) count only teachers coming from
       // pccmMatrix values. The engine used to score EVERY teacherGrid row —
@@ -727,47 +745,69 @@
 
     getCanonMonKey(mon){
       if(!mon) return "";
-      let s = this.removeDiacritics(mon);
+      let s = this.removeDiacritics(mon).toLowerCase();
       s = s.replace(/\s+\d+$/, "").trim();
-      s = s.replace(/\s+/g, " ");
+      s = s.replace(/[\s\-_,]+/g, " ");
 
-      if(["chao co", "cc", "shdc", "sinh hoat duoi co", "shl", "sinh hoat lop", "sinh hoat", "tnhn", "hdtn", "hdtn,hn", "hdtn-hn", "hdtn/hn", "hoat dong trai nghiem", "hoat dong trai nghiem huong nghiep", "hoat dong trai nghiem va huong nghiep"].includes(s)){
+      if(this._monhocCanonMap && this._monhocCanonMap.has(s)){
+        return this._monhocCanonMap.get(s);
+      }
+
+      if(["tin hoc quoc te", "tin quoc te", "tin hoc qt", "tin qt", "tinqt", "tinhocquocte", "tin-qt", "tin_qt"].includes(s)){
+        return "tinqt";
+      }
+      if(["tieng anh tang cuong", "anh tang cuong", "tieng anh tc", "anh tc", "ta tc", "tatc", "tienganhtangcuong"].includes(s)){
+        return "tatc";
+      }
+      if(["tieng anh ban ngu", "anh ban ngu", "tieng anh bn", "anh bn", "ta bn", "tabn", "tienganhbanngu"].includes(s)){
+        return "tabn";
+      }
+      if(["tieng anh tai nang", "tieng anh tk", "anh tk", "ta tk", "tatk", "anh tai nang", "tienganhtk"].includes(s)){
+        return "tatk";
+      }
+      if(["ky nang song", "kynangsong", "kn song", "kns"].includes(s)){
+        return "kns";
+      }
+      if(["giao duc stem", "gd stem", "stem", "giaoducstem"].includes(s)){
+        return "stem";
+      }
+      if(["chao co", "cc", "shdc", "sinh hoat duoi co", "shl", "sinh hoat lop", "sinh hoat", "tnhn", "hdtn", "hdtn,hn", "hdtn-hn", "hdtn/hn", "hdtn hn", "hoat dong trai nghiem", "hoat dong trai nghiem huong nghiep", "hoat dong trai nghiem va huong nghiep", "trai nghiem", "huong nghiep", "tn hn", "tnhn,hn"].includes(s)){
         return "hdtn";
       }
-      if(["lich su va dia ly", "lich su - dia ly", "lich su dia ly", "ls-dl", "ls&dl", "lsdl", "su dia", "sd"].includes(s)){
+      if(["lich su va dia ly", "lich su va dia li", "lich su - dia ly", "lich su dia ly", "ls-dl", "ls dl", "ls&dl", "lsdl", "su dia", "su - dia", "sd"].includes(s)){
         return "lsdl";
       }
-      if(["khoa hoc tu nhien", "khtn"].includes(s)){
+      if(["khoa hoc tu nhien", "khtn", "khoahoctunhien"].includes(s)){
         return "khtn";
       }
-      if(["giao duc the chat", "the duc", "gdtc", "td"].includes(s)){
+      if(["giao duc the chat", "the duc", "gdtc", "td", "giaoducthechat"].includes(s)){
         return "gdtc";
       }
-      if(["giao duc cong dan", "gdcd", "gd"].includes(s)){
+      if(["giao duc cong dan", "gdcd", "gd", "giaoduccongdan", "cong dan"].includes(s)){
         return "gdcd";
       }
-      if(["giao duc dia phuong", "gddp", "noi dung giao duc dia phuong"].includes(s)){
+      if(["giao duc dia phuong", "gddp", "noi dung giao duc dia phuong", "dia phuong", "dp", "giaoducdiaphuong"].includes(s)){
         return "gddp";
       }
-      if(["tin hoc", "tin"].includes(s)){
+      if(["tin hoc", "tin", "tinhoc"].includes(s)){
         return "tin";
       }
-      if(["cong nghe", "cn"].includes(s)){
+      if(["cong nghe", "cn", "congnghe", "cnghe"].includes(s)){
         return "cn";
       }
-      if(["my thuat", "mi thuat", "mt"].includes(s)){
+      if(["my thuat", "mi thuat", "mt", "mythuat", "mithuat", "nghe thuat (mi thuat)", "nghe thuat (my thuat)", "nghe thuat mi thuat", "nghe thuat my thuat"].includes(s)){
         return "mt";
       }
-      if(["am nhac", "nhac", "an"].includes(s)){
+      if(["am nhac", "nhac", "an", "amnhac", "nghe thuat (am nhac)", "nghe thuat am nhac"].includes(s)){
         return "nhac";
       }
-      if(["ngu van", "van", "va"].includes(s)){
+      if(["ngu van", "van", "va", "nguvan"].includes(s)){
         return "van";
       }
-      if(["tieng anh", "ngoai ngu", "anh", "av"].includes(s)){
+      if(["tieng anh", "ngoai ngu 1", "ngoai ngu", "nngu", "nn", "anh", "av", "ta", "tienganh", "ngoaingu"].includes(s)){
         return "anh";
       }
-      if(["toan", "to"].includes(s)){
+      if(["toan", "to", "toanhoc"].includes(s)){
         return "toan";
       }
       return s;
