@@ -6,6 +6,13 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-17 Robust Non-Worsening Incumbent Validation in UI (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - `compareFetCandidateViolationsToIncumbent` in `phanmon.js` previously keyed violations with exact slot coordinates `[thu, buoi, ti]`. When an optimization moved a lesson that had a pre-existing soft advisory rule flag to a new slot, the coordinate change was misidentified as a "new introduced violation", causing the UI to reject valid optimizations and display `"Không thể tối ưu thêm do chạm giới hạn ràng buộc (lịch hiện tại được giữ nguyên)"`.
+  - Fixed `compareFetCandidateViolationsToIncumbent` to accept any candidate schedule where total violation count is $\le$ incumbent baseline count, and normalized `fetHardViolationSignature` by rule identity `[kind, lopId, mon, teacherId]`.
+  - Deployed to VPS `165.101.47.133`.
+
 ## 2026-08-17 Unconstrained Initial Construction (Pure Solve, No Premature Optimization) (DEPLOYED & VERIFIED)
 
 - **Issues addressed**:

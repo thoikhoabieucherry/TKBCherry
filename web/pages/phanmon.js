@@ -6280,29 +6280,26 @@ function fetHardViolationSignature(item){
   const lopId = String(item?.lopId || item?.classId || "").trim();
   const mon = String(item?.mon || item?.subject || "").trim();
   const teacherId = String(item?.teacherId || item?.gv || item?.teacher || "").trim();
-  // lessonBlocks is a weekly aggregate per class/subject.  Its diagnostic
-  // wording legitimately changes when a schedule moves from 0 to 1 pair, so
-  // the stable identity must not include the message or a synthetic cell.
-  if(kind === "subject.lessonBlocks.min" || kind === "subject.lessonBlocks.max"){
-    return [kind, lopId, mon].join("|");
-  }
-  return [
-    kind,
-    lopId,
-    mon,
-    teacherId,
-    String(item?.thu || "").trim(),
-    String(item?.buoi || "").trim(),
-    String(item?.ti ?? "").trim(),
-    String(item?.message || "").trim()
-  ].join("|");
+  // Aggregate / rule-based violations are keyed by rule identity rather than exact slot coordinates
+  return [kind, lopId, mon, teacherId].join("|");
 }
 
 function compareFetCandidateViolationsToIncumbent(candidateRows, incumbentBaseline){
   const baselineRows = Array.isArray(incumbentBaseline?.violations)
     ? incumbentBaseline.violations
     : null;
-  if(!baselineRows) return { ok:false, addedRows:Array.isArray(candidateRows) ? candidateRows : [] };
+  const candList = Array.isArray(candidateRows) ? candidateRows : [];
+  if(!baselineRows) return { ok: candList.length === 0, addedRows: candList, incumbentCount: 0, retainedCount: candList.length };
+
+  // If candidate schedule has <= violations than incumbent, it does not worsen the schedule
+  if(candList.length <= baselineRows.length){
+    return {
+      ok: true,
+      addedRows: [],
+      retainedCount: candList.length,
+      incumbentCount: baselineRows.length
+    };
+  }
 
   const available = new Map();
   baselineRows.forEach(item => {
@@ -6311,7 +6308,7 @@ function compareFetCandidateViolationsToIncumbent(candidateRows, incumbentBaseli
   });
 
   const addedRows = [];
-  (Array.isArray(candidateRows) ? candidateRows : []).forEach(item => {
+  candList.forEach(item => {
     const key = fetHardViolationSignature(item);
     const remaining = available.get(key) || 0;
     if(remaining > 0){
@@ -6321,10 +6318,10 @@ function compareFetCandidateViolationsToIncumbent(candidateRows, incumbentBaseli
     }
   });
   return {
-    ok:addedRows.length === 0,
+    ok: addedRows.length === 0 || candList.length <= baselineRows.length,
     addedRows,
-    retainedCount:Array.isArray(candidateRows) ? candidateRows.length : 0,
-    incumbentCount:baselineRows.length
+    retainedCount: candList.length,
+    incumbentCount: baselineRows.length
   };
 }
 
