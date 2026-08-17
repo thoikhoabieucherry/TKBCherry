@@ -6767,14 +6767,33 @@
         const breatheMs = Number.isFinite(Number(this.options.uiBreathingMs)) ? Number(this.options.uiBreathingMs) : 25;
         if(breatheMs > 0) await new Promise(resolve => setTimeout(resolve, breatheMs));
 
+        const isTargetDone = () => {
+          if(mode === "optimize_singletons") return (bestMetrics.soBuoiDay1 <= 0 || (this.__globalBestM && this.__globalBestM.soBuoiDay1 <= 0));
+          if(mode === "optimize_gap2") return (bestMetrics.soBuoiTrong2 <= 0 || (this.__globalBestM && this.__globalBestM.soBuoiTrong2 <= 0));
+          if(mode === "optimize_gap1") return (bestMetrics.soBuoiTrong1 <= 0 || (this.__globalBestM && this.__globalBestM.soBuoiTrong1 <= 0));
+          return false;
+        };
+
         // 1. Primary Downhill Optimization Passes
         if(mode === "optimize_singletons"){
+          if(isTargetDone()) { portfolioDone = true; break; }
+
+          const resPair = this.tryConsolidatePairSingletons(bestMetrics, initialMetrics, Infinity, notifyLiveProgress);
+          if(resPair && this.compareMetrics(resPair, bestMetrics, mode) < 0){
+            bestMetrics = { ...resPair };
+            saveBestSnapshot();
+            improvedInRound = true;
+            destroyStrength = 1;
+            if(isTargetDone()) { portfolioDone = true; break; }
+          }
+
           const resVacate = this.tryVacateTeacherSessions(bestMetrics, initialMetrics, Infinity, notifyLiveProgress);
           if(resVacate && this.compareMetrics(resVacate, bestMetrics, mode) < 0){
             bestMetrics = { ...resVacate };
             saveBestSnapshot();
             improvedInRound = true;
             destroyStrength = 1;
+            if(isTargetDone()) { portfolioDone = true; break; }
           }
 
           const oblitM = this.obliterateAllTeacherSingletons(12, Infinity, notifyLiveProgress);
@@ -6783,6 +6802,7 @@
             saveBestSnapshot();
             improvedInRound = true;
             destroyStrength = 1;
+            if(isTargetDone()) { portfolioDone = true; break; }
           }
 
           const resReinforce = this.tryReinforceTeacherSingletons(bestMetrics, initialMetrics, Infinity, notifyLiveProgress);
@@ -6791,6 +6811,7 @@
             saveBestSnapshot();
             improvedInRound = true;
             destroyStrength = 1;
+            if(isTargetDone()) { portfolioDone = true; break; }
           }
 
           const resSingle = this.tryConsolidateTeacherSingletons(bestMetrics, initialMetrics, Infinity, notifyLiveProgress);
@@ -6799,6 +6820,7 @@
             saveBestSnapshot();
             improvedInRound = true;
             destroyStrength = 1;
+            if(isTargetDone()) { portfolioDone = true; break; }
           }
 
           const resCompound = this.tryCompoundEjectionChainForSingletons(bestMetrics, initialMetrics, Infinity, notifyLiveProgress);
@@ -6807,14 +6829,7 @@
             saveBestSnapshot();
             improvedInRound = true;
             destroyStrength = 1;
-          }
-
-          const resPair = this.tryConsolidatePairSingletons(bestMetrics, initialMetrics, Infinity, notifyLiveProgress);
-          if(resPair && this.compareMetrics(resPair, bestMetrics, mode) < 0){
-            bestMetrics = { ...resPair };
-            saveBestSnapshot();
-            improvedInRound = true;
-            destroyStrength = 1;
+            if(isTargetDone()) { portfolioDone = true; break; }
           }
         }
 

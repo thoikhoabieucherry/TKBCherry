@@ -6,6 +6,13 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-17 Instant Operator Break on Target Achieved (0s return) (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - When an operator (such as `tryConsolidatePairSingletons`) reduced `soBuoiDay1` from 1 -> 0, the engine previously continued executing 10 subsequent heavy operators in the round before reaching the loop-level break check. This caused a 9–15s delay where the UI showed `Dạy 1 tiết: 1 -> 0` with the stop button still spinning.
+  - Added `isTargetDone()` checks immediately after each operator inside the round loop. As soon as the target metric hits 0, the engine breaks instantly (`portfolioDone = true; break;`) and returns results in <0.2s.
+  - Deployed to VPS `165.101.47.133`.
+
 ## 2026-08-17 Pure Zero Target for Singletons (1 -> 0) (DEPLOYED & VERIFIED)
 
 - **Issues addressed**:
