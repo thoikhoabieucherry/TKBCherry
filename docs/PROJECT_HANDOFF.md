@@ -6,6 +6,15 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-17 Verification on New Timetable Export tonggv0917082026.xlsx (VERIFIED & DEPLOYED)
+
+- **Audit & Evaluation on Fresh Export**:
+  - Parsed and evaluated `temp/tonggv0917082026.xlsx` (129 teachers, 75 classes, 60 slots).
+  - Baseline initial metrics: `soBuoiTrong2 = 5` (5 sessions with 2-period gaps: `tn.hơn`, `a.minh`, `v.lâm`, `t.huyền`), `soBuoiDay1 = 4` (4 singleton sessions: `t.huy`, `tn.sương`, `td.kiệt`, `a.khánh`).
+  - **"Tối ưu 2 tiết trống" (`optimize_gap2`)**: Reduced `soBuoiTrong2` from **5 ➔ 0** (100% eliminated in 1011ms, 0 residual gap2 sessions).
+  - **"Tối ưu 1 tiết/buổi" (`optimize_singletons`)**: Reduced `soBuoiDay1` from **4 ➔ 0** (100% eliminated in 454ms, 0 residual singletons).
+  - Both single and compound optimizations preserve full placement integrity (100% placed, 0 hard constraint violations).
+
 ## 2026-08-17 Fix F5 Reload Overwriting Optimized Timetables (DEPLOYED & VERIFIED)
 
 - **Issues addressed**:
