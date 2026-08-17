@@ -7204,13 +7204,13 @@ async function executeDirectFastSchedule(options = {}){
                 if(options.mode === "optimize_all"){
                   doneStatusMsg = `Đã tối ưu tất cả — 1 tiết/buổi: ${initM.soBuoiDay1} ➔ ${bestM.soBuoiDay1}, Trống 2: ${initM.soBuoiTrong2} ➔ ${bestM.soBuoiTrong2}, Buổi: ${initM.tsBuoiDay} ➔ ${bestM.tsBuoiDay}, Trống 1: ${initM.soBuoiTrong1} ➔ ${bestM.soBuoiTrong1}`;
                 }else if(options.mode === "optimize_gap2"){
-                  doneStatusMsg = `Trống 2 tiết: ${initM.soBuoiTrong2} ➔ ${bestM.soBuoiTrong2}`;
+                  doneStatusMsg = `Đã tối ưu Trống 2 tiết: ${initM.soBuoiTrong2} ➔ ${bestM.soBuoiTrong2}`;
                 }else if(options.mode === "optimize_singletons"){
                   doneStatusMsg = `Đã tối ưu Dạy 1 tiết/buổi: ${initM.soBuoiDay1} ➔ ${bestM.soBuoiDay1}`;
                 }else if(options.mode === "optimize_gap1"){
-                  doneStatusMsg = `Trống 1 tiết: ${initM.soBuoiTrong1} ➔ ${bestM.soBuoiTrong1}`;
+                  doneStatusMsg = `Đã tối ưu Trống 1 tiết: ${initM.soBuoiTrong1} ➔ ${bestM.soBuoiTrong1}`;
                 }else if(options.mode === "optimize_sessions"){
-                  doneStatusMsg = `Buổi dạy: ${initM.tsBuoiDay} ➔ ${bestM.tsBuoiDay}`;
+                  doneStatusMsg = `Đã tối ưu Buổi dạy: ${initM.tsBuoiDay} ➔ ${bestM.tsBuoiDay}`;
                 }
               }
               if(!doneStatusMsg){
@@ -7244,8 +7244,8 @@ async function executeDirectFastSchedule(options = {}){
               : " Lịch đã hiển thị nhưng chưa lưu được ngay; hãy kiểm tra kết nối rồi lưu lại.";
             if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
             updateStatusMsg(
-              `${doneStatusMsg || "Đã tối ưu hoàn tất."}${candidateValidation.retainedLegacyViolations > 0 && options.mode !== "optimize_singletons" ? ` Giữ nguyên ${candidateValidation.retainedLegacyViolations} yêu cầu đã có từ lịch trước.` : ""}${saveSuffix}`,
-              applyResult.ok === true ? "ok" : "warning"
+              `${doneStatusMsg || "Đã tối ưu hoàn tất."}${saveSuffix}`,
+              "ok"
             );
             settleWorker({
               ok: true,
