@@ -1318,7 +1318,7 @@
           subjectPeriods.push(pi);
         }else{
           const existingActId = this.classGrid.get(act.classId)[s];
-          if(existingActId >= 0){
+          if(existingActId >= 0 && existingActId !== act.id){
             if(!conflictsSet.has(existingActId)){
               const existingAct = this.activities[existingActId];
               if(existingAct && this.getCanonMonKey(existingAct.mon) === actCanon){
@@ -3674,6 +3674,27 @@
                 if(this.offSlots.has(`${act1.classId}|${targetSlot}`) || this.fixedSlots.has(`${act1.classId}|${targetSlot}`)) continue;
 
                 const actId2 = cClassGrid[targetSlot];
+                if(actId2 === -1){
+                  // Direct move into completely free slot in class grid
+                  this.unplaceActivity(act1.id);
+                  const r1 = this.getConflictsForSlot(act1, targetSlot);
+                  if(r1.possible && r1.conflicts.length === 0){
+                    this.placeActivityDirect(act1.id, targetSlot);
+                    if(this.isLessonBlockSafe(act1) && this.isDailySubjectLimitSafe(act1, targetSlot)){
+                      const currentM = this.evaluateMetrics();
+                      if(this.compareMetrics(currentM, currentBest, mode) < 0){
+                        currentBest = { ...currentM };
+                        anyImproved = true;
+                        gapResolved = true;
+                        if(onProgress) onProgress(currentBest);
+                        break;
+                      }
+                    }
+                    this.unplaceActivity(act1.id);
+                  }
+                  this.placeActivityDirect(act1.id, srcItem.slot);
+                  continue;
+                }
                 if(actId2 < 0) continue;
 
                 const act2 = this.activities[actId2];

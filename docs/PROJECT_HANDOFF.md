@@ -6,6 +6,14 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-17 Intra-Session Free Slot Shifts for Gap Optimization (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - `getConflictsForSlot` in `web/pages/tkb-fet-engine.js` previously evaluated subject contiguity without checking `existingActId !== act.id`. When moving an activity within the same session (e.g. `9/13 - KHTN` from Tiết 5 to Tiết 1), the engine counted its own old placement at Tiết 5 as a second distinct placement, falsely believing that placing at Tiết 1 created a non-contiguous split subject session and blocking valid intra-session moves (`possible: false`).
+  - `tryCrushTeacherGaps` previously only attempted 2-way swaps into occupied slots (`actId2 >= 0`), skipping direct moves into empty class slots (`actId2 === -1`).
+  - Fixed self-id check in `getConflictsForSlot` and added direct free-slot moves to `tryCrushTeacherGaps`. Verified on live test dataset: `soBuoiTrong1` and `soBuoiTrong2` both successfully reduced to **0**.
+  - Deployed to VPS `165.101.47.133`.
+
 ## 2026-08-17 Clean Optimization Status Text (No Confusing Suffix on Done or Stop) (DEPLOYED & VERIFIED)
 
 - **Issues addressed**:
