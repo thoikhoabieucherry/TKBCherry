@@ -2292,6 +2292,27 @@
               if(tGrid[s2] >= 0 || tGrid[s2] === -3) continue;
 
               const actId2 = cGrid1[s2];
+              if(actId2 === -1){
+                // Direct consolidation into free slot of class grid in target session!
+                this.unplaceActivity(act1.id);
+                const r1 = this.getConflictsForSlot(act1, s2);
+                if(r1.possible && r1.conflicts.length === 0){
+                  this.placeActivityDirect(act1.id, s2);
+                  if(this.isLessonBlockSafe(act1) && this.isDailySubjectLimitSafe(act1, s2)){
+                    const m = this.evaluateMetrics();
+                    if(m.soBuoiDay1 < currentBest.soBuoiDay1 && m.soBuoiTrong2 <= maxGap2Limit){
+                      currentBest = { ...m };
+                      anyImproved = true;
+                      consResolved = true;
+                      if(typeof onProgress === "function") onProgress(currentBest);
+                      break;
+                    }
+                  }
+                  this.unplaceActivity(act1.id);
+                }
+                this.placeActivityDirect(act1.id, single.item.slot);
+                continue;
+              }
               if(actId2 < 0) continue;
 
               const act2 = this.activities[actId2];
@@ -3495,6 +3516,29 @@
                   if(tGrid[s2] >= 0 || tGrid[s2] === -3) continue;
 
                   const actId2 = cGrid[s2];
+                  if(actId2 === -1){
+                    // Direct move into free slot of class grid in target session
+                    this.unplaceActivity(act1.id);
+                    const r1 = this.getConflictsForSlot(act1, s2);
+                    if(r1.possible && r1.conflicts.length === 0){
+                      this.placeActivityDirect(act1.id, s2);
+                      if(this.isLessonBlockSafe(act1) && this.isDailySubjectLimitSafe(act1, s2)){
+                        const m = this.evaluateMetrics();
+                        if(m.soBuoiDay1 <= bestMetrics.soBuoiDay1 && m.soNgayMotTiet <= bestMetrics.soNgayMotTiet){
+                          if(m.tsBuoiDay < currentBest.tsBuoiDay || (m.tsBuoiDay === currentBest.tsBuoiDay && ((m.soBuoiDay2||0)*2 + (m.soBuoiDay3||0) < (currentBest.soBuoiDay2||0)*2 + (currentBest.soBuoiDay3||0) || m.tsNgayDay < currentBest.tsNgayDay))){
+                            currentBest = { ...m };
+                            anyImproved = true;
+                            resolved = true;
+                            if(typeof onProgress === "function") onProgress(currentBest);
+                            break;
+                          }
+                        }
+                      }
+                      this.unplaceActivity(act1.id);
+                    }
+                    this.placeActivityDirect(act1.id, s1);
+                    continue;
+                  }
                   if(actId2 < 0) continue;
                   const act2 = this.activities[actId2];
                   if(!act2 || act2.isFixed || act2.duration !== 1) continue;

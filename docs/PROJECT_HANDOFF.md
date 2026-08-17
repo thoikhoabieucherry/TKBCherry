@@ -6,6 +6,14 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-17 Direct Free Slot Placement in Singleton Consolidation & Session Vacating (DEPLOYED & VERIFIED)
+
+- **Issues addressed**:
+  - `tryConsolidateTeacherSingletons` and `tryVacateTeacherSessions` previously evaluated target slots in the class grid using `if(actId2 < 0) continue;`. When the destination slot in the class grid was completely free (`actId2 === -1`), e.g. moving Cô Uyên's `6/9 - HĐTN,HN` from Saturday morning to empty Thursday morning, the operator skipped the move because it only supported 2-way swaps into occupied cells.
+  - Added direct placement into empty class slots (`actId2 === -1`) for both operators. Singletons now consolidate directly into free class slots without requiring an occupied cell to swap with.
+  - Verified on live test dataset: singletons reduced to 0 with 100% placement integrity.
+  - Deployed to VPS `165.101.47.133`.
+
 ## 2026-08-17 Intra-Session Free Slot Shifts for Gap Optimization (DEPLOYED & VERIFIED)
 
 - **Issues addressed**:
