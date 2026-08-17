@@ -1416,6 +1416,13 @@
         const tGrid = this.teacherGrid.get(t);
         if(!tGrid) continue;
 
+        let dayTaught = 0;
+        const dayStart = d * SLOTS_PER_DAY;
+        for(let pi = 0; pi < SLOTS_PER_DAY; pi++){
+          const s = dayStart + pi;
+          if(tGrid[s] >= 0 || tGrid[s] === -3) dayTaught++;
+        }
+
         const currentP = [];
         for(let pi = 0; pi < PERIODS_PER_SESSION; pi++){
           const s = sessionStart + pi;
@@ -1428,6 +1435,10 @@
           // Opening a new session for teacher t:
           // Discourage creating an isolated 1-period session (Tối thiểu 1 buổi 2 tiết)
           penalty += 350;
+          if(dayTaught === 0 && (act.duration || 1) === 1){
+            // Creating an isolated 1-period day across entire day (Tối thiểu 1 ngày 2 tiết)
+            penalty += 450;
+          }
         }else{
           // Joining existing session (d, b) -> Helps reach >= 2 periods!
           // If the session currently has only 1 period, joining it turns it into >= 2 periods (SUPER BONUS)
@@ -1440,6 +1451,10 @@
             penalty -= 30;
           }else if(currentP.length === 4){
             penalty -= 10;
+          }
+          if(dayTaught === 1){
+            // Joining a day that currently only has 1 period -> eliminates 1-period day!
+            penalty -= 400;
           }
 
           const occupiedOffsets = [];
@@ -5999,10 +6014,12 @@
       if(!b) return -1;
 
       if(mode === "optimize_singletons"){
-        // 1. MỤC TIÊU TỐI THƯỢNG: soBuoiDay1 PHẢI GIẢM, tuyệt đối KHÔNG ĐƯỢC TĂNG
-        if(a.soBuoiDay1 !== b.soBuoiDay1){
-          // Nếu giảm 1t/buổi nhưng lại làm tăng trống 2 tiết thì không chấp nhận
-          if(a.soBuoiDay1 < b.soBuoiDay1 && a.soBuoiTrong2 > b.soBuoiTrong2) return 1;
+        // 1. MỤC TIÊU TỐI THƯỢNG: soBuoiDay1 & soNgayMotTiet PHẢI GIẢM
+        if(a.soBuoiDay1 !== b.soBuoiDay1 || a.soNgayMotTiet !== b.soNgayMotTiet){
+          if(a.soBuoiDay1 > b.soBuoiDay1 && a.soNgayMotTiet >= b.soNgayMotTiet) return 1;
+          if(a.soBuoiDay1 >= b.soBuoiDay1 && a.soNgayMotTiet > b.soNgayMotTiet) return 1;
+          if(a.soBuoiTrong2 > b.soBuoiTrong2) return 1;
+          if(a.soNgayMotTiet !== b.soNgayMotTiet) return a.soNgayMotTiet - b.soNgayMotTiet;
           return a.soBuoiDay1 - b.soBuoiDay1;
         }
         // Khi 1t/buổi bằng nhau: ưu tiên giảm trống 2 tiết -> giảm tổng buổi
@@ -6691,6 +6708,14 @@
 
         // 1. Primary Downhill Optimization Passes
         if(mode === "optimize_singletons"){
+          const resDay = this.fixDaySingletons(bestMetrics, notifyLiveProgress);
+          if(resDay && this.compareMetrics(resDay, bestMetrics, mode) < 0){
+            bestMetrics = { ...resDay };
+            saveBestSnapshot();
+            improvedInRound = true;
+            destroyStrength = 1;
+          }
+
           const oblitM = this.obliterateAllTeacherSingletons(12, 0, notifyLiveProgress);
           if(oblitM && this.compareMetrics(oblitM, bestMetrics, mode) < 0){
             bestMetrics = { ...oblitM };
