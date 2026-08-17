@@ -2005,12 +2005,49 @@
       this.activities = actList;
       this.actPlacement = new Array(actList.length).fill(-1);
 
-      // 2. Place initial existing activities into their slots
+      // 2. Place initial existing activities into their slots.
+      // CÓ KIỂM TRA XUNG ĐỘT (sửa 17/08): trước đây đặt mù quáng — dữ liệu đã
+      // hỏng (2 tiết cùng ô giáo viên) sẽ GHI ĐÈ teacherGrid, làm mọi phép
+      // kiểm tra sau đó mù: unplace tiết sau → ô thành "rảnh" dù tiết trước
+      // vẫn đứng đó → randomSwap đặt lại đúng chỗ trùng. Giờ tiết nào xung đột
+      // với tiết đã vào trước thì để CHƯA PHÂN — repairHardConflicts sẽ tìm chỗ
+      // hợp lệ ngay đầu optimize/optimizeAll.
       this.activities.forEach(act => {
         if(act.initSlot >= 0){
-          this.placeActivityDirect(act.id, act.initSlot);
+          if(this.canLoadPlacement(act, act.initSlot)){
+            this.placeActivityDirect(act.id, act.initSlot);
+          }
+          // else: giữ chưa phân — không bao giờ để lưới sai lệch
         }
       });
+    }
+
+    // Kiểm tra HẸP cho việc nạp lịch đã lưu: chỉ chặn xung đột VẬT LÝ (trùng ô
+    // lớp, ô lớp OFF/cố định, trùng/OFF giáo viên, trùng phòng). KHÔNG chặn các
+    // ràng buộc chính sách (subjectOff, ca ưa thích...) — lịch cũ hợp lệ của
+    // người dùng phải nạp nguyên trạng dù ràng buộc đổi sau đó.
+    canLoadPlacement(act, slot){
+      for(let d = 0; d < (act.duration || 1); d++){
+        const s = slot + d;
+        if(s >= TOTAL_SLOTS) return false;
+        if(this.offSlots.has(`${act.classId}|${s}`)) return false;
+        if(this.fixedSlots.has(`${act.classId}|${s}`)) return false;
+        const cg = this.classGrid.get(act.classId);
+        if(!cg || cg[s] >= 0 || cg[s] === -2 || cg[s] === -3) return false;
+        if(act.gv){
+          for(const t of parseTeacherList(act.gv)){
+            if(this.teacherOffSlots && this.teacherOffSlots.has(`${t}|${s}`)) return false;
+            const tg = this.teacherGrid.get(t);
+            if(tg && (tg[s] >= 0 || tg[s] === -2 || tg[s] === -3)) return false;
+          }
+        }
+        if(act.room){
+          const rKey = String(act.room).trim().toLowerCase();
+          const rg = this.roomGrid.get(rKey);
+          if(rg && (rg[s] >= 0 || rg[s] === -2 || rg[s] === -3)) return false;
+        }
+      }
+      return true;
     }
 
     // Recursive LNS Ruin-and-Recreate: Completely vacate a day for a teacher to give full Day Off
@@ -5552,6 +5589,115 @@
       return anyImproved ? currentBest : null;
     }
 
+    // =========================================================================
+    // EXILE EDGE LESSON (chỉ thị 17/08: "1t là block — còn lại phá kẹt tự do")
+    // Nước đơn giản nhất chưa từng có trong bộ: BỐC HẲN một tiết MÉP của buổi
+    // Trống-2 đi NƠI KHÁC BẤT KỲ trong tuần (recursive swapping toàn dải, không
+    // giới hạn đích). Phần còn lại của buổi phải liền mạch >=2 tiết — buổi hết
+    // trống ngay: [1,2,5] đày tiết 5 -> [1,2]; [1,4,5] đày tiết 1 -> [4,5].
+    // Hỗ trợ cả khối tiết đôi ở mép ([D12,5] đày 5 -> [D12]). Gate so sánh với
+    // comparator 1t-khóa-trần nên không bao giờ sinh thêm 1 tiết/buổi.
+    // =========================================================================
+    tryExileEdgeLesson(bestMetrics, initialMetrics, mode = "optimize_gap2", onProgress = null){
+      const PERIODS = PERIODS_PER_SESSION;
+      let currentBest = { ...bestMetrics };
+      let anyImproved = false;
+
+      const teacherList = Array.from(this.teacherGrid.keys()).filter(t => t && this.isScoredTeacher(t));
+      this.rng.shuffle(teacherList);
+
+      for(const tKey of teacherList){
+        const tGrid = this.teacherGrid.get(tKey);
+        if(!tGrid) continue;
+
+        for(let d = 0; d < DAYS_LIST.length; d++){
+          for(let b = 0; b < SESSIONS_LIST.length; b++){
+            const sStart = d * SLOTS_PER_DAY + b * PERIODS_PER_SESSION;
+            const taughtPs = [];
+            for(let p = 0; p < PERIODS; p++){
+              if(tGrid[sStart + p] >= 0 || tGrid[sStart + p] === -3) taughtPs.push(p);
+            }
+            if(taughtPs.length < 3) continue; // đày 1 tiết phải còn >=2
+            const holes = (taughtPs[taughtPs.length - 1] - taughtPs[0] + 1) - taughtPs.length;
+            const isTarget = mode === "optimize_gap1" ? holes === 1 : holes >= 2;
+            if(!isTarget) continue;
+
+            // Ứng viên đày: cụm mép đầu hoặc cụm mép cuối (head của act, dur 1-2)
+            const exileCands = [];
+            for(const p of [taughtPs[0], taughtPs[taughtPs.length - 1]]){
+              const v = tGrid[sStart + p];
+              if(v < 0) continue;
+              const act = this.activities[v];
+              if(!act || act.isFixed) continue;
+              const head = this.actPlacement[act.id];
+              if(head < sStart || head >= sStart + PERIODS) continue;
+              // sau khi bỏ act, các tiết còn lại phải liền mạch và >= 2
+              const rest = taughtPs.filter(pp => tGrid[sStart + pp] !== act.id);
+              if(rest.length < 2) continue;
+              if((rest[rest.length - 1] - rest[0] + 1) !== rest.length) continue;
+              exileCands.push(act);
+            }
+
+            let resolved = false;
+            for(const act of exileCands){
+              const snap = this.captureStateSnapshot();
+              const savedCalls = this.limitCalls;
+              this.limitCalls = Math.max(this.limitCalls || 0, 20000);
+              this.nCalls = 0;
+              this.unplaceActivity(act.id);
+              // Ưu tiên đáp vào LỖ/MÉP các buổi đang có của giáo viên (không
+              // sinh buổi lẻ mới → không vướng khóa 1t); bí mới thả toàn dải.
+              const preferred = [];
+              if(act.gv){
+                for(const t2 of parseTeacherList(act.gv)){
+                  const tg2 = this.teacherGrid.get(t2);
+                  if(!tg2) continue;
+                  for(let d3 = 0; d3 < DAYS_LIST.length; d3++){
+                    for(let b3 = 0; b3 < SESSIONS_LIST.length; b3++){
+                      const st3 = d3 * SLOTS_PER_DAY + b3 * PERIODS_PER_SESSION;
+                      if(st3 === sStart) continue;
+                      const ps3 = [];
+                      for(let p3 = 0; p3 < PERIODS; p3++){
+                        if(tg2[st3 + p3] >= 0 || tg2[st3 + p3] === -3) ps3.push(p3);
+                      }
+                      if(!ps3.length) continue;
+                      const lo = ps3[0], hi = ps3[ps3.length - 1];
+                      for(let p3 = 0; p3 < PERIODS; p3++){
+                        const v3 = tg2[st3 + p3];
+                        if(v3 >= 0 || v3 === -2 || v3 === -3) continue;
+                        if((p3 > lo && p3 < hi) || p3 === lo - 1 || p3 === hi + 1) preferred.push(st3 + p3);
+                      }
+                    }
+                  }
+                }
+              }
+              let ok = false;
+              if(preferred.length){
+                ok = this.randomSwap(act.id, 0, preferred);
+              }
+              if(!ok){
+                this.nCalls = 0;
+                ok = this.randomSwap(act.id, 0); // toàn dải — tự do tuyệt đối
+              }
+              this.limitCalls = savedCalls;
+              if(ok && this.isLessonBlockSafe(act) && this.isLessonBlockSafe()){
+                const m = this.evaluateMetrics();
+                if(this.compareMetrics(m, currentBest, mode) < 0){
+                  currentBest = { ...m };
+                  anyImproved = true;
+                  resolved = true;
+                  if(typeof onProgress === "function") onProgress(currentBest);
+                }
+              }
+              if(!resolved) this.restoreStateSnapshot(snap);
+              if(resolved) break;
+            }
+          }
+        }
+      }
+      return anyImproved ? currentBest : null;
+    }
+
     compareMetrics(a, b, mode = "optimize_singletons"){
       if(!a) return 1;
       if(!b) return -1;
@@ -6206,9 +6352,9 @@
         });
       }
 
-      const MAX_ROUNDS = (mode === "optimize_singletons") ? 65 : ((mode === "optimize_gap2") ? 45 : 55);
+      const MAX_ROUNDS = (mode === "optimize_singletons") ? 65 : ((mode === "optimize_gap2") ? 28 : 55);
       let consecutiveUnimprovedRounds = 0;
-      const maxStagnantRounds = (mode === "optimize_singletons") ? 25 : 18;
+      const maxStagnantRounds = (mode === "optimize_singletons") ? 25 : ((mode === "optimize_gap2") ? 8 : 18);
       let destroyStrength = 1;
       let round = 0;
 
@@ -6347,7 +6493,8 @@
           // nhỏ): lúc gap2 còn lớn chúng ngốn cả phút mỗi vòng làm portfolio
           // không xoay pha được — các operator rẻ phía dưới hạ 35 -> ~5 trong
           // vài giây, rồi bộ nặng vào kết liễu phần đuôi.
-          const heavyOpsOn = (bestMetrics.soBuoiTrong2 || 0) <= 6;
+          // Op nặng: chỉ ở tàn cuộc thật (<=3) hoặc thỉnh thoảng khi kẹt (1/3 vòng)
+          const heavyOpsOn = (bestMetrics.soBuoiTrong2 || 0) <= 3 || (consecutiveUnimprovedRounds >= 2 && round % 3 === 0);
           if(heavyOpsOn){
           const resBlockSwap = this.tryIntraClassSingleDoubleBlockSwap(bestMetrics, initialMetrics, "optimize_gap2", notifyLiveProgress);
           if(resBlockSwap && this.compareMetrics(resBlockSwap, bestMetrics, mode) < 0){
@@ -6472,6 +6619,14 @@
           const resKempe = this.tryKempeChainPeriodSwap(bestMetrics, initialMetrics, "optimize_gap2", notifyLiveProgress);
           if(resKempe && this.compareMetrics(resKempe, bestMetrics, mode) < 0){
             bestMetrics = { ...resKempe };
+            saveBestSnapshot();
+            improvedInRound = true;
+          }
+
+          // 3f. Đày tiết mép đi nơi khác bất kỳ (17/08: 1t khóa, còn lại tự do)
+          const resExile = this.tryExileEdgeLesson(bestMetrics, initialMetrics, "optimize_gap2", notifyLiveProgress);
+          if(resExile && this.compareMetrics(resExile, bestMetrics, mode) < 0){
+            bestMetrics = { ...resExile };
             saveBestSnapshot();
             improvedInRound = true;
           }
@@ -6834,11 +6989,47 @@
       let repaired = 0, unresolved = 0;
       const savedCalls = this.limitCalls;
       const toPlace = Array.from(offenders).concat(unplaced.filter(id => !offenders.has(id)));
+      // Đặt lại BIẾT GIỮ 1 TIẾT/BUỔI: ưu tiên đáp vào LỖ trong span hoặc NỐI
+      // MÉP các buổi đang có của chính giáo viên đó (không sinh buổi lẻ mới);
+      // chỉ khi hết đường mới thả tự do toàn dải.
+      const preferredSlotsFor = (act) => {
+        const out = [];
+        if(!act.gv) return out;
+        for(const t of parseTeacherList(act.gv)){
+          const tg = this.teacherGrid.get(t);
+          if(!tg) continue;
+          for(let d2 = 0; d2 < DAYS_LIST.length; d2++){
+            for(let b2 = 0; b2 < SESSIONS_LIST.length; b2++){
+              const st = d2 * SLOTS_PER_DAY + b2 * PERIODS_PER_SESSION;
+              const ps = [];
+              for(let p = 0; p < PERIODS_PER_SESSION; p++){
+                if(tg[st + p] >= 0 || tg[st + p] === -3) ps.push(p);
+              }
+              if(!ps.length) continue;
+              const lo = ps[0], hi = ps[ps.length - 1];
+              for(let p = 0; p < PERIODS_PER_SESSION; p++){
+                if(tg[st + p] >= 0 || tg[st + p] === -2 || tg[st + p] === -3) continue;
+                if((p > lo && p < hi) || p === lo - 1 || p === hi + 1) out.push(st + p);
+              }
+            }
+          }
+        }
+        return out;
+      };
       for(const id of toPlace){
         if(this.actPlacement[id] >= 0) continue;
         this.limitCalls = Math.max(savedCalls || 0, 30000);
         this.nCalls = 0;
-        if(this.randomSwap(id, 0)){
+        const preferred = preferredSlotsFor(this.activities[id]);
+        let placedNow = false;
+        if(preferred.length){
+          placedNow = this.randomSwap(id, 0, preferred);
+        }
+        if(!placedNow){
+          this.nCalls = 0;
+          placedNow = this.randomSwap(id, 0);
+        }
+        if(placedNow){
           repaired++;
         }else if(typeof this.tryEjectionChain === "function" && this.tryEjectionChain(id) && this.actPlacement[id] >= 0){
           repaired++;
@@ -7160,6 +7351,7 @@
     "tryRelocateGapSessionToNewDay",
     "tryMergeSessionIntoGaps",
     "tryKempeChainPeriodSwap",
+    "tryExileEdgeLesson",
     "tryIntraSessionCrossClassChain",
     "tryBlockShiftAndGapResolution",
     "tryInterDayRelocateGapLesson",
