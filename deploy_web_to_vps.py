@@ -39,7 +39,9 @@ def deploy_from_tkbcherry():
         "pages/tkb-fet-engine.js",
         "pages/tkb-fet-worker.js",
         "pages/phanmon.js",
-        "pages/sapxep.html"
+        "pages/phanmon.css",
+        "pages/sapxep.html",
+        "pages/tkb-rust-bridge.js",
     ]
     
     for rel_path in files_to_sync:

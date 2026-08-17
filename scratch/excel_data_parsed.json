@@ -1,0 +1,9376 @@
+{
+  "lop": [
+    {
+      "id": "6A1",
+      "name": "6A1",
+      "buoi": "sang"
+    },
+    {
+      "id": "6A10",
+      "name": "6A10",
+      "buoi": "sang"
+    },
+    {
+      "id": "6A11",
+      "name": "6A11",
+      "buoi": "sang"
+    },
+    {
+      "id": "6A12",
+      "name": "6A12",
+      "buoi": "sang"
+    },
+    {
+      "id": "6A13",
+      "name": "6A13",
+      "buoi": "sang"
+    },
+    {
+      "id": "6A14",
+      "name": "6A14",
+      "buoi": "sang"
+    },
+    {
+      "id": "6A15",
+      "name": "6A15",
+      "buoi": "sang"
+    },
+    {
+      "id": "6A16",
+      "name": "6A16",
+      "buoi": "sang"
+    },
+    {
+      "id": "6A17",
+      "name": "6A17",
+      "buoi": "sang"
+    },
+    {
+      "id": "6A2",
+      "name": "6A2",
+      "buoi": "sang"
+    },
+    {
+      "id": "6A3",
+      "name": "6A3",
+      "buoi": "sang"
+    },
+    {
+      "id": "6A4",
+      "name": "6A4",
+      "buoi": "sang"
+    },
+    {
+      "id": "6A5",
+      "name": "6A5",
+      "buoi": "sang"
+    },
+    {
+      "id": "6A6",
+      "name": "6A6",
+      "buoi": "sang"
+    },
+    {
+      "id": "6A7",
+      "name": "6A7",
+      "buoi": "sang"
+    },
+    {
+      "id": "6A8",
+      "name": "6A8",
+      "buoi": "sang"
+    },
+    {
+      "id": "6A9",
+      "name": "6A9",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A1",
+      "name": "7A1",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A10",
+      "name": "7A10",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A11",
+      "name": "7A11",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A12",
+      "name": "7A12",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A13",
+      "name": "7A13",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A14",
+      "name": "7A14",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A15",
+      "name": "7A15",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A16",
+      "name": "7A16",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A17",
+      "name": "7A17",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A18",
+      "name": "7A18",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A19",
+      "name": "7A19",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A2",
+      "name": "7A2",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A20",
+      "name": "7A20",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A3",
+      "name": "7A3",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A4",
+      "name": "7A4",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A5",
+      "name": "7A5",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A6",
+      "name": "7A6",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A7",
+      "name": "7A7",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A8",
+      "name": "7A8",
+      "buoi": "sang"
+    },
+    {
+      "id": "7A9",
+      "name": "7A9",
+      "buoi": "sang"
+    },
+    {
+      "id": "8A1",
+      "name": "8A1",
+      "buoi": "sang"
+    },
+    {
+      "id": "8A10",
+      "name": "8A10",
+      "buoi": "sang"
+    },
+    {
+      "id": "8A11",
+      "name": "8A11",
+      "buoi": "sang"
+    },
+    {
+      "id": "8A12",
+      "name": "8A12",
+      "buoi": "sang"
+    },
+    {
+      "id": "8A13",
+      "name": "8A13",
+      "buoi": "sang"
+    },
+    {
+      "id": "8A14",
+      "name": "8A14",
+      "buoi": "sang"
+    },
+    {
+      "id": "8A15",
+      "name": "8A15",
+      "buoi": "sang"
+    },
+    {
+      "id": "8A16",
+      "name": "8A16",
+      "buoi": "sang"
+    },
+    {
+      "id": "8A17",
+      "name": "8A17",
+      "buoi": "sang"
+    },
+    {
+      "id": "8A18",
+      "name": "8A18",
+      "buoi": "sang"
+    },
+    {
+      "id": "8A2",
+      "name": "8A2",
+      "buoi": "sang"
+    },
+    {
+      "id": "8A3",
+      "name": "8A3",
+      "buoi": "sang"
+    },
+    {
+      "id": "8A4",
+      "name": "8A4",
+      "buoi": "sang"
+    },
+    {
+      "id": "8A5",
+      "name": "8A5",
+      "buoi": "sang"
+    },
+    {
+      "id": "8A6",
+      "name": "8A6",
+      "buoi": "sang"
+    },
+    {
+      "id": "8A7",
+      "name": "8A7",
+      "buoi": "sang"
+    },
+    {
+      "id": "8A8",
+      "name": "8A8",
+      "buoi": "sang"
+    },
+    {
+      "id": "8A9",
+      "name": "8A9",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A1",
+      "name": "9A1",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A10",
+      "name": "9A10",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A11",
+      "name": "9A11",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A12",
+      "name": "9A12",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A13",
+      "name": "9A13",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A14",
+      "name": "9A14",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A15",
+      "name": "9A15",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A16",
+      "name": "9A16",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A17",
+      "name": "9A17",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A18",
+      "name": "9A18",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A19",
+      "name": "9A19",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A2",
+      "name": "9A2",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A20",
+      "name": "9A20",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A3",
+      "name": "9A3",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A4",
+      "name": "9A4",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A5",
+      "name": "9A5",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A6",
+      "name": "9A6",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A7",
+      "name": "9A7",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A8",
+      "name": "9A8",
+      "buoi": "sang"
+    },
+    {
+      "id": "9A9",
+      "name": "9A9",
+      "buoi": "sang"
+    }
+  ],
+  "giaovien": [
+    {
+      "magv": "HT.Nhung",
+      "ten": "HT.Nhung"
+    },
+    {
+      "magv": "PHT.Đài",
+      "ten": "PHT.Đài"
+    },
+    {
+      "magv": "PHT.Định",
+      "ten": "PHT.Định"
+    },
+    {
+      "magv": "V.Lệ",
+      "ten": "V.Lệ"
+    },
+    {
+      "magv": "V.Mỹ",
+      "ten": "V.Mỹ"
+    },
+    {
+      "magv": "V.Thúy",
+      "ten": "V.Thúy"
+    },
+    {
+      "magv": "V.Trâm",
+      "ten": "V.Trâm"
+    },
+    {
+      "magv": "V.Tú",
+      "ten": "V.Tú"
+    },
+    {
+      "magv": "V.Vân",
+      "ten": "V.Vân"
+    },
+    {
+      "magv": "V.Hoa",
+      "ten": "V.Hoa"
+    },
+    {
+      "magv": "V.Tuyền",
+      "ten": "V.Tuyền"
+    },
+    {
+      "magv": "V.Tuấn",
+      "ten": "V.Tuấn"
+    },
+    {
+      "magv": "V.Vy",
+      "ten": "V.Vy"
+    },
+    {
+      "magv": "V.Quỳnh",
+      "ten": "V.Quỳnh"
+    },
+    {
+      "magv": "V.Trinh",
+      "ten": "V.Trinh"
+    },
+    {
+      "magv": "V.Trang",
+      "ten": "V.Trang"
+    },
+    {
+      "magv": "V.Bình",
+      "ten": "V.Bình"
+    },
+    {
+      "magv": "V.Giang",
+      "ten": "V.Giang"
+    },
+    {
+      "magv": "V.Lâm",
+      "ten": "V.Lâm"
+    },
+    {
+      "magv": "T.Minh",
+      "ten": "T.Minh"
+    },
+    {
+      "magv": "T.Chung",
+      "ten": "T.Chung"
+    },
+    {
+      "magv": "T.Hương",
+      "ten": "T.Hương"
+    },
+    {
+      "magv": "T.Huy",
+      "ten": "T.Huy"
+    },
+    {
+      "magv": "T.Nhơn",
+      "ten": "T.Nhơn"
+    },
+    {
+      "magv": "T.Trung",
+      "ten": "T.Trung"
+    },
+    {
+      "magv": "T.Xuân",
+      "ten": "T.Xuân"
+    },
+    {
+      "magv": "T.Hùng",
+      "ten": "T.Hùng"
+    },
+    {
+      "magv": "T.Nhật",
+      "ten": "T.Nhật"
+    },
+    {
+      "magv": "T.Huyền",
+      "ten": "T.Huyền"
+    },
+    {
+      "magv": "T.Tiên",
+      "ten": "T.Tiên"
+    },
+    {
+      "magv": "T.Phát",
+      "ten": "T.Phát"
+    },
+    {
+      "magv": "T.CLoan",
+      "ten": "T.CLoan"
+    },
+    {
+      "magv": "T.Trang",
+      "ten": "T.Trang"
+    },
+    {
+      "magv": "T.Cường",
+      "ten": "T.Cường"
+    },
+    {
+      "magv": "T.HLoan",
+      "ten": "T.HLoan"
+    },
+    {
+      "magv": "T.Châu",
+      "ten": "T.Châu"
+    },
+    {
+      "magv": "T.ThHương",
+      "ten": "T.ThHương"
+    },
+    {
+      "magv": "T.Thư",
+      "ten": "T.Thư"
+    },
+    {
+      "magv": "T.Phương",
+      "ten": "T.Phương"
+    },
+    {
+      "magv": "A.Nguyên",
+      "ten": "A.Nguyên"
+    },
+    {
+      "magv": "A.Dung",
+      "ten": "A.Dung"
+    },
+    {
+      "magv": "A.Hải",
+      "ten": "A.Hải"
+    },
+    {
+      "magv": "A.Phong",
+      "ten": "A.Phong"
+    },
+    {
+      "magv": "A.Hoa",
+      "ten": "A.Hoa"
+    },
+    {
+      "magv": "A.Lan",
+      "ten": "A.Lan"
+    },
+    {
+      "magv": "A.Ngân",
+      "ten": "A.Ngân"
+    },
+    {
+      "magv": "A.CVân",
+      "ten": "A.CVân"
+    },
+    {
+      "magv": "A.HVân",
+      "ten": "A.HVân"
+    },
+    {
+      "magv": "A.An",
+      "ten": "A.An"
+    },
+    {
+      "magv": "A.Minh",
+      "ten": "A.Minh"
+    },
+    {
+      "magv": "A.Ái",
+      "ten": "A.Ái"
+    },
+    {
+      "magv": "A.Nga",
+      "ten": "A.Nga"
+    },
+    {
+      "magv": "A.Khánh",
+      "ten": "A.Khánh"
+    },
+    {
+      "magv": "A.Luận",
+      "ten": "A.Luận"
+    },
+    {
+      "magv": "TN.Thanh",
+      "ten": "TN.Thanh"
+    },
+    {
+      "magv": "TN.Tân",
+      "ten": "TN.Tân"
+    },
+    {
+      "magv": "TN.Hương",
+      "ten": "TN.Hương"
+    },
+    {
+      "magv": "TN.Ngân",
+      "ten": "TN.Ngân"
+    },
+    {
+      "magv": "TN.Trâm",
+      "ten": "TN.Trâm"
+    },
+    {
+      "magv": "TN.NChâu",
+      "ten": "TN.NChâu"
+    },
+    {
+      "magv": "TN.Khanh",
+      "ten": "TN.Khanh"
+    },
+    {
+      "magv": "TN.LNguyên",
+      "ten": "TN.LNguyên"
+    },
+    {
+      "magv": "TN.Dung",
+      "ten": "TN.Dung"
+    },
+    {
+      "magv": "TN.Huyền",
+      "ten": "TN.Huyền"
+    },
+    {
+      "magv": "TN.TNguyên",
+      "ten": "TN.TNguyên"
+    },
+    {
+      "magv": "TN.Mỹ",
+      "ten": "TN.Mỹ"
+    },
+    {
+      "magv": "TN.Sương",
+      "ten": "TN.Sương"
+    },
+    {
+      "magv": "TN.Tú",
+      "ten": "TN.Tú"
+    },
+    {
+      "magv": "TN.Phương",
+      "ten": "TN.Phương"
+    },
+    {
+      "magv": "TN.Hải",
+      "ten": "TN.Hải"
+    },
+    {
+      "magv": "TN.Hơn",
+      "ten": "TN.Hơn"
+    },
+    {
+      "magv": "TN.MChâu",
+      "ten": "TN.MChâu"
+    },
+    {
+      "magv": "TN.Thảo",
+      "ten": "TN.Thảo"
+    },
+    {
+      "magv": "TN.Nữ",
+      "ten": "TN.Nữ"
+    },
+    {
+      "magv": "TN.Thủy",
+      "ten": "TN.Thủy"
+    },
+    {
+      "magv": "TN.Hảo",
+      "ten": "TN.Hảo"
+    },
+    {
+      "magv": "TN.ÁLoan",
+      "ten": "TN.ÁLoan"
+    },
+    {
+      "magv": "TN.Đoan",
+      "ten": "TN.Đoan"
+    },
+    {
+      "magv": "SĐ.Liễu",
+      "ten": "SĐ.Liễu"
+    },
+    {
+      "magv": "SĐ.Hằng",
+      "ten": "SĐ.Hằng"
+    },
+    {
+      "magv": "SĐ.Loan",
+      "ten": "SĐ.Loan"
+    },
+    {
+      "magv": "SĐ.Nhung",
+      "ten": "SĐ.Nhung"
+    },
+    {
+      "magv": "SĐ.Kiều",
+      "ten": "SĐ.Kiều"
+    },
+    {
+      "magv": "SĐ.Ngân",
+      "ten": "SĐ.Ngân"
+    },
+    {
+      "magv": "SĐ.Anh",
+      "ten": "SĐ.Anh"
+    },
+    {
+      "magv": "SĐ.Châu",
+      "ten": "SĐ.Châu"
+    },
+    {
+      "magv": "SĐ.Trâm",
+      "ten": "SĐ.Trâm"
+    },
+    {
+      "magv": "SĐ.Linh",
+      "ten": "SĐ.Linh"
+    },
+    {
+      "magv": "SĐ.Nhàn",
+      "ten": "SĐ.Nhàn"
+    },
+    {
+      "magv": "SĐ.Yến",
+      "ten": "SĐ.Yến"
+    },
+    {
+      "magv": "SĐ.Tâm",
+      "ten": "SĐ.Tâm"
+    },
+    {
+      "magv": "SĐ.Thắm",
+      "ten": "SĐ.Thắm"
+    },
+    {
+      "magv": "SĐ.Phượng",
+      "ten": "SĐ.Phượng"
+    },
+    {
+      "magv": "SĐ.Dung",
+      "ten": "SĐ.Dung"
+    },
+    {
+      "magv": "GD.Em",
+      "ten": "GD.Em"
+    },
+    {
+      "magv": "GD.Tâm",
+      "ten": "GD.Tâm"
+    },
+    {
+      "magv": "GD.Tuyền",
+      "ten": "GD.Tuyền"
+    },
+    {
+      "magv": "GD.Thuận",
+      "ten": "GD.Thuận"
+    },
+    {
+      "magv": "GD.Chi",
+      "ten": "GD.Chi"
+    },
+    {
+      "magv": "CN.Xuân",
+      "ten": "CN.Xuân"
+    },
+    {
+      "magv": "CN.Vàng",
+      "ten": "CN.Vàng"
+    },
+    {
+      "magv": "CN.Bằng",
+      "ten": "CN.Bằng"
+    },
+    {
+      "magv": "CN.Thiện",
+      "ten": "CN.Thiện"
+    },
+    {
+      "magv": "CN.Chí",
+      "ten": "CN.Chí"
+    },
+    {
+      "magv": "CN.Liên",
+      "ten": "CN.Liên"
+    },
+    {
+      "magv": "CN.Phượng",
+      "ten": "CN.Phượng"
+    },
+    {
+      "magv": "CN.Trâm",
+      "ten": "CN.Trâm"
+    },
+    {
+      "magv": "CN.Lý",
+      "ten": "CN.Lý"
+    },
+    {
+      "magv": "MT.Bách",
+      "ten": "MT.Bách"
+    },
+    {
+      "magv": "MT.Nam",
+      "ten": "MT.Nam"
+    },
+    {
+      "magv": "MT.Trang",
+      "ten": "MT.Trang"
+    },
+    {
+      "magv": "TD.Bằng",
+      "ten": "TD.Bằng"
+    },
+    {
+      "magv": "TD.Cương",
+      "ten": "TD.Cương"
+    },
+    {
+      "magv": "TD.Phúc",
+      "ten": "TD.Phúc"
+    },
+    {
+      "magv": "TD.Tiền",
+      "ten": "TD.Tiền"
+    },
+    {
+      "magv": "TD.Thanh",
+      "ten": "TD.Thanh"
+    },
+    {
+      "magv": "TD.Duy",
+      "ten": "TD.Duy"
+    },
+    {
+      "magv": "TD.Thuyền",
+      "ten": "TD.Thuyền"
+    },
+    {
+      "magv": "TD.Quí",
+      "ten": "TD.Quí"
+    },
+    {
+      "magv": "TD.Kiệt",
+      "ten": "TD.Kiệt"
+    },
+    {
+      "magv": "Nhạc.Minh",
+      "ten": "Nhạc.Minh"
+    },
+    {
+      "magv": "Nhạc.Dương",
+      "ten": "Nhạc.Dương"
+    },
+    {
+      "magv": "Nhạc.Hiền",
+      "ten": "Nhạc.Hiền"
+    },
+    {
+      "magv": "Ti.Ân",
+      "ten": "Ti.Ân"
+    },
+    {
+      "magv": "Ti.Hậu",
+      "ten": "Ti.Hậu"
+    },
+    {
+      "magv": "Ti.Tập",
+      "ten": "Ti.Tập"
+    },
+    {
+      "magv": "Ti.Hào",
+      "ten": "Ti.Hào"
+    },
+    {
+      "magv": "Ti.Thuận",
+      "ten": "Ti.Thuận"
+    },
+    {
+      "magv": "Ti.Dương",
+      "ten": "Ti.Dương"
+    }
+  ],
+  "tkb": {
+    "6A13": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - V.Tuyền",
+          "HĐTN 2 - V.Tuyền",
+          "LSĐL - SĐ.Anh",
+          "Toán - T.Tiên",
+          "Toán - T.Tiên"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "GDTC - TD.Duy",
+          "Nhạc - Nhạc.Dương",
+          "Anh - A.CVân",
+          "Anh - A.CVân",
+          "KHTN - TN.Sương"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "GDCD - GD.Em",
+          "CN - CN.Trâm",
+          "KHTN - TN.Sương",
+          "KHTN - TN.Sương",
+          "GDĐP - CN.Lý"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Văn - V.Tuyền",
+          "Văn - V.Tuyền",
+          "Tin - Ti.Hậu",
+          "Toán - T.Tiên",
+          "HĐTN 3 - V.Tuyền"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Toán - T.Tiên",
+          "Văn - V.Tuyền",
+          "LSĐL - SĐ.Anh",
+          "LSĐL - SĐ.Anh",
+          "KHTN - TN.Sương"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "MT - MT.Nam",
+          "GDTC - TD.Duy",
+          "Văn - V.Tuyền",
+          "Anh - A.CVân",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "6A9": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - V.Quỳnh",
+          "HĐTN 2 - V.Quỳnh",
+          "Văn - V.Quỳnh",
+          "Văn - V.Quỳnh",
+          "Anh - A.Phong"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Toán - T.Huy",
+          "Toán - T.Huy",
+          "LSĐL - SĐ.Kiều",
+          "KHTN - TN.LNguyên",
+          "Văn - V.Quỳnh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Văn - V.Quỳnh",
+          "HĐTN 3 - V.Quỳnh",
+          "KHTN - TN.LNguyên",
+          "GDCD - GD.Em",
+          "Nhạc - Nhạc.Dương"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "KHTN - TN.LNguyên",
+          "KHTN - TN.LNguyên",
+          "LSĐL - SĐ.Kiều",
+          "LSĐL - SĐ.Kiều",
+          "GDĐP - CN.Vàng"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "MT - MT.Bách",
+          "GDTC - TD.Bằng",
+          "GDTC - TD.Bằng",
+          "Anh - A.Phong",
+          "Anh - A.Phong"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "Toán - T.Huy",
+          "Toán - T.Huy",
+          "Tin - Ti.Ân",
+          "CN - CN.Trâm",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A10": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - V.Trinh",
+          "HĐTN 2 - V.Trinh",
+          "Anh - A.An",
+          "Anh - A.An",
+          "CN - CN.Xuân"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Văn - V.Trinh",
+          "Văn - V.Trinh",
+          "HĐTN 3 - V.Trinh",
+          "Toán - T.Minh",
+          "Toán - T.Minh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "KHTN - PHT.Đài",
+          "KHTN - PHT.Đài",
+          "GDTC - TD.Phúc",
+          "MT - MT.Bách",
+          "Anh - A.An"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "KHTN - PHT.Đài",
+          "KHTN - PHT.Đài",
+          "LSĐL - SĐ.Liễu",
+          "Toán - T.Minh",
+          "Toán - T.Minh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Văn - V.Trinh",
+          "Văn - V.Trinh",
+          "GDTC - TD.Phúc",
+          "GDĐP - TN.Thủy",
+          "Nhạc - Nhạc.Minh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "GDCD - GD.Chi",
+          "LSĐL - SĐ.Liễu",
+          "LSĐL - SĐ.Liễu",
+          "Tin - Ti.Tập",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "6A14": {
+      "thu2": {
+        "sang": [
+          "Toán - T.Chung",
+          "HĐTN 2 - T.Chung",
+          "KHTN - TN.Sương",
+          "KHTN - TN.Sương",
+          "Văn - V.Quỳnh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Toán - T.Chung",
+          "GDTC - TD.Kiệt",
+          "HĐTN 3 - T.Chung",
+          "KHTN - TN.Sương",
+          "Anh - A.CVân"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "CN - CN.Lý",
+          "GDTC - TD.Kiệt",
+          "Văn - V.Quỳnh",
+          "Văn - V.Quỳnh",
+          "Tin - Ti.Hậu"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "HĐTN 1 - T.Chung",
+          "LSĐL - SĐ.Anh",
+          "MT - MT.Nam",
+          "Toán - T.Chung",
+          "Toán - T.Chung"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Văn - V.Quỳnh",
+          "GDCD - GD.Em",
+          "KHTN - TN.Sương",
+          "Anh - A.CVân",
+          "Anh - A.CVân"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "Nhạc - Nhạc.Dương",
+          "GDĐP - CN.Lý",
+          "LSĐL - SĐ.Anh",
+          "LSĐL - SĐ.Anh",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A13": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - T.Hùng",
+          "HĐTN 2 - T.Hùng",
+          "Anh - A.HVân",
+          "LSĐL - SĐ.Trâm",
+          "LSĐL - SĐ.Trâm"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Toán - T.Hùng",
+          "GDTC - TD.Phúc",
+          "GDCD - GD.Chi",
+          "KHTN - TN.MChâu",
+          "KHTN - TN.MChâu"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Văn - V.Tuyền",
+          "Văn - V.Tuyền",
+          "Anh - A.HVân",
+          "Anh - A.HVân",
+          "LSĐL - SĐ.Trâm"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Toán - T.Hùng",
+          "Toán - T.Hùng",
+          "Văn - V.Tuyền",
+          "Văn - V.Tuyền",
+          "CN - CN.Xuân"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "HĐTN 3 - T.Hùng",
+          "Toán - T.Hùng",
+          "GDĐP - CN.Liên",
+          "Nhạc - Nhạc.Minh",
+          "KHTN - TN.MChâu"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "MT - MT.Bách",
+          "KHTN - TN.MChâu",
+          "Tin - Ti.Hào",
+          "GDTC - TD.Phúc",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A15": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - T.Huyền",
+          "HĐTN 2 - T.Huyền",
+          "Văn - V.Vy",
+          "Văn - V.Vy",
+          "GDTC - TD.Phúc"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Nhạc - Nhạc.Minh",
+          "Toán - T.Tiên",
+          "Toán - T.Tiên",
+          "GDTC - TD.Phúc",
+          "GDĐP - CN.Liên"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "MT - MT.Bách",
+          "HĐTN 3 - T.Huyền",
+          "GDCD - GD.Chi",
+          "KHTN - TN.Dung",
+          "KHTN - TN.Dung"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Anh - A.Hoa",
+          "Anh - A.Hoa",
+          "Văn - V.Vy",
+          "Văn - V.Vy",
+          "Toán - T.Tiên"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "LSĐL - SĐ.Châu",
+          "LSĐL - SĐ.Châu",
+          "Anh - A.Hoa",
+          "CN - CN.Trâm",
+          "Toán - T.Tiên"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "LSĐL - SĐ.Châu",
+          "KHTN - TN.Dung",
+          "KHTN - TN.Dung",
+          "Tin - Ti.Thuận",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A16": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - T.Tiên",
+          "HĐTN 2 - T.Tiên",
+          "Anh - A.Hoa",
+          "GDTC - TD.Phúc",
+          "KHTN - TN.Thanh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "KHTN - TN.Thanh",
+          "MT - MT.Trang",
+          "Tin - Ti.Thuận",
+          "LSĐL - SĐ.Châu",
+          "LSĐL - SĐ.Châu"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "KHTN - TN.Thanh",
+          "KHTN - TN.Thanh",
+          "GDĐP - CN.Liên",
+          "GDTC - TD.Phúc",
+          "LSĐL - SĐ.Châu"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Văn - V.Vy",
+          "Văn - V.Vy",
+          "Anh - A.Hoa",
+          "Anh - A.Hoa",
+          "GDCD - GD.Chi"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Văn - V.Vy",
+          "Văn - V.Vy",
+          "Toán - T.Tiên",
+          "Toán - T.Tiên",
+          "CN - CN.Lý"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "HĐTN 3 - T.Tiên",
+          "Toán - T.Tiên",
+          "Toán - T.Tiên",
+          "Nhạc - Nhạc.Minh",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "8A5": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - T.HLoan",
+          "HĐTN 2 - T.HLoan",
+          "GDTC - TD.Tiền",
+          "LSĐL - SĐ.Loan",
+          "Tin - Ti.Hào"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Toán - T.HLoan",
+          "GDCD - GD.Tâm",
+          "KHTN - TN.Tân",
+          "KHTN - TN.Tân",
+          "Anh - A.An"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Văn - V.Lâm",
+          "MT - MT.Nam",
+          "Toán - T.HLoan",
+          "Toán - T.HLoan",
+          "HĐTN 3 - T.HLoan"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "LSĐL - SĐ.Loan",
+          "LSĐL - SĐ.Loan",
+          "Toán - T.HLoan",
+          "Anh - A.An",
+          "Anh - A.An"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Văn - V.Lâm",
+          "Văn - V.Lâm",
+          "GDTC - TD.Tiền",
+          "GDĐP - CN.Bằng",
+          "CN - CN.Thiện"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "CN - CN.Thiện",
+          "Nhạc - Nhạc.Hiền",
+          "KHTN - TN.Tân",
+          "KHTN - TN.Tân",
+          "Văn - V.Lâm"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A6": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - A.Dung",
+          "HĐTN 2 - A.Dung",
+          "KHTN - TN.Ngân",
+          "KHTN - TN.Ngân",
+          "LSĐL - SĐ.Thắm"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "HĐTN 3 - A.Dung",
+          "GDTC - TD.Duy",
+          "Anh - A.Dung",
+          "Anh - A.Dung",
+          "MT - MT.Bách"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Văn - V.Thúy",
+          "Văn - V.Thúy",
+          "GDĐP - TN.Thủy",
+          "GDCD - GD.Chi",
+          "GDTC - TD.Duy"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Văn - V.Thúy",
+          "Văn - V.Thúy",
+          "CN - CN.Xuân",
+          "Toán - T.Trung",
+          "Toán - T.Trung"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Nhạc - Nhạc.Minh",
+          "Toán - T.Trung",
+          "Toán - T.Trung",
+          "LSĐL - SĐ.Thắm",
+          "LSĐL - SĐ.Thắm"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "KHTN - TN.Ngân",
+          "KHTN - TN.Ngân",
+          "Tin - Ti.Tập",
+          "Anh - A.Dung",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A5": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - A.Phong",
+          "HĐTN 2 - A.Phong",
+          "LSĐL - SĐ.Thắm",
+          "LSĐL - SĐ.Thắm",
+          "KHTN - TN.Ngân"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Văn - V.Thúy",
+          "Văn - V.Thúy",
+          "Tin - Ti.Tập",
+          "LSĐL - SĐ.Thắm",
+          "Toán - T.Nhơn"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Anh - A.Phong",
+          "Anh - A.Phong",
+          "HĐTN 3 - A.Phong",
+          "KHTN - TN.Ngân",
+          "KHTN - TN.Ngân"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "GDTC - TD.Duy",
+          "MT - MT.Bách",
+          "Anh - A.Phong",
+          "CN - CN.Phượng",
+          "KHTN - TN.Ngân"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDĐP - A.Nguyên",
+          "Toán - T.Nhơn",
+          "Văn - V.Thúy",
+          "Văn - V.Thúy",
+          "GDCD - GD.Chi"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "Toán - T.Nhơn",
+          "Toán - T.Nhơn",
+          "Nhạc - Nhạc.Minh",
+          "GDTC - TD.Duy",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A8": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - A.Ngân",
+          "HĐTN 2 - A.Ngân",
+          "CN - CN.Xuân",
+          "Văn - V.Trâm",
+          "Văn - V.Trâm"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "LSĐL - SĐ.Liễu",
+          "LSĐL - SĐ.Liễu",
+          "Anh - A.Ngân",
+          "MT - MT.Bách",
+          "GDĐP - TN.Thủy"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "KHTN - TN.NChâu",
+          "KHTN - TN.NChâu",
+          "Toán - T.Hương",
+          "Anh - A.Ngân",
+          "Anh - A.Ngân"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "HĐTN 3 - A.Ngân",
+          "KHTN - TN.NChâu",
+          "KHTN - TN.NChâu",
+          "LSĐL - SĐ.Liễu",
+          "Văn - V.Trâm"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Toán - T.Hương",
+          "Nhạc - Nhạc.Minh",
+          "GDCD - GD.Chi",
+          "Tin - Ti.Tập",
+          "GDTC - TD.Tiền"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "Toán - T.Hương",
+          "Toán - T.Hương",
+          "GDTC - TD.Tiền",
+          "Văn - V.Trâm",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A14": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - A.HVân",
+          "HĐTN 2 - A.HVân",
+          "CN - CN.Trâm",
+          "KHTN - TN.NChâu",
+          "Nhạc - Nhạc.Minh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "GDCD - GD.Chi",
+          "LSĐL - SĐ.Trâm",
+          "LSĐL - SĐ.Trâm",
+          "Toán - A.HVân",
+          "Toán - A.HVân"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Anh - A.HVân",
+          "Anh - A.HVân",
+          "Văn - V.Tuyền",
+          "KHTN - TN.NChâu",
+          "KHTN - TN.NChâu"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Anh - A.HVân",
+          "Toán - A.HVân",
+          "Toán - A.HVân",
+          "HĐTN 3 - A.HVân",
+          "KHTN - TN.NChâu"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Văn - V.Tuyền",
+          "GDĐP - CN.Liên",
+          "LSĐL - SĐ.Trâm",
+          "GDTC - TD.Phúc",
+          "GDTC - TD.Phúc"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "Văn - V.Tuyền",
+          "Văn - V.Tuyền",
+          "Tin - Ti.Thuận",
+          "MT - MT.Bách",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A11": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - A.An",
+          "HĐTN 2 - A.An",
+          "Nhạc - Nhạc.Minh",
+          "KHTN - TN.MChâu",
+          "Anh - A.An"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Toán - T.Minh",
+          "Toán - T.Minh",
+          "GDTC - TD.Phúc",
+          "GDĐP - TN.Thủy",
+          "Văn - V.Hoa"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "CN - CN.Xuân",
+          "KHTN - TN.MChâu",
+          "KHTN - TN.MChâu",
+          "HĐTN 3 - A.An",
+          "MT - MT.Bách"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Văn - V.Hoa",
+          "Văn - V.Hoa",
+          "KHTN - TN.MChâu",
+          "GDCD - GD.Chi",
+          "LSĐL - SĐ.Liễu"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Anh - A.An",
+          "Anh - A.An",
+          "LSĐL - SĐ.Liễu",
+          "LSĐL - SĐ.Liễu",
+          "Toán - T.Minh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "GDTC - TD.Phúc",
+          "Toán - T.Minh",
+          "Văn - V.Hoa",
+          "Tin - Ti.Hào",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "6A15": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - A.Luận",
+          "HĐTN 2 - A.Luận",
+          "LSĐL - SĐ.Châu",
+          "LSĐL - SĐ.Châu",
+          "Toán - T.Hương"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "GDTC - TD.Kiệt",
+          "Anh - A.Luận",
+          "Anh - A.Luận",
+          "MT - MT.Nam",
+          "Toán - T.Hương"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Anh - A.Luận",
+          "GDĐP - CN.Lý",
+          "Văn - V.Trâm",
+          "CN - CN.Lý",
+          "Văn - V.Trâm"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Tin - Ti.Hậu",
+          "LSĐL - SĐ.Châu",
+          "GDCD - GD.Em",
+          "KHTN - TN.Thủy",
+          "KHTN - TN.Thủy"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDTC - TD.Kiệt",
+          "Toán - T.Hương",
+          "Toán - T.Hương",
+          "Văn - V.Trâm",
+          "Văn - V.Trâm"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "KHTN - TN.Thủy",
+          "KHTN - TN.Thủy",
+          "HĐTN 3 - A.Luận",
+          "Nhạc - Nhạc.Dương",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A3": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - TN.Tân",
+          "HĐTN 2 - TN.Tân",
+          "Anh - A.Nguyên",
+          "Anh - A.Nguyên",
+          "Toán - T.Huyền"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "GDĐP - SĐ.Thắm",
+          "GDTC - TD.Thanh",
+          "Nhạc - Nhạc.Minh",
+          "Tin - Ti.Tập",
+          "Anh - A.Nguyên"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Toán - T.Huyền",
+          "GDCD - GD.Chi",
+          "MT - MT.Bách",
+          "LSĐL - SĐ.Loan",
+          "LSĐL - SĐ.Loan"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Văn - V.Mỹ",
+          "Văn - V.Mỹ",
+          "KHTN - TN.Tân",
+          "KHTN - TN.Tân",
+          "HĐTN 3 - TN.Tân"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Văn - V.Mỹ",
+          "KHTN - TN.Tân",
+          "KHTN - TN.Tân",
+          "CN - CN.Phượng",
+          "LSĐL - SĐ.Loan"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "Văn - V.Mỹ",
+          "GDTC - TD.Thanh",
+          "Toán - T.Huyền",
+          "Toán - T.Huyền",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "8A3": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - TN.Hương",
+          "HĐTN 2 - TN.Hương",
+          "GDCD - GD.Tâm",
+          "Anh - A.Hoa",
+          "Anh - A.Hoa"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "GDTC - TD.Tiền",
+          "Toán - T.HLoan",
+          "KHTN - TN.Hương",
+          "Văn - V.Mỹ",
+          "Văn - V.Mỹ"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Văn - V.Mỹ",
+          "LSĐL - SĐ.Loan",
+          "LSĐL - SĐ.Loan",
+          "KHTN - TN.Hương",
+          "KHTN - TN.Hương"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "HĐTN 3 - TN.Hương",
+          "Tin - Ti.Hào",
+          "LSĐL - SĐ.Loan",
+          "Toán - T.HLoan",
+          "Toán - T.HLoan"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDTC - TD.Tiền",
+          "Văn - V.Mỹ",
+          "Toán - T.HLoan",
+          "CN - CN.Thiện",
+          "Nhạc - Nhạc.Hiền"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "Anh - A.Hoa",
+          "GDĐP - CN.Bằng",
+          "KHTN - TN.Hương",
+          "CN - CN.Thiện",
+          "MT - MT.Nam"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A7": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - TN.Ngân",
+          "HĐTN 2 - TN.Ngân",
+          "GDĐP - TN.Thủy",
+          "Anh - A.Dung",
+          "Anh - A.Dung"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Văn - V.Trâm",
+          "Văn - V.Trâm",
+          "CN - CN.Xuân",
+          "Toán - T.Trung",
+          "Toán - T.Trung"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "KHTN - TN.Ngân",
+          "KHTN - TN.Ngân",
+          "Toán - T.Trung",
+          "Anh - A.Dung",
+          "GDTC - TD.Tiền"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Văn - V.Trâm",
+          "Văn - V.Trâm",
+          "MT - MT.Bách",
+          "HĐTN 3 - TN.Ngân",
+          "LSĐL - SĐ.Loan"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Toán - T.Trung",
+          "Tin - Ti.Tập",
+          "Nhạc - Nhạc.Minh",
+          "KHTN - TN.Ngân",
+          "KHTN - TN.Ngân"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "GDTC - TD.Tiền",
+          "GDCD - GD.Chi",
+          "LSĐL - SĐ.Loan",
+          "LSĐL - SĐ.Loan",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A9": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - TN.NChâu",
+          "HĐTN 2 - TN.NChâu",
+          "Toán - T.Hương",
+          "Toán - T.Hương",
+          "KHTN - TN.NChâu"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Anh - A.Ngân",
+          "Anh - A.Ngân",
+          "LSĐL - SĐ.Liễu",
+          "LSĐL - SĐ.Liễu",
+          "GDCD - GD.Chi"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Toán - T.Hương",
+          "Toán - T.Hương",
+          "CN - CN.Xuân",
+          "GDTC - TD.Tiền",
+          "Nhạc - Nhạc.Minh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Văn - V.Trinh",
+          "Văn - V.Trinh",
+          "Anh - A.Ngân",
+          "KHTN - TN.NChâu",
+          "MT - MT.Bách"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Tin - Ti.Tập",
+          "GDTC - TD.Tiền",
+          "GDĐP - TN.Thủy",
+          "Văn - V.Trinh",
+          "Văn - V.Trinh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "LSĐL - SĐ.Liễu",
+          "HĐTN 3 - TN.NChâu",
+          "KHTN - TN.NChâu",
+          "KHTN - TN.NChâu",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "6A10": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - TN.LNguyên",
+          "HĐTN 2 - TN.LNguyên",
+          "Anh - A.Phong",
+          "Anh - A.Phong",
+          "KHTN - TN.LNguyên"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Nhạc - Nhạc.Dương",
+          "GDTC - TD.Bằng",
+          "HĐTN 3 - TN.LNguyên",
+          "Toán - T.Huy",
+          "Toán - T.Huy"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "KHTN - TN.LNguyên",
+          "GDCD - GD.Em",
+          "CN - CN.Trâm",
+          "Tin - Ti.Ân",
+          "LSĐL - SĐ.Linh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "MT - MT.Bách",
+          "Anh - A.Phong",
+          "GDĐP - CN.Vàng",
+          "LSĐL - SĐ.Linh",
+          "LSĐL - SĐ.Linh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Văn - V.Hoa",
+          "Văn - V.Hoa",
+          "KHTN - TN.LNguyên",
+          "KHTN - TN.LNguyên",
+          "GDTC - TD.Bằng"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "Văn - V.Hoa",
+          "Văn - V.Hoa",
+          "Toán - T.Huy",
+          "Toán - T.Huy",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A2": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - TN.Dung",
+          "HĐTN 2 - TN.Dung",
+          "KHTN - TN.Dung",
+          "KHTN - TN.Dung",
+          "Anh - A.Nguyên"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "MT - MT.Bách",
+          "Văn - V.Lệ",
+          "GDTC - TD.Thanh",
+          "Nhạc - Nhạc.Minh",
+          "GDĐP - SĐ.Liễu"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "LSĐL - SĐ.Loan",
+          "Tin - Ti.Ân",
+          "Toán - T.Chung",
+          "Toán - T.Chung",
+          "GDCD - GD.Chi"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "KHTN - TN.Dung",
+          "Toán - T.Chung",
+          "Toán - T.Chung",
+          "Anh - A.Nguyên",
+          "Anh - A.Nguyên"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Văn - V.Lệ",
+          "Văn - V.Lệ",
+          "LSĐL - SĐ.Loan",
+          "LSĐL - SĐ.Loan",
+          "CN - CN.Phượng"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "KHTN - TN.Dung",
+          "Văn - V.Lệ",
+          "GDTC - TD.Thanh",
+          "HĐTN 3 - TN.Dung",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A1": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - TN.TNguyên",
+          "HĐTN 2 - TN.TNguyên",
+          "Toán - T.Chung",
+          "Toán - T.Chung",
+          "LSĐL - SĐ.Loan"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Tin - Ti.Ân",
+          "CN - CN.Phượng",
+          "Văn - V.Lệ",
+          "Văn - V.Lệ",
+          "GDTC - TD.Thanh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Toán - T.Chung",
+          "Toán - T.Chung",
+          "Nhạc - Nhạc.Minh",
+          "KHTN - TN.TNguyên",
+          "KHTN - TN.TNguyên"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Anh - A.Nguyên",
+          "Anh - A.Nguyên",
+          "KHTN - TN.TNguyên",
+          "KHTN - TN.TNguyên",
+          "HĐTN 3 - TN.TNguyên"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "LSĐL - SĐ.Loan",
+          "LSĐL - SĐ.Loan",
+          "Anh - A.Nguyên",
+          "Văn - V.Lệ",
+          "Văn - V.Lệ"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "GDTC - TD.Thanh",
+          "MT - MT.Bách",
+          "GDCD - GD.Chi",
+          "GDĐP - SĐ.Liễu",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "6A12": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - TN.Sương",
+          "HĐTN 2 - TN.Sương",
+          "Văn - V.Tuyền",
+          "Văn - V.Tuyền",
+          "LSĐL - SĐ.Anh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Anh - A.CVân",
+          "Anh - A.CVân",
+          "Tin - Ti.Ân",
+          "Văn - V.Tuyền",
+          "Văn - V.Tuyền"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "KHTN - TN.Sương",
+          "KHTN - TN.Sương",
+          "GDĐP - CN.Lý",
+          "GDTC - TD.Bằng",
+          "Toán - T.Trung"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "MT - MT.Nam",
+          "Toán - T.Trung",
+          "Toán - T.Trung",
+          "Nhạc - Nhạc.Dương",
+          "GDCD - GD.Em"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "LSĐL - SĐ.Anh",
+          "LSĐL - SĐ.Anh",
+          "CN - CN.Trâm",
+          "HĐTN 3 - TN.Sương",
+          "Toán - T.Trung"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "KHTN - TN.Sương",
+          "KHTN - TN.Sương",
+          "Anh - A.CVân",
+          "GDTC - TD.Bằng",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A17": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - TN.Phương",
+          "HĐTN 2 - TN.Phương",
+          "GDTC - TD.Phúc",
+          "Anh - A.Lan",
+          "Anh - A.Lan"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Văn - V.Quỳnh",
+          "Văn - V.Quỳnh",
+          "MT - MT.Trang",
+          "CN - CN.Lý",
+          "Tin - Ti.Thuận"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "KHTN - TN.Phương",
+          "KHTN - TN.Phương",
+          "LSĐL - SĐ.Thắm",
+          "GDĐP - CN.Liên",
+          "Anh - A.Lan"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "KHTN - TN.Phương",
+          "Nhạc - Nhạc.Minh",
+          "GDTC - TD.Phúc",
+          "LSĐL - SĐ.Thắm",
+          "LSĐL - SĐ.Thắm"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDCD - GD.Chi",
+          "Toán - T.Trang",
+          "Toán - T.Trang",
+          "Văn - V.Quỳnh",
+          "Văn - V.Quỳnh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "Toán - T.Trang",
+          "Toán - T.Trang",
+          "HĐTN 3 - TN.Phương",
+          "KHTN - TN.Phương",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "6A3": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - TN.Hơn",
+          "HĐTN 2 - TN.Hơn",
+          "Anh - A.Luận",
+          "Anh - A.Luận",
+          "KHTN - TN.Hơn"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Văn - V.Lệ",
+          "Tin - Ti.Ân",
+          "GDTC - TD.Duy",
+          "KHTN - TN.Hơn",
+          "KHTN - TN.Hơn"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "CN - CN.Trâm",
+          "Nhạc - Nhạc.Dương",
+          "LSĐL - SĐ.Linh",
+          "LSĐL - SĐ.Linh",
+          "GDĐP - CN.Phượng"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "GDCD - GD.Em",
+          "LSĐL - SĐ.Linh",
+          "Toán - T.Minh",
+          "Văn - V.Lệ",
+          "Anh - A.Luận"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDTC - TD.Duy",
+          "MT - MT.Bách",
+          "Toán - T.Minh",
+          "Toán - T.Minh",
+          "KHTN - TN.Hơn"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "Toán - T.Minh",
+          "HĐTN 3 - TN.Hơn",
+          "Văn - V.Lệ",
+          "Văn - V.Lệ",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A20": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - TN.Thảo",
+          "HĐTN 2 - TN.Thảo",
+          "KHTN - TN.Thảo",
+          "MT - MT.Trang",
+          "Toán - T.ThHương"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "LSĐL - SĐ.Nhàn",
+          "LSĐL - SĐ.Nhàn",
+          "Anh - A.Minh",
+          "GDĐP - CN.Liên",
+          "GDTC - TD.Phúc"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Tin - Ti.Dương",
+          "Văn - V.Giang",
+          "Văn - V.Giang",
+          "Anh - A.Minh",
+          "Anh - A.Minh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Văn - V.Giang",
+          "Văn - V.Giang",
+          "Nhạc - Nhạc.Minh",
+          "KHTN - TN.Thảo",
+          "KHTN - TN.Thảo"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDCD - GD.Em",
+          "Toán - T.ThHương",
+          "Toán - T.ThHương",
+          "HĐTN 3 - TN.Thảo",
+          "KHTN - TN.Thảo"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "LSĐL - SĐ.Nhàn",
+          "Toán - T.ThHương",
+          "GDTC - TD.Phúc",
+          "CN - CN.Lý",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "8A2": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - TN.Nữ",
+          "HĐTN 2 - TN.Nữ",
+          "KHTN - TN.Nữ",
+          "KHTN - TN.Nữ",
+          "Nhạc - Nhạc.Hiền"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "CN - CN.Thiện",
+          "Anh - A.Khánh",
+          "Anh - A.Khánh",
+          "GDCD - GD.Chi",
+          "GDĐP - CN.Bằng"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "KHTN - TN.Nữ",
+          "KHTN - TN.Nữ",
+          "Văn - V.Thúy",
+          "HĐTN 3 - TN.Nữ",
+          "CN - CN.Thiện"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Toán - T.Phương",
+          "Toán - T.Phương",
+          "GDTC - TD.Thanh",
+          "Văn - V.Thúy",
+          "MT - MT.Nam"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Toán - T.Phương",
+          "Toán - T.Phương",
+          "GDTC - TD.Thanh",
+          "LSĐL - SĐ.Trâm",
+          "Anh - A.Khánh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "Tin - Ti.Hào",
+          "Văn - V.Thúy",
+          "Văn - V.Thúy",
+          "LSĐL - SĐ.Trâm",
+          "LSĐL - SĐ.Trâm"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "8A7": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - SĐ.Hằng",
+          "HĐTN 2 - SĐ.Hằng",
+          "GDTC - TD.Thanh",
+          "Toán - T.Nhơn",
+          "GDCD - GD.Tâm"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "GDTC - TD.Thanh",
+          "CN - CN.Thiện",
+          "Toán - T.Nhơn",
+          "Tin - Ti.Hào",
+          "KHTN - TN.Hương"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Toán - T.Nhơn",
+          "Toán - T.Nhơn",
+          "CN - CN.Thiện",
+          "MT - MT.Nam",
+          "LSĐL - SĐ.Hằng"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "HĐTN 3 - SĐ.Hằng",
+          "KHTN - TN.Hương",
+          "KHTN - TN.Hương",
+          "Anh - A.Luận",
+          "Văn - V.Thúy"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "LSĐL - SĐ.Hằng",
+          "LSĐL - SĐ.Hằng",
+          "KHTN - TN.Hương",
+          "Nhạc - Nhạc.Hiền",
+          "Văn - V.Thúy"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "Anh - A.Luận",
+          "Anh - A.Luận",
+          "GDĐP - CN.Bằng",
+          "Văn - V.Thúy",
+          "Văn - V.Thúy"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "6A1": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - SĐ.Kiều",
+          "HĐTN 2 - SĐ.Kiều",
+          "LSĐL - SĐ.Kiều",
+          "LSĐL - SĐ.Kiều",
+          "KHTN - TN.Mỹ"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Toán - T.Trung",
+          "Toán - T.Trung",
+          "KHTN - TN.Mỹ",
+          "Văn - V.Hoa",
+          "Tin - Ti.Ân"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Nhạc - Nhạc.Dương",
+          "KHTN - TN.Mỹ",
+          "KHTN - TN.Mỹ",
+          "GDTC - TD.Duy",
+          "Văn - V.Hoa"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "GDĐP - TN.Hơn",
+          "GDCD - GD.Em",
+          "GDTC - TD.Duy",
+          "Anh - A.Ngân",
+          "Anh - A.Ngân"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "HĐTN 3 - SĐ.Kiều",
+          "LSĐL - SĐ.Kiều",
+          "Văn - V.Hoa",
+          "Văn - V.Hoa",
+          "MT - MT.Bách"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "Toán - T.Trung",
+          "Toán - T.Trung",
+          "CN - CN.Trâm",
+          "Anh - A.Ngân",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A4": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - SĐ.Anh",
+          "HĐTN 2 - SĐ.Anh",
+          "KHTN - TN.Thanh",
+          "KHTN - TN.Thanh",
+          "Toán - T.Nhơn"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "CN - CN.Phượng",
+          "KHTN - TN.Thanh",
+          "MT - MT.Bách",
+          "GDĐP - A.Nguyên",
+          "Tin - Ti.Tập"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Nhạc - Nhạc.Minh",
+          "Văn - V.Mỹ",
+          "Văn - V.Mỹ",
+          "KHTN - TN.Thanh",
+          "Anh - A.Phong"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "LSĐL - SĐ.Anh",
+          "GDTC - TD.Duy",
+          "Văn - V.Mỹ",
+          "Văn - V.Mỹ",
+          "GDTC - TD.Duy"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Toán - T.Nhơn",
+          "Anh - A.Phong",
+          "Anh - A.Phong",
+          "GDCD - GD.Chi",
+          "HĐTN 3 - SĐ.Anh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "LSĐL - SĐ.Anh",
+          "LSĐL - SĐ.Anh",
+          "Toán - T.Nhơn",
+          "Toán - T.Nhơn",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "6A16": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - SĐ.Châu",
+          "HĐTN 2 - SĐ.Châu",
+          "Văn - V.Trâm",
+          "GDTC - TD.Kiệt",
+          "Anh - A.Luận"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "LSĐL - SĐ.Châu",
+          "HĐTN 3 - SĐ.Châu",
+          "Văn - V.Trâm",
+          "Anh - A.Luận",
+          "Anh - A.Luận"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "KHTN - TN.Thủy",
+          "KHTN - TN.Thủy",
+          "Tin - Ti.Hậu",
+          "Toán - T.Hương",
+          "Toán - T.Hương"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "KHTN - TN.Thủy",
+          "KHTN - TN.Thủy",
+          "Văn - V.Trâm",
+          "Văn - V.Trâm",
+          "Nhạc - Nhạc.Dương"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDĐP - CN.Lý",
+          "CN - CN.Lý",
+          "GDTC - TD.Kiệt",
+          "Toán - T.Hương",
+          "Toán - T.Hương"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "GDCD - GD.Em",
+          "MT - MT.Nam",
+          "LSĐL - SĐ.Châu",
+          "LSĐL - SĐ.Châu",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A12": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - SĐ.Trâm",
+          "HĐTN 2 - SĐ.Trâm",
+          "Tin - Ti.Hào",
+          "Văn - V.Hoa",
+          "Văn - V.Hoa"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "CN - CN.Xuân",
+          "Toán - T.Hùng",
+          "Toán - T.Hùng",
+          "LSĐL - SĐ.Trâm",
+          "LSĐL - SĐ.Trâm"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "GDCD - GD.Chi",
+          "Nhạc - Nhạc.Minh",
+          "Văn - V.Hoa",
+          "LSĐL - SĐ.Trâm",
+          "GDTC - TD.Phúc"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "KHTN - TN.MChâu",
+          "KHTN - TN.MChâu",
+          "Toán - T.Hùng",
+          "Toán - T.Hùng",
+          "Anh - A.HVân"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "HĐTN 3 - SĐ.Trâm",
+          "Anh - A.HVân",
+          "Anh - A.HVân",
+          "KHTN - TN.MChâu",
+          "GDĐP - TN.Thủy"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "KHTN - TN.MChâu",
+          "GDTC - TD.Phúc",
+          "MT - MT.Bách",
+          "Văn - V.Hoa",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A19": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - SĐ.Nhàn",
+          "HĐTN 2 - SĐ.Nhàn",
+          "Toán - T.ThHương",
+          "Văn - V.Giang",
+          "Văn - V.Giang"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "MT - MT.Trang",
+          "Nhạc - Nhạc.Minh",
+          "CN - CN.Lý",
+          "Anh - A.Minh",
+          "Anh - A.Minh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "GDĐP - CN.Liên",
+          "Tin - Ti.Dương",
+          "Anh - A.Minh",
+          "Văn - V.Giang",
+          "Văn - V.Giang"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "GDTC - TD.Phúc",
+          "GDTC - TD.Phúc",
+          "Toán - T.ThHương",
+          "Toán - T.ThHương",
+          "KHTN - TN.Hơn"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "KHTN - TN.Hơn",
+          "KHTN - TN.Hơn",
+          "HĐTN 3 - SĐ.Nhàn",
+          "LSĐL - SĐ.Nhàn",
+          "LSĐL - SĐ.Nhàn"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "Toán - T.ThHương",
+          "LSĐL - SĐ.Nhàn",
+          "KHTN - TN.Hơn",
+          "GDCD - GD.Em",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "9A18": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - SĐ.Thắm",
+          "HĐTN 2 - SĐ.Thắm",
+          "KHTN - TN.Phương",
+          "KHTN - TN.Phương",
+          "MT - MT.Trang"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "GDTC - TD.Phúc",
+          "LSĐL - SĐ.Thắm",
+          "Văn - V.Quỳnh",
+          "Văn - V.Quỳnh",
+          "Nhạc - Nhạc.Minh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "LSĐL - SĐ.Thắm",
+          "LSĐL - SĐ.Thắm",
+          "Tin - Ti.Dương",
+          "Anh - A.Lan",
+          "Văn - V.Quỳnh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Anh - A.Lan",
+          "Anh - A.Lan",
+          "KHTN - TN.Phương",
+          "KHTN - TN.Phương",
+          "GDTC - TD.Phúc"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDĐP - CN.Liên",
+          "Văn - V.Quỳnh",
+          "HĐTN 3 - SĐ.Thắm",
+          "Toán - T.Trang",
+          "Toán - T.Trang"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "CN - CN.Lý",
+          "GDCD - GD.Em",
+          "Toán - T.Trang",
+          "Toán - T.Trang",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "8A6": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - GD.Tâm",
+          "HĐTN 2 - GD.Tâm",
+          "KHTN - TN.Hương",
+          "KHTN - TN.Hương",
+          "GDTC - TD.Tiền"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "GDCD - GD.Tâm",
+          "Toán - T.Châu",
+          "Toán - T.Châu",
+          "GDTC - TD.Tiền",
+          "HĐTN 3 - GD.Tâm"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "CN - CN.Thiện",
+          "Anh - A.Luận",
+          "MT - MT.Nam",
+          "Văn - V.Lâm",
+          "Văn - V.Lâm"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Văn - V.Lâm",
+          "LSĐL - SĐ.Hằng",
+          "Toán - T.Châu",
+          "Toán - T.Châu",
+          "Tin - Ti.Hào"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Anh - A.Luận",
+          "Anh - A.Luận",
+          "GDĐP - CN.Bằng",
+          "Văn - V.Lâm",
+          "KHTN - TN.Hương"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "Nhạc - Nhạc.Hiền",
+          "CN - CN.Thiện",
+          "LSĐL - SĐ.Hằng",
+          "LSĐL - SĐ.Hằng",
+          "KHTN - TN.Hương"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "8A8": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - CN.Thiện",
+          "HĐTN 2 - CN.Thiện",
+          "LSĐL - SĐ.Hằng",
+          "LSĐL - SĐ.Hằng",
+          "KHTN - TN.Dung"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Toán - T.Nhơn",
+          "Toán - T.Nhơn",
+          "GDCD - GD.Tâm",
+          "Văn - V.Thúy",
+          "Văn - V.Thúy"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "GDTC - TD.Thanh",
+          "CN - CN.Thiện",
+          "Toán - T.Nhơn",
+          "LSĐL - SĐ.Hằng",
+          "MT - MT.Nam"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Tin - Ti.Hào",
+          "KHTN - TN.Dung",
+          "Văn - V.Thúy",
+          "GDTC - TD.Thanh",
+          "CN - CN.Thiện"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Anh - A.Hoa",
+          "Anh - A.Hoa",
+          "HĐTN 3 - CN.Thiện",
+          "KHTN - TN.Dung",
+          "KHTN - TN.Dung"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "Văn - V.Thúy",
+          "Anh - A.Hoa",
+          "Nhạc - Nhạc.Hiền",
+          "GDĐP - CN.Bằng",
+          "Toán - T.Nhơn"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "6A2": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - CN.Phượng",
+          "HĐTN 2 - CN.Phượng",
+          "KHTN - TN.LNguyên",
+          "Toán - T.HLoan",
+          "Toán - T.HLoan"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "LSĐL - SĐ.Kiều",
+          "Văn - V.Hoa",
+          "Văn - V.Hoa",
+          "GDTC - TD.Duy",
+          "Anh - A.Dung"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Văn - V.Hoa",
+          "Văn - V.Hoa",
+          "Nhạc - Nhạc.Dương",
+          "HĐTN 3 - CN.Phượng",
+          "GDCD - GD.Em"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "LSĐL - SĐ.Kiều",
+          "LSĐL - SĐ.Kiều",
+          "KHTN - TN.LNguyên",
+          "KHTN - TN.LNguyên",
+          "CN - CN.Phượng"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Toán - T.HLoan",
+          "Toán - T.HLoan",
+          "GDTC - TD.Duy",
+          "MT - MT.Bách",
+          "KHTN - TN.LNguyên"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "GDĐP - CN.Trâm",
+          "Anh - A.Dung",
+          "Anh - A.Dung",
+          "Tin - Ti.Ân",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "6A11": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - CN.Trâm",
+          "HĐTN 2 - CN.Trâm",
+          "KHTN - TN.Mỹ",
+          "KHTN - TN.Mỹ",
+          "CN - CN.Trâm"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "GDTC - TD.Bằng",
+          "Anh - A.Phong",
+          "Anh - A.Phong",
+          "KHTN - TN.Mỹ",
+          "KHTN - TN.Mỹ"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Văn - V.Trâm",
+          "Văn - V.Trâm",
+          "GDĐP - CN.Vàng",
+          "LSĐL - SĐ.Anh",
+          "LSĐL - SĐ.Anh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Toán - T.Trung",
+          "MT - MT.Nam",
+          "LSĐL - SĐ.Anh",
+          "GDCD - GD.Em",
+          "Anh - A.Phong"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDTC - TD.Bằng",
+          "Văn - V.Trâm",
+          "Văn - V.Trâm",
+          "Toán - T.Trung",
+          "HĐTN 3 - CN.Trâm"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "Tin - Ti.Ân",
+          "Nhạc - Nhạc.Dương",
+          "Toán - T.Trung",
+          "Toán - T.Trung",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "8A4": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - TD.Tiền",
+          "HĐTN 2 - TD.Tiền",
+          "KHTN - TN.Tân",
+          "GDCD - GD.Tâm",
+          "Văn - V.Mỹ"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Anh - A.An",
+          "Anh - A.An",
+          "GDTC - TD.Tiền",
+          "Toán - T.Châu",
+          "HĐTN 3 - TD.Tiền"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "MT - MT.Nam",
+          "Anh - A.An",
+          "GDTC - TD.Tiền",
+          "CN - CN.Thiện",
+          "Văn - V.Mỹ"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "KHTN - TN.Tân",
+          "KHTN - TN.Tân",
+          "Tin - Ti.Hào",
+          "LSĐL - SĐ.Loan",
+          "Toán - T.Châu"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "KHTN - TN.Tân",
+          "Toán - T.Châu",
+          "Toán - T.Châu",
+          "Văn - V.Mỹ",
+          "Văn - V.Mỹ"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "LSĐL - SĐ.Loan",
+          "LSĐL - SĐ.Loan",
+          "CN - CN.Thiện",
+          "Nhạc - Nhạc.Hiền",
+          "GDĐP - CN.Bằng"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "8A1": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - TD.Thanh",
+          "HĐTN 2 - TD.Thanh",
+          "CN - CN.Thiện",
+          "Nhạc - Nhạc.Hiền",
+          "KHTN - TN.MChâu"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Toán - T.Châu",
+          "GDCD - GD.Chi",
+          "Anh - A.An",
+          "Anh - A.An",
+          "Tin - Ti.Hào"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Anh - A.An",
+          "HĐTN 3 - TD.Thanh",
+          "LSĐL - SĐ.Trâm",
+          "KHTN - TN.MChâu",
+          "KHTN - TN.MChâu"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Toán - T.Châu",
+          "Văn - V.Lâm",
+          "Văn - V.Lâm",
+          "MT - MT.Nam",
+          "KHTN - TN.MChâu"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "GDTC - TD.Thanh",
+          "GDTC - TD.Thanh",
+          "Văn - V.Lâm",
+          "Toán - T.Châu",
+          "Toán - T.Châu"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "GDĐP - CN.Bằng",
+          "LSĐL - SĐ.Trâm",
+          "LSĐL - SĐ.Trâm",
+          "Văn - V.Lâm",
+          "CN - CN.Thiện"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "6A4": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - TD.Duy",
+          "HĐTN 2 - TD.Duy",
+          "Anh - A.Ngân",
+          "CN - CN.Trâm",
+          "Nhạc - Nhạc.Dương"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "KHTN - TN.Hơn",
+          "KHTN - TN.Hơn",
+          "LSĐL - SĐ.Linh",
+          "LSĐL - SĐ.Linh",
+          "Văn - V.Lệ"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "Tin - Ti.Ân",
+          "GDĐP - CN.Vàng",
+          "GDCD - GD.Em",
+          "Văn - V.Lệ",
+          "Văn - V.Lệ"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "LSĐL - SĐ.Linh",
+          "KHTN - TN.Hơn",
+          "KHTN - TN.Hơn",
+          "GDTC - TD.Duy",
+          "Văn - V.Lệ"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Toán - T.Minh",
+          "Toán - T.Minh",
+          "MT - MT.Bách",
+          "GDTC - TD.Duy",
+          "HĐTN 3 - TD.Duy"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "Anh - A.Ngân",
+          "Anh - A.Ngân",
+          "Toán - T.Minh",
+          "Toán - T.Minh",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "6A17": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - TD.Kiệt",
+          "HĐTN 2 - TD.Kiệt",
+          "Nhạc - Nhạc.Dương",
+          "KHTN - TN.Thủy",
+          "KHTN - TN.Thủy"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "KHTN - TN.Thủy",
+          "KHTN - TN.Thủy",
+          "Toán - T.Hương",
+          "Toán - T.Hương",
+          "Văn - V.Trâm"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "GDTC - TD.Kiệt",
+          "Tin - Ti.Hậu",
+          "LSĐL - SĐ.Châu",
+          "LSĐL - SĐ.Châu",
+          "Anh - A.Dung"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "LSĐL - SĐ.Châu",
+          "Anh - A.Dung",
+          "Anh - A.Dung",
+          "Toán - T.Hương",
+          "Toán - T.Hương"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "Văn - V.Trâm",
+          "GDTC - TD.Kiệt",
+          "CN - CN.Lý",
+          "GDĐP - CN.Lý",
+          "HĐTN 3 - TD.Kiệt"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "Văn - V.Trâm",
+          "Văn - V.Trâm",
+          "GDCD - GD.Em",
+          "MT - MT.Nam",
+          ""
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "8A9": {
+      "thu2": {
+        "sang": [
+          "HĐTN 1 - Ti.Hào",
+          "HĐTN 2 - Ti.Hào",
+          "Văn - V.Mỹ",
+          "Văn - V.Mỹ",
+          "CN - CN.Thiện"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "Anh - A.Hoa",
+          "Anh - A.Hoa",
+          "GDĐP - CN.Bằng",
+          "GDCD - GD.Tâm",
+          "MT - MT.Nam"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "HĐTN 3 - Ti.Hào",
+          "Tin - Ti.Hào",
+          "GDTC - TD.Bằng",
+          "Toán - T.Nhơn",
+          "Toán - T.Nhơn"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "Toán - T.Nhơn",
+          "Toán - T.Nhơn",
+          "CN - CN.Thiện",
+          "KHTN - TN.Khanh",
+          "KHTN - TN.Khanh"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "KHTN - TN.Khanh",
+          "KHTN - TN.Khanh",
+          "Nhạc - Nhạc.Hiền",
+          "LSĐL - SĐ.Hằng",
+          "LSĐL - SĐ.Hằng"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "LSĐL - SĐ.Hằng",
+          "Văn - V.Mỹ",
+          "Văn - V.Mỹ",
+          "Anh - A.Hoa",
+          "GDTC - TD.Bằng"
+        ],
+        "chieu": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    "8A12": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Tú",
+          "Văn - V.Tú",
+          "GDĐP - CN.Thiện",
+          "HĐTN 2 - Ti.Thuận",
+          "HĐTN 1 - Ti.Thuận"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Nhật",
+          "KHTN - TN.TNguyên",
+          "KHTN - TN.TNguyên",
+          "CN - CN.Bằng",
+          "Toán - T.Nhật"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Tú",
+          "Văn - V.Tú",
+          "LSĐL - SĐ.Phượng",
+          "MT - MT.Nam",
+          "Nhạc - Nhạc.Hiền"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDTC - TD.Bằng",
+          "CN - CN.Bằng",
+          "Tin - Ti.Thuận",
+          "HĐTN 3 - Ti.Thuận",
+          "Anh - A.Khánh"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDCD - GD.Tâm",
+          "Anh - A.Khánh",
+          "Anh - A.Khánh",
+          "LSĐL - SĐ.Phượng",
+          "LSĐL - SĐ.Phượng"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDTC - TD.Bằng",
+          "Toán - T.Nhật",
+          "Toán - T.Nhật",
+          "KHTN - TN.TNguyên",
+          "KHTN - TN.TNguyên"
+        ]
+      }
+    },
+    "6A7": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Vân",
+          "Văn - V.Vân",
+          "Toán - T.Xuân",
+          "HĐTN 2 - TN.Tú",
+          "HĐTN 1 - TN.Tú"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Nhạc - Nhạc.Dương",
+          "LSĐL - SĐ.Kiều",
+          "Văn - V.Vân",
+          "Văn - V.Vân",
+          "HĐTN 3 - TN.Tú"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Xuân",
+          "Toán - T.Xuân",
+          "KHTN - TN.Tú",
+          "KHTN - TN.Tú",
+          "MT - MT.Bách"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDTC - TD.Quí",
+          "GDCD - GD.Em",
+          "Anh - A.Nga",
+          "Tin - Ti.Ân",
+          "Toán - T.Xuân"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDTC - TD.Quí",
+          "Anh - A.Nga",
+          "Anh - A.Nga",
+          "GDĐP - CN.Vàng",
+          "CN - CN.Vàng"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Tú",
+          "KHTN - TN.Tú",
+          "LSĐL - SĐ.Kiều",
+          "LSĐL - SĐ.Kiều",
+          ""
+        ]
+      }
+    },
+    "7A14": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Tuấn",
+          "Anh - A.Minh",
+          "Anh - A.Minh",
+          "HĐTN 2 - TD.Cương",
+          "HĐTN 1 - TD.Cương"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Nhạc - Nhạc.Hiền",
+          "Toán - T.Châu",
+          "Toán - T.Châu",
+          "Văn - V.Tuấn",
+          "Văn - V.Tuấn"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "MT - MT.Trang",
+          "HĐTN 3 - PHT.Định",
+          "CN - CN.Liên",
+          "Toán - T.Châu",
+          "Toán - T.Châu"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Thảo",
+          "KHTN - TN.Thảo",
+          "Văn - V.Tuấn",
+          "LSĐL - SĐ.Nhung",
+          "LSĐL - SĐ.Nhung"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDTC - TD.Cương",
+          "GDTC - TD.Cương",
+          "Anh - A.Minh",
+          "GDĐP - Ti.Hậu",
+          "GDCD - GD.Tuyền"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "LSĐL - SĐ.Nhung",
+          "Tin - Ti.Tập",
+          "KHTN - TN.Thảo",
+          "KHTN - TN.Thảo",
+          ""
+        ]
+      }
+    },
+    "7A2": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Vy",
+          "LSĐL - SĐ.Tâm",
+          "LSĐL - SĐ.Tâm",
+          "HĐTN 2 - Ti.Dương",
+          "HĐTN 1 - Ti.Dương"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Hùng",
+          "Toán - T.Hùng",
+          "Văn - V.Vy",
+          "Văn - V.Vy",
+          "KHTN - TN.Hảo"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Tin - Ti.Dương",
+          "Toán - T.Hùng",
+          "Toán - T.Hùng",
+          "Anh - A.Nga",
+          "KHTN - TN.Hảo"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Vy",
+          "KHTN - TN.Hảo",
+          "KHTN - TN.Hảo",
+          "GDCD - GD.Thuận",
+          "GDĐP - Ti.Hậu"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDTC - TD.Thuyền",
+          "Nhạc - Nhạc.Hiền",
+          "MT - MT.Trang",
+          "Anh - A.Nga",
+          "Anh - A.Nga"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "LSĐL - SĐ.Tâm",
+          "GDTC - TD.Thuyền",
+          "HĐTN 3 - Ti.Dương",
+          "CN - CN.Chí",
+          ""
+        ]
+      }
+    },
+    "8A18": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Bình",
+          "LSĐL - SĐ.Dung",
+          "LSĐL - SĐ.Dung",
+          "HĐTN 2 - TN.Trâm",
+          "HĐTN 1 - TN.Trâm"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDTC - TD.Quí",
+          "LSĐL - SĐ.Dung",
+          "CN - CN.Bằng",
+          "GDCD - GD.Tuyền",
+          "Tin - Ti.Thuận"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Bình",
+          "KHTN - TN.Trâm",
+          "KHTN - TN.Trâm",
+          "Nhạc - Nhạc.Hiền",
+          "MT - MT.Nam"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "HĐTN 3 - TN.Trâm",
+          "GDTC - TD.Quí",
+          "CN - CN.Bằng",
+          "Toán - T.Thư",
+          "Toán - T.Thư"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.HVân",
+          "Anh - A.HVân",
+          "GDĐP - GD.Tâm",
+          "Văn - V.Bình",
+          "Văn - V.Bình"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Thư",
+          "Toán - T.Thư",
+          "Anh - A.HVân",
+          "KHTN - TN.Trâm",
+          "KHTN - TN.Trâm"
+        ]
+      }
+    },
+    "7A18": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Lâm",
+          "Toán - T.Huy",
+          "Toán - T.Huy",
+          "HĐTN 2 - TN.ÁLoan",
+          "HĐTN 1 - TN.ÁLoan"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDTC - TD.Kiệt",
+          "MT - MT.Trang",
+          "GDĐP - CN.Chí",
+          "CN - CN.Liên",
+          "Nhạc - Nhạc.Dương"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Lâm",
+          "Anh - A.Nga",
+          "Anh - A.Nga",
+          "KHTN - TN.ÁLoan",
+          "HĐTN 3 - TN.ÁLoan"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDTC - TD.Kiệt",
+          "Toán - T.Huy",
+          "Toán - T.Huy",
+          "GDCD - GD.Tuyền",
+          "LSĐL - SĐ.Dung"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "LSĐL - SĐ.Dung",
+          "LSĐL - SĐ.Dung",
+          "Văn - V.Lâm",
+          "Văn - V.Lâm",
+          "KHTN - TN.ÁLoan"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Tin - Ti.Tập",
+          "Anh - A.Nga",
+          "KHTN - TN.ÁLoan",
+          "KHTN - TN.ÁLoan",
+          ""
+        ]
+      }
+    },
+    "7A17": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Huy",
+          "Văn - V.Lâm",
+          "Văn - V.Lâm",
+          "HĐTN 2 - T.Huy",
+          "HĐTN 1 - T.Huy"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "LSĐL - SĐ.Nhung",
+          "LSĐL - SĐ.Nhung",
+          "CN - CN.Liên",
+          "Nhạc - Nhạc.Dương",
+          "Anh - A.Nga"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "HĐTN 3 - PHT.Định",
+          "Văn - V.Lâm",
+          "Tin - Ti.Tập",
+          "KHTN - TN.Nữ",
+          "KHTN - TN.Nữ"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "MT - MT.Trang",
+          "GDTC - TD.Cương",
+          "GDTC - TD.Cương",
+          "Toán - T.Huy",
+          "Toán - T.Huy"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDCD - GD.Tuyền",
+          "KHTN - TN.Nữ",
+          "GDĐP - CN.Chí",
+          "LSĐL - SĐ.Nhung",
+          "Văn - V.Lâm"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Huy",
+          "KHTN - TN.Nữ",
+          "Anh - A.Nga",
+          "Anh - A.Nga",
+          ""
+        ]
+      }
+    },
+    "6A8": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Xuân",
+          "Toán - T.Xuân",
+          "CN - CN.Vàng",
+          "HĐTN 2 - CN.Vàng",
+          "HĐTN 1 - CN.Vàng"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "LSĐL - SĐ.Kiều",
+          "GDCD - GD.Em",
+          "Anh - A.Nga",
+          "Anh - A.Nga",
+          "GDĐP - CN.Vàng"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "LSĐL - SĐ.Kiều",
+          "LSĐL - SĐ.Kiều",
+          "Toán - T.Xuân",
+          "MT - MT.Bách",
+          "Anh - A.Nga"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Tin - Ti.Ân",
+          "Văn - V.Vân",
+          "Văn - V.Vân",
+          "GDTC - TD.Bằng",
+          "KHTN - TN.Tú"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Tú",
+          "KHTN - TN.Tú",
+          "HĐTN 3 - CN.Vàng",
+          "Văn - V.Vân",
+          "Văn - V.Vân"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Nhạc - Nhạc.Dương",
+          "GDTC - TD.Bằng",
+          "Toán - T.Xuân",
+          "KHTN - TN.Tú",
+          ""
+        ]
+      }
+    },
+    "8A10": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Nhật",
+          "KHTN - TN.Khanh",
+          "KHTN - TN.Khanh",
+          "HĐTN 2 - T.Nhật",
+          "HĐTN 1 - T.Nhật"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Tin - Ti.Thuận",
+          "Toán - T.Nhật",
+          "Toán - T.Nhật",
+          "Anh - A.Hoa",
+          "Anh - A.Hoa"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Nhạc - Nhạc.Hiền",
+          "GDĐP - CN.Bằng",
+          "LSĐL - SĐ.Nhàn",
+          "GDCD - GD.Tâm",
+          "Toán - T.Nhật"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Khanh",
+          "Văn - V.Tú",
+          "Văn - V.Tú",
+          "CN - CN.Bằng",
+          "GDTC - TD.Bằng"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Tú",
+          "Văn - V.Tú",
+          "CN - CN.Bằng",
+          "Anh - A.Hoa",
+          "MT - MT.Nam"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "HĐTN 3 - T.Nhật",
+          "KHTN - TN.Khanh",
+          "GDTC - TD.Bằng",
+          "LSĐL - SĐ.Nhàn",
+          "LSĐL - SĐ.Nhàn"
+        ]
+      }
+    },
+    "8A13": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Phát",
+          "GDĐP - CN.Thiện",
+          "Nhạc - Nhạc.Hiền",
+          "HĐTN 2 - A.Khánh",
+          "HĐTN 1 - A.Khánh"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.Khánh",
+          "CN - CN.Bằng",
+          "HĐTN 3 - A.Khánh",
+          "Tin - Ti.Thuận",
+          "Toán - T.Phát"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "LSĐL - SĐ.Phượng",
+          "GDCD - GD.Tâm",
+          "MT - MT.Nam",
+          "Anh - A.Khánh",
+          "Anh - A.Khánh"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.TNguyên",
+          "KHTN - TN.TNguyên",
+          "GDTC - TD.Bằng",
+          "Văn - V.Tuấn",
+          "Văn - V.Tuấn"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.TNguyên",
+          "KHTN - TN.TNguyên",
+          "Văn - V.Tuấn",
+          "Văn - V.Tuấn",
+          "GDTC - TD.Bằng"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "LSĐL - SĐ.Phượng",
+          "LSĐL - SĐ.Phượng",
+          "Toán - T.Phát",
+          "Toán - T.Phát",
+          "CN - CN.Bằng"
+        ]
+      }
+    },
+    "7A13": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Cường",
+          "Tin - Ti.Tập",
+          "GDĐP - Ti.Hậu",
+          "HĐTN 2 - SĐ.Ngân",
+          "HĐTN 1 - SĐ.Ngân"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Cường",
+          "Nhạc - Nhạc.Hiền",
+          "MT - MT.Trang",
+          "Văn - V.Trinh",
+          "Văn - V.Trinh"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "CN - CN.Liên",
+          "GDTC - TD.Cương",
+          "GDTC - TD.Cương",
+          "Anh - A.CVân",
+          "Anh - A.CVân"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDCD - GD.Tuyền",
+          "Văn - V.Trinh",
+          "Văn - V.Trinh",
+          "KHTN - TN.Hải",
+          "KHTN - TN.Hải"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Hải",
+          "KHTN - TN.Hải",
+          "Anh - A.CVân",
+          "LSĐL - SĐ.Ngân",
+          "LSĐL - SĐ.Ngân"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "HĐTN 3 - SĐ.Ngân",
+          "Toán - T.Cường",
+          "Toán - T.Cường",
+          "LSĐL - SĐ.Ngân",
+          ""
+        ]
+      }
+    },
+    "7A19": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.ThHương",
+          "Văn - V.Bình",
+          "GDĐP - CN.Chí",
+          "HĐTN 2 - T.ThHương",
+          "HĐTN 1 - T.ThHương"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "MT - MT.Trang",
+          "Nhạc - Nhạc.Dương",
+          "LSĐL - SĐ.Dung",
+          "LSĐL - SĐ.Dung",
+          "GDCD - GD.Tuyền"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.Khánh",
+          "Anh - A.Khánh",
+          "Toán - T.ThHương",
+          "Toán - T.ThHương",
+          "Tin - Ti.Tập"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "CN - CN.Liên",
+          "GDTC - TD.Kiệt",
+          "LSĐL - SĐ.Dung",
+          "Anh - A.Khánh",
+          "Văn - V.Bình"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDTC - TD.Kiệt",
+          "HĐTN 3 - PHT.Định",
+          "KHTN - TN.ÁLoan",
+          "KHTN - TN.ÁLoan",
+          "Toán - T.ThHương"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.ÁLoan",
+          "KHTN - TN.ÁLoan",
+          "Văn - V.Bình",
+          "Văn - V.Bình",
+          ""
+        ]
+      }
+    },
+    "7A5": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.Hải",
+          "LSĐL - SĐ.Yến",
+          "LSĐL - SĐ.Yến",
+          "HĐTN 2 - T.Phương",
+          "HĐTN 1 - T.Phương"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "HĐTN 3 - T.Phương",
+          "Toán - T.Phương",
+          "Toán - T.Phương",
+          "Tin - Ti.Dương",
+          "GDTC - TD.Thuyền"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Trâm",
+          "Anh - A.Hải",
+          "Anh - A.Hải",
+          "Văn - V.Giang",
+          "Văn - V.Giang"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDTC - TD.Thuyền",
+          "GDĐP - Ti.Hậu",
+          "Toán - T.Phương",
+          "Toán - T.Phương",
+          "GDCD - GD.Thuận"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "LSĐL - SĐ.Yến",
+          "Văn - V.Giang",
+          "Văn - V.Giang",
+          "MT - MT.Trang",
+          "KHTN - TN.Trâm"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Trâm",
+          "KHTN - TN.Trâm",
+          "CN - CN.Chí",
+          "Nhạc - Nhạc.Hiền",
+          ""
+        ]
+      }
+    },
+    "7A1": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.Lan",
+          "Văn - V.Trinh",
+          "Văn - V.Trinh",
+          "HĐTN 2 - SĐ.Yến",
+          "HĐTN 1 - SĐ.Yến"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Trâm",
+          "KHTN - TN.Trâm",
+          "Văn - V.Trinh",
+          "Toán - T.Phương",
+          "Toán - T.Phương"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDTC - TD.Thuyền",
+          "LSĐL - SĐ.Yến",
+          "LSĐL - SĐ.Yến",
+          "GDCD - GD.Thuận",
+          "CN - CN.Chí"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Trinh",
+          "Tin - Ti.Dương",
+          "KHTN - TN.Trâm",
+          "GDĐP - Ti.Hậu",
+          "LSĐL - SĐ.Yến"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "MT - MT.Trang",
+          "HĐTN 3 - SĐ.Yến",
+          "Nhạc - Nhạc.Hiền",
+          "KHTN - TN.Trâm",
+          "GDTC - TD.Thuyền"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Phương",
+          "Toán - T.Phương",
+          "Anh - A.Lan",
+          "Anh - A.Lan",
+          ""
+        ]
+      }
+    },
+    "7A16": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.Minh",
+          "GDCD - GD.Tuyền",
+          "GDTC - TD.Cương",
+          "HĐTN 2 - A.Minh",
+          "HĐTN 1 - A.Minh"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Tuấn",
+          "GDĐP - CN.Chí",
+          "LSĐL - SĐ.Nhung",
+          "LSĐL - SĐ.Nhung",
+          "CN - CN.Liên"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Tin - Ti.Tập",
+          "MT - MT.Trang",
+          "KHTN - TN.Nữ",
+          "Anh - A.Minh",
+          "Anh - A.Minh"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDTC - TD.Cương",
+          "Nhạc - Nhạc.Hiền",
+          "Toán - T.Xuân",
+          "Toán - T.Xuân",
+          "HĐTN 3 - A.Minh"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Tuấn",
+          "Văn - V.Tuấn",
+          "KHTN - TN.Nữ",
+          "KHTN - TN.Nữ",
+          "Toán - T.Xuân"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Nữ",
+          "Văn - V.Tuấn",
+          "LSĐL - SĐ.Nhung",
+          "Toán - T.Xuân",
+          ""
+        ]
+      }
+    },
+    "6A6": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.Nga",
+          "Anh - A.Nga",
+          "Văn - V.Vân",
+          "HĐTN 2 - TD.Quí",
+          "HĐTN 1 - TD.Quí"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "CN - CN.Vàng",
+          "Toán - T.Xuân",
+          "Toán - T.Xuân",
+          "GDTC - TD.Quí",
+          "Văn - V.Vân"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDTC - TD.Quí",
+          "KHTN - TN.Đoan",
+          "KHTN - TN.Đoan",
+          "Toán - T.Xuân",
+          "LSĐL - SĐ.Linh"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDCD - GD.Em",
+          "Tin - Ti.Ân",
+          "KHTN - TN.Đoan",
+          "KHTN - TN.Đoan",
+          "HĐTN 3 - TD.Quí"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDĐP - CN.Vàng",
+          "LSĐL - SĐ.Linh",
+          "LSĐL - SĐ.Linh",
+          "Toán - T.Xuân",
+          "MT - MT.Bách"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.Nga",
+          "Nhạc - Nhạc.Dương",
+          "Văn - V.Vân",
+          "Văn - V.Vân",
+          ""
+        ]
+      }
+    },
+    "7A3": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Thanh",
+          "KHTN - TN.Thanh",
+          "Tin - Ti.Dương",
+          "HĐTN 2 - CN.Chí",
+          "HĐTN 1 - CN.Chí"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "LSĐL - SĐ.Ngân",
+          "Anh - A.Hải",
+          "Anh - A.Hải",
+          "Toán - T.Xuân",
+          "Nhạc - Nhạc.Hiền"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Thanh",
+          "GDTC - TD.Thuyền",
+          "LSĐL - SĐ.Ngân",
+          "LSĐL - SĐ.Ngân",
+          "Toán - T.Xuân"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Xuân",
+          "Toán - T.Xuân",
+          "GDTC - TD.Thuyền",
+          "KHTN - TN.Thanh",
+          "MT - MT.Trang"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.Hải",
+          "GDĐP - Ti.Hậu",
+          "GDCD - GD.Thuận",
+          "Văn - V.Giang",
+          "Văn - V.Giang"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "HĐTN 3 - CN.Chí",
+          "CN - CN.Chí",
+          "Văn - V.Giang",
+          "Văn - V.Giang",
+          ""
+        ]
+      }
+    },
+    "8A11": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Khanh",
+          "Nhạc - Nhạc.Hiền",
+          "Toán - T.Nhật",
+          "HĐTN 2 - TN.Khanh",
+          "HĐTN 1 - TN.Khanh"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "CN - CN.Bằng",
+          "Tin - Ti.Thuận",
+          "LSĐL - SĐ.Nhàn",
+          "LSĐL - SĐ.Nhàn",
+          "MT - MT.Nam"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "CN - CN.Bằng",
+          "LSĐL - SĐ.Nhàn",
+          "Toán - T.Nhật",
+          "GDĐP - CN.Bằng",
+          "GDCD - GD.Tâm"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Nhật",
+          "Toán - T.Nhật",
+          "KHTN - TN.Khanh",
+          "Văn - V.Tú",
+          "Văn - V.Tú"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Khanh",
+          "KHTN - TN.Khanh",
+          "GDTC - TD.Bằng",
+          "GDTC - TD.Bằng",
+          "Anh - A.Hoa"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "HĐTN 3 - TN.Khanh",
+          "Anh - A.Hoa",
+          "Anh - A.Hoa",
+          "Văn - V.Tú",
+          "Văn - V.Tú"
+        ]
+      }
+    },
+    "7A10": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - TN.Mỹ",
+          "KHTN - TN.Mỹ",
+          "KHTN - TN.Mỹ",
+          "HĐTN 2 - TN.Mỹ",
+          "HĐTN 1 - TN.Mỹ"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Tin - Ti.Dương",
+          "LSĐL - SĐ.Ngân",
+          "LSĐL - SĐ.Ngân",
+          "Anh - A.CVân",
+          "Anh - A.CVân"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "LSĐL - SĐ.Ngân",
+          "Toán - T.Trang",
+          "Toán - T.Trang",
+          "GDTC - TD.Cương",
+          "GDCD - GD.Thuận"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Mỹ",
+          "Văn - TN.Mỹ",
+          "Văn - TN.Mỹ",
+          "GDTC - TD.Cương",
+          "Nhạc - Nhạc.Hiền"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.CVân",
+          "Toán - T.Trang",
+          "KHTN - TN.Mỹ",
+          "HĐTN 3 - TN.Mỹ",
+          "Văn - TN.Mỹ"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "MT - MT.Trang",
+          "CN - CN.Liên",
+          "GDĐP - Ti.Hậu",
+          "Toán - T.Trang",
+          ""
+        ]
+      }
+    },
+    "8A15": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Hải",
+          "KHTN - TN.Hải",
+          "LSĐL - SĐ.Phượng",
+          "HĐTN 2 - T.Cường",
+          "HĐTN 1 - T.Cường"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "MT - MT.Nam",
+          "LSĐL - SĐ.Phượng",
+          "LSĐL - SĐ.Phượng",
+          "Nhạc - Nhạc.Hiền",
+          "HĐTN 3 - T.Cường"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Cường",
+          "Toán - T.Cường",
+          "Văn - V.Tuấn",
+          "Văn - V.Tuấn",
+          "CN - CN.Bằng"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "CN - CN.Bằng",
+          "Văn - V.Tuấn",
+          "Anh - A.Nguyên",
+          "Anh - A.Nguyên",
+          "GDĐP - CN.Thiện"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Tin - Ti.Thuận",
+          "Anh - A.Nguyên",
+          "GDCD - GD.Tuyền",
+          "KHTN - TN.Hải",
+          "KHTN - TN.Hải"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDTC - TD.Quí",
+          "GDTC - TD.Quí",
+          "Văn - V.Tuấn",
+          "Toán - T.Cường",
+          "Toán - T.Cường"
+        ]
+      }
+    },
+    "6A5": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "LSĐL - SĐ.Linh",
+          "LSĐL - SĐ.Linh",
+          "KHTN - TN.Đoan",
+          "HĐTN 2 - SĐ.Linh",
+          "HĐTN 1 - SĐ.Linh"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDCD - GD.Em",
+          "CN - CN.Vàng",
+          "GDĐP - CN.Vàng",
+          "KHTN - TN.Đoan",
+          "KHTN - TN.Đoan"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.Nga",
+          "GDTC - TD.Quí",
+          "GDTC - TD.Quí",
+          "LSĐL - SĐ.Linh",
+          "Văn - V.Vân"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.Nga",
+          "Anh - A.Nga",
+          "Toán - T.HLoan",
+          "Toán - T.HLoan",
+          "Tin - Ti.Ân"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Vân",
+          "Toán - T.HLoan",
+          "Toán - T.HLoan",
+          "MT - MT.Bách",
+          "HĐTN 3 - SĐ.Linh"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Vân",
+          "Văn - V.Vân",
+          "KHTN - TN.Đoan",
+          "Nhạc - Nhạc.Dương",
+          ""
+        ]
+      }
+    },
+    "8A17": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDĐP - SĐ.Yến",
+          "KHTN - TN.ÁLoan",
+          "KHTN - TN.ÁLoan",
+          "HĐTN 2 - GD.Tuyền",
+          "HĐTN 1 - GD.Tuyền"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Thư",
+          "Toán - T.Thư",
+          "Văn - V.Bình",
+          "MT - MT.Nam",
+          "LSĐL - SĐ.Dung"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "HĐTN 3 - GD.Tuyền",
+          "GDCD - GD.Tuyền",
+          "CN - CN.Bằng",
+          "Văn - V.Bình",
+          "Văn - V.Bình"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Thư",
+          "Toán - T.Thư",
+          "GDTC - TD.Quí",
+          "Văn - V.Bình",
+          "Tin - Ti.Thuận"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.ÁLoan",
+          "GDTC - TD.Quí",
+          "Anh - A.HVân",
+          "LSĐL - SĐ.Dung",
+          "LSĐL - SĐ.Dung"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.HVân",
+          "Anh - A.HVân",
+          "Nhạc - Nhạc.Hiền",
+          "CN - CN.Bằng",
+          "KHTN - TN.ÁLoan"
+        ]
+      }
+    },
+    "7A7": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "LSĐL - SĐ.Tâm",
+          "Toán - T.Phát",
+          "Toán - T.Phát",
+          "HĐTN 2 - T.Phát",
+          "HĐTN 1 - T.Phát"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.Lan",
+          "Anh - A.Lan",
+          "GDTC - TD.Thuyền",
+          "GDCD - GD.Thuận",
+          "MT - MT.Trang"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Vy",
+          "Văn - V.Vy",
+          "KHTN - TN.Huyền",
+          "KHTN - TN.Huyền",
+          "Anh - A.Lan"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Nhạc - Nhạc.Hiền",
+          "Văn - V.Vy",
+          "Văn - V.Vy",
+          "KHTN - TN.Huyền",
+          "KHTN - TN.Huyền"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "HĐTN 3 - PHT.Định",
+          "Toán - T.Phát",
+          "Toán - T.Phát",
+          "CN - CN.Chí",
+          "GDĐP - Ti.Hậu"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDTC - TD.Thuyền",
+          "LSĐL - SĐ.Tâm",
+          "LSĐL - SĐ.Tâm",
+          "Tin - Ti.Dương",
+          ""
+        ]
+      }
+    },
+    "8A14": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "LSĐL - SĐ.Phượng",
+          "Văn - V.Tuấn",
+          "Văn - V.Tuấn",
+          "HĐTN 2 - SĐ.Phượng",
+          "HĐTN 1 - SĐ.Phượng"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "HĐTN 3 - SĐ.Phượng",
+          "GDTC - TD.Quí",
+          "Toán - T.Phát",
+          "KHTN - TN.Phương",
+          "KHTN - TN.Phương"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDCD - GD.Tâm",
+          "Toán - T.Phát",
+          "Toán - T.Phát",
+          "GDTC - TD.Quí",
+          "Văn - V.Tuấn"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.Nguyên",
+          "Anh - A.Nguyên",
+          "Toán - T.Phát",
+          "GDĐP - CN.Thiện",
+          "CN - CN.Bằng"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.Nguyên",
+          "Tin - Ti.Thuận",
+          "MT - MT.Nam",
+          "KHTN - TN.Phương",
+          "KHTN - TN.Phương"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Tuấn",
+          "CN - CN.Bằng",
+          "LSĐL - SĐ.Phượng",
+          "LSĐL - SĐ.Phượng",
+          "Nhạc - Nhạc.Hiền"
+        ]
+      }
+    },
+    "8A16": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "LSĐL - SĐ.Dung",
+          "Tin - Ti.Thuận",
+          "GDTC - TD.Quí",
+          "HĐTN 2 - TN.Hảo",
+          "HĐTN 1 - TN.Hảo"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.Hải",
+          "MT - MT.Nam",
+          "Toán - T.Cường",
+          "Toán - T.Cường",
+          "GDTC - TD.Quí"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "LSĐL - SĐ.Dung",
+          "LSĐL - SĐ.Dung",
+          "KHTN - TN.Hảo",
+          "Anh - A.Hải",
+          "Anh - A.Hải"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDĐP - SĐ.Dung",
+          "Văn - V.Bình",
+          "Văn - V.Bình",
+          "KHTN - TN.Hảo",
+          "KHTN - TN.Hảo"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "CN - CN.Bằng",
+          "GDCD - GD.Tuyền",
+          "Toán - T.Cường",
+          "Toán - T.Cường",
+          "Nhạc - Nhạc.Hiền"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Bình",
+          "Văn - V.Bình",
+          "CN - CN.Bằng",
+          "KHTN - TN.Hảo",
+          "HĐTN 3 - TN.Hảo"
+        ]
+      }
+    },
+    "7A15": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDCD - GD.Tuyền",
+          "LSĐL - SĐ.Nhung",
+          "LSĐL - SĐ.Nhung",
+          "HĐTN 2 - SĐ.Nhung",
+          "HĐTN 1 - SĐ.Nhung"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDĐP - TN.Sương",
+          "Văn - V.Tuấn",
+          "Văn - V.Tuấn",
+          "Toán - T.Châu",
+          "Toán - T.Châu"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Tuấn",
+          "CN - CN.Liên",
+          "Nhạc - Nhạc.Hiền",
+          "Tin - Ti.Tập",
+          "GDTC - TD.Cương"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.Minh",
+          "Anh - A.Minh",
+          "MT - MT.Trang",
+          "KHTN - TN.Thảo",
+          "KHTN - TN.Thảo"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "LSĐL - SĐ.Nhung",
+          "HĐTN 3 - SĐ.Nhung",
+          "GDTC - TD.Cương",
+          "Anh - A.Minh",
+          "Văn - V.Tuấn"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Thảo",
+          "KHTN - TN.Thảo",
+          "Toán - T.Châu",
+          "Toán - T.Châu",
+          ""
+        ]
+      }
+    },
+    "7A9": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDCD - GD.Thuận",
+          "Anh - A.Lan",
+          "GDTC - TD.Thuyền",
+          "HĐTN 2 - SĐ.Tâm",
+          "HĐTN 1 - SĐ.Tâm"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "HĐTN 3 - SĐ.Tâm",
+          "Văn - SĐ.Tâm",
+          "Văn - SĐ.Tâm",
+          "LSĐL - SĐ.Tâm",
+          "LSĐL - SĐ.Tâm"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Huyền",
+          "KHTN - TN.Huyền",
+          "GDTC - TD.Thuyền",
+          "Toán - T.Trang",
+          "Toán - T.Trang"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Tin - Ti.Dương",
+          "CN - CN.Liên",
+          "Văn - SĐ.Tâm",
+          "Nhạc - Nhạc.Hiền",
+          "Toán - T.Trang"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDĐP - Ti.Hậu",
+          "LSĐL - SĐ.Tâm",
+          "Văn - SĐ.Tâm",
+          "Anh - A.Lan",
+          "Anh - A.Lan"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Trang",
+          "MT - MT.Trang",
+          "KHTN - TN.Huyền",
+          "KHTN - TN.Huyền",
+          ""
+        ]
+      }
+    },
+    "7A20": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDĐP - CN.Chí",
+          "MT - MT.Trang",
+          "Toán - T.ThHương",
+          "HĐTN 2 - TN.Đoan",
+          "HĐTN 1 - TN.Đoan"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Bình",
+          "Văn - V.Bình",
+          "Nhạc - Nhạc.Dương",
+          "Anh - A.Khánh",
+          "Anh - A.Khánh"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.ThHương",
+          "Toán - T.ThHương",
+          "Văn - V.Bình",
+          "LSĐL - SĐ.Dung",
+          "LSĐL - SĐ.Dung"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Bình",
+          "LSĐL - SĐ.Dung",
+          "GDCD - GD.Tuyền",
+          "GDTC - TD.Kiệt",
+          "KHTN - TN.Đoan"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.Khánh",
+          "GDTC - TD.Kiệt",
+          "HĐTN 3 - TN.Đoan",
+          "Toán - T.ThHương",
+          "KHTN - TN.Đoan"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Đoan",
+          "KHTN - TN.Đoan",
+          "CN - CN.Liên",
+          "Tin - Ti.Tập",
+          ""
+        ]
+      }
+    },
+    "7A6": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "MT - MT.Trang",
+          "KHTN - TN.Hảo",
+          "KHTN - TN.Hảo",
+          "HĐTN 2 - T.Thư",
+          "HĐTN 1 - T.Thư"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Vy",
+          "Văn - V.Vy",
+          "KHTN - TN.Hảo",
+          "Toán - T.Thư",
+          "Toán - T.Thư"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "LSĐL - SĐ.Yến",
+          "Tin - Ti.Dương",
+          "Anh - A.Lan",
+          "Anh - A.Lan",
+          "GDTC - TD.Thuyền"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Hảo",
+          "GDTC - TD.Thuyền",
+          "HĐTN 3 - T.Thư",
+          "Văn - V.Vy",
+          "Văn - V.Vy"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Nhạc - Nhạc.Hiền",
+          "Toán - T.Thư",
+          "Toán - T.Thư",
+          "GDCD - GD.Thuận",
+          "CN - CN.Chí"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.Lan",
+          "GDĐP - Ti.Hậu",
+          "LSĐL - SĐ.Yến",
+          "LSĐL - SĐ.Yến",
+          ""
+        ]
+      }
+    },
+    "7A4": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDTC - TD.Thuyền",
+          "Anh - A.Hải",
+          "GDCD - GD.Thuận",
+          "HĐTN 2 - A.Hải",
+          "HĐTN 1 - A.Hải"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Thanh",
+          "KHTN - TN.Thanh",
+          "Tin - Ti.Dương",
+          "GDTC - TD.Thuyền",
+          "HĐTN 3 - A.Hải"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Giang",
+          "Văn - V.Giang",
+          "KHTN - TN.Thanh",
+          "LSĐL - SĐ.Yến",
+          "LSĐL - SĐ.Yến"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDĐP - Ti.Hậu",
+          "Toán - T.Huyền",
+          "Toán - T.Huyền",
+          "LSĐL - SĐ.Yến",
+          "KHTN - TN.Thanh"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "CN - CN.Chí",
+          "Anh - A.Hải",
+          "Anh - A.Hải",
+          "Nhạc - Nhạc.Hiền",
+          "MT - MT.Trang"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Giang",
+          "Văn - V.Giang",
+          "Toán - T.Huyền",
+          "Toán - T.Huyền",
+          ""
+        ]
+      }
+    },
+    "7A11": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Nhạc - Nhạc.Hiền",
+          "GDCD - GD.Thuận",
+          "Tin - Ti.Tập",
+          "HĐTN 2 - GD.Thuận",
+          "HĐTN 1 - GD.Thuận"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.CVân",
+          "Anh - A.CVân",
+          "KHTN - TN.Tú",
+          "LSĐL - SĐ.Ngân",
+          "LSĐL - SĐ.Ngân"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDTC - TD.Cương",
+          "Anh - A.CVân",
+          "Văn - V.Vân",
+          "Văn - V.Vân",
+          "LSĐL - SĐ.Ngân"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Vân",
+          "MT - MT.Trang",
+          "Toán - T.Trang",
+          "KHTN - TN.Tú",
+          "GDTC - TD.Cương"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Trang",
+          "Văn - V.Vân",
+          "KHTN - TN.Tú",
+          "KHTN - TN.Tú",
+          "HĐTN 3 - GD.Thuận"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDĐP - Ti.Hậu",
+          "Toán - T.Trang",
+          "Toán - T.Trang",
+          "CN - CN.Liên",
+          ""
+        ]
+      }
+    },
+    "7A8": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "GDĐP - Ti.Hậu",
+          "Văn - V.Vy",
+          "Văn - V.Vy",
+          "HĐTN 2 - TN.Huyền",
+          "HĐTN 1 - TN.Huyền"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Phát",
+          "Toán - T.Phát",
+          "GDCD - GD.Thuận",
+          "KHTN - TN.Huyền",
+          "KHTN - TN.Huyền"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Anh - A.Lan",
+          "Anh - A.Lan",
+          "Tin - Ti.Dương",
+          "CN - CN.Chí",
+          "HĐTN 3 - TN.Huyền"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Phát",
+          "KHTN - TN.Huyền",
+          "KHTN - TN.Huyền",
+          "LSĐL - SĐ.Tâm",
+          "LSĐL - SĐ.Tâm"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Phát",
+          "GDTC - TD.Thuyền",
+          "GDTC - TD.Thuyền",
+          "Văn - V.Vy",
+          "Văn - V.Vy"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Nhạc - Nhạc.Hiền",
+          "Anh - A.Lan",
+          "MT - MT.Trang",
+          "LSĐL - SĐ.Tâm",
+          ""
+        ]
+      }
+    },
+    "7A12": {
+      "thu2": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Tin - Ti.Tập",
+          "Toán - T.Cường",
+          "Toán - T.Cường",
+          "HĐTN 2 - TN.Hải",
+          "HĐTN 1 - TN.Hải"
+        ]
+      },
+      "thu3": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "CN - CN.Liên",
+          "Toán - T.Cường",
+          "Nhạc - Nhạc.Hiền",
+          "MT - MT.Trang",
+          "GDCD - GD.Thuận"
+        ]
+      },
+      "thu4": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Văn - V.Vân",
+          "Văn - V.Vân",
+          "Anh - A.CVân",
+          "KHTN - TN.Hải",
+          "KHTN - TN.Hải"
+        ]
+      },
+      "thu5": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "KHTN - TN.Hải",
+          "KHTN - TN.Hải",
+          "HĐTN 3 - TN.Hải",
+          "Văn - V.Vân",
+          "Văn - V.Vân"
+        ]
+      },
+      "thu6": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "LSĐL - SĐ.Ngân",
+          "LSĐL - SĐ.Ngân",
+          "GDĐP - Ti.Hậu",
+          "Anh - A.CVân",
+          "Anh - A.CVân"
+        ]
+      },
+      "thu7": {
+        "sang": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "chieu": [
+          "Toán - T.Cường",
+          "LSĐL - SĐ.Ngân",
+          "GDTC - TD.Cương",
+          "GDTC - TD.Cương",
+          ""
+        ]
+      }
+    }
+  },
+  "pccmMatrix": {
+    "6A13|HĐTN 1": "V.Tuyền",
+    "6A9|HĐTN 1": "V.Quỳnh",
+    "9A10|HĐTN 1": "V.Trinh",
+    "6A14|Toán": "T.Chung",
+    "9A13|HĐTN 1": "T.Hùng",
+    "9A15|HĐTN 1": "T.Huyền",
+    "9A16|HĐTN 1": "T.Tiên",
+    "8A5|HĐTN 1": "T.HLoan",
+    "9A6|HĐTN 1": "A.Dung",
+    "9A5|HĐTN 1": "A.Phong",
+    "9A8|HĐTN 1": "A.Ngân",
+    "9A14|HĐTN 1": "A.HVân",
+    "9A11|HĐTN 1": "A.An",
+    "6A15|HĐTN 1": "A.Luận",
+    "9A3|HĐTN 1": "TN.Tân",
+    "8A3|HĐTN 1": "TN.Hương",
+    "9A7|HĐTN 1": "TN.Ngân",
+    "9A9|HĐTN 1": "TN.NChâu",
+    "6A10|HĐTN 1": "TN.LNguyên",
+    "9A2|HĐTN 1": "TN.Dung",
+    "9A1|HĐTN 1": "TN.TNguyên",
+    "6A12|HĐTN 1": "TN.Sương",
+    "9A17|HĐTN 1": "TN.Phương",
+    "6A3|HĐTN 1": "TN.Hơn",
+    "9A20|HĐTN 1": "TN.Thảo",
+    "8A2|HĐTN 1": "TN.Nữ",
+    "8A7|HĐTN 1": "SĐ.Hằng",
+    "6A1|HĐTN 1": "SĐ.Kiều",
+    "9A4|HĐTN 1": "SĐ.Anh",
+    "6A16|HĐTN 1": "SĐ.Châu",
+    "9A12|HĐTN 1": "SĐ.Trâm",
+    "9A19|HĐTN 1": "SĐ.Nhàn",
+    "9A18|HĐTN 1": "SĐ.Thắm",
+    "8A6|HĐTN 1": "GD.Tâm",
+    "8A8|HĐTN 1": "CN.Thiện",
+    "6A2|HĐTN 1": "CN.Phượng",
+    "6A11|HĐTN 1": "CN.Trâm",
+    "8A4|HĐTN 1": "TD.Tiền",
+    "8A1|HĐTN 1": "TD.Thanh",
+    "6A4|HĐTN 1": "TD.Duy",
+    "6A17|HĐTN 1": "TD.Kiệt",
+    "8A9|HĐTN 1": "Ti.Hào",
+    "6A13|HĐTN 2": "V.Tuyền",
+    "6A9|HĐTN 2": "V.Quỳnh",
+    "9A10|HĐTN 2": "V.Trinh",
+    "6A14|HĐTN 2": "T.Chung",
+    "9A13|HĐTN 2": "T.Hùng",
+    "9A15|HĐTN 2": "T.Huyền",
+    "9A16|HĐTN 2": "T.Tiên",
+    "8A5|HĐTN 2": "T.HLoan",
+    "9A6|HĐTN 2": "A.Dung",
+    "9A5|HĐTN 2": "A.Phong",
+    "9A8|HĐTN 2": "A.Ngân",
+    "9A14|HĐTN 2": "A.HVân",
+    "9A11|HĐTN 2": "A.An",
+    "6A15|HĐTN 2": "A.Luận",
+    "9A3|HĐTN 2": "TN.Tân",
+    "8A3|HĐTN 2": "TN.Hương",
+    "9A7|HĐTN 2": "TN.Ngân",
+    "9A9|HĐTN 2": "TN.NChâu",
+    "6A10|HĐTN 2": "TN.LNguyên",
+    "9A2|HĐTN 2": "TN.Dung",
+    "9A1|HĐTN 2": "TN.TNguyên",
+    "6A12|HĐTN 2": "TN.Sương",
+    "9A17|HĐTN 2": "TN.Phương",
+    "6A3|HĐTN 2": "TN.Hơn",
+    "9A20|HĐTN 2": "TN.Thảo",
+    "8A2|HĐTN 2": "TN.Nữ",
+    "8A7|HĐTN 2": "SĐ.Hằng",
+    "6A1|HĐTN 2": "SĐ.Kiều",
+    "9A4|HĐTN 2": "SĐ.Anh",
+    "6A16|HĐTN 2": "SĐ.Châu",
+    "9A12|HĐTN 2": "SĐ.Trâm",
+    "9A19|HĐTN 2": "SĐ.Nhàn",
+    "9A18|HĐTN 2": "SĐ.Thắm",
+    "8A6|HĐTN 2": "GD.Tâm",
+    "8A8|HĐTN 2": "CN.Thiện",
+    "6A2|HĐTN 2": "CN.Phượng",
+    "6A11|HĐTN 2": "CN.Trâm",
+    "8A4|HĐTN 2": "TD.Tiền",
+    "8A1|HĐTN 2": "TD.Thanh",
+    "6A4|HĐTN 2": "TD.Duy",
+    "6A17|HĐTN 2": "TD.Kiệt",
+    "8A9|HĐTN 2": "Ti.Hào",
+    "8A9|Văn": "V.Mỹ",
+    "6A16|Văn": "V.Trâm",
+    "6A12|Văn": "V.Tuyền",
+    "9A15|Văn": "V.Vy",
+    "6A9|Văn": "V.Quỳnh",
+    "9A1|Toán": "T.Chung",
+    "9A9|Toán": "T.Hương",
+    "9A19|Toán": "T.ThHương",
+    "9A3|Anh": "A.Nguyên",
+    "6A10|Anh": "A.Phong",
+    "9A16|Anh": "A.Hoa",
+    "6A4|Anh": "A.Ngân",
+    "9A13|Anh": "A.HVân",
+    "9A10|Anh": "A.An",
+    "6A3|Anh": "A.Luận",
+    "9A4|KHTN": "TN.Thanh",
+    "8A4|KHTN": "TN.Tân",
+    "8A6|KHTN": "TN.Hương",
+    "9A6|KHTN": "TN.Ngân",
+    "6A2|KHTN": "TN.LNguyên",
+    "9A2|KHTN": "TN.Dung",
+    "6A11|KHTN": "TN.Mỹ",
+    "6A14|KHTN": "TN.Sương",
+    "9A18|KHTN": "TN.Phương",
+    "9A20|KHTN": "TN.Thảo",
+    "8A2|KHTN": "TN.Nữ",
+    "9A7|GDĐP": "TN.Thủy",
+    "8A8|LSĐL": "SĐ.Hằng",
+    "6A1|LSĐL": "SĐ.Kiều",
+    "6A13|LSĐL": "SĐ.Anh",
+    "6A15|LSĐL": "SĐ.Châu",
+    "9A5|LSĐL": "SĐ.Thắm",
+    "8A3|GDCD": "GD.Tâm",
+    "9A8|CN": "CN.Xuân",
+    "8A1|CN": "CN.Thiện",
+    "9A14|CN": "CN.Trâm",
+    "9A17|GDTC": "TD.Phúc",
+    "8A5|GDTC": "TD.Tiền",
+    "8A7|GDTC": "TD.Thanh",
+    "9A11|Nhạc": "Nhạc.Minh",
+    "6A17|Nhạc": "Nhạc.Dương",
+    "9A12|Tin": "Ti.Hào",
+    "9A8|Văn": "V.Trâm",
+    "9A12|Văn": "V.Hoa",
+    "9A19|Văn": "V.Giang",
+    "8A7|Toán": "T.Nhơn",
+    "6A13|Toán": "T.Tiên",
+    "6A2|Toán": "T.HLoan",
+    "9A7|Anh": "A.Dung",
+    "8A3|Anh": "A.Hoa",
+    "9A17|Anh": "A.Lan",
+    "9A14|KHTN": "TN.NChâu",
+    "9A11|KHTN": "TN.MChâu",
+    "6A17|KHTN": "TN.Thủy",
+    "8A5|LSĐL": "SĐ.Loan",
+    "9A13|LSĐL": "SĐ.Trâm",
+    "8A4|GDCD": "GD.Tâm",
+    "6A4|CN": "CN.Trâm",
+    "9A20|MT": "MT.Trang",
+    "9A16|GDTC": "TD.Phúc",
+    "6A16|GDTC": "TD.Kiệt",
+    "8A1|Nhạc": "Nhạc.Hiền",
+    "8A4|Văn": "V.Mỹ",
+    "6A14|Văn": "V.Quỳnh",
+    "6A15|Toán": "T.Hương",
+    "9A4|Toán": "T.Nhơn",
+    "9A3|Toán": "T.Huyền",
+    "9A20|Toán": "T.ThHương",
+    "9A2|Anh": "A.Nguyên",
+    "6A9|Anh": "A.Phong",
+    "9A11|Anh": "A.An",
+    "6A16|Anh": "A.Luận",
+    "9A16|KHTN": "TN.Thanh",
+    "9A5|KHTN": "TN.Ngân",
+    "9A9|KHTN": "TN.NChâu",
+    "6A10|KHTN": "TN.LNguyên",
+    "8A8|KHTN": "TN.Dung",
+    "6A1|KHTN": "TN.Mỹ",
+    "6A3|KHTN": "TN.Hơn",
+    "8A1|KHTN": "TN.MChâu",
+    "9A1|LSĐL": "SĐ.Loan",
+    "6A12|LSĐL": "SĐ.Anh",
+    "9A6|LSĐL": "SĐ.Thắm",
+    "8A7|GDCD": "GD.Tâm",
+    "9A10|CN": "CN.Xuân",
+    "8A9|CN": "CN.Thiện",
+    "6A11|CN": "CN.Trâm",
+    "9A18|MT": "MT.Trang",
+    "9A15|GDTC": "TD.Phúc",
+    "8A6|GDTC": "TD.Tiền",
+    "9A14|Nhạc": "Nhạc.Minh",
+    "6A4|Nhạc": "Nhạc.Dương",
+    "8A2|Nhạc": "Nhạc.Hiền",
+    "8A5|Tin": "Ti.Hào",
+    "8A12|Văn": "V.Tú",
+    "6A7|Văn": "V.Vân",
+    "7A14|Văn": "V.Tuấn",
+    "7A2|Văn": "V.Vy",
+    "8A18|Văn": "V.Bình",
+    "7A18|Văn": "V.Lâm",
+    "7A17|Toán": "T.Huy",
+    "6A8|Toán": "T.Xuân",
+    "8A10|Toán": "T.Nhật",
+    "8A13|Toán": "T.Phát",
+    "7A13|Toán": "T.Cường",
+    "7A19|Toán": "T.ThHương",
+    "7A5|Anh": "A.Hải",
+    "7A1|Anh": "A.Lan",
+    "7A16|Anh": "A.Minh",
+    "6A6|Anh": "A.Nga",
+    "7A3|KHTN": "TN.Thanh",
+    "8A11|KHTN": "TN.Khanh",
+    "7A10|Văn": "TN.Mỹ",
+    "8A15|KHTN": "TN.Hải",
+    "6A5|LSĐL": "SĐ.Linh",
+    "8A17|GDĐP": "SĐ.Yến",
+    "7A7|LSĐL": "SĐ.Tâm",
+    "8A14|LSĐL": "SĐ.Phượng",
+    "8A16|LSĐL": "SĐ.Dung",
+    "7A15|GDCD": "GD.Tuyền",
+    "7A9|GDCD": "GD.Thuận",
+    "7A20|GDĐP": "CN.Chí",
+    "7A6|MT": "MT.Trang",
+    "7A4|GDTC": "TD.Thuyền",
+    "7A11|Nhạc": "Nhạc.Hiền",
+    "7A8|GDĐP": "Ti.Hậu",
+    "7A12|Tin": "Ti.Tập",
+    "8A14|Văn": "V.Tuấn",
+    "7A8|Văn": "V.Vy",
+    "7A1|Văn": "V.Trinh",
+    "7A19|Văn": "V.Bình",
+    "7A17|Văn": "V.Lâm",
+    "7A18|Toán": "T.Huy",
+    "7A7|Toán": "T.Phát",
+    "7A12|Toán": "T.Cường",
+    "7A4|Anh": "A.Hải",
+    "7A9|Anh": "A.Lan",
+    "7A14|Anh": "A.Minh",
+    "8A10|KHTN": "TN.Khanh",
+    "7A10|KHTN": "TN.Mỹ",
+    "7A6|KHTN": "TN.Hảo",
+    "8A17|KHTN": "TN.ÁLoan",
+    "7A15|LSĐL": "SĐ.Nhung",
+    "7A5|LSĐL": "SĐ.Yến",
+    "7A2|LSĐL": "SĐ.Tâm",
+    "8A18|LSĐL": "SĐ.Dung",
+    "7A16|GDCD": "GD.Tuyền",
+    "7A11|GDCD": "GD.Thuận",
+    "8A13|GDĐP": "CN.Thiện",
+    "7A20|MT": "MT.Trang",
+    "8A11|Nhạc": "Nhạc.Hiền",
+    "7A13|Tin": "Ti.Tập",
+    "8A16|Tin": "Ti.Thuận",
+    "6A6|Văn": "V.Vân",
+    "6A7|Toán": "T.Xuân",
+    "8A11|Toán": "T.Nhật",
+    "7A20|Toán": "T.ThHương",
+    "6A5|KHTN": "TN.Đoan",
+    "8A15|LSĐL": "SĐ.Phượng",
+    "7A4|GDCD": "GD.Thuận",
+    "6A8|CN": "CN.Vàng",
+    "8A12|GDĐP": "CN.Thiện",
+    "7A19|GDĐP": "CN.Chí",
+    "7A16|GDTC": "TD.Cương",
+    "7A9|GDTC": "TD.Thuyền",
+    "8A16|GDTC": "TD.Quí",
+    "8A13|Nhạc": "Nhạc.Hiền",
+    "7A13|GDĐP": "Ti.Hậu",
+    "7A11|Tin": "Ti.Tập",
+    "7A3|Tin": "Ti.Dương",
+    "7A17|HĐTN 2": "T.Huy",
+    "8A10|HĐTN 2": "T.Nhật",
+    "7A7|HĐTN 2": "T.Phát",
+    "8A15|HĐTN 2": "T.Cường",
+    "7A19|HĐTN 2": "T.ThHương",
+    "7A6|HĐTN 2": "T.Thư",
+    "7A5|HĐTN 2": "T.Phương",
+    "7A4|HĐTN 2": "A.Hải",
+    "7A16|HĐTN 2": "A.Minh",
+    "8A13|HĐTN 2": "A.Khánh",
+    "8A18|HĐTN 2": "TN.Trâm",
+    "8A11|HĐTN 2": "TN.Khanh",
+    "7A8|HĐTN 2": "TN.Huyền",
+    "7A10|HĐTN 2": "TN.Mỹ",
+    "6A7|HĐTN 2": "TN.Tú",
+    "7A12|HĐTN 2": "TN.Hải",
+    "8A16|HĐTN 2": "TN.Hảo",
+    "7A18|HĐTN 2": "TN.ÁLoan",
+    "7A20|HĐTN 2": "TN.Đoan",
+    "7A15|HĐTN 2": "SĐ.Nhung",
+    "7A13|HĐTN 2": "SĐ.Ngân",
+    "6A5|HĐTN 2": "SĐ.Linh",
+    "7A1|HĐTN 2": "SĐ.Yến",
+    "7A9|HĐTN 2": "SĐ.Tâm",
+    "8A14|HĐTN 2": "SĐ.Phượng",
+    "8A17|HĐTN 2": "GD.Tuyền",
+    "7A11|HĐTN 2": "GD.Thuận",
+    "6A8|HĐTN 2": "CN.Vàng",
+    "7A3|HĐTN 2": "CN.Chí",
+    "7A14|HĐTN 2": "TD.Cương",
+    "6A6|HĐTN 2": "TD.Quí",
+    "8A12|HĐTN 2": "Ti.Thuận",
+    "7A2|HĐTN 2": "Ti.Dương",
+    "7A17|HĐTN 1": "T.Huy",
+    "8A10|HĐTN 1": "T.Nhật",
+    "7A7|HĐTN 1": "T.Phát",
+    "8A15|HĐTN 1": "T.Cường",
+    "7A19|HĐTN 1": "T.ThHương",
+    "7A6|HĐTN 1": "T.Thư",
+    "7A5|HĐTN 1": "T.Phương",
+    "7A4|HĐTN 1": "A.Hải",
+    "7A16|HĐTN 1": "A.Minh",
+    "8A13|HĐTN 1": "A.Khánh",
+    "8A18|HĐTN 1": "TN.Trâm",
+    "8A11|HĐTN 1": "TN.Khanh",
+    "7A8|HĐTN 1": "TN.Huyền",
+    "7A10|HĐTN 1": "TN.Mỹ",
+    "6A7|HĐTN 1": "TN.Tú",
+    "7A12|HĐTN 1": "TN.Hải",
+    "8A16|HĐTN 1": "TN.Hảo",
+    "7A18|HĐTN 1": "TN.ÁLoan",
+    "7A20|HĐTN 1": "TN.Đoan",
+    "7A15|HĐTN 1": "SĐ.Nhung",
+    "7A13|HĐTN 1": "SĐ.Ngân",
+    "6A5|HĐTN 1": "SĐ.Linh",
+    "7A1|HĐTN 1": "SĐ.Yến",
+    "7A9|HĐTN 1": "SĐ.Tâm",
+    "8A14|HĐTN 1": "SĐ.Phượng",
+    "8A17|HĐTN 1": "GD.Tuyền",
+    "7A11|HĐTN 1": "GD.Thuận",
+    "6A8|HĐTN 1": "CN.Vàng",
+    "7A3|HĐTN 1": "CN.Chí",
+    "7A14|HĐTN 1": "TD.Cương",
+    "6A6|HĐTN 1": "TD.Quí",
+    "8A12|HĐTN 1": "Ti.Thuận",
+    "7A2|HĐTN 1": "Ti.Dương",
+    "6A3|Văn": "V.Lệ",
+    "9A5|Văn": "V.Thúy",
+    "9A7|Văn": "V.Trâm",
+    "9A17|Văn": "V.Quỳnh",
+    "9A10|Văn": "V.Trinh",
+    "9A11|Toán": "T.Minh",
+    "6A9|Toán": "T.Huy",
+    "8A8|Toán": "T.Nhơn",
+    "6A1|Toán": "T.Trung",
+    "9A13|Toán": "T.Hùng",
+    "8A5|Toán": "T.HLoan",
+    "8A1|Toán": "T.Châu",
+    "9A6|HĐTN 3": "A.Dung",
+    "8A9|Anh": "A.Hoa",
+    "9A9|Anh": "A.Ngân",
+    "6A12|Anh": "A.CVân",
+    "8A4|Anh": "A.An",
+    "6A4|KHTN": "TN.Hơn",
+    "9A8|LSĐL": "SĐ.Liễu",
+    "6A2|LSĐL": "SĐ.Kiều",
+    "6A16|LSĐL": "SĐ.Châu",
+    "9A20|LSĐL": "SĐ.Nhàn",
+    "9A3|GDĐP": "SĐ.Thắm",
+    "8A6|GDCD": "GD.Tâm",
+    "9A14|GDCD": "GD.Chi",
+    "9A12|CN": "CN.Xuân",
+    "8A2|CN": "CN.Thiện",
+    "9A4|CN": "CN.Phượng",
+    "9A2|MT": "MT.Bách",
+    "9A19|MT": "MT.Trang",
+    "6A11|GDTC": "TD.Bằng",
+    "9A18|GDTC": "TD.Phúc",
+    "8A3|GDTC": "TD.Tiền",
+    "6A13|GDTC": "TD.Duy",
+    "6A15|GDTC": "TD.Kiệt",
+    "9A15|Nhạc": "Nhạc.Minh",
+    "6A10|Nhạc": "Nhạc.Dương",
+    "9A1|Tin": "Ti.Ân",
+    "9A2|Văn": "V.Lệ",
+    "6A2|Văn": "V.Hoa",
+    "9A12|Toán": "T.Hùng",
+    "9A15|Toán": "T.Tiên",
+    "8A3|Toán": "T.HLoan",
+    "8A6|Toán": "T.Châu",
+    "6A11|Anh": "A.Phong",
+    "8A2|Anh": "A.Khánh",
+    "6A15|Anh": "A.Luận",
+    "6A16|HĐTN 3": "SĐ.Châu",
+    "9A14|LSĐL": "SĐ.Trâm",
+    "9A18|LSĐL": "SĐ.Thắm",
+    "8A5|GDCD": "GD.Tâm",
+    "8A1|GDCD": "GD.Chi",
+    "8A7|CN": "CN.Thiện",
+    "9A1|CN": "CN.Phượng",
+    "9A16|MT": "MT.Trang",
+    "6A10|GDTC": "TD.Bằng",
+    "9A13|GDTC": "TD.Phúc",
+    "9A3|GDTC": "TD.Thanh",
+    "9A6|GDTC": "TD.Duy",
+    "6A14|GDTC": "TD.Kiệt",
+    "9A19|Nhạc": "Nhạc.Minh",
+    "6A13|Nhạc": "Nhạc.Dương",
+    "6A3|Tin": "Ti.Ân",
+    "9A1|Văn": "V.Lệ",
+    "9A18|Văn": "V.Quỳnh",
+    "9A10|HĐTN 3": "V.Trinh",
+    "6A14|HĐTN 3": "T.Chung",
+    "6A17|Toán": "T.Hương",
+    "9A6|Anh": "A.Dung",
+    "9A8|Anh": "A.Ngân",
+    "6A13|Anh": "A.CVân",
+    "8A1|Anh": "A.An",
+    "9A20|Anh": "A.Minh",
+    "8A5|KHTN": "TN.Tân",
+    "8A3|KHTN": "TN.Hương",
+    "6A10|HĐTN 3": "TN.LNguyên",
+    "9A9|LSĐL": "SĐ.Liễu",
+    "6A9|LSĐL": "SĐ.Kiều",
+    "6A4|LSĐL": "SĐ.Linh",
+    "8A8|GDCD": "GD.Tâm",
+    "9A13|GDCD": "GD.Chi",
+    "9A7|CN": "CN.Xuân",
+    "8A9|GDĐP": "CN.Bằng",
+    "9A19|CN": "CN.Lý",
+    "9A4|MT": "MT.Bách",
+    "9A17|MT": "MT.Trang",
+    "9A11|GDTC": "TD.Phúc",
+    "8A4|GDTC": "TD.Tiền",
+    "9A2|GDTC": "TD.Thanh",
+    "6A3|GDTC": "TD.Duy",
+    "9A3|Nhạc": "Nhạc.Minh",
+    "6A12|Tin": "Ti.Ân",
+    "9A5|Tin": "Ti.Tập",
+    "9A16|Tin": "Ti.Thuận",
+    "8A3|Văn": "V.Mỹ",
+    "8A8|Văn": "V.Thúy",
+    "6A1|Văn": "V.Hoa",
+    "9A10|Toán": "T.Minh",
+    "6A10|Toán": "T.Huy",
+    "9A7|Toán": "T.Trung",
+    "8A4|Toán": "T.Châu",
+    "9A4|GDĐP": "A.Nguyên",
+    "9A14|Toán": "A.HVân",
+    "9A19|Anh": "A.Minh",
+    "6A9|KHTN": "TN.LNguyên",
+    "9A13|KHTN": "TN.MChâu",
+    "9A11|GDĐP": "TN.Thủy",
+    "9A16|LSĐL": "SĐ.Châu",
+    "9A12|LSĐL": "SĐ.Trâm",
+    "8A9|GDCD": "GD.Tâm",
+    "8A2|GDCD": "GD.Chi",
+    "9A20|GDĐP": "CN.Liên",
+    "9A17|CN": "CN.Lý",
+    "9A8|MT": "MT.Bách",
+    "6A15|MT": "MT.Nam",
+    "6A2|GDTC": "TD.Duy",
+    "9A2|Nhạc": "Nhạc.Minh",
+    "9A3|Tin": "Ti.Tập",
+    "8A7|Tin": "Ti.Hào",
+    "6A4|Văn": "V.Lệ",
+    "6A17|Văn": "V.Trâm",
+    "9A11|Văn": "V.Hoa",
+    "9A5|Toán": "T.Nhơn",
+    "6A2|Anh": "A.Dung",
+    "6A14|Anh": "A.CVân",
+    "8A5|Anh": "A.An",
+    "8A7|KHTN": "TN.Hương",
+    "6A13|KHTN": "TN.Sương",
+    "9A8|GDĐP": "TN.Thủy",
+    "9A2|GDĐP": "SĐ.Liễu",
+    "8A6|HĐTN 3": "GD.Tâm",
+    "9A9|GDCD": "GD.Chi",
+    "8A2|GDĐP": "CN.Bằng",
+    "9A15|GDĐP": "CN.Liên",
+    "9A6|MT": "MT.Bách",
+    "8A9|MT": "MT.Nam",
+    "9A20|GDTC": "TD.Phúc",
+    "8A4|HĐTN 3": "TD.Tiền",
+    "9A1|GDTC": "TD.Thanh",
+    "9A18|Nhạc": "Nhạc.Minh",
+    "6A1|Tin": "Ti.Ân",
+    "9A4|Tin": "Ti.Tập",
+    "8A1|Tin": "Ti.Hào",
+    "9A17|Tin": "Ti.Thuận",
+    "7A16|Văn": "V.Tuấn",
+    "7A6|Văn": "V.Vy",
+    "7A20|Văn": "V.Bình",
+    "7A2|Toán": "T.Hùng",
+    "8A12|Toán": "T.Nhật",
+    "7A8|Toán": "T.Phát",
+    "8A17|Toán": "T.Thư",
+    "7A5|HĐTN 3": "T.Phương",
+    "8A16|Anh": "A.Hải",
+    "7A7|Anh": "A.Lan",
+    "7A11|Anh": "A.CVân",
+    "8A13|Anh": "A.Khánh",
+    "7A4|KHTN": "TN.Thanh",
+    "7A1|KHTN": "TN.Trâm",
+    "7A15|GDĐP": "TN.Sương",
+    "7A17|LSĐL": "SĐ.Nhung",
+    "6A8|LSĐL": "SĐ.Kiều",
+    "7A3|LSĐL": "SĐ.Ngân",
+    "7A9|HĐTN 3": "SĐ.Tâm",
+    "8A14|HĐTN 3": "SĐ.Phượng",
+    "6A5|GDCD": "GD.Em",
+    "6A6|CN": "CN.Vàng",
+    "8A11|CN": "CN.Bằng",
+    "7A12|CN": "CN.Liên",
+    "8A15|MT": "MT.Nam",
+    "7A19|MT": "MT.Trang",
+    "8A18|GDTC": "TD.Quí",
+    "7A18|GDTC": "TD.Kiệt",
+    "6A7|Nhạc": "Nhạc.Dương",
+    "7A14|Nhạc": "Nhạc.Hiền",
+    "8A10|Tin": "Ti.Thuận",
+    "7A10|Tin": "Ti.Dương",
+    "7A15|Văn": "V.Tuấn",
+    "6A6|Toán": "T.Xuân",
+    "7A14|Toán": "T.Châu",
+    "7A5|Toán": "T.Phương",
+    "7A3|Anh": "A.Hải",
+    "8A12|KHTN": "TN.TNguyên",
+    "6A7|LSĐL": "SĐ.Kiều",
+    "7A10|LSĐL": "SĐ.Ngân",
+    "7A9|Văn": "SĐ.Tâm",
+    "6A8|GDCD": "GD.Em",
+    "6A5|CN": "CN.Vàng",
+    "8A13|CN": "CN.Bằng",
+    "7A16|GDĐP": "CN.Chí",
+    "8A16|MT": "MT.Nam",
+    "7A18|MT": "MT.Trang",
+    "8A14|GDTC": "TD.Quí",
+    "7A19|Nhạc": "Nhạc.Dương",
+    "7A13|Nhạc": "Nhạc.Hiền",
+    "8A11|Tin": "Ti.Thuận",
+    "8A17|Văn": "V.Bình",
+    "8A14|Toán": "T.Phát",
+    "8A16|Toán": "T.Cường",
+    "6A8|Anh": "A.Nga",
+    "8A13|HĐTN 3": "A.Khánh",
+    "7A11|KHTN": "TN.Tú",
+    "7A16|LSĐL": "SĐ.Nhung",
+    "8A11|LSĐL": "SĐ.Nhàn",
+    "7A19|LSĐL": "SĐ.Dung",
+    "7A8|GDCD": "GD.Thuận",
+    "6A5|GDĐP": "CN.Vàng",
+    "8A18|CN": "CN.Bằng",
+    "7A18|GDĐP": "CN.Chí",
+    "7A17|CN": "CN.Liên",
+    "7A13|MT": "MT.Trang",
+    "7A7|GDTC": "TD.Thuyền",
+    "7A20|Nhạc": "Nhạc.Dương",
+    "7A12|Nhạc": "Nhạc.Hiền",
+    "7A4|Tin": "Ti.Dương",
+    "7A13|Văn": "V.Trinh",
+    "7A3|Toán": "T.Xuân",
+    "7A15|Toán": "T.Châu",
+    "7A6|Toán": "T.Thư",
+    "7A1|Toán": "T.Phương",
+    "8A10|Anh": "A.Hoa",
+    "7A10|Anh": "A.CVân",
+    "7A20|Anh": "A.Khánh",
+    "7A8|KHTN": "TN.Huyền",
+    "8A14|KHTN": "TN.Phương",
+    "7A11|LSĐL": "SĐ.Ngân",
+    "7A9|LSĐL": "SĐ.Tâm",
+    "8A18|GDCD": "GD.Tuyền",
+    "7A7|GDCD": "GD.Thuận",
+    "8A12|CN": "CN.Bằng",
+    "7A18|CN": "CN.Liên",
+    "8A17|MT": "MT.Nam",
+    "7A12|MT": "MT.Trang",
+    "6A6|GDTC": "TD.Quí",
+    "7A17|Nhạc": "Nhạc.Dương",
+    "8A15|Nhạc": "Nhạc.Hiền",
+    "8A13|Tin": "Ti.Thuận",
+    "7A5|Tin": "Ti.Dương",
+    "8A15|HĐTN 3": "T.Cường",
+    "7A4|HĐTN 3": "A.Hải",
+    "7A17|Anh": "A.Nga",
+    "6A7|HĐTN 3": "TN.Tú",
+    "7A2|KHTN": "TN.Hảo",
+    "8A17|LSĐL": "SĐ.Dung",
+    "7A19|GDCD": "GD.Tuyền",
+    "7A12|GDCD": "GD.Thuận",
+    "6A8|GDĐP": "CN.Vàng",
+    "7A16|CN": "CN.Liên",
+    "8A11|MT": "MT.Nam",
+    "7A7|MT": "MT.Trang",
+    "7A5|GDTC": "TD.Thuyền",
+    "7A18|Nhạc": "Nhạc.Dương",
+    "7A3|Nhạc": "Nhạc.Hiền",
+    "8A18|Tin": "Ti.Thuận",
+    "9A10|KHTN": "PHT.Đài",
+    "9A6|Văn": "V.Thúy",
+    "6A11|Văn": "V.Trâm",
+    "9A13|Văn": "V.Tuyền",
+    "8A5|Văn": "V.Lâm",
+    "9A5|Anh": "A.Phong",
+    "9A14|Anh": "A.HVân",
+    "9A7|KHTN": "TN.Ngân",
+    "9A8|KHTN": "TN.NChâu",
+    "6A12|KHTN": "TN.Sương",
+    "9A17|KHTN": "TN.Phương",
+    "6A16|KHTN": "TN.Thủy",
+    "9A2|LSĐL": "SĐ.Loan",
+    "6A13|GDCD": "GD.Em",
+    "9A12|GDCD": "GD.Chi",
+    "9A11|CN": "CN.Xuân",
+    "8A6|CN": "CN.Thiện",
+    "9A19|GDĐP": "CN.Liên",
+    "6A3|CN": "CN.Trâm",
+    "6A14|CN": "CN.Lý",
+    "9A15|MT": "MT.Bách",
+    "8A4|MT": "MT.Nam",
+    "8A8|GDTC": "TD.Thanh",
+    "6A17|GDTC": "TD.Kiệt",
+    "9A4|Nhạc": "Nhạc.Minh",
+    "6A1|Nhạc": "Nhạc.Dương",
+    "6A4|Tin": "Ti.Ân",
+    "8A9|HĐTN 3": "Ti.Hào",
+    "9A20|Tin": "Ti.Dương",
+    "9A4|Văn": "V.Mỹ",
+    "6A9|HĐTN 3": "V.Quỳnh",
+    "9A20|Văn": "V.Giang",
+    "9A15|HĐTN 3": "T.Huyền",
+    "8A6|Anh": "A.Luận",
+    "8A3|LSĐL": "SĐ.Loan",
+    "6A10|GDCD": "GD.Em",
+    "9A3|GDCD": "GD.Chi",
+    "6A4|GDĐP": "CN.Vàng",
+    "8A8|CN": "CN.Thiện",
+    "6A13|CN": "CN.Trâm",
+    "6A15|GDĐP": "CN.Lý",
+    "8A5|MT": "MT.Nam",
+    "8A1|HĐTN 3": "TD.Thanh",
+    "9A12|Nhạc": "Nhạc.Minh",
+    "6A3|Nhạc": "Nhạc.Dương",
+    "9A2|Tin": "Ti.Ân",
+    "6A17|Tin": "Ti.Hậu",
+    "8A9|Tin": "Ti.Hào",
+    "9A19|Tin": "Ti.Dương",
+    "8A2|Văn": "V.Thúy",
+    "6A15|Văn": "V.Trâm",
+    "9A14|Văn": "V.Tuyền",
+    "9A2|Toán": "T.Chung",
+    "9A8|Toán": "T.Hương",
+    "9A5|HĐTN 3": "A.Phong",
+    "9A6|GDĐP": "TN.Thủy",
+    "6A17|LSĐL": "SĐ.Châu",
+    "8A1|LSĐL": "SĐ.Trâm",
+    "6A3|LSĐL": "SĐ.Linh",
+    "9A17|LSĐL": "SĐ.Thắm",
+    "6A4|GDCD": "GD.Em",
+    "9A15|GDCD": "GD.Chi",
+    "9A9|CN": "CN.Xuân",
+    "6A11|GDĐP": "CN.Vàng",
+    "9A16|GDĐP": "CN.Liên",
+    "6A10|CN": "CN.Trâm",
+    "6A12|GDĐP": "CN.Lý",
+    "9A3|MT": "MT.Bách",
+    "8A6|MT": "MT.Nam",
+    "8A9|GDTC": "TD.Bằng",
+    "9A10|GDTC": "TD.Phúc",
+    "9A1|Nhạc": "Nhạc.Minh",
+    "6A2|Nhạc": "Nhạc.Dương",
+    "6A16|Tin": "Ti.Hậu",
+    "9A18|Tin": "Ti.Dương",
+    "8A6|Văn": "V.Lâm",
+    "6A16|Toán": "T.Hương",
+    "8A9|Toán": "T.Nhơn",
+    "9A18|Anh": "A.Lan",
+    "9A11|HĐTN 3": "A.An",
+    "9A15|KHTN": "TN.Dung",
+    "9A1|KHTN": "TN.TNguyên",
+    "8A2|HĐTN 3": "TN.Nữ",
+    "9A3|LSĐL": "SĐ.Loan",
+    "6A11|LSĐL": "SĐ.Anh",
+    "6A9|GDCD": "GD.Em",
+    "9A6|GDCD": "GD.Chi",
+    "8A4|CN": "CN.Thiện",
+    "9A17|GDĐP": "CN.Liên",
+    "6A2|HĐTN 3": "CN.Phượng",
+    "6A15|CN": "CN.Lý",
+    "9A10|MT": "MT.Bách",
+    "8A7|MT": "MT.Nam",
+    "6A12|GDTC": "TD.Bằng",
+    "9A9|GDTC": "TD.Tiền",
+    "6A1|GDTC": "TD.Duy",
+    "6A10|Tin": "Ti.Ân",
+    "6A12|Toán": "T.Trung",
+    "8A5|HĐTN 3": "T.HLoan",
+    "6A17|Anh": "A.Dung",
+    "9A4|Anh": "A.Phong",
+    "8A7|LSĐL": "SĐ.Hằng",
+    "6A10|LSĐL": "SĐ.Linh",
+    "6A2|GDCD": "GD.Em",
+    "9A2|GDCD": "GD.Chi",
+    "6A3|GDĐP": "CN.Phượng",
+    "6A13|GDĐP": "CN.Lý",
+    "9A11|MT": "MT.Bách",
+    "8A8|MT": "MT.Nam",
+    "9A12|GDTC": "TD.Phúc",
+    "9A7|GDTC": "TD.Tiền",
+    "9A9|Nhạc": "Nhạc.Minh",
+    "6A9|Nhạc": "Nhạc.Dương",
+    "6A14|Tin": "Ti.Hậu",
+    "7A17|HĐTN 3": "PHT.Định",
+    "7A12|Văn": "V.Vân",
+    "7A7|Văn": "V.Vy",
+    "7A4|Văn": "V.Giang",
+    "8A15|Toán": "T.Cường",
+    "7A8|Anh": "A.Lan",
+    "6A5|Anh": "A.Nga",
+    "7A19|Anh": "A.Khánh",
+    "7A5|KHTN": "TN.Trâm",
+    "7A9|KHTN": "TN.Huyền",
+    "7A6|LSĐL": "SĐ.Yến",
+    "8A13|LSĐL": "SĐ.Phượng",
+    "8A14|GDCD": "GD.Tâm",
+    "8A17|HĐTN 3": "GD.Tuyền",
+    "7A13|CN": "CN.Liên",
+    "7A14|MT": "MT.Trang",
+    "7A11|GDTC": "TD.Cương",
+    "7A1|GDTC": "TD.Thuyền",
+    "8A10|Nhạc": "Nhạc.Hiền",
+    "7A16|Tin": "Ti.Tập",
+    "7A2|Tin": "Ti.Dương",
+    "7A14|HĐTN 3": "PHT.Định",
+    "7A10|Toán": "T.Trang",
+    "7A18|Anh": "A.Nga",
+    "8A18|KHTN": "TN.Trâm",
+    "6A6|KHTN": "TN.Đoan",
+    "7A1|LSĐL": "SĐ.Yến",
+    "8A13|GDCD": "GD.Tâm",
+    "8A17|GDCD": "GD.Tuyền",
+    "8A10|GDĐP": "CN.Bằng",
+    "7A15|CN": "CN.Liên",
+    "7A16|MT": "MT.Trang",
+    "7A13|GDTC": "TD.Cương",
+    "7A3|GDTC": "TD.Thuyền",
+    "6A5|GDTC": "TD.Quí",
+    "7A6|Tin": "Ti.Dương",
+    "7A11|Văn": "V.Vân",
+    "8A15|Văn": "V.Tuấn",
+    "7A6|Anh": "A.Lan",
+    "7A12|Anh": "A.CVân",
+    "7A7|KHTN": "TN.Huyền",
+    "6A7|KHTN": "TN.Tú",
+    "7A16|KHTN": "TN.Nữ",
+    "8A16|KHTN": "TN.Hảo",
+    "8A10|LSĐL": "SĐ.Nhàn",
+    "8A12|LSĐL": "SĐ.Phượng",
+    "8A17|CN": "CN.Bằng",
+    "7A14|CN": "CN.Liên",
+    "8A13|MT": "MT.Nam",
+    "7A15|Nhạc": "Nhạc.Hiền",
+    "7A17|Tin": "Ti.Tập",
+    "7A8|Tin": "Ti.Dương",
+    "7A5|Văn": "V.Giang",
+    "7A9|Toán": "T.Trang",
+    "7A13|Anh": "A.CVân",
+    "7A2|Anh": "A.Nga",
+    "7A12|KHTN": "TN.Hải",
+    "7A17|KHTN": "TN.Nữ",
+    "7A18|KHTN": "TN.ÁLoan",
+    "7A4|LSĐL": "SĐ.Yến",
+    "7A20|LSĐL": "SĐ.Dung",
+    "8A10|GDCD": "GD.Tâm",
+    "7A1|GDCD": "GD.Thuận",
+    "8A11|GDĐP": "CN.Bằng",
+    "7A8|CN": "CN.Chí",
+    "6A8|MT": "MT.Bách",
+    "8A12|MT": "MT.Nam",
+    "7A10|GDTC": "TD.Cương",
+    "8A18|Nhạc": "Nhạc.Hiền",
+    "7A15|Tin": "Ti.Tập",
+    "6A5|Văn": "V.Vân",
+    "7A8|HĐTN 3": "TN.Huyền",
+    "7A18|HĐTN 3": "TN.ÁLoan",
+    "6A6|LSĐL": "SĐ.Linh",
+    "8A11|GDCD": "GD.Tâm",
+    "7A10|GDCD": "GD.Thuận",
+    "8A15|CN": "CN.Bằng",
+    "7A1|CN": "CN.Chí",
+    "6A7|MT": "MT.Bách",
+    "8A18|MT": "MT.Nam",
+    "7A15|GDTC": "TD.Cương",
+    "7A6|GDTC": "TD.Thuyền",
+    "8A12|Nhạc": "Nhạc.Hiền",
+    "7A19|Tin": "Ti.Tập",
+    "9A3|Văn": "V.Mỹ",
+    "6A13|Văn": "V.Tuyền",
+    "9A16|Văn": "V.Vy",
+    "9A9|Văn": "V.Trinh",
+    "6A14|HĐTN 1": "T.Chung",
+    "6A11|Toán": "T.Trung",
+    "8A2|Toán": "T.Phương",
+    "9A1|Anh": "A.Nguyên",
+    "9A15|Anh": "A.Hoa",
+    "9A8|HĐTN 3": "A.Ngân",
+    "8A3|HĐTN 3": "TN.Hương",
+    "6A1|GDĐP": "TN.Hơn",
+    "9A12|KHTN": "TN.MChâu",
+    "8A7|HĐTN 3": "SĐ.Hằng",
+    "9A4|LSĐL": "SĐ.Anh",
+    "6A3|GDCD": "GD.Em",
+    "6A10|MT": "MT.Bách",
+    "6A12|MT": "MT.Nam",
+    "9A19|GDTC": "TD.Phúc",
+    "9A5|GDTC": "TD.Duy",
+    "6A15|Tin": "Ti.Hậu",
+    "8A8|Tin": "Ti.Hào",
+    "8A1|Văn": "V.Lâm",
+    "8A6|LSĐL": "SĐ.Hằng",
+    "6A14|LSĐL": "SĐ.Anh",
+    "6A1|GDCD": "GD.Em",
+    "9A5|MT": "MT.Bách",
+    "6A11|MT": "MT.Nam",
+    "9A4|GDTC": "TD.Duy",
+    "9A17|Nhạc": "Nhạc.Minh",
+    "8A3|Tin": "Ti.Hào",
+    "6A3|Toán": "T.Minh",
+    "9A3|KHTN": "TN.Tân",
+    "9A10|LSĐL": "SĐ.Liễu",
+    "6A15|GDCD": "GD.Em",
+    "9A6|CN": "CN.Xuân",
+    "6A10|GDĐP": "CN.Vàng",
+    "9A7|MT": "MT.Bách",
+    "6A14|MT": "MT.Nam",
+    "8A2|GDTC": "TD.Thanh",
+    "9A20|Nhạc": "Nhạc.Minh",
+    "6A13|Tin": "Ti.Hậu",
+    "8A4|Tin": "Ti.Hào",
+    "9A6|Toán": "T.Trung",
+    "6A1|Anh": "A.Ngân",
+    "9A14|HĐTN 3": "A.HVân",
+    "8A7|Anh": "A.Luận",
+    "9A7|HĐTN 3": "TN.Ngân",
+    "8A9|KHTN": "TN.Khanh",
+    "6A15|KHTN": "TN.Thủy",
+    "8A4|LSĐL": "SĐ.Loan",
+    "6A11|GDCD": "GD.Em",
+    "9A11|GDCD": "GD.Chi",
+    "9A5|CN": "CN.Phượng",
+    "8A1|MT": "MT.Nam",
+    "6A4|GDTC": "TD.Duy",
+    "6A12|Nhạc": "Nhạc.Dương",
+    "8A7|Văn": "V.Thúy",
+    "6A13|HĐTN 3": "V.Tuyền",
+    "9A12|Anh": "A.HVân",
+    "9A3|HĐTN 3": "TN.Tân",
+    "9A1|HĐTN 3": "TN.TNguyên",
+    "9A19|KHTN": "TN.Hơn",
+    "9A11|LSĐL": "SĐ.Liễu",
+    "9A7|LSĐL": "SĐ.Loan",
+    "6A12|GDCD": "GD.Em",
+    "9A16|GDCD": "GD.Chi",
+    "9A13|CN": "CN.Xuân",
+    "6A9|GDĐP": "CN.Vàng",
+    "6A2|CN": "CN.Phượng",
+    "9A9|MT": "MT.Bách",
+    "8A2|MT": "MT.Nam",
+    "6A16|Nhạc": "Nhạc.Dương",
+    "8A6|Tin": "Ti.Hào",
+    "8A14|Anh": "A.Nguyên",
+    "7A15|Anh": "A.Minh",
+    "8A18|HĐTN 3": "TN.Trâm",
+    "8A13|KHTN": "TN.TNguyên",
+    "7A14|KHTN": "TN.Thảo",
+    "8A16|GDĐP": "SĐ.Dung",
+    "6A6|GDCD": "GD.Em",
+    "7A13|GDCD": "GD.Tuyền",
+    "7A19|CN": "CN.Liên",
+    "7A17|MT": "MT.Trang",
+    "8A12|GDTC": "TD.Bằng",
+    "6A7|GDTC": "TD.Quí",
+    "7A7|Nhạc": "Nhạc.Hiền",
+    "6A8|Tin": "Ti.Ân",
+    "7A4|GDĐP": "Ti.Hậu",
+    "7A9|Tin": "Ti.Dương",
+    "8A10|Văn": "V.Tú",
+    "6A8|Văn": "V.Vân",
+    "8A16|Văn": "V.Bình",
+    "7A4|Toán": "T.Huyền",
+    "6A7|GDCD": "GD.Em",
+    "7A9|CN": "CN.Liên",
+    "7A11|MT": "MT.Trang",
+    "7A17|GDTC": "TD.Cương",
+    "7A19|GDTC": "TD.Kiệt",
+    "7A16|Nhạc": "Nhạc.Hiền",
+    "6A6|Tin": "Ti.Ân",
+    "7A5|GDĐP": "Ti.Hậu",
+    "7A1|Tin": "Ti.Dương",
+    "7A16|Toán": "T.Xuân",
+    "7A11|Toán": "T.Trang",
+    "6A5|Toán": "T.HLoan",
+    "7A6|HĐTN 3": "T.Thư",
+    "8A15|Anh": "A.Nguyên",
+    "6A7|Anh": "A.Nga",
+    "7A12|HĐTN 3": "TN.Hải",
+    "7A20|GDCD": "GD.Tuyền",
+    "7A15|MT": "MT.Trang",
+    "8A13|GDTC": "TD.Bằng",
+    "8A17|GDTC": "TD.Quí",
+    "8A12|Tin": "Ti.Thuận",
+    "8A11|Văn": "V.Tú",
+    "8A13|Văn": "V.Tuấn",
+    "8A18|Toán": "T.Thư",
+    "7A13|KHTN": "TN.Hải",
+    "7A15|KHTN": "TN.Thảo",
+    "7A14|LSĐL": "SĐ.Nhung",
+    "7A8|LSĐL": "SĐ.Tâm",
+    "7A18|GDCD": "GD.Tuyền",
+    "7A2|GDCD": "GD.Thuận",
+    "8A10|CN": "CN.Bằng",
+    "8A14|GDĐP": "CN.Thiện",
+    "6A8|GDTC": "TD.Bằng",
+    "7A20|GDTC": "TD.Kiệt",
+    "7A9|Nhạc": "Nhạc.Hiền",
+    "6A7|Tin": "Ti.Ân",
+    "7A1|GDĐP": "Ti.Hậu",
+    "8A12|HĐTN 3": "Ti.Thuận",
+    "7A16|HĐTN 3": "A.Minh",
+    "8A12|Anh": "A.Khánh",
+    "6A8|KHTN": "TN.Tú",
+    "7A20|KHTN": "TN.Đoan",
+    "7A18|LSĐL": "SĐ.Dung",
+    "7A5|GDCD": "GD.Thuận",
+    "8A14|CN": "CN.Bằng",
+    "8A15|GDĐP": "CN.Thiện",
+    "7A3|MT": "MT.Trang",
+    "8A10|GDTC": "TD.Bằng",
+    "6A6|HĐTN 3": "TD.Quí",
+    "7A10|Nhạc": "Nhạc.Hiền",
+    "6A5|Tin": "Ti.Ân",
+    "7A2|GDĐP": "Ti.Hậu",
+    "8A17|Tin": "Ti.Thuận",
+    "6A10|Văn": "V.Hoa",
+    "6A4|Toán": "T.Minh",
+    "9A13|HĐTN 3": "T.Hùng",
+    "9A5|GDĐP": "A.Nguyên",
+    "8A8|Anh": "A.Hoa",
+    "6A1|HĐTN 3": "SĐ.Kiều",
+    "9A15|LSĐL": "SĐ.Châu",
+    "9A12|HĐTN 3": "SĐ.Trâm",
+    "9A20|GDCD": "GD.Em",
+    "9A17|GDCD": "GD.Chi",
+    "9A18|GDĐP": "CN.Liên",
+    "6A16|GDĐP": "CN.Lý",
+    "6A9|MT": "MT.Bách",
+    "8A1|GDTC": "TD.Thanh",
+    "9A6|Nhạc": "Nhạc.Minh",
+    "9A9|Tin": "Ti.Tập",
+    "9A17|Toán": "T.Trang",
+    "6A14|GDCD": "GD.Em",
+    "9A14|GDĐP": "CN.Liên",
+    "6A16|CN": "CN.Lý",
+    "6A3|MT": "MT.Bách",
+    "6A9|GDTC": "TD.Bằng",
+    "9A8|Nhạc": "Nhạc.Minh",
+    "9A7|Tin": "Ti.Tập",
+    "9A16|Toán": "T.Tiên",
+    "9A9|GDĐP": "TN.Thủy",
+    "9A19|HĐTN 3": "SĐ.Nhàn",
+    "9A18|HĐTN 3": "SĐ.Thắm",
+    "9A8|GDCD": "GD.Chi",
+    "8A6|GDĐP": "CN.Bằng",
+    "8A8|HĐTN 3": "CN.Thiện",
+    "9A13|GDĐP": "CN.Liên",
+    "6A12|CN": "CN.Trâm",
+    "6A17|CN": "CN.Lý",
+    "6A4|MT": "MT.Bách",
+    "9A7|Nhạc": "Nhạc.Minh",
+    "8A9|Nhạc": "Nhạc.Hiền",
+    "9A18|Toán": "T.Trang",
+    "6A12|HĐTN 3": "TN.Sương",
+    "9A20|HĐTN 3": "TN.Thảo",
+    "9A10|GDĐP": "TN.Thủy",
+    "8A9|LSĐL": "SĐ.Hằng",
+    "8A2|LSĐL": "SĐ.Trâm",
+    "9A19|LSĐL": "SĐ.Nhàn",
+    "9A4|GDCD": "GD.Chi",
+    "8A5|GDĐP": "CN.Bằng",
+    "8A3|CN": "CN.Thiện",
+    "9A3|CN": "CN.Phượng",
+    "9A15|CN": "CN.Trâm",
+    "6A17|GDĐP": "CN.Lý",
+    "6A2|MT": "MT.Bách",
+    "9A14|GDTC": "TD.Phúc",
+    "9A13|Nhạc": "Nhạc.Minh",
+    "8A7|Nhạc": "Nhạc.Hiền",
+    "9A8|Tin": "Ti.Tập",
+    "9A12|GDĐP": "TN.Thủy",
+    "9A4|HĐTN 3": "SĐ.Anh",
+    "9A5|GDCD": "GD.Chi",
+    "8A5|CN": "CN.Thiện",
+    "9A2|CN": "CN.Phượng",
+    "6A11|HĐTN 3": "CN.Trâm",
+    "9A16|CN": "CN.Lý",
+    "6A1|MT": "MT.Bách",
+    "9A8|GDTC": "TD.Tiền",
+    "6A4|HĐTN 3": "TD.Duy",
+    "6A17|HĐTN 3": "TD.Kiệt",
+    "9A10|Nhạc": "Nhạc.Minh",
+    "8A3|Nhạc": "Nhạc.Hiền",
+    "7A7|HĐTN 3": "PHT.Định",
+    "8A18|Anh": "A.HVân",
+    "7A12|LSĐL": "SĐ.Ngân",
+    "8A12|GDCD": "GD.Tâm",
+    "7A17|GDCD": "GD.Tuyền",
+    "6A6|GDĐP": "CN.Vàng",
+    "8A16|CN": "CN.Bằng",
+    "7A4|CN": "CN.Chí",
+    "7A1|MT": "MT.Trang",
+    "7A14|GDTC": "TD.Cương",
+    "7A2|GDTC": "TD.Thuyền",
+    "7A6|Nhạc": "Nhạc.Hiền",
+    "7A9|GDĐP": "Ti.Hậu",
+    "8A15|Tin": "Ti.Thuận",
+    "7A19|HĐTN 3": "PHT.Định",
+    "7A15|HĐTN 3": "SĐ.Nhung",
+    "7A1|HĐTN 3": "SĐ.Yến",
+    "8A16|GDCD": "GD.Tuyền",
+    "7A8|GDTC": "TD.Thuyền",
+    "7A2|Nhạc": "Nhạc.Hiền",
+    "7A3|GDĐP": "Ti.Hậu",
+    "8A14|Tin": "Ti.Thuận",
+    "8A17|Anh": "A.HVân",
+    "7A19|KHTN": "TN.ÁLoan",
+    "7A20|HĐTN 3": "TN.Đoan",
+    "8A18|GDĐP": "GD.Tâm",
+    "8A15|GDCD": "GD.Tuyền",
+    "7A3|GDCD": "GD.Thuận",
+    "6A8|HĐTN 3": "CN.Vàng",
+    "7A17|GDĐP": "CN.Chí",
+    "8A14|MT": "MT.Nam",
+    "7A2|MT": "MT.Trang",
+    "8A11|GDTC": "TD.Bằng",
+    "7A1|Nhạc": "Nhạc.Hiền",
+    "7A12|GDĐP": "Ti.Hậu",
+    "7A3|Văn": "V.Giang",
+    "7A10|HĐTN 3": "TN.Mỹ",
+    "7A13|LSĐL": "SĐ.Ngân",
+    "7A6|GDCD": "GD.Thuận",
+    "6A7|GDĐP": "CN.Vàng",
+    "7A7|CN": "CN.Chí",
+    "6A5|MT": "MT.Bách",
+    "7A5|MT": "MT.Trang",
+    "7A4|Nhạc": "Nhạc.Hiền",
+    "7A14|GDĐP": "Ti.Hậu",
+    "8A11|Anh": "A.Hoa",
+    "6A5|HĐTN 3": "SĐ.Linh",
+    "7A14|GDCD": "GD.Tuyền",
+    "7A11|HĐTN 3": "GD.Thuận",
+    "6A7|CN": "CN.Vàng",
+    "7A6|CN": "CN.Chí",
+    "6A6|MT": "MT.Bách",
+    "8A10|MT": "MT.Nam",
+    "7A4|MT": "MT.Trang",
+    "8A16|Nhạc": "Nhạc.Hiền",
+    "7A7|GDĐP": "Ti.Hậu",
+    "9A16|HĐTN 3": "T.Tiên",
+    "6A16|GDCD": "GD.Em",
+    "9A10|GDCD": "GD.Chi",
+    "8A1|GDĐP": "CN.Bằng",
+    "6A2|GDĐP": "CN.Trâm",
+    "9A18|CN": "CN.Lý",
+    "9A13|MT": "MT.Bách",
+    "6A13|MT": "MT.Nam",
+    "6A14|Nhạc": "Nhạc.Dương",
+    "8A6|Nhạc": "Nhạc.Hiền",
+    "6A11|Tin": "Ti.Ân",
+    "8A2|Tin": "Ti.Hào",
+    "9A9|HĐTN 3": "TN.NChâu",
+    "6A3|HĐTN 3": "TN.Hơn",
+    "9A18|GDCD": "GD.Em",
+    "9A7|GDCD": "GD.Chi",
+    "8A3|GDĐP": "CN.Bằng",
+    "6A14|GDĐP": "CN.Lý",
+    "9A1|MT": "MT.Bách",
+    "6A16|MT": "MT.Nam",
+    "6A11|Nhạc": "Nhạc.Dương",
+    "8A5|Nhạc": "Nhạc.Hiền",
+    "6A15|HĐTN 3": "A.Luận",
+    "9A17|HĐTN 3": "TN.Phương",
+    "6A17|GDCD": "GD.Em",
+    "9A1|GDCD": "GD.Chi",
+    "8A7|GDĐP": "CN.Bằng",
+    "6A1|CN": "CN.Trâm",
+    "9A12|MT": "MT.Bách",
+    "9A5|Nhạc": "Nhạc.Minh",
+    "8A8|Nhạc": "Nhạc.Hiền",
+    "6A9|Tin": "Ti.Ân",
+    "9A6|Tin": "Ti.Tập",
+    "9A13|Tin": "Ti.Hào",
+    "9A14|Tin": "Ti.Thuận",
+    "9A2|HĐTN 3": "TN.Dung",
+    "9A1|GDĐP": "SĐ.Liễu",
+    "9A19|GDCD": "GD.Em",
+    "8A8|GDĐP": "CN.Bằng",
+    "6A9|CN": "CN.Trâm",
+    "9A20|CN": "CN.Lý",
+    "9A14|MT": "MT.Bách",
+    "6A17|MT": "MT.Nam",
+    "9A16|Nhạc": "Nhạc.Minh",
+    "6A15|Nhạc": "Nhạc.Dương",
+    "8A4|Nhạc": "Nhạc.Hiền",
+    "6A2|Tin": "Ti.Ân",
+    "9A10|Tin": "Ti.Tập",
+    "9A11|Tin": "Ti.Hào",
+    "9A15|Tin": "Ti.Thuận",
+    "8A4|GDĐP": "CN.Bằng",
+    "8A3|MT": "MT.Nam",
+    "8A10|HĐTN 3": "T.Nhật",
+    "8A11|HĐTN 3": "TN.Khanh",
+    "7A13|HĐTN 3": "SĐ.Ngân",
+    "7A3|HĐTN 3": "CN.Chí",
+    "7A10|MT": "MT.Trang",
+    "8A15|GDTC": "TD.Quí",
+    "6A8|Nhạc": "Nhạc.Dương",
+    "7A8|Nhạc": "Nhạc.Hiền",
+    "7A11|GDĐP": "Ti.Hậu",
+    "7A18|Tin": "Ti.Tập",
+    "7A3|CN": "CN.Chí",
+    "7A10|CN": "CN.Liên",
+    "7A9|MT": "MT.Trang",
+    "6A6|Nhạc": "Nhạc.Dương",
+    "7A6|GDĐP": "Ti.Hậu",
+    "7A14|Tin": "Ti.Tập",
+    "7A5|CN": "CN.Chí",
+    "7A20|CN": "CN.Liên",
+    "7A8|MT": "MT.Trang",
+    "7A12|GDTC": "TD.Cương",
+    "8A17|Nhạc": "Nhạc.Hiền",
+    "7A10|GDĐP": "Ti.Hậu",
+    "7A2|HĐTN 3": "Ti.Dương",
+    "7A2|CN": "CN.Chí",
+    "7A11|CN": "CN.Liên",
+    "6A5|Nhạc": "Nhạc.Dương",
+    "7A5|Nhạc": "Nhạc.Hiền",
+    "7A20|Tin": "Ti.Tập",
+    "7A7|Tin": "Ti.Dương",
+    "8A16|HĐTN 3": "TN.Hảo",
+    "8A14|Nhạc": "Nhạc.Hiền"
+  }
+}

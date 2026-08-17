@@ -417,10 +417,9 @@ test("portrait planner keeps eight compact mobile slots including Optimize", () 
   assert.doesNotMatch(actions, /id="desktopSolveControls"/);
   assert.match(actions, /id="btnOptimizeMenu"[^>]*aria-haspopup="menu"[^>]*aria-expanded="false"/);
   assert.match(actions, /id="plannerOptimizeMenu"[^>]*role="menu"[^>]*hidden/);
-  assert.equal((actions.match(/data-scheduler-mode=/g) || []).length, 5);
+  assert.equal((actions.match(/data-scheduler-mode=/g) || []).length, 4);
   assert.equal((actions.match(/data-superadmin-only="true"/g) || []).length, 0);
   for(const [mode, label] of [
-    ["optimize_all", "Tối ưu tất cả"],
     ["optimize_singletons", "1 tiết/buổi"],
     ["optimize_sessions", "Buổi dạy"],
     ["optimize_gap2", "2 tiết trống"],

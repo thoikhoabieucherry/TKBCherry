@@ -46,24 +46,23 @@ test("Optimize exposes the unified pipeline and the four local FET goals", () =>
   assert.ok(menuStart >= 0 && menuEnd > menuStart, "optimize menu is missing");
   const menu = plannerHtml.slice(menuStart, menuEnd);
   const items = menu.match(/<button\b[^>]*role="menuitem"[^>]*>[\s\S]*?<\/button>/g) || [];
-  assert.equal(items.length, 5);
+  assert.equal(items.length, 4);
   const schedulerItems = items.filter(item => /data-scheduler-mode=/.test(item));
   const deepItems = items.filter(item => /data-scheduler-deep="true"/.test(item));
-  assert.equal(schedulerItems.length, 5);
+  assert.equal(schedulerItems.length, 4);
   assert.equal(deepItems.length, 0);
   assert.deepEqual(
     schedulerItems.map(item => item.match(/data-scheduler-mode="([^"]+)"/)?.[1]),
-    ["optimize_all", "optimize_singletons", "optimize_sessions", "optimize_gap2", "optimize_gap1"]
+    ["optimize_singletons", "optimize_sessions", "optimize_gap2", "optimize_gap1"]
   );
   assert.deepEqual(
     schedulerItems.map(item => item.replace(/<[^>]+>/g, "").trim()),
-    ["Tối ưu tất cả", "1 tiết/buổi", "Buổi dạy", "2 tiết trống", "1 tiết trống"]
+    ["1 tiết/buổi", "Buổi dạy", "2 tiết trống", "1 tiết trống"]
   );
-  assert.match(schedulerItems[0], /runPlannerSchedulerMode\('optimize_all', event\)/);
-  assert.match(schedulerItems[1], /runPlannerSchedulerMode\('optimize_singletons', event\)/);
-  assert.match(schedulerItems[2], /runPlannerSchedulerMode\('optimize_sessions', event\)/);
-  assert.match(schedulerItems[3], /runPlannerSchedulerMode\('optimize_gap2', event\)/);
-  assert.match(schedulerItems[4], /runPlannerSchedulerMode\('optimize_gap1', event\)/);
+  assert.match(schedulerItems[0], /runPlannerSchedulerMode\('optimize_singletons', event\)/);
+  assert.match(schedulerItems[1], /runPlannerSchedulerMode\('optimize_sessions', event\)/);
+  assert.match(schedulerItems[2], /runPlannerSchedulerMode\('optimize_gap2', event\)/);
+  assert.match(schedulerItems[3], /runPlannerSchedulerMode\('optimize_gap1', event\)/);
   for(const ordinary of schedulerItems){
     assert.doesNotMatch(ordinary, /data-superadmin-only|\shidden(?:\s|>)/);
   }

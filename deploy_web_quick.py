@@ -9,11 +9,13 @@ sys.path.insert(0, str(TOOLS_DIR))
 from vps_credentials import resolve_vps_connection
 
 FILES = [
+    (r"C:\Users\Love\Documents\Codex\TKBCherry\web\tkb-fet-engine.js", "/opt/cherry-scheduler/web/tkb-fet-engine.js"),
     (r"C:\Users\Love\Documents\Codex\TKBCherry\web\pages\tkb-fet-engine.js", "/opt/cherry-scheduler/web/pages/tkb-fet-engine.js"),
     (r"C:\Users\Love\Documents\Codex\TKBCherry\web\pages\tkb-fet-worker.js", "/opt/cherry-scheduler/web/pages/tkb-fet-worker.js"),
     (r"C:\Users\Love\Documents\Codex\TKBCherry\web\pages\phanmon.js", "/opt/cherry-scheduler/web/pages/phanmon.js"),
     (r"C:\Users\Love\Documents\Codex\TKBCherry\web\pages\phanmon.css", "/opt/cherry-scheduler/web/pages/phanmon.css"),
     (r"C:\Users\Love\Documents\Codex\TKBCherry\web\pages\sapxep.html", "/opt/cherry-scheduler/web/pages/sapxep.html"),
+    (r"C:\Users\Love\Documents\Codex\TKBCherry\web\pages\tkb-rust-bridge.js", "/opt/cherry-scheduler/web/pages/tkb-rust-bridge.js"),
 ]
 
 def main():

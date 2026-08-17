@@ -6610,6 +6610,7 @@ async function executeDirectFastSchedule(options = {}){
       return { ok:false, applied:false, failureKind:"unknown_optimize_mode", error:failMsg };
     }
     const modeLabelMap = {
+      "auto_min2": "Sắp tự động (>= 2 tiết/buổi)",
       "optimize_singletons": "1 tiết/buổi",
       "optimize_sessions": "Buổi",
       "optimize_gap2": "2 tiết trống",
@@ -7242,7 +7243,7 @@ async function executeDirectFastSchedule(options = {}){
               : " Lịch đã hiển thị nhưng chưa lưu được ngay; hãy kiểm tra kết nối rồi lưu lại.";
             if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
             updateStatusMsg(
-              `${doneStatusMsg || "Đã tối ưu hoàn tất."}${saveSuffix}`,
+              `${doneStatusMsg || (isOptimizeMode ? "Đã tối ưu hoàn tất." : "Đã sắp xếp xong!")}${saveSuffix}`,
               "ok"
             );
             settleWorker({

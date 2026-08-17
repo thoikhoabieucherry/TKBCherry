@@ -39,6 +39,7 @@
     const NO_BETTER_SCHEDULE_MESSAGE = SOLVE_COMPLETE_MESSAGE;
     const SOLVE_REQUEST_MODES = Object.freeze({
       automatic: "automatic",
+      autoMin2: "auto_min2",
       quickComplete: "quick_complete",
       singletons: "optimize_singletons",
       sessions: "optimize_sessions",
@@ -879,6 +880,7 @@
     // browser action always maps to one explicit objective.
     return [
       SOLVE_REQUEST_MODES.automatic,
+      SOLVE_REQUEST_MODES.autoMin2,
       SOLVE_REQUEST_MODES.quickComplete,
       SOLVE_REQUEST_MODES.singletons,
       SOLVE_REQUEST_MODES.sessions,
@@ -1303,7 +1305,7 @@
     if(!options || typeof options !== "object") return null;
     if(options.fromHybridCaller !== true) return null;
     const requestedMode = normalizeSolveRequestMode(options.mode);
-    if(requestedMode === SOLVE_REQUEST_MODES.automatic) return null;
+    if(requestedMode === SOLVE_REQUEST_MODES.automatic || requestedMode === SOLVE_REQUEST_MODES.autoMin2) return null;
     const deep = options?.settings?.ui_hybrid_deep_optimize === true || options?.deepOptimize === true;
     return {
       routing_mode: "serverless_only",
@@ -4955,15 +4957,16 @@
 
   function initialVisibleProgressSettings(requestedMode, data){
     const mode = normalizeSolveRequestMode(requestedMode);
+    const isAutoMode = mode === SOLVE_REQUEST_MODES.automatic || mode === SOLVE_REQUEST_MODES.autoMin2;
     const settings = {
-      ui_default_fresh_sort:mode === SOLVE_REQUEST_MODES.automatic,
+      ui_default_fresh_sort:isAutoMode,
       ui_requested_solve_mode:mode,
       optimization_focus:optimizationFocusForSolveRequestMode(mode),
-      ui_progress_mode:mode === SOLVE_REQUEST_MODES.automatic ? "time" : "work"
+      ui_progress_mode:isAutoMode ? "time" : "work"
     };
     const gapTarget = gapOptimizationTargetForSolveRequestMode(mode);
     if(gapTarget) settings.optimization_gap_target = gapTarget;
-    if(mode === SOLVE_REQUEST_MODES.automatic) return settings;
+    if(isAutoMode) return settings;
 
     const safeData = data || getData() || {};
     const expected = Math.max(0, expectedLessonCount(safeData));
@@ -5510,7 +5513,8 @@
     if(explicitMode === "time") return false;
     const requestedMode = String(settings.ui_requested_solve_mode || "").trim();
     if(requestedMode){
-      return normalizeSolveRequestMode(requestedMode) !== SOLVE_REQUEST_MODES.automatic;
+      const norm = normalizeSolveRequestMode(requestedMode);
+      return norm !== SOLVE_REQUEST_MODES.automatic && norm !== SOLVE_REQUEST_MODES.autoMin2;
     }
     const focus = String(settings.optimization_focus || "")
       .trim()
@@ -5735,7 +5739,7 @@
       const nextProgressSettings = Object.assign({}, progressState.settings || {}, {
         ui_requested_solve_mode:normalizedMode,
         optimization_focus:optimizationFocusForSolveRequestMode(normalizedMode),
-        ui_progress_mode:normalizedMode === SOLVE_REQUEST_MODES.automatic ? "time" : "work"
+        ui_progress_mode:(normalizedMode === SOLVE_REQUEST_MODES.automatic || normalizedMode === SOLVE_REQUEST_MODES.autoMin2) ? "time" : "work"
       });
       const gapTarget = gapOptimizationTargetForSolveRequestMode(normalizedMode);
       if(gapTarget) nextProgressSettings.optimization_gap_target = gapTarget;
@@ -18676,7 +18680,7 @@
     const complete = !!currentScheduleAppearsComplete(safeData);
     settings.ui_requested_solve_mode = mode;
 
-    if(mode === SOLVE_REQUEST_MODES.automatic){
+    if(mode === SOLVE_REQUEST_MODES.automatic || mode === SOLVE_REQUEST_MODES.autoMin2){
       const inheritedFocusedPolicy = settings.optimization_focused_objective_only === true
         || String(settings.quality_priority_order || "").trim().toLowerCase().startsWith("focused_")
         || [
@@ -18711,6 +18715,26 @@
         if(String(settings.quality_priority_order || "").trim().toLowerCase().startsWith("focused_")){
           delete settings.quality_priority_order;
         }
+      }
+      if(mode === SOLVE_REQUEST_MODES.autoMin2){
+        settings.minimize_one_period_sessions = true;
+        settings.max_one_period_sessions = 0;
+        settings.strict_one_period_sessions_cap = true;
+        settings.enforce_max_one_period_sessions = true;
+        settings.one_period_priority_absolute = true;
+        settings.target_one_period_teacher_sessions = 0;
+        settings.session_early_stop_max_one_period_sessions = 0;
+        settings.one_period_teacher_sessions_lower_bound = 0;
+        settings.allow_quality_debt = false;
+        settings.teacher_min_hours_daily = 2;
+        settings.min_hours_per_session = 2;
+        settings.teacher_min_hours_per_morning = 2;
+        settings.teacher_min_hours_per_afternoon = 2;
+        settings.ui_auto_min2_mode = true;
+        settings.quality_priority_order = "one_period_teacher_sessions_gap2_gap1";
+        settings.optimization_two_stage_teacher_quality = true;
+        settings.target_gap1_sessions = 0;
+        settings.gap1_quality_target_explicit = true;
       }
       settings.ui_progress_mode = "time";
       clearPlanMetricProgress(settings);
@@ -19544,7 +19568,7 @@
       // while the bridge silently sent a normal VPS/auto request.
       Object.assign(settings, hybridInvocationSettings);
     }
-    if(requestedSolveMode === SOLVE_REQUEST_MODES.automatic){
+    if(requestedSolveMode === SOLVE_REQUEST_MODES.automatic || requestedSolveMode === SOLVE_REQUEST_MODES.autoMin2){
       settings.ui_track_automatic_sort_cycle = true;
       settings.ui_automatic_sort_previous_successful_clicks = Math.max(
         0,
@@ -19648,7 +19672,7 @@
       && !statisticsImproved;
 
     if(
-      requestedSolveMode === SOLVE_REQUEST_MODES.automatic
+      (requestedSolveMode === SOLVE_REQUEST_MODES.automatic || requestedSolveMode === SOLVE_REQUEST_MODES.autoMin2)
       && !!result
       && completeAfterSolve
     ){

@@ -1,76 +1,67 @@
-const fs = require('fs');
+const fs = require("fs");
+const path = require("path");
 
-const schoolData = JSON.parse(fs.readFileSync('C:/Users/Love/.gemini/antigravity/brain/e6e653cb-e567-476a-85f0-e418e6636dc4/scratch/school_default_vps.json', 'utf8'));
+const ENGINE_PATH = path.resolve(__dirname, "../web/pages/tkb-fet-engine.js");
+eval(fs.readFileSync(ENGINE_PATH, "utf8"));
 
-const engineCode = fs.readFileSync('web/pages/tkb-fet-engine.js', 'utf8');
-eval(engineCode);
+const data = JSON.parse(fs.readFileSync(path.resolve(__dirname, "excel_data_parsed.json"), "utf8"));
 
-const FetTimetableEngine = globalThis.FetTimetableEngine;
+const engine = new FetTimetableEngine(data, { seed: 101 });
+engine.loadExistingSchedule();
 
-const solver = new FetTimetableEngine(schoolData);
-solver.solve();
-schoolData.tkb = solver.getSnapshotTKB();
-
-const opt = new FetTimetableEngine(schoolData);
-opt.loadExistingSchedule();
-
-console.log("Initial metrics:", opt.evaluateMetrics());
-
-// Find T.Huy
-const huyKey = Array.from(opt.teacherGrid.keys()).find(k => k.toLowerCase().includes('huy') && !k.toLowerCase().includes('huyền'));
-console.log("Teacher T.Huy key:", huyKey);
-
-// Run optimize_singletons
-opt.optimize('optimize_singletons').then(() => {
-  console.log("\nAfter optimize_singletons:", opt.evaluateMetrics());
-
-  // Check T.Huy grid
-  const tGrid = opt.teacherGrid.get(huyKey);
-  console.log(`\nTeacher ${huyKey} schedule:`);
+console.log("=== INSPECTING CO TN.NU ===");
+const tNu = engine.teacherGrid.get("tn.nữ") || engine.teacherGrid.get("tn.nu");
+console.log("Teacher tn.nu found:", !!tNu);
+if(tNu){
   for(let d = 0; d < 6; d++){
-    const sang = [];
-    const chieu = [];
-    for(let p = 0; p < 5; p++){
-      const s1 = d * 10 + p;
-      const s2 = d * 10 + 5 + p;
-      if(tGrid[s1] >= 0){
-        const a = opt.activities[tGrid[s1]];
-        sang.push(`P${p+1}:${a.classId}-${a.mon}`);
-      }
-      if(tGrid[s2] >= 0){
-        const a = opt.activities[tGrid[s2]];
-        chieu.push(`P${p+1}:${a.classId}-${a.mon}`);
-      }
-    }
-    console.log(`Day ${d+2}: Sáng [${sang.join(', ')}] | Chiều [${chieu.join(', ')}]`);
-  }
-
-  // Find all remaining singletons
-  const remaining = [];
-  for(const [gv, grid] of opt.teacherGrid.entries()){
-    for(let d = 0; d < 6; d++){
-      for(let b = 0; b < 2; b++){
-        const sStart = d * 10 + b * 5;
-        const taught = [];
-        for(let p = 0; p < 5; p++){
-          const s = sStart + p;
-          if(grid[s] >= 0 || grid[s] === -3){
-            taught.push({ p, slot: s, actId: grid[s] });
-          }
+    for(let b = 0; b < 2; b++){
+      const sStart = d * 10 + b * 5;
+      const acts = [];
+      for(let p = 0; p < 5; p++){
+        const aId = tNu[sStart + p];
+        if(aId >= 0){
+          const a = engine.activities[aId];
+          acts.push(`T${p+1}: ${a.classId} - ${a.mon}`);
         }
-        if(taught.length === 1){
-          const act = taught[0].actId >= 0 ? opt.activities[taught[0].actId] : null;
-          remaining.push({
-            gv, day: d, session: b, slot: taught[0].slot, actId: taught[0].actId,
-            classId: act?.classId, mon: act?.mon, duration: act?.duration
-          });
-        }
+      }
+      if(acts.length > 0){
+        console.log(`  ${["T2","T3","T4","T5","T6","T7"][d]} ${b === 0 ? "Sáng" : "Chiều"}: ${acts.join(", ")}`);
       }
     }
   }
+}
 
-  console.log(`\nTotal remaining singletons: ${remaining.length}`);
-  for(const s of remaining){
-    console.log(`- Teacher ${s.gv}: Day ${s.day+2} (${s.session===0?'Sáng':'Chiều'}), Slot ${s.slot}, Class ${s.classId}, Mon ${s.mon}, Dur ${s.duration}`);
+// Check all swap candidates between T2 Chiều (Slot 5) and T7 Chiều (Slots 55..59)
+const actToanT2 = engine.activities.find(a => a.classId === "7A17" && a.mon === "Toán" && engine.actPlacement[a.id] === 5);
+console.log("\nAct Toán T2 Chiều:", actToanT2?.id);
+
+for(let p = 0; p < 5; p++){
+  const targetSlot = 55 + p;
+  const aId = engine.classGrid.get("7A17")[targetSlot];
+  if(aId >= 0){
+    const targetAct = engine.activities[aId];
+    console.log(`Target Slot ${targetSlot} (T7 Chiều T${p+1}): Act #${aId} (${targetAct.mon} - ${targetAct.gv})`);
+    
+    // Check conflicts if we move actToanT2 -> targetSlot and targetAct -> 5
+    engine.unplaceActivity(actToanT2.id);
+    engine.unplaceActivity(targetAct.id);
+    
+    const r1 = engine.getConflictsForSlot(actToanT2, targetSlot);
+    const r2 = engine.getConflictsForSlot(targetAct, 5);
+    
+    console.log(`  Swap possible? r1 (${actToanT2.mon} -> ${targetSlot}): ${r1.possible} (conflicts: ${r1.conflicts.length}), r2 (${targetAct.mon} -> 5): ${r2.possible} (conflicts: ${r2.conflicts.length})`);
+    if(r1.possible && r1.conflicts.length === 0 && r2.possible && r2.conflicts.length === 0){
+      engine.placeActivityDirect(actToanT2.id, targetSlot);
+      engine.placeActivityDirect(targetAct.id, 5);
+      const safe = engine.isLessonBlockSafe(actToanT2, targetAct);
+      const m = engine.evaluateMetrics();
+      console.log(`  => VALID SWAP! Safe: ${safe}, soBuoiDay1: ${m.soBuoiDay1}, soBuoiTrong2: ${m.soBuoiTrong2}`);
+      engine.unplaceActivity(actToanT2.id);
+      engine.unplaceActivity(targetAct.id);
+    }
+    engine.placeActivityDirect(actToanT2.id, 5);
+    engine.placeActivityDirect(targetAct.id, targetSlot);
+  } else {
+    console.log(`Target Slot ${targetSlot} (T7 Chiều T${p+1}): EMPTY (${aId})`);
   }
-});
+}
