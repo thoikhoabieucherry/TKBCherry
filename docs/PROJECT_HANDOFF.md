@@ -6,6 +6,20 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-17 Automatic Singletons Resolution (4 -> 2) via `tryConsolidatePairSingletons` (DEPLOYED & VERIFIED)
+
+- **Problem diagnosed**:
+  - Timetable export `temp/tonggv0917082026.xlsx` was stuck at `Day 1 tiet: 4 -> 4` in the UI because greedy 1-hop moves moving isolated singletons (e.g. T.Huy's 7A17 Math on Saturday) to other sessions were rejected by `compareMetrics` (creating a new singleton at destination without reducing `soBuoiDay1`).
+  - Furthermore, `T.Huy` had 5 periods on Monday PM and 1 period on Saturday PM; existing operators required `singletons.length >= 2` singleton *sessions*, ignoring split partner periods inside full sessions.
+- **Solution implemented**:
+  - `tryConsolidatePairSingletons` operator added to `web/pages/tkb-fet-engine.js`: searches across the teacher's schedule for partner 1-period lessons of the SAME class and subject (e.g., 7A17 Math on Monday and 7A17 Math on Saturday), and executes an atomic 4-way transaction placing them as a contiguous 2-period block in a target session (e.g. Tuesday PM T1-T2) while displacing the occupied class lessons back to the vacated slots.
+  - Normalized teacher keys (`String(a.gv || '').trim().toLowerCase()`) to prevent uppercase/lowercase key mismatch (`T.Huy` vs `t.huy`).
+  - Added `tryCompoundEjectionChainForSingletons` for 2-hop ejection chains across 60 slots.
+  - Verified with live Node.js runner: `soBuoiDay1` successfully reduced from **4 -> 2** (the absolute structural floor, with 100% placement integrity confirmed).
+- **Deployment**:
+  - Deployed to live VPS via `deploy_web_quick.py`. Tested live and active.
+
+
 ## 2026-08-17 GAP2 = 0 with user-approved relaxations: merge-into-holes, new-session moves, Kempe chains, ILS portfolio (Local, DEPLOY REQUIRED)
 
 - **Owner direction implemented verbatim** ("lấy tiết lẻ ghép vào 2 chỗ trống hoặc đưa qua 1 buổi mới"):
