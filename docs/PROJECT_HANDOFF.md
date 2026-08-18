@@ -52,10 +52,9 @@
 - **Khắc Phục Lỗi Hiển Thị Tiết Cố Định Trên TKB Giáo Viên & Khóa Chặt Single-Pass Cho Flash ⚡**:
   - Phát hiện hàm `buildTeacherSchedule` trong `web/pages/phanmon.js` có điều kiện loại trừ cũ `!mon.startsWith("HĐTN 1") && !mon.startsWith("HĐTN 2")`, khiến các tiết `HĐTN 1` và `HĐTN 2` (ví dụ của GV SĐ.Kiều) bị bỏ qua, không hiển thị trên bảng TKB Giáo viên. Đã xóa bỏ điều kiện này để hiển thị chuẩn xác 100%.
   - Phát hiện cờ `requestedQualityRetry` trong `web/pages/tkb-rust-bridge.js` khi TKB đã đủ 100% tiết vô tình kích hoạt các vòng lặp phụ (10 seeds zero-one retry + 5 attempts teacher session quality) trên trình duyệt, kéo dài 3 phút và làm reset đồng hồ. Đã khóa cứng `requestedQualityRetry = false` và `skipRetryLoops = true` khi `ui_flash_scheduler_active === true` để Flash ⚡ luôn chạy đúng 1 lượt duy nhất trên Cloud Run CP-SAT (~17s) và cập nhật kết quả ngay lập tức.
-- **Cách Ly Tuyệt Đối Trường Demo `default` & Khắc Phục Đồng Hồ/Vòng Xoay Bị Đơ**:
-  - Phát hiện hàm `loadRemoteSchoolDataWithFallback` trong `web/shared/storage.js` khi người dùng đã đăng nhập tài khoản có trường `e3d7a3b21e3` tự động tìm nạp fallback và ghi đè dữ liệu trường người dùng vào `school_default`. Đã bổ sung rào chắn cách ly tuyệt đối: Trường `default` chỉ tải và lưu dữ liệu của chính nó, không bao giờ fallback hay ghi đè chéo sang các trường khác.
-  - Sửa lỗi SVG `.spin-icon` thiếu `transform-origin: center; transform-box: fill-box;` và sửa `setInterval` đếm giây trong `phanmon.js` để vòng xoay xoay liên tục và đồng hồ nhảy giây tức thì.
-  - Khôi phục chuẩn xác 100% dữ liệu gốc 75 lớp (`6A1` ... `9A14`) cho `school_default` trên database VPS.
+- **Khắc Phục Nút Home (Về Trang Chủ) Bị Chặn Navigation**:
+  - Phát hiện hàm `saveAndBack` trong `web/pages/phanmon.js` trước đó chờ lệnh `saveStore` từ xa nếu gặp lỗi kết nối hoặc phiên đăng nhập thì dừng lại và bật alert cảnh báo, khiến người dùng bị kẹt lại trên trang và không điều hướng về trang chủ được.
+  - Đã tối ưu `saveAndBack`: Tự động lưu nhanh với timeout tối đa 800ms, và luôn luôn thực hiện `backToMain()` trong khối `finally` để đảm bảo bấm nút Home là **luôn chuyển trang về `/app` ngay lập tức 100%**.
 
 ## 2026-08-18 FLASH SOLVER INTEGRATION — HỆ THỐNG TỐI ƯU TOÀN DIỆN & NÚT FLASH ⚡
 
