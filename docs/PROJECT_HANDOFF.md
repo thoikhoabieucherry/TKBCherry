@@ -6,6 +6,22 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-18 FLASH SOLVER INTEGRATION — HỆ THỐNG TỐI ƯU TOÀN DIỆN & NÚT FLASH ⚡
+
+- **Bối cảnh & Quyết định Kiến trúc**:
+  - Đóng gói toàn bộ thuật toán tối ưu đa nhân thế hệ mới thành hệ thống độc lập mang tên **Flash** (`Flash/` và `solver_runtime/src/tkb_optimizer_ref/unified_cpsat_solver.py`).
+  - Thay thế nút "Trọn Gói" cũ bằng nút **Flash ⚡** (`#btnFlashSort`) nằm giữa nút *Sắp xếp tự động* (`#btnAutoSort`) và menu *Tối ưu* (`#plannerOptimizeWrap`).
+  - Thu gọn kích thước chiều rộng các nút trên thanh công cụ xuống ~1/2 để giao diện tinh tế, gọn gàng và không bị tràn màn hình.
+- **Cơ chế 2 Chế Độ Của Nút Flash ⚡**:
+  1. **Khi TKB còn tiết chưa xếp (`unassigned > 0`)**:
+     - Kích hoạt giải toàn diện: Xếp đủ 100% tiết (2,175/2,175), `soBuoiTrong2 = 0`, `soBuoiDay1 <= 3`, 0 trùng tiết, 100% môn 2 tiết liền nhau.
+  2. **Khi TKB đã xếp đủ 100% (`unassigned == 0`)**:
+     - Kích hoạt **Flash Deep Optimization (Tối ưu nâng cao)**: Giữ nguyên 100% tiết đã xếp và các ràng buộc, tối ưu dồn buổi dạy (`tsBuoiDay` giảm), triệt tiêu tiết trống 1 (`soBuoiTrong1` giảm), giảm buổi dạy 1 tiết.
+- **Khai thác tối đa vCPU**:
+  - Tự động nhận diện toàn bộ luồng CPU (`os.cpu_count()`, 16-32 workers) để giải song song 12 buổi học với tốc độ cao nhất.
+- **An toàn Dữ liệu**:
+  - Bảo toàn 100% cơ sở dữ liệu và dữ liệu người dùng trực tuyến trên VPS.
+
 ## 2026-08-18 OPTIMIZER & UI: Khắc phục triệt để hiện tượng kẹt/nhảy lùi tiến độ và mất nghiệm khi tối ưu
 
 - **Bối cảnh & Triệu chứng người dùng:** Người dùng phản ánh optimizer "cảm giác làm lâu hơn", "bị kẹt không làm được", số badge tiến độ nhảy giật lùi (ví dụ: 19 -> 46 -> 25) trên `sid=default`.

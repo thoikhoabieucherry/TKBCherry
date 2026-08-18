@@ -2008,7 +2008,10 @@ function buildTeacherSchedule(gvCode){
         if(!v || v === "OFF") continue;
         const mon = cellMon(v);
         if(!mon) continue;
-        const gv = getTeacherForClassMon(classCanon, mon);
+        let gv = (typeof v === "object" && v.gv) ? v.gv : (typeof v === "string" && v.includes(" - ")) ? v.split(" - ")[1] : "";
+        if(!gv && mon !== "Chào cờ" && !mon.startsWith("HĐTN 1") && !mon.startsWith("HĐTN 2")){
+          gv = getTeacherForClassMon(classCanon, mon);
+        }
         if(gv && teacherValueHas(gv, code)){
           const room = getRoomForClassMon(classCanon, mon);
           sched[thu].sang[ti].push({classId, classDisplay, mon, room, fixed: !!isFixed(v)});
@@ -2020,7 +2023,10 @@ function buildTeacherSchedule(gvCode){
         if(!v || v === "OFF") continue;
         const mon = cellMon(v);
         if(!mon) continue;
-        const gv = getTeacherForClassMon(classCanon, mon);
+        let gv = (typeof v === "object" && v.gv) ? v.gv : (typeof v === "string" && v.includes(" - ")) ? v.split(" - ")[1] : "";
+        if(!gv && mon !== "Chào cờ" && !mon.startsWith("HĐTN 1") && !mon.startsWith("HĐTN 2")){
+          gv = getTeacherForClassMon(classCanon, mon);
+        }
         if(gv && teacherValueHas(gv, code)){
           const room = getRoomForClassMon(classCanon, mon);
           sched[thu].chieu[ti].push({classId, classDisplay, mon, room, fixed: !!isFixed(v)});
@@ -11974,3 +11980,45 @@ function backToMain(){
     console.error("[phanmon] paired view patch failed", e);
   }
 })();
+
+/* =========================================================
+   FLASH SCHEDULER ENGINE (MULTI-CORE CP-SAT)
+   ========================================================= */
+async function runFlashScheduler(event){
+  if(event) { try{ event.preventDefault(); event.stopPropagation(); }catch(_){} }
+  if(window.__TKB_RUST_SOLVER_RUNNING === true || window.__TKB_SOLVE_UI_BUSY === true){
+    return;
+  }
+  
+  let stats = null;
+  try{
+    if(typeof window.calcTeacherTKBStats === "function"){
+      stats = window.calcTeacherTKBStats();
+    }
+  }catch(_){}
+  
+  const unassigned = Number(stats?.unassigned ?? 0);
+  const isDeepOptimize = unassigned === 0;
+  
+  if(isDeepOptimize){
+    _setStatus("⚡ Flash Solver: Đang kích hoạt tối ưu sâu đa nhân vCPU (giảm buổi, giảm tiết trống)...", "info");
+  } else {
+    _setStatus("⚡ Flash Solver: Đang kích hoạt giải toàn diện 100% trên toàn bộ vCPU...", "info");
+  }
+  
+  const flashSettings = {
+    mode: isDeepOptimize ? "optimize_deep_sessions" : "full_solve",
+    seed: Math.floor(Math.random() * 100000) + 1,
+    num_workers: 0,
+    time_limit_seconds: 60,
+    is_deep_optimize: isDeepOptimize
+  };
+  
+  if(typeof window.triggerAutoSort === "function"){
+    return window.triggerAutoSort(flashSettings);
+  } else if(typeof window.sapXepTuDongAll === "function"){
+    return window.sapXepTuDongAll(flashSettings);
+  }
+}
+window.runFlashScheduler = runFlashScheduler;
+

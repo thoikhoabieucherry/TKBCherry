@@ -31,11 +31,11 @@ body.planner-shell {
 
 /* Keep feedback inline on desktop and below the compact mobile commands. */
 body.planner-shell .toolbar-main {
-  --planner-toolbar-button-width: clamp(96px, 7.2vw, 104px);
+  --planner-toolbar-button-width: clamp(46px, 3.6vw, 52px);
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
   min-width: 0;
   padding-right: 0;
@@ -276,6 +276,29 @@ body.planner-shell #btnAutoSort .toolbar-icon {
   width: 18px;
   height: 18px;
   transform: translateX(1px);
+}
+
+body.planner-shell #btnFlashSort {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-color: #d97706;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 3px 10px rgba(217, 119, 6, 0.28);
+}
+
+body.planner-shell #btnFlashSort:hover:not(:disabled) {
+  border-color: #b45309;
+  background: linear-gradient(135deg, #d97706, #b45309);
+  box-shadow: 0 4px 12px rgba(217, 119, 6, 0.38);
+}
+
+body.planner-shell #btnFlashSort .toolbar-icon {
+  width: 18px;
+  height: 18px;
 }
 
 body.planner-shell #btnStopAutoSort .toolbar-icon {
@@ -1454,6 +1477,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
       <button id="btnUndoTKB" class="icon-button" type="button" onclick="tkbUndo()" title="Hoàn tác" aria-label="Hoàn tác" disabled><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 14-4-4 4-4"/><path d="M5 10h11a4 4 0 1 1 0 8h-1"/></svg></button>
       <button id="btnRedoTKB" class="icon-button" type="button" onclick="tkbRedo()" title="Làm lại" aria-label="Làm lại" disabled><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 14 4-4-4-4"/><path d="M19 10H8a4 4 0 1 0 0 8h1"/></svg></button>
       <button id="btnAutoSort" class="primary icon-button" type="button" onclick="sapXepTuDongAll()" title="Bắt đầu sắp xếp" aria-label="Bắt đầu sắp xếp"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8.35 6.3c0-1.02 1.12-1.65 2-1.12l8.1 4.88a1.3 1.3 0 0 1 0 2.22l-8.1 4.88c-.88.53-2-.1-2-1.12V6.3Z" fill="currentColor"/></svg></button>
+      <button id="btnFlashSort" class="flash-btn icon-button" type="button" onclick="runFlashScheduler(event)" title="Xếp Flash ⚡ / Tối ưu sâu" aria-label="Xếp Flash ⚡ / Tối ưu sâu"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></button>
       <div id="plannerOptimizeWrap" class="planner-optimize-wrap">
         <button id="btnOptimizeMenu" class="planner-mode-button" type="button" onclick="togglePlannerOptimizeMenu(event)" title="Chọn mục tiêu tối ưu" aria-label="Chọn mục tiêu tối ưu" aria-haspopup="menu" aria-expanded="false" aria-controls="plannerOptimizeMenu"><svg class="planner-mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg><span class="planner-mode-label">Tối ưu</span></button>
         <div id="plannerOptimizeMenu" class="planner-optimize-menu" role="menu" aria-label="Mục tiêu tối ưu" hidden>
