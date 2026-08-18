@@ -1653,7 +1653,7 @@ function triggerExcel(section){
     document.getElementById("excelFile").click();
 }
 
-document.addEventListener("DOMContentLoaded",()=>{
+function bootWhenReady(){
     if (!document.getElementById("excelFile")){
         const inp=document.createElement("input");
         inp.type="file";
@@ -1662,7 +1662,8 @@ document.addEventListener("DOMContentLoaded",()=>{
         inp.style.display="none";
         document.body.appendChild(inp);
     }
-    document.getElementById("excelFile").addEventListener("change",readExcel);
+    const excelEl = document.getElementById("excelFile");
+    if(excelEl) excelEl.addEventListener("change",readExcel);
 
     // Tiết chuẩn: hỗ trợ Ctrl/Shift chọn nhiều ô + Ctrl/Cmd+C, Ctrl/Cmd+V
     // (Chỉ kích hoạt khi đang ở trang Tiết chuẩn)
@@ -1685,7 +1686,13 @@ document.addEventListener("DOMContentLoaded",()=>{
         const c=document.getElementById('section-content');
         if (c) c.innerHTML = '<div style="padding:16px;color:#c00">Lỗi khởi tạo dữ liệu: '+(err && err.message ? err.message : err)+'</div>';
     });
-});
+}
+
+if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", bootWhenReady);
+}else{
+    bootWhenReady();
+}
 
 function readExcel(e){
     const file = e.target.files && e.target.files[0];

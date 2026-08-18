@@ -18,6 +18,11 @@
     return `TKB_STORE::${schoolId || "default"}`;
   }
 
+  function cleanSchoolId(schoolId){
+    if(SC && SC.sanitizeSchoolId) return SC.sanitizeSchoolId(schoolId);
+    return String(schoolId || "default").trim().toLowerCase().replace(/[^a-z0-9]+/g, "") || "default";
+  }
+
   function purgeLocalSchoolCaches(){
     try{
       const remove = [];
@@ -41,21 +46,9 @@
     }catch(e){
       console.warn("Local school cache purge failed", e);
     }
-    try{
-      if(typeof indexedDB !== "undefined"){
-        indexedDB.deleteDatabase("TKB_SQLJS_DB");
-      }
-    }catch(e){
-      console.warn("Local KVDB purge failed", e);
-    }
   }
 
   if(REMOTE_ONLY_STORAGE) purgeLocalSchoolCaches();
-
-  function cleanSchoolId(schoolId){
-    if(SC && SC.sanitizeSchoolId) return SC.sanitizeSchoolId(schoolId);
-    return String(schoolId || "default").trim().toLowerCase().replace(/[^a-z0-9]+/g, "") || "default";
-  }
 
   function remoteStoreUrl(schoolId){
     return `/api/school/store?id=${encodeURIComponent(cleanSchoolId(schoolId))}`;
@@ -97,6 +90,7 @@
       hasMeaningfulConstraints(data.tkbConstraints)
     );
   }
+
   function addUnique(list, value){
     const id = cleanSchoolId(value);
     if(id && !list.includes(id)) list.push(id);
@@ -409,7 +403,10 @@
       return null;
     }
     try{
-      return await window.KVDB.open(dbName);
+      return await Promise.race([
+        window.KVDB.open(dbName),
+        new Promise(resolve => setTimeout(() => resolve(null), 300))
+      ]);
     }catch(e){
       console.warn("KVDB open failed", e);
       return null;
@@ -428,6 +425,12 @@
       raw = JSON.stringify(remoteData);
       source = "remote";
       try{ localStorage.setItem(key, raw); }catch(_){}
+      return {
+        kv: null,
+        data: remoteData,
+        storeKey: key,
+        source: "remote"
+      };
     }
 
     if(window.KVDB){
@@ -478,7 +481,7 @@
   }
 
   window.TKBStorage = {
-    version:"remote-save-retry-v2",
+    version:"remote-save-retry-v3",
     safeParseJSON,
     lsKey,
     cleanSchoolId,
