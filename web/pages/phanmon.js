@@ -1546,7 +1546,7 @@ function __tkbPayloadForSave(options){
   const stable = __tkbStableSave || {};
   const running = __tkbAlgorithmRunning();
   const worse = stable.payload && __tkbStatsWorse(currentStats, stable.stats);
-  const guardWorse = !!(worse && (running || opts.beforeUnload || opts.guardUnstable));
+  const guardWorse = !!(worse && (running || (opts.guardUnstable && running)));
   const partialRefresh = !!(opts.beforeUnload && running && __tkbSaveNum(currentStats.missing) > 0);
 
   if(!opts.force && stable.payload && (guardWorse || partialRefresh)){
@@ -1574,15 +1574,15 @@ function flushDeferredSaveStore(){
   if(__tkbDeferredSaveTimer){
     clearTimeout(__tkbDeferredSaveTimer);
     __tkbDeferredSaveTimer = null;
-    try{ saveStore(); }catch(e){ console.error("deferred saveStore failed", e); }
   }
+  try{ saveStore({ force: true, beforeUnload: true, syncRemote: true }); }catch(e){ console.error("deferred saveStore failed", e); }
 }
 function saveStoreDeferred(){
   if(__tkbDeferredSaveTimer) clearTimeout(__tkbDeferredSaveTimer);
   __tkbDeferredSaveTimer = setTimeout(()=>{
     __tkbDeferredSaveTimer = null;
-    try{ saveStore(); }catch(e){ console.error("deferred saveStore failed", e); }
-  }, 500);
+    try{ saveStore({ force: true }); }catch(e){ console.error("deferred saveStore failed", e); }
+  }, 300);
 }
 try{
   window.addEventListener("pagehide", flushDeferredSaveStore);
@@ -1650,7 +1650,8 @@ function saveStore(options){
       remoteSave = fetch(`/api/school/store?id=${encodeURIComponent(schoolParam)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: payload
+        body: payload,
+        keepalive: true
       }).then(resp => {
         if(!resp.ok) throw new Error("Remote school store save failed");
         return true;
@@ -4128,7 +4129,7 @@ function toggleFixedByKey(key){
   if(isFixed(cur)) tkb[thu][buoi][ti] = mon;
   else tkb[thu][buoi][ti] = {mon, fixed: true};
 
-  try{ saveStoreDeferred(); }catch(e){ console.error('saveStore failed', e); }
+  try{ saveStore({ force: true }); }catch(e){ console.error('saveStore failed', e); }
   try{ renderCurrentView(); }catch(e){ console.error('renderCurrentView failed', e); }
   try{ loadMonList(); }catch(e){ console.error('loadMonList failed', e); }
   applyCellSelectionStyles();
@@ -4146,7 +4147,7 @@ function clearLessonByKey(key){
   if(!mon) return false;
 
   tkb[thu][buoi][ti] = "";
-  try{ saveStoreDeferred(); }catch(e){ console.error('saveStore failed', e); }
+  try{ saveStore({ force: true }); }catch(e){ console.error('saveStore failed', e); }
   try{ renderCurrentView(); }catch(e){ console.error('renderCurrentView failed', e); }
   try{ loadMonList(); }catch(e){ console.error('loadMonList failed', e); }
   try{ _setStatus("Đã đưa tiết về Chưa phân.", "ok"); }catch(_){ }
@@ -5094,7 +5095,7 @@ function onDrop(td){
     throw new Error("Dữ liệu kéo thả không hợp lệ (dragData.type)");
   }
 
-  try{ saveStoreDeferred(); }catch(e){ console.error('saveStore failed', e); }
+  try{ saveStore({ force: true }); }catch(e){ console.error('saveStore failed', e); }
   try{ renderCurrentView(); }catch(e){ console.error('renderCurrentView failed', e); }
   try{ loadMonList(); }catch(e){ console.error('loadMonList failed', e); }
 

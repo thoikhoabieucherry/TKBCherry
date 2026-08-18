@@ -326,7 +326,8 @@
           method: "POST",
           headers: authHeaders({ "Content-Type": "application/json" }),
           body: raw,
-          cache: "no-store"
+          cache: "no-store",
+          keepalive: true
         });
         lastStatus = Number(resp?.status || 0) || 0;
         let payload = null;
