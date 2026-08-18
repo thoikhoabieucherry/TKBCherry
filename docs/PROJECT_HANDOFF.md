@@ -49,6 +49,9 @@
   - Cập nhật `web/shared/storage.js`: Giữ nguyên bộ đệm local (`localStorage` + `KVDB`) làm lớp lưu trữ tức thì không bao giờ bị xóa nhầm, đồng thời luôn đồng bộ 2 chiều với máy chủ.
   - Sửa lỗi biến chưa khai báo `remoteTs`/`localTs` trong `web/pages/phanmon.js` khi đối soát thời gian cập nhật.
   - Đã biên dịch lại `rust_api` (bản release) trên VPS và kiểm thử thành công 100% việc lưu trữ và tải lại qua F5.
+- **Khắc Phục Lỗi Hiển Thị Tiết Cố Định Trên TKB Giáo Viên & Khóa Chặt Single-Pass Cho Flash ⚡**:
+  - Phát hiện hàm `buildTeacherSchedule` trong `web/pages/phanmon.js` có điều kiện loại trừ cũ `!mon.startsWith("HĐTN 1") && !mon.startsWith("HĐTN 2")`, khiến các tiết `HĐTN 1` và `HĐTN 2` (ví dụ của GV SĐ.Kiều) bị bỏ qua, không hiển thị trên bảng TKB Giáo viên. Đã xóa bỏ điều kiện này để hiển thị chuẩn xác 100%.
+  - Phát hiện cờ `requestedQualityRetry` trong `web/pages/tkb-rust-bridge.js` khi TKB đã đủ 100% tiết vô tình kích hoạt các vòng lặp phụ (10 seeds zero-one retry + 5 attempts teacher session quality) trên trình duyệt, kéo dài 3 phút và làm reset đồng hồ. Đã khóa cứng `requestedQualityRetry = false` và `skipRetryLoops = true` khi `ui_flash_scheduler_active === true` để Flash ⚡ luôn chạy đúng 1 lượt duy nhất trên Cloud Run CP-SAT (~17s) và cập nhật kết quả ngay lập tức.
 
 ## 2026-08-18 FLASH SOLVER INTEGRATION — HỆ THỐNG TỐI ƯU TOÀN DIỆN & NÚT FLASH ⚡
 
