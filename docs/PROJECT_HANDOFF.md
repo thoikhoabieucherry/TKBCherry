@@ -6,6 +6,26 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-18 OPTIMIZE & PERF: Giai quyet dut diem nghen mach/lag khi chay toi uu (2.5x speedup, default/real-school benchmarked)
+
+- **Boi canh & Trieu chung:** Nguoi dung phan anh he thong "lam lau hon, bi ket tren sid=default".
+- **Dieu tra & Nguyen nhan:**
+  1. `tryIntraSessionCrossClassChain` trong stage gap2 thieu check GV lien quan -> chay 360,000 to hop snapshot moi vong gay nghen 8-9s/lan goi.
+  2. `obliterateAllTeacherSingletons` o Case 2 (3-way cyclic swap) goi 2.4 trieu lan `unplaceActivity` + `getConflictsForSlot` ma khong co pre-check nhanh tren `teacherGrid`.
+  3. `tryBlockShiftAndGapResolution` lay full state snapshot tren moi cap o lop (10,800 snapshots) ke ca khi cung GV.
+  4. `optimize_sessions` (`tryVacateTeacherSession`) scan toi 30 session/vong gay lang phi hang nghin phep thu.
+  5. `optimizeAllBudgetMs` mac dinh 150s + final sweep 90s lam nguoi dung phai cho 2.5-3.5 phut khi chay tu dong.
+  6. Vong lap restart trong `optimize` thieu phanh hanh trinh (stagnation cap) nen thu toi 20 restarts du da cham nguong co the giai cua truong.
+- **Cai tien (v14.1):**
+  - Them Fast Pre-check tren `teacherGrid` va `teacherOffSlots` truoc khi unplace/snapshot o tat ca cac operator 3-way, 4-way, block-shift.
+  - Gioi han `tryTargetedDeepSingletonChain` tap trung o giai doan tan cuoc (singletons <= 25) va gioi han nhanh tim kiem.
+  - Them `stagnantRestarts` thoat som sau 2-3 restart khong cai thien global best.
+  - Ha budget mac dinh cua `optimizeAll` xuong 60s (snap-tight) giup toan bo tien trinh xong trong ~30-65s ma khong suy giam chat luong nghiem.
+- **Kiem chung thuc nghiem (Benchmark sequential E2E):**
+  - `DEFAULT SCHOOL`: Thoi gian chay giam tu **154.05s** xuong **65.41s** (**nhanh gap 2.35 lan**), Buoi 1 tiet ve **0**, Trống-2 ve **3**.
+  - `SCHOOL 95671c41791`: Thoi gian chay giam tu **163.78s** xuong **63.39s** (**nhanh gap 2.58 lan**), Buoi 1 tiet tu 132 ha ve **16**, Trống-2 ve **6**.
+  - 100% unit tests pass (7/7). Da deploy len VPS.
+
 ## 2026-08-18 DOT PHA construction + stage singletons: bat dang thuc dem cua FET + tha luat gap cung (v14 = 3way-cycle cua phien song song + 2 patch, REAL-SCHOOL VERIFIED)
 
 - **Nguon goc (chu du an chi):** doc lai FET generate.cpp (~dong 21828, ConstraintMinHoursDaily): FET xu ly "toi thieu N tiet/ngay" bang BAT DANG THUC DEM — moi don vi da mo phai dat duoc muc toi thieu: Sum max(soTiet_i, min) <= tong quy tiet; mo don vi moi ma quy khong nuoi noi -> TU CHOI ngay tu luc xep. Port sang buoi (min 2): `computeTeacherWeeklyLoad()` + `teacherSessionRequirement()` + guard `opensUnaffordableSession` trong randomSwap, chi bat trong construction (`__minTwoGuardActive`), tu tat o pass >= 6 cua vet can de bao dam DU 100%% tiet; GV quy < 2 tiet/tuan mien tru.
