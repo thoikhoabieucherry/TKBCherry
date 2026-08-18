@@ -418,16 +418,6 @@
 
   async function loadSchoolData(schoolId, dbName){
     const key = lsKey(schoolId);
-    if(REMOTE_ONLY_STORAGE){
-      const remoteData = await loadRemoteSchoolDataWithFallback(schoolId);
-      purgeLocalSchoolCaches();
-      return {
-        kv: null,
-        data: hasMeaningfulData(remoteData) ? remoteData : {},
-        storeKey: key,
-        source: hasMeaningfulData(remoteData) ? "remote" : "empty"
-      };
-    }
     const rawLS = localStorage.getItem(key);
     let kv = null;
     let raw = null;
@@ -475,10 +465,6 @@
   }
 
   async function saveSchoolData(kv, schoolId, dataJson){
-    if(REMOTE_ONLY_STORAGE){
-      purgeLocalSchoolCaches();
-      return await saveRemoteSchoolData(schoolId, dataJson);
-    }
     const key = lsKey(schoolId);
     try{ localStorage.setItem(key, dataJson); }catch(e){
       console.warn("localStorage save failed", e);
@@ -494,7 +480,6 @@
   window.TKBStorage = {
     version:"remote-save-retry-v2",
     safeParseJSON,
-    remoteOnly: REMOTE_ONLY_STORAGE,
     lsKey,
     cleanSchoolId,
     remoteStoreUrl,

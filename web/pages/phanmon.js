@@ -392,6 +392,8 @@ if (typeof schoolParam !== "undefined" && schoolParam && !(window.TKBStorage && 
 
       const remotePlaced = countTkbPlaced(remoteData.tkb);
       const localPlaced = countTkbPlaced(DATA.tkb);
+      const remoteTs = Number(remoteData?._lastModified || remoteData?._updatedAt || 0) || 0;
+      const localTs = Number(DATA?._lastModified || DATA?._updatedAt || 0) || 0;
 
       const acceptRemote = !localHasData || (remoteTs > localTs && remotePlaced >= localPlaced) || (localPlaced === 0 && remotePlaced > 0);
 
