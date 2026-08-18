@@ -551,9 +551,18 @@ function syncDerivedDataIntegrity(){
     changed = syncClassAvailabilityIntegrity() || changed;
 
     // ===== valid sets =====
-    const classNormSet = new Set((DATA.lop || [])
-        .map(canonTen2FromLop)
-        .filter(Boolean));
+    const classNormSet = new Set();
+    (DATA.lop || []).forEach(lop => {
+        const canon = canonTen2FromLop(lop);
+        [canon, lop?.ten, lop?.ten2, lop?.id].forEach(v => {
+            classLookupCandidates(v).forEach(alias => {
+                const s = _normText(alias).toLowerCase();
+                if (s) classNormSet.add(s);
+            });
+            const s = _normText(v).toLowerCase();
+            if (s) classNormSet.add(s);
+        });
+    });
 
     const classAliasToCanon = new Map();
     (DATA.lop || []).forEach(lop => {
@@ -573,7 +582,7 @@ function syncDerivedDataIntegrity(){
 
     const monAliasSet = new Set();
     (DATA.monhoc || []).forEach(m => {
-        [m.ten, m.ma, m.ma2].forEach(v => {
+        [m.ten, m.ma, m.ma2, m.key, m.id].forEach(v => {
             const s = _normText(v).toLowerCase();
             if (s) monAliasSet.add(s);
         });
@@ -588,9 +597,13 @@ function syncDerivedDataIntegrity(){
         });
     }catch(_){ /* ignore */ }
 
-    const gvCodeSet = new Set((DATA.giaovien || [])
-        .map(g => _normText(g.magv).toUpperCase())
-        .filter(Boolean));
+    const gvCodeSet = new Set();
+    (DATA.giaovien || []).forEach(g => {
+        [g.magv, g.magv2, g.ten, g.tengv, g.id, `${g.hodem||""} ${g.ten||""}`].forEach(v => {
+            const s = _normText(v).toUpperCase();
+            if (s) gvCodeSet.add(s);
+        });
+    });
 
     const pruneObj = (obj, keepFn) => {
         if (!obj || typeof obj !== "object") return false;
@@ -621,8 +634,8 @@ function syncDerivedDataIntegrity(){
             }
             const cls = _normText(parts[0]).toLowerCase();
             const mon = _normText(parts.slice(1).join("|"));
-            const canon = classAliasToCanon.get(cls);
-            if (!canon || !mon){
+            const canon = classAliasToCanon.get(cls) || _normText(parts[0]);
+            if (!mon){
                 delete obj[k];
                 ch = true;
                 return;
@@ -713,8 +726,8 @@ function syncDerivedDataIntegrity(){
             if (parts.length < 2) return false;
             const classCandidates = classLookupCandidates(parts[0]);
             const mon = _normText(parts.slice(1).join("|")).toLowerCase();
-            if (!classCandidates.some(cls => classNormSet.has(cls))) return false;
-            if (!mon || !monAliasSet.has(mon)) return false;
+            if (classNormSet.size > 0 && !classCandidates.some(cls => classNormSet.has(_normText(cls).toLowerCase()))) return false;
+            if (monAliasSet.size > 0 && !monAliasSet.has(mon)) return false;
             return true;
         };
 
@@ -726,8 +739,8 @@ function syncDerivedDataIntegrity(){
         changed = pruneObj(DATA.pccmMatrix, (k, v) => {
             if (!keepKeyByClassMon(k)) return false;
             const teachers = pccmTeacherListFromValue(v);
-            if (!teachers.length) return false; // rỗng thì coi như chưa phân công → xoá key
-            return teachers.every(gv => gvCodeSet.has(_normText(gv).toUpperCase()));
+            if (!teachers.length) return false;
+            return true;
         }) || changed;
 
         changed = initializeAssignedPccmPeriods() || changed;
