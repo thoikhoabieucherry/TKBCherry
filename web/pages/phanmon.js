@@ -10920,27 +10920,29 @@ function isAutoSortRunningForNavigation(){
 }
 
 async function saveAndBack(){
-  const btn = document.querySelector("button[onclick*='saveAndBack']");
-  const status = document.getElementById("statusMsg");
-  let navigating = false;
+  const btn = document.getElementById("btnHome") || document.querySelector("button[onclick*='saveAndBack']");
+  if(btn) btn.disabled = true;
+  __tkbNavigatingHome = true;
   try{
     if(isAutoSortRunningForNavigation()){
       try{
         _setStatus("Lượt xếp vẫn tiếp tục trên máy chủ; khi quay lại hệ thống sẽ tự nối lại.", "info");
       }catch(_){ }
     }
-    if(btn) btn.disabled = true;
-    __tkbNavigatingHome = true;
-    const result = saveStore({force:true, awaitRemote:true, skipIfUnchanged:true});
-    if(result && typeof result.then === "function") await result;
-    navigating = true;
-    backToMain();
-  }catch(e){
-    __tkbNavigatingHome = false;
-    console.error("saveAndBack failed", e);
-    alert("Không lưu được dữ liệu lên VPS. Vui lòng kiểm tra kết nối rồi thử lại.");
+    try{
+      const result = saveStore({force:true, awaitRemote:true, skipIfUnchanged:true});
+      if(result && typeof result.then === "function"){
+        await Promise.race([
+          result,
+          new Promise(resolve => setTimeout(resolve, 800))
+        ]);
+      }
+    }catch(e){
+      console.warn("saveAndBack remote save warning", e);
+      try{ saveStore({force:true, syncRemote:false}); }catch(_){}
+    }
   }finally{
-    if(!navigating && btn) btn.disabled = false;
+    backToMain();
   }
 }
 
