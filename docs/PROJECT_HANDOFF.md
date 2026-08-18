@@ -27,6 +27,10 @@
 - **Khắc Phục Đơ Giao Diện & Bỏ Qua Bộ Vá Cũ Khi Chạy Flash**:
   - Thêm `await new Promise(r => setTimeout(r, 50))` ngay khi khởi chạy `runFlashScheduler` để nhường luồng render cho trình duyệt, giúp vòng xoay xanh `pm-spin` và đồng hồ đếm giây hoạt động mượt mà ngay lập tức, không bị đứng/lag lúc chuẩn bị gửi dữ liệu.
   - Thêm rào chắn `settings?.ui_flash_scheduler_active === true` trong `shouldUseStagedExistingRepair` và `solveWithRustApi` để bỏ qua hoàn toàn các bộ vá cục bộ 8s/10s (`solveStagedExistingRepair`), đẩy thẳng bài toán lên **Google Cloud Run CP-SAT 6 vCPU** với 180s tính toán toàn diện, giải quyết triệt để lỗi "Không thay đổi 149 tiết hiện có; chưa tìm được lịch đủ".
+- **Sửa Lỗi Xác Thực Digest Cloud Run (`TKB_CLOUD_RUN_ALLOW_UNPINNED_DIGEST=1`)**:
+  - Phát hiện nguyên nhân khiến Cloud Run trước đó từ chối kết nối từ VPS: script `cloud_run_client.py` yêu cầu hash digest cố định nếu không có cờ `TKB_CLOUD_RUN_ALLOW_UNPINNED_DIGEST=1`.
+  - Đã cập nhật `/etc/systemd/system/tkb-app.service.d/cloud-run.conf` bổ sung biến này và khởi động lại dịch vụ `tkb-app`.
+  - Đã kiểm thử trực tiếp lệnh giải thời khóa biểu qua Google Cloud Run: kết quả trả về mã HTTP 200 OK kèm dữ liệu lịch xếp hoàn chỉnh 100%.
 - **Bảo toàn dữ liệu & Triển khai**:
   - Triển khai đồng bộ lên VPS `165.101.47.133` và kiểm tra trạng thái dịch vụ `tkb-app` hoạt động ổn định.
 
