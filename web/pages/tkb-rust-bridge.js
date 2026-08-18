@@ -5651,6 +5651,12 @@
   function backendProgressStageLabel(stage){
     const value = String(stage || "").trim().toLowerCase();
     if(!value) return "";
+    if(value.startsWith("exact_v2:")){
+      if(value.includes("model")) return "Đang dựng mô hình tối ưu";
+      if(value.includes("sessions")) return "Đang chứng minh số buổi ít nhất";
+      if(value.includes("gap1")) return "Đang chứng minh trống 1 tiết ít nhất";
+      return "Đang chạy Solver V2";
+    }
     if(value.startsWith("period:")) return "Đang phân tiết";
     if(value.startsWith("validate:")) return "Đang kiểm tra lịch";
     if(value.startsWith("result:") || value.startsWith("output:")) return "Đang nhận kết quả";
@@ -19561,6 +19567,12 @@
       return null;
     }
     const settings = automaticPlan.settings;
+    // Solver V2 is selected by the single planner action.  Keep this merge
+    // explicit and late so legacy mode planning cannot reintroduce FET,
+    // singleton, gap, or "trọn gói" aliases into the backend request.
+    if(invocationOptions.settings && typeof invocationOptions.settings === "object"){
+      Object.assign(settings, invocationOptions.settings);
+    }
     if(hybridInvocationSettings){
       // `automaticPlan` is intentionally rebuilt from planner state, so copy
       // the explicit Hybrid executor contract back only after canonical mode

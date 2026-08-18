@@ -8012,13 +8012,31 @@ fn normalize_reference_payload(
     let elapsed_seconds = (elapsed.as_secs_f64() * 100.0).round() / 100.0;
 
     let solver = ensure_object_child(&mut payload, "solver");
-    solver.insert("backend".to_string(), json!("hybrid-python-reference"));
-    solver
-        .entry("name".to_string())
-        .or_insert_with(|| json!("hybrid_reference_cp_sat_milp_v1"));
-    solver.entry("description".to_string()).or_insert_with(|| {
-        json!("Session-first CP-SAT/MILP reference pipeline: build a complete feasible timetable first, then minimize one-period teacher sessions and teacher gaps.")
-    });
+    let exact_v2 = request_settings(request)
+        .and_then(|settings| settings.get("solver_algorithm"))
+        .and_then(Value::as_str)
+        .is_some_and(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "exact_v2" | "tkb_exact_v2" | "integrated_exact_v2"
+            )
+        });
+    if exact_v2 {
+        solver.insert("backend".to_string(), json!("exact-v2-cp-sat"));
+        solver.insert("name".to_string(), json!("tkb_exact_v2_integrated_pattern_cp_sat"));
+        solver.insert(
+            "description".to_string(),
+            json!("Solver V2: chứng minh đủ tiết, singleton=0, Gap2+=0, buổi giáo viên tối thiểu và Gap1 tối thiểu."),
+        );
+    } else {
+        solver.insert("backend".to_string(), json!("hybrid-python-reference"));
+        solver
+            .entry("name".to_string())
+            .or_insert_with(|| json!("hybrid_reference_cp_sat_milp_v1"));
+        solver.entry("description".to_string()).or_insert_with(|| {
+            json!("Session-first CP-SAT/MILP reference pipeline: build a complete feasible timetable first, then minimize one-period teacher sessions and teacher gaps.")
+        });
+    }
     let runtime = solver
         .entry("runtime_settings".to_string())
         .or_insert_with(|| json!({}));
@@ -8053,7 +8071,10 @@ fn normalize_reference_payload(
             "capacity_partial_accepted".to_string(),
             json!(safe_capacity_partial),
         );
-        runtime.insert("phase".to_string(), json!("reference_pipeline"));
+        runtime.insert(
+            "phase".to_string(),
+            json!(if exact_v2 { "exact_v2" } else { "reference_pipeline" }),
+        );
         runtime.insert(
             "require_complete_schedule".to_string(),
             json!(require_complete),

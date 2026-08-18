@@ -104,6 +104,7 @@ from tkb_new.adapter import (  # noqa: E402
     validate_candidate_payload,
 )
 from tkb_new.fixture import build_ui_fixture_from_workbooks  # noqa: E402
+from tkb_exact_v2 import ExactV2NoSolution, solve_exact_v2_from_ui_data  # noqa: E402
 from tkb_optimizer_ref.period_milp import PeriodAllocationError  # noqa: E402
 from tkb_optimizer_ref.external_cp_sat import (  # noqa: E402
     EXTERNAL_HIGHS_MODEL_MAGIC,
@@ -717,6 +718,47 @@ def main() -> int:
             write_json({"error": "Truong settings phai la object."}, status=400)
             return 0
         settings = raw_settings or {}
+        if str(settings.get("solver_algorithm") or "").strip().casefold() in {
+            "exact_v2",
+            "tkb_exact_v2",
+            "integrated_exact_v2",
+        }:
+            emit_progress(
+                {
+                    "stage": "exact_v2:starting",
+                    "message": "Đang chạy Solver V2: xếp đủ và chứng minh tối ưu",
+                }
+            )
+            try:
+                result = solve_exact_v2_from_ui_data(
+                    ui_data,
+                    settings,
+                    progress=emit_progress,
+                )
+            except ExactV2NoSolution as exc:
+                CURRENT_REQUEST_BODY = None
+                write_json(
+                    {
+                        "ok": False,
+                        "kind": "exact_v2_no_solution",
+                        "error": str(exc),
+                        "detail": exc.detail,
+                        "solver": {
+                            "algorithm": "tkb_exact_v2_integrated_pattern_cp_sat",
+                            "version": "20260818-exact-v2-v1",
+                        },
+                    },
+                    status=422,
+                )
+                return 0
+            emit_progress(
+                {
+                    "stage": "exact_v2:done",
+                    "message": "Solver V2 đã có nghiệm đủ và được chứng minh",
+                }
+            )
+            write_json(result, status=200)
+            return 0
         emit_progress(
             {
                 "stage": "solver:starting",

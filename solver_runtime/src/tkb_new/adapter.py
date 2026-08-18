@@ -814,7 +814,11 @@ def _sanitize_impossible_lesson_block_mins(
     return replace(rule_set, constraints=normalized_constraints), warnings
 
 
-def build_school_data_from_ui(ui_data: dict[str, Any]) -> UiDataContext:
+def build_school_data_from_ui(
+    ui_data: dict[str, Any],
+    *,
+    strict_constraints: bool = False,
+) -> UiDataContext:
     if not isinstance(ui_data, dict):
         raise ValueError("Payload DATA không hợp lệ.")
 
@@ -918,8 +922,17 @@ def build_school_data_from_ui(ui_data: dict[str, Any]) -> UiDataContext:
         limits_by_grade_subject=limits_by_grade_subject,
     )
     rules = _normalize_constraints(ui_data, classes, class_by_alias, alias_to_subject, teacher_lookup)
-    rules, constraint_warnings = _sanitize_impossible_lesson_block_mins(school_data, rules)
-    warnings.extend(constraint_warnings)
+    # The legacy best-effort pipeline historically removed impossible
+    # lessonBlocks Min values so it could still publish a partial/capacity
+    # timetable.  Solver V2 is fail-closed: a user-authored minimum remains a
+    # hard requirement and an impossible request must be reported as
+    # infeasible instead of being silently weakened.
+    if not strict_constraints:
+        rules, constraint_warnings = _sanitize_impossible_lesson_block_mins(
+            school_data,
+            rules,
+        )
+        warnings.extend(constraint_warnings)
     school_data = _school_data_with_lesson_block_caps(school_data, rules)
     return UiDataContext(
         school_data=school_data,

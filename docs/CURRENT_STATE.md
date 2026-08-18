@@ -1,6 +1,24 @@
 # TKBCherry — Trạng thái hiện hành (CURRENT STATE)
 
-*Cập nhật: 2026-08-16. File này là bản tóm tắt ngắn để onboard nhanh; chi tiết từng phiên làm việc nằm trong `PROJECT_HANDOFF.md` (mục cũ hơn ở `docs/archive/`).*
+*Cập nhật: 2026-08-18. File này là bản tóm tắt ngắn để onboard nhanh; chi tiết từng phiên làm việc nằm trong `PROJECT_HANDOFF.md` (mục cũ hơn ở `docs/archive/`).*
+
+## Đợt thay thế Solver V2 (local, chưa deploy)
+
+- Đường xếp TKB mới nằm ở `solver_runtime/src/tkb_exact_v2/solver.py`, dùng
+  CP-SAT tích hợp và chứng minh tuần tự: singleton/Gap2+ là hard zero, sau đó
+  tối ưu tổng buổi giáo viên và Gap1 bằng `OPTIMAL`/best-bound.
+- `solver_runtime/scripts/solve_stdio.py` nhận `settings.solver_algorithm=
+  exact_v2`; không gọi FET/local-search. UI planner đã bỏ các nút Tối ưu,
+  NEW và Trọn gói, nút Sắp xếp duy nhất định tuyến request này.
+- Mọi `Giới hạn/Max` là cận trên; `lessonBlocks.Min`, `mustTeach`, nghỉ và ô
+  cố định không được tự nới. Vô nghiệm hoặc chưa chứng minh tối ưu thì không
+  áp lịch.
+- Test mới: `python -m unittest solver_runtime.tests.test_exact_v2` (5/5).
+- Fixture read-only 1.530 tiết chưa chứng minh được `sessions_optimum` trong
+  60–180 giây (`sessions_optimum_not_proven`); hệ thống fail-closed, chưa áp
+  candidate. Đây là blocker tối ưu lớn còn mở trước canary.
+- Chưa deploy VPS/Cloud Run. Xem chi tiết hợp đồng và gate ở
+  [`SOLVER_V2_PLAN.md`](SOLVER_V2_PLAN.md).
 
 ## Sản phẩm
 
