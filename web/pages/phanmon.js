@@ -12015,6 +12015,9 @@ async function runFlashScheduler(event){
     setAutoSortProgress(5, "");
   }
 
+  // Yield to browser rendering thread so the spinning clock animates immediately
+  await new Promise(resolve => setTimeout(resolve, 50));
+
   try {
     if(typeof window.clearOptimizationPlateau === "function"){
       window.clearOptimizationPlateau(window.getData?.());

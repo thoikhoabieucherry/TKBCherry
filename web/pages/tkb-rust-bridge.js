@@ -9636,6 +9636,7 @@
   }
 
   function shouldUseStagedExistingRepair(settings, data){
+    if(settings?.ui_flash_scheduler_active === true) return null;
     const allowFreshStaged = settings?.ui_allow_staged_existing_on_fresh_sort === true;
     if(
       !data
@@ -16624,6 +16625,8 @@
             stagedExistingRepairState,
             activeSolveRunId
           );
+        }else if(settings?.ui_flash_scheduler_active === true){
+          payload = await postSolve(settings);
         }else{
           payload = await solveCapacitySafeFreshProbe(
             settings,
