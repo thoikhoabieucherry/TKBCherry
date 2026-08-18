@@ -2012,7 +2012,7 @@ function buildTeacherSchedule(gvCode){
         const mon = cellMon(v);
         if(!mon) continue;
         let gv = (typeof v === "object" && v.gv) ? v.gv : (typeof v === "string" && v.includes(" - ")) ? v.split(" - ")[1] : "";
-        if(!gv && mon !== "Chào cờ" && !mon.startsWith("HĐTN 1") && !mon.startsWith("HĐTN 2")){
+        if(!gv && mon !== "Chào cờ"){
           gv = getTeacherForClassMon(classCanon, mon);
         }
         if(gv && teacherValueHas(gv, code)){
@@ -2027,7 +2027,7 @@ function buildTeacherSchedule(gvCode){
         const mon = cellMon(v);
         if(!mon) continue;
         let gv = (typeof v === "object" && v.gv) ? v.gv : (typeof v === "string" && v.includes(" - ")) ? v.split(" - ")[1] : "";
-        if(!gv && mon !== "Chào cờ" && !mon.startsWith("HĐTN 1") && !mon.startsWith("HĐTN 2")){
+        if(!gv && mon !== "Chào cờ"){
           gv = getTeacherForClassMon(classCanon, mon);
         }
         if(gv && teacherValueHas(gv, code)){

@@ -16457,21 +16457,23 @@
       if(localUnassignedRepairPayload) return localUnassignedRepairPayload;
       traceSolveStep("solve:presolve-fast-done");
     }
-    const singlePassAutoSort = options?.singlePass === true || settings?.ui_single_pass_auto_sort === true;
+    const singlePassAutoSort = options?.singlePass === true || settings?.ui_single_pass_auto_sort === true || settings?.ui_flash_scheduler_active === true;
     let allowSinglePassQuality = false;
     if(singlePassAutoSort){
       const localRepairNeedsOptimize = settings?.ui_local_unassigned_repair_needs_optimize === true;
-      const requestedQualityRetry = localRepairNeedsOptimize
+      const requestedQualityRetry = settings?.ui_flash_scheduler_active !== true && (
+        localRepairNeedsOptimize
         || settings?.allow_zero_one_quality_retry === true
         || settings?.allow_teacher_session_deep_retry === true
         || settings?.allow_teacher_session_fast_portfolio === true
         || settings?.gap1_quality_target_explicit === true
         || nonnegativeNumberSetting(settings?.target_gap1_sessions) != null
-        || nonnegativeNumberSetting(settings?.optimization_accept_gap1_sessions) != null;
+        || nonnegativeNumberSetting(settings?.optimization_accept_gap1_sessions) != null
+      );
       settings.ui_single_pass_auto_sort = true;
       settings.complete_schedule_seed_retry = false;
       settings.allow_zero_one_quality_retry = requestedQualityRetry ? true : false;
-      settings.allow_teacher_session_deep_retry = settings?.allow_teacher_session_deep_retry === true;
+      settings.allow_teacher_session_deep_retry = requestedQualityRetry && settings?.allow_teacher_session_deep_retry === true;
       settings.allow_teacher_session_fast_portfolio = requestedQualityRetry ? true : false;
       allowSinglePassQuality = requestedQualityRetry
         && settings?.ui_allow_quality_after_single_pass === true
@@ -16698,6 +16700,9 @@
         completion = payloadCompletion(payload);
         skipFurtherRetries = completion.complete && payloadReturnedCompleteIncumbentNearDeadline(payload);
         skipRetryLoops = (
+            settings?.ui_flash_scheduler_active === true
+          )
+          || (
             singlePassAutoSort
             && (
               completion.complete
