@@ -4287,6 +4287,12 @@ function pccmSetTeacherMembershipNoSave(lopCanon, monObj, teacherCode, shouldAss
 
 function pccmGetNumberFromMatrix(matrix, lopCanon, monObj){
     if (!matrix || !lopCanon || !monObj) return null;
+    const directKey = `${lopCanon}|${monObj.key || monObj.ten || ""}`;
+    const directRaw = matrix[directKey];
+    if (directRaw !== undefined && directRaw !== null && String(directRaw).trim() !== ""){
+        const n = Number(String(directRaw).trim());
+        if (!Number.isNaN(n)) return n;
+    }
 
     const clsRaw = _normText(lopCanon);
     const classCandidates = classLookupCandidates(clsRaw);
@@ -4329,24 +4335,40 @@ function pccmGetGioihanDisplay(lopCanon, monObj, khoiName){
     return tc ? (tc.gioihan || "") : "";
 }
 
+let __CLASS_KHOI_META_MAP = null;
+let __CLASS_KHOI_META_DATA_REF = null;
+
+function __buildClassKhoiMetaMap(){
+    const map = new Map();
+    (DATA.lop || []).forEach(l=>{
+        const canon = classCanonFromLop(l);
+        const rawKhoi = _normText(l?.khoi) || _normText(l?.ten2) || _normText(l?.ten);
+        const khoiNum = extractKhoiNumber(rawKhoi);
+        const khoiName = khoiNum ? `Khối ${khoiNum}` : (_normText(l?.khoi) || rawKhoi);
+        const meta = { canon: canon || l?.ten2 || l?.ten, khoiName };
+        if (canon) map.set(canon, meta);
+        if (l?.ten2) map.set(l.ten2, meta);
+        if (l?.ten) map.set(l.ten, meta);
+        if (l?.id) map.set(l.id, meta);
+    });
+    __CLASS_KHOI_META_MAP = map;
+    __CLASS_KHOI_META_DATA_REF = DATA.lop;
+}
+
 function pccmClassKhoiMeta(classDisplayName){
     if (!classDisplayName) return null;
-    const aliases = classLookupCandidates(classDisplayName).map(x=>x.toLowerCase());
+    if (!__CLASS_KHOI_META_MAP || __CLASS_KHOI_META_DATA_REF !== DATA.lop){
+        __buildClassKhoiMetaMap();
+    }
+    const cached = __CLASS_KHOI_META_MAP.get(classDisplayName);
+    if (cached) return cached;
 
-    const lopObj = (DATA.lop || []).find(l=>{
-        const own = classLookupCandidates(classCanonFromLop(l))
-            .concat(classLookupCandidates(l?.ten2 || ""))
-            .concat(classLookupCandidates(l?.id || ""))
-            .map(x=>x.toLowerCase());
-        return aliases.some(a => own.includes(a));
-    });
-    if (!lopObj) return null;
-
-    const canon = classCanonFromLop(lopObj);
-    const rawKhoi = _normText(lopObj?.khoi) || _normText(lopObj?.ten2) || _normText(lopObj?.ten);
-    const khoiNum = extractKhoiNumber(rawKhoi);
-    const khoiName = khoiNum ? `Khối ${khoiNum}` : (_normText(lopObj?.khoi) || rawKhoi);
-    return { canon, khoiName };
+    const canon = classCanonFromLop({ten: classDisplayName, ten2: classDisplayName});
+    const khoiNum = extractKhoiNumber(classDisplayName);
+    const khoiName = khoiNum ? `Khối ${khoiNum}` : "Khối 6";
+    const meta = { canon: canon || classDisplayName, khoiName };
+    __CLASS_KHOI_META_MAP.set(classDisplayName, meta);
+    return meta;
 }
 
 function pccmAssignedPeriodForClassSubject(classCanon, khoiName, monObj){
@@ -4854,12 +4876,15 @@ function pccmQuickRenderMultiItem(type, item, selectedValues){
         </button>`;
 }
 
+let __PCCM_QUICK_ITEMS = {};
+
 function pccmQuickRenderMulti(type, items, selectedValues, placeholder){
     items = (items || []).map(item=>({
         value: _normText(item?.value),
         label: _normText(item?.label) || _normText(item?.value),
         title: _normText(item?.title) || _normText(item?.label) || _normText(item?.value)
     })).filter(item=>item.value);
+    __PCCM_QUICK_ITEMS[type] = items;
     const values = items.map(item=>item.value);
     selectedValues = (selectedValues || []).filter(v=>values.includes(v));
     const labelByValue = new Map(items.map(item=>[item.value, item.label || item.value]));
@@ -4875,20 +4900,32 @@ function pccmQuickRenderMulti(type, items, selectedValues, placeholder){
                 <span id="${textId}">${escapeHtml(text)}</span>
                 <span class="pccm-multi-arrow">▾</span>
             </button>
-            <div class="pccm-multi-menu">
-                ${items.map(item=>pccmQuickRenderMultiItem(type, item, selectedValues)).join("")}
-            </div>
+            <div class="pccm-multi-menu" id="${boxId}_menu"></div>
         </div>`;
+}
+
+function pccmPopulateQuickMultiMenu(type){
+    const boxId = pccmQuickMultiBoxId(type);
+    const menu = document.getElementById(`${boxId}_menu`) || document.querySelector(`#${boxId} .pccm-multi-menu`);
+    if (!menu) return;
+    const items = __PCCM_QUICK_ITEMS[type] || [];
+    const hidden = document.getElementById(pccmQuickMultiId(type));
+    const selectedValues = pccmQuickMultiValues(hidden?.value || "");
+    menu.innerHTML = items.map(item=>pccmQuickRenderMultiItem(type, item, selectedValues)).join("");
 }
 
 function pccmQuickMultiToggle(ev, type){
     try{
         if (ev) ev.stopPropagation();
-        const box = document.getElementById(pccmQuickMultiBoxId(type));
+        const boxId = pccmQuickMultiBoxId(type);
+        const box = document.getElementById(boxId);
         if (!box) return;
         const willOpen = !box.classList.contains("open");
         pccmQuickMultiCloseAll();
-        if (willOpen) box.classList.add("open");
+        if (willOpen){
+            pccmPopulateQuickMultiMenu(type);
+            box.classList.add("open");
+        }
     }catch(e){
         // ignore
     }
