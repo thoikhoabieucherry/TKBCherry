@@ -19697,6 +19697,8 @@
       releaseAutoSortPreflight(preflightToken);
     }
   };
+  window.bridgeSapXepTuDongAll = bridgeSapXepTuDongAll;
+  window.solveWithRustApi = solveWithRustApi;
   if(typeof window.executeDirectFastSchedule !== "function"){
     window.sapXepTuDongAll = bridgeSapXepTuDongAll;
     window.sapXepTheoCheDo = function(mode){

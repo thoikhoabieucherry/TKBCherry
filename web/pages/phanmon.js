@@ -12006,8 +12006,13 @@ async function runFlashScheduler(event){
     }
   }catch(_){}
   
-  if(typeof window.sapXepTuDongAll === "function"){
-    return window.sapXepTuDongAll({
+  if(typeof window.bridgeSapXepTuDongAll === "function"){
+    return await window.bridgeSapXepTuDongAll({
+      manualAgentInvite: false,
+      mode: "automatic"
+    });
+  } else if(typeof window.sapXepTuDongAll === "function"){
+    return await window.sapXepTuDongAll({
       manualAgentInvite: false
     });
   }
