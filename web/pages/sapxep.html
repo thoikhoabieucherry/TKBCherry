@@ -31,11 +31,11 @@ body.planner-shell {
 
 /* Keep feedback inline on desktop and below the compact mobile commands. */
 body.planner-shell .toolbar-main {
-  --planner-toolbar-button-width: 36px;
+  --planner-toolbar-button-width: 48px;
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
   min-width: 0;
   padding-right: 0;
@@ -47,7 +47,7 @@ body.planner-shell .toolbar-actions {
   display: flex;
   flex-flow: row nowrap;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   width: auto;
   min-width: 0;
 }
@@ -55,12 +55,12 @@ body.planner-shell .toolbar-actions {
 body.planner-shell .toolbar-actions > .planner-optimize-wrap {
   position: relative;
   display: inline-flex;
-  flex: 0 0 36px;
-  width: 36px;
-  min-width: 36px;
-  max-width: 36px;
-  height: 36px;
-  min-height: 36px;
+  flex: 0 0 var(--planner-toolbar-button-width);
+  width: var(--planner-toolbar-button-width);
+  min-width: var(--planner-toolbar-button-width);
+  max-width: var(--planner-toolbar-button-width);
+  height: 38px;
+  min-height: 38px;
 }
 
 body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu {
@@ -68,13 +68,13 @@ body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu {
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
-  min-height: 36px;
+  width: var(--planner-toolbar-button-width);
+  min-width: var(--planner-toolbar-button-width);
+  height: 38px;
+  min-height: 38px;
   padding: 0;
   border: 1px solid var(--tkb-border, #e2e8f0);
-  border-radius: 8px;
+  border-radius: 9px;
   background: #fff;
   color: #334155;
   line-height: 1;
@@ -203,15 +203,24 @@ body.planner-shell .toolbar-actions > button {
   width: var(--planner-toolbar-button-width);
   min-width: var(--planner-toolbar-button-width);
   max-width: var(--planner-toolbar-button-width);
-  height: 36px;
-  min-height: 36px;
-  border-radius: 8px;
+  height: 38px;
+  min-height: 38px;
+  border-radius: 9px;
 }
 
 body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button,
 body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button,
 body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
-  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--planner-toolbar-button-width);
+  min-width: var(--planner-toolbar-button-width);
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
+  border-radius: 9px;
 }
 
 body.planner-shell #btnRangBuoc {
@@ -221,10 +230,10 @@ body.planner-shell #btnRangBuoc {
   width: var(--planner-toolbar-button-width);
   min-width: var(--planner-toolbar-button-width);
   max-width: var(--planner-toolbar-button-width);
-  height: 36px;
-  min-height: 36px;
+  height: 38px;
+  min-height: 38px;
   padding: 0;
-  border-radius: 8px;
+  border-radius: 9px;
   border-color: #4d9b2c;
   background: #58ad32;
   color: #fff;
@@ -237,9 +246,9 @@ body.planner-shell #btnRangBuoc:hover:not(:disabled) {
 }
 
 body.planner-shell #btnRangBuoc .toolbar-requirement-icon {
-  width: 18px;
-  height: 18px;
-  stroke-width: 2.8;
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.6;
 }
 
 body.planner-shell .toolbar-actions > button.icon-button {
@@ -250,10 +259,10 @@ body.planner-shell .toolbar-actions > button.icon-button {
   width: var(--planner-toolbar-button-width);
   min-width: var(--planner-toolbar-button-width);
   max-width: var(--planner-toolbar-button-width);
-  height: 36px;
-  min-height: 36px;
+  height: 38px;
+  min-height: 38px;
   padding: 0;
-  border-radius: 8px;
+  border-radius: 9px;
   line-height: 1;
 }
 
@@ -1506,8 +1515,8 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
     <div class="toolbar-secondary-actions" aria-label="Điều hướng và thống kê">
       <div class="stats-popover-wrap">
-        <button id="btnHome" class="primary save-button" type="button" title="Về trang chủ" aria-label="Về trang chủ" onclick="saveAndBack()">Home</button>
-        <button id="statsToggle" class="stats-toggle" type="button" onclick="toggleStatsPopover(event)" title="Thống kê thời khóa biểu" aria-label="Thống kê thời khóa biểu" aria-expanded="false"><span class="toolbar-label-full" aria-hidden="true">Thống kê</span><span class="toolbar-label-compact" aria-hidden="true"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M4 20V13h4v7M10 20V9h4v11M16 20V5h4v15M3 20h18"/></svg></span></button>
+        <button id="btnHome" class="icon-button primary save-button" type="button" title="Về trang chủ" aria-label="Về trang chủ" onclick="saveAndBack()"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></button>
+        <button id="statsToggle" class="stats-toggle icon-button" type="button" onclick="toggleStatsPopover(event)" title="Thống kê thời khóa biểu" aria-label="Thống kê thời khóa biểu" aria-expanded="false"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></button>
         <div id="statsPopover" class="stats-popover" hidden>
           <div id="statsBox" class="stats-box"></div>
         </div>

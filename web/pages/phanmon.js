@@ -11990,34 +11990,10 @@ async function runFlashScheduler(event){
     return;
   }
   
-  let stats = null;
-  try{
-    if(typeof window.calcTeacherTKBStats === "function"){
-      stats = window.calcTeacherTKBStats();
-    }
-  }catch(_){}
-  
-  const unassigned = Number(stats?.unassigned ?? 0);
-  const isDeepOptimize = unassigned === 0;
-  
-  if(isDeepOptimize){
-    _setStatus("⚡ Flash Solver: Đang kích hoạt tối ưu sâu đa nhân vCPU (giảm buổi, giảm tiết trống)...", "info");
-  } else {
-    _setStatus("⚡ Flash Solver: Đang kích hoạt giải toàn diện 100% trên toàn bộ vCPU...", "info");
-  }
-  
-  const flashSettings = {
-    mode: isDeepOptimize ? "optimize_deep_sessions" : "full_solve",
-    seed: Math.floor(Math.random() * 100000) + 1,
-    num_workers: 0,
-    time_limit_seconds: 60,
-    is_deep_optimize: isDeepOptimize
-  };
-  
-  if(typeof window.triggerAutoSort === "function"){
-    return window.triggerAutoSort(flashSettings);
-  } else if(typeof window.sapXepTuDongAll === "function"){
-    return window.sapXepTuDongAll(flashSettings);
+  if(typeof window.sapXepTuDongAll === "function"){
+    return window.sapXepTuDongAll({
+      manualAgentInvite: true
+    });
   }
 }
 window.runFlashScheduler = runFlashScheduler;
