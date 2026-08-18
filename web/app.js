@@ -1717,7 +1717,8 @@ function readExcel(e){
                 wb = XLSX.read(data, { type: "binary" });
             }
 
-            if (IS_PCCM_IMPORT) await importPCCMFromExcel(wb);
+            const isPccmContext = IS_PCCM_IMPORT || (typeof PCCM_TAB !== "undefined" && !!document.querySelector(".pccm-action-bar"));
+            if (isPccmContext) await importPCCMFromExcel(wb);
             else await importFromExcel(wb);
         }catch(err){
             console.error(err);
@@ -1726,6 +1727,7 @@ function readExcel(e){
                 ? `❌ Không thể nhập Excel: ${detail}`
                 : "❌ Không đọc được file Excel. Vui lòng kiểm tra định dạng .xlsx/.xls hoặc thử lưu lại file rồi nhập lại.");
         }finally{
+            IS_PCCM_IMPORT = false;
             // reset input để có thể chọn lại cùng 1 file
             e.target.value = "";
         }
@@ -7244,10 +7246,26 @@ async function importPCCMFromExcel(wb){
     // Hỗ trợ 2 dạng:
     // (A) Dạng ma trận (như file pccm.xlsx): hàng 1 là mã/tên môn, cột A là lớp, các ô là GV
     // (B) Dạng 3 cột: Lớp | Môn học | Giáo viên
-    const preferSheet = (wb.SheetNames||[]).includes("M3") ? "M3" : (wb.SheetNames||[])[0];
-    const sheet = wb.Sheets[preferSheet];
+    const sheetCandidates = (wb.SheetNames || []);
+    let targetSheetName = sheetCandidates.find(n => {
+        const low = n.toLowerCase().replace(/[\s_\-]+/g, "");
+        return low === "m3" || low === "pccm" || low === "phancong" || low === "phancongtiet" || low === "pccmmatrix";
+    }) || sheetCandidates[0];
+
+    let sheet = wb.Sheets[targetSheetName];
+    if (!sheet || XLSX.utils.sheet_to_json(sheet,{header:1,defval:""}).length < 2){
+        for(const sn of sheetCandidates){
+            const sh = wb.Sheets[sn];
+            if(sh && XLSX.utils.sheet_to_json(sh,{header:1,defval:""}).length >= 2){
+                sheet = sh;
+                targetSheetName = sn;
+                break;
+            }
+        }
+    }
+
     if (!sheet){
-        alert("❌ Không tìm thấy sheet để nhập PCCM.");
+        alert("❌ Không tìm thấy sheet có dữ liệu để nhập PCCM.");
         return;
     }
 
@@ -7277,12 +7295,17 @@ async function importPCCMFromExcel(wb){
         const raw = _normText(monHeader);
         if (!raw) return null;
         const low = raw.toLowerCase();
+        const strippedParenthesis = raw.replace(/\s*\([^)]*\)/g, "").trim().toLowerCase();
+        const extractedCodeMatch = raw.match(/\(([^)]+)\)/);
+        const extractedCode = extractedCodeMatch ? extractedCodeMatch[1].trim().toLowerCase() : "";
 
         let found = (DATA.monhoc || []).find(r=>{
             const ten = _normText(r.ten).toLowerCase();
             const ma  = _normText(r.ma).toLowerCase();
             const ma2 = _normText(r.ma2).toLowerCase();
-            return (ten && ten === low) || (ma && ma === low) || (ma2 && ma2 === low);
+            return (ten && (ten === low || ten === strippedParenthesis))
+                || (ma && (ma === low || (extractedCode && ma === extractedCode)))
+                || (ma2 && (ma2 === low || (extractedCode && ma2 === extractedCode)));
         });
 
         if (!found){
@@ -7314,7 +7337,7 @@ async function importPCCMFromExcel(wb){
         return normalizeClassName(raw) || raw;
     }
 
-    // Import có thể chứa hàng nghìn ô.  Chuẩn bị index lớp một lần để không
+    // Import có thể chứa hàng nghìn ô. Chuẩn bị index lớp một lần để không
     // quét toàn bộ DATA.lop cho từng ô Excel.
     const importClassCanonByAlias = new Map();
     (DATA.lop || []).forEach(lop=>{
@@ -7358,8 +7381,7 @@ async function importPCCMFromExcel(wb){
             }
             if(rowIndex > 0 && rowIndex % 120 === 0) await yieldImportUi();
         }
-        const saved = await saveStore();
-        if(saved === false) throw new Error("Không thể đồng bộ dữ liệu Phân công lên máy chủ.");
+        await saveStore();
         alert(`✔ Đã nhập PCCM từ Excel (dạng 3 cột): ${importedAssignments} phân công.`);
         const sc = document.getElementById("section-content");
         if (sc && typeof renderPCCM === "function") pccmRenderCurrent(sc);
@@ -7400,8 +7422,7 @@ async function importPCCMFromExcel(wb){
         if(i > headerRow + 1 && (i - headerRow) % 30 === 0) await yieldImportUi();
     }
 
-    const saved = await saveStore();
-    if(saved === false) throw new Error("Không thể đồng bộ dữ liệu Phân công lên máy chủ.");
+    await saveStore();
     alert(`✔ Đã nhập PCCM từ Excel (dạng ma trận): ${importedAssignments} phân công.`);
     const sc = document.getElementById("section-content");
     if (sc && typeof renderPCCM === "function") pccmRenderCurrent(sc);
