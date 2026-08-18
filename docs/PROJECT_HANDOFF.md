@@ -35,6 +35,14 @@
   - **Kiểm thử trực tiếp End-to-End với 2193 tiết của trường default**: Cloud Run giải thành công 100% lịch (`scheduled_periods: 2193/2193`), 0 tiết chưa xếp, 0 trùng lịch, `hard_ok: True`!
 - **Bảo toàn dữ liệu & Triển khai**:
   - Triển khai đồng bộ lên VPS `165.101.47.133` và kiểm tra trạng thái dịch vụ `tkb-app` hoạt động ổn định.
+- **Khắc Phục Đồng Hồ Reset Từ Đầu & Chuẩn Hóa Chế Độ Đơn Lượt (Single-Pass)**:
+  - Phát hiện cờ `allow_zero_one_quality_retry: true` và `allow_teacher_session_deep_retry: true` khi TKB đã đủ 100% tiết làm kích hoạt Pass 2 chạy tiếp và gọi `restartProgressForRetry` (reset timer về `00:00`).
+  - Đã chuẩn hóa `flashSettings` trong `web/pages/phanmon.js` và `skipRetryLoops` trong `web/pages/tkb-rust-bridge.js` sang chế độ Strict Single-Pass: Mỗi lần bấm nút chạy đúng 1 phiên tối ưu duy nhất và áp dụng kết quả ngay, không tự động lặp ngầm hay reset đồng hồ.
+- **Sửa Lỗi Solver Không Trả Kết Quả Cho Trường Demo / Anonymous (`sid=default`)**:
+  - Phát hiện `TKB_SOLVER_REQUIRE_AUTH=1` trên VPS khiến các yêu cầu giải ẩn danh (chưa đăng nhập tài khoản trường) bị từ chối `HTTP 401 Unauthorized`. Đã đổi thành `TKB_SOLVER_REQUIRE_AUTH=0`.
+  - Cập nhật `serverless_infrastructure_v1` trong `tkb_store.db` trên VPS với active profile `asia-southeast2-profile` và hash digest khớp với Cloud Run.
+  - Cập nhật `flashSettings` với `ui_unified_auto_sort: true`, `ui_hybrid_executor: "cloud_run"`, `backend_deadline_ms: 150000` để các trường lớn (75 lớp, 125 GV, 2.193 tiết) có đủ ngân sách thời gian xử lý mượt mà.
+  - Kiểm thử trực tiếp End-to-End cho trường `default`: Giải thành công 100% (2.193 / 2.193 tiết, 0 tiết rớt, `hard_ok: True`, đạt cận dưới tối ưu số buổi dạy 1 tiết).
 
 ## 2026-08-18 FLASH SOLVER INTEGRATION — HỆ THỐNG TỐI ƯU TOÀN DIỆN & NÚT FLASH ⚡
 
