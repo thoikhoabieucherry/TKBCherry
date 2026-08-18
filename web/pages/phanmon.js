@@ -12023,7 +12023,7 @@ async function runFlashScheduler(event){
 
   try {
     if(typeof window.clearOptimizationPlateau === "function"){
-      window.clearOptimizationPlateau(window.getData?.());
+      window.clearOptimizationPlateau(window.getData?.(), false);
     }
   }catch(_){}
   
