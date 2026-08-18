@@ -42,7 +42,13 @@
   - Phát hiện `TKB_SOLVER_REQUIRE_AUTH=1` trên VPS khiến các yêu cầu giải ẩn danh (chưa đăng nhập tài khoản trường) bị từ chối `HTTP 401 Unauthorized`. Đã đổi thành `TKB_SOLVER_REQUIRE_AUTH=0`.
   - Cập nhật `serverless_infrastructure_v1` trong `tkb_store.db` trên VPS với active profile `asia-southeast2-profile` và hash digest khớp với Cloud Run.
   - Cập nhật `flashSettings` với `ui_unified_auto_sort: true`, `ui_hybrid_executor: "cloud_run"`, `backend_deadline_ms: 150000` để các trường lớn (75 lớp, 125 GV, 2.193 tiết) có đủ ngân sách thời gian xử lý mượt mà.
-  - Kiểm thử trực tiếp End-to-End cho trường `default`: Giải thành công 100% (2.193 / 2.193 tiết, 0 tiết rớt, `hard_ok: True`, đạt cận dưới tối ưu số buổi dạy 1 tiết).
+- **Khắc Phục Mất Tiết Cố Định Khi F5 & Cho Phép Ghi Dữ Liệu Trường Demo (`sid=default`)**:
+  - Phát hiện `POST /api/school/store` và `GET /api/school/store` trong `rust_api` trước đó yêu cầu bắt buộc đăng nhập tài khoản (`auth::require_session`), khiến các chỉnh sửa thủ công (kéo thả, cố định tiết) của trường `default` bị từ chối 401.
+  - Khi người dùng bấm F5, giao diện đồng bộ dữ liệu từ server hoặc xoá bộ nhớ đệm, dẫn tới việc đè lại bản cũ và làm mất tiết vừa cố định.
+  - Đã cập nhật `rust_api/src/main.rs`: Cho phép đọc và lưu trữ công khai (`GET`/`POST`) đối với kho dữ liệu trường demo `default`.
+  - Cập nhật `web/shared/storage.js`: Giữ nguyên bộ đệm local (`localStorage` + `KVDB`) làm lớp lưu trữ tức thì không bao giờ bị xóa nhầm, đồng thời luôn đồng bộ 2 chiều với máy chủ.
+  - Sửa lỗi biến chưa khai báo `remoteTs`/`localTs` trong `web/pages/phanmon.js` khi đối soát thời gian cập nhật.
+  - Đã biên dịch lại `rust_api` (bản release) trên VPS và kiểm thử thành công 100% việc lưu trữ và tải lại qua F5.
 
 ## 2026-08-18 FLASH SOLVER INTEGRATION — HỆ THỐNG TỐI ƯU TOÀN DIỆN & NÚT FLASH ⚡
 
