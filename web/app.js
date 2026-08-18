@@ -7266,9 +7266,6 @@ function triggerPCCMImport(){
 ============================================================ */
 
 async function importPCCMFromExcel(wb){
-    // Hỗ trợ 2 dạng:
-    // (A) Dạng ma trận (như file pccm.xlsx): hàng 1 là mã/tên môn, cột A là lớp, các ô là GV
-    // (B) Dạng 3 cột: Lớp | Môn học | Giáo viên
     const sheetCandidates = (wb.SheetNames || []);
     let targetSheetName = sheetCandidates.find(n => {
         const low = n.toLowerCase().replace(/[\s_\-]+/g, "");
@@ -7298,13 +7295,8 @@ async function importPCCMFromExcel(wb){
         return;
     }
 
-    const yieldImportUi = ()=>new Promise(resolve=>{
-        if(typeof requestAnimationFrame === "function") requestAnimationFrame(()=>setTimeout(resolve, 0));
-        else setTimeout(resolve, 0);
-    });
     let importedAssignments = 0;
 
-    // helpers
     function looksLikeCode(s){
         s = _normText(s);
         if (!s) return false;
@@ -7332,7 +7324,6 @@ async function importPCCMFromExcel(wb){
         });
 
         if (!found){
-            // không có trong danh mục môn => dùng raw làm cả tên lẫn key
             return { key: raw, ten: raw, code: looksLikeCode(raw) ? raw : "" };
         }
 
@@ -7343,25 +7334,10 @@ async function importPCCMFromExcel(wb){
 
         const displayName = _normText(fields.find(x=>!looksLikeCode(x)) || ten || ma || ma2 || raw) || raw;
         const code = _normText(fields.find(x=>looksLikeCode(x)) || ma || ma2 || "") || (looksLikeCode(raw) ? raw : "");
-        const key = code || displayName; // KEY lưu PCCM ưu tiên mã
+        const key = code || displayName;
         return { key, ten: displayName, code, ma, ma2 };
     }
 
-    function canonLop(x){
-        const raw = String(x||"").trim();
-        if (!raw) return "";
-        const aliases = legacyClassNameAliases(raw);
-        for(const lop of (DATA.lop || [])){
-            const own = legacyClassNameAliases(classCanonFromLop(lop))
-                .concat(legacyClassNameAliases(lop?.ten2 || ""))
-                .concat(legacyClassNameAliases(lop?.id || ""));
-            if(aliases.some(a => own.includes(a))) return classCanonFromLop(lop);
-        }
-        return normalizeClassName(raw) || raw;
-    }
-
-    // Import có thể chứa hàng nghìn ô. Chuẩn bị index lớp một lần để không
-    // quét toàn bộ DATA.lop cho từng ô Excel.
     const importClassCanonByAlias = new Map();
     (DATA.lop || []).forEach(lop=>{
         const canon = classCanonFromLop(lop);
@@ -7384,8 +7360,9 @@ async function importPCCMFromExcel(wb){
         return normalizeClassName(raw) || raw;
     };
 
+    if (typeof DATA.pccmMatrix !== "object" || !DATA.pccmMatrix) DATA.pccmMatrix = {};
+
     // ---- Detect long format (3 columns) ----
-    // Nếu hàng đầu có chứa "Lớp" và "Môn" => long format
     const header0 = rows[0].map(x=>String(x||"").trim().toLowerCase());
     const hasLop = header0.some(x=>x==="lớp" || x==="lop" || x==="tên lớp" || x==="ten lop");
     const hasMon = header0.some(x=>x==="môn học" || x==="mon hoc" || x==="môn" || x==="mon");
@@ -7399,56 +7376,56 @@ async function importPCCMFromExcel(wb){
             const mon = resolveMon(r["Môn học"] || r["Mon hoc"] || r["Môn"] || r["Mon"] || "");
             const gv  = _normText(r["Giáo viên"] || r["Giao vien"] || r["GV"] || r["gv"] || "");
             if (lop && mon && gv){
-                pccmSetTeachersNoSave(lop, mon, gv);
-                importedAssignments++;
-            }
-            if(rowIndex > 0 && rowIndex % 120 === 0) await yieldImportUi();
-        }
-        await saveStore();
-        alert(`✔ Đã nhập PCCM từ Excel (dạng 3 cột): ${importedAssignments} phân công.`);
-        const sc = document.getElementById("section-content");
-        if (sc && typeof renderPCCM === "function") pccmRenderCurrent(sc);
-        return;
-    }
-
-    // ---- Matrix format ----
-    // tìm dòng header: dòng đầu tiên có ít nhất 3 ô có dữ liệu
-    let headerRow = 0;
-    for (let i=0;i<Math.min(rows.length,10);i++){
-        const nonEmpty = rows[i].filter(x=>String(x||"").trim()!=="").length;
-        if (nonEmpty >= 3){
-            headerRow = i; break;
-        }
-    }
-
-    const header = rows[headerRow].map(x=>String(x||"").trim());
-    const monHeaders = header.slice(1); // bỏ cột lớp (* / Lớp)
-
-    const monObjs = monHeaders.map(h=>resolveMon(h));
-
-    for (let i=headerRow+1;i<rows.length;i++){
-        const line = rows[i];
-        if (!line || !line.length) continue;
-
-        const lop = canonLopFast(line[0]);
-        if (!lop) continue;
-
-        for (let j=0;j<monObjs.length;j++){
-            const mon = monObjs[j];
-            if (!mon) continue;
-            const gv = _normText(line[j+1] || "");
-            if (gv){
-                pccmSetTeachersNoSave(lop, mon, gv);
-                importedAssignments++;
+                const val = pccmNormalizeTeacherValue(gv);
+                if (val){
+                    DATA.pccmMatrix[`${lop}|${mon.key}`] = val;
+                    importedAssignments++;
+                }
             }
         }
-        if(i > headerRow + 1 && (i - headerRow) % 30 === 0) await yieldImportUi();
+    } else {
+        // ---- Matrix format ----
+        let headerRow = 0;
+        for (let i=0;i<Math.min(rows.length,10);i++){
+            const nonEmpty = rows[i].filter(x=>String(x||"").trim()!=="").length;
+            if (nonEmpty >= 3){
+                headerRow = i; break;
+            }
+        }
+
+        const header = rows[headerRow].map(x=>String(x||"").trim());
+        const monHeaders = header.slice(1);
+        const monObjs = monHeaders.map(h=>resolveMon(h));
+
+        for (let i=headerRow+1;i<rows.length;i++){
+            const line = rows[i];
+            if (!line || !line.length) continue;
+
+            const lop = canonLopFast(line[0]);
+            if (!lop) continue;
+
+            for (let j=0;j<monObjs.length;j++){
+                const mon = monObjs[j];
+                if (!mon) continue;
+                const gv = _normText(line[j+1] || "");
+                if (gv){
+                    const val = pccmNormalizeTeacherValue(gv);
+                    if (val){
+                        DATA.pccmMatrix[`${lop}|${mon.key}`] = val;
+                        importedAssignments++;
+                    }
+                }
+            }
+        }
     }
 
-    await saveStore();
-    alert(`✔ Đã nhập PCCM từ Excel (dạng ma trận): ${importedAssignments} phân công.`);
+    try{ pccmInvalidateLookupCache(); }catch(_){}
+    saveStore();
+
     const sc = document.getElementById("section-content");
     if (sc && typeof renderPCCM === "function") pccmRenderCurrent(sc);
+
+    alert(`✔ Đã nhập PCCM từ Excel: ${importedAssignments} phân công.`);
 }
 
 /* ============================================================

@@ -3,8 +3,8 @@
 
   const SC = window.TKBSchool;
   const REMOTE_ONLY_STORAGE = true;
-  const REMOTE_SAVE_MAX_ATTEMPTS = 40;
-  const REMOTE_SAVE_RETRY_WINDOW_MS = 180000;
+  const REMOTE_SAVE_MAX_ATTEMPTS = 3;
+  const REMOTE_SAVE_RETRY_WINDOW_MS = 5000;
   const remoteSaveQueues = new Map();
   let remoteAuthRequired = false;
 
