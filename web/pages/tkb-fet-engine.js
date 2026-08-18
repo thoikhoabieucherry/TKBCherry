@@ -5186,6 +5186,30 @@
                     if(!a3 || a3.isFixed || a3.duration !== 1) continue;
 
                     // Thu cycle: p1->p2, p2->p3, p3->p1
+                    const t1 = a1.gv || a1.teacherId;
+                    const t2 = a2.gv || a2.teacherId;
+                    const t3 = a3.gv || a3.teacherId;
+                    
+                    if(t1 !== tKey && t2 !== tKey && t3 !== tKey) continue;
+                    
+                    const checkT = (t, p, ignoreT1, ignoreT2, ignoreT3) => {
+                        if(!t) return true;
+                        if(t === ignoreT1 || t === ignoreT2 || t === ignoreT3) return true;
+                        const tg = this.teacherGrid.get(t);
+                        if(tg && (tg[sStart + p] >= 0 || tg[sStart + p] === -3)) return false;
+                        if(this.offSlots && this.offSlots.has(`${t}|${sStart + p}`)) return false;
+                        return true;
+                    };
+                    
+                    if(!checkT(t1, p2, t2, null, null)) continue;
+                    if(!checkT(t2, p3, t3, null, null)) continue;
+                    if(!checkT(t3, p1, t1, null, null)) continue;
+                    
+                    if(this.offSlots){
+                        if(this.offSlots.has(`${cid}|${sStart + p2}`)) continue;
+                        if(this.offSlots.has(`${cid}|${sStart + p3}`)) continue;
+                        if(this.offSlots.has(`${cid}|${sStart + p1}`)) continue;
+                    }
                     const snap = this.captureStateSnapshot();
                     this.unplaceActivity(a1.id);
                     this.unplaceActivity(a2.id);
@@ -5261,6 +5285,34 @@
                         if(!a4 || a4.isFixed || a4.duration !== 1) continue;
 
                         // Swap a1(p1)<->a2(p2) in cid1 and a3(p3)<->a4(p4) in cid2
+                        const t1 = a1.gv || a1.teacherId;
+                        const t2 = a2.gv || a2.teacherId;
+                        const t3 = a3.gv || a3.teacherId;
+                        const t4 = a4.gv || a4.teacherId;
+                        
+                        if(t1 !== tKey && t2 !== tKey && t3 !== tKey && t4 !== tKey) continue;
+                        
+                        const checkT = (t, p, ignoreT1, ignoreT2, ignoreT3, ignoreT4) => {
+                            if(!t) return true;
+                            if(t === ignoreT1 || t === ignoreT2 || t === ignoreT3 || t === ignoreT4) return true;
+                            const tg = this.teacherGrid.get(t);
+                            if(tg && (tg[sStart + p] >= 0 || tg[sStart + p] === -3)) return false;
+                            if(this.offSlots && this.offSlots.has(`${t}|${sStart + p}`)) return false;
+                            return true;
+                        };
+                        
+                        if(!checkT(t1, p2, t2, null, null, null)) continue;
+                        if(!checkT(t2, p1, t1, null, null, null)) continue;
+                        if(!checkT(t3, p4, null, null, t4, null)) continue;
+                        if(!checkT(t4, p3, null, null, t3, null)) continue;
+                        
+                        if(this.offSlots){
+                            if(this.offSlots.has(`${cid1}|${sStart + p2}`)) continue;
+                            if(this.offSlots.has(`${cid1}|${sStart + p1}`)) continue;
+                            if(this.offSlots.has(`${cid2}|${sStart + p4}`)) continue;
+                            if(this.offSlots.has(`${cid2}|${sStart + p3}`)) continue;
+                        }
+
                         const snap = this.captureStateSnapshot();
                         this.unplaceActivity(a1.id);
                         this.unplaceActivity(a2.id);
