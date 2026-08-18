@@ -8,6 +8,14 @@
 
 ## 2026-08-18 Solver V2 hardening — one button only, upper-bound semantics, local only
 
+- Follow-up UI polish: thêm spinner nhỏ cạnh đồng hồ runtime trong toolbar
+  (`auto-sort-spinner`, cache `exact-v2-v3`). Spinner chỉ hiện khi
+  `#autoSortProgress.is-active`; tôn trọng `prefers-reduced-motion`.
+- Follow-up status clarity: các lỗi fail-closed/exact_v2 no-solution không còn
+  dùng câu “Đã xếp xong!” làm fallback. Status mới nói rõ “Chưa xếp xong;
+  lịch hiện tại vẫn được giữ nguyên.” để người dùng không nhầm với thành công.
+- Verification follow-up: `node --check web/pages/tkb-rust-bridge.js` và
+  `node --check web/pages/phanmon.js` OK.
 - Cung cố đường `exact_v2`: allocation master giờ được dùng như **cận dưới
   chứng minh** cho tổng buổi giáo viên. Nếu mô hình strict tìm được nghiệm
   chạm đúng cận dưới này, pha `sessions_optimum` được coi là đã chứng minh

@@ -36,7 +36,7 @@
     const MIN_FRESH_SOLVE_DURATION_SECONDS = 30;
     const MAX_CUSTOM_SOLVE_DURATION_SECONDS = 1800;
     const SOLVE_COMPLETE_MESSAGE = "Đã xếp xong!";
-    const NO_BETTER_SCHEDULE_MESSAGE = SOLVE_COMPLETE_MESSAGE;
+    const NO_BETTER_SCHEDULE_MESSAGE = "Chưa có lịch mới tốt hơn; lịch hiện tại được giữ nguyên.";
     const SOLVE_REQUEST_MODES = Object.freeze({
       automatic: "automatic",
       autoMin2: "auto_min2",
@@ -7974,10 +7974,28 @@
     ){
       return {
         title: "Chưa tìm được lịch đủ",
-        message: "Lượt xếp chưa kịp tạo lịch đầy đủ trong thời gian hiện tại. Lịch cũ vẫn được giữ nguyên; hãy bấm Xếp lại để thử seed tiếp theo.",
+        message: "Chưa xếp xong toàn bộ tiết trong thời gian hiện tại. Lịch hiện tại vẫn được giữ nguyên để bạn kiểm tra ràng buộc.",
         level: "warning",
         statusLevel: "warning",
-        progressLabel: "Chưa đủ"
+        statusMessage: "Chưa xếp xong; lịch hiện tại vẫn được giữ nguyên.",
+        progressLabel: "Chưa xong"
+      };
+    }
+    if(normalizedKind === "exact_v2_no_solution"){
+      const detailCode = String(err?.payload?.detail?.code || "").trim();
+      const detailMessage = String(
+        err?.payload?.detail?.message
+        || err?.payload?.error
+        || raw
+        || ""
+      ).trim();
+      return {
+        title: "Chưa xếp được lịch đủ",
+        message: detailMessage || "Solver V2 chưa tìm được lịch thỏa toàn bộ ràng buộc cứng. Lịch hiện tại được giữ nguyên.",
+        level: "warning",
+        statusLevel: "warning",
+        statusMessage: "Chưa xếp xong; lịch hiện tại vẫn được giữ nguyên.",
+        progressLabel: detailCode === "sessions_optimum_not_proven" ? "Chưa chứng minh" : "Chưa xong"
       };
     }
     if(text.includes("benders teacher-session cap search failed")){
@@ -8035,7 +8053,7 @@
         ? noBetterScheduleStatus(
             getData()?.tkbSolverResult || window.__TKB_SOLVER_LAST_PAYLOAD || null
           )
-        : "Chưa tìm được lịch đủ; lịch hiện tại vẫn được giữ nguyên.";
+        : "Chưa xếp xong; lịch hiện tại vẫn được giữ nguyên.";
       return {
         title: "Chưa tìm được lịch đủ",
         message: [
