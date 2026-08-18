@@ -1998,10 +1998,24 @@
 
               const mon = this.extractMon(cell);
               const sCanon = this.getCanonMonKey(mon);
-              const gv = this.getTeacherForClassMon(lop, mon);
-              const rm = this.getRoomForClassMon(lop, mon);
+              let gv = "";
+              if(typeof cell === "object" && cell && cell.gv){
+                gv = String(cell.gv).trim();
+              }else if(typeof cell === "string" && cell.includes(" - ")){
+                gv = cell.split(" - ")[1].trim();
+              }
+              if(!gv){
+                gv = this.getTeacherForClassMon(lop, mon);
+              }
+              let rm = "";
+              if(typeof cell === "object" && cell && cell.room){
+                rm = String(cell.room).trim();
+              }
+              if(!rm){
+                rm = this.getRoomForClassMon(lop, mon);
+              }
 
-              // Check if next period in same session is identical subject with lessonBlocks[2].min > 0
+              // Check if next period in same session is identical subject with lessonBlocks[2].min > 0 and same teacher
               let blockLen = 1;
               if(ti + 1 < PERIODS_PER_SESSION){
                 const nextCell = arr[ti + 1];
@@ -2009,7 +2023,15 @@
                 if(nextCell && nextCell !== "OFF" && !this.isCellOff(nextCell) && !this.isCellFixed(nextCell, cid, nextSlot)){
                   const nextMon = this.extractMon(nextCell);
                   const nextCanon = this.getCanonMonKey(nextMon);
-                  if(nextCanon === sCanon){
+                  let nextGv = "";
+                  if(typeof nextCell === "object" && nextCell && nextCell.gv){
+                    nextGv = String(nextCell.gv).trim();
+                  }else if(typeof nextCell === "string" && nextCell.includes(" - ")){
+                    nextGv = nextCell.split(" - ")[1].trim();
+                  }
+                  if(!nextGv) nextGv = this.getTeacherForClassMon(lop, nextMon);
+
+                  if(nextCanon === sCanon && nextGv === gv){
                     const req = this.classSubjectLessonBlocks ? (
                       this.classSubjectLessonBlocks.get(`${cid}|${sCanon}|2`) ||
                       this.classSubjectLessonBlocks.get(`${classCanon}|${sCanon}|2`)
@@ -2047,20 +2069,22 @@
       this.actPlacement = new Array(actList.length).fill(-1);
 
       // 2. Place initial existing activities into their slots.
-      // CÓ KIỂM TRA XUNG ĐỘT (sửa 17/08): trước đây đặt mù quáng — dữ liệu đã
-      // hỏng (2 tiết cùng ô giáo viên) sẽ GHI ĐÈ teacherGrid, làm mọi phép
-      // kiểm tra sau đó mù: unplace tiết sau → ô thành "rảnh" dù tiết trước
-      // vẫn đứng đó → randomSwap đặt lại đúng chỗ trùng. Giờ tiết nào xung đột
-      // với tiết đã vào trước thì để CHƯA PHÂN — repairHardConflicts sẽ tìm chỗ
-      // hợp lệ ngay đầu optimize/optimizeAll.
+      let hasUnplaced = false;
       this.activities.forEach(act => {
         if(act.initSlot >= 0){
           if(this.canLoadPlacement(act, act.initSlot)){
             this.placeActivityDirect(act.id, act.initSlot);
+          }else{
+            hasUnplaced = true;
           }
-          // else: giữ chưa phân — không bao giờ để lưới sai lệch
+        }else{
+          hasUnplaced = true;
         }
       });
+
+      if(hasUnplaced){
+        this.repairHardConflicts();
+      }
     }
 
     // Kiểm tra HẸP cho việc nạp lịch đã lưu: chỉ chặn xung đột VẬT LÝ (trùng ô
@@ -6973,12 +6997,7 @@
         // checkpoint: mọi snapshot gửi ra ngoài từ đây là global best.
         if(!this.__globalBestM || this.compareMetrics(bestMetrics, this.__globalBestM, mode) < 0){
           this.__globalBestM = { ...bestMetrics };
-          this.__globalBestSnap = {
-            placement: bestPlacement,
-            classGrid: bestClassGrid,
-            teacherGrid: bestTeacherGrid,
-            roomGrid: bestRoomGrid
-          };
+          this.__globalBestSnap = this.captureStateSnapshot();
           this.checkpointGuard = this.__globalBestSnap;
         }
       };
@@ -6990,32 +7009,6 @@
         if(mode === "optimize_gap1") return m.soBuoiTrong1;
         return m.soBuoiDay1;
       };
-
-      const notifyLiveProgress = (metrics) => {
-        // UI luôn thấy tiến độ ĐƠN ĐIỆU: nếu lượt hiện tại là bước đa dạng hóa
-        // (tạm xấu hơn), hiển thị global best thay vì bước dò đường.
-        const shown = (this.__globalBestM && this.compareMetrics(this.__globalBestM, metrics, mode) < 0) ? this.__globalBestM : metrics;
-        const currentVal = getMetricVal(shown);
-        const initialVal = getMetricVal(initialMetrics);
-        const pct = Math.min(99, Math.round(((round + 1) / MAX_ROUNDS) * 100));
-        if(progressCallback){
-          progressCallback({
-            percent: pct,
-            currentMetric: currentVal,
-            initialMetric: initialVal,
-            metrics: shown
-          });
-        }
-      };
-
-      if(progressCallback){
-        progressCallback({
-          percent: 0,
-          currentMetric: getMetricVal(bestMetrics),
-          initialMetric: getMetricVal(initialMetrics),
-          metrics: bestMetrics
-        });
-      }
 
       const MAX_ROUNDS = (mode === "optimize_singletons") ? 65 : ((mode === "optimize_gap2") ? 28 : 55);
       let consecutiveUnimprovedRounds = 0;
@@ -7031,14 +7024,49 @@
       const canRestart = !this.__inOptimizeAll &&
         (mode === "optimize_gap2" || mode === "optimize_gap1" || mode === "optimize_singletons");
       const restartTargetVal = (mode === "optimize_singletons" && !this.pushToZero) ? 2 : 0;
-      const restartBudgetMs = Number(this.options.optimizeRestartBudgetMs) || 180000;
-      const maxRestarts = Number(this.options.optimizeMaxRestarts) || 20;
-      const hardCapMs = Number(this.options.optimizeHardCapMs) || 240000;
+      const restartBudgetMs = Number(this.options.optimizeRestartBudgetMs) || (this.__inOptimizeAll ? 20000 : 35000);
+      const maxRestarts = Number(this.options.optimizeMaxRestarts) || (this.__inOptimizeAll ? 1 : 2);
+      const hardCapMs = Number(this.options.optimizeHardCapMs) || (this.__inOptimizeAll ? 25000 : 40000);
       this.opDeadlineMs = this.stageDeadlineMs || (optStartMs + hardCapMs);
       let restartCount = 0;
       let portfolioDone = false;
       let stagnantRestarts = 0;
       let prevGlobalVal = undefined;
+      let currentShownMetricVal = getMetricVal(initialMetrics);
+      const notifyLiveProgress = (metrics) => {
+        // UI luôn thấy tiến độ ĐƠN ĐIỆU: tuyệt đối không nhảy số ngược lên
+        let shown = metrics;
+        if(this.__globalBestM && this.compareMetrics(this.__globalBestM, shown, mode) < 0){
+          shown = this.__globalBestM;
+        }
+        let currentVal = getMetricVal(shown);
+        if(currentVal > currentShownMetricVal){
+          currentVal = currentShownMetricVal;
+        }else{
+          currentShownMetricVal = currentVal;
+        }
+        const initialVal = getMetricVal(initialMetrics);
+        const totalExpected = MAX_ROUNDS * (canRestart ? (maxRestarts + 1) : 1);
+        const totalSoFar = restartCount * MAX_ROUNDS + round + 1;
+        const pct = Math.min(99, Math.round((totalSoFar / totalExpected) * 100));
+        if(progressCallback){
+          progressCallback({
+            percent: Math.max(1, pct),
+            currentMetric: currentVal,
+            initialMetric: initialVal,
+            metrics: shown
+          });
+        }
+      };
+
+      if(progressCallback){
+        progressCallback({
+          percent: 0,
+          currentMetric: getMetricVal(bestMetrics),
+          initialMetric: getMetricVal(initialMetrics),
+          metrics: bestMetrics
+        });
+      }
 
       while(!portfolioDone){
       portfolioDone = true;
@@ -7509,12 +7537,23 @@
           consecutiveUnimprovedRounds = 0;
         }
 
-        const pct = Math.min(99, Math.round(((round + 1) / MAX_ROUNDS) * 100));
+        const totalExpected = MAX_ROUNDS * (canRestart ? (maxRestarts + 1) : 1);
+        const totalSoFar = restartCount * MAX_ROUNDS + round + 1;
+        const pct = Math.min(99, Math.round((totalSoFar / totalExpected) * 100));
         if(progressCallback){
-          const shownM = (this.__globalBestM && this.compareMetrics(this.__globalBestM, bestMetrics, mode) < 0) ? this.__globalBestM : bestMetrics;
+          let shownM = bestMetrics;
+          if(this.__globalBestM && this.compareMetrics(this.__globalBestM, shownM, mode) < 0){
+            shownM = this.__globalBestM;
+          }
+          let currentVal = getMetricVal(shownM);
+          if(currentVal > currentShownMetricVal){
+            currentVal = currentShownMetricVal;
+          }else{
+            currentShownMetricVal = currentVal;
+          }
           progressCallback({
-            percent: pct,
-            currentMetric: getMetricVal(shownM),
+            percent: Math.max(1, pct),
+            currentMetric: currentVal,
             initialMetric: getMetricVal(initialMetrics),
             metrics: shownM
           });
@@ -7562,7 +7601,7 @@
       prevGlobalVal = globalVal;
 
       if(canRestart && globalVal > restartTargetVal && restartCount < maxRestarts &&
-         (stagnantRestarts || 0) < 3 &&
+         (stagnantRestarts || 0) < 1 &&
          (Date.now() - optStartMs) < Math.min(restartBudgetMs, hardCapMs) &&
          !(typeof window !== "undefined" && window.__AUTO_SORT_STOP_REQUESTED) &&
          !(this.stageDeadlineMs && Date.now() > this.stageDeadlineMs)){
@@ -7593,10 +7632,7 @@
 
       // Chốt: khôi phục GLOBAL BEST (nếu có) làm kết quả cuối.
       if(this.__globalBestSnap){
-        bestPlacement = this.__globalBestSnap.placement;
-        bestClassGrid = this.__globalBestSnap.classGrid;
-        bestTeacherGrid = this.__globalBestSnap.teacherGrid;
-        bestRoomGrid = this.__globalBestSnap.roomGrid;
+        this.restoreStateSnapshot(this.__globalBestSnap);
         bestMetrics = { ...this.__globalBestM };
       }
       this.checkpointGuard = null;
@@ -7613,17 +7649,13 @@
         });
       }
 
-      if(bestPlacement){
-        this.actPlacement = bestPlacement;
-        this.classGrid = bestClassGrid;
-        this.teacherGrid = bestTeacherGrid;
-        this.roomGrid = bestRoomGrid;
-      }
-
       // PHÒNG THỦ CUỐI: trạng thái trả về BẮT BUỘC nguyên vẹn và không tệ hơn
       // lúc bấm nút (theo đúng thước đo của mode). Đường hỏng nào lọt tới đây
       // → trả nguyên trạng ban đầu.
-      if(!this.verifyPlacementIntegrity() || this.compareMetrics(this.evaluateMetrics(), initialMetrics, mode) > 0){
+      const integrityOk = this.verifyPlacementIntegrity();
+      const currentEval = this.evaluateMetrics();
+      const comp = this.compareMetrics(currentEval, initialMetrics, mode);
+      if(!integrityOk || comp > 0){
         this.restoreStateSnapshot(initialStateSnap);
         bestMetrics = { ...initialMetrics };
       }
@@ -8028,6 +8060,7 @@
               exitReason = "improved";
             }else if(cmp > 0){
               this.data.tkb = JSON.parse(JSON.stringify(restartBestTkb));
+              this.loadExistingSchedule();
               exitReason = "rolled-back";
             }
             // Track the global best across restarts.

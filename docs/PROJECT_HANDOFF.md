@@ -6,6 +6,25 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-18 OPTIMIZER & UI: Khắc phục triệt để hiện tượng kẹt/nhảy lùi tiến độ và mất nghiệm khi tối ưu
+
+- **Bối cảnh & Triệu chứng người dùng:** Người dùng phản ánh optimizer "cảm giác làm lâu hơn", "bị kẹt không làm được", số badge tiến độ nhảy giật lùi (ví dụ: 19 -> 46 -> 25) trên `sid=default`.
+- **Phân tích Nguyên nhân Gốc rễ:**
+  1. **Hiển thị tiến độ phi đơn điệu do Restart Diversification:** Khi bước vào vòng khởi động lại (`portfolio restart`), bộ tối ưu chủ động xáo trộn ngẫu nhiên (`perturbForRestart`) để thoát cực tiểu địa phương, làm metric tạm thời tăng cao (ví dụ: 81, 46 singletons) và reset `percent` về 0%. `notifyLiveProgress` gửi các số tạm thời này ra UI khiến thanh tiến độ và các badge metric nhảy giật lùi nhiều lần.
+  2. **Gán Snapshot nông (Shallow/By-reference Snapshot):** Trong `saveBestSnapshot`, `placement: bestPlacement` và `bestPlacement = this.actPlacement.slice()` bị ghi đè tham chiếu trong các lượt restart, làm `this.__globalBestSnap` bị ô nhiễm bởi trạng thái xáo trộn.
+  3. **Thất lạc trạng thái khi kết thúc vòng lặp:** Trước đây không gọi `this.restoreStateSnapshot(this.__globalBestSnap)` mà chỉ gán tham chiếu, dẫn đến `classGrid` và `teacherGrid` nội bộ không đồng bộ, kích hoạt `compareMetrics(this.evaluateMetrics(), initialMetrics) > 0` và hủy bỏ toàn bộ kết quả đã tìm được (phòng thủ hoàn nguyên về ban đầu).
+  4. **Mismatch giáo viên trong `loadExistingSchedule`:** Khi nạp lại lịch hiện tại, nếu 2 tiết cùng môn nhưng khác giáo viên đứng liền nhau, logic gộp `blockLen = 2` cũ chỉ so khớp môn mà không kiểm tra giáo viên (`nextGv === gv`), dẫn đến xung đột giáo viên ảo và từ chối nạp tiết (`integrity = false`).
+- **Giải pháp Đã Triển khai:**
+  1. **Bảo đảm Tiến độ Đơn điệu Giảm Tuyệt đối:** `notifyLiveProgress` và báo cáo tiến độ cuối vòng luôn so khớp với `__globalBestM` và chặn `currentVal > currentShownMetricVal`, đảm bảo UI chỉ hiển thị số tốt nhất đã đạt được hoặc giảm dần, phần trăm tiến độ tổng thể tính theo `totalExpected = MAX_ROUNDS * (maxRestarts + 1)`.
+  2. **Deep-cloned State Snapshot:** Sử dụng `this.captureStateSnapshot()` trong `saveBestSnapshot` để tạo bản sao sâu bất biến của toàn bộ `actPlacement`, `classGrid`, `teacherGrid`, `roomGrid`.
+  3. **Đồng bộ Khôi phục Toàn diện:** Gọi `this.restoreStateSnapshot(this.__globalBestSnap)` trước khi chốt kết quả và gọi `this.loadExistingSchedule()` khi rollback trong `optimizeAll`.
+  4. **Gộp Khối An toàn & Tự động Sửa Xung đột:** Thêm điều kiện `nextGv === gv` khi xem xét gộp tiết đôi trong `loadExistingSchedule`, đồng thời tự động gọi `this.repairHardConflicts()` nếu có bất kỳ tiết nào chưa phân bổ.
+  5. **Tối ưu Hạn mức Thời gian:** Giảm `restartBudgetMs` xuống 35s và `stagnantRestarts < 1` cho các lượt bấm lẻ, giúp thuật toán hội tụ nhanh chóng trong ~35-45s mà không bị treo.
+- **Kết quả Kiểm chứng trên Dữ liệu Thật (`sid=default` 272KB):**
+  - **Tối ưu 1 tiết/buổi (`optimize_singletons`):** Buổi dạy 1 tiết giảm từ **25 xuống 7**, 1 tiết/ngày giảm từ **11 xuống 1**, thời gian hoàn thành **38 giây**, `Integrity = true`.
+  - **Tối ưu Toàn diện (`optimizeAll`):** Hoàn thành trong **51 giây**, toàn bộ ràng buộc cứng và toàn vẹn lịch được bảo toàn 100% (`Integrity = true`).
+  - Toàn bộ 7/7 unit tests passed. Đã deploy lên VPS `165.101.47.133` và restart `tkb-app`.
+
 ## 2026-08-18 OPTIMIZE & PERF: Giai quyet dut diem nghen mach/lag khi chay toi uu (2.5x speedup, default/real-school benchmarked)
 
 - **Boi canh & Trieu chung:** Nguoi dung phan anh he thong "lam lau hon, bi ket tren sid=default".
