@@ -10584,8 +10584,13 @@ function setAutoSortProgress(percent, label, details){
     }, 500);
   }
 
-  // Update Metric Chip (clean local-FET metric only)
-  if(metric){
+  // Update Metric Chip (clean local-FET metric only, completely hidden in Flash mode)
+  if(window.__TKB_FLASH_SOLVING === true || window.__TKB_HIDE_PROGRESS_METRIC === true){
+    if(metric){
+      metric.textContent = "";
+      metric.hidden = true;
+    }
+  }else if(metric){
     let rawMetric = String(details?.metricLabel || "").trim();
     const isSystemNoise = (str) => {
       const s = String(str || "").trim().toLowerCase();
@@ -11982,7 +11987,7 @@ function backToMain(){
 })();
 
 /* =========================================================
-   FLASH SCHEDULER ENGINE (MULTI-CORE CP-SAT)
+   FLASH SCHEDULER ENGINE (MULTI-CORE CP-SAT CLOUD RUN)
    ========================================================= */
 async function runFlashScheduler(event){
   if(event) { try{ event.preventDefault(); event.stopPropagation(); }catch(_){} }
@@ -11990,10 +11995,20 @@ async function runFlashScheduler(event){
     return;
   }
   
+  window.__TKB_FLASH_SOLVING = true;
+  window.__TKB_HIDE_PROGRESS_METRIC = true;
+
   // Clear any status messages
   if(typeof _setStatus === "function") _setStatus("", "info");
   const statusEl = document.getElementById("statusMsg");
   if(statusEl) statusEl.textContent = "";
+
+  // Hide the metric chip (2044/2044 tiết) completely
+  const metric = document.getElementById("autoSortProgressMetric");
+  if(metric){
+    metric.textContent = "";
+    metric.hidden = true;
+  }
 
   // Immediately start stopwatch timer display
   if(typeof setAutoSortProgress === "function"){
@@ -12006,15 +12021,66 @@ async function runFlashScheduler(event){
     }
   }catch(_){}
   
-  if(typeof window.bridgeSapXepTuDongAll === "function"){
-    return await window.bridgeSapXepTuDongAll({
-      manualAgentInvite: false,
-      mode: "automatic"
-    });
-  } else if(typeof window.sapXepTuDongAll === "function"){
-    return await window.sapXepTuDongAll({
-      manualAgentInvite: false
-    });
+  const data = typeof window.getData === "function" ? window.getData() : null;
+  const scheduled = typeof window.countScheduledLessons === "function" ? window.countScheduledLessons(data) : 0;
+  const expected = typeof window.expectedLessonCount === "function" ? window.expectedLessonCount(data) : 0;
+  const isComplete = expected > 0 && scheduled >= expected;
+
+  const flashSettings = {
+    ui_flash_scheduler_active: true,
+    solver_mode: "auto",
+    num_workers: 6,
+    overall_time_limit_seconds: 180,
+    backend_deadline_ms: 180000,
+    native_global_deadline_ms: 180000,
+    progress_estimate_seconds: 60,
+    require_complete_schedule: true,
+    best_effort_on_timeout: true,
+    force_fresh_backend_solve: true,
+    allow_backend_cache: false,
+    minimize_sessions: true,
+    minimize_one_period_sessions: true,
+    max_one_period_sessions: 0,
+    minimize_teacher_gaps: true,
+    period_max_teacher_gap: 1
+  };
+
+  if(isComplete){
+    flashSettings.optimize_existing_schedule = true;
+    flashSettings.allow_solver_warm_start = true;
+    flashSettings.preserve_existing_tkb = true;
+    flashSettings.ui_unified_solve_kind = "refine_complete";
+    flashSettings.optimization_focus = "automatic";
+    flashSettings.allow_zero_one_quality_retry = true;
+    flashSettings.allow_teacher_session_deep_retry = true;
+  } else {
+    flashSettings.optimize_existing_schedule = false;
+    flashSettings.preserve_existing_tkb = false;
+    flashSettings.force_preserve_partial_existing = false;
+    flashSettings.ui_unified_solve_kind = "fresh_complete_first";
+    flashSettings.ui_no_hint_fresh_solve = true;
+    flashSettings.ui_disable_staged_existing_repair = true;
+    flashSettings.allow_solver_warm_start = false;
+    flashSettings.auto_sort_strategy = "fresh_fast_quality";
+  }
+
+  try {
+    if(typeof window.solveWithRustApi === "function"){
+      return await window.solveWithRustApi({
+        ask: false,
+        settings: flashSettings,
+        singlePass: true
+      });
+    } else if(typeof window.bridgeSapXepTuDongAll === "function"){
+      return await window.bridgeSapXepTuDongAll({
+        manualAgentInvite: false,
+        mode: "automatic",
+        settings: flashSettings
+      });
+    }
+  } finally {
+    window.__TKB_FLASH_SOLVING = false;
+    window.__TKB_HIDE_PROGRESS_METRIC = false;
   }
 }
 window.runFlashScheduler = runFlashScheduler;
