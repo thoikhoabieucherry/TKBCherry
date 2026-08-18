@@ -16448,6 +16448,44 @@
     if(options?.shuffleOnly !== true && isNoHintSmartFreshSettings(settings)){
       enforceNoHintFreshSolveSettings(settings);
     }
+    if(settings?.ui_flash_scheduler_active === true){
+      const dataForProgress = getData();
+      const activeSolveRunId = makeSolveRunId();
+      window.__TKB_RUST_SOLVER_RUNNING = true;
+      window.__TKB_SOLVE_UI_BUSY = true;
+      setAutoSortButtonBusy(true);
+      window.__TKB_ACTIVE_SOLVE_RUN_ID = activeSolveRunId;
+      window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = "";
+      window.__TKB_SOLVER_LAST_ERROR = "";
+      window.__TKB_SOLVER_LAST_ERROR_PAYLOAD = null;
+      window.__TKB_SOLVER_LAST_FAILURE_RETRYABLE = false;
+      dismissCompletionPopup(true);
+      publishE2EState("running", null, {runId: activeSolveRunId});
+      startProgressTicker(settings, dataForProgress);
+      if(typeof setAutoSortProgress === "function") setAutoSortProgress(5, "");
+
+      try{
+        const payload = await postSolve(settings);
+        if(!isCurrentSolveRun(activeSolveRunId)) return null;
+
+        const result = await applyPayload(payload, settings);
+        finishProgress("100%", "ok");
+        setStatus("Hoàn tất sắp xếp TKB.", "ok");
+        window.__TKB_RUST_SOLVER_RUNNING = false;
+        window.__TKB_SOLVE_UI_BUSY = false;
+        schedulePostSolveUi(payload, result);
+        return result;
+      }catch(err){
+        window.__TKB_RUST_SOLVER_RUNNING = false;
+        window.__TKB_SOLVE_UI_BUSY = false;
+        setAutoSortButtonBusy(false);
+        stopProgressTicker();
+        if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
+        const friendly = friendlySolveError(err);
+        setStatus(friendly, "warning");
+        throw err;
+      }
+    }
     await yieldResponsiveUi();
     if(options?.shuffleOnly !== true && settings?.ui_allow_presolve_local_fast_finish === true){
       traceSolveStep("solve:presolve-fast-start");
