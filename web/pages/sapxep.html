@@ -1483,11 +1483,11 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     <div class="toolbar-secondary-actions" aria-label="Điều hướng và thống kê">
       <div class="stats-popover-wrap">
         <button id="btnNewLockedPipeline" class="primary save-button" type="button" hidden aria-hidden="true"
-          title="NEW (superadmin): thiếu tiết thì xếp mới + pipeline khóa; ĐỦ 100% thì tối ưu tiếp từ lịch hiện tại — 1 tiết/buổi thấp nhất → KHÓA → trống ≥2 về 0 → KHÓA → giảm buổi → giảm trống 1"
-          aria-label="NEW: xếp mới + pipeline khóa tuần tự" onclick="runNewLockedPipeline(event)">NEW ★</button>
+          title="NEW (superadmin): Tối ưu tiếp từ lịch hiện tại theo chuỗi tuần tự — 1 tiết/buổi → trống ≥2 → giảm buổi → giảm trống 1"
+          aria-label="NEW: tối ưu tiếp từ lịch hiện tại" onclick="runNewLockedPipeline(event)">NEW ★</button>
         <button id="btnTrialFullPipeline" class="primary save-button" type="button" hidden aria-hidden="true"
-          title="Thử nghiệm (superadmin): Xếp mới + tối ưu trọn gói — mục tiêu 0 buổi 1 tiết, 0 buổi trống ≥2 tiết, giảm tối đa trống 1 tiết và tổng buổi"
-          aria-label="Xếp và tối ưu trọn gói (thử nghiệm)" onclick="runTrialFullPipeline(event)">Trọn gói ★</button>
+          title="Trọn gói (superadmin): Tối ưu tiếp trọn gói từ lịch hiện tại — mục tiêu 0 buổi 1 tiết, 0 buổi trống ≥2 tiết, giảm tối đa trống 1 tiết và tổng buổi"
+          aria-label="Tối ưu tiếp trọn gói từ lịch hiện tại" onclick="runTrialFullPipeline(event)">Trọn gói ★</button>
         <button id="btnHome" class="primary save-button" type="button" title="Về trang chủ" aria-label="Về trang chủ" onclick="saveAndBack()">Home</button>
         <button id="statsToggle" class="stats-toggle" type="button" onclick="toggleStatsPopover(event)" title="Thống kê thời khóa biểu" aria-label="Thống kê thời khóa biểu" aria-expanded="false"><span class="toolbar-label-full" aria-hidden="true">Thống kê</span><span class="toolbar-label-compact" aria-hidden="true"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M4 20V13h4v7M10 20V9h4v11M16 20V5h4v15M3 20h18"/></svg></span></button>
         <div id="statsPopover" class="stats-popover" hidden>

@@ -6642,24 +6642,12 @@ async function executeDirectFastSchedule(options = {}){
     let totalPlaced = 0;
     let totalUnplaced = 0;
     let directFetResult = null;
-    // CHE DO THICH UNG cua nut Tron goi (yeu cau chu du an 17/08):
-    // lich DA DU 100% tiet (Chua xep = 0) -> khong xay lai tu dau, chuyen
-    // sang TOI UU TIEP tu lich hien tai (optimize_all tren incumbent).
-    if(["solve_optimize_all", "solve_optimize_all_fresh"].includes(String(options?.mode || ""))){ // NEW ★ cung adaptive (yeu cau 17/08)
-      let __missing = -1, __totalReq = 0;
-      try{
-        __missing = 0;
-        for(const lop of (Array.isArray(data.lop) ? data.lop : [])){
-          const st = calcClassTKBPeriodStats(lop.id);
-          __missing += Number(st.missing) || 0;
-          __totalReq += Number(st.total) || 0;
-        }
-      }catch(_){ __missing = -1; }
-      if(__missing === 0 && __totalReq > 0){
-        options = Object.assign({}, options, { mode: "optimize_all", __trongoiRefine: true });
-        if(typeof setStatus === "function"){
-          setStatus("Lịch đã đủ 100% tiết — Trọn gói chuyển sang tối ưu tiếp từ lịch hiện tại.", "info");
-        }
+    // CẢ 2 NÚT "Trọn gói ★" và "NEW ★": LUÔN TỐI ƯU TIẾP TỪ LỊCH HIỆN TẠI (Refine incumbent)
+    // tuyệt đối không đập đi xếp lại từ đầu.
+    if(["solve_optimize_all", "solve_optimize_all_fresh"].includes(String(options?.mode || ""))){
+      options = Object.assign({}, options, { mode: "optimize_all", __trongoiRefine: true });
+      if(typeof setStatus === "function"){
+        setStatus("Tối ưu tiếp từ lịch hiện tại (trọn gói)...", "info");
       }
     }
     const isOptimizeMode = ["optimize_singletons", "optimize_sessions", "optimize_gap2", "optimize_gap1", "optimize_all", "solve_optimize_all", "solve_optimize_all_fresh"].includes(options?.mode);

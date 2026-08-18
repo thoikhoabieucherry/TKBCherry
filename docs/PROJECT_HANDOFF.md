@@ -16,11 +16,9 @@
   4. `optimize_sessions` (`tryVacateTeacherSession`) scan toi 30 session/vong gay lang phi hang nghin phep thu.
   5. `optimizeAllBudgetMs` mac dinh 150s + final sweep 90s lam nguoi dung phai cho 2.5-3.5 phut khi chay tu dong.
   6. Vong lap restart trong `optimize` thieu phanh hanh trinh (stagnation cap) nen thu toi 20 restarts du da cham nguong co the giai cua truong.
-- **Cai tien (v14.1):**
-  - Them Fast Pre-check tren `teacherGrid` va `teacherOffSlots` truoc khi unplace/snapshot o tat ca cac operator 3-way, 4-way, block-shift.
-  - Gioi han `tryTargetedDeepSingletonChain` tap trung o giai doan tan cuoc (singletons <= 25) va gioi han nhanh tim kiem.
-  - Them `stagnantRestarts` thoat som sau 2-3 restart khong cai thien global best.
-  - Ha budget mac dinh cua `optimizeAll` xuong 60s (snap-tight) giup toan bo tien trinh xong trong ~30-65s ma khong suy giam chat luong nghiem.
+- **Dieu chinh 2 nut "NEW ★" va "Trọn gói ★" (Theo yeu cau chu du an):**
+  - Cả 2 nút `NEW ★` và `Trọn gói ★` nay **LUÔN TỐI ƯU TIẾP TRÊN LỊCH HIỆN TẠI** (`optimize_all` / refine incumbent), tuyệt đối không bao giờ đập đi xếp mới lại (`solve()`).
+  - Toàn bộ unassigned/conflicts nếu có sẽ được `repairHardConflicts` giải quyết vào chỗ trống sẵn có và tối ưu tuần tự các mục tiêu.
 - **Kiem chung thuc nghiem (Benchmark sequential E2E):**
   - `DEFAULT SCHOOL`: Thoi gian chay giam tu **154.05s** xuong **65.41s** (**nhanh gap 2.35 lan**), Buoi 1 tiet ve **0**, Trống-2 ve **3**.
   - `SCHOOL 95671c41791`: Thoi gian chay giam tu **163.78s** xuong **63.39s** (**nhanh gap 2.58 lan**), Buoi 1 tiet tu 132 ha ve **16**, Trống-2 ve **6**.
