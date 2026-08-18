@@ -24,6 +24,9 @@
 - **Đồng Bộ Đồng Hồ Vòng Quay Xoay (Spinning Clock Loader) Cho Toàn Bộ Chế Độ**:
   - Tích hợp biểu tượng vòng cung xoay mượt mà (`pm-spin`, màu xanh ngọc lục bảo `#059669`) kèm đồng hồ đếm giây thời gian thực dạng chữ số dày (`font-weight: 700; font-variant-numeric: tabular-nums;`).
   - Áp dụng đồng bộ và chuẩn hóa cho toàn bộ các chế độ xếp lịch: Sắp xếp tự động, Flash ⚡, Tối ưu 1 tiết/buổi, Tối ưu buổi dạy, Tối ưu 2 tiết trống, Tối ưu 1 tiết trống.
+- **Khắc Phục Đơ Giao Diện & Bỏ Qua Bộ Vá Cũ Khi Chạy Flash**:
+  - Thêm `await new Promise(r => setTimeout(r, 50))` ngay khi khởi chạy `runFlashScheduler` để nhường luồng render cho trình duyệt, giúp vòng xoay xanh `pm-spin` và đồng hồ đếm giây hoạt động mượt mà ngay lập tức, không bị đứng/lag lúc chuẩn bị gửi dữ liệu.
+  - Thêm rào chắn `settings?.ui_flash_scheduler_active === true` trong `shouldUseStagedExistingRepair` và `solveWithRustApi` để bỏ qua hoàn toàn các bộ vá cục bộ 8s/10s (`solveStagedExistingRepair`), đẩy thẳng bài toán lên **Google Cloud Run CP-SAT 6 vCPU** với 180s tính toán toàn diện, giải quyết triệt để lỗi "Không thay đổi 149 tiết hiện có; chưa tìm được lịch đủ".
 - **Bảo toàn dữ liệu & Triển khai**:
   - Triển khai đồng bộ lên VPS `165.101.47.133` và kiểm tra trạng thái dịch vụ `tkb-app` hoạt động ổn định.
 
