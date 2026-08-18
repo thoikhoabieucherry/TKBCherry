@@ -1693,23 +1693,27 @@ if(document.readyState === "loading"){
     bootWhenReady();
 }
 
+let __READ_EXCEL_RUNNING = false;
 function readExcel(e){
+    if (__READ_EXCEL_RUNNING) return;
     const file = e.target.files && e.target.files[0];
     if (!file) return;
 
     if (!window.XLSX){
         alert("❌ Chưa tải thư viện Excel (XLSX). Hãy kiểm tra kết nối mạng hoặc thẻ <script src=...xlsx...> trong HTML.");
-        e.target.value = "";
+        if (e.target) e.target.value = "";
         return;
     }
+
+    __READ_EXCEL_RUNNING = true;
+    const isPccmContext = IS_PCCM_IMPORT || (typeof PCCM_TAB !== "undefined" && !!document.querySelector(".pccm-action-bar"));
+    IS_PCCM_IMPORT = false;
 
     const reader = new FileReader();
 
     reader.onload = async (evt)=>{
         try{
             const data = evt.target.result;
-
-            // Ưu tiên ArrayBuffer (ổn định trên Chrome/Edge/Safari). Fallback binary nếu cần.
             let wb;
             if (data instanceof ArrayBuffer){
                 wb = XLSX.read(data, { type: "array" });
@@ -1717,7 +1721,6 @@ function readExcel(e){
                 wb = XLSX.read(data, { type: "binary" });
             }
 
-            const isPccmContext = IS_PCCM_IMPORT || (typeof PCCM_TAB !== "undefined" && !!document.querySelector(".pccm-action-bar"));
             if (isPccmContext) await importPCCMFromExcel(wb);
             else await importFromExcel(wb);
         }catch(err){
@@ -1727,23 +1730,21 @@ function readExcel(e){
                 ? `❌ Không thể nhập Excel: ${detail}`
                 : "❌ Không đọc được file Excel. Vui lòng kiểm tra định dạng .xlsx/.xls hoặc thử lưu lại file rồi nhập lại.");
         }finally{
-            IS_PCCM_IMPORT = false;
-            // reset input để có thể chọn lại cùng 1 file
-            e.target.value = "";
+            __READ_EXCEL_RUNNING = false;
+            if (e.target) e.target.value = "";
         }
     };
 
     reader.onerror = (err)=>{
+        __READ_EXCEL_RUNNING = false;
         console.error(err);
         alert("❌ Lỗi đọc file. Vui lòng thử lại.");
-        e.target.value = "";
+        if (e.target) e.target.value = "";
     };
 
-    // ArrayBuffer works best across browsers
     try{
         reader.readAsArrayBuffer(file);
     }catch(_){
-        // Old fallback
         reader.readAsBinaryString(file);
     }
 }

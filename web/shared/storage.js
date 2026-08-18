@@ -312,7 +312,6 @@
     let lastStatus = 0;
     let attemptsUsed = 0;
     for(let attempt = 0; attempt < REMOTE_SAVE_MAX_ATTEMPTS; attempt += 1){
-      if(remoteAuthRequired) return false;
       attemptsUsed = attempt + 1;
       let resp = null;
       try{
