@@ -17,6 +17,10 @@
     - Đồng hồ đếm thời gian (`⏱ 00:01`, `00:02`...) khởi chạy ngay lập tức mà không bị đơ/đứng ở `00:00`.
     - Ẩn toàn bộ thông báo chữ dài dòng trên thanh công cụ để giữ thanh trạng thái tối giản, chuyên nghiệp và sạch sẽ theo đúng yêu cầu người dùng.
     - Bỏ chặn `manualAgentInvite` để lệnh giải đa nhân trên Cloud Run được điều phối trực tiếp, liền mạch.
+- **Sửa Lỗi Điều Hướng Thuật Toán (FET -> Cloud Run CP-SAT)**:
+  - Trước đó, `window.sapXepTuDongAll` bị `phanmon.js` gán đè sang `executeDirectFastSchedule` (động cơ FET cục bộ của trình duyệt).
+  - Đã xuất khẩu rõ ràng `window.bridgeSapXepTuDongAll` và cập nhật `runFlashScheduler(event)` gọi thẳng vào `bridgeSapXepTuDongAll`.
+  - Nút Flash ⚡ giờ đây **chạy 100% trên Cloud Run (Google CP-SAT 6 vCPU)** và không còn dính vào FET nữa.
 - **Bảo toàn dữ liệu & Triển khai**:
   - Triển khai đồng bộ lên VPS `165.101.47.133` và kiểm tra trạng thái dịch vụ `tkb-app` hoạt động ổn định.
 
