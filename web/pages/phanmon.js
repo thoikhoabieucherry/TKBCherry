@@ -11990,17 +11990,25 @@ async function runFlashScheduler(event){
     return;
   }
   
+  // Clear any status messages
+  if(typeof _setStatus === "function") _setStatus("", "info");
+  const statusEl = document.getElementById("statusMsg");
+  if(statusEl) statusEl.textContent = "";
+
+  // Immediately start stopwatch timer display
+  if(typeof setAutoSortProgress === "function"){
+    setAutoSortProgress(5, "");
+  }
+
   try {
     if(typeof window.clearOptimizationPlateau === "function"){
       window.clearOptimizationPlateau(window.getData?.());
     }
   }catch(_){}
-
-  _setStatus("⚡ Flash Solver (Cloud Run 6 vCPU): Đang kết nối và kích hoạt đa nhân...", "info");
   
   if(typeof window.sapXepTuDongAll === "function"){
     return window.sapXepTuDongAll({
-      manualAgentInvite: true
+      manualAgentInvite: false
     });
   }
 }

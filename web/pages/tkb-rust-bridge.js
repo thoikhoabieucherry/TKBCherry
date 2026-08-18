@@ -19598,12 +19598,7 @@
     }
     traceSolveStep("auto-sort:targets", automaticPlan.qualityTargets);
     traceSolveStep("auto-sort:settings-ready", {preset:"balanced", kind:automaticPlan.kind});
-    setStatus(
-      settings.ui_fresh_solve_duration_floor_applied === true
-        ? `Lịch chưa xếp đủ; lượt đầu dùng tối thiểu ${MIN_FRESH_SOLVE_DURATION_SECONDS} giây.`
-        : "⚡ Đang tính toán tối ưu trên Cloud Run (6 vCPU)...",
-      "info"
-    );
+    setStatus("", "info");
     let result = await solveWithRustApi({
       ask:false,
       settings,
