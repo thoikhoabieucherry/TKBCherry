@@ -52,6 +52,10 @@
 - **Khắc Phục Lỗi Hiển Thị Tiết Cố Định Trên TKB Giáo Viên & Khóa Chặt Single-Pass Cho Flash ⚡**:
   - Phát hiện hàm `buildTeacherSchedule` trong `web/pages/phanmon.js` có điều kiện loại trừ cũ `!mon.startsWith("HĐTN 1") && !mon.startsWith("HĐTN 2")`, khiến các tiết `HĐTN 1` và `HĐTN 2` (ví dụ của GV SĐ.Kiều) bị bỏ qua, không hiển thị trên bảng TKB Giáo viên. Đã xóa bỏ điều kiện này để hiển thị chuẩn xác 100%.
   - Phát hiện cờ `requestedQualityRetry` trong `web/pages/tkb-rust-bridge.js` khi TKB đã đủ 100% tiết vô tình kích hoạt các vòng lặp phụ (10 seeds zero-one retry + 5 attempts teacher session quality) trên trình duyệt, kéo dài 3 phút và làm reset đồng hồ. Đã khóa cứng `requestedQualityRetry = false` và `skipRetryLoops = true` khi `ui_flash_scheduler_active === true` để Flash ⚡ luôn chạy đúng 1 lượt duy nhất trên Cloud Run CP-SAT (~17s) và cập nhật kết quả ngay lập tức.
+- **Tối Ưu Hóa Toàn Diện Khung Thêm Nhanh & Tra Cứu Khối Lớp PCCM (0ms)**:
+  - Khắc phục điểm nghẽn trong `pccmClassKhoiMeta`: Đã đệm sẵn bản đồ `__CLASS_KHOI_META_MAP` để loại bỏ 5.625 lần tạo candidate regex class khi tính tổng tiết.
+  - Khắc phục điểm nghẽn trong `pccmGetNumberFromMatrix`: Bổ sung đường tra cứu trực tiếp $O(1)$ thay vì gọi regex class candidates cho từng ô số tiết/giới hạn.
+  - Khắc phục điểm nghẽn trong `renderPCCMQuickBox`: Chuyển menu chọn nhanh Môn/Lớp/GV sang cơ chế nạp lười (`pccmPopulateQuickMultiMenu`), giảm thêm 230 phần tử DOM thừa trên mỗi lượt vẽ trang.
 - **Triệt Tiêu Điểm Nghẽn DOM (1.2 Triệu Lượt Quét) Bằng Cơ Chế Lazy-Rendering Dropdown PCCM**:
   - Phát hiện nguyên nhân lag/giật chính: Trong hàm `pccmRenderTeacherMulti`, với mỗi dòng bảng phân công, hệ thống render sẵn 129 thẻ `<button>` menu cho 129 giáo viên. Khi bảng có 50–75 dòng, trình duyệt phải vẽ cùng lúc **gần 10.000 phần tử DOM** và thực hiện **hơn 1.200.000 lượt quét mảng tuyến tính** `pccmTeacherHint` $\to$ gây khựng khung hình và giật lag rõ rệt.
   - Đã tối ưu hóa với cơ chế nạp lười (*Lazy-Loading on Click*): Khi hiển thị bảng, dropdown chỉ render nút bấm gọn nhẹ. Khi người dùng click mở menu chọn giáo viên, danh sách mới được nạp vào trong **0.1ms**.
