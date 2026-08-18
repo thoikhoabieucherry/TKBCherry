@@ -21,6 +21,9 @@
   - Khi bấm nút Flash ⚡, badge `2044/2044 tiết` được ẩn hoàn toàn để giao diện chỉ hiển thị duy nhất đồng hồ đếm giây thời gian thực và nút dừng đỏ, giúp phân biệt rõ ràng với chế độ thường.
   - Khi lịch TKB đang chưa đủ (ví dụ 149/2044 hoặc 0/2044), Flash ⚡ thiết lập chế độ `fresh_complete_first` chạy 180s trên Cloud Run CP-SAT 6 vCPU để xếp đầy đủ 100% tiết mà không bị vướng lỗi "Không thay đổi X tiết hiện có; chưa tìm được lịch đủ".
   - Khi lịch TKB đã đủ 100% (2044/2044), Flash ⚡ kích hoạt chế độ `refine_complete` để tối ưu sâu dồn buổi dạy và triệt tiêu tiết trống.
+- **Đồng Bộ Đồng Hồ Vòng Quay Xoay (Spinning Clock Loader) Cho Toàn Bộ Chế Độ**:
+  - Tích hợp biểu tượng vòng cung xoay mượt mà (`pm-spin`, màu xanh ngọc lục bảo `#059669`) kèm đồng hồ đếm giây thời gian thực dạng chữ số dày (`font-weight: 700; font-variant-numeric: tabular-nums;`).
+  - Áp dụng đồng bộ và chuẩn hóa cho toàn bộ các chế độ xếp lịch: Sắp xếp tự động, Flash ⚡, Tối ưu 1 tiết/buổi, Tối ưu buổi dạy, Tối ưu 2 tiết trống, Tối ưu 1 tiết trống.
 - **Bảo toàn dữ liệu & Triển khai**:
   - Triển khai đồng bộ lên VPS `165.101.47.133` và kiểm tra trạng thái dịch vụ `tkb-app` hoạt động ổn định.
 
