@@ -1647,9 +1647,20 @@ let IMPORT_SECTION="";
 let IS_PCCM_IMPORT=false;
 
 function triggerExcel(section){
-    IMPORT_SECTION=section;
-    IS_PCCM_IMPORT=false;
-    document.getElementById("excelFile").click();
+    IMPORT_SECTION = section;
+    IS_PCCM_IMPORT = false;
+    let fileEl = document.getElementById("excelFile");
+    if (!fileEl){
+        fileEl = document.createElement("input");
+        fileEl.type = "file";
+        fileEl.accept = ".xlsx,.xls";
+        fileEl.id = "excelFile";
+        fileEl.style.display = "none";
+        document.body.appendChild(fileEl);
+    }
+    fileEl.onchange = readExcel;
+    fileEl.value = "";
+    fileEl.click();
 }
 
 function bootWhenReady(){
@@ -7236,7 +7247,18 @@ function mapPCCMMonNameByCode(monRaw){
 
 function triggerPCCMImport(){
     IS_PCCM_IMPORT = true;
-    document.getElementById("excelFile").click();
+    let fileEl = document.getElementById("excelFile");
+    if (!fileEl){
+        fileEl = document.createElement("input");
+        fileEl.type = "file";
+        fileEl.accept = ".xlsx,.xls";
+        fileEl.id = "excelFile";
+        fileEl.style.display = "none";
+        document.body.appendChild(fileEl);
+    }
+    fileEl.onchange = readExcel;
+    fileEl.value = "";
+    fileEl.click();
 }
 
 /* ============================================================
