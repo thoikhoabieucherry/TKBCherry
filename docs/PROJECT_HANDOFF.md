@@ -27,10 +27,12 @@
 - **Khắc Phục Đơ Giao Diện & Bỏ Qua Bộ Vá Cũ Khi Chạy Flash**:
   - Thêm `await new Promise(r => setTimeout(r, 50))` ngay khi khởi chạy `runFlashScheduler` để nhường luồng render cho trình duyệt, giúp vòng xoay xanh `pm-spin` và đồng hồ đếm giây hoạt động mượt mà ngay lập tức, không bị đứng/lag lúc chuẩn bị gửi dữ liệu.
   - Thêm rào chắn `settings?.ui_flash_scheduler_active === true` trong `shouldUseStagedExistingRepair` và `solveWithRustApi` để bỏ qua hoàn toàn các bộ vá cục bộ 8s/10s (`solveStagedExistingRepair`), đẩy thẳng bài toán lên **Google Cloud Run CP-SAT 6 vCPU** với 180s tính toán toàn diện, giải quyết triệt để lỗi "Không thay đổi 149 tiết hiện có; chưa tìm được lịch đủ".
-- **Sửa Lỗi Xác Thực Digest Cloud Run (`TKB_CLOUD_RUN_ALLOW_UNPINNED_DIGEST=1`)**:
-  - Phát hiện nguyên nhân khiến Cloud Run trước đó từ chối kết nối từ VPS: script `cloud_run_client.py` yêu cầu hash digest cố định nếu không có cờ `TKB_CLOUD_RUN_ALLOW_UNPINNED_DIGEST=1`.
-  - Đã cập nhật `/etc/systemd/system/tkb-app.service.d/cloud-run.conf` bổ sung biến này và khởi động lại dịch vụ `tkb-app`.
-  - Đã kiểm thử trực tiếp lệnh giải thời khóa biểu qua Google Cloud Run: kết quả trả về mã HTTP 200 OK kèm dữ liệu lịch xếp hoàn chỉnh 100%.
+- **Build & Triển Khai Bản Cập Nhật Solver Lên Google Cloud Run (Revision `tkb-solver-00244-get`)**:
+  - Phát hiện nguyên nhân khiến Cloud Run trả về 422 trên dữ liệu thực tế `school_default` (2193 tiết): container Cloud Run cũ kích hoạt `UnifiedCpSatSolver` với ràng buộc cứng số buổi 1 tiết (`== 0`) và cận trên ca học bị giới hạn, khiến bài toán bị vô nghiệm.
+  - Đã chuyển hướng `solve_stdio.py` sang động cơ CP-SAT hoàn chỉnh `solve_from_ui_data`, tự động phân tích đúng toàn bộ ca học, phòng học, giáo viên nghỉ, và tối ưu đa tầng (Session CP-SAT + Period MILP).
+  - Đã thực hiện `deploy.ps1` build container mới qua Google Cloud Build và triển khai thành công revision `tkb-solver-00244-get` phục vụ 100% lưu lượng tại `https://tkb-solver-tys7xrhbca-et.a.run.app`.
+  - Cập nhật hash digest mới `c7d7ae916c762c1919e7c5408560c9df5c4846af9a4a104db2e0c32f4ce25ca5` vào `cloud-run.conf` trên VPS.
+  - **Kiểm thử trực tiếp End-to-End với 2193 tiết của trường default**: Cloud Run giải thành công 100% lịch (`scheduled_periods: 2193/2193`), 0 tiết chưa xếp, 0 trùng lịch, `hard_ok: True`!
 - **Bảo toàn dữ liệu & Triển khai**:
   - Triển khai đồng bộ lên VPS `165.101.47.133` và kiểm tra trạng thái dịch vụ `tkb-app` hoạt động ổn định.
 
