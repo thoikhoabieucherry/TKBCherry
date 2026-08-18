@@ -2783,6 +2783,14 @@
                     const act3 = this.activities[actId3];
                     if(!act3 || act3.isFixed || act3.duration !== 1) continue;
 
+                    // Fast pre-check: act2->s3 and act3->s1 availability in teacherGrid
+                    const tg2 = act2.gv ? this.teacherGrid.get(act2.gv) : null;
+                    const tg3 = act3.gv ? this.teacherGrid.get(act3.gv) : null;
+                    if(tg2 && tg2[s3] >= 0 && tg2[s3] !== act3.id) continue;
+                    if(tg3 && tg3[s1] >= 0 && tg3[s1] !== act1.id) continue;
+                    if(this.teacherOffSlots && act2.gv && this.teacherOffSlots.has(`${act2.gv}|${s3}`)) continue;
+                    if(this.teacherOffSlots && act3.gv && this.teacherOffSlots.has(`${act3.gv}|${s1}`)) continue;
+
                     this.unplaceActivity(act1.id);
                     this.unplaceActivity(act2.id);
                     this.unplaceActivity(act3.id);
@@ -3114,9 +3122,12 @@
       });
 
       if(singletons.length === 0) return null;
+      // Khi số tiết lẻ còn nhiều (>25), các operator nhanh giải quyết hiệu quả hơn;
+      // Chỉ kích hoạt Deep DFS khi số tiết lẻ <= 25 để hạ gục các ca lẻ cứng đầu.
+      if(singletons.length > 25) return null;
       this.rng.shuffle(singletons);
 
-      for(const sing of singletons){
+      for(const sing of singletons.slice(0, 15)){
         const { tKey, act, sourceSlot } = sing;
         const cGrid = this.classGrid.get(act.classId);
         if(!cGrid) continue;
@@ -3145,9 +3156,10 @@
         
         if(targetSlots.length === 0) continue;
         this.rng.shuffle(targetSlots);
+        const candTargetSlots = targetSlots.slice(0, 12);
 
         let resolved = false;
-        for(const sTarget of targetSlots){
+        for(const sTarget of candTargetSlots){
            const displacedActId = cGrid[sTarget];
            if(displacedActId < 0){
                const snap = this.captureStateSnapshot();
@@ -5391,6 +5403,16 @@
                 const a1 = this.activities[a1Id];
                 const a2 = this.activities[a2Id];
                 if (!a1 || !a2 || a1.isFixed || a2.isFixed) continue;
+                if (a1.gv === a2.gv) continue; // Same teacher swap inside same session cannot change teacher gaps
+
+                // Fast availability pre-check before snapshot
+                const tg1 = a1.gv ? this.teacherGrid.get(a1.gv) : null;
+                const tg2 = a2.gv ? this.teacherGrid.get(a2.gv) : null;
+                if (tg1 && tg1[sStart + p2] >= 0 && tg1[sStart + p2] !== a2.id) continue;
+                if (tg2 && tg2[sStart + p1] >= 0 && tg2[sStart + p1] !== a1.id) continue;
+                if (this.offSlots && (this.offSlots.has(`${cid}|${sStart + p2}`) || this.offSlots.has(`${cid}|${sStart + p1}`))) continue;
+                if (this.teacherOffSlots && a1.gv && this.teacherOffSlots.has(`${a1.gv}|${sStart + p2}`)) continue;
+                if (this.teacherOffSlots && a2.gv && this.teacherOffSlots.has(`${a2.gv}|${sStart + p1}`)) continue;
 
                 // Direct 2-way swap in class
                 const snap = this.captureStateSnapshot();
@@ -7015,6 +7037,8 @@
       this.opDeadlineMs = this.stageDeadlineMs || (optStartMs + hardCapMs);
       let restartCount = 0;
       let portfolioDone = false;
+      let stagnantRestarts = 0;
+      let prevGlobalVal = undefined;
 
       while(!portfolioDone){
       portfolioDone = true;
@@ -7126,7 +7150,7 @@
           this.rng.shuffle(thinSessions);
           thinSessions.sort((x, y) => x.cnt - y.cnt);
 
-          for(const s of thinSessions.slice(0, 30)){
+          for(const s of thinSessions.slice(0, 12)){
             const res = this.tryVacateTeacherSession(s.tKey, s.d, s.b, bestMetrics, initialMetrics);
             if(res && this.compareMetrics(res, bestMetrics, mode) < 0){
               bestMetrics = { ...res };
@@ -7530,7 +7554,15 @@
       // — mỗi pha mở được các ca kẹt khác nhau), lượt CHẴN đi tiếp từ global
       // best (thâm canh). Kết quả cuối luôn là global best qua mọi lượt.
       const globalVal = this.__globalBestM ? getMetricVal(this.__globalBestM) : getMetricVal(bestMetrics);
+      if(restartCount > 0 && prevGlobalVal !== undefined && globalVal >= prevGlobalVal){
+        stagnantRestarts = stagnantRestarts + 1;
+      }else{
+        stagnantRestarts = 0;
+      }
+      prevGlobalVal = globalVal;
+
       if(canRestart && globalVal > restartTargetVal && restartCount < maxRestarts &&
+         (stagnantRestarts || 0) < 3 &&
          (Date.now() - optStartMs) < Math.min(restartBudgetMs, hardCapMs) &&
          !(typeof window !== "undefined" && window.__AUTO_SORT_STOP_REQUESTED) &&
          !(this.stageDeadlineMs && Date.now() > this.stageDeadlineMs)){
@@ -7913,14 +7945,14 @@
 
     async optimizeAll(progressCallback = null){
       const STAGES = ["optimize_singletons", "optimize_gap2", "optimize_sessions", "optimize_gap1"];
-      const totalBudgetMs = Math.max(20_000, Number(this.options.optimizeAllBudgetMs) || 150_000);
-      const minStageSliceMs = Math.max(3_000, Number(this.options.optimizeAllMinStageMs) || 8_000);
+      const totalBudgetMs = Math.max(20_000, Number(this.options.optimizeAllBudgetMs) || 60_000);
+      const minStageSliceMs = Math.max(2_000, Number(this.options.optimizeAllMinStageMs) || 5_000);
       const MAX_CYCLES = Math.max(1, Number(this.options.optimizeAllMaxCycles) || 3);
       const startedAt = Date.now();
       const deadline = startedAt + totalBudgetMs;
       // Dành riêng phần cuối ngân sách cho BƯỚC QUÉT GAP2 CHỐT (portfolio đầy
       // đủ của nút "2 tiết trống") — các stage không được ăn hết thời gian.
-      const sweepReserveMs = Math.min(90_000, Math.floor(totalBudgetMs * 0.35));
+      const sweepReserveMs = Math.min(25_000, Math.floor(totalBudgetMs * 0.30));
       const stagesDeadline = deadline - sweepReserveMs;
 
       const stopRequested = () => typeof window !== "undefined" && window.__AUTO_SORT_STOP_REQUESTED;
