@@ -52,6 +52,9 @@
 - **Khắc Phục Lỗi Hiển Thị Tiết Cố Định Trên TKB Giáo Viên & Khóa Chặt Single-Pass Cho Flash ⚡**:
   - Phát hiện hàm `buildTeacherSchedule` trong `web/pages/phanmon.js` có điều kiện loại trừ cũ `!mon.startsWith("HĐTN 1") && !mon.startsWith("HĐTN 2")`, khiến các tiết `HĐTN 1` và `HĐTN 2` (ví dụ của GV SĐ.Kiều) bị bỏ qua, không hiển thị trên bảng TKB Giáo viên. Đã xóa bỏ điều kiện này để hiển thị chuẩn xác 100%.
   - Phát hiện cờ `requestedQualityRetry` trong `web/pages/tkb-rust-bridge.js` khi TKB đã đủ 100% tiết vô tình kích hoạt các vòng lặp phụ (10 seeds zero-one retry + 5 attempts teacher session quality) trên trình duyệt, kéo dài 3 phút và làm reset đồng hồ. Đã khóa cứng `requestedQualityRetry = false` và `skipRetryLoops = true` khi `ui_flash_scheduler_active === true` để Flash ⚡ luôn chạy đúng 1 lượt duy nhất trên Cloud Run CP-SAT (~17s) và cập nhật kết quả ngay lập tức.
+- **Khôi Phục & Đồng Bộ Dữ Liệu Trường THCS Đồng Đen Sang Slot TKB 3 (`e3d7a3b21e3`)**:
+  - Đã sao chép toàn bộ dữ liệu từ `school_e3d7a3b21e1` sang `school_e3d7a3b21e3` trong database SQLite VPS `/opt/cherry-scheduler/rust_api/tkb_store.db`.
+  - Dữ liệu slot 3 hiện có đầy đủ 100%: 72 lớp học, 127 giáo viên, 936 phân công môn học, và 72 thời khóa biểu lớp hoàn chỉnh.
 - **Tối Ưu Hóa Toàn Diện Khung Thêm Nhanh & Tra Cứu Khối Lớp PCCM (0ms)**:
   - Khắc phục điểm nghẽn trong `pccmClassKhoiMeta`: Đã đệm sẵn bản đồ `__CLASS_KHOI_META_MAP` để loại bỏ 5.625 lần tạo candidate regex class khi tính tổng tiết.
   - Khắc phục điểm nghẽn trong `pccmGetNumberFromMatrix`: Bổ sung đường tra cứu trực tiếp $O(1)$ thay vì gọi regex class candidates cho từng ô số tiết/giới hạn.
