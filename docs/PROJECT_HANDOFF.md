@@ -17,10 +17,10 @@
     - Đồng hồ đếm thời gian (`⏱ 00:01`, `00:02`...) khởi chạy ngay lập tức mà không bị đơ/đứng ở `00:00`.
     - Ẩn toàn bộ thông báo chữ dài dòng trên thanh công cụ để giữ thanh trạng thái tối giản, chuyên nghiệp và sạch sẽ theo đúng yêu cầu người dùng.
     - Bỏ chặn `manualAgentInvite` để lệnh giải đa nhân trên Cloud Run được điều phối trực tiếp, liền mạch.
-- **Sửa Lỗi Điều Hướng Thuật Toán (FET -> Cloud Run CP-SAT)**:
-  - Trước đó, `window.sapXepTuDongAll` bị `phanmon.js` gán đè sang `executeDirectFastSchedule` (động cơ FET cục bộ của trình duyệt).
-  - Đã xuất khẩu rõ ràng `window.bridgeSapXepTuDongAll` và cập nhật `runFlashScheduler(event)` gọi thẳng vào `bridgeSapXepTuDongAll`.
-  - Nút Flash ⚡ giờ đây **chạy 100% trên Cloud Run (Google CP-SAT 6 vCPU)** và không còn dính vào FET nữa.
+- **Ẩn Badge Số Tiết (2044/2044) & Xử Lý Xếp Mới Toàn Diện**:
+  - Khi bấm nút Flash ⚡, badge `2044/2044 tiết` được ẩn hoàn toàn để giao diện chỉ hiển thị duy nhất đồng hồ đếm giây thời gian thực và nút dừng đỏ, giúp phân biệt rõ ràng với chế độ thường.
+  - Khi lịch TKB đang chưa đủ (ví dụ 149/2044 hoặc 0/2044), Flash ⚡ thiết lập chế độ `fresh_complete_first` chạy 180s trên Cloud Run CP-SAT 6 vCPU để xếp đầy đủ 100% tiết mà không bị vướng lỗi "Không thay đổi X tiết hiện có; chưa tìm được lịch đủ".
+  - Khi lịch TKB đã đủ 100% (2044/2044), Flash ⚡ kích hoạt chế độ `refine_complete` để tối ưu sâu dồn buổi dạy và triệt tiêu tiết trống.
 - **Bảo toàn dữ liệu & Triển khai**:
   - Triển khai đồng bộ lên VPS `165.101.47.133` và kiểm tra trạng thái dịch vụ `tkb-app` hoạt động ổn định.
 
