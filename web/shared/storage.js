@@ -97,7 +97,6 @@
       hasMeaningfulConstraints(data.tkbConstraints)
     );
   }
-
   function addUnique(list, value){
     const id = cleanSchoolId(value);
     if(id && !list.includes(id)) list.push(id);
@@ -107,6 +106,7 @@
     const target = cleanSchoolId(schoolId);
     const out = [];
     addUnique(out, target);
+    if(target === "default") return out;
     try{
       const A = window.TKBAuth;
       if(!A || typeof A.loadRegistry !== "function") return out;
@@ -206,7 +206,7 @@
     const target = cleanSchoolId(schoolId);
     const direct = await loadRemoteSchoolData(target);
     if(remoteAuthRequired) return null;
-    if(hasMeaningfulData(direct)) return direct;
+    if(target === "default" || hasMeaningfulData(direct)) return direct;
     const ids = relatedStoreIds(target).filter(id => id !== target);
     for(const id of ids){
       if(remoteAuthRequired) return null;
@@ -244,7 +244,7 @@
     const target = cleanSchoolId(schoolId);
     const direct = loadRemoteSchoolDataSync(target);
     if(remoteAuthRequired) return null;
-    if(hasMeaningfulData(direct)) return direct;
+    if(target === "default" || hasMeaningfulData(direct)) return direct;
     const ids = relatedStoreIds(target).filter(id => id !== target);
     for(const id of ids){
       if(remoteAuthRequired) return null;
