@@ -4290,3 +4290,25 @@ body.planner-shell .stats-popover{
   position: sticky; bottom: 0;
 }
 body.class-assignment-stats-open{ overflow: hidden; }
+
+.auto-sort-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 13px;
+  color: #1e293b;
+  line-height: 1;
+}
+
+.auto-sort-timer .spin-icon {
+  animation: pm-spin 0.8s linear infinite;
+  color: #059669;
+  flex-shrink: 0;
+}
+
+@keyframes pm-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
