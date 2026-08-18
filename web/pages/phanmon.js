@@ -12031,12 +12031,15 @@ async function runFlashScheduler(event){
 
   const flashSettings = {
     ui_flash_scheduler_active: true,
+    ui_single_pass_auto_sort: true,
+    ui_allow_quality_after_single_pass: false,
+    ui_stop_after_first_complete_schedule: true,
     solver_mode: "auto",
     num_workers: 6,
-    overall_time_limit_seconds: 180,
-    backend_deadline_ms: 180000,
-    native_global_deadline_ms: 180000,
-    progress_estimate_seconds: 60,
+    overall_time_limit_seconds: 60,
+    backend_deadline_ms: 75000,
+    native_global_deadline_ms: 75000,
+    progress_estimate_seconds: 45,
     require_complete_schedule: true,
     best_effort_on_timeout: true,
     force_fresh_backend_solve: true,
@@ -12045,7 +12048,14 @@ async function runFlashScheduler(event){
     minimize_one_period_sessions: true,
     max_one_period_sessions: 0,
     minimize_teacher_gaps: true,
-    period_max_teacher_gap: 1
+    period_max_teacher_gap: 1,
+    complete_schedule_seed_retry: false,
+    complete_schedule_seed_retry_max_runs: 0,
+    allow_zero_one_quality_retry: false,
+    allow_teacher_session_deep_retry: false,
+    allow_teacher_session_fast_portfolio: false,
+    schedule_diversity: false,
+    reclick_schedule_diversity: false
   };
 
   if(isComplete){
@@ -12054,8 +12064,6 @@ async function runFlashScheduler(event){
     flashSettings.preserve_existing_tkb = true;
     flashSettings.ui_unified_solve_kind = "refine_complete";
     flashSettings.optimization_focus = "automatic";
-    flashSettings.allow_zero_one_quality_retry = true;
-    flashSettings.allow_teacher_session_deep_retry = true;
   } else {
     flashSettings.optimize_existing_schedule = false;
     flashSettings.preserve_existing_tkb = false;

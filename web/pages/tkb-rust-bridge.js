@@ -16669,8 +16669,10 @@
       acceptSafeCapacityPartial(payload);
       let completion = payloadCompletion(payload);
       let skipFurtherRetries = completion.complete && payloadReturnedCompleteIncumbentNearDeadline(payload);
-      let capacityShortageRun = acceptedCapacityPartial;
       let skipRetryLoops = (
+          settings?.ui_flash_scheduler_active === true
+        )
+        || (
           singlePassAutoSort
           && (
             completion.complete
