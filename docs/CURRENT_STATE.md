@@ -6,14 +6,19 @@
 
 - Đường xếp TKB mới nằm ở `solver_runtime/src/tkb_exact_v2/solver.py`, dùng
   CP-SAT tích hợp và chứng minh tuần tự: singleton/Gap2+ là hard zero, sau đó
-  tối ưu tổng buổi giáo viên và Gap1 bằng `OPTIMAL`/best-bound.
+  tối ưu tổng buổi giáo viên và Gap1 bằng `OPTIMAL`/best-bound. Pha buổi có
+  thêm chứng chỉ cận dưới từ allocation master; nếu nghiệm strict chạm cận
+  này thì được coi là đã chứng minh tối ưu.
 - `solver_runtime/scripts/solve_stdio.py` nhận `settings.solver_algorithm=
   exact_v2`; không gọi FET/local-search. UI planner đã bỏ các nút Tối ưu,
-  NEW và Trọn gói, nút Sắp xếp duy nhất định tuyến request này.
+  NEW và Trọn gói, nút Sắp xếp duy nhất định tuyến request này. Các alias
+  cũ `sapXepTheoCheDo`/`deepOptimizeTheoCheDo` bị quy về một lượt exact_v2.
 - Mọi `Giới hạn/Max` là cận trên; `lessonBlocks.Min`, `mustTeach`, nghỉ và ô
-  cố định không được tự nới. Vô nghiệm hoặc chưa chứng minh tối ưu thì không
-  áp lịch.
-- Test mới: `python -m unittest solver_runtime.tests.test_exact_v2` (5/5).
+  cố định không được tự nới. `lessonBlocks.Min` không được tự nâng
+  `Giới hạn`; nếu mâu thuẫn sẽ trả chẩn đoán
+  `lesson_block_min_conflicts_with_upper_bound`. Vô nghiệm hoặc chưa chứng
+  minh tối ưu thì không áp lịch.
+- Test mới: `python -m unittest solver_runtime.tests.test_exact_v2` (6/6).
 - Fixture read-only 1.530 tiết chưa chứng minh được `sessions_optimum` trong
   60–180 giây (`sessions_optimum_not_proven`); hệ thống fail-closed, chưa áp
   candidate. Đây là blocker tối ưu lớn còn mở trước canary.

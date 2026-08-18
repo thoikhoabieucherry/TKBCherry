@@ -19573,6 +19573,31 @@
     if(invocationOptions.settings && typeof invocationOptions.settings === "object"){
       Object.assign(settings, invocationOptions.settings);
     }
+    if(String(settings.solver_algorithm || "").trim().toLowerCase() === "exact_v2" || invocationOptions.exactV2 === true){
+      Object.assign(settings, {
+        solver_algorithm: "exact_v2",
+        solver_mode: "reference",
+        require_complete_schedule: true,
+        preserve_existing_tkb: false,
+        preserve_fixed_lessons_only: true,
+        best_effort_on_timeout: false,
+        ui_allow_best_effort_on_timeout: false,
+        ui_accept_incomplete_best_effort: false,
+        ui_allow_short_backend_deadline: false,
+        ui_disable_automatic_retry: true,
+        ui_skip_final_existing_teacher_gap_optimize: true,
+        ui_allow_auto_existing_optimize: false,
+        complete_schedule_seed_retry: false,
+        complete_schedule_seed_retry_max_runs: 0,
+        allow_zero_one_quality_retry: false,
+        teacher_session_quality_retry_attempts: 0,
+        gap_existing_optimize_attempts: 0,
+        optimize_existing_schedule: false,
+        existing_fill_missing_schedule: false,
+        auto_sort_strategy: "exact_v2_fresh_complete",
+        quality_priority_order: "exact_v2_sessions_then_gap1"
+      });
+    }
     if(hybridInvocationSettings){
       // `automaticPlan` is intentionally rebuilt from planner state, so copy
       // the explicit Hybrid executor contract back only after canonical mode

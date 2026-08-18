@@ -933,7 +933,8 @@ def build_school_data_from_ui(
             rules,
         )
         warnings.extend(constraint_warnings)
-    school_data = _school_data_with_lesson_block_caps(school_data, rules)
+    if not strict_constraints:
+        school_data = _school_data_with_lesson_block_caps(school_data, rules)
     return UiDataContext(
         school_data=school_data,
         classes=classes,

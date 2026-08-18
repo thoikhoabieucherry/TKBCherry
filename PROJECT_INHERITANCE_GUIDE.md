@@ -17,15 +17,15 @@ graph TD
     B -->|HTTP nội bộ| C[Rust Backend API tkb_rust_api]
     C -->|Local SQLite| D[(SQLite kvstore tkb_store.db)]
     C -->|Serverless Route| E[Google Cloud Run tkb-solver]
-    C -->|VPS Local Fallback| F[Python OR-Tools Solver]
-    A -->|Client-Side WebWorker| G[FET Client Engine tkb-fet-engine.js]
+    C -->|VPS Local Fallback| F[Python OR-Tools Solver V2]
+    F -->|solver_algorithm=exact_v2| G[Integrated CP-SAT tkb_exact_v2]
 ```
 
 ### Các thành phần chính:
 1. **Web Client (Frontend)**:
    * **Công nghệ**: HTML5, Vanilla JavaScript (ES6+), Vanilla CSS3. Không dùng framework hay build system; giao tiếp backend qua HTTP polling (không WebSocket).
    * **Giao diện phân môn & sắp xếp TKB**: `web/pages/phanmon.js`, `web/pages/sapxep.html`, `web/pages/phanmon.css`.
-   * **Bộ giải & tối ưu FET chạy trực tiếp trên Browser**: `web/pages/tkb-fet-engine.js`, `web/pages/tkb-fet-worker.js`.
+   * **Luồng xếp TKB hiện hành**: trình duyệt chỉ gửi một request qua `web/pages/tkb-rust-bridge.js`; không chạy FET/Web Worker cho nút Sắp xếp.
    * **Quản trị hệ thống & Cổng trường học**: `web/super-admin.js`, `web/school-portal.js`, `web/app.js`.
 
 2. **Backend API Server (Rust)**:
@@ -69,25 +69,23 @@ DB chạy chế độ **WAL**: dữ liệu mới nhất nằm trong `*.db-wal`/`
 
 ---
 
-## 3. BỘ THUẬT TOÁN XẾP TKB VÀ TỐI ƯU HÓA CHUYÊN SÂU
+## 3. BỘ THUẬT TOÁN XẾP TKB
 
-Bộ thuật toán tối ưu hóa nằm tại `web/pages/tkb-fet-engine.js`:
+Luồng xếp hiện hành là **Solver V2 exact_v2** tại `solver_runtime/src/tkb_exact_v2/solver.py`.
+Trang `web/pages/sapxep.html` chỉ còn một nút **Sắp xếp**; các nút/mode Tối ưu,
+NEW và Trọn gói không còn là workflow planner. Các alias JavaScript cũ
+`sapXepTheoCheDo` và `deepOptimizeTheoCheDo` vẫn tồn tại để tương thích cache,
+nhưng đều quy về một lượt `solver_algorithm=exact_v2`.
 
-### 3.1. Thuật toán Xếp Tự Động (FET Schedule Construction)
-* Sử dụng chiến lược **MRV (Minimum Remaining Values)** kết hợp **Degree Heuristic**.
-* Các tiết cố định và tiết 1 buổi của giáo viên được ưu tiên xếp trước (Fixed & Singleton Priority Queue) để tránh phát sinh tiết lẻ về sau.
+### 3.1. Hợp đồng Solver V2
+* Dùng Python OR-Tools CP-SAT tích hợp, không dùng FET Web Worker/local-search để chứng minh chất lượng.
+* Hard constraints: xếp đủ toàn bộ tiết, không trùng lớp/giáo viên/phòng, giữ rule nghỉ, `mustTeach`, ô cố định, `lessonBlocks.Min`, giới hạn thời điểm và các rule người dùng.
+* Chất lượng hard: buổi giáo viên 1 tiết = 0, Gap2+ = 0, lỗ trống học sinh = 0.
+* Tối ưu lexicographic: chứng minh tổng buổi giáo viên nhỏ nhất, khóa giá trị đó, rồi chứng minh Gap1 nhỏ nhất.
+* Mọi `Giới hạn/Max` là cận trên, không phải số bắt buộc phải chạm. Solver V2 không tự nâng `Giới hạn` để chiều theo `lessonBlocks.Min`; nếu rule tự mâu thuẫn sẽ trả chẩn đoán và giữ nguyên lịch cũ.
 
-### 3.2. Bộ Tối Ưu Hóa Đa Tầng (Multi-Pass Deep Optimization)
-Hệ thống cung cấp 4 chế độ tối ưu độc lập:
-1. **Tối ưu buổi 1 tiết (`optimize_singletons`)**:
-   * Áp dụng **Deep LNS Singleton Consolidation**: Dò tìm các buổi dạy 1 tiết của giáo viên, thực hiện hoán đổi hoặc dời sang các buổi giáo viên đã có tiết để ghép thành cụm $\ge 2$ tiết hoặc giải phóng hoàn toàn ngày nghỉ.
-2. **Tối ưu số buổi dạy / ngày dạy (`optimize_sessions`)**:
-   * Gom gọn số ngày đến trường của giáo viên, tăng ngày nghỉ trọn vẹn trong tuần.
-3. **Tối ưu 2 tiết trống (`optimize_gap2`)**:
-   * **Chuỗi Dịch Chuyển Vòng 3 Bước (3-Way Multi-Hop Ejection Chain)**: Khi gặp nút thắt (ví dụ Thầy Thành có tiết cố định Tiết 5 và tiết di động Tiết 1), bộ giải kích hoạt chuỗi hoán vị vòng 3–5 bước giữa các lớp để kéo tiết di động áp sát vào mỏ neo cố định.
-   * **Ràng buộc cứng (Hard Invariant)**: Không cho phép làm tăng số buổi 1 tiết (`soBuoiDay1 <= initial.soBuoiDay1`).
-4. **Tối ưu 1 tiết trống (`optimize_gap1`)**:
-   * Tinh chỉnh các lỗ hổng 1 tiết xen kẽ giữa các giờ học.
+### 3.2. Điều kiện áp lịch
+Payload chỉ được áp khi solver trả đủ tiết, validator độc lập `hard_ok`, singleton 0, Gap2+ 0, lỗ học sinh 0, và chứng chỉ tối ưu hợp lệ (`OPTIMAL`, best-bound, hoặc cận dưới master hợp lệ). Nếu chỉ có nghiệm gần đúng/timeout/vô nghiệm, hệ thống fail-closed và giữ lịch hiện tại.
 
 ### 3.3. Bảng Thống Kê Theo Lớp (Class Statistics Table)
 Bảng thống kê (`openClassAssignmentStatistics()` trong `web/pages/phanmon.js`) bao gồm các nhóm cột:
@@ -156,9 +154,9 @@ Ba bộ test cần backend đang chạy (`app_assignment_subject_visibility`, `a
 | :--- | :--- |
 | `web/pages/phanmon.js` | Logic phân công chuyên môn, hiển thị TKB, quản lý bảng thống kê lớp/GV, điều phối giao diện |
 | `web/pages/phanmon.css` | Toàn bộ định kiểu giao diện TKB, bảng thống kê modal, responsive mobile/desktop |
-| `web/pages/tkb-fet-engine.js` | Thuật toán xếp FET & các bộ tối ưu chuyên sâu (Singletons, Sessions, Gap2, Gap1) |
-| `web/pages/tkb-fet-worker.js` | Web Worker chạy nền thuật toán FET không gây đơ giao diện trình duyệt |
-| `web/pages/tkb-rust-bridge.js` | Bridge UI ↔ backend: precheck, dispatch solve, theo dõi job, áp kết quả |
+| `web/pages/tkb-fet-engine.js` | Di sản FET/local-search; không còn là đường chạy của nút Sắp xếp |
+| `web/pages/tkb-fet-worker.js` | Di sản Web Worker FET; không tải từ `sapxep.html` trong luồng Solver V2 |
+| `web/pages/tkb-rust-bridge.js` | Bridge UI ↔ backend: ép `solver_algorithm=exact_v2`, theo dõi job, áp kết quả |
 | `web/pages/tkb-constraints-menu.js` | Menu ràng buộc TKB, popup Thống kê theo lớp, xuất in ấn TKB |
 | `web/pages/sapxep.html` | Trang xếp thời khóa biểu chính |
 | `web/app.js` | Router chính, xác thực phiên đăng nhập, điều hướng trường học |
@@ -166,7 +164,8 @@ Ba bộ test cần backend đang chạy (`app_assignment_subject_visibility`, `a
 | `rust_api/src/main.rs` | Entry point + HTTP server tự viết + toàn bộ route của Rust Backend |
 | `rust_api/src/auth.rs` | Xác thực người dùng (Argon2id + session token), phân quyền trường học |
 | `rust_api/src/solver_pool.rs` | Solver pool FIFO theo CPU token, quản lý job đa trường |
-| `solver_runtime/src/tkb_new/adapter.py` | Adapter chính của solver Python: dựng model, chạy CP-SAT/MILP, trả kết quả |
+| `solver_runtime/src/tkb_exact_v2/solver.py` | Solver V2 CP-SAT tích hợp, chứng minh đủ tiết/buổi/Gap1 |
+| `solver_runtime/src/tkb_new/adapter.py` | Adapter dữ liệu UI sang solver; strict mode giữ nguyên Min/Max/rule người dùng |
 | `solver_runtime/src/tkb_optimizer_ref/pipeline.py` | Pipeline giải toán CP-SAT / MILP qua Google OR-Tools trên Python |
 | `solver_runtime/scripts/cloud_run_service.py` | Service endpoint nhận request solve trên Google Cloud Run |
 | `tools/vps-deploy/update-deploy.py` | Script tự động hóa build và deploy lên VPS một bước |

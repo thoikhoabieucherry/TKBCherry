@@ -123,6 +123,31 @@ class ExactV2Tests(unittest.TestCase):
             )
         self.assertEqual(raised.exception.detail["code"], "fixed_lessons_exceed_upper_bound")
 
+    def test_lesson_block_min_does_not_raise_session_upper_bound(self) -> None:
+        request = _request(periods=2, limit=1)
+        request["tkbConstraints"]["subject"] = {
+            "M": {
+                "byClass": {
+                    "A": {
+                        "lessonBlocks": {
+                            "2": {"min": 1}
+                        }
+                    }
+                }
+            }
+        }
+        with self.assertRaises(ExactV2NoSolution) as raised:
+            solve_exact_v2_from_ui_data(
+                request,
+                {"exact_v2_time_limit_seconds": 10, "exact_v2_workers": 2},
+            )
+        self.assertEqual(
+            raised.exception.detail["code"],
+            "lesson_block_min_conflicts_with_upper_bound",
+        )
+        conflict = raised.exception.detail["conflicts"][0]
+        self.assertEqual(conflict["upperBoundPerSession"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

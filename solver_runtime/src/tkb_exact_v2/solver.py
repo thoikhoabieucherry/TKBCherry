@@ -909,6 +909,7 @@ def _solve_model(
     workers: int,
     progress: ProgressFn | None,
     stage: str,
+    external_lower_bound: int | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     cp_model = _load_cp_model()
     solver = cp_model.CpSolver()
@@ -927,6 +928,11 @@ def _solve_model(
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         objective_value = float(solver.ObjectiveValue())
         bound = float(solver.BestObjectiveBound())
+    external_proof = (
+        objective_value is not None
+        and external_lower_bound is not None
+        and math.isclose(objective_value, float(external_lower_bound), abs_tol=1e-6)
+    )
     meta = {
         "stage": stage,
         "status": int(status),
@@ -938,7 +944,9 @@ def _solve_model(
         "booleans": int(solver.NumBooleans()),
         "objective": objective_value,
         "best_bound": bound,
-        "proven_optimal": bool(status == cp_model.OPTIMAL or (objective_value is not None and bound is not None and math.isclose(objective_value, bound, abs_tol=1e-6))),
+        "external_lower_bound": external_lower_bound,
+        "proof_source": "external_lower_bound" if external_proof else "cp_sat_bound",
+        "proven_optimal": bool(status == cp_model.OPTIMAL or external_proof or (objective_value is not None and bound is not None and math.isclose(objective_value, bound, abs_tol=1e-6))),
     }
     if progress:
         progress({"stage": f"exact_v2:{stage}", "message": f"{stage}: {status_name}", **{k: v for k, v in meta.items() if k not in {"stage"}}})
@@ -1075,6 +1083,57 @@ def solve_exact_v2_from_ui_data(
                 "conflictCount": len(upper_bound_conflicts),
             }
         )
+    lesson_block_conflicts = []
+    for assignment in data.assignments:
+        for rule_id, rule in _subject_rule_items(
+            data,
+            rules,
+            assignment.class_name,
+            assignment.subject,
+        ):
+            blocks = rule.get("lessonBlocks") if isinstance(rule.get("lessonBlocks"), Mapping) else {}
+            for raw_length, conf in blocks.items():
+                if not isinstance(conf, Mapping):
+                    continue
+                length = _to_int(raw_length, 0)
+                minimum = _to_int(conf.get("min"), 0)
+                maximum = _to_int(conf.get("max"), 0)
+                if length <= 0 or minimum <= 0:
+                    continue
+                reasons = []
+                if length > int(assignment.max_periods_per_session):
+                    reasons.append("min_block_exceeds_session_upper_bound")
+                if length * minimum > int(assignment.periods_per_week):
+                    reasons.append("min_blocks_exceed_weekly_periods")
+                if maximum > 0 and minimum > maximum:
+                    reasons.append("min_exceeds_max_blocks")
+                if reasons:
+                    lesson_block_conflicts.append(
+                        {
+                            "rule": rule_id,
+                            "class": assignment.class_name,
+                            "subject": assignment.subject,
+                            "teacher": assignment.teacher,
+                            "blockLength": int(length),
+                            "minBlocks": int(minimum),
+                            "maxBlocks": int(maximum),
+                            "weeklyPeriods": int(assignment.periods_per_week),
+                            "upperBoundPerSession": int(assignment.max_periods_per_session),
+                            "reasons": reasons,
+                        }
+                    )
+    if lesson_block_conflicts:
+        raise ExactV2NoSolution(
+            {
+                "code": "lesson_block_min_conflicts_with_upper_bound",
+                "message": (
+                    "Yêu cầu Min cụm tiết đang mâu thuẫn với Giới hạn/Max "
+                    "hoặc số tiết tuần; Solver V2 giữ nguyên rule và không tự nới cận."
+                ),
+                "conflicts": lesson_block_conflicts[:50],
+                "conflictCount": len(lesson_block_conflicts),
+            }
+        )
     requested = _to_int(settings.get("exact_v2_time_limit_seconds"), 0)
     if requested <= 0:
         requested = _to_int(settings.get("overall_time_limit_seconds"), 0) or 900
@@ -1082,9 +1141,9 @@ def solve_exact_v2_from_ui_data(
     build_started = time.monotonic()
     warm_start = []
     allocation_hints: dict[tuple[int, int], int] = {}
-    allocation_upper_bound: int | None = None
+    allocation_session_lower_bound: int | None = None
     if expected >= 500 and str(settings.get("exact_v2_allocation_master", "1")).casefold() not in {"0", "false", "off", "no"}:
-        allocation_hints, allocation_upper_bound = _session_allocation_warm_start(
+        allocation_hints, allocation_session_lower_bound = _session_allocation_warm_start(
             data,
             rules,
             fixed_lessons,
@@ -1092,7 +1151,7 @@ def solve_exact_v2_from_ui_data(
             seconds=min(20.0, max(5.0, requested * 0.12)),
         )
         if progress:
-            progress({"stage": "exact_v2:allocation_master", "message": "Đã giải master phân bổ buổi để giảm đối xứng", "allocation_entries": len(allocation_hints), "upper_bound": allocation_upper_bound})
+            progress({"stage": "exact_v2:allocation_master", "message": "Đã giải master phân bổ buổi để giảm đối xứng", "allocation_entries": len(allocation_hints), "session_lower_bound": allocation_session_lower_bound})
     if expected >= 500 and str(settings.get("exact_v2_relaxed_warm_start", "1")).casefold() not in {"0", "false", "off", "no"}:
         warm_start = _relaxed_warm_start(
             data,
@@ -1131,6 +1190,7 @@ def solve_exact_v2_from_ui_data(
         workers=workers,
         progress=progress,
         stage="sessions_optimum",
+        external_lower_bound=allocation_session_lower_bound,
     )
     teacher_opt = int(round(float(stage1["objective"])))
     built.cp_model.Add(built.teacher_total == teacher_opt)
@@ -1141,6 +1201,7 @@ def solve_exact_v2_from_ui_data(
         workers=workers,
         progress=progress,
         stage="gap1_optimum",
+        external_lower_bound=0,
     )
     lessons = _materialize(built, solver2, data)
     metrics = compute_metrics(data, lessons, rules=rules)

@@ -6623,7 +6623,10 @@ async function executeDirectFastSchedule(options = {}){
       typeof window.bridgeSapXepTuDongAll === "function"
       && options?.__legacyFetBypass !== true
     ){
-      const exactSettings = Object.assign({
+      const exactSettings = Object.assign(
+        {},
+        options?.settings && typeof options.settings === "object" ? options.settings : {},
+        {
         solver_algorithm: "exact_v2",
         solver_mode: "reference",
         require_complete_schedule: true,
@@ -6638,7 +6641,7 @@ async function executeDirectFastSchedule(options = {}){
         ui_unified_solve_kind: "fresh_complete_first",
         auto_sort_strategy: "exact_v2_fresh_complete",
         quality_priority_order: "exact_v2_sessions_then_gap1"
-      }, options?.settings && typeof options.settings === "object" ? options.settings : {});
+      });
       if(typeof setStatus === "function"){
         setStatus("Đang xếp đủ 100% tiết và chứng minh tối ưu…", "info");
       }
@@ -7906,29 +7909,27 @@ async function executeDirectFastSchedule(options = {}){
 
 try{
   window.executeDirectFastSchedule = executeDirectFastSchedule;
-  window.sapXepTuDongAll = async function(options = {}){
-    return await executeDirectFastSchedule({ mode: options?.mode || "auto" });
+  window.sapXepTuDongAll = async function(){
+    return await executeDirectFastSchedule({ mode: "automatic" });
   };
-  window.sapXepTheoCheDo = async function(mode = "optimize_singletons"){
-    return await executeDirectFastSchedule({ mode: mode });
+  window.sapXepTheoCheDo = async function(){
+    return await executeDirectFastSchedule({ mode: "automatic" });
   };
-  window.deepOptimizeTheoCheDo = async function(mode = "optimize_singletons"){
-    // Backward-compatible alias for old cached callers.  There is no deep
-    // Cloud Run lane anymore; every planner action stays in the FET worker.
-    return await executeDirectFastSchedule({ mode });
+  window.deepOptimizeTheoCheDo = async function(){
+    return await executeDirectFastSchedule({ mode: "automatic" });
   };
 }catch(_){}
 
-async function sapXepTuDongAll(options = {}){
-  return await executeDirectFastSchedule({ mode: options?.mode || "auto" });
+async function sapXepTuDongAll(){
+  return await executeDirectFastSchedule({ mode: "automatic" });
 }
 
-async function sapXepTheoCheDo(mode = "optimize_singletons"){
-  return await executeDirectFastSchedule({ mode: mode });
+async function sapXepTheoCheDo(){
+  return await executeDirectFastSchedule({ mode: "automatic" });
 }
 
-async function deepOptimizeTheoCheDo(mode = "optimize_singletons"){
-  return await executeDirectFastSchedule({ mode });
+async function deepOptimizeTheoCheDo(){
+  return await executeDirectFastSchedule({ mode: "automatic" });
 }
 
 function countMon(mon){
