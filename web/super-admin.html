@@ -17,7 +17,7 @@
   <script src="shared/auth.js?v=20260803-free-5-solve-quota-v1"></script>
   <script src="shared/runtime.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
   <script defer src="shared/password-toggle.js?v=20260708-v1"></script>
-  <script defer src="super-admin.js?v=20260816-solver-telemetry-v1"></script>
+  <script defer src="super-admin.js?v=20260819-remove-telemetry-v2"></script>
 </head>
 <body class="portal-body portal-page-super">
   <header class="portal-top">
@@ -53,41 +53,6 @@
       <p class="solver-infrastructure-status portal-muted" id="solverInfrastructureStatus" role="status" aria-live="polite"></p>
     </section>
 
-    <section class="portal-card solver-telemetry-card" id="solverTelemetryCard" aria-labelledby="solverTelemetryTitle" data-aggregate-only="true">
-      <div class="portal-card-head solver-telemetry-head">
-        <div>
-          <h2 id="solverTelemetryTitle">Vận hành solver</h2>
-          <p class="portal-muted">Số liệu tổng hợp ẩn danh theo executor, mục tiêu và ngân sách. Không hiển thị thời khóa biểu, mã job, trường, tài khoản hay lỗi thô.</p>
-        </div>
-        <div class="solver-telemetry-controls">
-          <label class="solver-telemetry-window-label" for="solverTelemetryWindow">Khoảng xem
-            <select id="solverTelemetryWindow" aria-label="Khoảng thời gian telemetry solver">
-              <option value="24h">24 giờ</option>
-              <option value="7d" selected>7 ngày</option>
-              <option value="30d">30 ngày</option>
-            </select>
-          </label>
-          <button type="button" class="portal-btn portal-chrome-action" id="btnReloadSolverTelemetry" title="Tải lại telemetry" aria-label="Tải lại telemetry">
-            <span class="portal-button-icon" data-portal-icon="refresh" aria-hidden="true"></span>
-            <span class="portal-button-label">Tải lại</span>
-          </button>
-        </div>
-      </div>
-      <div class="solver-telemetry-overview" id="solverTelemetrySummary" aria-live="polite">
-        <div class="solver-telemetry-stat"><span>Lượt chạy</span><strong>Đang tải…</strong></div>
-      </div>
-      <div class="portal-table-wrap">
-        <table class="portal-table solver-telemetry-table">
-          <thead><tr><th>Nhóm</th><th>Lượt</th><th>Hoàn tất</th><th>Không cải thiện</th><th>Lỗi / hủy</th><th>p50 / p95</th><th>Đạt mục tiêu</th><th>Δ metric TB</th><th>Chi phí ước tính</th></tr></thead>
-          <tbody id="solverTelemetryBody"><tr><td colspan="9" class="portal-muted">Đang tải…</td></tr></tbody>
-        </table>
-      </div>
-      <details class="solver-telemetry-provenance" id="solverTelemetryProvenance">
-        <summary>Cloud Run revision / digest tổng hợp</summary>
-        <div id="solverTelemetryProvenanceBody" class="solver-telemetry-provenance-body">Đang tải…</div>
-      </details>
-      <p class="solver-telemetry-status portal-muted" id="solverTelemetryStatus" role="status" aria-live="polite"></p>
-    </section>
 
     <section class="portal-card">
       <div class="portal-card-head">
