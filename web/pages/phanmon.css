@@ -4304,6 +4304,8 @@ body.class-assignment-stats-open{ overflow: hidden; }
 
 .auto-sort-timer .spin-icon {
   animation: pm-spin 0.8s linear infinite;
+  transform-origin: center;
+  transform-box: fill-box;
   color: #059669;
   flex-shrink: 0;
 }

@@ -10575,7 +10575,8 @@ function setAutoSortProgress(percent, label, details){
   // Manage Stopwatch Timer
   if(!window.__autoSortStartTime){
     window.__autoSortStartTime = Date.now();
-    if(window.__autoSortTimerInterval) window.clearInterval(window.__autoSortTimerInterval);
+  }
+  if(!window.__autoSortTimerInterval){
     window.__autoSortTimerInterval = window.setInterval(() => {
       if(!window.__autoSortStartTime) return;
       const elapsedSec = Math.floor((Date.now() - window.__autoSortStartTime) / 1000);
@@ -10584,7 +10585,13 @@ function setAutoSortProgress(percent, label, details){
       const tStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
       const tEl = document.getElementById("autoSortTimerVal");
       if(tEl) tEl.textContent = tStr;
-    }, 500);
+    }, 250);
+  }
+  if(timerVal && window.__autoSortStartTime){
+    const elapsedSec = Math.floor((Date.now() - window.__autoSortStartTime) / 1000);
+    const m = Math.floor(elapsedSec / 60);
+    const s = elapsedSec % 60;
+    timerVal.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
   // Update Metric Chip (clean local-FET metric only, completely hidden in Flash mode)
