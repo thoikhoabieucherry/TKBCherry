@@ -19601,7 +19601,7 @@
     setStatus(
       settings.ui_fresh_solve_duration_floor_applied === true
         ? `Lịch chưa xếp đủ; lượt đầu dùng tối thiểu ${MIN_FRESH_SOLVE_DURATION_SECONDS} giây.`
-        : "Đang sắp xếp...",
+        : "⚡ Đang tính toán tối ưu trên Cloud Run (6 vCPU)...",
       "info"
     );
     let result = await solveWithRustApi({

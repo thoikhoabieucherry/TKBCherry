@@ -11990,6 +11990,14 @@ async function runFlashScheduler(event){
     return;
   }
   
+  try {
+    if(typeof window.clearOptimizationPlateau === "function"){
+      window.clearOptimizationPlateau(window.getData?.());
+    }
+  }catch(_){}
+
+  _setStatus("⚡ Flash Solver (Cloud Run 6 vCPU): Đang kết nối và kích hoạt đa nhân...", "info");
+  
   if(typeof window.sapXepTuDongAll === "function"){
     return window.sapXepTuDongAll({
       manualAgentInvite: true
