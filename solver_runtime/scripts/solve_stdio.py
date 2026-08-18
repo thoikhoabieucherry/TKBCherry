@@ -723,12 +723,7 @@ def main() -> int:
                 "message": "Da nhan du lieu, bat dau sap xep",
             }
         )
-        try:
-            from tkb_optimizer_ref.unified_cpsat_solver import UnifiedCpSatSolver
-            unified_solver = UnifiedCpSatSolver(ui_data, settings=settings)
-            result = unified_solver.solve(progress=emit_progress)
-        except Exception:
-            result = solve_from_ui_data(ui_data, settings, progress=emit_progress)
+        result = solve_from_ui_data(ui_data, settings, progress=emit_progress)
 
         emit_progress(
             {
