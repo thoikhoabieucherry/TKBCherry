@@ -19,9 +19,10 @@ __pycache__
 **/*service-account*.json
 docs
 mail-server
-rust_api
-web
-tools/vps-deploy
+web/*
+!web/pages
+web/pages/*
+!web/pages/tkb-fet-engine.js
 solver_runtime/logs
 solver_runtime/tests
 solver_runtime/**/__pycache__

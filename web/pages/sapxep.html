@@ -31,7 +31,7 @@ body.planner-shell {
 
 /* Keep feedback inline on desktop and below the compact mobile commands. */
 body.planner-shell .toolbar-main {
-  --planner-toolbar-button-width: clamp(46px, 3.6vw, 52px);
+  --planner-toolbar-button-width: 36px;
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr) auto;
   align-items: center;
@@ -55,10 +55,10 @@ body.planner-shell .toolbar-actions {
 body.planner-shell .toolbar-actions > .planner-optimize-wrap {
   position: relative;
   display: inline-flex;
-  flex: 0 0 var(--planner-toolbar-button-width);
-  width: var(--planner-toolbar-button-width);
-  min-width: var(--planner-toolbar-button-width);
-  max-width: var(--planner-toolbar-button-width);
+  flex: 0 0 36px;
+  width: 36px;
+  min-width: 36px;
+  max-width: 36px;
   height: 36px;
   min-height: 36px;
 }
@@ -68,20 +68,16 @@ body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu {
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
+  width: 36px;
+  min-width: 36px;
   height: 36px;
   min-height: 36px;
-  padding: 0 9px;
-  gap: 5px;
+  padding: 0;
   border: 1px solid var(--tkb-border, #e2e8f0);
   border-radius: 8px;
   background: #fff;
   color: #334155;
-  font-size: 12px;
-  font-weight: 600;
   line-height: 1;
-  white-space: nowrap;
 }
 
 body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu:hover:not(:disabled),
@@ -222,12 +218,16 @@ body.planner-shell #btnRangBuoc {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding-inline: 11px;
+  width: var(--planner-toolbar-button-width);
+  min-width: var(--planner-toolbar-button-width);
+  max-width: var(--planner-toolbar-button-width);
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 8px;
   border-color: #4d9b2c;
   background: #58ad32;
   color: #fff;
-  font-weight: 600;
   box-shadow: 0 3px 10px rgb(77 155 44 / 22%);
 }
 
@@ -1473,13 +1473,13 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     <div class="toolbar-actions" role="toolbar" aria-label="Công cụ thời khóa biểu">
       <select id="chonKhoi" onchange="loadLopList()" hidden></select>
 
-      <button id="btnRangBuoc" type="button" onclick="if(window.openRangBuocMenu)window.openRangBuocMenu(this);" title="Yêu cầu xếp thời khóa biểu" aria-label="Yêu cầu xếp thời khóa biểu"><svg class="toolbar-icon toolbar-requirement-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5.5 12.5 4.2 4.2L18.7 7.7"/></svg><span class="toolbar-label-full" aria-hidden="true">Yêu cầu</span></button>
+      <button id="btnRangBuoc" class="icon-button" type="button" onclick="if(window.openRangBuocMenu)window.openRangBuocMenu(this);" title="Yêu cầu xếp thời khóa biểu" aria-label="Yêu cầu xếp thời khóa biểu"><svg class="toolbar-icon toolbar-requirement-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5.5 12.5 4.2 4.2L18.7 7.7"/></svg></button>
       <button id="btnUndoTKB" class="icon-button" type="button" onclick="tkbUndo()" title="Hoàn tác" aria-label="Hoàn tác" disabled><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 14-4-4 4-4"/><path d="M5 10h11a4 4 0 1 1 0 8h-1"/></svg></button>
       <button id="btnRedoTKB" class="icon-button" type="button" onclick="tkbRedo()" title="Làm lại" aria-label="Làm lại" disabled><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 14 4-4-4-4"/><path d="M19 10H8a4 4 0 1 0 0 8h1"/></svg></button>
       <button id="btnAutoSort" class="primary icon-button" type="button" onclick="sapXepTuDongAll()" title="Bắt đầu sắp xếp" aria-label="Bắt đầu sắp xếp"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8.35 6.3c0-1.02 1.12-1.65 2-1.12l8.1 4.88a1.3 1.3 0 0 1 0 2.22l-8.1 4.88c-.88.53-2-.1-2-1.12V6.3Z" fill="currentColor"/></svg></button>
       <button id="btnFlashSort" class="flash-btn icon-button" type="button" onclick="runFlashScheduler(event)" title="Xếp Flash ⚡ / Tối ưu sâu" aria-label="Xếp Flash ⚡ / Tối ưu sâu"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></button>
       <div id="plannerOptimizeWrap" class="planner-optimize-wrap">
-        <button id="btnOptimizeMenu" class="planner-mode-button" type="button" onclick="togglePlannerOptimizeMenu(event)" title="Chọn mục tiêu tối ưu" aria-label="Chọn mục tiêu tối ưu" aria-haspopup="menu" aria-expanded="false" aria-controls="plannerOptimizeMenu"><svg class="planner-mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg><span class="planner-mode-label">Tối ưu</span></button>
+        <button id="btnOptimizeMenu" class="planner-mode-button icon-button" type="button" onclick="togglePlannerOptimizeMenu(event)" title="Chọn mục tiêu tối ưu" aria-label="Chọn mục tiêu tối ưu" aria-haspopup="menu" aria-expanded="false" aria-controls="plannerOptimizeMenu"><svg class="planner-mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg></button>
         <div id="plannerOptimizeMenu" class="planner-optimize-menu" role="menu" aria-label="Mục tiêu tối ưu" hidden>
           <button type="button" role="menuitem" data-scheduler-mode="optimize_singletons" onclick="runPlannerSchedulerMode('optimize_singletons', event)">1 tiết/buổi</button>
           <button type="button" role="menuitem" data-scheduler-mode="optimize_sessions" onclick="runPlannerSchedulerMode('optimize_sessions', event)">Buổi dạy</button>
@@ -1506,12 +1506,6 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
     <div class="toolbar-secondary-actions" aria-label="Điều hướng và thống kê">
       <div class="stats-popover-wrap">
-        <button id="btnNewLockedPipeline" class="primary save-button" type="button" hidden aria-hidden="true"
-          title="NEW (superadmin): Tối ưu tiếp từ lịch hiện tại theo chuỗi tuần tự — 1 tiết/buổi → trống ≥2 → giảm buổi → giảm trống 1"
-          aria-label="NEW: tối ưu tiếp từ lịch hiện tại" onclick="runNewLockedPipeline(event)">NEW ★</button>
-        <button id="btnTrialFullPipeline" class="primary save-button" type="button" hidden aria-hidden="true"
-          title="Trọn gói (superadmin): Tối ưu tiếp trọn gói từ lịch hiện tại — mục tiêu 0 buổi 1 tiết, 0 buổi trống ≥2 tiết, giảm tối đa trống 1 tiết và tổng buổi"
-          aria-label="Tối ưu tiếp trọn gói từ lịch hiện tại" onclick="runTrialFullPipeline(event)">Trọn gói ★</button>
         <button id="btnHome" class="primary save-button" type="button" title="Về trang chủ" aria-label="Về trang chủ" onclick="saveAndBack()">Home</button>
         <button id="statsToggle" class="stats-toggle" type="button" onclick="toggleStatsPopover(event)" title="Thống kê thời khóa biểu" aria-label="Thống kê thời khóa biểu" aria-expanded="false"><span class="toolbar-label-full" aria-hidden="true">Thống kê</span><span class="toolbar-label-compact" aria-hidden="true"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M4 20V13h4v7M10 20V9h4v11M16 20V5h4v15M3 20h18"/></svg></span></button>
         <div id="statsPopover" class="stats-popover" hidden>
