@@ -428,28 +428,36 @@ body.planner-shell .toolbar-feedback > #autoSortProgress .auto-sort-label {
   font-variant-numeric: tabular-nums;
 }
 
-@keyframes planner-solve-spin {
+@keyframes planner-titan-spin {
   to { transform: rotate(360deg); }
 }
 
-body.planner-shell .toolbar-feedback > #autoSortProgress .auto-sort-spinner {
-  display: none;
+body.planner-shell .toolbar-feedback > #autoSortProgress .auto-sort-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  color: #475569;
+  font-variant-numeric: tabular-nums;
+}
+
+body.planner-shell .toolbar-feedback > #autoSortProgress .auto-sort-timer-icon {
+  display: block;
   width: 15px;
   height: 15px;
   flex: 0 0 15px;
-  border: 2px solid #cbd5e1;
-  border-top-color: #2563eb;
-  border-radius: 999px;
-  animation: planner-solve-spin .78s linear infinite;
+  overflow: visible;
 }
 
-body.planner-shell .toolbar-feedback > #autoSortProgress.is-active .auto-sort-spinner {
-  display: inline-block;
+body.planner-shell .toolbar-feedback > #autoSortProgress.is-active .auto-sort-timer-icon {
+  animation: planner-titan-spin 1.05s linear infinite;
+  transform-origin: 50% 50%;
+  transform-box: fill-box;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  body.planner-shell .toolbar-feedback > #autoSortProgress .auto-sort-spinner {
-    animation: none;
+  body.planner-shell .toolbar-feedback > #autoSortProgress .auto-sort-timer-icon {
+    animation: none !important;
   }
 }
 
@@ -1342,10 +1350,22 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
     <div class="toolbar-feedback" aria-label="Trạng thái sắp xếp">
       <div id="autoSortProgress" class="auto-sort-progress is-idle" aria-live="polite" aria-hidden="true" hidden>
-        <!-- Stopwatch Elapsed Timer -->
+        <!-- Live Elapsed Timer -->
         <div id="autoSortTimer" class="auto-sort-timer" title="Thời gian thực thi">
-          <svg class="auto-sort-timer-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 6 12 12 16 14"/></svg>
-          <span class="auto-sort-spinner" aria-hidden="true"></span>
+          <svg class="auto-sort-timer-icon" viewBox="0 0 24 24" fill="none" stroke="url(#autoSortTitanGradient)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <defs>
+              <linearGradient id="autoSortTitanGradient" x1="3" y1="4" x2="21" y2="20" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="#22d3ee"/>
+                <stop offset="0.32" stop-color="#818cf8"/>
+                <stop offset="0.62" stop-color="#f472b6"/>
+                <stop offset="0.84" stop-color="#fbbf24"/>
+                <stop offset="1" stop-color="#34d399"/>
+              </linearGradient>
+            </defs>
+            <path d="M18.8 7.4A9 9 0 1 0 19 12"/>
+            <path d="M18.9 4.8v3.1h-3.1"/>
+            <path d="M9.2 16.1a5.5 5.5 0 0 0 8.2-4.7"/>
+          </svg>
           <span id="autoSortTimerVal">00:00</span>
         </div>
         <!-- Clean Live Metric Badge -->

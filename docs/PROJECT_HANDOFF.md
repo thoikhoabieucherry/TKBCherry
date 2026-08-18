@@ -8,9 +8,9 @@
 
 ## 2026-08-18 Solver V2 hardening — one button only, upper-bound semantics, local only
 
-- Follow-up UI polish: thêm spinner nhỏ cạnh đồng hồ runtime trong toolbar
-  (`auto-sort-spinner`, cache `exact-v2-v3`). Spinner chỉ hiện khi
-  `#autoSortProgress.is-active`; tôn trọng `prefers-reduced-motion`.
+- Follow-up UI polish: thay icon đồng hồ runtime bằng SVG vòng xoáy đa sắc
+  kiểu titan (`auto-sort-timer-icon`, cache `exact-v2-v3`). Biểu tượng chỉ
+  quay khi `#autoSortProgress.is-active`; tôn trọng `prefers-reduced-motion`.
 - Follow-up status clarity: các lỗi fail-closed/exact_v2 no-solution không còn
   dùng câu “Đã xếp xong!” làm fallback. Status mới nói rõ “Chưa xếp xong;
   lịch hiện tại vẫn được giữ nguyên.” để người dùng không nhầm với thành công.
