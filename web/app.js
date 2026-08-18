@@ -2847,15 +2847,21 @@ function pccmBuildLookupCache(){
     const teacherByName = new Map();
     const teacherNames = new Map();
     (DATA.giaovien || []).forEach(g=>{
-        const code = _normText(g?.magv);
+        const code = _normText(g?.magv) || _normText(g?.magv2) || _normText(g?.ten);
         if (!code) return;
         const codeKey = code.toLowerCase();
         if (!teacherByCode.has(codeKey)) teacherByCode.set(codeKey, code);
         if (!teacherNames.has(codeKey)){
-            teacherNames.set(codeKey, `${_normText(g?.hodem)} ${_normText(g?.ten)}`.trim());
+            teacherNames.set(codeKey, `${_normText(g?.hodem)} ${_normText(g?.ten)}`.trim() || code);
         }
         const full = `${_normText(g?.hodem)} ${_normText(g?.ten)}`.trim();
         if (full && !teacherByName.has(full.toLowerCase())) teacherByName.set(full.toLowerCase(), code);
+        const ten = _normText(g?.ten);
+        if (ten && !teacherByName.has(ten.toLowerCase())) teacherByName.set(ten.toLowerCase(), code);
+        const magv2 = _normText(g?.magv2);
+        if (magv2 && !teacherByName.has(magv2.toLowerCase())) teacherByName.set(magv2.toLowerCase(), code);
+        const tengv = _normText(g?.tengv);
+        if (tengv && !teacherByName.has(tengv.toLowerCase())) teacherByName.set(tengv.toLowerCase(), code);
     });
 
     // lookupTietChuan() compares the standard row's subject name with one of
