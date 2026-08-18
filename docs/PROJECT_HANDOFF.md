@@ -52,6 +52,13 @@
 - **Khắc Phục Lỗi Hiển Thị Tiết Cố Định Trên TKB Giáo Viên & Khóa Chặt Single-Pass Cho Flash ⚡**:
   - Phát hiện hàm `buildTeacherSchedule` trong `web/pages/phanmon.js` có điều kiện loại trừ cũ `!mon.startsWith("HĐTN 1") && !mon.startsWith("HĐTN 2")`, khiến các tiết `HĐTN 1` và `HĐTN 2` (ví dụ của GV SĐ.Kiều) bị bỏ qua, không hiển thị trên bảng TKB Giáo viên. Đã xóa bỏ điều kiện này để hiển thị chuẩn xác 100%.
   - Phát hiện cờ `requestedQualityRetry` trong `web/pages/tkb-rust-bridge.js` khi TKB đã đủ 100% tiết vô tình kích hoạt các vòng lặp phụ (10 seeds zero-one retry + 5 attempts teacher session quality) trên trình duyệt, kéo dài 3 phút và làm reset đồng hồ. Đã khóa cứng `requestedQualityRetry = false` và `skipRetryLoops = true` khi `ui_flash_scheduler_active === true` để Flash ⚡ luôn chạy đúng 1 lượt duy nhất trên Cloud Run CP-SAT (~17s) và cập nhật kết quả ngay lập tức.
+- **Đếm Toàn Bộ Lỗ Trống Học Sinh Cho Toàn Trường Trên Bảng Thống Kê**:
+  - Tối ưu hóa hàm `calcStudentTimetableGapStats` trong `web/pages/phanmon.js`: Quét toàn bộ 100% danh sách lớp của trường (`DATA.lop`), tra cứu TKB linh hoạt theo `id`, `canon`, hoặc `ten` để không bỏ sót bất kỳ lớp nào.
+  - Chuẩn hóa thuật toán đếm lỗ trống học sinh: Trong mỗi buổi học (`sang` và `chieu`), tính chính xác các tiết trống nằm xen giữa tiết đầu và tiết cuối có môn học (`minPeriod < i < maxPeriod`), phản ánh đúng thực tế lỗ trống giữa buổi học sinh phải chờ đợi.
+- **Nâng Cấp Nhập Phân Công Chuyên Môn Bằng Excel (`importPCCMFromExcel`)**:
+  - Tự động nhận diện thông minh tên Sheet (hỗ trợ `M3`, `PCCM`, `Phân công`, `PhanCong`, hoặc sheet đầu tiên có dữ liệu).
+  - Khớp môn học linh hoạt hơn: Tự động tách và so khớp cả tên môn lẫn mã trong ngoặc đơn (ví dụ: `Âm nhạc (AN)`, `Toán (TO)`).
+  - Loại bỏ lỗi nghẽn lưu từ xa và kích hoạt cập nhật ngay ma trận phân công lên giao diện sau khi nhập.
 - **Khắc Phục Nút "Sắp Xếp TKB" (Chuyển Trang Từ App Qua Sắp Xếp)**:
   - Tương tự như hàm `saveAndBack`, hàm `openTKBPlanner` trong `web/app.js` trước đó gọi `saveStore({throwOnError:true})` nếu gặp cảnh báo hoặc timeout sẽ ném Exception và chặn không cho chuyển trang.
   - Đã tối ưu hóa hàm `openTKBPlanner`: Tự động lưu nhanh với giới hạn thời gian tối đa 800ms, và đưa lệnh `window.location.href = u.toString()` vào khối `finally` để **luôn luôn chuyển sang trang `/pages/sapxep` ngay lập tức 100%**.
