@@ -382,7 +382,6 @@
   function saveRemoteSchoolData(schoolId, dataJson){
     const target = cleanSchoolId(schoolId);
     const raw = String(dataJson || "{}");
-    if(remoteAuthRequired) return Promise.resolve(false);
 
     const previous = remoteSaveQueues.get(target) || null;
     if(previous && previous.raw === raw) return previous.promise;

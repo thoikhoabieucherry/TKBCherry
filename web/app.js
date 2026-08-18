@@ -795,14 +795,18 @@ function saveStore(options){
     // indexes before serializing so an autosave followed by a badge refresh or
     // tab switch always sees the just-edited values.
     try{ pccmInvalidateLookupCache(); }catch(_){ /* PCCM module not initialized yet */ }
-    // Luôn backup vào localStorage theo trường để tránh mất dữ liệu khi KVDB/sql.js/IndexedDB lỗi.
     const sid = CTX.schoolId || getSchoolId();
     const json = JSON.stringify(DATA);
 
+    try{
+        localStorage.setItem(_lsKey(sid), json);
+    }catch(e){
+        console.warn("saveStore localStorage failed", e);
+    }
+
     if(window.TKBStorage && typeof window.TKBStorage.saveSchoolData === "function"){
         const pending = Promise.resolve(window.TKBStorage.saveSchoolData(__kv, sid, json)).then(ok => {
-            if(ok === false) throw new Error("Remote school store save failed");
-            return true;
+            return ok !== false;
         }).catch(e => {
             console.warn("saveStore remote/local helper failed", e);
             if(opts.throwOnError) throw e;
@@ -811,13 +815,6 @@ function saveStore(options){
         return pending;
     }
 
-    try{
-        localStorage.setItem(_lsKey(sid), json);
-    }catch(e){
-        console.warn("saveStore localStorage failed", e);
-    }
-
-    // KVDB.set trả Promise, nhưng ta không cần await để UI mượt
     try{
         if (__kv) __kv.set("DATA_JSON", json);
     }catch(e){
@@ -5530,8 +5527,8 @@ function pccmSaveClassEdits(opts){
         if (s === "") return { ok:true, val:"" };
         const n = Number(s);
         if (!Number.isFinite(n)) return { ok:false };
-        if (n <= 0) return { ok:false };
-        return { ok:true, val: Number.isInteger(n) ? String(n) : String(n) };
+        if (n < 0) return { ok:false };
+        return { ok:true, val: String(n) };
     }
 
     // set teacher without saving each change
@@ -5669,8 +5666,8 @@ function pccmSaveTeacherEdits(opts){
         if (s === "") return { ok:true, val:"" };
         const n = Number(s);
         if (!Number.isFinite(n)) return { ok:false };
-        if (n <= 0) return { ok:false };
-        return { ok:true, val: Number.isInteger(n) ? String(n) : String(n) };
+        if (n < 0) return { ok:false };
+        return { ok:true, val: String(n) };
     }
 
     function _setTeacherNoSave(lopCanon, monObj, val){
@@ -5788,8 +5785,8 @@ function pccmSaveSubjectEdits(opts){
         if (s === "") return { ok:true, val:"" };
         const n = Number(s);
         if (!Number.isFinite(n)) return { ok:false };
-        if (n <= 0) return { ok:false };
-        return { ok:true, val: Number.isInteger(n) ? String(n) : String(n) };
+        if (n < 0) return { ok:false };
+        return { ok:true, val: String(n) };
     }
 
     function _setTeacherNoSave(lopCanon, monObj, val){
@@ -6163,13 +6160,13 @@ function renderPCCM_ByClass(classNames, monList){
             </td>
             <td ${pccmCellAttrs(idx, 2, "periods")} style="text-align:center">
                 <input id="pccm_sotiet_${idx}" class="inline-edit-input" type="number" min="0" step="1"
-                       value="${escapeHtml(sotietDisp)}" placeholder="trống hoặc >0" style="text-align:center"
-                       onchange="pccmAutoSaveActive()" onblur="pccmAutoSaveActive()">
+                       value="${escapeHtml(sotietDisp)}" placeholder="trống hoặc >=0" style="text-align:center"
+                       oninput="pccmAutoSaveActive()" onchange="pccmAutoSaveActive()" onblur="pccmAutoSaveActive()">
             </td>
             <td ${pccmCellAttrs(idx, 3, "limit")} style="text-align:center">
                 <input id="pccm_gioihan_${idx}" class="inline-edit-input" type="number" min="0" step="1"
-                       value="${escapeHtml(gioihanDisp)}" placeholder="trống hoặc >0" style="text-align:center"
-                       onchange="pccmAutoSaveActive()" onblur="pccmAutoSaveActive()">
+                       value="${escapeHtml(gioihanDisp)}" placeholder="trống hoặc >=0" style="text-align:center"
+                       oninput="pccmAutoSaveActive()" onchange="pccmAutoSaveActive()" onblur="pccmAutoSaveActive()">
             </td>
         </tr>`;
     });
@@ -6293,13 +6290,13 @@ function renderPCCM_ByTeacher(gvs, monList, classNames){
             </td>
             <td ${pccmCellAttrs(idx, 2, "periods")} style="text-align:center">
                 <input id="pccmT_sotiet_${idx}" class="inline-edit-input" type="number" min="0" step="1"
-                       value="${escapeHtml(r.sotiet||"")}" placeholder="trống hoặc >0" style="text-align:center"
-                       onchange="pccmAutoSaveActive()" onblur="pccmAutoSaveActive()">
+                       value="${escapeHtml(r.sotiet||"")}" placeholder="trống hoặc >=0" style="text-align:center"
+                       oninput="pccmAutoSaveActive()" onchange="pccmAutoSaveActive()" onblur="pccmAutoSaveActive()">
             </td>
             <td ${pccmCellAttrs(idx, 3, "limit")} style="text-align:center">
                 <input id="pccmT_gioihan_${idx}" class="inline-edit-input" type="number" min="0" step="1"
-                       value="${escapeHtml(r.gioihan||"")}" placeholder="trống hoặc >0" style="text-align:center"
-                       onchange="pccmAutoSaveActive()" onblur="pccmAutoSaveActive()">
+                       value="${escapeHtml(r.gioihan||"")}" placeholder="trống hoặc >=0" style="text-align:center"
+                       oninput="pccmAutoSaveActive()" onchange="pccmAutoSaveActive()" onblur="pccmAutoSaveActive()">
             </td>
         </tr>`;
     });
@@ -6432,13 +6429,13 @@ function renderPCCM_BySubject(classNames, monList){
             </td>
             <td ${pccmCellAttrs(idx, 2, "periods")} style="text-align:center">
                 <input id="pccmS_sotiet_${idx}" class="inline-edit-input" type="number" min="0" step="1"
-                       value="${escapeHtml(r.sotiet||"")}" placeholder="trống hoặc >0" style="text-align:center"
-                       onchange="pccmAutoSaveActive()" onblur="pccmAutoSaveActive()">
+                       value="${escapeHtml(r.sotiet||"")}" placeholder="trống hoặc >=0" style="text-align:center"
+                       oninput="pccmAutoSaveActive()" onchange="pccmAutoSaveActive()" onblur="pccmAutoSaveActive()">
             </td>
             <td ${pccmCellAttrs(idx, 3, "limit")} style="text-align:center">
                 <input id="pccmS_gioihan_${idx}" class="inline-edit-input" type="number" min="0" step="1"
-                       value="${escapeHtml(r.gioihan||"")}" placeholder="trống hoặc >0" style="text-align:center"
-                       onchange="pccmAutoSaveActive()" onblur="pccmAutoSaveActive()">
+                       value="${escapeHtml(r.gioihan||"")}" placeholder="trống hoặc >=0" style="text-align:center"
+                       oninput="pccmAutoSaveActive()" onchange="pccmAutoSaveActive()" onblur="pccmAutoSaveActive()">
             </td>
         </tr>`;
     });
