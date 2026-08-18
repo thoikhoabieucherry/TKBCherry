@@ -3968,13 +3968,30 @@ function pccmRenderSubjectOption(monObj, selected){
     const title = pccmSubjectHint(monObj) || label;
     return `<option value="${escapeHtml(value)}" ${selected ? "selected" : ""} title="${escapeHtml(title)}" data-title="${escapeHtml(title)}">${escapeHtml(label)}</option>`;
 }
+let __TEACHER_NAME_MAP = null;
+let __TEACHER_NAME_DATA_REF = null;
+
+function __ensureTeacherNameMap(){
+    if (__TEACHER_NAME_MAP && __TEACHER_NAME_DATA_REF === DATA.giaovien) return __TEACHER_NAME_MAP;
+    const map = new Map();
+    (DATA.giaovien || []).forEach(g=>{
+        const code = _normText(g?.magv);
+        if (code){
+            const name = `${_normText(g?.hodem)} ${_normText(g?.ten)}`.trim();
+            map.set(code.toLowerCase(), name);
+        }
+    });
+    __TEACHER_NAME_MAP = map;
+    __TEACHER_NAME_DATA_REF = DATA.giaovien;
+    return map;
+}
+
 function pccmTeacherName(code){
     const value = _normText(code);
     if (!value) return "";
     const low = value.toLowerCase();
-    const found = (DATA.giaovien || []).find(g => _normText(g?.magv).toLowerCase() === low);
-    if (!found) return "";
-    return `${_normText(found.hodem)} ${_normText(found.ten)}`.trim();
+    const map = __ensureTeacherNameMap();
+    return map.get(low) || "";
 }
 function pccmTeacherHint(code){
     const value = _normText(code);
@@ -4037,17 +4054,24 @@ function pccmRenderTeacherMultiItem(controlId, code, label, selected){
             ${escapeHtml(label || value)}
         </button>`;
 }
+function pccmPopulateTeacherMultiMenu(controlId){
+    const hidden = document.getElementById(controlId);
+    const selected = pccmTeacherListFromValue(hidden?.value || "");
+    const selectedSet = new Set(selected.map(x=>x.toLowerCase()));
+    const gvs = (DATA.giaovien || []).map(g=>_normText(g?.magv)).filter(Boolean);
+    const itemSet = new Set(gvs.map(x=>x.toLowerCase()));
+    const missing = selected.filter(code=>!itemSet.has(code.toLowerCase())).map(code=>({code, label:`(Đang lưu) ${code}`}));
+    const allItems = missing.concat(gvs.map(code=>({code, label:code})));
+
+    const menu = document.getElementById(`${controlId}_menu`);
+    if (!menu) return;
+    menu.innerHTML = `
+        <button type="button" class="pccm-multi-item pccm-teacher-clear" onclick="pccmTeacherMultiClear(event,'${controlId}')">(Chưa phân)</button>
+        ${allItems.map(item=>pccmRenderTeacherMultiItem(controlId, item.code, item.label, selectedSet.has(item.code.toLowerCase()))).join("")}
+    `;
+}
 function pccmRenderTeacherMulti(controlId, selectedRaw, teacherItems){
     const selected = pccmTeacherListFromValue(selectedRaw);
-    const selectedSet = new Set(selected.map(x=>x.toLowerCase()));
-    const items = (teacherItems || [])
-        .map(x => typeof x === "string" ? {code:x, label:x} : {code:_normText(x?.code), label:_normText(x?.code)})
-        .filter(x=>x.code);
-    const itemSet = new Set(items.map(x=>x.code.toLowerCase()));
-    const missing = selected
-        .filter(code=>!itemSet.has(code.toLowerCase()))
-        .map(code=>({code, label:`(Đang lưu) ${code}`}));
-    const allItems = missing.concat(items);
     const label = pccmTeacherLabel(selected);
     const hiddenValue = pccmNormalizeTeacherValue(selected);
     return `
@@ -4057,10 +4081,7 @@ function pccmRenderTeacherMulti(controlId, selectedRaw, teacherItems){
                 <span id="${controlId}_text">${escapeHtml(label || "(Chưa phân)")}</span>
                 <span class="pccm-multi-arrow">▾</span>
             </button>
-            <div class="pccm-multi-menu">
-                <button type="button" class="pccm-multi-item pccm-teacher-clear" onclick="pccmTeacherMultiClear(event,'${controlId}')">(Chưa phân)</button>
-                ${allItems.map(item=>pccmRenderTeacherMultiItem(controlId, item.code, item.label, selectedSet.has(item.code.toLowerCase()))).join("")}
-            </div>
+            <div class="pccm-multi-menu" id="${controlId}_menu"></div>
         </div>`;
 }
 function pccmTeacherMultiToggle(ev, controlId){
@@ -4070,7 +4091,13 @@ function pccmTeacherMultiToggle(ev, controlId){
         if (!box) return;
         const willOpen = !box.classList.contains("open");
         pccmQuickMultiCloseAll();
-        if (willOpen) box.classList.add("open");
+        if (willOpen){
+            const menu = document.getElementById(`${controlId}_menu`);
+            if (menu && !menu.hasChildNodes()){
+                pccmPopulateTeacherMultiMenu(controlId);
+            }
+            box.classList.add("open");
+        }
     }catch(e){}
 }
 function pccmTeacherMultiApply(controlId, values){
