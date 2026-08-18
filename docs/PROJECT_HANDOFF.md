@@ -52,6 +52,9 @@
 - **Khắc Phục Lỗi Hiển Thị Tiết Cố Định Trên TKB Giáo Viên & Khóa Chặt Single-Pass Cho Flash ⚡**:
   - Phát hiện hàm `buildTeacherSchedule` trong `web/pages/phanmon.js` có điều kiện loại trừ cũ `!mon.startsWith("HĐTN 1") && !mon.startsWith("HĐTN 2")`, khiến các tiết `HĐTN 1` và `HĐTN 2` (ví dụ của GV SĐ.Kiều) bị bỏ qua, không hiển thị trên bảng TKB Giáo viên. Đã xóa bỏ điều kiện này để hiển thị chuẩn xác 100%.
   - Phát hiện cờ `requestedQualityRetry` trong `web/pages/tkb-rust-bridge.js` khi TKB đã đủ 100% tiết vô tình kích hoạt các vòng lặp phụ (10 seeds zero-one retry + 5 attempts teacher session quality) trên trình duyệt, kéo dài 3 phút và làm reset đồng hồ. Đã khóa cứng `requestedQualityRetry = false` và `skipRetryLoops = true` khi `ui_flash_scheduler_active === true` để Flash ⚡ luôn chạy đúng 1 lượt duy nhất trên Cloud Run CP-SAT (~17s) và cập nhật kết quả ngay lập tức.
+- **Khắc Phục Nút "Sắp Xếp TKB" (Chuyển Trang Từ App Qua Sắp Xếp)**:
+  - Tương tự như hàm `saveAndBack`, hàm `openTKBPlanner` trong `web/app.js` trước đó gọi `saveStore({throwOnError:true})` nếu gặp cảnh báo hoặc timeout sẽ ném Exception và chặn không cho chuyển trang.
+  - Đã tối ưu hóa hàm `openTKBPlanner`: Tự động lưu nhanh với giới hạn thời gian tối đa 800ms, và đưa lệnh `window.location.href = u.toString()` vào khối `finally` để **luôn luôn chuyển sang trang `/pages/sapxep` ngay lập tức 100%**.
 - **Khắc Phục Phân Công Chuyên Môn (PCCM) Không Tự Động Lưu**:
   - Phát hiện hàm `_validateNumber` trong `pccmSaveClassEdits`, `pccmSaveTeacherEdits`, `pccmSaveSubjectEdits` trước đây kiểm tra `n <= 0` là không hợp lệ, khiến các trường hợp nhập `0` (hoặc sửa đổi tiết) bị từ chối và hủy toàn bộ thao tác lưu.
   - Phát hiện sự kiện chỉ bắt ở `onchange` và `onblur`. Đã bổ sung sự kiện `oninput="pccmAutoSaveActive()"` vào tất cả các ô nhập Tiết/Giới hạn để vừa gõ số là hệ thống **tự động lưu tức thì**.
