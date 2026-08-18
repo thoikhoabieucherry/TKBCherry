@@ -862,22 +862,24 @@ function changeSchool(){
 // Mở trang Sắp xếp TKB và mang theo schoolId để dùng đúng dữ liệu trường.
 async function openTKBPlanner(){
     const u = new URL("/pages/sapxep", window.location.origin);
-
     const sid = getSchoolId();
     _setSchoolUrlParams(u, sid, getSchoolLabel());
-    const btn = document.querySelector("button[onclick*='openTKBPlanner']");
-    let navigating = false;
+    const btn = document.querySelector("button[onclick*='openTKBPlanner']") || document.querySelector(".btn-planner");
+    if(btn) btn.disabled = true;
     try{
-        if(btn) btn.disabled = true;
-        const pending = saveStore({throwOnError:true});
-        if(pending && typeof pending.then === "function") await pending;
-        navigating = true;
-        window.location.href = u.toString();
-    }catch(e){
-        console.warn("openTKBPlanner save failed", e);
-        alert("Không lưu được dữ liệu TKB lên VPS trước khi sắp xếp. Vui lòng thử lại.");
+        try{
+            const pending = saveStore();
+            if(pending && typeof pending.then === "function"){
+                await Promise.race([
+                    pending,
+                    new Promise(resolve => setTimeout(resolve, 800))
+                ]);
+            }
+        }catch(saveErr){
+            console.warn("openTKBPlanner saveStore warning", saveErr);
+        }
     }finally{
-        if(!navigating && btn) btn.disabled = false;
+        window.location.href = u.toString();
     }
 }
 
