@@ -52,6 +52,9 @@
 - **Khắc Phục Lỗi Hiển Thị Tiết Cố Định Trên TKB Giáo Viên & Khóa Chặt Single-Pass Cho Flash ⚡**:
   - Phát hiện hàm `buildTeacherSchedule` trong `web/pages/phanmon.js` có điều kiện loại trừ cũ `!mon.startsWith("HĐTN 1") && !mon.startsWith("HĐTN 2")`, khiến các tiết `HĐTN 1` và `HĐTN 2` (ví dụ của GV SĐ.Kiều) bị bỏ qua, không hiển thị trên bảng TKB Giáo viên. Đã xóa bỏ điều kiện này để hiển thị chuẩn xác 100%.
   - Phát hiện cờ `requestedQualityRetry` trong `web/pages/tkb-rust-bridge.js` khi TKB đã đủ 100% tiết vô tình kích hoạt các vòng lặp phụ (10 seeds zero-one retry + 5 attempts teacher session quality) trên trình duyệt, kéo dài 3 phút và làm reset đồng hồ. Đã khóa cứng `requestedQualityRetry = false` và `skipRetryLoops = true` khi `ui_flash_scheduler_active === true` để Flash ⚡ luôn chạy đúng 1 lượt duy nhất trên Cloud Run CP-SAT (~17s) và cập nhật kết quả ngay lập tức.
+- **Đảm Bảo Kích Hoạt `onchange` Cho File Input Khi Chọn Lại Cùng File**:
+  - Phát hiện hàm `triggerPCCMImport()` và `triggerExcel()` trước đó chưa xóa `fileEl.value = ""` trước khi gọi `.click()`. Khi người dùng chọn lại tệp Excel cũ hoặc chọn lại tệp sau khi hủy, trình duyệt nhận thấy giá trị đường dẫn không đổi nên không kích hoạt sự kiện `change`.
+  - Đã gắn trực tiếp `fileEl.onchange = readExcel` và `fileEl.value = ""` mỗi khi nhấn nút **Nhập Excel** để đảm bảo 100% lần chọn file nào cũng kích hoạt bộ đọc Excel.
 - **Khắc Phục Triệt Để Lỗi Nhập Excel Không Báo Gì & F5 Bị Mất Dữ Liệu**:
   - Phát hiện nguyên nhân "không báo gì": Thẻ `#excelFile` bị gắn đồng thời 2 listener (`onchange="..."` trong HTML + `addEventListener` trong JS), khiến `readExcel` bị kích hoạt đồng thời 2 lần. Lần gọi thứ hai chạy vào `importFromExcel(wb)` với `IMPORT_SECTION = ""` gây lỗi JavaScript ngầm và chặn popup alert.
   - Đã thêm khóa chống gọi lặp `__READ_EXCEL_RUNNING` và loại bỏ thuộc tính inline `onchange`.
