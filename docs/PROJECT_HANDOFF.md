@@ -6,6 +6,20 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-18 FLASH ⚡ CLOUD RUN (6 vCPU) & CLEAN TIMER UI
+
+- **Triển khai & Kích hoạt Cloud Run 6 vCPU**:
+  - Dịch vụ Cloud Run `tkb-solver-00106-5pk` (6 vCPU, 8GiB RAM) tại vùng `asia-southeast2` được cấu hình làm solver chính thức cho thuật toán **Flash**.
+  - Drop-in systemd `/etc/systemd/system/tkb-app.service.d/cloud-run.conf` trên VPS thiết lập `TKB_SERVERLESS_MODE=serverless_only` và `TKB_CLOUD_RUN_URL=https://tkb-solver-tys7xrhbca-et.a.run.app`.
+  - Xác thực bảo mật Google IAM qua Workload Identity Federation (WIF) được kiểm thử thành công 100%.
+- **Trải nghiệm Giao diện (Clean Stopwatch Timer UI)**:
+  - Khi bấm nút **Flash ⚡** (`#btnFlashSort`):
+    - Đồng hồ đếm thời gian (`⏱ 00:01`, `00:02`...) khởi chạy ngay lập tức mà không bị đơ/đứng ở `00:00`.
+    - Ẩn toàn bộ thông báo chữ dài dòng trên thanh công cụ để giữ thanh trạng thái tối giản, chuyên nghiệp và sạch sẽ theo đúng yêu cầu người dùng.
+    - Bỏ chặn `manualAgentInvite` để lệnh giải đa nhân trên Cloud Run được điều phối trực tiếp, liền mạch.
+- **Bảo toàn dữ liệu & Triển khai**:
+  - Triển khai đồng bộ lên VPS `165.101.47.133` và kiểm tra trạng thái dịch vụ `tkb-app` hoạt động ổn định.
+
 ## 2026-08-18 FLASH SOLVER INTEGRATION — HỆ THỐNG TỐI ƯU TOÀN DIỆN & NÚT FLASH ⚡
 
 - **Bối cảnh & Quyết định Kiến trúc**:
