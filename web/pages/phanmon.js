@@ -8422,20 +8422,10 @@ function calcStudentTimetableGapStats(){
       for(const buoi of ["sang","chieu"]){
         const arr = tkb?.[thu]?.[buoi] || [];
         const limit = buoi === "sang" ? SANG : CHIEU;
-        let minPeriod = -1;
-        let maxPeriod = -1;
         for(let i=0; i<limit; i++){
-          if(cellMon(arr[i])){
-            if(minPeriod === -1) minPeriod = i;
-            maxPeriod = i;
-          }
-        }
-        if(minPeriod !== -1 && maxPeriod > minPeriod){
-          for(let i = minPeriod + 1; i < maxPeriod; i++){
-            if(isStudentGapSlot(arr[i])){
-              classGaps++;
-              sessions.push({thu, buoi, ti:i});
-            }
+          if(isStudentGapSlot(arr[i])){
+            classGaps++;
+            sessions.push({thu, buoi, ti:i});
           }
         }
       }
