@@ -2813,6 +2813,120 @@
       return improved ? currentBest : null;
     }
 
+    tryIntraClassGapCrush(bestMetrics, onProgress = null){
+      let currentBest = { ...bestMetrics };
+      let improved = false;
+
+      const teacherList = Array.from(this.scoredTeachers || this.teacherGrid.keys());
+      this.rng.shuffle(teacherList);
+
+      for(const tKey of teacherList){
+        const tIdx = this.teacherIndexMap.get(tKey);
+        if(tIdx === undefined) continue;
+        const tg = this.teacherGridList[tIdx];
+        if(!tg) continue;
+
+        for(let d = 0; d < DAYS_LIST.length; d++){
+          for(let b = 0; b < SESSIONS_LIST.length; b++){
+            const sStart = d * SLOTS_PER_DAY + b * PERIODS_PER_SESSION;
+            const taught = [];
+            for(let p = 0; p < PERIODS_PER_SESSION; p++){
+              if(tg[sStart + p] >= 0 || tg[sStart + p] === -3) taught.push(p);
+            }
+            if(taught.length < 2) continue;
+
+            for(let i = 0; i < taught.length - 1; i++){
+              const p1 = taught[i];
+              const p2 = taught[i + 1];
+              if(p2 - p1 - 1 >= 1){
+                const s2 = sStart + p2;
+                const act2Id = tg[s2];
+                if(act2Id < 0) continue;
+                const act2 = this.activities[act2Id];
+                if(!act2 || act2.isFixed || act2.lockedByLessonBlock || act2.duration !== 1) continue;
+
+                for(let targetP = p1 + 1; targetP < p2; targetP++){
+                  const sTarget = sStart + targetP;
+                  const cGrid2 = this.classGridList[act2.classIdx];
+                  const occId = cGrid2[sTarget];
+                  if(occId === undefined) continue;
+
+                  if(occId >= 0){
+                    const occAct = this.activities[occId];
+                    if(occAct && !occAct.isFixed && !occAct.lockedByLessonBlock && occAct.duration === 1){
+                      const snap = this.captureStateSnapshot();
+                      this.unplaceActivity(act2.id);
+                      this.unplaceActivity(occAct.id);
+
+                      if(this.isSlotFeasible(act2, sTarget) && this.isSlotFeasible(occAct, s2)){
+                        this.placeActivityDirect(act2.id, sTarget);
+                        this.placeActivityDirect(occAct.id, s2);
+
+                        const m = this.evaluateMetrics();
+                        if(this.compareMetrics(m, currentBest, "optimize_gap2") < 0){
+                          currentBest = { ...m };
+                          improved = true;
+                          if(typeof onProgress === "function") onProgress(currentBest);
+                          break;
+                        }
+                      }
+                      this.restoreStateSnapshot(snap);
+                    }
+                  }
+                }
+                if(improved) break;
+              }
+            }
+            if(improved) break;
+          }
+          if(improved) break;
+        }
+      }
+      return improved ? currentBest : null;
+    }
+
+    tryCrossDayClassSwap(bestMetrics, onProgress = null){
+      let currentBest = { ...bestMetrics };
+      let improved = false;
+
+      for(let cIdx = 0; cIdx < this.classes.length; cIdx++){
+        const cGrid = this.classGridList[cIdx];
+        for(let s1 = 0; s1 < TOTAL_SLOTS; s1++){
+          const act1Id = cGrid[s1];
+          if(act1Id < 0) continue;
+          const act1 = this.activities[act1Id];
+          if(!act1 || act1.isFixed || act1.lockedByLessonBlock || act1.duration !== 1) continue;
+
+          for(let s2 = s1 + 1; s2 < TOTAL_SLOTS; s2++){
+            const act2Id = cGrid[s2];
+            if(act2Id < 0) continue;
+            const act2 = this.activities[act2Id];
+            if(!act2 || act2.isFixed || act2.lockedByLessonBlock || act2.duration !== 1) continue;
+
+            const snap = this.captureStateSnapshot();
+            this.unplaceActivity(act1.id);
+            this.unplaceActivity(act2.id);
+
+            if(this.isSlotFeasible(act1, s2) && this.isSlotFeasible(act2, s1)){
+              this.placeActivityDirect(act1.id, s2);
+              this.placeActivityDirect(act2.id, s1);
+
+              const mNew = this.evaluateMetrics();
+              if(this.compareMetrics(mNew, currentBest, "optimize_gap2") < 0){
+                currentBest = { ...mNew };
+                improved = true;
+                if(typeof onProgress === "function") onProgress(currentBest);
+                break;
+              }
+            }
+            this.restoreStateSnapshot(snap);
+          }
+          if(improved) break;
+        }
+      }
+      return improved ? currentBest : null;
+    }
+
     loadExistingSchedule(){
       this.init();
       const data = this.data;
@@ -3034,6 +3148,10 @@
         if(mode === "optimize_all" || mode === "optimize_gap2"){
           const res4 = this.tryCrushGaps(bestMetrics, onProgress);
           if(res4){ bestMetrics = res4; anyRoundImprovement = true; }
+          const res4b = this.tryIntraClassGapCrush(bestMetrics, onProgress);
+          if(res4b){ bestMetrics = res4b; anyRoundImprovement = true; }
+          const res4c = this.tryCrossDayClassSwap(bestMetrics, onProgress);
+          if(res4c){ bestMetrics = res4c; anyRoundImprovement = true; }
         }
 
         if(mode === "optimize_all" || mode === "optimize_sessions"){
