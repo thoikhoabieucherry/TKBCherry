@@ -6322,24 +6322,30 @@ async function executeDirectFastSchedule(options = {}){
       : ((typeof FetTimetableEngine !== "undefined") ? FetTimetableEngine : null);
 
     let totalPlaced = 0;
-    let totalUnplaced = 0;
-    let directFetResult = null;
-    // CẢ 2 NÚT "Trọn gói ★" và "NEW ★": LUÔN TỐI ƯU TIẾP TỪ LỊCH HIỆN TẠI (Refine incumbent)
-    // tuyệt đối không đập đi xếp lại từ đầu.
-    if(["solve_optimize_all", "solve_optimize_all_fresh"].includes(String(options?.mode || ""))){
-      options = Object.assign({}, options, { mode: "optimize_all", __trongoiRefine: true });
-      if(typeof setStatus === "function"){
-        setStatus("Tối ưu tiếp từ lịch hiện tại (trọn gói)...", "info");
+    // Check if missing unplaced lessons exist
+    let unplacedPeriodsCount = 0;
+    try {
+      const lops = Array.isArray(data.lop) ? data.lop : [];
+      for(const lop of lops){
+        const stats = calcClassTKBPeriodStats(lop.id);
+        unplacedPeriodsCount += Math.max(0, (stats.total || 0) - (stats.assigned || 0));
       }
-    }
-    const isOptimizeMode = ["optimize_singletons", "optimize_sessions", "optimize_gap2", "optimize_gap1", "optimize_all", "solve_optimize_all", "solve_optimize_all_fresh"].includes(options?.mode);
-    // FAIL-CLOSED: mode tối ưu không nhận diện được (JS cũ bị cache, mode lạ…)
-    // tuyệt đối không được rơi xuống nhánh XẾP MỚI — nhánh đó đập lịch hiện tại
-    // và xây lại từ đầu. Từ chối ngay để bảo vệ lịch của người dùng.
-    if(!isOptimizeMode && /^optimize/i.test(String(options?.mode || ""))){
-      const failMsg = "Chế độ tối ưu chưa được phiên bản đang tải hỗ trợ. Nhấn Ctrl+F5 để tải bản mới rồi thử lại.";
-      if(typeof setStatus === "function") setStatus(failMsg, "error");
-      return { ok:false, applied:false, failureKind:"unknown_optimize_mode", error:failMsg };
+    } catch(_) {}
+
+    const requestedMode = String(options?.mode || "solve_optimize_all");
+    const isSolveOptMode = ["solve_optimize_all", "solve_optimize_all_fresh", "auto", "fast"].includes(requestedMode);
+    let isOptimizeMode = ["optimize_singletons", "optimize_sessions", "optimize_gap2", "optimize_gap1", "optimize_all"].includes(requestedMode);
+    if(isSolveOptMode){
+      if(unplacedPeriodsCount > 0){
+        isOptimizeMode = false;
+        options = Object.assign({}, options, { mode: "solve_optimize_all" });
+      } else {
+        isOptimizeMode = true;
+        options = Object.assign({}, options, { mode: "optimize_all", __trongoiRefine: true });
+        if(typeof setStatus === "function"){
+          setStatus("Tối ưu tiếp từ lịch hiện tại (trọn gói)...", "info");
+        }
+      }
     }
     const modeLabelMap = {
       "auto_min2": "Sắp tự động (>= 2 tiết/buổi)",
@@ -6401,16 +6407,6 @@ async function executeDirectFastSchedule(options = {}){
       initialDetail = totalReq > 0 ? `${curPlaced}/${totalReq} tiết` : `0%...`;
     }
     window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = initialDetail;
-
-    // Check if missing unplaced lessons exist
-    let unplacedPeriodsCount = 0;
-    try {
-      const lops = Array.isArray(data.lop) ? data.lop : [];
-      for(const lop of lops){
-        const stats = calcClassTKBPeriodStats(lop.id);
-        unplacedPeriodsCount += Math.max(0, (stats.total || 0) - (stats.assigned || 0));
-      }
-    } catch(_) {}
 
     if(isOptimizeMode && options.mode === "optimize_gap2" && initialStats.soBuoiTrong2 === 0){
       if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
