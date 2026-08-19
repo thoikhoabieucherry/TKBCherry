@@ -5,8 +5,26 @@
 > Các mục cũ hơn 2026-08-10 đã chuyển sang
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
+## 2026-08-19 CLOUD RUN PROFILE SYNC & VPS QUICK DEPLOY (FLASH & CHERRY)
+
+- **Cập nhật Profile Cloud Run & Cấu hình Serverless VPS 165.101.47.133**:
+  - Ghi nhận và đồng bộ profile Cloud Run mới nhất từ `cloud_run_profile_moi_nhat.txt` vào `kvstore` (`serverless_infrastructure_v1`) và dropin systemd trên VPS:
+    - ID: `cloud-run-project-61ee7855-507e-40a3-879`
+    - Project: `project-61ee7855-507e-40a3-879`
+    - Region: `asia-southeast2`
+    - URL: `https://tkb-solver-tys7xrhbca-et.a.run.app`
+    - Digest: `085fc30ed36198b1526a98d0e2ee81da2b144c54db6a2e72a90370abe4b0d27f`
+  - Đã sao lưu cấu hình cũ và kích hoạt thành công trên VPS: `serverless = {"activeReservations": 1, "configured": true, "fallback": "vps", "mode": "serverless_only"}`.
+- **Nâng cấp Cơ chế Quick Deploy VPS (`deploy_web_quick.py`)**:
+  - Đóng gói toàn bộ `web/` và `solver_runtime/` thành gói tarball `tkb_web_quick_deploy.tar.gz` tải lên VPS và giải nén trực tiếp, loại bỏ hoàn toàn lỗi timeout/reset kết nối SFTP khi đồng bộ hàng trăm tệp riêng lẻ.
+  - Bổ sung cơ chế thử lại kết nối SSH (retry) với các cờ `banner_timeout`, `auth_timeout`, `look_for_keys=False`.
+- **Triển khai Web & Kiểm định Probe**:
+  - Đã triển khai thành công toàn bộ mã nguồn web mới nhất và solver runtime lên VPS.
+  - Dịch vụ `tkb-app` hoạt động bình thường (`active`).
+  - Đã chạy probe kiểm tra end-to-end `kiem_tra_flash_cherry.py` xác nhận Cloud Run phản hồi HTTP 200 cho cả 2 thuật toán Flash và Cherry.
 
 ## 2026-08-18 FLASH ⚡ CLOUD RUN (6 vCPU) & CLEAN TIMER UI
+
 
 - **Triển khai & Kích hoạt Cloud Run 6 vCPU**:
   - Dịch vụ Cloud Run `tkb-solver-00106-5pk` (6 vCPU, 8GiB RAM) tại vùng `asia-southeast2` được cấu hình làm solver chính thức cho thuật toán **Flash**.

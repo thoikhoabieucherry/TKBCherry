@@ -143,7 +143,7 @@ class CloudRunDeployAssetTests(unittest.TestCase):
     def test_service_is_private_and_solver_resources_are_fixed(self) -> None:
         for option in (
             "--cpu=6",
-            "--memory=4Gi",
+            "--memory=8Gi",
             "--concurrency=1",
             "--timeout=300",
             "--min-instances=0",

@@ -717,6 +717,19 @@ class Optimizer:
                         )
                     except Exception:
                         pass
+            # 19/08 THOAT SOM: portfolio nay chay den het deadline nen mot lich
+            # da cham day van ngoi cho het gio. Neu 1 tiet/buoi da o day, khong
+            # con buoi trong >=2 va khong con trong 1 tiet, thi bo (1,2,4) cua
+            # tuple khong the tot hon; chi con tsBuoiDay co the nhich. Cho them
+            # vai vong khong cai thien roi dung — tra ket qua som thay vi dot
+            # not ngan sach.
+            if (
+                cur[0] <= self.floor_singleton
+                and cur[1] == 0
+                and cur[3] == 0
+                and stagnation >= 6
+            ):
+                break
             if not improved:
                 stagnation += 1
                 if stagnation % 3 == 0:

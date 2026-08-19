@@ -1811,7 +1811,11 @@
       this.computeDifficultiesAndSort();
       // 13.4: kich hoat bat dang thuc dem kieu FET cho pha xep chinh
       this.computeTeacherWeeklyLoad();
-      this.__minTwoGuardActive = true;
+      // 19/08: guard "min-two" (khong mo buoi khong du 2 tiet) lam buoc xay
+      // dung cham ~24 lan (2s -> 47s). Nut "Sap xep" can NHANH; viec khu buoi
+      // 1 tiet da co cac toan tu Antigravity o pha toi uu lo. Vi vay MAC DINH
+      // TAT, chi bat khi nguoi goi yeu cau ro (options.minTwoGuard === true).
+      this.__minTwoGuardActive = this.options.minTwoGuard === true;
 
       let totalActivities = this.activities.length;
       this.limitCalls = Math.max(8000, 10 * totalActivities);
@@ -1841,7 +1845,14 @@
         if(unplacedActs.length === 0) break;
         this.strictFetGaps = true;
         // 13.4: sau vai luot vet can, tha guard de bao dam DU 100%% tiet (luat so 1)
-        if(pass >= 6) this.__minTwoGuardActive = false;
+        // 19/08 SUA HOI QUY: phai tha CA HAI guard. Chi tha minTwoGuard (ban
+        // nghien cuu) ma giu strictFetGaps=true lam buoc xay dung cham gap ~24
+        // lan (2s -> 48s tren cung bo du lieu) — nut "Sap xep" chay engine FET
+        // trong trinh duyet nen nguoi dung cam nhan ngay.
+        if(pass >= 6){
+          this.__minTwoGuardActive = false;
+          this.strictFetGaps = false;
+        }
 
         this.limitCalls = Math.max(8000, 10 * this.activities.length);
         for(const uAct of unplacedActs){

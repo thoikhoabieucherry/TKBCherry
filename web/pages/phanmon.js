@@ -10622,9 +10622,27 @@ function setAutoSortProgress(percent, label, details){
     || window.__CURRENT_ACTIVE_ENGINE === "cherry";
 
   if(isAltEngine){
+    // 19/08: KHONG duoc de nhan tien do CU dinh lai khi chay Flash/Cherry.
+    // Bien __CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL song sot giua cac luot; luot
+    // truoc chay "1 tiet trong" de lai "Trong 1 tiet: 70 -> 6", nen ngay giay
+    // thu 2 cua luot Cherry nhan cu hien lai => nguoi dung tuong nut Cherry
+    // dang chay thuat toan gap1 trong trinh duyet. Xoa nhan cu va hien thang
+    // TEN THUAT TOAN dang chay de nhin la biet luot nay di duong may chu nao.
+    window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = "";
+    var __engKey = String(window.__TKB_FORCE_ENGINE || window.__CURRENT_ACTIVE_ENGINE || "").trim().toLowerCase();
+    var __engBadge = __engKey === "cherry"
+      ? "Cherry \u2022 engine v3 (m\u00e1y ch\u1ee7)"
+      : (__engKey === "flash" ? "Flash \u2022 CP-SAT (m\u00e1y ch\u1ee7)" : "");
     if(metric){
-      metric.textContent = "";
-      metric.hidden = true;
+      if(__engBadge){
+        metric.classList.remove("is-hybrid");
+        metric.textContent = __engBadge;
+        metric.title = __engBadge;
+        metric.hidden = false;
+      }else{
+        metric.textContent = "";
+        metric.hidden = true;
+      }
     }
   }else if(metric){
     let rawMetric = String(details?.metricLabel || "").trim();

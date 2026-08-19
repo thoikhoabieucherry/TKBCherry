@@ -216,6 +216,23 @@ def _worker_solve(args) -> dict:
     return result
 
 
+def _result_hits_floor(res: dict | None, expected: int) -> bool:
+    """Nghiem 'cham day': du 100% tiet, khong buoi nao day 1 tiet, khong con
+    buoi trong 2 tiet va khong con trong 1 tiet. Luc do bo ba dau cua tuple
+    khong the tot hon nua nen khong can cho not cac seed con lai."""
+    if not res:
+        return False
+    try:
+        if int(res.get("placed", 0)) < int(expected or 0):
+            return False
+        obj = tuple(res.get("objective") or ())
+        if len(obj) < 4:
+            return False
+        return int(obj[0]) == 0 and int(obj[1]) == 0 and int(obj[3]) == 0
+    except Exception:
+        return False
+
+
 def _portfolio_solve(
     problem: Problem,
     deadline_s: float,
@@ -275,21 +292,42 @@ def _portfolio_solve(
                     )
                     for i in range(workers)
                 ]
-                async_result = pool.map_async(_worker_solve, args)
-                while True:
+                # 19/08: truoc day dung map_async().get() nen PHAI cho DU moi
+                # seed chay het ngan sach. Gio nhan tung ket qua mot; seed nao
+                # cham day truoc thi cat luon cac seed con lai -> ket thuc som
+                # ma van dung nghiem tot nhat.
+                pending = pool.imap_unordered(_worker_solve, args)
+                collected: list[dict] = []
+                early_cut = False
+                while len(collected) < len(args):
                     try:
-                        results = async_result.get(timeout=10)
-                        used_mp = True
-                        break
+                        res = pending.next(timeout=10)
                     except multiprocessing.TimeoutError:
                         if remaining() < -20:
                             # workers overran their own deadline guard — cut them
                             pool.terminate()
-                            results = []
                             break
                         report_heartbeat("%d luong" % workers)
+                        continue
+                    except StopIteration:
+                        break
+                    if res:
+                        collected.append(res)
+                        if _result_hits_floor(res, expected):
+                            early_cut = True
+                            pool.terminate()
+                            break
+                results = collected
+                used_mp = bool(collected)
+                if early_cut:
+                    report_heartbeat("da cham day, dung som")
             finally:
-                pool.close()
+                # close() sau terminate() co the nem ValueError tuy phien ban ->
+                # boc ca hai, dung de buoc don dep lam hong ket qua da co.
+                try:
+                    pool.close()
+                except Exception:
+                    pass
                 try:
                     pool.terminate()
                 except Exception:

@@ -10044,6 +10044,9 @@
 
   function shouldUseCapacitySafeFreshProbe(settings, data){
     if(!data || settings?.ui_capacity_safe_fresh_probe_attempted === true) return false;
+    // 19/08: nut Flash/Cherry da chon san thuat toan — phep tham do suc chua
+    // 60 giay o day khong giup gi, chi lam nguoi dung cho them 1 phut.
+    try{ if(String(window.__TKB_FORCE_ENGINE || "").trim()) return false; }catch(_){ }
     // 19/08: mot khi phep tham do 60s da het han tren CHINH bo du lieu nay thi
     // moi lan bam sau do deu se het han y het — bo qua de khong dot them 60s
     // (va khong con bao 422 do trong console) cho toi khi tai lai trang.
@@ -14225,6 +14228,19 @@
       preserveExisting: isTruthySetting(settings?.preserve_existing_tkb),
       skipPreRelease: settings?.ui_skip_pre_solve_constraint_release === true
     });
+    // CHAN DOAN 19/08: do thoi gian TUNG BUOC chuan bi truoc khi POST. Do dac
+    // tren may that cho thay giai doan nay ngon 3-6 PHUT voi truong 75 lop —
+    // lau hon ca thoi gian giai. Moc nay chi ghi vao trace (khong doi hanh vi).
+    window.__TKB_PREP_LAST = Date.now();
+    const prepMark = (name) => {
+      try{
+        const now = Date.now();
+        const prev = Number(window.__TKB_PREP_LAST) || now;
+        window.__TKB_PREP_LAST = now;
+        const ms = now - prev;
+        if(ms >= 150) traceSolveStep("prep:" + name, {ms});
+      }catch(_){ }
+    };
     if(!resumeExistingServerJobOnly){
       try{
         const rb = window.TKBConstraints || window.TKBConstraintsFull;
@@ -14247,7 +14263,9 @@
     if(!resumeExistingServerJobOnly){
       syncOffLocksToData(data, collectOffLocks(data));
     }
+    prepMark("releaseViolations+offLocks");
     const effectiveSettings = effectiveSettingsForSolve(settings, data);
+    prepMark("effectiveSettingsForSolve");
     await yieldResponsiveUi();
     enforceCompleteScheduleForUi(effectiveSettings);
     if(!effectiveSettings.ui_capacity_safe_fresh_probe
@@ -14259,6 +14277,7 @@
     clearPostRollbackSettings(effectiveSettings);
     const activeSolveRunId = String(window.__TKB_ACTIVE_SOLVE_RUN_ID || "");
     const requestApplyGuardFingerprint = durableScheduleFingerprint(data);
+    prepMark("durableScheduleFingerprint");
     const canonicalFocus = optimizationFocusForSolveRequestMode(
       effectiveSettings.ui_requested_solve_mode || effectiveSettings.optimization_focus
     );
@@ -14281,6 +14300,7 @@
       ? `${activeSolveRunId}:req:${Date.now()}:${Math.random().toString(36).slice(2)}`
       : makeSolveRunId());
     const partialRepairState = applyPartialExistingRepairSettings(effectiveSettings, data, "few_unassigned_before_post");
+    prepMark("applyPartialExistingRepairSettings");
     if(partialRepairState){
       effectiveSettings.optimize_existing_schedule = effectiveSettings.ui_unified_partial_repair !== true;
       effectiveSettings.existing_fill_missing_schedule = true;
@@ -14289,7 +14309,9 @@
       effectiveSettings.best_effort_on_timeout = true;
     }
     const expectedForExistingOptimize = expectedLessonCount(data);
+    prepMark("expectedLessonCount");
     const scheduledForExistingOptimize = countScheduledLessons(data);
+    prepMark("countScheduledLessons");
     const existingCompleteForOptimize = !partialRepairState
       && effectiveSettings.ui_allow_auto_existing_optimize === true
       && effectiveSettings.ui_default_fresh_sort !== true
@@ -14372,6 +14394,7 @@
       enforceNoHintFreshSolveSettings(effectiveSettings);
     }
     const fixedLessonPreserveCount = applyFixedLessonPreserveSettings(effectiveSettings, data);
+    prepMark("applyFixedLessonPreserveSettings");
     await yieldResponsiveUi();
     if(isNoHintSmartFreshSettings(effectiveSettings)){
       enforceNoHintFreshSolveSettings(effectiveSettings);
@@ -14385,7 +14408,9 @@
       || effectiveSettings.ui_staged_existing_repair === true
       || capacityShortageSolve;
     if(!allowShortBackendDeadline && !capacityShortageSolve) applySchedulingPressureTimeFloor(effectiveSettings, data);
+    prepMark("applySchedulingPressureTimeFloor");
     if(!capacityShortageSolve) applyHeavyOnePeriodCleanupSettings(effectiveSettings, data);
+    prepMark("applyHeavyOnePeriodCleanupSettings");
     enforceRustRuntimeSafetySettings(effectiveSettings);
     if(isNoHintSmartFreshSettings(effectiveSettings)){
       enforceNoHintFreshSolveSettings(effectiveSettings);
@@ -14419,7 +14444,19 @@
     try{
       const forcedEngineEarly = String(window.__TKB_FORCE_ENGINE || "").trim().toLowerCase();
       if(forcedEngineEarly){
-        budgetSeconds = Math.max(Number(budgetSeconds) || 0, 200);
+        // 19/08: bo giai DUNG HET ngan sach duoc cap (no toi uu tiep chu khong
+        // tra ve som), nen "ngan sach" = "thoi gian cho". 200s cho ca hai nut la
+        // qua tay; dat theo dac tinh tung bo giai, cho phep chinh nhanh bang
+        // window.__TKB_ENGINE_BUDGET_SECONDS neu can thu nghiem.
+        // 19/08 (sua): TRUOC day dung Math.max(...) nen ngan sach cua lane mac
+        // dinh (270s) luon thang -> Cherry/Flash ngoi du 280s du bo giai goc chi
+        // can ~70-80s cho cung bo du lieu (log tham chieu: "HOAN TAT TRON GOI
+        // TRONG 79.74s", 2175 tiet / 75 lop / 125 GV). Engine v3 la portfolio
+        // chay DEN HET deadline, nen ngan sach = thoi gian cho. Vi vay DAT
+        // THANG ngan sach cua nut, khong lay max nua.
+        const engineBudgetOverride = Number(window.__TKB_ENGINE_BUDGET_SECONDS) || 0;
+        const engineDefaultBudget = forcedEngineEarly === "flash" ? 90 : 90;
+        budgetSeconds = engineBudgetOverride > 0 ? engineBudgetOverride : engineDefaultBudget;
         effectiveSettings.overall_time_limit_seconds = budgetSeconds;
         effectiveSettings.integrated_time_limit = budgetSeconds;
         effectiveSettings.optimization_time_limit_seconds = budgetSeconds;
@@ -14437,6 +14474,7 @@
       ? Math.max(250, Math.min(1500, Number(effectiveSettings.native_deadline_reserve_ms || 500) || 500))
       : 1500;
     if(!allowShortBackendDeadline) alignNativeFreshToBackendDeadline(effectiveSettings, data, backendDeadlineMs);
+    prepMark("alignNativeFreshToBackendDeadline");
     applySolverPresetQualityPolicy(effectiveSettings);
     effectiveSettings.allow_strict_quality_solution_bank = false;
     if(isNoHintSmartFreshSettings(effectiveSettings)){
@@ -14625,7 +14663,9 @@
         expected: expectedLessonCount(data)
       });
       await yieldResponsiveUi();
+      prepMark("upto-before-request-data");
       const requestData = dataForSolverRequest(data, effectiveSettings);
+      prepMark("dataForSolverRequest");
       const clientFastSeed = await buildClientFastSeed(
         requestData,
         effectiveSettings,
@@ -14888,7 +14928,9 @@
           );
         }catch(_){ }
       }
+      prepMark("upto-serialize");
       body = JSON.stringify(browserWasmRequest);
+      prepMark("JSON.stringify(request)");
       traceSolveStep("postSolve:before-fetch", {
         requestBytes: body.length,
         timeoutMs,
@@ -20491,6 +20533,10 @@
     }
     window.__TKB_FORCE_ENGINE = String(engine || "");
     window.__CURRENT_ACTIVE_ENGINE = String(engine || "");
+    // 19/08: nhan tien do cu ("Trong 1 tiet: 70 -> 6"...) song sot giua cac
+    // luot va se hien lai o giay thu 2 cua luot Flash/Cherry neu khong xoa —
+    // trong nhu nut Cherry dang chay thuat toan gap1 trong trinh duyet.
+    window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = "";
     var metricEl = document.getElementById("autoSortProgressMetric");
     if(metricEl){
       metricEl.textContent = "";
@@ -20499,6 +20545,7 @@
     var clear = function(){
       window.__TKB_FORCE_ENGINE = "";
       window.__CURRENT_ACTIVE_ENGINE = "";
+      window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = "";
     };
     var start = function(){
       var runner = (typeof window.bridgeSapXepTuDongAll === "function")

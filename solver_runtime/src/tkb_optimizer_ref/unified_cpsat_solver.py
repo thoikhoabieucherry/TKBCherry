@@ -327,6 +327,45 @@ class UnifiedCpSatSolver:
             fixed_count[(cid, _get_canon_mon_key(f_info["mon"]))] += 1
             
         self.assignments = []
+        # 19/08 FIX: so tiet/tuan phai lay theo dung thu tu cua ung dung:
+        #   1) pccmTietMatrix[lop|mon]  (gia tri ghi de cua tung lop)
+        #   2) TIET CHUAN theo KHOI (DATA.mon: {khoi, ten, sotiet, gioihan})
+        # Truoc day chi doc (1); ma ung dung TU DONG XOA cac o (1) trung voi
+        # tiet chuan (pruneRedundantPccmPeriods), nen voi truong dung tiet chuan
+        # thi pccmTietMatrix RONG -> bo giai nay thay 0 tiet -> ket thuc trong
+        # 0,1 giay va tra lich rong (Flash bi vo hieu, phai nho engine v3 lam ho).
+        import re as _re
+
+        def _grade_key(value) -> str:
+            m = _re.search(r"\d+", str(value or ""))
+            return m.group(0) if m else ""
+
+        self.std_periods = {}
+        self.std_limits = {}
+        for _row in (data.get("mon") or []):
+            if not isinstance(_row, dict):
+                continue
+            _g = _grade_key(_row.get("khoi"))
+            _m = _get_canon_mon_key(str(_row.get("ten") or _row.get("mon") or ""))
+            try:
+                _st = int(_row.get("sotiet") or 0)
+            except Exception:
+                _st = 0
+            if not _g or not _m or _st <= 0:
+                continue
+            self.std_periods[(_g, _m)] = _st
+            try:
+                _gh = int(_row.get("gioihan") or 0)
+            except Exception:
+                _gh = 0
+            if _gh > 0:
+                self.std_limits[(_g, _m)] = _gh
+
+        def _class_grade(cid_value: str) -> str:
+            info = self.class_map.get(cid_value) or {}
+            return _grade_key(info.get("khoi") or info.get("ten") or info.get("ten2") or cid_value)
+
+        total_expected = 0
         for key, gv in self.pccm.items():
             gv = str(gv).strip()
             if not gv or gv == "null":
@@ -337,6 +376,9 @@ class UnifiedCpSatSolver:
             raw_cid, mon = parts[0], parts[1]
             cid = self.class_alias_to_id.get(raw_cid.lower(), self.class_alias_to_id.get(raw_cid, raw_cid))
             total_req = int(self.pccm_tiet.get(key, 0) or 0)
+            if total_req <= 0:
+                total_req = int(self.std_periods.get((_class_grade(cid), _get_canon_mon_key(mon)), 0) or 0)
+            total_expected += total_req
             
             # Trừ các tiết fixed đã có sẵn theo canonical key
             already_fixed = fixed_count.get((cid, _get_canon_mon_key(mon)), 0)
@@ -345,6 +387,8 @@ class UnifiedCpSatSolver:
                 continue
                 
             limit = int(self.pccm_gioihan.get(key, 0) or 0)
+            if limit <= 0:
+                limit = int(self.std_limits.get((_class_grade(cid), _get_canon_mon_key(mon)), 0) or 0)
             if limit <= 0:
                 limit = 2  # CẬN TRÊN
             room = str(self.pccm_room.get(key, "") or "").strip()
@@ -360,7 +404,9 @@ class UnifiedCpSatSolver:
                 "room": room
             })
 
-        self.total_school_periods = sum(int(v) for v in self.pccm_tiet.values() if v)
+        # Tong so tiet toan truong = tong so tiet da giai theo dung thu tu uu tien
+        # (khong con phu thuoc rieng vao pccmTietMatrix).
+        self.total_school_periods = total_expected or sum(int(v) for v in self.pccm_tiet.values() if v)
         self.total_periods = self.total_school_periods
         
         # 7. Teacher shift total assigned periods (tính chính xác theo ca của lớp)
