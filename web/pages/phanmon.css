@@ -207,6 +207,19 @@ body {
   box-shadow: inset 0 0 0 3px #295bff;
 }
 
+/* Read-only state during auto-sort solving */
+#tkb.is-solving-readonly,
+.is-solving-readonly #tkb,
+.is-solving-readonly table,
+.is-solving-readonly td,
+.is-solving-readonly .mon-item,
+.is-solving-readonly .lop-item,
+.is-solving-readonly .gv-item {
+  pointer-events: none !important;
+  user-select: none !important;
+  cursor: default !important;
+}
+
 /* ===========================
    DRAG & DROP HIGHLIGHT
 =========================== */

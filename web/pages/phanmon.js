@@ -4690,7 +4690,7 @@ function bindSelectableCell(td){
   }, true);
 
   td.addEventListener("mousedown", (e)=>{
-    if(!e || e.button !== 0) return;
+    if(!e || e.button !== 0 || isPlannerBusySolving()) return;
 
     try{ hideCellMenu(); }catch(_){ }
     try{ closeUnassignedDropdown(); }catch(_){ }
@@ -4725,7 +4725,7 @@ function bindSelectableCell(td){
   });
 
   td.addEventListener("mouseenter", ()=>{
-    if(!TKB_DRAG_SELECTING) return;
+    if(!TKB_DRAG_SELECTING || isPlannerBusySolving()) return;
     try{ _cancelCellLongPress(); }catch(_){ }
     if(TKB_CELL_ANCHOR) selectRange(TKB_CELL_ANCHOR, td);
   });
@@ -4748,6 +4748,7 @@ function fixedLessonKeyForTd(td){
 }
 
 function handleRightClickUnassign(td, e){
+  if(isPlannerBusySolving()) return false;
   const key = fixedLessonKeyForTd(td);
   if(!key) return false;
   try{ e.preventDefault(); e.stopPropagation(); }catch(_){ }
@@ -4778,6 +4779,7 @@ function bindCells(){
     bindSelectableCell(td);
     bindRightClickUnassignCell(td);
     td.ondragstart = (e)=>{
+      if(isPlannerBusySolving()){ try{ e.preventDefault(); }catch(_){} return; }
       // bảo đảm menu ô không bật khi drag
       try{ _cancelCellLongPress(); hideCellMenu(); }catch(_){ }
       let unfixedFromFixed = false;
@@ -4829,14 +4831,14 @@ function bindCells(){
     };
 
     td.ondragover = (e)=>{
-      if(!dragData) return;
+      if(!dragData || isPlannerBusySolving()) return;
       e.preventDefault();
       const res = validateDrop(td, dragMon);
       setDropHint(td, res.ok && !res.warn);
     };
 
     td.ondragenter = ()=>{
-      if(!dragData) return;
+      if(!dragData || isPlannerBusySolving()) return;
       td.classList.add("drag-over");
     };
     td.ondragleave = ()=>{
@@ -4844,7 +4846,7 @@ function bindCells(){
     };
 
     td.ondrop = (e)=>{
-      if(!dragData) return;
+      if(!dragData || isPlannerBusySolving()){ try{ if(e) e.preventDefault(); }catch(_){} return; }
       try{ if(e) e.preventDefault(); }catch(_){ }
       let res = validateDrop(td, dragMon);
       if(!res.ok && maybeRaiseSessionLimitForDrop(td, dragMon, res)){
@@ -10375,10 +10377,14 @@ function setAutoSortStopAccessibleState(stopping){
   btn.title = label;
 }
 
-function setAutoSortBusyControls(locked){
-  const workerStillRunning = (window.__ACTIVE_TKB_FET_WORKER != null)
+function isPlannerBusySolving(){
+  return (window.__ACTIVE_TKB_FET_WORKER != null)
     || (window.__TKB_RUST_SOLVER_RUNNING === true)
     || (window.__TKB_SOLVE_UI_BUSY === true);
+}
+
+function setAutoSortBusyControls(locked){
+  const workerStillRunning = isPlannerBusySolving();
   const shouldLock = !!locked || workerStillRunning;
   const controls = [
     document.getElementById("btnDeleteAll"),
@@ -10386,9 +10392,10 @@ function setAutoSortBusyControls(locked){
     document.getElementById("btnUndoTKB"),
     document.getElementById("btnRedoTKB"),
     document.getElementById("btnAutoSort"),
+    document.getElementById("btnEngineFlash"),
+    document.getElementById("btnEngineCherry"),
     document.getElementById("btnOptimizeMenu"),
     document.getElementById("btnHome"),
-    document.getElementById("btnStatsPopover"),
     document.getElementById("solveDurationSeconds"),
     ...Array.from(document.querySelectorAll(".solver-preset-btn[data-preset]"))
   ].filter(Boolean);
@@ -10403,6 +10410,14 @@ function setAutoSortBusyControls(locked){
   if(presetGroup) presetGroup.setAttribute("aria-disabled", shouldLock ? "true" : "false");
   setAutoSortHomeHidden(shouldLock);
   if(!shouldLock) __tkbUpdateHistoryButtons();
+
+  // Khóa tương tác lưới thời khóa biểu bên dưới (chỉ xem, không kéo thả/chỉnh sửa khi đang xếp)
+  const tkbEl = document.getElementById("tkb");
+  if(tkbEl) tkbEl.classList.toggle("is-solving-readonly", shouldLock);
+  const centerEl = document.querySelector(".center");
+  if(centerEl) centerEl.classList.toggle("is-solving-readonly", shouldLock);
+  const leftEl = document.querySelector(".left");
+  if(leftEl) leftEl.classList.toggle("is-solving-readonly", shouldLock);
 }
 
 function setAutoSortStopVisible(visible){
