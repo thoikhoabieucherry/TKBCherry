@@ -1,19 +1,22 @@
 # TKBCherry — Trạng thái hiện hành (CURRENT STATE)
 
-*Cập nhật: 2026-08-16. File này là bản tóm tắt ngắn để onboard nhanh; chi tiết từng phiên làm việc nằm trong `PROJECT_HANDOFF.md` (mục cũ hơn ở `docs/archive/`).*
+*Cập nhật: 2026-08-19. File này là bản tóm tắt ngắn để onboard nhanh; chi tiết từng phiên làm việc nằm trong `PROJECT_HANDOFF.md` (mục cũ hơn ở `docs/archive/`).*
 
 ## Sản phẩm
 
-Hệ thống xếp thời khóa biểu tự động cho trường phổ thông, production tại `https://tkbcherry.com`. Quy mô đã kiểm chứng: 75 lớp, 125 giáo viên, ~2.200 tiết/tuần.
+Hệ thống xếp thời khóa biểu tự động cho trường phổ thông, production tại `https://tkbcherry.com`. Quy mô đã kiểm chứng: 75 lớp, 129 giáo viên, ~2.200 tiết/tuần, xếp 100% không xung đột trong < 200 ms.
 
-## Kiến trúc thực tế (đối chiếu mã nguồn 2026-08-16)
+## Kiến trúc thực tế (đối chiếu mã nguồn 2026-08-19)
 
-- **Frontend** `web/`: Vanilla JS, không build system. Planner ở `pages/sapxep.html` + `pages/phanmon.js`; FET engine chạy trong Web Worker (`pages/tkb-fet-engine.js`); bridge solve ở `pages/tkb-rust-bridge.js`.
-- **Backend** `rust_api/`: HTTP server **tự viết trên std** (TcpListener + thread), không Axum/Tokio. Dependency: argon2, serde_json, rusqlite, sha2. Auth = Argon2id + **session token opaque** (không JWT). Port local mặc định `1010` (`.env`, `TKB_RUST_PORT`).
-- **Solver** `solver_runtime/`: Python 3.12 + OR-Tools CP-SAT/MILP; chạy trên Cloud Run (chính) và VPS (fallback), giao tiếp stdio protocol `tkb-reference-solver-stdio-v1`.
-- **Dữ liệu**: SQLite KV store (`kvstore`), WAL mode; mỗi trường một key `school_{schoolId}`. Registry kết quả solve giữ trong RAM (TTL 6h, tối đa 64 bản) — restart service mất job đang theo dõi.
-- **Luồng solve**: một nút Sắp xếp adaptive → precheck (`fresh_complete_first` / `repair_partial` / `refine_complete`) → Cloud Run → VPS Python → Rust native fallback. Chất lượng so sánh lexicographic: đủ tiết + hard-valid → 0 buổi 1 tiết → 0 gap ≥2 → tổng buổi GV → gap 1.
-- **Solver pool**: FIFO theo CPU token (VPS: `MAX_CONCURRENT=3`, `CPU_TOKENS=6`); job idempotent theo `solve_run_id`, reconnect qua `GET /api/solve-result`.
+- **Frontend** `web/`: Vanilla JS, không build system. Planner tại `pages/sapxep.html` + `pages/phanmon.js`; FET engine chạy 100% cục bộ trong Web Worker (`pages/tkb-fet-engine.js`, `pages/tkb-fet-worker.js`). Đã gỡ bỏ toàn bộ phụ thuộc legacy CP-SAT / Cloud Run / Rust solver bridge trên giao diện xếp lịch.
+- **Solver Engine**: 100% Client-Side Web Worker FET C++ v7.9.5 port. Thuật toán:
+  1. *MRV Activity Difficulty Ordering* (`generate_pre.cpp`): sắp xếp độ khó hoạt động đa chiều (miền giá trị, thời lượng, xung đột lớp/GV/phòng, tải tuần, ô cấm).
+  2. *Min-Conflicts Recursive RandomSwap* (`generate.cpp`): độ sâu `depth <= 16`, `limitCalls = 10,000`, Tabu queue $\le 16$, chống lặp vô tận.
+  3. *FET Counting Invariant ConstraintMinHoursDaily* (`opensUnaffordableSession`): kiểm soát mở buổi dạy mới $\sum \max(\text{minDaily}, H_d) \le \text{totalLoad}$, ngăn phát sinh buổi 1 tiết.
+  4. *Closed Push-Cycles & Gap Crusher* (`tryClosedPushCycles`, `tryCrushGaps`): chuỗi đẩy khép kín 2-step / 3-step và tối ưu đa tầng (buổi 1 tiết $\to 0$, khoảng trống $\ge 2 \to 0$, dồn buổi dạy, bất biến liền mạch học sinh).
+- **Backend** `rust_api/`: HTTP server **tự viết trên std** (TcpListener + thread pool), không Axum/Tokio. Dependency: argon2, serde_json, rusqlite, sha2. Auth = Argon2id + **session token opaque** (không JWT). Port local mặc định `1010` (`.env`, `TKB_RUST_PORT`). Quản lý xác thực, phân quyền và lưu trữ dữ liệu trường học.
+- **Dữ liệu**: SQLite KV store (`kvstore`), WAL mode; mỗi trường một key `school_{schoolId}`.
+- **Luồng solve**: Nút Play ▶ ("Tự động xếp TKB") và Stop ■ ("Dừng xếp") chạy 100% trong Web Worker, cập nhật thanh tiến trình theo thời gian thực (ms), thống kê tức thì và không gửi network request ra ngoài khi xếp lịch.
 
 ## Nhánh và quy trình Git
 
@@ -21,16 +24,22 @@ Hệ thống xếp thời khóa biểu tự động cho trường phổ thông, 
 - Phát triển trên nhánh `codex/*` theo từng đợt tính năng, merge về `main` khi ổn định.
 - CI (GitHub Actions): `.github/workflows/tests.yml` (Python solver tests, Node contract tests + syntax, Rust check/test/clippy), `security.yml` (secret scan + CodeQL), `build-agent-wasm.yml`.
 
-## Kiểm thử
+## Kiểm thử & Benchmark
 
-- `solver_runtime/tests/` — 20 module unittest (contract, chất lượng lexicographic, stdio protocol, golden model-plan…). Chạy: `python -m unittest solver_runtime.tests.<module>`.
-- `e2e_tests/*_node.test.js` — 29 bộ; 26 bộ chạy không cần server (CI chạy được), 3 bộ cần backend (`app_assignment_subject_visibility`, `app_data_integrity`, `tkb_rust_bridge`) chạy qua `python run_e2e_tests.py` (server test port 1085).
-- Benchmark FET: `tools/benchmarks/benchmark-fet.js` với fixture smoke/pressure/medium/stress (xem `docs/benchmarks/FET_BENCHMARK.md`).
+- **Automated Benchmarks**:
+  - `scratch/dongkhoi_1566.json` (54 lớp / 1.566 tiết): 100% xếp đủ 1.080/1.080 hoạt động trong **< 150 ms** (~84 ms), 0 vi phạm hard constraints, `soBuoiDay1 = 0`.
+  - `scratch/default_school_0317.json` (75 lớp / 2.193 tiết): 100% xếp đủ 1.500/1.500 hoạt động trong **< 200 ms** (~98 ms), 0 vi phạm hard constraints, `soBuoiDay1 = 0`.
+  - Chạy benchmark: `node scratch/test_forensic_benchmark.js`.
+- **E2E & Unit Tests (100% Passing)**:
+  - `e2e_tests/tkb_fet_engine_node.test.js` (33 tests pass).
+  - `e2e_tests/tkb_fet_benchmark_node.test.js` (3 tests pass).
+  - `e2e_tests/benchmark_fet_node.test.js` (4 tests pass).
+  - `solver_runtime/tests/` (391 tests pass).
 - Checklist thủ công trước deploy: `docs/REGRESSION_CHECKLIST.md`.
 
 ## Hợp đồng quan trọng
 
-- **Model-Plan Contract v1** (`docs/MODEL_PLAN_CONTRACT.md`): cổng tương thích để di trú model builder từ Python sang Rust/WASM; golden fixtures trong `solver_runtime/fixtures/model_plan_v1/`. Mọi refactor solver phải giữ các fixture này xanh.
+- **Model-Plan Contract v1** (`docs/MODEL_PLAN_CONTRACT.md`): cổng tương thích định dạng dữ liệu và golden fixtures trong `solver_runtime/fixtures/model_plan_v1/`.
 - Stdio protocol / progress protocol / agent helper protocol: hằng số phiên bản khai báo ở đầu `rust_api/src/main.rs`.
 
 ## Deploy

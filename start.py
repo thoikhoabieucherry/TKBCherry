@@ -705,7 +705,7 @@ def stop_software_window(proc: subprocess.Popen[Any] | None) -> None:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Start the local TKB Rust API/UI server without using .bat files.")
     parser.add_argument("--host", default=os.environ.get("TKB_NEW_HOST") or os.environ.get("TKB_RUST_HOST") or "127.0.0.1")
-    parser.add_argument("--port", type=int, default=int(os.environ.get("TKB_RUST_PORT", "1010")))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("TKB_RUST_PORT", "1991")))
     parser.add_argument("--timeout", type=int, default=45, help="Seconds to wait for /api/health.")
     parser.add_argument("--foreground", action="store_true", help="Run the Rust API in this console instead of opening a new one.")
     parser.add_argument("--no-browser", action="store_true", help="Do not open the browser after startup.")

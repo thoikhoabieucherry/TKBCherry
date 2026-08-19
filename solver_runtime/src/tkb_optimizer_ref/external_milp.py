@@ -14,7 +14,12 @@ import math
 from types import SimpleNamespace
 from typing import Any, Mapping
 
-import numpy as np
+try:
+    import numpy as np
+except Exception:  # pragma: no cover
+    from .external_cp_sat import _MissingModule
+
+    np = _MissingModule("numpy")
 
 from .external_cp_sat import (
     EXTERNAL_HIGHS_MODEL_MAGIC,

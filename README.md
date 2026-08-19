@@ -15,17 +15,17 @@ Hoặc dùng `start.exe` nếu đã build bằng PyInstaller (xem mục Build b�
 Mở trình duyệt:
 
 ```text
-http://127.0.0.1:1010/
+http://127.0.0.1:1991/
 ```
 
-Đóng cửa sổ điều khiển TKB (hoặc Ctrl+C khi chạy `--foreground`) để dừng backend và giải phóng port `1010`.
+Đóng cửa sổ điều khiển TKB (hoặc Ctrl+C khi chạy `--foreground`) để dừng backend và giải phóng port `1991`.
 
 ## Kiến trúc
 
 | Thành phần | Mô tả |
 |------------|--------|
 | `web/` | Giao diện: quản lý dữ liệu, planner TKB, ràng buộc, import/export |
-| `rust_api/` | HTTP API Rust (port 1010), phục vụ static files + solve + export |
+| `rust_api/` | HTTP API Rust (port 1991), phục vụ static files + solve + export |
 | `solver_runtime/` | Python optimizer tham chiếu (CP-SAT / MILP qua `ortools`) |
 | `web/vendor/` | Thư viện giao diện/dữ liệu local (xlsx, jszip, sql.js) — không chứa solver trình duyệt |
 | `data/` | File Excel mẫu (nếu có) |

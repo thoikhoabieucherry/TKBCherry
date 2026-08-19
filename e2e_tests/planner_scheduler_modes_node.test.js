@@ -20,165 +20,20 @@ function buttonMarkup(source, id){
     .find(markup => markup.includes(`id="${id}"`)) || "";
 }
 
-function optimizeScript(){
-  const marker = '  const optimizeWrap = document.getElementById("plannerOptimizeWrap");';
-  const start = plannerHtml.indexOf(marker);
-  const scriptStart = plannerHtml.lastIndexOf("<script>", start);
-  const end = plannerHtml.indexOf("</script>", start);
-  assert.ok(scriptStart >= 0 && end > start, "optimize menu script is missing");
-  return plannerHtml.slice(scriptStart + "<script>".length, end);
-}
-
-test("Optimize exposes the unified pipeline and the four local FET goals", () => {
+test("Unified Play button invokes sapXepTuDongAll and Stop button invokes requestStopAutoSort", () => {
   const play = buttonMarkup(plannerHtml, "btnAutoSort");
   assert.ok(play, "automatic Play button is missing");
   assert.match(play, /onclick="sapXepTuDongAll\(\)"/);
 
-  const optimize = buttonMarkup(plannerHtml, "btnOptimizeMenu");
-  assert.ok(optimize, "optimize button is missing");
-  assert.match(optimize, /onclick="togglePlannerOptimizeMenu\(event\)"/);
-  assert.match(optimize, /aria-haspopup="menu"/);
-  assert.match(optimize, /aria-expanded="false"/);
-  assert.match(optimize, />[\s\S]*<span class="planner-mode-label">Tối ưu<\/span>/);
+  const stop = buttonMarkup(plannerHtml, "btnStopAutoSort");
+  assert.ok(stop, "stop button is missing");
+  assert.match(stop, /onclick="requestStopAutoSort\(\)"/);
 
-  const menuStart = plannerHtml.indexOf('<div id="plannerOptimizeMenu"');
-  const menuEnd = plannerHtml.indexOf("</div>", menuStart);
-  assert.ok(menuStart >= 0 && menuEnd > menuStart, "optimize menu is missing");
-  const menu = plannerHtml.slice(menuStart, menuEnd);
-  const items = menu.match(/<button\b[^>]*role="menuitem"[^>]*>[\s\S]*?<\/button>/g) || [];
-  assert.equal(items.length, 4);
-  const schedulerItems = items.filter(item => /data-scheduler-mode=/.test(item));
-  const deepItems = items.filter(item => /data-scheduler-deep="true"/.test(item));
-  assert.equal(schedulerItems.length, 4);
-  assert.equal(deepItems.length, 0);
-  assert.deepEqual(
-    schedulerItems.map(item => item.match(/data-scheduler-mode="([^"]+)"/)?.[1]),
-    ["optimize_singletons", "optimize_sessions", "optimize_gap2", "optimize_gap1"]
-  );
-  assert.deepEqual(
-    schedulerItems.map(item => item.replace(/<[^>]+>/g, "").trim()),
-    ["1 tiết/buổi", "Buổi dạy", "2 tiết trống", "1 tiết trống"]
-  );
-  assert.match(schedulerItems[0], /runPlannerSchedulerMode\('optimize_singletons', event\)/);
-  assert.match(schedulerItems[1], /runPlannerSchedulerMode\('optimize_sessions', event\)/);
-  assert.match(schedulerItems[2], /runPlannerSchedulerMode\('optimize_gap2', event\)/);
-  assert.match(schedulerItems[3], /runPlannerSchedulerMode\('optimize_gap1', event\)/);
-  for(const ordinary of schedulerItems){
-    assert.doesNotMatch(ordinary, /data-superadmin-only|\shidden(?:\s|>)/);
-  }
-  assert.doesNotMatch(plannerHtml, /runPlannerDeepOptimize|Tối ưu sâu|Cloud Run/);
-  assert.match(
-    plannerHtml,
-    /\.planner-optimize-menu\s*>\s*button\[hidden\]\s*\{[^}]*display:\s*none !important;/s
-  );
-});
-
-test("optimization menu opens, forwards supported modes, and refuses busy state", () => {
-  const documentListeners = new Map();
-  const elements = {};
-  const document = {
-    activeElement:null,
-    getElementById(id){ return elements[id] || null; },
-    addEventListener(type, listener){ documentListeners.set(type, listener); }
-  };
-  function element(extra = {}){
-    const attributes = new Map();
-    const listeners = new Map();
-    return Object.assign({
-      hidden:false,
-      disabled:false,
-      setAttribute(name, value){ attributes.set(String(name), String(value)); },
-      getAttribute(name){ return attributes.get(String(name)) ?? null; },
-      removeAttribute(name){ attributes.delete(String(name)); },
-      addEventListener(type, listener){ listeners.set(type, listener); },
-      contains(){ return false; },
-      focus(){ document.activeElement = this; },
-      querySelector(){ return null; },
-      querySelectorAll(){ return []; },
-      listeners
-    }, extra);
-  }
-  const menuItems = [element(), element(), element(), element()];
-  const advancedItems = [];
-  elements.plannerOptimizeWrap = element({contains(){ return false; }});
-  elements.btnOptimizeMenu = element();
-  elements.plannerOptimizeMenu = element({
-    hidden:true,
-    querySelectorAll(selector){
-      if(selector === '[role="menuitem"]') return menuItems;
-      if(selector === '[data-superadmin-only="true"]') return advancedItems;
-      return [];
-    }
-  });
-
-  const receivedModes = [];
-  let role = "school_user";
-  const windowListeners = new Map();
-  const window = {
-    __TKB_RUST_SOLVER_RUNNING:false,
-    __TKB_SOLVE_UI_BUSY:false,
-    TKBAuth:{currentUser(){ return {user:{role}}; }},
-    addEventListener(type, listener){ windowListeners.set(type, listener); },
-    sapXepTheoCheDo(mode){ receivedModes.push(mode); return `started:${mode}`; }
-  };
-  vm.runInNewContext(optimizeScript(), {window, document});
-
-  const event = {
-    preventDefault(){},
-    stopPropagation(){}
-  };
-  assert.equal(window.togglePlannerOptimizeMenu(event), true);
-  assert.equal(elements.plannerOptimizeMenu.hidden, false);
-  assert.equal(elements.btnOptimizeMenu.getAttribute("aria-expanded"), "true");
-  assert.equal(document.activeElement, null);
-
-  const keyEvent = {
-    key:"ArrowDown",
-    preventDefault(){},
-    stopPropagation(){}
-  };
-  elements.btnOptimizeMenu.listeners.get("keydown")(keyEvent);
-  assert.equal(document.activeElement, menuItems[0]);
-  elements.plannerOptimizeMenu.listeners.get("keydown")(keyEvent);
-  assert.equal(document.activeElement, menuItems[1]);
-  elements.plannerOptimizeMenu.listeners.get("keydown")(keyEvent);
-  assert.equal(document.activeElement, menuItems[2]);
-  elements.plannerOptimizeMenu.listeners.get("keydown")(keyEvent);
-  assert.equal(document.activeElement, menuItems[3]);
-  elements.plannerOptimizeMenu.listeners.get("keydown")(keyEvent);
-  assert.equal(document.activeElement, menuItems[0]);
-
-  assert.equal(window.runPlannerSchedulerMode("optimize_sessions", event), "started:optimize_sessions");
-  assert.deepEqual(receivedModes, ["optimize_sessions"]);
-  assert.equal(elements.plannerOptimizeMenu.hidden, true);
-
-  assert.equal(window.runPlannerSchedulerMode("unknown_mode", event), false);
-  assert.deepEqual(receivedModes, ["optimize_sessions"]);
-
-  for(const mode of ["optimize_singletons", "optimize_gap2", "optimize_gap1"]){
-    assert.equal(window.runPlannerSchedulerMode(mode, event), `started:${mode}`);
-  }
-  assert.deepEqual(receivedModes, ["optimize_sessions", "optimize_singletons", "optimize_gap2", "optimize_gap1"]);
-  assert.equal(advancedItems.length, 0);
-
-  role = "superadmin";
-  assert.equal(window.syncPlannerOptimizeRoleAccess(), true);
-  assert.equal(window.runPlannerSchedulerMode("optimize_sessions", event), "started:optimize_sessions");
-  assert.deepEqual(receivedModes, ["optimize_sessions", "optimize_singletons", "optimize_gap2", "optimize_gap1", "optimize_sessions"]);
-
-  elements.btnOptimizeMenu.disabled = true;
-  assert.equal(window.togglePlannerOptimizeMenu(event), false);
-  assert.equal(window.runPlannerSchedulerMode("optimize_gap2", event), false);
-  assert.deepEqual(receivedModes, ["optimize_sessions", "optimize_singletons", "optimize_gap2", "optimize_gap1", "optimize_sessions"]);
-
-  elements.btnOptimizeMenu.disabled = false;
-  window.__TKB_RUST_SOLVER_RUNNING = true;
-  assert.equal(window.togglePlannerOptimizeMenu(event), false);
-  assert.equal(window.runPlannerSchedulerMode("optimize_gap1", event), false);
-  assert.deepEqual(receivedModes, ["optimize_sessions", "optimize_singletons", "optimize_gap2", "optimize_gap1", "optimize_sessions"]);
-  assert.equal(typeof documentListeners.get("click"), "function");
-  assert.equal(typeof documentListeners.get("keydown"), "function");
-  assert.equal(typeof windowListeners.get("tkb:auth-ready"), "function");
+  // Deleted pipeline buttons must not exist
+  assert.doesNotMatch(plannerHtml, /id="btnTrialFullPipeline"/);
+  assert.doesNotMatch(plannerHtml, /id="btnNewLockedPipeline"/);
+  assert.doesNotMatch(plannerHtml, /id="plannerOptimizeWrap"/);
+  assert.doesNotMatch(plannerHtml, /id="plannerOptimizeMenu"/);
 });
 
 test("portrait and landscape retain responsive toolbar slots for the optimize control", () => {

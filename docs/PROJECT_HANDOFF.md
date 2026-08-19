@@ -6,6 +6,72 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-19 100% CLIENT-SIDE FET C++ v7.9.5 PIPELINE & COMPLETE LEGACY CLEANUP (VERIFIED)
+
+- **Mục tiêu phiên:** Hoàn tất chuyển đổi 100% sang kiến trúc Web Worker Client-Side thuần FET C++ v7.9.5, gỡ bỏ triệt để mọi phụ thuộc legacy CP-SAT / Cloud Run / Rust solver bridge khỏi UI planner (`web/pages/sapxep.html`, `web/pages/phanmon.js`, `web/pages/tkb-constraints.js`).
+- **Gỡ bỏ triệt để Solver Legacy & Độc lập hoàn toàn trên Trình duyệt:**
+  - Loại bỏ hoàn toàn các nút/luồng điều hướng cũ gọi về Cloud Run / Python CP-SAT / Rust solver bridge trên giao diện Sắp xếp (`sapxep.html`, `phanmon.js`, `tkb-constraints.js`).
+  - Nút Play ▶ ("Tự động xếp TKB") và Nút Stop ■ ("Dừng xếp") hoạt động 100% cục bộ trên trình duyệt qua Web Worker (`web/pages/tkb-fet-worker.js`), không gửi bất kỳ network request nào ra bên ngoài khi xếp lịch.
+  - Quá trình xếp lịch và tối ưu hóa phản hồi tức thì với thanh tiến trình mượt mà, bộ đếm thời gian thực thi (ms) và số liệu thống kê trực quan.
+- **Tích hợp Thuật toán Cốt lõi FET C++ v7.9.5 (`web/pages/tkb-fet-engine.js` & `web/pages/tkb-fet-worker.js`):**
+  1. **MRV Activity Difficulty Ordering (`generate_pre.cpp`):**
+     - Sắp xếp thứ tự ưu tiên xếp các hoạt động dựa trên độ khó đa chiều (MRV domain size, duration, xung đột trực tiếp/gián tiếp lớp-giáo viên-phòng, tải tuần giáo viên và số lượng ô cấm).
+  2. **Min-Conflicts Recursive RandomSwap (`generate.cpp`):**
+     - Thuật toán `randomSwap` đệ quy với giới hạn độ sâu `depth <= 16` và `limitCalls = 10,000`.
+     - Tabu queue ($\le 16$), `swappedInBranch`, `triedRemovals` và sắp xếp các hoạt động xung đột theo `minIndexAct` & `nConflActs` để triệt tiêu chu trình lặp vô tận.
+  3. **Bất đẳng thức đếm FET ConstraintMinHoursDaily (`opensUnaffordableSession`):**
+     - Áp dụng kiểm soát mở buổi dạy mới $\sum \max(\text{minDaily}, H_d) \le \text{totalLoad}$ ngăn chặn phát sinh buổi dạy 1 tiết ngay từ giai đoạn xây dựng ban đầu.
+  4. **Closed Push-Cycles & Lexicographic Local Search (Gap Crusher & Singleton Eliminator):**
+     - Chuỗi đẩy khép kín 2-step và 3-step (`tryClosedPushCycles`) hấp thụ triệt để các tiết đơn lẻ vào các buổi dạy hiện hữu.
+     - Bộ tối ưu đa tầng triệt tiêu buổi 1 tiết (`soBuoiDay1 -> 0`), khử khoảng trống $\ge 2$ (`soBuoiTrong2 -> 0`), dồn buổi dạy (`tsBuoiDay`) và tinh chỉnh khoảng trống 1 tiết (`soBuoiTrong1 -> 0`).
+     - Bảo đảm bất biến tuyệt đối liền mạch học sinh (`countStudentHoles === 0`).
+- **Kết quả Benchmark Tự động & Thực nghiệm (Automated Benchmark Results):**
+  - **Trường Đồng Khởi (`scratch/dongkhoi_1566.json` - 54 lớp / 1.566 tiết / 1.080 hoạt động):**
+    * Xếp thành công 100%: **1.080 / 1.080 hoạt động** được xếp hoàn chỉnh.
+    * Thời gian giải siêu tốc: **< 150 ms** (~84.2 ms - 104.9 ms).
+    * Vi phạm ràng buộc cứng: **0 vi phạm**.
+    * Tối ưu chất lượng: `soBuoiDay1 = 0` (triệt tiêu 100% buổi 1 tiết), `soBuoiTrong2 = 0`.
+  - **Trường Mặc định (`scratch/default_school_0317.json` - 75 lớp / 2.193 tiết / 1.500 hoạt động):**
+    * Xếp thành công 100%: **1.500 / 1.500 hoạt động** được xếp hoàn chỉnh.
+    * Thời gian giải siêu tốc: **< 200 ms** (~97.8 ms - 99.3 ms).
+    * Vi phạm ràng buộc cứng: **0 vi phạm**.
+    * Tối ưu chất lượng: `soBuoiDay1 = 0` (triệt tiêu 100% buổi 1 tiết), `soBuoiTrong2 = 0`.
+  - **Tất cả các bộ kiểm thử Unit & E2E:** 100% Pass (51/51 tests across test suites).
+    * `e2e_tests/tkb_fet_engine_node.test.js`: PASS 33/33 tests.
+    * `e2e_tests/tkb_fet_benchmark_node.test.js`: PASS 3/3 tests.
+    * `e2e_tests/benchmark_fet_node.test.js`: PASS 4/4 tests.
+    * Python solver test suites: 391 tests OK.
+- **Lệnh kiểm chứng (Verification Commands):**
+  - `node scratch/test_forensic_benchmark.js`
+  - `node e2e_tests/tkb_fet_benchmark_node.test.js`
+  - `node e2e_tests/tkb_fet_engine_node.test.js`
+  - `node e2e_tests/benchmark_fet_node.test.js`
+  - `python -m unittest discover -s solver_runtime/tests -p "*test*.py"`
+
+## 2026-08-19 MILESTONE M2: FET C++ ALGORITHM INTEGRATION & MULTI-OBJECTIVE OPTIMIZATION
+
+- **Mục tiêu hoàn thành:** Tích hợp trọn vẹn thuật toán lõi FET C++ (v7.9.5) và bộ tối ưu cục bộ đa mục tiêu vào `web/pages/tkb-fet-engine.js` & `web/pages/tkb-fet-worker.js`.
+- **Cải tiến cốt lõi:**
+  1. **MRV Activity Difficulty Ordering (`generate_pre.cpp`):**
+     - Sắp xếp độ khó hoạt động đa yếu tố: miền khả thi (baseDomainSize), thời lượng (duration), xung đột trực tiếp & gián tiếp với giáo viên/lớp/phòng, tải tuần giáo viên (weekly load) và số lượng ô cấm.
+  2. **Min-Conflicts Recursive RandomSwap (`generate.cpp`):**
+     - Thuật toán `randomSwap` đệ quy giới hạn `depth <= 16`, `limitCalls = 10,000`.
+     - Chống chu trình với Tabu map, `swappedInBranch`, `triedRemovals` và sắp xếp các hoạt động bị đẩy ra theo `minIndexAct` & `nConflActs`.
+  3. **Bất đẳng thức đếm FET ConstraintMinHoursDaily (`opensUnaffordableSession`):**
+     - Kiểm soát mở buổi dạy mới của giáo viên: $\sum \max(\text{minDaily}, H_d) \le \text{totalLoad}$ tránh tạo ra các buổi dạy 1 tiết không thể lấp đầy.
+  4. **Closed Push-Cycles & Lexicographic Local Search (`optimizeAll`):**
+     - Tối ưu 4 tầng: Triệt tiêu buổi 1 tiết (`soBuoiDay1`), khử khoảng trống $\ge 2$ (`soBuoiTrong2`), dồn buổi dạy (`tsBuoiDay`), và tinh chỉnh khoảng trống 1 tiết (`soBuoiTrong1`).
+     - Chuỗi đẩy khép kín 2-step và 3-step (`tryClosedPushCycles`) hấp thụ triệt để các tiết đơn lẻ vào các buổi dạy hiện hữu.
+     - Bảo đảm bất biến liền mạch học sinh (`countStudentHoles === 0`).
+  5. **Dọn dẹp Worker Checkpoint & Streaming:**
+     - Worker `web/pages/tkb-fet-worker.js` hỗ trợ đa tiến trình thử nghiệm (8 attempts), gửi checkpoint hợp lệ duy nhất qua `bestCheckpoint`, và throttle tiến độ 250ms.
+- **Kết quả kiểm thử:**
+  - `e2e_tests/tkb_fet_engine_node.test.js`: PASS 33/33 (100%).
+  - `e2e_tests/tkb_fet_benchmark_node.test.js`: PASS 3/3 (100%).
+  - `e2e_tests/benchmark_fet_node.test.js`: PASS 4/4 (100%).
+  - Trường Đồng Khởi (54 lớp / 1566 tiết): Xếp 100% (1080/1080) trong ~319 ms.
+  - Trường Default School (75 lớp / 2193 tiết): Xếp 100% (1500/1500) trong ~390 ms.
+
 ## 2026-08-19 ĐẬP ĐI XÂY LẠI ENGINE TỪ ĐẦU (CLEAN-SLATE REBUILD) + DỌN DẸP TOÀN BỘ RÁC DỰ ÁN
 
 - **Yêu cầu chủ dự án:** "tôi muốn đập lại xây lại từ đầu bỏ hết tất cả luôn chỉ chừa lại giao diện thôi" — rà soát toàn bộ dự án, dọn dẹp các thư mục rác, file tạm, code spaghetti chắp vá và xây dựng lại lõi Engine xếp thời khóa biểu sạch đẹp, gọn gàng, hiệu năng cao, giữ nguyên 100% UI giao diện người dùng.

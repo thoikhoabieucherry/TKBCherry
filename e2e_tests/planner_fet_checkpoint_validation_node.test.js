@@ -34,6 +34,18 @@ function loadHelpers(violationsForTkb){
     Object,
     Promise,
     console,
+    clonePlannerScheduleState(data){
+      return {
+        tkb:JSON.parse(JSON.stringify(data.tkb || {})),
+        tkbLessonTeachers:JSON.parse(JSON.stringify(data.tkbLessonTeachers || {})),
+        tkbLessonRooms:JSON.parse(JSON.stringify(data.tkbLessonRooms || {}))
+      };
+    },
+    restorePlannerScheduleState(data, snapshot){
+      data.tkb = snapshot.tkb;
+      data.tkbLessonTeachers = snapshot.tkbLessonTeachers;
+      data.tkbLessonRooms = snapshot.tkbLessonRooms;
+    },
     cloneHybridScheduleState(data){
       return {
         tkb:JSON.parse(JSON.stringify(data.tkb || {})),

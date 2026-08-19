@@ -9,14 +9,7 @@ importScripts('tkb-fet-engine.js?v=' + Date.now());
 
 let currentEngine = null;
 
-
 async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isConstruction) {
-  // XEP MOI + TOI UU TRON GOI trong MOT worker — CAM KET DU 100% TIET:
-  // construction thu nhieu seed den khi DAT DU TIET (toi da 8 seed / ~75s);
-  // chi khi du 100% moi chay optimizeAll (0 buoi 1 tiet, 0 trong >=2, giam
-  // trong 1 + tong buoi). Khong bao gio ap lich thieu tiet — neu moi seed deu
-  // thieu, tra fail-closed kem danh sach hoat dong ket de nguoi dung go rang
-  // buoc; lich hien tai duoc giu nguyen.
   const baseSeed = Number(workerOptions.seed) || 12345;
   const MAX_ATTEMPTS = 8;
   const ATTEMPT_DEADLINE_MS = Date.now() + 75000;
@@ -49,9 +42,7 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
   if (!bestRes || bestRes.ok === false) {
     return Object.assign({ initialMetrics: null, metrics: null }, bestRes || { ok: false, applied: false, failureKind: 'fet_construction_failed' });
   }
-  // CHI DAO 17/08: khong du cho thi van LAP TOI DA, phan du tra ve "Chua phan"
-  // — khong fail-closed nua. So tiet con thieu duoc tra ve trung thuc qua
-  // `unassigned` de UI canh bao ro rang.
+
   const opt = await bestEngine.optimizeAll((p) => {
     cb(Object.assign({}, p, { percent: 35 + Math.round(Math.min(100, Number(p.percent) || 0) * 0.65) }));
   });
@@ -62,16 +53,15 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
 }
 
 self.onmessage = async function(e) {
-  const action = e.data?.action || e.data?.type;
+  const taskType = e.data?.action || e.data?.type;
   const { mode, data, options } = e.data || {};
 
-  if (action === 'optimize') {
+  if (taskType === 'optimize') {
     try {
-      // Worker thread has no UI to protect: drop the per-round breathing delay.
       const workerOptions = Object.assign({ uiBreathingMs: 0 }, options || {});
       currentEngine = new self.FetTimetableEngine(data, workerOptions);
 
-      let constructionPhase = false; // solve_optimize_all: khong phat checkpoint khi luoi con dang xay (chua du tiet)
+      let constructionPhase = false;
       const runSolveOptimizeAll = (cb) => runSolveOptimizeAllImpl(
         cb,
         data,
@@ -79,54 +69,54 @@ self.onmessage = async function(e) {
         (eng) => { if (eng) currentEngine = eng; },
         (v) => { constructionPhase = !!v; }
       );
-      const runOptimize = async (cb) => {
-        if (mode === 'solve_optimize_all' || mode === 'solve_optimize_all_fresh') {
-          return await runSolveOptimizeAll(cb);
-        }
-        if (mode === 'optimize_all' && typeof currentEngine.optimizeAll === 'function') return currentEngine.optimizeAll(cb);
-        // Nút "2 tiết trống": dùng cơ chế vay-trả 1t/buổi (không bao giờ tệ hơn chạy thường)
-        if (mode === 'optimize_gap2' && typeof currentEngine.optimizeGap2WithBorrow === 'function') return currentEngine.optimizeGap2WithBorrow(cb);
-        return currentEngine.optimize(mode, cb);
-      };
+
+      let bestCheckpoint = null;
       let lastSnapshotAt = 0;
-      let lastSnapshotTkb = null;
       const SNAPSHOT_INTERVAL_MS = 250;
 
-      const res = await runOptimize((prog) => {
+      const res = await currentEngine.optimize(mode, (prog) => {
         let snapshotTkb = null;
         if (!constructionPhase) {
           const now = Date.now();
-          if (!lastSnapshotTkb || now - lastSnapshotAt >= SNAPSHOT_INTERVAL_MS || prog.percent >= 100) {
-            try { 
-              lastSnapshotTkb = currentEngine.getSnapshotTKB(); 
+          if (!bestCheckpoint || now - lastSnapshotAt >= SNAPSHOT_INTERVAL_MS || (prog && prog.percent >= 100)) {
+            try {
+              const snap = typeof currentEngine.getRetainedOptimizationSnapshotTKB === 'function'
+                ? currentEngine.getRetainedOptimizationSnapshotTKB()
+                : currentEngine.getSnapshotTKB();
               lastSnapshotAt = now;
-            } catch(_) {}
+              bestCheckpoint = {
+                complete: Number(prog?.metrics?.unplacedCount || 0) === 0,
+                tkb: snap,
+                metrics: prog?.metrics
+              };
+            } catch (_) {}
           }
-          snapshotTkb = lastSnapshotTkb;
+          snapshotTkb = bestCheckpoint ? bestCheckpoint.tkb : null;
         }
+
         self.postMessage({
           type: 'progress',
           mode: mode,
-          percent: prog.percent,
-          currentMetric: prog.currentMetric,
-          initialMetric: prog.initialMetric,
-          stage: prog.stage || null,
-          cycle: prog.cycle,
-          metrics: prog.metrics,
-          checkpoint: snapshotTkb ? {
-            complete: true,
-            tkb: snapshotTkb,
-            metrics: prog.metrics
-          } : null,
+          percent: prog?.percent,
+          currentMetric: prog?.currentMetric,
+          initialMetric: prog?.initialMetric,
+          stage: prog?.stage || null,
+          cycle: prog?.cycle,
+          metrics: prog?.metrics,
+          checkpoint: bestCheckpoint,
           tkb: snapshotTkb
         });
       });
+
+      const finalSnapshot = typeof currentEngine.getRetainedOptimizationSnapshotTKB === 'function'
+        ? currentEngine.getRetainedOptimizationSnapshotTKB()
+        : currentEngine.getSnapshotTKB();
 
       self.postMessage({
         type: 'done',
         ok: true,
         applied: true,
-        tkb: currentEngine.getSnapshotTKB(),
+        tkb: finalSnapshot,
         initialMetrics: res.initialMetrics,
         metrics: res.metrics,
         placed: res.placed,
@@ -138,10 +128,8 @@ self.onmessage = async function(e) {
         error: err?.message || String(err)
       });
     }
-  } else if (action === 'solve') {
+  } else {
     try {
-      // FAIL-CLOSED: an optimize_* mode arriving on the construction lane means
-      // a stale caller; refuse instead of rebuilding (and destroying) the grid.
       if (/^optimize/i.test(String(mode || ''))) {
         self.postMessage({ type: 'error', error: 'optimize mode routed to solve lane (stale client); refusing to rebuild' });
         return;
@@ -157,16 +145,17 @@ self.onmessage = async function(e) {
         });
       });
 
-      const snapshotTkb = currentEngine.getSnapshotTKB();
+      const isOk = res && res.ok !== false && (Number(res.unassigned) || 0) === 0;
+      const snapshotTkb = isOk ? currentEngine.getSnapshotTKB() : null;
       self.postMessage({
         type: 'done',
-        ok: true,
-        applied: true,
+        ok: isOk,
+        applied: isOk,
         tkb: snapshotTkb,
-        checkpoint: {
+        checkpoint: isOk ? {
           complete: true,
           tkb: snapshotTkb
-        },
+        } : null,
         placed: res.placed,
         unassigned: res.unassigned,
         total: res.total || (res.placed + res.unassigned)

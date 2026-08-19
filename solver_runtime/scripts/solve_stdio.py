@@ -95,26 +95,54 @@ if __name__ == "__main__":
         }
     )
 
-from tkb_new.adapter import (  # noqa: E402
-    _trim_context_to_available_slots,
-    _unassigned_from_shortfall,
-    build_payload,
-    build_school_data_from_ui,
-    solve_from_ui_data,
-    validate_candidate_payload,
-)
-from tkb_new.fixture import build_ui_fixture_from_workbooks  # noqa: E402
-from tkb_optimizer_ref.period_milp import PeriodAllocationError  # noqa: E402
-from tkb_optimizer_ref.external_cp_sat import (  # noqa: E402
-    EXTERNAL_HIGHS_MODEL_MAGIC,
-    EXTERNAL_MODEL_PLAN_VERSION,
-    ExternalCpSatPending,
-    ExternalCpSatProtocolError,
-    ExternalCpSatUnusableResponse,
-    external_cp_sat_lns_policy_from_request,
-    external_model_digest,
-    external_solver_scope,
-)
+try:
+    from tkb_new.adapter import (  # noqa: E402
+        _trim_context_to_available_slots,
+        _unassigned_from_shortfall,
+        build_payload,
+        build_school_data_from_ui,
+        solve_from_ui_data,
+        validate_candidate_payload,
+    )
+    from tkb_optimizer_ref.period_milp import PeriodAllocationError  # noqa: E402
+    from tkb_optimizer_ref.external_cp_sat import (  # noqa: E402
+        EXTERNAL_HIGHS_MODEL_MAGIC,
+        EXTERNAL_MODEL_PLAN_VERSION,
+        ExternalCpSatPending,
+        ExternalCpSatProtocolError,
+        ExternalCpSatUnusableResponse,
+        external_cp_sat_lns_policy_from_request,
+        external_model_digest,
+        external_solver_scope,
+    )
+except Exception as _import_error:  # pragma: no cover - broken python env
+    # Never die silently: surface the exact import failure through the wire
+    # protocol so the app (and the operator) can see WHY the solver is down.
+    if __name__ == "__main__":
+        emit_progress(
+            {
+                "stage": "runtime:import_error",
+                "message": f"Loi khoi dong solver Python: {_import_error}",
+            }
+        )
+        _write_protocol_value(
+            {
+                "protocol": STDIO_PROTOCOL,
+                "status": 500,
+                "payload": {
+                    "ok": False,
+                    "kind": "solver_import_error",
+                    "error": (
+                        "Moi truong Python thieu thu vien hoac hong: "
+                        f"{_import_error}. Hay chay: python solver_runtime/scripts/solve_stdio.py solve "
+                        "de xem chi tiet."
+                    ),
+                    "trace": traceback.format_exc(limit=8),
+                },
+            }
+        )
+        raise SystemExit(0)
+    raise
 
 
 CURRENT_REQUEST_BODY: bytes | None = None
@@ -565,12 +593,14 @@ def main() -> int:
     ui_data = None
     settings = {}
     try:
-        if mode == "fixture":
-            _write_protocol_value(
-                build_ui_fixture_from_workbooks(ROOT / "web", include_fixed_off_excel=True)
-            )
-            return 0
-        if mode == "sample":
+        if mode in {"fixture", "sample"}:
+            from tkb_new.fixture import build_ui_fixture_from_workbooks  # lazy: needs openpyxl
+
+            if mode == "fixture":
+                _write_protocol_value(
+                    build_ui_fixture_from_workbooks(ROOT / "web", include_fixed_off_excel=True)
+                )
+                return 0
             write_json({"ok": True, "data": build_ui_fixture_from_workbooks(ROOT / "web", include_fixed_off_excel=True)})
             return 0
 
@@ -723,7 +753,33 @@ def main() -> int:
                 "message": "Da nhan du lieu, bat dau sap xep",
             }
         )
-        result = solve_from_ui_data(ui_data, settings, progress=emit_progress)
+        engine_choice = (
+            os.environ.get("TKB_ENGINE", "").strip().casefold()
+            or str(settings.get("engine") or "").strip().casefold()
+            or "v3"
+        )
+        if engine_choice in {"legacy", "v1", "reference"}:
+            result = solve_from_ui_data(ui_data, settings, progress=emit_progress)
+        else:
+            # Engine v3 is the one-button scheduler. Legacy remains only as a
+            # crash-safety net so a solver bug can never brick the button.
+            try:
+                from tkb_engine_v3.entry import solve_from_ui_data_v3
+
+                result = solve_from_ui_data_v3(ui_data, settings, progress=emit_progress)
+            except Exception:
+                emit_progress(
+                    {
+                        "stage": "solver:fallback",
+                        "message": "Engine v3 gap loi bat ngo; dung engine du phong",
+                    }
+                )
+                if os.environ.get("TKB_DEBUG_TRACE") == "1":
+                    traceback.print_exc(file=sys.stderr)
+                result = solve_from_ui_data(ui_data, settings, progress=emit_progress)
+                result.setdefault("solver", {}).setdefault("runtime_settings", {})[
+                    "engine_v3_fallback"
+                ] = True
         emit_progress(
             {
                 "stage": "result:finalizing",

@@ -31,7 +31,7 @@ body.planner-shell {
 
 /* Keep feedback inline on desktop and below the compact mobile commands. */
 body.planner-shell .toolbar-main {
-  --planner-toolbar-button-width: clamp(96px, 7.2vw, 104px);
+  --planner-toolbar-button-width: clamp(72px, 5.4vw, 84px); /* 18/08: nut ngan lai theo y user */
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr) auto;
   align-items: center;
@@ -1454,15 +1454,9 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
       <button id="btnUndoTKB" class="icon-button" type="button" onclick="tkbUndo()" title="Hoàn tác" aria-label="Hoàn tác" disabled><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 14-4-4 4-4"/><path d="M5 10h11a4 4 0 1 1 0 8h-1"/></svg></button>
       <button id="btnRedoTKB" class="icon-button" type="button" onclick="tkbRedo()" title="Làm lại" aria-label="Làm lại" disabled><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 14 4-4-4-4"/><path d="M19 10H8a4 4 0 1 0 0 8h1"/></svg></button>
       <button id="btnAutoSort" class="primary icon-button" type="button" onclick="sapXepTuDongAll()" title="Bắt đầu sắp xếp" aria-label="Bắt đầu sắp xếp"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8.35 6.3c0-1.02 1.12-1.65 2-1.12l8.1 4.88a1.3 1.3 0 0 1 0 2.22l-8.1 4.88c-.88.53-2-.1-2-1.12V6.3Z" fill="currentColor"/></svg></button>
-      <div id="plannerOptimizeWrap" class="planner-optimize-wrap">
-        <button id="btnOptimizeMenu" class="planner-mode-button" type="button" onclick="togglePlannerOptimizeMenu(event)" title="Chọn mục tiêu tối ưu" aria-label="Chọn mục tiêu tối ưu" aria-haspopup="menu" aria-expanded="false" aria-controls="plannerOptimizeMenu"><svg class="planner-mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg><span class="planner-mode-label">Tối ưu</span></button>
-        <div id="plannerOptimizeMenu" class="planner-optimize-menu" role="menu" aria-label="Mục tiêu tối ưu" hidden>
-          <button type="button" role="menuitem" data-scheduler-mode="optimize_singletons" onclick="runPlannerSchedulerMode('optimize_singletons', event)">1 tiết/buổi</button>
-          <button type="button" role="menuitem" data-scheduler-mode="optimize_sessions" onclick="runPlannerSchedulerMode('optimize_sessions', event)">Buổi dạy</button>
-          <button type="button" role="menuitem" data-scheduler-mode="optimize_gap2" onclick="runPlannerSchedulerMode('optimize_gap2', event)">2 tiết trống</button>
-          <button type="button" role="menuitem" data-scheduler-mode="optimize_gap1" onclick="runPlannerSchedulerMode('optimize_gap1', event)">1 tiết trống</button>
-        </div>
-      </div>
+      <!-- (đã gỡ menu Tối ưu: một nút Sắp xếp duy nhất, engine v3 backend tự tối ưu trọn gói) -->
+      <!-- (18/08: đã gỡ ô nhập thời gian — ngân sách tự động, engine tự dừng sớm khi lịch đã ổn) -->
+      <!-- (18/08: đã gỡ nút Tối ưu trống 1 — chế độ tự động đảm nhiệm) -->
       <button type="button" id="btnStopAutoSort" class="auto-sort-stop icon-button" onclick="requestStopAutoSort()" title="Dừng tối ưu" aria-label="Dừng tối ưu" aria-hidden="true" style="display:none;"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" stroke="currentColor"/><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" stroke="none"/></svg></button>
       <button id="btnDeleteAll" class="danger icon-button" type="button" onclick="deleteAllTKB()" title="Xóa toàn bộ thời khóa biểu" aria-label="Xóa toàn bộ thời khóa biểu"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 7h15"/><path d="M9 7V4.8h6V7"/><path d="m6.7 7 .8 12h9l.8-12"/><path d="M10 10.5v5.2M14 10.5v5.2"/></svg></button>
     </div>
@@ -1482,12 +1476,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
     <div class="toolbar-secondary-actions" aria-label="Điều hướng và thống kê">
       <div class="stats-popover-wrap">
-        <button id="btnNewLockedPipeline" class="primary save-button" type="button" hidden aria-hidden="true"
-          title="NEW (superadmin): thiếu tiết thì xếp mới + pipeline khóa; ĐỦ 100% thì tối ưu tiếp từ lịch hiện tại — 1 tiết/buổi thấp nhất → KHÓA → trống ≥2 về 0 → KHÓA → giảm buổi → giảm trống 1"
-          aria-label="NEW: xếp mới + pipeline khóa tuần tự" onclick="runNewLockedPipeline(event)">NEW ★</button>
-        <button id="btnTrialFullPipeline" class="primary save-button" type="button" hidden aria-hidden="true"
-          title="Thử nghiệm (superadmin): Xếp mới + tối ưu trọn gói — mục tiêu 0 buổi 1 tiết, 0 buổi trống ≥2 tiết, giảm tối đa trống 1 tiết và tổng buổi"
-          aria-label="Xếp và tối ưu trọn gói (thử nghiệm)" onclick="runTrialFullPipeline(event)">Trọn gói ★</button>
+        <!-- (đã gỡ nút NEW ★ / Trọn gói ★: hợp nhất vào một nút Sắp xếp) -->
         <button id="btnHome" class="primary save-button" type="button" title="Về trang chủ" aria-label="Về trang chủ" onclick="saveAndBack()">Home</button>
         <button id="statsToggle" class="stats-toggle" type="button" onclick="toggleStatsPopover(event)" title="Thống kê thời khóa biểu" aria-label="Thống kê thời khóa biểu" aria-expanded="false"><span class="toolbar-label-full" aria-hidden="true">Thống kê</span><span class="toolbar-label-compact" aria-hidden="true"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M4 20V13h4v7M10 20V9h4v11M16 20V5h4v15M3 20h18"/></svg></span></button>
         <div id="statsPopover" class="stats-popover" hidden>
@@ -1498,219 +1487,6 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   </div>
 
 </div>
-
-<script>
-(function(){
-  const optimizeWrap = document.getElementById("plannerOptimizeWrap");
-  const toggleButton = document.getElementById("btnOptimizeMenu");
-  const menu = document.getElementById("plannerOptimizeMenu");
-  const ordinaryModes = new Set([
-    "optimize_singletons",
-    "optimize_sessions",
-    "optimize_gap2",
-    "optimize_gap1"
-  ]);
-  const superadminOnlyModes = new Set([]);
-
-  function plannerOptimizeUserIsSuperadmin(){
-    try{
-      return String(window.TKBAuth?.currentUser?.()?.user?.role || "")
-        .trim()
-        .toLowerCase() === "superadmin";
-    }catch(_){
-      return false;
-    }
-  }
-
-  function visibleOptimizeMenuItems(){
-    return Array.from(menu?.querySelectorAll('[role="menuitem"]') || [])
-      .filter(item => item.hidden !== true && item.getAttribute?.("aria-hidden") !== "true");
-  }
-
-  function syncPlannerOptimizeRoleAccess(){
-    const superadmin = plannerOptimizeUserIsSuperadmin();
-    for(const item of menu?.querySelectorAll('[data-superadmin-only="true"]') || []){
-      item.hidden = !superadmin;
-      item.setAttribute("aria-hidden", superadmin ? "false" : "true");
-      if(superadmin) item.removeAttribute?.("tabindex");
-      else item.setAttribute("tabindex", "-1");
-    }
-    return superadmin;
-  }
-
-  function plannerOptimizeModeAllowed(mode){
-    return ordinaryModes.has(mode)
-      || (superadminOnlyModes.has(mode) && plannerOptimizeUserIsSuperadmin());
-  }
-
-  function optimizeControlBusy(){
-    return !toggleButton
-      || toggleButton.disabled === true
-      || toggleButton.getAttribute("aria-disabled") === "true"
-      || window.__TKB_RUST_SOLVER_RUNNING === true
-      || window.__TKB_SOLVE_UI_BUSY === true;
-  }
-
-  function setPlannerOptimizeMenuOpen(open, options){
-    if(!toggleButton || !menu) return false;
-    const shouldOpen = !!open && !optimizeControlBusy();
-    menu.hidden = !shouldOpen;
-    toggleButton.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
-    if(shouldOpen && options?.focusFirst === true){
-      visibleOptimizeMenuItems()[0]?.focus();
-    }else if(!shouldOpen && options?.returnFocus === true && !toggleButton.disabled){
-      toggleButton.focus();
-    }
-    return shouldOpen;
-  }
-
-  function togglePlannerOptimizeMenu(event){
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-    if(optimizeControlBusy()) return setPlannerOptimizeMenuOpen(false);
-    return setPlannerOptimizeMenuOpen(menu?.hidden !== false);
-  }
-
-  function runPlannerSchedulerMode(mode, event){
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-    const normalizedMode = String(mode || "").trim();
-    setPlannerOptimizeMenuOpen(false);
-    if(optimizeControlBusy() || !plannerOptimizeModeAllowed(normalizedMode)) return false;
-    if(typeof window.sapXepTheoCheDo !== "function") return false;
-    return window.sapXepTheoCheDo(normalizedMode);
-  }
-
-  toggleButton?.addEventListener("keydown", (event) => {
-    if(event.key !== "ArrowDown") return;
-    event.preventDefault();
-    event.stopPropagation();
-    setPlannerOptimizeMenuOpen(true, {focusFirst:true});
-  });
-
-  menu?.addEventListener("keydown", (event) => {
-    const items = visibleOptimizeMenuItems();
-    const currentIndex = items.indexOf(document.activeElement);
-    if(event.key === "Escape"){
-      event.preventDefault();
-      setPlannerOptimizeMenuOpen(false, {returnFocus:true});
-      return;
-    }
-    if(event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-    event.preventDefault();
-    const direction = event.key === "ArrowDown" ? 1 : -1;
-    const nextIndex = currentIndex < 0
-      ? (direction > 0 ? 0 : items.length - 1)
-      : (currentIndex + direction + items.length) % items.length;
-    items[nextIndex]?.focus();
-  });
-
-  document.addEventListener("click", (event) => {
-    if(menu?.hidden !== false || optimizeWrap?.contains(event.target)) return;
-    setPlannerOptimizeMenuOpen(false);
-  });
-
-  document.addEventListener("keydown", (event) => {
-    if(event.key !== "Escape" || menu?.hidden !== false) return;
-    event.preventDefault();
-    setPlannerOptimizeMenuOpen(false, {returnFocus:true});
-  });
-
-  window.setPlannerOptimizeMenuOpen = setPlannerOptimizeMenuOpen;
-  window.togglePlannerOptimizeMenu = togglePlannerOptimizeMenu;
-  window.runPlannerSchedulerMode = runPlannerSchedulerMode;
-  window.syncPlannerOptimizeRoleAccess = syncPlannerOptimizeRoleAccess;
-  syncPlannerOptimizeRoleAccess();
-  window.addEventListener?.("tkb:auth-ready", syncPlannerOptimizeRoleAccess);
-})();
-
-/* ============ NÚT THỬ NGHIỆM "TRỌN GÓI" (chỉ superadmin) ============
-   Chuỗi: (1) luồng Sắp xếp hiện tại (giữ nguyên, không đụng) →
-          (2) Tối ưu tất cả trong FET worker (mục tiêu 0 buổi 1 tiết,
-              0 buổi trống ≥2, giảm trống 1 + tổng buổi).
-   Tính năng xếp hiện tại trên web KHÔNG thay đổi; nút này chỉ để
-   superadmin thử nghiệm pipeline trọn gói trước khi phổ cập. */
-(function(){
-  const btn = document.getElementById("btnTrialFullPipeline");
-  if(!btn) return;
-
-  function trialUserIsSuperadmin(){
-    try{
-      return String(window.TKBAuth?.currentUser?.()?.user?.role || "")
-        .trim()
-        .toLowerCase() === "superadmin";
-    }catch(_){
-      return false;
-    }
-  }
-
-  function syncTrialButtonVisibility(){
-    const on = trialUserIsSuperadmin();
-    btn.hidden = !on;
-    btn.setAttribute("aria-hidden", on ? "false" : "true");
-  }
-
-  function solveBusy(){
-    return window.__TKB_RUST_SOLVER_RUNNING === true || window.__TKB_SOLVE_UI_BUSY === true;
-  }
-
-  async function waitForSolveIdle(maxMs){
-    const t0 = Date.now();
-    while(solveBusy() && (Date.now() - t0) < maxMs){
-      await new Promise(r => setTimeout(r, 1000));
-    }
-    return !solveBusy();
-  }
-
-  async function runTrialFullPipeline(event){
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-    if(btn.disabled || solveBusy() || !trialUserIsSuperadmin()) return false;
-    btn.disabled = true;
-    try{
-      // MỘT worker duy nhất: xếp mới + tối ưu trọn gói (mode solve_optimize_all)
-      // — một luồng UI, một lần apply, Dừng hoạt động xuyên suốt; không còn
-      // chuỗi hai bước có thể bị lượt khác chen ngang (sửa 17/08).
-      if(typeof window.sapXepTheoCheDo === "function"){
-        return await window.sapXepTheoCheDo("solve_optimize_all");
-      }
-      return false;
-    }finally{
-      btn.disabled = false;
-    }
-  }
-
-  window.runTrialFullPipeline = runTrialFullPipeline;
-
-  // ============ NÚT "NEW ★" (superadmin): LUÔN xếp mới + pipeline KHÓA ======
-  const btnNew = document.getElementById("btnNewLockedPipeline");
-  function syncNewButtonVisibility(){
-    if(!btnNew) return;
-    const on = trialUserIsSuperadmin();
-    btnNew.hidden = !on;
-    btnNew.setAttribute("aria-hidden", on ? "false" : "true");
-  }
-  async function runNewLockedPipeline(event){
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-    if(!btnNew || btnNew.disabled || solveBusy() || !trialUserIsSuperadmin()) return false;
-    btnNew.disabled = true;
-    try{
-      if(typeof window.sapXepTheoCheDo === "function"){
-        return await window.sapXepTheoCheDo("solve_optimize_all_fresh");
-      }
-      return false;
-    }finally{
-      btnNew.disabled = false;
-    }
-  }
-  window.runNewLockedPipeline = runNewLockedPipeline;
-
-  const syncBoth = () => { syncTrialButtonVisibility(); syncNewButtonVisibility(); };
-  syncBoth();
-  window.addEventListener?.("tkb:auth-ready", syncBoth);
-})();
-</script>
 
 <div class="main">
   <div class="left">
@@ -1760,15 +1536,14 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="../excel-style.js?v=20260701-excel-style-v2"></script>
 <script src="../vendor/sql-wasm.js"></script>
 <script src="../kvdb.js?v=20260707-vendor-local-v1"></script>
-<script src="tkb-fet-engine.js?v=20260818-singleton-v1"></script>
-<script src="phanmon.js?v=20260818-singleton-v1"></script>
+<script src="tkb-fet-engine.js?v=20260818-advanced-pull-in-v9"></script>
+<script src="phanmon.js?v=20260818-drag-perf-v1"></script>
 <script src="tkb-constraints.js?v=20260810-v1206-assigned-demand-lesson-block-min-guard-v1"></script>
 <script src="tkb-constraints-menu.js?v=20260808-v1192-assigned-only-all-statistics-v1"></script>
 <script src="tkb-gv-template.js"></script>
 <script src="tkb-export.js?v=20260725-v1100-industry-export-queue-v1"></script>
 <script src="tkb-word-export.js?v=20260705-save-picker-v1"></script>
 <script src="tkb-student-excel-export.js?v=20260705-school-wide-prefix-v6"></script>
-<script src="tkb-rust-bridge.js?v=20260817-strict-fet-max-gap1-v1"></script>
 
 </body>
 </html>
