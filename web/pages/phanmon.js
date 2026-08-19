@@ -10613,8 +10613,15 @@ function setAutoSortProgress(percent, label, details){
     timerVal.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
-  // Update Metric Chip (clean local-FET metric only, completely hidden in Flash mode)
-  if(window.__TKB_FLASH_SOLVING === true || window.__TKB_HIDE_PROGRESS_METRIC === true){
+  // Update Metric Chip (completely hidden in Flash and Cherry modes)
+  const isAltEngine = window.__TKB_FLASH_SOLVING === true
+    || window.__TKB_HIDE_PROGRESS_METRIC === true
+    || window.__TKB_FORCE_ENGINE === "flash"
+    || window.__TKB_FORCE_ENGINE === "cherry"
+    || window.__CURRENT_ACTIVE_ENGINE === "flash"
+    || window.__CURRENT_ACTIVE_ENGINE === "cherry";
+
+  if(isAltEngine){
     if(metric){
       metric.textContent = "";
       metric.hidden = true;

@@ -1763,7 +1763,16 @@ window.tkbRunEngine = function(engine, btn){
     return;
   }
   window.__TKB_FORCE_ENGINE = String(engine || "");
-  var clear = function(){ window.__TKB_FORCE_ENGINE = ""; };
+  window.__CURRENT_ACTIVE_ENGINE = String(engine || "");
+  var metricEl = document.getElementById("autoSortProgressMetric");
+  if(metricEl){
+    metricEl.textContent = "";
+    metricEl.hidden = true;
+  }
+  var clear = function(){
+    window.__TKB_FORCE_ENGINE = "";
+    window.__CURRENT_ACTIVE_ENGINE = "";
+  };
   try{
     // QUAN TRONG: tren ban production, window.sapXepTuDongAll van la bo giai
     // chay trong TRINH DUYET (phanmon.js executeDirectFastSchedule) — no khong
