@@ -3620,7 +3620,14 @@ function isTeacherFixedOff(gvCode, thu, buoi, ti){
   const id = String(gvCode || "").trim();
   if(!id) return false;
   const key = userOffLockKey(thu, buoi, ti);
-  return !!DATA.tkbConstraints?.fixedOff?.teacher?.[id]?.[key];
+  const fixed = DATA.tkbConstraints?.fixedOff?.teacher;
+  if(!fixed || typeof fixed !== "object") return false;
+  if(fixed[id]?.[key]) return true;
+  const idLower = id.toLowerCase();
+  for(const k of Object.keys(fixed)){
+    if(k.toLowerCase() === idLower && fixed[k]?.[key]) return true;
+  }
+  return false;
 }
 
 function clearTeacherLessonsAtSlot(gvCode, thu, buoi, ti){
@@ -6049,7 +6056,378 @@ function fetValidatorDiagnostics(rows, options = {}){
   };
 }
 
+function inspectTrueHardConflicts(data, candidateTkb) {
+  if (!candidateTkb || typeof candidateTkb !== "object") {
+    return { ok: false, error: "Dữ liệu thời khóa biểu không hợp lệ.", conflicts: [], violations: [], studentHoles: 0, available: true };
+  }
+  const conflicts = [];
+  const teacherOccupancy = new Map();
+  const roomOccupancy = new Map();
+
+  const lops = Array.isArray(data?.lop) ? data.lop : (typeof DATA !== "undefined" && Array.isArray(DATA?.lop) ? DATA.lop : []);
+  const classMap = new Map();
+  lops.forEach(l => {
+    if (!l) return;
+    if (l.id) {
+      classMap.set(String(l.id), l);
+      classMap.set(String(l.id).trim(), l);
+      classMap.set(String(l.id).trim().toLowerCase(), l);
+    }
+    if (l.ten) {
+      classMap.set(String(l.ten), l);
+      classMap.set(String(l.ten).trim(), l);
+      classMap.set(String(l.ten).trim().toLowerCase(), l);
+    }
+    if (l.ten2) {
+      classMap.set(String(l.ten2), l);
+      classMap.set(String(l.ten2).trim(), l);
+      classMap.set(String(l.ten2).trim().toLowerCase(), l);
+    }
+  });
+
+  const getCanon = (id) => {
+    if (typeof getLopCanonById === "function") {
+      const c = getLopCanonById(id);
+      if (c) return c;
+    }
+    const raw = String(id || "").trim();
+    const lop = classMap.get(raw) || classMap.get(raw.toLowerCase());
+    return (lop && (lop.ten || lop.ten2 || lop.id)) || raw;
+  };
+
+  const getClassIdentifiers = (classId) => {
+    const ids = new Set();
+    const raw = String(classId || "").trim();
+    if (raw) ids.add(raw);
+    const canon = getCanon(classId);
+    if (canon) ids.add(String(canon).trim());
+    const lop = classMap.get(raw) || classMap.get(raw.toLowerCase()) || (canon ? (classMap.get(String(canon).trim()) || classMap.get(String(canon).trim().toLowerCase())) : null);
+    if (lop) {
+      if (lop.id) ids.add(String(lop.id).trim());
+      if (lop.ten) ids.add(String(lop.ten).trim());
+      if (lop.ten2) ids.add(String(lop.ten2).trim());
+    }
+    return Array.from(ids).filter(Boolean);
+  };
+
+  const getTeacher = (lopId, mon, rawCell) => {
+    if (rawCell && typeof rawCell === "object" && (rawCell.gv || rawCell.teacher)) {
+      return String(rawCell.gv || rawCell.teacher).trim();
+    }
+    if (typeof rawCell === "string" && rawCell.includes(" - ")) {
+      return rawCell.split(" - ")[1].trim();
+    }
+    const canon = getCanon(lopId);
+    if (typeof getTeacherForClassMon === "function") {
+      const g = getTeacherForClassMon(canon, mon);
+      if (g) return g;
+    }
+    const identifiers = getClassIdentifiers(lopId);
+    const tries = [];
+    for (const id of identifiers) {
+      tries.push(id + "|" + mon);
+    }
+    if (!tries.includes(canon + "|" + mon)) tries.push(canon + "|" + mon);
+    for (const k of tries) {
+      if (data?.tkbLessonTeachers && data.tkbLessonTeachers[k]) return String(data.tkbLessonTeachers[k]).trim();
+      if (data?.pccmMatrix && data.pccmMatrix[k]) return String(data.pccmMatrix[k]).trim();
+      if (typeof DATA !== "undefined" && DATA?.tkbLessonTeachers && DATA.tkbLessonTeachers[k]) return String(DATA.tkbLessonTeachers[k]).trim();
+      if (typeof DATA !== "undefined" && DATA?.pccmMatrix && DATA.pccmMatrix[k]) return String(DATA.pccmMatrix[k]).trim();
+    }
+    return "";
+  };
+
+  const getRoom = (lopId, mon, rawCell) => {
+    if (rawCell && typeof rawCell === "object" && (rawCell.room || rawCell.phong)) {
+      return String(rawCell.room || rawCell.phong).trim();
+    }
+    const canon = getCanon(lopId);
+    if (typeof getRoomForClassMon === "function") {
+      const r = getRoomForClassMon(canon, mon);
+      if (r) return r;
+    }
+    const identifiers = getClassIdentifiers(lopId);
+    const tries = [];
+    for (const id of identifiers) {
+      tries.push(id + "|" + mon);
+    }
+    if (!tries.includes(canon + "|" + mon)) tries.push(canon + "|" + mon);
+    for (const k of tries) {
+      if (data?.tkbLessonRooms && data.tkbLessonRooms[k]) return String(data.tkbLessonRooms[k]).trim();
+      if (typeof DATA !== "undefined" && DATA?.tkbLessonRooms && DATA.tkbLessonRooms[k]) return String(DATA.tkbLessonRooms[k]).trim();
+    }
+    return "";
+  };
+
+  const isCellOff = (cell) => {
+    if (!cell) return false;
+    if (cell === "OFF" || cell === "off") return true;
+    if (typeof cell === "string" && (cell.trim().toLowerCase() === "nghi" || cell.trim().toLowerCase() === "off")) return true;
+    if (typeof cell === "object" && (cell.off === true || cell.val === "OFF" || cell.mon === "OFF" || cell.off === 1 || cell.nghi === true)) return true;
+    return false;
+  };
+
+  const isCellFixed = (cell) => {
+    if (!cell) return false;
+    if (typeof cell === "object" && (cell.fixed === true || cell.fixed === 1 || cell.cd === 1 || cell.cd === true || cell.codinh === true || cell.isFixed === true || cell.locked === true)) return true;
+    if (typeof cell === "string") {
+      const s = cell.trim();
+      if (s.startsWith("!") || s.endsWith("*") || s.includes("[fixed]") || s.startsWith("[cd]") || s.includes("(cố định)") || s.includes("(co dinh)")) return true;
+    }
+    return false;
+  };
+
+  const extractMon = (cell) => {
+    if (!cell) return "";
+    let m = typeof cell === "object" ? String(cell.mon || cell.val || cell.subject || "").trim() : String(cell).trim();
+    if (m.includes(" - ")) m = m.split(" - ")[0].trim();
+    return m.replace(/^[!*]+|[!*]+$/g, "").replace(/\[fixed\]/gi, "").replace(/\[co_dinh\]/gi, "").trim();
+  };
+
+  const dayKeys = (d) => {
+    const s = String(d || "").trim();
+    const lower = s.toLowerCase();
+    const num = lower.replace(/\D/g, "");
+    const keys = [s, lower];
+    if (num) {
+      keys.push("thu" + num);
+      keys.push("T" + num);
+      keys.push(num);
+    }
+    return Array.from(new Set(keys));
+  };
+
+  const teacherFixedOffMap = new Map();
+  const rawTeacherFixedOff = data?.tkbConstraints?.fixedOff?.teacher || (typeof DATA !== "undefined" ? DATA?.tkbConstraints?.fixedOff?.teacher : null);
+  if (rawTeacherFixedOff && typeof rawTeacherFixedOff === "object") {
+    for (const [tName, slots] of Object.entries(rawTeacherFixedOff)) {
+      if (slots && typeof slots === "object") {
+        const normKey = String(tName).trim().toLowerCase();
+        if (!teacherFixedOffMap.has(normKey)) {
+          teacherFixedOffMap.set(normKey, []);
+        }
+        teacherFixedOffMap.get(normKey).push(slots);
+      }
+    }
+  }
+
+  const classFixedOffMap = new Map();
+  const rawClassFixedOff = data?.tkbConstraints?.fixedOff?.class || (typeof DATA !== "undefined" ? DATA?.tkbConstraints?.fixedOff?.class : null);
+  if (rawClassFixedOff && typeof rawClassFixedOff === "object") {
+    for (const [cName, slots] of Object.entries(rawClassFixedOff)) {
+      if (slots && typeof slots === "object") {
+        const normKey = String(cName).trim().toLowerCase();
+        if (!classFixedOffMap.has(normKey)) {
+          classFixedOffMap.set(normKey, []);
+        }
+        classFixedOffMap.get(normKey).push(slots);
+      }
+    }
+  }
+
+  const classUserOffMap = new Map();
+  const rawUserOff = data?.tkbUserOff || (typeof DATA !== "undefined" ? DATA?.tkbUserOff : null);
+  if (rawUserOff && typeof rawUserOff === "object") {
+    for (const [cName, slots] of Object.entries(rawUserOff)) {
+      if (slots) {
+        const normKey = String(cName).trim().toLowerCase();
+        if (!classUserOffMap.has(normKey)) {
+          classUserOffMap.set(normKey, []);
+        }
+        classUserOffMap.get(normKey).push(slots);
+      }
+    }
+  }
+
+  const isTeacherOff = (gv, thu, buoi, ti) => {
+    if (!gv) return false;
+    const gvStr = String(gv).trim();
+    const gvNorm = gvStr.toLowerCase();
+    if (typeof isTeacherFixedOff === "function") {
+      if (isTeacherFixedOff(gvStr, thu, buoi, ti) || isTeacherFixedOff(gvNorm, thu, buoi, ti)) return true;
+    }
+    const slotLists = teacherFixedOffMap.get(gvNorm);
+    for (const d of dayKeys(thu)) {
+      const key = d + "|" + buoi + "|" + ti;
+      const keyLower = key.toLowerCase();
+      if (slotLists) {
+        for (const slots of slotLists) {
+          if (slots && (slots[key] || slots[keyLower] || slots[key.toUpperCase()])) return true;
+        }
+      }
+      if (rawTeacherFixedOff) {
+        const direct = rawTeacherFixedOff[gvStr] || rawTeacherFixedOff[gvNorm];
+        if (direct && (direct[key] || direct[keyLower] || direct[key.toUpperCase()])) return true;
+      }
+    }
+    return false;
+  };
+
+  const isClassOff = (classId, thu, buoi, ti) => {
+    const identifiers = getClassIdentifiers(classId);
+    for (const d of dayKeys(thu)) {
+      const key = d + "|" + buoi + "|" + ti;
+      const keyLower = key.toLowerCase();
+      for (const id of identifiers) {
+        const idNorm = id.toLowerCase();
+        // 1. Check in indexed classFixedOffMap
+        const fixedLists = classFixedOffMap.get(idNorm);
+        if (fixedLists) {
+          for (const slots of fixedLists) {
+            if (slots && (slots[key] || slots[keyLower] || slots[key.toUpperCase()])) return true;
+          }
+        }
+        // 2. Check in direct rawClassFixedOff
+        const directFixed = rawClassFixedOff?.[id] || rawClassFixedOff?.[idNorm];
+        if (directFixed && (directFixed[key] || directFixed[keyLower] || directFixed[key.toUpperCase()])) return true;
+
+        // 3. Check in indexed classUserOffMap
+        const userOffLists = classUserOffMap.get(idNorm);
+        if (userOffLists) {
+          for (const slots of userOffLists) {
+            if (Array.isArray(slots)) {
+              if (slots.includes(key) || slots.includes(keyLower) || slots.some(k => String(k).toLowerCase() === keyLower)) return true;
+            } else if (slots && typeof slots === "object") {
+              if (slots[key] || slots[keyLower] || slots[key.toUpperCase()]) return true;
+            }
+          }
+        }
+        // 4. Check in direct rawUserOff
+        const directUser = rawUserOff?.[id] || rawUserOff?.[idNorm];
+        if (Array.isArray(directUser)) {
+          if (directUser.includes(key) || directUser.includes(keyLower) || directUser.some(k => String(k).toLowerCase() === keyLower)) return true;
+        } else if (directUser && typeof directUser === "object") {
+          if (directUser[key] || directUser[keyLower] || directUser[key.toUpperCase()]) return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  let totalStudentHoles = 0;
+
+  for (const [lopId, daysObj] of Object.entries(candidateTkb)) {
+    if (!daysObj || typeof daysObj !== "object") continue;
+
+    for (const [thu, buoiObj] of Object.entries(daysObj)) {
+      if (!buoiObj || typeof buoiObj !== "object") continue;
+
+      for (const [buoi, cells] of Object.entries(buoiObj)) {
+        if (!Array.isArray(cells)) continue;
+
+        const taughtPeriods = [];
+
+        for (let ti = 0; ti < cells.length; ti++) {
+          const cell = cells[ti];
+          if (!cell) continue;
+          if (isCellOff(cell)) continue;
+
+          const mon = extractMon(cell);
+          if (!mon || mon === "OFF") continue;
+
+          taughtPeriods.push(ti);
+
+          // 1. Check Class OFF
+          if (isClassOff(lopId, thu, buoi, ti)) {
+            conflicts.push({ type: "class_off", kind: "class_off", lopId, thu, buoi, ti, mon });
+          }
+
+          // 2. Check Teacher Clashes & Teacher OFF
+          const gvStr = getTeacher(lopId, mon, cell);
+          if (gvStr) {
+            const teachers = (typeof parseTeacherList === "function" ? parseTeacherList(gvStr) : gvStr.split(/[,+]/))
+              .map(t => String(t).trim().toLowerCase()).filter(Boolean);
+            for (const gv of teachers) {
+              const tKey = gv + "|" + thu + "|" + buoi + "|" + ti;
+              if (teacherOccupancy.has(tKey)) {
+                conflicts.push({ type: "teacher_clash", kind: "teacher_clash", teacher: gv, lopId1: teacherOccupancy.get(tKey).lopId, lopId2: lopId, lopId, thu, buoi, ti, mon });
+              } else {
+                teacherOccupancy.set(tKey, { lopId, mon });
+              }
+              if (isTeacherOff(gv, thu, buoi, ti)) {
+                conflicts.push({ type: "teacher_off", kind: "teacher_off", teacher: gv, lopId, thu, buoi, ti, mon });
+              }
+            }
+          }
+
+          // 3. Check Room Clashes
+          const rmStr = getRoom(lopId, mon, cell);
+          if (rmStr) {
+            const rKey = rmStr.toLowerCase() + "|" + thu + "|" + buoi + "|" + ti;
+            if (roomOccupancy.has(rKey)) {
+              conflicts.push({ type: "room_clash", kind: "room_clash", room: rmStr, lopId1: roomOccupancy.get(rKey).lopId, lopId2: lopId, lopId, thu, buoi, ti, mon });
+            } else {
+              roomOccupancy.set(rKey, { lopId, mon });
+            }
+          }
+        }
+
+        // 4. Check Student Holes
+        if (taughtPeriods.length >= 2) {
+          const span = taughtPeriods[taughtPeriods.length - 1] - taughtPeriods[0] + 1;
+          const gaps = span - taughtPeriods.length;
+          if (gaps > 0) {
+            totalStudentHoles += gaps;
+            conflicts.push({ type: "student_hole", kind: "student_hole", lopId, thu, buoi, gaps, taughtPeriods });
+          }
+        }
+      }
+    }
+  }
+
+  // 5. Check Fixed Cells Preservation from Incumbent
+  const incumbentTkb = data?.tkb || (typeof DATA !== "undefined" ? DATA?.tkb : null) || {};
+  for (const [lopId, daysObj] of Object.entries(incumbentTkb)) {
+    if (!daysObj || typeof daysObj !== "object") continue;
+    for (const [thu, buoiObj] of Object.entries(daysObj)) {
+      if (!buoiObj || typeof buoiObj !== "object") continue;
+      for (const [buoi, cells] of Object.entries(buoiObj)) {
+        if (!Array.isArray(cells)) continue;
+        for (let ti = 0; ti < cells.length; ti++) {
+          const cell = cells[ti];
+          if (isCellFixed(cell)) {
+            const expectedMon = extractMon(cell);
+            let candCell = candidateTkb?.[lopId]?.[thu]?.[buoi]?.[ti];
+            if (candCell === undefined) {
+              const identifiers = getClassIdentifiers(lopId);
+              for (const id of identifiers) {
+                if (candidateTkb?.[id]?.[thu]?.[buoi]?.[ti] !== undefined) {
+                  candCell = candidateTkb[id][thu][buoi][ti];
+                  break;
+                }
+              }
+            }
+            const candMon = extractMon(candCell);
+            if (candMon !== expectedMon) {
+              conflicts.push({ type: "fixed_cell", kind: "fixed_cell", lopId, thu, buoi, ti, expected: expectedMon, actual: candMon });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    ok: conflicts.length === 0 && totalStudentHoles === 0,
+    conflicts,
+    violations: conflicts,
+    studentHoles: totalStudentHoles,
+    clashCount: conflicts.length,
+    available: true
+  };
+}
+
 async function inspectFetCandidateHardConstraints(data, candidateTkb){
+  const lops = Array.isArray(data?.lop) ? data.lop : (typeof DATA !== "undefined" && Array.isArray(DATA?.lop) ? DATA.lop : []);
+  if (lops.length > 0) {
+    const hardCheck = inspectTrueHardConflicts(data, candidateTkb);
+    return {
+      available: true,
+      violations: hardCheck.conflicts || [],
+      studentHoles: hardCheck.studentHoles || 0
+    };
+  }
+
   const api = window.TKBConstraints || window.TKBConstraintsFull;
   const validateAsync = api?.validateAllAsync;
   const validateSync = api?.validateAll;
@@ -6082,6 +6460,46 @@ async function inspectFetCandidateHardConstraints(data, candidateTkb){
 }
 
 async function validateFetCandidateHardConstraints(data, candidateTkb, options = {}){
+  const lops = Array.isArray(data?.lop) ? data.lop : (typeof DATA !== "undefined" && Array.isArray(DATA?.lop) ? DATA.lop : []);
+  if (lops.length > 0) {
+    const hardCheck = inspectTrueHardConflicts(data, candidateTkb);
+    if (!hardCheck.ok) {
+      const first = hardCheck.conflicts?.[0];
+      let msg = "Phát hiện xung đột lịch cứng.";
+      if (first?.type === "teacher_clash") {
+        msg = `Trùng tiết giáo viên ${first.teacher} giữa các lớp vào ${first.thu} ${first.buoi} tiết ${Number(first.ti) + 1}.`;
+      } else if (first?.type === "room_clash") {
+        msg = `Trùng phòng học ${first.room} vào ${first.thu} ${first.buoi} tiết ${Number(first.ti) + 1}.`;
+      } else if (first?.type === "class_off") {
+        msg = `Tiết học lớp ${first.lopId || ""} được đặt vào ô nghỉ cố định (${first.thu} ${first.buoi} tiết ${Number(first.ti) + 1}).`;
+      } else if (first?.type === "teacher_off") {
+        msg = `Giáo viên ${first.teacher} có tiết dạy vào ô nghỉ cố định (${first.thu} ${first.buoi} tiết ${Number(first.ti) + 1}).`;
+      } else if (first?.type === "fixed_cell") {
+        msg = `Vi phạm ô cố định lớp ${first.lopId || ""} (${first.thu} ${first.buoi} tiết ${Number(first.ti) + 1}).`;
+      } else if (hardCheck.studentHoles > 0) {
+        msg = `Phát sinh ${hardCheck.studentHoles} lỗ trống học sinh giữa buổi.`;
+      } else if (hardCheck.error) {
+        msg = String(hardCheck.error);
+      }
+      return {
+        ok: false,
+        applied: false,
+        failureKind: "fet_candidate_hard_validation_failed",
+        error: msg,
+        hardValid: false,
+        diagnostics: fetValidatorDiagnostics(hardCheck.conflicts || [], {
+          introducedViolationCount: (hardCheck.conflicts?.length || 0) + (hardCheck.studentHoles || 0)
+        })
+      };
+    }
+    return {
+      ok: true,
+      applied: true,
+      executor: "fet_worker",
+      hardValid: true
+    };
+  }
+
   const inspection = await inspectFetCandidateHardConstraints(data, candidateTkb);
   if(inspection.available !== true){
     return {
