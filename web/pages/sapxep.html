@@ -285,9 +285,9 @@ body.planner-shell #btnEngineFlash .toolbar-icon {
 }
 
 body.planner-shell #btnEngineCherry .toolbar-icon {
-  width: 21px;
-  height: 21px;
-  filter: drop-shadow(0 1px 2px rgba(239, 30, 60, 0.2));
+  width: 25px;
+  height: 25px;
+  filter: drop-shadow(0 1px 3px rgba(239, 30, 60, 0.28));
 }
 
 body.planner-shell #btnEngineFlash:hover:not(:disabled) {
@@ -697,12 +697,25 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     border-radius: 0 0 var(--tkb-radius, 10px) var(--tkb-radius, 10px);
   }
 
-  body.planner-shell .toolbar-actions > #btnAutoSort {
-    grid-column: 3;
-    grid-row: 1;
+  /* 19/08: dien thoai chi giu Cherry + Flash (ngay ben trai nut Xoa). */
+  body.planner-shell .toolbar-actions > #btnAutoSort,
+  body.planner-shell .toolbar-actions > .planner-optimize-wrap {
+    display: none !important;
   }
 
-  body.planner-shell .toolbar-actions > .planner-optimize-wrap {
+  body.planner-shell .toolbar-actions > #btnEngineFlash {
+    grid-column: 3;
+    grid-row: 1;
+    display: inline-flex !important;
+  }
+
+  body.planner-shell .toolbar-actions > #btnEngineCherry {
+    grid-column: 4;
+    grid-row: 1;
+    display: inline-flex !important;
+  }
+
+  body.planner-shell .toolbar-actions > .planner-optimize-wrap--unused {
     grid-column: 4;
     grid-row: 1;
     display: inline-flex;
@@ -1010,12 +1023,14 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     border-radius: var(--tkb-radius, 10px);
   }
 
-  body.planner-shell .toolbar-actions > #btnAutoSort {
+  body.planner-shell .toolbar-actions > #btnEngineFlash {
     grid-column: 4;
+    display: inline-flex !important;
   }
 
-  body.planner-shell .toolbar-actions > .planner-optimize-wrap {
+  body.planner-shell .toolbar-actions > #btnEngineCherry {
     grid-column: 5;
+    display: inline-flex !important;
   }
 
   body.planner-shell .toolbar-actions > #btnStopAutoSort,
@@ -1508,8 +1523,8 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
       <button id="btnEngineCherry" class="icon-button" type="button"
               onclick="tkbRunEngine('cherry', this)"
               title="Cherry Time!" aria-label="Cherry Time!" data-tooltip="Cherry Time!">
-        <svg class="toolbar-icon toolbar-icon-cherry" viewBox="0 0 64 64" fill="none" aria-hidden="true" focusable="false">
-          <path d="M32 30c-1-5-5-6-8-4" stroke="#334155" stroke-width="3.2" stroke-linecap="round"/>
+        <svg class="toolbar-icon toolbar-icon-cherry" viewBox="13 18 38 42" fill="none" aria-hidden="true" focusable="false">
+          <path d="M32 30c-1-5-5-6-8-4" stroke="#334155" stroke-width="3" stroke-linecap="round"/>
           <path d="M40 22c4-3 9-2 10 2-4 4-9 3-10-2z" fill="#16a34a"/>
           <path d="M32 30c-1-4-4-6-8-4-4 2-6 6-6 12 0 10 6 17 14 17s14-7 14-17c0-6-2-10-6-12-4-2-7 0-8 4z" fill="#ef1e3c"/>
           <g fill="#ffffff">
@@ -1737,7 +1752,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="tkb-export.js?v=20260725-v1100-industry-export-queue-v1"></script>
 <script src="tkb-word-export.js?v=20260705-save-picker-v1"></script>
 <script src="tkb-student-excel-export.js?v=20260705-school-wide-prefix-v6"></script>
-<script src="tkb-rust-bridge.js?v=20260819-cherry-flash-v1"></script>
+<script src="tkb-rust-bridge.js?v=20260819-cherry-flash-v5"></script>
 
 
 <script>
@@ -1750,7 +1765,15 @@ window.tkbRunEngine = function(engine, btn){
   window.__TKB_FORCE_ENGINE = String(engine || "");
   var clear = function(){ window.__TKB_FORCE_ENGINE = ""; };
   try{
-    var r = window.sapXepTuDongAll && window.sapXepTuDongAll();
+    // QUAN TRONG: tren ban production, window.sapXepTuDongAll van la bo giai
+    // chay trong TRINH DUYET (phanmon.js executeDirectFastSchedule) — no khong
+    // biet settings.engine va khong bao gio goi backend/Cloud Run.
+    // Hai nut nay phai goi thang ban cua bridge de di duong may chu.
+    var runner = (typeof window.bridgeSapXepTuDongAll === "function")
+      ? window.bridgeSapXepTuDongAll
+      : window.sapXepTuDongAll;
+    if(typeof runner !== "function"){ clear(); return; }
+    var r = runner({ manualAgentInvite: false });
     if(r && typeof r.finally === "function") r.finally(clear);
     else window.setTimeout(clear, 5000);
   }catch(e){ clear(); }
