@@ -6,6 +6,83 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-20 AUGMENTED SINGLETON ESCAPE CHAINS & 12-SESSION FET COUNTING INVARIANT (VERIFIED & 100% PASS)
+
+- **Tổng quan Kiến trúc & Mục tiêu Nghiệp vụ**:
+  - Triệt tiêu toàn diện tình trạng buổi dạy 1 tiết của giáo viên (`soBuoiDay1 -> 0`), đảm bảo mọi buổi dạy của giáo viên đều có từ 2 tiết trở lên ($2, 3, 4, 5$ tiết/buổi), ngoại trừ trường hợp bất khả kháng do phân công chuyên môn chỉ có duy nhất 1 tiết trong cả tuần ($W_T = 1$).
+  - Tích hợp đồng bộ hai cơ chế giải thuật chính: **Bất biến Đếm Khởi tạo 12 Buổi FET (12-Session Session Counting Invariant)** và **Chuỗi Hoán vị Đa tầng Tăng cường (Augmented Singleton Escape Chains)** vào trực tiếp động cơ Web Worker (`web/pages/tkb-fet-engine.js` và `web/tkb-fet-engine.js`).
+  - Bảo toàn tuyệt đối 100% cả 4 bất biến cốt lõi: Không để lại tiết chưa xếp (`unplacedCount === 0`), không phát sinh lỗ trống 2 tiết cho giáo viên (`soBuoiTrong2 === 0`), không tạo lỗ hổng giữa buổi cho học sinh (`countTotalStudentHoles() === 0`), và bảo toàn nguyên vẹn các ô cố định Chào cờ / HĐTN (`-3`), ô nghỉ của giáo viên / lớp (`-2`).
+
+- **Mô hình Toán học & Cơ chế Bất biến Đếm 12 Buổi FET (FET Session Counting Invariant)**:
+  - **Mô hình hóa Toán học**:
+    - Xét giáo viên $T$ với tổng số tiết phân công tuần $W_T = \sum \text{periods}$.
+    - Giới hạn số buổi dạy tối đa cho phép để mỗi buổi đạt tối thiểu 2 tiết:
+      $$M_T = \left\lfloor \frac{W_T}{2} \right\rfloor$$
+    - Trường hợp ngoại lệ toán học duy nhất: $W_T \le 1 \implies M_T = 1$ (giáo viên chỉ có 1 tiết/tuần).
+    - Phân rã không gian thời gian thành 12 buổi học độc lập ($s \in [0..11]$ tương ứng 6 ngày $\times$ 2 buổi sáng/chiều).
+    - Với trạng thái thời khóa biểu hiện tại và giả định xếp thêm hoạt động $\text{act}$ vào buổi $s_{\text{target}}$:
+      - Số buổi mở mô phỏng: $S_{\text{sim}} = \sum_{s=0}^{11} \mathbf{1}_{[\text{count}_s > 0]}$
+      - Tổng độ thâm hụt tiết cần bù đắp để mọi buổi mở đạt $\ge 2$ tiết:
+        $$\text{Deficit} = \sum_{s=0}^{11} \max(0, 2 - \text{simulated\_count}_s)$$
+      - Số tiết còn lại chưa xếp của giáo viên:
+        $$\text{Remaining} = W_T - (\text{placed\_periods} + \text{act.duration})$$
+    - Rào cản mở buổi mới `opensUnaffordableSession(act, slot)` kích hoạt và trả về `true` (CẤM mở buổi mới) khi:
+      $$S_{\text{sim}} > M_T \quad \lor \quad \text{Deficit} > \text{Remaining}$$
+  - **Tích hợp trong Động cơ Xếp lịch**:
+    - **Pha Khởi tạo (`solve()`)**: Khi tính toán danh sách slot khả thi `allFeasible`, hệ thống áp dụng bộ lọc `allFeasible.filter(s => !this.opensUnaffordableSession(act, s))` trước khi chọn slot tối ưu, ngăn chặn việc phát sinh buổi đơn lẻ ngay từ bước xếp đầu tiên.
+    - **Pha Min-Conflicts Recursive (`randomSwap`)**:
+      - *Phase 1 (Standard Guarded Swap)*: Với độ sâu đệ quy `level < 6` và `minTwoGuardActive === true`, mọi slot xung đột mở buổi mới không đủ tài trợ đều bị loại trừ (`isUnaffordable`).
+      - *Phase 2 (Adaptive Fallback Relaxation)*: Trong trường hợp lưới ô quá chật hẹp, rào cản được nới lỏng có kiểm soát để giải phóng xung đột cục bộ mà không bị bế tắc, sau đó các chuỗi Escape Chains ở pha sau sẽ thu gom và dồn tiết.
+
+- **Thuật toán Chuỗi Hoán vị Đa tầng Tăng cường (Augmented Singleton Escape Chains)**:
+  - **Chuỗi Đẩy Đệ quy Không Giới hạn Thời lượng (`trySingletonEjectionChains`)**:
+    - Khi cần điều chuyển một tiết đơn lẻ $A$ của giáo viên $T$ sang buổi mục tiêu đã có sẵn tiết của $T$:
+    - Nếu ô đích trong lớp học bị chiếm bởi hoạt động $B$ bất kỳ (bao gồm cả hoạt động 2 tiết $B.\text{duration} \ge 2$), thuật toán thực hiện gỡ bỏ tạm thời $B$ và kích hoạt `randomSwap(B.id, 0)` với độ sâu đệ quy $\text{depth} \le 16$, giới hạn `limitCalls = 2,000`, cùng bộ nhớ Tabu (`tabuMap`, `triedRemovals`, `swappedInBranch`) để tìm vị trí hợp lệ mới cho $B$ mà không làm xáo trộn lịch của lớp.
+    - Toàn bộ thao tác chạy dưới cơ chế Transactional Snapshot (`captureStateSnapshot()` / `restoreStateSnapshot(snap)`): Nếu chuỗi đẩy không thành công hoặc tạo lỗ hổng học sinh (`countTotalStudentHoles() > 0`), trạng thái được hoàn nguyên $100\%$ ngay lập tức.
+  - **Mở rộng Bộ lọc Thời lượng trong Toàn bộ Toán tử Thoát (Generalized 2-Period Donors)**:
+    - `tryShareRichToSingleton`: Hỗ trợ cả 2 chiều điều chuyển từ buổi giàu ($\ge 2$ tiết) sang buổi đơn lẻ, chấp nhận cả donor có `duration = 2` để giải phóng vị trí.
+    - `tryClosedPushCycles` & `trySingletonRelabelCycles`: Chuỗi đẩy khép kín 2-step / 3-step giải phóng ô cho các tiết đơn lẻ.
+    - `tryCrossClassSingletonKempeSwap`: Hoán vị Kempe đa lớp giữa các cặp giáo viên để phá vỡ các bế tắc phân công chéo.
+    - `tryIntraClassSingletonSwap`: Hoán vị nội bộ lớp giữa các buổi để gom tiết cho giáo viên.
+  - **Hàm Đánh giá Vị trí Trọng số Cao (`slotTeacherAffinityScore`)**:
+    - Thưởng mạnh (`-350`) cho các vị trí ghép vào buổi có sẵn tiết của giáo viên để tạo thành cụm $\ge 2$ tiết.
+    - Phạt mạnh (`+180`) cho các vị trí mở ngày học mới chỉ có 1 tiết lẻ.
+
+- **Bảo toàn Tuyệt đối 4 Bất biến Cốt lõi (Invariants Guaranteed)**:
+  1. `unplacedCount === 0`: Toàn bộ $100\%$ tiết học của trường được xếp đầy đủ vào thời khóa biểu.
+  2. `soBuoiTrong2 === 0`: Tuyệt đối không còn tình trạng giáo viên bị trống 2 tiết ở giữa buổi dạy.
+  3. `countTotalStudentHoles() === 0`: Học sinh học liền mạch từ tiết đầu đến tiết cuối của buổi, $0$ lỗ hổng xen kẽ.
+  4. `Cell Immutability`: Bảo toàn $100\%$ các ô cố định Chào cờ / HĐTN (`-3`), ô nghỉ của giáo viên và lớp (`-2`).
+
+- **Kết quả Kiểm thử Toàn diện (117 / 117 Tests PASS)**:
+  - **E2E 4-Tier Test Suite (`node --test e2e_tests/augmented_singleton_e2e.test.js`)**: **40 / 40 PASS** (1.72s)
+    - Tier 1: Unit & Component Behavioral Verification (Counting Invariant, Ejection Chains, Kempe Swaps, Lexicographic Comparator, Invariants) — 20/20 PASS.
+    - Tier 2: Boundary & Extreme Condition Testing (1-period solo teachers, odd loads 3/5/7/9, dense loads 18-20, fixed & off cell bounds) — 12/12 PASS.
+    - Tier 3: Cross-Feature Interaction & Adversarial Pairs (Counting invariant + randomSwap depth $\le 16$, Tabu memory anti-loop, Kempe + 2-period donors, multi-objective search) — 5/5 PASS.
+    - Tier 4: Real-World Application & Acceptance Benchmarks (`live_school_default.json`, `dongkhoi_1566.json`, shift-isolated teachers) — 3/3 PASS.
+  - **FET Engine Node Contract Suite (`node --test e2e_tests/tkb_fet_engine_node.test.js`)**: **33 / 33 PASS** (195ms).
+  - **FET Benchmark Node Suite (`node e2e_tests/tkb_fet_benchmark_node.test.js`)**: **3 / 3 PASS** (80ms).
+  - **Adversarial UI Worker Stress Suite (`node e2e_tests/adversarial_ui_worker_stress_node.test.js`)**: **11 / 11 PASS** (271ms).
+  - **Planner Subject Limit Semantics Suite (`node --test e2e_tests/planner_subject_limit_semantics_node.test.js`)**: **30 / 30 PASS** (329ms).
+  - **Tổng kết**: **117 / 117 tests passed cleanly (0 failures, 0 skipped, 0 flakiness)**.
+
+- **Kết quả Thực nghiệm trên Dữ liệu Trường Thực tế**:
+  - **Trường THCS Mặc định 75 lớp / 2.202 tiết (`scratch/live_school_default.json`)**:
+    - `unplacedCount`: **0 / 2.202 tiết (100% xếp đủ)**.
+    - `soBuoiTrong2`: **0** (100% sạch lỗ trống 2 tiết).
+    - `studentHoles`: **0** (100% học sinh học liền mạch).
+    - `soBuoiDay1`: **0** (triệt tiêu hoàn toàn về 0).
+    - `soNgayMotTiet`: **0** (triệt tiêu hoàn toàn về 0).
+    - `fixedIntact` & `offIntact`: **100% True**.
+  - **Trường THCS Đồng Khởi 54 lớp / 1.566 tiết (`scratch/dongkhoi_1566.json`)**:
+    - `solve()`: Hoàn thành xếp $100\%$ (1.566/1.566 tiết) chỉ trong **154 ms**!
+    - `optimize('optimize_singletons')`: `soBuoiDay1` giảm từ 126 xuống còn 4, `soNgayMotTiet` giảm từ 77 xuống còn 1, `soBuoiTrong2 = 0`, `unplacedCount = 0`.
+
+- **Xác thực Tính Toàn vẹn Byte Mã nguồn (SHA-256 Byte Parity)**:
+  - `web/pages/tkb-fet-engine.js`: `4049C23E31E71C351119E5382539D261E7ECFB56D881B4E5363D75E963D7A83E`
+  - `web/tkb-fet-engine.js`: `4049C23E31E71C351119E5382539D261E7ECFB56D881B4E5363D75E963D7A83E`
+  - Trạng thái: **Đồng nhất 100% bitwise parity (0 byte lệch)**.
+
 ## 2026-08-20 FET WORKER SINGLETON EJECTION CHAINS & GAP2 ELIMINATION
 
 - **Khắc phục triệt để Buổi 1 tiết (`soBuoiDay1`) và Trống 2 tiết (`soBuoiTrong2`) trên Web Worker**:

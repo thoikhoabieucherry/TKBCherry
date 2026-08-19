@@ -613,6 +613,7 @@
           }
         }
       }
+      this.computeTeacherWeeklyLoad();
 
       this.hasSubjectOff = this.subjectOffSlots.size > 0;
       this.hasSubjectConstraints = Boolean(data?.tkbConstraints?.subject && Object.keys(data.tkbConstraints.subject).length > 0);
@@ -1126,11 +1127,14 @@
 
     computeTeacherWeeklyLoad(){
       this.teacherWeeklyLoad = new Map();
-      this.activities.forEach(a => {
-        a.gvList.forEach(t => {
+      for(let i = 0; i < this.activities.length; i++){
+        const a = this.activities[i];
+        for(let j = 0; j < a.teacherIdxs.length; j++){
+          const tIdx = a.teacherIdxs[j];
+          const t = this.teachers[tIdx];
           this.teacherWeeklyLoad.set(t, (this.teacherWeeklyLoad.get(t) || 0) + a.duration);
-        });
-      });
+        }
+      }
       for(let tIdx = 0; tIdx < this.teachers.length; tIdx++){
         const t = this.teachers[tIdx];
         let fixedCount = 0;
@@ -1149,8 +1153,9 @@
     opensUnaffordableSession(act, slot){
       if(!this.minTwoGuardActive || !this.teacherSessionCounts) return false;
       const sessIdx = Math.floor(slot / PERIODS_PER_SESSION);
-      const dayIdx = Math.floor(slot / SLOTS_PER_DAY);
       const dur = act.duration;
+      const isAlreadyPlaced = (this.actPlacement && this.actPlacement[act.id] !== undefined && this.actPlacement[act.id] >= 0);
+      const oldSessIdx = isAlreadyPlaced ? Math.floor(this.actPlacement[act.id] / PERIODS_PER_SESSION) : -1;
 
       for(let i = 0; i < act.teacherIdxs.length; i++){
         const tIdx = act.teacherIdxs[i];
@@ -1161,52 +1166,32 @@
         if(totalLoad <= 1) continue;
 
         let totalPlaced = 0;
-        const dayLoads = new Int32Array(6);
-        for(let d = 0; d < 6; d++){
-          const load = this.teacherSessionCounts[tBase + 2 * d] + this.teacherSessionCounts[tBase + 2 * d + 1];
-          dayLoads[d] = load;
-          totalPlaced += load;
-        }
-
-        // simulate placing act on dayIdx
-        dayLoads[dayIdx] += dur;
-
-        let openedDays = 0;
+        let openedSessions = 0;
         let totalDeficit = 0;
-        for(let d = 0; d < 6; d++){
-          const hd = dayLoads[d];
-          if(hd > 0){
-            openedDays++;
-            if(hd < 2){
-              totalDeficit += (2 - hd);
+
+        for(let s = 0; s < 12; s++){
+          let current = this.teacherSessionCounts[tBase + s];
+          if(isAlreadyPlaced && s === oldSessIdx){
+            current -= dur;
+          }
+          totalPlaced += current;
+          const sim = current + (s === sessIdx ? dur : 0);
+          if(sim > 0){
+            openedSessions++;
+            if(sim < 2){
+              totalDeficit += (2 - sim);
             }
           }
         }
 
-        const oddRemainder = totalLoad % 2;
-        if(2 * openedDays - oddRemainder > totalLoad){
+        const maxAllowedSessions = Math.floor(totalLoad / 2);
+        if(openedSessions > maxAllowedSessions){
           return true;
         }
 
-        const adjDeficit = Math.max(0, totalDeficit - oddRemainder);
         const remainingUnplaced = totalLoad - (totalPlaced + dur);
-        if(adjDeficit > remainingUnplaced){
+        if(totalDeficit > remainingUnplaced){
           return true;
-        }
-
-        const countInSession = this.teacherSessionCounts[tBase + sessIdx];
-        if(countInSession === 0 && dur === 1){
-          let otherActiveSessions = 0;
-          let roomInExisting = false;
-          for(let s2 = 0; s2 < 12; s2++){
-            if(s2 === sessIdx) continue;
-            const c2 = this.teacherSessionCounts[tBase + s2];
-            if(c2 > 0) otherActiveSessions++;
-            if(c2 >= 1 && c2 < PERIODS_PER_SESSION) roomInExisting = true;
-          }
-          if(otherActiveSessions > 0 && roomInExisting && remainingUnplaced < 2 * otherActiveSessions){
-            return true;
-          }
         }
       }
       return false;
@@ -1445,6 +1430,7 @@
         });
 
         const sessionAffinityScore = this.slotTeacherAffinityScore(act, slot);
+        const isUnaffordable = (level < 6 && this.minTwoGuardActive) ? this.opensUnaffordableSession(act, slot) : false;
 
         candidateInfo.push({
           slot,
@@ -1452,11 +1438,13 @@
           nConflActs: displacedActIds.size,
           totalWrong: totalWrong + domainTightnessPenalty,
           sessionAffinityScore,
+          isUnaffordable,
           minIndexAct
         });
       }
 
       candidateInfo.sort((a, b) => {
+        if(a.isUnaffordable !== b.isUnaffordable) return a.isUnaffordable ? 1 : -1;
         if(a.nConflActs !== b.nConflActs) return a.nConflActs - b.nConflActs;
         if(a.totalWrong !== b.totalWrong) return a.totalWrong - b.totalWrong;
         return (this.rng.next() - 0.5);
@@ -2688,7 +2676,7 @@
                   this.unplaceActivity(occId);
 
                   let feasibleMove = false;
-                  if(occAct.duration === 1 && this.isSlotFeasible(act, dst) && this.isSlotFeasible(occAct, singleSlot)){
+                  if(occAct.duration === act.duration && this.isSlotFeasible(act, dst) && this.isSlotFeasible(occAct, singleSlot)){
                     this.placeActivityDirect(actId, dst);
                     this.placeActivityDirect(occAct.id, singleSlot);
                     feasibleMove = true;
@@ -2698,7 +2686,7 @@
                     this.tabuMap.clear();
                     this.triedRemovals.clear();
                     this.swappedInBranch.clear();
-                    this.limitCalls = 1000;
+                    this.limitCalls = 2000;
                     feasibleMove = this.randomSwap(occAct.id, 0);
                   }
 
@@ -2783,14 +2771,17 @@
             if(rich.items.length >= 2){
               for(const richItem of rich.items){
                 const donorAct = this.activities[richItem.actId];
-                if(!donorAct || donorAct.isFixed || donorAct.lockedByLessonBlock || donorAct.duration !== 1) continue;
+                if(!donorAct || donorAct.isFixed || donorAct.lockedByLessonBlock) continue;
                 const cid = donorAct.classId;
-                const oldHoles = this.countStudentHoles(cid);
 
-                for(let p = 0; p < PERIODS_PER_SESSION; p++){
+                for(let p = 0; p <= PERIODS_PER_SESSION - donorAct.duration; p++){
                   const targetSlot = single.sStart + p;
                   if(targetSlot === single.item.slot) continue;
-                  if(tg[targetSlot] >= 0 || tg[targetSlot] === -3) continue;
+                  let tBusy = false;
+                  for(let d = 0; d < donorAct.duration; d++){
+                    if(tg[targetSlot + d] >= 0 || tg[targetSlot + d] === -3){ tBusy = true; break; }
+                  }
+                  if(tBusy) continue;
 
                   const cGrid = this.classGridList[donorAct.classIdx];
                   const occId = cGrid[targetSlot];
@@ -2819,7 +2810,7 @@
                       this.unplaceActivity(occId);
 
                       let ok = false;
-                      if(occAct.duration === 1 && this.isSlotFeasible(donorAct, targetSlot) && this.isSlotFeasible(occAct, richItem.slot)){
+                      if(occAct.duration === donorAct.duration && this.isSlotFeasible(donorAct, targetSlot) && this.isSlotFeasible(occAct, richItem.slot)){
                         this.placeActivityDirect(donorAct.id, targetSlot);
                         this.placeActivityDirect(occAct.id, richItem.slot);
                         ok = true;
@@ -2829,7 +2820,7 @@
                         this.tabuMap.clear();
                         this.triedRemovals.clear();
                         this.swappedInBranch.clear();
-                        this.limitCalls = 1000;
+                        this.limitCalls = 2000;
                         ok = this.randomSwap(occAct.id, 0);
                       }
 
@@ -2853,14 +2844,18 @@
 
             // Direction 2: Transfer single into rich (vacate single session completely: 1 -> 0, <= 4 -> <= 5)
             const singleAct = this.activities[single.item.actId];
-            if(singleAct && !singleAct.isFixed && !singleAct.lockedByLessonBlock && singleAct.duration === 1 && rich.items.length <= 4){
+            if(singleAct && !singleAct.isFixed && !singleAct.lockedByLessonBlock && rich.items.length + singleAct.duration <= PERIODS_PER_SESSION){
               const cid = singleAct.classId;
+              const cGrid = this.classGridList[singleAct.classIdx];
 
-              for(let p = 0; p < PERIODS_PER_SESSION; p++){
+              for(let p = 0; p <= PERIODS_PER_SESSION - singleAct.duration; p++){
                 const targetSlot = rich.sStart + p;
-                if(tg[targetSlot] >= 0 || tg[targetSlot] === -3) continue;
+                let tBusy = false;
+                for(let d = 0; d < singleAct.duration; d++){
+                  if(tg[targetSlot + d] >= 0 || tg[targetSlot + d] === -3){ tBusy = true; break; }
+                }
+                if(tBusy) continue;
 
-                const cGrid = this.classGridList[singleAct.classIdx];
                 const occId = cGrid[targetSlot];
 
                 if(occId === -1){
@@ -2887,7 +2882,7 @@
                     this.unplaceActivity(occId);
 
                     let ok = false;
-                    if(occAct.duration === 1 && this.isSlotFeasible(singleAct, targetSlot) && this.isSlotFeasible(occAct, single.item.slot)){
+                    if(occAct.duration === singleAct.duration && this.isSlotFeasible(singleAct, targetSlot) && this.isSlotFeasible(occAct, single.item.slot)){
                       this.placeActivityDirect(singleAct.id, targetSlot);
                       this.placeActivityDirect(occAct.id, single.item.slot);
                       ok = true;
@@ -2897,7 +2892,7 @@
                       this.tabuMap.clear();
                       this.triedRemovals.clear();
                       this.swappedInBranch.clear();
-                      this.limitCalls = 1000;
+                      this.limitCalls = 2000;
                       ok = this.randomSwap(occAct.id, 0);
                     }
 
@@ -2949,7 +2944,7 @@
 
             const sOrig = singleSlots[0];
             const actOrig = this.activities[tg[sOrig]];
-            if(!actOrig || actOrig.isFixed || actOrig.lockedByLessonBlock || actOrig.duration !== 1) continue;
+            if(!actOrig || actOrig.isFixed || actOrig.lockedByLessonBlock) continue;
 
             const cid = actOrig.classId;
             const cGrid = this.classGridList[actOrig.classIdx];
@@ -2971,7 +2966,7 @@
               this.unplaceActivity(actOrig.id);
               this.unplaceActivity(occAct.id);
               let ok = false;
-              if(occAct.duration === 1 && this.isSlotFeasible(actOrig, sTarget) && this.isSlotFeasible(occAct, sOrig)){
+              if(occAct.duration === actOrig.duration && this.isSlotFeasible(actOrig, sTarget) && this.isSlotFeasible(occAct, sOrig)){
                 this.placeActivityDirect(actOrig.id, sTarget);
                 this.placeActivityDirect(occAct.id, sOrig);
                 ok = true;
@@ -2981,7 +2976,7 @@
                 this.tabuMap.clear();
                 this.triedRemovals.clear();
                 this.swappedInBranch.clear();
-                this.limitCalls = 1000;
+                this.limitCalls = 2000;
                 ok = this.randomSwap(occAct.id, 0);
               }
 
@@ -3018,7 +3013,7 @@
           const actId1 = cGrid[s1];
           if(actId1 < 0) continue;
           const act1 = this.activities[actId1];
-          if(!act1 || act1.isFixed || act1.lockedByLessonBlock || act1.duration !== 1) continue;
+          if(!act1 || act1.isFixed || act1.lockedByLessonBlock) continue;
 
           for(let s2 = s1 + 1; s2 < TOTAL_SLOTS; s2++){
             if((++evalSteps % 64) === 0 && Date.now() - lastYieldAt >= 16){
@@ -3035,7 +3030,7 @@
             this.unplaceActivity(actId1);
             this.unplaceActivity(actId2);
             let ok = false;
-            if(act2.duration === 1 && this.isSlotFeasible(act1, s2) && this.isSlotFeasible(act2, s1)){
+            if(act2.duration === act1.duration && this.isSlotFeasible(act1, s2) && this.isSlotFeasible(act2, s1)){
               this.placeActivityDirect(act1.id, s2);
               this.placeActivityDirect(act2.id, s1);
               ok = true;
@@ -3045,7 +3040,7 @@
               this.tabuMap.clear();
               this.triedRemovals.clear();
               this.swappedInBranch.clear();
-              this.limitCalls = 1000;
+              this.limitCalls = 2000;
               ok = this.randomSwap(act2.id, 0);
             }
 
@@ -3092,7 +3087,7 @@
 
             const sStartSingleton = singleSlots[0];
             const startAct = this.activities[tg[sStartSingleton]];
-            if(!startAct || startAct.isFixed || startAct.lockedByLessonBlock || startAct.duration !== 1) continue;
+            if(!startAct || startAct.isFixed || startAct.lockedByLessonBlock) continue;
 
             const visitedActs = new Set([startAct.id]);
             const snap = this.captureStateSnapshot();
@@ -3113,7 +3108,7 @@
                       if(curTg[s2Start + p2] >= 0 || curTg[s2Start + p2] === -3){ hasT = true; break; }
                     }
                     if(hasT){
-                      for(let p2 = 0; p2 < PERIODS_PER_SESSION; p2++){
+                      for(let p2 = 0; p2 <= PERIODS_PER_SESSION - curAct.duration; p2++){
                         const sDst = s2Start + p2;
                         if(sDst !== curFromSlot) candidateSlots.push(sDst);
                       }
@@ -3139,7 +3134,7 @@
 
                 if(occId >= 0 && occId !== curAct.id){
                   const occAct = this.activities[occId];
-                  if(!occAct || occAct.isFixed || occAct.lockedByLessonBlock || occAct.duration !== 1) continue;
+                  if(!occAct || occAct.isFixed || occAct.lockedByLessonBlock) continue;
                   if(visitedActs.has(occAct.id)) continue;
 
                   if(this.isSlotFeasible(curAct, sDst, occId)){
@@ -3173,7 +3168,7 @@
                             if(occTg[sAbsStart + pAbs] >= 0 || occTg[sAbsStart + pAbs] === -3){ hasOccT = true; break; }
                           }
                           if(hasOccT){
-                            for(let pAbs = 0; pAbs < PERIODS_PER_SESSION; pAbs++){
+                            for(let pAbs = 0; pAbs <= PERIODS_PER_SESSION - occAct.duration; pAbs++){
                               const sAbs = sAbsStart + pAbs;
                               if(curCGrid[sAbs] === -1 && this.isSlotFeasible(occAct, sAbs)){
                                 this.placeActivityDirect(occAct.id, sAbs);
@@ -3199,7 +3194,7 @@
                     this.triedRemovals.clear();
                     this.swappedInBranch.clear();
                     this.nCalls = 0;
-                    this.limitCalls = 200;
+                    this.limitCalls = 2000;
                     if(this.randomSwap(occAct.id, 0)){
                       const m = this.evaluateMetrics();
                       if(this.countTotalStudentHoles() === 0 && this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
@@ -3221,7 +3216,7 @@
                   const occId = curCGrid[sDst];
                   if(occId >= 0 && occId !== curAct.id){
                     const occAct = this.activities[occId];
-                    if(!occAct || occAct.isFixed || occAct.lockedByLessonBlock || occAct.duration !== 1) continue;
+                    if(!occAct || occAct.isFixed || occAct.lockedByLessonBlock) continue;
                     if(visitedActs.has(occAct.id)) continue;
 
                     if(this.isSlotFeasible(curAct, sDst, occId)){
@@ -3293,7 +3288,7 @@
             const s1 = singleSlots[0];
             const act1Id = tg[s1];
             const act1 = this.activities[act1Id];
-            if(!act1 || act1.isFixed || act1.lockedByLessonBlock || act1.duration !== 1) continue;
+            if(!act1 || act1.isFixed || act1.lockedByLessonBlock) continue;
 
             const cGrid = this.classGridList[act1.classIdx];
             if(!cGrid) continue;
@@ -3315,7 +3310,7 @@
               this.unplaceActivity(act2.id);
 
               let ok = false;
-              if(act2.duration === 1 && this.isSlotFeasible(act1, s2) && this.isSlotFeasible(act2, s1)){
+              if(act2.duration === act1.duration && this.isSlotFeasible(act1, s2) && this.isSlotFeasible(act2, s1)){
                 this.placeActivityDirect(act1.id, s2);
                 this.placeActivityDirect(act2.id, s1);
                 ok = true;
@@ -3325,7 +3320,7 @@
                 this.tabuMap.clear();
                 this.triedRemovals.clear();
                 this.swappedInBranch.clear();
-                this.limitCalls = 1000;
+                this.limitCalls = 2000;
                 ok = this.randomSwap(act2.id, 0);
               }
 
@@ -3387,7 +3382,7 @@
           for(const targetSess of targetSessions){
             if(targetSess.sStart === single.sStart) continue;
 
-            for(let p = 0; p < PERIODS_PER_SESSION; p++){
+            for(let p = 0; p <= PERIODS_PER_SESSION - singleAct.duration; p++){
               if((++evalSteps % 32) === 0 && Date.now() - lastYieldAt >= 16){
                 await new Promise(resolve => setTimeout(resolve, 0));
                 lastYieldAt = Date.now();
@@ -3395,7 +3390,11 @@
 
               const targetSlot = targetSess.sStart + p;
               if(targetSlot === single.item.slot) continue;
-              if(tg[targetSlot] >= 0 || tg[targetSlot] === -3) continue;
+              let tBusy = false;
+              for(let d = 0; d < singleAct.duration; d++){
+                if(tg[targetSlot + d] >= 0 || tg[targetSlot + d] === -3){ tBusy = true; break; }
+              }
+              if(tBusy) continue;
 
               const occId = cGrid[targetSlot];
               if(occId === -3) continue;
@@ -3419,7 +3418,7 @@
                     this.tabuMap.clear();
                     this.triedRemovals.clear();
                     this.swappedInBranch.clear();
-                    this.limitCalls = 1000;
+                    this.limitCalls = 2000;
                     ok = this.randomSwap(occAct.id, 0);
                   }
                 }
