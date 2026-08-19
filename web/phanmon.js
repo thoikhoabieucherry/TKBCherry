@@ -5335,11 +5335,13 @@ function requiredSubjectsForClass(lop){
   const matrix = DATA.pccmMatrix || {};
   const periods = DATA.pccmTietMatrix || {};
   const rooms = DATA.pccmRoomMatrix || {};
+  const className = String(lop?.ten || lop?.ten2 || lop?.name || "").trim();
   Object.keys(matrix).forEach(rawKey=>{
     const parts = String(rawKey).split("|");
     const cid = String(parts.shift() || "").trim();
     const subject = String(parts.join("|") || "").trim();
-    if(cid !== classId || !subject) return;
+    const isMatch = (cid === classId) || (className && cid === className) || (classCanon && (cid === classCanon || getLopCanonById(cid) === classCanon));
+    if(!isMatch || !subject) return;
     let req = Number(periods[rawKey] ?? periods[`${cid}|${subject}`] ?? 0);
     if(!Number.isFinite(req) || req <= 0){
       const existing = bySubject.get(monCanonicalKey(subject));
