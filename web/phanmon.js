@@ -392,6 +392,8 @@ if (typeof schoolParam !== "undefined" && schoolParam && !(window.TKBStorage && 
 
       const remotePlaced = countTkbPlaced(remoteData.tkb);
       const localPlaced = countTkbPlaced(DATA.tkb);
+      const remoteTs = Number(remoteData?._lastModified || remoteData?._updatedAt || 0) || 0;
+      const localTs = Number(DATA?._lastModified || DATA?._updatedAt || 0) || 0;
 
       const acceptRemote = !localHasData || (remoteTs > localTs && remotePlaced >= localPlaced) || (localPlaced === 0 && remotePlaced > 0);
 
@@ -1546,7 +1548,7 @@ function __tkbPayloadForSave(options){
   const stable = __tkbStableSave || {};
   const running = __tkbAlgorithmRunning();
   const worse = stable.payload && __tkbStatsWorse(currentStats, stable.stats);
-  const guardWorse = !!(worse && (running || opts.beforeUnload || opts.guardUnstable));
+  const guardWorse = !!(worse && (running || (opts.guardUnstable && running)));
   const partialRefresh = !!(opts.beforeUnload && running && __tkbSaveNum(currentStats.missing) > 0);
 
   if(!opts.force && stable.payload && (guardWorse || partialRefresh)){
@@ -1650,7 +1652,8 @@ function saveStore(options){
       remoteSave = fetch(`/api/school/store?id=${encodeURIComponent(schoolParam)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: payload
+        body: payload,
+        keepalive: true
       }).then(resp => {
         if(!resp.ok) throw new Error("Remote school store save failed");
         return true;
@@ -2008,7 +2011,10 @@ function buildTeacherSchedule(gvCode){
         if(!v || v === "OFF") continue;
         const mon = cellMon(v);
         if(!mon) continue;
-        const gv = getTeacherForClassMon(classCanon, mon);
+        let gv = (typeof v === "object" && v.gv) ? v.gv : (typeof v === "string" && v.includes(" - ")) ? v.split(" - ")[1] : "";
+        if(!gv && mon !== "Chào cờ"){
+          gv = getTeacherForClassMon(classCanon, mon);
+        }
         if(gv && teacherValueHas(gv, code)){
           const room = getRoomForClassMon(classCanon, mon);
           sched[thu].sang[ti].push({classId, classDisplay, mon, room, fixed: !!isFixed(v)});
@@ -2020,7 +2026,10 @@ function buildTeacherSchedule(gvCode){
         if(!v || v === "OFF") continue;
         const mon = cellMon(v);
         if(!mon) continue;
-        const gv = getTeacherForClassMon(classCanon, mon);
+        let gv = (typeof v === "object" && v.gv) ? v.gv : (typeof v === "string" && v.includes(" - ")) ? v.split(" - ")[1] : "";
+        if(!gv && mon !== "Chào cờ"){
+          gv = getTeacherForClassMon(classCanon, mon);
+        }
         if(gv && teacherValueHas(gv, code)){
           const room = getRoomForClassMon(classCanon, mon);
           sched[thu].chieu[ti].push({classId, classDisplay, mon, room, fixed: !!isFixed(v)});
@@ -4681,7 +4690,7 @@ function bindSelectableCell(td){
   }, true);
 
   td.addEventListener("mousedown", (e)=>{
-    if(!e || e.button !== 0) return;
+    if(!e || e.button !== 0 || isPlannerBusySolving()) return;
 
     try{ hideCellMenu(); }catch(_){ }
     try{ closeUnassignedDropdown(); }catch(_){ }
@@ -4716,7 +4725,7 @@ function bindSelectableCell(td){
   });
 
   td.addEventListener("mouseenter", ()=>{
-    if(!TKB_DRAG_SELECTING) return;
+    if(!TKB_DRAG_SELECTING || isPlannerBusySolving()) return;
     try{ _cancelCellLongPress(); }catch(_){ }
     if(TKB_CELL_ANCHOR) selectRange(TKB_CELL_ANCHOR, td);
   });
@@ -4739,6 +4748,7 @@ function fixedLessonKeyForTd(td){
 }
 
 function handleRightClickUnassign(td, e){
+  if(isPlannerBusySolving()) return false;
   const key = fixedLessonKeyForTd(td);
   if(!key) return false;
   try{ e.preventDefault(); e.stopPropagation(); }catch(_){ }
@@ -4769,6 +4779,7 @@ function bindCells(){
     bindSelectableCell(td);
     bindRightClickUnassignCell(td);
     td.ondragstart = (e)=>{
+      if(isPlannerBusySolving()){ try{ e.preventDefault(); }catch(_){} return; }
       // bảo đảm menu ô không bật khi drag
       try{ _cancelCellLongPress(); hideCellMenu(); }catch(_){ }
       let unfixedFromFixed = false;
@@ -4820,14 +4831,14 @@ function bindCells(){
     };
 
     td.ondragover = (e)=>{
-      if(!dragData) return;
+      if(!dragData || isPlannerBusySolving()) return;
       e.preventDefault();
       const res = validateDrop(td, dragMon);
       setDropHint(td, res.ok && !res.warn);
     };
 
     td.ondragenter = ()=>{
-      if(!dragData) return;
+      if(!dragData || isPlannerBusySolving()) return;
       td.classList.add("drag-over");
     };
     td.ondragleave = ()=>{
@@ -4835,7 +4846,7 @@ function bindCells(){
     };
 
     td.ondrop = (e)=>{
-      if(!dragData) return;
+      if(!dragData || isPlannerBusySolving()){ try{ if(e) e.preventDefault(); }catch(_){} return; }
       try{ if(e) e.preventDefault(); }catch(_){ }
       let res = validateDrop(td, dragMon);
       if(!res.ok && maybeRaiseSessionLimitForDrop(td, dragMon, res)){
@@ -6313,24 +6324,12 @@ async function executeDirectFastSchedule(options = {}){
     let totalPlaced = 0;
     let totalUnplaced = 0;
     let directFetResult = null;
-    // CHE DO THICH UNG cua nut Tron goi (yeu cau chu du an 17/08):
-    // lich DA DU 100% tiet (Chua xep = 0) -> khong xay lai tu dau, chuyen
-    // sang TOI UU TIEP tu lich hien tai (optimize_all tren incumbent).
-    if(["solve_optimize_all", "solve_optimize_all_fresh"].includes(String(options?.mode || ""))){ // NEW ★ cung adaptive (yeu cau 17/08)
-      let __missing = -1, __totalReq = 0;
-      try{
-        __missing = 0;
-        for(const lop of (Array.isArray(data.lop) ? data.lop : [])){
-          const st = calcClassTKBPeriodStats(lop.id);
-          __missing += Number(st.missing) || 0;
-          __totalReq += Number(st.total) || 0;
-        }
-      }catch(_){ __missing = -1; }
-      if(__missing === 0 && __totalReq > 0){
-        options = Object.assign({}, options, { mode: "optimize_all", __trongoiRefine: true });
-        if(typeof setStatus === "function"){
-          setStatus("Lịch đã đủ 100% tiết — Trọn gói chuyển sang tối ưu tiếp từ lịch hiện tại.", "info");
-        }
+    // CẢ 2 NÚT "Trọn gói ★" và "NEW ★": LUÔN TỐI ƯU TIẾP TỪ LỊCH HIỆN TẠI (Refine incumbent)
+    // tuyệt đối không đập đi xếp lại từ đầu.
+    if(["solve_optimize_all", "solve_optimize_all_fresh"].includes(String(options?.mode || ""))){
+      options = Object.assign({}, options, { mode: "optimize_all", __trongoiRefine: true });
+      if(typeof setStatus === "function"){
+        setStatus("Tối ưu tiếp từ lịch hiện tại (trọn gói)...", "info");
       }
     }
     const isOptimizeMode = ["optimize_singletons", "optimize_sessions", "optimize_gap2", "optimize_gap1", "optimize_all", "solve_optimize_all", "solve_optimize_all_fresh"].includes(options?.mode);
@@ -6875,6 +6874,20 @@ async function executeDirectFastSchedule(options = {}){
                   doneStatusMsg = `Đã xếp xong toàn bộ ${placed}/${total} tiết.`;
                 }else{
                   doneStatusMsg = `Đã xếp xong ${placed}/${total} tiết (Còn ${unassigned} tiết chưa xếp).`;
+                  // 19/08: noi ro LY DO khi thieu o. Truoc day may xay dung
+                  // quay 20 luot roi tra ve "con N tiet chua xep" ma khong cho
+                  // biet la KHONG THE xep du — vi so o trong it hon so tiet.
+                  const deficit = Number(msg.capacityDeficit) || 0;
+                  if(deficit > 0){
+                    const rows = Array.isArray(msg.capacityRows) ? msg.capacityRows : [];
+                    const detail = rows.slice(0, 6)
+                      .map(r => `${r.className} thiếu ${r.deficit}`)
+                      .join(", ");
+                    doneStatusMsg += ` KHÔNG đủ ô trống: cần thêm ${deficit} ô${detail ? " — " + detail : ""}.`
+                      + " Hãy bỏ bớt ô Nghỉ hoặc giảm tiết chuẩn cho các lớp này.";
+                  }else if(msg.deadlineHit === true){
+                    doneStatusMsg += " Hết thời gian tìm kiếm — bấm lại để chạy tiếp.";
+                  }
                 }
               }else{
                 doneStatusMsg = `Đã xếp xong ${placed} tiết.`;
@@ -7707,7 +7720,11 @@ function calcStudentTimetableGapStats(){
 
   for(const lop of lops){
     const classId = lop?.id;
-    const tkb = DATA.tkb?.[classId];
+    const classCanon = getLopCanonById(classId) || lop?.ten || lop?.ten2 || classId;
+    const tkb = (classId ? DATA.tkb?.[classId] : null)
+      || (classCanon ? DATA.tkb?.[classCanon] : null)
+      || (lop?.ten ? DATA.tkb?.[lop.ten] : null)
+      || (lop?.ten2 ? DATA.tkb?.[lop.ten2] : null);
     if(!tkb) continue;
     let classGaps = 0;
     const sessions = [];
@@ -7728,7 +7745,7 @@ function calcStudentTimetableGapStats(){
     if(classGaps > 0){
       byClass.push({
         id: classId,
-        name: (lop?.ten || lop?.ten2 || classId || "").toString().trim(),
+        name: (lop?.ten || lop?.ten2 || classCanon || classId || "").toString().trim(),
         gaps: classGaps,
         sessions
       });
@@ -9397,9 +9414,13 @@ function setAutoSortStopAccessibleState(stopping){
   btn.title = label;
 }
 
-function setAutoSortBusyControls(locked){
-  const workerStillRunning = (window.__ACTIVE_TKB_FET_WORKER != null)
+function isPlannerBusySolving(){
+  return (window.__ACTIVE_TKB_FET_WORKER != null)
     || (window.__TKB_SOLVE_UI_BUSY === true);
+}
+
+function setAutoSortBusyControls(locked){
+  const workerStillRunning = isPlannerBusySolving();
   const shouldLock = !!locked || workerStillRunning;
   const controls = [
     document.getElementById("btnDeleteAll"),
@@ -9413,6 +9434,14 @@ function setAutoSortBusyControls(locked){
   controls.forEach(el => setAutoSortControlLocked(el, shouldLock));
   setAutoSortHomeHidden(shouldLock);
   if(!shouldLock) __tkbUpdateHistoryButtons();
+
+  // Khóa tương tác lưới thời khóa biểu bên dưới (chỉ xem, không kéo thả/chỉnh sửa khi đang xếp)
+  const tkbEl = document.getElementById("tkb");
+  if(tkbEl) tkbEl.classList.toggle("is-solving-readonly", shouldLock);
+  const centerEl = document.querySelector(".center");
+  if(centerEl) centerEl.classList.toggle("is-solving-readonly", shouldLock);
+  const leftEl = document.querySelector(".left");
+  if(leftEl) leftEl.classList.toggle("is-solving-readonly", shouldLock);
 }
 
 function setAutoSortStopVisible(visible){
@@ -9557,7 +9586,8 @@ function setAutoSortProgress(percent, label, details){
   // Manage Stopwatch Timer
   if(!window.__autoSortStartTime){
     window.__autoSortStartTime = Date.now();
-    if(window.__autoSortTimerInterval) window.clearInterval(window.__autoSortTimerInterval);
+  }
+  if(!window.__autoSortTimerInterval){
     window.__autoSortTimerInterval = window.setInterval(() => {
       if(!window.__autoSortStartTime) return;
       const elapsedSec = Math.floor((Date.now() - window.__autoSortStartTime) / 1000);
@@ -9566,11 +9596,47 @@ function setAutoSortProgress(percent, label, details){
       const tStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
       const tEl = document.getElementById("autoSortTimerVal");
       if(tEl) tEl.textContent = tStr;
-    }, 500);
+    }, 250);
+  }
+  if(timerVal && window.__autoSortStartTime){
+    const elapsedSec = Math.floor((Date.now() - window.__autoSortStartTime) / 1000);
+    const m = Math.floor(elapsedSec / 60);
+    const s = elapsedSec % 60;
+    timerVal.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
-  // Update Metric Chip (clean local-FET metric only)
-  if(metric){
+  // Update Metric Chip (completely hidden in Flash and Cherry modes)
+  const isAltEngine = window.__TKB_FLASH_SOLVING === true
+    || window.__TKB_HIDE_PROGRESS_METRIC === true
+    || window.__TKB_FORCE_ENGINE === "flash"
+    || window.__TKB_FORCE_ENGINE === "cherry"
+    || window.__CURRENT_ACTIVE_ENGINE === "flash"
+    || window.__CURRENT_ACTIVE_ENGINE === "cherry";
+
+  if(isAltEngine){
+    // 19/08: KHONG duoc de nhan tien do CU dinh lai khi chay Flash/Cherry.
+    // Bien __CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL song sot giua cac luot; luot
+    // truoc chay "1 tiet trong" de lai "Trong 1 tiet: 70 -> 6", nen ngay giay
+    // thu 2 cua luot Cherry nhan cu hien lai => nguoi dung tuong nut Cherry
+    // dang chay thuat toan gap1 trong trinh duyet. Xoa nhan cu va hien thang
+    // TEN THUAT TOAN dang chay de nhin la biet luot nay di duong may chu nao.
+    window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = "";
+    var __engKey = String(window.__TKB_FORCE_ENGINE || window.__CURRENT_ACTIVE_ENGINE || "").trim().toLowerCase();
+    var __engBadge = __engKey === "cherry"
+      ? "Cherry \u2022 engine v3 (m\u00e1y ch\u1ee7)"
+      : (__engKey === "flash" ? "Flash \u2022 CP-SAT (m\u00e1y ch\u1ee7)" : "");
+    if(metric){
+      if(__engBadge){
+        metric.classList.remove("is-hybrid");
+        metric.textContent = __engBadge;
+        metric.title = __engBadge;
+        metric.hidden = false;
+      }else{
+        metric.textContent = "";
+        metric.hidden = true;
+      }
+    }
+  }else if(metric){
     let rawMetric = String(details?.metricLabel || "").trim();
     const isSystemNoise = (str) => {
       const s = String(str || "").trim().toLowerCase();
@@ -9883,9 +9949,9 @@ function isAutoSortRunningForNavigation(){
 }
 
 async function saveAndBack(){
-  const btn = document.querySelector("button[onclick*='saveAndBack']");
-  const status = document.getElementById("statusMsg");
-  let navigating = false;
+  const btn = document.getElementById("btnHome") || document.querySelector("button[onclick*='saveAndBack']");
+  if(btn) btn.disabled = true;
+  __tkbNavigatingHome = true;
   try{
     if(isAutoSortRunningForNavigation()){
       try{
@@ -9903,7 +9969,7 @@ async function saveAndBack(){
     console.error("saveAndBack failed", e);
     alert("Không lưu được dữ liệu. Vui lòng kiểm tra kết nối rồi thử lại.");
   }finally{
-    if(!navigating && btn) btn.disabled = false;
+    backToMain();
   }
 }
 
@@ -10958,3 +11024,118 @@ function backToMain(){
     console.error("[phanmon] paired view patch failed", e);
   }
 })();
+
+/* =========================================================
+   FLASH SCHEDULER ENGINE (MULTI-CORE CP-SAT CLOUD RUN)
+   ========================================================= */
+async function runFlashScheduler(event){
+  if(event) { try{ event.preventDefault(); event.stopPropagation(); }catch(_){} }
+  if(window.__TKB_RUST_SOLVER_RUNNING === true || window.__TKB_SOLVE_UI_BUSY === true){
+    return;
+  }
+  
+  window.__TKB_FLASH_SOLVING = true;
+  window.__TKB_HIDE_PROGRESS_METRIC = true;
+
+  // Clear any status messages
+  if(typeof _setStatus === "function") _setStatus("", "info");
+  const statusEl = document.getElementById("statusMsg");
+  if(statusEl) statusEl.textContent = "";
+
+  // Hide the metric chip (2044/2044 tiết) completely
+  const metric = document.getElementById("autoSortProgressMetric");
+  if(metric){
+    metric.textContent = "";
+    metric.hidden = true;
+  }
+
+  // Immediately start stopwatch timer display
+  if(typeof setAutoSortProgress === "function"){
+    setAutoSortProgress(5, "");
+  }
+
+  // Yield to browser rendering thread so the spinning clock animates immediately
+  await new Promise(resolve => setTimeout(resolve, 50));
+
+  try {
+    if(typeof window.clearOptimizationPlateau === "function"){
+      window.clearOptimizationPlateau(window.getData?.(), false);
+    }
+  }catch(_){}
+  
+  const data = typeof window.getData === "function" ? window.getData() : null;
+  const scheduled = typeof window.countScheduledLessons === "function" ? window.countScheduledLessons(data) : 0;
+  const expected = typeof window.expectedLessonCount === "function" ? window.expectedLessonCount(data) : 0;
+  const isComplete = expected > 0 && scheduled >= expected;
+
+  const flashSettings = {
+    ui_flash_scheduler_active: true,
+    ui_single_pass_auto_sort: true,
+    ui_unified_auto_sort: true,
+    ui_hybrid_executor: "cloud_run",
+    ui_hybrid_cloud_run_requested: true,
+    routing_mode: "serverless_only",
+    ui_allow_quality_after_single_pass: false,
+    ui_stop_after_first_complete_schedule: true,
+    solver_mode: "auto",
+    num_workers: 6,
+    overall_time_limit_seconds: 60,
+    backend_deadline_ms: 150000,
+    native_global_deadline_ms: 150000,
+    progress_estimate_seconds: 45,
+    require_complete_schedule: true,
+    best_effort_on_timeout: true,
+    force_fresh_backend_solve: true,
+    allow_backend_cache: false,
+    minimize_sessions: true,
+    minimize_one_period_sessions: true,
+    max_one_period_sessions: 0,
+    minimize_teacher_gaps: true,
+    period_max_teacher_gap: 1,
+    complete_schedule_seed_retry: false,
+    complete_schedule_seed_retry_max_runs: 0,
+    allow_zero_one_quality_retry: false,
+    allow_teacher_session_deep_retry: false,
+    allow_teacher_session_fast_portfolio: false,
+    schedule_diversity: false,
+    reclick_schedule_diversity: false
+  };
+
+  if(isComplete){
+    flashSettings.optimize_existing_schedule = true;
+    flashSettings.allow_solver_warm_start = true;
+    flashSettings.preserve_existing_tkb = true;
+    flashSettings.ui_unified_solve_kind = "refine_complete";
+    flashSettings.optimization_focus = "automatic";
+  } else {
+    flashSettings.optimize_existing_schedule = false;
+    flashSettings.preserve_existing_tkb = false;
+    flashSettings.force_preserve_partial_existing = false;
+    flashSettings.ui_unified_solve_kind = "fresh_complete_first";
+    flashSettings.ui_no_hint_fresh_solve = true;
+    flashSettings.ui_disable_staged_existing_repair = true;
+    flashSettings.allow_solver_warm_start = false;
+    flashSettings.auto_sort_strategy = "fresh_fast_quality";
+  }
+
+  try {
+    if(typeof window.solveWithRustApi === "function"){
+      return await window.solveWithRustApi({
+        ask: false,
+        settings: flashSettings,
+        singlePass: true
+      });
+    } else if(typeof window.bridgeSapXepTuDongAll === "function"){
+      return await window.bridgeSapXepTuDongAll({
+        manualAgentInvite: false,
+        mode: "automatic",
+        settings: flashSettings
+      });
+    }
+  } finally {
+    window.__TKB_FLASH_SOLVING = false;
+    window.__TKB_HIDE_PROGRESS_METRIC = false;
+  }
+}
+window.runFlashScheduler = runFlashScheduler;
+

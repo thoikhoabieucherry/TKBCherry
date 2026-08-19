@@ -660,34 +660,8 @@ function syncDerivedDataIntegrity(){
         return Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) < 0.000001;
     };
 
-    const pruneRedundantPccmPeriods = () => {
-        const periodMatrix = DATA.pccmTietMatrix;
-        const limitMatrix = DATA.pccmGioihanMatrix;
-        if ((!periodMatrix || typeof periodMatrix !== "object") && (!limitMatrix || typeof limitMatrix !== "object")) return false;
-        let ch = false;
-        const keys = new Set([
-            ...Object.keys(periodMatrix || {}),
-            ...Object.keys(limitMatrix || {})
-        ]);
-        keys.forEach(key => {
-            const parts = String(key).split("|");
-            if (parts.length < 2) return;
-            const cls = _normText(parts.shift());
-            const monKey = _normText(parts.join("|"));
-            const khoiName = classCanonToKhoi.get(cls);
-            if (!cls || !monKey || !khoiName) return;
-            const tc = lookupTietChuan(khoiName, findPccmMonObj(monKey));
-            if (!tc) return;
-            if (periodMatrix && Object.prototype.hasOwnProperty.call(periodMatrix, key) && sameNumber(periodMatrix[key], tc.sotiet)){
-                delete periodMatrix[key];
-                ch = true;
-            }
-            if (limitMatrix && Object.prototype.hasOwnProperty.call(limitMatrix, key) && sameNumber(limitMatrix[key], tc.gioihan || 1)){
-                delete limitMatrix[key];
-                ch = true;
-            }
-        });
-        return ch;
+    const initializeAssignedPccmPeriods = () => {
+        return false;
     };
 
     const clearObjIfNotEmpty = (field) => {
@@ -719,7 +693,7 @@ function syncDerivedDataIntegrity(){
         changed = normalizeClassSubjectKeys(DATA.pccmRoomMatrix) || changed;
         changed = normalizeClassSubjectKeys(DATA.pccmTietMatrix) || changed;
         changed = normalizeClassSubjectKeys(DATA.pccmGioihanMatrix) || changed;
-        changed = pruneRedundantPccmPeriods() || changed;
+        changed = initializeAssignedPccmPeriods() || changed;
 
         // TỰ CHỮA giá trị GV theo danh mục hiện tại trước khi dọn (sửa lỗi
         // "nhập phân công từ Excel không lưu" 17/08): người dùng có thể nhập

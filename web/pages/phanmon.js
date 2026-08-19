@@ -9414,8 +9414,8 @@ function setAutoSortStopAccessibleState(stopping){
   btn.title = label;
 }
 
-function setAutoSortBusyControls(locked){
-  const workerStillRunning = (window.__ACTIVE_TKB_FET_WORKER != null)
+function isPlannerBusySolving(){
+  return (window.__ACTIVE_TKB_FET_WORKER != null)
     || (window.__TKB_SOLVE_UI_BUSY === true);
 }
 
