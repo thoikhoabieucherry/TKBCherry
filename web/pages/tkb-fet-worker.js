@@ -84,59 +84,9 @@ self.onmessage = async function(e) {
     let bestCheckpoint = null;
     let lastSnapshotAt = 0;
     const SNAPSHOT_INTERVAL_MS = 250;
+    const isSolveOptMode = mode === 'solve_optimize_all' || mode === 'solve_optimize_all_fresh' || mode === 'auto' || taskType === 'solve';
 
-    if (taskType === 'optimize') {
-      const res = await currentEngine.optimize(mode, (prog) => {
-        let snapshotTkb = null;
-        if (!constructionPhase) {
-          const now = Date.now();
-          if (!bestCheckpoint || now - lastSnapshotAt >= SNAPSHOT_INTERVAL_MS || (prog && prog.percent >= 100)) {
-            try {
-              const snap = typeof currentEngine.getRetainedOptimizationSnapshotTKB === 'function'
-                ? currentEngine.getRetainedOptimizationSnapshotTKB()
-                : currentEngine.getSnapshotTKB();
-              lastSnapshotAt = now;
-              bestCheckpoint = {
-                complete: Number(prog?.metrics?.unplacedCount || 0) === 0,
-                tkb: snap,
-                metrics: prog?.metrics
-              };
-            } catch (_) {}
-          }
-          snapshotTkb = bestCheckpoint ? bestCheckpoint.tkb : null;
-        }
-
-        self.postMessage({
-          type: 'progress',
-          mode: mode,
-          percent: prog?.percent,
-          currentMetric: prog?.currentMetric,
-          initialMetric: prog?.initialMetric,
-          stage: prog?.stage || null,
-          cycle: prog?.cycle,
-          metrics: prog?.metrics,
-          checkpoint: bestCheckpoint,
-          tkb: snapshotTkb
-        });
-      });
-
-      const finalSnapshot = typeof currentEngine.getRetainedOptimizationSnapshotTKB === 'function'
-        ? currentEngine.getRetainedOptimizationSnapshotTKB()
-        : currentEngine.getSnapshotTKB();
-
-      self.postMessage({
-        type: 'done',
-        ok: true,
-        applied: true,
-        tkb: finalSnapshot,
-        initialMetrics: res?.initialMetrics,
-        metrics: res?.metrics,
-        placed: res?.placed,
-        unassigned: res?.unassigned,
-        total: res?.total || ((res?.placed || 0) + (res?.unassigned || 0))
-      });
-      return;
-    } else {
+    if (isSolveOptMode) {
       res = await runSolveOptimizeAll((prog) => {
         let snapshotTkb = null;
         if (!constructionPhase) {
@@ -170,24 +120,58 @@ self.onmessage = async function(e) {
           tkb: snapshotTkb
         });
       });
+    } else {
+      res = await currentEngine.optimize(mode, (prog) => {
+        let snapshotTkb = null;
+        if (!constructionPhase) {
+          const now = Date.now();
+          if (!bestCheckpoint || now - lastSnapshotAt >= SNAPSHOT_INTERVAL_MS || (prog && prog.percent >= 100)) {
+            try {
+              const snap = typeof currentEngine.getRetainedOptimizationSnapshotTKB === 'function'
+                ? currentEngine.getRetainedOptimizationSnapshotTKB()
+                : currentEngine.getSnapshotTKB();
+              lastSnapshotAt = now;
+              bestCheckpoint = {
+                complete: Number(prog?.metrics?.unplacedCount || 0) === 0,
+                tkb: snap,
+                metrics: prog?.metrics
+              };
+            } catch (_) {}
+          }
+          snapshotTkb = bestCheckpoint ? bestCheckpoint.tkb : null;
+        }
 
-      const finalSnapshot = typeof currentEngine.getRetainedOptimizationSnapshotTKB === 'function'
-        ? currentEngine.getRetainedOptimizationSnapshotTKB()
-        : currentEngine.getSnapshotTKB();
-
-      self.postMessage({
-        type: 'done',
-        ok: true,
-        applied: true,
-        tkb: finalSnapshot,
-        initialMetrics: res?.initialMetrics,
-        metrics: res?.metrics,
-        placed: res?.placed,
-        unassigned: res?.unassigned,
-        total: res?.total || ((res?.placed || 0) + (res?.unassigned || 0))
+        self.postMessage({
+          type: 'progress',
+          mode: mode,
+          percent: prog?.percent,
+          currentMetric: prog?.currentMetric,
+          initialMetric: prog?.initialMetric,
+          stage: prog?.stage || null,
+          cycle: prog?.cycle,
+          metrics: prog?.metrics,
+          checkpoint: bestCheckpoint,
+          tkb: snapshotTkb
+        });
       });
-      return;
     }
+
+    const finalSnapshot = typeof currentEngine.getRetainedOptimizationSnapshotTKB === 'function'
+      ? currentEngine.getRetainedOptimizationSnapshotTKB()
+      : currentEngine.getSnapshotTKB();
+
+    self.postMessage({
+      type: 'done',
+      ok: res && res.ok !== false,
+      applied: res && res.applied !== false,
+      tkb: finalSnapshot,
+      initialMetrics: res?.initialMetrics,
+      metrics: res?.metrics,
+      placed: res?.placed,
+      unassigned: res?.unassigned,
+      total: res?.total || ((res?.placed || 0) + (res?.unassigned || 0))
+    });
+    return;
   } catch (err) {
     self.postMessage({
       type: 'error',

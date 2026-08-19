@@ -2490,7 +2490,7 @@
       return improved ? currentBest : null;
     }
 
-    tryClosedPushCycles(bestMetrics, onProgress = null, maxDepth = 6){
+    tryClosedPushCycles(bestMetrics, onProgress = null, maxDepth = 3){
       let currentBest = { ...bestMetrics };
       let improved = false;
 
@@ -3058,7 +3058,7 @@
         if(!anyRoundImprovement){
           // If still have singletons, do an ILS push cycle with higher depth
           if((mode === "optimize_all" || mode === "optimize_singletons") && bestMetrics.soBuoiDay1 > 0 && r < MAX_ROUNDS - 1){
-            const deepRes = this.tryClosedPushCycles(bestMetrics, onProgress, 8);
+            const deepRes = this.tryClosedPushCycles(bestMetrics, onProgress, 4);
             if(deepRes){
               bestMetrics = deepRes;
               anyRoundImprovement = true;
