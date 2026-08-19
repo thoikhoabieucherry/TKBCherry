@@ -8,7 +8,7 @@
     const FIRST_QUALITY_GATE_CEILING_SECONDS = 130;
     const ROBUST_AUTO_DURATION_SECONDS = 180;
     const DEEP_AUTO_DURATION_SECONDS = 180;
-    const REFINEMENT_AUTO_DURATION_SECONDS = 60;
+    const REFINEMENT_AUTO_DURATION_SECONDS = 240; // 18/08: che do "tu dong" chay den khi on (engine tu dung som khi het cai thien)
     const HARD_DEBT_REFINEMENT_DURATION_SECONDS = 270;
     // Fresh merged timetables keep one uninterrupted completeness + quality
     // ceiling. Each later Auto click gets a bounded quality-only burst
@@ -1769,7 +1769,7 @@
           if(origin) candidates.push(origin);
         }
       }catch(_){}
-      if(isLocalPageOrigin()) candidates.push("http://127.0.0.1:1010");
+      if(isLocalPageOrigin()) candidates.push("http://127.0.0.1:1991");
       const seen = new Set();
       for(let attempt = 0; attempt < 2; attempt++){
         for(const candidate of candidates){
@@ -4508,8 +4508,8 @@
       ? "Dữ liệu đang có ràng buộc/tiết nghỉ nên cần dịch vụ xếp lịch để xử lý đúng."
       : "Dữ liệu toàn trường khá lớn nên cần dịch vụ xếp lịch để chạy ổn định.";
     const deploymentHint = isLocalPageOrigin()
-      ? "Hãy chạy python .\\start.py trong thư mục TKB, mở http://127.0.0.1:1010/, rồi bấm Sắp xếp TKB > Sắp xếp."
-      : "Hãy mở bản local tại http://127.0.0.1:1010/ để kết nối dịch vụ xếp lịch.";
+      ? "Hãy chạy python .\\start.py trong thư mục TKB, mở http://127.0.0.1:1991/, rồi bấm Sắp xếp TKB > Sắp xếp."
+      : "Hãy mở bản local tại http://127.0.0.1:1991/ để kết nối dịch vụ xếp lịch.";
     return [
       "Không kết nối được dịch vụ xếp lịch.",
       reason,
@@ -6384,6 +6384,20 @@
       delete next.tkbLessonTeachers;
       delete next.tkbLessonRooms;
       next.__tkbRequestStrippedSchedule = true;
+      // 18/08: goi lich hien tai (du 100% tiet) lam warm-start cho engine v3.
+      // May chu tu kiem tra toan bo rang buoc va bo qua hint neu khong hop le,
+      // nen ket qua sau khi bam lai khong bao gio xau hon lich dang co.
+      try{
+        const warmExpected = expectedLessonCount(data);
+        const warmLessons = visibleScheduleLessonsFromData(data);
+        if(
+          warmExpected > 0
+          && Array.isArray(warmLessons)
+          && warmLessons.length === warmExpected
+        ){
+          next.tkbSolverResult = {lessons: warmLessons};
+        }
+      }catch(_){}
     }
     return next;
   }
@@ -9425,6 +9439,29 @@
         8,
         Math.min(24, Math.ceil(Math.max(1, current.totalGap) * 0.10))
       );
+      // 18/08: engine v3 co the sua hang chuc buoi 1 tiet / Gap2 trong MOT lan
+      // bam. Cho phep tra gia gap1/tong trong ti le voi tien do chat luong cung
+      // vua dat duoc (2 don vi moi buoi da sua), van chan tren +120 nhu
+      // boundedRepairCap de khong bao gio thanh ratchet.
+      const hardProgressUnits = Math.max(0, current.onePeriod - next.onePeriod)
+        + Math.max(0, current.gap2Plus - next.gap2Plus);
+      // 18/08: giam BUOI cung la tien do bac cao hon gap1 (dung thu tu uu tien
+      // cua chu du an: buoi truoc, gap1 sau) — cho phep tra gia gap1 bi chan.
+      const sessionProgressUnits = Math.max(0, current.teacherSessions - next.teacherSessions);
+      const sessionProgress = sessionProgressUnits > 0;
+      const progressGapDebt = Math.min(120, 2 * (hardProgressUnits + sessionProgressUnits));
+      // 18/08: mot ung vien khong xau hon o CA 5 chi so (va se phai tot hon
+      // that su o tuyen kiem tra tuple phia sau) luon duoc chap nhan — truoc
+      // day no bi chan chi vi con no singleton ma khong giam them duoc.
+      if(
+        next.onePeriod <= current.onePeriod
+        && next.gap2Plus <= current.gap2Plus
+        && next.teacherSessions <= current.teacherSessions
+        && next.gap1 <= current.gap1
+        && next.totalGap <= current.totalGap
+      ){
+        return true;
+      }
       const boundedRepairCap = (field, currentValue, legacyHeadroom) => {
         const incumbentCap = Number(incumbent?.metrics?.[field]);
         const candidateCap = Number(candidate?.metrics?.[field]);
@@ -9449,19 +9486,21 @@
       const gap1Cap = boundedRepairCap(
         "automatic_quality_repair_gap1_cap",
         current.gap1,
-        legacyGap1Headroom
+        Math.max(legacyGap1Headroom, progressGapDebt)
       );
       const totalGapCap = boundedRepairCap(
         "automatic_quality_repair_total_gap_cap",
         current.totalGap,
-        legacyTotalGapHeadroom
+        Math.max(legacyTotalGapHeadroom, progressGapDebt)
       );
+      const lowerTierProgress = hardQualityProgress || sessionProgress;
       return next.onePeriod <= current.onePeriod
         && next.gap2Plus <= current.gap2Plus
         && (
           !hardQualityDebt
           || singletonProgress
           || gap2Progress
+          || sessionProgress
         )
         && (
           next.teacherSessions <= current.teacherSessions
@@ -9469,11 +9508,11 @@
         )
         && (
           next.gap1 <= current.gap1
-          || (hardQualityProgress && next.gap1 <= gap1Cap)
+          || (lowerTierProgress && next.gap1 <= gap1Cap)
         )
         && (
           next.totalGap <= current.totalGap
-          || (hardQualityProgress && next.totalGap <= totalGapCap)
+          || (lowerTierProgress && next.totalGap <= totalGapCap)
         );
     }
 
@@ -14600,6 +14639,8 @@
       }
       await yieldResponsiveUi();
       if(!cacheEligible) requestData.__tkbSolverRequestNonce = solveRunId;
+      // 19/08: chi con engine v3 — khong bao gio gui settings.engine len backend.
+      try{ delete effectiveSettings.engine; }catch(_){ }
       const browserWasmRequest = {data: requestData, settings: effectiveSettings};
       let body = "";
       await yieldResponsiveUi();
@@ -16067,7 +16108,7 @@
   function settingsForCompleteExistingOptimize(baseSettings, data, state){
     const next = settingsForFastQualityAutoSort(baseSettings || readSettings());
     const expected = Math.max(0, Number(state?.expected || expectedLessonCount(data)) || 0);
-    const seconds = expected >= 900 ? 45 : 28;
+    const seconds = expected >= 900 ? 150 : 60;
     next.ui_complete_schedule_existing_optimize = true;
     next.ui_default_fresh_sort = false;
     next.ui_skip_pre_solve_constraint_release = true;
@@ -19306,6 +19347,22 @@
         return retainedPayload;
       }
     }
+    // 18/08: cac nut toi uu chuyen sau (trong 1 tiet, ...) chi chay khi lich
+    // DA XEP DU 100%. Chua du thi bao nguoi dung bam Sap xep truoc.
+    if(
+      [
+        SOLVE_REQUEST_MODES.gap1,
+        SOLVE_REQUEST_MODES.gap2,
+        SOLVE_REQUEST_MODES.gaps,
+        SOLVE_REQUEST_MODES.sessions,
+        SOLVE_REQUEST_MODES.singletons
+      ].includes(requestedSolveMode)
+      && !currentScheduleAppearsComplete(currentData)
+    ){
+      releaseAutoSortButtonSoon();
+      setStatus("Ch\u1ec9 t\u1ed1i \u01b0u khi \u0111\u00e3 x\u1ebfp \u0111\u1ee7 100% s\u1ed1 ti\u1ebft. H\u00e3y b\u1ea5m S\u1eafp x\u1ebfp tr\u01b0\u1edbc.", "warning");
+      return null;
+    }
     let existingBackendJob = await inspectExistingBackendJobForManualSolve(currentData);
     if(existingBackendJob?.kind === "auth_required") return null;
     if(window.__TKB_WINDOWS_WEB_AGENT_TRIAL === true && existingBackendJob?.job){
@@ -19702,24 +19759,17 @@
       releaseAutoSortPreflight(preflightToken);
     }
   };
-  if(typeof window.executeDirectFastSchedule !== "function"){
-    window.sapXepTuDongAll = bridgeSapXepTuDongAll;
-    window.sapXepTheoCheDo = function(mode){
-      return window.sapXepTuDongAll({
-        mode:normalizeSolveRequestMode(mode),
-        manualAgentInvite:true
-      });
-    };
-  }
+  window.bridgeSapXepTuDongAll = bridgeSapXepTuDongAll;
+
   try{
     const autoSortButton = document.getElementById("btnAutoSort");
-    if(autoSortButton && typeof window.executeDirectFastSchedule !== "function"){
+    if(autoSortButton){
       autoSortButton.dataset.rustBridgeVersion = VERSION;
       autoSortButton.onclick = function(event){
         try{ event?.preventDefault?.(); }catch(_){}
         let result = null;
         try{
-          result = window.sapXepTuDongAll({manualAgentInvite:true});
+          result = window.sapXepTuDongAll ? window.sapXepTuDongAll({ mode: "solve_optimize_all" }) : null;
         }catch(err){
           releaseAutoSortButtonSoon();
           throw err;

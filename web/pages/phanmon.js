@@ -1467,6 +1467,7 @@ function __tkbRefreshAfterHistory(label){
 }
 
 function tkbUndo(){
+  flushDeferredSaveStore();
   if(!TKB_UNDO_STACK.length) return false;
   const current = TKB_HISTORY_CURRENT || __tkbHistoryPayload();
   const prev = TKB_UNDO_STACK.pop();
@@ -1485,6 +1486,7 @@ function tkbUndo(){
 }
 
 function tkbRedo(){
+  flushDeferredSaveStore();
   if(!TKB_REDO_STACK.length) return false;
   const current = TKB_HISTORY_CURRENT || __tkbHistoryPayload();
   const next = TKB_REDO_STACK.pop();
@@ -1562,6 +1564,33 @@ function __tkbPayloadForSave(options){
   __tkbRememberStablePayload(payload, currentStats, opts.beforeUnload ? "beforeunload-current" : "saveStore");
   return { payload, stats: currentStats, usedStable: false };
 }
+// PERF 18/08: keo/tha & sua tung o — don phan LUU (sanitize + stringify + localStorage
+// + day server + history) ve sau 500ms yen lang thay vi chay dong bo theo TUNG o
+// (truong lon: moi luot luu ton hang tram ms => keo tha "khung"). DATA trong bo nho
+// da doi ngay nen render/solve van dung; chi phan persist duoc gom lo.
+// Flush ngay khi: roi trang/an tab, Undo/Redo, hoac truoc khi chay xep/toi uu.
+let __tkbDeferredSaveTimer = null;
+function flushDeferredSaveStore(){
+  if(__tkbDeferredSaveTimer){
+    clearTimeout(__tkbDeferredSaveTimer);
+    __tkbDeferredSaveTimer = null;
+    try{ saveStore(); }catch(e){ console.error("deferred saveStore failed", e); }
+  }
+}
+function saveStoreDeferred(){
+  if(__tkbDeferredSaveTimer) clearTimeout(__tkbDeferredSaveTimer);
+  __tkbDeferredSaveTimer = setTimeout(()=>{
+    __tkbDeferredSaveTimer = null;
+    try{ saveStore(); }catch(e){ console.error("deferred saveStore failed", e); }
+  }, 500);
+}
+try{
+  window.addEventListener("pagehide", flushDeferredSaveStore);
+  window.addEventListener("beforeunload", flushDeferredSaveStore);
+  document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState === "hidden") flushDeferredSaveStore(); });
+}catch(_){ }
+window.flushDeferredSaveStore = flushDeferredSaveStore;
+
 function saveStore(options){
   let opts = options || {};
   const trustedSolverApply = opts.trustedSolverApply === true;
@@ -4072,7 +4101,7 @@ function setOffByKeys(keys, isOff, opts){
   }
 
   if(!changed) return;
-  try{ saveStore(); }catch(e){ console.error('saveStore failed', e); }
+  try{ saveStoreDeferred(); }catch(e){ console.error('saveStore failed', e); }
   try{ renderCurrentView(); }catch(e){ console.error('renderCurrentView failed', e); }
   try{ loadMonList(); }catch(e){ console.error('loadMonList failed', e); }
   applyCellSelectionStyles();
@@ -4093,7 +4122,7 @@ function toggleFixedByKey(key){
   if(isFixed(cur)) tkb[thu][buoi][ti] = mon;
   else tkb[thu][buoi][ti] = {mon, fixed: true};
 
-  try{ saveStore(); }catch(e){ console.error('saveStore failed', e); }
+  try{ saveStoreDeferred(); }catch(e){ console.error('saveStore failed', e); }
   try{ renderCurrentView(); }catch(e){ console.error('renderCurrentView failed', e); }
   try{ loadMonList(); }catch(e){ console.error('loadMonList failed', e); }
   applyCellSelectionStyles();
@@ -4111,7 +4140,7 @@ function clearLessonByKey(key){
   if(!mon) return false;
 
   tkb[thu][buoi][ti] = "";
-  try{ saveStore(); }catch(e){ console.error('saveStore failed', e); }
+  try{ saveStoreDeferred(); }catch(e){ console.error('saveStore failed', e); }
   try{ renderCurrentView(); }catch(e){ console.error('renderCurrentView failed', e); }
   try{ loadMonList(); }catch(e){ console.error('loadMonList failed', e); }
   try{ _setStatus("Đã đưa tiết về Chưa phân.", "ok"); }catch(_){ }
@@ -4336,7 +4365,7 @@ function deleteSelectedCells(){
   }
 
   if(!changed) return;
-  try{ saveStore(); }catch(e){ console.error('saveStore failed', e); }
+  try{ saveStoreDeferred(); }catch(e){ console.error('saveStore failed', e); }
   try{ renderCurrentView(); }catch(e){ console.error('renderCurrentView failed', e); }
   try{ loadMonList(); }catch(e){ console.error('loadMonList failed', e); }
   try{
@@ -4468,7 +4497,7 @@ function tryApplyFixedLessonFromUnassigned(task){
     tkb[item.p.thu][item.p.buoi][item.p.ti] = {mon: task.mon, fixed: true};
   });
 
-  try{ saveStore(); }catch(e){ console.error('saveStore failed', e); }
+  try{ saveStoreDeferred(); }catch(e){ console.error('saveStore failed', e); }
   try{ renderCurrentView(); }catch(e){ console.error('renderCurrentView failed', e); }
   try{ loadMonList(); }catch(e){ console.error('loadMonList failed', e); }
   applyCellSelectionStyles();
@@ -4783,7 +4812,7 @@ function bindCells(){
       clearDragVisual();
       // Nếu vừa bỏ cố định ở dragstart mà user thả (không drop), render lại để UI đồng bộ.
       if(dragData && dragData.type === "cell" && dragData._unfixedFromFixed){
-        try{ saveStore(); }catch(_){ }
+        try{ saveStoreDeferred(); }catch(_){ }
         try{ renderCurrentView(); loadMonList(); }catch(_){ }
       }
       dragData = null;
@@ -5059,7 +5088,7 @@ function onDrop(td){
     throw new Error("Dữ liệu kéo thả không hợp lệ (dragData.type)");
   }
 
-  try{ saveStore(); }catch(e){ console.error('saveStore failed', e); }
+  try{ saveStoreDeferred(); }catch(e){ console.error('saveStore failed', e); }
   try{ renderCurrentView(); }catch(e){ console.error('renderCurrentView failed', e); }
   try{ loadMonList(); }catch(e){ console.error('loadMonList failed', e); }
 
@@ -7845,20 +7874,18 @@ async function executeDirectFastSchedule(options = {}){
 try{
   window.executeDirectFastSchedule = executeDirectFastSchedule;
   window.sapXepTuDongAll = async function(options = {}){
-    return await executeDirectFastSchedule({ mode: options?.mode || "auto" });
+    return await executeDirectFastSchedule({ mode: options?.mode || "solve_optimize_all" });
   };
   window.sapXepTheoCheDo = async function(mode = "optimize_singletons"){
     return await executeDirectFastSchedule({ mode: mode });
   };
   window.deepOptimizeTheoCheDo = async function(mode = "optimize_singletons"){
-    // Backward-compatible alias for old cached callers.  There is no deep
-    // Cloud Run lane anymore; every planner action stays in the FET worker.
     return await executeDirectFastSchedule({ mode });
   };
 }catch(_){}
 
 async function sapXepTuDongAll(options = {}){
-  return await executeDirectFastSchedule({ mode: options?.mode || "auto" });
+  return await executeDirectFastSchedule({ mode: options?.mode || "solve_optimize_all" });
 }
 
 async function sapXepTheoCheDo(mode = "optimize_singletons"){
@@ -11731,7 +11758,7 @@ function backToMain(){
       }
       tkb[thu][buoi][ti] = info.val || info.mon;
 
-      try{ saveStore(); }catch(e){ console.error('saveStore failed', e); }
+      try{ saveStoreDeferred(); }catch(e){ console.error('saveStore failed', e); }
       try{ renderCurrentView(); }catch(e){ console.error('renderCurrentView failed', e); }
       try{ loadMonList(); }catch(e){ console.error('loadMonList failed', e); }
       clearDragVisual();
