@@ -526,6 +526,15 @@ class UnifiedCpSatSolver:
         )
         return best_solution
 
+    # ---- HOOK cho ban hop nhat (Cherry). Lop co so KHONG rang buoc gi them ----
+    def _extra_session_constraints(self, model, x_vars):
+        """No-op o ban goc; lop con them rang buoc tiet doi o Tang 1."""
+        return None
+
+    def _extra_period_constraints(self, model, p_vars, acts, day, buoi):
+        """No-op o ban goc; lop con them rang buoc tranh tiet 2-3 o Tang 2."""
+        return None
+
     def _solve_session_master(self, no_good_cuts: list[tuple[str, str, list[int]]]) -> dict[str, Any] | None:
         """Tầng 1: Session Master Model phân bổ môn vào các buổi."""
         model = cp_model.CpModel()
@@ -711,6 +720,8 @@ class UnifiedCpSatSolver:
         # Priority 2: Tối thiểu hóa tổng số buổi dạy GV (Phạt 1,000 điểm)
         total_teacher_sessions = sum(z_teacher_session.values())
         total_singletons = sum(singleton_penalties) if singleton_penalties else 0
+        # HOOK (TKBCherry): lop con co the them rang buoc rieng (tiet doi...).
+        self._extra_session_constraints(model, x_vars)
         model.Minimize(total_singletons * 10000000 + total_teacher_sessions * 1000)
 
         solver = cp_model.CpSolver()
@@ -1246,6 +1257,8 @@ class UnifiedCpSatSolver:
                     matching = [pat_map[pat] for pat in valid_pats if p in pat]
                     model.Add(sum(terms) == sum(matching))
 
+        self._extra_period_constraints(model, p_vars, acts, day, buoi)
+
         # Tối thiểu hóa gap 1
         if gap1_penalties:
             model.Minimize(sum(yp * c for yp, c in gap1_penalties))
@@ -1459,6 +1472,7 @@ class UnifiedCpSatSolver:
 
         total_placed_expr = sum(placed_vars.values()) if placed_vars else 0
         total_pen = sum(obj_penalties) if obj_penalties else 0
+        self._extra_period_constraints(model, p_vars, acts, day, buoi)
         model.Maximize(total_placed_expr * 1000000 - total_pen)
             
         solver = cp_model.CpSolver()

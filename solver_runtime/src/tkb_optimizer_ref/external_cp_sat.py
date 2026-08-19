@@ -13,8 +13,32 @@ import tempfile
 from typing import Any, Callable, Iterator, Mapping
 
 from google.protobuf import text_format
-from ortools.sat import cp_model_pb2, sat_parameters_pb2
-from ortools.sat.python import cp_model_helper
+# Optional-dependency guard: engine v3 runs without ortools. Legacy CP-SAT
+# lanes need the real package; with it missing they fail only when invoked.
+class _MissingModule:
+    """Placeholder that tolerates attribute chains (annotations) but raises
+    with a clear message the moment legacy code actually calls into it."""
+
+    def __init__(self, dep: str = "ortools"):
+        self._dep = dep
+
+    def __getattr__(self, name):
+        return _MissingModule(self._dep)
+
+    def __call__(self, *args, **kwargs):
+        raise RuntimeError(
+            f"{self._dep} is not installed; the legacy solver lane needs it "
+            "(engine v3 does not)."
+        )
+
+
+try:
+    from ortools.sat import cp_model_pb2, sat_parameters_pb2
+    from ortools.sat.python import cp_model_helper
+except Exception:  # pragma: no cover - machines without ortools
+    cp_model_pb2 = _MissingModule("ortools")
+    sat_parameters_pb2 = _MissingModule("ortools")
+    cp_model_helper = _MissingModule("ortools")
 
 from .model_plan import MODEL_PLAN_PROTOCOL
 

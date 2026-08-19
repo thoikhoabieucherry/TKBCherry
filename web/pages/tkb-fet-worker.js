@@ -80,9 +80,10 @@ self.onmessage = async function(e) {
         (v) => { constructionPhase = !!v; }
       );
       const runOptimize = async (cb) => {
-        if (mode === 'solve_optimize_all' || mode === 'solve_optimize_all_fresh' || mode === 'optimize_all') {
-          if (typeof currentEngine.optimizeAll === 'function') return await currentEngine.optimizeAll(cb);
+        if (mode === 'solve_optimize_all' || mode === 'solve_optimize_all_fresh') {
+          return await runSolveOptimizeAll(cb);
         }
+        if (mode === 'optimize_all' && typeof currentEngine.optimizeAll === 'function') return currentEngine.optimizeAll(cb);
         // Nút "2 tiết trống": dùng cơ chế vay-trả 1t/buổi (không bao giờ tệ hơn chạy thường)
         if (mode === 'optimize_gap2' && typeof currentEngine.optimizeGap2WithBorrow === 'function') return currentEngine.optimizeGap2WithBorrow(cb);
         return currentEngine.optimize(mode, cb);

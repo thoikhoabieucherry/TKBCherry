@@ -526,6 +526,15 @@ class UnifiedCpSatSolver:
         )
         return best_solution
 
+    # ---- HOOK cho ban hop nhat (Cherry). Lop co so KHONG rang buoc gi them ----
+    def _extra_session_constraints(self, model, x_vars):
+        """No-op o ban goc; lop con them rang buoc tiet doi o Tang 1."""
+        return None
+
+    def _extra_period_constraints(self, model, p_vars, acts, day, buoi):
+        """No-op o ban goc; lop con them rang buoc tranh tiet 2-3 o Tang 2."""
+        return None
+
     def _solve_session_master(self, no_good_cuts: list[tuple[str, str, list[int]]]) -> dict[str, Any] | None:
         """Tầng 1: Session Master Model phân bổ môn vào các buổi."""
         model = cp_model.CpModel()
@@ -656,16 +665,68 @@ class UnifiedCpSatSolver:
                     else:
                         model.Add(z == 0)
 
+        # CẬN TRÊN TOÁN HỌC CHO SỐ BUỔI 1 TIẾT:
+        # Chỉ những GV có tổng tải ca == 1 (hoặc GV có 1 lớp dạy đúng 3 tiết nhưng limitDaily == 2) mới được phép có tối đa 1 buổi 1 tiết.
+        # Tất cả các GV khác CẤM HOÀN TOÀN buổi 1 tiết (allowed_singles = 0)!
+        for (gv, b), s_vars in teacher_singles.items():
+            sh_load = self.teacher_shift_loads[gv][b]
+            if sh_load <= 0:
+                model.Add(sum(s_vars) == 0)
+            elif sh_load == 1:
+                model.Add(sum(s_vars) <= 1)
+            elif sh_load == 3:
+                # Chỉ cho phép nếu GV có 1 lớp dạy đúng 3 tiết và limitDaily <= 2 (ví dụ Thầy A.Khánh với 8A2)
+                gv_has_single_class_3 = any(
+                    a["gv"] == gv and a["totalPeriods"] == 3 and a["limitDaily"] <= 2
+                    for a in self.assignments
+                )
+                if gv_has_single_class_3:
+                    model.Add(sum(s_vars) <= 1)
+                else:
+                    # Nếu là nhiều lớp khác nhau (như Cô Ti.Dương dạy 9A18, 9A19, 9A20), gom toàn bộ 3 tiết vào 1 buổi -> 0 buổi 1 tiết!
+                    model.Add(sum(s_vars) == 0)
+            else:
+                model.Add(sum(s_vars) == 0)
+
+        # Ràng buộc Cận trên số buổi/tuần và số ngày/tuần của GV nếu có
+        teacher_constraints = self.constraints.get("teacher", {}) or {}
+        for gv, t_conf in teacher_constraints.items():
+            if not isinstance(t_conf, dict):
+                continue
+            max_days = int(t_conf.get("maxDaysSessions", {}).get("maxDays", 0) or 0)
+            if max_days > 0:
+                # CẬN TRÊN số ngày dạy
+                day_active_vars = []
+                for day in DAYS:
+                    day_z = [z_teacher_session[(gv, day, b)] for b in BUOIS if (gv, day, b) in z_teacher_session]
+                    if day_z:
+                        d_act = model.NewBoolVar(f"d_act_{gv}_{day}")
+                        for z in day_z:
+                            model.Add(z <= d_act)
+                        model.Add(d_act <= sum(day_z))
+                        day_active_vars.append(d_act)
+                if day_active_vars:
+                    model.Add(sum(day_active_vars) <= max_days)
+
+        # Thêm các No-Good Cuts từ các vòng lặp trước
+        for (cut_day, cut_b, cut_aids) in no_good_cuts:
+            cut_terms = [x_active[(aid, cut_day, cut_b)] for aid in cut_aids if (aid, cut_day, cut_b) in x_active]
+            if len(cut_terms) > 1:
+                # Ít nhất 1 môn trong nhóm xung đột phải chuyển sang buổi khác
+                model.Add(sum(cut_terms) <= len(cut_terms) - 1)
+
         # HÀM MỤC TIÊU LEXICOGRAPHIC TẦNG 1:
         # Priority 1: Triệt tiêu buổi 1 tiết (Phạt 10,000,000 điểm)
         # Priority 2: Tối thiểu hóa tổng số buổi dạy GV (Phạt 1,000 điểm)
         total_teacher_sessions = sum(z_teacher_session.values())
         total_singletons = sum(singleton_penalties) if singleton_penalties else 0
+        # HOOK (TKBCherry): lop con co the them rang buoc rieng (tiet doi...).
+        self._extra_session_constraints(model, x_vars)
         model.Minimize(total_singletons * 10000000 + total_teacher_sessions * 1000)
 
         solver = cp_model.CpSolver()
-        solver.parameters.max_time_in_seconds = min(float(self.time_limit), 60.0)
-        solver.parameters.num_search_workers = max(1, self.num_workers)
+        solver.parameters.max_time_in_seconds = 6.0
+        solver.parameters.num_search_workers = 4
         solver.parameters.random_seed = self.seed
         
         status = solver.Solve(model)
@@ -1196,6 +1257,8 @@ class UnifiedCpSatSolver:
                     matching = [pat_map[pat] for pat in valid_pats if p in pat]
                     model.Add(sum(terms) == sum(matching))
 
+        self._extra_period_constraints(model, p_vars, acts, day, buoi)
+
         # Tối thiểu hóa gap 1
         if gap1_penalties:
             model.Minimize(sum(yp * c for yp, c in gap1_penalties))
@@ -1409,6 +1472,7 @@ class UnifiedCpSatSolver:
 
         total_placed_expr = sum(placed_vars.values()) if placed_vars else 0
         total_pen = sum(obj_penalties) if obj_penalties else 0
+        self._extra_period_constraints(model, p_vars, acts, day, buoi)
         model.Maximize(total_placed_expr * 1000000 - total_pen)
             
         solver = cp_model.CpSolver()

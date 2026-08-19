@@ -16,10 +16,49 @@ FILES = [
     (r"C:\Users\Love\Documents\Codex\TKBCherry\web\pages\tkb-fet-worker.js", "/opt/cherry-scheduler/web/pages/tkb-fet-worker.js"),
     (r"C:\Users\Love\Documents\Codex\TKBCherry\web\pages\phanmon.js", "/opt/cherry-scheduler/web/pages/phanmon.js"),
     (r"C:\Users\Love\Documents\Codex\TKBCherry\web\pages\phanmon.css", "/opt/cherry-scheduler/web/pages/phanmon.css"),
-    (r"C:\Users\Love\Documents\Codex\TKBCherry\web\pages\sapxep.html", "/opt/cherry-scheduler/web/pages/sapxep.html"),
-    # 19/08: bridge phai di kem sapxep.html, neu khong 2 nut Cherry/Flash se khong gui duoc settings.engine
     (r"C:\Users\Love\Documents\Codex\TKBCherry\web\pages\tkb-rust-bridge.js", "/opt/cherry-scheduler/web/pages/tkb-rust-bridge.js"),
+    (r"C:\Users\Love\Documents\Codex\TKBCherry\web\pages\sapxep.html", "/opt/cherry-scheduler/web/pages/sapxep.html"),
 ]
+
+SOLVER_DIRS = [
+    (r"C:\Users\Love\Documents\Codex\TKBCherry\solver_runtime\src", "/opt/cherry-scheduler/solver_runtime/src"),
+]
+SOLVER_FILES = [
+    (r"C:\Users\Love\Documents\Codex\TKBCherry\solver_runtime\scripts\solve_stdio.py", "/opt/cherry-scheduler/solver_runtime/scripts/solve_stdio.py"),
+    (r"C:\Users\Love\Documents\Codex\TKBCherry\solver_runtime\scripts\cloud_run_client.py", "/opt/cherry-scheduler/solver_runtime/scripts/cloud_run_client.py"),
+    (r"C:\Users\Love\Documents\Codex\TKBCherry\solver_runtime\scripts\cloud_run_service.py", "/opt/cherry-scheduler/solver_runtime/scripts/cloud_run_service.py"),
+]
+
+
+def _put_tree(sftp, local_root, remote_root):
+    from pathlib import Path as _P
+    count = 0
+    for path in _P(local_root).rglob("*"):
+        if path.is_dir():
+            if path.name == "__pycache__":
+                continue
+            continue
+        if "__pycache__" in path.parts:
+            continue
+        if path.suffix.lower() not in (".py", ".json"):
+            continue
+        rel = path.relative_to(local_root).as_posix()
+        remote = f"{remote_root}/{rel}"
+        parent = remote.rsplit("/", 1)[0]
+        try:
+            sftp.stat(parent)
+        except IOError:
+            acc = ""
+            for part in parent.strip("/").split("/"):
+                acc += "/" + part
+                try:
+                    sftp.stat(acc)
+                except IOError:
+                    sftp.mkdir(acc)
+        sftp.put(str(path), remote)
+        count += 1
+    return count
+
 
 def main():
     host, user, password = resolve_vps_connection()
@@ -31,6 +70,13 @@ def main():
     for local, remote in FILES:
         print(f"  {Path(local).name} -> {remote}")
         sftp.put(local, remote)
+    print("Dong bo solver_runtime (lane du phong tren VPS)...")
+    for local, remote in SOLVER_FILES:
+        print(f"  {Path(local).name} -> {remote}")
+        sftp.put(local, remote)
+    for local_root, remote_root in SOLVER_DIRS:
+        n = _put_tree(sftp, local_root, remote_root)
+        print(f"  {n} file .py/.json -> {remote_root}")
     sftp.close()
     print("Restart tkb-app...")
     _, out, _ = client.exec_command("systemctl restart tkb-app && systemctl is-active tkb-app")

@@ -723,7 +723,54 @@ def main() -> int:
                 "message": "Da nhan du lieu, bat dau sap xep",
             }
         )
-        result = solve_from_ui_data(ui_data, settings, progress=emit_progress)
+        # 19/08: hai thuat toan bo sung, CHON THEO NUT tren UI (settings.engine).
+        #   engine = "cherry" | "v3"     -> Cherry  (solver_runtime/src/tkb_engine_v3, log: Cherry/logs)
+        #   engine = "flash"  | "cpsat"  -> Flash   (tkb_optimizer_ref/unified_cpsat_solver, log: Flash/logs)
+        # Khong dat gia tri nao thi giu NGUYEN pipeline cu (nut Sap xep / Toi uu).
+        engine_choice = (
+            os.environ.get("TKB_ENGINE", "").strip().casefold()
+            or str(settings.get("engine") or "").strip().casefold()
+        )
+        if engine_choice in {"cherry", "v3", "engine_v3"}:
+            try:
+                from tkb_engine_v3.entry import solve_from_ui_data_v3
+
+                result = solve_from_ui_data_v3(ui_data, settings, progress=emit_progress)
+            except Exception as exc:
+                emit_progress(
+                    {
+                        "stage": "solver:fallback",
+                        "message": "Cherry gap loi (%s); dung bo giai mac dinh"
+                        % type(exc).__name__,
+                    }
+                )
+                if os.environ.get("TKB_DEBUG_TRACE") == "1":
+                    traceback.print_exc(file=sys.stderr)
+                result = solve_from_ui_data(ui_data, settings, progress=emit_progress)
+                result.setdefault("solver", {}).setdefault("runtime_settings", {})[
+                    "cherry_fallback_reason"
+                ] = repr(exc)[:300]
+        elif engine_choice in {"flash", "cpsat", "unified", "unified_cpsat", "lightning"}:
+            try:
+                from tkb_engine_v3.cpsat_modes import solve_unified_cpsat
+
+                result = solve_unified_cpsat(ui_data, settings, progress=emit_progress)
+            except Exception as exc:
+                emit_progress(
+                    {
+                        "stage": "solver:fallback",
+                        "message": "Flash gap loi (%s); dung bo giai mac dinh"
+                        % type(exc).__name__,
+                    }
+                )
+                if os.environ.get("TKB_DEBUG_TRACE") == "1":
+                    traceback.print_exc(file=sys.stderr)
+                result = solve_from_ui_data(ui_data, settings, progress=emit_progress)
+                result.setdefault("solver", {}).setdefault("runtime_settings", {})[
+                    "flash_fallback_reason"
+                ] = repr(exc)[:300]
+        else:
+            result = solve_from_ui_data(ui_data, settings, progress=emit_progress)
 
         emit_progress(
             {

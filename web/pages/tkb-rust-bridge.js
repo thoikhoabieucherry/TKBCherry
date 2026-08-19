@@ -10044,6 +10044,10 @@
 
   function shouldUseCapacitySafeFreshProbe(settings, data){
     if(!data || settings?.ui_capacity_safe_fresh_probe_attempted === true) return false;
+    // 19/08: mot khi phep tham do 60s da het han tren CHINH bo du lieu nay thi
+    // moi lan bam sau do deu se het han y het — bo qua de khong dot them 60s
+    // (va khong con bao 422 do trong console) cho toi khi tai lai trang.
+    if(window.__TKB_CAPACITY_PROBE_DEADLINE_FAILED === true) return false;
     if(settings?.ui_capacity_safe_fresh_probe === true) return false;
     if(settings?.ui_unified_solve_kind !== "fresh_complete_first") return false;
     if(!isTeacherSessionOptSettings(settings)) return false;
@@ -10144,7 +10148,12 @@
       rethrowCancelledSolve(err, runId);
       rethrowAuthRequiredSolve(err);
       if(err?.kind === "solver_busy") throw err;
-      console.warn(`[${VERSION}] capacity-safe fresh probe skipped`, err);
+      // Het deadline => danh dau de cac luot sau khoi cho vo ich.
+      if(String(err?.kind || "") === "no_complete_schedule_before_deadline"
+        || Number(err?.status || 0) === 422){
+        window.__TKB_CAPACITY_PROBE_DEADLINE_FAILED = true;
+      }
+      console.info(`[${VERSION}] bo qua phep tham do suc chua (khong anh huong ket qua)`, err?.message || err);
     }
     return null;
   }
@@ -10817,6 +10826,24 @@
     return actual;
   }
 
+  // 19/08: neu backend da AM THAM roi ve bo giai cu (Cherry/Flash import loi,
+  // vd anh Cloud Run chua co tkb_engine_v3) thi PHAI noi ro cho nguoi dung —
+  // truoc day nut van bao "Da sap xep xong" nen khong ai biet nut khong chay
+  // dung thuat toan minh chon.
+  function engineFallbackNotice(payload){
+    const runtime = payload?.solver?.runtime_settings || {};
+    const raw = runtime.cherry_fallback_reason || runtime.flash_fallback_reason || "";
+    if(!raw) return "";
+    const which = runtime.cherry_fallback_reason ? "Cherry" : "Flash";
+    const text = String(raw);
+    const missingModule = /ModuleNotFound|No module named/i.test(text);
+    const missingOrtools = /ortools/i.test(text);
+    let why = text.slice(0, 160);
+    if(missingModule && missingOrtools) why = "máy chủ giải thiếu thư viện ortools";
+    else if(missingModule) why = "ảnh Cloud Run chưa có bộ giải mới (tkb_engine_v3)";
+    return `⚠ Nút ${which} KHÔNG chạy thuật toán riêng — đã tự chuyển về bộ giải cũ (${why}). Cần build lại ảnh Cloud Run.`;
+  }
+
   function buildCompletionMessage(payload, visibleOverride){
     const metrics = payload?.metrics || {};
     const solver = payload?.solver || {};
@@ -10837,7 +10864,11 @@
     const capacityShortageOnly = payloadIsPureCapacityShortage(payload);
     const debtMessage = qualityDebtMessage(payload, runtime);
     if(bestEffort) unchangedSchedule = false;
-    if(!bestEffort) return completionQualityStatus(payload, getData()).message;
+    const fallbackNotice = engineFallbackNotice(payload);
+    if(!bestEffort){
+      const base = completionQualityStatus(payload, getData()).message;
+      return fallbackNotice ? `${base}\n${fallbackNotice}` : base;
+    }
     const returnedIncumbentNearDeadline = payloadReturnedCompleteIncumbentNearDeadline(payload);
     const lines = [
       returnedIncumbentNearDeadline
@@ -10857,6 +10888,7 @@
     if(debtMessage) lines.push(debtMessage);
     if(Number.isFinite(elapsed)) lines.push(`Thời gian: ${formatDuration(elapsed)}.`);
     if(unchangedSchedule) lines.push("Ghi chú: phương án mới không đổi vị trí các tiết so với lịch đang hiển thị.");
+    if(fallbackNotice) lines.push(fallbackNotice);
     return lines.join("\n");
   }
 
@@ -14383,6 +14415,19 @@
       effectiveSettings.overall_time_limit_seconds = optimizationSeconds;
     }
     const minBackendDeadlineMs = allowShortBackendDeadline ? 1_000 : 20_000;
+    // 19/08: nut Cherry / Flash can ngan sach dai hon lane mac dinh.
+    try{
+      const forcedEngineEarly = String(window.__TKB_FORCE_ENGINE || "").trim().toLowerCase();
+      if(forcedEngineEarly){
+        budgetSeconds = Math.max(Number(budgetSeconds) || 0, 200);
+        effectiveSettings.overall_time_limit_seconds = budgetSeconds;
+        effectiveSettings.integrated_time_limit = budgetSeconds;
+        effectiveSettings.optimization_time_limit_seconds = budgetSeconds;
+        effectiveSettings.optimization_adaptive_time_limit_seconds = budgetSeconds;
+        effectiveSettings.progress_estimate_seconds = budgetSeconds;
+        effectiveSettings.ui_client_timeout_reserve_ms = 120000;
+      }
+    }catch(_){ }
     let backendDeadlineMs = budgetSeconds > 0
       ? Math.max(minBackendDeadlineMs, Math.min(1_800_000, Math.round(budgetSeconds * 1000)))
       : 1_800_000;
@@ -14601,6 +14646,24 @@
       }
       await yieldResponsiveUi();
       if(!cacheEligible) requestData.__tkbSolverRequestNonce = solveRunId;
+      // 19/08: gan engine do nguoi dung chon (cherry | flash). Trong thi giu
+      // nguyen bo giai mac dinh cua nut Sap xep / Toi uu.
+      try{
+        const forcedEngine = String(window.__TKB_FORCE_ENGINE || "").trim().toLowerCase();
+        if(forcedEngine){
+          effectiveSettings.engine = forcedEngine;
+          // Tat bo giai chay trong trinh duyet (no khong biet engine nay)...
+          effectiveSettings.ui_agent_preference_enabled = false;
+          effectiveSettings.ui_browser_agent_required = false;
+          // ...NHUNG khong duoc de no khoa request ve VPS: rust coi
+          // ui_agent_execution_policy = vps_only / ui_execution_mode = vps la
+          // "client_requested_vps" va bo qua Cloud Run hoan toan.
+          delete effectiveSettings.ui_agent_execution_policy;
+          delete effectiveSettings.ui_execution_mode;
+        }else{
+          delete effectiveSettings.engine;
+        }
+      }catch(_){ }
       const browserWasmRequest = {data: requestData, settings: effectiveSettings};
       let body = "";
       await yieldResponsiveUi();
@@ -20407,4 +20470,60 @@
     window.TKBRustAPI.cancelBackendSolver = cancelBackendSolver;
     window.TKBRustAPI.backendSolverState = backendSolverState;
   }
+})();
+
+/* =============================================================================
+   FAIL-SAFE 19/08: cai dat window.tkbRunEngine NGAY TRONG FILE NAY.
+   Ly do: hai nut Flash/Cherry nam trong sapxep.html va goi tkbRunEngine qua
+   onclick. Neu ban sapxep.html tren may chu cu hon ban co dinh nghia (deploy
+   thieu file hoac trinh duyet giu ban HTML cu), nut se bao
+   "tkbRunEngine is not defined" va khong lam gi ca. File bridge nay LUON duoc
+   nap kem ?v=... nen luon moi -> dinh nghia o day la luoi an toan cuoi cung.
+   Chi cai khi CHUA co (ban trong HTML, neu co, se ghi de sau va duoc uu tien).
+============================================================================= */
+(function(){
+  if(typeof window === "undefined") return;
+  if(typeof window.tkbRunEngine === "function") return;
+  window.tkbRunEngine = function(engine, btn){
+    if(window.__TKB_SOLVE_UI_BUSY === true || window.__TKB_RUST_SOLVER_RUNNING === true){
+      try{ window.setStatus && window.setStatus("Đang có lượt xếp chạy, vui lòng chờ.", "info"); }catch(_){}
+      return;
+    }
+    window.__TKB_FORCE_ENGINE = String(engine || "");
+    window.__CURRENT_ACTIVE_ENGINE = String(engine || "");
+    var metricEl = document.getElementById("autoSortProgressMetric");
+    if(metricEl){
+      metricEl.textContent = "";
+      metricEl.hidden = true;
+    }
+    var clear = function(){
+      window.__TKB_FORCE_ENGINE = "";
+      window.__CURRENT_ACTIVE_ENGINE = "";
+    };
+    var start = function(){
+      var runner = (typeof window.bridgeSapXepTuDongAll === "function")
+        ? window.bridgeSapXepTuDongAll
+        : window.sapXepTuDongAll;
+      if(typeof runner !== "function") return false;
+      var r = runner({ manualAgentInvite: false });
+      if(r && typeof r.finally === "function") r.finally(clear);
+      else window.setTimeout(clear, 5000);
+      return true;
+    };
+    try{
+      if(start()) return;
+      // Bo giai chua nap xong: cho toi da 5 giay roi thu lai thay vi im lang.
+      var tries = 0;
+      var timer = window.setInterval(function(){
+        tries++;
+        if(start() || tries >= 25){
+          window.clearInterval(timer);
+          if(tries >= 25){
+            clear();
+            try{ window.setStatus && window.setStatus("Bộ giải chưa sẵn sàng, vui lòng tải lại trang (Ctrl+F5).", "warning"); }catch(_){}
+          }
+        }
+      }, 200);
+    }catch(e){ clear(); }
+  };
 })();

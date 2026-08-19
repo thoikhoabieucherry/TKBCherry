@@ -1764,11 +1764,14 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="tkb-export.js?v=20260725-v1100-industry-export-queue-v1"></script>
 <script src="tkb-word-export.js?v=20260705-save-picker-v1"></script>
 <script src="tkb-student-excel-export.js?v=20260705-school-wide-prefix-v6"></script>
-<script src="tkb-rust-bridge.js?v=20260819-cherry-flash-v5"></script>
+<script src="tkb-rust-bridge.js?v=20260819-cherry-flash-v7"></script>
 
 
 <script>
 // 19/08: chon thuat toan backend cho tung nut (mac dinh = bo giai cu)
+// Ban day du (co cho bo giai nap xong) nam trong tkb-rust-bridge.js — file do
+// luon duoc bust cache nen luon moi. Khoi nay chi la du phong khi bridge loi.
+if(typeof window.tkbRunEngine !== "function")
 window.tkbRunEngine = function(engine, btn){
   if(window.__TKB_SOLVE_UI_BUSY === true || window.__TKB_RUST_SOLVER_RUNNING === true){
     try{ window.setStatus && window.setStatus("Đang có lượt xếp chạy, vui lòng chờ.", "info"); }catch(_){}

@@ -8,9 +8,18 @@ from typing import Any, Callable, Mapping
 import json
 import warnings
 
-import numpy as np
-from scipy.optimize import Bounds, LinearConstraint, milp
-from scipy.sparse import coo_matrix
+try:
+    import numpy as np
+    from scipy.optimize import Bounds, LinearConstraint, milp
+    from scipy.sparse import coo_matrix
+except Exception:  # pragma: no cover - machines without numpy/scipy
+    from .external_cp_sat import _MissingModule
+
+    np = _MissingModule("numpy")
+    Bounds = _MissingModule("scipy")
+    LinearConstraint = _MissingModule("scipy")
+    milp = _MissingModule("scipy")
+    coo_matrix = _MissingModule("scipy")
 
 from .external_cp_sat import active_external_solver
 from .external_milp import solve_milp_with_external_runtime

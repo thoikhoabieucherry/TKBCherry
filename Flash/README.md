@@ -1,50 +1,41 @@
-# FLASH SOLVER ENGINE — HỆ THỐNG TỐI ƯU THỜI KHÓA BIỂU TOÀN DIỆN
+# Flash — thuật toán xếp TKB bằng CP-SAT 2 tầng
 
-Hệ thống **Flash** là động cơ giải và tối ưu thời khóa biểu trường học thế hệ mới, ứng dụng mô hình toán học **Constraint Programming (CP-SAT)** đa nhân (Multi-Core Benders Decomposition) kết hợp thuật toán Chuỗi phóng xuất (Ejection Chain) và Pattern Matching.
+**Mã nguồn:** `solver_runtime/src/tkb_optimizer_ref/unified_cpsat_solver.py` (bê nguyên từ dự án TKBCherryAnti)
+**Vỏ tích hợp:** `solver_runtime/src/tkb_engine_v3/cpsat_modes.py` → `solve_unified_cpsat()`
+**Nút trên UI:** ⚡ `btnEngineFlash` (giữa 🍒 *Cherry* và 🗑️ *Xóa*)
+**Kích hoạt:** `settings.engine = "flash"` (hoặc `TKB_ENGINE=flash`).
+**Phụ thuộc:** cần **OR-Tools** (`ortools`) — phải có trong image Cloud Run / môi trường VPS.
 
----
+## Cách hoạt động (Benders 2 tầng + no-good cut, tối đa 5 vòng)
+- **Tầng 1 — Session Master (CP-SAT):** phân bổ (lớp, môn) vào 12 buổi. Hàm mục tiêu
+  `Minimize(1e7 × số buổi-1-tiết + 1e3 × tổng buổi dạy)` → tối ưu tổng buổi **toàn cục**.
+- **Tầng 2 — Pattern theo buổi:** sinh sẵn mọi dải tiết trong 1 buổi 5 tiết có **tổng trống ≤ 1**
+  ⇒ *trống ≥2 tiết = 0 do cấu tạo*; trong mỗi buổi tối thiểu hoá số trống 1 tiết.
+- Buổi nào bất khả thi → gửi **no-good cut** ngược lên Tầng 1 rồi lặp lại.
 
-## 1. Cấu Trúc Động Cơ Flash
+## Điểm mạnh / điểm yếu (đo trên trường 2175 tiết)
+| | Flash | Cherry |
+|---|---|---|
+| Tổng buổi dạy | **578–585** | ~689 |
+| Trống 1 tiết | **76–82** | ~200 |
+| Buổi 1 tiết / trống ≥2 | 1 / 0 | 2 / 0 |
+| Thời gian | **25–71s** | 52–264s |
+| Ràng buộc tiết đôi (`lessonBlocks`) + tránh tiết 2–3 | **KHÔNG hỗ trợ** | Đầy đủ |
 
-- **`Flash/engine/unified_cpsat_solver.py`**: Bộ não thuật toán chính (Unified Multi-Core CP-SAT Engine).
-- **`Flash/engine/solve_stdio.py`**: Cổng giao tiếp Stdio / IPC tốc độ cao cho Backend Rust và Python.
-- **`Flash/FLASH_HANDOFF.md`**: Tài liệu bàn giao kỹ thuật, nhật ký kiến trúc và cơ chế vận hành.
+⚠️ Vì Flash không đọc `lessonBlocks` / `avoidBreakPair23` / rule giáo viên nâng cao, lịch của nó có thể
+vi phạm quy định của trường. Khi payload bị đánh dấu vi phạm, vỏ tích hợp sẽ **giao lại cho Cherry hoàn tất
+một lịch hợp lệ**, và vẫn ghi số liệu gốc của Flash để đối chiếu.
 
----
-
-## 2. Kiến Trúc 3 Tầng Siêu Tốc (3-Stage Hybrid Architecture)
-
-```mermaid
-graph TD
-    A["Tầng 1: Master Session Allocator<br/>(CP-SAT phân bổ ca & ngày tối ưu toàn trường)"] -->|Session Allocations| B["Tầng 2: Parallel Pattern Solvers<br/>(Song song hóa 12 buổi học trên toàn bộ vCPU)"]
-    B -->|Xác định xung đột & No-Good Cuts| C{"Đạt 100%?"}
-    C -- "Chưa hoàn tất" -->|Benders Feedback Loop (tối đa 5 vòng)| A
-    C -- "Thành công" --> D["Tầng 3: Last-Mile Ejection Chain<br/>(Dọn sạch 100% tiết trống & hoàn tất TKB)"]
+## Log / theo dõi
+Mỗi lượt ghi `Flash/logs/flash-last.json`:
+```json
+{ "engine": "tkb-flash-cpsat", "finished_at": "...", "elapsed_seconds": 26.8,
+  "expected": 2175, "placed": 2175,
+  "raw": { "tsBuoiDay": 585, "soBuoiDay1": 1, "soBuoiTrong2": 0, "soBuoiTrong1": 82, "iterations": 2 } }
 ```
+Log tiến trình chi tiết theo thời gian thực: `temp/solver_live.log` (dòng `[Bộ giải TKB]`).
 
----
-
-## 3. Các Ràng Buộc Đạt Chuẩn 100% Tuyệt Đối
-
-1. **Không trùng tiết (Zero Teacher Clashes)**: Đảm bảo 100% không có bất kỳ giáo viên nào bị xếp 2 lớp trong cùng 1 tiết.
-2. **Không trống 2 tiết (`soBuoiTrong2 = 0`)**: 100% giáo viên trong trường không có bất kỳ buổi dạy nào bị thủng 2 tiết trống.
-3. **Triệt tiêu buổi dạy 1 tiết (`soBuoiDay1 <= 3`)**: Loại bỏ toàn bộ các buổi 1 tiết phát sinh nhân tạo, gom gọn các tiết lẻ thành các buổi dạy tập trung 3-5 tiết.
-4. **Bảo toàn 100% ô cố định & môn 2 tiết liền nhau**: Giữ nguyên Chào cờ, Sinh hoạt lớp, HĐTN và các ô cố định của nhà trường.
-
----
-
-## 4. Cách Sử Dụng Trong Code
-
-```python
-from Flash.engine.unified_cpsat_solver import UnifiedCpSatSolver
-
-# Khởi tạo solver với dữ liệu trường học và cấu hình luồng tối đa
-solver = UnifiedCpSatSolver(school_data, settings={
-    "seed": 12345,
-    "num_workers": 0 # Tự động nhận diện toàn bộ số nhân vCPU của hệ thống
-})
-
-result = solver.solve()
-# result["tkb"]: Ma trận thời khóa biểu 75 lớp hoàn chỉnh 100%
-# result["metrics"]: Bảng thống kê chi tiết (tsBuoiDay, soBuoiDay1, soBuoiTrong2, soBuoiTrong1)
+## Chạy tay để đối chiếu
+```bash
+TKB_ENGINE=flash python solver_runtime/scripts/solve_stdio.py solve < request.json
 ```
