@@ -56,25 +56,28 @@ self.onmessage = async function(e) {
   const taskType = e.data?.action || e.data?.type;
   const { mode, data, options } = e.data || {};
 
-  if (taskType === 'optimize') {
-    try {
-      const workerOptions = Object.assign({ uiBreathingMs: 0 }, options || {});
-      currentEngine = new self.FetTimetableEngine(data, workerOptions);
+  try {
+    const workerOptions = Object.assign({ uiBreathingMs: 0 }, options || {});
+    currentEngine = new self.FetTimetableEngine(data, workerOptions);
 
-      let constructionPhase = false;
-      const runSolveOptimizeAll = (cb) => runSolveOptimizeAllImpl(
-        cb,
-        data,
-        workerOptions,
-        (eng) => { if (eng) currentEngine = eng; },
-        (v) => { constructionPhase = !!v; }
-      );
+    let constructionPhase = false;
+    const runSolveOptimizeAll = (cb) => runSolveOptimizeAllImpl(
+      cb,
+      data,
+      workerOptions,
+      (eng) => { if (eng) currentEngine = eng; },
+      (v) => { constructionPhase = !!v; }
+    );
 
-      let bestCheckpoint = null;
-      let lastSnapshotAt = 0;
-      const SNAPSHOT_INTERVAL_MS = 250;
+    let bestCheckpoint = null;
+    let lastSnapshotAt = 0;
+    const SNAPSHOT_INTERVAL_MS = 250;
 
-      const res = await currentEngine.optimize(mode, (prog) => {
+    const isSolveOptMode = mode === 'solve_optimize_all' || mode === 'solve_optimize_all_fresh' || mode === 'auto' || taskType === 'solve';
+    let res = null;
+
+    if (isSolveOptMode) {
+      res = await runSolveOptimizeAll((prog) => {
         let snapshotTkb = null;
         if (!constructionPhase) {
           const now = Date.now();
@@ -107,64 +110,61 @@ self.onmessage = async function(e) {
           tkb: snapshotTkb
         });
       });
+    } else {
+      res = await currentEngine.optimize(mode, (prog) => {
+        let snapshotTkb = null;
+        if (!constructionPhase) {
+          const now = Date.now();
+          if (!bestCheckpoint || now - lastSnapshotAt >= SNAPSHOT_INTERVAL_MS || (prog && prog.percent >= 100)) {
+            try {
+              const snap = typeof currentEngine.getRetainedOptimizationSnapshotTKB === 'function'
+                ? currentEngine.getRetainedOptimizationSnapshotTKB()
+                : currentEngine.getSnapshotTKB();
+              lastSnapshotAt = now;
+              bestCheckpoint = {
+                complete: Number(prog?.metrics?.unplacedCount || 0) === 0,
+                tkb: snap,
+                metrics: prog?.metrics
+              };
+            } catch (_) {}
+          }
+          snapshotTkb = bestCheckpoint ? bestCheckpoint.tkb : null;
+        }
 
-      const finalSnapshot = typeof currentEngine.getRetainedOptimizationSnapshotTKB === 'function'
-        ? currentEngine.getRetainedOptimizationSnapshotTKB()
-        : currentEngine.getSnapshotTKB();
-
-      self.postMessage({
-        type: 'done',
-        ok: true,
-        applied: true,
-        tkb: finalSnapshot,
-        initialMetrics: res.initialMetrics,
-        metrics: res.metrics,
-        placed: res.placed,
-        unassigned: res.unassigned
-      });
-    } catch (err) {
-      self.postMessage({
-        type: 'error',
-        error: err?.message || String(err)
-      });
-    }
-  } else {
-    try {
-      if (/^optimize/i.test(String(mode || ''))) {
-        self.postMessage({ type: 'error', error: 'optimize mode routed to solve lane (stale client); refusing to rebuild' });
-        return;
-      }
-      currentEngine = new self.FetTimetableEngine(data, options);
-      const res = await currentEngine.solve((prog) => {
         self.postMessage({
           type: 'progress',
-          percent: prog.percent,
-          placed: prog.placed,
-          total: prog.total,
-          message: prog.message || null
+          mode: mode,
+          percent: prog?.percent,
+          currentMetric: prog?.currentMetric,
+          initialMetric: prog?.initialMetric,
+          stage: prog?.stage || null,
+          cycle: prog?.cycle,
+          metrics: prog?.metrics,
+          checkpoint: bestCheckpoint,
+          tkb: snapshotTkb
         });
       });
-
-      const isOk = res && res.ok !== false && (Number(res.unassigned) || 0) === 0;
-      const snapshotTkb = isOk ? currentEngine.getSnapshotTKB() : null;
-      self.postMessage({
-        type: 'done',
-        ok: isOk,
-        applied: isOk,
-        tkb: snapshotTkb,
-        checkpoint: isOk ? {
-          complete: true,
-          tkb: snapshotTkb
-        } : null,
-        placed: res.placed,
-        unassigned: res.unassigned,
-        total: res.total || (res.placed + res.unassigned)
-      });
-    } catch (err) {
-      self.postMessage({
-        type: 'error',
-        error: err?.message || String(err)
-      });
     }
+
+    const finalSnapshot = typeof currentEngine.getRetainedOptimizationSnapshotTKB === 'function'
+      ? currentEngine.getRetainedOptimizationSnapshotTKB()
+      : currentEngine.getSnapshotTKB();
+
+    self.postMessage({
+      type: 'done',
+      ok: res && res.ok !== false,
+      applied: res && res.applied !== false,
+      tkb: finalSnapshot,
+      initialMetrics: res?.initialMetrics,
+      metrics: res?.metrics,
+      placed: res?.placed,
+      unassigned: res?.unassigned,
+      total: res?.total || ((res?.placed || 0) + (res?.unassigned || 0))
+    });
+  } catch (err) {
+    self.postMessage({
+      type: 'error',
+      error: err?.message || String(err)
+    });
   }
 };
