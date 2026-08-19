@@ -1548,7 +1548,19 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
       <div id="autoSortProgress" class="auto-sort-progress is-idle" aria-live="polite" aria-hidden="true" hidden>
         <!-- Stopwatch Elapsed Timer -->
         <div id="autoSortTimer" class="auto-sort-timer" title="Thời gian thực thi">
-          <svg class="auto-sort-timer-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 6 12 12 16 14"/></svg>
+          <svg class="auto-sort-timer-icon auto-sort-timer-spinner" viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true" focusable="false">
+            <defs>
+              <linearGradient id="timerMultiColorGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#38bdf8"/>
+                <stop offset="35%" stop-color="#6366f1"/>
+                <stop offset="70%" stop-color="#ec4899"/>
+                <stop offset="100%" stop-color="#f59e0b"/>
+              </linearGradient>
+            </defs>
+            <circle cx="12" cy="12" r="9" stroke="rgba(99, 102, 241, 0.18)" stroke-width="2.6"/>
+            <path d="M12 3a9 9 0 0 1 9 9 9 9 0 0 1-5 8.1" stroke="url(#timerMultiColorGrad)" stroke-width="2.6" stroke-linecap="round"/>
+            <circle cx="12" cy="3" r="1.5" fill="#38bdf8"/>
+          </svg>
           <span id="autoSortTimerVal">00:00</span>
         </div>
         <!-- Clean Live Metric Badge -->
