@@ -1022,6 +1022,36 @@
         }
       }
 
+      // Teacher gap-2 guard in session: Disallow creating a gap >= 2 for teachers in the same session
+      if(this.strictTeacherGaps !== false){
+        const dur = act.duration;
+        const sStart = dayIdx * SLOTS_PER_DAY + sessionIdx * PERIODS_PER_SESSION;
+        for(let i = 0; i < act.teacherIdxs.length; i++){
+          const tg = this.teacherGridList[act.teacherIdxs[i]];
+          if(!tg) continue;
+          const periods = [];
+          for(let p = 0; p < PERIODS_PER_SESSION; p++){
+            const s = sStart + p;
+            if(s >= slot && s < slot + dur){
+              periods.push(p);
+            } else {
+              const tocc = tg[s];
+              if(tocc === -3 || (tocc >= 0 && !isIgnored(tocc))){
+                periods.push(p);
+              }
+            }
+          }
+          if(periods.length >= 2){
+            periods.sort((a, b) => a - b);
+            for(let j = 0; j < periods.length - 1; j++){
+              if(periods[j+1] - periods[j] - 1 >= 2){
+                return false;
+              }
+            }
+          }
+        }
+      }
+
       const conf = this.constraintConflictForSlot(act, slot, ignoreActIdOrSet);
       if(conf) return false;
 
@@ -2889,37 +2919,67 @@
       let currentBest = { ...bestMetrics };
       let improved = false;
 
-      for(let cIdx = 0; cIdx < this.classes.length; cIdx++){
-        const cGrid = this.classGridList[cIdx];
-        for(let s1 = 0; s1 < TOTAL_SLOTS; s1++){
-          const act1Id = cGrid[s1];
-          if(act1Id < 0) continue;
-          const act1 = this.activities[act1Id];
-          if(!act1 || act1.isFixed || act1.lockedByLessonBlock || act1.duration !== 1) continue;
+      const teacherList = Array.from(this.scoredTeachers || this.teacherGrid.keys());
+      this.rng.shuffle(teacherList);
 
-          for(let s2 = s1 + 1; s2 < TOTAL_SLOTS; s2++){
-            const act2Id = cGrid[s2];
-            if(act2Id < 0) continue;
-            const act2 = this.activities[act2Id];
-            if(!act2 || act2.isFixed || act2.lockedByLessonBlock || act2.duration !== 1) continue;
+      for(const tKey of teacherList){
+        const tIdx = this.teacherIndexMap.get(tKey);
+        if(tIdx === undefined) continue;
+        const tg = this.teacherGridList[tIdx];
+        if(!tg) continue;
 
-            const snap = this.captureStateSnapshot();
-            this.unplaceActivity(act1.id);
-            this.unplaceActivity(act2.id);
-
-            if(this.isSlotFeasible(act1, s2) && this.isSlotFeasible(act2, s1)){
-              this.placeActivityDirect(act1.id, s2);
-              this.placeActivityDirect(act2.id, s1);
-
-              const mNew = this.evaluateMetrics();
-              if(this.compareMetrics(mNew, currentBest, "optimize_gap2") < 0){
-                currentBest = { ...mNew };
-                improved = true;
-                if(typeof onProgress === "function") onProgress(currentBest);
-                break;
-              }
+        for(let d = 0; d < DAYS_LIST.length; d++){
+          for(let b = 0; b < SESSIONS_LIST.length; b++){
+            const sStart = d * SLOTS_PER_DAY + b * PERIODS_PER_SESSION;
+            const taught = [];
+            for(let p = 0; p < PERIODS_PER_SESSION; p++){
+              if(tg[sStart + p] >= 0 || tg[sStart + p] === -3) taught.push(p);
             }
-            this.restoreStateSnapshot(snap);
+            if(taught.length < 2) continue;
+
+            let hasGap2 = false;
+            for(let i = 0; i < taught.length - 1; i++){
+              if(taught[i+1] - taught[i] - 1 >= 1){ hasGap2 = true; break; }
+            }
+            if(!hasGap2) continue;
+
+            for(const p1 of taught){
+              const s1 = sStart + p1;
+              const act1Id = tg[s1];
+              if(act1Id < 0) continue;
+              const act1 = this.activities[act1Id];
+              if(!act1 || act1.isFixed || act1.lockedByLessonBlock || act1.duration !== 1) continue;
+
+              const cGrid = this.classGridList[act1.classIdx];
+
+              for(let s2 = 0; s2 < TOTAL_SLOTS; s2++){
+                if(Math.floor(s2 / PERIODS_PER_SESSION) === Math.floor(s1 / PERIODS_PER_SESSION)) continue;
+                const act2Id = cGrid[s2];
+                if(act2Id < 0) continue;
+                const act2 = this.activities[act2Id];
+                if(!act2 || act2.isFixed || act2.lockedByLessonBlock || act2.duration !== 1) continue;
+
+                const snap = this.captureStateSnapshot();
+                this.unplaceActivity(act1.id);
+                this.unplaceActivity(act2.id);
+
+                if(this.isSlotFeasible(act1, s2) && this.isSlotFeasible(act2, s1)){
+                  this.placeActivityDirect(act1.id, s2);
+                  this.placeActivityDirect(act2.id, s1);
+
+                  const mNew = this.evaluateMetrics();
+                  if(this.compareMetrics(mNew, currentBest, "optimize_gap2") < 0){
+                    currentBest = { ...mNew };
+                    improved = true;
+                    if(typeof onProgress === "function") onProgress(currentBest);
+                    break;
+                  }
+                }
+                this.restoreStateSnapshot(snap);
+              }
+              if(improved) break;
+            }
+            if(improved) break;
           }
           if(improved) break;
         }
@@ -3128,7 +3188,7 @@
       const targetMetricKey = mode === "optimize_gap2" ? "soBuoiTrong2" : (mode === "optimize_singletons" ? "soBuoiDay1" : (mode === "optimize_gap1" ? "soBuoiTrong1" : (mode === "optimize_sessions" ? "tsBuoiDay" : "soBuoiDay1")));
       const targetMetricLowerBound = Number(this.constraintPreflight?.structuralFloor?.metricLowerBounds?.[targetMetricKey] || 0);
 
-      const MAX_ROUNDS = mode === "optimize_all" ? 25 : 15;
+      const MAX_ROUNDS = mode === "optimize_all" ? 10 : 8;
       for(let r = 0; r < MAX_ROUNDS; r++){
         let anyRoundImprovement = false;
 
@@ -3168,6 +3228,8 @@
             metrics: bestMetrics
           });
         }
+
+        await new Promise(resolve => setTimeout(resolve, 0));
 
         if(bestMetrics[targetMetricKey] <= targetMetricLowerBound && bestMetrics.soBuoiDay1 === 0){
           break;
