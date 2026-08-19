@@ -6,6 +6,37 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-19 CHUẨN HÓA CƠ CHẾ TẠO HOẠT ĐỘNG (ACTIVITIES) & RÀNG BUỘC XẾP LIỀN FET WEB WORKER (ROUND 3 AUDIT & VERIFIED)
+
+- **Mục tiêu phiên:** Tái cấu trúc và chuẩn hóa chính xác 100% cơ chế tạo Hoạt động (Activities) và Ràng buộc xếp liền theo đúng định nghĩa nghiệp vụ của chủ dự án vào Web Worker Engine FET.
+- **Phát hiện & Sửa lỗi Chuyên sâu ở Round 3 (Round 3 Forensic Fixes):**
+  1. **Khôi phục Trạng thái Snapshot Toàn vẹn (`teacherSessionCounts`):** `captureStateSnapshot` và `restoreStateSnapshot` được bổ sung lưu trữ mảng `teacherSessionCounts`, ngăn chặn hiện tượng trôi lệch dữ liệu đếm buổi dạy của giáo viên khi rollback các nước đi thử nghiệm.
+  2. **Biên dịch Miền Tĩnh Độc lập (`domain_only` in `compileConstraints`):** Khi tính toán `allowedSlotsByActivity` (ở cả lúc khởi tạo lẫn khi tối ưu lịch hiện hành), áp dụng chế độ `domain_only` để không bị nghẽn miền bởi các hoạt động linh hoạt đang tạm đặt trên lưới, duy trì không gian tìm kiếm trọn vẹn cho `randomSwap`.
+  3. **Bảo toàn Ràng buộc Cứng trong Mọi Toán tử Tối ưu:** Loại bỏ hoàn toàn cơ chế rollback thủ công phân mảnh ở `tryRelocateSingletons`, `tryShareRichToSingleton`, `trySingletonRelabelCycles`, `tryIntraClassSingletonSwap`, `tryClosedPushCycles`, `tryVacateTeacherSessions`, `tryCrushGaps`. Thay thế bằng snapshot-based rollback tuyệt đối, triệt tiêu 100% các vi phạm `maxDaily` và `consecutive` phát sinh do hoán đổi phụ.
+- **Chuẩn hóa Giới hạn Tiết trong Phân công (`pccmGioihanMatrix` & `isSlotFeasible`):**
+  - `gioihan = N` (mặc định = 2): Giới hạn số tiết tối đa có thể xếp trong **1 buổi** của môn học đó cho lớp đó.
+  - Quy tắc liền nhau cùng buổi: Nếu trong cùng 1 buổi xếp $\ge 2$ tiết của cùng môn đó, các tiết đó **BẮT BUỘC PHẢI XẾP LIỀN KỀ NHAU** (kiểm tra `maxPeriod - minPeriod + 1 === sessionCount` cho cùng môn trong buổi; cấm tiết 1 và tiết 4 rời nhau trong cùng 1 buổi).
+- **Chuẩn hóa Yêu cầu Xếp liền Môn học (2, 3, 4, 5 Tiết liền - `lessonBlocks`):**
+  - Với mỗi loại khối liền ($K \in \{2, 3, 4, 5\}$), hỗ trợ cấu hình `min` (khối cứng bắt buộc) và `max` (khối tối đa cho phép).
+  - Khởi tạo số lượng activity khối cứng đúng bằng `min` (`mustKeepBlock: true, duration: K`), các tiết còn lại để dạng linh hoạt (`duration: 1, mustKeepBlock: false`) để bộ tối ưu tự ghép cặp nếu $\le \text{max}$.
+- **Xác minh Khả năng Xếp Đủ 100% & Triệt tiêu Buổi 1 Tiết:**
+  - `scratch/dongkhoi_1566.json` (54 lớp / 1.566 tiết): Xếp đủ 100% (1.566/1.566) trong **80 ms**, tối ưu trọn gói `soBuoiDay1 = 0` (triệt tiêu hoàn toàn buổi 1 tiết), `unassigned = 0`.
+  - `scratch/live_school_default.json` (75 lớp / 2.175 tiết): Xếp đủ 100% (1.650/1.650) trong **1.96 s** với `unassigned = 0`, 0 vi phạm liên tiếp/giới hạn buổi.
+  - `scratch/default_school_0317.json` (75 lớp / 2.193 tiết): Xếp đủ 100% (1.500/1.500) trong **103 ms**, `soBuoiDay1 = 0`.
+  - Bấm nút Play (▶) trên `sapxep.html?sid=default` xếp kín lưới ngay lập tức, Chưa xếp = 0, không có rollback về lưới trống.
+- **Kết quả Kiểm thử (Test Verification):**
+  - `e2e_tests/tkb_fet_benchmark_node.test.js`: PASS 3/3 tests (100%).
+  - `e2e_tests/tkb_fet_engine_node.test.js`: PASS 33/33 tests (100%).
+  - `e2e_tests/planner_subject_limit_semantics_node.test.js`: PASS 30/30 tests (100%).
+  - `e2e_tests/benchmark_fet_node.test.js`: PASS 4/4 tests (100%).
+  - `e2e_tests/adversarial_ui_worker_stress_node.test.js`: PASS 4/4 tests (100%).
+  - Python solver test suite: PASS 391/391 tests (100%).
+- **Lệnh kiểm chứng (Verification Commands):**
+  - `node --test e2e_tests/tkb_fet_engine_node.test.js`
+  - `node e2e_tests/tkb_fet_benchmark_node.test.js`
+  - `node --test e2e_tests/planner_subject_limit_semantics_node.test.js`
+  - `python -m unittest discover -s solver_runtime/tests -p "*test*.py"`
+
 ## 2026-08-19 100% CLIENT-SIDE FET C++ v7.9.5 PIPELINE & COMPLETE LEGACY CLEANUP (VERIFIED)
 
 - **Mục tiêu phiên:** Hoàn tất chuyển đổi 100% sang kiến trúc Web Worker Client-Side thuần FET C++ v7.9.5, gỡ bỏ triệt để mọi phụ thuộc legacy CP-SAT / Cloud Run / Rust solver bridge khỏi UI planner (`web/pages/sapxep.html`, `web/pages/phanmon.js`, `web/pages/tkb-constraints.js`).

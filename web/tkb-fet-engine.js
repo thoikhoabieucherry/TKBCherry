@@ -43,8 +43,8 @@
 
   const INF = 1500000000;
   const INF2 = 2000000000;
-  const MAX_RECURSION_LEVEL = 12;
-  const DEFAULT_LIMIT_CALLS = 500;
+  const MAX_RECURSION_LEVEL = 16;
+  const DEFAULT_LIMIT_CALLS = 2000;
 
   // Precomputed 32-entry lookup tables for 5-period sessions (bitmask 0..31)
   const GAP_PENALTY_LUT = new Int32Array(32);
@@ -384,7 +384,7 @@
       this.restoreStack = [];
 
       const data = this.data;
-      const rawLop = Array.isArray(data.lop) ? data.lop : [];
+      const rawLop = Array.isArray(data.lop) ? data.lop : (Array.isArray(data.dslop) ? data.dslop : []);
       this.classes = rawLop.filter(l => l && (l.id || l.ten));
 
       this.scoredTeachers = new Set();
@@ -602,6 +602,30 @@
       this.hasAnyComplexConstraint = this.hasSubjectOff || this.hasSubjectConstraints || this.hasNoSameSession || this.hasTeacherConstraints || this.hasSubjectGroupConstraints || this.hasTimeLimitConstraints;
     }
 
+    getSubjectRules(mon, lop){
+      const data = this.data;
+      if(!mon) return {};
+      const monNorm = this.normalizeMonName(mon);
+      let sobj = data.tkbConstraints?.subject?.[mon] || data.tkbConstraints?.subject?.[monNorm];
+      if(!sobj && data.tkbConstraints?.subject){
+        for(const [k, v] of Object.entries(data.tkbConstraints.subject)){
+          if(this.normalizeMonName(k) === monNorm){
+            sobj = v;
+            break;
+          }
+        }
+      }
+      if(!sobj) return {};
+      if(!lop) return sobj;
+      const cid = String(lop.id || "");
+      const classCanon = lop.ten2 || lop.ten || cid;
+      const cTen = lop.ten || "";
+      const cTen2 = lop.ten2 || "";
+      const byClass = sobj.byClass || {};
+      const r = byClass[cid] || byClass[classCanon] || byClass[cTen] || byClass[cTen2] || {};
+      return Object.assign({}, sobj, r);
+    }
+
     buildActivities(){
       this.activities = [];
       const data = this.data;
@@ -666,11 +690,18 @@
 
           const loc = (roomRaw && this.roomLocationMap.get(roomRaw.toLowerCase())) || this.classLocationMap.get(cid.toLowerCase()) || "";
 
-          const subRules = data.tkbConstraints?.subject?.[mon]?.byClass?.[cid] || {};
-          const blockRule = subRules.lessonBlocks?.["2"] || {};
-          const mustKeepPair = Boolean(blockRule.min && blockRule.min > 0);
+          const subRules = this.getSubjectRules(mon, lop);
+          const lessonBlocks = subRules.lessonBlocks || {};
+          let hasExplicitBlocks = false;
+          for(const K of [5, 4, 3, 2]){
+            const b = lessonBlocks[String(K)] || lessonBlocks[K] || {};
+            if((Number(b.min) || 0) > 0 || (Number(b.max) || 0) > 0){
+              hasExplicitBlocks = true;
+              break;
+            }
+          }
 
-          const subSessionAllowed = subRules.sessionAllowed || (data.tkbConstraints?.subject?.[mon]?.sessionAllowed) || "";
+          const subSessionAllowed = subRules.sessionAllowed || "";
           const classCa = lop.ca ? String(lop.ca).toLowerCase() : "";
           let sessionAllowed = "ca_ngay";
           if(subSessionAllowed === "sang" || subSessionAllowed === "chieu"){
@@ -682,27 +713,50 @@
           const cIdx = this.classIndexMap.get(cid);
 
           let rem = needed;
-          while(rem >= 2 && maxDaily >= 2 && (mustKeepPair || rem === 2 || rem === 4 || rem >= 3)){
-            this.activities.push({
-              id: actIdCounter++,
-              classId: cid,
-              classIdx: cIdx,
-              mon,
-              canonKey,
-              gv: teacherRaw,
-              gvList: tList,
-              teacherIdxs: new Int32Array(tIndices),
-              room: roomRaw,
-              roomIdx,
-              location: loc,
-              duration: 2,
-              maxDaily,
-              mustKeepBlock: mustKeepPair,
-              isFixed: false,
-              sessionAllowed
-            });
-            rem -= 2;
+          const blocksMax = {};
+          for(const K of [5, 4, 3, 2]){
+            const blockConfig = lessonBlocks[String(K)] || lessonBlocks[K] || {};
+            if(blockConfig.max !== undefined && blockConfig.max !== "" && blockConfig.max !== null){
+              const val = Number(blockConfig.max);
+              if(!isNaN(val) && val >= 0){
+                blocksMax[K] = val;
+              }
+            }
           }
+          const lessonBlocksMax = Object.keys(blocksMax).length > 0 ? blocksMax : null;
+
+          for(const K of [5, 4, 3, 2]){
+            const blockConfig = lessonBlocks[String(K)] || lessonBlocks[K] || {};
+            const kMin = Number(blockConfig.min) || 0;
+            const kMax = Number(blockConfig.max) || 0;
+            let validMin = kMin;
+            if(kMax > 0 && validMin > kMax) validMin = kMax;
+            const count = Math.min(validMin, Math.floor(rem / K));
+            for(let b = 0; b < count; b++){
+              this.activities.push({
+                id: actIdCounter++,
+                classId: cid,
+                classIdx: cIdx,
+                mon,
+                canonKey,
+                gv: teacherRaw,
+                gvList: tList,
+                teacherIdxs: new Int32Array(tIndices),
+                room: roomRaw,
+                roomIdx,
+                location: loc,
+                duration: K,
+                maxDaily: Math.max(maxDaily, K),
+                mustKeepBlock: true,
+                lessonBlockLen: K,
+                lessonBlocksMax,
+                isFixed: false,
+                sessionAllowed
+              });
+              rem -= K;
+            }
+          }
+
           while(rem > 0){
             this.activities.push({
               id: actIdCounter++,
@@ -719,6 +773,8 @@
               duration: 1,
               maxDaily,
               mustKeepBlock: false,
+              lessonBlockLen: 1,
+              lessonBlocksMax,
               isFixed: false,
               sessionAllowed
             });
@@ -738,7 +794,8 @@
       this.teacherGrid.forEach((v, k) => teacherGrid.set(k, v.slice()));
       const roomGrid = new Map();
       this.roomGrid.forEach((v, k) => roomGrid.set(k, v.slice()));
-      return { placement, classGrid, teacherGrid, roomGrid };
+      const teacherSessionCounts = this.teacherSessionCounts ? new Int8Array(this.teacherSessionCounts) : null;
+      return { placement, classGrid, teacherGrid, roomGrid, teacherSessionCounts };
     }
 
     restoreStateSnapshot(snap){
@@ -756,6 +813,9 @@
         const g = this.roomGrid.get(k);
         if(g) g.set(v);
       });
+      if(snap.teacherSessionCounts && this.teacherSessionCounts){
+        this.teacherSessionCounts.set(snap.teacherSessionCounts);
+      }
     }
 
     placeActivityDirect(actId, slot){
@@ -836,6 +896,29 @@
 
       if(sessionIdx !== endSessionIdx) return false;
 
+      const cGrid = this.classGridList[act.classIdx];
+      if(!cGrid) return false;
+
+      if(ignoreActIdOrSet === "domain_only"){
+        for(let d = 0; d < dur; d++){
+          const s = slot + d;
+          const occ = cGrid[s];
+          if(occ === -2 || occ === -3) return false;
+
+          for(let i = 0; i < act.teacherIdxs.length; i++){
+            const tg = this.teacherGridList[act.teacherIdxs[i]];
+            if(tg && (tg[s] === -2 || tg[s] === -3)) return false;
+          }
+          if(act.roomIdx >= 0){
+            const rg = this.roomGridList[act.roomIdx];
+            if(rg && (rg[s] === -2 || rg[s] === -3)) return false;
+          }
+        }
+        const conf = this.constraintConflictForSlot(act, slot, "domain_only");
+        if(conf) return false;
+        return true;
+      }
+
       const isIgnored = (id) => {
         if(id < 0) return false;
         if(id === act.id) return true;
@@ -843,9 +926,6 @@
         if(ignoreActIdOrSet instanceof Set) return ignoreActIdOrSet.has(id);
         return false;
       };
-
-      const cGrid = this.classGridList[act.classIdx];
-      if(!cGrid) return false;
 
       for(let d = 0; d < dur; d++){
         const s = slot + d;
@@ -873,23 +953,74 @@
         }
       }
 
+      // Session limit and consecutive check for the same subject in this session
       const dayIdx = Math.floor(slot / SLOTS_PER_DAY);
-      const dayStart = dayIdx * SLOTS_PER_DAY;
-      let dayCount = 0;
-      for(let p = 0; p < SLOTS_PER_DAY; p++){
-        const s = dayStart + p;
+      const sessionStart = dayIdx * SLOTS_PER_DAY + sessionIdx * PERIODS_PER_SESSION;
+      let sessionCount = 0;
+      let minPeriod = 999;
+      let maxPeriod = -1;
+
+      for(let d = 0; d < dur; d++){
+        const p = (slot + d) - sessionStart;
+        if(p < minPeriod) minPeriod = p;
+        if(p > maxPeriod) maxPeriod = p;
+        sessionCount++;
+      }
+
+      for(let p = 0; p < PERIODS_PER_SESSION; p++){
+        const s = sessionStart + p;
+        if(s >= slot && s < slot + dur) continue;
         const occ = cGrid[s];
         if(occ >= 0 && !isIgnored(occ)){
           const otherAct = this.activities[occ];
           if(otherAct && (otherAct.canonKey === act.canonKey || this.getCanonMonKey(otherAct.mon) === act.canonKey)){
-            dayCount++;
+            sessionCount++;
+            if(p < minPeriod) minPeriod = p;
+            if(p > maxPeriod) maxPeriod = p;
           }
         }else if(occ === -3){
           const fix = this.fixedSlots.get(act.classId + "|" + s);
-          if(fix && this.getCanonMonKey(fix.mon) === act.canonKey) dayCount++;
+          if(fix && this.getCanonMonKey(fix.mon) === act.canonKey){
+            sessionCount++;
+            if(p < minPeriod) minPeriod = p;
+            if(p > maxPeriod) maxPeriod = p;
+          }
         }
       }
-      if(dayCount + dur > act.maxDaily) return false;
+
+      if(sessionCount > act.maxDaily) return false;
+      if(sessionCount >= 2 && (maxPeriod - minPeriod + 1 !== sessionCount)) return false;
+
+      if(act.lessonBlocksMax){
+        for(const [kStr, kMax] of Object.entries(act.lessonBlocksMax)){
+          const K = Number(kStr);
+          let kCount = (sessionCount === K) ? 1 : 0;
+          for(let d = 0; d < DAYS_LIST.length; d++){
+            for(let b = 0; b < SESSIONS_LIST.length; b++){
+              if(d === dayIdx && b === sessionIdx) continue;
+              const otherSessionStart = d * SLOTS_PER_DAY + b * PERIODS_PER_SESSION;
+              let otherCount = 0;
+              for(let p = 0; p < PERIODS_PER_SESSION; p++){
+                const s = otherSessionStart + p;
+                const occ = cGrid[s];
+                if(occ >= 0 && !isIgnored(occ)){
+                  const otherAct = this.activities[occ];
+                  if(otherAct && (otherAct.canonKey === act.canonKey || this.getCanonMonKey(otherAct.mon) === act.canonKey)){
+                    otherCount++;
+                  }
+                }else if(occ === -3){
+                  const fix = this.fixedSlots.get(act.classId + "|" + s);
+                  if(fix && this.getCanonMonKey(fix.mon) === act.canonKey){
+                    otherCount++;
+                  }
+                }
+              }
+              if(otherCount === K) kCount++;
+            }
+          }
+          if(kCount > kMax) return false;
+        }
+      }
 
       const conf = this.constraintConflictForSlot(act, slot, ignoreActIdOrSet);
       if(conf) return false;
@@ -1397,13 +1528,13 @@
         if(anchored && anchored.length > 0){
           for(let i = 0; i < anchored.length; i++){
             const s = anchored[i];
-            if(this.isSlotFeasible(act, s)) allowed.push(s);
+            if(this.isSlotFeasible(act, s, "domain_only")) allowed.push(s);
           }
         }else{
           const candidateIndices = act.sessionAllowed === "sang" ? SANG_SLOTS : (act.sessionAllowed === "chieu" ? CHIEU_SLOTS : ALL_60_SLOTS);
           for(let i = 0; i < candidateIndices.length; i++){
             const s = candidateIndices[i];
-            if(this.isSlotFeasible(act, s)){
+            if(this.isSlotFeasible(act, s, "domain_only")){
               allowed.push(s);
             }
           }
@@ -1496,6 +1627,7 @@
 
       const isIgnored = (id) => {
         if(id < 0) return false;
+        if(ignoreActIdOrSet === "domain_only") return true;
         if(id === act.id) return true;
         if(typeof ignoreActIdOrSet === "number") return id === ignoreActIdOrSet;
         if(ignoreActIdOrSet instanceof Set) return ignoreActIdOrSet.has(id);
@@ -1870,11 +2002,13 @@
 
       this.minTwoGuardActive = true;
       let placedCount = 0;
+      this.limitCalls = Math.max(this.limitCalls || DEFAULT_LIMIT_CALLS, 2000);
       for(let i = 0; i < this.activities.length; i++){
         if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) break;
         this.nCalls = 0;
         this.tabuMap.clear();
         this.triedRemovals.clear();
+        this.swappedInBranch.clear();
         const success = this.randomSwap(i, 0);
         if(success) placedCount++;
 
@@ -1888,14 +2022,18 @@
         }
       }
 
-      // Pass 2: Fallback for any unplaced activities
-      if(placedCount < totalActivities){
+      // Multi-pass fallback for any unplaced activities
+      for(let pass = 0; pass < 8 && placedCount < totalActivities; pass++){
+        if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) break;
         this.minTwoGuardActive = false;
+        this.limitCalls = Math.min(10000, 2000 + pass * 1000);
         for(let i = 0; i < this.activities.length; i++){
           if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) break;
           if(this.actPlacement[i] < 0){
             this.nCalls = 0;
             this.tabuMap.clear();
+            this.triedRemovals.clear();
+            this.swappedInBranch.clear();
             if(this.randomSwap(i, 0)){
               placedCount++;
             }
@@ -2077,6 +2215,7 @@
               if(occId >= 0){
                 const occAct = this.activities[occId];
                 if(occAct && !occAct.isFixed && !occAct.lockedByLessonBlock && occAct.duration === 1){
+                  const snap = this.captureStateSnapshot();
                   this.unplaceActivity(actId);
                   this.unplaceActivity(occId);
 
@@ -2088,6 +2227,9 @@
                   } else if(this.isSlotFeasible(act, dst)){
                     this.placeActivityDirect(actId, dst);
                     this.nCalls = 0;
+                    this.tabuMap.clear();
+                    this.triedRemovals.clear();
+                    this.swappedInBranch.clear();
                     feasibleMove = this.randomSwap(occAct.id, 0);
                   }
 
@@ -2101,13 +2243,10 @@
                     }
                   }
 
-                  // Rollback
-                  if(this.actPlacement[actId] >= 0) this.unplaceActivity(actId);
-                  if(this.actPlacement[occId] >= 0) this.unplaceActivity(occId);
-                  this.placeActivityDirect(actId, singleSlot);
-                  this.placeActivityDirect(occId, dst);
+                  this.restoreStateSnapshot(snap);
                 }
               } else if(occId === -1){
+                const snap = this.captureStateSnapshot();
                 this.unplaceActivity(actId);
                 if(this.isSlotFeasible(act, dst)){
                   this.placeActivityDirect(actId, dst);
@@ -2120,12 +2259,13 @@
                       break;
                     }
                   }
-                  this.unplaceActivity(actId);
                 }
-                this.placeActivityDirect(actId, singleSlot);
+                this.restoreStateSnapshot(snap);
               }
             }
+            if(improved) break;
           }
+          if(improved) break;
         }
       }
       return improved ? currentBest : null;
@@ -2180,6 +2320,7 @@
                 if(occId >= 0){
                   const occAct = this.activities[occId];
                   if(occAct && !occAct.isFixed && !occAct.lockedByLessonBlock && occAct.duration === 1){
+                    const snap = this.captureStateSnapshot();
                     this.unplaceActivity(donorAct.id);
                     this.unplaceActivity(occId);
 
@@ -2191,6 +2332,9 @@
                     } else if(this.isSlotFeasible(donorAct, targetSlot)){
                       this.placeActivityDirect(donorAct.id, targetSlot);
                       this.nCalls = 0;
+                      this.tabuMap.clear();
+                      this.triedRemovals.clear();
+                      this.swappedInBranch.clear();
                       ok = this.randomSwap(occAct.id, 0);
                     }
 
@@ -2204,12 +2348,10 @@
                       }
                     }
 
-                    if(this.actPlacement[donorAct.id] >= 0) this.unplaceActivity(donorAct.id);
-                    if(this.actPlacement[occId] >= 0) this.unplaceActivity(occId);
-                    this.placeActivityDirect(donorAct.id, richItem.slot);
-                    this.placeActivityDirect(occAct.id, targetSlot);
+                    this.restoreStateSnapshot(snap);
                   }
                 } else if(occId === -1){
+                  const snap = this.captureStateSnapshot();
                   this.unplaceActivity(donorAct.id);
                   if(this.isSlotFeasible(donorAct, targetSlot)){
                     this.placeActivityDirect(donorAct.id, targetSlot);
@@ -2222,9 +2364,8 @@
                         break;
                       }
                     }
-                    this.unplaceActivity(donorAct.id);
                   }
-                  this.placeActivityDirect(donorAct.id, richItem.slot);
+                  this.restoreStateSnapshot(snap);
                 }
               }
               if(improved) break;
@@ -2275,9 +2416,10 @@
               const occAct = this.activities[occId];
               if(!occAct || occAct.isFixed || occAct.lockedByLessonBlock || occAct.duration !== 1) continue;
 
-              if(this.isSlotFeasible(actOrig, sTarget, occId) && this.isSlotFeasible(occAct, sOrig, actOrig.id)){
-                this.unplaceActivity(actOrig.id);
-                this.unplaceActivity(occAct.id);
+              const snap = this.captureStateSnapshot();
+              this.unplaceActivity(actOrig.id);
+              this.unplaceActivity(occAct.id);
+              if(this.isSlotFeasible(actOrig, sTarget) && this.isSlotFeasible(occAct, sOrig)){
                 this.placeActivityDirect(actOrig.id, sTarget);
                 this.placeActivityDirect(occAct.id, sOrig);
 
@@ -2290,11 +2432,8 @@
                     break;
                   }
                 }
-                this.unplaceActivity(actOrig.id);
-                this.unplaceActivity(occAct.id);
-                this.placeActivityDirect(actOrig.id, sOrig);
-                this.placeActivityDirect(occAct.id, sTarget);
               }
+              this.restoreStateSnapshot(snap);
             }
             if(improved) break;
           }
@@ -2326,9 +2465,10 @@
             const act2 = this.activities[actId2];
             if(!act2 || act2.isFixed || act2.lockedByLessonBlock || act2.duration !== 1) continue;
 
-            if(this.isSlotFeasible(act1, s2, actId2) && this.isSlotFeasible(act2, s1, actId1)){
-              this.unplaceActivity(actId1);
-              this.unplaceActivity(actId2);
+            const snap = this.captureStateSnapshot();
+            this.unplaceActivity(actId1);
+            this.unplaceActivity(actId2);
+            if(this.isSlotFeasible(act1, s2) && this.isSlotFeasible(act2, s1)){
               this.placeActivityDirect(act1.id, s2);
               this.placeActivityDirect(act2.id, s1);
 
@@ -2341,12 +2481,8 @@
                   break;
                 }
               }
-
-              this.unplaceActivity(act1.id);
-              this.unplaceActivity(act2.id);
-              this.placeActivityDirect(act1.id, s1);
-              this.placeActivityDirect(act2.id, s2);
             }
+            this.restoreStateSnapshot(snap);
           }
           if(improved) break;
         }
@@ -2382,7 +2518,7 @@
             if(!startAct || startAct.isFixed || startAct.lockedByLessonBlock || startAct.duration !== 1) continue;
 
             const visitedActs = new Set([startAct.id]);
-            const pathMoves = [];
+            const snap = this.captureStateSnapshot();
 
             const dfsPush = (curAct, curFromSlot, depth) => {
               if(depth > maxDepth) return false;
@@ -2421,7 +2557,6 @@
                 if(occId === -1 && this.isSlotFeasible(curAct, sDst)){
                   this.unplaceActivity(curAct.id);
                   this.placeActivityDirect(curAct.id, sDst);
-                  pathMoves.push({ actId: curAct.id, fromSlot: curFromSlot, toSlot: sDst });
                   return true;
                 }
 
@@ -2431,19 +2566,18 @@
                   if(visitedActs.has(occAct.id)) continue;
 
                   if(this.isSlotFeasible(curAct, sDst, occId)){
+                    const innerSnap = this.captureStateSnapshot();
                     this.unplaceActivity(curAct.id);
                     this.unplaceActivity(occId);
                     this.placeActivityDirect(curAct.id, sDst);
 
                     visitedActs.add(occAct.id);
-                    pathMoves.push({ actId: curAct.id, fromSlot: curFromSlot, toSlot: sDst });
 
                     // Try closing cycle by placing occAct at sStartSingleton if it improves metrics
                     if(this.isSlotFeasible(occAct, sStartSingleton)){
                       this.placeActivityDirect(occAct.id, sStartSingleton);
                       const m = this.evaluateMetrics();
                       if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
-                        pathMoves.push({ actId: occAct.id, fromSlot: sDst, toSlot: sStartSingleton });
                         return true;
                       }
                       this.unplaceActivity(occAct.id);
@@ -2452,24 +2586,19 @@
                     // Try placing occAct with randomSwap
                     this.tabuMap.clear();
                     this.triedRemovals.clear();
+                    this.swappedInBranch.clear();
                     this.nCalls = 0;
                     this.limitCalls = 200;
                     if(this.randomSwap(occAct.id, 0)){
                       const m = this.evaluateMetrics();
                       if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
-                        pathMoves.push({ actId: occAct.id, fromSlot: sDst, toSlot: this.actPlacement[occAct.id] });
                         return true;
                       }
-                      this.unplaceActivity(occAct.id);
                     }
 
-                    // Backtrack for Pass 1
-                    pathMoves.pop();
+                    // Backtrack
                     visitedActs.delete(occAct.id);
-                    this.unplaceActivity(curAct.id);
-                    if(this.actPlacement[occAct.id] >= 0) this.unplaceActivity(occAct.id);
-                    this.placeActivityDirect(curAct.id, curFromSlot);
-                    this.placeActivityDirect(occAct.id, sDst);
+                    this.restoreStateSnapshot(innerSnap);
                   }
                 }
               }
@@ -2485,23 +2614,19 @@
                     if(visitedActs.has(occAct.id)) continue;
 
                     if(this.isSlotFeasible(curAct, sDst, occId)){
+                      const innerSnap = this.captureStateSnapshot();
                       this.unplaceActivity(curAct.id);
                       this.unplaceActivity(occId);
                       this.placeActivityDirect(curAct.id, sDst);
 
                       visitedActs.add(occAct.id);
-                      pathMoves.push({ actId: curAct.id, fromSlot: curFromSlot, toSlot: sDst });
 
                       if(dfsPush(occAct, sDst, depth + 1)){
                         return true;
                       }
 
-                      pathMoves.pop();
                       visitedActs.delete(occAct.id);
-                      this.unplaceActivity(curAct.id);
-                      if(this.actPlacement[occAct.id] >= 0) this.unplaceActivity(occAct.id);
-                      this.placeActivityDirect(curAct.id, curFromSlot);
-                      this.placeActivityDirect(occAct.id, sDst);
+                      this.restoreStateSnapshot(innerSnap);
                     }
                   }
                 }
@@ -2517,18 +2642,15 @@
                 if(typeof onProgress === "function") onProgress(currentBest);
                 break;
               } else {
-                for(let k = pathMoves.length - 1; k >= 0; k--){
-                  const mv = pathMoves[k];
-                  if(this.actPlacement[mv.actId] >= 0) this.unplaceActivity(mv.actId);
-                }
-                for(let k = 0; k < pathMoves.length; k++){
-                  const mv = pathMoves[k];
-                  this.placeActivityDirect(mv.actId, mv.fromSlot);
-                }
+                this.restoreStateSnapshot(snap);
               }
+            } else {
+              this.restoreStateSnapshot(snap);
             }
           }
+          if(improved) break;
         }
+        if(improved) break;
       }
       return improved ? currentBest : null;
     }
@@ -2556,7 +2678,7 @@
             }
             if(sessionActs.length !== 2) continue;
 
-            const oldSlots = sessionActs.map(x => x.slot);
+            const snap = this.captureStateSnapshot();
             let allMoved = true;
 
             for(const item of sessionActs){
@@ -2564,6 +2686,9 @@
               if(!act || act.isFixed || act.lockedByLessonBlock || act.duration !== 1){ allMoved = false; break; }
               this.unplaceActivity(act.id);
               this.nCalls = 0;
+              this.tabuMap.clear();
+              this.triedRemovals.clear();
+              this.swappedInBranch.clear();
               if(!this.randomSwap(act.id, 0)){ allMoved = false; break; }
             }
 
@@ -2577,14 +2702,7 @@
               }
             }
 
-            // Rollback
-            for(let j = 0; j < sessionActs.length; j++){
-              const aId = sessionActs[j].actId;
-              if(this.actPlacement[aId] >= 0) this.unplaceActivity(aId);
-            }
-            for(let j = 0; j < sessionActs.length; j++){
-              this.placeActivityDirect(sessionActs[j].actId, oldSlots[j]);
-            }
+            this.restoreStateSnapshot(snap);
           }
           if(improved) break;
         }
@@ -2639,6 +2757,7 @@
                 if(occId >= 0){
                   const occAct = this.activities[occId];
                   if(occAct && !occAct.isFixed && !occAct.lockedByLessonBlock && occAct.duration === 1){
+                    const snap = this.captureStateSnapshot();
                     this.unplaceActivity(actId);
                     this.unplaceActivity(occId);
 
@@ -2650,6 +2769,9 @@
                     } else if(this.isSlotFeasible(act, sTarget)){
                       this.placeActivityDirect(act.id, sTarget);
                       this.nCalls = 0;
+                      this.tabuMap.clear();
+                      this.triedRemovals.clear();
+                      this.swappedInBranch.clear();
                       ok = this.randomSwap(occAct.id, 0);
                     }
 
@@ -2663,12 +2785,10 @@
                       }
                     }
 
-                    if(this.actPlacement[actId] >= 0) this.unplaceActivity(actId);
-                    if(this.actPlacement[occId] >= 0) this.unplaceActivity(occId);
-                    this.placeActivityDirect(act.id, sOrig);
-                    this.placeActivityDirect(occAct.id, sTarget);
+                    this.restoreStateSnapshot(snap);
                   }
                 } else if(occId === -1){
+                  const snap = this.captureStateSnapshot();
                   this.unplaceActivity(actId);
                   if(this.isSlotFeasible(act, sTarget)){
                     this.placeActivityDirect(act.id, sTarget);
@@ -2681,9 +2801,8 @@
                         break;
                       }
                     }
-                    this.unplaceActivity(actId);
                   }
-                  this.placeActivityDirect(act.id, sOrig);
+                  this.restoreStateSnapshot(snap);
                 }
               }
               if(improved) break;
@@ -2752,67 +2871,64 @@
 
               const loc = (rm && this.roomLocationMap.get(rm.toLowerCase())) || this.classLocationMap.get(cid.toLowerCase()) || "";
 
-              const subRules = data.tkbConstraints?.subject?.[mon]?.byClass?.[cid] || {};
-              const blockRule = subRules.lessonBlocks?.["2"] || {};
-              const mustKeepPair = Boolean(blockRule.min && blockRule.min > 0);
-
-              let dur = 1;
-              if(p + 1 < PERIODS_PER_SESSION){
-                const nextCell = arr[p + 1];
-                if(nextCell && !this.isCellOff(nextCell) && !this.isCellFixed(nextCell)){
-                  const nextMon = this.extractMon(nextCell);
-                  if(nextMon === mon){
-                    dur = 2;
+              const subRules = this.getSubjectRules(mon, lop);
+              const lessonBlocks = subRules.lessonBlocks || {};
+              const blocksMax = {};
+              for(const K of [5, 4, 3, 2]){
+                const blockConfig = lessonBlocks[String(K)] || lessonBlocks[K] || {};
+                if(blockConfig.max !== undefined && blockConfig.max !== "" && blockConfig.max !== null){
+                  const val = Number(blockConfig.max);
+                  if(!isNaN(val) && val >= 0){
+                    blocksMax[K] = val;
                   }
                 }
               }
+              const lessonBlocksMax = Object.keys(blocksMax).length > 0 ? blocksMax : null;
 
-              if(mustKeepPair && dur === 2){
-                const actId1 = actIdCounter++;
-                const act1 = {
-                  id: actId1,
-                  classId: cid,
-                  classIdx: cIdx,
-                  mon,
-                  canonKey,
-                  gv,
-                  gvList: tList,
-                  teacherIdxs: new Int32Array(tIndices),
-                  room: rm,
-                  roomIdx,
-                  location: loc,
-                  duration: 1,
-                  maxDaily,
-                  isFixed: true,
-                  lockedByLessonBlock: true
-                };
-                this.activities.push(act1);
-                this.actPlacement.push(slot);
-                this.placeActivityDirect(actId1, slot);
+              let runLen = 1;
+              while(p + runLen < PERIODS_PER_SESSION){
+                const nextCell = arr[p + runLen];
+                if(!nextCell || this.isCellOff(nextCell) || this.isCellFixed(nextCell)) break;
+                const nextMon = this.extractMon(nextCell);
+                if(nextMon !== mon) break;
+                runLen++;
+              }
 
-                const actId2 = actIdCounter++;
-                const act2 = {
-                  id: actId2,
-                  classId: cid,
-                  classIdx: cIdx,
-                  mon,
-                  canonKey,
-                  gv,
-                  gvList: tList,
-                  teacherIdxs: new Int32Array(tIndices),
-                  room: rm,
-                  roomIdx,
-                  location: loc,
-                  duration: 1,
-                  maxDaily,
-                  isFixed: true,
-                  lockedByLessonBlock: true
-                };
-                this.activities.push(act2);
-                this.actPlacement.push(slot + 1);
-                this.placeActivityDirect(actId2, slot + 1);
+              let lockedK = 0;
+              for(const K of [5, 4, 3, 2]){
+                const bMin = Number(lessonBlocks[String(K)]?.min) || Number(lessonBlocks[K]?.min) || 0;
+                if(bMin > 0 && runLen >= K){
+                  lockedK = K;
+                  break;
+                }
+              }
 
-                p += 2;
+              if(lockedK > 0){
+                for(let k = 0; k < lockedK; k++){
+                  const actId = actIdCounter++;
+                  const act = {
+                    id: actId,
+                    classId: cid,
+                    classIdx: cIdx,
+                    mon,
+                    canonKey,
+                    gv,
+                    gvList: tList,
+                    teacherIdxs: new Int32Array(tIndices),
+                    room: rm,
+                    roomIdx,
+                    location: loc,
+                    duration: 1,
+                    maxDaily,
+                    lessonBlocksMax,
+                    isFixed: true,
+                    lockedByLessonBlock: true
+                  };
+                  this.activities.push(act);
+                  this.actPlacement.push(slot + k);
+                  this.placeActivityDirect(actId, slot + k);
+                }
+                p += lockedK;
                 continue;
               }
 
@@ -2829,16 +2945,17 @@
                 room: rm,
                 roomIdx,
                 location: loc,
-                duration: dur,
+                duration: 1,
                 maxDaily,
-                mustKeepBlock: mustKeepPair && dur === 2,
+                mustKeepBlock: false,
+                lessonBlocksMax,
                 isFixed: false
               };
               this.activities.push(act);
               this.actPlacement.push(slot);
               this.placeActivityDirect(actId, slot);
 
-              p += dur;
+              p += 1;
             }
           });
         });
