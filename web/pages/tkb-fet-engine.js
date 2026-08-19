@@ -688,7 +688,59 @@
       return true;
     }
 
-    // Min-Conflicts Backtracking Search with Recursive Swapping
+    computeTeacherWeeklyLoad(){
+      this.teacherWeeklyLoad = new Map();
+      this.activities.forEach(a => {
+        a.gvList.forEach(t => {
+          this.teacherWeeklyLoad.set(t, (this.teacherWeeklyLoad.get(t) || 0) + a.duration);
+        });
+      });
+    }
+
+    opensUnaffordableSession(act, slot){
+      if(!this.minTwoGuardActive) return false;
+      const dIdx = Math.floor(slot / SLOTS_PER_DAY);
+      const sIdx = Math.floor((slot % SLOTS_PER_DAY) / PERIODS_PER_SESSION);
+      const sStart = dIdx * SLOTS_PER_DAY + sIdx * PERIODS_PER_SESSION;
+
+      for(const t of act.gvList){
+        const totalLoad = this.teacherWeeklyLoad?.get(t) || 0;
+        if(totalLoad < 2) continue;
+
+        const tg = this.teacherGrid.get(t);
+        if(!tg) continue;
+
+        let periodsInThisSession = 0;
+        for(let p = 0; p < PERIODS_PER_SESSION; p++){
+          if(tg[sStart + p] >= 0 || tg[sStart + p] === -3){
+            periodsInThisSession++;
+          }
+        }
+        if(periodsInThisSession > 0) continue;
+
+        let requiredTotal = 2;
+        for(let d = 0; d < DAYS_LIST.length; d++){
+          for(let b = 0; b < SESSIONS_LIST.length; b++){
+            if(d === dIdx && b === sIdx) continue;
+            const start = d * SLOTS_PER_DAY + b * PERIODS_PER_SESSION;
+            let count = 0;
+            for(let p = 0; p < PERIODS_PER_SESSION; p++){
+              if(tg[start + p] >= 0 || tg[start + p] === -3) count++;
+            }
+            if(count > 0){
+              requiredTotal += Math.max(count, 2);
+            }
+          }
+        }
+
+        if(requiredTotal > totalLoad){
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // Min-Conflicts Backtracking Search with Recursive Swapping & FET Counting Bound
     randomSwap(actId, level = 0){
       if(this.nCalls++ >= this.limitCalls) return false;
       if(level >= MAX_RECURSION_LEVEL) return false;
@@ -696,11 +748,19 @@
       const act = this.activities[actId];
       if(!act) return false;
 
-      const candidateSlots = [];
+      const allFeasible = [];
       for(let s = 0; s < TOTAL_SLOTS; s++){
-        if(this.isSlotFeasible(act, s)) candidateSlots.push(s);
+        if(this.isSlotFeasible(act, s)) allFeasible.push(s);
       }
-      if(candidateSlots.length === 0) return false;
+      if(allFeasible.length === 0) return false;
+
+      // FET Counting Invariant: Prefer slots that do NOT open an unaffordable session
+      let candidateSlots = allFeasible.filter(s => !this.opensUnaffordableSession(act, s));
+      if(candidateSlots.length === 0 || level >= 6){
+        candidateSlots = allFeasible;
+      }
+
+      // CLR Random Permutation
       this.rng.shuffle(candidateSlots);
 
       const cid = act.classId;
@@ -890,6 +950,9 @@
       this.activities.forEach((a, idx) => a.id = idx);
       this.actPlacement = new Array(this.activities.length).fill(-1);
 
+      this.minTwoGuardActive = true;
+      this.computeTeacherWeeklyLoad();
+
       let placedCount = 0;
       for(let i = 0; i < this.activities.length; i++){
         this.nCalls = 0;
@@ -904,6 +967,20 @@
             total: totalActivities,
             message: `Đã xếp ${placedCount}/${totalActivities} hoạt động`
           });
+        }
+      }
+
+      // Pass 2: Fallback to place any remaining activities without minTwo constraint
+      if(placedCount < totalActivities){
+        this.minTwoGuardActive = false;
+        for(let i = 0; i < this.activities.length; i++){
+          if(this.actPlacement[i] < 0){
+            this.nCalls = 0;
+            this.tabuMap.clear();
+            if(this.randomSwap(i, 0)){
+              placedCount++;
+            }
+          }
         }
       }
 
