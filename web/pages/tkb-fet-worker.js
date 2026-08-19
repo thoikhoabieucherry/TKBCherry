@@ -88,10 +88,21 @@ self.onmessage = async function(e) {
         if (mode === 'optimize_gap2' && typeof currentEngine.optimizeGap2WithBorrow === 'function') return currentEngine.optimizeGap2WithBorrow(cb);
         return currentEngine.optimize(mode, cb);
       };
+      let lastSnapshotAt = 0;
+      let lastSnapshotTkb = null;
+      const SNAPSHOT_INTERVAL_MS = 250;
+
       const res = await runOptimize((prog) => {
         let snapshotTkb = null;
         if (!constructionPhase) {
-          try { snapshotTkb = currentEngine.getSnapshotTKB(); } catch(_) {}
+          const now = Date.now();
+          if (!lastSnapshotTkb || now - lastSnapshotAt >= SNAPSHOT_INTERVAL_MS || prog.percent >= 100) {
+            try { 
+              lastSnapshotTkb = currentEngine.getSnapshotTKB(); 
+              lastSnapshotAt = now;
+            } catch(_) {}
+          }
+          snapshotTkb = lastSnapshotTkb;
         }
         self.postMessage({
           type: 'progress',

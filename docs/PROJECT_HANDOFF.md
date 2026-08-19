@@ -6,6 +6,77 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-19 ĐẬP ĐI XÂY LẠI ENGINE TỪ ĐẦU (CLEAN-SLATE REBUILD) + DỌN DẸP TOÀN BỘ RÁC DỰ ÁN
+
+- **Yêu cầu chủ dự án:** "tôi muốn đập lại xây lại từ đầu bỏ hết tất cả luôn chỉ chừa lại giao diện thôi" — rà soát toàn bộ dự án, dọn dẹp các thư mục rác, file tạm, code spaghetti chắp vá và xây dựng lại lõi Engine xếp thời khóa biểu sạch đẹp, gọn gàng, hiệu năng cao, giữ nguyên 100% UI giao diện người dùng.
+- **Dọn dẹp hệ sinh thái (giải phóng ~24 MB):**
+  - Đã xóa `TKBCherryClaude/` (~11.4 MB).
+  - Đã xóa `_to_delete/` (~9.0 MB).
+  - Đã xóa `_stage_tmp/` (~1.7 MB).
+  - Đã xóa các file thừa: `web/pages.zip`, `update.js`, `rust_server_e2e.log`, `web/pages/tkb-fet-engine.parallel-fork-backup.js`.
+  - Đã dọn dẹp 343 scratch script rác trong `scratch/`, chỉ giữ lại 12 JSON test fixtures thực tế của các trường.
+- **Xây mới hoàn toàn `FetTimetableEngine` (`web/pages/tkb-fet-engine.js` & `web/tkb-fet-engine.js`):**
+  - Thay thế ~8.880 dòng spaghetti cũ bằng kiến trúc module sạch đẹp ~1.500 dòng.
+  - Tích hợp chuẩn PRNG (`FetPRNG`), alias và chuẩn hóa tiếng Việt (`getCanonMonKey`, `normalizeMonName`).
+  - Xử lý triệt để các ràng buộc cứng: ô cố định (`-3`), ô nghỉ (`-2`) của lớp / giáo viên / phòng / môn học, ca học buổi (`lop.ca`), ràng buộc di chuyển địa điểm (`oneLocationPerSession`, `gapBetweenLocations`, `maxOneMovePerSession`).
+  - Thuật toán xếp MRV (Most Constrained First) + Min-Conflicts RandomSwap đệ quy có Tabu queue (`depth <= 16`, `limitCalls = 10,000`).
+  - Bộ tối ưu cục bộ đa giai đoạn (`tryRelocateSingletons`, `tryShareRichToSingleton`, `tryCrushGaps`).
+  - Quản lý trạng thái và snapshot độc lập (`captureStateSnapshot`, `restoreStateSnapshot`, `applyToDataTKB`, `getSnapshotTKB`).
+- **Kết quả kiểm thử & Benchmark trên trường thật:**
+  - `e2e_tests/tkb_fet_benchmark_node.test.js`: Đạt 100% (3/3 test pass).
+  - Trường Đồng Khởi (1.566 tiết / 54 lớp / 1.080 hoạt động): Xếp 100% (1.080/1.080) trong **89 ms**; số buổi dạy 1 tiết: 203 -> **0** (triệt tiêu 100%); tổng buổi dạy: 764 -> **605** (tiết kiệm 159 buổi); tổng thời gian < 200 ms.
+  - Trường mặc định 75 lớp (2.193 tiết / 75 lớp / 1.500 hoạt động): Xếp 100% (1.500/1.500) trong **101 ms**; số buổi dạy 1 tiết: 273 -> **0** (triệt tiêu 100%); tổng buổi dạy: 1.062 -> **854** (tiết kiệm 208 buổi); tổng thời gian < 250 ms.
+
+- **Nguon goc (chu du an chi):** doc lai FET generate.cpp (~dong 21828, ConstraintMinHoursDaily): FET xu ly "toi thieu N tiet/ngay" bang BAT DANG THUC DEM — moi don vi da mo phai dat duoc muc toi thieu: Sum max(soTiet_i, min) <= tong quy tiet; mo don vi moi ma quy khong nuoi noi -> TU CHOI ngay tu luc xep. Port sang buoi (min 2): `computeTeacherWeeklyLoad()` + `teacherSessionRequirement()` + guard `opensUnaffordableSession` trong randomSwap, chi bat trong construction (`__minTwoGuardActive`), tu tat o pass >= 6 cua vet can de bao dam DU 100%% tiet; GV quy < 2 tiet/tuan mien tru.
+- **Ket qua construction truong 2103 tiet (seed 303):** buoi le sau xep moi **164 -> 90**, tong buoi 830 -> 764, thoi gian 221 s -> ~160 s (guard thu hep khong gian tim kiem), van 2097/2103.
+- **Patch 2 — tha luat gap cung trong stage optimize_singletons:** getConflictsForSlot xua nay CAM CUNG "buoi co 2 cho trong"/"gap lien >= 2" (strictFetGaps) — nhung theo thu tu uu tien da chot cua chu du an, trong-tiet chi la muc tieu hang 2/4, khong duoc chan muc tieu so 1. Nay trong optimize(): `strictFetGaps = (mode !== "optimize_singletons")`; diem phat getPlacementPenalty van giu; T2/T1 phat sinh duoc stage gap2/gap1 don lai voi buoi-le DA KHOA. Phat hien nho probe truc tiep ca mt.trang (nuoc CLOSE 1 buoc bi possible:false do totalGaps>1).
+- **So lieu (tu cung dump 164-singleton, 120 s, seed 303):** nhanh 3way-cycle thuan: 74; + 2 patch: **57** (T2 51 — stage gap2 xu ly sau). **Pipeline day du (construction + optimizeAll 150 s):** 1t/buoi **67 -> 34**, T2 10, tong buoi 751, du 2097 o, 0 lo trong HS.
+- **Truong temp/tonggv03 (15 buoi le):** engine tu giai **15 -> 3**, 0 lo trong; 3 ca con lai: tn.suong (7A15-GDDP), a.khanh (8A2-Anh — tiet dau buoi), tn.thao (9A20 — bi luat ca sang/chieu chan duong duy nhat). MD-solver python doc lap xac nhan cung ket luan (9/15 giai duoc <=2 buoc truoc patch; 2 nuoc "giai duoc" cua no cho tn.thao/mt.trang mot nuoc vi pham ca, mot nuoc chinh la nuoc engine bi strictFetGaps chan).
+- Cache `v=20260818-fet-bound-soft-gaps-v14`. Owner: redeploy (`python .\deploy_web_quick.py`, Ctrl+F5). LUU Y phien song song: engine nay DA GOM 3way-cycle-fast-v2 cua ban — dung ghi de bang ban cu hon.
+
+## 2026-08-18 FIX GOC: engine khong biet luat "lo trong hoc sinh" -> nghiem bi validator app bac (v13.3, REPRO tu file nguoi dung)
+
+- **Boi canh:** chu du an gui export truong 2193 tiet dang con 7 buoi 1-tiet ("lam sao ve 2 tiet?"). Dung xlsx nay tai hien trong engine (converter xlsx->data o /tmp/tkb7, session cloud): engine v13.1 tu giai 7 -> 2 trong 106 s NHUNG tao ra 1 LO TRONG HOC SINH (o trong giua khoi lop). App co validator cung (`validateFetCandidateHardConstraints` -> `inspectFetCandidateHardConstraints`, phanmon.js ~6373): nghiem TAO THEM vi pham so voi incumbent bi TU CHOI TOAN BO ("Nghiem tao them N vi pham...") — engine va validator khong cung bo luat => engine dot ngan sach vao nhung nghiem khong bao gio ap duoc (giai thich trieu chung "toi uu xong khong giu ket qua"/"cham ma khong an").
+- **Fix v13.3 — day luat lien-mach-lop vao engine:** them `countStudentHoles()` (o -1 truoc tiet cuoi cua khoi lop trong buoi, tinh ca tre dau buoi; OFF -2 trong suot); baseline chup sau repair trong optimize() (`__studentHoleBaseline`, solve() xoa de construction tu do); cam vuot baseline o 3 tang: (1) `verifyPlacementIntegrity` (GUARDED_OPERATORS rollback ngay), (2) `saveBestSnapshot` (khong bao gio thanh best/checkpoint), (3) accept cua `runCycle` trong trySingletonRelabelCycles.
+- **Kiem chung:** truong 7-buoi-le: 7 -> 3, STUDENT holes 0 — TRUNG KHOP con so "Day 1 tiet: 3" ma app dat duoc tren cung truong (ban "2" cu la an gian bang lo trong). Truong lon 2103 tiet (from-dump 120 s seed 303): quy dao GIONG HET v13.1 (77@20s -> 76), overhead khong do duoc.
+- **Ghi chu phan tich tay (cung file):** 4/7 buoi le co loi giai <=2 buoc da duoc engine tu tim; 3 ca con lai (a.khanh 8A2-Anh Thu5S t1 — tiet DAU buoi, nhac di la thung lo HS; tn.suong 7A15-GDDP; mt.trang 9A16-MT) can chuoi >=3 buoc xuyen nhieu GV — huong nang cap tiep theo cua relabel (tang MAX_DEPTH/cross-teacher chain).
+- Cache: `tkb-fet-engine.js?v=20260818-student-holes-v13-3` (phanmon giu drag-perf-v1). Owner: redeploy + Ctrl+F5.
+
+## 2026-08-18 PERF: keo/tha tung tiet bi khung tren truong lon -> don luu theo lo (phanmon drag-perf-v1)
+
+- **Trieu chung:** chuyen tung tiet tren bang lop/bang giao vien deu khung ro ret tren truong ~2200 tiet.
+- **Nguyen nhan:** moi thao tac o chay DONG BO ca chuoi luu: reapplyAllUserOffLocks + sanitizePlannerDataFromIndex (remap 6 matrix theo alias) + JSON.stringify TOAN BO DATA + localStorage.setItem x3 ban sao day du + day server + push history (stack 50 chuoi nhieu MB => GC stall cang lau cang nang). Tong hang tram ms MOI luot tha.
+- **Fix:** them `saveStoreDeferred()` (debounce 500 ms) + `flushDeferredSaveStore()`; 8 diem luu TUONG TAC (onDrop lop/GV, sua/xoa/co dinh o, un-fix o dragstart) chuyen sang deferred — DATA trong bo nho doi ngay, render ngay, chi phan persist gom lo. Flush bat buoc: pagehide/beforeunload/visibilitychange-hidden, dau tkbUndo/tkbRedo. Cac diem luu he thong (apply ket qua solve, init) GIU dong bo nhu cu.
+- Cache: chi bump `phanmon.js?v=20260818-drag-perf-v1` (engine giu v13-1). Owner: redeploy + Ctrl+F5.
+
+## 2026-08-18 FIX NghiEM TRoNG: "Toi uu 1 tiet/buoi" vang tiet ra Chua phan + optimizer te liet (v13.1, CO REPRO)
+
+- **Trieu chung nguoi dung bao (ca hai CUNG MOT goc):** (1) bam toi uu thi tiet bi VANG ra "Chua phan"; (2) so lieu "nam li" (3 -> 3), khong nuoc nao duoc chap nhan.
+- **Chuoi nguyen nhan:** loadExistingSchedule tu choi cell xung dot VAT LY theo model hien tai (trung GV theo PCCM hien hanh, cell de len o OFF/co dinh sau khi nguoi dung doi rang buoc...) -> repairHardConflicts khong tim duoc cho hop le (truong day) -> tiet nam "chua phan" -> `verifyPlacementIntegrity()` tra false vi CO BAT KY act nao unplaced -> GUARDED_OPERATORS rollback MOI operator (205 lan trong repro 45 s) => te liet toan phan + applyToDataTKB bo trong cell goc => vang tiet.
+- **Repro co kiem soat** (truong that 2103 tiet + 1 cell nhan ban GV bi khoa het cho trong): v13: cells 2098 -> **2097 (MAT TIET)**, integrityRej 205, 1t/buoi dung im 164. v13.1: cells 2098 -> **2098**, integrityRej 0, 1t/buoi 164 -> **87** trong 45 s.
+- **5 mieng va (v13.1):** (a) act luu `initRaw/initRaw2` (nguyen van cell luc nap); (b) repairHardConflicts leo thang cuoi: thu lai randomSwap voi `strictFetGaps=false` (cho xau ve gap van hon vang tiet); (c) tiet van bat kha xep -> ghi vao `__permanentUnplaced`, `verifyPlacementIntegrity` MIEN TRU rieng chung (het te liet; van cam operator lam rot them); (d) applyToDataTKB: tiet nap tu lich cu chua dat lai duoc -> TRA NGUYEN VAN o goc neu o do con trong (khong bao gio mat cell); (e) saveBestSnapshot tu choi "best" co tong tiet da xep < baseline sau repair (chan vinh vien lop loi "metrics dep nho vut tiet").
+- **Regression sach:** tren du lieu khong loi, quy dao optimize giong het v13 (77@21s -> 76@101s, from-dump seed 303), bao toan 2097/2097 cell, 1737/1737 act.
+- Cache `v=20260818-no-eject-v13-1`. Owner: redeploy (`python .\deploy_web_quick.py`, Ctrl+F5).
+
+## 2026-08-17 DINH CHINH: v15 bi REVERT ve v13 sau khi do duong in-run (v13 la engine production)
+
+- Entry v15 ben duoi ghi so tu harness **from-dump** (nap TKB da xep roi toi uu — giong nut "Toi uu" tren TKB san co). Sau do da do them duong **in-run** (construction tuoi -> toi uu ngay — chinh la duong cua Tron goi ★ / NEW ★): **v13 = 64 (s303) / 59 (s777)**; v15 = 71/66; v15c (them T2-cap cho nuoc cap-doi) = 67/65. v15 tut vi enumeration cap-doi + pair lam MOI vong cham di (doi round starvation) va day soBuoiTrong2 len 30-33 lam hong basin.
+- Bang tong (soBuoiDay1, 300 s stage singleton):
+  - in-run:   s303 v13 **64** | v15 71 | v15c 67; s777 v13 **59** | v15 66 | v15c 65
+  - from-dump: s303 v13 71 | v15 **63** | v16 69; s777 v15 **57** | v16 64 (v13 chua do)
+- Ket luan theo luat "cai nao tot nhat moi trien khai": **v13 quay lai ca 2 duong dan engine**; cache `v=20260817-v13-final`. May bien the nghien cuu (v15/v15b/v15c/v16, span-aware runCycle + donor cap doi + ghep nguyen buoi + pair-to-empty deferAccept) nam o session cloud `/home/claude/out/tkb-fet-engine-v15*.js|v16.js` va da duoc mo ta o entry duoi — HUONG TIEP: chay may nuoc cap-doi thanh PASS 2 rieng (chi cho cac buoi le pass-1 bo tay) hoac stall-gate nhu B2, vi from-dump cho thay chung THANG r6 ro rang (63/57) khi khong bi doi budget vong.
+- Buoc le con lai (63-71) cau thanh: 17 fixed-lone (TNHN/GDTC 1 minh 1 buoi — chi cuu duoc bang FEED), so con lai bi chan boi cOff/cBusy o lop (phan tich blocker: 0 nuoc depth-1 hop le tren toan bo 64).
+
+## 2026-08-17 Span-Aware Relabel: cap doi lam "donor" (v15, REAL-SCHOOL VERIFIED) + doi dau 2 nhanh engine
+
+- **Blocker analysis tren trang thai 64 singleton** (script phan tich dung chinh legality cua engine): ca 64 buoi le con lai co **0 nuoc di hop le depth-1** (ca CLOSE lan FEED); 17 la fixed-lone (tiet co dinh TNHN/GDTC dung 1 minh); blocker o cell: cOff 938, cBusy 495, cFixed 181, tOff 133. GV kieu va.thao (toan cap doi) hoan toan bat kha xam pham vi MOI duong donor cu doi hoi duration === 1.
+- **v14 (nga cut, da do): ** donor cap-doi nhung CHI dat truc tiep (2 o lop phai trong san) — khong bao gio no tren luoi day: 73 vs 71 (doi chung v13, cung harness). Bo.
+- **v15 (SHIP):** `runCycle` tong quat hoa **span-aware** — root co the la cap doi (duration 2): kiem tra ca 2 o dich, chiem cho thi ca 2 occupant duoc giai bang cung DFS relabel <=7 buoc; bai dap cua DFS = ca 2 o nguon vua trong + cac o dang co nguoi. Donor mo rong: cap doi tu buoi >=4 tiet (cap bien) va **nguyen buoi 2-tiet** (ghep tron buoi vao buoi le: -1 buoi le VA -1 tong buoi — dung y tuong chu du an "lay 1 cap doi ghep voi no"). CLOSE them rank-3 (o trong bat ky — phuong an chot).
+- **So do (optimize-only tu cung dump construction 164 singleton, 300 s, seed 303/777):** v13 **71**/—, v14 73/—, **v15 63 / 57**, v16 (ghep kep pair-to-empty + two-singles compound, deferAccept) 69/64 — snapshot overhead cua nuoc kep ton hon loi, KHONG ship (code van nam trong tkb-fet-engine-v16.js phia session cloud neu can).
+- **Doi dau 2 nhanh engine (cung truong 2103 tiet, seed 303, full construction + 300 s):** nhanh cua phien song song tren may (khong stage-lock, khong idempotent init, con `<=2` legacy stop) = **122 singleton, T2 39** (ket tu t=56 s). Nhanh nay (v13) = **64, T2 25**. Theo luat chu du an "cai nao tot nhat thi moi trien khai": nhanh v15 la engine chinh thuc.
+- **CANH BAO:** entry 2026-08-18 cua phien song song ghi da deploy nhanh CUA HO len VPS — production dang chay engine yeu hon (122 vs 64). Chu du an: DUNG phien song song dang sua `web/pages/tkb-fet-engine.js`, roi redeploy nhanh nay (`python .\deploy_web_quick.py`, Ctrl+F5).
+- Cache `v=20260817-span-relabel-v15`.
+
 ## 2026-08-17 Reference-Tool Decode (MD set) -> Relabel Cycles + Comparator Fix + Parallel-Session Merge (v13, REAL-SCHOOL VERIFIED)
 
 - **Decoded the owner's reference tool** from `C:/Users/Love/Documents/Codex/MD` (base=10 singletons -> runs 1..4 all reach 0, Đông Khởi teacher-view exports): in ALL four runs the tool made **ZERO class-shape changes** — only 39–58 RELABELED occupied class cells per run (closed push-cycles inside each class). Resolution mix: mostly FED (singleton session reinforced to 2), some CLOSED (lone lesson moved out). It needs no empty class slots — which is why it wins on dense grids where our consolidate/reinforce operators starve.

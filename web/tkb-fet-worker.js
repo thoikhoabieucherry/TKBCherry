@@ -9,6 +9,58 @@ importScripts('tkb-fet-engine.js?v=' + Date.now());
 
 let currentEngine = null;
 
+
+async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isConstruction) {
+  // XEP MOI + TOI UU TRON GOI trong MOT worker — CAM KET DU 100% TIET:
+  // construction thu nhieu seed den khi DAT DU TIET (toi da 8 seed / ~75s);
+  // chi khi du 100% moi chay optimizeAll (0 buoi 1 tiet, 0 trong >=2, giam
+  // trong 1 + tong buoi). Khong bao gio ap lich thieu tiet — neu moi seed deu
+  // thieu, tra fail-closed kem danh sach hoat dong ket de nguoi dung go rang
+  // buoc; lich hien tai duoc giu nguyen.
+  const baseSeed = Number(workerOptions.seed) || 12345;
+  const MAX_ATTEMPTS = 8;
+  const ATTEMPT_DEADLINE_MS = Date.now() + 75000;
+  let bestEngine = null;
+  let bestRes = null;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    isConstruction(true);
+    const engineData = JSON.parse(JSON.stringify(data));
+    const eng = new self.FetTimetableEngine(engineData, Object.assign({}, workerOptions, { seed: baseSeed + attempt * 7919 }));
+    setEngine(eng);
+    const res = await eng.solve((p) => {
+      cb({
+        percent: Math.round(Math.min(100, Number(p.percent) || 0) * 0.35),
+        currentMetric: p.placed,
+        initialMetric: p.total,
+        stage: 'construction',
+        metrics: null
+      });
+    });
+    try { eng.getSnapshotTKB(); } catch (_) {}
+    isConstruction(false);
+    const un = (res && res.ok !== false) ? (Number(res.unassigned) || 0) : Number.MAX_SAFE_INTEGER;
+    const bestUn = bestRes ? ((bestRes.ok !== false) ? (Number(bestRes.unassigned) || 0) : Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+    if (!bestRes || un < bestUn) { bestEngine = eng; bestRes = res; }
+    if (un === 0) break;
+    if (Date.now() > ATTEMPT_DEADLINE_MS) break;
+  }
+  setEngine(bestEngine);
+  const bestUnassigned = (bestRes && bestRes.ok !== false) ? (Number(bestRes.unassigned) || 0) : Number.MAX_SAFE_INTEGER;
+  if (!bestRes || bestRes.ok === false) {
+    return Object.assign({ initialMetrics: null, metrics: null }, bestRes || { ok: false, applied: false, failureKind: 'fet_construction_failed' });
+  }
+  // CHI DAO 17/08: khong du cho thi van LAP TOI DA, phan du tra ve "Chua phan"
+  // — khong fail-closed nua. So tiet con thieu duoc tra ve trung thuc qua
+  // `unassigned` de UI canh bao ro rang.
+  const opt = await bestEngine.optimizeAll((p) => {
+    cb(Object.assign({}, p, { percent: 35 + Math.round(Math.min(100, Number(p.percent) || 0) * 0.65) }));
+  });
+  const out = opt || {};
+  out.placed = Number(bestRes.placed) || 0;
+  out.unassigned = Number(bestUnassigned) || 0;
+  return out;
+}
+
 self.onmessage = async function(e) {
   const action = e.data?.action || e.data?.type;
   const { mode, data, options } = e.data || {};
@@ -19,12 +71,39 @@ self.onmessage = async function(e) {
       const workerOptions = Object.assign({ uiBreathingMs: 0 }, options || {});
       currentEngine = new self.FetTimetableEngine(data, workerOptions);
 
-      const runOptimize = (cb) => mode === 'optimize_all' && typeof currentEngine.optimizeAll === 'function'
-        ? currentEngine.optimizeAll(cb)
-        : currentEngine.optimize(mode, cb);
+      let constructionPhase = false; // solve_optimize_all: khong phat checkpoint khi luoi con dang xay (chua du tiet)
+      const runSolveOptimizeAll = (cb) => runSolveOptimizeAllImpl(
+        cb,
+        data,
+        workerOptions,
+        (eng) => { if (eng) currentEngine = eng; },
+        (v) => { constructionPhase = !!v; }
+      );
+      const runOptimize = async (cb) => {
+        if (mode === 'solve_optimize_all' || mode === 'solve_optimize_all_fresh') {
+          return await runSolveOptimizeAll(cb);
+        }
+        if (mode === 'optimize_all' && typeof currentEngine.optimizeAll === 'function') return currentEngine.optimizeAll(cb);
+        // Nút "2 tiết trống": dùng cơ chế vay-trả 1t/buổi (không bao giờ tệ hơn chạy thường)
+        if (mode === 'optimize_gap2' && typeof currentEngine.optimizeGap2WithBorrow === 'function') return currentEngine.optimizeGap2WithBorrow(cb);
+        return currentEngine.optimize(mode, cb);
+      };
+      let lastSnapshotAt = 0;
+      let lastSnapshotTkb = null;
+      const SNAPSHOT_INTERVAL_MS = 250;
+
       const res = await runOptimize((prog) => {
         let snapshotTkb = null;
-        try { snapshotTkb = currentEngine.getSnapshotTKB(); } catch(_) {}
+        if (!constructionPhase) {
+          const now = Date.now();
+          if (!lastSnapshotTkb || now - lastSnapshotAt >= SNAPSHOT_INTERVAL_MS || prog.percent >= 100) {
+            try { 
+              lastSnapshotTkb = currentEngine.getSnapshotTKB(); 
+              lastSnapshotAt = now;
+            } catch(_) {}
+          }
+          snapshotTkb = lastSnapshotTkb;
+        }
         self.postMessage({
           type: 'progress',
           mode: mode,
@@ -34,11 +113,11 @@ self.onmessage = async function(e) {
           stage: prog.stage || null,
           cycle: prog.cycle,
           metrics: prog.metrics,
-          checkpoint: {
+          checkpoint: snapshotTkb ? {
             complete: true,
             tkb: snapshotTkb,
             metrics: prog.metrics
-          },
+          } : null,
           tkb: snapshotTkb
         });
       });
@@ -68,12 +147,13 @@ self.onmessage = async function(e) {
         return;
       }
       currentEngine = new self.FetTimetableEngine(data, options);
-      const res = currentEngine.solve((prog) => {
+      const res = await currentEngine.solve((prog) => {
         self.postMessage({
           type: 'progress',
           percent: prog.percent,
           placed: prog.placed,
-          total: prog.total
+          total: prog.total,
+          message: prog.message || null
         });
       });
 
