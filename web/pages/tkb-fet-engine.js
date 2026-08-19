@@ -3271,8 +3271,10 @@
       const targetMetricKey = mode === "optimize_gap2" ? "soBuoiTrong2" : (mode === "optimize_singletons" ? "soBuoiDay1" : (mode === "optimize_gap1" ? "soBuoiTrong1" : (mode === "optimize_sessions" ? "tsBuoiDay" : "soBuoiDay1")));
       const targetMetricLowerBound = Number(this.constraintPreflight?.structuralFloor?.metricLowerBounds?.[targetMetricKey] || 0);
 
-      const MAX_ROUNDS = mode === "optimize_all" ? 10 : 8;
+      this.deadlineAtMs = Date.now() + (Number(this.timeBudgetMs) || 10000);
+      const MAX_ROUNDS = mode === "optimize_all" ? 6 : 5;
       for(let r = 0; r < MAX_ROUNDS; r++){
+        if(Date.now() >= this.deadlineAtMs) break;
         let anyRoundImprovement = false;
 
         if(mode === "optimize_all" || mode === "optimize_singletons"){

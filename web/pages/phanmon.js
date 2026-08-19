@@ -6652,15 +6652,6 @@ async function executeDirectFastSchedule(options = {}){
             if(isOptimizeMode && checkpoint?.complete === true && checkpoint?.tkb && typeof checkpoint.tkb === "object"){
               window.__LATEST_OPTIMIZE_CHECKPOINT = checkpoint;
               window.__LATEST_OPTIMIZE_TKB = checkpoint.tkb;
-
-              const now = Date.now();
-              if(!window.__LAST_LIVE_GRID_RENDER || (now - window.__LAST_LIVE_GRID_RENDER) >= 400){
-                window.__LAST_LIVE_GRID_RENDER = now;
-                try {
-                  data.tkb = checkpoint.tkb;
-                  if(typeof renderCurrentView === "function") renderCurrentView();
-                } catch(_) {}
-              }
             }
 
             let detail = "";
