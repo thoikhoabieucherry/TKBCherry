@@ -1294,17 +1294,17 @@
 
         const cntInSess = this.teacherSessionCounts[tBase + sessOffset];
         if(cntInSess === 1){
-          score -= 150;
+          score -= 350;
         } else if(cntInSess === 2){
-          score -= 80;
+          score -= 150;
         } else if(cntInSess === 3){
-          score -= 40;
+          score -= 80;
         } else if(cntInSess === 0){
           const otherCnt = this.teacherSessionCounts[tBase + otherOffset];
           if(otherCnt > 0){
-            score += 10;
+            score += 30;
           } else {
-            score += 60;
+            score += 180;
           }
         }
       }
@@ -2682,13 +2682,13 @@
 
               if(occId >= 0){
                 const occAct = this.activities[occId];
-                if(occAct && !occAct.isFixed && !occAct.lockedByLessonBlock && occAct.duration === 1){
+                if(occAct && !occAct.isFixed && !occAct.lockedByLessonBlock){
                   const snap = this.captureStateSnapshot();
                   this.unplaceActivity(actId);
                   this.unplaceActivity(occId);
 
                   let feasibleMove = false;
-                  if(this.isSlotFeasible(act, dst) && this.isSlotFeasible(occAct, singleSlot)){
+                  if(occAct.duration === 1 && this.isSlotFeasible(act, dst) && this.isSlotFeasible(occAct, singleSlot)){
                     this.placeActivityDirect(actId, dst);
                     this.placeActivityDirect(occAct.id, singleSlot);
                     feasibleMove = true;
@@ -2813,13 +2813,13 @@
                     this.restoreStateSnapshot(snap);
                   } else if(occId >= 0 && occId !== donorAct.id){
                     const occAct = this.activities[occId];
-                    if(occAct && !occAct.isFixed && !occAct.lockedByLessonBlock && occAct.duration === 1){
+                    if(occAct && !occAct.isFixed && !occAct.lockedByLessonBlock){
                       const snap = this.captureStateSnapshot();
                       this.unplaceActivity(donorAct.id);
                       this.unplaceActivity(occId);
 
                       let ok = false;
-                      if(this.isSlotFeasible(donorAct, targetSlot) && this.isSlotFeasible(occAct, richItem.slot)){
+                      if(occAct.duration === 1 && this.isSlotFeasible(donorAct, targetSlot) && this.isSlotFeasible(occAct, richItem.slot)){
                         this.placeActivityDirect(donorAct.id, targetSlot);
                         this.placeActivityDirect(occAct.id, richItem.slot);
                         ok = true;
@@ -2881,13 +2881,13 @@
                   this.restoreStateSnapshot(snap);
                 } else if(occId >= 0 && occId !== singleAct.id){
                   const occAct = this.activities[occId];
-                  if(occAct && !occAct.isFixed && !occAct.lockedByLessonBlock && occAct.duration === 1){
+                  if(occAct && !occAct.isFixed && !occAct.lockedByLessonBlock){
                     const snap = this.captureStateSnapshot();
                     this.unplaceActivity(singleAct.id);
                     this.unplaceActivity(occId);
 
                     let ok = false;
-                    if(this.isSlotFeasible(singleAct, targetSlot) && this.isSlotFeasible(occAct, single.item.slot)){
+                    if(occAct.duration === 1 && this.isSlotFeasible(singleAct, targetSlot) && this.isSlotFeasible(occAct, single.item.slot)){
                       this.placeActivityDirect(singleAct.id, targetSlot);
                       this.placeActivityDirect(occAct.id, single.item.slot);
                       ok = true;
@@ -2965,13 +2965,13 @@
               const occId = cGrid[sTarget];
               if(occId < 0) continue;
               const occAct = this.activities[occId];
-              if(!occAct || occAct.isFixed || occAct.lockedByLessonBlock || occAct.duration !== 1) continue;
+              if(!occAct || occAct.isFixed || occAct.lockedByLessonBlock) continue;
 
               const snap = this.captureStateSnapshot();
               this.unplaceActivity(actOrig.id);
               this.unplaceActivity(occAct.id);
               let ok = false;
-              if(this.isSlotFeasible(actOrig, sTarget) && this.isSlotFeasible(occAct, sOrig)){
+              if(occAct.duration === 1 && this.isSlotFeasible(actOrig, sTarget) && this.isSlotFeasible(occAct, sOrig)){
                 this.placeActivityDirect(actOrig.id, sTarget);
                 this.placeActivityDirect(occAct.id, sOrig);
                 ok = true;
@@ -3029,13 +3029,13 @@
             const actId2 = cGrid[s2];
             if(actId2 < 0 || actId2 === actId1) continue;
             const act2 = this.activities[actId2];
-            if(!act2 || act2.isFixed || act2.lockedByLessonBlock || act2.duration !== 1) continue;
+            if(!act2 || act2.isFixed || act2.lockedByLessonBlock) continue;
 
             const snap = this.captureStateSnapshot();
             this.unplaceActivity(actId1);
             this.unplaceActivity(actId2);
             let ok = false;
-            if(this.isSlotFeasible(act1, s2) && this.isSlotFeasible(act2, s1)){
+            if(act2.duration === 1 && this.isSlotFeasible(act1, s2) && this.isSlotFeasible(act2, s1)){
               this.placeActivityDirect(act1.id, s2);
               this.placeActivityDirect(act2.id, s1);
               ok = true;
@@ -3308,29 +3308,137 @@
               const act2Id = cGrid[s2];
               if(act2Id < 0) continue;
               const act2 = this.activities[act2Id];
-              if(!act2 || act2.isFixed || act2.lockedByLessonBlock || act2.duration !== 1) continue;
+              if(!act2 || act2.isFixed || act2.lockedByLessonBlock) continue;
 
               const snap = this.captureStateSnapshot();
               this.unplaceActivity(act1.id);
               this.unplaceActivity(act2.id);
 
-              if(this.isSlotFeasible(act1, s2) && this.isSlotFeasible(act2, s1)){
+              let ok = false;
+              if(act2.duration === 1 && this.isSlotFeasible(act1, s2) && this.isSlotFeasible(act2, s1)){
                 this.placeActivityDirect(act1.id, s2);
                 this.placeActivityDirect(act2.id, s1);
+                ok = true;
+              } else if(this.isSlotFeasible(act1, s2)){
+                this.placeActivityDirect(act1.id, s2);
+                this.nCalls = 0;
+                this.tabuMap.clear();
+                this.triedRemovals.clear();
+                this.swappedInBranch.clear();
+                this.limitCalls = 1000;
+                ok = this.randomSwap(act2.id, 0);
+              }
 
-                if(this.countTotalStudentHoles() === 0){
-                  const m = this.evaluateMetrics();
-                  if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
-                    currentBest = { ...m };
-                    improved = true;
-                    if(typeof onProgress === "function") onProgress(currentBest);
-                    break;
-                  }
+              if(ok && this.countTotalStudentHoles() === 0){
+                const m = this.evaluateMetrics();
+                if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
+                  currentBest = { ...m };
+                  improved = true;
+                  if(typeof onProgress === "function") onProgress(currentBest);
+                  break;
                 }
               }
               this.restoreStateSnapshot(snap);
             }
           }
+        }
+      }
+      return improved ? currentBest : null;
+    }
+
+    async trySingletonEjectionChains(bestMetrics, onProgress = null){
+      let currentBest = { ...bestMetrics };
+      let improved = false;
+      let evalSteps = 0;
+      let lastYieldAt = Date.now();
+
+      const scoredList = Array.from(this.scoredTeachers || this.teacherGrid.keys());
+      this.rng.shuffle(scoredList);
+
+      for(const tKey of scoredList){
+        if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) break;
+        const tIdx = this.teacherIndexMap.get(tKey);
+        if(tIdx === undefined) continue;
+        const tg = this.teacherGridList[tIdx];
+        if(!tg) continue;
+
+        const singleSessions = [];
+        const targetSessions = [];
+        for(let d = 0; d < DAYS_LIST.length; d++){
+          for(let b = 0; b < SESSIONS_LIST.length; b++){
+            const sStart = d * SLOTS_PER_DAY + b * PERIODS_PER_SESSION;
+            const acts = [];
+            for(let p = 0; p < PERIODS_PER_SESSION; p++){
+              const s = sStart + p;
+              if(tg[s] >= 0) acts.push({ actId: tg[s], slot: s, pIdx: p });
+            }
+            if(acts.length === 1) singleSessions.push({ sStart, item: acts[0], d, b });
+            else if(acts.length >= 1 && acts.length <= 4) targetSessions.push({ sStart, acts, d, b });
+          }
+        }
+        if(singleSessions.length === 0 || targetSessions.length === 0) continue;
+
+        for(const single of singleSessions){
+          const singleAct = this.activities[single.item.actId];
+          if(!singleAct || singleAct.isFixed || singleAct.lockedByLessonBlock) continue;
+          const cGrid = this.classGridList[singleAct.classIdx];
+          if(!cGrid) continue;
+
+          for(const targetSess of targetSessions){
+            if(targetSess.sStart === single.sStart) continue;
+
+            for(let p = 0; p < PERIODS_PER_SESSION; p++){
+              if((++evalSteps % 32) === 0 && Date.now() - lastYieldAt >= 16){
+                await new Promise(resolve => setTimeout(resolve, 0));
+                lastYieldAt = Date.now();
+              }
+
+              const targetSlot = targetSess.sStart + p;
+              if(targetSlot === single.item.slot) continue;
+              if(tg[targetSlot] >= 0 || tg[targetSlot] === -3) continue;
+
+              const occId = cGrid[targetSlot];
+              if(occId === -3) continue;
+
+              const snap = this.captureStateSnapshot();
+              this.unplaceActivity(singleAct.id);
+
+              let ok = false;
+              if(occId === -1){
+                if(this.isSlotFeasible(singleAct, targetSlot)){
+                  this.placeActivityDirect(singleAct.id, targetSlot);
+                  ok = true;
+                }
+              } else if(occId >= 0 && occId !== singleAct.id){
+                const occAct = this.activities[occId];
+                if(occAct && !occAct.isFixed && !occAct.lockedByLessonBlock){
+                  this.unplaceActivity(occId);
+                  if(this.isSlotFeasible(singleAct, targetSlot)){
+                    this.placeActivityDirect(singleAct.id, targetSlot);
+                    this.nCalls = 0;
+                    this.tabuMap.clear();
+                    this.triedRemovals.clear();
+                    this.swappedInBranch.clear();
+                    this.limitCalls = 1000;
+                    ok = this.randomSwap(occAct.id, 0);
+                  }
+                }
+              }
+
+              if(ok && this.countTotalStudentHoles() === 0){
+                const m = this.evaluateMetrics();
+                if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
+                  currentBest = { ...m };
+                  improved = true;
+                  if(typeof onProgress === "function") onProgress(currentBest);
+                  break;
+                }
+              }
+              this.restoreStateSnapshot(snap);
+            }
+            if(improved) break;
+          }
+          if(improved) break;
         }
       }
       return improved ? currentBest : null;
@@ -4012,6 +4120,8 @@
           if(res3c){ bestMetrics = res3c; anyRoundImprovement = true; }
           const res3d = await this.tryCrossClassSingletonKempeSwap(bestMetrics, onProgress);
           if(res3d){ bestMetrics = res3d; anyRoundImprovement = true; }
+          const res3e = await this.trySingletonEjectionChains(bestMetrics, onProgress);
+          if(res3e){ bestMetrics = res3e; anyRoundImprovement = true; }
         }
 
         if(mode === "optimize_all" || mode === "optimize_gap2" || mode === "optimize_gap1"){
@@ -4061,6 +4171,15 @@
         }
       }
 
+      // (GO BO 17/08 — theo chi dao chu du an) Buoc "KHOA CUNG gap2=0 moi tra
+      // lich" cu goi this.optimize() NGAY TRONG solve() ma chua applyToDataTKB
+      // -> loadExistingSchedule cua optimize nap lai luoi CHI CON O CO DINH va
+      // VUT TOAN BO lich vua xep (chinh la loi "287/287"/"360/360" tren app).
+      // Nguyen tac moi: solve() CHI lo xep DU 100% (khong du cho thi lap toi
+      // da, phan du tra ve Chua phan); chat luong gap2/1t-buoi la viec cua
+      // pipeline toi uu (Tron goi/NEW) chay SAU khi lich da ap.
+
+      this.__minTwoGuardActive = false;
       this.applyToDataTKB();
       const currentVal = bestMetrics[targetMetricKey];
       const targetReached = currentVal === 0 || currentVal <= targetMetricLowerBound;
@@ -4136,6 +4255,25 @@
           const tkbKey = cid + "|" + act.mon;
           if(act.gv) data.tkbLessonTeachers[tkbKey] = act.gv;
           if(act.room) data.tkbLessonRooms[tkbKey] = act.room;
+        }
+      });
+
+      // CHONG VANG TIET (13.1): tiet nap tu lich cu ma den gio van chua dat lai
+      // duoc -> tra NGUYEN VAN o goc cua no (neu o do con trong) thay vi de trong.
+      // Nguoi dung khong bao gio bi "mat" tiet chi vi bam Toi uu.
+      this.activities.forEach(act => {
+        if(this.actPlacement[act.id] >= 0) return;
+        if(!(act.initSlot >= 0) || !act.initRaw) return;
+        const cells = [{ s: act.initSlot, raw: act.initRaw }];
+        if(act.duration === 2 && act.initRaw2) cells.push({ s: act.initSlot + 1, raw: act.initRaw2 });
+        for(const c of cells){
+          const d = slotToDetails(c.s);
+          const key = `${act.classId}|${c.s}`;
+          if(this.fixedRawCells.has(key) || this.offSlots.has(key)) continue;
+          const row = data.tkb[act.classId]?.[d.thu]?.[d.buoi];
+          if(!Array.isArray(row)) continue;
+          const cur = row[d.periodIdx];
+          if(cur == null || cur === ""){ row[d.periodIdx] = c.raw; }
         }
       });
     }

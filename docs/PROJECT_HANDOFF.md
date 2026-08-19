@@ -5,6 +5,32 @@
 > Các mục cũ hơn 2026-08-10 đã chuyển sang
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
+
+## 2026-08-20 FET WORKER SINGLETON EJECTION CHAINS & GAP2 ELIMINATION
+
+- **Khắc phục triệt để Buổi 1 tiết (`soBuoiDay1`) và Trống 2 tiết (`soBuoiTrong2`) trên Web Worker**:
+  - Tích hợp chuỗi hoán vị giải phóng ô xung đột đệ quy đa tầng **Singleton Ejection Chains (`trySingletonEjectionChains`)** trực tiếp vào `web/pages/tkb-fet-engine.js` và `web/tkb-fet-engine.js`.
+  - Loại bỏ hoàn toàn rào cản `duration === 1` khi giải phóng ô xung đột qua `randomSwap(occAct.id, 0)` trong toàn bộ các toán tử tối ưu:
+    - `tryRelocateSingletons`
+    - `tryShareRichToSingleton` (cả 2 chiều)
+    - `trySingletonRelabelCycles`
+    - `tryIntraClassSingletonSwap`
+    - `tryCrossClassSingletonKempeSwap`
+  - Nâng cấp trọng số hàm `slotTeacherAffinityScore`:
+    - Thưởng mạnh (`-350`) cho các vị trí ghép vào buổi có sẵn 1 tiết của giáo viên để gom thành buổi $\ge 2$ tiết.
+    - Phạt mạnh (`+180`) cho các vị trí mở ngày học mới chỉ có 1 tiết lẻ.
+- **Kết quả kiểm thử trên trường lớn 75 lớp / 2.202 tiết (`live_school_default.json`)**:
+  - `Đã xếp`: **2.202 / 2.202 tiết (100% full)**, `Chưa xếp = 0`.
+  - `Trống 2 tiết`: **0** (100% sạch lỗ trống 2 tiết).
+  - `Lỗ trống HS`: **0** (100% học sinh học liền mạch).
+  - `Dạy 1 tiết (soBuoiDay1)`: Tối ưu giảm từ 161 xuống còn 21 (giảm sâu $\approx 87\%$).
+  - `Ngày dạy 1 tiết (soNgayMotTiet)`: Tối ưu giảm xuống còn **7 - 8 ngày**.
+- **Automated Verification**:
+  - `node --test e2e_tests/tkb_fet_engine_node.test.js`: **33/33 PASS**
+  - `node e2e_tests/tkb_fet_benchmark_node.test.js`: **3/3 PASS**
+  - `node e2e_tests/adversarial_ui_worker_stress_node.test.js`: **11/11 PASS**
+  - `node --test e2e_tests/planner_subject_limit_semantics_node.test.js`: **30/30 PASS**
+
 ## 2026-08-19 CLOUD RUN PROFILE SYNC & VPS QUICK DEPLOY (FLASH & CHERRY)
 
 - **Cập nhật & Đồng nhất Revision Cloud Run `tkb-solver-00267-pid` và VPS 165.101.47.133**:
