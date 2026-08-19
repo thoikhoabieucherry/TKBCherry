@@ -1,7 +1,7 @@
 # Project: TKBCherryANTIFET
 
 ## Architecture
-TKBCherryANTIFET is a high-performance, 100% client-side automated timetable scheduling system for Vietnamese secondary and high schools. It eliminates all backend solver dependencies (Python CP-SAT, Cloud Run, VPS endpoints) in favor of an optimized, Web Worker-driven JavaScript solver based on FET C++ v7.9.5 core algorithms.
+TKBCherryANTIFET is a high-performance, 100% client-side automated timetable scheduling system for Vietnamese secondary and high schools. It eliminates all backend solver dependencies in favor of an optimized, Web Worker-driven JavaScript solver based on FET C++ v7.9.5 core algorithms with deep recursive Min-Conflicts escape and Tabu memory.
 
 ### High-Level Data Flow:
 ```
@@ -13,39 +13,35 @@ TKBCherryANTIFET is a high-performance, 100% client-side automated timetable sch
        ▼
 [FET Engine: tkb-fet-engine.js]
   ├── Step 1: Preprocessing & MRV Activity Difficulty Ordering (generate_pre.cpp)
-  ├── Step 2: Min-Conflicts Recursive RandomSwap + Tabu <= 16 (generate.cpp)
-  ├── Step 3: FET Counting Invariant (ConstraintMinHoursDaily)
-  └── Step 4: Closed Push-Cycles & Gap Crusher (Eliminate Singletons -> soBuoiDay1 = 0)
+  ├── Step 2: Hard Constraint Enforcement (MaxGap <= 1, MinDaily >= 2 Invariant, gioihan <= 2)
+  ├── Step 3: Min-Conflicts Deep Recursive RandomSwap + Persistent Tabu [5..12] + Vacancy Gap Guard
+  ├── Step 4: Step-Budgeted Intra-Session Permutations & Bidirectional Singleton Merging (Non-blocking)
+  └── Step 5: Lexicographic Local Search & Gap Crusher (Eliminate Singletons -> soBuoiDay1 <= 2, soBuoiTrong2 = 0)
 ```
 
 ## Feature Inventory
 | # | Feature | Description | Milestone | Source |
 |---|---------|-------------|-----------|--------|
-| 1 | Remove Legacy CP-SAT Links | Remove `tkb-rust-bridge.js` script tag, polling `/api/solver-state`, and legacy solve API callers | M1 | ORIGINAL_REQUEST R1 |
-| 2 | Clean `phanmon.js` Hybrid Branches | Eliminate `useHybridOptimization`, `#hybridFailureChoice` modal, dead greedy placers, and dead routing stubs | M1 | ORIGINAL_REQUEST R1 |
-| 3 | Local Web Worker Play ▶ / Stop ■ | Ensure Play ▶ starts `tkb-fet-worker.js` locally and Stop ■ cancels worker cleanly without network | M1 | ORIGINAL_REQUEST R1 |
-| 4 | MRV Activity Difficulty Ordering | Sort activities by constraint pressure (duration, teacher load, room contention, unavailable slots) | M2 | ORIGINAL_REQUEST R2 |
-| 5 | Min-Conflicts Recursive RandomSwap | Implement FET C++ `randomSwap` with CLR permutation, `_minWrong`/`_minIndexAct`, Tabu queue <= 16 | M2 | ORIGINAL_REQUEST R2 |
-| 6 | FET Counting Invariant Daily Hours | Enforce `ConstraintMinHoursDaily` counting bounds ($\sum \max(\text{minDaily}, H_d) \le \text{total}$) | M2 | ORIGINAL_REQUEST R2 |
-| 7 | Closed Push-Cycles & Gap Crusher | Eliminate singletons via length 3–7 DFS push cycles to achieve `soBuoiDay1 = 0` | M2 | ORIGINAL_REQUEST R2 |
-| 8 | Multi-Seed Worker Construction | Web Worker multi-seed solve with streaming checkpoints and throttling | M2 | ORIGINAL_REQUEST R2 |
-| 9 | Drag-and-Drop Schedule Editing | Interactive cell drag/drop with validation and debounced storage (`saveStoreDeferred`) | M3 | ORIGINAL_REQUEST R3 |
-| 10 | Fixed (-3) and Off (-2) Constraints | Support fixed/locked periods (-3) and forbidden/off periods (-2) across teacher/class/room/subject | M3 | ORIGINAL_REQUEST R3 |
-| 11 | Shift (`lop.ca`) Rules | Morning ("sang") and Afternoon ("chieu") partition constraints | M3 | ORIGINAL_REQUEST R3 |
-| 12 | Campus Mobility Constraints | Enforce 1 campus per half-day and max 1 campus movement between morning/afternoon | M3 | ORIGINAL_REQUEST R3 |
-| 13 | UI Progress, Timer & Live Stats | Live progress bar, stopwatch execution timer, live metrics popover, and teacher stats | M3 | ORIGINAL_REQUEST R3 |
-| 14 | Automated Benchmark Test Runner | `node e2e_tests/tkb_fet_benchmark_node.test.js` passes 100% (3/3) | M4 | ORIGINAL_REQUEST R4 |
-| 15 | Dong Khoi Benchmark Target | 54 classes / 1566 periods: 100% placed (1080/1080) in < 200 ms, `soBuoiDay1 = 0` | M4 | ORIGINAL_REQUEST R4 |
-| 16 | Default School Benchmark Target | 75 classes / 2193 periods: 100% placed (1500/1500) in < 300 ms, `soBuoiDay1 = 0` | M4 | ORIGINAL_REQUEST R4 |
-| 17 | Zero CP-SAT Network Isolation | Zero network requests to `/api/solve*` or Cloud Run on solve | M4 | ORIGINAL_REQUEST R4 |
+| 1 | MaxGapPerSession <= 1 Feasibility Guard | Enforce no gaps >= 2 in teacher sessions in `isSlotFeasible()` | M1 | ORIGINAL_REQUEST R1 |
+| 2 | Ejection Vacancy Gap Guard in randomSwap | Reject/rollback ejections that leave intermediate gaps >= 2 in vacated teacher sessions | M1 | ORIGINAL_REQUEST R1 |
+| 3 | MinDailyPeriods >= 2 Counting Invariant | Enforce daily counting invariant during initial construction in `opensUnaffordableSession()` | M1 | ORIGINAL_REQUEST R1 |
+| 4 | Gioihan <= 2 & Contiguity in Session | Enforce max 2 periods/day for subject and strict contiguity when >= 2 periods in same session | M1 | ORIGINAL_REQUEST R1 |
+| 5 | Worker Dispatcher Contract Alignment | Harmonize `tkb-fet-worker.js` message dispatcher with contract test suite (33/33 pass) | M1 | ORIGINAL_REQUEST Criteria |
+| 6 | Persistent Multi-Step Tabu Tenure | Implement Tabu tenure T in [5, 12] and ILS kick perturbation in `randomSwap` | M2 | ORIGINAL_REQUEST R2 |
+| 7 | Intra-Session Block Permutations | Implement session-level block permutations to untangle tight configurations | M2 | ORIGINAL_REQUEST R2 |
+| 8 | Bidirectional Singleton Merging | Implement rich-to-single and single-to-rich activity relocation with bounded ejection | M2 | ORIGINAL_REQUEST R2 |
+| 9 | Micro-Task Yielding (Non-blocking UI) | Implement step-budgeted yielding (`setTimeout(0)`) in worker to ensure smooth UI/timer | M2 | ORIGINAL_REQUEST R2 |
+| 10 | 100% Placement on live_school_default | Place 2,175 / 2,175 periods (1,650 activities + 150 fixed) with unassigned = 0 | M3 | ORIGINAL_REQUEST R3 |
+| 11 | Student Hole & Cell Lock Invariants | Preserve `Lỗ trống HS = 0`, Fixed (-3) and OFF (-2) protections across all runs | M3 | ORIGINAL_REQUEST R3 |
+| 12 | Automated Benchmark & E2E Test Suite | Pass `tkb_fet_benchmark_node.test.js` (3/3), `tkb_fet_engine_node.test.js` (33/33), `adversarial_ui_worker_stress_node.test.js` (11/11) | M3 | ORIGINAL_REQUEST Criteria |
+| 13 | Documentation & PROJECT_HANDOFF Update | Update `docs/PROJECT_HANDOFF.md` with current state, decisions, and verification | M3 | AGENTS.md / ORIGINAL_REQUEST |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| M1 | Legacy Solver Residue Cleanup | Remove `tkb-rust-bridge.js`, clean `phanmon.js` hybrid/solver branches, wire 100% local Web Worker Play/Stop | None | DONE |
-| M2 | FET C++ v7.9.5 Engine Integration | Implement MRV ordering, Min-Conflicts RandomSwap, Counting Invariant, and Closed Push-Cycles in `tkb-fet-engine.js` & `tkb-fet-worker.js` | None | DONE |
-| M3 | UI Integrity & Constraints | Validate Drag-Drop, Fixed (-3) / Off (-2), Shift (`lop.ca`), Campus mobility, Progress Bar, Timer, Live Stats | M1, M2 | DONE |
-| M4 | E2E Testing & Benchmark Pass | Pass `tkb_fet_benchmark_node.test.js` (3/3), Dong Khoi < 200 ms with `soBuoiDay1 = 0`, Default School < 300 ms with `soBuoiDay1 = 0`, Zero CP-SAT Network Calls | M1, M2, M3 | DONE |
+| M1 | Initial Hard Constraints & Feasibility Guards | Features 1, 2, 3, 4, 5: `isSlotFeasible`, `randomSwap` vacancy guard, `MinDaily` counting invariant, `gioihan` contiguity, worker dispatch alignment | None | DONE |
+| M2 | Min-Conflicts Deep Escape & Non-blocking Permutations | Features 6, 7, 8, 9: Persistent Tabu, ILS perturbation, block permutations, singleton merging, micro-task yielding | M1 | DONE |
+| M3 | Full School Benchmark, Invariant Pass & Handoff | Features 10, 11, 12, 13: 100% placement on `live_school_default.json` (2175 periods), 0 HS gaps, 100% test pass (3/3, 33/33, 11/11), `docs/PROJECT_HANDOFF.md` | M1, M2 | DONE |
 
 ## Interface Contracts
 ### `sapxep.html` / `phanmon.js` ↔ `tkb-fet-worker.js`
@@ -63,11 +59,11 @@ TKBCherryANTIFET is a high-performance, 100% client-side automated timetable sch
   {
     "type": "progress",
     "checkpoint": {
-      "placed": 1080,
-      "total": 1080,
-      "elapsedMs": 120,
+      "placed": 1650,
+      "total": 1650,
+      "elapsedMs": 3500,
       "stage": "optimize_singletons",
-      "metrics": { "soBuoiDay1": 0, "soNgayMotTiet": 0, "soBuoiTrong2": 12, "tsBuoiDay": 611 },
+      "metrics": { "soBuoiDay1": 0, "soNgayMotTiet": 0, "soBuoiTrong2": 0, "tsBuoiDay": 611 },
       "tkb": { ... }
     }
   }
@@ -79,8 +75,8 @@ TKBCherryANTIFET is a high-performance, 100% client-side automated timetable sch
     "ok": true,
     "applied": true,
     "tkb": { ... },
-    "metrics": { "soBuoiDay1": 0, "soNgayMotTiet": 0, "soBuoiTrong2": 12, "tsBuoiDay": 611 },
-    "durationMs": 190
+    "metrics": { "soBuoiDay1": 0, "soNgayMotTiet": 0, "soBuoiTrong2": 0, "tsBuoiDay": 611 },
+    "durationMs": 4200
   }
   ```
 
@@ -96,5 +92,8 @@ TKBCherryANTIFET is a high-performance, 100% client-side automated timetable sch
 - `web/pages/tkb-fet-engine.js`: Pure mathematical FET C++ v7.9.5 timetable engine (MRV, Min-Conflicts RandomSwap, Invariant pruning, Push Cycles).
 - `web/pages/tkb-fet-worker.js`: Background Web Worker orchestrator for non-blocking browser solving.
 - `e2e_tests/tkb_fet_benchmark_node.test.js`: Deterministic automated benchmark test suite.
+- `e2e_tests/tkb_fet_engine_node.test.js`: Engine contract test suite (33 tests).
+- `e2e_tests/adversarial_ui_worker_stress_node.test.js`: Adversarial UI and worker stress test suite (11 tests).
 - `scratch/dongkhoi_1566.json`: Dong Khoi High School test dataset (54 classes, 1566 periods).
-- `scratch/default_school_0317.json`: Large comprehensive school test dataset (75 classes, 2193 periods).
+- `scratch/live_school_default.json`: Large comprehensive school test dataset (75 classes, 2175 periods).
+- `docs/PROJECT_HANDOFF.md`: Living handoff documentation.
