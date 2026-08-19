@@ -2326,7 +2326,7 @@
               if(tg[s] >= 0) actsInSession.push({ actId: tg[s], slot: s });
             }
             if(actsInSession.length === 1) singleSessions.push({ sStart, item: actsInSession[0] });
-            else if(actsInSession.length >= 3) richSessions.push({ sStart, items: actsInSession });
+            else if(actsInSession.length >= 2) richSessions.push({ sStart, items: actsInSession });
           }
         }
 
@@ -2334,33 +2334,87 @@
 
         for(const single of singleSessions){
           for(const rich of richSessions){
-            for(const richItem of rich.items){
-              const donorAct = this.activities[richItem.actId];
-              if(!donorAct || donorAct.isFixed || donorAct.lockedByLessonBlock || donorAct.duration !== 1) continue;
-              const cid = donorAct.classId;
+            // Direction 1: Transfer from rich to single (when rich has >= 3)
+            if(rich.items.length >= 3){
+              for(const richItem of rich.items){
+                const donorAct = this.activities[richItem.actId];
+                if(!donorAct || donorAct.isFixed || donorAct.lockedByLessonBlock || donorAct.duration !== 1) continue;
+                const cid = donorAct.classId;
+                const oldHoles = this.countStudentHoles(cid);
+
+                for(let p = 0; p < PERIODS_PER_SESSION; p++){
+                  const targetSlot = single.sStart + p;
+                  if(targetSlot === single.item.slot) continue;
+
+                  const cGrid = this.classGridList[donorAct.classIdx];
+                  const occId = cGrid[targetSlot];
+
+                  if(occId >= 0){
+                    const occAct = this.activities[occId];
+                    if(occAct && !occAct.isFixed && !occAct.lockedByLessonBlock && occAct.duration === 1){
+                      const snap = this.captureStateSnapshot();
+                      this.unplaceActivity(donorAct.id);
+                      this.unplaceActivity(occId);
+
+                      let ok = false;
+                      if(this.isSlotFeasible(donorAct, targetSlot) && this.isSlotFeasible(occAct, richItem.slot)){
+                        this.placeActivityDirect(donorAct.id, targetSlot);
+                        this.placeActivityDirect(occAct.id, richItem.slot);
+                        ok = true;
+                      } else if(this.isSlotFeasible(donorAct, targetSlot)){
+                        this.placeActivityDirect(donorAct.id, targetSlot);
+                        this.nCalls = 0;
+                        this.tabuMap.clear();
+                        this.triedRemovals.clear();
+                        this.swappedInBranch.clear();
+                        ok = this.randomSwap(occAct.id, 0);
+                      }
+
+                      if(ok && this.countStudentHoles(cid) <= oldHoles){
+                        const m = this.evaluateMetrics();
+                        if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
+                          currentBest = { ...m };
+                          improved = true;
+                          if(typeof onProgress === "function") onProgress(currentBest);
+                          break;
+                        }
+                      }
+                      this.restoreStateSnapshot(snap);
+                    }
+                  }
+                }
+                if(improved) break;
+              }
+            }
+            if(improved) break;
+
+            // Direction 2: Transfer single into rich (vacate single session completely!)
+            const singleAct = this.activities[single.item.actId];
+            if(singleAct && !singleAct.isFixed && !singleAct.lockedByLessonBlock && singleAct.duration === 1 && rich.items.length <= 4){
+              const cid = singleAct.classId;
               const oldHoles = this.countStudentHoles(cid);
 
               for(let p = 0; p < PERIODS_PER_SESSION; p++){
-                const targetSlot = single.sStart + p;
-                if(targetSlot === single.item.slot) continue;
+                const targetSlot = rich.sStart + p;
+                if(tg[targetSlot] >= 0 || tg[targetSlot] === -3) continue;
 
-                const cGrid = this.classGridList[donorAct.classIdx];
+                const cGrid = this.classGridList[singleAct.classIdx];
                 const occId = cGrid[targetSlot];
 
                 if(occId >= 0){
                   const occAct = this.activities[occId];
                   if(occAct && !occAct.isFixed && !occAct.lockedByLessonBlock && occAct.duration === 1){
                     const snap = this.captureStateSnapshot();
-                    this.unplaceActivity(donorAct.id);
+                    this.unplaceActivity(singleAct.id);
                     this.unplaceActivity(occId);
 
                     let ok = false;
-                    if(this.isSlotFeasible(donorAct, targetSlot) && this.isSlotFeasible(occAct, richItem.slot)){
-                      this.placeActivityDirect(donorAct.id, targetSlot);
-                      this.placeActivityDirect(occAct.id, richItem.slot);
+                    if(this.isSlotFeasible(singleAct, targetSlot) && this.isSlotFeasible(occAct, single.item.slot)){
+                      this.placeActivityDirect(singleAct.id, targetSlot);
+                      this.placeActivityDirect(occAct.id, single.item.slot);
                       ok = true;
-                    } else if(this.isSlotFeasible(donorAct, targetSlot)){
-                      this.placeActivityDirect(donorAct.id, targetSlot);
+                    } else if(this.isSlotFeasible(singleAct, targetSlot)){
+                      this.placeActivityDirect(singleAct.id, targetSlot);
                       this.nCalls = 0;
                       this.tabuMap.clear();
                       this.triedRemovals.clear();
@@ -2377,31 +2431,14 @@
                         break;
                       }
                     }
-
                     this.restoreStateSnapshot(snap);
                   }
-                } else if(occId === -1){
-                  const snap = this.captureStateSnapshot();
-                  this.unplaceActivity(donorAct.id);
-                  if(this.isSlotFeasible(donorAct, targetSlot)){
-                    this.placeActivityDirect(donorAct.id, targetSlot);
-                    if(this.countStudentHoles(cid) <= oldHoles){
-                      const m = this.evaluateMetrics();
-                      if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
-                        currentBest = { ...m };
-                        improved = true;
-                        if(typeof onProgress === "function") onProgress(currentBest);
-                        break;
-                      }
-                    }
-                  }
-                  this.restoreStateSnapshot(snap);
                 }
               }
               if(improved) break;
             }
-            if(improved) break;
           }
+          if(improved) break;
         }
       }
       return improved ? currentBest : null;
