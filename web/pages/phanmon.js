@@ -7362,6 +7362,20 @@ async function executeDirectFastSchedule(options = {}){
                   doneStatusMsg = `Đã xếp xong toàn bộ ${placed}/${total} tiết.`;
                 }else{
                   doneStatusMsg = `Đã xếp xong ${placed}/${total} tiết (Còn ${unassigned} tiết chưa xếp).`;
+                  // 19/08: noi ro LY DO khi thieu o. Truoc day may xay dung
+                  // quay 20 luot roi tra ve "con N tiet chua xep" ma khong cho
+                  // biet la KHONG THE xep du — vi so o trong it hon so tiet.
+                  const deficit = Number(msg.capacityDeficit) || 0;
+                  if(deficit > 0){
+                    const rows = Array.isArray(msg.capacityRows) ? msg.capacityRows : [];
+                    const detail = rows.slice(0, 6)
+                      .map(r => `${r.className} thiếu ${r.deficit}`)
+                      .join(", ");
+                    doneStatusMsg += ` KHÔNG đủ ô trống: cần thêm ${deficit} ô${detail ? " — " + detail : ""}.`
+                      + " Hãy bỏ bớt ô Nghỉ hoặc giảm tiết chuẩn cho các lớp này.";
+                  }else if(msg.deadlineHit === true){
+                    doneStatusMsg += " Hết thời gian tìm kiếm — bấm lại để chạy tiếp.";
+                  }
                 }
               }else{
                 doneStatusMsg = `Đã xếp xong ${placed} tiết.`;

@@ -169,7 +169,10 @@ self.onmessage = async function(e) {
         },
         placed: res.placed,
         unassigned: res.unassigned,
-        total: res.total || (res.placed + res.unassigned)
+        total: res.total || (res.placed + res.unassigned),
+        deadlineHit: res.deadlineHit === true,
+        capacityDeficit: Number(res.capacityDeficit) || 0,
+        capacityRows: Array.isArray(res.capacityRows) ? res.capacityRows : []
       });
     } catch (err) {
       self.postMessage({

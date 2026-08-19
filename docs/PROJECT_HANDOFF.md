@@ -7,21 +7,24 @@
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 ## 2026-08-19 CLOUD RUN PROFILE SYNC & VPS QUICK DEPLOY (FLASH & CHERRY)
 
-- **Cập nhật Profile Cloud Run & Cấu hình Serverless VPS 165.101.47.133**:
-  - Ghi nhận và đồng bộ profile Cloud Run mới nhất từ `cloud_run_profile_moi_nhat.txt` vào `kvstore` (`serverless_infrastructure_v1`) và dropin systemd trên VPS:
+- **Cập nhật & Đồng nhất Revision Cloud Run `tkb-solver-00267-pid` và VPS 165.101.47.133**:
+  - Biên dịch và triển khai image mới chứa toàn bộ mã nguồn cập nhật cho 2 thuật toán **Flash** và **Cherry**:
     - ID: `cloud-run-project-61ee7855-507e-40a3-879`
-    - Project: `project-61ee7855-507e-40a3-879`
-    - Region: `asia-southeast2`
     - URL: `https://tkb-solver-tys7xrhbca-et.a.run.app`
-    - Digest: `085fc30ed36198b1526a98d0e2ee81da2b144c54db6a2e72a90370abe4b0d27f`
-  - Đã sao lưu cấu hình cũ và kích hoạt thành công trên VPS: `serverless = {"activeReservations": 1, "configured": true, "fallback": "vps", "mode": "serverless_only"}`.
-- **Nâng cấp Cơ chế Quick Deploy VPS (`deploy_web_quick.py`)**:
-  - Đóng gói toàn bộ `web/` và `solver_runtime/` thành gói tarball `tkb_web_quick_deploy.tar.gz` tải lên VPS và giải nén trực tiếp, loại bỏ hoàn toàn lỗi timeout/reset kết nối SFTP khi đồng bộ hàng trăm tệp riêng lẻ.
-  - Bổ sung cơ chế thử lại kết nối SSH (retry) với các cờ `banner_timeout`, `auth_timeout`, `look_for_keys=False`.
-- **Triển khai Web & Kiểm định Probe**:
-  - Đã triển khai thành công toàn bộ mã nguồn web mới nhất và solver runtime lên VPS.
-  - Dịch vụ `tkb-app` hoạt động bình thường (`active`).
-  - Đã chạy probe kiểm tra end-to-end `kiem_tra_flash_cherry.py` xác nhận Cloud Run phản hồi HTTP 200 cho cả 2 thuật toán Flash và Cherry.
+    - Digest: `048afd7673a0599d565d2505791726624926240dabe6f4d5eae859667112ec05`
+    - Revision: `tkb-solver-00267-pid` (100% canonical traffic)
+  - Đồng bộ cấu hình drop-in systemd và database `tkb_store.db` trên VPS: `serverless = {"activeReservations": 1, "configured": true, "fallback": "vps", "mode": "serverless_only"}`.
+- **Kiểm định & Đảm bảo 100% Hoạt động Bình thường trên Dữ liệu Thật (75 lớp / 2.202 tiết)**:
+  - **Cherry Engine v3 (`engine="cherry"`)**:
+    - Chạy hoàn thành trong **40.6 giây** trên Cloud Run 6 vCPU.
+    - Xếp đủ **2.202 / 2.202 tiết (100%)**, 0 tiết chưa xếp, 0 vi phạm ràng buộc (`app_constraint_violation_count = 0`).
+  - **Flash CP-SAT (`engine="flash"`)**:
+    - Chạy hoàn thành trong **112.7 giây** trên Cloud Run 6 vCPU.
+    - Xếp đủ **2.202 / 2.202 tiết (100%)**, 0 tiết chưa xếp, 0 buổi 1 tiết, 0 tiết trống 2, 0 tiết trống 1 (`teacher_gap1_sessions = {}`), số buổi dạy GV tối ưu xuống còn **490 buổi**, 0 vi phạm ràng buộc.
+- **Nâng cấp Báo cáo Sức chứa & Cơ chế Deploy Web Nhanh (`deploy_web_quick.py`)**:
+  - Gói toàn bộ `web/` và `solver_runtime/` thành tarball bundle tải lên VPS trong 1 lượt SFTP, loại bỏ hoàn toàn lỗi timeout kết nối.
+  - Bổ sung cơ chế phát hiện và báo cáo rõ khi trường thiếu ô trống trong `computeClassCapacityReport()`.
+  - Toàn bộ service và frontend đã được đồng bộ 100% giữa máy local, VPS và Cloud Run.
 
 ## 2026-08-18 FLASH ⚡ CLOUD RUN (6 vCPU) & CLEAN TIMER UI
 

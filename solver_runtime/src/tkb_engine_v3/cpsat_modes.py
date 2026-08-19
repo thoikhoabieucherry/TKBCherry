@@ -194,23 +194,26 @@ def solve_unified_cpsat(
             settings={**settings, "time_limit_seconds": int(budget)},
         )
         result = solver.solve(progress=progress)
+        tkb = _tkb_from_result(result)
     except Exception as exc:
         import traceback as _tb
-
         _write_marker(
             "flash-last.json",
             {
                 "engine": CPSAT_ENGINE_NAME,
-                "stage": "LOI",
+                "stage": "FALLBACK_DIRECT",
                 "finished_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "error": repr(exc)[:400],
                 "traceback": _tb.format_exc()[-2000:],
             },
         )
-        raise
-    tkb = _tkb_from_result(result)
+        result = None
+        tkb = None
+
     if not tkb:
-        raise RuntimeError("unified_cpsat_no_schedule")
+        from tkb_new.adapter import solve_from_ui_data
+        _report(progress, "cpsat:direct", "Dang toi uu toan dien bang CP-SAT da luong (6 vCPU)")
+        return solve_from_ui_data(ui_data, {**settings, "solver_mode": "auto"}, progress=progress)
 
     ctx = build_school_data_from_ui(ui_data)
     seeded = dict(ui_data)

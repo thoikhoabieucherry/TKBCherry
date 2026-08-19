@@ -1513,6 +1513,10 @@
     randomSwap(actId, level, restrictSlots = null){
       if(level >= MAX_RECURSION_LEVEL) return false;
       if(this.nCalls >= this.limitCalls) return false;
+      if(this.__solveDeadlineAt && (this.nCalls & 255) === 0 && Date.now() > this.__solveDeadlineAt){
+        this.__solveDeadlineHit = true;
+        return false;
+      }
       if(level === 0) this.moveJournal.length = 0; // committed history is never rolled back
       this.nCalls++;
       this.currentStep++;
@@ -1804,9 +1808,47 @@
       return false;
     }
 
+    // 19/08: bao cao SUC CHUA — nhu cau tiet cua tung lop so voi so O CON
+    // TRONG that su (bo o Nghi/OFF va o co dinh). Neu nhu cau > suc chua thi
+    // KHONG THUAT TOAN NAO xep du 100% duoc; truoc day may xay dung cu quay
+    // vong 20 luot roi treo o "1265/1284" ma khong noi ly do.
+    computeClassCapacityReport(){
+      const demand = new Map();
+      for(const act of this.activities){
+        if(!act || act.isFixed) continue;
+        const cid = String(act.classId || "");
+        if(!cid) continue;
+        demand.set(cid, (demand.get(cid) || 0) + (Number(act.duration) || 1));
+      }
+      const rows = [];
+      let deficit = 0;
+      for(const [cid, need] of demand.entries()){
+        const grid = this.classGrid.get(cid);
+        let free = 0;
+        if(grid){ for(let i = 0; i < grid.length; i++){ if(grid[i] === -1) free++; } }
+        const gap = need - free;
+        if(gap > 0){
+          deficit += gap;
+          const lop = (this.classes || []).find(c => String(c.id || "") === cid);
+          rows.push({classId: cid, className: String(lop?.ten2 || lop?.ten || cid), need, free, deficit: gap});
+        }
+      }
+      rows.sort((a, b) => b.deficit - a.deficit);
+      return {deficit, rows};
+    }
+
     async solve(progressCallback = null){
       this.__studentHoleBaseline = undefined; // construction tu do tao lo tam thoi
       this.init();
+      // 19/08: han thoi gian cung cho pha xay dung. Trên bo du lieu thieu o,
+      // vong lap 20 luot chay vo tan (do >4 phut van chua tra ve) va nut
+      // "Sap xep" ket cung. Het gio thi tra lich tot nhat dang co.
+      const solveBudgetMs = Number(this.options.solveBudgetMs) > 0
+        ? Number(this.options.solveBudgetMs)
+        : 60000;
+      this.__solveDeadlineAt = Date.now() + solveBudgetMs;
+      this.__solveDeadlineHit = false;
+      this.__capacityReport = this.computeClassCapacityReport();
       this.strictFetGaps = true;
       this.computeDifficultiesAndSort();
       // 13.4: kich hoat bat dang thuc dem kieu FET cho pha xep chinh
@@ -1843,6 +1885,16 @@
       for(let pass = 0; pass < 20; pass++){
         const unplacedActs = this.activities.filter(a => this.actPlacement[a.id] < 0);
         if(unplacedActs.length === 0) break;
+        if(this.__solveDeadlineHit || Date.now() > this.__solveDeadlineAt){
+          this.__solveDeadlineHit = true;
+          break;
+        }
+        // Thieu o that su: so tiet chua xep da bang dung so o con thieu ->
+        // khong con gi de tim nua, quay vong them chi ton thoi gian.
+        if(this.__capacityReport && this.__capacityReport.deficit > 0){
+          const stillUnplaced = unplacedActs.reduce((sum, a) => sum + (Number(a.duration) || 1), 0);
+          if(stillUnplaced <= this.__capacityReport.deficit) break;
+        }
         this.strictFetGaps = true;
         // 13.4: sau vai luot vet can, tha guard de bao dam DU 100%% tiet (luat so 1)
         // 19/08 SUA HOI QUY: phai tha CA HAI guard. Chi tha minTwoGuard (ban
@@ -1854,7 +1906,8 @@
           this.strictFetGaps = false;
         }
 
-        this.limitCalls = Math.max(8000, 10 * this.activities.length);
+        // Luot sau tim sau hon (chuoi day day hon) cho nhung tiet kho nhat.
+        this.limitCalls = Math.max(8000, 10 * this.activities.length) * (1 + Math.min(4, Math.floor(pass / 4)));
         for(const uAct of unplacedActs){
           this.nCalls = 0;
           this.randomSwap(uAct.id, 0);
@@ -1890,7 +1943,15 @@
       });
       placed += this.fixedSlots.size;
 
-      return { ok: unassigned === 0, placed, unassigned, total: placed + unassigned };
+      return {
+        ok: unassigned === 0,
+        placed,
+        unassigned,
+        total: placed + unassigned,
+        deadlineHit: this.__solveDeadlineHit === true,
+        capacityDeficit: this.__capacityReport ? this.__capacityReport.deficit : 0,
+        capacityRows: this.__capacityReport ? this.__capacityReport.rows.slice(0, 20) : []
+      };
     }
 
     applyToDataTKB(){

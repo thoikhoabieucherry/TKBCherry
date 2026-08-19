@@ -711,28 +711,15 @@ class UnifiedCpSatSolver:
                     else:
                         model.Add(z == 0)
 
-        # CẬN TRÊN TOÁN HỌC CHO SỐ BUỔI 1 TIẾT:
-        # Chỉ những GV có tổng tải ca == 1 (hoặc GV có 1 lớp dạy đúng 3 tiết nhưng limitDaily == 2) mới được phép có tối đa 1 buổi 1 tiết.
-        # Tất cả các GV khác CẤM HOÀN TOÀN buổi 1 tiết (allowed_singles = 0)!
+        # CẬN TRÊN SỐ BUỔI 1 TIẾT:
+        # Tối ưu hóa triệt để số buổi 1 tiết thông qua hàm mục tiêu trọng số lớn (10,000,000 điểm)
+        # Đồng thời áp dụng chặn cận trên hợp lý cho giáo viên có tải rõ ràng
         for (gv, b), s_vars in teacher_singles.items():
             sh_load = self.teacher_shift_loads[gv][b]
             if sh_load <= 0:
                 model.Add(sum(s_vars) == 0)
             elif sh_load == 1:
                 model.Add(sum(s_vars) <= 1)
-            elif sh_load == 3:
-                # Chỉ cho phép nếu GV có 1 lớp dạy đúng 3 tiết và limitDaily <= 2 (ví dụ Thầy A.Khánh với 8A2)
-                gv_has_single_class_3 = any(
-                    a["gv"] == gv and a["totalPeriods"] == 3 and a["limitDaily"] <= 2
-                    for a in self.assignments
-                )
-                if gv_has_single_class_3:
-                    model.Add(sum(s_vars) <= 1)
-                else:
-                    # Nếu là nhiều lớp khác nhau (như Cô Ti.Dương dạy 9A18, 9A19, 9A20), gom toàn bộ 3 tiết vào 1 buổi -> 0 buổi 1 tiết!
-                    model.Add(sum(s_vars) == 0)
-            else:
-                model.Add(sum(s_vars) == 0)
 
         # Ràng buộc Cận trên số buổi/tuần và số ngày/tuần của GV nếu có
         teacher_constraints = self.constraints.get("teacher", {}) or {}
@@ -771,8 +758,8 @@ class UnifiedCpSatSolver:
         model.Minimize(total_singletons * 10000000 + total_teacher_sessions * 1000)
 
         solver = cp_model.CpSolver()
-        solver.parameters.max_time_in_seconds = 6.0
-        solver.parameters.num_search_workers = 4
+        solver.parameters.max_time_in_seconds = min(30.0, max(8.0, float(self.time_limit) / 3))
+        solver.parameters.num_search_workers = 6
         solver.parameters.random_seed = self.seed
         
         status = solver.Solve(model)
