@@ -5995,7 +5995,7 @@ function fetHardViolationSignature(item){
 function compareFetCandidateViolationsToIncumbent(candidateRows, incumbentBaseline){
   const baselineRows = Array.isArray(incumbentBaseline?.violations)
     ? incumbentBaseline.violations
-    : null;
+    : (Array.isArray(incumbentBaseline) ? incumbentBaseline : null);
   const candList = Array.isArray(candidateRows) ? candidateRows : [];
   if(!baselineRows) return { ok: candList.length === 0, addedRows: candList, incumbentCount: 0, retainedCount: candList.length };
 
