@@ -1,0 +1,1 @@
+TKB_CLOUD_PROFILE={"id":"cloud-run-project-61ee7855-507e-40a3-879","projectId":"project-61ee7855-507e-40a3-879","region":"asia-southeast2","url":"https://tkb-solver-tys7xrhbca-et.a.run.app","solverDigest":"048afd7673a0599d565d2505791726624926240dabe6f4d5eae859667112ec05","budgetUsd":300,"infrastructureBudgetUsd":300,"estimatedCostUsd":0.06}

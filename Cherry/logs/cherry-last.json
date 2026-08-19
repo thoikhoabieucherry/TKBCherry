@@ -1,0 +1,54 @@
+{
+ "engine": "tkb-engine-v3",
+ "finished_at": "2026-08-18 18:44:53",
+ "elapsed_seconds": 33.2,
+ "expected": 2175,
+ "placed": 2175,
+ "objective_singleton_gap2_sessions_gap1_days": [
+  2,
+  0,
+  679,
+  202,
+  586
+ ],
+ "warm_start": true,
+ "warm_hint": {
+  "cells": 2175
+ },
+ "floors": {
+  "one_period_floor": 0,
+  "gap2_floor": 0,
+  "evidence": []
+ },
+ "feasibility": {
+  "attempts": 0,
+  "seconds": 0.0
+ },
+ "workers": 2,
+ "used_multiprocessing": true,
+ "portfolio": [
+  {
+   "seed": 43013,
+   "placed": 2175,
+   "objective": [
+    2,
+    0,
+    679,
+    202,
+    586
+   ]
+  },
+  {
+   "seed": 43114,
+   "placed": 2175,
+   "objective": [
+    2,
+    1,
+    747,
+    234,
+    652
+   ]
+  }
+ ],
+ "capacity_unassigned": 0
+}

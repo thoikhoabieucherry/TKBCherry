@@ -172,7 +172,7 @@ body.planner-shell .planner-optimize-menu > button:focus-visible {
 
 @media (min-width: 901px) and (max-width: 1150px) and (hover: hover) and (pointer: fine) {
   body.planner-shell .toolbar-main {
-    --planner-toolbar-button-width: 88px;
+    --planner-toolbar-button-width: 74px;
     gap: 5px;
   }
 
@@ -185,7 +185,7 @@ body.planner-shell .planner-optimize-menu > button:focus-visible {
 
 @media (min-width: 901px) and (max-width: 1024px) and (hover: hover) and (pointer: fine) {
   body.planner-shell .toolbar-main {
-    --planner-toolbar-button-width: 80px;
+    --planner-toolbar-button-width: 68px;
   }
 
 }
@@ -276,6 +276,30 @@ body.planner-shell #btnAutoSort .toolbar-icon {
   width: 18px;
   height: 18px;
   transform: translateX(1px);
+}
+
+body.planner-shell #btnEngineFlash .toolbar-icon {
+  width: 20px;
+  height: 20px;
+  filter: drop-shadow(0 1px 2px rgba(99, 102, 241, 0.25));
+}
+
+body.planner-shell #btnEngineCherry .toolbar-icon {
+  width: 25px;
+  height: 25px;
+  filter: drop-shadow(0 1px 3px rgba(239, 30, 60, 0.28));
+}
+
+body.planner-shell #btnEngineFlash:hover:not(:disabled) {
+  border-color: #818cf8;
+  background: #f5f3ff;
+  box-shadow: 0 3px 10px rgba(99, 102, 241, 0.18);
+}
+
+body.planner-shell #btnEngineCherry:hover:not(:disabled) {
+  border-color: #f87171;
+  background: #fef2f2;
+  box-shadow: 0 3px 10px rgba(239, 30, 60, 0.18);
 }
 
 body.planner-shell #btnStopAutoSort .toolbar-icon {
@@ -673,12 +697,25 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     border-radius: 0 0 var(--tkb-radius, 10px) var(--tkb-radius, 10px);
   }
 
-  body.planner-shell .toolbar-actions > #btnAutoSort {
-    grid-column: 3;
-    grid-row: 1;
+  /* 19/08: dien thoai chi giu Cherry + Flash (ngay ben trai nut Xoa). */
+  body.planner-shell .toolbar-actions > #btnAutoSort,
+  body.planner-shell .toolbar-actions > .planner-optimize-wrap {
+    display: none !important;
   }
 
-  body.planner-shell .toolbar-actions > .planner-optimize-wrap {
+  body.planner-shell .toolbar-actions > #btnEngineFlash {
+    grid-column: 3;
+    grid-row: 1;
+    display: inline-flex !important;
+  }
+
+  body.planner-shell .toolbar-actions > #btnEngineCherry {
+    grid-column: 4;
+    grid-row: 1;
+    display: inline-flex !important;
+  }
+
+  body.planner-shell .toolbar-actions > .planner-optimize-wrap--unused {
     grid-column: 4;
     grid-row: 1;
     display: inline-flex;
@@ -986,12 +1023,14 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     border-radius: var(--tkb-radius, 10px);
   }
 
-  body.planner-shell .toolbar-actions > #btnAutoSort {
+  body.planner-shell .toolbar-actions > #btnEngineFlash {
     grid-column: 4;
+    display: inline-flex !important;
   }
 
-  body.planner-shell .toolbar-actions > .planner-optimize-wrap {
+  body.planner-shell .toolbar-actions > #btnEngineCherry {
     grid-column: 5;
+    display: inline-flex !important;
   }
 
   body.planner-shell .toolbar-actions > #btnStopAutoSort,
@@ -1465,7 +1504,19 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
       <div id="autoSortProgress" class="auto-sort-progress is-idle" aria-live="polite" aria-hidden="true" hidden>
         <!-- Stopwatch Elapsed Timer -->
         <div id="autoSortTimer" class="auto-sort-timer" title="Thời gian thực thi">
-          <svg class="auto-sort-timer-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 6 12 12 16 14"/></svg>
+          <svg class="auto-sort-timer-icon auto-sort-timer-spinner" viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true" focusable="false">
+            <defs>
+              <linearGradient id="timerMultiColorGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#38bdf8"/>
+                <stop offset="35%" stop-color="#6366f1"/>
+                <stop offset="70%" stop-color="#ec4899"/>
+                <stop offset="100%" stop-color="#f59e0b"/>
+              </linearGradient>
+            </defs>
+            <circle cx="12" cy="12" r="9" stroke="rgba(99, 102, 241, 0.18)" stroke-width="2.6"/>
+            <path d="M12 3a9 9 0 0 1 9 9 9 9 0 0 1-5 8.1" stroke="url(#timerMultiColorGrad)" stroke-width="2.6" stroke-linecap="round"/>
+            <circle cx="12" cy="3" r="1.5" fill="#38bdf8"/>
+          </svg>
           <span id="autoSortTimerVal">00:00</span>
         </div>
         <!-- Clean Live Metric Badge -->
@@ -1506,7 +1557,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="../shared/auth.js?v=20260803-free-5-solve-quota-v1"></script>
 <script src="../shared/runtime.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
 <script src="../shared/school-switcher.js?v=20260708-v1"></script>
-<script src="../shared/storage.js?v=20260802-max1-store-guard-v2"></script>
+<script src="../shared/storage.js?v=20260817-save-error-detail-v1"></script>
 <script src="../shared/tkb-constants.js?v=20260708-v1"></script>
 <script src="../shared/constraints-meta.js?v=20260709-v2"></script>
 <script>
@@ -1545,5 +1596,44 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="tkb-word-export.js?v=20260705-save-picker-v1"></script>
 <script src="tkb-student-excel-export.js?v=20260705-school-wide-prefix-v6"></script>
 
+
+<script>
+// 19/08: chon thuat toan backend cho tung nut (mac dinh = bo giai cu)
+// Ban day du (co cho bo giai nap xong) nam trong tkb-rust-bridge.js — file do
+// luon duoc bust cache nen luon moi. Khoi nay chi la du phong khi bridge loi.
+if(typeof window.tkbRunEngine !== "function")
+window.tkbRunEngine = function(engine, btn){
+  if(window.__TKB_SOLVE_UI_BUSY === true || window.__TKB_RUST_SOLVER_RUNNING === true){
+    try{ window.setStatus && window.setStatus("Đang có lượt xếp chạy, vui lòng chờ.", "info"); }catch(_){}
+    return;
+  }
+  window.__TKB_FORCE_ENGINE = String(engine || "");
+  window.__CURRENT_ACTIVE_ENGINE = String(engine || "");
+  window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = "";
+  var metricEl = document.getElementById("autoSortProgressMetric");
+  if(metricEl){
+    metricEl.textContent = "";
+    metricEl.hidden = true;
+  }
+  var clear = function(){
+    window.__TKB_FORCE_ENGINE = "";
+    window.__CURRENT_ACTIVE_ENGINE = "";
+    window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = "";
+  };
+  try{
+    // QUAN TRONG: tren ban production, window.sapXepTuDongAll van la bo giai
+    // chay trong TRINH DUYET (phanmon.js executeDirectFastSchedule) — no khong
+    // biet settings.engine va khong bao gio goi backend/Cloud Run.
+    // Hai nut nay phai goi thang ban cua bridge de di duong may chu.
+    var runner = (typeof window.bridgeSapXepTuDongAll === "function")
+      ? window.bridgeSapXepTuDongAll
+      : window.sapXepTuDongAll;
+    if(typeof runner !== "function"){ clear(); return; }
+    var r = runner({ manualAgentInvite: false });
+    if(r && typeof r.finally === "function") r.finally(clear);
+    else window.setTimeout(clear, 5000);
+  }catch(e){ clear(); }
+};
+</script>
 </body>
 </html>

@@ -93,6 +93,8 @@ function New-MinimalCloudBuildContext {
             'solver_runtime\requirements.txt',
             'solver_runtime\scripts\solve_stdio.py',
             'solver_runtime\scripts\cloud_run_service.py',
+            'solver_runtime\scripts\fet_trongoi_runner.cjs',
+            'web\pages\tkb-fet-engine.js',
             'tools\cloud-run\Dockerfile',
             'tools\cloud-run\cloudbuild.yaml',
             'tools\cloud-run\.gcloudignore'
@@ -601,7 +603,7 @@ try {
         '--platform=managed',
         '--execution-environment=gen2',
         '--cpu=6',
-        '--memory=4Gi',
+        '--memory=8Gi',
         '--concurrency=1',
         '--timeout=300',
         '--min-instances=0',

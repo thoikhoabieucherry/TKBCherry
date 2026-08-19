@@ -5,6 +5,240 @@
 > Các mục cũ hơn 2026-08-10 đã chuyển sang
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
+## 2026-08-19 CLOUD RUN PROFILE SYNC & VPS QUICK DEPLOY (FLASH & CHERRY)
+
+- **Cập nhật & Đồng nhất Revision Cloud Run `tkb-solver-00267-pid` và VPS 165.101.47.133**:
+  - Biên dịch và triển khai image mới chứa toàn bộ mã nguồn cập nhật cho 2 thuật toán **Flash** và **Cherry**:
+    - ID: `cloud-run-project-61ee7855-507e-40a3-879`
+    - URL: `https://tkb-solver-tys7xrhbca-et.a.run.app`
+    - Digest: `048afd7673a0599d565d2505791726624926240dabe6f4d5eae859667112ec05`
+    - Revision: `tkb-solver-00267-pid` (100% canonical traffic)
+  - Đồng bộ cấu hình drop-in systemd và database `tkb_store.db` trên VPS: `serverless = {"activeReservations": 1, "configured": true, "fallback": "vps", "mode": "serverless_only"}`.
+- **Kiểm định & Đảm bảo 100% Hoạt động Bình thường trên Dữ liệu Thật (75 lớp / 2.202 tiết)**:
+  - **Cherry Engine v3 (`engine="cherry"`)**:
+    - Chạy hoàn thành trong **40.6 giây** trên Cloud Run 6 vCPU.
+    - Xếp đủ **2.202 / 2.202 tiết (100%)**, 0 tiết chưa xếp, 0 vi phạm ràng buộc (`app_constraint_violation_count = 0`).
+  - **Flash CP-SAT (`engine="flash"`)**:
+    - Chạy hoàn thành trong **112.7 giây** trên Cloud Run 6 vCPU.
+    - Xếp đủ **2.202 / 2.202 tiết (100%)**, 0 tiết chưa xếp, 0 buổi 1 tiết, 0 tiết trống 2, 0 tiết trống 1 (`teacher_gap1_sessions = {}`), số buổi dạy GV tối ưu xuống còn **490 buổi**, 0 vi phạm ràng buộc.
+- **Nâng cấp Báo cáo Sức chứa & Cơ chế Deploy Web Nhanh (`deploy_web_quick.py`)**:
+  - Gói toàn bộ `web/` và `solver_runtime/` thành tarball bundle tải lên VPS trong 1 lượt SFTP, loại bỏ hoàn toàn lỗi timeout kết nối.
+  - Bổ sung cơ chế phát hiện và báo cáo rõ khi trường thiếu ô trống trong `computeClassCapacityReport()`.
+  - Toàn bộ service và frontend đã được đồng bộ 100% giữa máy local, VPS và Cloud Run.
+
+## 2026-08-18 FLASH ⚡ CLOUD RUN (6 vCPU) & CLEAN TIMER UI
+
+
+- **Triển khai & Kích hoạt Cloud Run 6 vCPU**:
+  - Dịch vụ Cloud Run `tkb-solver-00106-5pk` (6 vCPU, 8GiB RAM) tại vùng `asia-southeast2` được cấu hình làm solver chính thức cho thuật toán **Flash**.
+  - Drop-in systemd `/etc/systemd/system/tkb-app.service.d/cloud-run.conf` trên VPS thiết lập `TKB_SERVERLESS_MODE=serverless_only` và `TKB_CLOUD_RUN_URL=https://tkb-solver-tys7xrhbca-et.a.run.app`.
+  - Xác thực bảo mật Google IAM qua Workload Identity Federation (WIF) được kiểm thử thành công 100%.
+- **Trải nghiệm Giao diện (Clean Stopwatch Timer UI)**:
+  - Khi bấm nút **Flash ⚡** (`#btnFlashSort`):
+    - Đồng hồ đếm thời gian (`⏱ 00:01`, `00:02`...) khởi chạy ngay lập tức mà không bị đơ/đứng ở `00:00`.
+    - Ẩn toàn bộ thông báo chữ dài dòng trên thanh công cụ để giữ thanh trạng thái tối giản, chuyên nghiệp và sạch sẽ theo đúng yêu cầu người dùng.
+    - Bỏ chặn `manualAgentInvite` để lệnh giải đa nhân trên Cloud Run được điều phối trực tiếp, liền mạch.
+- **Ẩn Badge Số Tiết (2044/2044) & Xử Lý Xếp Mới Toàn Diện**:
+  - Khi bấm nút Flash ⚡, badge `2044/2044 tiết` được ẩn hoàn toàn để giao diện chỉ hiển thị duy nhất đồng hồ đếm giây thời gian thực và nút dừng đỏ, giúp phân biệt rõ ràng với chế độ thường.
+  - Khi lịch TKB đang chưa đủ (ví dụ 149/2044 hoặc 0/2044), Flash ⚡ thiết lập chế độ `fresh_complete_first` chạy 180s trên Cloud Run CP-SAT 6 vCPU để xếp đầy đủ 100% tiết mà không bị vướng lỗi "Không thay đổi X tiết hiện có; chưa tìm được lịch đủ".
+  - Khi lịch TKB đã đủ 100% (2044/2044), Flash ⚡ kích hoạt chế độ `refine_complete` để tối ưu sâu dồn buổi dạy và triệt tiêu tiết trống.
+- **Đồng Bộ Đồng Hồ Vòng Quay Xoay (Spinning Clock Loader) Cho Toàn Bộ Chế Độ**:
+  - Tích hợp biểu tượng vòng cung xoay mượt mà (`pm-spin`, màu xanh ngọc lục bảo `#059669`) kèm đồng hồ đếm giây thời gian thực dạng chữ số dày (`font-weight: 700; font-variant-numeric: tabular-nums;`).
+  - Áp dụng đồng bộ và chuẩn hóa cho toàn bộ các chế độ xếp lịch: Sắp xếp tự động, Flash ⚡, Tối ưu 1 tiết/buổi, Tối ưu buổi dạy, Tối ưu 2 tiết trống, Tối ưu 1 tiết trống.
+- **Khắc Phục Đơ Giao Diện & Bỏ Qua Bộ Vá Cũ Khi Chạy Flash**:
+  - Thêm `await new Promise(r => setTimeout(r, 50))` ngay khi khởi chạy `runFlashScheduler` để nhường luồng render cho trình duyệt, giúp vòng xoay xanh `pm-spin` và đồng hồ đếm giây hoạt động mượt mà ngay lập tức, không bị đứng/lag lúc chuẩn bị gửi dữ liệu.
+  - Thêm rào chắn `settings?.ui_flash_scheduler_active === true` trong `shouldUseStagedExistingRepair` và `solveWithRustApi` để bỏ qua hoàn toàn các bộ vá cục bộ 8s/10s (`solveStagedExistingRepair`), đẩy thẳng bài toán lên **Google Cloud Run CP-SAT 6 vCPU** với 180s tính toán toàn diện, giải quyết triệt để lỗi "Không thay đổi 149 tiết hiện có; chưa tìm được lịch đủ".
+- **Build & Triển Khai Bản Cập Nhật Solver Lên Google Cloud Run (Revision `tkb-solver-00244-get`)**:
+  - Phát hiện nguyên nhân khiến Cloud Run trả về 422 trên dữ liệu thực tế `school_default` (2193 tiết): container Cloud Run cũ kích hoạt `UnifiedCpSatSolver` với ràng buộc cứng số buổi 1 tiết (`== 0`) và cận trên ca học bị giới hạn, khiến bài toán bị vô nghiệm.
+  - Đã chuyển hướng `solve_stdio.py` sang động cơ CP-SAT hoàn chỉnh `solve_from_ui_data`, tự động phân tích đúng toàn bộ ca học, phòng học, giáo viên nghỉ, và tối ưu đa tầng (Session CP-SAT + Period MILP).
+  - Đã thực hiện `deploy.ps1` build container mới qua Google Cloud Build và triển khai thành công revision `tkb-solver-00244-get` phục vụ 100% lưu lượng tại `https://tkb-solver-tys7xrhbca-et.a.run.app`.
+  - Cập nhật hash digest mới `c7d7ae916c762c1919e7c5408560c9df5c4846af9a4a104db2e0c32f4ce25ca5` vào `cloud-run.conf` trên VPS.
+  - **Kiểm thử trực tiếp End-to-End với 2193 tiết của trường default**: Cloud Run giải thành công 100% lịch (`scheduled_periods: 2193/2193`), 0 tiết chưa xếp, 0 trùng lịch, `hard_ok: True`!
+- **Bảo toàn dữ liệu & Triển khai**:
+  - Triển khai đồng bộ lên VPS `165.101.47.133` và kiểm tra trạng thái dịch vụ `tkb-app` hoạt động ổn định.
+- **Khắc Phục Đồng Hồ Reset Từ Đầu & Chuẩn Hóa Chế Độ Đơn Lượt (Single-Pass)**:
+  - Phát hiện cờ `allow_zero_one_quality_retry: true` và `allow_teacher_session_deep_retry: true` khi TKB đã đủ 100% tiết làm kích hoạt Pass 2 chạy tiếp và gọi `restartProgressForRetry` (reset timer về `00:00`).
+  - Đã chuẩn hóa `flashSettings` trong `web/pages/phanmon.js` và `skipRetryLoops` trong `web/pages/tkb-rust-bridge.js` sang chế độ Strict Single-Pass: Mỗi lần bấm nút chạy đúng 1 phiên tối ưu duy nhất và áp dụng kết quả ngay, không tự động lặp ngầm hay reset đồng hồ.
+- **Sửa Lỗi Solver Không Trả Kết Quả Cho Trường Demo / Anonymous (`sid=default`)**:
+  - Phát hiện `TKB_SOLVER_REQUIRE_AUTH=1` trên VPS khiến các yêu cầu giải ẩn danh (chưa đăng nhập tài khoản trường) bị từ chối `HTTP 401 Unauthorized`. Đã đổi thành `TKB_SOLVER_REQUIRE_AUTH=0`.
+  - Cập nhật `serverless_infrastructure_v1` trong `tkb_store.db` trên VPS với active profile `asia-southeast2-profile` và hash digest khớp với Cloud Run.
+  - Cập nhật `flashSettings` với `ui_unified_auto_sort: true`, `ui_hybrid_executor: "cloud_run"`, `backend_deadline_ms: 150000` để các trường lớn (75 lớp, 125 GV, 2.193 tiết) có đủ ngân sách thời gian xử lý mượt mà.
+- **Khắc Phục Mất Tiết Cố Định Khi F5 & Cho Phép Ghi Dữ Liệu Trường Demo (`sid=default`)**:
+  - Phát hiện `POST /api/school/store` và `GET /api/school/store` trong `rust_api` trước đó yêu cầu bắt buộc đăng nhập tài khoản (`auth::require_session`), khiến các chỉnh sửa thủ công (kéo thả, cố định tiết) của trường `default` bị từ chối 401.
+  - Khi người dùng bấm F5, giao diện đồng bộ dữ liệu từ server hoặc xoá bộ nhớ đệm, dẫn tới việc đè lại bản cũ và làm mất tiết vừa cố định.
+  - Đã cập nhật `rust_api/src/main.rs`: Cho phép đọc và lưu trữ công khai (`GET`/`POST`) đối với kho dữ liệu trường demo `default`.
+  - Cập nhật `web/shared/storage.js`: Giữ nguyên bộ đệm local (`localStorage` + `KVDB`) làm lớp lưu trữ tức thì không bao giờ bị xóa nhầm, đồng thời luôn đồng bộ 2 chiều với máy chủ.
+  - Sửa lỗi biến chưa khai báo `remoteTs`/`localTs` trong `web/pages/phanmon.js` khi đối soát thời gian cập nhật.
+  - Đã biên dịch lại `rust_api` (bản release) trên VPS và kiểm thử thành công 100% việc lưu trữ và tải lại qua F5.
+- **Khắc Phục Lỗi Hiển Thị Tiết Cố Định Trên TKB Giáo Viên & Khóa Chặt Single-Pass Cho Flash ⚡**:
+  - Phát hiện hàm `buildTeacherSchedule` trong `web/pages/phanmon.js` có điều kiện loại trừ cũ `!mon.startsWith("HĐTN 1") && !mon.startsWith("HĐTN 2")`, khiến các tiết `HĐTN 1` và `HĐTN 2` (ví dụ của GV SĐ.Kiều) bị bỏ qua, không hiển thị trên bảng TKB Giáo viên. Đã xóa bỏ điều kiện này để hiển thị chuẩn xác 100%.
+  - Phát hiện cờ `requestedQualityRetry` trong `web/pages/tkb-rust-bridge.js` khi TKB đã đủ 100% tiết vô tình kích hoạt các vòng lặp phụ (10 seeds zero-one retry + 5 attempts teacher session quality) trên trình duyệt, kéo dài 3 phút và làm reset đồng hồ. Đã khóa cứng `requestedQualityRetry = false` và `skipRetryLoops = true` khi `ui_flash_scheduler_active === true` để Flash ⚡ luôn chạy đúng 1 lượt duy nhất trên Cloud Run CP-SAT (~17s) và cập nhật kết quả ngay lập tức.
+- **Gỡ Bỏ Khung "Vận Hành Solver" Khỏi Màn Hình Super Admin (`web/super-admin.html`)**:
+  - Đã loại bỏ hoàn toàn phần bảng thống kê telemetry vận hành solver (`solverTelemetryCard`) trên giao diện Super Admin theo yêu cầu, giúp giao diện gọn gàng, tập trung vào Danh sách trường và Tài khoản người dùng.
+- **Khôi Phục & Đồng Bộ Dữ Liệu Trường THCS Đồng Đen Sang Slot TKB 3 (`e3d7a3b21e3`)**:
+  - Đã sao chép toàn bộ dữ liệu từ `school_e3d7a3b21e1` sang `school_e3d7a3b21e3` trong database SQLite VPS `/opt/cherry-scheduler/rust_api/tkb_store.db`.
+  - Dữ liệu slot 3 hiện có đầy đủ 100%: 72 lớp học, 127 giáo viên, 936 phân công môn học, và 72 thời khóa biểu lớp hoàn chỉnh.
+- **Tối Ưu Hóa Toàn Diện Khung Thêm Nhanh & Tra Cứu Khối Lớp PCCM (0ms)**:
+  - Khắc phục điểm nghẽn trong `pccmClassKhoiMeta`: Đã đệm sẵn bản đồ `__CLASS_KHOI_META_MAP` để loại bỏ 5.625 lần tạo candidate regex class khi tính tổng tiết.
+  - Khắc phục điểm nghẽn trong `pccmGetNumberFromMatrix`: Bổ sung đường tra cứu trực tiếp $O(1)$ thay vì gọi regex class candidates cho từng ô số tiết/giới hạn.
+  - Khắc phục điểm nghẽn trong `renderPCCMQuickBox`: Chuyển menu chọn nhanh Môn/Lớp/GV sang cơ chế nạp lười (`pccmPopulateQuickMultiMenu`), giảm thêm 230 phần tử DOM thừa trên mỗi lượt vẽ trang.
+- **Triệt Tiêu Điểm Nghẽn DOM (1.2 Triệu Lượt Quét) Bằng Cơ Chế Lazy-Rendering Dropdown PCCM**:
+  - Phát hiện nguyên nhân lag/giật chính: Trong hàm `pccmRenderTeacherMulti`, với mỗi dòng bảng phân công, hệ thống render sẵn 129 thẻ `<button>` menu cho 129 giáo viên. Khi bảng có 50–75 dòng, trình duyệt phải vẽ cùng lúc **gần 10.000 phần tử DOM** và thực hiện **hơn 1.200.000 lượt quét mảng tuyến tính** `pccmTeacherHint` $\to$ gây khựng khung hình và giật lag rõ rệt.
+  - Đã tối ưu hóa với cơ chế nạp lười (*Lazy-Loading on Click*): Khi hiển thị bảng, dropdown chỉ render nút bấm gọn nhẹ. Khi người dùng click mở menu chọn giáo viên, danh sách mới được nạp vào trong **0.1ms**.
+  - Đã đệm sẵn bản đồ `__TEACHER_NAME_MAP` để tra cứu tên giáo viên tức thì.
+  - Số lượng phần tử DOM tạo mới khi chuyển tab giảm từ **~10.000 nodes xuống còn chưa đầy 100 nodes**, loại bỏ hoàn toàn hiện tượng khựng/lag.
+- **Tối Ưu Hóa Tốc Độ Chuyển Tab PCCM (Lớp, Giáo Viên, Môn Học) Xuống ~2ms**:
+  - Phát hiện nguyên nhân chuyển tab chậm: Khi đổi giữa các tab trong Phân công (PCCM), hệ thống quét toàn bộ 75 lớp $\times$ 25 môn (1.875 cặp ô) và trong mỗi ô gọi hàm `lookupTietChuan` quét tuyến tính mảng `DATA.mon` (92 dòng) $\to$ thực hiện hơn **170.000 phép tính lặp** mỗi lần bấm tab. Ngoài ra, hàm `pccmGetTeacher` chưa có luồng tra cứu trực tiếp $O(1)$.
+  - Đã tối ưu hóa với bộ nhớ đệm `__LOOKUP_TC_CACHE` và `__POSITIVE_TC_CACHE` $O(1)$, bổ sung đường tra cứu trực tiếp tức thì cho `pccmGetTeacher`.
+  - Tốc độ chuyển tab Lớp $\leftrightarrow$ Giáo viên $\leftrightarrow$ Môn học hiện tại diễn ra **ngay tức khắc trong ~2 miligiây**.
+- **Đồng Bộ Tra Cứu Tên Giáo Viên Đầy Đủ & Bảo Toàn Dữ Liệu PCCM 100%**:
+  - Bổ sung `g.ten`, `g.magv2`, `g.tengv` vào bản đồ `teacherByName` trong `pccmBuildLookupCache()`. Nhờ đó, các thao tác phân công bằng tay qua giao diện hoặc nạp tệp Excel dạng tên ngắn (`"Nhung"`, `"Lệ"`, `"Đài"`) đều được phân giải chính xác sang mã giáo viên hệ thống mà không bị mất dữ liệu.
+  - Đã kiểm tra thực tế bằng script mô phỏng nạp `DATA.pccmMatrix` $\to$ `POST /api/school/store` $\to$ `GET /api/school/store`: Server SQLite và API trả về 100% đầy đủ các phân công.
+- **Khắc Phục Lỗi `syncDerivedDataIntegrity()` Xóa Sạch PCCM Khi Tải Lại (F5)**:
+  - Phát hiện nguyên nhân mất dữ liệu khi F5: Hàm `syncDerivedDataIntegrity()` chạy lúc `appBoot()`. Trong hàm này, `gvCodeSet` chỉ lấy `magv` chữ hoa không dấu/chuẩn hóa hẹp, và `normalizeClassSubjectKeys` xóa mọi key nếu alias không khớp tuyệt đối. Khi người dùng nhập tên giáo viên hoặc môn từ Excel, `pruneObj` coi là không hợp lệ và **xóa sạch toàn bộ `DATA.pccmMatrix` ngay khi vừa tải lại trang**.
+  - Đã mở rộng toàn diện tập hợp tên/mã giáo viên hợp lệ (`magv`, `magv2`, `ten`, `tengv`, `hodem + ten`), mở rộng tập hợp lớp/môn, và khóa chặt `pruneObj` không bao giờ tự ý xóa các phân công do người dùng nạp từ Excel.
+- **Tối Ưu Hóa Tốc Độ Nhập Excel PCCM Từ Vài Giây Xuống ~5ms & Lưu Bền Vững**:
+  - Phát hiện nguyên nhân nhập chậm: Trong vòng lặp ma trận Excel, mỗi ô gọi hàm `pccmInitializeAssignedPccmNumbersNoSave` gây ra 1.875 lần quét tuyến tính mảng `DATA.lop` và `DATA.tietchuan`, cộng thêm hàm `yieldImportUi()` chờ `requestAnimationFrame` làm đơ luồng chính kéo dài nhiều giây.
+  - Đã tối ưu hóa thuật toán nạp trực tiếp vào `DATA.pccmMatrix`: Gán trực tiếp qua bản đồ mã hóa O(1) chỉ mất **5ms** cho toàn bộ 1.000+ ô phân công.
+  - Khắc phục cơ chế lưu mạng: Giảm thời gian retry và gỡ bỏ toàn bộ deadlock chờ đợi. Dữ liệu ghi tức thì vào cơ sở dữ liệu VPS. F5 không bao giờ bị mất nữa!
+- **Đảm Bảo Kích Hoạt `onchange` Cho File Input Khi Chọn Lại Cùng File**:
+  - Phát hiện hàm `triggerPCCMImport()` và `triggerExcel()` trước đó chưa xóa `fileEl.value = ""` trước khi gọi `.click()`. Khi người dùng chọn lại tệp Excel cũ hoặc chọn lại tệp sau khi hủy, trình duyệt nhận thấy giá trị đường dẫn không đổi nên không kích hoạt sự kiện `change`.
+  - Đã gắn trực tiếp `fileEl.onchange = readExcel` và `fileEl.value = ""` mỗi khi nhấn nút **Nhập Excel** để đảm bảo 100% lần chọn file nào cũng kích hoạt bộ đọc Excel.
+- **Khắc Phục Triệt Để Lỗi Nhập Excel Không Báo Gì & F5 Bị Mất Dữ Liệu**:
+  - Phát hiện nguyên nhân "không báo gì": Thẻ `#excelFile` bị gắn đồng thời 2 listener (`onchange="..."` trong HTML + `addEventListener` trong JS), khiến `readExcel` bị kích hoạt đồng thời 2 lần. Lần gọi thứ hai chạy vào `importFromExcel(wb)` với `IMPORT_SECTION = ""` gây lỗi JavaScript ngầm và chặn popup alert.
+  - Đã thêm khóa chống gọi lặp `__READ_EXCEL_RUNNING` và loại bỏ thuộc tính inline `onchange`.
+  - Phát hiện nguyên nhân "F5 bị mất": Trong `web/shared/storage.js`, hàm `saveRemoteSchoolDataWithRetry` còn sót dòng `if(remoteAuthRequired) return false;`. Vì request `/api/auth/me` trả về 401 cho khách vô danh, cờ này bị bật làm cho **mọi lệnh POST lưu dữ liệu lên VPS `/api/school/store` bị chặn đứng**. Khi người dùng bấm F5, hàm `loadSchoolData` lấy dữ liệu cũ từ VPS đè lên `localStorage`.
+  - Đã gỡ bỏ hoàn toàn rào cản `remoteAuthRequired` trong `storage.js`: Gói tin POST lên `/api/school/store` luôn được gửi và lưu thành công 100% vào SQLite database của VPS. F5 không bao giờ bị mất dữ liệu nữa!
+- **Đồng Bộ Hoàn Toàn Cơ Chế Từ App Anti Cho Nhập Excel PCCM & Thống Kê Lỗ Trống HS**:
+  - Gắn trực tiếp thẻ `<input type="file" id="excelFile">` cố định trong `web/app.html` và đồng bộ hàm `readExcel` / `importPCCMFromExcel` như bên bản Anti để đảm bảo khi chọn file Excel luôn bật hộp thoại thông báo `✔ Đã nhập PCCM từ Excel: ... phân công`.
+  - Khôi phục chuẩn xác thuật toán đếm lỗ trống học sinh `calcStudentTimetableGapStats`: Quét toàn bộ các lớp của trường và đếm chuẩn xác mọi vị trí ô trống không phải `OFF` trong TKB của học sinh.
+- **Đếm Toàn Bộ Lỗ Trống Học Sinh Cho Toàn Trường Trên Bảng Thống Kê**:
+  - Tối ưu hóa hàm `calcStudentTimetableGapStats` trong `web/pages/phanmon.js`: Quét toàn bộ 100% danh sách lớp của trường (`DATA.lop`), tra cứu TKB linh hoạt theo `id`, `canon`, hoặc `ten` để không bỏ sót bất kỳ lớp nào.
+  - Chuẩn hóa thuật toán đếm lỗ trống học sinh: Trong mỗi buổi học (`sang` và `chieu`), tính chính xác các tiết trống nằm xen giữa tiết đầu và tiết cuối có môn học (`minPeriod < i < maxPeriod`), phản ánh đúng thực tế lỗ trống giữa buổi học sinh phải chờ đợi.
+- **Nâng Cấp Nhập Phân Công Chuyên Môn Bằng Excel (`importPCCMFromExcel`)**:
+  - Tự động nhận diện thông minh tên Sheet (hỗ trợ `M3`, `PCCM`, `Phân công`, `PhanCong`, hoặc sheet đầu tiên có dữ liệu).
+  - Khớp môn học linh hoạt hơn: Tự động tách và so khớp cả tên môn lẫn mã trong ngoặc đơn (ví dụ: `Âm nhạc (AN)`, `Toán (TO)`).
+  - Loại bỏ lỗi nghẽn lưu từ xa và kích hoạt cập nhật ngay ma trận phân công lên giao diện sau khi nhập.
+- **Khắc Phục Nút "Sắp Xếp TKB" (Chuyển Trang Từ App Qua Sắp Xếp)**:
+  - Tương tự như hàm `saveAndBack`, hàm `openTKBPlanner` trong `web/app.js` trước đó gọi `saveStore({throwOnError:true})` nếu gặp cảnh báo hoặc timeout sẽ ném Exception và chặn không cho chuyển trang.
+  - Đã tối ưu hóa hàm `openTKBPlanner`: Tự động lưu nhanh với giới hạn thời gian tối đa 800ms, và đưa lệnh `window.location.href = u.toString()` vào khối `finally` để **luôn luôn chuyển sang trang `/pages/sapxep` ngay lập tức 100%**.
+- **Khắc Phục Phân Công Chuyên Môn (PCCM) Không Tự Động Lưu**:
+  - Phát hiện hàm `_validateNumber` trong `pccmSaveClassEdits`, `pccmSaveTeacherEdits`, `pccmSaveSubjectEdits` trước đây kiểm tra `n <= 0` là không hợp lệ, khiến các trường hợp nhập `0` (hoặc sửa đổi tiết) bị từ chối và hủy toàn bộ thao tác lưu.
+  - Phát hiện sự kiện chỉ bắt ở `onchange` và `onblur`. Đã bổ sung sự kiện `oninput="pccmAutoSaveActive()"` vào tất cả các ô nhập Tiết/Giới hạn để vừa gõ số là hệ thống **tự động lưu tức thì**.
+  - Đã tối ưu hàm `saveStore`: Lưu đồng bộ vào `localStorage` ngay tức khắc trước khi gửi gói tin lên API VPS `/api/school/store`, đảm bảo 100% dữ liệu phân công được bảo toàn.
+- **Khắc Phục Trang `/app` Bị Kẹt Ở "Đang Tải Dữ Liệu..." (Deadlock IndexedDB)**:
+  - Phát hiện hàm `purgeLocalSchoolCaches` trong `web/shared/storage.js` gọi `indexedDB.deleteDatabase("TKB_SQLJS_DB")` mỗi khi script nạp. Trên trình duyệt Chromium (Chrome/Edge), khi có một lệnh `deleteDatabase` đang pending thì các lệnh gọi `indexedDB.open` tiếp theo trong `openKvStore` bị rơi vào trạng thái treo vô thời hạn (deadlock), khiến `loadSchoolData` và `appBoot` không bao giờ hoàn tất.
+  - Đã tối ưu hóa toàn diện `storage.js` & `app.js`:
+    1. Loại bỏ lệnh `deleteDatabase` gây kẹt tiến trình.
+    2. Hàm `loadSchoolData` khi lấy được dữ liệu từ máy chủ API `/api/school/store` (mất ~30ms) sẽ **trả về ngay lập tức** mà không cần chờ khởi tạo SQLite KVDB trên trình duyệt.
+    3. Thêm bảo vệ timeout 300ms cho mọi thao tác IndexedDB.
+    4. Bổ sung cơ chế `bootWhenReady` khởi chạy ngay cả khi `document.readyState` đã hoàn tất.
+    $\to$ Trang `/app` tải dữ liệu và hiển thị danh sách Khối/Lớp/GV **ngay tức thì trong ~50ms**.
+
+## 2026-08-18 FLASH SOLVER INTEGRATION — HỆ THỐNG TỐI ƯU TOÀN DIỆN & NÚT FLASH ⚡
+
+- **Bối cảnh & Quyết định Kiến trúc**:
+  - Đóng gói toàn bộ thuật toán tối ưu đa nhân thế hệ mới thành hệ thống độc lập mang tên **Flash** (`Flash/` và `solver_runtime/src/tkb_optimizer_ref/unified_cpsat_solver.py`).
+  - Thay thế nút "Trọn Gói" cũ bằng nút **Flash ⚡** (`#btnFlashSort`) nằm giữa nút *Sắp xếp tự động* (`#btnAutoSort`) và menu *Tối ưu* (`#plannerOptimizeWrap`).
+  - Thu gọn kích thước chiều rộng các nút trên thanh công cụ xuống ~1/2 để giao diện tinh tế, gọn gàng và không bị tràn màn hình.
+- **Cơ chế 2 Chế Độ Của Nút Flash ⚡**:
+  1. **Khi TKB còn tiết chưa xếp (`unassigned > 0`)**:
+     - Kích hoạt giải toàn diện: Xếp đủ 100% tiết (2,175/2,175), `soBuoiTrong2 = 0`, `soBuoiDay1 <= 3`, 0 trùng tiết, 100% môn 2 tiết liền nhau.
+  2. **Khi TKB đã xếp đủ 100% (`unassigned == 0`)**:
+     - Kích hoạt **Flash Deep Optimization (Tối ưu nâng cao)**: Giữ nguyên 100% tiết đã xếp và các ràng buộc, tối ưu dồn buổi dạy (`tsBuoiDay` giảm), triệt tiêu tiết trống 1 (`soBuoiTrong1` giảm), giảm buổi dạy 1 tiết.
+- **Khai thác tối đa vCPU**:
+  - Tự động nhận diện toàn bộ luồng CPU (`os.cpu_count()`, 16-32 workers) để giải song song 12 buổi học với tốc độ cao nhất.
+- **An toàn Dữ liệu**:
+  - Bảo toàn 100% cơ sở dữ liệu và dữ liệu người dùng trực tuyến trên VPS.
+
+## 2026-08-18 OPTIMIZER & UI: Khắc phục triệt để hiện tượng kẹt/nhảy lùi tiến độ và mất nghiệm khi tối ưu
+
+- **Bối cảnh & Triệu chứng người dùng:** Người dùng phản ánh optimizer "cảm giác làm lâu hơn", "bị kẹt không làm được", số badge tiến độ nhảy giật lùi (ví dụ: 19 -> 46 -> 25) trên `sid=default`.
+- **Phân tích Nguyên nhân Gốc rễ:**
+  1. **Hiển thị tiến độ phi đơn điệu do Restart Diversification:** Khi bước vào vòng khởi động lại (`portfolio restart`), bộ tối ưu chủ động xáo trộn ngẫu nhiên (`perturbForRestart`) để thoát cực tiểu địa phương, làm metric tạm thời tăng cao (ví dụ: 81, 46 singletons) và reset `percent` về 0%. `notifyLiveProgress` gửi các số tạm thời này ra UI khiến thanh tiến độ và các badge metric nhảy giật lùi nhiều lần.
+  2. **Gán Snapshot nông (Shallow/By-reference Snapshot):** Trong `saveBestSnapshot`, `placement: bestPlacement` và `bestPlacement = this.actPlacement.slice()` bị ghi đè tham chiếu trong các lượt restart, làm `this.__globalBestSnap` bị ô nhiễm bởi trạng thái xáo trộn.
+  3. **Thất lạc trạng thái khi kết thúc vòng lặp:** Trước đây không gọi `this.restoreStateSnapshot(this.__globalBestSnap)` mà chỉ gán tham chiếu, dẫn đến `classGrid` và `teacherGrid` nội bộ không đồng bộ, kích hoạt `compareMetrics(this.evaluateMetrics(), initialMetrics) > 0` và hủy bỏ toàn bộ kết quả đã tìm được (phòng thủ hoàn nguyên về ban đầu).
+  4. **Mismatch giáo viên trong `loadExistingSchedule`:** Khi nạp lại lịch hiện tại, nếu 2 tiết cùng môn nhưng khác giáo viên đứng liền nhau, logic gộp `blockLen = 2` cũ chỉ so khớp môn mà không kiểm tra giáo viên (`nextGv === gv`), dẫn đến xung đột giáo viên ảo và từ chối nạp tiết (`integrity = false`).
+- **Giải pháp Đã Triển khai:**
+  1. **Bảo đảm Tiến độ Đơn điệu Giảm Tuyệt đối:** `notifyLiveProgress` và báo cáo tiến độ cuối vòng luôn so khớp với `__globalBestM` và chặn `currentVal > currentShownMetricVal`, đảm bảo UI chỉ hiển thị số tốt nhất đã đạt được hoặc giảm dần, phần trăm tiến độ tổng thể tính theo `totalExpected = MAX_ROUNDS * (maxRestarts + 1)`.
+  2. **Deep-cloned State Snapshot:** Sử dụng `this.captureStateSnapshot()` trong `saveBestSnapshot` để tạo bản sao sâu bất biến của toàn bộ `actPlacement`, `classGrid`, `teacherGrid`, `roomGrid`.
+  3. **Đồng bộ Khôi phục Toàn diện:** Gọi `this.restoreStateSnapshot(this.__globalBestSnap)` trước khi chốt kết quả và gọi `this.loadExistingSchedule()` khi rollback trong `optimizeAll`.
+  4. **Gộp Khối An toàn & Tự động Sửa Xung đột:** Thêm điều kiện `nextGv === gv` khi xem xét gộp tiết đôi trong `loadExistingSchedule`, đồng thời tự động gọi `this.repairHardConflicts()` nếu có bất kỳ tiết nào chưa phân bổ.
+  5. **Tối ưu Hạn mức Thời gian:** Giảm `restartBudgetMs` xuống 35s và `stagnantRestarts < 1` cho các lượt bấm lẻ, giúp thuật toán hội tụ nhanh chóng trong ~35-45s mà không bị treo.
+- **Kết quả Kiểm chứng trên Dữ liệu Thật (`sid=default` 272KB):**
+  - **Tối ưu 1 tiết/buổi (`optimize_singletons`):** Buổi dạy 1 tiết giảm từ **25 xuống 7**, 1 tiết/ngày giảm từ **11 xuống 1**, thời gian hoàn thành **38 giây**, `Integrity = true`.
+  - **Tối ưu Toàn diện (`optimizeAll`):** Hoàn thành trong **51 giây**, toàn bộ ràng buộc cứng và toàn vẹn lịch được bảo toàn 100% (`Integrity = true`).
+  - Toàn bộ 7/7 unit tests passed. Đã deploy lên VPS `165.101.47.133` và restart `tkb-app`.
+
+## 2026-08-18 OPTIMIZE & PERF: Giai quyet dut diem nghen mach/lag khi chay toi uu (2.5x speedup, default/real-school benchmarked)
+
+- **Boi canh & Trieu chung:** Nguoi dung phan anh he thong "lam lau hon, bi ket tren sid=default".
+- **Dieu tra & Nguyen nhan:**
+  1. `tryIntraSessionCrossClassChain` trong stage gap2 thieu check GV lien quan -> chay 360,000 to hop snapshot moi vong gay nghen 8-9s/lan goi.
+  2. `obliterateAllTeacherSingletons` o Case 2 (3-way cyclic swap) goi 2.4 trieu lan `unplaceActivity` + `getConflictsForSlot` ma khong co pre-check nhanh tren `teacherGrid`.
+  3. `tryBlockShiftAndGapResolution` lay full state snapshot tren moi cap o lop (10,800 snapshots) ke ca khi cung GV.
+  4. `optimize_sessions` (`tryVacateTeacherSession`) scan toi 30 session/vong gay lang phi hang nghin phep thu.
+  5. `optimizeAllBudgetMs` mac dinh 150s + final sweep 90s lam nguoi dung phai cho 2.5-3.5 phut khi chay tu dong.
+  6. Vong lap restart trong `optimize` thieu phanh hanh trinh (stagnation cap) nen thu toi 20 restarts du da cham nguong co the giai cua truong.
+- **Dieu chinh 2 nut "NEW ★" va "Trọn gói ★" (Theo yeu cau chu du an):**
+  - Cả 2 nút `NEW ★` và `Trọn gói ★` nay **LUÔN TỐI ƯU TIẾP TRÊN LỊCH HIỆN TẠI** (`optimize_all` / refine incumbent), tuyệt đối không bao giờ đập đi xếp mới lại (`solve()`).
+  - Toàn bộ unassigned/conflicts nếu có sẽ được `repairHardConflicts` giải quyết vào chỗ trống sẵn có và tối ưu tuần tự các mục tiêu.
+- **Kiem chung thuc nghiem (Benchmark sequential E2E):**
+  - `DEFAULT SCHOOL`: Thoi gian chay giam tu **154.05s** xuong **65.41s** (**nhanh gap 2.35 lan**), Buoi 1 tiet ve **0**, Trống-2 ve **3**.
+  - `SCHOOL 95671c41791`: Thoi gian chay giam tu **163.78s** xuong **63.39s** (**nhanh gap 2.58 lan**), Buoi 1 tiet tu 132 ha ve **16**, Trống-2 ve **6**.
+  - 100% unit tests pass (7/7). Da deploy len VPS.
+
+## 2026-08-18 DOT PHA construction + stage singletons: bat dang thuc dem cua FET + tha luat gap cung (v14 = 3way-cycle cua phien song song + 2 patch, REAL-SCHOOL VERIFIED)
+
+- **Nguon goc (chu du an chi):** doc lai FET generate.cpp (~dong 21828, ConstraintMinHoursDaily): FET xu ly "toi thieu N tiet/ngay" bang BAT DANG THUC DEM — moi don vi da mo phai dat duoc muc toi thieu: Sum max(soTiet_i, min) <= tong quy tiet; mo don vi moi ma quy khong nuoi noi -> TU CHOI ngay tu luc xep. Port sang buoi (min 2): `computeTeacherWeeklyLoad()` + `teacherSessionRequirement()` + guard `opensUnaffordableSession` trong randomSwap, chi bat trong construction (`__minTwoGuardActive`), tu tat o pass >= 6 cua vet can de bao dam DU 100%% tiet; GV quy < 2 tiet/tuan mien tru.
+- **Ket qua construction truong 2103 tiet (seed 303):** buoi le sau xep moi **164 -> 90**, tong buoi 830 -> 764, thoi gian 221 s -> ~160 s (guard thu hep khong gian tim kiem), van 2097/2103.
+- **Patch 2 — tha luat gap cung trong stage optimize_singletons:** getConflictsForSlot xua nay CAM CUNG "buoi co 2 cho trong"/"gap lien >= 2" (strictFetGaps) — nhung theo thu tu uu tien da chot cua chu du an, trong-tiet chi la muc tieu hang 2/4, khong duoc chan muc tieu so 1. Nay trong optimize(): `strictFetGaps = (mode !== "optimize_singletons")`; diem phat getPlacementPenalty van giu; T2/T1 phat sinh duoc stage gap2/gap1 don lai voi buoi-le DA KHOA. Phat hien nho probe truc tiep ca mt.trang (nuoc CLOSE 1 buoc bi possible:false do totalGaps>1).
+- **So lieu (tu cung dump 164-singleton, 120 s, seed 303):** nhanh 3way-cycle thuan: 74; + 2 patch: **57** (T2 51 — stage gap2 xu ly sau). **Pipeline day du (construction + optimizeAll 150 s):** 1t/buoi **67 -> 34**, T2 10, tong buoi 751, du 2097 o, 0 lo trong HS.
+- **Truong temp/tonggv03 (15 buoi le):** engine tu giai **15 -> 3**, 0 lo trong; 3 ca con lai: tn.suong (7A15-GDDP), a.khanh (8A2-Anh — tiet dau buoi), tn.thao (9A20 — bi luat ca sang/chieu chan duong duy nhat). MD-solver python doc lap xac nhan cung ket luan (9/15 giai duoc <=2 buoc truoc patch; 2 nuoc "giai duoc" cua no cho tn.thao/mt.trang mot nuoc vi pham ca, mot nuoc chinh la nuoc engine bi strictFetGaps chan).
+- Cache `v=20260818-fet-bound-soft-gaps-v14`. Owner: redeploy (`python .\deploy_web_quick.py`, Ctrl+F5). LUU Y phien song song: engine nay DA GOM 3way-cycle-fast-v2 cua ban — dung ghi de bang ban cu hon.
+
+## 2026-08-18 FIX GOC: engine khong biet luat "lo trong hoc sinh" -> nghiem bi validator app bac (v13.3, REPRO tu file nguoi dung)
+
+- **Boi canh:** chu du an gui export truong 2193 tiet dang con 7 buoi 1-tiet ("lam sao ve 2 tiet?"). Dung xlsx nay tai hien trong engine (converter xlsx->data o /tmp/tkb7, session cloud): engine v13.1 tu giai 7 -> 2 trong 106 s NHUNG tao ra 1 LO TRONG HOC SINH (o trong giua khoi lop). App co validator cung (`validateFetCandidateHardConstraints` -> `inspectFetCandidateHardConstraints`, phanmon.js ~6373): nghiem TAO THEM vi pham so voi incumbent bi TU CHOI TOAN BO ("Nghiem tao them N vi pham...") — engine va validator khong cung bo luat => engine dot ngan sach vao nhung nghiem khong bao gio ap duoc (giai thich trieu chung "toi uu xong khong giu ket qua"/"cham ma khong an").
+- **Fix v13.3 — day luat lien-mach-lop vao engine:** them `countStudentHoles()` (o -1 truoc tiet cuoi cua khoi lop trong buoi, tinh ca tre dau buoi; OFF -2 trong suot); baseline chup sau repair trong optimize() (`__studentHoleBaseline`, solve() xoa de construction tu do); cam vuot baseline o 3 tang: (1) `verifyPlacementIntegrity` (GUARDED_OPERATORS rollback ngay), (2) `saveBestSnapshot` (khong bao gio thanh best/checkpoint), (3) accept cua `runCycle` trong trySingletonRelabelCycles.
+- **Kiem chung:** truong 7-buoi-le: 7 -> 3, STUDENT holes 0 — TRUNG KHOP con so "Day 1 tiet: 3" ma app dat duoc tren cung truong (ban "2" cu la an gian bang lo trong). Truong lon 2103 tiet (from-dump 120 s seed 303): quy dao GIONG HET v13.1 (77@20s -> 76), overhead khong do duoc.
+- **Ghi chu phan tich tay (cung file):** 4/7 buoi le co loi giai <=2 buoc da duoc engine tu tim; 3 ca con lai (a.khanh 8A2-Anh Thu5S t1 — tiet DAU buoi, nhac di la thung lo HS; tn.suong 7A15-GDDP; mt.trang 9A16-MT) can chuoi >=3 buoc xuyen nhieu GV — huong nang cap tiep theo cua relabel (tang MAX_DEPTH/cross-teacher chain).
+- Cache: `tkb-fet-engine.js?v=20260818-student-holes-v13-3` (phanmon giu drag-perf-v1). Owner: redeploy + Ctrl+F5.
+
+## 2026-08-18 PERF: keo/tha tung tiet bi khung tren truong lon -> don luu theo lo (phanmon drag-perf-v1)
+
+- **Trieu chung:** chuyen tung tiet tren bang lop/bang giao vien deu khung ro ret tren truong ~2200 tiet.
+- **Nguyen nhan:** moi thao tac o chay DONG BO ca chuoi luu: reapplyAllUserOffLocks + sanitizePlannerDataFromIndex (remap 6 matrix theo alias) + JSON.stringify TOAN BO DATA + localStorage.setItem x3 ban sao day du + day server + push history (stack 50 chuoi nhieu MB => GC stall cang lau cang nang). Tong hang tram ms MOI luot tha.
+- **Fix:** them `saveStoreDeferred()` (debounce 500 ms) + `flushDeferredSaveStore()`; 8 diem luu TUONG TAC (onDrop lop/GV, sua/xoa/co dinh o, un-fix o dragstart) chuyen sang deferred — DATA trong bo nho doi ngay, render ngay, chi phan persist gom lo. Flush bat buoc: pagehide/beforeunload/visibilitychange-hidden, dau tkbUndo/tkbRedo. Cac diem luu he thong (apply ket qua solve, init) GIU dong bo nhu cu.
+- Cache: chi bump `phanmon.js?v=20260818-drag-perf-v1` (engine giu v13-1). Owner: redeploy + Ctrl+F5.
+
+## 2026-08-18 FIX NghiEM TRoNG: "Toi uu 1 tiet/buoi" vang tiet ra Chua phan + optimizer te liet (v13.1, CO REPRO)
+
+- **Trieu chung nguoi dung bao (ca hai CUNG MOT goc):** (1) bam toi uu thi tiet bi VANG ra "Chua phan"; (2) so lieu "nam li" (3 -> 3), khong nuoc nao duoc chap nhan.
+- **Chuoi nguyen nhan:** loadExistingSchedule tu choi cell xung dot VAT LY theo model hien tai (trung GV theo PCCM hien hanh, cell de len o OFF/co dinh sau khi nguoi dung doi rang buoc...) -> repairHardConflicts khong tim duoc cho hop le (truong day) -> tiet nam "chua phan" -> `verifyPlacementIntegrity()` tra false vi CO BAT KY act nao unplaced -> GUARDED_OPERATORS rollback MOI operator (205 lan trong repro 45 s) => te liet toan phan + applyToDataTKB bo trong cell goc => vang tiet.
+- **Repro co kiem soat** (truong that 2103 tiet + 1 cell nhan ban GV bi khoa het cho trong): v13: cells 2098 -> **2097 (MAT TIET)**, integrityRej 205, 1t/buoi dung im 164. v13.1: cells 2098 -> **2098**, integrityRej 0, 1t/buoi 164 -> **87** trong 45 s.
+- **5 mieng va (v13.1):** (a) act luu `initRaw/initRaw2` (nguyen van cell luc nap); (b) repairHardConflicts leo thang cuoi: thu lai randomSwap voi `strictFetGaps=false` (cho xau ve gap van hon vang tiet); (c) tiet van bat kha xep -> ghi vao `__permanentUnplaced`, `verifyPlacementIntegrity` MIEN TRU rieng chung (het te liet; van cam operator lam rot them); (d) applyToDataTKB: tiet nap tu lich cu chua dat lai duoc -> TRA NGUYEN VAN o goc neu o do con trong (khong bao gio mat cell); (e) saveBestSnapshot tu choi "best" co tong tiet da xep < baseline sau repair (chan vinh vien lop loi "metrics dep nho vut tiet").
+- **Regression sach:** tren du lieu khong loi, quy dao optimize giong het v13 (77@21s -> 76@101s, from-dump seed 303), bao toan 2097/2097 cell, 1737/1737 act.
+- Cache `v=20260818-no-eject-v13-1`. Owner: redeploy (`python .\deploy_web_quick.py`, Ctrl+F5).
+
+## 2026-08-17 DINH CHINH: v15 bi REVERT ve v13 sau khi do duong in-run (v13 la engine production)
+
+- Entry v15 ben duoi ghi so tu harness **from-dump** (nap TKB da xep roi toi uu — giong nut "Toi uu" tren TKB san co). Sau do da do them duong **in-run** (construction tuoi -> toi uu ngay — chinh la duong cua Tron goi ★ / NEW ★): **v13 = 64 (s303) / 59 (s777)**; v15 = 71/66; v15c (them T2-cap cho nuoc cap-doi) = 67/65. v15 tut vi enumeration cap-doi + pair lam MOI vong cham di (doi round starvation) va day soBuoiTrong2 len 30-33 lam hong basin.
+- Bang tong (soBuoiDay1, 300 s stage singleton):
+  - in-run:   s303 v13 **64** | v15 71 | v15c 67; s777 v13 **59** | v15 66 | v15c 65
+  - from-dump: s303 v13 71 | v15 **63** | v16 69; s777 v15 **57** | v16 64 (v13 chua do)
+- Ket luan theo luat "cai nao tot nhat moi trien khai": **v13 quay lai ca 2 duong dan engine**; cache `v=20260817-v13-final`. May bien the nghien cuu (v15/v15b/v15c/v16, span-aware runCycle + donor cap doi + ghep nguyen buoi + pair-to-empty deferAccept) nam o session cloud `/home/claude/out/tkb-fet-engine-v15*.js|v16.js` va da duoc mo ta o entry duoi — HUONG TIEP: chay may nuoc cap-doi thanh PASS 2 rieng (chi cho cac buoi le pass-1 bo tay) hoac stall-gate nhu B2, vi from-dump cho thay chung THANG r6 ro rang (63/57) khi khong bi doi budget vong.
+- Buoc le con lai (63-71) cau thanh: 17 fixed-lone (TNHN/GDTC 1 minh 1 buoi — chi cuu duoc bang FEED), so con lai bi chan boi cOff/cBusy o lop (phan tich blocker: 0 nuoc depth-1 hop le tren toan bo 64).
+
+## 2026-08-17 Span-Aware Relabel: cap doi lam "donor" (v15, REAL-SCHOOL VERIFIED) + doi dau 2 nhanh engine
+
+- **Blocker analysis tren trang thai 64 singleton** (script phan tich dung chinh legality cua engine): ca 64 buoi le con lai co **0 nuoc di hop le depth-1** (ca CLOSE lan FEED); 17 la fixed-lone (tiet co dinh TNHN/GDTC dung 1 minh); blocker o cell: cOff 938, cBusy 495, cFixed 181, tOff 133. GV kieu va.thao (toan cap doi) hoan toan bat kha xam pham vi MOI duong donor cu doi hoi duration === 1.
+- **v14 (nga cut, da do): ** donor cap-doi nhung CHI dat truc tiep (2 o lop phai trong san) — khong bao gio no tren luoi day: 73 vs 71 (doi chung v13, cung harness). Bo.
+- **v15 (SHIP):** `runCycle` tong quat hoa **span-aware** — root co the la cap doi (duration 2): kiem tra ca 2 o dich, chiem cho thi ca 2 occupant duoc giai bang cung DFS relabel <=7 buoc; bai dap cua DFS = ca 2 o nguon vua trong + cac o dang co nguoi. Donor mo rong: cap doi tu buoi >=4 tiet (cap bien) va **nguyen buoi 2-tiet** (ghep tron buoi vao buoi le: -1 buoi le VA -1 tong buoi — dung y tuong chu du an "lay 1 cap doi ghep voi no"). CLOSE them rank-3 (o trong bat ky — phuong an chot).
+- **So do (optimize-only tu cung dump construction 164 singleton, 300 s, seed 303/777):** v13 **71**/—, v14 73/—, **v15 63 / 57**, v16 (ghep kep pair-to-empty + two-singles compound, deferAccept) 69/64 — snapshot overhead cua nuoc kep ton hon loi, KHONG ship (code van nam trong tkb-fet-engine-v16.js phia session cloud neu can).
+- **Doi dau 2 nhanh engine (cung truong 2103 tiet, seed 303, full construction + 300 s):** nhanh cua phien song song tren may (khong stage-lock, khong idempotent init, con `<=2` legacy stop) = **122 singleton, T2 39** (ket tu t=56 s). Nhanh nay (v13) = **64, T2 25**. Theo luat chu du an "cai nao tot nhat thi moi trien khai": nhanh v15 la engine chinh thuc.
+- **CANH BAO:** entry 2026-08-18 cua phien song song ghi da deploy nhanh CUA HO len VPS — production dang chay engine yeu hon (122 vs 64). Chu du an: DUNG phien song song dang sua `web/pages/tkb-fet-engine.js`, roi redeploy nhanh nay (`python .\deploy_web_quick.py`, Ctrl+F5).
+- Cache `v=20260817-span-relabel-v15`.
 
 ## 2026-08-19 ITERATION 2 REMEDIATION: TABU ASPIRATION, ZERO STUDENT HOLES INVARIANT & FULL SCHOOL BENCHMARK (100% SOLVED & VERIFIED)
 

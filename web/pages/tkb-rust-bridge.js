@@ -9675,6 +9675,7 @@
   }
 
   function shouldUseStagedExistingRepair(settings, data){
+    if(settings?.ui_flash_scheduler_active === true) return null;
     const allowFreshStaged = settings?.ui_allow_staged_existing_on_fresh_sort === true;
     if(
       !data
@@ -10082,6 +10083,13 @@
 
   function shouldUseCapacitySafeFreshProbe(settings, data){
     if(!data || settings?.ui_capacity_safe_fresh_probe_attempted === true) return false;
+    // 19/08: nut Flash/Cherry da chon san thuat toan — phep tham do suc chua
+    // 60 giay o day khong giup gi, chi lam nguoi dung cho them 1 phut.
+    try{ if(String(window.__TKB_FORCE_ENGINE || "").trim()) return false; }catch(_){ }
+    // 19/08: mot khi phep tham do 60s da het han tren CHINH bo du lieu nay thi
+    // moi lan bam sau do deu se het han y het — bo qua de khong dot them 60s
+    // (va khong con bao 422 do trong console) cho toi khi tai lai trang.
+    if(window.__TKB_CAPACITY_PROBE_DEADLINE_FAILED === true) return false;
     if(settings?.ui_capacity_safe_fresh_probe === true) return false;
     if(settings?.ui_unified_solve_kind !== "fresh_complete_first") return false;
     if(!isTeacherSessionOptSettings(settings)) return false;
@@ -10182,7 +10190,12 @@
       rethrowCancelledSolve(err, runId);
       rethrowAuthRequiredSolve(err);
       if(err?.kind === "solver_busy") throw err;
-      console.warn(`[${VERSION}] capacity-safe fresh probe skipped`, err);
+      // Het deadline => danh dau de cac luot sau khoi cho vo ich.
+      if(String(err?.kind || "") === "no_complete_schedule_before_deadline"
+        || Number(err?.status || 0) === 422){
+        window.__TKB_CAPACITY_PROBE_DEADLINE_FAILED = true;
+      }
+      console.info(`[${VERSION}] bo qua phep tham do suc chua (khong anh huong ket qua)`, err?.message || err);
     }
     return null;
   }
@@ -10855,6 +10868,24 @@
     return actual;
   }
 
+  // 19/08: neu backend da AM THAM roi ve bo giai cu (Cherry/Flash import loi,
+  // vd anh Cloud Run chua co tkb_engine_v3) thi PHAI noi ro cho nguoi dung —
+  // truoc day nut van bao "Da sap xep xong" nen khong ai biet nut khong chay
+  // dung thuat toan minh chon.
+  function engineFallbackNotice(payload){
+    const runtime = payload?.solver?.runtime_settings || {};
+    const raw = runtime.cherry_fallback_reason || runtime.flash_fallback_reason || "";
+    if(!raw) return "";
+    const which = runtime.cherry_fallback_reason ? "Cherry" : "Flash";
+    const text = String(raw);
+    const missingModule = /ModuleNotFound|No module named/i.test(text);
+    const missingOrtools = /ortools/i.test(text);
+    let why = text.slice(0, 160);
+    if(missingModule && missingOrtools) why = "máy chủ giải thiếu thư viện ortools";
+    else if(missingModule) why = "ảnh Cloud Run chưa có bộ giải mới (tkb_engine_v3)";
+    return `⚠ Nút ${which} KHÔNG chạy thuật toán riêng — đã tự chuyển về bộ giải cũ (${why}). Cần build lại ảnh Cloud Run.`;
+  }
+
   function buildCompletionMessage(payload, visibleOverride){
     const metrics = payload?.metrics || {};
     const solver = payload?.solver || {};
@@ -10875,7 +10906,11 @@
     const capacityShortageOnly = payloadIsPureCapacityShortage(payload);
     const debtMessage = qualityDebtMessage(payload, runtime);
     if(bestEffort) unchangedSchedule = false;
-    if(!bestEffort) return completionQualityStatus(payload, getData()).message;
+    const fallbackNotice = engineFallbackNotice(payload);
+    if(!bestEffort){
+      const base = completionQualityStatus(payload, getData()).message;
+      return fallbackNotice ? `${base}\n${fallbackNotice}` : base;
+    }
     const returnedIncumbentNearDeadline = payloadReturnedCompleteIncumbentNearDeadline(payload);
     const lines = [
       returnedIncumbentNearDeadline
@@ -10895,6 +10930,7 @@
     if(debtMessage) lines.push(debtMessage);
     if(Number.isFinite(elapsed)) lines.push(`Thời gian: ${formatDuration(elapsed)}.`);
     if(unchangedSchedule) lines.push("Ghi chú: phương án mới không đổi vị trí các tiết so với lịch đang hiển thị.");
+    if(fallbackNotice) lines.push(fallbackNotice);
     return lines.join("\n");
   }
 
@@ -14231,6 +14267,19 @@
       preserveExisting: isTruthySetting(settings?.preserve_existing_tkb),
       skipPreRelease: settings?.ui_skip_pre_solve_constraint_release === true
     });
+    // CHAN DOAN 19/08: do thoi gian TUNG BUOC chuan bi truoc khi POST. Do dac
+    // tren may that cho thay giai doan nay ngon 3-6 PHUT voi truong 75 lop —
+    // lau hon ca thoi gian giai. Moc nay chi ghi vao trace (khong doi hanh vi).
+    window.__TKB_PREP_LAST = Date.now();
+    const prepMark = (name) => {
+      try{
+        const now = Date.now();
+        const prev = Number(window.__TKB_PREP_LAST) || now;
+        window.__TKB_PREP_LAST = now;
+        const ms = now - prev;
+        if(ms >= 150) traceSolveStep("prep:" + name, {ms});
+      }catch(_){ }
+    };
     if(!resumeExistingServerJobOnly){
       try{
         const rb = window.TKBConstraints || window.TKBConstraintsFull;
@@ -14253,7 +14302,9 @@
     if(!resumeExistingServerJobOnly){
       syncOffLocksToData(data, collectOffLocks(data));
     }
+    prepMark("releaseViolations+offLocks");
     const effectiveSettings = effectiveSettingsForSolve(settings, data);
+    prepMark("effectiveSettingsForSolve");
     await yieldResponsiveUi();
     enforceCompleteScheduleForUi(effectiveSettings);
     if(!effectiveSettings.ui_capacity_safe_fresh_probe
@@ -14265,6 +14316,7 @@
     clearPostRollbackSettings(effectiveSettings);
     const activeSolveRunId = String(window.__TKB_ACTIVE_SOLVE_RUN_ID || "");
     const requestApplyGuardFingerprint = durableScheduleFingerprint(data);
+    prepMark("durableScheduleFingerprint");
     const canonicalFocus = optimizationFocusForSolveRequestMode(
       effectiveSettings.ui_requested_solve_mode || effectiveSettings.optimization_focus
     );
@@ -14287,6 +14339,7 @@
       ? `${activeSolveRunId}:req:${Date.now()}:${Math.random().toString(36).slice(2)}`
       : makeSolveRunId());
     const partialRepairState = applyPartialExistingRepairSettings(effectiveSettings, data, "few_unassigned_before_post");
+    prepMark("applyPartialExistingRepairSettings");
     if(partialRepairState){
       effectiveSettings.optimize_existing_schedule = effectiveSettings.ui_unified_partial_repair !== true;
       effectiveSettings.existing_fill_missing_schedule = true;
@@ -14295,7 +14348,9 @@
       effectiveSettings.best_effort_on_timeout = true;
     }
     const expectedForExistingOptimize = expectedLessonCount(data);
+    prepMark("expectedLessonCount");
     const scheduledForExistingOptimize = countScheduledLessons(data);
+    prepMark("countScheduledLessons");
     const existingCompleteForOptimize = !partialRepairState
       && effectiveSettings.ui_allow_auto_existing_optimize === true
       && effectiveSettings.ui_default_fresh_sort !== true
@@ -14378,6 +14433,7 @@
       enforceNoHintFreshSolveSettings(effectiveSettings);
     }
     const fixedLessonPreserveCount = applyFixedLessonPreserveSettings(effectiveSettings, data);
+    prepMark("applyFixedLessonPreserveSettings");
     await yieldResponsiveUi();
     if(isNoHintSmartFreshSettings(effectiveSettings)){
       enforceNoHintFreshSolveSettings(effectiveSettings);
@@ -14391,7 +14447,9 @@
       || effectiveSettings.ui_staged_existing_repair === true
       || capacityShortageSolve;
     if(!allowShortBackendDeadline && !capacityShortageSolve) applySchedulingPressureTimeFloor(effectiveSettings, data);
+    prepMark("applySchedulingPressureTimeFloor");
     if(!capacityShortageSolve) applyHeavyOnePeriodCleanupSettings(effectiveSettings, data);
+    prepMark("applyHeavyOnePeriodCleanupSettings");
     enforceRustRuntimeSafetySettings(effectiveSettings);
     if(isNoHintSmartFreshSettings(effectiveSettings)){
       enforceNoHintFreshSolveSettings(effectiveSettings);
@@ -14421,6 +14479,31 @@
       effectiveSettings.overall_time_limit_seconds = optimizationSeconds;
     }
     const minBackendDeadlineMs = allowShortBackendDeadline ? 1_000 : 20_000;
+    // 19/08: nut Cherry / Flash can ngan sach dai hon lane mac dinh.
+    try{
+      const forcedEngineEarly = String(window.__TKB_FORCE_ENGINE || "").trim().toLowerCase();
+      if(forcedEngineEarly){
+        // 19/08: bo giai DUNG HET ngan sach duoc cap (no toi uu tiep chu khong
+        // tra ve som), nen "ngan sach" = "thoi gian cho". 200s cho ca hai nut la
+        // qua tay; dat theo dac tinh tung bo giai, cho phep chinh nhanh bang
+        // window.__TKB_ENGINE_BUDGET_SECONDS neu can thu nghiem.
+        // 19/08 (sua): TRUOC day dung Math.max(...) nen ngan sach cua lane mac
+        // dinh (270s) luon thang -> Cherry/Flash ngoi du 280s du bo giai goc chi
+        // can ~70-80s cho cung bo du lieu (log tham chieu: "HOAN TAT TRON GOI
+        // TRONG 79.74s", 2175 tiet / 75 lop / 125 GV). Engine v3 la portfolio
+        // chay DEN HET deadline, nen ngan sach = thoi gian cho. Vi vay DAT
+        // THANG ngan sach cua nut, khong lay max nua.
+        const engineBudgetOverride = Number(window.__TKB_ENGINE_BUDGET_SECONDS) || 0;
+        const engineDefaultBudget = forcedEngineEarly === "flash" ? 90 : 90;
+        budgetSeconds = engineBudgetOverride > 0 ? engineBudgetOverride : engineDefaultBudget;
+        effectiveSettings.overall_time_limit_seconds = budgetSeconds;
+        effectiveSettings.integrated_time_limit = budgetSeconds;
+        effectiveSettings.optimization_time_limit_seconds = budgetSeconds;
+        effectiveSettings.optimization_adaptive_time_limit_seconds = budgetSeconds;
+        effectiveSettings.progress_estimate_seconds = budgetSeconds;
+        effectiveSettings.ui_client_timeout_reserve_ms = 120000;
+      }
+    }catch(_){ }
     let backendDeadlineMs = budgetSeconds > 0
       ? Math.max(minBackendDeadlineMs, Math.min(1_800_000, Math.round(budgetSeconds * 1000)))
       : 1_800_000;
@@ -14430,6 +14513,7 @@
       ? Math.max(250, Math.min(1500, Number(effectiveSettings.native_deadline_reserve_ms || 500) || 500))
       : 1500;
     if(!allowShortBackendDeadline) alignNativeFreshToBackendDeadline(effectiveSettings, data, backendDeadlineMs);
+    prepMark("alignNativeFreshToBackendDeadline");
     applySolverPresetQualityPolicy(effectiveSettings);
     effectiveSettings.allow_strict_quality_solution_bank = false;
     if(isNoHintSmartFreshSettings(effectiveSettings)){
@@ -14618,7 +14702,9 @@
         expected: expectedLessonCount(data)
       });
       await yieldResponsiveUi();
+      prepMark("upto-before-request-data");
       const requestData = dataForSolverRequest(data, effectiveSettings);
+      prepMark("dataForSolverRequest");
       const clientFastSeed = await buildClientFastSeed(
         requestData,
         effectiveSettings,
@@ -14865,7 +14951,9 @@
           );
         }catch(_){ }
       }
+      prepMark("upto-serialize");
       body = JSON.stringify(browserWasmRequest);
+      prepMark("JSON.stringify(request)");
       traceSolveStep("postSolve:before-fetch", {
         requestBytes: body.length,
         timeoutMs,
@@ -16488,6 +16576,44 @@
     if(options?.shuffleOnly !== true && isNoHintSmartFreshSettings(settings)){
       enforceNoHintFreshSolveSettings(settings);
     }
+    if(settings?.ui_flash_scheduler_active === true){
+      const dataForProgress = getData();
+      const activeSolveRunId = makeSolveRunId();
+      window.__TKB_RUST_SOLVER_RUNNING = true;
+      window.__TKB_SOLVE_UI_BUSY = true;
+      setAutoSortButtonBusy(true);
+      window.__TKB_ACTIVE_SOLVE_RUN_ID = activeSolveRunId;
+      window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = "";
+      window.__TKB_SOLVER_LAST_ERROR = "";
+      window.__TKB_SOLVER_LAST_ERROR_PAYLOAD = null;
+      window.__TKB_SOLVER_LAST_FAILURE_RETRYABLE = false;
+      dismissCompletionPopup(true);
+      publishE2EState("running", null, {runId: activeSolveRunId});
+      startProgressTicker(settings, dataForProgress);
+      if(typeof setAutoSortProgress === "function") setAutoSortProgress(5, "");
+
+      try{
+        const payload = await postSolve(settings);
+        if(!isCurrentSolveRun(activeSolveRunId)) return null;
+
+        const result = await applyPayload(payload, settings);
+        finishProgress("100%", "ok");
+        setStatus("Hoàn tất sắp xếp TKB.", "ok");
+        window.__TKB_RUST_SOLVER_RUNNING = false;
+        window.__TKB_SOLVE_UI_BUSY = false;
+        schedulePostSolveUi(payload, result);
+        return result;
+      }catch(err){
+        window.__TKB_RUST_SOLVER_RUNNING = false;
+        window.__TKB_SOLVE_UI_BUSY = false;
+        setAutoSortButtonBusy(false);
+        stopProgressTicker();
+        if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
+        const friendly = friendlySolveError(err);
+        setStatus(friendly, "warning");
+        throw err;
+      }
+    }
     await yieldResponsiveUi();
     if(options?.shuffleOnly !== true && settings?.ui_allow_presolve_local_fast_finish === true){
       traceSolveStep("solve:presolve-fast-start");
@@ -16497,21 +16623,23 @@
       if(localUnassignedRepairPayload) return localUnassignedRepairPayload;
       traceSolveStep("solve:presolve-fast-done");
     }
-    const singlePassAutoSort = options?.singlePass === true || settings?.ui_single_pass_auto_sort === true;
+    const singlePassAutoSort = options?.singlePass === true || settings?.ui_single_pass_auto_sort === true || settings?.ui_flash_scheduler_active === true;
     let allowSinglePassQuality = false;
     if(singlePassAutoSort){
       const localRepairNeedsOptimize = settings?.ui_local_unassigned_repair_needs_optimize === true;
-      const requestedQualityRetry = localRepairNeedsOptimize
+      const requestedQualityRetry = settings?.ui_flash_scheduler_active !== true && (
+        localRepairNeedsOptimize
         || settings?.allow_zero_one_quality_retry === true
         || settings?.allow_teacher_session_deep_retry === true
         || settings?.allow_teacher_session_fast_portfolio === true
         || settings?.gap1_quality_target_explicit === true
         || nonnegativeNumberSetting(settings?.target_gap1_sessions) != null
-        || nonnegativeNumberSetting(settings?.optimization_accept_gap1_sessions) != null;
+        || nonnegativeNumberSetting(settings?.optimization_accept_gap1_sessions) != null
+      );
       settings.ui_single_pass_auto_sort = true;
       settings.complete_schedule_seed_retry = false;
       settings.allow_zero_one_quality_retry = requestedQualityRetry ? true : false;
-      settings.allow_teacher_session_deep_retry = settings?.allow_teacher_session_deep_retry === true;
+      settings.allow_teacher_session_deep_retry = requestedQualityRetry && settings?.allow_teacher_session_deep_retry === true;
       settings.allow_teacher_session_fast_portfolio = requestedQualityRetry ? true : false;
       allowSinglePassQuality = requestedQualityRetry
         && settings?.ui_allow_quality_after_single_pass === true
@@ -16665,6 +16793,8 @@
             stagedExistingRepairState,
             activeSolveRunId
           );
+        }else if(settings?.ui_flash_scheduler_active === true){
+          payload = await postSolve(settings);
         }else{
           payload = await solveCapacitySafeFreshProbe(
             settings,
@@ -16707,8 +16837,10 @@
       acceptSafeCapacityPartial(payload);
       let completion = payloadCompletion(payload);
       let skipFurtherRetries = completion.complete && payloadReturnedCompleteIncumbentNearDeadline(payload);
-      let capacityShortageRun = acceptedCapacityPartial;
       let skipRetryLoops = (
+          settings?.ui_flash_scheduler_active === true
+        )
+        || (
           singlePassAutoSort
           && (
             completion.complete
@@ -16734,6 +16866,9 @@
         completion = payloadCompletion(payload);
         skipFurtherRetries = completion.complete && payloadReturnedCompleteIncumbentNearDeadline(payload);
         skipRetryLoops = (
+            settings?.ui_flash_scheduler_active === true
+          )
+          || (
             singlePassAutoSort
             && (
               completion.complete
@@ -19655,12 +19790,7 @@
     }
     traceSolveStep("auto-sort:targets", automaticPlan.qualityTargets);
     traceSolveStep("auto-sort:settings-ready", {preset:"balanced", kind:automaticPlan.kind});
-    setStatus(
-      settings.ui_fresh_solve_duration_floor_applied === true
-        ? `Lịch chưa xếp đủ; lượt đầu dùng tối thiểu ${MIN_FRESH_SOLVE_DURATION_SECONDS} giây.`
-        : "Đang sắp xếp...",
-      "info"
-    );
+    setStatus("", "info");
     let result = await solveWithRustApi({
       ask:false,
       settings,
@@ -20412,4 +20542,65 @@
     window.TKBRustAPI.cancelBackendSolver = cancelBackendSolver;
     window.TKBRustAPI.backendSolverState = backendSolverState;
   }
+})();
+
+/* =============================================================================
+   FAIL-SAFE 19/08: cai dat window.tkbRunEngine NGAY TRONG FILE NAY.
+   Ly do: hai nut Flash/Cherry nam trong sapxep.html va goi tkbRunEngine qua
+   onclick. Neu ban sapxep.html tren may chu cu hon ban co dinh nghia (deploy
+   thieu file hoac trinh duyet giu ban HTML cu), nut se bao
+   "tkbRunEngine is not defined" va khong lam gi ca. File bridge nay LUON duoc
+   nap kem ?v=... nen luon moi -> dinh nghia o day la luoi an toan cuoi cung.
+   Chi cai khi CHUA co (ban trong HTML, neu co, se ghi de sau va duoc uu tien).
+============================================================================= */
+(function(){
+  if(typeof window === "undefined") return;
+  if(typeof window.tkbRunEngine === "function") return;
+  window.tkbRunEngine = function(engine, btn){
+    if(window.__TKB_SOLVE_UI_BUSY === true || window.__TKB_RUST_SOLVER_RUNNING === true){
+      try{ window.setStatus && window.setStatus("Đang có lượt xếp chạy, vui lòng chờ.", "info"); }catch(_){}
+      return;
+    }
+    window.__TKB_FORCE_ENGINE = String(engine || "");
+    window.__CURRENT_ACTIVE_ENGINE = String(engine || "");
+    // 19/08: nhan tien do cu ("Trong 1 tiet: 70 -> 6"...) song sot giua cac
+    // luot va se hien lai o giay thu 2 cua luot Flash/Cherry neu khong xoa —
+    // trong nhu nut Cherry dang chay thuat toan gap1 trong trinh duyet.
+    window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = "";
+    var metricEl = document.getElementById("autoSortProgressMetric");
+    if(metricEl){
+      metricEl.textContent = "";
+      metricEl.hidden = true;
+    }
+    var clear = function(){
+      window.__TKB_FORCE_ENGINE = "";
+      window.__CURRENT_ACTIVE_ENGINE = "";
+      window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = "";
+    };
+    var start = function(){
+      var runner = (typeof window.bridgeSapXepTuDongAll === "function")
+        ? window.bridgeSapXepTuDongAll
+        : window.sapXepTuDongAll;
+      if(typeof runner !== "function") return false;
+      var r = runner({ manualAgentInvite: false });
+      if(r && typeof r.finally === "function") r.finally(clear);
+      else window.setTimeout(clear, 5000);
+      return true;
+    };
+    try{
+      if(start()) return;
+      // Bo giai chua nap xong: cho toi da 5 giay roi thu lai thay vi im lang.
+      var tries = 0;
+      var timer = window.setInterval(function(){
+        tries++;
+        if(start() || tries >= 25){
+          window.clearInterval(timer);
+          if(tries >= 25){
+            clear();
+            try{ window.setStatus && window.setStatus("Bộ giải chưa sẵn sàng, vui lòng tải lại trang (Ctrl+F5).", "warning"); }catch(_){}
+          }
+        }
+      }, 200);
+    }catch(e){ clear(); }
+  };
 })();

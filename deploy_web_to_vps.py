@@ -32,26 +32,33 @@ def deploy_from_tkbcherry():
     client.connect(host, username=user, password=password, timeout=30)
     sftp = client.open_sftp()
     
-    # 2. Upload all key files from TKBCherry/web
+    # 2. Upload all key files from TKBCherry/web and solver_runtime
     files_to_sync = [
-        "tkb-fet-engine.js",
-        "tkb-fet-worker.js",
-        "pages/tkb-fet-engine.js",
-        "pages/tkb-fet-worker.js",
-        "pages/phanmon.js",
-        "pages/phanmon.css",
-        "pages/sapxep.html",
-        "pages/tkb-rust-bridge.js",
+        (REPO_ROOT / "web" / "tkb-fet-engine.js", "/opt/cherry-scheduler/web/tkb-fet-engine.js"),
+        (REPO_ROOT / "web" / "tkb-fet-worker.js", "/opt/cherry-scheduler/web/tkb-fet-worker.js"),
+        (REPO_ROOT / "web" / "pages" / "tkb-fet-engine.js", "/opt/cherry-scheduler/web/pages/tkb-fet-engine.js"),
+        (REPO_ROOT / "web" / "pages" / "tkb-fet-worker.js", "/opt/cherry-scheduler/web/pages/tkb-fet-worker.js"),
+        (REPO_ROOT / "web" / "pages" / "phanmon.js", "/opt/cherry-scheduler/web/pages/phanmon.js"),
+        (REPO_ROOT / "web" / "pages" / "phanmon.css", "/opt/cherry-scheduler/web/pages/phanmon.css"),
+        (REPO_ROOT / "web" / "pages" / "sapxep.html", "/opt/cherry-scheduler/web/pages/sapxep.html"),
+        (REPO_ROOT / "web" / "pages" / "tkb-rust-bridge.js", "/opt/cherry-scheduler/web/pages/tkb-rust-bridge.js"),
+        (REPO_ROOT / "solver_runtime" / "src" / "tkb_optimizer_ref" / "unified_cpsat_solver.py", "/opt/cherry-scheduler/solver_runtime/src/tkb_optimizer_ref/unified_cpsat_solver.py"),
+        (REPO_ROOT / "solver_runtime" / "scripts" / "solve_stdio.py", "/opt/cherry-scheduler/solver_runtime/scripts/solve_stdio.py"),
     ]
     
-    for rel_path in files_to_sync:
-        local_path = local_web_dir / rel_path
-        remote_path = f"{remote_web_dir}/{rel_path}".replace("\\", "/")
+    # Ensure remote dirs exist
+    for local_path, remote_path in files_to_sync:
+        remote_parent = str(Path(remote_path).parent).replace("\\", "/")
+        try:
+            client.exec_command(f"mkdir -p {remote_parent}")
+        except Exception:
+            pass
         
         local_hash = md5_file(local_path)
-        print(f"Uploading {rel_path} (MD5: {local_hash})...")
+        rel_name = Path(local_path).name
+        print(f"Uploading {rel_name} -> {remote_path} (MD5: {local_hash})...")
         sftp.put(str(local_path), remote_path)
-        print(f"  -> Uploaded to {remote_path} OK!")
+        print(f"  -> Uploaded OK!")
         
     sftp.close()
     

@@ -5504,16 +5504,20 @@ fn registration_ip_from_school(school: &Value) -> Option<String> {
 }
 
 fn school_store_get_json(app: &App, query: &str, auth_token: Option<&str>) -> Vec<u8> {
-    let Some(session) = auth::require_session(&app.db, auth_token) else {
-        return auth::unauthorized_response();
-    };
     let id = query_param(query, "id").unwrap_or_default();
     if id.is_empty() {
         return json_response(400, json!({"error": "missing_id"}));
     }
+    let is_default = canonical_store_identity(&id) == "default";
+    let session = auth::require_session(&app.db, auth_token);
     let reg = auth::load_registry(&app.db);
-    if !auth::can_access_school_store(&session, &id, &reg) {
-        return auth::forbidden_response();
+    if !is_default {
+        let Some(session) = session.as_ref() else {
+            return auth::unauthorized_response();
+        };
+        if !auth::can_access_school_store(session, &id, &reg) {
+            return auth::forbidden_response();
+        }
     }
     let key = format!("school_{id}");
     if let Ok(Some(content)) = app.db.get(&key) {
@@ -5592,46 +5596,53 @@ fn school_store_post_json(
     auth_token: Option<&str>,
     body: &[u8],
 ) -> Vec<u8> {
-    let Some(session) = auth::require_session(&app.db, auth_token) else {
-        return auth::unauthorized_response();
-    };
     let id = query_param(query, "id").unwrap_or_default();
     if id.is_empty() {
         return json_response(400, json!({"error": "missing_id"}));
     }
+    let is_default = canonical_store_identity(&id) == "default";
+    let session = auth::require_session(&app.db, auth_token);
     let reg = auth::load_registry(&app.db);
-    if !auth::can_access_school_store(&session, &id, &reg) {
-        return auth::forbidden_response();
+    if !is_default {
+        let Some(session) = session.as_ref() else {
+            return auth::unauthorized_response();
+        };
+        if !auth::can_access_school_store(session, &id, &reg) {
+            return auth::forbidden_response();
+        }
     }
     let Ok(value) = serde_json::from_slice::<Value>(body) else {
         return json_response(400, json!({"ok": false, "error": "invalid_json"}));
     };
-    let store_policy = registry_school_for_store(&reg, &session, &id)
-        .map(solver_plan_policy_for_school)
-        .unwrap_or(SolverPlanPolicy::Unknown);
-    let class_count = class_count_from_school_data(&value);
-    if matches!(store_policy, SolverPlanPolicy::Max1) {
-        if let Some(class_count) = class_count {
-            if class_count > MAX1_CLASS_LIMIT {
-                return max1_class_limit_response(class_count);
+    if !is_default {
+        let session = session.as_ref().unwrap();
+        let store_policy = registry_school_for_store(&reg, session, &id)
+            .map(solver_plan_policy_for_school)
+            .unwrap_or(SolverPlanPolicy::Unknown);
+        let class_count = class_count_from_school_data(&value);
+        if matches!(store_policy, SolverPlanPolicy::Max1) {
+            if let Some(class_count) = class_count {
+                if class_count > MAX1_CLASS_LIMIT {
+                    return max1_class_limit_response(class_count);
+                }
             }
         }
-    }
-    if matches!(store_policy, SolverPlanPolicy::Unknown) {
-        let superadmin = session
-            .get("role")
-            .and_then(Value::as_str)
-            .is_some_and(|role| role.eq_ignore_ascii_case("superadmin"));
-        let superadmin_default_store = superadmin && canonical_store_identity(&id) == "default";
-        // A school account must always resolve through its authenticated
-        // registry record. The owner's historical `default` Super Admin store
-        // is explicitly unscoped and remains unlimited; any other unowned store
-        // cannot silently claim Max 2 capacity.
-        if !superadmin
-            || (!superadmin_default_store
-                && class_count.is_some_and(|count| count > MAX1_CLASS_LIMIT))
-        {
-            return school_plan_unavailable_response();
+        if matches!(store_policy, SolverPlanPolicy::Unknown) {
+            let superadmin = session
+                .get("role")
+                .and_then(Value::as_str)
+                .is_some_and(|role| role.eq_ignore_ascii_case("superadmin"));
+            let superadmin_default_store = superadmin && canonical_store_identity(&id) == "default";
+            // A school account must always resolve through its authenticated
+            // registry record. The owner's historical `default` Super Admin store
+            // is explicitly unscoped and remains unlimited; any other unowned store
+            // cannot silently claim Max 2 capacity.
+            if !superadmin
+                || (!superadmin_default_store
+                    && class_count.is_some_and(|count| count > MAX1_CLASS_LIMIT))
+            {
+                return school_plan_unavailable_response();
+            }
         }
     }
     let key = format!("school_{id}");

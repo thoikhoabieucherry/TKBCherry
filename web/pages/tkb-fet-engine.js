@@ -4061,6 +4061,15 @@
         }
       }
 
+      // (GO BO 17/08 — theo chi dao chu du an) Buoc "KHOA CUNG gap2=0 moi tra
+      // lich" cu goi this.optimize() NGAY TRONG solve() ma chua applyToDataTKB
+      // -> loadExistingSchedule cua optimize nap lai luoi CHI CON O CO DINH va
+      // VUT TOAN BO lich vua xep (chinh la loi "287/287"/"360/360" tren app).
+      // Nguyen tac moi: solve() CHI lo xep DU 100% (khong du cho thi lap toi
+      // da, phan du tra ve Chua phan); chat luong gap2/1t-buoi la viec cua
+      // pipeline toi uu (Tron goi/NEW) chay SAU khi lich da ap.
+
+      this.__minTwoGuardActive = false;
       this.applyToDataTKB();
       const currentVal = bestMetrics[targetMetricKey];
       const targetReached = currentVal === 0 || currentVal <= targetMetricLowerBound;
@@ -4136,6 +4145,25 @@
           const tkbKey = cid + "|" + act.mon;
           if(act.gv) data.tkbLessonTeachers[tkbKey] = act.gv;
           if(act.room) data.tkbLessonRooms[tkbKey] = act.room;
+        }
+      });
+
+      // CHONG VANG TIET (13.1): tiet nap tu lich cu ma den gio van chua dat lai
+      // duoc -> tra NGUYEN VAN o goc cua no (neu o do con trong) thay vi de trong.
+      // Nguoi dung khong bao gio bi "mat" tiet chi vi bam Toi uu.
+      this.activities.forEach(act => {
+        if(this.actPlacement[act.id] >= 0) return;
+        if(!(act.initSlot >= 0) || !act.initRaw) return;
+        const cells = [{ s: act.initSlot, raw: act.initRaw }];
+        if(act.duration === 2 && act.initRaw2) cells.push({ s: act.initSlot + 1, raw: act.initRaw2 });
+        for(const c of cells){
+          const d = slotToDetails(c.s);
+          const key = `${act.classId}|${c.s}`;
+          if(this.fixedRawCells.has(key) || this.offSlots.has(key)) continue;
+          const row = data.tkb[act.classId]?.[d.thu]?.[d.buoi];
+          if(!Array.isArray(row)) continue;
+          const cur = row[d.periodIdx];
+          if(cur == null || cur === ""){ row[d.periodIdx] = c.raw; }
         }
       });
     }
