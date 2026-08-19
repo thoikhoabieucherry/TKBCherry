@@ -2987,6 +2987,89 @@
       return improved ? currentBest : null;
     }
 
+    tryIntraSessionBlockPermutations(bestMetrics, onProgress = null){
+      let currentBest = { ...bestMetrics };
+      let improved = false;
+
+      const permute = (arr) => {
+        if (arr.length <= 1) return [arr];
+        const res = [];
+        for (let i = 0; i < arr.length; i++) {
+          const current = arr[i];
+          const remaining = arr.slice(0, i).concat(arr.slice(i + 1));
+          for (const p of permute(remaining)) {
+            res.push([current].concat(p));
+          }
+        }
+        return res;
+      };
+
+      for(let d = 0; d < DAYS_LIST.length; d++){
+        for(let b = 0; b < SESSIONS_LIST.length; b++){
+          const sStart = d * SLOTS_PER_DAY + b * PERIODS_PER_SESSION;
+
+          for(let cIdx = 0; cIdx < this.classes.length; cIdx++){
+            const cGrid = this.classGridList[cIdx];
+
+            const sessionActIds = [];
+            const actSet = new Set();
+            for(let p = 0; p < PERIODS_PER_SESSION; p++){
+              const actId = cGrid[sStart + p];
+              if(actId >= 0 && !actSet.has(actId)){
+                actSet.add(actId);
+                sessionActIds.push(actId);
+              }
+            }
+            if(sessionActIds.length <= 1) continue;
+
+            const acts = sessionActIds.map(id => this.activities[id]);
+            if(acts.some(a => a.isFixed || a.lockedByLessonBlock)) continue;
+
+            const allPerms = permute(acts);
+
+            for(const perm of allPerms){
+              const targetSlots = [];
+              let currentOffset = 0;
+              for(const a of perm){
+                targetSlots.push(sStart + currentOffset);
+                currentOffset += a.duration;
+              }
+              if(currentOffset !== PERIODS_PER_SESSION) continue;
+
+              const isSame = perm.every((a, idx) => this.actPlacement[a.id] === targetSlots[idx]);
+              if(isSame) continue;
+
+              const snap = this.captureStateSnapshot();
+              for(const a of acts) this.unplaceActivity(a.id);
+
+              let allFeasible = true;
+              for(let i = 0; i < perm.length; i++){
+                if(!this.isSlotFeasible(perm[i], targetSlots[i])){
+                  allFeasible = false;
+                  break;
+                }
+                this.placeActivityDirect(perm[i].id, targetSlots[i]);
+              }
+
+              if(allFeasible){
+                const mNew = this.evaluateMetrics();
+                if(this.compareMetrics(mNew, currentBest, "optimize_gap2") < 0){
+                  currentBest = { ...mNew };
+                  improved = true;
+                  if(typeof onProgress === "function") onProgress(currentBest);
+                  break;
+                }
+              }
+              this.restoreStateSnapshot(snap);
+            }
+            if(improved) break;
+          }
+          if(improved) break;
+        }
+      }
+      return improved ? currentBest : null;
+    }
+
     loadExistingSchedule(){
       this.init();
       const data = this.data;
@@ -3212,6 +3295,8 @@
           if(res4b){ bestMetrics = res4b; anyRoundImprovement = true; }
           const res4c = this.tryCrossDayClassSwap(bestMetrics, onProgress);
           if(res4c){ bestMetrics = res4c; anyRoundImprovement = true; }
+          const res4d = this.tryIntraSessionBlockPermutations(bestMetrics, onProgress);
+          if(res4d){ bestMetrics = res4d; anyRoundImprovement = true; }
         }
 
         if(mode === "optimize_all" || mode === "optimize_sessions"){
