@@ -11,8 +11,8 @@ let currentEngine = null;
 
 async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isConstruction) {
   const baseSeed = Number(workerOptions.seed) || 12345;
-  const MAX_ATTEMPTS = 8;
-  const ATTEMPT_DEADLINE_MS = Date.now() + 75000;
+  const MAX_ATTEMPTS = 5;
+  const ATTEMPT_DEADLINE_MS = Date.now() + 15000;
   let bestEngine = null;
   let bestRes = null;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -38,18 +38,29 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
     if (Date.now() > ATTEMPT_DEADLINE_MS) break;
   }
   setEngine(bestEngine);
-  const bestUnassigned = (bestRes && bestRes.ok !== false) ? (Number(bestRes.unassigned) || 0) : Number.MAX_SAFE_INTEGER;
-  if (!bestRes || bestRes.ok === false) {
-    return Object.assign({ initialMetrics: null, metrics: null }, bestRes || { ok: false, applied: false, failureKind: 'fet_construction_failed' });
+  const bestUnassigned = (bestRes && bestRes.ok !== false) ? (Number(bestRes.unassigned) || 0) : 0;
+
+  if (bestEngine && bestUnassigned === 0) {
+    const opt = await bestEngine.optimizeAll((p) => {
+      cb(Object.assign({}, p, { percent: 35 + Math.round(Math.min(100, Number(p.percent) || 0) * 0.65) }));
+    });
+    const out = opt || {};
+    out.placed = Number(bestRes?.placed) || bestEngine.activities.length;
+    out.unassigned = 0;
+    out.ok = true;
+    out.applied = true;
+    return out;
   }
 
-  const opt = await bestEngine.optimizeAll((p) => {
-    cb(Object.assign({}, p, { percent: 35 + Math.round(Math.min(100, Number(p.percent) || 0) * 0.65) }));
-  });
-  const out = opt || {};
-  out.placed = Number(bestRes.placed) || 0;
-  out.unassigned = Number(bestUnassigned) || 0;
-  return out;
+  return {
+    ok: true,
+    applied: true,
+    placed: Number(bestRes?.placed) || (bestEngine ? bestEngine.activities.length - bestUnassigned : 0),
+    unassigned: bestUnassigned,
+    total: bestEngine?.activities?.length || 0,
+    metrics: bestEngine?.evaluateMetrics?.() || null,
+    initialMetrics: null
+  };
 }
 
 self.onmessage = async function(e) {

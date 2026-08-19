@@ -1129,20 +1129,18 @@
         const slot = cand.slot;
         const displaced = cand.displacedActIds;
 
-        const oldSlots = [];
+        const snap = this.captureStateSnapshot();
+
         for(let j = 0; j < displaced.length; j++){
           const dId = displaced[j];
-          oldSlots.push(this.actPlacement[dId]);
           this.triedRemovals.set(dId, (this.triedRemovals.get(dId) || 0) + 1);
           this.unplaceActivity(dId);
           this.swappedInBranch.add(dId);
         }
 
         if(!this.isSlotFeasible(act, slot)){
-          for(let j = 0; j < displaced.length; j++){
-            this.placeActivityDirect(displaced[j], oldSlots[j]);
-            this.swappedInBranch.delete(displaced[j]);
-          }
+          this.restoreStateSnapshot(snap);
+          for(let j = 0; j < displaced.length; j++) this.swappedInBranch.delete(displaced[j]);
           continue;
         }
 
@@ -1165,14 +1163,9 @@
           return true;
         }
 
-        this.unplaceActivity(actId);
+        this.restoreStateSnapshot(snap);
+        for(let j = 0; j < displaced.length; j++) this.swappedInBranch.delete(displaced[j]);
         this.swappedInBranch.delete(actId);
-        for(let j = 0; j < displaced.length; j++){
-          const dId = displaced[j];
-          if(this.actPlacement[dId] >= 0) this.unplaceActivity(dId);
-          this.placeActivityDirect(dId, oldSlots[j]);
-          this.swappedInBranch.delete(dId);
-        }
       }
 
       if(level === 0){
