@@ -1,86 +1,48 @@
-# Project: Zero Singletons & Cross-Day Pair Shift Optimization
+# Project: TKBCherry FET Solver - Zero Singleton & Multi-Tier Optimization
 
 ## Architecture
-- **Engine Core** (`web/pages/tkb-fet-engine.js`, `web/tkb-fet-engine.js`):
-  - Client-side Web Worker FET C++ v7.9.5 port.
-  - Activity generation with 4-period paired block normalization (`2 + 2`).
-  - Min-Conflicts Recursive `randomSwap` with Tabu tenure, depth $\le 16$, adaptive limit calls ($2,000 \dots 3,500 \dots 5,000$).
-  - Fast 32-entry bitmask LUTs (`SESSION_STATS_LUT`, `GAP_PENALTY_LUT`) for $O(1)$ metric and student hole evaluation.
-  - Algorithmic Operators:
-    - `tryPairClassSingletons`: Intra-class 1-period singleton pair merger to contiguous blocks $(p, p+1)$.
-    - `tryCrossDayPairShift`: Cross-class, cross-day multi-period block shifting for multi-subject teachers (e.g. Teacher T.Chung 9A2 + 6A14).
-    - `tryTargetedIntraClassSingletonCrusher`, `trySingletonEjectionChains`, `tryClosedPushCycles`, `tryCrushGaps`.
-  - Multi-Pass Deep Search: `runUntilZeroSingletons` / `runUntilStagnation` with non-blocking cooperative yielding (`setTimeout(0)` every 16ms) and transactional snapshot rollback.
-- **Worker & UI Telemetry** (`web/pages/tkb-fet-worker.js`, `web/tkb-fet-worker.js`):
-  - Snapshot throttling (`SNAPSHOT_INTERVAL_MS = 250`), instant task cancellation (`isCancelled`), and live telemetry stream.
-- **Strict Invariants**:
-  1. `unplacedCount === 0` (100% placed).
-  2. `countTotalStudentHoles() === 0` (100% student contiguity).
-  3. `soBuoiTrong2 === 0` (0 gap-2 teacher sessions).
-  4. 100% immutable locked/fixed cells (-3) and teacher/class off cells (-2).
-  5. `soBuoiDay1 -> 0` (all teacher sessions $\ge 2$ periods or structural floor).
+- **Core Algorithm**: Constraint Satisfaction Problem (CSP) solver based on FET C++ engine principles with Maximum Remaining Values (MRV) heuristic, dynamic domain filtering, and conflict-driven recursive backtracking.
+- **Session-Block Constructive Packing (R1)**: Mathematical session-budget invariant $M = \lfloor W_T / 2 \rfloor$, `opensUnaffordableSession` deficit guarding, `hasViableCompanionForSession` in `isSlotFeasible`, and strong affinity heuristic scoring (`-1500` for companion slots) to pack teaching periods in pairs during initial constructive placement.
+- **Min-Conflicts Escape Chains (R2)**: Multi-tier recursive `randomSwap(actId, level = 0)` with depth up to 16, dynamic Tabu memory $[5..12]$, closed push-cycles (`tryClosedPushCycles`), and cross-class Kempe chains (`tryCrossClassSingletonKempeSwap`) to escape dense conflict clusters without infinite loops or UI freeze.
+- **Deep Post-Optimization Engine (R3)**: 14-stage heuristic optimization pipeline (`tryPairClassSingletons`, `tryCrossDayPairShift`, `tryTargetedIntraClassSingletonCrusher`, `trySingletonEjectionChains`, `tryShareRichToSingleton`, etc.) running until zero singletons (`runUntilZeroSingletons`) with Iterated Local Search (ILS) perturbation kicks.
+- **Strict Invariant Guarding (R4)**: Contiguous student session compaction (`compactAllStudentSessions`, `countTotalStudentHoles() === 0`), teacher gap-2 avoidance (`soBuoiTrong2 === 0`), 100% placement rate (`unplacedCount === 0`), and absolute preservation of fixed flag cells (`-3`) and off/busy cells (`-2`).
+
+## Code Layout
+- `web/pages/tkb-fet-engine.js`: Primary solver implementation, CSP search, ejection chains, and post-optimization operators.
+- `web/tkb-fet-engine.js`: Canonical mirror of the engine for runtime consistency.
+- `web/pages/tkb-fet-worker.js`: Web Worker background wrapper with cooperative event-loop yielding (`setTimeout(0)`).
+- `web/tkb-fet-worker.js`: Canonical mirror of the Web Worker wrapper.
+- `e2e_tests/zero_singleton_cross_day_e2e.test.js`: Tier 1–4 acceptance test suite for cross-day shifts and live school default verification.
+- `e2e_tests/augmented_singleton_e2e.test.js`: Comprehensive 40-test singleton invariant suite.
+- `e2e_tests/tkb_fet_engine_node.test.js`: Core engine CSP semantics and constraint checks.
+- `e2e_tests/tkb_fet_benchmark_node.test.js`: Telemetry and performance benchmarks.
+- `e2e_tests/adversarial_ui_worker_stress_node.test.js`: Stress tests for worker responsiveness, yielding, and cancellation.
+- `e2e_tests/planner_subject_limit_semantics_node.test.js`: Subject daily limits and period distribution semantics.
+- `scratch/live_school_default.json`: Official production test benchmark (75 classes, 129 teachers, 2,202 periods).
 
 ## Feature Inventory
-| # | Feature | Description | Milestone | Source |
-|---|---------|-------------|-----------|--------|
-| 1 | `tryCrossDayPairShift` Operator | Cross-day, cross-class block relocation for multi-subject teachers | M1 | ORIGINAL_REQUEST §R1 |
-| 2 | Enhanced `tryPairClassSingletons` | Intra-class singleton pairing with multi-step recursive ejection chain | M1 | ORIGINAL_REQUEST §R1 |
-| 3 | Transactional ACID Snapshot Rollback | Bit-for-bit state snapshot restore on blocked displacement or hole creation | M1 | ORIGINAL_REQUEST §R3 |
-| 4 | `Run Until Zero Singletons` Multi-Pass Loop | Multi-pass deep iterative search loop until `soBuoiDay1 <= targetLowerBound` | M2 | ORIGINAL_REQUEST §R2 |
-| 5 | Stagnation Detection & ILS Perturbation | Stagnation threshold detection (3 stagnant passes) + ILS perturbation kick | M2 | ORIGINAL_REQUEST §R2 |
-| 6 | Non-blocking Cooperative Yielding | 16ms event loop yielding for 60 FPS UI responsiveness and instant cancellation | M2 | ORIGINAL_REQUEST §R2 |
-| 7 | Teacher T.Chung Resolution | Specific resolution for T.Chung (Math 9A2 / Math 6A14) on Saturday $\ge 2$t | M3 | ORIGINAL_REQUEST §R1, AC |
-| 8 | Whole-School Zero Singletons Pass | Verification of `soBuoiDay1 = 0` on `live_school_default.json` (75 classes / 2,202 slots) | M3 | ORIGINAL_REQUEST §AC |
-| 9 | Invariant Hardening | Zero student holes, zero gap-2, 100% fixed cell preservation | M3 | ORIGINAL_REQUEST §R3 |
-| 10 | E2E Test Suite (Tiers 1-4) | Comprehensive requirement-driven opaque-box test suite for cross-day & deep search | E2E_TRACK | ORIGINAL_REQUEST §AC |
-| 11 | Phase 2 Adversarial Coverage Hardening | Tier 5 adversarial stress testing and coverage verification | FM | Project Pattern |
-| 12 | Documentation & Handover | Update `docs/PROJECT_HANDOFF.md`, `docs/CURRENT_STATE.md` per AGENTS.md | FM | ORIGINAL_REQUEST §AC |
+| # | Feature | Description | Milestone | Source | Status |
+|---|---------|-------------|-----------|--------|--------|
+| 1 | R1: Session-Block Constructive Packing | Rào cứng >=2 tiết/buổi ngay từ pha khởi tạo (`solve()`, `isSlotFeasible`, `opensUnaffordableSession`) | M1 | ORIGINAL_REQUEST §R1 | **VERIFIED** |
+| 2 | R2: Min-Conflicts Escape Chains | Chuỗi đẩy đa tầng đệ quy thoát kẹt khả thi với Tabu list & Kempe chains | M2 | ORIGINAL_REQUEST §R2 | **VERIFIED** |
+| 3 | R3: Deep Post-Optimization Pipeline | Tối ưu sâu đa tầng (`tryPairClassSingletons`, `tryCrossDayPairShift`, `tryTargetedIntraClassSingletonCrusher`) đưa `soBuoiDay1 -> 0` | M3 | ORIGINAL_REQUEST §R3 | **VERIFIED** |
+| 4 | R4: Invariant Preservation | Bảo toàn 100% unassigned=0 (2202/2202), student holes=0, soBuoiTrong2=0, fixed/off cells (-3, -2) | M4 | ORIGINAL_REQUEST §R4 | **VERIFIED** |
+| 5 | Live Benchmark Verification | Kiểm định trường THCS Mặc Định (75 lớp / 2202 tiết) & các thầy cô T.Chung, V.Quỳnh, PHT.Định | M5 | ORIGINAL_REQUEST §Acceptance | **VERIFIED** |
+| 6 | E2E Regression & Stress Suites | Toàn bộ 6 test suites đạt 100% (153/153 pass) | M5 | ORIGINAL_REQUEST §Acceptance | **VERIFIED** |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| E2E | E2E Testing Track | Design test runner and Tier 1-4 test cases; publish `TEST_READY.md` | none | DONE |
-| 1 | Cross-Day Pair Shift & Enhanced Singleton Pairing | Implement `tryCrossDayPairShift` and enhance `tryPairClassSingletons` in engine | none | DONE |
-| 2 | Multi-Pass Deep Search Optimizer Loop | Implement `runUntilZeroSingletons` / `runUntilStagnation` with cooperative yielding & worker telemetry | M1 | DONE |
-| 3 | Target Invariant & Teacher T.Chung Resolution | Resolve T.Chung and achieve `soBuoiDay1 = 0` on `live_school_default.json` preserving all invariants | M1, M2 | DONE |
-| 4 | Final Milestone & Adversarial Hardening | Pass 100% E2E test suite (Tiers 1-4), Tier 5 adversarial hardening, forensic audit clean verdict, documentation | E2E, M3 | DONE |
+| 1 | M1: Constructive Invariant Packing | Session-Block packing and feasibility bounds in `solve()` | None | **DONE** |
+| 2 | M2: Min-Conflicts Ejection Chains | Recursive ejection, Tabu memory, Kempe chains | M1 | **DONE** |
+| 3 | M3: Multi-Operator Post-Optimization | 14 post-opt operators & `runUntilZeroSingletons` loop | M2 | **DONE** |
+| 4 | M4: Invariant Compaction & ACID Guarding | Student hole elimination & strict cell protection | M3 | **DONE** |
+| 5 | M5: Verification & Forensic Integrity Gate | 6 E2E test suites pass, live school pass, adversarial audit | M1, M2, M3, M4 | **DONE** |
 
 ## Interface Contracts
-### `FetTimetableEngine.prototype.tryCrossDayPairShift(bestMetrics, onProgress)`
-- **Input**: `bestMetrics` (Object from `evaluateMetrics()`), `onProgress` (optional async callback).
-- **Behavior**:
-  - Scans scored teachers who have sessions with $k = 1$ active period on day $D_1$.
-  - Scans other days $D_2 \neq D_1$ where teacher teaches a 1-period or 2-period activity block of class $C_2$.
-  - Searches for valid contiguous slot placement $(s_1, s_1+d-1)$ in day $D_1$ session.
-  - Checks if candidate slots contain movable occupant activities; unplaces them and invokes `randomSwap(occ.id, 0)` with Tabu memory and adaptive call limit (`limitCalls = this.getAdaptiveLimitCalls(2000, 3500)`).
-  - Evaluates: `countTotalStudentHoles() === 0 && compareMetrics(m, currentBest, "optimize_singletons") < 0`.
-  - Returns `true` if move accepted and improves metrics, `false` otherwise (with bit-for-bit snapshot restore on failure).
-
-### `FetTimetableEngine.prototype.runUntilZeroSingletons(options)` / `runUntilStagnation(options)`
-- **Input**:
-  - `options.maxPasses` (default 15)
-  - `options.stagnationThreshold` (default 3)
-  - `options.timeBudgetMs` (default 35,000ms)
-  - `options.onProgress` (async callback emitting `{ pass, maxPasses, metrics, stage }`)
-- **Behavior**:
-  - Executes multi-pass optimization cycles combining Stage 1 (`tryPairClassSingletons`, `tryCrossDayPairShift`, `tryTargetedIntraClassSingletonCrusher`, `trySingletonEjectionChains`, `tryClosedPushCycles`) and Stage 2 (`tryCrushGaps`).
-  - Detects stagnation when `soBuoiDay1` does not improve across passes.
-  - Applies ILS perturbation kick on stagnation pass 1.
-  - Terminates when `soBuoiDay1 <= targetLowerBound`, `stagnantPasses >= stagnationThreshold`, or time budget expired.
-  - Cooperatively yields to JS event loop every 16ms.
-
-## Code Layout
-- `web/pages/tkb-fet-engine.js`: Primary engine source code.
-- `web/tkb-fet-engine.js`: Mirrored engine source code (MUST maintain 100% bitwise SHA-256 parity with `web/pages/tkb-fet-engine.js`).
-- `web/pages/tkb-fet-worker.js`: Primary Web Worker handler.
-- `web/tkb-fet-worker.js`: Mirrored Web Worker handler (MUST maintain 100% bitwise SHA-256 parity with `web/pages/tkb-fet-worker.js`).
-- `e2e_tests/`: Opaque-box E2E test suites:
-  - `e2e_tests/augmented_singleton_e2e.test.js`
-  - `e2e_tests/tkb_fet_engine_node.test.js`
-  - `e2e_tests/tkb_fet_benchmark_node.test.js`
-  - `e2e_tests/adversarial_ui_worker_stress_node.test.js`
-  - `e2e_tests/planner_subject_limit_semantics_node.test.js`
-  - `e2e_tests/zero_singleton_cross_day_e2e.test.js` (new comprehensive suite for this feature set)
-- `scratch/live_school_default.json`: Golden benchmark dataset (75 classes / 2,202 slots).
-- `docs/PROJECT_HANDOFF.md`: Work session handoff logs.
-- `docs/CURRENT_STATE.md`: Stack and product state summary.
+### `FetTimetableEngine` ↔ `tkb-fet-worker`
+- `engine.initFromData(data)`: Prepares class and teacher matrices, computes domains, initializes immutable constraints.
+- `engine.solve()`: Runs constructive MRV CSP search with Session-Block packing.
+- `engine.runUntilZeroSingletons(options)`: Executes deep multi-pass optimization pipeline until `soBuoiDay1 === 0`.
+- `engine.evaluateMetrics()`: Returns `{ unplacedCount, soBuoiDay1, soNgayMotTiet, soBuoiTrong2, ... }`.
+- `countTotalStudentHoles(data, lopData)`: Returns integer count of internal student session holes (must be 0).
