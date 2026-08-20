@@ -1,17 +1,19 @@
-# Project: TKBCherry Augmented Singleton Escape Chains & FET Counting Invariants
+# Project: TKBCherry Targeted Intra-Class Singleton Crusher & Deep Compute Budget
 
 ## Architecture
 - **Client-Side Core Engine**: `web/pages/tkb-fet-engine.js` (and mirrored `web/tkb-fet-engine.js`)
   - Activity MRV sorting & domain computation (`computeDifficultiesAndSort`)
-  - Min-conflicts recursive `randomSwap` (depth $\le 16$, call budget 2,000, Tabu map)
+  - Min-conflicts recursive `randomSwap` (depth $\le 16$, call budget $\ge 2,000$, Tabu map)
   - FET Session Counting Invariant guard (`opensUnaffordableSession`)
-  - 4-Stage Lexicographic Local Search (`optimize` / `optimizeAll`)
+  - Targeted Intra-Class Singleton Crusher (`tryTargetedIntraClassSingletonCrusher`)
+  - Multi-tier recursive push displacement chain (`trySingletonEjectionChains`)
+  - 4-Stage Lexicographic Local Search (`optimize` / `optimizeAll`) with deep compute budgets (`deepCycles`)
 - **Background Worker & UI Telemetry**: `web/pages/tkb-fet-worker.js` / `web/tkb-fet-worker.js` and `web/pages/phanmon.js`
   - Multi-attempt solve execution and non-blocking real-time progress streaming
   - 250ms snapshot sampling (`getRetainedOptimizationSnapshotTKB`)
-  - Hard constraint candidate validator (`validateFetCandidateHardConstraints`)
+  - Hard constraint candidate validator (`validateFetCandidateHardConstraints` via `inspectTrueHardConflicts`)
 - **Core Invariants Protected**:
-  1. Complete Placement Invariant: `unplacedCount === 0` (100% placed).
+  1. Complete Placement Invariant: `unplacedCount === 0` (100% placed, 2,202 / 2,202 periods).
   2. Student Session Contiguity Invariant: `countTotalStudentHoles() === 0` (zero internal holes for classes).
   3. Teacher Gap-2 Invariant: `soBuoiTrong2 === 0` (zero 2-period internal gaps for teachers).
   4. Fixed & Off Cell Invariant: Locked cells (`-3`) and off cells (`-2`) remain 100% immutable.
@@ -19,44 +21,43 @@
 ## Feature Inventory
 | # | Feature | Description | Milestone | Source |
 |---|---------|-------------|-----------|--------|
-| F1 | 12-Session Counting Invariant Formula | Upgrade `opensUnaffordableSession` from 6-day aggregation to 12 half-day sessions ($M = \lfloor T / 2 \rfloor$) with remaining period deficit validation | M1 | ORIGINAL_REQUEST §R3 |
-| F2 | Invariant Guard in Construction & Ejection | Enforce session counting invariant in `solve()` and `randomSwap` Phase 1 & 2 without blocking completion under high constraint density | M1 | ORIGINAL_REQUEST §R3 |
-| F3 | Unconstrained Displacement Chains | Enable `trySingletonEjectionChains` to displace multi-period activities ($B.\text{duration} \ge 2$) via `randomSwap(B.id, 0)` with Tabu memory and recursion depth $\le 16$ | M2 | ORIGINAL_REQUEST §R2 |
-| F4 | Lift Duration Constraints in Escape Operators | Remove restrictive `duration === 1` filters in `tryClosedPushCycles`, `tryShareRichToSingleton`, and Kempe swaps while preserving student contiguity | M2 | ORIGINAL_REQUEST §R2 |
-| F5 | Single-Period Teaching Elimination | Drive `soBuoiDay1` and `soNgayMotTiet` to mathematical lower bound ($0$ for all teachers, $1$ for shift-isolated math exceptions like `tn.sương`) | M2 | ORIGINAL_REQUEST §R1 |
-| F6 | 4-Tier Opaque-Box E2E Test Suite | Build comprehensive E2E tests (Tier 1 Feature, Tier 2 Boundary, Tier 3 Cross-Feature Combinations, Tier 4 Full School Benchmark) | E2E | ORIGINAL_REQUEST §Acceptance Criteria |
-| F7 | Full School Acceptance & Benchmark Verification | Validate `scratch/live_school_default.json` (75 classes, 2,202 slots) achieving 100% placement, 0 gap-2, 0 student holes, and minimal `soBuoiDay1` | M3 | ORIGINAL_REQUEST §Acceptance Criteria |
-| F8 | Documentation & Project Handoff Maintenance | Update `docs/PROJECT_HANDOFF.md` and related state docs per AGENTS.md | M3 | AGENTS.md & User Request |
+| F1 | Targeted Intra-Class Singleton Crusher | Implement `tryTargetedIntraClassSingletonCrusher` algorithm: for teacher $T$ with singleton session $S1$ in class $C$, inspect target session $S2$, perform direct intra-class swap or multi-tier recursive `randomSwap` to evacuate obstacles and crush $S1 \to 0$ | M1 | ORIGINAL_REQUEST §R1 |
+| F2 | Singleton Ejection Chains Fix & Enhancement | Fix session classification in `trySingletonEjectionChains` so singleton-only teachers (e.g. PHT.Định) are paired and consolidated into $\ge 2$-period sessions | M1 | ORIGINAL_REQUEST §R1 |
+| F3 | Deep Compute Budget & Multi-tier Cycles | Expand `deepCycles` in `optimize('optimize_singletons')` and `optimizeAll()`, expand Tabu jump limits and recursive search budget without memory leaks or stack overflow | M2 | ORIGINAL_REQUEST §R2 |
+| F4 | Real-time Worker Telemetry & Responsiveness | Ensure Web Worker event loop yielding ($\le 16\text{ms}$), anti-freeze streaming, and instant responsive cancellation | M2 | ORIGINAL_REQUEST §R2 |
+| F5 | Full School Benchmark & Zero-Singleton Verification | Validate `scratch/live_school_default.json` (75 classes, 2,202 periods) achieving `unplacedCount = 0`, `soBuoiTrong2 = 0`, `studentHoles = 0`, `soBuoiDay1 = 0` (including PHT.Định with 4 periods HĐTN 3) | M3 | ORIGINAL_REQUEST §Acceptance Criteria |
+| F6 | Automated Test Suites Green Gate | Pass 100% of tests in `augmented_singleton_e2e.test.js`, `tkb_fet_engine_node.test.js`, `tkb_fet_benchmark_node.test.js`, `adversarial_ui_worker_stress_node.test.js`, and `planner_subject_limit_semantics_node.test.js` | M3 | ORIGINAL_REQUEST §Acceptance Criteria |
+| F7 | Documentation & Code Parity | Update `docs/PROJECT_HANDOFF.md` per AGENTS.md, maintain bitwise SHA-256 parity between `web/pages/` and `web/` | M3 | AGENTS.md & User Request |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| E2E | E2E Testing Suite & Benchmark Harness | Create 4-Tier test suite (Tiers 1-4) in `e2e_tests/` verifying counting invariant, unconstrained escape chains, and full school benchmark | none | DONE |
-| M1 | FET Session Counting Invariant | Refactor `opensUnaffordableSession` to 12 sessions, integrate into `solve()` and `randomSwap`, verify initial construction quality | none | DONE |
-| M2 | Augmented Singleton Escape Chains | Implement unconstrained displacement chains with multi-period ejection, Tabu memory, Kempe chains, and duration filter relaxation | M1 | DONE |
-| M3 | Full Integration, Verification & Documentation | Verify all node test suites, E2E benchmarks on `live_school_default.json`, worker telemetry, and update `docs/PROJECT_HANDOFF.md` | M2, E2E | DONE |
-
+| M1 | Targeted Intra-Class Singleton Crusher Implementation | Implement `tryTargetedIntraClassSingletonCrusher`, enhance `trySingletonEjectionChains`, integrate into `optimize()` pipeline | Survey | DONE |
+| M2 | Deep Compute Budget & Parameter Tuning | Expand `deepCycles`, Tabu jump limits, call limits, and optimize local search iteration depth | M1 | DONE |
+| M3 | Full Integration, Verification & Documentation | Execute all 5 automated test suites, verify live school 2,202-period benchmark, maintain `docs/PROJECT_HANDOFF.md`, verify SHA-256 parity | M2 | DONE |
 
 ## Interface Contracts
-### `opensUnaffordableSession(act, slot)`
-- Input: `act` (Activity object), `slot` (0..59 integer)
-- Output: `boolean` (`true` if placing `act` at `slot` opens an unaffordable session, `false` otherwise)
-- Behavior: Evaluates teacher's total periods $T$, active sessions count $S$, and checks if adding a session exceeds $\lfloor T / 2 \rfloor$ or if remaining unplaced periods are insufficient to bring all active sessions to $\ge 2$ periods.
+### `tryTargetedIntraClassSingletonCrusher(bestMetrics, onProgress)`
+- Input: `bestMetrics` (Metric snapshot), `onProgress` (callback)
+- Output: `bestMetrics` object if improved, or `null` if no improvement
+- Behavior: Strictly targets teachers with $k=1$ sessions. Explores all destination sessions $S2 \neq S1$ where $T$ has available capacity. Performs direct intra-class swap $A \leftrightarrow B$ within class $C$ if feasible, or executes `randomSwap(B.id, 0)` with Tabu memory and recursion depth $\le 16$ to relocate occupant $B$. Rolls back state on failure or if student holes occur.
 
-### `trySingletonEjectionChains(tId, maxChains)`
-- Input: `tId` (teacher index), `maxChains` (iteration limit)
-- Output: `boolean` (`true` if a single-period session was eliminated, `false` otherwise)
-- Behavior: Transactionally attempts to move singleton activity $A$ into target session of `tId`. If occupied by activity $B$ (of any duration 1..2), attempts `randomSwap(B.id, 0)` with Tabu memory and recursion depth $\le 16$. Rolls back state on failure.
+### `trySingletonEjectionChains(bestMetrics, onProgress)`
+- Input: `bestMetrics` (Metric snapshot), `onProgress` (callback)
+- Output: `bestMetrics` object if improved, or `null` if no improvement
+- Behavior: Evaluates all sessions $S2$ with $k \ge 1$ as targets for merging singletons. Displaces donors of any duration via `randomSwap(occAct.id, 0)` with Tabu memory.
 
-### `evaluateMetrics()` & `compareMetrics(a, b)`
-- Output object: `{ unplacedCount, soBuoiDay1, soNgayMotTiet, soBuoiTrong2, soBuoiTrong1, tsBuoiDay, totalGaps, studentHoles }`
-- Strict Lexicographic Ordering: Hard Validity (`unplacedCount == 0`, `soBuoiTrong2 == 0`, `studentHoles == 0`) $\to$ `soBuoiDay1` $\to$ `soNgayMotTiet` $\to$ `tsBuoiDay` $\to$ `soBuoiTrong1`.
+### `optimize(mode, onProgress)`
+- Input: `mode` (e.g. `"optimize_singletons"`, `"optimize_all"`), `onProgress` (callback)
+- Output: `Promise<boolean>` (`true` if schedule was improved)
+- Behavior: Runs deep compute cycles with `deepCycles`, executing the full singleton crusher pipeline while yielding to event loop every 16ms.
 
 ## Code Layout
 - `web/pages/tkb-fet-engine.js`: Primary engine implementation
-- `web/tkb-fet-engine.js`: Mirrored production engine
+- `web/tkb-fet-engine.js`: Mirrored production engine (byte-identical)
 - `web/pages/tkb-fet-worker.js`: Web worker handler
-- `web/tkb-fet-worker.js`: Mirrored worker
+- `web/tkb-fet-worker.js`: Mirrored worker (byte-identical)
 - `web/pages/phanmon.js`: Frontend UI glue & validator
+- `web/phanmon.js`: Mirrored frontend validator (byte-identical)
 - `e2e_tests/`: E2E test suites
 - `docs/PROJECT_HANDOFF.md`: Project handoff and audit documentation

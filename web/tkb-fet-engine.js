@@ -173,8 +173,9 @@
       this.data = data || {};
       this.options = options || {};
       this.rng = new FetPRNG(options.seed || Date.now());
-      this.timeBudgetMs = Number(options.timeBudgetMs) || 12000;
-      this.optimizeTimeBudgetMs = Number(options.optimizeTimeBudgetMs) || 20000;
+      const isDeep = Boolean(options.deepCycles || options.deepLocalFet);
+      this.timeBudgetMs = Number(options.timeBudgetMs) || (isDeep ? 30000 : 12000);
+      this.optimizeTimeBudgetMs = Number(options.optimizeTimeBudgetMs) || (isDeep ? 35000 : 20000);
 
       this.classes = [];
       this.activities = [];
@@ -221,6 +222,13 @@
       };
 
       this.init();
+    }
+
+    getAdaptiveLimitCalls(base = 2000, deep = 3500){
+      if(this.options?.limitCalls && Number(this.options.limitCalls) > 0) return Number(this.options.limitCalls);
+      if(this.options?.deepLimitCalls && Number(this.options.deepLimitCalls) > 0) return Number(this.options.deepLimitCalls);
+      if(this.options?.deepCycles || this.options?.deepLocalFet) return deep;
+      return base;
     }
 
     removeDiacritics(str){
@@ -1472,7 +1480,8 @@
 
         const snap = this.captureStateSnapshot();
         this.swapStep = (this.swapStep || 0) + 1;
-        const tenure = 5 + (Math.abs(this.rng.next()) % 8); // tenure in [5, 12]
+        const isDeep = Boolean(this.options?.deepCycles || this.options?.deepLocalFet);
+        const tenure = isDeep ? (7 + (Math.abs(this.rng.next()) % 10)) : (5 + (Math.abs(this.rng.next()) % 8)); // tenure in [5, 12] or [7, 16]
 
         for(let j = 0; j < displaced.length; j++){
           const dId = displaced[j];
@@ -2658,7 +2667,7 @@
             this.rng.shuffle(targetSlots);
 
             for(let idx = 0; idx < targetSlots.length; idx++){
-              if((++evalSteps % 64) === 0 && Date.now() - lastYieldAt >= 16){
+              if((++evalSteps % 32) === 0 && (Date.now() - lastYieldAt >= 16)){
                 await new Promise(resolve => setTimeout(resolve, 0));
                 lastYieldAt = Date.now();
               }
@@ -2686,7 +2695,7 @@
                     this.tabuMap.clear();
                     this.triedRemovals.clear();
                     this.swappedInBranch.clear();
-                    this.limitCalls = 2000;
+                    this.limitCalls = this.getAdaptiveLimitCalls(2000, 3500);
                     feasibleMove = this.randomSwap(occAct.id, 0);
                   }
 
@@ -2820,7 +2829,7 @@
                         this.tabuMap.clear();
                         this.triedRemovals.clear();
                         this.swappedInBranch.clear();
-                        this.limitCalls = 2000;
+                        this.limitCalls = this.getAdaptiveLimitCalls(2000, 3500);
                         ok = this.randomSwap(occAct.id, 0);
                       }
 
@@ -2892,7 +2901,7 @@
                       this.tabuMap.clear();
                       this.triedRemovals.clear();
                       this.swappedInBranch.clear();
-                      this.limitCalls = 2000;
+                      this.limitCalls = this.getAdaptiveLimitCalls(2000, 3500);
                       ok = this.randomSwap(occAct.id, 0);
                     }
 
@@ -2951,7 +2960,7 @@
             if(!cGrid) continue;
 
             for(let sTarget = 0; sTarget < TOTAL_SLOTS; sTarget++){
-              if((++evalSteps % 64) === 0 && Date.now() - lastYieldAt >= 16){
+              if((++evalSteps % 32) === 0 && (Date.now() - lastYieldAt >= 16)){
                 await new Promise(resolve => setTimeout(resolve, 0));
                 lastYieldAt = Date.now();
               }
@@ -2976,7 +2985,7 @@
                 this.tabuMap.clear();
                 this.triedRemovals.clear();
                 this.swappedInBranch.clear();
-                this.limitCalls = 2000;
+                this.limitCalls = this.getAdaptiveLimitCalls(2000, 3500);
                 ok = this.randomSwap(occAct.id, 0);
               }
 
@@ -3016,7 +3025,7 @@
           if(!act1 || act1.isFixed || act1.lockedByLessonBlock) continue;
 
           for(let s2 = s1 + 1; s2 < TOTAL_SLOTS; s2++){
-            if((++evalSteps % 64) === 0 && Date.now() - lastYieldAt >= 16){
+            if((++evalSteps % 32) === 0 && (Date.now() - lastYieldAt >= 16)){
               await new Promise(resolve => setTimeout(resolve, 0));
               lastYieldAt = Date.now();
             }
@@ -3040,7 +3049,7 @@
               this.tabuMap.clear();
               this.triedRemovals.clear();
               this.swappedInBranch.clear();
-              this.limitCalls = 2000;
+              this.limitCalls = this.getAdaptiveLimitCalls(2000, 3500);
               ok = this.randomSwap(act2.id, 0);
             }
 
@@ -3077,6 +3086,11 @@
 
         for(let d = 0; d < DAYS_LIST.length; d++){
           for(let b = 0; b < SESSIONS_LIST.length; b++){
+            if((++evalSteps % 32) === 0 && (Date.now() - lastYieldAt >= 16)){
+              await new Promise(resolve => setTimeout(resolve, 0));
+              lastYieldAt = Date.now();
+            }
+
             const sStart = d * SLOTS_PER_DAY + b * PERIODS_PER_SESSION;
             const singleSlots = [];
             for(let p = 0; p < PERIODS_PER_SESSION; p++){
@@ -3194,7 +3208,7 @@
                     this.triedRemovals.clear();
                     this.swappedInBranch.clear();
                     this.nCalls = 0;
-                    this.limitCalls = 2000;
+                    this.limitCalls = this.getAdaptiveLimitCalls(2000, 3500);
                     if(this.randomSwap(occAct.id, 0)){
                       const m = this.evaluateMetrics();
                       if(this.countTotalStudentHoles() === 0 && this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
@@ -3294,7 +3308,7 @@
             if(!cGrid) continue;
 
             for(let s2 = 0; s2 < TOTAL_SLOTS; s2++){
-              if((++evalSteps % 64) === 0 && Date.now() - lastYieldAt >= 16){
+              if((++evalSteps % 32) === 0 && (Date.now() - lastYieldAt >= 16)){
                 await new Promise(resolve => setTimeout(resolve, 0));
                 lastYieldAt = Date.now();
               }
@@ -3320,7 +3334,7 @@
                 this.tabuMap.clear();
                 this.triedRemovals.clear();
                 this.swappedInBranch.clear();
-                this.limitCalls = 2000;
+                this.limitCalls = this.getAdaptiveLimitCalls(2000, 3500);
                 ok = this.randomSwap(act2.id, 0);
               }
 
@@ -3336,6 +3350,124 @@
               this.restoreStateSnapshot(snap);
             }
           }
+        }
+      }
+      return improved ? currentBest : null;
+    }
+
+    async tryTargetedIntraClassSingletonCrusher(bestMetrics, onProgress = null){
+      let currentBest = { ...bestMetrics };
+      let improved = false;
+      let evalSteps = 0;
+      let lastYieldAt = Date.now();
+
+      const scoredList = Array.from(this.scoredTeachers || this.teacherGrid.keys());
+      this.rng.shuffle(scoredList);
+
+      for(const tKey of scoredList){
+        if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) break;
+        const tIdx = this.teacherIndexMap.get(tKey);
+        if(tIdx === undefined) continue;
+        const tg = this.teacherGridList[tIdx];
+        if(!tg) continue;
+
+        const singleSessions = [];
+        const targetSessions = [];
+        for(let d = 0; d < DAYS_LIST.length; d++){
+          for(let b = 0; b < SESSIONS_LIST.length; b++){
+            const sStart = d * SLOTS_PER_DAY + b * PERIODS_PER_SESSION;
+            const acts = [];
+            for(let p = 0; p < PERIODS_PER_SESSION; p++){
+              const s = sStart + p;
+              if(tg[s] >= 0) acts.push({ actId: tg[s], slot: s, pIdx: p });
+            }
+            if(acts.length === 1){
+              singleSessions.push({ sStart, item: acts[0], d, b });
+              targetSessions.push({ sStart, k: 1, acts, d, b });
+            } else if(acts.length >= 2 && acts.length <= 4){
+              targetSessions.push({ sStart, k: acts.length, acts, d, b });
+            }
+          }
+        }
+        if(singleSessions.length === 0 || targetSessions.length === 0) continue;
+
+        for(const single of singleSessions){
+          const singleAct = this.activities[single.item.actId];
+          if(!singleAct || singleAct.isFixed || singleAct.lockedByLessonBlock) continue;
+          const cGrid = this.classGridList[singleAct.classIdx];
+          if(!cGrid) continue;
+
+          const s1 = single.item.slot;
+          const dA = singleAct.duration;
+
+          for(const targetSess of targetSessions){
+            if(targetSess.sStart === single.sStart) continue;
+            const s2Start = targetSess.sStart;
+
+            for(let p = 0; p <= PERIODS_PER_SESSION - dA; p++){
+              if((++evalSteps % 32) === 0 && Date.now() - lastYieldAt >= 16){
+                await new Promise(resolve => setTimeout(resolve, 0));
+                lastYieldAt = Date.now();
+              }
+
+              const s2 = s2Start + p;
+              if(s2 === s1) continue;
+
+              let tBusy = false;
+              for(let d = 0; d < dA; d++){
+                const cell = tg[s2 + d];
+                if(cell >= 0 || cell === -2 || cell === -3){ tBusy = true; break; }
+              }
+              if(tBusy) continue;
+
+              const occId = cGrid[s2];
+              if(occId === -2 || occId === -3) continue;
+
+              const snap = this.captureStateSnapshot();
+              this.unplaceActivity(singleAct.id);
+
+              let ok = false;
+              if(occId === -1){
+                if(this.isSlotFeasible(singleAct, s2)){
+                  this.placeActivityDirect(singleAct.id, s2);
+                  ok = true;
+                }
+              } else if(occId >= 0 && occId !== singleAct.id){
+                const occAct = this.activities[occId];
+                if(occAct && !occAct.isFixed && !occAct.lockedByLessonBlock){
+                  this.unplaceActivity(occAct.id);
+                  const dB = occAct.duration;
+
+                  if(dA === dB && this.isSlotFeasible(singleAct, s2) && this.isSlotFeasible(occAct, s1)){
+                    this.placeActivityDirect(singleAct.id, s2);
+                    this.placeActivityDirect(occAct.id, s1);
+                    ok = true;
+                  } else if(this.isSlotFeasible(singleAct, s2)){
+                    this.placeActivityDirect(singleAct.id, s2);
+                    this.nCalls = 0;
+                    this.tabuMap.clear();
+                    this.triedRemovals.clear();
+                    this.swappedInBranch.clear();
+                    this.limitCalls = this.getAdaptiveLimitCalls(2000, 3500);
+                    ok = this.randomSwap(occAct.id, 0);
+                  }
+                }
+              }
+
+              if(ok && this.countTotalStudentHoles() === 0){
+                const m = this.evaluateMetrics();
+                if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
+                  currentBest = { ...m };
+                  improved = true;
+                  if(typeof onProgress === "function") onProgress(currentBest);
+                  break;
+                }
+              }
+              this.restoreStateSnapshot(snap);
+            }
+            if(improved) break;
+          }
+          if(improved) break;
         }
       }
       return improved ? currentBest : null;
@@ -3368,7 +3500,7 @@
               if(tg[s] >= 0) acts.push({ actId: tg[s], slot: s, pIdx: p });
             }
             if(acts.length === 1) singleSessions.push({ sStart, item: acts[0], d, b });
-            else if(acts.length >= 1 && acts.length <= 4) targetSessions.push({ sStart, acts, d, b });
+            if(acts.length >= 1 && acts.length <= 4) targetSessions.push({ sStart, acts, d, b });
           }
         }
         if(singleSessions.length === 0 || targetSessions.length === 0) continue;
@@ -3383,7 +3515,7 @@
             if(targetSess.sStart === single.sStart) continue;
 
             for(let p = 0; p <= PERIODS_PER_SESSION - singleAct.duration; p++){
-              if((++evalSteps % 32) === 0 && Date.now() - lastYieldAt >= 16){
+              if((++evalSteps % 32) === 0 && (Date.now() - lastYieldAt >= 16)){
                 await new Promise(resolve => setTimeout(resolve, 0));
                 lastYieldAt = Date.now();
               }
@@ -3392,12 +3524,12 @@
               if(targetSlot === single.item.slot) continue;
               let tBusy = false;
               for(let d = 0; d < singleAct.duration; d++){
-                if(tg[targetSlot + d] >= 0 || tg[targetSlot + d] === -3){ tBusy = true; break; }
+                if(tg[targetSlot + d] >= 0 || tg[targetSlot + d] === -2 || tg[targetSlot + d] === -3){ tBusy = true; break; }
               }
               if(tBusy) continue;
 
               const occId = cGrid[targetSlot];
-              if(occId === -3) continue;
+              if(occId === -2 || occId === -3) continue;
 
               const snap = this.captureStateSnapshot();
               this.unplaceActivity(singleAct.id);
@@ -3418,7 +3550,7 @@
                     this.tabuMap.clear();
                     this.triedRemovals.clear();
                     this.swappedInBranch.clear();
-                    this.limitCalls = 2000;
+                    this.limitCalls = this.getAdaptiveLimitCalls(2000, 3500);
                     ok = this.randomSwap(occAct.id, 0);
                   }
                 }
@@ -3461,7 +3593,7 @@
 
         for(let d = 0; d < DAYS_LIST.length; d++){
           for(let b = 0; b < SESSIONS_LIST.length; b++){
-            if((++evalSteps % 32) === 0 && Date.now() - lastYieldAt >= 16){
+            if((++evalSteps % 32) === 0 && (Date.now() - lastYieldAt >= 16)){
               await new Promise(resolve => setTimeout(resolve, 0));
               lastYieldAt = Date.now();
             }
@@ -3485,6 +3617,7 @@
               this.tabuMap.clear();
               this.triedRemovals.clear();
               this.swappedInBranch.clear();
+              this.limitCalls = this.getAdaptiveLimitCalls(2000, 3500);
               if(!this.randomSwap(act.id, 0)){ allMoved = false; break; }
             }
 
@@ -3545,7 +3678,7 @@
               if(!act || act.isFixed || act.lockedByLessonBlock || act.duration !== 1) continue;
 
               for(let pTarget = 0; pTarget < PERIODS_PER_SESSION; pTarget++){
-                if((++evalSteps % 64) === 0 && Date.now() - lastYieldAt >= 16){
+                if((++evalSteps % 32) === 0 && (Date.now() - lastYieldAt >= 16)){
                   await new Promise(resolve => setTimeout(resolve, 0));
                   lastYieldAt = Date.now();
                 }
@@ -3575,6 +3708,7 @@
                       this.tabuMap.clear();
                       this.triedRemovals.clear();
                       this.swappedInBranch.clear();
+                      this.limitCalls = this.getAdaptiveLimitCalls(2000, 3500);
                       ok = this.randomSwap(occAct.id, 0);
                     }
 
@@ -3652,7 +3786,7 @@
                 if(!act2 || act2.isFixed || act2.lockedByLessonBlock || act2.duration !== 1) continue;
 
                 for(let targetP = p1 + 1; targetP < p2; targetP++){
-                  if((++evalSteps % 64) === 0 && Date.now() - lastYieldAt >= 16){
+                  if((++evalSteps % 32) === 0 && (Date.now() - lastYieldAt >= 16)){
                     await new Promise(resolve => setTimeout(resolve, 0));
                     lastYieldAt = Date.now();
                   }
@@ -3739,7 +3873,7 @@
               const cGrid = this.classGridList[act1.classIdx];
 
               for(let s2 = 0; s2 < TOTAL_SLOTS; s2++){
-                if((++evalSteps % 64) === 0 && Date.now() - lastYieldAt >= 16){
+                if((++evalSteps % 32) === 0 && (Date.now() - lastYieldAt >= 16)){
                   await new Promise(resolve => setTimeout(resolve, 0));
                   lastYieldAt = Date.now();
                 }
@@ -3838,7 +3972,7 @@
               if(startOffset + totalDuration > PERIODS_PER_SESSION) continue;
 
               for(const perm of allPerms){
-                if((++evalSteps % 32) === 0 && Date.now() - lastYieldAt >= 16){
+                if((++evalSteps % 32) === 0 && (Date.now() - lastYieldAt >= 16)){
                   await new Promise(resolve => setTimeout(resolve, 0));
                   lastYieldAt = Date.now();
                 }
@@ -4100,13 +4234,31 @@
       const targetMetricKey = mode === "optimize_gap2" ? "soBuoiTrong2" : (mode === "optimize_singletons" ? "soBuoiDay1" : (mode === "optimize_gap1" ? "soBuoiTrong1" : (mode === "optimize_sessions" ? "tsBuoiDay" : "soBuoiDay1")));
       const targetMetricLowerBound = Number(this.constraintPreflight?.structuralFloor?.metricLowerBounds?.[targetMetricKey] || 0);
 
-      this.deadlineAtMs = Date.now() + (Number(this.timeBudgetMs) || 10000);
-      const MAX_ROUNDS = mode === "optimize_all" ? 6 : 5;
+      const isDeep = Boolean(this.options?.deepCycles || this.options?.deepLocalFet);
+      let budget = Number(this.options?.optimizeTimeBudgetMs || this.options?.timeBudgetMs || this.timeBudgetMs);
+      if(isDeep && (!budget || budget <= 12000)){
+        budget = 30000;
+      } else if(!budget){
+        budget = 12000;
+      }
+      this.deadlineAtMs = Date.now() + budget;
+
+      let maxRounds = mode === "optimize_singletons" ? 8 : (mode === "optimize_all" ? 6 : 5);
+      if(this.options?.deepCycles){
+        maxRounds = Math.max(maxRounds, Math.min(20, Number(this.options.deepCycles) || 8));
+      } else if(this.options?.deepLocalFet){
+        maxRounds = Math.max(maxRounds, 12);
+      } else if(this.options?.maxRounds){
+        maxRounds = Math.max(maxRounds, Number(this.options.maxRounds));
+      }
+      const MAX_ROUNDS = maxRounds;
       for(let r = 0; r < MAX_ROUNDS; r++){
         if(Date.now() >= this.deadlineAtMs) break;
         let anyRoundImprovement = false;
 
         if(mode === "optimize_all" || mode === "optimize_singletons"){
+          const res0 = await this.tryTargetedIntraClassSingletonCrusher(bestMetrics, onProgress);
+          if(res0){ bestMetrics = res0; anyRoundImprovement = true; }
           const res1 = await this.tryRelocateSingletons(bestMetrics, onProgress);
           if(res1){ bestMetrics = res1; anyRoundImprovement = true; }
           const res2 = await this.tryShareRichToSingleton(bestMetrics, onProgress);

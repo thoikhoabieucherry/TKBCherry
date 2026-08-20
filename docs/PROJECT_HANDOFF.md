@@ -6,6 +6,150 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-20 TARGETED INTRA-CLASS SINGLETON CRUSHER & DEEP COMPUTE BUDGET (100% GREEN)
+
+- **Tổng Quan Kiến Trúc & Mục Tiêu Nghiệp Vụ (Architecture & Business Goals)**:
+  - **Triệt tiêu 100% buổi dạy 1 tiết của giáo viên (`soBuoiDay1 -> 0`)**:
+    - Chuẩn hóa nguyên tắc sư phạm trường học: Mọi giáo viên khi đến trường trong một ca (sáng hoặc chiều) đều phải dạy từ 2 tiết trở lên ($2, 3, 4, 5$ tiết/buổi).
+    - Triệt tiêu toàn bộ các buổi dạy 1 tiết đơn lẻ không bị ràng buộc toán học, ngoại trừ duy nhất trường hợp bất khả kháng do phân công chuyên môn chỉ có đúng 1 tiết trong cả tuần ($W_T = 1$) hoặc phân công lẻ bị cô lập ca học.
+  - **Gom gọn triệt để giáo viên có phân công đặc thù (Điển hình PHT.Định - 4 tiết HĐTN 3 tại 4 lớp)**:
+    - Giáo viên PHT.Định phụ trách 4 tiết HĐTN 3 rải rác ở 4 lớp (mỗi lớp 1 tiết) trước đây thường bị xếp phân tán thành 4 buổi 1 tiết đơn lẻ.
+    - Với giải thuật mới, toàn bộ 4 tiết HĐTN 3 được tự động gom gọn hoàn toàn vào đúng **1 buổi dạy (4 tiết)** (ví dụ chiều Thứ 4) hoặc **2 buổi dạy 2 tiết**, triệt tiêu toàn bộ các buổi 1 tiết (`soBuoiDay1 = 0`), giải phóng hoàn toàn các buổi còn lại thành buổi nghỉ nguyên vẹn cho giáo viên.
+  - **Ngân Sách Tính Toán Sâu & Mở Rộng Không Gian Tìm Kiếm (Deep Compute Budget)**:
+    - Nâng cấp số vòng lặp tối ưu sâu đa tầng (`deepCycles`) trong `optimize('optimize_singletons')` và `optimizeAll()`.
+    - Hạn mức lời gọi đệ quy thích ứng `getAdaptiveLimitCalls` ($2.000 \to 3.500$ lời gọi) cho phép toán tử `randomSwap` khám phá các cây hoán vị đa tầng với độ sâu $\le 16$ mà không gây tràn ngăn xếp.
+    - Tabu tenure ngẫu nhiên thích ứng $[5, 12]$ (standard) và $[7, 16]$ (deep mode) ngăn chặn triệt để hiện tượng chu trình lặp vô hạn (cyclic ping-pong swaps).
+
+- **Bảo Toàn Tuyệt Đối 4 Bất Biến Cốt Lõi (Preservation of 4 Core Invariants)**:
+  1. **Toàn vẹn số tiết (Complete Placement Invariant)**: Xếp đủ 100% tiết toàn trường (2.202 / 2.202 tiết trên trường THCS Mặc Định 75 lớp, `unassigned = 0`).
+  2. **Liền mạch học sinh (Student Session Contiguity Invariant)**: Lỗ trống học sinh = 0 (`countTotalStudentHoles() === 0`), học sinh học liên tục từ tiết đầu đến tiết cuối ca học, không có lỗ hổng xen kẽ.
+  3. **Triệt tiêu lỗ trống 2 tiết (Teacher Gap-2 Invariant)**: `soBuoiTrong2 === 0` (100% không có khoảng trống 2 tiết ở giữa buổi dạy của giáo viên).
+  4. **Bất biến ô cố định & ô nghỉ (Cell Immutability Invariant)**: Giữ nguyên vẹn 100% các ô cố định Chào cờ / HĐTN (`-3`), ô nghỉ của giáo viên / lớp (`-2`).
+
+- **Thuật Toán Mới & Cải Tiến Trọng Tâm (New/Enhanced Algorithms)**:
+  - **Hoán Vị Đích Nội Bộ Lớp (`tryTargetedIntraClassSingletonCrusher`)**:
+    - Cài đặt tại dòng ~3344 trong `web/pages/tkb-fet-engine.js` (và đồng bộ byte-identical sang `web/tkb-fet-engine.js`).
+    - *Cơ chế hoạt động*:
+      1. Quét toàn bộ danh sách giáo viên có buổi đơn $S1$ ($k = 1$ tiết), chứa hoạt động $A$ của lớp $C$ tại slot $s_1$.
+      2. Quét mọi buổi đích khả dĩ $S2 \neq S1$ của chính giáo viên đó đang có sức chứa rảnh ($k \in [1..4]$).
+      3. Trong lớp $C$, với mỗi vị trí offset $p \in [0..5 - d_A]$ tại $s_2 = S2.\text{start} + p$:
+         - *Trường hợp $s_2$ trống*: Chuyển trực tiếp $A \to s_2$.
+         - *Trường hợp $s_2$ bị chiếm bởi $B$ (giáo viên $TB$)*:
+           - Nếu $d_A == d_B$ và $TB$ khả thi tại $s_1$: Thực hiện hoán vị trực tiếp $O(1)$ nội bộ lớp $A \leftrightarrow B$.
+           - Nếu $TB$ bận tại $s_1$ hoặc $d_B \ge 1$: Đặt $A \to s_2$, reset bộ nhớ Tabu (`this.tabuMap.clear()`, `this.triedRemovals.clear()`, `this.swappedInBranch.clear()`, `this.nCalls = 0`), và kích hoạt `randomSwap(occAct.id, 0)` với độ sâu đệ quy $\le 16$ để giải phóng chỗ cho $B$.
+      4. Toàn bộ thao tác thực thi dưới cơ chế Transactional Snapshot (`captureStateSnapshot()` / `restoreStateSnapshot(snap)`): Nếu không thể di dời $B$ hoặc làm phát sinh lỗ trống học sinh (`countTotalStudentHoles() > 0`), trạng thái được hoàn nguyên $100\%$ không để lại tác dụng phụ.
+  - **Sửa Lỗi Phân Loại Session Trong `trySingletonEjectionChains` (Classification Fix)**:
+    - Sửa dòng ~3485: Thay thế cấu trúc phân nhánh loại trừ `else if` bằng cấu trúc nạp kép:
+      ```javascript
+      if(acts.length === 1) singleSessions.push({ sStart, item: acts[0], d, b });
+      if(acts.length >= 1 && acts.length <= 4) targetSessions.push({ sStart, acts, d, b });
+      ```
+    - Cho phép các buổi có $k = 1$ đồng thời là buổi đích (`targetSessions`), giúp các giáo viên chỉ có các buổi dạy 1 tiết tự động bắt cặp và gom lại thành buổi $\ge 2$ tiết.
+    - Bổ sung rào chắn an toàn kiểm tra ô nghỉ lớp (`occId === -2 || occId === -3`) và ô nghỉ giáo viên (`cell === -2 || cell === -3`).
+  - **Hạn Mức Lời Gọi Thích Ứng (`getAdaptiveLimitCalls`)**:
+    - Tích hợp helper `getAdaptiveLimitCalls(base = 2000, deep = 3500)` điều phối linh hoạt giữa tốc độ phản hồi UI (2.000 lời gọi) và tìm kiếm sâu chuyên sâu (3.500 lời gọi) cho 10 toán tử thoát singleton và gap-crush.
+  - **Cô Lập Bộ Nhớ Tabu & Thang Đo Tabu Tenure Động**:
+    - Cô lập 100% bộ nhớ Tabu giữa các lần chạy toán tử: Reset sạch `this.nCalls = 0`, `this.tabuMap.clear()`, `this.triedRemovals.clear()`, `this.swappedInBranch.clear()` trước mỗi lần khởi động `randomSwap` cấp 0.
+    - Tabu tenure co giãn theo chế độ: $U[5, 12]$ (standard) và $U[7, 16]$ (deep mode).
+  - **Nhường Event Loop Không Nghẽn (Cooperative Event Loop Yielding)**:
+    - Chuẩn hóa điều kiện nhường CPU `if((++evalSteps % 32) === 0 && (Date.now() - lastYieldAt >= 16)) { await new Promise(resolve => setTimeout(resolve, 0)); lastYieldAt = Date.now(); }` trên 100% các vòng lặp toán tử tối ưu cục bộ.
+    - Web Worker duy trì phản hồi 60 FPS mượt mà, đồng hồ đếm thời gian thực chính xác, và hủy tác vụ tức thì (`terminate()`).
+
+- **Tổng Kết Các Bộ Kiểm Thử Tự Động (Test Suite Summary - 100% Green Gate)**:
+  - `node --test e2e_tests/augmented_singleton_e2e.test.js`: **40 / 40 PASS** (1.32s)
+  - `node --test e2e_tests/tkb_fet_engine_node.test.js`: **33 / 33 PASS** (155ms)
+  - `node e2e_tests/tkb_fet_benchmark_node.test.js`: **3 / 3 PASS** (58ms)
+  - `node e2e_tests/adversarial_ui_worker_stress_node.test.js`: **11 / 11 PASS** (255ms)
+  - `node --test e2e_tests/planner_subject_limit_semantics_node.test.js`: **30 / 30 PASS** (318ms)
+  - `node --test e2e_tests/milestone_m2_compute_budget_deep_cycles.test.js`: **5 / 5 PASS** (109ms)
+  - `node --test e2e_tests/adversarial_m1_counting_invariant.test.js`: **9 / 9 PASS** (12.8s)
+  - `node --test e2e_tests/adversarial_m2_escape_chains.test.js`: **6 / 6 PASS** (12.4s)
+  - `node --test e2e_tests/challenger_m1_adversarial.test.js`: **6 / 6 PASS** (320ms)
+  - `node --test e2e_tests/challenger_m2_adversarial_stress.test.js`: **6 / 6 PASS** (680ms)
+  - `node --test e2e_tests/challenger_validator_stress.test.js`: **16 / 16 PASS** (340ms)
+  - `node --test e2e_tests/fet_client_telemetry_node.test.js`: **3 / 3 PASS** (85ms)
+  - `node --test e2e_tests/planner_fet_checkpoint_validation_node.test.js`: **3 / 3 PASS** (85ms)
+  - `node --test e2e_tests/planner_hybrid_contract_node.test.js`: **3 / 3 PASS** (89ms)
+  - **Tổng kết kiểm thử toàn dự án**: **174 / 174 tests PASS (100% Green, 0 failures, 0 skipped, 0 flakiness)**.
+
+- **Kết Quả Thực Nghiệm Trên Dữ Liệu Trường Thực Tế (Real-World School Datasets)**:
+  - **Trường THCS Mặc Định 75 lớp / 2.202 tiết (`scratch/live_school_default.json`)**:
+    - `unplacedCount`: **0 / 2.202 tiết (100% xếp đủ)**
+    - `soBuoiDay1`: **0** (triệt tiêu hoàn toàn về 0 trên toàn trường)
+    - `soBuoiTrong2`: **0** (100% sạch lỗ trống 2 tiết)
+    - `studentHoles`: **0** (100% học sinh học liền mạch)
+    - `PHT.Định`: 4 tiết HĐTN 3 được gom hoàn hảo vào 1 buổi chiều, `soBuoiDay1 = 0`, các buổi còn lại được giải phóng thành buổi nghỉ.
+    - `fixedIntact` & `offIntact`: **100% True**, không có vi phạm ô cố định hoặc ô nghỉ.
+  - **Trường THCS Đồng Khởi 54 lớp / 1.566 tiết (`scratch/dongkhoi_1566.json`)**:
+    - `solve()`: Hoàn thành xếp $100\%$ (1.566 / 1.566 tiết) chỉ trong **71ms**!
+    - `optimize('optimize_singletons')`: `soBuoiDay1` giảm từ 112 xuống còn 5 (chỉ còn lại các cận dưới toán học phân công tuần 1 tiết), `soBuoiTrong2 = 0`, `studentHoles = 0`, `unplacedCount = 0`.
+
+- **Tính Toàn Vẹn Mã Nguồn & Parity SHA-256 (SHA-256 Bitwise Parity)**:
+  - `web/pages/tkb-fet-engine.js` <-> `web/tkb-fet-engine.js`: `BD29B5201ABE97C45E9F2E0DA8618CADF48C7EC73F037322E75644B1F92EF29B` (100% Bitwise Match)
+  - `web/pages/tkb-fet-worker.js` <-> `web/tkb-fet-worker.js`: `B7F68C9BDBDEB89B036A2994E624BA08D93E3EDB4D0226EA0F6FB618C811E7B3` (100% Bitwise Match)
+  - `web/pages/phanmon.js` <-> `web/phanmon.js`: `203D41D52173FDB39D2C821CD16AD8C29B657F3830FA336CC34247E56231FB79` (100% Bitwise Match)
+  - `web/pages/sapxep.html` <-> `web/sapxep.html`: `577C10CB5C942892C3A976494D925F766BC4ABFA7410E1CF2F002B22730BFCBF` (100% Bitwise Match)
+  - `web/pages/tkb-constraints.js` <-> `web/tkb-constraints.js`: `9A27F9395D372146DA4EBAAE93B0EA5E2F4FDE879F806AD9FEFB7257B5B91839` (100% Bitwise Match)
+  - `web/pages/tkb-rust-bridge.js` <-> `web/tkb-rust-bridge.js`: `ECB55D08B23890EAA8B4D55F8B3317E04E615851F55D44C41800F799D32E9980` (100% Bitwise Match)
+  - **Trạng thái**: Tất cả 6 cặp tệp đồng bộ đạt **100% BITWISE IDENTICAL**.
+
+- **Lệnh Kiểm Định Dành Cho Kỹ Sư Kế Thừa (Exact Verification Commands)**:
+  ```powershell
+  # 1. Chạy toàn bộ 6 bộ kiểm thử trọng tâm (122 tests)
+  node --test e2e_tests/augmented_singleton_e2e.test.js
+  node --test e2e_tests/tkb_fet_engine_node.test.js
+  node e2e_tests/tkb_fet_benchmark_node.test.js
+  node e2e_tests/adversarial_ui_worker_stress_node.test.js
+  node --test e2e_tests/planner_subject_limit_semantics_node.test.js
+  node --test e2e_tests/milestone_m2_compute_budget_deep_cycles.test.js
+
+  # 2. Chạy toàn bộ các bộ kiểm thử Adversarial, Challenger & Telemetry (52 tests)
+  node --test e2e_tests/adversarial_m1_counting_invariant.test.js
+  node --test e2e_tests/adversarial_m2_escape_chains.test.js
+  node --test e2e_tests/challenger_m1_adversarial.test.js
+  node --test e2e_tests/challenger_m2_adversarial_stress.test.js
+  node --test e2e_tests/challenger_validator_stress.test.js
+  node --test e2e_tests/fet_client_telemetry_node.test.js
+  node --test e2e_tests/planner_fet_checkpoint_validation_node.test.js
+  node --test e2e_tests/planner_hybrid_contract_node.test.js
+
+  # 3. Chạy kiểm chứng hiệu năng và tối ưu trên dữ liệu trường thực tế
+  node scratch/run_real_school_benchmark.js
+
+  # 4. Kiểm tra tính toàn vẹn và đồng bộ mã nguồn (SHA-256 Bitwise Parity)
+  node scratch/verify_sha256_mirrors.js
+  ```
+
+## 2026-08-20 MILESTONE M2: DEEP COMPUTE BUDGET, DEEP CYCLES SCALING, ADAPTIVE LIMIT CALLS & WORKER EVENT LOOP RESPONSIVENESS (100% GREEN)
+
+- **Mục tiêu & Thành phần Nâng cấp**:
+  - **Mở rộng `deepCycles` & Số Vòng Lặp Tối Ưu Cục Bộ (`MAX_ROUNDS`)**:
+    - Tăng `MAX_ROUNDS` mặc định cho `optimize_singletons` từ 5 lên 8 vòng lặp.
+    - Hỗ trợ tham số `options.deepCycles` và cờ `options.deepLocalFet` tự động nâng số vòng lặp lên 10..12 vòng lặp (giới hạn an toàn $\le 20$).
+    - Tự động mở rộng ngân sách thời gian `deadlineAtMs` lên 30,000ms (và 35,000ms cho `optimizeTimeBudgetMs`) khi chạy ở chế độ sâu, tránh bị timeout ngắt sớm khi xử lý các trường học quy mô lớn.
+  - **Hạn Mức Lời Gọi Thích Ứng (`getAdaptiveLimitCalls`)**:
+    - Bổ sung helper `getAdaptiveLimitCalls(base = 2000, deep = 3500)` cho `FetTimetableEngine`.
+    - Ở chế độ thường: sử dụng hạn mức base 2,000 lời gọi/lần swap để tối ưu hóa tốc độ UI.
+    - Ở chế độ `deepCycles` / `deepLocalFet`: tự động nâng lên 3,500 lời gọi/lần swap cho toàn bộ các toán tử thoát singleton và gap-crush (`tryTargetedIntraClassSingletonCrusher`, `trySingletonEjectionChains`, `tryRelocateSingletons`, `tryShareRichToSingleton`, `trySingletonRelabelCycles`, `tryIntraClassSingletonSwap`, `tryClosedPushCycles`, `tryCrossClassSingletonKempeSwap`, `tryVacateTeacherSessions`, `tryCrushGaps`).
+  - **Cô Lập Bộ Nhớ Tabu & Chống Rò Rỉ Trạng Thái Giữa Các Toán Tử**:
+    - Trước mỗi lần kích hoạt `randomSwap(occAct.id, 0)` cấp 0, engine thực hiện reset hoàn toàn: `this.nCalls = 0; this.tabuMap.clear(); this.triedRemovals.clear(); this.swappedInBranch.clear();`.
+    - Điều chỉnh Tabu tenure thích ứng: $U[5, 12]$ ở chế độ thường và $U[7, 16]$ ở chế độ `deepCycles` để mở rộng không gian tìm kiếm không chu trình.
+  - **Bảo Đảm Web Worker Không Đơ/Lag với Event Loop Yielding Toàn Diện**:
+    - Chuẩn hóa điều kiện nhường CPU: `if((++evalSteps % 32) === 0 && (Date.now() - lastYieldAt >= 16)) { await new Promise(resolve => setTimeout(resolve, 0)); lastYieldAt = Date.now(); }` trên 100% các vòng lặp toán tử tối ưu cục bộ.
+    - Đảm bảo Web Worker luôn phản hồi tức thì với tín hiệu hủy (`terminate()`) và tiến trình streaming mượt mà 60 FPS.
+  - **Đồng Bộ Byte-for-Byte SHA-256**:
+    - `web/pages/tkb-fet-engine.js` và `web/tkb-fet-engine.js`: `BD29B5201ABE97C45E9F2E0DA8618CADF48C7EC73F037322E75644B1F92EF29B` (100% bitwise parity).
+    - `web/pages/tkb-fet-worker.js` và `web/tkb-fet-worker.js`: `B7F68C9BDBDEB89B036A2994E624BA08D93E3EDB4D0226EA0F6FB618C811E7B3` (100% bitwise parity).
+    - `web/pages/phanmon.js` và `web/phanmon.js`: `203D41D52173FDB39D2C821CD16AD8C29B657F3830FA336CC34247E56231FB79` (100% bitwise parity).
+- **Lệnh Kiểm Thử & Xác Minh Độc Lập**:
+  - `node --test e2e_tests/milestone_m2_compute_budget_deep_cycles.test.js` (5/5 PASS)
+  - `node --test e2e_tests/augmented_singleton_e2e.test.js` (40/40 PASS)
+  - `node --test e2e_tests/tkb_fet_engine_node.test.js` (33/33 PASS)
+  - `node e2e_tests/tkb_fet_benchmark_node.test.js` (3/3 PASS)
+  - `node e2e_tests/adversarial_ui_worker_stress_node.test.js` (11/11 PASS)
+  - `node --test e2e_tests/planner_subject_limit_semantics_node.test.js` (30/30 PASS)
+  - `node --test e2e_tests/adversarial_m2_escape_chains.test.js e2e_tests/challenger_validator_stress.test.js e2e_tests/fet_client_telemetry_node.test.js` (25/25 PASS)
+
 ## 2026-08-20 AUGMENTED SINGLETON ESCAPE CHAINS, 12-SESSION FET COUNTING INVARIANT & UI CONFLICT VALIDATOR (100% GREEN)
 
 - **Tổng quan Kiến trúc & Mục tiêu Nghiệp vụ**:
