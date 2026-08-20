@@ -15,6 +15,15 @@
 - Kiểm thử: 96/96 test Node liên quan pass; chạy browser local thực tế cho thấy progress bắt đầu bằng `Ưu tiên 1 tiết/buổi`, `Trống 2 = 0`, sau đó hoàn tất với lịch đầy đủ và không tạo gap-2.
 - Dữ liệu local hiện tại đạt `soBuoiDay1 = 4`; đây là giá trị cần đối chiếu với `targetMetricLowerBound` trong worker để phân biệt floor chứng minh với nghiệm heuristic chưa đạt floor. Chưa deploy/push.
 
+## 2026-08-21 LOCAL DEEP SEARCH & MULTI-SEED RESTART (NOT DEPLOYED)
+
+- Ảnh kiểm tra cho thấy sau 24 giây pipeline vẫn đứng ở `1t/buổi: 4`; tăng thời gian nhưng vẫn giữ nguyên nên xác định đây là plateau cục bộ chứ không chỉ là lỗi progress.
+- Worker tăng ngân sách mặc định singleton lên 120 giây toàn pipeline, 45 giây/chu kỳ, tối đa 60 pass và 12 pass stagnation; sau pha thường chạy thêm deep singleton search (`deepLocalFet`, tối đa 6.000 recursive calls, 12 deep cycles).
+- Nếu vẫn chưa chạm floor, worker thử tối đa 3 construction độc lập bằng seed khác trên cùng hard constraints, chạy singleton optimization cho từng nghiệm và chỉ nhận candidate khi `soBuoiDay1` giảm theo comparator lexicographic mà không làm `soBuoiTrong2` xấu đi.
+- Deep singleton search có thể nới `strictFetGaps/strictTeacherGaps` tạm thời để thử đường gom cần gap-2 trung gian; sau đó chạy gap-2 cleanup, chỉ giữ nghiệm nếu singleton giảm và `soBuoiTrong2 = 0`, ngược lại restore snapshot incumbent.
+- Giữ nguyên các invariant: đủ tiết, gap-2 không tăng, student holes = 0, fixed/OFF bất biến; mirror `web/pages/*` và `web/*` được đồng bộ byte parity.
+- Chưa deploy/push; cần chạy lại dữ liệu local hiện tại để xác nhận nghiệm 4 là floor toán học hay đã được restart giảm tiếp.
+
 ## 2026-08-21 LOCAL FET TEACHER-SESSION QUALITY HARDENING (NOT DEPLOYED)
 
 - Chỉ thay đổi và kiểm thử trong workspace local; không gọi VPS/Cloud Run, không sửa dữ liệu trường và không deploy production.

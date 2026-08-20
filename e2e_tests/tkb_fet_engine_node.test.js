@@ -268,6 +268,14 @@ test("automatic worker prioritizes singleton elimination before gap-2 polish and
     "raw metric callbacks must be normalized before posting progress");
   assert.match(WORKER_SOURCE, /currentMetrics\.soBuoiDay1\s*<=\s*singletonFloor[\s\S]*?optimize\('optimize_gap2'/,
     "gap-2 polish must wait until singleton floor is reached");
+  assert.match(WORKER_SOURCE, /singletonRestartAttempts/,
+    "a plateaued incumbent must get independent construction restarts");
+  assert.match(WORKER_SOURCE, /new self\.FetTimetableEngine\(candidateData, candidateOptions\)/,
+    "restart candidates must use independent seeds and the same hard constraints");
+  assert.match(WORKER_SOURCE, /allowSingletonGap2Tradeoff/,
+    "deep singleton search may use a temporary gap-2 tradeoff before cleanup");
+  assert.match(WORKER_SOURCE, /restoreStateSnapshot\(tradeoffSnapshot\)/,
+    "failed tradeoff cleanup must rollback the incumbent atomically");
 });
 
 test("FET orders construction activities by MRV domain before degree tie-breakers", () => {

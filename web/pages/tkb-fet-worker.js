@@ -34,7 +34,8 @@ function emitOptimizerProgress(cb, progress, config) {
     cycle: config.cycle,
     pass: progress?.pass,
     maxPasses: progress?.maxPasses,
-    metrics
+    metrics,
+    targetMetricLowerBound: config.targetMetricLowerBound ?? progress?.targetMetricLowerBound
   });
 }
 
@@ -61,7 +62,8 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
       currentMetric: eng.evaluateMetrics().soBuoiDay1,
       initialMetric: eng.evaluateMetrics().soBuoiDay1,
       stage: 'singleton_priority',
-      metrics: eng.evaluateMetrics()
+      metrics: eng.evaluateMetrics(),
+      targetMetricLowerBound: Number(eng.constraintPreflight?.structuralFloor?.metricLowerBounds?.soBuoiDay1 || 0)
     });
   } else {
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -93,8 +95,11 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
   if (bestEngine && bestUnassigned === 0) {
     const initialMetrics = bestEngine.evaluateMetrics();
     const singletonFloor = Number(bestEngine.constraintPreflight?.structuralFloor?.metricLowerBounds?.soBuoiDay1 || 0);
-    const qualityBudgetMs = clampNumber(workerOptions.autoQualityTimeBudgetMs, 60_000, 12_000, 180_000);
-    const singletonCycleBudgetMs = clampNumber(workerOptions.singletonCycleBudgetMs, 20_000, 5_000, 60_000);
+    // Give the first objective enough room to escape local minima. The old
+    // 20s/30-pass budget often stopped at a valid but unchanged singleton
+    // count (the common "1t/buổi: 4" plateau in the live school data).
+    const qualityBudgetMs = clampNumber(workerOptions.autoQualityTimeBudgetMs, 120_000, 12_000, 180_000);
+    const singletonCycleBudgetMs = clampNumber(workerOptions.singletonCycleBudgetMs, 45_000, 5_000, 60_000);
     const qualityDeadline = Date.now() + qualityBudgetMs;
     let currentMetrics = initialMetrics;
     let singletonResult = null;
@@ -107,7 +112,8 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
       initialMetric: initialMetrics.soBuoiDay1,
       stage: 'singleton_priority',
       cycle: 0,
-      metrics: currentMetrics
+      metrics: currentMetrics,
+      targetMetricLowerBound: singletonFloor
     });
 
     while (currentMetrics.soBuoiDay1 > singletonFloor && Date.now() < qualityDeadline) {
@@ -123,15 +129,16 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
 
       singletonResult = await bestEngine.runUntilZeroSingletons({
         timeBudgetMs: Math.min(singletonCycleBudgetMs, remainingMs),
-        maxPasses: clampNumber(workerOptions.singletonMaxPasses, 30, 8, 60),
-        stagnationThreshold: clampNumber(workerOptions.singletonStagnationThreshold, 6, 2, 15),
+        maxPasses: clampNumber(workerOptions.singletonMaxPasses, 60, 8, 120),
+        stagnationThreshold: clampNumber(workerOptions.singletonStagnationThreshold, 12, 2, 30),
         onProgress: (progress) => emitOptimizerProgress(cb, progress, {
           basePercent: 35,
           percentSpan: 50,
           stage: 'singleton_priority',
           cycle,
           metricKey: 'soBuoiDay1',
-          initialMetrics
+          initialMetrics,
+          targetMetricLowerBound: singletonFloor
         })
       });
       currentMetrics = bestEngine.evaluateMetrics();
@@ -141,12 +148,151 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
         initialMetric: initialMetrics.soBuoiDay1,
         stage: 'singleton_priority',
         cycle,
-        metrics: currentMetrics
+        metrics: currentMetrics,
+        targetMetricLowerBound: singletonFloor
       });
 
       if (currentMetrics.soBuoiDay1 < beforeSingletons) noImprovementCycles = 0;
       else noImprovementCycles++;
-      if (noImprovementCycles >= 2) break;
+      if (noImprovementCycles >= 4) break;
+    }
+
+    // A focused deep-search phase is deliberately separate from the normal
+    // pass. It raises the recursive swap budget and enables deeper FET-style
+    // rounds only after the inexpensive operators plateau, so routine solves
+    // stay responsive while hard incumbents get a genuine second search.
+    if (currentMetrics.soBuoiDay1 > singletonFloor && Date.now() < qualityDeadline) {
+      const deepRounds = clampNumber(workerOptions.deepSingletonRounds, 3, 1, 8);
+      const tradeoffBaseline = { ...currentMetrics };
+      const tradeoffSnapshot = bestEngine.captureStateSnapshot();
+      bestEngine.options.deepLocalFet = true;
+      bestEngine.options.deepCycles = Math.max(Number(bestEngine.options.deepCycles) || 0, 12);
+      bestEngine.options.deepLimitCalls = Math.max(Number(bestEngine.options.deepLimitCalls) || 0, 6000);
+      bestEngine.options.allowSingletonGap2Tradeoff = true;
+      bestEngine.strictFetGaps = false;
+      bestEngine.strictTeacherGaps = false;
+      for (let deepRound = 1; deepRound <= deepRounds; deepRound++) {
+        if (Date.now() >= qualityDeadline || currentMetrics.soBuoiDay1 <= singletonFloor) break;
+        const beforeDeep = currentMetrics.soBuoiDay1;
+        const remainingMs = qualityDeadline - Date.now();
+        bestEngine.options.optimizeTimeBudgetMs = Math.max(1000, remainingMs);
+        bestEngine.tabuMap?.clear?.();
+        bestEngine.triedRemovals?.clear?.();
+        bestEngine.swappedInBranch?.clear?.();
+        bestEngine.nCalls = 0;
+        await bestEngine.optimize('optimize_singletons', (progress) => emitOptimizerProgress(cb, progress, {
+          basePercent: 60,
+          percentSpan: 25,
+          stage: 'singleton_priority',
+          cycle: cycle + deepRound,
+          metricKey: 'soBuoiDay1',
+          initialMetrics,
+          targetMetricLowerBound: singletonFloor
+        }));
+        currentMetrics = bestEngine.evaluateMetrics();
+        cb({
+          percent: Math.min(85, 60 + deepRound * 7),
+          currentMetric: currentMetrics.soBuoiDay1,
+          initialMetric: initialMetrics.soBuoiDay1,
+          stage: 'singleton_priority',
+          cycle: cycle + deepRound,
+          metrics: currentMetrics,
+          targetMetricLowerBound: singletonFloor
+        });
+        if (currentMetrics.soBuoiDay1 >= beforeDeep && deepRound >= 2) break;
+      }
+      bestEngine.options.allowSingletonGap2Tradeoff = false;
+      bestEngine.strictFetGaps = true;
+      bestEngine.strictTeacherGaps = true;
+      if (currentMetrics.soBuoiTrong2 > 0) {
+        await bestEngine.optimize('optimize_gap2', (progress) => emitOptimizerProgress(cb, progress, {
+          basePercent: 85,
+          percentSpan: 10,
+          stage: 'gap2_priority',
+          cycle: cycle + 1,
+          metricKey: 'soBuoiTrong2',
+          initialMetrics: currentMetrics
+        }));
+        currentMetrics = bestEngine.evaluateMetrics();
+      }
+      if (currentMetrics.soBuoiDay1 >= tradeoffBaseline.soBuoiDay1 || currentMetrics.soBuoiTrong2 > 0) {
+        bestEngine.restoreStateSnapshot(tradeoffSnapshot);
+        bestEngine.applyToDataTKB();
+        currentMetrics = bestEngine.evaluateMetrics();
+      }
+    }
+
+    // If local search is still plateaued, try a few independent constructions
+    // from the same hard constraints. A complete incumbent can be a genuine
+    // local minimum; restarting with a different seed explores a different
+    // pairing/session topology. We keep the incumbent unless the candidate is
+    // lexicographically better and never trade away a zero gap-2 schedule.
+    if (currentMetrics.soBuoiDay1 > singletonFloor && Date.now() < qualityDeadline) {
+      const restartAttempts = clampNumber(workerOptions.singletonRestartAttempts, 3, 1, 6);
+      for (let restart = 0; restart < restartAttempts; restart++) {
+        if (Date.now() >= qualityDeadline || currentMetrics.soBuoiDay1 <= singletonFloor) break;
+        const remainingMs = qualityDeadline - Date.now();
+        const attemptBudget = Math.max(1000, Math.min(25_000, Math.floor(remainingMs / (restartAttempts - restart))));
+        const candidateOptions = Object.assign({}, workerOptions, {
+          seed: baseSeed + 104729 * (restart + 1),
+          deepLocalFet: true,
+          deepCycles: Math.max(Number(workerOptions.deepCycles) || 0, 12),
+          deepLimitCalls: Math.max(Number(workerOptions.deepLimitCalls) || 0, 6000),
+          timeBudgetMs: attemptBudget,
+          optimizeTimeBudgetMs: attemptBudget
+        });
+        const candidateData = JSON.parse(JSON.stringify(data));
+        const candidate = new self.FetTimetableEngine(candidateData, candidateOptions);
+        isConstruction(true);
+        const construction = await candidate.solve((progress) => {
+          cb({
+            percent: 35 + Math.round(Math.max(0, Math.min(100, Number(progress?.percent) || 0)) * 0.15),
+            currentMetric: currentMetrics.soBuoiDay1,
+            initialMetric: initialMetrics.soBuoiDay1,
+            stage: 'singleton_priority',
+            cycle: cycle + restart + 1,
+            metrics: currentMetrics,
+            targetMetricLowerBound: singletonFloor
+          });
+        });
+        isConstruction(false);
+        if (!construction || construction.ok === false || Number(construction.unassigned) > 0) continue;
+
+        candidate.options.allowSingletonGap2Tradeoff = true;
+        candidate.strictFetGaps = false;
+        candidate.strictTeacherGaps = false;
+        await candidate.runUntilZeroSingletons({
+          timeBudgetMs: Math.min(attemptBudget, qualityDeadline - Date.now()),
+          maxPasses: clampNumber(workerOptions.singletonMaxPasses, 60, 8, 120),
+          stagnationThreshold: clampNumber(workerOptions.singletonStagnationThreshold, 12, 2, 30)
+        });
+        candidate.options.allowSingletonGap2Tradeoff = false;
+        candidate.strictFetGaps = true;
+        candidate.strictTeacherGaps = true;
+        let candidateMetrics = candidate.evaluateMetrics();
+        if (candidateMetrics.soBuoiTrong2 > 0) {
+          await candidate.optimize('optimize_gap2', null);
+          candidateMetrics = candidate.evaluateMetrics();
+        }
+        const improves = candidateMetrics.soBuoiTrong2 === 0
+          && candidate.compareMetrics(candidateMetrics, currentMetrics, currentMetrics, 'optimize_singletons') < 0;
+        if (improves) {
+          bestEngine = candidate;
+          setEngine(candidate);
+          currentMetrics = candidateMetrics;
+          bestRes = { ok: true, applied: true, placed: candidate.activities.length, unassigned: 0, total: candidate.activities.length };
+          cb({
+            percent: 75,
+            currentMetric: currentMetrics.soBuoiDay1,
+            initialMetric: initialMetrics.soBuoiDay1,
+            stage: 'singleton_priority',
+            cycle: cycle + restart + 1,
+            metrics: currentMetrics,
+            targetMetricLowerBound: singletonFloor
+          });
+        }
+      }
+      setEngine(bestEngine);
     }
 
     let finalResult = singletonResult || {
@@ -349,9 +495,10 @@ self.onmessage = async function(e) {
             currentMetric: prog?.currentMetric,
             initialMetric: prog?.initialMetric,
             stage: prog?.stage || null,
-            cycle: prog?.cycle,
-            metrics: prog?.metrics,
-            checkpoint: bestCheckpoint,
+          cycle: prog?.cycle,
+          metrics: prog?.metrics,
+          targetMetricLowerBound: prog?.targetMetricLowerBound,
+          checkpoint: bestCheckpoint,
             tkb: snapshotTkb
           });
         });

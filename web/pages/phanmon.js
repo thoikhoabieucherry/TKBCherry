@@ -7095,7 +7095,10 @@ async function executeDirectFastSchedule(options = {}){
                 "quality_polish": "Tối ưu phụ"
               };
               const stageLabel = stageLabelMap[msg.stage] || "Tối ưu";
-              detail = `${stageLabel} • 1t/buổi:${msg.metrics.soBuoiDay1} T2:${msg.metrics.soBuoiTrong2} B:${msg.metrics.tsBuoiDay} T1:${msg.metrics.soBuoiTrong1}`;
+              const floorHint = stageLabel === "Ưu tiên 1 tiết/buổi" && Number(msg.targetMetricLowerBound) > 0
+                ? ` sàn:${Number(msg.targetMetricLowerBound)}`
+                : "";
+              detail = `${stageLabel} • 1t/buổi:${msg.metrics.soBuoiDay1} T2:${msg.metrics.soBuoiTrong2} B:${msg.metrics.tsBuoiDay} T1:${msg.metrics.soBuoiTrong1}${floorHint}`;
             }else if(initVal !== undefined && curVal !== undefined){
               if(options.mode === "optimize_sessions"){
                 detail = `Buổi dạy: ${initVal} ➔ ${curVal}`;

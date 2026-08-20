@@ -2762,7 +2762,7 @@
       if(aUnplaced !== bUnplaced) return aUnplaced - bUnplaced;
 
       if(mode === "optimize_singletons"){
-        if(a.soBuoiTrong2 > initial.soBuoiTrong2) return 1;
+        if(!this.options?.allowSingletonGap2Tradeoff && a.soBuoiTrong2 > initial.soBuoiTrong2) return 1;
         if(a.soBuoiDay1 !== b.soBuoiDay1) return a.soBuoiDay1 - b.soBuoiDay1;
         if(a.soNgayMotTiet !== b.soNgayMotTiet) return a.soNgayMotTiet - b.soNgayMotTiet;
         if(a.soBuoiTrong2 !== b.soBuoiTrong2) return a.soBuoiTrong2 - b.soBuoiTrong2;

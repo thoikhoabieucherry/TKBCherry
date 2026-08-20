@@ -17,7 +17,7 @@ Hệ thống xếp thời khóa biểu tự động cho trường phổ thông, 
   5. *Proven Singleton Floor*: preflight tính cận dưới `soBuoiDay1` cho tải giáo viên bị tách bởi miền ca/buổi độc lập; optimizer dừng khi đạt floor có chứng cứ thay vì cố tìm nghiệm 0 bất khả thi.
 - **Backend** `rust_api/`: HTTP server **tự viết trên std** (TcpListener + thread pool), không Axum/Tokio. Dependency: argon2, serde_json, rusqlite, sha2. Auth = Argon2id + **session token opaque** (không JWT). Port local mặc định `1010` (`.env`, `TKB_RUST_PORT`). Quản lý xác thực, phân quyền và lưu trữ dữ liệu trường học.
 - **Dữ liệu**: SQLite KV store (`kvstore`), WAL mode; mỗi trường một key `school_{schoolId}`.
- - **Luồng solve**: Nút Play ▶ ("Tự động xếp TKB") và Stop ■ ("Dừng xếp") chạy 100% trong Web Worker, cập nhật thanh tiến trình theo thời gian thực (ms), thống kê tức thì và không gửi network request ra ngoài khi xếp lịch. Với lịch đã đủ tiết, worker nạp incumbent rồi tối ưu theo thứ tự `1 tiết/buổi` → `Trống 2` → polish; progress được chuẩn hóa để không rơi về `0/0`.
+ - **Luồng solve**: Nút Play ▶ ("Tự động xếp TKB") và Stop ■ ("Dừng xếp") chạy 100% trong Web Worker, cập nhật thanh tiến trình theo thời gian thực (ms), thống kê tức thì và không gửi network request ra ngoài khi xếp lịch. Với lịch đã đủ tiết, worker nạp incumbent rồi tối ưu theo thứ tự `1 tiết/buổi` → deep singleton search/restart đa seed (cho phép gap-2 tạm thời rồi dọn/rollback) → `Trống 2` → polish; progress được chuẩn hóa để không rơi về `0/0`.
 
 ## Nhánh và quy trình Git
 
