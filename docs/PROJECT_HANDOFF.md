@@ -6,6 +6,40 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-20 4-PERIOD PAIRED LESSONS (2+2) & CLASS SINGLETON PAIRING OPERATOR (100% GREEN)
+
+- **Tổng Quan Cải Tiến & Nghiệp Vụ (Key Enhancements & Business Value)**:
+  - **Chuẩn hóa khối môn 4 tiết thành cặp tiết đôi (`2 + 2 Paired Lessons`)**:
+    - Trong `buildActivities()` của `web/pages/tkb-fet-engine.js` (và bản mirror `web/tkb-fet-engine.js`), chuẩn hóa các môn học 4 tiết/tuần (như Văn, Toán, KHTN...) với `needed === 4` và `maxDaily >= 2` (khi `lessonBlocks["2"]?.max !== 0`) thành 2 khối tiết đôi (`Math.floor(rem / 2)` paired blocks với `duration: 2`, `mustKeepBlock: true`, `lessonBlockLen: 2`).
+    - Ngăn chặn việc phân rã tự do thành `2 + 1 + 1` hoặc `1 + 1 + 1 + 1`, loại bỏ tận gốc nguyên nhân sinh ra các buổi dạy 1 tiết đơn độc cho giáo viên (như cô V.Quỳnh dạy Văn lớp 9A18).
+  - **Cài đặt toán tử Ghép Cặp Tiết Đơn Trong Lớp (`tryPairClassSingletons`)**:
+    - Quét toàn bộ các lớp để tìm các môn học có $\ge 2$ tiết đơn lẻ trên các buổi khác nhau.
+    - Tự động gom ghép 2 tiết đơn thành 1 cặp 2 tiết liền kề $(p, p+1)$ tại buổi đích, đồng thời giải phóng hoàn toàn buổi còn lại về 0 tiết.
+    - Xử lý các môn cản trở bằng di dời trực tiếp slot $O(1)$ hoặc kích hoạt đệ quy `randomSwap(occAct.id, 0)` với bộ nhớ Tabu và hạn mức thích ứng $2.000 \dots 3.500$ cuộc gọi.
+    - Bảo toàn nghiêm ngặt các ô cố định Chào cờ / HĐTN (`-3`), ô nghỉ (`-2`), và cơ chế Transactional Snapshot Rollback.
+    - Tích hợp tại vị trí ưu tiên hàng đầu trong Stage 1 (`optimize_singletons` / `optimize_all`) của `optimize()`.
+  - **Nâng cấp thuật toán dàn xếp lỗ trống học sinh (`compactAllStudentSessions` & `repairStudentHoles`)**:
+    - Bổ sung tìm kiếm hoán vị toàn diện ($N! \le 120$) cho các hoạt động động trong buổi học để dồn khít các tiết học, đảm bảo không có lỗ hổng xen kẽ cho học sinh (`countTotalStudentHoles() === 0`).
+    - Tích hợp toán tử sửa lỗ trống học sinh liên buổi `repairStudentHoles()` tự động khôi phục tính liền mạch sau khi hoàn thành xếp lịch `solve()`.
+  - **Đồng bộ song song Mirror Parity (100% SHA-256 byte parity)**:
+    - Đồng bộ `web/pages/tkb-fet-engine.js` và `web/tkb-fet-engine.js` với mã băm SHA-256 hoàn toàn trùng khớp.
+
+- **Kết Quả Thực Nghiệm & Kiểm Thử (Verification & Test Results)**:
+  - **Trường THCS Mặc Định (`scratch/live_school_default.json` - 75 lớp / 2.202 tiết)**:
+    - `unplacedCount = 0` (Xếp đủ 100% 2.202 / 2.202 tiết).
+    - `soBuoiDay1 = 0` (Triệt tiêu 100% các buổi dạy 1 tiết).
+    - Giáo viên cô V.Quỳnh (`GV014` / `v.quỳnh`): Thứ 7 giải phóng hoàn toàn về 0 tiết (`satTaughtCount = 0`).
+    - `soBuoiTrong2 = 0` (100% không còn khoảng trống 2 tiết).
+    - `countTotalStudentHoles() = 0` (100% học sinh học liền mạch).
+  - **5 Bộ Kiểm Thử E2E Toàn Diện (100% Green Gate)**:
+    - `node --test e2e_tests/augmented_singleton_e2e.test.js`: **40 / 40 PASS** (1.56s).
+    - `node --test e2e_tests/tkb_fet_engine_node.test.js`: **33 / 33 PASS** (189ms).
+    - `node e2e_tests/tkb_fet_benchmark_node.test.js`: **3 / 3 PASS** (58ms).
+    - `node e2e_tests/adversarial_ui_worker_stress_node.test.js`: **11 / 11 PASS** (247ms).
+    - `node --test e2e_tests/planner_subject_limit_semantics_node.test.js`: **30 / 30 PASS** (334ms).
+    - **Tổng số tests PASS**: **117 / 117 tests (100% GREEN, 0 failed, 0 skipped)**.
+  - **Rust Check**: `cargo check --manifest-path rust_api/Cargo.toml` biên dịch thành công 0 lỗi.
+
 ## 2026-08-20 TARGETED INTRA-CLASS SINGLETON CRUSHER & DEEP COMPUTE BUDGET (100% GREEN)
 
 - **Tổng Quan Kiến Trúc & Mục Tiêu Nghiệp Vụ (Architecture & Business Goals)**:
