@@ -787,38 +787,7 @@
             }
           }
 
-          // For 4-period subjects (needed === 4) where maxDaily >= 2 and lessonBlocks["2"]?.max !== 0,
-          // standardize remaining periods into paired blocks of duration 2 (e.g. 2 + 2) by default
-          if(needed === 4 && maxDaily >= 2 && rem >= 2){
-            const b2MaxVal = lessonBlocks["2"]?.max ?? lessonBlocks[2]?.max;
-            const isBlock2Allowed = (b2MaxVal === undefined || b2MaxVal === null || b2MaxVal === "" || Number(b2MaxVal) !== 0);
-            const b2MaxLimit = (b2MaxVal !== undefined && b2MaxVal !== null && b2MaxVal !== "") ? Number(b2MaxVal) : 999;
-            const alreadyCreated2 = this.activities.filter(a => a.classId === cid && a.canonKey === canonKey && a.duration === 2).length;
-            const canCreate2 = isBlock2Allowed ? Math.max(0, Math.min(b2MaxLimit - alreadyCreated2, Math.floor(rem / 2))) : 0;
-            for(let b = 0; b < canCreate2; b++){
-              this.activities.push({
-                id: actIdCounter++,
-                classId: cid,
-                classIdx: cIdx,
-                mon,
-                canonKey,
-                gv: teacherRaw,
-                gvList: tList,
-                teacherIdxs: new Int32Array(tIndices),
-                room: roomRaw,
-                roomIdx,
-                location: loc,
-                duration: 2,
-                maxDaily: Math.max(maxDaily, 2),
-                mustKeepBlock: true,
-                lessonBlockLen: 2,
-                lessonBlocksMax,
-                isFixed: false,
-                sessionAllowed
-              });
-              rem -= 2;
-            }
-          }
+
 
           while(rem > 0){
             this.activities.push({
