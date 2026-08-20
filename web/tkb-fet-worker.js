@@ -495,10 +495,10 @@ self.onmessage = async function(e) {
             currentMetric: prog?.currentMetric,
             initialMetric: prog?.initialMetric,
             stage: prog?.stage || null,
-          cycle: prog?.cycle,
-          metrics: prog?.metrics,
-          targetMetricLowerBound: prog?.targetMetricLowerBound,
-          checkpoint: bestCheckpoint,
+            cycle: prog?.cycle,
+            metrics: prog?.metrics,
+            targetMetricLowerBound: prog?.targetMetricLowerBound,
+            checkpoint: bestCheckpoint,
             tkb: snapshotTkb
           });
         });
@@ -530,6 +530,12 @@ self.onmessage = async function(e) {
         tkb: finalSnapshot,
         initialMetrics: res?.initialMetrics,
         metrics: res?.metrics,
+        targetMetric: res?.targetMetric,
+        targetMetricKey: res?.targetMetricKey,
+        targetMetricLowerBound: res?.targetMetricLowerBound,
+        targetReached: res?.targetReached,
+        floorReached: res?.floorReached,
+        stagnated: res?.stagnated,
         placed: res?.placed,
         unassigned: res?.unassigned,
         total: res?.total || ((res?.placed || 0) + (res?.unassigned || 0))

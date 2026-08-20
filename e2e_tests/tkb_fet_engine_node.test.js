@@ -276,6 +276,8 @@ test("automatic worker prioritizes singleton elimination before gap-2 polish and
     "deep singleton search may use a temporary gap-2 tradeoff before cleanup");
   assert.match(WORKER_SOURCE, /restoreStateSnapshot\(tradeoffSnapshot\)/,
     "failed tradeoff cleanup must rollback the incumbent atomically");
+  assert.match(WORKER_SOURCE, /type: 'done',[\s\S]*?stagnated: res\?\.stagnated/,
+    "automatic solve completion must expose the stagnation/floor result to the UI");
 });
 
 test("FET orders construction activities by MRV domain before degree tie-breakers", () => {
