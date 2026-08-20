@@ -231,6 +231,11 @@
       return base;
     }
 
+    getTabuTenure(){
+      const isDeep = Boolean(this.options?.deepCycles || this.options?.deepLocalFet);
+      return isDeep ? 7 + this.rng.nextInt(10) : 5 + this.rng.nextInt(8);
+    }
+
     removeDiacritics(str){
       if(!str) return "";
       return String(str)
@@ -1454,7 +1459,8 @@
           totalWrong: totalWrong + domainTightnessPenalty,
           sessionAffinityScore,
           isUnaffordable,
-          minIndexAct
+          minIndexAct,
+          tieBreaker: this.rng.next()
         });
       }
 
@@ -1462,7 +1468,7 @@
         if(a.isUnaffordable !== b.isUnaffordable) return a.isUnaffordable ? 1 : -1;
         if(a.nConflActs !== b.nConflActs) return a.nConflActs - b.nConflActs;
         if(a.totalWrong !== b.totalWrong) return a.totalWrong - b.totalWrong;
-        return (this.rng.next() - 0.5);
+        return a.tieBreaker - b.tieBreaker;
       });
 
       for(let i = 0; i < candidateInfo.length; i++){
@@ -1487,8 +1493,7 @@
 
         const snap = this.captureStateSnapshot();
         this.swapStep = (this.swapStep || 0) + 1;
-        const isDeep = Boolean(this.options?.deepCycles || this.options?.deepLocalFet);
-        const tenure = isDeep ? (7 + (Math.abs(this.rng.next()) % 10)) : (5 + (Math.abs(this.rng.next()) % 8)); // tenure in [5, 12] or [7, 16]
+        const tenure = this.getTabuTenure();
 
         for(let j = 0; j < displaced.length; j++){
           const dId = displaced[j];
@@ -1659,6 +1664,94 @@
 
     checkMissingMustTeach(){
       return this.missingMustTeachSlots();
+    }
+
+    computeTeacherSingletonLowerBound(){
+      const evidence = [];
+      let lowerBound = 0;
+      const teacherActivities = Array.from({ length: this.teachers.length }, () => []);
+
+      for(const act of this.activities){
+        for(const tIdx of act.teacherIdxs || []){
+          if(teacherActivities[tIdx]) teacherActivities[tIdx].push(act);
+        }
+      }
+
+      for(let tIdx = 0; tIdx < teacherActivities.length; tIdx++){
+        const teacher = this.teachers[tIdx];
+        if(!teacher || !this.isScoredTeacher(teacher)) continue;
+
+        const parent = new Int32Array(12);
+        for(let s = 0; s < 12; s++) parent[s] = s;
+        const find = (x) => {
+          let root = x;
+          while(parent[root] !== root) root = parent[root];
+          while(parent[x] !== x){
+            const next = parent[x];
+            parent[x] = root;
+            x = next;
+          }
+          return root;
+        };
+        const union = (a, b) => {
+          const ra = find(a);
+          const rb = find(b);
+          if(ra !== rb) parent[rb] = ra;
+        };
+        const activitySessions = new Map();
+
+        for(const act of teacherActivities[tIdx]){
+          const allowed = this.allowedSlotsByActivity?.get(act) || [];
+          const sessions = new Set();
+          for(const slot of allowed){
+            const session = Math.floor(slot / PERIODS_PER_SESSION);
+            if(session >= 0 && session < 12) sessions.add(session);
+          }
+          if(sessions.size === 0) continue;
+          const list = Array.from(sessions);
+          for(let i = 1; i < list.length; i++) union(list[0], list[i]);
+          activitySessions.set(act, list);
+        }
+
+        const components = new Map();
+        const ensureComponent = (root) => {
+          if(!components.has(root)) components.set(root, { sessions: [], load: 0 });
+          return components.get(root);
+        };
+
+        for(const [act, sessions] of activitySessions){
+          const component = ensureComponent(find(sessions[0]));
+          component.load += Math.max(1, Number(act.duration) || 1);
+          for(const session of sessions){
+            if(!component.sessions.includes(session)) component.sessions.push(session);
+          }
+        }
+
+        const tg = this.teacherGridList[tIdx];
+        if(tg){
+          for(let session = 0; session < 12; session++){
+            let fixedCount = 0;
+            const start = session * PERIODS_PER_SESSION;
+            for(let p = 0; p < PERIODS_PER_SESSION; p++){
+              if(tg[start + p] === -3) fixedCount++;
+            }
+            if(fixedCount > 0) ensureComponent(find(session)).load += fixedCount;
+          }
+        }
+
+        for(const component of components.values()){
+          if(component.load !== 1) continue;
+          lowerBound++;
+          evidence.push({
+            metric: "soBuoiDay1",
+            teacher,
+            reason: "teacher_session_domain_component_has_one_period",
+            sessions: component.sessions.slice().sort((a, b) => a - b)
+          });
+        }
+      }
+
+      return { lowerBound, evidence };
     }
 
     constraintLimitValue(rule, limitField, entityType, ctx = {}){
@@ -1847,6 +1940,10 @@
           if(dayFixedCount > 0) metricLowerBounds.tsNgayDay++;
         }
       });
+
+      const singletonFloor = this.computeTeacherSingletonLowerBound();
+      metricLowerBounds.soBuoiDay1 = singletonFloor.lowerBound;
+      metricLowerBoundEvidence.push(...singletonFloor.evidence);
 
       this.constraintPreflight = {
         zeroDomainActivities: zeroDomains,
@@ -2330,7 +2427,7 @@
                   const oldSlot = this.actPlacement[kId];
                   this.unplaceActivity(kId);
                   this.swapStep = (this.swapStep || 0) + 1;
-                  const tenure = 8 + (Math.abs(this.rng.next()) % 5);
+                  const tenure = 8 + this.rng.nextInt(5);
                   if(oldSlot >= 0) this.tabuMap.set(kId + '@' + oldSlot, this.swapStep + tenure);
                 }
 
@@ -3105,6 +3202,31 @@
       let improved = false;
       let evalSteps = 0;
       let lastYieldAt = Date.now();
+      const singletonClassIdxs = new Set();
+
+      const collectSingletonClasses = () => {
+        for(let tIdx = 0; tIdx < this.teacherGridList.length; tIdx++){
+          const teacher = this.teachers[tIdx];
+          if(!teacher || !this.isScoredTeacher(teacher)) continue;
+          const tg = this.teacherGridList[tIdx];
+          if(!tg) continue;
+          for(let sessIdx = 0; sessIdx < 12; sessIdx++){
+            const start = sessIdx * PERIODS_PER_SESSION;
+            let count = 0;
+            let onlyActId = -1;
+            for(let p = 0; p < PERIODS_PER_SESSION; p++){
+              const id = tg[start + p];
+              if(id >= 0){ count++; onlyActId = id; }
+            }
+            if(count === 1 && onlyActId >= 0){
+              const act = this.activities[onlyActId];
+              if(act && act.classIdx >= 0) singletonClassIdxs.add(act.classIdx);
+            }
+          }
+        }
+      };
+      collectSingletonClasses();
+      if(singletonClassIdxs.size === 0) return null;
 
       for(let cIdx = 0; cIdx < this.classes.length; cIdx++){
         if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) break;
@@ -3119,9 +3241,12 @@
           if(!act1 || act1.isFixed || act1.lockedByLessonBlock) continue;
 
           for(let s2 = s1 + 1; s2 < TOTAL_SLOTS; s2++){
-            if((++evalSteps % 32) === 0 && (Date.now() - lastYieldAt >= 16)){
-              await new Promise(resolve => setTimeout(resolve, 0));
-              lastYieldAt = Date.now();
+            if((++evalSteps % 32) === 0){
+              if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) break;
+              if(Date.now() - lastYieldAt >= 16){
+                await new Promise(resolve => setTimeout(resolve, 0));
+                lastYieldAt = Date.now();
+              }
             }
 
             const actId2 = cGrid[s2];
@@ -3129,11 +3254,16 @@
             const act2 = this.activities[actId2];
             if(!act2 || act2.isFixed || act2.lockedByLessonBlock) continue;
 
+            const pairIgnore = new Set([actId1, actId2]);
+            if(!this.isSlotFeasible(act1, s2, pairIgnore)) continue;
+            const directPair = act2.duration === act1.duration
+              && this.isSlotFeasible(act2, s1, pairIgnore);
+
             const snap = this.captureStateSnapshot();
             this.unplaceActivity(actId1);
             this.unplaceActivity(actId2);
             let ok = false;
-            if(act2.duration === act1.duration && this.isSlotFeasible(act1, s2) && this.isSlotFeasible(act2, s1)){
+            if(directPair){
               this.placeActivityDirect(act1.id, s2);
               this.placeActivityDirect(act2.id, s1);
               ok = true;
@@ -4917,6 +5047,7 @@
         }
 
         this.compactAllStudentSessions();
+        bestMetrics = this.evaluateMetrics();
 
         if(typeof onProgress === "function"){
           onProgress({
@@ -5064,7 +5195,7 @@
 
       const onProgress = options?.onProgress || null;
 
-      if(bestMetrics.soBuoiDay1 <= targetMetricLowerBound && bestMetrics.soBuoiDay1 === 0){
+      if(bestMetrics.soBuoiDay1 <= targetMetricLowerBound){
         this.__minTwoGuardActive = false;
         this.applyToDataTKB();
         if(typeof onProgress === "function"){
@@ -5165,7 +5296,7 @@
 
         await new Promise(resolve => setTimeout(resolve, 0));
 
-        if(bestMetrics.soBuoiDay1 <= targetMetricLowerBound && bestMetrics.soBuoiDay1 === 0){
+        if(bestMetrics.soBuoiDay1 <= targetMetricLowerBound){
           break;
         }
 

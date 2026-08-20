@@ -6,6 +6,32 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-21 LOCAL OPTIMIZER PIPELINE & PROGRESS FIX (NOT DEPLOYED)
+
+- Worker và UI local đã được kiểm tra end-to-end sau khi sửa nhánh lịch đã xếp đủ: incumbent được nạp lại, không dựng lịch từ trắng mỗi lần bấm `Xếp TKB`.
+- Một lần chạy tự động hiện phát progress theo thứ tự `Ưu tiên 1 tiết/buổi` → `Ưu tiên Trống 2` → `Tối ưu phụ`; callback metrics thô được chuẩn hóa nên toolbar không còn hiển thị sai `0/0`.
+- UI hiển thị rõ “đạt sàn toán học” khi `soBuoiDay1` còn dương nhưng bằng cận dưới đã chứng minh; không gọi đó là lỗi hoặc giả vờ đã đạt 0.
+- Nếu hết ngân sách/stagnation trước khi chạm floor, worker gửi `stagnated` để UI báo “đạt cận hiện biết”, giúp phân biệt nghiệm heuristic còn có thể cải thiện với floor bất khả thi.
+- Kiểm thử: 96/96 test Node liên quan pass; chạy browser local thực tế cho thấy progress bắt đầu bằng `Ưu tiên 1 tiết/buổi`, `Trống 2 = 0`, sau đó hoàn tất với lịch đầy đủ và không tạo gap-2.
+- Dữ liệu local hiện tại đạt `soBuoiDay1 = 4`; đây là giá trị cần đối chiếu với `targetMetricLowerBound` trong worker để phân biệt floor chứng minh với nghiệm heuristic chưa đạt floor. Chưa deploy/push.
+
+## 2026-08-21 LOCAL FET TEACHER-SESSION QUALITY HARDENING (NOT DEPLOYED)
+
+- Chỉ thay đổi và kiểm thử trong workspace local; không gọi VPS/Cloud Run, không sửa dữ liệu trường và không deploy production.
+- Cải thiện `web/pages/tkb-fet-engine.js` cùng mirror `web/tkb-fet-engine.js`:
+  - tính cận dưới có chứng cứ cho `soBuoiDay1` khi tải của giáo viên bị tách thành các miền buổi độc lập (ví dụ một tiết chỉ học sáng và một tiết chỉ học chiều), giúp optimizer nhận diện ngoại lệ toán học thay vì luôn giả định floor bằng 0;
+  - dừng `runUntilZeroSingletons()` khi đạt đúng floor đã chứng minh, không bắt buộc chỉ được dừng ở 0;
+  - sửa Tabu tenure dùng `rng.nextInt()` để thực sự nằm trong `[5,12]` hoặc `[7,16]`, đồng thời thay comparator sort ngẫu nhiên không ổn định bằng tie-breaker sinh một lần cho từng candidate;
+  - prefilter swap nội bộ lớp trước khi tạo snapshot, kiểm tra deadline trong vòng lặp và tính lại metrics sau compaction để báo/giữ đúng nghiệm thực tế;
+  - giữ nguyên gap-2 hard guard trong `isSlotFeasible()` và rollback sau chuỗi swap.
+- Bổ sung regression test chứng minh floor `soBuoiDay1 = 2` cho một giáo viên có hai tiết bị tách bắt buộc giữa ca sáng/chiều.
+- Kiểm thử local:
+  - `node --test e2e_tests/tkb_fet_engine_node.test.js`: 34/34 pass.
+  - `node --test e2e_tests/tkb_fet_engine_node.test.js e2e_tests/tkb_fet_benchmark_node.test.js e2e_tests/benchmark_fet_node.test.js`: 40/40 pass trước khi thêm test floor mới.
+  - `node --test e2e_tests/augmented_singleton_e2e.test.js e2e_tests/adversarial_ui_worker_stress_node.test.js e2e_tests/planner_subject_limit_semantics_node.test.js`: 81/81 pass.
+  - Đồng Khởi 1.566 tiết: xếp đủ 100%, `soBuoiTrong2 = 0`, student holes = 0; optimizer nhận diện floor singleton bắt buộc là 2. Kết quả heuristic theo seed/ngân sách 8–15 giây còn 3–4 singleton, vì vậy floor 2 là mục tiêu đã chứng minh nhưng chưa bảo đảm đạt trên mọi seed.
+- Không deploy và chưa commit/push trong phiên này theo yêu cầu làm việc local-only.
+
 ## 2026-08-20 4-PERIOD PAIRED LESSONS (2+2) & CLASS SINGLETON PAIRING OPERATOR (100% GREEN)
 
 - **Tổng Quan Cải Tiến & Nghiệp Vụ (Key Enhancements & Business Value)**:

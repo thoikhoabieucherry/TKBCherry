@@ -196,6 +196,29 @@ test("FET exposes only fixed/domain-proven quality floors", () => {
   assert.equal(floor.metricLowerBoundEvidence[0].reason, "fixed_gap_cannot_be_reduced_by_compiled_domains");
 });
 
+test("FET proves a singleton floor for teachers split across disjoint class sessions", () => {
+  const data = makeConstraintData({
+    subjects:[
+      {name:"Toán", teacher:"GV01", periods:1},
+      {name:"Văn", teacher:"GV01", periods:1}
+    ]
+  });
+  data.lop = [
+    {id:"L1", ten:"10A1", ten2:"10A1", khoi:"10", ca:"sang"},
+    {id:"L2", ten:"10A2", ten2:"10A2", khoi:"10", ca:"chieu"}
+  ];
+  data.pccmMatrix = {"L1|Toán":"GV01", "L2|Văn":"GV01"};
+  data.pccmTietMatrix = {"L1|Toán":1, "L2|Văn":1};
+  const engine = prepareConstraintEngine(data);
+  const floor = engine.constraintPreflight.structuralFloor;
+
+  assert.equal(floor.metricLowerBounds.soBuoiDay1, 2);
+  assert.equal(
+    floor.metricLowerBoundEvidence.filter(item => item.metric === "soBuoiDay1").length,
+    2
+  );
+});
+
 test("FET stops optimization at a proven positive floor and exposes it", async () => {
   const data = makeConstraintData({subjects:[{name:"Toán", teacher:"GV01", periods:2}]});
   setCell(data, "L1", "thu2", "sang", 0, {mon:"Toán", gv:"GV01", fixed:true});
@@ -227,12 +250,24 @@ test("optimizer worker sends only complete improved checkpoints, never its live 
 
   assert.match(progressCallback, /bestCheckpoint/);
   assert.match(progressCallback, /checkpoint:\s*bestCheckpoint/);
-  assert.match(progressCallback, /complete:\s*Number\(prog\?\.metrics\?\.unplacedCount/);
+  assert.match(progressCallback, /complete:\s*Number\(normalized\?\.metrics\?\.unplacedCount/,
+    "checkpoint completeness must use the normalized progress metrics");
   assert.match(progressCallback, /currentEngine\.getSnapshotTKB\(\)/,
     "a complete improved checkpoint must contain a retained timetable snapshot");
   assert.match(progressCallback, /getRetainedOptimizationSnapshotTKB/,
     "a Stop checkpoint must use the retained best timetable rather than a transient ejection state");
   assert.match(optimizeBranch, /type: 'done',[\s\S]*?applied:\s*true/);
+});
+
+test("automatic worker prioritizes singleton elimination before gap-2 polish and normalizes progress", () => {
+  assert.match(WORKER_SOURCE, /runUntilZeroSingletons\(\{/,
+    "automatic solve must enter the dedicated singleton pipeline");
+  assert.match(WORKER_SOURCE, /stage:\s*'singleton_priority'/,
+    "singleton phase must expose an explicit progress stage");
+  assert.match(WORKER_SOURCE, /optimizerMetricsFromProgress/,
+    "raw metric callbacks must be normalized before posting progress");
+  assert.match(WORKER_SOURCE, /currentMetrics\.soBuoiDay1\s*<=\s*singletonFloor[\s\S]*?optimize\('optimize_gap2'/,
+    "gap-2 polish must wait until singleton floor is reached");
 });
 
 test("FET orders construction activities by MRV domain before degree tie-breakers", () => {

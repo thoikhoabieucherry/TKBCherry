@@ -1,6 +1,6 @@
 # TKBCherry — Trạng thái hiện hành (CURRENT STATE)
 
-*Cập nhật: 2026-08-19. File này là bản tóm tắt ngắn để onboard nhanh; chi tiết từng phiên làm việc nằm trong `PROJECT_HANDOFF.md` (mục cũ hơn ở `docs/archive/`).*
+*Cập nhật: 2026-08-21. File này là bản tóm tắt ngắn để onboard nhanh; chi tiết từng phiên làm việc nằm trong `PROJECT_HANDOFF.md` (mục cũ hơn ở `docs/archive/`).*
 
 ## Sản phẩm
 
@@ -14,9 +14,10 @@ Hệ thống xếp thời khóa biểu tự động cho trường phổ thông, 
   2. *Min-Conflicts Recursive RandomSwap* (`generate.cpp`): độ sâu `depth <= 16`, `limitCalls = 10,000`, Tabu queue $\le 16$, chống lặp vô tận.
   3. *FET Counting Invariant ConstraintMinHoursDaily* (`opensUnaffordableSession`): kiểm soát mở buổi dạy mới $\sum \max(\text{minDaily}, H_d) \le \text{totalLoad}$, ngăn phát sinh buổi 1 tiết.
   4. *Closed Push-Cycles & Gap Crusher* (`tryClosedPushCycles`, `tryCrushGaps`): chuỗi đẩy khép kín 2-step / 3-step và tối ưu đa tầng (buổi 1 tiết $\to 0$, khoảng trống $\ge 2 \to 0$, dồn buổi dạy, bất biến liền mạch học sinh).
+  5. *Proven Singleton Floor*: preflight tính cận dưới `soBuoiDay1` cho tải giáo viên bị tách bởi miền ca/buổi độc lập; optimizer dừng khi đạt floor có chứng cứ thay vì cố tìm nghiệm 0 bất khả thi.
 - **Backend** `rust_api/`: HTTP server **tự viết trên std** (TcpListener + thread pool), không Axum/Tokio. Dependency: argon2, serde_json, rusqlite, sha2. Auth = Argon2id + **session token opaque** (không JWT). Port local mặc định `1010` (`.env`, `TKB_RUST_PORT`). Quản lý xác thực, phân quyền và lưu trữ dữ liệu trường học.
 - **Dữ liệu**: SQLite KV store (`kvstore`), WAL mode; mỗi trường một key `school_{schoolId}`.
-- **Luồng solve**: Nút Play ▶ ("Tự động xếp TKB") và Stop ■ ("Dừng xếp") chạy 100% trong Web Worker, cập nhật thanh tiến trình theo thời gian thực (ms), thống kê tức thì và không gửi network request ra ngoài khi xếp lịch.
+ - **Luồng solve**: Nút Play ▶ ("Tự động xếp TKB") và Stop ■ ("Dừng xếp") chạy 100% trong Web Worker, cập nhật thanh tiến trình theo thời gian thực (ms), thống kê tức thì và không gửi network request ra ngoài khi xếp lịch. Với lịch đã đủ tiết, worker nạp incumbent rồi tối ưu theo thứ tự `1 tiết/buổi` → `Trống 2` → polish; progress được chuẩn hóa để không rơi về `0/0`.
 
 ## Nhánh và quy trình Git
 
@@ -36,6 +37,7 @@ Hệ thống xếp thời khóa biểu tự động cho trường phổ thông, 
   - `e2e_tests/benchmark_fet_node.test.js` (4 tests pass).
   - `solver_runtime/tests/` (391 tests pass).
 - Checklist thủ công trước deploy: `docs/REGRESSION_CHECKLIST.md`.
+- Ghi chú local 2026-08-21: các cải thiện floor/Tabu/prefilter singleton đã qua 34/34 core, 81/81 focused regression và giữ `soBuoiTrong2 = 0`; chưa deploy production.
 
 ## Hợp đồng quan trọng
 
