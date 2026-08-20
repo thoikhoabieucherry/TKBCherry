@@ -7356,13 +7356,12 @@ async function executeDirectFastSchedule(options = {}){
             // thieu tiet (vd mon alias chua khop phan cong -> muc "Chua phan")
             // thi phai noi ro thay vi bao "xong toan bo".
             try{
-              let __appMissing = 0;
-              for(const lop of (Array.isArray(data.lop) ? data.lop : [])){
-                const st = calcClassTKBPeriodStats(lop.id);
-                __appMissing += Number(st.missing) || 0;
-              }
-              if(__appMissing > 0){
-                doneStatusMsg = (doneStatusMsg + " ⚠ Theo phân công, còn " + __appMissing + " tiết chưa xếp được (xem mục Chưa phân — thường do môn chưa gán giáo viên hoặc tên môn/GV không khớp PCCM).").trim();
+              const unassignedList = typeof collectUnassignedTasks === "function" ? collectUnassignedTasks() : [];
+              if(unassignedList.length > 0 && Number(msg?.unassigned || 0) > 0){
+                const missingSum = unassignedList.reduce((acc, it) => acc + (Number(it.remain) || 0), 0);
+                if(missingSum > 0){
+                  doneStatusMsg = (doneStatusMsg + " ⚠ Theo phân công, còn " + missingSum + " tiết chưa xếp được (xem mục Chưa phân — thường do môn chưa gán giáo viên hoặc tên môn/GV không khớp PCCM).").trim();
+                }
               }
             }catch(_){ }
             window.__TKB_TEACHER_TKB_STATS_CACHE = null;
