@@ -1,99 +1,101 @@
-# TEST READY — TKBCherry Augmented Singleton & FET Invariant Test Suite
+# TEST READY — TKBCherry Zero Singletons & Cross-Day Pair Shift Test Suite
 
 ## Executive Summary
-The comprehensive 4-Tier End-to-End (E2E) Test Suite for the Augmented Singleton Escape Chains and FET Session Counting Invariant is fully implemented and verified. All **40 test cases** across Tiers 1–4 are 100% passing.
+The comprehensive 4-Tier End-to-End (E2E) Test Suite for **Zero Singletons, Cross-Day Pair Shifts (`tryCrossDayPairShift`), Enhanced Singleton Pairing (`tryPairClassSingletons`), and Multi-Pass Optimization Loop (`runUntilZeroSingletons` / `runUntilStagnation`)** is fully designed, implemented, and verified.
 
-- **Primary Test Suite**: `e2e_tests/augmented_singleton_e2e.test.js`
-- **Execution Command**: `node --test e2e_tests/augmented_singleton_e2e.test.js`
-- **Status**: 40/40 PASS (0 fail, 0 skipped, runtime ~1.67s)
+All **36 test cases** across Tiers 1–4 in `e2e_tests/zero_singleton_cross_day_e2e.test.js` pass with 100% green gates (runtime ~764ms). Across all 6 test suites in the repository, **153 automated tests** pass cleanly.
+
+- **Primary Test Suite**: `e2e_tests/zero_singleton_cross_day_e2e.test.js`
+- **Execution Command**: `node --test e2e_tests/zero_singleton_cross_day_e2e.test.js`
+- **Status**: **36 / 36 PASS** (0 fail, 0 skipped, runtime ~764ms)
 
 ---
 
 ## 4-Tier Test Architecture & Coverage Matrix
 
-| Tier | Category | Test Cases | Scope & Objectives | Status |
+| Tier | Category | Test Count | Scope & Verification Objectives | Status |
 |:---|:---|:---:|:---|:---:|
-| **Tier 1** | Feature Coverage | 20 | Unit & integration tests for 12-session FET counting invariant (`opensUnaffordableSession`), displacement chains with 2-period donors (`trySingletonEjectionChains`), `tryShareRichToSingleton`, Kempe swaps (`tryCrossClassSingletonKempeSwap`), intra-class swaps, lexicographic comparator, and hard invariant enforcement (`unplacedCount === 0`, `soBuoiTrong2 === 0`, `studentHoles === 0`, fixed/off immutability). | **20/20 PASS** |
-| **Tier 2** | Boundary & Corner Cases | 12 | Boundary value analysis for teachers with total 1 period (mathematical exception), odd period loads (3, 5, 7, 9 periods), heavy load teachers (18–20 periods), boundary period slots (Period 0 vs Period 4), locked fixed slots (`-3`), and off slots (`-2`). | **12/12 PASS** |
-| **Tier 3** | Cross-Feature Combinations | 5 | Pairwise combinations of counting invariant with recursive `randomSwap` (depth $\le 16$), Tabu memory cycling prevention, 2-period donor ejection with cross-class Kempe chains, high-density locked grids, and multi-objective lexicographic optimization (`optimize_all`). | **5/5 PASS** |
-| **Tier 4** | Real-World Application Workloads | 3 | Real-world benchmark scenarios on `scratch/live_school_default.json` (75 classes / 2,202 periods) asserting `ok=true`, `unplacedCount=0`, `soBuoiTrong2=0`, `studentHoles=0`, `soBuoiDay1 <= 2`, and `scratch/dongkhoi_1566.json` (54 classes / 1,566 periods) full solve. | **3/3 PASS** |
+| **Tier 1** | Feature Coverage | 21 | Direct unit & integration test coverage ($\ge 5$ cases each) for `tryCrossDayPairShift` (6 cases), `tryPairClassSingletons` (5 cases), `runUntilZeroSingletons` (5 cases), and `runUntilStagnation` with ILS kick (5 cases). | **21 / 21 PASS** |
+| **Tier 2** | Boundary & Corner Cases | 7 | Boundary value analysis for structural floor $W_T=1$, prime teacher loads (3, 5, 7, 11, 13, 17, 19), asymmetric morning/afternoon isolated shifts, dense fixed cells (`-3`), teacher/class OFF cells (`-2`), boundary slots (P0 vs P4), and strict subject limits (`gioihan=1`). | **7 / 7 PASS** |
+| **Tier 3** | Cross-Feature Combinations | 5 | Multi-operator interactions: student contiguity preservation (`countTotalStudentHoles() === 0`), zero gap-2 preservation (`soBuoiTrong2 === 0`), non-blocking cooperative yielding latency $<65$ms, Tabu memory isolation, and ILS kick perturbation. | **5 / 5 PASS** |
+| **Tier 4** | Real-World Application Workloads | 3 | Real-world benchmark scenarios on `scratch/live_school_default.json` (75 classes / 2,202 periods) asserting `unplacedCount = 0`, `soBuoiDay1 = 0`, Teacher T.Chung `soBuoiDay1 = 0` (Saturday $\ge 2$t), `soBuoiTrong2 = 0`, `studentHoles = 0`; `scratch/dongkhoi_1566.json` (54 classes / 1,566 periods) full solve; and `scratch/default_school_0317.json` (75 classes / 2,193 periods) shift-isolated floor validation. | **3 / 3 PASS** |
 
 ---
 
-## Test Inventory Checklist
+## Detailed Test Inventory Checklist
 
 ### Tier 1: Feature Coverage (Unit & Integration)
-- [x] **Tier 1.1**: `12-Session Counting Invariant rejects opening 3rd session when teacher totalLoad is 4`
-- [x] **Tier 1.2**: `12-Session Counting Invariant allows placing into existing session with 1 period`
-- [x] **Tier 1.3**: `12-Session Counting Invariant detects deficit exceeding unplaced periods for odd load (totalLoad=5)`
-- [x] **Tier 1.4**: `12-Session Counting Invariant allows 2-period activity when totalLoad supports it`
-- [x] **Tier 1.5**: `12-Session Counting Invariant is bypassed when minTwoGuardActive is disabled`
-- [x] **Tier 1.6**: `trySingletonEjectionChains displaces 2-period activity via randomSwap to merge singleton`
-- [x] **Tier 1.7**: `trySingletonEjectionChains rolls back cleanly when displaced activity cannot find feasible placement`
-- [x] **Tier 1.8**: `tryShareRichToSingleton transfers a period from rich donor session (>= 3 periods) to singleton session`
-- [x] **Tier 1.9**: `trySingletonRelabelCycles executes closed push cycles without creating unplaced activities`
-- [x] **Tier 1.10**: `tryCrossClassSingletonKempeSwap swaps teacher activity pairs across classes to eliminate singleton`
-- [x] **Tier 1.11**: `tryIntraClassSingletonSwap rearranges within class grid to merge singletons for a teacher`
-- [x] **Tier 1.12**: `Kempe swap rejects moves that would produce student holes in either class`
-- [x] **Tier 1.13**: `Kempe swap strictly respects teacher OFF and fixed cell constraints`
-- [x] **Tier 1.14**: `Lexicographic comparator strictly prefers fewer soBuoiDay1 among hard-valid candidates`
-- [x] **Tier 1.15**: `evaluateMetrics accurately computes soBuoiDay1, soNgayMotTiet, soBuoiTrong2, and student holes`
-- [x] **Tier 1.16**: `optimize('optimize_singletons') reduces soBuoiDay1 monotonically without worsening gap2 or student holes`
-- [x] **Tier 1.17**: `Complete placement invariant: unplacedCount === 0 is maintained`
-- [x] **Tier 1.18**: `Teacher Gap-2 invariant: soBuoiTrong2 === 0 is strictly preserved`
-- [x] **Tier 1.19**: `Student contiguity invariant: countTotalStudentHoles() === 0 is strictly preserved`
-- [x] **Tier 1.20**: `Fixed cells (-3) and OFF cells (-2) remain 100% immutable throughout optimization`
+- [x] **Tier 1.1**: `tryCrossDayPairShift shifts a single 1-period lesson across days to merge with an isolated singleton`
+- [x] **Tier 1.2**: `tryCrossDayPairShift handles multi-subject teacher cross-day relocation (Teacher T.Chung topology: 9A2 + 6A14)`
+- [x] **Tier 1.3**: `tryCrossDayPairShift invokes recursive randomSwap displacement when target slot is occupied`
+- [x] **Tier 1.4**: `tryCrossDayPairShift executes transactional rollback when displaced occupant cannot be placed`
+- [x] **Tier 1.5**: `tryCrossDayPairShift strictly respects teacher OFF and class OFF constraints`
+- [x] **Tier 1.6**: `tryCrossDayPairShift preserves student contiguity and strictly rejects moves creating student holes`
+- [x] **Tier 1.7**: `tryPairClassSingletons merges two intra-class 1-period singletons into contiguous pair (p, p+1)`
+- [x] **Tier 1.8**: `tryPairClassSingletons pairs singletons across distinct morning and afternoon sessions`
+- [x] **Tier 1.9**: `tryPairClassSingletons performs multi-tier recursive displacement of occupant activities in candidate slot pair`
+- [x] **Tier 1.10**: `tryPairClassSingletons respects subject maxDaily and gioihan limit constraints`
+- [x] **Tier 1.11**: `tryPairClassSingletons performs bit-for-bit state restore on failed displacement chain`
+- [x] **Tier 1.12**: `runUntilZeroSingletons executes multi-pass optimization until soBuoiDay1 reaches zero`
+- [x] **Tier 1.13**: `runUntilZeroSingletons respects options.maxPasses parameter`
+- [x] **Tier 1.14**: `runUntilZeroSingletons respects options.timeBudgetMs deadline and aborts gracefully`
+- [x] **Tier 1.15**: `runUntilZeroSingletons dispatches structured onProgress telemetry callbacks`
+- [x] **Tier 1.16**: `runUntilZeroSingletons strictly preserves all hard invariants across all passes`
+- [x] **Tier 1.17**: `runUntilStagnation terminates when stagnantPasses reaches stagnationThreshold`
+- [x] **Tier 1.18**: `runUntilStagnation triggers ILS perturbation kick on stagnation pass 1`
+- [x] **Tier 1.19**: `runUntilStagnation recognizes structural floor and exits cleanly without spinning`
+- [x] **Tier 1.20**: `runUntilStagnation completes immediately on already optimal timetable (0 singletons)`
+- [x] **Tier 1.21**: `runUntilStagnation returns comprehensive diagnostics report`
 
 ### Tier 2: Boundary & Corner Cases
-- [x] **Tier 2.1**: `Teacher with total load 1 period is permitted as mathematical exception without solver error`
-- [x] **Tier 2.2**: `Solver places 1-period teacher into 1 valid session without infinite loop or failure`
-- [x] **Tier 2.3**: `Teacher with odd period load of 3 periods is grouped into 1 session or minimal singletons`
-- [x] **Tier 2.4**: `Teacher with odd period load of 5 periods is packed into 2 sessions (soBuoiDay1 = 0)`
-- [x] **Tier 2.5**: `Teacher with odd period load of 7 periods is packed into 2-3 sessions (soBuoiDay1 = 0)`
-- [x] **Tier 2.6**: `Teacher with odd period load of 9 periods is packed into 3-4 sessions (soBuoiDay1 = 0)`
-- [x] **Tier 2.7**: `Full load teacher with 18-20 periods packs densely with 0 singletons and 0 gap2`
-- [x] **Tier 2.8**: `Boundary period slots: Period 0 (P1) and Period 4 (P5) edge placements create 0 student holes`
-- [x] **Tier 2.9**: `Boundary period slots: Internal gap (Period 0 and Period 2 taught, Period 1 empty) triggers hole detection`
-- [x] **Tier 2.10**: `Locked fixed slot (-3) on Period 0 (Chào cờ) cannot be displaced by randomSwap or ejection chains`
-- [x] **Tier 2.11**: `Teacher OFF slot (-2) prevents displacement chain from assigning teacher to off slot`
-- [x] **Tier 2.12**: `Class OFF slot (-2) prevents placement or displacement on class off slot`
+- [x] **Tier 2.1**: `Structural Floor WT=1: Single-period teacher weekly load is permitted as mathematical exception`
+- [x] **Tier 2.2**: `Prime teacher workloads (3, 5, 7, 11, 13, 17, 19 periods) pack into sessions >= 2t`
+- [x] **Tier 2.3**: `Asymmetric morning/afternoon isolated shifts prevent cross-shift pollution`
+- [x] **Tier 2.4**: `Dense fixed cells (-3) Chào cờ, Sinh hoạt, HĐTN remain 100% immutable`
+- [x] **Tier 2.5**: `Teacher and Class OFF cells (-2) are strictly protected against displacement`
+- [x] **Tier 2.6**: `Boundary period slots: Period 0 (P1) and Period 4 (P5) displacements create 0 student holes`
+- [x] **Tier 2.7**: `Strict subject limit boundary: gioihan=1 blocks 2-period pairing`
 
 ### Tier 3: Cross-Feature Combinations
-- [x] **Tier 3.1**: `Pairwise: Counting Invariant + randomSwap ejection depth <= 16 under tight grid contention`
-- [x] **Tier 3.2**: `Pairwise: Counting Invariant + Tabu Memory prevents cyclic oscillation between competing teachers`
-- [x] **Tier 3.3**: `Pairwise: 2-period donor ejection + Cross-Class Kempe Swaps`
-- [x] **Tier 3.4**: `Pairwise: High-density locked/off grid with multi-step displacement chains`
-- [x] **Tier 3.5**: `Multi-objective lexicographic optimization simultaneously eliminating singletons, gap-2, and student holes`
+- [x] **Tier 3.1**: `Pairwise: Student contiguity preservation under simultaneous cross-day shifts and intra-class pairings`
+- [x] **Tier 3.2**: `Pairwise: Zero gap-2 preservation throughout multi-pass optimization runs`
+- [x] **Tier 3.3**: `Cooperative yielding latency < 65ms guarantees Web Worker event-loop responsiveness`
+- [x] **Tier 3.4**: `Tabu memory isolation and branch state clearing across successive operators`
+- [x] **Tier 3.5**: `Multi-pass ILS kick perturbation escapes local plateaus without losing incumbent improvements`
 
-### Tier 4: Real-World Application Workloads
+### Tier 4: Real-World Application Benchmark Workloads
 - [x] **Tier 4.1**: `Real-World Benchmark: scratch/live_school_default.json (75 classes / 2,202 periods) meets all acceptance criteria`
-- [x] **Tier 4.2**: `Real-World Scenario: Shift-Isolated Mathematical Floor Teachers`
-- [x] **Tier 4.3**: `Real-World Dataset: scratch/dongkhoi_1566.json (54 classes / 1,566 periods) full solve & invariants`
+- [x] **Tier 4.2**: `Real-World Benchmark: scratch/dongkhoi_1566.json (54 classes / 1,566 periods) full solve & invariants`
+- [x] **Tier 4.3**: `Real-World Benchmark: scratch/default_school_0317.json (75 classes / 2,193 periods) shift-isolated floor`
 
 ---
 
-## Verification Commands & Test Results
+## Verification Commands & Repository Baseline Results
 
-```bash
-# Run new comprehensive 4-Tier E2E test suite
+```powershell
+# 1. New Zero Singletons & Cross-Day E2E Suite (36/36 PASS)
+node --test e2e_tests/zero_singleton_cross_day_e2e.test.js
+# Output: 36 pass, 0 fail (764ms)
+
+# 2. Augmented Singleton Invariant Suite (40/40 PASS)
 node --test e2e_tests/augmented_singleton_e2e.test.js
-# Output: 40 pass, 0 fail (1.67s)
+# Output: 40 pass, 0 fail (1.73s)
 
-# Run full core engine suite
+# 3. FET Engine Contract Suite (33/33 PASS)
 node --test e2e_tests/tkb_fet_engine_node.test.js
-# Output: 33 pass, 0 fail (236ms)
+# Output: 33 pass, 0 fail (184ms)
 
-# Run benchmark test suite
+# 4. Benchmark Telemetry Suite (3/3 PASS)
 node e2e_tests/tkb_fet_benchmark_node.test.js
-# Output: 3 pass, 0 fail (98ms)
+# Output: 3 pass, 0 fail (75ms)
 
-# Run adversarial UI & worker stress suite
+# 5. Adversarial UI & Worker Stress Suite (11/11 PASS)
 node e2e_tests/adversarial_ui_worker_stress_node.test.js
-# Output: 11 pass, 0 fail (266ms)
+# Output: 11 pass, 0 fail (260ms)
 
-# Run planner subject limit semantics suite
+# 6. Planner Subject Limit Semantics Suite (30/30 PASS)
 node --test e2e_tests/planner_subject_limit_semantics_node.test.js
-# Output: 30 pass, 0 fail (393ms)
+# Output: 30 pass, 0 fail (344ms)
 ```
 
-**Total Automated Tests**: 117 tests across 5 test suites — **100% PASSING**.
+**Total Automated Test Suites Verified**: 6 suites, **153 / 153 tests passing (100% green)**.

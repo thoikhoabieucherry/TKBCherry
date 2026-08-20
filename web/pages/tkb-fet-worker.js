@@ -109,6 +109,8 @@ self.onmessage = async function(e) {
           type: 'progress',
           mode: mode,
           percent: prog?.percent,
+          pass: prog?.pass,
+          maxPasses: prog?.maxPasses,
           currentMetric: prog?.currentMetric,
           initialMetric: prog?.initialMetric,
           stage: prog?.stage || null,

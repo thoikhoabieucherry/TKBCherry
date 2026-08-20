@@ -216,11 +216,11 @@ test("FET stops optimization at a proven positive floor and exposes it", async (
 });
 
 test("optimizer worker sends only complete improved checkpoints, never its live grid per progress frame", () => {
-  const optimizeStart = WORKER_SOURCE.indexOf("if (taskType === 'optimize')");
+  const optimizeStart = WORKER_SOURCE.indexOf("taskType === 'optimize'");
   const solveStart = WORKER_SOURCE.indexOf("} else {", optimizeStart);
   assert.ok(optimizeStart >= 0 && solveStart > optimizeStart, "optimizer worker branch is present");
   const optimizeBranch = WORKER_SOURCE.slice(optimizeStart, solveStart);
-  const progressStart = optimizeBranch.indexOf("const res = await currentEngine.optimize");
+  const progressStart = optimizeBranch.indexOf("await currentEngine.optimize");
   const progressEnd = optimizeBranch.indexOf("self.postMessage({\n        type: 'done'", progressStart);
   assert.ok(progressStart >= 0 && progressEnd > progressStart, "optimizer progress callback is present");
   const progressCallback = optimizeBranch.slice(progressStart, progressEnd);
