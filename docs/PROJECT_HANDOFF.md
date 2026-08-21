@@ -6,6 +6,14 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-21 LOCAL SPEEDUP: EARLY STOP + ADAPTIVE WORKER POOL (NOT DEPLOYED)
+
+- Tìm ra nút thắt lớn: sau khi đã đạt `soBuoiDay1` bằng floor và `soBuoiTrong2 = 0`, worker vẫn chạy `optimizeAll` phần chỉ số phụ với phần còn lại của ngân sách mặc định 600 giây. `qualityPolishTimeBudgetMs` nay mặc định bằng 0; phần polish chỉ chạy khi được bật rõ ràng và bị giới hạn tối đa 60 giây. Lịch đạt hai mục tiêu chính được xuất ngay.
+- Bổ sung `runParallelRestartLane()` trong worker và mirror. Khi incumbent còn singleton sau các lượt tìm đầu, tối đa 4 worker con chạy seed độc lập đồng thời; worker cha nhận nghiệm cuối, so sánh theo `unplacedCount -> soBuoiDay1 -> soBuoiTrong2 -> tsBuoiDay -> soBuoiTrong1`, giữ nghiệm tốt nhất rồi dừng các lane còn lại khi đạt floor. Worker con đặt `parallelWorkers: 1` để không đệ quy tạo pool.
+- UI tự chọn số lane theo `navigator.hardwareConcurrency`, tối đa 4 và chừa 2 luồng cho trình duyệt; chỉ bật cho incumbent hoàn chỉnh đang bị kẹt, không bật cho lịch đã đạt mục tiêu hoặc pha dựng lịch mới. Nếu browser không hỗ trợ worker lồng nhau, tự động quay về restart một worker.
+- Benchmark local trên `scratch/live_default.json`, 4 seed × 5 giây: tuần tự **54,6 giây**, đồng thời **18,8 giây**, nhanh khoảng **2,9 lần**; từng nghiệm giữ `unplacedCount = 0`, student holes = 0 và cùng chất lượng theo seed. Harness: `scratch/bench_parallel_speed.js`.
+- Kiểm tra sau thay đổi: engine suite **36/36 pass**, worker/phanmon mirror syntax pass, SHA-256 worker/UI mirror pass. Chỉ local, chưa deploy/push.
+
 ## 2026-08-21 LOCAL SESSION-FIRST SEARCH (NOT DEPLOYED)
 
 - Bổ sung `trySessionFirstSingletonSearch()` trong engine và mirror. Mỗi nhánh trước hết gán hoạt động/lesson-block vào 12 bin (6 buổi sáng + 6 buổi chiều), kiểm tra sức chứa lớp/GV/phòng và số buổi singleton; chỉ khi phương án bin cải thiện mới giải 5 cột tiết bên trong từng bin bị ảnh hưởng.

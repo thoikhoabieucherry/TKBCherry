@@ -332,6 +332,12 @@ test("automatic worker prioritizes singleton elimination before gap-2 polish and
     "an incumbent must compile the structural singleton floor before the worker starts quality cycles");
   assert.match(WORKER_SOURCE, /sessionFirstStateBudget/,
     "the worker must expose the bounded 12-session state budget");
+  assert.match(WORKER_SOURCE, /qualityPolishTimeBudgetMs/,
+    "secondary quality polish must have an explicit bounded budget");
+  assert.match(WORKER_SOURCE, /runParallelRestartLane/,
+    "a plateaued incumbent must be able to use independent worker lanes");
+  assert.match(WORKER_SOURCE, /parallelWorkers:\s*1/,
+    "child lanes must not recursively spawn another worker pool");
   assert.match(ENGINE_SOURCE, /trySessionFirstSingletonSearch/,
     "deep singleton optimization must enter the 12-session-first search");
   assert.match(ENGINE_SOURCE, /1_000_000_000/,

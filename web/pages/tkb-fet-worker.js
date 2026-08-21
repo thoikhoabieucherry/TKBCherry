@@ -39,6 +39,130 @@ function emitOptimizerProgress(cb, progress, config) {
   });
 }
 
+function compareParallelQuality(candidate, incumbent) {
+  if (!candidate || !incumbent) return candidate ? -1 : 0;
+  const keys = ['unplacedCount', 'soBuoiDay1', 'soBuoiTrong2', 'tsBuoiDay', 'soBuoiTrong1', 'tsNgayDay'];
+  for (const key of keys) {
+    const a = Number(candidate[key] || 0);
+    const b = Number(incumbent[key] || 0);
+    if (a !== b) return a - b;
+  }
+  return 0;
+}
+
+async function runParallelRestartLane(cb, data, workerOptions, baseSeed, incumbentMetrics, singletonFloor, qualityDeadline) {
+  if (typeof Worker !== 'function') return null;
+  const requestedWorkers = Number(workerOptions.parallelWorkers);
+  const workerCount = Number.isFinite(requestedWorkers) && requestedWorkers > 1
+    ? clampNumber(requestedWorkers, 2, 2, 6)
+    : 1;
+  if (workerCount <= 1) return null;
+
+  const remainingMs = Math.max(0, qualityDeadline - Date.now());
+  if (remainingMs < 1_000) return null;
+  const sliceMs = clampNumber(workerOptions.parallelRestartSliceMs, 30_000, 5_000, 120_000);
+  const childBudgetMs = Math.min(sliceMs, remainingMs);
+  const children = [];
+  let completed = 0;
+  let lastProgressAt = 0;
+  let best = null;
+
+  const result = await new Promise(resolve => {
+    let settled = false;
+    let timer = null;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      for (const child of children) {
+        try { child.terminate(); } catch (_) {}
+      }
+      resolve(best);
+    };
+
+    const onChildMessage = (event, index) => {
+      const msg = event?.data || {};
+      if (msg.type === 'progress') {
+        const now = Date.now();
+        if (now - lastProgressAt >= 500 && msg.metrics) {
+          lastProgressAt = now;
+          cb({
+            percent: 45,
+            currentMetric: msg.metrics.soBuoiDay1,
+            initialMetric: incumbentMetrics.soBuoiDay1,
+            stage: 'parallel_restart',
+            cycle: index + 1,
+            metrics: msg.metrics,
+            targetMetricLowerBound: singletonFloor
+          });
+        }
+        return;
+      }
+      if (msg.type !== 'done') return;
+      completed++;
+      const candidateMetrics = msg.metrics && typeof msg.metrics === 'object' ? msg.metrics : null;
+      const candidate = candidateMetrics && msg.tkb &&
+        Number(msg.unassigned || candidateMetrics.unplacedCount || 0) === 0 &&
+        candidateMetrics.soBuoiTrong2 === 0
+        ? { metrics: candidateMetrics, tkb: msg.tkb }
+        : null;
+      if (candidate && compareParallelQuality(candidate.metrics, best?.metrics || incumbentMetrics) < 0) {
+        best = candidate;
+        cb({
+          percent: 60,
+          currentMetric: candidate.metrics.soBuoiDay1,
+          initialMetric: incumbentMetrics.soBuoiDay1,
+          stage: 'parallel_restart',
+          cycle: index + 1,
+          metrics: candidate.metrics,
+          targetMetricLowerBound: singletonFloor
+        });
+        if (candidate.metrics.soBuoiDay1 <= singletonFloor) finish();
+      }
+      if (completed >= workerCount) finish();
+    };
+
+    timer = setTimeout(finish, childBudgetMs + 1_000);
+    for (let index = 0; index < workerCount; index++) {
+      try {
+        const child = new Worker('tkb-fet-worker.js?v=' + Date.now() + '-' + index);
+        children.push(child);
+        child.onmessage = event => onChildMessage(event, index);
+        child.onerror = () => {
+          completed++;
+          if (completed >= workerCount) finish();
+        };
+        child.postMessage({
+          action: 'solve',
+          mode: 'solve_optimize_all',
+          data: JSON.parse(JSON.stringify(data)),
+          options: Object.assign({}, workerOptions, {
+            seed: baseSeed + 104729 * (index + 1),
+            __incumbentComplete: false,
+            parallelWorkers: 1,
+            autoQualityTimeBudgetMs: childBudgetMs,
+            parallelRestartSliceMs: 0
+          })
+        });
+      } catch (_) {
+        completed++;
+      }
+    }
+    if (children.length === 0) finish();
+  });
+
+  if (!result?.tkb) return children.length > 0 ? { attempted: true } : null;
+  const candidateData = JSON.parse(JSON.stringify(data));
+  candidateData.tkb = result.tkb;
+  const candidateEngine = new self.FetTimetableEngine(candidateData, Object.assign({}, workerOptions, {
+    parallelWorkers: 1,
+    __incumbentComplete: true
+  }));
+  candidateEngine.loadExistingSchedule();
+  candidateEngine.compileConstraints();
+  return { engine: candidateEngine, metrics: candidateEngine.evaluateMetrics() };
+}
+
 async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isConstruction) {
   const baseSeed = Number(workerOptions.seed) || 28183;
   const MAX_ATTEMPTS = 5;
@@ -107,6 +231,11 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
     // the first intermediate checkpoint.
     const qualityBudgetMs = clampNumber(workerOptions.autoQualityTimeBudgetMs, 600_000, 12_000, 1_200_000);
     const singletonCycleBudgetMs = clampNumber(workerOptions.singletonCycleBudgetMs, 120_000, 5_000, 180_000);
+    // The user's hard target is singleton=0/floor and gap-2=0.  Secondary
+    // polish used to consume the remainder of the 600s quality budget even
+    // after those targets were already solved.  Keep it opt-in and bounded;
+    // a solved timetable should be published immediately by default.
+    const qualityPolishTimeBudgetMs = clampNumber(workerOptions.qualityPolishTimeBudgetMs, 0, 0, 60_000);
     const qualityDeadline = Date.now() + qualityBudgetMs;
     let currentMetrics = initialMetrics;
     let singletonResult = null;
@@ -250,8 +379,27 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
     // pairing/session topology. We keep the incumbent unless the candidate is
     // lexicographically better and never trade away a zero gap-2 schedule.
     if (currentMetrics.soBuoiDay1 > singletonFloor && Date.now() < qualityDeadline) {
-      const restartAttempts = clampNumber(workerOptions.singletonRestartAttempts, 3, 1, 6);
-      for (let restart = 0; restart < restartAttempts; restart++) {
+      const parallelResult = await runParallelRestartLane(
+        cb,
+        data,
+        workerOptions,
+        baseSeed,
+        currentMetrics,
+        singletonFloor,
+        qualityDeadline
+      );
+      if (parallelResult?.engine) {
+        bestEngine = parallelResult.engine;
+        setEngine(bestEngine);
+        currentMetrics = parallelResult.metrics;
+        bestRes = { ok: true, applied: true, placed: bestEngine.activities.length, unassigned: 0, total: bestEngine.activities.length };
+      }
+
+      // Keep the original single-worker restarts as the compatibility fallback
+      // only when nested workers are unavailable.
+      if (!parallelResult?.attempted) {
+        const restartAttempts = clampNumber(workerOptions.singletonRestartAttempts, 3, 1, 6);
+        for (let restart = 0; restart < restartAttempts; restart++) {
         if (Date.now() >= qualityDeadline || currentMetrics.soBuoiDay1 <= singletonFloor) break;
         const remainingMs = qualityDeadline - Date.now();
         const attemptBudget = Math.max(1000, Math.min(25_000, Math.floor(remainingMs / (restartAttempts - restart))));
@@ -312,6 +460,7 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
             metrics: currentMetrics,
             targetMetricLowerBound: singletonFloor
           });
+        }
         }
       }
       setEngine(bestEngine);
@@ -387,9 +536,9 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
         }
       }
 
-      if (currentMetrics.soBuoiTrong2 === 0 && Date.now() < qualityDeadline) {
+      if (currentMetrics.soBuoiTrong2 === 0 && qualityPolishTimeBudgetMs > 0 && Date.now() < qualityDeadline) {
         const remainingMs = qualityDeadline - Date.now();
-        bestEngine.options.optimizeTimeBudgetMs = Math.max(250, remainingMs);
+        bestEngine.options.optimizeTimeBudgetMs = Math.max(250, Math.min(qualityPolishTimeBudgetMs, remainingMs));
         const polishInitialMetrics = currentMetrics;
         const polishResult = await bestEngine.optimizeAll((progress) => {
           emitOptimizerProgress(cb, progress, {

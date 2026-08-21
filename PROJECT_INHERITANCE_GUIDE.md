@@ -90,6 +90,10 @@ Hệ thống cung cấp quy trình tối ưu đa tầng lexicographic:
    * Mỗi retry gap dùng seed tái lập theo root/đích/lần thử và khôi phục RNG của tìm kiếm ngoài; snapshot bảo vệ toàn transaction. `protectedIds` chỉ sống trong transaction singleton, không được rò sang gap phase.
    * Worker không kết thúc sau checkpoint giảm đầu tiên: incumbent lane cấp nhiều lát deadline mới (mặc định 600 giây tổng, 120 giây/lát), giữ candidate tốt nhất và chỉ chuyển sang gap2 sau khi singleton đạt floor. Sau singleton=0, `runHorizontalGapClosure()` chạy lại vacancy chain trong 5 cột trước generic gap polish.
    * Deep candidate được phép dùng gap-2 trung gian có giới hạn để tìm đường đổi liên hoàn, nhưng chỉ được giữ sau bước cleanup đạt `soBuoiTrong2 = 0`; đường chạy thường không gọi exact bin repack để giữ thời gian phản hồi ổn định.
+* **Adaptive parallel restart lane (`runParallelRestartLane`)**:
+   * Khi incumbent hoàn chỉnh vẫn còn singleton sau các lượt chính, tạo tối đa 4 worker con với seed độc lập; mỗi worker con đặt `parallelWorkers: 1`, giữ giới hạn RAM và không tạo pool đệ quy.
+   * Worker cha nhận nghiệm hoàn chỉnh, chọn theo `unplacedCount -> soBuoiDay1 -> soBuoiTrong2 -> tsBuoiDay -> soBuoiTrong1`, rồi dừng các worker còn lại khi đạt floor. Không bật pool cho lịch mới, lịch đã đạt mục tiêu, hoặc browser không hỗ trợ worker lồng nhau.
+   * `qualityPolishTimeBudgetMs` mặc định là 0 vì polish phụ không được phép giữ máy bận sau khi hai mục tiêu hard đã đạt; có thể bật opt-in với trần 60 giây.
 2. **Closed Push-Cycles (`tryClosedPushCycles`)**:
    * Chuỗi đẩy khép kín 2-step và 3-step di chuyển và hấp thụ tiết đơn lẻ vào các buổi dạy hiện hữu mà không tạo thêm ô trống hay xung đột.
 3. **Tối ưu buổi 1 tiết (`optimize_singletons`)**:

@@ -6771,6 +6771,18 @@ async function executeDirectFastSchedule(options = {}){
       }
     }
     const qualityPipelineActive = isOptimizeMode || isConstructionThenOptimize;
+    // A complete incumbent can use independent seed restarts in parallel when
+    // the first local lane gets stuck. Keep the pool small so memory remains
+    // bounded and avoid spawning it for a fresh construction or an already
+    // solved timetable.
+    if(qualityPipelineActive && isConstructionThenOptimize && options.__incumbentComplete === true &&
+       options.parallelWorkers === undefined){
+      const logicalCores = Number(globalThis.navigator?.hardwareConcurrency) || 1;
+      options = Object.assign({}, options, {
+        parallelWorkers: Math.min(4, Math.max(1, logicalCores - 2)),
+        parallelRestartSliceMs: 30_000
+      });
+    }
     const modeLabelMap = {
       "auto_min2": "Sắp tự động (>= 2 tiết/buổi)",
       "optimize_singletons": "1 tiết/buổi",
@@ -7092,6 +7104,7 @@ async function executeDirectFastSchedule(options = {}){
                 "optimize_gap1": "Trống 1 tiết",
                 "singleton_priority": "Ưu tiên 1 tiết/buổi",
                 "session_first": "Gom 12 buổi",
+                "parallel_restart": "Chạy song song",
                 "gap2_priority": "Ưu tiên Trống 2",
                 "quality_polish": "Tối ưu phụ"
               };
