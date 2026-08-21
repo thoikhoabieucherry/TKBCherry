@@ -125,7 +125,64 @@ test("local backend boost has a bounded stop window and accepts only complete FE
   assert.match(source, /function fetBackendIsLocalOnly\(\)/);
   assert.match(source, /fet_backend_total_state_budget:1_000_000_000/);
   assert.match(source, /session_first_time_budget_ms:8_000/);
+  assert.match(source, /fet_backend_stall_ms:backendStallMs/);
+  assert.match(source, /Backend không cải thiện thêm sau/);
+  assert.match(source, /const retainedCheckpoint = progressStage === "backend_best"/);
   assert.match(source, /stopRequestedAt \? stopRequestedAt \+ 5_000/);
   assert.match(source, /backendPayloadIsComplete\s*=\s*\(value, candidate\)\s*=>/);
   assert.match(source, /return backendKind && unassigned === 0 && hardOk/);
+});
+
+test("quality progress and Stop reject a complete-incumbent regression", () => {
+  const context = {
+    window:{},
+    performance:{now(){ return 1; }},
+    Date,
+    Math,
+    Number,
+    String,
+    Object,
+    JSON,
+    Promise,
+    console
+  };
+  vm.runInNewContext(telemetryHelpers(), context, {filename:"fet-quality-guards.js"});
+
+  const incumbent = {soBuoiDay1:0, soBuoiTrong2:0, tsBuoiDay:84, soBuoiTrong1:0};
+  assert.equal(
+    context.fetQualityMetricsNotWorse(
+      {soBuoiDay1:10, soBuoiTrong2:0, tsBuoiDay:711, soBuoiTrong1:188},
+      incumbent,
+      "solve_optimize_all"
+    ),
+    false
+  );
+  assert.equal(
+    context.fetQualityMetricsNotWorse(
+      {soBuoiDay1:0, soBuoiTrong2:0, tsBuoiDay:80, soBuoiTrong1:0},
+      incumbent,
+      "solve_optimize_all"
+    ),
+    true
+  );
+  assert.equal(
+    context.fetQualityMetricsNotWorse(
+      {soBuoiDay1:9, soBuoiTrong2:0, tsBuoiDay:720, soBuoiTrong1:220},
+      {soBuoiDay1:10, soBuoiTrong2:0, tsBuoiDay:711, soBuoiTrong1:188},
+      "solve_optimize_all"
+    ),
+    true,
+    "a real singleton improvement must outrank lower-priority session debt"
+  );
+  assert.equal(
+    context.fetQualityMetricsNotWorse(
+      {soBuoiDay1:9, soBuoiTrong2:1, tsBuoiDay:700, soBuoiTrong1:180},
+      {soBuoiDay1:10, soBuoiTrong2:0, tsBuoiDay:711, soBuoiTrong1:188},
+      "solve_optimize_all"
+    ),
+    false,
+    "singleton improvement must not introduce gap-2 debt"
+  );
+  assert.match(source, /fet_checkpoint_quality_regression_rejected/);
+  assert.match(source, /fet_candidate_quality_regression_rejected/);
 });

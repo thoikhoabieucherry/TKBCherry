@@ -529,6 +529,7 @@ async function runLane(request, laneIndex, laneCount) {
       const candidate = {
         ok: resultLike?.ok !== false,
         applied: resultLike?.applied !== false,
+        completeIncumbent: configured.options.__incumbentComplete === true,
         lane: laneIndex + 1,
         seed: configured.seed,
         runtimeMs: Date.now() - startedMs,
@@ -615,6 +616,7 @@ function admissibleCandidate(candidate, baselineMetrics, baselineCellCount) {
   const candidateBaseline = candidate.baselineMetrics || baselineMetrics || {};
   if (metricValue(candidate.metrics, "soBuoiTrong2", Number.MAX_SAFE_INTEGER)
       > metricValue(candidateBaseline, "soBuoiTrong2", 0)) return false;
+  if (candidate.completeIncumbent && compareQuality(candidate.metrics, candidateBaseline) > 0) return false;
   if (candidate.cellCount < Math.max(baselineCellCount, Number(candidate.baselineCellCount || 0))) return false;
   const baseline = candidate.baselineValidation || {};
   if (candidate.validation?.hard_ok === false && Number(candidate.metrics?.unassigned_periods || 0) === 0) return false;
@@ -652,6 +654,8 @@ async function runParallel(request) {
     let timer = null;
     let stopTimer = null;
     let stopGraceTimer = null;
+    let stallTimer = null;
+    let lastQualityImprovementAt = Date.now();
     let bestFloor = Number.POSITIVE_INFINITY;
     let bestGapFloor = Number.POSITIVE_INFINITY;
     const laneFinished = new Array(laneCount).fill(false);
@@ -667,6 +671,7 @@ async function runParallel(request) {
       if (timer) clearTimeout(timer);
       if (stopTimer) clearInterval(stopTimer);
       if (stopGraceTimer) clearTimeout(stopGraceTimer);
+      if (stallTimer) clearInterval(stallTimer);
       for (const lane of lanes) lane.terminate().catch(() => {});
       resolve({ reason, best, baselineMetrics, laneCount, laneErrors, rejectedCandidates });
     };
@@ -676,8 +681,24 @@ async function runParallel(request) {
       12_000,
       600_000
     );
+    const stallBudgetMs = clampInteger(
+      settings.fet_backend_stall_ms,
+      60_000,
+      15_000,
+      180_000
+    );
     timer = setTimeout(() => finish(stopRequested ? "cancelled" : "deadline"), maxLaneBudgetMs + 20_000);
     timer.unref?.();
+    stallTimer = setInterval(() => {
+      if (!settled && !stopRequested && Date.now() - lastQualityImprovementAt >= stallBudgetMs) {
+        emitProgress({
+          stage: "backend_stagnated",
+          message: `Khong cai thien trong ${Math.round(stallBudgetMs / 1000)}s; giu nghiem tot nhat`
+        });
+        finish("stagnated");
+      }
+    }, 1_000);
+    stallTimer.unref?.();
     const stopFile = String(process.env.TKB_SOLVER_STOP_FILE || "").trim();
     if (stopFile) {
       const beginStopGrace = () => {
@@ -727,6 +748,7 @@ async function runParallel(request) {
           if (admissibleCandidate(candidate, baselineMetrics || candidate?.initialMetrics, baselineCellCount)
               && (!best || compareQuality(candidate.metrics, best.metrics) < 0)) {
             best = candidate;
+            lastQualityImprovementAt = Date.now();
             const candidateFloor = metricValue(candidate?.result, "targetMetricLowerBound",
               metricValue(candidate?.result?.diagnostics?.structuralFloor?.metricLowerBounds, "soBuoiDay1", 0));
             bestFloor = Math.min(bestFloor, Math.max(0, candidateFloor));
@@ -759,6 +781,7 @@ async function runParallel(request) {
         if (admissibleCandidate(candidate, baselineMetrics || candidate?.initialMetrics, baselineCellCount)
             && (!best || compareQuality(candidate.metrics, best.metrics) < 0)) {
           best = candidate;
+          lastQualityImprovementAt = Date.now();
           const candidateFloor = metricValue(candidate?.result, "targetMetricLowerBound",
             metricValue(candidate?.result?.diagnostics?.structuralFloor?.metricLowerBounds, "soBuoiDay1", 0));
           bestFloor = Math.min(bestFloor, Math.max(0, candidateFloor));
@@ -822,12 +845,15 @@ async function runParallel(request) {
         ok: false,
         applied: false,
         engine: "fet_trongoi_backend_parallel",
-        kind: "fet_backend_no_admissible_candidate",
+        kind: terminal.reason === "stagnated"
+          ? "fet_backend_stagnated"
+          : "fet_backend_no_admissible_candidate",
         error: "Khong co lane backend nao tra ve lich day du, hop le va khong tang Trong 2.",
         runtimeMs: Date.now() - processStartedMs,
         parallelWorkers: terminal.laneCount,
         totalStateBudget,
-        stopped: terminal.reason === "deadline" || terminal.reason === "cancelled",
+        stopped: terminal.reason === "deadline" || terminal.reason === "cancelled" || terminal.reason === "stagnated",
+        stagnated: terminal.reason === "stagnated",
         stopReason: terminal.reason,
         laneErrors: terminal.laneErrors.slice(-4),
         rejectedCandidates: terminal.rejectedCandidates.slice(-4)
@@ -868,7 +894,8 @@ async function runParallel(request) {
       qualityTargetReached,
       singletonTargetReached,
       gapTargetReached,
-      stopped: terminal.reason === "deadline" || terminal.reason === "cancelled",
+      stopped: terminal.reason === "deadline" || terminal.reason === "cancelled" || terminal.reason === "stagnated",
+      stagnated: terminal.reason === "stagnated",
       stopReason: terminal.reason,
       selectedLane: selected.lane,
       selectedSeed: selected.seed,

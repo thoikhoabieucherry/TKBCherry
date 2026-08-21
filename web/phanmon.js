@@ -6770,6 +6770,81 @@ function fetBackendCountCells(tkbObj){
   return count;
 }
 
+// A backend lane is allowed to explore temporary states that are worse than
+// the incumbent.  Those states must never become the visible "best" metric or
+// replace a complete timetable.  Keep this comparison deliberately small and
+// numeric so it is safe to use while a partially decoded progress frame is
+// arriving from the async Rust job.
+function fetQualityMetricNumber(metrics, key){
+  const raw = metrics?.[key];
+  if(raw === null || raw === undefined || raw === "") return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+function fetQualityMetricKeys(mode){
+  switch(String(mode || "").trim().toLowerCase()){
+    case "optimize_singletons":
+      return ["soBuoiDay1", "soNgayMotTiet", "soBuoiTrong2", "tsBuoiDay", "soBuoiTrong1"];
+    case "optimize_gap2":
+      return ["soBuoiTrong2", "soBuoiDay1", "tsBuoiDay", "soBuoiTrong1"];
+    case "optimize_gap1":
+      return ["soBuoiDay1", "soBuoiTrong2", "soBuoiTrong1", "tsBuoiDay"];
+    case "optimize_sessions":
+      return ["soBuoiDay1", "soBuoiTrong2", "tsBuoiDay", "soBuoiTrong1"];
+    default:
+      return ["soBuoiDay1", "soNgayMotTiet", "soBuoiTrong2", "tsBuoiDay", "soBuoiTrong1", "tsNgayDay"];
+  }
+}
+
+function fetQualityMetricsCompare(left, right, mode){
+  if(!left || !right) return 0;
+  const leftUnplaced = fetQualityMetricNumber(left, "unplacedCount");
+  const rightUnplaced = fetQualityMetricNumber(right, "unplacedCount");
+  if(leftUnplaced !== null && rightUnplaced !== null && leftUnplaced !== rightUnplaced){
+    return leftUnplaced - rightUnplaced;
+  }
+  for(const key of fetQualityMetricKeys(mode)){
+    const a = fetQualityMetricNumber(left, key);
+    const b = fetQualityMetricNumber(right, key);
+    if(a !== null && b !== null && a !== b) return a - b;
+  }
+  return 0;
+}
+
+function fetQualityMetricsNotWorse(candidate, incumbent, mode){
+  if(!candidate || !incumbent) return true;
+  const candidateUnplaced = fetQualityMetricNumber(candidate, "unplacedCount");
+  const incumbentUnplaced = fetQualityMetricNumber(incumbent, "unplacedCount");
+  if(candidateUnplaced !== null && incumbentUnplaced !== null && candidateUnplaced > incumbentUnplaced){
+    return false;
+  }
+  const normalizedMode = String(mode || "").trim().toLowerCase();
+  const candidateSingletons = fetQualityMetricNumber(candidate, "soBuoiDay1");
+  const incumbentSingletons = fetQualityMetricNumber(incumbent, "soBuoiDay1");
+  const candidateGap2 = fetQualityMetricNumber(candidate, "soBuoiTrong2");
+  const incumbentGap2 = fetQualityMetricNumber(incumbent, "soBuoiTrong2");
+
+  // Match the engine's priority contract: singleton is the first objective,
+  // while gap-2 may never be introduced. Lower-priority session/gap-1 counts
+  // remain tie-breakers and must not block a real singleton improvement.
+  if(candidateGap2 !== null && incumbentGap2 !== null && candidateGap2 > incumbentGap2){
+    return false;
+  }
+  if(["optimize_gap2", "optimize_gap1", "optimize_sessions"].includes(normalizedMode)
+    && candidateSingletons !== null && incumbentSingletons !== null
+    && candidateSingletons > incumbentSingletons){
+    return false;
+  }
+  return fetQualityMetricsCompare(candidate, incumbent, mode) <= 0;
+}
+
+function fetQualityStallBudgetMs(options, key, fallback = 60_000){
+  const value = Number(options?.[key]);
+  if(!Number.isFinite(value) || value <= 0) return fallback;
+  return Math.max(15_000, Math.min(180_000, Math.round(value)));
+}
+
 async function executeFetBackendBoost(data, options, initialStats){
   if(!fetBackendIsLocalOnly()) return null;
   if(options?.backendFetBoost === false) return null;
@@ -6783,6 +6858,7 @@ async function executeFetBackendBoost(data, options, initialStats){
   const logicalCores = Math.max(1, Number(globalThis.navigator?.hardwareConcurrency) || 1);
   const requestedWorkers = Math.min(8, Math.max(2, logicalCores - 2));
   const backendBudgetMs = Math.max(60_000, Math.min(240_000, Number(options?.backendFetBudgetMs) || 150_000));
+  const backendStallMs = fetQualityStallBudgetMs(options, "backendFetStallMs", 60_000);
   const controller = new AbortController();
   let stopRequested = false;
   let stopRequestedAt = 0;
@@ -6790,6 +6866,15 @@ async function executeFetBackendBoost(data, options, initialStats){
   let settled = false;
   let activeJobId = runId;
   const startedAt = Date.now();
+  let backendWatchdogTimer = null;
+  let watchdogTriggered = false;
+  let bestProgressMetrics = initialStats && typeof initialStats === "object" ? {...initialStats} : null;
+  let bestProgressStateCount = 0;
+  let lastQualityProgressAt = startedAt;
+  let payload = null;
+  let lastProgressPayload = null;
+  let backendTimedOut = false;
+  let backendStagnated = false;
   const incumbentValidationPromise = inspectFetCandidateHardConstraints(
     data,
     JSON.parse(JSON.stringify(data.tkb || {}))
@@ -6797,12 +6882,38 @@ async function executeFetBackendBoost(data, options, initialStats){
 
   const updateProgress = payload => {
     try{
+      if(settled) return;
       lastProgressPayload = payload || lastProgressPayload;
       const solver = payload?.solver && typeof payload.solver === "object" ? payload.solver : {};
-      const metrics = payload?.metrics || solver.metrics || payload?.progress?.metrics || payload?.requestedJobProgress?.metrics;
+      const progress = payload?.progress && typeof payload.progress === "object" ? payload.progress : {};
+      const requestedProgress = payload?.requestedJobProgress && typeof payload.requestedJobProgress === "object" ? payload.requestedJobProgress : {};
+      const metrics = payload?.metrics || solver.metrics || progress.metrics || requestedProgress.metrics;
       if(!metrics || typeof metrics !== "object") return;
-      const stateCount = Number(payload?.sessionStates || 0) + Number(payload?.periodStates || 0);
-      const detail = `Backend gom buổi • 1t/buổi:${Number(metrics.soBuoiDay1 || 0)} T2:${Number(metrics.soBuoiTrong2 || 0)}${stateCount > 0 ? ` • thử:${stateCount.toLocaleString("vi-VN")}` : ""}`;
+      const progressStage = String(payload?.stage || progress.stage || requestedProgress.stage || "");
+      const retainedCheckpoint = progressStage === "backend_best"
+        || payload?.checkpoint === true
+        || progress.checkpoint === true
+        || requestedProgress.checkpoint === true
+        || Boolean(payload?.tkb || payload?.result?.tkb || solver.tkb);
+      const stateCount = Math.max(
+        bestProgressStateCount,
+        Number(payload?.sessionStates || progress.sessionStates || requestedProgress.sessionStates || 0)
+          + Number(payload?.periodStates || progress.periodStates || requestedProgress.periodStates || 0)
+      );
+      bestProgressStateCount = Number.isFinite(stateCount) ? stateCount : bestProgressStateCount;
+
+      // Progress frames are emitted by independent lanes and therefore are not
+      // ordered by quality.  Only expose a candidate that is no worse than the
+      // complete incumbent; otherwise the screen appears to regress while the
+      // backend is actually retaining a better checkpoint.
+      if(retainedCheckpoint
+        && fetQualityMetricsNotWorse(metrics, initialStats, mode)
+        && (!bestProgressMetrics || fetQualityMetricsCompare(metrics, bestProgressMetrics, mode) < 0)){
+        bestProgressMetrics = {...metrics};
+        lastQualityProgressAt = Date.now();
+      }
+      const visibleMetrics = bestProgressMetrics || metrics;
+      const detail = `Backend gom buổi • 1t/buổi:${Number(visibleMetrics.soBuoiDay1 || 0)} T2:${Number(visibleMetrics.soBuoiTrong2 || 0)}${bestProgressStateCount > 0 ? ` • thử:${bestProgressStateCount.toLocaleString("vi-VN")}` : ""}`;
       window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = detail;
       if(typeof setAutoSortProgress === "function"){
         const elapsed = Math.max(0, Date.now() - startedAt);
@@ -6851,6 +6962,20 @@ async function executeFetBackendBoost(data, options, initialStats){
   if(typeof setAutoSortStopVisible === "function") setAutoSortStopVisible(true);
   if(typeof setStatus === "function") setStatus("Đang gom buổi trên backend local…", "info");
 
+  // A lane can keep searching after it has reached a plateau.  Stop the
+  // backend race after a bounded quiet period so the teacher can click again
+  // and receive a fresh seed instead of waiting for the full hard deadline.
+  backendWatchdogTimer = window.setInterval(() => {
+    if(settled || stopRequested || watchdogTriggered) return;
+    if(Date.now() - lastQualityProgressAt < backendStallMs) return;
+    watchdogTriggered = true;
+    backendTimedOut = true;
+    if(typeof setStatus === "function"){
+      setStatus(`Backend không cải thiện thêm sau ${Math.round(backendStallMs / 1000)}s; đang giữ nghiệm tốt nhất…`, "info");
+    }
+    try{ requestBackendStop(); }catch(_){ }
+  }, 1_000);
+
   const settings = Object.assign({}, options || {}, {
     engine:"fet_trongoi",
     solver_mode:"auto",
@@ -6865,6 +6990,7 @@ async function executeFetBackendBoost(data, options, initialStats){
     fet_backend_parallel_workers:requestedWorkers,
     fet_backend_total_state_budget:1_000_000_000,
     fet_backend_lane_budget_ms:backendBudgetMs,
+    fet_backend_stall_ms:backendStallMs,
     session_first_time_budget_ms:8_000,
     initial_singleton_warmup_ms:5_000,
     deep_singleton_rounds:3,
@@ -6885,10 +7011,6 @@ async function executeFetBackendBoost(data, options, initialStats){
   });
   const requestBody = JSON.stringify({engine:"fet_trongoi", data:requestData, settings});
   const headers = Object.assign({"Content-Type":"application/json"}, fetBackendAuthHeaders());
-  let payload = null;
-  let lastProgressPayload = null;
-  let backendTimedOut = false;
-
   const payloadWithCandidate = value => {
     const queue = [value, value?.progress, value?.requestedJobProgress, value?.result, value?.solver];
     for(const item of queue){
@@ -6938,6 +7060,7 @@ async function executeFetBackendBoost(data, options, initialStats){
     });
     payload = await response.json().catch(() => null);
     lastProgressPayload = payload;
+    backendStagnated = payload?.stagnated === true || payload?.kind === "fet_backend_stagnated" || payload?.stopReason === "stagnated";
     if(payload?.jobId) activeJobId = String(payload.jobId);
     updateProgress(payload);
 
@@ -6958,6 +7081,7 @@ async function executeFetBackendBoost(data, options, initialStats){
         if(next && typeof next === "object"){
           payload = next;
           lastProgressPayload = next;
+          backendStagnated = backendStagnated || next?.stagnated === true || next?.kind === "fet_backend_stagnated" || next?.stopReason === "stagnated";
           updateProgress(payload);
           terminal = terminalPollPayload(payload, poll.status);
         }
@@ -6980,9 +7104,10 @@ async function executeFetBackendBoost(data, options, initialStats){
           });
           const next = await poll.json().catch(() => null);
           if(next && typeof next === "object"){
-            payload = next;
-            lastProgressPayload = next;
-            updateProgress(payload);
+             payload = next;
+             lastProgressPayload = next;
+             backendStagnated = backendStagnated || next?.stagnated === true || next?.kind === "fet_backend_stagnated" || next?.stopReason === "stagnated";
+             updateProgress(payload);
             if(terminalPollPayload(payload, poll.status)) break;
           }
         }
@@ -6994,20 +7119,32 @@ async function executeFetBackendBoost(data, options, initialStats){
       candidate = payloadWithCandidate(lastProgressPayload);
     }
     if(!candidate || !backendPayloadIsComplete(payload, candidate)){
-      if(stopRequested || backendTimedOut){
+      if(stopRequested || backendTimedOut || backendStagnated){
         if(typeof setStatus === "function") setStatus(
-          backendTimedOut ? "Backend hết thời gian; giữ nguyên lịch hiện tại để chạy tiếp lần sau." : "Đã dừng backend; giữ nguyên lịch hiện tại.",
+          watchdogTriggered || backendStagnated
+            ? "Backend đã dừng vì không cải thiện thêm; lịch hiện tại được giữ nguyên."
+            : (backendTimedOut ? "Backend hết thời gian; giữ nguyên lịch hiện tại để chạy tiếp lần sau." : "Đã dừng backend; giữ nguyên lịch hiện tại."),
           "info"
         );
         return {
           handled:true,
-          result:{ok:false, applied:false, cancelled:stopRequested, executor:"fet_backend", failureKind:backendTimedOut ? "fet_backend_timeout" : "user_cancelled"},
+          result:{ok:false, applied:false, cancelled:stopRequested, executor:"fet_backend", failureKind:(backendTimedOut || backendStagnated) ? "fet_backend_stagnated" : "user_cancelled"},
           telemetry:{initialMetrics:initialStats, metrics:payloadMetrics(payload) || null, hardValid:false}
         };
       }
       return null;
     }
     const candidateTkb = candidate.tkb;
+    const candidateMetrics = payloadMetrics(payload) || payloadMetrics(candidate.source);
+    if(options?.__incumbentComplete === true
+      && !fetQualityMetricsNotWorse(candidateMetrics, initialStats, mode)){
+      if(typeof setStatus === "function") setStatus("Backend tìm được trạng thái tạm thời kém hơn; lịch hiện tại được giữ nguyên.", "info");
+      return {
+        handled:true,
+        result:{ok:false, applied:false, cancelled:stopRequested, executor:"fet_backend", failureKind:"fet_backend_quality_regression_rejected"},
+        telemetry:{initialMetrics:initialStats, metrics:candidateMetrics || null, hardValid:false}
+      };
+    }
     const currentCellCount = fetBackendCountCells(data.tkb || {});
     const candidateCellCount = fetBackendCountCells(candidateTkb);
     if(candidateCellCount < currentCellCount){
@@ -7039,7 +7176,12 @@ async function executeFetBackendBoost(data, options, initialStats){
     }
     const finalMetrics = payloadMetrics(payload) || calcTeacherTKBStats();
     if(typeof setStatus === "function"){
-      setStatus(`Backend gom buổi xong: 1 tiết/buổi ${initialStats.soBuoiDay1} ➔ ${Number(finalMetrics?.soBuoiDay1 || 0)} • Trống 2: ${Number(finalMetrics?.soBuoiTrong2 || 0)} (dùng ${Number(payload?.parallelWorkers || requestedWorkers)} lane)`, "ok");
+      setStatus(
+        watchdogTriggered
+          ? `Backend đã giữ nghiệm tốt nhất: 1 tiết/buổi ${initialStats.soBuoiDay1} ➔ ${Number(finalMetrics?.soBuoiDay1 || 0)} • Trống 2: ${Number(finalMetrics?.soBuoiTrong2 || 0)}`
+          : `Backend gom buổi xong: 1 tiết/buổi ${initialStats.soBuoiDay1} ➔ ${Number(finalMetrics?.soBuoiDay1 || 0)} • Trống 2: ${Number(finalMetrics?.soBuoiTrong2 || 0)} (dùng ${Number(payload?.parallelWorkers || requestedWorkers)} lane)`,
+        "ok"
+      );
     }
     const singletonTargetReached = payload?.singletonTargetReached === true || payload?.targetReached === true;
     const gapTargetReached = payload?.gapTargetReached === true;
@@ -7051,11 +7193,11 @@ async function executeFetBackendBoost(data, options, initialStats){
       telemetry:{initialMetrics:initialStats, metrics:finalMetrics, hardValid:true, targetReached:singletonTargetReached, floorReached:payload?.floorReached === true, singletonTargetReached, gapTargetReached, qualityTargetReached}
     };
   }catch(error){
-    if(stopRequested || backendTimedOut){
+    if(stopRequested || backendTimedOut || backendStagnated){
       if(typeof setStatus === "function") setStatus("Backend đã dừng; lịch hiện tại được giữ nguyên.", "info");
       return {
         handled:true,
-        result:{ok:false, applied:false, cancelled:stopRequested, executor:"fet_backend", failureKind:backendTimedOut ? "fet_backend_timeout" : "user_cancelled"},
+        result:{ok:false, applied:false, cancelled:stopRequested, executor:"fet_backend", failureKind:(backendTimedOut || backendStagnated) ? "fet_backend_stagnated" : "user_cancelled"},
         telemetry:{initialMetrics:initialStats, metrics:payloadMetrics(payload) || null, hardValid:false}
       };
     }
@@ -7063,9 +7205,14 @@ async function executeFetBackendBoost(data, options, initialStats){
     return null;
   }finally{
     settled = true;
+    if(backendWatchdogTimer !== null){
+      window.clearInterval(backendWatchdogTimer);
+      backendWatchdogTimer = null;
+    }
     window.__ACTIVE_TKB_FET_WORKER = null;
     window.__ACTIVE_TKB_FET_WORKER_STOP = null;
-    if(typeof setAutoSortStopVisible === "function") setAutoSortStopVisible(false);
+    if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
+    else if(typeof setAutoSortStopVisible === "function") setAutoSortStopVisible(false);
   }
 }
 
@@ -7248,9 +7395,21 @@ async function executeDirectFastSchedule(options = {}){
       return await new Promise((resolve) => {
         const telemetryStartedAtMs = fetTelemetryNowMs();
         let workerSettled = false;
+        let workerWatchdogTimer = null;
+        let workerWatchdogTriggered = false;
+        let lastWorkerMessageAt = Date.now();
+        let lastWorkerQualityAt = Date.now();
+        let workerQualityPhaseSeen = false;
+        let workerBestMetrics = initialStats && typeof initialStats === "object" ? {...initialStats} : null;
+        const workerStallBudgetMs = fetQualityStallBudgetMs(options, "workerFetStallMs", 60_000);
+        const workerNoMessageBudgetMs = fetQualityStallBudgetMs(options, "workerNoMessageMs", 20_000);
         const settleWorker = (result, telemetryDetails = {}) => {
           if(workerSettled) return;
           workerSettled = true;
+          if(workerWatchdogTimer !== null){
+            window.clearInterval(workerWatchdogTimer);
+            workerWatchdogTimer = null;
+          }
           try{
             postFetTerminalTelemetry(options, telemetryStartedAtMs, result, telemetryDetails);
           }catch(_){ }
@@ -7355,6 +7514,24 @@ async function executeDirectFastSchedule(options = {}){
               return;
             }
           }
+          if(options?.__incumbentComplete === true
+            && !fetQualityMetricsNotWorse(checkpoint.metrics, initialStats, options.mode)){
+            window.__LATEST_OPTIMIZE_TKB = null;
+            window.__LATEST_OPTIMIZE_CHECKPOINT = null;
+            if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
+            else setAutoSortStopVisible(false);
+            updateStatusMsg("Đã dừng; nghiệm tạm thời kém hơn lịch hiện tại nên lịch cũ được giữ nguyên.", "info");
+            if(typeof pendingResolve === "function"){
+              pendingResolve({
+                ok:false,
+                applied:false,
+                cancelled:true,
+                executor:"fet_worker",
+                failureKind:"fet_checkpoint_quality_regression_rejected"
+              });
+            }
+            return;
+          }
           const candidateValidation = await validateLocalFetCandidate(checkpoint.tkb);
           if(candidateValidation.ok !== true){
             window.__LATEST_OPTIMIZE_TKB = null;
@@ -7428,6 +7605,27 @@ async function executeDirectFastSchedule(options = {}){
           }
         };
 
+        if(qualityPipelineActive){
+          workerWatchdogTimer = window.setInterval(() => {
+            if(workerSettled || workerWatchdogTriggered) return;
+            const now = Date.now();
+            const noMessage = now - lastWorkerMessageAt >= workerNoMessageBudgetMs;
+            const qualityStalled = workerQualityPhaseSeen && now - lastWorkerQualityAt >= workerStallBudgetMs;
+            if(!noMessage && !qualityStalled) return;
+            workerWatchdogTriggered = true;
+            window.__AUTO_SORT_STOP_REQUESTED = true;
+            updateStatusMsg(
+              noMessage
+                ? "Bộ xử lý không phát heartbeat; đang dừng và giữ lịch hiện tại…"
+                : `Bộ xử lý không cải thiện thêm sau ${Math.round(workerStallBudgetMs / 1000)}s; đang giữ nghiệm tốt nhất…`,
+              "info"
+            );
+            try{
+              Promise.resolve(window.__ACTIVE_TKB_FET_WORKER_STOP?.()).catch(() => {});
+            }catch(_){ }
+          }, 1_000);
+        }
+
         if(!isOptimizeMode && !isConstructionThenOptimize){
           updateStatusMsg("Đang xếp lượt đầu: 0%...");
         }else{
@@ -7440,6 +7638,7 @@ async function executeDirectFastSchedule(options = {}){
         }
 
         worker.onmessage = async function(e) {
+          lastWorkerMessageAt = Date.now();
           const msg = e.data || {};
           if(msg.type === "preflight"){
             const preflight = msg.preflight || {};
@@ -7456,6 +7655,19 @@ async function executeDirectFastSchedule(options = {}){
             );
           }else if(msg.type === "progress"){
             const checkpoint = msg.checkpoint;
+            if(msg.stage && msg.stage !== "construction" && msg.metrics && typeof msg.metrics === "object"){
+              if(!workerQualityPhaseSeen) lastWorkerQualityAt = Date.now();
+              workerQualityPhaseSeen = true;
+              const retainedMetrics = checkpoint?.complete === true && checkpoint?.metrics && typeof checkpoint.metrics === "object"
+                ? checkpoint.metrics
+                : null;
+              if(retainedMetrics
+                && fetQualityMetricsNotWorse(retainedMetrics, initialStats, options.mode)
+                && (!workerBestMetrics || fetQualityMetricsCompare(retainedMetrics, workerBestMetrics, options.mode) < 0)){
+                workerBestMetrics = {...retainedMetrics};
+                lastWorkerQualityAt = Date.now();
+              }
+            }
             if(qualityPipelineActive && checkpoint?.complete === true && checkpoint?.tkb && typeof checkpoint.tkb === "object"){
               window.__LATEST_OPTIMIZE_CHECKPOINT = checkpoint;
               window.__LATEST_OPTIMIZE_TKB = checkpoint.tkb;
@@ -7654,6 +7866,23 @@ async function executeDirectFastSchedule(options = {}){
                 });
                 return;
               }
+            }
+            if(qualityPipelineActive && options?.__incumbentComplete === true
+              && !fetQualityMetricsNotWorse(msg.metrics, initialStats, options.mode)){
+              if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
+              else setAutoSortStopVisible(false);
+              updateStatusMsg("Kết quả tối ưu làm tăng chỉ số chất lượng; lịch hiện tại được giữ nguyên.", "info");
+              settleWorker({
+                ok:false,
+                applied:false,
+                executor:"fet_worker",
+                failureKind:"fet_candidate_quality_regression_rejected"
+              }, {
+                initialMetrics:msg.initialMetrics || initialStats,
+                metrics:msg.metrics || null,
+                hardValid:false
+              });
+              return;
             }
             let candidateValidation = { ok: true };
             if(qualityPipelineActive){

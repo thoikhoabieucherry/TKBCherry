@@ -8,6 +8,7 @@ const test = require("node:test");
 const ROOT = path.resolve(__dirname, "..");
 const RUNNER = path.join(ROOT, "solver_runtime", "scripts", "fet_trongoi_runner.cjs");
 const PROGRESS_PREFIX = "@@TKB_PROGRESS@@";
+const RUNNER_SOURCE = require("node:fs").readFileSync(RUNNER, "utf8");
 
 function makeFixture(){
   const data = {
@@ -106,4 +107,11 @@ test("backend FET runner emits the generic complete/hard-valid reference metrics
   assert.equal(payload.lessons.length, metrics.expected_periods);
   const start = frames.find(frame => frame.stage === "backend_parallel");
   assert.deepEqual(start?.laneStateBudgets, [500_000_000, 500_000_000]);
+});
+
+test("complete-incumbent lanes reject quality regressions and expose stagnation", () => {
+  assert.match(RUNNER_SOURCE, /completeIncumbent:\s*configured\.options\.__incumbentComplete === true/);
+  assert.match(RUNNER_SOURCE, /candidate\.completeIncumbent && compareQuality\(candidate\.metrics, candidateBaseline\) > 0/);
+  assert.match(RUNNER_SOURCE, /fet_backend_stall_ms/);
+  assert.match(RUNNER_SOURCE, /backend_stagnated/);
 });

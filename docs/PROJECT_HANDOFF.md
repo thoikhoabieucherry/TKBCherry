@@ -6,6 +6,15 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-21 LOCAL E2E STALL GUARD + PORT 1010 (NOT DEPLOYED)
+
+- **E2E bằng in-app browser** trên `http://127.0.0.1:1010/pages/sapxep?sid=default` đã tái hiện lỗi: worker browser giữ UI ở trạng thái chạy hơn 4 phút, chỉ số dao động quanh `1t/buổi: 11–22` và còn 27 tiết ở lớp đang xem. Dừng lượt này giữ đủ tiết nhưng cho thấy đường Stop cũ có thể nhận checkpoint chất lượng kém hơn lịch incumbent (`0 -> 10` singleton), vì chỉ kiểm tra số ô.
+- Sửa hai UI mirror (`web/pages/phanmon.js`, `web/phanmon.js`): thêm comparator quality an toàn; progress backend nhiều lane chỉ hiển thị checkpoint parent thực sự đã giữ. Stop và terminal worker/backend từ chối regression theo thứ tự lexicographic và không cho tăng Gap2; singleton vẫn là mục tiêu đầu tiên, số buổi/Gap1 chỉ là tie-breaker nên không chặn một cải thiện singleton thật. Hash hai UI mirror vẫn giống nhau.
+- Sửa backend runner: đánh dấu `completeIncumbent`, loại candidate regression trong `admissibleCandidate`, thêm watchdog stagnation mặc định 60 giây và trạng thái `fet_backend_stagnated`. Trần session-first **1.000.000.000** vẫn là quota tối đa chia chính xác theo lane, không ép chạy hết khi đã plateau.
+- Thêm watchdog browser: 60 giây không cải thiện hoặc 20 giây không có heartbeat thì tự dừng, giữ lịch cũ; lần bấm tiếp theo vẫn có thể chạy seed mới. Cổng launcher fallback và `.env` local thống nhất `127.0.0.1:1010`; README đã cập nhật.
+- Kiểm tra: `fet_backend_runner_node.test.js` **3/3**, `fet_client_telemetry_node.test.js` **5/5**, FET engine suite **40/40**, Node syntax cho hai UI mirror và runner, mirror hash, `git diff --check` pass. E2E mới đi đúng `/api/solve-data`, giữ metric thật `1t/buổi:10 T2:0` và vẫn tăng bộ đếm đến `thử:220.822`; watchdog tự mở khóa UI quanh ngưỡng một phút, ẩn progress, reset đồng hồ `00:00`, không có console error và giữ lịch thực tế `Dạy 1 tiết:10`, `Trống 2:0`.
+- Chỉ local: không deploy, không push, không sửa DB/lịch production. `Cherry/`, `Flash/`, `.statem/` và các file scratch người dùng đang có vẫn được giữ nguyên.
+
 ## 2026-08-21 LOCAL BACKEND CONTRACT FOLLOW-UP (NOT DEPLOYED)
 
 - Sửa lỗi grace timer: 5 giây chỉ bắt đầu sau khi parent thực sự nhìn thấy stop-file. Dừng sau nhiều giây chạy vẫn còn đủ cửa sổ để lane gửi checkpoint cuối; timer không còn âm thầm hết hạn từ lúc runner khởi động.
