@@ -4307,8 +4307,9 @@
       let currentBest = { ...bestMetrics };
       let improved = false;
       let nodes = 0;
-      const maxNodesPerChain = 7000;
-      const maxDepth = 10;
+      const deepSessionBinSearch = Boolean(this.options?.deepLocalFet || this.options?.deepCycles);
+      const maxNodesPerChain = deepSessionBinSearch ? 20000 : 7000;
+      const maxDepth = deepSessionBinSearch ? 16 : 10;
       const unitCache = new Map();
       const gap2Ceiling = Number(bestMetrics?.soBuoiTrong2 || 0) + 2;
       const acceptedSingletonSignatures = new Set();
