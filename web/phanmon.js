@@ -6772,14 +6772,20 @@ async function executeDirectFastSchedule(options = {}){
     }
     const qualityPipelineActive = isOptimizeMode || isConstructionThenOptimize;
     // A complete incumbent can use independent seed restarts in parallel when
-    // the first local lane gets stuck. Keep the pool small so memory remains
-    // bounded and avoid spawning it for a fresh construction or an already
-    // solved timetable.
-    if(qualityPipelineActive && isConstructionThenOptimize && options.__incumbentComplete === true &&
-       options.parallelWorkers === undefined){
+    // the first local lane gets stuck. Fresh construction uses a smaller
+    // two-seed race; an already solved timetable still skips the pool.
+    if(qualityPipelineActive && isConstructionThenOptimize && options.parallelWorkers === undefined){
       const logicalCores = Number(globalThis.navigator?.hardwareConcurrency) || 1;
+      const restartWorkers = Math.min(4, Math.max(1, logicalCores - 2));
+      const constructionWorkers = Math.min(2, Math.max(1, logicalCores - 2));
       options = Object.assign({}, options, {
-        parallelWorkers: Math.min(4, Math.max(1, logicalCores - 2)),
+        // Keep the incumbent optimization pool at the proven 4-lane ceiling.
+        // Fresh construction gets a smaller race: the first complete seed is
+        // enough to enter the normal quality lane, so extra seeds only add CPU
+        // contention after the answer is already available.
+        parallelWorkers: options.__incumbentComplete === true ? restartWorkers : constructionWorkers,
+        parallelConstructionWorkers: constructionWorkers,
+        parallelConstructionTimeBudgetMs: 30_000,
         parallelRestartSliceMs: 30_000
       });
     }

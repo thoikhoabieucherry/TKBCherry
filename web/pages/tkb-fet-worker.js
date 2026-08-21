@@ -55,6 +55,120 @@ function compareParallelQuality(candidate, incumbent) {
   return 0;
 }
 
+async function runParallelConstructionLane(cb, data, workerOptions, baseSeed) {
+  if (typeof Worker !== 'function') return null;
+  const requestedWorkers = Number(workerOptions.parallelConstructionWorkers ?? workerOptions.parallelWorkers);
+  const workerCount = Number.isFinite(requestedWorkers) && requestedWorkers > 1
+    ? clampNumber(requestedWorkers, 2, 2, 4)
+    : 1;
+  if (workerCount <= 1) return null;
+
+  const constructionBudgetMs = clampNumber(
+    workerOptions.parallelConstructionTimeBudgetMs,
+    30_000,
+    5_000,
+    120_000
+  );
+  const children = [];
+  let completed = 0;
+  let lastProgressAt = 0;
+  let best = null;
+
+  const result = await new Promise(resolve => {
+    let settled = false;
+    let timer = null;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      for (const child of children) {
+        try { child.terminate(); } catch (_) {}
+      }
+      resolve(best);
+    };
+
+    const onChildMessage = (event, index) => {
+      const msg = event?.data || {};
+      if (msg.type === 'progress') {
+        const now = Date.now();
+        if (now - lastProgressAt >= 500) {
+          lastProgressAt = now;
+          cb({
+            percent: Math.round(Math.max(0, Math.min(100, Number(msg.percent) || 0)) * 0.35),
+            currentMetric: msg.currentMetric,
+            initialMetric: msg.initialMetric,
+            stage: 'construction',
+            cycle: index + 1,
+            metrics: null
+          });
+        }
+        return;
+      }
+      if (msg.type !== 'done') return;
+      completed++;
+
+      const unassigned = Number(msg.unassigned || 0);
+      if (msg.ok === true && msg.tkb && unassigned === 0) {
+        const candidateData = JSON.parse(JSON.stringify(data));
+        candidateData.tkb = msg.tkb;
+        const candidateEngine = new self.FetTimetableEngine(candidateData, Object.assign({}, workerOptions, {
+          parallelWorkers: 1,
+          parallelConstructionWorkers: 1
+        }));
+        candidateEngine.loadExistingSchedule();
+        candidateEngine.compileConstraints();
+        best = {
+          engine: candidateEngine,
+          metrics: candidateEngine.evaluateMetrics(),
+          result: {
+            ok: true,
+            applied: true,
+            placed: Number(msg.placed) || candidateEngine.activities.length,
+            unassigned: 0,
+            total: Number(msg.total) || candidateEngine.activities.length
+          }
+        };
+        // A complete construction is enough to enter the normal quality lane.
+        // Do not wait for slower seeds once the first valid schedule is ready.
+        finish();
+        return;
+      }
+      if (completed >= workerCount) finish();
+    };
+
+    timer = setTimeout(finish, constructionBudgetMs + 1_000);
+    for (let index = 0; index < workerCount; index++) {
+      try {
+        const child = new Worker('tkb-fet-worker.js?v=' + Date.now() + '-construction-' + index);
+        children.push(child);
+        child.onmessage = event => onChildMessage(event, index);
+        child.onerror = () => {
+          completed++;
+          if (completed >= workerCount) finish();
+        };
+        child.postMessage({
+          action: 'solve',
+          mode: 'solve',
+          data: JSON.parse(JSON.stringify(data)),
+          options: Object.assign({}, workerOptions, {
+            seed: baseSeed + 104729 * (index + 1),
+            parallelWorkers: 1,
+            parallelConstructionWorkers: 1,
+            parallelRestartSliceMs: 0,
+            timeBudgetMs: constructionBudgetMs
+          })
+        });
+      } catch (_) {
+        completed++;
+      }
+    }
+    if (children.length === 0) finish();
+  });
+
+  if (!result?.engine) return children.length > 0 ? { attempted: true } : null;
+  return result;
+}
+
 async function runParallelRestartLane(cb, data, workerOptions, baseSeed, incumbentMetrics, singletonFloor, qualityDeadline) {
   if (typeof Worker !== 'function') return null;
   const requestedWorkers = Number(workerOptions.parallelWorkers);
@@ -196,27 +310,38 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
       targetMetricLowerBound: Number(eng.constraintPreflight?.structuralFloor?.metricLowerBounds?.soBuoiDay1 || 0)
     });
   } else {
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      isConstruction(true);
-      const engineData = JSON.parse(JSON.stringify(data));
-      const eng = new self.FetTimetableEngine(engineData, Object.assign({}, workerOptions, { seed: baseSeed + attempt * 7919 }));
-      setEngine(eng);
-      const res = await eng.solve((p) => {
-        cb({
-          percent: Math.round(Math.min(100, Number(p.percent) || 0) * 0.35),
-          currentMetric: Number(p.placed) || 0,
-          initialMetric: Number(p.total) || 0,
-          stage: 'construction',
-          metrics: null
+    isConstruction(true);
+    const parallelConstruction = await runParallelConstructionLane(cb, data, workerOptions, baseSeed);
+    isConstruction(false);
+    if (parallelConstruction?.engine) {
+      bestEngine = parallelConstruction.engine;
+      setEngine(bestEngine);
+      bestRes = parallelConstruction.result;
+    }
+
+    if (!bestEngine) {
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        isConstruction(true);
+        const engineData = JSON.parse(JSON.stringify(data));
+        const eng = new self.FetTimetableEngine(engineData, Object.assign({}, workerOptions, { seed: baseSeed + attempt * 7919 }));
+        setEngine(eng);
+        const res = await eng.solve((p) => {
+          cb({
+            percent: Math.round(Math.min(100, Number(p.percent) || 0) * 0.35),
+            currentMetric: Number(p.placed) || 0,
+            initialMetric: Number(p.total) || 0,
+            stage: 'construction',
+            metrics: null
+          });
         });
-      });
-      try { eng.getSnapshotTKB(); } catch (_) {}
-      isConstruction(false);
-      const un = (res && res.ok !== false) ? (Number(res.unassigned) || 0) : Number.MAX_SAFE_INTEGER;
-      const bestUn = bestRes ? ((bestRes.ok !== false) ? (Number(bestRes.unassigned) || 0) : Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
-      if (!bestRes || un < bestUn) { bestEngine = eng; bestRes = res; }
-      if (un === 0) break;
-      if (Date.now() > ATTEMPT_DEADLINE_MS) break;
+        try { eng.getSnapshotTKB(); } catch (_) {}
+        isConstruction(false);
+        const un = (res && res.ok !== false) ? (Number(res.unassigned) || 0) : Number.MAX_SAFE_INTEGER;
+        const bestUn = bestRes ? ((bestRes.ok !== false) ? (Number(bestRes.unassigned) || 0) : Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+        if (!bestRes || un < bestUn) { bestEngine = eng; bestRes = res; }
+        if (un === 0) break;
+        if (Date.now() > ATTEMPT_DEADLINE_MS) break;
+      }
     }
   }
   setEngine(bestEngine);

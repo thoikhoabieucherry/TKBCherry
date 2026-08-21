@@ -90,8 +90,9 @@ Hệ thống cung cấp quy trình tối ưu đa tầng lexicographic:
    * Mỗi retry gap dùng seed tái lập theo root/đích/lần thử và khôi phục RNG của tìm kiếm ngoài; snapshot bảo vệ toàn transaction. `protectedIds` chỉ sống trong transaction singleton, không được rò sang gap phase.
    * Worker không kết thúc sau checkpoint giảm đầu tiên: incumbent lane cấp nhiều lát deadline mới (mặc định 600 giây tổng, 120 giây/lát), giữ candidate tốt nhất và chỉ chuyển sang gap2 sau khi singleton đạt floor. Sau singleton=0, `runHorizontalGapClosure()` chạy lại vacancy chain trong 5 cột trước generic gap polish.
    * Deep candidate được phép dùng gap-2 trung gian có giới hạn để tìm đường đổi liên hoàn, nhưng chỉ được giữ sau bước cleanup đạt `soBuoiTrong2 = 0`; đường chạy thường không gọi exact bin repack để giữ thời gian phản hồi ổn định.
-* **Adaptive parallel restart lane (`runParallelRestartLane`)**:
-   * Khi incumbent hoàn chỉnh vẫn còn singleton sau các lượt chính, tạo tối đa 4 worker con với seed độc lập; mỗi worker con đặt `parallelWorkers: 1`, giữ giới hạn RAM và không tạo pool đệ quy.
+* **Adaptive parallel lanes (`runParallelConstructionLane` / `runParallelRestartLane`)**:
+   * Khi dựng lịch mới, tạo tối đa 2 worker con với seed độc lập và nhận nghiệm đủ tiết đầu tiên để đi tiếp sang quality lane; khi incumbent hoàn chỉnh vẫn còn singleton sau các lượt chính, tạo tối đa 4 worker con với seed độc lập.
+   * Mỗi worker con đặt `parallelWorkers: 1`, giữ giới hạn RAM và không tạo pool đệ quy. Nếu browser không hỗ trợ worker lồng nhau, worker cha tự quay về đường chạy tuần tự.
 * **Session-first stall guard & telemetry**:
    * Khi còn singleton, gap-2 là stage bị khóa; lane thường không được nới gap2. Deep tradeoff chỉ là transaction có rollback. Singleton cycle mặc định 30 giây, explicit optimizer budget luôn được tôn trọng.
    * `trySessionFirstSingletonSearch()` có lát thời gian riêng mặc định 8 giây (override an toàn 1..60 giây), luôn lấy min với deadline pipeline; `sessionFirstStateBudget` vẫn cho phép trần lớn nhưng không ép một nhánh dùng hết deadline tổng.

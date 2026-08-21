@@ -383,6 +383,10 @@ test("automatic worker prioritizes singleton elimination before gap-2 polish and
     "gap-2 operators must wait until singleton debt reaches its floor");
   assert.match(WORKER_SOURCE, /runParallelRestartLane/,
     "a plateaued incumbent must be able to use independent worker lanes");
+  assert.match(WORKER_SOURCE, /runParallelConstructionLane/,
+    "fresh construction must be able to race independent seeds locally");
+  assert.match(WORKER_SOURCE, /parallelConstructionTimeBudgetMs/,
+    "fresh construction worker racing must have a bounded budget");
   assert.match(WORKER_SOURCE, /parallelWorkers:\s*1/,
     "child lanes must not recursively spawn another worker pool");
   assert.match(ENGINE_SOURCE, /trySessionFirstSingletonSearch/,

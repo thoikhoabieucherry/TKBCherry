@@ -6,6 +6,17 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-21 LOCAL PARALLEL CONSTRUCTION RACE (NOT DEPLOYED)
+
+- **Mục tiêu**: giảm thời gian dựng lịch mới trên máy local mà không tăng cứng pool đến mức tranh CPU làm chậm hoặc làm mất tiết.
+- **Thay đổi**:
+  - Bổ sung `runParallelConstructionLane()` trong hai worker mirror. Khi lịch đầu vào chưa hoàn chỉnh, tối đa 2 worker seed độc lập chạy `solve` cùng lúc; worker cha nhận nghiệm đầu tiên có `unassigned = 0`, dựng lại engine từ snapshot đó rồi chuyển sang pipeline tối ưu hiện hữu.
+  - Giữ fallback tuần tự nếu worker lồng nhau không được hỗ trợ hoặc cả pool không tìm được nghiệm hoàn chỉnh trong ngân sách 30 giây.
+  - UI tự cấp 2 lane cho dựng mới và giữ trần 4 lane cho incumbent restart; mỗi child đặt `parallelWorkers: 1` để không đệ quy tạo pool.
+- **Đo local** trên `scratch/live_school_default.json`, seed đơn `28183`: khoảng **28,4 giây**; đua 2 seed `132912/237641`, nhận nghiệm đầu tiên: khoảng **18,0 giây** (~36% nhanh hơn), nghiệm đủ `1.650/1.650`, student holes `= 0`, gap-2 `= 0`.
+- **Đối chứng pool**: tối ưu incumbent 4 lane giảm khoảng **26,8 giây → 6,5 giây**; tăng lên 6/8 lane không cải thiện và có dấu hiệu tranh CPU, nên không nâng trần mặc định.
+- **Kiểm tra**: worker/phanmon syntax pass, worker mirror SHA-256 parity pass, engine contract **37/37 pass**. Bộ tổng hợp **135/136 pass**; test `M1-ADV-5.1` riêng vẫn dao động vượt deadline 25 giây trên máy hiện tại (không phải lỗi bất biến; các benchmark trường thực tế khác pass). Chỉ sửa local, không deploy, không push, không sửa DB lịch.
+
 ## 2026-08-21 LOCAL STALL FIX 2: PRIMARY-OBJECTIVE GATE + WORKER KEEPALIVE (NOT DEPLOYED)
 
 - Profiler trực tiếp trên school_default tìm được nguyên nhân còn sót: runUntilZeroSingletons vẫn chạy các toán tử gap-2 trong cùng pass khi singleton còn 8; riêng lượt đó singleton giữ nguyên 8 nhưng gap-2 giảm 17 -> 13, tức là tốn thời gian cho mục tiêu phụ trước mục tiêu chính.
