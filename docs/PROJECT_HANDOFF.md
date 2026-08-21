@@ -6,6 +6,15 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-21 LOCAL 12-BIN HORIZONTAL GAP CLOSURE (NOT DEPLOYED)
+
+- Hoàn thiện nhánh cuối của `trySessionBinAugmentingChains()` theo mô hình 12 bin ngang: sau khi ưu tiên đưa `soBuoiDay1` về 0, pha dọn `soBuoiTrong2` chỉ đổi cột trong cùng một buổi 5 tiết để vacancy chạy qua các cạnh lớp/GV/phòng.
+- Bổ sung augmenting-chain backtracking có điều kiện đích ngay tại lá tìm kiếm. Nhánh không chỉ cần “xếp đủ” mà phải đạt đồng thời `soBuoiDay1 = 0`, giảm gap-2, không thủng tiết học sinh và lesson-block còn hợp lệ; nếu không đạt thì quay lại thử cột/chuỗi kế tiếp.
+- Bổ sung ejection closure cho occupant: duyệt các ô trống hợp lệ trong bin trước, sau đó mới dùng `randomSwap` làm fallback. Mỗi lần thử dùng seed độc lập, tái lập theo `(root, target, retry)` và khôi phục RNG của tìm kiếm ngoài; transaction luôn có snapshot rollback.
+- Reset `protectedIds` sau khi kết thúc transaction singleton để donor cũ không bị hiểu nhầm là ô cố định khi bước sang gap phase. Giới hạn chuỗi ngang theo đúng `session` hiện tại nhằm giữ bài toán trong 5 cột và tránh nổ nhánh qua 12 buổi.
+- Probe local `rust_api/tkb_store.db / school_default`: `soBuoiDay1 4 -> 0`, sau đó `soBuoiTrong2 0 -> 2 -> 0`; kết quả cuối `unplacedCount = 0`, student holes = 0, location violations = 0, missing must-teach = 0.
+- Kiểm thử: focused Node suite **127/127 pass**, syntax check cho hai mirror pass, SHA-256 hai engine bằng nhau. Chỉ sửa local; không deploy, không sửa production DB, không push.
+
 ## 2026-08-21 LOCAL 12-BIN SESSION AUGMENTING CHAINS (NOT DEPLOYED)
 
 - Đổi cách nhìn của nhánh tối ưu sâu từ lịch xen kẽ từng ngày (`sáng, chiều`) sang 12 bin ngang: bin `0..5` là sáng Thứ 2..Thứ 7, bin `6..11` là chiều Thứ 2..Thứ 7; mỗi bin vẫn có đúng 5 ô tiết.
