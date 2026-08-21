@@ -120,3 +120,12 @@ test("FET worker-posted error frames settle fail-closed instead of leaving the p
   assert.match(source, /msg\.type === "error"[\s\S]{0,900}worker\.terminate\(\)/);
   assert.match(source, /msg\.type === "error"[\s\S]{0,1200}settleWorker\(/);
 });
+
+test("local backend boost has a bounded stop window and accepts only complete FET payloads", () => {
+  assert.match(source, /function fetBackendIsLocalOnly\(\)/);
+  assert.match(source, /fet_backend_total_state_budget:1_000_000_000/);
+  assert.match(source, /session_first_time_budget_ms:8_000/);
+  assert.match(source, /stopRequestedAt \? stopRequestedAt \+ 5_000/);
+  assert.match(source, /backendPayloadIsComplete\s*=\s*\(value, candidate\)\s*=>/);
+  assert.match(source, /return backendKind && unassigned === 0 && hardOk/);
+});

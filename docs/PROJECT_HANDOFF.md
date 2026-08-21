@@ -6,6 +6,30 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-21 LOCAL BACKEND CONTRACT FOLLOW-UP (NOT DEPLOYED)
+
+- Sửa lỗi grace timer: 5 giây chỉ bắt đầu sau khi parent thực sự nhìn thấy stop-file. Dừng sau nhiều giây chạy vẫn còn đủ cửa sổ để lane gửi checkpoint cuối; timer không còn âm thầm hết hạn từ lúc runner khởi động.
+- Đồng bộ semantics mục tiêu với engine: `targetReached`/`floorReached` chỉ phản ánh mục tiêu chính `soBuoiDay1 <= singleton floor`; `gapTargetReached` và `qualityTargetReached` phản ánh pha `Trống 2`/cả hai mục tiêu. Điều kiện đua sớm của parent vẫn yêu cầu cả singleton floor và gap-2 floor để không cắt mất pha dọn gap.
+- Backend UI hiển thị cả kết quả `1 tiết/buổi` và `Trống 2`, truyền đủ cờ singleton/gap/quality vào result và telemetry. Payload có TKB nhưng thiếu metrics hard-valid không còn được nhận chỉ vì có `ok=true`; browser validator chỉ chạy sau contract kiểm tra đủ tiết.
+- Kiểm tra sau follow-up: runner + telemetry **6/6 pass**, focused scheduler/challenger/benchmark **69/69 pass**, Python stdlib unittest `test_stdio_protocol` **9 pass, 1 skipped**, `node --check` runner/UI pass, mirror hash pass, `git diff --check` pass. API local contract probe trả `executor=fet_backend`, đủ `4/4` tiết và đầy đủ cờ singleton/gap/quality. Chưa deploy, chưa push, không sửa DB/lịch production.
+- Chuỗi backend trên fixture `default_school_0317` (2.193 tiết, 2 lane, lát 12 giây) giữ `2.193/2.193`, `studentHoles=0`, `hard_ok=true`; ba lượt liên tiếp cho `singleton/gap2 = 1/9 -> 1/7 -> 1/5`. Preflight chứng minh singleton floor là **1** do giáo viên `tn.sương` chỉ có miền buổi rời nhau; mục tiêu `0` chỉ hợp lệ trên dữ liệu có floor `0`.
+
+## 2026-08-21 LOCAL BACKEND FET PARALLEL CONTRACT (NOT DEPLOYED)
+
+- **Mục tiêu**: đưa quy trình gom buổi 12-bin/session-first vào backend local nhiều lane để lần chạy tiếp theo có thể thoát plateau nhanh hơn, dùng trần tối đa **1.000.000.000 trạng thái session-first** mà không nhân ngân sách theo số worker.
+- **Backend**: `solver_runtime/scripts/solve_stdio.py` dispatch request `engine=fet_trongoi` sang `solver_runtime/scripts/fet_trongoi_runner.cjs`. Runner nạp đúng `web/pages/tkb-fet-engine.js` + `tkb-fet-worker.js` trong Node `worker_threads`, mỗi lane seed riêng, chia quota chính xác (phần dư phân cho lane đầu), chọn candidate theo `unplacedCount -> soBuoiDay1 -> soBuoiTrong2 -> tsBuoiDay -> soBuoiTrong1`.
+- **Hợp đồng an toàn**: runner tự kiểm tra đủ tiết, student holes, location và must-teach; trả thêm metrics chuẩn `expected_periods`, `scheduled_periods`, `unassigned_periods`, `hard_ok`, `core_hard_ok`, `app_constraint_violation_count`, `lessons` và `unassignedLessons`. Rust trước đây đã đổi kết quả hoàn chỉnh thành `422 incomplete_schedule` vì thiếu các trường này; contract mới đã sửa đúng nguyên nhân. FET positive floor chưa được tự động dịch sang schema floor của reference (fail-closed về 0).
+- **Reconcile + giữ nghiệm**: backend bật `preserveOccupiedOffSlots` cho incumbent; những ô đang có tiết nhưng bị class-shift/`OFF` inference đánh dấu nhầm không bị `applyToDataTKB()` làm rơi. Runner còn có reconcile fail-closed theo số tiết từng lớp/môn, không phục hồi một ô nếu candidate đã dời đủ tiết sang vị trí khác. Mỗi lane gửi checkpoint TKB tốt nhất (throttle 750 ms, không phát ra heartbeat); khi Stop, parent giữ checkpoint hoàn chỉnh cuối thay vì trả rỗng.
+- **Giữ nhịp/dừng**: parent runner phát heartbeat 500 ms không kèm TKB; sau khi phát hiện stop-file, lane có tối đa 5 giây grace để trả engine cuối, rồi parent mới terminate. UI backend polling có grace 3 giây sau timeout, gửi `retainBest`, và trả `handled` khi cancel/timeout để không rơi nhầm sang một browser worker thứ hai. Slice session-first UI giảm từ 60 giây xuống **8 giây** để tránh một nhánh chiếm toàn bộ click.
+- **Bảo vệ ngân sách**: sửa hai engine mirror để kiểm tra quota trước khi tăng `sessionStates/periodStates`; probe quota 101 không vượt 101. Hai engine mirror vẫn byte-identical.
+- **Kiểm tra**:
+  - `e2e_tests/fet_backend_runner_node.test.js`: **2/2 pass** (quota `[51,50]`, quota UI `[500.000.000,500.000.000]`, canonical hard-valid metrics, đủ lessons).
+  - focused Node run (runner + engine + planner/telemetry/challenger): **64/64 pass**.
+  - API local async probe: `POST /api/solve-data` nhận `202`, polling trả `200`, `executor=fet_backend`, `unplacedCount=0`, `hard_ok=true`; fixture 4 singleton đạt `1t/buổi=0`, `Trống 2=0`.
+  - Fixture trường 75 lớp / 2.193 tiết, 2 lane và lát 12 giây: ba seed đều trả đủ `2.193/2.193`, `studentHoles=0`, `hard_ok=true`, runtime khoảng **13,9–14,1 giây**; singleton tốt nhất `1`, gap-2 `7–9` trong lát này, nên lần bấm sau vẫn có ích. Stop sau 1 giây trả checkpoint `200`, đủ tiết và không lỗ học sinh; probe qua API async cũng nhận `retainBest=true` và kết thúc sau khoảng 5 giây grace.
+  - Python `test_stdio_protocol` pass khi dùng Python hệ thống có `protobuf`. `test_solver_result_contract` khởi động được nhưng process hệ thống kết thúc bằng Windows native access-violation `-1073741819` ở test adaptive HiGHS; đây là môi trường/native dependency hiện có, chưa gán cho thay đổi FET backend. Bundled runtime của Codex thiếu module `google.protobuf` nên không dùng làm bằng chứng cho Python suite.
+- **Trạng thái**: chỉ local, không deploy, không push, không sửa DB/lịch production. Việc còn mở: chạy benchmark nhiều seed dài hơn để đo khả năng kéo gap-2 về 0; heartbeat vẫn intentionally không serialize TKB, chỉ checkpoint cải thiện mới mang snapshot.
+
 ## 2026-08-21 LOCAL INITIAL SINGLETON WARMUP (NOT DEPLOYED)
 
 - **Mục tiêu**: giảm singleton ngay sau khi dựng đủ lịch để deep optimizer nhận một incumbent nhẹ hơn.

@@ -5797,8 +5797,8 @@
         const solveSession = async (session) => {
           const remaining = new Set(bySession.get(session) || []);
           const dfs = async () => {
+            if(sessionStates + periodStates >= stateBudget || Date.now() >= deadlineAt || this.isCancelled) return false;
             periodStates++;
-            if(sessionStates + periodStates > stateBudget || Date.now() >= deadlineAt || this.isCancelled) return false;
             if((periodStates & 1023) === 0){
               await new Promise(resolve => setTimeout(resolve, 0));
               emitHeartbeat();
@@ -5913,8 +5913,8 @@
 
         for(let moveLimit = 1; moveLimit <= maxMovedUnits; moveLimit++){
           const dfsSessions = async (depth, moved) => {
+            if(sessionStates + periodStates >= stateBudget || Date.now() >= deadlineAt || this.isCancelled) return false;
             sessionStates++;
-            if(sessionStates + periodStates > stateBudget || Date.now() >= deadlineAt || this.isCancelled) return false;
             if((sessionStates & 4095) === 0){
               await new Promise(resolve => setTimeout(resolve, 0));
               emitHeartbeat();
@@ -6807,6 +6807,18 @@
       return improved ? currentBest : null;
     }
 
+    preserveOccupiedIncumbentOffSlots(){
+      if(this.options?.preserveOccupiedOffSlots !== true) return;
+      for(const act of this.activities || []){
+        const start = Number(this.actPlacement?.[act.id]);
+        if(!Number.isFinite(start) || start < 0) continue;
+        const duration = Math.max(1, Number(act.duration) || 1);
+        for(let offset = 0; offset < duration; offset++){
+          this.offSlots?.delete(`${act.classId}|${start + offset}`);
+        }
+      }
+    }
+
     loadExistingSchedule(){
       this.init();
       const data = this.data;
@@ -6954,6 +6966,7 @@
           });
         });
       });
+      this.preserveOccupiedIncumbentOffSlots();
     }
 
     async optimize(mode = "optimize_all", onProgress = null){

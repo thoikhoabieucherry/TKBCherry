@@ -17,13 +17,14 @@ graph TD
     B -->|HTTP nội bộ| C[Rust Backend API tkb_rust_api]
     C -->|Local SQLite| D[(SQLite kvstore tkb_store.db)]
     A -->|Client-Side WebWorker 100%| E[FET C++ v7.9.5 Engine tkb-fet-worker.js]
+    C -->|Local stdio solve route only| F[Node FET backend runner + worker_threads]
 ```
 
 ### Các thành phần chính:
 1. **Web Client (Frontend)**:
    * **Công nghệ**: HTML5, Vanilla JavaScript (ES6+), Vanilla CSS3. Không dùng framework hay build system; giao tiếp backend qua HTTP polling (không WebSocket).
    * **Giao diện phân môn & sắp xếp TKB**: `web/pages/phanmon.js`, `web/pages/sapxep.html`, `web/pages/phanmon.css`.
-   * **Bộ giải & tối ưu FET 100% Client-Side Web Worker**: `web/pages/tkb-fet-engine.js`, `web/pages/tkb-fet-worker.js`. Toàn bộ quá trình xếp TKB (Play ▶ / Stop ■) chạy cục bộ trên trình duyệt không qua network. Đã gỡ bỏ toàn bộ phụ thuộc legacy CP-SAT / Cloud Run / Rust solver bridge trên giao diện xếp lịch.
+   * **Bộ giải & tối ưu FET Client-Side Web Worker**: `web/pages/tkb-fet-engine.js`, `web/pages/tkb-fet-worker.js`. Đường mặc định vẫn chạy cục bộ trên trình duyệt. Riêng incumbent đã xếp đủ trên hostname local có thể chọn backend FET bổ trợ qua Rust local API; đường này bị khóa trên hostname production và không gửi dữ liệu lịch ra ngoài.
    * **Quản trị hệ thống & Cổng trường học**: `web/super-admin.js`, `web/school-portal.js`, `web/app.js`.
 
 2. **Backend API Server (Rust)**:
@@ -35,6 +36,13 @@ graph TD
 
 3. **Hạ tầng VPS**:
    * **VPS**: Ubuntu 24.04 LTS, Nginx, Rust Daemon (`/opt/cherry-scheduler/`), SQLite DB (`/opt/cherry-scheduler/rust_api/tkb_store.db`).
+
+4. **Local FET backend runner (chỉ dùng local)**:
+   * `solver_runtime/scripts/solve_stdio.py` giữ giao thức stdio một JSON wrapper và chuyển request có `engine=fet_trongoi` sang `solver_runtime/scripts/fet_trongoi_runner.cjs`.
+   * Runner dùng đúng engine/worker FET của web trong các Node `worker_threads` độc lập, mỗi lane một seed; `fet_backend_total_state_budget` là trần chung của session-first và được chia quota chính xác, không nhân lên theo số lane. Mặc định trực tiếp không vượt quá 4 lane nếu Rust không cấp trần khác; Rust có thể cấp quota thấp hơn qua `TKB_SOLVER_MAX_WORKERS`.
+   * Runner bật `preserveOccupiedOffSlots` cho incumbent để class-shift/`OFF` inference không làm rơi các ô lịch cũ; reconcile chỉ phục hồi ô thiếu khi số tiết lớp/môn còn thiếu, rồi vẫn qua student-hole/hard validator. Candidate checkpoint được throttle và giữ ở parent khi Stop.
+   * Runner chỉ nhận candidate đủ tiết, không tăng `Trống 2`, không tăng hard-validation baseline; metrics còn có hợp đồng chung `expected_periods`, `scheduled_periods`, `unassigned_periods`, `hard_ok` để Rust không nhầm quality debt mềm với lịch thiếu tiết. Payload thiếu metrics hard-valid không được nhận chỉ vì có `ok=true`.
+   * UI gọi `/api/solve-data` theo async job và polling `/api/solve-result`; heartbeat không mang TKB. Stop gửi `retainBest`, runner quan sát stop-file rồi mới mở grace window 5 giây cho lane trả checkpoint cuối. `targetReached` giữ nghĩa mục tiêu singleton; `gapTargetReached` và `qualityTargetReached` là cờ pha sau. Timeout/cancel không tự khởi động thêm browser worker.
 
 ---
 
@@ -104,6 +112,10 @@ Hệ thống cung cấp quy trình tối ưu đa tầng lexicographic:
    * Engine phát heartbeat theo thời gian/trạng thái với số `sessionStates + periodStates`; worker chuyển tiếp nhưng không clone checkpoint cho heartbeat. UI hiển thị nhãn `Gom 12 buổi • thử:N`; khoảng snapshot giữ ở 1 giây.
    * Worker cha nhận nghiệm hoàn chỉnh, chọn theo `unplacedCount -> soBuoiDay1 -> soBuoiTrong2 -> tsBuoiDay -> soBuoiTrong1`, rồi dừng các worker còn lại khi đạt floor. Không bật pool cho lịch mới, lịch đã đạt mục tiêu, hoặc browser không hỗ trợ worker lồng nhau.
    * `qualityPolishTimeBudgetMs` mặc định là 0 vì polish phụ không được phép giữ máy bận sau khi hai mục tiêu hard đã đạt; có thể bật opt-in với trần 60 giây.
+* **Local backend parallel lanes (`fet_trongoi_runner.cjs`)**:
+   * Đây là đường bổ trợ cho incumbent hoàn chỉnh, không thay thế pipeline browser và không dùng cho lịch còn thiếu tiết. UI đặt tối đa 1 tỷ trạng thái session-first; runner chia quota `[floor(total/lane), ...]` cộng phần dư vào các lane đầu để tổng đúng bằng trần.
+   * Mỗi lane chạy cùng 12-bin/session-first + chain/reform pipeline với seed riêng. Parent chọn lexicographic candidate tốt nhất, dừng sớm khi đạt cả singleton floor và gap-2 floor, phát keepalive 500 ms và chỉ serialize TKB ở kết quả cuối.
+   * Khi runner trả HTTP 422 do Rust quality gate nhưng payload vẫn có đủ metrics hard-valid và TKB hoàn chỉnh, UI chỉ nhận sau khi tự đếm ô và chạy validator browser; candidate thiếu tiết hoặc thêm vi phạm luôn bị loại.
 2. **Closed Push-Cycles (`tryClosedPushCycles`)**:
    * Chuỗi đẩy khép kín 2-step và 3-step di chuyển và hấp thụ tiết đơn lẻ vào các buổi dạy hiện hữu mà không tạo thêm ô trống hay xung đột.
 3. **Tối ưu buổi 1 tiết (`optimize_singletons`)**:
@@ -188,6 +200,8 @@ Chạy các lệnh kiểm thử độc lập:
 | `web/pages/phanmon.css` | Toàn bộ định kiểu giao diện TKB, bảng thống kê modal, responsive mobile/desktop |
 | `web/pages/tkb-fet-engine.js` | Thuật toán xếp FET C++ v7.9.5 (MRV, Min-Conflicts RandomSwap, Tabu, Counting Invariant, Push Cycles) |
 | `web/pages/tkb-fet-worker.js` | Web Worker chạy nền thuật toán FET không gây đơ giao diện trình duyệt, streaming tiến độ và checkpoint |
+| `solver_runtime/scripts/fet_trongoi_runner.cjs` | Backend FET local nhiều lane, quota session-first, heartbeat và giữ candidate tốt nhất |
+| `solver_runtime/scripts/solve_stdio.py` | Cổng stdio Python; dispatch request FET sang Node runner và relay progress |
 | `web/pages/tkb-constraints-menu.js` | Menu ràng buộc TKB, popup Thống kê theo lớp, xuất in ấn TKB |
 | `web/pages/sapxep.html` | Trang xếp thời khóa biểu chính (Play ▶ / Stop ■ thuần Web Worker) |
 | `web/app.js` | Router chính, xác thực phiên đăng nhập, điều hướng trường học |
@@ -196,6 +210,7 @@ Chạy các lệnh kiểm thử độc lập:
 | `rust_api/src/auth.rs` | Xác thực người dùng (Argon2id + session token), phân quyền trường học |
 | `tools/vps-deploy/update-deploy.py` | Script tự động hóa build và deploy lên VPS một bước |
 | `scratch/test_forensic_benchmark.js` | Script kiểm chứng hiệu năng và ràng buộc cứng trên dữ liệu trường thực tế |
+| `e2e_tests/fet_backend_runner_node.test.js` | Contract test cho quota lane 1 tỷ, metrics hard-valid và candidate đủ tiết |
 
 ---
 

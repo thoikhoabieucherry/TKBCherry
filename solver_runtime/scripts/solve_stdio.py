@@ -4,6 +4,8 @@ import base64
 import binascii
 import json
 import os
+import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -588,6 +590,121 @@ def period_allocation_error_payload(
     )
 
 
+def _node_command() -> str:
+    configured = os.environ.get("TKB_NODE_BIN", "").strip()
+    candidates = [
+        configured,
+        shutil.which("node") or "",
+        str(
+            Path.home()
+            / ".cache"
+            / "codex-runtimes"
+            / "codex-primary-runtime"
+            / "dependencies"
+            / "node"
+            / "bin"
+            / "node.exe"
+        ),
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(candidate)
+        if path.is_file():
+            return str(path)
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+    raise RuntimeError(
+        "Khong tim thay Node.js de chay backend FET. "
+        "Hay dat TKB_NODE_BIN hoac cai Node.js 20+."
+    )
+
+
+def _run_fet_backend_runner(raw_request: bytes) -> int:
+    runner = Path(__file__).resolve().with_name("fet_trongoi_runner.cjs")
+    if not runner.is_file():
+        _write_protocol_value(
+            {
+                "protocol": STDIO_PROTOCOL,
+                "status": 500,
+                "payload": {
+                    "ok": False,
+                    "kind": "fet_backend_runner_missing",
+                    "error": "Khong tim thay fet_trongoi_runner.cjs.",
+                },
+            }
+        )
+        return 0
+
+    try:
+        process = subprocess.Popen(
+            [_node_command(), str(runner)],
+            cwd=str(ROOT),
+            env=os.environ.copy(),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except OSError as exc:
+        _write_protocol_value(
+            {
+                "protocol": STDIO_PROTOCOL,
+                "status": 500,
+                "payload": {
+                    "ok": False,
+                    "kind": "fet_backend_start_failed",
+                    "error": str(exc),
+                },
+            }
+        )
+        return 0
+
+    assert process.stdin is not None
+    assert process.stdout is not None
+    assert process.stderr is not None
+
+    def relay_progress() -> None:
+        for line in iter(process.stderr.readline, b""):
+            try:
+                sys.stderr.buffer.write(line)
+                sys.stderr.buffer.flush()
+            except Exception:
+                break
+
+    progress_thread = threading.Thread(target=relay_progress, daemon=True)
+    progress_thread.start()
+    try:
+        process.stdin.write(raw_request)
+        process.stdin.close()
+        stdout = process.stdout.read()
+        return_code = process.wait()
+    finally:
+        progress_thread.join(timeout=5)
+
+    wrapper = None
+    for line in stdout.decode("utf-8", errors="replace").splitlines():
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict) and isinstance(value.get("payload"), dict):
+            wrapper = value
+    if wrapper is None:
+        wrapper = {
+            "protocol": STDIO_PROTOCOL,
+            "status": 500,
+            "payload": {
+                "ok": False,
+                "kind": "fet_backend_protocol_error",
+                "error": "Backend FET khong tra ve ket qua hop le.",
+                "exitCode": return_code,
+            },
+        }
+    _write_protocol_value(wrapper)
+    return 0
+
+
 def main() -> int:
     mode = sys.argv[1] if len(sys.argv) > 1 else "solve"
     ui_data = None
@@ -747,6 +864,14 @@ def main() -> int:
             write_json({"error": "Truong settings phai la object."}, status=400)
             return 0
         settings = raw_settings or {}
+        engine_choice = (
+            str(request.get("engine") or settings.get("engine") or "")
+            .strip()
+            .casefold()
+        )
+        if engine_choice in {"fet_trongoi", "fet_backend", "fet_backend_parallel"}:
+            CURRENT_REQUEST_BODY = None
+            return _run_fet_backend_runner(raw)
         emit_progress(
             {
                 "stage": "solver:starting",

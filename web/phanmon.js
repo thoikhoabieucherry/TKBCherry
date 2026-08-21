@@ -6713,6 +6713,362 @@ function postFetTerminalTelemetry(options, startedAtMs, result, details = {}){
   }
 }
 
+function fetBackendIsLocalOnly(){
+  try{
+    const host = String(window.location?.hostname || "").trim().toLowerCase();
+    return host === "127.0.0.1" || host === "localhost" || host === "::1";
+  }catch(_){ return false; }
+}
+
+function fetBackendAuthHeaders(){
+  try{
+    const api = window.TKBAuthApi;
+    return api && typeof api.getAuthHeaders === "function"
+      ? (api.getAuthHeaders() || {})
+      : {};
+  }catch(_){ return {}; }
+}
+
+function fetBackendSleep(ms){
+  return new Promise(resolve => window.setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+function fetBackendRunId(){
+  const random = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  return `fet-backend-${Date.now().toString(36)}-${random}`.slice(0, 120);
+}
+
+function fetBackendCloneInput(data){
+  let copy = null;
+  try{ copy = JSON.parse(JSON.stringify(data || {})); }catch(_){ return null; }
+  if(!copy || typeof copy !== "object") return null;
+  // Old solver payloads can make the Rust API preserve a stale result before
+  // the requested backend race starts. The backend receives only the current
+  // timetable and constraints for this local boost.
+  for(const key of ["tkbSolverResult", "tkbRustSolverResult", "tkbSolverPayload", "solverResult", "solverMetrics"]){
+    try{ delete copy[key]; }catch(_){ }
+  }
+  return copy;
+}
+
+function fetBackendCountCells(tkbObj){
+  let count = 0;
+  try{
+    for(const byDay of Object.values(tkbObj || {})){
+      for(const bySession of Object.values(byDay || {})){
+        for(const cells of Object.values(bySession || {})){
+          if(!Array.isArray(cells)) continue;
+          for(const cell of cells){
+            if(!cell || cell === "OFF") continue;
+            if(typeof cell === "object" && (cell.off === true || String(cell.val || cell.mon || cell.subject || "").trim() === "")) continue;
+            count++;
+          }
+        }
+      }
+    }
+  }catch(_){ }
+  return count;
+}
+
+async function executeFetBackendBoost(data, options, initialStats){
+  if(!fetBackendIsLocalOnly()) return null;
+  if(options?.backendFetBoost === false) return null;
+  const mode = String(options?.mode || "");
+  if(!["solve_optimize_all", "solve_optimize_all_fresh", "optimize_singletons"].includes(mode)) return null;
+  if(Number(initialStats?.soBuoiDay1 || 0) <= 0 && Number(initialStats?.soBuoiTrong2 || 0) <= 0) return null;
+
+  const requestData = fetBackendCloneInput(data);
+  if(!requestData) return null;
+  const runId = fetBackendRunId();
+  const logicalCores = Math.max(1, Number(globalThis.navigator?.hardwareConcurrency) || 1);
+  const requestedWorkers = Math.min(8, Math.max(2, logicalCores - 2));
+  const backendBudgetMs = Math.max(60_000, Math.min(240_000, Number(options?.backendFetBudgetMs) || 150_000));
+  const controller = new AbortController();
+  let stopRequested = false;
+  let stopRequestedAt = 0;
+  let cancelSent = false;
+  let settled = false;
+  let activeJobId = runId;
+  const startedAt = Date.now();
+  const incumbentValidationPromise = inspectFetCandidateHardConstraints(
+    data,
+    JSON.parse(JSON.stringify(data.tkb || {}))
+  );
+
+  const updateProgress = payload => {
+    try{
+      lastProgressPayload = payload || lastProgressPayload;
+      const solver = payload?.solver && typeof payload.solver === "object" ? payload.solver : {};
+      const metrics = payload?.metrics || solver.metrics || payload?.progress?.metrics || payload?.requestedJobProgress?.metrics;
+      if(!metrics || typeof metrics !== "object") return;
+      const stateCount = Number(payload?.sessionStates || 0) + Number(payload?.periodStates || 0);
+      const detail = `Backend gom buổi • 1t/buổi:${Number(metrics.soBuoiDay1 || 0)} T2:${Number(metrics.soBuoiTrong2 || 0)}${stateCount > 0 ? ` • thử:${stateCount.toLocaleString("vi-VN")}` : ""}`;
+      window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = detail;
+      if(typeof setAutoSortProgress === "function"){
+        const elapsed = Math.max(0, Date.now() - startedAt);
+        setAutoSortProgress(Math.min(92, 8 + Math.round(elapsed * 70 / backendBudgetMs)), "", { metricLabel:detail, isHybrid:false });
+      }
+    }catch(_){ }
+  };
+
+  const cancelBackend = async () => {
+    if(cancelSent || !activeJobId) return null;
+    cancelSent = true;
+    const cancelController = new AbortController();
+    const cancelTimeout = window.setTimeout(() => {
+      try{ cancelController.abort(); }catch(_){ }
+    }, 2_500);
+    try{
+      return await fetch("/api/solve-cancel", {
+        method:"POST",
+        headers:Object.assign({"Content-Type":"application/json"}, fetBackendAuthHeaders()),
+        body:JSON.stringify({solve_run_id:activeJobId, retainBest:true}),
+        cache:"no-store",
+        signal:cancelController.signal
+      });
+    }catch(_){ return null; }
+    finally{ window.clearTimeout(cancelTimeout); }
+  };
+
+  const requestBackendStop = () => {
+    stopRequested = true;
+    if(!stopRequestedAt) stopRequestedAt = Date.now();
+    return cancelBackend();
+  };
+
+  const marker = {
+    backend:true,
+    terminate(){ return requestBackendStop(); }
+  };
+  window.__ACTIVE_TKB_FET_WORKER = marker;
+  window.__ACTIVE_TKB_FET_WORKER_STOP = async () => {
+    if(settled) return;
+    await requestBackendStop();
+    if(typeof setStatus === "function") setStatus("Đang dừng backend và giữ nghiệm tốt nhất…", "info");
+    await cancelBackend();
+  };
+  window.__AUTO_SORT_STOP_REQUESTED = false;
+  if(typeof setAutoSortStopVisible === "function") setAutoSortStopVisible(true);
+  if(typeof setStatus === "function") setStatus("Đang gom buổi trên backend local…", "info");
+
+  const settings = Object.assign({}, options || {}, {
+    engine:"fet_trongoi",
+    solver_mode:"auto",
+    optimization_focus:"automatic",
+    ui_requested_solve_mode:mode,
+    ui_unified_auto_sort:true,
+    ui_unified_solve_kind:"refine_complete",
+    ui_solver_async_job:true,
+    ui_solver_fifo_admission:true,
+    solve_run_id:runId,
+    fet_backend_complete_incumbent:true,
+    fet_backend_parallel_workers:requestedWorkers,
+    fet_backend_total_state_budget:1_000_000_000,
+    fet_backend_lane_budget_ms:backendBudgetMs,
+    session_first_time_budget_ms:8_000,
+    initial_singleton_warmup_ms:5_000,
+    deep_singleton_rounds:3,
+    backend_deadline_ms:backendBudgetMs,
+    native_global_deadline_ms:backendBudgetMs,
+    reference_watchdog_deadline_ms:backendBudgetMs,
+    overall_time_limit_seconds:Math.ceil(backendBudgetMs / 1000),
+    optimization_time_limit_seconds:Math.ceil(backendBudgetMs / 1000),
+    require_complete_schedule:true,
+    optimize_existing_schedule:true,
+    preserve_existing_tkb:true,
+    allow_solver_warm_start:true,
+    force_fresh_backend_solve:true,
+    allow_backend_cache:false,
+    ui_use_existing_complete_incumbent:true,
+    ui_existing_incumbent_revalidated:true,
+    ui_return_complete_incumbent_on_existing_optimize_failure:true
+  });
+  const requestBody = JSON.stringify({engine:"fet_trongoi", data:requestData, settings});
+  const headers = Object.assign({"Content-Type":"application/json"}, fetBackendAuthHeaders());
+  let payload = null;
+  let lastProgressPayload = null;
+  let backendTimedOut = false;
+
+  const payloadWithCandidate = value => {
+    const queue = [value, value?.progress, value?.requestedJobProgress, value?.result, value?.solver];
+    for(const item of queue){
+      if(!item || typeof item !== "object") continue;
+      const tkb = item.tkb || item.result?.tkb || item.solver?.tkb;
+      if(tkb && typeof tkb === "object") return {source:item, tkb};
+    }
+    return null;
+  };
+
+  const payloadMetrics = value => {
+    if(!value || typeof value !== "object") return null;
+    return value.metrics
+      || value.solver?.metrics
+      || value.progress?.metrics
+      || value.requestedJobProgress?.metrics
+      || null;
+  };
+
+  const backendPayloadIsComplete = (value, candidate) => {
+    if(!candidate?.tkb) return false;
+    const metrics = payloadMetrics(value) || payloadMetrics(candidate.source) || {};
+    const unassigned = Number(metrics.unassigned_periods ?? metrics.unplacedCount ?? value?.unassigned ?? 1);
+    const hardOk = metrics.hard_ok === true
+      && metrics.core_hard_ok !== false
+      && Number(metrics.app_constraint_violation_count || 0) === 0;
+    // Rust may normalize a complete FET result to HTTP 422 when only the
+    // optional quality floor is still unmet. Independent browser validation
+    // below is the final authority, so retain that complete candidate.
+    const backendKind = String(value?.executor || value?.engine || candidate.source?.executor || candidate.source?.engine || "")
+      .includes("fet_backend");
+    return backendKind && unassigned === 0 && hardOk;
+  };
+
+  const terminalPollPayload = (value, status) => {
+    if(value?.ok === true || payloadWithCandidate(value)) return true;
+    return status !== 202 && !["solver_queued", "solver_running", "solver_cancelling"].includes(String(value?.kind || ""));
+  };
+
+  try{
+    const response = await fetch("/api/solve-data", {
+      method:"POST",
+      headers,
+      body:requestBody,
+      cache:"no-store",
+      signal:controller.signal
+    });
+    payload = await response.json().catch(() => null);
+    lastProgressPayload = payload;
+    if(payload?.jobId) activeJobId = String(payload.jobId);
+    updateProgress(payload);
+
+    const pollRequired = response.status === 202 || payload?.serverOwned === true || payload?.kind === "solver_queued" || payload?.kind === "solver_running";
+    if(pollRequired){
+      const deadline = Date.now() + backendBudgetMs + 30_000;
+      let terminal = false;
+      while(Date.now() < Math.min(deadline, stopRequestedAt ? stopRequestedAt + 5_000 : deadline) && !terminal){
+        if(stopRequested && !cancelSent) await cancelBackend();
+        await fetBackendSleep(stopRequested ? 250 : 700);
+        const poll = await fetch(`/api/solve-result?jobId=${encodeURIComponent(activeJobId)}`, {
+          method:"GET",
+          headers:fetBackendAuthHeaders(),
+          cache:"no-store",
+          signal:controller.signal
+        });
+        const next = await poll.json().catch(() => null);
+        if(next && typeof next === "object"){
+          payload = next;
+          lastProgressPayload = next;
+          updateProgress(payload);
+          terminal = terminalPollPayload(payload, poll.status);
+        }
+      }
+      if(!terminal && Date.now() >= deadline){
+        backendTimedOut = true;
+        await requestBackendStop();
+        await cancelBackend();
+        // Give the local backend a short grace window to publish its retained
+        // best result after seeing the stop file. Do not leave a job running
+        // while the UI falls back to another solver.
+        const graceDeadline = Date.now() + 3_000;
+        while(Date.now() < graceDeadline){
+          await fetBackendSleep(250);
+          const poll = await fetch(`/api/solve-result?jobId=${encodeURIComponent(activeJobId)}`, {
+            method:"GET",
+            headers:fetBackendAuthHeaders(),
+            cache:"no-store",
+            signal:controller.signal
+          });
+          const next = await poll.json().catch(() => null);
+          if(next && typeof next === "object"){
+            payload = next;
+            lastProgressPayload = next;
+            updateProgress(payload);
+            if(terminalPollPayload(payload, poll.status)) break;
+          }
+        }
+      }
+    }
+
+    let candidate = payloadWithCandidate(payload) || payloadWithCandidate(lastProgressPayload);
+    if(!candidate && (stopRequested || backendTimedOut)){
+      candidate = payloadWithCandidate(lastProgressPayload);
+    }
+    if(!candidate || !backendPayloadIsComplete(payload, candidate)){
+      if(stopRequested || backendTimedOut){
+        if(typeof setStatus === "function") setStatus(
+          backendTimedOut ? "Backend hết thời gian; giữ nguyên lịch hiện tại để chạy tiếp lần sau." : "Đã dừng backend; giữ nguyên lịch hiện tại.",
+          "info"
+        );
+        return {
+          handled:true,
+          result:{ok:false, applied:false, cancelled:stopRequested, executor:"fet_backend", failureKind:backendTimedOut ? "fet_backend_timeout" : "user_cancelled"},
+          telemetry:{initialMetrics:initialStats, metrics:payloadMetrics(payload) || null, hardValid:false}
+        };
+      }
+      return null;
+    }
+    const candidateTkb = candidate.tkb;
+    const currentCellCount = fetBackendCountCells(data.tkb || {});
+    const candidateCellCount = fetBackendCountCells(candidateTkb);
+    if(candidateCellCount < currentCellCount){
+      if(typeof setStatus === "function") setStatus("Backend trả về ít tiết hơn lịch hiện tại; giữ nguyên lịch.", "warning");
+      return stopRequested || backendTimedOut ? {
+        handled:true,
+        result:{ok:false, applied:false, cancelled:stopRequested, executor:"fet_backend", failureKind:"fet_backend_fewer_lessons_rejected"},
+        telemetry:{initialMetrics:initialStats, metrics:payloadMetrics(payload) || null, hardValid:false}
+      } : null;
+    }
+    const candidateValidation = await validateFetCandidateHardConstraints(data, candidateTkb, {
+      allowUnchangedIncumbentViolations:true,
+      incumbentBaseline:await incumbentValidationPromise
+    });
+    if(candidateValidation?.ok !== true){
+      return stopRequested || backendTimedOut ? {
+        handled:true,
+        result:{ok:false, applied:false, cancelled:stopRequested, executor:"fet_backend", failureKind:candidateValidation?.failureKind || "fet_backend_hard_validation_failed"},
+        telemetry:{initialMetrics:initialStats, metrics:payloadMetrics(payload) || null, hardValid:false}
+      } : null;
+    }
+    const applied = await applyValidatedFetCandidate(data, candidateTkb, options);
+    if(applied?.ok !== true){
+      return {
+        handled:true,
+        result:{ok:false, applied:false, executor:"fet_backend", failureKind:"fet_backend_apply_failed"},
+        telemetry:{initialMetrics:initialStats, metrics:payloadMetrics(payload) || null, hardValid:true}
+      };
+    }
+    const finalMetrics = payloadMetrics(payload) || calcTeacherTKBStats();
+    if(typeof setStatus === "function"){
+      setStatus(`Backend gom buổi xong: 1 tiết/buổi ${initialStats.soBuoiDay1} ➔ ${Number(finalMetrics?.soBuoiDay1 || 0)} • Trống 2: ${Number(finalMetrics?.soBuoiTrong2 || 0)} (dùng ${Number(payload?.parallelWorkers || requestedWorkers)} lane)`, "ok");
+    }
+    const singletonTargetReached = payload?.singletonTargetReached === true || payload?.targetReached === true;
+    const gapTargetReached = payload?.gapTargetReached === true;
+    const qualityTargetReached = payload?.qualityTargetReached === true
+      || (singletonTargetReached && gapTargetReached);
+    return {
+      handled:true,
+      result:{ok:true, applied:true, executor:"fet_backend", tkb:data.tkb, targetReached:singletonTargetReached, floorReached:payload?.floorReached === true, singletonTargetReached, gapTargetReached, qualityTargetReached, cancelled:stopRequested},
+      telemetry:{initialMetrics:initialStats, metrics:finalMetrics, hardValid:true, targetReached:singletonTargetReached, floorReached:payload?.floorReached === true, singletonTargetReached, gapTargetReached, qualityTargetReached}
+    };
+  }catch(error){
+    if(stopRequested || backendTimedOut){
+      if(typeof setStatus === "function") setStatus("Backend đã dừng; lịch hiện tại được giữ nguyên.", "info");
+      return {
+        handled:true,
+        result:{ok:false, applied:false, cancelled:stopRequested, executor:"fet_backend", failureKind:backendTimedOut ? "fet_backend_timeout" : "user_cancelled"},
+        telemetry:{initialMetrics:initialStats, metrics:payloadMetrics(payload) || null, hardValid:false}
+      };
+    }
+    if(typeof console !== "undefined") console.warn("FET backend boost unavailable; falling back to local worker", error);
+    return null;
+  }finally{
+    settled = true;
+    window.__ACTIVE_TKB_FET_WORKER = null;
+    window.__ACTIVE_TKB_FET_WORKER_STOP = null;
+    if(typeof setAutoSortStopVisible === "function") setAutoSortStopVisible(false);
+  }
+}
+
 async function executeDirectFastSchedule(options = {}){
   try{
     // SINGLE-FLIGHT GUARD (sua 17/08): duong goi truc tiep (menu Toi uu, nut
@@ -6867,6 +7223,20 @@ async function executeDirectFastSchedule(options = {}){
       else setAutoSortStopVisible(false);
       if(typeof setStatus === "function") setStatus("Trống 1 tiết: 0 -> 0", "ok");
       return { ok: true, skipped: true };
+    }
+
+    // A complete incumbent is the expensive case where a fresh seed can
+    // escape a local plateau. Let the local backend race several independent
+    // FET lanes before falling back to the browser worker. Fresh/incomplete
+    // schedules still use the browser construction path first.
+    if(qualityPipelineActive && unplacedPeriodsCount === 0){
+      const backendBoost = await executeFetBackendBoost(data, options, initialStats);
+      if(backendBoost?.handled === true){
+        try{
+          postFetTerminalTelemetry(options, fetTelemetryNowMs(), backendBoost.result, backendBoost.telemetry || {});
+        }catch(_){ }
+        return backendBoost.result;
+      }
     }
 
     if((isOptimizeMode || isConstructionThenOptimize) && unplacedPeriodsCount > 0){
