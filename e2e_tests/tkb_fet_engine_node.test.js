@@ -447,6 +447,12 @@ test("automatic worker prioritizes singleton elimination before gap-2 polish and
     "the incumbent lane must reserve enough time for multiple singleton-chain slices");
   assert.match(WORKER_SOURCE, /singletonCycleBudgetMs = clampNumber\(workerOptions\.singletonCycleBudgetMs, 30_000/,
     "each singleton slice must get a fresh bounded deadline");
+  assert.match(WORKER_SOURCE, /initialSingletonWarmupMs = clampNumber\(/,
+    "a complete construction must get a bounded shallow singleton warmup before deep search");
+  assert.match(WORKER_SOURCE, /stage: 'singleton_warmup'/,
+    "the shallow construction warmup must be visible as its own progress stage");
+  assert.match(WORKER_SOURCE, /bestEngine\.options\.deepLocalFet = false/,
+    "the warmup must not spend its first slice in the expensive deep session search");
   assert.match(WORKER_SOURCE, /reformLessonBlocks = true/,
     "the deep incumbent lane must be allowed to re-pair lesson-block members before final validation");
   assert.match(WORKER_SOURCE, /eng\.compileConstraints\(\)/,

@@ -372,6 +372,60 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
     let noImprovementCycles = 0;
     let cycle = 0;
 
+    // Give the freshly constructed schedule a short, shallow packing pass
+    // before enabling the expensive 12-bin/deep operators. The warmup uses
+    // the same singleton objective but keeps the normal construction search
+    // profile, so it removes cheap singleton debt without spending the first
+    // quality slice exploring deep neighborhoods.
+    const initialSingletonWarmupMs = clampNumber(
+      workerOptions.initialSingletonWarmupMs,
+      5_000,
+      0,
+      15_000
+    );
+    if(currentMetrics.soBuoiDay1 > singletonFloor
+      && initialSingletonWarmupMs > 0
+      && Date.now() < qualityDeadline){
+      const savedWarmupOptions = {
+        deepLocalFet: bestEngine.options.deepLocalFet,
+        deepCycles: bestEngine.options.deepCycles,
+        sessionBinChains: bestEngine.options.sessionBinChains,
+        reformLessonBlocks: bestEngine.options.reformLessonBlocks,
+        allowSingletonGap2Tradeoff: bestEngine.options.allowSingletonGap2Tradeoff
+      };
+      bestEngine.options.deepLocalFet = false;
+      bestEngine.options.deepCycles = 0;
+      bestEngine.options.sessionBinChains = false;
+      bestEngine.options.reformLessonBlocks = false;
+      bestEngine.options.allowSingletonGap2Tradeoff = false;
+      const warmupRemainingMs = Math.max(0, qualityDeadline - Date.now());
+      await bestEngine.runUntilZeroSingletons({
+        timeBudgetMs: Math.min(initialSingletonWarmupMs, warmupRemainingMs),
+        maxPasses: clampNumber(workerOptions.initialSingletonWarmupPasses, 15, 1, 30),
+        stagnationThreshold: clampNumber(workerOptions.initialSingletonWarmupStagnation, 3, 1, 8),
+        onProgress: (progress) => emitOptimizerProgress(cb, progress, {
+          basePercent: 35,
+          percentSpan: 5,
+          stage: 'singleton_warmup',
+          cycle: 0,
+          metricKey: 'soBuoiDay1',
+          initialMetrics,
+          targetMetricLowerBound: singletonFloor
+        })
+      });
+      currentMetrics = bestEngine.evaluateMetrics();
+      cb({
+        percent: 40,
+        currentMetric: currentMetrics.soBuoiDay1,
+        initialMetric: initialMetrics.soBuoiDay1,
+        stage: 'singleton_warmup',
+        cycle: 0,
+        metrics: currentMetrics,
+        targetMetricLowerBound: singletonFloor
+      });
+      Object.assign(bestEngine.options, savedWarmupOptions);
+    }
+
     // Start the incumbent lane in its strongest 12-bin mode. Lesson-block
     // members may be re-paired, but every accepted transaction revalidates
     // the configured block minima before it is retained.

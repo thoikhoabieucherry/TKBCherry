@@ -7109,6 +7109,7 @@ async function executeDirectFastSchedule(options = {}){
                 "optimize_sessions": "Buổi dạy",
                 "optimize_gap1": "Trống 1 tiết",
                 "singleton_priority": "Ưu tiên 1 tiết/buổi",
+                "singleton_warmup": "Gom buổi ban đầu",
                 "session_first": "Gom 12 buổi",
                 "parallel_restart": "Chạy song song",
                 "gap2_priority": "Ưu tiên Trống 2",
@@ -7118,7 +7119,13 @@ async function executeDirectFastSchedule(options = {}){
               const floorHint = stageLabel === "Ưu tiên 1 tiết/buổi" && Number(msg.targetMetricLowerBound) > 0
                 ? ` sàn:${Number(msg.targetMetricLowerBound)}`
                 : "";
-              detail = `${stageLabel} • 1t/buổi:${msg.metrics.soBuoiDay1} T2:${msg.metrics.soBuoiTrong2} B:${msg.metrics.tsBuoiDay} T1:${msg.metrics.soBuoiTrong1}${floorHint}`;
+              const searchedStates = Number(msg.sessionStates) + Number(msg.periodStates);
+              const searchHint = msg.heartbeat
+                ? (msg.stage === "session_first" && Number.isFinite(searchedStates)
+                  ? ` • thử:${searchedStates.toLocaleString("vi-VN")}`
+                  : ` • đang xử lý ${Math.max(0, Math.floor(Number(msg.elapsedMs || 0) / 1000))}s`)
+                : "";
+              detail = `${stageLabel} • 1t/buổi:${msg.metrics.soBuoiDay1} T2:${msg.metrics.soBuoiTrong2} B:${msg.metrics.tsBuoiDay} T1:${msg.metrics.soBuoiTrong1}${searchHint}${floorHint}`;
             }else if(initVal !== undefined && curVal !== undefined){
               if(options.mode === "optimize_sessions"){
                 detail = `Buổi dạy: ${initVal} ➔ ${curVal}`;

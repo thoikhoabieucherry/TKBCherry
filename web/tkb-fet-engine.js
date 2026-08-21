@@ -3650,6 +3650,7 @@
       this.rng.shuffle(scoredList);
 
       for(const tKey of scoredList){
+        if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) break;
         const tIdx = this.teacherIndexMap.get(tKey);
         if(tIdx === undefined) continue;
         const tg = this.teacherGridList[tIdx];
@@ -3657,6 +3658,7 @@
 
         for(let d = 0; d < DAYS_LIST.length; d++){
           for(let b = 0; b < SESSIONS_LIST.length; b++){
+            if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) break;
             if((++evalSteps % 32) === 0 && (Date.now() - lastYieldAt >= 16)){
               await new Promise(resolve => setTimeout(resolve, 0));
               lastYieldAt = Date.now();
@@ -3678,7 +3680,7 @@
             const snap = this.captureStateSnapshot();
 
             const dfsPush = (curAct, curFromSlot, depth) => {
-              if(depth > maxDepth) return false;
+              if(depth > maxDepth || (this.deadlineAtMs && Date.now() >= this.deadlineAtMs)) return false;
 
               const candidateSlots = [];
               for(let i = 0; i < curAct.teacherIdxs.length; i++){
@@ -3707,6 +3709,7 @@
 
               // Pass 1: Try immediate 1-step displacement with randomSwap
               for(let idx = 0; idx < candidateSlots.length; idx++){
+                if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) return false;
                 const sDst = candidateSlots[idx];
                 const occId = curCGrid[sDst];
 
@@ -3743,10 +3746,12 @@
                     // Try absorbing occAct into any open session of occAct's teacher that already has periods
                     let absorbed = false;
                     for(let t = 0; t < occAct.teacherIdxs.length; t++){
+                      if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) break;
                       const occTg = this.teacherGridList[occAct.teacherIdxs[t]];
                       if(!occTg) continue;
                       for(let dAbs = 0; dAbs < DAYS_LIST.length; dAbs++){
                         for(let bAbs = 0; bAbs < SESSIONS_LIST.length; bAbs++){
+                          if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) break;
                           const sAbsStart = dAbs * SLOTS_PER_DAY + bAbs * PERIODS_PER_SESSION;
                           let hasOccT = false;
                           for(let pAbs = 0; pAbs < PERIODS_PER_SESSION; pAbs++){
@@ -3797,6 +3802,7 @@
               // Pass 2: Deeper recursion if depth < maxDepth
               if(depth < maxDepth){
                 for(let idx = 0; idx < candidateSlots.length; idx++){
+                  if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) return false;
                   const sDst = candidateSlots[idx];
                   const occId = curCGrid[sDst];
                   if(occId >= 0 && occId !== curAct.id){

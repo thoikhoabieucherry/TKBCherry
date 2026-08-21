@@ -7109,6 +7109,7 @@ async function executeDirectFastSchedule(options = {}){
                 "optimize_sessions": "Buổi dạy",
                 "optimize_gap1": "Trống 1 tiết",
                 "singleton_priority": "Ưu tiên 1 tiết/buổi",
+                "singleton_warmup": "Gom buổi ban đầu",
                 "session_first": "Gom 12 buổi",
                 "parallel_restart": "Chạy song song",
                 "gap2_priority": "Ưu tiên Trống 2",

@@ -6,6 +6,14 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-21 LOCAL INITIAL SINGLETON WARMUP (NOT DEPLOYED)
+
+- **Mục tiêu**: giảm singleton ngay sau khi dựng đủ lịch để deep optimizer nhận một incumbent nhẹ hơn.
+- **Thay đổi**: hai worker mirror nay chạy một warmup singleton nông mặc định **5 giây** trước khi bật `deepLocalFet`/12-bin. Warmup tắt deep/session-first, giữ gap-2 hard guard, phát stage `singleton_warmup`, rồi khôi phục pipeline sâu cũ. UI hiển thị nhãn `Gom buổi ban đầu`.
+- **Deadline hardening**: `tryClosedPushCycles()` nay kiểm tra deadline trong DFS và các vòng candidate/absorb, không thể chạy tràn sau khi warmup hoặc quality slice đã hết.
+- **Đo worker thật local** trên `scratch/live_school_default.json`: seed `132912` đi từ `34` sau solve xuống `18` trong warmup và kết thúc probe `15`; seed `237641` đi `23 -> 20`. Cả hai giữ `unassigned = 0`, `gap-2 = 0`, student holes = 0. Probe ngân sách quality ngắn chưa dùng để tuyên bố đạt floor 0; mục tiêu của thay đổi là làm nhẹ incumbent đầu vào.
+- **Kiểm tra**: engine suite **40/40 pass**, syntax/parity hai engine, hai worker và hai UI mirror pass; worker VM harness đã thấy stage warmup trên hai seed. Chỉ local, không deploy/push/DB.
+
 ## 2026-08-21 LOCAL DEADLINE GUARD & WORKER CAPACITY AUDIT (NOT DEPLOYED)
 
 - **Nguyên nhân chậm mới xác định**: `runUntilZeroSingletons()` đã hết ngân sách sau lát `session-first`, nhưng nhánh ILS “stagnation pass 1” vẫn gọi trực tiếp `tryClosedPushCycles(..., 4)`, có thể chạy thêm khoảng 30 giây dù `timeBudgetMs` đã hết.

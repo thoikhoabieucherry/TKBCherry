@@ -93,10 +93,11 @@ Hệ thống cung cấp quy trình tối ưu đa tầng lexicographic:
 * **Adaptive parallel lanes (`runParallelConstructionLane` / `runParallelRestartLane`)**:
    * Khi dựng lịch mới, tạo tối đa 2 worker con với seed độc lập và nhận nghiệm đủ tiết đầu tiên để đi tiếp sang quality lane; khi incumbent hoàn chỉnh vẫn còn singleton sau các lượt chính, tạo tối đa 4 worker con với seed độc lập.
    * Mỗi worker con đặt `parallelWorkers: 1`, giữ giới hạn RAM và không tạo pool đệ quy. Nếu browser không hỗ trợ worker lồng nhau, worker cha tự quay về đường chạy tuần tự.
+   * Trước deep quality lane, worker chạy `initialSingletonWarmupMs` mặc định 5 giây với `deepLocalFet/sessionBinChains/reformLessonBlocks` tắt; stage này hiển thị là `Gom buổi ban đầu` và chỉ sau đó mới bật 12-bin/deep.
    * Không tăng pool chỉ vì máy có nhiều logical core: phép đo local trên fixture trường cho thấy 4 lane đã tranh CPU ở lát 10 giây, còn 6/8 lane không có lợi ích ổn định. Nút thắt phải được xử lý bằng deadline và thứ tự mục tiêu trước khi tăng worker.
 * **Deadline contract cho singleton search**:
    * `runUntilZeroSingletons({timeBudgetMs})` phải chặn cả toán tử perturbation sau deadline, không chỉ chặn đầu vòng lặp. Các nhánh `tryPairClassSingletons`, `tryCrossDayPairShift`, `tryClosedPushCycles` bắt buộc đi qua `needsSingletons()`/`runSingletonOperator`.
-   * Khi sửa hoặc thêm toán tử deep, phải có test chứng minh ngân sách ngắn không bị chạy tràn; không được gọi trực tiếp một toán tử đệ quy sau khi deadline đã hết.
+   * Khi sửa hoặc thêm toán tử deep, phải có test chứng minh ngân sách ngắn không bị chạy tràn; các vòng DFS/candidate/absorb của `tryClosedPushCycles` cũng phải kiểm tra deadline bên trong, không được gọi trực tiếp một toán tử đệ quy sau khi deadline đã hết.
 * **Session-first stall guard & telemetry**:
    * Khi còn singleton, gap-2 là stage bị khóa; lane thường không được nới gap2. Deep tradeoff chỉ là transaction có rollback. Singleton cycle mặc định 30 giây, explicit optimizer budget luôn được tôn trọng.
    * `trySessionFirstSingletonSearch()` có lát thời gian riêng mặc định 8 giây (override an toàn 1..60 giây), luôn lấy min với deadline pipeline; `sessionFirstStateBudget` vẫn cho phép trần lớn nhưng không ép một nhánh dùng hết deadline tổng.
