@@ -80,6 +80,8 @@ Hệ thống cung cấp quy trình tối ưu đa tầng lexicographic:
 1. **Teacher Donor Augmenting Chains (`tryTeacherDonorAugmentingChains`)**:
    * Chọn một tiết đơn từ buổi của cùng giáo viên có ít nhất 3 tiết (sau khi lấy vẫn còn ≥2), đưa vào buổi singleton và đẩy mọi hoạt động bị chiếm chỗ theo chuỗi lớp/GV/phòng.
    * Chuỗi được giới hạn độ sâu/nút, mỗi nhánh có snapshot rollback; chỉ commit khi toàn bộ hoạt động vẫn được xếp, không có lỗ học sinh và `soBuoiDay1` giảm.
+   * Ở deep stage, `trySessionBinAugmentingChains()` dùng mô hình 12 bin ngang: bin `0..5` là sáng Thứ 2..Thứ 7, bin `6..11` là chiều Thứ 2..Thứ 7, mỗi bin có 5 cột tiết. Bài toán tải buổi được xử lý trước, sau đó mới thử hoán vị 5 cột; lesson block là một unit, donor đầu chuỗi được khóa tại bin đích, và toàn bộ nhánh có snapshot rollback.
+   * Deep candidate được phép dùng gap-2 trung gian có giới hạn để tìm đường đổi liên hoàn, nhưng chỉ được giữ sau bước cleanup đạt `soBuoiTrong2 = 0`; đường chạy thường không gọi exact bin repack để giữ thời gian phản hồi ổn định.
 2. **Closed Push-Cycles (`tryClosedPushCycles`)**:
    * Chuỗi đẩy khép kín 2-step và 3-step di chuyển và hấp thụ tiết đơn lẻ vào các buổi dạy hiện hữu mà không tạo thêm ô trống hay xung đột.
 3. **Tối ưu buổi 1 tiết (`optimize_singletons`)**:

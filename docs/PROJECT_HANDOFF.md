@@ -6,6 +6,14 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-21 LOCAL 12-BIN SESSION AUGMENTING CHAINS (NOT DEPLOYED)
+
+- Đổi cách nhìn của nhánh tối ưu sâu từ lịch xen kẽ từng ngày (`sáng, chiều`) sang 12 bin ngang: bin `0..5` là sáng Thứ 2..Thứ 7, bin `6..11` là chiều Thứ 2..Thứ 7; mỗi bin vẫn có đúng 5 ô tiết.
+- Bổ sung `trySessionBinAugmentingChains()` trong `web/pages/tkb-fet-engine.js` và mirror `web/tkb-fet-engine.js`: chọn donor ở bin có tải từ 3 tiết, đưa vào ô còn trống của bin singleton, rồi đẩy các hoạt động bị chiếm chỗ theo chuỗi lớp/GV/phòng. Các thành viên lesson block được di chuyển cùng nhau; donor đầu chuỗi được khóa tại đích để không bị nhánh sau lấy ra lần nữa.
+- Mỗi thử nghiệm là transaction có snapshot; chỉ nhận khi không mất tiết, không có student holes, không có gap-2 (trừ deep-search cho phép gap-2 trung gian với trần tạm thời và phải qua cleanup), và singleton không tăng. Nhánh mới chỉ chạy trong deep mode/`sessionBinChains`; đường chạy thường được giữ nhẹ để không làm benchmark bị timeout.
+- Cập nhật worker pipeline để exact repack và bin-chain chạy ở deep stage; candidate deep vẫn bị rollback nếu cleanup gap-2 không đạt. Probe `school_default` cho thấy đường sâu đã tìm được candidate tạm `4 -> 2` nhưng còn gap-2, nên chưa được nhận làm kết quả cuối và chưa chứng minh được `4 -> 0`.
+- Kiểm thử local: `node --test e2e_tests/tkb_fet_engine_node.test.js e2e_tests/augmented_singleton_e2e.test.js e2e_tests/zero_singleton_cross_day_e2e.test.js e2e_tests/adversarial_m1_counting_invariant.test.js e2e_tests/adversarial_m2_escape_chains.test.js` — **127/127 pass**; hai mirror engine byte parity; không deploy, không sửa dữ liệu production, không push.
+
 ## 2026-08-21 LOCAL TEACHER DONOR AUGMENTING CHAIN (NOT DEPLOYED)
 
 - Bổ sung `tryTeacherDonorAugmentingChains()` vào FET engine và mirror: lấy một hoạt động 1 tiết từ buổi của cùng giáo viên có ít nhất 3 tiết, đưa vào buổi singleton, rồi đẩy hoạt động bị chiếm chỗ theo chuỗi lớp/GV/phòng đến ô hợp lệ hoặc khép về ô nguồn.
