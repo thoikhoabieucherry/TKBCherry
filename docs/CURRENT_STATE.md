@@ -21,6 +21,8 @@ Hệ thống xếp thời khóa biểu tự động cho trường phổ thông, 
 - **Dữ liệu**: SQLite KV store (`kvstore`), WAL mode; mỗi trường một key `school_{schoolId}`.
  - **Luồng solve**: Nút Play ▶ ("Tự động xếp TKB") và Stop ■ ("Dừng xếp") chạy cục bộ trong Web Worker, cập nhật thanh tiến trình theo thời gian thực (ms), thống kê tức thì và không gửi lịch ra ngoài khi xếp. Với incumbent hoàn chỉnh bị kẹt, UI tự mở tối đa 4 worker seed độc lập theo số luồng CPU; worker nạp incumbent, biên dịch floor rồi chạy session-first 12-bin/reform lesson-block (trần 1.000.000 trạng thái, nhận tối đa 1 tỷ qua option, mỗi lát mặc định 8 giây), chỉ chuyển sang `Trống 2` sau khi singleton đạt floor. Heartbeat mang số trạng thái đã thử; checkpoint được clone thưa hơn và không clone lại chỉ vì heartbeat. Khi singleton + gap2 đạt mục tiêu, không chạy polish phụ mặc định; progress được chuẩn hóa để không rơi về `0/0`.
 
+Ghi chú stall-fix local 2026-08-21: singleton là mục tiêu độc quyền trước gap2; lane bình thường không được tăng gap2, deep tradeoff có rollback. Singleton cycle mặc định 30 giây; worker keepalive 500 ms gửi metrics nhưng không gửi checkpoint/lịch. Probe worker trên school_default đạt progress gap tối đa khoảng 1,48 giây, đủ tiết và không có lỗ học sinh.
+
 ## Nhánh và quy trình Git
 
 - Remote: `https://github.com/thoikhoabieucherry/TKBCherry` (nhánh chính: `main`).

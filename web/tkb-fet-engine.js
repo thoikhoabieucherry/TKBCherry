@@ -6684,7 +6684,9 @@
 
       const isDeep = Boolean(this.options?.deepCycles || this.options?.deepLocalFet);
       let budget = Number(this.options?.optimizeTimeBudgetMs || this.options?.timeBudgetMs || this.timeBudgetMs);
-      if(isDeep && (!budget || budget <= 12000)){
+      const hasExplicitBudget = Number.isFinite(Number(this.options?.optimizeTimeBudgetMs)) && Number(this.options.optimizeTimeBudgetMs) > 0 ||
+        Number.isFinite(Number(this.options?.timeBudgetMs)) && Number(this.options.timeBudgetMs) > 0;
+      if(isDeep && (!budget || budget <= 12000) && !hasExplicitBudget){
         budget = 30000;
       } else if(!budget){
         budget = 12000;
@@ -6943,6 +6945,12 @@
       let prevSingletons = bestMetrics.soBuoiDay1;
       let completedPasses = 0;
       const useSessionBinChains = Boolean(this.options?.deepLocalFet || this.options?.deepCycles || this.options?.sessionBinChains);
+      const needsSingletons = () =>
+        bestMetrics.soBuoiDay1 > targetMetricLowerBound &&
+        (!this.deadlineAtMs || Date.now() < this.deadlineAtMs) &&
+        !this.isCancelled;
+      const runSingletonOperator = async operator =>
+        needsSingletons() ? await operator() : null;
 
       for(let pass = 1; pass <= maxPasses; pass++){
         if(Date.now() >= this.deadlineAtMs || this.isCancelled) break;
@@ -6956,61 +6964,64 @@
           if(bestMetrics.soBuoiDay1 <= targetMetricLowerBound) break;
         }
 
-        const resPair = await this.tryPairClassSingletons(bestMetrics, onProgress);
+        const resPair = await runSingletonOperator(() => this.tryPairClassSingletons(bestMetrics, onProgress));
         if(resPair){ bestMetrics = resPair; anyPassImprovement = true; }
 
-        const resCross = await this.tryCrossDayPairShift(bestMetrics, onProgress);
+        const resCross = await runSingletonOperator(() => this.tryCrossDayPairShift(bestMetrics, onProgress));
         if(resCross){ bestMetrics = resCross; anyPassImprovement = true; }
 
         if(useSessionBinChains){
-          const resSessionBins = await this.trySessionBinAugmentingChains(bestMetrics, onProgress);
+          const resSessionBins = await runSingletonOperator(() => this.trySessionBinAugmentingChains(bestMetrics, onProgress));
           if(resSessionBins){ bestMetrics = resSessionBins; anyPassImprovement = true; }
         }
 
         if(useSessionBinChains){
-          const resRepack = await this.tryRepackSingletonComponents(bestMetrics, onProgress);
+          const resRepack = await runSingletonOperator(() => this.tryRepackSingletonComponents(bestMetrics, onProgress));
           if(resRepack){ bestMetrics = resRepack; anyPassImprovement = true; }
         }
 
-        const resDonorChain = await this.tryTeacherDonorAugmentingChains(bestMetrics, onProgress);
+        const resDonorChain = await runSingletonOperator(() => this.tryTeacherDonorAugmentingChains(bestMetrics, onProgress));
         if(resDonorChain){ bestMetrics = resDonorChain; anyPassImprovement = true; }
 
-        const resCrush = await this.tryTargetedIntraClassSingletonCrusher(bestMetrics, onProgress);
+        const resCrush = await runSingletonOperator(() => this.tryTargetedIntraClassSingletonCrusher(bestMetrics, onProgress));
         if(resCrush){ bestMetrics = resCrush; anyPassImprovement = true; }
 
-        const resEject = await this.trySingletonEjectionChains(bestMetrics, onProgress);
+        const resEject = await runSingletonOperator(() => this.trySingletonEjectionChains(bestMetrics, onProgress));
         if(resEject){ bestMetrics = resEject; anyPassImprovement = true; }
 
-        const resPush = await this.tryClosedPushCycles(bestMetrics, onProgress, 2);
+        const resPush = await runSingletonOperator(() => this.tryClosedPushCycles(bestMetrics, onProgress, 2));
         if(resPush){ bestMetrics = resPush; anyPassImprovement = true; }
 
-        const resReloc = await this.tryRelocateSingletons(bestMetrics, onProgress);
+        const resReloc = await runSingletonOperator(() => this.tryRelocateSingletons(bestMetrics, onProgress));
         if(resReloc){ bestMetrics = resReloc; anyPassImprovement = true; }
 
-        const resShare = await this.tryShareRichToSingleton(bestMetrics, onProgress);
+        const resShare = await runSingletonOperator(() => this.tryShareRichToSingleton(bestMetrics, onProgress));
         if(resShare){ bestMetrics = resShare; anyPassImprovement = true; }
 
-        const resRelabel = await this.trySingletonRelabelCycles(bestMetrics, onProgress);
+        const resRelabel = await runSingletonOperator(() => this.trySingletonRelabelCycles(bestMetrics, onProgress));
         if(resRelabel){ bestMetrics = resRelabel; anyPassImprovement = true; }
 
-        const resSwap = await this.tryIntraClassSingletonSwap(bestMetrics, onProgress);
+        const resSwap = await runSingletonOperator(() => this.tryIntraClassSingletonSwap(bestMetrics, onProgress));
         if(resSwap){ bestMetrics = resSwap; anyPassImprovement = true; }
 
-        const resKempe = await this.tryCrossClassSingletonKempeSwap(bestMetrics, onProgress);
+        const resKempe = await runSingletonOperator(() => this.tryCrossClassSingletonKempeSwap(bestMetrics, onProgress));
         if(resKempe){ bestMetrics = resKempe; anyPassImprovement = true; }
 
-        // Stage 2: Gap crushing & student contiguity
-        const resGaps = await this.tryCrushGaps(bestMetrics, onProgress);
-        if(resGaps){ bestMetrics = resGaps; anyPassImprovement = true; }
+        // Stage 2 is deliberately locked behind the primary objective. A
+        // timetable with singleton debt must not spend a pass polishing gaps.
+        if(bestMetrics.soBuoiDay1 <= targetMetricLowerBound){
+          const resGaps = await this.tryCrushGaps(bestMetrics, onProgress);
+          if(resGaps){ bestMetrics = resGaps; anyPassImprovement = true; }
 
-        const resIntraGap = await this.tryIntraClassGapCrush(bestMetrics, onProgress);
-        if(resIntraGap){ bestMetrics = resIntraGap; anyPassImprovement = true; }
+          const resIntraGap = await this.tryIntraClassGapCrush(bestMetrics, onProgress);
+          if(resIntraGap){ bestMetrics = resIntraGap; anyPassImprovement = true; }
 
-        const resCrossClass = await this.tryCrossDayClassSwap(bestMetrics, onProgress);
-        if(resCrossClass){ bestMetrics = resCrossClass; anyPassImprovement = true; }
+          const resCrossClass = await this.tryCrossDayClassSwap(bestMetrics, onProgress);
+          if(resCrossClass){ bestMetrics = resCrossClass; anyPassImprovement = true; }
 
-        const resPerms = await this.tryIntraSessionBlockPermutations(bestMetrics, onProgress);
-        if(resPerms){ bestMetrics = resPerms; anyPassImprovement = true; }
+          const resPerms = await this.tryIntraSessionBlockPermutations(bestMetrics, onProgress);
+          if(resPerms){ bestMetrics = resPerms; anyPassImprovement = true; }
+        }
 
         this.compactAllStudentSessions();
         bestMetrics = this.evaluateMetrics();

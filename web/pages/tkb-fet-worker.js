@@ -235,7 +235,7 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
     // time to finish the primary objective instead of reporting a plateau at
     // the first intermediate checkpoint.
     const qualityBudgetMs = clampNumber(workerOptions.autoQualityTimeBudgetMs, 600_000, 12_000, 1_200_000);
-    const singletonCycleBudgetMs = clampNumber(workerOptions.singletonCycleBudgetMs, 120_000, 5_000, 180_000);
+    const singletonCycleBudgetMs = clampNumber(workerOptions.singletonCycleBudgetMs, 30_000, 5_000, 120_000);
     // The user's hard target is singleton=0/floor and gap-2=0.  Secondary
     // polish used to consume the remainder of the 600s quality budget even
     // after those targets were already solved.  Keep it opt-in and bounded;
@@ -254,7 +254,10 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
     bestEngine.options.deepCycles = Math.max(Number(bestEngine.options.deepCycles) || 0, 12);
     bestEngine.options.sessionBinChains = true;
     bestEngine.options.reformLessonBlocks = true;
-    bestEngine.options.allowSingletonGap2Tradeoff = true;
+    // The normal incumbent lane must never publish a singleton improvement
+    // that increases teacher gap-2 debt. Temporary tradeoff is enabled only
+    // inside the explicitly bounded deep-search transaction below.
+    bestEngine.options.allowSingletonGap2Tradeoff = false;
     bestEngine.options.sessionFirstStateBudget = clampNumber(
       workerOptions.sessionFirstStateBudget,
       1_000_000,
@@ -360,7 +363,8 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
       bestEngine.options.allowSingletonGap2Tradeoff = false;
       bestEngine.strictFetGaps = true;
       bestEngine.strictTeacherGaps = true;
-      if (currentMetrics.soBuoiTrong2 > 0) {
+      const deepSingletonImproved = currentMetrics.soBuoiDay1 < tradeoffBaseline.soBuoiDay1;
+      if (deepSingletonImproved && currentMetrics.soBuoiTrong2 > 0) {
         await bestEngine.optimize('optimize_gap2', (progress) => emitOptimizerProgress(cb, progress, {
           basePercent: 85,
           percentSpan: 10,
@@ -371,7 +375,7 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
         }));
         currentMetrics = bestEngine.evaluateMetrics();
       }
-      if (currentMetrics.soBuoiDay1 >= tradeoffBaseline.soBuoiDay1 || currentMetrics.soBuoiTrong2 > 0) {
+      if (!deepSingletonImproved || currentMetrics.soBuoiTrong2 > 0) {
         bestEngine.restoreStateSnapshot(tradeoffSnapshot);
         bestEngine.applyToDataTKB();
         currentMetrics = bestEngine.evaluateMetrics();
@@ -445,11 +449,12 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
         candidate.strictFetGaps = true;
         candidate.strictTeacherGaps = true;
         let candidateMetrics = candidate.evaluateMetrics();
-        if (candidateMetrics.soBuoiTrong2 > 0) {
+        const candidateSingletonImproved = candidateMetrics.soBuoiDay1 < currentMetrics.soBuoiDay1;
+        if (candidateSingletonImproved && candidateMetrics.soBuoiTrong2 > 0) {
           await candidate.optimize('optimize_gap2', null);
           candidateMetrics = candidate.evaluateMetrics();
         }
-        const improves = candidateMetrics.soBuoiTrong2 === 0
+        const improves = candidateSingletonImproved && candidateMetrics.soBuoiTrong2 === 0
           && candidate.compareMetrics(candidateMetrics, currentMetrics, currentMetrics, 'optimize_singletons') < 0;
         if (improves) {
           bestEngine = candidate;
@@ -594,6 +599,7 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
 self.onmessage = async function(e) {
   const taskType = e.data?.action || e.data?.type;
   const { mode, data, options } = e.data || {};
+  let cleanupBackgroundHeartbeat = () => {};
 
   try {
     const workerOptions = Object.assign({ uiBreathingMs: 0 }, options || {});
@@ -612,9 +618,49 @@ self.onmessage = async function(e) {
     let bestCheckpoint = null;
     let lastSnapshotAt = 0;
     const SNAPSHOT_INTERVAL_MS = 1000;
+    let backgroundHeartbeatTimer = null;
+    let backgroundHeartbeatStartedAt = 0;
+    let backgroundHeartbeatInitialMetric = null;
+    const stopBackgroundHeartbeat = () => {
+      if(backgroundHeartbeatTimer !== null){
+        clearInterval(backgroundHeartbeatTimer);
+        backgroundHeartbeatTimer = null;
+      }
+    };
+    cleanupBackgroundHeartbeat = stopBackgroundHeartbeat;
+    const startBackgroundHeartbeat = heartbeatMode => {
+      stopBackgroundHeartbeat();
+      backgroundHeartbeatStartedAt = Date.now();
+      backgroundHeartbeatInitialMetric = null;
+      backgroundHeartbeatTimer = setInterval(() => {
+        if(constructionPhase || !currentEngine) return;
+        try {
+          const metrics = currentEngine.evaluateMetrics();
+          if(backgroundHeartbeatInitialMetric === null){
+            backgroundHeartbeatInitialMetric = Number(metrics?.soBuoiDay1) || 0;
+          }
+          self.postMessage({
+            type: 'progress',
+            mode: heartbeatMode,
+            percent: 35,
+            currentMetric: metrics?.soBuoiDay1,
+            initialMetric: backgroundHeartbeatInitialMetric,
+            stage: currentEngine.__activeStage || 'singleton_priority',
+            metrics,
+            targetMetricLowerBound: Number(currentEngine.constraintPreflight?.structuralFloor?.metricLowerBounds?.soBuoiDay1 || 0),
+            heartbeat: true,
+            elapsedMs: Date.now() - backgroundHeartbeatStartedAt,
+            checkpoint: null,
+            tkb: null
+          });
+        } catch (_) {}
+      }, 500);
+    };
     if (taskType === 'optimize') {
       const initialMetrics = currentEngine.evaluateMetrics();
+      startBackgroundHeartbeat(mode);
       const res = await currentEngine.optimize(mode, (prog) => {
+        currentEngine.__activeStage = prog?.stage || mode;
         let normalized = null;
         emitOptimizerProgress((value) => { normalized = value; }, prog, {
           basePercent: 0,
@@ -661,10 +707,11 @@ self.onmessage = async function(e) {
           periodStates: normalized.periodStates,
           stateBudget: normalized.stateBudget,
           elapsedMs: normalized.elapsedMs,
-          checkpoint: bestCheckpoint,
-          tkb: snapshotTkb
+          checkpoint: normalized.heartbeat ? null : bestCheckpoint,
+          tkb: normalized.heartbeat ? null : snapshotTkb
         });
       });
+      stopBackgroundHeartbeat();
 
       const finalSnapshot = typeof currentEngine.getRetainedOptimizationSnapshotTKB === 'function'
         ? currentEngine.getRetainedOptimizationSnapshotTKB()
@@ -691,7 +738,9 @@ self.onmessage = async function(e) {
     } else {
       const isSolveOptMode = mode === 'solve_optimize_all' || mode === 'solve_optimize_all_fresh' || mode === 'auto' || taskType === 'solve';
       if (isSolveOptMode) {
+        startBackgroundHeartbeat(mode);
         res = await runSolveOptimizeAll((prog) => {
+          if(currentEngine) currentEngine.__activeStage = prog?.stage || currentEngine.__activeStage || 'singleton_priority';
           let snapshotTkb = null;
           if (!constructionPhase) {
             const now = Date.now();
@@ -727,10 +776,11 @@ self.onmessage = async function(e) {
             periodStates: prog?.periodStates,
             stateBudget: prog?.stateBudget,
             elapsedMs: prog?.elapsedMs,
-            checkpoint: bestCheckpoint,
-            tkb: snapshotTkb
+            checkpoint: prog?.heartbeat ? null : bestCheckpoint,
+            tkb: prog?.heartbeat ? null : snapshotTkb
           });
         });
+        stopBackgroundHeartbeat();
       } else {
         res = await currentEngine.solve((prog) => {
           self.postMessage({
@@ -772,6 +822,7 @@ self.onmessage = async function(e) {
       return;
     }
   } catch (err) {
+    cleanupBackgroundHeartbeat();
     self.postMessage({
       type: 'error',
       error: err?.message || String(err)

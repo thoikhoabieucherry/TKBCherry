@@ -6,6 +6,16 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-21 LOCAL STALL FIX 2: PRIMARY-OBJECTIVE GATE + WORKER KEEPALIVE (NOT DEPLOYED)
+
+- Profiler trực tiếp trên school_default tìm được nguyên nhân còn sót: runUntilZeroSingletons vẫn chạy các toán tử gap-2 trong cùng pass khi singleton còn 8; riêng lượt đó singleton giữ nguyên 8 nhưng gap-2 giảm 17 -> 13, tức là tốn thời gian cho mục tiêu phụ trước mục tiêu chính.
+- Đã khóa thứ tự thật: mọi toán tử gap2 chỉ chạy khi soBuoiDay1 <= singletonFloor. Lane bình thường tắt allowSingletonGap2Tradeoff; chỉ deep-search transaction mới được phép nới tạm và phải rollback nếu singleton không giảm hoặc cleanup gap2 không thành công.
+- Sửa lỗi ngân sách: optimize trước đây tự nâng mọi ngân sách deep <= 12 giây lên 30 giây, kể cả khi worker truyền ngân sách còn lại rất nhỏ. Ngân sách explicit nay được tôn trọng. singletonCycleBudgetMs mặc định giảm từ 120 xuống 30 giây, vẫn cho phép override tối đa 120 giây.
+- Bổ sung heartbeat cấp worker mỗi 500 ms cho các toán tử cũ không tự gọi onProgress. Heartbeat chỉ gửi metrics/thời gian, checkpoint và tkb đều là null, nên không clone/serialize toàn bộ lịch. UI hiển thị đang xử lý Ns khi stage không có số trạng thái riêng.
+- Probe worker production trên incumbent local: 8 -> 7 singleton, gap2 17 -> 15, unplacedCount=0, student holes=0, location/must-teach violations=0; khoảng cách progress lớn nhất khoảng 1,48 giây, heartbeat không truyền checkpoint.
+- Benchmark 4 seed sau thay đổi: tuần tự 23,9 giây, song song 6,25 giây, nhanh khoảng 3,8 lần; mọi seed đủ tiết và student holes=0. Focused scheduler suite 129/129 pass chạy tuần tự.
+- Chỉ sửa local, không deploy, không push và không sửa DB lịch.
+
 ## 2026-08-21 LOCAL STALL FIX: BOUNDED SESSION-FIRST SLICES + HEARTBEAT (NOT DEPLOYED)
 
 - Nguyên nhân còn lại của cảm giác “đứng”: `trySessionFirstSingletonSearch()` dùng toàn bộ `deadlineAtMs` của chu kỳ (có thể 60–120 giây) cho một nhánh không cải thiện, trong khi engine chỉ gọi progress khi nhận nghiệm tốt hơn. Worker vì vậy không chết nhưng UI không có tín hiệu sống.

@@ -93,6 +93,7 @@ Hệ thống cung cấp quy trình tối ưu đa tầng lexicographic:
 * **Adaptive parallel restart lane (`runParallelRestartLane`)**:
    * Khi incumbent hoàn chỉnh vẫn còn singleton sau các lượt chính, tạo tối đa 4 worker con với seed độc lập; mỗi worker con đặt `parallelWorkers: 1`, giữ giới hạn RAM và không tạo pool đệ quy.
 * **Session-first stall guard & telemetry**:
+   * Khi còn singleton, gap-2 là stage bị khóa; lane thường không được nới gap2. Deep tradeoff chỉ là transaction có rollback. Singleton cycle mặc định 30 giây, explicit optimizer budget luôn được tôn trọng.
    * `trySessionFirstSingletonSearch()` có lát thời gian riêng mặc định 8 giây (override an toàn 1..60 giây), luôn lấy min với deadline pipeline; `sessionFirstStateBudget` vẫn cho phép trần lớn nhưng không ép một nhánh dùng hết deadline tổng.
    * Engine phát heartbeat theo thời gian/trạng thái với số `sessionStates + periodStates`; worker chuyển tiếp nhưng không clone checkpoint cho heartbeat. UI hiển thị nhãn `Gom 12 buổi • thử:N`; khoảng snapshot giữ ở 1 giây.
    * Worker cha nhận nghiệm hoàn chỉnh, chọn theo `unplacedCount -> soBuoiDay1 -> soBuoiTrong2 -> tsBuoiDay -> soBuoiTrong1`, rồi dừng các worker còn lại khi đạt floor. Không bật pool cho lịch mới, lịch đã đạt mục tiêu, hoặc browser không hỗ trợ worker lồng nhau.

@@ -332,7 +332,7 @@ test("optimizer worker sends only complete improved checkpoints, never its live 
   const progressCallback = optimizeBranch.slice(progressStart, progressEnd);
 
   assert.match(progressCallback, /bestCheckpoint/);
-  assert.match(progressCallback, /checkpoint:\s*bestCheckpoint/);
+  assert.match(progressCallback, /checkpoint:\s*normalized\.heartbeat\s*\?\s*null\s*:\s*bestCheckpoint/);
   assert.match(progressCallback, /complete:\s*Number\(normalized\?\.metrics\?\.unplacedCount/,
     "checkpoint completeness must use the normalized progress metrics");
   assert.match(progressCallback, /currentEngine\.getSnapshotTKB\(\)/,
@@ -359,7 +359,7 @@ test("automatic worker prioritizes singleton elimination before gap-2 polish and
     "deep singleton search may use a temporary gap-2 tradeoff before cleanup");
   assert.match(WORKER_SOURCE, /qualityBudgetMs = clampNumber\(workerOptions\.autoQualityTimeBudgetMs, 600_000/,
     "the incumbent lane must reserve enough time for multiple singleton-chain slices");
-  assert.match(WORKER_SOURCE, /singletonCycleBudgetMs = clampNumber\(workerOptions\.singletonCycleBudgetMs, 120_000/,
+  assert.match(WORKER_SOURCE, /singletonCycleBudgetMs = clampNumber\(workerOptions\.singletonCycleBudgetMs, 30_000/,
     "each singleton slice must get a fresh bounded deadline");
   assert.match(WORKER_SOURCE, /reformLessonBlocks = true/,
     "the deep incumbent lane must be allowed to re-pair lesson-block members before final validation");
@@ -375,6 +375,12 @@ test("automatic worker prioritizes singleton elimination before gap-2 polish and
     "checkpoint snapshots must not clone the timetable every progress frame");
   assert.match(WORKER_SOURCE, /qualityPolishTimeBudgetMs/,
     "secondary quality polish must have an explicit bounded budget");
+  assert.match(WORKER_SOURCE, /startBackgroundHeartbeat/,
+    "the worker must keep the UI alive while an operator has no improvement callback");
+  assert.match(WORKER_SOURCE, /heartbeat:\s*true[\s\S]*?checkpoint:\s*null/,
+    "background heartbeats must not clone or transmit a timetable checkpoint");
+  assert.match(ENGINE_SOURCE, /Stage 2 is deliberately locked behind the primary objective/,
+    "gap-2 operators must wait until singleton debt reaches its floor");
   assert.match(WORKER_SOURCE, /runParallelRestartLane/,
     "a plateaued incumbent must be able to use independent worker lanes");
   assert.match(WORKER_SOURCE, /parallelWorkers:\s*1/,

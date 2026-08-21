@@ -7113,8 +7113,10 @@ async function executeDirectFastSchedule(options = {}){
                 ? ` sàn:${Number(msg.targetMetricLowerBound)}`
                 : "";
               const searchedStates = Number(msg.sessionStates) + Number(msg.periodStates);
-              const searchHint = msg.stage === "session_first" && msg.heartbeat && Number.isFinite(searchedStates)
-                ? ` • thử:${searchedStates.toLocaleString("vi-VN")}`
+              const searchHint = msg.heartbeat
+                ? (msg.stage === "session_first" && Number.isFinite(searchedStates)
+                  ? ` • thử:${searchedStates.toLocaleString("vi-VN")}`
+                  : ` • đang xử lý ${Math.max(0, Math.floor(Number(msg.elapsedMs || 0) / 1000))}s`)
                 : "";
               detail = `${stageLabel} • 1t/buổi:${msg.metrics.soBuoiDay1} T2:${msg.metrics.soBuoiTrong2} B:${msg.metrics.tsBuoiDay} T1:${msg.metrics.soBuoiTrong1}${searchHint}${floorHint}`;
             }else if(initVal !== undefined && curVal !== undefined){
