@@ -6,6 +6,16 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-21 LOCAL INCUMBENT COMPLETION LANE (NOT DEPLOYED)
+
+- Audit trực tiếp `rust_api/tkb_store.db / school_default` xác nhận incumbent ban đầu vẫn có `soBuoiDay1 = 4`, không có chứng cứ floor dương; bốn singleton là `tn.mỹ`, `a.hoa`, `tn.tnguyên`, `td.bằng`.
+- Luồng worker trước đây chỉ cấp một lát tìm kiếm ngắn rồi dễ dừng ở checkpoint trung gian. Đã đổi điều phối thành nhiều lát deadline mới trên cùng incumbent: bật deep 12-bin, `sessionBinChains`, `reformLessonBlocks`, và giữ incumbent tốt nhất qua từng chu kỳ. Ngân sách mặc định cho mục tiêu chính là 600 giây, mỗi lát singleton tối đa 120 giây; Stop vẫn do Web Worker xử lý.
+- Sau khi singleton đạt 0, worker chạy riêng `runHorizontalGapClosure()` dùng lại augmenting-path/ejection-chain trong đúng 5 cột của từng buổi trước khi gọi gap optimizer tổng quát. Chỉ giữ candidate khi đủ tiết, singleton không tăng, gap2 giảm và student holes vẫn 0.
+- Kết quả chạy chính hàm `runSolveOptimizeAllImpl()` trên incumbent local: `4 -> 3 -> 2 -> 1 -> 0`; kết quả cuối `soBuoiDay1 = 0`, `soBuoiTrong2 = 0`, `unplacedCount = 0`, student holes = 0, location violations = 0, missing must-teach = 0. Thời gian đo: khoảng 444 giây.
+- Kiểm tra UI `http://127.0.0.1:1010/pages/sapxep?sid=default`: trạng thái đã đi qua `Ưu tiên 1 tiết/buổi • 1t/buổi:4`, `...:3`, `...:2`, rồi `Ưu tiên Trống 2 • 1t/buổi:0`; kết thúc hiển thị `Tối ưu phụ • 1t/buổi:0 T2:0` và nút Bắt đầu sắp xếp bật lại.
+- Đối chiếu tài liệu thuật toán công khai về Large Neighborhood Search, ejection-chain/filter-and-fan và local search + constraint programming; triển khai tương ứng dưới dạng 12-bin augmenting path, bounded ejection chain, rollback và multi-slice incumbent search. Không gửi dữ liệu lịch ra internet.
+- Regression focused suite **127/127 pass**; worker/engine syntax pass; SHA-256 hai mirror engine và worker bằng nhau. Chỉ sửa local, chưa deploy/push.
+
 ## 2026-08-21 LOCAL 12-BIN HORIZONTAL GAP CLOSURE (NOT DEPLOYED)
 
 - Hoàn thiện nhánh cuối của `trySessionBinAugmentingChains()` theo mô hình 12 bin ngang: sau khi ưu tiên đưa `soBuoiDay1` về 0, pha dọn `soBuoiTrong2` chỉ đổi cột trong cùng một buổi 5 tiết để vacancy chạy qua các cạnh lớp/GV/phòng.

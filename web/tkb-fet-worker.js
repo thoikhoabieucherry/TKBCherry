@@ -98,13 +98,28 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
     // Give the first objective enough room to escape local minima. The old
     // 20s/30-pass budget often stopped at a valid but unchanged singleton
     // count (the common "1t/buổi: 4" plateau in the live school data).
-    const qualityBudgetMs = clampNumber(workerOptions.autoQualityTimeBudgetMs, 120_000, 12_000, 180_000);
-    const singletonCycleBudgetMs = clampNumber(workerOptions.singletonCycleBudgetMs, 45_000, 5_000, 60_000);
+    // The live incumbent needs several closed-chain slices: a successful
+    // topology is commonly 4 -> 3 -> 1 -> 0, and each slice must get a fresh
+    // deadline so the first accepted chain cannot consume the entire click.
+    // Keep Stop responsive through the worker, but reserve enough default
+    // time to finish the primary objective instead of reporting a plateau at
+    // the first intermediate checkpoint.
+    const qualityBudgetMs = clampNumber(workerOptions.autoQualityTimeBudgetMs, 600_000, 12_000, 1_200_000);
+    const singletonCycleBudgetMs = clampNumber(workerOptions.singletonCycleBudgetMs, 120_000, 5_000, 180_000);
     const qualityDeadline = Date.now() + qualityBudgetMs;
     let currentMetrics = initialMetrics;
     let singletonResult = null;
     let noImprovementCycles = 0;
     let cycle = 0;
+
+    // Start the incumbent lane in its strongest 12-bin mode. Lesson-block
+    // members may be re-paired, but every accepted transaction revalidates
+    // the configured block minima before it is retained.
+    bestEngine.options.deepLocalFet = true;
+    bestEngine.options.deepCycles = Math.max(Number(bestEngine.options.deepCycles) || 0, 12);
+    bestEngine.options.sessionBinChains = true;
+    bestEngine.options.reformLessonBlocks = true;
+    bestEngine.options.allowSingletonGap2Tradeoff = true;
 
     cb({
       percent: 35,
@@ -154,7 +169,7 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
 
       if (currentMetrics.soBuoiDay1 < beforeSingletons) noImprovementCycles = 0;
       else noImprovementCycles++;
-      if (noImprovementCycles >= 4) break;
+      if (noImprovementCycles >= 8) break;
     }
 
     // A focused deep-search phase is deliberately separate from the normal
@@ -308,6 +323,44 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
     // Singleton quality is the first priority. Do not spend the remaining
     // budget on secondary objectives until it reaches zero or a proven floor.
     if (currentMetrics.soBuoiDay1 <= singletonFloor && Date.now() < qualityDeadline) {
+      const runHorizontalGapClosure = async () => {
+        let gapCycle = 0;
+        while (currentMetrics.soBuoiDay1 <= singletonFloor && currentMetrics.soBuoiTrong2 > 0 && Date.now() < qualityDeadline) {
+          const beforeGap2 = currentMetrics.soBuoiTrong2;
+          const remainingMs = qualityDeadline - Date.now();
+          if (remainingMs < 250) break;
+          gapCycle++;
+          bestEngine.options.allowSingletonGap2Tradeoff = false;
+          bestEngine.options.reformLessonBlocks = true;
+          bestEngine.strictFetGaps = true;
+          bestEngine.strictTeacherGaps = true;
+          bestEngine.deadlineAtMs = Date.now() + Math.min(90_000, remainingMs);
+          await bestEngine.trySessionBinAugmentingChains(currentMetrics, (progress) => emitOptimizerProgress(cb, progress, {
+            basePercent: 85,
+            percentSpan: 8,
+            stage: 'gap2_priority',
+            cycle: gapCycle,
+            metricKey: 'soBuoiTrong2',
+            initialMetrics: currentMetrics
+          }));
+          currentMetrics = bestEngine.evaluateMetrics();
+          cb({
+            percent: Math.min(93, 85 + gapCycle * 2),
+            currentMetric: currentMetrics.soBuoiTrong2,
+            initialMetric: beforeGap2,
+            stage: 'gap2_priority',
+            cycle: gapCycle,
+            metrics: currentMetrics,
+            targetMetricLowerBound: 0
+          });
+          if (currentMetrics.soBuoiDay1 > singletonFloor || currentMetrics.soBuoiTrong2 >= beforeGap2) break;
+        }
+      };
+
+      // The same 12-bin vacancy chain that merged the singleton rows is the
+      // most direct way to close the temporary long gaps it created. Run it
+      // before and, if needed, after the generic gap operators.
+      await runHorizontalGapClosure();
       const gapInitialMetrics = currentMetrics;
       if (currentMetrics.soBuoiTrong2 > 0) {
         const gapResult = await bestEngine.optimize('optimize_gap2', (progress) => {
@@ -322,6 +375,9 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
         });
         if (gapResult) finalResult = gapResult;
         currentMetrics = bestEngine.evaluateMetrics();
+        if (currentMetrics.soBuoiTrong2 > 0 && Date.now() < qualityDeadline) {
+          await runHorizontalGapClosure();
+        }
       }
 
       if (currentMetrics.soBuoiTrong2 === 0 && Date.now() < qualityDeadline) {

@@ -17,7 +17,7 @@ Hệ thống xếp thời khóa biểu tự động cho trường phổ thông, 
   5. *Proven Singleton Floor*: preflight tính cận dưới `soBuoiDay1` cho tải giáo viên bị tách bởi miền ca/buổi độc lập; optimizer dừng khi đạt floor có chứng cứ thay vì cố tìm nghiệm 0 bất khả thi.
 - **Backend** `rust_api/`: HTTP server **tự viết trên std** (TcpListener + thread pool), không Axum/Tokio. Dependency: argon2, serde_json, rusqlite, sha2. Auth = Argon2id + **session token opaque** (không JWT). Port local mặc định `1010` (`.env`, `TKB_RUST_PORT`). Quản lý xác thực, phân quyền và lưu trữ dữ liệu trường học.
 - **Dữ liệu**: SQLite KV store (`kvstore`), WAL mode; mỗi trường một key `school_{schoolId}`.
- - **Luồng solve**: Nút Play ▶ ("Tự động xếp TKB") và Stop ■ ("Dừng xếp") chạy 100% trong Web Worker, cập nhật thanh tiến trình theo thời gian thực (ms), thống kê tức thì và không gửi network request ra ngoài khi xếp lịch. Với lịch đã đủ tiết, worker nạp incumbent rồi tối ưu theo thứ tự `1 tiết/buổi` → deep singleton search/restart đa seed (cho phép gap-2 tạm thời rồi dọn/rollback) → `Trống 2` → polish; progress được chuẩn hóa để không rơi về `0/0`.
+ - **Luồng solve**: Nút Play ▶ ("Tự động xếp TKB") và Stop ■ ("Dừng xếp") chạy 100% trong Web Worker, cập nhật thanh tiến trình theo thời gian thực (ms), thống kê tức thì và không gửi network request ra ngoài khi xếp lịch. Với lịch đã đủ tiết, worker nạp incumbent rồi chạy nhiều lát deep 12-bin/reform lesson-block cho mục tiêu `1 tiết/buổi` (mặc định 600 giây tổng, tối đa 120 giây mỗi lát), chỉ chuyển sang `Trống 2` sau khi singleton đạt 0; pha gap dùng horizontal vacancy closure trước generic polish và progress được chuẩn hóa để không rơi về `0/0`.
 
 ## Nhánh và quy trình Git
 
@@ -37,7 +37,7 @@ Hệ thống xếp thời khóa biểu tự động cho trường phổ thông, 
   - `e2e_tests/benchmark_fet_node.test.js` (4 tests pass).
   - `solver_runtime/tests/` (391 tests pass).
 - Checklist thủ công trước deploy: `docs/REGRESSION_CHECKLIST.md`.
-- Ghi chú local 2026-08-21: pipeline 12-bin/deep augmenting-chain đã qua focused suite **127/127**, giữ `unplacedCount = 0`; probe `school_default` đạt `soBuoiDay1 = 0` và `soBuoiTrong2 = 0` sau chuỗi ngang (student holes = 0, location/must-teach violations = 0). Thay đổi chỉ ở local, chưa deploy production.
+- Ghi chú local 2026-08-21: pipeline 12-bin/deep augmenting-chain và worker completion lane đã qua focused suite **127/127**, giữ `unplacedCount = 0`; chạy trực tiếp worker và UI local trên incumbent `school_default` đạt `soBuoiDay1 = 0`, `soBuoiTrong2 = 0` (student holes = 0, location/must-teach violations = 0). Thay đổi chỉ ở local, chưa deploy production.
 
 ## Hợp đồng quan trọng
 

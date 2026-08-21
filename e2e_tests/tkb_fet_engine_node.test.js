@@ -274,6 +274,14 @@ test("automatic worker prioritizes singleton elimination before gap-2 polish and
     "restart candidates must use independent seeds and the same hard constraints");
   assert.match(WORKER_SOURCE, /allowSingletonGap2Tradeoff/,
     "deep singleton search may use a temporary gap-2 tradeoff before cleanup");
+  assert.match(WORKER_SOURCE, /qualityBudgetMs = clampNumber\(workerOptions\.autoQualityTimeBudgetMs, 600_000/,
+    "the incumbent lane must reserve enough time for multiple singleton-chain slices");
+  assert.match(WORKER_SOURCE, /singletonCycleBudgetMs = clampNumber\(workerOptions\.singletonCycleBudgetMs, 120_000/,
+    "each singleton slice must get a fresh bounded deadline");
+  assert.match(WORKER_SOURCE, /reformLessonBlocks = true/,
+    "the deep incumbent lane must be allowed to re-pair lesson-block members before final validation");
+  assert.match(WORKER_SOURCE, /runHorizontalGapClosure/,
+    "gap-2 cleanup must reuse the horizontal 12-bin vacancy chain");
   assert.match(WORKER_SOURCE, /restoreStateSnapshot\(tradeoffSnapshot\)/,
     "failed tradeoff cleanup must rollback the incumbent atomically");
   assert.match(WORKER_SOURCE, /type: 'done',[\s\S]*?stagnated: res\?\.stagnated/,
