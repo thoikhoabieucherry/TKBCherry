@@ -267,6 +267,41 @@ test("session-first search reaches singleton zero before spending a billion-stat
   );
 });
 
+test("session-first search emits heartbeat and respects its bounded time slice", async () => {
+  const data = JSON.parse(fs.readFileSync(
+    path.resolve(__dirname, "..", "scratch", "live_default.json"),
+    "utf8"
+  ));
+  const engine = new (loadEngine())(data, {
+    seed:28183,
+    deepLocalFet:true,
+    deepCycles:12,
+    sessionFirstStateBudget:1_000_000,
+    sessionFirstTimeBudgetMs:1_000,
+    uiBreathingMs:0
+  });
+  engine.loadExistingSchedule();
+  engine.compileConstraints();
+  engine.deadlineAtMs = Date.now() + 5_000;
+  const before = engine.evaluateMetrics();
+  const heartbeats = [];
+  const started = Date.now();
+  await engine.trySessionFirstSingletonSearch(before, progress => {
+    if(progress?.heartbeat) heartbeats.push(progress);
+  });
+  const elapsedMs = Date.now() - started;
+  const after = engine.evaluateMetrics();
+
+  assert.ok(heartbeats.length > 0, "a long search must report heartbeat progress");
+  assert.ok(elapsedMs < 2_500, `session-first slice exceeded bound: ${elapsedMs}ms`);
+  assert.equal(engine.lastSessionFirstStats.sessionFirstTimeBudgetMs, 1_000);
+  assert.equal(after.unplacedCount, 0);
+  assert.equal(engine.countTotalStudentHoles(), 0);
+  assert.ok(heartbeats.every(progress =>
+    Number(progress.sessionStates) + Number(progress.periodStates) <= progress.stateBudget
+  ));
+});
+
 test("FET stops optimization at a proven positive floor and exposes it", async () => {
   const data = makeConstraintData({subjects:[{name:"Toán", teacher:"GV01", periods:2}]});
   setCell(data, "L1", "thu2", "sang", 0, {mon:"Toán", gv:"GV01", fixed:true});
@@ -332,6 +367,12 @@ test("automatic worker prioritizes singleton elimination before gap-2 polish and
     "an incumbent must compile the structural singleton floor before the worker starts quality cycles");
   assert.match(WORKER_SOURCE, /sessionFirstStateBudget/,
     "the worker must expose the bounded 12-session state budget");
+  assert.match(ENGINE_SOURCE, /sessionFirstTimeBudgetMs/,
+    "session-first must have a bounded per-slice time budget");
+  assert.ok(ENGINE_SOURCE.includes("heartbeat: true"),
+    "session-first must expose heartbeat progress while exploring");
+  assert.match(WORKER_SOURCE, /SNAPSHOT_INTERVAL_MS = 1000/,
+    "checkpoint snapshots must not clone the timetable every progress frame");
   assert.match(WORKER_SOURCE, /qualityPolishTimeBudgetMs/,
     "secondary quality polish must have an explicit bounded budget");
   assert.match(WORKER_SOURCE, /runParallelRestartLane/,

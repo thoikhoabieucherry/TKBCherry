@@ -35,7 +35,12 @@ function emitOptimizerProgress(cb, progress, config) {
     pass: progress?.pass,
     maxPasses: progress?.maxPasses,
     metrics,
-    targetMetricLowerBound: config.targetMetricLowerBound ?? progress?.targetMetricLowerBound
+    targetMetricLowerBound: config.targetMetricLowerBound ?? progress?.targetMetricLowerBound,
+    heartbeat: Boolean(progress?.heartbeat),
+    sessionStates: progress?.sessionStates,
+    periodStates: progress?.periodStates,
+    stateBudget: progress?.stateBudget,
+    elapsedMs: progress?.elapsedMs
   });
 }
 
@@ -606,7 +611,7 @@ self.onmessage = async function(e) {
 
     let bestCheckpoint = null;
     let lastSnapshotAt = 0;
-    const SNAPSHOT_INTERVAL_MS = 250;
+    const SNAPSHOT_INTERVAL_MS = 1000;
     if (taskType === 'optimize') {
       const initialMetrics = currentEngine.evaluateMetrics();
       const res = await currentEngine.optimize(mode, (prog) => {
@@ -623,7 +628,8 @@ self.onmessage = async function(e) {
         let snapshotTkb = null;
         if (!constructionPhase) {
           const now = Date.now();
-          if (!bestCheckpoint || now - lastSnapshotAt >= SNAPSHOT_INTERVAL_MS || (normalized && normalized.percent >= 100)) {
+          if (normalized && !normalized.heartbeat &&
+              (!bestCheckpoint || now - lastSnapshotAt >= SNAPSHOT_INTERVAL_MS || normalized.percent >= 100)) {
             try {
               const snap = typeof currentEngine.getRetainedOptimizationSnapshotTKB === 'function'
                 ? currentEngine.getRetainedOptimizationSnapshotTKB()
@@ -650,6 +656,11 @@ self.onmessage = async function(e) {
           stage: normalized.stage || null,
           cycle: normalized.cycle,
           metrics: normalized.metrics,
+          heartbeat: normalized.heartbeat,
+          sessionStates: normalized.sessionStates,
+          periodStates: normalized.periodStates,
+          stateBudget: normalized.stateBudget,
+          elapsedMs: normalized.elapsedMs,
           checkpoint: bestCheckpoint,
           tkb: snapshotTkb
         });
@@ -684,7 +695,8 @@ self.onmessage = async function(e) {
           let snapshotTkb = null;
           if (!constructionPhase) {
             const now = Date.now();
-            if (!bestCheckpoint || now - lastSnapshotAt >= SNAPSHOT_INTERVAL_MS || (prog && prog.percent >= 100)) {
+            if (prog && !prog.heartbeat &&
+                (!bestCheckpoint || now - lastSnapshotAt >= SNAPSHOT_INTERVAL_MS || prog.percent >= 100)) {
               try {
                 const snap = typeof currentEngine.getRetainedOptimizationSnapshotTKB === 'function'
                   ? currentEngine.getRetainedOptimizationSnapshotTKB()
@@ -710,6 +722,11 @@ self.onmessage = async function(e) {
             cycle: prog?.cycle,
             metrics: prog?.metrics,
             targetMetricLowerBound: prog?.targetMetricLowerBound,
+            heartbeat: Boolean(prog?.heartbeat),
+            sessionStates: prog?.sessionStates,
+            periodStates: prog?.periodStates,
+            stateBudget: prog?.stateBudget,
+            elapsedMs: prog?.elapsedMs,
             checkpoint: bestCheckpoint,
             tkb: snapshotTkb
           });

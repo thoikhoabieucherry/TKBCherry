@@ -92,6 +92,9 @@ Hệ thống cung cấp quy trình tối ưu đa tầng lexicographic:
    * Deep candidate được phép dùng gap-2 trung gian có giới hạn để tìm đường đổi liên hoàn, nhưng chỉ được giữ sau bước cleanup đạt `soBuoiTrong2 = 0`; đường chạy thường không gọi exact bin repack để giữ thời gian phản hồi ổn định.
 * **Adaptive parallel restart lane (`runParallelRestartLane`)**:
    * Khi incumbent hoàn chỉnh vẫn còn singleton sau các lượt chính, tạo tối đa 4 worker con với seed độc lập; mỗi worker con đặt `parallelWorkers: 1`, giữ giới hạn RAM và không tạo pool đệ quy.
+* **Session-first stall guard & telemetry**:
+   * `trySessionFirstSingletonSearch()` có lát thời gian riêng mặc định 8 giây (override an toàn 1..60 giây), luôn lấy min với deadline pipeline; `sessionFirstStateBudget` vẫn cho phép trần lớn nhưng không ép một nhánh dùng hết deadline tổng.
+   * Engine phát heartbeat theo thời gian/trạng thái với số `sessionStates + periodStates`; worker chuyển tiếp nhưng không clone checkpoint cho heartbeat. UI hiển thị nhãn `Gom 12 buổi • thử:N`; khoảng snapshot giữ ở 1 giây.
    * Worker cha nhận nghiệm hoàn chỉnh, chọn theo `unplacedCount -> soBuoiDay1 -> soBuoiTrong2 -> tsBuoiDay -> soBuoiTrong1`, rồi dừng các worker còn lại khi đạt floor. Không bật pool cho lịch mới, lịch đã đạt mục tiêu, hoặc browser không hỗ trợ worker lồng nhau.
    * `qualityPolishTimeBudgetMs` mặc định là 0 vì polish phụ không được phép giữ máy bận sau khi hai mục tiêu hard đã đạt; có thể bật opt-in với trần 60 giây.
 2. **Closed Push-Cycles (`tryClosedPushCycles`)**:

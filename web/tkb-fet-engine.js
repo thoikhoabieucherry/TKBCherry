@@ -5131,7 +5131,16 @@
       const maxMovedUnits = Math.max(1, Math.min(16, Number(this.options?.sessionFirstMaxMovedUnits) || (deepSearch ? 10 : 5)));
       const maxNeighborhoodUnits = Math.max(6, Math.min(48, Number(this.options?.sessionFirstMaxNeighborhoodUnits) || (deepSearch ? 48 : 18)));
       const gap2Headroom = this.options?.allowSingletonGap2Tradeoff ? (deepSearch ? 6 : 2) : 0;
-      const deadlineAt = this.deadlineAtMs || (Date.now() + (deepSearch ? 120_000 : 15_000));
+      const sessionFirstTimeBudgetMs = Math.max(1_000, Math.min(60_000,
+        Number.isFinite(Number(this.options?.sessionFirstTimeBudgetMs)) && Number(this.options.sessionFirstTimeBudgetMs) > 0
+          ? Math.floor(Number(this.options.sessionFirstTimeBudgetMs))
+          : 8_000
+      ));
+      const searchStartedAt = Date.now();
+      const deadlineAt = Math.min(
+        this.deadlineAtMs || Infinity,
+        searchStartedAt + sessionFirstTimeBudgetMs
+      );
       const originalStrictTeacherGaps = this.strictTeacherGaps;
       const originalStrictFetGaps = this.strictFetGaps;
       const originalStudentHoleGuard = this.suspendStudentHoleGuard;
@@ -5141,6 +5150,27 @@
       let periodStates = 0;
       let duplicatePlans = 0;
       const seenPlans = new Set();
+      let lastHeartbeatAt = searchStartedAt;
+      let lastHeartbeatStates = 0;
+      const emitHeartbeat = (force = false) => {
+        if(typeof onProgress !== "function") return;
+        const now = Date.now();
+        const totalStates = sessionStates + periodStates;
+        if(!force && now - lastHeartbeatAt < 500 && totalStates - lastHeartbeatStates < 4096) return;
+        lastHeartbeatAt = now;
+        lastHeartbeatStates = totalStates;
+        onProgress({
+          stage: "session_first",
+          currentMetric: currentBest.soBuoiDay1,
+          initialMetric: bestMetrics.soBuoiDay1,
+          metrics: currentBest,
+          sessionStates,
+          periodStates,
+          stateBudget,
+          elapsedMs: now - searchStartedAt,
+          heartbeat: true
+        });
+      };
 
       const forceUnplace = (id) => {
         const act = this.activities[id];
@@ -5431,7 +5461,10 @@
           const dfs = async () => {
             periodStates++;
             if(sessionStates + periodStates > stateBudget || Date.now() >= deadlineAt || this.isCancelled) return false;
-            if((periodStates & 1023) === 0) await new Promise(resolve => setTimeout(resolve, 0));
+            if((periodStates & 1023) === 0){
+              await new Promise(resolve => setTimeout(resolve, 0));
+              emitHeartbeat();
+            }
             if(remaining.size === 0){
               for(const classIdx of affectedClasses.get(session) || []){
                 if(sessionHasStudentHole(classIdx, session)) return false;
@@ -5544,7 +5577,10 @@
           const dfsSessions = async (depth, moved) => {
             sessionStates++;
             if(sessionStates + periodStates > stateBudget || Date.now() >= deadlineAt || this.isCancelled) return false;
-            if((sessionStates & 4095) === 0) await new Promise(resolve => setTimeout(resolve, 0));
+            if((sessionStates & 4095) === 0){
+              await new Promise(resolve => setTimeout(resolve, 0));
+              emitHeartbeat();
+            }
             if(depth === order.length){
               if(singletonScore() >= currentBest.soBuoiDay1) return false;
               const signature = units.map((unit, index) => assignments[index] === unit.originalSession ? "" : `${unit.key}:${assignments[index]}`).filter(Boolean).sort().join("|");
@@ -5591,6 +5627,7 @@
         let roundImproved = false;
         const plans = buildRootPlans();
         for(const plan of plans){
+          emitHeartbeat();
           if(sessionStates + periodStates >= stateBudget || Date.now() >= deadlineAt || this.isCancelled) break;
           const units = buildNeighborhood(plan);
           if(!units) continue;
@@ -5613,11 +5650,14 @@
         if(!roundImproved) break;
       }
 
+      emitHeartbeat(true);
+
       this.suspendStudentHoleGuard = originalStudentHoleGuard;
       this.strictTeacherGaps = originalStrictTeacherGaps;
       this.strictFetGaps = originalStrictFetGaps;
       this.lastSessionFirstStats = {
         stateBudget,
+        sessionFirstTimeBudgetMs,
         sessionStates,
         periodStates,
         duplicatePlans,

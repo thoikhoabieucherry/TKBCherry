@@ -6,6 +6,16 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-21 LOCAL STALL FIX: BOUNDED SESSION-FIRST SLICES + HEARTBEAT (NOT DEPLOYED)
+
+- Nguyên nhân còn lại của cảm giác “đứng”: `trySessionFirstSingletonSearch()` dùng toàn bộ `deadlineAtMs` của chu kỳ (có thể 60–120 giây) cho một nhánh không cải thiện, trong khi engine chỉ gọi progress khi nhận nghiệm tốt hơn. Worker vì vậy không chết nhưng UI không có tín hiệu sống.
+- Mỗi lát session-first nay có ngân sách riêng `sessionFirstTimeBudgetMs`, mặc định **8 giây**, giới hạn an toàn `1.000..60.000 ms`, đồng thời vẫn tôn trọng deadline lớn hơn của pipeline. Trần trạng thái 1 tỷ vẫn được giữ để cho phép override, nhưng không còn cho một lát đơn chiếm trọn chu kỳ.
+- Engine phát heartbeat tối đa mỗi 500 ms hoặc sau khoảng 4.096 trạng thái, mang theo `sessionStates`, `periodStates`, `stateBudget`, `elapsedMs`. Worker chuyển tiếp heartbeat qua UI; `phanmon.js` hiển thị thêm `thử:N` trong stage `Gom 12 buổi`.
+- Khoảng checkpoint worker tăng từ 250 lên **1.000 ms**; heartbeat không tạo snapshot/clone lịch mới, chỉ snapshot lần đầu hoặc progress không phải heartbeat. Điều này giảm serialize/GC mà vẫn giữ Stop checkpoint là nghiệm giữ lại tốt nhất.
+- Probe local `scratch/live_default.json`, ép lát 1 giây: chạy **1.003 ms**, phát **6 heartbeat**, khoảng cách heartbeat lớn nhất **235 ms**, `unplacedCount=0`, student holes `=0`. Probe trực tiếp `school_default` với ngân sách pipeline ngắn cũng phát heartbeat và giữ `unplacedCount=0`, location/must-teach violations `=0`.
+- Benchmark 4 seed: tuần tự **45,7 giây**, song song **13,5 giây**, khoảng **3,4 lần** nhanh hơn; tất cả seed vẫn `unplacedCount=0`, student holes `=0`. Focused scheduler suite sau thay đổi **129/129 pass** khi chạy tuần tự; chạy đồng thời với benchmark có thể làm test deadline dao động do tranh CPU.
+- Regression mới bổ sung kiểm tra heartbeat + lát thời gian riêng; focused scheduler suite chạy tuần tự **129/129 pass**. Chỉ sửa local, không deploy, không push và không sửa dữ liệu lịch trong DB.
+
 ## 2026-08-21 LOCAL SPEEDUP: EARLY STOP + ADAPTIVE WORKER POOL (NOT DEPLOYED)
 
 - Tìm ra nút thắt lớn: sau khi đã đạt `soBuoiDay1` bằng floor và `soBuoiTrong2 = 0`, worker vẫn chạy `optimizeAll` phần chỉ số phụ với phần còn lại của ngân sách mặc định 600 giây. `qualityPolishTimeBudgetMs` nay mặc định bằng 0; phần polish chỉ chạy khi được bật rõ ràng và bị giới hạn tối đa 60 giây. Lịch đạt hai mục tiêu chính được xuất ngay.

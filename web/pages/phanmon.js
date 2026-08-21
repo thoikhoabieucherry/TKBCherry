@@ -7112,7 +7112,11 @@ async function executeDirectFastSchedule(options = {}){
               const floorHint = stageLabel === "Ưu tiên 1 tiết/buổi" && Number(msg.targetMetricLowerBound) > 0
                 ? ` sàn:${Number(msg.targetMetricLowerBound)}`
                 : "";
-              detail = `${stageLabel} • 1t/buổi:${msg.metrics.soBuoiDay1} T2:${msg.metrics.soBuoiTrong2} B:${msg.metrics.tsBuoiDay} T1:${msg.metrics.soBuoiTrong1}${floorHint}`;
+              const searchedStates = Number(msg.sessionStates) + Number(msg.periodStates);
+              const searchHint = msg.stage === "session_first" && msg.heartbeat && Number.isFinite(searchedStates)
+                ? ` • thử:${searchedStates.toLocaleString("vi-VN")}`
+                : "";
+              detail = `${stageLabel} • 1t/buổi:${msg.metrics.soBuoiDay1} T2:${msg.metrics.soBuoiTrong2} B:${msg.metrics.tsBuoiDay} T1:${msg.metrics.soBuoiTrong1}${searchHint}${floorHint}`;
             }else if(initVal !== undefined && curVal !== undefined){
               if(options.mode === "optimize_sessions"){
                 detail = `Buổi dạy: ${initVal} ➔ ${curVal}`;
