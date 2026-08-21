@@ -49,6 +49,7 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
     const eng = new self.FetTimetableEngine(JSON.parse(JSON.stringify(data)), workerOptions);
     setEngine(eng);
     eng.loadExistingSchedule();
+    eng.compileConstraints();
     bestEngine = eng;
     bestRes = {
       ok: true,
@@ -120,6 +121,12 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
     bestEngine.options.sessionBinChains = true;
     bestEngine.options.reformLessonBlocks = true;
     bestEngine.options.allowSingletonGap2Tradeoff = true;
+    bestEngine.options.sessionFirstStateBudget = clampNumber(
+      workerOptions.sessionFirstStateBudget,
+      1_000_000,
+      10,
+      1_000_000_000
+    );
 
     cb({
       percent: 35,

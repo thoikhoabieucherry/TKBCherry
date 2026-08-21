@@ -77,6 +77,11 @@ Bộ thuật toán lõi nằm tại `web/pages/tkb-fet-engine.js` và `web/pages
 
 ### 3.2. Bộ Tối Ưu Hóa Đa Tầng (Multi-Objective Local Search & Closed Push-Cycles)
 Hệ thống cung cấp quy trình tối ưu đa tầng lexicographic:
+* **Session-first 12-bin search (`trySessionFirstSingletonSearch`)**:
+  * Quy đổi lịch thành 12 buổi độc lập theo hướng ngang: 6 buổi sáng và 6 buổi chiều, mỗi buổi 5 cột.
+  * Gán lesson-unit vào buổi trước bằng MRV miền buổi, giới hạn tải lớp/GV/phòng, đóng vòng tài nguyên và loại kế hoạch trùng; chỉ sau đó mới tìm màu 5 cột trong các buổi bị ảnh hưởng.
+  * `sessionFirstStateBudget` cho phép đặt từ 10 đến 1.000.000.000 trạng thái. Deep mặc định 1.000.000, dừng sớm khi đạt singleton floor nên không mặc định chạy hết trần.
+  * Candidate phải còn đủ tiết, không student holes, không vi phạm location/must-teach/lesson-block và được rollback nguyên tử nếu không đạt comparator.
 1. **Teacher Donor Augmenting Chains (`tryTeacherDonorAugmentingChains`)**:
    * Chọn một tiết đơn từ buổi của cùng giáo viên có ít nhất 3 tiết (sau khi lấy vẫn còn ≥2), đưa vào buổi singleton và đẩy mọi hoạt động bị chiếm chỗ theo chuỗi lớp/GV/phòng.
    * Chuỗi được giới hạn độ sâu/nút, mỗi nhánh có snapshot rollback; chỉ commit khi toàn bộ hoạt động vẫn được xếp, không có lỗ học sinh và `soBuoiDay1` giảm.

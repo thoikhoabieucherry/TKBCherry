@@ -219,6 +219,54 @@ test("FET proves a singleton floor for teachers split across disjoint class sess
   );
 });
 
+test("session-first search reaches singleton zero before spending a billion-state ceiling", async () => {
+  const days = ["thu2", "thu3", "thu4", "thu5"];
+  const data = {
+    lop:days.map((_, index) => ({id:`L${index + 1}`, ten:`10A${index + 1}`, khoi:"10"})),
+    mon:[{ten:"Toán", khoi:"10", sotiet:1, gioihan:1}],
+    monhoc:[{ten:"Toán", ma:"TOAN"}],
+    giaovien:[{ma:"GV01", ten:"GV01"}],
+    pccmMatrix:{},
+    pccmTietMatrix:{},
+    pccmRoomMatrix:{},
+    pccmGioihanMatrix:{},
+    tkb:{},
+    tkbLessonTeachers:{},
+    tkbLessonRooms:{},
+    tkbConstraints:{}
+  };
+  days.forEach((thu, index) => {
+    const classId = `L${index + 1}`;
+    data.pccmMatrix[`${classId}|Toán`] = "GV01";
+    data.pccmTietMatrix[`${classId}|Toán`] = 1;
+    setCell(data, classId, thu, "sang", 0, "Toán");
+  });
+
+  const engine = new (loadEngine())(data, {
+    seed:41,
+    deepLocalFet:true,
+    sessionBinChains:true,
+    sessionFirstStateBudget:1_000_000_000
+  });
+  engine.loadExistingSchedule();
+  engine.compileConstraints();
+  engine.deadlineAtMs = Date.now() + 5_000;
+  const before = engine.evaluateMetrics();
+  await engine.trySessionFirstSingletonSearch(before);
+  const after = engine.evaluateMetrics();
+
+  assert.equal(before.soBuoiDay1, 4);
+  assert.equal(after.soBuoiDay1, 0);
+  assert.equal(after.soBuoiTrong2, 0);
+  assert.equal(after.unplacedCount, 0);
+  assert.equal(engine.countTotalStudentHoles(), 0);
+  assert.equal(engine.lastSessionFirstStats.stateBudget, 1_000_000_000);
+  assert.ok(
+    engine.lastSessionFirstStats.sessionStates + engine.lastSessionFirstStats.periodStates < 10_000,
+    "the solver must stop at the proven target instead of exhausting the configured ceiling"
+  );
+});
+
 test("FET stops optimization at a proven positive floor and exposes it", async () => {
   const data = makeConstraintData({subjects:[{name:"Toán", teacher:"GV01", periods:2}]});
   setCell(data, "L1", "thu2", "sang", 0, {mon:"Toán", gv:"GV01", fixed:true});
@@ -280,6 +328,14 @@ test("automatic worker prioritizes singleton elimination before gap-2 polish and
     "each singleton slice must get a fresh bounded deadline");
   assert.match(WORKER_SOURCE, /reformLessonBlocks = true/,
     "the deep incumbent lane must be allowed to re-pair lesson-block members before final validation");
+  assert.match(WORKER_SOURCE, /eng\.compileConstraints\(\)/,
+    "an incumbent must compile the structural singleton floor before the worker starts quality cycles");
+  assert.match(WORKER_SOURCE, /sessionFirstStateBudget/,
+    "the worker must expose the bounded 12-session state budget");
+  assert.match(ENGINE_SOURCE, /trySessionFirstSingletonSearch/,
+    "deep singleton optimization must enter the 12-session-first search");
+  assert.match(ENGINE_SOURCE, /1_000_000_000/,
+    "the session-first search must accept a billion-state ceiling while stopping early at the target");
   assert.match(WORKER_SOURCE, /runHorizontalGapClosure/,
     "gap-2 cleanup must reuse the horizontal 12-bin vacancy chain");
   assert.match(WORKER_SOURCE, /restoreStateSnapshot\(tradeoffSnapshot\)/,

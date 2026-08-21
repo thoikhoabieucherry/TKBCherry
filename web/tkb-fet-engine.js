@@ -5114,6 +5114,521 @@
       return improved ? currentBest : null;
     }
 
+    // Session-first large-neighborhood search.  The old repair operators branch
+    // directly on 60 period cells, so many expensive branches differ only in
+    // the horizontal position of a lesson inside the same session.  This
+    // operator first searches assignments to the 12 session bins, then solves
+    // the five horizontal periods only for a promising session plan.
+    async trySessionFirstSingletonSearch(bestMetrics, onProgress = null){
+      const singletonFloor = Number(this.constraintPreflight?.structuralFloor?.metricLowerBounds?.soBuoiDay1 || 0);
+      if(Number(bestMetrics?.soBuoiDay1 || 0) <= singletonFloor) return null;
+
+      const deepSearch = Boolean(this.options?.deepLocalFet || this.options?.deepCycles);
+      const requestedBudget = Number(this.options?.sessionFirstStateBudget);
+      const stateBudget = Math.max(10, Math.min(1_000_000_000,
+        Number.isFinite(requestedBudget) && requestedBudget > 0 ? Math.floor(requestedBudget) : (deepSearch ? 1_000_000 : 10_000)
+      ));
+      const maxMovedUnits = Math.max(1, Math.min(16, Number(this.options?.sessionFirstMaxMovedUnits) || (deepSearch ? 10 : 5)));
+      const maxNeighborhoodUnits = Math.max(6, Math.min(48, Number(this.options?.sessionFirstMaxNeighborhoodUnits) || (deepSearch ? 48 : 18)));
+      const gap2Headroom = this.options?.allowSingletonGap2Tradeoff ? (deepSearch ? 6 : 2) : 0;
+      const deadlineAt = this.deadlineAtMs || (Date.now() + (deepSearch ? 120_000 : 15_000));
+      const originalStrictTeacherGaps = this.strictTeacherGaps;
+      const originalStrictFetGaps = this.strictFetGaps;
+      const originalStudentHoleGuard = this.suspendStudentHoleGuard;
+      let currentBest = { ...bestMetrics };
+      let improved = false;
+      let sessionStates = 0;
+      let periodStates = 0;
+      let duplicatePlans = 0;
+      const seenPlans = new Set();
+
+      const forceUnplace = (id) => {
+        const act = this.activities[id];
+        const slot = this.actPlacement[id];
+        if(!act || slot < 0) return;
+        this.actPlacement[id] = -1;
+        const cGrid = this.classGridList[act.classIdx];
+        for(let d = 0; d < act.duration; d++){
+          const s = slot + d;
+          if(cGrid && cGrid[s] === id) cGrid[s] = -1;
+          for(const tIdx of act.teacherIdxs || []){
+            const tg = this.teacherGridList[tIdx];
+            if(tg && tg[s] === id) tg[s] = -1;
+          }
+          if(act.roomIdx >= 0){
+            const rg = this.roomGridList[act.roomIdx];
+            if(rg && rg[s] === id) rg[s] = -1;
+          }
+        }
+        if(this.teacherSessionCounts){
+          const session = Math.floor(slot / PERIODS_PER_SESSION);
+          for(const tIdx of act.teacherIdxs || []) this.teacherSessionCounts[tIdx * 12 + session] -= act.duration;
+        }
+      };
+
+      const unitCache = new Map();
+      const getUnit = (id) => {
+        if(unitCache.has(id)) return unitCache.get(id);
+        const act = this.activities[id];
+        if(!act || this.actPlacement[id] < 0) return null;
+        let ids = [id];
+        if(act.lockedByLessonBlock && act.duration === 1){
+          const siblings = this.activities.filter(other =>
+            other.lockedByLessonBlock && other.duration === 1 &&
+            other.classId === act.classId && other.mon === act.mon &&
+            other.gvList.join("|") === act.gvList.join("|") &&
+            Math.floor(this.actPlacement[other.id] / PERIODS_PER_SESSION) === Math.floor(this.actPlacement[id] / PERIODS_PER_SESSION)
+          );
+          const bySlot = new Map(siblings.map(other => [this.actPlacement[other.id], other.id]));
+          ids = [id];
+          let slot = this.actPlacement[id] - 1;
+          while(bySlot.has(slot)){ ids.unshift(bySlot.get(slot)); slot--; }
+          slot = this.actPlacement[id] + 1;
+          while(bySlot.has(slot)){ ids.push(bySlot.get(slot)); slot++; }
+        }
+        ids.sort((a, b) => this.actPlacement[a] - this.actPlacement[b]);
+        const offsets = [];
+        let duration = 0;
+        for(const memberId of ids){
+          offsets.push(duration);
+          duration += this.activities[memberId]?.duration || 1;
+        }
+        const originalStart = this.actPlacement[ids[0]];
+        const unit = {
+          key: ids[0], ids, offsets, duration, originalStart,
+          originalSession: Math.floor(originalStart / PERIODS_PER_SESSION),
+          movable: ids.every(memberId => {
+            const member = this.activities[memberId];
+            return member && (!member.isFixed || (member.lockedByLessonBlock && this.options?.reformLessonBlocks));
+          })
+        };
+        for(const memberId of ids) unitCache.set(memberId, unit);
+        return unit;
+      };
+
+      const unitStarts = (unit, onlySession = null) => {
+        if(!unit) return [];
+        const first = this.activities[unit.ids[0]];
+        const allowed = this.allowedSlotsByActivity?.get(first) || [];
+        const starts = [];
+        for(const start of allowed){
+          if(onlySession !== null && Math.floor(start / PERIODS_PER_SESSION) !== onlySession) continue;
+          if(start % PERIODS_PER_SESSION + unit.duration > PERIODS_PER_SESSION) continue;
+          let okay = true;
+          for(let i = 0; i < unit.ids.length; i++){
+            const member = this.activities[unit.ids[i]];
+            if(!(this.allowedSlotsByActivity?.get(member) || []).includes(start + unit.offsets[i])){
+              okay = false;
+              break;
+            }
+          }
+          if(okay) starts.push(start);
+        }
+        return starts;
+      };
+
+      const unitSessions = (unit) => [...new Set(unitStarts(unit).map(start => Math.floor(start / PERIODS_PER_SESSION)))];
+      const sessionLoad = (grid, session) => {
+        let load = 0;
+        for(let p = 0; p < PERIODS_PER_SESSION; p++){
+          const cell = grid?.[session * PERIODS_PER_SESSION + p];
+          if(cell >= 0 || cell === -3) load++;
+        }
+        return load;
+      };
+
+      const findSingletonRows = () => {
+        const rows = [];
+        for(let tIdx = 0; tIdx < this.teachers.length; tIdx++){
+          if(!this.isScoredTeacher(this.teachers[tIdx])) continue;
+          const tg = this.teacherGridList[tIdx];
+          if(!tg) continue;
+          for(let session = 0; session < 12; session++){
+            let load = 0;
+            let id = -1;
+            for(let p = 0; p < PERIODS_PER_SESSION; p++){
+              const cell = tg[session * PERIODS_PER_SESSION + p];
+              if(cell >= 0 || cell === -3) load++;
+              if(cell >= 0) id = cell;
+            }
+            if(load === 1 && id >= 0) rows.push({ teacherIdx: tIdx, session, id });
+          }
+        }
+        return rows;
+      };
+
+      const lessonBlocksRemainValid = () => {
+        const groups = new Map();
+        const add = (classId, mon, session) => {
+          const key = `${classId}|${this.getCanonMonKey(mon)}`;
+          if(!groups.has(key)) groups.set(key, { classId, mon, counts: new Int16Array(12) });
+          groups.get(key).counts[session]++;
+        };
+        for(const act of this.activities){
+          const start = this.actPlacement[act.id];
+          if(start < 0) continue;
+          for(let d = 0; d < act.duration; d++) add(act.classId, act.mon, Math.floor((start + d) / PERIODS_PER_SESSION));
+        }
+        for(const [key, fix] of this.fixedSlots.entries()){
+          const split = key.lastIndexOf("|");
+          if(split >= 0 && fix?.mon) add(key.slice(0, split), fix.mon, Math.floor(Number(key.slice(split + 1)) / PERIODS_PER_SESSION));
+        }
+        for(const group of groups.values()){
+          const lop = this.classes.find(item => String(item.id || "") === String(group.classId));
+          const rules = this.getSubjectRules(group.mon, lop)?.lessonBlocks || {};
+          for(const size of [5, 4, 3, 2]){
+            const min = Number((rules[String(size)] || rules[size] || {}).min) || 0;
+            if(min <= 0) continue;
+            let count = 0;
+            for(const periods of group.counts) if(periods === size) count++;
+            if(count < min) return false;
+          }
+        }
+        return true;
+      };
+
+      const buildRootPlans = () => {
+        const plans = [];
+        const keys = new Set();
+        const addPlan = (row, unit, targetSession, kind) => {
+          if(!unit?.movable || targetSession === unit.originalSession || !unitSessions(unit).includes(targetSession)) return;
+          const key = `${unit.key}@${targetSession}`;
+          if(keys.has(key)) return;
+          keys.add(key);
+          plans.push({ row, unit, targetSession, kind });
+        };
+        for(const row of findSingletonRows()){
+          const tg = this.teacherGridList[row.teacherIdx];
+          const singletonUnit = getUnit(row.id);
+          if(singletonUnit?.movable){
+            for(const target of unitSessions(singletonUnit)){
+              const load = sessionLoad(tg, target);
+              if(target !== row.session && load > 0 && load + singletonUnit.duration <= PERIODS_PER_SESSION){
+                addPlan(row, singletonUnit, target, "merge_singleton");
+              }
+            }
+          }
+          const donors = new Map();
+          for(const act of this.activities){
+            if(!act.teacherIdxs.includes(row.teacherIdx) || this.actPlacement[act.id] < 0) continue;
+            const unit = getUnit(act.id);
+            if(!unit?.movable || donors.has(unit.key) || unit.originalSession === row.session) continue;
+            if(sessionLoad(tg, unit.originalSession) - unit.duration < 2) continue;
+            donors.set(unit.key, unit);
+          }
+          for(const donor of donors.values()) addPlan(row, donor, row.session, "fill_singleton");
+        }
+        plans.sort((a, b) => {
+          if(a.kind !== b.kind) return a.kind === "merge_singleton" ? -1 : 1;
+          if(a.unit.duration !== b.unit.duration) return a.unit.duration - b.unit.duration;
+          return Math.abs(a.targetSession - a.unit.originalSession) - Math.abs(b.targetSession - b.unit.originalSession);
+        });
+        return plans;
+      };
+
+      const buildNeighborhood = (plan) => {
+        const units = new Map();
+        const sessions = new Set([plan.unit.originalSession, plan.targetSession, plan.row.session]);
+        const classes = new Set();
+        const teachers = new Set([plan.row.teacherIdx]);
+        const addUnit = (unit) => {
+          if(!unit?.movable || units.has(unit.key)) return;
+          units.set(unit.key, unit);
+          for(const id of unit.ids){
+            const act = this.activities[id];
+            classes.add(act.classIdx);
+            for(const tIdx of act.teacherIdxs || []) teachers.add(tIdx);
+          }
+        };
+        addUnit(plan.unit);
+        const singletonUnit = getUnit(plan.row.id);
+        addUnit(singletonUnit);
+
+        // Two resource-closure passes are enough to reflow the affected class
+        // rows while keeping the neighborhood bounded.
+        for(let pass = 0; pass < 2; pass++){
+          const classSnapshot = new Set(classes);
+          const teacherSnapshot = new Set(teachers);
+          for(const act of this.activities){
+            if(this.actPlacement[act.id] < 0 || !sessions.has(Math.floor(this.actPlacement[act.id] / PERIODS_PER_SESSION))) continue;
+            if(!classSnapshot.has(act.classIdx) && !(act.teacherIdxs || []).some(tIdx => teacherSnapshot.has(tIdx))) continue;
+            addUnit(getUnit(act.id));
+            if(units.size > maxNeighborhoodUnits) return null;
+          }
+        }
+        return [...units.values()];
+      };
+
+      const makeCapacity = (grids) => {
+        const counts = new Int8Array(grids.length * 12);
+        for(let index = 0; index < grids.length; index++){
+          const grid = grids[index];
+          for(let session = 0; session < 12; session++) counts[index * 12 + session] = sessionLoad(grid, session);
+        }
+        return counts;
+      };
+
+      const contribution = (unit) => {
+        const classes = new Map();
+        const teachers = new Map();
+        const rooms = new Map();
+        for(const id of unit.ids){
+          const act = this.activities[id];
+          classes.set(act.classIdx, (classes.get(act.classIdx) || 0) + act.duration);
+          for(const tIdx of act.teacherIdxs || []) teachers.set(tIdx, (teachers.get(tIdx) || 0) + act.duration);
+          if(act.roomIdx >= 0) rooms.set(act.roomIdx, (rooms.get(act.roomIdx) || 0) + act.duration);
+        }
+        return { classes: [...classes], teachers: [...teachers], rooms: [...rooms] };
+      };
+
+      const realizePlan = async (units, assignments, baseline) => {
+        const snapshot = this.captureStateSnapshot();
+        for(const unit of units) for(const id of unit.ids) forceUnplace(id);
+        this.suspendStudentHoleGuard = true;
+        this.strictTeacherGaps = false;
+        this.strictFetGaps = false;
+
+        const placeUnit = (unit, start) => {
+          const ignore = new Set(unit.ids);
+          for(let i = 0; i < unit.ids.length; i++){
+            if(!this.isSlotFeasible(this.activities[unit.ids[i]], start + unit.offsets[i], ignore)) return false;
+          }
+          for(let i = 0; i < unit.ids.length; i++){
+            if(!this.placeActivityDirect(unit.ids[i], start + unit.offsets[i])) return false;
+          }
+          return true;
+        };
+
+        const sessionHasStudentHole = (classIdx, session) => {
+          const grid = this.classGridList[classIdx];
+          let mask = 0;
+          for(let p = 0; p < PERIODS_PER_SESSION; p++){
+            const cell = grid?.[session * PERIODS_PER_SESSION + p];
+            if(cell >= 0 || cell === -3) mask |= (1 << p);
+          }
+          return SESSION_STATS_LUT[mask].gaps > 0;
+        };
+
+        // Period coloring is independent between sessions.  Solving one
+        // five-column bin at a time avoids multiplying equivalent layouts of
+        // unrelated bins (the main source of the old 100k+ node explosion).
+        const bySession = new Map();
+        const affectedClasses = new Map();
+        for(let index = 0; index < units.length; index++){
+          const assigned = assignments[index];
+          if(!bySession.has(assigned)) bySession.set(assigned, []);
+          bySession.get(assigned).push(index);
+          for(const session of [units[index].originalSession, assigned]){
+            if(!affectedClasses.has(session)) affectedClasses.set(session, new Set());
+            for(const id of units[index].ids) affectedClasses.get(session).add(this.activities[id].classIdx);
+          }
+        }
+        const sessions = [...new Set([...affectedClasses.keys(), ...bySession.keys()])];
+        sessions.sort((a, b) => (bySession.get(b)?.length || 0) - (bySession.get(a)?.length || 0));
+
+        const solveSession = async (session) => {
+          const remaining = new Set(bySession.get(session) || []);
+          const dfs = async () => {
+            periodStates++;
+            if(sessionStates + periodStates > stateBudget || Date.now() >= deadlineAt || this.isCancelled) return false;
+            if((periodStates & 1023) === 0) await new Promise(resolve => setTimeout(resolve, 0));
+            if(remaining.size === 0){
+              for(const classIdx of affectedClasses.get(session) || []){
+                if(sessionHasStudentHole(classIdx, session)) return false;
+              }
+              return true;
+            }
+
+            let chosen = -1;
+            let chosenStarts = null;
+            for(const index of remaining){
+              const unit = units[index];
+              const ignore = new Set(unit.ids);
+              const starts = unitStarts(unit, session).filter(start =>
+                unit.ids.every((id, memberIndex) => this.isSlotFeasible(this.activities[id], start + unit.offsets[memberIndex], ignore))
+              );
+              if(starts.length === 0) return false;
+              if(!chosenStarts || starts.length < chosenStarts.length){
+                chosen = index;
+                chosenStarts = starts;
+                if(starts.length === 1) break;
+              }
+            }
+            const unit = units[chosen];
+            chosenStarts.sort((a, b) => {
+              const originalPeriod = unit.originalStart % PERIODS_PER_SESSION;
+              const affinityA = this.slotTeacherAffinityScore(this.activities[unit.ids[0]], a);
+              const affinityB = this.slotTeacherAffinityScore(this.activities[unit.ids[0]], b);
+              if(affinityA !== affinityB) return affinityA - affinityB;
+              return Math.abs((a % PERIODS_PER_SESSION) - originalPeriod) - Math.abs((b % PERIODS_PER_SESSION) - originalPeriod);
+            });
+            remaining.delete(chosen);
+            for(const start of chosenStarts){
+              if(placeUnit(unit, start) && await dfs()) return true;
+              for(const id of unit.ids) forceUnplace(id);
+              if(sessionStates + periodStates >= stateBudget || Date.now() >= deadlineAt) break;
+            }
+            remaining.add(chosen);
+            return false;
+          };
+          return dfs();
+        };
+
+        let okay = true;
+        for(const session of sessions){
+          if(!await solveSession(session)){
+            okay = false;
+            break;
+          }
+        }
+        if(okay){
+          const metrics = this.evaluateMetrics();
+          okay = this.countTotalStudentHoles() === 0 && lessonBlocksRemainValid() &&
+            metrics.unplacedCount === 0 && metrics.soBuoiDay1 < baseline.soBuoiDay1 &&
+            metrics.soBuoiTrong2 <= baseline.soBuoiTrong2 + gap2Headroom &&
+            this.validateIncumbentLocationConstraints().length === 0 && this.missingMustTeachSlots().length === 0 &&
+            this.compareMetrics(metrics, baseline, baseline, "optimize_singletons") < 0;
+        }
+        this.suspendStudentHoleGuard = originalStudentHoleGuard;
+        this.strictTeacherGaps = originalStrictTeacherGaps;
+        this.strictFetGaps = originalStrictFetGaps;
+        if(okay) return true;
+        this.restoreStateSnapshot(snapshot);
+        return false;
+      };
+
+      const searchPlan = async (plan, units) => {
+        const rootIndex = units.findIndex(unit => unit.key === plan.unit.key);
+        if(rootIndex < 0) return false;
+        const domains = units.map(unit => unitSessions(unit));
+        if(domains.some(domain => domain.length === 0)) return false;
+        const classCounts = makeCapacity(this.classGridList);
+        const teacherCounts = makeCapacity(this.teacherGridList);
+        const roomCounts = makeCapacity(this.roomGridList);
+        const contrib = units.map(contribution);
+        for(let index = 0; index < units.length; index++){
+          const session = units[index].originalSession;
+          for(const [resource, amount] of contrib[index].classes) classCounts[resource * 12 + session] -= amount;
+          for(const [resource, amount] of contrib[index].teachers) teacherCounts[resource * 12 + session] -= amount;
+          for(const [resource, amount] of contrib[index].rooms) roomCounts[resource * 12 + session] -= amount;
+        }
+
+        const order = units.map((_, index) => index).sort((a, b) => {
+          if(a === rootIndex) return -1;
+          if(b === rootIndex) return 1;
+          return domains[a].length - domains[b].length;
+        });
+        const assignments = new Int8Array(units.length).fill(-1);
+
+        const applyCounts = (index, session, sign) => {
+          for(const [resource, amount] of contrib[index].classes) classCounts[resource * 12 + session] += sign * amount;
+          for(const [resource, amount] of contrib[index].teachers) teacherCounts[resource * 12 + session] += sign * amount;
+          for(const [resource, amount] of contrib[index].rooms) roomCounts[resource * 12 + session] += sign * amount;
+        };
+        const fits = (index, session) => {
+          for(const [resource, amount] of contrib[index].classes) if(classCounts[resource * 12 + session] + amount > PERIODS_PER_SESSION) return false;
+          for(const [resource, amount] of contrib[index].teachers) if(teacherCounts[resource * 12 + session] + amount > PERIODS_PER_SESSION) return false;
+          for(const [resource, amount] of contrib[index].rooms) if(roomCounts[resource * 12 + session] + amount > PERIODS_PER_SESSION) return false;
+          return true;
+        };
+        const singletonScore = () => {
+          let score = 0;
+          for(let tIdx = 0; tIdx < this.teachers.length; tIdx++){
+            if(!this.isScoredTeacher(this.teachers[tIdx])) continue;
+            for(let session = 0; session < 12; session++) if(teacherCounts[tIdx * 12 + session] === 1) score++;
+          }
+          return score;
+        };
+
+        for(let moveLimit = 1; moveLimit <= maxMovedUnits; moveLimit++){
+          const dfsSessions = async (depth, moved) => {
+            sessionStates++;
+            if(sessionStates + periodStates > stateBudget || Date.now() >= deadlineAt || this.isCancelled) return false;
+            if((sessionStates & 4095) === 0) await new Promise(resolve => setTimeout(resolve, 0));
+            if(depth === order.length){
+              if(singletonScore() >= currentBest.soBuoiDay1) return false;
+              const signature = units.map((unit, index) => assignments[index] === unit.originalSession ? "" : `${unit.key}:${assignments[index]}`).filter(Boolean).sort().join("|");
+              if(seenPlans.has(signature)){ duplicatePlans++; return false; }
+              seenPlans.add(signature);
+              return realizePlan(units, assignments, currentBest);
+            }
+            const index = order[depth];
+            const unit = units[index];
+            let candidates = index === rootIndex ? [plan.targetSession] : domains[index].slice();
+            candidates.sort((a, b) => {
+              if(a === unit.originalSession) return -1;
+              if(b === unit.originalSession) return 1;
+              let aScore = 0;
+              let bScore = 0;
+              for(const [teacher] of contrib[index].teachers){
+                const ca = teacherCounts[teacher * 12 + a];
+                const cb = teacherCounts[teacher * 12 + b];
+                aScore += ca === 1 ? -4 : (ca === 0 ? 2 : -ca);
+                bScore += cb === 1 ? -4 : (cb === 0 ? 2 : -cb);
+              }
+              return aScore - bScore;
+            });
+            for(const session of candidates){
+              const nextMoved = moved + (session === unit.originalSession ? 0 : 1);
+              if(nextMoved > moveLimit || !fits(index, session)) continue;
+              assignments[index] = session;
+              applyCounts(index, session, 1);
+              if(await dfsSessions(depth + 1, nextMoved)) return true;
+              applyCounts(index, session, -1);
+              assignments[index] = -1;
+              if(sessionStates + periodStates >= stateBudget || Date.now() >= deadlineAt) break;
+            }
+            return false;
+          };
+          if(await dfsSessions(0, 0)) return true;
+          if(sessionStates + periodStates >= stateBudget || Date.now() >= deadlineAt) break;
+        }
+        return false;
+      };
+
+      while(currentBest.soBuoiDay1 > singletonFloor && sessionStates + periodStates < stateBudget && Date.now() < deadlineAt){
+        unitCache.clear();
+        let roundImproved = false;
+        const plans = buildRootPlans();
+        for(const plan of plans){
+          if(sessionStates + periodStates >= stateBudget || Date.now() >= deadlineAt || this.isCancelled) break;
+          const units = buildNeighborhood(plan);
+          if(!units) continue;
+          if(await searchPlan(plan, units)){
+            currentBest = this.evaluateMetrics();
+            improved = true;
+            roundImproved = true;
+            if(typeof onProgress === "function") onProgress({
+              stage: "session_first",
+              currentMetric: currentBest.soBuoiDay1,
+              initialMetric: bestMetrics.soBuoiDay1,
+              metrics: currentBest,
+              sessionStates,
+              periodStates,
+              stateBudget
+            });
+            break;
+          }
+        }
+        if(!roundImproved) break;
+      }
+
+      this.suspendStudentHoleGuard = originalStudentHoleGuard;
+      this.strictTeacherGaps = originalStrictTeacherGaps;
+      this.strictFetGaps = originalStrictFetGaps;
+      this.lastSessionFirstStats = {
+        stateBudget,
+        sessionStates,
+        periodStates,
+        duplicatePlans,
+        initialSingletons: Number(bestMetrics.soBuoiDay1 || 0),
+        finalSingletons: Number(currentBest.soBuoiDay1 || 0),
+        floor: singletonFloor,
+        reachedFloor: currentBest.soBuoiDay1 <= singletonFloor
+      };
+      return improved ? currentBest : null;
+    }
+
     // Exact bounded neighborhood for incumbent schedules.  loadExistingSchedule
     // represents a required lesson block as fixed one-period members so that a
     // generic swap cannot split it.  For this operator those members are
@@ -6151,6 +6666,11 @@
         let anyRoundImprovement = false;
 
         if(mode === "optimize_all" || mode === "optimize_singletons"){
+          if(useSessionBinChains){
+            const resSessionFirst = await this.trySessionFirstSingletonSearch(bestMetrics, onProgress);
+            if(resSessionFirst){ bestMetrics = resSessionFirst; anyRoundImprovement = true; }
+            if(mode === "optimize_singletons" && bestMetrics.soBuoiDay1 <= targetMetricLowerBound) break;
+          }
           const resPair = await this.tryPairClassSingletons(bestMetrics, onProgress);
           if(resPair){ bestMetrics = resPair; anyRoundImprovement = true; }
           const resCross = await this.tryCrossDayPairShift(bestMetrics, onProgress);
@@ -6390,6 +6910,12 @@
         let anyPassImprovement = false;
 
         // Stage 1: Singleton elimination operators
+        if(useSessionBinChains){
+          const resSessionFirst = await this.trySessionFirstSingletonSearch(bestMetrics, onProgress);
+          if(resSessionFirst){ bestMetrics = resSessionFirst; anyPassImprovement = true; }
+          if(bestMetrics.soBuoiDay1 <= targetMetricLowerBound) break;
+        }
+
         const resPair = await this.tryPairClassSingletons(bestMetrics, onProgress);
         if(resPair){ bestMetrics = resPair; anyPassImprovement = true; }
 

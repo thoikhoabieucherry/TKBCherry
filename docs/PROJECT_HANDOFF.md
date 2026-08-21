@@ -6,6 +6,15 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-21 LOCAL SESSION-FIRST SEARCH (NOT DEPLOYED)
+
+- Bổ sung `trySessionFirstSingletonSearch()` trong engine và mirror. Mỗi nhánh trước hết gán hoạt động/lesson-block vào 12 bin (6 buổi sáng + 6 buổi chiều), kiểm tra sức chứa lớp/GV/phòng và số buổi singleton; chỉ khi phương án bin cải thiện mới giải 5 cột tiết bên trong từng bin bị ảnh hưởng.
+- Đây là tìm kiếm large-neighborhood/augmenting-chain theo buổi, khác với đường cũ duyệt trực tiếp các ô 60 tiết. Có đóng gói lesson-block, đóng vòng tài nguyên lớp–GV–phòng, MRV theo miền buổi, băm kế hoạch để bỏ trùng, snapshot rollback và kiểm tra lại student holes/location/must-teach/lesson-block trước khi nhận.
+- `sessionFirstStateBudget` nhận từ 10 đến **1.000.000.000** trạng thái. Mặc định deep là 1.000.000; thuật toán dừng ngay khi đạt `soBuoiDay1` bằng cận dưới đã chứng minh, nên trần 1 tỷ không biến thành thời gian chạy 1 tỷ bước vô ích.
+- Benchmark fixture local 4 singleton có floor toán học 1: 10 trạng thái chưa cải thiện; 100 đạt `4 -> 3`; 1.000 đạt `4 -> 2`; 10.000 đạt `4 -> 1`; trần 100.000/1.000.000/1 tỷ đều dừng ở khoảng 1.380 trạng thái, `4 -> 1`, khoảng 48–65 ms. Fixture 4 tiết không bị tách đạt `4 -> 0` với 27 trạng thái.
+- Worker incumbent nay gọi `compileConstraints()` trước khi đọc floor, tránh lặp lại nhiều chu kỳ khi floor dương; stage progress có nhãn `Gom 12 buổi`. Đường cũ vẫn là fallback/hard-conflict repair.
+- Kiểm tra: engine suite **36/36 pass**; focused combined suite **127/127 pass** khi chạy độc lập (một lần chạy toàn bộ có test deadline 50–200 ms dao động do máy, test đó pass khi chạy riêng); syntax, `git diff --check`, và SHA-256 hai mirror engine/worker/UI đều pass. Chỉ local, chưa deploy/push.
+
 ## 2026-08-21 LOCAL INCUMBENT COMPLETION LANE (NOT DEPLOYED)
 
 - Audit trực tiếp `rust_api/tkb_store.db / school_default` xác nhận incumbent ban đầu vẫn có `soBuoiDay1 = 4`, không có chứng cứ floor dương; bốn singleton là `tn.mỹ`, `a.hoa`, `tn.tnguyên`, `td.bằng`.
