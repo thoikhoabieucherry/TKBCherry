@@ -6,6 +6,16 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-21 LOCAL FAST PREFLIGHT + TERMINAL DIAGNOSTICS (NOT DEPLOYED)
+
+- **Nguyên nhân thông báo sai/chạy lặp**: sau khi backend local trả candidate không qua validator, `executeFetBackendBoost()` có thể trả `null`, khiến UI chạy thêm browser worker dài; nhánh worker lại hiện thông báo chung “chạm giới hạn ràng buộc”. Nhánh đó còn tham chiếu biến `validationDiagnostics` chưa khai báo, nên terminal settlement có thể bị ngắt sau khi đã hiện thông báo.
+- **Preflight nhanh**: thêm `fetAutomaticTargetPreflight()` trước backend/worker. Incumbent đủ tiết với `1 tiết/buổi = 0` và `Trống 2 = 0` kết thúc ngay; singleton dương chỉ kết thúc sớm khi FET compile chứng minh structural floor. Dữ liệu local `school_default` hiện `0/0`, preflight trả `reached=true`.
+- **Gom nhanh**: worker và backend lane chạy `initialSingletonPacking()` tối đa `1.200ms` trước warmup/deep, hiển thị stage `Gom nhanh`; direct move/short-chain vẫn dùng `isSlotFeasible`, snapshot rollback và không nới hard constraint.
+- **Terminal contract**: thêm `fetFailurePresentation()` để phân loại plateau/budget, regression, thiếu tiết, hard violation và lỗi validator; candidate diagnostics được render. Backend candidate invalid/no-improvement được settle ngay, không tự rơi sang worker thứ hai. Parent runner chỉ nhận candidate strict-better so với incumbent hoàn chỉnh; nghiệm bằng nhau trả `fet_backend_no_improvement`.
+- **Hard baseline**: validator local giờ cho phép giữ đúng violation/student-hole đã tồn tại trong incumbent khi candidate không thêm lỗi mới; so sánh signature không còn chấp nhận việc thay một violation cũ bằng violation mới chỉ vì tổng số không tăng.
+- **Kiểm tra**: planner/telemetry **12/12**, backend runner **4/4**, FET engine **40/40**, Node syntax hai mirror + runner và `git diff --check` pass. Runner solved incumbent trả `422 fet_backend_no_improvement`; fixture local hiện hành được đọc chỉ để xác nhận `unplaced=0`, singleton/gap2 bằng 0. Không deploy, không push, không sửa DB/lịch production.
+- **Personal skills**: đã xóa toàn bộ tệp của `C:\Users\Cherry\.codex\skills\anti-over-engineering` và `C:\Users\Cherry\.codex\skills\statem-single-agent`; không xóa skill hệ thống/plugin và giữ `.statem/` trong workspace theo yêu cầu bảo toàn thay đổi người dùng.
+
 ## 2026-08-21 LOCAL E2E STALL GUARD + PORT 1010 (NOT DEPLOYED)
 
 - **E2E bằng in-app browser** trên `http://127.0.0.1:1010/pages/sapxep?sid=default` đã tái hiện lỗi: worker browser giữ UI ở trạng thái chạy hơn 4 phút, chỉ số dao động quanh `1t/buổi: 11–22` và còn 27 tiết ở lớp đang xem. Dừng lượt này giữ đủ tiết nhưng cho thấy đường Stop cũ có thể nhận checkpoint chất lượng kém hơn lịch incumbent (`0 -> 10` singleton), vì chỉ kiểm tra số ô.

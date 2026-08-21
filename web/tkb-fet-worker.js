@@ -372,6 +372,39 @@ async function runSolveOptimizeAllImpl(cb, data, workerOptions, setEngine, isCon
     let noImprovementCycles = 0;
     let cycle = 0;
 
+    // Fast deterministic pass before the deeper search. It tries direct
+    // moves and short three-step chains into a teacher's already occupied
+    // session, which is the cheap "gom các phần tử lẻ" case. If it solves the
+    // primary target, the expensive 12-bin search is skipped entirely.
+    const initialSingletonFastMs = clampNumber(
+      workerOptions.initialSingletonFastMs,
+      1_200,
+      0,
+      5_000
+    );
+    if(currentMetrics.soBuoiDay1 > singletonFloor
+      && initialSingletonFastMs > 0
+      && Date.now() < qualityDeadline){
+      const fastBudgetMs = Math.min(initialSingletonFastMs, Math.max(0, qualityDeadline - Date.now()));
+      bestEngine.deadlineAtMs = Date.now() + fastBudgetMs;
+      const fastResult = bestEngine.initialSingletonPacking({
+        timeBudgetMs:fastBudgetMs,
+        maxAttempts:clampNumber(workerOptions.initialSingletonFastAttempts, 20_000, 1_000, 50_000)
+      });
+      currentMetrics = bestEngine.evaluateMetrics();
+      cb({
+        percent:38,
+        currentMetric:currentMetrics.soBuoiDay1,
+        initialMetric:initialMetrics.soBuoiDay1,
+        stage:'singleton_fast',
+        cycle:0,
+        metrics:currentMetrics,
+        targetMetricLowerBound:singletonFloor,
+        attempts:Number(fastResult?.attempts || 0),
+        elapsedMs:Number(fastResult?.elapsedMs || 0)
+      });
+    }
+
     // Give the freshly constructed schedule a short, shallow packing pass
     // before enabling the expensive 12-bin/deep operators. The warmup uses
     // the same singleton objective but keeps the normal construction search

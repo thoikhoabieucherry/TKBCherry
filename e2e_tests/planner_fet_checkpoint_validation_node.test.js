@@ -117,4 +117,41 @@ test("candidate-validation diagnostics do not masquerade as a zero-activity pref
   assert.match(source, /const isCandidateValidation = diagnostics\.origin === "candidate_validation";/);
   assert.match(source, /Lịch mới chưa vượt qua kiểm tra ràng buộc/);
   assert.match(source, /Trạng thái", "Ràng buộc vi phạm/);
+  assert.doesNotMatch(source, /if\(!diagnostics \|\| diagnostics\.origin === "candidate_validation"/,
+    "candidate diagnostics must be renderable instead of being discarded by the panel guard");
+});
+
+test("validator comparison rejects a new violation even when its total count is not larger", () => {
+  const {context} = loadHelpers(() => []);
+  const baseline = [{kind:"fixed_cell", lopId:"L1", mon:"Toán"}];
+  const candidate = [{kind:"teacher_clash", lopId:"L2", mon:"Văn", teacher:"GV02"}];
+  const result = context.compareFetCandidateViolationsToIncumbent(candidate, {violations:baseline});
+
+  assert.equal(result.ok, false);
+  assert.equal(result.addedRows.length, 1);
+});
+
+test("terminal messages distinguish plateau, regression, hard violation, and validator error", () => {
+  const {context} = loadHelpers(() => []);
+  const plateau = context.fetFailurePresentation({failureKind:"fet_backend_stagnated"});
+  const regression = context.fetFailurePresentation({failureKind:"fet_candidate_quality_regression_rejected"});
+  const hard = context.fetFailurePresentation({
+    failureKind:"fet_candidate_hard_validation_failed",
+    error:"Trùng tiết giáo viên GV01"
+  });
+  const validator = context.fetFailurePresentation({
+    failureKind:"fet_candidate_validation_error",
+    error:"validator crashed"
+  });
+
+  assert.match(plateau.message, /chưa tìm được lịch tốt hơn/i);
+  assert.doesNotMatch(plateau.message, /chạm giới hạn ràng buộc/i);
+  assert.match(regression.message, /không tốt hơn lịch hiện tại/i);
+  assert.match(hard.message, /Trùng tiết giáo viên GV01/);
+  assert.equal(hard.level, "warning");
+  assert.match(validator.message, /Bộ kiểm tra nghiệm gặp lỗi/);
+  assert.equal(validator.level, "error");
+  assert.doesNotMatch(source, /Không thể tối ưu thêm do chạm giới hạn ràng buộc/);
+  assert.doesNotMatch(source, /diagnostics:validationDiagnostics/,
+    "candidate settlement must never reference an undefined diagnostics variable");
 });

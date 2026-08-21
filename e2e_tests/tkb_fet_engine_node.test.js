@@ -449,6 +449,12 @@ test("automatic worker prioritizes singleton elimination before gap-2 polish and
     "each singleton slice must get a fresh bounded deadline");
   assert.match(WORKER_SOURCE, /initialSingletonWarmupMs = clampNumber\(/,
     "a complete construction must get a bounded shallow singleton warmup before deep search");
+  assert.match(WORKER_SOURCE, /initialSingletonFastMs = clampNumber\(/,
+    "a cheap deterministic singleton pass must run before the warmup and deep search");
+  assert.match(WORKER_SOURCE, /bestEngine\.initialSingletonPacking\(\{/,
+    "the fast pass must reuse the guarded direct and short-chain packer");
+  assert.match(WORKER_SOURCE, /stage:'singleton_fast'/,
+    "the fast pass must be visible in progress telemetry");
   assert.match(WORKER_SOURCE, /stage: 'singleton_warmup'/,
     "the shallow construction warmup must be visible as its own progress stage");
   assert.match(WORKER_SOURCE, /bestEngine\.options\.deepLocalFet = false/,

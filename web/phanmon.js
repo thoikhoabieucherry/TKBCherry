@@ -1,4 +1,4 @@
-window.__PHANMON_VERSION = "20260810-client-agent-retired-v1";
+window.__PHANMON_VERSION = "20260821-fast-preflight-v1";
 try{
   window.__TKB_PLANNER_DATA_READY = false;
   window.__TKB_PLANNER_REMOTE_HYDRATION_PENDING = false;
@@ -5893,7 +5893,7 @@ function clearFetDiagnosticPanel(){
 }
 
 function renderFetDiagnosticPanel(diagnostics){
-  if(!diagnostics || diagnostics.origin === "candidate_validation" || typeof document === "undefined") return;
+  if(!diagnostics || typeof document === "undefined") return;
   clearFetDiagnosticPanel();
   const host = document.getElementById("statusMsg")?.parentElement || document.body;
   if(!host || typeof document.createElement !== "function") return;
@@ -6006,16 +6006,6 @@ function compareFetCandidateViolationsToIncumbent(candidateRows, incumbentBaseli
   const candList = Array.isArray(candidateRows) ? candidateRows : [];
   if(!baselineRows) return { ok: candList.length === 0, addedRows: candList, incumbentCount: 0, retainedCount: candList.length };
 
-  // If candidate schedule has <= violations than incumbent, it does not worsen the schedule
-  if(candList.length <= baselineRows.length){
-    return {
-      ok: true,
-      addedRows: [],
-      retainedCount: candList.length,
-      incumbentCount: baselineRows.length
-    };
-  }
-
   const available = new Map();
   baselineRows.forEach(item => {
     const key = fetHardViolationSignature(item);
@@ -6033,7 +6023,10 @@ function compareFetCandidateViolationsToIncumbent(candidateRows, incumbentBaseli
     }
   });
   return {
-    ok: addedRows.length === 0 || candList.length <= baselineRows.length,
+    // A smaller count is not enough: replacing an old violation with a new
+    // violation is still a regression. Every retained row must match an
+    // incumbent signature.
+    ok: addedRows.length === 0,
     addedRows,
     retainedCount: candList.length,
     incumbentCount: baselineRows.length
@@ -6053,6 +6046,61 @@ function fetValidatorDiagnostics(rows, options = {}){
       allowedSlots:null,
       constraintCategory:String(item?.kind || item?.type || "ui_hard_validation").slice(0, 120)
     }))
+  };
+}
+
+function fetFailurePresentation(result){
+  const failure = String(result?.failureKind || result?.kind || "").trim().toLowerCase();
+  const rawDetail = String(result?.error || result?.message || "").replace(/\s+/g, " ").trim().slice(0, 320);
+  const detail = rawDetail && !/[.!?…]$/.test(rawDetail) ? `${rawDetail}.` : rawDetail;
+  const keepCurrent = "Lịch hiện tại được giữ nguyên.";
+
+  if(/stagnat|plateau|no_improvement|budget_exhausted|time_budget|timeout/.test(failure)){
+    return {
+      level:"info",
+      showDiagnostics:false,
+      message:`Lượt này chưa tìm được lịch tốt hơn trong thời gian cho phép; ${keepCurrent.toLowerCase()} Bấm Xếp để thử một hướng tìm kiếm mới.`
+    };
+  }
+  if(/quality_regression/.test(failure)){
+    return {
+      level:"info",
+      showDiagnostics:false,
+      message:`Nghiệm mới không tốt hơn lịch hiện tại nên không được áp dụng. ${keepCurrent}`
+    };
+  }
+  if(/fewer_lessons|incomplete_schedule/.test(failure)){
+    return {
+      level:"warning",
+      showDiagnostics:true,
+      message:`Nghiệm mới bị loại vì thiếu tiết. ${keepCurrent}`
+    };
+  }
+  if(/validator_unavailable|validation_error|contract_invalid/.test(failure)){
+    return {
+      level:"error",
+      showDiagnostics:true,
+      message:`Bộ kiểm tra nghiệm gặp lỗi.${detail ? ` ${detail}` : ""} ${keepCurrent}`
+    };
+  }
+  if(/hard_validation|constraint_violation|location_constraint/.test(failure)){
+    return {
+      level:"warning",
+      showDiagnostics:true,
+      message:`${detail || "Nghiệm mới vi phạm ràng buộc cứng."} ${keepCurrent}`
+    };
+  }
+  if(/worker_error|engine_unavailable|apply_failed/.test(failure)){
+    return {
+      level:"error",
+      showDiagnostics:false,
+      message:`Bộ xử lý tối ưu gặp lỗi.${detail ? ` ${detail}` : ""} ${keepCurrent}`
+    };
+  }
+  return {
+    level:"warning",
+    showDiagnostics:Boolean(result?.diagnostics),
+    message:`${detail || "Chưa thể áp dụng nghiệm mới."} ${keepCurrent}`
   };
 }
 
@@ -6464,6 +6512,28 @@ async function validateFetCandidateHardConstraints(data, candidateTkb, options =
   if (lops.length > 0) {
     const hardCheck = inspectTrueHardConflicts(data, candidateTkb);
     if (!hardCheck.ok) {
+      if(options.allowUnchangedIncumbentViolations === true){
+        const comparison = compareFetCandidateViolationsToIncumbent(
+          hardCheck.conflicts || [],
+          options.incumbentBaseline
+        );
+        const incumbentStudentHoles = Number(options.incumbentBaseline?.studentHoles || 0) || 0;
+        const candidateStudentHoles = Number(hardCheck.studentHoles || 0) || 0;
+        if(comparison.ok === true && candidateStudentHoles <= incumbentStudentHoles){
+          return {
+            ok:true,
+            applied:true,
+            executor:"fet_worker",
+            hardValid:false,
+            retainedLegacyViolations:comparison.retainedCount + candidateStudentHoles,
+            incumbentViolationCount:comparison.incumbentCount + incumbentStudentHoles,
+            diagnostics:fetValidatorDiagnostics(hardCheck.conflicts || [], {
+              incumbentViolationCount:comparison.incumbentCount + incumbentStudentHoles,
+              introducedViolationCount:0
+            })
+          };
+        }
+      }
       const first = hardCheck.conflicts?.[0];
       let msg = "Phát hiện xung đột lịch cứng.";
       if (first?.type === "teacher_clash") {
@@ -6845,6 +6915,40 @@ function fetQualityStallBudgetMs(options, key, fallback = 60_000){
   return Math.max(15_000, Math.min(180_000, Math.round(value)));
 }
 
+function fetAutomaticTargetPreflight(data, initialStats, FetEngineClass){
+  const singletons = Math.max(0, Number(initialStats?.soBuoiDay1 || 0));
+  const gap2 = Math.max(0, Number(initialStats?.soBuoiTrong2 || 0));
+  if(gap2 > 0) return {reached:false, singletonFloor:0};
+  if(singletons === 0){
+    return {reached:true, singletonFloor:0, proven:true, reason:"zero_target"};
+  }
+  if(typeof FetEngineClass !== "function") return {reached:false, singletonFloor:0};
+
+  try{
+    const preflightData = JSON.parse(JSON.stringify(data || {}));
+    const engine = new FetEngineClass(preflightData, {
+      seed:1,
+      preserveOccupiedOffSlots:true,
+      deepLocalFet:false
+    });
+    engine.loadExistingSchedule();
+    engine.compileConstraints();
+    const floor = Math.max(0, Number(
+      engine.constraintPreflight?.structuralFloor?.metricLowerBounds?.soBuoiDay1 || 0
+    ));
+    return {
+      reached:floor > 0 && singletons <= floor,
+      singletonFloor:floor,
+      proven:floor > 0,
+      reason:floor > 0 && singletons <= floor ? "proven_floor" : "search_required"
+    };
+  }catch(_){
+    // Preflight is only a fast exit. Any compiler mismatch falls through to
+    // the normal isolated backend/worker path and never blocks optimization.
+    return {reached:false, singletonFloor:0};
+  }
+}
+
 async function executeFetBackendBoost(data, options, initialStats){
   if(!fetBackendIsLocalOnly()) return null;
   if(options?.backendFetBoost === false) return null;
@@ -6913,7 +7017,14 @@ async function executeFetBackendBoost(data, options, initialStats){
         lastQualityProgressAt = Date.now();
       }
       const visibleMetrics = bestProgressMetrics || metrics;
-      const detail = `Backend gom buổi • 1t/buổi:${Number(visibleMetrics.soBuoiDay1 || 0)} T2:${Number(visibleMetrics.soBuoiTrong2 || 0)}${bestProgressStateCount > 0 ? ` • thử:${bestProgressStateCount.toLocaleString("vi-VN")}` : ""}`;
+      const backendStageLabel = {
+        singleton_fast:"Backend gom nhanh",
+        singleton_warmup:"Backend gom ban đầu",
+        session_first:"Backend gom 12 buổi",
+        singleton_priority:"Backend tìm chuỗi đổi",
+        gap2_priority:"Backend dọn Trống 2"
+      }[progressStage] || "Backend gom buổi";
+      const detail = `${backendStageLabel} • 1t/buổi:${Number(visibleMetrics.soBuoiDay1 || 0)} T2:${Number(visibleMetrics.soBuoiTrong2 || 0)}${bestProgressStateCount > 0 ? ` • thử:${bestProgressStateCount.toLocaleString("vi-VN")}` : ""}`;
       window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = detail;
       if(typeof setAutoSortProgress === "function"){
         const elapsed = Math.max(0, Date.now() - startedAt);
@@ -6992,6 +7103,7 @@ async function executeFetBackendBoost(data, options, initialStats){
     fet_backend_lane_budget_ms:backendBudgetMs,
     fet_backend_stall_ms:backendStallMs,
     session_first_time_budget_ms:8_000,
+    initial_singleton_fast_ms:1_200,
     initial_singleton_warmup_ms:5_000,
     deep_singleton_rounds:3,
     backend_deadline_ms:backendBudgetMs,
@@ -7048,6 +7160,11 @@ async function executeFetBackendBoost(data, options, initialStats){
   const terminalPollPayload = (value, status) => {
     if(value?.ok === true || payloadWithCandidate(value)) return true;
     return status !== 202 && !["solver_queued", "solver_running", "solver_cancelling"].includes(String(value?.kind || ""));
+  };
+
+  const payloadSaysNoImprovement = value => {
+    const kind = String(value?.kind || value?.failureKind || "").trim().toLowerCase();
+    return kind === "fet_backend_no_improvement" || kind === "fet_backend_stagnated";
   };
 
   try{
@@ -7118,21 +7235,37 @@ async function executeFetBackendBoost(data, options, initialStats){
     if(!candidate && (stopRequested || backendTimedOut)){
       candidate = payloadWithCandidate(lastProgressPayload);
     }
-    if(!candidate || !backendPayloadIsComplete(payload, candidate)){
-      if(stopRequested || backendTimedOut || backendStagnated){
-        if(typeof setStatus === "function") setStatus(
-          watchdogTriggered || backendStagnated
-            ? "Backend đã dừng vì không cải thiện thêm; lịch hiện tại được giữ nguyên."
-            : (backendTimedOut ? "Backend hết thời gian; giữ nguyên lịch hiện tại để chạy tiếp lần sau." : "Đã dừng backend; giữ nguyên lịch hiện tại."),
-          "info"
-        );
+    const backendNoImprovement = payloadSaysNoImprovement(payload) || payloadSaysNoImprovement(lastProgressPayload);
+    if(!candidate){
+      if(stopRequested || backendTimedOut || backendStagnated || backendNoImprovement){
+        const cancelledByUser = stopRequested && !watchdogTriggered && !backendTimedOut && !backendStagnated;
+        const failureKind = cancelledByUser
+          ? "user_cancelled"
+          : (backendStagnated ? "fet_backend_stagnated" : "fet_backend_no_improvement");
+        const presentation = cancelledByUser
+          ? {message:"Đã dừng backend; lịch hiện tại được giữ nguyên.", level:"info"}
+          : fetFailurePresentation({failureKind});
+        if(typeof setStatus === "function") setStatus(presentation.message, presentation.level);
         return {
           handled:true,
-          result:{ok:false, applied:false, cancelled:stopRequested, executor:"fet_backend", failureKind:(backendTimedOut || backendStagnated) ? "fet_backend_stagnated" : "user_cancelled"},
+          result:{ok:!cancelledByUser, applied:false, cancelled:cancelledByUser, executor:"fet_backend", failureKind},
           telemetry:{initialMetrics:initialStats, metrics:payloadMetrics(payload) || null, hardValid:false}
         };
       }
       return null;
+    }
+    if(!backendPayloadIsComplete(payload, candidate)){
+      const failure = {
+        failureKind:"fet_backend_contract_invalid",
+        error:"Backend trả về nghiệm chưa đủ dữ liệu xác nhận đủ tiết và hợp lệ"
+      };
+      const presentation = fetFailurePresentation(failure);
+      if(typeof setStatus === "function") setStatus(presentation.message, presentation.level);
+      return {
+        handled:true,
+        result:{ok:false, applied:false, executor:"fet_backend", failureKind:failure.failureKind, error:presentation.message},
+        telemetry:{initialMetrics:initialStats, metrics:payloadMetrics(payload) || null, hardValid:false}
+      };
     }
     const candidateTkb = candidate.tkb;
     const candidateMetrics = payloadMetrics(payload) || payloadMetrics(candidate.source);
@@ -7148,23 +7281,35 @@ async function executeFetBackendBoost(data, options, initialStats){
     const currentCellCount = fetBackendCountCells(data.tkb || {});
     const candidateCellCount = fetBackendCountCells(candidateTkb);
     if(candidateCellCount < currentCellCount){
-      if(typeof setStatus === "function") setStatus("Backend trả về ít tiết hơn lịch hiện tại; giữ nguyên lịch.", "warning");
-      return stopRequested || backendTimedOut ? {
+      const failure = {failureKind:"fet_backend_fewer_lessons_rejected"};
+      const presentation = fetFailurePresentation(failure);
+      if(typeof setStatus === "function") setStatus(presentation.message, presentation.level);
+      return {
         handled:true,
-        result:{ok:false, applied:false, cancelled:stopRequested, executor:"fet_backend", failureKind:"fet_backend_fewer_lessons_rejected"},
+        result:{ok:false, applied:false, executor:"fet_backend", failureKind:failure.failureKind, error:presentation.message},
         telemetry:{initialMetrics:initialStats, metrics:payloadMetrics(payload) || null, hardValid:false}
-      } : null;
+      };
     }
     const candidateValidation = await validateFetCandidateHardConstraints(data, candidateTkb, {
       allowUnchangedIncumbentViolations:true,
       incumbentBaseline:await incumbentValidationPromise
     });
     if(candidateValidation?.ok !== true){
-      return stopRequested || backendTimedOut ? {
+      const presentation = fetFailurePresentation(candidateValidation);
+      if(typeof setStatus === "function") setStatus(presentation.message, presentation.level);
+      if(presentation.showDiagnostics) renderFetDiagnosticPanel(candidateValidation?.diagnostics || null);
+      return {
         handled:true,
-        result:{ok:false, applied:false, cancelled:stopRequested, executor:"fet_backend", failureKind:candidateValidation?.failureKind || "fet_backend_hard_validation_failed"},
+        result:{
+          ok:false,
+          applied:false,
+          executor:"fet_backend",
+          failureKind:candidateValidation?.failureKind || "fet_backend_hard_validation_failed",
+          diagnostics:candidateValidation?.diagnostics || null,
+          error:presentation.message
+        },
         telemetry:{initialMetrics:initialStats, metrics:payloadMetrics(payload) || null, hardValid:false}
-      } : null;
+      };
     }
     const applied = await applyValidatedFetCandidate(data, candidateTkb, options);
     if(applied?.ok !== true){
@@ -7317,11 +7462,17 @@ async function executeDirectFastSchedule(options = {}){
     // the exact validator state of the timetable before the run.  A stopped
     // checkpoint may keep that pre-existing debt, but never introduce a new
     // violation simply to obtain a nicer quality metric.
-    const incumbentValidationPromise = (isOptimizeMode || isConstructionThenOptimize)
-      ? inspectFetCandidateHardConstraints(data, JSON.parse(JSON.stringify(data.tkb || {})))
-      : Promise.resolve(null);
+    let incumbentValidationPromise = null;
+    const getIncumbentValidation = () => {
+      if(!incumbentValidationPromise){
+        incumbentValidationPromise = (isOptimizeMode || isConstructionThenOptimize)
+          ? inspectFetCandidateHardConstraints(data, JSON.parse(JSON.stringify(data.tkb || {})))
+          : Promise.resolve(null);
+      }
+      return incumbentValidationPromise;
+    };
     const validateLocalFetCandidate = async candidateTkb => {
-      const incumbentBaseline = qualityPipelineActive ? await incumbentValidationPromise : null;
+      const incumbentBaseline = qualityPipelineActive ? await getIncumbentValidation() : null;
       return validateFetCandidateHardConstraints(data, candidateTkb, (isOptimizeMode || isConstructionThenOptimize) ? {
         allowUnchangedIncumbentViolations:true,
         incumbentBaseline
@@ -7370,6 +7521,34 @@ async function executeDirectFastSchedule(options = {}){
       else setAutoSortStopVisible(false);
       if(typeof setStatus === "function") setStatus("Trống 1 tiết: 0 -> 0", "ok");
       return { ok: true, skipped: true };
+    }
+
+    const automaticQualityMode = ["optimize_all", "solve_optimize_all", "solve_optimize_all_fresh"]
+      .includes(String(options?.mode || ""));
+    if(qualityPipelineActive && automaticQualityMode && unplacedPeriodsCount === 0){
+      const quickTarget = fetAutomaticTargetPreflight(data, initialStats, FetEngineClass);
+      if(quickTarget.reached === true){
+        if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
+        else setAutoSortStopVisible(false);
+        const message = quickTarget.singletonFloor > 0
+          ? `Lịch hiện tại đã đạt sàn toán học: 1 tiết/buổi = ${initialStats.soBuoiDay1}, Trống 2 = 0. Không cần chạy tìm kiếm sâu.`
+          : "Lịch hiện tại đã đạt mục tiêu: 1 tiết/buổi = 0, Trống 2 = 0. Không cần chạy tối ưu.";
+        if(typeof setStatus === "function") setStatus(message, "ok");
+        else if(typeof _setStatus === "function") _setStatus(message, "ok");
+        return {
+          ok:true,
+          applied:false,
+          skipped:true,
+          executor:"fet_preflight",
+          targetReached:true,
+          floorReached:true,
+          singletonTargetReached:true,
+          gapTargetReached:true,
+          qualityTargetReached:true,
+          floorMetric:quickTarget.singletonFloor,
+          metrics:initialStats
+        };
+      }
     }
 
     // A complete incumbent is the expensive case where a fresh seed can
@@ -7691,6 +7870,7 @@ async function executeDirectFastSchedule(options = {}){
                 "optimize_sessions": "Buổi dạy",
                 "optimize_gap1": "Trống 1 tiết",
                 "singleton_priority": "Ưu tiên 1 tiết/buổi",
+                "singleton_fast": "Gom nhanh",
                 "singleton_warmup": "Gom buổi ban đầu",
                 "session_first": "Gom 12 buổi",
                 "parallel_restart": "Chạy song song",
@@ -7871,7 +8051,8 @@ async function executeDirectFastSchedule(options = {}){
               && !fetQualityMetricsNotWorse(msg.metrics, initialStats, options.mode)){
               if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
               else setAutoSortStopVisible(false);
-              updateStatusMsg("Kết quả tối ưu làm tăng chỉ số chất lượng; lịch hiện tại được giữ nguyên.", "info");
+              const presentation = fetFailurePresentation({failureKind:"fet_candidate_quality_regression_rejected"});
+              updateStatusMsg(presentation.message, presentation.level);
               settleWorker({
                 ok:false,
                 applied:false,
@@ -7884,27 +8065,44 @@ async function executeDirectFastSchedule(options = {}){
               });
               return;
             }
+            if(qualityPipelineActive && options?.__incumbentComplete === true
+              && msg.metrics && typeof msg.metrics === "object"
+              && fetQualityMetricsCompare(msg.metrics, initialStats, options.mode) === 0){
+              if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
+              else setAutoSortStopVisible(false);
+              const presentation = fetFailurePresentation({failureKind:"fet_worker_no_improvement"});
+              updateStatusMsg(presentation.message, presentation.level);
+              settleWorker({
+                ok:true,
+                applied:false,
+                executor:"fet_worker",
+                failureKind:"fet_worker_no_improvement"
+              }, {
+                initialMetrics:msg.initialMetrics || initialStats,
+                metrics:msg.metrics,
+                hardValid:true
+              });
+              return;
+            }
             let candidateValidation = { ok: true };
             if(qualityPipelineActive){
               candidateValidation = await validateFetCandidateHardConstraints(data, msg.tkb, {
                 allowUnchangedIncumbentViolations:true,
-                incumbentBaseline: await incumbentValidationPromise
+                incumbentBaseline: await getIncumbentValidation()
               });
               if(candidateValidation.ok !== true){
                 if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
                 else setAutoSortStopVisible(false);
-                updateStatusMsg(
-                  "Không thể tối ưu thêm do chạm giới hạn ràng buộc (lịch hiện tại được giữ nguyên).",
-                  "info"
-                );
-                clearFetDiagnosticPanel();
+                const presentation = fetFailurePresentation(candidateValidation);
+                updateStatusMsg(presentation.message, presentation.level);
+                if(presentation.showDiagnostics) renderFetDiagnosticPanel(candidateValidation.diagnostics || null);
                 settleWorker({
                   ok:false,
                   applied:false,
                   executor:"fet_worker",
                   failureKind:candidateValidation.failureKind || "fet_candidate_hard_validation_failed",
-                  diagnostics:validationDiagnostics,
-                  error:candidateValidation.error
+                  diagnostics:candidateValidation.diagnostics || null,
+                  error:presentation.message
                 }, {
                   initialMetrics:msg.initialMetrics || initialStats,
                   metrics:msg.metrics || null,
@@ -8149,10 +8347,11 @@ async function executeDirectFastSchedule(options = {}){
       const candidateValidation = await validateLocalFetCandidate(data.tkb);
       if(candidateValidation.ok !== true){
         restorePlannerScheduleState(data, directFetIncumbent);
-        const message = "Không thể tối ưu thêm do chạm giới hạn ràng buộc (lịch hiện tại được giữ nguyên).";
-        if(typeof setStatus === "function") setStatus(message, "info");
-        else if(typeof _setStatus === "function") _setStatus(message, "info");
-        clearFetDiagnosticPanel();
+        const presentation = fetFailurePresentation(candidateValidation);
+        const message = presentation.message;
+        if(typeof setStatus === "function") setStatus(message, presentation.level);
+        else if(typeof _setStatus === "function") _setStatus(message, presentation.level);
+        if(presentation.showDiagnostics) renderFetDiagnosticPanel(candidateValidation.diagnostics || null);
         return {
           ok:false,
           applied:false,
@@ -10408,13 +10607,13 @@ function _setStatus(msg, type="error"){
   el.style.display = msg ? "inline-block" : "none";
   el.style.fontWeight = "600";
   el.style.letterSpacing = "-0.01em";
-  const isCompletionText = /^(đã tối ưu|đã xếp xong|trống \d tiết|dạy 1 tiết|buổi dạy)/i.test(String(msg || "").trim());
+  const isCompletionText = /^(đã tối ưu|đã xếp xong|trống \d tiết|dạy 1 tiết|buổi dạy|lịch hiện tại đã đạt)/i.test(String(msg || "").trim());
   if(type === "ok" || isCompletionText) el.style.color = "#16a34a";
   else if(type === "info") el.style.color = "#2563eb";
   else if(type === "warning") el.style.color = "#d97706";
   else el.style.color = "#dc2626";
   fitPlannerMobileStatusMessage(el);
-  const persistentCompletion = String(msg || "").trim() === "Đã xếp xong!" || /^(đã tối ưu|dạy 1 tiết|trống \d tiết|buổi dạy)/i.test(String(msg || "").trim());
+  const persistentCompletion = String(msg || "").trim() === "Đã xếp xong!" || /^(đã tối ưu|dạy 1 tiết|trống \d tiết|buổi dạy|lịch hiện tại đã đạt)/i.test(String(msg || "").trim());
   if(msg && !persistentCompletion){
     window.__TKB_STATUS_HIDE_TIMER = window.setTimeout(() => {
       el.textContent = "";

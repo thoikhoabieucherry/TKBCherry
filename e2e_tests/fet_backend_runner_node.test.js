@@ -42,15 +42,33 @@ function makeFixture(){
   return data;
 }
 
-function runRunner(settings = {}){
+function makeSolvedFixture(){
+  const data = makeFixture();
+  const placements = [
+    ["thu2", 0],
+    ["thu2", 1],
+    ["thu3", 0],
+    ["thu3", 1]
+  ];
+  for(let index = 1; index <= 4; index++){
+    const classId = `L${index}`;
+    const [day, period] = placements[index - 1];
+    data.tkb[classId] = {[day]:{sang:new Array(5).fill("")}};
+    data.tkb[classId][day].sang[period] = "Toán";
+  }
+  return data;
+}
+
+function runRunner(settings = {}, data = makeFixture()){
   const request = {
     engine:"fet_trongoi",
-    data:makeFixture(),
+    data,
     settings:Object.assign({
       fet_backend_parallel_workers:2,
       fet_backend_total_state_budget:101,
       fet_backend_lane_budget_ms:12_000,
       session_first_time_budget_ms:1_000,
+      initial_singleton_fast_ms:1_000,
       initial_singleton_warmup_ms:0,
       seed:41
     }, settings)
@@ -107,6 +125,8 @@ test("backend FET runner emits the generic complete/hard-valid reference metrics
   assert.equal(payload.lessons.length, metrics.expected_periods);
   const start = frames.find(frame => frame.stage === "backend_parallel");
   assert.deepEqual(start?.laneStateBudgets, [500_000_000, 500_000_000]);
+  assert.ok(frames.some(frame => frame.stage === "singleton_fast"),
+    "the cheap singleton packer must run before deep 12-bin search");
 });
 
 test("complete-incumbent lanes reject quality regressions and expose stagnation", () => {
@@ -114,4 +134,15 @@ test("complete-incumbent lanes reject quality regressions and expose stagnation"
   assert.match(RUNNER_SOURCE, /candidate\.completeIncumbent && compareQuality\(candidate\.metrics, candidateBaseline\) > 0/);
   assert.match(RUNNER_SOURCE, /fet_backend_stall_ms/);
   assert.match(RUNNER_SOURCE, /backend_stagnated/);
+  assert.match(RUNNER_SOURCE, /strictlyImprovesCompleteIncumbent/);
+  assert.match(RUNNER_SOURCE, /fet_backend_no_improvement/);
+});
+
+test("an already optimal incumbent returns no-improvement instead of a fake successful apply", () => {
+  const {wrapper} = runRunner({}, makeSolvedFixture());
+  assert.equal(wrapper.status, 422);
+  assert.equal(wrapper.payload.ok, false);
+  assert.equal(wrapper.payload.applied, false);
+  assert.equal(wrapper.payload.kind, "fet_backend_no_improvement");
+  assert.ok(wrapper.payload.rejectedCandidates.some(candidate => candidate.reason === "not_better"));
 });

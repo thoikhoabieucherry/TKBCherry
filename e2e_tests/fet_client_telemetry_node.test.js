@@ -16,6 +16,13 @@ function telemetryHelpers(){
   return source.slice(start, end);
 }
 
+function automaticPreflightHelper(){
+  const start = source.indexOf("function fetAutomaticTargetPreflight(");
+  const end = source.indexOf("\nasync function executeFetBackendBoost", start);
+  assert.ok(start >= 0 && end > start, "automatic target preflight must remain a standalone safe slice");
+  return source.slice(start, end);
+}
+
 test("FET terminal telemetry posts only the strict aggregate event schema", async () => {
   const fetchCalls = [];
   const window = {
@@ -185,4 +192,33 @@ test("quality progress and Stop reject a complete-incumbent regression", () => {
   );
   assert.match(source, /fet_checkpoint_quality_regression_rejected/);
   assert.match(source, /fet_candidate_quality_regression_rejected/);
+});
+
+test("automatic preflight skips deep search at zero or at a proven positive singleton floor", () => {
+  const context = {JSON, Math, Number, Object};
+  vm.runInNewContext(automaticPreflightHelper(), context, {filename:"fet-automatic-preflight.js"});
+
+  class FloorEngine {
+    constructor(){ this.constraintPreflight = null; }
+    loadExistingSchedule(){}
+    compileConstraints(){
+      this.constraintPreflight = {structuralFloor:{metricLowerBounds:{soBuoiDay1:1}}};
+    }
+  }
+
+  assert.equal(context.fetAutomaticTargetPreflight({}, {soBuoiDay1:0, soBuoiTrong2:0}, null).reached, true);
+  assert.equal(context.fetAutomaticTargetPreflight({}, {soBuoiDay1:1, soBuoiTrong2:0}, FloorEngine).reached, true);
+  assert.equal(context.fetAutomaticTargetPreflight({}, {soBuoiDay1:2, soBuoiTrong2:0}, FloorEngine).reached, false);
+  assert.equal(context.fetAutomaticTargetPreflight({}, {soBuoiDay1:0, soBuoiTrong2:1}, FloorEngine).reached, false);
+
+  const preflightCall = source.indexOf("const quickTarget = fetAutomaticTargetPreflight");
+  const backendCall = source.indexOf("const backendBoost = await executeFetBackendBoost", preflightCall);
+  assert.ok(preflightCall >= 0 && backendCall > preflightCall,
+    "the cheap target proof must run before backend lanes are started");
+});
+
+test("a backend candidate rejected by validation settles once instead of launching the browser solver again", () => {
+  assert.match(source, /if\(candidateValidation\?\.ok !== true\)\{[\s\S]{0,1000}handled:true/);
+  assert.match(source, /payloadSaysNoImprovement/);
+  assert.match(source, /fet_backend_contract_invalid/);
 });

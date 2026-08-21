@@ -101,6 +101,7 @@ Hệ thống cung cấp quy trình tối ưu đa tầng lexicographic:
 * **Adaptive parallel lanes (`runParallelConstructionLane` / `runParallelRestartLane`)**:
    * Khi dựng lịch mới, tạo tối đa 2 worker con với seed độc lập và nhận nghiệm đủ tiết đầu tiên để đi tiếp sang quality lane; khi incumbent hoàn chỉnh vẫn còn singleton sau các lượt chính, tạo tối đa 4 worker con với seed độc lập.
    * Mỗi worker con đặt `parallelWorkers: 1`, giữ giới hạn RAM và không tạo pool đệ quy. Nếu browser không hỗ trợ worker lồng nhau, worker cha tự quay về đường chạy tuần tự.
+   * Trước warmup/deep, worker chạy `initialSingletonPacking()` trong `initialSingletonFastMs` mặc định 1.200 ms; stage `singleton_fast` chỉ thử direct move/short chain có snapshot rollback. Đây là prepass định hướng nhanh cho bài toán gom 12 buổi, không phải LLM/Agent suy luận và không được nới hard constraints.
    * Trước deep quality lane, worker chạy `initialSingletonWarmupMs` mặc định 5 giây với `deepLocalFet/sessionBinChains/reformLessonBlocks` tắt; stage này hiển thị là `Gom buổi ban đầu` và chỉ sau đó mới bật 12-bin/deep.
    * Không tăng pool chỉ vì máy có nhiều logical core: phép đo local trên fixture trường cho thấy 4 lane đã tranh CPU ở lát 10 giây, còn 6/8 lane không có lợi ích ổn định. Nút thắt phải được xử lý bằng deadline và thứ tự mục tiêu trước khi tăng worker.
 * **Deadline contract cho singleton search**:
@@ -115,7 +116,12 @@ Hệ thống cung cấp quy trình tối ưu đa tầng lexicographic:
 * **Local backend parallel lanes (`fet_trongoi_runner.cjs`)**:
    * Đây là đường bổ trợ cho incumbent hoàn chỉnh, không thay thế pipeline browser và không dùng cho lịch còn thiếu tiết. UI đặt tối đa 1 tỷ trạng thái session-first; runner chia quota `[floor(total/lane), ...]` cộng phần dư vào các lane đầu để tổng đúng bằng trần.
    * Mỗi lane chạy cùng 12-bin/session-first + chain/reform pipeline với seed riêng. Parent chọn lexicographic candidate tốt nhất, dừng sớm khi đạt cả singleton floor và gap-2 floor, phát keepalive 500 ms và chỉ serialize TKB ở kết quả cuối.
+   * Candidate hoàn chỉnh nhưng không cải thiện incumbent bị loại ở parent bằng comparator nghiêm ngặt; terminal trả `fet_backend_no_improvement` hoặc `fet_backend_stagnated`. UI kết thúc một lượt và không chạy lại browser worker chỉ vì backend không có candidate tốt hơn.
    * Khi runner trả HTTP 422 do Rust quality gate nhưng payload vẫn có đủ metrics hard-valid và TKB hoàn chỉnh, UI chỉ nhận sau khi tự đếm ô và chạy validator browser; candidate thiếu tiết hoặc thêm vi phạm luôn bị loại.
+
+* **Automatic preflight và chẩn đoán terminal**:
+   * `fetAutomaticTargetPreflight()` chạy trước backend/worker. Incumbent đủ tiết với singleton=0 và Gap2=0 kết thúc ngay; singleton dương chỉ được kết thúc sớm khi FET compile chứng minh structural floor tương ứng.
+   * Mọi terminal candidate failure phải đi qua `fetFailurePresentation()`: plateau/budget, regression, thiếu tiết, hard violation và lỗi validator có thông báo riêng. Không dùng câu “chạm giới hạn ràng buộc” cho một candidate validation failure chung; diagnostic candidate phải được render để người dùng thấy ràng buộc cụ thể.
 2. **Closed Push-Cycles (`tryClosedPushCycles`)**:
    * Chuỗi đẩy khép kín 2-step và 3-step di chuyển và hấp thụ tiết đơn lẻ vào các buổi dạy hiện hữu mà không tạo thêm ô trống hay xung đột.
 3. **Tối ưu buổi 1 tiết (`optimize_singletons`)**:
@@ -211,6 +217,8 @@ Chạy các lệnh kiểm thử độc lập:
 | `tools/vps-deploy/update-deploy.py` | Script tự động hóa build và deploy lên VPS một bước |
 | `scratch/test_forensic_benchmark.js` | Script kiểm chứng hiệu năng và ràng buộc cứng trên dữ liệu trường thực tế |
 | `e2e_tests/fet_backend_runner_node.test.js` | Contract test cho quota lane 1 tỷ, metrics hard-valid và candidate đủ tiết |
+| `e2e_tests/fet_client_telemetry_node.test.js` | Contract test cho preflight nhanh, terminal classification và không fallback solver lặp |
+| `e2e_tests/planner_fet_checkpoint_validation_node.test.js` | Contract test cho hard baseline, diagnostic candidate và thông báo plateau/regression |
 
 ---
 

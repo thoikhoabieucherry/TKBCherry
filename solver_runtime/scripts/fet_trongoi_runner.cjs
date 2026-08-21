@@ -427,6 +427,7 @@ function laneSettings(request, laneIndex, laneCount, laneStateBudget) {
       parallelRestartSliceMs: 0,
       autoQualityTimeBudgetMs: laneBudgetMs,
       singletonCycleBudgetMs: clampInteger(settings.singleton_cycle_budget_ms, 30_000, 5_000, 120_000),
+      initialSingletonFastMs: clampInteger(settings.initial_singleton_fast_ms, 1_200, 0, 5_000),
       initialSingletonWarmupMs: clampInteger(settings.initial_singleton_warmup_ms, 5_000, 0, 15_000),
       deepSingletonRounds: clampInteger(settings.deep_singleton_rounds, 3, 1, 8),
       singletonMaxPasses: clampInteger(settings.singleton_max_passes, 60, 8, 120),
@@ -625,6 +626,12 @@ function admissibleCandidate(candidate, baselineMetrics, baselineCellCount) {
     && Number(candidate.validation?.missingMustTeachCount || 0) <= Number(baseline.missingMustTeachCount || 0);
 }
 
+function strictlyImprovesCompleteIncumbent(candidate, baselineMetrics) {
+  if (!candidate?.completeIncumbent) return true;
+  const baseline = candidate.baselineMetrics || baselineMetrics || candidate.initialMetrics;
+  return Boolean(baseline) && compareQuality(candidate.metrics, baseline) < 0;
+}
+
 async function runParallel(request) {
   const settings = request.settings && typeof request.settings === "object" ? request.settings : {};
   const defaultWorkerCap = Math.min(4, os.cpus().length || 1);
@@ -746,6 +753,7 @@ async function runParallel(request) {
         if (message.type === "checkpoint") {
           const candidate = message.candidate;
           if (admissibleCandidate(candidate, baselineMetrics || candidate?.initialMetrics, baselineCellCount)
+              && strictlyImprovesCompleteIncumbent(candidate, baselineMetrics || candidate?.initialMetrics)
               && (!best || compareQuality(candidate.metrics, best.metrics) < 0)) {
             best = candidate;
             lastQualityImprovementAt = Date.now();
@@ -778,7 +786,14 @@ async function runParallel(request) {
         if (!baselineMetrics && (candidate?.baselineMetrics || candidate?.initialMetrics)) {
           baselineMetrics = candidate.baselineMetrics || candidate.initialMetrics;
         }
-        if (admissibleCandidate(candidate, baselineMetrics || candidate?.initialMetrics, baselineCellCount)
+        const candidateAdmissible = admissibleCandidate(
+          candidate,
+          baselineMetrics || candidate?.initialMetrics,
+          baselineCellCount
+        );
+        const candidateImproves = candidateAdmissible
+          && strictlyImprovesCompleteIncumbent(candidate, baselineMetrics || candidate?.initialMetrics);
+        if (candidateImproves
             && (!best || compareQuality(candidate.metrics, best.metrics) < 0)) {
           best = candidate;
           lastQualityImprovementAt = Date.now();
@@ -806,7 +821,8 @@ async function runParallel(request) {
             cellCount: candidate.cellCount,
             baselineCellCount,
             validation: candidate.validation,
-            baselineValidation: candidate.baselineValidation
+            baselineValidation: candidate.baselineValidation,
+            reason: candidateAdmissible ? "not_better" : "inadmissible"
           });
         }
         const primaryReached = best
@@ -839,16 +855,20 @@ async function runParallel(request) {
   });
 
   if (!terminal.best) {
+    const noImprovement = terminal.rejectedCandidates.some(candidate => candidate.reason === "not_better");
+    const resultKind = terminal.reason === "stagnated"
+      ? "fet_backend_stagnated"
+      : (noImprovement ? "fet_backend_no_improvement" : "fet_backend_no_admissible_candidate");
     return {
       status: 422,
       payload: {
         ok: false,
         applied: false,
         engine: "fet_trongoi_backend_parallel",
-        kind: terminal.reason === "stagnated"
-          ? "fet_backend_stagnated"
-          : "fet_backend_no_admissible_candidate",
-        error: "Khong co lane backend nao tra ve lich day du, hop le va khong tang Trong 2.",
+        kind: resultKind,
+        error: noImprovement
+          ? "Cac lane da ket thuc nhung chua tim thay lich tot hon incumbent."
+          : "Khong co lane backend nao tra ve lich day du, hop le va khong tang Trong 2.",
         runtimeMs: Date.now() - processStartedMs,
         parallelWorkers: terminal.laneCount,
         totalStateBudget,
