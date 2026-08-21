@@ -93,6 +93,10 @@ Hệ thống cung cấp quy trình tối ưu đa tầng lexicographic:
 * **Adaptive parallel lanes (`runParallelConstructionLane` / `runParallelRestartLane`)**:
    * Khi dựng lịch mới, tạo tối đa 2 worker con với seed độc lập và nhận nghiệm đủ tiết đầu tiên để đi tiếp sang quality lane; khi incumbent hoàn chỉnh vẫn còn singleton sau các lượt chính, tạo tối đa 4 worker con với seed độc lập.
    * Mỗi worker con đặt `parallelWorkers: 1`, giữ giới hạn RAM và không tạo pool đệ quy. Nếu browser không hỗ trợ worker lồng nhau, worker cha tự quay về đường chạy tuần tự.
+   * Không tăng pool chỉ vì máy có nhiều logical core: phép đo local trên fixture trường cho thấy 4 lane đã tranh CPU ở lát 10 giây, còn 6/8 lane không có lợi ích ổn định. Nút thắt phải được xử lý bằng deadline và thứ tự mục tiêu trước khi tăng worker.
+* **Deadline contract cho singleton search**:
+   * `runUntilZeroSingletons({timeBudgetMs})` phải chặn cả toán tử perturbation sau deadline, không chỉ chặn đầu vòng lặp. Các nhánh `tryPairClassSingletons`, `tryCrossDayPairShift`, `tryClosedPushCycles` bắt buộc đi qua `needsSingletons()`/`runSingletonOperator`.
+   * Khi sửa hoặc thêm toán tử deep, phải có test chứng minh ngân sách ngắn không bị chạy tràn; không được gọi trực tiếp một toán tử đệ quy sau khi deadline đã hết.
 * **Session-first stall guard & telemetry**:
    * Khi còn singleton, gap-2 là stage bị khóa; lane thường không được nới gap2. Deep tradeoff chỉ là transaction có rollback. Singleton cycle mặc định 30 giây, explicit optimizer budget luôn được tôn trọng.
    * `trySessionFirstSingletonSearch()` có lát thời gian riêng mặc định 8 giây (override an toàn 1..60 giây), luôn lấy min với deadline pipeline; `sessionFirstStateBudget` vẫn cho phép trần lớn nhưng không ép một nhánh dùng hết deadline tổng.
@@ -114,10 +118,10 @@ Hệ thống cung cấp quy trình tối ưu đa tầng lexicographic:
 
 ### 3.3. Hiệu Năng Thực Nghiệm Đã Đo Đạc (Empirical Benchmarks)
 * **Trường Đồng Khởi (`scratch/dongkhoi_1566.json` - 54 lớp / 1.566 tiết / 1.080 hoạt động)**:
-  * Xếp 100% (1.080/1.080 hoạt động) trong **< 150 ms** (~84 ms).
+  * Xếp đủ 100%; thời gian phụ thuộc seed và ngân sách local, các lần đo hiện tại khoảng **1–2 giây** cho `solve()`.
   * 0 vi phạm ràng buộc cứng; `soBuoiDay1 = 0`, `soBuoiTrong2 = 0`.
 * **Trường Mặc định (`scratch/default_school_0317.json` - 75 lớp / 2.193 tiết / 1.500 hoạt động)**:
-  * Xếp 100% (1.500/1.500 hoạt động) trong **< 200 ms** (~98 ms).
+  * Xếp đủ trên fixture hiện hành; không dùng con số `< 200 ms` cũ làm cam kết cho pipeline 12-bin/deep mới.
   * 0 vi phạm ràng buộc cứng; `soBuoiDay1 = 0`, `soBuoiTrong2 = 0`.
 
 ### 3.4. Bảng Thống Kê Theo Lớp (Class Statistics Table)

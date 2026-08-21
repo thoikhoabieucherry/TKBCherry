@@ -6,6 +6,15 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-21 LOCAL DEADLINE GUARD & WORKER CAPACITY AUDIT (NOT DEPLOYED)
+
+- **Nguyên nhân chậm mới xác định**: `runUntilZeroSingletons()` đã hết ngân sách sau lát `session-first`, nhưng nhánh ILS “stagnation pass 1” vẫn gọi trực tiếp `tryClosedPushCycles(..., 4)`, có thể chạy thêm khoảng 30 giây dù `timeBudgetMs` đã hết.
+- **Sửa local**: ba nhánh perturbation (`tryPairClassSingletons`, `tryCrossDayPairShift`, `tryClosedPushCycles`) nay đi qua `needsSingletons()`/`runSingletonOperator`. `initialSingletonPacking()` cũng truyền đúng `sourceSlot` thật của tiết đơn thay vì luôn dùng ô đầu buổi; hai engine mirror giữ byte-identical.
+- **Đo trước/sau** trên `scratch/live_school_default.json`, seed `132912`, ngân sách singleton 5 giây: trước khoảng **36,3 giây**, sau **5,8 giây**; lịch vẫn đủ tiết, gap-2 = 0, student holes = 0. Test hồi quy mới bảo đảm deep kick không khởi động sau deadline.
+- **Đo seed thực tế**: dựng lịch mới `132912` khoảng **5,2 giây**, `237641` khoảng **5,5 giây**; chạy `optimize_all` trực tiếp 30 giây/lượt giảm singleton lần lượt `34 -> 10` và `23 -> 9`, không mất tiết/gap-2/lỗ học sinh.
+- **Audit worker/RAM**: race 4 worker trên đúng fixture trường với lát tối ưu 10 giây mất khoảng **28,9 giây** do tranh CPU; giữ mặc định 2 worker dựng mới và tối đa 4 worker restart. Tăng lên 6/8 không có bằng chứng lợi ích ổn định.
+- **Kiểm tra**: engine contract **40/40 pass**, syntax hai engine/hai worker pass, SHA-256 mirror pass, `git diff --check` pass. Chỉ local; không deploy, không push, không sửa DB lịch.
+
 ## 2026-08-21 LOCAL PARALLEL CONSTRUCTION RACE (NOT DEPLOYED)
 
 - **Mục tiêu**: giảm thời gian dựng lịch mới trên máy local mà không tăng cứng pool đến mức tranh CPU làm chậm hoặc làm mất tiết.

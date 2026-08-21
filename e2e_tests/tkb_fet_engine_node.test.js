@@ -163,6 +163,62 @@ test("Auto construction publishes immediately after all lessons are placed and n
   assert.equal(polishWasCalled, false);
 });
 
+test("FET construction packs four one-period lessons for one teacher into non-singleton sessions", () => {
+  const FetTimetableEngine = loadEngine();
+  const data = makeData();
+  data.lop = [1, 2, 3, 4].map(index => ({
+    id:`L${index}`,
+    ten:`10A${index}`,
+    ten2:`10A${index}`,
+    khoi:"10"
+  }));
+  data.mon = [1, 2, 3, 4].map(index => ({ten:`Môn ${index}`, khoi:"10", sotiet:1, gioihan:1}));
+  data.monhoc = data.mon.map(row => ({ten:row.ten, ma:row.ten}));
+  data.pccmMatrix = {};
+  data.pccmTietMatrix = {};
+  for(let index = 1; index <= 4; index++){
+    data.pccmMatrix[`L${index}|Môn ${index}`] = "GV01";
+    data.pccmTietMatrix[`L${index}|Môn ${index}`] = 1;
+  }
+
+  const engine = new FetTimetableEngine(data, {timeBudgetMs:2_000, seed:31});
+  const result = engine.solve();
+  const metrics = engine.evaluateMetrics();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.unassigned, 0);
+  assert.equal(metrics.unplacedCount, 0);
+  assert.equal(metrics.soBuoiDay1, 0,
+    "construction must group the teacher's four compatible lessons before deep optimization");
+  assert.equal(engine.countTotalStudentHoles(), 0);
+});
+
+test("construction session hints remain soft when a teacher is forced across morning and afternoon", () => {
+  const FetTimetableEngine = loadEngine();
+  const data = makeConstraintData({
+    subjects:[
+      {name:"Toán", teacher:"GV01", periods:1},
+      {name:"Văn", teacher:"GV01", periods:1}
+    ]
+  });
+  data.lop = [
+    {id:"L1", ten:"10A1", ten2:"10A1", khoi:"10", ca:"sang"},
+    {id:"L2", ten:"10A2", ten2:"10A2", khoi:"10", ca:"chieu"}
+  ];
+  data.pccmMatrix = {"L1|Toán":"GV01", "L2|Văn":"GV01"};
+  data.pccmTietMatrix = {"L1|Toán":1, "L2|Văn":1};
+
+  const engine = new FetTimetableEngine(data, {timeBudgetMs:2_000, seed:37});
+  const result = engine.solve();
+  const metrics = engine.evaluateMetrics();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.unassigned, 0,
+    "a singleton preference must never discard a lesson when pairing is mathematically impossible");
+  assert.equal(metrics.soBuoiDay1, 2);
+  assert.equal(engine.countTotalStudentHoles(), 0);
+});
+
 test("FET reports a conservative unplaced floor for a proven capacity shortage", () => {
   const onlyOneSlot = allClassSlotsOff();
   delete onlyOneSlot["thu2|sang|0"];
@@ -300,6 +356,36 @@ test("session-first search emits heartbeat and respects its bounded time slice",
   assert.ok(heartbeats.every(progress =>
     Number(progress.sessionStates) + Number(progress.periodStates) <= progress.stateBudget
   ));
+});
+
+test("singleton optimization does not start a deep kick after its deadline", async () => {
+  const FetTimetableEngine = loadEngine();
+  const data = makeData();
+  const engine = new FetTimetableEngine(data, {
+    seed:43,
+    deepLocalFet:true,
+    sessionBinChains:true
+  });
+  const construction = engine.solve();
+  assert.equal(construction.ok, true);
+
+  let deepKickCalled = false;
+  engine.trySessionFirstSingletonSearch = async () => {
+    engine.deadlineAtMs = Date.now() - 1;
+    return null;
+  };
+  engine.tryClosedPushCycles = () => {
+    deepKickCalled = true;
+    throw new Error("deadline-expired deep kick must not start");
+  };
+
+  await engine.runUntilZeroSingletons({
+    timeBudgetMs:1,
+    maxPasses:2,
+    stagnationThreshold:3
+  });
+
+  assert.equal(deepKickCalled, false);
 });
 
 test("FET stops optimization at a proven positive floor and exposes it", async () => {

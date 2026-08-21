@@ -1276,6 +1276,156 @@
       this.actPlacement = new Array(this.activities.length).fill(-1);
     }
 
+    buildConstructionSessionHints(){
+      // Build a soft 12-bin plan before period coloring. It never becomes a
+      // hard constraint: if the period-level FET checks reject the hinted bin,
+      // randomSwap may still use any legal session. The plan only prevents the
+      // greedy constructor from opening a fresh singleton session when a
+      // compatible teacher/class bin is still available.
+      const teacherCapacity = new Int16Array(this.teachers.length * 12);
+      const classCapacity = new Int16Array(this.classes.length * 12);
+      const teacherFixedLoad = new Int16Array(this.teachers.length * 12);
+      const classFixedLoad = new Int16Array(this.classes.length * 12);
+      for(let tIdx = 0; tIdx < this.teacherGridList.length; tIdx++){
+        const grid = this.teacherGridList[tIdx];
+        if(!grid) continue;
+        for(let session = 0; session < 12; session++){
+          for(let p = 0; p < PERIODS_PER_SESSION; p++){
+            const value = grid[session * PERIODS_PER_SESSION + p];
+            if(value !== -2) teacherCapacity[tIdx * 12 + session]++;
+            if(value === -3) teacherFixedLoad[tIdx * 12 + session]++;
+          }
+        }
+      }
+      for(let classIdx = 0; classIdx < this.classGridList.length; classIdx++){
+        const grid = this.classGridList[classIdx];
+        if(!grid) continue;
+        for(let session = 0; session < 12; session++){
+          for(let p = 0; p < PERIODS_PER_SESSION; p++){
+            const value = grid[session * PERIODS_PER_SESSION + p];
+            if(value !== -2) classCapacity[classIdx * 12 + session]++;
+            if(value === -3) classFixedLoad[classIdx * 12 + session]++;
+          }
+        }
+      }
+
+      const sessionDomains = this.activities.map(act => Array.from(new Set(
+        (this.allowedSlotsByActivity?.get(act) || []).map(slot => Math.floor(slot / PERIODS_PER_SESSION))
+      )));
+      let bestPlan = null;
+      let bestPlanScore = Infinity;
+      const restarts = Math.max(1, Math.min(16, Number(this.options?.initialSessionPlanRestarts) || 8));
+
+      for(let restart = 0; restart < restarts; restart++){
+        const teacherLoad = new Int16Array(teacherFixedLoad);
+        const classLoad = new Int16Array(classFixedLoad);
+        const plan = new Map();
+
+        for(const act of this.activities){
+          const sessions = sessionDomains[act.id] || [];
+          if(sessions.length === 0) continue;
+          const dur = act.duration || 1;
+          let bestSession = null;
+          let bestScore = Infinity;
+          for(const session of sessions){
+            let score = 0;
+            for(const tIdx of act.teacherIdxs || []){
+              const offset = tIdx * 12 + session;
+              const before = teacherLoad[offset] || 0;
+              const after = before + dur;
+              const overflow = Math.max(0, after - teacherCapacity[offset]);
+              if(overflow > 0) score += 100000 + overflow * 10000;
+              if(dur === 1 && before === 0) score += 10000;
+              if(dur === 1 && before === 1) score -= 10000;
+              score += after * 5;
+            }
+            const classOffset = act.classIdx * 12 + session;
+            const classBefore = classLoad[classOffset] || 0;
+            const classOverflow = Math.max(0, classBefore + dur - classCapacity[classOffset]);
+            if(classOverflow > 0) score += 100000 + classOverflow * 10000;
+            score += classBefore * 20;
+            // Different restarts explore equal-cost bins while retaining a
+            // deterministic result for the same public seed.
+            score += this.rng.next() * 0.1;
+            if(score < bestScore){
+              bestScore = score;
+              bestSession = session;
+            }
+          }
+
+          plan.set(act.id, bestSession);
+          for(const tIdx of act.teacherIdxs || []){
+            teacherLoad[tIdx * 12 + bestSession] += dur;
+          }
+          classLoad[act.classIdx * 12 + bestSession] += dur;
+        }
+
+        // Repair predicted singleton bins without constraining period-level
+        // placement. Only zero-overflow moves that lower the plan's singleton
+        // count are accepted.
+        for(let pass = 0; pass < 5; pass++){
+          let changed = false;
+          for(const act of this.activities){
+            const source = plan.get(act.id);
+            if(source === undefined) continue;
+            const dur = act.duration || 1;
+            let target = source;
+            let bestDelta = 0;
+            for(const destination of sessionDomains[act.id] || []){
+              if(destination === source) continue;
+              const classOffset = act.classIdx * 12 + destination;
+              if(classLoad[classOffset] + dur > classCapacity[classOffset]) continue;
+              let delta = 0;
+              let valid = true;
+              for(const tIdx of act.teacherIdxs || []){
+                const sourceCount = teacherLoad[tIdx * 12 + source];
+                const targetOffset = tIdx * 12 + destination;
+                const targetCount = teacherLoad[targetOffset];
+                if(targetCount + dur > teacherCapacity[targetOffset]){
+                  valid = false;
+                  break;
+                }
+                delta += ((sourceCount - dur === 1 ? 1 : 0) + (targetCount + dur === 1 ? 1 : 0))
+                  - ((sourceCount === 1 ? 1 : 0) + (targetCount === 1 ? 1 : 0));
+              }
+              if(valid && delta < bestDelta){
+                bestDelta = delta;
+                target = destination;
+              }
+            }
+            if(target !== source){
+              for(const tIdx of act.teacherIdxs || []){
+                teacherLoad[tIdx * 12 + source] -= dur;
+                teacherLoad[tIdx * 12 + target] += dur;
+              }
+              classLoad[act.classIdx * 12 + source] -= dur;
+              classLoad[act.classIdx * 12 + target] += dur;
+              plan.set(act.id, target);
+              changed = true;
+            }
+          }
+          if(!changed) break;
+        }
+
+        let predictedSingletons = 0;
+        let overflow = 0;
+        for(let i = 0; i < teacherLoad.length; i++){
+          if(teacherLoad[i] === 1) predictedSingletons++;
+          overflow += Math.max(0, teacherLoad[i] - teacherCapacity[i]);
+        }
+        for(let i = 0; i < classLoad.length; i++){
+          overflow += Math.max(0, classLoad[i] - classCapacity[i]);
+        }
+        const planScore = overflow * 100000 + predictedSingletons;
+        if(planScore < bestPlanScore){
+          bestPlanScore = planScore;
+          bestPlan = plan;
+        }
+      }
+
+      this.constructionSessionHints = bestPlan || new Map();
+    }
+
     slotTeacherGapPenalty(act, slot){
       let penalty = 0;
       const dIdx = Math.floor(slot / SLOTS_PER_DAY);
@@ -1298,6 +1448,10 @@
 
     slotTeacherAffinityScore(act, slot){
       let score = this.slotTeacherGapPenalty(act, slot) * 100;
+      const hintedSession = this.constructionSessionHints?.get(act.id);
+      if(hintedSession !== undefined){
+        score += Math.floor(slot / PERIODS_PER_SESSION) === hintedSession ? -500 : 500;
+      }
       if(!this.teacherSessionCounts) return score;
 
       const dIdx = Math.floor(slot / SLOTS_PER_DAY);
@@ -1310,6 +1464,10 @@
         const tBase = tIdx * 12;
 
         const cntInSess = this.teacherSessionCounts[tBase + sessOffset];
+        const duration = act.duration || 1;
+        const projectedCount = cntInSess + duration;
+        score += ((projectedCount === 1 ? 1 : 0) - (cntInSess === 1 ? 1 : 0)) * 5000;
+        if(duration === 1 && cntInSess === 0) score += 300;
         if(cntInSess === 1){
           score -= 350;
         } else if(cntInSess === 2){
@@ -1362,7 +1520,11 @@
           const filtered = allFeasible.filter(s => !this.opensUnaffordableSession(act, s));
           if(filtered.length > 0) candidateSlots = filtered;
         }
-        this.rng.shuffle(candidateSlots);
+        if(this.minTwoGuardActive && this.constructionSessionHints){
+          candidateSlots.sort((a, b) => this.slotTeacherAffinityScore(act, a) - this.slotTeacherAffinityScore(act, b));
+        }else{
+          this.rng.shuffle(candidateSlots);
+        }
 
         const sampleSize = Math.min(candidateSlots.length, 4);
         let bestSlot = candidateSlots[0];
@@ -1463,7 +1625,6 @@
 
         const sessionAffinityScore = this.slotTeacherAffinityScore(act, slot);
         const isUnaffordable = (level < 6 && this.minTwoGuardActive) ? this.opensUnaffordableSession(act, slot) : false;
-
         candidateInfo.push({
           slot,
           displacedActIds: Array.from(displacedActIds),
@@ -1480,6 +1641,9 @@
         if(a.isUnaffordable !== b.isUnaffordable) return a.isUnaffordable ? 1 : -1;
         if(a.nConflActs !== b.nConflActs) return a.nConflActs - b.nConflActs;
         if(a.totalWrong !== b.totalWrong) return a.totalWrong - b.totalWrong;
+        if(this.minTwoGuardActive && a.sessionAffinityScore !== b.sessionAffinityScore){
+          return a.sessionAffinityScore - b.sessionAffinityScore;
+        }
         return a.tieBreaker - b.tieBreaker;
       });
 
@@ -2308,6 +2472,169 @@
       return { possible: feasible };
     }
 
+    initialSingletonPacking(options = {}){
+      if(this.getUnassignedCount() > 0) return { attempts: 0, accepted: 0, elapsedMs: 0 };
+
+      const startedAt = Date.now();
+      const configuredBudget = Number(options.timeBudgetMs ?? this.options?.initialSingletonPackingBudgetMs);
+      const budgetMs = Math.max(0, Math.min(
+        Number.isFinite(configuredBudget) && configuredBudget >= 0 ? configuredBudget : 2500,
+        15000
+      ));
+      const configuredAttempts = Number(options.maxAttempts ?? this.options?.initialSingletonPackingMaxAttempts);
+      const maxAttempts = Math.max(1, Math.min(
+        Number.isFinite(configuredAttempts) && configuredAttempts > 0 ? Math.floor(configuredAttempts) : 12000,
+        50000
+      ));
+      const deadline = Math.min(
+        startedAt + budgetMs,
+        this.deadlineAtMs || (startedAt + budgetMs)
+      );
+      let attempts = 0;
+      let accepted = 0;
+
+      const hasTime = () => attempts < maxAttempts && Date.now() < deadline;
+      const currentMetrics = () => this.evaluateMetrics();
+      const acceptIfBetter = before => {
+        const after = currentMetrics();
+        return after.unplacedCount === 0
+          && after.soBuoiDay1 < before.soBuoiDay1
+          && after.soBuoiTrong2 <= before.soBuoiTrong2
+          && this.countTotalStudentHoles() === 0;
+      };
+      const teacherSessionCount = (tIdx, session) => {
+        const tg = this.teacherGridList[tIdx];
+        if(!tg) return 0;
+        let count = 0;
+        for(let p = 0; p < PERIODS_PER_SESSION; p++){
+          if(tg[session * PERIODS_PER_SESSION + p] >= 0) count++;
+        }
+        return count;
+      };
+      const targetWorksForAllTeachers = (act, session, slot) => {
+        for(const tIdx of act.teacherIdxs || []){
+          const tg = this.teacherGridList[tIdx];
+          if(!tg || tg[slot] !== -1) return false;
+          if(teacherSessionCount(tIdx, session) < 1) return false;
+        }
+        return true;
+      };
+
+      const tryDirectMove = (act, sourceSlot, targetSession, before) => {
+        const classGrid = this.classGridList[act.classIdx];
+        for(let p = 0; p < PERIODS_PER_SESSION && hasTime(); p++){
+          const targetSlot = targetSession * PERIODS_PER_SESSION + p;
+          if(!targetWorksForAllTeachers(act, targetSession, targetSlot)) continue;
+          if(!classGrid || classGrid[targetSlot] !== -1) continue;
+
+          attempts++;
+          const snapshot = this.captureStateSnapshot();
+          this.unplaceActivity(act.id);
+          let ok = this.isSlotFeasible(act, targetSlot);
+          if(ok) this.placeActivityDirect(act.id, targetSlot);
+          if(ok && acceptIfBetter(before)){
+            accepted++;
+            return true;
+          }
+          this.restoreStateSnapshot(snapshot);
+        }
+        return false;
+      };
+
+      const tryThreeStepChain = (act, sourceSlot, targetSession, before) => {
+        const classGrid = this.classGridList[act.classIdx];
+        for(let p = 0; p < PERIODS_PER_SESSION && hasTime(); p++){
+          const targetSlot = targetSession * PERIODS_PER_SESSION + p;
+          if(!targetWorksForAllTeachers(act, targetSession, targetSlot)) continue;
+          const displacedId = classGrid ? classGrid[targetSlot] : -1;
+          const displaced = displacedId >= 0 ? this.activities[displacedId] : null;
+          if(!displaced || displaced.isFixed || displaced.lockedByLessonBlock || displaced.duration !== 1) continue;
+
+          const displacedClassGrid = this.classGridList[displaced.classIdx];
+          const displacedDomain = this.allowedSlotsByActivity?.get(displaced) || [];
+          for(const nextSlot of displacedDomain){
+            if(!hasTime()) break;
+            if(nextSlot === sourceSlot || nextSlot === targetSlot) continue;
+            const nextId = displacedClassGrid ? displacedClassGrid[nextSlot] : -1;
+            const next = nextId >= 0 ? this.activities[nextId] : null;
+            if(nextId === -2 || nextId === -3) continue;
+            if(next && (next.isFixed || next.lockedByLessonBlock || next.duration !== 1 || next.id === act.id || next.id === displaced.id)) continue;
+
+            const ids = [act.id, displaced.id];
+            if(next) ids.push(next.id);
+            const snapshot = this.captureStateSnapshot();
+            for(const id of ids) this.unplaceActivity(id);
+
+            let ok = this.isSlotFeasible(act, targetSlot);
+            if(ok) this.placeActivityDirect(act.id, targetSlot);
+            ok = ok && this.isSlotFeasible(displaced, nextSlot);
+            if(ok) this.placeActivityDirect(displaced.id, nextSlot);
+            if(ok && next){
+              ok = this.isSlotFeasible(next, sourceSlot);
+              if(ok) this.placeActivityDirect(next.id, sourceSlot);
+            }
+
+            attempts++;
+            if(ok && acceptIfBetter(before)){
+              accepted++;
+              return true;
+            }
+            this.restoreStateSnapshot(snapshot);
+          }
+        }
+        return false;
+      };
+
+      for(let pass = 0; pass < 3 && hasTime(); pass++){
+        let changed = false;
+        for(let tIdx = 0; tIdx < this.teacherGridList.length && hasTime(); tIdx++){
+          const tg = this.teacherGridList[tIdx];
+          if(!tg) continue;
+          for(let session = 0; session < 12 && hasTime(); session++){
+            const ids = [];
+            let sourceSlot = -1;
+            for(let p = 0; p < PERIODS_PER_SESSION; p++){
+              const slot = session * PERIODS_PER_SESSION + p;
+              const id = tg[slot];
+              if(id >= 0){
+                ids.push(id);
+                sourceSlot = slot;
+              }
+            }
+            if(ids.length !== 1) continue;
+            const act = this.activities[ids[0]];
+            if(!act || act.isFixed || act.lockedByLessonBlock || act.duration !== 1) continue;
+
+            const before = currentMetrics();
+            const targets = [];
+            for(let targetSession = 0; targetSession < 12; targetSession++){
+              if(targetSession === session) continue;
+              let allTeachersHaveSession = true;
+              let richness = 0;
+              for(const teacherIdx of act.teacherIdxs || []){
+                const count = teacherSessionCount(teacherIdx, targetSession);
+                if(count < 1) allTeachersHaveSession = false;
+                richness += count;
+              }
+              if(allTeachersHaveSession) targets.push({ targetSession, richness });
+            }
+            targets.sort((a, b) => b.richness - a.richness);
+
+            for(const target of targets){
+              if(tryDirectMove(act, sourceSlot, target.targetSession, before)
+                || tryThreeStepChain(act, sourceSlot, target.targetSession, before)){
+                changed = true;
+                break;
+              }
+            }
+          }
+        }
+        if(!changed) break;
+      }
+
+      return { attempts, accepted, elapsedMs: Date.now() - startedAt, metrics: currentMetrics() };
+    }
+
     solve(onProgress = null){
       this.deadlineAtMs = Date.now() + (Number(this.timeBudgetMs) || 12000);
 
@@ -2348,6 +2675,7 @@
       }
 
       this.computeDifficultiesAndSort();
+      this.buildConstructionSessionHints();
 
       if(typeof onProgress === "function"){
         onProgress({
@@ -2495,6 +2823,10 @@
       this.compactAllStudentSessions();
       this.repairStudentHoles();
       this.compactAllStudentSessions();
+      if(this.options?.initialSingletonPacking !== false && placedCount === totalActivities){
+        this.initialSingletonPacking();
+        this.compactAllStudentSessions();
+      }
       this.applyToDataTKB();
       const unassigned = totalActivities - placedCount;
       return {
@@ -7050,20 +7382,20 @@
         } else {
           stagnantPasses++;
           // Stagnation pass 1: ILS perturbation kick
-          if(stagnantPasses === 1 && bestMetrics.soBuoiDay1 > targetMetricLowerBound && pass < maxPasses){
-            const deepPair = await this.tryPairClassSingletons(bestMetrics, onProgress);
+          if(stagnantPasses === 1 && bestMetrics.soBuoiDay1 > targetMetricLowerBound && pass < maxPasses && needsSingletons()){
+            const deepPair = await runSingletonOperator(() => this.tryPairClassSingletons(bestMetrics, onProgress));
             if(deepPair){
               bestMetrics = deepPair;
               stagnantPasses = 0;
               prevSingletons = bestMetrics.soBuoiDay1;
             } else {
-              const deepCross = await this.tryCrossDayPairShift(bestMetrics, onProgress);
+              const deepCross = await runSingletonOperator(() => this.tryCrossDayPairShift(bestMetrics, onProgress));
               if(deepCross){
                 bestMetrics = deepCross;
                 stagnantPasses = 0;
                 prevSingletons = bestMetrics.soBuoiDay1;
               } else {
-                const deepRes = await this.tryClosedPushCycles(bestMetrics, onProgress, 4);
+                const deepRes = await runSingletonOperator(() => this.tryClosedPushCycles(bestMetrics, onProgress, 4));
                 if(deepRes){
                   bestMetrics = deepRes;
                   stagnantPasses = 0;
