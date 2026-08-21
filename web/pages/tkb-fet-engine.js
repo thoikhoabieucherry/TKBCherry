@@ -3180,6 +3180,9 @@
                 ok = this.randomSwap(occAct.id, 0);
               }
 
+              if(ok && this.countTotalStudentHoles() > 0){
+                this.compactAllStudentSessions();
+              }
               if(ok && this.countTotalStudentHoles() === 0){
                 const m = this.evaluateMetrics();
                 if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
@@ -3562,6 +3565,9 @@
                 ok = this.randomSwap(act2.id, 0);
               }
 
+              if(ok && this.countTotalStudentHoles() > 0){
+                this.compactAllStudentSessions();
+              }
               if(ok && this.countTotalStudentHoles() === 0){
                 const m = this.evaluateMetrics();
                 if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
@@ -4094,6 +4100,54 @@
       return improved ? currentBest : false;
     }
 
+    async tryClosedAugmentingChain(rootAct, rootTarget, rootSource, bestMetrics, onProgress = null){
+      if(!rootAct || rootAct.isFixed || rootAct.lockedByLessonBlock || rootAct.duration !== 1) return null;
+      const cGrid = this.classGridList[rootAct.classIdx];
+      if(!cGrid || rootTarget === rootSource) return null;
+      const rootOcc = cGrid[rootTarget];
+      if(rootOcc < 0) return null;
+      const rootOther = this.activities[rootOcc];
+      if(!rootOther || rootOther.isFixed || rootOther.lockedByLessonBlock || rootOther.duration !== 1) return null;
+
+      const queue = [{ id: rootOther, acts: [rootAct.id, rootOther], destinations: [rootTarget] }];
+      const seen = new Set([rootAct.id, rootOther]);
+      let expansions = 0;
+      while(queue.length && expansions++ < 6000){
+        if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) break;
+        const node = queue.shift();
+        const current = this.activities[node.id];
+        const allowed = this.allowedSlotsByActivity?.get(current) || [];
+        if(allowed.includes(rootSource)){
+          const snap = this.captureStateSnapshot();
+          for(const id of node.acts) this.unplaceActivity(id);
+          let ok = true;
+          for(let i = 0; i < node.acts.length; i++){
+            const moving = this.activities[node.acts[i]];
+            if(!this.isSlotFeasible(moving, i === node.acts.length - 1 ? rootSource : node.destinations[i])){ ok = false; break; }
+            this.placeActivityDirect(moving.id, i === node.acts.length - 1 ? rootSource : node.destinations[i]);
+          }
+          if(ok && this.countTotalStudentHoles() > 0) this.compactAllStudentSessions();
+          if(ok && this.countTotalStudentHoles() === 0){
+            const metrics = this.evaluateMetrics();
+            if(this.compareMetrics(metrics, bestMetrics, "optimize_singletons") < 0){
+              if(typeof onProgress === "function") onProgress(metrics);
+              return metrics;
+            }
+          }
+          this.restoreStateSnapshot(snap);
+        }
+        for(const nextSlot of allowed){
+          if(nextSlot === rootSource || nextSlot === rootTarget) continue;
+          const nextId = cGrid[nextSlot];
+          const next = this.activities[nextId];
+          if(!next || seen.has(nextId) || next.isFixed || next.lockedByLessonBlock || next.duration !== 1) continue;
+          seen.add(nextId);
+          queue.push({ id: nextId, acts: node.acts.concat(nextId), destinations: node.destinations.concat(nextSlot) });
+        }
+      }
+      return null;
+    }
+
     async tryTargetedIntraClassSingletonCrusher(bestMetrics, onProgress = null){
       let currentBest = { ...bestMetrics };
       let improved = false;
@@ -4138,6 +4192,22 @@
 
           const s1 = single.item.slot;
           const dA = singleAct.duration;
+
+          // Search a complete augmenting chain before the cheaper one/two-step
+          // operators. The final moved activity must occupy s1, so the chain
+          // is a permutation and cannot leave an unassigned lesson behind.
+          for(const targetSess of targetSessions){
+            if(targetSess.sStart === single.sStart) continue;
+            for(let p = 0; p <= PERIODS_PER_SESSION - dA; p++){
+              const s2 = targetSess.sStart + p;
+              if(s2 === s1 || tg[s2] >= 0 || tg[s2] === -2 || tg[s2] === -3) continue;
+              if(!this.isSlotFeasible(singleAct, s2, new Set([singleAct.id, cGrid[s2]]))) continue;
+              const chainMetrics = await this.tryClosedAugmentingChain(singleAct, s2, s1, currentBest, onProgress);
+              if(chainMetrics){ currentBest = chainMetrics; improved = true; break; }
+            }
+            if(improved) break;
+          }
+          if(improved) break;
 
           for(const targetSess of targetSessions){
             if(targetSess.sStart === single.sStart) continue;
@@ -4193,6 +4263,9 @@
                 }
               }
 
+              if(ok && this.countTotalStudentHoles() > 0){
+                this.compactAllStudentSessions();
+              }
               if(ok && this.countTotalStudentHoles() === 0){
                 const m = this.evaluateMetrics();
                 if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
@@ -4208,6 +4281,165 @@
           }
           if(improved) break;
         }
+      }
+      return improved ? currentBest : null;
+    }
+
+    // Move one period from a genuinely rich session (>= 3 periods) of the
+    // same teacher into a singleton session.  The destination may be
+    // occupied by another class/room activity, so this is an augmenting
+    // chain rather than a single move: every displaced activity is moved to
+    // another legal slot until the chain reaches a free slot.  The whole
+    // attempt is transactional; a failed chain restores the incumbent.
+    async tryTeacherDonorAugmentingChains(bestMetrics, onProgress = null){
+      let currentBest = { ...bestMetrics };
+      let improved = false;
+      let nodes = 0;
+      const MAX_NODES_PER_CHAIN = 2400;
+      const MAX_DEPTH = 7;
+
+      const collectOccupants = (act, slot, unplacedIds) => {
+        const ids = new Set();
+        const blocked = { fixed: false };
+        const addCell = (cell) => {
+          if(cell === -2 || cell === -3) blocked.fixed = true;
+          else if(cell >= 0 && cell !== act.id && !unplacedIds.has(cell)) ids.add(cell);
+        };
+        const cGrid = this.classGridList[act.classIdx];
+        for(let d = 0; d < act.duration; d++){
+          const s = slot + d;
+          addCell(cGrid ? cGrid[s] : -2);
+          for(const tIdx of act.teacherIdxs || []){
+            const tg = this.teacherGridList[tIdx];
+            addCell(tg ? tg[s] : -2);
+          }
+          if(act.roomIdx >= 0){
+            const rg = this.roomGridList[act.roomIdx];
+            addCell(rg ? rg[s] : -2);
+          }
+        }
+        return { ids: Array.from(ids), blocked: blocked.fixed };
+      };
+
+      const scoredList = Array.from(this.scoredTeachers || this.teacherGrid.keys());
+      this.rng.shuffle(scoredList);
+
+      for(const tKey of scoredList){
+        if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) break;
+        const tIdx = this.teacherIndexMap.get(tKey);
+        if(tIdx === undefined) continue;
+        const tg = this.teacherGridList[tIdx];
+        if(!tg) continue;
+
+        const singleSessions = [];
+        const donorSessions = [];
+        for(let d = 0; d < DAYS_LIST.length; d++){
+          for(let b = 0; b < SESSIONS_LIST.length; b++){
+            const sStart = d * SLOTS_PER_DAY + b * PERIODS_PER_SESSION;
+            const acts = [];
+            let periods = 0;
+            for(let p = 0; p < PERIODS_PER_SESSION; p++){
+              const s = sStart + p;
+              const id = tg[s];
+              if(id >= 0){
+                periods++;
+                if(!acts.some(item => item.actId === id)) acts.push({ actId: id, slot: s });
+              }
+            }
+            if(periods === 1 && acts.length === 1) singleSessions.push({ sStart, item: acts[0] });
+            // A one-period donor is deliberately excluded: removing it from
+            // a 2-period session would merely create another singleton.
+            if(periods >= 3 && acts.length > 0) donorSessions.push({ sStart, periods, acts });
+          }
+        }
+        if(singleSessions.length === 0 || donorSessions.length === 0) continue;
+
+        for(const single of singleSessions){
+          if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) break;
+          const singletonAct = this.activities[single.item.actId];
+          if(!singletonAct || singletonAct.isFixed || singletonAct.lockedByLessonBlock) continue;
+
+          for(const donorSess of donorSessions){
+            if(donorSess.sStart === single.sStart) continue;
+            for(const donorItem of donorSess.acts){
+              const donorAct = this.activities[donorItem.actId];
+              if(!donorAct || donorAct.isFixed || donorAct.lockedByLessonBlock || donorAct.duration !== 1) continue;
+
+              // The donor source session is guaranteed to remain >= 2 after
+              // removing this one-period activity because periods >= 3.
+              for(let p = 0; p < PERIODS_PER_SESSION; p++){
+                const targetSlot = single.sStart + p;
+                if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) break;
+
+                const snap = this.captureStateSnapshot();
+                const rootUnplaced = new Set([donorAct.id]);
+                this.unplaceActivity(donorAct.id);
+                nodes = 0;
+
+                const placeChain = (act, slot, unplacedIds, depth) => {
+                  if(++nodes > MAX_NODES_PER_CHAIN || depth > MAX_DEPTH) return false;
+                  if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) return false;
+                  const occ = collectOccupants(act, slot, unplacedIds);
+                  if(occ.blocked) return false;
+                  for(const id of occ.ids){
+                    const other = this.activities[id];
+                    if(!other || other.isFixed || other.lockedByLessonBlock) return false;
+                  }
+
+                  const branchSnap = this.captureStateSnapshot();
+                  for(const id of occ.ids) this.unplaceActivity(id);
+                  const ignore = new Set(unplacedIds);
+                  ignore.add(act.id);
+                  for(const id of occ.ids) ignore.add(id);
+                  if(!this.isSlotFeasible(act, slot, ignore)){
+                    this.restoreStateSnapshot(branchSnap);
+                    return false;
+                  }
+                  this.placeActivityDirect(act.id, slot);
+
+                  const nextUnplaced = new Set(unplacedIds);
+                  nextUnplaced.delete(act.id);
+                  for(const id of occ.ids) nextUnplaced.add(id);
+                  for(const id of occ.ids){
+                    const other = this.activities[id];
+                    const allowed = this.allowedSlotsByActivity?.get(other) || [];
+                    let resolved = false;
+                    for(const nextSlot of allowed){
+                      if(nextSlot === slot) continue;
+                      if(placeChain(other, nextSlot, nextUnplaced, depth + 1)){
+                        resolved = true;
+                        nextUnplaced.delete(id);
+                        break;
+                      }
+                    }
+                    if(!resolved){
+                      this.restoreStateSnapshot(branchSnap);
+                      return false;
+                    }
+                  }
+                  return true;
+                };
+
+                const ok = placeChain(donorAct, targetSlot, rootUnplaced, 0);
+                if(ok && this.countTotalStudentHoles() > 0) this.compactAllStudentSessions();
+                if(ok && this.countTotalStudentHoles() === 0){
+                  const metrics = this.evaluateMetrics();
+                  if(metrics.unplacedCount === 0 && this.compareMetrics(metrics, currentBest, "optimize_singletons") < 0){
+                    currentBest = { ...metrics };
+                    improved = true;
+                    if(typeof onProgress === "function") onProgress(currentBest);
+                    break;
+                  }
+                }
+                this.restoreStateSnapshot(snap);
+              }
+              if(improved) break;
+            }
+            if(improved) break;
+          }
+          if(improved) break;
+        }
+        if(improved) break;
       }
       return improved ? currentBest : null;
     }
@@ -4295,6 +4527,9 @@
                 }
               }
 
+              if(ok && this.countTotalStudentHoles() > 0){
+                this.compactAllStudentSessions();
+              }
               if(ok && this.countTotalStudentHoles() === 0){
                 const m = this.evaluateMetrics();
                 if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
@@ -5012,6 +5247,8 @@
           if(resPair){ bestMetrics = resPair; anyRoundImprovement = true; }
           const resCross = await this.tryCrossDayPairShift(bestMetrics, onProgress);
           if(resCross){ bestMetrics = resCross; anyRoundImprovement = true; }
+          const resDonorChain = await this.tryTeacherDonorAugmentingChains(bestMetrics, onProgress);
+          if(resDonorChain){ bestMetrics = resDonorChain; anyRoundImprovement = true; }
           const res0 = await this.tryTargetedIntraClassSingletonCrusher(bestMetrics, onProgress);
           if(res0){ bestMetrics = res0; anyRoundImprovement = true; }
           const res1 = await this.tryRelocateSingletons(bestMetrics, onProgress);
@@ -5241,6 +5478,9 @@
 
         const resCross = await this.tryCrossDayPairShift(bestMetrics, onProgress);
         if(resCross){ bestMetrics = resCross; anyPassImprovement = true; }
+
+        const resDonorChain = await this.tryTeacherDonorAugmentingChains(bestMetrics, onProgress);
+        if(resDonorChain){ bestMetrics = resDonorChain; anyPassImprovement = true; }
 
         const resCrush = await this.tryTargetedIntraClassSingletonCrusher(bestMetrics, onProgress);
         if(resCrush){ bestMetrics = resCrush; anyPassImprovement = true; }

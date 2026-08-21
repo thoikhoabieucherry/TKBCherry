@@ -6,6 +6,13 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-21 LOCAL TEACHER DONOR AUGMENTING CHAIN (NOT DEPLOYED)
+
+- Bổ sung `tryTeacherDonorAugmentingChains()` vào FET engine và mirror: lấy một hoạt động 1 tiết từ buổi của cùng giáo viên có ít nhất 3 tiết, đưa vào buổi singleton, rồi đẩy hoạt động bị chiếm chỗ theo chuỗi lớp/GV/phòng đến ô hợp lệ hoặc khép về ô nguồn.
+- Mỗi nhánh dùng snapshot rollback, giới hạn 2.400 nút và sâu 7 bước; chỉ nhận nghiệm khi `unplacedCount = 0`, student holes = 0 và comparator giảm `soBuoiDay1`. Tích hợp trước các singleton crusher trong `optimize()` và `runUntilZeroSingletons()`.
+- Bổ sung regression Tier 1.8b mô phỏng chuỗi donor → displaced activity → free slot; focused suite sau thay đổi: `76/76` pass.
+- Dữ liệu `school_default` hiện tại vẫn giữ `4 -> 4` vì các ô đích khả thi trực tiếp đang bị hoạt động cố định/ràng buộc cứng chặn; đây là kết quả fail-closed, không bỏ tiết. Không deploy, không sửa DB local, không push production.
+
 ## 2026-08-21 LOCAL OPTIMIZER PIPELINE & PROGRESS FIX (NOT DEPLOYED)
 
 - Worker và UI local đã được kiểm tra end-to-end sau khi sửa nhánh lịch đã xếp đủ: incumbent được nạp lại, không dựng lịch từ trắng mỗi lần bấm `Xếp TKB`.

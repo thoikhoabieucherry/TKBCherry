@@ -13,7 +13,7 @@ Hệ thống xếp thời khóa biểu tự động cho trường phổ thông, 
   1. *MRV Activity Difficulty Ordering* (`generate_pre.cpp`): sắp xếp độ khó hoạt động đa chiều (miền giá trị, thời lượng, xung đột lớp/GV/phòng, tải tuần, ô cấm).
   2. *Min-Conflicts Recursive RandomSwap* (`generate.cpp`): độ sâu `depth <= 16`, `limitCalls = 10,000`, Tabu queue $\le 16$, chống lặp vô tận.
   3. *FET Counting Invariant ConstraintMinHoursDaily* (`opensUnaffordableSession`): kiểm soát mở buổi dạy mới $\sum \max(\text{minDaily}, H_d) \le \text{totalLoad}$, ngăn phát sinh buổi 1 tiết.
-  4. *Closed Push-Cycles & Gap Crusher* (`tryClosedPushCycles`, `tryCrushGaps`): chuỗi đẩy khép kín 2-step / 3-step và tối ưu đa tầng (buổi 1 tiết $\to 0$, khoảng trống $\ge 2 \to 0$, dồn buổi dạy, bất biến liền mạch học sinh).
+  4. *Augmenting Chains, Closed Push-Cycles & Gap Crusher* (`tryTeacherDonorAugmentingChains`, `tryClosedPushCycles`, `tryCrushGaps`): lấy tiết từ buổi cùng giáo viên có ≥3 tiết để lấp buổi singleton, đẩy xung đột lớp/GV/phòng theo chuỗi có rollback; sau đó tối ưu đa tầng (buổi 1 tiết → 0, khoảng trống ≥2 → 0, dồn buổi dạy, bất biến liền mạch học sinh).
   5. *Proven Singleton Floor*: preflight tính cận dưới `soBuoiDay1` cho tải giáo viên bị tách bởi miền ca/buổi độc lập; optimizer dừng khi đạt floor có chứng cứ thay vì cố tìm nghiệm 0 bất khả thi.
 - **Backend** `rust_api/`: HTTP server **tự viết trên std** (TcpListener + thread pool), không Axum/Tokio. Dependency: argon2, serde_json, rusqlite, sha2. Auth = Argon2id + **session token opaque** (không JWT). Port local mặc định `1010` (`.env`, `TKB_RUST_PORT`). Quản lý xác thực, phân quyền và lưu trữ dữ liệu trường học.
 - **Dữ liệu**: SQLite KV store (`kvstore`), WAL mode; mỗi trường một key `school_{schoolId}`.
@@ -37,7 +37,7 @@ Hệ thống xếp thời khóa biểu tự động cho trường phổ thông, 
   - `e2e_tests/benchmark_fet_node.test.js` (4 tests pass).
   - `solver_runtime/tests/` (391 tests pass).
 - Checklist thủ công trước deploy: `docs/REGRESSION_CHECKLIST.md`.
-- Ghi chú local 2026-08-21: các cải thiện floor/Tabu/prefilter singleton đã qua 34/34 core, 81/81 focused regression và giữ `soBuoiTrong2 = 0`; chưa deploy production.
+- Ghi chú local 2026-08-21: pipeline augmenting-chain singleton đã qua focused suite 76/76 và giữ `unplacedCount = 0`, `soBuoiTrong2 = 0`, student holes = 0; chưa deploy production.
 
 ## Hợp đồng quan trọng
 

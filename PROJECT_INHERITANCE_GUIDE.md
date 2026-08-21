@@ -77,17 +77,20 @@ Bộ thuật toán lõi nằm tại `web/pages/tkb-fet-engine.js` và `web/pages
 
 ### 3.2. Bộ Tối Ưu Hóa Đa Tầng (Multi-Objective Local Search & Closed Push-Cycles)
 Hệ thống cung cấp quy trình tối ưu đa tầng lexicographic:
-1. **Closed Push-Cycles (`tryClosedPushCycles`)**:
+1. **Teacher Donor Augmenting Chains (`tryTeacherDonorAugmentingChains`)**:
+   * Chọn một tiết đơn từ buổi của cùng giáo viên có ít nhất 3 tiết (sau khi lấy vẫn còn ≥2), đưa vào buổi singleton và đẩy mọi hoạt động bị chiếm chỗ theo chuỗi lớp/GV/phòng.
+   * Chuỗi được giới hạn độ sâu/nút, mỗi nhánh có snapshot rollback; chỉ commit khi toàn bộ hoạt động vẫn được xếp, không có lỗ học sinh và `soBuoiDay1` giảm.
+2. **Closed Push-Cycles (`tryClosedPushCycles`)**:
    * Chuỗi đẩy khép kín 2-step và 3-step di chuyển và hấp thụ tiết đơn lẻ vào các buổi dạy hiện hữu mà không tạo thêm ô trống hay xung đột.
-2. **Tối ưu buổi 1 tiết (`optimize_singletons`)**:
+3. **Tối ưu buổi 1 tiết (`optimize_singletons`)**:
    * Triệt tiêu toàn bộ các buổi dạy 1 tiết (`soBuoiDay1 -> 0`), ghép thành cụm $\ge 2$ tiết hoặc giải phóng hoàn toàn ngày nghỉ cho giáo viên.
-3. **Tối ưu 2 tiết trống (`optimize_gap2`) & Gap Crusher (`tryCrushGaps`)**:
+4. **Tối ưu 2 tiết trống (`optimize_gap2`) & Gap Crusher (`tryCrushGaps`)**:
    * Khử triệt để các khoảng trống $\ge 2$ tiết giữa các giờ dạy của giáo viên (`soBuoiTrong2 -> 0`), duy trì bất biến không làm tăng số buổi 1 tiết.
-4. **Tối ưu số buổi dạy / ngày dạy (`optimize_sessions`)**:
+5. **Tối ưu số buổi dạy / ngày dạy (`optimize_sessions`)**:
    * Gom gọn số ngày đến trường của giáo viên (`tsBuoiDay`), tăng ngày nghỉ trọn vẹn trong tuần.
-5. **Tối ưu 1 tiết trống (`optimize_gap1`)**:
+6. **Tối ưu 1 tiết trống (`optimize_gap1`)**:
    * Tinh chỉnh các lỗ hổng 1 tiết xen kẽ giữa các giờ học (`soBuoiTrong1 -> 0`).
-6. **Bảo đảm bất biến liền mạch học sinh**:
+7. **Bảo đảm bất biến liền mạch học sinh**:
    * Luôn duy trì `countStudentHoles === 0` trong suốt toàn bộ quá trình xây dựng và tối ưu.
 
 ### 3.3. Hiệu Năng Thực Nghiệm Đã Đo Đạc (Empirical Benchmarks)

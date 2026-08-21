@@ -447,6 +447,53 @@ test("Tier 1.8: tryShareRichToSingleton transfers a period from rich donor sessi
   assert.equal(engine.countTotalStudentHoles(), 0);
 });
 
+test("Tier 1.8b: teacher donor augmenting chain closes a class displacement without unplacing lessons", async () => {
+  const FetTimetableEngine = loadEngine();
+  const data = {
+    lop: [
+      { id: "L1", ten: "L1", ten2: "L1", khoi: "10" },
+      { id: "L2", ten: "L2", ten2: "L2", khoi: "10" }
+    ],
+    mon: [
+      { ten: "Toan", khoi: "10", sotiet: 4, gioihan: 4 },
+      { ten: "Anh", khoi: "10", sotiet: 1, gioihan: 1 },
+      { ten: "Van", khoi: "10", sotiet: 3, gioihan: 3 }
+    ],
+    monhoc: [{ ten: "Toan", ma: "TOAN" }, { ten: "Anh", ma: "ANH" }, { ten: "Van", ma: "VAN" }],
+    giaovien: [{ ma: "G", ten: "G" }, { ma: "H", ten: "H" }],
+    pccmMatrix: { "L1|Toan": "G", "L2|Anh": "G", "L1|Van": "H" },
+    pccmTietMatrix: { "L1|Toan": 4, "L2|Anh": 1, "L1|Van": 3 },
+    pccmGioihanMatrix: { "L1|Toan": 4, "L2|Anh": 1, "L1|Van": 3 },
+    pccmRoomMatrix: {}, tkb: {}, tkbLessonTeachers: {}, tkbLessonRooms: {}, tkbConstraints: {}
+  };
+  const engine = new FetTimetableEngine(data, { seed: 101, mode: "optimize_singletons" });
+  engine.init();
+  engine.compileConstraints();
+  const toan = engine.activities.filter((a) => a.classId === "L1" && a.mon === "Toan");
+  const anh = engine.activities.find((a) => a.classId === "L2" && a.mon === "Anh");
+  const van = engine.activities.filter((a) => a.classId === "L1" && a.mon === "Van");
+
+  // G has a 3-period donor session (0,1,2), and a singleton at slot 5.
+  // Slot 6 in the target class is occupied by H; H can be pushed to a free
+  // period in its own rich session, so the chain is donor -> H -> free slot.
+  engine.placeActivityDirect(toan[0].id, 0);
+  engine.placeActivityDirect(toan[1].id, 1);
+  engine.placeActivityDirect(toan[2].id, 2);
+  engine.placeActivityDirect(toan[3].id, 10);
+  engine.placeActivityDirect(anh.id, 5);
+  engine.placeActivityDirect(van[0].id, 6);
+  engine.placeActivityDirect(van[1].id, 10);
+  engine.placeActivityDirect(van[2].id, 11);
+
+  const before = engine.evaluateMetrics();
+  engine.deadlineAtMs = Date.now() + 5000;
+  const improved = await engine.tryTeacherDonorAugmentingChains(before);
+  assert.ok(improved, "donor chain should eliminate one singleton");
+  assert.equal(engine.evaluateMetrics().soBuoiDay1, before.soBuoiDay1 - 1);
+  assert.equal(engine.evaluateMetrics().unplacedCount, 0);
+  assert.equal(engine.countTotalStudentHoles(), 0);
+});
+
 test("Tier 1.9: trySingletonRelabelCycles executes closed push cycles without creating unplaced activities", async () => {
   const FetTimetableEngine = loadEngine();
   const data = makeData({
