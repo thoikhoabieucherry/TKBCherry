@@ -2,7 +2,7 @@
 
 `tools/benchmarks/benchmark-fet.js` runs the same browser FET source used by
 the Web Worker against deterministic, anonymised fixtures. It never reads the
-production `DATA` singleton, calls a network service, or deploys anything.
+school `DATA` singleton, calls a network service, or changes external state.
 Every seed/mode receives a fresh fixture copy.
 
 ## Fixtures
@@ -72,4 +72,4 @@ rule as satisfied.
 The `pressure` fixture intentionally keeps `soBuoiTrong2 = 1` because both
 edge lessons are fixed. A result with `targetReached: false` there is expected:
 `floorReached: true` demonstrates lower-bound reporting and is not a solver
-failure.
+error.

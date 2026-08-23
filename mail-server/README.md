@@ -50,14 +50,12 @@ localStorage.setItem("TKB_MAIL_API", "https://mail.tenmien-cua-ban.com");
 
 hoặc đặt biến toàn cục `window.TKB_MAIL_API` trong trang.
 
-## 5. Đưa lên mạng (khi cần dùng thật, không chỉ localhost)
+## 5. Phạm vi
 
-Gmail SMTP cần một máy chủ luôn bật. Khi muốn học sinh/giáo viên ngoài mạng dùng được, deploy `mail-server` lên một trong các nơi:
-
-- **Render.com** / **Railway.app** (miễn phí cơ bản, dễ dùng cho Node)
-- **VPS** (nếu bạn có sẵn)
-
-Sau khi deploy, lấy URL công khai (vd `https://tkb-mail.onrender.com`) và set `TKB_MAIL_API` như bước 4.
+Đây là dịch vụ tùy chọn, độc lập với máy chủ Rust và không được `start.py` khởi
+động. Repo hiện không chứa quy trình đưa dịch vụ này lên môi trường bên ngoài.
+Nếu dùng một địa chỉ mail API khác localhost, cấu hình `TKB_MAIL_API` như bước 4
+trong một công việc vận hành riêng.
 
 ## Giới hạn
 

@@ -365,13 +365,6 @@
     return zip.generateAsync({type:'blob', mimeType:DOCX_MIME, compression:'DEFLATE'});
   }
 
-  function fallbackSequence(dateStamp){
-    const key = `TKB_DOCX_EXPORT_SEQ::${dateStamp}`;
-    const next = Math.max(1, Number(localStorage.getItem(key) || 0) + 1);
-    localStorage.setItem(key, String(next));
-    return next;
-  }
-
   function nextSequence(dateStamp){
     const key = `TKB_DOCX_EXPORT_SEQ::${dateStamp}`;
     return Math.max(1, Number(localStorage.getItem(key) || 0) + 1);
@@ -424,22 +417,6 @@
     const result = await saveBlobWithPicker(blob, fileName, DOCX_MIME, 'docx', 'Word Document');
     if(result?.ok) rememberSequence(dateStamp, seq);
     return result;
-    try{
-      const response = await fetch(`/api/export/tkb-class-docx?date=${encodeURIComponent(dateStamp)}`, {
-        method: 'POST',
-        headers: {'Content-Type': DOCX_MIME},
-        body: blob
-      });
-      const payload = await response.json().catch(() => null);
-      if(response.ok && payload?.ok) return payload;
-      throw new Error(payload?.error || `HTTP ${response.status}`);
-    }catch(err){
-      console.warn('save docx endpoint unavailable, falling back to browser download', err);
-      const seq = fallbackSequence(dateStamp);
-      const fileName = `${pad2(seq)}${dateStamp}.docx`;
-      downloadBlob(blob, fileName);
-      return {ok:true, fallback:true, fileName, path:'Thư mục tải xuống của trình duyệt'};
-    }
   }
 
   function setStatus(message, type){

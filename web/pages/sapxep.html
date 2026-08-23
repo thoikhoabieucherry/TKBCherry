@@ -99,8 +99,7 @@ body.planner-shell #btnAutoSort.is-auto-sort-disabled,
 body.planner-shell #btnHome.is-auto-sort-disabled,
 body.planner-shell #btnUndoTKB.is-auto-sort-disabled,
 body.planner-shell #btnRedoTKB.is-auto-sort-disabled,
-body.planner-shell #btnStatsPopover.is-auto-sort-disabled,
-body.planner-shell #btnAgentHelper.is-auto-sort-disabled {
+body.planner-shell #btnStatsPopover.is-auto-sort-disabled {
   opacity: .42 !important;
   cursor: not-allowed !important;
   filter: grayscale(.3) saturate(.5) !important;
@@ -213,7 +212,6 @@ body.planner-shell .toolbar-actions > button {
 }
 
 body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button,
-body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button,
 body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
   border-radius: 8px;
 }
@@ -276,30 +274,6 @@ body.planner-shell #btnAutoSort .toolbar-icon {
   width: 18px;
   height: 18px;
   transform: translateX(1px);
-}
-
-body.planner-shell #btnEngineFlash .toolbar-icon {
-  width: 20px;
-  height: 20px;
-  filter: drop-shadow(0 1px 2px rgba(99, 102, 241, 0.25));
-}
-
-body.planner-shell #btnEngineCherry .toolbar-icon {
-  width: 25px;
-  height: 25px;
-  filter: drop-shadow(0 1px 3px rgba(239, 30, 60, 0.28));
-}
-
-body.planner-shell #btnEngineFlash:hover:not(:disabled) {
-  border-color: #818cf8;
-  background: #f5f3ff;
-  box-shadow: 0 3px 10px rgba(99, 102, 241, 0.18);
-}
-
-body.planner-shell #btnEngineCherry:hover:not(:disabled) {
-  border-color: #f87171;
-  background: #fef2f2;
-  box-shadow: 0 3px 10px rgba(239, 30, 60, 0.18);
 }
 
 body.planner-shell #btnStopAutoSort .toolbar-icon {
@@ -404,7 +378,6 @@ body.planner-shell .toolbar-secondary-actions .stats-popover-wrap {
 }
 
 body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button,
-body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button,
 body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
   flex: 0 0 var(--planner-toolbar-button-width);
   box-sizing: border-box;
@@ -413,123 +386,6 @@ body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggl
   max-width: var(--planner-toolbar-button-width);
   height: 36px;
   min-height: 36px;
-}
-
-body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button {
-  order: initial;
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding-inline: 8px 10px;
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  color: #1e293b;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all .16s ease;
-}
-
-body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button:hover:not(:disabled) {
-  background: #f8fafc;
-  border-color: #94a3b8;
-}
-
-body.planner-shell #btnAgentHelper .agent-status-dot {
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  width: 7px;
-  height: 7px;
-  border: 1.5px solid #fff;
-  border-radius: 50%;
-  background: #94a3b8;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 16%);
-  pointer-events: none;
-  transition: background-color .16s ease, box-shadow .16s ease;
-}
-
-body.planner-shell #btnAgentHelper[data-agent-state="enabled"] .agent-status-dot,
-body.planner-shell #btnAgentHelper[data-agent-state="prepared"] .agent-status-dot {
-  background: #16a34a;
-}
-
-body.planner-shell #btnAgentHelper[data-agent-state="active"] .agent-status-dot,
-body.planner-shell #btnAgentHelper[data-agent-state="working"] .agent-status-dot {
-  background: #22c55e;
-}
-body.planner-shell #btnAgentHelper[data-agent-state="fallback"] .agent-status-dot {
-  background: #f59e0b;
-}
-
-body.planner-shell #btnAgentHelper[data-agent-state="working"] .agent-status-dot {
-  animation: planner-agent-working-pulse 1.2s ease-in-out infinite;
-}
-
-body.planner-shell #btnAgentHelper[data-agent-state="error"] .agent-status-dot {
-  background: #dc2626;
-}
-
-@keyframes planner-agent-working-pulse {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgb(34 197 94 / 30%), 0 1px 3px rgb(15 23 42 / 24%);
-  }
-  50% {
-    box-shadow: 0 0 0 4px rgb(34 197 94 / 12%), 0 1px 3px rgb(15 23 42 / 24%);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  body.planner-shell #btnAgentHelper[data-agent-state="working"] .agent-status-dot {
-    animation: none;
-    box-shadow: 0 0 0 3px rgb(34 197 94 / 18%), 0 1px 3px rgb(15 23 42 / 24%);
-  }
-}
-
-body.planner-shell #btnAgentHelper:disabled {
-  opacity: 1;
-  cursor: default;
-}
-
-body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button[hidden] {
-  display: none !important;
-}
-
-body.planner-shell #btnAgentHelper[hidden] {
-  display: none !important;
-}
-
-body.planner-shell #btnAgentHelper .agent-ai-icon {
-  width: 16px;
-  height: 16px;
-  color: #7c3aed;
-  stroke: #7c3aed;
-  stroke-width: 2;
-  fill: none;
-  filter: drop-shadow(0 1px 2px rgb(124 58 237 / 18%));
-  transition: all .16s ease;
-}
-
-body.planner-shell #btnAgentHelper.is-auto-sort-disabled {
-  opacity: 1;
-  cursor: not-allowed;
-  filter: none;
-  pointer-events: none;
-}
-
-body.planner-shell #btnAgentHelper.is-auto-sort-disabled .agent-ai-icon,
-body.planner-shell #btnAgentHelper.is-auto-sort-disabled .agent-button-label {
-  opacity: .45;
-  filter: grayscale(.35) saturate(.55);
-}
-
-body.planner-shell #btnAgentHelper.is-auto-sort-disabled .agent-status-dot {
-  z-index: 2;
-  opacity: 1;
-  filter: none;
 }
 
 body.planner-shell .toolbar-feedback {
@@ -618,7 +474,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   }
 
   body.planner-shell .toolbar-main {
-    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     grid-template-rows: 44px var(--planner-mobile-feedback-h);
     align-items: stretch;
     gap: 4px 2px;
@@ -631,7 +487,6 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   body.planner-shell .toolbar-actions > button,
   body.planner-shell .toolbar-actions > .planner-optimize-wrap > .planner-mode-button,
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button,
-  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button,
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
     flex: 0 1 auto;
     width: 100%;
@@ -655,7 +510,6 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
   body.planner-shell .toolbar-actions > button:active:not(:disabled),
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button:active:not(:disabled),
-  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button:active:not(:disabled),
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle:active:not(:disabled) {
     transform: translateY(1px);
     box-shadow: 0 1px 1px rgb(15 23 42 / 8%);
@@ -697,9 +551,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     border-radius: 0 0 var(--tkb-radius, 10px) var(--tkb-radius, 10px);
   }
 
-  /* 22/08: dien thoai giu nut Xep (cot 3) va nut Toi uu (cot 4). Hai selector
-     #btnEngineFlash/#btnEngineCherry cu da khong con trong markup nen quy tac
-     an nut Xep truoc day lam mat han nut Xep tren dien thoai. */
+  /* Điện thoại giữ nút Xếp ở cột 3 và nút Tối ưu ở cột 4. */
   body.planner-shell .toolbar-actions > #btnAutoSort {
     grid-column: 3;
     grid-row: 1;
@@ -921,43 +773,14 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     display: contents;
   }
 
-  body.planner-shell #btnAgentHelper {
-    grid-column: 6;
-    grid-row: 1;
-    display: inline-flex !important;
-    width: 100%;
-    min-width: 0;
-    max-width: none;
-    height: 44px;
-    min-height: 44px;
-    padding: 0;
-    gap: 0;
-    border-radius: var(--tkb-radius, 10px);
-    font-size: 0;
-    touch-action: manipulation;
-  }
-
-  body.planner-shell #btnAgentHelper .agent-ai-icon {
-    width: 18px;
-    height: 18px;
-  }
-
-  body.planner-shell #btnAgentHelper .agent-status-dot {
-    top: 3px;
-    left: 3px;
-    width: 8px;
-    height: 8px;
-    border-width: 2px;
-  }
-
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button {
-    grid-column: 7;
+    grid-column: 6;
     grid-row: 1;
     padding-inline: 3px;
   }
 
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
-    grid-column: 8;
+    grid-column: 7;
     grid-row: 1;
     height: 44px;
     min-height: 44px;
@@ -994,7 +817,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 /* Landscape phones have enough width for separate full-size history buttons. */
 @media (orientation: landscape) and (max-height: 540px) and (any-pointer: coarse) {
   body.planner-shell .toolbar-main {
-    grid-template-columns: repeat(9, minmax(0, 1fr));
+    grid-template-columns: repeat(8, minmax(0, 1fr));
   }
 
   body.planner-shell .toolbar-actions > #btnUndoTKB {
@@ -1029,16 +852,12 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     grid-column: 6 !important;
   }
 
-  body.planner-shell #btnAgentHelper {
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button {
     grid-column: 7;
   }
 
-  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button {
-    grid-column: 8;
-  }
-
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
-    grid-column: 9;
+    grid-column: 8;
   }
 }
 
@@ -1060,7 +879,6 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
   body.planner-shell .toolbar-actions > button,
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button,
-  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .agent-helper-button,
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
     flex: 0 0 var(--planner-toolbar-button-width);
     width: var(--planner-toolbar-button-width);
@@ -1078,11 +896,6 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     min-width: var(--planner-toolbar-button-width);
     max-width: var(--planner-toolbar-button-width);
     padding: 0;
-  }
-
-  body.planner-shell #btnAgentHelper {
-    padding-inline: 3px;
-    font-size: 9.5px;
   }
 
   body.planner-shell .toolbar-label-full {
@@ -1553,10 +1366,10 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
 <script src="../shared/school-context.js?v=20260708-sid-only-v3"></script>
 <script src="../shared/auth-api.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
-<script src="../shared/auth.js?v=20260803-free-5-solve-quota-v1"></script>
+<script src="../shared/auth.js?v=20260823-web-fet-v1"></script>
 <script src="../shared/runtime.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
 <script src="../shared/school-switcher.js?v=20260708-v1"></script>
-<script src="../shared/storage.js?v=20260817-save-error-detail-v1"></script>
+<script src="../shared/storage.js?v=20260823-web-fet-v1"></script>
 <script src="../shared/tkb-constants.js?v=20260708-v1"></script>
 <script src="../shared/constraints-meta.js?v=20260709-v2"></script>
 <script>
@@ -1586,8 +1399,8 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="../excel-style.js?v=20260701-excel-style-v2"></script>
 <script src="../vendor/sql-wasm.js"></script>
 <script src="../kvdb.js?v=20260707-vendor-local-v1"></script>
-<script src="tkb-fet-engine.js?v=20260821-backend-fet-v1"></script>
-<script src="phanmon.js?v=20260821-fast-preflight-v1"></script>
+<script src="tkb-fet-engine.js?v=20260823-web-fet-v1"></script>
+<script src="phanmon.js?v=20260823-web-fet-v1"></script>
 <script src="tkb-constraints.js?v=20260810-v1206-assigned-demand-lesson-block-min-guard-v1"></script>
 <script src="tkb-constraints-menu.js?v=20260808-v1192-assigned-only-all-statistics-v1"></script>
 <script src="tkb-optimize-menu.js?v=20260822-optimize-menu-four-goals-v1"></script>
@@ -1597,40 +1410,5 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="tkb-student-excel-export.js?v=20260705-school-wide-prefix-v6"></script>
 
 
-<script>
-// 19/08: chon thuat toan backend cho tung nut (mac dinh = bo giai cu)
-// Ban day du (co cho bo giai nap xong) nam trong tkb-rust-bridge.js — file do
-// luon duoc bust cache nen luon moi. Khoi nay chi la du phong khi bridge loi.
-if(typeof window.tkbRunEngine !== "function")
-window.tkbRunEngine = function(engine, btn){
-  if(window.__TKB_SOLVE_UI_BUSY === true || window.__TKB_RUST_SOLVER_RUNNING === true){
-    try{ window.setStatus && window.setStatus("Đang có lượt xếp chạy, vui lòng chờ.", "info"); }catch(_){}
-    return;
-  }
-  window.__TKB_FORCE_ENGINE = String(engine || "");
-  window.__CURRENT_ACTIVE_ENGINE = String(engine || "");
-  window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = "";
-  var metricEl = document.getElementById("autoSortProgressMetric");
-  if(metricEl){
-    metricEl.textContent = "";
-    metricEl.hidden = true;
-  }
-  var clear = function(){
-    window.__TKB_FORCE_ENGINE = "";
-    window.__CURRENT_ACTIVE_ENGINE = "";
-    window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = "";
-  };
-  try{
-    // QUAN TRONG: tren ban production, window.sapXepTuDongAll van la bo giai
-    // chay trong TRINH DUYET (phanmon.js executeDirectFastSchedule) — no khong
-    // biet settings.engine va khong bao gio goi backend/Cloud Run.
-    var runner = window.sapXepTuDongAll;
-    if(typeof runner !== "function"){ clear(); return; }
-    var r = runner({ mode: "solve_optimize_all" });
-    if(r && typeof r.finally === "function") r.finally(clear);
-    else window.setTimeout(clear, 5000);
-  }catch(e){ clear(); }
-};
-</script>
 </body>
 </html>

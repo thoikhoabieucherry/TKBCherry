@@ -1,0 +1,82 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main, master, "codex/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-fet:
+    name: Browser FET and UI contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Set up Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+      - name: Syntax-check JavaScript
+        run: find web e2e_tests tools/benchmarks -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Run browser FET and UI tests
+        run: node --test e2e_tests/*.test.js
+
+  launcher:
+    name: Local launcher
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Set up Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Run launcher tests
+        run: python -m unittest discover -s tests -p 'test_*.py'
+
+  mail:
+    name: Optional mail service
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: mail-server
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Set up Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mail-server/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run tests
+        run: npm test
+
+  rust:
+    name: Web/auth/store server
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Install SQLite development files
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - name: Check
+        working-directory: rust_api
+        run: cargo check --locked
+      - name: Test
+        working-directory: rust_api
+        run: cargo test --locked

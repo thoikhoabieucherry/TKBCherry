@@ -14,7 +14,6 @@ use crate::db::Db;
 
 pub const SUPER_ID: &str = "suadmin";
 const SESSION_TTL_SECS: u64 = 86_400;
-const AGENT_CREDENTIAL_TTL_SECS: u64 = 90 * 86_400;
 const LOGIN_MAX_ATTEMPTS: u32 = 12;
 const LOGIN_WINDOW_SECS: u64 = 900;
 
@@ -379,13 +378,6 @@ fn session_key(token: &str) -> String {
     format!("auth_session:{token}")
 }
 
-fn agent_credential_key(token: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(b"tkb-agent-credential-v1\0");
-    hasher.update(token.trim().as_bytes());
-    format!("auth_agent_credential:{:x}", hasher.finalize())
-}
-
 fn active_session_key(user_key: &str) -> String {
     format!("auth_active_session:{user_key}")
 }
@@ -428,7 +420,7 @@ fn session_is_active(db: &Db, token: &str, session: &Value) -> bool {
     let key = active_session_key(user_key);
     if db.claim_if_empty(&key, token.trim()).unwrap_or(false) {
         // Seamlessly adopt sessions issued before single-login enforcement was
-        // deployed. The first old session used becomes the sole active one.
+        // introduced. The first old session used becomes the sole active one.
         return true;
     }
     db.get(&key)
@@ -519,59 +511,6 @@ fn create_replacing_session(db: &Db, user_key: &str, user: &Value) -> Option<Str
         }
     }
     Some(token)
-}
-
-/// Issues a durable bearer that can only be accepted by Agent Helper routes.
-/// It is intentionally stored outside the normal single-login session index,
-/// so closing or renewing the browser session cannot stop a running Agent.
-pub fn create_agent_credential(db: &Db, session: &Value) -> Option<(String, u64)> {
-    let user_key = session.get("userId").and_then(Value::as_str)?.trim();
-    let school_id = session
-        .get("schoolId")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .trim();
-    if user_key.is_empty() && school_id.is_empty() {
-        return None;
-    }
-    let token = format!("tkba_{}", random_token());
-    let expires_at = now_secs().saturating_add(AGENT_CREDENTIAL_TTL_SECS);
-    let payload = json!({
-        "scope": "agent_helper",
-        "userId": user_key,
-        "schoolId": school_id,
-        "role": session.get("role").cloned().unwrap_or(json!("")),
-        "displayName": session
-            .get("displayName")
-            .cloned()
-            .unwrap_or(json!(user_key)),
-        "issuedAt": now_secs(),
-        "expiresAt": expires_at
-    });
-    db.set(
-        &agent_credential_key(&token),
-        &serde_json::to_string(&payload).ok()?,
-    )
-    .ok()?;
-    Some((token, expires_at))
-}
-
-/// Validates the limited Agent bearer without adopting it as a browser login.
-pub fn require_agent_credential(db: &Db, token: Option<&str>) -> Option<Value> {
-    let token = token?.trim();
-    if !token.starts_with("tkba_") || token.len() > 512 {
-        return None;
-    }
-    let key = agent_credential_key(token);
-    let raw = db.get(&key).ok().flatten()?;
-    let credential: Value = serde_json::from_str(&raw).ok()?;
-    if credential.get("scope").and_then(Value::as_str) != Some("agent_helper")
-        || session_has_expired(&credential)
-    {
-        let _ = db.set(&key, "");
-        return None;
-    }
-    Some(credential)
 }
 
 pub fn login_json(db: &Db, body: &[u8], request_ip: &str) -> Vec<u8> {

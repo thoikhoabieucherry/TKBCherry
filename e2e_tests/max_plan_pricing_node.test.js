@@ -103,17 +103,17 @@ function authForRegistry(registry, options = {}){
 test("service-plan contract prices Plus and separates Max 1 from Max 2", () => {
   const auth = loadAuth();
 
-  assert.equal(auth.PLANS.free.solveLimit, 5);
+  assert.equal(auth.PLANS.free.solveLimit, undefined);
   assert.equal(auth.PLANS.plus.price, 300_000);
   assert.equal(auth.PLANS.plus.durationDays, 30);
-  assert.equal(auth.PLANS.plus.solveLimit, 100);
+  assert.equal(auth.PLANS.plus.solveLimit, undefined);
 
   assert.equal(auth.PLANS.max1.price, 1_000_000);
   assert.equal(auth.PLANS.max1.classLimit, 39);
-  assert.equal(auth.PLANS.max1.unlimitedSolves, true);
+  assert.equal(auth.PLANS.max1.unlimitedSolves, undefined);
   assert.equal(auth.PLANS.max2.price, 1_500_000);
   assert.equal(auth.PLANS.max2.unlimitedClasses, true);
-  assert.equal(auth.PLANS.max2.unlimitedSolves, true);
+  assert.equal(auth.PLANS.max2.unlimitedSolves, undefined);
 
   assert.equal(auth.MAX_PLAN_PRICING.dimension, "classes");
   assert.equal(auth.MAX_PLAN_PRICING.thresholdClasses, 40);
@@ -204,21 +204,16 @@ test("legacy Max activation input still selects the corresponding explicit tier"
   assert.equal(registry.schools.school1.plan, "max2");
 });
 
-test("each Plus activation creates a fresh shared 100-request billing cycle", () => {
+test("Plus activation records its plan and payment", () => {
   const registry = registryFixture();
   const {auth} = authForRegistry(registry);
-  const first = auth.activatePlan("school1", "plus", true);
-  const firstCycle = registry.schools.school1.plusQuotaCycleId;
-  const second = auth.activatePlan("school1", "plus", true);
-  const secondCycle = registry.schools.school1.plusQuotaCycleId;
+  const result = auth.activatePlan("school1", "plus", true);
 
-  assert.equal(first.ok, true);
-  assert.equal(second.ok, true);
-  assert.equal(first.paymentAmount, 300_000);
-  assert.equal(second.paymentAmount, 300_000);
-  assert.ok(firstCycle);
-  assert.ok(secondCycle);
-  assert.notEqual(secondCycle, firstCycle);
+  assert.equal(result.ok, true);
+  assert.equal(result.paymentAmount, 300_000);
+  assert.equal(registry.schools.school1.plan, "plus");
+  assert.equal(registry.schools.school1.lastPaymentAmount, 300_000);
+  assert.ok(registry.schools.school1.expiresAt);
 });
 
 test("failed remote schedule copy never appends registry metadata", () => {
@@ -281,13 +276,13 @@ test("failed SID migration keeps the registry on its source and never clears it"
   ]);
 });
 
-test("school portal shows Plus quota, both Max choices and equal-height desktop cards", () => {
+test("school portal describes browser FET, both Max choices and equal-height desktop cards", () => {
   assert.match(portalSource, /MAX_PLAN_PRICING_FALLBACK/);
   assert.match(portalSource, /planId:"max1"/);
   assert.match(portalSource, /planId:"max2"/);
   assert.match(portalSource, /data-max-plan/);
-  assert.match(portalSource, /p\.solveLimit/);
-  assert.match(portalSource, /Không giới hạn lượt Xếp \/ Tối ưu/);
+  assert.match(portalSource, /Xếp và tối ưu FET trực tiếp trên thiết bị/);
+  assert.doesNotMatch(portalSource, /p\.solveLimit|Giới hạn .* lượt Xếp|Không giới hạn lượt Xếp/);
   assert.match(portalSource, /Hỗ trợ xếp TKB đầu tiên/);
   assert.match(portalSource, /data-plan-card="managed-service"/);
   assert.doesNotMatch(portalSource, /Liên hệ trực tiếp để đặt dịch vụ xếp hộ TKB\./);
@@ -304,7 +299,7 @@ test("school portal shows Plus quota, both Max choices and equal-height desktop 
 
   assert.match(portalHtml, /auth\.css\?v=20260803-trial-banner-v8/);
   assert.match(portalHtml, /theme-light\.css\?v=20260803-trial-banner-v8/);
-  assert.match(portalHtml, /shared\/auth\.js\?v=20260803-free-5-solve-quota-v1/);
+  assert.match(portalHtml, /shared\/auth\.js\?v=20260823-web-fet-v1/);
   assert.match(portalHtml, /school-portal\.js\?v=20260803-trial-banner-v8/);
   assert.match(lightCss, /\.portal-trial-banner\.is-active\s*\{[\s\S]*?background:\s*#ffffff;/);
   assert.match(lightCss, /\.plan-card\[data-plan-card="plus"\],[\s\S]*?\.plan-card\[data-plan-card="max"\][\s\S]*?border-color:\s*color-mix\(in srgb, var\(--plan-color/);
@@ -318,14 +313,14 @@ test("Super Admin assigns Max 1 and Max 2 with concise selector labels", () => {
   assert.match(superAdminSource, /A\.activatePlan\(id, planId/);
   assert.doesNotMatch(superAdminSource, /Số lớp của trường để tính giá gói Max/);
   assert.doesNotMatch(superAdminSource, /activationOptions = \{classCount\}/);
-  assert.match(superAdminHtml, /shared\/auth\.js\?v=20260803-free-5-solve-quota-v1/);
-  assert.match(superAdminHtml, /super-admin\.js\?v=20260803-max-plan-labels-v1/);
+  assert.match(superAdminHtml, /shared\/auth\.js\?v=20260823-web-fet-v1/);
+  assert.match(superAdminHtml, /super-admin\.js\?v=20260823-web-fet-v1/);
 });
 
-test("class-limit and storage guards are cache-busted on editor and planner", () => {
-  assert.match(appHtml, /shared\/auth\.js\?v=20260803-free-5-solve-quota-v1/);
-  assert.match(appHtml, /shared\/storage\.js\?v=20260802-max1-store-guard-v2/);
-  assert.match(appHtml, /app\.js\?v=20260802-max1-class-limit-v1/);
-  assert.match(plannerHtml, /shared\/auth\.js\?v=20260803-free-5-solve-quota-v1/);
-  assert.match(plannerHtml, /shared\/storage\.js\?v=20260802-max1-store-guard-v2/);
+test("browser-FET and storage guards are cache-busted on editor and planner", () => {
+  assert.match(appHtml, /shared\/auth\.js\?v=20260823-web-fet-v1/);
+  assert.match(appHtml, /shared\/storage\.js\?v=20260823-web-fet-v1/);
+  assert.match(appHtml, /app\.js\?v=20260823-web-fet-v1/);
+  assert.match(plannerHtml, /shared\/auth\.js\?v=20260823-web-fet-v1/);
+  assert.match(plannerHtml, /shared\/storage\.js\?v=20260823-web-fet-v1/);
 });

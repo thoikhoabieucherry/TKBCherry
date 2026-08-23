@@ -155,13 +155,6 @@ body.planner-shell .toolbar-main {
   border: 1px solid var(--tkb-border);
 }
 
-body.planner-shell .solver-preset-group {
-  border-radius: 999px;
-  overflow: hidden;
-  border: 1px solid var(--tkb-border);
-  background: var(--tkb-bg);
-}
-
 body.planner-shell .toolbar .btn,
 body.planner-shell .toolbar button {
   border-radius: 999px;

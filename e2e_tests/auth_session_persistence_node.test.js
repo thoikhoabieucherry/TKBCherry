@@ -201,10 +201,10 @@ test("central auth expiry is single-flight and remembers the protected return pa
 
   const first = window.TKBRuntime.handleAuthExpired({
     status:401,
-    source:"solve-result",
+    source:"school-store-load",
     returnTo:"/pages/sapxep.html?sid=default"
   });
-  const second = window.TKBRuntime.handleAuthExpired({status:401, source:"school-store"});
+  const second = window.TKBRuntime.handleAuthExpired({status:401, source:"school-store-save"});
   assert.deepEqual(await Promise.all([first, second]), [true, true]);
 
   assert.equal(validationCalls, 1);

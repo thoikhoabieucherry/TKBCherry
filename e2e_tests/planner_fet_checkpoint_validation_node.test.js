@@ -11,7 +11,7 @@ const source = fs.readFileSync(
 
 function checkpointValidationHelpers(){
   const start = source.indexOf("function fetHardViolationSignature(");
-  const end = source.indexOf("function fetTelemetryNowMs()", start);
+  const end = source.indexOf("function nextPlannerPaint()", start);
   assert.ok(start >= 0 && end > start, "checkpoint validator helpers must remain an isolated planner slice");
   return source.slice(start, end);
 }
@@ -42,18 +42,6 @@ function loadHelpers(violationsForTkb){
       };
     },
     restorePlannerScheduleState(data, snapshot){
-      data.tkb = snapshot.tkb;
-      data.tkbLessonTeachers = snapshot.tkbLessonTeachers;
-      data.tkbLessonRooms = snapshot.tkbLessonRooms;
-    },
-    cloneHybridScheduleState(data){
-      return {
-        tkb:JSON.parse(JSON.stringify(data.tkb || {})),
-        tkbLessonTeachers:JSON.parse(JSON.stringify(data.tkbLessonTeachers || {})),
-        tkbLessonRooms:JSON.parse(JSON.stringify(data.tkbLessonRooms || {}))
-      };
-    },
-    restoreHybridScheduleState(data, snapshot){
       data.tkb = snapshot.tkb;
       data.tkbLessonTeachers = snapshot.tkbLessonTeachers;
       data.tkbLessonRooms = snapshot.tkbLessonRooms;
@@ -133,7 +121,7 @@ test("validator comparison rejects a new violation even when its total count is 
 
 test("terminal messages distinguish plateau, regression, hard violation, and validator error", () => {
   const {context} = loadHelpers(() => []);
-  const plateau = context.fetFailurePresentation({failureKind:"fet_backend_stagnated"});
+  const plateau = context.fetFailurePresentation({failureKind:"fet_worker_no_improvement"});
   const regression = context.fetFailurePresentation({failureKind:"fet_candidate_quality_regression_rejected"});
   const hard = context.fetFailurePresentation({
     failureKind:"fet_candidate_hard_validation_failed",

@@ -857,7 +857,7 @@ async function openTKBPlanner(){
         window.location.href = u.toString();
     }catch(e){
         console.warn("openTKBPlanner save failed", e);
-        alert("Không lưu được dữ liệu TKB lên VPS trước khi sắp xếp. Vui lòng thử lại.");
+        alert("Không lưu được dữ liệu TKB trước khi sắp xếp. Vui lòng thử lại.");
     }finally{
         if(!navigating && btn) btn.disabled = false;
     }
@@ -7341,7 +7341,7 @@ function switchManagedSchool(schoolId){
   const reg = window.TKBAuth.loadRegistry ? window.TKBAuth.loadRegistry() : { schools: {} };
   const school = reg.schools && reg.schools[schoolId];
   if(!school){
-    showBottomPopup("Không tìm thấy trường trên VPS.", "error");
+    showBottomPopup("Không tìm thấy dữ liệu trường trên máy chủ.", "error");
     return;
   }
   let entry = window.TKBAuth.activeScheduleEntry ? window.TKBAuth.activeScheduleEntry(schoolId) : null;

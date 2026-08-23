@@ -155,14 +155,3 @@ test('M2.4: Tabu tenure, triedRemovals, and swappedInBranch remain isolated with
   assert.equal(engine.swappedInBranch.size, 0, 'swappedInBranch must be empty after execution');
   assert.equal(engine.countTotalStudentHoles(), 0, 'Zero student holes must be maintained');
 });
-
-test('M2.5: SHA-256 bitwise parity between web/pages/tkb-fet-engine.js and web/tkb-fet-engine.js', () => {
-  const crypto = require('node:crypto');
-  const codePages = fs.readFileSync(path.resolve(__dirname, '../web/pages/tkb-fet-engine.js'));
-  const codeRoot = fs.readFileSync(path.resolve(__dirname, '../web/tkb-fet-engine.js'));
-
-  const hashPages = crypto.createHash('sha256').update(codePages).digest('hex');
-  const hashRoot = crypto.createHash('sha256').update(codeRoot).digest('hex');
-
-  assert.equal(hashPages, hashRoot, 'Engine files must have 100% bitwise SHA-256 parity');
-});

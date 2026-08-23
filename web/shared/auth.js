@@ -162,7 +162,6 @@
       label: "Free",
       price: 0,
       durationDays: 0,
-      solveLimit: 5,
       print: false,
       color: "#94a3b8",
       glow: "0 0 12px rgb(148 163 184 / 45%)"
@@ -182,7 +181,6 @@
       label: "Plus",
       price: 300000,
       durationDays: 30,
-      solveLimit: 100,
       print: true,
       color: "#22d3ee",
       glow: "0 0 16px rgb(34 211 238 / 55%)"
@@ -193,7 +191,6 @@
       price: 1000000,
       durationDays: 365,
       classLimit: 39,
-      unlimitedSolves: true,
       print: true,
       color: "#a855f7",
       glow: "0 0 18px rgb(168 85 247 / 58%)"
@@ -204,7 +201,6 @@
       price: 1500000,
       durationDays: 365,
       unlimitedClasses: true,
-      unlimitedSolves: true,
       print: true,
       color: "#7c3aed",
       glow: "0 0 20px rgb(124 58 237 / 62%)"
@@ -215,7 +211,6 @@
       price: MAX_PLAN_PRICING.tiers[0].price,
       priceByClasses: true,
       durationDays: 365,
-      unlimitedSolves: true,
       print: true,
       color: "#c084fc",
       glow: "0 0 18px rgb(192 132 252 / 60%)",
@@ -859,7 +854,7 @@
   }
 
   function remoteSaveError(){
-    return { ok: false, message: "Không lưu được dữ liệu tài khoản lên VPS. Kiểm tra backend/kết nối rồi thử lại." };
+    return { ok: false, message: "Không lưu được dữ liệu tài khoản. Kiểm tra kết nối rồi thử lại." };
   }
 
   function getSession(){
@@ -1638,8 +1633,7 @@
     const explicitClassCount = Number(options?.classCount);
     const hasExplicitClassCount = Number.isFinite(explicitClassCount) && explicitClassCount > 0;
     // Super Admin assigns Max 1/Max 2 directly. Do not let stale metadata from
-    // the previous Max tier prevent that explicit assignment; the API still
-    // enforces the real 39-class ceiling on every store write and solve.
+    // the previous Max tier prevent that explicit assignment.
     const requestedClassCount = hasExplicitClassCount
       ? explicitClassCount
       : requestedPlanId === "max1"
@@ -1693,9 +1687,6 @@
       school.lastPaymentAt = nowIso();
       school.lastPaymentAmount = paymentAmount;
       school.lastPaymentDemo = !!demoPaid;
-    }
-    if(resolvedPlanId === "plus"){
-      school.plusQuotaCycleId = `${Date.now().toString(36)}-${generateShortId()}`;
     }
     if(resolvedPlanId === "max1" || resolvedPlanId === "max2"){
       school.classCount = classCount;

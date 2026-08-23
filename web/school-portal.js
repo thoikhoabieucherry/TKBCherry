@@ -489,8 +489,7 @@
         <div class="price${p.id === "max" ? " max-plan-base-price" : ""}">${p.price ? (p.id === "max" ? `<span>Từ</span><strong>${esc(A.formatMoney(p.price))}</strong><small>/ năm</small>` : A.formatMoney(p.price)) : "Miễn phí"}</div>
         <ul>
           ${p.id === "max" ? "<li>Hỗ trợ xếp TKB đầu tiên</li>" : ""}
-          ${p.solveLimit ? `<li>Giới hạn ${esc(p.solveLimit)} lượt Xếp / Tối ưu</li>` : ""}
-          ${p.id === "max" ? "<li>Không giới hạn lượt Xếp / Tối ưu</li>" : ""}
+          <li>Xếp và tối ưu FET trực tiếp trên thiết bị</li>
           <li>${p.print ? "Được in / xuất TKB" : "Chỉ xếp TKB, không in"}</li>
           <li>${A.planDurationLabel ? A.planDurationLabel(p) : (p.durationDays ? p.durationDays + " ngày sử dụng" : "Không giới hạn thời gian")}</li>
         </ul>

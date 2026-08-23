@@ -16,14 +16,6 @@ updates:
       rust-dependencies:
         patterns: ["*"]
 
-  - package-ecosystem: pip
-    directory: /solver_runtime
-    schedule:
-      interval: weekly
-    groups:
-      solver-runtime-dependencies:
-        patterns: ["*"]
-
   - package-ecosystem: github-actions
     directory: /
     schedule:

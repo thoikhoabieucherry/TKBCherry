@@ -408,7 +408,7 @@ if (typeof schoolParam !== "undefined" && schoolParam && !(window.TKBStorage && 
           try { loadMonList(); } catch(_) {}
         }
       } else if (localHasData && localPlaced >= remotePlaced) {
-        // Local is newer or has equal/more progress: push local to remote VPS so VPS is up-to-date
+        // Local is newer or has equal/more progress: update the authenticated school store.
         try {
           fetch(`/api/school/store?id=${encodeURIComponent(schoolParam)}`, {
             method: "POST",
@@ -1529,7 +1529,7 @@ function __tkbPayloadForSave(options){
     DATA._updatedAt = Date.now();
   }
   const payload = JSON.stringify(DATA);
-  const knownStats = opts.trustedSolverApply === true
+  const knownStats = opts.trustedFetApply === true
     && opts.knownStats
     && typeof opts.knownStats === "object"
     ? opts.knownStats
@@ -1567,7 +1567,7 @@ function __tkbPayloadForSave(options){
   return { payload, stats: currentStats, usedStable: false };
 }
 // PERF 18/08: keo/tha & sua tung o — don phan LUU (sanitize + stringify + localStorage
-// + day server + history) ve sau 500ms yen lang thay vi chay dong bo theo TUNG o
+// + lưu máy chủ + history) về sau 500ms yên lặng thay vì chạy đồng bộ theo từng ô.
 // (truong lon: moi luot luu ton hang tram ms => keo tha "khung"). DATA trong bo nho
 // da doi ngay nen render/solve van dung; chi phan persist duoc gom lo.
 // Flush ngay khi: roi trang/an tab, Undo/Redo, hoac truoc khi chay xep/toi uu.
@@ -1595,12 +1595,12 @@ window.flushDeferredSaveStore = flushDeferredSaveStore;
 
 function saveStore(options){
   let opts = options || {};
-  const trustedSolverApply = opts.trustedSolverApply === true;
-  if(!trustedSolverApply){
+  const trustedFetApply = opts.trustedFetApply === true;
+  if(!trustedFetApply){
     try{ if(typeof reapplyAllUserOffLocks === "function") reapplyAllUserOffLocks(); }catch(_){}
   }
   let sanitizedChanged = false;
-  if(!trustedSolverApply){
+  if(!trustedFetApply){
     try{ sanitizedChanged = !!sanitizePlannerDataFromIndex(); }catch(e){ console.warn("sanitizePlannerDataFromIndex before save failed", e); }
   }
   if(sanitizedChanged){
@@ -2417,7 +2417,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Migration dữ liệu cũ
   try{ migrateRemoveLegacyDefaultFixedEvents(); }catch(_){ }
-  try{ migrateInvalidPartialSchedule(); }catch(_){ }
   // Hotkeys: Ctrl/Cmd+C + Ctrl/Cmd+V (copy/paste ô NGHỈ)
   try{ installTKBHotkeysOnce(); }catch(_){ }
 
@@ -2572,12 +2571,12 @@ function setStatsPopoverOpen(open){
     // student scans can take several seconds; doing them inside the click
     // handler made the button look dead (and left a text caret in the focused
     // button).  Keep the last rendered values when available and refresh them
-    // in a macrotask after the browser has had a chance to paint.
+    // on the next animation frame after the browser can paint the loading state.
     pop.hidden = false;
-    pop.removeAttribute("aria-busy");
+    pop.setAttribute("aria-busy", "true");
     const box = document.getElementById("statsBox");
     if(box && !box.innerHTML.trim()) renderStatsBoxLoading();
-    renderStatsBox();
+    scheduleStatsBoxRender({onlyIfOpen:true});
   }else{
     cancelScheduledStatsBoxRender();
   }
@@ -3987,73 +3986,6 @@ function makeEmptyTKBPreservingOff(classId, cfg){
   return applyOffPositionsToTkb(tkb, offPositions);
 }
 
-function tkbPartialMetricNumber(value, fallback=0){
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function detectStoredPartialSolverSchedule(){
-  const result = DATA?.tkbSolverResult;
-  if(!result || typeof result !== "object") return null;
-  if(result.version === "invalidated-partial") return null;
-
-  const metrics = result.metrics || result.payload?.metrics || {};
-  const validation = result.validation || result.payload?.validation || {};
-  const scheduledMetric = tkbPartialMetricNumber(metrics.scheduled_periods, -1);
-  const expectedMetric = tkbPartialMetricNumber(metrics.expected_periods, 0);
-  const unassignedMetric = tkbPartialMetricNumber(metrics.unassigned_periods, 0);
-  const violationsMetric = tkbPartialMetricNumber(metrics.app_constraint_violation_count, 0);
-  const bestEffort = result.bestEffort === true
-    || result.best_effort === true
-    || metrics.best_effort === true
-    || result.payload?.bestEffort === true;
-  const hardOk = metrics.hard_ok !== false
-    && metrics.core_hard_ok !== false
-    && validation.hard_ok !== false;
-  const incompleteMetric = expectedMetric > 0 && scheduledMetric >= 0 && scheduledMetric < expectedMetric;
-  const hasBadSolverSignal = bestEffort
-    || unassignedMetric > 0
-    || incompleteMetric
-    || violationsMetric > 0
-    || !hardOk;
-  if(!hasBadSolverSignal) return null;
-
-  const stats = calcSchoolTKBStats();
-  const scheduledNow = tkbPartialMetricNumber(stats.daXepTiet, 0);
-  const expectedNow = tkbPartialMetricNumber(stats.soTiet, expectedMetric);
-  const missingNow = tkbPartialMetricNumber(stats.chuaXepTiet, 0);
-  const hasPartialScheduleNow = expectedNow > 0 && scheduledNow > 0 && missingNow > 0;
-  const hasEmptyScheduleNow = expectedNow > 0 && scheduledNow === 0 && missingNow > 0;
-  if(!hasPartialScheduleNow && !hasEmptyScheduleNow) return null;
-
-  const reportedExpected = expectedMetric > 0 ? expectedMetric : expectedNow;
-  const reportedScheduled = (scheduledMetric >= 0 && expectedMetric > 0) ? scheduledMetric : scheduledNow;
-  const reportedMissing = Math.max(unassignedMetric, missingNow);
-
-  return {
-    stats,
-    metrics,
-    validation,
-    scheduled: reportedScheduled,
-    expected: reportedExpected,
-    missing: reportedMissing,
-    scheduledNow,
-    expectedNow,
-    missingNow,
-    scheduledMetric,
-    expectedMetric,
-    unassignedMetric,
-    bestEffort,
-    hardOk,
-    incompleteMetric,
-    hasPartialScheduleNow
-  };
-}
-
-function migrateInvalidPartialSchedule(){
-  return false;
-}
-
 function reapplyAllUserOffLocks(){
   for(const id of Object.keys(DATA.tkb || {})){
     const tkb = DATA.tkb?.[id];
@@ -4065,8 +3997,6 @@ try{
   window.__tkbCollectOffPositionsForClass = collectOffPositionsForClass;
   window.__tkbApplyOffPositionsToTkb = applyOffPositionsToTkb;
   window.__tkbMakeEmptyTKBPreservingOff = makeEmptyTKBPreservingOff;
-  window.__tkbDetectStoredPartialSolverSchedule = detectStoredPartialSolverSchedule;
-  window.__tkbMigrateInvalidPartialSchedule = migrateInvalidPartialSchedule;
   window.__tkbReapplyAllUserOffLocks = reapplyAllUserOffLocks;
   window.__tkbSyncAllUserOffLocksFromTkb = syncAllUserOffLocksFromTkb;
   window.__tkbRestorePendingOffDisplacedLessons = restorePendingOffDisplacedLessons;
@@ -5884,10 +5814,6 @@ function restorePlannerScheduleState(data, snapshot){
   data.tkbLessonRooms = snapshot.tkbLessonRooms || {};
 }
 
-// Aliases for compatibility
-const cloneHybridScheduleState = clonePlannerScheduleState;
-const restoreHybridScheduleState = restorePlannerScheduleState;
-
 function clearFetDiagnosticPanel(){
   try{ document.getElementById("fetScheduleDiagnostics")?.remove(); }catch(_){}
 }
@@ -6649,11 +6575,20 @@ function nextPlannerPaint(){
   });
 }
 
+function plannerNowMs(){
+  try{
+    if(typeof performance !== "undefined" && typeof performance.now === "function"){
+      return performance.now();
+    }
+  }catch(_){ }
+  return Date.now();
+}
+
 // Apply only after validation.  Paint the actual timetable before the larger
 // persistence/list/stat scans so a completed FET solve is visible immediately;
 // those secondary refreshes are intentionally moved out of the critical path.
 async function applyValidatedFetCandidate(data, candidateTkb, options = {}){
-  const startedAt = fetTelemetryNowMs();
+  const startedAt = plannerNowMs();
   data.tkb = candidateTkb;
   if(typeof DATA !== "undefined" && DATA) {
     DATA.tkb = candidateTkb;
@@ -6671,8 +6606,8 @@ async function applyValidatedFetCandidate(data, candidateTkb, options = {}){
 
   let saveError = null;
   try{
-    // Local persistence is synchronous; syncRemote sends to server synchronously if possible
-    saveStore({force:true, trustedSolverApply:true, syncRemote:true});
+    // Persist the validated timetable before refreshing secondary views.
+    saveStore({force:true, trustedFetApply:true, syncRemote:true});
   }catch(err){
     saveError = err;
     console.warn("Schedule candidate persistence failed", err);
@@ -6685,181 +6620,13 @@ async function applyValidatedFetCandidate(data, candidateTkb, options = {}){
   }catch(_){ }
   window.__TKB_LAST_FET_APPLY_TIMING = {
     mode:String(options?.mode || "auto"),
-    renderMs:Math.max(0, Math.round(fetTelemetryNowMs() - startedAt)),
+    renderMs:Math.max(0, Math.round(plannerNowMs() - startedAt)),
     persisted:!saveError,
     at:new Date().toISOString()
   };
   return {ok:!saveError, applied:!saveError, saveError};
 }
 
-// Browser FET is intentionally outside the solve request path.  Emit one
-// best-effort terminal telemetry event only after a local attempt settles so
-// Super Admin can see aggregate FET health without receiving timetable data,
-// teacher/class IDs, diagnostics or raw errors.  The Rust endpoint applies a
-// strict allowlist, authentication, idempotency and rate limiting again.
-function fetTelemetryNowMs(){
-  try{
-    if(typeof performance !== "undefined" && typeof performance.now === "function"){
-      return performance.now();
-    }
-  }catch(_){ }
-  return Date.now();
-}
-
-function fetTelemetryOpaqueEventId(){
-  try{
-    if(typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"){
-      return crypto.randomUUID().replace(/-/g, "");
-    }
-  }catch(_){ }
-  const entropy = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-  return `fet${Date.now().toString(36)}${entropy}`.slice(0, 80).padEnd(16, "0");
-}
-
-function fetTelemetryFocus(mode){
-  switch(String(mode || "").trim().toLowerCase()){
-    case "optimize_singletons": return { focus:"singletons", gapTarget:null, metricKey:"singletons", metricsKey:"soBuoiDay1" };
-    case "optimize_sessions": return { focus:"sessions", gapTarget:null, metricKey:"sessions", metricsKey:"tsBuoiDay" };
-    case "optimize_gap2": return { focus:"gaps", gapTarget:"gap2", metricKey:"gap2", metricsKey:"soBuoiTrong2" };
-    case "optimize_gap1": return { focus:"gaps", gapTarget:"gap1", metricKey:"gap1", metricsKey:"soBuoiTrong1" };
-    default: return { focus:"automatic", gapTarget:null, metricKey:null, metricsKey:null };
-  }
-}
-
-function fetTelemetryOutcome(result){
-  const failure = String(result?.failureKind || "").trim().toLowerCase();
-  if(result?.cancelled === true || failure === "user_cancelled") return {outcome:"cancelled", resultKind:"cancelled"};
-  if(result?.ok === true && result?.applied === true) return {outcome:"completed", resultKind:"completed"};
-  if(result?.ok === true && result?.applied === false) return {outcome:"no_improvement", resultKind:"no_improvement"};
-  if(/hard_validation|location_constraint|constraint_violation/.test(failure)){
-    return {outcome:"failed", resultKind:"hard_constraint_violation"};
-  }
-  if(/zero_domain|infeasible|capacity|must_teach|fixed_location/.test(failure)){
-    return {outcome:"infeasible", resultKind:"preflight_infeasible"};
-  }
-  if(/budget|time_budget|timeout/.test(failure)) return {outcome:"timeout", resultKind:"budget_exhausted"};
-  return {outcome:"failed", resultKind:"failed"};
-}
-
-function postFetTerminalTelemetry(options, startedAtMs, result, details = {}){
-  try{
-    if(typeof window === "undefined" || typeof window.fetch !== "function") return null;
-    const authApi = window.TKBAuthApi;
-    if(!authApi || typeof authApi.getAuthHeaders !== "function") return null;
-    const focus = fetTelemetryFocus(options?.mode);
-    const outcome = fetTelemetryOutcome(result);
-    const elapsed = Math.max(0, Math.round(fetTelemetryNowMs() - Number(startedAtMs || fetTelemetryNowMs())));
-    const localBudgetSeconds = Math.max(1, Math.min(300, Number(options?.deepLocalFet === true ? 30 : (options?.localFetBudgetSeconds || 12)) || 12));
-    const payload = {
-      eventId:fetTelemetryOpaqueEventId(),
-      executor:"fet_web_worker",
-      focus:focus.focus,
-      budgetKind:"local",
-      budgetSeconds:localBudgetSeconds,
-      runtimeMs:elapsed,
-      outcome:outcome.outcome,
-      resultKind:outcome.resultKind,
-      fallback:options?.fallbackFromCloudRun === true
-        ? "cloud_run_failed"
-        : (options?.forceLocalFet === true ? "user_selected_fet" : "none"),
-      applied:result?.applied === true
-    };
-    if(focus.gapTarget) payload.gapTarget = focus.gapTarget;
-    if(typeof details.hardValid === "boolean") payload.hardValid = details.hardValid;
-    if(typeof details.targetReached === "boolean") payload.targetReached = details.targetReached;
-    if(typeof details.floorReached === "boolean") payload.floorReached = details.floorReached;
-
-    const before = Number(details?.initialMetrics?.[focus.metricsKey]);
-    const after = Number(details?.metrics?.[focus.metricsKey]);
-    if(focus.metricKey && Number.isFinite(before) && Number.isFinite(after)){
-      payload.metricKey = focus.metricKey;
-      payload.metricBefore = Math.max(0, Math.round(before));
-      payload.metricAfter = Math.max(0, Math.round(after));
-      payload.metricDelta = payload.metricBefore - payload.metricAfter;
-      const floor = Number(details.floorMetric);
-      if(Number.isFinite(floor)) payload.floorMetric = Math.max(0, Math.round(floor));
-      const target = Number(details.targetMetric);
-      if(Number.isFinite(target)) payload.targetMetric = Math.max(0, Math.round(target));
-    }
-    const headers = Object.assign({"Content-Type":"application/json"}, authApi.getAuthHeaders() || {});
-    if(!headers.Authorization) return null;
-    // Intentionally not awaited: telemetry must never hold the UI lock or
-    // affect a validated local result when the VPS is unavailable.
-    window.fetch("/api/solver-telemetry/fet", {
-      method:"POST",
-      headers,
-      body:JSON.stringify(payload),
-      cache:"no-store",
-      keepalive:true
-    }).catch(() => {});
-    return payload;
-  }catch(_){
-    return null;
-  }
-}
-
-function fetBackendIsLocalOnly(){
-  try{
-    const host = String(window.location?.hostname || "").trim().toLowerCase();
-    return host === "127.0.0.1" || host === "localhost" || host === "::1";
-  }catch(_){ return false; }
-}
-
-function fetBackendAuthHeaders(){
-  try{
-    const api = window.TKBAuthApi;
-    return api && typeof api.getAuthHeaders === "function"
-      ? (api.getAuthHeaders() || {})
-      : {};
-  }catch(_){ return {}; }
-}
-
-function fetBackendSleep(ms){
-  return new Promise(resolve => window.setTimeout(resolve, Math.max(0, Number(ms) || 0)));
-}
-
-function fetBackendRunId(){
-  const random = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-  return `fet-backend-${Date.now().toString(36)}-${random}`.slice(0, 120);
-}
-
-function fetBackendCloneInput(data){
-  let copy = null;
-  try{ copy = JSON.parse(JSON.stringify(data || {})); }catch(_){ return null; }
-  if(!copy || typeof copy !== "object") return null;
-  // Old solver payloads can make the Rust API preserve a stale result before
-  // the requested backend race starts. The backend receives only the current
-  // timetable and constraints for this local boost.
-  for(const key of ["tkbSolverResult", "tkbRustSolverResult", "tkbSolverPayload", "solverResult", "solverMetrics"]){
-    try{ delete copy[key]; }catch(_){ }
-  }
-  return copy;
-}
-
-function fetBackendCountCells(tkbObj){
-  let count = 0;
-  try{
-    for(const byDay of Object.values(tkbObj || {})){
-      for(const bySession of Object.values(byDay || {})){
-        for(const cells of Object.values(bySession || {})){
-          if(!Array.isArray(cells)) continue;
-          for(const cell of cells){
-            if(!cell || cell === "OFF") continue;
-            if(typeof cell === "object" && (cell.off === true || String(cell.val || cell.mon || cell.subject || "").trim() === "")) continue;
-            count++;
-          }
-        }
-      }
-    }
-  }catch(_){ }
-  return count;
-}
-
-// A backend lane is allowed to explore temporary states that are worse than
-// the incumbent.  Those states must never become the visible "best" metric or
-// replace a complete timetable.  Keep this comparison deliberately small and
-// numeric so it is safe to use while a partially decoded progress frame is
-// arriving from the async Rust job.
 function fetQualityMetricNumber(metrics, key){
   const raw = metrics?.[key];
   if(raw === null || raw === undefined || raw === "") return null;
@@ -6972,420 +6739,8 @@ function fetAutomaticTargetPreflight(data, initialStats, FetEngineClass){
     };
   }catch(_){
     // Preflight is only a fast exit. Any compiler mismatch falls through to
-    // the normal isolated backend/worker path and never blocks optimization.
+    // the isolated worker path and never blocks optimization.
     return {reached:false, singletonFloor:0};
-  }
-}
-
-async function executeFetBackendBoost(data, options, initialStats){
-  if(!fetBackendIsLocalOnly()) return null;
-  if(options?.backendFetBoost === false) return null;
-  const mode = String(options?.mode || "");
-  if(!["solve_optimize_all", "solve_optimize_all_fresh", "optimize_singletons"].includes(mode)) return null;
-  if(Number(initialStats?.soBuoiDay1 || 0) <= 0 && Number(initialStats?.soBuoiTrong2 || 0) <= 0) return null;
-
-  const requestData = fetBackendCloneInput(data);
-  if(!requestData) return null;
-  const runId = fetBackendRunId();
-  const logicalCores = Math.max(1, Number(globalThis.navigator?.hardwareConcurrency) || 1);
-  const requestedWorkers = Math.min(8, Math.max(2, logicalCores - 2));
-  const backendBudgetMs = Math.max(60_000, Math.min(240_000, Number(options?.backendFetBudgetMs) || 150_000));
-  const backendStallMs = fetQualityStallBudgetMs(options, "backendFetStallMs", 60_000);
-  const controller = new AbortController();
-  let stopRequested = false;
-  let stopRequestedAt = 0;
-  let cancelSent = false;
-  let settled = false;
-  let activeJobId = runId;
-  const startedAt = Date.now();
-  let backendWatchdogTimer = null;
-  let watchdogTriggered = false;
-  let bestProgressMetrics = initialStats && typeof initialStats === "object" ? {...initialStats} : null;
-  let bestProgressStateCount = 0;
-  let lastQualityProgressAt = startedAt;
-  let payload = null;
-  let lastProgressPayload = null;
-  let backendTimedOut = false;
-  let backendStagnated = false;
-  const incumbentValidationPromise = inspectFetCandidateHardConstraints(
-    data,
-    JSON.parse(JSON.stringify(data.tkb || {}))
-  );
-
-  const updateProgress = payload => {
-    try{
-      if(settled) return;
-      lastProgressPayload = payload || lastProgressPayload;
-      const solver = payload?.solver && typeof payload.solver === "object" ? payload.solver : {};
-      const progress = payload?.progress && typeof payload.progress === "object" ? payload.progress : {};
-      const requestedProgress = payload?.requestedJobProgress && typeof payload.requestedJobProgress === "object" ? payload.requestedJobProgress : {};
-      const metrics = payload?.metrics || solver.metrics || progress.metrics || requestedProgress.metrics;
-      if(!metrics || typeof metrics !== "object") return;
-      const progressStage = String(payload?.stage || progress.stage || requestedProgress.stage || "");
-      const retainedCheckpoint = progressStage === "backend_best"
-        || payload?.checkpoint === true
-        || progress.checkpoint === true
-        || requestedProgress.checkpoint === true
-        || Boolean(payload?.tkb || payload?.result?.tkb || solver.tkb);
-      const stateCount = Math.max(
-        bestProgressStateCount,
-        Number(payload?.sessionStates || progress.sessionStates || requestedProgress.sessionStates || 0)
-          + Number(payload?.periodStates || progress.periodStates || requestedProgress.periodStates || 0)
-      );
-      bestProgressStateCount = Number.isFinite(stateCount) ? stateCount : bestProgressStateCount;
-
-      // Progress frames are emitted by independent lanes and therefore are not
-      // ordered by quality.  Only expose a candidate that is no worse than the
-      // complete incumbent; otherwise the screen appears to regress while the
-      // backend is actually retaining a better checkpoint.
-      if(retainedCheckpoint
-        && fetQualityMetricsNotWorse(metrics, initialStats, mode)
-        && (!bestProgressMetrics || fetQualityMetricsCompare(metrics, bestProgressMetrics, mode) < 0)){
-        bestProgressMetrics = {...metrics};
-        lastQualityProgressAt = Date.now();
-      }
-      const visibleMetrics = bestProgressMetrics || metrics;
-      const backendStageLabel = {
-        singleton_fast:"Backend gom nhanh",
-        singleton_warmup:"Backend gom ban đầu",
-        session_first:"Backend gom 12 buổi",
-        singleton_priority:"Backend tìm chuỗi đổi",
-        gap2_priority:"Backend dọn Trống 2"
-      }[progressStage] || "Backend gom buổi";
-      const detail = `${backendStageLabel} • 1t/buổi:${Number(visibleMetrics.soBuoiDay1 || 0)} T2:${Number(visibleMetrics.soBuoiTrong2 || 0)}${bestProgressStateCount > 0 ? ` • thử:${bestProgressStateCount.toLocaleString("vi-VN")}` : ""}`;
-      window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = detail;
-      if(typeof setAutoSortProgress === "function"){
-        const elapsed = Math.max(0, Date.now() - startedAt);
-        setAutoSortProgress(Math.min(92, 8 + Math.round(elapsed * 70 / backendBudgetMs)), "", { metricLabel:detail, isHybrid:false });
-      }
-    }catch(_){ }
-  };
-
-  const cancelBackend = async () => {
-    if(cancelSent || !activeJobId) return null;
-    cancelSent = true;
-    const cancelController = new AbortController();
-    const cancelTimeout = window.setTimeout(() => {
-      try{ cancelController.abort(); }catch(_){ }
-    }, 2_500);
-    try{
-      return await fetch("/api/solve-cancel", {
-        method:"POST",
-        headers:Object.assign({"Content-Type":"application/json"}, fetBackendAuthHeaders()),
-        body:JSON.stringify({solve_run_id:activeJobId, retainBest:true}),
-        cache:"no-store",
-        signal:cancelController.signal
-      });
-    }catch(_){ return null; }
-    finally{ window.clearTimeout(cancelTimeout); }
-  };
-
-  const requestBackendStop = () => {
-    stopRequested = true;
-    if(!stopRequestedAt) stopRequestedAt = Date.now();
-    return cancelBackend();
-  };
-
-  const marker = {
-    backend:true,
-    terminate(){ return requestBackendStop(); }
-  };
-  window.__ACTIVE_TKB_FET_WORKER = marker;
-  window.__ACTIVE_TKB_FET_WORKER_STOP = async () => {
-    if(settled) return;
-    await requestBackendStop();
-    if(typeof setStatus === "function") setStatus("Đang dừng backend và giữ nghiệm tốt nhất…", "info");
-    await cancelBackend();
-  };
-  window.__AUTO_SORT_STOP_REQUESTED = false;
-  if(typeof setAutoSortStopVisible === "function") setAutoSortStopVisible(true);
-  if(typeof setStatus === "function") setStatus("Đang gom buổi trên backend local…", "info");
-
-  // A lane can keep searching after it has reached a plateau.  Stop the
-  // backend race after a bounded quiet period so the teacher can click again
-  // and receive a fresh seed instead of waiting for the full hard deadline.
-  backendWatchdogTimer = window.setInterval(() => {
-    if(settled || stopRequested || watchdogTriggered) return;
-    if(Date.now() - lastQualityProgressAt < backendStallMs) return;
-    watchdogTriggered = true;
-    backendTimedOut = true;
-    if(typeof setStatus === "function"){
-      setStatus(`Backend không cải thiện thêm sau ${Math.round(backendStallMs / 1000)}s; đang giữ nghiệm tốt nhất…`, "info");
-    }
-    try{ requestBackendStop(); }catch(_){ }
-  }, 1_000);
-
-  const settings = Object.assign({}, options || {}, {
-    engine:"fet_trongoi",
-    solver_mode:"auto",
-    optimization_focus:"automatic",
-    ui_requested_solve_mode:mode,
-    ui_unified_auto_sort:true,
-    ui_unified_solve_kind:"refine_complete",
-    ui_solver_async_job:true,
-    ui_solver_fifo_admission:true,
-    solve_run_id:runId,
-    fet_backend_complete_incumbent:true,
-    fet_backend_parallel_workers:requestedWorkers,
-    fet_backend_total_state_budget:1_000_000_000,
-    fet_backend_lane_budget_ms:backendBudgetMs,
-    fet_backend_stall_ms:backendStallMs,
-    session_first_time_budget_ms:8_000,
-    initial_singleton_fast_ms:1_200,
-    initial_singleton_warmup_ms:5_000,
-    deep_singleton_rounds:3,
-    backend_deadline_ms:backendBudgetMs,
-    native_global_deadline_ms:backendBudgetMs,
-    reference_watchdog_deadline_ms:backendBudgetMs,
-    overall_time_limit_seconds:Math.ceil(backendBudgetMs / 1000),
-    optimization_time_limit_seconds:Math.ceil(backendBudgetMs / 1000),
-    require_complete_schedule:true,
-    optimize_existing_schedule:true,
-    preserve_existing_tkb:true,
-    allow_solver_warm_start:true,
-    force_fresh_backend_solve:true,
-    allow_backend_cache:false,
-    ui_use_existing_complete_incumbent:true,
-    ui_existing_incumbent_revalidated:true,
-    ui_return_complete_incumbent_on_existing_optimize_failure:true
-  });
-  const requestBody = JSON.stringify({engine:"fet_trongoi", data:requestData, settings});
-  const headers = Object.assign({"Content-Type":"application/json"}, fetBackendAuthHeaders());
-  const payloadWithCandidate = value => {
-    const queue = [value, value?.progress, value?.requestedJobProgress, value?.result, value?.solver];
-    for(const item of queue){
-      if(!item || typeof item !== "object") continue;
-      const tkb = item.tkb || item.result?.tkb || item.solver?.tkb;
-      if(tkb && typeof tkb === "object") return {source:item, tkb};
-    }
-    return null;
-  };
-
-  const payloadMetrics = value => {
-    if(!value || typeof value !== "object") return null;
-    return value.metrics
-      || value.solver?.metrics
-      || value.progress?.metrics
-      || value.requestedJobProgress?.metrics
-      || null;
-  };
-
-  const backendPayloadIsComplete = (value, candidate) => {
-    if(!candidate?.tkb) return false;
-    const metrics = payloadMetrics(value) || payloadMetrics(candidate.source) || {};
-    const unassigned = Number(metrics.unassigned_periods ?? metrics.unplacedCount ?? value?.unassigned ?? 1);
-    const hardOk = metrics.hard_ok === true
-      && metrics.core_hard_ok !== false
-      && Number(metrics.app_constraint_violation_count || 0) === 0;
-    // Rust may normalize a complete FET result to HTTP 422 when only the
-    // optional quality floor is still unmet. Independent browser validation
-    // below is the final authority, so retain that complete candidate.
-    const backendKind = String(value?.executor || value?.engine || candidate.source?.executor || candidate.source?.engine || "")
-      .includes("fet_backend");
-    return backendKind && unassigned === 0 && hardOk;
-  };
-
-  const terminalPollPayload = (value, status) => {
-    if(value?.ok === true || payloadWithCandidate(value)) return true;
-    return status !== 202 && !["solver_queued", "solver_running", "solver_cancelling"].includes(String(value?.kind || ""));
-  };
-
-  const payloadSaysNoImprovement = value => {
-    const kind = String(value?.kind || value?.failureKind || "").trim().toLowerCase();
-    return kind === "fet_backend_no_improvement" || kind === "fet_backend_stagnated";
-  };
-
-  try{
-    const response = await fetch("/api/solve-data", {
-      method:"POST",
-      headers,
-      body:requestBody,
-      cache:"no-store",
-      signal:controller.signal
-    });
-    payload = await response.json().catch(() => null);
-    lastProgressPayload = payload;
-    backendStagnated = payload?.stagnated === true || payload?.kind === "fet_backend_stagnated" || payload?.stopReason === "stagnated";
-    if(payload?.jobId) activeJobId = String(payload.jobId);
-    updateProgress(payload);
-
-    const pollRequired = response.status === 202 || payload?.serverOwned === true || payload?.kind === "solver_queued" || payload?.kind === "solver_running";
-    if(pollRequired){
-      const deadline = Date.now() + backendBudgetMs + 30_000;
-      let terminal = false;
-      while(Date.now() < Math.min(deadline, stopRequestedAt ? stopRequestedAt + 5_000 : deadline) && !terminal){
-        if(stopRequested && !cancelSent) await cancelBackend();
-        await fetBackendSleep(stopRequested ? 250 : 700);
-        const poll = await fetch(`/api/solve-result?jobId=${encodeURIComponent(activeJobId)}`, {
-          method:"GET",
-          headers:fetBackendAuthHeaders(),
-          cache:"no-store",
-          signal:controller.signal
-        });
-        const next = await poll.json().catch(() => null);
-        if(next && typeof next === "object"){
-          payload = next;
-          lastProgressPayload = next;
-          backendStagnated = backendStagnated || next?.stagnated === true || next?.kind === "fet_backend_stagnated" || next?.stopReason === "stagnated";
-          updateProgress(payload);
-          terminal = terminalPollPayload(payload, poll.status);
-        }
-      }
-      if(!terminal && Date.now() >= deadline){
-        backendTimedOut = true;
-        await requestBackendStop();
-        await cancelBackend();
-        // Give the local backend a short grace window to publish its retained
-        // best result after seeing the stop file. Do not leave a job running
-        // while the UI falls back to another solver.
-        const graceDeadline = Date.now() + 3_000;
-        while(Date.now() < graceDeadline){
-          await fetBackendSleep(250);
-          const poll = await fetch(`/api/solve-result?jobId=${encodeURIComponent(activeJobId)}`, {
-            method:"GET",
-            headers:fetBackendAuthHeaders(),
-            cache:"no-store",
-            signal:controller.signal
-          });
-          const next = await poll.json().catch(() => null);
-          if(next && typeof next === "object"){
-             payload = next;
-             lastProgressPayload = next;
-             backendStagnated = backendStagnated || next?.stagnated === true || next?.kind === "fet_backend_stagnated" || next?.stopReason === "stagnated";
-             updateProgress(payload);
-            if(terminalPollPayload(payload, poll.status)) break;
-          }
-        }
-      }
-    }
-
-    let candidate = payloadWithCandidate(payload) || payloadWithCandidate(lastProgressPayload);
-    if(!candidate && (stopRequested || backendTimedOut)){
-      candidate = payloadWithCandidate(lastProgressPayload);
-    }
-    const backendNoImprovement = payloadSaysNoImprovement(payload) || payloadSaysNoImprovement(lastProgressPayload);
-    if(!candidate){
-      if(stopRequested || backendTimedOut || backendStagnated || backendNoImprovement){
-        const cancelledByUser = stopRequested && !watchdogTriggered && !backendTimedOut && !backendStagnated;
-        const failureKind = cancelledByUser
-          ? "user_cancelled"
-          : (backendStagnated ? "fet_backend_stagnated" : "fet_backend_no_improvement");
-        const presentation = cancelledByUser
-          ? {message:"Đã dừng backend; lịch hiện tại được giữ nguyên.", level:"info"}
-          : fetFailurePresentation({failureKind});
-        if(typeof setStatus === "function") setStatus(presentation.message, presentation.level);
-        return {
-          handled:true,
-          result:{ok:!cancelledByUser, applied:false, cancelled:cancelledByUser, executor:"fet_backend", failureKind},
-          telemetry:{initialMetrics:initialStats, metrics:payloadMetrics(payload) || null, hardValid:false}
-        };
-      }
-      return null;
-    }
-    if(!backendPayloadIsComplete(payload, candidate)){
-      const failure = {
-        failureKind:"fet_backend_contract_invalid",
-        error:"Backend trả về nghiệm chưa đủ dữ liệu xác nhận đủ tiết và hợp lệ"
-      };
-      const presentation = fetFailurePresentation(failure);
-      if(typeof setStatus === "function") setStatus(presentation.message, presentation.level);
-      return {
-        handled:true,
-        result:{ok:false, applied:false, executor:"fet_backend", failureKind:failure.failureKind, error:presentation.message},
-        telemetry:{initialMetrics:initialStats, metrics:payloadMetrics(payload) || null, hardValid:false}
-      };
-    }
-    const candidateTkb = candidate.tkb;
-    const candidateMetrics = payloadMetrics(payload) || payloadMetrics(candidate.source);
-    if(options?.__incumbentComplete === true
-      && !fetQualityMetricsNotWorse(candidateMetrics, initialStats, mode)){
-      if(typeof setStatus === "function") setStatus("Backend tìm được trạng thái tạm thời kém hơn; lịch hiện tại được giữ nguyên.", "info");
-      return {
-        handled:true,
-        result:{ok:false, applied:false, cancelled:stopRequested, executor:"fet_backend", failureKind:"fet_backend_quality_regression_rejected"},
-        telemetry:{initialMetrics:initialStats, metrics:candidateMetrics || null, hardValid:false}
-      };
-    }
-    const currentCellCount = fetBackendCountCells(data.tkb || {});
-    const candidateCellCount = fetBackendCountCells(candidateTkb);
-    if(candidateCellCount < currentCellCount){
-      const failure = {failureKind:"fet_backend_fewer_lessons_rejected"};
-      const presentation = fetFailurePresentation(failure);
-      if(typeof setStatus === "function") setStatus(presentation.message, presentation.level);
-      return {
-        handled:true,
-        result:{ok:false, applied:false, executor:"fet_backend", failureKind:failure.failureKind, error:presentation.message},
-        telemetry:{initialMetrics:initialStats, metrics:payloadMetrics(payload) || null, hardValid:false}
-      };
-    }
-    const candidateValidation = await validateFetCandidateHardConstraints(data, candidateTkb, {
-      allowUnchangedIncumbentViolations:true,
-      incumbentBaseline:await incumbentValidationPromise
-    });
-    if(candidateValidation?.ok !== true){
-      const presentation = fetFailurePresentation(candidateValidation);
-      if(typeof setStatus === "function") setStatus(presentation.message, presentation.level);
-      if(presentation.showDiagnostics) renderFetDiagnosticPanel(candidateValidation?.diagnostics || null);
-      return {
-        handled:true,
-        result:{
-          ok:false,
-          applied:false,
-          executor:"fet_backend",
-          failureKind:candidateValidation?.failureKind || "fet_backend_hard_validation_failed",
-          diagnostics:candidateValidation?.diagnostics || null,
-          error:presentation.message
-        },
-        telemetry:{initialMetrics:initialStats, metrics:payloadMetrics(payload) || null, hardValid:false}
-      };
-    }
-    const applied = await applyValidatedFetCandidate(data, candidateTkb, options);
-    if(applied?.ok !== true){
-      return {
-        handled:true,
-        result:{ok:false, applied:false, executor:"fet_backend", failureKind:"fet_backend_apply_failed"},
-        telemetry:{initialMetrics:initialStats, metrics:payloadMetrics(payload) || null, hardValid:true}
-      };
-    }
-    const finalMetrics = payloadMetrics(payload) || calcTeacherTKBStats();
-    if(typeof setStatus === "function"){
-      setStatus(
-        watchdogTriggered
-          ? `Backend đã giữ nghiệm tốt nhất: 1 tiết/buổi ${initialStats.soBuoiDay1} ➔ ${Number(finalMetrics?.soBuoiDay1 || 0)} • Trống 2: ${Number(finalMetrics?.soBuoiTrong2 || 0)}`
-          : `Backend gom buổi xong: 1 tiết/buổi ${initialStats.soBuoiDay1} ➔ ${Number(finalMetrics?.soBuoiDay1 || 0)} • Trống 2: ${Number(finalMetrics?.soBuoiTrong2 || 0)} (dùng ${Number(payload?.parallelWorkers || requestedWorkers)} lane)`,
-        "ok"
-      );
-    }
-    const singletonTargetReached = payload?.singletonTargetReached === true || payload?.targetReached === true;
-    const gapTargetReached = payload?.gapTargetReached === true;
-    const qualityTargetReached = payload?.qualityTargetReached === true
-      || (singletonTargetReached && gapTargetReached);
-    return {
-      handled:true,
-      result:{ok:true, applied:true, executor:"fet_backend", tkb:data.tkb, targetReached:singletonTargetReached, floorReached:payload?.floorReached === true, singletonTargetReached, gapTargetReached, qualityTargetReached, cancelled:stopRequested},
-      telemetry:{initialMetrics:initialStats, metrics:finalMetrics, hardValid:true, targetReached:singletonTargetReached, floorReached:payload?.floorReached === true, singletonTargetReached, gapTargetReached, qualityTargetReached}
-    };
-  }catch(error){
-    if(stopRequested || backendTimedOut || backendStagnated){
-      if(typeof setStatus === "function") setStatus("Backend đã dừng; lịch hiện tại được giữ nguyên.", "info");
-      return {
-        handled:true,
-        result:{ok:false, applied:false, cancelled:stopRequested, executor:"fet_backend", failureKind:(backendTimedOut || backendStagnated) ? "fet_backend_stagnated" : "user_cancelled"},
-        telemetry:{initialMetrics:initialStats, metrics:payloadMetrics(payload) || null, hardValid:false}
-      };
-    }
-    if(typeof console !== "undefined") console.warn("FET backend boost unavailable; falling back to local worker", error);
-    return null;
-  }finally{
-    settled = true;
-    if(backendWatchdogTimer !== null){
-      window.clearInterval(backendWatchdogTimer);
-      backendWatchdogTimer = null;
-    }
-    window.__ACTIVE_TKB_FET_WORKER = null;
-    window.__ACTIVE_TKB_FET_WORKER_STOP = null;
-    if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
-    else if(typeof setAutoSortStopVisible === "function") setAutoSortStopVisible(false);
   }
 }
 
@@ -7396,13 +6751,11 @@ async function executeDirectFastSchedule(options = {}){
     // bridge), nen bam chong len nhau tao NHIEU worker song song; ket qua
     // muon cua worker cu ap de trang thai moi (da tai hien: luot optimize 225s
     // ket thuc sau khi nguoi dung xoa lich + bam xep lai -> luu lich rong).
-    // Chi khoa theo WORKER THAT SU dang chay — khong dua vao co UI
-    // (__TKB_SOLVE_UI_BUSY co the bi luong khac bat roi khong tat -> truoc
-    // day lam nut Sap xep bi khoa vinh vien; sua 17/08 v2).
+    // Chỉ khóa theo Web Worker FET thực sự đang chạy.
     if(window.__ACTIVE_TKB_FET_WORKER){
       const busyMsg = "Đang có lượt xếp/tối ưu chạy — hãy chờ xong hoặc bấm Dừng trước khi chạy lượt mới.";
       if(typeof setStatus === "function") setStatus(busyMsg, "info");
-      return { ok:false, applied:false, failureKind:"solver_busy", error:busyMsg };
+      return { ok:false, applied:false, failureKind:"fet_worker_busy", error:busyMsg };
     }
     clearFetDiagnosticPanel();
     const data = (typeof window !== "undefined" && window.DATA) ? window.DATA : ((typeof DATA !== "undefined") ? DATA : null);
@@ -7595,20 +6948,6 @@ async function executeDirectFastSchedule(options = {}){
       }
     }
 
-    // A complete incumbent is the expensive case where a fresh seed can
-    // escape a local plateau. Let the local backend race several independent
-    // FET lanes before falling back to the browser worker. Fresh/incomplete
-    // schedules still use the browser construction path first.
-    if(qualityPipelineActive && unplacedPeriodsCount === 0){
-      const backendBoost = await executeFetBackendBoost(data, options, initialStats);
-      if(backendBoost?.handled === true){
-        try{
-          postFetTerminalTelemetry(options, fetTelemetryNowMs(), backendBoost.result, backendBoost.telemetry || {});
-        }catch(_){ }
-        return backendBoost.result;
-      }
-    }
-
     if((isOptimizeMode || isConstructionThenOptimize) && unplacedPeriodsCount > 0){
       if(typeof setStatus === "function") setStatus(`TKB còn ${unplacedPeriodsCount} tiết chưa xếp, đang tự động xếp đủ 100% và tối ưu [${label}]...`, "info");
     }
@@ -7616,7 +6955,6 @@ async function executeDirectFastSchedule(options = {}){
     // Run local FET engine on background Web Worker
     if(typeof Worker !== "undefined"){
       return await new Promise((resolve) => {
-        const telemetryStartedAtMs = fetTelemetryNowMs();
         let workerSettled = false;
         let workerWatchdogTimer = null;
         let workerWatchdogTriggered = false;
@@ -7626,16 +6964,13 @@ async function executeDirectFastSchedule(options = {}){
         let workerBestMetrics = initialStats && typeof initialStats === "object" ? {...initialStats} : null;
         const workerStallBudgetMs = fetQualityStallBudgetMs(options, "workerFetStallMs", 60_000);
         const workerNoMessageBudgetMs = fetQualityStallBudgetMs(options, "workerNoMessageMs", 20_000);
-        const settleWorker = (result, telemetryDetails = {}) => {
+        const settleWorker = result => {
           if(workerSettled) return;
           workerSettled = true;
           if(workerWatchdogTimer !== null){
             window.clearInterval(workerWatchdogTimer);
             workerWatchdogTimer = null;
           }
-          try{
-            postFetTerminalTelemetry(options, telemetryStartedAtMs, result, telemetryDetails);
-          }catch(_){ }
           resolve(result);
         };
         let worker = null;
@@ -7857,7 +7192,7 @@ async function executeDirectFastSchedule(options = {}){
 
         // Show immediate live progress chip
         if(typeof setAutoSortProgress === "function"){
-          setAutoSortProgress(0, "", { metricLabel: initialDetail, isHybrid: false });
+          setAutoSortProgress(0, "", { metricLabel: initialDetail });
         }
 
         worker.onmessage = async function(e) {
@@ -7963,7 +7298,7 @@ async function executeDirectFastSchedule(options = {}){
             }
 
             if(typeof setAutoSortProgress === "function"){
-              setAutoSortProgress(msg.percent, "", { metricLabel: detail || window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL, isHybrid: false });
+              setAutoSortProgress(msg.percent, "", { metricLabel: detail || window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL });
             }
 
             if(typeof updateStatsBoxLiveProgress === "function"){
@@ -8424,7 +7759,7 @@ async function executeDirectFastSchedule(options = {}){
     if(totalPlaced > 0){
       if(typeof saveStore === "function"){
         try{
-          await Promise.resolve(saveStore({ force: true, trustedSolverApply: true }));
+          await Promise.resolve(saveStore({ force: true, trustedFetApply: true }));
         }catch(e){
           console.error("saveStore failed:", e);
         }
@@ -9502,7 +8837,7 @@ window.closeClassAssignmentStatistics = closeClassAssignmentStatistics;
 function renderStatsBox(){
   const box = document.getElementById("statsBox");
   if(!box) return;
-  const isSolving = (window.__ACTIVE_TKB_FET_WORKER != null) || window.__TKB_SOLVE_UI_BUSY === true;
+  const isSolving = window.__ACTIVE_TKB_FET_WORKER != null;
   box.classList.toggle("is-solving", isSolving);
 
   // One content signature is enough for the four views below.  Previously
@@ -9651,7 +8986,7 @@ function updateStatsBoxLiveProgress(snapshot){
   if(!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return false;
   const box = document.getElementById("statsBox");
   if(!box) return false;
-  const solving = (window.__ACTIVE_TKB_FET_WORKER != null) || window.__TKB_SOLVE_UI_BUSY === true;
+  const solving = window.__ACTIVE_TKB_FET_WORKER != null;
   if(!solving) return false;
   const focus = String(snapshot.focus || snapshot.optimizationFocus || snapshot.optimization_focus || "")
     .trim()
@@ -10723,8 +10058,7 @@ function setAutoSortStopAccessibleState(stopping){
 }
 
 function isPlannerBusySolving(){
-  return (window.__ACTIVE_TKB_FET_WORKER != null)
-    || (window.__TKB_SOLVE_UI_BUSY === true);
+  return window.__ACTIVE_TKB_FET_WORKER != null;
 }
 
 function setAutoSortBusyControls(locked){
@@ -10804,7 +10138,6 @@ function resetAutoSortStopRequest(){
 
 function requestStopAutoSort(){
   window.__AUTO_SORT_STOP_REQUESTED = true;
-  window.__TKB_SOLVE_UI_BUSY = false;
 
   // Focused FET optimization owns an explicit asynchronous stop flow. It
   // validates and applies the latest safe checkpoint; construction still uses
@@ -10922,38 +10255,8 @@ function setAutoSortProgress(percent, label, details){
     timerVal.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
-  // Update Metric Chip (completely hidden in Flash and Cherry modes)
-  const isAltEngine = window.__TKB_FLASH_SOLVING === true
-    || window.__TKB_HIDE_PROGRESS_METRIC === true
-    || window.__TKB_FORCE_ENGINE === "flash"
-    || window.__TKB_FORCE_ENGINE === "cherry"
-    || window.__CURRENT_ACTIVE_ENGINE === "flash"
-    || window.__CURRENT_ACTIVE_ENGINE === "cherry";
-
-  if(isAltEngine){
-    // 19/08: KHONG duoc de nhan tien do CU dinh lai khi chay Flash/Cherry.
-    // Bien __CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL song sot giua cac luot; luot
-    // truoc chay "1 tiet trong" de lai "Trong 1 tiet: 70 -> 6", nen ngay giay
-    // thu 2 cua luot Cherry nhan cu hien lai => nguoi dung tuong nut Cherry
-    // dang chay thuat toan gap1 trong trinh duyet. Xoa nhan cu va hien thang
-    // TEN THUAT TOAN dang chay de nhin la biet luot nay di duong may chu nao.
-    window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = "";
-    var __engKey = String(window.__TKB_FORCE_ENGINE || window.__CURRENT_ACTIVE_ENGINE || "").trim().toLowerCase();
-    var __engBadge = __engKey === "cherry"
-      ? "Cherry \u2022 engine v3 (m\u00e1y ch\u1ee7)"
-      : (__engKey === "flash" ? "Flash \u2022 CP-SAT (m\u00e1y ch\u1ee7)" : "");
-    if(metric){
-      if(__engBadge){
-        metric.classList.remove("is-hybrid");
-        metric.textContent = __engBadge;
-        metric.title = __engBadge;
-        metric.hidden = false;
-      }else{
-        metric.textContent = "";
-        metric.hidden = true;
-      }
-    }
-  }else if(metric){
+  // Update the metric chip for the single browser FET execution path.
+  if(metric){
     let rawMetric = String(details?.metricLabel || "").trim();
     const isSystemNoise = (str) => {
       const s = String(str || "").trim().toLowerCase();
@@ -10972,7 +10275,6 @@ function setAutoSortProgress(percent, label, details){
     }
     if(!isSystemNoise(rawMetric)){
       window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = rawMetric;
-      metric.classList.remove("is-hybrid");
       metric.textContent = rawMetric;
       metric.title = rawMetric;
       metric.hidden = false;
@@ -10996,33 +10298,17 @@ function finishAutoSortProgress(label, state){
   hideAutoSortProgress();
 }
 
-function invalidateSolverStateAfterScheduleDelete(resetLessonMappings){
+function invalidateScheduleStateAfterDelete(resetLessonMappings){
   if(!DATA || typeof DATA !== "object") return;
   try{
     const previousRevision = Math.max(0, Number(DATA.tkbScheduleRevision || 0) || 0);
     DATA.tkbScheduleRevision = Math.max(Date.now(), previousRevision + 1);
   }catch(_){ }
-  [
-    "tkbSolverResult",
-    "tkbRustSolverResult",
-    "tkbSolverPayload",
-    "solverResult",
-    "solverMetrics",
-    "tkbOptimizationPlateau"
-  ].forEach(key=>{
-    try{ delete DATA[key]; }catch(_){ DATA[key] = null; }
-  });
+  try{ delete DATA.tkbOptimizationPlateau; }catch(_){ DATA.tkbOptimizationPlateau = null; }
   if(resetLessonMappings === true){
     DATA.tkbLessonTeachers = {};
     DATA.tkbLessonRooms = {};
   }
-  try{
-    window.__TKB_SOLVER_LAST_PAYLOAD = null;
-    window.__TKB_SOLVER_LAST_RESULT = null;
-    window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = "";
-    window.__TKB_SOLVER_LAST_ERROR = "";
-    window.__TKB_SOLVER_LAST_ERROR_PAYLOAD = null;
-  }catch(_){ }
 }
 
 function persistScheduleDelete(){
@@ -11058,7 +10344,7 @@ function deleteCurrentClassTKB(){
 
   const cfg = DATA.tkbConfig || {fixed:[], off:[]};
   DATA.tkb[currentLop] = makeEmptyTKBPreservingOff(currentLop, cfg);
-  invalidateSolverStateAfterScheduleDelete(false);
+  invalidateScheduleStateAfterDelete(false);
   persistScheduleDelete();
   renderCurrentView();
   loadMonList();
@@ -11083,7 +10369,7 @@ function deleteAllTKB(){
   (DATA.lop||[]).forEach(l=>{
     DATA.tkb[l.id] = makeEmptyTKBPreservingOff(l.id, cfg);
   });
-  invalidateSolverStateAfterScheduleDelete(true);
+  invalidateScheduleStateAfterDelete(true);
   persistScheduleDelete();
   renderCurrentView();
   loadMonList();
@@ -11144,7 +10430,7 @@ function confirmDeleteMenu(){
     }
     const cfg = DATA.tkbConfig || {fixed:[], off:[]};
     DATA.tkb[currentLop] = makeEmptyTKBPreservingOff(currentLop, cfg);
-    invalidateSolverStateAfterScheduleDelete(false);
+    invalidateScheduleStateAfterDelete(false);
     persistScheduleDelete();
     renderCurrentView();
     loadMonList();
@@ -11160,7 +10446,7 @@ function confirmDeleteMenu(){
     (DATA.lop||[]).forEach(l=>{
       DATA.tkb[l.id] = makeEmptyTKBPreservingOff(l.id, cfg);
     });
-    invalidateSolverStateAfterScheduleDelete(true);
+    invalidateScheduleStateAfterDelete(true);
     persistScheduleDelete();
     renderCurrentView();
     loadMonList();
@@ -11262,7 +10548,7 @@ function exportExcel(){
 function saveTKB(){ saveStore({force:true}); }
 
 function isAutoSortRunningForNavigation(){
-  return (window.__ACTIVE_TKB_FET_WORKER != null) || window.__TKB_SOLVE_UI_BUSY === true;
+  return window.__ACTIVE_TKB_FET_WORKER != null;
 }
 
 async function saveAndBack(){
@@ -12341,117 +11627,3 @@ function backToMain(){
     console.error("[phanmon] paired view patch failed", e);
   }
 })();
-
-/* =========================================================
-   FLASH SCHEDULER ENGINE (MULTI-CORE CP-SAT CLOUD RUN)
-   ========================================================= */
-async function runFlashScheduler(event){
-  if(event) { try{ event.preventDefault(); event.stopPropagation(); }catch(_){} }
-  if(window.__TKB_RUST_SOLVER_RUNNING === true || window.__TKB_SOLVE_UI_BUSY === true){
-    return;
-  }
-  
-  window.__TKB_FLASH_SOLVING = true;
-  window.__TKB_HIDE_PROGRESS_METRIC = true;
-
-  // Clear any status messages
-  if(typeof _setStatus === "function") _setStatus("", "info");
-  const statusEl = document.getElementById("statusMsg");
-  if(statusEl) statusEl.textContent = "";
-
-  // Hide the metric chip (2044/2044 tiết) completely
-  const metric = document.getElementById("autoSortProgressMetric");
-  if(metric){
-    metric.textContent = "";
-    metric.hidden = true;
-  }
-
-  // Immediately start stopwatch timer display
-  if(typeof setAutoSortProgress === "function"){
-    setAutoSortProgress(5, "");
-  }
-
-  // Yield to browser rendering thread so the spinning clock animates immediately
-  await new Promise(resolve => setTimeout(resolve, 50));
-
-  try {
-    if(typeof window.clearOptimizationPlateau === "function"){
-      window.clearOptimizationPlateau(window.getData?.(), false);
-    }
-  }catch(_){}
-  
-  const data = typeof window.getData === "function" ? window.getData() : null;
-  const scheduled = typeof window.countScheduledLessons === "function" ? window.countScheduledLessons(data) : 0;
-  const expected = typeof window.expectedLessonCount === "function" ? window.expectedLessonCount(data) : 0;
-  const isComplete = expected > 0 && scheduled >= expected;
-
-  const flashSettings = {
-    ui_flash_scheduler_active: true,
-    ui_single_pass_auto_sort: true,
-    ui_unified_auto_sort: true,
-    ui_hybrid_executor: "cloud_run",
-    ui_hybrid_cloud_run_requested: true,
-    routing_mode: "serverless_only",
-    ui_allow_quality_after_single_pass: false,
-    ui_stop_after_first_complete_schedule: true,
-    solver_mode: "auto",
-    num_workers: 6,
-    overall_time_limit_seconds: 60,
-    backend_deadline_ms: 150000,
-    native_global_deadline_ms: 150000,
-    progress_estimate_seconds: 45,
-    require_complete_schedule: true,
-    best_effort_on_timeout: true,
-    force_fresh_backend_solve: true,
-    allow_backend_cache: false,
-    minimize_sessions: true,
-    minimize_one_period_sessions: true,
-    max_one_period_sessions: 0,
-    minimize_teacher_gaps: true,
-    period_max_teacher_gap: 1,
-    complete_schedule_seed_retry: false,
-    complete_schedule_seed_retry_max_runs: 0,
-    allow_zero_one_quality_retry: false,
-    allow_teacher_session_deep_retry: false,
-    allow_teacher_session_fast_portfolio: false,
-    schedule_diversity: false,
-    reclick_schedule_diversity: false
-  };
-
-  if(isComplete){
-    flashSettings.optimize_existing_schedule = true;
-    flashSettings.allow_solver_warm_start = true;
-    flashSettings.preserve_existing_tkb = true;
-    flashSettings.ui_unified_solve_kind = "refine_complete";
-    flashSettings.optimization_focus = "automatic";
-  } else {
-    flashSettings.optimize_existing_schedule = false;
-    flashSettings.preserve_existing_tkb = false;
-    flashSettings.force_preserve_partial_existing = false;
-    flashSettings.ui_unified_solve_kind = "fresh_complete_first";
-    flashSettings.ui_no_hint_fresh_solve = true;
-    flashSettings.ui_disable_staged_existing_repair = true;
-    flashSettings.allow_solver_warm_start = false;
-    flashSettings.auto_sort_strategy = "fresh_fast_quality";
-  }
-
-  try {
-    if(typeof window.solveWithRustApi === "function"){
-      return await window.solveWithRustApi({
-        ask: false,
-        settings: flashSettings,
-        singlePass: true
-      });
-    } else if(typeof window.bridgeSapXepTuDongAll === "function"){
-      return await window.bridgeSapXepTuDongAll({
-        manualAgentInvite: false,
-        mode: "automatic",
-        settings: flashSettings
-      });
-    }
-  } finally {
-    window.__TKB_FLASH_SOLVING = false;
-    window.__TKB_HIDE_PROGRESS_METRIC = false;
-  }
-}
-window.runFlashScheduler = runFlashScheduler;

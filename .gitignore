@@ -5,25 +5,22 @@
 **/.env
 **/.env.*
 !**/.env.example
-tools/vps-deploy/super-admin.conf
 *.pem
 *.key
 *.p12
 *.pfx
 
-# Runtime databases, logs, and generated solver artifacts
+# Runtime databases and logs
 *.db
 *.db-shm
 *.db-wal
 *.sqlite
 *.sqlite3
 *.log
-solver_runtime/logs/
 archived_logs/
 
 # Dependencies and build outputs
 node_modules/
-.agents/
 .codex/
 rust_api/target/
 rust_api/target-*/
@@ -38,6 +35,8 @@ __pycache__/
 
 # Session-local scratch (files staged for manual deletion)
 _to_delete/
+scratch/
+temp/
 
 # School workbooks may contain teacher/class personal data. Keep them out of
 # source backup unless an explicitly encrypted data archive is requested.

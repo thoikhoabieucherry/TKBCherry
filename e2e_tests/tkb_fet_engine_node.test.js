@@ -94,6 +94,31 @@ function setCell(data, classId, thu, buoi, period, value){
   data.tkb[classId][thu][buoi][period] = value;
 }
 
+function makeSessionFirstFixture(){
+  const days = ["thu2", "thu3", "thu4", "thu5"];
+  const data = {
+    lop:days.map((_, index) => ({id:`L${index + 1}`, ten:`10A${index + 1}`, khoi:"10"})),
+    mon:[{ten:"Toán", khoi:"10", sotiet:1, gioihan:1}],
+    monhoc:[{ten:"Toán", ma:"TOAN"}],
+    giaovien:[{ma:"GV01", ten:"GV01"}],
+    pccmMatrix:{},
+    pccmTietMatrix:{},
+    pccmRoomMatrix:{},
+    pccmGioihanMatrix:{},
+    tkb:{},
+    tkbLessonTeachers:{},
+    tkbLessonRooms:{},
+    tkbConstraints:{}
+  };
+  days.forEach((thu, index) => {
+    const classId = `L${index + 1}`;
+    data.pccmMatrix[`${classId}|Toán`] = "GV01";
+    data.pccmTietMatrix[`${classId}|Toán`] = 1;
+    setCell(data, classId, thu, "sang", 0, "Toán");
+  });
+  return data;
+}
+
 function prepareConstraintEngine(data, options = {}){
   const FetTimetableEngine = loadEngine();
   const engine = new FetTimetableEngine(data, {seed:17, ...options});
@@ -276,27 +301,7 @@ test("FET proves a singleton floor for teachers split across disjoint class sess
 });
 
 test("session-first search reaches singleton zero before spending a billion-state ceiling", async () => {
-  const days = ["thu2", "thu3", "thu4", "thu5"];
-  const data = {
-    lop:days.map((_, index) => ({id:`L${index + 1}`, ten:`10A${index + 1}`, khoi:"10"})),
-    mon:[{ten:"Toán", khoi:"10", sotiet:1, gioihan:1}],
-    monhoc:[{ten:"Toán", ma:"TOAN"}],
-    giaovien:[{ma:"GV01", ten:"GV01"}],
-    pccmMatrix:{},
-    pccmTietMatrix:{},
-    pccmRoomMatrix:{},
-    pccmGioihanMatrix:{},
-    tkb:{},
-    tkbLessonTeachers:{},
-    tkbLessonRooms:{},
-    tkbConstraints:{}
-  };
-  days.forEach((thu, index) => {
-    const classId = `L${index + 1}`;
-    data.pccmMatrix[`${classId}|Toán`] = "GV01";
-    data.pccmTietMatrix[`${classId}|Toán`] = 1;
-    setCell(data, classId, thu, "sang", 0, "Toán");
-  });
+  const data = makeSessionFirstFixture();
 
   const engine = new (loadEngine())(data, {
     seed:41,
@@ -324,10 +329,7 @@ test("session-first search reaches singleton zero before spending a billion-stat
 });
 
 test("session-first search emits heartbeat and respects its bounded time slice", async () => {
-  const data = JSON.parse(fs.readFileSync(
-    path.resolve(__dirname, "..", "scratch", "live_default.json"),
-    "utf8"
-  ));
+  const data = makeSessionFirstFixture();
   const engine = new (loadEngine())(data, {
     seed:28183,
     deepLocalFet:true,

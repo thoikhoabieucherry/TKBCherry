@@ -6,6 +6,73 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-23 REWRITE THÀNH WEB FET DUY NHẤT + DỌN REPO (SOURCE ONLY, NOT DEPLOYED)
+
+### Quyết định kiến trúc
+
+- TKBCherry chỉ còn một đường tính lịch: `web/pages/tkb-fet-worker.js` dùng
+  `web/pages/tkb-fet-engine.js`; toàn bộ xếp mới, tối ưu, checkpoint, tiến
+  trình và hủy chạy trong trình duyệt.
+- Rust được thu gọn thành máy chủ local tại `127.0.0.1:1010`, chỉ phục vụ
+  static web, auth/session/registry và school store SQLite. Health công bố
+  `architecture=browser-only`, `engine=fet-web-worker` và đúng ba capability
+  `static-web`, `auth`, `school-store`.
+- Không còn API nhận bài toán TKB, job/polling/queue, tuyến compute từ xa hoặc
+  backend FET bổ trợ. Export Excel/Word tiếp tục chạy và tải file trong browser.
+- Phiên này tuyệt đối không triển khai lên máy chủ/dịch vụ nào. Port 1010 chỉ là
+  mặc định chạy cục bộ.
+
+### Phần đã xóa
+
+- Toàn bộ `solver_runtime/`: CP-SAT/MILP/Python solver, model-plan, stdio/WSL,
+  Cloud Run client/service, backend FET runner, fixture và test của runtime cũ.
+- Các module Rust điều phối lịch cũ: native solver/precheck, solver pool,
+  serverless, telemetry, Google usage, Agent helper/credential, JSON bridge,
+  binary kiểm định tạm, harness và prebuilt backend.
+- Các bridge/mirror/backup frontend: Rust bridge, fast-seed, quick-fill,
+  engine/worker/constraints/phanmon/sapxep ở `web/` gốc, parallel-fork backup,
+  `phanmon-ops.js` và mirror menu tối ưu. Nguồn canonical chỉ còn dưới
+  `web/pages/`.
+- UI quản trị hạ tầng/compute, quota lượt xếp và metadata billing-cycle của
+  scheduler cũ. Super Admin chỉ còn quản lý trường, tài khoản và gói.
+- `tools/cloud-run/`, `tools/vps-deploy/`, script deploy/chẩn đoán/đọc server
+  ở thư mục gốc, package helper cũ và workflow build Agent.
+- Scratch, cache, log, workbook/JSON dữ liệu thật, hai fixture Rust chứa dữ liệu
+  trường không còn được dùng, binary Excel tạm và các test chỉ bảo vệ thành phần
+  đã nghỉ.
+- Tài liệu kế hoạch/hạ tầng cũ. Nội dung còn giá trị của `PROJECT.md` đã nhập
+  vào `README.md`; `PROJECT.md` và `AGENTS.md` đã xóa. README hiện liên kết
+  tập tài liệu nhỏ còn lại theo đúng vai trò.
+
+### Phần được giữ và làm rõ
+
+- Planner, ràng buộc, chỉnh tay, undo/redo, thống kê lớp/giáo viên, bốn mục tiêu
+  tối ưu, FET worker nhiều seed, cổng chống hồi quy và lưu school JSON.
+- Export Excel ngành, Excel học sinh và Word qua API browser.
+- Auth Argon2, single-login cho tài khoản thường, registry có scope theo trường,
+  SQLite WAL/busy timeout và dịch vụ OTP mail tùy chọn độc lập.
+- `start.py` chỉ build/start Rust web server bằng Cargo locked release, kiểm tra
+  health đúng identity rồi mở `http://127.0.0.1:1010/`; không kiểm tra hay khởi
+  động Python solver/prebuilt backend.
+- Sửa popover Thống kê để trạng thái loading được vẽ trước phép tính nặng; nút
+  Thống kê không còn xuất hiện caret/chọn chữ khi bấm.
+- Thêm architecture contract test và workflow CI bốn lane: browser FET/UI,
+  launcher, mail tùy chọn và Rust web/auth/store.
+
+### Kiểm chứng tại máy local
+
+- JavaScript syntax: **52/52 file pass**.
+- Toàn bộ Node FET/UI: **148/148 test pass**.
+- Python launcher: **7/7 test pass**.
+- Mail service: **5/5 test pass** bằng Node 22 sau khi cài dependency cục bộ.
+- `cargo`, `rustc` và `rustup` không có trên máy này nên chưa thể chạy Rust
+  check/test local. Workflow GitHub là cổng biên dịch Rust bắt buộc sau push.
+- `.env` và `rust_api/tkb_store.db*` được giữ nguyên, không stage/commit.
+- Mã nguồn của phiên đã được commit local trên nhánh
+  `codex/backend-fet-billion`. Push HTTPS bị GitHub từ chối vì máy không có
+  credential, token môi trường hoặc khóa SSH; cần đăng nhập GitHub rồi thử lại.
+  **Không deploy**.
+
 ## 2026-08-22 BỊT LỖ HỒI QUY: CỔNG UI THIẾU + ĐÁNH ĐỔI VÔ ÍCH (LOCAL, NOT DEPLOYED)
 
 Chủ dự án báo `1 tiết/buổi` "không giảm, càng ngày càng tệ". Tìm được hai lỗ, cả hai đều cho phép thiệt hại **tích luỹ qua nhiều lần bấm**:

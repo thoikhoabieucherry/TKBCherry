@@ -564,15 +564,8 @@ body.planner-shell .left {
   background: #fafbfc;
 }
 
-.planner-toolbar-group,
-body.planner-shell .solver-preset-group {
+.planner-toolbar-group {
   background: #f8fafc;
-}
-
-.tkb-backend-banner {
-  background: #fff7ed;
-  border-bottom: 1px solid #fed7aa;
-  color: #9a3412;
 }
 
 /* ── Runtime pill ── */
@@ -1162,21 +1155,6 @@ body.planner-shell .planner-toolbar-group {
   background: transparent;
 }
 
-body.planner-shell .solver-preset-group {
-  height: auto;
-  min-height: 0;
-  padding: 0;
-  border-color: transparent;
-  background: transparent;
-  box-sizing: border-box;
-}
-
-body.planner-shell .solver-preset-btn {
-  height: var(--tkb-control-h);
-  min-height: var(--tkb-control-h);
-  border-radius: 6px;
-}
-
 body.planner-shell .stats-popover-wrap .save-button,
 body.planner-shell .toolbar button.print-button,
 body.planner-shell .toolbar button.stats-toggle {
@@ -1232,21 +1210,6 @@ body.planner-shell .center {
     justify-self: stretch;
     width: 100%;
     max-width: 100%;
-  }
-
-  body.planner-shell .toolbar-main #solverPresetGroup {
-    width: 100%;
-    max-width: 100%;
-    height: auto;
-    min-height: 0;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    justify-content: stretch;
-  }
-
-  body.planner-shell .toolbar-main .solver-preset-btn {
-    width: 100%;
-    height: 38px;
-    min-height: 38px;
   }
 
   body.planner-shell .stats-popover-wrap {

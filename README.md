@@ -1,166 +1,188 @@
-# TKBCherry — Phần mềm xếp thời khóa biểu
+# TKBCherry — FET chạy trên web
 
-Ứng dụng web cho trường học: nhập danh mục, phân công (PCCM), ràng buộc, sắp xếp TKB tự động, chỉnh tay, xuất Excel/Word. Production chạy solver trên Cloud Run và tự dự phòng qua VPS; trình duyệt chỉ gửi dữ liệu, theo dõi job và nhận kết quả.
+TKBCherry là ứng dụng web quản lý và xếp thời khóa biểu trường học. Người dùng
+nhập danh mục, phân công chuyên môn, ràng buộc và các ô cố định; FET tự xếp ngay
+trong trình duyệt, cho phép chỉnh tay rồi xuất Excel/Word.
+
+Phiên bản hiện tại có một kiến trúc duy nhất:
+
+```text
+Trình duyệt
+  ├─ giao diện, ràng buộc, import/export
+  └─ Web Worker FET: toàn bộ việc xếp và tối ưu TKB
+
+Rust tại 127.0.0.1:1010
+  ├─ phục vụ thư mục web/
+  ├─ đăng nhập và phiên làm việc
+  └─ lưu dữ liệu trường vào SQLite
+```
+
+Không có bộ xếp lịch phía máy chủ, hàng đợi job, bridge solver, CP-SAT hay Cloud
+Run. Trình duyệt không gửi bài toán TKB ra dịch vụ tính toán bên ngoài.
+
+## Hợp đồng ổn định
+
+| Thành phần | Trách nhiệm | Không được làm |
+| --- | --- | --- |
+| Planner | Nhập/chỉnh dữ liệu, hiển thị tiến trình, kiểm định và áp lịch | Gọi dịch vụ tính lịch từ xa |
+| FET worker | Xếp mới, tối ưu, checkpoint, hủy và trả metrics | Ghi trực tiếp vào SQLite |
+| Rust | Static web, auth/session, registry và school store | Chạy hoặc điều phối thuật toán TKB |
+| Mail service | Gửi OTP khi được cấu hình riêng | Tham gia luồng xếp lịch |
+
+Mọi thay đổi phải giữ các bất biến sau:
+
+- Không mất tiết và không áp kết quả thiếu tiết.
+- Không ghi đè ô cố định hoặc ô OFF.
+- Không thêm trùng lớp, giáo viên, phòng hay vi phạm cứng đang bật.
+- Mỗi trang chỉ có một worker chính; lệnh Dừng giữ checkpoint tốt nhất đã qua
+  kiểm định.
+- Lịch không rời thiết bị để được tính toán.
+- Máy chủ mặc định chỉ nghe `127.0.0.1:1010`.
 
 ## Chạy ứng dụng
 
-Từ thư mục gốc repo:
+Yêu cầu: Python 3.10+ và Rust/Cargo để build máy chủ lần đầu.
+
+Từ thư mục gốc:
 
 ```powershell
 python .\start.py
 ```
 
-Hoặc dùng `start.exe` nếu đã build bằng PyInstaller (xem mục Build bên dưới).
-
-Mở trình duyệt:
+Mở:
 
 ```text
 http://127.0.0.1:1010/
 ```
 
-Đóng cửa sổ điều khiển TKB (hoặc Ctrl+C khi chạy `--foreground`) để dừng backend và giải phóng port `1010`.
-
-## Kiến trúc
-
-| Thành phần | Mô tả |
-|------------|--------|
-| `web/` | Giao diện: quản lý dữ liệu, planner TKB, ràng buộc, import/export |
-| `rust_api/` | HTTP API Rust (port 1010 mặc định local), phục vụ static files + solve + export |
-| `solver_runtime/` | Python optimizer tham chiếu (CP-SAT / MILP qua `ortools`) |
-| `web/vendor/` | Thư viện giao diện/dữ liệu local (xlsx, jszip, sql.js) — không chứa solver trình duyệt |
-| `data/` | File Excel mẫu (nếu có) |
-| `start.py` | Launcher: build Rust nếu cần, khởi động API, mở trình duyệt |
-
-Tài liệu tái tạo Cloud Run, Billing Export, API đồng bộ chi phí và hợp đồng để
-mở rộng sang Microsoft/Azure hoặc Cloudflare:
-[docs/CLOUD_COST_SYNC.md](docs/CLOUD_COST_SYNC.md).
-
-### Luồng sắp xếp tự động
-
-```text
-UI (một nút Sắp xếp) → POST /api/solve-precheck
-  → tự nhận diện trạng thái lịch
-     ├─ fresh_complete_first: lịch trống/thiếu nhiều → xếp đủ trước, rồi tối ưu
-     ├─ repair_partial: chỉ thiếu ít tiết → sửa phần còn thiếu từ incumbent mềm
-     └─ refine_complete: lịch đã đủ và hợp lệ → tối ưu tiếp từ incumbent mềm
-  → POST /api/solve-data
-  → Cloud Run Python CP-SAT/MILP (mặc định)
-  → VPS Hybrid Python CP-SAT/MILP + Rust native fallback khi Cloud Run lỗi
-```
-
-Người dùng không phải chọn Nhanh/Max. Bridge tự chọn nhánh theo nhu cầu tiết từ PCCM và trạng thái TKB hiện tại. Lịch hiện có chỉ là **incumbent mềm**: solver được phép dời các tiết để thoát nghiệm cục bộ; chỉ ô có `fixed: true` mới là khóa cứng. Trước khi tái sử dụng incumbent, backend dựng lại giáo viên theo PCCM hiện tại và kiểm tra ràng buộc cứng để không khôi phục lịch cũ sai phân công.
-
-Client Agent EXE và solver WebAssembly đã ngừng sử dụng. Tài khoản thường không thấy điều khiển hạ tầng. Superadmin vẫn có biểu tượng hạ tầng để chuyển tuyến Cloud Run/VPS khi vận hành; biểu tượng này không chạy solver trên thiết bị người dùng.
-
-Chất lượng được so sánh theo thứ tự ưu tiên (lexicographic), không dùng một mốc số buổi/tiết trống cố định cho mọi trường:
-
-1. Xếp đủ nhu cầu và không vi phạm ràng buộc cứng.
-2. Bắt buộc `0` buổi giáo viên chỉ dạy 1 tiết.
-3. Bắt buộc `0` buổi giáo viên có khoảng trống từ 2 tiết trở lên.
-4. Giảm tổng số buổi dạy của giáo viên.
-5. Giảm khoảng trống 1 tiết, sau đó mới xét tổng khoảng trống và độ cân bằng.
-
-Khi ô thời lượng để trống, lần xếp mới hoặc dựng lại sau khi đổi yêu cầu có cổng chất lượng tối đa `110` giây nhưng trả sớm ngay khi lịch đã đủ, hợp lệ, không có buổi giáo viên dạy một tiết và không có khoảng trống từ hai tiết trở lên; lần bấm tối ưu tiếp trên lịch đầy đủ có ceiling `180` giây để giảm tiếp tổng buổi và gap 1. Ô thời lượng không bị tự điền, thời gian người dùng nhập luôn thắng mặc định ẩn, thời gian chờ FIFO không bị tính vào thời gian giải, và mỗi lần bấm chỉ tạo một canonical job. Nhánh sửa lịch thiếu ít tiết dùng ngân sách ngắn hơn theo đúng số tiết còn thiếu. Bản v1.46 giữ lịch đầy đủ dự phòng cho trường hợp yêu cầu người dùng bắt buộc tạo nợ chất lượng, thử thêm một seed ngẫu nhiên trước khi dùng dự phòng, và không dùng legacy/static hint cho lượt fresh.
-
-`GET /api/health` trả về `api: "rust"` và `algorithmStatus` phản ánh backend đang dùng (ví dụ `hybrid-reference-cp-sat-milp-v1` khi Python solver sẵn sàng).
-
-### API chính
-
-- `GET /api/health` — trạng thái server và solver
-- `POST /api/solve-data` — sắp xếp TKB
-- `GET /api/solve-result?jobId=...` — nối lại trạng thái/kết quả của job server-owned
-- `POST /api/solve-precheck` — kiểm tra dữ liệu trước khi solve
-- `POST /api/solve-cancel` — hủy solve đang chạy (theo `solve_run_id` của trường)
-- `GET /api/solver-state` — số lượt xếp đang chạy / slot còn trống
-- `POST /api/export/tkb-class-xlsx` / `docx` — lưu file export ra thư mục Documents
-
-### Nhiều trường xếp cùng lúc
-
-Backend dùng **solver pool FIFO** có giới hạn CPU để nhiều trường không làm CP-SAT tranh tài nguyên rồi hết deadline:
-
-- VPS 6 CPU mặc định: `TKB_SOLVER_MAX_CONCURRENT=3`, `TKB_SOLVER_CPU_TOKENS=6`; unified fresh/refine chất lượng dùng toàn bộ 6 worker và xếp hàng FIFO, repair ngắn dùng 2 worker
-- Một job chỉ được nhận khi còn đủ toàn bộ worker yêu cầu; mỗi thời điểm VPS chạy một unified fresh/refine hoặc tối đa ba repair ngắn `2 + 2 + 2`
-- Local `start.py` tự chọn 1-4 slot theo số CPU và chia tối đa 8 worker cho mỗi lượt
-- Khi hết slot/token, request nhận trạng thái `solver_queued` và giao diện âm thầm giữ vị trí, thử lại theo FIFO; lượt sau không được vượt lượt trước
-- Mỗi lượt xếp có `solve_run_id` và chủ sở hữu riêng — trạng thái và nút **Dừng** chỉ xem/hủy lượt đang chạy hoặc đang chờ của trường đó
-- Hai trình duyệt cùng tài khoản gửi đồng thời cùng một fingerprint TKB sẽ dùng chung một server job; trình duyệt đến sau chỉ nối tiến trình/kết quả, không tiêu tốn thêm một lượt solve
-- Unified solve là job do server sở hữu: waiter trên server tự gia hạn vé và nhận CPU theo FIFO kể cả khi trình duyệt ngủ hoặc mất kết nối
-- `GET /api/solve-result?jobId=...` trả `202` khi queued/running và trả nguyên status/payload cuối khi hoàn tất; duplicate POST cùng `solve_run_id` là idempotent
-- Kết quả reconnect giữ trong RAM tối đa 6 giờ và tối đa 64 bản; sống qua F5/chuyển tab nhưng không qua restart dịch vụ. Frontend lưu job ID cùng fingerprint lịch theo từng `sid` và không áp kết quả stale
-- Thời gian chờ không bị trừ vào deadline giải
-
-Có thể chỉnh hai biến trên theo cấu hình máy. VPS: xem `tools/vps-deploy/solver-pool.conf`.
-
-## Bảo mật (auth server-side)
-
-- Đăng nhập qua `POST /api/auth/login` — mật khẩu xác thực trên server
-- Session token (Bearer) bắt buộc cho `GET/POST /api/auth/registry` và `/api/school/store`
-- Production đặt `TKB_SOLVER_REQUIRE_AUTH=1`: `/api/solve-data`, `/api/solve-result`, `/api/solve-precheck`, `/api/solver-state` và `/api/solve-cancel` đều yêu cầu Bearer hợp lệ
-- Local có thể để auth solver tắt phục vụ phát triển; không tắt cổng này trên VPS
-- CORS cho phép header `Authorization`; state/cancel được lọc theo chủ sở hữu dù hàng đợi vẫn là FIFO toàn cục
-- Đăng ký trường qua `POST /api/auth/register` (public, có kiểm tra IP trùng)
-- `GET /api/auth/registry` không trả `passwordHash` / mã OTP
-- Super admin khởi tạo từ `TKB_SUPER_PASSWORD` trong `.env`
-- Giao diện **không lưu mật khẩu** trong “Ghi nhớ đăng nhập” (chỉ tên đăng nhập)
-- Pill trạng thái backend góc màn hình (`runtime.js`) — biết ngay khi server chưa chạy
-
-## Cài đặt lần đầu
-
-### 1. Python dependencies (cho sắp xếp chất lượng cao)
+`start.py` tự build Rust khi mã nguồn mới hơn bản chạy, khởi động máy chủ và mở
+trình duyệt. Đóng cửa sổ launcher để dừng. Chế độ dòng lệnh:
 
 ```powershell
-pip install -r solver_runtime\requirements.txt
+python .\start.py --foreground --no-browser
 ```
 
-Cần: `numpy`, `scipy`, `openpyxl`, `ortools`. Nếu thiếu, app vẫn chạy nhưng hybrid solver có thể không hoạt động.
+Cổng mặc định là `1010`; có thể đổi tạm để kiểm thử bằng `--port` hoặc
+`TKB_RUST_PORT`. Máy chủ mặc định chỉ nghe `127.0.0.1`.
 
-### 2. Rust backend
+## Cấu hình
 
-`start.py` tự build `rust_api/target/release/tkb_rust_api.exe` nếu source mới hơn exe.
+Sao chép `.env.example` thành `.env`, tối thiểu đổi mật khẩu Super Admin:
 
-**Không build được (thiếu MSVC)?** Cài Rust toolchain và Visual Studio Build Tools có workload C++, sau đó build lại bằng Cargo.
+```dotenv
+TKB_SUPER_PASSWORD=your-secure-password-here
+TKB_RUST_HOST=127.0.0.1
+TKB_RUST_PORT=1010
+```
 
-Build thủ công:
+Các tùy chọn còn lại được giải thích ngay trong `.env.example`. Không commit
+`.env`, token phiên, cơ sở dữ liệu hoặc file Excel có dữ liệu thật.
+
+## Luồng xếp lịch
+
+1. Trang `web/pages/sapxep.html` nạp engine FET và giao diện planner.
+2. `web/pages/phanmon.js` kiểm tra dữ liệu, tạo
+   `web/pages/tkb-fet-worker.js` và gửi một bản sao dữ liệu vào worker.
+3. Worker chạy `FetTimetableEngine`, gửi tiến trình/checkpoint về giao diện và
+   quan sát lệnh Dừng.
+4. Ứng viên chỉ được áp dụng sau khi qua kiểm tra đủ tiết, ô cố định, OFF, trùng
+   giáo viên/phòng và các ràng buộc đang bật.
+5. Lịch hợp lệ được lưu qua `/api/school/store`; Excel/Word được tạo và tải ngay
+   trong trình duyệt.
+
+Thứ tự chất lượng tổng quát:
+
+1. Xếp đủ nhu cầu và không thêm vi phạm cứng.
+2. Giảm buổi giáo viên chỉ dạy một tiết.
+3. Giảm buổi có từ hai tiết trống trở lên.
+4. Giảm tổng buổi/ngày dạy.
+5. Giảm buổi có một tiết trống và cân bằng lịch.
+
+Menu **Tối ưu** có bốn mục tiêu riêng: **1 tiết/buổi**, **Buổi**,
+**2 tiết trống**, **1 tiết trống**. Mỗi lần chạy giữ checkpoint tốt nhất; Dừng
+không áp một lịch thiếu tiết hoặc xấu hơn theo cổng chất lượng của chế độ đó.
+
+## Máy chủ Rust
+
+Máy chủ chỉ cung cấp các tuyến sau:
+
+- `GET /api/health` — trạng thái và danh tính kiến trúc.
+- `GET /api/version` — phiên bản ứng dụng.
+- `POST /api/auth/login`, `/logout`, `/register`, `/hash-password`.
+- `GET /api/auth/session`.
+- `GET`/`POST /api/auth/registry` — registry đã giới hạn theo vai trò/trường.
+- `GET`/`POST /api/school/store?id=...` — dữ liệu một TKB, bắt buộc Bearer.
+- Các đường dẫn còn lại phục vụ tệp tĩnh trong `web/`.
+
+`GET /api/health` phải báo:
+
+```json
+{
+  "api": "rust",
+  "architecture": "browser-only",
+  "engine": "fet-web-worker",
+  "capabilities": ["static-web", "auth", "school-store"]
+}
+```
+
+Dữ liệu mặc định nằm ở `rust_api/tkb_store.db`. Mỗi request lưu trường được kiểm
+tra session và quyền truy cập `sid`; registry trả về trình duyệt không chứa hash
+mật khẩu hay mã OTP.
+
+## Cấu trúc repo
+
+| Đường dẫn | Vai trò |
+| --- | --- |
+| `web/pages/tkb-fet-engine.js` | Engine FET/CSP và các operator tối ưu |
+| `web/pages/tkb-fet-worker.js` | Worker nền, tiến trình, checkpoint và hủy |
+| `web/pages/phanmon.js` | Hợp đồng giao diện ↔ FET, kiểm định và áp lịch |
+| `web/pages/tkb-constraints*.js` | Khai báo, nhập/xuất và kiểm tra ràng buộc |
+| `web/shared/` | Đăng nhập, phiên, ngữ cảnh trường và lưu dữ liệu |
+| `rust_api/src/` | Máy chủ static/auth/store và SQLite |
+| `e2e_tests/` | Kiểm thử FET, worker và hợp đồng giao diện |
+| `tools/benchmarks/` | Fixture ẩn danh và benchmark FET cục bộ |
+| `mail-server/` | Dịch vụ OTP Gmail tùy chọn, không được `start.py` khởi động |
+| `docs/` | Trạng thái, thuật toán, checklist và nhật ký bàn giao |
+
+## Kiểm thử
+
+Với Node 22, Python và Rust/Cargo:
 
 ```powershell
-cd rust_api
-cargo build --release
+Get-ChildItem web,e2e_tests,tools\benchmarks -Recurse -Filter *.js |
+  ForEach-Object { node --check $_.FullName }
+node --test e2e_tests\*.test.js
+python -m unittest discover -s tests -p "test_*.py"
+cargo check --locked --manifest-path rust_api\Cargo.toml
+cargo test --locked --manifest-path rust_api\Cargo.toml
 ```
 
-### 3. Build launcher EXE (tùy chọn)
+Kiểm thử dịch vụ mail tùy chọn:
 
 ```powershell
-python -m pip install --user pyinstaller
-python -m PyInstaller --onefile --windowed --name start .\start.py
+cd mail-server
+npm ci
+npm test
 ```
 
-`start.exe` và `tkb_rust_api.exe` là **artifact build** — có thể không có sẵn trong repo clone mới.
+Benchmark nhanh dùng fixture ẩn danh:
 
-## Kiểm tra regression
+```powershell
+node tools\benchmarks\benchmark-fet.js --fixture=smoke --seeds=101,202,303 --modes=auto,optimize_gap2
+```
 
-Xem [docs/REGRESSION_CHECKLIST.md](docs/REGRESSION_CHECKLIST.md) để test thủ công sau khi chỉnh sửa.
+Tài liệu kỹ thuật được giữ lại có mục đích rõ ràng:
 
-## Lưu trữ dữ liệu
+- [Trạng thái hiện hành](docs/CURRENT_STATE.md)
+- [Hướng dẫn kế thừa](PROJECT_INHERITANCE_GUIDE.md)
+- [Checklist hồi quy](docs/REGRESSION_CHECKLIST.md)
+- [Thiết kế tối ưu Gap 2](docs/ALGORITHM_GAP2.md)
+- [Benchmark FET](docs/benchmarks/FET_BENCHMARK.md)
+- [Nhật ký bàn giao](docs/PROJECT_HANDOFF.md)
 
-- Mỗi trường = một DB riêng (`TKB_STORE::<schoolId>` trong localStorage + IndexedDB/sql.js)
-- Backup localStorage khi KVDB lỗi
-- Đổi trường qua school switcher trên thanh menu
+## Phạm vi triển khai
 
-## Một nút sắp xếp adaptive
-
-- **Lần đầu hoặc lịch thiếu nhiều:** dựng nghiệm đầy đủ trước, sau đó chỉ nhận ứng viên tốt hơn theo thứ tự chất lượng ở trên.
-- **Sau khi đổi một ít PCCM:** giữ phần lịch hợp lệ làm gợi ý mềm, điền phần thiếu và cho phép swap/dời các tiết không khóa; không dựng lại toàn bộ nếu không cần.
-- **Bấm lại khi lịch đã đủ:** dùng lịch hiện tại đã tái kiểm định làm incumbent và tối ưu tiếp; không trả về metrics cũ nếu incumbent không còn hợp lệ.
-- Mỗi lần chạy có thể tìm nghiệm khác. Solver không khóa cứng lịch cũ và không lấy cache/hint chưa kiểm định làm kết quả.
-
-Nút **Tối ưu** nằm ngay bên phải nút Xếp, mở menu bốn mục tiêu theo đúng thứ tự ưu tiên: **1 tiết/buổi** → **Buổi** → **2 tiết trống** → **1 tiết trống**. Mỗi lệnh chỉ tập trung vào đúng chỉ số đã chọn.
-
-Riêng **1 tiết/buổi** chạy theo cách FET xử lý ràng buộc ở trọng số 100%: khi chỉ số này chưa về mục tiêu (0, hoặc sàn cấu trúc đã được chứng minh), nó là mục tiêu độc quyền — solver được phép tăng tổng buổi và tiết trống để thoát kẹt, miễn không vi phạm ràng buộc cứng của người dùng. Ngay khi chạm mục tiêu, chỉ số này bị **khoá**: ba lệnh còn lại không bao giờ được phép sinh lại một buổi giáo viên chỉ dạy 1 tiết, và khoá đó được kiểm tra ngay lúc đặt tiết chứ không chỉ khi so kết quả.
-
-## Ghi chú kỹ thuật
-
-- Thuật toán FET Client & Optimizer: `web/pages/tkb-fet-engine.js`, `web/pages/tkb-fet-worker.js`
-- Ràng buộc & Menu: `web/pages/tkb-constraints.js`, `web/pages/tkb-constraints-menu.js`
-- Menu Tối ưu (4 mục tiêu): `web/pages/tkb-optimize-menu.js`
-- Bridge solver UI: `web/pages/tkb-rust-bridge.js`
-- Chi tiết kế thừa & bàn giao: Xem [`PROJECT_INHERITANCE_GUIDE.md`](PROJECT_INHERITANCE_GUIDE.md)
+Repo này không chứa quy trình triển khai hạ tầng. Phiên chuyển đổi kiến trúc
+ngày 23/08/2026 chỉ sửa, kiểm thử, commit và push mã nguồn; không triển khai lên
+dịch vụ hay máy chủ bên ngoài. Mọi yêu cầu phát hành sau này phải là một công
+việc riêng, có đích và quyền rõ ràng.

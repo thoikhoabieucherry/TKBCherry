@@ -1105,14 +1105,6 @@
     return safe(value).toLowerCase().replace(/[^a-z0-9]/g, '');
   }
 
-  function fallbackSequence(dateStamp, prefix){
-    const cleanPrefix = exportPrefix(prefix);
-    const key = `TKB_XLSX_EXPORT_SEQ::${cleanPrefix}::${dateStamp}`;
-    const next = Math.max(1, Number(localStorage.getItem(key) || 0) + 1);
-    localStorage.setItem(key, String(next));
-    return next;
-  }
-
   function nextSequence(dateStamp, prefix){
     const cleanPrefix = exportPrefix(prefix);
     const key = `TKB_XLSX_EXPORT_SEQ::${cleanPrefix}::${dateStamp}`;
@@ -1168,22 +1160,6 @@
     const result = await saveBlobWithPicker(blob, fileName, XLSX_MIME, 'xlsx', 'Excel Workbook');
     if(result?.ok) rememberSequence(dateStamp, cleanPrefix, seq);
     return result;
-    try{
-      const response = await fetch(`/api/export/tkb-class-xlsx?date=${encodeURIComponent(dateStamp)}&prefix=${encodeURIComponent(cleanPrefix)}`, {
-        method: 'POST',
-        headers: {'Content-Type': XLSX_MIME},
-        body: blob
-      });
-      const payload = await response.json().catch(() => null);
-      if(response.ok && payload?.ok) return payload;
-      throw new Error(payload?.error || `HTTP ${response.status}`);
-    }catch(err){
-      console.warn('save xlsx endpoint unavailable, falling back to browser download', err);
-      const seq = fallbackSequence(dateStamp, cleanPrefix);
-      const fileName = `${cleanPrefix}${pad2(seq)}${dateStamp}.xlsx`;
-      downloadBlob(blob, fileName);
-      return {ok:true, fallback:true, fileName, path:'Thư mục tải xuống của trình duyệt'};
-    }
   }
 
   function setStatus(message, type){

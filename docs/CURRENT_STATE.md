@@ -1,70 +1,128 @@
-# TKBCherry — Trạng thái hiện hành (CURRENT STATE)
+# TKBCherry — Current State
 
-*Cập nhật: 2026-08-22. File này là bản tóm tắt ngắn để onboard nhanh; chi tiết từng phiên làm việc nằm trong `PROJECT_HANDOFF.md` (mục cũ hơn ở `docs/archive/`).*
+Cập nhật: **23/08/2026**
+Trạng thái phát hành: **mã nguồn cục bộ/GitHub, chưa triển khai**
 
-## Sản phẩm
+## Kiến trúc hiện hành
 
-Hệ thống xếp thời khóa biểu tự động cho trường phổ thông, production tại `https://tkbcherry.com`. Quy mô đã kiểm chứng: 75 lớp, 129 giáo viên, khoảng 1.650–2.200 hoạt động/tuần; xếp đủ và giữ các bất biến hard trên bộ fixture local.
+TKBCherry là ứng dụng web FET. Toàn bộ thuật toán xếp và tối ưu chạy trong
+`web/pages/tkb-fet-worker.js`, sử dụng
+`web/pages/tkb-fet-engine.js`. Worker có thể tạo các worker con để thử nhiều
+seed nhưng mọi compute vẫn nằm trong trình duyệt.
 
-## Kiến trúc thực tế (đối chiếu mã nguồn 2026-08-19)
+Rust là một máy chủ HTTP tối thiểu tại `127.0.0.1:1010`:
 
-- **Frontend** `web/`: Vanilla JS, không build system. Planner tại `pages/sapxep.html` + `pages/phanmon.js`; FET engine chạy 100% cục bộ trong Web Worker (`pages/tkb-fet-engine.js`, `pages/tkb-fet-worker.js`). Đã gỡ bỏ toàn bộ phụ thuộc legacy CP-SAT / Cloud Run / Rust solver bridge trên giao diện xếp lịch.
-- **Solver Engine**: 100% Client-Side Web Worker FET C++ v7.9.5 port. Thuật toán:
-  1. *MRV Activity Difficulty Ordering* (`generate_pre.cpp`): sắp xếp độ khó hoạt động đa chiều (miền giá trị, thời lượng, xung đột lớp/GV/phòng, tải tuần, ô cấm).
-  2. *Min-Conflicts Recursive RandomSwap* (`generate.cpp`): độ sâu `depth <= 16`, `limitCalls = 10,000`, Tabu queue $\le 16$, chống lặp vô tận.
-  3. *FET Counting Invariant ConstraintMinHoursDaily* (`opensUnaffordableSession`): kiểm soát mở buổi dạy mới $\sum \max(\text{minDaily}, H_d) \le \text{totalLoad}$, ngăn phát sinh buổi 1 tiết.
-  4. *Session-first 12-bin large-neighborhood search* (`trySessionFirstSingletonSearch`): deep stage trước hết gán các lesson-unit vào 12 bin ngang (6 sáng + 6 chiều, mỗi bin 5 tiết), MRV theo miền buổi và kiểm tra tải lớp/GV/phòng; sau đó mới tô màu 5 cột trong các bin bị ảnh hưởng. Kế hoạch được đóng vòng qua cạnh lớp–GV–phòng, khử trùng bằng signature, rollback nguyên tử và dừng khi đạt floor. Trần `sessionFirstStateBudget` hỗ trợ 10..1.000.000.000 nhưng default deep là 1.000.000 và dừng sớm khi đã đạt đích.
-  5. *12-Bin Session Augmenting Chains, Horizontal Gap Closure, Closed Push-Cycles & Gap Crusher* (`trySessionBinAugmentingChains`, `tryTeacherDonorAugmentingChains`, `tryClosedPushCycles`, `tryCrushGaps`): sau session-first, dùng donor từ bin có ≥3 tiết để lấp bin singleton, đẩy xung đột lớp/GV/phòng theo chuỗi với rollback và giữ lesson block nguyên vẹn. Pha dọn gap-2 dùng backtracking có điều kiện mục tiêu ngay tại lá, duyệt vacancy trong đúng 5 cột của bin rồi mới fallback ejection; candidate chỉ được nhận khi `soBuoiDay1` không xấu hơn floor, gap-2 theo hợp đồng, đủ tiết và không có student holes.
-  6. *Adaptive parallel lanes + fast singleton prepass + initial singleton warmup*: lịch mới có thể đua tối đa 2 worker seed độc lập và dừng ngay khi một nghiệm đủ tiết; incumbent hoàn chỉnh bị kẹt vẫn dùng tối đa 4 worker restart theo cấu hình UI, nhận và so sánh nghiệm theo thứ tự lexicographic. Trước deep lane, worker chạy `initialSingletonFastMs` mặc định 1,2 giây bằng direct-move/short-chain packing, sau đó mới warmup nông 5 giây (`initialSingletonWarmupMs`) với deep/session-first tắt. Pha nhanh hiển thị `Gom nhanh`; nếu đã đạt floor thì bỏ qua tìm kiếm sâu. Pool chỉ bật khi cần, fallback an toàn về một worker nếu browser không hỗ trợ worker lồng nhau. Đo local cho thấy 6/8 lane tranh CPU nên không tăng trần mặc định. Khi đã đạt singleton floor + gap-2 zero, worker dừng ngay; polish chỉ số phụ mặc định tắt và có ngân sách opt-in tối đa 60 giây. Mỗi lát `session-first` mặc định bị giới hạn 8 giây (cấu hình được `1..60` giây), phát heartbeat theo trạng thái để UI không im lặng trong lúc tìm kiếm.
-  7. *Proven Singleton Floor*: preflight tính cận dưới `soBuoiDay1` cho tải giáo viên bị tách bởi miền ca/buổi độc lập; optimizer dừng khi đạt floor có chứng cứ thay vì cố tìm nghiệm 0 bất khả thi.
-- **Backend** `rust_api/`: HTTP server **tự viết trên std** (TcpListener + thread pool), không Axum/Tokio. Dependency: argon2, serde_json, rusqlite, sha2. Auth = Argon2id + **session token opaque** (không JWT). Port local mặc định `1010` (`.env`, `TKB_RUST_PORT`). Quản lý xác thực, phân quyền và lưu trữ dữ liệu trường học.
-- **Local backend FET boost**: `solver_runtime/scripts/solve_stdio.py` nhận `engine=fet_trongoi` và chuyển sang `solver_runtime/scripts/fet_trongoi_runner.cjs`. Runner nạp cùng FET engine/worker mirror bằng Node `worker_threads`, đua các seed độc lập, chia đúng tổng `fet_backend_total_state_budget` giữa lane (UI local đặt trần `1_000_000_000` cho session-first), bật `preserveOccupiedOffSlots` cho incumbent để không làm rơi ô cũ bị suy luận `OFF`, phát heartbeat không kèm TKB và gửi checkpoint TKB tốt nhất có throttle khi có cải thiện. Candidate bằng hoặc kém incumbent hoàn chỉnh không còn được coi là nghiệm tối ưu mới; runner trả `fet_backend_no_improvement`/`fet_backend_stagnated` để UI kết thúc một lần, không rơi sang browser worker lần hai. UI chỉ gọi đường này khi hostname là local (`127.0.0.1`/`localhost`/`::1`), qua `/api/solve-data` + polling; không bật đường backend này trên production host. Kết quả FET được bổ sung đủ hợp đồng `expected_periods/scheduled_periods/hard_ok` để Rust không nhầm lịch hoàn chỉnh còn nợ mục tiêu mềm thành `incomplete_schedule`. Progress từ nhiều lane chỉ hiển thị checkpoint đã giữ theo thứ tự lexicographic; singleton vẫn là mục tiêu đầu tiên, `Trống 2` không được tăng, còn số buổi/Gap1 chỉ là tie-breaker khi singleton bằng nhau. Backend và browser worker có watchdog chống plateau (mặc định 60 giây không cải thiện; 20 giây không có heartbeat), sau đó giữ lịch cũ và cho phép lần bấm sau dùng seed mới. Trần 1 tỷ là giới hạn trạng thái, không buộc máy phải chạy hết 1 tỷ bước.
-- **Dữ liệu**: SQLite KV store (`kvstore`), WAL mode; mỗi trường một key `school_{schoolId}`.
- - **Luồng solve**: Nút Play ▶ ("Tự động xếp TKB") và Stop ■ ("Dừng xếp") chạy cục bộ trong Web Worker, cập nhật thanh tiến trình theo thời gian thực (ms), thống kê tức thì và không gửi lịch ra ngoài khi xếp. Trước khi mở backend/worker, automatic mode chạy preflight cực nhanh: lịch đủ tiết với `1 tiết/buổi = 0` và `Trống 2 = 0` kết thúc ngay; nếu floor dương đã được FET chứng minh thì cũng kết thúc ngay tại floor. Lịch mới có thể đua tối đa 2 worker seed và nhận nghiệm đủ tiết đầu tiên; incumbent hoàn chỉnh bị kẹt thì UI tự mở tối đa 4 worker seed độc lập theo số luồng CPU. Trên local, incumbent hoàn chỉnh đi qua thêm backend FET nhiều lane; backend chia trần session-first 1 tỷ trạng thái thành quota chính xác, giữ candidate tốt nhất, gửi heartbeat và sau khi phát hiện Dừng chờ một grace window ngắn trước khi kết thúc, tránh rơi nhầm về worker thứ hai. Worker nạp incumbent hoặc nghiệm dựng mới, biên dịch floor rồi chạy `Gom nhanh` tối đa 1,2 giây, tiếp theo `Gom buổi ban đầu` tối đa 5 giây trước khi vào `Ưu tiên 1 tiết/buổi`, sau đó chạy session-first 12-bin/reform lesson-block (trần 1.000.000 trạng thái, nhận tối đa 1 tỷ qua option, mỗi lát mặc định 8 giây), chỉ chuyển sang `Trống 2` sau khi singleton đạt floor. Candidate không tốt hơn, thiếu tiết, hoặc vi phạm hard được phân loại riêng; validator hiển thị chẩn đoán thay vì gọi chung là giới hạn toán học. `targetReached` là cờ của mục tiêu singleton; `gapTargetReached`/`qualityTargetReached` theo dõi pha gap-2 và cả hai mục tiêu. Heartbeat mang số trạng thái đã thử; checkpoint được clone thưa hơn và không clone lại chỉ vì heartbeat. Các nhánh perturbation cũng bị chặn bởi deadline, không được chạy thêm deep kick sau khi ngân sách đã hết. Khi singleton + gap2 đạt mục tiêu, không chạy polish phụ mặc định; progress được chuẩn hóa để không rơi về `0/0`.
+- phục vụ tệp trong `web/`;
+- đăng nhập, đăng xuất, đăng ký, session và registry;
+- phân quyền dữ liệu theo trường/TKB;
+- đọc/ghi JSON trường trong SQLite.
 
-Ghi chú stall-fix local 2026-08-21: singleton là mục tiêu độc quyền trước gap2; warmup nông chạy trước deep lane; lane bình thường không được tăng gap2, deep tradeoff có rollback. Singleton cycle mặc định 30 giây; mọi explicit optimizer budget được tôn trọng cả ở nhánh perturbation và `tryClosedPushCycles`; worker keepalive 500 ms gửi metrics nhưng không gửi checkpoint/lịch. Probe warmup 5 giây trên live fixture giữ đủ tiết, gap2 = 0, student holes = 0.
+Máy chủ không nhận bài toán TKB, không có job/polling/queue, không chạy engine
+FET thay trình duyệt và không chọn tuyến compute bên ngoài.
 
-Ghi chú 2026-08-22 (nút Tối ưu 4 mục tiêu, chỉ local): planner có lại nút **Tối ưu** ngay bên phải nút Xếp (`.planner-optimize-wrap` + `#btnOptimizeMenu`, logic ở `web/pages/tkb-optimize-menu.js`), dropdown **1 tiết/buổi · Buổi · 2 tiết trống · 1 tiết trống** gọi `sapXepTheoCheDo(mode)`. Engine thêm `singletonLock`/`singletonRushActive`: chưa đạt mục tiêu thì `optimize_singletons` được đánh đổi tổng buổi và tiết trống để hạ singleton; đạt rồi thì **khoá** ở mọi mode và bật `minTwoGuardActive` để chặn ngay lúc đặt tiết. Bốn operator gap nay nhận tham số `mode` (trước đều hard-code gap-2, nên nút *1 tiết trống* chạy sai bộ toán); `tryVacateTeacherSessions` xét buổi 1/2/3 tiết theo chi phí tăng dần và chỉ đặt lại tiết vào buổi giáo viên đã có tiết, có tầng ejection. Chế độ đánh đổi chỉ bật qua cờ tường minh `options.singletonRush`, do `phanmon.js` đặt **chỉ** cho lệnh bấm từ menu — đường ▶ Xếp trong worker cũng gọi `optimize('optimize_singletons')` nhưng đã có cơ chế đánh đổi riêng có rollback, không được đè lên. Ba dòng `__minTwoGuardActive = false` là **dead code có chủ ý**: cổng min-2 phải bật suốt pipeline trọn gói, chỉ được nâng lên chứ không bao giờ hạ. Cổng chống hồi quy ở UI dùng `incumbentQualityBaselineReady` (không còn chỉ `__incumbentComplete`), nên **bốn lệnh trên menu Tối ưu cũng được kiểm tra** — trước đây chúng áp thẳng kết quả worker không qua cổng nào. `runUntilZeroSingletons()`/`runUntilStagnation()` cũng có `entrySnapshot` như `optimize()`. Riêng chế độ rush: nếu hết lượt mà `soBuoiDay1` không giảm thì hoàn tác toàn bộ (`rushRolledBack`), để một lần đánh đổi thất bại không cộng dồn `Trống 2` qua nhiều lần bấm. `optimize()` có hai lưới an toàn: chụp `entrySnapshot` lúc vào và hoàn tác nếu kết thúc mà `soBuoiDay1`/`unplacedCount` cao hơn lúc bắt đầu (trả cờ `singletonRegressionReverted`), và hoàn tác `compactAllStudentSessions()` nếu bước nén đó — vốn chạy ngoài cổng `compareMetrics` — làm singleton xấu đi trong khi lịch học sinh đã không còn lỗ. Cờ `gapAwareSessionGuard` (bất biến đếm gộp min-2-tiết + nợ gap của FET) mặc định tắt, chờ benchmark. Đo trên `scratch/dongkhoi_1566.json`: *1 tiết/buổi* 17→3 (trước 17→7), *Buổi* 483→474 (trước không đổi), *1 tiết trống* 127→89 (trước 127→126). Máy hiện **chưa cài Node** nên các suite `node --test` chưa chạy được trong phiên này.
+## Luồng dữ liệu
 
-Ghi chú local 2026-08-21: launcher `start.py` và `.env` dùng `127.0.0.1:1010` làm cổng mặc định. E2E trên trình duyệt local đã xác nhận đường backend hiển thị heartbeat và dừng an toàn; sau thay đổi watchdog, một lane không cải thiện sẽ tự kết thúc thay vì giữ UI ở trạng thái chạy vô hạn.
+```text
+Người dùng → planner → FET Web Worker → checkpoint đã kiểm định → DATA
+                                                        ↓
+                                      /api/school/store → SQLite
+```
 
-## Nhánh và quy trình Git
+1. Planner nạp dữ liệu trường từ kho có Bearer session.
+2. Khi bấm Xếp/Tối ưu, planner chụp dữ liệu và gửi sang worker.
+3. Worker gửi progress và candidate; planner kiểm tra lại ràng buộc cứng.
+4. Candidate hợp lệ được render trước, sau đó lưu vào school store.
+5. Xuất Excel/Word dùng API trình duyệt và tải file trực tiếp.
 
-- Remote: `https://github.com/thoikhoabieucherry/TKBCherry` (nhánh chính: `main`).
-- Phát triển trên nhánh `codex/*` theo từng đợt tính năng, merge về `main` khi ổn định.
-- CI (GitHub Actions): `.github/workflows/tests.yml` (Python solver tests, Node contract tests + syntax, Rust check/test/clippy), `security.yml` (secret scan + CodeQL), `build-agent-wasm.yml`.
+## Hợp đồng FET đang giữ
 
-## Kiểm thử & Benchmark
+- Construction phải trả lịch đủ tiết hoặc báo thất bại; lịch thiếu không được áp.
+- Fixed/OFF, trùng lớp/giáo viên/phòng, tiết đôi, giới hạn môn và các ràng buộc
+  người dùng đều được kiểm tra trước khi commit.
+- Tối ưu được phép giữ đúng các vi phạm legacy đã có trong incumbent nhưng không
+  được thêm một chữ ký vi phạm mới.
+- So sánh chất lượng là lexicographic theo mode; checkpoint xấu hơn bị loại.
+- Một worker chính mỗi trang; Dừng/timeout/plateau giải phóng worker và giữ best.
+- Worker có cooperative yield để giao diện vẫn phản hồi.
 
-- **Automated Benchmarks**:
-  - `scratch/dongkhoi_1566.json` (54 lớp / 1.566 tiết): 100% xếp đủ 1.080/1.080 hoạt động trong **< 150 ms** (~84 ms), 0 vi phạm hard constraints, `soBuoiDay1 = 0`.
-  - `scratch/default_school_0317.json` (75 lớp / 2.193 tiết): 100% xếp đủ 1.500/1.500 hoạt động trong **< 200 ms** (~98 ms), 0 vi phạm hard constraints, `soBuoiDay1 = 0`.
-  - Chạy benchmark: `node scratch/test_forensic_benchmark.js`.
-- **E2E & Unit Tests (100% Passing)**:
-  - `e2e_tests/tkb_fet_engine_node.test.js` (40 tests pass).
-  - `e2e_tests/tkb_fet_benchmark_node.test.js` (3 tests pass).
-  - `e2e_tests/benchmark_fet_node.test.js` (4 tests pass).
-  - `solver_runtime/tests/` (391 tests pass).
-- Checklist thủ công trước deploy: `docs/REGRESSION_CHECKLIST.md`.
-- Ghi chú local 2026-08-21: session-first 12-bin search benchmark đạt `4 -> 1` trên fixture có floor 1 và `4 -> 0` trên fixture không có floor; focused engine suite hiện **40/40**, giữ `unplacedCount = 0`. Hai engine mirror và hai worker mirror byte-identical. Incumbent `school_default` trong DB local hiện đã ở `0/3` trước lần chạy này nên không phải benchmark đầu vào 4; thay đổi chỉ ở local, chưa deploy production.
-- Ghi chú local backend 2026-08-21: runner contract suite **2/2** pass; focused Node run **69/69** pass; Python stdlib unittest `test_stdio_protocol` **9 pass, 1 skipped**. Runner 2 lane trên fixture 4 singleton đạt `1t/buổi: 0`, `Trống 2: 0`, đủ tiết và `hard_ok=true`; API local async đã kiểm chứng `executor=fet_backend` cùng các cờ singleton/gap/quality. Với quota thử nghiệm `101`, lane nhận `[51,50]` và không vượt trần; với cấu hình UI `1_000_000_000`, lane nhận quota chính xác theo số worker. Fixture 2.193 tiết qua backend giữ đủ tiết/hard-valid; ba lượt liên tiếp giảm gap2 `9 -> 7 -> 5`, singleton dừng ở floor toán học `1`. Stop sau 6 giây vẫn trả `cancelled` và checkpoint đủ tiết. Không deploy, không push, không sửa lịch production/DB.
-- Ghi chú local 2026-08-21 fast-preflight/diagnostics: focused planner + telemetry suite **12/12**, backend runner **4/4**, FET engine **40/40**; syntax/parity và `git diff --check` pass. Dữ liệu local `school_default` hiện `unplaced=0`, `1 tiết/buổi=0`, `Trống 2=0`; preflight trả `reached=true` trước khi tạo job backend. Runner incumbent không cải thiện trả `fet_backend_no_improvement` thay vì candidate giả thành công. Candidate validator nay giữ được hard violation cũ nếu không thêm violation mới, hiển thị diagnostic, và không còn tham chiếu biến `validationDiagnostics` chưa khai báo. Chỉ local, không deploy/push/đụng DB production.
+## Máy chủ và API
 
-## Hợp đồng quan trọng
+Phiên bản health: `tkb-web-fet-v1`.
 
-- **Model-Plan Contract v1** (`docs/MODEL_PLAN_CONTRACT.md`): cổng tương thích định dạng dữ liệu và golden fixtures trong `solver_runtime/fixtures/model_plan_v1/`.
-- Stdio protocol / progress protocol / agent helper protocol: hằng số phiên bản khai báo ở đầu `rust_api/src/main.rs`.
+Các tuyến chủ động:
 
-## Deploy
+- `GET /api/health`, `GET /api/version`.
+- `POST /api/auth/login`, `/logout`, `/register`, `/hash-password`.
+- `GET /api/auth/session`.
+- `GET`/`POST /api/auth/registry`.
+- `GET`/`POST /api/school/store?id=<sid>`.
+- Static aliases `/`, `/app`, `/school-portal`, `/super-admin`, `/sapxep`.
 
-- VPS: `python tools/vps-deploy/update-deploy.py` (backup → upload → build → drain → health check `UPDATE_OK`). Credentials từ biến môi trường/DPAPI — không ghi vào repo.
-- Cloud Run: `tools/cloud-run/deploy.ps1` (build qua Cloud Build, canary rồi chuyển traffic).
-- Quy tắc sống còn: **không bao giờ** xóa các exclude `*.db-wal`/`*.db-shm` trong script rsync deploy (đã từng gây mất dữ liệu).
+Giới hạn HTTP: header 64 KiB, body 64 MiB, store id 160 byte và chỉ gồm chữ,
+số, `-`, `_`, `.`. Static path được canonicalize để chặn traversal. Response có
+`nosniff`, `DENY` frame, referrer/permissions policy và CORS cấu hình được.
 
-## Việc đang mở / nợ kỹ thuật đã ghi nhận
+Auth dùng Argon2, session hết hạn sau 24 giờ, giới hạn đăng nhập theo cửa sổ và
+khóa một session hoạt động cho tài khoản thường. Registry trả cho client đã loại
+hash mật khẩu và OTP. Super Admin lấy mật khẩu khởi tạo từ
+`TKB_SUPER_PASSWORD`.
 
-1. Refactor dần 4 file monolith: `rust_api/src/main.rs` (~25k dòng), `solver_runtime/src/tkb_new/adapter.py` (~27k dòng), `web/pages/tkb-rust-bridge.js` (~20k dòng), `web/pages/phanmon.js` (~12k dòng). Dùng golden fixtures + contract tests làm lưới an toàn; mỗi phiên tách một mảng.
-2. Chuỗi sâu cho ca `1 tiết/buổi` cuối cùng: đã chứng minh trên `dongkhoi_1566` rằng mọi nước 1–2 tiết đã cạn (xem handoff 2026-08-22), phần còn lại cần ejection chain ≥3 tiết hoặc micro-exact repair theo `OPTIMIZER_V2_PLAN.md` mục 4.1.
-3. Bền hóa registry job solve vào SQLite để sống qua restart service.
-4. Dọn secrets plaintext trên máy dev (mail-server/.env, super-admin.conf) — chủ dự án tự thực hiện.
-5. Chính sách archive handoff: đầu mỗi tháng, chuyển các mục tháng trước của `PROJECT_HANDOFF.md` sang `docs/archive/PROJECT_HANDOFF_<khoảng-ngày>.md`.
+SQLite mặc định: `rust_api/tkb_store.db`, WAL + busy timeout 5 giây. `.env` và
+database đều bị Git bỏ qua.
+
+## Cây mã nguồn được giữ
+
+- `web/`: giao diện, FET, ràng buộc, auth/storage và thư viện browser.
+- `rust_api/`: ba file Rust chính, Cargo manifest/lock và SQLite runtime Windows.
+- `e2e_tests/`: test engine, worker, planner, auth, export và responsive UI.
+- `tools/benchmarks/`: benchmark FET dùng fixture ẩn danh.
+- `tests/`: test launcher Python.
+- `mail-server/`: OTP Gmail tùy chọn, độc lập với `start.py` và luồng FET.
+- `docs/`: tài liệu hiện hành, benchmark và archive handoff.
+
+Đã xóa runtime Python solver, các module điều phối Rust cũ, bridge/mirror/backup
+engine, script Cloud/host cũ, file thử nghiệm tạm, dữ liệu benchmark thật, binary
+Excel tạm và các test chỉ bảo vệ kiến trúc đã nghỉ.
+
+## Chạy và cấu hình
+
+```powershell
+python .\start.py
+```
+
+Mặc định mở `http://127.0.0.1:1010/`. Launcher dùng release Rust còn mới hoặc
+build `cargo build --release --locked`; không dùng binary prebuilt trong repo và
+không kiểm tra phụ thuộc solver Python.
+
+Biến môi trường hỗ trợ: `TKB_SUPER_PASSWORD`, `TKB_RUST_HOST`,
+`TKB_RUST_PORT`, tùy chọn `TKB_DB_PATH`, `TKB_CORS_ORIGIN`, `TKB_NO_LOGS` và
+`TKB_RUST_BUILD_TIMEOUT`.
+
+## Kiểm thử chuẩn
+
+- JavaScript syntax cho `web/`, `e2e_tests/`, `tools/benchmarks/`.
+- `node --test e2e_tests/*.test.js`.
+- `python -m unittest discover -s tests -p "test_*.py"`.
+- `cargo check --locked` và `cargo test --locked` trong `rust_api/`.
+- `npm ci && npm test` trong `mail-server/`.
+- Smoke local: health, static planner, auth và school store trên một cổng tạm.
+
+CI hiện hành: `.github/workflows/tests.yml` với bốn lane browser FET, launcher,
+mail và Rust; `.github/workflows/security.yml` cho secret/JS/Rust review.
+
+## Trạng thái triển khai
+
+Không có thao tác triển khai trong lần chuyển đổi 23/08/2026. Repo không còn
+runbook hay script triển khai ứng dụng chính. Việc phát hành về sau phải được yêu
+cầu rõ ràng và kiểm tra riêng; không suy ra quyền triển khai từ một yêu cầu sửa
+mã, kiểm thử hoặc push Git.
+
+## Việc cần lưu ý khi sửa tiếp
+
+1. `tkb-fet-engine.js` và `phanmon.js` vẫn lớn; chia nhỏ chỉ nên làm cùng fixture
+   và contract test tương ứng.
+2. Không tạo mirror của engine/worker; tránh lệch phiên bản.
+3. Không đưa school workbook, registry dump hoặc database vào fixture; chỉ dùng
+   dữ liệu tổng hợp/ẩn danh.
+4. Khi đổi hợp đồng worker, cập nhật architecture test, benchmark và handoff
+   trong cùng phiên.

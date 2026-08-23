@@ -199,18 +199,21 @@ test("class assignment statistics preserve subject order and split single versus
   });
 });
 
-test("class assignment table follows the grouped-header layout without unassigned periods", () => {
+test("class assignment table follows the grouped total and placement-status layout", () => {
   const context = loadStatisticsContext();
   const html = vm.runInContext("renderClassAssignmentStatisticsTable(buildClassAssignmentStatistics())", context);
 
   assert.match(html, /rowspan="2"[^>]*>TT<\/th>/);
   assert.match(html, /colspan="3"[^>]*>Tổng số<\/th>/);
+  assert.match(html, /colspan="3"[^>]*>Tình trạng xếp<\/th>/);
   assert.match(html, />Tiết đơn<\/th><th[^>]*>Tiết ghép<\/th>/);
+  assert.match(html, />Đã xếp<\/th>/);
+  assert.match(html, />Chưa xếp<\/th>/);
+  assert.match(html, />Trống<\/th>/);
   assert.match(html, /class="class-stats-total-col"[^>]*>Cộng<\/th>/);
   assert.match(html, /data-class-id="L2"[^>]*class-stats-grade-start|class="class-stats-grade-start"[^>]*data-class-id="L2"/);
-  assert.doesNotMatch(html, /class="class-stats-missing"/);
-  assert.doesNotMatch(html, /title="Chưa phân công giáo viên"/);
-  assert.match(plannerCss, /\.class-assignment-stats-table \.class-stats-subject-col[\s\S]*?min-width:\s*68px/);
+  assert.match(html, /class="class-stats-unassigned-col has-unassigned"/);
+  assert.match(plannerCss, /\.class-assignment-stats-table td\s*\{[\s\S]*?min-width:\s*44px/);
 });
 
 test("external school, class and unassigned statistics ignore subjects without PCCM teachers", () => {
@@ -275,7 +278,7 @@ test("requirements menu puts Statistics by class immediately above Print TKB", (
   assert.match(menuSource, /data-rb-statistics="class">Thống kê theo lớp/);
   assert.match(menuSource, /openClassAssignmentStatistics/);
   assert.match(plannerCss, /\.class-assignment-stats-table-wrap[\s\S]*?overflow:\s*auto/);
-  assert.match(plannerHtml, /phanmon\.css\?v=20260808-v1192-assigned-only-all-statistics-v1/);
-  assert.match(plannerHtml, /phanmon\.js\?v=20260808-v1192-assigned-only-all-statistics-v1/);
+  assert.match(plannerHtml, /phanmon\.css\?v=20260817-class-stats-modal-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260823-web-fet-v1/);
   assert.match(plannerHtml, /tkb-constraints-menu\.js\?v=20260808-v1192-assigned-only-all-statistics-v1/);
 });

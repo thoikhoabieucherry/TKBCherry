@@ -86,10 +86,9 @@ test("statistics popover becomes visible before expensive statistics render", ()
   assert.equal(renderCalls, 0, "the click handler must not synchronously scan the timetable");
 
   frames.splice(0).forEach(callback=>callback());
-  assert.equal(renderCalls, 0, "render remains deferred until after the first paint");
-  timers.splice(0).forEach(callback=>callback());
   assert.equal(renderCalls, 1);
   assert.equal(pop.attrs["aria-busy"], undefined);
+  assert.equal(timers.length, 0);
 });
 
 test("statistics button cannot show a text caret or select its label", () => {

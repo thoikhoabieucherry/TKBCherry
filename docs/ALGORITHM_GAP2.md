@@ -1,6 +1,6 @@
 # Thuật toán xử lý "Trống 2 tiết" (optimize_gap2)
 
-*Tài liệu mô tả đúng theo mã nguồn `web/pages/tkb-fet-engine.js` hiện hành (bản 17/08/2026). Đây là thuật toán chạy khi bấm nút **Tối ưu → 2 tiết trống**, và cũng là giai đoạn gap2 bên trong nút **Tối ưu tất cả**.*
+*Tài liệu mô tả engine FET chạy trong trình duyệt tại `web/pages/tkb-fet-engine.js`. Đây là thuật toán chạy khi bấm **Tối ưu → 2 tiết trống**, và cũng là giai đoạn Gap2 trong luồng tối ưu tổng hợp.*
 
 ---
 
@@ -27,7 +27,7 @@ Mọi nước đi chỉ được nhận khi **cải thiện theo thứ tự từ
 2. Hàng rào ngân sách buổi: `tổng buổi ≤ tổng buổi ban đầu + budget`. Budget mặc định **6 buổi**, chỉ mở khi đã qua 30% số vòng *hoặc* kẹt 3 vòng liên tiếp — tức được phép "mua" gap2=0 bằng vài buổi dạy thêm, đúng thứ tự ưu tiên đã chốt.
 3. Giảm **số buổi Trống-2** (mục tiêu chính).
 4. Hòa Trống-2 thì ít **tổng buổi** hơn thắng; hòa nữa thì ít **ngày dạy** hơn thắng.
-5. **Trống-1 được thả tự do** — đánh đổi Trống-2 thành Trống-1 là hợp lệ (đúng như công cụ tham chiếu làm: 24 gap2 → 0, gap1 tăng ~24).
+5. **Trống-1 được thả tự do** — đánh đổi Trống-2 thành Trống-1 là hợp lệ ở mode này.
 
 Và các **bất biến không bao giờ vi phạm**: đủ 100% số tiết, không trùng giáo viên/phòng, ô cố định (`fixed`) và ô OFF bất khả xâm phạm, tiết đôi không bị tách, các tiết cùng môn trong một buổi phải liền nhau, không vượt giới hạn môn/buổi.
 
@@ -125,10 +125,10 @@ Chạy lần lượt, mỗi bậc mạnh (và rủi ro thời gian) hơn bậc t
 2. **moveJournal**: riêng recursive swapping dùng nhật ký giao dịch, hoàn tác bằng cách phát lại ngược chính xác — loại trừ lớp lỗi "khôi phục nhầm ô".
 3. Kết quả cuối luôn là **best snapshot** đã qua kiểm định; bảng Thống kê và nhãn tiến trình giờ dùng cùng một thước đo với engine.
 
-## 7. Vì sao có thể còn sót vài ca trên app thật?
+## 7. Vì sao có thể còn sót vài ca?
 
-Fixture kiểm chứng của Claude không chứa ràng buộc người dùng; trên app, một ca Trống-2 chỉ "cứng đầu" khi **mọi** đường ở mục 4 đều bị chặn bởi: tiết cố định nằm đúng biên/lỗ, ô OFF, giới hạn môn/buổi, hoặc tiết đôi không tách được. Đó là **sàn cấu trúc** — bước B2 kế tiếp (chứng chỉ sàn) sẽ chỉ đích danh "ca này còn vì ràng buộc X của thầy/cô Y" ngay trên giao diện, thay vì để bạn đoán.
+Fixture tổng hợp không mang mọi ràng buộc của một trường. Trên dữ liệu thật, một ca Trống-2 có thể là sàn cấu trúc khi mọi đường ở mục 4 bị chặn bởi tiết cố định, ô OFF, giới hạn môn/buổi hoặc tiết đôi không tách được. Engine chỉ báo đạt sàn khi lower bound đã được chứng minh và metric hiện tại đúng bằng sàn đó.
 
 ---
 
-*Số liệu kiểm chứng hiện tại: bộ thí nghiệm base của bạn 24→0 trong 0,1s, buổi 591→567, Trống-1 165 (tham chiếu: 20 bước tay, giữ 591 buổi, Trống-1 196); trường default 0317: 37→0/0,3s; 1566 giai đoạn 4: 9→0 với 491 buổi (tham chiếu 500); **trường default + 2.307 ô OFF thật: nút Trống-2 35→0, "Tối ưu tất cả" đạt 1tiết=0 & Trống-2=0**.*
+Số liệu hiệu năng và chất lượng có thể thay đổi theo trình duyệt, seed và dữ liệu. Chỉ dùng fixture ẩn danh trong `tools/benchmarks/` cùng report tại `docs/benchmarks/` làm mốc regression có thể tái tạo.
