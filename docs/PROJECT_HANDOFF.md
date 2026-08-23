@@ -143,8 +143,9 @@ FET_BENCHMARK, README và PROJECT_INHERITANCE_GUIDE.
 
 ### Trạng thái Git và deploy
 
-Baseline trước phiên: commit **0b97a2f**. Toàn bộ thay đổi của mục này được gom
-trên nhánh **codex/backend-fet-billion**; Git là nguồn xác nhận commit/push.
+Baseline trước phiên: commit **0b97a2f**. Nội dung xếp nhanh, tối ưu và dọn repo
+được ghi ở commit **4d9d3b8** rồi push thành công lên
+`origin/codex/backend-fet-billion`.
 
 Không deploy, không chạm Cloud/VPS, không gửi bài toán ra ngoài, không sửa
 database hoặc lịch người dùng. Port 1011 chỉ dùng cho smoke local rồi đã dừng.
