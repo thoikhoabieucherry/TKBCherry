@@ -6,7 +6,7 @@
  * Examples (PowerShell):
  *
  *   node tools/benchmarks/benchmark-fet.js --seeds=101,202 --modes=auto
- *   node tools/benchmarks/benchmark-fet.js --seeds=101,202,303 --out=docs/benchmarks/fet-latest.json
+ *   node tools/benchmarks/benchmark-fet.js --fixture=medium --seeds=101,202,303 --out=docs/benchmarks/fet-medium-latest.json
  *
  * The harness deliberately loads the same browser source through a VM rather
  * than importing a second implementation.  Every run receives a fresh,
@@ -431,10 +431,19 @@ async function runOne({Engine, window}, mode, seed, options){
   let engine = null;
   let data = fixture;
   let optimizationTimedOut = false;
+  let constructionRuntimeMs = 0;
+  let optimizationRuntimeMs = 0;
 
   try{
-    engine = new Engine(fixture, {seed, timeBudgetMs:options.autoBudgetMs});
+    engine = new Engine(fixture, {
+      seed,
+      timeBudgetMs:options.autoBudgetMs,
+      constructionPolishTimeBudgetMs:250,
+      initialSingletonPacking:false
+    });
+    const constructionStarted = performance.now();
     autoResult = engine.solve();
+    constructionRuntimeMs = performance.now() - constructionStarted;
     if(!Number(fixture.__benchmark.requiredPeriods) && Number.isFinite(autoResult?.total)){
       fixture.__benchmark.requiredPeriods = autoResult.total;
     }
@@ -456,7 +465,10 @@ async function runOne({Engine, window}, mode, seed, options){
       engine = new Engine(data, {
         seed,
         timeBudgetMs:options.autoBudgetMs,
-        optimizeTimeBudgetMs:options.optimizerTimeoutMs
+        optimizeTimeBudgetMs:options.optimizerTimeoutMs,
+        // Match the actual menu contract: the singleton button may trade
+        // lower-priority metrics only when it lowers the requested target.
+        singletonRush:mode === "optimize_singletons"
       });
       window.__AUTO_SORT_STOP_REQUESTED = false;
       const timeoutHandle = setTimeout(() => {
@@ -464,9 +476,11 @@ async function runOne({Engine, window}, mode, seed, options){
         window.__AUTO_SORT_STOP_REQUESTED = true;
       }, options.optimizerTimeoutMs);
       try{
+        const optimizationStarted = performance.now();
         result = mode === "optimize_all" && typeof engine.optimizeAll === "function"
           ? await engine.optimizeAll()
           : await engine.optimize(mode);
+        optimizationRuntimeMs = performance.now() - optimizationStarted;
       }finally{
         clearTimeout(timeoutHandle);
         window.__AUTO_SORT_STOP_REQUESTED = false;
@@ -500,6 +514,10 @@ async function runOne({Engine, window}, mode, seed, options){
     seed,
     mode,
     runtimeMs:Number(elapsedMs.toFixed(2)),
+    phaseRuntimeMs:{
+      construction:Number(constructionRuntimeMs.toFixed(2)),
+      optimization:Number(optimizationRuntimeMs.toFixed(2))
+    },
     executor:result?.executor || "fet_worker",
     ok:Boolean(result?.ok),
     applied:result?.applied !== false,
@@ -552,6 +570,16 @@ function aggregate(records){
         avg:average(rows.map(row => row.runtimeMs)),
         p50:percentile(rows.map(row => row.runtimeMs), 50),
         p95:percentile(rows.map(row => row.runtimeMs), 95)
+      },
+      phaseRuntimeMs:{
+        construction:{
+          p50:percentile(rows.map(row => row.phaseRuntimeMs?.construction), 50),
+          p95:percentile(rows.map(row => row.phaseRuntimeMs?.construction), 95)
+        },
+        optimization:{
+          p50:percentile(rows.map(row => row.phaseRuntimeMs?.optimization), 50),
+          p95:percentile(rows.map(row => row.phaseRuntimeMs?.optimization), 95)
+        }
       },
       metricAverage,
       validationRejections:rows.filter(row => row.validationViolationCount > 0).length,

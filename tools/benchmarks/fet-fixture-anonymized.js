@@ -240,7 +240,11 @@ function createSyntheticFixture({name, classCount, subjectsPerClass, stress = fa
   const subject = {};
   const assignments = [];
   const teacherCount = Math.max(40, Math.ceil(classCount * subjectsPerClass / 8));
-  const roomCount = Math.max(12, Math.ceil(classCount * subjectsPerClass / 20));
+  // Keep synthetic room demand structurally feasible inside a morning or an
+  // afternoon.  The old medium fixture mapped 40 morning-only periods to a
+  // room with just 30 weekly morning slots, so a healthy constructor was
+  // incorrectly reported as slow/invalid while proving an impossible case.
+  const roomCount = Math.max(12, classCount, Math.ceil(classCount * subjectsPerClass / 20));
   const teacherNames = new Set();
   const roomNames = new Set();
 

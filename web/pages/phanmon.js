@@ -6710,48 +6710,10 @@ function fetQualityStallBudgetMs(options, key, fallback = 60_000){
   return Math.max(15_000, Math.min(180_000, Math.round(value)));
 }
 
-function fetAutomaticTargetPreflight(data, initialStats, FetEngineClass){
-  const singletons = Math.max(0, Number(initialStats?.soBuoiDay1 || 0));
-  const gap2 = Math.max(0, Number(initialStats?.soBuoiTrong2 || 0));
-  if(gap2 > 0) return {reached:false, singletonFloor:0};
-  if(singletons === 0){
-    return {reached:true, singletonFloor:0, proven:true, reason:"zero_target"};
-  }
-  if(typeof FetEngineClass !== "function") return {reached:false, singletonFloor:0};
-
-  try{
-    const preflightData = JSON.parse(JSON.stringify(data || {}));
-    const engine = new FetEngineClass(preflightData, {
-      seed:1,
-      preserveOccupiedOffSlots:true,
-      deepLocalFet:false
-    });
-    engine.loadExistingSchedule();
-    engine.compileConstraints();
-    const floor = Math.max(0, Number(
-      engine.constraintPreflight?.structuralFloor?.metricLowerBounds?.soBuoiDay1 || 0
-    ));
-    return {
-      reached:floor > 0 && singletons <= floor,
-      singletonFloor:floor,
-      proven:floor > 0,
-      reason:floor > 0 && singletons <= floor ? "proven_floor" : "search_required"
-    };
-  }catch(_){
-    // Preflight is only a fast exit. Any compiler mismatch falls through to
-    // the isolated worker path and never blocks optimization.
-    return {reached:false, singletonFloor:0};
-  }
-}
-
 async function executeDirectFastSchedule(options = {}){
   try{
-    // SINGLE-FLIGHT GUARD (sua 17/08): duong goi truc tiep (menu Toi uu, nut
-    // Tron goi) truoc day KHONG co khoa nhu nut Sap xep (preflight token o
-    // bridge), nen bam chong len nhau tao NHIEU worker song song; ket qua
-    // muon cua worker cu ap de trang thai moi (da tai hien: luot optimize 225s
-    // ket thuc sau khi nguoi dung xoa lich + bam xep lai -> luu lich rong).
-    // Chỉ khóa theo Web Worker FET thực sự đang chạy.
+    // Một lượt xếp/tối ưu tại một thời điểm; checkpoint cũ không được phép áp
+    // đè lên lịch mới sau khi người dùng đã chuyển thao tác.
     if(window.__ACTIVE_TKB_FET_WORKER){
       const busyMsg = "Đang có lượt xếp/tối ưu chạy — hãy chờ xong hoặc bấm Dừng trước khi chạy lượt mới.";
       if(typeof setStatus === "function") setStatus(busyMsg, "info");
@@ -6779,60 +6741,51 @@ async function executeDirectFastSchedule(options = {}){
       }
     } catch(_) {}
 
-    const requestedMode = String(options?.mode || "solve_optimize_all");
-    const isSolveOptMode = ["solve_optimize_all", "solve_optimize_all_fresh", "auto", "fast"].includes(requestedMode);
-    let isOptimizeMode = ["optimize_singletons", "optimize_sessions", "optimize_gap2", "optimize_gap1", "optimize_all"].includes(requestedMode);
-    let isConstructionThenOptimize = false;
-    if(isSolveOptMode){
-      if(unplacedPeriodsCount > 0){
-        isConstructionThenOptimize = true;
-        options = Object.assign({}, options, { mode: "solve_optimize_all" });
-      } else {
-        isConstructionThenOptimize = true;
-        options = Object.assign({}, options, {
-          mode: "solve_optimize_all",
-          __trongoiRefine: true,
-          __incumbentComplete: true
-        });
-        if(typeof setStatus === "function"){
-          setStatus("Tối ưu tiếp từ lịch hiện tại (trọn gói)...", "info");
-        }
-      }
+    const requestedMode = String(options?.mode || "solve_fast");
+    const isSolveMode = ["solve_fast", "solve_optimize_all", "solve_optimize_all_fresh", "auto", "fast"].includes(requestedMode);
+    const isOptimizeMode = ["optimize_singletons", "optimize_sessions", "optimize_gap2", "optimize_gap1"].includes(requestedMode);
+    const isConstructionMode = isSolveMode && unplacedPeriodsCount > 0;
+
+    if(isSolveMode && unplacedPeriodsCount === 0){
+      const message = "Lịch đã đủ tiết. Hãy chọn một mục trong nút Tối ưu nếu muốn cải thiện chất lượng.";
+      if(typeof setStatus === "function") setStatus(message, "ok");
+      else if(typeof _setStatus === "function") _setStatus(message, "ok");
+      return { ok:true, applied:false, skipped:true, executor:"fet_preflight" };
     }
-    const qualityPipelineActive = isOptimizeMode || isConstructionThenOptimize;
-    // Cổng chống hồi quy trước đây chỉ bật khi `__incumbentComplete === true`,
-    // mà cờ đó CHỈ được đặt ở nhánh ▶ Xếp (solve_optimize_all trên lịch đã đủ
-    // tiết). Hệ quả: bốn lệnh trên menu Tối ưu áp thẳng kết quả worker trả về,
-    // không ai kiểm tra nó có tệ hơn lịch hiện tại hay không — bấm nhiều lần thì
-    // sai số tích luỹ. Một lệnh tối ưu chỉ chạy được trên lịch đã đủ tiết, nên
-    // ở đó incumbent luôn là mốc so sánh hợp lệ.
-    const incumbentQualityBaselineReady = options?.__incumbentComplete === true
-      || (isOptimizeMode && unplacedPeriodsCount === 0);
-    // Lệnh "1 tiết/buổi" trên menu Tối ưu được phép đánh đổi tổng buổi và tiết
-    // trống để hạ 1 tiết/buổi cho nhanh, rồi khoá chỉ số đó lại. Cờ này phải là
-    // cờ tường minh của riêng lệnh người dùng bấm: đường trọn gói (nút ▶ Xếp)
-    // cũng gọi optimize("optimize_singletons") trong worker nhưng đã có cơ chế
-    // đánh đổi riêng có snapshot rollback, không được để rush đè lên.
+    if(isOptimizeMode && unplacedPeriodsCount > 0){
+      const message = `TKB còn ${unplacedPeriodsCount} tiết chưa xếp. Hãy bấm Xếp trước rồi mới tối ưu.`;
+      if(typeof setStatus === "function") setStatus(message, "warning");
+      else if(typeof _setStatus === "function") _setStatus(message, "warning");
+      return { ok:false, applied:false, failureKind:"fet_optimize_requires_complete_schedule", error:message };
+    }
+
+    const qualityPipelineActive = isOptimizeMode;
+    const incumbentQualityBaselineReady = isOptimizeMode && unplacedPeriodsCount === 0;
+    if(isConstructionMode){
+      options = Object.assign({}, options, {
+        mode:"solve_fast",
+        constructionTimeBudgetMs:Number(options?.constructionTimeBudgetMs) || 12_000,
+        constructionAttempts:Number(options?.constructionAttempts) || 3,
+        constructionPolishTimeBudgetMs:Number.isFinite(Number(options?.constructionPolishTimeBudgetMs))
+          ? Number(options.constructionPolishTimeBudgetMs)
+          : 250,
+        initialSingletonPacking:false
+      });
+    }
+    // Chỉ lệnh "1 tiết/buổi" do người dùng chọn mới được đánh đổi các chỉ số
+    // thấp hơn, và chỉ khi mục tiêu chính thực sự giảm. Nút Xếp không chạy
+    // optimizer nên không bao giờ nhận cờ này.
     if(isOptimizeMode && requestedMode === "optimize_singletons"){
       options = Object.assign({}, options, { singletonRush: true });
     }
-    // A complete incumbent can use independent seed restarts in parallel when
-    // the first local lane gets stuck. Fresh construction uses a smaller
-    // two-seed race; an already solved timetable still skips the pool.
-    if(qualityPipelineActive && isConstructionThenOptimize && options.parallelWorkers === undefined){
-      const logicalCores = Number(globalThis.navigator?.hardwareConcurrency) || 1;
-      const restartWorkers = Math.min(4, Math.max(1, logicalCores - 2));
-      const constructionWorkers = Math.min(2, Math.max(1, logicalCores - 2));
-      options = Object.assign({}, options, {
-        // Keep the incumbent optimization pool at the proven 4-lane ceiling.
-        // Fresh construction gets a smaller race: the first complete seed is
-        // enough to enter the normal quality lane, so extra seeds only add CPU
-        // contention after the answer is already available.
-        parallelWorkers: options.__incumbentComplete === true ? restartWorkers : constructionWorkers,
-        parallelConstructionWorkers: constructionWorkers,
-        parallelConstructionTimeBudgetMs: 30_000,
-        parallelRestartSliceMs: 30_000
-      });
+    if(isOptimizeMode && options.optimizeTimeBudgetMs === undefined){
+      const focusedBudgets = {
+        optimize_singletons:12_000,
+        optimize_sessions:8_000,
+        optimize_gap2:8_000,
+        optimize_gap1:8_000
+      };
+      options = Object.assign({}, options, { optimizeTimeBudgetMs:focusedBudgets[requestedMode] });
     }
     const modeLabelMap = {
       "auto_min2": "Sắp tự động (>= 2 tiết/buổi)",
@@ -6840,13 +6793,10 @@ async function executeDirectFastSchedule(options = {}){
       "optimize_sessions": "Buổi",
       "optimize_gap2": "2 tiết trống",
       "optimize_gap1": "1 tiết trống",
-      "optimize_all": "Tất cả",
-      "solve_optimize_all": "Xếp + tối ưu trọn gói",
-      "solve_optimize_all_fresh": "NEW – xếp mới + khóa tuần tự"
+      "solve_fast": "Xếp nhanh"
     };
     let label = modeLabelMap[options.mode] || options.mode || "Tự động";
-    if(options.__trongoiRefine === true) label = "Trọn gói – tối ưu tiếp";
-    const preparationMessage = isOptimizeMode || isConstructionThenOptimize
+    const preparationMessage = isOptimizeMode
       ? `Đang chuẩn bị tối ưu ${label} trên máy này…`
       : "Đang chuẩn bị xếp lịch trên máy này…";
     if(typeof setStatus === "function") setStatus(preparationMessage, "info");
@@ -6862,7 +6812,7 @@ async function executeDirectFastSchedule(options = {}){
     let incumbentValidationPromise = null;
     const getIncumbentValidation = () => {
       if(!incumbentValidationPromise){
-        incumbentValidationPromise = (isOptimizeMode || isConstructionThenOptimize)
+        incumbentValidationPromise = isOptimizeMode
           ? inspectFetCandidateHardConstraints(data, JSON.parse(JSON.stringify(data.tkb || {})))
           : Promise.resolve(null);
       }
@@ -6870,15 +6820,13 @@ async function executeDirectFastSchedule(options = {}){
     };
     const validateLocalFetCandidate = async candidateTkb => {
       const incumbentBaseline = qualityPipelineActive ? await getIncumbentValidation() : null;
-      return validateFetCandidateHardConstraints(data, candidateTkb, (isOptimizeMode || isConstructionThenOptimize) ? {
+      return validateFetCandidateHardConstraints(data, candidateTkb, isOptimizeMode ? {
         allowUnchangedIncumbentViolations:true,
         incumbentBaseline
       } : {});
     };
     let initialDetail = "";
-    if(["optimize_all","solve_optimize_all","solve_optimize_all_fresh"].includes(options?.mode)){
-      initialDetail = `1 tiết/buổi: ${initialStats.soBuoiDay1} • Trống 2: ${initialStats.soBuoiTrong2} • Buổi: ${initialStats.tsBuoiDay} • Trống 1: ${initialStats.soBuoiTrong1}`;
-    }else if(options?.mode === "optimize_sessions"){
+    if(options?.mode === "optimize_sessions"){
       initialDetail = `Buổi dạy: ${initialStats.tsBuoiDay}`;
     }else if(options?.mode === "optimize_singletons"){
       initialDetail = `Dạy 1 tiết: ${initialStats.soBuoiDay1}`;
@@ -6918,38 +6866,6 @@ async function executeDirectFastSchedule(options = {}){
       else setAutoSortStopVisible(false);
       if(typeof setStatus === "function") setStatus("Trống 1 tiết: 0 -> 0", "ok");
       return { ok: true, skipped: true };
-    }
-
-    const automaticQualityMode = ["optimize_all", "solve_optimize_all", "solve_optimize_all_fresh"]
-      .includes(String(options?.mode || ""));
-    if(qualityPipelineActive && automaticQualityMode && unplacedPeriodsCount === 0){
-      const quickTarget = fetAutomaticTargetPreflight(data, initialStats, FetEngineClass);
-      if(quickTarget.reached === true){
-        if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
-        else setAutoSortStopVisible(false);
-        const message = quickTarget.singletonFloor > 0
-          ? `Lịch hiện tại đã đạt sàn toán học: 1 tiết/buổi = ${initialStats.soBuoiDay1}, Trống 2 = 0. Không cần chạy tìm kiếm sâu.`
-          : "Lịch hiện tại đã đạt mục tiêu: 1 tiết/buổi = 0, Trống 2 = 0. Không cần chạy tối ưu.";
-        if(typeof setStatus === "function") setStatus(message, "ok");
-        else if(typeof _setStatus === "function") _setStatus(message, "ok");
-        return {
-          ok:true,
-          applied:false,
-          skipped:true,
-          executor:"fet_preflight",
-          targetReached:true,
-          floorReached:true,
-          singletonTargetReached:true,
-          gapTargetReached:true,
-          qualityTargetReached:true,
-          floorMetric:quickTarget.singletonFloor,
-          metrics:initialStats
-        };
-      }
-    }
-
-    if((isOptimizeMode || isConstructionThenOptimize) && unplacedPeriodsCount > 0){
-      if(typeof setStatus === "function") setStatus(`TKB còn ${unplacedPeriodsCount} tiết chưa xếp, đang tự động xếp đủ 100% và tối ưu [${label}]...`, "info");
     }
 
     // Run local FET engine on background Web Worker
@@ -7017,7 +6933,7 @@ async function executeDirectFastSchedule(options = {}){
           window.__ACTIVE_TKB_FET_WORKER_RESOLVE = null;
           window.__ACTIVE_TKB_FET_WORKER_STOP = null;
 
-    if(!qualityPipelineActive || !checkpoint?.complete || !checkpoint?.tkb || typeof checkpoint.tkb !== "object"){
+          if(!qualityPipelineActive || !checkpoint?.complete || !checkpoint?.tkb || typeof checkpoint.tkb !== "object"){
             window.__LATEST_OPTIMIZE_TKB = null;
             window.__LATEST_OPTIMIZE_CHECKPOINT = null;
             if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
@@ -7129,10 +7045,7 @@ async function executeDirectFastSchedule(options = {}){
             updateStatusMsg("Đã dừng tối ưu; nghiệm tốt nhất đã hiển thị nhưng không lưu được ngay. Hãy kiểm tra kết nối rồi lưu lại.", "warning");
           }else{
             let transitionLabel = `[${label}]`;
-            if(["optimize_all","solve_optimize_all","solve_optimize_all_fresh"].includes(options?.mode)){
-              const mAll = appliedStats || checkpoint?.metrics || {};
-              transitionLabel = `1 tiết/buổi: ${initialStats.soBuoiDay1} ➔ ${mAll.soBuoiDay1 ?? "?"}, Trống 2: ${initialStats.soBuoiTrong2} ➔ ${mAll.soBuoiTrong2 ?? "?"}, Buổi: ${initialStats.tsBuoiDay} ➔ ${mAll.tsBuoiDay ?? "?"}, Trống 1: ${initialStats.soBuoiTrong1} ➔ ${mAll.soBuoiTrong1 ?? "?"}`;
-            }else if(options?.mode === "optimize_gap2"){
+            if(options?.mode === "optimize_gap2"){
               const curGap2 = Number(appliedStats?.soBuoiTrong2 ?? checkpoint?.metrics?.soBuoiTrong2 ?? initialStats.soBuoiTrong2);
               transitionLabel = `Trống 2 tiết: ${initialStats.soBuoiTrong2} ➔ ${curGap2}`;
             }else if(options?.mode === "optimize_singletons"){
@@ -7184,7 +7097,7 @@ async function executeDirectFastSchedule(options = {}){
           }, 1_000);
         }
 
-        if(!isOptimizeMode && !isConstructionThenOptimize){
+        if(isConstructionMode){
           updateStatusMsg("Đang xếp lượt đầu: 0%...");
         }else{
           updateStatusMsg(`Đang tối ưu [${label}]: 0%...`);
@@ -7242,32 +7155,7 @@ async function executeDirectFastSchedule(options = {}){
                 ? `Đang xếp: ${done}/${total} tiết`
                 : `Đang xếp lịch mới…`;
             }
-            if(["optimize_all","solve_optimize_all","solve_optimize_all_fresh"].includes(options.mode) && msg.metrics){
-              const stageLabelMap = {
-                "optimize_singletons": "1 tiết/buổi",
-                "optimize_gap2": "Trống 2 tiết",
-                "optimize_sessions": "Buổi dạy",
-                "optimize_gap1": "Trống 1 tiết",
-                "singleton_priority": "Ưu tiên 1 tiết/buổi",
-                "singleton_fast": "Gom nhanh",
-                "singleton_warmup": "Gom buổi ban đầu",
-                "session_first": "Gom 12 buổi",
-                "parallel_restart": "Chạy song song",
-                "gap2_priority": "Ưu tiên Trống 2",
-                "quality_polish": "Tối ưu phụ"
-              };
-              const stageLabel = stageLabelMap[msg.stage] || "Tối ưu";
-              const floorHint = stageLabel === "Ưu tiên 1 tiết/buổi" && Number(msg.targetMetricLowerBound) > 0
-                ? ` sàn:${Number(msg.targetMetricLowerBound)}`
-                : "";
-              const searchedStates = Number(msg.sessionStates) + Number(msg.periodStates);
-              const searchHint = msg.heartbeat
-                ? (msg.stage === "session_first" && Number.isFinite(searchedStates)
-                  ? ` • thử:${searchedStates.toLocaleString("vi-VN")}`
-                  : ` • đang xử lý ${Math.max(0, Math.floor(Number(msg.elapsedMs || 0) / 1000))}s`)
-                : "";
-              detail = `${stageLabel} • 1t/buổi:${msg.metrics.soBuoiDay1} T2:${msg.metrics.soBuoiTrong2} B:${msg.metrics.tsBuoiDay} T1:${msg.metrics.soBuoiTrong1}${searchHint}${floorHint}`;
-            }else if(initVal !== undefined && curVal !== undefined){
+            if(initVal !== undefined && curVal !== undefined){
               if(options.mode === "optimize_sessions"){
                 detail = `Buổi dạy: ${initVal} ➔ ${curVal}`;
               }else if(options.mode === "optimize_singletons"){
@@ -7463,32 +7351,26 @@ async function executeDirectFastSchedule(options = {}){
               });
               return;
             }
-            let candidateValidation = { ok: true };
-            if(qualityPipelineActive){
-              candidateValidation = await validateFetCandidateHardConstraints(data, msg.tkb, {
-                allowUnchangedIncumbentViolations:true,
-                incumbentBaseline: await getIncumbentValidation()
+            const candidateValidation = await validateLocalFetCandidate(msg.tkb);
+            if(candidateValidation.ok !== true){
+              if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
+              else setAutoSortStopVisible(false);
+              const presentation = fetFailurePresentation(candidateValidation);
+              updateStatusMsg(presentation.message, presentation.level);
+              if(presentation.showDiagnostics) renderFetDiagnosticPanel(candidateValidation.diagnostics || null);
+              settleWorker({
+                ok:false,
+                applied:false,
+                executor:"fet_worker",
+                failureKind:candidateValidation.failureKind || "fet_candidate_hard_validation_failed",
+                diagnostics:candidateValidation.diagnostics || null,
+                error:presentation.message
+              }, {
+                initialMetrics:msg.initialMetrics || initialStats,
+                metrics:msg.metrics || null,
+                hardValid:false
               });
-              if(candidateValidation.ok !== true){
-                if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
-                else setAutoSortStopVisible(false);
-                const presentation = fetFailurePresentation(candidateValidation);
-                updateStatusMsg(presentation.message, presentation.level);
-                if(presentation.showDiagnostics) renderFetDiagnosticPanel(candidateValidation.diagnostics || null);
-                settleWorker({
-                  ok:false,
-                  applied:false,
-                  executor:"fet_worker",
-                  failureKind:candidateValidation.failureKind || "fet_candidate_hard_validation_failed",
-                  diagnostics:candidateValidation.diagnostics || null,
-                  error:presentation.message
-                }, {
-                  initialMetrics:msg.initialMetrics || initialStats,
-                  metrics:msg.metrics || null,
-                  hardValid:false
-                });
-                return;
-              }
+              return;
             }
 
             const applyResult = await applyValidatedFetCandidate(data, msg.tkb, options);
@@ -7525,11 +7407,7 @@ async function executeDirectFastSchedule(options = {}){
               const initM = msg.initialMetrics;
               const bestM = msg.metrics;
               if(initM && bestM){
-                if(options.mode === "solve_optimize_all" || options.mode === "solve_optimize_all_fresh"){
-                  doneStatusMsg = `Đã xếp mới + tối ưu trọn gói — 1 tiết/buổi: ${bestM.soBuoiDay1}, Trống 2: ${bestM.soBuoiTrong2}, Trống 1: ${bestM.soBuoiTrong1}, Buổi: ${bestM.tsBuoiDay}`;
-                }else if(options.mode === "optimize_all"){
-                  doneStatusMsg = `Đã tối ưu tất cả — 1 tiết/buổi: ${initM.soBuoiDay1} ➔ ${bestM.soBuoiDay1}, Trống 2: ${initM.soBuoiTrong2} ➔ ${bestM.soBuoiTrong2}, Buổi: ${initM.tsBuoiDay} ➔ ${bestM.tsBuoiDay}, Trống 1: ${initM.soBuoiTrong1} ➔ ${bestM.soBuoiTrong1}`;
-                }else if(options.mode === "optimize_gap2"){
+                if(options.mode === "optimize_gap2"){
                   doneStatusMsg = `Đã tối ưu Trống 2 tiết: ${initM.soBuoiTrong2} ➔ ${bestM.soBuoiTrong2}`;
                 }else if(options.mode === "optimize_singletons"){
                   doneStatusMsg = `Đã tối ưu Dạy 1 tiết/buổi: ${initM.soBuoiDay1} ➔ ${bestM.soBuoiDay1}`;
@@ -7541,16 +7419,6 @@ async function executeDirectFastSchedule(options = {}){
               }
               if(!doneStatusMsg){
                 doneStatusMsg = `Đã tối ưu xong mục tiêu [${label}].`;
-              }
-              // The automatic quality pipeline may legitimately stop above zero
-              // when the engine has proved a structural singleton floor. Make
-              // that fact explicit instead of leaving the teacher to infer why
-              // the first metric did not reach 0.
-              if((options.mode === "solve_optimize_all" || options.mode === "solve_optimize_all_fresh")
-                && msg.floorReached === true
-                && Number(msg.targetMetricLowerBound) > 0
-                && Number(bestM?.soBuoiDay1) === Number(msg.targetMetricLowerBound)){
-                doneStatusMsg += ` (đạt sàn toán học: ${Number(msg.targetMetricLowerBound)}; không thể giảm thêm mà không phá ràng buộc)`;
               }
               const finalTarget = options.mode === "optimize_sessions"
                 ? Number(bestM?.tsBuoiDay || 0)
@@ -7643,8 +7511,8 @@ async function executeDirectFastSchedule(options = {}){
 
         // Send task to background worker
         worker.postMessage({
-          action: isConstructionThenOptimize ? "solve" : (isOptimizeMode ? "optimize" : "solve"),
-          mode: options.mode || "fast",
+          action: isOptimizeMode ? "optimize" : "construct",
+          mode: options.mode || "solve_fast",
           data: JSON.parse(JSON.stringify(data)),
           options
         });
@@ -7667,7 +7535,8 @@ async function executeDirectFastSchedule(options = {}){
         if(typeof setStatus === "function") setStatus(`Đang tối ưu mục tiêu [${label}]...`, "info");
         else if(typeof _setStatus === "function") _setStatus(`Đang tối ưu mục tiêu [${label}]...`, "info");
 
-        // Run deep FET Engine optimizer for maximum quality convergence and 100% timetable integrity
+        // Direct fallback keeps the same focused, deadline-bound optimizer
+        // contract as the worker path.
         res = await engine.optimize(options.mode, (prog) => {
           let detail = "";
           if(prog.metrics){
@@ -7827,7 +7696,7 @@ async function executeDirectFastSchedule(options = {}){
 try{
   window.executeDirectFastSchedule = executeDirectFastSchedule;
   window.sapXepTuDongAll = async function(options = {}){
-    return await executeDirectFastSchedule({ mode: options?.mode || "solve_optimize_all" });
+    return await executeDirectFastSchedule({ mode: options?.mode || "solve_fast" });
   };
   window.sapXepTheoCheDo = async function(mode = "optimize_singletons"){
     return await executeDirectFastSchedule({ mode: mode });
@@ -7838,7 +7707,7 @@ try{
 }catch(_){}
 
 async function sapXepTuDongAll(options = {}){
-  return await executeDirectFastSchedule({ mode: options?.mode || "solve_optimize_all" });
+  return await executeDirectFastSchedule({ mode: options?.mode || "solve_fast" });
 }
 
 async function sapXepTheoCheDo(mode = "optimize_singletons"){

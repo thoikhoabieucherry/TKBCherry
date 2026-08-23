@@ -259,6 +259,9 @@ test("FET reports a conservative unplaced floor for a proven capacity shortage",
   assert.equal(preflight.capacityShortages[0].shortage, 1);
   assert.equal(preflight.structuralFloor.provenInfeasible, true);
   assert.equal(preflight.structuralFloor.minimumUnplacedPeriods, 1);
+  const result = engine.solve();
+  assert.equal(result.ok, false);
+  assert.equal(result.failureKind, "fet_capacity_shortage");
 });
 
 test("FET exposes only fixed/domain-proven quality floors", () => {
@@ -409,96 +412,37 @@ test("FET stops optimization at a proven positive floor and exposes it", async (
   assert.equal(result.diagnostics.structuralFloor.metricLowerBounds.soBuoiTrong2, 1);
 });
 
-test("optimizer worker sends only complete improved checkpoints, never its live grid per progress frame", () => {
-  const optimizeStart = WORKER_SOURCE.indexOf("taskType === 'optimize'");
-  const solveStart = WORKER_SOURCE.indexOf("} else {", optimizeStart);
-  assert.ok(optimizeStart >= 0 && solveStart > optimizeStart, "optimizer worker branch is present");
-  const optimizeBranch = WORKER_SOURCE.slice(optimizeStart, solveStart);
-  const progressStart = optimizeBranch.indexOf("await currentEngine.optimize");
-  const progressEnd = optimizeBranch.indexOf("self.postMessage({\n        type: 'done'", progressStart);
-  assert.ok(progressStart >= 0 && progressEnd > progressStart, "optimizer progress callback is present");
-  const progressCallback = optimizeBranch.slice(progressStart, progressEnd);
+test("optimizer worker checkpoints only complete metric improvements", () => {
+  const optimizeStart = WORKER_SOURCE.indexOf("async function runFocusedOptimization");
+  const optimizeEnd = WORKER_SOURCE.indexOf("function startHeartbeat", optimizeStart);
+  assert.ok(optimizeStart >= 0 && optimizeEnd > optimizeStart, "focused optimizer branch is present");
+  const optimizeBranch = WORKER_SOURCE.slice(optimizeStart, optimizeEnd);
 
-  assert.match(progressCallback, /bestCheckpoint/);
-  assert.match(progressCallback, /checkpoint:\s*normalized\.heartbeat\s*\?\s*null\s*:\s*bestCheckpoint/);
-  assert.match(progressCallback, /complete:\s*Number\(normalized\?\.metrics\?\.unplacedCount/,
-    "checkpoint completeness must use the normalized progress metrics");
-  assert.match(progressCallback, /currentEngine\.getSnapshotTKB\(\)/,
-    "a complete improved checkpoint must contain a retained timetable snapshot");
-  assert.match(progressCallback, /getRetainedOptimizationSnapshotTKB/,
-    "a Stop checkpoint must use the retained best timetable rather than a transient ejection state");
-  assert.match(optimizeBranch, /type: 'done',[\s\S]*?applied:\s*true/);
+  assert.match(optimizeBranch, /compareForMode\(engine, metrics, bestMetrics, initialMetrics, mode\) < 0/);
+  assert.match(optimizeBranch, /Number\(metrics\.unplacedCount \|\| 0\) === 0/);
+  assert.match(optimizeBranch, /bestCheckpoint = \{[\s\S]*?complete: true,[\s\S]*?tkb: snapshotTimetable\(engine\)/);
+  assert.match(optimizeBranch, /checkpoint: normalized\.heartbeat \? null : bestCheckpoint/);
+  assert.match(optimizeBranch, /tkb: null/,
+    "ordinary progress frames must not transmit the live grid");
+  assert.match(WORKER_SOURCE, /getRetainedOptimizationSnapshotTKB/,
+    "Stop/final snapshots use the engine-retained best timetable");
 });
 
-test("automatic worker prioritizes singleton elimination before gap-2 polish and normalizes progress", () => {
-  assert.match(WORKER_SOURCE, /runUntilZeroSingletons\(\{/,
-    "automatic solve must enter the dedicated singleton pipeline");
-  assert.match(WORKER_SOURCE, /stage:\s*'singleton_priority'/,
-    "singleton phase must expose an explicit progress stage");
-  assert.match(WORKER_SOURCE, /optimizerMetricsFromProgress/,
-    "raw metric callbacks must be normalized before posting progress");
-  assert.match(WORKER_SOURCE, /currentMetrics\.soBuoiDay1\s*<=\s*singletonFloor[\s\S]*?optimize\('optimize_gap2'/,
-    "gap-2 polish must wait until singleton floor is reached");
-  assert.match(WORKER_SOURCE, /singletonRestartAttempts/,
-    "a plateaued incumbent must get independent construction restarts");
-  assert.match(WORKER_SOURCE, /new self\.FetTimetableEngine\(candidateData, candidateOptions\)/,
-    "restart candidates must use independent seeds and the same hard constraints");
-  assert.match(WORKER_SOURCE, /allowSingletonGap2Tradeoff/,
-    "deep singleton search may use a temporary gap-2 tradeoff before cleanup");
-  assert.match(WORKER_SOURCE, /qualityBudgetMs = clampNumber\(workerOptions\.autoQualityTimeBudgetMs, 600_000/,
-    "the incumbent lane must reserve enough time for multiple singleton-chain slices");
-  assert.match(WORKER_SOURCE, /singletonCycleBudgetMs = clampNumber\(workerOptions\.singletonCycleBudgetMs, 30_000/,
-    "each singleton slice must get a fresh bounded deadline");
-  assert.match(WORKER_SOURCE, /initialSingletonWarmupMs = clampNumber\(/,
-    "a complete construction must get a bounded shallow singleton warmup before deep search");
-  assert.match(WORKER_SOURCE, /initialSingletonFastMs = clampNumber\(/,
-    "a cheap deterministic singleton pass must run before the warmup and deep search");
-  assert.match(WORKER_SOURCE, /bestEngine\.initialSingletonPacking\(\{/,
-    "the fast pass must reuse the guarded direct and short-chain packer");
-  assert.match(WORKER_SOURCE, /stage:'singleton_fast'/,
-    "the fast pass must be visible in progress telemetry");
-  assert.match(WORKER_SOURCE, /stage: 'singleton_warmup'/,
-    "the shallow construction warmup must be visible as its own progress stage");
-  assert.match(WORKER_SOURCE, /bestEngine\.options\.deepLocalFet = false/,
-    "the warmup must not spend its first slice in the expensive deep session search");
-  assert.match(WORKER_SOURCE, /reformLessonBlocks = true/,
-    "the deep incumbent lane must be allowed to re-pair lesson-block members before final validation");
-  assert.match(WORKER_SOURCE, /eng\.compileConstraints\(\)/,
-    "an incumbent must compile the structural singleton floor before the worker starts quality cycles");
-  assert.match(WORKER_SOURCE, /sessionFirstStateBudget/,
-    "the worker must expose the bounded 12-session state budget");
-  assert.match(ENGINE_SOURCE, /sessionFirstTimeBudgetMs/,
-    "session-first must have a bounded per-slice time budget");
-  assert.ok(ENGINE_SOURCE.includes("heartbeat: true"),
-    "session-first must expose heartbeat progress while exploring");
-  assert.match(WORKER_SOURCE, /SNAPSHOT_INTERVAL_MS = 1000/,
-    "checkpoint snapshots must not clone the timetable every progress frame");
-  assert.match(WORKER_SOURCE, /qualityPolishTimeBudgetMs/,
-    "secondary quality polish must have an explicit bounded budget");
-  assert.match(WORKER_SOURCE, /startBackgroundHeartbeat/,
-    "the worker must keep the UI alive while an operator has no improvement callback");
+test("worker separates quick construction from four bounded optimizer profiles", () => {
+  assert.match(WORKER_SOURCE, /async function runFastConstruction/);
+  assert.match(WORKER_SOURCE, /constructionTimeBudgetMs[\s\S]*?12_000/);
+  assert.match(WORKER_SOURCE, /constructionAttempts, 3, 1, 5/);
+  assert.match(WORKER_SOURCE, /initialSingletonPacking: false/,
+    "Xếp publishes once construction is complete instead of entering quality polish");
+  assert.match(WORKER_SOURCE, /OPTIMIZE_BUDGETS_MS[\s\S]*?optimize_singletons: 12_000[\s\S]*?optimize_sessions: 8_000[\s\S]*?optimize_gap2: 8_000[\s\S]*?optimize_gap1: 8_000/);
+  assert.match(WORKER_SOURCE, /taskType === 'optimize' && OPTIMIZE_MODES\.has\(mode\)/);
+  assert.match(WORKER_SOURCE, /Legacy solve_optimize_all\/auto messages[\s\S]*?runFastConstruction/,
+    "legacy automatic requests must map to construction rather than hidden deep search");
   assert.match(WORKER_SOURCE, /heartbeat:\s*true[\s\S]*?checkpoint:\s*null/,
-    "background heartbeats must not clone or transmit a timetable checkpoint");
-  assert.match(ENGINE_SOURCE, /Stage 2 is deliberately locked behind the primary objective/,
-    "gap-2 operators must wait until singleton debt reaches its floor");
-  assert.match(WORKER_SOURCE, /runParallelRestartLane/,
-    "a plateaued incumbent must be able to use independent worker lanes");
-  assert.match(WORKER_SOURCE, /runParallelConstructionLane/,
-    "fresh construction must be able to race independent seeds locally");
-  assert.match(WORKER_SOURCE, /parallelConstructionTimeBudgetMs/,
-    "fresh construction worker racing must have a bounded budget");
-  assert.match(WORKER_SOURCE, /parallelWorkers:\s*1/,
-    "child lanes must not recursively spawn another worker pool");
-  assert.match(ENGINE_SOURCE, /trySessionFirstSingletonSearch/,
-    "deep singleton optimization must enter the 12-session-first search");
-  assert.match(ENGINE_SOURCE, /1_000_000_000/,
-    "the session-first search must accept a billion-state ceiling while stopping early at the target");
-  assert.match(WORKER_SOURCE, /runHorizontalGapClosure/,
-    "gap-2 cleanup must reuse the horizontal 12-bin vacancy chain");
-  assert.match(WORKER_SOURCE, /restoreStateSnapshot\(tradeoffSnapshot\)/,
-    "failed tradeoff cleanup must rollback the incumbent atomically");
-  assert.match(WORKER_SOURCE, /type: 'done',[\s\S]*?stagnated: res\?\.stagnated/,
-    "automatic solve completion must expose the stagnation/floor result to the UI");
+    "background heartbeats never carry a timetable clone");
+  assert.match(WORKER_SOURCE, /timing:\s*\{[\s\S]*?phase: 'construction'/);
+  assert.doesNotMatch(WORKER_SOURCE, /600_000|autoQualityTimeBudgetMs|runParallelRestartLane|qualityPolishTimeBudgetMs/,
+    "the retired ten-minute automatic pipeline must stay removed");
 });
 
 test("FET orders construction activities by MRV domain before degree tie-breakers", () => {

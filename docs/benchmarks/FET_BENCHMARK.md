@@ -1,75 +1,66 @@
-# FET benchmark harness
+# Benchmark FET trên web
 
-`tools/benchmarks/benchmark-fet.js` runs the same browser FET source used by
-the Web Worker against deterministic, anonymised fixtures. It never reads the
-school `DATA` singleton, calls a network service, or changes external state.
-Every seed/mode receives a fresh fixture copy.
+**tools/benchmarks/benchmark-fet.js** nạp đúng
+**web/pages/tkb-fet-engine.js** bằng VM; không có bản solver thứ hai. Fixture
+đều tổng hợp, ẩn danh, không đọc DATA, SQLite hay gọi mạng.
 
-## Fixtures
+## Fixture
 
-| Variant | Classes | Required periods | Purpose |
+| Variant | Lớp | Tiết yêu cầu | Mục đích |
 | --- | ---: | ---: | --- |
-| `smoke` | 5 | 49 | Fast regression smoke test with shared teachers/rooms, OFF cells, fixed cells and paired lessons. |
-| `pressure` | 6 | 51 | Smoke data plus two fixed edge lessons that prove a structural `gap2` floor of 1. |
-| `medium` | 24 | 432 | Synthetic contention fixture in the 300–700-period range. |
-| `stress` | 60 | 2,340 | Synthetic 1,500+ period fixture for capacity/runtime observations. |
+| smoke | 5 | 49 | Test nhanh fixed/OFF, phòng, GV và tiết đôi |
+| pressure | 6 | 51 | Có sàn Gap2 cố định bằng 1 |
+| medium | 24 | 432 | Mốc construction và bốn nút tối ưu |
+| stress | 60 | 2.340 | Kiểm tra deadline trên bài toán lớn |
 
-The synthetic names (`S001`, `GV001`, `P001`, etc.) contain no school or user
-data. `medium` and `stress` are deliberately larger than the smoke fixture;
-they are useful for detecting budget exhaustion, not as proof that FET can
-solve every production school inside a fixed budget. `stress` leaves both
-sessions available per class so its load is structurally feasible; `medium`
-retains morning/afternoon class domains for `ca` coverage.
+Room generator của medium bảo đảm sức chứa sáng/chiều khả thi. Preflight engine
+vẫn tự phát hiện thiếu sức chứa lớp, giáo viên hoặc phòng trong fixture tùy
+biến.
 
-## Commands
+## Lệnh canonical
 
-Run the fast regression set:
+~~~powershell
+node tools\benchmarks\benchmark-fet.js --fixture=medium --seeds=101,202,303 --modes=auto,optimize_singletons,optimize_sessions,optimize_gap2,optimize_gap1 --auto-budget-ms=6000 --optimizer-timeout-ms=8000 --out=docs\benchmarks\fet-medium-latest.json --strict
 
-```powershell
-node tools/benchmarks/benchmark-fet.js `
-  --fixture=smoke `
-  --seeds=101,202,303 `
-  --modes=auto,optimize_singletons,optimize_sessions,optimize_gap2,optimize_gap1
-```
+node tools\benchmarks\benchmark-fet.js --fixture=pressure --seeds=101,202,303 --modes=auto,optimize_gap2 --auto-budget-ms=6000 --optimizer-timeout-ms=8000 --out=docs\benchmarks\fet-pressure-latest.json --strict
+~~~
 
-Write a machine-readable report:
+Mode auto trong harness mô phỏng nút Xếp: construction polish 250 ms và
+initialSingletonPacking=false. optimize_singletons bật đúng cờ singletonRush
+của menu.
 
-```powershell
-node tools/benchmarks/benchmark-fet.js `
-  --fixture=pressure `
-  --seeds=101,202,303 `
-  --modes=auto,optimize_gap2 `
-  --out=docs/benchmarks/fet-pressure-latest.json
-```
+## Kết quả 23/08/2026
 
-For a bounded medium/stress observation, select Auto only and set a budget:
+Medium, 3 seed:
 
-```powershell
-node tools/benchmarks/benchmark-fet.js --fixture=medium --seeds=101 --modes=auto --auto-budget-ms=12000
-node tools/benchmarks/benchmark-fet.js --fixture=stress --seeds=101 --modes=auto --auto-budget-ms=1000
-```
+| Mode | Complete/hard-valid | Wall p50 / p95 | Optimization p50 / p95 | Delta mục tiêu TB |
+| --- | ---: | ---: | ---: | ---: |
+| auto | 100% / 100% | 166,93 / 199,13 ms | 0 / 0 ms | — |
+| 1 tiết/buổi | 100% / 100% | 1.804,15 / 2.325,41 ms | 1.634,45 / 2.155,97 ms | -16,33 |
+| Buổi | 100% / 100% | 717,20 / 733,69 ms | 519,83 / 560,56 ms | -13,00 |
+| 2 tiết trống | 100% / 100% | 486,60 / 543,09 ms | 300,76 / 363,28 ms | 0,00 (đã bằng 0) |
+| 1 tiết trống | 100% / 100% | 738,56 / 835,25 ms | 506,26 / 673,20 ms | -3,33 |
 
-`--optimizer-timeout-ms` sets a harness stop request for asynchronous FET
-optimization (clamped to 120 seconds). `--auto-budget-ms` follows the engine's
-1–30 second construction range. A stopped run is reported as a non-target
-result; the harness does not convert it to success.
+Pressure, 3 seed: complete/hard-valid 100%; Gap2 giữ đúng sàn đã chứng minh
+bằng 1, floorReached=100%, p50 31,75 ms.
 
-## Report fields and validity gate
+Stress với budget construction 1.000 ms dừng ở khoảng 1.054 ms và báo
+incomplete. Đây là kiểm tra deadline, không phải kỳ vọng solve 2.340 tiết trong
+một giây.
 
-Each record contains runtime, executor, placement counts, initial/final
-metrics, target status, failure kind, preflight diagnostics, and independent
-validator violations. `completeValid` is true only when all required cells are
-present, the engine reports zero unassigned activities, and the validator sees
-no hard violation. `targetReached` means the requested metric reached zero;
-`floorReached` means it reached the fixture's declared structural lower bound.
+## Trường báo cáo
 
-The validator checks class morning/afternoon (`ca`), class/teacher/room OFF,
-fixed-cell preservation, teacher and room collisions, subject maximum periods
-per half-day, paired lesson blocks, and optional spacing/no-same metadata. It
-reports an enabled rule violation instead of silently treating an unsupported
-rule as satisfied.
+Mỗi record có:
 
-The `pressure` fixture intentionally keeps `soBuoiTrong2 = 1` because both
-edge lessons are fixed. A result with `targetReached: false` there is expected:
-`floorReached: true` demonstrates lower-bound reporting and is not a solver
-error.
+- runtimeMs: tổng wall time;
+- phaseRuntimeMs.construction và phaseRuntimeMs.optimization;
+- placement, initial/final metrics, delta, target/floor;
+- preflight/failure kind;
+- kết quả validator độc lập.
+
+completeValid=true chỉ khi đủ đúng số tiết, engine không còn activity chưa xếp
+và validator không thấy vi phạm. Timeout/plateau không được đổi thành target
+success.
+
+Chỉ giữ hai report *-latest.json canonical. Report ngày cũ và tài liệu mô tả
+pipeline 90–600 giây đã xóa để tránh dùng nhầm.

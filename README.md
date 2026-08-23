@@ -25,7 +25,7 @@ Run. Trình duyệt không gửi bài toán TKB ra dịch vụ tính toán bên 
 | Thành phần | Trách nhiệm | Không được làm |
 | --- | --- | --- |
 | Planner | Nhập/chỉnh dữ liệu, hiển thị tiến trình, kiểm định và áp lịch | Gọi dịch vụ tính lịch từ xa |
-| FET worker | Xếp mới, tối ưu, checkpoint, hủy và trả metrics | Ghi trực tiếp vào SQLite |
+| FET worker | Xếp nhanh, seed restart ngắn, tối ưu có deadline và checkpoint | Ghi trực tiếp vào SQLite |
 | Rust | Static web, auth/session, registry và school store | Chạy hoặc điều phối thuật toán TKB |
 | Mail service | Gửi OTP khi được cấu hình riêng | Tham gia luồng xếp lịch |
 
@@ -85,8 +85,8 @@ Các tùy chọn còn lại được giải thích ngay trong `.env.example`. Kh
 1. Trang `web/pages/sapxep.html` nạp engine FET và giao diện planner.
 2. `web/pages/phanmon.js` kiểm tra dữ liệu, tạo
    `web/pages/tkb-fet-worker.js` và gửi một bản sao dữ liệu vào worker.
-3. Worker chạy `FetTimetableEngine`, gửi tiến trình/checkpoint về giao diện và
-   quan sát lệnh Dừng.
+3. Worker chạy `FetTimetableEngine`: construction trả ngay lịch hoàn chỉnh đầu
+   tiên; tối ưu chỉ chạy khi người dùng chọn một mục tiêu.
 4. Ứng viên chỉ được áp dụng sau khi qua kiểm tra đủ tiết, ô cố định, OFF, trùng
    giáo viên/phòng và các ràng buộc đang bật.
 5. Lịch hợp lệ được lưu qua `/api/school/store`; Excel/Word được tạo và tải ngay
@@ -103,6 +103,10 @@ Thứ tự chất lượng tổng quát:
 Menu **Tối ưu** có bốn mục tiêu riêng: **1 tiết/buổi**, **Buổi**,
 **2 tiết trống**, **1 tiết trống**. Mỗi lần chạy giữ checkpoint tốt nhất; Dừng
 không áp một lịch thiếu tiết hoặc xấu hơn theo cổng chất lượng của chế độ đó.
+
+Nút **Xếp** không còn chạy tối ưu ngầm: ngân sách mặc định 12 giây, tối đa ba
+seed tuần tự và dừng ở lịch complete-valid đầu tiên. Bốn profile tối ưu có ngân
+sách mặc định lần lượt 12/8/8/8 giây và dừng sớm khi đạt zero/sàn hoặc plateau.
 
 ## Máy chủ Rust
 
@@ -171,7 +175,7 @@ npm test
 Benchmark nhanh dùng fixture ẩn danh:
 
 ```powershell
-node tools\benchmarks\benchmark-fet.js --fixture=smoke --seeds=101,202,303 --modes=auto,optimize_gap2
+node tools\benchmarks\benchmark-fet.js --fixture=medium --seeds=101,202,303 --modes=auto,optimize_singletons,optimize_sessions,optimize_gap2,optimize_gap1
 ```
 
 Tài liệu kỹ thuật được giữ lại có mục đích rõ ràng:
@@ -179,7 +183,6 @@ Tài liệu kỹ thuật được giữ lại có mục đích rõ ràng:
 - [Trạng thái hiện hành](docs/CURRENT_STATE.md)
 - [Hướng dẫn kế thừa](PROJECT_INHERITANCE_GUIDE.md)
 - [Checklist hồi quy](docs/REGRESSION_CHECKLIST.md)
-- [Thiết kế tối ưu Gap 2](docs/ALGORITHM_GAP2.md)
 - [Benchmark FET](docs/benchmarks/FET_BENCHMARK.md)
 - [Nhật ký bàn giao](docs/PROJECT_HANDOFF.md)
 

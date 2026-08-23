@@ -47,12 +47,18 @@ Không tạo điểm vào song song.
 
 - `web/pages/tkb-fet-engine.js`: `FetTimetableEngine`, construction, metrics,
   structural floor và các operator tối ưu.
-- `web/pages/tkb-fet-worker.js`: nạp engine bằng `importScripts`, quản lý seed,
-  worker con, tiến trình, checkpoint và stop.
+- `web/pages/tkb-fet-worker.js`: nạp engine bằng `importScripts`, quản lý
+  seed restart tuần tự, deadline, tiến trình, checkpoint và stop.
 
 Worker nhận `{action, mode, data, options}` và trả các message progress/done/error.
 Planner không tin tuyệt đối kết quả worker: trước khi áp phải gọi cổng kiểm định
 FET trong `phanmon.js` và validator ràng buộc giao diện.
+
+`action=construct` dùng profile Xếp nhanh: 12 giây tổng, tối đa ba seed và
+dừng ở complete-valid đầu tiên. `action=optimize` chỉ chấp nhận bốn mode của
+menu, với budget mặc định 12 giây cho singleton và 8 giây cho ba mode còn lại.
+Không khôi phục pipeline solve+optimize, nested worker pool hay quality budget
+600 giây.
 
 Không tạo bản mirror ở `web/` gốc. Nếu đổi cache marker, đổi các trang đang nạp
 asset và test contract cùng lúc.
@@ -156,6 +162,10 @@ Metric chính:
 
 Worker và planner phải thống nhất metric, floor, `targetReached` và checkpoint.
 Không biến plateau/timeout thành “đã đạt mục tiêu”.
+
+Construction bám FET 7.9.5 ở depth 14 và call budget xấp xỉ hai lần số activity.
+Rollback của randomSwap phải dùng move journal; không clone toàn bộ grid trong
+mỗi nhánh.
 
 ## 5. API contract
 

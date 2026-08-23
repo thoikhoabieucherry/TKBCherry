@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-15T17:09:59.287Z",
+  "generatedAt": "2026-08-23T02:01:06.369Z",
   "fixture": {
     "name": "fet-anonymized-medium-v1",
     "classes": 24,
     "teachers": 64,
-    "rooms": 15,
+    "rooms": 24,
     "requiredPeriods": 432,
     "activityCountEstimate": 384,
     "anonymized": true,
@@ -20,40 +20,182 @@
     }
   },
   "seeds": [
-    101
+    101,
+    202,
+    303
   ],
   "modes": [
-    "auto"
+    "auto",
+    "optimize_singletons",
+    "optimize_sessions",
+    "optimize_gap2",
+    "optimize_gap1"
   ],
   "fixtureVariant": "medium",
   "budgets": {
-    "autoBudgetMs": 12000,
-    "optimizerTimeoutMs": 20000
+    "autoBudgetMs": 6000,
+    "optimizerTimeoutMs": 8000
   },
   "summary": {
     "auto": {
-      "runs": 1,
-      "completeValidRate": 0,
-      "hardValidRate": 0,
+      "runs": 3,
+      "completeValidRate": 1,
+      "hardValidRate": 1,
       "targetReachedRate": null,
       "structuralFloorReachedRate": null,
       "runtimeMs": {
-        "avg": 12362.35,
-        "p50": 12362.35,
-        "p95": 12362.35
+        "avg": 153.64000000000001,
+        "p50": 166.93,
+        "p95": 199.13
+      },
+      "phaseRuntimeMs": {
+        "construction": {
+          "p50": 156.19,
+          "p95": 193.75
+        },
+        "optimization": {
+          "p50": 0,
+          "p95": 0
+        }
       },
       "metricAverage": {
-        "soBuoiDay1": null,
-        "tsBuoiDay": null,
-        "tsNgayDay": null,
-        "soBuoiTrong1": null,
-        "soBuoiTrong2": null,
-        "unplacedCount": null
+        "soBuoiDay1": 49.666666666666664,
+        "tsBuoiDay": 205.33333333333334,
+        "tsNgayDay": 153.66666666666666,
+        "soBuoiTrong1": 20.333333333333332,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
       },
       "validationRejections": 0,
-      "failureKinds": {
-        "fet_time_budget_exhausted": 1
-      }
+      "failureKinds": {}
+    },
+    "optimize_singletons": {
+      "runs": 3,
+      "completeValidRate": 1,
+      "hardValidRate": 1,
+      "targetReachedRate": 0,
+      "structuralFloorReachedRate": 0,
+      "runtimeMs": {
+        "avg": 1787.4766666666667,
+        "p50": 1804.15,
+        "p95": 2325.41
+      },
+      "phaseRuntimeMs": {
+        "construction": {
+          "p50": 146.77,
+          "p95": 147.92
+        },
+        "optimization": {
+          "p50": 1634.45,
+          "p95": 2155.97
+        }
+      },
+      "metricAverage": {
+        "soBuoiDay1": 33.333333333333336,
+        "tsBuoiDay": 197,
+        "tsNgayDay": 150,
+        "soBuoiTrong1": 25.333333333333332,
+        "soBuoiTrong2": 0.3333333333333333,
+        "unplacedCount": 0
+      },
+      "validationRejections": 0,
+      "failureKinds": {}
+    },
+    "optimize_sessions": {
+      "runs": 3,
+      "completeValidRate": 1,
+      "hardValidRate": 1,
+      "targetReachedRate": 0,
+      "structuralFloorReachedRate": 0,
+      "runtimeMs": {
+        "avg": 619.0166666666668,
+        "p50": 717.2,
+        "p95": 733.69
+      },
+      "phaseRuntimeMs": {
+        "construction": {
+          "p50": 149.43,
+          "p95": 178.3
+        },
+        "optimization": {
+          "p50": 519.83,
+          "p95": 560.56
+        }
+      },
+      "metricAverage": {
+        "soBuoiDay1": 37,
+        "tsBuoiDay": 192.33333333333334,
+        "tsNgayDay": 147.66666666666666,
+        "soBuoiTrong1": 21.666666666666668,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "validationRejections": 0,
+      "failureKinds": {}
+    },
+    "optimize_gap2": {
+      "runs": 3,
+      "completeValidRate": 1,
+      "hardValidRate": 1,
+      "targetReachedRate": 1,
+      "structuralFloorReachedRate": 1,
+      "runtimeMs": {
+        "avg": 461.17666666666673,
+        "p50": 486.6,
+        "p95": 543.09
+      },
+      "phaseRuntimeMs": {
+        "construction": {
+          "p50": 157.87,
+          "p95": 160.03
+        },
+        "optimization": {
+          "p50": 300.76,
+          "p95": 363.28
+        }
+      },
+      "metricAverage": {
+        "soBuoiDay1": 49.333333333333336,
+        "tsBuoiDay": 205,
+        "tsNgayDay": 153.33333333333334,
+        "soBuoiTrong1": 20,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "validationRejections": 0,
+      "failureKinds": {}
+    },
+    "optimize_gap1": {
+      "runs": 3,
+      "completeValidRate": 1,
+      "hardValidRate": 1,
+      "targetReachedRate": 0,
+      "structuralFloorReachedRate": 0,
+      "runtimeMs": {
+        "avg": 733.6566666666666,
+        "p50": 738.56,
+        "p95": 835.25
+      },
+      "phaseRuntimeMs": {
+        "construction": {
+          "p50": 133.44,
+          "p95": 230.53
+        },
+        "optimization": {
+          "p50": 506.26,
+          "p95": 673.2
+        }
+      },
+      "metricAverage": {
+        "soBuoiDay1": 49.333333333333336,
+        "tsBuoiDay": 205,
+        "tsNgayDay": 153,
+        "soBuoiTrong1": 17,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "validationRejections": 0,
+      "failureKinds": {}
     }
   },
   "records": [
@@ -61,19 +203,43 @@
       "fixture": "fet-anonymized-medium-v1",
       "seed": 101,
       "mode": "auto",
-      "runtimeMs": 12362.35,
+      "runtimeMs": 166.93,
+      "phaseRuntimeMs": {
+        "construction": 156.19,
+        "optimization": 0
+      },
       "executor": "fet_worker",
-      "ok": false,
-      "applied": false,
-      "complete": false,
-      "valid": false,
-      "completeValid": false,
-      "unassigned": 254,
-      "placed": 0,
-      "lessonCount": 24,
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 360,
+      "lessonCount": 432,
       "expectedLessonCount": 432,
-      "initialMetrics": null,
-      "metrics": null,
+      "initialMetrics": {
+        "soNgayMotTiet": 33,
+        "soBuoiDay1": 57,
+        "soBuoiDay2": 88,
+        "soBuoiDay3": 41,
+        "tsBuoiDay": 204,
+        "tsNgayDay": 153,
+        "soBuoiTrong1": 28,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soNgayMotTiet": 33,
+        "soBuoiDay1": 57,
+        "soBuoiDay2": 88,
+        "soBuoiDay3": 41,
+        "tsBuoiDay": 204,
+        "tsNgayDay": 153,
+        "soBuoiTrong1": 28,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
       "targetMetric": null,
       "initialTarget": null,
       "finalTarget": null,
@@ -83,547 +249,795 @@
       "floorReached": null,
       "stagnated": false,
       "optimizationTimedOut": false,
-      "failureKind": "fet_time_budget_exhausted",
+      "failureKind": null,
       "validationViolationCount": 0,
       "validationViolations": [],
-      "preflight": {
-        "activityCount": 312,
-        "blockedSlotCount": 9460,
-        "minDomainActivity": {
-          "activityId": 13,
-          "classId": "S002",
-          "subject": "Môn 01",
-          "teacher": "FIX002",
-          "duration": 2,
-          "allowedSlots": 15,
-          "blockedSlots": 45,
-          "constraintCategory": "hard_domain"
-        },
-        "minDomainSize": 15,
-        "zeroDomainActivities": [],
-        "capacityShortages": [],
-        "fixedLocationViolations": [],
-        "locationConstraintViolations": [],
-        "structuralFloor": {
-          "provenInfeasible": false,
-          "minimumUnplacedPeriods": 0,
-          "metricLowerBounds": {
-            "soBuoiDay1": 24,
-            "tsBuoiDay": 24,
-            "tsNgayDay": 24,
-            "soBuoiTrong1": 0,
-            "soBuoiTrong2": 0
-          },
-          "metricLowerBoundEvidence": [
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix001",
-              "thu": "thu2",
-              "buoi": "sang",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix002",
-              "thu": "thu3",
-              "buoi": "chieu",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix003",
-              "thu": "thu4",
-              "buoi": "sang",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix004",
-              "thu": "thu5",
-              "buoi": "sang",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix005",
-              "thu": "thu6",
-              "buoi": "chieu",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix006",
-              "thu": "thu7",
-              "buoi": "sang",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix007",
-              "thu": "thu2",
-              "buoi": "sang",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix008",
-              "thu": "thu3",
-              "buoi": "chieu",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix009",
-              "thu": "thu4",
-              "buoi": "sang",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix010",
-              "thu": "thu5",
-              "buoi": "sang",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix011",
-              "thu": "thu6",
-              "buoi": "chieu",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix012",
-              "thu": "thu7",
-              "buoi": "sang",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix013",
-              "thu": "thu2",
-              "buoi": "sang",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix014",
-              "thu": "thu3",
-              "buoi": "chieu",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix015",
-              "thu": "thu4",
-              "buoi": "sang",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix016",
-              "thu": "thu5",
-              "buoi": "sang",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix017",
-              "thu": "thu6",
-              "buoi": "chieu",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix018",
-              "thu": "thu7",
-              "buoi": "sang",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix019",
-              "thu": "thu2",
-              "buoi": "sang",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix020",
-              "thu": "thu3",
-              "buoi": "chieu",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix021",
-              "thu": "thu4",
-              "buoi": "sang",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix022",
-              "thu": "thu5",
-              "buoi": "sang",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix023",
-              "thu": "thu6",
-              "buoi": "chieu",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            },
-            {
-              "metric": "soBuoiDay1",
-              "teacher": "fix024",
-              "thu": "thu7",
-              "buoi": "sang",
-              "fixedPeriods": [
-                0
-              ],
-              "reason": "no_compiled_activity_can_join_fixed_singleton"
-            }
-          ],
-          "note": "FET reports only proven capacity/fixed-domain lower bounds here; it does not claim a global quality optimum."
-        },
-        "hardConstraintCoverage": [
-          "fixed",
-          "off",
-          "subject_fixed_off",
-          "teacher_collision",
-          "class_collision",
-          "room_collision",
-          "paired_block",
-          "subject_session_limit",
-          "teacher_limits",
-          "subject_limits",
-          "subject_group_limits",
-          "no_same_day",
-          "no_same_session",
-          "spacing_days",
-          "must_teach",
-          "time_limit",
-          "teacher_one_location_per_session",
-          "teacher_gap_between_locations",
-          "teacher_max_one_move_per_session"
-        ],
-        "blockedActivities": [
-          {
-            "activityId": 24,
-            "classId": "S002",
-            "subject": "Môn 11",
-            "teacher": "GV004",
-            "duration": 1,
-            "allowedSlots": 22,
-            "blockedSlots": 38,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 96,
-            "classId": "S008",
-            "subject": "Môn 06",
-            "teacher": "GV007",
-            "duration": 1,
-            "allowedSlots": 22,
-            "blockedSlots": 38,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 174,
-            "classId": "S014",
-            "subject": "Môn 06",
-            "teacher": "GV005",
-            "duration": 1,
-            "allowedSlots": 22,
-            "blockedSlots": 38,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 258,
-            "classId": "S020",
-            "subject": "Môn 11",
-            "teacher": "GV038",
-            "duration": 1,
-            "allowedSlots": 22,
-            "blockedSlots": 38,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 93,
-            "classId": "S008",
-            "subject": "Môn 03",
-            "teacher": "GV026",
-            "duration": 1,
-            "allowedSlots": 22,
-            "blockedSlots": 38,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 180,
-            "classId": "S014",
-            "subject": "Môn 11",
-            "teacher": "GV040",
-            "duration": 1,
-            "allowedSlots": 22,
-            "blockedSlots": 38,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 219,
-            "classId": "S017",
-            "subject": "Môn 11",
-            "teacher": "GV039",
-            "duration": 1,
-            "allowedSlots": 22,
-            "blockedSlots": 38,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 245,
-            "classId": "S019",
-            "subject": "Môn 11",
-            "teacher": "GV025",
-            "duration": 1,
-            "allowedSlots": 22,
-            "blockedSlots": 38,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 7,
-            "classId": "S001",
-            "subject": "Môn 07",
-            "teacher": "GV003",
-            "duration": 1,
-            "allowedSlots": 23,
-            "blockedSlots": 37,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 60,
-            "classId": "S005",
-            "subject": "Môn 08",
-            "teacher": "GV022",
-            "duration": 1,
-            "allowedSlots": 23,
-            "blockedSlots": 37,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 196,
-            "classId": "S016",
-            "subject": "Môn 02",
-            "teacher": "GV003",
-            "duration": 1,
-            "allowedSlots": 23,
-            "blockedSlots": 37,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 277,
-            "classId": "S022",
-            "subject": "Môn 05",
-            "teacher": "GV022",
-            "duration": 1,
-            "allowedSlots": 23,
-            "blockedSlots": 37,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 281,
-            "classId": "S022",
-            "subject": "Môn 08",
-            "teacher": "GV003",
-            "duration": 1,
-            "allowedSlots": 23,
-            "blockedSlots": 37,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 2,
-            "classId": "S001",
-            "subject": "Môn 03",
-            "teacher": "GV015",
-            "duration": 1,
-            "allowedSlots": 23,
-            "blockedSlots": 37,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 4,
-            "classId": "S001",
-            "subject": "Môn 05",
-            "teacher": "GV029",
-            "duration": 1,
-            "allowedSlots": 23,
-            "blockedSlots": 37,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 5,
-            "classId": "S001",
-            "subject": "Môn 06",
-            "teacher": "GV036",
-            "duration": 1,
-            "allowedSlots": 23,
-            "blockedSlots": 37,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 8,
-            "classId": "S001",
-            "subject": "Môn 08",
-            "teacher": "GV010",
-            "duration": 1,
-            "allowedSlots": 23,
-            "blockedSlots": 37,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 59,
-            "classId": "S005",
-            "subject": "Môn 07",
-            "teacher": "GV015",
-            "duration": 1,
-            "allowedSlots": 23,
-            "blockedSlots": 37,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 61,
-            "classId": "S005",
-            "subject": "Môn 09",
-            "teacher": "GV029",
-            "duration": 1,
-            "allowedSlots": 23,
-            "blockedSlots": 37,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 64,
-            "classId": "S005",
-            "subject": "Môn 12",
-            "teacher": "GV010",
-            "duration": 1,
-            "allowedSlots": 23,
-            "blockedSlots": 37,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 87,
-            "classId": "S007",
-            "subject": "Môn 09",
-            "teacher": "GV015",
-            "duration": 1,
-            "allowedSlots": 23,
-            "blockedSlots": 37,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 89,
-            "classId": "S007",
-            "subject": "Môn 11",
-            "teacher": "GV029",
-            "duration": 1,
-            "allowedSlots": 23,
-            "blockedSlots": 37,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 90,
-            "classId": "S007",
-            "subject": "Môn 12",
-            "teacher": "GV036",
-            "duration": 1,
-            "allowedSlots": 23,
-            "blockedSlots": 37,
-            "constraintCategory": "hard_domain"
-          },
-          {
-            "activityId": 197,
-            "classId": "S016",
-            "subject": "Môn 03",
-            "teacher": "GV010",
-            "duration": 1,
-            "allowedSlots": 23,
-            "blockedSlots": 37,
-            "constraintCategory": "hard_domain"
-          }
-        ],
-        "deadlineReached": true
+      "preflight": {},
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-medium-v1",
+      "seed": 101,
+      "mode": "optimize_singletons",
+      "runtimeMs": 1232.87,
+      "phaseRuntimeMs": {
+        "construction": 112.48,
+        "optimization": 1102.56
       },
-      "originalTimetablePreservedOnFailure": true
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 408,
+      "lessonCount": 432,
+      "expectedLessonCount": 432,
+      "initialMetrics": {
+        "soNgayMotTiet": 33,
+        "soBuoiDay1": 57,
+        "soBuoiDay2": 88,
+        "soBuoiDay3": 41,
+        "tsBuoiDay": 204,
+        "tsNgayDay": 153,
+        "soBuoiTrong1": 28,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soNgayMotTiet": 18,
+        "soBuoiDay1": 28,
+        "soBuoiDay2": 101,
+        "soBuoiDay3": 43,
+        "tsBuoiDay": 189,
+        "tsNgayDay": 147,
+        "soBuoiTrong1": 38,
+        "soBuoiTrong2": 1,
+        "unplacedCount": 0
+      },
+      "targetMetric": "soBuoiDay1",
+      "initialTarget": 57,
+      "finalTarget": 28,
+      "targetDelta": -29,
+      "targetReached": false,
+      "knownLowerBound": 0,
+      "floorReached": false,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {},
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-medium-v1",
+      "seed": 101,
+      "mode": "optimize_sessions",
+      "runtimeMs": 406.16,
+      "phaseRuntimeMs": {
+        "construction": 93.75,
+        "optimization": 297.76
+      },
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 408,
+      "lessonCount": 432,
+      "expectedLessonCount": 432,
+      "initialMetrics": {
+        "soNgayMotTiet": 33,
+        "soBuoiDay1": 57,
+        "soBuoiDay2": 88,
+        "soBuoiDay3": 41,
+        "tsBuoiDay": 204,
+        "tsNgayDay": 153,
+        "soBuoiTrong1": 28,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soNgayMotTiet": 22,
+        "soBuoiDay1": 36,
+        "soBuoiDay2": 89,
+        "soBuoiDay3": 35,
+        "tsBuoiDay": 187,
+        "tsNgayDay": 143,
+        "soBuoiTrong1": 30,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "targetMetric": "tsBuoiDay",
+      "initialTarget": 204,
+      "finalTarget": 187,
+      "targetDelta": -17,
+      "targetReached": false,
+      "knownLowerBound": 0,
+      "floorReached": false,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {},
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-medium-v1",
+      "seed": 101,
+      "mode": "optimize_gap2",
+      "runtimeMs": 353.84,
+      "phaseRuntimeMs": {
+        "construction": 108.11,
+        "optimization": 229.41
+      },
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 408,
+      "lessonCount": 432,
+      "expectedLessonCount": 432,
+      "initialMetrics": {
+        "soNgayMotTiet": 33,
+        "soBuoiDay1": 57,
+        "soBuoiDay2": 88,
+        "soBuoiDay3": 41,
+        "tsBuoiDay": 204,
+        "tsNgayDay": 153,
+        "soBuoiTrong1": 28,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soNgayMotTiet": 33,
+        "soBuoiDay1": 57,
+        "soBuoiDay2": 88,
+        "soBuoiDay3": 41,
+        "tsBuoiDay": 204,
+        "tsNgayDay": 153,
+        "soBuoiTrong1": 28,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "targetMetric": "soBuoiTrong2",
+      "initialTarget": 0,
+      "finalTarget": 0,
+      "targetDelta": 0,
+      "targetReached": true,
+      "knownLowerBound": 0,
+      "floorReached": true,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {},
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-medium-v1",
+      "seed": 101,
+      "mode": "optimize_gap1",
+      "runtimeMs": 627.16,
+      "phaseRuntimeMs": {
+        "construction": 107.02,
+        "optimization": 506.26
+      },
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 408,
+      "lessonCount": 432,
+      "expectedLessonCount": 432,
+      "initialMetrics": {
+        "soNgayMotTiet": 33,
+        "soBuoiDay1": 57,
+        "soBuoiDay2": 88,
+        "soBuoiDay3": 41,
+        "tsBuoiDay": 204,
+        "tsNgayDay": 153,
+        "soBuoiTrong1": 28,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soNgayMotTiet": 32,
+        "soBuoiDay1": 57,
+        "soBuoiDay2": 88,
+        "soBuoiDay3": 41,
+        "tsBuoiDay": 204,
+        "tsNgayDay": 152,
+        "soBuoiTrong1": 21,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "targetMetric": "soBuoiTrong1",
+      "initialTarget": 28,
+      "finalTarget": 21,
+      "targetDelta": -7,
+      "targetReached": false,
+      "knownLowerBound": 0,
+      "floorReached": false,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {},
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-medium-v1",
+      "seed": 202,
+      "mode": "auto",
+      "runtimeMs": 94.86,
+      "phaseRuntimeMs": {
+        "construction": 88.63,
+        "optimization": 0
+      },
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 360,
+      "lessonCount": 432,
+      "expectedLessonCount": 432,
+      "initialMetrics": {
+        "soNgayMotTiet": 20,
+        "soBuoiDay1": 50,
+        "soBuoiDay2": 114,
+        "soBuoiDay3": 35,
+        "tsBuoiDay": 211,
+        "tsNgayDay": 156,
+        "soBuoiTrong1": 15,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soNgayMotTiet": 20,
+        "soBuoiDay1": 50,
+        "soBuoiDay2": 114,
+        "soBuoiDay3": 35,
+        "tsBuoiDay": 211,
+        "tsNgayDay": 156,
+        "soBuoiTrong1": 15,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "targetMetric": null,
+      "initialTarget": null,
+      "finalTarget": null,
+      "targetDelta": null,
+      "targetReached": null,
+      "knownLowerBound": null,
+      "floorReached": null,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {},
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-medium-v1",
+      "seed": 202,
+      "mode": "optimize_singletons",
+      "runtimeMs": 2325.41,
+      "phaseRuntimeMs": {
+        "construction": 147.92,
+        "optimization": 2155.97
+      },
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 408,
+      "lessonCount": 432,
+      "expectedLessonCount": 432,
+      "initialMetrics": {
+        "soNgayMotTiet": 20,
+        "soBuoiDay1": 50,
+        "soBuoiDay2": 114,
+        "soBuoiDay3": 35,
+        "tsBuoiDay": 211,
+        "tsNgayDay": 156,
+        "soBuoiTrong1": 15,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soNgayMotTiet": 16,
+        "soBuoiDay1": 34,
+        "soBuoiDay2": 123,
+        "soBuoiDay3": 36,
+        "tsBuoiDay": 204,
+        "tsNgayDay": 154,
+        "soBuoiTrong1": 19,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "targetMetric": "soBuoiDay1",
+      "initialTarget": 50,
+      "finalTarget": 34,
+      "targetDelta": -16,
+      "targetReached": false,
+      "knownLowerBound": 0,
+      "floorReached": false,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {},
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-medium-v1",
+      "seed": 202,
+      "mode": "optimize_sessions",
+      "runtimeMs": 733.69,
+      "phaseRuntimeMs": {
+        "construction": 149.43,
+        "optimization": 560.56
+      },
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 408,
+      "lessonCount": 432,
+      "expectedLessonCount": 432,
+      "initialMetrics": {
+        "soNgayMotTiet": 20,
+        "soBuoiDay1": 50,
+        "soBuoiDay2": 114,
+        "soBuoiDay3": 35,
+        "tsBuoiDay": 211,
+        "tsNgayDay": 156,
+        "soBuoiTrong1": 15,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soNgayMotTiet": 20,
+        "soBuoiDay1": 42,
+        "soBuoiDay2": 104,
+        "soBuoiDay3": 41,
+        "tsBuoiDay": 201,
+        "tsNgayDay": 153,
+        "soBuoiTrong1": 15,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "targetMetric": "tsBuoiDay",
+      "initialTarget": 211,
+      "finalTarget": 201,
+      "targetDelta": -10,
+      "targetReached": false,
+      "knownLowerBound": 0,
+      "floorReached": false,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {},
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-medium-v1",
+      "seed": 202,
+      "mode": "optimize_gap2",
+      "runtimeMs": 543.09,
+      "phaseRuntimeMs": {
+        "construction": 157.87,
+        "optimization": 363.28
+      },
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 408,
+      "lessonCount": 432,
+      "expectedLessonCount": 432,
+      "initialMetrics": {
+        "soNgayMotTiet": 20,
+        "soBuoiDay1": 50,
+        "soBuoiDay2": 114,
+        "soBuoiDay3": 35,
+        "tsBuoiDay": 211,
+        "tsNgayDay": 156,
+        "soBuoiTrong1": 15,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soNgayMotTiet": 20,
+        "soBuoiDay1": 50,
+        "soBuoiDay2": 114,
+        "soBuoiDay3": 35,
+        "tsBuoiDay": 211,
+        "tsNgayDay": 156,
+        "soBuoiTrong1": 15,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "targetMetric": "soBuoiTrong2",
+      "initialTarget": 0,
+      "finalTarget": 0,
+      "targetDelta": 0,
+      "targetReached": true,
+      "knownLowerBound": 0,
+      "floorReached": true,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {},
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-medium-v1",
+      "seed": 202,
+      "mode": "optimize_gap1",
+      "runtimeMs": 738.56,
+      "phaseRuntimeMs": {
+        "construction": 230.53,
+        "optimization": 483.13
+      },
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 408,
+      "lessonCount": 432,
+      "expectedLessonCount": 432,
+      "initialMetrics": {
+        "soNgayMotTiet": 20,
+        "soBuoiDay1": 50,
+        "soBuoiDay2": 114,
+        "soBuoiDay3": 35,
+        "tsBuoiDay": 211,
+        "tsNgayDay": 156,
+        "soBuoiTrong1": 15,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soNgayMotTiet": 20,
+        "soBuoiDay1": 50,
+        "soBuoiDay2": 114,
+        "soBuoiDay3": 35,
+        "tsBuoiDay": 211,
+        "tsNgayDay": 156,
+        "soBuoiTrong1": 14,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "targetMetric": "soBuoiTrong1",
+      "initialTarget": 15,
+      "finalTarget": 14,
+      "targetDelta": -1,
+      "targetReached": false,
+      "knownLowerBound": 0,
+      "floorReached": false,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {},
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-medium-v1",
+      "seed": 303,
+      "mode": "auto",
+      "runtimeMs": 199.13,
+      "phaseRuntimeMs": {
+        "construction": 193.75,
+        "optimization": 0
+      },
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 360,
+      "lessonCount": 432,
+      "expectedLessonCount": 432,
+      "initialMetrics": {
+        "soNgayMotTiet": 23,
+        "soBuoiDay1": 42,
+        "soBuoiDay2": 103,
+        "soBuoiDay3": 42,
+        "tsBuoiDay": 201,
+        "tsNgayDay": 152,
+        "soBuoiTrong1": 18,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soNgayMotTiet": 23,
+        "soBuoiDay1": 42,
+        "soBuoiDay2": 103,
+        "soBuoiDay3": 42,
+        "tsBuoiDay": 201,
+        "tsNgayDay": 152,
+        "soBuoiTrong1": 18,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "targetMetric": null,
+      "initialTarget": null,
+      "finalTarget": null,
+      "targetDelta": null,
+      "targetReached": null,
+      "knownLowerBound": null,
+      "floorReached": null,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {},
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-medium-v1",
+      "seed": 303,
+      "mode": "optimize_singletons",
+      "runtimeMs": 1804.15,
+      "phaseRuntimeMs": {
+        "construction": 146.77,
+        "optimization": 1634.45
+      },
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 408,
+      "lessonCount": 432,
+      "expectedLessonCount": 432,
+      "initialMetrics": {
+        "soNgayMotTiet": 23,
+        "soBuoiDay1": 42,
+        "soBuoiDay2": 103,
+        "soBuoiDay3": 42,
+        "tsBuoiDay": 201,
+        "tsNgayDay": 152,
+        "soBuoiTrong1": 18,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soNgayMotTiet": 19,
+        "soBuoiDay1": 38,
+        "soBuoiDay2": 103,
+        "soBuoiDay3": 43,
+        "tsBuoiDay": 198,
+        "tsNgayDay": 149,
+        "soBuoiTrong1": 19,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "targetMetric": "soBuoiDay1",
+      "initialTarget": 42,
+      "finalTarget": 38,
+      "targetDelta": -4,
+      "targetReached": false,
+      "knownLowerBound": 0,
+      "floorReached": false,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {},
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-medium-v1",
+      "seed": 303,
+      "mode": "optimize_sessions",
+      "runtimeMs": 717.2,
+      "phaseRuntimeMs": {
+        "construction": 178.3,
+        "optimization": 519.83
+      },
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 408,
+      "lessonCount": 432,
+      "expectedLessonCount": 432,
+      "initialMetrics": {
+        "soNgayMotTiet": 23,
+        "soBuoiDay1": 42,
+        "soBuoiDay2": 103,
+        "soBuoiDay3": 42,
+        "tsBuoiDay": 201,
+        "tsNgayDay": 152,
+        "soBuoiTrong1": 18,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soNgayMotTiet": 21,
+        "soBuoiDay1": 33,
+        "soBuoiDay2": 91,
+        "soBuoiDay3": 45,
+        "tsBuoiDay": 189,
+        "tsNgayDay": 147,
+        "soBuoiTrong1": 20,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "targetMetric": "tsBuoiDay",
+      "initialTarget": 201,
+      "finalTarget": 189,
+      "targetDelta": -12,
+      "targetReached": false,
+      "knownLowerBound": 0,
+      "floorReached": false,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {},
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-medium-v1",
+      "seed": 303,
+      "mode": "optimize_gap2",
+      "runtimeMs": 486.6,
+      "phaseRuntimeMs": {
+        "construction": 160.03,
+        "optimization": 300.76
+      },
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 408,
+      "lessonCount": 432,
+      "expectedLessonCount": 432,
+      "initialMetrics": {
+        "soNgayMotTiet": 23,
+        "soBuoiDay1": 42,
+        "soBuoiDay2": 103,
+        "soBuoiDay3": 42,
+        "tsBuoiDay": 201,
+        "tsNgayDay": 152,
+        "soBuoiTrong1": 18,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soNgayMotTiet": 22,
+        "soBuoiDay1": 41,
+        "soBuoiDay2": 104,
+        "soBuoiDay3": 40,
+        "tsBuoiDay": 200,
+        "tsNgayDay": 151,
+        "soBuoiTrong1": 17,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "targetMetric": "soBuoiTrong2",
+      "initialTarget": 0,
+      "finalTarget": 0,
+      "targetDelta": 0,
+      "targetReached": true,
+      "knownLowerBound": 0,
+      "floorReached": true,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {},
+      "originalTimetablePreservedOnFailure": null
+    },
+    {
+      "fixture": "fet-anonymized-medium-v1",
+      "seed": 303,
+      "mode": "optimize_gap1",
+      "runtimeMs": 835.25,
+      "phaseRuntimeMs": {
+        "construction": 133.44,
+        "optimization": 673.2
+      },
+      "executor": "fet_worker",
+      "ok": true,
+      "applied": true,
+      "complete": true,
+      "valid": true,
+      "completeValid": true,
+      "unassigned": 0,
+      "placed": 408,
+      "lessonCount": 432,
+      "expectedLessonCount": 432,
+      "initialMetrics": {
+        "soNgayMotTiet": 23,
+        "soBuoiDay1": 42,
+        "soBuoiDay2": 103,
+        "soBuoiDay3": 42,
+        "tsBuoiDay": 201,
+        "tsNgayDay": 152,
+        "soBuoiTrong1": 18,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "metrics": {
+        "soNgayMotTiet": 22,
+        "soBuoiDay1": 41,
+        "soBuoiDay2": 104,
+        "soBuoiDay3": 40,
+        "tsBuoiDay": 200,
+        "tsNgayDay": 151,
+        "soBuoiTrong1": 16,
+        "soBuoiTrong2": 0,
+        "unplacedCount": 0
+      },
+      "targetMetric": "soBuoiTrong1",
+      "initialTarget": 18,
+      "finalTarget": 16,
+      "targetDelta": -2,
+      "targetReached": false,
+      "knownLowerBound": 0,
+      "floorReached": false,
+      "stagnated": false,
+      "optimizationTimedOut": false,
+      "failureKind": null,
+      "validationViolationCount": 0,
+      "validationViolations": [],
+      "preflight": {},
+      "originalTimetablePreservedOnFailure": null
     }
   ]
 }

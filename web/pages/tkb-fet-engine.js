@@ -43,7 +43,10 @@
 
   const INF = 1500000000;
   const INF2 = 2000000000;
-  const MAX_RECURSION_LEVEL = 16;
+  // Match FET 7.9.5 generate.cpp (MAX_LEVEL = 14).  Deeper branches are
+  // disproportionately expensive in JavaScript and are better explored by a
+  // fresh seed restart.
+  const MAX_RECURSION_LEVEL = 14;
   const DEFAULT_LIMIT_CALLS = 2000;
 
   // Precomputed 32-entry lookup tables for 5-period sessions (bitmask 0..31)
@@ -216,6 +219,14 @@
       this.triedRemovals = new Map();
       this.swappedInBranch = new Set();
       this.restoreStack = [];
+      // randomSwap is the construction hot path.  A branch used to clone all
+      // class/teacher/room grids before every speculative ejection.  That is
+      // quadratic in the size of a school and made one difficult activity
+      // consume the whole wall-clock budget.  Keep a FET-style move journal
+      // instead: nested branches retain successful moves and rollback only
+      // the activities touched after their transaction mark.
+      this.constructionUndoLog = null;
+      this.replayingConstructionUndo = false;
       this.currentStep = 0;
       this.nCalls = 0;
       this.limitCalls = DEFAULT_LIMIT_CALLS;
@@ -251,6 +262,17 @@
       if(this.options?.deepLimitCalls && Number(this.options.deepLimitCalls) > 0) return Number(this.options.deepLimitCalls);
       if(this.options?.deepCycles || this.options?.deepLocalFet) return deep;
       return base;
+    }
+
+    getConstructionLimitCalls(multiplier = 2){
+      const explicit = Number(this.options?.constructionLimitCalls);
+      if(Number.isFinite(explicit) && explicit > 0) return Math.max(16, Math.floor(explicit));
+      const activityCount = Math.max(1, this.activities.length || 0);
+      const scaled = Math.ceil(activityCount * Math.max(1, Number(multiplier) || 2));
+      // FET 7.9.5 uses 2*nInternalActivities.  The small floor avoids making
+      // tiny fixtures brittle; the ceiling prevents a large school from
+      // turning one unlucky activity into a multi-minute recursive branch.
+      return Math.max(64, Math.min(6000, scaled));
     }
 
     getTabuTenure(){
@@ -882,6 +904,26 @@
       }
     }
 
+    constructionTransactionMark(){
+      return Array.isArray(this.constructionUndoLog) ? this.constructionUndoLog.length : -1;
+    }
+
+    rollbackConstructionTransaction(mark){
+      const log = this.constructionUndoLog;
+      if(!Array.isArray(log) || mark < 0) return;
+      this.replayingConstructionUndo = true;
+      try{
+        while(log.length > mark){
+          const entry = log.pop();
+          const currentSlot = this.actPlacement[entry.actId];
+          if(currentSlot >= 0) this.unplaceActivity(entry.actId);
+          if(entry.previousSlot >= 0) this.placeActivityDirect(entry.actId, entry.previousSlot);
+        }
+      }finally{
+        this.replayingConstructionUndo = false;
+      }
+    }
+
     placeActivityDirect(actId, slot){
       const act = this.activities[actId];
       if(!act) return false;
@@ -890,6 +932,12 @@
         if(cur >= 0 && cur !== slot) return false;
       }
       if(act.isFixed && this.actPlacement[actId] >= 0 && this.actPlacement[actId] !== slot) return false;
+
+      const previousSlot = this.actPlacement[actId];
+      if(previousSlot === slot) return true;
+      if(Array.isArray(this.constructionUndoLog) && !this.replayingConstructionUndo){
+        this.constructionUndoLog.push({ actId, previousSlot });
+      }
 
       this.actPlacement[actId] = slot;
       const dur = act.duration;
@@ -924,6 +972,9 @@
       if(act.isFixed) return false;
       const slot = this.actPlacement[actId];
       if(slot < 0) return false;
+      if(Array.isArray(this.constructionUndoLog) && !this.replayingConstructionUndo){
+        this.constructionUndoLog.push({ actId, previousSlot: slot });
+      }
       this.actPlacement[actId] = -1;
 
       const dur = act.duration;
@@ -1548,6 +1599,26 @@
     }
 
     randomSwap(actId, level = 0){
+      // External callers always enter at level 0.  Recursive calls share one
+      // journal so a parent branch can undo successful child placements when
+      // a later displaced activity fails.
+      if(level > 0 || Array.isArray(this.constructionUndoLog)){
+        return this.randomSwapCore(actId, level);
+      }
+      this.constructionUndoLog = [];
+      try{
+        const success = this.randomSwapCore(actId, level);
+        if(!success) this.rollbackConstructionTransaction(0);
+        return success;
+      }catch(error){
+        this.rollbackConstructionTransaction(0);
+        throw error;
+      }finally{
+        this.constructionUndoLog = null;
+      }
+    }
+
+    randomSwapCore(actId, level = 0){
       if(this.nCalls++ >= this.limitCalls) return false;
       if(this.deadlineAtMs && (this.nCalls & 15) === 0 && Date.now() >= this.deadlineAtMs) return false;
       if(level >= MAX_RECURSION_LEVEL) return false;
@@ -1704,6 +1775,7 @@
         const cand = candidateInfo[i];
         const slot = cand.slot;
         const displaced = cand.displacedActIds;
+        const studentHolesBeforeBranch = this.countTotalStudentHoles();
 
         const affectedTeacherSessions = [];
         for(let j = 0; j < displaced.length; j++){
@@ -1720,7 +1792,7 @@
           }
         }
 
-        const snap = this.captureStateSnapshot();
+        const transactionMark = this.constructionTransactionMark();
         this.swapStep = (this.swapStep || 0) + 1;
         const tenure = this.getTabuTenure();
 
@@ -1736,7 +1808,7 @@
         }
 
         if(!this.isSlotFeasible(act, slot)){
-          this.restoreStateSnapshot(snap);
+          this.rollbackConstructionTransaction(transactionMark);
           for(let j = 0; j < displaced.length; j++) this.swappedInBranch.delete(displaced[j]);
           continue;
         }
@@ -1772,13 +1844,23 @@
         }
 
         if(allResolved){
+          // Each recursive displacement is feasible in isolation, but the
+          // complete chain may leave a hole in a class whose activity was
+          // temporarily removed by its parent.  Validate the committed chain
+          // as a whole so construction never accumulates hidden student gaps.
+          if(this.countTotalStudentHoles() > studentHolesBeforeBranch){
+            allResolved = false;
+          }
+        }
+
+        if(allResolved){
           if(level === 0){
             this.swappedInBranch.clear();
           }
           return true;
         }
 
-        this.restoreStateSnapshot(snap);
+        this.rollbackConstructionTransaction(transactionMark);
         for(let j = 0; j < displaced.length; j++) this.swappedInBranch.delete(displaced[j]);
         this.swappedInBranch.delete(actId);
       }
@@ -2132,9 +2214,63 @@
           if(this.fixedSlots.has(cid + "|" + s)) reqPeriods++;
         }
         if(reqPeriods > availableSlots){
-          shortages.push({ classId: cid, shortage: reqPeriods - availableSlots });
+          shortages.push({ kind:"class", classId: cid, entity:cid, shortage: reqPeriods - availableSlots });
         }
       }
+
+      const addResourceShortages = (kind, entities, grids, activityEntityIndices) => {
+        for(let entityIdx = 0; entityIdx < entities.length; entityIdx++){
+          const grid = grids[entityIdx];
+          if(!grid) continue;
+          let morningRequired = 0;
+          let afternoonRequired = 0;
+          let totalRequired = 0;
+          for(const act of this.activities){
+            if(!activityEntityIndices(act).includes(entityIdx)) continue;
+            const duration = Math.max(1, Number(act.duration) || 1);
+            totalRequired += duration;
+            if(act.sessionAllowed === "sang") morningRequired += duration;
+            else if(act.sessionAllowed === "chieu") afternoonRequired += duration;
+          }
+          let morningAvailable = 0;
+          let afternoonAvailable = 0;
+          // Existing dynamic lessons still belong to the usable capacity
+          // counted by totalRequired; only OFF (-2) and fixed cells (-3,
+          // whose demand was already removed from activities) are unavailable.
+          for(const slot of SANG_SLOTS) if(grid[slot] !== -2 && grid[slot] !== -3) morningAvailable++;
+          for(const slot of CHIEU_SLOTS) if(grid[slot] !== -2 && grid[slot] !== -3) afternoonAvailable++;
+
+          const checks = [
+            ["sang", morningRequired, morningAvailable],
+            ["chieu", afternoonRequired, afternoonAvailable],
+            ["ca_ngay", totalRequired, morningAvailable + afternoonAvailable]
+          ];
+          for(const [sessionAllowed, required, available] of checks){
+            if(required > available){
+              shortages.push({
+                kind,
+                entity:String(entities[entityIdx] || ""),
+                sessionAllowed,
+                required,
+                available,
+                shortage:required - available
+              });
+            }
+          }
+        }
+      };
+      addResourceShortages(
+        "teacher",
+        this.teachers,
+        this.teacherGridList,
+        act => act.teacherIdxs || []
+      );
+      addResourceShortages(
+        "room",
+        this.rooms,
+        this.roomGridList,
+        act => act.roomIdx >= 0 ? [act.roomIdx] : []
+      );
 
       const metricLowerBounds = { soBuoiDay1: 0, tsBuoiDay: 0, tsNgayDay: 0, soBuoiTrong1: 0, soBuoiTrong2: 0 };
       const metricLowerBoundEvidence = [];
@@ -2174,13 +2310,20 @@
       metricLowerBounds.soBuoiDay1 = singletonFloor.lowerBound;
       metricLowerBoundEvidence.push(...singletonFloor.evidence);
 
+      const zeroDomainFloor = zeroDomains.reduce((sum, act) => sum + Math.max(1, Number(act.duration) || 1), 0);
+      const classShortageFloor = shortages
+        .filter(item => item.kind === "class")
+        .reduce((sum, item) => sum + Number(item.shortage || 0), 0);
+      const resourceShortageFloor = shortages
+        .filter(item => item.kind !== "class")
+        .reduce((max, item) => Math.max(max, Number(item.shortage || 0)), 0);
       this.constraintPreflight = {
         zeroDomainActivities: zeroDomains,
         capacityShortages: shortages,
         minDomainSize: minDomain,
         structuralFloor: {
           provenInfeasible: zeroDomains.length > 0 || shortages.length > 0,
-          minimumUnplacedPeriods: shortages.reduce((sum, x) => sum + x.shortage, 0) + zeroDomains.reduce((sum, a) => sum + a.duration, 0),
+          minimumUnplacedPeriods: Math.max(zeroDomainFloor, classShortageFloor, resourceShortageFloor),
           metricLowerBounds,
           metricLowerBoundEvidence
         }
@@ -2714,6 +2857,17 @@
           diagnostics: this.constraintPreflight
         };
       }
+      if(this.constraintPreflight.capacityShortages.length > 0){
+        return {
+          ok: false,
+          applied: false,
+          placed: 0,
+          unassigned: this.activities.length,
+          total: this.activities.length,
+          failureKind: "fet_capacity_shortage",
+          diagnostics: this.constraintPreflight
+        };
+      }
 
       const totalActivities = this.activities.length;
       if(totalActivities === 0){
@@ -2744,7 +2898,7 @@
       let placedCount = 0;
       this.swapStep = 0;
       this.tabuMap.clear();
-      this.limitCalls = Math.max(this.limitCalls || DEFAULT_LIMIT_CALLS, 2000);
+      this.limitCalls = this.getConstructionLimitCalls(2);
       for(let i = 0; i < this.activities.length; i++){
         if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) break;
         this.nCalls = 0;
@@ -2767,7 +2921,7 @@
       for(let pass = 0; pass < 8 && placedCount < totalActivities; pass++){
         if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) break;
         this.minTwoGuardActive = false;
-        this.limitCalls = Math.min(10000, 2000 + pass * 1000);
+        this.limitCalls = this.getConstructionLimitCalls(Math.min(6, 2.5 + pass * 0.5));
         for(let i = 0; i < this.activities.length; i++){
           if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) break;
           if(this.actPlacement[i] < 0){
@@ -2825,7 +2979,7 @@
                 }
 
                 this.nCalls = 0;
-                this.limitCalls = 10000;
+                this.limitCalls = this.getConstructionLimitCalls(6);
                 this.triedRemovals.clear();
                 this.swappedInBranch.clear();
                 const kickSuccess = this.randomSwap(i, 0);
@@ -2835,7 +2989,7 @@
                   for(let k = 0; k < kickCandidates.length; k++){
                     const kId = kickCandidates[k];
                     this.nCalls = 0;
-                    this.limitCalls = 10000;
+                    this.limitCalls = this.getConstructionLimitCalls(6);
                     this.swappedInBranch.clear();
                     if(!this.randomSwap(kId, 0)){
                       allKickedRestored = false;
@@ -2873,15 +3027,33 @@
         };
       }
 
-      this.compactAllStudentSessions();
-      this.repairStudentHoles();
-      this.compactAllStudentSessions();
-      if(this.options?.initialSingletonPacking !== false && placedCount === totalActivities){
-        this.initialSingletonPacking();
-        this.compactAllStudentSessions();
-      }
-      this.applyToDataTKB();
       const unassigned = totalActivities - placedCount;
+      // Construction and quality polishing are separate jobs.  The previous
+      // code ran an unbounded hole-repair search even after placement had
+      // finished (or timed out); on a 24-class fixture that turned 124 ms of
+      // construction into roughly 10 seconds of repeated no-op compaction.
+      // Keep only a short, explicit cleanup slice after a complete schedule.
+      if(unassigned === 0){
+        const configuredPolishMs = Number(this.options?.constructionPolishTimeBudgetMs);
+        const polishBudgetMs = Math.max(0, Math.min(
+          Number.isFinite(configuredPolishMs) ? configuredPolishMs : 350,
+          2500
+        ));
+        const polishDeadline = Date.now() + polishBudgetMs;
+        this.compactAllStudentSessions({ deadlineAtMs: polishDeadline });
+        if(this.countTotalStudentHoles() > 0 && Date.now() < polishDeadline){
+          this.repairStudentHoles({ deadlineAtMs: polishDeadline, maxPasses: 2 });
+          this.compactAllStudentSessions({ deadlineAtMs: polishDeadline });
+        }
+        if(this.options?.initialSingletonPacking !== false && Date.now() < polishDeadline){
+          this.initialSingletonPacking({
+            timeBudgetMs: Math.max(0, polishDeadline - Date.now()),
+            maxAttempts: Number(this.options?.initialSingletonPackingMaxAttempts) || 4000
+          });
+          this.compactAllStudentSessions({ deadlineAtMs: polishDeadline });
+        }
+        this.applyToDataTKB();
+      }
       return {
         ok: unassigned === 0,
         applied: unassigned === 0,
@@ -2892,27 +3064,38 @@
       };
     }
 
-    repairStudentHoles(){
+    repairStudentHoles(options = {}){
       if(this.countTotalStudentHoles() === 0) return true;
-      for(let pass = 0; pass < 5; pass++){
+      const configuredDeadline = Number(options?.deadlineAtMs);
+      const configuredBudget = Number(options?.timeBudgetMs);
+      const deadlineAtMs = Number.isFinite(configuredDeadline) && configuredDeadline > 0
+        ? configuredDeadline
+        : Date.now() + Math.max(0, Math.min(Number.isFinite(configuredBudget) ? configuredBudget : 250, 2000));
+      const maxPasses = Math.max(1, Math.min(5, Number(options?.maxPasses) || 2));
+      for(let pass = 0; pass < maxPasses && Date.now() < deadlineAtMs; pass++){
         if(this.countTotalStudentHoles() === 0) return true;
 
         for(let cIdx = 0; cIdx < this.classes.length; cIdx++){
+          if(Date.now() >= deadlineAtMs) break;
           const cid = String(this.classes[cIdx].id || "");
           if(this.countStudentHoles(cid) === 0) continue;
           const cGrid = this.classGridList[cIdx];
           if(!cGrid) continue;
 
           for(let d1 = 0; d1 < DAYS_LIST.length; d1++){
+            if(Date.now() >= deadlineAtMs) break;
             for(let b1 = 0; b1 < SESSIONS_LIST.length; b1++){
+              if(Date.now() >= deadlineAtMs) break;
               const s1Start = d1 * SLOTS_PER_DAY + b1 * PERIODS_PER_SESSION;
               for(let p1 = 0; p1 < PERIODS_PER_SESSION; p1++){
+                if(Date.now() >= deadlineAtMs) break;
                 const act1Id = cGrid[s1Start + p1];
                 if(act1Id < 0) continue;
                 const act1 = this.activities[act1Id];
                 if(!act1 || act1.isFixed || act1.lockedByLessonBlock) continue;
 
                 for(let s2 = 0; s2 < TOTAL_SLOTS; s2++){
+                  if(Date.now() >= deadlineAtMs) break;
                   const sess2 = Math.floor(s2 / PERIODS_PER_SESSION);
                   const sess1 = Math.floor((s1Start + p1) / PERIODS_PER_SESSION);
                   if(sess2 === sess1) continue;
@@ -2931,7 +3114,7 @@
                   if(this.isSlotFeasible(act1, s2) && this.isSlotFeasible(act2, s1Start + p1)){
                     this.placeActivityDirect(act1.id, s2);
                     this.placeActivityDirect(act2.id, s1Start + p1);
-                    this.compactAllStudentSessions();
+                    this.compactAllStudentSessions({ deadlineAtMs });
 
                     if(this.countTotalStudentHoles() < prevHoles){
                       break;
@@ -2950,15 +3133,19 @@
       return this.countTotalStudentHoles() === 0;
     }
 
-    compactAllStudentSessions(){
+    compactAllStudentSessions(options = {}){
+      const deadlineAtMs = Number(options?.deadlineAtMs) || 0;
       let anyShifted = false;
       for(let cIdx = 0; cIdx < this.classes.length; cIdx++){
+        if(deadlineAtMs && Date.now() >= deadlineAtMs) break;
         const cid = String(this.classes[cIdx].id || "");
         const cGrid = this.classGridList[cIdx];
         if(!cGrid) continue;
 
         for(let d = 0; d < DAYS_LIST.length; d++){
+          if(deadlineAtMs && Date.now() >= deadlineAtMs) break;
           for(let b = 0; b < SESSIONS_LIST.length; b++){
+            if(deadlineAtMs && Date.now() >= deadlineAtMs) break;
             const sStart = d * SLOTS_PER_DAY + b * PERIODS_PER_SESSION;
             let mask = 0;
             const dynActs = [];
@@ -3027,12 +3214,14 @@
             const dynPerms = (dynActs.length <= 5) ? getPermutations(dynActs) : [dynActs];
             const combos = getCombos(openPeriods, totalDur);
             for(const combo of combos){
+              if(deadlineAtMs && Date.now() >= deadlineAtMs) break;
               let testMask = 0;
               for(const p of fixedPeriods) testMask |= (1 << p);
               for(const p of combo) testMask |= (1 << p);
               if(SESSION_STATS_LUT[testMask].gaps !== 0) continue;
 
               for(const perm of dynPerms){
+                if(deadlineAtMs && Date.now() >= deadlineAtMs) break;
                 let curIdx = 0;
                 let feasible = true;
                 for(const a of perm){
@@ -3136,7 +3325,24 @@
             const occ = grid[sStart + p];
             if(occ >= 0 || occ === -3) mask |= (1 << p);
           }
-          holes += SESSION_STATS_LUT[mask].gaps;
+          // OFF periods are unavailable capacity, not repairable student
+          // holes.  Match isSlotFeasible(), which counts only genuinely free
+          // cells (-1) between the first and last lesson.  Treating OFF as a
+          // hole kept every optimizer permanently behind a false "zero
+          // student holes" gate on otherwise valid timetables.
+          let first = -1;
+          let last = -1;
+          for(let p = 0; p < PERIODS_PER_SESSION; p++){
+            if((mask & (1 << p)) !== 0){
+              if(first < 0) first = p;
+              last = p;
+            }
+          }
+          if(first >= 0 && last > first){
+            for(let p = first + 1; p < last; p++){
+              if(grid[sStart + p] === -1) holes++;
+            }
+          }
         }
       }
       return holes;
@@ -7253,7 +7459,7 @@
                     lockedByLessonBlock: true
                   };
                   this.activities.push(act);
-                  this.actPlacement.push(slot + k);
+                  this.actPlacement.push(-1);
                   this.placeActivityDirect(actId, slot + k);
                 }
                 p += lockedK;
@@ -7280,7 +7486,7 @@
                 isFixed: false
               };
               this.activities.push(act);
-              this.actPlacement.push(slot);
+              this.actPlacement.push(-1);
               this.placeActivityDirect(actId, slot);
 
               p += 1;

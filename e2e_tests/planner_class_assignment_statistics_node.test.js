@@ -279,6 +279,6 @@ test("requirements menu puts Statistics by class immediately above Print TKB", (
   assert.match(menuSource, /openClassAssignmentStatistics/);
   assert.match(plannerCss, /\.class-assignment-stats-table-wrap[\s\S]*?overflow:\s*auto/);
   assert.match(plannerHtml, /phanmon\.css\?v=20260817-class-stats-modal-v1/);
-  assert.match(plannerHtml, /phanmon\.js\?v=20260823-web-fet-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260823-web-fet-quick-v2/);
   assert.match(plannerHtml, /tkb-constraints-menu\.js\?v=20260808-v1192-assigned-only-all-statistics-v1/);
 });

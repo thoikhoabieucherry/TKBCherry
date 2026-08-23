@@ -65,6 +65,11 @@ python .\start.py --foreground --no-browser --no-launcher --port 1011
 ## 5. Xếp mới bằng FET
 
 - [ ] Một lần bấm Xếp chỉ tạo một worker chính; bấm chồng nhận trạng thái bận.
+- [ ] Xếp gửi `action=construct` / `mode=solve_fast`, không gọi optimizer.
+- [ ] Alias `solve_optimize_all` cũ cũng kết thúc sau construction, không có
+  budget 600 giây.
+- [ ] Profile mặc định dừng ở complete-valid đầu tiên trong tổng 12 giây và tối
+  đa ba seed; preflight bất khả thi dừng ngay.
 - [ ] Tiến trình cập nhật nhưng UI, Dừng và cuộn vẫn phản hồi.
 - [ ] Kết quả đủ nhu cầu PCCM và `unplacedCount=0` trước khi áp.
 - [ ] Không trùng lớp, giáo viên, phòng.
@@ -78,6 +83,10 @@ python .\start.py --foreground --no-browser --no-launcher --port 1011
 Kiểm tra lần lượt **1 tiết/buổi**, **Buổi**, **2 tiết trống**,
 **1 tiết trống**:
 
+- [ ] Mỗi mode chỉ chạy khi lịch đã complete; lịch thiếu hướng người dùng bấm
+  Xếp trước.
+- [ ] Budget mặc định lần lượt là 12/8/8/8 giây và engine dừng sớm ở
+  zero/floor/plateau.
 - [ ] Metric mục tiêu không bị báo đạt khi chỉ timeout/plateau.
 - [ ] Comparator mode không nhận candidate xấu hơn incumbent.
 - [ ] Tối ưu không thêm chữ ký vi phạm mới so với lịch legacy.

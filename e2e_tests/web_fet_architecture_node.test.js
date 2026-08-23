@@ -15,10 +15,13 @@ const serverSource = read("rust_api", "src", "main.rs");
 const envExample = read(".env.example");
 
 test("the planner owns timetable computation in a browser worker", () => {
-  assert.match(plannerHtml, /src="tkb-fet-engine\.js\?v=20260823-web-fet-v1"/);
+  assert.match(plannerHtml, /src="tkb-fet-engine\.js\?v=20260823-web-fet-quick-v2"/);
   assert.match(plannerSource, /new Worker\("tkb-fet-worker\.js\?v=" \+ Date\.now\(\)\)/);
   assert.match(workerSource, /importScripts\('tkb-fet-engine\.js\?v=' \+ Date\.now\(\)\)/);
   assert.match(workerSource, /new self\.FetTimetableEngine/);
+  assert.match(plannerSource, /options\?\.mode \|\| "solve_fast"/);
+  assert.match(plannerSource, /action: isOptimizeMode \? "optimize" : "construct"/);
+  assert.match(plannerHtml, /title="Xếp nhanh thời khóa biểu"/);
   assert.doesNotMatch(plannerHtml + plannerSource, /tkb-rust-bridge|tkb-fast-seed|\/api\/solve/);
 });
 
