@@ -153,11 +153,14 @@ Xem [docs/REGRESSION_CHECKLIST.md](docs/REGRESSION_CHECKLIST.md) để test th�
 - **Bấm lại khi lịch đã đủ:** dùng lịch hiện tại đã tái kiểm định làm incumbent và tối ưu tiếp; không trả về metrics cũ nếu incumbent không còn hợp lệ.
 - Mỗi lần chạy có thể tìm nghiệm khác. Solver không khóa cứng lịch cũ và không lấy cache/hint chưa kiểm định làm kết quả.
 
-Menu **Tối ưu** tách ba mục tiêu cho người dùng thường: **1 tiết/buổi**, **1 tiết trống**, **2 tiết trống**. Mỗi lệnh chỉ tập trung vào đúng chỉ số đã chọn. Mục **Buổi** tổng quát chỉ hiện với superadmin để phục vụ vận hành và chẩn đoán.
+Nút **Tối ưu** nằm ngay bên phải nút Xếp, mở menu bốn mục tiêu theo đúng thứ tự ưu tiên: **1 tiết/buổi** → **Buổi** → **2 tiết trống** → **1 tiết trống**. Mỗi lệnh chỉ tập trung vào đúng chỉ số đã chọn.
+
+Riêng **1 tiết/buổi** chạy theo cách FET xử lý ràng buộc ở trọng số 100%: khi chỉ số này chưa về mục tiêu (0, hoặc sàn cấu trúc đã được chứng minh), nó là mục tiêu độc quyền — solver được phép tăng tổng buổi và tiết trống để thoát kẹt, miễn không vi phạm ràng buộc cứng của người dùng. Ngay khi chạm mục tiêu, chỉ số này bị **khoá**: ba lệnh còn lại không bao giờ được phép sinh lại một buổi giáo viên chỉ dạy 1 tiết, và khoá đó được kiểm tra ngay lúc đặt tiết chứ không chỉ khi so kết quả.
 
 ## Ghi chú kỹ thuật
 
 - Thuật toán FET Client & Optimizer: `web/pages/tkb-fet-engine.js`, `web/pages/tkb-fet-worker.js`
 - Ràng buộc & Menu: `web/pages/tkb-constraints.js`, `web/pages/tkb-constraints-menu.js`
+- Menu Tối ưu (4 mục tiêu): `web/pages/tkb-optimize-menu.js`
 - Bridge solver UI: `web/pages/tkb-rust-bridge.js`
 - Chi tiết kế thừa & bàn giao: Xem [`PROJECT_INHERITANCE_GUIDE.md`](PROJECT_INHERITANCE_GUIDE.md)

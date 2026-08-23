@@ -6,6 +6,105 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-22 BỊT LỖ HỒI QUY: CỔNG UI THIẾU + ĐÁNH ĐỔI VÔ ÍCH (LOCAL, NOT DEPLOYED)
+
+Chủ dự án báo `1 tiết/buổi` "không giảm, càng ngày càng tệ". Tìm được hai lỗ, cả hai đều cho phép thiệt hại **tích luỹ qua nhiều lần bấm**:
+
+1. **Cổng chống hồi quy ở UI chưa từng áp cho menu Tối ưu.** Ba cổng trong `phanmon.js` (áp kết quả cuối, phát hiện không cải thiện, và nhánh Dừng nhận checkpoint) đều có điều kiện `options?.__incumbentComplete === true`. Cờ đó **chỉ** được đặt ở nhánh ▶ Xếp (`solve_optimize_all` trên lịch đã đủ tiết). Bốn lệnh trên menu Tối ưu chạy với `__incumbentComplete === undefined` nên **không cổng nào kiểm tra** — UI áp thẳng kết quả worker trả về, kể cả khi nó tệ hơn lịch hiện tại. Thay bằng `incumbentQualityBaselineReady = __incumbentComplete === true || (isOptimizeMode && unplacedPeriodsCount === 0)`: một lệnh tối ưu chỉ chạy được trên lịch đã đủ tiết, nên ở đó incumbent luôn là mốc so sánh hợp lệ.
+2. **`runUntilZeroSingletons()` / `runUntilStagnation()` không có lưới an toàn.** Hai hàm này nằm trên đường ▶ Xếp và trước giờ không có ràng buộc đầu ra nào. Thêm cùng cơ chế `entrySnapshot` như `optimize()`: kết thúc mà `soBuoiDay1` hoặc `unplacedCount` cao hơn lúc vào thì khôi phục nguyên trạng, trả cờ `singletonRegressionReverted`, và kèm `residualSingletons`.
+
+Thêm một siết chặt về chất lượng: **đánh đổi vô ích thì hoàn tác**. Chế độ rush được phép tăng tổng buổi và `Trống 2` để hạ `1 tiết/buổi`, nhưng lý do duy nhất chấp nhận thiệt hại đó là singleton phải giảm thật. Nếu hết lượt mà `soBuoiDay1` **không giảm**, `optimize()` khôi phục nguyên trạng và trả cờ `rushRolledBack`. Không có bước này, bấm lại nhiều lần sẽ cộng dồn `Trống 2` mà chẳng được gì — đúng cảm nhận "càng ngày càng tệ".
+
+Kiểm chứng mô phỏng đúng thao tác người dùng — 8 lượt bấm liên tiếp trên lịch tiến hoá dần (`dongkhoi_1566`, incumbent 17/0/483/127, mỗi lượt 3 s, seed khác nhau):
+
+| # | Lệnh | 1 tiết/buổi | Buổi | Trống 2 | Ghi chú |
+|---|---|---|---|---|---|
+| 1 | 1 tiết/buổi | 17 → 5 | 483 → 476 | 0 → 3 | mua được, giữ |
+| 2 | 1 tiết/buổi | 5 → 3 | 476 → 476 | 3 → 2 | mua được, giữ |
+| 3 | 1 tiết/buổi | 3 → 3 | — | — | **hoàn tác (đánh đổi vô ích)** |
+| 4 | Buổi | 3 → 3 | 476 → 472 | 2 → 2 | |
+| 5 | 1 tiết/buổi | 3 → 3 | — | — | **hoàn tác** |
+| 6 | 2 tiết trống | 3 → 3 | 472 → 472 | 2 → 1 | |
+| 7 | 1 tiết/buổi | 3 → 3 | — | — | **hoàn tác** |
+| 8 | 1 tiết trống | 3 → 3 | 472 → 472 | 1 → 1 | gap1 125 → 86 |
+
+`1 tiết/buổi` đơn điệu giảm 17 → 5 → 3, **0 lượt làm tăng**, đủ 1.566 tiết và student holes = 0 ở mọi lượt. Lưới an toàn được kiểm chứng riêng bằng cách ép `compareMetrics` luôn trả `-1` (nhận mọi nước đi): cả `optimize()` lẫn `runUntilZeroSingletons()` đều trả `singletonRegressionReverted = true` và lịch **giống hệt lúc vào**.
+
+Lưu ý còn lại: rush vẫn để lại `Trống 2` từ 0 lên 1–3 khi nó thực sự mua được singleton (17 → 3). Đó là đánh đổi đã được chủ dự án chốt và lấy lại được bằng lệnh *2 tiết trống*; nhưng nếu muốn `Trống 2` tuyệt đối không tăng thì chỉ cần bỏ cờ `singletonRush` khi gọi lệnh.
+
+## 2026-08-22 CHẨN ĐOÁN CA "1 TIẾT/BUỔI" CÒN SÓT + CHỨNG CHỈ SÀN (LOCAL, NOT DEPLOYED)
+
+Chủ dự án hỏi FET có hướng nào xử lý các ca `1 tiết/buổi` còn lại không, và gợi ý ba nước: (1) lấy một tiết từ buổi nhiều tiết sang buổi lẻ, (2) dời tiết lẻ sang buổi nhiều tiết, (3) đảo thứ tự / đổi chéo tiết. **Cả ba đều đã có trong engine** (`tryShareRichToSingleton` chiều 1 và chiều 2, `tryRelocateSingletons`, `tryIntraSessionBlockPermutations`). Nên phiên này tập trung đo **vì sao chúng bó tay**, thay vì viết thêm operator mù.
+
+Chẩn đoán trên `scratch/dongkhoi_1566.json` sau khi lệnh "1 tiết/buổi" chạm plateau ở 3 (sàn đã chứng minh = 2):
+
+- **`t.hiếu` (2 trong 3 ca)**: cả tuần chỉ dạy **2 tiết**, ở 2 buổi khác nhau, không buổi nào ≥2 tiết để cho/nhận. Quét vét cạn: lớp 6/14 **OFF trọn buổi 7**, lớp 8/12 **OFF trọn buổi 6** → hai tiết không thể gộp trực tiếp. Quét tiếp mọi buổi thứ ba: **không buổi nào chứa được cả hai lớp**. Đây là **sàn cấu trúc thật**, không thuật toán nào gỡ được. Việc này cũng giải toả nghi vấn ghi ở mục dưới: `structuralFloor.soBuoiDay1 = 2` là **đúng**, không phải quá chặt.
+- **`t.bình.1` (1 ca)**: quét vét cạn 3 họ nước — dời tiết lẻ (41 ô: 18 lớp OFF, 3 bất khả thi, **20 thành công nhưng đều rơi vào buổi giáo viên chưa dạy** nên chỉ đổi chỗ), cho tiết vào buổi lẻ (**32/32 bị chặn vì lớp của tiết cho đều OFF đúng buổi đó**), và cặp "tiết lẻ + bạn đồng hành sang buổi thứ ba" (0 cặp cải thiện). Là cực tiểu cục bộ của mọi nước 1–2 tiết; chỉ chuỗi sâu hơn mới có cửa.
+
+Ba thay đổi rút ra từ chẩn đoán:
+
+1. **Cổng lỗ học sinh quá chặt.** Mọi operator loại ngay một nước đi khi `countTotalStudentHoles() > 0`, dù engine có sẵn bộ nén sẽ vá đúng cái lỗ vừa tạo. Đo trên fixture: nén dời 4 tiết, **0 tiết sang buổi khác**, `soBuoiDay1`/`tsBuoiDay` **bất biến** — nên nén là an toàn tuyệt đối với mục tiêu singleton. Thêm `studentHolesClearedAfterCompaction()`: thử nén trước khi loại, không hết lỗ thì khôi phục đúng trạng thái trước khi nén. Áp cho 6 điểm chấp nhận trong `tryRelocateSingletons` và `tryShareRichToSingleton`.
+2. **`tryShareRichToSingleton` chiều 1 quét vô ích.** Ngưỡng cũ `rich.items.length >= 2`: cho đi một tiết từ buổi 2 tiết làm chính nó thành buổi 1 tiết, tổng `soBuoiDay1` không đổi nên comparator luôn loại. Đổi thành `>= 3`.
+3. **Chứng chỉ sàn hiển thị được.** Thêm `explainResidualSingletons()` (chỉ kiểm tra tĩnh, không tìm kiếm) phân loại từng ca còn sót: ô cố định / tiết bị khoá / lớp nghỉ ở mọi buổi khác / không lớp nào cho tiết được / còn đường đi nhưng hết ngân sách. Kết quả đi qua worker (`residualSingletons`) và `fetResidualSingletonMessage()` trong `phanmon.js` nối vào thông báo cuối của lệnh "1 tiết/buổi".
+
+Kết quả trên fixture (incumbent 17/0/483/127, 8 s):
+
+| Đường chạy | Trước phiên | Sau phiên |
+|---|---|---|
+| `optimize_singletons` **không** rush (đường ▶ Xếp) | 17 → 7 | 17 → **5** |
+| `optimize_singletons` có rush (nút menu) | 17 → 3 | 17 → 3 |
+
+Các lệnh còn lại giữ nguyên, không lệnh nào làm tăng `soBuoiDay1`, `unplacedCount = 0`, student holes = 0. Thông báo mẫu sinh ra: *"Dạy 1 tiết: 17 -> 3. Các ca còn lại — t.bình.1: không lớp nào có thể cho tiết vào buổi này (đều nghỉ hoặc kín chỗ); t.hiếu: lớp 6/14 nghỉ ở mọi buổi khác của giáo viên…"*. Chỉ local, không deploy/push.
+
+## 2026-08-22 NÚT TỐI ƯU 4 MỤC TIÊU + KHOÁ SINGLETON KIỂU FET (LOCAL, NOT DEPLOYED)
+
+- **Nút Tối ưu quay lại**, đặt ngay bên phải nút Xếp (`web/pages/sapxep.html`, khối `.planner-optimize-wrap` + `#btnOptimizeMenu` + `#plannerOptimizeMenu`). Dropdown 4 mục theo đúng thứ tự **1 tiết/buổi → Buổi → 2 tiết trống → 1 tiết trống**, hiện cho mọi vai trò (bản local; nếu cần khoá mục *Buổi* cho superadmin thì dùng `__isSuperPlanner` trong `phanmon.js`). Toàn bộ CSS của menu vẫn còn nguyên từ trước, chỉ markup và JS bị gỡ.
+- **Module mới** `web/pages/tkb-optimize-menu.js` (+ mirror): mở/đóng menu, đóng khi bấm ra ngoài / Escape / resize / scroll, gọi `window.sapXepTheoCheDo(mode)`. `setAutoSortBusyControls` trong `phanmon.js` nay khoá `#btnOptimizeMenu` và đóng menu khi có lượt đang chạy.
+- **Sửa lỗi CSS mobile đang sống**: media query điện thoại ẩn `#btnAutoSort` và `.planner-optimize-wrap` để nhường chỗ `#btnEngineFlash`/`#btnEngineCherry` — hai nút này đã không còn trong markup, nên trên điện thoại **không có nút Xếp**. Đã trả nút Xếp về cột 3 (portrait) / cột 4 (landscape) và nút Tối ưu về cột 4 / cột 5, đúng như `e2e_tests/planner_toolbar_layout_node.test.js` mong đợi (hai assertion đó đang đỏ trước phiên này).
+- **Khoá "1 tiết/buổi" kiểu FET** (`tkb-fet-engine.js`): thêm `singletonLock` + `singletonRushActive`.
+  - Chưa chạm mục tiêu → `optimize_singletons` coi singleton là **mục tiêu độc quyền**: được phép tăng tổng buổi và tiết trống để thoát kẹt (các chỉ số mềm tụt xuống vai trò tie-break), đúng tinh thần FET để ràng buộc 100% chặn tại chỗ đặt tiết rồi đẩy hoạt động xung đột đi xếp lại.
+  - Chạm mục tiêu (0, hoặc sàn cấu trúc đã chứng minh) → **khoá**: `compareMetrics` từ chối mọi nước làm `soBuoiDay1` vượt mức đã khoá, ở **tất cả** các mode, và bật `minTwoGuardActive` để `randomSwap` chặn ngay lúc đặt tiết chứ không đợi so metrics.
+  - Khoá được suy ra lại từ lịch hiện tại ở đầu **mỗi** lượt optimize, nên bấm *Buổi* / *2 tiết trống* / *1 tiết trống* trên lịch đã sạch singleton là tự động bị khoá.
+- **Sửa lỗi `__minTwoGuardActive`**: ba chỗ ghi vào thuộc tính này thực ra không ai đọc (cờ thật là `minTwoGuardActive`), nên lệnh tắt cổng trước `applyToDataTKB` chưa bao giờ có hiệu lực. Đã đổi về đúng tên.
+- **`optimize_gap1` trước đây chạy bộ tối ưu của gap-2**: cả bốn operator gap hard-code `compareMetrics(..., "optimize_gap2")` và `tryCrushGaps` có `if(gapCount < 2) continue` — tức là bỏ qua đúng những buổi 1 lỗ mà nút này nhắm tới. Đã tham số hoá `mode` cho `tryCrushGaps`/`tryIntraClassGapCrush`/`tryCrossDayClassSwap`/`tryIntraSessionBlockPermutations`; ngưỡng quét thành `maxGaps = 0` khi mode là gap-1 (`ConstraintTeachersMaxGapsPerDay` của FET).
+- **`tryVacateTeacherSessions` (nút Buổi) được viết lại**: trước chỉ xét buổi **đúng 2 tiết**. Nay xét buổi 1/2/3 tiết theo thứ tự chi phí tăng dần (giống cách FET chọn ngày có ít hoạt động phải đẩy nhất trong `ConstraintTeacherMaxDaysPerWeek`), bỏ qua buổi có ô cố định, và thêm `placeIntoOccupiedTeacherSession()`: tiết bị bốc ra **chỉ** được đặt vào buổi giáo viên đã có tiết, có tầng ejection (tối đa 6 lần thử, snapshot/rollback riêng) khi ô đích bị lớp chiếm. Đo được: pha đặt trực tiếp trượt ~92% nên nếu không có tầng ejection thì `randomSwap` lại mở buổi mới và tổng buổi không bao giờ giảm.
+- **Bất biến đếm gộp của FET** (`opensUnaffordableSession`): thêm số hạng nợ tiết trống `max(0, gaps_buổi − 1)` vào công thức `Σ max(H_buổi + nợ, 2) ≤ tải tuần` (generate.cpp 30972-30976), **mặc định TẮT** sau cờ `gapAwareSessionGuard` vì nó nằm trên đường nóng của `isSlotFeasible` và cần benchmark pha dựng lịch trước khi đổi hành vi.
+- **Kiểm chứng** (không có Node trên máy này — các suite `node --test` chưa chạy được; đã chạy engine thật trong Chrome trên fixture `scratch/dongkhoi_1566.json`, 54 lớp / 93 GV / 1.566 tiết, incumbent `solve(seed 101)` = 17/0/483/127):
+
+  | Lệnh | Trước phiên | Sau phiên |
+  |---|---|---|
+  | 1 tiết/buổi (8 s) | 17 → 7 | 17 → **3** |
+  | Buổi (8 s) | 483 → 483 | 483 → **474** |
+  | 1 tiết trống (8 s) | 127 → 126 (7,9 s) | 127 → **89** (3,8 s) |
+  | 2 tiết trống (8 s) | không đổi | không đổi (gap2 đã = 0) |
+
+  Chuỗi bấm lần lượt 1 tiết/buổi → 1 tiết/buổi → Buổi → 2 tiết trống → 1 tiết trống: `17/0/483/127 → 3/0/478/80`, `unplacedCount = 0` và `countTotalStudentHoles() = 0` ở mọi bước, singleton không lần nào tăng lại. 9 assertion đơn vị cho khoá/rush đều pass; 13 assertion DOM cho nút và menu đều pass; 4 file JS `new Function()` parse sạch; hai mirror `web/` và `web/pages/` byte-identical.
+- **Còn mở**: (a) lane sâu (`sessionBinChains`) ở ngân sách 8–10 s cho kết quả **tệ hơn** (17 → 13 và làm gap2 0 → 1) nên chưa bật cho nút; cần ngân sách theo tầng (nông trước, sâu bằng thời gian còn lại). (b) Trên fixture này preflight báo sàn `soBuoiDay1 = 2` trong khi `OPTIMIZER_V2_PLAN.md` ghi `optimizeAll` từng đạt 0 — cần soát lại độ chặt của `structuralFloor`. (c) `gapAwareSessionGuard` chưa benchmark. (d) Chưa chạy được `e2e_tests/*` vì máy chưa cài Node.
+- Chỉ local: không deploy, không push, không sửa DB/lịch production.
+
+### Hotfix cùng ngày — hồi quy "1 tiết/buổi tăng mạnh" do chính đợt trên gây ra
+
+Chủ dự án báo sau đợt trên `1 tiết/buổi` **tăng mạnh thay vì giảm**. Truy được hai nguyên nhân, cả hai đều nằm trong đợt trên:
+
+1. **Đổi tên `__minTwoGuardActive` → `minTwoGuardActive` là sai.** Ba dòng đó là *dead code* và pipeline trọn gói phụ thuộc vào việc chúng vô hại: `tkb-fet-worker.js` gọi liên tiếp `optimize('optimize_singletons')` (dòng 554) → `optimize('optimize_gap2')` (580/744) → `runUntilZeroSingletons()` (501/655) trên **cùng một engine**, và các pha sau dựa vào cổng min-2 vẫn bật từ `solve()`. Sau khi "sửa" tên, `optimize()` **tắt cổng chặn mở buổi 1 tiết** ở cuối lượt đầu tiên, các pha sau chạy không còn cổng → singleton leo lên. Đã xoá hẳn ba dòng dead code và ghi rõ trong comment là **không được** biến chúng thành lệnh tắt thật; cổng chỉ được **nâng lên**, không bao giờ hạ.
+2. **Chế độ rush lọt sang đường ▶ Xếp.** Comment cũ của tôi ghi đường trọn gói dùng `optimize_all` — sai; nó dùng đúng `optimize('optimize_singletons')`, nên rush áp cả vào đó và đè lên cơ chế đánh đổi riêng của worker (`allowSingletonGap2Tradeoff` + `tradeoffSnapshot` rollback, `tkb-fet-worker.js:542-594`). Rush nay chỉ bật khi có cờ tường minh `options.singletonRush`, do `phanmon.js` đặt **chỉ** cho lệnh `optimize_singletons` bấm từ menu Tối ưu.
+
+Thêm hai lưới an toàn không phụ thuộc vào việc từng operator có tự giác hay không:
+
+- **Lưới cuối lượt**: `optimize()` chụp `entrySnapshot` lúc vào; nếu kết thúc mà `soBuoiDay1` hoặc `unplacedCount` **cao hơn lúc bắt đầu** thì khôi phục nguyên trạng và trả cờ `singletonRegressionReverted`.
+- **Lưới quanh `compactAllStudentSessions()`**: bước này chạy **ngoài** cổng `compareMetrics` và ngay sau nó `bestMetrics` được lấy lại từ `evaluateMetrics()`, nên mọi thiệt hại thành nền móng cho vòng sau và tích luỹ. Nay nếu trước khi nén lịch học sinh đã không còn lỗ (tức việc nén là tuỳ chọn) mà nén làm singleton xấu đi thì hoàn tác.
+
+Kiểm chứng lại trên `scratch/dongkhoi_1566.json` (incumbent 17/0/483/127), ngân sách 5 s mỗi lệnh:
+
+| Lệnh | singleton | đỉnh trong lượt | buổi | gap2 |
+|---|---|---|---|---|
+| 1 tiết/buổi (có rush) | 17 → **5** | 17 | 483 → 479 | 0 → 0 |
+| Buổi | 17 → 13 | 17 | 483 → 474 | 0 → 0 |
+| 2 tiết trống | 17 → 14 | 17 | 483 → 482 | 0 → 0 |
+| 1 tiết trống | 17 → 17 | 17 | 483 → 484 | 0 → 0 |
+
+Không lệnh nào vượt quá giá trị lúc vào. `optimize('optimize_singletons')` **không** kèm cờ rush (đúng đường ▶ Xếp) cho 17 → 7 — trùng khớp hành vi trước đợt thay đổi. Test ép comparator luôn trả `-1` (nhận mọi nước đi) xác nhận lưới cuối lượt bắt được: kết quả trả về `singletonRegressionReverted = true` và lịch giống hệt lúc vào. Chuỗi bấm lần lượt: `17/0/483/127 → 3/0/479/91`, singleton không lần nào tăng.
+
 ## 2026-08-21 LOCAL FAST PREFLIGHT + TERMINAL DIAGNOSTICS (NOT DEPLOYED)
 
 - **Nguyên nhân thông báo sai/chạy lặp**: sau khi backend local trả candidate không qua validator, `executeFetBackendBoost()` có thể trả `null`, khiến UI chạy thêm browser worker dài; nhánh worker lại hiện thông báo chung “chạm giới hạn ràng buộc”. Nhánh đó còn tham chiếu biến `validationDiagnostics` chưa khai báo, nên terminal settlement có thể bị ngắt sau khi đã hiện thông báo.

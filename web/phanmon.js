@@ -5978,6 +5978,21 @@ function fetTargetMetricKeyForMode(mode){
   return "";
 }
 
+// Biến "chứng chỉ sàn" của engine thành một câu người dùng đọc được. Mục đích là
+// trả lời đúng câu hỏi "sao còn N buổi 1 tiết?" bằng ràng buộc cụ thể đang chặn,
+// thay vì để người dùng bấm đi bấm lại một lệnh đã hết đường đi.
+function fetResidualSingletonMessage(rows){
+  if(!Array.isArray(rows) || rows.length === 0) return "";
+  const shown = rows.slice(0, 3).map(row => {
+    const teacher = String(row?.teacher || "").trim() || "GV";
+    const reason = String(row?.reason || "").trim();
+    return reason ? `${teacher}: ${reason}` : teacher;
+  });
+  const rest = rows.length - shown.length;
+  const tail = rest > 0 ? ` (và ${rest} ca tương tự)` : "";
+  return `Các ca còn lại — ${shown.join("; ")}${tail}.`;
+}
+
 function fetProvenMetricFloorMessage(mode, metrics, diagnostics){
   const key = fetTargetMetricKeyForMode(mode);
   if(!key) return "";
@@ -6898,7 +6913,20 @@ function fetQualityMetricsNotWorse(candidate, incumbent, mode){
   // Match the engine's priority contract: singleton is the first objective,
   // while gap-2 may never be introduced. Lower-priority session/gap-1 counts
   // remain tie-breakers and must not block a real singleton improvement.
-  if(candidateGap2 !== null && incumbentGap2 !== null && candidateGap2 > incumbentGap2){
+  //
+  // Ngoại lệ (22/08) — lệnh "1 tiết/buổi": engine được phép mua singleton bằng
+  // gap-2 và số buổi cho tới khi singleton chạm mục tiêu, rồi khoá singleton
+  // lại (FetTimetableEngine.singletonLock). Nếu cổng này vẫn phủ quyết mọi
+  // mức gap-2 cao hơn thì đúng những nghiệm mà lệnh đó tạo ra sẽ bị loại,
+  // và nút coi như vô dụng. Thứ tự ưu tiên tổng thể không đổi: singleton vẫn
+  // đứng trước gap-2, nên đổi gap-2 lấy singleton là một cải thiện hợp lệ.
+  const singletonRushMode = normalizedMode === "optimize_singletons";
+  const singletonImproved = singletonRushMode
+    && candidateSingletons !== null
+    && incumbentSingletons !== null
+    && candidateSingletons < incumbentSingletons;
+  if(!singletonImproved
+    && candidateGap2 !== null && incumbentGap2 !== null && candidateGap2 > incumbentGap2){
     return false;
   }
   if(["optimize_gap2", "optimize_gap1", "optimize_sessions"].includes(normalizedMode)
@@ -7419,6 +7447,22 @@ async function executeDirectFastSchedule(options = {}){
       }
     }
     const qualityPipelineActive = isOptimizeMode || isConstructionThenOptimize;
+    // Cổng chống hồi quy trước đây chỉ bật khi `__incumbentComplete === true`,
+    // mà cờ đó CHỈ được đặt ở nhánh ▶ Xếp (solve_optimize_all trên lịch đã đủ
+    // tiết). Hệ quả: bốn lệnh trên menu Tối ưu áp thẳng kết quả worker trả về,
+    // không ai kiểm tra nó có tệ hơn lịch hiện tại hay không — bấm nhiều lần thì
+    // sai số tích luỹ. Một lệnh tối ưu chỉ chạy được trên lịch đã đủ tiết, nên
+    // ở đó incumbent luôn là mốc so sánh hợp lệ.
+    const incumbentQualityBaselineReady = options?.__incumbentComplete === true
+      || (isOptimizeMode && unplacedPeriodsCount === 0);
+    // Lệnh "1 tiết/buổi" trên menu Tối ưu được phép đánh đổi tổng buổi và tiết
+    // trống để hạ 1 tiết/buổi cho nhanh, rồi khoá chỉ số đó lại. Cờ này phải là
+    // cờ tường minh của riêng lệnh người dùng bấm: đường trọn gói (nút ▶ Xếp)
+    // cũng gọi optimize("optimize_singletons") trong worker nhưng đã có cơ chế
+    // đánh đổi riêng có snapshot rollback, không được để rush đè lên.
+    if(isOptimizeMode && requestedMode === "optimize_singletons"){
+      options = Object.assign({}, options, { singletonRush: true });
+    }
     // A complete incumbent can use independent seed restarts in parallel when
     // the first local lane gets stuck. Fresh construction uses a smaller
     // two-seed race; an already solved timetable still skips the pool.
@@ -7693,7 +7737,7 @@ async function executeDirectFastSchedule(options = {}){
               return;
             }
           }
-          if(options?.__incumbentComplete === true
+          if(incumbentQualityBaselineReady
             && !fetQualityMetricsNotWorse(checkpoint.metrics, initialStats, options.mode)){
             window.__LATEST_OPTIMIZE_TKB = null;
             window.__LATEST_OPTIMIZE_CHECKPOINT = null;
@@ -8047,7 +8091,7 @@ async function executeDirectFastSchedule(options = {}){
                 return;
               }
             }
-            if(qualityPipelineActive && options?.__incumbentComplete === true
+            if(qualityPipelineActive && incumbentQualityBaselineReady
               && !fetQualityMetricsNotWorse(msg.metrics, initialStats, options.mode)){
               if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
               else setAutoSortStopVisible(false);
@@ -8065,7 +8109,7 @@ async function executeDirectFastSchedule(options = {}){
               });
               return;
             }
-            if(qualityPipelineActive && options?.__incumbentComplete === true
+            if(qualityPipelineActive && incumbentQualityBaselineReady
               && msg.metrics && typeof msg.metrics === "object"
               && fetQualityMetricsCompare(msg.metrics, initialStats, options.mode) === 0){
               if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
@@ -8191,6 +8235,8 @@ async function executeDirectFastSchedule(options = {}){
                 }else if(msg.stagnated === true && finalTarget > 0){
                   doneStatusMsg = `Đạt cận hiện biết cho [${label}]: ${finalTarget}. Chưa thể cải thiện thêm trong thời gian cho phép.`;
                 }
+              }else{
+                doneStatusMsg = `${doneStatusMsg} ${fetResidualSingletonMessage(msg.residualSingletons)}`.trim();
               }
             }
 
@@ -8405,6 +8451,8 @@ async function executeDirectFastSchedule(options = {}){
         finalMsg = `Trống 2 tiết: ${initM.soBuoiTrong2 ?? 0} -> ${bestM.soBuoiTrong2 ?? 0}`;
       }else if(options.mode === "optimize_singletons"){
         finalMsg = `Dạy 1 tiết: ${initM.soBuoiDay1 ?? 0} -> ${bestM.soBuoiDay1 ?? 0}`;
+        const residual = fetResidualSingletonMessage(directFetResult?.residualSingletons);
+        if(residual) finalMsg += ` ${residual}`;
       }else if(options.mode === "optimize_gap1"){
         finalMsg = `Trống 1 tiết: ${initM.soBuoiTrong1 ?? 0} -> ${bestM.soBuoiTrong1 ?? 0}`;
       }else if(options.mode === "optimize_sessions"){
@@ -10688,10 +10736,19 @@ function setAutoSortBusyControls(locked){
     document.getElementById("btnUndoTKB"),
     document.getElementById("btnRedoTKB"),
     document.getElementById("btnAutoSort"),
+    document.getElementById("btnOptimizeMenu"),
     document.getElementById("btnHome"),
     document.getElementById("btnStatsPopover")
   ].filter(Boolean);
   controls.forEach(el => setAutoSortControlLocked(el, shouldLock));
+  // Menu Tối ưu không được để mở đè lên lượt đang chạy: khóa nút thì đóng luôn
+  // danh sách mục tiêu, tránh bấm mục thứ hai khi worker đầu chưa dừng.
+  if(shouldLock){
+    const optimizeMenu = document.getElementById("plannerOptimizeMenu");
+    if(optimizeMenu) optimizeMenu.hidden = true;
+    const optimizeBtn = document.getElementById("btnOptimizeMenu");
+    if(optimizeBtn) optimizeBtn.setAttribute("aria-expanded", "false");
+  }
   setAutoSortHomeHidden(shouldLock);
   if(!shouldLock) __tkbUpdateHistoryButtons();
 

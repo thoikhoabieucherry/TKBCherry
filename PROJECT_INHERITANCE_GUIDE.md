@@ -126,12 +126,15 @@ Hệ thống cung cấp quy trình tối ưu đa tầng lexicographic:
    * Chuỗi đẩy khép kín 2-step và 3-step di chuyển và hấp thụ tiết đơn lẻ vào các buổi dạy hiện hữu mà không tạo thêm ô trống hay xung đột.
 3. **Tối ưu buổi 1 tiết (`optimize_singletons`)**:
    * Triệt tiêu toàn bộ các buổi dạy 1 tiết (`soBuoiDay1 -> 0`), ghép thành cụm $\ge 2$ tiết hoặc giải phóng hoàn toàn ngày nghỉ cho giáo viên.
+   * **Rush + khoá (22/08)**: khi chưa đạt mục tiêu, `singletonRushActive` cho phép đánh đổi `tsBuoiDay` và `soBuoiTrong2` để hạ `soBuoiDay1` — mô phỏng cách FET để ràng buộc trọng số 100% chặn tại chỗ đặt tiết rồi đẩy hoạt động xung đột đi xếp lại. Khi đạt mục tiêu (0 hoặc `structuralFloor.metricLowerBounds.soBuoiDay1`), `singletonLock` khoá chỉ số này ở **mọi** mode và `minTwoGuardActive` được bật để `randomSwap` từ chối ô mở buổi thiếu 2 tiết.
 4. **Tối ưu 2 tiết trống (`optimize_gap2`) & Gap Crusher (`tryCrushGaps`)**:
    * Khử triệt để các khoảng trống $\ge 2$ tiết giữa các giờ dạy của giáo viên (`soBuoiTrong2 -> 0`), duy trì bất biến không làm tăng số buổi 1 tiết.
 5. **Tối ưu số buổi dạy / ngày dạy (`optimize_sessions`)**:
    * Gom gọn số ngày đến trường của giáo viên (`tsBuoiDay`), tăng ngày nghỉ trọn vẹn trong tuần.
+   * `tryVacateTeacherSessions` xét buổi **1/2/3 tiết** theo chi phí đẩy tăng dần (tương ứng cách `ConstraintTeacherMaxDaysPerWeek` của FET chọn ngày có ít hoạt động phải đẩy nhất). Tiết bị bốc ra đi qua `placeIntoOccupiedTeacherSession()` — chỉ nhận ô nằm trong buổi giáo viên **đã** có tiết, có tầng ejection khi ô đích bị lớp chiếm. Nếu thả cho `randomSwap` tự do, tiết hay mở buổi mới nên `tsBuoiDay` không giảm.
 6. **Tối ưu 1 tiết trống (`optimize_gap1`)**:
    * Tinh chỉnh các lỗ hổng 1 tiết xen kẽ giữa các giờ học (`soBuoiTrong1 -> 0`).
+   * Bốn operator gap nhận tham số `mode`; với `optimize_gap1`, `tryCrushGaps` quét cả buổi chỉ có **1** lỗ (tương đương `maxGaps = 0` của `ConstraintTeachersMaxGapsPerDay`). Trước 22/08 cả bốn đều so sánh theo `optimize_gap2` và bỏ qua buổi 1 lỗ, nên lệnh này chạy sai bộ toán.
 7. **Bảo đảm bất biến liền mạch học sinh**:
    * Luôn duy trì `countStudentHoles === 0` trong suốt toàn bộ quá trình xây dựng và tối ưu.
 
@@ -209,6 +212,7 @@ Chạy các lệnh kiểm thử độc lập:
 | `solver_runtime/scripts/fet_trongoi_runner.cjs` | Backend FET local nhiều lane, quota session-first, heartbeat và giữ candidate tốt nhất |
 | `solver_runtime/scripts/solve_stdio.py` | Cổng stdio Python; dispatch request FET sang Node runner và relay progress |
 | `web/pages/tkb-constraints-menu.js` | Menu ràng buộc TKB, popup Thống kê theo lớp, xuất in ấn TKB |
+| `web/pages/tkb-optimize-menu.js` | Menu **Tối ưu** cạnh nút Xếp: 1 tiết/buổi · Buổi · 2 tiết trống · 1 tiết trống |
 | `web/pages/sapxep.html` | Trang xếp thời khóa biểu chính (Play ▶ / Stop ■ thuần Web Worker) |
 | `web/app.js` | Router chính, xác thực phiên đăng nhập, điều hướng trường học |
 | `web/super-admin.js` | Giao diện Super Admin (quản lý người dùng, trường học, cấu hình hệ thống) |

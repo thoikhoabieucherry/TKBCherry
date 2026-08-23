@@ -221,6 +221,16 @@
       this.limitCalls = DEFAULT_LIMIT_CALLS;
       this.strictFetGaps = true;
 
+      // Khoa "1 tiet/buoi" theo tinh than FET: mot rang buoc dat trong so 100%
+      // se tro thanh CONG CUNG luc dat tiet, dat roi thi khong nuoc di nao duoc
+      // pha (generate.cpp: okteachersminhoursdaily -> nConflActivities=MAX).
+      //   singletonLock === null  -> chua cham muc tieu, chua khoa.
+      //   singletonLock === k     -> khong nuoc di nao duoc de soBuoiDay1 > k.
+      // singletonRushActive: giai doan CHUA cham muc tieu, 1 tiet/buoi la doc
+      // quyen — duoc phep tang buoi day / tiet trong de thoat ket nhanh.
+      this.singletonLock = null;
+      this.singletonRushActive = false;
+
       this.constraintPreflight = {
         zeroDomainActivities: [],
         capacityShortages: [],
@@ -1182,12 +1192,27 @@
       }
     }
 
+    // Bat bien dem cua FET cho "moi buoi day it nhat 2 tiet"
+    // (ConstraintTeachersMinHoursDaily, generate.cpp: okteachersminhoursdaily).
+    //
+    // FET kiem tra  Sum_{buoi co day} max(H_buoi, minHoursDaily) <= tong tai GV.
+    // Dang tuong duong dang dung o day la  totalDeficit <= remainingUnplaced.
+    //
+    // Khi bat `gapAwareSessionGuard`, cong them ve tiet trong dung nhu FET lam
+    // khi ca MinHoursDaily lan MaxGapsPerDay cung bat (generate.cpp dong
+    // 30972-30976):  max(H_buoi + max(0, gaps_buoi - maxGaps), minHoursDaily).
+    // Voi hop dong cua du an nay minHoursDaily = 2 va maxGaps = 1 ("mot buoi
+    // khong qua 1 tiet trong"), nen pha dung lich nhin thay truoc ca no gap-2
+    // chu khong chi no tiet. Mac dinh TAT vi day la duong nong cua isSlotFeasible
+    // va can benchmark truoc khi doi hanh vi dung lich.
     opensUnaffordableSession(act, slot){
       if(!this.minTwoGuardActive || !this.teacherSessionCounts) return false;
       const sessIdx = Math.floor(slot / PERIODS_PER_SESSION);
       const dur = act.duration;
       const isAlreadyPlaced = (this.actPlacement && this.actPlacement[act.id] !== undefined && this.actPlacement[act.id] >= 0);
-      const oldSessIdx = isAlreadyPlaced ? Math.floor(this.actPlacement[act.id] / PERIODS_PER_SESSION) : -1;
+      const oldSlot = isAlreadyPlaced ? this.actPlacement[act.id] : -1;
+      const oldSessIdx = isAlreadyPlaced ? Math.floor(oldSlot / PERIODS_PER_SESSION) : -1;
+      const gapAware = this.options?.gapAwareSessionGuard === true;
 
       for(let i = 0; i < act.teacherIdxs.length; i++){
         const tIdx = act.teacherIdxs[i];
@@ -1197,9 +1222,11 @@
 
         if(totalLoad <= 1) continue;
 
+        const tg = gapAware ? this.teacherGridList[tIdx] : null;
         let totalPlaced = 0;
         let openedSessions = 0;
         let totalDeficit = 0;
+        let reqHours = 0;
 
         for(let s = 0; s < 12; s++){
           let current = this.teacherSessionCounts[tBase + s];
@@ -1213,6 +1240,28 @@
             if(sim < 2){
               totalDeficit += (2 - sim);
             }
+            if(tg){
+              const base = s * PERIODS_PER_SESSION;
+              let mask = 0;
+              for(let p = 0; p < PERIODS_PER_SESSION; p++){
+                const cell = tg[base + p];
+                if(cell >= 0 || cell === -3) mask |= (1 << p);
+              }
+              if(isAlreadyPlaced && s === oldSessIdx){
+                for(let o = 0; o < dur; o++){
+                  const bit = (oldSlot - base) + o;
+                  if(bit >= 0 && bit < PERIODS_PER_SESSION) mask &= ~(1 << bit);
+                }
+              }
+              if(s === sessIdx){
+                for(let o = 0; o < dur; o++){
+                  const bit = (slot - base) + o;
+                  if(bit >= 0 && bit < PERIODS_PER_SESSION) mask |= (1 << bit);
+                }
+              }
+              const extraGaps = Math.max(0, SESSION_STATS_LUT[mask].gaps - 1);
+              reqHours += Math.max(sim + extraGaps, 2);
+            }
           }
         }
 
@@ -1223,6 +1272,10 @@
 
         const remainingUnplaced = totalLoad - (totalPlaced + dur);
         if(totalDeficit > remainingUnplaced){
+          return true;
+        }
+
+        if(tg && reqHours > totalLoad){
           return true;
         }
       }
@@ -3097,6 +3150,118 @@
       return holes;
     }
 
+    // Sau mot nuoc di, lich lop co the con lo — va cac operator truoc gio LOAI
+    // NGAY nuoc di do (`countTotalStudentHoles() === 0`), mac du engine co san
+    // bo nen lich hoc sinh se vá dung cai lo vua tao ra.
+    //
+    // Nen lich chi dich tiet TRONG cung mot buoi cua lop (do tren fixture that:
+    // 4 tiet bi doi, 0 tiet sang buoi khac), nghia la so tiet moi buoi cua moi
+    // giao vien khong doi -> soBuoiDay1 va tsBuoiDay BAT BIEN qua buoc nen.
+    // Vi vay hay thu nen truoc khi loai. Neu nen van khong het lo thi khoi phuc
+    // dung trang thai truoc khi nen va tra false nhu cu.
+    studentHolesClearedAfterCompaction(){
+      if(this.countTotalStudentHoles() === 0) return true;
+      const beforeCompaction = this.captureStateSnapshot();
+      this.compactAllStudentSessions();
+      if(this.countTotalStudentHoles() === 0) return true;
+      this.restoreStateSnapshot(beforeCompaction);
+      return false;
+    }
+
+    // Chung chi san cho tung buoi 1 tiet con sot: giai thich VI SAO no khong go
+    // duoc, bang cac phep kiem tra tinh (khong tim kiem), de nguoi dung biet nen
+    // noi rang buoc nao thay vi de may hu c mai vao tuong.
+    //
+    // Ba nhom nguyen nhan do duoc tren du lieu that:
+    //  - o co dinh / tiet bi khoa;
+    //  - LOP cua tiet le nghi (OFF) o moi buoi khac ma giao vien co the day
+    //    -> khong the don tiet le di dau, cung khong the keo ban dong hanh toi;
+    //  - moi lop co the CHO tiet deu nghi dung buoi do.
+    explainResidualSingletons(limit = 8){
+      const rows = [];
+      const sessionsPerWeek = DAYS_LIST.length * SESSIONS_LIST.length;
+
+      for(let tIdx = 0; tIdx < this.teachers.length && rows.length < limit; tIdx++){
+        const tKey = this.teachers[tIdx];
+        if(!tKey || !this.isScoredTeacher(tKey)) continue;
+        const tg = this.teacherGridList[tIdx];
+        if(!tg) continue;
+
+        const sessions = [];
+        for(let s = 0; s < sessionsPerWeek; s++){
+          const base = s * PERIODS_PER_SESSION;
+          const acts = [];
+          let fixedCells = 0;
+          for(let p = 0; p < PERIODS_PER_SESSION; p++){
+            const cell = tg[base + p];
+            if(cell >= 0) acts.push(cell);
+            else if(cell === -3) fixedCells++;
+          }
+          sessions.push({ s, base, acts, fixedCells, k: acts.length + fixedCells });
+        }
+
+        for(const sess of sessions){
+          if(sess.k !== 1 || rows.length >= limit) continue;
+
+          if(sess.acts.length === 0){
+            rows.push({ teacher: tKey, reason: "buổi chỉ có một ô cố định, không thể dời" });
+            continue;
+          }
+          const act = this.activities[sess.acts[0]];
+          if(!act){ continue; }
+          if(act.isFixed || act.lockedByLessonBlock){
+            rows.push({ teacher: tKey, classId: act.classId, reason: "tiết lẻ bị khóa cố định" });
+            continue;
+          }
+
+          // Buoi le co the bien mat neu tiet le di sang mot buoi giao vien DA day.
+          const classGrid = this.classGridList[act.classIdx];
+          let landingSlots = 0;
+          for(const other of sessions){
+            if(other.s === sess.s || other.k === 0) continue;
+            for(let p = 0; p < PERIODS_PER_SESSION; p++){
+              const slot = other.base + p;
+              if(tg[slot] !== -1) continue;
+              const cell = classGrid ? classGrid[slot] : -2;
+              if(cell === -2 || cell === -3) continue;
+              landingSlots++;
+            }
+          }
+
+          // Hoac buoi le tro thanh 2 tiet neu mot buoi >= 3 tiet cho sang mot tiet.
+          let donorSlots = 0;
+          for(const donor of sessions){
+            if(donor.s === sess.s || donor.k < 3) continue;
+            for(const donorId of donor.acts){
+              const donorAct = this.activities[donorId];
+              if(!donorAct || donorAct.isFixed || donorAct.lockedByLessonBlock) continue;
+              const donorGrid = this.classGridList[donorAct.classIdx];
+              for(let p = 0; p < PERIODS_PER_SESSION; p++){
+                const slot = sess.base + p;
+                if(tg[slot] !== -1) continue;
+                const cell = donorGrid ? donorGrid[slot] : -2;
+                if(cell === -2 || cell === -3) continue;
+                donorSlots++;
+              }
+            }
+          }
+
+          let reason;
+          if(landingSlots === 0 && donorSlots === 0){
+            reason = `lớp ${act.classId} nghỉ ở mọi buổi khác của giáo viên, và mọi lớp có thể cho tiết đều nghỉ đúng buổi này`;
+          }else if(landingSlots === 0){
+            reason = `lớp ${act.classId} nghỉ ở mọi buổi khác mà giáo viên còn trống`;
+          }else if(donorSlots === 0){
+            reason = `không lớp nào có thể cho tiết vào buổi này (đều nghỉ hoặc kín chỗ)`;
+          }else{
+            reason = "còn đường đi hợp lệ nhưng chưa tìm ra trong ngân sách thời gian";
+          }
+          rows.push({ teacher: tKey, classId: act.classId, reason });
+        }
+      }
+      return rows;
+    }
+
     compareMetrics(a, b, arg3 = "optimize_all", arg4 = null){
       const mode = typeof arg4 === "string" ? arg4 : (typeof arg3 === "string" ? arg3 : "optimize_all");
       const initial = typeof arg3 === "object" && arg3 !== null ? arg3 : (b || a);
@@ -3105,7 +3270,28 @@
       const bUnplaced = Number(b?.unplacedCount || 0);
       if(aUnplaced !== bUnplaced) return aUnplaced - bUnplaced;
 
+      // KHOA 1 TIET/BUOI (ap cho MOI mode).
+      // Khi soBuoiDay1 da cham muc tieu (0, hoac san cau truc da chung minh),
+      // no tro thanh cong cung: cac pha sau (giam buoi, 2 tiet trong, 1 tiet
+      // trong) khong bao gio duoc mua cai tien cua minh bang cach de sinh lai
+      // mot buoi giao vien chi day 1 tiet.
+      if(this.singletonLock !== null && a.soBuoiDay1 > this.singletonLock) return 1;
+
       if(mode === "optimize_singletons"){
+        // Giai doan bam ve 0: 1 tiet/buoi la muc tieu DOC QUYEN.
+        // FET khong chia pha — no de rang buoc 100% chan thang tai cho dat tiet
+        // va day cac hoat dong xung dot ra de xep lai. Tuong duong o day: cho
+        // phep tang tong buoi day va tiet trong mien la khong vi pham rang buoc
+        // cung cua nguoi dung, doi lay toc do ha soBuoiDay1. Cac chi so mem con
+        // lai tut xuong vai tro tie-break, khong duoc phep phu quyet mot nuoc
+        // di lam giam singleton.
+        if(this.singletonRushActive){
+          if(a.soBuoiDay1 !== b.soBuoiDay1) return a.soBuoiDay1 - b.soBuoiDay1;
+          if(a.soNgayMotTiet !== b.soNgayMotTiet) return a.soNgayMotTiet - b.soNgayMotTiet;
+          if(a.soBuoiTrong2 !== b.soBuoiTrong2) return a.soBuoiTrong2 - b.soBuoiTrong2;
+          if(a.tsBuoiDay !== b.tsBuoiDay) return a.tsBuoiDay - b.tsBuoiDay;
+          return a.soBuoiTrong1 - b.soBuoiTrong1;
+        }
         if(!this.options?.allowSingletonGap2Tradeoff && a.soBuoiTrong2 > initial.soBuoiTrong2) return 1;
         if(a.soBuoiDay1 !== b.soBuoiDay1) return a.soBuoiDay1 - b.soBuoiDay1;
         if(a.soNgayMotTiet !== b.soNgayMotTiet) return a.soNgayMotTiet - b.soNgayMotTiet;
@@ -3234,7 +3420,7 @@
                     feasibleMove = this.randomSwap(occAct.id, 0);
                   }
 
-                  if(feasibleMove && this.countTotalStudentHoles() === 0){
+                  if(feasibleMove && this.studentHolesClearedAfterCompaction()){
                     const m = this.evaluateMetrics();
                     if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
                       currentBest = { ...m };
@@ -3251,7 +3437,7 @@
                 this.unplaceActivity(actId);
                 if(this.isSlotFeasible(act, dst)){
                   this.placeActivityDirect(actId, dst);
-                  if(this.countTotalStudentHoles() === 0){
+                  if(this.studentHolesClearedAfterCompaction()){
                     const m = this.evaluateMetrics();
                     if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
                       currentBest = { ...m };
@@ -3311,8 +3497,12 @@
               lastYieldAt = Date.now();
             }
 
-            // Direction 1: Transfer from rich to single (when rich has >= 2 periods)
-            if(rich.items.length >= 2){
+            // Direction 1: cho mot tiet tu buoi nhieu tiet sang buoi le.
+            // Buoi cho phai co >= 3 tiet: neu no chi co 2, cho di mot tiet lam
+            // chinh no thanh buoi 1 tiet — tong soBuoiDay1 khong doi nen nuoc di
+            // luon bi comparator loai. Truoc day nguong la >= 2 nen ca nhanh nay
+            // quet vo ich tren moi buoi 2 tiet cua moi giao vien.
+            if(rich.items.length >= 3){
               for(const richItem of rich.items){
                 const donorAct = this.activities[richItem.actId];
                 if(!donorAct || donorAct.isFixed || donorAct.lockedByLessonBlock) continue;
@@ -3335,7 +3525,7 @@
                     this.unplaceActivity(donorAct.id);
                     if(this.isSlotFeasible(donorAct, targetSlot)){
                       this.placeActivityDirect(donorAct.id, targetSlot);
-                      if(this.countTotalStudentHoles() === 0){
+                      if(this.studentHolesClearedAfterCompaction()){
                         const m = this.evaluateMetrics();
                         if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
                           currentBest = { ...m };
@@ -3368,7 +3558,7 @@
                         ok = this.randomSwap(occAct.id, 0);
                       }
 
-                      if(ok && this.countTotalStudentHoles() === 0){
+                      if(ok && this.studentHolesClearedAfterCompaction()){
                         const m = this.evaluateMetrics();
                         if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
                           currentBest = { ...m };
@@ -3407,7 +3597,7 @@
                   this.unplaceActivity(singleAct.id);
                   if(this.isSlotFeasible(singleAct, targetSlot)){
                     this.placeActivityDirect(singleAct.id, targetSlot);
-                    if(this.countTotalStudentHoles() === 0){
+                    if(this.studentHolesClearedAfterCompaction()){
                       const m = this.evaluateMetrics();
                       if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
                         currentBest = { ...m };
@@ -3440,7 +3630,7 @@
                       ok = this.randomSwap(occAct.id, 0);
                     }
 
-                    if(ok && this.countTotalStudentHoles() === 0){
+                    if(ok && this.studentHolesClearedAfterCompaction()){
                       const m = this.evaluateMetrics();
                       if(this.compareMetrics(m, currentBest, "optimize_singletons") < 0){
                         currentBest = { ...m };
@@ -6349,11 +6539,97 @@
       return improved ? currentBest : null;
     }
 
+    // Dat mot tiet vua bi boc ra vao buoi ma giao vien DANG co tiet, bo qua
+    // buoi dang duoc giai phong. Tra ve true neu dat duoc.
+    //
+    // Day la ve "don sang buoi nhieu tiet": chi cac o nam trong buoi da co
+    // nguoi day moi duoc nhan, nen mot buoi bi xoa khong the tai sinh thanh
+    // mot buoi moi o ngay khac. Trong so cac o hop le, chon o co diem bam cum
+    // tot nhat (slotTeacherAffinityScore — diem cang thap cang bam).
+    placeIntoOccupiedTeacherSession(act, vacatingSession, maxEjectionTries = 0){
+      if(!this.teacherSessionCounts) return false;
+      const allowed = this.allowedSlotsByActivity?.get(act) || [];
+      const ranked = [];
+
+      for(let i = 0; i < allowed.length; i++){
+        const slot = allowed[i];
+        const session = Math.floor(slot / PERIODS_PER_SESSION);
+        if(session === vacatingSession) continue;
+
+        let occupied = false;
+        for(let t = 0; t < act.teacherIdxs.length; t++){
+          if(this.teacherSessionCounts[act.teacherIdxs[t] * 12 + session] > 0){
+            occupied = true;
+            break;
+          }
+        }
+        if(occupied) ranked.push(slot);
+      }
+      if(ranked.length === 0) return false;
+      ranked.sort((a, b) => this.slotTeacherAffinityScore(act, a) - this.slotTeacherAffinityScore(act, b));
+
+      // Pha 1 — o con trong that su.
+      for(let i = 0; i < ranked.length; i++){
+        if(this.isSlotFeasible(act, ranked[i])){
+          this.placeActivityDirect(act.id, ranked[i]);
+          return true;
+        }
+      }
+      if(maxEjectionTries <= 0) return false;
+
+      // Pha 2 — ejection. Do rat da so buoi cua giao vien deu kin cho lop nay,
+      // pha 1 mot minh hau nhu luon that bai (do duoc: ~92% truot). FET giai
+      // dung tinh huong nay bang cach DAY hoat dong dang chiem ra roi xep lai
+      // no bang tim kiem de quy (teacherRemoveAnActivity... -> conflActivities
+      // -> randomSwap o level ke tiep). Moi lan thu deu co snapshot rieng nen
+      // that bai khong de lai dau vet.
+      const classGrid = this.classGridList[act.classIdx];
+      if(!classGrid) return false;
+      let tries = 0;
+
+      for(let i = 0; i < ranked.length && tries < maxEjectionTries; i++){
+        const slot = ranked[i];
+        const occId = classGrid[slot];
+        if(occId === undefined || occId < 0) continue;
+        const occAct = this.activities[occId];
+        if(!occAct || occAct.isFixed || occAct.lockedByLessonBlock || occAct.duration !== 1) continue;
+
+        tries++;
+        const snap = this.captureStateSnapshot();
+        this.unplaceActivity(occId);
+        if(!this.isSlotFeasible(act, slot)){
+          this.restoreStateSnapshot(snap);
+          continue;
+        }
+        this.placeActivityDirect(act.id, slot);
+        this.nCalls = 0;
+        this.tabuMap.clear();
+        this.triedRemovals.clear();
+        this.swappedInBranch.clear();
+        this.limitCalls = this.getAdaptiveLimitCalls(1500, 2500);
+        if(this.randomSwap(occId, 0)) return true;
+        this.restoreStateSnapshot(snap);
+      }
+      return false;
+    }
+
+    // Don buoi it tiet sang buoi nhieu tiet.
+    //
+    // FET xu ly ConstraintTeacherMaxDaysPerWeek bang cach giai phong TRON MOT
+    // ngay day cua giao vien, va luon uu tien ngay co it hoat dong phai day di
+    // nhat (generate.cpp: dem _nConflActivities cho tung ngay co the lam trong,
+    // roi boc ngau nhien trong so cac ngay dat cuc tieu). O day don vi tuong
+    // duong la mot "buoi" (5 tiet sang hoac 5 tiet chieu), nen buoi 1 tiet duoc
+    // thu truoc, roi 2 tiet, roi 3 tiet — dung thu tu luy tien k = 1 -> 2 -> 3.
+    //
+    // Ban truoc 22/08 chi xet buoi co DUNG 2 tiet, nen bo qua ca buoi 1 tiet
+    // (vua la singleton vua la buoi thua) lan buoi 3 tiet.
     async tryVacateTeacherSessions(bestMetrics, onProgress = null){
       let currentBest = { ...bestMetrics };
       let improved = false;
-      let evalSteps = 0;
       let lastYieldAt = Date.now();
+
+      const MAX_SESSION_PERIODS_TO_VACATE = 3;
 
       const scoredList = Array.from(this.scoredTeachers || this.teacherGrid.keys());
       this.rng.shuffle(scoredList);
@@ -6365,59 +6641,105 @@
         const tg = this.teacherGridList[tIdx];
         if(!tg) continue;
 
+        const candidates = [];
         for(let d = 0; d < DAYS_LIST.length; d++){
           for(let b = 0; b < SESSIONS_LIST.length; b++){
-            if((++evalSteps % 32) === 0 && (Date.now() - lastYieldAt >= 16)){
-              await new Promise(resolve => setTimeout(resolve, 0));
-              lastYieldAt = Date.now();
-            }
-
             const sStart = d * SLOTS_PER_DAY + b * PERIODS_PER_SESSION;
-            const sessionActs = [];
+            const actIds = [];
+            const seen = new Set();
+            let periods = 0;
+            let blocked = false;
+
             for(let p = 0; p < PERIODS_PER_SESSION; p++){
-              const s = sStart + p;
-              if(tg[s] >= 0) sessionActs.push({ actId: tg[s], slot: s });
-            }
-            if(sessionActs.length !== 2) continue;
-
-            const snap = this.captureStateSnapshot();
-            let allMoved = true;
-
-            for(const item of sessionActs){
-              const act = this.activities[item.actId];
-              if(!act || act.isFixed || act.lockedByLessonBlock || act.duration !== 1){ allMoved = false; break; }
-              this.unplaceActivity(act.id);
-              this.nCalls = 0;
-              this.tabuMap.clear();
-              this.triedRemovals.clear();
-              this.swappedInBranch.clear();
-              this.limitCalls = this.getAdaptiveLimitCalls(2000, 3500);
-              if(!this.randomSwap(act.id, 0)){ allMoved = false; break; }
+              const cell = tg[sStart + p];
+              // O co dinh (-3) khong the roi buoi nay, nen buoi khong bao gio
+              // dong lai duoc: bo qua ngay thay vi ton mot luot randomSwap.
+              if(cell === -3){ blocked = true; break; }
+              if(cell < 0) continue;
+              periods++;
+              if(seen.has(cell)) continue;
+              seen.add(cell);
+              actIds.push(cell);
             }
 
-            if(allMoved && this.countTotalStudentHoles() === 0){
-              const m = this.evaluateMetrics();
-              if(this.compareMetrics(m, currentBest, "optimize_sessions") < 0){
-                currentBest = { ...m };
-                improved = true;
-                if(typeof onProgress === "function") onProgress(currentBest);
-                break;
-              }
-            }
+            if(blocked || periods === 0) continue;
+            if(periods > MAX_SESSION_PERIODS_TO_VACATE) continue;
 
-            this.restoreStateSnapshot(snap);
+            const movable = actIds.every(id => {
+              const act = this.activities[id];
+              return act && !act.isFixed && !act.lockedByLessonBlock && act.duration === 1;
+            });
+            if(!movable) continue;
+
+            candidates.push({
+              actIds,
+              cost: actIds.length,
+              session: Math.floor(sStart / PERIODS_PER_SESSION)
+            });
           }
-          if(improved) break;
+        }
+
+        if(candidates.length === 0) continue;
+        // Xao truoc roi sort on dinh: cac buoi cung chi phi giu thu tu ngau
+        // nhien, giong cach FET boc ngau nhien trong nhom ngay dat cuc tieu.
+        this.rng.shuffle(candidates);
+        candidates.sort((a, b) => a.cost - b.cost);
+
+        for(const candidate of candidates){
+          if(this.deadlineAtMs && Date.now() >= this.deadlineAtMs) break;
+          if(Date.now() - lastYieldAt >= 16){
+            await new Promise(resolve => setTimeout(resolve, 0));
+            lastYieldAt = Date.now();
+          }
+
+          const snap = this.captureStateSnapshot();
+          let allMoved = true;
+
+          for(const actId of candidate.actIds){
+            const act = this.activities[actId];
+            if(!act){ allMoved = false; break; }
+            this.unplaceActivity(act.id);
+            // Uu tien tuyet doi: dat lai tiet vao mot buoi GIAO VIEN DA CO TIET
+            // (va khong phai buoi dang giai phong). randomSwap tu do rat hay
+            // mo mot buoi moi o cho khac — luc do tong buoi khong giam, ca nuoc
+            // di bi rollback va operator coi nhu bat luc. Do la ly do ban truoc
+            // gan nhu khong bao gio ha duoc tsBuoiDay.
+            if(this.placeIntoOccupiedTeacherSession(act, candidate.session, 6)) continue;
+            this.nCalls = 0;
+            this.tabuMap.clear();
+            this.triedRemovals.clear();
+            this.swappedInBranch.clear();
+            this.limitCalls = this.getAdaptiveLimitCalls(2000, 3500);
+            if(!this.randomSwap(act.id, 0)){ allMoved = false; break; }
+          }
+
+          if(allMoved && this.countTotalStudentHoles() === 0){
+            const m = this.evaluateMetrics();
+            if(this.compareMetrics(m, currentBest, "optimize_sessions") < 0){
+              currentBest = { ...m };
+              improved = true;
+              if(typeof onProgress === "function") onProgress(currentBest);
+              break;
+            }
+          }
+
+          this.restoreStateSnapshot(snap);
         }
       }
       return improved ? currentBest : null;
     }
 
-    async tryCrushGaps(bestMetrics, onProgress = null){
+    async tryCrushGaps(bestMetrics, onProgress = null, mode = "optimize_gap2"){
       let currentBest = { ...bestMetrics };
       let improved = false;
       let evalSteps = 0;
       let lastYieldAt = Date.now();
+
+      // FET (ConstraintTeachersMaxGapsPerDay) chi coi mot buoi la vi pham khi
+      // so lo vuot maxGaps. Muc tieu "2 tiet trong" tuong duong maxGaps = 1 nen
+      // chi quet buoi co >= 2 lo; muc tieu "1 tiet trong" tuong duong
+      // maxGaps = 0 nen phai quet ca buoi chi co dung 1 lo.
+      const minGapToTarget = mode === "optimize_gap1" ? 1 : 2;
 
       const scoredList = Array.from(this.scoredTeachers || this.teacherGrid.keys());
       this.rng.shuffle(scoredList);
@@ -6441,7 +6763,7 @@
             if(k < 2) continue;
             const span = taught[k - 1] - taught[0] + 1;
             const gapCount = span - k;
-            if(gapCount < 2) continue;
+            if(gapCount < minGapToTarget) continue;
 
             for(let idx = 0; idx < k; idx++){
               const pOrig = taught[idx];
@@ -6488,7 +6810,7 @@
 
                     if(ok && this.countTotalStudentHoles() === 0){
                       const m = this.evaluateMetrics();
-                      if(this.compareMetrics(m, currentBest, "optimize_gap2") < 0){
+                      if(this.compareMetrics(m, currentBest, mode) < 0){
                         currentBest = { ...m };
                         improved = true;
                         if(typeof onProgress === "function") onProgress(currentBest);
@@ -6505,7 +6827,7 @@
                     this.placeActivityDirect(act.id, sTarget);
                     if(this.countTotalStudentHoles() === 0){
                       const m = this.evaluateMetrics();
-                      if(this.compareMetrics(m, currentBest, "optimize_gap2") < 0){
+                      if(this.compareMetrics(m, currentBest, mode) < 0){
                         currentBest = { ...m };
                         improved = true;
                         if(typeof onProgress === "function") onProgress(currentBest);
@@ -6524,7 +6846,7 @@
       return improved ? currentBest : null;
     }
 
-    async tryIntraClassGapCrush(bestMetrics, onProgress = null){
+    async tryIntraClassGapCrush(bestMetrics, onProgress = null, mode = "optimize_gap2"){
       let currentBest = { ...bestMetrics };
       let improved = false;
       let evalSteps = 0;
@@ -6583,7 +6905,7 @@
 
                         if(this.countTotalStudentHoles() === 0){
                           const m = this.evaluateMetrics();
-                          if(this.compareMetrics(m, currentBest, "optimize_gap2") < 0){
+                          if(this.compareMetrics(m, currentBest, mode) < 0){
                             currentBest = { ...m };
                             improved = true;
                             if(typeof onProgress === "function") onProgress(currentBest);
@@ -6606,7 +6928,7 @@
       return improved ? currentBest : null;
     }
 
-    async tryCrossDayClassSwap(bestMetrics, onProgress = null){
+    async tryCrossDayClassSwap(bestMetrics, onProgress = null, mode = "optimize_gap2"){
       let currentBest = { ...bestMetrics };
       let improved = false;
       let evalSteps = 0;
@@ -6668,7 +6990,7 @@
 
                   if(this.countTotalStudentHoles() === 0){
                     const mNew = this.evaluateMetrics();
-                    if(this.compareMetrics(mNew, currentBest, "optimize_gap2") < 0){
+                    if(this.compareMetrics(mNew, currentBest, mode) < 0){
                       currentBest = { ...mNew };
                       improved = true;
                       if(typeof onProgress === "function") onProgress(currentBest);
@@ -6688,7 +7010,7 @@
       return improved ? currentBest : null;
     }
 
-    async tryIntraSessionBlockPermutations(bestMetrics, onProgress = null){
+    async tryIntraSessionBlockPermutations(bestMetrics, onProgress = null, mode = "optimize_gap2"){
       let currentBest = { ...bestMetrics };
       let improved = false;
       let evalSteps = 0;
@@ -6788,7 +7110,7 @@
 
                 if(allFeasible && this.countTotalStudentHoles() === 0){
                   const mNew = this.evaluateMetrics();
-                  if(this.compareMetrics(mNew, currentBest, "optimize_gap2") < 0){
+                  if(this.compareMetrics(mNew, currentBest, mode) < 0){
                     currentBest = { ...mNew };
                     improved = true;
                     if(typeof onProgress === "function") onProgress(currentBest);
@@ -7033,6 +7355,44 @@
       const targetMetricKey = mode === "optimize_gap2" ? "soBuoiTrong2" : (mode === "optimize_singletons" ? "soBuoiDay1" : (mode === "optimize_gap1" ? "soBuoiTrong1" : (mode === "optimize_sessions" ? "tsBuoiDay" : "soBuoiDay1")));
       const targetMetricLowerBound = Number(this.constraintPreflight?.structuralFloor?.metricLowerBounds?.[targetMetricKey] || 0);
 
+      // Vong doi khoa "1 tiet/buoi" (chi tiet o compareMetrics).
+      // Muc tieu la 0, hoac san cau truc da duoc chung minh khi 0 la bat kha
+      // thi. Lich vao day da dat muc tieu -> khoa ngay, moi mode phia sau
+      // (Buoi / 2 tiet trong / 1 tiet trong) deu khong duoc lam no tang lai.
+      // Luoi an toan cuoi luot: chup trang thai vao truoc khi tim kiem. Neu vi
+      // bat ky ly do nao (compactAllStudentSessions chay ngoai cong so sanh,
+      // mot operator moi, hay mot pha danh doi khong tra duoc no) ma luot nay
+      // ket thuc voi NHIEU buoi 1 tiet hon luc bat dau, tra lai nguyen trang.
+      // Day la bat bien duoc kiem tra o dau ra, khong phu thuoc vao viec tung
+      // operator co tu giac hay khong.
+      const entrySnapshot = this.captureStateSnapshot();
+
+      const singletonFloor = Math.max(0, Number(
+        this.constraintPreflight?.structuralFloor?.metricLowerBounds?.soBuoiDay1 || 0
+      ));
+      this.singletonLock = initialMetrics.soBuoiDay1 <= singletonFloor
+        ? initialMetrics.soBuoiDay1
+        : null;
+      // Che do danh doi chi bat khi NGUOI DUNG bam lenh "1 tiet/buoi" tren menu
+      // Toi uu (phanmon.js dat `singletonRush: true`).
+      // KHONG duoc suy ra tu mode: pipeline tron goi trong tkb-fet-worker.js
+      // cung goi optimize('optimize_singletons'), nhung no da co co che danh doi
+      // rieng va co ky luat hon (`allowSingletonGap2Tradeoff` + tradeoffSnapshot
+      // rollback quanh dong 542-594). Bat rush o day se de len co che do.
+      this.singletonRushActive = mode === "optimize_singletons"
+        && this.singletonLock === null
+        && this.options?.singletonRush === true;
+      const rushEngagedThisRun = this.singletonRushActive;
+      // Khi khoa da dong, bat cong dat tiet cua FET: randomSwap uu tien cac o
+      // KHONG mo them mot buoi khong du 2 tiet (opensUnaffordableSession) va
+      // xep hang o theo do "bam cum" cua giao vien. Nho vay "khong lam tang
+      // 1 tiet/buoi" duoc chan ngay luc dat tiet, chu khong chi bi bat lai o
+      // buoc so sanh metrics sau khi da di mot nuoc hong.
+      // Chi NANG cong len, khong bao gio ha xuong: mot engine vua chay solve()
+      // xong co the dang bat san cong nay, va tat di se doi hanh vi cua duong
+      // xep tron goi.
+      if(this.singletonLock !== null) this.minTwoGuardActive = true;
+
       const isDeep = Boolean(this.options?.deepCycles || this.options?.deepLocalFet);
       let budget = Number(this.options?.optimizeTimeBudgetMs || this.options?.timeBudgetMs || this.timeBudgetMs);
       const hasExplicitBudget = Number.isFinite(Number(this.options?.optimizeTimeBudgetMs)) && Number(this.options.optimizeTimeBudgetMs) > 0 ||
@@ -7097,13 +7457,17 @@
         }
 
         if(mode === "optimize_all" || mode === "optimize_gap2" || mode === "optimize_gap1"){
-          const res4 = await this.tryCrushGaps(bestMetrics, onProgress);
+          // Truoc 22/08 ca bon operator deu so sanh cung "optimize_gap2", nen
+          // nut "1 tiet trong" that ra chay bo toi uu cua gap-2 va bo qua dung
+          // nhung buoi chi co 1 lo ma no nham toi.
+          const gapMode = mode === "optimize_gap1" ? "optimize_gap1" : "optimize_gap2";
+          const res4 = await this.tryCrushGaps(bestMetrics, onProgress, gapMode);
           if(res4){ bestMetrics = res4; anyRoundImprovement = true; }
-          const res4b = await this.tryIntraClassGapCrush(bestMetrics, onProgress);
+          const res4b = await this.tryIntraClassGapCrush(bestMetrics, onProgress, gapMode);
           if(res4b){ bestMetrics = res4b; anyRoundImprovement = true; }
-          const res4c = await this.tryCrossDayClassSwap(bestMetrics, onProgress);
+          const res4c = await this.tryCrossDayClassSwap(bestMetrics, onProgress, gapMode);
           if(res4c){ bestMetrics = res4c; anyRoundImprovement = true; }
-          const res4d = await this.tryIntraSessionBlockPermutations(bestMetrics, onProgress);
+          const res4d = await this.tryIntraSessionBlockPermutations(bestMetrics, onProgress, gapMode);
           if(res4d){ bestMetrics = res4d; anyRoundImprovement = true; }
         }
 
@@ -7112,8 +7476,30 @@
           if(res5){ bestMetrics = res5; anyRoundImprovement = true; }
         }
 
+        // compactAllStudentSessions() chay NGOAI cong compareMetrics: no doi lich
+        // de khu lo cua hoc sinh va co the vo tinh tach ra buoi giao vien chi con
+        // 1 tiet. Vi ngay sau do bestMetrics duoc lay lai tu evaluateMetrics(),
+        // moi thiet hai o day tro thanh nen mong cua vong sau — tich luy qua
+        // nhieu vong thi 1 tiet/buoi leo len thay vi giam. Neu truoc khi nen lich
+        // hoc sinh da khong con lo thi viec nen la tuy chon, nen hoan tac duoc.
+        const holesBeforeCompact = this.countTotalStudentHoles();
+        const compactSnapshot = holesBeforeCompact === 0 ? this.captureStateSnapshot() : null;
+        const singletonsBeforeCompact = bestMetrics.soBuoiDay1;
         this.compactAllStudentSessions();
         bestMetrics = this.evaluateMetrics();
+        if(compactSnapshot && bestMetrics.soBuoiDay1 > singletonsBeforeCompact){
+          this.restoreStateSnapshot(compactSnapshot);
+          bestMetrics = this.evaluateMetrics();
+        }
+
+        // Vua cham muc tieu 1 tiet/buoi -> KHOA lai va tat che do danh doi.
+        // Tu day tro di khong nuoc di nao (ke ca cua cac pha sau) duoc phep
+        // sinh lai mot buoi giao vien chi day 1 tiet.
+        if(this.singletonLock === null && bestMetrics.soBuoiDay1 <= singletonFloor){
+          this.singletonLock = bestMetrics.soBuoiDay1;
+          this.singletonRushActive = false;
+          this.minTwoGuardActive = true;
+        }
 
         if(typeof onProgress === "function"){
           onProgress({
@@ -7126,6 +7512,12 @@
         }
 
         await new Promise(resolve => setTimeout(resolve, 0));
+
+        // Nut "1 tiet/buoi" cham dich thi dung ngay: cac chi so con lai la viec
+        // cua ba nut kia, khong tieu them ngan sach o day.
+        if(mode === "optimize_singletons" && this.singletonLock !== null){
+          break;
+        }
 
         if(bestMetrics[targetMetricKey] <= targetMetricLowerBound && bestMetrics.soBuoiDay1 === 0){
           break;
@@ -7164,7 +7556,39 @@
       // da, phan du tra ve Chua phan); chat luong gap2/1t-buoi la viec cua
       // pipeline toi uu (Tron goi/NEW) chay SAU khi lich da ap.
 
-      this.__minTwoGuardActive = false;
+      // (22/08) O day tung co dong `this.__minTwoGuardActive = false;` — mot
+      // thuoc tinh KHONG ai doc (co that la `minTwoGuardActive`), tuc la dead
+      // code. KHONG duoc "sua" no thanh lenh tat co that: pipeline tron goi
+      // trong tkb-fet-worker.js goi lien tiep optimize('optimize_singletons')
+      // -> optimize('optimize_gap2') -> runUntilZeroSingletons() tren CUNG mot
+      // engine, va cac pha sau dua vao cong min-2 van con bat tu solve(). Tat
+      // no o cuoi luot dau tien lam cac pha sau tu do mo lai buoi 1 tiet.
+      // Da xoa dong dead code; cong chi duoc NANG len, khong bao gio ha xuong.
+      // Che do danh doi chi song trong mot luot optimize(); singletonLock duoc
+      // giu lai vi no mo ta mot bat bien lich da dat duoc.
+      this.singletonRushActive = false;
+
+      const entrySingletons = Number(initialMetrics.soBuoiDay1 || 0);
+      const entryUnplaced = Number(initialMetrics.unplacedCount || 0);
+      let singletonRegressionReverted = false;
+      let rushRolledBack = false;
+
+      if(Number(bestMetrics.soBuoiDay1 || 0) > entrySingletons
+        || Number(bestMetrics.unplacedCount || 0) > entryUnplaced){
+        this.restoreStateSnapshot(entrySnapshot);
+        bestMetrics = this.evaluateMetrics();
+        singletonRegressionReverted = true;
+      }else if(rushEngagedThisRun && Number(bestMetrics.soBuoiDay1 || 0) >= entrySingletons){
+        // Che do danh doi duoc phep tang tong buoi va tiet trong — nhung LY DO
+        // duy nhat de chap nhan thiet hai do la ha duoc 1 tiet/buoi. Neu het
+        // luot ma chi so do khong giam, thiet hai la vo ich: tra lai nguyen
+        // trang thay vi de nguoi dung ganh mot lich Trong-2 xau hon ma khong
+        // duoc gi. (Khong co buoc nay, bam lai nhieu lan se tich luy thiet hai.)
+        this.restoreStateSnapshot(entrySnapshot);
+        bestMetrics = this.evaluateMetrics();
+        rushRolledBack = true;
+      }
+
       this.applyToDataTKB();
       const currentVal = bestMetrics[targetMetricKey];
       const targetReached = currentVal === 0 || currentVal <= targetMetricLowerBound;
@@ -7180,6 +7604,9 @@
         floorReached,
         initialMetrics,
         metrics: bestMetrics,
+        singletonRegressionReverted,
+        rushRolledBack,
+        residualSingletons: bestMetrics.soBuoiDay1 > 0 ? this.explainResidualSingletons() : [],
         placed: this.activities.length,
         unassigned: 0,
         diagnostics: this.constraintPreflight
@@ -7252,6 +7679,10 @@
       let bestMetrics = { ...initialMetrics };
       const targetMetricKey = "soBuoiDay1";
       const targetMetricLowerBound = Number(this.constraintPreflight?.structuralFloor?.metricLowerBounds?.soBuoiDay1 || 0);
+      // Cung luoi an toan nhu optimize(): ham nay nam tren duong ▶ Xep va truoc
+      // day khong co bat ky rang buoc dau-ra nao, nen mot luot khong may van co
+      // the tra ve lich nhieu buoi 1 tiet hon luc vao.
+      const entrySnapshot = this.captureStateSnapshot();
 
       const maxPasses = Number(options?.maxPasses) || 15;
       const stagnationThreshold = Number(options?.stagnationThreshold) || 3;
@@ -7262,7 +7693,14 @@
       const onProgress = options?.onProgress || null;
 
       if(bestMetrics.soBuoiDay1 <= targetMetricLowerBound){
-        this.__minTwoGuardActive = false;
+        // (22/08) O day tung co dong `this.__minTwoGuardActive = false;` — mot
+      // thuoc tinh KHONG ai doc (co that la `minTwoGuardActive`), tuc la dead
+      // code. KHONG duoc "sua" no thanh lenh tat co that: pipeline tron goi
+      // trong tkb-fet-worker.js goi lien tiep optimize('optimize_singletons')
+      // -> optimize('optimize_gap2') -> runUntilZeroSingletons() tren CUNG mot
+      // engine, va cac pha sau dua vao cong min-2 van con bat tu solve(). Tat
+      // no o cuoi luot dau tien lam cac pha sau tu do mo lai buoi 1 tiet.
+      // Da xoa dong dead code; cong chi duoc NANG len, khong bao gio ha xuong.
         this.applyToDataTKB();
         if(typeof onProgress === "function"){
           onProgress({
@@ -7430,7 +7868,21 @@
         }
       }
 
-      this.__minTwoGuardActive = false;
+      // (22/08) O day tung co dong `this.__minTwoGuardActive = false;` — mot
+      // thuoc tinh KHONG ai doc (co that la `minTwoGuardActive`), tuc la dead
+      // code. KHONG duoc "sua" no thanh lenh tat co that: pipeline tron goi
+      // trong tkb-fet-worker.js goi lien tiep optimize('optimize_singletons')
+      // -> optimize('optimize_gap2') -> runUntilZeroSingletons() tren CUNG mot
+      // engine, va cac pha sau dua vao cong min-2 van con bat tu solve(). Tat
+      // no o cuoi luot dau tien lam cac pha sau tu do mo lai buoi 1 tiet.
+      // Da xoa dong dead code; cong chi duoc NANG len, khong bao gio ha xuong.
+      let singletonRegressionReverted = false;
+      if(Number(bestMetrics.soBuoiDay1 || 0) > Number(initialMetrics.soBuoiDay1 || 0)
+        || Number(bestMetrics.unplacedCount || 0) > Number(initialMetrics.unplacedCount || 0)){
+        this.restoreStateSnapshot(entrySnapshot);
+        bestMetrics = this.evaluateMetrics();
+        singletonRegressionReverted = true;
+      }
       this.applyToDataTKB();
       const currentVal = bestMetrics.soBuoiDay1;
       const targetReached = currentVal === 0 || currentVal <= targetMetricLowerBound;
@@ -7446,6 +7898,8 @@
         floorReached,
         initialMetrics,
         metrics: bestMetrics,
+        singletonRegressionReverted,
+        residualSingletons: bestMetrics.soBuoiDay1 > 0 ? this.explainResidualSingletons() : [],
         passes: completedPasses,
         placed: this.activities.length,
         unassigned: 0,

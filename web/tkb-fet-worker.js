@@ -942,6 +942,10 @@ self.onmessage = async function(e) {
         targetReached: res?.targetReached,
         floorReached: res?.floorReached,
         stagnated: res?.stagnated,
+        // Chung chi san: ly do tung buoi 1 tiet con sot khong go duoc, de UI noi
+        // ro rang buoc nao dang chan thay vi chi bao con N buoi.
+        residualSingletons: res?.residualSingletons || [],
+        singletonRegressionReverted: res?.singletonRegressionReverted === true,
         placed: res?.placed,
         unassigned: res?.unassigned,
         total: res?.total || ((res?.placed || 0) + (res?.unassigned || 0))
