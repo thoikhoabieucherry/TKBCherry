@@ -73,7 +73,8 @@ database đều bị Git bỏ qua.
 ## Cây mã nguồn được giữ
 
 - `web/`: giao diện, FET, ràng buộc, auth/storage và thư viện browser.
-- `rust_api/`: ba file Rust chính, Cargo manifest/lock và SQLite runtime Windows.
+- `rust_api/`: ba file Rust chính, Cargo manifest/lock, SQLite runtime và bản
+  chạy Windows x64 có manifest SHA-256.
 - `e2e_tests/`: test engine, worker, planner, auth, export và responsive UI.
 - `tools/benchmarks/`: benchmark FET dùng fixture ẩn danh.
 - `tests/`: test launcher Python.
@@ -90,9 +91,11 @@ Excel tạm và các test chỉ bảo vệ kiến trúc đã nghỉ.
 python .\start.py
 ```
 
-Mặc định mở `http://127.0.0.1:1010/`. Launcher dùng release Rust còn mới hoặc
-build `cargo build --release --locked`; không dùng binary prebuilt trong repo và
-không kiểm tra phụ thuộc solver Python.
+Mặc định mở `http://127.0.0.1:1010/`. Trên Windows x64, launcher kiểm tra cả
+dấu vân tay nguồn Rust và SHA-256 binary rồi dùng
+`rust_api/prebuilt/windows-x64/tkb_rust_api.exe`; không yêu cầu cài Rust. Bản
+build local còn mới được ưu tiên, còn Cargo chỉ được gọi khi mã Rust đã thay đổi
+và bản đóng gói không còn khớp. Launcher không kiểm tra phụ thuộc solver Python.
 
 Biến môi trường hỗ trợ: `TKB_SUPER_PASSWORD`, `TKB_RUST_HOST`,
 `TKB_RUST_PORT`, tùy chọn `TKB_DB_PATH`, `TKB_CORS_ORIGIN`, `TKB_NO_LOGS` và

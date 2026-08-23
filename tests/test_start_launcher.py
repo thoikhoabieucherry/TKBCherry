@@ -38,11 +38,40 @@ class WebLauncherTests(unittest.TestCase):
         self.assertEqual(args.host, "127.0.0.1")
         self.assertEqual(args.port, 1010)
 
-    def test_executable_candidates_contain_only_local_builds(self) -> None:
-        self.assertEqual(
-            start.executable_candidates(),
-            (start.RUST_RELEASE_EXE, start.RUST_DEBUG_EXE),
-        )
+    def test_executable_candidates_include_packaged_windows_backend(self) -> None:
+        expected = (start.RUST_RELEASE_EXE, start.RUST_DEBUG_EXE)
+        if start.os.name == "nt":
+            expected += (start.RUST_PREBUILT_EXE,)
+        self.assertEqual(start.executable_candidates(), expected)
+
+    def test_packaged_backend_matches_current_rust_source(self) -> None:
+        self.assertTrue(start.prebuilt_backend_manifest_is_valid())
+
+    def test_source_digest_ignores_checkout_line_endings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            rust_dir = Path(tmp)
+            source = rust_dir / "src" / "main.rs"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"fn main() {\n    println!(\"ok\");\n}\n")
+            with (
+                patch.object(start, "RUST_DIR", rust_dir),
+                patch.object(start, "rust_source_paths", return_value=[source]),
+            ):
+                lf_digest = start.rust_source_digest()
+                source.write_bytes(b"fn main() {\r\n    println!(\"ok\");\r\n}\r\n")
+                crlf_digest = start.rust_source_digest()
+        self.assertEqual(lf_digest, crlf_digest)
+
+    def test_packaged_backend_rejects_a_changed_binary(self) -> None:
+        with patch.object(start, "file_sha256", return_value="0" * 64):
+            self.assertFalse(start.prebuilt_backend_manifest_is_valid())
+
+    @unittest.skipUnless(start.os.name == "nt", "Windows packaged backend")
+    def test_packaged_backend_starts_without_cargo(self) -> None:
+        with patch.object(start, "cargo_candidates") as cargo_candidates:
+            selected = start.build_backend_if_needed()
+        self.assertEqual(selected, start.RUST_PREBUILT_EXE)
+        cargo_candidates.assert_not_called()
 
     def test_fresh_release_is_reused_without_invoking_cargo(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -110,7 +139,7 @@ class WebLauncherTests(unittest.TestCase):
 
         with (
             patch.object(start, "build_backend_if_needed", return_value=executable),
-            patch.object(start, "ensure_sqlite_runtime"),
+            patch.object(start, "add_sqlite_runtime_to_env"),
             patch.object(start, "start_process", side_effect=launch),
             patch.object(start, "wait_until_ready", return_value=True),
         ):
@@ -129,7 +158,7 @@ class WebLauncherTests(unittest.TestCase):
         args = backend_args()
         with (
             patch.object(start, "build_backend_if_needed", return_value=Path("server.exe")),
-            patch.object(start, "ensure_sqlite_runtime"),
+            patch.object(start, "add_sqlite_runtime_to_env"),
             patch.object(start, "start_process", return_value=process),
             patch.object(start, "wait_until_ready", return_value=False),
             patch.object(start, "stop_backend_process") as stop_process,

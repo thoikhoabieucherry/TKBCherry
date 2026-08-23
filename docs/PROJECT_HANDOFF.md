@@ -6,6 +6,37 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-08-23 FIX LAUNCHER WINDOWS KHÔNG CẦN CÀI RUST (LOCAL, NOT DEPLOYED)
+
+- Báo lỗi từ ảnh người dùng: launcher dừng ở “Không tìm thấy backend hoặc Rust
+  toolchain”. Nguyên nhân là phiên source-only ngay trước đã xóa backend dựng sẵn
+  trong khi máy người dùng không có Cargo/Rust.
+- Khôi phục khả năng chạy dành cho người dùng cuối bằng
+  `rust_api/prebuilt/windows-x64/tkb_rust_api.exe` (712.704 byte), build từ đúng
+  nguồn Rust hiện tại bằng `rustc 1.98.0`, target
+  `x86_64-pc-windows-gnu`. Đây vẫn chỉ là static/auth/store server; không chứa
+  solver, CP-SAT, Cloud Run, bridge hay Agent.
+- `manifest.json` khóa cả SHA-256 binary và dấu vân tay của `src/*.rs`,
+  `Cargo.toml`, `Cargo.lock`. Dấu vân tay chuẩn hóa CRLF/LF để checkout trên
+  máy khác không làm bản hợp lệ bị từ chối. Binary bị đổi hoặc nguồn Rust lệch
+  đều không được chạy.
+- `start.py` ưu tiên release/debug local còn mới, rồi dùng bản Windows đóng gói.
+  Cargo chỉ được gọi khi lập trình viên đã sửa Rust làm manifest hết khớp. SQLite
+  DLL được nạp qua PATH riêng của tiến trình từ `rust_api/vendor/sqlite3/`, nên
+  launcher không tạo thêm file cạnh binary.
+- Smoke thật bằng Python hệ thống trên cổng tạm 1011 và DB tạm: health đúng
+  `browser-only/fet-web-worker`, capabilities chỉ
+  `static-web,auth,school-store`; `/` và planner trả 200; Super Admin login,
+  POST/GET school store đều thành công. Dữ liệu thật không bị chạm.
+- Kiểm chứng: JavaScript syntax **52/52 file**, Node FET/UI **148/148 test**,
+  launcher **11/11 test**, Rust `cargo check --locked` pass, Rust
+  **20/20 test**, Clippy `-D warnings` pass, mail **5/5 test**. Manifest và
+  đường chạy không Cargo có test riêng. Toolchain/build/cache tạm **1.384,85
+  MiB** đã được xóa sau kiểm thử.
+- Không deploy. Cổng mặc định vẫn là `127.0.0.1:1010`.
+- Thay đổi được commit local trên `codex/backend-fet-billion`. Push vẫn cần
+  đăng nhập GitHub trên máy này; việc push mã nguồn không phải là triển khai.
+
 ## 2026-08-23 REWRITE THÀNH WEB FET DUY NHẤT + DỌN REPO (SOURCE ONLY, NOT DEPLOYED)
 
 ### Quyết định kiến trúc

@@ -103,7 +103,14 @@ Copy-Item .env.example .env
 python .\start.py
 ```
 
-Launcher tìm release/debug Rust còn mới. Nếu không có, nó chạy:
+Trên Windows x64, launcher ưu tiên release/debug local còn mới, sau đó dùng:
+
+`rust_api/prebuilt/windows-x64/tkb_rust_api.exe`
+
+Manifest đi kèm phải khớp SHA-256 của binary và dấu vân tay đã chuẩn hóa LF của
+`rust_api/src/`, `Cargo.toml`, `Cargo.lock`. Vì vậy người dùng cuối chỉ cần
+Python. Nếu lập trình viên sửa nguồn Rust khiến manifest không còn khớp, launcher
+mới chạy:
 
 ```powershell
 cargo build --release --locked --manifest-path rust_api\Cargo.toml

@@ -41,7 +41,8 @@ Mọi thay đổi phải giữ các bất biến sau:
 
 ## Chạy ứng dụng
 
-Yêu cầu: Python 3.10+ và Rust/Cargo để build máy chủ lần đầu.
+Yêu cầu cho Windows x64: Python 3.10+. Bản máy chủ web đã được đóng gói cùng
+repo; người dùng không cần cài Rust/Cargo.
 
 Từ thư mục gốc:
 
@@ -55,8 +56,9 @@ Mở:
 http://127.0.0.1:1010/
 ```
 
-`start.py` tự build Rust khi mã nguồn mới hơn bản chạy, khởi động máy chủ và mở
-trình duyệt. Đóng cửa sổ launcher để dừng. Chế độ dòng lệnh:
+`start.py` kiểm tra dấu vân tay của bản máy chủ đóng gói, khởi động nó rồi mở
+trình duyệt. Cargo chỉ được dùng để build lại khi lập trình viên sửa
+`rust_api/src/`. Đóng cửa sổ launcher để dừng. Chế độ dòng lệnh:
 
 ```powershell
 python .\start.py --foreground --no-browser
@@ -139,6 +141,7 @@ mật khẩu hay mã OTP.
 | `web/pages/tkb-constraints*.js` | Khai báo, nhập/xuất và kiểm tra ràng buộc |
 | `web/shared/` | Đăng nhập, phiên, ngữ cảnh trường và lưu dữ liệu |
 | `rust_api/src/` | Máy chủ static/auth/store và SQLite |
+| `rust_api/prebuilt/windows-x64/` | Bản chạy Windows kèm manifest kiểm tra nguồn/binary |
 | `e2e_tests/` | Kiểm thử FET, worker và hợp đồng giao diện |
 | `tools/benchmarks/` | Fixture ẩn danh và benchmark FET cục bộ |
 | `mail-server/` | Dịch vụ OTP Gmail tùy chọn, không được `start.py` khởi động |
@@ -146,7 +149,7 @@ mật khẩu hay mã OTP.
 
 ## Kiểm thử
 
-Với Node 22, Python và Rust/Cargo:
+Với Node 22 và Python; các lệnh Cargo dành cho kiểm chứng mã nguồn Rust:
 
 ```powershell
 Get-ChildItem web,e2e_tests,tools\benchmarks -Recurse -Filter *.js |

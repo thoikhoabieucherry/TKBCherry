@@ -12,6 +12,7 @@ thực tế; không chép số pass từ phiên cũ.
 - [ ] Repo không có runtime Python solver, bridge/mirror engine hay script hạ tầng
   của kiến trúc đã nghỉ.
 - [ ] `.env.example` không có biến compute/scheduler.
+- [ ] Manifest của backend Windows khớp nguồn Rust và SHA-256 binary.
 
 ## 2. Tự động
 
@@ -28,6 +29,7 @@ git diff --check
 - [ ] JavaScript syntax pass.
 - [ ] Toàn bộ Node test pass.
 - [ ] Launcher test pass.
+- [ ] Trên Windows không có Cargo, `python start.py` vẫn dùng bản đóng gói.
 - [ ] Rust check/test pass.
 - [ ] `git diff --check` sạch.
 - [ ] Nếu sửa mail: `npm ci && npm test` trong `mail-server/` pass.
@@ -101,7 +103,7 @@ Kiểm tra lần lượt **1 tiết/buổi**, **Buổi**, **2 tiết trống**,
 
 ## 9. Dọn repo và bàn giao
 
-- [ ] Không còn `scratch`, `temp`, build cache hay log được
+- [ ] Không còn `.codex_tmp`, `scratch`, `temp`, build cache hay log được
   theo dõi trong commit.
 - [ ] Không có workbook/database/dump dữ liệu thật trong diff.
 - [ ] `README.md`, `docs/CURRENT_STATE.md`,

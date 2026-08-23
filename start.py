@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import queue
@@ -27,8 +28,13 @@ WEB_ROOT = ROOT / "web"
 RUST_DIR = ROOT / "rust_api"
 RUST_RELEASE_EXE = RUST_DIR / "target" / "release" / "tkb_rust_api.exe"
 RUST_DEBUG_EXE = RUST_DIR / "target" / "debug" / "tkb_rust_api.exe"
+RUST_PREBUILT_DIR = RUST_DIR / "prebuilt" / "windows-x64"
+RUST_PREBUILT_EXE = RUST_PREBUILT_DIR / "tkb_rust_api.exe"
+RUST_PREBUILT_MANIFEST = RUST_PREBUILT_DIR / "manifest.json"
 RUST_SQLITE_VENDOR_DIR = RUST_DIR / "vendor" / "sqlite3"
+RUST_SQLITE_IMPORT_LIB = RUST_SQLITE_VENDOR_DIR / "sqlite3.lib"
 RUST_SQLITE_RUNTIME_DLL = RUST_SQLITE_VENDOR_DIR / "sqlite3.dll"
+PREBUILT_MANIFEST_SCHEMA = 1
 
 
 def load_dotenv_file() -> None:
@@ -92,8 +98,62 @@ def rust_source_paths() -> list[Path]:
     return paths
 
 
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def rust_source_digest() -> str:
+    digest = hashlib.sha256()
+    paths = sorted(
+        rust_source_paths(),
+        key=lambda path: path.relative_to(RUST_DIR).as_posix(),
+    )
+    for path in paths:
+        relative = path.relative_to(RUST_DIR).as_posix()
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes().replace(b"\r\n", b"\n"))
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def prebuilt_backend_manifest_is_valid() -> bool:
+    if not RUST_PREBUILT_EXE.is_file():
+        return False
+    try:
+        manifest = json.loads(RUST_PREBUILT_MANIFEST.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(manifest, dict):
+        return False
+    try:
+        source_digest = rust_source_digest()
+        binary_digest = file_sha256(RUST_PREBUILT_EXE)
+    except OSError:
+        return False
+    return bool(
+        manifest.get("schema") == PREBUILT_MANIFEST_SCHEMA
+        and manifest.get("target") == "x86_64-pc-windows-gnu"
+        and manifest.get("sourceSha256") == source_digest
+        and manifest.get("binarySha256") == binary_digest
+    )
+
+
+def prebuilt_backend_is_valid() -> bool:
+    return os.name == "nt" and prebuilt_backend_manifest_is_valid()
+
+
 def executable_is_stale(path: Path | None) -> bool:
     if path is None or not path.exists():
+        return True
+    try:
+        if path.resolve() == RUST_PREBUILT_EXE.resolve():
+            return not prebuilt_backend_is_valid()
+    except OSError:
         return True
     try:
         built_at = path.stat().st_mtime
@@ -103,7 +163,10 @@ def executable_is_stale(path: Path | None) -> bool:
 
 
 def executable_candidates() -> tuple[Path, ...]:
-    return (RUST_RELEASE_EXE, RUST_DEBUG_EXE)
+    local_builds = (RUST_RELEASE_EXE, RUST_DEBUG_EXE)
+    if os.name == "nt":
+        return local_builds + (RUST_PREBUILT_EXE,)
+    return local_builds
 
 
 def cargo_candidates() -> list[str]:
@@ -135,6 +198,19 @@ def build_timeout_seconds() -> int:
     return max(30, min(1800, value))
 
 
+def rust_build_env() -> dict[str, str]:
+    env = os.environ.copy()
+    if os.name == "nt" and RUST_SQLITE_IMPORT_LIB.exists():
+        vendor_dir = str(RUST_SQLITE_VENDOR_DIR)
+        env["SQLITE3_LIB_DIR"] = vendor_dir
+        env["SQLITE3_DYNAMIC"] = "1"
+        current_flags = env.get("RUSTFLAGS", "").strip()
+        native_flag = f"-L native={vendor_dir}"
+        if native_flag not in current_flags:
+            env["RUSTFLAGS"] = f"{current_flags} {native_flag}".strip()
+    return env
+
+
 def build_backend_if_needed() -> Path:
     fresh = next((path for path in executable_candidates() if path.exists() and not executable_is_stale(path)), None)
     if fresh is not None:
@@ -148,6 +224,7 @@ def build_backend_if_needed() -> Path:
             result = subprocess.run(
                 [cargo, "build", "--release", "--locked", "--manifest-path", str(manifest)],
                 cwd=str(ROOT),
+                env=rust_build_env(),
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -165,31 +242,25 @@ def build_backend_if_needed() -> Path:
     if stale is not None:
         details = "\n".join(failures[-2:])
         raise RuntimeError(
-            "Backend hiện có đã cũ so với mã nguồn và không build lại được. "
-            "Hãy cài Rust rồi chạy lại.\n" + details
+            "Bản máy chủ web hiện có không khớp mã nguồn. Hãy tải lại bộ ứng dụng "
+            "đầy đủ; nhà phát triển có thể cài Cargo để build lại.\n" + details
         )
     raise RuntimeError(
-        "Không tìm thấy backend hoặc Rust toolchain. Cài Rust rồi chạy lại python start.py."
+        "Thiếu bản chạy Windows đi kèm. Hãy tải lại đầy đủ thư mục rust_api/prebuilt. "
+        "Nếu đang phát triển mã Rust, hãy cài Cargo để build lại."
     )
 
 
-def ensure_sqlite_runtime(executable: Path) -> None:
-    if os.name != "nt" or not executable.exists():
+def add_sqlite_runtime_to_env(env: dict[str, str]) -> None:
+    if os.name != "nt":
         return
-    candidates = [
-        RUST_SQLITE_RUNTIME_DLL,
-        Path(sys.base_prefix) / "DLLs" / "sqlite3.dll",
-        Path(sys.executable).resolve().parent / "DLLs" / "sqlite3.dll",
-    ]
-    source = next((path for path in candidates if path.exists()), None)
-    if source is None:
-        return
-    destination = executable.parent / "sqlite3.dll"
-    try:
-        if source.resolve() != destination.resolve():
-            shutil.copy2(source, destination)
-    except OSError:
-        pass
+    if not RUST_SQLITE_RUNTIME_DLL.is_file():
+        raise RuntimeError("Thiếu SQLite runtime đi kèm: rust_api/vendor/sqlite3/sqlite3.dll")
+    vendor_dir = str(RUST_SQLITE_VENDOR_DIR)
+    current_path = env.get("PATH", "")
+    path_parts = [part for part in current_path.split(os.pathsep) if part]
+    if not any(os.path.normcase(part) == os.path.normcase(vendor_dir) for part in path_parts):
+        env["PATH"] = vendor_dir + (os.pathsep + current_path if current_path else "")
 
 
 def listener_pids(port: int) -> set[int]:
@@ -317,9 +388,8 @@ def start_backend(
             stop_pids(pids)
             time.sleep(0.4)
 
-    emit_status(status, "Kiểm tra backend web...")
+    emit_status(status, "Chuẩn bị máy chủ web...")
     executable = build_backend_if_needed()
-    ensure_sqlite_runtime(executable)
     env = os.environ.copy()
     env.update(
         {
@@ -329,6 +399,7 @@ def start_backend(
             "TKB_NO_LOGS": "1",
         }
     )
+    add_sqlite_runtime_to_env(env)
     emit_status(status, "Khởi động TKBCherry web FET...")
     process = start_process(executable, env, args.foreground)
     if not wait_until_ready(url, process, args.timeout):

@@ -7,8 +7,10 @@ $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $approvedTargets = @(
   (Join-Path $projectRoot 'rust_api\target'),
   (Join-Path $projectRoot 'mail-server\node_modules'),
+  (Join-Path $projectRoot '.codex_tmp'),
   (Join-Path $projectRoot '.pytest_cache'),
   (Join-Path $projectRoot 'scratch'),
+  (Join-Path $projectRoot 'temp'),
   (Join-Path $projectRoot 'rust_server_e2e.log')
 )
 
