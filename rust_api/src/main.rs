@@ -5182,23 +5182,39 @@ fn merge_school_admin_registry(
             } else if current_plan == "free"
                 && school.get("trialUsed").and_then(Value::as_bool) != Some(true)
             {
-                let requested_expiry = incoming_school
+                // 22/08 (chu du an): kich hoat (xac thuc email) cap thang goi
+                // Max 2 dung thu thay vi Trial. Client cu van co the gui
+                // "trial". Ca hai chi duoc cap MOT lan (trialUsed) va han toi
+                // da 31 ngay; moi goi khac (plus/max1/ultra...) bi bo qua.
+                let requested_grant = incoming_school
                     .as_ref()
-                    .filter(|value| {
-                        value
+                    .and_then(|value| {
+                        let plan = value
                             .get("plan")
-                            .and_then(Value::as_str)
-                            .is_some_and(|plan| plan.eq_ignore_ascii_case("trial"))
-                    })
-                    .and_then(|value| value.get("expiresAt"))
-                    .and_then(Value::as_str)
-                    .and_then(|raw| plan_expiry_millis(raw).map(|expiry| (raw, expiry)));
+                            .and_then(Value::as_str)?
+                            .trim()
+                            .to_ascii_lowercase();
+                        if !matches!(plan.as_str(), "max2" | "trial") {
+                            return None;
+                        }
+                        let raw = value.get("expiresAt").and_then(Value::as_str)?;
+                        let expiry = plan_expiry_millis(raw)?;
+                        Some((plan, raw.to_string(), expiry))
+                    });
                 let now = now_millis();
-                if let Some((raw_expiry, expiry)) = requested_expiry.filter(|(_, expiry)| {
-                    *expiry > now
-                        && *expiry <= now.saturating_add(31 * 24 * 60 * 60 * 1_000)
-                }) {
-                    school.insert("plan".to_string(), json!("trial"));
+                if let Some((plan, raw_expiry, _expiry)) =
+                    requested_grant.filter(|(_, _, expiry)| {
+                        *expiry > now
+                            && *expiry <= now.saturating_add(31 * 24 * 60 * 60 * 1_000)
+                    })
+                {
+                    if plan == "max2" {
+                        school.insert(
+                            "maxPlanPricingTier".to_string(),
+                            json!("from-40-classes"),
+                        );
+                    }
+                    school.insert("plan".to_string(), json!(plan));
                     school.insert("expiresAt".to_string(), json!(raw_expiry));
                     school.insert("trialUsed".to_string(), json!(true));
                 }
@@ -10040,12 +10056,22 @@ fn run_reference_solver(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if let Some(profile) = cloud_profile.as_ref() {
+        // Cloud Run CPU quota is per region. Sibling profiles run the same
+        // pinned solver build in other regions; the client retries there when
+        // this region answers HTTP 429 before producing any solver output.
+        let fallback_urls = server_owner
+            .map(|owner| {
+                app.serverless
+                    .fallback_urls_for_school(owner.school_id(), profile)
+            })
+            .unwrap_or_default();
         command
             .env("TKB_CLOUD_RUN_URL", &profile.url)
             .env("TKB_CLOUD_RUN_AUDIENCE", &profile.audience)
             .env("TKB_CLOUD_RUN_REGION", &profile.region)
             .env("TKB_CLOUD_RUN_PROJECT_ID", &profile.project_id)
             .env("TKB_CLOUD_RUN_SOLVER_DIGEST", &profile.solver_digest)
+            .env("TKB_CLOUD_RUN_FALLBACK_URLS", fallback_urls.join(","))
             .env(
                 "TKB_CLOUD_RUN_TIMEOUT_SECONDS",
                 cloud_run_client_timeout_seconds(budget).to_string(),
@@ -13862,6 +13888,92 @@ mod tests {
         assert_eq!(merged["users"]["admina"]["emailVerified"], json!(true));
         assert_eq!(merged["schools"]["school-a"]["verified"], json!(true));
         assert_eq!(merged["schools"]["school-a"]["trialUsed"], json!(true));
+    }
+
+    fn iso_date_days_from_now(days: i64) -> String {
+        // civil_from_days (Howard Hinnant) — chi dung trong test de tao ngay
+        // het han "N ngay nua" theo dung dinh dang plan_expiry_millis doc duoc.
+        let z = (now_millis() / 86_400_000) as i64 + days + 719_468;
+        let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+        let doe = z - era * 146_097;
+        let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+        let y = yoe + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        let y = if m <= 2 { y + 1 } else { y };
+        format!("{y:04}-{m:02}-{d:02}T00:00:00.000Z")
+    }
+
+    #[test]
+    fn email_verification_grants_max2_trial_once_for_free_schools() {
+        // 22/08 (chu du an): kich hoat = cap goi Max 2 dung thu thay vi Trial.
+        let mut registry = registry_security_fixture();
+        registry["schools"]["school-a"]["plan"] = json!("free");
+        registry["schools"]["school-a"]["trialUsed"] = json!(false);
+        registry["users"]["admina"]["emailVerified"] = json!(false);
+        let session = json!({
+            "userId":"admina", "role":"school_admin", "schoolId":"school-a"
+        });
+        let expiry = iso_date_days_from_now(30);
+        let incoming = json!({
+            "schools": {
+                "school-a": {"id":"school-a", "plan":"max2", "expiresAt": expiry, "trialUsed": true}
+            },
+            "users": {
+                "admina": {"id":"admina", "role":"school_admin", "schoolId":"school-a", "emailVerified":true}
+            }
+        });
+        let merged = merge_school_admin_registry(&registry, &incoming, &session)
+            .expect("authorized school admin merge");
+        assert_eq!(merged["schools"]["school-a"]["plan"], json!("max2"));
+        assert_eq!(merged["schools"]["school-a"]["expiresAt"], json!(expiry));
+        assert_eq!(merged["schools"]["school-a"]["trialUsed"], json!(true));
+        assert_eq!(
+            merged["schools"]["school-a"]["maxPlanPricingTier"],
+            json!("from-40-classes")
+        );
+        assert_eq!(merged["users"]["admina"]["emailVerified"], json!(true));
+        assert!(matches!(
+            solver_plan_policy_for_school(&merged["schools"]["school-a"]),
+            SolverPlanPolicy::Exempt
+        ));
+
+        // Chi cap MOT lan: da dung (trialUsed) thi xin lai Max 2 bi bo qua.
+        let mut used = merged.clone();
+        used["schools"]["school-a"]["plan"] = json!("free");
+        used["schools"]["school-a"]["expiresAt"] = json!("");
+        let again = merge_school_admin_registry(&used, &incoming, &session)
+            .expect("authorized school admin merge");
+        assert_eq!(again["schools"]["school-a"]["plan"], json!("free"));
+
+        // Goi khac (ultra) hoac han qua 31 ngay: khong duoc tu cap.
+        let mut fresh = registry_security_fixture();
+        fresh["schools"]["school-a"]["plan"] = json!("free");
+        fresh["schools"]["school-a"]["trialUsed"] = json!(false);
+        let too_long = json!({
+            "schools": {
+                "school-a": {"id":"school-a", "plan":"max2", "expiresAt": iso_date_days_from_now(90)}
+            },
+            "users": {
+                "admina": {"id":"admina", "role":"school_admin", "schoolId":"school-a", "emailVerified":true}
+            }
+        });
+        let rejected = merge_school_admin_registry(&fresh, &too_long, &session)
+            .expect("authorized school admin merge");
+        assert_eq!(rejected["schools"]["school-a"]["plan"], json!("free"));
+        let ultra = json!({
+            "schools": {
+                "school-a": {"id":"school-a", "plan":"ultra", "expiresAt": iso_date_days_from_now(10)}
+            },
+            "users": {
+                "admina": {"id":"admina", "role":"school_admin", "schoolId":"school-a", "emailVerified":true}
+            }
+        });
+        let rejected = merge_school_admin_registry(&fresh, &ultra, &session)
+            .expect("authorized school admin merge");
+        assert_eq!(rejected["schools"]["school-a"]["plan"], json!("free"));
     }
 
     #[test]

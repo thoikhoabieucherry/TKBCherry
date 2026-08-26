@@ -36,7 +36,11 @@
     const MIN_FRESH_SOLVE_DURATION_SECONDS = 30;
     const MAX_CUSTOM_SOLVE_DURATION_SECONDS = 1800;
     const SOLVE_COMPLETE_MESSAGE = "Đã xếp xong!";
-    const NO_BETTER_SCHEDULE_MESSAGE = SOLVE_COMPLETE_MESSAGE;
+    // 20/08: TRUOC day cau nay dat bang SOLVE_COMPLETE_MESSAGE, nen "da ap lich
+    // moi" va "giu lich cu vi khong tot hon" hien ra y het nhau — nguoi dung chi
+    // thay "Da xep xong!" va tuong nut khong chay.
+    const NO_BETTER_SCHEDULE_MESSAGE =
+      "Đã xếp xong. Lịch mới KHÔNG tốt hơn nên giữ nguyên lịch hiện tại.";
     const SOLVE_REQUEST_MODES = Object.freeze({
       automatic: "automatic",
       autoMin2: "auto_min2",
@@ -174,6 +178,14 @@
         settings.ui_capacity_shortage_confirmed = true;
         settings.ui_accept_incomplete_best_effort = true;
         delete settings.ui_capacity_shortage_accepted;
+      }
+      if(forcedEngineBestEffortActive()){
+        settings.require_complete_schedule = false;
+        settings.best_effort_on_timeout = true;
+        settings.ui_allow_best_effort_on_timeout = true;
+        settings.ui_accept_incomplete_best_effort = true;
+        settings.ui_internal_allow_incomplete = true;
+        return settings;
       }
       settings.require_complete_schedule = true;
       settings.best_effort_on_timeout = false;
@@ -335,7 +347,19 @@
         || settings.ui_local_repair_pass === true
         || settings.ui_accept_incomplete_internal === true;
     }
+    // 19/08: NUT Cherry = "xep duoc bao nhieu giu bay nhieu".
+    // Cac co best-effort dat tren mot doi tuong settings cu the deu vo dung, vi
+    // luong xep di qua NHIEU doi tuong settings khac nhau (settings tho cua
+    // lane, effectiveSettings trong postSolve, cac ban sao cho retry/staged
+    // repair — moi ham build lai deu dat require_complete_schedule = true).
+    // Vi vay dung thang y dinh cua NGUOI DUNG: khi mot nut engine dang chay thi
+    // hop dong "du-hoac-khong" bi tat o MOI nhanh.
+    function forcedEngineBestEffortActive(){
+      try{ return String(window.__TKB_FORCE_ENGINE || "").trim() !== ""; }
+      catch(_){ return false; }
+    }
     function shouldRequireCompletePresetResult(settings){
+      if(forcedEngineBestEffortActive()) return false;
       const preset = solverPresetForSettings(settings);
       // A capacity preflight is a proof that the requested workload cannot fit
       // in the user's allowed cells.  Keep the schedulable portion instead of
@@ -348,6 +372,7 @@
     function enforceCompletePresetSolveSettings(settings){
       if(!settings || typeof settings !== "object") return settings;
       if(settings.ui_capacity_safe_fresh_probe === true) return settings;
+      if(forcedEngineBestEffortActive()) return settings;
       if(!shouldRequireCompletePresetResult(settings)) return settings;
       settings.require_complete_schedule = true;
       settings.best_effort_on_timeout = false;
@@ -559,6 +584,14 @@
   let pendingBackendWakeRequested = false;
   let pendingBackendWakeNeedsEmptyProbe = false;
   let bestEffortStopJobId = "";
+  let bestEffortStopSinceMs = 0;
+  let bestEffortStopEscalationTimer = null;
+  /* 24/08: Dung "mem" (giu phuong an tot nhat) VO HIEU HOA nut Dung va nuot
+     moi lan bam tiep. Neu may chu khong bao gio giao phuong an (engine bo qua
+     TKB_SOLVER_STOP_FILE, instance Cloud Run dang ban, luot bi day sang
+     revision cu) thi nut Dung ket cung vinh vien - bam ma khong co gi xay ra.
+     Sau ngan nay mili giay: tra nut Dung ve, va lan bam ke tiep huy HAN. */
+  const BEST_EFFORT_STOP_ESCALATION_MS = 15000;
     let backendResumeEpoch = 0;
     let backendAuthRequired = false;
     let backendAuthFlowStarted = false;
@@ -702,7 +735,30 @@
     let queuedAutoSortContinuationTimer = 0;
     const SOLVE_TIMING_KEY = "TKB_RUST_SOLVE_TIMING_V1";
 
+  // Neu mot luot xep truoc bi treo o buoc luu (fetch khong bao gio settle) thi
+  // `finally` cua bridgeSapXepTuDongAll khong chay -> token nay khong duoc tra
+  // lai -> MOI lan bam Cherry/Play sau do deu bi tu choi bang thong bao
+  // "Dang co luot xep chay, vui long cho hoan tat" cho toi khi tai lai trang.
+  // Da gap that: preflight = true trong khi __TKB_RUST_SOLVER_RUNNING = false.
+  // Sau 60 giay ma khong con luot nao that su chay thi coi token la cu va thu hoi.
+  const AUTO_SORT_PREFLIGHT_STALE_MS = 60_000;
+
+  function autoSortPreflightTokenIsStale(){
+    const token = autoSortPreflightToken;
+    if(!token) return false;
+    if(window.__TKB_RUST_SOLVER_RUNNING === true) return false;
+    if(window.__TKB_SOLVE_UI_BUSY === true) return false;
+    const startedAt = Number(token.startedAt) || 0;
+    if(!startedAt) return true;
+    return Date.now() - startedAt > AUTO_SORT_PREFLIGHT_STALE_MS;
+  }
+
   function acquireAutoSortPreflight(){
+    if(autoSortPreflightToken && autoSortPreflightTokenIsStale()){
+      try{ console.warn(`[${VERSION}] thu hoi khoa preflight cu (luot truoc khong tra khoa)`); }catch(_){ }
+      autoSortPreflightToken = null;
+      window.__TKB_AUTO_SORT_PREFLIGHT_ACTIVE = false;
+    }
     if(autoSortPreflightToken) return null;
     const token = {
       id:++autoSortPreflightCounter,
@@ -1338,11 +1394,54 @@
 
   let rustApiBaseCache = "";
 
+  /* 21/08: TIMER KHONG BI THROTTLE khi tab an. Chrome bop setTimeout cua tab
+     nen xuong ~1 lan/phut (sau 5 phut an), lam vong poll ket qua + apply chia
+     lat dung im — nguoi dung chuyen tab xem YouTube thi luot xep "2 phut"
+     keo dai den khi quay lai moi tra ket qua. Timer dat trong Web Worker
+     khong bi bop, message van duoc chuyen ve tab an binh thuong. */
+  if(!window.__tkbBgSleep){
+    (function(){
+      let bgWorker = null, bgSeq = 0;
+      const bgPending = new Map();
+      function ensureBgWorker(){
+        if(bgWorker) return bgWorker;
+        const src = "self.onmessage=function(e){var d=e.data;setTimeout(function(){self.postMessage(d.id);},d.ms);};";
+        bgWorker = new Worker(URL.createObjectURL(new Blob([src], {type:"text/javascript"})));
+        bgWorker.onmessage = function(e){
+          const cb = bgPending.get(e.data);
+          bgPending.delete(e.data);
+          if(cb) cb();
+        };
+        return bgWorker;
+      }
+      window.__tkbBgSleep = function(ms){
+        return new Promise(function(resolve){
+          try{
+            const w = ensureBgWorker();
+            const id = ++bgSeq;
+            bgPending.set(id, resolve);
+            w.postMessage({id, ms: Math.max(0, Number(ms) || 0)});
+          }catch(_){
+            window.setTimeout(resolve, ms);
+          }
+        });
+      };
+    })();
+  }
+
   async function sleep(ms){
+    // Tab an: dung worker-timer de khong bi throttle; foreground giu setTimeout.
+    if(typeof document !== "undefined" && document.hidden && window.__tkbBgSleep){
+      return window.__tkbBgSleep(ms);
+    }
     return new Promise(resolve => window.setTimeout(resolve, ms));
   }
 
   async function waitForUiPaint(){
+    // Tab an: rAF khong bao gio chay va setTimeout bi bop — tra ve ngay.
+    if(typeof document !== "undefined" && document.hidden){
+      return window.__tkbBgSleep ? window.__tkbBgSleep(0) : Promise.resolve();
+    }
     return new Promise(resolve => {
       let done = false;
       const finish = () => {
@@ -1364,6 +1463,11 @@
   }
 
   async function yieldResponsiveUi(){
+    // 21/08: tab an thi setTimeout bi Chrome bop ~1 lan/phut — pha ap ket qua
+    // dung yield nay hang tram lan nen tung "dung hinh" den khi quay lai tab.
+    if(typeof document !== "undefined" && document.hidden && window.__tkbBgSleep){
+      return window.__tkbBgSleep(0);
+    }
     return new Promise(resolve => {
       try{ window.setTimeout(resolve, 0); }catch(_){ resolve(); }
     });
@@ -2089,6 +2193,14 @@
     if(!kind) return false;
     if(payload?.retryable === false) return true;
     if(value < 500) return false;
+    // 19/08: Cloud Run tu choi luot giai (vi du cloud_solver_digest_mismatch —
+    // VPS ghim digest cu) tra ve 503 kem kind "serverless_solver_unavailable"
+    // va fallback:false. Loi nay KHONG TU KHOI. Truoc day no bi coi la loi tam
+    // thoi nen client hoi lai suot ca ngan sach (do duoc 25-40 luot 503 lien
+    // tiep) roi ket thuc im lang. Dung ngay va noi ro ly do.
+    if(kind === "serverless_solver_unavailable" || kind === "cloud_run_route_unavailable"){
+      return payload?.fallback !== true;
+    }
     return kind.startsWith("solver_worker_")
       || kind.startsWith("reference_solver_")
       || kind.startsWith("native_solver_")
@@ -4250,7 +4362,21 @@
       || pending?.optimizationFocus
       || ""
     ).trim().toLowerCase().replace(/[\s-]+/g, "_");
-    return ["singletons", "sessions", "gaps"].includes(focus);
+    if(["singletons", "sessions", "gaps"].includes(focus)) return true;
+    // 26/08 (chu du an: "toi thay 40 -> 30, bam Dung lai tra ve 40"): luot
+    // CHERRY (optimization_focus = "automatic") truoc day khong duoc dung mem
+    // nen bam Dung la vut sach ket qua tot nhat engine da tim.
+    //
+    // An toan vi: engine v3 co dung mem tu te (construct.py::_stop_requested —
+    // "ket qua tot nhat hien co duoc tra ve ngay"), Cloud Run cho san 8 s
+    // (CANCEL_KILL_GRACE_SECONDS) truoc khi giet tien trinh, va nghiem tra ve
+    // van phai qua dung cong cherryCandidateStrictlyBetter nhu mot luot chay
+    // het gio — khong the xau hon lich dang co. Bam Dung lan hai van huy han
+    // (escalateStuckBestEffortStop).
+    try{
+      if(String(window.__TKB_FORCE_ENGINE || "").trim()) return true;
+    }catch(_){ }
+    return false;
   }
 
   function bestEffortStopPendingFor(jobId){
@@ -4274,25 +4400,86 @@
   function setActiveSolveRunningStatus(){
     setStatus(
       bestEffortStopStatusActive()
-        ? "\u0110ang nh\u1eadn ph\u01b0\u01a1ng \u00e1n t\u1ed1t nh\u1ea5t..."
-        : "\u0110ang s\u1eafp x\u1ebfp...",
+        ? (bestEffortStopEscalationDue()
+            ? "Đang nhận phương án tốt nhất... (bấm Dừng lần nữa để hủy hẳn)"
+            : "Đang nhận phương án tốt nhất...")
+        : "Đang sắp xếp...",
       "info"
     );
+  }
+
+  function bestEffortStopEscalationDue(){
+    return bestEffortStopSinceMs > 0
+      && (Date.now() - bestEffortStopSinceMs) >= BEST_EFFORT_STOP_ESCALATION_MS;
+  }
+
+  function syncBestEffortStopButton(){
+    const stuck = bestEffortStopJobId !== "" && bestEffortStopEscalationDue();
+    // Thanh tien do cua planner cung khoa nut Dung theo co nay moi khung hinh;
+    // khong cong bo "da treo" thi no se khoa lai ngay sau khi bridge mo ra.
+    if(progressState) progressState.bestEffortStopStuck = stuck;
+    // Anh chup tren window chi duoc dung lai moi khung tien do; ghi thang vao
+    // do de nut Dung song lai ngay khi het han, khong phai doi khung ke tiep.
+    try{
+      if(window.__TKB_RUST_PROGRESS_STATE){
+        window.__TKB_RUST_PROGRESS_STATE.bestEffortStopStuck = stuck;
+      }else if(stuck){
+        // Chua co khung tien do nao dung anh chup: van phai cong bo, neu khong
+        // planner khong bao gio biet dung mem da treo.
+        window.__TKB_RUST_PROGRESS_STATE = {
+          percent:0,
+          label:"",
+          phase:"best_effort_stop",
+          bestEffortStopPending:true,
+          bestEffortStopStuck:true,
+          updatedAt:Date.now()
+        };
+      }
+    }catch(_){ }
+    const stopButton = document.getElementById("btnStopAutoSort");
+    if(!stopButton) return;
+    stopButton.disabled = bestEffortStopJobId !== "" && !stuck;
+  }
+
+  function cancelBestEffortStopEscalationTimer(){
+    if(bestEffortStopEscalationTimer == null) return;
+    try{ window.clearTimeout(bestEffortStopEscalationTimer); }catch(_){ }
+    bestEffortStopEscalationTimer = null;
+  }
+
+  function armBestEffortStopEscalationTimer(){
+    cancelBestEffortStopEscalationTimer();
+    try{
+      bestEffortStopEscalationTimer = window.setTimeout(() => {
+        bestEffortStopEscalationTimer = null;
+        if(!bestEffortStopJobId) return;
+        syncBestEffortStopButton();
+        setActiveSolveRunningStatus();
+      }, BEST_EFFORT_STOP_ESCALATION_MS);
+    }catch(_){ }
   }
 
   function setBestEffortStopPending(jobId, pending){
     const value = String(jobId || "").trim();
     if(pending === true){
+      // Bo dem chi khoi dong o lan dau cua MOI luot: vong bo phieu tham do lap
+      // lai setBestEffortStopPending(jobId, true) moi lan poll, khong duoc
+      // phep gia han thoi gian cho mai mai.
+      if(bestEffortStopJobId !== value){
+        bestEffortStopSinceMs = Date.now();
+        armBestEffortStopEscalationTimer();
+      }
       bestEffortStopJobId = value;
     }else if(!value || bestEffortStopJobId === value){
       bestEffortStopJobId = "";
+      bestEffortStopSinceMs = 0;
+      cancelBestEffortStopEscalationTimer();
     }
     if(progressState){
       progressState.bestEffortStopPending = pending === true;
       progressState.phase = pending === true ? "best_effort_stop" : "running";
     }
-    const stopButton = document.getElementById("btnStopAutoSort");
-    if(stopButton) stopButton.disabled = pending === true;
+    syncBestEffortStopButton();
   }
 
   async function requestStopActiveSolve(options){
@@ -4302,7 +4489,13 @@
       || readPendingBackendJob()?.jobId
       || ""
     ).trim();
-    const retainBest = options?.retainBest !== false
+    // Dung mem da qua han ma may chu van chua giao gi: lan bam nay phai la huy
+    // han, neu khong nguoi dung ket trong trang thai khong the dung duoc.
+    const escalateStuckBestEffortStop = !!backendJobId
+      && bestEffortStopPendingFor(backendJobId)
+      && bestEffortStopEscalationDue();
+    const retainBest = !escalateStuckBestEffortStop
+      && options?.retainBest !== false
       && options?.hardCancel !== true
       && activeFocusedOptimizationSupportsBestStop();
     if(backendJobId && retainBest){
@@ -4703,6 +4896,7 @@
       metricBaseline:metricProgress ? Number(metricProgress.baseline) : null,
       metricPercent:metricProgress ? Number(metricProgress.percent) : null,
       bestEffortStopPending:progressState?.bestEffortStopPending === true,
+      bestEffortStopStuck:progressState?.bestEffortStopStuck === true,
       updatedAt: Date.now()
     });
     callMaybe("setAutoSortProgress", [n, elapsedLabel, {metricLabel}]);
@@ -4837,7 +5031,8 @@
     const hasCurrentExecutor = window.__TKB_CURRENT_SOLVE_EXECUTOR?.active === true;
     if(options?.force !== true && !visibleAttention && !hasCurrentExecutor) return false;
     const statusText = String(document.getElementById("statusMsg")?.textContent || "").trim();
-    const preserveCompletion = statusText === SOLVE_COMPLETE_MESSAGE;
+    const preserveCompletion = statusText === SOLVE_COMPLETE_MESSAGE
+      || statusText.startsWith(NO_BETTER_SCHEDULE_MESSAGE);
     stopProgressTicker();
     stopStatusDots();
     progressState = null;
@@ -5249,9 +5444,11 @@
     if(unassigned <= 0) return false;
     const expected = Math.max(0, Number(before.expected || 0) || 0);
     const scheduled = Math.max(0, Number(before.scheduled || 0) || 0);
-    const maxPlace = Math.max(1, Math.round(Number(options?.maxPlace ?? 24) || 24));
-    const maxMissing = Math.max(maxPlace, Math.round(Number(options?.nearCompleteMaxMissing ?? maxPlace) || maxPlace));
-    return expected > 0 && scheduled > 0 && unassigned <= maxMissing;
+    // 19/08: TRUOC day con cong thuc `unassigned <= maxMissing` voi maxMissing
+    // mac dinh 24, nen lich thieu 27 tiet bi BO QUA hoan toan khong va — dung
+    // luc can va nhat. Nguoi dung da yeu cau "cu xep vao", nen chi can con
+    // tiet chua phan va da co lich la chay va.
+    return expected > 0 && scheduled > 0;
   }
 
   function autoPlaceUnassignedFromUi(reason, options){
@@ -5269,7 +5466,7 @@
         };
         return null;
       }
-      const result = fn(Object.assign({maxPlace: 24, reason}, options || {}));
+      const result = fn(Object.assign({maxPlace: 400, reason}, options || {}));
       if(result && Number(result.placed || 0) > 0){
         window.__TKB_LAST_LOCAL_UNASSIGNED_REPAIR = Object.assign({reason}, result);
         refreshStatsPopoverIfOpen();
@@ -5279,6 +5476,212 @@
       console.warn(`[${VERSION}] local unassigned repair failed`, err);
       return null;
     }
+  }
+
+  // 21/08: Chrome co the DONG BANG tab nen sau ~5 phut (freeze — dung ca
+  // Worker), khien luot xep "cho den khi quay lai tab moi tra ket qua".
+  // Trang giu Web Lock duoc mien tru dong bang, nen giu mot lock trong suot
+  // luot xep; watcher 4s tu nha lock khi luot xep ket thuc (moi duong thoat).
+  function acquireSolveKeepalive(){
+    try{
+      if(!navigator.locks || typeof navigator.locks.request !== "function") return;
+      if(!window.__tkbSolveKeepaliveRelease){
+        navigator.locks.request("tkb-solve-keepalive", () => new Promise(resolve => {
+          window.__tkbSolveKeepaliveRelease = resolve;
+        })).catch(() => {});
+      }
+      if(window.__tkbSolveKeepaliveTimer) window.clearInterval(window.__tkbSolveKeepaliveTimer);
+      window.__tkbSolveKeepaliveTimer = window.setInterval(() => {
+        try{
+          if(window.__TKB_RUST_SOLVER_RUNNING || window.__TKB_SOLVE_UI_BUSY) return;
+          window.clearInterval(window.__tkbSolveKeepaliveTimer);
+          window.__tkbSolveKeepaliveTimer = null;
+          const release = window.__tkbSolveKeepaliveRelease;
+          window.__tkbSolveKeepaliveRelease = null;
+          if(typeof release === "function") release();
+        }catch(_){ }
+      }, 4000);
+    }catch(_){ }
+  }
+
+  // 21/08: TU TINH CHINH sau khi xep xong — bac thang 4 lane, tu chay den khi
+  // het cai thien duoc (toi da 5 luot moi cu bam):
+  //   1) buoi GV trong >= 2 tiet   (optimize_gap2)
+  //   2) buoi GV 1 tiet vuot san   (optimize_singletons)
+  //   3) tong so BUOI day cua GV   (optimize_sessions)   — yeu cau 21/08
+  //   4) buoi GV trong 1 tiet      (optimize_gap1)       — yeu cau 21/08
+  // Mot lane khong giam duoc chi so cua no thi bi danh dau CAN va bo qua.
+  // Van tay lich sau lan danh bong tron ven duoc nho lai de cu bam sau tren
+  // cung mot lich khong chay lai ca bac thang vo ich.
+  function maybeScheduleAutoRefine(options){
+    try{
+      const snapFn = window.__tkbTeacherQualitySnapshot;
+      // 22/08 (chi dao chu du an): nut Cherry = MOT LUOT DUY NHAT — xep + toi
+      // uu nam TRONG cung luot (engine v3 tren may chu, warm-start khi lich
+      // da du). KHONG noi bac thang 4 lane sau do: truoc day moi luot Cherry
+      // keo theo toi da 5 lane backend (~90-270s/lane) nen nguoi dung thay
+      // "xep roi toi uu khong co diem dung". Bam Cherry lan nua tren lich da
+      // du = toi uu tiep toan dien (1 tiet/buoi -> khoa -> trong >=2 -> khoa
+      // -> buoi day/trong 1) trong mot luot moi.
+      const cherryTurn = options?.cherryTurn === true
+        || String(window.__TKB_FORCE_ENGINE || "").trim() !== "";
+      if(cherryTurn){
+        window.__TKB_AUTO_REFINE_STATE = null;
+        window.__TKB_AUTO_REFINE_PENDING = false;
+        let summary = "";
+        try{
+          const q = typeof snapFn === "function" ? snapFn() : null;
+          if(q){
+            let sessionsDone = 0;
+            try{ (q.sessions || new Map()).forEach(byKey => { sessionsDone += byKey.size; }); }catch(_){ }
+            // 22/08 (dem): menu "Toi uu v3" — nhan theo muc tieu rieng le.
+            const focusLabels = {
+              optimize_singletons: "1 tiết/buổi",
+              optimize_sessions: "Buổi dạy",
+              optimize_gap2: "2 tiết trống",
+              optimize_gap1: "1 tiết trống"
+            };
+            const focusMode = String(window.__TKB_ENGINE_FOCUS_MODE || "").trim();
+            const head = focusLabels[focusMode]
+              ? `Tối ưu v3 (${focusLabels[focusMode]}) xong:`
+              : "Cherry xong (1 lượt):";
+            const tail = focusLabels[focusMode]
+              ? "Bấm lại để tối ưu tiếp mục tiêu này."
+              : "Bấm Cherry lần nữa để tối ưu tiếp.";
+            summary = `${head} ${Number(q.onePeriod || 0)} buổi 1 tiết, `
+              + `${Number(q.gap2Plus || 0)} trống ≥2, ${Number(q.gap1 || 0)} trống 1 tiết, `
+              + `${sessionsDone} buổi dạy. ${tail}`;
+            // 23/08: yeu cau dia diem (co tiet trong giua 2 dia diem / khong di
+            // chuyen 2 lan/buoi) — bao ro da gỡ duoc bao nhieu buoi vi pham.
+            try{
+              const locApi = window.TKBConstraints || window.TKBConstraintsFull;
+              const before = Number(window.__TKB_LOCATION_DEBT_BEFORE);
+              const afterInfo = (locApi && typeof locApi.teacherLocationRuleDebt === "function")
+                ? locApi.teacherLocationRuleDebt()
+                : null;
+              const after = Number(afterInfo?.sessions);
+              if(Number.isFinite(after) && (after > 0 || (Number.isFinite(before) && before > 0))){
+                const fromText = Number.isFinite(before) ? `${before} → ` : "";
+                summary += ` Yêu cầu địa điểm (tiết trống giữa 2 địa điểm / không đổi địa điểm 2 lần/buổi): ${fromText}${after} buổi vi phạm.`;
+                if(after > 0 && Array.isArray(afterInfo?.cases) && afterInfo.cases.length){
+                  const dayLabel = t => `Thứ ${String(t || "").replace(/^thu/, "") || "?"}`;
+                  const rows = afterInfo.cases.slice(0, 2).map(k => `${k.teacher} ${dayLabel(k.thu)} ${k.buoi === "chieu" ? "chiều" : "sáng"} (tiết ${(k.periods || []).join(",")})`);
+                  summary += ` Còn: ${rows.join("; ")}${afterInfo.cases.length > 2 ? "…" : ""}.`;
+                }
+              }
+            }catch(_){ }
+            // 22/08: bac 4 — tiet chu dong dua ve Chua phan kem ly do/goi y.
+            let ejected = 0;
+            try{
+              ejected = qualityEjectedPeriods(window.__TKB_SOLVER_LAST_RESULT)
+                || qualityEjectedPeriods((typeof getData === "function" ? getData() : window.DATA)?.tkbSolverResult);
+            }catch(_){ ejected = 0; }
+            if(ejected > 0){
+              summary += ` Đã đưa ${ejected} tiết về Chưa phân để GV không còn buổi 1 tiết/trống ≥2 — xem lý do và gợi ý ở hộp Chưa phân.`;
+            }
+            // 22/08 (khuya): engine KHONG rot tiet nua — chi bao cac buoi 1 tiet /
+            // trong >= 2 con lai kem goi y (quality_unavoidable, why="kept") de
+            // nguoi dung tu xu ly mau thuan rang buoc.
+            try{
+              const lastResult = window.__TKB_SOLVER_LAST_RESULT
+                || (typeof getData === "function" ? getData() : window.DATA)?.tkbSolverResult;
+              const kept = Array.isArray(lastResult?.solver?.engine_v3?.quality_unavoidable)
+                ? lastResult.solver.engine_v3.quality_unavoidable
+                : [];
+              if(kept.length){
+                const dayLabel = d => `Thứ ${Number(d) || "?"}`;
+                const rows = kept.slice(0, 2).map(k =>
+                  `${k.teacher || "?"} ${dayLabel(k.day)} ${k.session === "PM" ? "chiều" : "sáng"}`
+                  + `${k.kind === "gap2" ? " (trống ≥2)" : " (1 tiết)"}: ${String(k.why_label || k.why || "chưa gỡ được").replace(/^[^.]*\.\s*/, "")}`);
+                summary += ` Chưa gỡ được ${kept.length} buổi (chỉ hoán đổi, không rớt tiết): ${rows.join("; ")}${kept.length > 2 ? "…" : ""}`;
+              }
+            }catch(_){ }
+          }
+        }catch(_){ }
+        window.__TKB_CHERRY_LAST_SUMMARY = summary;
+        if(summary){
+          const base = String(window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE || "").trim();
+          const partial = /Chưa phân/.test(base) ? base + " " : "";
+          setStatus(partial + summary, partial ? "warning" : "ok");
+        }
+        return;
+      }
+      if(typeof snapFn !== "function") return;
+      const quality = snapFn();
+      // "1 tiet/buoi" chi tinh phan VUOT muc san backend da chung minh.
+      let floor = 0;
+      try{
+        const storedMetrics = (typeof getData === "function" ? getData() : window.DATA)?.tkbSolverResult?.metrics || {};
+        floor = Math.max(0, Number(onePeriodTeacherSessionLowerBound(storedMetrics)) || 0);
+      }catch(_){ }
+      const gap2 = Math.max(0, Number(quality?.gap2Plus || 0) || 0);
+      const actionableOne = Math.max(0, Math.max(0, Number(quality?.onePeriod || 0) || 0) - floor);
+      const bad = gap2 + actionableOne;
+      const gap1 = Math.max(0, Number(quality?.gap1 || 0) || 0);
+      let teacherSessions = 0;
+      try{ (quality?.sessions || new Map()).forEach(byKey => { teacherSessions += byKey.size; }); }catch(_){ }
+
+      let fingerprint = "";
+      try{ fingerprint = scheduleFingerprintFromData(getData()); }catch(_){ }
+      if(fingerprint && fingerprint === window.__TKB_AUTO_REFINE_DONE_FP){
+        window.__TKB_AUTO_REFINE_STATE = null;
+        return;
+      }
+
+      const state = window.__TKB_AUTO_REFINE_STATE || {count: 0, done: {}, last: null, lastMode: ""};
+      if(state.lastMode && state.last){
+        const current = {bad, sessions: teacherSessions, gap1};
+        const targetKey = state.lastMode === "optimize_sessions"
+          ? "sessions"
+          : (state.lastMode === "optimize_gap1" ? "gap1" : "bad");
+        if(current[targetKey] >= state.last[targetKey]) state.done[state.lastMode] = true;
+      }
+      let refineMode = "";
+      if(gap2 > 0 && !state.done.optimize_gap2) refineMode = "optimize_gap2";
+      else if(actionableOne > 0 && !state.done.optimize_singletons) refineMode = "optimize_singletons";
+      else if(teacherSessions > 0 && !state.done.optimize_sessions) refineMode = "optimize_sessions";
+      else if(gap1 > 0 && !state.done.optimize_gap1) refineMode = "optimize_gap1";
+      if(!refineMode || state.count >= 5){
+        window.__TKB_AUTO_REFINE_STATE = null;
+        if(fingerprint) window.__TKB_AUTO_REFINE_DONE_FP = fingerprint;
+        setStatus(
+          `Đã tối ưu trọn gói: ${quality.onePeriod} buổi 1 tiết, ${gap2} trống ≥2, `
+          + `${gap1} trống 1 tiết, ${teacherSessions} buổi dạy.`,
+          "ok"
+        );
+        return;
+      }
+      window.__TKB_AUTO_REFINE_STATE = {
+        count: state.count + 1,
+        done: state.done,
+        last: {bad, sessions: teacherSessions, gap1},
+        lastMode: refineMode
+      };
+      window.__TKB_AUTO_REFINE_PENDING = true;
+      const laneLabel = refineMode === "optimize_gap2" ? "buổi trống ≥2 tiết"
+        : (refineMode === "optimize_singletons" ? "buổi GV 1 tiết"
+        : (refineMode === "optimize_sessions" ? "số buổi dạy" : "buổi trống 1 tiết"));
+      setStatus(
+        `Tự tinh chỉnh (lượt ${state.count + 1}/5): ${laneLabel} — hiện `
+        + `${quality.onePeriod} buổi 1 tiết, ${gap2} trống ≥2, ${gap1} trống 1, ${teacherSessions} buổi dạy.`,
+        "info"
+      );
+      // 22/08: co busy co the chua kip ha o 1.2s sau terminal (don dep async)
+      // — truoc day cu kick bi nuot va BAC THANG DUNG giua chung. Gio thu lai
+      // toi da 20 lan (moi 3s) truoc khi bo cuoc.
+      let refineKickTries = 0;
+      const refineKick = () => {
+        try{
+          if(window.__TKB_SOLVE_UI_BUSY || window.__TKB_RUST_SOLVER_RUNNING){
+            if(++refineKickTries <= 20){ window.setTimeout(refineKick, 3000); return; }
+            window.__TKB_AUTO_REFINE_PENDING = false;
+            return;
+          }
+          bridgeSapXepTuDongAll({mode: refineMode});
+        }catch(_){ window.__TKB_AUTO_REFINE_PENDING = false; }
+      };
+      window.setTimeout(refineKick, 1200);
+    }catch(_){ }
   }
 
   function forceFinishSolveUi(message, state){
@@ -5506,6 +5909,12 @@
 
   function progressUsesWorkMetrics(settings){
     if(!settings || typeof settings !== "object") return false;
+    // 23/08 (chu du an, muc B): luot engine v3 (Cherry / menu Toi uu v3) —
+    // vong % chay theo THOI GIAN ngan sach (nhu luot Cherry), con so lieu
+    // thuc nam tren nhan metricLabel engine gui ("Trống 1 tiết: 146 ➔ 127").
+    // Cong thuc % theo muc tieu 0 lam vong gan nhu dung im (146 -> 127 = 13%)
+    // nen nguoi dung tuong nut khong lam gi.
+    try{ if(String(window.__TKB_FORCE_ENGINE || "").trim()) return false; }catch(_){ }
     const explicitMode = String(settings.ui_progress_mode || "")
       .trim()
       .toLowerCase();
@@ -5713,6 +6122,7 @@
       progressState.backendProgressSequence = 0;
       progressState.backendProgressStage = "";
       progressState.backendProgressElapsedMs = 0;
+      progressState.metricLabelText = "";
       // Keep the accepted incumbent metric visible while a new VPS/Agent
       // generation is starting. Early lifecycle frames do not always carry a
       // metric; clearing it here made repeated focused runs fall back to the
@@ -5753,6 +6163,15 @@
     }else if(!progressUsesWorkMetrics(progressState.settings || {})){
       progressState.metricProgress = null;
     }
+    // 22/08 (khuya): engine v3 gui san nhan so lieu ("Dạy 1 tiết: 43 ➔ 4" /
+    // "1 tiết/buổi 43 ➔ 4 · Trống 2 tiết 48 ➔ 3 · …") trong khung tien do —
+    // hien thang nhan nay cho luot Cherry / Toi uu v3.
+    try{
+      const liveLabel = typeof snapshot.metricLabel === "string" ? snapshot.metricLabel.trim() : "";
+      if(liveLabel && liveLabel.length <= 160 && !/[<>]/.test(liveLabel)){
+        progressState.metricLabelText = liveLabel;
+      }
+    }catch(_){ }
     publishLiveStatsProgress(progressState.metricProgress);
     try{
       window.__TKB_RUST_LAST_LIVE_PROGRESS = {
@@ -5784,18 +6203,22 @@
   function progressLabel(_phase, elapsedSeconds, _backendStage){
     // Preserve one combined diagnostic label for resume/E2E state. The visible
     // toolbar receives elapsed and metric as separate fields below.
+    // 22/08 (khuya): nhan so lieu do engine v3 gui (metricLabelText, vd
+    // "D\u1ea1y 1 ti\u1ebft: 43 \u2794 4") duoc uu tien truoc nhan tinh tu metricProgress.
     const elapsed = formatLiveDuration(elapsedSeconds);
-    const metric = progressUsesWorkMetrics(progressState?.settings || {})
+    const engineLabel = String(progressState?.metricLabelText || "").trim();
+    const metric = engineLabel || (progressUsesWorkMetrics(progressState?.settings || {})
       ? metricProgressCurrentLabel(progressState?.metricProgress)
-      : "";
+      : "");
     return metric ? `${metric} \u00b7 ${elapsed}` : elapsed;
   }
 
   function progressDisplayParts(elapsedSeconds){
+    const engineLabel = String(progressState?.metricLabelText || "").trim();
     return {
       elapsedLabel:formatLiveDuration(elapsedSeconds),
-      metricLabel:progressUsesWorkMetrics(progressState?.settings || {})
-        ? metricProgressCurrentLabel(progressState?.metricProgress)
+      metricLabel:progressUsesWorkMetrics(progressState?.settings || {}) || engineLabel
+        ? (engineLabel || metricProgressCurrentLabel(progressState?.metricProgress))
         : ""
     };
   }
@@ -6049,6 +6472,31 @@
         ));
       el.classList.toggle("is-auto-sort-running-label", isRoutineSortingLabel);
       el.style.display = message ? "inline-block" : "none";
+      // 19/08: thanh trang thai cat chu bang dau "..." nen thong bao dai bi
+      // mat phan quan trong nhat (danh sach cho vuot Gioi han). Luon gan
+      // title de ro chuot vao la thay het, va cho BAM de mo rong.
+      el.title = statusText;
+      const hasConflictDetail = Array.isArray(window.__TKB_LIMIT_CONFLICTS)
+        && window.__TKB_LIMIT_CONFLICTS.length > 0
+        && statusText.includes("Giới hạn");
+      if(hasConflictDetail || statusText.length > 90){
+        el.classList.add("is-clamped");
+        if(!el.dataset.tkbExpandBound){
+          el.dataset.tkbExpandBound = "1";
+          el.style.cursor = "pointer";
+          el.addEventListener("click", () => {
+            // Co bang chi tiet thi mo bang; khong co thi chi gian dong chu ra.
+            if(Array.isArray(window.__TKB_LIMIT_CONFLICTS) && window.__TKB_LIMIT_CONFLICTS.length){
+              toggleLimitConflictPanel();
+            }else{
+              el.classList.toggle("is-expanded");
+            }
+          });
+        }
+      }else{
+        el.classList.remove("is-clamped");
+        el.classList.remove("is-expanded");
+      }
     }
   }
 
@@ -6077,8 +6525,34 @@
     statusDotsTimer = window.setInterval(tick, 420);
   }
 
+  // 21/08: NHAT KY LOI XEP — luu moi thong bao muc "error"/"warning" vao
+  // localStorage de superadmin xem lai qua nut "Lỗi" canh nut Home (nguoi
+  // dung bao "Cherry bao loi" nhung F5 xong la mat dau vet).
+  function recordSolveStatusLog(message, type){
+    try{
+      const level = String(type || "info");
+      if(level !== "error" && level !== "warning") return;
+      const text = String(message || "").trim();
+      if(!text) return;
+      const sid = (()=>{ try{ return new URLSearchParams(location.search).get("sid") || ""; }catch(_){ return ""; } })();
+      const raw = localStorage.getItem("tkbSolveErrorLog");
+      const log = Array.isArray(JSON.parse(raw || "[]")) ? JSON.parse(raw || "[]") : [];
+      // Gop trung: cung noi dung lien tiep thi chi cap nhat thoi gian/dem.
+      if(log[0] && log[0].message === text && log[0].sid === sid){
+        log[0].at = new Date().toISOString();
+        log[0].count = Math.max(1, Number(log[0].count) || 1) + 1;
+      }else{
+        log.unshift({at: new Date().toISOString(), sid, level, message: text.slice(0, 600), count: 1});
+      }
+      while(log.length > 30) log.pop();
+      localStorage.setItem("tkbSolveErrorLog", JSON.stringify(log));
+      window.__TKB_SOLVE_ERROR_LOG = log;
+    }catch(_){ }
+  }
+
   function setStatus(message, type){
     const text = String(message || "");
+    recordSolveStatusLog(text, type);
     if((type || "info") === "info" && text === `${ROUTINE_SORTING_STATUS_BASE}...`){
       startStatusDots(ROUTINE_SORTING_STATUS_BASE, type || "info");
       return;
@@ -6086,6 +6560,38 @@
     stopStatusDots();
     writeStatus(message, type);
   }
+
+  // Bang xem nhat ky loi (chi superadmin — nut duoc an/hien o sapxep.html).
+  window.__tkbToggleSolveErrorLog = function(){
+    try{
+      const existing = document.getElementById("tkbSolveErrorLogPanel");
+      if(existing){ existing.remove(); return; }
+      let log = [];
+      try{ log = JSON.parse(localStorage.getItem("tkbSolveErrorLog") || "[]") || []; }catch(_){ }
+      const panel = document.createElement("div");
+      panel.id = "tkbSolveErrorLogPanel";
+      panel.style.cssText = "position:fixed;top:64px;right:16px;z-index:99999;width:min(560px,92vw);"
+        + "max-height:70vh;overflow:auto;background:#fff;border:1px solid #d33;border-radius:10px;"
+        + "box-shadow:0 8px 30px rgba(0,0,0,.25);padding:12px 14px;font-size:13px;line-height:1.45;";
+      const rows = log.length
+        ? log.map(item => (
+            `<div style="border-bottom:1px solid #eee;padding:6px 0">`
+            + `<div style="color:#888;font-size:11px">${String(item.at || "").replace("T", " ").slice(0, 19)}`
+            + `${item.sid ? " · " + item.sid : ""}${Number(item.count) > 1 ? " · x" + item.count : ""}`
+            + ` · <b style="color:${item.level === "error" ? "#c00" : "#b60"}">${item.level}</b></div>`
+            + `<div>${String(item.message || "").replace(/&/g, "&amp;").replace(/</g, "&lt;")}</div>`
+            + `</div>`
+          )).join("")
+        : `<div style="color:#666">Chưa ghi nhận lỗi/cảnh báo nào trên máy này.</div>`;
+      panel.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">`
+        + `<b>Nhật ký lỗi xếp (máy này)</b>`
+        + `<span>`
+        + `<button type="button" style="margin-right:8px" onclick="try{localStorage.removeItem('tkbSolveErrorLog');}catch(_){};document.getElementById('tkbSolveErrorLogPanel').remove();">Xóa</button>`
+        + `<button type="button" onclick="document.getElementById('tkbSolveErrorLogPanel').remove()">Đóng</button>`
+        + `</span></div>` + rows;
+      document.body.appendChild(panel);
+    }catch(_){ }
+  };
 
   function dismissCompletionPopup(immediate){
     if(completionPopupTimer){
@@ -6318,8 +6824,13 @@
   }
 
   function dataForSolverRequest(data, settings){
+    // 22/08 (toi): luot Cherry luon gui kem tkbSolverResult (ban gon) de engine
+    // v3 nhan ra tiet lan truoc da dua ve Chua phan vi chat luong GV.
+    let forcedEngineTurn = false;
+    try{ forcedEngineTurn = String(window.__TKB_FORCE_ENGINE || "").trim() !== ""; }catch(_){ forcedEngineTurn = false; }
     const allowWarmStart = isTruthySetting(settings?.allow_solver_warm_start)
       || isTruthySetting(settings?.preserve_existing_tkb)
+      || forcedEngineTurn
       || ["preserve_existing", "preserve-existing", "preserve"].includes(String(settings?.auto_sort_strategy || "").trim().toLowerCase());
     const carryCompleteIncumbentLessons = String(settings?.ui_unified_solve_kind || "")
       .trim()
@@ -6368,6 +6879,7 @@
     delete next.solverResult;
     delete next.solverMetrics;
     const preserveExisting = isTruthySetting(settings?.preserve_existing_tkb)
+      || forcedEngineTurn
       || ["preserve_existing", "preserve-existing", "preserve"].includes(String(settings?.auto_sort_strategy || "").trim().toLowerCase());
     if(!preserveExisting){
       const fixedOnlyTkb = fixedOnlyTkbForSolverRequest(data, {
@@ -7082,7 +7594,10 @@
     const metrics = payload?.metrics || {};
     const scheduled = metricNumber(metrics.scheduled_periods);
     const expected = metricNumber(metrics.expected_periods);
-    const unassigned = metricNumber(metrics.unassigned_periods);
+    // Bu khoa `unassigned_periods` neu bo giai khong phat ra (xem ghi chu o
+    // ensureUnassignedPeriodsMetric). payloadCompletion duoc goi trong hau het
+    // moi nhanh quyet dinh, nen bu o day la phu song rong nhat.
+    const unassigned = ensureUnassignedPeriodsMetric(payload);
     const violations = metricNumber(metrics.app_constraint_violation_count);
     const hardOk = metrics.hard_ok !== false && metrics.core_hard_ok !== false && payload?.validation?.hard_ok !== false;
     const rawBestEffort = payload?.bestEffort === true || metrics.best_effort === true;
@@ -7133,6 +7648,42 @@
       && payload.lessons.length === Number(metrics.expected_periods)
       && Array.isArray(payload?.unassignedLessons)
       && payload.unassignedLessons.length === 0;
+  }
+
+  // 19/08: CHOT QUAN TRONG.
+  // Bo giai (solve_stdio / engine v3) KHONG he phat ra khoa `unassigned_periods`.
+  // No chi phat `solver_unassigned_periods`, `capacity_unassigned_periods` va
+  // danh sach `unassignedLessons`. Trong khi do ca chuc cho trong file nay doc
+  // thang `metrics.unassigned_periods` -> luon nhan 0, ke ca khi thuc te con 27
+  // tiet chua xep. Hau qua nang nhat: cong tac va nhanh sau khi ap ket qua bi
+  // chan boi dieu kien `unassigned_periods > 0`, nen no KHONG BAO GIO chay —
+  // ham va da co san tren trang nhung chua tung duoc goi.
+  // Ham nay bu khoa con thieu (khong bao gio ghi de gia tri da co).
+  function ensureUnassignedPeriodsMetric(payload){
+    if(!payload || typeof payload !== "object") return 0;
+    const metrics = payload.metrics && typeof payload.metrics === "object" ? payload.metrics : null;
+    if(!metrics) return 0;
+    const current = metricNumber(metrics.unassigned_periods, NaN);
+    if(Number.isFinite(current)) return current;
+    let derived = NaN;
+    const items = Array.isArray(payload.unassignedLessons) ? payload.unassignedLessons : null;
+    if(items && items.length){
+      derived = items.reduce((sum, item) => sum + metricNumber(item?.periods ?? item?.count, 1), 0);
+    }
+    if(!Number.isFinite(derived)){
+      const solverUnassigned = metricNumber(metrics.solver_unassigned_periods, NaN);
+      const capacityUnassigned = metricNumber(metrics.capacity_unassigned_periods, 0);
+      if(Number.isFinite(solverUnassigned)) derived = solverUnassigned + capacityUnassigned;
+    }
+    if(!Number.isFinite(derived)){
+      const expected = metricNumber(metrics.expected_periods, NaN);
+      const scheduled = metricNumber(metrics.scheduled_periods, NaN);
+      if(Number.isFinite(expected) && Number.isFinite(scheduled)) derived = Math.max(0, expected - scheduled);
+    }
+    if(!Number.isFinite(derived)) return 0;
+    const value = Math.max(0, Math.round(derived));
+    try{ metrics.unassigned_periods = value; }catch(_){ }
+    return value;
   }
 
   function payloadUnassignedPeriods(payload){
@@ -7217,6 +7768,52 @@
       && validationViolations === 0
       && applicationViolations === 0
     );
+  }
+
+  // 22/08 (yeu cau chu du an): tiet khong xep duoc vi rang buoc thi ve Chua
+  // phan KEM LY DO + HUONG XU LY. Gom unassignedLessons theo ma ly do (nhan
+  // tieng Viet lay tu phanmon.js: window.tkbUnassignedReasonInfo) de dong
+  // trang thai / nhat ky Loi noi ro "N tiet thieu cho xep (GV ...)" thay vi
+  // chi "Chua xep du".
+  function unassignedReasonBreakdown(payload){
+    try{
+      const items = Array.isArray(payload?.unassignedLessons) ? payload.unassignedLessons : [];
+      if(!items.length) return {text:"", hint:""};
+      const infoFn = typeof window.tkbUnassignedReasonInfo === "function" ? window.tkbUnassignedReasonInfo : null;
+      const groups = new Map();
+      for(const item of items){
+        if(!item || typeof item !== "object") continue;
+        const periods = Math.max(1, Math.round(Number(item.periods ?? item.count) || 1));
+        const info = infoFn
+          ? infoFn(item.reason, item.message)
+          : {label: String(item.reason || "chưa xếp được"), hint: ""};
+        const label = String(info?.label || "chưa xếp được");
+        const g = groups.get(label) || {periods:0, hint:String(info?.hint || ""), teachers:new Set()};
+        g.periods += periods;
+        if(item.teacher) g.teachers.add(String(item.teacher).trim());
+        groups.set(label, g);
+      }
+      const parts = [];
+      let hint = "";
+      groups.forEach((g, label) => {
+        const names = Array.from(g.teachers);
+        const who = names.length && names.length <= 3
+          ? ` (${names.join(", ")})`
+          : (names.length ? ` (${names.length} GV)` : "");
+        parts.push(`${g.periods} tiết ${label.charAt(0).toLowerCase()}${label.slice(1)}${who}`);
+        if(!hint && g.hint) hint = g.hint;
+      });
+      return {text: parts.join("; "), hint};
+    }catch(_){
+      return {text:"", hint:""};
+    }
+  }
+
+  function setStatusHint(hint){
+    try{
+      const el = document.getElementById("statusMsg");
+      if(el) el.title = String(hint || "");
+    }catch(_){ }
   }
 
   function payloadAcceptableWithUnassigned(payload){
@@ -7687,7 +8284,15 @@
     const expected = (() => {
       try{ return expectedLessonCount(getData()); }catch(_){ return 0; }
     })();
+    // 22/08: nut Cherry (engine ep) KHONG chay bo quet thieu-o cuc bo o day —
+    // teacherCapacityPrecheckWarnings() mat 32-57 s dong bo tren 74 lop/135 GV
+    // (trace: prep:durableScheduleFingerprint {ms:32843} chinh la doan nay).
+    // Cherry luon o che do "xep duoc bao nhieu giu bay nhieu" nen
+    // capacity_shortage_total chi mang tinh thong tin; engine v3 tu tinh suc
+    // chua GV va tra tiet du ve Chua phan kem ly do.
+    const forcedEngineRun = String(window.__TKB_FORCE_ENGINE || "").trim() !== "";
     const shortageTotal = (() => {
+      if(forcedEngineRun) return 0;
       try{
         return teacherCapacityPrecheckWarnings().reduce((sum, item) => {
           const required = Number(item?.required || 0);
@@ -7743,8 +8348,15 @@
     // the same hard constraints. Honour the fast-path flags before invoking
     // the synchronous local capacity scanner, which can monopolize the UI
     // thread for several seconds on a large school.
+    // 22/08: nut Cherry bo qua bo quet "thieu o" cuc bo — teacherFixedOff
+    // CapacityWarnings() chay DONG BO hang chuc giay tren 74 lop/129 GV (do
+    // duoc: dong ho dung o giay 02 roi ~25 s sau moi chay tiep). Engine v3
+    // tu tinh suc chua GV bang matching (Kuhn) va tra tiet du ve Chua phan
+    // kem ly do, nen buoc quet nay la thua tren duong Cherry.
+    const forcedEngineRun = String(window.__TKB_FORCE_ENGINE || "").trim() !== "";
     const skipLocalCapacityScan = settings?.ui_skip_capacity_precheck === true
-      || settings?.ui_fast_auto_sort_no_capacity_precheck === true;
+      || settings?.ui_fast_auto_sort_no_capacity_precheck === true
+      || forcedEngineRun;
     if(skipLocalCapacityScan){
       return {
         ok: true,
@@ -7899,6 +8511,36 @@
         statusLevel: "warning",
         statusMessage: "Phi\u00ean \u0111\u0103ng nh\u1eadp \u0111\u00e3 h\u1ebft h\u1ea1n.",
         progressLabel: "\u0110\u0103ng nh\u1eadp"
+      };
+    }
+    if(normalizedKind === "apply_payload_lesson_loss"){
+      return {
+        title: "Đã chặn để không mất lịch",
+        message: raw || "Phương án máy chủ trả về ít tiết hơn hẳn lịch hiện tại nên không được áp dụng.",
+        level: "error",
+        statusLevel: "error",
+        statusMessage: "Đã giữ nguyên lịch: phương án mới thiếu tiết bất thường.",
+        progressLabel: "Giữ lịch"
+      };
+    }
+    if(
+      normalizedKind === "serverless_solver_unavailable"
+      || normalizedKind === "cloud_run_route_unavailable"
+      || text.includes("cloud_solver_digest_mismatch")
+      || text.includes("cloud_run_client_error")
+    ){
+      const digestMismatch = text.includes("cloud_solver_digest_mismatch");
+      return {
+        title: "Cloud Run từ chối lượt giải",
+        message: digestMismatch
+          ? "Máy chủ VPS đang ghim một phiên bản bộ giải khác với bản Cloud Run đang chạy, nên mọi yêu cầu đều bị từ chối. Chạy lại lệnh cập nhật hồ sơ Cloud Run rồi bấm lại. Lịch hiện tại được giữ nguyên."
+          : (backendDetail || raw || "Cloud Run không nhận lượt giải. Lịch hiện tại được giữ nguyên."),
+        level: "error",
+        statusLevel: "error",
+        statusMessage: digestMismatch
+          ? "Cloud Run từ chối: sai phiên bản bộ giải."
+          : "Cloud Run không nhận lượt giải.",
+        progressLabel: "Cloud Run lỗi"
       };
     }
     if(
@@ -8890,6 +9532,62 @@
       : [onePeriod, gap2Plus, teacherSessions, gap1, totalGap];
   }
 
+  // 23/08: so buoi (GV, thu, buoi) vi pham yeu cau DIA DIEM (co tiet trong
+  // giua 2 dia diem / khong di chuyen 2 lan/buoi / 1 dia diem/buoi). Lay tu
+  // metrics (luoi hien thi, uiTeacherQualityMetrics) hoac cham truc tiep
+  // danh sach tiet cua ung vien bang bo kiem tra cua giao dien. NaN = khong
+  // xac dinh duoc (khong co API) -> cong bo qua chieu nay.
+  function teacherLocationRuleDebtOf(payload){
+    const metrics = payload?.metrics || {};
+    const known = Number(metrics.teacher_location_rule_debt);
+    if(Number.isFinite(known) && known >= 0) return known;
+    const lessons = Array.isArray(payload?.lessons) ? payload.lessons : null;
+    if(!lessons || !lessons.length) return NaN;
+    try{
+      const api = window.TKBConstraints || window.TKBConstraintsFull;
+      if(!api || typeof api.teacherLocationRuleDebt !== "function") return NaN;
+      const value = Number(api.teacherLocationRuleDebt({lessons})?.sessions);
+      if(!Number.isFinite(value)) return NaN;
+      try{
+        if(payload.metrics && typeof payload.metrics === "object") payload.metrics.teacher_location_rule_debt = value;
+      }catch(_){ }
+      return value;
+    }catch(_){
+      return NaN;
+    }
+  }
+
+  // 26/08: moc "so buoi vi pham yeu cau dia diem cua lich DANG HIEN THI".
+  // Thu tu: metrics cua payload cu -> cham truc tiep luoi dang hien thi ->
+  // so da chup ngay truoc luot giai. Chi tra NaN khi khong con duong nao.
+  function visibleLocationRuleDebt(incumbent){
+    const fromPayload = teacherLocationRuleDebtOf(incumbent);
+    if(Number.isFinite(fromPayload)) return fromPayload;
+    try{
+      const api = window.TKBConstraints || window.TKBConstraintsFull;
+      if(api && typeof api.teacherLocationRuleDebt === "function"){
+        const live = Number(api.teacherLocationRuleDebt()?.sessions);
+        if(Number.isFinite(live)) return live;
+      }
+    }catch(_){ }
+    try{
+      const before = Number(window.__TKB_LOCATION_DEBT_BEFORE);
+      if(Number.isFinite(before)) return before;
+    }catch(_){ }
+    return NaN;
+  }
+
+  // 26/08 (chu du an: "khong duoc pha vo cac rang buoc dia diem cua TKB nay"):
+  // dung cho CAC NUT NGOAI Cherry (Xep thuong / Toi uu / buoi le / trong 1-2),
+  // vi cong tu dien cua chung khong co chieu dia diem. Cherry di duong rieng
+  // trong cherryCandidateStrictlyBetter.
+  function candidateWorsensLocationRuleDebt(candidate, incumbent){
+    const next = teacherLocationRuleDebtOf(candidate);
+    if(!Number.isFinite(next)) return false;
+    const current = visibleLocationRuleDebt(incumbent);
+    return Number.isFinite(current) && next > current;
+  }
+
   function teacherQualitySummary(payload){
     const metrics = payload?.metrics || {};
     return {
@@ -8901,7 +9599,8 @@
       onePeriodLowerBound: onePeriodTeacherSessionLowerBound(metrics),
       gap1: gapExactCount(metrics, 1),
       gap2Plus: gap2PlusCount(metrics),
-      totalGap: metricGapTotal(metrics)
+      totalGap: metricGapTotal(metrics),
+      locationDebt: teacherLocationRuleDebtOf(payload)
     };
   }
 
@@ -9041,8 +9740,63 @@
   }
 
   function noBetterScheduleStatus(payload){
-    return onePeriodTeacherSessionFloorMessage(payload)
-      || NO_BETTER_SCHEDULE_MESSAGE;
+    let rejectionText = "";
+    try{
+      const info = window.__TKB_LAST_QUALITY_REJECTION;
+      if(info && info.text && (Date.now() - Number(info.at || 0)) < 180000){
+        rejectionText = String(info.text);
+      }
+    }catch(_){ }
+    // 23/08: nut mot muc tieu (menu Toi uu v3) noi ro muc tieu KHONG giam duoc
+    // them, hien muc hien tai va ly do cac buoi khong go duoc (engine bao trong
+    // quality_unavoidable), thay vi chi "Khong tim duoc lich tot hon".
+    let focusKey = "";
+    try{ focusKey = cherryFocusMetricKey(window.__TKB_ENGINE_FOCUS_MODE); }catch(_){ focusKey = ""; }
+    if(focusKey){
+      const label = CHERRY_FOCUS_LABELS[focusKey] || "Mục tiêu";
+      let current = NaN;
+      try{ current = Number(teacherQualitySummary({metrics: uiTeacherQualityMetrics(getData())})[focusKey]); }catch(_){ current = NaN; }
+      const kindWanted = focusKey === "onePeriod" ? "one_period" : (focusKey === "gap2Plus" ? "gap2" : "");
+      let hints = [];
+      try{
+        const kept = payload?.solver?.engine_v3?.quality_unavoidable;
+        if(Array.isArray(kept)){
+          hints = kept
+            .filter(k => k && (!kindWanted || String(k.kind || "") === kindWanted))
+            .slice(0, 2)
+            .map(k => `${k.teacher || "?"} Thứ ${Number(k.day) || "?"} ${k.session === "PM" ? "chiều" : "sáng"}: ${String(k.why_label || k.why || "chưa gỡ được").trim().replace(/[.\s]+$/, "")}`);
+        }
+      }catch(_){ hints = []; }
+      // 25/08: engine v3 tu giu nguyen lich khi khong toi uu tai cho duoc
+      // (warm-start bi tu choi: lich thieu tiet / vi pham luat) hoac khi ket
+      // qua khong tot hon moc xuat phat -> noi RO ly do do thay vi chi "khong
+      // giam duoc them" (truoc day UI khong doc warm_reject_reason o dau ca).
+      let engineReason = "";
+      try{
+        const v3 = payload?.solver?.engine_v3 || {};
+        const gate = v3.focus_gate || {};
+        if(gate.aborted && gate.message) engineReason = String(gate.message);
+        else if(v3.focus_aborted) engineReason = String(v3.focus_no_gain || v3.focus_aborted);
+      }catch(_){ engineReason = ""; }
+      const parts = [];
+      if(engineReason){
+        parts.push(`${label}: ${engineReason.replace(/[.\s]+$/, "")}.`);
+      }else{
+        parts.push(
+          Number.isFinite(current)
+            ? `${label}: không giảm được thêm (hiện ${current}).`
+            : `${label}: không giảm được thêm.`
+        );
+      }
+      if(hints.length && !engineReason) parts.push(`Không gỡ được: ${hints.join("; ")}.`);
+      if(rejectionText && !engineReason) parts.push(`Xấu hơn ở: ${rejectionText}.`);
+      parts.push("Lịch giữ nguyên.");
+      return parts.join(" ");
+    }
+    const floorMessage = onePeriodTeacherSessionFloorMessage(payload);
+    if(floorMessage) return floorMessage;
+    if(rejectionText) return `${NO_BETTER_SCHEDULE_MESSAGE} Xấu hơn ở: ${rejectionText}.`;
+    return NO_BETTER_SCHEDULE_MESSAGE;
   }
 
   function onePeriodTeacherSessionCount(metrics){
@@ -9383,11 +10137,112 @@
     return "";
   }
 
+  // 20/08: nut Cherry (engine v3) lam viec bang cach DON BUOI DAY lai. Giam
+  // "buoi chi co 1 tiet" gan nhu luon keo theo tang "buoi trong 1 tiet" — do la
+  // he qua cua viec don, khong phai lam xau di. Tran gap1 cu (current + 12)
+  // khien MOI ket qua cua Cherry bi loai: vi du 152 -> 4 buoi le va 23 -> 0
+  // trong-2-tiet van bi chan chi vi gap1 120 -> 181. Vi vay rieng nut nay,
+  // ba muc tieu chinh moi la rang buoc; gap1/totalGap lui ve lam tie-breaker
+  // trong visibleTeacherQualityTuple.
+  function isCherryEngineName(value){
+    return ["cherry", "v3", "engine_v3"].includes(String(value || "").trim().toLowerCase());
+  }
+  function isCherryEngineRun(candidate, settings){
+    try{
+      if(isCherryEngineName(settings?.engine)) return true;
+      const runtime = candidate?.solver?.runtime_settings || {};
+      const route = String(runtime.engine_route || "").trim().toLowerCase();
+      if(route === "cherry_engine_v3") return true;
+      // May chu (anh moi) echo lai nut da bam: tin may chu. Ke ca khi Cherry
+      // phai roi ve bo giai cu (cherry_fallback_legacy) thi van la luot Cherry.
+      const requested = String(runtime.engine_requested || "").trim();
+      if(requested) return isCherryEngineName(requested);
+      // Anh moi nhung khong co engine_requested -> lượt nay KHONG bam nut engine.
+      if(route) return false;
+      // 22/08: anh cu khong echo gi ca. TRUOC day roi ve
+      // window.__TKB_LAST_REQUESTED_ENGINE — bien nay co tinh GIU LAI sau khi
+      // luot Cherry ket thuc (de engineFallbackNotice doi chieu), nen moi luot
+      // backend sau do (menu TEST) cung bi coi la Cherry va bo qua cong so
+      // sanh chat luong. Chi __TKB_FORCE_ENGINE moi phan anh luot DANG chay:
+      // no duoc dat luc bam nut va xoa trong finally() cua chinh luot do.
+      return isCherryEngineName(window.__TKB_FORCE_ENGINE);
+    }catch(_){
+      return false;
+    }
+  }
+
+  // Ghi lai vi sao mot phuong an bi loai, de thong bao noi duoc chi so nao xau
+  // di thay vi chi bao "Da xep xong!" nhu truoc.
+  function rememberQualityRejection(candidate, incumbent, scheduledInfo){
+    try{
+      const next = teacherQualitySummary(candidate);
+      const current = teacherQualitySummary(incumbent);
+      const rows = [
+        ["buổi chỉ có 1 tiết", next.onePeriod, current.onePeriod],
+        ["buổi trống 2+ tiết", next.gap2Plus, current.gap2Plus],
+        ["tổng buổi dạy GV", next.teacherSessions, current.teacherSessions],
+        ["buổi trống 1 tiết", next.gap1, current.gap1]
+      ];
+      const worse = rows.filter(row => Number(row[1]) > Number(row[2]));
+      const parts = worse.map(row => `${row[0]} ${row[2]} → ${row[1]}`);
+      if(Number.isFinite(next.locationDebt) && Number.isFinite(current.locationDebt) && next.locationDebt > current.locationDebt){
+        parts.push(`buổi vi phạm yêu cầu địa điểm ${current.locationDebt} → ${next.locationDebt}`);
+      }
+      // 22/08: ung vien xep duoc IT tiet hon (khong ke tiet chu dong dua ra
+      // vi chat luong GV) cung la mot ly do bi loai — noi ro cho nguoi dung.
+      const nextScheduled = Number(scheduledInfo?.nextScheduled);
+      const currentScheduled = Number(scheduledInfo?.currentScheduled);
+      if(Number.isFinite(nextScheduled) && Number.isFinite(currentScheduled) && nextScheduled < currentScheduled){
+        parts.push(`số tiết xếp được ${currentScheduled} → ${nextScheduled}`);
+      }
+      window.__TKB_LAST_QUALITY_REJECTION = {
+        at: Date.now(),
+        text: parts.join("; ")
+      };
+    }catch(_){ }
+  }
+
   function candidateWithinVisibleQualityEnvelope(candidate, incumbent, settings){
     const next = teacherQualitySummary(candidate);
     const current = teacherQualitySummary(incumbent);
     const focus = optimizationFocusForSolveRequestMode(settings?.optimization_focus);
     const gapTarget = normalizedGapOptimizationTarget(settings);
+    // Chi ap dung cho luot Cherry "xep chung": cac nut tap trung (buoi le / so
+    // buoi / trong 1-2 tiet) van giu nguyen luat cu cua rieng chung.
+    if(!gapTarget && (!focus || focus === "automatic") && isCherryEngineRun(candidate, settings)){
+      // Hai PHA, quyet dinh bang SAN da duoc chung minh cua chinh bo du lieu do
+      // (one_period_teacher_sessions_lower_bound + bang chung), nen luat nay
+      // dung cho moi truong chu khong rieng bo nao.
+      //
+      //  Pha 1 — con no nang (chua cham san buoi-1-tiet, hoac con trong-2-tiet):
+      //    don buoi day lai la viec chinh, va don thi tat yeu sinh them
+      //    trong-1-tiet. Cho phep danh doi, mien ba muc tieu chinh khong xau di.
+      //  Pha 2 — da cham san va het trong-2-tiet:
+      //    khong con ly do de danh doi nua; phan viec con lai chinh la giam
+      //    trong-1-tiet, nen tu day tro di khong cho no tang.
+      // DU TIET la uu tien tuyet doi, dung tren moi chi so chat luong.
+      // 20/08: nut Cherry dat require_complete_schedule = false ("xep duoc bao
+      // nhieu giu bay nhieu") nen no co the tra ve mot lich DEP HON nhung
+      // THIEU tiet. Truoc day cong nay chi nhin chat luong nen da nhan lich do:
+      // 4 tiet Anh cua mot giao viem bi nghi ca thu 6 + thu 7 roi ra "Chua
+      // phan", va vi lich thanh chua hoan chinh nen cac lan bam sau khong con
+      // toi uu tiep duoc nua.
+      const nextDone = payloadCompletion(candidate);
+      const currentDone = payloadCompletion(incumbent);
+      const nextScheduled = Number(nextDone.scheduled || 0);
+      const currentScheduled = Number(currentDone.scheduled || 0);
+      if(currentScheduled > 0 && nextScheduled < currentScheduled) return false;
+
+      const floorReached = onePeriodTeacherSessionFloorReached(incumbent?.metrics);
+      const hardQualityDebt = !floorReached || current.gap2Plus > 0;
+      const mainObjectivesOk = next.onePeriod <= current.onePeriod
+        && next.gap2Plus <= current.gap2Plus
+        && next.teacherSessions <= current.teacherSessions;
+      if(hardQualityDebt) return mainObjectivesOk;
+      return mainObjectivesOk
+        && next.gap1 <= current.gap1
+        && next.totalGap <= current.totalGap;
+    }
     const safeStagedAutomatic = focus === "automatic"
       && settings?.optimization_safe_staged_reclick === true;
 
@@ -9551,8 +10406,237 @@
     ];
   }
 
+  // 22/08 (chi dao chu du an, THAY quyet dinh 20/08 "dua ra luon"): ket qua
+  // Cherry phai DAM BAO khong xau hon lich dang co, theo dung thu tu uu tien:
+  //   so tiet da xep (nhieu hon = nhan, it hon = loai)
+  //   > buoi GV 1 tiet > buoi trong >= 2 > tong buoi day > trong 1 > tong o trong
+  // (so sanh tu dien; bang nhau moi mat = khong co gi tot hon -> giu lich cu).
+  // Chi so cua lich dang co lay tu LUOI DANG HIEN THI (uiTeacherQualityMetrics),
+  // khong tin metrics cu trong tkbSolverResult (lech sau khi keo tha / xep FET).
+  // Lich cu CHUA DU hoac CON LOI rang buoc thi cong nay khong duoc goi
+  // (incumbentQualityGuardState = null) -> ket qua du & hop le duoc ap thang.
+  // 22/08 (toi, chi dao chu du an): engine v3 bac 4 — tiet VAN lam GV con
+  // buoi 1 tiet / trong >= 2 sau khi toi uu het muc thi CHU DONG dua ve Chua
+  // phan kem ly do + goi y (reason = teacher_quality_unreachable). Khi so
+  // "du tiet", nhung tiet nay duoc tinh la DA XU LY (khong phai thieu tiet).
+  const CHERRY_QUALITY_EJECT_REASON = "teacher_quality_unreachable";
+  // 22/08 (khuya, chi dao chu du an): "nut Cherry khi xep cung KHONG duoc rot
+  // tiet ra Chua phan" -> engine khong dua tiet ra nua; cong chap nhan khong
+  // con tinh tiet "da dua ra" la da xu ly (tiet thieu = thieu). Giu ham/ma ly
+  // do de doc du lieu cu, nhung ke toan = 0.
+  const CHERRY_QUALITY_EJECT_ACCOUNTING = false;
+  function qualityEjectedPeriods(payload){
+    if(!CHERRY_QUALITY_EJECT_ACCOUNTING) return 0;
+    try{
+      const items = Array.isArray(payload?.unassignedLessons) ? payload.unassignedLessons : [];
+      let total = 0;
+      for(const item of items){
+        if(!item || typeof item !== "object") continue;
+        if(String(item.reason || "").trim() !== CHERRY_QUALITY_EJECT_REASON) continue;
+        total += Math.max(1, Math.round(metricNumber(item.periods ?? item.count, 1)));
+      }
+      return total;
+    }catch(_){
+      return 0;
+    }
+  }
+
+  // Ung vien Cherry THIEU tiet chi vi no dua tiet ra de GV het buoi 1 tiet /
+  // trong >= 2 -> di qua cong tu dien nhu lich du (so voi luoi dang hien thi).
+  function cherryIncompleteCandidatePreferred(candidate, scheduleSnapshot, data){
+    try{
+      const ejected = qualityEjectedPeriods(candidate);
+      if(ejected <= 0) return false;
+      const c = payloadCompletion(candidate);
+      if(c.violations > 0 || c.hardOk === false) return false;
+      const incumbentPayload = scheduleSnapshot?.tkbSolverResult || null;
+      const incumbentExpected = Math.max(0, expectedLessonCount(data)) || c.expected;
+      const incumbentScheduled = snapshotScheduledLessonCount(scheduleSnapshot);
+      const incumbentMissing = Math.max(0, incumbentExpected - incumbentScheduled);
+      const incumbentQuality = Math.min(qualityEjectedPeriods(incumbentPayload), incumbentMissing);
+      // Ung vien chi duoc thieu DUNG nhung tiet no chu dong dua ra.
+      const candidateOtherMissing = Math.max(0, c.expected - c.scheduled - ejected);
+      const incumbentOtherMissing = Math.max(0, incumbentMissing - incumbentQuality);
+      if(candidateOtherMissing > incumbentOtherMissing) return false;
+      return cherryCandidateStrictlyBetter(candidate, incumbentPayload, {
+        incumbentScheduled,
+        incumbentQualityEjected: incumbentQuality
+      });
+    }catch(_){
+      return false;
+    }
+  }
+
+  // 23/08 (chu du an: "nut toi uu v3 phai tap trung giam dung noi dung no phu
+  // trach"): khoa chi so cua tung nut menu Toi uu v3 trong bo 4 chi so GV.
+  function cherryFocusMetricKey(mode){
+    const m = String(mode || "").trim().toLowerCase();
+    if(["optimize_singletons", "singletons"].includes(m)) return "onePeriod";
+    if(["optimize_gap2", "gap2"].includes(m)) return "gap2Plus";
+    if(["optimize_sessions", "sessions"].includes(m)) return "teacherSessions";
+    if(["optimize_gap1", "gap1"].includes(m)) return "gap1";
+    return "";
+  }
+  const CHERRY_FOCUS_LABELS = {
+    onePeriod: "1 tiết/buổi",
+    gap2Plus: "2 tiết trống",
+    teacherSessions: "Buổi dạy",
+    gap1: "1 tiết trống"
+  };
+  // Thu tu uu tien cua 4 chi so (cao -> thap). Nut mot muc tieu: chi so phu
+  // trach phai GIAM THAT SU; chi so uu tien CAO HON khong duoc xau di (engine da
+  // khoa); chi so thap hon duoc phep doi (vd nut 1 tiet/buoi co the tang trong 1).
+  const CHERRY_METRIC_ORDER = ["onePeriod", "gap2Plus", "teacherSessions", "gap1"];
+
+  function cherryCandidateStrictlyBetter(candidate, incumbent, overrides){
+    const next = teacherQualitySummary(candidate);
+    // 23/08: "lich hien tai" mac dinh doc tu LUOI DANG HIEN THI (cong truoc
+    // khi ap trong solveWithRustApi). Sau khi ung vien DA DUOC AP thi luoi hien
+    // thi chinh la ung vien -> buoc hau kiem phai truyen ignoreVisibleMetrics
+    // = true de so voi metrics lich cu da chup truoc luot giai; neu khong, ung
+    // vien bi so voi chinh no -> "khong tot hon" -> bi hoan tac.
+    let visible = {};
+    if(overrides?.ignoreVisibleMetrics !== true){
+      try{ visible = uiTeacherQualityMetrics(getData()) || {}; }catch(_){ visible = {}; }
+    }
+    const currentMetrics = hasVisibleTeacherQualityMetrics({metrics: visible})
+      ? Object.assign({}, incumbent?.metrics || {}, visible)
+      : Object.assign({}, incumbent?.metrics || {});
+    const currentPayload = {metrics: currentMetrics};
+    const current = teacherQualitySummary(currentPayload);
+    const nextScheduled = Number(payloadCompletion(candidate).scheduled || 0);
+    let currentScheduled = Math.max(
+      Number(payloadCompletion(incumbent).scheduled || 0),
+      metricNumber(currentMetrics.scheduled_periods, 0)
+    );
+    const overrideScheduled = Number(overrides?.incumbentScheduled);
+    if(Number.isFinite(overrideScheduled) && overrideScheduled > 0) currentScheduled = overrideScheduled;
+    // 22/08 (toi): tiet da chu dong dua ve Chua phan vi chat luong GV (co ly
+    // do + huong xu ly) tinh la DA XU LY khi so "du tiet"; sau do moi so chat
+    // luong GV, roi moi uu tien ben xep duoc NHIEU tiet hon.
+    const nextQuality = qualityEjectedPeriods(candidate);
+    const overrideQuality = Number(overrides?.incumbentQualityEjected);
+    const currentQuality = Number.isFinite(overrideQuality)
+      ? Math.max(0, overrideQuality)
+      : qualityEjectedPeriods(incumbent);
+    const nextHandled = nextScheduled + nextQuality;
+    const currentHandled = currentScheduled + currentQuality;
+    // 23/08: luot MOT MUC TIEU (menu Toi uu v3) — xac dinh som de cong "xep
+    // nhieu tiet hon thi ap ngay" ben duoi khong duoc di tat qua chi so phu trach.
+    let focusKey = "";
+    try{ focusKey = cherryFocusMetricKey(overrides?.focusMode ?? window.__TKB_ENGINE_FOCUS_MODE); }catch(_){ focusKey = ""; }
+    // 26/08 (chu du an: "TKB nay co dia diem, khong duoc pha vo cac rang buoc
+    // dia diem"): yeu cau DIA DIEM cua GV la rang buoc CUNG nen phai chan
+    // TRUOC moi nhanh thoat som ben duoi. Truoc day ca nhanh "ung vien xep
+    // them tiet thi ap ngay" (nextHandled > currentHandled, khong focusKey) lan
+    // nhanh mot muc tieu deu `return true` truoc khoi kiem dia diem o duoi ->
+    // luot Cherry 26/08 tren truong 2 co so 2kkn7c6y7l1 day 35 -> 45 buoi vi
+    // pham ma van duoc ap va luu len server.
+    // Khong do duoc UNG VIEN (NaN) thi van bo qua chieu nay nhu cu; nhung neu
+    // chi thieu moc "lich cu" (buoc hau kiem dung ignoreVisibleMetrics, metrics
+    // cua payload cu khong co so nay) thi lay so da chup ngay truoc luot giai
+    // thay vi im lang bo qua ca chieu dia diem.
+    const nextLocationDebt = Number(next.locationDebt);
+    let currentLocationDebt = Number(current.locationDebt);
+    if(!Number.isFinite(currentLocationDebt)){
+      try{ currentLocationDebt = Number(window.__TKB_LOCATION_DEBT_BEFORE); }
+      catch(_){ currentLocationDebt = NaN; }
+    }
+    if(
+      Number.isFinite(nextLocationDebt)
+      && Number.isFinite(currentLocationDebt)
+      && nextLocationDebt > currentLocationDebt
+    ){
+      rememberQualityRejection(candidate, currentPayload, {nextScheduled, currentScheduled});
+      return false;
+    }
+    if(nextHandled > currentHandled){
+      if(!focusKey) return true;
+      // 25/08 (chu du an: "toi uu xong thi so do lai tang la khong hop ly"):
+      // truoc day ung vien xep them tiet duoc ap TRUOC khi xet chi so phu
+      // trach -> lich thieu tiet + warm-start bi tu choi = luot "xep moi"
+      // duoc ap du trong 1 tang (147 -> 180). Nut mot muc tieu: xep them tiet
+      // van duoc ap, nhung chi so phu trach KHONG duoc tang va chi so uu tien
+      // cao hon khong duoc xau di (rieng "buoi day" duoc noi dung bang so
+      // tiet xep them, vi moi tiet moi co the mo them 1 buoi).
+      const focusIndex = CHERRY_METRIC_ORDER.indexOf(focusKey);
+      const gained = nextHandled - currentHandled;
+      for(let index = 0; index < focusIndex; index += 1){
+        const key = CHERRY_METRIC_ORDER[index];
+        const slack = key === "teacherSessions" ? gained : 0;
+        if(Number(next[key]) > Number(current[key]) + slack){
+          rememberQualityRejection(candidate, currentPayload, {nextScheduled, currentScheduled});
+          return false;
+        }
+      }
+      if(Number(next[focusKey]) > Number(current[focusKey])){
+        rememberQualityRejection(candidate, currentPayload, {nextScheduled, currentScheduled});
+        return false;
+      }
+      return true;
+    }
+    if(currentHandled > 0 && nextHandled < currentHandled){
+      rememberQualityRejection(candidate, currentPayload, {nextScheduled, currentScheduled});
+      return false;
+    }
+    // 23/08: yeu cau DIA DIEM cua giao vien (co tiet trong giua 2 dia diem /
+    // khong di chuyen 2 lan/buoi) la rang buoc CUNG cua engine v3. Lich dang
+    // hien thi con buoi vi pham ma ung vien het (hoac it hon) thi do la tien
+    // bo, ap ngay du chi so chat luong co doi; nguoc lai ung vien tang vi
+    // pham thi loai (engine khong bao gio tao them, day la luoi an toan).
+    // Ung vien TANG vi pham da bi loai o tren (truoc moi nhanh thoat som);
+    // o day chi con phan "giam duoc thi ap ngay".
+    if(Number.isFinite(nextLocationDebt) && Number.isFinite(currentLocationDebt)){
+      if(nextLocationDebt < currentLocationDebt) return true;
+    }
+    // 23/08: luot MOT MUC TIEU (menu Toi uu v3) — chi AP khi chi so phu trach
+    // giam that su. Ket qua chi cai thien "tac dung phu" (vd bot buoi day, giam
+    // trong 1) ma khong giam muc tieu thi GIU NGUYEN lich va bao ro; truoc day
+    // cong tu dien chung ap luon nen nguoi dung thay lich doi ma "1 tiet/buoi
+    // van y nguyen".
+    if(focusKey){
+      const focusIndex = CHERRY_METRIC_ORDER.indexOf(focusKey);
+      for(let index = 0; index < focusIndex; index += 1){
+        const key = CHERRY_METRIC_ORDER[index];
+        if(Number(next[key]) > Number(current[key])){
+          rememberQualityRejection(candidate, currentPayload, {nextScheduled, currentScheduled});
+          return false;
+        }
+      }
+      if(Number(next[focusKey]) < Number(current[focusKey])) return true;
+      rememberQualityRejection(candidate, currentPayload, {nextScheduled, currentScheduled});
+      return false;
+    }
+    const nextTuple = [next.onePeriod, next.gap2Plus, -nextScheduled, next.teacherSessions, next.gap1, next.totalGap];
+    const currentTuple = [current.onePeriod, current.gap2Plus, -currentScheduled, current.teacherSessions, current.gap1, current.totalGap];
+    for(let index = 0; index < nextTuple.length; index += 1){
+      if(nextTuple[index] < currentTuple[index]) return true;
+      if(nextTuple[index] > currentTuple[index]){
+        rememberQualityRejection(candidate, currentPayload, {nextScheduled, currentScheduled});
+        return false;
+      }
+    }
+    rememberQualityRejection(candidate, currentPayload, {nextScheduled, currentScheduled});
+    return false;
+  }
+
   function payloadStrictlyBetterTeacherQuality(candidate, incumbent, settings){
-    if(!candidateWithinVisibleQualityEnvelope(candidate, incumbent, settings)) return false;
+    // 22/08: nut Cherry = cong tu dien "khong bao gio xau hon" (xem
+    // cherryCandidateStrictlyBetter). Cac nut con lai (Xep thuong, buoi le, so
+    // buoi, trong 1-2 tiet) van giu nguyen luat doi chieu cu.
+    if(isCherryEngineRun(candidate, settings)) return cherryCandidateStrictlyBetter(candidate, incumbent);
+    // 26/08: cac nut con lai cung khong duoc lam TANG so buoi vi pham yeu cau
+    // dia diem (rang buoc cung cua engine v3; bo tu dien duoi day khong co
+    // chieu nay nen truoc day mot ung vien "bot 1 tiet le" van duoc ap du no
+    // day them GV qua lai giua 2 co so).
+    if(candidateWorsensLocationRuleDebt(candidate, incumbent)){
+      rememberQualityRejection(candidate, incumbent);
+      return false;
+    }
+    if(!candidateWithinVisibleQualityEnvelope(candidate, incumbent, settings)){
+      rememberQualityRejection(candidate, incumbent);
+      return false;
+    }
     const focus = optimizationFocusForSolveRequestMode(settings?.optimization_focus);
     const gapTarget = normalizedGapOptimizationTarget(settings);
     const nextFocused = teacherQualitySummary(candidate);
@@ -9572,8 +10656,12 @@
     const current = visibleTeacherQualityTuple(incumbent, settings, candidate, incumbent);
     for(let index = 0; index < next.length; index += 1){
       if(next[index] < current[index]) return true;
-      if(next[index] > current[index]) return false;
+      if(next[index] > current[index]){
+        rememberQualityRejection(candidate, incumbent);
+        return false;
+      }
     }
+    rememberQualityRejection(candidate, incumbent);
     return false;
   }
 
@@ -9587,11 +10675,27 @@
     if(!incumbentPayload || typeof incumbentPayload !== "object") return null;
     const completion = payloadCompletion(incumbentPayload);
     const visibleState = cheapSchoolCompletionStats(data);
+    // 22/08 (toi): luot Cherry — lich dang co chi thieu DUNG nhung tiet Cherry
+    // lan truoc da chu dong dua ve Chua phan (co ly do) thi van la lich "du"
+    // de cong chat luong hoat dong (neu khong, ket qua moi se duoc ap vo
+    // dieu kien va co the keo buoi 1 tiet / trong >=2 quay lai).
+    const cherryTurn = isCherryEngineRun(null, settings);
+    const storedQualityEjected = cherryTurn ? qualityEjectedPeriods(incumbentPayload) : 0;
+    const visibleExpected = Number(visibleState?.expected || 0);
+    const visibleScheduled = Number(visibleState?.scheduled || 0);
+    const visibleUnassigned = Number(visibleState?.unassigned || 0);
+    const visibleShortfall = Math.max(0, visibleExpected - visibleScheduled);
+    const qualityComplete = cherryTurn
+      && storedQualityEjected > 0
+      && visibleExpected > 0
+      && (visibleUnassigned > 0 || visibleShortfall > 0)
+      && visibleUnassigned <= storedQualityEjected
+      && visibleShortfall <= storedQualityEjected;
     if(
       !visibleState
-      || Number(visibleState.expected || 0) <= 0
-      || Number(visibleState.scheduled || 0) < Number(visibleState.expected || 0)
-      || Number(visibleState.unassigned || 0) > 0
+      || visibleExpected <= 0
+      || (visibleScheduled < visibleExpected && !qualityComplete)
+      || (visibleUnassigned > 0 && !qualityComplete)
       || currentConstraintViolations(1).length > 0
     ) return null;
     const expected = Math.max(
@@ -9617,26 +10721,53 @@
     );
     const missing = Math.max(visibleMissing, payloadMissing);
     const hardUsable = completion.violations <= 0 && completion.hardOk !== false;
-    const complete = expected > 0 && scheduled >= expected && missing === 0 && hardUsable;
+    const complete = expected > 0
+      && (scheduled >= expected || (qualityComplete && missing <= storedQualityEjected))
+      && (missing === 0 || qualityComplete)
+      && hardUsable;
     if(!complete) return null;
     return {
       complete,
       nearComplete:false,
       missing,
       expected,
-      scheduled
+      scheduled,
+      qualityEjected: qualityComplete ? Math.min(storedQualityEjected, missing) : 0
     };
   }
 
   function shouldKeepIncumbentForTeacherQuality(candidate, incumbent, guardState, settings){
     if(!guardState || !incumbent) return false;
     const candidateCompletion = payloadCompletion(candidate);
-    if(!candidateCompletion.complete) return true;
+    // 22/08 (toi): luot Cherry so sanh voi so lieu cua LUOI dang hien thi
+    // (guardState), tinh ca tiet da chu dong dua ve Chua phan vi chat luong GV.
+    const cherryTurn = isCherryEngineRun(candidate, settings);
+    const cherryOverrides = cherryTurn ? {
+      incumbentScheduled: Number(guardState.scheduled) || 0,
+      incumbentQualityEjected: Math.min(
+        qualityEjectedPeriods(incumbent),
+        Math.max(0, Number(guardState.qualityEjected ?? guardState.missing) || 0)
+      )
+    } : null;
+    if(cherryTurn && !candidateCompletion.complete && qualityEjectedPeriods(candidate) > 0){
+      return !cherryCandidateStrictlyBetter(candidate, incumbent, cherryOverrides);
+    }
+    if(!candidateCompletion.complete){
+      // 19/08: TRUOC day mot ung vien chua du tiet LUON thua lich dang co, du
+      // no tot hon han. Do that tren truong e3d7a3b21e2: ung vien 2064 tiet bi
+      // vut de giu lich 1325 tiet. Neu ung vien xep duoc NHIEU TIET HON thi
+      // khong co ly do gi giu lich cu — nguoi dung bam nut de tien len.
+      const incumbentCompletion = payloadCompletion(incumbent);
+      const candidateScheduled = Number(candidateCompletion.scheduled) || 0;
+      const incumbentScheduled = Number(incumbentCompletion.scheduled) || 0;
+      if(candidateScheduled > incumbentScheduled) return false;
+      return true;
+    }
+    if(cherryTurn) return !cherryCandidateStrictlyBetter(candidate, incumbent, cherryOverrides);
     return !payloadStrictlyBetterTeacherQuality(candidate, incumbent, settings);
   }
 
   function shouldUseStagedExistingRepair(settings, data){
-    if(settings?.ui_flash_scheduler_active === true) return null;
     const allowFreshStaged = settings?.ui_allow_staged_existing_on_fresh_sort === true;
     if(
       !data
@@ -10044,7 +11175,7 @@
 
   function shouldUseCapacitySafeFreshProbe(settings, data){
     if(!data || settings?.ui_capacity_safe_fresh_probe_attempted === true) return false;
-    // 19/08: nut Flash/Cherry da chon san thuat toan — phep tham do suc chua
+    // 19/08: nut Cherry da chon san thuat toan — phep tham do suc chua
     // 60 giay o day khong giup gi, chi lam nguoi dung cho them 1 phut.
     try{ if(String(window.__TKB_FORCE_ENGINE || "").trim()) return false; }catch(_){ }
     // 19/08: mot khi phep tham do 60s da het han tren CHINH bo du lieu nay thi
@@ -10829,22 +11960,53 @@
     return actual;
   }
 
-  // 19/08: neu backend da AM THAM roi ve bo giai cu (Cherry/Flash import loi,
+  // 19/08: neu backend da AM THAM roi ve bo giai cu (Cherry import loi,
   // vd anh Cloud Run chua co tkb_engine_v3) thi PHAI noi ro cho nguoi dung —
   // truoc day nut van bao "Da sap xep xong" nen khong ai biet nut khong chay
   // dung thuat toan minh chon.
   function engineFallbackNotice(payload){
     const runtime = payload?.solver?.runtime_settings || {};
-    const raw = runtime.cherry_fallback_reason || runtime.flash_fallback_reason || "";
-    if(!raw) return "";
-    const which = runtime.cherry_fallback_reason ? "Cherry" : "Flash";
-    const text = String(raw);
-    const missingModule = /ModuleNotFound|No module named/i.test(text);
-    const missingOrtools = /ortools/i.test(text);
-    let why = text.slice(0, 160);
-    if(missingModule && missingOrtools) why = "máy chủ giải thiếu thư viện ortools";
-    else if(missingModule) why = "ảnh Cloud Run chưa có bộ giải mới (tkb_engine_v3)";
-    return `⚠ Nút ${which} KHÔNG chạy thuật toán riêng — đã tự chuyển về bộ giải cũ (${why}). Cần build lại ảnh Cloud Run.`;
+    const raw = runtime.cherry_fallback_reason || "";
+    if(raw){
+      const which = "Cherry";
+      const text = String(raw);
+      const missingModule = /ModuleNotFound|No module named/i.test(text);
+      const missingOrtools = /ortools/i.test(text);
+      let why = text.slice(0, 160);
+      if(missingModule && missingOrtools) why = "máy chủ giải thiếu thư viện ortools";
+      else if(missingModule) why = "ảnh Cloud Run chưa có bộ giải mới (tkb_engine_v3)";
+      return `⚠ Nút ${which} KHÔNG chạy thuật toán riêng — đã tự chuyển về bộ giải cũ (${why}). Cần build lại ảnh Cloud Run.`;
+    }
+    // 19/08: doi chieu NUT nguoi dung bam voi DUONG DI THUC TE tren may chu,
+    // de khong con canh nut bao "Da xep xong" trong khi may chu am tham chay
+    // bo giai khac.
+    // 20/08: anh Cloud Run cu KHONG tra ve engine_requested. Truoc day gap
+    // truong hop do thi ham nay tra ve "" — nguoi dung chi thay "Da sap xep
+    // xong" va khong he biet nut Cherry that ra dang chay bo giai mac dinh.
+    // Lay lai lua chon tu chinh nut da bam de van canh bao duoc.
+    // 20/08 (sua tiep): CHI duoc suy ra tu nut khi payload dung la ket qua cua
+    // luot vua chay. Khi mot lich moi bi tu choi vi khong tot hon, ham nay nhan
+    // lai payload CU (lich duong nhiem) — payload do khong co engine_requested
+    // nen truoc do bi bao nham la "may chu chay bo giai mac dinh".
+    const payloadStartedAt = Number(payload?.startedAtMs || payload?.startedAt || 0);
+    const engineClickAt = Number(window.__TKB_LAST_ENGINE_CLICK_AT || 0);
+    const payloadFromThisRun = payloadStartedAt > 0
+      && engineClickAt > 0
+      && payloadStartedAt >= engineClickAt - 5000;
+    const serverEcho = String(runtime.engine_requested || "").trim().toLowerCase();
+    const requested = String(
+      serverEcho || (payloadFromThisRun ? (window.__TKB_LAST_REQUESTED_ENGINE || "") : "")
+    ).trim().toLowerCase();
+    if(!requested) return "";
+    const route = String(runtime.engine_route || "").trim().toLowerCase();
+    const label = requested === "cherry" ? "Cherry" : requested;
+    if(!route){
+      return `\u26a0 M\u00e1y ch\u1ee7 ch\u01b0a nh\u1eadn di\u1ec7n l\u1ef1a ch\u1ecdn thu\u1eadt to\u00e1n (b\u1ea3n b\u1ed9 gi\u1ea3i c\u0169) \u2014 n\u00fat ${label} \u0111ang ch\u1ea1y b\u1ed9 gi\u1ea3i m\u1eb7c \u0111\u1ecbnh. H\u00e3y build l\u1ea1i \u1ea3nh Cloud Run.`;
+    }
+    if(requested === "cherry" && route !== "cherry_engine_v3"){
+      return `\u26a0 B\u1ea1n b\u1ea5m Cherry nh\u01b0ng m\u00e1y ch\u1ee7 ch\u1ea1y nh\u00e1nh "${route}".`;
+    }
+    return "Đã xếp bằng Cherry v3."; // 22/08: nhan theo yeu cau chu du an
   }
 
   function buildCompletionMessage(payload, visibleOverride){
@@ -10887,6 +12049,26 @@
           ) : (debtMessage ? "Đã xếp đủ tiết nhưng còn cần tối ưu giáo viên." : "Đã sắp xếp xong."))
     ];
     if(unassigned > 0) lines.push(capacityShortageOnly ? `Chưa phân: ${unassigned} tiết do thiếu ô.` : `Chưa phân: ${unassigned} tiết.`);
+    // 19/08: noi RO tiet chua phan roi vao LOP nao va vi sao. Truoc day chi co
+    // mot con so tong, nen khi ca 27 tiet deu thuoc mot lop (vi du 6/10) thi
+    // nguoi dung khong the biet de di sua dung cho.
+    if(unassigned > 0 && Array.isArray(payload?.unassignedLessons) && payload.unassignedLessons.length){
+      const byClass = new Map();
+      for(const item of payload.unassignedLessons){
+        const cls = String(item?.className || item?.classId || "?").trim() || "?";
+        const n = metricNumber(item?.periods ?? item?.count, 1) || 1;
+        const reason = String(item?.reason || item?.message || "").trim();
+        const cur = byClass.get(cls) || {periods: 0, reason: ""};
+        cur.periods += n;
+        if(!cur.reason && reason) cur.reason = reason.slice(0, 80);
+        byClass.set(cls, cur);
+      }
+      const parts = [...byClass.entries()]
+        .sort((a, b) => b[1].periods - a[1].periods)
+        .slice(0, 5)
+        .map(([cls, info]) => `${cls}: ${info.periods} tiết${info.reason ? ` (${info.reason})` : ""}`);
+      if(parts.length) lines.push(`Thiếu ở — ${parts.join("; ")}.`);
+    }
     if(violations > 0) lines.push(`Còn ${violations} lỗi ràng buộc.`);
     if(debtMessage) lines.push(debtMessage);
     if(Number.isFinite(elapsed)) lines.push(`Thời gian: ${formatDuration(elapsed)}.`);
@@ -10910,6 +12092,341 @@
     if(lower.includes("timeout") || lower.includes("deadline") || lower.includes("time")) return "Bỏ qua lượt thử phụ vì gần hết thời gian.";
     if(lower.includes("capacity")) return "Số ô học hợp lệ không đủ cho toàn bộ tiết.";
     return text.replace(/[_-]+/g, " ");
+  }
+
+  // 19/08: Dem cac cho VUOT GIOI HAN tren dung lich DANG HIEN THI (khong phai
+  // tren payload da bi loai bo). Dung de bao cao trung thuc.
+  function visibleScheduleSessionLimitIssues(){
+    const out = [];
+    try{
+      const data = getData();
+      const tkbs = data?.tkb || {};
+      const days = Array.isArray(window.DAYS) ? window.DAYS : ["thu2","thu3","thu4","thu5","thu6","thu7"];
+      const cellMonFn = window.cellMon || (typeof cellMon === "function" ? cellMon : null);
+      const canonFn = window.getLopCanonById || (typeof getLopCanonById === "function" ? getLopCanonById : null);
+      const limFn = window.getGioiHanForClassMon || (typeof getGioiHanForClassMon === "function" ? getGioiHanForClassMon : null);
+      const keyFn = window.monCanonicalKey || (typeof monCanonicalKey === "function" ? monCanonicalKey : null);
+      const fixedFn = window.isFixed || (typeof isFixed === "function" ? isFixed : null);
+      if(!cellMonFn || !canonFn || !limFn || !keyFn) return out;
+      for(const lopId of Object.keys(tkbs)){
+        const canon = canonFn(lopId);
+        if(!canon) continue;
+        const grid = tkbs[lopId] || {};
+        for(const thu of days){
+          for(const buoi of ["sang", "chieu"]){
+            const arr = grid?.[thu]?.[buoi] || [];
+            const seen = new Map();
+            arr.forEach(cell => {
+              if(!cell || cell === "OFF") return;
+              const mon = cellMonFn(cell);
+              if(!mon) return;
+              const k = keyFn(mon);
+              const cur = seen.get(k) || {mon, count: 0, fixed: 0};
+              cur.count += 1;
+              if(fixedFn && fixedFn(cell)) cur.fixed += 1;
+              seen.set(k, cur);
+            });
+            seen.forEach(info => {
+              const limit = Number(limFn(canon, info.mon)) || 0;
+              if(limit > 0 && info.count > limit){
+                out.push({
+                  className: canon,
+                  thu,
+                  buoi,
+                  mon: info.mon,
+                  count: info.count,
+                  limit,
+                  allFixed: info.fixed >= info.count
+                });
+              }
+            });
+          }
+        }
+      }
+    }catch(_){ }
+    return out;
+  }
+
+  // 19/08: SUA "bao sai" — truoc day thanh trang thai lay so lieu tu PAYLOAD
+  // cua luot giai, ke ca khi payload do BI LOAI va man hinh van giu lich cu
+  // day du. Ket qua: lich tren man hinh du 1554/1554, khong trung tiet nao,
+  // nhung o duoi van bao "Chua xep du. Chua phan: 27 tiet". Ham nay chay lai
+  // sau khi ap dung + ve xong, doi chieu voi lich THUC TE dang hien thi va
+  // viet lai thong bao cho dung.
+  // 19/08: THANH TRANG THAI QUA HEP de liet ke 14 cho vuot Gioi han — chu bi
+  // cat bang "..." dung o phan nguoi dung can nhat (lop nao, mon nao). Dung
+  // mot BANG rieng, mo ra la doc duoc ngay tung dong.
+  function thuLabel(thu){
+    const n = String(thu || "").replace("thu", "");
+    return n === "8" ? "Chủ nhật" : `Thứ ${n}`;
+  }
+
+  function removeLimitConflictPanel(){
+    try{ document.getElementById("tkbLimitConflictPanel")?.remove(); }catch(_){ }
+  }
+
+  function ensureLimitConflictStyles(){
+    if(document.getElementById("tkbLimitConflictStyles")) return;
+    const el = document.createElement("style");
+    el.id = "tkbLimitConflictStyles";
+    el.textContent = [
+      "#tkbLimitConflictPanel{position:fixed;z-index:99999;top:64px;right:16px;",
+      "max-width:min(560px,calc(100vw - 32px));max-height:min(70vh,720px);overflow:auto;",
+      "padding:14px 16px;border:1px solid #f0c98c;border-radius:12px;background:#fffdf7;",
+      "box-shadow:0 10px 30px rgba(15,23,42,0.18);font:13px/1.5 system-ui,Segoe UI,Arial,sans-serif;color:#1f2937}",
+      "#tkbLimitConflictPanel .tkb-lc-head{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px}",
+      "#tkbLimitConflictPanel .tkb-lc-title{flex:1;font-weight:700;font-size:14px;color:#92400e}",
+      "#tkbLimitConflictPanel .tkb-lc-close{border:0;background:transparent;font-size:22px;line-height:1;",
+      "cursor:pointer;color:#92400e;padding:0 2px}",
+      "#tkbLimitConflictPanel .tkb-lc-note{margin-bottom:10px;color:#374151}",
+      "#tkbLimitConflictPanel .tkb-lc-group{margin-top:12px;font-weight:700}",
+      "#tkbLimitConflictPanel .tkb-lc-group.is-blocking{color:#b91c1c}",
+      "#tkbLimitConflictPanel .tkb-lc-group.is-auto{color:#1d4ed8}",
+      "#tkbLimitConflictPanel table{border-collapse:collapse;width:100%;margin:6px 0 2px}",
+      "#tkbLimitConflictPanel th{padding:4px 8px;font-weight:600;color:#6b7280;font-size:12px;text-align:left}",
+      "#tkbLimitConflictPanel td{padding:4px 8px;border-bottom:1px solid #f1e7d2}",
+      "#tkbLimitConflictPanel td.tkb-lc-key{font-weight:600}",
+      "#tkbLimitConflictPanel th.tkb-lc-num,#tkbLimitConflictPanel td.tkb-lc-num{text-align:center}",
+      "#tkbLimitConflictPanel td.tkb-lc-over{color:#b91c1c;font-weight:700}"
+    ].join("");
+    document.head.appendChild(el);
+  }
+
+  function renderLimitConflictPanel(issues){
+    removeLimitConflictPanel();
+    if(!Array.isArray(issues) || !issues.length) return null;
+    ensureLimitConflictStyles();
+    const fixedOnly = issues.filter(x => x.allFixed);
+    const movable = issues.filter(x => !x.allFixed);
+
+    const row = issue => [
+      "<tr>",
+      `<td class="tkb-lc-key">${escapeHtml(issue.className)}</td>`,
+      `<td>${escapeHtml(thuLabel(issue.thu))}</td>`,
+      `<td>${issue.buoi === "sang" ? "Sáng" : "Chiều"}</td>`,
+      `<td class="tkb-lc-key">${escapeHtml(issue.mon)}</td>`,
+      `<td class="tkb-lc-num tkb-lc-over">${issue.count}</td>`,
+      `<td class="tkb-lc-num">${issue.limit}</td>`,
+      "</tr>"
+    ].join("");
+
+    const table = list => [
+      "<table><thead><tr>",
+      "<th>Lớp</th><th>Ngày</th><th>Buổi</th><th>Môn</th>",
+      '<th class="tkb-lc-num">Đang xếp</th><th class="tkb-lc-num">Giới hạn</th>',
+      "</tr></thead><tbody>",
+      list.map(row).join(""),
+      "</tbody></table>"
+    ].join("");
+
+    const blocks = [];
+    blocks.push([
+      '<div class="tkb-lc-head">',
+      `<div class="tkb-lc-title">${issues.length} chỗ vượt Giới hạn đang chặn phần tối ưu "Dạy 1 tiết/buổi"</div>`,
+      '<button type="button" id="tkbLimitConflictClose" class="tkb-lc-close" aria-label="Đóng">×</button>',
+      "</div>"
+    ].join(""));
+    blocks.push('<div class="tkb-lc-note">Thuật toán chỉ bước sang phần tối ưu khi lịch đã sạch lỗi ràng buộc. Còn một chỗ vượt Giới hạn thì nó dừng ở mức "xếp đủ".</div>');
+    if(fixedOnly.length){
+      const need = Math.max(...fixedOnly.map(x => x.count));
+      blocks.push([
+        `<div class="tkb-lc-group is-blocking">${fixedOnly.length} chỗ do TIẾT CỐ ĐỊNH — thuật toán không được phép dời, bạn phải sửa</div>`,
+        `<div class="tkb-lc-note">Mỗi dòng dưới đây: hoặc đặt Giới hạn của môn đó thành ${need}, hoặc bỏ ghim cố định một tiết.</div>`,
+        table(fixedOnly)
+      ].join(""));
+    }
+    if(movable.length){
+      blocks.push([
+        `<div class="tkb-lc-group is-auto">${movable.length} chỗ thuật toán tự dời được — bạn không cần làm gì</div>`,
+        table(movable)
+      ].join(""));
+    }
+
+    const panel = document.createElement("div");
+    panel.id = "tkbLimitConflictPanel";
+    panel.innerHTML = blocks.join("");
+    document.body.appendChild(panel);
+    try{
+      panel.querySelector("#tkbLimitConflictClose")?.addEventListener("click", removeLimitConflictPanel);
+    }catch(_){ }
+    return panel;
+  }
+
+  function toggleLimitConflictPanel(){
+    if(document.getElementById("tkbLimitConflictPanel")){
+      removeLimitConflictPanel();
+      return;
+    }
+    renderLimitConflictPanel(window.__TKB_LIMIT_CONFLICTS || []);
+  }
+  try{ window.tkbToggleLimitConflictPanel = toggleLimitConflictPanel; }catch(_){ }
+
+  /* ===== 21/08: BANG LOI RANG BUOC sau khi xep =====
+     Truoc day trang thai chi ghi "con N loi rang buoc" ma khong noi loi NAO —
+     nguoi dung khong biet sua dau. Panel nay liet ke tung loi (lop, mon, noi
+     dung) va tu mo sau moi luot xep co loi. Danh sach lay tu ket qua validate
+     sau khi ap lich (window.__TKB_CONSTRAINT_VIOLATIONS), fallback chay lai
+     validateAllAsync neu chua co. */
+  function removeConstraintViolationPanel(){
+    try{ document.getElementById("tkbConstraintViolationPanel")?.remove(); }catch(_){ }
+  }
+
+  function ensureConstraintViolationStyles(){
+    if(document.getElementById("tkbConstraintViolationStyles")) return;
+    const el = document.createElement("style");
+    el.id = "tkbConstraintViolationStyles";
+    el.textContent = [
+      "#tkbConstraintViolationPanel{position:fixed;z-index:99999;top:64px;right:16px;",
+      "max-width:min(600px,calc(100vw - 32px));max-height:min(70vh,720px);overflow:auto;",
+      "padding:14px 16px;border:1px solid #f3b4b4;border-radius:12px;background:#fffafa;",
+      "box-shadow:0 10px 30px rgba(15,23,42,0.18);font:13px/1.5 system-ui,Segoe UI,Arial,sans-serif;color:#1f2937}",
+      "#tkbConstraintViolationPanel .tkb-cv-head{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px}",
+      "#tkbConstraintViolationPanel .tkb-cv-title{flex:1;font-weight:700;font-size:14px;color:#b91c1c}",
+      "#tkbConstraintViolationPanel .tkb-cv-close{border:0;background:transparent;font-size:22px;line-height:1;",
+      "cursor:pointer;color:#b91c1c;padding:0 2px}",
+      "#tkbConstraintViolationPanel .tkb-cv-note{margin-bottom:10px;color:#374151}",
+      "#tkbConstraintViolationPanel table{border-collapse:collapse;width:100%;margin:6px 0 2px}",
+      "#tkbConstraintViolationPanel th{padding:4px 8px;font-weight:600;color:#6b7280;font-size:12px;text-align:left}",
+      "#tkbConstraintViolationPanel td{padding:4px 8px;border-bottom:1px solid #f3dede;vertical-align:top}",
+      "#tkbConstraintViolationPanel td.tkb-cv-key{font-weight:600;white-space:nowrap}"
+    ].join("");
+    document.head.appendChild(el);
+  }
+
+  function constraintViolationFixHint(kind){
+    const k = String(kind || "");
+    if(k.startsWith("subject.lessonBlocks")) return "Yêu cầu môn học → Tiết đôi/cụm (Min/Max)";
+    if(k.startsWith("subject.maxPeriods")) return "Yêu cầu môn học → Giới hạn số tiết";
+    if(k.startsWith("subject.noSame")) return "Yêu cầu môn học → Không cùng buổi/ngày";
+    if(k.startsWith("subject.spacing")) return "Yêu cầu môn học → Học cách ngày";
+    if(k.startsWith("teacher")) return "Yêu cầu của giáo viên";
+    if(k.startsWith("fixedOff") || k.startsWith("class")) return "Yêu cầu cố định";
+    return k || "";
+  }
+
+  function renderConstraintViolationPanel(items){
+    removeConstraintViolationPanel();
+    const list = Array.isArray(items) ? items.filter(Boolean) : [];
+    if(!list.length) return null;
+    ensureConstraintViolationStyles();
+    const rows = list.slice(0, 60).map(item => [
+      "<tr>",
+      `<td class="tkb-cv-key">${escapeHtml(item.className || item.lopId || "")}</td>`,
+      `<td class="tkb-cv-key">${escapeHtml(item.mon || "")}</td>`,
+      `<td>${escapeHtml(item.message || item.kind || "")}</td>`,
+      `<td>${escapeHtml(constraintViolationFixHint(item.kind))}</td>`,
+      "</tr>"
+    ].join("")).join("");
+    const more = list.length > 60 ? `<div class="tkb-cv-note">… và ${list.length - 60} lỗi khác.</div>` : "";
+    const panel = document.createElement("div");
+    panel.id = "tkbConstraintViolationPanel";
+    panel.innerHTML = [
+      '<div class="tkb-cv-head">',
+      `<div class="tkb-cv-title">${list.length} lỗi ràng buộc cần bạn xử lý</div>`,
+      '<button type="button" id="tkbConstraintViolationClose" class="tkb-cv-close" aria-label="Đóng">×</button>',
+      "</div>",
+      '<div class="tkb-cv-note">Thuật toán không tự gỡ được các yêu cầu dưới đây. Sửa yêu cầu (cột "Sửa ở đâu") hoặc kéo tiết bằng tay rồi xếp lại.</div>',
+      "<table><thead><tr><th>Lớp</th><th>Môn</th><th>Lỗi</th><th>Sửa ở đâu</th></tr></thead><tbody>",
+      rows,
+      "</tbody></table>",
+      more
+    ].join("");
+    document.body.appendChild(panel);
+    try{
+      panel.querySelector("#tkbConstraintViolationClose")?.addEventListener("click", removeConstraintViolationPanel);
+    }catch(_){ }
+    return panel;
+  }
+
+  function toggleConstraintViolationPanel(){
+    if(document.getElementById("tkbConstraintViolationPanel")){
+      removeConstraintViolationPanel();
+      return;
+    }
+    renderConstraintViolationPanel(window.__TKB_CONSTRAINT_VIOLATIONS || []);
+  }
+  try{ window.tkbToggleConstraintViolationPanel = toggleConstraintViolationPanel; }catch(_){ }
+
+  /* 21/08: TRAN TONG cho phan "thu them seed" cua luot xep tu dong.
+     Cac vong retry (portfolio / zero-one / teacher-quality) bounded ve SO LAN
+     nhung moi lan la mot luot solve day du tren backend (1-3 phut) — cong don
+     thanh 10+ phut khong tu dung. Qua 8 phut tinh tu luc bam nut thi ngung
+     thu them seed va tra ket qua tot nhat dang co (cac lane chinh fresh +
+     refine ~6 phut khong bi anh huong). */
+  const SOLVE_TURN_RETRY_BUDGET_MS = 480_000;
+
+  function solveTurnRetryBudgetExhausted(){
+    const startedAt = Number(window.__TKB_SOLVE_TURN_STARTED_AT || 0) || 0;
+    if(startedAt <= 0) return false;
+    return (Date.now() - startedAt) > SOLVE_TURN_RETRY_BUDGET_MS;
+  }
+
+  function scheduleConstraintViolationPanel(){
+    const cached = Array.isArray(window.__TKB_CONSTRAINT_VIOLATIONS) ? window.__TKB_CONSTRAINT_VIOLATIONS : [];
+    if(cached.length){
+      renderConstraintViolationPanel(cached);
+      return;
+    }
+    // Chua co danh sach (vi du duong skip-validation): tinh lai o nen roi mo.
+    currentConstraintViolationsAsync(200, {allowSyncFallback:false, ignoreStop:true})
+      .then(listResult => {
+        const items = Array.isArray(listResult) ? listResult : [];
+        window.__TKB_CONSTRAINT_VIOLATIONS = items;
+        if(items.length) renderConstraintViolationPanel(items);
+      })
+      .catch(()=>{});
+  }
+
+  // 19/08: SUA "bao sai" — thanh trang thai truoc day lay so lieu tu PAYLOAD
+  // cua luot giai, ke ca khi payload do BI LOAI va man hinh van giu lich cu
+  // day du. Ham nay chay lai sau khi ap dung + ve xong, doi chieu voi lich
+  // THUC TE dang hien thi va viet lai thong bao cho dung.
+  //
+  // 19/08 (bo sung): NOI RO MOI LIEN HE. Cac cho vuot Gioi han khong chi la
+  // canh bao roi rac — chung lam `app_constraint_violation_count > 0`, keo
+  // theo payloadCompletion().complete = false VINH VIEN. Ma toan bo giai doan
+  // toi uu chat luong ("Day 1 tiet/buoi", "Trong 2 tiet") deu doi
+  // `completion.complete === true` moi chay (xem shouldRetryZeroOneQuality o
+  // vong thu lai). Nghia la: con mot cho vuot Gioi han do TIET CO DINH thi
+  // thuat toan KHONG BAO GIO buoc vao pha toi uu 1 tiet/buoi. Nguoi dung can
+  // biet dieu nay, vi ho la nguoi duy nhat go duoc nut that do.
+  function reconcileStatusWithVisibleSchedule(){
+    try{
+      const ui = uiSchoolCompletionStats();
+      if(!ui || !(ui.expected > 0)) return;
+      if(ui.unassigned > 0 || ui.scheduled < ui.expected) return;
+      const issues = visibleScheduleSessionLimitIssues();
+      try{ window.__TKB_LIMIT_CONFLICTS = issues; }catch(_){ }
+      if(!issues.length){
+        try{ removeLimitConflictPanel(); }catch(_){ }
+        setStatus(SOLVE_COMPLETE_MESSAGE, "ok");
+        return;
+      }
+      const fixedOnly = issues.filter(x => x.allFixed);
+      const movable = issues.filter(x => !x.allFixed);
+      // Dong trang thai phai NGAN de khong bi cat; chi tiet nam trong bang.
+      const message = `Đã xếp đủ ${ui.scheduled} tiết, không tiết nào trùng.`
+        + ` Còn ${issues.length} chỗ vượt Giới hạn`
+        + (fixedOnly.length ? ` (${fixedOnly.length} do tiết cố định)` : "")
+        + ` — bấm để xem chi tiết.`;
+      try{
+        console.warn(`[TKB] ${issues.length} cho vuot Gioi han dang chan pha toi uu chat luong:`);
+        console.table(issues.map(x => ({
+          Lop: x.className,
+          Ngay: thuLabel(x.thu),
+          Buoi: x.buoi === "sang" ? "Sang" : "Chieu",
+          Mon: x.mon,
+          Dang_xep: x.count,
+          Gioi_han: x.limit,
+          Tiet_co_dinh: x.allFixed ? "co" : "khong"
+        })));
+        console.warn("[TKB] Danh sach day du: window.__TKB_LIMIT_CONFLICTS");
+      }catch(_){ }
+      // Mo san bang mot lan sau moi luot xep — nguoi dung khong phai doan la
+      // phai bam vao dau moi thay chi tiet.
+      try{ renderLimitConflictPanel(issues); }catch(_){ }
+      setStatus(message, "warning");
+    }catch(_){ }
   }
 
   function notifyCompletion(payload, visibleOverride, messageOverride){
@@ -10941,16 +12458,31 @@
     }
     else if(unassigned > 0 || incomplete){
       const remain = Math.max(unassigned, expected > 0 ? Math.max(0, expected - scheduled) : 0);
+      // 22/08: noi ro LY DO tung nhom tiet chua phan + huong xu ly (tooltip).
+      const why = unassignedReasonBreakdown(payload);
+      const whyText = why.text ? ` — ${why.text}` : "";
       setStatus(
         capacityShortageOnly
-          ? `Đã xếp phần có thể xếp. Chưa phân: ${remain} tiết do thiếu ô${violations > 0 ? ` và ${violations} lỗi ràng buộc` : ""}.`
-          : `Chưa xếp đủ. Chưa phân: ${remain} tiết${violations > 0 ? ` và ${violations} lỗi ràng buộc` : ""}.`,
+          ? `Đã xếp phần có thể xếp. Chưa phân: ${remain} tiết do thiếu ô${whyText}${violations > 0 ? ` và ${violations} lỗi ràng buộc` : ""}.`
+          : `Chưa xếp đủ. Chưa phân: ${remain} tiết${whyText}${violations > 0 ? ` và ${violations} lỗi ràng buộc` : ""}.`,
         statusType
       );
+      setStatusHint(why.hint ? `Hướng xử lý: ${why.hint}` : "");
     }else{
       setStatus(`Đã xếp đủ ${scheduled || expected || ""} tiết. Còn ${violations} lỗi ràng buộc cần kiểm tra.`, statusType);
     }
+    // 21/08: co loi rang buoc => TU MO bang liet ke tung loi de nguoi dung
+    // biet sua dau (truoc day chi bao con so, khong chi ra loi nao).
+    if(violations > 0){
+      try{ scheduleConstraintViolationPanel(); }catch(_){ }
+    }else{
+      try{ removeConstraintViolationPanel(); }catch(_){ }
+    }
     dismissCompletionPopup(true);
+    // Lich co the duoc ap dung / ve lai NGAY SAU loi goi nay, hoac payload bi
+    // loai va man hinh giu lich cu. Doi chieu lai de thong bao khop man hinh.
+    try{ setTimeout(reconcileStatusWithVisibleSchedule, 0); }catch(_){ }
+    try{ setTimeout(reconcileStatusWithVisibleSchedule, 900); }catch(_){ }
     return message;
   }
 
@@ -11771,6 +13303,26 @@
     const wanted = fixedLessonLockSubjectKey(lock);
     const actual = fixedLessonCanonicalSubjectKey(subject);
     return !!wanted && !!actual && wanted === actual;
+  }
+
+  // 23/08 (chu du an: "toi uu la KHONG duoc vang tiet"): tiet nam dung o O CO
+  // DINH phai duoc ap TRUOC cac tiet cung mon o o khac. applyPayload "tieu thu"
+  // moi o co dinh mon S bang tiet S DAU TIEN gap trong payload (de payload khong
+  // chua tiet co dinh van dung so tiet); engine v3 liet ke tiet theo thu tu o
+  // (thu2 -> thu7) nen tiet S o dau tuan bi bo roi truoc khi toi tiet S o dung
+  // o co dinh -> "lech nho N tiet" (do tren truong default: 20 tiet/luot), roi
+  // va nhanh dat lai tuy tien, tao buoi le moi.
+  function orderPayloadLessonsFixedFirst(lessons, isAtFixedCell){
+    const list = Array.isArray(lessons) ? lessons : [];
+    if(typeof isAtFixedCell !== "function") return list.slice();
+    const fixedFirst = [];
+    const rest = [];
+    for(const lesson of list){
+      let atFixed = false;
+      try{ atFixed = isAtFixedCell(lesson) === true; }catch(_){ atFixed = false; }
+      (atFixed ? fixedFirst : rest).push(lesson);
+    }
+    return fixedFirst.concat(rest);
   }
 
   function applyFixedLessonLocks(nextTkb, locks){
@@ -13226,6 +14778,26 @@
     return c.fixedOff.class;
   }
 
+  // Vong quet validateAll() trong releaseConstraintViolatingLessons CHI dung de
+  // nhat ra thong bao vi pham O CO DINH / NGHI CO DINH — moi thong bao khac deu
+  // bi bo qua. Ma hai ho fixedOff.teacher va fixedOff.class thi da duoc tha ra
+  // trong chinh ham do (vong fixedOff.teacher + collectOffLocks). Vay chi khi
+  // truong co fixedOff cho PHONG / MON / NHOM MON thi vong quet kia moi con
+  // viec de lam. Do tren truong that: 2103 o -> validateAll ngon 3,9 giay khoa
+  // cung luong chinh va tra ve 0 thong bao — dung nghia dot thoi gian.
+  function preSolveFullConstraintValidationNeeded(data){
+    const fixedOff = data?.tkbConstraints?.fixedOff;
+    if(!fixedOff || typeof fixedOff !== "object") return false;
+    return ["room", "subject", "subjectGroup"].some(family => {
+      const bucket = fixedOff[family];
+      if(!bucket || typeof bucket !== "object") return false;
+      return Object.values(bucket).some(slots => {
+        if(!slots || typeof slots !== "object") return false;
+        return Object.values(slots).some(Boolean);
+      });
+    });
+  }
+
   function collectOffLocks(data){
     const locks = {};
     const add = (classId, key) => {
@@ -13737,7 +15309,9 @@
     // timetable from scratch.
     releaseAggregateTeacherOverflows();
 
-    if(api && (Array.isArray(opts.violations) || typeof api.validateAll === "function")){
+    const fullValidationNeeded = Array.isArray(opts.violations)
+      || preSolveFullConstraintValidationNeeded(data);
+    if(api && fullValidationNeeded && (Array.isArray(opts.violations) || typeof api.validateAll === "function")){
       let violations = Array.isArray(opts.violations) ? opts.violations : [];
       if(!Array.isArray(opts.violations)){
         try{
@@ -13859,6 +15433,39 @@
       return true;
     };
 
+    // ------------------------------------------------------------------
+    // 19/08 CHOT CHAN MAT LICH: applyPayload dung lai TOAN BO data.tkb tu
+    // payload.lessons. Neu may chu tra ve mot phuong an gan nhu rong (do loi
+    // bo giai, do CP-SAT doc duoc 0 tiet, do het gio o pha dau...) thi lenh
+    // gan ben duoi XOA SACH thoi khoa bieu dang co — da tai hien: 2202 tiet
+    // tut xuong 150 (chi con o co dinh). Lich cua nguoi dung khong duoc phep
+    // bien mat vi mot ket qua hong; tha giu nguyen va bao loi.
+    {
+      const incumbentScheduled = countScheduledLessons(data);
+      const incomingLessons = Array.isArray(payloadLessons) ? payloadLessons.length : 0;
+      const incomingTotal = incomingLessons + fixedLessonLocks.size;
+      const allowShrink = solveSettings?.ui_allow_schedule_shrink === true;
+      if(
+        !allowShrink
+        && incumbentScheduled >= 50
+        && incomingTotal < Math.floor(incumbentScheduled * 0.6)
+      ){
+        const err = new Error(
+          `Máy chủ trả về phương án chỉ có ${incomingTotal} tiết trong khi lịch hiện tại đang có `
+          + `${incumbentScheduled} tiết — hệ thống KHÔNG áp dụng để tránh mất lịch. `
+          + `Lịch hiện tại được giữ nguyên.`
+        );
+        err.kind = "apply_payload_lesson_loss";
+        err.keepIncumbentSchedule = true;
+        err.payload = payload;
+        traceSolveStep("solve:apply-rejected-lesson-loss", {
+          incumbentScheduled,
+          incomingTotal
+        });
+        throw err;
+      }
+    }
+
     const nextTkb = {};
     for(const cls of (payload.classes || [])){
       const classId = String(cls.id || cls.name || "");
@@ -13867,6 +15474,15 @@
       await yieldApplySlice(false);
     }
 
+    // 23/08: tiet o dung o co dinh di truoc (xem orderPayloadLessonsFixedFirst).
+    payloadLessons = orderPayloadLessonsFixedFirst(payloadLessons, lesson => {
+      const classId = classIdForLesson(payload, lesson);
+      if(!classId) return false;
+      const lock = fixedLessonLocks.get(
+        fixedLessonLockKey(classId, dayKey(lesson.day), sessionKey(lesson.session), Number(lesson.period) - 1)
+      );
+      return !!lock && fixedLessonLockMatches(lock, resolveSubject(classId, lesson.subject));
+    });
     for(const lesson of payloadLessons){
       const classId = classIdForLesson(payload, lesson);
       if(!classId) continue;
@@ -13977,6 +15593,11 @@
           ignoreStop:true
         })
       : postApplyViolations;
+    // 21/08: giu lai DANH SACH loi rang buoc de bang loi sau khi xep hien
+    // dung tung dong (khong chi con so). Xem renderConstraintViolationPanel.
+    try{
+      window.__TKB_CONSTRAINT_VIOLATIONS = Array.isArray(remainingValidation) ? remainingValidation : [];
+    }catch(_){ }
     payloadLessons = payloadLessonsPresentInData(data, payload, payloadLessons, resolveSubject);
     payload.lessons = payloadLessons;
     const remainingViolations = Array.isArray(remainingValidation) ? remainingValidation.length : 0;
@@ -13991,13 +15612,34 @@
         && payload?.validation?.hard_ok !== false
         && remainingViolations === 0;
       const rejectedCount = Math.max(0, teacherOffRejected) + Math.max(0, postApplyReleased);
-      const candidateContractRejected = rejectedCount > 0
-        || postApplyViolations.length > 0
-        || remainingViolations > 0
-        || appliedExpected <= 0
-        || appliedScheduled < appliedExpected
-        || appliedUnassigned > 0
-        || !appliedHardOk;
+      // 22/08: DUNG vut ca nghiem vi lech vai tiet. Truong "default" tung mat
+      // trang TKB vi backend xep du 2193/2193 nhung validator giao dien nha
+      // 5-6 tiet ve Chua phan -> contract cu throw va lich cu (trong) duoc
+      // giu nguyen — nguoi dung bam Cherry ma "khong tra TKB". Gio: lech NHO
+      // (thieu <= max(30, 2%) va vi pham <= 30) thi CHAP NHAN nghiem, ghi
+      // canh bao, roi de chuoi va tu dong (autoPlace + cac pass sua) xu ly
+      // phan con lai. Chi tu choi khi hong nang that su.
+      const appliedMissing = Math.max(
+        Math.max(0, appliedExpected - appliedScheduled),
+        Math.max(0, appliedUnassigned)
+      );
+      const missingTolerance = Math.max(30, Math.ceil(Math.max(0, appliedExpected) * 0.02));
+      const candidateContractRejected = appliedExpected <= 0
+        || appliedMissing > missingTolerance
+        || remainingViolations > 30;
+      const candidateSmallDrift = !candidateContractRejected
+        && (rejectedCount > 0
+          || postApplyViolations.length > 0
+          || remainingViolations > 0
+          || appliedMissing > 0
+          || !appliedHardOk);
+      if(candidateSmallDrift){
+        payload.warnings = Array.isArray(payload.warnings) ? payload.warnings : [];
+        payload.warnings.push({
+          kind: "ui_candidate_small_drift_accepted",
+          message: `Đã áp dụng lịch: lệch nhỏ ${appliedMissing} tiết / ${remainingViolations} vi phạm sẽ được tự vá ngay sau đây.`
+        });
+      }
       if(candidateContractRejected){
         const err = new Error(
           `Backend đã xếp đủ ${backendScheduledBeforeApply}/${backendExpectedBeforeApply} tiết, `
@@ -14250,9 +15892,35 @@
     await yieldResponsiveUi();
     const optimizeExistingOnly = settings?.optimize_existing_schedule === true;
     const skipPreSolveRelease = settings?.ui_skip_pre_solve_constraint_release === true;
+    // 20/08: nguyen nhan "khung khi bat dau". releaseConstraintViolatingLessons
+    // goi validateAll() DONG BO — ham do chay canPlaceLesson(full:true) cho
+    // TUNG O da xep (do duoc: 2103 o -> 3,9 giay khoa cung luong chinh, may
+    // yeu / truong lon con lau hon nhieu). tkb-constraints.js von DA CO ban
+    // validateAllAsync nhuong luong giua cac lat, viet dung cho tinh huong nay
+    // ("a large school does not monopolize the main thread immediately after
+    // Play") nhung khong ai goi. Tinh truoc bang ban async roi truyen vao qua
+    // opts.violations — ham giu nguyen, chi khac la trinh duyet con tho duoc.
+    let preSolveViolations = null;
+    if(!(resumeExistingServerJobOnly || optimizeExistingOnly || skipPreSolveRelease)
+      && preSolveFullConstraintValidationNeeded(data)){
+      try{
+        const rbAsync = window.TKBConstraints || window.TKBConstraintsFull;
+        if(rbAsync && typeof rbAsync.validateAllAsync === "function"){
+          const asyncViolations = await rbAsync.validateAllAsync(3000, {sliceBudgetMs:8});
+          if(Array.isArray(asyncViolations)) preSolveViolations = asyncViolations;
+        }
+      }catch(err){
+        try{ console.warn(`[${VERSION}] async constraint precheck failed`, err); }catch(_){ }
+        preSolveViolations = null;
+      }
+    }
+    prepMark("validateAllAsync(precheck)");
     const releasedViolatingLessons = resumeExistingServerJobOnly || optimizeExistingOnly || skipPreSolveRelease
       ? 0
-      : releaseConstraintViolatingLessons(data);
+      : releaseConstraintViolatingLessons(
+          data,
+          preSolveViolations ? {violations:preSolveViolations} : undefined
+        );
     if(releasedViolatingLessons > 0){
       window.__TKB_SOLVE_RELEASED_CONSTRAINT_VIOLATIONS = Math.max(
         Number(window.__TKB_SOLVE_RELEASED_CONSTRAINT_VIOLATIONS || 0) || 0,
@@ -14440,7 +16108,7 @@
       effectiveSettings.overall_time_limit_seconds = optimizationSeconds;
     }
     const minBackendDeadlineMs = allowShortBackendDeadline ? 1_000 : 20_000;
-    // 19/08: nut Cherry / Flash can ngan sach dai hon lane mac dinh.
+    // 19/08: nut Cherry can ngan sach dai hon lane mac dinh.
     try{
       const forcedEngineEarly = String(window.__TKB_FORCE_ENGINE || "").trim().toLowerCase();
       if(forcedEngineEarly){
@@ -14449,13 +16117,26 @@
         // qua tay; dat theo dac tinh tung bo giai, cho phep chinh nhanh bang
         // window.__TKB_ENGINE_BUDGET_SECONDS neu can thu nghiem.
         // 19/08 (sua): TRUOC day dung Math.max(...) nen ngan sach cua lane mac
-        // dinh (270s) luon thang -> Cherry/Flash ngoi du 280s du bo giai goc chi
+        // dinh (270s) luon thang -> Cherry ngoi du 280s du bo giai goc chi
         // can ~70-80s cho cung bo du lieu (log tham chieu: "HOAN TAT TRON GOI
         // TRONG 79.74s", 2175 tiet / 75 lop / 125 GV). Engine v3 la portfolio
         // chay DEN HET deadline, nen ngan sach = thoi gian cho. Vi vay DAT
         // THANG ngan sach cua nut, khong lay max nua.
         const engineBudgetOverride = Number(window.__TKB_ENGINE_BUDGET_SECONDS) || 0;
-        const engineDefaultBudget = forcedEngineEarly === "flash" ? 90 : 90;
+        // 22/08 (dem): menu "Toi uu v3" (mot muc tieu rieng le: 1 tiet/buoi,
+        // buoi day, trong 2, trong 1) = luot NHANH 45s tren lich dang co;
+        // nut Cherry (xep + toi uu toan dien) giu 90s.
+        const focusedV3Turn = ["singletons", "sessions", "gaps"].includes(
+          String(effectiveSettings.optimization_focus || "").trim().toLowerCase()
+        );
+        const focusBudgetOverride = Number(window.__TKB_ENGINE_FOCUS_BUDGET_SECONDS) || 0;
+        // 22/08 (khuya, chu du an: "rang khu toi da ve 0"): 45s -> 60s cho luot
+        // mot muc tieu; chinh bang window.__TKB_ENGINE_FOCUS_BUDGET_SECONDS.
+        // 23/08 (chu du an hoi "nen chay bao lau"): do tren truong default,
+        // nut 1 tiet trong 4 worker: 60s -> 148, 120s -> 140, 180s -> 128 (van
+        // giam khi het gio) -> chon 120s: gap doi thoi gian cho loi ich ro,
+        // 2 phut/cu bam con chap nhan duoc; bam lai van warm-start tiep.
+        const engineDefaultBudget = focusedV3Turn ? (focusBudgetOverride > 0 ? focusBudgetOverride : 120) : 90;
         budgetSeconds = engineBudgetOverride > 0 ? engineBudgetOverride : engineDefaultBudget;
         effectiveSettings.overall_time_limit_seconds = budgetSeconds;
         effectiveSettings.integrated_time_limit = budgetSeconds;
@@ -14686,12 +16367,33 @@
       }
       await yieldResponsiveUi();
       if(!cacheEligible) requestData.__tkbSolverRequestNonce = solveRunId;
-      // 19/08: gan engine do nguoi dung chon (cherry | flash). Trong thi giu
+      // 19/08: gan engine do nguoi dung chon (cherry). Trong thi giu
       // nguyen bo giai mac dinh cua nut Sap xep / Toi uu.
       try{
         const forcedEngine = String(window.__TKB_FORCE_ENGINE || "").trim().toLowerCase();
         if(forcedEngine){
           effectiveSettings.engine = forcedEngine;
+          // 19/08 (chi dao chu du an): "cu xep du, khong du thi rot ve Chua
+          // phan". Preset mac dinh la hop dong DU-HOAC-KHONG: enforceComplete
+          // PresetSolveSettings dat require_complete_schedule = true va tat
+          // best-effort, nen mot lich thieu vai tiet bi NEM DI CA — nguoi dung
+          // chi thay "Khong thay doi 1002 tiet hien co". Voi hai nut nay: nhan
+          // lich tot nhat, so tiet con lai roi vao Tiet chua phan.
+          effectiveSettings.ui_internal_allow_incomplete = true;
+          effectiveSettings.ui_accept_incomplete_best_effort = true;
+          effectiveSettings.ui_allow_best_effort_on_timeout = true;
+          effectiveSettings.best_effort_on_timeout = true;
+          effectiveSettings.require_complete_schedule = false;
+          // Mot lan bam = MOT luot giai trong ngan sach cua nut. Khong tu dong
+          // chay lai nhieu vong khi thieu tiet (moi vong ~90s, nguoi dung cho
+          // hang chuc phut ma khong hieu vi sao).
+          effectiveSettings.ui_disable_automatic_retry = true;
+          // 22/08: O CO DINH la bat kha xam pham. Engine v3 chi khoa o co dinh
+          // khi bridge xin ro (preserve_fixed_lessons_only); thieu co nay thi
+          // warm-start sua lop hong se xe dich ca tiet co dinh -> khi ap vao
+          // giao dien 378 tiet roi vao o co dinh cua mon khac, bi bo, lich
+          // "2193/2193" chi con 2003 va bi tu choi (tai hien 22/08 11:31 UTC).
+          effectiveSettings.preserve_fixed_lessons_only = true;
           // Tat bo giai chay trong trinh duyet (no khong biet engine nay)...
           effectiveSettings.ui_agent_preference_enabled = false;
           effectiveSettings.ui_browser_agent_required = false;
@@ -15321,8 +17023,15 @@
             response = null;
             queueDeadline = Date.now() + queueTimeoutMs;
             if(busyKind === "solver_job_already_running"){
+              // 21/08: vong nay truoc day RESET deadline moi lan lap va khong
+              // co gioi han so lan — neu backend giu "job ma" (job cu ket/mat
+              // ket qua) thi client cho VO HAN: timer dung im, promise khong
+              // bao gio ket thuc, cac luot xep sau bi chan. Gioi han 2 luot
+              // gia han (~2x queueTimeout) roi bao loi ro rang.
               let existingJobFinished = false;
+              let existingJobWaits = 0;
               while(!existingJobFinished){
+                throwIfStopRequested(activeSolveRunId);
                 existingJobFinished = await waitForBackendSolverTurn(
                   activeSolveRunId,
                   queueDeadline - Date.now(),
@@ -15330,7 +17039,18 @@
                   solveRunId,
                   knownRequiredWorkers
                 );
-                queueDeadline = Date.now() + queueTimeoutMs;
+                if(!existingJobFinished){
+                  existingJobWaits += 1;
+                  if(existingJobWaits >= 2){
+                    const staleErr = new Error(
+                      "Lượt xếp trước trên máy chủ không kết thúc (job kẹt); lượt này đã dừng. Hãy bấm xếp lại sau ít phút."
+                    );
+                    staleErr.kind = "solver_queue_timeout";
+                    staleErr.backendUnavailable = false;
+                    throw staleErr;
+                  }
+                  queueDeadline = Date.now() + queueTimeoutMs;
+                }
               }
             }else{
               await sleep(700);
@@ -15526,16 +17246,22 @@
         );
       const partialScheduled = metricNumber(payload?.metrics?.scheduled_periods, 0) > 0
         || (Array.isArray(payload?.lessons) && payload.lessons.length > 0);
+      // 19/08: PHAI doc tu effectiveSettings — do MOI LA khoi settings that su
+      // gui len may chu (nut Cherry bat cac co "nhan lich thieu" o day).
+      // Truoc day cong nay chi nhin `settings` (tham so tho cua postSolve) nen
+      // co bat bao nhieu cung vo nghia: lich 2064/2088 hop le van bi nem di va
+      // nguoi dung chi thay "Da giu lich cu de ban dieu chinh".
+      const gateSettings = effectiveSettings || settings;
       const capacityBestEffortRequested = payloadHasCapacityShortage(payload)
-        || settings?.ui_capacity_shortage_confirmed === true
-        || settings?.ui_capacity_shortage_accepted === true
-        || settings?.ui_capacity_shortage_accepted_after_solve === true;
+        || gateSettings?.ui_capacity_shortage_confirmed === true
+        || gateSettings?.ui_capacity_shortage_accepted === true
+        || gateSettings?.ui_capacity_shortage_accepted_after_solve === true;
       const allowIncompleteBestEffort = !browserRequiredCompleteResult
-        && !shouldRequireCompletePresetResult(settings)
+        && !shouldRequireCompletePresetResult(gateSettings)
         && (
           capacityBestEffortRequested
-          || settings?.ui_staged_existing_repair === true
-          || settings?.ui_accept_incomplete_best_effort === true
+          || gateSettings?.ui_staged_existing_repair === true
+          || gateSettings?.ui_accept_incomplete_best_effort === true
         );
       const acceptableIncompleteBestEffort = capacityBestEffortRequested
         ? payloadIsSafeCapacityPartial(payload)
@@ -15998,7 +17724,11 @@
     try{
       const saveStoreFn = window.saveStore;
       if(typeof saveStoreFn === "function"){
-        await Promise.resolve(saveStoreFn.call(window, {
+        // Ghi dau moc chu ky xep tu dong la viec PHU. Neu request luu bi treo
+        // (mang chap chon, tab bi ngu...) thi await nay giu luon ca lifecycle
+        // cua luot xep: khoa preflight khong duoc tra, nut Cherry/Play
+        // bao "dang co luot xep chay" mai mai. Cho toi da 20 giay roi di tiep.
+        const persistPromise = Promise.resolve(saveStoreFn.call(window, {
           force:true,
           awaitRemote:true,
           trustedSolverApply:true,
@@ -16006,6 +17736,12 @@
           replaceHistoryCurrent:true,
           skipIfUnchanged:true
         }));
+        let persistTimer = 0;
+        await Promise.race([
+          persistPromise,
+          new Promise(resolve => { persistTimer = window.setTimeout(resolve, 20_000); })
+        ]);
+        try{ window.clearTimeout(persistTimer); }catch(_){ }
       }
     }catch(err){
       try{ console.warn(`[${VERSION}] automatic sort cycle persistence failed`, err); }catch(_){ }
@@ -16126,6 +17862,17 @@
 
   function refinementStatisticsImproved(candidate, incumbent, fingerprintChanged, settings){
     if(hasComparableOptimizationStats(candidate) && hasComparableOptimizationStats(incumbent)){
+      // 23/08: hau kiem nay chay SAU khi solveWithRustApi da ap ung vien vao
+      // luoi (nhanh refine_complete cua bridgeSapXepTuDongAll). Luot Cherry
+      // khong duoc goi lai cong doc luoi hien thi (luc nay = ung vien) ma so
+      // thang metrics ung vien voi metrics lich cu da chup truoc luot giai
+      // (incumbentPayloadBeforeAutoSort = visibleCompleteIncumbentQualityPayload).
+      // Truoc day: ung vien bi so voi chinh no -> false ->
+      // restoreUnimprovedRefinementSnapshot hoan tac lich vua cai thien va bao
+      // "khong tot hon" -> bam Cherry tren lich da du khong bao gio tien len.
+      if(isCherryEngineRun(candidate, settings)){
+        return cherryCandidateStrictlyBetter(candidate, incumbent, {ignoreVisibleMetrics:true});
+      }
       return payloadStrictlyBetterTeacherQuality(candidate, incumbent, settings);
     }
     return fingerprintChanged === true;
@@ -16258,6 +18005,15 @@
           "2": gap2
         }
       };
+      // 23/08: so buoi vi pham yeu cau dia diem cua luoi dang hien thi (chi
+      // vai chuc ms, dung lai chi muc cua bo kiem tra rang buoc).
+      try{
+        const api = window.TKBConstraints || window.TKBConstraintsFull;
+        if(api && typeof api.teacherLocationRuleDebt === "function"){
+          const debt = Number(api.teacherLocationRuleDebt()?.sessions);
+          if(Number.isFinite(debt) && debt >= 0) result.teacher_location_rule_debt = debt;
+        }
+      }catch(_){ }
       const savedMetrics = safeData?.tkbSolverResult?.metrics
         || safeData?.tkbRustSolverResult?.metrics
         || {};
@@ -16386,17 +18142,25 @@
 
   function maybeFinishLocalUnassignedRepairSolve(settings){
     if(settings?.force_full_solve === true) return null;
+    // 22/08 (toi): luot Cherry KHONG va nhanh truoc khi giai. Truoc day buoc
+    // nay xep tham lam cac tiet Chua phan (ke ca tiet Cherry vua chu dong dua
+    // ra vi GV con buoi 1 tiet) vao lai luoi -> tao lai dung buoi le do, roi
+    // gui len may chu mot luoi xau hon; Cherry phai warm-start tu luoi dang
+    // hien thi va tu xep lai nhung tiet do (engine v3 _insert_missing_*).
+    try{
+      if(String(window.__TKB_FORCE_ENGINE || "").trim() || isCherryEngineName(settings?.engine)) return null;
+    }catch(_){ }
     const data = getData();
     if(!data) return null;
     const before = cheapSchoolCompletionStats(data);
     if(!before || Number(before.unassigned || 0) <= 0) return null;
-    if(!shouldAutoPlaceUnassignedFromUi(before, {maxPlace: 48, nearCompleteMaxMissing: 48})){
+    if(!shouldAutoPlaceUnassignedFromUi(before, {maxPlace: 400, nearCompleteMaxMissing: 400})){
       return null;
     }
     const snapshot = snapshotScheduleData(data);
     const repairResult = autoPlaceUnassignedFromUi("before_solve", {
-      maxPlace: 48,
-      nearCompleteMaxMissing: 48,
+      maxPlace: 400,
+      nearCompleteMaxMissing: 400,
       render: true
     });
     if(!repairResult || Number(repairResult.placed || 0) <= 0) return null;
@@ -16550,46 +18314,30 @@
       : requestedSettings;
     applyHybridCloudRunBudget(settings);
     enforceCompleteScheduleForUi(settings);
+    // 19/08: nut Cherry = "xep duoc bao nhieu giu bay nhieu". Cac co nay
+    // phai nam TRONG khoi settings cua lane nay, vi cac vong thu lai va cac
+    // cong o day doc `settings` chu khong doc effectiveSettings ben trong
+    // postSolve. Thieu buoc nay thi lich 2064/2088 hop le van bi nem di.
+    try{
+      if(String(window.__TKB_FORCE_ENGINE || "").trim() && settings && typeof settings === "object"){
+        settings.ui_internal_allow_incomplete = true;
+        settings.ui_accept_incomplete_best_effort = true;
+        settings.ui_allow_best_effort_on_timeout = true;
+        settings.best_effort_on_timeout = true;
+        settings.require_complete_schedule = false;
+        settings.ui_disable_automatic_retry = true;
+      }else{
+        // 22/08: luot nay KHONG bam nut engine -> quen lua chon Cherry cua lan
+        // truoc. Hai bien nay chi duoc giu qua het luot Cherry de
+        // engineFallbackNotice doi chieu; de sot sang luot backend ke tiep
+        // (menu TEST) thi thong bao cuoi bao nham "nut Cherry dang chay bo
+        // giai mac dinh" va cong chat luong bi bo qua.
+        window.__TKB_LAST_REQUESTED_ENGINE = "";
+        window.__TKB_LAST_ENGINE_CLICK_AT = 0;
+      }
+    }catch(_){ }
     if(options?.shuffleOnly !== true && isNoHintSmartFreshSettings(settings)){
       enforceNoHintFreshSolveSettings(settings);
-    }
-    if(settings?.ui_flash_scheduler_active === true){
-      const dataForProgress = getData();
-      const activeSolveRunId = makeSolveRunId();
-      window.__TKB_RUST_SOLVER_RUNNING = true;
-      window.__TKB_SOLVE_UI_BUSY = true;
-      setAutoSortButtonBusy(true);
-      window.__TKB_ACTIVE_SOLVE_RUN_ID = activeSolveRunId;
-      window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = "";
-      window.__TKB_SOLVER_LAST_ERROR = "";
-      window.__TKB_SOLVER_LAST_ERROR_PAYLOAD = null;
-      window.__TKB_SOLVER_LAST_FAILURE_RETRYABLE = false;
-      dismissCompletionPopup(true);
-      publishE2EState("running", null, {runId: activeSolveRunId});
-      startProgressTicker(settings, dataForProgress);
-      if(typeof setAutoSortProgress === "function") setAutoSortProgress(5, "");
-
-      try{
-        const payload = await postSolve(settings);
-        if(!isCurrentSolveRun(activeSolveRunId)) return null;
-
-        const result = await applyPayload(payload, settings);
-        finishProgress("100%", "ok");
-        setStatus("Hoàn tất sắp xếp TKB.", "ok");
-        window.__TKB_RUST_SOLVER_RUNNING = false;
-        window.__TKB_SOLVE_UI_BUSY = false;
-        schedulePostSolveUi(payload, result);
-        return result;
-      }catch(err){
-        window.__TKB_RUST_SOLVER_RUNNING = false;
-        window.__TKB_SOLVE_UI_BUSY = false;
-        setAutoSortButtonBusy(false);
-        stopProgressTicker();
-        if(typeof hideAutoSortProgress === "function") hideAutoSortProgress();
-        const friendly = friendlySolveError(err);
-        setStatus(friendly, "warning");
-        throw err;
-      }
     }
     await yieldResponsiveUi();
     if(options?.shuffleOnly !== true && settings?.ui_allow_presolve_local_fast_finish === true){
@@ -16600,11 +18348,11 @@
       if(localUnassignedRepairPayload) return localUnassignedRepairPayload;
       traceSolveStep("solve:presolve-fast-done");
     }
-    const singlePassAutoSort = options?.singlePass === true || settings?.ui_single_pass_auto_sort === true || settings?.ui_flash_scheduler_active === true;
+    const singlePassAutoSort = options?.singlePass === true || settings?.ui_single_pass_auto_sort === true;
     let allowSinglePassQuality = false;
     if(singlePassAutoSort){
       const localRepairNeedsOptimize = settings?.ui_local_unassigned_repair_needs_optimize === true;
-      const requestedQualityRetry = settings?.ui_flash_scheduler_active !== true && (
+      const requestedQualityRetry = (
         localRepairNeedsOptimize
         || settings?.allow_zero_one_quality_retry === true
         || settings?.allow_teacher_session_deep_retry === true
@@ -16678,6 +18426,14 @@
         || settings?.ui_quality_debt_fresh_rebuild === true
       )
       && incumbentSatisfiesCurrentConstraints;
+    // 23/08: nho so buoi vi pham yeu cau dia diem truoc luot giai de thong
+    // bao ket thuc noi ro "N -> M" (engine v3 coi day la rang buoc cung).
+    try{
+      const locApi = window.TKBConstraints || window.TKBConstraintsFull;
+      window.__TKB_LOCATION_DEBT_BEFORE = (locApi && typeof locApi.teacherLocationRuleDebt === "function")
+        ? Number(locApi.teacherLocationRuleDebt()?.sessions)
+        : NaN;
+    }catch(_){ window.__TKB_LOCATION_DEBT_BEFORE = NaN; }
     const scheduleSnapshot = snapshotScheduleData(dataForProgress);
     if(protectVisibleCompleteIncumbent && scheduleSnapshot){
       const visibleIncumbent = visibleCompleteIncumbentQualityPayload(
@@ -16731,6 +18487,13 @@
     try{
       let payload;
       let acceptedCapacityPartial = false;
+      // 19/08 LOI CHET NGUOI: bien nay duoc GAN o 3 cho ben duoi nhung khong he
+      // duoc KHAI BAO. Doc no truoc lan gan dau tien nem ReferenceError
+      // ("capacityShortageRun is not defined") -> ket qua may chu vua tra ve bi
+      // vut bo, khong thong bao, lich giu nguyen: dung canh "bam Cherry
+      // ma khong co gi xay ra". Chi lo ra khi may chu tra ve lich CHUA DU TIET,
+      // vi khi du tiet thi toan tu || phia truoc da chan ngan (short-circuit).
+      let capacityShortageRun = false;
       const acceptSafeCapacityPartial = candidate => {
         // The zero-slack probe is a server-owned, canonical capacity proof.
         // Its result has already passed accounting, placement and hard
@@ -16770,8 +18533,6 @@
             stagedExistingRepairState,
             activeSolveRunId
           );
-        }else if(settings?.ui_flash_scheduler_active === true){
-          payload = await postSolve(settings);
         }else{
           payload = await solveCapacitySafeFreshProbe(
             settings,
@@ -16815,9 +18576,6 @@
       let completion = payloadCompletion(payload);
       let skipFurtherRetries = completion.complete && payloadReturnedCompleteIncumbentNearDeadline(payload);
       let skipRetryLoops = (
-          settings?.ui_flash_scheduler_active === true
-        )
-        || (
           singlePassAutoSort
           && (
             completion.complete
@@ -16843,9 +18601,6 @@
         completion = payloadCompletion(payload);
         skipFurtherRetries = completion.complete && payloadReturnedCompleteIncumbentNearDeadline(payload);
         skipRetryLoops = (
-            settings?.ui_flash_scheduler_active === true
-          )
-          || (
             singlePassAutoSort
             && (
               completion.complete
@@ -16947,6 +18702,7 @@
         if(portfolioPlan){
           const seeds = compactPortfolioSeedSequence(dataForProgress, portfolioPlan.maxAttempts);
           for(let index = 0; index < seeds.length; index += 1){
+            if(solveTurnRetryBudgetExhausted()) break;
             if(fastTeacherSessionPortfolioSatisfied(payload, portfolioPlan)) break;
             const cap = fastTeacherSessionPortfolioCap(portfolioPlan, payload, index + 1);
             if(cap <= 0) break;
@@ -16974,6 +18730,7 @@
         const seeds = schoolSeedSequence(dataForProgress, hasFixedOffPressure(dataForProgress) ? 10 : 6);
         let zeroOneRetryAttempted = false;
         for(let index = 0; index < seeds.length; index += 1){
+          if(solveTurnRetryBudgetExhausted()) break;
           const currentQuality = teacherSessionQuality(payload);
           if(currentQuality[0] === 0 && currentQuality[1] === 0) break;
           zeroOneRetryAttempted = true;
@@ -17017,6 +18774,7 @@
         );
         let qualityNoImproveAttempts = 0;
         for(let qualityAttempt = 0; qualityAttempt < maxQualityAttempts; qualityAttempt += 1){
+          if(solveTurnRetryBudgetExhausted()) break;
           if(!completion.complete || !shouldRetryTeacherSessionQuality(settings, dataForProgress, payload)) break;
           const retrySettings = teacherSessionQualityRetrySettings(settings, dataForProgress, payload);
           if(!retrySettings) break;
@@ -17168,16 +18926,45 @@
           || payloadHasCapacityShortage(payload);
         const capacityShortageAccepted = acceptSafeCapacityPartial(payload);
         capacityShortageRun = capacityShortageAccepted;
-        const unsafeCapacityPartial = capacityWasClaimed && !capacityShortageAccepted;
+        // 19/08: nhanh cuoi cung con vut lich di. "unsafeCapacityPartial" nghia
+        // la ket qua co dau hieu thieu o NHUNG chua qua duoc kiem dinh
+        // "thieu o an toan" -> khoi phuc lich cu. Voi nut Cherry, chu du
+        // an da chot: cu ap phan xep duoc, phan thieu roi vao Chua phan.
+        const unsafeCapacityPartial = capacityWasClaimed
+          && !capacityShortageAccepted
+          && !forcedEngineBestEffortActive();
         const incumbentPayloadForIncomplete = scheduleSnapshot?.tkbSolverResult || null;
         const incumbentExpectedForIncomplete = expectedLessonCount(dataForProgress || getData());
         const incumbentScheduledForIncomplete = snapshotScheduledLessonCount(scheduleSnapshot);
         const incumbentVisibleComplete = incumbentExpectedForIncomplete > 0
           && incumbentScheduledForIncomplete >= incumbentExpectedForIncomplete;
+        // 22/08 (toi): (a) lich dang co chi thieu dung nhung tiet Cherry lan
+        // truoc da chu dong dua ve Chua phan (ly do teacher_quality_unreachable)
+        // thi van coi la "du" khi doi chieu; (b) ung vien Cherry thieu tiet CHI
+        // vi no dua tiet ra de GV het buoi 1 tiet / trong >= 2 thi di qua cong
+        // tu dien (cherryIncompleteCandidatePreferred) thay vi bi vut ngay.
+        const cherryTurnIncomplete = isCherryEngineRun(payload, settings);
+        const incumbentMissingForIncomplete = Math.max(
+          0,
+          incumbentExpectedForIncomplete - incumbentScheduledForIncomplete
+        );
+        const incumbentQualityEjectedForIncomplete = cherryTurnIncomplete
+          ? Math.min(qualityEjectedPeriods(incumbentPayloadForIncomplete), incumbentMissingForIncomplete)
+          : 0;
+        const incumbentQualityComplete = incumbentVisibleComplete
+          || (
+            cherryTurnIncomplete
+            && incumbentExpectedForIncomplete > 0
+            && incumbentMissingForIncomplete > 0
+            && incumbentMissingForIncomplete <= incumbentQualityEjectedForIncomplete
+          );
+        const cherryEjectionWins = cherryTurnIncomplete
+          && cherryIncompleteCandidatePreferred(payload, scheduleSnapshot, dataForProgress || getData());
         if(
           !releasedDuringSolve
-          && incumbentVisibleComplete
+          && incumbentQualityComplete
           && incumbentSatisfiesCurrentConstraints
+          && !cherryEjectionWins
           && (
             !strictBrowserAutomaticRequired(settings)
             || !strictBrowserAutomaticQualityMessage(
@@ -17198,13 +18985,17 @@
           // A complete incumbent is a successful solve result. Keep the
           // visible terminal notice consistent across fresh, repair, and
           // incumbent-restore paths; diagnostics stay in E2E metadata.
-          const message = SOLVE_COMPLETE_MESSAGE;
+          // 22/08: rieng luot Cherry co tiet dua ra ma KHONG tot hon -> noi ro.
+          const cherryRejected = cherryTurnIncomplete && qualityEjectedPeriods(payload) > 0;
+          const message = cherryRejected ? noBetterScheduleStatus(payload) : SOLVE_COMPLETE_MESSAGE;
           window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = message;
-          setStatus(message, "ok");
+          setStatus(message, cherryRejected ? "info" : "ok");
+          if(cherryRejected) window.__TKB_CHERRY_LAST_SUMMARY = message;
           publishE2EState("done", restoredPayload || incumbentPayloadForIncomplete, {
             message,
             keptIncumbent: true,
-            rejectedIncomplete: true
+            rejectedIncomplete: true,
+            rejectedWorseQuality: cherryRejected
           });
           refreshStatsPopoverIfOpen();
           return restoredPayload || incumbentPayloadForIncomplete;
@@ -17353,9 +19144,13 @@
         // timetable, but its terminal UI notice follows the same concise
         // success contract as every other completed path. Keep the guard
         // reason and missing count in E2E metadata below.
-        const message = SOLVE_COMPLETE_MESSAGE;
+        // 22/08: rieng luot Cherry phai NOI RO "khong tot hon -> giu nguyen"
+        // va chi so nao xau di (nguoi dung can biet vi sao lich khong doi).
+        const cherryKept = isCherryEngineRun(payload, settings);
+        const message = cherryKept ? noBetterScheduleStatus(payload) : SOLVE_COMPLETE_MESSAGE;
         window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = message;
-        setStatus(message, "ok");
+        setStatus(message, cherryKept ? "info" : "ok");
+        if(cherryKept) window.__TKB_CHERRY_LAST_SUMMARY = message;
         scheduleUiRefresh();
         publishE2EState("done", incumbentPayload, {
           message,
@@ -17423,9 +19218,19 @@
         return null;
       }
       const strictBrowserAutomatic = strictBrowserAutomaticRequired(settings);
-      const hardQualityMessage = skipFurtherRetries && !strictBrowserAutomatic
+      const rawHardQualityMessage = skipFurtherRetries && !strictBrowserAutomatic
         ? ""
         : hardQualityViolationMessage(payload, settings);
+      // 19/08 (chi dao chu du an): "cu xep vao, con cai nao vi pham thi bao de
+      // toi go nut that". Cong nay dang VUT ca phuong an chi vi chi tieu chat
+      // luong chua ve 0 (vi du "buoi GV chi day 1 tiet: 132, muc tieu 0") —
+      // trong khi do la thong tin de nguoi dung sua du lieu, khong phai ly do
+      // giu lai lich cu te hon. Voi nut Cherry: AP lich, va ghi lai loi
+      // nhac de dinh vao thong bao ket thuc.
+      const hardQualityMessage = forcedEngineBestEffortActive() ? "" : rawHardQualityMessage;
+      window.__TKB_FORCED_ENGINE_QUALITY_NOTE = (!hardQualityMessage && rawHardQualityMessage)
+        ? String(rawHardQualityMessage)
+        : "";
       if(hardQualityMessage){
         if(!releasedDuringSolve) restoreScheduleData(dataForProgress || getData(), scheduleSnapshot);
         window.__TKB_SOLVER_LAST_PAYLOAD = payload;
@@ -17489,8 +19294,25 @@
         }
         result = await applyPayload(payload, retrySettings);
       }
-      const localRepairAfterPayload = metricNumber(payload?.metrics?.unassigned_periods, 0) > 0
-        ? autoPlaceUnassignedFromUi("after_payload", {maxPlace: 24})
+      // 19/08: dung so tiet chua xep THUC TE (bu khoa thieu + doi chieu voi lich
+      // dang hien thi), va bo tran 24 — mot lop co the thieu nhieu hon the.
+      const unassignedAfterPayload = Math.max(
+        ensureUnassignedPeriodsMetric(payload),
+        payloadUnassignedPeriods(payload),
+        Math.max(0, Number(cheapSchoolCompletionStats(dataForProgress || getData())?.unassigned || 0) || 0)
+      );
+      // 22/08 (toi): tiet Cherry vua chu dong dua ve Chua phan (co ly do) KHONG
+      // duoc va nhanh xep lai ngay sau khi ap — truyen danh sach cho phanmon
+      // vi DATA.tkbSolverResult co the chua duoc cap nhat o thoi diem nay.
+      const qualityEjectedAfterPayload = Array.isArray(payload?.unassignedLessons)
+        ? payload.unassignedLessons.filter(item => item && String(item.reason || "").trim() === CHERRY_QUALITY_EJECT_REASON)
+        : [];
+      const localRepairAfterPayload = unassignedAfterPayload > 0 && unassignedAfterPayload > qualityEjectedAfterPayload.length
+        ? autoPlaceUnassignedFromUi("after_payload", {
+            maxPlace: 400,
+            nearCompleteMaxMissing: 400,
+            qualityEjectedItems: qualityEjectedAfterPayload
+          })
         : null;
       if(localRepairAfterPayload && Number(localRepairAfterPayload.placed || 0) > 0){
         try{
@@ -17500,6 +19322,49 @@
             : {};
           payload.solver.runtime_settings.ui_local_unassigned_repair = localRepairAfterPayload;
         }catch(_){}
+      }
+      // 21/08: HAU KIEM CHAT LUONG sau MOI lan ap ket qua — ke ca khi lich da
+      // du tiet (truoc day chi chay khi con tiet chua phan, nen nghiem
+      // best-effort thieu cap tiet doi khong bao gio duoc va lai):
+      //   1) ep du cap tiet doi (lessonBlocks[2].min) bang hoan doi / xoay 3 o,
+      //   2) don buoi GV chi day 1 tiet va lap buoi GV trong >= 2 tiet.
+      try{
+        const pairFn = window.__tkbEnsureLessonPairs;
+        const vioFn = window.__tkbAutoRepairConstraintViolations;
+        const gapFn = window.__tkbAutoRepairTeacherQuality;
+        const aesFn = window.__tkbAutoRepairAestheticPairs;
+        const balFn = window.__tkbAutoRepairGap1Balance;
+        const pairFixes = typeof pairFn === "function" ? ((await pairFn({budgetMs: 8000})) || []) : [];
+        const vioFixes = typeof vioFn === "function" ? ((await vioFn({budgetMs: 10000})) || []) : [];
+        const gapFixes = typeof gapFn === "function" ? ((await gapFn({budgetMs: 12000})) || []) : [];
+        // 22/08: can bang trong-1 giua cac GV (giam nguoi nang nhat truoc).
+        const balFixes = typeof balFn === "function" ? ((await balFn({budgetMs: 10000})) || []) : [];
+        // 22/08: ghep tiet le thanh cum >= 2 (uu tien bam tiet co dinh) —
+        // chay CUOI cung va bi khoa khong duoc lam xau chat luong GV.
+        const aesFixes = typeof aesFn === "function" ? ((await aesFn({budgetMs: 10000})) || []) : [];
+        if(pairFixes.length || vioFixes.length || gapFixes.length || balFixes.length || aesFixes.length){
+          payload.solver = payload.solver && typeof payload.solver === "object" ? payload.solver : {};
+          payload.solver.runtime_settings = payload.solver.runtime_settings && typeof payload.solver.runtime_settings === "object"
+            ? payload.solver.runtime_settings
+            : {};
+          payload.solver.runtime_settings.ui_post_solve_quality_pass = {
+            pair_fixes: pairFixes.slice(0, 40),
+            violation_fixes: vioFixes.slice(0, 40),
+            teacher_session_fixes: gapFixes.slice(0, 40),
+            gap1_balance_fixes: balFixes.slice(0, 40),
+            aesthetic_pair_fixes: aesFixes.slice(0, 40)
+          };
+          try{
+            // 22/08: ban chia lat (validateAll dong bo mat 1-3 s tren 74 lop -> do).
+            const freshViolations = await currentConstraintViolationsAsync(500, {allowSyncFallback:false, ignoreStop:true});
+            window.__TKB_CONSTRAINT_VIOLATIONS = Array.isArray(freshViolations) ? freshViolations : [];
+            scheduleConstraintViolationPanel();
+          }catch(_){ }
+          try{ if(typeof saveStore === "function") saveStore({force:true, syncRemote:true}); }catch(_){ }
+          refreshStatsPopoverIfOpen();
+        }
+      }catch(err){
+        console.warn(`[${VERSION}] post-solve quality pass failed`, err);
       }
       const scheduleAfterFingerprint = scheduleFingerprintFromData(dataForProgress || getData());
       const unchangedSchedule = !!scheduleBeforeFingerprint && scheduleBeforeFingerprint === scheduleAfterFingerprint;
@@ -17532,17 +19397,29 @@
           ?? payloadUnassignedPeriods(payload)
         ) || 0)
       );
-      const acceptedPartialTerminal = acceptedCapacityPartial
-        && finalExpected > 0
+      // Bao dung su that cho MOI ket qua thieu tiet, khong chi rieng truong
+      // hop "thieu o da duoc xac nhan": neu con tiet chua xep thi phai noi ro
+      // thay vi bao "Da xep xong!".
+      const acceptedPartialTerminal = finalExpected > 0
         && (finalScheduled < finalExpected || finalUnassigned > 0);
-      const terminalMessage = acceptedPartialTerminal
-        ? `Hoàn tất: đã xếp ${finalScheduled}/${finalExpected} tiết, còn ${finalUnassigned} tiết ở Chưa phân.`
-        : SOLVE_COMPLETE_MESSAGE;
+      const qualityNote = String(window.__TKB_FORCED_ENGINE_QUALITY_NOTE || "").trim();
+      // 22/08: ke ro ly do (thieu cho xep / het thoi gian...) + huong xu ly.
+      const partialWhy = acceptedPartialTerminal ? unassignedReasonBreakdown(payload) : {text:"", hint:""};
+      if(acceptedPartialTerminal) setStatusHint(partialWhy.hint ? `Hướng xử lý: ${partialWhy.hint}` : "");
+      const terminalMessage = [
+        acceptedPartialTerminal
+          ? `Hoàn tất: đã xếp ${finalScheduled}/${finalExpected} tiết, còn ${finalUnassigned} tiết ở Chưa phân${partialWhy.text ? ` — ${partialWhy.text}` : ""}.`
+          : SOLVE_COMPLETE_MESSAGE,
+        qualityNote ? qualityNote.replace(/^Không áp dụng phương án vì /, "Đã áp dụng, nhưng ") : ""
+      ].filter(Boolean).join(" ");
+      window.__TKB_FORCED_ENGINE_QUALITY_NOTE = "";
       finishProgress("100%", "ok");
       window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = terminalMessage;
       setStatus(terminalMessage, "ok");
       window.__TKB_RUST_SOLVER_RUNNING = false;
       window.__TKB_SOLVE_UI_BUSY = false;
+      // 22/08: luot Cherry dung tai day (mot luot), khong noi bac thang.
+      maybeScheduleAutoRefine({ cherryTurn: isCherryEngineRun(payload, settings) });
       schedulePostSolveUi(payload, result);
       clearManualFreshRetryBudget(dataForProgress || getData(), true);
       publishE2EState("done", payload, {
@@ -17736,6 +19613,7 @@
         confirmCapacityPrecheckBeforeSolve,
         currentConstraintViolationsAsync,
         releaseConstraintViolatingLessons,
+        preSolveFullConstraintValidationNeeded,
         optimizationPlateauState,
         rememberOptimizationPlateau,
         clearOptimizationPlateau,
@@ -17749,6 +19627,8 @@
         automaticSortCycleIntentFromSettings,
         persistAutomaticSortSuccess,
         refinementStatisticsImproved,
+        progressUsesWorkMetrics,
+        orderPayloadLessonsFixedFirst,
         syncOptimizationLockState,
         readSettings,
         estimateSolveSeconds,
@@ -17775,12 +19655,16 @@
         setStatus,
         stopStatusDots,
         noBetterScheduleStatus,
+        engineFallbackNotice,
         hasVisibleTeacherQualityMetrics,
         inheritRefinementRound,
         teacherSessionOptGoalSatisfied,
         candidateWithinVisibleQualityEnvelope,
         payloadBetterOrEqualTeacherQuality,
         payloadStrictlyBetterTeacherQuality,
+        isCherryEngineRun,
+        maybeScheduleAutoRefine,
+        unassignedReasonBreakdown,
         teacherSessionQualityRetryPlan,
         teacherSessionQualityRetrySettings,
         shouldRetryTeacherSessionQuality,
@@ -17793,6 +19677,13 @@
         buildClientFastSeed,
         incumbentQualityGuardState,
         shouldKeepIncumbentForTeacherQuality,
+        cherryCandidateStrictlyBetter,
+        teacherQualitySummary,
+        teacherLocationRuleDebtOf,
+        candidateWorsensLocationRuleDebt,
+        visibleLocationRuleDebt,
+        cherryIncompleteCandidatePreferred,
+        qualityEjectedPeriods,
         snapshotScheduleData,
         restoreScheduleData,
         restoreUnimprovedRefinementSnapshot,
@@ -19365,6 +21256,21 @@
       setStatus("Đang có lượt xếp chạy, vui lòng chờ hoàn tất.", "info");
       return null;
     }
+    // 21/08: xoa danh sach loi rang buoc cua luot truoc + dong bang loi cu,
+    // va danh dau moc thoi gian de tran retry 8 phut tinh tu luc bam nut.
+    try{
+      window.__TKB_CONSTRAINT_VIOLATIONS = [];
+      removeConstraintViolationPanel();
+      window.__TKB_SOLVE_TURN_STARTED_AT = Date.now();
+      // 21/08: giu tab song khi chay ngam; luot do NGUOI DUNG bam thi lam moi
+      // trang thai chuoi tu tinh chinh, luot do chuoi tu goi thi giu nguyen.
+      acquireSolveKeepalive();
+      if(window.__TKB_AUTO_REFINE_PENDING === true){
+        window.__TKB_AUTO_REFINE_PENDING = false;
+      }else{
+        window.__TKB_AUTO_REFINE_STATE = null;
+      }
+    }catch(_){ }
     try{
     if(invocationOptions?.fromHybridCaller !== true && (window.__TKB_SOLVE_UI_BUSY === true || window.__TKB_RUST_SOLVER_RUNNING === true)){
       setStatus("Đang có lượt xếp chạy, vui lòng chờ hoàn tất.", "info");
@@ -19436,8 +21342,15 @@
       // disruption into that more expensive metric.  Keep the incumbent and
       // make the required next action explicit instead of starting a costly
       // server job that cannot satisfy the lexicographic contract.
+      // 23/08 (trua): menu "Toi uu v3" (engine ep, __TKB_FORCE_ENGINE) KHONG
+      // can "trong 2 truoc": lane gap1 cua engine v3 KHOA buoi 1 tiet, trong
+      // >= 2 va so buoi (khong duoc tang) nen khong the day no sang chi so dat
+      // hon. Giu luat cu cho lane CP-SAT; neu ap cho v3 thi truong con trong
+      // >= 2 cau truc (khong go duoc) se KHONG BAO GIO chay duoc nut 1 tiet trong.
+      const forcedEngineGapTurn = String(window.__TKB_FORCE_ENGINE || "").trim() !== "";
       if(
         requestedSolveMode === SOLVE_REQUEST_MODES.gap1
+        && !forcedEngineGapTurn
         && gap2PlusCount(visibleMetrics) > 0
       ){
         const retainedPayload = visibleCompleteIncumbentQualityPayload(
@@ -19561,6 +21474,12 @@
     const lockedState = syncOptimizationLockState();
     if(lockedState?.locked === true){
       setStatus(noBetterScheduleStatus(getData()?.tkbSolverResult || null), "ok");
+      // 21/08: dang o plateau van phai cho BAC THANG chay tiep lane ke.
+      try{
+        if(window.__TKB_AUTO_REFINE_STATE || requestedSolveMode === SOLVE_REQUEST_MODES.automatic){
+          maybeScheduleAutoRefine();
+        }
+      }catch(_){ }
       return null;
     }
     traceSolveStep("auto-sort:start");
@@ -19839,6 +21758,14 @@
       window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = plateauMessage;
       finishProgress("100%", "ok");
       setStatus(plateauMessage, "ok");
+      // 21/08: ket qua "giu nguyen" cung phai di tiep BAC THANG tinh chinh —
+      // truoc day nhanh nay return som lam chuoi dung giua chung. Lane le do
+      // nguoi dung tu bam (menu Toi uu) thi chi di tiep khi chuoi dang chay.
+      try{
+        if(window.__TKB_AUTO_REFINE_STATE || requestedSolveMode === SOLVE_REQUEST_MODES.automatic){
+          maybeScheduleAutoRefine();
+        }
+      }catch(_){ }
       return result;
     }
     if(result && completeAfterSolve){
@@ -20516,25 +22443,40 @@
 
 /* =============================================================================
    FAIL-SAFE 19/08: cai dat window.tkbRunEngine NGAY TRONG FILE NAY.
-   Ly do: hai nut Flash/Cherry nam trong sapxep.html va goi tkbRunEngine qua
+   Ly do: nut Cherry nam trong sapxep.html va goi tkbRunEngine qua
    onclick. Neu ban sapxep.html tren may chu cu hon ban co dinh nghia (deploy
    thieu file hoac trinh duyet giu ban HTML cu), nut se bao
    "tkbRunEngine is not defined" va khong lam gi ca. File bridge nay LUON duoc
    nap kem ?v=... nen luon moi -> dinh nghia o day la luoi an toan cuoi cung.
-   Chi cai khi CHUA co (ban trong HTML, neu co, se ghi de sau va duoc uu tien).
+   Thu tu nap: bridge truoc, khoi inline trong sapxep.html sau — va khoi inline
+   cung co guard "chi cai khi chua co", nen BAN NAY (co vong cho bo giai nap
+   xong toi da 5s) moi la ban thuc su chay; ban trong HTML chi dung khi bridge
+   khong nap duoc.
 ============================================================================= */
 (function(){
   if(typeof window === "undefined") return;
   if(typeof window.tkbRunEngine === "function") return;
-  window.tkbRunEngine = function(engine, btn){
+  // 22/08 (dem): options.mode = optimize_singletons | optimize_sessions |
+  // optimize_gap2 | optimize_gap1 -> menu "Toi uu v3": cung engine v3 nhung
+  // MOT muc tieu rieng le, ngan sach 45s, cac chi so khac khong duoc xau di.
+  window.tkbRunEngine = function(engine, btn, options){
     if(window.__TKB_SOLVE_UI_BUSY === true || window.__TKB_RUST_SOLVER_RUNNING === true){
       try{ window.setStatus && window.setStatus("Đang có lượt xếp chạy, vui lòng chờ.", "info"); }catch(_){}
       return;
     }
+    var focusMode = String((options && options.mode) || "").trim();
     window.__TKB_FORCE_ENGINE = String(engine || "");
+    window.__TKB_ENGINE_FOCUS_MODE = focusMode;
     window.__CURRENT_ACTIVE_ENGINE = String(engine || "");
+    // Giu lai lua chon that su cua nguoi dung SAU khi luot xep ket thuc, de
+    // engineFallbackNotice con doi chieu duoc khi may chu khong tra ve
+    // engine_requested (anh Cloud Run cu).
+    window.__TKB_LAST_REQUESTED_ENGINE = String(engine || "");
+    // Moc thoi gian de phan biet "ket qua cua chinh luot nay" voi "lich cu duoc
+    // giu lai": chi luot nay moi duoc phep bao "may chu khong nhan dien engine".
+    window.__TKB_LAST_ENGINE_CLICK_AT = Date.now();
     // 19/08: nhan tien do cu ("Trong 1 tiet: 70 -> 6"...) song sot giua cac
-    // luot va se hien lai o giay thu 2 cua luot Flash/Cherry neu khong xoa —
+    // luot va se hien lai o giay thu 2 cua luot Cherry neu khong xoa —
     // trong nhu nut Cherry dang chay thuat toan gap1 trong trinh duyet.
     window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = "";
     var metricEl = document.getElementById("autoSortProgressMetric");
@@ -20544,6 +22486,7 @@
     }
     var clear = function(){
       window.__TKB_FORCE_ENGINE = "";
+      window.__TKB_ENGINE_FOCUS_MODE = "";
       window.__CURRENT_ACTIVE_ENGINE = "";
       window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = "";
     };
@@ -20552,7 +22495,9 @@
         ? window.bridgeSapXepTuDongAll
         : window.sapXepTuDongAll;
       if(typeof runner !== "function") return false;
-      var r = runner({ manualAgentInvite: false });
+      var invocation = { manualAgentInvite: false };
+      if(focusMode) invocation.mode = focusMode;
+      var r = runner(invocation);
       if(r && typeof r.finally === "function") r.finally(clear);
       else window.setTimeout(clear, 5000);
       return true;

@@ -95,7 +95,38 @@
     return {};
   }
 
+  // Ten truong / TKB so / ngay ap dung la thong tin cua ban TKB dang mo o trang
+  // Quan ly (school-portal). Doc thang tu do de khong lech voi bang ben do;
+  // meta trong store chi con la du phong.
+  let portalInfoCache = null;
+  let portalInfoCacheAt = 0;
+
+  function portalScheduleInfo(){
+    // Mot lan xuat file goi ham nay nhieu lan (ten truong, TKB so, ngay ap
+    // dung) nen nho ket qua trong vai giay de chi doc lai registry mot lan.
+    const now = Date.now();
+    if(portalInfoCache !== null && (now - portalInfoCacheAt) < 5000) return portalInfoCache;
+    let info = null;
+    try{
+      const api = window.TKBAuth;
+      if(api && typeof api.schoolInfoForSid === 'function'){
+        let sid = '';
+        try{ sid = safe(window.__TKB_SCHOOL_CONTEXT?.sid); }catch(_){ }
+        try{ if(!sid && typeof schoolParam !== 'undefined') sid = safe(schoolParam); }catch(_){ }
+        info = api.schoolInfoForSid(sid, { refresh: true }) || null;
+      }
+    }catch(_){
+      info = null;
+    }
+    portalInfoCache = info;
+    portalInfoCacheAt = now;
+    return info;
+  }
+
   function getStoredSchoolName(){
+    const fromPortal = safe(portalScheduleInfo()?.schoolName);
+    if(fromPortal) return fromPortal;
+
     const meta = getInfoMeta();
     const fromInfo = safe(meta.schoolName || meta.schoolLabel || meta.tenTruong || meta.school);
     if(fromInfo) return fromInfo;
@@ -126,13 +157,15 @@
   }
 
   function getScheduleNumber(){
+    const fromPortal = safe(portalScheduleInfo()?.scheduleNumber);
+    if(fromPortal) return fromPortal;
     const meta = getInfoMeta();
     return safe(meta.scheduleNumber || meta.scheduleNo || meta.tkbNumber) || '1';
   }
 
   function getEffectiveDate(){
     const meta = getInfoMeta();
-    return displayDate(meta.effectiveDate || meta.applyDate || meta.ngayApDung || '');
+    return displayDate(safe(portalScheduleInfo()?.effectiveDate) || meta.effectiveDate || meta.applyDate || meta.ngayApDung || '');
   }
 
   function classDisplay(lop){

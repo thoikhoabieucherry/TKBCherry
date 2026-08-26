@@ -487,6 +487,11 @@ let currentPhong = null;
 
 let dragData = null;   // {type:"mon", mon} or {type:"cell", from, val}
 let dragMon = "";      // tên môn đang kéo
+// PERF 21/08: dragover ban lien tuc (moi lan chuot nhich ~vai chuc lan/giay) ma
+// validateDrop quet toan bo lop de tim trung GV/phong -> keo tha giat. Trong MOT
+// luot keo, DATA khong doi nen ket qua validate cua tung o giu nguyen: cache theo
+// td, xoa khi bat dau/ket thuc keo (applyDragVisual/clearDragVisual).
+const DRAG_VALIDATE_CACHE = new Map(); // td -> ket qua validate cua luot keo hien tai
 
 // Cache tiết chuẩn theo lớp đang chọn
 let CURRENT_MONS = [];         // [{ten,sotiet,gioihan}]
@@ -528,8 +533,16 @@ function normalizeClassName(name){
   return raw.replace(/\s+/g,'').toUpperCase();
 }
 
+// Ham thuan: cung chuoi vao => cung ket qua. Render 1 lop goi toi hon 46.000 lan
+// nhung chi voi vai chuc ten khac nhau, nen nho ket qua theo ten.
+const CLASS_ALIAS_CACHE = new Map();
+const CLASS_ALIAS_CACHE_MAX = 5000;
+
 function legacyClassNameAliases(name){
   const raw = (name||"").toString().trim();
+  const cachedAliases = CLASS_ALIAS_CACHE.get(raw);
+  // tra ban sao de noi goi tu do sap xep/them bot ma khong hong cache
+  if(cachedAliases) return cachedAliases.slice();
   const out = [];
   const add = (v)=>{
     const s = (v||"").toString().trim();
@@ -547,7 +560,9 @@ function legacyClassNameAliases(name){
     add(`${a[1]}A${Number(a[2])}`.toUpperCase());
     add(`${a[1]}/${Number(a[2])}`);
   }
-  return out;
+  if(CLASS_ALIAS_CACHE.size >= CLASS_ALIAS_CACHE_MAX) CLASS_ALIAS_CACHE.clear();
+  CLASS_ALIAS_CACHE.set(raw, out);
+  return out.slice();
 }
 
 function classCanonFromLop(lop){
@@ -761,10 +776,15 @@ function sanitizePlannerDataFromIndex(){
     }
   });
   changed = pruneRedundantPccmPeriodMatrices() || changed;
+  // Don muc giao vien-theo-tiet mau thuan voi Phan cong (xem chu thich o
+  // pruneLessonTeacherConflicts): mot muc sai o day lam lech ca thong ke lan
+  // ket qua xep.
+  try{ if(pruneLessonTeacherConflicts() > 0) changed = true; }catch(_){ }
 
   if(changed){
     try{ invalidatePccmNumCaches(); }catch(_){ }
     try{ COMPUTE_MONS_CACHE = {refs: [], values: new Map()}; }catch(_){ }
+    try{ REQUIRED_SUBJECTS_CACHE = {refs: [], values: new Map()}; }catch(_){ }
     try{ TEACHER_FOR_CLASS_MON_CACHE = {pccmRef: null, lessonRef: null, monRef: null, monhocRef: null, values: new Map()}; }catch(_){ }
     try{ ROOM_FOR_CLASS_MON_CACHE = {roomRef: null, lessonRef: null, monRef: null, monhocRef: null, values: new Map()}; }catch(_){ }
   }
@@ -831,19 +851,53 @@ function looksLikeCode(s){
   return str && str.length <= 10 && !/\s/.test(str) && /^[A-Za-z0-9_.-]+$/.test(str);
 }
 
+/* Chi muc ma giao vien.
+   Ban cu quet tuyen tinh ca DATA.giaovien cho MOI lan goi, va teacherOrderIndex
+   con goi resolveTeacherCode mot lan cho TUNG giao vien => doi 1 lop trong
+   planner ton ~1,0s (resolveTeacherCode bi goi hon 141.000 lan). Dung Map mot
+   lan roi tra O(1). Cache tu huy khi mang giao vien bi thay the/doi so luong,
+   va bi xoa tuong minh o saveStore(). */
+let TEACHER_CODE_INDEX = { ref: null, len: -1, byCode: new Map(), byName: new Map(), orderByCode: new Map() };
+
+function invalidateTeacherCodeIndex(){
+  TEACHER_CODE_INDEX = { ref: null, len: -1, byCode: new Map(), byName: new Map(), orderByCode: new Map() };
+}
+
+function ensureTeacherCodeIndex(){
+  const list = Array.isArray(DATA.giaovien) ? DATA.giaovien : [];
+  if(TEACHER_CODE_INDEX.ref === list && TEACHER_CODE_INDEX.len === list.length){
+    return TEACHER_CODE_INDEX;
+  }
+  const byCode = new Map();
+  const byName = new Map();
+  const orderByCode = new Map();
+  list.forEach((g, i)=>{
+    const code = (g?.magv||"").toString().trim();
+    if(code){
+      const k = code.toLowerCase();
+      // ban ghi xuat hien truoc thang, dung nhu find/findIndex cu
+      if(!byCode.has(k)) byCode.set(k, code);
+      if(!orderByCode.has(k)) orderByCode.set(k, i);
+    }
+    const full = `${(g?.hodem||"").toString().trim()} ${(g?.ten||"").toString().trim()}`.trim().toLowerCase();
+    // luu ca ma rong: khi do resolveTeacherCode tra nguyen van input nhu ban cu
+    if(full && !byName.has(full)) byName.set(full, code);
+  });
+  TEACHER_CODE_INDEX = { ref: list, len: list.length, byCode, byName, orderByCode };
+  return TEACHER_CODE_INDEX;
+}
+
 function resolveTeacherCode(input){
   const raw = (input||"").toString().trim();
   if(!raw) return "";
   const lower = raw.toLowerCase();
 
-  const byCode = (DATA.giaovien||[]).find(g => (g.magv||"").toString().trim().toLowerCase() === lower);
-  if(byCode && byCode.magv) return byCode.magv.toString().trim();
+  const index = ensureTeacherCodeIndex();
+  const byCode = index.byCode.get(lower);
+  if(byCode) return byCode;
 
-  const byName = (DATA.giaovien||[]).find(g=>{
-    const full = `${(g.hodem||"").toString().trim()} ${(g.ten||"").toString().trim()}`.trim().toLowerCase();
-    return full && full === lower;
-  });
-  if(byName && byName.magv) return byName.magv.toString().trim();
+  const byName = index.byName.get(lower);
+  if(byName) return byName;
 
   return raw;
 }
@@ -851,8 +905,8 @@ function resolveTeacherCode(input){
 function teacherOrderIndex(code){
   const c = resolveTeacherCode(code).toLowerCase();
   if(!c) return Number.MAX_SAFE_INTEGER;
-  const idx = (DATA.giaovien||[]).findIndex(g => resolveTeacherCode(g?.magv).toLowerCase() === c);
-  return idx >= 0 ? idx : Number.MAX_SAFE_INTEGER;
+  const pos = ensureTeacherCodeIndex().orderByCode.get(c);
+  return pos === undefined ? Number.MAX_SAFE_INTEGER : pos;
 }
 
 function compareTeacherCodeByDataOrder(a,b){
@@ -1018,6 +1072,37 @@ function compareMonByHiddenCode(a,b){
   return String(aa||"").localeCompare(String(bb||""),'vi');
 }
 
+/* Thứ tự môn ĐÚNG NHƯ bảng "Môn học" trong phần app (thứ tự dòng DATA.monhoc).
+   Dùng cho danh sách "Chưa phân" để người dùng đối chiếu dễ. Môn không có
+   trong bảng Môn học rơi xuống cuối, fallback sort theo mã như cũ. */
+let MON_HOC_ORDER_CACHE = { ref: null, len: -1, map: new Map() };
+
+function monHocOrderIndex(mon){
+  const list = Array.isArray(DATA.monhoc) ? DATA.monhoc : [];
+  if(MON_HOC_ORDER_CACHE.ref !== list || MON_HOC_ORDER_CACHE.len !== list.length){
+    const map = new Map();
+    list.forEach((m, i)=>{
+      // ghi index cho MỌI alias của môn (tên + mã) để khớp bất kể tasks lưu dạng nào
+      monRecordAliases(m).forEach(alias=>{
+        const key = monCanonicalKey(alias);
+        if(key && !map.has(key)) map.set(key, i);
+      });
+    });
+    MON_HOC_ORDER_CACHE = { ref: list, len: list.length, map };
+  }
+  const idx = MON_HOC_ORDER_CACHE.map.get(monCanonicalKey(mon));
+  return idx === undefined ? Number.MAX_SAFE_INTEGER : idx;
+}
+
+function compareMonByMonHocOrder(a,b){
+  const aa = typeof a === "object" ? (a?.ten || a?.mon || a?.key || "") : a;
+  const bb = typeof b === "object" ? (b?.ten || b?.mon || b?.key || "") : b;
+  const ai = monHocOrderIndex(aa);
+  const bi = monHocOrderIndex(bb);
+  if(ai !== bi) return ai - bi;
+  return compareMonByHiddenCode(aa, bb);
+}
+
 function getMonShort(mon){
   const mh = findMonHoc(mon);
   if(!mh) return (mon||"").toString().trim();
@@ -1032,8 +1117,23 @@ function getMonShort(mon){
   return candidates[0] || (mon||"").toString().trim();
 }
 
+// Quet toan bo DATA.lop moi lan goi; render 1 lop goi ~150 lan (~200ms) nhung
+// chi voi vai chuc ten lop => nho ket qua theo ten, huy khi mang lop doi.
+let CLASS_KEY_CANDIDATES_CACHE = { ref: null, len: -1, values: new Map() };
+
+function invalidateClassKeyCandidatesCache(){
+  CLASS_KEY_CANDIDATES_CACHE = { ref: null, len: -1, values: new Map() };
+}
+
 function classKeyCandidates(input){
+  const lopList = Array.isArray(DATA.lop) ? DATA.lop : [];
+  if(CLASS_KEY_CANDIDATES_CACHE.ref !== lopList || CLASS_KEY_CANDIDATES_CACHE.len !== lopList.length){
+    CLASS_KEY_CANDIDATES_CACHE = { ref: lopList, len: lopList.length, values: new Map() };
+  }
   const raw = (input||"").toString().trim();
+  const cachedKeys = CLASS_KEY_CANDIDATES_CACHE.values.get(raw);
+  if(cachedKeys) return cachedKeys.slice();
+
   const out = [];
   const add = (v)=>{
     const s = (v||"").toString().trim();
@@ -1042,7 +1142,7 @@ function classKeyCandidates(input){
   const addAliases = (v)=>legacyClassNameAliases(v).forEach(add);
   addAliases(raw);
   const rawAliases = legacyClassNameAliases(raw).map(v => v.toLowerCase());
-  (DATA.lop||[]).forEach(lop=>{
+  lopList.forEach(lop=>{
     const vals = [classCanonFromLop(lop), lop?.id, lop?.ten, lop?.ten2].map(v => (v||"").toString().trim()).filter(Boolean);
     const ownAliases = [];
     vals.forEach(v=>legacyClassNameAliases(v).forEach(a=>{
@@ -1052,7 +1152,8 @@ function classKeyCandidates(input){
     if(!matches) return;
     vals.forEach(addAliases);
   });
-  return out;
+  CLASS_KEY_CANDIDATES_CACHE.values.set(raw, out);
+  return out.slice();
 }
 
 let TEACHER_FOR_CLASS_MON_CACHE = {
@@ -1102,14 +1203,18 @@ function getTeacherForClassMon(lopCanon, mon){
   }
   classKeys.forEach(cls => subjects.forEach(subject => tries.push(`${cls}|${subject}`)));
 
-  for(const k of tries){
-    const v = DATA.tkbLessonTeachers?.[k];
-    if(v){
-      const out = teacherValueFromRaw(v);
-      cache.set(cacheKey, out);
-      return out;
-    }
-  }
+  // 19/08 SUA THU TU UU TIEN — day la goc cua "thong ke sai" va "khong xep
+  // duoc". TRUOC day tkbLessonTeachers duoc tra TRUOC pccmMatrix. Bang do luu
+  // giao vien theo TUNG TIET DA XEP va co ca khoa theo TEN DAY DU cua mon, nen
+  // mot muc cu/sai kieu:
+  //     tkbLessonTeachers["7/2|Hoat dong trai nghiem huong nghiep"] = "Phuong"
+  // se DE LEN phan cong that cua nguoi dung:
+  //     pccmMatrix["7/2|TNHN"] = "Phuong"   (khac dau, khac nguoi!)
+  // Hau qua do duoc tren truong that: 7/2, 8/2, 8/5 mon Toan/TNHN bi gan cho
+  // co Phuong (Le Thi Hoa) thay vi thay Phuong (Nguyen Dang) -> thong ke lech,
+  // bam vao o thong ke nhay sai nguoi, va bo giai (dung PCCM) mau thuan voi
+  // giao dien (dung bang nay) nen tiet bi coi la trung va bi go ra.
+  // PHAN CONG LA NGUON SU THAT: tra PCCM truoc, bang tiet chi la du phong.
   for(const k of tries){
     const v = DATA.pccmMatrix?.[k];
     if(v){
@@ -1118,8 +1223,61 @@ function getTeacherForClassMon(lopCanon, mon){
       return out;
     }
   }
+  for(const k of tries){
+    const v = DATA.tkbLessonTeachers?.[k];
+    if(v){
+      const out = teacherValueFromRaw(v);
+      cache.set(cacheKey, out);
+      return out;
+    }
+  }
   cache.set(cacheKey, "");
   return "";
+}
+
+// Dong bo cac muc trong tkbLessonTeachers mau thuan voi Phan cong (so sanh co
+// xet bi danh cua mon, vi khoa co the la ten ngan hoac ten day du). Muc sai
+// duoc GHI DE bang gia tri Phan cong chu KHONG bi xoa. Chay mot lan khi nap
+// du lieu; tra ve so muc da sua.
+function pruneLessonTeacherConflicts(){
+  const lt = DATA.tkbLessonTeachers;
+  if(!lt || typeof lt !== "object") return 0;
+  let removed = 0;
+  for(const key of Object.keys(lt)){
+    const parts = String(key).split("|");
+    if(parts.length < 2) continue;
+    const cls = parts[0];
+    const mon = parts.slice(1).join("|");
+    let pccmValue = "";
+    try{
+      const mh = findMonHoc(mon);
+      const subjects = [mon];
+      if(mh){
+        [mh.ma, mh.ten, mh.ma2, mh.id].forEach(v => {
+          const t = String(v || "").trim();
+          if(t && !subjects.includes(t)) subjects.push(t);
+        });
+      }
+      for(const subject of subjects){
+        const v = DATA.pccmMatrix?.[`${cls}|${subject}`];
+        if(v){ pccmValue = String(v); break; }
+      }
+    }catch(_){ continue; }
+    if(!pccmValue) continue;
+    const a = teacherListFromValue(lt[key]).map(x => x.toLowerCase()).sort().join(",");
+    const b = teacherListFromValue(pccmValue).map(x => x.toLowerCase()).sort().join(",");
+    if(a && b && a !== b){
+      // KHONG xoa du lieu: ghi de bang gia tri Phan cong (nguon su that) de
+      // vua het mau thuan vua giu nguyen dong du lieu cua nguoi dung.
+      lt[key] = pccmValue;
+      removed += 1;
+    }
+  }
+  if(removed > 0){
+    try{ TEACHER_FOR_CLASS_MON_CACHE = {pccmRef: null, lessonRef: null, monRef: null, monhocRef: null, values: new Map()}; }catch(_){ }
+    try{ console.warn(`[TKB] Da dong bo ${removed} muc giao vien theo tiet cho khop Phan cong`); }catch(_){ }
+  }
+  return removed;
 }
 
 function getTeachersForClassMon(lopCanon, mon){
@@ -1228,6 +1386,7 @@ function invalidatePccmNumCaches(){
   try{ if(DATA.pccmTietMatrix) PCCM_NUM_CACHE.delete(DATA.pccmTietMatrix); }catch(_){}
   try{ if(DATA.pccmGioihanMatrix) PCCM_NUM_CACHE.delete(DATA.pccmGioihanMatrix); }catch(_){}
   try{ COMPUTE_MONS_CACHE = {refs: [], values: new Map()}; }catch(_){}
+  try{ REQUIRED_SUBJECTS_CACHE = {refs: [], values: new Map()}; }catch(_){}
 }
 function getPccmNumCached(matrix, lopCanon, mon){
   if(!matrix || typeof matrix !== "object") return 0;
@@ -1272,7 +1431,9 @@ function setClassSubjectSessionLimit(lopCanon, mon, limit){
   });
   const directMeta = CURRENT_MON_META[mon] || {sotiet: getMonMeta(mon).sotiet || 0, gioihan: next};
   CURRENT_MON_META[mon] = {...directMeta, gioihan: next};
-  try{ saveStore({force:true}); }catch(e){ console.error("saveStore failed", e); }
+  // PERF 21/08: ham nay chi duoc goi giua mot luot tha (maybeRaiseSessionLimitForDrop);
+  // luu dong bo o day + luu cua onDrop = 2 lan "khung" cho MOT lan tha -> luu tre.
+  try{ saveStoreDeferred(); }catch(e){ console.error("saveStore failed", e); }
   return true;
 }
 function cellMon(v){
@@ -1595,6 +1756,11 @@ window.flushDeferredSaveStore = flushDeferredSaveStore;
 
 function saveStore(options){
   let opts = options || {};
+  // Du lieu vua doi => cac chi muc tra cuu co the cu.
+  // (TEACHER_LIST_FILTER_CACHE khong can xoa o day: planner chi DOC pccmMatrix/
+  //  giaovien/lop — cache do tu miss khi cac object nay bi thay the boi remote
+  //  load, va xoa o day se pha cache dung luc toggle Co dinh dang can no.)
+  try{ invalidateTeacherCodeIndex(); invalidateClassKeyCandidatesCache(); }catch(_){ }
   const trustedSolverApply = opts.trustedSolverApply === true;
   if(!trustedSolverApply){
     try{ if(typeof reapplyAllUserOffLocks === "function") reapplyAllUserOffLocks(); }catch(_){}
@@ -1627,6 +1793,18 @@ function saveStore(options){
       xhr.open("POST", url, false);
       xhr.setRequestHeader("Content-Type", "application/json");
       xhr.setRequestHeader("Accept", "application/json");
+      // /api/school/store yeu cau Bearer token. Thieu header nay thi may chu
+      // luon tra 401 va moi lan luu deu ton mot vong hong truoc khi roi ve
+      // duong luu async (TKBStorage.saveSchoolData) — chinh la dong
+      // "Sync remote store save failed 401" trong console.
+      try{
+        const authHeaders = (window.TKBAuthApi && typeof window.TKBAuthApi.getAuthHeaders === "function")
+          ? window.TKBAuthApi.getAuthHeaders()
+          : null;
+        if(authHeaders && authHeaders.Authorization){
+          xhr.setRequestHeader("Authorization", authHeaders.Authorization);
+        }
+      }catch(_){ }
       xhr.send(payload);
       if(xhr.status >= 200 && xhr.status < 300){
         __tkbLastSavedPayload = payload;
@@ -1810,7 +1988,28 @@ function mobileStackCellLineHTML(primary, secondary, extraClasses){
   `</div>`;
 }
 
+/* Quet ca DATA.pccmMatrix (hon 1.000 key) moi lan goi, bi goi 2 lan cho MOI
+   luot render — chiem ~30ms trong cu "khung nhe" khi double-click Co dinh.
+   Ket qua chi phu thuoc (giaovien, pccmMatrix, lop, khoi dang loc) nen cache
+   theo cac ref do; toggle co dinh/keo tha khong lam thay doi chung. */
+let TEACHER_LIST_FILTER_CACHE = { pccmRef: null, gvRef: null, lopRef: null, khoi: "", value: null };
+
+function invalidateTeacherListFilterCache(){
+  TEACHER_LIST_FILTER_CACHE = { pccmRef: null, gvRef: null, lopRef: null, khoi: "", value: null };
+}
+
 function getTeacherListForCurrentFilter(){
+  const cachedKhoi = document.getElementById("chonKhoi")?.value || "";
+  const c = TEACHER_LIST_FILTER_CACHE;
+  if(c.value
+      && c.pccmRef === DATA.pccmMatrix
+      && c.gvRef === DATA.giaovien
+      && c.lopRef === DATA.lop
+      && c.khoi === cachedKhoi){
+    // tra ban sao nong: noi goi co the sort/loc tuy y ma khong pha cache
+    return c.value.slice();
+  }
+
   const map = new Map(); // code -> {code,name}
 
   // 1) Lấy từ bảng giáo viên
@@ -1835,7 +2034,7 @@ function getTeacherListForCurrentFilter(){
   }
 
   // Nếu đang lọc theo khối và có dữ liệu phân công, ưu tiên chỉ hiện GV có phân công trong khối
-  const khoiSel = document.getElementById("chonKhoi")?.value || "";
+  const khoiSel = cachedKhoi;
   const kFilter = extractKhoiNumber(khoiSel);
   let arr = Array.from(map.values()).filter(x=>x.code);
   if(kFilter){
@@ -1850,7 +2049,14 @@ function getTeacherListForCurrentFilter(){
   }
 
   arr.sort(compareTeacherCodeByDataOrder);
-  return arr;
+  TEACHER_LIST_FILTER_CACHE = {
+    pccmRef: DATA.pccmMatrix,
+    gvRef: DATA.giaovien,
+    lopRef: DATA.lop,
+    khoi: cachedKhoi,
+    value: arr
+  };
+  return arr.slice();
 }
 
 function showAllGV(){
@@ -3058,7 +3264,9 @@ function selectLop(id){
   clearDragVisual();
   dragData = null;
   dragMon = "";
-  try{ closeUnassignedDropdown(); }catch(_){ }
+  // Khong dong dropdown "Chua phan" o day: click item trong menu cung di qua
+  // selectLop, va nguoi dung muon menu mo lien tuc de keo nhieu tiet.
+  // (Click ra ngoai da co listener pointerdown toan cuc lo viec dong.)
   currentLop = id;
 
   // reset chọn ô khi đổi lớp
@@ -3076,12 +3284,16 @@ function selectLop(id){
   const lopCanon = getLopCanonById(id);
   const mons = buildMonsForKhoi(lopKhoiNum, lopCanon);
 
+  // 26/08: dang xep thi CHI XEM — van dung DATA trong bo nho de ve luoi,
+  // nhung khong ghi kho (luot xep se ap ket qua va luu sau; ghi xen giua co
+  // the dam vao ban luu cua luot dang chay).
+  const __solvingReadOnly = (typeof isPlannerBusySolving === "function") && isPlannerBusySolving();
   if(!DATA.tkb[id]){
     // Mặc định: KHÔNG tự động xếp vào TKB, chỉ tạo khung trống + cố định (nếu có)
     DATA.tkb[id] = taoTKBTheoConfig([], DATA.tkbConfig);
-    saveStore();
+    if(!__solvingReadOnly) saveStore();
   }else if(ensureClassTkbShape(id)){
-    saveStore({force:true});
+    if(!__solvingReadOnly) saveStore({force:true});
   }
 
   renderTKB(id);
@@ -4131,7 +4343,8 @@ function toggleFixedByKey(key){
   if(isFixed(cur)) tkb[thu][buoi][ti] = mon;
   else tkb[thu][buoi][ti] = {mon, fixed: true};
 
-  try{ saveStore({ force: true }); }catch(e){ console.error('saveStore failed', e); }
+  // PERF 21/08: bam Co dinh tung o cung dinh don "luu dong bo" nhu keo tha -> luu tre.
+  try{ saveStoreDeferred(); }catch(e){ console.error('saveStore failed', e); }
   try{ renderCurrentView(); }catch(e){ console.error('renderCurrentView failed', e); }
   try{ loadMonList(); }catch(e){ console.error('loadMonList failed', e); }
   applyCellSelectionStyles();
@@ -4149,7 +4362,8 @@ function clearLessonByKey(key){
   if(!mon) return false;
 
   tkb[thu][buoi][ti] = "";
-  try{ saveStore({ force: true }); }catch(e){ console.error('saveStore failed', e); }
+  // PERF 21/08: xoa tung tiet (chuot phai / menu o) cung la thao tac lien tay -> luu tre.
+  try{ saveStoreDeferred(); }catch(e){ console.error('saveStore failed', e); }
   try{ renderCurrentView(); }catch(e){ console.error('renderCurrentView failed', e); }
   try{ loadMonList(); }catch(e){ console.error('loadMonList failed', e); }
   try{ _setStatus("Đã đưa tiết về Chưa phân.", "ok"); }catch(_){ }
@@ -4833,7 +5047,11 @@ function bindCells(){
     td.ondragover = (e)=>{
       if(!dragData || isPlannerBusySolving()) return;
       e.preventDefault();
-      const res = validateDrop(td, dragMon);
+      let res = DRAG_VALIDATE_CACHE.get(td);
+      if(!res){
+        res = validateDrop(td, dragMon);
+        DRAG_VALIDATE_CACHE.set(td, res);
+      }
       setDropHint(td, res.ok && !res.warn);
     };
 
@@ -4842,7 +5060,7 @@ function bindCells(){
       td.classList.add("drag-over");
     };
     td.ondragleave = ()=>{
-      td.classList.remove("drag-over", "drop-valid", "drop-invalid");
+      releaseDragOver(td);
     };
 
     td.ondrop = (e)=>{
@@ -5099,7 +5317,10 @@ function onDrop(td){
     throw new Error("Dữ liệu kéo thả không hợp lệ (dragData.type)");
   }
 
-  try{ saveStore({ force: true }); }catch(e){ console.error('saveStore failed', e); }
+  // PERF 21/08: luu tre nhu setOffByKeys/pvApplySupportDrop — saveStore dong bo
+  // (sanitize + stringify + 3x localStorage) ton hang tram ms o truong lon,
+  // chinh la con "khung" ngay sau moi lan tha.
+  try{ saveStoreDeferred(); }catch(e){ console.error('saveStore failed', e); }
   try{ renderCurrentView(); }catch(e){ console.error('renderCurrentView failed', e); }
   try{ loadMonList(); }catch(e){ console.error('loadMonList failed', e); }
 
@@ -5109,12 +5330,52 @@ function onDrop(td){
 }
 
 function setDropHint(td, ok){
+  const want = ok ? "drop-valid" : "drop-invalid";
+  if(td.classList.contains(want)) return; // tranh churn class -> style recalc moi dragover
   td.classList.remove("drop-valid", "drop-invalid");
-  td.classList.add(ok ? "drop-valid" : "drop-invalid");
+  td.classList.add(want);
+}
+
+/* Tô sẵn ô thả được / không thả được ngay khi bắt đầu kéo.
+   Chạy ở frame kế tiếp để dragstart trả về ngay (trình duyệt khởi động thao tác
+   kéo mượt), người dùng vẫn thấy màu gần như tức thì. Token chặn việc tô muộn
+   sau khi đã thả/hủy kéo. Kết quả nằm luôn trong DRAG_VALIDATE_CACHE nên
+   ondragover sau đó không phải tính lại. */
+let DRAG_PAINT_TOKEN = 0;
+
+function tkbMainDropCells(){
+  return Array.from(document.querySelectorAll("#tkb td"))
+    .filter(td => !td.closest(".tkb-support-table"));
+}
+
+function tkbSupportDropCells(){
+  return Array.from(document.querySelectorAll(".tkb-support-table td[data-pair-slot='teacher']"));
+}
+
+function paintDropTargets(mon){
+  const token = ++DRAG_PAINT_TOKEN;
+  const paint = (cells, validate)=>{
+    cells.forEach(td=>{
+      if(td.classList.contains("drag-source")) return;
+      let res = DRAG_VALIDATE_CACHE.get(td);
+      if(!res){
+        try{ res = validate(td); }catch(_){ res = {ok:false, reason:"runtime"}; }
+        DRAG_VALIDATE_CACHE.set(td, res);
+      }
+      setDropHint(td, !!(res && res.ok && !res.warn));
+    });
+  };
+  requestAnimationFrame(()=>{
+    if(token !== DRAG_PAINT_TOKEN || !dragData) return;
+    paint(tkbMainDropCells(), td => validateDrop(td, mon));
+    const validateSupport = window.__tkbValidateSupportDrop;
+    if(typeof validateSupport === "function") paint(tkbSupportDropCells(), validateSupport);
+  });
 }
 
 function applyDragVisual(mon, excludeTd){
   clearDragVisual();
+  DRAG_VALIDATE_CACHE.clear();
 
   // excludeTd có thể là <td> (khi kéo trong TKB) hoặc null (khi kéo từ "Chưa phân")
   const isEl = !!(excludeTd && typeof excludeTd === "object" && excludeTd.classList);
@@ -5127,12 +5388,22 @@ function applyDragVisual(mon, excludeTd){
   });
 
   if(isEl) excludeTd.classList.add("drag-source");
+
+  paintDropTargets(mon);
 }
 
 function clearDragVisual(){
+  DRAG_PAINT_TOKEN++; // huỷ lượt tô đang chờ frame
+  DRAG_VALIDATE_CACHE.clear();
   document.querySelectorAll("#tkb td").forEach(td=>{
     td.classList.remove("conflict","drag-source","drag-over","drop-valid","drop-invalid");
   });
+}
+
+// Rời ô: chỉ bỏ viền hover, giữ nguyên màu thả được/không thả được đã tô sẵn.
+function releaseDragOver(td){
+  td.classList.remove("drag-over");
+  if(!DRAG_VALIDATE_CACHE.has(td)) td.classList.remove("drop-valid","drop-invalid");
 }
 
 /* ======================= VALIDATION (KHÔNG TRÙNG MÔN TRONG 1 BUỔI) ======================= */
@@ -5319,9 +5590,38 @@ function countMonFromTkbCountMap(counts, mon){
   return key ? Number(counts.get(key) || 0) : 0;
 }
 
+// 20/08 DO DUOC TREN MAY THAT: goi ham nay cho 72 lop het 2.704 ms, va no bi
+// goi lai nhieu lan trong mot luot bam (expectedLessonCount, capacity precheck,
+// completeScheduleState...) -> cong don hang chuc giay TRUOC KHI gui len may
+// chu, chinh la doan "do lag" nguoi dung thay. Ham chi doc bang phan cong +
+// danh muc mon, KHONG doc DATA.tkb, nen cache theo danh tinh cac bang do la an
+// toan; moi thay doi phan cong deu di qua invalidatePccmNumCaches().
+let REQUIRED_SUBJECTS_CACHE = {refs: [], values: new Map()};
+
+function ensureRequiredSubjectsCache(){
+  const refs = [
+    DATA.lop, DATA.mon, DATA.monhoc,
+    DATA.pccmMatrix, DATA.pccmTietMatrix, DATA.pccmGioihanMatrix, DATA.pccmRoomMatrix,
+    DATA.tkbLessonTeachers
+  ];
+  if(
+    REQUIRED_SUBJECTS_CACHE.refs.length === refs.length
+    && refs.every((ref, i) => ref === REQUIRED_SUBJECTS_CACHE.refs[i])
+  ){
+    return REQUIRED_SUBJECTS_CACHE.values;
+  }
+  REQUIRED_SUBJECTS_CACHE = {refs, values: new Map()};
+  return REQUIRED_SUBJECTS_CACHE.values;
+}
+
 function requiredSubjectsForClass(lop){
   const classId = String(lop?.id || "").trim();
   if(!classId) return [];
+  const cache = ensureRequiredSubjectsCache();
+  if(cache.has(classId)){
+    // Tra ban sao: nhieu cho goi xong con sua tai cho tren ket qua.
+    return cache.get(classId).map(row => Object.assign({}, row));
+  }
   const classCanon = getLopCanonById(classId);
   const khoiNum = extractKhoiNumber(lop?.khoi) || extractKhoiNumber(lop?.ten2) || extractKhoiNumber(lop?.ten) || "";
   const bySubject = new Map();
@@ -5364,12 +5664,38 @@ function requiredSubjectsForClass(lop){
     );
   });
 
-  return Array.from(bySubject.values()).map(row=>({
+  const rows = Array.from(bySubject.values()).map(row=>({
     mon: row.mon,
     required: Number(row.required || 0),
     gv: String(row.gv || getTeacherForClassMon(classCanon, row.mon) || "").trim(),
     room: String(row.room || getRoomForClassMon(classCanon, row.mon) || "").trim()
   }));
+  cache.set(classId, rows);
+  return rows.map(row => Object.assign({}, row));
+}
+
+/* 22/08 (toi): tiet Cherry da CHU DONG dua ve Chua phan vi GV van con buoi 1
+   tiet / trong >= 2 (reason teacher_quality_unreachable) KHONG duoc cac luot
+   "va nhanh" tu xep lai (truoc khi giai / sau khi ap): xep lai se tao dung
+   buoi le do, roi Cherry lai dua ra -> vong lap. Co nay duoc bat trong
+   tkbAutoPlaceUnassignedLessons; hop Chua phan van liet ke du de nguoi dung
+   tu keo neu muon. */
+let TKB_SKIP_QUALITY_EJECTED_TASKS = false;
+// Danh sach tiet da dua ra cua KET QUA VUA AP (bridge truyen vao khi
+// DATA.tkbSolverResult chua kip cap nhat); null = doc tu DATA.tkbSolverResult.
+let TKB_QUALITY_EJECTED_OVERRIDE = null;
+function tkbQualityEjectedPeriodsFor(classId, mon){
+  try{
+    if(typeof tkbUnassignedItemsFor !== "function") return 0;
+    let total = 0;
+    tkbUnassignedItemsFor(classId, mon, TKB_QUALITY_EJECTED_OVERRIDE).forEach(u => {
+      if(String(u?.reason || "") !== "teacher_quality_unreachable") return;
+      total += Math.max(1, Math.round(Number(u.periods ?? u.count) || 1));
+    });
+    return total;
+  }catch(_){
+    return 0;
+  }
 }
 
 function collectUnassignedTasks(options={}){
@@ -5378,7 +5704,8 @@ function collectUnassignedTasks(options={}){
   if(hasOnlyClass && !onlyClassId) return [];
 
   const useKhoiFilter = options?.useKhoiFilter === true;
-  const cacheEligible = !hasOnlyClass && !useKhoiFilter;
+  const skipEjected = TKB_SKIP_QUALITY_EJECTED_TASKS === true || options?.excludeQualityEjected === true;
+  const cacheEligible = !hasOnlyClass && !useKhoiFilter && !skipEjected;
   const cacheSig = cacheEligible
     ? String(options?.cacheSignature || schoolStatsTkbSignature())
     : "";
@@ -5422,7 +5749,8 @@ function collectUnassignedTasks(options={}){
       const required = Number(s?.required ?? s?.sotiet ?? 0);
       if(!Number.isFinite(required) || required <= 0) return;
       const used = countMonFromTkbCountMap(tkbMonCounts, mon);
-      const remain = Math.max(0, required - used);
+      const ejected = skipEjected ? tkbQualityEjectedPeriodsFor(classId, mon) : 0;
+      const remain = Math.max(0, required - used - ejected);
       if(remain <= 0) return;
       tasks.push({
         classId,
@@ -5555,19 +5883,127 @@ function tkbAutoRepairValidateResultAtSlot(task, slot){
   });
 }
 
+/* 21/08: pha va cuc bo truoc day CHI kiem luat keo-tha (validateDrop: trung
+   GV, gioi han buoi...) ma khong hoi bo rang buoc "Yeu cau" (TKBConstraints)
+   — nen no dat tiet vao cho vi pham "hoc sang hoac chieu" (oneSessionPerDay),
+   khong cung ngay/buoi, gioi han tiet/ngay... va lam vo yeu cau tiet doi.
+   Bo sung: (1) moi vi tri dat/di doi phai qua canPlaceCell cua TKBConstraints;
+   (2) cham diem uu tien o KE tiet cung mon khi mon con thieu cum tiet doi. */
+function tkbAutoRepairConstraintOk(taskOrClassId, monOrSlot, maybeSlot){
+  try{
+    const api = window.TKBConstraints || window.TKBConstraintsFull;
+    if(!api || typeof api.canPlaceCell !== "function") return true;
+    // Ho tro ca 2 dang goi: (task, slot) va (classId, mon, slot).
+    let classId, mon, slot, srcOpts = {};
+    if(maybeSlot){
+      classId = taskOrClassId; mon = monOrSlot; slot = maybeSlot;
+    }else{
+      const task = taskOrClassId || {};
+      classId = task.classId; mon = task.mon; slot = monOrSlot;
+      // Neu task la DI DOI mot tiet dang co (dragData type 'cell'), phai khai
+      // bao o nguon de canPlaceCell loai tiet cu khoi phep dem — khong thi
+      // oneSessionPerDay/spacing tu chan chinh minh.
+      const from = task.dragData?.type === "cell" ? task.dragData?.from : null;
+      const ds = from?.dataset;
+      if(ds && ds.thu && ds.buoi != null){
+        srcOpts = {src: {thu: ds.thu, buoi: ds.buoi, ti: Number(ds.ti)}};
+      }
+    }
+    const res = api.canPlaceCell(String(classId), String(mon), slot.thu, slot.buoi, Number(slot.ti), srcOpts);
+    return !res || res.ok !== false;
+  }catch(_){
+    return true;
+  }
+}
+
+function tkbAutoRepairLessonBlockPairShortfall(task){
+  // >0 khi mon nay co yeu cau "min N cum 2 tiet lien" va lich hien tai chua du.
+  try{
+    const subj = DATA?.tkbConstraints?.subject;
+    if(!subj) return 0;
+    let min = 0;
+    for(const key of Object.keys(subj)){
+      if(!monMatches(key, task?.mon)) continue;
+      const rule = subj[key]?.byClass?.[String(task?.classId)];
+      const m = Number(rule?.lessonBlocks?.[2]?.min || 0);
+      if(m > min) min = m;
+    }
+    if(min <= 0) return 0;
+    // 25/08: mon chi co 1 tiet/tuan (hay it hon 2*min) thi khong the co cum
+    // doi -> khong phai vi pham (nguoi dung quick-fill "all" min=1 cho ca
+    // mon Tin 1 tiet). Cung nguong voi TKBConstraints (impossibleLessonBlockMinimum).
+    if(tkbLessonBlockMinImpossible(task?.classId, task?.mon, 2, min)) return 0;
+    const tkb = DATA?.tkb?.[task?.classId];
+    if(!tkb) return min;
+    let pairs = 0;
+    for(const thu of DAYS){
+      for(const buoi of ["sang","chieu"]){
+        const arr = tkb?.[thu]?.[buoi] || [];
+        let run = 0;
+        for(let i=0;i<=arr.length;i++){
+          const hit = i < arr.length && arr[i] && arr[i] !== "OFF" && monMatches(cellMon(arr[i]), task?.mon);
+          if(hit) run++;
+          else { if(run >= 2) pairs += 1; run = 0; }
+        }
+      }
+    }
+    return Math.max(0, min - pairs);
+  }catch(_){
+    return 0;
+  }
+}
+
+/* 25/08: so tiet/tuan cua (lop, mon) theo Phan cong (pccmTietMatrix); 0 khi
+   chua biet. Dung de bo qua yeu cau "min N cum L tiet lien" bat kha thi:
+   min > floor(soTiet / L) thi khong lich nao dat duoc, nen bang RB va bo tu
+   sua KHONG duoc tinh la vi pham (khop TKBConstraints.impossibleLessonBlockMinimum). */
+function tkbLessonBlockPeriodsForClassMon(classId, mon){
+  try{
+    if(typeof getLopCanonById !== "function") return 0;
+    const canon = getLopCanonById(classId);
+    let n = 0;
+    if(typeof getSoTietForClassMon === "function") n = Number(getSoTietForClassMon(canon, mon));
+    if(!(Number.isFinite(n) && n > 0) && typeof _findTietChuanRow === "function" && typeof extractKhoiNumber === "function"){
+      // khong co so tiet rieng trong Phan cong -> Tiet chuan cua khoi (cung
+      // cach computeMonsForClass / TKBConstraints.assignedPeriodsForConstraint)
+      const lop = (DATA?.lop || []).find(l => l && (String(l.id) === String(classId) || String(l.ten || "") === canon || String(l.ten2 || "") === canon));
+      const k = String(extractKhoiNumber(lop?.khoi) || extractKhoiNumber(lop?.ten2) || extractKhoiNumber(lop?.ten) || extractKhoiNumber(canon) || "");
+      const row = k ? _findTietChuanRow(k, mon) : null;
+      n = Number(row?.sotiet || 0);
+    }
+    return Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
+  }catch(_){
+    return 0;
+  }
+}
+function tkbLessonBlockMinImpossible(classId, mon, len, min){
+  const periods = tkbLessonBlockPeriodsForClassMon(classId, mon);
+  if(periods <= 0) return false;   // chua biet so tiet: khong ket luan
+  return Number(min) > Math.floor(periods / Math.max(1, Number(len) || 1));
+}
+
 function tkbAutoRepairValidateAtSlot(task, slot){
   const res = tkbAutoRepairValidateResultAtSlot(task, slot);
-  return !!(res && res.ok && !res.warn);
+  if(!res || !res.ok || res.warn) return false;
+  return tkbAutoRepairConstraintOk(task, slot);
 }
 
 function tkbAutoRepairSlotScore(task, slot){
   const tkb = DATA?.tkb?.[task?.classId];
   const arr = tkb?.[slot.thu]?.[slot.buoi] || [];
   let score = 0;
-  if(cellMon(arr[slot.ti - 1])) score += 4;
-  if(cellMon(arr[slot.ti + 1])) score += 4;
+  const prevMon = cellMon(arr[slot.ti - 1]);
+  const nextMon = cellMon(arr[slot.ti + 1]);
+  if(prevMon) score += 4;
+  if(nextMon) score += 4;
   if(slot.buoi === "sang") score += 2;
   score -= Number(slot.ti || 0) * 0.01;
+  // Mon con thieu cum tiet doi: o ke tiet CUNG MON duoc uu tien tuyet doi
+  // de pha va tu tao cum doi thay vi rai tiet le.
+  if(tkbAutoRepairLessonBlockPairShortfall(task) > 0){
+    const monKey = task?.mon;
+    if((prevMon && monMatches(prevMon, monKey)) || (nextMon && monMatches(nextMon, monKey))) score += 12;
+  }
   return score;
 }
 
@@ -5590,7 +6026,11 @@ function tkbAutoRepairFindSlot(task){
             return false;
           }
         });
-        if(ok) candidates.push({thu, buoi, ti, score: tkbAutoRepairSlotScore(task, {thu, buoi, ti})});
+        // 21/08: them lop kiem "Yeu cau" (oneSessionPerDay, khong cung
+        // ngay/buoi, gioi han tiet/ngay...) truoc khi coi o nay la ung vien.
+        if(ok && tkbAutoRepairConstraintOk(task.classId, task.mon, {thu, buoi, ti})){
+          candidates.push({thu, buoi, ti, score: tkbAutoRepairSlotScore(task, {thu, buoi, ti})});
+        }
       }
     }
   }
@@ -5794,8 +6234,554 @@ function tkbAutoRepairTryConflictMove(task){
   return null;
 }
 
+// 19/08: XEP LUI (backtracking) cho MOT lop.
+// Vi sao can: pha va nhanh cu chi la "tham lam first-fit" — moi tiet chon o
+// dau tien hop le roi khong bao gio quay lai. Voi lop kin nhu 6/10 (dung 27 o
+// trong cho dung 27 tiet, khong con o du) tham lam gan nhu chac chan ket, du
+// ton tai loi giai. Do do neu tham lam bo cuoc thi chay them mot luot quay
+// lui co that bai-quay-lai, van dung validateDrop lam trong tai nen moi rang
+// buoc (o NGHI, tiet CO DINH, trung giao vien, trung phong, gioi han mon moi
+// buoi) deu duoc ton trong y het khi nguoi dung keo tay.
+function tkbBacktrackPlaceClass(classId, options={}){
+  const tkb = DATA?.tkb?.[classId];
+  if(!tkb) return {placed: 0, remaining: 0, ok: false, reason: "khong_co_lop"};
+  const budgetMs = Math.max(500, Number(options.budgetMs) || 8000);
+  const startedAt = Date.now();
+
+  const tasks = collectUnassignedTasks({onlyClassId: String(classId)});
+  const items = [];
+  tasks.forEach(t => {
+    const n = Math.max(0, Math.round(Number(t.remain) || 0));
+    for(let i = 0; i < n; i++) items.push(t);
+  });
+  if(!items.length) return {placed: 0, remaining: 0, ok: true};
+
+  const slots = [];
+  for(const thu of DAYS){
+    for(const buoi of ["sang", "chieu"]){
+      const arr = tkb?.[thu]?.[buoi] || [];
+      for(let ti = 0; ti < arr.length; ti++){
+        const v = arr[ti];
+        if(v === "OFF" || isFixed(v) || cellMon(v)) continue;
+        slots.push({classId, thu, buoi, ti});
+      }
+    }
+  }
+  if(slots.length < items.length){
+    return {placed: 0, remaining: items.length, ok: false, reason: "thieu_o", slots: slots.length, need: items.length};
+  }
+
+  // Tap o kha thi ban dau cho tung tiet (dung de cat nhanh va de sap thu tu
+  // MRV: tiet nao it lua chon nhat thi thu truoc).
+  const base = items.map(t => {
+    const list = [];
+    for(let j = 0; j < slots.length; j++){
+      if(tkbAutoRepairValidateAtSlot(t, slots[j])) list.push(j);
+    }
+    return list;
+  });
+  const order = items.map((_, i) => i).sort((a, b) => base[a].length - base[b].length);
+  if(order.some(i => base[i].length === 0)){
+    const stuck = order.filter(i => base[i].length === 0).map(i => items[i].mon);
+    return {placed: 0, remaining: items.length, ok: false, reason: "khong_o_hop_le", stuck: [...new Set(stuck)]};
+  }
+
+  const used = new Set();
+  const done = [];
+  let timedOut = false;
+  const step = (k) => {
+    if(k >= order.length) return true;
+    if(Date.now() - startedAt > budgetMs){ timedOut = true; return false; }
+    const i = order[k];
+    const task = items[i];
+    for(const j of base[i]){
+      if(used.has(j)) continue;
+      const slot = slots[j];
+      // Kiem tra LAI theo trang thai hien tai: cac tiet vua dat cua chinh lop
+      // nay co the lam thay doi gioi han buoi / trung giao vien.
+      if(!tkbAutoRepairValidateAtSlot(task, slot)) continue;
+      tkb[slot.thu][slot.buoi][slot.ti] = task.mon;
+      used.add(j);
+      done.push({slot, task});
+      if(step(k + 1)) return true;
+      done.pop();
+      used.delete(j);
+      tkb[slot.thu][slot.buoi][slot.ti] = "";
+      if(timedOut) return false;
+    }
+    return false;
+  };
+
+  const ok = step(0);
+  if(!ok){
+    // Khong tim duoc loi giai day du -> tra ve nguyen trang, KHONG dat nua voi.
+    while(done.length){
+      const d = done.pop();
+      tkb[d.slot.thu][d.slot.buoi][d.slot.ti] = "";
+    }
+    return {placed: 0, remaining: items.length, ok: false, reason: timedOut ? "het_thoi_gian" : "vo_nghiem"};
+  }
+  return {
+    placed: done.length,
+    remaining: 0,
+    ok: true,
+    ms: Date.now() - startedAt,
+    details: done.map(d => ({classId, mon: d.task.mon, thu: d.slot.thu, buoi: d.slot.buoi, ti: d.slot.ti, placed: true, method: "backtrack"}))
+  };
+}
+
+try{ window.__tkbBacktrackPlaceClass = tkbBacktrackPlaceClass; }catch(_){ }
+
+// 19/08: GO NUT CHEO LOP.
+// tkbBacktrackPlaceClass chi xao lai trong MOT lop, nen no bo tay khi o trong
+// duy nhat con lai bi giao vien cua chinh mon do "ban" o LOP KHAC. Vi du that
+// tren 6/10: chi con thu7 chieu tiet 3 va 4, ma co B.Anh dang day Van-6/8 o
+// tiet 3 va GDDP-6/3 o tiet 4 -> 2 tiet Ngu van khong bao gio dat duoc.
+// Ham nay di sang lop dang chan, doi tiet cua ho sang o khac (hoac hoan doi
+// hai o trong chinh lop ho), roi moi dat tiet con thieu. Moi buoc deu qua
+// validateDrop nen o NGHI / tiet CO DINH / trung GV / trung phong / gioi han
+// van duoc ton trong. Co nhat ky de hoan tac sach neu khong thanh.
+function tkbCrossClassEjectionPlace(task, options={}){
+  const classId = task?.classId;
+  const tkb = DATA?.tkb?.[classId];
+  if(!tkb) return null;
+  const maxSwapScan = Math.max(1, Number(options.maxSwapScan) || 60);
+
+  const journal = [];
+  const setCell = (lopId, slot, value) => {
+    const grid = DATA?.tkb?.[lopId];
+    if(!grid?.[slot.thu]?.[slot.buoi]) return false;
+    journal.push({lopId, slot, prev: grid[slot.thu][slot.buoi][slot.ti]});
+    grid[slot.thu][slot.buoi][slot.ti] = value;
+    return true;
+  };
+  const rollback = () => {
+    while(journal.length){
+      const j = journal.pop();
+      const grid = DATA?.tkb?.[j.lopId];
+      if(grid?.[j.slot.thu]?.[j.slot.buoi]) grid[j.slot.thu][j.slot.buoi][j.slot.ti] = j.prev;
+    }
+  };
+
+  const targets = [];
+  for(const thu of DAYS){
+    for(const buoi of ["sang", "chieu"]){
+      const arr = tkb?.[thu]?.[buoi] || [];
+      for(let ti = 0; ti < arr.length; ti++){
+        const v = arr[ti];
+        if(v === "OFF" || isFixed(v) || cellMon(v)) continue;
+        targets.push({classId, thu, buoi, ti});
+      }
+    }
+  }
+
+  const teachers = teacherListFromValue(task.gv || getTeacherForClassMon(task.classCanon, task.mon));
+
+  for(const slot of targets){
+    const mark = journal.length;
+    let cleared = true;
+    // Mot o co the bi nhieu giao viec cua mon nay chan (mon day chung).
+    for(const gv of teachers){
+      let guard = 0;
+      while(guard++ < 4){
+        const clash = findTeacherConflictAtSlot(gv, slot.thu, slot.buoi, slot.ti, classId);
+        if(!clash) break;
+        if(!tkbFreeBlockingLesson(clash.lopId, slot, setCell, maxSwapScan)){ cleared = false; break; }
+      }
+      if(!cleared) break;
+    }
+    if(cleared && tkbAutoRepairValidateAtSlot(task, slot)){
+      tkb[slot.thu][slot.buoi][slot.ti] = task.mon;
+      return {
+        classId,
+        className: task.className,
+        mon: task.mon,
+        thu: slot.thu,
+        buoi: slot.buoi,
+        ti: slot.ti,
+        placed: true,
+        method: "cross_class_ejection",
+        moves: journal.length
+      };
+    }
+    // Khong xong o nay -> tra lai nguyen trang roi thu o ke tiep.
+    while(journal.length > mark){
+      const j = journal.pop();
+      const grid = DATA?.tkb?.[j.lopId];
+      if(grid?.[j.slot.thu]?.[j.slot.buoi]) grid[j.slot.thu][j.slot.buoi][j.slot.ti] = j.prev;
+    }
+  }
+
+  // Giai doan 2: o trong con lai bi chan cung dau -> HOAN DOI trong chinh lop.
+  // Doi mot tiet khac cua lop sang o trong, roi dat tiet dang thieu vao cho
+  // vua giai phong (cho do giao vien cua no ranh). Vi du that tren 6/10: o
+  // trong cuoi cung la thu 7 chieu t4 nhung B.Anh dang day GDDP-6/2 o do;
+  // chuyen GDCD tu thu 2 sang t1 xuong thu 7 chieu t4, roi dat Ngu van vao
+  // thu 2 sang t1 - hop le hoan toan.
+  const movable = [];
+  for(const thu of DAYS){
+    for(const buoi of ["sang", "chieu"]){
+      const arr = tkb?.[thu]?.[buoi] || [];
+      for(let ti = 0; ti < arr.length; ti++){
+        const v = arr[ti];
+        if(v === "OFF" || isFixed(v) || !cellMon(v)) continue;
+        movable.push({classId, thu, buoi, ti});
+      }
+    }
+  }
+  const taskKey = monCanonicalKey(task.mon);
+  for(const blank of targets){
+    for(const spot of movable){
+      const mark2 = journal.length;
+      const val = tkbAutoRepairSlotValue(classId, spot);
+      const mon2 = cellMon(val);
+      if(!mon2 || monCanonicalKey(mon2) === taskKey) continue;
+      const task2 = {classId, classCanon: task.classCanon, className: task.className, mon: mon2, remain: 1};
+      setCell(classId, spot, "");
+      const okMove = tkbAutoRepairValidateAtSlot(task2, blank);
+      if(okMove){
+        setCell(classId, blank, val);
+        let cleared2 = true;
+        for(const gv of teachers){
+          let guard2 = 0;
+          while(guard2++ < 4){
+            const clash = findTeacherConflictAtSlot(gv, spot.thu, spot.buoi, spot.ti, classId);
+            if(!clash) break;
+            if(!tkbFreeBlockingLesson(clash.lopId, spot, setCell, maxSwapScan)){ cleared2 = false; break; }
+          }
+          if(!cleared2) break;
+        }
+        if(cleared2 && tkbAutoRepairValidateAtSlot(task, spot)){
+          tkb[spot.thu][spot.buoi][spot.ti] = task.mon;
+          return {
+            classId,
+            className: task.className,
+            mon: task.mon,
+            thu: spot.thu,
+            buoi: spot.buoi,
+            ti: spot.ti,
+            placed: true,
+            method: "swap_then_place",
+            movedMon: mon2,
+            movedTo: {thu: blank.thu, buoi: blank.buoi, ti: blank.ti},
+            moves: journal.length
+          };
+        }
+      }
+      while(journal.length > mark2){
+        const j = journal.pop();
+        const grid = DATA?.tkb?.[j.lopId];
+        if(grid?.[j.slot.thu]?.[j.slot.buoi]) grid[j.slot.thu][j.slot.buoi][j.slot.ti] = j.prev;
+      }
+    }
+  }
+
+  rollback();
+  return null;
+}
+
+// Don o (thu, buoi, ti) cua lop `lopId`: chuyen tiet dang o do sang o trong
+// khac cua chinh lop do, hoac hoan doi voi mot tiet khac cung lop.
+function tkbFreeBlockingLesson(lopId, slot, setCell, maxSwapScan){
+  const grid = DATA?.tkb?.[lopId];
+  if(!grid) return false;
+  const here = {classId: lopId, thu: slot.thu, buoi: slot.buoi, ti: slot.ti};
+  const val = tkbAutoRepairSlotValue(lopId, here);
+  if(val === "OFF" || isFixed(val)) return false;   // tiet CO DINH: khong dong vao
+  const mon = cellMon(val);
+  if(!mon) return true;
+  const canon = getLopCanonById(lopId);
+  const moveTask = {classId: lopId, classCanon: canon, className: canon, mon, remain: 1};
+
+  const slots = tkbAutoRepairSlotsForClass(lopId)
+    .filter(s => !(s.thu === here.thu && s.buoi === here.buoi && s.ti === here.ti));
+
+  // 1) Con o trong trong lop do -> chi can doi sang.
+  if(!setCell(lopId, here, "")) return false;
+  for(const s of slots){
+    if(!tkbAutoRepairIsBlankSlot(lopId, s)) continue;
+    if(!tkbAutoRepairValidateAtSlot(moveTask, s)) continue;
+    setCell(lopId, s, val);
+    return true;
+  }
+
+  // 2) Lop do da kin -> hoan doi voi mot tiet khac cung lop.
+  let scanned = 0;
+  for(const s of slots){
+    if(scanned++ > maxSwapScan) break;
+    if(!tkbAutoRepairIsMovableLesson(lopId, s)) continue;
+    const val2 = tkbAutoRepairSlotValue(lopId, s);
+    const mon2 = cellMon(val2);
+    if(!mon2 || monCanonicalKey(mon2) === monCanonicalKey(mon)) continue;
+    const task2 = {classId: lopId, classCanon: canon, className: canon, mon: mon2, remain: 1};
+    setCell(lopId, s, "");
+    const okA = tkbAutoRepairValidateAtSlot(moveTask, s);
+    const okB = okA && tkbAutoRepairValidateAtSlot(task2, here);
+    if(okA && okB){
+      setCell(lopId, s, val);
+      setCell(lopId, here, val2);
+      return true;
+    }
+    setCell(lopId, s, val2);
+  }
+  return false;
+}
+
+try{ window.__tkbCrossClassEjectionPlace = tkbCrossClassEjectionPlace; }catch(_){ }
+
+/* 21/08: PASS "DU CAP TIET DOI". Sau khi va xong tiet thieu, ra soat moi
+   (lop, mon) co yeu cau lessonBlocks[2].min chua dat va thu SWAP noi lop de
+   keo mot tiet cua mon ve KE tiet cung mon (moi buoc qua validateDrop +
+   TKBConstraints.canPlaceCell nhu keo tay). Co ngan sach thoi gian de khong
+   treo; truong hop qua ket van de lai cho bang loi rang buoc bao. */
+function tkbPairTrySwapCells(classId, src, dst){
+  const tkb = DATA?.tkb?.[classId];
+  if(!tkb?.[src.thu]?.[src.buoi] || !tkb?.[dst.thu]?.[dst.buoi]) return false;
+  const vS = tkb[src.thu][src.buoi][src.ti];
+  const vD = tkb[dst.thu][dst.buoi][dst.ti];
+  const bad = v=>!v || v === "OFF" || isFixed(v);
+  if(bad(vS) || bad(vD)) return false;
+  const monS = cellMon(vS), monD = cellMon(vD);
+  if(!monS || !monD) return false;
+  const classCanon = getLopCanonById(classId);
+  // B1: dua tiet mon (src) sang dst — di doi tiet dang co
+  tkb[dst.thu][dst.buoi][dst.ti] = "";
+  const taskM = {classId, classCanon, mon: monS, remain: 1,
+    dragData: {type:"cell", classId, from: tkbAutoRepairSlotStub({classId, thu:src.thu, buoi:src.buoi, ti:src.ti}), val: vS, mon: monS}};
+  if(!tkbAutoRepairValidateAtSlot(taskM, dst)){
+    tkb[dst.thu][dst.buoi][dst.ti] = vD;
+    return false;
+  }
+  tkb[src.thu][src.buoi][src.ti] = "";
+  tkb[dst.thu][dst.buoi][dst.ti] = vS;
+  // B2: dua mon X (vua nhac khoi dst) ve o nguon
+  const taskX = {classId, classCanon, mon: monD, remain: 1};
+  if(!tkbAutoRepairValidateAtSlot(taskX, src)){
+    tkb[src.thu][src.buoi][src.ti] = vS;
+    tkb[dst.thu][dst.buoi][dst.ti] = vD;
+    return false;
+  }
+  tkb[src.thu][src.buoi][src.ti] = vD;
+  return true;
+}
+
+/* 21/08: xoay 3 o cung lop (src -> dst, tiet o dst -> mid, tiet o mid -> src).
+   Moi buoc deu qua tkbAutoRepairValidateAtSlot nhu keo tay; hong o buoc nao
+   thi tra nguyen trang. Dung cho ca ket ma hoan doi 2 o khong go duoc. */
+function tkbTriangleRotateCells(classId, src, dst, mid){
+  const tkb = DATA?.tkb?.[classId];
+  if(!tkb?.[src.thu]?.[src.buoi] || !tkb?.[dst.thu]?.[dst.buoi] || !tkb?.[mid.thu]?.[mid.buoi]) return false;
+  const vS = tkb[src.thu][src.buoi][src.ti];
+  const vD = tkb[dst.thu][dst.buoi][dst.ti];
+  const vM = tkb[mid.thu][mid.buoi][mid.ti];
+  const bad = v=>!v || v === "OFF" || isFixed(v);
+  if(bad(vS) || bad(vD) || bad(vM)) return false;
+  const classCanon = getLopCanonById(classId);
+  const restore = ()=>{
+    tkb[src.thu][src.buoi][src.ti] = vS;
+    tkb[dst.thu][dst.buoi][dst.ti] = vD;
+    tkb[mid.thu][mid.buoi][mid.ti] = vM;
+  };
+  const mk = mon => ({classId, classCanon, mon, remain: 1});
+  tkb[dst.thu][dst.buoi][dst.ti] = "";
+  const taskS = Object.assign(mk(cellMon(vS)), {
+    dragData: {type:"cell", classId, from: tkbAutoRepairSlotStub({classId, thu:src.thu, buoi:src.buoi, ti:src.ti}), val: vS, mon: cellMon(vS)}
+  });
+  if(!tkbAutoRepairValidateAtSlot(taskS, dst)){ restore(); return false; }
+  tkb[src.thu][src.buoi][src.ti] = "";
+  tkb[dst.thu][dst.buoi][dst.ti] = vS;
+  tkb[mid.thu][mid.buoi][mid.ti] = "";
+  if(!tkbAutoRepairValidateAtSlot(mk(cellMon(vD)), mid)){ restore(); return false; }
+  tkb[mid.thu][mid.buoi][mid.ti] = vD;
+  if(!tkbAutoRepairValidateAtSlot(mk(cellMon(vM)), src)){ restore(); return false; }
+  tkb[src.thu][src.buoi][src.ti] = vM;
+  return true;
+}
+
+function tkbPairListShortfallCases(onlyClassId){
+  const out = [];
+  const subj = DATA?.tkbConstraints?.subject || {};
+  for(const key of Object.keys(subj)){
+    const byClass = subj[key]?.byClass || {};
+    for(const cid of Object.keys(byClass)){
+      if(onlyClassId && String(cid) !== String(onlyClassId)) continue;
+      if(Number(byClass[cid]?.lessonBlocks?.[2]?.min || 0) <= 0) continue;
+      if(tkbAutoRepairLessonBlockPairShortfall({classId: cid, mon: key}) > 0){
+        out.push({classId: String(cid), mon: key});
+      }
+    }
+  }
+  return out;
+}
+
+async function tkbPairSimpleFixCase(cse, deadline, slice){
+  const tkb = DATA?.tkb?.[cse.classId];
+  if(!tkb) return false;
+  const spots = [];
+  DAYS.forEach(thu=>["sang","chieu"].forEach(buoi=>{
+    (tkb?.[thu]?.[buoi]||[]).forEach((v,i)=>{
+      if(v && v !== "OFF" && !isFixed(v) && monMatches(cellMon(v), cse.mon)) spots.push({thu, buoi, ti:i});
+    });
+  }));
+  for(const anchor of spots){
+    for(const d of [-1, 1]){
+      const ti = anchor.ti + d;
+      if(ti < 0) continue;
+      const arr = tkb?.[anchor.thu]?.[anchor.buoi] || [];
+      if(ti >= arr.length) continue;
+      const dv = arr[ti];
+      if(!dv || dv === "OFF" || isFixed(dv) || monMatches(cellMon(dv), cse.mon)) continue;
+      const dst = {thu: anchor.thu, buoi: anchor.buoi, ti};
+      for(const src of spots){
+        if(src.thu === anchor.thu && src.buoi === anchor.buoi) continue;
+        if(Date.now() > deadline) return false;
+        if(slice) await tkbQualityMaybeYield(slice);
+        if(tkbPairTrySwapCells(cse.classId, src, dst)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/* 21/08: chien luoc SAU cho cap tiet doi khi hoan doi don khong go duoc:
+   chon mot cap o ke nhau ma GV cua mon ranh o ca hai tiet (hoac dang day
+   chinh mon do), roi keo 2 tiet cua mon ve dung cap o do bang hoan doi 2 o
+   hoac xoay 3 o. Chi giu ket qua khi tong so loi rang buoc GIAM. */
+async function tkbPairDeepFixCase(classId, monKey, deadline, slice){
+  const tkb = DATA?.tkb?.[classId];
+  if(!tkb || typeof TKBConstraints === "undefined") return false;
+  const snapshot = JSON.parse(JSON.stringify(tkb));
+  const restoreSnapshot = ()=>{
+    DAYS.forEach(thu=>["sang","chieu"].forEach(buoi=>{
+      const from = snapshot?.[thu]?.[buoi] || [];
+      const to = tkb?.[thu]?.[buoi];
+      if(to) from.forEach((v,i)=>{ to[i] = v; });
+    }));
+  };
+  // 22/08: chi quet PHAM VI LOP nay (vai chuc ms) thay vi validateAll toan
+  // truong (1-3 s dong bo); caller xac nhan toan truong bang ban chia lat.
+  const before = tkbVioScopedCount(classId);
+  const classCanon = getLopCanonById(classId);
+  const gv = getTeacherForClassMon(classCanon, monKey);
+  const busy = new Set();
+  if(gv){
+    Object.keys(DATA?.tkb || {}).forEach(otherId => {
+      if(String(otherId) === String(classId)) return;
+      const otherCanon = getLopCanonById(otherId);
+      const grid = DATA.tkb[otherId];
+      DAYS.forEach(thu=>["sang","chieu"].forEach(buoi=>{
+        (grid?.[thu]?.[buoi]||[]).forEach((v,ti)=>{
+          if(!v || v === "OFF") return;
+          const g = getTeacherForClassMon(otherCanon, cellMon(v));
+          if(g && teacherValueHas(g, gv)) busy.add(`${thu}|${buoi}|${ti}`);
+        });
+      }));
+    });
+  }
+  const usable = v => v && v !== "OFF" && !isFixed(v);
+  const isMonCell = v => usable(v) && monMatches(cellMon(v), monKey);
+  const monSpots = ()=>{
+    const out = [];
+    DAYS.forEach(thu=>["sang","chieu"].forEach(buoi=>{
+      (tkb?.[thu]?.[buoi]||[]).forEach((v,i)=>{ if(isMonCell(v)) out.push({thu, buoi, ti:i}); });
+    }));
+    return out;
+  };
+  const allSlots = ()=>{
+    const out = [];
+    DAYS.forEach(thu=>["sang","chieu"].forEach(buoi=>{
+      (tkb?.[thu]?.[buoi]||[]).forEach((v,i)=>{ if(usable(v)) out.push({thu, buoi, ti:i}); });
+    }));
+    return out;
+  };
+  const pairs = [];
+  DAYS.forEach(thu=>["sang","chieu"].forEach(buoi=>{
+    const arr = tkb?.[thu]?.[buoi] || [];
+    for(let i = 0; i + 1 < arr.length; i++){
+      if(!usable(arr[i]) || !usable(arr[i+1])) continue;
+      const aOk = !busy.has(`${thu}|${buoi}|${i}`) || isMonCell(arr[i]);
+      const bOk = !busy.has(`${thu}|${buoi}|${i+1}`) || isMonCell(arr[i+1]);
+      if(aOk && bOk) pairs.push({thu, buoi, ti:i});
+    }
+  }));
+  for(const p of pairs){
+    if(Date.now() > deadline) break;
+    const targets = [{thu:p.thu, buoi:p.buoi, ti:p.ti}, {thu:p.thu, buoi:p.buoi, ti:p.ti+1}]
+      .filter(t => !isMonCell(tkb[t.thu][t.buoi][t.ti]));
+    let ok = true;
+    for(const target of targets){
+      const sources = monSpots().filter(s => !(s.thu === p.thu && s.buoi === p.buoi));
+      let placedOne = false;
+      for(const srcSpot of sources){
+        if(Date.now() > deadline){ ok = false; break; }
+        if(slice) await tkbQualityMaybeYield(slice);
+        if(tkbPairTrySwapCells(classId, srcSpot, target)){ placedOne = true; break; }
+        for(const mid of allSlots()){
+          if(mid.thu === srcSpot.thu && mid.buoi === srcSpot.buoi && mid.ti === srcSpot.ti) continue;
+          if(mid.thu === target.thu && mid.buoi === target.buoi && mid.ti === target.ti) continue;
+          if(tkbTriangleRotateCells(classId, srcSpot, target, mid)){ placedOne = true; break; }
+        }
+        if(placedOne) break;
+      }
+      if(!placedOne){ ok = false; break; }
+    }
+    if(ok){
+      const after = tkbVioScopedCount(classId);
+      if(after < before) return true;
+    }
+    restoreSnapshot();
+  }
+  restoreSnapshot();
+  return false;
+}
+
+async function tkbAutoRepairEnsureLessonPairs(options = {}){
+  const deadline = Date.now() + Math.max(1000, Number(options.budgetMs) || 6000);
+  const fixedCases = [];
+  const slice = {lastYield: Date.now()};
+  let cases = [];
+  try{ cases = tkbPairListShortfallCases(options.onlyClassId); }catch(_){ return fixedCases; }
+  if(!cases.length) return fixedCases;
+  // 22/08: quet toan truong MOT lan (chia lat); moi ca sua xong duoc xac nhan
+  // toan truong, xau hon thi hoan tac — khong con validateAll dong bo.
+  const vio = tkbVioStateFromItems(await tkbVioScanAsync());
+  for(const cse of cases){
+    if(Date.now() > deadline) break;
+    const gridBefore = tkbGridSnapshot();
+    let done = false;
+    try{ done = await tkbPairSimpleFixCase(cse, deadline, slice); }catch(_){ }
+    if(!done && Date.now() <= deadline){
+      try{ done = await tkbPairDeepFixCase(cse.classId, cse.mon, deadline, slice); }catch(e){ console.warn("pair deep fix failed", e); }
+    }
+    if(done && !(await tkbVioConfirmMove(vio, gridBefore, false))) done = false;
+    if(done) fixedCases.push(`${cse.classId}|${cse.mon}`);
+  }
+  return fixedCases;
+}
+
 function tkbAutoPlaceUnassignedLessons(options={}){
-  const maxPlace = Math.max(0, Math.round(Number(options.maxPlace ?? 24) || 0));
+  // 22/08 (toi): bo qua tiet Cherry da dua ra vi chat luong GV (xem
+  // TKB_SKIP_QUALITY_EJECTED_TASKS) tru khi goi ro includeQualityEjected.
+  const prevSkip = TKB_SKIP_QUALITY_EJECTED_TASKS;
+  const prevOverride = TKB_QUALITY_EJECTED_OVERRIDE;
+  // 22/08 (khuya): engine khong rot tiet nua -> va nhanh xep MOI tiet Chua phan
+  // nhu truoc; chi bo qua tiet "rot vi chat luong" khi goi ro excludeQualityEjected
+  // (du lieu cu con ma ly do teacher_quality_unreachable).
+  TKB_SKIP_QUALITY_EJECTED_TASKS = options.excludeQualityEjected === true;
+  TKB_QUALITY_EJECTED_OVERRIDE = Array.isArray(options.qualityEjectedItems) ? options.qualityEjectedItems : null;
+  try{
+    return tkbAutoPlaceUnassignedLessonsInner(options);
+  }finally{
+    TKB_SKIP_QUALITY_EJECTED_TASKS = prevSkip;
+    TKB_QUALITY_EJECTED_OVERRIDE = prevOverride;
+  }
+}
+
+function tkbAutoPlaceUnassignedLessonsInner(options={}){
+  // 19/08: tran cu la 24 nen mot lop thieu 27 tiet (6/10) khong bao gio duoc
+  // va het. Nguoi dung yeu cau "cu xep vao", nen tran mac dinh phai lon hon
+  // so tiet thuc te con thieu.
+  const maxPlace = Math.max(0, Math.round(Number(options.maxPlace ?? 400) || 0));
   const onlyClassId = options.onlyClassId != null ? String(options.onlyClassId || "") : "";
   const details = [];
   let placed = 0;
@@ -5836,6 +6822,58 @@ function tkbAutoPlaceUnassignedLessons(options={}){
     if(!didPlace) break;
   }
 
+  // Tham lam da het duong -> quay lui tung lop. Xu ly lop thieu nhieu truoc.
+  if(options.backtrack !== false){
+    const budgetMs = Math.max(1000, Number(options.backtrackBudgetMs) || 8000);
+    const leftover = collectUnassignedTasks(onlyClassId ? {onlyClassId} : {});
+    const byClass = new Map();
+    leftover.forEach(t => {
+      const cur = byClass.get(t.classId) || {classId: t.classId, className: t.className, remain: 0};
+      cur.remain += Math.max(0, Number(t.remain) || 0);
+      byClass.set(t.classId, cur);
+    });
+    const classes = [...byClass.values()].sort((a, b) => b.remain - a.remain);
+    for(const c of classes){
+      if(placed >= maxPlace) break;
+      const res = tkbBacktrackPlaceClass(c.classId, {budgetMs});
+      if(res && res.ok && res.placed > 0){
+        placed += res.placed;
+        (res.details || []).forEach(d => details.push(Object.assign({className: c.className}, d)));
+      }else if(res){
+        details.push({classId: c.classId, className: c.className, placed: false, method: "backtrack", reason: res.reason, stuck: res.stuck});
+      }
+    }
+
+    // Con sot lai -> go nut cheo lop (doi tiet cua lop khac de giai phong GV).
+    let guard = 0;
+    while(placed < maxPlace && guard++ < 60){
+      const rest = collectUnassignedTasks(onlyClassId ? {onlyClassId} : {});
+      if(!rest.length) break;
+      let moved = false;
+      for(const task of rest){
+        if(placed >= maxPlace) break;
+        const done = tkbCrossClassEjectionPlace(task);
+        if(done){
+          placed++;
+          moved = true;
+          details.push(done);
+          break;
+        }
+        details.push({classId: task.classId, className: task.className, mon: task.mon, placed: false, method: "cross_class_ejection"});
+      }
+      if(!moved) break;
+    }
+  }
+
+  // 21/08: viec ep du cap tiet doi da chuyen sang pass ASYNC (bridge goi sau
+  // MOI lan ap ket qua xep). O day chi kich hoat nen khi duoc va truc tiep tu
+  // giao dien de khong chan luong dong bo.
+  try{
+    if(options.ensurePairs !== false && typeof window.__tkbEnsureLessonPairs === "function"){
+      window.__tkbEnsureLessonPairs({onlyClassId, budgetMs: 6000});
+    }
+  }catch(_){ }
+
   if(placed > 0){
     try{ saveStore({force:true}); }catch(e){ console.error("saveStore failed", e); }
     if(options.render !== false){
@@ -5857,6 +6895,819 @@ function tkbAutoPlaceUnassignedLessons(options={}){
 }
 
 try{ window.__tkbAutoPlaceUnassignedLessons = tkbAutoPlaceUnassignedLessons; }catch(_){}
+
+/* 21/08: PASS "BUOI DAY GV" chay sau khi ap ket qua xep: do dem buoi GV chi
+   day 1 tiet va buoi GV trong >= 2 tiet giua hai tiet day, roi go bang hoan
+   doi noi lop (giu nguyen do day cua lop, moi buoc qua kiem tra rang buoc).
+   Mot buoc doi chi duoc GIU khi chi so muc tieu giam, chi so kia khong tang
+   va tong so loi rang buoc khong tang. */
+function tkbTeacherQualitySnapshot(){
+  const sessions = new Map();
+  Object.keys(DATA?.tkb || {}).forEach(cid => {
+    const canon = getLopCanonById(cid);
+    const grid = DATA.tkb[cid];
+    DAYS.forEach(thu=>["sang","chieu"].forEach(buoi=>{
+      (grid?.[thu]?.[buoi]||[]).forEach((v,ti)=>{
+        if(!v || v === "OFF") return;
+        const mon = cellMon(v);
+        if(!mon) return;
+        const gv = getTeacherForClassMon(canon, mon);
+        if(!gv) return;
+        String(gv).split(/[,;+]/).map(s=>s.trim()).filter(Boolean).forEach(code=>{
+          if(!sessions.has(code)) sessions.set(code, new Map());
+          const byKey = sessions.get(code);
+          const key = `${thu}|${buoi}`;
+          if(!byKey.has(key)) byKey.set(key, []);
+          byKey.get(key).push({ti, classId: String(cid), thu, buoi});
+        });
+      });
+    }));
+  });
+  let onePeriod = 0, gap1 = 0, gap2Plus = 0, excess = 0;
+  const onePeriodCases = [], gapCases = [], gap1Cases = [];
+  sessions.forEach((byKey, code)=>{
+    byKey.forEach((cells, key)=>{
+      const tis = [...new Set(cells.map(c=>c.ti))].sort((a,b)=>a-b);
+      if(tis.length === 1){ onePeriod++; onePeriodCases.push({code, key, cells}); return; }
+      const holes = (tis[tis.length-1] - tis[0] + 1) - tis.length;
+      if(holes === 1){ gap1++; gap1Cases.push({code, key, cells, holes}); }
+      else if(holes >= 2){ gap2Plus++; gapCases.push({code, key, cells, holes}); }
+      excess += Math.max(0, holes - 1);
+    });
+  });
+  // "bad" = so buoi xau (1 tiet/buoi + trong >= 2); "excess" = tong so lo
+  // trong vuot muc 1 — dung so sanh vector de nhan ca cai thien TUNG PHAN
+  // (vi du buoi trong 3 tiet lap con 2 van la tien bo).
+  return {onePeriod, gap1, gap2Plus, excess, bad: onePeriod + gap2Plus, onePeriodCases, gapCases, gap1Cases, sessions};
+}
+
+function tkbCellPairBackup(classId, a, b){
+  const grid = DATA?.tkb?.[classId];
+  const rowA = grid?.[a.thu]?.[a.buoi];
+  const rowB = grid?.[b.thu]?.[b.buoi];
+  if(!rowA || !rowB) return null;
+  const va = rowA[a.ti], vb = rowB[b.ti];
+  return ()=>{ rowA[a.ti] = va; rowB[b.ti] = vb; };
+}
+
+// So sanh vector (bad, excess): true khi `now` tot hon `base` that su.
+function tkbTeacherQualityBetter(now, base){
+  if(now.bad !== base.bad) return now.bad < base.bad;
+  return now.excess < base.excess;
+}
+
+function tkbCellsBackup(classId, slots){
+  const grid = DATA?.tkb?.[classId];
+  if(!grid) return null;
+  const saved = [];
+  for(const s of slots){
+    const row = grid?.[s.thu]?.[s.buoi];
+    if(!row) return null;
+    saved.push({row, ti: s.ti, v: row[s.ti]});
+  }
+  return ()=>{ saved.forEach(x=>{ x.row[x.ti] = x.v; }); };
+}
+
+/* 21/08: cac pass chat luong chay ASYNC theo lat ~40ms de khong dong bang
+   giao dien (truoc day chay dong bo 8-16s lien tuc gay khung). Khi tab bi an
+   thi nhuong quyen qua Web Worker timer de Chrome khong bop tien do. */
+const TKB_QUALITY_SLICE_MS = 40;
+function tkbQualityYield(){
+  try{
+    if(document.hidden && typeof window.__tkbBgSleep === "function") return window.__tkbBgSleep(0);
+  }catch(_){ }
+  return new Promise(r=>setTimeout(r, 0));
+}
+async function tkbQualityMaybeYield(slice){
+  if(Date.now() - slice.lastYield < TKB_QUALITY_SLICE_MS) return;
+  await tkbQualityYield();
+  slice.lastYield = Date.now();
+}
+
+/* 22/08 (Cherry "giat / do"): TKBConstraints.validateAll() quet TOAN truong
+   (74 lop: 1-3 s, DONG BO) nhung cac pass hau kiem ben duoi goi no trong
+   TUNG lan thu doi o va moi vong lap -> sau khi ap ket qua, giao dien dong
+   bang tung cu 1-3 s suot 10-50 s. Thay bang hai lop kiem tra:
+   (1) accepted(classId): chi kiem tra PHAM VI LOP vua doi o
+       (TKBConstraints.validateClasses, vai chuc ms) so voi so loi cua lop do
+       luc bat dau pass;
+   (2) nuoc di duoc giu -> XAC NHAN TOAN TRUONG bang validateAllAsync (chia lat
+       8 ms, khong dong bang); tong loi tang thi hoan tac ca nuoc di.
+   Ket qua van "khong bao gio lam xau them" nhu truoc, nhung khong con do. */
+// Tran cao de so dem khong bi "bao hoa" (luoi dang hong nang co the co vai
+// tram loi; bao hoa thi phep so sanh <= se bo lot loi moi).
+const TKB_VIO_SCAN_MAX = 3000;
+
+function tkbVioStateFromItems(items){
+  const state = {base: 0, byClass: new Map()};
+  const list = Array.isArray(items) ? items : [];
+  state.base = list.length;
+  list.forEach(v => {
+    const key = String(v?.lopId || "");
+    if(!key) return;
+    state.byClass.set(key, (state.byClass.get(key) || 0) + 1);
+  });
+  return state;
+}
+
+async function tkbVioScanAsync(){
+  const api = (typeof TKBConstraints !== "undefined") ? TKBConstraints : null;
+  if(!api) return [];
+  try{
+    if(typeof api.validateAllAsync === "function"){
+      let r = await api.validateAllAsync(TKB_VIO_SCAN_MAX, {sliceBudgetMs: 8});
+      if(r && r.stale === true) r = await api.validateAllAsync(TKB_VIO_SCAN_MAX, {sliceBudgetMs: 8});
+      if(Array.isArray(r)) return r;
+    }
+    if(typeof api.validateAll === "function") return api.validateAll(TKB_VIO_SCAN_MAX) || [];
+  }catch(_){ }
+  return [];
+}
+
+function tkbVioScopedCount(classId){
+  const api = (typeof TKBConstraints !== "undefined") ? TKBConstraints : null;
+  if(!api || typeof api.validateClasses !== "function") return 0;
+  try{ return (api.validateClasses([String(classId)], TKB_VIO_SCAN_MAX) || []).length; }
+  catch(_){ return 0; }
+}
+
+// Dieu kien nhanh trong accepted(): lop vua doi o khong duoc co them loi so
+// voi luc bat dau pass (cac lop khac chua doi -> khong can quet).
+function tkbVioScopedOk(state, classId, strictLess){
+  if(!state) return true;
+  const api = (typeof TKBConstraints !== "undefined") ? TKBConstraints : null;
+  if(!api || typeof api.validateClasses !== "function") return true;
+  const now = tkbVioScopedCount(classId);
+  const base = state.byClass.get(String(classId)) || 0;
+  return strictLess ? now < base : now <= base;
+}
+
+function tkbGridSnapshot(){
+  try{
+    return JSON.stringify({
+      tkb: DATA?.tkb || {},
+      lt: DATA?.tkbLessonTeachers || {},
+      lr: DATA?.tkbLessonRooms || {}
+    });
+  }catch(_){ return null; }
+}
+
+function tkbGridRestore(snapshot){
+  if(!snapshot) return false;
+  try{
+    const saved = JSON.parse(snapshot);
+    const tkb = DATA.tkb || (DATA.tkb = {});
+    Object.keys(saved.tkb || {}).forEach(cid => {
+      if(!tkb[cid]){ tkb[cid] = saved.tkb[cid]; return; }
+      Object.keys(saved.tkb[cid] || {}).forEach(thu => {
+        if(!tkb[cid][thu]){ tkb[cid][thu] = saved.tkb[cid][thu]; return; }
+        Object.keys(saved.tkb[cid][thu] || {}).forEach(buoi => { tkb[cid][thu][buoi] = saved.tkb[cid][thu][buoi]; });
+      });
+    });
+    DATA.tkbLessonTeachers = saved.lt || {};
+    DATA.tkbLessonRooms = saved.lr || {};
+    window.__TKB_TEACHER_TKB_STATS_CACHE = null;
+    window.__TKB_UNASSIGNED_TASKS_CACHE = null;
+    return true;
+  }catch(_){ return false; }
+}
+
+// Sau khi mot nuoc di duoc giu: xac nhan toan truong (chia lat, khong dong
+// bang). true = giu (cap nhat state); false = da hoan tac ve snapshot.
+async function tkbVioConfirmMove(state, snapshot, strictLess){
+  if(!state) return true;
+  const items = await tkbVioScanAsync();
+  const total = items.length;
+  const ok = strictLess ? total < state.base : total <= state.base;
+  if(!ok){
+    tkbGridRestore(snapshot);
+    return false;
+  }
+  const next = tkbVioStateFromItems(items);
+  state.base = next.base;
+  state.byClass = next.byClass;
+  return true;
+}
+
+// Dua tiet o `src` ve `dst` (cung lop): thu hoan doi 2 o truoc, khong duoc
+// thi xoay 3 o qua mot o trung gian bat ky cua lop. Chi GIU khi acceptFn()
+// dong y; nguoc lai tra nguyen trang.
+async function tkbTryMoveCellWithFallback(classId, src, dst, acceptFn, deadline, slice){
+  // 22/08: acceptFn nhan classId de kiem tra rang buoc theo PHAM VI LOP.
+  let undo = tkbCellsBackup(classId, [src, dst]);
+  if(undo && tkbPairTrySwapCells(classId, src, dst)){
+    if(acceptFn(classId)) return "swap";
+    undo();
+  }
+  const grid = DATA?.tkb?.[classId];
+  const mids = [];
+  DAYS.forEach(thu=>["sang","chieu"].forEach(buoi=>{
+    (grid?.[thu]?.[buoi]||[]).forEach((v,i)=>{
+      if(!v || v === "OFF" || isFixed(v)) return;
+      if(thu === src.thu && buoi === src.buoi && i === src.ti) return;
+      if(thu === dst.thu && buoi === dst.buoi && i === dst.ti) return;
+      mids.push({thu, buoi, ti:i});
+    });
+  }));
+  for(const mid of mids){
+    if(Date.now() > deadline) return null;
+    if(slice) await tkbQualityMaybeYield(slice);
+    undo = tkbCellsBackup(classId, [src, dst, mid]);
+    if(!undo) continue;
+    if(!tkbTriangleRotateCells(classId, src, dst, mid)) continue;
+    if(acceptFn(classId)) return "tri";
+    undo();
+  }
+  return null;
+}
+
+// Chieu nguoc lai: keo mot tiet KHAC cua chinh GV tu buoi khac VE cac vi
+// tri `targetTis` cua buoi `key` (lap lo trong / ghep sat tiet le).
+async function tkbTeacherTryPullIntoSession(code, key, targetTis, sessions, acceptFn, deadline, slice){
+  const parts = key.split("|");
+  const thu = parts[0], buoi = parts[1];
+  const byKey = sessions.get(code) || new Map();
+  for(const [key2, cells2] of byKey){
+    if(key2 === key) continue;
+    for(const cell2 of cells2){
+      for(const ti of targetTis){
+        if(Date.now() > deadline) return false;
+        const arr = DATA?.tkb?.[cell2.classId]?.[thu]?.[buoi] || [];
+        if(ti < 0 || ti >= arr.length) continue;
+        if(await tkbTryMoveCellWithFallback(
+          cell2.classId,
+          {thu: cell2.thu, buoi: cell2.buoi, ti: cell2.ti},
+          {thu, buoi, ti},
+          acceptFn,
+          deadline,
+          slice
+        )) return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Thu chuyen o `cell` (cua GV `code`) sang mot buoi KHAC ma GV da co mat,
+// dat vao lo trong hoac sat ngay dau/cuoi day tiet cua GV o buoi do.
+async function tkbTeacherTrySwapIntoOwnSession(code, cell, sessions, excludeKey, acceptFn, deadline, slice){
+  const byKey = sessions.get(code) || new Map();
+  for(const [key2, cells2] of byKey){
+    if(key2 === excludeKey) continue;
+    const p2 = key2.split("|");
+    const thu2 = p2[0], buoi2 = p2[1];
+    const tis2 = [...new Set(cells2.map(c=>c.ti))].sort((a,b)=>a-b);
+    const targets = [];
+    for(let t = tis2[0] + 1; t < tis2[tis2.length-1]; t++){ if(!tis2.includes(t)) targets.push(t); }
+    if(tis2[0] > 0) targets.push(tis2[0] - 1);
+    targets.push(tis2[tis2.length-1] + 1);
+    for(const ti2 of targets){
+      if(Date.now() > deadline) return false;
+      const arr = DATA?.tkb?.[cell.classId]?.[thu2]?.[buoi2] || [];
+      if(ti2 < 0 || ti2 >= arr.length) continue;
+      if(await tkbTryMoveCellWithFallback(
+        cell.classId,
+        {thu: cell.thu, buoi: cell.buoi, ti: cell.ti},
+        {thu: thu2, buoi: buoi2, ti: ti2},
+        acceptFn,
+        deadline,
+        slice
+      )) return true;
+    }
+  }
+  return false;
+}
+
+async function tkbAutoRepairTeacherQuality(options = {}){
+  const deadline = Date.now() + Math.max(1000, Number(options.budgetMs) || 6000);
+  const fixes = [];
+  const slice = {lastYield: Date.now()};
+  // 22/08: quet toan truong MOT lan (chia lat), sau do chi kiem tra pham vi lop.
+  const vio = tkbVioStateFromItems(await tkbVioScanAsync());
+  let guard = 0;
+  while(Date.now() <= deadline && guard++ < 80){
+    const snap = tkbTeacherQualitySnapshot();
+    if(!snap.gapCases.length && !snap.onePeriodCases.length) break;
+    const gridBefore = tkbGridSnapshot();
+    const accepted = (classId)=>{
+      const now = tkbTeacherQualitySnapshot();
+      return tkbTeacherQualityBetter(now, snap) && tkbVioScopedOk(vio, classId, false);
+    };
+    let improved = false;
+
+    // 1) Buoi GV trong >= 2 tiet — thu theo thu tu:
+    //    (a) keo mot tiet cua GV vao lo trong CUNG buoi (lop van kin nhu cu),
+    //    (b) chuyen mot tiet le cua GV sang buoi khac ma GV da co mat
+    //        (can cho ca o bi kep giua cac tiet CO DINH khong the xe dich).
+    for(const cse of snap.gapCases){
+      if(improved || Date.now() > deadline) break;
+      await tkbQualityMaybeYield(slice);
+      const parts = cse.key.split("|");
+      const thu = parts[0], buoi = parts[1];
+      const tis = [...new Set(cse.cells.map(c=>c.ti))].sort((a,b)=>a-b);
+      const holeTis = [];
+      for(let t = tis[0] + 1; t < tis[tis.length-1]; t++){ if(!tis.includes(t)) holeTis.push(t); }
+      for(const cell of cse.cells){
+        if(improved) break;
+        for(const hole of holeTis){
+          if(Date.now() > deadline) break;
+          if(await tkbTryMoveCellWithFallback(cell.classId, {thu, buoi, ti: cell.ti}, {thu, buoi, ti: hole}, accepted, deadline, slice)){
+            fixes.push(`gap2:${cse.code}:${cse.key}`);
+            improved = true;
+            break;
+          }
+        }
+      }
+      for(const cell of cse.cells){
+        if(improved || Date.now() > deadline) break;
+        if(await tkbTeacherTrySwapIntoOwnSession(cse.code, cell, snap.sessions, cse.key, accepted, deadline, slice)){
+          fixes.push(`gap2out:${cse.code}:${cse.key}`);
+          improved = true;
+        }
+      }
+      // (c) keo mot tiet khac cua chinh GV tu buoi khac VE lap lo trong.
+      if(!improved && Date.now() <= deadline
+        && await tkbTeacherTryPullIntoSession(cse.code, cse.key, holeTis, snap.sessions, accepted, deadline, slice)){
+        fixes.push(`gap2in:${cse.code}:${cse.key}`);
+        improved = true;
+      }
+    }
+    if(improved){
+      // 22/08: xac nhan toan truong (chia lat); xau hon thi hoan tac va thu phan 2.
+      if(await tkbVioConfirmMove(vio, gridBefore, false)) continue;
+      fixes.pop();
+      improved = false;
+    }
+
+    // 2) Buoi GV chi day 1 tiet: (a) chuyen tiet le sang buoi khac ma GV da
+    //    co mat; (b) nguoc lai, keo mot tiet khac cua GV ve ghep sat tiet le.
+    for(const cse of snap.onePeriodCases){
+      if(improved || Date.now() > deadline) break;
+      await tkbQualityMaybeYield(slice);
+      const cell = cse.cells[0];
+      if(await tkbTeacherTrySwapIntoOwnSession(cse.code, cell, snap.sessions, cse.key, accepted, deadline, slice)){
+        fixes.push(`1tiet:${cse.code}:${cse.key}`);
+        improved = true;
+        break;
+      }
+      if(Date.now() <= deadline
+        && await tkbTeacherTryPullIntoSession(cse.code, cse.key, [cell.ti - 1, cell.ti + 1], snap.sessions, accepted, deadline, slice)){
+        fixes.push(`1tietin:${cse.code}:${cse.key}`);
+        improved = true;
+      }
+    }
+    if(improved && !(await tkbVioConfirmMove(vio, gridBefore, false))){
+      fixes.pop();
+      improved = false;
+    }
+    if(!improved) break;
+  }
+  return fixes;
+}
+
+/* 21/08: PASS SUA VI PHAM RANG BUOC CON SOT sau khi xep — vi du mon "chi hoc
+   1 buoi/ngay" nhung bi xep ca sang lan chieu. Voi moi vi pham gan voi mot O
+   cu the, thu don o do sang vi tri khac bang hoan doi 2 o / xoay 3 o; chi giu
+   buoc doi khi TONG so vi pham GIAM (khong bao gio lam xau them). */
+async function tkbAutoRepairConstraintViolations(options = {}){
+  const deadline = Date.now() + Math.max(1000, Number(options.budgetMs) || 8000);
+  const fixes = [];
+  const slice = {lastYield: Date.now()};
+  if(typeof TKBConstraints === "undefined") return fixes;
+  let guard = 0;
+  while(Date.now() <= deadline && guard++ < 30){
+    // 22/08: quet toan truong bang ban chia lat (khong dong bang), sau do
+    // kiem tra pham vi lop trong accepted(); xac nhan toan truong khi giu.
+    let scan = [];
+    try{ scan = await tkbVioScanAsync(); }catch(_){ break; }
+    const items = scan.filter(v =>
+      v && v.lopId && v.thu && v.buoi && v.ti != null
+      && DATA?.tkb?.[v.lopId]?.[v.thu]?.[v.buoi]
+    );
+    if(!items.length) break;
+    const vio = tkbVioStateFromItems(scan);
+    const gridBefore = tkbGridSnapshot();
+    const accepted = (classId)=> tkbVioScopedOk(vio, classId, true);
+    let improved = false;
+    for(const item of items){
+      if(improved || Date.now() > deadline) break;
+      await tkbQualityMaybeYield(slice);
+      const classId = String(item.lopId);
+      const src = {thu: item.thu, buoi: item.buoi, ti: Number(item.ti)};
+      const grid = DATA?.tkb?.[classId];
+      const dsts = [];
+      DAYS.forEach(thu=>["sang","chieu"].forEach(buoi=>{
+        (grid?.[thu]?.[buoi]||[]).forEach((v,i)=>{
+          if(thu === src.thu && buoi === src.buoi && i === src.ti) return;
+          if(!v || v === "OFF" || isFixed(v)) return;
+          if(item.mon && monMatches(cellMon(v), item.mon)) return;
+          dsts.push({thu, buoi, ti:i});
+        });
+      }));
+      for(const dst of dsts){
+        if(Date.now() > deadline) break;
+        if(await tkbTryMoveCellWithFallback(classId, src, dst, accepted, deadline, slice)){
+          fixes.push(`vi:${item.className || classId}|${item.mon || ""}|${src.thu}-${src.buoi}-t${src.ti + 1}`);
+          improved = true;
+          break;
+        }
+      }
+    }
+    if(improved && !(await tkbVioConfirmMove(vio, gridBefore, true))){
+      fixes.pop();
+      improved = false;
+    }
+    if(!improved) break;
+  }
+  return fixes;
+}
+
+/* 22/08: PASS "GHEP TIET LE" (yeu cau nguoi dung): sau khi xep, mon nao con
+   cac tiet don le roi rac thi keo chung ve KE nhau thanh cum >= 2 tiet — uu
+   tien ghep vao TIET CO DINH (o co dinh khong xe dich duoc nen tiet linh
+   hoat phai tim den no). Moi buoc doi deu qua kiem tra rang buoc; chi giu
+   khi: so tiet le GIAM, so loi rang buoc KHONG tang, va chat luong buoi day
+   GV (buoi xau / lo trong) KHONG xau di. Mon co Gioi han tiet/buoi = 1 se
+   tu bi validator chan nen khong bao gio ghep sai luat. */
+function tkbLoneSingleCases(){
+  const cases = [];
+  Object.keys(DATA?.tkb || {}).forEach(cid => {
+    const grid = DATA.tkb[cid];
+    const bySubject = new Map();
+    DAYS.forEach(thu=>["sang","chieu"].forEach(buoi=>{
+      (grid?.[thu]?.[buoi]||[]).forEach((v,ti)=>{
+        if(!v || v === "OFF") return;
+        const mon = cellMon(v);
+        if(!mon) return;
+        const key = monCanonicalKey(mon);
+        if(!bySubject.has(key)) bySubject.set(key, {mon, cells: []});
+        bySubject.get(key).cells.push({thu, buoi, ti, fixed: isFixed(v)});
+      });
+    }));
+    bySubject.forEach(info => {
+      if(info.cells.length < 2) return;
+      const has = (thu, buoi, ti) => info.cells.some(c => c.thu === thu && c.buoi === buoi && c.ti === ti);
+      const lones = info.cells.filter(c => !has(c.thu, c.buoi, c.ti - 1) && !has(c.thu, c.buoi, c.ti + 1));
+      if(lones.length < 2) return;
+      cases.push({classId: String(cid), mon: info.mon, lones});
+    });
+  });
+  return cases;
+}
+
+function tkbCountLoneSingles(){
+  let total = 0;
+  try{ tkbLoneSingleCases().forEach(c => { total += c.lones.length; }); }catch(_){ }
+  return total;
+}
+
+async function tkbAutoRepairAestheticPairs(options = {}){
+  const deadline = Date.now() + Math.max(1000, Number(options.budgetMs) || 8000);
+  const fixes = [];
+  const slice = {lastYield: Date.now()};
+  if(typeof TKBConstraints === "undefined") return fixes;
+  // 22/08: quet toan truong MOT lan (chia lat), sau do chi kiem tra pham vi lop.
+  const vio = tkbVioStateFromItems(await tkbVioScanAsync());
+  let guard = 0;
+  while(Date.now() <= deadline && guard++ < 60){
+    const cases = tkbLoneSingleCases();
+    if(!cases.length) break;
+    const gridBefore = tkbGridSnapshot();
+    const baseQ = tkbTeacherQualitySnapshot();
+    const baseLone = cases.reduce((sum, c) => sum + c.lones.length, 0);
+    const accepted = (classId)=>{
+      const q = tkbTeacherQualitySnapshot();
+      if(q.bad > baseQ.bad || q.excess > baseQ.excess) return false;
+      if(tkbCountLoneSingles() >= baseLone) return false;
+      return tkbVioScopedOk(vio, classId, false);
+    };
+    // Uu tien 0: keo tiet linh hoat ve canh tiet CO DINH; uu tien 1: ghep
+    // hai tiet linh hoat le voi nhau.
+    const ordered = [];
+    cases.forEach(c => {
+      const fixedAnchors = c.lones.filter(l => l.fixed);
+      const movables = c.lones.filter(l => !l.fixed);
+      fixedAnchors.forEach(anchor => movables.forEach(src => ordered.push({c, anchor, src, pri: 0})));
+      for(let i = 0; i < movables.length; i++){
+        for(let j = 0; j < movables.length; j++){
+          if(i !== j) ordered.push({c, anchor: movables[i], src: movables[j], pri: 1});
+        }
+      }
+    });
+    ordered.sort((a, b) => a.pri - b.pri);
+    let improved = false;
+    for(const item of ordered){
+      if(improved || Date.now() > deadline) break;
+      await tkbQualityMaybeYield(slice);
+      const {c, anchor, src} = item;
+      if(src.thu === anchor.thu && src.buoi === anchor.buoi) continue;
+      const arr = DATA?.tkb?.[c.classId]?.[anchor.thu]?.[anchor.buoi] || [];
+      for(const d of [-1, 1]){
+        const ti = anchor.ti + d;
+        if(ti < 0 || ti >= arr.length) continue;
+        const dv = arr[ti];
+        if(!dv || dv === "OFF" || isFixed(dv)) continue;
+        if(monMatches(cellMon(dv), c.mon)) continue;
+        if(await tkbTryMoveCellWithFallback(
+          c.classId,
+          {thu: src.thu, buoi: src.buoi, ti: src.ti},
+          {thu: anchor.thu, buoi: anchor.buoi, ti},
+          accepted,
+          deadline,
+          slice
+        )){
+          fixes.push(`pair:${c.classId}|${c.mon}${anchor.fixed ? "|codinh" : ""}`);
+          improved = true;
+          break;
+        }
+      }
+    }
+    if(improved && !(await tkbVioConfirmMove(vio, gridBefore, false))){
+      fixes.pop();
+      improved = false;
+    }
+    if(!improved) break;
+  }
+  return fixes;
+}
+
+try{
+  window.__tkbAutoRepairAestheticPairs = async function(options){
+    const fixes = await tkbAutoRepairAestheticPairs(options || {});
+    if(fixes.length){
+      try{ saveStore({force:true}); }catch(_){ }
+      try{ renderCurrentView(); }catch(_){ }
+    }
+    return fixes;
+  };
+  window.__tkbCountLoneSingles = tkbCountLoneSingles;
+}catch(_){ }
+
+try{
+  window.__tkbAutoRepairConstraintViolations = async function(options){
+    const fixes = await tkbAutoRepairConstraintViolations(options || {});
+    if(fixes.length){
+      try{ saveStore({force:true}); }catch(_){ }
+      try{ renderCurrentView(); }catch(_){ }
+    }
+    return fixes;
+  };
+}catch(_){ }
+
+/* 22/08: PASS "CAN BANG TRONG 1 TIET" (yeu cau nguoi dung): thay vi de vai
+   GV ganh 4-5 buoi trong 1 tiet trong khi nhieu GV khong dinh buoi nao, don
+   bot cua nguoi nang nhat. Thuoc do la HO SO CONG BANG: day so trong-1 cua
+   tung GV xep giam dan, so sanh theo thu tu tu dien — [5,5,4,...] xau hon
+   [4,4,4,...]; mot phep doi duoc GIU khi ho so tot len (ke ca khi phai
+   chuyen 1 buoi trong tu GV 5 sang GV 0), voi dieu kien: tong loi rang buoc
+   khong tang va chat luong cung (buoi 1 tiet / trong >= 2) khong xau di. */
+function tkbGap1FairnessProfile(snapshot){
+  const per = new Map();
+  (snapshot.gap1Cases || []).forEach(c => { per.set(c.code, (per.get(c.code) || 0) + 1); });
+  return {per, sorted: [...per.values()].sort((a, b) => b - a)};
+}
+
+function tkbGap1ProfileBetter(now, base){
+  const length = Math.max(now.length, base.length);
+  for(let i = 0; i < length; i++){
+    const x = now[i] || 0, y = base[i] || 0;
+    if(x !== y) return x < y;
+  }
+  return false;
+}
+
+async function tkbAutoRepairGap1Balance(options = {}){
+  const deadline = Date.now() + Math.max(1000, Number(options.budgetMs) || 8000);
+  const fixes = [];
+  const slice = {lastYield: Date.now()};
+  if(typeof TKBConstraints === "undefined") return fixes;
+  // 22/08: quet toan truong MOT lan (chia lat), sau do chi kiem tra pham vi lop.
+  const vio = tkbVioStateFromItems(await tkbVioScanAsync());
+  let guard = 0;
+  while(Date.now() <= deadline && guard++ < 60){
+    const snap = tkbTeacherQualitySnapshot();
+    const fair = tkbGap1FairnessProfile(snap);
+    if(!fair.sorted.length || fair.sorted[0] <= 1) break;   // khong con GV nao > 1: da can bang
+    const gridBefore = tkbGridSnapshot();
+    const accepted = (classId)=>{
+      const q = tkbTeacherQualitySnapshot();
+      if(q.bad > snap.bad || q.excess > snap.excess) return false;
+      if(!tkbGap1ProfileBetter(tkbGap1FairnessProfile(q).sorted, fair.sorted)) return false;
+      return tkbVioScopedOk(vio, classId, false);
+    };
+    // Xu ly GV nang nhat truoc.
+    const cases = (snap.gap1Cases || [])
+      .slice()
+      .sort((a, b) => (fair.per.get(b.code) || 0) - (fair.per.get(a.code) || 0))
+      .filter(c => (fair.per.get(c.code) || 0) > 1);
+    let improved = false;
+    for(const cse of cases){
+      if(improved || Date.now() > deadline) break;
+      await tkbQualityMaybeYield(slice);
+      const parts = cse.key.split("|");
+      const thu = parts[0], buoi = parts[1];
+      const tis = [...new Set(cse.cells.map(c=>c.ti))].sort((a,b)=>a-b);
+      const holeTis = [];
+      for(let t = tis[0] + 1; t < tis[tis.length-1]; t++){ if(!tis.includes(t)) holeTis.push(t); }
+      // (a) lap lo trong cung buoi
+      for(const cell of cse.cells){
+        if(improved) break;
+        for(const hole of holeTis){
+          if(Date.now() > deadline) break;
+          if(await tkbTryMoveCellWithFallback(cell.classId, {thu, buoi, ti: cell.ti}, {thu, buoi, ti: hole}, accepted, deadline, slice)){
+            fixes.push(`bal:${cse.code}:${cse.key}`);
+            improved = true;
+            break;
+          }
+        }
+      }
+      // (b) chuyen mot tiet cua GV sang buoi khac ma GV da co mat
+      for(const cell of cse.cells){
+        if(improved || Date.now() > deadline) break;
+        if(await tkbTeacherTrySwapIntoOwnSession(cse.code, cell, snap.sessions, cse.key, accepted, deadline, slice)){
+          fixes.push(`balout:${cse.code}:${cse.key}`);
+          improved = true;
+        }
+      }
+      // (c) keo mot tiet khac cua GV ve lap lo trong
+      if(!improved && Date.now() <= deadline
+        && await tkbTeacherTryPullIntoSession(cse.code, cse.key, holeTis, snap.sessions, accepted, deadline, slice)){
+        fixes.push(`balin:${cse.code}:${cse.key}`);
+        improved = true;
+      }
+    }
+    if(improved && !(await tkbVioConfirmMove(vio, gridBefore, false))){
+      fixes.pop();
+      improved = false;
+    }
+    if(!improved) break;
+  }
+  return fixes;
+}
+
+/* 22/08: BANG "KIEM TRA RANG BUOC" (nut RB canh nut Loi, chi superadmin):
+   liet ke TUNG rang buoc da khai bao trong Yeu cau mon hoc va do trang thai
+   THUC TE tren luoi hien tai — de kiem chung rang buoc co duoc thuc thi
+   khong (vi du tiet doi theo tung mon). */
+/* 24/08: "Yeu cau mon hoc" van giu byClass cua nhung lop DA XOA (truong
+   v2mjxf2tbt1 rut tu 31 xuong 21 lop nhung con L022..L031). Cac muc do khong
+   con lop nao doi ung: tkbAutoRepairLessonBlockPairShortfall khong tim thay
+   luoi nen tra ve dung `min` => bang RB bao "281 luat, 50 chua dat" trong khi
+   trinh kiem tra tong bao 0 vi pham. Chi do luat cua lop CON TON TAI; so muc
+   rac duoc bao rieng de chu du an tu don, khong am tham nuot. */
+function tkbConstraintAuditClassLive(cid){
+  const id = String(cid == null ? "" : cid).trim();
+  if(!id) return false;
+  if(DATA?.tkb?.[id]) return true;
+  const list = DATA?.lop || [];
+  if(!list.length) return true;   // danh muc lop chua nap: khong loc gi ca
+  return list.some(l => [l?.id, l?.ten, l?.ten2, l?.ma]
+    .some(v => String(v == null ? "" : v).trim() === id));
+}
+
+function tkbConstraintAuditStaleSummary(){
+  const classes = [];
+  const seen = new Set();
+  let rules = 0;
+  const subj = DATA?.tkbConstraints?.subject || {};
+  for(const key of Object.keys(subj)){
+    const byClass = subj[key]?.byClass || {};
+    for(const cid of Object.keys(byClass)){
+      if(tkbConstraintAuditClassLive(cid)) continue;
+      if(!seen.has(cid)){ seen.add(cid); classes.push(cid); }
+      const rule = byClass[cid] || {};
+      if(Number(rule?.lessonBlocks?.[2]?.min || 0) > 0) rules++;
+      if(rule?.sessionAllowed?.oneSessionPerDay === true) rules++;
+    }
+  }
+  return {classes, rules};
+}
+
+function tkbConstraintAuditRows(){
+  const rows = [];
+  const subj = DATA?.tkbConstraints?.subject || {};
+  for(const key of Object.keys(subj)){
+    const byClass = subj[key]?.byClass || {};
+    for(const cid of Object.keys(byClass)){
+      if(!tkbConstraintAuditClassLive(cid)) continue;
+      const rule = byClass[cid] || {};
+      const canon = getLopCanonById(cid);
+      const minPairs = Number(rule?.lessonBlocks?.[2]?.min || 0);
+      if(minPairs > 0){
+        // 25/08: mon it tiet hon 2*min (vd Tin 1 tiet/tuan, quick-fill min=1)
+        // -> yeu cau bat kha thi, bao "bo qua" thay vi "thieu cum".
+        const periods = tkbLessonBlockPeriodsForClassMon(cid, key);
+        if(periods > 0 && minPairs > Math.floor(periods / 2)){
+          rows.push({
+            lop: canon, mon: key,
+            rb: "Tiết đôi ≥ " + minPairs,
+            ok: true,
+            note: "bỏ qua: chỉ " + periods + " tiết/tuần, không thể xếp " + minPairs + " cụm đôi"
+          });
+        }else{
+          let shortfall = 0;
+          try{ shortfall = Math.max(0, Number(tkbAutoRepairLessonBlockPairShortfall({classId: cid, mon: key}) || 0)); }catch(_){ }
+          rows.push({
+            lop: canon, mon: key,
+            rb: "Tiết đôi ≥ " + minPairs,
+            ok: shortfall <= 0,
+            note: shortfall > 0 ? ("thiếu " + shortfall + " cụm") : "đủ"
+          });
+        }
+      }
+      if(rule?.sessionAllowed?.oneSessionPerDay === true){
+        let badDays = 0;
+        const grid = DATA?.tkb?.[cid];
+        DAYS.forEach(thu => {
+          const hasIn = buoi => (grid?.[thu]?.[buoi] || []).some(v => v && v !== "OFF" && monMatches(cellMon(v), key));
+          if(hasIn("sang") && hasIn("chieu")) badDays++;
+        });
+        rows.push({
+          lop: canon, mon: key,
+          rb: "1 buổi/ngày",
+          ok: badDays === 0,
+          note: badDays > 0 ? (badDays + " ngày vi phạm") : "đạt"
+        });
+      }
+    }
+  }
+  return rows;
+}
+
+try{
+  window.__tkbToggleConstraintAudit = function(){
+    try{
+      const existing = document.getElementById("tkbConstraintAuditPanel");
+      if(existing){ existing.remove(); return; }
+      let rows = [];
+      try{ rows = tkbConstraintAuditRows(); }catch(_){ }
+      let vio = [];
+      try{ vio = (TKBConstraints.validateAll(500) || []).map(v => String(v.message || "")); }catch(_){ }
+      let stale = {classes: [], rules: 0};
+      try{ stale = tkbConstraintAuditStaleSummary() || stale; }catch(_){ }
+      const bad = rows.filter(r => !r.ok);
+      const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+      const rowHtml = r => "<tr>"
+        + `<td style="padding:2px 10px 2px 0">${esc(r.lop)}</td>`
+        + `<td style="padding:2px 10px 2px 0">${esc(r.mon)}</td>`
+        + `<td style="padding:2px 10px 2px 0">${esc(r.rb)}</td>`
+        + `<td style="padding:2px 0;color:${r.ok ? "#0a7" : "#c00"};font-weight:600">${r.ok ? "✓" : "✗"} ${esc(r.note)}</td>`
+        + "</tr>";
+      const listRows = bad.length ? bad : rows.slice(0, 200);
+      const panel = document.createElement("div");
+      panel.id = "tkbConstraintAuditPanel";
+      panel.style.cssText = "position:fixed;top:64px;right:16px;z-index:99999;width:min(640px,94vw);"
+        + "max-height:72vh;overflow:auto;background:#fff;border:1px solid #2a7;border-radius:10px;"
+        + "box-shadow:0 8px 30px rgba(0,0,0,.25);padding:12px 14px;font-size:13px;line-height:1.45;";
+      panel.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">`
+        + `<b>Kiểm tra ràng buộc — ${rows.length} luật, <span style="color:${bad.length ? "#c00" : "#0a7"}">${bad.length} chưa đạt</span></b>`
+        + `<button type="button" onclick="document.getElementById('tkbConstraintAuditPanel').remove()">Đóng</button></div>`
+        + `<div style="color:${vio.length ? "#c00" : "#0a7"};margin-bottom:8px">Trình kiểm tra tổng: `
+        + (vio.length ? `${vio.length} vi phạm` : "0 vi phạm — mọi ràng buộc đang được thực thi ✓") + "</div>"
+        + (stale.rules
+          ? `<div style="color:#a60;margin-bottom:8px">Đã bỏ qua ${stale.rules} luật của ${stale.classes.length} lớp đã xóa `
+            + `(${esc(stale.classes.slice(0, 12).join(", "))}${stale.classes.length > 12 ? "…" : ""}) — nên xóa trong Yêu cầu môn học.</div>`
+          : "")
+        + (bad.length
+          ? `<div style="color:#c00;margin-bottom:4px"><b>Các luật chưa đạt:</b></div>`
+          : `<div style="color:#666;margin-bottom:4px">Tất cả đạt — liệt kê${rows.length > 200 ? " 200/" + rows.length : ""} luật:</div>`)
+        + `<table style="border-collapse:collapse">${listRows.map(rowHtml).join("")}</table>`
+        + (vio.length ? `<div style="margin-top:8px"><b>Vi phạm chi tiết:</b><br>${vio.slice(0, 20).map(esc).join("<br>")}</div>` : "");
+      document.body.appendChild(panel);
+    }catch(_){ }
+  };
+}catch(_){ }
+
+try{
+  window.__tkbAutoRepairGap1Balance = async function(options){
+    const fixes = await tkbAutoRepairGap1Balance(options || {});
+    if(fixes.length){
+      try{ saveStore({force:true}); }catch(_){ }
+      try{ renderCurrentView(); }catch(_){ }
+    }
+    return fixes;
+  };
+}catch(_){ }
+
+try{
+  window.__tkbEnsureLessonPairs = async function(options){
+    const fixes = await tkbAutoRepairEnsureLessonPairs(options || {});
+    if(fixes.length){
+      try{ saveStore({force:true}); }catch(_){ }
+      try{ renderCurrentView(); }catch(_){ }
+    }
+    return fixes;
+  };
+  window.__tkbAutoRepairTeacherQuality = async function(options){
+    const fixes = await tkbAutoRepairTeacherQuality(options || {});
+    if(fixes.length){
+      try{ saveStore({force:true}); }catch(_){ }
+      try{ renderCurrentView(); }catch(_){ }
+    }
+    return fixes;
+  };
+  window.__tkbTeacherQualitySnapshot = tkbTeacherQualitySnapshot;
+}catch(_){ }
 
 // Hybrid is an executor boundary, not a hint that an old timetable is a
 // successful Cloud Run result.  Keep this contract local to the UI so legacy
@@ -6464,6 +8315,13 @@ async function validateFetCandidateHardConstraints(data, candidateTkb, options =
 }
 
 function nextPlannerPaint(){
+  // 21/08: tab an thi rAF KHONG BAO GIO chay -> promise nay treo vinh vien
+  // den khi quay lai tab (dung la trieu chung "xem ket qua no moi tra").
+  if(typeof document !== "undefined" && document.hidden){
+    return typeof window.__tkbBgSleep === "function"
+      ? window.__tkbBgSleep(0)
+      : Promise.resolve();
+  }
   return new Promise(resolve => {
     try{
       if(typeof requestAnimationFrame === "function"){
@@ -6478,8 +8336,72 @@ function nextPlannerPaint(){
 // Apply only after validation.  Paint the actual timetable before the larger
 // persistence/list/stat scans so a completed FET solve is visible immediately;
 // those secondary refreshes are intentionally moved out of the critical path.
+// 19/08: CHOT CHAN CUOI CUNG TRUOC KHI AP LICH.
+// Bo giai co luoi rieng cua no; nhung ten mon trong o co the khac ten trong
+// PCCM (vi du o ghi "Ngu van" con PCCM ghi "Van"), nen giao vien MA GIAO DIEN
+// suy ra tu mot o co the khac giao vien ma bo giai nghi. Khi do luoi hop le voi
+// bo giai lai thanh TRUNG TIET tren man hinh. Kiem lai bang DUNG cach giao dien
+// suy ra giao vien, va tiet nao trung/di vao o Nghi-co dinh thi GO ve Chua phan
+// — khong bao gio de hai lop de len nhau.
+function auditCandidateHardConflicts(data, candidateTkb){
+  const days = Array.isArray(DAYS) ? DAYS : ["thu2","thu3","thu4","thu5","thu6","thu7"];
+  const sessions = ["sang", "chieu"];
+  const busy = new Map();
+  const removed = [];
+  const classes = Array.isArray(data?.lop) ? data.lop : [];
+  for(const lop of classes){
+    const cid = String(lop?.id || "");
+    if(!cid || !candidateTkb?.[cid]) continue;
+    const canon = lop?.ten2 || lop?.ten || cid;
+    for(const d of days){
+      for(const b of sessions){
+        const arr = candidateTkb[cid]?.[d]?.[b];
+        if(!Array.isArray(arr)) continue;
+        for(let i = 0; i < arr.length; i++){
+          const cell = arr[i];
+          if(!cell || cell === "OFF") continue;
+          const mon = typeof cell === "object" ? String(cell.mon || "") : String(cell).split(" - ")[0];
+          if(!mon || mon === "OFF") continue;
+          let gv = "";
+          try{ gv = getTeacherForClassMon(canon, mon) || ""; }catch(_){ gv = ""; }
+          if(!gv) continue;
+          const teachers = String(gv).split(/[,;+]/).map(x => x.trim().toLowerCase()).filter(Boolean);
+          let clashWith = "";
+          for(const t of teachers){
+            const key = `${t}|${d}|${b}|${i}`;
+            const holder = busy.get(key);
+            if(holder && holder.cid !== cid){ clashWith = `${holder.ten} - ${holder.mon}`; break; }
+          }
+          if(clashWith){
+            const isFixed = typeof cell === "object" && cell.fixed === true;
+            if(isFixed) continue; // tiet co dinh cua nguoi dung: khong dung vao
+            arr[i] = "";
+            removed.push({lop: String(lop?.ten || cid), mon, thu: d, buoi: b, tiet: i + 1, trungVoi: clashWith});
+            continue;
+          }
+          for(const t of teachers){
+            busy.set(`${t}|${d}|${b}|${i}`, {cid, ten: String(lop?.ten || cid), mon});
+          }
+        }
+      }
+    }
+  }
+  return removed;
+}
+
 async function applyValidatedFetCandidate(data, candidateTkb, options = {}){
   const startedAt = fetTelemetryNowMs();
+  try{
+    const droppedByAudit = auditCandidateHardConflicts(data, candidateTkb);
+    if(droppedByAudit.length){
+      window.__TKB_LAST_CONFLICT_AUDIT = droppedByAudit;
+      console.warn(`[TKB] Da go ${droppedByAudit.length} tiet trung giao vien ve Chua phan`, droppedByAudit.slice(0, 10));
+    }else{
+      window.__TKB_LAST_CONFLICT_AUDIT = [];
+    }
+  }catch(auditErr){
+    console.warn("[TKB] audit trung tiet that bai", auditErr);
+  }
   data.tkb = candidateTkb;
   if(typeof DATA !== "undefined" && DATA) {
     DATA.tkb = candidateTkb;
@@ -6623,6 +8545,37 @@ function postFetTerminalTelemetry(options, startedAtMs, result, details = {}){
     return null;
   }
 }
+
+/* 21/08: giu tab song trong luc FET worker chay (Chrome co the DONG BANG tab
+   nen sau ~5 phut — ke ca Worker — khien "quay lai tab moi thay ket qua").
+   Trang giu Web Lock duoc mien tru dong bang; watcher tu nha khi worker xong. */
+function tkbFetAcquireKeepalive(){
+  try{
+    if(!navigator.locks || typeof navigator.locks.request !== "function") return;
+    if(!window.__tkbFetKeepaliveRelease){
+      navigator.locks.request("tkb-fet-keepalive", () => new Promise(resolve => {
+        window.__tkbFetKeepaliveRelease = resolve;
+      })).catch(() => {});
+    }
+    if(window.__tkbFetKeepaliveTimer) window.clearInterval(window.__tkbFetKeepaliveTimer);
+    window.__tkbFetKeepaliveTimer = window.setInterval(() => {
+      try{
+        if(window.__ACTIVE_TKB_FET_WORKER || window.__TKB_RUST_SOLVER_RUNNING) return;
+        window.clearInterval(window.__tkbFetKeepaliveTimer);
+        window.__tkbFetKeepaliveTimer = null;
+        const release = window.__tkbFetKeepaliveRelease;
+        window.__tkbFetKeepaliveRelease = null;
+        if(typeof release === "function") release();
+      }catch(_){ }
+    }, 4000);
+  }catch(_){ }
+}
+
+/* 22/08 (chi dao chu du an): chuoi "HAU-FET" (21/08, tkbPostFetQualityChain)
+   — sau khi ▶ xep xong thi tu goi backend CP-SAT/Cloud Run de xep bu / toi uu
+   roi keo theo bac thang tu tinh chinh — DA GO BO. Nut ▶ chi con FET trong
+   trinh duyet de kiem tra xep du hay khong; toi uu GV dung nut Cherry hoac
+   menu Toi uu. */
 
 async function executeDirectFastSchedule(options = {}){
   try{
@@ -6940,6 +8893,7 @@ async function executeDirectFastSchedule(options = {}){
         }
 
         window.__ACTIVE_TKB_FET_WORKER = worker;
+        tkbFetAcquireKeepalive();
         window.__ACTIVE_TKB_FET_WORKER_RESOLVE = (result) => settleWorker(result, {
           initialMetrics:initialStats,
           hardValid:false
@@ -7376,6 +9330,35 @@ async function executeDirectFastSchedule(options = {}){
                   }else if(msg.deadlineHit === true){
                     doneStatusMsg += " Hết thời gian tìm kiếm — bấm lại để chạy tiếp.";
                   }
+                  // 19/08: mau thuan "cap tiet doi" vs "Gioi han tiet/buoi" —
+                  // day la nguyen nhan kieu "con 4 tiet cua co Thuy.A chua phan"
+                  // ma nhin vao Phan cong thi thay da phan cong day du.
+                  // 19/08: be tac vi GIAO VIEN, khong phai vi lop. Lop co the
+                  // vua khit nhung mot GV phai day nhieu tiet hon so o thoi gian
+                  // ma cac lop cua ho mo ra -> khong bao gio xep du.
+                  const tDeficit = Number(msg.teacherDeficit) || 0;
+                  if(tDeficit > 0){
+                    const tRows = Array.isArray(msg.teacherRows) ? msg.teacherRows : [];
+                    const tDetail = tRows.slice(0, 5)
+                      .map(r => `${r.teacher} cần ${r.need} tiết nhưng chỉ có ${r.slots} ô (${r.classCount} lớp)`)
+                      .join("; ");
+                    doneStatusMsg += ` GIÁO VIÊN QUÁ TẢI ${tDeficit} tiết: ${tDetail}.`
+                      + " Hãy chia bớt lớp cho giáo viên khác hoặc mở thêm buổi cho các lớp đó.";
+                  }
+                  const audit = Array.isArray(window.__TKB_LAST_CONFLICT_AUDIT) ? window.__TKB_LAST_CONFLICT_AUDIT : [];
+                  if(audit.length){
+                    const first = audit.slice(0, 3)
+                      .map(r => `${r.lop} ${r.mon} (${r.thu} ${r.buoi} tiết ${r.tiet}, trùng ${r.trungVoi})`)
+                      .join("; ");
+                    doneStatusMsg += ` Đã gỡ ${audit.length} tiết TRÙNG GIÁO VIÊN về Chưa phân: ${first}.`;
+                  }
+                  const blockConflicts = Array.isArray(msg.blockLimitConflicts) ? msg.blockLimitConflicts : [];
+                  if(blockConflicts.length){
+                    const detail = blockConflicts.slice(0, 5)
+                      .map(c => `${c.className} ${c.mon} (đôi ${c.blockLen} tiết / giới hạn ${c.sessionLimit})`)
+                      .join(", ");
+                    doneStatusMsg += ` Có yêu cầu tiết đôi vượt Giới hạn tiết/buổi nên đã bỏ ghép đôi: ${detail}.`;
+                  }
                 }
               }else{
                 doneStatusMsg = `Đã xếp xong ${placed} tiết.`;
@@ -7467,6 +9450,10 @@ async function executeDirectFastSchedule(options = {}){
               targetMetric:msg.targetMetricLowerBound,
               floorMetric:msg.targetMetricLowerBound
             });
+            // 22/08: nut ▶ dung tai day. Chuoi hau ky "tkbPostFetQualityChain"
+            // (21/08: tu goi backend CP-SAT khi con thieu tiet / con no chat
+            // luong roi keo theo bac thang) da duoc go theo chi dao chu du an —
+            // ▶ chi la FET de kiem tra xep du hay khong.
           }
         };
 
@@ -7887,6 +9874,13 @@ async function executeDirectFastSchedule(options = {}){
 try{
   window.executeDirectFastSchedule = executeDirectFastSchedule;
   window.sapXepTuDongAll = async function(options = {}){
+    // 22/08 (chi dao chu du an, TRA LAI nhu ban dau): nut ▶ Sap xep = CHI
+    // thuat toan FET chay trong trinh duyet (worker `solve`, mode "auto"),
+    // muc dich la KIEM TRA XEP DU HAY KHONG: bao "Da xep xong X/Y tiet" + ly
+    // do thieu (thieu o, GV qua tai, tiet doi vuot gioi han...). KHONG doi
+    // sang mode "xep + toi uu tron goi", KHONG goi backend CP-SAT/Cloud Run,
+    // KHONG noi chuoi hau ky (da go ngay 22/08). Toi uu giao vien la viec
+    // cua nut Cherry / menu Toi uu.
     return await executeDirectFastSchedule({ mode: options?.mode || "auto" });
   };
   window.sapXepTheoCheDo = async function(mode = "optimize_singletons"){
@@ -7965,15 +9959,128 @@ function goToUnassignedItem(classId, gvCode){
   }
 }
 
+/* 22/08 (yeu cau chu du an): tiet khong xep duoc vi rang buoc thi DUA VE
+   "Chua phan" KEM LY DO + HUONG XU LY, thay vi chi bao "Chua xep du".
+   Ma ly do do bo giai tra ve trong tkbSolverResult.unassignedLessons[].reason
+   (solver_runtime/src/tkb_new/adapter.py, tkb_engine_v3/entry.py). */
+window.TKB_UNASSIGNED_REASON_INFO = {
+  not_enough_available_slots: {
+    label: "Thiếu chỗ xếp (GV hết ô trống)",
+    hint: "GV không còn ô trống hợp lệ sau khi áp dụng tiết nghỉ và ràng buộc. Hướng xử lý: bớt tiết nghỉ của GV, cho phép dạy thêm buổi, hoặc chuyển bớt tiết sang GV khác."
+  },
+  not_enough_class_slots: {
+    label: "Thiếu chỗ xếp (lớp hết ô học)",
+    hint: "Lớp không còn ô học trống (ô Nghỉ/OFF hoặc tiết cố định chiếm hết). Hướng xử lý: mở thêm ô học cho lớp hoặc giảm số tiết/tuần của môn."
+  },
+  engine_v3_best_effort: {
+    label: "Hết thời gian, chưa xếp được (không vi phạm ràng buộc)",
+    hint: "Bấm Cherry lần nữa để xếp tiếp từ lịch hiện tại; nếu vẫn còn, nới ràng buộc của môn/GV liên quan (tiết đôi, tránh tiết 2–3, giới hạn môn/buổi, lịch nghỉ)."
+  },
+  period_best_effort_failed_session: {
+    label: "Không còn ô hợp lệ trong buổi",
+    hint: "Kiểm tra giới hạn tiết/buổi của môn và lịch nghỉ của GV trong buổi đó; nới bớt rồi bấm xếp lại."
+  },
+  constraint_violation: {
+    label: "Gỡ ra vì vi phạm ràng buộc",
+    hint: "Xếp vào sẽ vi phạm ràng buộc nên tiết được đưa về Chưa phân. Hướng xử lý: nới ràng buộc tương ứng hoặc kéo thả vào ô hợp lệ."
+  },
+  // 22/08 (toi): Cherry da toi uu het muc ma GV van con buoi 1 tiet / trong >=2
+  // -> tiet gay ra duoc dua ve Chua phan; `message` cua bo giai mang goi y
+  // cu the (GV nghi nhieu, mon cam buoi, GV chi 1 tiet/tuan...).
+  teacher_quality_unreachable: {
+    label: "Đưa ra để GV không còn buổi 1 tiết / trống ≥2",
+    hint: "Cherry đã thử hết cách mà tiết này vẫn làm GV có buổi 1 tiết hoặc trống ≥2 tiết. Hướng xử lý: làm theo gợi ý ở từng tiết (nới lịch nghỉ/ràng buộc, đổi GV), hoặc kéo tiết vào cạnh một buổi đã có tiết của GV rồi Cố định ô đó và bấm Cherry lại."
+  }
+};
+window.TKB_UNASSIGNED_REASON_DEFAULT = {
+  label: "Chưa xếp được",
+  hint: "Kéo thả thủ công vào ô hợp lệ, hoặc bấm Cherry để xếp tiếp. Nếu không còn ô nào hợp lệ: nới lịch nghỉ/ràng buộc của GV hoặc môn liên quan."
+};
+
+function tkbUnassignedReasonInfo(reason, message){
+  const code = String(reason || "").trim();
+  const table = window.TKB_UNASSIGNED_REASON_INFO || {};
+  let info = table[code] || null;
+  // adapter dung chung ma not_enough_available_slots cho ca GV lan LOP; phan
+  // biet bang thong diep ("o hoc ... cua lop" = lop het o).
+  if(code === "not_enough_available_slots" && /o hoc|ô học|cua lop|của lớp/i.test(String(message || ""))){
+    info = table.not_enough_class_slots || info;
+  }
+  if(code === "teacher_quality_unreachable" && info){
+    // Goi y cu the cua bo giai cho TUNG tiet (co dau tieng Viet) di truoc,
+    // huong xu ly chung di sau.
+    const specific = String(message || "").trim();
+    if(specific) return {label: info.label, hint: `${specific} ${info.hint}`.trim(), specific};
+  }
+  if(info) return info;
+  const fallback = window.TKB_UNASSIGNED_REASON_DEFAULT || {label: "Chưa xếp được", hint: ""};
+  return code ? {label: `${fallback.label} (${code})`, hint: fallback.hint} : fallback;
+}
+window.tkbUnassignedReasonInfo = tkbUnassignedReasonInfo;
+
+function tkbUnassignedItemsFor(classId, mon, itemsOverride){
+  try{
+    const items = Array.isArray(itemsOverride) ? itemsOverride : DATA?.tkbSolverResult?.unassignedLessons;
+    if(!Array.isArray(items) || !items.length) return [];
+    const norm = v => String(v || "").trim().replace(/\s+/g, " ").toLowerCase();
+    const cid = String(classId || "");
+    const canon = norm(getLopCanonById(cid) || "");
+    const monN = norm(mon);
+    const monShort = norm(typeof getMonShort === "function" ? getMonShort(mon) : "");
+    return items.filter(u => {
+      if(!u || typeof u !== "object") return false;
+      const sameClass = String(u.classId || "") === cid
+        || norm(u.className) === canon
+        || norm(u.classId) === canon;
+      if(!sameClass) return false;
+      const subj = norm(u.subject);
+      return subj === monN || (monShort && subj === monShort)
+        || (typeof getMonShort === "function" && norm(getMonShort(u.subject)) === monN);
+    });
+  }catch(_){
+    return [];
+  }
+}
+
+function tkbUnassignedReasonFor(classId, mon){
+  try{
+    const hits = tkbUnassignedItemsFor(classId, mon);
+    if(!hits.length) return null;
+    const first = hits[0];
+    const info = tkbUnassignedReasonInfo(first.reason, first.message);
+    let periods = 0;
+    hits.forEach(u => { periods += Math.max(1, Math.round(Number(u.periods ?? u.count) || 1)); });
+    return {reason: String(first.reason || ""), label: info.label, hint: info.hint, periods, teacher: String(first.teacher || "")};
+  }catch(_){
+    return null;
+  }
+}
+
 function unassignedDropdownHTML(){
-  return `<div id="unassignedBar" class="unassigned-dropdown" aria-label="Chưa phân">
-    <button id="unassignedToggle" class="unassigned-dropdown-btn" type="button" onclick="toggleUnassignedDropdown(event)" aria-expanded="false">
-      <span id="unassignedSummary">Chưa phân:0</span>
+  // Nướng sẵn trạng thái mở + NỘI DUNG gần nhất vào markup: bar bị dựng lại
+  // sau mỗi re-render còn loadMonList chạy sau ~120ms; nếu render menu đóng
+  // hoặc rỗng thì danh sách xổ ra chớp tắt trong khoảng đó.
+  const open = TKB_UNASSIGNED_MENU_OPEN === true;
+  return `<div id="unassignedBar" class="unassigned-dropdown${open ? " is-open" : ""}" aria-label="Chưa phân">
+    <button id="unassignedToggle" class="unassigned-dropdown-btn" type="button" onclick="toggleUnassignedDropdown(event)" aria-expanded="${open ? "true" : "false"}"${TKB_UNASSIGNED_BTN_DISABLED ? " disabled" : ""}>
+      <span id="unassignedSummary">${escapeHtml(TKB_UNASSIGNED_SUMMARY_TEXT || "Chưa phân:0")}</span>
       <span class="unassigned-caret">v</span>
     </button>
-    <div id="monList" class="unassigned-menu" hidden></div>
+    <div id="monList" class="unassigned-menu"${open ? "" : " hidden"}>${open ? TKB_UNASSIGNED_MENU_HTML : ""}</div>
   </div>`;
 }
+
+// Trang thai mo mong muon: song sot qua cac lan re-render (moi luot tha tiet
+// deu dung lai #unassignedBar) de nguoi dung keo nhieu tiet lien tiep.
+let TKB_UNASSIGNED_MENU_OPEN = false;
+// Snapshot noi dung menu + summary cua lan loadMonList gan nhat. Bar bi dung
+// lai boi renderTKB roi loadMonList moi chay sau ~120ms (scheduleLoadMonList):
+// neu render menu rong thi hop xo ra "chop" mat noi dung trong khoang do.
+// Nuong lai noi dung cu => nhin lien mach; loadMonList thay bang ban moi
+// (kem handler) ngay sau do.
+let TKB_UNASSIGNED_MENU_HTML = "";
+let TKB_UNASSIGNED_SUMMARY_TEXT = "Chưa phân:0";
+let TKB_UNASSIGNED_BTN_DISABLED = true;
 
 function setUnassignedDropdownOpen(open){
   const root = document.getElementById("unassignedBar");
@@ -7981,6 +10088,7 @@ function setUnassignedDropdownOpen(open){
   const menu = document.getElementById("monList");
   if(!root || !btn || !menu) return;
   const shouldOpen = !!open && !btn.disabled;
+  TKB_UNASSIGNED_MENU_OPEN = shouldOpen;
   root.classList.toggle("is-open", shouldOpen);
   menu.hidden = !shouldOpen;
   btn.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
@@ -8090,7 +10198,8 @@ function loadMonList(){
     const ai = classOrder.has(ac) ? classOrder.get(ac) : 999999;
     const bi = classOrder.has(bc) ? classOrder.get(bc) : 999999;
     if(ai !== bi) return ai - bi;
-    const m = compareMonByHiddenCode(a.mon,b.mon);
+    // môn theo đúng thứ tự bảng "Môn học" trong phần app
+    const m = compareMonByMonHocOrder(a.mon,b.mon);
     if(m) return m;
     return Number(b.remain || 0) - Number(a.remain || 0);
   });
@@ -8249,9 +10358,27 @@ function loadMonList(){
 
       d.innerHTML = `<span class="mon-item-main">${escapeHtml(monShort)}${gvPart}${escapeHtml(remainDisp)}</span>`+
                     `<span class="mon-item-meta">${escapeHtml(roomDisp)}</span>`;
+      // 22/08: ly do bo giai dua tiet nay ve Chua phan + huong xu ly (tooltip).
+      try{
+        const why = (typeof tkbUnassignedReasonFor === "function") ? tkbUnassignedReasonFor(t.classId, t.mon) : null;
+        const fallbackWhy = (typeof tkbUnassignedReasonInfo === "function") ? tkbUnassignedReasonInfo("", "") : null;
+        const info = why || fallbackWhy;
+        if(info){
+          d.title = `${info.label} — ${info.hint}`;
+        }
+        if(why){
+          const note = document.createElement("div");
+          note.className = "mon-item-why";
+          note.style.cssText = "flex-basis:100%;width:100%;font-size:11px;color:#b45309;line-height:1.3;margin-top:2px;white-space:normal;";
+          note.textContent = `⚠ ${why.label}`;
+          note.title = why.hint;
+          d.style.flexWrap = "wrap"; // .mon-item la flex row -> cho dong ly do xuong hang
+          d.appendChild(note);
+        }
+      }catch(_){ }
       d.onclick = ()=>{
-        if(tryApplyFixedLessonFromUnassigned(t)) return;
-        closeUnassignedDropdown();
+        // Giong co che pane GV: chi DIEU HUONG (dua GV cua tiet nay xuong bang
+        // duoi), khong xep + khoa tiet vao TKB nua, va giu menu mo de keo tiep.
         goToUnassignedItem(t.classId, gvTxt);
       };
       d.draggable = (VIEW_MODE === "lop" && String(currentLop || "") === String(t.classId));
@@ -8275,6 +10402,18 @@ function loadMonList(){
     groupEl.appendChild(list);
     box.appendChild(groupEl);
   });
+
+  // Bar vua duoc dung lai (mac dinh dong): khoi phuc trang thai mo truoc do
+  // de sau moi luot tha tiet menu van mo cho nguoi dung keo tiep.
+  if(TKB_UNASSIGNED_MENU_OPEN) setUnassignedDropdownOpen(true);
+
+  // Snapshot de lan dung lai bar ke tiep render san noi dung (chong chop tat).
+  try{
+    TKB_UNASSIGNED_MENU_HTML = box.innerHTML;
+    const summaryEl = document.getElementById("unassignedSummary");
+    if(summaryEl) TKB_UNASSIGNED_SUMMARY_TEXT = summaryEl.textContent || "Chưa phân:0";
+    TKB_UNASSIGNED_BTN_DISABLED = !!document.getElementById("unassignedToggle")?.disabled;
+  }catch(_){ }
 
   // The full-school teacher statistics live inside a popover and can be
   // expensive on a large timetable. Opening the popover renders on demand.
@@ -8950,6 +11089,39 @@ function renderStatsBox(){
     updateVal("onePeriodTeacherSessions", gvStats.soBuoiDay1);
     updateVal("studentGaps", studentGapStats.totalGaps);
     updateVal("fivePeriodTeacherSessions", gvStats.soBuoiDay5);
+
+    // Cập nhật lại TRẠNG THÁI của các nút drill-down mỗi lần refresh.
+    // Nút LUÔN bấm được (kể cả = 0 — bấm sẽ báo "Thời khóa biểu không có ...");
+    // đồng thời gỡ khóa live-progress ngay khi lượt tối ưu kết thúc.
+    const updateDrill = (key, emptyKind, issues, title)=>{
+      const cell = box.querySelector(`[data-stat-key="${key}"]`);
+      const btn = cell?.querySelector?.("button");
+      if(!cell || !btn) return;
+      const has = Array.isArray(issues) && issues.length > 0;
+      btn.disabled = false;
+      btn.title = has ? (title || "") : statEmptyMessage(emptyKind);
+      if(!isSolving){
+        cell.classList.remove("is-live-progress");
+        cell.removeAttribute("title");
+      }
+    };
+    const teacherIssues = window.__TKB_TEACHER_STAT_ISSUES || {};
+    const teacherTitle = issues => (Array.isArray(issues) && issues.length)
+      ? `Bấm để xem giáo viên liên quan.\n${issues.map(t => `${t.code}: ${teacherStatIssueCount(t)}`).join("\n")}`
+      : "";
+    updateDrill("unassignedPeriods", "unassigned", unassignedIssues,
+      unassignedIssues.length
+        ? unassignedIssues.map(t => `${t.className || t.classId} - ${getMonShort(t.mon)}: ${unassignedIssueCount(t)}`).join("\n")
+        : "");
+    updateDrill("teacherGapPeriods", "gapAll", teacherIssues.gapAll, teacherTitle(teacherIssues.gapAll));
+    updateDrill("teacherGap1Sessions", "gap1", teacherIssues.gap1, teacherTitle(teacherIssues.gap1));
+    updateDrill("teacherGap2Sessions", "gap2", teacherIssues.gap2, teacherTitle(teacherIssues.gap2));
+    updateDrill("onePeriodTeacherSessions", "onePeriod", teacherIssues.onePeriod, teacherTitle(teacherIssues.onePeriod));
+    updateDrill("studentGaps", "studentGaps", window.__TKB_STUDENT_GAP_ISSUES,
+      (window.__TKB_STUDENT_GAP_ISSUES || []).length
+        ? window.__TKB_STUDENT_GAP_ISSUES.map(t => `${t.name || t.id}: ${Math.round(Number(t.gaps || 0))}`).join("\n")
+        : "");
+
     box.classList.remove("is-loading");
     box.dataset.statsReady = "1";
     box.removeAttribute("aria-live");
@@ -8973,16 +11145,17 @@ function renderStatsBox(){
 
   const teacherGrid = box.querySelector(".stats-teacher-grid");
   const teacherCells = teacherGrid ? Array.from(teacherGrid.children) : [];
+  // Nút luôn bấm được, kể cả khi chỉ số = 0: bấm sẽ báo
+  // "Thời khóa biểu không có ..." qua goTo* thay vì disable.
   const drillButton = (type, label, count, issues)=>{
     const safeIssues = Array.isArray(issues) ? issues : [];
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "stats-pair stats-link stats-link-drilldown stats-teacher-drilldown";
-    btn.disabled = safeIssues.length === 0;
     btn.innerHTML = `<span class="stats-label">${escapeHtml(label)}: </span><span class="stats-value">${n(count)}</span>`;
     btn.title = safeIssues.length
       ? `Bấm để xem giáo viên liên quan.\n${safeIssues.map(t => `${t.code}: ${teacherStatIssueCount(t)}`).join("\n")}`
-      : "Không có giáo viên liên quan.";
+      : statEmptyMessage(type);
     btn.onclick = () => goToTeacherStatIssues(type);
     return btn;
   };
@@ -8991,11 +11164,10 @@ function renderStatsBox(){
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "stats-pair stats-link stats-link-drilldown stats-student-gap-drilldown";
-    btn.disabled = safeIssues.length === 0;
     btn.innerHTML = `<span class="stats-label">${escapeHtml(label)}: </span><span class="stats-value">${n(count)}</span>`;
     btn.title = safeIssues.length
       ? safeIssues.map(t => `${t.name || t.id}: ${n(t.gaps)}`).join("\n")
-      : "";
+      : statEmptyMessage("studentGaps");
     btn.onclick = () => goToStudentGapIssues();
     return btn;
   };
@@ -9004,11 +11176,10 @@ function renderStatsBox(){
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "stats-pair stats-link stats-link-drilldown stats-unassigned-drilldown";
-    btn.disabled = safeIssues.length === 0 || Number(count || 0) <= 0;
     btn.innerHTML = `<span class="stats-label">${escapeHtml(label)}: </span><span class="stats-value">${n(count)}</span>`;
     btn.title = safeIssues.length
       ? safeIssues.map(t => `${t.className || t.classId} - ${getMonShort(t.mon)}: ${unassignedIssueCount(t)}`).join("\n")
-      : "";
+      : statEmptyMessage("unassigned");
     btn.onclick = () => goToUnassignedIssues();
     return btn;
   };
@@ -9312,6 +11483,19 @@ function getStudentGapIssuesFromStats(){
   return Array.isArray(st.byClass) ? st.byClass : [];
 }
 
+// Thông báo khi chỉ số thống kê = 0: nút vẫn bấm được, bấm thì báo rõ ràng.
+function statEmptyMessage(kind){
+  switch(String(kind || "")){
+    case "unassigned": return "Thời khóa biểu không có tiết chưa xếp.";
+    case "gapAll": return "Thời khóa biểu không có tiết trống của giáo viên.";
+    case "gap1": return "Thời khóa biểu không có buổi trống 1 tiết.";
+    case "gap2": return "Thời khóa biểu không có buổi trống 2 tiết.";
+    case "onePeriod": return "Thời khóa biểu không có buổi giáo viên dạy 1 tiết.";
+    case "studentGaps": return "Thời khóa biểu không có lỗ trống của học sinh.";
+    default: return "Thời khóa biểu không có dữ liệu liên quan.";
+  }
+}
+
 function getUnassignedIssuesFromStats(cacheSignature){
   return collectUnassignedTasks(cacheSignature ? {cacheSignature} : {});
 }
@@ -9330,7 +11514,7 @@ function goToUnassignedIssues(){
   const issues = getUnassignedIssuesFromStats();
   window.__TKB_UNASSIGNED_STAT_ISSUES = issues;
   if(!issues.length){
-    try{ _setStatus("Ti\u1ebft ch\u01b0a x\u1ebfp: 0", "ok"); }catch(_){ }
+    try{ _setStatus(statEmptyMessage("unassigned"), "ok"); }catch(_){ }
     return;
   }
   const stored = Number(window.__TKB_UNASSIGNED_STAT_INDEX);
@@ -9430,7 +11614,7 @@ function goToStudentGapIssues(){
   const issues = getStudentGapIssuesFromStats();
   window.__TKB_STUDENT_GAP_ISSUES = issues;
   if(!issues.length){
-    try{ _setStatus(`${getStudentGapStatLabel()}: 0`, "ok"); }catch(_){ }
+    try{ _setStatus(statEmptyMessage("studentGaps"), "ok"); }catch(_){ }
     return;
   }
   const targets = studentGapTargetsFromIssues(issues);
@@ -9604,12 +11788,20 @@ function findClassForTeacherIssue(code, issue){
   for(const lop of ordered){
     if(classAssignedToTeacher(lop.id, code)) return lop.id;
   }
-  return currentLop || ordered[0]?.id || "";
+  // 19/08: TRUOC day khi khong tim duoc lop nao lien quan, ham nay tra ve
+  // `currentLop` — tuc la lop DANG XEM, chang lien quan gi toi giao vien co
+  // van de. Ket qua: tieu de ghi mot giao vien, luoi ben duoi lai la giao vien
+  // khac (nhat la hai ma gan giong nhau nhu "Phuong" va "Phuong"), va o duoc
+  // to sang la o cua nguoi khac. Tha khong doi lop con hon chi sai cho.
+  return "";
 }
 
 function focusTeacherIssueInClassPair(type, target){
   const code = String(target?.code || "").trim();
   if(!code) return;
+  // Ghim giao vien dang xem: pvEnsureTeacherForClass() se KHONG duoc tu y doi
+  // sang giao vien dau danh sach cua lop nua.
+  window.__TKB_PAIR_PINNED_GV = code;
   const classId = findClassForTeacherIssue(code, target);
   if(VIEW_MODE !== "lop") setViewMode("lop");
   currentGV = code;
@@ -9634,7 +11826,7 @@ function goToTeacherStatIssues(type){
   window.__TKB_TEACHER_STAT_ISSUES = Object.assign({}, window.__TKB_TEACHER_STAT_ISSUES || {}, {[key]: issues});
   if(key === "onePeriod") window.__TKB_ONE_PERIOD_TEACHER_ISSUES = issues;
   if(!issues.length){
-    try{ _setStatus(`${getTeacherStatLabel(key)}: không có giáo viên cần xem.`, "ok"); }catch(_){ }
+    try{ _setStatus(statEmptyMessage(key), "ok"); }catch(_){ }
     return;
   }
   const currentIndex = issues.findIndex(item => String(item?.code||"").trim() === String(currentGV||"").trim());
@@ -9708,8 +11900,13 @@ function highlightTeacherStatIssue(type, code){
   });
   if(!issue) return;
   issue.sessions.forEach(s=>{
+    // 19/08: PHAI khoa theo dung ma giao vien. Truoc day bo loc chi co thu +
+    // buoi, nen neu luoi ben duoi dang hien giao vien khac (vi du bi doi ngam)
+    // thi cac o cua NGUOI KHAC bi to sang — dung canh "bam vao thong ke ma no
+    // dan toi cho sai".
+    const teacherAttr = String(issue.code || "").replace(/"/g, '\\"');
     const scopeSelector = (key !== "onePeriod" && document.getElementById("tkbPairSupport"))
-      ? `#tkbPairSupport td[data-pair-slot="teacher"][data-thu="${s.thu}"][data-buoi="${s.buoi}"]`
+      ? `#tkbPairSupport td[data-pair-slot="teacher"][data-teacher="${teacherAttr}"][data-thu="${s.thu}"][data-buoi="${s.buoi}"]`
       : `#tkb td[data-thu="${s.thu}"][data-buoi="${s.buoi}"]`;
     document.querySelectorAll(scopeSelector).forEach(td=>{
       if(key === "onePeriod"){
@@ -9723,7 +11920,21 @@ function highlightTeacherStatIssue(type, code){
       }
     });
   });
-  try{ _setStatus(`Đang xem GV ${issue.code}: ${teacherStatIssueCount(issue)} mục - ${getTeacherStatLabel(key)}.`, "info"); }catch(_){ }
+  try{
+    // Ten day du de phan biet hai ma gan giong nhau (vi du "Phuong" vs "Phuong").
+    let hoTen = "";
+    try{
+      const row = (DATA.giaovien || []).find(g => String(g?.magv || "").trim() === String(issue.code || "").trim());
+      hoTen = row ? `${String(row.hodem || "").trim()} ${String(row.ten || "").trim()}`.trim() : "";
+    }catch(_){ }
+    const shownTeacher = String(document.querySelector("#tkbPairSupport td[data-pair-slot='teacher']")?.dataset?.teacher || "").trim();
+    const mismatch = shownTeacher && shownTeacher !== String(issue.code || "").trim();
+    _setStatus(
+      `Đang xem GV ${issue.code}${hoTen ? ` (${hoTen})` : ""}: ${teacherStatIssueCount(issue)} mục - ${getTeacherStatLabel(key)}.`
+      + (mismatch ? ` ⚠ Lưới bên dưới đang hiển thị GV ${shownTeacher}, không phải GV này.` : ""),
+      mismatch ? "warning" : "info"
+    );
+  }catch(_){ }
 }
 
 function goToOnePeriodTeachers(){
@@ -10071,6 +12282,10 @@ function _setStatus(msg, type="error"){
 }
 
 function _autoSortProgressYield(){
+  // 21/08: tab an -> setTimeout bi bop ~1 lan/phut; nhuong qua worker timer.
+  if(typeof document !== "undefined" && document.hidden && typeof window.__tkbBgSleep === "function"){
+    return window.__tkbBgSleep(0);
+  }
   return new Promise(resolve => setTimeout(resolve, 0));
 }
 
@@ -10406,19 +12621,34 @@ function setAutoSortBusyControls(locked){
     document.getElementById("btnUndoTKB"),
     document.getElementById("btnRedoTKB"),
     document.getElementById("btnAutoSort"),
-    document.getElementById("btnEngineFlash"),
     document.getElementById("btnEngineCherry"),
     document.getElementById("btnOptimizeMenu"),
+    // 25/08 (chi dao chu du an): nut "Toi uu v3" truoc day KHONG bi khoa khi
+    // dang xep. runPlannerV3Mode van chan bang testControlBusy() nen bam
+    // khong chay gi, nhung nut sang binh thuong nen nguoi dung tuong no hong.
+    document.getElementById("btnTestMenu"),
+    // 26/08 (chi dao chu du an): nut RB (kiem tra rang buoc) cung khoa khi
+    // dang xep — bang RB doc DATA.tkb dang bi luot xep ghi de.
+    document.getElementById("btnConstraintAudit"),
     document.getElementById("btnHome"),
     document.getElementById("solveDurationSeconds"),
+    // Muc ben trong hai menu toi uu: menu co the dang mo khi luot xep bat dau.
+    ...Array.from(document.querySelectorAll(
+      "#plannerOptimizeMenu button, #plannerTestMenu button"
+    )),
     ...Array.from(document.querySelectorAll(".solver-preset-btn[data-preset]"))
   ].filter(Boolean);
   controls.forEach(el => setAutoSortControlLocked(el, shouldLock));
   if(shouldLock){
-    const optimizeMenu = document.getElementById("plannerOptimizeMenu");
-    const optimizeBtn = document.getElementById("btnOptimizeMenu");
-    if(optimizeMenu) optimizeMenu.hidden = true;
-    if(optimizeBtn) optimizeBtn.setAttribute("aria-expanded", "false");
+    [
+      ["plannerOptimizeMenu", "btnOptimizeMenu"],
+      ["plannerTestMenu", "btnTestMenu"]
+    ].forEach(([menuId, buttonId]) => {
+      const menu = document.getElementById(menuId);
+      const button = document.getElementById(buttonId);
+      if(menu) menu.hidden = true;
+      if(button) button.setAttribute("aria-expanded", "false");
+    });
   }
   const presetGroup = document.getElementById("solverPresetGroup");
   if(presetGroup) presetGroup.setAttribute("aria-disabled", shouldLock ? "true" : "false");
@@ -10430,8 +12660,14 @@ function setAutoSortBusyControls(locked){
   if(tkbEl) tkbEl.classList.toggle("is-solving-readonly", shouldLock);
   const centerEl = document.querySelector(".center");
   if(centerEl) centerEl.classList.toggle("is-solving-readonly", shouldLock);
+  // 26/08 (chi dao chu du an): cot trai chi khoa NGUON KEO (.mon-item); van
+  // cho doi lop / giao vien de XEM trong luc dang xep (chon lop chi doc DATA,
+  // luoi #tkb van read-only nen khong the keo tha / sua).
   const leftEl = document.querySelector(".left");
-  if(leftEl) leftEl.classList.toggle("is-solving-readonly", shouldLock);
+  if(leftEl){
+    leftEl.classList.remove("is-solving-readonly");
+    leftEl.classList.toggle("is-solving-select-only", shouldLock);
+  }
 }
 
 function setAutoSortStopVisible(visible){
@@ -10627,31 +12863,35 @@ function setAutoSortProgress(percent, label, details){
     timerVal.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
-  // Update Metric Chip (completely hidden in Flash and Cherry modes)
-  const isAltEngine = window.__TKB_FLASH_SOLVING === true
-    || window.__TKB_HIDE_PROGRESS_METRIC === true
-    || window.__TKB_FORCE_ENGINE === "flash"
+  // Update Metric Chip (an hoan toan khi chay Cherry)
+  const isAltEngine = window.__TKB_HIDE_PROGRESS_METRIC === true
     || window.__TKB_FORCE_ENGINE === "cherry"
-    || window.__CURRENT_ACTIVE_ENGINE === "flash"
     || window.__CURRENT_ACTIVE_ENGINE === "cherry";
 
   if(isAltEngine){
-    // 19/08: KHONG duoc de nhan tien do CU dinh lai khi chay Flash/Cherry.
-    // Bien __CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL song sot giua cac luot; luot
-    // truoc chay "1 tiet trong" de lai "Trong 1 tiet: 70 -> 6", nen ngay giay
-    // thu 2 cua luot Cherry nhan cu hien lai => nguoi dung tuong nut Cherry
-    // dang chay thuat toan gap1 trong trinh duyet. Xoa nhan cu va hien thang
-    // TEN THUAT TOAN dang chay de nhin la biet luot nay di duong may chu nao.
-    window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = "";
+    // 19/08: KHONG duoc de nhan tien do CU dinh lai khi chay Cherry (nhan cu
+    // "Trong 1 tiet: 70 -> 6" cua luot truoc tung hien lai o giay thu 2).
+    // 22/08 (khuya, chu du an: "nut toi uu v3 phai hien 1 tiet -> 0 tiet"):
+    // engine v3 nay gui nhan so lieu truc tiep qua khung tien do (bridge dua
+    // vao details.metricLabel, vd "D\u1ea1y 1 ti\u1ebft: 43 \u2794 4"); co nhan do thi hien
+    // no, chua co thi hien ten thuat toan dang chay.
     var __engKey = String(window.__TKB_FORCE_ENGINE || window.__CURRENT_ACTIVE_ENGINE || "").trim().toLowerCase();
+    var __focusMode = String(window.__TKB_ENGINE_FOCUS_MODE || "").trim();
+    var __live = String(details?.metricLabel || "").trim();
+    var __liveIsNumbers = !!__live && /\d\s*\u2794\s*\d|\d+\s*(bu\u1ed5i|ti\u1ebft)/i.test(__live)
+      && !/^\d+\s*gi\u00e2y$/i.test(__live) && !/^\d+:\d+$/.test(__live);
     var __engBadge = __engKey === "cherry"
-      ? "Cherry \u2022 engine v3 (m\u00e1y ch\u1ee7)"
-      : (__engKey === "flash" ? "Flash \u2022 CP-SAT (m\u00e1y ch\u1ee7)" : "");
+      ? (__focusMode ? "\u0110ang t\u1ed1i \u01b0u v3\u2026" : "\u0110ang x\u1ebfp b\u1eb1ng Cherry v3!")
+      : "";
+    var __text = __liveIsNumbers
+      ? (__focusMode || /\u2794/.test(__live) && /\u00b7/.test(__live) ? __live : ("Cherry v3 \u00b7 " + __live))
+      : (window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL || __engBadge);
+    if(__liveIsNumbers) window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = __text;
     if(metric){
-      if(__engBadge){
+      if(__text){
         metric.classList.remove("is-hybrid");
-        metric.textContent = __engBadge;
-        metric.title = __engBadge;
+        metric.textContent = __text;
+        metric.title = __text;
         metric.hidden = false;
       }else{
         metric.textContent = "";
@@ -10691,7 +12931,12 @@ function setAutoSortProgress(percent, label, details){
   if(statusMsgEl && statusMsgEl.textContent) statusMsgEl.textContent = "";
 
   const btn = document.getElementById("btnStopAutoSort");
-  const bestEffortStopPending = window.__TKB_RUST_PROGRESS_STATE?.bestEffortStopPending === true;
+  // 24/08: chi giu nut Dung o trang thai khoa khi lan dung mem VAN con trong
+  // thoi gian cho. Khi bridge bao da treo qua han, nut phai song lai de lan
+  // bam ke tiep huy han - neu khong nguoi dung khong the dung duoc luot xep.
+  const bestEffortStopStuck = window.__TKB_RUST_PROGRESS_STATE?.bestEffortStopStuck === true;
+  const bestEffortStopPending = window.__TKB_RUST_PROGRESS_STATE?.bestEffortStopPending === true
+    && !bestEffortStopStuck;
   if(btn && !window.__AUTO_SORT_STOP_REQUESTED && !bestEffortStopPending && n < 100){
     btn.disabled = false;
     setAutoSortStopAccessibleState(false);
@@ -11326,6 +13571,14 @@ function backToMain(){
 
     function pvEnsureTeacherForClass(classId){
       const list = pvAllTeacherCodes(pvTeachersForClass(classId));
+      // 19/08: giu nguyen giao vien da ghim (khi dang soi mot van de tu bang
+      // thong ke). Truoc day dong duoi day am tham thay bang list[0] khien
+      // luoi hien SAI giao vien so voi tieu de.
+      const pinned = String(window.__TKB_PAIR_PINNED_GV || "").trim();
+      if(pinned){
+        currentGV = pinned;
+        return currentGV;
+      }
       if(!list.length){ currentGV = null; return ""; }
       if(!currentGV || !list.includes(currentGV)) currentGV = list[0];
       return currentGV;
@@ -11790,13 +14043,36 @@ function backToMain(){
       }
 
       const oldLop = currentLop;
+      let res;
       try{
         currentLop = info.classId;
-        return validateDrop(td, info.mon);
+        res = validateDrop(td, info.mon);
       }finally{
         currentLop = oldLop;
       }
+      if(!res || !res.ok) return res || {ok:false, reason:"runtime"};
+
+      // O tren luoi GV trong khong co nghia la o cua LOP cung trong. Khong hoi
+      // truoc thi tiet cu cua lop se bi ghi de am tham.
+      const occupied = cellMon(targetVal);
+      if(occupied && occupied !== info.mon){
+        const lopCanon = getLopCanonById(info.classId);
+        const extra = `Ô này của lớp ${lopCanon} đang có ${getMonShort(occupied)}.\n`+
+          `Nếu tiếp tục, tiết đó sẽ được đưa về "Chưa phân".`;
+        return Object.assign({}, res, {
+          warn: true,
+          msg: res.msg || `Lớp ${lopCanon} đang có ${getMonShort(occupied)} ở tiết này.`,
+          confirmText: res.confirmText
+            ? (res.confirmText + "\n\n" + extra)
+            : (extra + "\n\nBạn có muốn tiếp tục không?")
+        });
+      }
+      return res;
     }
+
+    // applyDragVisual nằm ngoài closure này nhưng cần đúng bộ kiểm tra của bảng
+    // phụ để tô sẵn màu cho ô GV ngay khi bắt đầu kéo.
+    window.__tkbValidateSupportDrop = pvValidateSupportDrop;
 
     function pvApplySupportDrop(td){
       const info = pvPairDragInfo();
@@ -11813,13 +14089,13 @@ function backToMain(){
         showDropError(res, td);
         return;
       }
-      if(res.warn && Array.isArray(res.conflicts) && res.conflicts.length){
-        const ok = confirm(res.confirmText || buildReplaceConfirmText(res.conflicts));
+      if(res.warn){
+        const ok = confirm(res.confirmText || buildReplaceConfirmText(res.conflicts || []));
         if(!ok){
           flashInvalid(td);
           return;
         }
-        clearConflictSlots(res.conflicts);
+        if(Array.isArray(res.conflicts) && res.conflicts.length) clearConflictSlots(res.conflicts);
       }
 
       const tkb = DATA?.tkb?.[info.classId];
@@ -11867,7 +14143,11 @@ function backToMain(){
         td.ondragover = (e)=>{
           if(!dragData) return;
           try{ e.preventDefault(); }catch(_){}
-          const res = pvValidateSupportDrop(td);
+          let res = DRAG_VALIDATE_CACHE.get(td);
+          if(!res){
+            res = pvValidateSupportDrop(td);
+            DRAG_VALIDATE_CACHE.set(td, res);
+          }
           setDropHint(td, res.ok && !res.warn);
         };
         td.ondragenter = ()=>{
@@ -11875,7 +14155,7 @@ function backToMain(){
           td.classList.add("drag-over");
         };
         td.ondragleave = ()=>{
-          td.classList.remove("drag-over", "drop-valid", "drop-invalid");
+          releaseDragOver(td);
         };
         td.ondrop = (e)=>{
           if(!dragData) return;
@@ -11885,18 +14165,168 @@ function backToMain(){
       });
     }
 
+    /* ===== "Chua phan" cua GIAO VIEN (pane duoi) =====
+       Danh sach PHANG "9A6 - GDTC x2" (khong xo theo lop), chi liet ke tiet
+       cua giao vien dang xem. Item keo ra dat dragData.type = "mon" kem
+       classId nen di thang vao duong drop san co cua pane GV
+       (pvPairDragInfo -> pvValidateSupportDrop). */
+
+    function pvTeacherUnassignedHTML(){
+      // Nướng sẵn trạng thái mở vào markup để không chớp tắt khi pane re-render.
+      const open = pvGvUnassignedMenuOpen === true;
+      return `<div id="gvUnassignedBar" class="unassigned-dropdown unassigned-dropdown-gv${open ? " is-open" : ""}" aria-label="Chưa phân của giáo viên">
+        <button id="gvUnassignedToggle" class="unassigned-dropdown-btn" type="button" onclick="toggleTeacherUnassignedDropdown(event)" aria-expanded="${open ? "true" : "false"}">
+          <span id="gvUnassignedSummary">Chưa phân:0</span>
+          <span class="unassigned-caret">v</span>
+        </button>
+        <div id="gvMonList" class="unassigned-menu unassigned-menu-gv"${open ? "" : " hidden"}></div>
+      </div>`;
+    }
+
+    // Trang thai mo mong muon, song sot qua re-render (nhu ban cua pane lop).
+    let pvGvUnassignedMenuOpen = false;
+
+    function pvSetTeacherUnassignedOpen(open){
+      const root = document.getElementById("gvUnassignedBar");
+      const btn = document.getElementById("gvUnassignedToggle");
+      const menu = document.getElementById("gvMonList");
+      if(!root || !btn || !menu) return;
+      const shouldOpen = !!open && !btn.disabled;
+      pvGvUnassignedMenuOpen = shouldOpen;
+      root.classList.toggle("is-open", shouldOpen);
+      menu.hidden = !shouldOpen;
+      btn.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+    }
+
+    window.closeTeacherUnassignedDropdown = function(){
+      pvSetTeacherUnassignedOpen(false);
+    };
+
+    window.toggleTeacherUnassignedDropdown = function(ev){
+      try{ ev?.preventDefault(); ev?.stopPropagation(); }catch(_){ }
+      const menu = document.getElementById("gvMonList");
+      if(!menu) return;
+      pvSetTeacherUnassignedOpen(menu.hidden);
+    };
+
+    if(!window.__TKB_GV_UNASSIGNED_DROPDOWN_BOUND){
+      window.__TKB_GV_UNASSIGNED_DROPDOWN_BOUND = true;
+      document.addEventListener("pointerdown", ev=>{
+        if(ev.target?.closest?.("#gvUnassignedBar")) return;
+        try{ pvSetTeacherUnassignedOpen(false); }catch(_){ }
+      }, true);
+    }
+
+    function pvTeacherUnassignedTasks(gvCode){
+      const code = (gvCode || "").toString().trim();
+      if(!code) return [];
+      const classOrder = new Map();
+      (Array.isArray(DATA.lop) ? DATA.lop : []).forEach((lop, index)=>{
+        classOrder.set(String(lop?.id || ""), index);
+      });
+      // Thứ tự CỐ ĐỊNH: lớp từ trên xuống theo bảng Lớp học, trong mỗi lớp môn
+      // theo đúng thứ tự bảng "Môn học" trong phần app. Không kéo lớp đang
+      // chọn lên đầu nữa (đổi lớp làm danh sách nhảy chỗ, khó theo dõi).
+      return collectUnassignedTasks({})
+        .filter(t => teacherValueHas(t.gv, code))
+        .sort((a,b)=>{
+          const ac = String(a.classId || "");
+          const bc = String(b.classId || "");
+          const ai = classOrder.has(ac) ? classOrder.get(ac) : 999999;
+          const bi = classOrder.has(bc) ? classOrder.get(bc) : 999999;
+          if(ai !== bi) return ai - bi;
+          return compareMonByMonHocOrder(a.mon, b.mon);
+        });
+    }
+
+    function pvLoadTeacherUnassigned(gvCode){
+      const box = document.getElementById("gvMonList");
+      const btn = document.getElementById("gvUnassignedToggle");
+      const summary = document.getElementById("gvUnassignedSummary");
+      if(!box || !btn || !summary) return;
+      box.innerHTML = "";
+
+      const code = (gvCode || currentGV || "").toString().trim();
+      let tasks = [];
+      try{
+        tasks = pvTeacherUnassignedTasks(code);
+      }catch(err){
+        console.error("[phanmon] teacher unassigned failed", err);
+      }
+
+      const totalRemain = tasks.reduce((sum,t)=>sum + Number(t.remain || 0), 0);
+      summary.textContent = `Chưa phân:${totalRemain}`;
+      btn.disabled = totalRemain <= 0;
+      if(btn.disabled){
+        pvSetTeacherUnassignedOpen(false);
+        return;
+      }
+
+      // Danh sách PHẲNG "9A6 - GDTC x2": nhìn là kéo được ngay, không phải mở
+      // thêm một cấp xổ xuống theo từng lớp nữa. (tasks đã sort: lớp đang chọn
+      // trước, rồi theo thứ tự lớp trong dữ liệu.)
+      tasks.forEach(t=>{
+        const d = document.createElement("div");
+        d.className = "mon-item";
+        d.dataset.mon = t.mon;
+        d.dataset.classid = String(t.classId);
+
+        const clsName = (t.className || getLopCanonById(t.classId) || t.classId || "").toString();
+        const monShort = getMonShort(t.mon);
+        const roomTxt = (t.room||"").toString().trim();
+        const remainDisp = Number(t.remain || 0) > 1 ? ` x${Number(t.remain || 0)}` : "";
+        d.innerHTML = `<span class="mon-item-main">${escapeHtml(clsName)} - ${escapeHtml(monShort)}${escapeHtml(remainDisp)}</span>`+
+                      `<span class="mon-item-meta">${escapeHtml(roomTxt ? ` (${roomTxt})` : "")}</span>`;
+        d.title = `${clsName} - ${t.mon}`;
+
+        d.onclick = ()=>{
+          // Dua lop cua tiet nay len bang tren; pvEnsureTeacherForClass giu
+          // nguyen currentGV nen bang duoi van la giao vien dang xem.
+          // Giu menu mo de nguoi dung keo tiep nhieu tiet.
+          if(String(currentLop || "") === String(t.classId)) return;
+          selectLop(t.classId);
+        };
+
+        d.draggable = true;
+        d.ondragstart = (e)=>{
+          if(isPlannerBusySolving()){ try{ e.preventDefault(); }catch(_){ } return; }
+          dragMon = t.mon;
+          dragData = { type:"mon", classId: t.classId, mon: t.mon };
+          setNativeDragTransfer(e, t.mon);
+          applyDragVisual(dragMon, null);
+        };
+        d.ondragend = ()=>{
+          clearDragVisual();
+          dragData = null;
+          dragMon = "";
+        };
+
+        box.appendChild(d);
+      });
+
+      // Bar vua duoc dung lai (mac dinh dong): khoi phuc trang thai mo truoc do.
+      if(pvGvUnassignedMenuOpen) pvSetTeacherUnassignedOpen(true);
+    }
+
+    function pvTeacherSummaryHTML(gvCode){
+      return pvTeacherUnassignedHTML() + pvTeacherStatsHTML(gvCode);
+    }
+
     function pvUpdateTeacherSupport(classId){
       const root = document.getElementById("tkbPairSupport");
       if(!root) return;
       const gv = pvEnsureTeacherForClass(classId);
       const teachers = pvAllTeacherCodes(pvTeachersForClass(classId));
       const tools = pvSelectHTML("pairTeacherSelect", teachers, gv, pvTeacherLabel, "pairSelectTeacher(this.value)");
-      root.innerHTML = pvPane("TKB giáo viên", tools, pvTeacherTableHTML(gv), "support", pvTeacherStatsHTML(gv));
+      root.innerHTML = pvPane("TKB giáo viên", tools, pvTeacherTableHTML(gv), "support", pvTeacherSummaryHTML(gv));
       pvBindSupportNav(root);
       pvBindTeacherSupportDrag(root);
+      pvLoadTeacherUnassigned(gv);
     }
 
     window.pairSelectTeacher = function(code){
+      // Nguoi dung tu chon giao vien -> bo ghim cua che do soi thong ke.
+      window.__TKB_PAIR_PINNED_GV = "";
       currentGV = (code || "").toString().trim();
       if(VIEW_MODE === "lop") pvUpdateTeacherSupport(currentLop);
       else renderCurrentView();
@@ -11908,6 +14338,7 @@ function backToMain(){
     };
 
     window.pairSelectClass = function(classId){
+      window.__TKB_PAIR_PINNED_GV = "";
       currentLop = (classId || "").toString();
       renderCurrentView();
     };
@@ -11976,7 +14407,8 @@ function backToMain(){
         const gv = pvEnsureTeacherForClass(id);
         const teachers = pvAllTeacherCodes(pvTeachersForClass(id));
         const tools = pvSelectHTML("pairTeacherSelect", teachers, gv, pvTeacherLabel, "pairSelectTeacher(this.value)");
-        box.insertAdjacentHTML("beforeend", `<div id="tkbPairSupport">${pvPane("TKB giáo viên", tools, pvTeacherTableHTML(gv), "support", pvTeacherStatsHTML(gv))}</div>`);
+        box.insertAdjacentHTML("beforeend", `<div id="tkbPairSupport">${pvPane("TKB giáo viên", tools, pvTeacherTableHTML(gv), "support", pvTeacherSummaryHTML(gv))}</div>`);
+        pvLoadTeacherUnassigned(gv);
       }catch(err){
         console.error("[phanmon] render teacher support failed", err);
         const fallback = '<div class="tkb-pair-empty">Chưa tải được TKB giáo viên</div>';
@@ -12056,117 +14488,4 @@ function backToMain(){
   }
 })();
 
-/* =========================================================
-   FLASH SCHEDULER ENGINE (MULTI-CORE CP-SAT CLOUD RUN)
-   ========================================================= */
-async function runFlashScheduler(event){
-  if(event) { try{ event.preventDefault(); event.stopPropagation(); }catch(_){} }
-  if(window.__TKB_RUST_SOLVER_RUNNING === true || window.__TKB_SOLVE_UI_BUSY === true){
-    return;
-  }
-  
-  window.__TKB_FLASH_SOLVING = true;
-  window.__TKB_HIDE_PROGRESS_METRIC = true;
-
-  // Clear any status messages
-  if(typeof _setStatus === "function") _setStatus("", "info");
-  const statusEl = document.getElementById("statusMsg");
-  if(statusEl) statusEl.textContent = "";
-
-  // Hide the metric chip (2044/2044 tiết) completely
-  const metric = document.getElementById("autoSortProgressMetric");
-  if(metric){
-    metric.textContent = "";
-    metric.hidden = true;
-  }
-
-  // Immediately start stopwatch timer display
-  if(typeof setAutoSortProgress === "function"){
-    setAutoSortProgress(5, "");
-  }
-
-  // Yield to browser rendering thread so the spinning clock animates immediately
-  await new Promise(resolve => setTimeout(resolve, 50));
-
-  try {
-    if(typeof window.clearOptimizationPlateau === "function"){
-      window.clearOptimizationPlateau(window.getData?.(), false);
-    }
-  }catch(_){}
-  
-  const data = typeof window.getData === "function" ? window.getData() : null;
-  const scheduled = typeof window.countScheduledLessons === "function" ? window.countScheduledLessons(data) : 0;
-  const expected = typeof window.expectedLessonCount === "function" ? window.expectedLessonCount(data) : 0;
-  const isComplete = expected > 0 && scheduled >= expected;
-
-  const flashSettings = {
-    ui_flash_scheduler_active: true,
-    ui_single_pass_auto_sort: true,
-    ui_unified_auto_sort: true,
-    ui_hybrid_executor: "cloud_run",
-    ui_hybrid_cloud_run_requested: true,
-    routing_mode: "serverless_only",
-    ui_allow_quality_after_single_pass: false,
-    ui_stop_after_first_complete_schedule: true,
-    solver_mode: "auto",
-    num_workers: 6,
-    overall_time_limit_seconds: 60,
-    backend_deadline_ms: 150000,
-    native_global_deadline_ms: 150000,
-    progress_estimate_seconds: 45,
-    require_complete_schedule: true,
-    best_effort_on_timeout: true,
-    force_fresh_backend_solve: true,
-    allow_backend_cache: false,
-    minimize_sessions: true,
-    minimize_one_period_sessions: true,
-    max_one_period_sessions: 0,
-    minimize_teacher_gaps: true,
-    period_max_teacher_gap: 1,
-    complete_schedule_seed_retry: false,
-    complete_schedule_seed_retry_max_runs: 0,
-    allow_zero_one_quality_retry: false,
-    allow_teacher_session_deep_retry: false,
-    allow_teacher_session_fast_portfolio: false,
-    schedule_diversity: false,
-    reclick_schedule_diversity: false
-  };
-
-  if(isComplete){
-    flashSettings.optimize_existing_schedule = true;
-    flashSettings.allow_solver_warm_start = true;
-    flashSettings.preserve_existing_tkb = true;
-    flashSettings.ui_unified_solve_kind = "refine_complete";
-    flashSettings.optimization_focus = "automatic";
-  } else {
-    flashSettings.optimize_existing_schedule = false;
-    flashSettings.preserve_existing_tkb = false;
-    flashSettings.force_preserve_partial_existing = false;
-    flashSettings.ui_unified_solve_kind = "fresh_complete_first";
-    flashSettings.ui_no_hint_fresh_solve = true;
-    flashSettings.ui_disable_staged_existing_repair = true;
-    flashSettings.allow_solver_warm_start = false;
-    flashSettings.auto_sort_strategy = "fresh_fast_quality";
-  }
-
-  try {
-    if(typeof window.solveWithRustApi === "function"){
-      return await window.solveWithRustApi({
-        ask: false,
-        settings: flashSettings,
-        singlePass: true
-      });
-    } else if(typeof window.bridgeSapXepTuDongAll === "function"){
-      return await window.bridgeSapXepTuDongAll({
-        manualAgentInvite: false,
-        mode: "automatic",
-        settings: flashSettings
-      });
-    }
-  } finally {
-    window.__TKB_FLASH_SOLVING = false;
-    window.__TKB_HIDE_PROGRESS_METRIC = false;
-  }
-}
-window.runFlashScheduler = runFlashScheduler;
 

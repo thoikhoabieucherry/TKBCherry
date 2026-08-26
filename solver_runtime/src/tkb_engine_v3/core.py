@@ -11,8 +11,9 @@ Coordinate system:
 from __future__ import annotations
 
 import random
+import unicodedata
 from dataclasses import dataclass, field
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 NUM_DAYS = 6
 NUM_SESSIONS = 12
@@ -192,6 +193,17 @@ class TeacherRule:
     no_m5_a1: tuple[bool, ...] = (False,) * NUM_DAYS
     # (group_id_or_None(=all), subject_set_or_None, per_session, per_day)
     class_period_caps: tuple[tuple[frozenset | None, int, int], ...] = ()
+    # 23/08: yeu cau ve DIA DIEM (co so) theo tung buoi, chi so buoi
+    # s = day*2 + part (0 = sang, 1 = chieu):
+    #   loc_one  - "Chi day 1 dia diem/1 buoi"
+    #   loc_gap  - "Co tiet trong giua 2 dia diem": hai tiet KE NHAU (lien tiet)
+    #              khong duoc o 2 dia diem khac nhau -> phai co >= 1 tiet trong
+    #              de di chuyen (tiet trong do la hop le).
+    #   loc_move - "Khong di chuyen 2 lan/1 buoi": trong mot buoi GV chi duoc
+    #              doi dia diem toi da 1 lan.
+    loc_one: tuple[bool, ...] = (False,) * NUM_SESSIONS
+    loc_gap: tuple[bool, ...] = (False,) * NUM_SESSIONS
+    loc_move: tuple[bool, ...] = (False,) * NUM_SESSIONS
 
     def is_default(self) -> bool:
         return (
@@ -204,7 +216,42 @@ class TeacherRule:
             and not any(cap for pair in self.session_period_cap for cap in pair)
             and not any(self.no_m5_a1)
             and not self.class_period_caps
+            and not self.has_location_rules()
         )
+
+    def has_location_rules(self) -> bool:
+        return any(self.loc_one) or any(self.loc_gap) or any(self.loc_move)
+
+
+def location_rule_debt(entries: list[tuple[int, int]], one: bool, gap: bool, move: bool) -> int:
+    """So vi pham luat dia diem cua MOT buoi giao vien.
+
+    ``entries``: [(tiet, dia_diem)] da sap theo tiet, chi gom o co dia diem
+    (dia_diem >= 0). Cung mot cach tinh cho kiem tra cung (State) va diem phat
+    mem (SoftSchedule) de hai ben luon dong y: 0 <=> buoi hop le. Ngu nghia
+    khop evalTeacherRule trong web/pages/tkb-constraints.js:
+      one : so dia diem khac nhau trong buoi - 1
+      gap : moi cap tiet lien tiet (cach nhau <= 1 tiet) ma khac dia diem
+      move: so lan doi dia diem - 1 (neu doi > 1 lan)
+    """
+
+    if len(entries) < 2:
+        return 0
+    debt = 0
+    if one:
+        debt += len({loc for _p, loc in entries}) - 1
+    if gap or move:
+        changes = 0
+        prev_p, prev_loc = entries[0]
+        for p, loc in entries[1:]:
+            if loc != prev_loc:
+                changes += 1
+                if gap and p - prev_p <= 1:
+                    debt += 1
+            prev_p, prev_loc = p, loc
+        if move and changes > 1:
+            debt += changes - 1
+    return debt
 
 
 def compile_teacher_rule(rule: Mapping[str, Any], one_session_mode: Callable[[Any], str], constraints: Any) -> TeacherRule:
@@ -244,6 +291,14 @@ def compile_teacher_rule(rule: Mapping[str, Any], one_session_mode: Callable[[An
             else:
                 subject_set = frozenset(constraints.group_items("subject", gid)) if constraints else frozenset()
             caps.append((subject_set, per_session, per_day))
+    def _loc_flags(name: str) -> tuple[bool, ...]:
+        flags = [False] * NUM_SESSIONS
+        for d in range(NUM_DAYS):
+            for part, part_key in enumerate(("sang", "chieu")):
+                if _truthy(_get_path(rule, f"{name}.{part_key}.{_DAY_KEYS[d]}", False)):
+                    flags[d * 2 + part] = True
+        return tuple(flags)
+
     return TeacherRule(
         max_days=_to_int(_get_path(rule, "maxDaysSessions.maxDays", 0), 0),
         max_sessions=_to_int(_get_path(rule, "maxDaysSessions.maxSessions", 0), 0),
@@ -254,6 +309,9 @@ def compile_teacher_rule(rule: Mapping[str, Any], one_session_mode: Callable[[An
         session_period_cap=sess_cap,
         no_m5_a1=no51,
         class_period_caps=tuple(caps),
+        loc_one=_loc_flags("oneLocationPerSession"),
+        loc_gap=_loc_flags("gapBetweenLocations"),
+        loc_move=_loc_flags("maxOneMovePerSession"),
     )
 
 
@@ -296,6 +354,27 @@ class Problem:
     group_rule_keys: dict[tuple[int, str], SubjectRule] = field(default_factory=dict)
     raw_groups: Mapping[str, Mapping[str, Any]] | None = None  # constraint groups (for timeLimit)
     _raw_groups: Mapping[str, Mapping[str, Any]] | None = None  # alias used by State
+    # 23/08: ten GV de XUAT ket qua cho cac phan cong "o co dinh dung chung"
+    # (a_teacher = -1 de engine khong dem xung dot/thong ke GV, nhung tiet
+    # tra ve van mang dung ma GV nhu phan cong). Rong cho phan cong thuong.
+    a_teacher_label: list[str] = field(default_factory=list)
+    # 25/08: MOI giao vien cua tung phan cong. Tiet DAY GHEP ("GV1, GV2": mot
+    # mon, mot lop, hai GV cung day) -> (i1, i2); phan cong thuong -> (i,);
+    # phan cong tong hop (a_teacher = -1) -> (). a_teacher[ai] la GV DAU TIEN
+    # (dung cho cac heuristic "tiet cua GV t"); moi kiem tra CUNG (trung gio,
+    # o nghi, luat GV, thong ke buoi day) phai xet ca tuple nay.
+    a_teachers: list[tuple[int, ...]] = field(default_factory=list)
+    # 23/08: dia diem (co so) cua tung phan cong (-1 = khong co), ten dia
+    # diem, va co "GV nay co luat dia diem VA day o >= 2 dia diem" — chi khi
+    # co moi phai kiem tra/phat (GV day 1 dia diem khong bao gio vi pham).
+    a_loc: list[int] = field(default_factory=list)
+    loc_names: list[str] = field(default_factory=list)
+    teacher_loc_rules: list[bool] = field(default_factory=list)
+    # 23/08: o CO DINH theo lop (C x 60). Luat phia lop ma chinh cac o co dinh
+    # da vi pham (vd nguoi dung co dinh "Tich Hop" tiet 3-4 chieu trong khi mon
+    # do co "tranh cap tiet 3-4") khong duoc chan engine xep phan con lai cua
+    # lop — vi pham do van duoc bo kiem dinh bao cho nguoi dung.
+    fixed_mask: list[bytearray] = field(default_factory=list)
 
     def num_classes(self) -> int:
         return len(self.class_names)
@@ -306,26 +385,87 @@ class Problem:
     def num_assignments(self) -> int:
         return len(self.a_class)
 
+    def teacher_label(self, ai: int) -> str:
+        """Teacher code to export for assignment ``ai`` ("" when none).
 
-def compile_problem(ctx: Any, rules: Any, fixed_lessons: list[Any]) -> Problem:
-    """Compile UiDataContext + TimetableRuleSet (+ locked lessons) into arrays."""
+        Tiet day ghep tra ve nhan gop "GV1, GV2" (a_teacher_label) de giao
+        dien nhan dung phan cong; phan cong thuong tra ve ma GV.
+        """
+
+        if ai < len(self.a_teacher_label) and self.a_teacher_label[ai]:
+            return self.a_teacher_label[ai]
+        t = self.a_teacher[ai]
+        if t >= 0:
+            return self.teacher_names[t]
+        return ""
+
+
+def compile_problem(
+    ctx: Any,
+    rules: Any,
+    fixed_lessons: list[Any],
+    *,
+    shared_teacher_slots: Iterable[tuple[str, int, str, int]] | None = None,
+) -> Problem:
+    """Compile UiDataContext + TimetableRuleSet (+ locked lessons) into arrays.
+
+    ``shared_teacher_slots``: (teacher, day, session, period) cells that the
+    user locked for ONE teacher in several classes at the same time (school-
+    wide activity such as "sinh hoat duoi co"). Those fixed lessons become
+    separate teacher-less assignments (``a_teacher = -1``, exported with the
+    real teacher code via ``a_teacher_label``) so the engine never sees them
+    as a teacher conflict, while the teacher is marked unavailable at those
+    slots so none of their other lessons can be placed there.
+    """
 
     from tkb_optimizer_ref.models import Session
-    from tkb_optimizer_ref.rules import one_session_per_day_mode
+    from tkb_optimizer_ref.rules import one_session_per_day_mode, teacher_members
     from tkb_optimizer_ref.template import class_available_periods
 
     data = ctx.school_data
     constraints = rules.constraints if rules else None
+    shared_slots = {tuple(item) for item in (shared_teacher_slots or [])}
 
     class_names = [c.name for c in data.classes]
     class_grades = [c.grade for c in data.classes]
     class_idx = {name: i for i, name in enumerate(class_names)}
 
-    teacher_names = sorted({a.teacher for a in data.assignments if a.teacher})
+    # 25/08: "GV1, GV2" (tiet day ghep) KHONG phai la mot giao vien moi — chi
+    # cac thanh vien moi la giao vien cua bai toan.
+    teacher_names = sorted({m for a in data.assignments for m in teacher_members(a.teacher)})
     for lesson in fixed_lessons:
-        if lesson.teacher and lesson.teacher not in teacher_names:
-            teacher_names.append(lesson.teacher)
+        for m in teacher_members(lesson.teacher):
+            if m not in teacher_names:
+                teacher_names.append(m)
     teacher_idx = {name: i for i, name in enumerate(teacher_names)}
+
+    def _member_ids(teacher_value: Any) -> tuple[int, ...]:
+        return tuple(
+            teacher_idx[m] for m in teacher_members(teacher_value) if m in teacher_idx
+        )
+
+    def _is_shared(lesson: Any) -> bool:
+        # 25/08: shared_slots duoc dem theo tung GV thanh vien (adapter
+        # shared_fixed_teacher_slots) -> tiet day ghep la o dung chung khi BAT
+        # KY thanh vien nao co o dung chung tai gio do.
+        if not shared_slots:
+            return False
+        key = (int(lesson.day), str(lesson.session), int(lesson.period))
+        return any((member, *key) in shared_slots for member in teacher_members(lesson.teacher))
+
+    # shared fixed lessons grouped per (class, subject, teacher) -> slots
+    shared_fixed: dict[tuple[str, str, str], list[int]] = {}
+    for lesson in fixed_lessons:
+        if not _is_shared(lesson):
+            continue
+        d = int(lesson.day) - 2
+        part = 0 if lesson.session == "AM" else 1
+        p = int(lesson.period) - 1
+        if not (0 <= d < NUM_DAYS and 0 <= p < PERIODS):
+            continue
+        shared_fixed.setdefault(
+            (lesson.class_name, lesson.subject, lesson.teacher), []
+        ).append(slot_of(d, part, p))
 
     subject_names = sorted({a.subject for a in data.assignments})
     for lesson in fixed_lessons:
@@ -360,6 +500,21 @@ def compile_problem(ctx: Any, rules: Any, fixed_lessons: list[Any]) -> Problem:
                         if _off("teacher", t, d, part, p):
                             mask[slot_of(d, part, p)] = 0
         teacher_avail.append(mask)
+    # GV dang o o co dinh dung chung (nhieu lop cung gio) -> ban tai gio do cho
+    # moi phan cong khac cua GV; chinh cac o do duoc giu boi phan cong tong hop
+    # ben duoi (a_teacher = -1) nen khong bi mat na nay chan.
+    # 25/08: chan MOI thanh vien cua tung o dung chung (ke ca GV chi xuat hien
+    # trong tiet ghep) — phan cong tong hop (a_teacher = -1) khong giu cho GV.
+    for lesson in fixed_lessons:
+        if not _is_shared(lesson):
+            continue
+        d = int(lesson.day) - 2
+        part = 0 if lesson.session == "AM" else 1
+        p = int(lesson.period) - 1
+        if not (0 <= d < NUM_DAYS and 0 <= p < PERIODS):
+            continue
+        for ti in _member_ids(lesson.teacher):
+            teacher_avail[ti][slot_of(d, part, p)] = 0
 
     # --- subject groups ---------------------------------------------------
     subject_groups: dict[int, tuple[str, ...]] = {}
@@ -378,12 +533,18 @@ def compile_problem(ctx: Any, rules: Any, fixed_lessons: list[Any]) -> Problem:
     a_cap: list[int] = []
     a_allowed: list[bytearray] = []
     a_rule: list[SubjectRule | None] = []
+    a_teacher_label: list[str] = []
+    a_teachers: list[tuple[int, ...]] = []
     group_rule_keys: dict[tuple[int, str], SubjectRule] = {}
+    # (class, subject, teacher) -> synthetic assignment index for shared cells
+    shared_assignment: dict[tuple[str, str, str], int] = {}
+    pending_shared: list[tuple[tuple[str, str, str], int, int, int, str, int, SubjectRule | None, list[int]]] = []
 
     for a in data.assignments:
         ci = class_idx[a.class_name]
         si = subject_idx[a.subject]
-        ti = teacher_idx.get(a.teacher, -1)
+        member_ids = _member_ids(a.teacher)
+        ti = member_ids[0] if member_ids else -1
         cap = max(1, int(a.max_periods_per_session))
         merged_rule: SubjectRule | None = None
         if constraints is not None:
@@ -406,7 +567,16 @@ def compile_problem(ctx: Any, rules: Any, fixed_lessons: list[Any]) -> Problem:
                     merged_rule = compiled
 
         allowed = bytearray(NUM_SLOTS)
-        tmask = teacher_avail[ti] if ti >= 0 else bytearray(b"\x01" * NUM_SLOTS)
+        if member_ids:
+            # tiet day ghep: chi xep duoc khi MOI giao vien thanh vien ranh
+            tmask = bytearray(teacher_avail[member_ids[0]])
+            for extra in member_ids[1:]:
+                extra_mask = teacher_avail[extra]
+                for slot in range(NUM_SLOTS):
+                    if not extra_mask[slot]:
+                        tmask[slot] = 0
+        else:
+            tmask = bytearray(b"\x01" * NUM_SLOTS)
         cmask = class_avail[ci]
         for slot in range(NUM_SLOTS):
             if not cmask[slot] or not tmask[slot]:
@@ -425,14 +595,45 @@ def compile_problem(ctx: Any, rules: Any, fixed_lessons: list[Any]) -> Problem:
                 continue
             allowed[slot] = 1
 
+        shared_key = (a.class_name, a.subject, a.teacher)
+        shared_slots_of_a = shared_fixed.get(shared_key)
+        periods = int(a.periods_per_week)
+        if shared_slots_of_a and shared_key not in shared_assignment:
+            # Phan cong thuong chi giu phan tiet KHONG nam o o dung chung; phan
+            # o dung chung do phan cong tong hop (them sau vong lap) gom.
+            shared_count = min(periods, len(shared_slots_of_a))
+            periods -= shared_count
+            shared_assignment[shared_key] = -1  # placeholder, set below
+            pending_shared.append(
+                (shared_key, ci, si, ti, a.room or "", cap, merged_rule, list(shared_slots_of_a)[:shared_count])
+            )
+
         a_class.append(ci)
         a_subject.append(si)
         a_teacher.append(ti)
+        a_teachers.append(member_ids)
         a_room.append(a.room or "")
-        a_periods.append(int(a.periods_per_week))
+        a_periods.append(periods)
         a_cap.append(cap)
         a_allowed.append(allowed)
         a_rule.append(merged_rule)
+        a_teacher_label.append(str(a.teacher or "") if len(member_ids) > 1 else "")
+
+    for shared_key, ci, si, ti, room, cap, merged_rule, slots in pending_shared:
+        allowed = bytearray(NUM_SLOTS)
+        for slot in slots:
+            allowed[slot] = 1
+        shared_assignment[shared_key] = len(a_class)
+        a_class.append(ci)
+        a_subject.append(si)
+        a_teacher.append(-1)
+        a_teachers.append(())
+        a_room.append(room)
+        a_periods.append(len(slots))
+        a_cap.append(cap)
+        a_allowed.append(allowed)
+        a_rule.append(merged_rule)
+        a_teacher_label.append(str(shared_key[2] or "") or (teacher_names[ti] if ti >= 0 else ""))
 
     # --- teacher rules ----------------------------------------------------
     teacher_rules: list[TeacherRule | None] = []
@@ -478,29 +679,78 @@ def compile_problem(ctx: Any, rules: Any, fixed_lessons: list[Any]) -> Problem:
 
     # --- fixed lessons → locked cells ------------------------------------
     key_to_assignment: dict[tuple[int, int, int], int] = {}
-    for ai in range(len(a_class)):
+    real_assignment_count = len(a_class) - len(pending_shared)
+    for ai in range(real_assignment_count):
         key_to_assignment[(a_class[ai], a_subject[ai], a_teacher[ai])] = ai
     fixed_cells: list[tuple[int, int, int]] = []
+    shared_cell_budget: dict[int, int] = {}
     for lesson in fixed_lessons:
         ci = class_idx.get(lesson.class_name)
         si = subject_idx.get(lesson.subject)
-        ti = teacher_idx.get(lesson.teacher, -1)
+        lesson_members = _member_ids(lesson.teacher)
+        ti = lesson_members[0] if lesson_members else -1
         if ci is None or si is None:
-            continue
-        ai = key_to_assignment.get((ci, si, ti))
-        if ai is None:
             continue
         d = int(lesson.day) - 2
         part = 0 if lesson.session == "AM" else 1
         p = int(lesson.period) - 1
-        if 0 <= d < NUM_DAYS and 0 <= p < PERIODS:
-            fixed_cells.append((ci, slot_of(d, part, p), ai))
+        if not (0 <= d < NUM_DAYS and 0 <= p < PERIODS):
+            continue
+        slot = slot_of(d, part, p)
+        ai = None
+        if _is_shared(lesson):
+            shared_ai = shared_assignment.get((lesson.class_name, lesson.subject, lesson.teacher), -1)
+            if shared_ai >= 0 and a_allowed[shared_ai][slot]:
+                used = shared_cell_budget.get(shared_ai, 0)
+                if used < a_periods[shared_ai]:
+                    shared_cell_budget[shared_ai] = used + 1
+                    ai = shared_ai
+        if ai is None:
+            ai = key_to_assignment.get((ci, si, ti))
+        if ai is None:
+            continue
+        fixed_cells.append((ci, slot, ai))
 
     time_limit_rules: tuple[Mapping[str, Any], ...] = ()
     if constraints is not None:
         from tkb_optimizer_ref.validate import _iter_limit_rules
 
         time_limit_rules = tuple(_iter_limit_rules(constraints))
+
+    # --- dia diem (co so) ----------------------------------------------------
+    # Cung ngu nghia voi roomLocation() cua giao dien: co phong -> phong la
+    # dia diem (phong khong co truong dia diem rieng trong app), khong co
+    # phong -> dia diem cua lop. Chi GV co luat dia diem va day >= 2 dia diem
+    # moi bat kiem tra, nen truong 1 co so / khong bat luat khong doi gi.
+    class_location = {c.name: str(getattr(c, "location", "") or "").strip() for c in data.classes}
+    loc_idx: dict[str, int] = {}
+    loc_names: list[str] = []
+    a_loc: list[int] = []
+    for ai in range(len(a_class)):
+        loc_text = str(a_room[ai] or "").strip() or class_location.get(class_names[a_class[ai]], "")
+        # cung cach chuan hoa voi norm() cua giao dien: NFC + gop khoang trang + thuong
+        loc_text = " ".join(unicodedata.normalize("NFC", loc_text).split()).casefold()
+        if not loc_text:
+            a_loc.append(-1)
+            continue
+        li = loc_idx.get(loc_text)
+        if li is None:
+            li = len(loc_names)
+            loc_idx[loc_text] = li
+            loc_names.append(loc_text)
+        a_loc.append(li)
+    teacher_locs: list[set[int]] = [set() for _ in teacher_names]
+    for ai in range(len(a_class)):
+        if a_loc[ai] >= 0:
+            for ti in a_teachers[ai]:
+                teacher_locs[ti].add(a_loc[ai])
+    teacher_loc_rules = [
+        bool(tr is not None and tr.has_location_rules() and len(teacher_locs[ti]) >= 2)
+        for ti, tr in enumerate(teacher_rules)
+    ]
+    fixed_mask = [bytearray(NUM_SLOTS) for _ in class_names]
+    for c, slot, _ai in fixed_cells:
+        fixed_mask[c][slot] = 1
 
     return Problem(
         class_names=class_names,
@@ -527,6 +777,12 @@ def compile_problem(ctx: Any, rules: Any, fixed_lessons: list[Any]) -> Problem:
         group_rule_keys=group_rule_keys,
         raw_groups=(constraints.groups if constraints is not None else None),
         _raw_groups=(constraints.groups if constraints is not None else None),
+        a_teacher_label=a_teacher_label,
+        a_teachers=a_teachers,
+        a_loc=a_loc,
+        loc_names=loc_names,
+        teacher_loc_rules=teacher_loc_rules,
+        fixed_mask=fixed_mask,
     )
 
 

@@ -7,15 +7,15 @@
   <link rel="icon" type="image/png" href="assets/favicon-cherry.png?v=2" />
   <meta name="theme-color" content="#ffffff" />
   <link rel="stylesheet" href="tokens.css?v=20260710-light-v1" />
-  <link rel="stylesheet" href="auth.css?v=20260803-trial-banner-v8" />
-  <link rel="stylesheet" href="theme-light.css?v=20260803-trial-banner-v8" />
+  <link rel="stylesheet" href="auth.css?v=20260820-portal-info-v1" />
+  <link rel="stylesheet" href="theme-light.css?v=20260821-ui-v1" />
   <link rel="stylesheet" href="runtime.css?v=20260710-runtime-v1" />
   <script src="shared/school-context.js?v=20260708-v1"></script>
   <script src="shared/auth-api.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
-  <script src="shared/auth.js?v=20260803-free-5-solve-quota-v1"></script>
+  <script src="shared/auth.js?v=20260823-default-first-v1"></script>
   <script src="shared/runtime.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
   <script defer src="shared/password-toggle.js?v=20260708-v1"></script>
-  <script defer src="school-portal.js?v=20260803-trial-banner-v8"></script>
+  <script defer src="school-portal.js?v=20260822-max2-grant-v1"></script>
 </head>
 <body class="portal-body">
   <header class="portal-top">
@@ -66,17 +66,20 @@
       </form>
     </section>
 
-    <section class="portal-card">
-      <h2>Gói dịch vụ</h2>
+    <section class="portal-card" id="plansCard">
+      <div class="portal-card-head">
+        <h2>Gói dịch vụ</h2>
+        <div class="portal-card-head-actions">
+          <span class="portal-plan-summary" id="plansSummary" hidden></span>
+          <button type="button" class="portal-btn" id="btnTogglePlans" aria-controls="planCards" aria-expanded="true" hidden>Thu gọn</button>
+        </div>
+      </div>
       <div class="plan-cards" id="planCards"></div>
     </section>
 
     <section class="portal-card">
       <div class="portal-card-head">
         <h2>Phiên bản thời khóa biểu</h2>
-        <div class="portal-card-head-actions">
-          <button type="button" class="portal-btn" id="btnNewSchedule">Tạo mới</button>
-        </div>
       </div>
       <div class="portal-table-wrap">
         <table class="portal-table portal-schedule-table">

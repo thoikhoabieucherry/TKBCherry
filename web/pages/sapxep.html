@@ -16,7 +16,7 @@
 <meta name="theme-color" content="#ffffff">
 
 <link rel="stylesheet" href="../tokens.css?v=20260710-light-v1">
-<link rel="stylesheet" href="phanmon.css?v=20260817-class-stats-modal-v1">
+<link rel="stylesheet" href="phanmon.css?v=20260821-unassigned-v4">
 <link rel="stylesheet" href="../admin-shell.css?v=20260710-app-nav-right-v1">
 <link rel="stylesheet" href="../theme-light.css?v=20260710-stats-zfix-v1">
 <link rel="stylesheet" href="../runtime.css?v=20260710-runtime-v1">
@@ -63,7 +63,8 @@ body.planner-shell .toolbar-actions > .planner-optimize-wrap {
   min-height: 36px;
 }
 
-body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu {
+body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu,
+body.planner-shell .planner-optimize-wrap > #btnTestMenu {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -85,13 +86,17 @@ body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu {
 }
 
 body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu:hover:not(:disabled),
-body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu[aria-expanded="true"] {
+body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu[aria-expanded="true"],
+body.planner-shell .planner-optimize-wrap > #btnTestMenu:hover:not(:disabled),
+body.planner-shell .planner-optimize-wrap > #btnTestMenu[aria-expanded="true"] {
   border-color: #94a3b8;
   background: #f8fafc;
   color: #0f172a;
 }
 
 body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu.is-auto-sort-disabled,
+body.planner-shell .planner-optimize-wrap > #btnTestMenu.is-auto-sort-disabled,
+body.planner-shell .planner-optimize-menu > button.is-auto-sort-disabled,
 body.planner-shell .toolbar-actions > button.is-auto-sort-disabled,
 body.planner-shell .toolbar-secondary-actions button.is-auto-sort-disabled,
 body.planner-shell #btnRangBuoc.is-auto-sort-disabled,
@@ -278,28 +283,56 @@ body.planner-shell #btnAutoSort .toolbar-icon {
   transform: translateX(1px);
 }
 
-body.planner-shell #btnEngineFlash .toolbar-icon {
-  width: 20px;
-  height: 20px;
-  filter: drop-shadow(0 1px 2px rgba(99, 102, 241, 0.25));
-}
-
 body.planner-shell #btnEngineCherry .toolbar-icon {
   width: 25px;
   height: 25px;
   filter: drop-shadow(0 1px 3px rgba(239, 30, 60, 0.28));
 }
 
-body.planner-shell #btnEngineFlash:hover:not(:disabled) {
-  border-color: #818cf8;
-  background: #f5f3ff;
-  box-shadow: 0 3px 10px rgba(99, 102, 241, 0.18);
-}
-
 body.planner-shell #btnEngineCherry:hover:not(:disabled) {
   border-color: #f87171;
   background: #fef2f2;
   box-shadow: 0 3px 10px rgba(239, 30, 60, 0.18);
+}
+
+/* Nút "Tối ưu v3" (22/08 đêm, trước là TEST): dùng chung khung/kích thước
+   với nút "Tối ưu" (selector nền ở trên), nhấn màu hổ phách ở chữ + icon để
+   phân biệt đường engine v3 (máy chủ) với menu Tối ưu (trình duyệt). Ẩn trên
+   điện thoại vì lưới nút mobile đặt grid-column cố định cho từng nút. */
+body.planner-shell .planner-optimize-wrap > #btnTestMenu {
+  color: #b45309;
+}
+
+body.planner-shell .planner-optimize-wrap > #btnTestMenu:hover:not(:disabled),
+body.planner-shell .planner-optimize-wrap > #btnTestMenu[aria-expanded="true"] {
+  border-color: #f0c98a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+/* 23/08 (chỉ đạo chủ dự án): trên điện thoại hiện Tối ưu v3 (icon) + Cherry + RB,
+   ẩn ▶ FET và menu Tối ưu FET — xem khối mobile bên dưới (không còn ẩn
+   #plannerTestWrap theo bề rộng nữa). */
+
+/* 21/08: thu hẹp thanh nút (desktop). Các nút CHỈ CÓ ICON không cần bề rộng
+   72-84px như nút có chữ — co về 46px, thanh nút ngắn lại ~180px mà không
+   đụng layout mobile (media riêng bên dưới đã tự xếp lưới). */
+@media (min-width: 901px) {
+  body.planner-shell .toolbar-actions {
+    gap: 4px;
+  }
+
+  body.planner-shell .toolbar-main .toolbar-actions > #btnUndoTKB,
+  body.planner-shell .toolbar-main .toolbar-actions > #btnRedoTKB,
+  body.planner-shell .toolbar-main .toolbar-actions > #btnAutoSort,
+  body.planner-shell .toolbar-main .toolbar-actions > #btnEngineCherry,
+  body.planner-shell .toolbar-main .toolbar-actions > #btnStopAutoSort,
+  body.planner-shell .toolbar-main .toolbar-actions > #btnDeleteAll {
+    flex: 0 0 46px;
+    width: 46px;
+    min-width: 46px;
+    max-width: 46px;
+  }
 }
 
 body.planner-shell #btnStopAutoSort .toolbar-icon {
@@ -594,6 +627,31 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   min-inline-size: 14ch;
 }
 
+/* 19/08: thong bao dai bi cat mat phan quan trong (danh sach cho vuot Gioi
+   han). Bam vao la mo rong ra doc het, bam lai thi thu gon. */
+body.planner-shell .toolbar-feedback > #statusMsg.is-clamped {
+  cursor: pointer;
+}
+
+body.planner-shell .toolbar-feedback > #statusMsg.is-clamped::after {
+  content: " \25be";
+  opacity: 0.7;
+}
+
+body.planner-shell .toolbar-feedback > #statusMsg.is-expanded {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  max-height: 40vh;
+  overflow-y: auto;
+  line-height: 1.45;
+  flex-basis: 100%;
+}
+
+body.planner-shell .toolbar-feedback > #statusMsg.is-expanded::after {
+  content: " \25b4";
+}
+
 /* A narrow desktop remains a desktop toolbar; coarse-pointer devices use mobile rows. */
 @media (max-width: 900px) and (hover: none) and (pointer: coarse),
        (max-width: 480px),
@@ -697,28 +755,30 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     border-radius: 0 0 var(--tkb-radius, 10px) var(--tkb-radius, 10px);
   }
 
-  /* 19/08: dien thoai chi giu Cherry + Flash (ngay ben trai nut Xoa). */
-  body.planner-shell .toolbar-actions > #btnAutoSort,
-  body.planner-shell .toolbar-actions > .planner-optimize-wrap {
+  /* 20/08 (yeu cau chu du an): dien thoai hien lai NUT XEP TU DONG va NUT TOI
+     UU. Van du 8 cot, khong phai bop nho nut nao: o cua nut Agent (cot 6 cu)
+     thuc te da trong tu lau — syncAgentHelperVisibility() luon dat hidden=true
+     va rule #btnAgentHelper[hidden] thang ve do uu tien, nen nut do khong con
+     chiem o nao trong luoi.
+     Thu tu moi: 1 Yeu cau | 2 Hoan tac/Lam lai | 3 Xep tu dong | 4 Toi uu |
+                 5 Cherry | 6 Dung-Xoa | 7 Luu | 8 Thong ke
+     23/08 (chi dao chu du an): dien thoai chi giu Cherry + Toi uu v3 (icon) + RB;
+     AN nut Xep FET (btnAutoSort) va menu Toi uu FET (plannerOptimizeWrap):
+       1 Yeu cau | 2 Hoan tac/Lam lai | 3 Cherry | 4 Toi uu v3 | 5 Dung-Xoa |
+       6 Home | 7 RB (chi superadmin) | 8 Thong ke
+     (RB an -> Thong ke lui ve cot 7, luoi co ve 7 cot). */
+  body.planner-shell .toolbar-actions > #btnAutoSort {
     display: none !important;
   }
 
-  body.planner-shell .toolbar-actions > #btnEngineFlash {
-    grid-column: 3;
-    grid-row: 1;
-    display: inline-flex !important;
+  body.planner-shell .toolbar-actions > #plannerOptimizeWrap {
+    display: none !important;
   }
 
-  body.planner-shell .toolbar-actions > #btnEngineCherry {
+  body.planner-shell .toolbar-actions > #plannerTestWrap {
     grid-column: 4;
     grid-row: 1;
     display: inline-flex !important;
-  }
-
-  body.planner-shell .toolbar-actions > .planner-optimize-wrap--unused {
-    grid-column: 4;
-    grid-row: 1;
-    display: inline-flex;
     width: 100%;
     min-width: 0;
     max-width: none;
@@ -726,7 +786,14 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     min-height: 44px;
   }
 
-  body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu {
+  body.planner-shell .toolbar-actions > #btnEngineCherry {
+    grid-column: 3;
+    grid-row: 1;
+    display: inline-flex !important;
+  }
+
+  body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu,
+  body.planner-shell .planner-optimize-wrap > #btnTestMenu {
     width: 100%;
     height: 44px;
     min-height: 44px;
@@ -736,7 +803,8 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     touch-action: manipulation;
   }
 
-  body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu .planner-mode-icon {
+  body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu .planner-mode-icon,
+  body.planner-shell .planner-optimize-wrap > #btnTestMenu .planner-mode-icon {
     width: 20px;
     height: 20px;
   }
@@ -931,7 +999,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   }
 
   body.planner-shell #btnAgentHelper {
-    grid-column: 6;
+    grid-column: 5;
     grid-row: 1;
     display: inline-flex !important;
     width: 100%;
@@ -960,9 +1028,27 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   }
 
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button {
-    grid-column: 7;
     grid-row: 1;
     padding-inline: 3px;
+  }
+
+  /* 23/08: Home o cot 6, RB (chi superadmin) o cot 8 — truoc day ca hai cung
+     selector .save-button nen RB DE LEN Home khi la superadmin. */
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > #btnHome {
+    grid-column: 6;
+  }
+
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > #btnConstraintAudit:not([hidden]) {
+    grid-column: 7;
+    display: inline-flex;
+  }
+
+  body.planner-shell .toolbar-main:has(#btnConstraintAudit[hidden]) {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+
+  body.planner-shell .toolbar-main:has(#btnConstraintAudit[hidden]) .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
+    grid-column: 7;
   }
 
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
@@ -1023,13 +1109,27 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
     border-radius: var(--tkb-radius, 10px);
   }
 
-  body.planner-shell .toolbar-actions > #btnEngineFlash {
-    grid-column: 4;
+  /* 20/08: mua ngang cung hien lai Xep tu dong + Toi uu. Du 9 cot:
+     1 Yeu cau | 2 Hoan tac | 3 Lam lai | 4 Xep tu dong | 5 Toi uu |
+     6 Cherry | 7 Dung-Xoa | 8 Luu | 9 Thong ke
+     23/08 (chi dao chu du an): an Xep FET + Toi uu FET, giu Toi uu v3 + Cherry + RB:
+     1 Yeu cau | 2 Hoan tac | 3 Lam lai | 4 Cherry | 5 Toi uu v3 | 6 Dung-Xoa |
+     7 Home | 8 RB (chi superadmin) | 9 Thong ke (RB an -> Thong ke cot 8, 8 cot). */
+  body.planner-shell .toolbar-actions > #btnAutoSort {
+    display: none !important;
+  }
+
+  body.planner-shell .toolbar-actions > #plannerOptimizeWrap {
+    display: none !important;
+  }
+
+  body.planner-shell .toolbar-actions > #plannerTestWrap {
+    grid-column: 5;
     display: inline-flex !important;
   }
 
   body.planner-shell .toolbar-actions > #btnEngineCherry {
-    grid-column: 5;
+    grid-column: 4;
     display: inline-flex !important;
   }
 
@@ -1039,15 +1139,27 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   }
 
   body.planner-shell #btnAgentHelper {
-    grid-column: 7;
+    grid-column: 6;
   }
 
-  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .save-button {
-    grid-column: 8;
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > #btnHome {
+    grid-column: 7;
   }
 
   body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
     grid-column: 9;
+  }
+
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > #btnConstraintAudit:not([hidden]) {
+    grid-column: 8;
+  }
+
+  body.planner-shell .toolbar-main:has(#btnConstraintAudit[hidden]) {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+
+  body.planner-shell .toolbar-main:has(#btnConstraintAudit[hidden]) .toolbar-secondary-actions .stats-popover-wrap > .stats-toggle {
+    grid-column: 8;
   }
 }
 
@@ -1198,6 +1310,11 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
   body.planner-shell #tkb.tkb-pair-stack .tkb-pair-pane.support .tkb-pair-tools,
   body.planner-shell #tkb.tkb-pair-gv-phong .tkb-pair-pane.main .tkb-pair-tools {
     grid-column: 1 / -1;
+  }
+
+  /* Pane GV gio co them dropdown "Chua phan" nen o chon GV phai nhuong cot 2. */
+  body.planner-shell #tkb.tkb-pair-lop-gv .tkb-pair-pane.support .tkb-pair-tools {
+    grid-column: 1;
   }
 
   body.planner-shell #tkb.tkb-pair-stack .tkb-pair-summary {
@@ -1492,7 +1609,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
       <button id="btnRangBuoc" type="button" onclick="if(window.openRangBuocMenu)window.openRangBuocMenu(this);" title="Yêu cầu xếp thời khóa biểu" aria-label="Yêu cầu xếp thời khóa biểu"><svg class="toolbar-icon toolbar-requirement-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5.5 12.5 4.2 4.2L18.7 7.7"/></svg><span class="toolbar-label-full" aria-hidden="true">Yêu cầu</span></button>
       <button id="btnUndoTKB" class="icon-button" type="button" onclick="tkbUndo()" title="Hoàn tác" aria-label="Hoàn tác" disabled><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 14-4-4 4-4"/><path d="M5 10h11a4 4 0 1 1 0 8h-1"/></svg></button>
       <button id="btnRedoTKB" class="icon-button" type="button" onclick="tkbRedo()" title="Làm lại" aria-label="Làm lại" disabled><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 14 4-4-4-4"/><path d="M19 10H8a4 4 0 1 0 0 8h1"/></svg></button>
-      <button id="btnAutoSort" class="primary icon-button" type="button" onclick="window.__TKB_FORCE_ENGINE='';sapXepTuDongAll()" title="Bắt đầu sắp xếp" aria-label="Bắt đầu sắp xếp"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8.35 6.3c0-1.02 1.12-1.65 2-1.12l8.1 4.88a1.3 1.3 0 0 1 0 2.22l-8.1 4.88c-.88.53-2-.1-2-1.12V6.3Z" fill="currentColor"/></svg></button>
+      <button id="btnAutoSort" class="primary icon-button" type="button" onclick="window.__TKB_FORCE_ENGINE='';window.__TKB_LAST_REQUESTED_ENGINE='';sapXepTuDongAll()" title="Bắt đầu sắp xếp" aria-label="Bắt đầu sắp xếp"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8.35 6.3c0-1.02 1.12-1.65 2-1.12l8.1 4.88a1.3 1.3 0 0 1 0 2.22l-8.1 4.88c-.88.53-2-.1-2-1.12V6.3Z" fill="currentColor"/></svg></button>
       <div id="plannerOptimizeWrap" class="planner-optimize-wrap">
         <button id="btnOptimizeMenu" class="planner-mode-button" type="button" onclick="togglePlannerOptimizeMenu(event)" title="Chọn mục tiêu tối ưu" aria-label="Chọn mục tiêu tối ưu" aria-haspopup="menu" aria-expanded="false" aria-controls="plannerOptimizeMenu"><svg class="planner-mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg><span class="planner-mode-label">Tối ưu</span></button>
         <div id="plannerOptimizeMenu" class="planner-optimize-menu" role="menu" aria-label="Mục tiêu tối ưu" hidden>
@@ -1502,24 +1619,8 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
           <button type="button" role="menuitem" data-scheduler-mode="optimize_gap1" onclick="runPlannerSchedulerMode('optimize_gap1', event)">1 tiết trống</button>
         </div>
       </div>
-      <!-- 19/08: hai thuat toan doc lap (Flash truoc, Cherry sau).
-           Flash  = Antigravity AI / CP-SAT 2 tang (tkb_optimizer_ref/unified_cpsat_solver.py, log Flash/logs)
-           Cherry = Cherry Scheduler engine v3 (thuat toan Cherry, ma nguon o solver_runtime/src/tkb_engine_v3, log Cherry/logs) -->
-      <button id="btnEngineFlash" class="icon-button" type="button"
-              onclick="tkbRunEngine('flash', this)"
-              title="Xếp nhanh" aria-label="Xếp nhanh" data-tooltip="Xếp nhanh">
-        <svg class="toolbar-icon toolbar-icon-flash" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-          <defs>
-            <linearGradient id="antigravityFlashGrad" x1="4" y1="2" x2="20" y2="22" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stop-color="#0ea5e9"/>
-              <stop offset="45%" stop-color="#6366f1"/>
-              <stop offset="100%" stop-color="#a855f7"/>
-            </linearGradient>
-          </defs>
-          <path d="M13.2 2.3L4.8 13.1C4.4 13.6 4.8 14.4 5.5 14.4H11.2L9.6 21.3C9.4 21.9 10.2 22.4 10.7 21.9L19.2 11.1C19.6 10.6 19.2 9.8 18.5 9.8H12.8L14.4 2.9C14.6 2.3 13.8 1.8 13.2 2.3Z" fill="url(#antigravityFlashGrad)"/>
-          <path d="M18.5 3.2L19 4.7L20.5 5.2L19 5.7L18.5 7.2L18 5.7L16.5 5.2L18 4.7L18.5 3.2Z" fill="#38bdf8"/>
-        </svg>
-      </button>
+      <!-- 19/08: thuat toan Cherry (Cherry Scheduler engine v3, ma nguon o
+           solver_runtime/src/tkb_engine_v3, log Cherry/logs). -->
       <button id="btnEngineCherry" class="icon-button" type="button"
               onclick="tkbRunEngine('cherry', this)"
               title="Cherry Time!" aria-label="Cherry Time!" data-tooltip="Cherry Time!">
@@ -1540,6 +1641,21 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
           </g>
         </svg>
       </button>
+      <!-- 22/08 (đêm, chỉ đạo chủ dự án): nút TEST (21/08, chỉ superadmin) được
+           CÔNG KHAI và đổi thành "Tối ưu v3": 4 mục tiêu riêng lẻ chạy bằng
+           Cherry engine v3 trên máy chủ (tkbRunEngine('cherry', _, {mode}) →
+           bridgeSapXepTuDongAll), lượt nhanh 45s, tối ưu DUY NHẤT mục tiêu đã
+           chọn trên lịch đang có, các chỉ số khác không được xấu đi, không vi
+           phạm ràng buộc. -->
+      <div id="plannerTestWrap" class="planner-optimize-wrap planner-test-wrap">
+        <button id="btnTestMenu" class="planner-mode-button" type="button" onclick="togglePlannerTestMenu(event)" title="Tối ưu v3 — từng mục tiêu bằng Cherry engine (≈120 giây)" aria-label="Tối ưu v3 — từng mục tiêu bằng Cherry engine" aria-haspopup="menu" aria-expanded="false" aria-controls="plannerTestMenu"><svg class="planner-mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 16.326A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 .5 8.973"/><path d="m13 12-3 5h4l-3 5"/></svg><span class="planner-mode-label">Tối ưu v3</span></button>
+        <div id="plannerTestMenu" class="planner-optimize-menu" role="menu" aria-label="Tối ưu v3 — mục tiêu" hidden>
+          <button type="button" role="menuitem" data-test-mode="optimize_singletons" onclick="runPlannerV3Mode('optimize_singletons', event)">1 tiết/buổi</button>
+          <button type="button" role="menuitem" data-test-mode="optimize_sessions" onclick="runPlannerV3Mode('optimize_sessions', event)">Buổi dạy</button>
+          <button type="button" role="menuitem" data-test-mode="optimize_gap2" onclick="runPlannerV3Mode('optimize_gap2', event)">2 tiết trống</button>
+          <button type="button" role="menuitem" data-test-mode="optimize_gap1" onclick="runPlannerV3Mode('optimize_gap1', event)">1 tiết trống</button>
+        </div>
+      </div>
       <button type="button" id="btnStopAutoSort" class="auto-sort-stop icon-button" onclick="requestStopAutoSort()" title="Dừng tối ưu" aria-label="Dừng tối ưu" aria-hidden="true" style="display:none;"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" stroke="currentColor"/><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" stroke="none"/></svg></button>
       <button id="btnDeleteAll" class="danger icon-button" type="button" onclick="deleteAllTKB()" title="Xóa toàn bộ thời khóa biểu" aria-label="Xóa toàn bộ thời khóa biểu"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 7h15"/><path d="M9 7V4.8h6V7"/><path d="m6.7 7 .8 12h9l.8-12"/><path d="M10 10.5v5.2M14 10.5v5.2"/></svg></button>
     </div>
@@ -1571,6 +1687,9 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
     <div class="toolbar-secondary-actions" aria-label="Điều hướng và thống kê">
       <div class="stats-popover-wrap">
+        <button id="btnConstraintAudit" class="primary save-button" type="button" hidden aria-hidden="true" title="Kiểm tra ràng buộc có được thực thi không (chỉ superadmin)" aria-label="Kiểm tra ràng buộc" onclick="window.__tkbToggleConstraintAudit&amp;&amp;window.__tkbToggleConstraintAudit()">RB</button>
+<!-- 22/08 (khuya, chỉ đạo chủ dự án): bỏ nút "Lỗi" (nhật ký lỗi xếp), giữ nút "RB". -->
+
         <button id="btnHome" class="primary save-button" type="button" title="Về trang chủ" aria-label="Về trang chủ" onclick="saveAndBack()">Home</button>
         <button id="statsToggle" class="stats-toggle" type="button" onclick="toggleStatsPopover(event)" title="Thống kê thời khóa biểu" aria-label="Thống kê thời khóa biểu" aria-expanded="false"><span class="toolbar-label-full" aria-hidden="true">Thống kê</span><span class="toolbar-label-compact" aria-hidden="true"><svg class="toolbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M4 20V13h4v7M10 20V9h4v11M16 20V5h4v15M3 20h18"/></svg></span></button>
         <div id="statsPopover" class="stats-popover" hidden>
@@ -1708,6 +1827,115 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 })();
 </script>
 
+<script>
+/* ===== Menu "Tối ưu v3" (22/08 đêm — trước là nút TEST chỉ superadmin) =====
+   4 mục tiêu riêng lẻ (1 tiết/buổi, buổi dạy, 2 tiết trống, 1 tiết trống)
+   chạy bằng Cherry engine v3 trên máy chủ qua tkbRunEngine('cherry', _, {mode})
+   → bridgeSapXepTuDongAll. Mỗi lượt 45s, chỉ tối ưu mục tiêu đã chọn trên lịch
+   đang có; các chỉ số khác bị khóa không được xấu đi; không vi phạm ràng buộc;
+   kết quả chỉ được áp khi tốt hơn (cổng Cherry). Công khai cho mọi người dùng. */
+(function(){
+  const wrap = document.getElementById("plannerTestWrap");
+  const toggleButton = document.getElementById("btnTestMenu");
+  const menu = document.getElementById("plannerTestMenu");
+  if(!wrap || !toggleButton || !menu) return;
+
+  function testUserIsSuperadmin(){
+    try{
+      return String(window.TKBAuth?.currentUser?.()?.user?.role || "")
+        .trim()
+        .toLowerCase() === "superadmin";
+    }catch(_){
+      return false;
+    }
+  }
+
+  function syncPlannerTestRoleAccess(){
+    const superadmin = testUserIsSuperadmin();
+    // Menu Tối ưu v3 công khai; chỉ nút chẩn đoán "RB" (kiểm tra ràng buộc)
+    // cạnh nút Home còn dành riêng superadmin (nút "Lỗi" đã bỏ 22/08 khuya).
+    wrap.hidden = false;
+    wrap.setAttribute("aria-hidden", "false");
+    ["btnConstraintAudit"].forEach(id => {
+      const btn = document.getElementById(id);
+      if(btn){
+        btn.hidden = !superadmin;
+        btn.setAttribute("aria-hidden", superadmin ? "false" : "true");
+      }
+    });
+    return superadmin;
+  }
+
+  function testControlBusy(){
+    return window.__TKB_RUST_SOLVER_RUNNING === true
+      || window.__TKB_SOLVE_UI_BUSY === true;
+  }
+
+  function setPlannerTestMenuOpen(open){
+    const shouldOpen = !!open && !testControlBusy();
+    menu.hidden = !shouldOpen;
+    toggleButton.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+    return shouldOpen;
+  }
+
+  // 25/08 đêm: khi đang có lượt xếp khác chạy, nút/menu Tối ưu v3 từng bỏ qua
+  // cú bấm trong im lặng → người dùng tưởng lane "Buổi dạy" không hoạt động.
+  // Luôn nói rõ lý do.
+  function reportTestControlBusy(){
+    try{ window._setStatus?.("Đang có lượt xếp/tối ưu khác chạy — bấm Dừng hoặc đợi xong rồi mới chọn Tối ưu v3.", "warning"); }catch(_){ }
+  }
+
+  function togglePlannerTestMenu(event){
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if(testControlBusy()){ reportTestControlBusy(); return setPlannerTestMenuOpen(false); }
+    return setPlannerTestMenuOpen(menu.hidden !== false);
+  }
+
+  const V3_MODE_LABELS = {
+    optimize_singletons: "1 tiết/buổi",
+    optimize_sessions: "Buổi dạy",
+    optimize_gap2: "2 tiết trống",
+    optimize_gap1: "1 tiết trống"
+  };
+
+  function runPlannerV3Mode(mode, event){
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    setPlannerTestMenuOpen(false);
+    const normalized = String(mode || "").trim();
+    if(!V3_MODE_LABELS[normalized]) return false;
+    if(testControlBusy()){ reportTestControlBusy(); return false; }
+    if(typeof window.bridgeSapXepTuDongAll !== "function" || typeof window.tkbRunEngine !== "function"){
+      try{ window._setStatus?.("Bộ giải chưa sẵn sàng (tkb-rust-bridge.js chưa nạp), vui lòng tải lại trang.", "error"); }catch(_){ }
+      return false;
+    }
+    try{ window._setStatus?.(`Tối ưu v3 — ${V3_MODE_LABELS[normalized]}: đang tối ưu trên lịch hiện tại (≈120 giây)…`, "info"); }catch(_){ }
+    // Đi đúng đường nút Cherry (engine v3, warm-start, cổng "không xấu hơn"),
+    // chỉ thêm mục tiêu riêng lẻ.
+    window.tkbRunEngine("cherry", null, { mode: normalized });
+    return true;
+  }
+  // Tên cũ (TEST) giữ làm bí danh cho các đoạn mã/test còn gọi.
+  const runPlannerTestMode = runPlannerV3Mode;
+
+  document.addEventListener("click", (event) => {
+    if(menu.hidden !== false || wrap.contains(event.target)) return;
+    setPlannerTestMenuOpen(false);
+  });
+  document.addEventListener("keydown", (event) => {
+    if(event.key !== "Escape" || menu.hidden !== false) return;
+    setPlannerTestMenuOpen(false);
+  });
+
+  window.togglePlannerTestMenu = togglePlannerTestMenu;
+  window.runPlannerV3Mode = runPlannerV3Mode;
+  window.runPlannerTestMode = runPlannerTestMode;
+  syncPlannerTestRoleAccess();
+  window.addEventListener?.("tkb:auth-ready", syncPlannerTestRoleAccess);
+})();
+</script>
+
 <div class="main">
   <div class="left">
     <h3 id="leftTitle">Lớp</h3>
@@ -1723,7 +1951,7 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 
 <script src="../shared/school-context.js?v=20260708-sid-only-v3"></script>
 <script src="../shared/auth-api.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
-<script src="../shared/auth.js?v=20260803-free-5-solve-quota-v1"></script>
+<script src="../shared/auth.js?v=20260823-default-first-v1"></script>
 <script src="../shared/runtime.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
 <script src="../shared/school-switcher.js?v=20260708-v1"></script>
 <script src="../shared/storage.js?v=20260817-save-error-detail-v1"></script>
@@ -1756,15 +1984,15 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 <script src="../excel-style.js?v=20260701-excel-style-v2"></script>
 <script src="../vendor/sql-wasm.js"></script>
 <script src="../kvdb.js?v=20260707-vendor-local-v1"></script>
-<script src="tkb-fet-engine.js?v=20260816-fet-only-v1"></script>
-<script src="phanmon.js?v=20260819-capacity-report-v13"></script>
-<script src="tkb-constraints.js?v=20260810-v1206-assigned-demand-lesson-block-min-guard-v1"></script>
+<script src="tkb-fet-engine.js?v=20260822-teacher-alias-v1"></script>
+<script src="phanmon.js?v=20260823-live-v1"></script>
+<script src="tkb-constraints.js?v=20260822-validate-classes-v1"></script>
 <script src="tkb-constraints-menu.js?v=20260808-v1192-assigned-only-all-statistics-v1"></script>
 <script src="tkb-gv-template.js"></script>
-<script src="tkb-export.js?v=20260725-v1100-industry-export-queue-v1"></script>
-<script src="tkb-word-export.js?v=20260705-save-picker-v1"></script>
-<script src="tkb-student-excel-export.js?v=20260705-school-wide-prefix-v6"></script>
-<script src="tkb-rust-bridge.js?v=20260819-capacity-report-v13"></script>
+<script src="tkb-export.js?v=20260820-portal-info-v1"></script>
+<script src="tkb-word-export.js?v=20260820-portal-info-v1"></script>
+<script src="tkb-student-excel-export.js?v=20260820-portal-info-v1"></script>
+<script src="tkb-rust-bridge.js?v=20260823-focus-gate-v1"></script>
 
 
 <script>
@@ -1772,13 +2000,17 @@ body.planner-shell .toolbar-feedback > #statusMsg.is-auto-sort-running-label {
 // Ban day du (co cho bo giai nap xong) nam trong tkb-rust-bridge.js — file do
 // luon duoc bust cache nen luon moi. Khoi nay chi la du phong khi bridge loi.
 if(typeof window.tkbRunEngine !== "function")
-window.tkbRunEngine = function(engine, btn){
+window.tkbRunEngine = function(engine, btn, options){
   if(window.__TKB_SOLVE_UI_BUSY === true || window.__TKB_RUST_SOLVER_RUNNING === true){
     try{ window.setStatus && window.setStatus("Đang có lượt xếp chạy, vui lòng chờ.", "info"); }catch(_){}
     return;
   }
+  var focusMode = String((options && options.mode) || "").trim();
   window.__TKB_FORCE_ENGINE = String(engine || "");
+  window.__TKB_ENGINE_FOCUS_MODE = focusMode;
   window.__CURRENT_ACTIVE_ENGINE = String(engine || "");
+  window.__TKB_LAST_REQUESTED_ENGINE = String(engine || "");
+  window.__TKB_LAST_ENGINE_CLICK_AT = Date.now();
   window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = "";
   var metricEl = document.getElementById("autoSortProgressMetric");
   if(metricEl){
@@ -1787,6 +2019,7 @@ window.tkbRunEngine = function(engine, btn){
   }
   var clear = function(){
     window.__TKB_FORCE_ENGINE = "";
+    window.__TKB_ENGINE_FOCUS_MODE = "";
     window.__CURRENT_ACTIVE_ENGINE = "";
     window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = "";
   };
@@ -1799,7 +2032,9 @@ window.tkbRunEngine = function(engine, btn){
       ? window.bridgeSapXepTuDongAll
       : window.sapXepTuDongAll;
     if(typeof runner !== "function"){ clear(); return; }
-    var r = runner({ manualAgentInvite: false });
+    var invocation = { manualAgentInvite: false };
+    if(focusMode) invocation.mode = focusMode;
+    var r = runner(invocation);
     if(r && typeof r.finally === "function") r.finally(clear);
     else window.setTimeout(clear, 5000);
   }catch(e){ clear(); }

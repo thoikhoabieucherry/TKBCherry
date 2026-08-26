@@ -72,6 +72,7 @@
     classGroup: '',
     noSameClassId: '',
     noSameClassIds: [],
+    noSameClassAnchor: '',
     mustTeachTeacherIds: [],
     mustTeachSlots: [],
     mustTeachAnchorSlot: '',
@@ -763,6 +764,7 @@
     const id=String(classId || '');
     state.noSameClassId=id;
     state.noSameClassIds=id ? [id] : [];
+    state.noSameClassAnchor=id;
   }
   function toggleNoSameClass(classId){
     const id=String(classId || '');
@@ -778,6 +780,29 @@
     }
     state.noSameClassIds=arrUnique(ids);
     if(!state.noSameClassId && state.noSameClassIds.length) state.noSameClassId=state.noSameClassIds[0];
+    state.noSameClassAnchor=id;
+  }
+  /* 25/08: chon DAI lop bang Shift+Click (Ctrl+Shift = cong don) va "Chon tat
+     ca" — cung cach voi danh sach lop o "Yeu cau co dinh lop hoc"
+     (selectFixedOffRangeForType). Lop chinh (bang nhom mon dang hien) giu
+     nguyen; cac lop duoc chon se nhan cung bang nhom mon khi luu. */
+  function selectNoSameClassRange(classId, additive){
+    const id=String(classId || '');
+    if(!id) return;
+    const ids=getClassList().map(cls=>String(cls.id));
+    const primary=String(noSameRuleClassId() || '');
+    const anchor=String(state.noSameClassAnchor || primary || id);
+    const a=ids.indexOf(anchor), b=ids.indexOf(id);
+    const range=(a>=0 && b>=0) ? ids.slice(Math.min(a,b), Math.max(a,b)+1) : [id];
+    const base=additive ? noSameSelectedClassIds().map(String) : [];
+    state.noSameClassIds=arrUnique([...base, ...range]);
+    if(!state.noSameClassIds.includes(primary)) state.noSameClassIds.unshift(primary);
+    state.noSameClassIds=arrUnique(state.noSameClassIds);
+  }
+  function selectAllNoSameClasses(){
+    const ids=getClassList().map(cls=>String(cls.id));
+    const primary=String(noSameRuleClassId() || '');
+    state.noSameClassIds=arrUnique([primary, ...ids].filter(Boolean));
   }
   function noSameRawItems(raw){
     return arrUnique(Array.isArray(raw) ? raw : (raw && typeof raw==='object' ? (raw.items || raw.subjects || []) : []));
@@ -907,7 +932,8 @@
         const v=arr[ti]; if(v==='OFF'||!v) continue; const mon=cellMonSafe(v); if(!mon) continue;
         const teacher=teacherOf(lopId,mon); const room=roomOf(lopId,mon); const cell={lopId:String(lopId),mon,thu,buoi,ti:Number(ti),teacher,room,location:roomLocation(room,lopId),fixed:isFixedSafe(v)};
         __cache.allCells.push(cell); classArr.push(cell);
-        if(teacher){ const k=String(teacher).trim(); if(!__cache.byTeacher.has(k)) __cache.byTeacher.set(k,[]); __cache.byTeacher.get(k).push(cell); }
+        // 25/08: tiet day ghep "GV1, GV2" nam trong chi muc cua TUNG giao vien
+        if(teacher){ splitTeacherValues(teacher).forEach(k=>{ if(!__cache.byTeacher.has(k)) __cache.byTeacher.set(k,[]); __cache.byTeacher.get(k).push(cell); }); }
       }}
       __cache.classCells.set(String(lopId), classArr);
     }
@@ -982,7 +1008,8 @@
     const lopId=String(ctx.lopId||currentClassId()||''); const mon=String(ctx.mon||'').trim(); const thu=String(ctx.thu), buoi=String(ctx.buoi), ti=Number(ctx.ti);
     const gv=teacherOf(lopId,mon); const room=roomOf(lopId,mon);
     if(isFixedOff('class',lopId,thu,buoi,ti)) msgs.push(`Lớp ${classNameOf(lopId)} đã cố định ${dayLabel(thu)} ${SESSION_LABEL[buoi]} tiết ${ti+1}.`);
-    if(gv && isFixedOff('teacher',gv,thu,buoi,ti)) msgs.push(`${teacherName(gv)} đã cố định ${dayLabel(thu)} ${SESSION_LABEL[buoi]} tiết ${ti+1}.`);
+    // 25/08: tiet day ghep "GV1, GV2" -> o nghi co dinh cua TUNG giao vien deu chan.
+    if(gv) splitTeacherValues(gv).forEach(g=>{ if(isFixedOff('teacher',g,thu,buoi,ti)) msgs.push(`${teacherName(g)} đã cố định ${dayLabel(thu)} ${SESSION_LABEL[buoi]} tiết ${ti+1}.`); });
     const sk=subjectKey(mon); if(sk && isFixedOff('subject',sk,thu,buoi,ti)) msgs.push(`Môn ${mon} đã cố định ${dayLabel(thu)} ${SESSION_LABEL[buoi]} tiết ${ti+1}.`);
     subjectGroupsOf(mon).forEach(gid=>{
       if(isFixedOff('subjectGroup',gid,thu,buoi,ti)){
@@ -998,16 +1025,23 @@
   function teacherCellsAfterPlace(teacher, ctx){
     const gv=String(teacher||'').trim(); if(!gv) return [];
     const idx=buildScheduleIndex(); const target=targetSlotFromCtx(ctx||{}); const src=sourceSlotFromCtx(ctx||{});
+    const hasGv=x=>splitTeacherValues(x?.teacher||'').includes(gv);   // 25/08: ke ca tiet day ghep
     let base=idx.byTeacher.get(gv)||[]; let local=[];
-    if(ctx && ctx.localTkb && target && target.lopId){ base=base.filter(x=>String(x.lopId)!==String(target.lopId)); local=scanClassCellsFromTkb(target.lopId,ctx.localTkb).filter(x=>String(x.teacher||'').trim()===gv); }
+    if(ctx && ctx.localTkb && target && target.lopId){ base=base.filter(x=>String(x.lopId)!==String(target.lopId)); local=scanClassCellsFromTkb(target.lopId,ctx.localTkb).filter(hasGv); }
     const cand=candidateCellFromCtx(ctx||{}); const out=[];
     for(const cell of base.concat(local)){ if(isSameSlotCell(cell,src)||isSameSlotCell(cell,target)) continue; out.push(cell); }
-    if(cand && String(cand.teacher||'').trim()===gv) out.push(cand);
+    if(cand && hasGv(cand)) out.push(cand);
     return out;
   }
   function evalTeacherRule(ctx){
     const msgs=[]; if(!ctx || !ctx.mon || !ctx.thu || !ctx.buoi || ctx.ti == null) return msgs;
-    const lopId=String(ctx.lopId||currentClassId()||''); if(!lopId) return msgs; const mon=String(ctx.mon||'').trim(); const gv=teacherOf(lopId,mon); if(!gv) return msgs;
+    const lopId=String(ctx.lopId||currentClassId()||''); if(!lopId) return msgs; const mon=String(ctx.mon||'').trim(); const gvRaw=teacherOf(lopId,mon); if(!gvRaw) return msgs;
+    // 25/08: tiet day ghep "GV1, GV2" -> kiem luat cua TUNG giao vien thanh vien
+    splitTeacherValues(gvRaw).forEach(gv=>{ evalTeacherRuleOne(gv, lopId, mon, ctx).forEach(m=>{ if(m && !msgs.includes(m)) msgs.push(m); }); });
+    return msgs;
+  }
+  function evalTeacherRuleOne(gv, lopId, mon, ctx){
+    const msgs=[];
     const r=model().teacher?.[gv]; if(!r || typeof r!=='object') return msgs;
     const cells=teacherCellsAfterPlace(gv,Object.assign({},ctx,{lopId,mon})); const thu=String(ctx.thu), buoi=String(ctx.buoi); const label=teacherName(gv); const add=m=>{ if(m && !msgs.includes(m)) msgs.push(m); };
     const maxDays=toInt(r.maxDaysSessions?.maxDays,0), maxSessions=toInt(r.maxDaysSessions?.maxSessions,0);
@@ -1035,6 +1069,61 @@
       if(ruleName==='maxOneMovePerSession'){ const seq=[]; withLoc.forEach(x=>{ const v=norm(x.loc); if(v && seq[seq.length-1]!==v) seq.push(v); }); if(seq.length>2) add(`${label}: ${dayLabel(thu)} ${SESSION_LABEL[buoi]} vi phạm không di chuyển 2 lần/1 buổi giữa các địa điểm.`); }
     }
     return msgs;
+  }
+
+  /* 23/08: dem cac buoi (GV, thu, buoi) dang vi pham 3 yeu cau DIA DIEM
+     (oneLocationPerSession / gapBetweenLocations / maxOneMovePerSession) —
+     cung ngu nghia voi evalTeacherRule o tren. Mac dinh quet luoi dang hien
+     thi; opts.lessons = danh sach tiet (payload engine) de cham diem ung vien
+     truoc khi ap. Engine v3 (Cherry / Toi uu v3) coi day la rang buoc cung. */
+  function cellsFromLessons(lessons){
+    const byTeacher = new Map();
+    const lops = D().lop || [];
+    const byId = new Map(); const byName = new Map();
+    lops.forEach(l => { if(!l) return; if(l.id != null) byId.set(String(l.id), l); [l.ten, l.ten2].forEach(n => { if(n) byName.set(norm(n), l); }); });
+    (Array.isArray(lessons) ? lessons : []).forEach(ls => {
+      if(!ls || typeof ls !== 'object') return;
+      const lop = byId.get(String(ls.classId ?? '')) || byName.get(norm(ls.className || ls.class || '')) || byId.get(String(ls.className ?? ''));
+      const lopId = String((lop && lop.id) || ls.classId || ls.className || '').trim(); if(!lopId) return;
+      const mon = String(ls.subject || ls.mon || '').trim();
+      const day = Number(ls.day); const thu = Number.isFinite(day) && day >= 2 ? ('thu' + day) : String(ls.thu || '');
+      const sess = String(ls.session || ls.buoi || '').toUpperCase(); const buoi = (sess === 'AM' || sess === 'SANG') ? 'sang' : 'chieu';
+      const ti = Number.isFinite(Number(ls.period)) && ls.period != null ? Number(ls.period) - 1 : Number(ls.ti);
+      if(!thu || !Number.isFinite(ti) || ti < 0) return;
+      const teacher = String(ls.teacher || ls.gv || '').trim() || teacherOf(lopId, mon); if(!teacher) return;
+      const room = String(ls.room || '').trim() || roomOf(lopId, mon);
+      const cell = {lopId, mon, thu, buoi, ti, teacher, room, location: roomLocation(room, lopId)};
+      // 25/08: tiet day ghep tinh cho TUNG giao vien thanh vien
+      splitTeacherValues(teacher).forEach(member => {
+        if(!byTeacher.has(member)) byTeacher.set(member, []);
+        byTeacher.get(member).push(cell);
+      });
+    });
+    return byTeacher;
+  }
+  function teacherLocationRuleDebt(opts){
+    const byTeacher = (opts && Array.isArray(opts.lessons)) ? cellsFromLessons(opts.lessons) : (buildScheduleIndex().byTeacher || new Map());
+    const teacherRules = model().teacher || {};
+    let sessions = 0; const teachers = new Set(); const cases = [];
+    byTeacher.forEach((cells, gv) => {
+      const r = teacherRules[gv]; if(!r || typeof r !== 'object') return;
+      if(!r.oneLocationPerSession && !r.gapBetweenLocations && !r.maxOneMovePerSession) return;
+      const groups = new Map();
+      cells.forEach(x => { const k = x.thu + '|' + x.buoi; if(!groups.has(k)) groups.set(k, []); groups.get(k).push(x); });
+      groups.forEach((ss, key) => {
+        const [thu, buoi] = key.split('|');
+        const withLoc = ss.map(x => ({ti: Number(x.ti), loc: norm(String(x.location || x.room || '').trim())})).filter(x => x.loc).sort((a, b) => a.ti - b.ti);
+        if(withLoc.length <= 1) return;
+        const kinds = [];
+        if(truthy(getPath(r, `oneLocationPerSession.${buoi}.${thu}`, false)) && uniqueCount(withLoc, x => x.loc) > 1) kinds.push('oneLocationPerSession');
+        if(truthy(getPath(r, `gapBetweenLocations.${buoi}.${thu}`, false))){ for(let i = 1; i < withLoc.length; i++){ if(withLoc[i].loc !== withLoc[i-1].loc && withLoc[i].ti - withLoc[i-1].ti <= 1){ kinds.push('gapBetweenLocations'); break; } } }
+        if(truthy(getPath(r, `maxOneMovePerSession.${buoi}.${thu}`, false))){ const seq = []; withLoc.forEach(x => { if(seq[seq.length-1] !== x.loc) seq.push(x.loc); }); if(seq.length > 2) kinds.push('maxOneMovePerSession'); }
+        if(!kinds.length) return;
+        sessions++; teachers.add(gv);
+        if(cases.length < 60) cases.push({teacher: gv, thu, buoi, kinds, periods: withLoc.map(x => x.ti + 1)});
+      });
+    });
+    return {sessions, teachers: teachers.size, cases};
   }
 
   /* ===================== SUBJECT ENGINE ===================== */
@@ -1280,6 +1369,25 @@
     return out;
   }
 
+  // 22/08: kiểm tra theo PHẠM VI một/vài lớp (dùng cho các pass hậu kiểm chạy
+  // sau khi xếp): cùng logic từng ô + hậu kiểm Min cụm tiết liền của
+  // validateAll, nhưng chỉ quét các lớp được chỉ định (vài chục ms thay vì
+  // 1-3 s quét toàn trường). Không gồm hậu kiểm "vị trí phải có tiết dạy"
+  // của giáo viên (thuộc toàn trường — caller xác nhận bằng validateAllAsync).
+  function validateClasses(classIds, maxItems){
+    invalidateConstraintCache();
+    const wanted=new Set((Array.isArray(classIds)?classIds:[classIds]).map(x=>String(x||'')).filter(Boolean));
+    const max=Number(maxItems||1000); const out=[]; const seen=new Set();
+    function add(item){ if(!item || out.length>=max) return; const key=[item.lopId||'',item.mon||'',item.thu||'',item.buoi||'',item.ti,item.message||''].join('|'); if(seen.has(key)) return; seen.add(key); out.push(item); }
+    const tkbs=D().tkb || {};
+    for(const lopId of wanted){ const tkb=tkbs[lopId]; if(!tkb) continue; for(const thu of days()) for(const buoi of SESSION_KEYS){ const arr=tkb?.[thu]?.[buoi]||[]; for(let ti=0;ti<arr.length;ti++){ const v=arr[ti]; if(v==='OFF'||!v) continue; const mon=cellMonSafe(v); if(!mon) continue; const res=canPlaceLesson({lopId,mon,thu,buoi,ti,full:true,mode:'validate'}); (res.messages||[]).forEach(message=>add({lopId,className:classNameOf(lopId),mon,thu,buoi,ti,message})); if(out.length>=max) return out; } } }
+    try{
+      const c=model();
+      Object.keys(c.subject||{}).forEach(sk=>{ const sobj=c.subject[sk]; Object.keys(sobj.byClass||{}).forEach(lopId=>{ if(!wanted.has(String(lopId))) return; const r=sobj.byClass[lopId]; if(!r.lessonBlocks) return; const cells=subjectCellsAfterPlace(lopId,sk,{lopId,mon:sk}); for(const len of [2,3,4,5]){ const min=toInt(r.lessonBlocks?.[len]?.min,0); const maxBound=toInt(r.lessonBlocks?.[len]?.max,0); if(min>0 && !impossibleLessonBlockMinimum(lopId,sk,len,min,maxBound)){ let blocks=0; for(const d of days()) for(const b of SESSION_KEYS) blocks += countConsecutiveBlocks(indexesInSession(cells,d,b),len); if(blocks<min) add({kind:'subject.lessonBlocks.min',lopId,className:classNameOf(lopId),mon:sk,message:`${classNameOf(lopId)} - ${sk}: số buổi/cụm có ${len} tiết xếp liền ${blocks}, chưa đạt Min ${min}.`}); } } }); });
+    }catch(e){ console.warn('[tkb-constraints] scoped post validate failed', e); }
+    return out;
+  }
+
   function constraintValidationNow(){
     return (typeof performance !== 'undefined' && performance.now)
       ? performance.now()
@@ -1287,6 +1395,12 @@
   }
 
   function yieldConstraintValidation(){
+    // 21/08: tab AN thi rAF khong chay va setTimeout bi Chrome bop (~1 lan/
+    // phut sau 5 phut nen) — validate chia lat 8ms se keo dai vo tan den khi
+    // nguoi dung quay lai tab. Dung worker-timer (khong bi throttle) khi an.
+    if(typeof document !== 'undefined' && document.hidden && window.__tkbBgSleep){
+      return window.__tkbBgSleep(0);
+    }
     return new Promise(resolve=>{
       let done=false;
       const resolveOnce=()=>{
@@ -1532,6 +1646,12 @@
       #${PANEL_ID} .rb-nss-classes button{width:100%;text-align:center;background:#fff;border:1px solid #d8e0ee;border-radius:6px;padding:5px 6px}
       #${PANEL_ID} .rb-nss-classes button.active{background:#e8f0ff;border-color:#6d8cff;color:#163f9f;font-weight:700}
       #${PANEL_ID} .rb-nss-classes button.primary{box-shadow:inset 3px 0 0 #2458d8}
+      #${PANEL_ID} .rb-nss-side{display:flex;flex-direction:column;gap:6px;min-height:0}
+      #${PANEL_ID} .rb-nss-side .rb-fixedoff-list{flex:1 1 auto;min-height:0}
+      #${PANEL_ID} .rb-nss-tools{display:flex;gap:4px}
+      #${PANEL_ID} .rb-nss-tools button{flex:1;font-size:11px;padding:4px 4px;background:#fff;border:1px solid #d7deea;border-radius:6px}
+      #${PANEL_ID} .rb-nss-tools button:hover{background:#f6f9ff}
+      #${PANEL_ID} .rb-nss-hint{font-size:10.5px;color:#5b6b85;line-height:1.3;text-align:center;padding:0 2px}
       #${PANEL_ID} .rb-nss-table table{table-layout:fixed}
       #${PANEL_ID} .rb-nss-table th,#${PANEL_ID} .rb-nss-table td{padding:4px 5px}
       #${PANEL_ID} .rb-nss-table th:first-child,#${PANEL_ID} .rb-nss-table td:first-child{min-width:150px;width:150px}
@@ -2757,6 +2877,7 @@ function buildMenuPopup(items, left, top, level){
   function fixedOffListScrollKey(){
     if(state.section==='teacher' && state.teacherRule==='mustTeach') return 'teacher:mustTeach';
     if(state.section==='fixedOff') return `fixedOff:${state.fixedType || ''}`;
+    if(state.section==='subject' && (state.subjectRule==='noSameSession' || state.subjectRule==='noSameDay')) return `subject:${state.subjectRule}`;
     return '';
   }
   function rememberFixedOffListScroll(list,key){
@@ -3510,9 +3631,11 @@ function buildMenuPopup(items, left, top, level){
     const classId=noSameRuleClassId();
     const selectedClasses=new Set(noSameSelectedClassIds().map(String));
     const groupIds=Array.from({length:10},(_,i)=>'g'+(i+1));
-    const classList=`<div class="rb-nss-layout"><aside class="rb-nss-classes">${classes.map(cls=>{const id=String(cls.id); const active=selectedClasses.has(id); const primary=id===String(classId); return `<button type="button" class="${active?'active':''} ${primary?'primary':''}" data-nss-class-select="${esc(id)}">${esc(cls.name || cls.id)}</button>`;}).join('')}</aside>`;
-    const table=`<div class="table-wrap rb-nss-table"><table><thead><tr><th>Môn học</th>${groupIds.map((gid,i)=>`<th>${esc('Nhóm '+(i+1))}</th>`).join('')}</tr></thead><tbody>${subjects.map(subject=>`<tr><td><b>${esc(subject.name || subject.id)}</b></td>${groupIds.map(gid=>`<td class="rb-check"><input type="checkbox" data-nss-rule="${esc(rule)}" data-nss-class="${esc(classId)}" data-nss-subject="${esc(subject.id)}" data-nss-group="${esc(gid)}" ${noSameGroupItems(rule,classId,gid).some(it=>subjectMatches(it,subject.id))?'checked':''}></td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
-    return classList + table;
+    const tools=`<div class="rb-nss-tools"><button type="button" data-nss-select-all title="Chọn tất cả lớp (bảng nhóm môn của lớp chính sẽ áp cho mọi lớp)">Chọn tất cả</button><button type="button" data-nss-select-one title="Chỉ giữ lớp chính">Chỉ lớp này</button></div><div class="rb-nss-hint">Click: 1 lớp · Ctrl+Click: thêm/bớt · Shift+Click: chọn dải</div>`;
+    // 25/08: cung cach the hien voi danh sach o "Yeu cau co dinh giao vien" (rb-fixedoff-list)
+    const items=classes.map(cls=>{const id=String(cls.id); const active=selectedClasses.has(id); const primary=id===String(classId); return `<button type="button" class="rb-fixedoff-item ${active?'active':''} ${primary?'primary':''}" data-nss-class-select="${esc(id)}">${esc(cls.name || cls.id)}</button>`;}).join('');
+    const table=`<div class="table-wrap rb-nss-table"><table><thead><tr><th>Môn học</th>${groupIds.map((gid,i)=>`<th>${esc('Nhóm '+(i+1))}</th>`).join('')}</tr></thead><tbody>${subjects.map(subject=>`<tr><td><b>${esc(subject.name || subject.id)}</b></td>${groupIds.map(gid=>`<td class="rb-check"><input type="checkbox" data-nss-rule="${esc(rule)}" data-nss-class="${esc(classId)}" data-nss-subject="${esc(subject.id)}" data-nss-group="${esc(gid)}" ${noSameGroupItems(rule,classId,gid).some(it=>subjectMatches(it,subject.id))?'checked':''}></td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+    return `<div class="rb-fixedoff-screen rb-nss-screen"><div class="rb-nss-side">${tools}<div class="rb-fixedoff-list">${items}</div></div><div class="rb-fixedoff-main">${table}</div></div>`;
   }
   function subjectTable(rule,isGroup){
     if(rule==='fixedOff') return renderFixedOff(isGroup?'subjectGroup':'subject');
@@ -4211,7 +4334,7 @@ function gradeListText(grades){
   function classFixedOffExcelRows(){
     const cols=classFixedOffExcelColumns();
     const classes=getClassList();
-    const fixed=classFixedOffSlotsSnapshot();
+    const fixed=classFixedOffExportSlots(); // kem ca o NGHI tren TKB (khung buoi)
     const rows=[['MaLop','TenLop','SoTietCoDinh',...cols.map(c=>c.header)]];
     classes.forEach(cls=>{
       const slots=fixed[cls.id] || {};
@@ -4386,7 +4509,7 @@ function gradeListText(grades){
     })).filter(x=>x.id);
   }
   function fixedOffMatrixSlots(type){
-    if(type==='class') return classFixedOffSlotsSnapshot();
+    if(type==='class') return classFixedOffExportSlots(); // kem ca o NGHI tren TKB
     if(type==='teacher') return model().fixedOff?.teacher || {};
     if(type==='subject') return model().fixedOff?.subject || {};
     return {};
@@ -4457,7 +4580,7 @@ function gradeListText(grades){
         const value=c<row.length ? row[c] : '';
         const isHeader=r===0;
         const isLeft=c<3 && r>0;
-        const isOff=norm(value)==='nghi';
+        const isOff=r>0 && c>=3 && fixedOffImportTruthy(value);
         const style={
           font:{name:'Times New Roman',sz:isLeft&&c===0?13:12,bold:isHeader||isLeft||isOff,color:{rgb:isOff?'C00000':'1F2937'}},
           alignment:{horizontal:'center',vertical:'center',wrapText:true},
@@ -4590,8 +4713,11 @@ function gradeListText(grades){
   function fixedOffImportTruthy(value){
     if(value === true) return true;
     if(typeof value === 'number') return Number(value) !== 0;
-    const s=norm(value);
-    return ['1','x','xx','nghi','off','true','yes','y','co','có'].includes(s);
+    // 25/08: sheet xuat ra ghi "Nghỉ" (co dau) nhung truoc day chi so sanh sau
+    // khi ha chu thuong (khong bo dau) -> "nghỉ" != "nghi" -> nhap lai coi moi
+    // o la trong va XOA het o nghi. So sanh khong dau (excelHeaderKey).
+    const s=excelHeaderKey(value);
+    return ['1','x','xx','nghi','off','true','yes','y','co','codinh','v','ok'].includes(s);
   }
   function importTeacherFixedOffRows(rows, opts){
     opts=opts||{};
@@ -4683,6 +4809,30 @@ function gradeListText(grades){
         if(p.thu && p.buoi) syncClassFixedOffCell(classId,p.thu,p.buoi,p.ti,false);
       });
     });
+  }
+  function classFixedOffExportSlots(){
+    // 21/08: XUAT Excel phai kem CA cac o dang NGHI ('OFF') nam thang tren TKB
+    // (nghi theo khung buoi khong duoc sync vao fixedOff/tkbUserOff nen
+    // snapshot thuong bo sot). Neu file thieu cac o nghi nay, vong
+    // xuat -> nhap lai se MO chung ra (import coi slot trong = bo nghi).
+    // Chi dung cho DUONG XUAT — snapshot goc van la nguon cho nut Xoa yeu cau
+    // de "Xoa" khong dong thoi mo ca khung buoi nghi toan truong.
+    const out=classFixedOffSlotsSnapshot();
+    const add=(classId,key)=>{
+      if(!classId || !key) return;
+      out[classId]=out[classId] || {};
+      out[classId][key]=true;
+    };
+    Object.entries(D().tkb || {}).forEach(([classId,tkb])=>{
+      if(!tkb || typeof tkb!=='object') return;
+      days().forEach(thu=>SESSION_KEYS.forEach(buoi=>{
+        const arr=tkb?.[thu]?.[buoi];
+        if(!Array.isArray(arr)) return;
+        const len=Math.min(arr.length, sessionLen(buoi));
+        for(let i=0;i<len;i++){ if(arr[i]==='OFF') add(classId, slotKey(thu,buoi,i)); }
+      }));
+    });
+    return out;
   }
   function fixedOffRowsHaveSlotHeaders(rows, cols){
     const slotByHeader=new Set((cols || []).map(c=>excelHeaderKey(c.header)));
@@ -6533,7 +6683,7 @@ function gradeListText(grades){
       const stored=state.fixedOffListScroll?.[key];
       if(stored) restoreFixedOffListScroll(stored,key);
       fixedList.onscroll=()=>rememberFixedOffListScroll(fixedList,key);
-      fixedList.querySelectorAll('[data-mt-select],[data-fo-select]').forEach(b=>{
+      fixedList.querySelectorAll('[data-mt-select],[data-fo-select],[data-nss-class-select]').forEach(b=>{
         b.onpointerdown=()=>rememberFixedOffListScroll(fixedList,key);
         b.onmousedown=()=>rememberFixedOffListScroll(fixedList,key);
       });
@@ -6575,24 +6725,43 @@ function gradeListText(grades){
     const gt=root.querySelector('[data-rb-group-type]'); if(gt) gt.onchange=()=>{state.groupType=gt.value;state.groupId='';render();}; const gid=root.querySelector('[data-rb-group-id]'); if(gid) gid.onchange=()=>{state.groupId=gid.value;render();}; const groupName=root.querySelector('[data-rb-group-name]'); if(groupName) groupName.onchange=()=>autoSaveGroupFromUI(); const newG=root.querySelector('[data-rb-new-group]'); if(newG) newG.onclick=()=>{state.groupId=''; const n=root.querySelector('[data-rb-group-name]'); if(n)n.value=''; root.querySelectorAll('[data-rb-group-items] input').forEach(x=>x.checked=false); refreshCheckAllMasters(root);}; const delG=root.querySelector('[data-rb-delete-group]'); if(delG) delG.onclick=deleteGroupFromUI;
     const ts=root.querySelector('[data-teacher-search]'); if(ts) ts.oninput=()=>{state.search=ts.value;render();}; const cg=root.querySelector('[data-class-group-filter]'); if(cg) cg.onchange=()=>{ if(!saveCurrentBeforeNavigation()) return; state.classGroup=cg.value;render();}; const sid=root.querySelector('[data-subject-id]'); if(sid) sid.onchange=()=>{ if(!saveCurrentBeforeNavigation()) return; state.subjectId=sid.value;render();}; const sgid=root.querySelector('[data-subject-group-id]'); if(sgid) sgid.onchange=()=>{ if(!saveCurrentBeforeNavigation()) return; state.subjectGroupId=sgid.value;render();}; const clearCur=root.querySelector('[data-rb-clear-current]'); if(clearCur) clearCur.onclick=clearCurrentRule;
     root.querySelectorAll('[data-tid][data-path]').forEach(el=>{ el.onchange=()=>saveCurrentFromUI(false); });
+    root.querySelectorAll('[data-nss-select-all]').forEach(b=>b.onclick=()=>{
+      if(saveCurrentFromUI(false,{releaseExisting:false})===false) return;
+      selectAllNoSameClasses();
+      if(saveCurrentFromUI(false,{releaseExisting:false})===false) return;
+      renderKeepingFixedOffListScroll();
+    });
+    root.querySelectorAll('[data-nss-select-one]').forEach(b=>b.onclick=()=>{
+      if(!saveCurrentBeforeNavigation()) return;
+      setNoSameSingleClass(noSameRuleClassId());
+      renderKeepingFixedOffListScroll();
+    });
     root.querySelectorAll('[data-nss-class-select]').forEach(b=>b.onclick=ev=>{
       const id=b.dataset.nssClassSelect||'';
+      if(ev && ev.shiftKey){
+        // 25/08: Shift+Click chon dai (Ctrl+Shift cong don) nhu "Yeu cau co dinh lop hoc"
+        if(saveCurrentFromUI(false,{releaseExisting:false})===false) return;
+        selectNoSameClassRange(id, !!(ev.ctrlKey || ev.metaKey));
+        if(saveCurrentFromUI(false,{releaseExisting:false})===false) return;
+        renderKeepingFixedOffListScroll();
+        return;
+      }
       if(ev && (ev.ctrlKey || ev.metaKey)){
         const wasSelected=noSameSelectedClassIds().map(String).includes(String(id));
         if(wasSelected){
           if(saveCurrentFromUI(false,{releaseExisting:false})===false) return;
           toggleNoSameClass(id);
-          render();
+          renderKeepingFixedOffListScroll();
           return;
         }
         toggleNoSameClass(id);
         if(saveCurrentFromUI(false,{releaseExisting:false})===false) return;
-        render();
+        renderKeepingFixedOffListScroll();
         return;
       }
       if(!saveCurrentBeforeNavigation()) return;
       setNoSameSingleClass(id);
-      render();
+      renderKeepingFixedOffListScroll();
     });
     root.querySelectorAll('[data-nss-subject][data-nss-group]').forEach(el=>{ el.onchange=()=>saveCurrentFromUI(false); });
     root.querySelectorAll('[data-tl-view]').forEach(b=>b.onclick=()=>{ if(!saveCurrentBeforeNavigation()) return; state.timeLimitView=b.dataset.tlView||'limits'; render(); });
@@ -7062,6 +7231,14 @@ function gradeListText(grades){
         fixedOffSelectedClassIds,
         setFixedOffSingleClass,
         toggleFixedOffClass,
+        fixedOffMatrixData,
+        importFixedOffMatrixRows,
+        fixedOffImportTruthy,
+        noSameSelectedClassIds,
+        setNoSameSingleClass,
+        toggleNoSameClass,
+        selectNoSameClassRange,
+        selectAllNoSameClasses,
         teacherStats,
         teacherRuleTable,
         teacherOneSessionDayMode,
@@ -7072,7 +7249,7 @@ function gradeListText(grades){
       };
     }
   }catch(_){ }
-  const API={version:VERSION,get:model,save:touchSave,open:openPanel,openPage,close:closePanel,render,syncDefaultGroups,canPlaceLesson,canPlaceCell,validateAll,validateAllAsync,invalidateConstraintCache,explain:validateAll,score:function(){return validateAll(1000).length;},teacherFixedOffCapacityWarnings,classFixedOffCapacityWarnings,teacherCellsAfterPlace,inferClassIdFromTkb,debugCanPlace,teacherFixedOffExcelRows,exportTeacherFixedOffExcel,importTeacherFixedOffRows,importTeacherFixedOffExcelFile,classFixedOffExcelRows,exportClassFixedOffExcel,importClassFixedOffRows,importClassFixedOffExcelFile,subjectFixedOffExcelRows,exportSubjectFixedOffExcel,importSubjectFixedOffRows,importSubjectFixedOffExcelFile,fullConstraintsExportPayload,exportAllConstraintsExcel,readAllConstraintsPayloadFromWorkbook,applyImportedConstraintsPayload,importAllConstraintsExcelFile};
+  const API={version:VERSION,get:model,save:touchSave,open:openPanel,openPage,close:closePanel,render,syncDefaultGroups,canPlaceLesson,canPlaceCell,validateAll,validateAllAsync,validateClasses,invalidateConstraintCache,explain:validateAll,score:function(){return validateAll(1000).length;},teacherFixedOffCapacityWarnings,classFixedOffCapacityWarnings,teacherCellsAfterPlace,teacherLocationRuleDebt,inferClassIdFromTkb,debugCanPlace,teacherFixedOffExcelRows,exportTeacherFixedOffExcel,importTeacherFixedOffRows,importTeacherFixedOffExcelFile,classFixedOffExcelRows,exportClassFixedOffExcel,importClassFixedOffRows,importClassFixedOffExcelFile,subjectFixedOffExcelRows,exportSubjectFixedOffExcel,importSubjectFixedOffRows,importSubjectFixedOffExcelFile,fullConstraintsExportPayload,exportAllConstraintsExcel,readAllConstraintsPayloadFromWorkbook,applyImportedConstraintsPayload,importAllConstraintsExcelFile};
   window.TKBConstraints=API; window.TKBConstraintsFull=API;
   try{ injectStyle(); model(); installHooks(); console.log('[tkb-constraints] loaded', VERSION); }catch(e){ console.warn('[tkb-constraints] init failed',e); }
 })();

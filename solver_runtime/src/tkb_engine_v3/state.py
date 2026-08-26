@@ -19,6 +19,7 @@ from .core import (
     Problem,
     SubjectRule,
     _to_int,
+    location_rule_debt,
 )
 
 
@@ -49,6 +50,9 @@ class State:
 
     def __init__(self, problem: Problem, defer_min: bool = False):
         self.P = problem
+        if not getattr(problem, "a_teachers", None):
+            # 25/08: Problem gia chi co a_teacher -> suy ra tuple thanh vien
+            problem.a_teachers = [((t,) if t >= 0 else ()) for t in problem.a_teacher]
         C = problem.num_classes()
         T = problem.num_teachers()
         self.grid = [[-1] * NUM_SLOTS for _ in range(C)]
@@ -74,6 +78,44 @@ class State:
 
     def objective(self) -> tuple[int, int, int, int, int]:
         return (self.n_singleton, self.n_gap2, self.n_sessions, self.n_gap1, self.n_days)
+
+    def location_rule_debt_sessions(self) -> int:
+        """26/08: so BUOI (GV, buoi) dang vi pham yeu cau DIA DIEM.
+
+        Cung don vi va cung ngu nghia voi
+        ``TKBConstraints.teacherLocationRuleDebt().sessions`` cua giao dien va
+        voi ``_check_teacher`` ben duoi — dung de entry.py xep hang cac seed,
+        chan ket qua xau hon moc va bao so nay ve trinh duyet.
+        """
+
+        P = self.P
+        loc_rules = getattr(P, "teacher_loc_rules", None)
+        if not loc_rules:
+            return 0
+        a_loc = P.a_loc
+        total = 0
+        for t, enabled in enumerate(loc_rules):
+            if not enabled:
+                continue
+            rule = P.teacher_rules[t]
+            if rule is None:
+                continue
+            row = self.teacher_slot[t]
+            for s in range(NUM_SESSIONS):
+                one = rule.loc_one[s]
+                gap = rule.loc_gap[s]
+                move = rule.loc_move[s]
+                if not (one or gap or move):
+                    continue
+                base = s * PERIODS
+                entries: list[tuple[int, int]] = []
+                for p in range(PERIODS):
+                    ai = row[base + p]
+                    if ai >= 0 and a_loc[ai] >= 0:
+                        entries.append((p, a_loc[ai]))
+                if len(entries) >= 2 and location_rule_debt(entries, one, gap, move) > 0:
+                    total += 1
+        return total
 
     def _session_contrib(self, t: int, s: int) -> tuple[int, int, int, int]:
         count = self.ts_count[t][s]
@@ -129,25 +171,27 @@ class State:
         if old == ai:
             return True
         P = self.P
+        a_teachers = P.a_teachers
+        # 25/08: tiet day ghep ("GV1, GV2") chiem cho cua MOI giao vien thanh
+        # vien -> khong GV nao trong so do duoc xep tiet khac cung gio.
         if old >= 0:
-            t = P.a_teacher[old]
-            if t >= 0:
+            for t in a_teachers[old]:
                 self.teacher_slot[t][slot] = -1
             self.a_placed[old] -= 1
             self.placed -= 1
         if ai >= 0:
-            t = P.a_teacher[ai]
-            if t >= 0:
+            members = a_teachers[ai]
+            for t in members:
                 if self.teacher_slot[t][slot] >= 0:
                     # teacher conflict: rollback this cell write and fail
                     if old >= 0:
-                        told = P.a_teacher[old]
-                        if told >= 0:
+                        for told in a_teachers[old]:
                             self.teacher_slot[told][slot] = old
                         self.a_placed[old] += 1
                         self.placed += 1
                     self.check_fail_reason = "teacher_conflict"
                     return False
+            for t in members:
                 self.teacher_slot[t][slot] = ai
             self.a_placed[ai] += 1
             self.placed += 1
@@ -157,16 +201,15 @@ class State:
 
     def _rollback(self, journal: list) -> None:
         P = self.P
+        a_teachers = P.a_teachers
         for c, slot, old, new in reversed(journal):
             if new >= 0:
-                t = P.a_teacher[new]
-                if t >= 0:
+                for t in a_teachers[new]:
                     self.teacher_slot[t][slot] = -1
                 self.a_placed[new] -= 1
                 self.placed -= 1
             if old >= 0:
-                t = P.a_teacher[old]
-                if t >= 0:
+                for t in a_teachers[old]:
                     self.teacher_slot[t][slot] = old
                 self.a_placed[old] += 1
                 self.placed += 1
@@ -237,6 +280,25 @@ class State:
                 if self.teacher_slot[t][(d * 2) * PERIODS + 4] >= 0 and self.teacher_slot[t][(d * 2 + 1) * PERIODS] >= 0:
                     self.check_fail_reason = "no_m5_a1"
                     return False
+            # 23/08: yeu cau dia diem (chi GV day >= 2 co so va co bat luat)
+            if P.teacher_loc_rules and P.teacher_loc_rules[t]:
+                a_loc = P.a_loc
+                row = self.teacher_slot[t]
+                for s in (d * 2, d * 2 + 1):
+                    one = rule.loc_one[s]
+                    gap = rule.loc_gap[s]
+                    move = rule.loc_move[s]
+                    if not (one or gap or move):
+                        continue
+                    base = s * PERIODS
+                    entries: list[tuple[int, int]] = []
+                    for p in range(PERIODS):
+                        ai = row[base + p]
+                        if ai >= 0 and a_loc[ai] >= 0:
+                            entries.append((p, a_loc[ai]))
+                    if len(entries) >= 2 and location_rule_debt(entries, one, gap, move) > 0:
+                        self.check_fail_reason = "teacher_location"
+                        return False
         if rule.max_days > 0 or rule.max_sessions > 0 or rule.max_morning > 0 or rule.max_afternoon > 0:
             used_days = 0
             used_sessions = 0
@@ -334,14 +396,15 @@ class State:
                 if ai < 0:
                     continue
                 cname = P.class_names[c]
-                tname = P.teacher_names[P.a_teacher[ai]] if P.a_teacher[ai] >= 0 else ""
+                tnames = tuple(P.teacher_names[t] for t in P.a_teachers[ai])
+                tname = tnames[0] if tnames else ""
                 sname = P.subject_names[P.a_subject[ai]]
                 room = P.a_room[ai]
                 ok = False
                 if target_type == "class":
                     ok = cname == target_id
                 elif target_type == "teacher":
-                    ok = tname == target_id
+                    ok = target_id in tnames
                 elif target_type == "subject":
                     ok = sname == target_id
                 elif target_type == "room":
@@ -416,10 +479,12 @@ class State:
         touched_ts: set[tuple[int, int]] = set()
         for c, slot, old, new in journal:
             s = slot // PERIODS
-            if old >= 0 and P.a_teacher[old] >= 0:
-                touched_ts.add((P.a_teacher[old], s))
-            if new >= 0 and P.a_teacher[new] >= 0:
-                touched_ts.add((P.a_teacher[new], s))
+            if old >= 0:
+                for t in P.a_teachers[old]:
+                    touched_ts.add((t, s))
+            if new >= 0:
+                for t in P.a_teachers[new]:
+                    touched_ts.add((t, s))
         for t, s in touched_ts:
             self._refresh_ts(t, s)
         return journal
@@ -430,10 +495,12 @@ class State:
         touched_ts: set[tuple[int, int]] = set()
         for c, slot, old, new in journal:
             s = slot // PERIODS
-            if old >= 0 and P.a_teacher[old] >= 0:
-                touched_ts.add((P.a_teacher[old], s))
-            if new >= 0 and P.a_teacher[new] >= 0:
-                touched_ts.add((P.a_teacher[new], s))
+            if old >= 0:
+                for t in P.a_teachers[old]:
+                    touched_ts.add((t, s))
+            if new >= 0:
+                for t in P.a_teachers[new]:
+                    touched_ts.add((t, s))
         for t, s in touched_ts:
             self._refresh_ts(t, s)
 
@@ -453,8 +520,7 @@ class State:
             for ai in (old, new):
                 if ai >= 0:
                     class_subjects.add((c, P.a_subject[ai], ai))
-                    t = P.a_teacher[ai]
-                    if t >= 0:
+                    for t in P.a_teachers[ai]:
                         teacher_days.setdefault(t, set()).add(d)
         for c, s in class_sessions:
             if not self._check_class_session(c, s):

@@ -14,7 +14,34 @@ param(
     [string]$Repository = 'tkb-cloud-run',
 
     [ValidateRange(1, 50)]
-    [int]$MaxInstances = 3,
+    # 22/08: 2 -> 1. Quota vung asia-southeast2 la 20 vCPU va Cloud Run tinh
+    # CA revision cu LAN revision moi trong luc rollout: 8 vCPU x max 2 = 16
+    # dang phuc vu + 16 cua revision moi = 32 > 20 nen moi lan deploy deu ket
+    # (da dinh 21/08). Voi max 1: 8 + 8 = 16 <= 20, rollout luon tron tru.
+    # 25/08: Google tu choi tang quota (project moi) -> 6 vCPU x max 2 moi vung
+    # bang rollout 2 buoc (deploy max 1: 6 + 12 = 18 <= 20, promote, roi nang
+    # max 2: 12 + 6 = 18 <= 20) va nhan ra NHIEU VUNG bang -ExtraRegions (quota
+    # tinh theo vung; VPS chia luot theo tai). 8 vCPU x 2 = 24 khong the.
+    [int]$MaxInstances = 2,
+
+    [ValidateSet(1, 2, 4, 6, 8)]
+    [int]$Cpu = 6,
+
+    [ValidateRange(2, 32)]
+    [int]$MemoryGi = 12,
+
+    [ValidateRange(1, 1000)]
+    [int]$RegionCpuQuota = 20,
+
+    # Secondary regions that receive the same image right after the primary
+    # region is promoted (tools/cloud-run/deploy-regions.ps1). Their profiles
+    # are written to -ProfilesOut for tools/vps-deploy/set-cloud-run-profiles.py.
+    [ValidatePattern('^[a-z]+(?:-[a-z0-9]+)+[0-9]$')]
+    # 25/08 dem: quota MaxRegionsPerProject = 3 (Google tu choi nang) -> chi 2
+    # vung phu ngoai asia-southeast2; them vung khac se bao "quota exceeded".
+    [string[]]$ExtraRegions = @('asia-southeast1', 'asia-east1'),
+
+    [string]$ProfilesOut = '',
 
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._+-]*@[A-Za-z0-9.-]+\.iam\.gserviceaccount\.com$')]
     [string]$InvokerServiceAccount,
@@ -547,6 +574,14 @@ if (-not $repositoryExists) {
     )
 }
 
+# Quota-safe rollout: with MaxInstances > 1 the new revision starts at max 1
+# (Cpu + Cpu*Max must fit), is promoted, then scaled up (Cpu*Max + Cpu).
+$deployMax = if ($MaxInstances -gt 1) { 1 } else { $MaxInstances }
+$rolloutCpu = $Cpu * $deployMax + $Cpu * $MaxInstances
+if ($rolloutCpu -gt $RegionCpuQuota) {
+    throw "Shape $Cpu vCPU x $MaxInstances needs $rolloutCpu vCPU during a rollout but the regional quota is $RegionCpuQuota (max for $Cpu vCPU is $([math]::Floor($RegionCpuQuota / $Cpu) - 1) instances)."
+}
+
 $tag = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
 $image = "$Region-docker.pkg.dev/$ProjectId/$Repository/tkb-solver:$tag"
 
@@ -602,18 +637,21 @@ try {
         "--region=$Region",
         '--platform=managed',
         '--execution-environment=gen2',
-        '--cpu=6',
-        '--memory=8Gi',
+        # 21/08: 6 -> 8 vCPU de CP-SAT chay 8 worker (nhanh hon ~15-25%).
+        # 25/08: mac dinh 4 vCPU x 2 instance/vung de co 2 luot song song moi
+        # vung ma rollout van vua quota 20 vCPU. TKB_CLOUD_RUN_MAX_WORKERS = Cpu.
+        "--cpu=$Cpu",
+        "--memory=${MemoryGi}Gi",
         '--concurrency=1',
         '--timeout=300',
         '--min-instances=0',
-        "--max-instances=$MaxInstances",
+        "--max-instances=$deployMax",
         '--cpu-boost',
         '--no-traffic',
         "--tag=$canaryTag",
         '--no-allow-unauthenticated',
         '--labels=app=tkb-cherry,component=solver,runtime=cloud-run',
-        "--set-env-vars=TKB_CLOUD_RUN_QUIET=1,TKB_CLOUD_RUN_MAX_WORKERS=6,TKB_CLOUD_RUN_MAX_SOLVE_SECONDS=285,TKB_CLOUD_RUN_SOLVER_DIGEST=$solverDigest",
+        "--set-env-vars=TKB_CLOUD_RUN_QUIET=1,TKB_CLOUD_RUN_MAX_WORKERS=$Cpu,TKB_CPSAT_THREADS=$Cpu,TKB_CLOUD_RUN_MAX_SOLVE_SECONDS=285,TKB_CLOUD_RUN_SOLVER_DIGEST=$solverDigest",
         "--project=$ProjectId",
         '--quiet'
     )
@@ -749,6 +787,64 @@ try {
         "--project=$ProjectId",
         '--quiet'
     )
+    $canaryTagObserved = $false
+
+    # Second rollout step: only the verified max-1 revision serves now, so a
+    # revision with the full instance count fits the regional quota. On failure
+    # the service keeps serving the verified revision at max 1 (a warning, not
+    # a rollback of the promoted build).
+    if ($MaxInstances -gt $deployMax) {
+        try {
+            Write-Host "Scaling '$ServiceName' to max $MaxInstances instances..."
+            Invoke-Gcloud -Arguments @(
+                'run', 'services', 'update', $ServiceName,
+                "--max-instances=$MaxInstances",
+                "--region=$Region",
+                "--project=$ProjectId",
+                '--quiet'
+            )
+            # latestReady lags latestCreated by a few seconds after `services
+            # update`; poll instead of checking once (25/08 lesson).
+            $scaledState = $null
+            $scaledRevision = ''
+            for ($wait = 0; $wait -lt 24; $wait++) {
+                $scaledState = Get-CloudRunServiceState -Project $ProjectId -RegionName $Region -Name $ServiceName
+                $scaledRevision = [string]$scaledState.status.latestCreatedRevisionName
+                if ($scaledRevision -ne $newRevision -and [string]$scaledState.status.latestReadyRevisionName -eq $scaledRevision) { break }
+                Start-Sleep -Seconds 5
+            }
+            if ($scaledRevision -eq $newRevision -or [string]$scaledState.status.latestReadyRevisionName -ne $scaledRevision) {
+                throw "Scaled revision $scaledRevision did not become Ready within 2 minutes."
+            }
+            Invoke-Gcloud -Arguments @(
+                'run', 'services', 'update-traffic', $ServiceName,
+                "--to-revisions=$scaledRevision=100",
+                "--region=$Region",
+                "--project=$ProjectId",
+                '--quiet'
+            )
+            Invoke-AuthenticatedCloudRunCanary `
+                -CanaryUrl $serviceUrl `
+                -Audience $serviceUrl `
+                -ExpectedRevision $scaledRevision `
+                -ExpectedDigest $solverDigest `
+                -InvokerAccount $InvokerServiceAccount
+            $newRevision = $scaledRevision
+        }
+        catch {
+            Write-Warning "Scale-up to $MaxInstances instances failed; '$newRevision' keeps serving at max $deployMax. $($_.Exception.Message)"
+            try {
+                Invoke-Gcloud -Arguments @(
+                    'run', 'services', 'update-traffic', $ServiceName,
+                    "--to-revisions=$newRevision=100",
+                    "--region=$Region",
+                    "--project=$ProjectId",
+                    '--quiet'
+                )
+            }
+            catch { Write-Warning 'Traffic could not be re-pinned to the verified revision; check the Cloud Run console.' }
+        }
+    }
 }
 catch {
     $deploymentError = $_
@@ -815,3 +911,50 @@ $profileBundle = [ordered]@{
 Write-Host ''
 Write-Host 'Copy the next safe line into Super Admin -> Doi tai khoan Google Cloud:'
 Write-Host ("TKB_CLOUD_PROFILE=" + ($profileBundle | ConvertTo-Json -Compress))
+
+# 25/08: the same image goes to the secondary regions so the VPS can spread
+# concurrent solves (Cloud Run CPU quota is per region). A failure here leaves
+# the primary promoted; the affected region simply keeps its previous
+# revision (stale digest -> the client skips it and the VPS balancer only
+# counts profiles that match the pinned digest).
+$secondaryRegions = @($ExtraRegions | Where-Object { $_ -and $_ -ne $Region })
+if ($secondaryRegions.Count -gt 0) {
+    $regionsScript = Join-Path $PSScriptRoot 'deploy-regions.ps1'
+    $profilesPath = if ([string]::IsNullOrWhiteSpace($ProfilesOut)) {
+        Join-Path ([System.IO.Path]::GetTempPath()) "tkb-cloud-run-profiles-$tag.json"
+    } else { $ProfilesOut }
+    Write-Host ''
+    Write-Host "Deploying the same image to secondary regions: $($secondaryRegions -join ', ')"
+    $regionArgs = @{
+        ProjectId = $ProjectId
+        Regions = $secondaryRegions
+        SourceRegion = $Region
+        ServiceName = $ServiceName
+        Image = $image
+        SolverDigest = $solverDigest
+        Cpu = $Cpu
+        MemoryGi = $MemoryGi
+        MaxInstances = $MaxInstances
+        RegionCpuQuota = $RegionCpuQuota
+        ProfilesOut = $profilesPath
+        ConfirmDeployment = $true
+    }
+    if (-not [string]::IsNullOrWhiteSpace($InvokerServiceAccount)) { $regionArgs.InvokerServiceAccount = $InvokerServiceAccount }
+    if (-not [string]::IsNullOrWhiteSpace($RuntimeServiceAccount)) { $regionArgs.RuntimeServiceAccount = $RuntimeServiceAccount }
+    $regionsOk = $true
+    try {
+        & $regionsScript @regionArgs
+        if ($LASTEXITCODE -ne 0) { $regionsOk = $false }
+    }
+    catch {
+        $regionsOk = $false
+        Write-Warning "Secondary region deployment failed: $($_.Exception.Message)"
+    }
+    Write-Host ''
+    Write-Host 'Next on the VPS (pins the digest for every profile, then upserts the region profiles):'
+    Write-Host "  python tools/vps-deploy/pin-cloud-run-digest.py $solverDigest --apply"
+    Write-Host "  python tools/vps-deploy/set-cloud-run-profiles.py `"$profilesPath`" --apply"
+    if (-not $regionsOk) {
+        Write-Warning 'One or more secondary regions did not deploy; their profiles are missing from the JSON above and they stay on the previous build (skipped by the balancer/client).'
+    }
+}

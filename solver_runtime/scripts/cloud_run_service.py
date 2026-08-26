@@ -96,8 +96,17 @@ def _signal_solver_stop(stop_file: Path) -> None:
     os.replace(temporary, stop_file)
 
 
+# 23/08: sau khi VPS bao HUY (cancelRequested) ma bo giai van chay qua so giay
+# nay thi giet tien trinh — tranh chiem instance Cloud Run duy nhat (max 1,
+# concurrency 1) khien luot ke tiep bi xep hang / day sang revision cu.
+CANCEL_KILL_GRACE_SECONDS = 8.0
+
+
 def _poll_stop_probe(
-    config: dict[str, str], stop_file: Path, finished: threading.Event
+    config: dict[str, str],
+    stop_file: Path,
+    finished: threading.Event,
+    cancelled: threading.Event | None = None,
 ) -> None:
     body = json.dumps(
         {
@@ -143,6 +152,16 @@ def _poll_stop_probe(
                 pass
             return
         if payload.get("known") is False or payload.get("cancelRequested") is True:
+            # 23/08 (chu du an: "nut Dung khong dung duoc"): huy cung phai BAO
+            # cho bo giai dung ngay (file dung) — truoc day chi ngung tham do,
+            # engine chay het ngan sach du VPS da bo ket qua. Neu bo giai van
+            # khong thoat, vong chinh se giet sau CANCEL_KILL_GRACE_SECONDS.
+            try:
+                _signal_solver_stop(stop_file)
+            except OSError:
+                pass
+            if cancelled is not None:
+                cancelled.set()
             return
 
 
@@ -426,10 +445,12 @@ class CloudSolverHandler(BaseHTTPRequestHandler):
             process.stdin.write(body)
             process.stdin.close()
 
+            cancel_event = threading.Event()
+            cancel_seen_at: float | None = None
             if stop_probe is not None:
                 stop_probe_thread = threading.Thread(
                     target=_poll_stop_probe,
-                    args=(stop_probe, stop_file, stop_probe_finished),
+                    args=(stop_probe, stop_file, stop_probe_finished, cancel_event),
                     daemon=True,
                 )
                 stop_probe_thread.start()
@@ -457,6 +478,11 @@ class CloudSolverHandler(BaseHTTPRequestHandler):
             stderr_done = False
             last_heartbeat = 0.0
             while process.poll() is None or not stderr_done:
+                if cancel_event.is_set() and process.poll() is None:
+                    if cancel_seen_at is None:
+                        cancel_seen_at = time.monotonic()
+                    elif time.monotonic() - cancel_seen_at >= CANCEL_KILL_GRACE_SECONDS:
+                        process.kill()
                 if time.monotonic() >= deadline:
                     process.kill()
                     process.wait(timeout=10)

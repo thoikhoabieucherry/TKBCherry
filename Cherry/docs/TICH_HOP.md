@@ -1,5 +1,9 @@
 # Tích hợp Cherry + Flash vào TKBCherry (19/08/2026)
 
+> **Cập nhật 22/08/2026:** nút ⚡ **Flash đã bị gỡ** khỏi dự án (xem `tools/tests/no_flash_test.js`); chỉ còn 🍒 Cherry.
+> Ngân sách nút Cherry hiện là **90s** (không còn "≥200s" như ghi bên dưới). Phần Flash dưới đây giữ lại làm lịch sử.
+> **22/08 (chiều):** Cherry = **một lượt duy nhất** — bridge không nối bậc thang tự tinh chỉnh sau Cherry (`maybeScheduleAutoRefine` bỏ qua lượt Cherry; test `tools/tests/cherry_single_turn_test.js`). Engine v3 tối ưu GV theo bậc có khóa (xem `Cherry/README.md`).
+
 ## File đã thêm / sửa
 | File | Việc |
 |---|---|

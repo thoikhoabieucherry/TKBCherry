@@ -1071,7 +1071,8 @@ body.portal-body {
   box-shadow: none;
 }
 
-.portal-account-modal-sub .tkb-plan-badge {
+.portal-account-modal-sub .tkb-plan-badge,
+.portal-plan-summary .tkb-plan-badge {
   color: var(--plan-color);
   background: #ffffff;
   border-color: var(--plan-color);

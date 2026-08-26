@@ -192,8 +192,10 @@ test("portrait and landscape retain responsive toolbar slots for the optimize co
     /grid-template-columns:\s*repeat\(9, minmax\(0, 1fr\)\);/,
     "landscape touch geometry must include Optimize"
   );
-  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*\.planner-optimize-wrap\s*\{[^}]*grid-column:\s*4;/s);
-  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*\.planner-optimize-wrap\s*\{[^}]*grid-column:\s*5;/s);
+  // 23/08: dien thoai an menu Toi uu FET, Toi uu v3 chiem o 3 (doc) / 4 (ngang).
+  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*#plannerOptimizeWrap\s*\{[^}]*display:\s*none !important;/s);
+  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*#plannerTestWrap\s*\{[^}]*grid-column:\s*4;/s);
+  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*#plannerTestWrap\s*\{[^}]*grid-column:\s*5;/s);
 });
 
 test("one-click Automatic still carries the internal quality-optimization contract", () => {

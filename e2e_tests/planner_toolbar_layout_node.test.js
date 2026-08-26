@@ -470,7 +470,10 @@ test("portrait planner keeps eight compact mobile slots including Optimize", () 
   );
   assert.doesNotMatch(plannerHtml, /desktop-solve-controls/);
   assert.match(plannerHtml, /\.toolbar-actions\s*>\s*\.planner-optimize-wrap\s*\{[^}]*grid-column:\s*4;[^}]*grid-row:\s*1;/s);
-  assert.match(plannerHtml, /#btnDeleteAll\s*\{[^}]*grid-column:\s*5 !important;[^}]*grid-row:\s*1 !important;/s);
+  // 20/08: nut Cherry (them 19/08) nam ngay ben trai nut Xoa, nen Dung/Xoa lui
+  // sang cot 6 — o cua nut Agent da bo (luon hidden) nen luoi van du 8 cot.
+  assert.match(plannerHtml, /#btnEngineCherry\s*\{[^}]*grid-column:\s*5;[^}]*grid-row:\s*1;/s);
+  assert.match(plannerHtml, /#btnDeleteAll\s*\{[^}]*grid-column:\s*6 !important;[^}]*grid-row:\s*1 !important;/s);
   assert.match(plannerHtml, /#btnAgentHelper\s*\{[^}]*grid-column:\s*6;[^}]*grid-row:\s*1;[^}]*height:\s*44px;/s);
   assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*7;[^}]*grid-row:\s*1;/s);
   assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*8;[^}]*grid-row:\s*1;/s);
@@ -513,12 +516,19 @@ test("landscape phones keep nine full-height slots including Optimize", () => {
   assert.match(landscapeCss, /#btnUndoTKB\s*\{[^}]*grid-column:\s*2;[^}]*align-self:\s*stretch;/s);
   assert.match(landscapeCss, /#btnRedoTKB\s*\{[^}]*grid-column:\s*3;[^}]*align-self:\s*stretch;/s);
   assert.match(landscapeCss, /#btnUndoTKB,[^}]*#btnRedoTKB\s*\{[^}]*height:\s*44px;[^}]*min-height:\s*44px;[^}]*border-radius:\s*var\(--tkb-radius, 10px\);/s);
-  assert.match(landscapeCss, /#btnAutoSort\s*\{[^}]*grid-column:\s*4;/s);
-  assert.match(landscapeCss, /\.toolbar-actions\s*>\s*\.planner-optimize-wrap\s*\{[^}]*grid-column:\s*5;/s);
+  // 23/08 (chu du an): dien thoai an Xep FET + Toi uu FET; giu Toi uu v3 + Cherry + RB.
+  assert.match(landscapeCss, /#btnAutoSort\s*\{[^}]*display:\s*none !important;/s);
+  assert.match(landscapeCss, /#plannerOptimizeWrap\s*\{[^}]*display:\s*none !important;/s);
+  // 23/08 (lan 2): Cherry 4 | Toi uu v3 5 | Dung-Xoa 6 | Home 7 | RB 8 | Thong ke 9.
+  assert.match(landscapeCss, /#btnEngineCherry\s*\{[^}]*grid-column:\s*4;/s);
+  assert.match(landscapeCss, /\.toolbar-actions\s*>\s*#plannerTestWrap\s*\{[^}]*grid-column:\s*5;/s);
   assert.match(landscapeCss, /#btnStopAutoSort,[^}]*#btnDeleteAll\s*\{[^}]*grid-column:\s*6 !important;/s);
-  assert.match(landscapeCss, /#btnAgentHelper\s*\{[^}]*grid-column:\s*7;/s);
-  assert.match(landscapeCss, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*8;/s);
+  assert.match(landscapeCss, /#btnAgentHelper\s*\{[^}]*grid-column:\s*6;/s);
+  assert.match(landscapeCss, /\.stats-popover-wrap\s*>\s*#btnHome\s*\{[^}]*grid-column:\s*7;/s);
+  assert.match(landscapeCss, /#btnConstraintAudit:not\(\[hidden\]\)\s*\{[^}]*grid-column:\s*8;/s);
   assert.match(landscapeCss, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*9;/s);
+  assert.match(landscapeCss, /\.toolbar-main:has\(#btnConstraintAudit\[hidden\]\)\s*\{[^}]*repeat\(8, minmax\(0, 1fr\)\);/s);
+  assert.match(landscapeCss, /\.toolbar-main:has\(#btnConstraintAudit\[hidden\]\)[^{]*\.stats-toggle\s*\{[^}]*grid-column:\s*8;/s);
 });
 
 test.skip("Hybrid toolbar bootstrap disables retired client Agent lanes", () => {
@@ -914,9 +924,14 @@ test("mobile Play matches the other controls and centers its white glyph", () =>
   const mobileCss = plannerHtml.slice(mobileStart, mobileEnd);
 
   assert.ok(mobileStart >= 0 && mobileEnd > mobileStart, "mobile toolbar media query is missing");
+  // 23/08 (chu du an): tren dien thoai AN nut Xep FET (▶); o 3 la Toi uu v3.
   assert.match(
     mobileCss,
-    /#btnAutoSort\s*\{[^}]*grid-column:\s*3;[^}]*grid-row:\s*1;/s
+    /\.toolbar-actions\s*>\s*#btnAutoSort\s*\{[^}]*display:\s*none !important;/s
+  );
+  assert.match(
+    mobileCss,
+    /\.toolbar-actions\s*>\s*#plannerTestWrap\s*\{[^}]*grid-column:\s*4;[^}]*grid-row:\s*1;/s
   );
   assert.match(
     mobileCss,
@@ -931,9 +946,11 @@ test("mobile Play matches the other controls and centers its white glyph", () =>
     mobileCss,
     /#btnAutoSort:hover:not\(:disabled\) \.toolbar-icon\s*\{[^}]*transform:\s*translateX\(1px\) scale\(1\.06\);/s
   );
+  // 23/08: 2 lan — luoi doc 8 cot + luoi ngang co ve 8 cot khi RB (superadmin) an
+  // (`.toolbar-main:has(#btnConstraintAudit[hidden])`).
   assert.equal(
     (mobileCss.match(/grid-template-columns:\s*repeat\(8, minmax\(0, 1fr\)\);/g) || []).length,
-    1
+    2
   );
   assert.doesNotMatch(mobileCss, /#btnAutoSort\s*\{[^}]*(?:border-radius:\s*50%|aspect-ratio|width:\s*min\(42px)/s);
 });
@@ -1002,7 +1019,26 @@ test("progress UI exposes Stop while active and bridge disables it during best-e
   assert.ok(stopStart >= 0 && stopEnd > stopStart, "bridge best-effort stop helper is missing");
   const stopBody = bridgeSource.slice(stopStart, stopEnd);
   assert.match(stopBody, /progressState\.bestEffortStopPending\s*=\s*pending === true/);
-  assert.match(stopBody, /stopButton\.disabled\s*=\s*pending === true/);
+  assert.match(stopBody, /syncBestEffortStopButton\(\)/);
+
+  // 24/08: nut Dung bi khoa trong luc cho phuong an tot nhat, NHUNG phai song
+  // lai khi may chu treo qua han — neu khong nguoi dung bam Dung ma khong co
+  // gi xay ra (bao cao that te tren production).
+  const syncStart = bridgeSource.indexOf("function syncBestEffortStopButton");
+  const syncEnd = bridgeSource.indexOf("function cancelBestEffortStopEscalationTimer", syncStart);
+  assert.ok(syncStart >= 0 && syncEnd > syncStart, "bridge stop-button sync helper is missing");
+  const syncBody = bridgeSource.slice(syncStart, syncEnd);
+  assert.match(syncBody, /const stuck = bestEffortStopJobId !== "" && bestEffortStopEscalationDue\(\)/);
+  assert.match(syncBody, /stopButton\.disabled = bestEffortStopJobId !== "" && !stuck/);
+  // Planner doc co nay de biet khong duoc khoa lai nut Dung o khung ke tiep.
+  assert.match(syncBody, /progressState\.bestEffortStopStuck = stuck/);
+  assert.match(syncBody, /window\.__TKB_RUST_PROGRESS_STATE\.bestEffortStopStuck = stuck/);
+  assert.match(bridgeSource, /const BEST_EFFORT_STOP_ESCALATION_MS = \d+;/);
+  assert.match(
+    body,
+    /const bestEffortStopStuck = window\.__TKB_RUST_PROGRESS_STATE\?\.bestEffortStopStuck === true/
+  );
+  assert.match(body, /&& !bestEffortStopStuck;/);
 });
 
 test("mobile viewport follows iOS visualViewport through orientation changes", () => {
@@ -1511,8 +1547,14 @@ test("Optimize, Agent, Home, and Statistics occupy mobile columns four through e
   assert.match(secondary, /id="statsToggle"[^>]*>[\s\S]*?toolbar-label-compact[^>]*>\s*<svg class="toolbar-icon"[^>]*>[\s\S]*?<\/svg>\s*<\/span><\/button>/);
   assert.match(plannerHtml, /\.toolbar-secondary-actions\s*\{[^}]*display:\s*contents;/s);
   assert.match(plannerHtml, /\.toolbar-secondary-actions \.stats-popover-wrap\s*\{[^}]*display:\s*contents;/s);
-  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*\.planner-optimize-wrap\s*\{[^}]*grid-column:\s*4;[^}]*height:\s*44px;/s);
-  assert.match(plannerHtml, /#btnAgentHelper\s*\{[^}]*grid-column:\s*6;[^}]*height:\s*44px;/s);
-  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.save-button\s*\{[^}]*grid-column:\s*7;/s);
+  // 23/08 (chu du an, lan 2): dien thoai: 3 Cherry | 4 Toi uu v3 | 5 Dung-Xoa | 6 Home | 7 RB | 8 Thong ke.
+  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*#btnEngineCherry\s*\{[^}]*grid-column:\s*3;[^}]*grid-row:\s*1;/s);
+  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*#plannerTestWrap\s*\{[^}]*grid-column:\s*4;[^}]*height:\s*44px;/s);
+  assert.match(plannerHtml, /\.toolbar-actions\s*>\s*#btnAutoSort\s*\{[^}]*display:\s*none !important;/s);
+  assert.match(plannerHtml, /#btnAgentHelper\s*\{[^}]*grid-column:\s*5;[^}]*height:\s*44px;/s);
+  assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*#btnHome\s*\{[^}]*grid-column:\s*6;/s);
+  assert.match(plannerHtml, /#btnConstraintAudit:not\(\[hidden\]\)\s*\{[^}]*grid-column:\s*7;/s);
   assert.match(plannerHtml, /\.stats-popover-wrap\s*>\s*\.stats-toggle\s*\{[^}]*grid-column:\s*8;[^}]*height:\s*44px;/s);
+  assert.match(plannerHtml, /\.toolbar-main:has\(#btnConstraintAudit\[hidden\]\)\s*\{[^}]*repeat\(7, minmax\(0, 1fr\)\);/s);
+  assert.match(plannerHtml, /\.toolbar-main:has\(#btnConstraintAudit\[hidden\]\)[^{]*\.stats-toggle\s*\{[^}]*grid-column:\s*7;/s);
 });

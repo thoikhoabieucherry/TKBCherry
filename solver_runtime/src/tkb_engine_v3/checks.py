@@ -25,9 +25,18 @@ def check_class_session(P: Problem, grid: list[list[int]], c: int, s: int, defer
         subj_assign[si] = ai
     if not subj_periods:
         return None
+    # 23/08: o CO DINH la quyet dinh cua nguoi dung. Mot mon trong buoi ma MOI
+    # tiet deu la o co dinh thi engine khong doi duoc gi -> khong xet luat cua
+    # mon do o buoi nay (vi pham, neu co, da ton tai truoc va duoc bo kiem dinh
+    # bao). Truoc day lop 9/1 (truong 8fbda952091) co "Tich Hop" co dinh tiet
+    # 3-4 chieu + luat "tranh cap 3-4" -> buoi do luon "vi pham" -> ca lop
+    # khong bao gio xep duoc (23 tiet Chua phan moi lan bam).
+    fixed = P.fixed_mask[c] if P.fixed_mask else None
     for si, periods in subj_periods.items():
         ai = subj_assign[si]
         n = len(periods)
+        if fixed is not None and all(fixed[base + p] for p in periods):
+            continue
         if n > P.a_cap[ai]:
             return "subject_session_cap"
         if n > 1 and (periods[-1] - periods[0] + 1) != n:
@@ -41,9 +50,11 @@ def check_class_session(P: Problem, grid: list[list[int]], c: int, s: int, defer
                 return "linked_days"
             pset = set(periods)
             if rule.avoid23[part] and 1 in pset and 2 in pset:
-                return "avoid23"
+                if fixed is None or not (fixed[base + 1] and fixed[base + 2]):
+                    return "avoid23"
             if rule.avoid34[part] and 2 in pset and 3 in pset:
-                return "avoid34"
+                if fixed is None or not (fixed[base + 2] and fixed[base + 3]):
+                    return "avoid34"
     for group in P.no_same_session[c]:
         hits = 0
         for si in subj_periods:

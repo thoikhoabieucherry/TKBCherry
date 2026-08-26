@@ -11,7 +11,7 @@ import random
 import re
 import time
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from tkb_optimizer_ref.export_csv import write_session_plan_csv, write_timetable_csv
 from tkb_optimizer_ref.clean_quality_cycles import optimize_clean_quality_cycles
@@ -56,6 +56,7 @@ from tkb_optimizer_ref.template import (
     class_session_capacity_for_constraints,
     teacher_session_capacity,
 )
+from tkb_optimizer_ref.rules import teacher_members
 from tkb_optimizer_ref.validate import assert_acceptance, compute_metrics, validate_app_constraints
 
 
@@ -83,6 +84,8 @@ class ClassEntry:
     name: str
     grade: str
     aliases: tuple[str, ...]
+    # 23/08: dia diem (co so) cua lop — cot "Dia diem" trong trang app
+    location: str = ""
 
 
 @dataclass(slots=True)
@@ -203,19 +206,61 @@ def _unique(values: list[str]) -> tuple[str, ...]:
 
 
 def _resolve_teacher_map(ui_data: dict[str, Any]) -> dict[str, str]:
+    """Alias -> ma GV. MA GV luon thang TEN RIENG.
+
+    21/08: truong co co "Nguyen Thi Dung" (ma DUNG) va co "Duong Thi My Dung"
+    (ma MYDUNG, ten rieng "Dung"). Ban cu tron ma va ten vao cung mot bang,
+    muc sau de muc truoc, nen PCCM ghi "DUNG" bi tra nham thanh MYDUNG — hai
+    giao vien bi gop lam mot, tai "mot nguoi" vuot so o day va engine cat oan
+    ~20 tiet voi ly do "not_enough_available_slots". Tach 2 tang uu tien:
+    ma (magv/ma/code/id) ghi truoc va khong bao gio bi ten rieng/ho ten de.
+    """
     lookup: dict[str, str] = {}
-    for row in ui_data.get("giaovien") or []:
-        if not isinstance(row, dict):
-            continue
-        code = _text(row.get("magv") or row.get("ma") or row.get("code") or row.get("id") or row.get("ten"))
+    rows = [row for row in (ui_data.get("giaovien") or []) if isinstance(row, dict)]
+
+    def row_code(row: dict[str, Any]) -> str:
+        return _text(row.get("magv") or row.get("ma") or row.get("code") or row.get("id") or row.get("ten"))
+
+    for row in rows:
+        code = row_code(row)
         if not code:
             continue
-        full_name = f"{_text(row.get('hodem'))} {_text(row.get('ten'))}".strip()
-        for alias in [code, row.get("magv"), row.get("ma"), row.get("ten"), full_name]:
+        for alias in [code, row.get("magv"), row.get("ma"), row.get("code"), row.get("id")]:
             alias_text = _text(alias)
             if alias_text:
                 lookup[_norm(alias_text)] = code
+    for row in rows:
+        code = row_code(row)
+        if not code:
+            continue
+        full_name = f"{_text(row.get('hodem'))} {_text(row.get('ten'))}".strip()
+        for alias in [row.get("ten"), full_name]:
+            alias_text = _text(alias)
+            if alias_text and _norm(alias_text) not in lookup:
+                lookup[_norm(alias_text)] = code
     return lookup
+
+
+def _canonical_teacher_value(raw_value: Any, teacher_lookup: Mapping[str, str]) -> str:
+    """Ma GV chuan cua mot o phan cong; tiet day ghep -> "MA1, MA2".
+
+    25/08: truoc day ca chuoi "TN.Tram, HT.Van" duoc tra qua bang alias mot
+    lan (khong khop) va tro thanh MOT "giao vien" moi -> engine khong thay
+    TN.Tram ban tai gio tiet ghep, xep KHTN cua TN.Tram trung gio, va o nghi
+    co dinh cua tung nguoi bi bo qua. Gio tung thanh vien duoc tra alias
+    rieng roi ghep lai bang ", " (dung dinh dang giao dien luu).
+    """
+
+    mapped: list[str] = []
+    seen: set[str] = set()
+    for member in teacher_members(raw_value):
+        code = teacher_lookup.get(_norm(member), member)
+        key = _norm(code)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        mapped.append(code)
+    return ", ".join(mapped)
 
 
 def _build_subject_aliases(ui_data: dict[str, Any]) -> tuple[dict[str, str], dict[str, set[str]]]:
@@ -285,7 +330,10 @@ def _build_classes(ui_data: dict[str, Any]) -> tuple[list[ClassEntry], dict[str,
                 _compact_class_alias(class_id),
             ]
         )
-        entry = ClassEntry(id=class_id, name=name, grade=grade, aliases=aliases)
+        location = _text(
+            row.get("diadiem") or row.get("diaDiem") or row.get("khu") or row.get("location") or ""
+        )
+        entry = ClassEntry(id=class_id, name=name, grade=grade, aliases=aliases, location=location)
         classes.append(entry)
         for alias in aliases:
             by_alias.setdefault(_norm(alias), entry)
@@ -870,7 +918,9 @@ def build_school_data_from_ui(ui_data: dict[str, Any]) -> UiDataContext:
         subject = _canonical_subject(subject_key, alias_to_subject)
         if not subject:
             continue
-        teacher = teacher_lookup.get(_norm(teacher_value), teacher_value)
+        teacher = _canonical_teacher_value(teacher_value, teacher_lookup)
+        if not teacher:
+            continue
         periods = _lookup_matrix_number(pccm_tiet, class_entry, subject_key, subject, aliases_by_subject)
         if periods <= 0:
             periods = periods_by_grade_subject.get((class_entry.grade, subject), 0)
@@ -910,7 +960,7 @@ def build_school_data_from_ui(ui_data: dict[str, Any]) -> UiDataContext:
     teachers = sorted({assignment.teacher for assignment in assignments})
     subjects = sorted({assignment.subject for assignment in assignments})
     school_data = SchoolData(
-        classes=[ClassInfo(name=item.name, grade=item.grade) for item in classes],
+        classes=[ClassInfo(name=item.name, grade=item.grade, location=item.location) for item in classes],
         assignments=assignments,
         teachers=teachers,
         subjects=subjects,
@@ -5854,6 +5904,27 @@ def _aggregate_teacher_release_indexes(
     return True, selected
 
 
+def shared_fixed_teacher_slots(
+    fixed_lessons: list[Lesson] | None,
+) -> set[tuple[str, int, str, int]]:
+    """Slots where ONE teacher is locked by the user in >= 2 classes at once.
+
+    23/08: truong that (v2mjxf2tbt1) co TNHN co dinh thu 2 tiet 1-2 o 31 lop
+    nhung chi 9 GV TNHN -> cung mot GV o 2..12 lop cung gio (sinh hoat duoi
+    co). Giao dien chap nhan; backend phai giu nguyen cac o nay va KHONG coi
+    la xung dot giao vien (chi cam GV do day them lop khac vao gio do).
+    """
+
+    # 25/08: dem theo TUNG giao vien thanh vien — o co dinh "GV_SH, GV_X" o lop
+    # nay va "GV_SH" o lop khac cung gio van la o dung chung cua GV_SH.
+    by_slot: Counter[tuple[str, int, str, int]] = Counter(
+        (member, int(lesson.day), str(lesson.session), int(lesson.period))
+        for lesson in (fixed_lessons or [])
+        for member in teacher_members(lesson.teacher)
+    )
+    return {key for key, count in by_slot.items() if count >= 2}
+
+
 def _release_invalid_fixed_lessons(
     data: SchoolData,
     lessons: list[Lesson],
@@ -5861,6 +5932,7 @@ def _release_invalid_fixed_lessons(
     *,
     protected_lessons: list[Lesson] | None = None,
     release_constraint_violations: bool = True,
+    release_teacher_duplicates: bool = True,
 ) -> tuple[list[Lesson], list[str]]:
     constraints = rules.constraints
     if not lessons:
@@ -5875,12 +5947,20 @@ def _release_invalid_fixed_lessons(
     # collision, but retaining both lessons would make every downstream model
     # infeasible.  Keep the first deterministic lock and release the later
     # lock back into the residual demand so the normal solver can place it.
+    #
+    # 23/08: ``release_teacher_duplicates=False`` (engine v3) giu NGUYEN cac o
+    # co dinh trung giao vien giua nhieu lop (sinh hoat duoi co / hoat dong
+    # toan truong: 1 GV "day" 2..12 lop cung luc). Giao dien chap nhan dieu
+    # nay; engine v3 tu biet khong dem xung dot GV trong cac o do (xem
+    # ``shared_fixed_teacher_slots`` trong tkb_engine_v3.core).
     resource_groups: dict[tuple[str, str, int, str, int], list[int]] = defaultdict(list)
     for index, lesson in enumerate(kept):
         slot = (int(lesson.day), str(lesson.session), int(lesson.period))
         resource_groups[("class", str(lesson.class_name), *slot)].append(index)
-        if lesson.teacher:
-            resource_groups[("teacher", str(lesson.teacher), *slot)].append(index)
+        if lesson.teacher and release_teacher_duplicates:
+            # 25/08: tiet day ghep chiem cho cua TUNG giao vien thanh vien.
+            for member in teacher_members(lesson.teacher):
+                resource_groups[("teacher", member, *slot)].append(index)
         if lesson.room:
             resource_groups[("room", str(lesson.room), *slot)].append(index)
     duplicate_indexes: set[int] = set()
@@ -7747,8 +7827,14 @@ def build_payload(
     deadline_exhausted: bool = False,
     optimization_skipped_reason: str | None = None,
     allow_temporary_teacher_gap_debt: bool = False,
+    shared_teacher_slots: Iterable[tuple[str, int, str, int]] | None = None,
 ) -> dict[str, Any]:
-    metrics = compute_metrics(ctx.school_data, lessons, rules=rules or ctx.rules)
+    metrics = compute_metrics(
+        ctx.school_data,
+        lessons,
+        rules=rules or ctx.rules,
+        shared_teacher_slots=shared_teacher_slots,
+    )
     report_ctx = original_ctx or ctx
     unassigned_lessons = unassigned_lessons or []
     unassigned_periods = sum(_to_int(item.get("periods"), 0) for item in unassigned_lessons)
@@ -7757,8 +7843,20 @@ def build_payload(
         for item in unassigned_lessons
         if str(item.get("reason") or "") == "not_enough_available_slots"
     )
-    solver_unassigned_periods = max(0, unassigned_periods - capacity_unassigned_periods)
+    # 22/08 (toi): tiet engine v3 CHU DONG dua ve Chua phan vi GV van con buoi
+    # 1 tiet / trong >= 2 (teacher_quality_unreachable) khong phai la "bo giai
+    # that bai": lich con lai van hop le, nen khong keo hard_ok xuong false.
+    quality_unassigned_periods = sum(
+        _to_int(item.get("periods"), 0)
+        for item in unassigned_lessons
+        if str(item.get("reason") or "") == "teacher_quality_unreachable"
+    )
+    solver_unassigned_periods = max(
+        0, unassigned_periods - capacity_unassigned_periods - quality_unassigned_periods
+    )
     metrics.setdefault("unassigned_periods", unassigned_periods)
+    if quality_unassigned_periods:
+        metrics["quality_unassigned_periods"] = quality_unassigned_periods
     if best_effort:
         metrics["best_effort"] = True
     if deadline_exhausted:
@@ -7843,6 +7941,14 @@ def build_payload(
                     "periods": solver_unassigned_periods,
                 }
             )
+        if quality_unassigned_periods:
+            unassigned_warnings.append(
+                {
+                    "kind": "unassigned.teacher_quality",
+                    "message": f"Da dua {quality_unassigned_periods} tiet ve Chua phan de giao vien khong con buoi 1 tiet / trong >= 2 tiet (xem ly do tung tiet).",
+                    "periods": quality_unassigned_periods,
+                }
+            )
 
     validation = {
         "hard_ok": bool(metrics.get("hard_ok")),
@@ -7850,6 +7956,7 @@ def build_payload(
         "warnings": [
             *([f"Con {capacity_unassigned_periods} tiet chua phan do thieu o kha dung sau khi ap dung tiet nghi/rang buoc."] if capacity_unassigned_periods else []),
             *([f"Con {solver_unassigned_periods} tiet chua xep trong ngan sach thoi gian; da tra best-effort."] if solver_unassigned_periods else []),
+            *([f"Da dua {quality_unassigned_periods} tiet ve Chua phan de giao vien khong con buoi 1 tiet / trong >= 2 tiet."] if quality_unassigned_periods else []),
             *([f"Best-effort: {optimization_skipped_reason or 'da tra ket qua hop le nhat trong ngan sach thoi gian.'}"] if best_effort else []),
             *ctx.warnings,
             *metrics.get("app_constraint_warnings", []),
@@ -9400,7 +9507,19 @@ def validate_candidate_payload(
     lessons = _payload_lessons_to_lessons(candidate)
     raw_lesson_count = len(raw_lessons) if isinstance(raw_lessons, list) else 0
     malformed_lesson_count = max(0, raw_lesson_count - len(lessons))
-    metrics = compute_metrics(ctx.school_data, lessons, rules=ctx.rules)
+    # 23/08: o co dinh trung GV giua nhieu lop (sinh hoat duoi co) la chu y
+    # cua nguoi dung, khong phai xung dot GV — cung hop dong voi engine v3.
+    try:
+        user_fixed_lessons, _fixed_warnings = _extract_hard_fixed_lessons_from_tkb(ui_data, ctx)
+        shared_slots = shared_fixed_teacher_slots(user_fixed_lessons)
+    except Exception:
+        shared_slots = set()
+    metrics = compute_metrics(
+        ctx.school_data,
+        lessons,
+        rules=ctx.rules,
+        shared_teacher_slots=shared_slots,
+    )
     reported_unassigned = candidate.get("unassignedLessons")
     unassigned_count = len(reported_unassigned) if isinstance(reported_unassigned, list) else -1
     expected = _metric_int(metrics, "expected_periods", 0)

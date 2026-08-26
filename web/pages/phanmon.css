@@ -207,6 +207,33 @@ body {
   box-shadow: inset 0 0 0 3px #295bff;
 }
 
+/* 26/08: cot trai khi dang xep — chi khoa nguon keo (.mon-item), van cho
+   chon lop / giao vien de xem (chu du an). */
+.is-solving-select-only .mon-item {
+  pointer-events: none !important;
+  user-select: none !important;
+  cursor: default !important;
+}
+.is-solving-select-only .lop-item,
+.is-solving-select-only .gv-item {
+  cursor: pointer;
+}
+
+/* 26/08 (chi dao chu du an): dang xep van cho DOI LOP / GIAO VIEN trong khung
+   xem cap de XEM — chi o luoi la read-only. pointer-events la thuoc tinh KE
+   THUA, nen dat lai 'auto' tren chinh o chon la du cho ca nut lan menu con. */
+.is-solving-readonly .tkb-pair-select,
+#tkb.is-solving-readonly .tkb-pair-select{
+  pointer-events: auto !important;
+  user-select: auto !important;
+}
+.is-solving-readonly .tkb-pair-select-btn,
+#tkb.is-solving-readonly .tkb-pair-select-btn,
+.is-solving-readonly .tkb-pair-select-menu button,
+#tkb.is-solving-readonly .tkb-pair-select-menu button{
+  cursor: pointer !important;
+}
+
 /* Read-only state during auto-sort solving */
 #tkb.is-solving-readonly,
 .is-solving-readonly #tkb,
@@ -850,8 +877,13 @@ td.tkb-student-gap-cell{
 .unassigned-menu{
   position: absolute;
   top: calc(100% + 3px);
-  left: 0;
-  width: min(300px, calc(100vw - 20px));
+  /* Canh canh PHAI menu trung canh phai nut "Chua phan" (nhu ban cua pane GV),
+     rong tu co gian vua voi dong chu dai nhat. */
+  left: auto;
+  right: 0;
+  width: max-content;
+  min-width: 150px;
+  max-width: min(360px, calc(100vw - 20px));
   max-height: min(300px, calc(100vh - 96px));
   overflow: auto;
   padding: 3px;
@@ -915,6 +947,36 @@ td.tkb-student-gap-cell{
 
 .unassigned-menu .unassigned-list .mon-item:hover{
   background: #eef4ff;
+}
+
+/* Muc "Chua phan" dang PHANG ("9A6 - GDTC x2") nam truc tiep trong menu
+   (khong boc trong .unassigned-list) — dung cho dropdown cua pane GV. */
+.unassigned-menu > .mon-item{
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 26px;
+  margin: 0 0 2px;
+  padding: 3px 7px;
+  border-color: #e5eaf3;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 13px;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.unassigned-menu > .mon-item:hover{
+  background: #eef4ff;
+}
+
+/* Dropdown "Chua phan" cua pane GIAO VIEN (nua duoi).
+   Danh sach phang "Lop - Mon xN" (khong con cap xo theo lop), va phai thap
+   hon vi pane duoi chi cao bang nua khung. */
+.unassigned-menu-gv{
+  max-height: min(210px, calc(50vh - 70px));
 }
 
 .mon-item.empty {
@@ -3008,11 +3070,13 @@ body{
   }
 
   .unassigned-menu{
-    width: min(320px, calc(100vw - 20px));
+    width: max-content;
+    max-width: min(340px, calc(100vw - 20px));
     max-height: min(340px, calc(100vh - 120px));
   }
 
-  .unassigned-menu .unassigned-list .mon-item{
+  .unassigned-menu .unassigned-list .mon-item,
+  .unassigned-menu > .mon-item{
     min-height: 32px;
     padding: 5px 8px;
     font-size: 14px;

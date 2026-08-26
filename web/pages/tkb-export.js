@@ -392,16 +392,44 @@
     return { year:now.getFullYear(), month:now.getMonth() + 1, day:now.getDate() };
   }
 
+  // Ten truong / TKB so / ngay ap dung lay tu bang o trang Quan ly
+  // (school-portal). Meta trong store chi la du phong khi khong doc duoc.
+  let _portalInfoCache = null;
+  let _portalInfoCacheAt = 0;
+
+  function _portalScheduleInfo(){
+    // Mot lan xuat file goi ham nay nhieu lan (ten truong, TKB so, ngay ap
+    // dung) nen nho ket qua trong vai giay de chi doc lai registry mot lan.
+    const now = Date.now();
+    if(_portalInfoCache !== null && (now - _portalInfoCacheAt) < 5000) return _portalInfoCache;
+    let info = null;
+    try{
+      const api = window.TKBAuth;
+      if(api && typeof api.schoolInfoForSid === 'function'){
+        let sid = '';
+        try{ sid = _safeText(window.__TKB_SCHOOL_CONTEXT?.sid); }catch(_){ }
+        try{ if(!sid && typeof schoolParam !== 'undefined') sid = _safeText(schoolParam); }catch(_){ }
+        info = api.schoolInfoForSid(sid, { refresh: true }) || null;
+      }
+    }catch(_){
+      info = null;
+    }
+    _portalInfoCache = info;
+    _portalInfoCacheAt = now;
+    return info;
+  }
+
   function _industryMeta(){
     const raw = _industryConstraintMeta();
-    const date = _industryDateParts(raw.effectiveDate || raw.applyDate || raw.ngayApDung);
+    const portal = _portalScheduleInfo();
+    const date = _industryDateParts(_safeText(portal?.effectiveDate) || raw.effectiveDate || raw.applyDate || raw.ngayApDung);
     const startYear = date.month >= 7 ? date.year : date.year - 1;
-    const schoolName = _safeText(raw.schoolName || raw.schoolLabel || raw.tenTruong || raw.school || _schoolLabel()) || 'Trường';
+    const schoolName = _safeText(portal?.schoolName || raw.schoolName || raw.schoolLabel || raw.tenTruong || raw.school || _schoolLabel()) || 'Trường';
     return {
       schoolLabel: schoolName.toLocaleUpperCase('vi-VN'),
       schoolYear: `${startYear} - ${startYear + 1}`,
       semester: date.month <= 6 ? 2 : 1,
-      scheduleNumber: _safeText(raw.scheduleNumber || raw.scheduleNo || raw.tkbNumber) || '1',
+      scheduleNumber: _safeText(portal?.scheduleNumber || raw.scheduleNumber || raw.scheduleNo || raw.tkbNumber) || '1',
       dateLine: `Thực hiện từ ngày ${_pad2(date.day)} tháng ${_pad2(date.month)} năm ${date.year}`
     };
   }

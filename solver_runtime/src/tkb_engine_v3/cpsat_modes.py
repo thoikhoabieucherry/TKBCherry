@@ -99,7 +99,11 @@ def build_cherry_solver_class():
             added = 0
             for aid, act in enumerate(self.assignments):
                 need = blocks.get((str(act["classId"]), str(act["mon"])), 0)
-                if need <= 0 or int(act.get("totalPeriods", 0)) < 2:
+                total_periods = int(act.get("totalPeriods", 0))
+                # 25/08: min cap doi khong the vuot floor(so tiet / 2) (quick-fill
+                # "all" dat min=1 cho ca mon 1 tiet/tuan) -> ha ve muc dat duoc.
+                need = min(need, total_periods // 2)
+                if need <= 0 or total_periods < 2:
                     continue
                 indicators = []
                 for (day, buoi) in self.class_sessions.get(act["classId"], []):
@@ -213,7 +217,12 @@ def solve_unified_cpsat(
     if not tkb:
         from tkb_new.adapter import solve_from_ui_data
         _report(progress, "cpsat:direct", "Dang toi uu toan dien bang CP-SAT da luong (6 vCPU)")
-        return solve_from_ui_data(ui_data, {**settings, "solver_mode": "auto"}, progress=progress)
+        direct = solve_from_ui_data(ui_data, {**settings, "solver_mode": "auto"}, progress=progress)
+        if isinstance(direct, dict):
+            direct.setdefault("solver", {}).setdefault("runtime_settings", {})[
+                "flash_stage"
+            ] = "cpsat_empty_then_legacy"
+        return direct
 
     ctx = build_school_data_from_ui(ui_data)
     seeded = dict(ui_data)
@@ -241,6 +250,7 @@ def solve_unified_cpsat(
             "engine": CPSAT_ENGINE_NAME,
             "overall_time_limit_seconds": budget,
             "auto_sort_mode": "unified_cpsat_raw",
+            "flash_stage": "cpsat_only",
         },
     }
     _write_marker(
@@ -291,6 +301,41 @@ def solve_unified_cpsat(
     if complete and hard_ok is not False and violations == 0:
         return payload
 
+    # 19/08 (chi dao chu du an): NUT FLASH = THUAT TOAN CUA TKBCherryAnti.
+    # Ban goc chi co dung mot buoc: UnifiedCpSatSolver(...).solve(). Truoc day
+    # o day tu dong giao tiep cho engine v3 khi lich cua CP-SAT vi pham rang
+    # buoc rieng cua truong (tiet doi / tranh tiet 2-3) — nghia la nguoi dung
+    # bam Flash nhung nhan ket qua cua Cherry ma khong he hay biet.
+    # Mac dinh tu gio: TRA VE dung ket qua cua CP-SAT kem canh bao. Ai muon
+    # engine v3 don not thi bat settings.flash_repair_with_engine_v3.
+    repair_flag = settings.get("flash_repair_with_engine_v3")
+    repair_with_v3 = str(repair_flag if repair_flag is not None else "").strip().casefold() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if not repair_with_v3:
+        runtime = payload.setdefault("solver", {}).setdefault("runtime_settings", {})
+        runtime["engine"] = CPSAT_ENGINE_NAME
+        runtime["auto_sort_mode"] = "unified_cpsat_raw"
+        runtime["flash_stage"] = "cpsat_only_best_effort"
+        runtime["flash_cpsat_violations"] = violations
+        runtime["flash_incomplete"] = not complete
+        note = (
+            "Thuat toan CP-SAT (ban goc TKBCherryAnti) da chay xong: xep %d/%d tiet"
+            % (len(lessons), expected)
+        )
+        if violations:
+            note += ", con %d rang buoc rieng cua truong bi vi pham" % violations
+        note += ". Bat 'flash_repair_with_engine_v3' neu muon engine v3 don not."
+        validation = payload.get("validation")
+        if isinstance(validation, dict):
+            validation.setdefault("warnings", [])
+            validation["warnings"] = [*validation["warnings"], note]
+        _report(progress, "cpsat:done", note)
+        return payload
+
     # Ban goc khong biet luat tiet doi / tranh tiet 2-3 cua truong, nen lich cua
     # no co the vi pham. Khong tra loi cho nguoi dung: giao lai cho engine v3
     # hoan tat mot lich HOP LE, con so goc cua CP-SAT van duoc ghi vao marker
@@ -311,6 +356,11 @@ def solve_unified_cpsat(
     )
     solver_block = fixed_payload.get("solver")
     if isinstance(solver_block, dict):
+        # Nhan nay nam trong runtime_settings nen chac chan di theo ket qua ve
+        # trinh duyet: nhin la biet Flash da chay CP-SAT truoc roi moi giao cho
+        # engine v3 hoan tat, chu khong phai "Flash chay y het Cherry".
+        solver_block.setdefault("runtime_settings", {})["flash_stage"] = "cpsat_then_engine_v3"
+        solver_block.setdefault("runtime_settings", {})["flash_cpsat_violations"] = violations
         solver_block["unified_cpsat_raw"] = {
             **metrics["unified_cpsat"],
             "app_constraint_violations": violations,

@@ -48,3 +48,15 @@ data/*.xlsx
 Thumbs.db
 .idea/
 .vscode/
+
+# 26/08/2026 — DU LIEU THAT CUA TRUONG khong bao gio duoc dua vao git.
+# scratch/live_default.json (129 GV) va scratch/school_95671c41791.json (100 GV)
+# da lo tren repo CONG KHAI truoc do; tu nay chan tan goc.
+scratch/school_*.json
+scratch/live_*.json
+scratch/*_result.json
+scratch/*_stuck.json
+scratch/*_bench_result.json
+TEMP/
+temp/
+*.xlsx

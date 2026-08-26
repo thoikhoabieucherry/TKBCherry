@@ -24,6 +24,10 @@ const SCHOOL_POLICY_KEY_PREFIX: &str = "serverless_school_policy_v1:";
 // telemetry; Google Billing Export is the sole public source of monetary cost.
 pub const DEFAULT_ESTIMATED_COST_USD: f64 = 0.06;
 const DEFAULT_RESERVATION_TTL_MS: u64 = 60 * 60 * 1_000;
+/// A Cloud Run request is capped at 300 s; a dispatched reservation older than
+/// this can only be an orphan of a coordinator restart and must not occupy a
+/// region slot when balancing (its cost is still reconciled by the TTL path).
+const CLOUD_RUN_DISPATCH_WINDOW_MS: u64 = 6 * 60 * 1_000;
 const MAX_RESERVATION_TTL_MS: u64 = 24 * 60 * 60 * 1_000;
 pub const FREE_SOLVE_ACTION_LIMIT: u64 = 5;
 pub const TRIAL_SOLVE_ACTION_LIMIT: u64 = 50;
@@ -287,6 +291,89 @@ impl ServerlessConfig {
             .filter(|profile| profile.enabled)
             .max_by_key(|profile| profile.priority)
             .cloned()
+    }
+
+    /// Every enabled profile that runs the same pinned solver build as the
+    /// selected profile, selected profile first and then by priority. Cloud Run
+    /// CPU quota is granted per region, so one region per profile lets the
+    /// coordinator spread concurrent solves instead of hitting HTTP 429
+    /// "no available instance" on a single region.
+    pub fn dispatch_candidates(&self) -> Vec<ServerlessProfile> {
+        let Some(primary) = self.selected_profile() else {
+            return Vec::new();
+        };
+        let mut siblings = self
+            .profiles
+            .iter()
+            .filter(|profile| {
+                profile.enabled
+                    && profile.id != primary.id
+                    && profile.solver_digest == primary.solver_digest
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        siblings.sort_by(|a, b| b.priority.cmp(&a.priority).then_with(|| a.id.cmp(&b.id)));
+        let mut candidates = Vec::with_capacity(siblings.len() + 1);
+        candidates.push(primary);
+        candidates.extend(siblings);
+        candidates
+    }
+
+    /// Picks the profile (region) that should receive the next Cloud Run job.
+    /// `in_flight` counts live reservations per profile id. The selected
+    /// profile keeps every job while it has free capacity; otherwise the least
+    /// loaded sibling with free capacity wins. When every region is saturated
+    /// the least loaded one is still returned so Cloud Run's own request queue
+    /// gets a chance instead of failing the job on the VPS.
+    pub fn dispatch_profile(
+        &self,
+        in_flight: &HashMap<String, u64>,
+    ) -> Option<ServerlessProfile> {
+        let candidates = self.dispatch_candidates();
+        let load = |profile: &ServerlessProfile| -> (u64, u64) {
+            let active = in_flight.get(&profile.id).copied().unwrap_or(0);
+            (active, u64::from(profile.max_concurrency.max(1)))
+        };
+        if let Some(primary) = candidates.first() {
+            let (active, capacity) = load(primary);
+            if active < capacity {
+                return Some(primary.clone());
+            }
+        }
+        let mut best: Option<(ServerlessProfile, u64, u64)> = None;
+        for candidate in candidates {
+            let (active, capacity) = load(&candidate);
+            let better = match best.as_ref() {
+                None => true,
+                Some((_, best_active, best_capacity)) => {
+                    let candidate_free = active < capacity;
+                    let best_free = *best_active < *best_capacity;
+                    if candidate_free != best_free {
+                        candidate_free
+                    } else {
+                        // Compare active/capacity ratios without floats:
+                        // active_a * cap_b < active_b * cap_a.
+                        active.saturating_mul(*best_capacity)
+                            < best_active.saturating_mul(capacity)
+                    }
+                }
+            };
+            if better {
+                best = Some((candidate, active, capacity));
+            }
+        }
+        best.map(|(profile, _, _)| profile)
+    }
+
+    /// Service URLs of the other regions that run the same solver build as
+    /// `profile`. The Cloud Run client retries there when the chosen region
+    /// answers HTTP 429 before any solver output was produced.
+    pub fn fallback_urls_for(&self, profile: &ServerlessProfile) -> Vec<String> {
+        self.dispatch_candidates()
+            .into_iter()
+            .filter(|candidate| candidate.id != profile.id && candidate.url != profile.url)
+            .map(|candidate| candidate.url)
+            .collect()
     }
 }
 
@@ -806,6 +893,15 @@ impl ServerlessCoordinator {
         self.config_for_school(school_id).selected_profile()
     }
 
+    /// Other-region service URLs the Cloud Run client may retry on HTTP 429.
+    pub fn fallback_urls_for_school(
+        &self,
+        school_id: &str,
+        profile: &ServerlessProfile,
+    ) -> Vec<String> {
+        self.config_for_school(school_id).fallback_urls_for(profile)
+    }
+
     /// Conservative Cloud Run request estimate. These are intentionally
     /// estimates (Google's billing export is reconciled separately); the
     /// reservation remains the safety ceiling when an export is unavailable.
@@ -867,14 +963,45 @@ impl ServerlessCoordinator {
                 // an idempotent execution/usage record, but its estimated cost
                 // is telemetry only and never blocks Cloud Run admission.
                 let config = config_for_school_transaction(tx, school_id)?;
-                let selected = config.selected_profile().ok_or_else(|| {
-                    ledger_user_error("serverless_profile_unavailable")
-                })?;
+                if config.selected_profile().is_none() {
+                    return Err(ledger_user_error("serverless_profile_unavailable"));
+                }
                 let estimate = config.estimated_cost_usd;
                 tx.execute(
                     "DELETE FROM serverless_reservations WHERE expires_at_ms <= ?1",
                     [now_i64],
                 )?;
+                // Live reservations (reserved or dispatched, not yet reconciled)
+                // are the in-flight jobs per region. Every Cloud Run request
+                // originates from this coordinator, so this count is exact —
+                // except after a process restart, which leaves dispatched rows
+                // nobody reconciles until the 1 h TTL. A Cloud Run request can
+                // never outlive its 300 s limit, so dispatched rows older than
+                // that window are ignored for balancing (25/08: two such rows
+                // made the primary region look full for an hour).
+                let dispatched_cutoff = sqlite_millis(
+                    now_ms.saturating_sub(CLOUD_RUN_DISPATCH_WINDOW_MS),
+                );
+                let in_flight = {
+                    let mut statement = tx.prepare(
+                        "SELECT profile_id, COUNT(*) FROM serverless_reservations \
+                         WHERE job_id <> ?1 \
+                           AND (dispatched_at_ms IS NULL OR dispatched_at_ms > ?2) \
+                         GROUP BY profile_id",
+                    )?;
+                    let rows = statement.query_map(params![job_id, dispatched_cutoff], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                    })?;
+                    let mut counts = HashMap::new();
+                    for row in rows {
+                        let (profile_id, count) = row?;
+                        counts.insert(profile_id, count.max(0) as u64);
+                    }
+                    counts
+                };
+                let selected = config.dispatch_profile(&in_flight).ok_or_else(|| {
+                    ledger_user_error("serverless_profile_unavailable")
+                })?;
                 if let Some(existing) = tx
                     .query_row(
                         "SELECT profile_id, estimated_usd FROM serverless_reservations WHERE job_id = ?1",
@@ -2268,6 +2395,126 @@ mod tests {
             ]
         }));
         assert!(config.selected_profile().is_none());
+    }
+
+    #[test]
+    fn dispatch_prefers_selected_region_until_full_then_least_loaded_sibling() {
+        let config = ServerlessConfig::from_value(&json!({
+            "mode":"serverless_only",
+            "fallback":"none",
+            "activeProfileId":"jakarta",
+            "profiles":[
+                {"id":"jakarta","url":"https://jkt.example.run.app","solverDigest":digest(),"priority":100,"maxConcurrency":2},
+                {"id":"singapore","url":"https://sin.example.run.app","solverDigest":digest(),"priority":90,"maxConcurrency":2},
+                {"id":"taipei","url":"https://tpe.example.run.app","solverDigest":digest(),"priority":80,"maxConcurrency":2},
+                {"id":"stale","url":"https://old.example.run.app","solverDigest":"b".repeat(64),"priority":200,"maxConcurrency":9},
+                {"id":"off","url":"https://off.example.run.app","solverDigest":digest(),"priority":300,"enabled":false}
+            ]
+        }));
+        let ids = |profiles: Vec<ServerlessProfile>| {
+            profiles.into_iter().map(|p| p.id).collect::<Vec<_>>()
+        };
+        assert_eq!(
+            ids(config.dispatch_candidates()),
+            vec!["jakarta", "singapore", "taipei"]
+        );
+        let mut in_flight = HashMap::new();
+        assert_eq!(config.dispatch_profile(&in_flight).unwrap().id, "jakarta");
+        in_flight.insert("jakarta".to_string(), 1);
+        assert_eq!(config.dispatch_profile(&in_flight).unwrap().id, "jakarta");
+        in_flight.insert("jakarta".to_string(), 2);
+        assert_eq!(config.dispatch_profile(&in_flight).unwrap().id, "singapore");
+        in_flight.insert("singapore".to_string(), 1);
+        in_flight.insert("taipei".to_string(), 0);
+        assert_eq!(config.dispatch_profile(&in_flight).unwrap().id, "taipei");
+        in_flight.insert("singapore".to_string(), 2);
+        in_flight.insert("taipei".to_string(), 2);
+        // Every region saturated: the least loaded ratio wins, which is a tie
+        // here, so the selected region keeps ordering priority.
+        assert_eq!(config.dispatch_profile(&in_flight).unwrap().id, "jakarta");
+        in_flight.insert("taipei".to_string(), 1);
+        assert_eq!(config.dispatch_profile(&in_flight).unwrap().id, "taipei");
+        let primary = config.selected_profile().unwrap();
+        assert_eq!(
+            config.fallback_urls_for(&primary),
+            vec!["https://sin.example.run.app", "https://tpe.example.run.app"]
+        );
+        let taipei = config.dispatch_candidates().remove(2);
+        assert_eq!(
+            config.fallback_urls_for(&taipei),
+            vec!["https://jkt.example.run.app", "https://sin.example.run.app"]
+        );
+    }
+
+    #[test]
+    fn reservations_spread_across_regions_by_live_load() {
+        let c = coordinator();
+        c.set_config(&json!({
+            "mode":"serverless_only",
+            "fallback":"none",
+            "activeProfileId":"jakarta",
+            "profiles":[
+                {"id":"jakarta","url":"https://jkt.example.run.app","solverDigest":digest(),"priority":100,"maxConcurrency":1},
+                {"id":"singapore","url":"https://sin.example.run.app","solverDigest":digest(),"priority":90,"maxConcurrency":1}
+            ]
+        }))
+        .unwrap();
+        assert_eq!(c.reserve_for_school("j1", "school").unwrap().profile.id, "jakarta");
+        // Re-reserving the same job keeps its region instead of counting itself.
+        assert_eq!(c.reserve_for_school("j1", "school").unwrap().profile.id, "jakarta");
+        assert_eq!(c.reserve_for_school("j2", "school").unwrap().profile.id, "singapore");
+        // Both regions full: the coordinator still hands out the least loaded
+        // one (a tie resolved by the selected region) rather than failing.
+        assert_eq!(c.reserve_for_school("j3", "other").unwrap().profile.id, "jakarta");
+        assert!(c.reconcile_outcome("j1", Some(0.02), ReservationOutcome::Completed));
+        assert!(c.reconcile_outcome("j3", Some(0.02), ReservationOutcome::Failed));
+        assert_eq!(c.reserve_for_school("j4", "school").unwrap().profile.id, "jakarta");
+    }
+
+    #[test]
+    fn balancing_ignores_dispatched_reservations_older_than_the_cloud_run_window() {
+        let c = coordinator();
+        c.set_config(&json!({
+            "mode":"serverless_only",
+            "fallback":"none",
+            "activeProfileId":"jakarta",
+            "profiles":[
+                {"id":"jakarta","url":"https://jkt.example.run.app","solverDigest":digest(),"priority":100,"maxConcurrency":1},
+                {"id":"singapore","url":"https://sin.example.run.app","solverDigest":digest(),"priority":90,"maxConcurrency":1}
+            ]
+        }))
+        .unwrap();
+        let now = crate::now_millis();
+        assert_eq!(c.reserve_for_school("j1", "school").unwrap().profile.id, "jakarta");
+        assert!(c.mark_dispatched("j1"));
+        // Still inside the 300 s Cloud Run window: jakarta counts as busy.
+        assert_eq!(
+            c.reserve_at("j2", "school", "", now + 60_000, DEFAULT_RESERVATION_TTL_MS)
+                .unwrap()
+                .profile
+                .id,
+            "singapore"
+        );
+        assert!(c.release("j2"));
+        // An orphan of a restart (dispatched > 6 min ago, TTL not expired) no
+        // longer blocks the region even though its row is still present.
+        assert_eq!(
+            c.reserve_at("j3", "school", "", now + CLOUD_RUN_DISPATCH_WINDOW_MS + 5_000, DEFAULT_RESERVATION_TTL_MS)
+                .unwrap()
+                .profile
+                .id,
+            "jakarta"
+        );
+        // A reserved-but-not-dispatched (queued) job keeps counting.
+        assert!(c.release("j3"));
+        assert_eq!(c.reserve_for_school("q1", "school").unwrap().profile.id, "singapore");
+        assert_eq!(
+            c.reserve_at("q2", "school", "", now + CLOUD_RUN_DISPATCH_WINDOW_MS + 5_000, DEFAULT_RESERVATION_TTL_MS)
+                .unwrap()
+                .profile
+                .id,
+            "jakarta"
+        );
     }
 
     #[test]

@@ -17304,3 +17304,76 @@ test("planner keeps Auto FET-first and requires a normalized applied Cloud Run c
   assert.match(body, /__LATEST_OPTIMIZE_TKB = null;/);
   assert.doesNotMatch(PLANNER_HTML, /runPlannerDeepOptimize|Tối ưu sâu|Cloud Run/);
 });
+
+// 24/08: Dung "mem" khoa nut Dung va nuot moi lan bam tiep, cho may chu giao
+// phuong an tot nhat. Khi may chu khong bao gio giao (engine bo qua stop-file,
+// instance Cloud Run dang ban, luot bi day sang revision cu) thi nut Dung ket
+// cung vinh vien - nguoi dung bam ma khong co gi xay ra. Qua han thi nut phai
+// song lai va lan bam ke tiep huy HAN.
+test("Dung mem treo qua han thi lan bam ke tiep huy han", async () => {
+  const data = makeData(2);
+  const jobId = "focused-stuck-best-stop";
+  const clock = createFakeClock(1_700_000_000_000, 0);
+  const progress = createProgressDocument(clock);
+  const cancelBodies = [];
+  const fetchImpl = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if(requestUrl.endsWith("/api/health")) return jsonResponse({ok:true, api:"rust"});
+    if(requestUrl.endsWith("/api/solve-cancel")){
+      cancelBodies.push(JSON.parse(options.body));
+      // May chu nhan yeu cau dung mem nhung KHONG BAO GIO giao phuong an.
+      return jsonResponse({
+        ok:true,
+        cancelRequested:false,
+        bestEffortStopRequested:true,
+        jobId
+      });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const {window, hooks} = loadBridge(data, fetchImpl, Object.assign({}, clock, {
+    document:progress.document
+  }));
+  const stopButton = installRealPlannerProgressUi(window, progress, clock);
+  stopButton.disabled = false;
+  hooks.startProgressTicker({optimization_focus:"sessions"}, data);
+  hooks.writePendingBackendJob(
+    jobId,
+    hooks.durableScheduleFingerprint(data),
+    {optimizationFocus:"sessions"}
+  );
+
+  await window.requestStopAutoSort();
+  assert.deepEqual(cancelBodies, [{solve_run_id:jobId, retainBest:true}]);
+  assert.equal(stopButton.disabled, true, "trong thoi gian cho, nut Dung khoa lai");
+
+  // Bam them trong thoi gian cho van la dung mem, khong duoc huy ngang.
+  await window.requestStopAutoSort();
+  assert.equal(cancelBodies.length, 1);
+  assert.notEqual(window.__AUTO_SORT_STOP_REQUESTED, true);
+  assert.equal(hooks.isSettledBackendJob(jobId), false);
+
+  clock.advance(16_000);
+  assert.equal(stopButton.disabled, false, "qua han thi nut Dung phai song lai");
+  assert.equal(window.__TKB_RUST_PROGRESS_STATE?.bestEffortStopStuck, true);
+  assert.match(
+    String(progress.nodes.get("statusMsg").textContent),
+    /bấm Dừng lần nữa/
+  );
+  // Thanh tien do that cua planner ve lai moi khung hinh va cung khoa nut Dung
+  // theo co bestEffortStopPending; no khong duoc khoa lai sau khi da qua han.
+  // (setAutoSortProgress xoa statusMsg nen phai kiem tra nhan truoc.)
+  window.setAutoSortProgress(42, "dang xep");
+  assert.equal(
+    stopButton.disabled,
+    false,
+    "khung tien do ke tiep khong duoc khoa lai nut Dung"
+  );
+
+  await window.requestStopAutoSort();
+  assert.equal(cancelBodies.length, 2);
+  assert.deepEqual(cancelBodies[1], {solve_run_id:jobId, retainBest:false});
+  assert.equal(window.__AUTO_SORT_STOP_REQUESTED, true);
+  assert.equal(hooks.isSettledBackendJob(jobId), true);
+  assert.equal(hooks.readPendingBackendJob(), null);
+});

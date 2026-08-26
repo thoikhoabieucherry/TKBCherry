@@ -177,7 +177,35 @@ def _stop_probe_headers() -> dict[str, str]:
     }
 
 
-def _request_headers(url: str, expected_digest: str = "") -> dict[str, str]:
+def _fallback_urls(primary_url: str) -> list[str]:
+    """Sibling-region service URLs that run the same pinned solver build.
+
+    Cloud Run CPU quota is granted per region, so the coordinator deploys the
+    same image to several regions and lists the other ones here. The client
+    only moves to the next region when the current one refuses the request
+    before any solver output exists (HTTP 429 "no available instance", a
+    stale-digest 409 from a region that has not been redeployed yet, or a
+    transport failure), never after a solve has started streaming.
+    """
+    raw = os.environ.get("TKB_CLOUD_RUN_FALLBACK_URLS", "")
+    urls: list[str] = []
+    seen = {primary_url.rstrip("/")}
+    for item in raw.split(","):
+        candidate = item.strip().rstrip("/")
+        if not candidate or candidate in seen:
+            continue
+        if not candidate.startswith("https://") and not (
+            _env_flag("TKB_CLOUD_RUN_ALLOW_HTTP") and candidate.startswith("http://")
+        ):
+            continue
+        seen.add(candidate)
+        urls.append(f"{candidate}/solve")
+    return urls
+
+
+def _request_headers(
+    url: str, expected_digest: str = "", audience: str | None = None
+) -> dict[str, str]:
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/x-ndjson, application/json",
@@ -185,7 +213,8 @@ def _request_headers(url: str, expected_digest: str = "") -> dict[str, str]:
     }
     if not _env_flag("TKB_CLOUD_RUN_ALLOW_UNAUTHENTICATED"):
         service_url = url.rsplit("/solve", 1)[0]
-        audience = os.environ.get("TKB_CLOUD_RUN_AUDIENCE", "").strip() or service_url
+        if audience is None:
+            audience = os.environ.get("TKB_CLOUD_RUN_AUDIENCE", "").strip() or service_url
         if audience.rstrip("/") != service_url.rstrip("/"):
             raise RuntimeError("Cloud Run audience must exactly match the service URL")
         headers["Authorization"] = f"Bearer {_identity_token(audience)}"
@@ -264,25 +293,71 @@ def _forward_stream(response, expected_digest: str = "") -> None:
     sys.stdout.flush()
 
 
+RETRY_NEXT_REGION_HTTP_CODES: Final = frozenset({429, 503})
+
+
+def _endpoint_refusal(error: urllib.error.HTTPError, detail: str) -> bool:
+    """True when the region refused the job before running it.
+
+    429/503 are Cloud Run capacity answers ("no available instance"). A 409
+    ``cloud_solver_digest_mismatch`` means that region still serves an older
+    build; another region may already run the pinned one.
+    """
+    if error.code in RETRY_NEXT_REGION_HTTP_CODES:
+        return True
+    return error.code == 409 and "cloud_solver_digest_mismatch" in detail
+
+
+def _note(message: str) -> None:
+    sys.stderr.write(f"cloud_run_client_notice: {message}\n")
+    sys.stderr.flush()
+
+
 def solve() -> int:
     body = _read_request()
-    url = _cloud_url()
+    primary_url = _cloud_url()
     expected_digest = _expected_digest()
-    request = urllib.request.Request(
-        url,
-        data=body,
-        headers=_request_headers(url, expected_digest),
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=_timeout_seconds()) as response:
-            _forward_stream(response, expected_digest)
-    except urllib.error.HTTPError as error:
-        detail = error.read(4096).decode("utf-8", errors="replace").strip()
-        raise RuntimeError(f"Cloud Run returned HTTP {error.code}: {detail}") from error
-    except urllib.error.URLError as error:
-        raise RuntimeError(f"Cloud Run transport failed: {error.reason}") from error
-    return 0
+    endpoints: list[tuple[str, str | None]] = [(primary_url, None)]
+    for fallback in _fallback_urls(primary_url.rsplit("/solve", 1)[0]):
+        endpoints.append((fallback, fallback.rsplit("/solve", 1)[0]))
+    timeout = _timeout_seconds()
+    last_error: RuntimeError | None = None
+    for index, (url, audience) in enumerate(endpoints):
+        remaining = len(endpoints) - index - 1
+        host = urllib.parse.urlsplit(url).hostname or url
+        try:
+            request = urllib.request.Request(
+                url,
+                data=body,
+                headers=_request_headers(url, expected_digest, audience),
+                method="POST",
+            )
+        except Exception as error:  # noqa: BLE001 - token minting for one region.
+            if remaining == 0 and last_error is None:
+                raise
+            last_error = RuntimeError(f"Cloud Run request setup failed for {host}: {error}")
+            _note(f"{host}: {error}; trying next region ({remaining} left)")
+            continue
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                if index > 0:
+                    _note(f"served by fallback region {host}")
+                _forward_stream(response, expected_digest)
+            return 0
+        except urllib.error.HTTPError as error:
+            detail = error.read(4096).decode("utf-8", errors="replace").strip()
+            last_error = RuntimeError(f"Cloud Run returned HTTP {error.code}: {detail}")
+            if remaining and _endpoint_refusal(error, detail):
+                _note(f"{host} refused with HTTP {error.code}; trying next region ({remaining} left)")
+                continue
+            raise last_error from error
+        except urllib.error.URLError as error:
+            last_error = RuntimeError(f"Cloud Run transport failed: {error.reason}")
+            if remaining:
+                _note(f"{host} transport failed ({error.reason}); trying next region ({remaining} left)")
+                continue
+            raise last_error from error
+    raise last_error or RuntimeError("Cloud Run endpoints exhausted")
 
 
 def main() -> int:

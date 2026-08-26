@@ -233,6 +233,16 @@
     }
   };
 
+  // 22/08 (chủ dự án): khi người dùng đăng ký và KÍCH HOẠT (xác thực email)
+  // thì cấp thẳng gói Max 2 dùng thử thay vì gói Trial. Vẫn chỉ cấp MỘT lần
+  // cho mỗi trường (cờ trialUsed) và có hạn như đợt dùng thử cũ; server
+  // (rust_api merge_school_admin_registry) chỉ chấp nhận đúng gói này với
+  // hạn tối đa 31 ngày.
+  const ACTIVATION_GRANT = Object.freeze({
+    planId: "max2",
+    durationDays: 30
+  });
+
   const MANAGED_SERVICE = {
     label: "Xếp hộ TKB",
     contact: "Zalo Thầy Ân",
@@ -506,12 +516,28 @@
     return `/api/school/store?id=${encodeURIComponent(sanitizeStoredSchoolId(schoolId))}`;
   }
 
+  // 21/08: /api/school/store yeu cau Bearer token cho moi id khac "default"
+  // (xem school_store_get_json / school_store_post_json trong rust_api). Truoc
+  // day 2 ham nay KHONG gan token nen luon bi 401: nut Sao chep TKB bao
+  // "Khong doc duoc du lieu TKB nguon", con deleteSchoolSchedule ghi {} de don
+  // store thi that bai AM THAM -> du lieu cu con tren server, khi so TKB duoc
+  // tai su dung (cung sid) thi du lieu "song lai".
+  function schoolStoreAuthToken(){
+    try{
+      return window.TKBAuthApi && window.TKBAuthApi.getSessionToken
+        ? window.TKBAuthApi.getSessionToken()
+        : "";
+    }catch(_){ return ""; }
+  }
+
   function loadRemoteSchoolStoreSync(schoolId){
     try{
       if(typeof XMLHttpRequest === "undefined") return null;
       const xhr = new XMLHttpRequest();
       xhr.open("GET", remoteSchoolStoreUrl(schoolId), false);
       xhr.setRequestHeader("Accept", "application/json");
+      const token = schoolStoreAuthToken();
+      if(token) xhr.setRequestHeader("Authorization", "Bearer " + token);
       xhr.send(null);
       if(xhr.status < 200 || xhr.status >= 300) return null;
       return safeParse(xhr.responseText, {});
@@ -527,6 +553,8 @@
       xhr.open("POST", remoteSchoolStoreUrl(schoolId), false);
       xhr.setRequestHeader("Content-Type", "application/json");
       xhr.setRequestHeader("Accept", "application/json");
+      const token = schoolStoreAuthToken();
+      if(token) xhr.setRequestHeader("Authorization", "Bearer " + token);
       xhr.send(JSON.stringify(data || {}));
       return xhr.status >= 200 && xhr.status < 300;
     }catch(_){
@@ -1376,14 +1404,16 @@
     if(school){
       school.verified = true;
       school.ownerEmail = normEmail(found.user.email) || school.ownerEmail;
-      // Kích hoạt dùng thử 30 ngày lần đầu tiên khi xác thực email (nếu đang Free và chưa từng dùng thử)
+      // Kích hoạt lần đầu khi xác thực email (nếu đang Free và chưa từng dùng thử):
+      // 22/08 cấp gói Max 2 dùng thử (ACTIVATION_GRANT) thay vì gói Trial.
       const curPlan = String(school.plan || "free").toLowerCase();
       if(curPlan === "free" && !school.trialUsed){
         const exp = new Date();
-        exp.setDate(exp.getDate() + (PLANS.trial.durationDays || 30));
-        school.plan = "trial";
+        exp.setDate(exp.getDate() + (ACTIVATION_GRANT.durationDays || 30));
+        school.plan = ACTIVATION_GRANT.planId;
         school.expiresAt = exp.toISOString();
         school.trialUsed = true;
+        if(ACTIVATION_GRANT.planId === "max2") school.maxPlanPricingTier = "from-40-classes";
         trialGranted = true;
       }
       school.updatedAt = nowIso();
@@ -1396,8 +1426,9 @@
     return {
       ok: true,
       trialGranted,
+      grantedPlan: trialGranted ? ACTIVATION_GRANT.planId : null,
       message: trialGranted
-        ? "Email đã xác thực! Đã kích hoạt gói Trial 30 ngày."
+        ? `Email đã xác thực! Đã kích hoạt gói ${(PLANS[ACTIVATION_GRANT.planId] || {}).label || ACTIVATION_GRANT.planId} dùng thử ${ACTIVATION_GRANT.durationDays} ngày.`
         : "Email đã được xác thực."
     };
   }
@@ -1523,13 +1554,22 @@
     try{ localStorage.setItem(key, JSON.stringify(data)); }catch(_){}
   }
 
+  // 23/08 (chu du an): truong "default" (TKB cua Super Admin) luon dung DAU danh
+  // sach; cac truong con lai xep theo ten.
+  function compareSchoolsDefaultFirst(a, b){
+    const ad = String(a?.id || "") === "default";
+    const bd = String(b?.id || "") === "default";
+    if(ad !== bd) return ad ? -1 : 1;
+    return String(a?.name || "").localeCompare(String(b?.name || ""), "vi");
+  }
+
   function listSchools(){
     const reg = loadRegistry();
     const schools = Object.values(reg.schools || {});
     if(!schools.length){
-      return rebuildSchoolsFromAllSources().sort((a,b) => String(a.name).localeCompare(String(b.name), "vi"));
+      return rebuildSchoolsFromAllSources().sort(compareSchoolsDefaultFirst);
     }
-    return schools.sort((a,b) => String(a.name).localeCompare(String(b.name), "vi"));
+    return schools.sort(compareSchoolsDefaultFirst);
   }
 
   function listSchoolUsers(schoolId){
@@ -1795,9 +1835,74 @@
     return { ok: true, schoolId };
   }
 
+  // 23/08 (chu du an: "dua kho default vao danh sach truong roi toi chinh cho
+  // de"): tao ban ghi truong `default` trong registry, TKB so 1 tro dung kho
+  // `school_default` dang co (khong sao chep, khong di tru), de Super Admin doi
+  // ten / ngay ap dung / tao phien ban TKB qua trang Quan ly nhu moi truong.
+  function adoptDefaultStoreAsSchool(opts){
+    const reg = loadRegistry();
+    reg.schools = reg.schools || {};
+    if(reg.schools.default){
+      return { ok: true, schoolId: "default", existed: true };
+    }
+    const name = String(opts?.name || "")
+      .normalize("NFC")
+      .replace(/\s+/g, " ")
+      .trim() || "Trường mặc định (Super Admin)";
+    if(Array.from(name).length > 160 || /[\u0000-\u001f\u007f]/.test(name)){
+      return { ok: false, message: "Tên trường không hợp lệ." };
+    }
+    const effectiveDate = String(opts?.effectiveDate || "").trim();
+    let owner = null;
+    try{ owner = currentUser()?.user || null; }catch(_){ owner = null; }
+    const ownerLoginId = String(owner?.id || opts?.ownerLoginId || "suadmin");
+    const ts = nowIso();
+    const school = {
+      id: "default",
+      name,
+      ownerEmail: String(owner?.email || ""),
+      ownerPhone: String(owner?.phone || ""),
+      ownerLoginId,
+      plan: "max2",
+      active: true,
+      verified: true,
+      scheduleNumber: "1",
+      effectiveDate,
+      expiresAt: "",
+      superAdminDefault: true,
+      createdAt: ts,
+      updatedAt: ts
+    };
+    reg.schools.default = school;
+    ensureSchoolShortId(reg, "default");
+    school.activeSchedule = 1;
+    school.schedules = [{
+      number: 1,
+      effectiveDate,
+      sid: "default",
+      original: true,
+      createdAt: ts
+    }];
+    if(reg.deletedSchools && reg.deletedSchools.default) delete reg.deletedSchools.default;
+    if(!saveRegistry(reg)) return remoteSaveError();
+    seedSchoolMeta("default", name, "1", effectiveDate, {
+      schoolId: "default",
+      ownerLoginId,
+      scheduleSid: "default"
+    });
+    try{
+      if(window.TKBSchool && window.TKBSchool.setSchoolName) window.TKBSchool.setSchoolName("default", name);
+    }catch(_){ }
+    return { ok: true, schoolId: "default", shortId: school.shortId };
+  }
+
   function deleteSchool(schoolId){
     const reg = loadRegistry();
     const sid = String(schoolId || "");
+    if(sid === "default"){
+      // Kho default la du lieu that cua Super Admin — khong bao gio xoa qua UI.
+      return { ok: false, message: "Không thể xóa kho default của Super Admin." };
+    }
     if(!reg.schools[sid]) return { ok: false, message: "Không tìm thấy trường." };
     // A block created from this school belongs to the school lifecycle. Once
     // the school is deleted it must not leave an orphan IP ban behind.
@@ -2038,6 +2143,11 @@
   }
 
   function scheduleEntrySid(school, number){
+    // 23/08 (chu du an): kho `default` cua Super Admin duoc dua vao danh sach
+    // truong (adoptDefaultStoreAsSchool). TKB so 1 cua no PHAI giu nguyen ma
+    // kho "default" (khong di tru sang <shortId>1 — do la bo TKB that dang
+    // dung); cac phien ban sau dung <shortId><n> nhu moi truong khac.
+    if(String(school?.id || "") === "default" && (Number(number) || 1) === 1) return "default";
     const shortId = school?.shortId || ensureSchoolShortId(loadRegistry(), school?.id) || school?.id || "";
     return `${shortId}${Number(number) || 1}`;
   }
@@ -2181,6 +2291,76 @@
     return list.find(s => Number(s.number) === want) || list.find(s => s.original) || list[0];
   }
 
+  // Thong tin dung de in an (ten truong / TKB so / ngay ap dung) PHAI lay tu
+  // bang o trang Quan ly (school-portal) chu khong tu meta trong store: meta
+  // chi la ban sao duoc gieo luc tao/sua, de lech khi nguoi dung sua lai ngay.
+  // Ham nay chi DOC registry, khong ghi (tranh POST dong bo luc dang xuat file).
+  function schoolInfoForSid(sid, opts){
+    const want = String(sid || "").trim();
+    let reg;
+    try{
+      // opts.refresh: doc lai registry tu server. Can khi trang Quan ly vua
+      // sua ngay ap dung trong luc trang xep TKB van dang mo (cache cua
+      // loadRegistry chi nap mot lan moi phien).
+      if(opts && opts.refresh){
+        const prev = registryCache;
+        remoteRegistryLoaded = false;
+        const next = loadRegistry();
+        // Mat mang thi syncRemoteRegistryBlocking dat cache ve rong. Mot lan
+        // xuat file khong duoc phep lam trong registry cua ca trang (canPrint,
+        // danh sach truong... deu doc tu day) nen phai tra cache cu ve.
+        if(!registryHasData(next) && registryHasData(prev)){
+          cacheRegistry(prev);
+          reg = prev;
+        }else{
+          reg = next;
+        }
+      }else{
+        reg = loadRegistry();
+      }
+    }catch(_){ return null; }
+    const schools = (reg && reg.schools) || {};
+
+    let schoolId = "";
+    let entry = null;
+    if(want){
+      for(const [id, school] of Object.entries(schools)){
+        const list = Array.isArray(school && school.schedules) ? school.schedules : [];
+        const found = list.find(s => String((s && s.sid) || "") === want);
+        if(found){ schoolId = id; entry = found; break; }
+        if(String(id) === want && !schoolId) schoolId = id;
+      }
+    }
+    if(!schoolId){
+      try{
+        const ctx = currentUser();
+        const uid = String((ctx && ctx.user && ctx.user.schoolId) || "").trim();
+        if(uid && schools[uid]) schoolId = uid;
+      }catch(_){ }
+    }
+    if(!schoolId || !schools[schoolId]) return null;
+
+    const school = schools[schoolId];
+    const list = Array.isArray(school.schedules) ? school.schedules : [];
+    if(!entry){
+      const activeNum = Number(school.activeSchedule);
+      entry = list.find(s => String((s && s.sid) || "") === want)
+        || list.find(s => Number(s && s.number) === activeNum)
+        || list.find(s => s && s.original)
+        || list[0]
+        || null;
+    }
+
+    return {
+      schoolId: String(schoolId),
+      sid: String((entry && entry.sid) || schoolId),
+      schoolName: String(school.name || "").trim(),
+      scheduleNumber: String((entry && entry.number != null ? entry.number : school.scheduleNumber) || "").trim(),
+      scheduleLabel: String((entry && entry.label) || "").trim(),
+      effectiveDate: String((entry && entry.effectiveDate) || school.effectiveDate || "").trim()
+    };
+  }
+
   function setActiveSchedule(schoolId, number){
     const reg = loadRegistry();
     const school = reg.schools[schoolId];
@@ -2203,8 +2383,12 @@
     if(!src) return { ok: false, message: "Không tìm thấy TKB nguồn." };
 
     const nextNumber = smallestFreeScheduleNumber(list);
+    const srcName = String(src.label || src.number || "").trim();
     const entry = {
       number: nextNumber,
+      // Cot "TKB so" hien thi label neu co: ban sao mang ten nguon de nguoi
+      // dung biet no chep tu dau.
+      label: `Bản sao của "${srcName}"`,
       effectiveDate: src.effectiveDate || "",
       sid: scheduleEntrySid(school, nextNumber),
       original: false,
@@ -2220,6 +2404,7 @@
       data.tkbConstraints.meta = Object.assign({}, data.tkbConstraints.meta || {}, {
         schoolName: school.name,
         scheduleNumber: String(nextNumber),
+        scheduleLabel: entry.label,
         effectiveDate: entry.effectiveDate,
         updatedAt: nowIso()
       });
@@ -2236,6 +2421,7 @@
         data.tkbConstraints.meta = Object.assign({}, data.tkbConstraints.meta || {}, {
           schoolName: school.name,
           scheduleNumber: String(nextNumber),
+          scheduleLabel: entry.label,
           effectiveDate: entry.effectiveDate,
           updatedAt: nowIso()
         });
@@ -2336,6 +2522,11 @@
     if(list.length <= 1) return { ok: false, message: "Phải giữ ít nhất một TKB." };
     const idx = list.findIndex(s => Number(s.number) === Number(number));
     if(idx < 0) return { ok: false, message: "Không tìm thấy TKB." };
+    if(String(schoolId) === "default" && (list[idx].original || String(list[idx].sid) === "default")){
+      // Xoa TKB = xoa kho cua no (saveRemoteSchoolStoreSync(sid, {})) — voi
+      // kho "default" thi do la bo TKB that cua Super Admin.
+      return { ok: false, message: "Không thể xóa TKB gốc của kho default (dữ liệu Super Admin)." };
+    }
     const [removed] = list.splice(idx, 1);
     if(removed && REMOTE_ONLY_AUTH){
       saveRemoteSchoolStoreSync(removed.sid, {});
@@ -2399,6 +2590,7 @@
 
   window.TKBAuth = {
     PLANS,
+    ACTIVATION_GRANT,
     MAX_PLAN_PRICING,
     MANAGED_SERVICE,
     BANK_TRANSFER,
@@ -2433,12 +2625,14 @@
     setSchoolActive,
     activatePlan,
     superCreateSchool,
+    adoptDefaultStoreAsSchool,
     deleteSchool,
     deleteUser,
     setSchoolExpiry,
     updateSchoolMeta,
     listSchoolSchedules,
     activeScheduleEntry,
+    schoolInfoForSid,
     setActiveSchedule,
     copySchoolSchedule,
     createSchoolSchedule,

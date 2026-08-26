@@ -10,6 +10,9 @@ SessionPart = Literal["AM", "PM"]
 class ClassInfo:
     name: str
     grade: str
+    # 23/08: dia diem (co so) cua lop theo cot "Dia diem" trong trang app;
+    # dung cho cac yeu cau giao vien ve di chuyen giua cac dia diem.
+    location: str = ""
 
 
 @dataclass(frozen=True, slots=True)

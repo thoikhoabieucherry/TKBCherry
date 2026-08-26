@@ -1130,6 +1130,28 @@
   align-items: stretch;
 }
 
+.portal-plan-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: .82rem;
+}
+
+.portal-plan-summary[hidden] {
+  display: none;
+}
+
+/* .plan-cards dat display:grid nen thuoc tinh hidden mac dinh khong an duoc. */
+.plan-cards[hidden],
+.portal-card.is-collapsed .plan-cards {
+  display: none;
+}
+
+.portal-card.is-collapsed .portal-card-head {
+  margin-bottom: 0;
+}
+
 .plan-cards.has-plan-banner {
   grid-template-rows: auto;
 }

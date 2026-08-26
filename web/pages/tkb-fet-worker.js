@@ -172,7 +172,10 @@ self.onmessage = async function(e) {
         total: res.total || (res.placed + res.unassigned),
         deadlineHit: res.deadlineHit === true,
         capacityDeficit: Number(res.capacityDeficit) || 0,
-        capacityRows: Array.isArray(res.capacityRows) ? res.capacityRows : []
+        capacityRows: Array.isArray(res.capacityRows) ? res.capacityRows : [],
+        blockLimitConflicts: Array.isArray(res.blockLimitConflicts) ? res.blockLimitConflicts : [],
+        teacherDeficit: Number(res.teacherDeficit) || 0,
+        teacherRows: Array.isArray(res.teacherRows) ? res.teacherRows : []
       });
     } catch (err) {
       self.postMessage({

@@ -23,7 +23,8 @@
     more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
     close:'<path d="m6 6 12 12M18 6 6 18"/>',
     chevronDown:'<path d="m6 9 6 6 6-6"/>',
-    chevronUp:'<path d="m18 15-6-6-6 6"/>'
+    chevronUp:'<path d="m18 15-6-6-6 6"/>',
+    users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'
   });
 
   function portalIcon(name){
@@ -160,6 +161,37 @@
   }
 
   document.getElementById("btnAddSchool")?.addEventListener("click", openAddSchoolModal);
+
+  // 23/08 (chu du an): dua kho `default` cua Super Admin vao danh sach truong
+  // de doi ten / ngay ap dung / tao phien ban TKB nhu moi truong khac. Nut an
+  // khi registry da co truong "default".
+  const btnAdoptDefault = document.getElementById("btnAdoptDefault");
+  function registryHasDefaultSchool(){
+    try{ return !!((A.loadRegistry().schools || {}).default); }catch(_){ return false; }
+  }
+  function syncAdoptDefaultButton(){
+    if(!btnAdoptDefault) return;
+    btnAdoptDefault.hidden = registryHasDefaultSchool() || typeof A.adoptDefaultStoreAsSchool !== "function";
+  }
+  btnAdoptDefault?.addEventListener("click", () => {
+    if(typeof A.adoptDefaultStoreAsSchool !== "function") return;
+    if(registryHasDefaultSchool()){
+      alert("Kho default đã có trong danh sách trường.");
+      syncAdoptDefaultButton();
+      return;
+    }
+    const name = prompt("Tên trường cho kho default:", "Trường mặc định (Super Admin)");
+    if(name === null) return;
+    const date = prompt("Ngày áp dụng (YYYY-MM-DD):", todayInputValue());
+    if(date === null) return;
+    const res = A.adoptDefaultStoreAsSchool({ name, effectiveDate: String(date || "").trim() });
+    if(!res || !res.ok){
+      alert((res && res.message) || "Không đưa được kho default vào danh sách.");
+      return;
+    }
+    alert("Đã đưa kho default vào danh sách trường (TKB số 1 = dữ liệu hiện có). Bấm “Quản lý” để sửa tên, ngày áp dụng và tạo phiên bản TKB.");
+    renderSchools();
+  });
   document.getElementById("btnCloseAddSchool")?.addEventListener("click", closeAddSchoolModal);
   document.getElementById("btnCancelAddSchool")?.addEventListener("click", closeAddSchoolModal);
   addSchoolModal?.querySelector("[data-close-modal]")?.addEventListener("click", closeAddSchoolModal);
@@ -275,6 +307,7 @@
 
   function renderSchools(){
     const schools = A.listSchools();
+    syncAdoptDefaultButton();
     if(!schools.length){
       tbody.innerHTML = `<tr><td colspan="6" class="portal-muted">Chưa có trường nào.</td></tr>`;
       return;
@@ -282,6 +315,9 @@
     tbody.innerHTML = schools.map(s => {
       const plan = A.effectivePlan(s);
       const active = s.active !== false;
+      // 23/08: truong "default" = kho that cua Super Admin — khong Khoa / doi MK
+      // admin / Xoa tu bang nay (deleteSchool cung chan).
+      const isDefault = String(s.id) === "default";
       const curPlan = String(plan.id || "free").toLowerCase();
       const subs = listSubUsers(s.id);
       const subCount = A.countSchoolSubUsers ? A.countSchoolSubUsers(s.id) : subs.length;
@@ -289,8 +325,6 @@
       const expanded = expandedSchools.has(s.id);
       const planSelect = renderPlanSelect(curPlan);
       const mobilePlanSelect = renderPlanSelect(curPlan, "portal-mobile-plan-select");
-      const scheduleSelect = renderScheduleSelect(s);
-      const mobileScheduleSelect = renderScheduleSelect(s, "portal-mobile-schedule-select");
       const expandBtn = hasSubs
         ? `<button type="button" class="portal-expand-btn${expanded ? " is-open" : ""}" data-act="expand" aria-expanded="${expanded ? "true" : "false"}" title="Tài khoản phụ (${subCount})" aria-label="${expanded ? "Thu gọn" : "Mở"} ${subCount} tài khoản phụ">${portalIcon(expanded ? "chevronUp" : "chevronDown")}</button>`
         : "";
@@ -313,19 +347,15 @@
         <td class="portal-cell-status" data-label="Trạng thái"><span class="portal-status-badge ${active ? "is-active" : "is-blocked"}">${active ? "Kích hoạt" : "Blocked"}</span></td>
         <td class="portal-cell-actions" data-label="Thao tác">
           <div class="portal-action-bar portal-action-desktop">
-            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-open" data-act="open-tkb" title="Mở TKB hiện hành" aria-label="Mở TKB hiện hành">${portalIcon("calendar")}<span class="portal-action-label">TKB</span></button>
-            ${scheduleSelect}
-            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot danger" data-act="del-tkb" title="Xóa TKB đang chọn" aria-label="Xóa TKB đang chọn">${portalIcon("trash")}<span class="portal-action-label">XTKB</span></button>
-            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-toggle${active ? "" : " warn"}" data-act="toggle" title="${active ? "Khóa trường" : "Mở khóa trường"}" aria-label="${active ? "Khóa trường" : "Mở khóa trường"}">${portalIcon(active ? "ban" : "activate")}<span class="portal-action-label">${active ? "Block" : "Unblock"}</span></button>
+            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-open" data-act="manage" title="Mở trang quản lý của trường (tài khoản, TKB, gói)" aria-label="Mở trang quản lý của trường">${portalIcon("users")}<span class="portal-action-label">Quản lý</span></button>
+            ${isDefault ? "" : `<button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-toggle${active ? "" : " warn"}" data-act="toggle" title="${active ? "Khóa trường" : "Mở khóa trường"}" aria-label="${active ? "Khóa trường" : "Mở khóa trường"}">${portalIcon(active ? "ban" : "activate")}<span class="portal-action-label">${active ? "Khóa" : "Mở khóa"}</span></button>`}
             ${planSelect}
             <button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-expiry" data-act="expiry" title="Chỉnh ngày hết hạn gói" aria-label="Chỉnh ngày hết hạn gói">${portalIcon("calendarClock")}<span class="portal-action-label">Ngày</span></button>
-            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-pwd" data-act="pwd" title="Đổi mật khẩu admin" aria-label="Đổi mật khẩu admin">${portalIcon("key")}<span class="portal-action-label">MK</span></button>
-            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-edit" data-act="edit" title="Sửa tên trường" aria-label="Sửa tên trường">${portalIcon("pencil")}<span class="portal-action-label">Sửa</span></button>
-            <button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-del danger" data-act="del" title="Xóa trường" aria-label="Xóa trường">${portalIcon("trash")}<span class="portal-action-label">Xóa</span></button>
+            ${isDefault ? "" : `<button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-pwd" data-act="pwd" title="Đổi mật khẩu admin" aria-label="Đổi mật khẩu admin">${portalIcon("key")}<span class="portal-action-label">MK</span></button>`}
+            ${isDefault ? "" : `<button type="button" class="portal-btn portal-btn-sm portal-btn-slot portal-btn-del danger" data-act="del" title="Xóa trường" aria-label="Xóa trường">${portalIcon("trash")}<span class="portal-action-label">Xóa</span></button>`}
           </div>
           <div class="portal-action-mobile" aria-label="Thao tác trường ${esc(s.name)}">
-            <button type="button" class="portal-btn portal-btn-sm portal-btn-open portal-mobile-open" data-act="open-tkb" title="Mở TKB hiện hành" aria-label="Mở TKB hiện hành">${portalIcon("calendar")}<span class="portal-visually-hidden">Mở TKB</span></button>
-            ${mobileScheduleSelect}
+            <button type="button" class="portal-btn portal-btn-sm portal-btn-open portal-mobile-open" data-act="manage" title="Mở trang quản lý của trường" aria-label="Mở trang quản lý của trường">${portalIcon("users")}<span class="portal-visually-hidden">Quản lý</span></button>
             <details class="portal-row-menu">
               <summary class="portal-more-trigger" title="Thao tác khác" aria-label="Thao tác khác">${portalIcon("more")}<span class="portal-visually-hidden">Thao tác khác</span></summary>
               <div class="portal-action-menu" role="menu" aria-label="Thao tác trường ${esc(s.name)}">
@@ -334,12 +364,10 @@
                   <button type="button" class="portal-menu-close" data-menu-close title="Đóng" aria-label="Đóng">${portalIcon("close")}</button>
                 </div>
                 <label class="portal-menu-field"><span>Gói</span>${mobilePlanSelect}</label>
-                <button type="button" class="portal-btn portal-btn-sm portal-btn-toggle${active ? "" : " warn"}" data-act="toggle" title="${active ? "Khóa trường" : "Mở khóa trường"}" aria-label="${active ? "Khóa trường" : "Mở khóa trường"}">${portalIcon(active ? "ban" : "activate")}<span>${active ? "Khóa trường" : "Mở khóa"}</span></button>
-                <button type="button" class="portal-btn portal-btn-sm danger" data-act="del-tkb" title="Xóa TKB đang chọn" aria-label="Xóa TKB đang chọn">${portalIcon("trash")}<span>Xóa TKB</span></button>
+                ${isDefault ? "" : `<button type="button" class="portal-btn portal-btn-sm portal-btn-toggle${active ? "" : " warn"}" data-act="toggle" title="${active ? "Khóa trường" : "Mở khóa trường"}" aria-label="${active ? "Khóa trường" : "Mở khóa trường"}">${portalIcon(active ? "ban" : "activate")}<span>${active ? "Khóa" : "Mở khóa"}</span></button>`}
                 <button type="button" class="portal-btn portal-btn-sm portal-btn-expiry" data-act="expiry" title="Chỉnh ngày hết hạn gói" aria-label="Chỉnh ngày hết hạn gói">${portalIcon("calendarClock")}<span>Hết hạn</span></button>
-                <button type="button" class="portal-btn portal-btn-sm portal-btn-pwd" data-act="pwd" title="Đổi mật khẩu admin" aria-label="Đổi mật khẩu admin">${portalIcon("key")}<span>Mật khẩu</span></button>
-                <button type="button" class="portal-btn portal-btn-sm portal-btn-edit" data-act="edit" title="Sửa tên trường" aria-label="Sửa tên trường">${portalIcon("pencil")}<span>Sửa tên</span></button>
-                <button type="button" class="portal-btn portal-btn-sm portal-btn-del danger" data-act="del" title="Xóa trường" aria-label="Xóa trường">${portalIcon("trash")}<span>Xóa trường</span></button>
+                ${isDefault ? "" : `<button type="button" class="portal-btn portal-btn-sm portal-btn-pwd" data-act="pwd" title="Đổi mật khẩu admin" aria-label="Đổi mật khẩu admin">${portalIcon("key")}<span>Mật khẩu</span></button>`}
+                ${isDefault ? "" : `<button type="button" class="portal-btn portal-btn-sm portal-btn-del danger" data-act="del" title="Xóa trường" aria-label="Xóa trường">${portalIcon("trash")}<span>Xóa trường</span></button>`}
               </div>
             </details>
           </div>
@@ -450,6 +478,12 @@
     }
     const act = btn.dataset.act;
 
+    if(act === "manage"){
+      // 21/08: superadmin vao thang trang quan ly cua truong (tao tai khoan,
+      // TKB, goi...) — mo tab moi de danh sach truong van con day.
+      window.open("/school-portal?school=" + encodeURIComponent(id), "_blank");
+      return;
+    }
     if(act === "open-tkb"){
       openSchoolApp(id);
       return;

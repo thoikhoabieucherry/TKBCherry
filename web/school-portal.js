@@ -2,20 +2,33 @@
   "use strict";
 
   const A = window.TKBAuth;
-  const auth = A && A.requireAuth(["school_admin"]);
+  const auth = A && A.requireAuth(["school_admin", "superadmin"]);
   if(!auth || !auth.ok){
     window.location.replace("/");
     return;
   }
 
-  const schoolId = auth.ctx.session.schoolId;
+  // 21/08: superadmin duoc mo trang quan ly cua BAT KY truong nao qua
+  // /school-portal?school=<id> (nut "Quan ly" o danh sach truong). Thieu
+  // tham so thi quay ve danh sach truong thay vi trang trong.
+  const isSuperadminView = String(auth.ctx.user?.role || "") === "superadmin";
+  let schoolId = auth.ctx.session.schoolId;
+  if(isSuperadminView){
+    const requested = new URLSearchParams(window.location.search).get("school") || "";
+    if(requested){
+      schoolId = requested;
+    }else{
+      window.location.replace("/super-admin");
+      return;
+    }
+  }
   const loginId = auth.ctx.user.id;
   let reg = A.loadRegistry();
   let school = reg.schools[schoolId];
   let user = reg.users[loginId] || auth.ctx.user;
   if(!school){
     alert("Không tìm thấy dữ liệu trường.");
-    window.location.href = "/";
+    window.location.href = isSuperadminView ? "/super-admin" : "/";
     return;
   }
   if(A.persistSchoolRecord) A.persistSchoolRecord(school);
@@ -101,9 +114,11 @@
     const plan = A.effectivePlan(school);
     if(chip) chip.style.setProperty("--plan-color", plan.color || "#60a5fa");
     if(nameEl) nameEl.textContent = school.name || auth.ctx.user.displayName || auth.ctx.user.id;
+    // Chip canh nut "Mo phan mem TKB" chi hien TEN TRUONG. Ten goi da co o
+    // bang Goi dich vu va trong menu tai khoan nen khong lap lai o day.
     if(planEl){
-      planEl.textContent = plan.label || "";
-      planEl.style.color = plan.color || "#60a5fa";
+      planEl.textContent = "";
+      planEl.hidden = true;
     }
   }
 
@@ -444,6 +459,74 @@
     if(modal) modal.hidden = true;
   }
 
+  // Da kich hoat goi roi thi khong can nhin bang gia moi lan vao trang: thu
+  // gon khu "Goi dich vu" lai, chi con dong tom tat + nut mo ra khi can.
+  const PLANS_COLLAPSE_KEY = "TKB_PORTAL_PLANS_COLLAPSED::" + schoolId;
+  let plansCollapsed = null;
+
+  // Bang "Goi dich vu" chi thu gon khi tai khoan da o goi KHAC Free (tu kich
+  // hoat hoac duoc superadmin phan goi) — ke ca Trial: luc do ho khong con can
+  // nhin bang bang gia moi lan vao trang, chi mo lai khi tu bam.
+  function planActivated(){
+    const eff = A.effectivePlan(school);
+    return !!eff && eff.id !== "free";
+  }
+
+  function storedPlansCollapsed(){
+    try{
+      const raw = localStorage.getItem(PLANS_COLLAPSE_KEY);
+      if(raw === "1") return true;
+      if(raw === "0") return false;
+    }catch(_){ }
+    return null;
+  }
+
+  function applyPlansCollapse(){
+    const card = document.getElementById("plansCard");
+    const body = document.getElementById("planCards");
+    const btn = document.getElementById("btnTogglePlans");
+    const summary = document.getElementById("plansSummary");
+    if(!card || !body || !btn || !summary) return;
+
+    if(!planActivated()){
+      btn.hidden = true;
+      summary.hidden = true;
+      summary.innerHTML = "";
+      card.classList.remove("is-collapsed");
+      body.hidden = false;
+      btn.setAttribute("aria-expanded", "true");
+      return;
+    }
+
+    const usage = planUsageText();
+    summary.innerHTML = A.planBadgeHtml(school.plan, school)
+      + (usage ? ' <span class="portal-usage-inline">' + esc(usage) + "</span>" : "");
+    summary.hidden = false;
+    btn.hidden = false;
+
+    const collapsed = !!plansCollapsed;
+    card.classList.toggle("is-collapsed", collapsed);
+    body.hidden = collapsed;
+    btn.textContent = collapsed ? "Xem gói dịch vụ" : "Thu gọn";
+    btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  }
+
+  function syncPlansCollapse(){
+    if(!planActivated()){
+      plansCollapsed = false;
+    }else if(plansCollapsed === null){
+      const stored = storedPlansCollapsed();
+      plansCollapsed = (stored === null) ? true : stored;
+    }
+    applyPlansCollapse();
+  }
+
+  document.getElementById("btnTogglePlans")?.addEventListener("click", () => {
+    plansCollapsed = !plansCollapsed;
+    try{ localStorage.setItem(PLANS_COLLAPSE_KEY, plansCollapsed ? "1" : "0"); }catch(_){ }
+    applyPlansCollapse();
+  });
+
   function renderPlans(){
     const root = document.getElementById("planCards");
     const eff = A.effectivePlan(school);
@@ -455,7 +538,10 @@
     }else if(eff.expiredFrom === "trial"){
       banner = `<div class="portal-trial-banner is-expired">Gói Trial đã hết hạn, tài khoản đang ở gói Free. Nâng cấp Plus hoặc Max để dùng đầy đủ tính năng.</div>`;
     }else if(current === "free" && !user.emailVerified && !school.trialUsed){
-      banner = `<div class="portal-trial-banner is-active">Xác thực email để nhận ngay <strong>30 ngày miễn phí</strong> đầy đủ tính năng.</div>`;
+      // 22/08: kích hoạt = cấp gói Max 2 dùng thử (A.ACTIVATION_GRANT) thay vì Trial.
+      const grant = A.ACTIVATION_GRANT || {planId: "max2", durationDays: 30};
+      const grantLabel = (A.PLANS?.[grant.planId] || {}).label || "Max 2";
+      banner = `<div class="portal-trial-banner is-active">Xác thực email để nhận ngay <strong>${esc(String(grant.durationDays || 30))} ngày gói ${esc(grantLabel)} miễn phí</strong> (không giới hạn lớp và lượt xếp).</div>`;
     }
     root.classList.toggle("has-plan-banner", Boolean(banner));
     const planCards = ["free", "plus", "max"].map(id => A.PLANS[id]).filter(Boolean).map(p => {
@@ -544,6 +630,8 @@
         openTransferModal(plan, isRenew, tier ? { tier, price:tier.price } : null);
       };
     });
+
+    syncPlansCollapse();
   }
 
   document.getElementById("btnCloseTransfer")?.addEventListener("click", closeTransferModal);
@@ -650,7 +738,6 @@
   }
 
   let editingScheduleNum = null;
-  let newScheduleNum = null;
 
   function renderSchedules(){
     const body = document.getElementById("schedulesBody");
@@ -685,7 +772,7 @@
           <div class="portal-user-actions portal-schedule-actions">
             ${isActive ? "" : `<button type="button" class="portal-btn portal-btn-slot" data-sc-act="activate" data-num="${s.number}">Hiện hành</button>`}
             <button type="button" class="portal-btn portal-btn-slot" data-sc-act="edit" data-num="${s.number}">Sửa</button>
-            <button type="button" class="portal-btn portal-btn-slot" data-sc-act="copy" data-num="${s.number}">Copy</button>
+            <button type="button" class="portal-btn portal-btn-slot" data-sc-act="copy" data-num="${s.number}">Sao chép</button>
             <button type="button" class="portal-btn portal-btn-slot danger" data-sc-act="del" data-num="${s.number}">Xóa</button>
           </div>
         </td>
@@ -713,10 +800,6 @@
       editingScheduleNum = num;
       renderSchedules();
     }else if(act === "cancel"){
-      if(newScheduleNum === num){
-        A.deleteSchoolSchedule(schoolId, num);
-        newScheduleNum = null;
-      }
       editingScheduleNum = null;
       renderSchedules();
     }else if(act === "save"){
@@ -735,18 +818,15 @@
         effectiveDate: dateEl ? dateEl.value : ""
       });
       if(!res.ok){ alert(res.message || "Không lưu được."); return; }
-      const wasNew = newScheduleNum === num;
-      newScheduleNum = null;
       editingScheduleNum = null;
-      if(wasNew) A.setActiveSchedule(schoolId, num);
       renderSchedules();
-      if(wasNew) alert("Đã tạo TKB " + (label || num) + " và đặt làm hiện hành.");
     }else if(act === "copy"){
       const res = A.copySchoolSchedule(schoolId, num);
       if(!res.ok){ alert(res.message || "Không sao chép được."); return; }
       A.setActiveSchedule(schoolId, res.number);
       renderSchedules();
-      alert("Đã tạo TKB số " + res.number + " (sao chép từ TKB số " + num + ") và đặt làm hiện hành. Sửa ngày áp dụng rồi bấm “Mở phần mềm TKB”.");
+      const srcName = entry.label || entry.number;
+      alert("Đã tạo Bản sao của \"" + srcName + "\" (toàn bộ dữ liệu được sao chép) và đặt làm hiện hành. Sửa ngày áp dụng rồi bấm “Mở phần mềm TKB”.");
     }else if(act === "del"){
       if(list.length <= 1){
         alert("Không thể xóa. Phải luôn tồn tại ít nhất một TKB.");
@@ -758,16 +838,6 @@
       if(editingScheduleNum === num) editingScheduleNum = null;
       renderSchedules();
     }
-  });
-
-  document.getElementById("btnNewSchedule")?.addEventListener("click", () => {
-    const res = A.createSchoolSchedule(schoolId, todayIso());
-    if(!res.ok){ alert(res.message || "Không tạo được TKB mới."); return; }
-    newScheduleNum = res.number;
-    editingScheduleNum = res.number;
-    renderSchedules();
-    const row = document.querySelector(`#schedulesBody tr[data-num="${res.number}"]`);
-    row?.querySelector("input.portal-schedule-label")?.focus();
   });
 
   renderEmailVerify();

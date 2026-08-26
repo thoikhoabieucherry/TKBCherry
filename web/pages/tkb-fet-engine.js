@@ -108,6 +108,23 @@
       });
     });
 
+    // 22/08: MA GV luon THANG ten rieng. Vi du co "Nguyen Thi Dung" (ma DUNG)
+    // va co "Duong Thi My Dung" (ma MYDUNG, ten rieng "Dung"): vong lap tren
+    // tron ma + ten vao mot bang, muc sau de muc truoc nen "DUNG" bi tra nham
+    // sang co My Dung — 2 GV bi gop lam 1, engine bao "khong du o" oan va xep
+    // thieu tiet. Vong ghi de nay chay SAU CUNG de moi khoa MA (id/ma/magv/
+    // magv2) luon tro dung nguoi, khong bi ten rieng cua GV khac chiem.
+    gvList.forEach(g => {
+      if(!g) return;
+      const codeCanon = String(g.id || g.magv || g.ma || g.ten || "").trim().toLowerCase();
+      if(!codeCanon) return;
+      [g.id, g.magv, g.ma, g.magv2].forEach(a => {
+        const k = String(a || "").trim().toLowerCase();
+        if(!k) return;
+        map.set(k, codeCanon);
+        map.set(k.normalize('NFD').replace(/[\u0300-\u036f]/g, ''), codeCanon);
+      });
+    });
     return map;
   }
 
@@ -489,6 +506,40 @@
 
       // 3. Build Activities from PCCM Matrix
       this.buildActivities();
+      // 25/08: ha min "cum tiet lien" bat kha thi (mon it tiet hon L*min)
+      this.clampLessonBlockRules();
+    }
+
+    // 25/08: yeu cau "min N cum L tiet lien" ma mon chi co it hon L*N tiet
+    // (vd Tin 1 tiet/tuan nhung quick-fill "all" dat min=1 cum 2 tiet) thi
+    // khong lich nao dat duoc: ha min xuong floor(soTiet/L). Neu khong,
+    // isLessonBlockSafe() tra false cho MOI nuoc di cham vao lop do va
+    // evaluateLessonBlockViolations() bao vi pham ao mai mai.
+    clampLessonBlockRules(){
+      if(!this.classSubjectLessonBlocks || this.classSubjectLessonBlocks.size === 0) return;
+      const totals = new Map();
+      const bump = (cid, sCanon, n) => {
+        const k = `${cid}|${sCanon}`;
+        totals.set(k, (totals.get(k) || 0) + n);
+      };
+      (this.activities || []).forEach(act => {
+        if(!act || act.isFixed) return;
+        bump(act.classId, act.canonKey || this.getCanonMonKey(act.mon), Number(act.duration) || 1);
+      });
+      if(this.fixedSlots && typeof this.fixedSlots.forEach === "function"){
+        this.fixedSlots.forEach((fix, key) => {
+          if(!fix || !fix.mon) return;
+          bump(String(key).split("|")[0], this.getCanonMonKey(fix.mon), 1);
+        });
+      }
+      for(const [key, req] of Array.from(this.classSubjectLessonBlocks.entries())){
+        const total = totals.get(`${req.cid}|${req.sCanon}`) || totals.get(`${req.classCanon}|${req.sCanon}`) || 0;
+        const achievable = Math.floor(total / Math.max(1, req.len));
+        if(req.min > achievable){
+          req.min = achievable;
+          if(req.min <= 0 && !Number.isFinite(req.max)) this.classSubjectLessonBlocks.delete(key);
+        }
+      }
     }
 
     isCellOff(cell){
@@ -746,7 +797,77 @@
         .trim();
     }
 
+    // 19/08: BANG MON HOC CUA CHINH TRUONG la nguon su that.
+    // Truoc day getCanonMonKey chi dua vao mot bang bi danh VIET CUNG trong ma
+    // nguon, nen "Giao duc STEM" (ten trong DATA.monhoc) va "STEM" (ma) bi coi
+    // la HAI mon khac nhau: o co dinh ghi "Giao duc STEM" khong tru vao yeu cau
+    // cua "STEM", may xay dung lai sinh du tiet -> so tiet tren bang xep KHONG
+    // khop voi Phan cong (do duoc: 7 lop, du 8 tiet). Chi so hop nhat moi bi
+    // danh cua tung ban ghi (ten/mon/mamon/ma/ma2/id/key) — dung dung cach
+    // giao dien lam (ensureMonAliasIndex trong phanmon.js).
+    ensureMonAliasIndex(){
+      const data = this.data || {};
+      const monhoc = Array.isArray(data.monhoc) ? data.monhoc : [];
+      const mon = Array.isArray(data.mon) ? data.mon : [];
+      const cached = this.__monAliasIndex;
+      if(cached && cached.monRef === mon && cached.monhocRef === monhoc) return cached;
+
+      const norm = value => this.removeDiacritics(String(value == null ? "" : value))
+        .replace(/\s+/g, " ")
+        .trim();
+      const parent = new Map();
+      const addKey = key => { if(key && !parent.has(key)) parent.set(key, key); };
+      const find = key => {
+        let root = key;
+        while(parent.get(root) && parent.get(root) !== root) root = parent.get(root);
+        let cur = key;
+        while(parent.get(cur) && parent.get(cur) !== cur){
+          const next = parent.get(cur);
+          parent.set(cur, root);
+          cur = next;
+        }
+        return root;
+      };
+      const union = (a, b) => {
+        addKey(a); addKey(b);
+        const ra = find(a), rb = find(b);
+        if(ra && rb && ra !== rb) parent.set(rb, ra);
+      };
+
+      const records = monhoc.concat(mon);
+      const keysOf = rec => [rec?.ten, rec?.mon, rec?.mamon, rec?.ma, rec?.ma2, rec?.id, rec?.key]
+        .map(norm)
+        .filter(Boolean);
+      records.forEach(rec => {
+        const keys = keysOf(rec);
+        if(!keys.length) return;
+        keys.forEach(addKey);
+        keys.forEach(k => union(keys[0], k));
+      });
+      const aliasToCanonical = new Map();
+      records.forEach(rec => {
+        const keys = keysOf(rec);
+        if(!keys.length) return;
+        const canonical = find(keys[0]) || keys[0];
+        keys.forEach(k => aliasToCanonical.set(k, canonical));
+      });
+
+      this.__monAliasIndex = {monRef: mon, monhocRef: monhoc, aliasToCanonical};
+      return this.__monAliasIndex;
+    }
+
     getCanonMonKey(mon){
+      if(!mon) return "";
+      const builtinKey = this.getCanonMonKeyBuiltin(mon);
+      // Chao co / SHL / HDTN co luat rieng o resolveFixedSubjectToPccm — giu nguyen.
+      if(builtinKey === "hdtn") return builtinKey;
+      const schoolKey = this.removeDiacritics(mon).replace(/\s+\d+$/, "").replace(/\s+/g, " ").trim();
+      const mapped = this.ensureMonAliasIndex().aliasToCanonical.get(schoolKey);
+      if(mapped) return this.getCanonMonKeyBuiltin(mapped) || mapped;
+      return builtinKey;
+    }
+
+    getCanonMonKeyBuiltin(mon){
       if(!mon) return "";
       let s = this.removeDiacritics(mon);
       s = s.replace(/\s+\d+$/, "").trim();
@@ -990,6 +1111,7 @@
     }
 
     buildActivities(){
+      this.__blockLimitConflicts = [];
       const data = this.data;
       const actList = [];
       let actCounter = 0;
@@ -1041,13 +1163,37 @@
 
           const sCanon = item.canonKey || this.getCanonMonKey(item.mon);
           const blockDurs = [];
+          // 19/08 MAU THUAN CHET NGUOI: "Gioi han" (so tiet toi da cua mon do
+          // trong MOT buoi, lay tu pccmGioihanMatrix) va yeu cau "cap tiet doi"
+          // co the choi nhau. Vi du 8/1 va 8/9 mon NNgu: Gioi han = 1 nhung van
+          // yeu cau 1 khoi 2 tiet — khoi do KHONG BAO GIO xep duoc (dat vao la
+          // 2 tiet cung buoi, vuot gioi han 1), nen luon con lai dung 2 tiet
+          // "chua phan" o moi lop. Cac lop cung mon nhung Gioi han = 2 thi xep
+          // du. Vi vay: cat khoi theo gioi han, va ghi lai de bao cho nguoi dung.
+          const sessionLimitRaw = Number(item.maxSessionLimit);
+          const sessionLimit = Number.isFinite(sessionLimitRaw) && sessionLimitRaw > 0
+            ? sessionLimitRaw
+            : Infinity;
 
           for(const len of [5, 4, 3, 2]){
             const req = this.classSubjectLessonBlocks ? (
               this.classSubjectLessonBlocks.get(`${cid}|${sCanon}|${len}`) ||
               this.classSubjectLessonBlocks.get(`${classCanon}|${sCanon}|${len}`)
             ) : null;
-            const minReq = req ? req.min : 0;
+            // 25/08: min khong the vuot floor(soTiet/len) (mon 1 tiet ma min=1 cum doi)
+            const minReq = req ? Math.min(req.min, Math.floor((Number(item.required) || 0) / len)) : 0;
+            if(minReq > 0 && len > sessionLimit){
+              if(!this.__blockLimitConflicts) this.__blockLimitConflicts = [];
+              this.__blockLimitConflicts.push({
+                classId: cid,
+                className: String(classCanon || cid),
+                mon: String(item.mon || ""),
+                blockLen: len,
+                sessionLimit: sessionLimitRaw,
+                periods: Number(item.required) || 0
+              });
+              continue;
+            }
             if(minReq > 0 && remain >= len){
               const count = Math.min(minReq, Math.floor(remain / len));
               for(let k = 0; k < count; k++){
@@ -1837,6 +1983,55 @@
       return {deficit, rows};
     }
 
+    // 19/08: bao cao SUC CHUA CUA GIAO VIEN. Suc chua cua LOP du (moi lop vua
+    // khit) van co the be tac vi mot giao vien phai day nhieu tiet hon so O
+    // THOI GIAN ma cac lop cua ho mo ra. Vi du do duoc tren truong that:
+    // CN.Nga day 21 lop x 2 tiet = 42 tiet, nhung 21 lop do dung chung 6 buoi
+    // nen chi co 29 o -> thieu 13 tiet, KHONG THUAT TOAN NAO xep noi.
+    computeTeacherCapacityReport(){
+      const load = new Map();
+      const classesOf = new Map();
+      for(const act of this.activities){
+        if(!act || act.isFixed) continue;
+        const teachers = parseTeacherList(act.gv);
+        if(!teachers.length) continue;
+        const dur = Number(act.duration) || 1;
+        for(const t of teachers){
+          load.set(t, (load.get(t) || 0) + dur);
+          if(!classesOf.has(t)) classesOf.set(t, new Set());
+          classesOf.get(t).add(act.classId);
+        }
+      }
+      const rows = [];
+      let deficit = 0;
+      for(const [teacher, need] of load.entries()){
+        const tGrid = this.teacherGrid.get(teacher);
+        const slots = new Set();
+        for(const cid of (classesOf.get(teacher) || [])){
+          const cGrid = this.classGrid.get(cid);
+          if(!cGrid) continue;
+          for(let s = 0; s < TOTAL_SLOTS; s++){
+            if(cGrid[s] !== -1) continue;
+            if(tGrid && tGrid[s] !== -1) continue;
+            slots.add(s);
+          }
+        }
+        const gap = need - slots.size;
+        if(gap > 0){
+          deficit += gap;
+          rows.push({
+            teacher,
+            need,
+            slots: slots.size,
+            deficit: gap,
+            classCount: (classesOf.get(teacher) || new Set()).size
+          });
+        }
+      }
+      rows.sort((a, b) => b.deficit - a.deficit);
+      return {deficit, rows};
+    }
+
     async solve(progressCallback = null){
       this.__studentHoleBaseline = undefined; // construction tu do tao lo tam thoi
       this.init();
@@ -1849,6 +2044,7 @@
       this.__solveDeadlineAt = Date.now() + solveBudgetMs;
       this.__solveDeadlineHit = false;
       this.__capacityReport = this.computeClassCapacityReport();
+      this.__teacherCapacityReport = this.computeTeacherCapacityReport();
       this.strictFetGaps = true;
       this.computeDifficultiesAndSort();
       // 13.4: kich hoat bat dang thuc dem kieu FET cho pha xep chinh
@@ -1933,6 +2129,14 @@
       // pipeline toi uu (Tron goi/NEW) chay SAU khi lich da ap.
 
       this.__minTwoGuardActive = false;
+      // 19/08 "CHANG CUOI": voi vai tiet cuoi cung chua co cho, khong con o
+      // trong nao vua Y — nhung THUONG van con hang chuc o ma LOP dang ban
+      // trong khi GIAO VIEN VAN RANH (do do: 8/1 va 8/9 mon NNgu cua co Thuy.A
+      // moi lop 24 o nhu vay). Day dung la viec cua chuoi day (ejection chain):
+      // day tiet dang chiem cho di noi khac roi chen tiet nay vao. Vong lap
+      // chinh tim tren TOAN BO 60 o nen loang; o day thu hep dung vao nhung o
+      // co co hoi that su, va cho han goi sau hon nhieu.
+      this.lastMileEjectionRepair();
       this.applyToDataTKB();
 
       let placed = 0;
@@ -1950,8 +2154,51 @@
         total: placed + unassigned,
         deadlineHit: this.__solveDeadlineHit === true,
         capacityDeficit: this.__capacityReport ? this.__capacityReport.deficit : 0,
-        capacityRows: this.__capacityReport ? this.__capacityReport.rows.slice(0, 20) : []
+        capacityRows: this.__capacityReport ? this.__capacityReport.rows.slice(0, 20) : [],
+        blockLimitConflicts: Array.isArray(this.__blockLimitConflicts)
+          ? this.__blockLimitConflicts.slice(0, 20)
+          : [],
+        teacherDeficit: this.__teacherCapacityReport ? this.__teacherCapacityReport.deficit : 0,
+        teacherRows: this.__teacherCapacityReport
+          ? this.__teacherCapacityReport.rows.slice(0, 20)
+          : []
       };
+    }
+
+    lastMileEjectionRepair(){
+      const unplaced = this.activities.filter(a => this.actPlacement[a.id] < 0 && !a.isFixed);
+      if(!unplaced.length) return 0;
+      let repaired = 0;
+      for(const act of unplaced){
+        if(this.__solveDeadlineHit || (this.__solveDeadlineAt && Date.now() > this.__solveDeadlineAt)){
+          this.__solveDeadlineHit = true;
+          break;
+        }
+        const cGrid = this.classGrid.get(act.classId);
+        if(!cGrid) continue;
+        const teacherGrids = parseTeacherList(act.gv)
+          .map(t => this.teacherGrid.get(t))
+          .filter(Boolean);
+        const slots = [];
+        for(let s = 0; s < TOTAL_SLOTS; s++){
+          const v = cGrid[s];
+          if(v === -2 || v === -3) continue;   // Nghi / co dinh: khong duoc dung
+          if(v < 0) continue;                   // o trong: cac luot truoc da thu roi
+          let teacherBusy = false;
+          for(const g of teacherGrids){
+            const tv = g[s];
+            if(tv === -2 || tv === -3 || tv >= 0){ teacherBusy = true; break; }
+          }
+          if(teacherBusy) continue;
+          slots.push(s);
+        }
+        if(!slots.length) continue;
+        this.rng.shuffle(slots);
+        this.nCalls = 0;
+        this.limitCalls = Math.max(40000, 40 * this.activities.length);
+        if(this.randomSwap(act.id, 0, slots)) repaired++;
+      }
+      return repaired;
     }
 
     applyToDataTKB(){
@@ -6944,6 +7191,199 @@
       return anyImproved ? currentBest : null;
     }
 
+    // =========================================================================
+    // ĐẨY TIẾT MÉP + KÉO TIẾT BẠN ĐI CÙNG (20/08)
+    // Đo trên bộ live_default: khi gap2 tụt còn 1-2 ca, MỌI nước đi 1 bước dứt
+    // điểm được ca đó đều phải trả giá +1 buổi-1-tiết → luật veto chặn sạch,
+    // engine đứng im dù còn cả phút ngân sách.
+    // Nước đi đúng mà bộ operator cũ KHÔNG dựng nổi: đẩy tiết mép của buổi gap
+    // sang một nửa-ngày giáo viên đang trống RỒI KÉO NGAY một "tiết bạn" từ
+    // buổi giàu (>=3 tiết, bỏ đi vẫn liền mạch) sang nằm cạnh nó. Kết quả:
+    //   gap2 -1 | buổi 1 tiết +0 | tổng buổi +1 | trống 1 tiết ~0
+    // Đúng thứ chủ dự án cho phép tiêu (buổi dạy / trống 1 tiết), không đụng
+    // tới thứ bị cấm (buổi 1 tiết).
+    // Thứ tự ưu tiên đích đến: buổi GV đang có ĐÚNG 1 TIẾT (ghép vào là khử
+    // luôn một buổi lẻ) → buổi đã có >=2 tiết → nửa-ngày trống (phải kéo bạn).
+    // =========================================================================
+    tryGap2EjectWithCompanion(bestMetrics, initialMetrics, mode = "optimize_gap2", onProgress = null){
+      let currentBest = { ...bestMetrics };
+      let anyImproved = false;
+      const PERIODS = PERIODS_PER_SESSION;
+
+      const sessionPeriods = (grid, sStart) => {
+        const ps = [];
+        for(let p = 0; p < PERIODS; p++){
+          const v = grid[sStart + p];
+          if(v >= 0 || v === -3) ps.push(p);
+        }
+        return ps;
+      };
+      const gapsOf = (ps) => ps.length ? (ps[ps.length - 1] - ps[0] + 1 - ps.length) : 0;
+
+      // Đặt act vào ĐÚNG một buổi cho trước (act phải đang ở trạng thái chưa xếp).
+      const placeInSession = (act, sStart2) => {
+        const dur = act.duration || 1;
+        const slots = [];
+        for(let p = 0; p + dur <= PERIODS; p++) slots.push(sStart2 + p);
+        const free = [];
+        for(const s of slots){
+          const r = this.getConflictsForSlot(act, s);
+          if(r.possible && r.conflicts.length === 0) free.push(s);
+        }
+        if(free.length){
+          free.sort((x, y) => this.getPlacementPenalty(act, x) - this.getPlacementPenalty(act, y));
+          this.placeActivityDirect(act.id, free[0]);
+          return true;
+        }
+        const savedCalls = this.limitCalls;
+        this.limitCalls = Math.max(this.limitCalls || 0, 20000);
+        this.nCalls = 0;
+        const ok = this.randomSwap(act.id, 0, slots);
+        this.limitCalls = savedCalls;
+        return ok;
+      };
+
+      const teachers = [];
+      this.teacherGrid.forEach((grid, tKey) => {
+        if(tKey && this.isScoredTeacher(tKey)) teachers.push(tKey);
+      });
+      this.rng.shuffle(teachers);
+
+      for(const tKey of teachers){
+        if(this.opDeadlineMs && Date.now() > this.opDeadlineMs) break;
+        const grid0 = this.teacherGrid.get(tKey);
+        if(!grid0) continue;
+
+        // Buổi đang có >=2 tiết trống của giáo viên này
+        const gapSessions = [];
+        for(let d = 0; d < DAYS_LIST.length; d++){
+          for(let b = 0; b < SESSIONS_LIST.length; b++){
+            const sStart = d * SLOTS_PER_DAY + b * PERIODS;
+            const ps = sessionPeriods(grid0, sStart);
+            if(ps.length >= 2 && gapsOf(ps) >= 2) gapSessions.push({ sStart, ps });
+          }
+        }
+        if(!gapSessions.length) continue;
+
+        for(const gs of gapSessions){
+          if(this.opDeadlineMs && Date.now() > this.opDeadlineMs) break;
+
+          // Ứng viên bị đẩy đi: bỏ tiết đó ra thì buổi còn lại phải hết gap2.
+          const exiles = [];
+          for(const p of gs.ps){
+            const id = grid0[gs.sStart + p];
+            if(id < 0) continue;
+            const act = this.activities[id];
+            if(!act || act.isFixed) continue;
+            if(this.actPlacement[id] !== gs.sStart + p) continue; // chỉ ô đầu của block
+            const dur = act.duration || 1;
+            const rest = gs.ps.filter(q => q < p || q >= p + dur);
+            if(gapsOf(rest) >= 2) continue;
+            exiles.push(act);
+          }
+          if(!exiles.length) continue;
+
+          let resolvedHere = false;
+          for(const act of exiles){
+            if(resolvedHere) break;
+            if(this.opDeadlineMs && Date.now() > this.opDeadlineMs) break;
+
+            // Xếp hạng đích đến theo "độ lợi" cho buổi 1 tiết
+            const dests = [];
+            const gNow = this.teacherGrid.get(tKey);
+            for(let d2 = 0; d2 < DAYS_LIST.length; d2++){
+              for(let b2 = 0; b2 < SESSIONS_LIST.length; b2++){
+                const sStart2 = d2 * SLOTS_PER_DAY + b2 * PERIODS;
+                if(sStart2 === gs.sStart) continue;
+                const ps2 = sessionPeriods(gNow, sStart2);
+                if(gapsOf(ps2) >= 2) continue; // không đổ vào buổi đang hỏng sẵn
+                // 0 = ghép vào buổi lẻ (khử luôn 1 buổi 1 tiết), 1 = buổi đã đủ, 2 = mở buổi mới
+                const rank = ps2.length === 1 ? 0 : (ps2.length >= 2 ? 1 : 2);
+                dests.push({ sStart2, rank, have: ps2.length });
+              }
+            }
+            dests.sort((x, y) => x.rank - y.rank);
+
+            for(const dest of dests){
+              if(resolvedHere) break;
+              if(this.opDeadlineMs && Date.now() > this.opDeadlineMs) break;
+
+              const snap = this.captureStateSnapshot();
+              this.unplaceActivity(act.id);
+              if(!placeInSession(act, dest.sStart2)){
+                this.restoreStateSnapshot(snap);
+                continue;
+              }
+              if(!this.isLessonBlockSafe(act) || !this.isDailySubjectLimitSafe(act, this.actPlacement[act.id])){
+                this.restoreStateSnapshot(snap);
+                continue;
+              }
+
+              // Mở buổi mới mà chỉ có mình nó -> phải KÉO TIẾT BẠN sang, nếu
+              // không sẽ đẻ ra một buổi 1 tiết (thứ tuyệt đối không được tăng).
+              const gAfter = this.teacherGrid.get(tKey);
+              const psDest = sessionPeriods(gAfter, dest.sStart2);
+              let needCompanion = psDest.length === 1;
+
+              if(needCompanion){
+                const donors = [];
+                for(let d3 = 0; d3 < DAYS_LIST.length; d3++){
+                  for(let b3 = 0; b3 < SESSIONS_LIST.length; b3++){
+                    const sStart3 = d3 * SLOTS_PER_DAY + b3 * PERIODS;
+                    if(sStart3 === dest.sStart2) continue;
+                    const ps3 = sessionPeriods(gAfter, sStart3);
+                    if(ps3.length < 3) continue; // buổi 2 tiết mà rút đi là đẻ buổi lẻ
+                    for(const p3 of ps3){
+                      const id3 = gAfter[sStart3 + p3];
+                      if(id3 < 0) continue;
+                      const donor = this.activities[id3];
+                      if(!donor || donor.isFixed) continue;
+                      if(this.actPlacement[id3] !== sStart3 + p3) continue;
+                      const dur3 = donor.duration || 1;
+                      const rest3 = ps3.filter(q => q < p3 || q >= p3 + dur3);
+                      if(rest3.length < 2) continue;
+                      if(gapsOf(rest3) >= 1) continue; // rút xong buổi cũ phải LIỀN MẠCH
+                      donors.push(donor);
+                    }
+                  }
+                }
+                this.rng.shuffle(donors);
+                let pulled = false;
+                for(const donor of donors.slice(0, 14)){
+                  const snapD = this.captureStateSnapshot();
+                  this.unplaceActivity(donor.id);
+                  if(placeInSession(donor, dest.sStart2)
+                    && this.isLessonBlockSafe(donor)
+                    && this.isDailySubjectLimitSafe(donor, this.actPlacement[donor.id])){
+                    const psNow = sessionPeriods(this.teacherGrid.get(tKey), dest.sStart2);
+                    if(psNow.length >= 2 && gapsOf(psNow) === 0){ pulled = true; break; }
+                  }
+                  this.restoreStateSnapshot(snapD);
+                }
+                if(!pulled){
+                  this.restoreStateSnapshot(snap);
+                  continue;
+                }
+              }
+
+              if(this.isLessonBlockSafe()){
+                const m = this.evaluateMetrics();
+                if(this.compareMetrics(m, currentBest, mode) < 0){
+                  currentBest = { ...m };
+                  anyImproved = true;
+                  resolvedHere = true;
+                  if(typeof onProgress === "function") onProgress(currentBest);
+                  break;
+                }
+              }
+              this.restoreStateSnapshot(snap);
+            }
+          }
+        }
+      }
+      return anyImproved ? currentBest : null;
+    }
+
     compareMetrics(a, b, mode = "optimize_singletons"){
       if(!a) return 1;
       if(!b) return -1;
@@ -6969,8 +7409,15 @@
 
       if(mode === "optimize_gap2"){
         // 1. MỤC TIÊU TỐI THƯỢNG: soBuoiTrong2 PHẢI GIẢM về 0, không được tăng 1t/buổi
+        // Khi đang bật trần vay (__s1Ceiling) thì trần đó ĐÃ là hàng rào của
+        // 1t/buổi — giữ thêm luật veto ở đây sẽ vô hiệu hoá chính cơ chế vay.
         if(a.soBuoiTrong2 !== b.soBuoiTrong2){
-          if(a.soBuoiTrong2 < b.soBuoiTrong2 && a.soBuoiDay1 > b.soBuoiDay1) return 1;
+          // Khi ĐANG có trần 1t/buổi (__stageLocks.soBuoiDay1) thì chính cái
+          // trần đó là hàng rào — lockViolations ở đầu hàm đã chặn mọi trạng
+          // thái vượt trần. Giữ thêm veto ở đây sẽ vô hiệu hoá cơ chế "vay":
+          // engine không bao giờ dám bước qua thung lũng s1+1 → gap2-1.
+          const hasS1Ceiling = !!this.__stageLocks && Number.isFinite(this.__stageLocks.soBuoiDay1);
+          if(!hasS1Ceiling && a.soBuoiTrong2 < b.soBuoiTrong2 && a.soBuoiDay1 > b.soBuoiDay1) return 1;
           return a.soBuoiTrong2 - b.soBuoiTrong2;
         }
         if(a.soBuoiDay1 !== b.soBuoiDay1) return a.soBuoiDay1 - b.soBuoiDay1;
@@ -7601,6 +8048,28 @@
       // quả nếu tuple cuối không tệ hơn ban đầu. Mặc định 0 — hành vi cũ.
       const slack = Math.max(0, Number(this.options.singletonSlack) || 0);
       this.initialMetricsSnapshot = { ...initialMetrics, soBuoiDay1: initialMetrics.soBuoiDay1 + slack };
+      // 20/08: singletonSlack trước đây là CODE CHẾT (chỉ được ghi, không nơi
+      // nào đọc) — nên "vay-trả" chưa từng thực sự vay lần nào. Nối nó vào
+      // đúng cơ chế khóa sẵn có (__stageLocks + lockViolations, đứng TRÊN mọi
+      // thước đo của mọi mode nên cả operator hardcode mode cũng phải tuân):
+      //   soBuoiDay1 = TRẦN buổi-1-tiết được phép vay khi đang tìm đường
+      //   soBuoiTrong2 = KHÓA 2-tiết-trống, dùng cho pha trả nợ để nó không
+      //                  được phép làm gap2 phình trở lại (lỗi cũ: pha trả nợ
+      //                  kéo gap2 từ 2 lên 5 rồi pha sau phải làm lại từ đầu).
+      {
+        const s1Ceiling = Number.isFinite(Number(this.options.s1CeilingAbsolute))
+          ? Number(this.options.s1CeilingAbsolute)
+          : (slack > 0 ? initialMetrics.soBuoiDay1 + slack : null);
+        const gap2Lock = Number.isFinite(Number(this.options.gap2LockAbsolute))
+          ? Number(this.options.gap2LockAbsolute)
+          : null;
+        if(s1Ceiling !== null || gap2Lock !== null){
+          const merged = Object.assign({}, this.__stageLocks || {});
+          if(s1Ceiling !== null) merged.soBuoiDay1 = s1Ceiling;
+          if(gap2Lock !== null) merged.soBuoiTrong2 = gap2Lock;
+          this.__stageLocks = merged;
+        }
+      }
       // SEED global best = trạng thái BAN ĐẦU (sửa lỗi nghiêm trọng 17/08):
       // trước đây nếu lượt đầu không cải thiện được gì, __globalBestM không bao
       // giờ được gieo bằng initial — lượt diversify sau đó "cải thiện so với
@@ -8030,6 +8499,15 @@
           }
 
           // 3f. Đày tiết mép đi nơi khác bất kỳ (17/08: 1t khóa, còn lại tự do)
+          // 3e-bis. Đẩy tiết mép + kéo tiết bạn: nước duy nhất gỡ được các ca
+          // mà mọi nước 1 bước đều phải trả giá bằng buổi 1 tiết.
+          const resPair = this.tryGap2EjectWithCompanion(bestMetrics, initialMetrics, "optimize_gap2", notifyLiveProgress);
+          if(resPair && this.compareMetrics(resPair, bestMetrics, mode) < 0){
+            bestMetrics = { ...resPair };
+            saveBestSnapshot();
+            improvedInRound = true;
+          }
+
           const resExile = this.tryExileEdgeLesson(bestMetrics, initialMetrics, "optimize_gap2", notifyLiveProgress);
           if(resExile && this.compareMetrics(resExile, bestMetrics, mode) < 0){
             bestMetrics = { ...resExile };
@@ -8360,7 +8838,12 @@
       // trạng thái sót xuyên pha trên cùng instance). Các pha nối nhau qua
       // this.data.tkb (được applyToDataTKB của pha trước ghi lại).
       const Ctor = this.constructor;
-      const seedBase = Number(this.options.seed) || 12345;
+      // 20/08: UI KHÔNG truyền seed, nên hằng 12345 làm mọi lần bấm chạy đúng
+      // cùng một chuỗi pha và trả về đúng một kết quả — bấm lại 10 lần cũng vô
+      // ích. Engine chính (dòng 275) vốn đã dùng Date.now(); theo đúng lệ đó
+      // thì mỗi lần bấm là một lượt bốc thăm mới, và các ca đuôi kẹt ở seed
+      // này thường tan ở seed khác (đo được: 2->1 rồi 1->0 ở lần bấm sau).
+      const seedBase = Number(this.options.seed) || Date.now();
       const runPhase = async (mode2, frac, extra, phaseIdx) => {
         setBudget(frac);
         const opts = Object.assign({}, this.options, extra || {}, {
@@ -8369,40 +8852,68 @@
           optimizeRestartBudgetMs: this.options.optimizeRestartBudgetMs
         });
         const child = new Ctor(this.data, opts);
-        if(extra && extra.__pushToZero) child.pushToZero = true;
         const res = await child.optimize(mode2, progressCallback);
         return res;
       };
+      const grabTkb = () => JSON.parse(JSON.stringify(this.data.tkb));
+      const putTkb = (t) => { this.data.tkb = JSON.parse(JSON.stringify(t)); };
+      // Thước đo NGHIỆM THU của riêng nút này: 2 tiết trống là số 1 tuyệt đối,
+      // buổi 1 tiết là số 2. Khác compareTuple (vốn đặt buổi-1-tiết lên trước)
+      // — dùng compareTuple ở đây thì một nghiệm gap2 thấp hơn sẽ bị loại chỉ
+      // vì hơn 1 buổi lẻ, đúng thứ chủ dự án bảo là ngược ưu tiên.
+      const betterForButton = (x, y) => (x.soBuoiTrong2 - y.soBuoiTrong2)
+        || (x.soBuoiDay1 - y.soBuoiDay1)
+        || (x.tsBuoiDay - y.tsBuoiDay)
+        || (x.soBuoiTrong1 - y.soBuoiTrong1)
+        || (x.tsNgayDay - y.tsNgayDay);
       try{
-        // Pha A: chạy chuẩn không vay (55% ngân sách)
-        const rA = await runPhase("optimize_gap2", 0.55, { singletonSlack: 0 }, 1);
+        // Pha A: chạy chuẩn không vay (40% ngân sách)
+        const rA = await runPhase("optimize_gap2", 0.40, { singletonSlack: 0 }, 1);
         const initialMetrics = rA.initialMetrics;
-        const tupleA = { ...rA.metrics };
-        if(tupleA.soBuoiTrong2 === 0 || (Date.now() - t0) > totalCapMs * 0.8){
+        let bestRes = rA;
+        let bestM = { ...rA.metrics };
+        let bestTkb = grabTkb();
+        if(bestM.soBuoiTrong2 === 0 || (Date.now() - t0) > totalCapMs * 0.9){
           this.loadExistingSchedule();
-          return rA;
+          return { ...rA, initialMetrics, borrowed: false };
         }
-        const tkbA = JSON.parse(JSON.stringify(this.data.tkb));
 
-        // Pha B: VAY 1 suất (25%)
-        await runPhase("optimize_gap2", 0.25, { singletonSlack: 1 }, 2);
-        // Pha C: TRẢ NỢ 1t/buổi (10%)
-        await runPhase("optimize_singletons", 0.1, { singletonSlack: 0, __pushToZero: true }, 3);
-        // Pha D: quét gap2 chốt không vay
-        const rD = await runPhase("optimize_gap2", 0.15, { singletonSlack: 0 }, 4);
-        const fin = { ...rD.metrics };
-
-        // Nghiệm thu: s1 không vượt lúc bấm nút VÀ tuple tốt hơn phương án không-vay
-        const okS1 = fin.soBuoiDay1 <= initialMetrics.soBuoiDay1;
-        const better = this.compareTuple(fin, tupleA) < 0;
-        if(okS1 && better){
-          this.loadExistingSchedule();
-          return { ...rD, initialMetrics, borrowed: true };
+        // TRẦN TUYỆT ĐỐI: buổi 1 tiết không bao giờ được cao hơn lúc bấm nút.
+        const s1Cap = initialMetrics.soBuoiDay1;
+        // Danh mục vay: đo trên trường thật, ca đuôi kẹt ở lượt vay này thường
+        // TAN ở lượt sau chỉ vì pha ngẫu nhiên khác — nên cứ còn ngân sách và
+        // còn gap2 thì bốc thăm tiếp, mỗi lượt một seed mới, thay vì dừng sau
+        // đúng hai lượt cố định như bản đầu.
+        const rounds = [];
+        for(let k = 0; k < 6; k++){
+          rounds.push({ slack: (k % 2) + 1, fB: 0.12, fC: 0.08, fD: 0.06, idx: 2 + k * 3 });
         }
-        // Trả lại phương án không-vay
-        this.data.tkb = JSON.parse(JSON.stringify(tkbA));
+        for(const r of rounds){
+          if(bestM.soBuoiTrong2 === 0) break;
+          // Một lượt cần tối thiểu 3 pha x 20s (sàn của setBudget) — hết chỗ
+          // cho trọn một lượt thì dừng, đừng bỏ dở giữa chừng.
+          if((Date.now() - t0) > totalCapMs - 62000) break;
+          // Luôn vay từ phương án TỐT NHẤT đang có, không phải từ pha A cũ.
+          putTkb(bestTkb);
+          // Pha B: VAY tối đa `slack` suất buổi-1-tiết để bước qua thung lũng.
+          const rB = await runPhase("optimize_gap2", r.fB,
+            { singletonSlack: 0, s1CeilingAbsolute: s1Cap + r.slack }, r.idx);
+          // Pha C: TRẢ NỢ buổi-1-tiết, KHÓA gap2 ở mức vừa đạt được.
+          await runPhase("optimize_singletons", r.fC,
+            { singletonSlack: 0, gap2LockAbsolute: Number(rB?.metrics?.soBuoiTrong2) || 0 }, r.idx + 1);
+          // Pha D: quét gap2 chốt, không vay.
+          const rD = await runPhase("optimize_gap2", r.fD, { singletonSlack: 0 }, r.idx + 2);
+          const fin = { ...rD.metrics };
+          if(fin.soBuoiDay1 <= s1Cap && betterForButton(fin, bestM) < 0){
+            bestRes = rD;
+            bestM = fin;
+            bestTkb = grabTkb();
+          }
+        }
+
+        putTkb(bestTkb);
         this.loadExistingSchedule();
-        return { ...rA, initialMetrics, borrowed: false };
+        return { ...bestRes, initialMetrics, metrics: bestM, borrowed: bestRes !== rA };
       }finally{
         this.options.optimizeHardCapMs = savedCap;
         this.options.optimizeRestartBudgetMs = savedBudget;
@@ -8870,6 +9381,7 @@
     "tryMergeSessionIntoGaps",
     "tryKempeChainPeriodSwap",
     "tryExileEdgeLesson",
+    "tryGap2EjectWithCompanion",
     "tryIntraSessionCrossClassChain",
     "tryBlockShiftAndGapResolution",
     "tryInterDayRelocateGapLesson",

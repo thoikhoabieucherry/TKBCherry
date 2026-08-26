@@ -1,7 +1,36 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Mapping
+
+
+_TEACHER_MEMBER_SPLIT = re.compile(r"[,;+\r\n]+")
+
+
+def teacher_members(value: Any) -> tuple[str, ...]:
+    """Ma GV thanh vien cua mot gia tri phan cong (giu thu tu, bo trung).
+
+    25/08: tiet DAY GHEP (1 mon, 1 lop, >= 2 giao vien) duoc giao dien luu la
+    "GV1, GV2" (pccmTeacherListFromValue tach theo phay / cham phay / dau
+    cong / xuong dong). Backend phai coi do la HAI giao vien: tiet nam tren
+    TKB cua ca hai, ca hai deu ban tai gio do va o nghi co dinh cua tung
+    nguoi deu phai duoc ton trong. Gia tri mot GV -> tuple 1 phan tu.
+    """
+
+    text = "" if value is None else str(value)
+    out: list[str] = []
+    seen: set[str] = set()
+    for part in _TEACHER_MEMBER_SPLIT.split(text):
+        item = " ".join(part.split())
+        if not item:
+            continue
+        key = item.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return tuple(out)
 
 
 _ONE_SESSION_PER_DAY_ALIASES = {
@@ -100,7 +129,16 @@ class TimetableConstraintRules:
         return tuple(group_id for group_id, items in self.groups.get("subject", {}).items() if subject in items)
 
     def is_fixed_off(self, kind: str, item_id: str, day: int, session: str, period: int) -> bool:
-        return (int(day), str(session), int(period)) in self.fixed_off.get(kind, {}).get(str(item_id), frozenset())
+        slot = (int(day), str(session), int(period))
+        kind_map = self.fixed_off.get(kind, {})
+        if slot in kind_map.get(str(item_id), frozenset()):
+            return True
+        if kind == "teacher":
+            # 25/08: tiet day ghep "GV1, GV2" nghi khi BAT KY giao vien nao nghi.
+            members = teacher_members(item_id)
+            if len(members) > 1:
+                return any(slot in kind_map.get(member, frozenset()) for member in members)
+        return False
 
     def is_subject_group_fixed_off(self, subject: str, day: int, session: str, period: int) -> bool:
         return any(self.is_fixed_off("subjectGroup", group_id, day, session, period) for group_id in self.subject_groups_for(subject))

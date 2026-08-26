@@ -60,6 +60,32 @@
   function occupiedKey(name, day, session, index){
     return `${text(name)}|${day}|${session}|${index}`;
   }
+  // 25/08: tiet day ghep "GV1, GV2" (cung cach tach voi pccmTeacherListFromValue:
+  // phay / cham phay / dau cong / xuong dong). Tiet chiem cho cua MOI giao vien.
+  function splitTeacherNames(raw){
+    const parts = Array.isArray(raw)
+      ? raw
+      : text(raw).replace(/\r?\n/g, ",").replace(/[;\uFF1B]+/g, ",").replace(/\s*[+\uFF0B]\s*/g, ",").split(",");
+    const out = [];
+    const seen = new Set();
+    for(const part of parts){
+      const name = text(part);
+      const key = resourceKey(name);
+      if(!name || seen.has(key)) continue;
+      seen.add(key);
+      out.push(name);
+    }
+    return out;
+  }
+  function teacherKeysOf(assignment, day, session, index){
+    const list = Array.isArray(assignment?.teachers) && assignment.teachers.length
+      ? assignment.teachers
+      : [assignment?.teacher];
+    return list.filter(Boolean).map(name => occupiedKey(name, day, session, index));
+  }
+  function teacherBusyAt(busy, assignment, day, session, index){
+    return teacherKeysOf(assignment, day, session, index).some(key => busy.has(key));
+  }
   function mulberry32(seed){
     let state = (Number(seed) || 1) >>> 0;
     return function(){
@@ -164,6 +190,17 @@
         teacherAliases.set(resourceKey(alias), {canonical:canonicalTeacher || alias, aliases:values});
       }
     }
+    // 22/08: MA GV luon THANG ten rieng (vd ma "DUNG" vs ten rieng "Dung" cua
+    // GV khac) — ghi de lai cac khoa MA sau cung de khong bi gop 2 GV lam 1.
+    for(const row of Array.isArray(data?.giaovien) ? data.giaovien : []){
+      const canonicalTeacher = text(row?.magv || row?.ma || row?.code || row?.id || row?.ten);
+      if(!canonicalTeacher) continue;
+      const fullName = `${text(row?.hodem)} ${text(row?.ten)}`.trim();
+      const values = [row?.id, row?.ma, row?.magv, row?.magv2, row?.ten, fullName].map(text).filter(Boolean);
+      for(const alias of [row?.id, row?.ma, row?.magv, row?.magv2].map(text).filter(Boolean)){
+        teacherAliases.set(resourceKey(alias), {canonical:canonicalTeacher, aliases:values});
+      }
+    }
     const roomAliases = new Map();
     for(const row of Array.isArray(data?.phong) ? data.phong : []){
       const names = [row?.id, row?.ma, row?.ten].map(text).filter(Boolean);
@@ -210,8 +247,22 @@
         matrixLookup(periodRows, classInfo, subjectAliases, matrixIndexes.get(periodRows)),
         number(standard?.sotiet || standard?.periods)
       )));
-      const teacherInfo = teacherAliases.get(resourceKey(rawTeacherText));
-      const teacher = text(teacherInfo?.canonical || rawTeacherText);
+      // 25/08: tung GV thanh vien cua tiet day ghep duoc tra alias rieng; o nghi
+      // co dinh va gio ban duoc kiem theo MOI thanh vien (truoc day ca chuoi
+      // "GV1, GV2" khong khop alias nao nen o nghi cua GV1/GV2 bi bo qua).
+      const members = [];
+      const memberAliases = [];
+      const seenMembers = new Set();
+      for(const rawMember of splitTeacherNames(rawTeacherText)){
+        const info = teacherAliases.get(resourceKey(rawMember));
+        const canonical = text(info?.canonical || rawMember);
+        const memberKey = resourceKey(canonical);
+        if(!canonical || seenMembers.has(memberKey)) continue;
+        seenMembers.add(memberKey);
+        members.push(canonical);
+        memberAliases.push(...(info?.aliases || [canonical]));
+      }
+      const teacher = members.join(", ");
       if(periods <= 0 || !teacher) continue;
       const assignmentId = `${classInfo.id}|${subjects.group(subject)}|${teacher}`;
       if(seenAssignments.has(assignmentId)) continue;
@@ -225,7 +276,8 @@
         subject:canonicalSubject,
         subjectGroup:subjects.group(subject),
         teacher,
-        teacherAliases:teacherInfo?.aliases || [teacher],
+        teachers:members,
+        teacherAliases:memberAliases,
         room,
         roomAliases:roomInfo?.aliases || [room].filter(Boolean),
         periods,
@@ -293,7 +345,7 @@
       return teacherSlots.get(key);
     }
     function markLesson(assignment, day, session, index, fixed){
-      const teacherKey = occupiedKey(assignment.teacher, day, session, index);
+      const teacherKeys = teacherKeysOf(assignment, day, session, index);
       const roomKey = assignment.room
         ? occupiedKey(assignment.room, day, session, index)
         : "";
@@ -301,8 +353,9 @@
         invalidReasons.push(`fixed_demand_overflow:${assignment.key}`);
         return null;
       }
-      if(teacherBusy.has(teacherKey)){
-        invalidReasons.push(`fixed_teacher_collision:${teacherKey}`);
+      const busyTeacherKey = teacherKeys.find(key => teacherBusy.has(key));
+      if(busyTeacherKey){
+        invalidReasons.push(`fixed_teacher_collision:${busyTeacherKey}`);
         return null;
       }
       if(roomKey && roomBusy.has(roomKey)){
@@ -322,7 +375,7 @@
         fixed:fixed === true
       };
       fixedLessons.push(lesson);
-      teacherBusy.add(teacherKey);
+      teacherKeys.forEach(key => teacherBusy.add(key));
       if(roomKey) roomBusy.add(roomKey);
       const slots = teacherSlotArray(assignment.teacher, day, session, Math.max(5, index + 1));
       while(slots.length <= index) slots.push(false);
@@ -475,9 +528,10 @@
       return `${assignment.classInfo.id}|${day}|${session}|${normalized(assignment.subject)}`;
     }
     function markOccupied(assignment, day, session, index, occupied){
-      const teacherKey = occupiedKey(assignment.teacher, day, session, index);
-      if(occupied) state.teacherBusy.add(teacherKey);
-      else state.teacherBusy.delete(teacherKey);
+      for(const teacherKey of teacherKeysOf(assignment, day, session, index)){
+        if(occupied) state.teacherBusy.add(teacherKey);
+        else state.teacherBusy.delete(teacherKey);
+      }
       if(assignment.room){
         const roomKey = occupiedKey(assignment.room, day, session, index);
         if(occupied) state.roomBusy.add(roomKey);
@@ -501,7 +555,7 @@
       if(assignmentBlocked(assignment, day, session, index)) return false;
       if((subjectSessionCounts.get(subjectSessionKey(assignment, day, session)) || 0) >= assignment.limit) return false;
       if(!options.ignoreResources){
-        if(state.teacherBusy.has(occupiedKey(assignment.teacher, day, session, index))) return false;
+        if(teacherBusyAt(state.teacherBusy, assignment, day, session, index)) return false;
         if(assignment.room && state.roomBusy.has(occupiedKey(assignment.room, day, session, index))) return false;
       }
       return true;
@@ -549,7 +603,11 @@
       for(const [classId, grid] of state.grids){
         const cell = grid?.[day]?.[session]?.[index];
         if(!cell?.lesson || seen.has(cell)) continue;
-        const teacherHit = assignment.teacher && cell.assignment?.teacher === assignment.teacher;
+        const mine = Array.isArray(assignment.teachers) && assignment.teachers.length ? assignment.teachers : [assignment.teacher];
+        const theirs = Array.isArray(cell.assignment?.teachers) && cell.assignment.teachers.length
+          ? cell.assignment.teachers
+          : [cell.assignment?.teacher];
+        const teacherHit = mine.some(name => name && theirs.includes(name));
         const roomHit = assignment.room && cell.assignment?.room === assignment.room;
         if(!teacherHit && !roomHit) continue;
         seen.add(cell);
@@ -653,7 +711,7 @@
             if(
               cells[index] == null
               && !assignmentBlocked(assignment, day, session, index)
-              && !state.teacherBusy.has(occupiedKey(assignment.teacher, day, session, index))
+              && !teacherBusyAt(state.teacherBusy, assignment, day, session, index)
               && (!assignment.room || !state.roomBusy.has(occupiedKey(assignment.room, day, session, index)))
             ) count += 1;
           }
@@ -681,7 +739,7 @@
           for(let index = 0; index < cells.length; index += 1){
             if(
               !assignmentBlocked(assignment, day, session, index)
-              && !state.teacherBusy.has(occupiedKey(assignment.teacher, day, session, index))
+              && !teacherBusyAt(state.teacherBusy, assignment, day, session, index)
             ) available.add(slotKey(day, session, index));
           }
         }
@@ -737,7 +795,7 @@
             for(const index of shuffled(cells.map((_, cellIndex) => cellIndex), rng)){
               if(cells[index] != null) continue;
               if(assignmentBlocked(assignment, day, session, index)) continue;
-              if(state.teacherBusy.has(occupiedKey(assignment.teacher, day, session, index))) continue;
+              if(teacherBusyAt(state.teacherBusy, assignment, day, session, index)) continue;
               if(assignment.room && state.roomBusy.has(occupiedKey(assignment.room, day, session, index))) continue;
               const slots = teacherSlots(assignment, day, session, cells.length);
               const before = teacherMetric(slots);

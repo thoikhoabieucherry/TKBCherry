@@ -193,6 +193,25 @@ tr:hover td {
   background: #f6f8ff;
 }
 
+/* Bảng dữ liệu (Khối / Lớp / Giáo viên / Môn học / Tiết chuẩn): giữ hàng tiêu
+   đề đứng yên và chỉ cuộn phần dữ liệu, thay vì cuộn cả trang. Chiều cao trừ
+   hao cho thanh điều hướng + thanh nút + lề của #section-content. */
+.data-table-wrap{
+  max-height: calc(100dvh - 210px);
+  min-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.data-table tr:first-child th{
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #eef2ff;
+  /* border-collapse làm mất viền dưới khi sticky, vẽ lại bằng shadow. */
+  box-shadow: inset 0 -1px 0 #d7ddf0;
+}
+
 .data-empty-row td{
   height: 86px;
   text-align: center;
@@ -1596,6 +1615,14 @@ textarea{
     grid-column: 1 / -1;
   }
 
+  /* Điện thoại: #section-content đã tự cuộn và thanh nút đã sticky, nên trả
+     bảng về chiều cao tự nhiên để không lồng hai vùng cuộn vào nhau. */
+  .data-table-wrap{
+    max-height: none;
+    min-height: 0;
+    overflow-y: visible;
+  }
+
   .data-table-wrap-compact{
     overflow-x: visible;
   }
@@ -1724,4 +1751,40 @@ button *,
   -webkit-user-select: none;
   user-select: none;
   caret-color: transparent;
+}
+
+/* ================================
+   DESKTOP: KHUNG APP VỪA ĐÚNG 1 MÀN HÌNH
+   Trang ngoài không cuộn nữa; chỉ bảng dữ liệu bên trong cuộn (Khối / Lớp /
+   Giáo viên / Môn học / Tiết chuẩn / Phân công). Thay các chiều cao tính tay
+   (calc(100vh - 126px), calc(100dvh - 210px)) bằng flex nên không lệch khi
+   thanh nút đổi chiều cao. Điện thoại (<=760px) giữ nguyên cuộn cả trang.
+================================ */
+@media (min-width: 761px){
+  body.app-shell-body{
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  body.app-shell-body #section-content{
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  body.app-shell-body #section-content > .action-bar{
+    flex: 0 0 auto;
+  }
+
+  body.app-shell-body #section-content .pccm-layout{
+    height: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  body.app-shell-body #section-content .data-table-wrap{
+    flex: 1 1 auto;
+    max-height: none;
+    min-height: 0;
+  }
 }

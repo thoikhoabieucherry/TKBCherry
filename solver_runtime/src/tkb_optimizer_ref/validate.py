@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import unicodedata
 from collections import Counter, defaultdict
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from .models import Lesson, SchoolData
-from .rules import TimetableRuleSet, one_session_per_day_mode, resolve_rule_set
+from .rules import TimetableRuleSet, one_session_per_day_mode, resolve_rule_set, teacher_members
 from .template import all_sessions, class_available_periods, class_sort_key
 
 
@@ -25,6 +26,22 @@ def _session_key(part: str) -> str:
 
 def _truthy(value: Any) -> bool:
     return value is True or value in {1, "1", "true", "True", "on", "yes", "YES"}
+
+
+def _norm_location(text: Any) -> str:
+    """Chuan hoa ten dia diem giong norm() cua giao dien: NFC + gop khoang
+    trang + thuong. Chuoi rong = "khong xac dinh dia diem"."""
+    return " ".join(unicodedata.normalize("NFC", str(text or "")).split()).casefold()
+
+
+def _effective_location(lesson: Lesson, class_location: Mapping[str, str]) -> str:
+    """Dia diem hieu luc cua mot tiet: co phong thi phong la dia diem, khong co
+    thi lay cot "Dia diem" cua lop (y het roomLocation() cua giao dien va
+    compile_problem cua engine v3)."""
+    room = str(getattr(lesson, "room", "") or "").strip()
+    if room:
+        return _norm_location(room)
+    return class_location.get(str(lesson.class_name), "")
 
 
 def _to_int(value: Any, default: int = 0) -> int:
@@ -175,13 +192,15 @@ def validate_app_constraints(data: SchoolData, lessons: list[Lesson], rules: Tim
     unsupported: set[str] = set()
     by_teacher_session: dict[tuple[str, int, str], list[Lesson]] = defaultdict(list)
     by_teacher_day: dict[tuple[str, int], list[Lesson]] = defaultdict(list)
+    # 25/08: tiet day ghep "GV1, GV2" nam tren TKB cua CA HAI giao vien.
     by_class_subject: dict[tuple[str, str], list[Lesson]] = defaultdict(list)
     by_class_group: dict[tuple[str, str], list[Lesson]] = defaultdict(list)
     by_slot: dict[tuple[int, str, int], list[Lesson]] = defaultdict(list)
 
     for lesson in lessons:
-        by_teacher_session[(lesson.teacher, lesson.day, lesson.session)].append(lesson)
-        by_teacher_day[(lesson.teacher, lesson.day)].append(lesson)
+        for member in teacher_members(lesson.teacher):
+            by_teacher_session[(member, lesson.day, lesson.session)].append(lesson)
+            by_teacher_day[(member, lesson.day)].append(lesson)
         by_class_subject[(lesson.class_name, lesson.subject)].append(lesson)
         by_slot[(lesson.day, lesson.session, lesson.period)].append(lesson)
         for group_id in constraints.subject_groups_for(lesson.subject):
@@ -221,6 +240,18 @@ def validate_app_constraints(data: SchoolData, lessons: list[Lesson], rules: Tim
                     period=lesson.period,
                 )
             )
+
+    # 26/08: DIA DIEM cua mot tiet — cung thu tu uu tien voi roomLocation() cua
+    # giao dien (web/pages/tkb-constraints.js:339) va compile_problem cua engine
+    # v3 (tkb_engine_v3/core.py:730): co phong thi phong la dia diem, khong co
+    # phong thi lay cot "Dia diem" cua LOP. Truoc day khoi kiem 3 luat ben duoi
+    # chi doc Lesson.room, ma pipeline nay hau nhu khong bao gio dien room ->
+    # moi tiet cung mot "__UNKNOWN_ROOM__" -> ba luat im lang khong bao gio bao.
+    class_location = {
+        str(item.name): _norm_location(getattr(item, "location", "") or "")
+        for item in data.classes
+    }
+    location_debt_sessions: set[tuple[str, int, str]] = set()
 
     for teacher, rule in constraints.teacher.items():
         if not isinstance(rule, Mapping):
@@ -291,21 +322,39 @@ def validate_app_constraints(data: SchoolData, lessons: list[Lesson], rules: Tim
             session_limit = _to_int(_get_path(rule, f"maxPeriods.{sk}.{dk}", 0), 0)
             if session_limit > 0 and len(items) > session_limit:
                 violations.append(_violation("teacher.maxPeriods.session", f"{teacher}: Thứ {day} {part} vượt số tiết/buổi.", teacher=teacher, day=day, session=part))
+            # 26/08: dung DIA DIEM hieu luc (phong, khong co thi "Dia diem" cua
+            # lop) va BO cac tiet khong xac dinh duoc dia diem — dung ngu nghia
+            # evalTeacherRuleOne cua giao dien (tkb-constraints.js:1064-1071).
+            with_loc = [
+                (int(item.period), loc)
+                for item, loc in (
+                    (x, _effective_location(x, class_location))
+                    for x in sorted(items, key=lambda item: item.period)
+                )
+                if loc
+            ]
             for move_rule in ("oneLocationPerSession", "gapBetweenLocations", "maxOneMovePerSession"):
                 if not _truthy(_get_path(rule, f"{move_rule}.{sk}.{dk}", False)):
                     continue
-                with_room = sorted(items, key=lambda item: item.period)
-                rooms = [x.room or "__UNKNOWN_ROOM__" for x in with_room]
-                compact_rooms = [room for index, room in enumerate(rooms) if index == 0 or room != rooms[index - 1]]
-                if move_rule == "oneLocationPerSession" and len(set(rooms)) > 1:
+                if len(with_loc) < 2:
+                    continue
+                locs = [loc for _period, loc in with_loc]
+                compact_locs = [loc for index, loc in enumerate(locs) if index == 0 or loc != locs[index - 1]]
+                broken = False
+                if move_rule == "oneLocationPerSession" and len(set(locs)) > 1:
                     violations.append(_violation("teacher.oneLocationPerSession", f"{teacher}: Thứ {day} {part} có nhiều địa điểm.", teacher=teacher, day=day, session=part))
-                if move_rule == "maxOneMovePerSession" and len(compact_rooms) > 2:
+                    broken = True
+                if move_rule == "maxOneMovePerSession" and len(compact_locs) > 2:
                     violations.append(_violation("teacher.maxOneMovePerSession", f"{teacher}: Thứ {day} {part} di chuyển quá 1 lần.", teacher=teacher, day=day, session=part))
+                    broken = True
                 if move_rule == "gapBetweenLocations":
-                    for prev, cur in zip(with_room, with_room[1:]):
-                        if prev.room != cur.room and cur.period - prev.period <= 1:
+                    for (prev_period, prev_loc), (cur_period, cur_loc) in zip(with_loc, with_loc[1:]):
+                        if prev_loc != cur_loc and cur_period - prev_period <= 1:
                             violations.append(_violation("teacher.gapBetweenLocations", f"{teacher}: Thứ {day} {part} đổi địa điểm không có tiết trống.", teacher=teacher, day=day, session=part))
+                            broken = True
                             break
+                if broken:
+                    location_debt_sessions.add((teacher, day, part))
 
         for group_id, conf in _iter_teacher_class_period_configs(rule):
             per_session = _to_int(conf.get("perSession"), 0)
@@ -528,11 +577,34 @@ def validate_app_constraints(data: SchoolData, lessons: list[Lesson], rules: Tim
 
     if unsupported:
         warnings.extend(sorted(unsupported))
-    return {"hard_ok": not violations, "violations": violations, "warnings": warnings, "unsupported": sorted(unsupported)}
+    return {
+        "hard_ok": not violations,
+        "violations": violations,
+        "warnings": warnings,
+        "unsupported": sorted(unsupported),
+        # 26/08: so BUOI (GV, thu, buoi) vi pham yeu cau dia diem — cung don vi
+        # voi TKBConstraints.teacherLocationRuleDebt().sessions cua giao dien.
+        "teacher_location_rule_debt": len(location_debt_sessions),
+    }
 
 
-def compute_metrics(data: SchoolData, lessons: list[Lesson], *, rules: TimetableRuleSet | None = None) -> dict[str, Any]:
+def compute_metrics(
+    data: SchoolData,
+    lessons: list[Lesson],
+    *,
+    rules: TimetableRuleSet | None = None,
+    shared_teacher_slots: Iterable[tuple[str, int, str, int]] | None = None,
+) -> dict[str, Any]:
+    """Hard/quality metrics of ``lessons``.
+
+    ``shared_teacher_slots``: (teacher, day, session, period) cells the USER
+    locked for one teacher in several classes at once (school-wide activity).
+    Those collisions are intentional and are not counted as teacher conflicts;
+    session statistics count such a slot once.
+    """
+
     rules = resolve_rule_set(rules)
+    shared_slots = {tuple(item) for item in (shared_teacher_slots or [])}
     constraints = rules.constraints
     class_grade = data.class_grade
     total_expected = sum(a.periods_per_week for a in data.assignments)
@@ -565,11 +637,31 @@ def compute_metrics(data: SchoolData, lessons: list[Lesson], *, rules: Timetable
             )
 
     by_class_slot = Counter((x.class_name, x.day, x.session, x.period) for x in lessons)
-    by_teacher_slot = Counter((x.teacher, x.day, x.session, x.period) for x in lessons)
+    # 25/08: tiet day ghep "GV1, GV2" chiem cho va tao buoi day cho TUNG giao
+    # vien thanh vien (truoc day ca chuoi la mot "GV" rieng nen KHTN cua
+    # TN.Tram trung gio tiet ghep TN.Tram+HT.Van khong bi dem la xung dot).
+    by_teacher_slot: Counter[tuple[str, int, str, int]] = Counter()
+    for x in lessons:
+        for member in teacher_members(x.teacher):
+            by_teacher_slot[(member, x.day, x.session, x.period)] += 1
+    shared_member_slots = {
+        (member, day, session, period)
+        for (teacher, day, session, period) in shared_slots
+        for member in teacher_members(teacher)
+    }
     by_room_slot = Counter((x.room, x.day, x.session, x.period) for x in lessons if x.room)
     by_teacher_session: dict[tuple[str, int, str], list[Lesson]] = defaultdict(list)
+    seen_teacher_cells: set[tuple[str, int, str, int]] = set()
     for lesson in lessons:
-        by_teacher_session[(lesson.teacher, lesson.day, lesson.session)].append(lesson)
+        for member in teacher_members(lesson.teacher):
+            cell = (member, lesson.day, lesson.session, lesson.period)
+            if cell in shared_member_slots:
+                # Mot GV o nhieu lop cung gio (o co dinh dung chung): buoi day
+                # cua GV tinh o do MOT lan, khong phai moi lop mot lan.
+                if cell in seen_teacher_cells:
+                    continue
+                seen_teacher_cells.add(cell)
+            by_teacher_session[(member, lesson.day, lesson.session)].append(lesson)
 
     assignment_expected = Counter((a.class_name, a.subject, a.teacher) for a in data.assignments for _ in range(a.periods_per_week))
     assignment_actual = Counter((x.class_name, x.subject, x.teacher) for x in lessons)
@@ -649,7 +741,7 @@ def compute_metrics(data: SchoolData, lessons: list[Lesson], *, rules: Timetable
 
     load_dist: Counter[int] = Counter()
     gap_stats: Counter[int] = Counter()
-    assignment_teachers = sorted({a.teacher for a in data.assignments if a.teacher})
+    assignment_teachers = sorted({member for a in data.assignments for member in teacher_members(a.teacher)})
     teacher_gap_periods: Counter[str] = Counter()
     teacher_gap1_sessions: Counter[str] = Counter()
     one_period_sessions = 0
@@ -694,7 +786,9 @@ def compute_metrics(data: SchoolData, lessons: list[Lesson], *, rules: Timetable
         "teacher_gap_period_max": max(gap_period_values) if gap_period_values else 0,
         "teacher_gap1_session_max": max(gap1_session_values) if gap1_session_values else 0,
         "class_slot_conflicts": sum(1 for v in by_class_slot.values() if v != 1),
-        "teacher_slot_conflicts": sum(1 for v in by_teacher_slot.values() if v > 1),
+        "teacher_slot_conflicts": sum(
+            1 for key, v in by_teacher_slot.items() if v > 1 and key not in shared_member_slots
+        ),
         "room_slot_conflicts": sum(1 for v in by_room_slot.values() if v > 1),
         "assignment_mismatches": assignment_mismatches,
         "class_session_violations": class_session_violations,
@@ -707,7 +801,14 @@ def compute_metrics(data: SchoolData, lessons: list[Lesson], *, rules: Timetable
         "app_constraint_violation_count": len(app_constraints["violations"]),
         "app_constraint_warnings": app_constraints["warnings"],
         "app_constraint_unsupported": app_constraints["unsupported"],
+        # 26/08 (chu du an: "khong duoc pha vo cac rang buoc dia diem"): cong
+        # "khong bao gio xau hon" o trinh duyet truoc day phai tu cham diem
+        # bang TKBConstraints vi backend khong he xuat so nay -> ung vien nao
+        # thieu lessons la cong im lang bo qua chieu dia diem.
+        "teacher_location_rule_debt": int(app_constraints.get("teacher_location_rule_debt") or 0),
     }
+    if shared_slots:
+        metrics["shared_fixed_teacher_slots"] = len(shared_slots)
     metrics["core_hard_ok"] = (
         metrics["scheduled_periods"] == metrics["expected_periods"]
         and metrics["class_slot_conflicts"] == 0

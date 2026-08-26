@@ -7,17 +7,17 @@
   <link rel="icon" type="image/png" href="assets/favicon-cherry.png?v=2" />
   <meta name="theme-color" content="#ffffff" />
   <link rel="stylesheet" href="tokens.css?v=20260710-light-v1" />
-  <link rel="stylesheet" href="auth.css?v=20260802-plus-max-plans-v6" />
+  <link rel="stylesheet" href="auth.css?v=20260820-portal-info-v1" />
   <link rel="stylesheet" href="theme-light.css?v=20260802-service-plans-compact-v3" />
   <link rel="stylesheet" href="runtime.css?v=20260710-runtime-v1" />
   <link rel="stylesheet" href="super-admin.css?v=20260816-solver-telemetry-v1" />
   <link rel="stylesheet" href="super-admin-mobile-compact.css?v=20260725-v188-compact-super-admin-v2" />
   <script src="shared/school-context.js?v=20260708-v1"></script>
   <script src="shared/auth-api.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
-  <script src="shared/auth.js?v=20260803-free-5-solve-quota-v1"></script>
+  <script src="shared/auth.js?v=20260823-default-first-v1"></script>
   <script src="shared/runtime.js?v=20260724-v185-immediate-singleton-zero-v1"></script>
   <script defer src="shared/password-toggle.js?v=20260708-v1"></script>
-  <script defer src="super-admin.js?v=20260819-remove-telemetry-v2"></script>
+  <script defer src="super-admin.js?v=20260823-adopt-default-v1"></script>
 </head>
 <body class="portal-body portal-page-super">
   <header class="portal-top">
@@ -61,6 +61,11 @@
           <button type="button" class="portal-btn primary portal-chrome-action" id="btnAddSchool" title="Thêm trường mới" aria-label="Thêm trường mới">
             <span class="portal-button-icon" data-portal-icon="plus" aria-hidden="true"></span>
             <span class="portal-button-label">Thêm mới</span>
+          </button>
+          <!-- 23/08: dua kho default cua Super Admin vao danh sach truong (an khi da co) -->
+          <button type="button" class="portal-btn portal-chrome-action" id="btnAdoptDefault" title="Đưa kho default (Super Admin) vào danh sách trường" aria-label="Đưa kho default vào danh sách trường" hidden>
+            <span class="portal-button-icon" data-portal-icon="users" aria-hidden="true"></span>
+            <span class="portal-button-label">Kho default</span>
           </button>
           <button type="button" class="portal-btn portal-chrome-action" id="btnReloadSchools" title="Tải lại danh sách" aria-label="Tải lại danh sách">
             <span class="portal-button-icon" data-portal-icon="refresh" aria-hidden="true"></span>

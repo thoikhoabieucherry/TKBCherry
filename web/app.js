@@ -800,6 +800,9 @@ function syncDerivedDataIntegrity(){
 
 function saveStore(options){
     const opts = options || {};
+    // Dữ liệu vừa đổi => các chỉ mục tra cứu có thể cũ.
+    try{ invalidateTeacherCodeIndex(); invalidateClassLookupCache(); }catch(_){ }
+    try{ invalidateTietChuanCaches(); }catch(_){ }
     // Luôn backup vào localStorage theo trường để tránh mất dữ liệu khi KVDB/sql.js/IndexedDB lỗi.
     const sid = CTX.schoolId || getSchoolId();
     const json = JSON.stringify(DATA);
@@ -1502,7 +1505,32 @@ function legacyClassNameAliases(name){
     return aliases;
 }
 
+/* classLookupCandidates quét toàn bộ DATA.lop mỗi lần gọi. Bảng phân công gọi
+   nó hơn 1.000 lần cho một lượt render (~160ms) nhưng chỉ với vài chục tên lớp
+   khác nhau => nhớ kết quả theo tên. Cache tự huỷ khi mảng lớp bị thay thế/đổi
+   số lượng, và bị xoá tường minh ở saveStore() + đầu renderPCCM(). */
+let _CLASS_LOOKUP_CACHE = new Map();
+let _CLASS_LOOKUP_SRC = null;
+let _CLASS_LOOKUP_LEN = -1;
+
+function invalidateClassLookupCache(){
+    _CLASS_LOOKUP_CACHE = new Map();
+    _CLASS_LOOKUP_SRC = null;
+    _CLASS_LOOKUP_LEN = -1;
+}
+
 function classLookupCandidates(name){
+    const lopList = Array.isArray(DATA.lop) ? DATA.lop : [];
+    if (_CLASS_LOOKUP_SRC !== lopList || _CLASS_LOOKUP_LEN !== lopList.length){
+        _CLASS_LOOKUP_CACHE = new Map();
+        _CLASS_LOOKUP_SRC = lopList;
+        _CLASS_LOOKUP_LEN = lopList.length;
+    }
+    const cacheKey = (name ?? "").toString();
+    const cached = _CLASS_LOOKUP_CACHE.get(cacheKey);
+    // trả bản sao: nơi gọi được tự do sắp xếp/thêm bớt mà không hỏng cache
+    if (cached) return cached.slice();
+
     const rawAliases = legacyClassNameAliases(name);
     const out = [];
     const add = v => {
@@ -1525,7 +1553,8 @@ function classLookupCandidates(name){
         }));
         if(own.some(a => rawSet.has(a.toLowerCase()))) own.forEach(add);
     });
-    return out;
+    _CLASS_LOOKUP_CACHE.set(cacheKey, out);
+    return out.slice();
 }
 
 function classCanonFromLop(l){
@@ -1996,6 +2025,9 @@ function importExcel_MonHoc(rows){
         DATA.monhoc.push(obj);
     });
 
+    // 23/08: môn mới có Tiết chuẩn mặc định ngay để Phân công thấy được
+    try{ ensureTietChuanSyncedFromMonHoc(); }catch(e){ console.warn("ensureTietChuanSyncedFromMonHoc failed", e); }
+
     saveStore();
     renderSectionInto("monhoc","section-content",document);
     alert("✔ Import môn học (tổng hợp) thành công!");
@@ -2177,6 +2209,8 @@ function renderSectionInto(section, containerId, doc=document){
                 <option value="THPT_GDTX">THPT (GDTX)</option>
             </select>
         </div>` : ``}
+        <button class="btn" onclick="moveSelectedRows('${section}', -1)" title="Di chuyển các dòng đã chọn lên trên 1 nấc" aria-label="Di chuyển lên">▲</button>
+        <button class="btn" onclick="moveSelectedRows('${section}', 1)" title="Di chuyển các dòng đã chọn xuống dưới 1 nấc" aria-label="Di chuyển xuống">▼</button>
         <button class="btn" onclick="triggerExcel('${section}')">Nhập Excel</button>
         <button class="btn" onclick="exportExcel('${section}')">Xuất Excel</button>
 
@@ -2273,8 +2307,32 @@ function renderSectionInto(section, containerId, doc=document){
         </table>
     </div>`;
 
-    
+    // Mỗi lần vẽ lại là thay toàn bộ khối #section-content, nên khung cuộn của
+    // bảng (.data-table-wrap) bị dựng mới với scrollTop = 0: kích đúp sửa dòng
+    // 40 thì bảng nhảy về đầu và mất dòng đang sửa. Nhớ chỗ đang cuộn của đúng
+    // mục này rồi trả lại sau khi vẽ.
+    const wrapSelector = `.data-table-wrap-${section}`;
+    const previousWrap = container.querySelector ? container.querySelector(wrapSelector) : null;
+    const keptScrollTop = previousWrap ? previousWrap.scrollTop : 0;
+    const keptScrollLeft = previousWrap ? previousWrap.scrollLeft : 0;
+
     container.innerHTML = html;
+
+    if (previousWrap){
+        const wrap = container.querySelector ? container.querySelector(wrapSelector) : null;
+        if (wrap){
+            if (keptScrollTop) wrap.scrollTop = keptScrollTop;
+            if (keptScrollLeft) wrap.scrollLeft = keptScrollLeft;
+            // Dòng đang sửa cao hơn dòng thường (ô nhập/select), nếu vì thế mà
+            // nó lọt ra ngoài khung thì kéo vừa đủ để thấy, không nhảy màn hình.
+            if (editingIndex >= 0 && wrap.querySelector){
+                const editingRow = wrap.querySelector("tr.row-editing");
+                if (editingRow && typeof editingRow.scrollIntoView === "function"){
+                    editingRow.scrollIntoView({block:"nearest"});
+                }
+            }
+        }
+    }
 }
 
 /* ============================================================
@@ -2366,8 +2424,17 @@ function saveData(){
         obj.id = autoID(section);
         DATA[section].push(obj);
     } else {
-        obj.id = DATA[section][EDIT_INDEX].id;
+        const previousRow = { ...DATA[section][EDIT_INDEX] };
+        obj.id = previousRow.id;
         DATA[section][EDIT_INDEX] = obj;
+        if (section === "monhoc"){
+            try{ propagateMonhocRename(previousRow, obj); }
+            catch(e){ console.warn("propagateMonhocRename failed", e); }
+        }
+    }
+    // Môn học mới/đổi → Tiết chuẩn + Phân công thấy ngay (không chờ mở trang Tiết chuẩn)
+    if (section === "monhoc"){
+        try{ ensureTietChuanSyncedFromMonHoc(); }catch(e){ console.warn("ensureTietChuanSyncedFromMonHoc failed", e); }
     }
 
     saveStore();
@@ -2529,6 +2596,170 @@ function tableEditKeyDown(evt, section, index){
     }
 }
 
+/* ============================================================
+   23/08: ĐỔI TÊN / MÃ MÔN HỌC PHẢI LAN SANG MỌI NƠI ĐANG THAM CHIẾU
+   Trước đây sửa dòng Môn học chỉ ghi đè DATA.monhoc; Tiết chuẩn (DATA.mon.ten),
+   Phân công (khóa "Lớp|Môn" trong pccm*Matrix), phòng, TKB, ràng buộc vẫn giữ
+   tên/mã cũ → trang Tiết chuẩn lọc mất dòng cũ rồi tự tạo dòng mới 1/1 ở cuối,
+   còn syncDerivedDataIntegrity() lúc tải lại xoá hẳn phân công của tên cũ.
+============================================================ */
+function monhocAliasMap(row){
+    // alias (lower) -> tên trường (ten/ma/ma2) để ánh xạ sang giá trị mới cùng loại
+    const map = new Map();
+    if (!row) return map;
+    [["ma", row.ma], ["ma2", row.ma2], ["ten", row.ten]].forEach(([field, v])=>{
+        const s = _normText(v).toLowerCase();
+        if (s && !map.has(s)) map.set(s, field);
+    });
+    return map;
+}
+function monhocStorageKey(row){
+    // cùng quy tắc với ensureTietChuanSyncedFromMonHoc / buildPCCMMonList: ưu tiên MÃ
+    if (!row) return "";
+    return _normText(row.ma) || _normText(row.ma2) || _normText(row.ten) || "";
+}
+
+function propagateMonhocRename(oldRow, newRow){
+    const oldAliases = monhocAliasMap(oldRow);
+    if (!oldAliases.size || !newRow) return false;
+    const newKey = monhocStorageKey(newRow);
+    if (!newKey) return false;
+    const oldKey = monhocStorageKey(oldRow);
+    const keyChanged = oldKey.toLowerCase() !== newKey.toLowerCase();
+    const newAliasSet = new Set(monhocAliasMap(newRow).keys());
+    // Alias bị mất (đổi tên/mã) → mọi nơi đang dùng alias đó phải đổi.
+    // Khoá lưu trữ đổi (vd thêm mã cho môn trước đây chỉ có tên) → Tiết chuẩn
+    // và Phân công chuyển sang khoá mới để không lệch với ensureTietChuan.
+    const lost = Array.from(oldAliases.keys()).filter(a => !newAliasSet.has(a));
+    if (!lost.length && !keyChanged) return false;
+    const lostSet = new Set(lost);
+    const rekeySet = new Set(keyChanged ? oldAliases.keys() : lost);
+
+    // Giá trị thay thế: cùng loại trường nếu còn (ten→ten, ma→ma), không thì khoá chuẩn
+    const mapValue = (value)=>{
+        const s = _normText(value);
+        const low = s.toLowerCase();
+        if (!lostSet.has(low)) return null;
+        const field = oldAliases.get(low);
+        const sameField = _normText(newRow[field]);
+        return sameField || newKey;
+    };
+    let changed = false;
+
+    // 1) Tiết chuẩn: giữ nguyên dòng/số tiết/giới hạn/vị trí, chỉ đổi khoá môn
+    (DATA.mon || []).forEach(r=>{
+        if (!r || typeof r !== "object") return;
+        const cur = _normText(r.ten);
+        if (rekeySet.has(cur.toLowerCase()) && cur !== newKey){
+            r.ten = newKey;
+            changed = true;
+        }
+    });
+
+    // 2) Phân công + phòng + số tiết/giới hạn riêng: khoá "Lớp|Môn"
+    ["pccmMatrix","pccmRoomMatrix","pccmTietMatrix","pccmGioihanMatrix"].forEach(field=>{
+        const obj = DATA[field];
+        if (!obj || typeof obj !== "object") return;
+        Object.keys(obj).forEach(k=>{
+            const parts = String(k).split("|");
+            if (parts.length < 2) return;
+            const mon = _normText(parts.slice(1).join("|")).toLowerCase();
+            if (!rekeySet.has(mon)) return;
+            const nextKey = `${parts[0]}|${newKey}`;
+            if (nextKey !== k){
+                if (obj[nextKey] == null || _normText(obj[nextKey]) === "") obj[nextKey] = obj[k];
+                delete obj[k];
+                changed = true;
+            }
+        });
+    });
+
+    // 3) Phòng học gắn môn
+    (DATA.phong || []).forEach(p=>{
+        const next = mapValue(p?.tinhtrang);
+        if (next != null && next !== p.tinhtrang){ p.tinhtrang = next; changed = true; }
+    });
+
+    // 4) Thời khoá biểu đang có (ô chữ hoặc {mon, fixed})
+    Object.values(DATA.tkb || {}).forEach(grid=>{
+        if (!grid || typeof grid !== "object") return;
+        Object.values(grid).forEach(day=>{
+            if (!day || typeof day !== "object") return;
+            ["sang","chieu"].forEach(b=>{
+                const arr = day[b];
+                if (!Array.isArray(arr)) return;
+                arr.forEach((cell, i)=>{
+                    if (typeof cell === "string"){
+                        const next = mapValue(cell);
+                        if (next != null && next !== cell){ arr[i] = next; changed = true; }
+                    } else if (cell && typeof cell === "object"){
+                        const next = mapValue(cell.mon);
+                        if (next != null && next !== cell.mon){ cell.mon = next; changed = true; }
+                    }
+                });
+            });
+        });
+    });
+    ["tkbLessonTeachers","tkbLessonRooms"].forEach(field=>{
+        const obj = DATA[field];
+        if (!obj || typeof obj !== "object") return;
+        Object.keys(obj).forEach(k=>{
+            const parts = String(k).split("|");
+            if (parts.length < 2) return;
+            const next = mapValue(parts.slice(1).join("|"));
+            if (next == null) return;
+            const nextKey = `${parts[0]}|${next}`;
+            if (nextKey !== k){
+                if (obj[nextKey] == null) obj[nextKey] = obj[k];
+                delete obj[k];
+                changed = true;
+            }
+        });
+    });
+
+    // 5) Ràng buộc + kết quả xếp đã lưu: khoá object / chuỗi khớp ĐÚNG alias cũ
+    const walk = (node, depth)=>{
+        if (!node || typeof node !== "object" || depth > 8) return;
+        if (Array.isArray(node)){
+            node.forEach((v, i)=>{
+                if (typeof v === "string"){
+                    const next = mapValue(v);
+                    if (next != null && next !== v){ node[i] = next; changed = true; }
+                } else walk(v, depth + 1);
+            });
+            return;
+        }
+        Object.keys(node).forEach(k=>{
+            const v = node[k];
+            if (typeof v === "string"){
+                const next = mapValue(v);
+                if (next != null && next !== v){ node[k] = next; changed = true; }
+            } else walk(v, depth + 1);
+            const nextKey = mapValue(k);
+            if (nextKey != null && nextKey !== k && !(nextKey in node)){
+                node[nextKey] = node[k];
+                delete node[k];
+                changed = true;
+            }
+        });
+    };
+    try{ walk(DATA.tkbConstraints, 0); }catch(_){ }
+    try{
+        ["lessons","unassignedLessons"].forEach(list=>{
+            (DATA.tkbSolverResult?.[list] || []).forEach(item=>{
+                if (!item || typeof item !== "object") return;
+                ["subject","mon"].forEach(f=>{
+                    const next = mapValue(item[f]);
+                    if (next != null && next !== item[f]){ item[f] = next; changed = true; }
+                });
+            });
+        });
+    }catch(_){ }
+
+    if (changed){ try{ invalidateTietChuanCaches(); }catch(_){ } }
+    return changed;
+}
+
 function tableSaveEdit(section, index){
     const cfg = FORM_CONFIG[section];
     const row = (DATA[section] || [])[index];
@@ -2548,7 +2779,14 @@ function tableSaveEdit(section, index){
     }
 
     obj.id = row.id;
+    const previousRow = { ...row };
     DATA[section][index] = { ...row, ...obj, id: row.id };
+    if (section === "monhoc"){
+        try{ propagateMonhocRename(previousRow, DATA[section][index]); }
+        catch(e){ console.warn("propagateMonhocRename failed", e); }
+        try{ ensureTietChuanSyncedFromMonHoc(); }
+        catch(e){ console.warn("ensureTietChuanSyncedFromMonHoc failed", e); }
+    }
 
     saveStore();
     INLINE_EDIT = { section:"", index:-1 };
@@ -2620,6 +2858,52 @@ function deleteSelectedRows(section){
     set.clear();
     TABLE_LAST_INDEX[section] = -1;
     INLINE_EDIT = { section:"", index:-1 };
+    renderSectionInto(section, "section-content", document);
+}
+
+/* Di chuyển các dòng đã chọn lên/xuống 1 nấc (dir = -1 lên, +1 xuống).
+   - Chọn liền kề: cả cụm đổi chỗ với dòng kề trên/kề dưới.
+   - Chọn rời rạc (Ctrl): gom thành 1 cụm neo tại dòng chọn trên cùng (khi lên)
+     hoặc dưới cùng (khi xuống) rồi dịch 1 nấc.
+   Thứ tự chính là thứ tự mảng DATA[section] nên mọi bảng/danh sách khác đọc
+   từ mảng này tự đồng nhất sau khi lưu. */
+function moveSelectedRows(section, dir){
+    const arr = DATA[section] || [];
+    const set = _getSelSet(section);
+    const sel = Array.from(set.values())
+        .filter(i => Number.isFinite(i) && i >= 0 && i < arr.length)
+        .sort((a,b)=>a-b);
+    if (!sel.length){
+        alert("Chưa chọn dòng nào.");
+        return;
+    }
+
+    const k = sel.length;
+    const minSel = sel[0];
+    const maxSel = sel[k-1];
+    const contiguous = (maxSel - minSel + 1) === k;
+
+    // Cụm liền kề đã chạm biên thì không có gì để di chuyển.
+    if (contiguous && ((dir < 0 && minSel === 0) || (dir > 0 && maxSel === arr.length - 1))) return;
+
+    const rows = sel.map(i => arr[i]);
+    for (let i = k - 1; i >= 0; i--) arr.splice(sel[i], 1);
+
+    let insertAt;
+    if (dir < 0){
+        insertAt = Math.max(0, minSel - 1);
+    } else {
+        // Đáy cụm sau khi chèn nằm tại maxSel + 1 (đã trừ các dòng rút ra).
+        insertAt = Math.min(arr.length, maxSel + 2 - k);
+    }
+    arr.splice(insertAt, 0, ...rows);
+
+    set.clear();
+    for (let i = 0; i < k; i++) set.add(insertAt + i);
+    TABLE_LAST_INDEX[section] = insertAt;
+    INLINE_EDIT = { section:"", index:-1 };
+
+    saveStore();
     renderSectionInto(section, "section-content", document);
 }
 /* ============================================================
@@ -2746,7 +3030,15 @@ function renderPCCM() {
         PCCM_CELL_ANCHOR = null;
         PCCM_CELL_DRAGGING = false;
         PCCM_CELL_DRAG_START = null;
+        // Dựng lại chỉ mục GV / alias lớp đúng 1 lần cho cả lượt render (thay vì
+        // quét lại DATA ở từng ô), nhưng vẫn luôn tươi so với dữ liệu hiện tại.
+        invalidateTeacherCodeIndex();
+        invalidateClassLookupCache();
     }catch(e){ /* ignore */ }
+    // 23/08: renderPCCM KHÔNG được sửa DATA (e2e app_assignment_subject_visibility);
+    // việc tạo Tiết chuẩn mặc định cho môn mới làm ngay lúc lưu Môn học
+    // (saveData / tableSaveEdit / import), còn cache tra cứu thì làm mới ở đây.
+    try{ invalidateTietChuanCaches(); }catch(e){ /* ignore */ }
 
     // ===== Lớp (hiển thị tất cả, không lọc theo khối) =====
     const lopObjs = (DATA.lop || []).map(l=>{
@@ -2943,8 +3235,8 @@ function renderTietChuanPage(){
 
     </div>
 
-    <div class="table-wrap">
-    <table>
+    <div class="table-wrap data-table-wrap data-table-wrap-tietchuan">
+    <table class="data-table data-table-tietchuan">
         <tr>
             <th style="width:60px">TT</th>
             <th style="width:140px">Khối học</th>
@@ -3141,10 +3433,21 @@ function pccmCellMouseDown(ev, td){
         }
         PCCM_CELL_DRAGGING = true;
         PCCM_CELL_DRAG_START = {r,c};
-        const opensControl = ev.target && ev.target.closest && ev.target.closest(".pccm-multi-button, select.inline-edit-select");
-        if (!opensControl){
+
+        // 1 click = chỉ CHỌN ô (để sao chép). Muốn xổ danh sách thì click đúp.
+        // Ô nào từng được "mở khoá" bằng click đúp mà không chọn nữa thì khoá lại.
+        document.querySelectorAll(".pccm-copy-cell[data-pccm-open]").forEach(el=>{
+            if (el !== td) delete el.dataset.pccmOpen;
+        });
+        const closest = (sel) => (ev.target && ev.target.closest) ? ev.target.closest(sel) : null;
+        // select gốc chỉ được bung khi ô đã mở khoá (fallback cho trình duyệt không có showPicker)
+        const armedSelect = td.dataset.pccmOpen === "1" && !!closest("select.inline-edit-select");
+        // để click lọt xuống nút GV thì menu đang mở mới đóng lại được
+        const teacherButton = !!closest(".pccm-multi-button");
+        if (!armedSelect && !teacherButton){
             ev.preventDefault();
         }
+        if (armedSelect) delete td.dataset.pccmOpen;
     }catch(e){
         // ignore
     }
@@ -3163,24 +3466,80 @@ function pccmCellMouseOver(ev, td){
     }
 }
 
+// Vào chế độ sửa ô số ("Số tiết" / "Giới hạn").
+// initialDigit != null => gõ số trên ô đang chọn, ký tự đó trở thành nội dung mới.
+/* 22/08: go so tren o Tiet/Gioi han dang CHON: doi gia tri NGAY, khong bat
+   che do sua nen khong hien con tro nhay. Go chu so thu 2 trong vong 1.2s
+   thi ghep thanh so 2 chu so (1 roi 0 => 10); de lau hon thi chu so moi
+   THAY THE gia tri. Cam ket qua pccmAutoSaveActive nhu khi sua tay. */
+let PCCM_TYPE_BUFFER = {input: null, text: "", at: 0};
+function pccmTypeDigitDirect(input, digit){
+    if(!input) return false;
+    const now = Date.now();
+    if(PCCM_TYPE_BUFFER.input === input
+        && (now - PCCM_TYPE_BUFFER.at) < 1200
+        && PCCM_TYPE_BUFFER.text.length < 2){
+        PCCM_TYPE_BUFFER.text += String(digit);
+    }else{
+        PCCM_TYPE_BUFFER = {input, text: String(digit), at: now};
+    }
+    PCCM_TYPE_BUFFER.at = now;
+    input.value = PCCM_TYPE_BUFFER.text.replace(/^0(?=[0-9])/, "");
+    try{ pccmAutoSaveActive(); }catch(_){ }
+    return true;
+}
+
+function pccmBeginNumberEdit(input, initialDigit){
+    if(!input) return false;
+    try{ input.setAttribute("data-prev", (input.value ?? "").toString()); }catch(_){ }
+    if(initialDigit != null){
+        input.value = String(initialDigit);
+        input.focus();
+        // input[type=number] không cho setSelectionRange ở Chrome => bỏ qua, caret tự về cuối
+        try{ input.setSelectionRange(input.value.length, input.value.length); }catch(_){ }
+    }else{
+        input.focus();
+        try{ input.select(); }catch(_){ }
+    }
+    return true;
+}
+
+function pccmOpenNativeSelect(td, select){
+    if(!select) return false;
+    select.focus();
+    try{
+        if(typeof select.showPicker === "function"){
+            select.showPicker();
+            return true;
+        }
+    }catch(_){ }
+    // Trình duyệt chưa hỗ trợ showPicker: mở khoá ô để cú click kế tiếp bung danh sách gốc
+    if(td) td.dataset.pccmOpen = "1";
+    return false;
+}
+
 function pccmCellDblClick(ev, td){
     try{
         if(!td) return;
         const target = ev?.target;
         if (target && target.closest && target.closest(".pccm-multi-menu")) return;
+        try{ ev?.preventDefault?.(); }catch(_){ }
+
+        const box = td.querySelector(".pccm-multi-select");
+        if(box){
+            const controlId = (box.id || "").replace(/_box$/, "");
+            if(controlId) pccmTeacherMultiToggle(ev, controlId);
+            return;
+        }
         const input = td.querySelector("input.inline-edit-input");
         if(input){
-            input.focus();
-            input.select();
+            pccmBeginNumberEdit(input, null);
             return;
         }
         const select = td.querySelector("select.inline-edit-select");
         if(select){
-            select.focus();
-            return;
+            pccmOpenNativeSelect(td, select);
         }
-        const button = td.querySelector(".pccm-multi-button");
-        if(button) button.click();
     }catch(e){
         // ignore
     }
@@ -3327,6 +3686,23 @@ function pccmGlobalKeyDown(ev){
         const isCmd = !!(ev.ctrlKey || ev.metaKey);
         const key = (ev.key || "").toLowerCase();
 
+        // Đang gõ trong ô số của bảng phân công: Enter = chốt, Esc = hoàn tác
+        const t = ev?.target;
+        const editingNumber = !!(t && t.classList && t.classList.contains("inline-edit-input")
+            && t.closest && t.closest(".pccm-copy-cell"));
+        if(editingNumber){
+            if(key === "enter"){
+                ev.preventDefault();
+                t.blur();
+            }else if(key === "escape"){
+                ev.preventDefault();
+                const prev = t.getAttribute("data-prev");
+                if(prev !== null && prev !== undefined) t.value = prev;
+                t.blur();
+            }
+            return;
+        }
+
         if(isCmd && key === "c"){
             if(isTyping) return;
             ev.preventDefault();
@@ -3343,6 +3719,32 @@ function pccmGlobalKeyDown(ev){
         if((key === "delete" || key === "backspace") && !isTyping){
             ev.preventDefault();
             pccmClearSelectedCells();
+            return;
+        }
+
+        // Ô "Số tiết" / "Giới hạn": đang chọn mà gõ số là sửa luôn, không cần click đúp.
+        // F2 / Enter mở sửa nhưng giữ nguyên giá trị cũ.
+        if(!isTyping && !isCmd && !ev.altKey && PCCM_CELL_ANCHOR){
+            const anchorTd = pccmGetCell(PCCM_CELL_ANCHOR.r, PCCM_CELL_ANCHOR.c);
+            const kind = anchorTd ? (anchorTd.dataset.kind || "") : "";
+            if(anchorTd && (kind === "periods" || kind === "limit")){
+                const input = anchorTd.querySelector("input.inline-edit-input");
+                if(input){
+                    if(/^[0-9]$/.test(ev.key || "")){
+                        ev.preventDefault();
+                        pccmSetSingleSelection(anchorTd.dataset.r, anchorTd.dataset.c);
+                        // 22/08: doi gia tri truc tiep, KHONG mo che do sua
+                        // (khong hien con tro) — yeu cau nguoi dung.
+                        pccmTypeDigitDirect(input, ev.key);
+                        return;
+                    }
+                    if(key === "f2" || key === "enter"){
+                        ev.preventDefault();
+                        pccmBeginNumberEdit(input, null);
+                        return;
+                    }
+                }
+            }
         }
     }catch(e){
         // ignore
@@ -3708,13 +4110,28 @@ function pccmDblSelClose(selectId, commit){
    - Cho phép copy bảng từ Excel rồi dán vào textarea
    - Nếu thiếu cột Khối học, sẽ dùng khối đang chọn ở PCCM
 ============================================================ */
-function _normText(x){
+// Render bảng lớn gọi hàm này hàng trăm nghìn lần với chỉ vài trăm chuỗi khác
+// nhau, nên nhớ kết quả theo chuỗi vào. Chỉ cache chuỗi (giá trị bất biến).
+const _NORM_TEXT_CACHE = new Map();
+const _NORM_TEXT_CACHE_MAX = 20000;
+
+function _normTextRaw(x){
     return (x ?? "")
         .toString()
         .normalize("NFC")
         .replace(/\r?\n/g, " ")
         .replace(/\s+/g, " ")
         .trim();
+}
+
+function _normText(x){
+    if (typeof x !== "string") return _normTextRaw(x);
+    const hit = _NORM_TEXT_CACHE.get(x);
+    if (hit !== undefined) return hit;
+    const out = _normTextRaw(x);
+    if (_NORM_TEXT_CACHE.size >= _NORM_TEXT_CACHE_MAX) _NORM_TEXT_CACHE.clear();
+    _NORM_TEXT_CACHE.set(x, out);
+    return out;
 }
 
 // ============================================================
@@ -3880,7 +4297,43 @@ function ensureTietChuanSyncedFromMonHoc(){
         }
     }
 
-    if(changed) saveStore();
+    // 23/08: thứ tự Tiết chuẩn = thứ tự KHỐI (bảng Khối) rồi thứ tự MÔN HỌC
+    // (bảng Môn học). Trước đây dòng mới bị push vào cuối cả bảng nên môn vừa
+    // tạo/đổi tên rơi xuống cuối thay vì cuối mỗi khối; môn đổi tên đứng đúng
+    // chỗ cũ vì chỉ đổi khoá, không tạo dòng mới.
+    if(Array.isArray(DATA.mon) && DATA.mon.length > 1){
+        const khoiOrder = new Map();
+        khoiList.forEach((k, i)=>{ const c = canonKhoi(k); if(c && !khoiOrder.has(c)) khoiOrder.set(c, i); });
+        const monOrder = new Map();
+        monhoc.forEach((m, i)=>{
+            [m?.ma, m?.ma2, m?.ten, m?.id].forEach(v=>{
+                const s = _normText(v).toLowerCase();
+                if(s && !monOrder.has(s)) monOrder.set(s, i);
+            });
+        });
+        const BIG = 1e9;
+        const rankOf = (r)=>{
+            if(!r || typeof r !== "object") return [BIG, BIG];
+            const k = khoiOrder.get(canonKhoi(r.khoi));
+            const m = monOrder.get(_normText(r.ten).toLowerCase());
+            return [k == null ? BIG : k, m == null ? BIG : m];
+        };
+        const indexed = DATA.mon.map((r, i)=>({ r, i, rank: rankOf(r) }));
+        indexed.sort((a, b)=>{
+            if(a.rank[0] !== b.rank[0]) return a.rank[0] - b.rank[0];
+            if(a.rank[1] !== b.rank[1]) return a.rank[1] - b.rank[1];
+            return a.i - b.i; // ổn định: giữ thứ tự cũ trong cùng nhóm
+        });
+        if(indexed.some((x, i)=>x.i !== i)){
+            DATA.mon = indexed.map(x=>x.r);
+            changed = true;
+        }
+    }
+
+    if(changed){
+        try{ invalidateTietChuanCaches(); }catch(_){ }
+        saveStore();
+    }
 }
 
 // Room list helpers (hiển thị kèm Mã môn học trong ngoặc nếu có)
@@ -4077,12 +4530,21 @@ function pccmRenderTeacherMulti(controlId, selectedRaw, teacherItems){
     return `
         <div id="${controlId}_box" class="pccm-multi-select pccm-teacher-multi">
             <input id="${controlId}" type="hidden" value="${escapeHtml(hiddenValue)}">
-            <button type="button" class="pccm-multi-button" onclick="pccmTeacherMultiToggle(event,'${controlId}')" title="${escapeHtml(label)}">
+            <button type="button" class="pccm-multi-button" onclick="pccmTeacherMultiButtonClick(event,'${controlId}')" title="${escapeHtml(label)}">
                 <span id="${controlId}_text">${escapeHtml(label || "(Chưa phân)")}</span>
                 <span class="pccm-multi-arrow">▾</span>
             </button>
             <div class="pccm-multi-menu" id="${controlId}_menu"></div>
         </div>`;
+}
+// 1 click vào ô GV chỉ để chọn ô (sao chép). Nếu menu đang mở thì click đóng lại.
+// Muốn xổ danh sách GV: click đúp (xem pccmCellDblClick).
+function pccmTeacherMultiButtonClick(ev, controlId){
+    try{
+        if (ev) ev.stopPropagation();
+        const box = document.getElementById(`${controlId}_box`);
+        if (box && box.classList.contains("open")) box.classList.remove("open");
+    }catch(e){}
 }
 function pccmTeacherMultiToggle(ev, controlId){
     try{
@@ -4197,7 +4659,16 @@ function buildPCCMMonList(){
         const displayName = _normText(fields.find(x=>!looksLikeCode(x)) || ten || ma || ma2);
         if (!displayName) return;
 
-        const code = _normText(fields.find(x=>looksLikeCode(x)) || ma || ma2 || "");
+        // 26/08: MÃ phải ưu tiên `ma`/`ma2` — trước đây lấy trường ĐẦU TIÊN
+        // "trông giống mã", mà `ten` cũng có thể trông giống mã (STEM/STEAM:
+        // thuần ASCII, không dấu cách, 10 ký tự) nên môn STEM lấy nhầm TÊN làm
+        // mã, kéo theo key = "STEM/STEAM" trong khi Tiết chuẩn/PCCM lưu "STEM".
+        const code = _normText(
+            (looksLikeCode(ma) && ma)
+            || (looksLikeCode(ma2) && ma2)
+            || fields.find(x=>looksLikeCode(x))
+            || ma || ma2 || ""
+        );
         const storageKey = code || displayName;
 
         const normSeen = displayName.toLowerCase();
@@ -4525,6 +4996,17 @@ function pccmSetRoomByMonKey(lopCanon, monKey, val){
 let __LOOKUP_TC_CACHE = null;
 let __LOOKUP_TC_DATA_REF = null;
 
+/* 23/08: hai cache tra cứu Tiết chuẩn chỉ tự làm mới khi DATA.mon bị THAY MẢNG,
+   nhưng ensureTietChuanSyncedFromMonHoc / import / sửa ô chỉ push/sửa trong
+   cùng mảng → Phân công không thấy môn vừa tạo ("Bản ngữ") dù Tiết chuẩn đã
+   có dòng. Gọi hàm này ở mọi chỗ DATA.mon đổi (saveStore gọi chung). */
+function invalidateTietChuanCaches(){
+    __LOOKUP_TC_CACHE = null;
+    __LOOKUP_TC_DATA_REF = null;
+    __POSITIVE_TC_CACHE = null;
+    __POSITIVE_TC_DATA_REF = null;
+}
+
 function __buildTietChuanCache(){
     const map = new Map();
     (DATA.mon || []).forEach(r=>{
@@ -4590,10 +5072,16 @@ function monHasPositiveTietChuanAnyKhoi(monObj){
     if (!__POSITIVE_TC_CACHE || __POSITIVE_TC_DATA_REF !== DATA.mon){
         __buildPositiveTietChuanCache();
     }
-    const m1 = (monObj.ten||"").toLowerCase();
-    const m2 = (monObj.key||"").toLowerCase();
-    const m3 = (monObj.ma2||"").toLowerCase();
-    return __POSITIVE_TC_CACHE.has(m1) || __POSITIVE_TC_CACHE.has(m2) || (m3 ? __POSITIVE_TC_CACHE.has(m3) : false);
+    // 26/08: phải tra CẢ `ma` — đúng bộ ứng viên mà pccmGetTeacher đang dùng.
+    // Trường 8ba8e0e8681 có môn ma="STEM", ten="STEM/STEAM"; Tiết chuẩn lưu theo
+    // MÃ ("STEM") nên chỉ tra ten/key/ma2 là trượt → môn bị lọc khỏi Phân công
+    // dù đã có đủ 1 tiết/tuần ở cả 4 khối ("Môn không có tiết sẽ không hiển thị").
+    const cands = [monObj.ten, monObj.key, monObj.ma2, monObj.ma];
+    for (const raw of cands){
+        const v = (raw || "").toString().toLowerCase();
+        if (v && __POSITIVE_TC_CACHE.has(v)) return true;
+    }
+    return false;
 }
 
 function pccmSetTeacherFromInput(inp, lopCanon){
@@ -4625,21 +5113,58 @@ function buildTeacherDatalistHTML(){
     return `<datalist id="pccmTeacherCodes">${opts}</datalist>`;
 }
 
+/* Chỉ mục mã giáo viên.
+   Trước đây resolveTeacherCode quét tuyến tính cả DATA.giaovien cho MỖI ô của
+   bảng phân công => render tab Giáo viên gọi _normText hơn 200.000 lần (~230ms).
+   Dựng Map một lần rồi tra O(1). Chỉ mục tự dựng lại khi mảng giáo viên bị thay
+   thế/đổi số lượng, và được xoá tường minh ở saveStore() + đầu renderPCCM(). */
+let _TEACHER_CODE_INDEX = null;
+let _TEACHER_CODE_INDEX_SRC = null;
+let _TEACHER_CODE_INDEX_LEN = -1;
+
+function invalidateTeacherCodeIndex(){
+    _TEACHER_CODE_INDEX = null;
+    _TEACHER_CODE_INDEX_SRC = null;
+    _TEACHER_CODE_INDEX_LEN = -1;
+}
+
+function teacherCodeIndex(){
+    const list = Array.isArray(DATA.giaovien) ? DATA.giaovien : [];
+    if (_TEACHER_CODE_INDEX && _TEACHER_CODE_INDEX_SRC === list && _TEACHER_CODE_INDEX_LEN === list.length){
+        return _TEACHER_CODE_INDEX;
+    }
+    const byCode = new Map();
+    const byName = new Map();
+    for (const g of list){
+        const code = _normText(g?.magv);
+        if (code){
+            const k = code.toLowerCase();
+            if (!byCode.has(k)) byCode.set(k, code);
+        }
+        // Giữ đúng thứ tự ưu tiên cũ: bản ghi trùng tên xuất hiện trước thắng,
+        // kể cả khi mã trống (khi đó trả về nguyên văn input như bản cũ).
+        const full = `${(g?.hodem||"").trim()} ${(g?.ten||"").trim()}`.trim().toLowerCase();
+        if (full && !byName.has(full)) byName.set(full, code);
+    }
+    _TEACHER_CODE_INDEX = { byCode, byName };
+    _TEACHER_CODE_INDEX_SRC = list;
+    _TEACHER_CODE_INDEX_LEN = list.length;
+    return _TEACHER_CODE_INDEX;
+}
+
 function resolveTeacherCode(input){
     const raw = (input||"").trim();
     if (!raw) return "";
     const lower = raw.toLowerCase();
 
+    const index = teacherCodeIndex();
     // Ưu tiên match theo mã GV
-    const byCode = (DATA.giaovien || []).find(g => _normText(g.magv).toLowerCase() === lower);
-    if (byCode && byCode.magv) return _normText(byCode.magv);
+    const byCode = index.byCode.get(lower);
+    if (byCode) return byCode;
 
     // Fallback: match theo tên đầy đủ
-    const byName = (DATA.giaovien || []).find(g=>{
-        const full = `${(g.hodem||"").trim()} ${(g.ten||"").trim()}`.trim().toLowerCase();
-        return full && full === lower;
-    });
-    if (byName && byName.magv) return _normText(byName.magv);
+    const byName = index.byName.get(lower);
+    if (byName) return byName;
 
     // Nếu không khớp, giữ nguyên (cho phép nhập tự do)
     return raw;
@@ -6383,11 +6908,57 @@ function tcSelectRange(a, b, keepAnchor){
     tcUpdateSelectionUI();
 }
 
+/* 23/08: ô Tiết chuẩn đang mở input sửa ở chỗ khác phải được CHỐT khi người
+   dùng bấm sang ô khác. mousedown gọi preventDefault (để không bôi đen chữ)
+   nên trình duyệt KHÔNG chuyển focus → blur không tự bắn → input cũ treo mãi. */
+function tcCommitOpenEditor(exceptTd){
+    try{
+        const inp = document.querySelector(".tc-cell input");
+        if(!inp) return false;
+        let host = (typeof inp.closest === "function") ? inp.closest(".tc-cell") : null;
+        if(!host){
+            host = Array.from(document.querySelectorAll(".tc-cell[data-r][data-c]"))
+                .find(td => td && td.querySelector && td.querySelector("input") === inp) || null;
+        }
+        if(exceptTd && host === exceptTd) return false;
+        if(typeof inp.blur === "function") inp.blur();   // onblur của tcBeginCellEdit tự chốt + lưu
+        if(host && host.querySelector && host.querySelector("input")){
+            // trình duyệt không bắn blur (input đã mất focus trước đó) → chốt tay
+            const v = (inp.value ?? "").toString().trim();
+            host.dataset.val = v;
+            host.innerHTML = escapeHtml(v);
+            tcAutoSaveEdits();
+        }
+        return true;
+    }catch(e){
+        return false;
+    }
+}
+
+// Gõ số khi đang chọn ô "Số tiết"/"Giới hạn": đổi giá trị NGAY, không mở input
+// (giống bảng Phân công). Gõ tiếp trong 1,2 giây thì nối thành số 2 chữ số.
+let TC_TYPE_BUFFER = { key:"", text:"", at:0 };
+function tcTypeDigitDirect(td, digit){
+    if(!td) return false;
+    const key = tcKey(td.dataset.r, td.dataset.c);
+    const now = Date.now();
+    if(TC_TYPE_BUFFER.key === key && (now - TC_TYPE_BUFFER.at) < 1200 && TC_TYPE_BUFFER.text.length < 2){
+        TC_TYPE_BUFFER.text += String(digit);
+    }else{
+        TC_TYPE_BUFFER = { key, text:String(digit), at:now };
+    }
+    TC_TYPE_BUFFER.at = now;
+    tcSetCellValue(td, TC_TYPE_BUFFER.text.replace(/^0(?=[0-9])/, ""));
+    tcAutoSaveEdits();
+    return true;
+}
+
 function tcCellMouseDown(ev, td){
     try{
         if(!ev || !td) return;
         if(ev.button !== 0) return;
         if(td.querySelector("input")) return;
+        tcCommitOpenEditor(td);
 
         const r = Number(td.dataset.r);
         const c = Number(td.dataset.c);
@@ -6431,6 +7002,7 @@ function tcCellClick(ev, td){
         if(!ev || !td) return;
         // Nếu đang sửa (có input) thì để người dùng thao tác trong input
         if(td.querySelector("input")) return;
+        tcCommitOpenEditor(td);
 
         const r = Number(td.dataset.r);
         const c = Number(td.dataset.c);
@@ -6593,6 +7165,25 @@ function tcGlobalKeyDown(ev){
             tcClearSelectedCells();
             tcUpdateSelectionUI();
             return;
+        }
+
+        // 23/08 (giống Phân công): ô đang chọn mà gõ số là đổi luôn, không cần
+        // nhấp đúp; F2 / Enter mở input sửa nhưng giữ giá trị cũ.
+        if(!isTyping && !isCmd && !ev.altKey && TC_CELL_ANCHOR){
+            const anchorTd = tcGetCell(TC_CELL_ANCHOR.r, TC_CELL_ANCHOR.c);
+            if(anchorTd && !anchorTd.querySelector("input")){
+                if(/^[0-9]$/.test(ev.key || "")){
+                    ev.preventDefault();
+                    tcSetSingleSelection(Number(anchorTd.dataset.r), Number(anchorTd.dataset.c));
+                    tcTypeDigitDirect(anchorTd, ev.key);
+                    return;
+                }
+                if(key === "f2" || key === "enter"){
+                    ev.preventDefault();
+                    tcBeginCellEdit(anchorTd);
+                    return;
+                }
+            }
         }
     }catch(e){
         // ignore
@@ -7336,7 +7927,14 @@ function _activeScheduleEntryForDisplay(school){
 }
 
 function _superAdminSchoolRows(){
-  const rows = [{
+  // 23/08: neu kho default da duoc dua vao registry (adoptDefaultStoreAsSchool)
+  // thi no hien nhu moi truong khac (ten / ngay ap dung / phien ban TKB), khong
+  // them hang "mac dinh" cung nua.
+  let defaultInRegistry = false;
+  try{
+    defaultInRegistry = !!((window.TKBAuth && window.TKBAuth.loadRegistry ? window.TKBAuth.loadRegistry().schools : {}) || {}).default;
+  }catch(_){ defaultInRegistry = false; }
+  const rows = defaultInRegistry ? [] : [{
     isDefault: true,
     school: {
       id: "default",

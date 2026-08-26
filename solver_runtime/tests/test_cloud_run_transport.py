@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import tempfile
 import threading
+import time
 import types
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
@@ -279,6 +280,139 @@ class CloudRunTransportTests(unittest.TestCase):
         )
         self.assertEqual(captured["timeout"], 30.0)
 
+    def _run_client_solve_with_regions(self, responders, fallback_urls: str):
+        """Drive client.solve() against fake per-URL responders.
+
+        ``responders`` maps a service URL (without /solve) to either an
+        exception instance to raise from urlopen or a wrapper dict to stream.
+        Returns (calls, stdout, stderr).
+        """
+        digest = "d" * 64
+        calls: list[str] = []
+
+        class Response:
+            def __init__(self, wrapper):
+                self.headers = {
+                    "X-TKB-Cloud-Protocol": client.CLOUD_PROTOCOL,
+                    "X-TKB-Solver-Digest": digest,
+                }
+                self._wrapper = wrapper
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def __iter__(self):
+                yield (client.RESULT_PREFIX + json.dumps(self._wrapper)).encode("utf-8")
+
+        def fake_urlopen(request, timeout=None):
+            url = request.full_url.rsplit("/solve", 1)[0]
+            calls.append(url)
+            outcome = responders[url]
+            if isinstance(outcome, Exception):
+                raise outcome
+            return Response(outcome)
+
+        env = {
+            "TKB_CLOUD_RUN_URL": "https://jkt.example.run.app",
+            "TKB_CLOUD_RUN_FALLBACK_URLS": fallback_urls,
+            "TKB_CLOUD_RUN_SOLVER_DIGEST": digest,
+            "TKB_CLOUD_RUN_ALLOW_UNAUTHENTICATED": "1",
+        }
+        body = json.dumps({"data": {}}).encode("utf-8")
+        with mock.patch.dict(client.os.environ, env, clear=False), mock.patch.object(
+            client, "_read_request", return_value=body
+        ), mock.patch.object(
+            client.urllib.request, "urlopen", side_effect=fake_urlopen
+        ), mock.patch.object(client.sys, "stdout", io.StringIO()) as stdout, mock.patch.object(
+            client.sys, "stderr", io.StringIO()
+        ) as stderr:
+            result = client.solve()
+        return calls, stdout.getvalue(), stderr.getvalue(), result
+
+    @staticmethod
+    def _http_error(url: str, code: int, body: str):
+        return client.urllib.error.HTTPError(
+            url + "/solve", code, "refused", {}, io.BytesIO(body.encode("utf-8"))
+        )
+
+    def test_client_moves_to_next_region_when_cloud_run_has_no_instance(self) -> None:
+        digest = "d" * 64
+        wrapper = {
+            "status": 200,
+            "payload": {"ok": True, "solver": {"runtime_settings": {"cloud_solver_digest": digest}}},
+        }
+        jkt, sin, tpe = (
+            "https://jkt.example.run.app",
+            "https://sin.example.run.app",
+            "https://tpe.example.run.app",
+        )
+        calls, stdout, stderr, result = self._run_client_solve_with_regions(
+            {
+                jkt: self._http_error(jkt, 429, "The request was aborted because there was no available instance."),
+                sin: self._http_error(sin, 409, json.dumps({"error": "cloud_solver_digest_mismatch"})),
+                tpe: wrapper,
+            },
+            f"{sin}/, {tpe}, {jkt}, http://plain.example",
+        )
+        self.assertEqual(result, 0)
+        self.assertEqual(calls, [jkt, sin, tpe])
+        self.assertTrue(json.loads(stdout)["payload"]["ok"])
+        self.assertIn("jkt.example.run.app refused with HTTP 429", stderr)
+        self.assertIn("sin.example.run.app refused with HTTP 409", stderr)
+        self.assertIn("served by fallback region tpe.example.run.app", stderr)
+
+    def test_client_reports_last_region_error_when_every_region_is_busy(self) -> None:
+        jkt, sin = "https://jkt.example.run.app", "https://sin.example.run.app"
+        with self.assertRaisesRegex(RuntimeError, "HTTP 429"):
+            self._run_client_solve_with_regions(
+                {
+                    jkt: self._http_error(jkt, 429, "no available instance"),
+                    sin: self._http_error(sin, 429, "no available instance"),
+                },
+                sin,
+            )
+
+    def test_client_does_not_retry_non_capacity_errors_on_another_region(self) -> None:
+        jkt, sin = "https://jkt.example.run.app", "https://sin.example.run.app"
+        recorded: list[str] = []
+
+        def fake_urlopen(request, timeout=None):
+            recorded.append(request.full_url)
+            raise self._http_error(jkt, 400, json.dumps({"error": "cloud_protocol_mismatch"}))
+
+        env = {
+            "TKB_CLOUD_RUN_URL": jkt,
+            "TKB_CLOUD_RUN_FALLBACK_URLS": sin,
+            "TKB_CLOUD_RUN_SOLVER_DIGEST": "d" * 64,
+            "TKB_CLOUD_RUN_ALLOW_UNAUTHENTICATED": "1",
+        }
+        with mock.patch.dict(client.os.environ, env, clear=False), mock.patch.object(
+            client, "_read_request", return_value=b'{"data":{}}'
+        ), mock.patch.object(client.urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch.object(
+            client.sys, "stderr", io.StringIO()
+        ):
+            with self.assertRaisesRegex(RuntimeError, "HTTP 400"):
+                client.solve()
+        # A protocol/config error is not a capacity answer: no second region.
+        self.assertEqual(recorded, [jkt + "/solve"])
+
+    def test_fallback_urls_skip_primary_duplicates_and_insecure_entries(self) -> None:
+        with mock.patch.dict(
+            client.os.environ,
+            {
+                "TKB_CLOUD_RUN_FALLBACK_URLS": " https://sin.example.run.app/ ,https://jkt.example.run.app, http://x.example, https://sin.example.run.app,,https://tpe.example.run.app"
+            },
+            clear=False,
+        ):
+            client.os.environ.pop("TKB_CLOUD_RUN_ALLOW_HTTP", None)
+            self.assertEqual(
+                client._fallback_urls("https://jkt.example.run.app"),
+                ["https://sin.example.run.app/solve", "https://tpe.example.run.app/solve"],
+            )
+
     def test_client_rejects_stale_service_digest_and_accepts_matching_wrapper(self) -> None:
         digest = "b" * 64
         wrapper = {
@@ -368,6 +502,127 @@ print('@@TKB_RESULT@@' + json.dumps({'status':200,'payload':{'ok':True,'lessons'
                 server.shutdown()
                 thread.join(timeout=2)
                 server.server_close()
+                for key, value in previous.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+
+    def test_local_cloud_service_cancel_signals_solver_stop_file(self) -> None:
+        # 23/08 (chu du an: "nut Dung khong dung duoc"): HUY (cancelRequested)
+        # cung phai dat file dung cho bo giai, khong chi ngung tham do.
+        fake_solver = """import json, os, pathlib, sys, time
+sys.stdin.read()
+stop_file = pathlib.Path(os.environ['TKB_SOLVER_STOP_FILE'])
+deadline = time.monotonic() + 5
+while time.monotonic() < deadline and not stop_file.exists():
+    time.sleep(0.02)
+seen = stop_file.exists()
+print('@@TKB_RESULT@@' + json.dumps({'status':200,'payload':{'ok':True,'lessons':[],'metrics':{'scheduled_periods':0},'solver':{'runtime_settings':{'cancel_stop_seen':seen}}}}), flush=True)
+"""
+
+        class CancelProbeHandler(BaseHTTPRequestHandler):
+            calls = 0
+
+            def log_message(self, _format, *_args) -> None:
+                return None
+
+            def do_POST(self) -> None:  # noqa: N802
+                length = int(self.headers.get("Content-Length", "0"))
+                self.rfile.read(length)
+                type(self).calls += 1
+                body = json.dumps(
+                    {
+                        "ok": True,
+                        "known": True,
+                        "stopRequested": False,
+                        "cancelRequested": True,
+                    }
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / "fake_solver.py"
+            script.write_text(fake_solver, encoding="utf-8")
+            probe_server = ThreadingHTTPServer(("127.0.0.1", 0), CancelProbeHandler)
+            cloud_server = ThreadingHTTPServer(
+                ("127.0.0.1", 0), service.CloudSolverHandler
+            )
+            probe_thread = threading.Thread(
+                target=probe_server.serve_forever, daemon=True
+            )
+            cloud_thread = threading.Thread(
+                target=cloud_server.serve_forever, daemon=True
+            )
+            previous = {
+                key: os.environ.get(key)
+                for key in (
+                    "TKB_REFERENCE_SOLVER_SCRIPT",
+                    "TKB_CLOUD_RUN_QUIET",
+                    "TKB_CLOUD_RUN_MAX_SOLVE_SECONDS",
+                    "TKB_CLOUD_RUN_SOLVER_DIGEST",
+                    "TKB_CLOUD_STOP_PROBE_ALLOW_LOCAL_HTTP",
+                )
+            }
+            os.environ.update(
+                {
+                    "TKB_REFERENCE_SOLVER_SCRIPT": str(script),
+                    "TKB_CLOUD_RUN_QUIET": "1",
+                    "TKB_CLOUD_RUN_MAX_SOLVE_SECONDS": "30",
+                    "TKB_CLOUD_RUN_SOLVER_DIGEST": "f" * 64,
+                    "TKB_CLOUD_STOP_PROBE_ALLOW_LOCAL_HTTP": "1",
+                }
+            )
+            probe_thread.start()
+            cloud_thread.start()
+            try:
+                token = "b" * 64
+                callback = (
+                    f"http://127.0.0.1:{probe_server.server_port}"
+                    "/api/internal/solver-stop-probe"
+                )
+                payload = {
+                    "data": {},
+                    "settings": {"backend_deadline_ms": 5_000},
+                }
+                request = Request(
+                    f"http://127.0.0.1:{cloud_server.server_port}/solve",
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-TKB-Cloud-Protocol": service.CLOUD_PROTOCOL,
+                        "X-TKB-Stop-Probe-Job": "cancel-job",
+                        "X-TKB-Stop-Probe-Url": callback,
+                        "X-TKB-Stop-Probe-Token": token,
+                    },
+                    method="POST",
+                )
+                started = time.monotonic()
+                with urlopen(request, timeout=10) as response:
+                    lines = response.read().decode("utf-8").splitlines()
+                elapsed = time.monotonic() - started
+                terminal = next(
+                    line for line in lines if line.startswith(service.RESULT_PREFIX)
+                )
+                wrapper = json.loads(terminal[len(service.RESULT_PREFIX) :])
+                self.assertTrue(
+                    wrapper["payload"]["solver"]["runtime_settings"][
+                        "cancel_stop_seen"
+                    ]
+                )
+                self.assertLess(elapsed, 4.0)
+                self.assertGreaterEqual(CancelProbeHandler.calls, 1)
+            finally:
+                cloud_server.shutdown()
+                probe_server.shutdown()
+                cloud_thread.join(timeout=2)
+                probe_thread.join(timeout=2)
+                cloud_server.server_close()
+                probe_server.server_close()
                 for key, value in previous.items():
                     if value is None:
                         os.environ.pop(key, None)
