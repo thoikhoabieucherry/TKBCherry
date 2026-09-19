@@ -6,6 +6,18 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-09-19 (9) DEPLOY THẤT BẠI — CHƯA THẤY «THỐNG KÊ THEO GIÁO VIÊN»
+
+- **Chủ dự án**: làm xong rồi sao không thấy thống kê giáo viên.
+- **Nguyên nhân**: lệnh bash dùng `\` xuống dòng; PowerShell hiểu `\` là tên file → `ROOT / '\\'` = `C:\` → `FileNotFoundError`. File paths bị dán thành lệnh riêng (`web/pages/phanmon.js` not recognized). **VPS chưa nhận mã** → menu vẫn chỉ có «Thống kê theo lớp».
+- **Vá**: `deploy-files.py` lọc arg rác (`\`, `/`, absolute), báo rõ khi thiếu file local / thiếu danh sách file; docstring PowerShell một dòng.
+- **Việc chủ dự án cần làm** (máy Windows, thư mục repo có mã PR):
+  1. Lấy mã: `git fetch origin` rồi `git checkout cursor/cherry-v3-speed-teacher-stats-a03d` (hoặc merge PR #19 vào nhánh đang dùng).
+  2. Kiểm tra local có mục menu: `Select-String -Path web\pages\tkb-constraints-menu.js -Pattern "Thống kê theo giáo viên"`.
+  3. Deploy **một dòng** PowerShell:
+     `python deploy.py files deploy cherry-speed-teacher-stats-20260919 --no-restart web/pages/phanmon.js web/pages/sapxep.html web/pages/tkb-constraints-menu.js web/pages/tkb-rust-bridge.js solver_runtime/src/tkb_engine_v3/construct.py`
+  4. Phải thấy `deployed web/pages/...` (không traceback). Ctrl+F5 `/pages/sapxep` → menu Thống kê phải có «Thống kê theo giáo viên». Cache-bust: `phanmon.js?v=20260919-cherry-speed-teacher-stats-v1`, `tkb-constraints-menu.js?v=20260919-teacher-stats-v1`.
+
 ## 2026-09-19 (8) CHERRY/V3 TĂNG TỐC TIME-TO-STATS + THỐNG KÊ THEO GV
 
 - **Chủ dự án**: FET bỏ qua ràng buộc thì kệ (chỉ xếp nhanh/kiểm đủ); tập trung Cherry + Tối ưu v3 — bước chuẩn bị ~30s mới thấy thống kê; test cải tiến rồi deploy; thêm thống kê theo giáo viên.
