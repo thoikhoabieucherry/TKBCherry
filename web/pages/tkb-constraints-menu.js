@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = 'constraints-menu-v7-class-assignment-statistics';
+  const VERSION = 'constraints-menu-v8-teacher-assignment-statistics';
   const MENU_ID = 'tkbConstraintsDropdownMenu';
   const STYLE_ID = 'tkbConstraintsDropdownStyle';
   let activeAnchor = null;
@@ -128,6 +128,7 @@
   function statisticsRows(){
     return `
       <li><button type="button" data-rb-statistics="class">Thống kê theo lớp</button></li>
+      <li><button type="button" data-rb-statistics="teacher">Thống kê theo giáo viên</button></li>
     `;
   }
 
@@ -240,6 +241,10 @@
           window.openClassAssignmentStatistics();
         }else if(mode === 'class'){
           alert('Chưa tải xong module thống kê theo lớp.');
+        }else if(mode === 'teacher' && typeof window.openTeacherAssignmentStatistics === 'function'){
+          window.openTeacherAssignmentStatistics();
+        }else if(mode === 'teacher'){
+          alert('Chưa tải xong module thống kê theo giáo viên.');
         }
         return;
       }

@@ -6,6 +6,20 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-09-19 (8) CHERRY/V3 TĂNG TỐC TIME-TO-STATS + THỐNG KÊ THEO GV
+
+- **Chủ dự án**: FET bỏ qua ràng buộc thì kệ (chỉ xếp nhanh/kiểm đủ); tập trung Cherry + Tối ưu v3 — bước chuẩn bị ~30s mới thấy thống kê; test cải tiến rồi deploy; thêm thống kê theo giáo viên.
+- **Chẩn đoán**: engine local đã phát `optimize:quality` ~1s; khoảng trống chủ yếu UI (xoá nhãn khi bấm) + `validateAllAsync` + `/api/solve-precheck` (≤5s) + `durableScheduleFingerprint` stringify lại nhiều lần + `structural_floors` trước khung đầu.
+- **Tăng tốc (giữ hợp đồng chất lượng)**:
+  1. Seed nhãn `X ➔ X` từ `calcTeacherTKBStats` ngay khi bấm Cherry/Tối ưu v3 (`tkbRunEngine` + `startInstantProgressTicker`).
+  2. Cherry/v3 bỏ `validateAllAsync` prep + bỏ backend precheck (engine tự kiểm).
+  3. Memo `durableScheduleFingerprint` trong một lượt.
+  4. Engine: `emit_quality` **trước** `structural_floors`; OR mask `a_allowed` trong floors.
+  5. Nhãn bridge cho `engine_v3:parse/compile/solve/…`.
+- **Thống kê theo giáo viên**: menu Thống kê → mục mới; bảng TT / GV / tiết PCCM / đã xếp / chưa xếp / lớp / buổi / 1 tiết / trống 1 / trống ≥2 + cột môn. Test `planner_teacher_assignment_statistics_node` + `test_engine_v3_emit_before_floors`.
+- **Deploy**: môi trường cloud **không có** `TKB_VPS_PASSWORD` / Cloud credentials — chủ dự án chạy `python deploy.py web` (hoặc `files deploy …`) mang `solver_runtime/src/tkb_engine_v3/{construct}.py` + web pages; Cloud Run `python deploy.py cloudrun` để image nhận emit-before-floors. Bản CP-SAT session 11/09 vẫn **chưa deploy** như trước.
+- **Kiểm**: `py-solver` không MOI HONG (emit_before_floors pass); `js-e2e` teacher stats pass; không test mới hỏng so baseline.
+
 ## 2026-09-19 (7) `cquz335tkr1` — NHẬP THCS TRẦN HƯNG ĐẠO
 
 - **Chủ dự án**: nhập `C:\Users\Cherry\Documents\Codex\phancong\tranhungdao` lên `https://tkbcherry.com/app?sid=cquz335tkr1`; khối 6–7 cố định HĐTN 1–2 chiều tiết 4–5 thứ 2, khối 8–9 ngược lại buổi sáng; tiết nghỉ cùng pattern; Văn/Toán/Anh/LSĐL/KHTN/GDTC phải có 1 cụm liền, không tiết 5 sáng / tiết 1 chiều, chỉ 1 buổi/ngày.

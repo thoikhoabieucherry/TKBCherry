@@ -140,6 +140,20 @@ function loadStatisticsContext(){
     isFixed(){ return false; },
     getRoomForClassMon(){ return ""; },
     compareMonByHiddenCode(a, b){ return String(a || "").localeCompare(String(b || ""), "vi"); },
+    tkbIsNoTeacherGhep(){ return false; },
+    resolveTeacherCode(code){ return String(code || "").trim(); },
+    getTeacherNameByCode(code){ return String(code || ""); },
+    compareTeacherCodeByDataOrder(a, b){ return String(a).localeCompare(String(b), "vi"); },
+    cellLegacyTeacher(){ return ""; },
+    calcTeacherTKBStats(){
+      return {
+        soBuoiDay1:0, soBuoiTrong1:0, soBuoiTrong2:0, tsBuoiDay:0,
+        onePeriodTeachers:[], gap1Teachers:[], gap2Teachers:[]
+      };
+    },
+    closeStatsPopover(){},
+    closePrintTKBMenu(){},
+    TKB_SKIP_QUALITY_EJECTED_TASKS:false,
     escapeHtml(value){
       return String(value == null ? "" : value)
         .replace(/&/g, "&amp;")
@@ -273,9 +287,11 @@ test("requirements menu puts Statistics by class immediately above Print TKB", (
 
   assert.ok(statisticsIndex >= 0 && printIndex > statisticsIndex);
   assert.match(menuSource, /data-rb-statistics="class">Thống kê theo lớp/);
+  assert.match(menuSource, /data-rb-statistics="teacher">Thống kê theo giáo viên/);
   assert.match(menuSource, /openClassAssignmentStatistics/);
+  assert.match(menuSource, /openTeacherAssignmentStatistics/);
   assert.match(plannerCss, /\.class-assignment-stats-table-wrap[\s\S]*?overflow:\s*auto/);
-  assert.match(plannerHtml, /phanmon\.css\?v=20260808-v1192-assigned-only-all-statistics-v1/);
-  assert.match(plannerHtml, /phanmon\.js\?v=20260808-v1192-assigned-only-all-statistics-v1/);
-  assert.match(plannerHtml, /tkb-constraints-menu\.js\?v=20260808-v1192-assigned-only-all-statistics-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260919-cherry-speed-teacher-stats-v1/);
+  assert.match(plannerHtml, /tkb-constraints-menu\.js\?v=20260919-teacher-stats-v1/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260919-cherry-speed-teacher-stats-v1/);
 });

@@ -2446,6 +2446,14 @@ class Constructor:
             if L <= 1:
                 continue
             ais = per_t_assign.get(t) or []
+            # 19/09: OR san a_allowed mot lan / GV thay vi any(...) moi o —
+            # cung ket qua, it nhay Python hon tren truong 75 lop.
+            usable_mask = [False] * NUM_SLOTS
+            for ai in ais:
+                allowed = P.a_allowed[ai]
+                for slot in range(NUM_SLOTS):
+                    if allowed[slot]:
+                        usable_mask[slot] = True
             one_cell: set[int] = set()
             multi_cap = 0
             for s in range(NUM_SESSIONS):
@@ -2453,7 +2461,7 @@ class Constructor:
                 usable = 0
                 for p in range(PERIODS):
                     slot = base + p
-                    if P.teacher_avail[t][slot] and any(P.a_allowed[ai][slot] for ai in ais):
+                    if P.teacher_avail[t][slot] and usable_mask[slot]:
                         usable += 1
                 if usable == 1:
                     one_cell.add(s)
@@ -2844,10 +2852,8 @@ class Constructor:
 
         P = self.P
         rng = self.rng
-        if not hasattr(self, "_floors_cache"):
-            self._floors_cache = self.structural_floors()
-        forced_singles, forced_gap2s, _evidence = self._floors_cache
-        floor_teachers = {t for t, s in forced_singles}
+        # 19/09: structural_floors doi sau emit_quality dau (xem ben duoi) de
+        # UI thay so lieu ngay; floor_teachers chi can truoc vong tabu.
         # 22/08 (toi): dieu kien "da cham san" cua bac 1/2 dua tren so no CON
         # XU LY DUOC (tru cac buoi san cau truc mien tru), khong phai so sanh
         # tong so buoi 1 tiet voi tong so san: truoc day 3 buoi san o GV khac
@@ -2923,47 +2929,15 @@ class Constructor:
             self._lock_singleton = soft.q_singleton
             self._lock_gap2 = soft.q_gap2
         best_grid = [row[:] for row in soft.grid]
-        best_score = self._quality_score(soft, weights)
+        # 19/09: PHAT khung quality TRUOC structural_floors — floors quet
+        # a_allowed theo GV/tiet (truong 75 lop co the mat vai giay). Nguoi dung
+        # thay so lieu X ➔ X ngay khi vao bac 3 thay vi cho den khi floors xong.
         best_q = soft.quality()
         best_act = act0
         tabu: dict[tuple[int, int, int], int] = {}
         iteration = 0
         stall = 0
         last_report = 0.0
-        # Tra nhanh khi da hoi tu: neu khong con cai thien duoc gi trong mot
-        # khoang dai thi dung som, khong dot not ngan sach.
-        stagnation_limit = max(25.0, min(90.0, budget * 0.25))
-        # Kien nhan tung bac (idle = khong cai thien) + tran thoi gian cua bac
-        # 1/2 de bac sau luon con ngan sach.
-        # 22/08 (toi, chi dao chu du an: "tap trung toi uu them 1 tiet/buoi va
-        # 2 tiet trong"): bac 1/2 duoc uu tien ngan sach — kien nhan dai hon va
-        # tran cao hon; bac 3 (buoi day / trong 1) chi nhan phan con lai.
-        stage_patience = {
-            1: max(30.0, budget * 0.40),
-            2: max(20.0, budget * 0.30),
-            3: stagnation_limit,
-        }
-        stage_cap = {
-            1: started_at + budget * 0.75,
-            2: started_at + budget * 0.92,
-            3: deadline,
-        }
-        if stage_only is not None:
-            # Nut mot muc tieu (chu du an 22/08 khuya: "rang khu toi da ve 0"):
-            # bac do duoc dung TRON ngan sach — khong chuyen bac, khong bo cuoc
-            # som vi "idle"; chi dung khi het no xu ly duoc hoac het gio.
-            stage_patience[stage_only] = budget + 1.0
-            stage_cap[stage_only] = deadline
-        stage_started = started_at
-        last_improve_at = started_at
-        # 23/08 (trua): nut "1 tiet trong" — tabu 2-hoan-doi gan nhu bat luc
-        # (do: 0 cai thien sau 25s), con "ep lap roi sua" thanh cong ~1/4 so
-        # buoi thu (60 luot -> -22 trong 1). Vi vay lane gap1 quet ep dinh ky
-        # theo THOI GIAN (moi ~2s, moi dot toi da 6s) thay vi chi moi 600 buoc.
-        # 26/08: dot quet dau tien ngay tu vong lap 1 (khong doi 2 s tabu):
-        # tren luoi warm sach, toan tu quet/CP-SAT la cai sinh ra cai thien.
-        last_sweep = started_at - 2.0
-        self._sweep_tried = 0
 
         def emit_quality(force: bool = False) -> None:
             # 22/08 (khuya): khung so lieu co cau truc cho bridge ("Day 1 tiet:
@@ -2998,6 +2972,46 @@ class Constructor:
                 pass
 
         emit_quality(force=True)
+
+        if not hasattr(self, "_floors_cache"):
+            self._floors_cache = self.structural_floors()
+        forced_singles, forced_gap2s, _evidence = self._floors_cache
+        floor_teachers = {t for t, s in forced_singles}
+        best_score = self._quality_score(soft, weights)
+        # Tra nhanh khi da hoi tu: neu khong con cai thien duoc gi trong mot
+        # khoang dai thi dung som, khong dot not ngan sach.
+        stagnation_limit = max(25.0, min(90.0, budget * 0.25))
+        # Kien nhan tung bac (idle = khong cai thien) + tran thoi gian cua bac
+        # 1/2 de bac sau luon con ngan sach.
+        # 22/08 (toi, chi dao chu du an: "tap trung toi uu them 1 tiet/buoi va
+        # 2 tiet trong"): bac 1/2 duoc uu tien ngan sach — kien nhan dai hon va
+        # tran cao hon; bac 3 (buoi day / trong 1) chi nhan phan con lai.
+        stage_patience = {
+            1: max(30.0, budget * 0.40),
+            2: max(20.0, budget * 0.30),
+            3: stagnation_limit,
+        }
+        stage_cap = {
+            1: started_at + budget * 0.75,
+            2: started_at + budget * 0.92,
+            3: deadline,
+        }
+        if stage_only is not None:
+            # Nut mot muc tieu (chu du an 22/08 khuya: "rang khu toi da ve 0"):
+            # bac do duoc dung TRON ngan sach — khong chuyen bac, khong bo cuoc
+            # som vi "idle"; chi dung khi het no xu ly duoc hoac het gio.
+            stage_patience[stage_only] = budget + 1.0
+            stage_cap[stage_only] = deadline
+        stage_started = started_at
+        last_improve_at = started_at
+        # 23/08 (trua): nut "1 tiet trong" — tabu 2-hoan-doi gan nhu bat luc
+        # (do: 0 cai thien sau 25s), con "ep lap roi sua" thanh cong ~1/4 so
+        # buoi thu (60 luot -> -22 trong 1). Vi vay lane gap1 quet ep dinh ky
+        # theo THOI GIAN (moi ~2s, moi dot toi da 6s) thay vi chi moi 600 buoc.
+        # 26/08: dot quet dau tien ngay tu vong lap 1 (khong doi 2 s tabu):
+        # tren luoi warm sach, toan tu quet/CP-SAT la cai sinh ra cai thien.
+        last_sweep = started_at - 2.0
+        self._sweep_tried = 0
 
         def restore_best() -> None:
             current = [row[:] for row in soft.grid]

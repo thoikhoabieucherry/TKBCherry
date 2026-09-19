@@ -5235,6 +5235,45 @@
     return settings;
   }
 
+  function seedForcedEngineProgressLabel(focusMode){
+    // 19/09: hien so lieu X ➔ X ngay khi bam Cherry / Toi uu v3, khong doi
+    // may chu phat khung optimize:quality dau (~chuẩn bị + mang + floors).
+    try{
+      const statsFn = typeof window.calcTeacherTKBStats === "function"
+        ? window.calcTeacherTKBStats
+        : null;
+      if(typeof statsFn !== "function") return "";
+      const st = statsFn() || {};
+      const one = Math.max(0, Number(st.soBuoiDay1) || 0);
+      const gap2 = Math.max(0, Number(st.soBuoiTrong2) || 0);
+      const sessions = Math.max(0, Number(st.tsBuoiDay) || 0);
+      const gap1 = Math.max(0, Number(st.soBuoiTrong1) || 0);
+      const mode = String(focusMode || window.__TKB_ENGINE_FOCUS_MODE || "").trim();
+      let label = "";
+      if(mode === "optimize_gap1" || mode === "gap1"){
+        label = `Trống 1 tiết: ${gap1} ➔ ${gap1}`;
+      }else if(mode === "optimize_gap2" || mode === "gap2"){
+        label = `Trống 2 tiết: ${gap2} ➔ ${gap2}`;
+      }else if(mode === "optimize_sessions" || mode === "sessions"){
+        label = `Buổi dạy: ${sessions} ➔ ${sessions}`;
+      }else if(mode === "optimize_singletons" || mode === "singletons"){
+        label = `Dạy 1 tiết: ${one} ➔ ${one}`;
+      }else{
+        label = `1 tiết/buổi ${one} ➔ ${one} · Trống 2 tiết ${gap2} ➔ ${gap2} · Buổi ${sessions} · Trống 1 ${gap1}`;
+      }
+      window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = label;
+      if(progressState) progressState.metricLabelText = label;
+      const metricEl = document.getElementById("autoSortProgressMetric");
+      if(metricEl){
+        metricEl.textContent = label;
+        metricEl.hidden = !label;
+      }
+      return label;
+    }catch(_){
+      return "";
+    }
+  }
+
   function startInstantProgressTicker(options){
     stopProgressTicker();
     const now = Date.now();
@@ -5306,6 +5345,16 @@
       progressBudgetSeconds:normalizePendingProgressSeconds(pending?.progressBudgetSeconds) || INITIAL_AUTO_DURATION_SECONDS,
       runIndex:normalizePendingProgressRunIndex(pending?.progressRunIndex || 1)
     };
+    // 19/09: Cherry / Toi uu v3 — seed nhãn số liệu ngay, bo defer 1s.
+    try{
+      if(String(window.__TKB_FORCE_ENGINE || "").trim()){
+        progressState.deferFirstPaint = false;
+        const seeded = seedForcedEngineProgressLabel(
+          options?.requestedSolveMode || window.__TKB_ENGINE_FOCUS_MODE || ""
+        );
+        if(seeded) progressState.metricLabelText = seeded;
+      }
+    }catch(_){ }
     publishLiveStatsProgress(progressState.metricProgress);
     if(progressState.deferFirstPaint) scheduleFirstProgressPaint();
     else tickEstimatedProgress();
@@ -6049,6 +6098,15 @@
     ) return "Đang nhận dữ liệu";
     if(value.startsWith("input:")) return "Đã nhận dữ liệu";
     if(value.endsWith(":attempt")) return "Đang thử phương án";
+    // 19/09: nhãn rõ cho các bước chuẩn bị engine v3 — trước đây gộp thành
+    // "Đang sắp xếp" nên người dùng tưởng máy đứng im trước khung quality.
+    if(value === "engine_v3:parse") return "Đang đọc dữ liệu";
+    if(value === "engine_v3:compile") return "Đang biên dịch bài toán";
+    if(value === "engine_v3:solve") return "Đang khởi động tối ưu";
+    if(value === "engine_v3:capacity") return "Đang kiểm tra sức chứa GV";
+    if(value === "engine_v3:solving") return "Đang tối ưu lịch";
+    if(value === "engine_v3:finalize") return "Đang đóng gói kết quả";
+    if(value.startsWith("engine_v3:")) return "Đang xếp bằng Cherry";
     if(
       value.startsWith("session:")
       || value.startsWith("session_cp_sat:")
@@ -7432,6 +7490,19 @@
 
   function durableScheduleFingerprint(data){
     if(!data || typeof data !== "object") return "";
+    // 19/09: memo trong 1 luot — prep goi fingerprint nhieu lan (guard, settings,
+    // POST). Truoc day moi lan JSON.stringify toan bo TKB (~vai giay / 75 lop).
+    const memo = window.__TKB_DURABLE_FP_MEMO;
+    const rev = data.tkbScheduleRevision ?? data._lastModified ?? "";
+    if(
+      memo
+      && memo.ref === data
+      && memo.rev === rev
+      && typeof memo.value === "string"
+      && memo.value
+    ){
+      return memo.value;
+    }
     const solverRelevant = {};
     [
       "lop",
@@ -7456,7 +7527,11 @@
     const constraints = constraintsForDurableFingerprint(data.tkbConstraints);
     if(constraints && Object.keys(constraints).length) solverRelevant.tkbConstraints = constraints;
     const serialized = JSON.stringify(stableFingerprintClone(solverRelevant));
-    return `v3:${compactFingerprintHash(serialized)}:${serialized.length}`;
+    const value = `v3:${compactFingerprintHash(serialized)}:${serialized.length}`;
+    try{
+      window.__TKB_DURABLE_FP_MEMO = {ref:data, rev, value};
+    }catch(_){ }
+    return value;
   }
 
   function durableScheduleFingerprintMatches(fingerprint, data){
@@ -21560,9 +21635,18 @@
       clearOptimizationPlateau(data, false);
     }
     await yieldResponsiveUi();
-    const violationsBeforeRepair = await currentConstraintViolationsAsync(3000, {
-      allowSyncFallback:false
-    });
+    const violationsBeforeRepair = await (async () => {
+      // 19/09: Cherry / Toi uu v3 bo qua validateAllAsync day du o buoc chuan
+      // bi (co the mat nhieu giay tren truong lon). Engine v3 tu kiem rang buoc
+      // cung; UI chi can biet lich du/thieu de chon refine vs repair.
+      try{
+        if(String(window.__TKB_FORCE_ENGINE || "").trim()){
+          if(currentScheduleAppearsComplete(data)) return [];
+          return [];
+        }
+      }catch(_){ }
+      return currentConstraintViolationsAsync(3000, {allowSyncFallback:false});
+    })();
     if(isStopRequested() || violationsBeforeRepair?.cancelled === true){
       releaseAutoSortButtonSoon();
       setStatus("\u0110\u00e3 d\u1eebng s\u1eafp x\u1ebfp theo y\u00eau c\u1ea7u.", "info");
@@ -21708,7 +21792,14 @@
       );
       settings.ui_automatic_sort_plan_kind = String(automaticPlan.kind || "");
     }
-    const backendPrecheckOk = await maybeRunBackendPrecheck(data, "balanced");
+    const backendPrecheckOk = await (async () => {
+      // 19/09: Cherry/v3 bo qua /api/solve-precheck (toi da 5s mang) — engine
+      // tu trim suc chua GV + tra Chua phan kem ly do.
+      try{
+        if(String(window.__TKB_FORCE_ENGINE || "").trim()) return true;
+      }catch(_){ }
+      return maybeRunBackendPrecheck(data, "balanced");
+    })();
     if(!autoSortPreparationMatches(data, planningScheduleFingerprint)){
       reportAutoSortPreparationChanged();
       return null;
@@ -22532,11 +22623,28 @@
     // 19/08: nhan tien do cu ("Trong 1 tiet: 70 -> 6"...) song sot giua cac
     // luot va se hien lai o giay thu 2 cua luot Cherry neu khong xoa —
     // trong nhu nut Cherry dang chay thuat toan gap1 trong trinh duyet.
+    // 19/09: khong xoa trang — seed so lieu tu lich dang co ngay lap tuc.
     window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = "";
+    try{
+      if(typeof window.calcTeacherTKBStats === "function"){
+        const st = window.calcTeacherTKBStats() || {};
+        const one = Math.max(0, Number(st.soBuoiDay1) || 0);
+        const gap2 = Math.max(0, Number(st.soBuoiTrong2) || 0);
+        const sessions = Math.max(0, Number(st.tsBuoiDay) || 0);
+        const gap1 = Math.max(0, Number(st.soBuoiTrong1) || 0);
+        var seedLabel = "";
+        if(focusMode === "optimize_gap1") seedLabel = "Trống 1 tiết: " + gap1 + " ➔ " + gap1;
+        else if(focusMode === "optimize_gap2") seedLabel = "Trống 2 tiết: " + gap2 + " ➔ " + gap2;
+        else if(focusMode === "optimize_sessions") seedLabel = "Buổi dạy: " + sessions + " ➔ " + sessions;
+        else if(focusMode === "optimize_singletons") seedLabel = "Dạy 1 tiết: " + one + " ➔ " + one;
+        else seedLabel = "1 tiết/buổi " + one + " ➔ " + one + " · Trống 2 tiết " + gap2 + " ➔ " + gap2 + " · Buổi " + sessions + " · Trống 1 " + gap1;
+        window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = seedLabel;
+      }
+    }catch(_){ }
     var metricEl = document.getElementById("autoSortProgressMetric");
     if(metricEl){
-      metricEl.textContent = "";
-      metricEl.hidden = true;
+      metricEl.textContent = window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL || "";
+      metricEl.hidden = !window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL;
     }
     var clear = function(){
       window.__TKB_FORCE_ENGINE = "";
