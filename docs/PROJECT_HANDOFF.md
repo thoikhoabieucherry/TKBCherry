@@ -6,6 +6,12 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-09-19 (10) DEPLOY NHẦM NHÁNH — VẪN CHƯA THẤY THỐNG KÊ GV
+
+- **Chủ dự án**: vẫn chưa thấy «Thống kê theo giáo viên» / phân công GV.
+- **Nguyên nhân**: `git checkout cursor/cherry-v3-speed-teacher-stats-a03d` **abort** vì local sửa `docs/PROJECT_HANDOFF.md` → lệnh `deploy.py files` đẩy **file cũ** trên nhánh đang đứng. Live `tkbcherry.com` vẫn `constraints-menu-v7…`, menu chỉ «Thống kê theo lớp», `sapxep.html` còn `?v=20260903-no-fet-optimize-v1` / `tkb-constraints-menu.js?v=20260808-…`.
+- **Cách làm đúng**: `git stash push -m tmp -u -- docs/PROJECT_HANDOFF.md` → `git checkout cursor/cherry-v3-speed-teacher-stats-a03d` → kiểm `Select-String … "Thống kê theo giáo viên"` → deploy lại 5 file → Ctrl+F5.
+
 ## 2026-09-19 (9) DEPLOY THẤT BẠI — CHƯA THẤY «THỐNG KÊ THEO GIÁO VIÊN»
 
 - **Chủ dự án**: làm xong rồi sao không thấy thống kê giáo viên.
