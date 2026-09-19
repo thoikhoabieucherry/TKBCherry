@@ -2,7 +2,7 @@
 
 Place `tkb_rust_api.exe` here when you cannot build locally (missing MSVC Build Tools).
 
-`scripts/setup.ps1` and `start.py` will copy this file to `target/release/` automatically.
+`start.py` will copy this file to `target/release/` automatically.
 
 Build on a machine with Rust + MSVC:
 

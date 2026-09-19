@@ -1,7 +1,7 @@
 "use strict";
 
-// 25/08: tiet DAY GHEP (1 mon, 1 lop, 2 giao vien "GV01, GV02"). Flash
-// (tkb-fast-seed) tung tra ca chuoi qua bang alias mot lan -> khong khop ->
+// 25/08: tiet DAY GHEP (1 mon, 1 lop, 2 giao vien "GV01, GV02"). Bo gieo
+// nhanh (tkb-fast-seed) tung tra ca chuoi qua bang alias mot lan -> khong khop ->
 // "GV01, GV02" thanh mot GV moi: o nghi co dinh cua GV01/GV02 bi bo qua va
 // GV01 co the bi xep tiet khac trung gio tiet ghep. Gio tung thanh vien duoc
 // tra alias rieng, tiet ghep chiem cho va ton trong o nghi cua MOI thanh vien.

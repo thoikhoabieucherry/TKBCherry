@@ -11,6 +11,12 @@
 | 2 | Solver Timeout/Best-effort | ORIGINAL_REQUEST §R2 | 0 | 15 | ✓ |
 | 3 | UI 'Dùng' Button Fix | ORIGINAL_REQUEST §R3 | 0 | 0 | ✓ |
 
+## Chạy test (cập nhật 27/08/2026)
+
+`python run_tests.py` chạy **toàn bộ** test của dự án bằng một lệnh và đối chiếu
+với mốc chuẩn `docs/test-baseline.json`. Tài liệu bên dưới chỉ mô tả lane e2e
+Tier 1-4 chạy với backend thật (`run_e2e_tests.py`) — đó là một phần nhỏ trong đó.
+
 ## Test Architecture
 - Test runner: `run_e2e_tests.py` at project root. It starts the server using `start.py` on port 1085, waits for it to become healthy, discovers and executes tests in `e2e_tests/test_suite.py`, and cleans up all processes when finished.
 - Test case format: Python `unittest.TestCase` making HTTP requests to the backend server and asserting status codes and response JSON content.

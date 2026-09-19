@@ -5,7 +5,7 @@
  * tkb-rust-bridge.js nhung khong he co `let/const/var`. Doc no truoc lan gan
  * dau tien nem ReferenceError, va vi no nam trong mot chuoi `||` nen chi no ra
  * khi may chu tra ve lich CHUA DU TIET — luc do ket qua bi vut bo im lang,
- * nguoi dung thay "bam Flash/Cherry ma khong co gi xay ra".
+ * nguoi dung thay "bam Cherry ma khong co gi xay ra".
  *
  *   node tools/tests/js_undeclared_scan.js
  */

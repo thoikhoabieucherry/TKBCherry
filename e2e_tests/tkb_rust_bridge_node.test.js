@@ -2876,6 +2876,29 @@ test("teacherless PCCM rows do not inflate completion or reject a complete paylo
   assert.equal(hooks.buildAutomaticAutoSortPlan(data).kind, "refine_complete");
 });
 
+test("02/09 dòng Dạy ghép KHÔNG giáo viên (gv:[]) vẫn là tiết phải xếp: expectedLessonCount đếm theo dayGhep", () => {
+  const data = makeData(2);
+  // dòng ghép không GV cho 2 lớp (10A1 + 10A2), 1 tiết/tuần; app chiếu Tiết vào pccmTietMatrix, KHÔNG có pccmMatrix
+  data.lop.push({id:"L2", ten:"10A2", ten2:"10A2", khoi:"10"});
+  data.dayGhep = [
+    {id:"DG001", lop:["10A1", "10A2"], mon:["Toán"], gv:[], sotiet:"1", gioihan:"1", viettat:"Hội trường", ten:"Hội trường"},
+    {id:"DG002", lop:["10A1"], mon:["Toán"], gv:["GV01"], sotiet:"1", gioihan:"1", viettat:"CLB", ten:"CLB"}
+  ];
+  data.pccmTietMatrix["10A1|Hội trường"] = "1";
+  data.pccmTietMatrix["10A2|Hội trường"] = "1";
+  data.pccmMatrix["10A1|CLB"] = "GV01";
+  data.pccmTietMatrix["10A1|CLB"] = "1";
+  const {hooks} = loadBridge(data);
+  // 2 (Toán) + 1 (CLB có GV, qua pccmMatrix) + 2 (Hội trường không GV, 2 lớp)
+  assert.equal(hooks.expectedLessonCount(data), 5);
+
+  // dòng không GV mà thiếu Tiết trong bảng -> lấy sotiet của dòng
+  delete data.pccmTietMatrix["10A2|Hội trường"];
+  assert.equal(hooks.expectedLessonCount(data), 5);
+  data.dayGhep[0].sotiet = "2";
+  assert.equal(hooks.expectedLessonCount(data), 6, "10A1 theo bảng Tiết (1) + 10A2 theo dòng (2)");
+});
+
 test("planner exposes one automatic arrange button and no manual duration input", () => {
   assert.equal((PLANNER_HTML.match(/id="btnAutoSort"/g) || []).length, 1);
   const selectTags = PLANNER_HTML.match(/<select\b[^>]*>/gi) || [];
@@ -5169,7 +5192,7 @@ test("Quick on an already complete constraint-clean timetable finishes without a
     return true;
   };
 
-  const result = await window.sapXepTheoCheDo("quick_complete");
+  const result = await window.sapXepTuDongAll({mode:"quick_complete", manualAgentInvite:true});
 
   assert.ok(result);
   assert.equal(solvePosts, 0);
@@ -5240,13 +5263,18 @@ test("singleton optimization at zero finishes before Agent invitation or VPS sol
     soBuoiTrong2:2
   });
 
-  const result = await window.sapXepTheoCheDo("optimize_singletons");
+  const result = await window.sapXepTuDongAll({mode:"optimize_singletons", manualAgentInvite:true});
 
   assert.ok(result);
   assert.equal(inviteCalls, 0);
   assert.equal(solvePosts, 0);
   assert.equal(solverStateCalls, 0);
-  assert.equal(progress.nodes.get("statusMsg").textContent, "Đã xếp xong!");
+  // 13/09: không báo "Đã xếp xong!" (người dùng tưởng nút chạy mà không xếp) — nói rõ mục đã = 0
+  // và các mục trong menu Tối ưu còn giảm được.
+  assert.equal(
+    progress.nodes.get("statusMsg").textContent,
+    "Không còn buổi dạy 1 tiết. Muốn tối ưu tiếp hãy chọn: Buổi dạy (1), 2 tiết trống (2), 1 tiết trống (4)."
+  );
   assert.equal(progress.wrap.hidden, true);
   assert.equal(progress.pct.textContent, "0%");
   assert.equal(progress.button.disabled, false);
@@ -5257,8 +5285,8 @@ test("singleton optimization at zero finishes before Agent invitation or VPS sol
 
 test("satisfied or out-of-order gap optimization reports immediately without Agent or VPS", async () => {
   for(const [mode, gap1, gap2, message] of [
-    ["optimize_gap2", 4, 0, "Kh\u00f4ng c\u00f2n tr\u1ed1ng 2 ti\u1ebft."],
-    ["optimize_gap1", 0, 0, "Kh\u00f4ng c\u00f2n tr\u1ed1ng 1 ti\u1ebft."],
+    ["optimize_gap2", 4, 0, "Kh\u00f4ng c\u00f2n tr\u1ed1ng 2 ti\u1ebft. Mu\u1ed1n t\u1ed1i \u01b0u ti\u1ebfp h\u00e3y ch\u1ecdn: Bu\u1ed5i d\u1ea1y (1), 1 ti\u1ebft tr\u1ed1ng (4)."],
+    ["optimize_gap1", 0, 0, "Kh\u00f4ng c\u00f2n tr\u1ed1ng 1 ti\u1ebft. Mu\u1ed1n t\u1ed1i \u01b0u ti\u1ebfp h\u00e3y ch\u1ecdn: Bu\u1ed5i d\u1ea1y (1)."],
     ["optimize_gap1", 3, 2, "H\u00e3y t\u1ed1i \u01b0u Tr\u1ed1ng 2 ti\u1ebft tr\u01b0\u1edbc."]
   ]){
     const data = makeData(2);
@@ -5302,7 +5330,7 @@ test("satisfied or out-of-order gap optimization reports immediately without Age
       soBuoiTrong2:gap2
     });
 
-    const result = await window.sapXepTheoCheDo(mode);
+    const result = await window.sapXepTuDongAll({mode, manualAgentInvite:true});
 
     assert.ok(result);
     assert.equal(inviteCalls, 0);
@@ -7826,7 +7854,7 @@ test("ordinary bridge authorization allows all four focused modes but keeps gene
   }
   assert.equal(hooks.solveRequestModeAllowedForCurrentUser("optimize_gaps"), false);
 
-  const result = await window.sapXepTheoCheDo("optimize_gaps");
+  const result = await window.sapXepTuDongAll({mode:"optimize_gaps", manualAgentInvite:true});
 
   assert.equal(result, null);
   assert.equal(fetchCalls, 0);

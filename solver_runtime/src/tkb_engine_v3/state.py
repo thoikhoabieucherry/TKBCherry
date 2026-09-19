@@ -105,7 +105,8 @@ class State:
                 one = rule.loc_one[s]
                 gap = rule.loc_gap[s]
                 move = rule.loc_move[s]
-                if not (one or gap or move):
+                breaks = rule.loc_breaks[s]
+                if not (one or gap or move or breaks):
                     continue
                 base = s * PERIODS
                 entries: list[tuple[int, int]] = []
@@ -113,7 +114,7 @@ class State:
                     ai = row[base + p]
                     if ai >= 0 and a_loc[ai] >= 0:
                         entries.append((p, a_loc[ai]))
-                if len(entries) >= 2 and location_rule_debt(entries, one, gap, move) > 0:
+                if len(entries) >= 2 and location_rule_debt(entries, one, gap, move, breaks) > 0:
                     total += 1
         return total
 
@@ -288,7 +289,8 @@ class State:
                     one = rule.loc_one[s]
                     gap = rule.loc_gap[s]
                     move = rule.loc_move[s]
-                    if not (one or gap or move):
+                    breaks = rule.loc_breaks[s]
+                    if not (one or gap or move or breaks):
                         continue
                     base = s * PERIODS
                     entries: list[tuple[int, int]] = []
@@ -296,7 +298,7 @@ class State:
                         ai = row[base + p]
                         if ai >= 0 and a_loc[ai] >= 0:
                             entries.append((p, a_loc[ai]))
-                    if len(entries) >= 2 and location_rule_debt(entries, one, gap, move) > 0:
+                    if len(entries) >= 2 and location_rule_debt(entries, one, gap, move, breaks) > 0:
                         self.check_fail_reason = "teacher_location"
                         return False
         if rule.max_days > 0 or rule.max_sessions > 0 or rule.max_morning > 0 or rule.max_afternoon > 0:

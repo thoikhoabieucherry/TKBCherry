@@ -27,11 +27,13 @@
     ['maxDaysSessions', 'Giới hạn số ngày dạy & buổi dạy/1 tuần'],
     ['maxPeriods', 'Giới hạn số tiết dạy/1 buổi'],
     ['maxMorningAfternoon', 'Giới hạn số buổi dạy sáng & chiều'],
-    ['oneSessionPerDay', 'Chỉ dạy 1 buổi/1 ngày'],
+    ['oneSessionPerDay', 'Giới hạn buổi dạy'],
     ['noMorningP5AfternoonP1', 'Không dạy tiết 5 buổi sáng & tiết 1 buổi chiều'],
     ['oneLocationPerSession', 'Chỉ dạy 1 địa điểm/1 buổi'],
     ['gapBetweenLocations', 'Có tiết trống giữa 2 địa điểm'],
     ['maxOneMovePerSession', 'Không di chuyển 2 lần/1 buổi giữa các địa điểm'],
+    ['moveAtBreak23', 'Đổi địa điểm ở giờ ra chơi (tiết 2-3)'],
+    ['moveAtBreak34', 'Đổi địa điểm ở giờ ra chơi (tiết 3-4)'],
     ['mustTeach', 'Vị trí phải có tiết dạy']
   ];
 
@@ -122,7 +124,18 @@
   function dayLabel(k){ try{ if(typeof LABEL !== 'undefined' && LABEL && LABEL[k]) return LABEL[k]; }catch(_){ } return DAY_LABEL_DEFAULT[k] || k; }
   function sessionLen(buoi){ try{ if(buoi === 'sang') return Number(typeof SANG !== 'undefined' ? SANG : 5) || 5; if(buoi === 'chieu') return Number(typeof CHIEU !== 'undefined' ? CHIEU : 5) || 5; }catch(_){ } return 5; }
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch])); }
-  function norm(s){ return String(s == null ? '' : s).normalize('NFC').trim().replace(/\s+/g,' ').toLowerCase(); }
+  // 05/09: norm() nằm trong mọi đường nóng (tra lớp/môn, chữ ký cache; đo 0,9 s tự thân khi mở trang Kiểm tra)
+  // — nhớ kết quả theo chuỗi vào. Hàm thuần nên nhớ là an toàn; xoá khi quá lớn để khỏi phình bộ nhớ.
+  const __normMemo=new Map();
+  function norm(s){
+    const raw=String(s == null ? '' : s);
+    const hit=__normMemo.get(raw);
+    if(hit!==undefined) return hit;
+    const v=raw.normalize('NFC').trim().replace(/\s+/g,' ').toLowerCase();
+    if(__normMemo.size>100000) __normMemo.clear();
+    __normMemo.set(raw,v);
+    return v;
+  }
   function cleanId(s, prefix){
     let x = String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D')
       .trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
@@ -138,9 +151,19 @@
     if(scalar==='afternoon'||scalar==='chieu') return 'afternoon';
     if(scalar==='either'||scalar==='both'||scalar==='ca2') return 'either';
     if(!value || typeof value!=='object' || Array.isArray(value)) return '';
-    // Deterministic precedence also repairs malformed data with several modes.
-    if(truthy(value.morning) || truthy(value.sang)) return 'morning';
-    if(truthy(value.afternoon) || truthy(value.chieu)) return 'afternoon';
+    // 13/09 "Giới hạn buổi dạy": mỗi ngày 2 ô Sáng / Chiều. Có khoá morning/afternoon (giao
+    // diện luôn ghi cả hai) thì theo hai ô: tick cả hai = sáng HOẶC chiều (either), tick một
+    // = chỉ buổi đó, bỏ cả hai = tự do. Không có hai khoá đó = dữ liệu cũ {either:true}.
+    const hasMorning=('morning' in value) || ('sang' in value);
+    const hasAfternoon=('afternoon' in value) || ('chieu' in value);
+    if(hasMorning || hasAfternoon){
+      const m=truthy(value.morning) || truthy(value.sang);
+      const a=truthy(value.afternoon) || truthy(value.chieu);
+      if(m && a) return 'either';
+      if(m) return 'morning';
+      if(a) return 'afternoon';
+      return '';
+    }
     if(truthy(value.either) || truthy(value.both)) return 'either';
     const explicit=String(value.mode || '').trim().toLowerCase();
     if(explicit==='morning'||explicit==='afternoon'||explicit==='either') return explicit;
@@ -244,7 +267,11 @@
     });
     return corrected;
   }
+  // 13/09: hai ô Sáng / Chiều được tick cùng lúc (= sáng hoặc chiều) — không còn loại trừ nhau.
   function enforceTeacherOneSessionInputs(root, sources){
+    return [];
+  }
+  function enforceTeacherOneSessionInputsLegacy(root, sources){
     const scope=root || document.getElementById(PANEL_ID) || document;
     const changed=[];
     const all=Array.from(scope.querySelectorAll('input[type="checkbox"][data-tid][data-rb-one-session-mode][data-rb-one-session-day]'));
@@ -401,6 +428,7 @@
       try{ Object.defineProperty(data.tkbConstraints, '__normalizedBy', {value: VERSION, writable: true, enumerable: false}); }
       catch(_){ data.tkbConstraints.__normalizedBy = VERSION; }
     }
+    try{ migrateGhepRuleKeys(data.tkbConstraints); }catch(_){ }   // 31/08: luật lưu dưới khoá ghép -> môn gốc
     return data.tkbConstraints;
   }
   let pendingStoreSaveTimer = null;
@@ -430,14 +458,35 @@
     const d = D();
     return [d.pccmMatrix || {}, d.pccmTietMatrix || {}, d.pccmGioihanMatrix || {}, d.pccmRoomMatrix || {}];
   }
-  function objectQuickSignature(obj){ return Object.keys(obj || {}).sort().map(k=>`${k}:${obj[k]}`).join('~'); }
-  function objectKeySignature(obj){ return Object.keys(obj || {}).sort().join('~'); }
-  function listQuickSignature(arr){
+  // 05/09: chữ ký cache (sort + join ~980 khoá PCCM) được tính lại hàng nghìn lần trong một lượt kiểm tra.
+  // Nhớ theo object: dùng lại khi cùng object, cùng số khoá và __cacheRev chưa đổi (mọi lần lưu / validateAll
+  // đều tăng __cacheRev nên sửa tại chỗ vẫn được nhận ra ở lần lưu kế tiếp, như trước).
+  const __sigMemo=new WeakMap();
+  function __memoSignature(obj, kind, compute){
+    if(!obj || typeof obj !== 'object') return compute(obj);
+    let rev=-1; try{ rev=__cacheRev; }catch(_){ return compute(obj); }
+    // mảng: kiểm tra thêm độ dài (rẻ); object: Object.keys() ~980 khoá mỗi lần gọi tốn hơn cả phần còn lại nên
+    // chỉ dựa vào tham chiếu + __cacheRev (mô-đun này chỉ chạy ở trang Sắp xếp, nơi ma trận PCCM không bị sửa tại chỗ).
+    const n=Array.isArray(obj) ? obj.length : -1;
+    let slot=__sigMemo.get(obj);
+    if(!slot){ slot={}; __sigMemo.set(obj,slot); }
+    const hit=slot[kind];
+    if(hit && hit.rev===rev && hit.n===n) return hit.sig;
+    const sig=compute(obj);
+    slot[kind]={rev,n,sig};
+    return sig;
+  }
+  function objectQuickSignatureRaw(obj){ return Object.keys(obj || {}).sort().map(k=>`${k}:${obj[k]}`).join('~'); }
+  function objectKeySignatureRaw(obj){ return Object.keys(obj || {}).sort().join('~'); }
+  function listQuickSignatureRaw(arr){
     return (arr || []).map((item, idx)=>{
       if(!item || typeof item !== 'object') return `${idx}:${String(item || '')}`;
       return `${idx}:` + Object.keys(item).sort().map(k=>`${k}:${item[k]}`).join(',');
     }).join('~');
   }
+  function objectQuickSignature(obj){ return __memoSignature(obj,'q',objectQuickSignatureRaw); }
+  function objectKeySignature(obj){ return __memoSignature(obj,'k',objectKeySignatureRaw); }
+  function listQuickSignature(arr){ return __memoSignature(arr,'l',listQuickSignatureRaw); }
   function forEachPccmKey(fn){
     const seen = new Set();
     pccmDataMatrices().forEach(matrix=>{
@@ -511,6 +560,11 @@
     const k=norm(s);
     const mh=(D().monhoc || []).find(m=>[m.ten,m.ma,m.ma2,m.id].some(v=>norm(v)===k));
     if(mh) return String(mh.ten || mh.ma || mh.ma2 || mh.id || s).trim();
+    // 29/08: khoá dạy ghép (modules/day-ghep.js) -> nhãn người dùng đặt
+    try{
+      const g=(D().dayGhep || []).find(r=>r && norm(r.ten)===k);
+      if(g) return String(g.viettat || g.ten || s).trim();
+    }catch(_){ }
     return s;
   }
   function subjectSortCode(subjectId){
@@ -609,7 +663,8 @@
   function assignedSubjectList(){
     const map=new Map();
     forEachPccmKey(key=>{
-      const subject=subjectFromPccmKey(key);
+      const raw=subjectFromPccmKey(key);
+      const subject=ghepBaseSubject(raw) || raw;   // 31/08: khoá dạy ghép -> môn gốc (không liệt kê "môn" theo viết tắt)
       addSubjectOption(map, subject, subjectDisplayName(subject), 'pccm');
     });
     return Array.from(map.values()).sort(subjectItemCompare);
@@ -704,8 +759,114 @@
   function classFilterRows(){ const all=getClassList(); const gid=state.classGroup || 'all'; const items = new Set(groupItems('class', gid)); if(gid && items.size) return all.filter(x=>items.has(x.id)); return all; }
 
   /* ===================== MATCHING HELPERS ===================== */
+  /* ===== 31/08: DẠY GHÉP — khoá dòng ghép chỉ là BÍ DANH của môn gốc khi tra luật =====
+     Chủ dự án: "khi tôi phân dạy ghép thì cũng sẽ sử dụng môn học nên sẽ sử dụng yêu cầu môn học chứ
+     không phải tạo ra một mớ môn học theo tên viết tắt". Dòng dạy ghép (modules/day-ghep.js) lưu khoá
+     riêng "Lớp|<ten>" trong phân công và chuỗi <ten> trong ô TKB (để giữ GV / số tiết / nhãn riêng),
+     nhưng LUẬT ở Yêu cầu tra theo môn gốc = row.mon[0] (dòng nhiều môn: môn đầu tiên). Khoá ghép được
+     nạp vào bảng bí danh môn (subjectAliasLookup) nên subjectKey/subjectMatches coi "AV-GT" ≡ "AVGT":
+     luật của môn gốc áp cho ô ghép, ô ghép được ĐẾM cùng môn gốc (tiết/buổi, tiết/ngày, tiết đôi, nhóm
+     môn, nghỉ cố định môn, giới hạn thời gian) và bộ chọn môn trong Yêu cầu không liệt kê khoá ghép.
+     Bản sắc phân công / giáo viên / số tiết / chuỗi hiển thị KHÔNG đổi. */
+  // 31/08 tối: chữ ký danh sách dạy ghép phải RẺ — subjectAliasLookup/ghepRuleSubjectMap nằm trên đường
+  // nóng (subjectMatches gọi hàng nghìn lần khi mở trang Yêu cầu / kiểm tra); listQuickSignature 28 dòng
+  // mỗi lần gọi làm "Cố định lớp học" đứng (ow14iqw5cb1). Token đổi khi mảng dayGhep đổi tham chiếu/độ dài
+  // (planner không sửa dòng ghép tại chỗ; app/adopt thay cả mảng), và __cacheRev đã bao lần đổi luật.
+  function ghepRowsToken(){
+    const rows=D().dayGhep;
+    const list=Array.isArray(rows) ? rows : null;
+    const len=list ? list.length : -1;
+    if(__cache.ghepRowsRef!==list || __cache.ghepRowsLen!==len){
+      __cache.ghepRowsRef=list; __cache.ghepRowsLen=len;
+      __cache.ghepRowsToken=(__cache.ghepRowsToken||0)+1;
+    }
+    return __cache.ghepRowsToken||0;
+  }
+  function ghepRuleSubjectMap(){
+    const rows=D().dayGhep;
+    const list=Array.isArray(rows) ? rows : [];
+    const sig=String(__cacheRev)+'|'+ghepRowsToken();
+    if(__cache.ghepRuleSubjectMap && __cache.ghepRuleSubjectSig===sig) return __cache.ghepRuleSubjectMap;
+    const map=new Map();
+    list.forEach(r=>{
+      if(!r || typeof r!=='object') return;
+      const ten=norm(r.ten);
+      const mons=Array.isArray(r.mon) ? r.mon : String(r.mon == null ? '' : r.mon).split(/[,;]+/);
+      const base=String((mons || []).map(x=>String(x == null ? '' : x).trim()).find(Boolean) || '').trim();
+      if(!ten || !base || norm(base)===ten) return;
+      map.set(ten, base);
+    });
+    __cache.ghepRuleSubjectMap=map; __cache.ghepRuleSubjectSig=sig;
+    return map;
+  }
+  function ghepBaseSubject(mon){ const k=norm(mon); if(!k) return ''; return ghepRuleSubjectMap().get(k) || ''; }
+  // 02/09: dòng dạy ghép KHÔNG giáo viên (gv:[]) — khoá chỉ có trong bảng Tiết (không có pccmMatrix)
+  // nhưng vẫn là tiết phải xếp của lớp: pccmAssignmentRows phải giữ (đếm sức chứa lớp, cộng tiết vào
+  // môn gốc khi kiểm luật). Map norm(ten) -> Set(mọi bí danh lớp, norm) của dòng.
+  function ghepNoTeacherMap(){
+    const rows=D().dayGhep;
+    const list=Array.isArray(rows) ? rows : [];
+    const sig=String(__cacheRev)+'|'+ghepRowsToken();
+    if(__cache.ghepNoTeacherMap && __cache.ghepNoTeacherSig===sig) return __cache.ghepNoTeacherMap;
+    const map=new Map();
+    list.forEach(r=>{
+      if(!r || typeof r!=='object') return;
+      const gv=Array.isArray(r.gv) ? r.gv : String(r.gv == null ? '' : r.gv).split(/[,;+\n]+/);
+      if(gv.some(x=>String(x == null ? '' : x).trim())) return;
+      const ten=norm(r.ten);
+      if(!ten) return;
+      const lops=Array.isArray(r.lop) ? r.lop : String(r.lop == null ? '' : r.lop).split(/[,;]+/);
+      const set=map.get(ten) || new Set();
+      lops.forEach(l=>{
+        const name=String(l == null ? '' : l).trim();
+        if(!name) return;
+        classKeyCandidates(name, findClassObject(name)).forEach(x=>{ const k=norm(x); if(k) set.add(k); });
+      });
+      map.set(ten, set);
+    });
+    __cache.ghepNoTeacherMap=map; __cache.ghepNoTeacherSig=sig;
+    return map;
+  }
+  function isNoTeacherGhepAssignment(cls, mon){
+    const set=ghepNoTeacherMap().get(norm(mon));
+    if(!set || !set.size) return false;
+    return classKeyCandidates(cls, findClassObject(cls)).some(x=>set.has(norm(x)));
+  }
+  // Luật từng lưu dưới khoá dòng ghép (trước 31/08 bộ chọn liệt kê khoá ghép như một môn) -> chuyển
+  // sang môn gốc (không đè luật đã có của môn gốc). Chạy lại khi danh sách dòng ghép / luật đổi.
+  let __ghepRuleMigratedSig='';
+  function migrateGhepRuleKeys(c){
+    if(!c || typeof c!=='object') return false;
+    const gmap=ghepRuleSubjectMap();
+    const sig=String(__cacheRev)+'|'+ghepRowsToken();
+    if(!gmap.size || sig===__ghepRuleMigratedSig) return false;
+    __ghepRuleMigratedSig=sig;
+    let changed=false;
+    const baseOf=id=>{ const b=gmap.get(norm(id)); if(!b) return ''; const k=subjectKey(b); return String(k || b); };
+    const subj=c.subject||{};
+    Object.keys(subj).forEach(id=>{
+      const base=baseOf(id); if(!base || base===id) return;
+      const src=subj[id];
+      if(src && typeof src==='object'){
+        const dst=subj[base] && typeof subj[base]==='object' ? subj[base] : (subj[base]={});
+        const sb=src.byClass && typeof src.byClass==='object' ? src.byClass : {};
+        dst.byClass=dst.byClass && typeof dst.byClass==='object' ? dst.byClass : {};
+        Object.keys(sb).forEach(cid=>{ if(!dst.byClass[cid] || !Object.keys(dst.byClass[cid]).length) dst.byClass[cid]=sb[cid]; });
+        ['globalLimit','groupLimit'].forEach(k=>{ if(src[k] && typeof src[k]==='object' && (!dst[k] || !Object.keys(dst[k]).length)) dst[k]=src[k]; });
+      }
+      delete subj[id]; changed=true;
+    });
+    const fo=c.fixedOff && c.fixedOff.subject && typeof c.fixedOff.subject==='object' ? c.fixedOff.subject : {};
+    Object.keys(fo).forEach(id=>{ const base=baseOf(id); if(!base || base===id) return; fo[base]=Object.assign({}, fo[id]||{}, fo[base]||{}); delete fo[id]; changed=true; });
+    Object.keys(c.groups?.subject||{}).forEach(gid=>{ const g=c.groups.subject[gid]; if(!g || !Array.isArray(g.items)) return; const next=arrUnique(g.items.map(it=>baseOf(it)||it)); if(next.join('|')!==g.items.join('|')){ g.items=next; changed=true; } });
+    const ns=c.subjectNoSameSession?.byClass||{};
+    Object.keys(ns).forEach(cid=>{ ['sameSession','sameDay'].forEach(kind=>{ const groups=ns[cid]?.[kind]?.groups; if(!groups || typeof groups!=='object') return; Object.keys(groups).forEach(g=>{ if(!Array.isArray(groups[g])) return; const next=arrUnique(groups[g].map(it=>baseOf(it)||it)); if(next.join('|')!==groups[g].join('|')){ groups[g]=next; changed=true; } }); }); });
+    (Array.isArray(c.timeLimit) ? c.timeLimit : []).forEach(tl=>{ if(tl && tl.targetType==='subject'){ const base=baseOf(tl.targetId); if(base && base!==tl.targetId){ tl.targetId=base; changed=true; } } });
+    if(changed){ try{ invalidateConstraintCache(); }catch(_){ } }
+    return changed;
+  }
   function subjectAliasLookup(){
-    const sig = String(__cacheRev);
+    const sig = String(__cacheRev)+'|'+ghepRowsToken();
     if(__cache.subjectAliasLookup && __cache.subjectAliasSig === sig) return __cache.subjectAliasLookup;
     const map = new Map();
     const addRecord = vals => {
@@ -719,6 +880,8 @@
     };
     try{ (D().monhoc || []).forEach(m=>addRecord([m?.ten,m?.mon,m?.mamon,m?.ma,m?.ma2,m?.id,m?.key])); }catch(_){ }
     try{ (D().mon || []).forEach(m=>addRecord([m?.ten,m?.mon,m?.ma,m?.ma2,m?.mamon,m?.id,m?.key])); }catch(_){ }
+    // 31/08: khoá dòng dạy ghép ≡ môn gốc (chỉ cho tra luật / đếm ô; xem chú thích ghepRuleSubjectMap)
+    try{ ghepRuleSubjectMap().forEach((base, ten)=>addRecord([ten, base])); }catch(_){ }
     __cache.subjectAliasLookup = map;
     __cache.subjectAliasSig = sig;
     return map;
@@ -880,6 +1043,7 @@
         __cacheRev,
         listQuickSignature(d.monhoc || []),
         listQuickSignature(d.mon || []),
+        'ghep:' + ghepRowsToken(),
         objectQuickSignature(d.pccmMatrix || {}),
         objectQuickSignature(d.pccmTietMatrix || {}),
         objectQuickSignature(d.pccmGioihanMatrix || {}),
@@ -902,6 +1066,7 @@
         listQuickSignature(d.lop || []),
         listQuickSignature(d.mon || []),
         listQuickSignature(d.monhoc || []),
+        'ghep:' + ghepRowsToken(),
         objectQuickSignature(d.pccmMatrix || {}),
         objectQuickSignature(d.pccmTietMatrix || {}),
         objectQuickSignature(d.pccmGioihanMatrix || {}),
@@ -933,11 +1098,45 @@
         const teacher=teacherOf(lopId,mon); const room=roomOf(lopId,mon); const cell={lopId:String(lopId),mon,thu,buoi,ti:Number(ti),teacher,room,location:roomLocation(room,lopId),fixed:isFixedSafe(v)};
         __cache.allCells.push(cell); classArr.push(cell);
         // 25/08: tiet day ghep "GV1, GV2" nam trong chi muc cua TUNG giao vien
-        if(teacher){ splitTeacherValues(teacher).forEach(k=>{ if(!__cache.byTeacher.has(k)) __cache.byTeacher.set(k,[]); __cache.byTeacher.get(k).push(cell); }); }
+        // 29/08: tiet hoc chung NHIEU LOP cung o (cung dong day-ghep) = MOT tiet cua GV, khong dem N lan
+        if(teacher){ splitTeacherValues(teacher).forEach(k=>{ if(!__cache.byTeacher.has(k)) __cache.byTeacher.set(k,[]); const list=__cache.byTeacher.get(k); if(list.some(c=>c.thu===cell.thu&&c.buoi===cell.buoi&&c.ti===cell.ti&&isJointGhepCells(c,cell))) return; list.push(cell); }); }
       }}
       __cache.classCells.set(String(lopId), classArr);
     }
     return __cache;
+  }
+  // 13/09 (lượt 7, chủ dự án: "kéo thả các tiết bị đứng"): thử đổi chỗ khi kéo thả ghi tạm vài ô của
+  // 1-3 lớp rồi phải kiểm luật trên lịch MỚI. invalidateConstraintCache dựng lại CẢ chỉ mục (tra GV/phòng
+  // cho mọi ô) và xoá luôn các bảng dẫn xuất — ~20-60 ms mỗi lần thử, tô màu ô thả bị đứng. Hàm này chỉ
+  // quét lại ô của các lớp đó (cùng cách buildScheduleIndex) rồi gom lại allCells/byTeacher từ các ô sẵn
+  // có, giữ nguyên thứ tự. false = chưa có chỉ mục khớp chữ ký -> người gọi tự dựng lại đầy đủ.
+  function refreshScheduleIndexClasses(lopIds){
+    if(!__cache.allCells || !__cache.classCells || !__cache.byTeacher || __cache.signature!==quickTkbSignature()) return false;
+    const tkbs=D().tkb||{};
+    const ids=new Set((lopIds||[]).map(x=>String(x)).filter(Boolean));
+    ids.forEach(id=>{ const tkb=tkbs[id]; if(tkb) __cache.classCells.set(id, scanClassCellsFromTkb(id, tkb)); else __cache.classCells.delete(id); });
+    const allCells=[]; const byTeacher=new Map();
+    for(const lopId of Object.keys(tkbs)){
+      if(!tkbs[lopId]) continue;
+      const classArr=__cache.classCells.get(String(lopId)); if(!classArr) continue;
+      for(const cell of classArr){
+        allCells.push(cell);
+        if(cell.teacher){ splitTeacherValues(cell.teacher).forEach(k=>{ if(!byTeacher.has(k)) byTeacher.set(k,[]); const list=byTeacher.get(k); if(list.some(c=>c.thu===cell.thu&&c.buoi===cell.buoi&&c.ti===cell.ti&&isJointGhepCells(c,cell))) return; list.push(cell); }); }
+      }
+    }
+    __cache.allCells=allCells; __cache.byTeacher=byTeacher;
+    return true;
+  }
+  // Hai o o hai lop khac nhau thuoc cung mot dong Day ghep nhieu lop (modules/day-ghep.js) = MOT tiet hoc chung.
+  function jointGhepRowOf(lopId, mon){
+    const rows=D().dayGhep; if(!Array.isArray(rows)||!rows.length) return null;
+    const m=norm(mon); if(!m) return null;
+    const names=[classNameOf(lopId), String(lopId)].map(norm);
+    return rows.find(r=>r&&Array.isArray(r.lop)&&r.lop.length>=2&&norm(r.ten)===m&&r.lop.some(x=>names.includes(norm(x))))||null;
+  }
+  function isJointGhepCells(a,b){
+    if(!a||!b||String(a.lopId)===String(b.lopId)) return false;
+    const ra=jointGhepRowOf(a.lopId,a.mon); return !!ra && ra===jointGhepRowOf(b.lopId,b.mon);
   }
   function buildMustTeachTeacherIndex(){
     // buildScheduleIndex uses the same lesson/teacher inclusion rules and its
@@ -1029,8 +1228,10 @@
     let base=idx.byTeacher.get(gv)||[]; let local=[];
     if(ctx && ctx.localTkb && target && target.lopId){ base=base.filter(x=>String(x.lopId)!==String(target.lopId)); local=scanClassCellsFromTkb(target.lopId,ctx.localTkb).filter(hasGv); }
     const cand=candidateCellFromCtx(ctx||{}); const out=[];
-    for(const cell of base.concat(local)){ if(isSameSlotCell(cell,src)||isSameSlotCell(cell,target)) continue; out.push(cell); }
-    if(cand && hasGv(cand)) out.push(cand);
+    // 29/08: o cua cung dong Day ghep nhieu lop tai cung gio (lop khac) = MOT tiet cua GV
+    const jointDup=(cell,list)=>list.some(c=>c.thu===cell.thu&&c.buoi===cell.buoi&&Number(c.ti)===Number(cell.ti)&&isJointGhepCells(c,cell));
+    for(const cell of base.concat(local)){ if(isSameSlotCell(cell,src)||isSameSlotCell(cell,target)) continue; if(jointDup(cell,out)) continue; out.push(cell); }
+    if(cand && hasGv(cand)){ const dupIdx=out.findIndex(c=>c.thu===cand.thu&&c.buoi===cand.buoi&&Number(c.ti)===Number(cand.ti)&&isJointGhepCells(c,cand)); if(dupIdx>=0) out.splice(dupIdx,1); out.push(cand); }
     return out;
   }
   function evalTeacherRule(ctx){
@@ -1061,18 +1262,35 @@
       if(oneSessionMode==='either' && hasS && hasC) add(`${label}: ${dayLabel(thu)} chỉ được dạy sáng hoặc chiều, không dạy cả hai buổi.`);
     }
     if(truthy(r.noMorningP5AfternoonP1?.[thu]) || truthy(r.noMorningP5AfternoonP1?.sang?.[thu]) || truthy(r.noMorningP5AfternoonP1?.chieu?.[thu])){ const hasP5=cells.some(x=>x.thu===thu&&x.buoi==='sang'&&Number(x.ti)===4), hasP1C=cells.some(x=>x.thu===thu&&x.buoi==='chieu'&&Number(x.ti)===0); if(hasP5&&hasP1C) add(`${label}: ${dayLabel(thu)} vi phạm không dạy tiết 5 sáng và tiết 1 chiều.`); }
-    for(const ruleName of ['oneLocationPerSession','gapBetweenLocations','maxOneMovePerSession']){
+    /* 03/09: gio ra choi — chi so tiet (0-based) ma NGAY SAU no la gio ra choi:
+       moveAtBreak23 -> 1 (het tiet 2), moveAtBreak34 -> 2 (het tiet 3). */
+    const brkSet=new Set();
+    if(truthy(getPath(r,`moveAtBreak23.${buoi}.${thu}`,false))) brkSet.add(1);
+    if(truthy(getPath(r,`moveAtBreak34.${buoi}.${thu}`,false))) brkSet.add(2);
+    for(const ruleName of ['oneLocationPerSession','maxOneMovePerSession']){
       if(!truthy(getPath(r,`${ruleName}.${buoi}.${thu}`,false))) continue;
       const ss=sessionCells(cells,thu,buoi).slice().sort((a,b)=>a.ti-b.ti); const withLoc=ss.map(x=>Object.assign({},x,{loc:String(x.location||x.room||'').trim()})).filter(x=>x.loc); if(withLoc.length<=1) continue;
       if(ruleName==='oneLocationPerSession'){ const n=uniqueCount(withLoc,x=>norm(x.loc)); if(n>1) add(`${label}: ${dayLabel(thu)} ${SESSION_LABEL[buoi]} vi phạm chỉ dạy 1 địa điểm/1 buổi.`); }
-      if(ruleName==='gapBetweenLocations'){ for(let i=1;i<withLoc.length;i++){ if(norm(withLoc[i].loc)!==norm(withLoc[i-1].loc)&&(Number(withLoc[i].ti)-Number(withLoc[i-1].ti)<=1)){ add(`${label}: ${dayLabel(thu)} ${SESSION_LABEL[buoi]} đổi địa điểm nhưng không có tiết trống để di chuyển.`); break; } } }
       if(ruleName==='maxOneMovePerSession'){ const seq=[]; withLoc.forEach(x=>{ const v=norm(x.loc); if(v && seq[seq.length-1]!==v) seq.push(v); }); if(seq.length>2) add(`${label}: ${dayLabel(thu)} ${SESSION_LABEL[buoi]} vi phạm không di chuyển 2 lần/1 buổi giữa các địa điểm.`); }
+    }
+    /* ĐỔI ĐỊA ĐIỂM LIỀN TIẾT: gapBetweenLocations va moveAtBreak* cung kiem MOT dieu
+       kien nen chi chay MOT lan (chay theo tung luat se bao trung mot cap tiet). */
+    const adjRule=['gapBetweenLocations','moveAtBreak23','moveAtBreak34'].find(n=>truthy(getPath(r,`${n}.${buoi}.${thu}`,false)));
+    if(adjRule){
+      const ss2=sessionCells(cells,thu,buoi).slice().sort((a,b)=>a.ti-b.ti); const withLoc2=ss2.map(x=>Object.assign({},x,{loc:String(x.location||x.room||'').trim()})).filter(x=>x.loc);
+      for(let i=1;i<withLoc2.length;i++){
+        if(norm(withLoc2[i].loc)!==norm(withLoc2[i-1].loc)&&(Number(withLoc2[i].ti)-Number(withLoc2[i-1].ti)<=1)&&!brkSet.has(Number(withLoc2[i-1].ti))){
+          add(`${label}: ${dayLabel(thu)} ${SESSION_LABEL[buoi]} `+(brkSet.size?`đổi địa điểm liền tiết ${Number(withLoc2[i-1].ti)+1}-${Number(withLoc2[i].ti)+1}, không phải giờ ra chơi.`:`đổi địa điểm nhưng không có tiết trống để di chuyển.`));
+          break;
+        }
+      }
     }
     return msgs;
   }
 
   /* 23/08: dem cac buoi (GV, thu, buoi) dang vi pham 3 yeu cau DIA DIEM
-     (oneLocationPerSession / gapBetweenLocations / maxOneMovePerSession) —
+     (oneLocationPerSession / gapBetweenLocations / maxOneMovePerSession +
+     03/09: moveAtBreak23 / moveAtBreak34 — mien tru cho gio ra choi) —
      cung ngu nghia voi evalTeacherRule o tren. Mac dinh quet luoi dang hien
      thi; opts.lessons = danh sach tiet (payload engine) de cham diem ung vien
      truoc khi ap. Engine v3 (Cherry / Toi uu v3) coi day la rang buoc cung. */
@@ -1107,7 +1325,7 @@
     let sessions = 0; const teachers = new Set(); const cases = [];
     byTeacher.forEach((cells, gv) => {
       const r = teacherRules[gv]; if(!r || typeof r !== 'object') return;
-      if(!r.oneLocationPerSession && !r.gapBetweenLocations && !r.maxOneMovePerSession) return;
+      if(!r.oneLocationPerSession && !r.gapBetweenLocations && !r.maxOneMovePerSession && !r.moveAtBreak23 && !r.moveAtBreak34) return;
       const groups = new Map();
       cells.forEach(x => { const k = x.thu + '|' + x.buoi; if(!groups.has(k)) groups.set(k, []); groups.get(k).push(x); });
       groups.forEach((ss, key) => {
@@ -1116,7 +1334,11 @@
         if(withLoc.length <= 1) return;
         const kinds = [];
         if(truthy(getPath(r, `oneLocationPerSession.${buoi}.${thu}`, false)) && uniqueCount(withLoc, x => x.loc) > 1) kinds.push('oneLocationPerSession');
-        if(truthy(getPath(r, `gapBetweenLocations.${buoi}.${thu}`, false))){ for(let i = 1; i < withLoc.length; i++){ if(withLoc[i].loc !== withLoc[i-1].loc && withLoc[i].ti - withLoc[i-1].ti <= 1){ kinds.push('gapBetweenLocations'); break; } } }
+        const brkSet = new Set();
+        if(truthy(getPath(r, `moveAtBreak23.${buoi}.${thu}`, false))) brkSet.add(1);
+        if(truthy(getPath(r, `moveAtBreak34.${buoi}.${thu}`, false))) brkSet.add(2);
+        const adjRule = ['gapBetweenLocations','moveAtBreak23','moveAtBreak34'].find(n => truthy(getPath(r, `${n}.${buoi}.${thu}`, false)));
+        if(adjRule){ for(let i = 1; i < withLoc.length; i++){ if(withLoc[i].loc !== withLoc[i-1].loc && withLoc[i].ti - withLoc[i-1].ti <= 1 && !brkSet.has(withLoc[i-1].ti)){ kinds.push(adjRule); break; } } }
         if(truthy(getPath(r, `maxOneMovePerSession.${buoi}.${thu}`, false))){ const seq = []; withLoc.forEach(x => { if(seq[seq.length-1] !== x.loc) seq.push(x.loc); }); if(seq.length > 2) kinds.push('maxOneMovePerSession'); }
         if(!kinds.length) return;
         sessions++; teachers.add(gv);
@@ -1687,7 +1909,7 @@
       #${PANEL_ID} .rb-teacher-simple-table col.rb-teacher-stat-col{width:68px}
       #${PANEL_ID} .rb-teacher-simple-table col.rb-teacher-value-col{width:auto}
       #${PANEL_ID} .rb-teacher-session-check-table{min-width:900px}
-      #${PANEL_ID} .rb-teacher-one-session-table{min-width:1120px}
+      #${PANEL_ID} .rb-teacher-one-session-table{min-width:820px}
       #${PANEL_ID} .rb-teacher-session-check-table col.rb-teacher-tt-col,
       #${PANEL_ID} .rb-teacher-one-session-table col.rb-teacher-tt-col{width:44px}
       #${PANEL_ID} .rb-teacher-session-check-table col.rb-teacher-name-col,
@@ -1873,7 +2095,7 @@
   #${PANEL_ID} .table-wrap{max-width:100%;overflow:auto;overscroll-behavior:contain;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch}
   #${PANEL_ID} .rb-teacher-simple-table{min-width:720px}
   #${PANEL_ID} .rb-teacher-session-check-table{min-width:900px}
-  #${PANEL_ID} .rb-teacher-one-session-table{min-width:1240px}
+  #${PANEL_ID} .rb-teacher-one-session-table{min-width:900px}
   #${PANEL_ID} .rb-teacher-period-table{min-width:1280px}
   #${PANEL_ID} .rb-time-limit-main .rb-desktop-table{min-width:980px}
   #${PANEL_ID} .rb-fixedoff-screen{grid-template-columns:1fr}
@@ -1985,11 +2207,13 @@ function buildMenuTree(){
       menuRoute('Giới hạn số ngày dạy & buổi dạy/1 tuần','teacher','maxDaysSessions'),
       menuRoute('Giới hạn số tiết dạy/1 buổi','teacher','maxPeriods'),
       menuRoute('Giới hạn số buổi dạy sáng & chiều','teacher','maxMorningAfternoon'),
-      menuRoute('Chỉ dạy 1 buổi/1 ngày','teacher','oneSessionPerDay'),
+      menuRoute('Giới hạn buổi dạy','teacher','oneSessionPerDay'),
       menuRoute('Không dạy tiết 5 sáng & tiết 1 chiều/1 ngày','teacher','noMorningP5AfternoonP1'),
       menuRoute('Chỉ dạy 1 địa điểm/1 buổi','teacher','oneLocationPerSession'),
       menuRoute('Có tiết trống giữa 2 địa điểm','teacher','gapBetweenLocations'),
       menuRoute('Không di chuyển 2 lần/1 buổi giữa các địa điểm','teacher','maxOneMovePerSession'),
+      menuRoute('Đổi địa điểm ở giờ ra chơi (tiết 2-3)','teacher','moveAtBreak23'),
+      menuRoute('Đổi địa điểm ở giờ ra chơi (tiết 3-4)','teacher','moveAtBreak34'),
       menuRoute('Vị trí phải có tiết dạy','teacher','mustTeach')
     ]},
     {label:'Yêu cầu của môn học', children:[
@@ -2368,7 +2592,13 @@ function buildMenuPopup(items, left, top, level){
     });
     return count;
   }
+  // 05/09: bỏ hẳn "Cảnh báo thiếu ô xếp". Bộ quét này chạy ĐỒNG BỘ 60–70 s trên trường 74 lớp/135 GV
+  // (findClassObject quét tuyến tính cho từng tiết cố định, lặp GV × ô × dòng PCCM) và tính lại sau mỗi lần
+  // lưu yêu cầu, làm trang Yêu cầu (Tổng quan / Kiểm tra) đứng. Engine v3 tự tính sức chứa GV nên bỏ.
+  // Hai hàm trả [] để mọi chỗ gọi (Tổng quan, Kiểm tra, hậu tố thông báo, tiền kiểm của bridge) thành không.
+  const CAPACITY_WARNINGS_ENABLED=false;
   function teacherFixedOffCapacityWarnings(maxItems){
+    if(!CAPACITY_WARNINGS_ENABLED) return [];
     const warnings=[];
     teacherDemandRows().forEach(entry=>{
       const required=Math.round(Number(entry.required || 0));
@@ -2459,6 +2689,7 @@ function buildMenuPopup(items, left, top, level){
     return count;
   }
   function classFixedOffCapacityWarnings(maxItems){
+    if(!CAPACITY_WARNINGS_ENABLED) return [];
     const warnings=[];
     const fixedByClass=fixedLessonSlotSetByClass();
     classDemandRows().forEach(entry=>{
@@ -2730,11 +2961,13 @@ function buildMenuPopup(items, left, top, level){
       maxDaysSessions:'Ngày dạy & buổi/tuần',
       maxPeriods:'Số tiết dạy/buổi',
       maxMorningAfternoon:'Buổi sáng & chiều',
-      oneSessionPerDay:'1 buổi/ngày',
+      oneSessionPerDay:'Giới hạn buổi',
       noMorningP5AfternoonP1:'Tránh tiết 5 sáng + tiết 1 chiều',
       oneLocationPerSession:'1 địa điểm/buổi',
       gapBetweenLocations:'Tiết trống giữa địa điểm',
       maxOneMovePerSession:'Tối đa 1 lần di chuyển/buổi',
+      moveAtBreak23:'Đổi địa điểm giờ ra chơi 2-3',
+      moveAtBreak34:'Đổi địa điểm giờ ra chơi 3-4',
       mustTeach:'Vị trí bắt buộc có tiết dạy'
     };
     const subjectDashLabel={
@@ -2792,7 +3025,6 @@ function buildMenuPopup(items, left, top, level){
         <h3>Yêu cầu thời khóa biểu</h3>
       </div>`}
       ${overviewHtml}
-      <div data-rb-dashboard-capacity></div>
       ${cardsHtml}
     </div>`;
   }
@@ -2873,7 +3105,7 @@ function buildMenuPopup(items, left, top, level){
     nav.innerHTML=`<h4>Tổng quan</h4>${navButton('Yêu cầu thời khóa biểu','dashboard')}<h4>Giáo viên</h4>${TEACHER_RULES.map(r=>navButton(r[1],'teacher',r[0])).join('')}<h4>Lớp / Môn học</h4>${SUBJECT_RULES.map(r=>navButton(r[1],'subject',r[0])).join('')}<h4>${FIXED_OFF_GROUP_LABEL}</h4>${FIXED_OFF_TYPES.map(r=>navButton(r[1],'fixedOff',r[0])).join('')}<h4>Khác</h4>${navButton('Giới hạn số tiết/1 thời điểm','timeLimit')}${navButton('Xóa yêu cầu TKB','clear')}`;
     nav.querySelectorAll('button[data-section]').forEach(b=>{ b.onclick=()=>{ if(!saveCurrentBeforeNavigation()) return; state.section=b.dataset.section; const r=b.dataset.rule; if(state.section==='teacher'&&r) state.teacherRule=r; if(state.section==='subject'&&r) state.subjectRule=r; if(state.section==='subjectGroup'&&r) state.subjectGroupRule=r; if(state.section==='fixedOff'&&r) state.fixedType=r; render(); }; });
   }
-  function render(){ renderNav(); updateFixedOffRibbon(); const body=document.querySelector(`#${PANEL_ID} [data-rb-body]`); if(!body) return; body.dataset.rbSection=state.section || 'dashboard'; if(state.section==='info') body.innerHTML=renderInfo(); else if(state.section==='dashboard') body.innerHTML=renderDashboard(); else if(state.section==='groups') body.innerHTML=renderGroups(); else if(state.section==='teacher') body.innerHTML=renderTeacherRule(state.teacherRule); else if(state.section==='subject') body.innerHTML=renderSubjectRule(state.subjectRule); else if(state.section==='subjectGroup') body.innerHTML=renderSubjectGroupRule(state.subjectGroupRule); else if(state.section==='fixedOff') body.innerHTML=renderFixedOff(state.fixedType); else if(state.section==='fixedLesson') body.innerHTML=renderFixedLessons(); else if(state.section==='timeLimit') body.innerHTML=renderTimeLimit(); else if(state.section==='check') body.innerHTML=renderCheck(); else if(state.section==='clear') body.innerHTML=renderClear(); else body.innerHTML=renderDashboard(); updateFixedOffRibbon(); bindBodyEvents(); rememberCurrentFormSignature(); if(state.section==='dashboard') scheduleDashboardCapacityWarnings(); }
+  function render(){ renderNav(); updateFixedOffRibbon(); const body=document.querySelector(`#${PANEL_ID} [data-rb-body]`); if(!body) return; body.dataset.rbSection=state.section || 'dashboard'; if(state.section==='info') body.innerHTML=renderInfo(); else if(state.section==='dashboard') body.innerHTML=renderDashboard(); else if(state.section==='groups') body.innerHTML=renderGroups(); else if(state.section==='teacher') body.innerHTML=renderTeacherRule(state.teacherRule); else if(state.section==='subject') body.innerHTML=renderSubjectRule(state.subjectRule); else if(state.section==='subjectGroup') body.innerHTML=renderSubjectGroupRule(state.subjectGroupRule); else if(state.section==='fixedOff') body.innerHTML=renderFixedOff(state.fixedType); else if(state.section==='fixedLesson') body.innerHTML=renderFixedLessons(); else if(state.section==='timeLimit') body.innerHTML=renderTimeLimit(); else if(state.section==='check') body.innerHTML=renderCheck(); else if(state.section==='clear') body.innerHTML=renderClear(); else body.innerHTML=renderDashboard(); updateFixedOffRibbon(); bindBodyEvents(); rememberCurrentFormSignature(); }
   function fixedOffListScrollKey(){
     if(state.section==='teacher' && state.teacherRule==='mustTeach') return 'teacher:mustTeach';
     if(state.section==='fixedOff') return `fixedOff:${state.fixedType || ''}`;
@@ -2937,10 +3169,10 @@ function buildMenuPopup(items, left, top, level){
   function inputNum(tid,path,val){ return `<input type="number" ${numberInputClass()} data-tid="${esc(tid)}" data-path="${esc(path)}" min="0" value="${esc(val == null ? '' : val)}">`; }
   function inputCheck(tid,path,val,attrs){ return `<input type="checkbox" data-tid="${esc(tid)}" data-path="${esc(path)}" ${truthy(val)?'checked':''}${attrs?' '+attrs:''}>`; }
   function teacherOneSessionInput(tid,thu,mode,selectedMode){
-    const labels={morning:'Sáng',afternoon:'Chiều',either:'Cả 2'};
+    const labels={morning:'Sáng',afternoon:'Chiều'};
     const path=`oneSessionPerDay.${thu}.${mode}`;
     const aria=`${teacherName(tid)} - ${dayLabel(thu)} - ${labels[mode] || mode}`;
-    return inputCheck(tid,path,selectedMode===mode,`data-rb-one-session-mode="${esc(mode)}" data-rb-one-session-day="${esc(thu)}" aria-label="${esc(aria)}"`);
+    return inputCheck(tid,path,selectedMode===mode || selectedMode==='either',`data-rb-one-session-mode="${esc(mode)}" data-rb-one-session-day="${esc(thu)}" aria-label="${esc(aria)}"`);
   }
   function inputSelect(tid,path,val,options){ return `<select data-tid="${esc(tid)}" data-path="${esc(path)}">${options.map(o=>`<option value="${esc(o[0])}" ${String(o[0])===String(val)?'selected':''}>${esc(o[1])}</option>`).join('')}</select>`; }
   function thDaysGrouped(colspan){ return days().map(d=>`<th colspan="${colspan}">${esc(dayLabel(d))}</th>`).join(''); }
@@ -2991,7 +3223,18 @@ function buildMenuPopup(items, left, top, level){
     const map={thu2:'T2',thu3:'T3',thu4:'T4',thu5:'T5',thu6:'T6',thu7:'T7'};
     return map[d] || dayLabel(d);
   }
+  // 05/09: nhớ kết quả (hàm thuần) — được gọi cho từng ô/dòng khi dựng bảng và kiểm tra.
+  const __classLikeMemo=new Map();
   function normalizeClassLike(name){
+    const raw=String(name || '');
+    const hit=__classLikeMemo.get(raw);
+    if(hit!==undefined) return hit;
+    const v=normalizeClassLikeRaw(raw);
+    if(__classLikeMemo.size>100000) __classLikeMemo.clear();
+    __classLikeMemo.set(raw,v);
+    return v;
+  }
+  function normalizeClassLikeRaw(name){
     let s=String(name || '').trim();
     if(!s) return '';
     if(/^\d+A\d+$/i.test(s)) return s.toUpperCase();
@@ -3035,20 +3278,31 @@ function buildMenuPopup(items, left, top, level){
     if(!s || !aliases) return false;
     return aliases.has(norm(s)) || aliases.has(norm(normalizeClassLike(s)));
   }
+  // 05/09: nhớ theo môn (mỗi lần gọi quét cả danh sách môn × 6 bí danh); làm mới khi __cacheRev / dữ liệu đổi.
   function subjectKeyCandidates(mon){
+    const d=D();
+    const sig=String(__cacheRev)+'|'+ghepRowsToken()+'|'+(d.monhoc||[]).length+'|'+(d.mon||[]).length;
+    if(__cache.subjectKeyCandidatesSig!==sig || __cache.subjectKeyCandidatesData!==d){
+      __cache.subjectKeyCandidatesSig=sig; __cache.subjectKeyCandidatesData=d; __cache.subjectKeyCandidates=new Map();
+    }
+    const memoKey=String(mon || '').trim();
+    const hit=__cache.subjectKeyCandidates.get(memoKey);
+    if(hit) return hit.slice();
     const out=new Set();
     const add=v=>{ const s=String(v || '').trim(); if(s) out.add(s); };
     add(mon);
     add(subjectKey(mon));
-    (D().monhoc || []).forEach(m=>{
+    (d.monhoc || []).forEach(m=>{
       const vals=[m?.ten,m?.mon,m?.ma,m?.ma2,m?.mamon,m?.id];
       if(vals.some(v=>v && subjectMatches(v, mon))) vals.forEach(add);
     });
-    (D().mon || []).forEach(m=>{
+    (d.mon || []).forEach(m=>{
       const vals=[m?.ten,m?.mon,m?.ma,m?.ma2,m?.mamon,m?.id];
       if(vals.some(v=>v && subjectMatches(v, mon))) vals.forEach(add);
     });
-    return Array.from(out).filter(Boolean);
+    const list=Array.from(out).filter(Boolean);
+    __cache.subjectKeyCandidates.set(memoKey, list);
+    return list.slice();
   }
   function matrixNumberForClassSubject(matrix, cls, mon, lop){
     if(!matrix || typeof matrix !== 'object') return null;
@@ -3231,21 +3485,33 @@ function buildMenuPopup(items, left, top, level){
 
   // Keep browser validation aligned with the solver's request-local
   // sanitization: an impossible lower bound cannot reject a complete result.
+  // 05/09: nhớ theo (lớp, môn) — kiểm tra toàn trường hỏi cùng một cặp cho từng ô của môn đó (đo 2,3 s / 3,3 s
+  // của trang Kiểm tra). Bộ nhớ làm mới khi mảng dòng PCCM (đã cache theo chữ ký) hoặc DATA đổi.
   function assignedPeriodsForConstraint(lopId, mon){
     const target=String(mon || '').trim();
     if(!target) return 0;
+    let rows=null;
+    try{ rows=pccmAssignmentRows(); }catch(_){ return 0; }
+    const d=D();
+    if(__cache.assignedPeriodsRows!==rows || __cache.assignedPeriodsData!==d){
+      __cache.assignedPeriodsRows=rows; __cache.assignedPeriodsData=d; __cache.assignedPeriods=new Map();
+    }
+    const memoKey=String(lopId || '')+'|'+norm(target);
+    const hit=__cache.assignedPeriods.get(memoKey);
+    if(hit!==undefined) return hit;
     let total=0;
     try{
       const targetLop=findClassObject(lopId);
-      const rows=pccmAssignmentRows();
       for(const row of rows){
         if(!subjectMatches(row?.mon, target)) continue;
         if(!classMatchesAssignment(lopId, row?.classId || row?.cls, targetLop, row?.lop)) continue;
         const count=toInt(row?.count,0);
         if(count>0) total+=count;
       }
-    }catch(_){ return 0; }
-    return Math.max(0,total);
+    }catch(_){ __cache.assignedPeriods.set(memoKey,0); return 0; }
+    const val=Math.max(0,total);
+    __cache.assignedPeriods.set(memoKey,val);
+    return val;
   }
   function impossibleLessonBlockMinimum(lopId, mon, length, minimum, maximum){
     const len=toInt(length,0), min=toInt(minimum,0), max=toInt(maximum,0);
@@ -3254,15 +3520,35 @@ function buildMenuPopup(items, left, top, level){
     const available=assignedPeriodsForConstraint(lopId,mon);
     return min>Math.floor(available/len);
   }
+  // 05/09: thay quét tuyến tính danh sách lớp (8 giá trị × 2 lần chuẩn hoá cho MỖI lớp, gọi hàng nghìn lần khi
+  // dựng bảng / kiểm tra / dựng dòng PCCM) bằng chỉ mục Map; dựng lại khi mảng lớp đổi tham chiếu, đổi độ dài
+  // hoặc __cacheRev đổi. Giữ đúng ngữ nghĩa cũ: khi nhiều lớp cùng khớp, lớp đứng TRƯỚC trong danh sách thắng.
+  let __classIndex=null;
+  function classIndex(){
+    const lops=D().lop || [];
+    let rev=-1; try{ rev=__cacheRev; }catch(_){ }
+    if(__classIndex && __classIndex.lops===lops && __classIndex.len===lops.length && __classIndex.rev===rev) return __classIndex;
+    const byNorm=new Map(), byLike=new Map();
+    lops.forEach((l,idx)=>{
+      const vals=[l?.id,l?.ten,l?.ten2,l?.ma,classCanon(l?.id),normalizeClassLike(l?.id),normalizeClassLike(l?.ten),normalizeClassLike(l?.ten2)];
+      vals.forEach(v=>{
+        const a=norm(v); if(a && !byNorm.has(a)) byNorm.set(a,{l,idx});
+        const b=norm(normalizeClassLike(v)); if(b && !byLike.has(b)) byLike.set(b,{l,idx});
+      });
+    });
+    __classIndex={lops,len:lops.length,rev,byNorm,byLike};
+    return __classIndex;
+  }
   function findClassObject(cls){
     const raw=String(cls || '').trim();
     if(!raw) return null;
     const rawNorm=norm(raw);
     const rawLike=norm(normalizeClassLike(raw));
-    return (D().lop || []).find(l=>{
-      const vals=[l?.id,l?.ten,l?.ten2,l?.ma,classCanon(l?.id),normalizeClassLike(l?.id),normalizeClassLike(l?.ten),normalizeClassLike(l?.ten2)];
-      return vals.some(v=>norm(v)===rawNorm || norm(normalizeClassLike(v))===rawLike);
-    }) || null;
+    const ix=classIndex();
+    const a=ix.byNorm.get(rawNorm), b=ix.byLike.get(rawLike);
+    if(a && b) return a.idx<=b.idx ? a.l : b.l;
+    const hit=a || b;
+    return hit ? hit.l : null;
   }
   function classMatchesAssignment(targetCls, rawCls, targetLop, rawLop){
     const targetSet=new Set(classKeyCandidates(targetCls, targetLop || findClassObject(targetCls)).map(x=>norm(x)));
@@ -3282,14 +3568,17 @@ function buildMenuPopup(items, left, top, level){
       const mon=parsed.mon;
       if(!cls || !mon) continue;
       const lop=findClassObject(cls);
-      const subject=subjectKey(mon);
+      // 31/08: dòng dạy ghép giữ khoá riêng ở đây (không gộp vào môn gốc khi khử trùng) để số tiết
+      // của nó được cộng riêng; luật/đếm theo môn gốc đi qua bí danh (subjectMatches).
+      const subject=ghepBaseSubject(mon) ? mon : subjectKey(mon);
       const classId=String(lop?.id || cls).trim();
       const teacher=teacherOf(cls, mon);
       // pccmTiet/Gioihan/Room can retain a legacy key after its teacher is
       // cleared.  Such a row is configuration metadata, not class demand.
       // Filter it before de-duplication so a later assigned alias can still
       // contribute the real row.
-      if(!splitTeacherValues(teacher).length) continue;
+      // 02/09: trừ dòng dạy ghép KHÔNG giáo viên — vẫn là tiết của lớp (teacher '').
+      if(!splitTeacherValues(teacher).length && !isNoTeacherGhepAssignment(cls, mon)) continue;
       const uniq=normalizeClassLike(classId || cls)+'|'+norm(subject);
       if(seen.has(uniq)) continue;
       seen.add(uniq);
@@ -3576,7 +3865,7 @@ function buildMenuPopup(items, left, top, level){
     }
     if(rule==='oneSessionPerDay') return teacherDayCheckTable(rows,rule,{mode:'day'});
     if(rule==='noMorningP5AfternoonP1') return teacherDayCheckTable(rows,rule,{mode:'sessionNoMorning'});
-    if(['oneLocationPerSession','gapBetweenLocations','maxOneMovePerSession'].includes(rule)) return teacherDayCheckTable(rows,rule,{mode:'session'});
+    if(['oneLocationPerSession','gapBetweenLocations','maxOneMovePerSession','moveAtBreak23','moveAtBreak34'].includes(rule)) return teacherDayCheckTable(rows,rule,{mode:'session'});
     return '';
   }
   function teacherDaySessionNumberTable(rows,base){
@@ -3585,16 +3874,22 @@ function buildMenuPopup(items, left, top, level){
   function teacherDayCheckTable(rows,base,opts){
     const mode = opts?.mode || 'day';
     if(mode === 'day'){
-      const modes=[['morning','Sáng'],['afternoon','Chiều'],['either','Cả 2']];
-      const html = `<div class="table-wrap rb-desktop-wrap rb-teacher-one-session-wrap"><table class="rb-desktop-table rb-teacher-one-session-table">${teacherCheckColgroup(days().length*modes.length)}<thead><tr><th rowspan="2">TT</th><th rowspan="2">Giáo viên</th>${days().map(d=>`<th colspan="3" class="rb-one-session-day-head">${esc(dayLabel(d))}</th>`).join('')}</tr><tr>${days().map(d=>modes.map(([value,label])=>`<th class="rb-one-session-option-head">${tableCheckAllHeader(label,`path:${base}.${d}.${value}`)}</th>`).join('')).join('')}</tr></thead><tbody>${rows.map((t,i)=>{const r=teacherRuleObj(t.id);return `<tr>${teacherIndexCell(i)}${teacherNameCell(t)}${days().map(d=>{const selected=teacherOneSessionDayMode(getPath(r,base+'.'+d,''));return modes.map(([value])=>`<td class="rb-check">${teacherOneSessionInput(t.id,d,value,selected)}</td>`).join('');}).join('')}</tr>`;}).join('')}</tbody></table></div>`;
-      return `<div data-rb-check-scope="fields">${html}</div>`;
+      const modes=[['morning','Sáng'],['afternoon','Chiều']];
+      const html = `<div class="table-wrap rb-desktop-wrap rb-teacher-one-session-wrap"><table class="rb-desktop-table rb-teacher-one-session-table">${teacherCheckColgroup(days().length*modes.length)}<thead><tr><th rowspan="2">TT</th><th rowspan="2">Giáo viên</th>${days().map(d=>`<th colspan="${modes.length}" class="rb-one-session-day-head">${esc(dayLabel(d))}</th>`).join('')}</tr><tr>${days().map(d=>modes.map(([value,label])=>`<th class="rb-one-session-option-head">${tableCheckAllHeader(label,`path:${base}.${d}.${value}`)}</th>`).join('')).join('')}</tr></thead><tbody>${rows.map((t,i)=>{const r=teacherRuleObj(t.id);return `<tr>${teacherIndexCell(i)}${teacherNameCell(t)}${days().map(d=>{const selected=teacherOneSessionDayMode(getPath(r,base+'.'+d,''));return modes.map(([value])=>`<td class="rb-check">${teacherOneSessionInput(t.id,d,value,selected)}</td>`).join('');}).join('')}</tr>`;}).join('')}</tbody></table></div>`;
+      const hint = `<div class="hint rb-one-session-hint">Bỏ trống: xếp sáng, chiều tự do · Tick <b>Sáng</b>: chỉ dạy buổi sáng · Tick <b>Chiều</b>: chỉ dạy buổi chiều · Tick <b>cả hai</b>: dạy sáng hoặc chiều (không cả hai buổi trong ngày).</div>`;
+      return `<div data-rb-check-scope="fields">${hint}${html}</div>`;
     }
     if(mode === 'sessionNoMorning'){
       const html = `<div class="table-wrap rb-desktop-wrap"><table class="rb-desktop-table rb-teacher-session-check-table">${teacherCheckColgroup(days().length*2)}<thead><tr><th rowspan="2">TT</th><th rowspan="2">Giáo viên</th><th colspan="${days().length}">${tableCheckAllHeader('Buổi sáng','morning')}</th><th colspan="${days().length}">${tableCheckAllHeader('Buổi chiều','afternoon')}</th></tr><tr>${days().map(d=>`<th>${shortDayLabel(d)}</th>`).join('')}${days().map(d=>`<th>${shortDayLabel(d)}</th>`).join('')}</tr></thead><tbody>${rows.map((t,i)=>{const r=teacherRuleObj(t.id);return `<tr>${teacherIndexCell(i)}${teacherNameCell(t)}${days().map(d=>`<td class="rb-check">${inputCheck(t.id,base+'.sang.'+d,getPath(r,base+'.sang.'+d,getPath(r,base+'.'+d,false)))}</td>`).join('')}${days().map(d=>`<td class="rb-check">${inputCheck(t.id,base+'.chieu.'+d,getPath(r,base+'.chieu.'+d,getPath(r,base+'.'+d,false)))}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>`;
       return `<div data-rb-check-scope="fields">${html}</div>`;
     }
     const html = `<div class="table-wrap rb-desktop-wrap"><table class="rb-desktop-table rb-teacher-session-check-table">${teacherCheckColgroup(days().length*2)}<thead><tr><th rowspan="2">TT</th><th rowspan="2">Giáo viên</th><th colspan="${days().length}">${tableCheckAllHeader('Buổi sáng','morning')}</th><th colspan="${days().length}">${tableCheckAllHeader('Buổi chiều','afternoon')}</th></tr><tr>${days().map(d=>`<th>${shortDayLabel(d)}</th>`).join('')}${days().map(d=>`<th>${shortDayLabel(d)}</th>`).join('')}</tr></thead><tbody>${rows.map((t,i)=>{const r=teacherRuleObj(t.id);return `<tr>${teacherIndexCell(i)}${teacherNameCell(t)}${days().map(d=>`<td class="rb-check">${inputCheck(t.id,base+'.sang.'+d,getPath(r,base+'.sang.'+d,false))}</td>`).join('')}${days().map(d=>`<td class="rb-check">${inputCheck(t.id,base+'.chieu.'+d,getPath(r,base+'.chieu.'+d,false))}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div>`;
-    return `<div data-rb-check-scope="fields">${html}</div>`;
+    // 13/09: chú thích luật giờ ra chơi (ô tick = buổi đó có giờ ra chơi ở vị trí này)
+    const breakAfter = base==='moveAtBreak23' ? '2-3' : (base==='moveAtBreak34' ? '3-4' : '');
+    const hint = breakAfter
+      ? `<div class="hint rb-break-move-hint">Tick buổi mà giờ ra chơi nằm giữa <b>tiết ${breakAfter}</b>: giáo viên được đổi địa điểm (cơ sở) liền tiết qua giờ ra chơi này. Đổi địa điểm ở chỗ khác trong buổi vẫn phải có tiết trống.</div>`
+      : '';
+    return `<div data-rb-check-scope="fields">${hint}${html}</div>`;
   }
 
   /* ===================== UI SUBJECT/SUBJECT GROUP ===================== */
@@ -6204,7 +6499,15 @@ function gradeListText(grades){
       if(el.matches('input[type="checkbox"][data-tid][data-path]')){
         const tid=el.dataset.tid, path=el.dataset.path;
         c.teacher[tid]=c.teacher[tid]||{};
-        setPath(c.teacher[tid],path,!!el.checked);
+        const oneDay=el.dataset.rbOneSessionDay;
+        if(oneDay){
+          // 13/09: giá trị của ngày = trạng thái CẢ hai ô Sáng/Chiều (ô kia lấy trên cùng dòng)
+          const row=el.closest ? el.closest('tr') : null;
+          const box=m=>(el.dataset.rbOneSessionMode===m) ? el : row?.querySelector?.(`input[data-tid][data-rb-one-session-day="${oneDay}"][data-rb-one-session-mode="${m}"]`);
+          const rule=c.teacher[tid];
+          if(!rule.oneSessionPerDay || typeof rule.oneSessionPerDay!=='object' || Array.isArray(rule.oneSessionPerDay)) rule.oneSessionPerDay={};
+          rule.oneSessionPerDay[oneDay]={morning:!!box('morning')?.checked, afternoon:!!box('afternoon')?.checked};
+        }else setPath(c.teacher[tid],path,!!el.checked);
         delEmpty(c.teacher[tid]);
         if(Object.keys(c.teacher[tid]).length===0) delete c.teacher[tid];
         else touchedTeachers.add(tid);
@@ -7188,9 +7491,7 @@ function gradeListText(grades){
   }
   function renderCheck(){
     const arr=validateAll(300);
-    const capacityWarnings=[...teacherFixedOffCapacityWarnings(), ...classFixedOffCapacityWarnings()];
-    const capacityHtml=teacherCapacityWarningsHtml(capacityWarnings,{limit:20,tall:true});
-    return `<h3>Kiểm tra yêu cầu</h3><div class="hint">Chỉ khi bấm kiểm tra mới quét toàn bộ TKB. Kéo-thả/xếp tự động chỉ kiểm tra nhanh ô đang đặt.</div>${capacityHtml}<div class="box"><b>Kết quả: ${arr.length} vi phạm${arr.length>=300?' (hiển thị 300 lỗi đầu để tránh đứng trang)':''}</b><pre>${esc(arr.length?arr.map((x,i)=>`${i+1}. ${x.className||x.lopId||''} ${x.mon?('['+x.mon+'] '):''}${x.thu?dayLabel(x.thu)+' '+SESSION_LABEL[x.buoi]+' tiết '+(Number(x.ti)+1)+': ':''}${x.message||''}`).join('\n'):'Không phát hiện vi phạm yêu cầu.')}</pre></div>`;
+    return `<h3>Kiểm tra yêu cầu</h3><div class="hint">Chỉ khi bấm kiểm tra mới quét toàn bộ TKB. Kéo-thả/xếp tự động chỉ kiểm tra nhanh ô đang đặt.</div><div class="box"><b>Kết quả: ${arr.length} vi phạm${arr.length>=300?' (hiển thị 300 lỗi đầu để tránh đứng trang)':''}</b><pre>${esc(arr.length?arr.map((x,i)=>`${i+1}. ${x.className||x.lopId||''} ${x.mon?('['+x.mon+'] '):''}${x.thu?dayLabel(x.thu)+' '+SESSION_LABEL[x.buoi]+' tiết '+(Number(x.ti)+1)+': ':''}${x.message||''}`).join('\n'):'Không phát hiện vi phạm yêu cầu.')}</pre></div>`;
   }
   function renderClear(){ return `<div class="rb-clear-screen"><h3>Xóa yêu cầu TKB</h3><div class="hint">Chỉ xóa dữ liệu yêu cầu. Không xóa TKB đã xếp, PCCM và danh mục.</div><div class="rb-clear-grid"><div class="rb-clear-card"><b>Yêu cầu của giáo viên</b><span>Xóa toàn bộ dữ liệu trong nhóm yêu cầu giáo viên.</span><button type="button" class="danger" data-clear-teacher>Xóa</button></div><div class="rb-clear-card"><b>Yêu cầu của môn học</b><span>Xóa toàn bộ dữ liệu trong nhóm yêu cầu môn học.</span><button type="button" class="danger" data-clear-subject>Xóa</button></div><div class="rb-clear-card"><b>${FIXED_OFF_GROUP_LABEL}</b><span>Xóa yêu cầu cố định lớp, giáo viên, môn và phòng.</span><button type="button" class="danger" data-clear-fixedOff>Xóa</button></div><div class="rb-clear-card"><b>Giới hạn số tiết/1 thời điểm</b><span>Xóa toàn bộ nhóm giới hạn và giới hạn theo lớp, giáo viên, môn.</span><button type="button" class="danger" data-clear-timeLimit>Xóa</button></div><div class="rb-clear-card"><b>Toàn bộ yêu cầu TKB</b><span>Khôi phục toàn bộ dữ liệu yêu cầu về trạng thái trống.</span><button type="button" class="danger" data-rb-clear-all>Xóa toàn bộ</button></div></div></div>`; }
   function clearSection(k){ if(!confirm('Xóa mục này?'))return; const c=model(); const classSnapshot=k==='fixedOff' ? classFixedOffSlotsSnapshot() : null; if(k==='teacher') c.teacher={}; if(k==='subject'){ c.subject={}; c.subjectNoSameSession={byClass:{}}; } if(k==='subjectGroup') c.subjectGroup={}; if(k==='fixedOff'){ c.fixedOff={class:{},teacher:{},subject:{},room:{},subjectGroup:{}}; clearClassFixedOffCells(classSnapshot); D().tkbUserOff={}; } if(k==='timeLimit') clearTimeLimitGroupsAndRules(); touchSave(); rerenderSafe(); render(); }
@@ -7221,6 +7522,7 @@ function gradeListText(grades){
       window.__TKB_CONSTRAINTS_TEST_HOOKS = {
         getTeacherList,
         getSubjectList,
+        isNoTeacherGhepAssignment,
         subjectOptionsForClasses,
         applyClassFixedLessonToSelection,
         classSubjectRequiredCount,
@@ -7244,12 +7546,13 @@ function gradeListText(grades){
         teacherOneSessionDayMode,
         normalizeTeacherOneSessionRule,
         enforceTeacherOneSessionInputs,
+        fastSaveCheckboxTargets,
         renderSubjectRule,
         applyLessonBlockBulkFill
       };
     }
   }catch(_){ }
-  const API={version:VERSION,get:model,save:touchSave,open:openPanel,openPage,close:closePanel,render,syncDefaultGroups,canPlaceLesson,canPlaceCell,validateAll,validateAllAsync,validateClasses,invalidateConstraintCache,explain:validateAll,score:function(){return validateAll(1000).length;},teacherFixedOffCapacityWarnings,classFixedOffCapacityWarnings,teacherCellsAfterPlace,teacherLocationRuleDebt,inferClassIdFromTkb,debugCanPlace,teacherFixedOffExcelRows,exportTeacherFixedOffExcel,importTeacherFixedOffRows,importTeacherFixedOffExcelFile,classFixedOffExcelRows,exportClassFixedOffExcel,importClassFixedOffRows,importClassFixedOffExcelFile,subjectFixedOffExcelRows,exportSubjectFixedOffExcel,importSubjectFixedOffRows,importSubjectFixedOffExcelFile,fullConstraintsExportPayload,exportAllConstraintsExcel,readAllConstraintsPayloadFromWorkbook,applyImportedConstraintsPayload,importAllConstraintsExcelFile};
+  const API={version:VERSION,get:model,save:touchSave,open:openPanel,openPage,close:closePanel,render,syncDefaultGroups,canPlaceLesson,canPlaceCell,validateAll,validateAllAsync,validateClasses,invalidateConstraintCache,refreshScheduleIndexClasses,explain:validateAll,score:function(){return validateAll(1000).length;},teacherFixedOffCapacityWarnings,classFixedOffCapacityWarnings,teacherCellsAfterPlace,teacherLocationRuleDebt,inferClassIdFromTkb,debugCanPlace,teacherFixedOffExcelRows,exportTeacherFixedOffExcel,importTeacherFixedOffRows,importTeacherFixedOffExcelFile,classFixedOffExcelRows,exportClassFixedOffExcel,importClassFixedOffRows,importClassFixedOffExcelFile,subjectFixedOffExcelRows,exportSubjectFixedOffExcel,importSubjectFixedOffRows,importSubjectFixedOffExcelFile,fullConstraintsExportPayload,exportAllConstraintsExcel,readAllConstraintsPayloadFromWorkbook,applyImportedConstraintsPayload,importAllConstraintsExcelFile};
   window.TKBConstraints=API; window.TKBConstraintsFull=API;
   try{ injectStyle(); model(); installHooks(); console.log('[tkb-constraints] loaded', VERSION); }catch(e){ console.warn('[tkb-constraints] init failed',e); }
 })();

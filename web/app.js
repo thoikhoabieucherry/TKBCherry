@@ -492,6 +492,9 @@ function ensureDataShape(){
     // key: "Lop|Mon" -> "4" (string)
     if (!DATA.pccmTietMatrix) DATA.pccmTietMatrix = {};
     if (!DATA.pccmGioihanMatrix) DATA.pccmGioihanMatrix = {};
+
+    // Dạy ghép (PCGD ghép) — xem modules/day-ghep.js
+    if (!Array.isArray(DATA.dayGhep)) DATA.dayGhep = [];
 }
 
 function syncClassAvailabilityIntegrity(){
@@ -542,8 +545,21 @@ function syncClassAvailabilityIntegrity(){
    - Khi Môn / Lớp / Giáo viên bị xoá → các bảng phụ thuộc phải trống
    - Khi chỉ xoá 1 phần → tự động dọn rác (orphan) theo dữ liệu còn lại
 ============================================================ */
+// 31/08: Chuẩn hoá Unicode NFC toàn bộ DATA (shared/storage.js normalizeUnicodeNFC). Dòng GV dán
+// từ Mac/Excel ở dạng NFD ("Hà" = "Ha" + U+0300) → mã tự sinh "ĐP.Hà" cũng NFD, trong khi phân công
+// lưu chuỗi NFC từ chỉ mục (_normText) → trang Sắp xếp thấy 2 giáo viên (trường 0l2vcan0xx1).
+// Gọi khi nạp (syncDerivedDataIntegrity → lưu nếu đổi) và trước mỗi saveStore.
+function appNormalizeDataNFC(){
+    const fn = window.TKBStorage && window.TKBStorage.normalizeUnicodeNFC;
+    if (typeof fn !== "function" || !DATA || typeof DATA !== "object") return false;
+    return !!fn(DATA);
+}
+
 function syncDerivedDataIntegrity(){
     let changed = false;
+    try{ changed = appNormalizeDataNFC() || changed; }catch(e){ console.warn("appNormalizeDataNFC failed", e); }
+    // Khoá "Lớp|Môn ảo" do Dạy ghép sở hữu (chữ thường) — không được dọn như phân công mồ côi.
+    let ghepKeys = new Set();
 
     const hasMonHoc = Array.isArray(DATA.monhoc) && DATA.monhoc.length > 0;
     const hasLop    = Array.isArray(DATA.lop) && DATA.lop.length > 0;
@@ -670,6 +686,7 @@ function syncDerivedDataIntegrity(){
             ...Object.keys(limitMatrix || {})
         ]);
         keys.forEach(key => {
+            if (ghepKeys.has(String(key).toLowerCase())) return;
             const parts = String(key).split("|");
             if (parts.length < 2) return;
             const cls = _normText(parts.shift());
@@ -704,8 +721,18 @@ function syncDerivedDataIntegrity(){
         clearObjIfNotEmpty("pccmRoomMatrix");
         clearObjIfNotEmpty("pccmTietMatrix");
         clearObjIfNotEmpty("pccmGioihanMatrix");
+        if (typeof syncDayGhepIntegrity === "function"){
+            changed = syncDayGhepIntegrity({hasCore:false}) || changed;
+        }
     } else {
+        // Dạy ghép: dọn dòng mồ côi trước, rồi giữ lại các khoá môn ảo mà nó sở hữu.
+        if (typeof syncDayGhepIntegrity === "function"){
+            changed = syncDayGhepIntegrity({classAliasToCanon, monAliasSet}) || changed;
+        }
+        if (typeof dayGhepOwnedKeySet === "function") ghepKeys = dayGhepOwnedKeySet();
+
         const keepKeyByClassMon = (key) => {
+            if (ghepKeys.has(String(key).toLowerCase())) return true;
             const parts = String(key).split("|");
             if (parts.length < 2) return false;
             const classCandidates = classLookupCandidates(parts[0]);
@@ -795,14 +822,26 @@ function syncDerivedDataIntegrity(){
         });
     }
 
+    // ===== 4) Dạy ghép -> bảng phân công (môn ảo "Lớp|Tên hiển thị") =====
+    if (typeof syncDayGhepProjection === "function"){
+        try{ changed = syncDayGhepProjection() || changed; }
+        catch(e){ console.warn("syncDayGhepProjection failed", e); }
+    }
+
     return changed;
 }
 
 function saveStore(options){
     const opts = options || {};
+    try{ appNormalizeDataNFC(); }catch(_){ }   // 31/08: không để chuỗi NFD lọt vào kho
     // Dữ liệu vừa đổi => các chỉ mục tra cứu có thể cũ.
     try{ invalidateTeacherCodeIndex(); invalidateClassLookupCache(); }catch(_){ }
     try{ invalidateTietChuanCaches(); }catch(_){ }
+    // 30/08: bộ đệm tên GV so theo THAM CHIẾU mảng giaovien -> sửa tại chỗ (đổi tên) không
+    // làm mới -> Phân công vẫn hiện tên cũ tới khi tải lại trang.
+    try{ invalidateTeacherNameMap(); }catch(_){ }
+    // 30/08: mốc thời gian để trang Sắp xếp (tab khác) nhận ra bản mới khi quay lại tab.
+    try{ if (DATA && typeof DATA === "object"){ DATA._lastModified = Date.now(); DATA._updatedAt = DATA._lastModified; } }catch(_){ }
     // Luôn backup vào localStorage theo trường để tránh mất dữ liệu khi KVDB/sql.js/IndexedDB lỗi.
     const sid = CTX.schoolId || getSchoolId();
     const json = JSON.stringify(DATA);
@@ -838,6 +877,97 @@ function updateSchoolBadge(){
     const badge = document.getElementById("schoolBadgeText");
     if (badge) badge.textContent = `Trường: ${getSchoolLabel()}`;
 }
+
+/* ===== 30/08: Nạp lại bản mới nhất từ kho khi quay lại tab (hai tab Dữ liệu + Sắp xếp) =====
+   Trang Sắp xếp lưu TKB ở tab khác; trang này vẫn giữ bản cũ -> thao tác tiếp theo ở đây
+   sẽ ghi đè TKB vừa xếp. Khi tab hiện lại / được focus mà không có hộp thoại/sửa dòng đang
+   mở, đọc kho: khác bản đang giữ -> thay DATA, vẽ lại trang hiện tại. */
+let __appRemoteRefreshInFlight = false;
+let __appRemoteRefreshLastAt = 0;
+function __appDataStamp(d){
+    const n = Number(d?._lastModified || d?._updatedAt || 0);
+    return Number.isFinite(n) ? n : 0;
+}
+function __appStableJson(v){
+    if (Array.isArray(v)) return "[" + v.map(__appStableJson).join(",") + "]";
+    if (v && typeof v === "object"){
+        return "{" + Object.keys(v).sort().map(k => JSON.stringify(k) + ":" + __appStableJson(v[k])).join(",") + "}";
+    }
+    return JSON.stringify(v === undefined ? null : v);
+}
+function appRemoteDataDiffers(remote){
+    if (!remote || typeof remote !== "object") return false;
+    const rt = __appDataStamp(remote), lt = __appDataStamp(DATA);
+    if (rt || lt) return rt !== lt;
+    try{ return __appStableJson(remote) !== __appStableJson(DATA); }catch(_){ return false; }
+}
+function appUiBusyEditing(){
+    try{
+        const modal = document.getElementById("modal");
+        if (modal && modal.style && modal.style.display && modal.style.display !== "none") return true;
+        const dg = document.getElementById("dgModal");
+        if (dg && dg.style && dg.style.display && dg.style.display !== "none") return true;
+    }catch(_){ }
+    if (INLINE_EDIT && INLINE_EDIT.index >= 0) return true;
+    if (typeof IS_PCCM_IMPORT !== "undefined" && IS_PCCM_IMPORT) return true;
+    return false;
+}
+function appCurrentPageName(){
+    try{
+        const active = document.querySelector(".app-nav .btn.nav-active");
+        const page = active?.dataset?.page || active?.getAttribute?.("data-page") || "";
+        if (page) return page;
+    }catch(_){ }
+    return CURRENT_SECTION || "khoi";
+}
+function appAdoptRemoteData(remote){
+    DATA = remote;
+    ensureDataShape();
+    try{ syncDerivedDataIntegrity(); }catch(e){ console.warn("syncDerivedDataIntegrity failed", e); }
+    try{ invalidateTeacherCodeIndex(); invalidateClassLookupCache(); }catch(_){ }
+    try{ invalidateTietChuanCaches(); }catch(_){ }
+    try{ invalidateTeacherNameMap(); }catch(_){ }
+    try{ INLINE_EDIT = { section:"", index:-1 }; }catch(_){ }
+    const page = appCurrentPageName();
+    try{
+        if (typeof loadPage === "function") loadPage(page);
+        else renderSectionInto(page, "section-content", document);
+    }catch(e){ console.warn("re-render after remote refresh failed", e); }
+    updateSchoolBadge();
+}
+async function appRefreshFromRemoteIfIdle(reason){
+    try{
+        if (!window.TKBStorage || typeof window.TKBStorage.loadRemoteSchoolData !== "function") return false;
+        if (typeof document !== "undefined" && document.visibilityState && document.visibilityState !== "visible") return false;
+        if (__appRemoteRefreshInFlight) return false;
+        const now = Date.now();
+        if (now - __appRemoteRefreshLastAt < 1500) return false;
+        __appRemoteRefreshLastAt = now;
+        if (appUiBusyEditing()) return false;
+        const sid = CTX.schoolId || getSchoolId();
+        if (!sid) return false;
+        __appRemoteRefreshInFlight = true;
+        const stampBefore = __appDataStamp(DATA);
+        const remote = await window.TKBStorage.loadRemoteSchoolData(sid);
+        if (!window.TKBStorage.hasMeaningfulData(remote)) return false;
+        if (!appRemoteDataDiffers(remote)) return false;
+        // trong lúc chờ mạng người dùng đã lưu gì đó ở đây -> bản này mới hơn, giữ
+        if (appUiBusyEditing() || __appDataStamp(DATA) !== stampBefore) return false;
+        appAdoptRemoteData(remote);
+        try{ showBottomPopup("Đã nạp dữ liệu mới nhất vừa lưu ở tab khác.", "info"); }catch(_){ }
+        return true;
+    }catch(e){
+        console.warn("appRefreshFromRemoteIfIdle failed", e);
+        return false;
+    }finally{
+        __appRemoteRefreshInFlight = false;
+    }
+}
+try{
+    document.addEventListener("visibilitychange", ()=>{ if (document.visibilityState === "visible") appRefreshFromRemoteIfIdle("visible"); });
+    window.addEventListener("focus", ()=>appRefreshFromRemoteIfIdle("focus"));
+    window.appRefreshFromRemoteIfIdle = appRefreshFromRemoteIfIdle;
+}catch(_){ }
 
 function showPendingSchoolPopup(){
     let message = "";
@@ -1722,6 +1852,10 @@ function importFromExcel(wb){
     if (IMPORT_SECTION==="lop") return importExcel_Lop(rows);
     if (IMPORT_SECTION==="monhoc") return importExcel_MonHoc(rows);
     if (IMPORT_SECTION==="mon") return importExcel_Mon(rows);
+    if (IMPORT_SECTION==="dayghep"){   // 31/08: mục Dạy ghép (modules/day-ghep.js)
+        if (typeof importExcel_DayGhep !== "function"){ alert("❌ Chưa tải mô-đun Dạy ghép. Tải lại trang rồi thử lại."); return; }
+        return importExcel_DayGhep(rows);
+    }
 
     return importExcel_Default(rows);
 }
@@ -2431,6 +2565,10 @@ function saveData(){
             try{ propagateMonhocRename(previousRow, obj); }
             catch(e){ console.warn("propagateMonhocRename failed", e); }
         }
+        if (section === "giaovien"){
+            try{ propagateGiaovienRename(previousRow, obj); }
+            catch(e){ console.warn("propagateGiaovienRename failed", e); }
+        }
     }
     // Môn học mới/đổi → Tiết chuẩn + Phân công thấy ngay (không chờ mở trang Tiết chuẩn)
     if (section === "monhoc"){
@@ -2447,10 +2585,19 @@ function saveData(){
    XÓA DỮ LIỆU
 ============================================================ */
 function deleteRow(section,index){
-    if (!confirm("Bạn có chắc muốn xóa?")) return;
+    const tkbNote = (section === "monhoc" || section === "mon")
+        ? "\nCác tiết của môn này trên TKB (kể cả tiết CỐ ĐỊNH) sẽ bị gỡ."
+        : "";
+    if (!confirm("Bạn có chắc muốn xóa?" + tkbNote)) return;
 
     const removed = (DATA[section] || [])[index];
     DATA[section].splice(index,1);
+    if (section === "monhoc" && removed){
+        try{ removeTkbCellsForSubjects(monhocRowAliases(removed)); }catch(e){ console.warn("removeTkbCellsForSubjects failed", e); }
+    }
+    if (section === "mon" && removed){
+        try{ removeTkbCellsForSubjects([removed.ten], {khoiNum: extractKhoiNumber(removed.khoi)}); }catch(e){ console.warn("removeTkbCellsForSubjects failed", e); }
+    }
     // Nếu xóa môn tổng hợp (monhoc) => hỏi có xóa luôn trong Tiết chuẩn (mon) không
     if (section === "monhoc" && removed){
         const ten = _normText(removed.ten);
@@ -2674,6 +2821,30 @@ function propagateMonhocRename(oldRow, newRow){
         });
     });
 
+    // 2b) Dạy ghép: đổi khoá môn của dòng; nếu tên tự động (Mã môn + Lớp) đổi
+    //     theo mã mới thì đổi tên môn ảo trên TKB rồi chiếu lại bảng phân công.
+    if (typeof dayGhepList === "function"){
+        let ghepChanged = false;
+        dayGhepList().forEach(e=>{
+            const mons = dayGhepSubjects(e);
+            if (!mons.some(k => rekeySet.has(k.toLowerCase()) && k !== newKey)) return;
+            const oldName = dayGhepName(e);
+            const next = [];
+            mons.forEach(k=>{
+                const v = rekeySet.has(k.toLowerCase()) ? newKey : k;
+                if (!next.some(x => x.toLowerCase() === v.toLowerCase())) next.push(v);
+            });
+            e.mon = next;
+            ghepChanged = true;
+            const nextName = dayGhepName(e);
+            if (nextName !== oldName) dayGhepClasses(e).forEach(c => dayGhepRenameTkbCells(c, oldName, nextName));
+        });
+        if (ghepChanged){
+            changed = true;
+            try{ syncDayGhepProjection(); }catch(_){ }
+        }
+    }
+
     // 3) Phòng học gắn môn
     (DATA.phong || []).forEach(p=>{
         const next = mapValue(p?.tinhtrang);
@@ -2760,6 +2931,172 @@ function propagateMonhocRename(oldRow, newRow){
     return changed;
 }
 
+// 30/08: Đổi MÃ GV (hoặc GV chưa có mã đổi tên) -> mọi nơi tham chiếu GV đổi theo:
+// Phân công (giá trị "GV1, GV2"), Dạy ghép, GV theo tiết, ô TKB có gv, Yêu cầu (khoá theo mã),
+// kết quả xếp đã lưu. Không lan toả tên GV khi mã giữ nguyên: mọi bảng đều lưu MÃ.
+function teacherRowFullName(row){
+    return `${_normText(row?.hodem)} ${_normText(row?.ten)}`.trim();
+}
+function propagateGiaovienRename(oldRow, newRow){
+    if (!oldRow || !newRow) return false;
+    const oldCode = _normText(oldRow.magv);
+    const newCode = _normText(newRow.magv);
+    const oldName = teacherRowFullName(oldRow);
+    const newName = teacherRowFullName(newRow);
+    const target = newCode || newName;
+    if (!target) return false;
+    const lost = new Set();
+    if (oldCode && oldCode.toLowerCase() !== newCode.toLowerCase()) lost.add(oldCode.toLowerCase());
+    // GV chưa có mã: phân công lưu nguyên TÊN -> tên đổi (hoặc vừa được cấp mã) phải chuyển.
+    // Chỉ chuyển khi không còn GV khác mang đúng tên đó (tránh cướp phân công của người trùng tên).
+    if (oldName && (oldName.toLowerCase() !== newName.toLowerCase() || (!oldCode && newCode))){
+        const shared = (DATA.giaovien || []).some(g => g !== newRow && teacherRowFullName(g).toLowerCase() === oldName.toLowerCase());
+        if (!shared) lost.add(oldName.toLowerCase());
+    }
+    if (!lost.size) return false;
+
+    const mapToken = (value)=>{
+        const s = _normText(value);
+        return lost.has(s.toLowerCase()) ? target : null;
+    };
+    // Chuỗi "GV1, GV2" (dạy ghép cũ) hoặc một GV
+    const mapValue = (value)=>{
+        if (typeof value !== "string") return null;
+        const parts = value.split(",");
+        let hit = false;
+        const next = parts.map(part=>{
+            const m = mapToken(part);
+            if (m == null) return part.trim();
+            hit = true;
+            return m;
+        });
+        if (!hit) return null;
+        const seen = new Set();
+        return next.filter(x => x && !seen.has(x.toLowerCase()) && seen.add(x.toLowerCase())).join(", ");
+    };
+    let changed = false;
+    const mapObjValues = (obj)=>{
+        if (!obj || typeof obj !== "object") return;
+        Object.keys(obj).forEach(k=>{
+            const next = mapValue(obj[k]);
+            if (next != null && next !== obj[k]){ obj[k] = next; changed = true; }
+        });
+    };
+    mapObjValues(DATA.pccmMatrix);
+    mapObjValues(DATA.tkbLessonTeachers);
+    (DATA.dayGhep || []).forEach(e=>{
+        if (!e || typeof e !== "object") return;
+        const list = Array.isArray(e.gv) ? e.gv : [];
+        let hit = false;
+        const next = [];
+        list.forEach(x=>{
+            const m = mapToken(x);
+            let v = _normText(x);
+            if (m != null){ v = m; hit = true; }
+            if (v && !next.some(y => y.toLowerCase() === v.toLowerCase())) next.push(v);
+        });
+        if (hit){ e.gv = next; changed = true; }
+    });
+    Object.values(DATA.tkb || {}).forEach(grid=>{
+        if (!grid || typeof grid !== "object") return;
+        Object.values(grid).forEach(day=>{
+            if (!day || typeof day !== "object") return;
+            ["sang","chieu"].forEach(b=>{
+                (Array.isArray(day[b]) ? day[b] : []).forEach(cell=>{
+                    if (!cell || typeof cell !== "object") return;
+                    const next = mapValue(cell.gv);
+                    if (next != null && next !== cell.gv){ cell.gv = next; changed = true; }
+                });
+            });
+        });
+    });
+    // Yêu cầu / kết quả xếp: khoá object hoặc chuỗi khớp đúng mã cũ (kể cả danh sách "A, B")
+    const walk = (node, depth)=>{
+        if (!node || typeof node !== "object" || depth > 8) return;
+        if (Array.isArray(node)){
+            node.forEach((v, i)=>{
+                if (typeof v === "string"){
+                    const next = mapValue(v);
+                    if (next != null && next !== v){ node[i] = next; changed = true; }
+                } else walk(v, depth + 1);
+            });
+            return;
+        }
+        Object.keys(node).forEach(k=>{
+            const v = node[k];
+            if (typeof v === "string"){
+                const next = mapValue(v);
+                if (next != null && next !== v){ node[k] = next; changed = true; }
+            } else walk(v, depth + 1);
+            const nextKey = mapToken(k);
+            if (nextKey != null && nextKey !== k && !(nextKey in node)){
+                node[nextKey] = node[k];
+                delete node[k];
+                changed = true;
+            }
+        });
+    };
+    try{ walk(DATA.tkbConstraints, 0); }catch(_){ }
+    try{ walk(DATA.tkbSolverResult, 0); }catch(_){ }
+    if (changed){
+        try{ invalidateTeacherCodeIndex(); invalidateTeacherNameMap(); }catch(_){ }
+        try{ if (typeof syncDayGhepProjection === "function") syncDayGhepProjection(); }catch(_){ }
+    }
+    return changed;
+}
+
+// 30/08: Xoá môn (Môn học) / xoá dòng Tiết chuẩn -> gỡ các tiết của môn đó khỏi TKB,
+// KỂ CẢ tiết cố định (trước đây chỉ bộ giải mới dọn tiết thường, tiết cố định nằm lại
+// mãi, phải sang Sắp xếp gỡ cố định rồi xoá tay). khoiNum: chỉ các lớp thuộc khối đó.
+function removeTkbCellsForSubjects(aliases, opts){
+    const set = new Set((aliases || []).map(a => _normText(a).toLowerCase()).filter(Boolean));
+    if (!set.size) return 0;
+    const khoiNum = _normText(opts?.khoiNum);
+    const classKhoi = (classId)=>{
+        const lop = (DATA.lop || []).find(l => String(l?.id) === String(classId));
+        if (!lop) return extractKhoiNumber(classId);
+        return extractKhoiNumber(lop.khoi) || extractKhoiNumber(canonTen2FromLop(lop));
+    };
+    const cellMonText = (cell)=>{
+        const raw = (typeof cell === "string") ? cell : (cell && typeof cell === "object" ? cell.mon : "");
+        const s = _normText(raw);
+        if (!s || s === "OFF") return "";
+        // dạng cũ "Môn - GV"
+        return s.includes(" - ") ? _normText(s.split(" - ")[0]) : s;
+    };
+    let n = 0;
+    Object.keys(DATA.tkb || {}).forEach(classId=>{
+        if (khoiNum && classKhoi(classId) !== khoiNum) return;
+        const grid = DATA.tkb[classId];
+        if (!grid || typeof grid !== "object") return;
+        Object.values(grid).forEach(day=>{
+            if (!day || typeof day !== "object") return;
+            ["sang","chieu"].forEach(b=>{
+                const arr = day[b];
+                if (!Array.isArray(arr)) return;
+                arr.forEach((cell, i)=>{
+                    const mon = cellMonText(cell);
+                    if (mon && set.has(mon.toLowerCase())){ arr[i] = ""; n += 1; }
+                });
+            });
+        });
+    });
+    ["tkbLessonTeachers","tkbLessonRooms"].forEach(field=>{
+        const obj = DATA[field];
+        if (!obj || typeof obj !== "object") return;
+        Object.keys(obj).forEach(k=>{
+            const parts = String(k).split("|");
+            if (parts.length < 2) return;
+            if (khoiNum && extractKhoiNumber(parts[0]) !== khoiNum) return;
+            if (set.has(_normText(parts.slice(1).join("|")).toLowerCase())){ delete obj[k]; n += 1; }
+        });
+    });
+    return n;
+}
+function monhocRowAliases(row){
+    return Array.from(new Set([row?.ten, row?.ma, row?.ma2].map(v => _normText(v)).filter(Boolean)));
+}
+
 function tableSaveEdit(section, index){
     const cfg = FORM_CONFIG[section];
     const row = (DATA[section] || [])[index];
@@ -2787,6 +3124,10 @@ function tableSaveEdit(section, index){
         try{ ensureTietChuanSyncedFromMonHoc(); }
         catch(e){ console.warn("ensureTietChuanSyncedFromMonHoc failed", e); }
     }
+    if (section === "giaovien"){
+        try{ propagateGiaovienRename(previousRow, DATA[section][index]); }
+        catch(e){ console.warn("propagateGiaovienRename failed", e); }
+    }
 
     saveStore();
     INLINE_EDIT = { section:"", index:-1 };
@@ -2801,7 +3142,10 @@ function deleteSelectedRows(section){
         return;
     }
 
-    if (!confirm(`Xóa ${idxs.length} dòng đã chọn?`)) return;
+    const tkbNote = (section === "monhoc" || section === "mon")
+        ? "\nCác tiết của các môn này trên TKB (kể cả tiết CỐ ĐỊNH) sẽ bị gỡ."
+        : "";
+    if (!confirm(`Xóa ${idxs.length} dòng đã chọn?` + tkbNote)) return;
 
     const removed = [];
     idxs.forEach(i=>{
@@ -2810,6 +3154,10 @@ function deleteSelectedRows(section){
             DATA[section].splice(i, 1);
         }
     });
+    try{
+        if (section === "monhoc") removed.forEach(r => removeTkbCellsForSubjects(monhocRowAliases(r)));
+        if (section === "mon") removed.forEach(r => removeTkbCellsForSubjects([r?.ten], {khoiNum: extractKhoiNumber(r?.khoi)}));
+    }catch(e){ console.warn("removeTkbCellsForSubjects failed", e); }
 
     // Special cleanup: monhoc => optional delete in Tiết chuẩn
     if (section === "monhoc" && removed.length){
@@ -2964,7 +3312,14 @@ let TC_CELL_ANCHOR = null;         // {r,c}
 let TC_CELL_DRAGGING = false;
 let TC_CELL_DRAG_START = null;
 
-// Thêm nhanh PCCM: chọn nhiều lớp trong tab Lớp.
+// Thêm nhanh PCCM: chọn nhiều lớp; Môn học và Giáo viên chỉ chọn MỘT
+// (28/08: dạy ghép nhiều GV / nhiều môn chuyển sang mục "Dạy ghép" riêng).
+// 11/09 (chủ dự án: "xem lại cơ chế chọn nhiều lớp"): danh sách LỚP bấm là
+// bật/tắt từng lớp (như bộ chọn ở Dạy ghép, không cần giữ Ctrl — trước đây
+// bấm thường = chọn MỘT lớp rồi đóng menu nên không chọn nhiều được trên
+// máy không có bàn phím), Shift = chọn dải, menu giữ mở; thêm hàng nút
+// "Tất cả / Khối … / Bỏ chọn". Môn học / Giáo viên (chọn một) vẫn đóng ngay.
+const PCCM_QUICK_SINGLE_TYPES = new Set(["subject", "teacher"]);
 let PCCM_QUICK_SELECTED_CLASSES = [];
 let PCCM_QUICK_CLASS_ANCHOR = "";
 let PCCM_QUICK_SELECTED_SUBJECTS = [];
@@ -3446,6 +3801,14 @@ function pccmCellMouseDown(ev, td){
         const teacherButton = !!closest(".pccm-multi-button");
         if (!armedSelect && !teacherButton){
             ev.preventDefault();
+            // 30/08: sau khi click đúp mở danh sách GV, <select> giữ focus mãi (preventDefault ở
+            // đây làm click đơn không chuyển focus) -> Ctrl+C / Ctrl+V bị coi là "đang gõ" và bị
+            // bỏ qua -> "sao chép GV dán sang ô khác không được". Trả focus về trang.
+            try{
+                const ae = document.activeElement;
+                if (ae && ae !== document.body && typeof ae.blur === "function"
+                    && ae.closest && ae.closest(".pccm-copy-cell")) ae.blur();
+            }catch(_){ }
         }
         if (armedSelect) delete td.dataset.pccmOpen;
     }catch(e){
@@ -3506,6 +3869,7 @@ function pccmBeginNumberEdit(input, initialDigit){
 
 function pccmOpenNativeSelect(td, select){
     if(!select) return false;
+    pccmTeacherSelectHydrate(select);
     select.focus();
     try{
         if(typeof select.showPicker === "function"){
@@ -3525,12 +3889,6 @@ function pccmCellDblClick(ev, td){
         if (target && target.closest && target.closest(".pccm-multi-menu")) return;
         try{ ev?.preventDefault?.(); }catch(_){ }
 
-        const box = td.querySelector(".pccm-multi-select");
-        if(box){
-            const controlId = (box.id || "").replace(/_box$/, "");
-            if(controlId) pccmTeacherMultiToggle(ev, controlId);
-            return;
-        }
         const input = td.querySelector("input.inline-edit-input");
         if(input){
             pccmBeginNumberEdit(input, null);
@@ -3562,8 +3920,6 @@ function pccmGetSelectionRect(){
 
 function pccmCellValue(td){
     if(!td) return "";
-    const teacherHidden = td.querySelector(".pccm-teacher-multi input[type='hidden']");
-    if(teacherHidden) return (teacherHidden.value ?? "").toString();
     const input = td.querySelector("input.inline-edit-input");
     if(input) return (input.value ?? "").toString();
     const select = td.querySelector("select.inline-edit-select");
@@ -3573,7 +3929,13 @@ function pccmCellValue(td){
 
 function pccmSetSelectValue(select, raw){
     if(!select) return false;
-    const value = (raw ?? "").toString().trim();
+    pccmTeacherSelectHydrate(select);
+    let value = (raw ?? "").toString().trim();
+    // 30/08: dán TÊN GV (từ Excel) vào ô Giáo viên -> quy về MÃ ngay để ô khớp option sẵn có
+    // (trước đây hiện "(Đang lưu) Tên…" tới khi tải lại, và sao chép lại ra tên thay vì mã).
+    if (value && select.dataset && select.dataset.kind === "gv"){
+        try{ const norm = pccmNormalizeTeacherValue(value); if (norm) value = norm; }catch(_){ }
+    }
     const low = value.toLowerCase();
     const options = Array.from(select.options || []);
     let found = options.find(opt => (opt.value || "").toString().trim().toLowerCase() === low)
@@ -3596,11 +3958,6 @@ function pccmSetSelectValue(select, raw){
 function pccmSetCellValue(td, raw){
     if(!td) return false;
     const value = (raw ?? "").toString().trim();
-    const teacherHidden = td.querySelector(".pccm-teacher-multi input[type='hidden']");
-    if(teacherHidden){
-        pccmTeacherMultiApply(teacherHidden.id, value);
-        return true;
-    }
     const input = td.querySelector("input.inline-edit-input");
     if(input){
         input.value = value;
@@ -3677,12 +4034,102 @@ function pccmClearSelectedCells(){
     pccmUpdateSelectionUI();
 }
 
+// 13/09: Delete xóa cả dòng phân công (sau khi xác nhận) — chọn ô ở 2 cột đầu, Shift/Ctrl
+// để chọn nhiều dòng:
+//   - tab Giáo viên (Môn học, Lớp): gỡ GV đang chọn khỏi các ô Lớp|Môn đó;
+//   - tab Lớp (Môn học, Giáo viên): bỏ phân công Lớp|Môn đó (mọi GV của ô).
+// Chỉ chọn ô Số tiết/Giới hạn thì trả false để Delete xóa giá trị ô như cũ.
+function pccmSelectedAssignmentRowIndexes(){
+    let rowCount = 0;
+    if (PCCM_TAB === "giaovien") rowCount = (PCCM_TEACHER_EDIT_CACHE?.rows || []).length;
+    else if (PCCM_TAB === "lop") rowCount = (PCCM_CLASS_EDIT_CACHE?.mons || []).length;
+    const idxs = new Set();
+    for (const key of (PCCM_CELL_SELECTION || [])){
+        const [r, c] = (key || "").split(",").map(Number);
+        if (!Number.isInteger(r) || r < 0 || r >= rowCount) continue;
+        if (c !== 0 && c !== 1) continue;   // 2 cột đầu của bảng
+        idxs.add(r);
+    }
+    return Array.from(idxs).sort((x, y)=>x - y);
+}
+
+// Môn của dòng: ưu tiên monObj đã cache (đủ ma/ma2 để dọn khoá cũ), trừ khi ô chọn đã đổi môn.
+function pccmAssignmentRowMon(selectId, cachedMon, allMons){
+    const cachedKey = _normText(cachedMon?.key || cachedMon?.ten);
+    const domKey = _normText(document.getElementById(selectId)?.value || cachedKey);
+    return (domKey === cachedKey) ? cachedMon : pccmFindMonByQuickKey(domKey, allMons);
+}
+
+function pccmCollectAssignmentDeleteTargets(idxs){
+    const allMons = buildPCCMMonList();
+    const targets = [];
+    if (PCCM_TAB === "giaovien"){
+        const gv = (PCCM_TEACHER_EDIT_CACHE?.gv || "").toString().trim();
+        if (!gv) return targets;
+        const rows = PCCM_TEACHER_EDIT_CACHE?.rows || [];
+        idxs.forEach(idx=>{
+            const row = rows[idx];
+            const cls = (document.getElementById(`pccmT_cls_${idx}`)?.value || row.cls || "").toString().trim();
+            const monObj = pccmAssignmentRowMon(`pccmT_mon_${idx}`, row.monObj, allMons);
+            if (!cls || !monObj) return;
+            targets.push({ cls, monObj, teacher: gv, label: `${cls} - ${pccmSubjectCode(monObj) || pccmSubjectName(monObj)}` });
+        });
+    }else if (PCCM_TAB === "lop"){
+        const cls = (PCCM_CLASS_EDIT_CACHE?.cls || "").toString().trim();
+        if (!cls) return targets;
+        const mons = PCCM_CLASS_EDIT_CACHE?.mons || [];
+        idxs.forEach(idx=>{
+            const monObj = pccmAssignmentRowMon(`pccm_mon_${idx}`, mons[idx], allMons);
+            if (!monObj) return;
+            const gvText = pccmNormalizeTeacherValue(pccmGetTeacher(cls, monObj));
+            const mon = pccmSubjectCode(monObj) || pccmSubjectName(monObj);
+            targets.push({ cls, monObj, teacher: "", label: gvText ? `${mon} (${gvText})` : mon });
+        });
+    }
+    return targets;
+}
+
+function pccmDeleteSelectedAssignments(){
+    const idxs = pccmSelectedAssignmentRowIndexes();
+    if (!idxs.length) return false;
+    const found = pccmCollectAssignmentDeleteTargets(idxs);
+    if (!found.length) return false;
+
+    const targets = found.filter(t=>!pccmIsDayGhepRow(t.cls, t.monObj));
+    const skippedGhep = found.filter(t=>pccmIsDayGhepRow(t.cls, t.monObj)).map(t=>t.label);
+    const ghepNote = skippedGhep.length
+        ? `Bỏ qua ${skippedGhep.length} dòng do mục Dạy ghép quản lý (sửa ở trang Dạy ghép): ${skippedGhep.slice(0, 4).join(", ")}${skippedGhep.length > 4 ? "…" : ""}`
+        : "";
+    if (!targets.length){
+        if (ghepNote) showBottomPopup(ghepNote, "warning");
+        return true;
+    }
+
+    const owner = (PCCM_TAB === "giaovien") ? `của GV ${targets[0].teacher}` : `của lớp ${targets[0].cls}`;
+    const question = targets.length === 1
+        ? `Xóa phân công ${targets[0].label} ${owner}?`
+        : `Xóa ${targets.length} phân công đã chọn ${owner}?\n${targets.slice(0, 8).map(t=>t.label).join(", ")}${targets.length > 8 ? "…" : ""}`;
+    if (!confirm(question)) return true;
+
+    targets.forEach(t=>{
+        if (t.teacher) pccmSetTeacherMembershipNoSave(t.cls, t.monObj, t.teacher, false);
+        else pccmSetTeachersNoSave(t.cls, t.monObj, []);
+    });
+    saveStore();
+    pccmClearSelection();
+    const sc = document.getElementById("section-content");
+    if (sc) pccmRenderCurrent(sc);
+    showBottomPopup(ghepNote || `Đã xóa ${targets.length} phân công ${owner}.`, ghepNote ? "warning" : "ok");
+    return true;
+}
+
 function pccmGlobalKeyDown(ev){
     try{
         if(!pccmIsActive()) return;
         if(!PCCM_CELL_SELECTION || PCCM_CELL_SELECTION.size === 0) return;
         const tag = (ev?.target?.tagName || "").toUpperCase();
-        const isTyping = (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT");
+        // 30/08: <select> không nhận chữ -> Ctrl+C/V, Delete vẫn phải chạy khi nó còn giữ focus
+        const isTyping = (tag === "INPUT" || tag === "TEXTAREA" || !!ev?.target?.isContentEditable);
         const isCmd = !!(ev.ctrlKey || ev.metaKey);
         const key = (ev.key || "").toLowerCase();
 
@@ -3718,6 +4165,8 @@ function pccmGlobalKeyDown(ev){
 
         if((key === "delete" || key === "backspace") && !isTyping){
             ev.preventDefault();
+            // 13/09: tab Giáo viên / Lớp — chọn ô ở 2 cột đầu rồi Delete = xóa dòng phân công
+            if(pccmDeleteSelectedAssignments()) return;
             pccmClearSelectedCells();
             return;
         }
@@ -3756,7 +4205,7 @@ function pccmGlobalPaste(ev){
         if(!pccmIsActive()) return;
         if(!PCCM_CELL_SELECTION || PCCM_CELL_SELECTION.size === 0) return;
         const tag = (ev?.target?.tagName || "").toUpperCase();
-        const isTyping = (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT");
+        const isTyping = (tag === "INPUT" || tag === "TEXTAREA" || !!ev?.target?.isContentEditable);
         if(isTyping) return;
 
         const text = (ev.clipboardData || window.clipboardData)?.getData("text");
@@ -4423,6 +4872,11 @@ function pccmRenderSubjectOption(monObj, selected){
 }
 let __TEACHER_NAME_MAP = null;
 let __TEACHER_NAME_DATA_REF = null;
+function invalidateTeacherNameMap(){
+    __TEACHER_NAME_MAP = null;
+    __TEACHER_NAME_DATA_REF = null;
+    try{ __CLASS_KHOI_META_MAP = null; __CLASS_KHOI_META_DATA_REF = null; }catch(_){ }
+}
 
 function __ensureTeacherNameMap(){
     if (__TEACHER_NAME_MAP && __TEACHER_NAME_DATA_REF === DATA.giaovien) return __TEACHER_NAME_MAP;
@@ -4487,125 +4941,58 @@ function pccmTeacherLabel(raw){
     const list = pccmTeacherListFromValue(raw);
     if (!list.length) return "";
     const base = list.join(", ");
-    return list.length > 1 ? `${base} (dạy ghép)` : base;
+    // Giá trị nhiều GV chỉ còn ở dữ liệu cũ (dạy ghép nay có mục riêng — modules/day-ghep.js)
+    return list.length > 1 ? `${base} (dạy ghép cũ)` : base;
 }
 function pccmTeacherHas(raw, code){
     const target = resolveTeacherCode(_normText(code)).toLowerCase();
     if (!target) return false;
     return pccmTeacherListFromValue(raw).some(x => x.toLowerCase() === target);
 }
-function pccmRenderTeacherMultiItem(controlId, code, label, selected){
-    const value = _normText(code);
-    const title = pccmTeacherHint(value) || value;
-    return `
-        <button type="button"
-                class="pccm-multi-item pccm-teacher-item ${selected ? "selected" : ""}"
-                data-pccm-teacher-value="${escapeHtml(value)}"
-                data-pccm-teacher-label="${escapeHtml(label || value)}"
-                title="${escapeHtml(title)}"
-                onclick="pccmTeacherMultiItemClick(event,'${controlId}', this.getAttribute('data-pccm-teacher-value'))">
-            ${escapeHtml(label || value)}
-        </button>`;
+// 28/08: ô Giáo viên trong Phân công chỉ chọn MỘT người (dạy ghép có mục riêng).
+// Danh sách GV được điền khi ô mở (mousedown/focus) — bảng tab Môn học có thể
+// tới 70+ dòng × 100+ GV, dựng sẵn toàn bộ option sẽ chậm.
+function pccmTeacherSelectCodes(teacherItems){
+    return (teacherItems || [])
+        .map(x => _normText((x && typeof x === "object") ? (x.code || x.value || x.magv) : x))
+        .filter(Boolean);
 }
-function pccmPopulateTeacherMultiMenu(controlId){
-    const hidden = document.getElementById(controlId);
-    const selected = pccmTeacherListFromValue(hidden?.value || "");
-    const selectedSet = new Set(selected.map(x=>x.toLowerCase()));
-    const gvs = (DATA.giaovien || []).map(g=>_normText(g?.magv)).filter(Boolean);
-    const itemSet = new Set(gvs.map(x=>x.toLowerCase()));
-    const missing = selected.filter(code=>!itemSet.has(code.toLowerCase())).map(code=>({code, label:`(Đang lưu) ${code}`}));
-    const allItems = missing.concat(gvs.map(code=>({code, label:code})));
-
-    const menu = document.getElementById(`${controlId}_menu`);
-    if (!menu) return;
-    menu.innerHTML = `
-        <button type="button" class="pccm-multi-item pccm-teacher-clear" onclick="pccmTeacherMultiClear(event,'${controlId}')">(Chưa phân)</button>
-        ${allItems.map(item=>pccmRenderTeacherMultiItem(controlId, item.code, item.label, selectedSet.has(item.code.toLowerCase()))).join("")}
-    `;
-}
-function pccmRenderTeacherMulti(controlId, selectedRaw, teacherItems){
-    const selected = pccmTeacherListFromValue(selectedRaw);
-    const label = pccmTeacherLabel(selected);
-    const hiddenValue = pccmNormalizeTeacherValue(selected);
-    return `
-        <div id="${controlId}_box" class="pccm-multi-select pccm-teacher-multi">
-            <input id="${controlId}" type="hidden" value="${escapeHtml(hiddenValue)}">
-            <button type="button" class="pccm-multi-button" onclick="pccmTeacherMultiButtonClick(event,'${controlId}')" title="${escapeHtml(label)}">
-                <span id="${controlId}_text">${escapeHtml(label || "(Chưa phân)")}</span>
-                <span class="pccm-multi-arrow">▾</span>
-            </button>
-            <div class="pccm-multi-menu" id="${controlId}_menu"></div>
-        </div>`;
-}
-// 1 click vào ô GV chỉ để chọn ô (sao chép). Nếu menu đang mở thì click đóng lại.
-// Muốn xổ danh sách GV: click đúp (xem pccmCellDblClick).
-function pccmTeacherMultiButtonClick(ev, controlId){
-    try{
-        if (ev) ev.stopPropagation();
-        const box = document.getElementById(`${controlId}_box`);
-        if (box && box.classList.contains("open")) box.classList.remove("open");
-    }catch(e){}
-}
-function pccmTeacherMultiToggle(ev, controlId){
-    try{
-        if (ev) ev.stopPropagation();
-        const box = document.getElementById(`${controlId}_box`);
-        if (!box) return;
-        const willOpen = !box.classList.contains("open");
-        pccmQuickMultiCloseAll();
-        if (willOpen){
-            const menu = document.getElementById(`${controlId}_menu`);
-            if (menu && !menu.hasChildNodes()){
-                pccmPopulateTeacherMultiMenu(controlId);
-            }
-            box.classList.add("open");
-        }
-    }catch(e){}
-}
-function pccmTeacherMultiApply(controlId, values){
-    const list = pccmTeacherListFromValue(values);
+function pccmRenderTeacherSelect(controlId, selectedRaw, teacherItems){
+    const list = pccmTeacherListFromValue(selectedRaw);
     const value = pccmNormalizeTeacherValue(list);
-    const label = pccmTeacherLabel(list);
-    const hidden = document.getElementById(controlId);
-    const text = document.getElementById(`${controlId}_text`);
-    const box = document.getElementById(`${controlId}_box`);
-    if (hidden) hidden.value = value;
-    if (text) text.textContent = label || "(Chưa phân)";
-    const btn = box ? box.querySelector(".pccm-multi-button") : null;
-    if (btn) btn.title = label;
-    const selectedSet = new Set(list.map(x=>x.toLowerCase()));
-    if (box){
-        box.querySelectorAll(".pccm-teacher-item").forEach(item=>{
-            const v = _normText(item.getAttribute("data-pccm-teacher-value")).toLowerCase();
-            item.classList.toggle("selected", selectedSet.has(v));
-        });
+    const codes = pccmTeacherSelectCodes(teacherItems);
+    const known = new Set(codes.map(c => c.toLowerCase()));
+    let current = "";
+    if (value){
+        const legacyMulti = list.length > 1;
+        const label = legacyMulti ? pccmTeacherLabel(list) : (known.has(value.toLowerCase()) ? value : `(Đang lưu) ${value}`);
+        const title = legacyMulti ? list.map(c => pccmTeacherHint(c) || c).join(" · ") : (pccmTeacherHint(value) || value);
+        current = `<option value="${escapeHtml(value)}" selected title="${escapeHtml(title)}" data-title="${escapeHtml(title)}">${escapeHtml(label)}</option>`;
     }
-    pccmAutoSaveActive();
+    return `<select id="${controlId}" class="inline-edit-select pccm-teacher-select" data-kind="gv" data-pccm-lazy="1"
+                title="${escapeHtml(value ? (pccmTeacherHint(value) || value) : "(Chưa phân)")}"
+                onmousedown="pccmTeacherSelectHydrate(this)" onfocus="pccmTeacherSelectHydrate(this)"
+                onchange="pccmUpdateOptionTitle(this); pccmAutoSaveActive()">
+            <option value="">(Chưa phân)</option>${current}
+        </select>`;
 }
-function pccmTeacherMultiItemClick(ev, controlId, value){
+// Điền đủ danh sách GV vào ô chọn (chỉ một lần), giữ nguyên giá trị đang chọn.
+function pccmTeacherSelectHydrate(selectEl){
     try{
-        if (ev) ev.stopPropagation();
-        const hidden = document.getElementById(controlId);
-        const cur = new Set(pccmTeacherListFromValue(hidden?.value || "").map(x=>x.toLowerCase()));
-        const byLower = new Map(pccmTeacherListFromValue(hidden?.value || "").map(x=>[x.toLowerCase(), x]));
-        const code = resolveTeacherCode(_normText(value));
-        if (!code) return;
-        const key = code.toLowerCase();
-        if (cur.has(key)){
-            cur.delete(key);
-            byLower.delete(key);
-        } else {
-            cur.add(key);
-            byLower.set(key, code);
-        }
-        pccmTeacherMultiApply(controlId, Array.from(cur).map(k=>byLower.get(k) || k));
-    }catch(e){}
-}
-function pccmTeacherMultiClear(ev, controlId){
-    try{
-        if (ev) ev.stopPropagation();
-        pccmTeacherMultiApply(controlId, []);
-    }catch(e){}
+        if (!selectEl || selectEl.getAttribute("data-pccm-lazy") !== "1") return selectEl;
+        selectEl.removeAttribute("data-pccm-lazy");
+        const value = _normText(selectEl.value);
+        const list = pccmTeacherListFromValue(value);
+        const codes = (DATA.giaovien || []).map(g => _normText(g?.magv)).filter(Boolean);
+        const keepCurrent = value && (list.length > 1 || !codes.some(c => c.toLowerCase() === value.toLowerCase()));
+        const currentOpt = keepCurrent ? Array.from(selectEl.options).find(o => o.value === value) : null;
+        const html = codes.map(code => pccmRenderTeacherOption(code, list.length === 1 && code.toLowerCase() === value.toLowerCase())).join("");
+        selectEl.innerHTML = `<option value="">(Chưa phân)</option>` + (currentOpt ? currentOpt.outerHTML : "") + html;
+        selectEl.value = value;
+        if (selectEl.value !== value) selectEl.value = "";
+        pccmUpdateOptionTitle(selectEl);
+    }catch(e){ /* ignore */ }
+    return selectEl;
 }
 function pccmUpdateOptionTitle(selectEl){
     try{
@@ -4671,7 +5058,14 @@ function buildPCCMMonList(){
         );
         const storageKey = code || displayName;
 
-        const normSeen = displayName.toLowerCase();
+        // 02/09: khử trùng theo KHOÁ LƯU (mã) chứ không theo TÊN hiển thị.
+        // Trường 792ad448361 khai 3 dòng Môn học cùng tên "Khoa học tự nhiên"
+        // với mã KHTN-Lí / KHTN-Hóa / KHTN-Sinh (và 2 dòng "Lịch sử và Địa lý"
+        // LSĐL-Sử / LSĐL-Địa): Tiết chuẩn + 4 ma trận PCCM đều lưu theo mã và
+        // bảng Phân công hiển thị mã, nhưng vòng lặp này bỏ dòng thứ 2, 3 vì
+        // trùng tên → 15 môn chỉ còn 12, dữ liệu phân công của 3 môn ẩn
+        // (38 lớp/môn) không cách nào xem/sửa được dù vẫn nằm trong kho.
+        const normSeen = storageKey.toLowerCase();
         if (seen.has(normSeen)) return;
         seen.add(normSeen);
 
@@ -4744,6 +5138,25 @@ function pccmSetTeachersNoSave(lopCanon, monObj, rawTeachers){
 
 function pccmGetTeachers(lopCanon, monObj){
     return pccmTeacherListFromValue(pccmGetTeacher(lopCanon, monObj));
+}
+
+// 28/08: ô phân công do mục Dạy ghép sở hữu (modules/day-ghep.js chiếu vào cùng
+// khoá "Lớp|Môn") — bảng Phân công chỉ xem, sửa ở trang Dạy ghép.
+function pccmIsDayGhepRow(lopCanon, monObj){
+    if (typeof dayGhepOwnedKeySet !== "function") return false;
+    const owned = dayGhepOwnedKeySet();
+    if (!owned.size) return false;
+    const cls = _normText(lopCanon).toLowerCase();
+    if (!cls) return false;
+    return [monObj?.key, monObj?.ten, monObj?.ma, monObj?.ma2]
+        .map(v => _normText(v).toLowerCase())
+        .filter(Boolean)
+        .some(k => owned.has(`${cls}|${k}`));
+}
+
+function pccmRenderDayGhepRow(idx, cells){
+    const body = cells.map((c, i) => `<td ${pccmCellAttrs(idx, i, c.kind)} ${c.center ? 'style="text-align:center"' : ""}><span class="pccm-ghep-text">${escapeHtml(c.text)}</span>${c.badge ? ' <span class="pccm-ghep-badge" title="Do mục Dạy ghép quản lý — sửa ở trang Dạy ghép">Dạy ghép</span>' : ""}</td>`).join("");
+    return `<tr class="pccm-ghep-row" title="Do mục Dạy ghép quản lý — sửa ở trang Dạy ghép"><td style="text-align:center">${idx + 1}</td>${body}</tr>`;
 }
 
 function pccmSetTeacherMembershipNoSave(lopCanon, monObj, teacherCode, shouldAssign){
@@ -4862,6 +5275,7 @@ function pccmComputeTotalTietForClass(classDisplayName, monList){
         if (pccmGetTeachers(meta.canon, m).length) assigned += tiet;
     });
 
+    // 29/08: tiết Dạy ghép KHÔNG cộng vào đây (mục Dạy ghép có huy hiệu tổng riêng).
     return { total, assigned, khoiName: meta.khoiName, canon: meta.canon };
 }
 
@@ -5143,7 +5557,7 @@ function teacherCodeIndex(){
         }
         // Giữ đúng thứ tự ưu tiên cũ: bản ghi trùng tên xuất hiện trước thắng,
         // kể cả khi mã trống (khi đó trả về nguyên văn input như bản cũ).
-        const full = `${(g?.hodem||"").trim()} ${(g?.ten||"").trim()}`.trim().toLowerCase();
+        const full = _normText(`${(g?.hodem||"").trim()} ${(g?.ten||"").trim()}`).toLowerCase();   // 31/08: NFC
         if (full && !byName.has(full)) byName.set(full, code);
     }
     _TEACHER_CODE_INDEX = { byCode, byName };
@@ -5153,7 +5567,7 @@ function teacherCodeIndex(){
 }
 
 function resolveTeacherCode(input){
-    const raw = (input||"").trim();
+    const raw = _normText(input);   // 31/08: NFC + gọn khoảng trắng
     if (!raw) return "";
     const lower = raw.toLowerCase();
 
@@ -5217,9 +5631,12 @@ function pccmQuickEditApply(){
     let subjects = [];
     let teachers = [];
 
+    // 28/08: mỗi lượt "Thêm nhanh" chỉ MỘT môn và MỘT giáo viên (nhiều lớp vẫn được);
+    // nhiều GV cùng dạy một tiết nhập ở mục "Dạy ghép".
     if (PCCM_TAB === "giaovien"){
         classes = pccmQuickMultiValues(document.getElementById("pccmQuickClass")?.value || "");
         subjects = pccmQuickMultiValues(document.getElementById("pccmQuickMon")?.value || "")
+            .slice(0, 1)
             .map(k=>pccmFindMonByQuickKey(k, allMons))
             .filter(Boolean);
         teachers = [_normText(PCCM_SELECTED_GV)].filter(Boolean);
@@ -5228,14 +5645,17 @@ function pccmQuickEditApply(){
         const monObj = pccmFindMonByQuickKey(PCCM_SUBJ, allMons);
         subjects = monObj ? [monObj] : [];
         teachers = pccmQuickMultiValues(document.getElementById("pccmQuickGv")?.value || "")
+            .slice(0, 1)
             .map(resolveTeacherCode)
             .filter(Boolean);
     }else{
         classes = [_normText(PCCM_SELECTED_CLASS)].filter(Boolean);
         subjects = pccmQuickMultiValues(document.getElementById("pccmQuickMon")?.value || "")
+            .slice(0, 1)
             .map(k=>pccmFindMonByQuickKey(k, allMons))
             .filter(Boolean);
         teachers = pccmQuickMultiValues(document.getElementById("pccmQuickGv")?.value || "")
+            .slice(0, 1)
             .map(resolveTeacherCode)
             .filter(Boolean);
     }
@@ -5250,24 +5670,28 @@ function pccmQuickEditApply(){
     }
 
     let applied = 0;
+    const skippedGhep = [];
     classes.forEach((cls, classIndex)=>{
         const khoiName = pccmGetKhoiNameForClass(cls);
         subjects.forEach((monObj, subjectIndex)=>{
             if (!monHasPositiveTietChuanForKhoi(khoiName, monObj)) return;
+            if (pccmIsDayGhepRow(cls, monObj)){ skippedGhep.push(`${cls} - ${pccmSubjectCode(monObj) || pccmSubjectName(monObj)}`); return; }
             const teacher = pccmQuickPickTeacher(teachers, classIndex, subjectIndex);
-            if (PCCM_TAB === "giaovien"){
-                pccmSetTeacherMembershipNoSave(cls, monObj, teacher, true);
-            }else{
-                pccmSetTeacherQuickNoSave(cls, monObj, teacher);
-            }
+            // Một ô Lớp|Môn = một giáo viên: gán là thay thế người cũ (mọi tab).
+            pccmSetTeacherQuickNoSave(cls, monObj, teacher);
             pccmQuickUpdateTietChuanForClass(cls, monObj, v1.val, v2.val);
             applied += 1;
         });
     });
 
     if (!applied){
-        alert("Không có phân công phù hợp với tiết chuẩn của lớp/môn đã chọn.");
+        alert(skippedGhep.length
+            ? `Các phân công này do mục Dạy ghép quản lý, hãy sửa ở trang Dạy ghép:\n${skippedGhep.join("\n")}`
+            : "Không có phân công phù hợp với tiết chuẩn của lớp/môn đã chọn.");
         return;
+    }
+    if (skippedGhep.length){
+        try{ showBottomPopup(`Bỏ qua ${skippedGhep.length} ô do mục Dạy ghép quản lý: ${skippedGhep.slice(0, 4).join(", ")}${skippedGhep.length > 4 ? "…" : ""}`, "warning"); }catch(_){ }
     }
 
     saveStore();
@@ -5353,6 +5777,7 @@ function pccmQuickSelectedValues(type, allValues, fallbackValues){
     if (!selected.length){
         selected = fallbacks.map(v=>_normText(v)).filter(v=>v && valid.has(v));
     }
+    if (PCCM_QUICK_SINGLE_TYPES.has(type)) selected = selected.slice(0, 1);
     return pccmQuickSetSelected(type, selected);
 }
 
@@ -5418,14 +5843,46 @@ function pccmQuickRenderMulti(type, items, selectedValues, placeholder){
     const id = pccmQuickMultiId(type);
     const boxId = pccmQuickMultiBoxId(type);
     const textId = pccmQuickMultiTextId(type);
+    const single = PCCM_QUICK_SINGLE_TYPES.has(type);
     return `
-        <div id="${boxId}" class="pccm-multi-select" data-pccm-quick-box="${escapeHtml(type)}">
+        <div id="${boxId}" class="pccm-multi-select ${single ? "pccm-single-select" : ""}" data-pccm-quick-box="${escapeHtml(type)}">
             <input id="${id}" type="hidden" value="${escapeHtml(selectedValues.join(", "))}">
             <button type="button" class="pccm-multi-button" onclick="pccmQuickMultiToggle(event,'${type}')" title="${escapeHtml(selectedLabel)}">
                 <span id="${textId}">${escapeHtml(text)}</span>
                 <span class="pccm-multi-arrow">▾</span>
             </button>
             <div class="pccm-multi-menu" id="${boxId}_menu"></div>
+        </div>`;
+}
+
+// 11/09: nhóm các lớp theo khối để có nút "Khối 6/7/8/9" trong menu chọn lớp.
+function pccmQuickMultiGroups(type, items){
+    if (type !== "class") return [];
+    const groups = [];
+    const seen = new Map();
+    (items || []).forEach(item=>{
+        const value = _normText(item?.value);
+        if (!value) return;
+        let g = "";
+        try{ g = _normText(pccmGetKhoiNameForClass(value)); }catch(_){ g = ""; }
+        if (!g) return;
+        if (!seen.has(g)){ seen.set(g, []); groups.push(g); }
+        seen.get(g).push(value);
+    });
+    return groups.map(g=>({ label:g, values:seen.get(g) || [] }));
+}
+
+function pccmQuickRenderMultiTools(type, items){
+    if (PCCM_QUICK_SINGLE_TYPES.has(type)) return "";
+    const groups = pccmQuickMultiGroups(type, items);
+    const groupButtons = groups.map(g=>`
+            <button type="button" class="pccm-multi-tool" data-pccm-quick-group="${escapeHtml(g.label)}"
+                    title="Chọn/bỏ chọn cả ${escapeHtml(g.label)}"
+                    onclick="pccmQuickMultiSelectGroup(event,'${type}', this.getAttribute('data-pccm-quick-group'))">${escapeHtml(g.label)}</button>`).join("");
+    return `
+        <div class="pccm-multi-tools">
+            <button type="button" class="pccm-multi-tool" onclick="pccmQuickMultiSelectAll(event,'${type}')">Tất cả</button>${groupButtons}
+            <button type="button" class="pccm-multi-tool pccm-multi-tool-clear" onclick="pccmQuickMultiClear(event,'${type}')">Bỏ chọn</button>
         </div>`;
 }
 
@@ -5436,7 +5893,50 @@ function pccmPopulateQuickMultiMenu(type){
     const items = __PCCM_QUICK_ITEMS[type] || [];
     const hidden = document.getElementById(pccmQuickMultiId(type));
     const selectedValues = pccmQuickMultiValues(hidden?.value || "");
-    menu.innerHTML = items.map(item=>pccmQuickRenderMultiItem(type, item, selectedValues)).join("");
+    menu.innerHTML = pccmQuickRenderMultiTools(type, items)
+        + items.map(item=>pccmQuickRenderMultiItem(type, item, selectedValues)).join("");
+}
+
+function pccmQuickMultiAllValues(type){
+    return Array.from(document.querySelectorAll(`[data-pccm-quick-type="${type}"]`))
+        .map(btn=>_normText(btn.getAttribute("data-pccm-quick-value")))
+        .filter(Boolean);
+}
+
+function pccmQuickMultiSelectAll(ev, type){
+    try{
+        if (ev){ ev.preventDefault(); ev.stopPropagation(); }
+        if (PCCM_QUICK_SINGLE_TYPES.has(type)) return;
+        pccmQuickSetSelected(type, pccmQuickMultiAllValues(type));
+        pccmQuickMultiUpdateUI(type);
+    }catch(e){ /* ignore */ }
+}
+
+function pccmQuickMultiClear(ev, type){
+    try{
+        if (ev){ ev.preventDefault(); ev.stopPropagation(); }
+        if (PCCM_QUICK_SINGLE_TYPES.has(type)) return;
+        pccmQuickSetSelected(type, []);
+        pccmQuickSetAnchor(type, "");
+        pccmQuickMultiUpdateUI(type);
+    }catch(e){ /* ignore */ }
+}
+
+// Bấm "Khối 6": chưa đủ cả khối thì thêm cả khối; đã đủ rồi thì bỏ cả khối.
+function pccmQuickMultiSelectGroup(ev, type, groupLabel){
+    try{
+        if (ev){ ev.preventDefault(); ev.stopPropagation(); }
+        if (PCCM_QUICK_SINGLE_TYPES.has(type)) return;
+        const all = pccmQuickMultiAllValues(type);
+        const items = all.map(v=>({ value:v }));
+        const group = pccmQuickMultiGroups(type, items).find(g=>g.label === _normText(groupLabel));
+        if (!group || !group.values.length) return;
+        const selected = new Set(pccmQuickGetSelected(type));
+        const complete = group.values.every(v=>selected.has(v));
+        group.values.forEach(v=>{ if (complete) selected.delete(v); else selected.add(v); });
+        pccmQuickSetSelected(type, all.filter(v=>selected.has(v)));
+        pccmQuickMultiUpdateUI(type);
+    }catch(e){ /* ignore */ }
 }
 
 function pccmQuickMultiToggle(ev, type){
@@ -5504,8 +6004,12 @@ function pccmQuickMultiItemClick(ev, type, value){
         if (!cur) return;
         const selected = new Set(pccmQuickGetSelected(type));
         const anchor = pccmQuickGetAnchor(type);
+        const single = PCCM_QUICK_SINGLE_TYPES.has(type);
 
-        if (ev && ev.shiftKey && anchor){
+        if (single){
+            selected.clear();
+            selected.add(cur);
+        } else if (ev && ev.shiftKey && anchor){
             const a = all.indexOf(anchor);
             const b = all.indexOf(cur);
             if (a >= 0 && b >= 0){
@@ -5515,18 +6019,16 @@ function pccmQuickMultiItemClick(ev, type, value){
             }else{
                 selected.add(cur);
             }
-        }else if (ev && (ev.ctrlKey || ev.metaKey)){
+        }else{
+            // 11/09: bấm thường (hoặc Ctrl) = bật/tắt từng lớp, không xoá lựa chọn cũ
             if (selected.has(cur)) selected.delete(cur);
             else selected.add(cur);
-        }else{
-            selected.clear();
-            selected.add(cur);
         }
 
         pccmQuickSetAnchor(type, cur);
         pccmQuickSetSelected(type, Array.from(selected).filter(v=>all.includes(v)));
         pccmQuickMultiUpdateUI(type);
-        if (!(ev && (ev.shiftKey || ev.ctrlKey || ev.metaKey))){
+        if (single){
             pccmQuickMultiCloseAll();
         }
     }catch(e){
@@ -5721,6 +6223,7 @@ function pccmSaveClassEdits(opts){
 
     for (let idx=0; idx<mons.length; idx++){
         const oldMonObj = mons[idx];
+        if (pccmIsDayGhepRow(cls, oldMonObj)) continue;   // dòng Dạy ghép: chỉ xem
         const newMonKey = (document.getElementById(`pccm_mon_${idx}`)?.value || (oldMonObj.key||oldMonObj.ten||""))
             .toString().trim();
         if (!newMonKey){
@@ -5849,6 +6352,7 @@ function pccmSaveTeacherEdits(opts){
     const seenKeys = new Set();
     for (let idx=0; idx<rows.length; idx++){
         const r = rows[idx];
+        if (pccmIsDayGhepRow(r.cls, r.monObj)) continue;   // dòng Dạy ghép: chỉ xem
         const newCls = (document.getElementById(`pccmT_cls_${idx}`)?.value || r.cls || "").toString().trim();
         const newMonKey = (document.getElementById(`pccmT_mon_${idx}`)?.value || (r.monObj?.key||r.monObj?.ten||""))
             .toString().trim();
@@ -5891,8 +6395,13 @@ function pccmSaveTeacherEdits(opts){
     for (const op of ops){
         const khoiName = classToKhoi.get(op.newCls) || ("Khối " + extractKhoiNumber(op.newCls));
 
-        // 1) GV (giáo viên đang chọn)
-        pccmSetTeacherMembershipNoSave(op.newCls, op.newMonObj, gv, true);
+        // 1) GV (giáo viên đang chọn). Dòng chuyển sang Lớp|Môn khác -> ô đích
+        //    chỉ còn GV này (một ô = một GV); dòng giữ nguyên khoá -> không đụng
+        //    giá trị cũ (kể cả ô "GV1, GV2" của dữ liệu cũ).
+        const oldKey = `${op.oldCls}|${(op.oldMonObj?.key || op.oldMonObj?.ten || "").toString().trim()}`;
+        const newKey = `${op.newCls}|${(op.newMonObj?.key || op.newMonObj?.ten || "").toString().trim()}`;
+        if (oldKey !== newKey) pccmSetTeachersNoSave(op.newCls, op.newMonObj, [gv]);
+        else pccmSetTeacherMembershipNoSave(op.newCls, op.newMonObj, gv, true);
 
         // 2) Tiết/Giới hạn theo Lớp|Môn
         const v1 = _validateNumber(op.sotietRaw);
@@ -5968,6 +6477,7 @@ function pccmSaveSubjectEdits(opts){
     const seenCls = new Set();
     for (let idx=0; idx<rows.length; idx++){
         const r = rows[idx];
+        if (pccmIsDayGhepRow(r.cls, monObj)) continue;   // dòng Dạy ghép: chỉ xem
         const newCls = (document.getElementById(`pccmS_cls_${idx}`)?.value || r.cls || "").toString().trim();
         if (!newCls){
             pccmNotifySaveProblem(`Dữ liệu Lớp không hợp lệ ở dòng ${idx+1}.`, silent);
@@ -6308,6 +6818,16 @@ function renderPCCM_ByClass(classNames, monList){
         const _ghNum = Number(String(gioihanDisp).trim());
         if(String(gioihanDisp).trim()==="" || Number.isNaN(_ghNum)) gioihanDisp = "1";
 
+        if (pccmIsDayGhepRow(cls, m)){
+            mid += pccmRenderDayGhepRow(idx, [
+                { kind:"subject", text: pccmSubjectCode(m) || pccmSubjectName(m), center:true },
+                { kind:"teacher", text: val, badge:true, center:true },
+                { kind:"periods", text: String(sotietDisp), center:true },
+                { kind:"limit", text: String(gioihanDisp), center:true }
+            ]);
+            return;
+        }
+
         mid += `
         <tr>
             <td style="text-align:center">${idx+1}</td>
@@ -6326,7 +6846,7 @@ function renderPCCM_ByClass(classNames, monList){
                 </select>
             </td>
             <td ${pccmCellAttrs(idx, 1, "teacher")}>
-                ${pccmRenderTeacherMulti(`pccm_gv_${idx}`, val, gvItems)}
+                ${pccmRenderTeacherSelect(`pccm_gv_${idx}`, val, gvItems)}
             </td>
             <td ${pccmCellAttrs(idx, 2, "periods")} style="text-align:center">
                 <input id="pccm_sotiet_${idx}" class="inline-edit-input" type="number" min="0" step="1"
@@ -6443,6 +6963,16 @@ function renderPCCM_ByTeacher(gvs, monList, classNames){
             const k = (m.key||m.ten||"").toString();
             return pccmRenderSubjectOption(m, k===monKey);
         }).join("");
+
+        if (pccmIsDayGhepRow(clsVal, r.monObj)){
+            mid += pccmRenderDayGhepRow(idx, [
+                { kind:"subject", text: pccmSubjectCode(r.monObj) || pccmSubjectName(r.monObj), badge:true, center:true },
+                { kind:"class", text: clsVal, center:true },
+                { kind:"periods", text: String(r.sotiet || ""), center:true },
+                { kind:"limit", text: String(r.gioihan || ""), center:true }
+            ]);
+            return;
+        }
 
         mid += `
         <tr>
@@ -6575,6 +7105,16 @@ function renderPCCM_BySubject(classNames, monList){
         const gvVal = r.gv;
         const teacherItems = gvCodes.map(code=>({code, label:code}));
 
+        if (pccmIsDayGhepRow(r.cls, monObj)){
+            mid += pccmRenderDayGhepRow(idx, [
+                { kind:"class", text: r.cls, center:true },
+                { kind:"teacher", text: gvVal, badge:true, center:true },
+                { kind:"periods", text: String(r.sotiet || ""), center:true },
+                { kind:"limit", text: String(r.gioihan || ""), center:true }
+            ]);
+            return;
+        }
+
         mid += `
         <tr>
             <td style="text-align:center">${idx+1}</td>
@@ -6584,7 +7124,7 @@ function renderPCCM_BySubject(classNames, monList){
                 </select>
             </td>
             <td ${pccmCellAttrs(idx, 1, "teacher")}>
-                ${pccmRenderTeacherMulti(`pccmS_gv_${idx}`, gvVal, teacherItems)}
+                ${pccmRenderTeacherSelect(`pccmS_gv_${idx}`, gvVal, teacherItems)}
             </td>
             <td ${pccmCellAttrs(idx, 2, "periods")} style="text-align:center">
                 <input id="pccmS_sotiet_${idx}" class="inline-edit-input" type="number" min="0" step="1"
@@ -7280,10 +7820,11 @@ function tcDelete(khoi, ten){
     ten = _normText(ten);
     if (!khoi || !ten) return;
 
-    if (!confirm(`Xóa tiết chuẩn: ${ten} (${khoi}) ?`)) return;
+    if (!confirm(`Xóa tiết chuẩn: ${ten} (${khoi}) ?\nCác tiết của môn này trên TKB các lớp ${khoi} (kể cả tiết CỐ ĐỊNH) sẽ bị gỡ.`)) return;
 
     // 1) Xóa khỏi DATA.mon (tiết chuẩn)
     DATA.mon = (DATA.mon || []).filter(m => !(_normText(m.khoi)===khoi && _normText(m.ten)===ten));
+    try{ removeTkbCellsForSubjects([ten], {khoiNum: extractKhoiNumber(khoi)}); }catch(e){ console.warn("removeTkbCellsForSubjects failed", e); }
 
     // 2) Xóa phân công PCCM liên quan: chỉ trong các lớp thuộc khối đó
     const khoiNum = extractKhoiNumber(khoi);
@@ -7319,12 +7860,14 @@ function tcDelete(khoi, ten){
 
 
 function deleteAllPCCM(){
-    if (!confirm("⚠ Bạn có chắc muốn XÓA TOÀN BỘ PCCM?")) return;
+    if (!confirm("⚠ Bạn có chắc muốn XÓA TOÀN BỘ PCCM?\n(Các dòng ở mục Dạy ghép được giữ nguyên.)")) return;
 
     DATA.pccmMatrix = {};
     DATA.pccmRoomMatrix = {};
     DATA.pccmTietMatrix = {};
     DATA.pccmGioihanMatrix = {};
+    // Dạy ghép có mục riêng: chiếu lại các môn ảo của nó vào bảng vừa xóa.
+    try{ if (typeof syncDayGhepProjection === "function") syncDayGhepProjection(); }catch(_){ }
     saveStore();
 
     pccmRenderCurrent("section-content");
@@ -7470,6 +8013,8 @@ function importPCCMFromExcel(wb){
     };
     const gvCodeSetForImport = new Set((DATA.giaovien || []).map(g => _normText(g.magv).toUpperCase()).filter(Boolean));
     const finishImport = (formatLabel) => {
+        // Khoá do Dạy ghép sở hữu luôn lấy lại từ mục Dạy ghép (file Excel không đè được)
+        try{ if (typeof syncDayGhepProjection === "function") syncDayGhepProjection(); }catch(_){ }
         const lines = [`✔ Đã nhập ${importReport.applied} ô phân công (${formatLabel}).`];
         if (importReport.unknownLop.size) lines.push(`⚠ ${importReport.unknownLop.size} lớp không có trong danh mục (bị bỏ qua): ${Array.from(importReport.unknownLop).slice(0,8).join(", ")}`);
         if (importReport.unknownMon.size) lines.push(`⚠ ${importReport.unknownMon.size} môn không có trong danh mục Môn học (sẽ không xếp được): ${Array.from(importReport.unknownMon).slice(0,8).join(", ")}`);
@@ -8015,10 +8560,16 @@ function showSuperAdminSchoolSwitcher(){
         ? "switchSchool('default')"
         : `switchManagedSchool('${_jsString(schoolId)}')`;
       const detail = scheduleText + date;
+      // 04/09 (chủ dự án): Super Admin trước đây chỉ được CHỌN trường ở hộp này,
+      // muốn đổi tên phải vòng qua Quản lý → trang trường. Thêm nút Sửa ngay tại dòng.
+      const renameArgs = isDefault ? "'default',true" : `'${_jsString(schoolId)}',false`;
       html += `
       <div class="school-item ${active ? "active" : ""}" onclick="${click}">
-        <div class="school-name" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
-        ${detail ? `<div style="font-size:12px;color:#667">${escapeHtml(detail)}</div>` : ""}
+        <div style="flex:1;min-width:0">
+          <div class="school-name" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
+          ${detail ? `<div style="font-size:12px;color:#667">${escapeHtml(detail)}</div>` : ""}
+        </div>
+        <button class="school-edit" onclick="event.stopPropagation();renameManagedSchool(${renameArgs})">Sửa</button>
       </div>`;
     });
   }
@@ -8030,6 +8581,85 @@ function showSuperAdminSchoolSwitcher(){
   </div></div>`;
 
   document.body.insertAdjacentHTML("beforeend", html);
+}
+
+/* 04/09 (chủ dự án): đổi tên trường NGAY trong hộp "Chọn TKB hiện hành" của Super
+   Admin — trước đây hộp này chỉ có danh sách + nút Đóng, muốn sửa tên phải vòng
+   qua Quản lý → trang trường.
+   - Trường có trong registry: ghi qua TKBAuth.updateSchoolMeta (đồng bộ lên VPS,
+     đổi luôn displayName của tài khoản school_admin, gieo lại meta cho MỌI mã TKB
+     của trường). Lỗi trả về hiện nguyên văn để biết là mạng hay quyền.
+   - Hàng "default" khi kho default CHƯA được đưa vào registry: không có bản ghi
+     trường nào để sửa nên chỉ đổi được tên hiển thị trên máy; muốn lưu thật thì
+     bấm "Kho default" ở trang Super Admin (adoptDefaultStoreAsSchool). */
+function renameManagedSchool(schoolId, isDefaultRow){
+  const id = String(schoolId == null ? "" : schoolId).trim();
+  if(!id) return;
+  const A = window.TKBAuth;
+
+  function schoolRecord(){
+    try{
+      const reg = (A && A.loadRegistry) ? A.loadRegistry() : null;
+      return ((reg && reg.schools) || {})[id] || null;
+    }catch(_){ return null; }
+  }
+
+  const record = schoolRecord();
+  const cur = String((record && record.name) || _getSchoolName(id) || "");
+  const entered = prompt("Tên trường mới:", cur);
+  if(entered === null) return;
+
+  const name = String(entered || "").normalize("NFC").replace(/\s+/g, " ").trim();
+  if(!name){
+    showBottomPopup("Tên trường không được để trống.", "warning");
+    return;
+  }
+  if(Array.from(name).length > 160){
+    showBottomPopup("Tên trường không được dài quá 160 ký tự.", "warning");
+    return;
+  }
+  if(/[\u0000-\u001f\u007f]/.test(name)){
+    showBottomPopup("Tên trường chứa ký tự không hợp lệ.", "warning");
+    return;
+  }
+  if(name === cur) return;
+
+  let note = "Đã cập nhật tên trường.";
+  let noteKind = "ok";
+  if(record && A && A.updateSchoolMeta){
+    const res = A.updateSchoolMeta(id, { name });
+    if(!res || !res.ok){
+      showBottomPopup((res && res.message) || "Không cập nhật được tên trường.", "error");
+      return;
+    }
+  }else if(isDefaultRow){
+    note = 'Đã đổi tên hiển thị trên máy này. Muốn lưu lên máy chủ, bấm "Kho default" ở trang Super Admin.';
+    noteKind = "warning";
+  }else{
+    showBottomPopup("Không tìm thấy trường trên VPS.", "error");
+    return;
+  }
+
+  // Tên hiển thị được nhớ theo TỪNG mã TKB, không phải theo mã trường -> cập nhật
+  // cho cả trường lẫn mọi mã TKB của nó thì badge và các trang khác mới đổi theo.
+  const sids = [_sanitizeSchoolId(id)];
+  const after = schoolRecord();
+  const schedules = (after && Array.isArray(after.schedules)) ? after.schedules : [];
+  schedules.forEach(entry => {
+    const sid = _sanitizeSchoolId(entry && entry.sid);
+    if(sid && sids.indexOf(sid) === -1) sids.push(sid);
+  });
+  sids.forEach(sid => _setSchoolName(sid, name));
+
+  const currentSid = _sanitizeSchoolId(CTX.schoolId || getSchoolId());
+  if(sids.indexOf(currentSid) !== -1){
+    CTX.schoolLabel = _prettySchoolLabel(name) || name;
+    try{ localStorage.setItem("TKB_LAST_SCHOOL_LABEL", CTX.schoolLabel); }catch(e){ /* ignore */ }
+    updateSchoolBadge();
+  }
+
+  showSuperAdminSchoolSwitcher();
+  showBottomPopup(note, noteKind);
 }
 
 function showSchoolSwitcher(){

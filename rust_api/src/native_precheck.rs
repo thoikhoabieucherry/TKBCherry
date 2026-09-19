@@ -114,7 +114,7 @@ fn class_grade_map(classes: &[JsonValue]) -> HashMap<String, String> {
         for alias in [id, name, alt, &format!("L{:03}", index + 1)] {
             let key = norm(alias);
             if !key.is_empty() {
-                out.entry(key).or_insert_with(|| grade.to_string());
+                out.entry(key).or_insert_with(|| grade_key(grade));
             }
         }
     }
@@ -155,7 +155,7 @@ fn periods_by_grade_subject(
             .unwrap_or_default();
         let periods = int_value(row.get("sotiet"), 0);
         if !grade.is_empty() && !subject.is_empty() && periods > 0 {
-            out.insert((grade.to_string(), subject), periods);
+            out.entry((grade_key(grade), subject)).or_insert(periods);
         }
     }
     out
@@ -275,6 +275,25 @@ fn canonical_subject(value: &str, subject_alias: &HashMap<String, String>) -> St
         .unwrap_or_else(|| value.trim().to_string())
 }
 
+/// Khoa khoi hoc dung chung cho bang Lop va bang Tiet chuan.
+///
+/// Giao dien (web/app.js `extractKhoiNumber`) luon so khoi theo SO, nen
+/// "K6" va "Khoi 6" la cung mot khoi. Precheck phai theo dung hop dong do,
+/// neu khong moi phan cong deu roi vao `skipped_no_period`.
+/// Khoi khong co chu so (vi du "Khoi A") van so bang chuoi da chuan hoa.
+fn grade_key(value: &str) -> String {
+    let digits: String = value
+        .chars()
+        .skip_while(|ch| !ch.is_ascii_digit())
+        .take_while(char::is_ascii_digit)
+        .collect();
+    if digits.is_empty() {
+        norm(value)
+    } else {
+        digits
+    }
+}
+
 fn norm(value: &str) -> String {
     value
         .trim()
@@ -299,4 +318,73 @@ fn escape_json(value: &str) -> String {
         .replace('"', "\\\"")
         .replace('\n', "\\n")
         .replace('\r', "\\r")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Truong 1eea52ea521 (27/08/2026): bang Lop ghi khoi la "K6", bang Tiet
+    /// chuan ghi "Khoi 6". Truoc khi co grade_key, ca 210 phan cong roi vao
+    /// skipped_no_period -> nut Cherry bao "chua co phan cong chuyen mon hop le".
+    #[test]
+    fn grade_labels_match_by_number_across_lop_and_tiet_chuan() {
+        let body = br#"{
+            "data": {
+                "lop": [{"id":"L001","ten":"6A1","khoi":"K6"}],
+                "giaovien": [{"id":"GV001","magv":"Toan A"}],
+                "monhoc": [{"id":"MH001","ten":"Toan","ma":"Toan"}],
+                "mon": [{"id":"M001","khoi":"Khoi 6","ten":"Toan","sotiet":"4"}],
+                "pccmMatrix": {"6A1|Toan": "Toan A"}
+            },
+            "settings": {}
+        }"#;
+        let out = solve_precheck_json(body).expect("precheck runs");
+        assert!(out.contains(r#""assignments":1"#), "{out}");
+        assert!(out.contains(r#""expectedPeriods":4"#), "{out}");
+        assert!(out.contains(r#""skippedNoPeriod":0"#), "{out}");
+    }
+
+    #[test]
+    fn grades_without_digits_still_match_themselves() {
+        let body = br#"{
+            "data": {
+                "lop": [{"id":"L001","ten":"AA1","khoi":"Khoi A"}],
+                "monhoc": [{"id":"MH001","ten":"Toan","ma":"Toan"}],
+                "mon": [{"id":"M001","khoi":"Khoi A","ten":"Toan","sotiet":"3"}],
+                "pccmMatrix": {"AA1|Toan": "Toan A"}
+            },
+            "settings": {}
+        }"#;
+        let out = solve_precheck_json(body).expect("precheck runs");
+        assert!(out.contains(r#""assignments":1"#), "{out}");
+        assert!(out.contains(r#""expectedPeriods":3"#), "{out}");
+    }
+
+    /// Khoi khac nhau van phai tach bach: khong duoc gop "K6" va "K9".
+    #[test]
+    fn different_grades_do_not_share_periods() {
+        let body = br#"{
+            "data": {
+                "lop": [{"id":"L001","ten":"6A1","khoi":"K6"},{"id":"L002","ten":"9A1","khoi":"K9"}],
+                "monhoc": [{"id":"MH001","ten":"Toan","ma":"Toan"}],
+                "mon": [{"id":"M001","khoi":"Khoi 6","ten":"Toan","sotiet":"4"}],
+                "pccmMatrix": {"6A1|Toan": "Toan A", "9A1|Toan": "Toan B"}
+            },
+            "settings": {}
+        }"#;
+        let out = solve_precheck_json(body).expect("precheck runs");
+        assert!(out.contains(r#""assignments":1"#), "{out}");
+        assert!(out.contains(r#""expectedPeriods":4"#), "{out}");
+        assert!(out.contains(r#""skippedNoPeriod":1"#), "{out}");
+    }
+
+    #[test]
+    fn grade_key_reads_the_first_digit_run() {
+        assert_eq!(grade_key("K6"), "6");
+        assert_eq!(grade_key("Khoi 6"), "6");
+        assert_eq!(grade_key(" khoi 10 "), "10");
+        assert_eq!(grade_key("12"), "12");
+        assert_eq!(grade_key("Khoi A"), norm("Khoi A"));
+    }
 }

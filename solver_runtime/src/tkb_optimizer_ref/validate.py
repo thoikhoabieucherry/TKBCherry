@@ -101,6 +101,13 @@ def _violation(kind: str, message: str, **payload: Any) -> dict[str, Any]:
     return {"kind": kind, "message": message, **payload}
 
 
+def _rule_subject_of(constraints: Any, subject: Any) -> str:
+    """31/08: mon dung de tra luat (khoa day ghep -> mon goc); thieu ho tro thi giu nguyen."""
+    fn = getattr(constraints, "rule_subject", None)
+    text = "" if subject is None else str(subject)
+    return fn(text) if callable(fn) else text
+
+
 def _lesson_matches_limit(lesson: Lesson, rule: Mapping[str, Any], constraints: Any) -> bool:
     target_type = str(rule.get("targetType") or "")
     target_id = str(rule.get("targetId") or "")
@@ -109,7 +116,7 @@ def _lesson_matches_limit(lesson: Lesson, rule: Mapping[str, Any], constraints: 
     if target_type == "teacher":
         return lesson.teacher == target_id
     if target_type == "subject":
-        return lesson.subject == target_id
+        return lesson.subject == target_id or _rule_subject_of(constraints, lesson.subject) == target_id
     if target_type == "room":
         return bool(lesson.room) and lesson.room == target_id
     if target_type == "subjectGroup":
@@ -333,7 +340,14 @@ def validate_app_constraints(data: SchoolData, lessons: list[Lesson], rules: Tim
                 )
                 if loc
             ]
-            for move_rule in ("oneLocationPerSession", "gapBetweenLocations", "maxOneMovePerSession"):
+            # 03/09: "Đổi địa điểm ở giờ ra chơi" — tiết (1-based) mà ngay sau nó là giờ ra
+            # chơi: đổi địa điểm liền tiết qua ranh giới này KHÔNG cần tiết trống.
+            break_periods = {
+                after
+                for break_rule, after in (("moveAtBreak23", 2), ("moveAtBreak34", 3))
+                if _truthy(_get_path(rule, f"{break_rule}.{sk}.{dk}", False))
+            }
+            for move_rule in ("oneLocationPerSession", "maxOneMovePerSession"):
                 if not _truthy(_get_path(rule, f"{move_rule}.{sk}.{dk}", False)):
                     continue
                 if len(with_loc) < 2:
@@ -347,14 +361,30 @@ def validate_app_constraints(data: SchoolData, lessons: list[Lesson], rules: Tim
                 if move_rule == "maxOneMovePerSession" and len(compact_locs) > 2:
                     violations.append(_violation("teacher.maxOneMovePerSession", f"{teacher}: Thứ {day} {part} di chuyển quá 1 lần.", teacher=teacher, day=day, session=part))
                     broken = True
-                if move_rule == "gapBetweenLocations":
-                    for (prev_period, prev_loc), (cur_period, cur_loc) in zip(with_loc, with_loc[1:]):
-                        if prev_loc != cur_loc and cur_period - prev_period <= 1:
-                            violations.append(_violation("teacher.gapBetweenLocations", f"{teacher}: Thứ {day} {part} đổi địa điểm không có tiết trống.", teacher=teacher, day=day, session=part))
-                            broken = True
-                            break
                 if broken:
                     location_debt_sessions.add((teacher, day, part))
+            # ĐỔI ĐỊA ĐIỂM LIỀN TIẾT: gapBetweenLocations và moveAtBreak* cùng
+            # kiểm một điều kiện nên chỉ chạy MỘT lần — nếu chạy theo từng luật thì một
+            # cặp tiết bị báo hai lần. Bật moveAtBreak* = "phải có tiết trống, TRừ khi
+            # đổi ở giờ ra chơi".
+            adjacent_rule = next(
+                (
+                    name
+                    for name in ("gapBetweenLocations", "moveAtBreak23", "moveAtBreak34")
+                    if _truthy(_get_path(rule, f"{name}.{sk}.{dk}", False))
+                ),
+                None,
+            )
+            if adjacent_rule is not None and len(with_loc) >= 2:
+                for (prev_period, prev_loc), (cur_period, cur_loc) in zip(with_loc, with_loc[1:]):
+                    if prev_loc != cur_loc and cur_period - prev_period <= 1 and prev_period not in break_periods:
+                        if break_periods:
+                            reason = f"đổi địa điểm liền tiết {prev_period}-{cur_period}, không phải giờ ra chơi."
+                        else:
+                            reason = "đổi địa điểm không có tiết trống."
+                        violations.append(_violation(f"teacher.{adjacent_rule}", f"{teacher}: Thứ {day} {part} {reason}", teacher=teacher, day=day, session=part))
+                        location_debt_sessions.add((teacher, day, part))
+                        break
 
         for group_id, conf in _iter_teacher_class_period_configs(rule):
             per_session = _to_int(conf.get("perSession"), 0)
@@ -772,7 +802,7 @@ def compute_metrics(
         "scheduled_periods": len(lessons),
         "expected_periods": total_expected,
         "classes": len(data.classes),
-        "teachers": len({a.teacher for a in data.assignments}),
+        "teachers": len({a.teacher for a in data.assignments if a.teacher}),   # "" = tiet khong GV (02/09)
         "teacher_sessions": len(by_teacher_session),
         "teacher_session_load_distribution": dict(sorted(load_dist.items())),
         "one_period_teacher_sessions": one_period_sessions,

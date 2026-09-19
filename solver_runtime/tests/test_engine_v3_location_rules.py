@@ -9,6 +9,12 @@ nhau la day 2 co so. Hai yeu cau trong phan "Yeu cau giao vien":
     chi duoc doi dia diem toi da 1 lan.
 (Va oneLocationPerSession — "Chi day 1 dia diem/1 buoi".)
 
+03/09: them cap luat moveAtBreak23 / moveAtBreak34 — "Doi dia diem o gio ra
+choi" — la TAP MIEN TRU cua chinh phep kiem "doi dia diem lien tiet" o tren.
+Chung duoc kiem rieng trong test_engine_v3_location_break_rules.py; file nay
+giu nguyen 3 luat cu (goi location_rule_debt() khong truyen tham so `breaks`,
+mac dinh () = khong co gio ra choi nao duoc mien).
+
 Engine v3 (nut Cherry + menu Toi uu v3) phai tuan thu cac yeu cau nay nhu
 rang buoc CUNG: ket qua tra ve khong co buoi nao vi pham, ke ca khi lich vao
 (warm-start) dang vi pham. Cac test chay engine that, thuan Python, 1 luong.

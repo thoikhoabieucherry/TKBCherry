@@ -997,20 +997,39 @@ th.sticky-col {
   font-weight:700;
 }
 
-.pccm-teacher-multi{
-  margin: 0;
+/* 11/09: danh sách chọn NHIỀU (lớp) — dấu ✓ trước mục đã chọn + hàng nút Tất cả / Khối / Bỏ chọn */
+.pccm-multi-select:not(.pccm-single-select) .pccm-multi-item::before{
+  content: "";
+  display: inline-block;
+  width: 14px;
+  color: #1d47d6;
 }
-
-.pccm-table .pccm-teacher-multi .pccm-multi-button{
-  margin: 0;
-  height: 36px;
-  min-height: 36px;
-  font-size: 13px;
+.pccm-multi-select:not(.pccm-single-select) .pccm-multi-item.selected::before{
+  content: "✓";
 }
-
-.pccm-table .pccm-teacher-multi .pccm-multi-menu{
-  z-index: 40;
+.pccm-multi-tools{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #e3e8f3;
+  background: #f8faff;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
+.pccm-multi-tool{
+  border: 1px solid #cad5eb;
+  border-radius: 999px;
+  background: #fff;
+  padding: 2px 9px;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+  color: #1d47d6;
+}
+.pccm-multi-tool:hover{ background: #eef2ff; }
+.pccm-multi-tool-clear{ color: #b42318; margin-left: auto; }
 
 /* ===== UI foundation (tokens in tokens.css) ===== */
 html,
@@ -1437,8 +1456,7 @@ textarea{
 }
 
 .pccm-list-table .pccm-copy-cell .inline-edit-select,
-.pccm-list-table .pccm-copy-cell .inline-edit-input,
-.pccm-list-table .pccm-copy-cell .pccm-multi-button{
+.pccm-list-table .pccm-copy-cell .inline-edit-input{
   width: 100%;
   min-height: 30px;
   height: 30px;
@@ -1467,29 +1485,6 @@ textarea{
 .pccm-list-table .pccm-copy-cell .inline-edit-input::-webkit-inner-spin-button{
   appearance: none;
   margin: 0;
-}
-
-.pccm-list-table .pccm-copy-cell .pccm-multi-select{
-  margin: 0;
-}
-
-.pccm-list-table .pccm-copy-cell .pccm-multi-button{
-  justify-content: center;
-  text-align: center;
-  gap: 0;
-}
-
-.pccm-list-table .pccm-copy-cell .pccm-multi-button span:first-child{
-  text-align: center;
-}
-
-.pccm-list-table .pccm-copy-cell .pccm-multi-arrow{
-  display: none;
-}
-
-.pccm-list-table .pccm-copy-cell .pccm-multi-menu{
-  top: 100%;
-  border-radius: 0;
 }
 
 @media (max-width: 1100px){
@@ -1787,4 +1782,276 @@ button *,
     max-height: none;
     min-height: 0;
   }
+}
+
+/* ================================
+   DẠY GHÉP (PCGD ghép) — trang + hộp thoại (modules/day-ghep.js)
+================================ */
+.pccm-list-table tr.pccm-ghep-row td{
+  background: #f7f9ff;
+  color: #3b4660;
+}
+
+.pccm-ghep-text{
+  display: inline-block;
+  padding: 3px 0;
+  font-size: 13px;
+}
+
+.pccm-ghep-badge{
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #1d47d6;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.dg-action-bar{
+  align-items: center;
+}
+
+.dg-total-badge{
+  margin-left: auto;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #1d47d6;
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.dg-table th,
+.dg-table td{
+  text-align: center;
+}
+
+.dg-table tr:not(:first-child){
+  cursor: pointer;
+}
+
+.dg-table td.dg-name{
+  font-weight: 600;
+}
+
+.dg-col-tt{
+  width: 48px;
+}
+
+.dg-col-check{
+  width: 40px;
+}
+
+.dg-table input[type="checkbox"]{
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.dg-modal-content{
+  width: min(600px, calc(100vw - 28px));
+  padding: 0;
+  overflow: visible;
+}
+
+.dg-modal-head{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e3e8f3;
+}
+
+.dg-modal-head h3{
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 400;
+  color: #1f2937;
+}
+
+.dg-modal-icon{
+  width: 18px;
+  height: 14px;
+  border: 1.5px solid #4b5563;
+  border-top-width: 4px;
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+
+.dg-modal-close{
+  border: 0;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #374151;
+}
+
+.dg-modal-close:hover{
+  background: #f3f4f6;
+}
+
+.dg-modal-body{
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.dg-modal-body .form-row{
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: center;
+  margin: 0;
+}
+
+.dg-modal-body .form-row label{
+  width: auto;
+  min-width: 0;
+  font-weight: 400;
+  color: #1f2937;
+}
+
+.dg-modal-body .form-row input,
+.dg-modal-body .form-row select{
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid #cad5eb;
+  border-radius: 6px;
+  font-size: 14px;
+  background: #fff;
+}
+
+.dg-picker{
+  margin: 0;
+}
+
+.dg-picker .pccm-multi-button{
+  margin: 0;
+  min-height: 36px;
+}
+
+.dg-picker .pccm-multi-menu{
+  z-index: 10001;
+}
+
+.dg-picker .dg-placeholder{
+  color: #8a94a6;
+}
+
+.dg-viettat-input{
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid #cad5eb;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.dg-hint-row{
+  align-items: start;
+}
+
+.dg-hint{
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
+.dg-modal-actions{
+  padding: 12px 16px;
+  border-top: 1px solid #e3e8f3;
+}
+
+@media (max-width: 640px){
+  .dg-modal-body .form-row{
+    grid-template-columns: 90px minmax(0, 1fr);
+  }
+}
+
+/* ===== File .cherry (02/09/2026, modules/cherry-file.js): nút cạnh Dạy ghép + hộp thoại xuất/nhập ===== */
+.app-nav-main .btn.cf-nav-btn{
+  border-color: var(--tkb-primary-border, #c7d2fe);
+  background: transparent;
+  color: var(--tkb-primary, #1d4ed8);
+}
+.app-nav-main .btn.cf-nav-btn:hover{
+  background: var(--tkb-primary-soft, #eef2ff);
+}
+.cf-modal-content{
+  width: min(560px, calc(100vw - 28px));
+}
+.cf-modal-body{
+  gap: 14px;
+}
+.cf-intro{
+  margin: 0;
+  color: #374151;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.cf-intro code{
+  background: #f3f4f6;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.cf-actions{
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+.cf-action{
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 14px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid #e3e8f3;
+  border-radius: 8px;
+  background: #fafbff;
+}
+.cf-action .btn{
+  min-width: 190px;
+  justify-self: start;
+  white-space: nowrap;
+}
+.cf-hint{
+  font-size: 13px;
+  color: #4b5563;
+  line-height: 1.45;
+}
+.cf-summary{
+  font-size: 13px;
+  color: #1f2937;
+  padding: 8px 12px;
+  background: #f3f4f6;
+  border-radius: 6px;
+  line-height: 1.45;
+}
+.cf-status{
+  min-height: 18px;
+  font-size: 13px;
+  color: #4b5563;
+  line-height: 1.45;
+}
+.cf-status-ok{ color: #047857; }
+.cf-status-error{ color: #b91c1c; }
+@media (max-width: 640px){
+  .cf-action{ grid-template-columns: 1fr; }
+  .cf-action .btn{ width: 100%; min-width: 0; }
 }

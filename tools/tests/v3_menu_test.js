@@ -23,8 +23,8 @@ check('mobile: #plannerTestWrap co o rieng (cot 4 doc, sau Cherry)', /\.toolbar-
 check('mobile: Cherry cot 3 (truoc Toi uu v3)', /\.toolbar-actions\s*>\s*#btnEngineCherry\s*\{[^}]*grid-column:\s*3;/.test(html), true);
 check('mobile: RB cot 7, Thong ke cot 8 (RB an -> Thong ke ve 7)', /#btnConstraintAudit:not\(\[hidden\]\)\s*\{[^}]*grid-column:\s*7;/.test(html) && /\.toolbar-main:has\(#btnConstraintAudit\[hidden\]\)[^{]*\.stats-toggle\s*\{[^}]*grid-column:\s*7;/.test(html), true);
 check('mobile: #btnTestMenu dang icon (font-size: 0)', /#btnTestMenu\s*\{[^}]*font-size:\s*0;/.test(html), true);
-check('mobile: an nut Xep FET va menu Toi uu FET', /\.toolbar-actions\s*>\s*#btnAutoSort\s*\{[^}]*display:\s*none !important;/.test(html) && /\.toolbar-actions\s*>\s*#plannerOptimizeWrap\s*\{[^}]*display:\s*none !important;/.test(html), true);
-check('nhan nut la "Tối ưu v3"', /<span class="planner-mode-label">Tối ưu v3<\/span>/.test(html), true);
+check('mobile: an nut Xep FET (menu Toi uu FET da go han 03/09)', /\.toolbar-actions\s*>\s*#btnAutoSort\s*\{[^}]*display:\s*none !important;/.test(html) && !/plannerOptimizeWrap|btnOptimizeMenu/.test(html), true);
+check('nhan nut la "Tối ưu" (13/09 bo chu v3)', /<span class="planner-mode-label">Tối ưu<\/span>/.test(html), true);
 check('khong con nhan TEST', /<span class="planner-mode-label">TEST<\/span>/.test(html), false);
 for (const mode of ['optimize_singletons', 'optimize_sessions', 'optimize_gap2', 'optimize_gap1']) {
   check(`menu goi runPlannerV3Mode('${mode}')`, new RegExp(`runPlannerV3Mode\\('${mode}', event\\)`).test(html), true);
@@ -36,7 +36,7 @@ check('nut RB van chi superadmin', /\["btnConstraintAudit"\]\.forEach\(id => \{[
 check('nut Lỗi da bo (22/08 khuya)', /id="btnSolveErrorLog"/.test(html), false);
 check('fallback tkbRunEngine trong HTML nhan options.mode', /window\.tkbRunEngine = function\(engine, btn, options\)\{/.test(html), true);
 // 23/08 trua: bump tiep thanh reclick-keep-v1 (sua hau kiem "ap roi hoan tac").
-check('sapxep.html bump bridge (live label tro di)', /tkb-rust-bridge\.js\?v=20260823-(live|reclick-keep|v3-progress|fixed-first|focus-gate)-v1/.test(html), true);
+check('sapxep.html bump bridge (live label tro di; 03/09 no-fet-optimize)', /tkb-rust-bridge\.js\?v=(20260823-(live|reclick-keep|v3-progress|fixed-first|focus-gate)|20260903-no-fet-optimize)-v1/.test(html), true);
 
 // Bridge
 check('bridge tkbRunEngine nhan options.mode', /window\.tkbRunEngine = function\(engine, btn, options\)\{/.test(bridge), true);
@@ -52,7 +52,7 @@ check('phanmon: luot engine hien nhan so lieu (details.metricLabel) neu co', /va
 check('phanmon: nhan cho cho luot mot muc tieu "Đang tối ưu v3…"', /"Đang tối ưu v3…"|\\u0110ang t\\u1ed1i \\u01b0u v3\\u2026/.test(phanmonSrc), true);
 const entrySrc = fs.readFileSync('solver_runtime/src/tkb_engine_v3/entry.py', 'utf8');
 check('entry: _LiveQuality gom khung tu worker (Manager queue) + metricLabel', /class _LiveQuality[\s\S]{0,8000}"metricLabel": label/.test(entrySrc), true);
-check('bridge: tom tat "Tối ưu v3 (…) xong"', /Tối ưu v3 \(\$\{focusLabels\[focusMode\]\}\) xong:/.test(bridge), true);
+check('bridge: tom tat "Tối ưu (…) xong"', /Tối ưu \(\$\{focusLabels\[focusMode\]\}\) xong:/.test(bridge), true);
 check('bridge: nguoi dung thuong duoc phep 4 muc tieu', /SOLVE_REQUEST_MODES\.singletons,\s*SOLVE_REQUEST_MODES\.sessions,\s*SOLVE_REQUEST_MODES\.gap1,\s*SOLVE_REQUEST_MODES\.gap2/.test(bridge), true);
 // 23/08 trua: nut "1 tiet trong" v3 KHONG bi chan boi "Hay toi uu Trong 2 tiet truoc"
 // (lane gap1 cua engine v3 khoa buoi 1 tiet / trong >= 2 / so buoi; truong con
@@ -61,9 +61,9 @@ check('bridge: nguoi dung thuong duoc phep 4 muc tieu', /SOLVE_REQUEST_MODES\.si
 // so lieu thuc nam o nhan metricLabel do engine gui.
 check('bridge: progressUsesWorkMetrics tra false khi __TKB_FORCE_ENGINE',
   /function progressUsesWorkMetrics\(settings\)\{[\s\S]{0,900}if\(String\(window\.__TKB_FORCE_ENGINE \|\| ""\)\.trim\(\)\) return false;/.test(bridge), true);
-// 23/08: chu du an yeu cau menu Toi uu (FET) GIU nguyen ten muc, KHONG them "(FET)".
-check('sapxep.html: muc menu Toi uu giu ten goc (khong "(FET)")',
-  /data-scheduler-mode="optimize_gap1"[^>]*>1 tiết trống<\/button>/.test(html)
+// 23/08: ten muc giu nguyen, KHONG them "(FET)". 03/09: menu Toi uu FET da go, chi con menu Toi uu v3.
+check('sapxep.html: muc menu Toi uu v3 giu ten goc (khong "(FET)"), khong con menu Toi uu FET',
+  !/data-scheduler-mode=/.test(html)
   && !/\(FET\)<\/button>/.test(html)
   && /data-test-mode="optimize_gap1"[^>]*>1 tiết trống<\/button>/.test(html), true);
 check('bridge: v3 gap1 bo qua "trong 2 truoc" (__TKB_FORCE_ENGINE)',

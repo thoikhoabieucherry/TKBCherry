@@ -216,7 +216,7 @@ test("every schedule deletion invalidates solver state and force-saves remotely"
   );
   const confirmDeleteBody = plannerSource.slice(
     plannerSource.indexOf("function confirmDeleteMenu"),
-    plannerSource.indexOf("/* [MOVED -> phanmon-ops.js] Section: xep_lai */")
+    plannerSource.indexOf("/* [REMOVED] Section: xep_lai */")
   );
   const menuClassDeleteBody = confirmDeleteBody.slice(
     confirmDeleteBody.indexOf('if(choice === "class"){'),
@@ -364,7 +364,7 @@ test("teacher timetable statistics ignore stale lessons without a PCCM assignmen
   assert.equal(stats.onePeriodTeachers[0].count, 1);
 });
 
-test("portrait planner keeps eight compact mobile slots including Optimize", () => {
+test("portrait planner keeps eight compact mobile slots (FET optimize menu removed 03/09)", () => {
   const actionsStart = plannerHtml.indexOf('<div class="toolbar-actions"');
   const feedbackStart = plannerHtml.indexOf('<div class="toolbar-feedback"');
   const secondaryStart = plannerHtml.indexOf('<div class="toolbar-secondary-actions"', feedbackStart);
@@ -378,7 +378,8 @@ test("portrait planner keeps eight compact mobile slots including Optimize", () 
     "btnUndoTKB",
     "btnRedoTKB",
     "btnAutoSort",
-    "btnOptimizeMenu",
+    "btnEngineCherry",
+    "plannerTestWrap",
     "btnStopAutoSort",
     "btnDeleteAll"
   ];
@@ -415,9 +416,11 @@ test("portrait planner keeps eight compact mobile slots including Optimize", () 
   assert.doesNotMatch(stopButton, />\s*(?:Dừng|Đang dừng)\s*</);
   assert.doesNotMatch(actions, /<span[^>]*>s<\/span>/i);
   assert.doesNotMatch(actions, /id="desktopSolveControls"/);
-  assert.match(actions, /id="btnOptimizeMenu"[^>]*aria-haspopup="menu"[^>]*aria-expanded="false"/);
-  assert.match(actions, /id="plannerOptimizeMenu"[^>]*role="menu"[^>]*hidden/);
-  assert.equal((actions.match(/data-scheduler-mode=/g) || []).length, 4);
+  // 03/09 (chu du an: "nut do hoi phe"): menu Toi uu FET trong trinh duyet da go han; chi con menu Toi uu v3 (engine).
+  assert.doesNotMatch(actions, /btnOptimizeMenu|plannerOptimizeMenu|plannerOptimizeWrap|data-scheduler-mode=|runPlannerSchedulerMode/);
+  assert.match(actions, /id="btnTestMenu"[^>]*aria-haspopup="menu"[^>]*aria-expanded="false"/);
+  assert.match(actions, /id="plannerTestMenu"[^>]*role="menu"[^>]*hidden/);
+  assert.equal((actions.match(/data-test-mode=/g) || []).length, 4);
   assert.equal((actions.match(/data-superadmin-only="true"/g) || []).length, 0);
   for(const [mode, label] of [
     ["optimize_singletons", "1 tiết/buổi"],
@@ -427,7 +430,7 @@ test("portrait planner keeps eight compact mobile slots including Optimize", () 
   ]){
     assert.match(
       actions,
-      new RegExp(`data-scheduler-mode="${mode}"[^>]*>${label}<\\/button>`)
+      new RegExp(`data-test-mode="${mode}"[^>]*>${label}<\/button>`)
     );
   }
   assert.doesNotMatch(actions, /data-scheduler-deep|Tối ưu sâu|Cloud Run/);
@@ -506,7 +509,7 @@ test("portrait planner keeps eight compact mobile slots including Optimize", () 
   assert.doesNotMatch(plannerHtml, /tkb-(?:browser|cpsat|highs)-wasm\.js/);
 });
 
-test("landscape phones keep nine full-height slots including Optimize", () => {
+test("landscape phones keep nine full-height slots (FET optimize menu removed 03/09)", () => {
   const start = plannerHtml.indexOf("@media (orientation: landscape) and (max-height: 540px) and (any-pointer: coarse)");
   const end = plannerHtml.indexOf("@media (min-width: 481px)", start);
   assert.ok(start >= 0 && end > start, "landscape toolbar override is missing");
@@ -516,9 +519,9 @@ test("landscape phones keep nine full-height slots including Optimize", () => {
   assert.match(landscapeCss, /#btnUndoTKB\s*\{[^}]*grid-column:\s*2;[^}]*align-self:\s*stretch;/s);
   assert.match(landscapeCss, /#btnRedoTKB\s*\{[^}]*grid-column:\s*3;[^}]*align-self:\s*stretch;/s);
   assert.match(landscapeCss, /#btnUndoTKB,[^}]*#btnRedoTKB\s*\{[^}]*height:\s*44px;[^}]*min-height:\s*44px;[^}]*border-radius:\s*var\(--tkb-radius, 10px\);/s);
-  // 23/08 (chu du an): dien thoai an Xep FET + Toi uu FET; giu Toi uu v3 + Cherry + RB.
+  // 23/08 (chu du an): dien thoai an Xep FET; giu Toi uu v3 + Cherry + RB. 03/09: menu Toi uu FET da go han.
   assert.match(landscapeCss, /#btnAutoSort\s*\{[^}]*display:\s*none !important;/s);
-  assert.match(landscapeCss, /#plannerOptimizeWrap\s*\{[^}]*display:\s*none !important;/s);
+  assert.doesNotMatch(landscapeCss, /plannerOptimizeWrap/);
   // 23/08 (lan 2): Cherry 4 | Toi uu v3 5 | Dung-Xoa 6 | Home 7 | RB 8 | Thong ke 9.
   assert.match(landscapeCss, /#btnEngineCherry\s*\{[^}]*grid-column:\s*4;/s);
   assert.match(landscapeCss, /\.toolbar-actions\s*>\s*#plannerTestWrap\s*\{[^}]*grid-column:\s*5;/s);
@@ -1299,15 +1302,12 @@ test.skip("sorting keeps Home and the superadmin route indicator in stable slots
     plannerHtml,
     /#btnAgentHelper\.is-auto-sort-disabled \.agent-status-dot\s*\{[^}]*opacity:\s*1;[^}]*filter:\s*none;/s
   );
-  assert.match(
-    plannerHtml,
-    /#btnOptimizeMenu\.is-auto-sort-disabled\s*\{[^}]*opacity:\s*\.45;[^}]*pointer-events:\s*none;/s
-  );
   assert.match(busyControls, /getElementById\("btnUndoTKB"\)/);
   assert.match(busyControls, /getElementById\("btnRedoTKB"\)/);
   assert.doesNotMatch(busyControls, /getElementById\("btnQuickComplete"\)/);
-  assert.match(busyControls, /getElementById\("btnOptimizeMenu"\)/);
-  assert.match(busyControls, /plannerOptimizeMenu/);
+  assert.doesNotMatch(busyControls, /btnOptimizeMenu|plannerOptimizeMenu/);
+  assert.match(busyControls, /getElementById\("btnTestMenu"\)/);
+  assert.match(busyControls, /#plannerTestMenu button/);
   assert.doesNotMatch(busyControls, /getElementById\("btnStopAutoSort"\)/);
   assert.match(busyControls, /getElementById\("solveDurationSeconds"\)/);
   assert.match(busyControls, /setAutoSortControlLocked\(el,\s*shouldLock\)/);
@@ -1340,8 +1340,8 @@ test.skip("sorting keeps Home and the superadmin route indicator in stable slots
   const controls = {
     btnHome:makeControl(false),
     btnAgentHelper:makeControl(false),
-    btnOptimizeMenu:makeControl(false),
-    plannerOptimizeMenu:makeControl(false),
+    btnTestMenu:makeControl(false),
+    plannerTestMenu:makeControl(false),
     btnUndoTKB:makeControl(false),
     btnRedoTKB:makeControl(true),
     btnDeleteAll:makeControl(false),
@@ -1378,11 +1378,11 @@ test.skip("sorting keeps Home and the superadmin route indicator in stable slots
   assert.equal(controls.btnAgentHelper.getAttribute("aria-disabled"), "true");
   assert.equal(controls.btnAgentHelper.classList.contains("is-auto-sort-disabled"), true);
   assert.equal(controls.btnAgentHelper.getAttribute("aria-hidden"), "false");
-  assert.equal(controls.btnOptimizeMenu.disabled, true);
-  assert.equal(controls.btnOptimizeMenu.getAttribute("aria-disabled"), "true");
-  assert.equal(controls.btnOptimizeMenu.classList.contains("is-auto-sort-disabled"), true);
-  assert.equal(controls.plannerOptimizeMenu.hidden, true);
-  assert.equal(controls.btnOptimizeMenu.getAttribute("aria-expanded"), "false");
+  assert.equal(controls.btnTestMenu.disabled, true);
+  assert.equal(controls.btnTestMenu.getAttribute("aria-disabled"), "true");
+  assert.equal(controls.btnTestMenu.classList.contains("is-auto-sort-disabled"), true);
+  assert.equal(controls.plannerTestMenu.hidden, true);
+  assert.equal(controls.btnTestMenu.getAttribute("aria-expanded"), "false");
   assert.equal(controls.btnUndoTKB.disabled, true);
   assert.equal(controls.btnRedoTKB.disabled, true);
   assert.equal(controls.solveDurationSeconds.disabled, true);
@@ -1394,9 +1394,9 @@ test.skip("sorting keeps Home and the superadmin route indicator in stable slots
   assert.equal(controls.btnAgentHelper.disabled, false);
   assert.equal(controls.btnAgentHelper.getAttribute("aria-disabled"), "false");
   assert.equal(controls.btnAgentHelper.classList.contains("is-auto-sort-disabled"), false);
-  assert.equal(controls.btnOptimizeMenu.disabled, false);
-  assert.equal(controls.btnOptimizeMenu.getAttribute("aria-disabled"), null);
-  assert.equal(controls.btnOptimizeMenu.classList.contains("is-auto-sort-disabled"), false);
+  assert.equal(controls.btnTestMenu.disabled, false);
+  assert.equal(controls.btnTestMenu.getAttribute("aria-disabled"), null);
+  assert.equal(controls.btnTestMenu.classList.contains("is-auto-sort-disabled"), false);
   assert.equal(controls.btnUndoTKB.disabled, false);
   assert.equal(controls.btnRedoTKB.disabled, true);
   assert.equal(controls.solveDurationSeconds.disabled, false);
@@ -1413,6 +1413,26 @@ test("leaving the planner detaches from an active server job instead of cancelli
   assert.match(navigation, /Lượt xếp vẫn tiếp tục trên máy chủ/);
   assert.match(navigation, /backToMain\(\)/);
   assert.doesNotMatch(navigation, /requestStopAutoSort|stopAutoSortBeforeHome|hardCancel|window\.confirm/);
+});
+
+test("In TKB always exports Excel and never falls back to window.print (31/08)", () => {
+  const printMenu = plannerSource.slice(
+    plannerSource.indexOf("const PRINT_EXPORT_MODULE_FILE"),
+    plannerSource.indexOf("window.togglePrintTKBMenu = togglePrintTKBMenu")
+  );
+  assert.ok(printMenu.length > 0);
+  assert.match(printMenu, /function ensurePrintExportFn/);
+  assert.match(printMenu, /function runPrintExport/);
+  assert.match(printMenu, /runPrintExport\("exportCurrentClassTKBExcel"/);
+  assert.match(printMenu, /runPrintExport\("exportTeacherTKBExcelTemplate1"/);
+  assert.match(printMenu, /runPrintExport\("exportTeacherTKBExcelTemplate2"/);
+  assert.match(printMenu, /runPrintExport\("exportSchoolClassTKBExcel"/);
+  assert.match(printMenu, /runPrintExport\("exportSchoolTeacherTKBExcel"/);
+  // Không còn nhánh nào của "In TKB" gọi in trình duyệt (PDF) khi module Excel chưa nạp.
+  assert.doesNotMatch(printMenu, /printTKB\(\)|window\.print\(|printCurrentTeacherTKB\(\)/);
+  // Thiếu module thì nạp lại đúng file rồi mới báo lỗi, không im lặng.
+  assert.match(printMenu, /tkb-student-excel-export\.js/);
+  assert.match(printMenu, /Hãy tải lại trang \(F5\)/);
 });
 
 test("soft Stop remains disabled while later progress frames arrive", () => {

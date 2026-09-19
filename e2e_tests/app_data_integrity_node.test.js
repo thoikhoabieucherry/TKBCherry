@@ -628,43 +628,55 @@ test("PCCM indexed lookups preserve class, teacher, and standard-period semantic
   });
 });
 
-test("PCCM teacher choices hydrate only when their row menu opens", () => {
+test("PCCM teacher select is single-choice and hydrates the full list only when opened", () => {
   const context = loadApp();
   vm.runInContext(`
     DATA={giaovien:[
       {magv:"GV01",hodem:"Nguyễn Văn",ten:"An"},
       {magv:"GV02",hodem:"Trần Thị",ten:"Bình"}
     ]};
-    PCCM_LOOKUP_CACHE=pccmBuildLookupCache();
   `, context);
 
-  const initial = context.pccmRenderTeacherMulti(
+  // 28/08: dạy ghép có mục riêng — ô Giáo viên trong Phân công là <select> một người.
+  const initial = context.pccmRenderTeacherSelect(
     "pccm_test_gv",
-    "GV01, GV-CU",
+    "GV-CU",
     [{code:"GV01"}, {code:"GV02"}]
   );
-  assert.match(initial, /data-pccm-menu-lazy="1"/);
-  assert.doesNotMatch(initial, /pccm-teacher-item/);
-  assert.match(initial, /value="GV01, GV-CU"/);
+  assert.match(initial, /<select id="pccm_test_gv"/);
+  assert.match(initial, /data-pccm-lazy="1"/);
+  assert.doesNotMatch(initial, /value="GV02"/);
+  assert.match(initial, /value="GV-CU" selected/);
+  assert.match(initial, /\(Đang lưu\) GV-CU/);
+  assert.doesNotMatch(initial, /pccm-multi/);
 
-  const attrs = new Map();
-  const menu = {
+  // Giá trị nhiều GV của dữ liệu cũ vẫn được giữ nguyên trong option đang chọn
+  const legacy = context.pccmRenderTeacherSelect("pccm_test_gv2", "GV01, GV02", [{code:"GV01"}, {code:"GV02"}]);
+  assert.match(legacy, /value="GV01, GV02" selected/);
+  assert.match(legacy, /dạy ghép cũ/);
+
+  const attrs = new Map([["data-pccm-lazy", "1"]]);
+  const select = {
+    value:"GV-CU",
     innerHTML:"",
+    options:[
+      {value:"", outerHTML:'<option value="">(Chưa phân)</option>'},
+      {value:"GV-CU", outerHTML:'<option value="GV-CU" selected>(Đang lưu) GV-CU</option>'}
+    ],
     getAttribute(name){ return attrs.get(name) || null; },
-    setAttribute(name, value){ attrs.set(name, String(value)); }
+    removeAttribute(name){ attrs.delete(name); }
   };
-  const box = {
-    id:"pccm_test_gv_box",
-    querySelector(selector){ return selector === ".pccm-multi-menu" ? menu : null; }
-  };
-  const hidden = {value:"GV01, GV-CU"};
-  context.document.getElementById = id => id === "pccm_test_gv" ? hidden : null;
+  const hydrated = context.pccmTeacherSelectHydrate(select);
+  assert.equal(hydrated, select);
+  assert.equal(attrs.has("data-pccm-lazy"), false);
+  assert.equal((select.innerHTML.match(/<option /g) || []).length, 4);
+  assert.match(select.innerHTML, /value="GV01"/);
+  assert.match(select.innerHTML, /value="GV02"/);
+  assert.match(select.innerHTML, /\(Đang lưu\) GV-CU/);
+  assert.equal(select.value, "GV-CU");
 
-  const hydrated = context.pccmEnsureTeacherMultiMenu(box);
-  assert.equal(hydrated, menu);
-  assert.equal(attrs.get("data-pccm-menu-hydrated"), "1");
-  assert.equal((menu.innerHTML.match(/pccm-teacher-item/g) || []).length, 3);
-  assert.match(menu.innerHTML, /GV01/);
-  assert.match(menu.innerHTML, /GV02/);
-  assert.match(menu.innerHTML, /GV-CU/);
+  // Đã điền rồi thì không điền lại
+  select.innerHTML = "x";
+  context.pccmTeacherSelectHydrate(select);
+  assert.equal(select.innerHTML, "x");
 });

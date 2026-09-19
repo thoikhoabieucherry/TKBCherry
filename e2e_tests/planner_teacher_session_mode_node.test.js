@@ -95,13 +95,19 @@ function rowModeInput(html, teacherId, mode){
   );
 }
 
+// 13/09 (chủ dự án): "Chỉ dạy 1 buổi/1 ngày" đổi thành "Giới hạn buổi dạy", mỗi ngày 2 ô Sáng / Chiều:
+// bỏ trống = tự do; tick Sáng = chỉ sáng; tick Chiều = chỉ chiều; tick cả hai = sáng HOẶC chiều (either).
+// Dữ liệu lưu vẫn là MỘT cờ {morning|afternoon|either:true} nên các bộ giải không đổi.
 test("one-session teacher rules normalize legacy and object values", () => {
   const api = loadConstraints(teacherData({
     Legacy:{oneSessionPerDay:{thu2:true}},
     Morning:{oneSessionPerDay:{thu2:{morning:true}}},
     Afternoon:{oneSessionPerDay:{thu2:{afternoon:true}}},
     Either:{oneSessionPerDay:{thu2:{either:true}}},
+    BothBoxes:{oneSessionPerDay:{thu2:{morning:true,afternoon:true}}},
     Malformed:{oneSessionPerDay:{thu2:{morning:true,afternoon:true,either:true}}},
+    UncheckedOverOld:{oneSessionPerDay:{thu2:{either:true,morning:false,afternoon:true}}},
+    ClearedOverOld:{oneSessionPerDay:{thu2:{either:true,morning:false,afternoon:false}}},
     Empty:{oneSessionPerDay:{thu2:{morning:false,afternoon:false,either:false}}}
   }));
   const hooks = api.__testHooks;
@@ -111,17 +117,18 @@ test("one-session teacher rules normalize legacy and object values", () => {
   assert.deepEqual(model.teacher.Morning.oneSessionPerDay.thu2, {morning:true});
   assert.deepEqual(model.teacher.Afternoon.oneSessionPerDay.thu2, {afternoon:true});
   assert.deepEqual(model.teacher.Either.oneSessionPerDay.thu2, {either:true});
-  assert.deepEqual(
-    model.teacher.Malformed.oneSessionPerDay.thu2,
-    {morning:true},
-    "malformed multi-mode data needs deterministic morning > afternoon > either precedence"
-  );
+  assert.deepEqual(model.teacher.BothBoxes.oneSessionPerDay.thu2, {either:true}, "tick cả Sáng lẫn Chiều = sáng hoặc chiều");
+  assert.deepEqual(model.teacher.Malformed.oneSessionPerDay.thu2, {either:true});
+  assert.deepEqual(model.teacher.UncheckedOverOld.oneSessionPerDay.thu2, {afternoon:true}, "hai ô giao diện thắng cờ either cũ");
+  assert.equal(model.teacher.ClearedOverOld, undefined, "bỏ cả hai ô = tự do, kể cả khi còn cờ either cũ");
   assert.equal(model.teacher.Empty, undefined, "an all-false mode object means no constraint");
 
   assert.equal(hooks.teacherOneSessionDayMode(true), "either");
   assert.equal(hooks.teacherOneSessionDayMode({morning:true}), "morning");
   assert.equal(hooks.teacherOneSessionDayMode({afternoon:true}), "afternoon");
   assert.equal(hooks.teacherOneSessionDayMode({either:true}), "either");
+  assert.equal(hooks.teacherOneSessionDayMode({morning:true, afternoon:true}), "either");
+  assert.equal(hooks.teacherOneSessionDayMode({morning:false, afternoon:false}), "");
   assert.equal(hooks.teacherOneSessionDayMode({}), "");
 
   const persisted = json(api.get());
@@ -135,7 +142,11 @@ test("one-session teacher rules normalize legacy and object values", () => {
   assert.deepEqual(reloaded.teacher.Either.oneSessionPerDay.thu2, {either:true});
 });
 
-test("one-session table renders three square choices per teacher and day", () => {
+test("Giới hạn buổi dạy: tên mới, bảng 2 ô Sáng/Chiều mỗi ngày, either = tick cả hai", () => {
+  assert.match(CONSTRAINTS_SOURCE, /\['oneSessionPerDay', 'Giới hạn buổi dạy'\]/);
+  assert.match(CONSTRAINTS_SOURCE, /menuRoute\('Giới hạn buổi dạy','teacher','oneSessionPerDay'\)/);
+  assert.doesNotMatch(CONSTRAINTS_SOURCE, /Chỉ dạy 1 buổi\/1 ngày/);
+
   const rules = {
     Legacy:{oneSessionPerDay:{thu2:true}},
     Morning:{oneSessionPerDay:{thu2:{morning:true}}},
@@ -150,103 +161,103 @@ test("one-session table renders three square choices per teacher and day", () =>
 
   assert.match(html, /class="table-wrap rb-desktop-wrap rb-teacher-one-session-wrap"/);
   assert.match(html, /class="rb-desktop-table rb-teacher-one-session-table"/);
-  assert.match(html, /<th colspan="3" class="rb-one-session-day-head">/);
+  assert.match(html, /<th colspan="2" class="rb-one-session-day-head">/);
+  assert.match(html, /rb-one-session-hint[\s\S]*Bỏ trống[\s\S]*cả hai/);
+  assert.doesNotMatch(html, /Cả 2|data-rb-one-session-mode="either"/, "không còn cột Cả 2");
   assert.equal(
     inputTags(html).filter(tag => tag.includes("data-rb-one-session-mode=")).length,
-    rows.length * 3,
-    "every teacher/day needs Morning, Afternoon, and Either choices"
+    rows.length * 2,
+    "mỗi GV/ngày chỉ có ô Sáng và ô Chiều"
   );
-
-  ["morning","afternoon","either"].forEach(mode => {
-    assert.match(
-      html,
-      new RegExp(`data-rb-check-filter="path:oneSessionPerDay\\.thu2\\.${mode}"`),
-      `the ${mode} subcolumn needs its own bulk checkbox`
-    );
+  ["morning","afternoon"].forEach(mode => {
+    assert.match(html, new RegExp(`data-rb-check-filter="path:oneSessionPerDay\\.thu2\\.${mode}"`), `cột ${mode} cần ô chọn tất cả`);
   });
 
   const expected = {
-    Legacy:"either",
-    Morning:"morning",
-    Afternoon:"afternoon",
-    Either:"either"
+    Legacy:{morning:true, afternoon:true},
+    Morning:{morning:true, afternoon:false},
+    Afternoon:{morning:false, afternoon:true},
+    Either:{morning:true, afternoon:true},
+    Free:{morning:false, afternoon:false}
   };
-  Object.entries(expected).forEach(([teacherId,selectedMode]) => {
-    ["morning","afternoon","either"].forEach(mode => {
+  Object.entries(expected).forEach(([teacherId, checks]) => {
+    ["morning","afternoon"].forEach(mode => {
       const tag = rowModeInput(html, teacherId, mode);
       assert.ok(tag, `${teacherId}/${mode} checkbox is missing`);
-      assert.equal(/\schecked(?:\s|>)/.test(tag), mode === selectedMode);
+      assert.equal(/\schecked(?:\s|>)/.test(tag), checks[mode], `${teacherId}/${mode}`);
       assert.match(tag, new RegExp(`data-path="oneSessionPerDay\\.thu2\\.${mode}"`));
       assert.match(tag, /data-rb-one-session-day="thu2"/);
     });
   });
-  ["morning","afternoon","either"].forEach(mode => {
-    assert.doesNotMatch(rowModeInput(html, "Free", mode), /\schecked(?:\s|>)/);
-  });
 });
 
-function modeBox(teacherId, day, mode, checked){
-  return {
+function modeBox(teacherId, day, mode, checked, row){
+  const box = {
     checked:!!checked,
     dataset:{
       tid:String(teacherId),
+      path:`oneSessionPerDay.${day}.${mode}`,
       rbOneSessionDay:String(day),
       rbOneSessionMode:String(mode)
-    }
+    },
+    matches(selector){ return selector === 'input[type="checkbox"][data-tid][data-path]'; },
+    closest(){ return row; }
   };
+  row.boxes.push(box);
+  return box;
 }
 
-test("individual and bulk mode selection clear the other two modes", () => {
-  const api = loadConstraints(teacherData({GV1:{},GV2:{}}), ["thu2","thu3"]);
-  const enforce = api.__testHooks.enforceTeacherOneSessionInputs;
+function sessionRow(){
+  const row = {boxes:[]};
+  row.querySelector = (selector) => row.boxes.find(box => selector.includes(`data-rb-one-session-mode="${box.dataset.rbOneSessionMode}"`) && selector.includes(`data-rb-one-session-day="${box.dataset.rbOneSessionDay}"`)) || null;
+  return row;
+}
 
-  const morning = modeBox("GV1","thu2","morning",true);
-  const afternoon = modeBox("GV1","thu2","afternoon",true);
-  const either = modeBox("GV1","thu2","either",true);
-  const otherDay = modeBox("GV1","thu3","either",true);
-  const otherTeacher = modeBox("GV2","thu2","either",true);
-  const boxes = [morning,afternoon,either,otherDay,otherTeacher];
-  const root = {querySelectorAll(){ return boxes; }};
-
-  const cleared = enforce(root, morning);
+test("hai ô Sáng/Chiều không còn loại trừ nhau", () => {
+  const api = loadConstraints(teacherData({GV1:{}}), ["thu2","thu3"]);
+  const row = sessionRow();
+  const morning = modeBox("GV1","thu2","morning",true,row);
+  const afternoon = modeBox("GV1","thu2","afternoon",true,row);
+  const root = {querySelectorAll(){ return row.boxes; }};
+  assert.equal(api.__testHooks.enforceTeacherOneSessionInputs(root, morning).length, 0);
   assert.equal(morning.checked, true);
-  assert.equal(afternoon.checked, false);
-  assert.equal(either.checked, false);
-  assert.equal(otherDay.checked, true, "another day must remain untouched");
-  assert.equal(otherTeacher.checked, true, "another teacher must remain untouched");
-  assert.deepEqual(new Set(cleared), new Set([afternoon,either]));
-
-  afternoon.checked = true;
-  enforce(root, afternoon);
-  assert.equal(morning.checked, false);
   assert.equal(afternoon.checked, true);
-  assert.equal(either.checked, false);
+});
 
-  afternoon.checked = false;
-  morning.checked = true;
-  enforce(root, afternoon);
-  assert.equal(morning.checked, true, "clearing one choice must not clear the active choice");
+test("lưu nhanh một ô ghi trạng thái cả hai ô của ngày rồi chuẩn hoá về một cờ", () => {
+  const api = loadConstraints(teacherData({GV1:{oneSessionPerDay:{thu2:{either:true}}}, GV2:{}}), ["thu2","thu3"]);
+  const save = api.__testHooks.fastSaveCheckboxTargets;
+  const rowGv1 = sessionRow();
+  const gv1Morning = modeBox("GV1","thu2","morning",true,rowGv1);
+  const gv1Afternoon = modeBox("GV1","thu2","afternoon",true,rowGv1);
 
-  const gv1Morning = modeBox("GV1","thu2","morning",true);
-  const gv1Either = modeBox("GV1","thu2","either",true);
-  const gv2Morning = modeBox("GV2","thu2","morning",true);
-  const gv2Afternoon = modeBox("GV2","thu2","afternoon",true);
-  const bulkBoxes = [gv1Morning,gv1Either,gv2Morning,gv2Afternoon];
-  const bulkRoot = {querySelectorAll(){ return bulkBoxes; }};
-  const bulkCleared = enforce(bulkRoot, [gv1Morning,gv2Morning]);
+  // đang "sáng hoặc chiều" -> bỏ ô Sáng = chỉ chiều
+  gv1Morning.checked = false;
+  save([gv1Morning]);
+  assert.deepEqual(json(api.get()).teacher.GV1.oneSessionPerDay.thu2, {afternoon:true});
 
-  assert.equal(gv1Morning.checked, true);
-  assert.equal(gv1Either.checked, false);
-  assert.equal(gv2Morning.checked, true);
-  assert.equal(gv2Afternoon.checked, false);
-  assert.deepEqual(new Set(bulkCleared), new Set([gv1Either,gv2Afternoon]));
+  // bỏ nốt ô Chiều = tự do
+  gv1Afternoon.checked = false;
+  save([gv1Afternoon]);
+  assert.equal(json(api.get()).teacher.GV1, undefined);
 
-  const bindStart = CONSTRAINTS_SOURCE.indexOf("function bindCheckAllControls");
-  const bindEnd = CONSTRAINTS_SOURCE.indexOf("function rbNumKey", bindStart);
-  const bindSource = CONSTRAINTS_SOURCE.slice(bindStart, bindEnd);
-  assert.ok(bindStart >= 0 && bindEnd > bindStart);
-  assert.match(bindSource, /enforceTeacherOneSessionInputs\(root,boxes\)/);
-  assert.match(bindSource, /boxes\.concat\(mutuallyCleared\)/);
+  // tick cả hai = sáng hoặc chiều; tick một = chỉ buổi đó
+  gv1Morning.checked = true;
+  save([gv1Morning]);
+  assert.deepEqual(json(api.get()).teacher.GV1.oneSessionPerDay.thu2, {morning:true});
+  gv1Afternoon.checked = true;
+  save([gv1Afternoon]);
+  assert.deepEqual(json(api.get()).teacher.GV1.oneSessionPerDay.thu2, {either:true});
+
+  // ô chọn tất cả của cột Chiều (nhiều GV cùng lúc)
+  const rowGv2 = sessionRow();
+  modeBox("GV2","thu2","morning",false,rowGv2);
+  const gv2Afternoon = modeBox("GV2","thu2","afternoon",true,rowGv2);
+  gv1Afternoon.checked = false;
+  save([gv1Afternoon, gv2Afternoon]);
+  const after = json(api.get()).teacher;
+  assert.deepEqual(after.GV1.oneSessionPerDay.thu2, {morning:true});
+  assert.deepEqual(after.GV2.oneSessionPerDay.thu2, {afternoon:true});
 });
 
 test("regular and bulk saves canonicalize a mode to one true key", () => {
@@ -303,7 +314,7 @@ test("constraint tables keep desktop proportions and mobile horizontal work spac
   );
   assert.match(mobileCss, /\.rb-teacher-simple-table\{min-width:720px\}/);
   assert.match(mobileCss, /\.rb-teacher-session-check-table\{min-width:900px\}/);
-  assert.match(mobileCss, /\.rb-teacher-one-session-table\{min-width:1240px\}/);
+  assert.match(mobileCss, /\.rb-teacher-one-session-table\{min-width:900px\}/);
   assert.match(mobileCss, /\.rb-teacher-period-table\{min-width:1280px\}/);
 });
 

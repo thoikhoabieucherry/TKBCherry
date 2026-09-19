@@ -241,6 +241,13 @@ def _event_start_allowed(
     return True
 
 
+def _rule_subject_of(constraints: Any, subject: Any) -> str:
+    """31/08: mon dung de tra luat (khoa day ghep -> mon goc); thieu ho tro thi giu nguyen."""
+    fn = getattr(constraints, "rule_subject", None)
+    text = "" if subject is None else str(subject)
+    return fn(text) if callable(fn) else text
+
+
 def _event_matches_limit(event: LessonEvent, rule: Mapping[str, Any], rules: TimetableRuleSet) -> bool:
     constraints = rules.constraints
     if constraints is None:
@@ -252,7 +259,7 @@ def _event_matches_limit(event: LessonEvent, rule: Mapping[str, Any], rules: Tim
     if target_type == "teacher":
         return event.teacher == target_id
     if target_type == "subject":
-        return event.subject == target_id
+        return event.subject == target_id or _rule_subject_of(constraints, event.subject) == target_id
     if target_type == "room":
         return bool(event.room) and event.room == target_id
     if target_type == "subjectGroup":
@@ -501,6 +508,10 @@ def _allocate_periods_sequential(
 
         teacher_events: dict[str, list[int]] = {}
         for ei, event in enumerate(events):
+            # 02/09: teacher "" = tiet day ghep KHONG giao vien — khong gom thanh
+            # mot "GV" chung (30 lop cung co tiet khong GV trong buoi se vuot cap).
+            if not event.teacher:
+                continue
             teacher_events.setdefault(event.teacher, []).append(ei)
 
         if rules.constraints is not None:

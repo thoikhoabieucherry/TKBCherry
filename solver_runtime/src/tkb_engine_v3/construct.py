@@ -34,6 +34,43 @@ def _gap1_session_slack() -> int:
         return 0
 
 
+FOCUS_METRIC_INDEX = {"singletons": 0, "gap2": 1, "sessions": 2, "gap1": 3}
+
+
+def focus_candidate_acceptable(focus, start_q, start_placed, quality, placed) -> bool:
+    """13/09 (chu du an: "toi quan sat thay giam tu 59 con 13 nhung khi tra ket
+    qua lai phuc hoi 59, toi muon giu ket qua tot nhat"): mot luoi cua nut MOT
+    MUC TIEU duoc giu lam ket qua khi dat dung hop dong cua entry._focus_gate so
+    voi luoi xuat phat — khong rot tiet, chi so uu tien cao hon khong tang (buoi
+    day noi dung so tiet xep them, nut gap1 cong them TKB_GAP1_SESSION_SLACK),
+    chi so phu trach GIAM THAT."""
+
+    idx = FOCUS_METRIC_INDEX.get(str(focus or ""))
+    if idx is None or not isinstance(start_q, (list, tuple)) or len(start_q) < 4:
+        return False
+    if not isinstance(quality, (list, tuple)) or len(quality) < 4:
+        return False
+    placed = int(placed)
+    start_placed = int(start_placed or 0)
+    if placed < start_placed:
+        return False
+    gained = placed - start_placed
+    for i in range(idx):
+        slack = gained if i == 2 else 0
+        if i == 2 and focus == "gap1":
+            slack += _gap1_session_slack()
+        if int(quality[i]) > int(start_q[i]) + slack:
+            return False
+    return int(quality[idx]) < int(start_q[idx])
+
+
+def _focus_candidate_key(focus, quality) -> tuple:
+    q = [int(x) for x in quality[:4]]
+    if focus == "gap1":
+        return (q[0], q[1], q[3], q[2])
+    return (q[0], q[1], q[2], q[3])
+
+
 # ---------------------------------------------------------------------------
 # Bang tra mat na buoi day (PERIODS bit).  Trang thai mot (giao vien, buoi) chi
 # co 2**PERIODS kha nang -> tien tinh san cnt/first/last va 4 thanh phan chat
@@ -171,6 +208,14 @@ class SoftSchedule:
         # set_cell chi ghi vao day cho GV co tloc (tuc co luat + day >= 2 co so),
         # nen truong mot co so khong ton them mot phep tinh nao.
         self._loc_dirty: set[int] = set()
+        # 27/08 (chu du an: "phai gom cac buoi ve 1 co so truoc, roi moi xet
+        # doi co so"): so BUOI co HAI co so cua tung GV. Buoi mot co so thi luat
+        # dia diem tu thoa — ne duoc nhu cau di chuyen con hon la chua cho cho no.
+        # KHONG duoc cong vao rule_pen: luoi nguoi dung thuong co san vai chuc
+        # buoi hai co so HOP LE, cong vao thi penalty() != 0 -> warm-start bi tu
+        # choi -> engine xay lai ca truong (dung cai bay da sua hom qua).
+        self.loc_mixed: list[int] = [0] * T
+        self.loc_mixed_total = 0
 
     def enable_quality_tracking(self) -> None:
         """Recompute all teacher-session stats and switch on incremental upkeep."""
@@ -375,7 +420,8 @@ class SoftSchedule:
         one = rule.loc_one[s]
         gap = rule.loc_gap[s]
         move = rule.loc_move[s]
-        if not (one or gap or move):
+        breaks = rule.loc_breaks[s]
+        if not (one or gap or move or breaks):
             return 0
         base = s * PERIODS
         entries: list[tuple[int, int]] = []
@@ -387,7 +433,7 @@ class SoftSchedule:
                 entries.append((p, locs[0]))
         if len(entries) < 2:
             return 0
-        return location_rule_debt(entries, one, gap, move)
+        return location_rule_debt(entries, one, gap, move, breaks)
 
     def location_debt(self, t: int) -> int:
         if self.tloc[t] is None:
@@ -432,7 +478,8 @@ class SoftSchedule:
             one = rule.loc_one[s]
             gap = rule.loc_gap[s]
             move = rule.loc_move[s]
-            if not (one or gap or move):
+            breaks = rule.loc_breaks[s]
+            if not (one or gap or move or breaks):
                 continue
             entries: list[tuple[int, int]] = []
             for q in range(PERIODS):
@@ -442,7 +489,7 @@ class SoftSchedule:
                 locs = tl[base + q]
                 if locs:
                     entries.append((q, locs[0]))
-            if len(entries) >= 2 and location_rule_debt(entries, one, gap, move) > 0:
+            if len(entries) >= 2 and location_rule_debt(entries, one, gap, move, breaks) > 0:
                 return True
         return False
 
@@ -481,6 +528,36 @@ class SoftSchedule:
             if seen and loc not in seen:
                 cost += 1
         return cost
+
+    def _count_mixed_sessions(self, t: int) -> int:
+        """So buoi ma GV t day o >= 2 co so trong cung mot buoi."""
+
+        tl = self.tloc[t]
+        if tl is None:
+            return 0
+        n = 0
+        for s in range(NUM_SESSIONS):
+            base = s * PERIODS
+            seen = None
+            mixed = False
+            for p in range(PERIODS):
+                locs = tl[base + p]
+                if not locs:
+                    continue
+                v = locs[0]
+                if seen is None:
+                    seen = v
+                elif v != seen:
+                    mixed = True
+                    break
+            if mixed:
+                n += 1
+        return n
+
+    def refresh_loc_mixed(self, t: int) -> None:
+        new = self._count_mixed_sessions(t)
+        self.loc_mixed_total += new - self.loc_mixed[t]
+        self.loc_mixed[t] = new
 
     def location_debt_session_count(self) -> int:
         """26/08: tong so BUOI (GV, buoi) vi pham luat dia diem tren ca luoi —
@@ -523,6 +600,8 @@ class SoftSchedule:
         new = self.teacher_rule_penalty(t)
         self.rule_pen_total += new - self.rule_pen[t]
         self.rule_pen[t] = new
+        if self.tloc[t] is not None:
+            self.refresh_loc_mixed(t)
         self._loc_dirty.discard(t)
 
     def sync_location_pen(self) -> None:
@@ -551,6 +630,7 @@ class SoftSchedule:
             new = self.teacher_rule_penalty(t)
             total += new - rule_pen[t]
             rule_pen[t] = new
+            self.refresh_loc_mixed(t)
         self.rule_pen_total = total
 
     def penalty(self) -> int:
@@ -587,6 +667,11 @@ _LOC_AVOID = 1000.0
 # nhung kem gon, nen phat nhe hon _LOC_AVOID rat nhieu.
 _LOC_MIX = 0.4
 
+# 27/08: gia cua mot BUOI HAI CO SO trong _quality_score. Dat GIUA "trong 1
+# tiet" (10) va "so buoi day" (10**5): du de engine chu dong gom buoi ve mot
+# co so, nhung khong bao gio danh doi mot buoi day hay mot tiet de lam viec do.
+_LOC_MIXED_W = 10**3
+
 # Nhan ngay/buoi cho thong diep goi y (hien cho nguoi dung, co dau).
 _DAY_LABEL = ("Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7")
 _PART_LABEL = ("sáng", "chiều")
@@ -612,6 +697,13 @@ class Constructor:
         # cho tong so buoi vuot qua muc luc bat dau (_session_cap).
         self.quality_focus: str | None = None
         self._session_cap: int | None = None
+        # 13/09: moc xuat phat + luoi HOP LE tot nhat da gap cua nut mot muc tieu
+        # (_offer_focus_candidate) — ket qua cuoi hong kiem tra thi tra luoi nay
+        # thay vi luoi goc.
+        self._focus_start: tuple[list[int], int] | None = None
+        self._focus_candidate: dict | None = None
+        self._focus_candidate_checked_at = 0.0
+        self._focus_info: dict | None = None
         # 23/08 (chu du an: "nut Dung bam vao khong dung duoc"): Cloud Run bao
         # dung/huy bang file TKB_SOLVER_STOP_FILE (nhu CP-SAT); engine v3 truoc
         # day khong doc -> chay het ngan sach, chiem instance duy nhat, luot ke
@@ -648,6 +740,7 @@ class Constructor:
         self._cpsat_stats: collections.Counter = collections.Counter()
         self._cpsat_memo: dict[frozenset, tuple[str, int]] = {}
         self._cpsat_pass_idx: int = 0
+        self._cpsat_session_idx: int = 0
         self._fpe_last_debts: int = -1
         self._has_rule_teachers = [
             t
@@ -707,6 +800,10 @@ class Constructor:
             info["warm_placed"] = placed
             info["warm_quality"] = [int(x) for x in soft.quality()[:4]]
             info["warm_grid"] = warm_grid0
+            if self.quality_focus is not None:
+                self._focus_start = (list(info["warm_quality"]), placed)
+                self._focus_candidate = None
+                self._focus_info = info
             # 26/08: moc so BUOI vi pham yeu cau DIA DIEM cua luoi nguoi dung
             # dang co — entry.py khong bao gio duoc tra ve lich nhieu hon moc nay.
             info["warm_location_debt"] = soft.location_debt_session_count()
@@ -766,9 +863,13 @@ class Constructor:
                         "gap2_floor": len(forced_gap2s),
                         "evidence": evidence[:20],
                     }
+                    self._offer_focus_candidate(soft.grid, soft.quality(), force=True)
                     state = self._load_state(soft)
                     if state is not None:
                         return state, info
+                    fallback = self._focus_fallback_state(soft, info)
+                    if fallback is not None:
+                        return fallback, info
             info["warm_start_rejected"] = True
             # Warm khong hop le/khong du (vi du lich do CP-SAT dua sang con
             # thieu vai tiet hoac vi pham luat lop): SUA CUC BO thay vi vut di —
@@ -800,6 +901,9 @@ class Constructor:
                 if state is not None:
                     return state, info
             if self.quality_focus is not None:
+                fallback = self._focus_fallback_state(soft, info)
+                if fallback is not None:
+                    return fallback, info
                 # 25/08: nut MOT MUC TIEU (menu Toi uu v3) chi co nghia tren
                 # lich dang co. Truoc day warm bi tu choi (vi du lich con tiet
                 # Chua phan o mon co cap 2 tiet -> hard:lesson_blocks_min_2) thi
@@ -859,6 +963,50 @@ class Constructor:
                 best_placed = placed
                 best_pen = pen
                 best_soft = soft
+        if (
+            complete_soft is None
+            and best_soft is not None
+            and best_placed >= expected
+            and best_soft.overlap == 0
+            and best_pen > 0
+        ):
+            # 13/09 (chu du an: "gioi han buoi day khi bam Cherry phai tuan thu"):
+            # du tiet, het trung gio, chi con NO LUAT GV (thuong la "sang HOAC
+            # chieu") khi het cua so kha thi. Truoc day tra luon luoi con no ma
+            # KHONG toi uu chat luong -> ~40% thoi gian bo phi. Nay sua tiep no
+            # tu luoi tot nhat (giu lai mot phan de toi uu chat luong neu sach).
+            extend_deadline = deadline - max(5.0, (deadline - time.monotonic()) * 0.35)
+            extend_rounds = 0
+            idle_rounds = 0
+            while (
+                time.monotonic() < extend_deadline
+                and not self._stop_requested()
+                and best_soft.penalty() > 0
+                and idle_rounds < 3
+            ):
+                extend_rounds += 1
+                soft = clone_from_grid(best_soft.grid)
+                round_started = time.monotonic()
+                self._phase2(soft, min(extend_deadline, time.monotonic() + 12.0))
+                placed = sum(1 for row in soft.grid for v in row if v >= 0)
+                pen = soft.penalty()
+                # pha 2 tra ve ngay (khong con o nao sua duoc) -> dung, khong quay vong
+                idle_rounds = idle_rounds + 1 if time.monotonic() - round_started < 0.2 and pen >= best_pen else 0
+                if placed >= expected and pen == 0:
+                    complete_soft = soft
+                    break
+                if placed >= expected and soft.overlap == 0 and pen < best_pen:
+                    best_pen = pen
+                    best_soft = soft
+            info["rule_debt_extend_rounds"] = extend_rounds
+            info["rule_debt_extend_solved"] = complete_soft is not None
+            if complete_soft is None and best_soft.overlap == 0 and best_soft.penalty() > 0:
+                # van con no: dua DUNG cac tiet vi pham ve Chua phan (chu du an:
+                # "co mau thuan rang buoc thi thong bao de toi xu ly") thay vi
+                # tra lich vi pham va bo qua toi uu chat luong.
+                ejected = self._eject_session_debt(best_soft, deadline)
+                if ejected:
+                    info["rule_debt_ejected"] = ejected
         info["feasibility_attempts"] = attempts
         info["feasibility_seconds"] = round(time.monotonic() - started, 1)
         if complete_soft is None and best_soft is not None:
@@ -899,6 +1047,76 @@ class Constructor:
             for c, slot, ai in P.fixed_cells:
                 state.lock_cell(c, slot)
         return state, info
+
+    def _eject_session_debt(self, soft: SoftSchedule, deadline: float) -> int:
+        """13/09: lich du tiet, het trung gio nhung con no "Gioi han buoi day"
+        ma pha 2 khong go duoc: go cac tiet (khong khoa) o buoi vi pham — "chi
+        sang" -> tiet chieu, "chi chieu" -> tiet sang, "sang hoac chieu" -> buoi
+        khong co o khoa / buoi it tiet hon — roi thu xep lai tiet vua go vao cho
+        hop le (_settle_warm). Chi giu khi het sach no va qua kiem tra cung; neu
+        khong tra lai nguyen luoi. Tra so tiet con nam o Chua phan."""
+
+        P = self.P
+        grid_before = [row[:] for row in soft.grid]
+        placed_before = sum(1 for row in grid_before for v in row if v >= 0)
+        removed = 0
+        for t in self._has_rule_teachers:
+            rule = P.teacher_rules[t]
+            if rule is None or soft.rule_pen[t] <= 0:
+                continue
+            for d in range(NUM_DAYS):
+                mode = rule.session_mode[d]
+                if not mode:
+                    continue
+                owners: list[list[tuple[int, int]]] = []
+                for s in (d * 2, d * 2 + 1):
+                    cells = []
+                    for slot in range(s * PERIODS, (s + 1) * PERIODS):
+                        if soft.tcnt[t][slot] <= 0:
+                            continue
+                        for c in range(P.num_classes()):
+                            ai = soft.grid[c][slot]
+                            if ai >= 0 and t in P.a_teachers[ai]:
+                                cells.append((c, slot))
+                    owners.append(cells)
+                am, pm = owners
+                target: list[tuple[int, int]] = []
+                if mode == "morning":
+                    target = pm
+                elif mode == "afternoon":
+                    target = am
+                elif am and pm:
+                    lock_am = any(soft.locked[c][x] for c, x in am)
+                    lock_pm = any(soft.locked[c][x] for c, x in pm)
+                    if lock_am and lock_pm:
+                        target = []
+                    elif lock_am or lock_pm:
+                        target = pm if lock_am else am
+                    else:
+                        target = am if len(am) <= len(pm) else pm
+                for c, slot in target:
+                    if soft.locked[c][slot] or soft.grid[c][slot] < 0:
+                        continue
+                    soft.set_cell(c, slot, -1)
+                    removed += 1
+        for t in self._has_rule_teachers:
+            soft.refresh_rule_pen(t)
+
+        def revert() -> int:
+            self._restore_grid(soft, grid_before)
+            for tt in self._has_rule_teachers:
+                soft.refresh_rule_pen(tt)
+            return 0
+
+        if removed == 0 or soft.penalty() > 0 or time.monotonic() > deadline - 6:
+            return revert()
+        try:
+            settled = self._settle_warm(soft, deadline, removed)
+        except Exception:  # noqa: BLE001 - duong du phong, khong duoc lam hong luot
+            settled = None
+        if settled is None or soft.penalty() > 0:
+            return revert()
+        return max(0, placed_before - sum(1 for row in soft.grid for v in row if v >= 0))
 
     def _shed_overlaps(self, soft: SoftSchedule) -> None:
         """Drop the extra lessons of every teacher double-booking (keep locked
@@ -1446,6 +1664,34 @@ class Constructor:
             # 24/08: luat "tiet 5 sang + tiet 1 chieu" con hep hon, no nam o
             # dung hai o cua ngay vi pham -> gop ca hai kieu no vao mot tap.
             debt_slots = set(soft.edge_pair_debt_slots(t))
+            # 13/09 (chu du an: "Gioi han buoi day khi bam Cherry phai tuan thu"):
+            # no "sang HOAC chieu" nam o buoi IT tiet hon cua ngay GV day ca hai
+            # buoi -> chon tiet trong buoi do (chon tiet bat ky cua GV thi pha 2
+            # thuong khong cham toi ngay vi pham va het gio van con no).
+            # Buoi co o KHOA cua GV khong the doi di -> nham buoi con lai.
+            rule_t = P.teacher_rules[t]
+            if rule_t is not None and "either" in rule_t.session_mode:
+                def _has_lock(slot_list):
+                    return any(
+                        soft.locked[cc][x] and soft.grid[cc][x] >= 0 and t in P.a_teachers[soft.grid[cc][x]]
+                        for x in slot_list
+                        for cc in range(P.num_classes())
+                    )
+
+                for d in range(NUM_DAYS):
+                    if rule_t.session_mode[d] != "either":
+                        continue
+                    am = [x for x in slots if x // PERIODS == d * 2]
+                    pm = [x for x in slots if x // PERIODS == d * 2 + 1]
+                    if not (am and pm):
+                        continue
+                    lock_am, lock_pm = _has_lock(am), _has_lock(pm)
+                    if lock_am and lock_pm:
+                        continue
+                    if lock_am or lock_pm:
+                        debt_slots.update(pm if lock_am else am)
+                    else:
+                        debt_slots.update(am if len(am) <= len(pm) else pm)
             loc_sessions = soft.location_debt_sessions(t)
             if loc_sessions:
                 debt_slots.update(
@@ -2735,6 +2981,7 @@ class Constructor:
             # lam nguoi dung tuong ket qua xau di. Ket qua ap luon la best.
             q = best_q
             q_trial = soft.quality()
+            self._offer_focus_candidate(best_grid, best_q)
             try:
                 progress({
                     "stage": "optimize:quality",
@@ -3051,6 +3298,7 @@ class Constructor:
         # end on best grid
         if self._quality_score(soft, weights) > best_score:
             restore_best()
+        self._offer_focus_candidate(soft.grid, soft.quality(), force=True)
         emit_quality(force=True)
         already_logged = bool(self._stage_log) and self._stage_log[-1].get("stage") == stage and stage_only is not None
         if not already_logged:
@@ -4984,6 +5232,59 @@ class Constructor:
                             return classes
         return classes
 
+    @staticmethod
+    def _cpsat_env_int(name: str, default: int) -> int:
+        try:
+            return int(str(os.environ.get(name, "") or "").strip() or default)
+        except ValueError:
+            return default
+
+    def _cpsat_session_turn(self) -> bool:
+        """11/09: xen ke vung "NGUYEN BUOI toan truong" (moi lop, chi o thuoc 2
+        buoi duoc mo, moi thu khac hang so) vao cac pass CP-SAT theo cum lop.
+        Do tren THCS Tan Phu Trung (74 lop): vung cum 5-12 lop ket o 622 buoi /
+        116 trong, vung theo buoi keo trong 1 xuong 80 voi cung bo luat — vi
+        tiet trong cua GV la chuyen sap xep TRONG buoi, rai o nhieu lop.
+        env TKB_CPSAT_SESSION_EVERY=0 tat; mac dinh cu 2 pass thi 1 pass theo buoi (do 11/09: pass theo buoi duoc nhan nhieu hon pass cum)."""
+
+        every = self._cpsat_env_int("TKB_CPSAT_SESSION_EVERY", 2)
+        if every <= 0:
+            return False
+        return (self._cpsat_pass_idx % every) == every - 1
+
+    def _cpsat_session_limit(self) -> float:
+        """Thoi gian toi da mot pass theo buoi (giay); mo hinh 74 lop x 2 buoi
+        thuong dat OPTIMAL trong 10-30 s."""
+
+        return float(max(5, self._cpsat_env_int("TKB_CPSAT_SESSION_LIMIT", 25)))
+
+    def _cpsat_pick_sessions(self, soft: SoftSchedule, lane: str) -> list[int]:
+        """Hai buoi cho mot pass theo buoi: buoi thu nhat xoay trong 4 buoi
+        nhieu "no" nhat (gap1: buoi ho 1 tiet; sessions: buoi mong), buoi thu
+        hai ngau nhien trong cac buoi con lai co lop mo — de cac tiet doi duoc
+        buoi cho nhau (giam buoi day) chu khong chi xep lai trong mot buoi."""
+
+        P = self.P
+        T = P.num_teachers()
+        if lane == "gap1":
+            debts = self._gap1_sessions_of(soft, set(range(T)))
+        else:
+            debts = self._thin_sessions_of(soft, range(T))
+        cnt: collections.Counter = collections.Counter(s for _t, s in debts)
+        open_sessions = [
+            s for s in range(NUM_SESSIONS)
+            if any(P.class_avail[c][s * PERIODS + p] for c in range(P.num_classes()) for p in range(PERIODS))
+        ]
+        if len(open_sessions) < 2:
+            return []
+        order = sorted(open_sessions, key=lambda s: (-cnt.get(s, 0), s))
+        k = self._cpsat_session_idx
+        self._cpsat_session_idx += 1
+        first = order[k % min(len(order), 4)]
+        rest = [s for s in open_sessions if s != first]
+        second = rest[self.rng.randrange(len(rest))]
+        return sorted((first, second))
+
     def _cpsat_cluster_pass(
         self,
         soft: SoftSchedule,
@@ -5007,7 +5308,10 @@ class Constructor:
         # 26/08: tu tat CP-SAT cho phan con lai cua luot khi no khong hop
         # (>= 4 pass ma <= 1 lan nhan) -> dot quet ep/don buoi + khoi toan tu
         # nang chay nhu cu (truong nhieu GV bi dong bang boi luat dia diem).
-        if stats["pass"] >= 4 and stats["accept"] <= 1:
+        # 11/09: truoc day ">= 4 pass ma <= 1 lan nhan" — voi truong kho (74 lop,
+        # cum 12 lop 2 000 bien) 3-8 s dau toan UNKNOWN nen CP-SAT bi tat ngay
+        # truoc khi pass theo buoi kip chay. Gio: >= 8 pass ma 0 lan nhan.
+        if stats["pass"] >= 8 and stats["accept"] == 0:
             self._cpsat_checked = False
             stats["auto_disabled"] += 1
             return False
@@ -5018,11 +5322,20 @@ class Constructor:
         from . import cpsat_lns
         threads = self._cpsat_threads_effective()
         max_classes = 12 if threads >= 4 else 8
-        classes = self._cpsat_pick_cluster(soft, lane, max_classes)
+        sessions: list[int] | None = None
+        classes: list[int] = []
+        if self._cpsat_session_turn():
+            sessions = self._cpsat_pick_sessions(soft, lane) or None
+            if sessions:
+                classes = list(range(self.P.num_classes()))
+                limit = min(max(limit, self._cpsat_session_limit()), deadline - now - 1.0)
+        if not classes:
+            sessions = None
+            classes = self._cpsat_pick_cluster(soft, lane, max_classes)
         if not classes:
             stats["no_debts"] += 1
             return False
-        key = frozenset(classes)
+        key = frozenset(classes) if sessions is None else frozenset(("S", s) for s in sessions)
         memo = self._cpsat_memo.get(key)
         if memo is not None:
             status, tries = memo
@@ -5033,14 +5346,22 @@ class Constructor:
             limit = min(limit * 1.5, deadline - now - 1.0)
         self._cpsat_pass_idx += 1
         stats["pass"] += 1
+        if sessions is not None:
+            stats["session_pass"] += 1
         target_score = self._quality_score(soft, weights)
         sessions0 = soft.quality()[2]
         gap1_0 = soft.quality()[3]
         try:
+            # 11/09: KHONG ep "chi so phu trach <= hien tai - 1" trong mo hinh
+            # (ca cum lan theo buoi): rang buoc do lam goi y xuat phat vo nghiem
+            # -> CP-SAT mat moc, 3-8 s toan UNKNOWN (do tren 74 lop). Bo no thi
+            # goi y kha thi ngay, solver chi con viec cai thien; cong ben duoi
+            # (q[3]/q[2] giam that) van quyet dinh nhan hay khong.
             new_cells, info = cpsat_lns.build_and_solve(
                 self.P, soft, classes, lane,
                 time_limit=limit, workers=threads, seed=self._cpsat_pass_idx,
                 stop_check=self._stop_requested,
+                require_improve=False, sessions=sessions,
             )
         except Exception as exc:  # noqa: BLE001 - toan tu phu, khong duoc lam hong luot
             stats["error"] += 1
@@ -5054,7 +5375,7 @@ class Constructor:
             prev = self._cpsat_memo.get(key)
             self._cpsat_memo[key] = (status or "UNKNOWN", (prev[1] + 1) if prev else 1)
             if os.environ.get("TKB_EVAC_DEBUG"):
-                sys.stderr.write(f"[cpsat] {status} classes={sorted(classes)} info={ {k: v for k, v in (info or {}).items() if k != 'timeline'} }\n")
+                sys.stderr.write(f"[cpsat] {status} sessions={sessions} classes={sorted(classes)} info={ {k: v for k, v in (info or {}).items() if k != 'timeline'} }\n")
             return False
         journal = cpsat_lns.apply_cells(soft, new_cells)
         for t in self._has_rule_teachers:
@@ -5077,13 +5398,22 @@ class Constructor:
             for t in self._has_rule_teachers:
                 soft.refresh_rule_pen(t)
             stats["rejected"] += 1
-            self._cpsat_memo[key] = ("REJECTED", 9)
+            if sessions is None:
+                self._cpsat_memo[key] = ("REJECTED", 9)
+            if os.environ.get("TKB_EVAC_DEBUG"):
+                sys.stderr.write(
+                    f"[cpsat] reject sessions={sessions} n={len(classes)} q={q[:4]} target=({gap1_0},{sessions0}) "
+                    f"new_touched={(info or {}).get('new_touched')} cur_touched={(info or {}).get('cur_touched')} "
+                    f"status={status} solve={(info or {}).get('solve_s')}s changed={len(journal)}\n"
+                )
             return False
         stats["accept"] += 1
         stats["cells_changed"] += len(journal)
+        if sessions is not None:
+            stats["session_accept"] += 1
         if os.environ.get("TKB_EVAC_DEBUG"):
             sys.stderr.write(
-                f"[cpsat] accept classes={sorted(classes)} q={q[:4]} changed={len(journal)} "
+                f"[cpsat] accept sessions={sessions} classes={sorted(classes)} q={q[:4]} changed={len(journal)} "
                 f"solve={(info or {}).get('solve_s')}s status={status} threads={threads}\n"
             )
         return True
@@ -5876,6 +6206,77 @@ class Constructor:
     # ------------------------------------------------------------------
     # load into hard State
     # ------------------------------------------------------------------
+
+    def _grid_hard_ok(self, grid: list[list[int]]) -> bool:
+        """Luoi qua DUNG kiem tra cung cua _load_state (trung gio, luat lop/mon/GV,
+        gioi han thoi gian) — khong can SoftSchedule."""
+
+        P = self.P
+        state = State(P, defer_min=False)
+        for c in range(P.num_classes()):
+            row = grid[c]
+            for slot in range(NUM_SLOTS):
+                ai = row[slot]
+                if ai >= 0 and state.apply([(c, slot, ai)], check=False) is None:
+                    return False
+        for c, slot, ai in P.fixed_cells:
+            if state.grid[c][slot] != ai:
+                return False
+        return bool(state.full_recheck())
+
+    def _offer_focus_candidate(self, grid, quality, *, force: bool = False) -> None:
+        """13/09: ghi nhan luoi (thuong la luoi tot nhat cua bac 3) lam ung vien
+        ket qua cua nut mot muc tieu neu dat hop dong so voi moc xuat phat va qua
+        kiem tra cung. Kiem tra gioi han ~1 lan/giay (tru force)."""
+
+        focus = self.quality_focus
+        start = self._focus_start
+        if focus is None or start is None or grid is None or quality is None:
+            return
+        try:
+            placed = sum(1 for row in grid for v in row if v >= 0)
+            if not focus_candidate_acceptable(focus, start[0], start[1], quality, placed):
+                return
+            key = _focus_candidate_key(focus, quality)
+            current = self._focus_candidate
+            if current is not None and key >= current["key"]:
+                return
+            now = time.monotonic()
+            if not force and now - self._focus_candidate_checked_at < 1.0:
+                return
+            self._focus_candidate_checked_at = now
+            if not self._grid_hard_ok(grid):
+                return
+            self._focus_candidate = {
+                "grid": [list(row) for row in grid],
+                "quality": [int(x) for x in quality[:5]],
+                "placed": int(placed),
+                "key": key,
+            }
+            if isinstance(self._focus_info, dict):
+                self._focus_info["focus_candidate"] = {
+                    k: self._focus_candidate[k] for k in ("grid", "quality", "placed")
+                }
+        except Exception:  # noqa: BLE001 - ung vien la luoi an toan phu, khong duoc lam hong luot
+            return
+
+    def _focus_fallback_state(self, soft: SoftSchedule, info: dict) -> State | None:
+        """Luoi toi uu cuoi khong nap duoc (kiem tra cung / sua cuc bo hong): tra
+        luoi ung vien hop le tot nhat thay vi vut ca luot ve luoi goc."""
+
+        cand = self._focus_candidate
+        if self.quality_focus is None or cand is None:
+            return None
+        reason = getattr(self, "_last_load_fail", "") or info.get("warm_repair_failed") or info.get("warm_reject_reason") or "final_state_rejected"
+        self._restore_grid(soft, cand["grid"])
+        for t in self._has_rule_teachers:
+            soft.refresh_rule_pen(t)
+        state = self._load_state(soft)
+        if state is None:
+            return None
+        info["focus_fallback"] = {"reason": str(reason), "quality": list(cand["quality"][:4])}
+        info.pop("warm_start_rejected", None)
+        return state
 
     def _lenient_state(self, grid: list[list[int]]) -> State:
         """25/08: dung State tu mot luoi CO THE con loi (lich nguoi dung dang co)

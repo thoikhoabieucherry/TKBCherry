@@ -125,3 +125,57 @@ test("teacherLocationRuleDebt scores an engine lessons payload without touching 
   // Luoi hien thi van trong -> 0
   assert.equal(api.teacherLocationRuleDebt().sessions, 0);
 });
+
+// 03/09: "Doi dia diem o gio ra choi" (moveAtBreak23 / moveAtBreak34). Ranh gioi
+// ra choi la MIEN TRU cua chinh phep kiem "doi dia diem lien tiet": doi ngay tai
+// gio ra choi thi khong can tiet trong; ranh gioi khac van phai co tiet trong.
+
+test("teacherLocationRuleDebt cho phep doi dia diem ngay tai gio ra choi (moveAtBreak23)", () => {
+  const data = schoolData();
+  data.tkbConstraints.teacher.GV_A = {moveAtBreak23: allSessions()};
+  // Thu 2 sang: L1 tiet 1-2 (DD1) -> L3 tiet 3-4 (DD2): doi dung gio ra choi -> HOP LE
+  data.tkb.L1.thu2.sang[0] = "Toan"; data.tkb.L1.thu2.sang[1] = "Toan";
+  data.tkb.L3.thu2.sang[2] = "Toan"; data.tkb.L3.thu2.sang[3] = "Toan";
+  const api = loadConstraints(data);
+  assert.equal(api.teacherLocationRuleDebt().sessions, 0);
+});
+
+test("teacherLocationRuleDebt van bat loi khi doi dia diem NGOAI gio ra choi", () => {
+  const data = schoolData();
+  data.tkbConstraints.teacher.GV_A = {moveAtBreak23: allSessions()};
+  // Thu 2 sang: L1 tiet 1 (DD1) -> L3 tiet 2 (DD2): ranh gioi 1-2, khong phai ra choi
+  data.tkb.L1.thu2.sang[0] = "Toan"; data.tkb.L3.thu2.sang[1] = "Toan";
+  const api = loadConstraints(data);
+  const debt = api.teacherLocationRuleDebt();
+  assert.equal(debt.sessions, 1);
+  // mang tao trong sandbox vm khac realm -> so sanh bang chuoi, khong deepStrictEqual
+  assert.equal(Array.from(debt.cases[0].kinds).join(","), "moveAtBreak23");
+});
+
+test("moveAtBreak34 doi ranh gioi duoc mien sang cap tiet 3-4", () => {
+  const data = schoolData();
+  data.tkbConstraints.teacher.GV_A = {moveAtBreak34: allSessions()};
+  // Thu 2 sang: L1 tiet 3 (DD1) -> L3 tiet 4 (DD2): dung ranh gioi 3-4 -> HOP LE
+  data.tkb.L1.thu2.sang[2] = "Toan"; data.tkb.L3.thu2.sang[3] = "Toan";
+  // Thu 3 sang: L1 tiet 1 -> L3 tiet 2: ranh gioi 1-2 -> VI PHAM
+  data.tkb.L1.thu3.sang[0] = "Toan"; data.tkb.L3.thu3.sang[1] = "Toan";
+  const api = loadConstraints(data);
+  const debt = api.teacherLocationRuleDebt();
+  assert.equal(debt.sessions, 1);
+  assert.equal(debt.cases[0].thu, "thu3");
+});
+
+test("bat ca gapBetweenLocations lan moveAtBreak23: ra choi duoc mien, chi bao MOT lan", () => {
+  const data = schoolData();
+  data.tkbConstraints.teacher.GV_A = {gapBetweenLocations: allSessions(), moveAtBreak23: allSessions()};
+  // Thu 2 sang: doi tai gio ra choi -> mien tru du gapBetweenLocations dang bat
+  data.tkb.L1.thu2.sang[0] = "Toan"; data.tkb.L1.thu2.sang[1] = "Toan"; data.tkb.L3.thu2.sang[2] = "Toan";
+  // Thu 3 sang: doi o ranh gioi 3-4 -> vi pham, va chi duoc dem 1 lan
+  data.tkb.L1.thu3.sang[2] = "Toan"; data.tkb.L3.thu3.sang[3] = "Toan";
+  const api = loadConstraints(data);
+  const debt = api.teacherLocationRuleDebt();
+  assert.equal(debt.sessions, 1);
+  assert.equal(debt.cases.length, 1);
+  assert.equal(debt.cases[0].kinds.length, 1);
+  assert.equal(debt.cases[0].thu, "thu3");
+});

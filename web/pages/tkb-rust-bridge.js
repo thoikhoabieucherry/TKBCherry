@@ -5071,8 +5071,6 @@
     if(handled === true) return;
     const btn = document.getElementById("btnHome");
     const agentBtn = document.getElementById("btnAgentHelper");
-    const optimizeBtn = document.getElementById("btnOptimizeMenu");
-    const optimizeMenu = document.getElementById("plannerOptimizeMenu");
     if(btn){
       btn.hidden = false;
       btn.setAttribute("aria-hidden", "false");
@@ -5107,28 +5105,6 @@
         if(agentBtn.disabled) agentBtn.setAttribute("aria-disabled", "true");
         else agentBtn.removeAttribute?.("aria-disabled");
         agentBtn.classList.remove("is-auto-sort-disabled");
-      }
-    }
-    if(optimizeBtn){
-      if(shouldLock){
-        if(!optimizeBtn.dataset.autoSortLock){
-          optimizeBtn.dataset.autoSortLock = "1";
-          optimizeBtn.dataset.autoSortPrevDisabled = optimizeBtn.disabled ? "1" : "0";
-        }
-        optimizeBtn.disabled = true;
-        optimizeBtn.setAttribute("aria-disabled", "true");
-        optimizeBtn.setAttribute("aria-expanded", "false");
-        optimizeBtn.classList.add("is-auto-sort-disabled");
-        if(optimizeMenu) optimizeMenu.hidden = true;
-      }else{
-        if(optimizeBtn.dataset.autoSortLock){
-          optimizeBtn.disabled = optimizeBtn.dataset.autoSortPrevDisabled === "1";
-          delete optimizeBtn.dataset.autoSortLock;
-          delete optimizeBtn.dataset.autoSortPrevDisabled;
-        }
-        if(optimizeBtn.disabled) optimizeBtn.setAttribute("aria-disabled", "true");
-        else optimizeBtn.removeAttribute?.("aria-disabled");
-        optimizeBtn.classList.remove("is-auto-sort-disabled");
       }
     }
   }
@@ -5350,6 +5326,8 @@
     const release = () => {
       try{
         if(window.__TKB_RUST_SOLVER_RUNNING === true || window.__TKB_SOLVE_UI_BUSY === true) return;
+        // 31/08: lượt bị huỷ/kết thúc mà không qua cờ bận -> ô ghim tạm (tiết chung nhiều lớp) phải về ô thường
+        try{ if(typeof window.tkbJointUnpin === "function") window.tkbJointUnpin(); }catch(_){ }
         stopProgressTicker();
         setAutoSortButtonBusy(false);
         const statusEl = document.getElementById("statusMsg");
@@ -5543,7 +5521,7 @@
             };
             const focusMode = String(window.__TKB_ENGINE_FOCUS_MODE || "").trim();
             const head = focusLabels[focusMode]
-              ? `Tối ưu v3 (${focusLabels[focusMode]}) xong:`
+              ? `Tối ưu (${focusLabels[focusMode]}) xong:`
               : "Cherry xong (1 lượt):";
             const tail = focusLabels[focusMode]
               ? "Bấm lại để tối ưu tiếp mục tiêu này."
@@ -9924,6 +9902,20 @@
     return `${headline} ${teacher}${assignment ? ` (${assignment})` : ""} có ${periods} tiết/tuần, tối đa ${maximum} tiết/buổi nên bắt buộc còn ${floor}.`;
   }
 
+  // 13/09: muc Toi uu da = 0 thi khong chay gi. Chi ra cac muc trong menu
+  // "Toi uu" con so > 0 (dung nhan menu) de nguoi dung biet bam muc nao tiep.
+  function alreadySatisfiedLaneMessage(headline, metrics){
+    const remaining = [
+      ["1 tiết/buổi", onePeriodTeacherSessionCount(metrics)],
+      ["Buổi dạy", metricNumber(metrics?.teacher_sessions, 0)],
+      ["2 tiết trống", gap2PlusCount(metrics)],
+      ["1 tiết trống", gapExactCount(metrics, 1)]
+    ].filter(([, value]) => value > 0);
+    if(!remaining.length) return headline;
+    const list = remaining.map(([label, value]) => `${label} (${value})`).join(", ");
+    return `${headline} Muốn tối ưu tiếp hãy chọn: ${list}.`;
+  }
+
   function needsTeacherQualityCleanup(payload){
     const metrics = payload?.metrics || {};
     return !onePeriodTeacherSessionFloorReached(metrics) || metricGapTotal(metrics) > 0;
@@ -10550,7 +10542,15 @@
       rememberQualityRejection(candidate, currentPayload, {nextScheduled, currentScheduled});
       return false;
     }
-    if(nextHandled > currentHandled){
+    // 26/08 (do that: 1110 tiet/27 buoi -> 1111 tiet/44 buoi van duoc ap):
+    // khi trang nang, `teacherLocationRuleDebt()` cua LUOI CU do hong -> NaN ->
+    // khoi kiem dia diem o tren bi bo qua, roi nhanh "xep them tiet thi ap
+    // ngay" ben duoi cho qua luon. Ket qua: doi 1 tiet lay 17 buoi vi pham.
+    // Khong do duoc moc ma ung vien CO no dia diem thi KHONG duoc di tat.
+    const locationBaselineUnknown = Number.isFinite(nextLocationDebt)
+      && nextLocationDebt > 0
+      && !Number.isFinite(currentLocationDebt);
+    if(nextHandled > currentHandled && !locationBaselineUnknown){
       if(!focusKey) return true;
       // 25/08 (chu du an: "toi uu xong thi so do lai tang la khong hop ly"):
       // truoc day ung vien xep them tiet duoc ap TRUOC khi xet chi so phu
@@ -13498,10 +13498,38 @@
         if(count <= 0) count = fallbackUiSubjectPeriods(data, classId, subject);
         total += count;
       });
+      noTeacherGhepDemand(data).forEach(item => { total += item.periods; });
       return total;
     }catch(_){
       return 0;
     }
+  }
+
+  // 02/09: dòng Dạy ghép KHÔNG giáo viên (modules/day-ghep.js gv:[]) — không có khoá pccmMatrix
+  // (app.js dọn khoá GV rỗng) nhưng vẫn là tiết phải xếp của lớp: adapter.py / Rust /
+  // ▶ FET tự nhận từ DATA.dayGhep, nên hợp đồng "đủ tiết" của trình duyệt phải đếm theo.
+  // Trả về [{classId (tên lớp như trong dayGhep.lop), subject (khoá row.ten), periods}].
+  function noTeacherGhepDemand(data){
+    const rows = Array.isArray(data?.dayGhep) ? data.dayGhep : [];
+    const out = [];
+    rows.forEach(row => {
+      if(!row || typeof row !== "object") return;
+      const gvList = Array.isArray(row.gv) ? row.gv : String(row.gv || "").split(/[,;+\n]+/);
+      if(gvList.some(x => String(x || "").trim())) return;
+      const subject = String(row.ten || "").trim();
+      if(!subject) return;
+      const classes = Array.isArray(row.lop) ? row.lop : String(row.lop || "").split(/[,;]+/);
+      classes.forEach(lop => {
+        const classId = String(lop || "").trim();
+        if(!classId) return;
+        const direct = Number(data?.pccmTietMatrix?.[`${classId}|${subject}`] ?? 0);
+        const periods = (Number.isFinite(direct) && direct > 0)
+          ? Math.round(direct)
+          : Math.max(0, Math.round(Number(row.sotiet || 0) || 0));
+        if(periods > 0) out.push({classId, subject, periods});
+      });
+    });
+    return out;
   }
 
   function adaptiveTeacherSessionStartCap(data){
@@ -18281,6 +18309,16 @@
       );
       return null;
     }
+    // 29/08 Tiết học chung nhiều lớp: ghim tạm vào cùng ô ở mọi lớp trước khi gửi bộ giải
+    // (engine v3 giữ ô cố định dùng chung GV, bận cho mọi GV của tiết). Lượt xếp đầy đủ
+    // (fast/auto) được đưa tiết khác về Chưa phân để tìm ô chung; lane tối ưu thì không.
+    try{
+      if(typeof window.tkbJointPinBeforeSolve === "function"){
+        const fullSolve = !options?.mode || options.mode === "fast" || options.mode === "auto";
+        const pinMsg = window.tkbJointPinBeforeSolve({allowDisplace: fullSolve});
+        if(pinMsg) setStatus(pinMsg, "info");
+      }
+    }catch(err){ console.error("pin ghep", err); }
     const requestedSettings = Object.assign({}, options?.settings || readSettings());
     const isHybridFocusedCall = options?.fromHybridCaller === true
       && options?.mode
@@ -21225,6 +21263,7 @@
   }
 
   function reportAutoSortPreparationChanged(){
+    try{ if(typeof window.tkbJointUnpin === "function") window.tkbJointUnpin(); }catch(_){ }   // 31/08: không để ô ghim tạm nằm lại
     releaseAutoSortButtonSoon();
     setStatus(
       "D\u1eef li\u1ec7u v\u1eeba thay \u0111\u1ed5i trong l\u00fac chu\u1ea9n b\u1ecb. B\u1ea1n b\u1ea5m X\u1ebfp l\u1ea1i nh\u00e9.",
@@ -21295,13 +21334,19 @@
           currentData,
           currentData?.tkbSolverResult || currentData?.tkbRustSolverResult || null
         );
+        // 13/09: truoc day bao "Da xep xong!" -> nguoi dung (fiwemj2uyk2) tuong
+        // nut chay ma khong xep duoc. Noi ro muc nay da = 0 va chi muc con giam duoc.
+        const message = alreadySatisfiedLaneMessage(
+          "Không còn buổi dạy 1 tiết.",
+          visibleMetrics
+        );
         window.__TKB_SOLVER_LAST_PAYLOAD = retainedPayload;
         window.__TKB_SOLVER_LAST_RESULT = retainedPayload;
-        window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = SOLVE_COMPLETE_MESSAGE;
+        window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = message;
         finishProgress("100%", "ok");
-        setStatus(SOLVE_COMPLETE_MESSAGE, "ok");
+        setStatus(message, "ok");
         publishE2EState("done", retainedPayload, {
-          message:SOLVE_COMPLETE_MESSAGE,
+          message,
           singletonOptimizationAlreadySatisfied:true
         });
         releaseAutoSortButtonSoon();
@@ -21321,9 +21366,12 @@
           currentData,
           currentData?.tkbSolverResult || currentData?.tkbRustSolverResult || null
         );
-        const message = requestedSolveMode === SOLVE_REQUEST_MODES.gap2
-          ? "Kh\u00f4ng c\u00f2n tr\u1ed1ng 2 ti\u1ebft."
-          : "Kh\u00f4ng c\u00f2n tr\u1ed1ng 1 ti\u1ebft.";
+        const message = alreadySatisfiedLaneMessage(
+          requestedSolveMode === SOLVE_REQUEST_MODES.gap2
+            ? "Kh\u00f4ng c\u00f2n tr\u1ed1ng 2 ti\u1ebft."
+            : "Kh\u00f4ng c\u00f2n tr\u1ed1ng 1 ti\u1ebft.",
+          visibleMetrics
+        );
         window.__TKB_SOLVER_LAST_PAYLOAD = retainedPayload;
         window.__TKB_SOLVER_LAST_RESULT = retainedPayload;
         window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = message;
@@ -21485,6 +21533,18 @@
     traceSolveStep("auto-sort:start");
     await yieldResponsiveUi();
     const data = getData();
+    // 31/08: ghim tạm tiết chung nhiều lớp NGAY ĐÂY, trước khi chụp vân tay lưới. Trước đây ghim nằm
+    // trong solveWithRustApi (sau vân tay) -> lưới đổi (43 ô Chào cờ (ghép), trường ow14iqw5cb1) ->
+    // autoSortPreparationMatches lệch -> "Dữ liệu vừa thay đổi trong lúc chuẩn bị", lượt bị huỷ mà ô
+    // ghim vẫn nằm lại. Lần ghim thứ hai trong solveWithRustApi không đổi lưới nữa.
+    try{
+      if(typeof window.tkbJointPinBeforeSolve === "function"){
+        const fullSolvePin = !invocationOptions.mode || invocationOptions.mode === "fast" || invocationOptions.mode === "auto";
+        const pinMsg = window.tkbJointPinBeforeSolve({allowDisplace: fullSolvePin});
+        if(pinMsg) setStatus(pinMsg, "info");
+        await yieldResponsiveUi();
+      }
+    }catch(err){ console.error("pin ghep", err); }
     const scheduleFingerprintBefore = scheduleFingerprintFromData(data);
     await yieldResponsiveUi();
     const scheduleSnapshotBeforeAutoSort = snapshotScheduleData(data);
@@ -21760,7 +21820,7 @@
       setStatus(plateauMessage, "ok");
       // 21/08: ket qua "giu nguyen" cung phai di tiep BAC THANG tinh chinh —
       // truoc day nhanh nay return som lam chuoi dung giua chung. Lane le do
-      // nguoi dung tu bam (menu Toi uu) thi chi di tiep khi chuoi dang chay.
+      // nguoi dung tu bam (menu Toi uu v3) thi chi di tiep khi chuoi dang chay.
       try{
         if(window.__TKB_AUTO_REFINE_STATE || requestedSolveMode === SOLVE_REQUEST_MODES.automatic){
           maybeScheduleAutoRefine();
@@ -21781,12 +21841,6 @@
   window.solveWithRustApi = solveWithRustApi;
   if(typeof window.executeDirectFastSchedule !== "function"){
     window.sapXepTuDongAll = bridgeSapXepTuDongAll;
-    window.sapXepTheoCheDo = function(mode){
-      return window.sapXepTuDongAll({
-        mode:normalizeSolveRequestMode(mode),
-        manualAgentInvite:true
-      });
-    };
   }
   try{
     const autoSortButton = document.getElementById("btnAutoSort");

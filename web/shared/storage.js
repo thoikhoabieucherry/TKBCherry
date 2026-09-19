@@ -5,6 +5,69 @@
   const REMOTE_ONLY_STORAGE = true;
   let remoteAuthRequired = false;
 
+  // 31/08: BỘ CHẶN GHI ĐÈ KHO. Trạng thái lần nạp kho gần nhất của từng trường trong phiên trang này:
+  //   "ok"       — máy chủ trả 2xx và kho CÓ dữ liệu
+  //   "ok-empty" — máy chủ trả 2xx nhưng kho trống (trường mới)
+  //   "failed"   — 503 / mất mạng / 401-403 / JSON hỏng → KHÔNG biết máy chủ đang giữ gì
+  // Bối cảnh: 31/08 20:17 trang Sắp xếp mở đúng lúc máy chủ chập chờn, nạp về null → DATA = {} →
+  // vẫn lưu → kho trường fiwemj2uyk1 (81 GV, 1266 tiết đã xếp) bị ghi rỗng. Quy tắc:
+  //   (1) nạp thất bại → từ chối MỌI lần lưu cho tới khi tải lại trang;
+  //   (2) bản lưu trống (không có lớp/GV/môn/phân công/TKB/luật) chỉ được phép khi kho trên máy chủ
+  //       cũng đang trống ("ok-empty") — muốn xoá cả trường thì dùng mục Quản lý.
+  const remoteLoadState = {};
+  function noteRemoteLoad(schoolId, data){
+    const id = cleanSchoolId(schoolId);
+    if(!data || typeof data !== "object") remoteLoadState[id] = "failed";
+    else remoteLoadState[id] = hasMeaningfulData(data) ? "ok" : "ok-empty";
+    return remoteLoadState[id];
+  }
+  function remoteLoadStateOf(schoolId){
+    return remoteLoadState[cleanSchoolId(schoolId)] || "";
+  }
+  function remoteSaveGuard(schoolId, dataJson){
+    const id = cleanSchoolId(schoolId);
+    const state = remoteLoadState[id] || "";
+    const parsed = typeof dataJson === "string" ? safeParseJSON(dataJson, null) : dataJson;
+    const meaningful = hasMeaningfulData(parsed);
+    if(state === "failed"){
+      return { ok:false, kind:"remote_load_failed_guard",
+        message:"Lúc mở trang KHÔNG nạp được dữ liệu trường từ máy chủ (mạng/máy chủ lỗi hoặc hết phiên đăng nhập), nên trang này không lưu để tránh ghi đè kho bằng bản trống/cũ. Hãy tải lại trang rồi thao tác lại." };
+    }
+    if(!meaningful && state !== "ok-empty"){
+      return { ok:false, kind:"empty_payload_guard",
+        message: state === "ok"
+          ? "Bản đang giữ trên trang trống rỗng trong khi kho trên máy chủ đang có dữ liệu — không lưu để tránh xoá sạch trường. Hãy tải lại trang; nếu thật sự muốn xoá trường, dùng mục Quản lý."
+          : "Trang chưa nạp được kho trường từ máy chủ mà lại định lưu bản trống — không lưu để tránh xoá sạch. Hãy tải lại trang." };
+    }
+    return { ok:true, meaningful };
+  }
+  function showStoreGuardBanner(message){
+    try{
+      if(typeof document === "undefined" || !document.body) return false;
+      let el = document.getElementById("tkb-store-guard-banner");
+      if(!el){
+        el = document.createElement("div");
+        el.id = "tkb-store-guard-banner";
+        el.setAttribute("role", "alert");
+        el.style.cssText = "position:fixed;left:0;right:0;top:0;z-index:2147483000;background:#b91c1c;color:#fff;padding:10px 16px;font:14px/1.4 system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3);display:flex;gap:12px;align-items:center;";
+        const text = document.createElement("span");
+        text.className = "tkb-store-guard-text";
+        text.style.cssText = "flex:1;";
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = "Tải lại trang";
+        btn.style.cssText = "background:#fff;color:#b91c1c;border:0;border-radius:6px;padding:6px 12px;font-weight:600;cursor:pointer;";
+        btn.addEventListener("click", () => { try{ location.reload(); }catch(_){ } });
+        el.appendChild(text);
+        el.appendChild(btn);
+        document.body.appendChild(el);
+      }
+      const t = el.querySelector(".tkb-store-guard-text");
+      if(t) t.textContent = "⚠ " + String(message || "Không lưu được dữ liệu.");
+      return true;
+    }catch(_){ return false; }
+  }
+
   function safeParseJSON(raw, fallback){
     if(SC && SC.safeParseJSON) return SC.safeParseJSON(raw, fallback);
     try{ return raw ? JSON.parse(raw) : (fallback ?? {}); }catch(_){ return (fallback ?? {}); }
@@ -93,6 +156,44 @@
       hasObjectEntries(data.tkbUserOff) ||
       hasMeaningfulConstraints(data.tkbConstraints)
     );
+  }
+
+  // 31/08: Chuẩn hoá Unicode NFC TẠI CHỖ cho toàn bộ dữ liệu trường (khoá lẫn chuỗi).
+  // Văn bản gõ/dán từ macOS, Excel, Word hay ở dạng NFD ("à" = "a" + U+0300) trong khi app sinh
+  // chuỗi NFC ("à" = U+00E0): hai chuỗi nhìn y hệt nhưng so sánh khác nhau → một giáo viên
+  // "ĐP.Hà" thành hai người ở trang Sắp xếp (trường 0l2vcan0xx1: dòng GV dán NFD, phân công NFC).
+  // Giữ nguyên tham chiếu object/mảng (UI đang giữ dòng) — chỉ đổi chuỗi và đổi tên khoá; khoá
+  // trùng sau chuẩn hoá thì giữ bản NFC sẵn có. Trả về true nếu có gì thay đổi. Idempotent.
+  function normalizeUnicodeNFC(root){
+    if(!root || typeof root !== "object" || typeof String.prototype.normalize !== "function") return false;
+    let changed = false;
+    const seen = new Set();
+    const norm = (str) => { const n = str.normalize("NFC"); if(n !== str) changed = true; return n; };
+    const walk = (v) => {
+      if(!v || typeof v !== "object" || seen.has(v)) return;
+      seen.add(v);
+      if(Array.isArray(v)){
+        for(let i = 0; i < v.length; i++){
+          const x = v[i];
+          if(typeof x === "string") v[i] = norm(x); else walk(x);
+        }
+        return;
+      }
+      for(const k of Object.keys(v)){
+        const x = v[k];
+        let nv = x;
+        if(typeof x === "string") nv = norm(x); else walk(x);
+        const nk = norm(k);
+        if(nk !== k){
+          delete v[k];
+          if(!Object.prototype.hasOwnProperty.call(v, nk)) v[nk] = nv;
+        }else if(nv !== x){
+          v[k] = nv;
+        }
+      }
+    };
+    walk(root);
+    return changed;
   }
 
   function addUnique(list, value){
@@ -192,9 +293,12 @@
 
   async function loadRemoteSchoolData(schoolId){
     try{
-      return await fetchJsonWithTimeout(remoteStoreUrl(schoolId), 5000);
+      const data = await fetchJsonWithTimeout(remoteStoreUrl(schoolId), 5000);
+      noteRemoteLoad(schoolId, data);
+      return data;
     }catch(e){
       console.warn("Remote school store load failed", e);
+      noteRemoteLoad(schoolId, null);
       return null;
     }
   }
@@ -217,9 +321,9 @@
   }
 
   function loadRemoteSchoolDataSync(schoolId){
-    if(remoteAuthRequired) return null;
+    if(remoteAuthRequired){ noteRemoteLoad(schoolId, null); return null; }
     try{
-      if(typeof XMLHttpRequest === "undefined") return null;
+      if(typeof XMLHttpRequest === "undefined"){ noteRemoteLoad(schoolId, null); return null; }
       const xhr = new XMLHttpRequest();
       xhr.open("GET", remoteStoreUrl(schoolId), false);
       xhr.setRequestHeader("Accept", "application/json");
@@ -228,11 +332,15 @@
       xhr.send(null);
       if(xhr.status === 401 || xhr.status === 403){
         reportRemoteAuthRequired(xhr.status, "school-store-load-sync");
+        noteRemoteLoad(schoolId, null);
         return null;
       }
-      if(xhr.status < 200 || xhr.status >= 300) return null;
-      return safeParseJSON(xhr.responseText, null);
+      if(xhr.status < 200 || xhr.status >= 300){ noteRemoteLoad(schoolId, null); return null; }
+      const data = safeParseJSON(xhr.responseText, null);
+      noteRemoteLoad(schoolId, data);
+      return data;
     }catch(e){
+      noteRemoteLoad(schoolId, null);
       return null;
     }
   }
@@ -259,6 +367,13 @@
     if(remoteAuthRequired){
       window.TKBStorage_lastSaveError = { status: 401, kind: "auth_required_latched",
         message: "Phiên đăng nhập đã hết hạn từ trước — TẢI LẠI TRANG và đăng nhập lại rồi thao tác lại." };
+      return false;
+    }
+    const guard = remoteSaveGuard(schoolId, raw);
+    if(!guard.ok){
+      window.TKBStorage_lastSaveError = { status: 0, kind: guard.kind, message: guard.message };
+      console.warn("Remote school store save blocked:", guard.kind, cleanSchoolId(schoolId));
+      showStoreGuardBanner(guard.message);
       return false;
     }
     try{
@@ -291,6 +406,7 @@
         return false;
       }
       window.TKBStorage_lastSaveError = null;
+      remoteLoadState[cleanSchoolId(schoolId)] = guard.meaningful ? "ok" : "ok-empty";
       return true;
     }catch(e){
       window.TKBStorage_lastSaveError = { status: 0, kind: "network", message: "Không kết nối được máy chủ (mất mạng?)." };
@@ -393,11 +509,15 @@
     cleanSchoolId,
     remoteStoreUrl,
     hasMeaningfulData,
+    normalizeUnicodeNFC,
     loadRemoteSchoolData,
     loadRemoteSchoolDataWithFallback,
     loadRemoteSchoolDataSync,
     loadRemoteSchoolDataWithFallbackSync,
     saveRemoteSchoolData,
+    remoteLoadStateOf,
+    remoteSaveGuard,
+    showStoreGuardBanner,
     openKvStore,
     loadSchoolData,
     saveSchoolData

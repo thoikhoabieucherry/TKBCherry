@@ -724,14 +724,13 @@ def main() -> int:
             }
         )
         # 19/08: thuat toan bo sung, CHON THEO NUT tren UI (settings.engine).
-        #   engine = "cherry" | "v3"  -> Cherry (solver_runtime/src/tkb_engine_v3, log: Cherry/logs)
+        #   engine = "cherry" | "v3"  -> Cherry (solver_runtime/src/tkb_engine_v3, log: solver_runtime/logs/cherry-last.json)
         # Khong dat gia tri nao thi giu NGUYEN pipeline cu (nut Sap xep / Toi uu).
         # 19/08 (sua thu tu uu tien): TRUOC day bien moi truong TKB_ENGINE dung
         # TRUOC settings.engine, nen chi can may chu (hoac anh Cloud Run) lo dat
         # TKB_ENGINE la moi nut deu chay cung mot bo giai ma khong co dau hieu
         # gi. Yeu cau cua NGUOI DUNG phai thang; bien moi truong chi la mac
         # dinh khi request khong noi gi.
-        # 19/08: nhanh "flash" (CP-SAT) da bi GO BO khoi du an.
         requested_engine = str(settings.get("engine") or "").strip().casefold()
         env_engine = os.environ.get("TKB_ENGINE", "").strip().casefold()
         engine_choice = requested_engine or env_engine

@@ -25,6 +25,7 @@ graph TD
 1. **Web Client (Frontend)**:
    * **Công nghệ**: HTML5, Vanilla JavaScript (ES6+), Vanilla CSS3. Không dùng framework hay build system; giao tiếp backend qua HTTP polling (không WebSocket).
    * **Giao diện phân môn & sắp xếp TKB**: `web/pages/phanmon.js`, `web/pages/sapxep.html`, `web/pages/phanmon.css`.
+   * **Trang quản trị dữ liệu** (Khối / Lớp / Giáo viên / Môn học / Tiết chuẩn / Phân công / Dạy ghép): `web/app.html`, `web/app.js`, `web/modules/admin-nav.js`, `web/modules/day-ghep.js` (28/08/2026 — dòng dạy ghép `DATA.dayGhep` được chiếu vào bảng phân công `pccmMatrix["Lớp|Môn"] = "GV1, GV2"`: dòng một môn dưới đúng môn thật, nhãn hiển thị `ten` chỉ dùng trên TKB qua `tkbMonLabel`; dòng nhiều môn dưới môn ảo mang tên dòng — nên planner/ràng buộc/bộ giải dùng nguyên hợp đồng phân công).
    * **Bộ giải & tối ưu FET chạy trực tiếp trên Browser**: `web/pages/tkb-fet-engine.js`, `web/pages/tkb-fet-worker.js`.
    * **Quản trị hệ thống & Cổng trường học**: `web/super-admin.js`, `web/school-portal.js`, `web/app.js`.
 
@@ -78,7 +79,9 @@ Bộ thuật toán tối ưu hóa nằm tại `web/pages/tkb-fet-engine.js`:
 * Các tiết cố định và tiết 1 buổi của giáo viên được ưu tiên xếp trước (Fixed & Singleton Priority Queue) để tránh phát sinh tiết lẻ về sau.
 
 ### 3.2. Bộ Tối Ưu Hóa Đa Tầng (Multi-Pass Deep Optimization)
-Hệ thống cung cấp 4 chế độ tối ưu độc lập:
+> **03/09/2026:** menu **Tối ưu** FET trong trình duyệt đã **gỡ khỏi giao diện** (chủ dự án: "nút đó hơi phế"); 4 chế độ dưới đây chỉ còn trong mã `tkb-fet-engine.js`, không có nút gọi. Tối ưu giáo viên hiện đi đường **Cherry** / **Tối ưu v3** (engine v3 trên máy chủ, `solver_runtime/src/tkb_engine_v3/`, xem `docs/CHERRY_ENGINE.md`).
+
+Bộ FET từng cung cấp 4 chế độ tối ưu độc lập:
 1. **Tối ưu buổi 1 tiết (`optimize_singletons`)**:
    * Áp dụng **Deep LNS Singleton Consolidation**: Dò tìm các buổi dạy 1 tiết của giáo viên, thực hiện hoán đổi hoặc dời sang các buổi giáo viên đã có tiết để ghép thành cụm $\ge 2$ tiết hoặc giải phóng hoàn toàn ngày nghỉ.
 2. **Tối ưu số buổi dạy / ngày dạy (`optimize_sessions`)**:
@@ -140,13 +143,12 @@ python start.py
 ```
 Hệ thống khởi chạy local server tại **`http://127.0.0.1:1010/`** (port đặt trong `.env`, biến `TKB_RUST_PORT`). Đóng cửa sổ điều khiển TKB để dừng backend và giải phóng port.
 
-### 4.4. Kiểm thử tự động (CI trên GitHub Actions)
-Workflow `.github/workflows/tests.yml` chạy trên mỗi push/PR:
-* **Python**: cài `solver_runtime/requirements.txt`, chạy toàn bộ `solver_runtime/tests/`.
-* **Node**: `node --check` toàn bộ JS trong `web/` và chạy các bộ test node không cần server trong `e2e_tests/`.
-* **Rust**: `cargo check` + `cargo test` (Linux, cần `libsqlite3-dev`); `cargo clippy` chạy ở chế độ cảnh báo.
+### 4.4. Kiểm thử tự động
+`python run_tests.py` chạy toàn bộ 4 thư mục test + `node --check` bundle web và đối chiếu mốc chuẩn `docs/test-baseline.json` (chỉ báo đỏ khi có test MỚI hỏng). Thêm `--rust` để chạy `cargo check` + `cargo test`.
 
-Ba bộ test cần backend đang chạy (`app_assignment_subject_visibility`, `app_data_integrity`, `tkb_rust_bridge`) vẫn chạy thủ công qua `python run_e2e_tests.py` trước khi deploy.
+Không có CI test trên GitHub: workflow test cũ nằm ở `tools/ci/tests.yml` (ngoài `.github/workflows/`) nên GitHub chưa từng chạy nó, đã bỏ ngày 28/08/2026. Trước khi commit chạy `python run_tests.py` (đối chiếu mốc chuẩn `docs/test-baseline.json`). GitHub chỉ còn `security.yml` (secret scan + CodeQL) và Dependabot.
+
+Ba bộ test cần backend đang chạy (`app_assignment_subject_visibility`, `app_data_integrity`, `tkb_rust_bridge`): mở `python start.py` rồi chạy `python run_tests.py --with-backend`. Bộ e2e Python Tier 1-4 (`e2e_tests/test_suite.py`, tự mở backend ở port 1085) chạy bằng `python run_e2e_tests.py`.
 
 ---
 
@@ -167,7 +169,7 @@ Ba bộ test cần backend đang chạy (`app_assignment_subject_visibility`, `a
 | `rust_api/src/auth.rs` | Xác thực người dùng (Argon2id + session token), phân quyền trường học |
 | `rust_api/src/solver_pool.rs` | Solver pool FIFO theo CPU token, quản lý job đa trường |
 | `solver_runtime/src/tkb_new/adapter.py` | Adapter chính của solver Python: dựng model, chạy CP-SAT/MILP, trả kết quả |
-| `solver_runtime/src/tkb_optimizer_ref/pipeline.py` | Pipeline giải toán CP-SAT / MILP qua Google OR-Tools trên Python |
+| `solver_runtime/src/tkb_engine_v3/` | Engine Cherry (nút 🍒 + menu Tối ưu v3), tài liệu `docs/CHERRY_ENGINE.md` |
 | `solver_runtime/scripts/cloud_run_service.py` | Service endpoint nhận request solve trên Google Cloud Run |
 | `tools/vps-deploy/update-deploy.py` | Script tự động hóa build và deploy lên VPS một bước |
 | `tools/cloud-run/deploy.ps1` | Script tự động hóa build container và deploy lên Google Cloud Run |

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import random
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Iterable, Mapping
 
 NUM_DAYS = 6
@@ -201,9 +201,16 @@ class TeacherRule:
     #              de di chuyen (tiet trong do la hop le).
     #   loc_move - "Khong di chuyen 2 lan/1 buoi": trong mot buoi GV chi duoc
     #              doi dia diem toi da 1 lan.
+    #   loc_breaks - 03/09: "Doi dia diem o gio ra choi (tiet 2-3 / 3-4)".
+    #              Moi buoi la tuple cac TIET (0-based) ma NGAY SAU tiet do la
+    #              gio ra choi: moveAtBreak23 -> 1 (het tiet 2), moveAtBreak34
+    #              -> 2 (het tiet 3). Doi dia diem giua hai tiet KE NHAU la HOP
+    #              LE khi vuot qua ranh gioi nay (GV di chuyen trong gio ra
+    #              choi); ranh gioi khac van phai co tiet trong nhu loc_gap.
     loc_one: tuple[bool, ...] = (False,) * NUM_SESSIONS
     loc_gap: tuple[bool, ...] = (False,) * NUM_SESSIONS
     loc_move: tuple[bool, ...] = (False,) * NUM_SESSIONS
+    loc_breaks: tuple[tuple[int, ...], ...] = ((),) * NUM_SESSIONS
 
     def is_default(self) -> bool:
         return (
@@ -220,19 +227,34 @@ class TeacherRule:
         )
 
     def has_location_rules(self) -> bool:
-        return any(self.loc_one) or any(self.loc_gap) or any(self.loc_move)
+        return (
+            any(self.loc_one)
+            or any(self.loc_gap)
+            or any(self.loc_move)
+            or any(self.loc_breaks)
+        )
 
 
-def location_rule_debt(entries: list[tuple[int, int]], one: bool, gap: bool, move: bool) -> int:
+def location_rule_debt(
+    entries: list[tuple[int, int]],
+    one: bool,
+    gap: bool,
+    move: bool,
+    breaks: tuple[int, ...] = (),
+) -> int:
     """So vi pham luat dia diem cua MOT buoi giao vien.
 
     ``entries``: [(tiet, dia_diem)] da sap theo tiet, chi gom o co dia diem
     (dia_diem >= 0). Cung mot cach tinh cho kiem tra cung (State) va diem phat
     mem (SoftSchedule) de hai ben luon dong y: 0 <=> buoi hop le. Ngu nghia
     khop evalTeacherRule trong web/pages/tkb-constraints.js:
-      one : so dia diem khac nhau trong buoi - 1
-      gap : moi cap tiet lien tiet (cach nhau <= 1 tiet) ma khac dia diem
-      move: so lan doi dia diem - 1 (neu doi > 1 lan)
+      one   : so dia diem khac nhau trong buoi - 1
+      gap   : moi cap tiet lien tiet (cach nhau <= 1 tiet) ma khac dia diem
+      move  : so lan doi dia diem - 1 (neu doi > 1 lan)
+      breaks: 03/09 - cac tiet (0-based) ma ngay sau do la gio ra choi. Co
+              breaks thi doi dia diem lien tiet CHI hop le khi tiet truoc nam
+              trong breaks; ranh gioi khac tinh vi pham y nhu gap. Bat cung luc
+              gap + breaks = "phai co tiet trong, TRU khi doi o gio ra choi".
     """
 
     if len(entries) < 2:
@@ -240,13 +262,14 @@ def location_rule_debt(entries: list[tuple[int, int]], one: bool, gap: bool, mov
     debt = 0
     if one:
         debt += len({loc for _p, loc in entries}) - 1
-    if gap or move:
+    adjacent = gap or bool(breaks)
+    if adjacent or move:
         changes = 0
         prev_p, prev_loc = entries[0]
         for p, loc in entries[1:]:
             if loc != prev_loc:
                 changes += 1
-                if gap and p - prev_p <= 1:
+                if adjacent and p - prev_p <= 1 and prev_p not in breaks:
                     debt += 1
             prev_p, prev_loc = p, loc
         if move and changes > 1:
@@ -299,6 +322,14 @@ def compile_teacher_rule(rule: Mapping[str, Any], one_session_mode: Callable[[An
                     flags[d * 2 + part] = True
         return tuple(flags)
 
+    # 03/09: gio ra choi -> tiet (0-based) ma ngay sau no la gio ra choi.
+    brk23 = _loc_flags("moveAtBreak23")
+    brk34 = _loc_flags("moveAtBreak34")
+    loc_breaks = tuple(
+        tuple(p for p, on in ((1, brk23[s]), (2, brk34[s])) if on)
+        for s in range(NUM_SESSIONS)
+    )
+
     return TeacherRule(
         max_days=_to_int(_get_path(rule, "maxDaysSessions.maxDays", 0), 0),
         max_sessions=_to_int(_get_path(rule, "maxDaysSessions.maxSessions", 0), 0),
@@ -312,6 +343,7 @@ def compile_teacher_rule(rule: Mapping[str, Any], one_session_mode: Callable[[An
         loc_one=_loc_flags("oneLocationPerSession"),
         loc_gap=_loc_flags("gapBetweenLocations"),
         loc_move=_loc_flags("maxOneMovePerSession"),
+        loc_breaks=loc_breaks,
     )
 
 
@@ -500,6 +532,45 @@ def compile_problem(
                         if _off("teacher", t, d, part, p):
                             mask[slot_of(d, part, p)] = 0
         teacher_avail.append(mask)
+    # 13/09 (chu du an: "Gioi han buoi day khi bam Cherry phai tuan thu"): luat GV
+    # oneSessionPerDay "chi sang" / "chi chieu" cua mot ngay = GV BAN ca buoi con lai
+    # cua ngay do -> dua thang vao mat na ranh GV de moi buoc (xep, sua, tabu,
+    # CP-SAT) deu tuan thu tuyet doi thay vi chi phat mem trong teacher_rule_penalty
+    # (do tren truong TEST: luat kha thi van con 21 cho vi pham sau Cherry). "Sang
+    # hoac chieu" (either) phu thuoc luoi nen van la luat cung kiem o State. O co
+    # dinh cua chinh GV trong buoi bi cam duoc giu (luat do nguoi dung tu dat).
+    # "Sang hoac chieu" ma GV da co O CO DINH o dung mot buoi cua ngay (vd Chao co
+    # tiet 1 sang cua GVCN) thi thuc chat la "chi buoi do" -> cam luon buoi kia
+    # (do tren TEST: no loai nay khong go duoc vi o khoa, lich moi khong bao gio sach).
+    teacher_fixed_slots: dict[int, set[int]] = {}
+    if constraints is not None:
+        for lesson in fixed_lessons:
+            d = int(lesson.day) - 2
+            part = 0 if lesson.session == "AM" else 1
+            p = int(lesson.period) - 1
+            if not (0 <= d < NUM_DAYS and 0 <= p < PERIODS):
+                continue
+            for ti in _member_ids(lesson.teacher):
+                teacher_fixed_slots.setdefault(ti, set()).add(slot_of(d, part, p))
+        for ti, t in enumerate(teacher_names):
+            raw_rule = constraints.teacher.get(t) if isinstance(getattr(constraints, "teacher", None), Mapping) else None
+            if not isinstance(raw_rule, Mapping) or not raw_rule.get("oneSessionPerDay"):
+                continue
+            keep = teacher_fixed_slots.get(ti, set())
+            for d in range(NUM_DAYS):
+                mode = one_session_per_day_mode(_get_path(raw_rule, f"oneSessionPerDay.{_DAY_KEYS[d]}", False))
+                banned_part = 1 if mode == "morning" else (0 if mode == "afternoon" else -1)
+                if mode == "either" and keep:
+                    fixed_am = any(slot_of(d, 0, p) in keep for p in range(PERIODS))
+                    fixed_pm = any(slot_of(d, 1, p) in keep for p in range(PERIODS))
+                    if fixed_am != fixed_pm:
+                        banned_part = 1 if fixed_am else 0
+                if banned_part < 0:
+                    continue
+                for p in range(PERIODS):
+                    slot = slot_of(d, banned_part, p)
+                    if slot not in keep:
+                        teacher_avail[ti][slot] = 0
     # GV dang o o co dinh dung chung (nhieu lop cung gio) -> ban tai gio do cho
     # moi phan cong khac cua GV; chinh cac o do duoc giu boi phan cong tong hop
     # ben duoi (a_teacher = -1) nen khong bi mat na nay chan.
@@ -655,17 +726,50 @@ def compile_problem(
                 if 0 <= d < NUM_DAYS and 1 <= int(period) <= PERIODS:
                     must.add(slot_of(d, part, int(period) - 1))
         teacher_must.append(frozenset(must))
+    # 13/09: O CO DINH cua GV nam dung buoi "Gioi han buoi day" cam (nguoi dung tu dat
+    # mau thuan, vd GVCN "chi sang" thu 2 ma Chao co co dinh buoi chieu): mat na ranh
+    # o tren da cam moi o KHAC cua buoi do, nen bo session_mode ngay do. Neu giu, no
+    # do o khoa gay ra khong bao gio go duoc -> lich moi khong bao gio "sach" (bo qua
+    # toi uu chat luong), lich warm luon bi tu choi va xay lai tu dau. validate.py
+    # van bao mau thuan nay cho nguoi dung.
+    for ti, tr in enumerate(teacher_rules):
+        keep = teacher_fixed_slots.get(ti)
+        if tr is None or not keep or not any(tr.session_mode):
+            continue
+        modes = list(tr.session_mode)
+        for d, mode in enumerate(modes):
+            fixed_am = any(slot_of(d, 0, p) in keep for p in range(PERIODS))
+            fixed_pm = any(slot_of(d, 1, p) in keep for p in range(PERIODS))
+            if (mode == "morning" and fixed_pm) or (mode == "afternoon" and fixed_am) or (
+                mode == "either" and fixed_am and fixed_pm
+            ):
+                modes[d] = ""
+        if tuple(modes) != tuple(tr.session_mode):
+            teacher_rules[ti] = replace(tr, session_mode=tuple(modes))
 
     # --- class no-same groups --------------------------------------------
     no_same_session: list[list[frozenset[int]]] = [[] for _ in class_names]
     no_same_day: list[list[frozenset[int]]] = [[] for _ in class_names]
     if constraints is not None:
+        rule_subject = getattr(constraints, "rule_subject", None)
+
+        def _no_same_ids(subjects: Any) -> frozenset[int]:
+            wanted = set(subjects)
+            ids = {subject_idx[s] for s in wanted if s in subject_idx}
+            # 31/08: mon day ghep (khoa rieng) tham gia nhom "khong cung buoi/ngay" cua mon goc
+            if callable(rule_subject):
+                for name, si in subject_idx.items():
+                    base = rule_subject(name)
+                    if base != name and base in wanted:
+                        ids.add(si)
+            return frozenset(ids)
+
         for cname, groups in (constraints.subject_no_same_session or {}).items():
             ci = class_idx.get(cname)
             if ci is None or not isinstance(groups, Mapping):
                 continue
             for subjects in groups.values():
-                ids = frozenset(subject_idx[s] for s in subjects if s in subject_idx)
+                ids = _no_same_ids(subjects)
                 if len(ids) >= 2:
                     no_same_session[ci].append(ids)
         for cname, groups in (constraints.subject_no_same_day or {}).items():
@@ -673,7 +777,7 @@ def compile_problem(
             if ci is None or not isinstance(groups, Mapping):
                 continue
             for subjects in groups.values():
-                ids = frozenset(subject_idx[s] for s in subjects if s in subject_idx)
+                ids = _no_same_ids(subjects)
                 if len(ids) >= 2:
                     no_same_day[ci].append(ids)
 

@@ -54,6 +54,7 @@ function loadValidateDrop({tkb, gioihan = 1, dragData = {type:"mon", classId:"L1
     getLopCanonById(id){ return String(id); },
     getTeacherForClassMon(){ return ""; },
     findTeacherConflictAtSlot(){ return null; },
+    tkbJointSiblingBlockers(){ return null; },
     getRoomForClassMon(){ return ""; },
     findRoomConflictAtSlot(){ return null; },
     flashLopItemConflict(){},

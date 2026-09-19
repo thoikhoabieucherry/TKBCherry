@@ -268,3 +268,66 @@ test("unassigned subjects keep standards as defaults without creating PCCM value
   assert.deepEqual(result.periods, {});
   assert.deepEqual(result.limits, {});
 });
+
+// 02/09: trường 792ad448361 khai 3 dòng Môn học cùng TÊN "Khoa học tự nhiên" nhưng khác MÃ
+// (KHTN-Lí / KHTN-Hóa / KHTN-Sinh). Tiết chuẩn + PCCM lưu theo mã, bảng Phân công hiển thị mã,
+// nhưng buildPCCMMonList khử trùng theo TÊN nên chỉ còn 1 dòng → 2 môn (và phân công của chúng)
+// biến mất khỏi mọi tab Phân công dù vẫn nằm trong kho.
+test("subjects sharing a display name but with distinct codes all stay visible in assignment", () => {
+  const context = loadApp();
+  const fixture = {
+    khoi:[{id:"K001", makhoi:"K6", ten:"Khối 6"}],
+    lop:[{id:"L001", ten:"6/1", ten2:"6/1", khoi:"Khối 6"}],
+    giaovien:[
+      {magv:"TTâm", hodem:"Nguyễn", ten:"Tâm"},
+      {magv:"L.Thảo", hodem:"Lê", ten:"Thảo"},
+      {magv:"Thủy", hodem:"Trần", ten:"Thủy"},
+      {magv:"Hiền", hodem:"Phạm", ten:"Hiền"}
+    ],
+    monhoc:[
+      {id:"MH005", ten:"Lịch sử và Địa lý", ma:"LSĐL-Sử", caphoc:"THCS"},
+      {id:"MH006", ten:"Lịch sử và Địa lý", ma:"LSĐL-Địa", caphoc:"THCS"},
+      {id:"MH007", ten:"Khoa học tự nhiên", ma:"KHTN-Lí", caphoc:"THCS"},
+      {id:"MH008", ten:"Khoa học tự nhiên", ma:"KHTN-Hóa", caphoc:"THCS"},
+      {id:"MH009", ten:"Khoa học tự nhiên", ma:"KHTN-Sinh", caphoc:"THCS"}
+    ],
+    mon:[
+      {khoi:"Khối 6", ten:"LSĐL-Sử", sotiet:"1", gioihan:"1"},
+      {khoi:"Khối 6", ten:"LSĐL-Địa", sotiet:"2", gioihan:"1"},
+      {khoi:"Khối 6", ten:"KHTN-Lí", sotiet:"1", gioihan:"1"},
+      {khoi:"Khối 6", ten:"KHTN-Hóa", sotiet:"1", gioihan:"1"},
+      {khoi:"Khối 6", ten:"KHTN-Sinh", sotiet:"2", gioihan:"1"}
+    ],
+    phong:[],
+    pccmMatrix:{
+      "6/1|LSĐL-Sử":"Thủy", "6/1|LSĐL-Địa":"Hiền",
+      "6/1|KHTN-Lí":"TTâm", "6/1|KHTN-Hóa":"TTâm", "6/1|KHTN-Sinh":"L.Thảo"
+    },
+    pccmTietMatrix:{}, pccmGioihanMatrix:{}, pccmRoomMatrix:{}
+  };
+  const result = JSON.parse(vm.runInContext(`
+    DATA=${JSON.stringify(fixture)};
+    ensureDataShape();
+    const before=JSON.stringify(DATA);
+    const all=buildPCCMMonList();
+    const visible=all.filter(m=>monHasPositiveTietChuanAnyKhoi(m));
+    PCCM_TAB="lop"; PCCM_SELECTED_CLASS="6/1";
+    const classHtml=renderPCCM();
+    PCCM_TAB="monhoc"; PCCM_SUBJ="KHTN-Hóa";
+    const subjectHtml=renderPCCM();
+    JSON.stringify({
+      keys: visible.map(m=>m.key),
+      teachers: visible.map(m=>pccmGetTeacher("6/1", m)),
+      classHtml, subjectHtml,
+      after: JSON.stringify(DATA), before
+    });
+  `, context));
+
+  assert.deepEqual(result.keys, ["LSĐL-Sử", "LSĐL-Địa", "KHTN-Lí", "KHTN-Hóa", "KHTN-Sinh"]);
+  assert.deepEqual(result.teachers, ["Thủy", "Hiền", "TTâm", "TTâm", "L.Thảo"]);
+  for (const code of ["LSĐL-Địa", "KHTN-Hóa", "KHTN-Sinh"]){
+    assert.ok(result.classHtml.includes(`>${code}</option>`), `class tab lists ${code}`);
+    assert.ok(result.subjectHtml.includes(`setPCCMSelectedSubject('${code}')`), `subject tab lists ${code}`);
+  }
+  assert.equal(result.after, result.before);
+});

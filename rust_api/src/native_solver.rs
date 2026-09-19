@@ -1966,7 +1966,7 @@ fn period_map(
         );
         let periods = int_value(row.get("sotiet"), 0);
         if !grade.is_empty() && !subject.is_empty() && periods > 0 {
-            out.insert((norm(&grade), norm(&subject)), periods);
+            out.entry((grade_key(&grade), norm(&subject))).or_insert(periods);
         }
     }
     out
@@ -1987,10 +1987,163 @@ fn session_limit_map(
         );
         let session_limit = int_value(row.get("gioihan"), 1).max(1);
         if !grade.is_empty() && !subject.is_empty() {
-            out.insert((norm(&grade), norm(&subject)), session_limit);
+            out.entry((grade_key(&grade), norm(&subject))).or_insert(session_limit);
         }
     }
     out
+}
+
+/// 31/08: khoa dong DAY GHEP (`data.dayGhep[].ten`, da `norm`) -> mon goc (`row.mon[0]`, canonical)
+/// chi de TRA LUAT mon. `Assignment.subject` van la khoa ghep (ban sac phan cong, chuoi o TKB).
+/// Chu du an: "yeu cau mon hoc chi can cho mon goc, khong tao ra mot list mon moi theo ten viet tat".
+fn ghep_rule_subject_alias(
+    data: &Map<String, Value>,
+    subject_alias: &HashMap<String, String>,
+) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    let Some(rows) = data.get("dayGhep").and_then(Value::as_array) else {
+        return out;
+    };
+    for row in rows {
+        let Some(ten) = row
+            .get("ten")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        let base_raw = match row.get("mon") {
+            Some(Value::Array(items)) => items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .find(|value| !value.is_empty())
+                .map(str::to_string),
+            Some(Value::String(text)) => text
+                .split(|ch| ch == ',' || ch == ';')
+                .map(str::trim)
+                .find(|value| !value.is_empty())
+                .map(str::to_string),
+            _ => None,
+        };
+        let Some(base_raw) = base_raw else {
+            continue;
+        };
+        let base = canonical_subject(&base_raw, subject_alias);
+        let key = norm(ten);
+        if key.is_empty() || base.is_empty() || key == norm(&base) {
+            continue;
+        }
+        // `norm` bo dau cau: khoa ghep trung bi danh mon that ("AV-GT" vs "AVGT") thi bo qua,
+        // khong duoc de mon that do bi tra luat cua mon goc khac.
+        if subject_alias.contains_key(&key) {
+            continue;
+        }
+        out.entry(key).or_insert(base);
+    }
+    out
+}
+
+/// Khoa dong day ghep (chu thuong, da trim). `norm()` bo het dau cau nen "AV-GT" ≡ "AVGT" →
+/// `canonical_subject` se gop khoa ghep vao mon that; khoa nao thuoc `data.dayGhep[].ten` thi
+/// giu NGUYEN VAN (ban sac phan cong rieng, chuoi o TKB), chi tra luat qua `rule_subject`.
+fn ghep_exact_keys(data: &Map<String, Value>) -> HashSet<String> {
+    data.get("dayGhep")
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| row.get("ten").and_then(Value::as_str))
+                .map(|ten| ten.trim().to_lowercase())
+                .filter(|ten| !ten.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Mot (lop, khoa) cua dong DAY GHEP KHONG GIAO VIEN (02/09).
+struct GhepNoTeacherRow {
+    class_name: String,
+    ten: String,
+    periods: i64,
+    session_limit: i64,
+}
+
+/// Gia tri `lop` / `gv` / `mon` cua dong day ghep: mang chuoi hoac chuoi cach dau phay.
+fn ghep_row_texts(value: Option<&Value>) -> Vec<String> {
+    match value {
+        Some(Value::Array(items)) => items
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .map(str::to_string)
+            .collect(),
+        Some(Value::String(text)) => text
+            .split(|ch| ch == ',' || ch == ';')
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .map(str::to_string)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// 02/09: cac (lop, khoa) cua dong DAY GHEP KHONG GIAO VIEN (`DATA.dayGhep[].gv` rong —
+/// web/modules/day-ghep.js: tiet chiem o cua lop, may tu xep, khong chiem ai). App KHONG ghi
+/// pccmMatrix cho khoa nay (app.js don khoa GV rong) nen `parse_assignments` phai tu them
+/// phan cong teacher = "" cho tung lop cua dong.
+fn ghep_no_teacher_rows(data: &Map<String, Value>) -> Vec<GhepNoTeacherRow> {
+    let mut out = Vec::new();
+    let Some(rows) = data.get("dayGhep").and_then(Value::as_array) else {
+        return out;
+    };
+    for row in rows {
+        let Some(row) = row.as_object() else {
+            continue;
+        };
+        if !ghep_row_texts(row.get("gv")).is_empty() {
+            continue;
+        }
+        let ten = row
+            .get("ten")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or_default();
+        if ten.is_empty() {
+            continue;
+        }
+        let periods = int_value(row.get("sotiet"), 0);
+        let session_limit = int_value(row.get("gioihan"), 0);
+        for class_name in ghep_row_texts(row.get("lop")) {
+            out.push(GhepNoTeacherRow {
+                class_name,
+                ten: ten.to_string(),
+                periods,
+                session_limit,
+            });
+        }
+    }
+    out
+}
+
+fn assignment_subject_key(
+    raw: &str,
+    subject_alias: &HashMap<String, String>,
+    ghep_keys: &HashSet<String>,
+) -> String {
+    let trimmed = raw.trim();
+    if !ghep_keys.is_empty() && ghep_keys.contains(&trimmed.to_lowercase()) {
+        return trimmed.to_string();
+    }
+    canonical_subject(trimmed, subject_alias)
+}
+
+fn rule_subject(subject: &str, ghep_alias: &HashMap<String, String>) -> String {
+    ghep_alias
+        .get(&norm(subject))
+        .cloned()
+        .unwrap_or_else(|| subject.to_string())
 }
 
 fn constraint_subject_day_limit_map(
@@ -2062,6 +2215,7 @@ fn apply_quick_authored_subject_rules(
     else {
         return;
     };
+    let ghep_alias = ghep_rule_subject_alias(data, subject_alias);
     for (raw_subject, subject_rule) in subject_rules {
         let subject = canonical_subject(raw_subject, subject_alias);
         let Some(by_class) = subject_rule.get("byClass").and_then(Value::as_object) else {
@@ -2085,7 +2239,8 @@ fn apply_quick_authored_subject_rules(
                 .and_then(|value| value.get("afternoon"))
                 .is_some_and(truthy);
             for assignment in assignments.iter_mut().filter(|assignment| {
-                assignment.class_id == class.id && norm(&assignment.subject) == norm(&subject)
+                assignment.class_id == class.id
+                    && norm(&rule_subject(&assignment.subject, &ghep_alias)) == norm(&subject)
             }) {
                 assignment.quick_min_two_blocks =
                     assignment.quick_min_two_blocks.max(min_two_blocks);
@@ -2112,13 +2267,45 @@ fn parse_assignments(
     let Some(pccm) = data.get("pccmMatrix").and_then(Value::as_object) else {
         return out;
     };
+    let ghep_alias = ghep_rule_subject_alias(data, subject_alias);
+    let ghep_keys = ghep_exact_keys(data);
     let class_by_id = classes
         .iter()
         .map(|class| (class.id.clone(), class.clone()))
         .collect::<HashMap<_, _>>();
 
-    for (raw_key, raw_teacher) in pccm {
-        let Some((raw_class, raw_subject)) = raw_key.split_once('|') else {
+    // (khoa "Lop|Mon", ten mon tho, GV) — phan cong co GV tu pccmMatrix, roi
+    // 02/09: dong DAY GHEP KHONG GIAO VIEN (DATA.dayGhep, gv rong): app khong ghi
+    // pccmMatrix cho khoa nay (app.js don khoa GV rong) nhung van la tiet phai
+    // xep cua lop; teacher = "" -> moi cho giu tai nguyen GV da co guard is_empty().
+    let mut candidates: Vec<(String, String, String)> = pccm
+        .iter()
+        .filter_map(|(raw_key, raw_teacher)| {
+            let teacher = teacher_value(raw_teacher);
+            if teacher.is_empty() {
+                return None;
+            }
+            let (_, raw_subject) = raw_key.split_once('|')?;
+            Some((raw_key.clone(), raw_subject.to_string(), teacher))
+        })
+        .collect();
+    // Khoa dong khong GV -> (so tiet, gioi han) ghi tren dong, du phong khi bang
+    // Tiet/Gioi han cua app chua co khoa (day-ghep.js chieu vao pccmTietMatrix).
+    let mut no_teacher_fallback: HashMap<String, (i64, i64)> = HashMap::new();
+    for row in ghep_no_teacher_rows(data) {
+        let raw_key = format!("{}|{}", row.class_name, row.ten);
+        let low = raw_key.to_lowercase();
+        if pccm.keys().any(|key| key.to_lowercase() == low) || no_teacher_fallback.contains_key(&low) {
+            continue;
+        }
+        no_teacher_fallback.insert(low, (row.periods, row.session_limit));
+        candidates.push((raw_key, row.ten, String::new()));
+    }
+
+    for (raw_key, raw_subject, teacher) in candidates {
+        let raw_key = raw_key.as_str();
+        let raw_subject = raw_subject.as_str();
+        let Some((raw_class, _)) = raw_key.split_once('|') else {
             continue;
         };
         let Some(class) = class_alias
@@ -2128,14 +2315,14 @@ fn parse_assignments(
         else {
             continue;
         };
-        let subject = canonical_subject(raw_subject, subject_alias);
+        let subject = assignment_subject_key(raw_subject, subject_alias, &ghep_keys);
         if subject.is_empty() {
             continue;
         }
-        let teacher = teacher_value(raw_teacher);
-        if teacher.is_empty() {
-            continue;
-        }
+        let row_fallback = teacher
+            .is_empty()
+            .then(|| no_teacher_fallback.get(&raw_key.to_lowercase()).copied())
+            .flatten();
         let periods = pccm_periods
             .get(raw_key)
             .copied()
@@ -2149,9 +2336,10 @@ fn parse_assignments(
                     .get(&format!("{}|{}", class.name, raw_subject))
                     .copied()
             })
+            .or_else(|| row_fallback.map(|(periods, _)| periods).filter(|value| *value > 0))
             .unwrap_or_else(|| {
                 period_map
-                    .get(&(norm(&class.grade), norm(&subject)))
+                    .get(&(grade_key(&class.grade), norm(&subject)))
                     .copied()
                     .unwrap_or(0)
             });
@@ -2178,16 +2366,18 @@ fn parse_assignments(
             })
             .or_else(|| {
                 session_limit_map
-                    .get(&(norm(&class.grade), norm(&subject)))
+                    .get(&(grade_key(&class.grade), norm(&subject)))
                     .copied()
             })
+            .or_else(|| row_fallback.map(|(_, limit)| limit).filter(|value| *value > 0))
             .unwrap_or(1)
             .max(1);
+        let rule_subject_key = norm(&rule_subject(&subject, &ghep_alias));
         let day_limits = DAYS
             .iter()
             .filter_map(|(_, day)| {
                 constraint_day_limits
-                    .get(&(class.id.clone(), norm(&subject), *day))
+                    .get(&(class.id.clone(), rule_subject_key.clone(), *day))
                     .copied()
                     .map(|limit| (*day, limit))
             })
@@ -2232,6 +2422,7 @@ fn collect_fixed_lessons(
     subject_alias: &HashMap<String, String>,
 ) -> Vec<FixedLesson> {
     let mut out = Vec::new();
+    let ghep_keys = ghep_exact_keys(data);
     let tkb = data.get("tkb").and_then(Value::as_object);
     let Some(tkb) = tkb else {
         return out;
@@ -2254,7 +2445,7 @@ fn collect_fixed_lessons(
                         continue;
                     }
                     let raw_subject = cell_subject(cell);
-                    let subject = canonical_subject(&raw_subject, subject_alias);
+                    let subject = assignment_subject_key(&raw_subject, subject_alias, &ghep_keys);
                     if subject.is_empty() {
                         continue;
                     }
@@ -2298,6 +2489,7 @@ fn collect_existing_schedule_lessons(
     class_alias: &HashMap<String, ClassInfo>,
     subject_alias: &HashMap<String, String>,
 ) -> Vec<Value> {
+    let ghep_keys = ghep_exact_keys(data);
     let required_fixed = collect_fixed_lessons(data, class_alias, subject_alias)
         .into_iter()
         .map(|fixed| {
@@ -2326,7 +2518,7 @@ fn collect_existing_schedule_lessons(
                 let class_name = class
                     .map(|item| item.name.clone())
                     .unwrap_or_else(|| lesson_string(lesson, "className"));
-                let subject = canonical_subject(&lesson_subject(lesson), subject_alias);
+                let subject = assignment_subject_key(&lesson_subject(lesson), subject_alias, &ghep_keys);
                 let slot = lesson_slot(lesson)?;
                 if class_id.is_empty() || subject.is_empty() {
                     return None;
@@ -2374,7 +2566,7 @@ fn collect_existing_schedule_lessons(
                 };
                 for (index, cell) in arr.iter().enumerate() {
                     let raw_subject = cell_subject(cell);
-                    let subject = canonical_subject(&raw_subject, subject_alias);
+                    let subject = assignment_subject_key(&raw_subject, subject_alias, &ghep_keys);
                     if subject.is_empty() || subject == "OFF" {
                         continue;
                     }
@@ -14561,6 +14753,22 @@ fn global_session_repack_safe(data: &Map<String, Value>) -> bool {
         })
 }
 
+/// Khoa khoi hoc dung chung cho bang Lop va bang Tiet chuan (xem
+/// `native_precheck::grade_key`): giao dien so khoi theo SO nen "K6" va
+/// "Khoi 6" la cung mot khoi. Khoi khong co chu so van so bang chuoi chuan hoa.
+fn grade_key(value: &str) -> String {
+    let digits: String = value
+        .chars()
+        .skip_while(|ch| !ch.is_ascii_digit())
+        .take_while(char::is_ascii_digit)
+        .collect();
+    if digits.is_empty() {
+        norm(value)
+    } else {
+        digits
+    }
+}
+
 fn norm(value: &str) -> String {
     value
         .trim()
@@ -14604,6 +14812,111 @@ fn current_timestamp_string() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // 31/08: khoa dong day ghep -> mon goc CHI de tra luat; ban sac phan cong giu nguyen van.
+    #[test]
+    fn ghep_rule_alias_maps_joint_key_to_base_subject_but_keeps_identity() {
+        let value = json!({
+            "dayGhep": [{"ten": "BN-ghép", "mon": ["Anh văn giao tiếp"], "lop": ["6A1"], "gv": ["GV1", "GV2"], "sotiet": "1"}]
+        });
+        let data: Map<String, Value> = value.as_object().cloned().unwrap();
+        let mut subject_alias = HashMap::new();
+        subject_alias.insert(norm("AVGT"), "AVGT".to_string());
+        subject_alias.insert(norm("Anh văn giao tiếp"), "AVGT".to_string());
+        let alias = ghep_rule_subject_alias(&data, &subject_alias);
+        assert_eq!(alias.get(&norm("BN-ghép")).map(String::as_str), Some("AVGT"));
+        assert_eq!(rule_subject("BN-ghép", &alias), "AVGT");
+        assert_eq!(rule_subject("Toán", &alias), "Toán");
+        let keys = ghep_exact_keys(&data);
+        assert_eq!(assignment_subject_key("BN-ghép", &subject_alias, &keys), "BN-ghép");
+        assert_eq!(assignment_subject_key("bn-ghép ", &subject_alias, &keys), "bn-ghép");
+        assert_eq!(assignment_subject_key("Anh văn giao tiếp", &subject_alias, &keys), "AVGT");
+    }
+
+    #[test]
+    fn ghep_rule_alias_skips_keys_colliding_with_real_subjects() {
+        // norm() bo dau cau: "AV-GT" == "AVGT" -> khong coi la bi danh (tranh tra nham luat cho mon that),
+        // nhung khoa ghep van giu nguyen van khi doc phan cong / o TKB.
+        let value = json!({
+            "dayGhep": [{"ten": "AV-GT", "mon": ["Toán"]}]
+        });
+        let data: Map<String, Value> = value.as_object().cloned().unwrap();
+        let mut subject_alias = HashMap::new();
+        subject_alias.insert(norm("AVGT"), "AVGT".to_string());
+        subject_alias.insert(norm("Toán"), "Toán".to_string());
+        let alias = ghep_rule_subject_alias(&data, &subject_alias);
+        assert!(alias.is_empty());
+        let keys = ghep_exact_keys(&data);
+        assert_eq!(assignment_subject_key("AV-GT", &subject_alias, &keys), "AV-GT");
+        assert_eq!(assignment_subject_key("AVGT", &subject_alias, &keys), "AVGT");
+    }
+
+    // 02/09: dong day ghep KHONG giao vien (gv rong) -> phan cong teacher = "" cho tung lop;
+    // so tiet tu pccmTietMatrix (app chieu), thieu thi lay tren dong; khong nhan doi khoa da co GV.
+    #[test]
+    fn ghep_no_teacher_rows_become_teacherless_assignments() {
+        let root = json!({
+            "lop": [
+                {"id":"L1", "ten":"6A1", "khoi":"6"},
+                {"id":"L2", "ten":"6A2", "khoi":"6"}
+            ],
+            "monhoc": [{"id":"toan", "ma":"T", "ten":"Toán"}],
+            "mon": [{"khoi":"6", "ten":"Toán", "sotiet":4, "gioihan":2}],
+            "pccmMatrix": {"6A1|Toán":"GV01", "6A2|Toán":"GV01", "6A1|CLB":"GV02"},
+            "pccmTietMatrix": {"6A1|Hội trường":"1", "6A1|CLB":"1"},
+            "pccmGioihanMatrix": {"6A1|Hội trường":"1"},
+            "dayGhep": [
+                {"ten":"Hội trường", "viettat":"Hội trường", "lop":["6A1", "6A2"], "mon":["Toán"], "gv":[], "sotiet":"2", "gioihan":"1"},
+                {"ten":"CLB", "lop":["6A1"], "mon":["Toán"], "gv":["GV02"], "sotiet":"1", "gioihan":"1"},
+                {"ten":"Rỗng", "lop":["6A1"], "mon":["Toán"], "gv":"", "sotiet":"0"}
+            ]
+        });
+        let data = root.as_object().expect("test data object");
+        let rows = ghep_no_teacher_rows(data);
+        assert_eq!(
+            rows.iter().map(|row| (row.class_name.as_str(), row.ten.as_str(), row.periods, row.session_limit)).collect::<Vec<_>>(),
+            vec![("6A1", "Hội trường", 2, 1), ("6A2", "Hội trường", 2, 1), ("6A1", "Rỗng", 0, 0)]
+        );
+
+        let classes = parse_classes(data);
+        let subjects = parse_subjects(data);
+        let class_alias = class_alias_map(&classes);
+        let subject_alias = subject_alias_map(&subjects);
+        let periods = period_map(data, &subject_alias);
+        let session_limits = session_limit_map(data, &subject_alias);
+        let day_limits = constraint_subject_day_limit_map(data, &class_alias, &subject_alias);
+        let assignments = parse_assignments(
+            data,
+            &classes,
+            &class_alias,
+            &subject_alias,
+            &periods,
+            &session_limits,
+            &day_limits,
+            &numeric_matrix(data.get("pccmTietMatrix")),
+            &numeric_matrix(data.get("pccmGioihanMatrix")),
+            &HashMap::new(),
+        );
+        let mut rows = assignments
+            .iter()
+            .map(|a| (a.class_name.as_str(), a.subject.as_str(), a.teacher.as_str(), a.periods, a.session_limit))
+            .collect::<Vec<_>>();
+        rows.sort();
+        assert_eq!(
+            rows,
+            vec![
+                ("6A1", "CLB", "GV02", 1, 1),
+                ("6A1", "Hội trường", "", 1, 1),   // bang Tiet cua app thang tren dong
+                ("6A1", "Toán", "GV01", 4, 2),
+                ("6A2", "Hội trường", "", 2, 1),   // khong co trong bang Tiet -> so tiet / gioi han tren dong
+                ("6A2", "Toán", "GV01", 4, 2),
+            ]
+        );
+        // "Rỗng" (0 tiet) bi bo; khong co assignment nao thieu so tiet
+        assert!(assignments.iter().all(|a| a.periods > 0));
+        // phan cong khong GV khong tao tai GV nao
+        assert!(teacher_period_load_map(&assignments).keys().all(|key| !key.is_empty()));
+    }
 
     fn subject_test_lesson(session_key: &str, session: &'static str, period_index: i64) -> Value {
         lesson_json(
@@ -16926,6 +17239,43 @@ mod tests {
         assert!(subject_limit_violations(&lessons, &limits)
             .iter()
             .any(|item| item.get("kind").and_then(Value::as_str) == Some("subject_day_limit")));
+    }
+
+    /// Truong 1eea52ea521 (27/08/2026): bang Lop ghi "K6", bang Tiet chuan ghi
+    /// "Khoi 6". Truoc khi co grade_key, period_map khong tra duoc -> lop bi bo
+    /// het (chi con lop nao co override trong pccmTietMatrix).
+    #[test]
+    fn tiet_chuan_matches_lop_when_grade_labels_use_different_wording() {
+        let root = json!({
+            "lop": [{"id":"6A", "ten":"6A", "khoi":"K6"}],
+            "monhoc": [{"id":"toan", "ma":"T", "ten":"Toán"}],
+            "mon": [{"khoi":"Khối 6", "ten":"Toán", "sotiet":4, "gioihan":2}],
+            "pccmMatrix": {"6A|Toán":"GV01"}
+        });
+        let data = root.as_object().expect("test data object");
+        let classes = parse_classes(data);
+        let subjects = parse_subjects(data);
+        let class_alias = class_alias_map(&classes);
+        let subject_alias = subject_alias_map(&subjects);
+        let periods = period_map(data, &subject_alias);
+        let session_limits = session_limit_map(data, &subject_alias);
+        let day_limits = constraint_subject_day_limit_map(data, &class_alias, &subject_alias);
+        let assignments = parse_assignments(
+            data,
+            &classes,
+            &class_alias,
+            &subject_alias,
+            &periods,
+            &session_limits,
+            &day_limits,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+        );
+
+        assert_eq!(assignments.len(), 1);
+        assert_eq!(assignments[0].periods, 4);
+        assert_eq!(assignments[0].session_limit, 2);
     }
 
     #[test]

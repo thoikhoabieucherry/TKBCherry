@@ -109,6 +109,12 @@ class TeacherDaySessionModeTests(unittest.TestCase):
             ({"sang": True}, "morning"),
             ({"chieu": True}, "afternoon"),
             ({"both": True}, "either"),
+            # 13/09 "Gioi han buoi day": tick ca Sang lan Chieu = sang HOAC chieu
+            ({"morning": True, "afternoon": True}, "either"),
+            ({"morning": True, "afternoon": False}, "morning"),
+            ({"morning": False, "afternoon": True}, "afternoon"),
+            ({"morning": False, "afternoon": False}, ""),
+            ({"morning": False, "afternoon": False, "either": True}, ""),
         )
         for raw, expected in cases:
             with self.subTest(raw=raw):
@@ -124,7 +130,7 @@ class TeacherDaySessionModeTests(unittest.TestCase):
                     "mode": "afternoon",
                 }
             ),
-            "morning",
+            "either",
         )
 
     def test_validator_applies_all_teacher_day_modes(self) -> None:

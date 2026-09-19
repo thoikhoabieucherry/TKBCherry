@@ -10,6 +10,8 @@ Run after significant changes. Start app with `python start.py`, open `http://12
 - [ ] School switcher: create/switch school, data isolated
 - [ ] Open planner via **Sắp xếp TKB**
 
+- [ ] Dạy ghép: **Xuất Excel** ra `dayghep.xlsx` (STT | Viết tắt | Lớp học | Môn học | Giáo viên | Số tiết | Giới hạn); **Nhập Excel** cùng cột: lớp/môn/GV lạ thì báo dòng và không nhập, nhập lại file vừa xuất thì cập nhật (không nhân đôi), ô TKB đã xếp của dòng giữ nguyên (31/08)
+
 ## Planner (`pages/sapxep.html`)
 
 - [ ] Backend banner hidden when `start.py` is running
@@ -20,6 +22,10 @@ Run after significant changes. Start app with `python start.py`, open `http://12
 - [ ] Lịch đã đủ và hard-valid chọn `refine_complete` ngay khi người dùng bấm: dùng incumbent mềm và chất lượng không xấu hơn lịch đầu vào
 - [ ] Sau khi đổi PCCM, incumbent được dựng lại giáo viên theo PCCM mới; không khôi phục tiết mang giáo viên/phân công cũ
 - [ ] Chỉ tiết có `fixed: true` giữ nguyên vị trí; các tiết hiện có khác vẫn có thể swap/dời
+- [ ] Cố định **Chào cờ** ở Thứ 2 / sáng / tiết 1 (và **SHL** ở Thứ 6 / chiều / tiết cuối) rồi F5: ô vẫn còn và kho không bị ghi đè (31/08: đã gỡ `migrateRemoveLegacyDefaultFixedEvents` v1.69 xóa đúng hai ô này lúc tải trang — trường 0l2vcan0xx1)
+- [ ] Dán tên GV từ Mac/Excel (Unicode NFD, ví dụ "Hà" = "Ha" + dấu huyền rời) rồi phân công: danh sách GV ở Sắp xếp chỉ có MỘT "ĐP.Hà" đúng vị trí, không sinh người trùng mã ở cuối (31/08: `TKBStorage.normalizeUnicodeNFC` chạy khi nạp/lưu ở cả 2 trang — trường 0l2vcan0xx1)
+- [ ] Dạy ghép dùng luật của môn gốc: mở **Yêu cầu** → bộ chọn môn KHÔNG có khoá/viết tắt dòng ghép, chỉ có môn gốc; đặt luật cho môn gốc (tiết/ngày, nghỉ cố định môn, tiết đôi, nhóm môn) → ô ghép bị kiểm/đếm cùng môn gốc ở bảng RB, ▶ FET và Cherry/Tối ưu v3; ô TKB vẫn hiện viết tắt, GV/số tiết của dòng giữ nguyên (31/08)
+- [ ] Dạy ghép nhiều lớp + ▶/Cherry: trước lượt giải các lớp của dòng được ghim tạm cùng ô (ổ khoá), lượt xong thì ô trở về tiết thường (không còn khoá); tải lại trang giữa lượt → mở lại vẫn KHÔNG còn ô khoá tạm (31/08 `tkbJointClearStalePins`)
 - [ ] Nút **Dừng** hiện giữa **Sắp xếp** và **Xóa ALL** khi đang xếp; hủy được cả lượt đang chạy lẫn đang chờ mà không ảnh hưởng trường khác
 - [ ] Khi server đầy slot/token, UI âm thầm chờ FIFO và thử lại; không hiện lỗi đỏ hoặc để lượt sau vượt lượt trước
 - [ ] Trường thời lượng trống dùng cổng chất lượng tối đa `110s` cho lịch mới/đổi yêu cầu và `180s` cho lịch đầy đủ cần tối ưu tiếp; lượt mới trả sớm khi lịch đủ, hợp lệ, `Dạy 1 tiết/buổi = 0` và `Trống 2 tiết = 0`, không tự điền ô thời gian và không tự tạo lượt retry
@@ -69,7 +75,7 @@ Dùng cùng một snapshot dữ liệu cho mọi lần so sánh. Không biến s
 
 - [ ] `python start.py` shows Python deps status in control window
 - [ ] Closing control window stops backend and frees port 1010
-- [ ] `scripts/setup.ps1` installs Python deps without error
+- [ ] `pip install -r solver_runtime\requirements.txt` installs Python deps without error
 
 ## Deploy VPS
 

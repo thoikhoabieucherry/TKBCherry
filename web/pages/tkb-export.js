@@ -138,7 +138,8 @@
               missingTeacherCount++;
               continue;
             }
-            const label = `${getMonShort(mon)} - ${classDisplay}`;
+            const monLabel = (typeof tkbMonLabel === 'function') ? tkbMonLabel(classId, mon) : getMonShort(mon);
+            const label = `${monLabel} - ${classDisplay}`;
             gvList.forEach(code => {
               if(!matrix[code]){
                 teachers.push({ code, name: getTeacherNameByCode(code) || code });
@@ -520,7 +521,7 @@
     try{ mon = _safeText(cellMon(raw)); }catch(_){ mon = _safeText(raw?.mon || raw); }
     if(!mon) return '';
     let subject = mon;
-    try{ subject = _safeText(getMonShort(mon)) || mon; }catch(_){ }
+    try{ subject = _safeText((typeof tkbMonLabel === 'function') ? tkbMonLabel(lop?.id, mon) : getMonShort(mon)) || mon; }catch(_){ }
     let teacherValue = '';
     try{
       const classId = _safeText(lop?.id);

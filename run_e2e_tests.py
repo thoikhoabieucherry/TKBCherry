@@ -180,4 +180,9 @@ def main():
         cleanup_tempdir(test_runtime)
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] in {"-h", "--help", "help"}:
+        print("Chay bo e2e Tier 1-4 (e2e_tests/test_suite.py) voi backend that "
+              "tren port 1085: mo start.py, cho khoe, chay unittest, tat.\n"
+              "Khong nhan tham so. Bo test thuong ngay: python run_tests.py")
+        raise SystemExit(0)
     main()

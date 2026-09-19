@@ -5184,8 +5184,9 @@ fn merge_school_admin_registry(
             {
                 // 22/08 (chu du an): kich hoat (xac thuc email) cap thang goi
                 // Max 2 dung thu thay vi Trial. Client cu van co the gui
-                // "trial". Ca hai chi duoc cap MOT lan (trialUsed) va han toi
-                // da 31 ngay; moi goi khac (plus/max1/ultra...) bi bo qua.
+                // "trial". Ca hai chi duoc cap MOT lan (trialUsed). 04/09 (chu
+                // du an): han 1 NAM (client gui 365 ngay, tran 366 ngay); moi
+                // goi khac (plus/max1/ultra...) bi bo qua.
                 let requested_grant = incoming_school
                     .as_ref()
                     .and_then(|value| {
@@ -5205,7 +5206,7 @@ fn merge_school_admin_registry(
                 if let Some((plan, raw_expiry, _expiry)) =
                     requested_grant.filter(|(_, _, expiry)| {
                         *expiry > now
-                            && *expiry <= now.saturating_add(31 * 24 * 60 * 60 * 1_000)
+                            && *expiry <= now.saturating_add(366 * 24 * 60 * 60 * 1_000)
                     })
                 {
                     if plan == "max2" {
@@ -13916,7 +13917,8 @@ mod tests {
         let session = json!({
             "userId":"admina", "role":"school_admin", "schoolId":"school-a"
         });
-        let expiry = iso_date_days_from_now(30);
+        // 04/09: kich hoat = 1 nam (365 ngay).
+        let expiry = iso_date_days_from_now(365);
         let incoming = json!({
             "schools": {
                 "school-a": {"id":"school-a", "plan":"max2", "expiresAt": expiry, "trialUsed": true}
@@ -13948,13 +13950,13 @@ mod tests {
             .expect("authorized school admin merge");
         assert_eq!(again["schools"]["school-a"]["plan"], json!("free"));
 
-        // Goi khac (ultra) hoac han qua 31 ngay: khong duoc tu cap.
+        // Goi khac (ultra) hoac han qua 366 ngay: khong duoc tu cap.
         let mut fresh = registry_security_fixture();
         fresh["schools"]["school-a"]["plan"] = json!("free");
         fresh["schools"]["school-a"]["trialUsed"] = json!(false);
         let too_long = json!({
             "schools": {
-                "school-a": {"id":"school-a", "plan":"max2", "expiresAt": iso_date_days_from_now(90)}
+                "school-a": {"id":"school-a", "plan":"max2", "expiresAt": iso_date_days_from_now(400)}
             },
             "users": {
                 "admina": {"id":"admina", "role":"school_admin", "schoolId":"school-a", "emailVerified":true}

@@ -16,7 +16,8 @@ const html = fs.readFileSync('web/pages/sapxep.html', 'utf8');
 // 1) Ham window.sapXepTuDongAll: chi goi executeDirectFastSchedule voi mode auto.
 const start = src.indexOf('window.sapXepTuDongAll = async function');
 check('co window.sapXepTuDongAll', start > 0);
-const end = src.indexOf('window.sapXepTheoCheDo = async function', start);
+// 03/09: menu Toi uu FET (sapXepTheoCheDo) da go -> khoi ▶ ket thuc o '}catch(_){}' ngay sau no.
+const end = src.indexOf('}catch(_){}', start);
 const body = start > 0 && end > start ? src.slice(start, end) : '';
 check('▶ goi executeDirectFastSchedule voi mode "auto"', /executeDirectFastSchedule\(\{\s*mode:\s*options\?\.mode\s*\|\|\s*"auto"\s*\}\)/.test(body));
 check('▶ khong doi sang solve_optimize_all', !/solve_optimize_all/.test(body));

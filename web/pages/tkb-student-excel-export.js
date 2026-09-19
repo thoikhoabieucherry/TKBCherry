@@ -214,11 +214,14 @@
     try{ return safe(getMonShort(mon)); }catch(_){ return safe(mon); }
   }
 
-  function lessonText(raw){
+  // 28/08: ô thuộc dòng dạy ghép hiện nhãn thống nhất của dòng (tkbMonLabel), còn lại là mã môn.
+  function lessonText(raw, classRef){
     if(!raw || raw === 'OFF') return '';
     let mon = '';
     try{ mon = safe(cellMon(raw)); }catch(_){ mon = safe(raw?.mon || raw); }
-    return mon ? monShort(mon) : '';
+    if(!mon) return '';
+    try{ if(classRef && typeof tkbMonLabel === 'function'){ const label = safe(tkbMonLabel(classRef, mon)); if(label) return label; } }catch(_){ }
+    return monShort(mon);
   }
 
   function classCanonForTeacherLookup(lop){
@@ -230,12 +233,15 @@
     return display;
   }
 
-  function lessonTeacherText(lop, raw){
+  // 04/09 (chủ dự án): thêm tham số classRef để phiếu TKB học sinh cũng dùng được
+  // hàm này mà vẫn giữ nhãn dạy ghép của lessonText. Không truyền classRef thì
+  // phần môn đúng bằng monShort(mon) như trước (bản toàn trường theo lớp giữ nguyên).
+  function lessonTeacherText(lop, raw, classRef){
     if(!raw || raw === 'OFF') return '';
     let mon = '';
     try{ mon = safe(cellMon(raw)); }catch(_){ mon = safe(raw?.mon || raw); }
     if(!mon) return '';
-    const subject = monShort(mon);
+    const subject = lessonText(raw, classRef) || monShort(mon);
     let teachers = '';
     try{ teachers = getTeacherForClassMon(classCanonForTeacherLookup(lop), mon); }catch(_){ teachers = ''; }
     const teacherText = teacherCodesFromValue(teachers).map(code => teacherShort(code)).filter(Boolean).join('.');
@@ -268,11 +274,13 @@
       try{ label = LABEL?.[d] || d; }catch(_){ }
       return dayShortLabel(d, label);
     });
+    // 04/09 (chủ dự án): phiếu TKB học sinh trước chỉ in tên môn -> in "Mã môn-Mã GV"
+    // như bản TKB toàn trường theo lớp, để học sinh biết tiết đó ai dạy.
     const rowFor = (session, count) => {
       const rows = [];
       const limit = Math.min(5, Math.max(0, Number(count || 0) || 5));
       for(let ti = 0; ti < limit; ti++){
-        rows.push(days.map(d => lessonText(tkb?.[d]?.[session]?.[ti])));
+        rows.push(days.map(d => lessonTeacherText(lop, tkb?.[d]?.[session]?.[ti], classId || classDisplay(lop))));
       }
       while(rows.length < 5) rows.push(days.map(() => ''));
       return rows;
@@ -463,7 +471,7 @@
           if(!mon) continue;
           let teachers = '';
           try{ teachers = getTeacherForClassMon(classCanon, mon); }catch(_){ teachers = ''; }
-          if(teacherValueContains(teachers, code)) sched[thu].sang[ti].push({classDisplay: display, mon});
+          if(teacherValueContains(teachers, code)) sched[thu].sang[ti].push({classId, classDisplay: display, mon});
         }
         for(let ti = 0; ti < afternoonCount; ti++){
           const raw = tkb?.[thu]?.chieu?.[ti];
@@ -473,16 +481,31 @@
           if(!mon) continue;
           let teachers = '';
           try{ teachers = getTeacherForClassMon(classCanon, mon); }catch(_){ teachers = ''; }
-          if(teacherValueContains(teachers, code)) sched[thu].chieu[ti].push({classDisplay: display, mon});
+          if(teacherValueContains(teachers, code)) sched[thu].chieu[ti].push({classId, classDisplay: display, mon});
         }
       });
     });
+    // 29/08: các lớp của một tiết học chung (Dạy ghép nhiều lớp) gộp thành một dòng "6A1, 6A2"
+    try{
+      const merge = (typeof window !== 'undefined') ? window.tkbJointMergeEntries : null;
+      if(typeof merge === 'function'){
+        days.forEach(d => ['sang', 'chieu'].forEach(b => { sched[d][b] = sched[d][b].map(list => merge(list)); }));
+      }
+    }catch(_){ }
     return {days, sched};
+  }
+
+  // 03/09: tiet hoc chung nhieu lop (Day ghep) — tkbJointMergeEntries gop cac lop thanh MOT
+  // muc va de trong classDisplay (tren man hinh danh sach lop nam o tooltip jointClassLabel).
+  // File Excel khong co tooltip nen phai lay jointClassLabel, neu khong mau 1 (chi in ten lop)
+  // ra o TRONG va mau 2 / toan truong theo GV mat ten lop.
+  function entryClassText(e){
+    return safe(e?.classDisplay) || safe(e?.jointClassLabel);
   }
 
   function teacherLessonText(entries){
     const arr = Array.isArray(entries) ? entries : [];
-    return arr.map(e => [safe(e.classDisplay), monShort(e.mon)].filter(Boolean).join(' - ')).filter(Boolean).join('; ');
+    return arr.map(e => [entryClassText(e), monShort(e.mon)].filter(Boolean).join(' - ')).filter(Boolean).join('; ');
   }
 
   function uniqueJoined(values){
@@ -500,7 +523,7 @@
 
   function teacherLessonClassText(entries){
     const arr = Array.isArray(entries) ? entries : [];
-    return uniqueJoined(arr.map(e => e.classDisplay));
+    return uniqueJoined(arr.map(entryClassText));
   }
 
   function teacherPeriodCount(sched, days){
@@ -1138,24 +1161,40 @@
     return safe(value).toLowerCase().replace(/[^a-z0-9]/g, '');
   }
 
+  // 03/09/2026: localStorage cua trinh duyet co the DAY (quota) vi app luu ban sao kho tung truong o do.
+  // Xuat Excel khong duoc phep that bai chi vi khong ghi duoc so thu tu file -> doc/ghi co try/catch,
+  // roi vao sessionStorage, cuoi cung la bo dem trong bo nho (SEQ_MEMORY).
+  const SEQ_MEMORY = {};
+  function seqRead(key){
+    try{ const v = Number(localStorage.getItem(key) || 0); if (Number.isFinite(v) && v > 0) return v; }catch(_){ }
+    try{ const v = Number(sessionStorage.getItem(key) || 0); if (Number.isFinite(v) && v > 0) return v; }catch(_){ }
+    return Number(SEQ_MEMORY[key] || 0);
+  }
+  function seqWrite(key, value){
+    const text = String(Math.max(1, Number(value || 1)));
+    SEQ_MEMORY[key] = Number(text);
+    try{ localStorage.setItem(key, text); return; }catch(_){ }
+    try{ sessionStorage.setItem(key, text); }catch(_){ }
+  }
+
   function fallbackSequence(dateStamp, prefix){
     const cleanPrefix = exportPrefix(prefix);
     const key = `TKB_XLSX_EXPORT_SEQ::${cleanPrefix}::${dateStamp}`;
-    const next = Math.max(1, Number(localStorage.getItem(key) || 0) + 1);
-    localStorage.setItem(key, String(next));
+    const next = Math.max(1, seqRead(key) + 1);
+    seqWrite(key, next);
     return next;
   }
 
   function nextSequence(dateStamp, prefix){
     const cleanPrefix = exportPrefix(prefix);
     const key = `TKB_XLSX_EXPORT_SEQ::${cleanPrefix}::${dateStamp}`;
-    return Math.max(1, Number(localStorage.getItem(key) || 0) + 1);
+    return Math.max(1, seqRead(key) + 1);
   }
 
   function rememberSequence(dateStamp, prefix, sequence){
     const cleanPrefix = exportPrefix(prefix);
     const key = `TKB_XLSX_EXPORT_SEQ::${cleanPrefix}::${dateStamp}`;
-    localStorage.setItem(key, String(Math.max(1, Number(sequence || 1))));
+    seqWrite(key, Math.max(1, Number(sequence || 1)));
   }
 
   function downloadBlob(blob, fileName){

@@ -14,6 +14,11 @@ function loadPage(name) {
         return;
     }
 
+    if (name === "dayghep") {
+        renderDayGhepPage(container);
+        return;
+    }
+
     if (name === "mon") {
         renderSectionInto("monhoc", "section-content", document);
         return;

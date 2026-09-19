@@ -33,6 +33,10 @@ def teacher_members(value: Any) -> tuple[str, ...]:
     return tuple(out)
 
 
+def _rule_alias_key(value: Any) -> str:
+    return " ".join(("" if value is None else str(value)).split()).casefold()
+
+
 _ONE_SESSION_PER_DAY_ALIASES = {
     "morning": "morning",
     "sang": "morning",
@@ -63,13 +67,23 @@ def one_session_per_day_mode(value: Any) -> str:
     """
 
     if isinstance(value, Mapping):
-        for mode, keys in (
-            ("morning", ("morning", "sang")),
-            ("afternoon", ("afternoon", "chieu")),
-            ("either", ("either", "both")),
-        ):
-            if any(_constraint_flag_enabled(value.get(key)) for key in keys):
-                return mode
+        # 13/09 "Gioi han buoi day": giao dien moi co 2 o Sang / Chieu moi ngay.
+        # Co khoa morning/afternoon (giao dien ghi ca hai) thi theo hai o: tick
+        # CA HAI = sang HOAC chieu (either), tick mot = chi buoi do, bo ca hai =
+        # tu do (ke ca con co "either" cu). Cung nghia voi teacherOneSessionDayMode
+        # (web/pages/tkb-constraints.js).
+        if any(key in value for key in ("morning", "sang", "afternoon", "chieu")):
+            morning = any(_constraint_flag_enabled(value.get(key)) for key in ("morning", "sang"))
+            afternoon = any(_constraint_flag_enabled(value.get(key)) for key in ("afternoon", "chieu"))
+            if morning and afternoon:
+                return "either"
+            if morning:
+                return "morning"
+            if afternoon:
+                return "afternoon"
+            return ""
+        if any(_constraint_flag_enabled(value.get(key)) for key in ("either", "both")):
+            return "either"
         explicit_mode = str(value.get("mode") or "").strip().casefold()
         return _ONE_SESSION_PER_DAY_ALIASES.get(explicit_mode, "")
 
@@ -99,6 +113,16 @@ class TimetableConstraintRules:
     subject_no_same_day: Mapping[str, Mapping[str, frozenset[str]]] = field(default_factory=dict)
     class_extra_slots: Mapping[str, frozenset[tuple[int, str, int]]] = field(default_factory=dict)
     teacher_must_teach: Mapping[str, frozenset[tuple[int, str, int]]] = field(default_factory=dict)
+    # 31/08: khoa dong DAY GHEP (DATA.dayGhep[].ten, da casefold) -> mon goc (row.mon[0], canonical).
+    # Chi dung de TRA LUAT mon: Assignment/Lesson.subject van la khoa ghep (ban sac, GV, so tiet,
+    # chuoi o TKB). Chu du an: "yeu cau mon hoc chi can cho mon goc, khong tao ra list mon moi".
+    rule_subject_alias: Mapping[str, str] = field(default_factory=dict)
+
+    def rule_subject(self, subject: Any) -> str:
+        text = "" if subject is None else str(subject)
+        if not self.rule_subject_alias:
+            return text
+        return self.rule_subject_alias.get(_rule_alias_key(text), text)
 
     @property
     def active(self) -> bool:
@@ -123,16 +147,26 @@ class TimetableConstraintRules:
         return self.group_names.get(kind, {}).get(group_id, group_id)
 
     def subject_in_group(self, subject: str, group_id: str) -> bool:
-        return subject in self.group_items("subject", group_id)
+        items = self.group_items("subject", group_id)
+        return subject in items or self.rule_subject(subject) in items
 
     def subject_groups_for(self, subject: str) -> tuple[str, ...]:
-        return tuple(group_id for group_id, items in self.groups.get("subject", {}).items() if subject in items)
+        base = self.rule_subject(subject)
+        return tuple(
+            group_id
+            for group_id, items in self.groups.get("subject", {}).items()
+            if subject in items or base in items
+        )
 
     def is_fixed_off(self, kind: str, item_id: str, day: int, session: str, period: int) -> bool:
         slot = (int(day), str(session), int(period))
         kind_map = self.fixed_off.get(kind, {})
         if slot in kind_map.get(str(item_id), frozenset()):
             return True
+        if kind == "subject":
+            base = self.rule_subject(item_id)
+            if base != str(item_id) and slot in kind_map.get(base, frozenset()):
+                return True
         if kind == "teacher":
             # 25/08: tiet day ghep "GV1, GV2" nghi khi BAT KY giao vien nao nghi.
             members = teacher_members(item_id)
@@ -154,7 +188,7 @@ class TimetableConstraintRules:
         )
 
     def subject_rule_for(self, class_name: str, subject: str) -> Mapping[str, Any]:
-        root = self.subject.get(subject, {})
+        root = self.subject.get(subject) or self.subject.get(self.rule_subject(subject), {})
         by_class = root.get("byClass", {}) if isinstance(root, Mapping) else {}
         rule = by_class.get(class_name, {}) if isinstance(by_class, Mapping) else {}
         return rule if isinstance(rule, Mapping) else {}

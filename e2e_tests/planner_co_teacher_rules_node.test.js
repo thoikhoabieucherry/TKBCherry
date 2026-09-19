@@ -89,3 +89,26 @@ test("tha tiet ghep: luat cua thanh vien THU HAI (GV2) cung duoc kiem", () => {
   assert.equal(res.ok, false, JSON.stringify(res));
   assert.match((res.messages || []).join(" | "), /Vân.*vượt giới hạn/);
 });
+
+test("29/08: tiet hoc chung NHIEU LOP cung o (cung dong Day ghep) chi dem MOT lan trong luat GV", () => {
+  const data = schoolData();
+  data.lop = [{id:"L1", ten:"6A"}, {id:"L2", ten:"6B"}];
+  data.dayGhep = [{id:"DG1", lop:["6A", "6B"], mon:["TNHN"], gv:["GV1", "GV2"], sotiet:"1", gioihan:"1", viettat:"CLB", ten:"CLB"}];
+  data.pccmMatrix = {"L1|CLB":"GV1, GV2", "L2|CLB":"GV1, GV2", "L2|KHTN":"GV1"};
+  data.pccmTietMatrix = {"L1|CLB":"1", "L2|CLB":"1", "L2|KHTN":"4"};
+  data.pccmGioihanMatrix = {"L1|CLB":"1", "L2|CLB":"1", "L2|KHTN":"2"};
+  data.tkb = {
+    L1:{thu2:{sang:blankSession(["CLB"]), chieu:blankSession()}},
+    L2:{thu2:{sang:blankSession(["CLB"]), chieu:blankSession()}}
+  };
+  // GV1 toi da 1 tiet sang thu 2: tiet chung o 6A + 6B la MOT tiet -> khong vuot
+  data.tkbConstraints = {teacher:{GV1:{maxPeriods:{sang:{thu2:1}}}}};
+  const api = loadConstraints(data);
+  const items = api.validateAll(100);
+  assert.equal(items.some(item => /maxPeriods|vượt giới hạn/i.test(item.kind + " " + (item.message || ""))), false, JSON.stringify(items));
+  // them KHTN cua GV1 vao sang thu 2 -> 2 tiet -> vuot
+  const res = api.canPlaceLesson({lopId:"L2", mon:"KHTN", thu:"thu2", buoi:"sang", ti:2, mode:"drag"});
+  assert.equal(res.ok, false, JSON.stringify(res));
+  assert.match((res.messages || []).join(" | "), /vượt giới hạn/);
+});
+

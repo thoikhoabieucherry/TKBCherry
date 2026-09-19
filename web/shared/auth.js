@@ -235,12 +235,12 @@
 
   // 22/08 (chủ dự án): khi người dùng đăng ký và KÍCH HOẠT (xác thực email)
   // thì cấp thẳng gói Max 2 dùng thử thay vì gói Trial. Vẫn chỉ cấp MỘT lần
-  // cho mỗi trường (cờ trialUsed) và có hạn như đợt dùng thử cũ; server
-  // (rust_api merge_school_admin_registry) chỉ chấp nhận đúng gói này với
-  // hạn tối đa 31 ngày.
+  // cho mỗi trường (cờ trialUsed). 04/09 (chủ dự án): hạn 1 NĂM (365 ngày)
+  // thay vì 1 tháng; server (rust_api merge_school_admin_registry) chỉ chấp
+  // nhận đúng gói này với hạn tối đa 366 ngày.
   const ACTIVATION_GRANT = Object.freeze({
     planId: "max2",
-    durationDays: 30
+    durationDays: 365
   });
 
   const MANAGED_SERVICE = {
@@ -1409,7 +1409,7 @@
       const curPlan = String(school.plan || "free").toLowerCase();
       if(curPlan === "free" && !school.trialUsed){
         const exp = new Date();
-        exp.setDate(exp.getDate() + (ACTIVATION_GRANT.durationDays || 30));
+        exp.setDate(exp.getDate() + (ACTIVATION_GRANT.durationDays || 365));
         school.plan = ACTIVATION_GRANT.planId;
         school.expiresAt = exp.toISOString();
         school.trialUsed = true;

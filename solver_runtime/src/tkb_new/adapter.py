@@ -300,6 +300,66 @@ def _canonical_subject(raw: Any, alias_to_subject: dict[str, str]) -> str:
     return alias_to_subject.get(_norm(value), value)
 
 
+def _build_ghep_rule_aliases(ui_data: dict[str, Any], alias_to_subject: dict[str, str]) -> dict[str, str]:
+    """31/08: khoa dong DAY GHEP -> mon goc, chi de TRA LUAT mon.
+
+    ``DATA.dayGhep[]`` (web/modules/day-ghep.js): ``ten`` la khoa rieng cua dong
+    ("Lop|ten" trong pccmMatrix, chuoi trong o TKB), ``mon`` la cac khoa mon that.
+    Chu du an: "khi toi phan day ghep thi cung se su dung mon hoc nen se su dung
+    yeu cau mon hoc chu khong phai tao ra mot mo mon hoc theo ten viet tat".
+    Ban do nay di vao ``TimetableConstraintRules.rule_subject_alias``; Assignment/
+    Lesson.subject van la khoa ghep (ban sac, GV, so tiet, chuoi tra ve).
+    """
+
+    out: dict[str, str] = {}
+    for row in ui_data.get("dayGhep") or []:
+        if not isinstance(row, dict):
+            continue
+        ten = _text(row.get("ten"))
+        mons = row.get("mon")
+        if isinstance(mons, (list, tuple)):
+            candidates = [_text(m) for m in mons]
+        else:
+            candidates = [_text(m) for m in re.split(r"[,;]+", _text(mons))]
+        base_raw = next((m for m in candidates if m), "")
+        if not ten or not base_raw:
+            continue
+        base = _canonical_subject(base_raw, alias_to_subject)
+        if not base or _norm(base) == _norm(ten):
+            continue
+        out.setdefault(_norm(ten), base)
+    return out
+
+
+def _ghep_row_list(value: Any) -> list[str]:
+    if isinstance(value, (list, tuple)):
+        return [_text(item) for item in value if _text(item)]
+    return [_text(item) for item in re.split(r"[,;]+", _text(value)) if _text(item)]
+
+
+def _iter_no_teacher_ghep_rows(ui_data: Mapping[str, Any]) -> list[tuple[dict[str, Any], str, str]]:
+    """02/09: cac (dong, ten lop, khoa) cua dong DAY GHEP KHONG GIAO VIEN.
+
+    ``DATA.dayGhep[]`` voi ``gv`` rong (day-ghep.js: "tiet khong giao vien" —
+    chiem o cua lop, may tu xep, khong chiem ai). App khong ghi pccmMatrix cho
+    khoa nay (app.js don khoa GV rong) nen adapter phai tu them phan cong.
+    """
+
+    out: list[tuple[dict[str, Any], str, str]] = []
+    rows = ui_data.get("dayGhep") if isinstance(ui_data, Mapping) else None
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        if any(teacher_members(item) for item in _ghep_row_list(row.get("gv"))):
+            continue
+        ten = _text(row.get("ten"))
+        if not ten:
+            continue
+        for class_name in _ghep_row_list(row.get("lop")):
+            out.append((row, class_name, ten))
+    return out
+
+
 def _subject_aliases(raw: Any, subject: str, aliases_by_subject: dict[str, set[str]]) -> tuple[str, ...]:
     aliases = set(aliases_by_subject.get(subject, set()))
     raw_text = _text(raw)
@@ -426,6 +486,7 @@ def _normalize_constraints(
     class_by_alias: dict[str, ClassEntry],
     alias_to_subject: dict[str, str],
     teacher_lookup: dict[str, str],
+    rule_subject_alias: Mapping[str, str] | None = None,
 ) -> TimetableRuleSet:
     raw_source = ui_data.get("tkbConstraints") or {}
     raw = _clone_jsonable(raw_source) if isinstance(raw_source, Mapping) else {}
@@ -647,6 +708,7 @@ def _normalize_constraints(
         subject_no_same_day=subject_no_same_day,
         class_extra_slots=class_extra_slots,
         teacher_must_teach=teacher_must_teach,
+        rule_subject_alias=dict(rule_subject_alias or {}),
     )
     return TimetableRuleSet(constraints=constraints if constraints.active else None)
 
@@ -780,10 +842,12 @@ def _sanitize_impossible_lesson_block_mins(
 
     subject_periods: Counter[tuple[str, str]] = Counter()
     for assignment in data.assignments:
-        subject_periods[(assignment.class_name, assignment.subject)] += max(
-            0,
-            int(assignment.periods_per_week),
-        )
+        periods = max(0, int(assignment.periods_per_week))
+        subject_periods[(assignment.class_name, assignment.subject)] += periods
+        # 31/08: tiet day ghep dem vao mon goc (luat cua mon goc ap cho ca hai)
+        base_subject = constraints.rule_subject(assignment.subject)
+        if base_subject != assignment.subject:
+            subject_periods[(assignment.class_name, base_subject)] += periods
 
     warnings: list[str] = []
 
@@ -950,6 +1014,50 @@ def build_school_data_from_ui(ui_data: dict[str, Any]) -> UiDataContext:
         periods_by_grade_subject.setdefault((class_entry.grade, subject), periods)
         limits_by_grade_subject.setdefault((class_entry.grade, subject), limit)
 
+    # 02/09: dong DAY GHEP KHONG GIAO VIEN (web/modules/day-ghep.js, gv = []) — tiet
+    # chiem o cua (cac) lop, engine tu xep nhung KHONG chiem giao vien nao. App chi
+    # chieu Tiet/Gioi han (khong co khoa pccmMatrix vi app.js don khoa GV rong), nen
+    # phai doc thang DATA.dayGhep. Assignment.teacher = "" -> teacher_members() rong,
+    # engine v3 a_teachers = () (khong dem xung dot / buoi day / o nghi cua ai).
+    for row, class_name_raw, ten in _iter_no_teacher_ghep_rows(ui_data):
+        class_entry = class_by_alias.get(_norm(class_name_raw))
+        if not class_entry:
+            skipped_unknown_class += 1
+            continue
+        subject = _canonical_subject(ten, alias_to_subject)
+        if not subject:
+            continue
+        periods = _lookup_matrix_number(pccm_tiet, class_entry, ten, subject, aliases_by_subject)
+        if periods <= 0:
+            periods = _to_int(row.get("sotiet"), 0)
+        if periods <= 0:
+            skipped_no_period += 1
+            continue
+        limit = _lookup_matrix_number(pccm_limit, class_entry, ten, subject, aliases_by_subject)
+        if limit <= 0:
+            limit = _to_int(row.get("gioihan"), 0)
+        limit = limit if limit > 0 else 99
+        room = _lookup_matrix_text(pccm_room, class_entry, ten, subject, aliases_by_subject)
+        key = (class_entry.name, subject, "")
+        if key in assignment_keys or any(
+            a.class_name == class_entry.name and a.subject == subject for a in assignments
+        ):
+            continue
+        assignment_keys.add(key)
+        assignments.append(
+            Assignment(
+                class_name=class_entry.name,
+                grade=class_entry.grade,
+                subject=subject,
+                teacher="",
+                periods_per_week=periods,
+                max_periods_per_session=limit,
+                room=room,
+            )
+        )
+        periods_by_grade_subject.setdefault((class_entry.grade, subject), periods)
+        limits_by_grade_subject.setdefault((class_entry.grade, subject), limit)
+
     if skipped_unknown_class:
         warnings.append(f"Bỏ qua {skipped_unknown_class} ô phân công vì không khớp lớp.")
     if skipped_no_period:
@@ -957,7 +1065,8 @@ def build_school_data_from_ui(ui_data: dict[str, Any]) -> UiDataContext:
     if not assignments:
         raise ValueError("Chưa có phân công hợp lệ để xếp thời khóa biểu.")
 
-    teachers = sorted({assignment.teacher for assignment in assignments})
+    # "" (tiet khong giao vien) khong phai la mot giao vien cua bai toan.
+    teachers = sorted({assignment.teacher for assignment in assignments if assignment.teacher})
     subjects = sorted({assignment.subject for assignment in assignments})
     school_data = SchoolData(
         classes=[ClassInfo(name=item.name, grade=item.grade, location=item.location) for item in classes],
@@ -967,7 +1076,14 @@ def build_school_data_from_ui(ui_data: dict[str, Any]) -> UiDataContext:
         periods_by_grade_subject=periods_by_grade_subject,
         limits_by_grade_subject=limits_by_grade_subject,
     )
-    rules = _normalize_constraints(ui_data, classes, class_by_alias, alias_to_subject, teacher_lookup)
+    rules = _normalize_constraints(
+        ui_data,
+        classes,
+        class_by_alias,
+        alias_to_subject,
+        teacher_lookup,
+        rule_subject_alias=_build_ghep_rule_aliases(ui_data, alias_to_subject),
+    )
     rules, constraint_warnings = _sanitize_impossible_lesson_block_mins(school_data, rules)
     warnings.extend(constraint_warnings)
     school_data = _school_data_with_lesson_block_caps(school_data, rules)
@@ -4948,18 +5064,35 @@ def _one_period_zero_probe_proved_infeasible(solver_metrics: Mapping[str, Any]) 
     return isinstance(probe, Mapping) and str(probe.get("status_name") or "") == "INFEASIBLE"
 
 
+def _no_teacher_assignment_keys(ctx: UiDataContext) -> set[tuple[str, str]]:
+    """(lop, mon) cua cac phan cong KHONG giao vien (tiet day ghep khong GV, 02/09)."""
+
+    return {
+        (assignment.class_name, assignment.subject)
+        for assignment in ctx.school_data.assignments
+        if not _text(assignment.teacher)
+    }
+
+
 def _extract_fixed_lessons_from_tkb(ui_data: dict[str, Any], ctx: UiDataContext) -> tuple[list[Lesson], list[str]]:
     stored_result = ui_data.get("tkbSolverResult")
     stored_lessons = stored_result.get("lessons") if isinstance(stored_result, Mapping) else None
     if isinstance(stored_lessons, list):
         exact_lessons: list[Lesson] = []
+        no_teacher_keys = _no_teacher_assignment_keys(ctx)
         for item in stored_lessons:
             if not isinstance(item, Mapping):
                 continue
             class_name = _text(item.get("className") or item.get("class_name") or item.get("classId") or item.get("class_id"))
             subject = _text(item.get("subject"))
             teacher = _text(item.get("teacher"))
-            if not class_name or not subject or not teacher:
+            # 02/09: teacher "" hop le khi (lop, mon) la phan cong KHONG giao vien
+            # (tiet day ghep khong GV) — bo thi so tiet luu khong bao gio bang
+            # expected, warm-start bi vut. Cac tiet "" khac (o co dinh khong phan
+            # cong do lane Rust tra ve) van bi bo nhu truoc.
+            if not class_name or not subject:
+                continue
+            if not teacher and (class_name, subject) not in no_teacher_keys:
                 continue
             exact_lessons.append(
                 Lesson(
@@ -9474,7 +9607,10 @@ def _payload_lessons_to_lessons(payload: Mapping[str, Any] | None) -> list[Lesso
         grade = _text(row.get("grade"))
         subject = _text(row.get("subject"))
         teacher = _text(row.get("teacher"))
-        if not class_name or not subject or not teacher or day <= 0 or period <= 0 or session not in {"AM", "PM"}:
+        # 02/09: teacher "" la tiet DAY GHEP KHONG GIAO VIEN (Assignment.teacher ""),
+        # engine v3 / Rust tra ve nhu moi tiet khac — khong duoc coi la "malformed"
+        # (validate_candidate_payload) hay bi bo khoi incumbent (warm-start thieu tiet).
+        if not class_name or not subject or day <= 0 or period <= 0 or session not in {"AM", "PM"}:
             continue
         lessons.append(
             Lesson(

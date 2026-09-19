@@ -146,6 +146,27 @@
     navigateToSchool(sid);
   }
 
+  /* 04/09: mã TKB (sid) -> mã TRƯỜNG trong registry. Hộp "Chọn trường" liệt kê theo
+     sid, còn tên thật của trường nằm ở reg.schools[<mã trường>].name. */
+  function registrySchoolIdForSid(sid){
+    try{
+      const A = window.TKBAuth;
+      const reg = (A && A.loadRegistry) ? A.loadRegistry() : null;
+      const schools = (reg && reg.schools) || {};
+      const ids = Object.keys(schools);
+      for(let i = 0; i < ids.length; i++){
+        const id = ids[i];
+        if(sanitize(id) === sid) return id;
+        const school = schools[id] || {};
+        const list = Array.isArray(school.schedules) ? school.schedules : [];
+        for(let k = 0; k < list.length; k++){
+          if(sanitize(list[k] && list[k].sid) === sid) return id;
+        }
+      }
+    }catch(_){ }
+    return "";
+  }
+
   function renameSchool(sid){
     sid = sanitize(sid);
     if(!sid) return;
@@ -156,6 +177,18 @@
     if(!name){
       notify("Nhập tên hiển thị của trường.", "warning");
       return;
+    }
+    /* 04/09 (chủ dự án): trước đây nút này chỉ ghi tên vào localStorage nên tên
+       trường thật trên VPS không đổi, nạp lại registry là trở về tên cũ. Trường
+       nào có trong registry thì ghi qua updateSchoolMeta để lưu thật. */
+    const schoolId = registrySchoolIdForSid(sid);
+    const A = window.TKBAuth;
+    if(schoolId && A && A.updateSchoolMeta){
+      const res = A.updateSchoolMeta(schoolId, { name });
+      if(!res || !res.ok){
+        notify((res && res.message) || "Không cập nhật được tên trường.", "error");
+        return;
+      }
     }
     setName(sid, name);
     if(getCurrentSchoolId() === sid){

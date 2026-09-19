@@ -1,6 +1,6 @@
 # TKBCherry — Phần mềm xếp thời khóa biểu
 
-Ứng dụng web cho trường học: nhập danh mục, phân công (PCCM), ràng buộc, sắp xếp TKB tự động, chỉnh tay, xuất Excel/Word. Production chạy solver trên Cloud Run và tự dự phòng qua VPS; trình duyệt chỉ gửi dữ liệu, theo dõi job và nhận kết quả.
+Ứng dụng web cho trường học: nhập danh mục, phân công (PCCM), dạy ghép (nhiều giáo viên cùng dạy một tiết), ràng buộc, sắp xếp TKB tự động, chỉnh tay, xuất Excel/Word. Production chạy solver trên Cloud Run và tự dự phòng qua VPS; trình duyệt chỉ gửi dữ liệu, theo dõi job và nhận kết quả.
 
 ## Chạy ứng dụng
 
@@ -138,7 +138,37 @@ python -m PyInstaller --onefile --windowed --name start .\start.py
 
 ## Kiểm tra regression
 
-Xem [docs/REGRESSION_CHECKLIST.md](docs/REGRESSION_CHECKLIST.md) để test thủ công sau khi chỉnh sửa.
+```
+python run_tests.py            # chạy toàn bộ test của dự án bằng một lệnh
+python run_tests.py --list     # xem các nhóm test
+python run_tests.py -v         # in log của test mới hỏng
+```
+
+`run_tests.py` gom 4 thư mục test (`tools/tests`, `e2e_tests`, `solver_runtime/tests`,
+`tests`) và tự lo phần lắt nhắt: `PYTHONPATH` cho solver, `node --test` cho e2e,
+bỏ qua các file cần `pytest` nếu máy chưa cài. Sau mỗi lần chạy nó đối chiếu với
+mốc chuẩn `docs/test-baseline.json` và **chỉ báo đỏ khi có test MỚI hỏng** — các
+test hỏng sẵn không làm nhiễu.
+
+Ba test e2e cần backend đang chạy: mở `python start.py` trước rồi thêm `--with-backend`.
+
+Cập nhật mốc chuẩn sau khi vá được test: `python run_tests.py --save-baseline`
+
+Xem thêm [docs/REGRESSION_CHECKLIST.md](docs/REGRESSION_CHECKLIST.md) để test thủ công.
+
+## Tìm code ở đâu
+
+59% code nằm trong 6 file từ 9k đến 27k dòng. Mục lục:
+[docs/CODE_MAP.md](docs/CODE_MAP.md) — sinh lại bằng `python tools/make-code-map.py`.
+
+## Deploy
+
+```
+python deploy.py --help        # xem các lệnh
+python deploy.py cloudrun      # deploy Cloud Run trọn gói
+python deploy.py web           # đẩy nhanh web + solver lên VPS
+python deploy.py files <file>  # đẩy từng file (có backup, không đụng DB)
+```
 
 ## Lưu trữ dữ liệu
 
@@ -153,11 +183,12 @@ Xem [docs/REGRESSION_CHECKLIST.md](docs/REGRESSION_CHECKLIST.md) để test th�
 - **Bấm lại khi lịch đã đủ:** dùng lịch hiện tại đã tái kiểm định làm incumbent và tối ưu tiếp; không trả về metrics cũ nếu incumbent không còn hợp lệ.
 - Mỗi lần chạy có thể tìm nghiệm khác. Solver không khóa cứng lịch cũ và không lấy cache/hint chưa kiểm định làm kết quả.
 
-Menu **Tối ưu** tách ba mục tiêu cho người dùng thường: **1 tiết/buổi**, **1 tiết trống**, **2 tiết trống**. Mỗi lệnh chỉ tập trung vào đúng chỉ số đã chọn. Mục **Buổi** tổng quát chỉ hiện với superadmin để phục vụ vận hành và chẩn đoán.
+Menu **Tối ưu v3** (engine v3 trên máy chủ) có 4 mục tiêu riêng lẻ: **1 tiết/buổi**, **Buổi dạy**, **2 tiết trống**, **1 tiết trống** — mỗi lệnh chỉ tối ưu đúng chỉ số đã chọn trên lịch đang có, các chỉ số khác không được xấu đi. Menu **Tối ưu** cũ chạy bộ tối ưu FET trong trình duyệt đã **gỡ hẳn 03/09/2026** (chủ dự án: "nút đó hơi phế"); nút ▶ vẫn là FET xếp nhanh.
 
 ## Ghi chú kỹ thuật
 
 - Thuật toán FET Client & Optimizer: `web/pages/tkb-fet-engine.js`, `web/pages/tkb-fet-worker.js`
 - Ràng buộc & Menu: `web/pages/tkb-constraints.js`, `web/pages/tkb-constraints-menu.js`
 - Bridge solver UI: `web/pages/tkb-rust-bridge.js`
+- Engine Cherry (nút 🍒 + menu Tối ưu v3): `solver_runtime/src/tkb_engine_v3/`, tài liệu [docs/CHERRY_ENGINE.md](docs/CHERRY_ENGINE.md)
 - Chi tiết kế thừa & bàn giao: Xem [`PROJECT_INHERITANCE_GUIDE.md`](PROJECT_INHERITANCE_GUIDE.md)

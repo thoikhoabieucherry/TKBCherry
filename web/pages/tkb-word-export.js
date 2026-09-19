@@ -164,11 +164,14 @@
     try{ return safe(getMonShort(mon)); }catch(_){ return safe(mon); }
   }
 
+  // 28/08: ô thuộc dòng dạy ghép hiện nhãn thống nhất của dòng (tkbMonLabel), còn lại là mã môn.
   function lessonText(lopCanon, raw){
     if(!raw || raw === 'OFF') return '';
     let mon = '';
     try{ mon = safe(cellMon(raw)); }catch(_){ mon = safe(raw?.mon || raw); }
-    return mon ? monShort(mon) : '';
+    if(!mon) return '';
+    try{ if(typeof tkbMonLabel === 'function'){ const label = safe(tkbMonLabel(lopCanon, mon)); if(label) return label; } }catch(_){ }
+    return monShort(mon);
   }
 
   function classSchedulePayload(){

@@ -55,6 +55,8 @@ def test_all_vps_entrypoints_use_the_shared_credential_resolver() -> None:
         "stage-tests.py",
         "update-deploy.py",
         "deploy.py",
+        # 27/08/2026: chuyen tu goc repo (deploy_web_quick.py) vao day.
+        "deploy-web-quick.py",
         "backup-full.py",
         "test-rust.py",
         "check-auth.py",

@@ -613,6 +613,9 @@
       const classCanon = lop.ten2 || lop.ten || classId;
       const key1 = `${classId}|${mon}`;
       const key2 = `${classCanon}|${mon}`;
+      // 02/09: tiết ghép KHÔNG giáo viên — không được rơi xuống nhánh tra theo canon
+      // (khoá ghép là bí danh của môn gốc khi tra luật -> sẽ lấy nhầm GV của môn gốc).
+      if(this.isNoTeacherGhepSubject(lop, mon)) return "";
       let val = data.pccmMatrix?.[key1] || data.pccmMatrix?.[key2] || data.tkbLessonTeachers?.[key1] || data.tkbLessonTeachers?.[key2] || "";
       if(!val){
         const norm = this.normalizeMonName(mon);
@@ -809,8 +812,9 @@
       const data = this.data || {};
       const monhoc = Array.isArray(data.monhoc) ? data.monhoc : [];
       const mon = Array.isArray(data.mon) ? data.mon : [];
+      const ghep = Array.isArray(data.dayGhep) ? data.dayGhep : null;
       const cached = this.__monAliasIndex;
-      if(cached && cached.monRef === mon && cached.monhocRef === monhoc) return cached;
+      if(cached && cached.monRef === mon && cached.monhocRef === monhoc && cached.ghepRef === ghep) return cached;
 
       const norm = value => this.removeDiacritics(String(value == null ? "" : value))
         .replace(/\s+/g, " ")
@@ -844,6 +848,20 @@
         keys.forEach(addKey);
         keys.forEach(k => union(keys[0], k));
       });
+      // 31/08: khoá dòng DẠY GHÉP (modules/day-ghep.js: row.ten) là bí danh của môn gốc row.mon[0]
+      // KHI TRA LUẬT (tiết đôi, nghỉ cố định môn, giới hạn/buổi, gom cùng môn trong buổi). act.mon vẫn
+      // là khoá ghép nên ô TKB / GV / số tiết của dòng không đổi (chủ dự án: "yêu cầu môn học chỉ cần
+      // cho môn gốc, không tạo ra một list môn mới theo tên viết tắt").
+      const ghepPairs = [];
+      (ghep || []).forEach(row => {
+        if(!row || typeof row !== "object") return;
+        const ten = norm(row.ten);
+        const mons = Array.isArray(row.mon) ? row.mon : String(row.mon == null ? "" : row.mon).split(/[,;]+/);
+        const base = norm((mons || []).map(x => String(x == null ? "" : x).trim()).find(Boolean) || "");
+        if(!ten || !base || ten === base) return;
+        const tenStem = ten.replace(/\s+\d+$/, "");   // getCanonMonKey bỏ " <số>" cuối trước khi tra
+        Array.from(new Set([ten, tenStem])).filter(Boolean).forEach(k => { union(base, k); ghepPairs.push([k, base]); });
+      });
       const aliasToCanonical = new Map();
       records.forEach(rec => {
         const keys = keysOf(rec);
@@ -851,9 +869,41 @@
         const canonical = find(keys[0]) || keys[0];
         keys.forEach(k => aliasToCanonical.set(k, canonical));
       });
+      ghepPairs.forEach(([k, base]) => { aliasToCanonical.set(k, aliasToCanonical.get(base) || find(base) || base); });
 
-      this.__monAliasIndex = {monRef: mon, monhocRef: monhoc, aliasToCanonical};
+      this.__monAliasIndex = {monRef: mon, monhocRef: monhoc, ghepRef: ghep, aliasToCanonical};
       return this.__monAliasIndex;
+    }
+
+    // 02/09: (lớp, khoá môn) thuộc một dòng Dạy ghép KHÔNG giáo viên (modules/day-ghep.js gv:[])?
+    // Tiết đó vẫn phải xếp cho lớp (chiếm ô lớp, tránh ô nghỉ, luật môn gốc) nhưng không có GV nào:
+    // act.gv = "" -> teacherGrid không ghi, không trùng giờ / không tính buổi dạy của ai.
+    isNoTeacherGhepSubject(lop, mon){
+      const rows = Array.isArray(this.data?.dayGhep) ? this.data.dayGhep : null;
+      if(!rows || !rows.length) return false;
+      const monLow = String(mon == null ? "" : mon).trim().toLowerCase();
+      if(!monLow) return false;
+      const cached = this.__noTeacherGhepIndex;
+      let index = cached && cached.ref === rows ? cached.index : null;
+      if(!index){
+        index = new Map();   // khoá (chữ thường) -> Set tên lớp (chữ thường)
+        rows.forEach(row => {
+          if(!row || typeof row !== "object") return;
+          const gv = Array.isArray(row.gv) ? row.gv : String(row.gv == null ? "" : row.gv).split(/[,;+\n]+/);
+          if(gv.some(x => String(x == null ? "" : x).trim())) return;
+          const ten = String(row.ten == null ? "" : row.ten).trim().toLowerCase();
+          if(!ten) return;
+          const classes = Array.isArray(row.lop) ? row.lop : String(row.lop == null ? "" : row.lop).split(/[,;]+/);
+          const set = index.get(ten) || new Set();
+          classes.forEach(c => { const t = String(c == null ? "" : c).trim().toLowerCase(); if(t) set.add(t); });
+          index.set(ten, set);
+        });
+        this.__noTeacherGhepIndex = {ref: rows, index};
+      }
+      const classSet = index.get(monLow);
+      if(!classSet || !classSet.size) return false;
+      const names = [lop?.id, lop?.ten, lop?.ten2].map(v => String(v == null ? "" : v).trim().toLowerCase()).filter(Boolean);
+      return names.some(n => classSet.has(n));
     }
 
     getCanonMonKey(mon){
@@ -1133,8 +1183,10 @@
                 const room = this.getRoomForClassMon(lop, m);
                 const required = this.getRequiredPeriods(lop, m);
                 const maxSessionLimit = this.getSubjectSessionLimit(lop, m);
-                if(gv){
-                  subjectMap.set(mKey, { mon: m, canonKey: this.getCanonMonKey(m), gv, room, required, maxSessionLimit, exactFixed: 0, remain: required });
+                // 02/09: dòng Dạy ghép KHÔNG giáo viên (gv:[]) — tiết thật của lớp, không chiếm ai.
+                const noTeacher = !gv && this.isNoTeacherGhepSubject(lop, m);
+                if(gv || noTeacher){
+                  subjectMap.set(mKey, { mon: m, canonKey: this.getCanonMonKey(m), gv: gv || "", room, required, maxSessionLimit, exactFixed: 0, remain: required, noTeacher });
                 }
               }
             }
@@ -1159,7 +1211,7 @@
           const gv = item.gv;
           const room = item.room;
 
-          if(!gv) return;
+          if(!gv && !item.noTeacher) return;
 
           const sCanon = item.canonKey || this.getCanonMonKey(item.mon);
           const blockDurs = [];

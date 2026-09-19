@@ -1,6 +1,6 @@
 # Thuật toán xử lý "Trống 2 tiết" (optimize_gap2)
 
-*Tài liệu mô tả đúng theo mã nguồn `web/pages/tkb-fet-engine.js` hiện hành (bản 17/08/2026). Đây là thuật toán chạy khi bấm nút **Tối ưu → 2 tiết trống**, và cũng là giai đoạn gap2 bên trong nút **Tối ưu tất cả**.*
+*Tài liệu mô tả đúng theo mã nguồn `web/pages/tkb-fet-engine.js` hiện hành (bản 17/08/2026). Đây là thuật toán từng chạy khi bấm nút **Tối ưu → 2 tiết trống**, và cũng là giai đoạn gap2 bên trong nút **Tối ưu tất cả**. **03/09/2026: menu Tối ưu FET đã gỡ khỏi giao diện** (chỉ còn ▶ FET xếp nhanh + Cherry + Tối ưu v3); mã optimize_gap2 vẫn nằm trong `tkb-fet-engine.js` nhưng không còn nút nào gọi tới — tài liệu giữ lại để tham khảo thuật toán.*
 
 ---
 

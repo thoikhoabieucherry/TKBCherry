@@ -16,9 +16,10 @@ from `docs/PROJECT_HANDOFF.md` into `docs/archive/PROJECT_HANDOFF_<date-range>.m
 so the live file stays small enough to read in one pass.
 
 Commit work to git and push to `origin` (GitHub) regularly — at least once per
-work session. CI (`.github/workflows/tests.yml`) runs the Python solver tests,
-the serverless Node test suites, and Rust check/test on every push and pull
-request; keep it green.
+work session. There is no GitHub test CI (the old workflow lived outside
+`.github/workflows/` and never ran; removed 28/08/2026). Run `python run_tests.py`
+before committing — it compares against `docs/test-baseline.json` and fails only
+on NEW breakage. GitHub still runs `security.yml` (secret scan + CodeQL) and Dependabot.
 
 Never store passwords, tokens, cookies, or bearer credentials in this repository.
 VPS scripts read secrets from environment variables such as `TKB_VPS_PASSWORD`.

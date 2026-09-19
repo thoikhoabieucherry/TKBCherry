@@ -52,11 +52,19 @@ Thumbs.db
 # 26/08/2026 — DU LIEU THAT CUA TRUONG khong bao gio duoc dua vao git.
 # scratch/live_default.json (129 GV) va scratch/school_95671c41791.json (100 GV)
 # da lo tren repo CONG KHAI truoc do; tu nay chan tan goc.
-scratch/school_*.json
-scratch/live_*.json
-scratch/*_result.json
-scratch/*_stuck.json
-scratch/*_bench_result.json
+# 27/08/2026 - sieu chat: MOI file .json trong scratch/ deu la ban dump trang
+# thai that cua truong (danh sach GV, lop, TKB). Chan ca thu muc thay vi liet ke
+# tung mau ten, vi cach cu de lot (default_school_*.json, dongkhoi_*.json,
+# temp_data.json, test_state_*.json ... da bi theo git cho toi 27/08).
+scratch/*.json
+# 28/08/2026 - bo theo doi ca thu muc scratch/: 439 script phan tich mot lan, nhieu
+# cai doc JSON da xoa bang duong dan tuyet doi may cu. File van nam tren dia.
+scratch/
+# 19/09/2026 - scratchpad/ la dump TKB that + script xep mot lan (school_*.json).
+# Giong scratch/: khong bao gio dua len git.
+scratchpad/
+# Output tu sinh cua tools/cloud-run/deploy-all.py (url + digest), loi thoi sau moi lan deploy
+cloud_run_profile_moi_nhat.txt
 TEMP/
 temp/
 *.xlsx

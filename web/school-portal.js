@@ -144,6 +144,9 @@
   function renderEmailVerify(){
     const card = document.getElementById("emailVerifyCard");
     if(!card) return;
+    // 04/09: thẻ này xác thực email của TÀI KHOẢN ĐANG ĐĂNG NHẬP. Superadmin xem
+    // portal của trường khác thì không có gì để xác thực ở đây -> ẩn hẳn.
+    if(isSuperadminView){ card.hidden = true; return; }
     const verified = user.emailVerified === true;
     card.hidden = verified;
     if(verified) return;
@@ -264,19 +267,32 @@
 
   let editingAccount = false;
 
+  /* 04/09: superadmin mở /school-portal?school=<id> của trường KHÁC thì `loginId`
+     và `user` vẫn là tài khoản suadmin — các ô Email / SĐT / Mật khẩu ở thẻ này là
+     của SUADMIN chứ không phải của trường đang xem (đổi mật khẩu ở đây sẽ đổi mật
+     khẩu suadmin!). Vì vậy khi xem bằng superadmin: chỉ hiện & cho sửa TÊN TRƯỜNG,
+     phần liên hệ hiển thị theo tài khoản chủ trường và để chủ trường tự đổi. */
+  function portalOwner(){
+    if(!isSuperadminView) return user;
+    const ownerId = String(school.ownerLoginId || "");
+    return (ownerId && reg.users && reg.users[ownerId]) || null;
+  }
+
   function renderAccountInfo(){
     refreshUserSchool();
     if(editingAccount){ renderAccountEdit(); return; }
     const editBtn = document.getElementById("btnEditAccount");
     if(editBtn){ editBtn.hidden = false; editBtn.textContent = "Chỉnh sửa"; }
-    const emailStatus = user.emailVerified
+    const shown = portalOwner() || user;
+    const shownLogin = isSuperadminView ? (school.ownerLoginId || "-") : loginId;
+    const emailStatus = shown.emailVerified
       ? '<span style="color:#4ade80">Đã xác thực</span>'
       : '<span style="color:#fbbf24">Chưa xác thực</span>';
     document.getElementById("accountInfo").innerHTML = `
       <div><span class="portal-muted">Tên trường</span><div>${esc(school.name || "-")}</div></div>
-      <div><span class="portal-muted">Tên đăng nhập</span><div>${esc(loginId)}</div></div>
-      <div><span class="portal-muted">Email</span><div>${esc(user.email || school.ownerEmail)} · ${emailStatus}</div></div>
-      <div><span class="portal-muted">Số điện thoại</span><div>${esc(A.formatPhone ? A.formatPhone(user.phone || school.ownerPhone) : (user.phone || school.ownerPhone || "-"))}</div></div>
+      <div><span class="portal-muted">Tên đăng nhập</span><div>${esc(shownLogin)}</div></div>
+      <div><span class="portal-muted">Email</span><div>${esc(shown.email || school.ownerEmail)} · ${emailStatus}</div></div>
+      <div><span class="portal-muted">Số điện thoại</span><div>${esc(A.formatPhone ? A.formatPhone(shown.phone || school.ownerPhone) : (shown.phone || school.ownerPhone || "-"))}</div></div>
       <div><span class="portal-muted">Mã trường</span><div>${esc(schoolId)}</div></div>
       <div><span class="portal-muted">Hết hạn gói</span><div>${esc(A.effectivePlan(school).unlimited ? "Unlimited" : A.formatDate(school.expiresAt))}</div></div>
     `;
@@ -285,6 +301,22 @@
   function renderAccountEdit(){
     const editBtn = document.getElementById("btnEditAccount");
     if(editBtn) editBtn.hidden = true;
+    if(isSuperadminView){
+      document.getElementById("accountInfo").innerHTML = `
+        <div class="portal-field"><label>Tên trường<input type="text" id="accSchoolName" value="${esc(school.name || "")}" /></label></div>
+        <div class="portal-field"><label>Mã trường (không sửa được)<input value="${esc(schoolId)}" disabled readonly autocomplete="off" /></label></div>
+        <div class="portal-field" style="grid-column:1/-1">
+          <span class="portal-muted">Email, số điện thoại và mật khẩu thuộc tài khoản ${esc(school.ownerLoginId || "chủ trường")} — chủ trường tự đổi trong trang này khi đăng nhập bằng tài khoản đó.</span>
+        </div>
+        <div class="portal-field" style="grid-column:1/-1;display:flex;gap:10px;flex-wrap:wrap">
+          <button type="button" class="portal-btn primary" id="btnSaveAccount">Lưu thay đổi</button>
+          <button type="button" class="portal-btn" id="btnCancelAccount">Hủy</button>
+        </div>
+      `;
+      document.getElementById("btnSaveAccount").onclick = saveAccount;
+      document.getElementById("btnCancelAccount").onclick = () => { editingAccount = false; renderAccountInfo(); };
+      return;
+    }
     const verified = user.emailVerified === true;
     const email = user.email || school.ownerEmail || "";
     const phone = user.phone || school.ownerPhone || "";
@@ -308,26 +340,34 @@
   }
 
   async function saveAccount(){
-    const emailEl = document.getElementById("accEmail");
-    const phone = document.getElementById("accPhone").value;
-    const patch = { phone };
-    if(emailEl && !emailEl.disabled) patch.email = emailEl.value;
-    const res = A.updateAccountContact(loginId, patch);
-    if(!res.ok){ alert(res.message); return; }
+    /* 04/09: LƯU TÊN TRƯỜNG TRƯỚC. Trước đây hàm này gọi updateAccountContact()
+       ngay dòng đầu rồi `return` khi lỗi; với suadmin hàm đó LUÔN trả
+       "Không được phép." (auth.js chỉ cho role school_admin) nên tên trường
+       không bao giờ được lưu — đúng lỗi chủ dự án gặp khi đổi tên trường. */
     const nameEl = document.getElementById("accSchoolName");
     const newName = nameEl ? String(nameEl.value || "").trim() : "";
     if(newName && newName !== school.name){
       const nres = A.updateSchoolMeta(schoolId, { name: newName });
-      if(!nres.ok){ alert(nres.message); return; }
+      if(!nres || !nres.ok){ alert((nres && nres.message) || "Không cập nhật được tên trường."); return; }
       school.name = newName;
     }
-    const pwd = document.getElementById("accPwd").value;
-    const pwd2 = document.getElementById("accPwd2").value;
-    if(pwd){
-      if(pwd.length < 6){ alert("Mật khẩu mới tối thiểu 6 ký tự."); return; }
-      if(pwd !== pwd2){ alert("Mật khẩu nhập lại không khớp."); return; }
-      const pres = await A.updateUserPassword(loginId, pwd);
-      if(!pres.ok){ alert(pres.message); return; }
+    if(!isSuperadminView){
+      const emailEl = document.getElementById("accEmail");
+      const phoneEl = document.getElementById("accPhone");
+      const patch = { phone: phoneEl ? phoneEl.value : "" };
+      if(emailEl && !emailEl.disabled) patch.email = emailEl.value;
+      const res = A.updateAccountContact(loginId, patch);
+      if(!res.ok){ alert(res.message); return; }
+      const pwdEl = document.getElementById("accPwd");
+      const pwd2El = document.getElementById("accPwd2");
+      const pwd = pwdEl ? pwdEl.value : "";
+      const pwd2 = pwd2El ? pwd2El.value : "";
+      if(pwd){
+        if(pwd.length < 6){ alert("Mật khẩu mới tối thiểu 6 ký tự."); return; }
+        if(pwd !== pwd2){ alert("Mật khẩu nhập lại không khớp."); return; }
+        const pres = await A.updateUserPassword(loginId, pwd);
+        if(!pres.ok){ alert(pres.message); return; }
+      }
     }
     editingAccount = false;
     refreshUserSchool();
@@ -335,7 +375,7 @@
     renderEmailVerify();
     renderAccountChip();
     renderAccountModalSub();
-    alert("Đã lưu thông tin tài khoản.");
+    alert(isSuperadminView ? "Đã lưu tên trường." : "Đã lưu thông tin tài khoản.");
   }
 
   document.getElementById("btnEditAccount")?.addEventListener("click", () => {
@@ -539,9 +579,9 @@
       banner = `<div class="portal-trial-banner is-expired">Gói Trial đã hết hạn, tài khoản đang ở gói Free. Nâng cấp Plus hoặc Max để dùng đầy đủ tính năng.</div>`;
     }else if(current === "free" && !user.emailVerified && !school.trialUsed){
       // 22/08: kích hoạt = cấp gói Max 2 dùng thử (A.ACTIVATION_GRANT) thay vì Trial.
-      const grant = A.ACTIVATION_GRANT || {planId: "max2", durationDays: 30};
+      const grant = A.ACTIVATION_GRANT || {planId: "max2", durationDays: 365};
       const grantLabel = (A.PLANS?.[grant.planId] || {}).label || "Max 2";
-      banner = `<div class="portal-trial-banner is-active">Xác thực email để nhận ngay <strong>${esc(String(grant.durationDays || 30))} ngày gói ${esc(grantLabel)} miễn phí</strong> (không giới hạn lớp và lượt xếp).</div>`;
+      banner = `<div class="portal-trial-banner is-active">Xác thực email để nhận ngay <strong>${esc(String(grant.durationDays || 365))} ngày gói ${esc(grantLabel)} miễn phí</strong> (không giới hạn lớp và lượt xếp).</div>`;
     }
     root.classList.toggle("has-plan-banner", Boolean(banner));
     const planCards = ["free", "plus", "max"].map(id => A.PLANS[id]).filter(Boolean).map(p => {

@@ -1,14 +1,13 @@
 # Bản giao việc: deploy TKBCherry lên Cloud Run (dành cho Antigravity)
 
-> Mục tiêu: đưa bản solver mới (đã có 2 thuật toán **Cherry** và **Flash**) lên Cloud Run,
+> Mục tiêu: đưa bản solver mới (có thuật toán **Cherry**, engine v3) lên Cloud Run,
 > rồi khai báo lại profile cho ứng dụng. **Không sửa thuật toán, không sửa deploy.ps1.**
 
 ## 0. Bối cảnh (đọc trước khi làm)
-- Repo: `C:\Users\Love\Documents\Codex\TKBCherry`
-- Mới thêm: `solver_runtime/src/tkb_engine_v3/**` (Cherry, thuần Python) và
-  `solver_runtime/src/tkb_optimizer_ref/unified_cpsat_solver.py` (Flash, CP-SAT, cần `ortools`).
-- `solve_stdio.py` định tuyến theo `settings.engine`: `cherry` → Cherry, `flash` → Flash, để trống → bộ giải cũ.
-- Gói build của Cloud Run tự lấy **mọi file .py trong `solver_runtime/src`** ⇒ hai engine tự động vào image, KHÔNG cần sửa Dockerfile.
+- Repo: thư mục gốc của dự án (chứa `deploy.py`, `start.py`).
+- Engine: `solver_runtime/src/tkb_engine_v3/**` (Cherry, thuần Python; lane *1 tiết trống* / *Buổi dạy* dùng thêm CP-SAT LNS cần `ortools`).
+- `solve_stdio.py` định tuyến theo `settings.engine`: `cherry` → Cherry, để trống → bộ giải cũ.
+- Gói build của Cloud Run tự lấy **mọi file .py trong `solver_runtime/src`** ⇒ engine tự động vào image, KHÔNG cần sửa Dockerfile.
 - Cấu hình dịch vụ: region `asia-southeast2`, service `tkb-solver`, 6 vCPU / 4 GiB, timeout 300s, trần solver 285s, max instances 3, luôn `--no-allow-unauthenticated`.
 
 ## 1. Điều kiện tiên quyết (kiểm tra, đừng bỏ qua)
@@ -68,10 +67,10 @@ Việc phải làm:
    VPS cần danh tính ADC có `roles/run.invoker` trên đúng service này (Workload Identity Federation ưu tiên).
 
 ## 5. Nghiệm thu
-- Mở ứng dụng, bấm lần lượt **▶ Sắp xếp**, **🍒 Cherry**, **⚡ Flash** trên cùng một dữ liệu.
-- Kỳ vọng: cả ba đều trả lịch, không báo lỗi; Flash nhanh nhất (~25–90s), Cherry ~50–260s.
-- Log đối chiếu: `Cherry/logs/cherry-last.json`, `Flash/logs/flash-last.json`, tiến trình realtime `temp/solver_live.log`.
-- Nếu Flash báo `flash_fallback_reason` = thiếu `ortools` ⇒ image build sai, kiểm tra lại `solver_runtime/requirements.txt` (phải có `ortools==9.15.6755`).
+- Mở ứng dụng, bấm lần lượt **▶ Sắp xếp** và **🍒 Cherry** trên cùng một dữ liệu.
+- Kỳ vọng: cả hai đều trả lịch, không báo lỗi; Cherry chạy trọn ngân sách 90s.
+- Log đối chiếu: `solver_runtime/logs/cherry-last.json` (marker mỗi lượt Cherry), tiến trình realtime `temp/solver_live.log`.
+- Nếu payload báo `cherry_fallback_reason` ⇒ engine v3 lỗi và đã rơi về bộ giải cũ; đọc lý do trong payload trước khi chuyển traffic.
 
 ## 6. Rollback thủ công (nếu cần)
 ```powershell

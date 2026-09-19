@@ -80,6 +80,7 @@ _TEACHER_FIELDS_ENCODED = frozenset(
         "loc_one",
         "loc_gap",
         "loc_move",
+        "loc_breaks",
     }
 )
 # Truong SubjectRule ma model ma hoa duoc (core.py 79-94). part_banned da nam
@@ -249,12 +250,19 @@ def build_and_solve(
     frozen_teachers: Iterable[int] | None = None,
     require_improve: bool = True,
     log: bool = False,
+    sessions: Iterable[int] | None = None,
 ) -> tuple[dict[tuple[int, int], int] | None, dict[str, Any]]:
     """Xep lai cac o tu do cua ``classes`` bang CP-SAT theo hop dong ``lane``.
 
     Tra ve (new_cells, info): new_cells = {(lop, o): phan cong} cho MOI o tu do
     cua cluster, hoac None (khong co loi giai cai thien / du lieu khong ma
     hoa duoc -> info["error"]). Khong bao gio nem loi vi du lieu.
+
+    ``sessions`` (11/09): neu cho, CHI cac o thuoc nhung buoi nay (0..11, buoi =
+    o // PERIODS) la tu do; o cua lop trong cluster o buoi khac la hang so.
+    Dung cho vung lan can "nguyen buoi toan truong" (classes = moi lop, 2 buoi):
+    tiet trong / buoi le cua GV nam rai o nhieu lop trong CUNG mot buoi, vung
+    theo cum lop khong voi toi duoc.
     """
 
     t0 = time.monotonic()
@@ -299,6 +307,7 @@ def build_and_solve(
             bool(log),
             info,
             t0,
+            sessions,
         )
     except Exception as exc:  # du lieu la -> bao loi, khong nem
         info["status"] = "ERROR"
@@ -322,8 +331,16 @@ def _build_and_solve(
     log: bool,
     info: dict[str, Any],
     t0: float,
+    sessions: Iterable[int] | None = None,
 ) -> tuple[dict[tuple[int, int], int] | None, dict[str, Any]]:
     C = P.num_classes()
+    sess_set: set[int] | None = None
+    if sessions is not None:
+        sess_set = {int(s) for s in sessions if 0 <= int(s) < NUM_SESSIONS}
+        info["sessions"] = sorted(sess_set)
+        if not sess_set:
+            info["error"] = "empty sessions"
+            return None, info
     T = P.num_teachers()
     A = P.num_assignments()
     a_teachers = _a_teachers(P)
@@ -383,6 +400,8 @@ def _build_and_solve(
         for x in range(NUM_SLOTS):
             ai = row[x]
             if ai < 0 or _is_const(c, x, ai):
+                continue
+            if sess_set is not None and (x // PERIODS) not in sess_set:
                 continue
             if P.a_class[ai] != c:
                 info["error"] = "cell (%d,%d) holds assignment %d of another class" % (c, x, ai)

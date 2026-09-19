@@ -283,6 +283,16 @@ try{
 }catch(e){
   console.warn("Remote store preload failed", e);
 }
+// 31/08: nếu lần nạp kho lúc mở trang THẤT BẠI (503 / mất mạng / hết phiên) thì DATA bên dưới chỉ là
+// vỏ rỗng. Trước đây planner vẫn lưu ngay khi mở → ghi đè kho của trường bằng bản trống (trường
+// fiwemj2uyk1, 31/08 20:17, mất 81 GV + 1266 tiết đã xếp). storage.js đã chặn ở đường lưu async
+// (remoteSaveGuard); cờ này báo cho người dùng và chặn thêm đường XHR đồng bộ trong saveStore.
+const __TKB_REMOTE_LOAD_FAILED = !!(window.TKBStorage && typeof window.TKBStorage.remoteLoadStateOf === "function"
+  && schoolParam && window.TKBStorage.remoteLoadStateOf(schoolParam) === "failed");
+if(__TKB_REMOTE_LOAD_FAILED){
+  const __showGuard = () => { try{ window.TKBStorage.showStoreGuardBanner("Không nạp được dữ liệu trường từ máy chủ (mạng/máy chủ lỗi hoặc hết phiên đăng nhập). Trang này sẽ KHÔNG lưu gì để tránh ghi đè kho — hãy tải lại trang."); }catch(_){ } };
+  if(document.body) __showGuard(); else document.addEventListener("DOMContentLoaded", __showGuard);
+}
 
 let __plannerKv = null;
 function plannerDbName(){
@@ -404,6 +414,9 @@ if (typeof schoolParam !== "undefined" && schoolParam && !(window.TKBStorage && 
             localStorage.setItem(PRIMARY_STORE_KEY, remoteDataStr);
           }
           DATA = remoteData;
+          try { tkbNormalizeDataNFC(DATA); } catch(_) {}   // 31/08: NFC trước khi dùng
+          try { tkbJointClearStalePins(); } catch(_) {}    // 31/08: ghim tạm còn sót từ lượt giải dở
+          try { tkbJointTakeSnapshot(); } catch(_) {}   // 29/08: ảnh chụp tiết chung theo dữ liệu vừa nạp
           try { renderCurrentView(); } catch(_) {}
           try { loadMonList(); } catch(_) {}
         }
@@ -449,6 +462,7 @@ try{
         if(!DATA.pccmTietMatrix) DATA.pccmTietMatrix = {};
         if(!DATA.pccmGioihanMatrix) DATA.pccmGioihanMatrix = {};
         if(!DATA.tkbUserOff || typeof DATA.tkbUserOff !== "object") DATA.tkbUserOff = {};
+        try{ if(typeof tkbJointTakeSnapshot === "function") tkbJointTakeSnapshot(); }catch(_){ }   // 29/08 tiết chung
       }
     });
   }else{
@@ -492,6 +506,10 @@ let dragMon = "";      // tên môn đang kéo
 // luot keo, DATA khong doi nen ket qua validate cua tung o giu nguyen: cache theo
 // td, xoa khi bat dau/ket thuc keo (applyDragVisual/clearDragVisual).
 const DRAG_VALIDATE_CACHE = new Map(); // td -> ket qua validate cua luot keo hien tai
+// 13/09: ke hoach doi cho khi tha de (tkbDropSwapPlan) cua luot keo hien tai; bang lop va
+// bang GV cung o dich dung chung mot ke hoach. Xoa cung luc voi DRAG_VALIDATE_CACHE.
+const DRAG_SWAP_PLAN_CACHE = new Map();
+const DRAG_SWAP_PAINT_BUDGET_MS = 150;
 
 // Cache tiết chuẩn theo lớp đang chọn
 let CURRENT_MONS = [];         // [{ten,sotiet,gioihan}]
@@ -750,9 +768,24 @@ function remapPlannerClassObjectMap(obj, idRemap, validIds){
   return changed;
 }
 
+// 31/08: Chuẩn hoá Unicode NFC tại chỗ (shared/storage.js normalizeUnicodeNFC): mã/tên GV dán từ
+// Mac/Excel ở dạng NFD ("Hà" = "Ha" + U+0300) không khớp chuỗi NFC app sinh trong phân công →
+// "ĐP.Hà" hiện 2 lần ở danh sách GV (vị trí thật trống, bản trùng mã nằm cuối). Chạy ở mọi điểm
+// nạp dữ liệu và trước mỗi lần lưu; KHÔNG tính là "thay đổi" để không ép lưu ngay lúc tải trang.
+function tkbNormalizeDataNFC(root){
+  const fn = window.TKBStorage && window.TKBStorage.normalizeUnicodeNFC;
+  if(typeof fn !== "function") return false;
+  return !!fn(root);
+}
+function tkbNFC(value){
+  const str = (value ?? "").toString();
+  return (typeof str.normalize === "function") ? str.normalize("NFC") : str;
+}
+
 function sanitizePlannerDataFromIndex(){
   let changed = false;
   if(!DATA || typeof DATA !== "object") return false;
+  try{ tkbNormalizeDataNFC(DATA); }catch(_){ }
   if(!Array.isArray(DATA.lop)) DATA.lop = [];
 
   const validClassIds = new Set((DATA.lop || []).map(l=>String(l?.id || "").trim()).filter(Boolean));
@@ -799,53 +832,6 @@ function normKey(s){
   return normText(s).toLowerCase();
 }
 
-// Migration: bỏ mặc định "Chào cờ" / "SHL" (nếu dữ liệu cũ còn)
-function migrateRemoveLegacyDefaultFixedEvents(){
-  let changed = false;
-
-  // 1) dọn trong config.fixed
-  try{
-    const cfg = DATA.tkbConfig;
-    if(cfg && Array.isArray(cfg.fixed)){
-      const before = cfg.fixed.length;
-      cfg.fixed = cfg.fixed.filter(f=>{
-        const ten = (f?.ten||"").toString().trim();
-        const thu = (f?.thu||"").toString().trim();
-        const buoi = (f?.buoi||"").toString().trim();
-        const tiet = Number(f?.tiet);
-        const isCC = (ten === "Chào cờ" && thu === "thu2" && buoi === "sang" && tiet === 0);
-        const isSHL = (ten === "SHL" && thu === "thu6" && buoi === "chieu" && tiet === (CHIEU-1));
-        return !(isCC || isSHL);
-      });
-      if(cfg.fixed.length !== before) changed = true;
-    }
-  }catch(_){ }
-
-  // 2) dọn trong từng TKB lớp (nếu đã được chèn trước đây)
-  try{
-    const positions = [
-      {thu:"thu2", buoi:"sang", ti:0, ten:"Chào cờ"},
-      {thu:"thu6", buoi:"chieu", ti:(CHIEU-1), ten:"SHL"}
-    ];
-    for(const lopId of Object.keys(DATA.tkb||{})){
-      const tkb = DATA.tkb?.[lopId];
-      if(!tkb) continue;
-      for(const p of positions){
-        const cur = tkb?.[p.thu]?.[p.buoi]?.[p.ti];
-        const mon = cellMon(cur);
-        if(mon && mon.toString().trim() === p.ten){
-          tkb[p.thu][p.buoi][p.ti] = "";
-          changed = true;
-        }
-      }
-    }
-  }catch(_){ }
-
-  if(changed){
-    try{ saveStore(); }catch(_){ }
-  }
-}
-
 function looksLikeCode(s){
   const str = (s||"").toString().trim();
   return str && str.length <= 10 && !/\s/.test(str) && /^[A-Za-z0-9_.-]+$/.test(str);
@@ -872,14 +858,14 @@ function ensureTeacherCodeIndex(){
   const byName = new Map();
   const orderByCode = new Map();
   list.forEach((g, i)=>{
-    const code = (g?.magv||"").toString().trim();
+    const code = tkbNFC(g?.magv).trim();   // 31/08: so sánh sau NFC
     if(code){
       const k = code.toLowerCase();
       // ban ghi xuat hien truoc thang, dung nhu find/findIndex cu
       if(!byCode.has(k)) byCode.set(k, code);
       if(!orderByCode.has(k)) orderByCode.set(k, i);
     }
-    const full = `${(g?.hodem||"").toString().trim()} ${(g?.ten||"").toString().trim()}`.trim().toLowerCase();
+    const full = tkbNFC(`${(g?.hodem||"").toString().trim()} ${(g?.ten||"").toString().trim()}`).trim().toLowerCase();
     // luu ca ma rong: khi do resolveTeacherCode tra nguyen van input nhu ban cu
     if(full && !byName.has(full)) byName.set(full, code);
   });
@@ -888,7 +874,7 @@ function ensureTeacherCodeIndex(){
 }
 
 function resolveTeacherCode(input){
-  const raw = (input||"").toString().trim();
+  const raw = tkbNFC(input).trim();   // 31/08: NFD/NFC cùng một mã
   if(!raw) return "";
   const lower = raw.toLowerCase();
 
@@ -1105,16 +1091,18 @@ function compareMonByMonHocOrder(a,b){
 
 function getMonShort(mon){
   const mh = findMonHoc(mon);
-  if(!mh) return (mon||"").toString().trim();
+  if(!mh){
+    // 29/08: khoá dạy ghép -> nhãn người dùng đặt (chip môn, thống kê, RB, xuất file…)
+    try{ const g = tkbGhepRowByIdentity(mon); if(g) return tkbGhepLabelOf(g) || (mon||"").toString().trim(); }catch(_){ }
+    return (mon||"").toString().trim();
+  }
   const ten = (mh.ten||"").toString().trim();
   const ma = (mh.ma||"").toString().trim();
   const ma2 = (mh.ma2||"").toString().trim();
-  // ưu tiên code ngắn, fallback ten
-  const candidates = [ma, ma2, ten].filter(Boolean).sort((a,b)=>a.length-b.length);
-  // nếu code nhìn giống mã thì ưu tiên, còn lại dùng candidate ngắn nhất
-  if(looksLikeCode(ma)) return ma;
-  if(looksLikeCode(ma2)) return ma2;
-  return candidates[0] || (mon||"").toString().trim();
+  // 01/09 (chủ dự án): ô TKB hiện ĐÚNG "Mã môn học" người dùng đặt trong bảng Môn học,
+  // không tự chọn alias ngắn nhất nữa — trước đây mã "HĐTN-HN 1" bị hiện thành tên
+  // "Chào cờ" chỉ vì tên ngắn hơn, đổi mã trong app mà TKB không đổi theo.
+  return ma || ma2 || ten || (mon||"").toString().trim();
 }
 
 // Quet toan bo DATA.lop moi lan goi; render 1 lop goi ~150 lan (~200ms) nhung
@@ -1443,6 +1431,13 @@ function cellMon(v){
   return "";
 }
 function isFixed(v){ return (v && typeof v === "object" && v.fixed); }
+// Ô dạng cũ "Môn - GV" (chuỗi). 29/08: CHỈ khi cả chuỗi không phải môn đã phân công của lớp —
+// nhãn/khoá môn dạy ghép như "AI - 1" là một môn, "1" không phải giáo viên.
+function cellLegacyTeacher(v, classCanon){
+  if(typeof v !== "string" || !v.includes(" - ")) return "";
+  try{ if(getTeacherForClassMon(classCanon, v)) return ""; }catch(_){ }
+  return v.split(" - ").slice(1).join(" - ").trim();
+}
 
 function getLopCanonById(lopId){
   const id = (lopId||"").toString();
@@ -1451,7 +1446,561 @@ function getLopCanonById(lopId){
   return (classCanonFromLop(lop) || normalizeClassName(lop.id) || id).toString().trim();
 }
 
-function findTeacherConflictAtSlot(teacherCode, thu, buoi, ti, ignoreLopId){
+/* 28/08 Dạy ghép (modules/day-ghep.js). Một dòng dạy ghép = {lop:[lớp…], mon:[môn…],
+   gv:[…], ten, viettat}. 29/08: mọi dòng là "môn ghép" riêng, không liên quan môn
+   thật: `ten` = KHOÁ app tự sinh (đứng sau "Lớp|" trong phân công, lưu trong ô TKB),
+   `viettat` = NHÃN người dùng đặt tùy ý (hiện trên TKB).
+   29/08 chiều (chủ dự án chốt lại): dòng NHIỀU LỚP = MỘT TIẾT HỌC CHUNG — các lớp
+   học cùng lúc (hội trường), mọi GV của dòng cùng dạy. Mỗi lớp thấy tiết đó trong
+   TKB của mình (đếm 1 tiết/lớp), mỗi GV thấy MỘT ô (các lớp gộp, đếm 1 tiết), cùng
+   GV ở các lớp của dòng tại cùng giờ KHÔNG phải trùng lịch. Xem khối "TIẾT HỌC CHUNG". */
+function tkbGhepRowFor(classRef, mon){
+  const rows = Array.isArray(DATA?.dayGhep) ? DATA.dayGhep : [];
+  if(!rows.length) return null;
+  const monRaw = String(mon || "").trim();
+  if(!monRaw) return null;
+  const monLow = monRaw.toLowerCase();
+  // 29/08: classRef có thể là MÃ lớp (L001) hay TÊN lớp (6.1 — bảng lớp truyền canon);
+  // getLopCanonById("6.1") có thể chuẩn hoá thành "6A1"/"6/1" nên so với MỌI bí danh.
+  const names = new Set();
+  const add = v => { const t = String(v || "").trim().toLowerCase(); if(t) names.add(t); };
+  add(classRef);
+  try{ add(getLopCanonById(classRef)); }catch(_){ }
+  try{ if(typeof classKeyCandidates === "function") classKeyCandidates(getLopCanonById(classRef) || classRef).forEach(add); }catch(_){ }
+  if(!names.size) return null;
+  for(const row of rows){
+    if(!row || !Array.isArray(row.lop) || !row.lop.some(x => names.has(String(x || "").trim().toLowerCase()))) continue;
+    if(String(row.ten || "").trim().toLowerCase() === monLow) return row;
+  }
+  return null;
+}
+
+// Dòng dạy ghép có khoá `ten` = mon (không cần biết lớp) — cho các chỗ hiển thị chung.
+function tkbGhepRowByIdentity(mon){
+  const rows = Array.isArray(DATA?.dayGhep) ? DATA.dayGhep : [];
+  if(!rows.length) return null;
+  const monLow = String(mon || "").trim().toLowerCase();
+  if(!monLow) return null;
+  return rows.find(row => row && String(row.ten || "").trim().toLowerCase() === monLow) || null;
+}
+
+function tkbGhepLabelOf(row){
+  return String(row?.viettat || "").trim() || String(row?.ten || "").trim();
+}
+
+// 02/09: dòng dạy ghép KHÔNG giáo viên (modules/day-ghep.js gv:[]) — tiết chiếm ô của lớp,
+// máy tự xếp, không chiếm ai. Không có khoá pccmMatrix nên các chỗ dùng "có GV phân công" làm
+// điều kiện "là tiết thật" (Chưa phân, thống kê lớp/trường) phải nhận thêm trường hợp này.
+function tkbGhepRowHasNoTeacher(row){
+  if(!row) return false;
+  const gv = Array.isArray(row.gv) ? row.gv : String(row.gv || "").split(/[,;+\n]+/);
+  return !gv.some(x => String(x || "").trim());
+}
+
+function tkbIsNoTeacherGhep(classRef, mon){
+  if(!Array.isArray(DATA?.dayGhep) || !DATA.dayGhep.length) return false;
+  let row = null;
+  try{ row = tkbGhepRowFor(classRef, mon); }catch(_){ row = null; }
+  return !!row && tkbGhepRowHasNoTeacher(row);
+}
+
+// Nhãn môn hiện trên TKB / danh sách Chưa phân: nhãn dòng dạy ghép nếu (lớp, môn) thuộc một dòng, không thì mã môn.
+function tkbMonLabel(classRef, mon){
+  try{
+    const row = tkbGhepRowFor(classRef, mon) || tkbGhepRowByIdentity(mon);
+    const label = row ? tkbGhepLabelOf(row) : "";
+    if(label) return label;
+  }catch(_){ }
+  return getMonShort(mon);
+}
+
+// ======================= TIẾT HỌC CHUNG NHIỀU LỚP (Dạy ghép) =======================
+// Chủ dự án 29/08: "Toán ghép 6A1 + 6A2, thầy A + thầy B, 1 tiết" = MỘT tiết: cả hai lớp
+// cùng học ở cùng giờ, cả hai thầy cùng dạy; TKB mỗi lớp có tiết đó (1 tiết), TKB mỗi thầy
+// có MỘT ô (đếm 1 tiết). Cài đặt:
+//   - Ô của các lớp thành viên luôn được ĐỒNG BỘ (tkbJointReconcile) tại điểm chốt lưu
+//     (saveStore/saveStoreDeferred): lớp nào vừa đổi (so với ảnh chụp lần trước) là "sự
+//     thật", các lớp còn lại đặt/xóa/khóa theo. Không móc từng đường thao tác (28-29/08
+//     móc onDrop/xóa/khóa đã sót đường khác -> ô lệch giữa các lớp).
+//   - Trước khi kéo (validateDrop) kiểm ô cùng vị trí ở các lớp còn lại: ô nghỉ / ô cố
+//     định môn khác -> chặn; ô đang có tiết khác -> hỏi rồi đưa về Chưa phân.
+//   - Bảng GV gộp các lớp của tiết chung thành một ô, không tô trùng lịch; kiểm tra
+//     trùng GV bỏ qua cặp ô cùng dòng.
+//   - Bộ giải (Cherry / ▶ FET / Tối ưu v3) xếp từng lớp riêng nên trước mỗi lượt app GHIM
+//     TẠM tiết chung vào cùng ô ở mọi lớp (fixed + jointPin) — engine v3 / FET giữ ô
+//     cố định dùng chung GV; khi lượt giải kết thúc (cờ bận tắt) app BỎ GHIM (không để
+//     lại ô "cố định" người dùng không xóa được).
+function tkbJointGhepRows(){
+  const rows = Array.isArray(DATA?.dayGhep) ? DATA.dayGhep : [];
+  return rows.filter(r => r && Array.isArray(r.lop) && r.lop.length >= 2 && String(r.ten || "").trim());
+}
+
+function tkbJointRowKey(row){
+  return String(row?.id || row?.ten || "").trim();
+}
+
+function tkbGhepSiblingClassIds(row, exceptClassId){
+  const out = [];
+  const names = (Array.isArray(row?.lop) ? row.lop : []).map(x => String(x || "").trim().toLowerCase()).filter(Boolean);
+  if(!names.length) return out;
+  const except = exceptClassId == null ? null : String(exceptClassId);
+  (DATA?.lop || []).forEach(l => {
+    if(!l || (except != null && String(l.id) === except)) return;
+    const aliases = [getLopCanonById(l.id), l.ten2, l.ten, l.id].map(v => String(v || "").trim().toLowerCase()).filter(Boolean);
+    if(aliases.some(a => names.includes(a))) out.push(String(l.id));
+  });
+  return out;
+}
+
+function tkbGhepMemberClassIds(row){
+  return tkbGhepSiblingClassIds(row, null);
+}
+
+function tkbGhepJointRowAt(classId, mon){
+  const row = tkbGhepRowFor(classId, mon);
+  if(!row || !Array.isArray(row.lop) || row.lop.length < 2) return null;
+  return row;
+}
+
+// Hai ô ở hai lớp khác nhau thuộc cùng một dòng dạy ghép nhiều lớp = MỘT tiết học chung.
+function tkbIsJointGhepPair(monA, lopIdA, monB, lopIdB){
+  if(String(lopIdA) === String(lopIdB)) return false;
+  const rowA = tkbGhepJointRowAt(lopIdA, monA);
+  if(!rowA) return false;
+  return tkbGhepJointRowAt(lopIdB, monB) === rowA;
+}
+
+// Các ô TKB GV tại một giờ đều thuộc cùng một dòng nhiều lớp -> dòng đó, không thì null.
+function tkbJointGhepRow(arr){
+  if(!Array.isArray(arr) || arr.length < 2) return null;
+  const row = tkbGhepJointRowAt(arr[0]?.classId, arr[0]?.mon);
+  if(!row) return null;
+  return arr.every(e => tkbGhepJointRowAt(e?.classId, e?.mon) === row) ? row : null;
+}
+
+function tkbJointClassLabel(row){
+  return tkbGhepMemberClassIds(row).map(id => { try{ return getLopCanonById(id) || String(id); }catch(_){ return String(id); } }).join(", ");
+}
+
+// Gộp các ô cùng tiết chung (TKB GV, xuất file): entries [{classId, classDisplay, mon, ...}]
+function tkbJointMergeEntries(list){
+  const arr = Array.isArray(list) ? list : [];
+  const row = tkbJointGhepRow(arr);
+  if(!row) return arr;
+  // 29/08 (chủ dự án): GV chỉ cần biết tiết đó dạy NỘI DUNG gì -> ô chỉ ghi tên viết tắt;
+  // danh sách lớp để ở tooltip (jointClassLabel), không in trước tên.
+  return [Object.assign({}, arr[0], {
+    classDisplay: "",
+    jointClassLabel: arr.map(e => String(e.classDisplay || "").trim()).filter(Boolean).join(", "),
+    fixed: arr.some(e => !!e.fixed),
+    jointClassIds: arr.map(e => String(e.classId))
+  })];
+}
+try{ window.tkbJointMergeEntries = tkbJointMergeEntries; }catch(_){ }
+
+function tkbJointSessions(){ return ["sang", "chieu"]; }
+
+// Vị trí các ô của khoá `low` trong lớp: Map "thu|buoi|ti" -> "F" (cố định) | "-".
+function tkbJointPlacements(classId, low){
+  const out = new Map();
+  const tkb = DATA?.tkb?.[classId];
+  if(!tkb) return out;
+  for(const thu of DAYS) for(const buoi of tkbJointSessions()){
+    const arr = tkb?.[thu]?.[buoi];
+    if(!Array.isArray(arr)) continue;
+    for(let i = 0; i < arr.length; i++){
+      const m = String(cellMon(arr[i]) || "").trim().toLowerCase();
+      if(m && m === low) out.set(`${thu}|${buoi}|${i}`, isFixed(arr[i]) ? "F" : "-");
+    }
+  }
+  return out;
+}
+
+function tkbJointSig(map){
+  return Array.from(map.entries()).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).map(([k, v]) => k + v).join(";");
+}
+
+let __TKB_JOINT_SNAP = null;
+
+function tkbJointTakeSnapshot(){
+  const snap = new Map();
+  tkbJointGhepRows().forEach(row => {
+    const low = String(row.ten || "").trim().toLowerCase();
+    const m = new Map();
+    tkbGhepMemberClassIds(row).forEach(id => { if(DATA?.tkb?.[id]) m.set(id, tkbJointSig(tkbJointPlacements(id, low))); });
+    snap.set(tkbJointRowKey(row), m);
+  });
+  __TKB_JOINT_SNAP = snap;
+  return snap;
+}
+
+// Đồng bộ ô tiết chung giữa các lớp của từng dòng. Trả về {changed, displaced, blocked, rows}.
+function tkbJointReconcile(opts){
+  opts = opts || {};
+  const res = {changed:false, displaced:[], blocked:[], rows:[]};
+  if(!opts.force && typeof isPlannerBusySolving === "function" && isPlannerBusySolving()) return res;
+  if(!__TKB_JOINT_SNAP && !opts.force){ tkbJointTakeSnapshot(); return res; }   // chưa có ảnh chụp: không đoán, chỉ chụp
+  const rows = tkbJointGhepRows();
+  const snap = __TKB_JOINT_SNAP || new Map();
+  const next = new Map();
+  rows.forEach(row => {
+    const key = String(row.ten || "").trim();
+    const low = key.toLowerCase();
+    const rk = tkbJointRowKey(row);
+    const members = tkbGhepMemberClassIds(row).filter(id => DATA?.tkb?.[id]);
+    if(!members.length) return;
+    const cur = new Map();
+    const sigs = new Map();
+    members.forEach(id => { const p = tkbJointPlacements(id, low); cur.set(id, p); sigs.set(id, tkbJointSig(p)); });
+    const distinct = new Set(sigs.values());
+    if(distinct.size > 1){
+      const snapRow = snap.get(rk);
+      const changed = members.filter(id => !snapRow || !snapRow.has(id) || snapRow.get(id) !== sigs.get(id));
+      const changedSigs = new Set(changed.map(id => sigs.get(id)));
+      let truthId = null;
+      if(changed.length && changedSigs.size === 1){
+        truthId = changed[0];                       // một lớp vừa đổi -> lớp đó là sự thật
+      }else{
+        // nhiều lớp cùng đổi (bộ giải, nạp lại, undo): trạng thái phổ biến nhất; hòa -> nhiều tiết hơn
+        const count = new Map();
+        members.forEach(id => { const sg = sigs.get(id); count.set(sg, (count.get(sg) || 0) + 1); });
+        let best = null;
+        members.forEach(id => {
+          const sg = sigs.get(id); const c = count.get(sg); const n = cur.get(id).size;
+          if(!best || c > best.c || (c === best.c && n > best.n)) best = {id, c, n};
+        });
+        truthId = best.id;
+      }
+      const truth = cur.get(truthId);
+      const truthSig = sigs.get(truthId);
+      members.forEach(id => {
+        if(id === truthId || sigs.get(id) === truthSig) return;
+        const tkb = DATA.tkb[id];
+        cur.get(id).forEach((_, sk) => {
+          if(truth.has(sk)) return;
+          const [thu, buoi, ti] = sk.split("|");
+          tkb[thu][buoi][Number(ti)] = "";
+          res.changed = true;
+        });
+        truth.forEach((flag, sk) => {
+          const [thu, buoi, tiS] = sk.split("|");
+          const ti = Number(tiS);
+          const arr = tkb?.[thu]?.[buoi];
+          if(!Array.isArray(arr)){ res.blocked.push({classId:id, thu, buoi, ti, why:"chưa có bảng TKB"}); return; }
+          const cell = arr[ti];
+          if(cell === "OFF"){ res.blocked.push({classId:id, thu, buoi, ti, why:"ô nghỉ"}); return; }
+          const m = String(cellMon(cell) || "").trim();
+          if(m && m.toLowerCase() !== low){
+            if(isFixed(cell)){ res.blocked.push({classId:id, thu, buoi, ti, why:`ô cố định ${tkbMonLabel(id, m)}`}); return; }
+            res.displaced.push({classId:id, mon:m, thu, buoi, ti});
+          }else if(m && (isFixed(cell) ? "F" : "-") === flag){
+            return;
+          }
+          arr[ti] = (flag === "F") ? {mon:key, fixed:true} : key;
+          res.changed = true;
+        });
+      });
+      res.rows.push({row, truthId});
+    }
+    const m2 = new Map();
+    members.forEach(id => m2.set(id, tkbJointSig(tkbJointPlacements(id, low))));
+    next.set(rk, m2);
+  });
+  __TKB_JOINT_SNAP = next;
+  if(res.changed){
+    try{ window.__TKB_UNASSIGNED_TASKS_CACHE = null; window.__TKB_TEACHER_TKB_STATS_CACHE = null; }catch(_){ }
+  }
+  return res;
+}
+
+function tkbJointReconcileMessage(res){
+  if(!res || !res.rows || !res.rows.length) return "";
+  const cls = id => { try{ return getLopCanonById(id) || String(id); }catch(_){ return String(id); } };
+  const parts = [];
+  res.rows.forEach(r => {
+    const name = String(r.row?.viettat || r.row?.ten || "").trim();
+    parts.push(`Tiết chung "${name}" đã đồng bộ theo lớp ${cls(r.truthId)}.`);
+  });
+  if(res.displaced.length) parts.push(`Đưa về Chưa phân: ${res.displaced.map(d => `${getMonShort(d.mon)}-${cls(d.classId)}`).join(", ")}.`);
+  if(res.blocked.length) parts.push(`Không đặt được ở: ${res.blocked.map(b => `${cls(b.classId)} (${b.why})`).join("; ")}.`);
+  return parts.join(" ");
+}
+
+// Gọi tại điểm chốt lưu. Chỉ báo khi thật sự có đồng bộ.
+function tkbJointReconcileAtSave(){
+  let res = null;
+  try{ res = tkbJointReconcile(); }catch(err){ console.error("joint reconcile", err); return null; }
+  if(res && res.rows.length){
+    const msg = tkbJointReconcileMessage(res);
+    if(msg){ try{ _setStatus(msg, res.blocked.length ? "warning" : "ok"); }catch(_){ } }
+    try{ if(res.displaced.length) res.displaced.forEach(d => flashLopItemConflict(d.classId)); }catch(_){ }
+  }
+  return res;
+}
+
+// Kiểm ô cùng vị trí ở các lớp còn lại trước khi đặt tiết chung vào classId.
+function tkbJointSiblingBlockers(classId, mon, thu, buoi, ti){
+  const row = tkbGhepJointRowAt(classId, mon);
+  if(!row) return null;
+  const low = String(row.ten || "").trim().toLowerCase();
+  const idx = Number(ti);
+  const out = {row, blocked:[], displace:[]};
+  tkbGhepSiblingClassIds(row, classId).forEach(sid => {
+    const arr = DATA?.tkb?.[sid]?.[thu]?.[buoi];
+    if(!Array.isArray(arr)) return;
+    const cell = arr[idx];
+    if(cell === "OFF"){ out.blocked.push({classId:sid, why:"ô nghỉ"}); return; }
+    const m = String(cellMon(cell) || "").trim();
+    if(!m || m.toLowerCase() === low) return;
+    if(isFixed(cell)){ out.blocked.push({classId:sid, why:`ô cố định ${tkbMonLabel(sid, m)}`}); return; }
+    out.displace.push({type:"joint", lopId:sid, mon:m, thu, buoi, ti:idx,
+      msg:`Lớp ${getLopCanonById(sid)} đang có ${getMonShort(m)} ở tiết chung này`});
+  });
+  return out;
+}
+
+// ---- Ghim tạm trước khi giải ----
+let __TKB_JOINT_PINNED = [];
+function tkbJointPinnedCount(){ return __TKB_JOINT_PINNED.length; }
+
+// GV của dòng có tiết ở lớp NGOÀI nhóm tại ô này?
+function tkbGhepTeachersBusyOutside(row, memberIds, thu, buoi, ti){
+  const gvs = Array.isArray(row?.gv) ? row.gv.join(", ") : String(row?.gv || "");
+  if(!gvs) return false;
+  const members = new Set(memberIds.map(String));
+  const tkbs = DATA.tkb || {};
+  for(const lopId of Object.keys(tkbs)){
+    if(members.has(String(lopId))) continue;
+    const cell = tkbs[lopId]?.[thu]?.[buoi]?.[ti];
+    if(!cell || cell === "OFF") continue;
+    const mon = cellMon(cell);
+    if(!mon) continue;
+    const gv2 = getTeacherForClassMon(getLopCanonById(lopId), mon);
+    if(gv2 && teacherValuesIntersect(gv2, gvs)) return true;
+  }
+  return false;
+}
+
+// Ghim: mọi tiết chung đang có -> fixed (jointPin); dòng còn thiếu tiết -> chọn ô mọi lớp cùng
+// trống (GV không bận ngoài nhóm, không ô nghỉ, tôn trọng giới hạn/buổi, trải ngày) rồi ghi vào
+// mọi lớp. allowDisplace: được đưa tiết khác về Chưa phân khi không còn ô nào cùng trống
+// (chỉ lượt xếp đầy đủ; lane tối ưu không xếp tiết thiếu nên không được đè).
+function tkbJointPinForSolve(opts){
+  opts = opts || {};
+  const allowDisplace = opts.allowDisplace === true;
+  const out = {changed:false, pinned:[], displaced:0, skipped:[]};
+  __TKB_JOINT_PINNED = [];   // lượt mới: bỏ sổ ghim cũ
+  try{ tkbJointReconcile({force:true}); }catch(_){ }
+  const sessions = tkbJointSessions();
+  const sessionLen = b => (b === "chieu" ? CHIEU : SANG);
+  tkbJointGhepRows().forEach(row => {
+    const key = String(row.ten || "").trim();
+    const low = key.toLowerCase();
+    const label = String(row.viettat || key);
+    const members = tkbGhepMemberClassIds(row).filter(id => DATA.tkb?.[id]);
+    if(members.length < 2){ out.skipped.push({row:label, why:"chưa đủ 2 lớp có bảng TKB"}); return; }
+    const need = Math.max(1, Number(row.sotiet) || 1);
+    const gh = Math.max(1, Number(row.gioihan) || 1);
+    const gvList = Array.isArray(row.gv) ? row.gv : [];
+    const same = v => String(cellMon(v) || "").trim().toLowerCase() === low;
+
+    const slots = [];
+    for(const thu of DAYS) for(const buoi of sessions){
+      const n = sessionLen(buoi);
+      for(let ti = 0; ti < n; ti++){
+        let have = 0, displace = 0, blocked = false;
+        for(const id of members){
+          const arr = DATA.tkb[id]?.[thu]?.[buoi];
+          const cell = Array.isArray(arr) ? arr[ti] : undefined;
+          if(cell === "OFF"){ blocked = true; break; }
+          if(same(cell)){ have += 1; continue; }
+          if(cellMon(cell)){
+            if(isFixed(cell) || !allowDisplace){ blocked = true; break; }
+            displace += 1;
+          }
+        }
+        if(blocked) continue;
+        if(have === 0){
+          if(gvList.some(gv => isTeacherFixedOff(gv, thu, buoi, ti))) continue;
+          if(tkbGhepTeachersBusyOutside(row, members, thu, buoi, ti)) continue;
+        }
+        slots.push({thu, buoi, ti, have, displace});
+      }
+    }
+    const chosen = [];
+    const usedDays = new Set();
+    const usedSession = new Map();
+    const take = sl => { chosen.push(sl); usedDays.add(sl.thu); const k = `${sl.thu}|${sl.buoi}`; usedSession.set(k, (usedSession.get(k) || 0) + 1); };
+    // 1) ô đã có tiết chung (đã đồng bộ nên mọi lớp đều có) -> giữ nguyên chỗ người dùng/bộ giải đã đặt
+    slots.filter(sl => sl.have > 0).forEach(take);
+    // 2) bổ sung cho đủ `need`
+    while(chosen.length < need){
+      const cand = slots.filter(sl => !chosen.includes(sl) && (usedSession.get(`${sl.thu}|${sl.buoi}`) || 0) < gh);
+      if(!cand.length) break;
+      cand.sort((a, b) =>
+        (a.displace - b.displace)
+        || ((usedDays.has(a.thu) ? 1 : 0) - (usedDays.has(b.thu) ? 1 : 0))
+        || (DAYS.indexOf(a.thu) - DAYS.indexOf(b.thu)) || (sessions.indexOf(a.buoi) - sessions.indexOf(b.buoi)) || (a.ti - b.ti));
+      take(cand[0]);
+    }
+    if(!chosen.length){ out.skipped.push({row:label, why:"không còn ô nào mọi lớp cùng trống"}); return; }
+    if(chosen.length < need) out.skipped.push({row:label, why:`chỉ ghim được ${chosen.length}/${need} tiết`});
+
+    const isChosen = (thu, buoi, ti) => chosen.some(sl => sl.thu === thu && sl.buoi === buoi && sl.ti === ti);
+    let rowChanged = false;
+    members.forEach(id => {
+      const tkb = DATA.tkb[id];
+      for(const thu of DAYS) for(const buoi of sessions){
+        const arr = tkb?.[thu]?.[buoi];
+        if(!Array.isArray(arr)) continue;
+        for(let ti = 0; ti < arr.length; ti++){
+          const cell = arr[ti];
+          if(!isChosen(thu, buoi, ti)) continue;
+          const wasFixed = same(cell) && isFixed(cell) && !cell.jointPin;
+          if(wasFixed) continue;                       // người dùng tự khóa: giữ nguyên, không bỏ ghim sau này
+          if(cellMon(cell) && !same(cell)) out.displaced += 1;
+          arr[ti] = {mon:key, fixed:true, jointPin:true};
+          __TKB_JOINT_PINNED.push({classId:id, thu, buoi, ti, key});
+          rowChanged = true;
+        }
+      }
+    });
+    if(rowChanged){
+      out.changed = true;
+      out.pinned.push({row:label, classes:members.length, slots:chosen.map(sl => `${sl.thu}/${sl.buoi}/${sl.ti + 1}`)});
+    }
+  });
+  try{ tkbJointTakeSnapshot(); }catch(_){ }
+  if(out.changed){
+    try{ window.__TKB_UNASSIGNED_TASKS_CACHE = null; window.__TKB_TEACHER_TKB_STATS_CACHE = null; }catch(_){ }
+  }
+  return out;
+}
+
+function tkbJointPinMessage(res){
+  if(!res) return "";
+  const parts = [];
+  if(res.pinned && res.pinned.length) parts.push(`Giữ ${res.pinned.length} tiết chung nhiều lớp cùng ô trong lượt xếp (${res.pinned.map(p => `${p.row}: ${p.slots.join(", ")}`).join("; ")}).`);
+  if(res.displaced) parts.push(`${res.displaced} tiết khác được đưa về Chưa phân để bộ giải xếp lại.`);
+  if(res.skipped && res.skipped.length) parts.push(`Chưa ghim được: ${res.skipped.map(sk => `${sk.row} (${sk.why})`).join("; ")}.`);
+  return parts.join(" ");
+}
+
+// Bỏ ghim sau lượt giải: ô ghim tạm trở lại ô thường (người dùng xóa/kéo như tiết khác).
+// Sổ ghim được GIỮ tới lượt ghim kế tiếp: bridge có thể áp kết quả (mang fixed:true từ payload)
+// SAU khi cờ bận đã tắt -> saveStore(trustedSolverApply) gọi lại hàm này để gỡ lần nữa.
+function tkbJointUnpin(){
+  const list = __TKB_JOINT_PINNED;
+  let changed = false;
+  list.forEach(p => {
+    const arr = DATA?.tkb?.[p.classId]?.[p.thu]?.[p.buoi];
+    if(!Array.isArray(arr)) return;
+    const cell = arr[p.ti];
+    if(!cell || cell === "OFF") return;
+    if(String(cellMon(cell) || "").trim().toLowerCase() !== p.key.toLowerCase()) return;
+    if(isFixed(cell)){ arr[p.ti] = p.key; changed = true; }
+  });
+  // ô ghim còn sót (kết quả bộ giải giữ cờ jointPin) -> bỏ luôn
+  Object.keys(DATA?.tkb || {}).forEach(id => {
+    const tkb = DATA.tkb[id];
+    for(const thu of DAYS) for(const buoi of tkbJointSessions()){
+      const arr = tkb?.[thu]?.[buoi];
+      if(!Array.isArray(arr)) continue;
+      for(let ti = 0; ti < arr.length; ti++){
+        const cell = arr[ti];
+        if(cell && typeof cell === "object" && cell.jointPin){ arr[ti] = cellMon(cell); changed = true; }
+      }
+    }
+  });
+  try{ tkbJointReconcile({force:true}); }catch(_){ }
+  if(changed){
+    try{ window.__TKB_UNASSIGNED_TASKS_CACHE = null; window.__TKB_TEACHER_TKB_STATS_CACHE = null; }catch(_){ }
+    try{ saveStoreDeferred(); }catch(_){ }
+    try{ renderCurrentView(); }catch(_){ }
+    try{ loadMonList(); }catch(_){ }
+  }
+  return changed;
+}
+
+// Gỡ ghim không lưu/vẽ lại (dùng bên trong saveStore để tránh gọi đệ quy).
+function tkbJointUnpinQuiet(){
+  let changed = false;
+  __TKB_JOINT_PINNED.forEach(p => {
+    const arr = DATA?.tkb?.[p.classId]?.[p.thu]?.[p.buoi];
+    if(!Array.isArray(arr)) return;
+    const cell = arr[p.ti];
+    if(!cell || cell === "OFF") return;
+    if(String(cellMon(cell) || "").trim().toLowerCase() !== p.key.toLowerCase()) return;
+    if(isFixed(cell)){ arr[p.ti] = p.key; changed = true; }
+  });
+  if(changed){ try{ window.__TKB_UNASSIGNED_TASKS_CACHE = null; window.__TKB_TEACHER_TKB_STATS_CACHE = null; }catch(_){ } try{ tkbJointTakeSnapshot(); }catch(_){ } }
+  return changed;
+}
+
+// 31/08: Ghim tạm chỉ có nghĩa TRONG lượt giải. Pin gọi saveStoreDeferred nên ô {fixed, jointPin}
+// có thể nằm lại trong kho nếu trang bị tải lại / đóng giữa lượt (F5, mất mạng, đóng tab) — khi đó
+// không còn cờ bận nào tắt để kích tkbJointUnpin → người dùng thấy tiết ghép "tự xếp vào TKB và cố
+// định luôn" (trường ow14iqw5cb1: Chào cờ (ghép) 37 lớp). Gọi ở mọi điểm nạp dữ liệu khi không giải.
+function tkbJointClearStalePins(){
+  if(typeof isPlannerBusySolving === "function" && isPlannerBusySolving()) return 0;
+  let n = 0;
+  Object.keys(DATA?.tkb || {}).forEach(id => {
+    const tkb = DATA.tkb[id];
+    for(const thu of DAYS) for(const buoi of ["sang", "chieu"]){
+      const arr = tkb?.[thu]?.[buoi];
+      if(!Array.isArray(arr)) continue;
+      for(let ti = 0; ti < arr.length; ti++){
+        const cell = arr[ti];
+        if(cell && typeof cell === "object" && cell.jointPin){ arr[ti] = cellMon(cell); n += 1; }
+      }
+    }
+  });
+  if(n){
+    __TKB_JOINT_PINNED = [];
+    try{ window.__TKB_UNASSIGNED_TASKS_CACHE = null; window.__TKB_TEACHER_TKB_STATS_CACHE = null; }catch(_){ }
+    try{ tkbJointTakeSnapshot(); }catch(_){ }
+  }
+  return n;
+}
+try{ window.tkbJointClearStalePins = tkbJointClearStalePins; }catch(_){ }
+
+// Ghim trước lượt giải (gọi từ ▶ FET / bridge Cherry / Tối ưu v3). Trả về thông điệp (có thể rỗng).
+function tkbJointPinBeforeSolve(opts){
+  let pin = null;
+  try{ pin = tkbJointPinForSolve(opts || {}); }catch(err){ console.error("pin ghep", err); return ""; }
+  if(pin && pin.changed){
+    try{ saveStoreDeferred(); }catch(_){ }
+    try{ renderCurrentView(); }catch(_){ }
+  }
+  return tkbJointPinMessage(pin);
+}
+try{ window.tkbJointPinBeforeSolve = tkbJointPinBeforeSolve; window.tkbJointUnpin = tkbJointUnpin; }catch(_){ }
+
+// Cờ bận của bộ giải tắt -> bỏ ghim (một điểm chốt cho mọi lane: Cherry, FET, Tối ưu v3, Dừng).
+(function installJointUnpinOnSolveEnd(){
+  const names = ["__TKB_RUST_SOLVER_RUNNING", "__TKB_SOLVE_UI_BUSY", "__ACTIVE_TKB_FET_WORKER"];
+  const store = {};
+  let timer = 0;
+  names.forEach(n => {
+    store[n] = window[n];
+    try{
+      Object.defineProperty(window, n, {
+        configurable:true, enumerable:true,
+        get(){ return store[n]; },
+        set(v){
+          store[n] = v;
+          if(timer || !__TKB_JOINT_PINNED.length) return;
+          if(typeof isPlannerBusySolving === "function" && isPlannerBusySolving()) return;
+          timer = setTimeout(()=>{ timer = 0; try{ tkbJointUnpin(); }catch(err){ console.error("unpin ghep", err); } }, 0);
+        }
+      });
+    }catch(_){ }
+  });
+})();
+
+// jointMon: môn đang đặt vào lớp ignoreLopId — ô cùng dòng dạy ghép nhiều lớp ở lớp khác là
+// cùng MỘT tiết chung, không tính là trùng GV.
+function findTeacherConflictAtSlot(teacherCode, thu, buoi, ti, ignoreLopId, jointMon){
   const gv = teacherValueFromRaw(teacherCode);
   if(!gv) return null;
   const tThu = String(thu||"");
@@ -1465,6 +2014,7 @@ function findTeacherConflictAtSlot(teacherCode, thu, buoi, ti, ignoreLopId){
     if(!cell || cell === "OFF") continue;
     const mon = cellMon(cell);
     if(!mon) continue;
+    if(jointMon && ignoreLopId && tkbIsJointGhepPair(jointMon, ignoreLopId, mon, lopId)) continue;
     const canon = getLopCanonById(lopId);
     const gv2 = getTeacherForClassMon(canon, mon);
     if(gv2 && teacherValuesIntersect(gv2, gv)) return { lopId, mon };
@@ -1613,6 +2163,7 @@ function __tkbRestoreHistoryPayload(payload){
   DATA = (obj && typeof obj === "object") ? obj : {};
   __tkbEnsureDataShape();
   try{ window.DATA = DATA; }catch(_){}
+  try{ tkbJointTakeSnapshot(); }catch(_){ }   // 29/08 tiết chung: lịch sử đã nhất quán, chụp lại
 }
 
 function __tkbRefreshAfterHistory(label){
@@ -1733,14 +2284,132 @@ function __tkbPayloadForSave(options){
 // da doi ngay nen render/solve van dung; chi phan persist duoc gom lo.
 // Flush ngay khi: roi trang/an tab, Undo/Redo, hoac truoc khi chay xep/toi uu.
 let __tkbDeferredSaveTimer = null;
+// 30/08: planner CÓ thay đổi chưa đẩy lên kho không? (còn hẹn lưu, hoặc DATA khác
+// bản đã lưu/nạp gần nhất). Chưa có mốc so sánh (vừa mở trang) = chưa sửa gì.
+function __tkbHasUnsavedChanges(){
+  if(__tkbDeferredSaveTimer) return true;
+  if(!__tkbLastSavedPayload) return false;
+  try{ return JSON.stringify(DATA) !== __tkbLastSavedPayload; }catch(_){ return true; }
+}
+// 30/08: CHỈ ghi khi có thay đổi chưa lưu. Trước đây hàm này luôn ghi đè kho bằng bản
+// planner đang giữ mỗi khi ẩn tab / tải lại trang -> nếu trang Dữ liệu (tab khác) vừa
+// đổi tên môn/GV, xoá môn, xoá phân công… thì bản cũ của planner xoá sạch các sửa đổi đó
+// ("đổi tên không đồng bộ", "xoá bên app mà qua Sắp xếp vẫn còn").
 function flushDeferredSaveStore(){
+  const pending = !!__tkbDeferredSaveTimer;
   if(__tkbDeferredSaveTimer){
     clearTimeout(__tkbDeferredSaveTimer);
     __tkbDeferredSaveTimer = null;
   }
+  if(!pending && !__tkbHasUnsavedChanges()) return;
   try{ saveStore({ force: true, beforeUnload: true, syncRemote: true }); }catch(e){ console.error("deferred saveStore failed", e); }
 }
+
+/* ===== 30/08: Nạp lại bản mới nhất từ kho khi quay lại tab (hai tab Dữ liệu + Sắp xếp) =====
+   Trang Dữ liệu lưu ngay mỗi thao tác; planner đang mở ở tab khác vẫn giữ bản cũ trong bộ
+   nhớ. Khi tab planner hiện lại / được focus mà KHÔNG có sửa đổi chưa lưu và không đang giải,
+   đọc kho: khác bản đang giữ -> thay DATA, vẽ lại. Có sửa đổi chưa lưu thì giữ nguyên. */
+let __tkbRemoteRefreshInFlight = false;
+let __tkbRemoteRefreshLastAt = 0;
+function __tkbDataStamp(d){
+  const n = Number(d?._lastModified || d?._updatedAt || 0);
+  return Number.isFinite(n) ? n : 0;
+}
+// JSON với khoá đã sắp (máy chủ trả khoá theo thứ tự bảng chữ) — chỉ dùng khi thiếu mốc thời gian.
+function __tkbStableJson(v){
+  if(Array.isArray(v)) return "[" + v.map(__tkbStableJson).join(",") + "]";
+  if(v && typeof v === "object"){
+    return "{" + Object.keys(v).sort().map(k => JSON.stringify(k) + ":" + __tkbStableJson(v[k])).join(",") + "}";
+  }
+  return JSON.stringify(v === undefined ? null : v);
+}
+function tkbRemoteDataDiffers(remote){
+  if(!remote || typeof remote !== "object") return false;
+  const rt = __tkbDataStamp(remote), lt = __tkbDataStamp(DATA);
+  if(rt || lt) return rt !== lt;
+  try{ return __tkbStableJson(remote) !== __tkbStableJson(DATA); }catch(_){ return false; }
+}
+function tkbPlannerIdleForRemoteRefresh(){
+  try{ if(typeof isPlannerBusySolving === "function" && isPlannerBusySolving()) return false; }catch(_){ }
+  try{ if(__tkbAlgorithmRunning()) return false; }catch(_){ }
+  if(window.__TKB_PLANNER_REMOTE_HYDRATION_PENDING === true) return false;
+  if(__tkbPendingSavePayload) return false;
+  if(typeof dragData !== "undefined" && dragData) return false;
+  if(__tkbHasUnsavedChanges()) return false;
+  return true;
+}
+function tkbAdoptRemoteData(remote, reason){
+  DATA = (remote && typeof remote === "object") ? remote : {};
+  if(!DATA.tkb) DATA.tkb = {};
+  if(!DATA.lop) DATA.lop = [];
+  if(!DATA.mon) DATA.mon = [];
+  if(!DATA.monhoc) DATA.monhoc = [];
+  if(!DATA.pccmMatrix) DATA.pccmMatrix = {};
+  if(!DATA.pccmRoomMatrix) DATA.pccmRoomMatrix = {};
+  if(!DATA.pccmTietMatrix) DATA.pccmTietMatrix = {};
+  if(!DATA.pccmGioihanMatrix) DATA.pccmGioihanMatrix = {};
+  if(!DATA.tkbUserOff || typeof DATA.tkbUserOff !== "object") DATA.tkbUserOff = {};
+  try{ if(!Object.getOwnPropertyDescriptor(window, "DATA")?.get) window.DATA = DATA; }catch(_){ }
+  try{ tkbJointClearStalePins(); }catch(_){ }   // 31/08: ghim tạm còn sót từ lượt giải dở
+  try{ tkbJointTakeSnapshot(); }catch(_){ }   // 29/08 tiết chung: ảnh chụp theo bản vừa nạp
+  try{ sanitizePlannerDataFromIndex(); }catch(_){ }
+  try{ invalidateTeacherCodeIndex(); invalidateClassKeyCandidatesCache(); }catch(_){ }
+  try{ invalidatePccmNumCaches(); }catch(_){ }
+  try{ COMPUTE_MONS_CACHE = {refs: [], values: new Map()}; }catch(_){ }
+  try{ REQUIRED_SUBJECTS_CACHE = {refs: [], values: new Map()}; }catch(_){ }
+  try{ TEACHER_FOR_CLASS_MON_CACHE = {pccmRef: null, lessonRef: null, monRef: null, monhocRef: null, values: new Map()}; }catch(_){ }
+  try{ ROOM_FOR_CLASS_MON_CACHE = {roomRef: null, lessonRef: null, monRef: null, monhocRef: null, values: new Map()}; }catch(_){ }
+  try{ window.TKBConstraints?.invalidateConstraintCache?.(); }catch(_){ }
+  try{
+    const payload = JSON.stringify(DATA);
+    __tkbLastSavedPayload = payload;
+    __tkbPendingSavePayload = "";
+    __tkbRememberStablePayload(payload, __tkbCurrentSaveStats(), reason || "remote-refresh");
+    TKB_HISTORY_CURRENT = payload;
+    TKB_UNDO_STACK.length = 0;   // lịch sử cũ thuộc bản trước, Undo sẽ ghi đè bản mới -> bỏ
+    TKB_REDO_STACK.length = 0;
+    __tkbUpdateHistoryButtons();
+  }catch(_){ }
+  try{ initKhoiOptions(); }catch(_){ }
+  try{ if(VIEW_MODE === "gv") showAllGV(); else showAllLop(); }catch(_){ }
+  try{ renderCurrentView(); }catch(_){ }
+  try{ scheduleLoadMonList("remote-refresh"); }catch(_){ try{ loadMonList(); }catch(__){ } }
+}
+async function tkbRefreshFromRemoteIfIdle(reason){
+  try{
+    if(typeof schoolParam === "undefined" || !schoolParam) return false;
+    if(!window.TKBStorage || typeof window.TKBStorage.loadRemoteSchoolData !== "function") return false;
+    if(document.visibilityState !== "visible") return false;
+    if(__tkbRemoteRefreshInFlight) return false;
+    const now = Date.now();
+    if(now - __tkbRemoteRefreshLastAt < 1500) return false;   // focus + visibilitychange bắn cùng lúc
+    __tkbRemoteRefreshLastAt = now;
+    if(!tkbPlannerIdleForRemoteRefresh()) return false;
+    __tkbRemoteRefreshInFlight = true;
+    const localBefore = JSON.stringify(DATA);
+    const remote = await window.TKBStorage.loadRemoteSchoolData(schoolParam);
+    if(!window.TKBStorage.hasMeaningfulData(remote)) return false;
+    if(!tkbRemoteDataDiffers(remote)) return false;
+    // Trong lúc chờ mạng người dùng có thể đã sửa -> không thay
+    if(!tkbPlannerIdleForRemoteRefresh() || JSON.stringify(DATA) !== localBefore) return false;
+    tkbAdoptRemoteData(remote, "remote-refresh:" + (reason || ""));
+    try{ _setStatus("Đã nạp dữ liệu mới nhất vừa lưu ở trang Dữ liệu.", "ok"); }catch(_){ }
+    return true;
+  }catch(e){
+    console.warn("tkbRefreshFromRemoteIfIdle failed", e);
+    return false;
+  }finally{
+    __tkbRemoteRefreshInFlight = false;
+  }
+}
+try{
+  document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState === "visible") tkbRefreshFromRemoteIfIdle("visible"); });
+  window.addEventListener("focus", ()=>tkbRefreshFromRemoteIfIdle("focus"));
+  window.tkbRefreshFromRemoteIfIdle = tkbRefreshFromRemoteIfIdle;
+  window.__tkbHasUnsavedChanges = __tkbHasUnsavedChanges;
+}catch(_){ }
 function saveStoreDeferred(){
+  try{ tkbJointReconcileAtSave(); }catch(_){ }   // 29/08: đồng bộ tiết chung nhiều lớp trước khi lưu/vẽ
   if(__tkbDeferredSaveTimer) clearTimeout(__tkbDeferredSaveTimer);
   __tkbDeferredSaveTimer = setTimeout(()=>{
     __tkbDeferredSaveTimer = null;
@@ -1756,6 +2425,11 @@ window.flushDeferredSaveStore = flushDeferredSaveStore;
 
 function saveStore(options){
   let opts = options || {};
+  if(opts.trustedSolverApply !== true){ try{ tkbJointReconcileAtSave(); }catch(_){ } }
+  else if(typeof isPlannerBusySolving === "function" && !isPlannerBusySolving() && __TKB_JOINT_PINNED.length){
+    // 29/08: kết quả bộ giải áp sau khi cờ bận tắt -> ô ghim tạm quay lại "cố định" -> gỡ lần nữa
+    try{ tkbJointUnpinQuiet(); }catch(_){ }
+  }
   // Du lieu vua doi => cac chi muc tra cuu co the cu.
   // (TEACHER_LIST_FILTER_CACHE khong can xoa o day: planner chi DOC pccmMatrix/
   //  giaovien/lop — cache do tu miss khi cac object nay bi thay the boi remote
@@ -1783,6 +2457,20 @@ function saveStore(options){
       return opts.awaitRemote ? __tkbLastSavePromise.then(() => false) : false;
     }
   }
+  // 31/08: chặn ghi đè kho khi bản đang giữ là vỏ rỗng do nạp thất bại (xem storage.js remoteSaveGuard).
+  // Phải chặn ở đây vì nhánh XHR đồng bộ bên dưới không đi qua TKBStorage.saveRemoteSchoolData.
+  try{
+    if(window.TKBStorage && typeof window.TKBStorage.remoteSaveGuard === "function" && typeof schoolParam !== "undefined" && schoolParam){
+      const guard = window.TKBStorage.remoteSaveGuard(schoolParam, payload);
+      if(!guard.ok){
+        window.TKBStorage_lastSaveError = { status: 0, kind: guard.kind, message: guard.message };
+        console.warn("Remote school store save blocked:", guard.kind);
+        try{ if(typeof _setStatus === "function") _setStatus(guard.message, "error"); }catch(_){ }
+        try{ window.TKBStorage.showStoreGuardBanner(guard.message); }catch(_){ }
+        return opts.awaitRemote ? Promise.resolve(false) : false;
+      }
+    }
+  }catch(_){ }
   const changed = !chosen.usedStable;
   if(opts.syncRemote === true && typeof schoolParam !== "undefined" && schoolParam && typeof XMLHttpRequest !== "undefined"){
     try{
@@ -1921,7 +2609,7 @@ function getMonMeta(mon){
 
 
 
-/* [MOVED -> phanmon-ops.js] Section: heuristic_optimize */
+/* [REMOVED] Section: heuristic_optimize */
 
 /* ======================= VIEW MODE (LỚP / GIÁO VIÊN) ======================= */
 function updateViewButtonsActive(){
@@ -2120,6 +2808,7 @@ function selectGV(code){
 }
 
 function renderCurrentView(){
+  if(!__TKB_JOINT_SNAP){ try{ tkbJointTakeSnapshot(); }catch(_){ } }   // ảnh chụp tiết chung lúc nạp trang
   if(VIEW_MODE === "gv"){
     if(currentGV) renderTKBTeacher(currentGV);
     else {
@@ -2217,8 +2906,11 @@ function buildTeacherSchedule(gvCode){
         if(!v || v === "OFF") continue;
         const mon = cellMon(v);
         if(!mon) continue;
-        let gv = (typeof v === "object" && v.gv) ? v.gv : (typeof v === "string" && v.includes(" - ")) ? v.split(" - ")[1] : "";
-        if(!gv && mon !== "Chào cờ"){
+        let gv = (typeof v === "object" && v.gv) ? v.gv : cellLegacyTeacher(v, classCanon);
+        // Ô "Chào cờ" trần chỉ bỏ qua khi trường KHÔNG có môn thật mang tên đó (bản rất cũ
+        // tự chèn, không GV); nếu là alias của môn thật (vd HĐTN-HN 1 tên "Chào cờ") vẫn tra
+        // GVCN — không thì TKB GV thiếu tiết dù TKB lớp có (trường fiwemj2uyk1, 01/09).
+        if(!gv && (mon !== "Chào cờ" || findMonHoc(mon))){
           gv = getTeacherForClassMon(classCanon, mon);
         }
         if(gv && teacherValueHas(gv, code)){
@@ -2232,8 +2924,11 @@ function buildTeacherSchedule(gvCode){
         if(!v || v === "OFF") continue;
         const mon = cellMon(v);
         if(!mon) continue;
-        let gv = (typeof v === "object" && v.gv) ? v.gv : (typeof v === "string" && v.includes(" - ")) ? v.split(" - ")[1] : "";
-        if(!gv && mon !== "Chào cờ"){
+        let gv = (typeof v === "object" && v.gv) ? v.gv : cellLegacyTeacher(v, classCanon);
+        // Ô "Chào cờ" trần chỉ bỏ qua khi trường KHÔNG có môn thật mang tên đó (bản rất cũ
+        // tự chèn, không GV); nếu là alias của môn thật (vd HĐTN-HN 1 tên "Chào cờ") vẫn tra
+        // GVCN — không thì TKB GV thiếu tiết dù TKB lớp có (trường fiwemj2uyk1, 01/09).
+        if(!gv && (mon !== "Chào cờ" || findMonHoc(mon))){
           gv = getTeacherForClassMon(classCanon, mon);
         }
         if(gv && teacherValueHas(gv, code)){
@@ -2247,15 +2942,25 @@ function buildTeacherSchedule(gvCode){
   return sched;
 }
 
+// Ô TKB giáo viên: >1 lớp cùng tiết = trùng lịch, TRỪ các lớp của cùng một tiết học chung
+// (Dạy ghép nhiều lớp) -> gộp thành MỘT ô "6A1, 6A2 <nhãn>", đếm 1 tiết.
+function tkbTeacherCellView(arr){
+  const list = Array.isArray(arr) ? arr : [];
+  const merged = tkbJointMergeEntries(list);
+  if(merged !== list) return {entries: merged, conflict: false};
+  return {entries: list, conflict: list.length > 1};
+}
+
 function cellHTMLTeacher(entries, thu, buoi, ti, gvCode){
   const arr = Array.isArray(entries) ? entries : [];
-  const conflict = arr.length > 1;
+  const view = tkbTeacherCellView(arr);
+  const conflict = view.conflict;
   const teacherOff = isTeacherFixedOff(gvCode, thu, buoi, ti);
   const offConflict = teacherOff && arr.length > 0;
   const fixed = !teacherOff && arr.length > 0 && arr.some(e=>!!e.fixed);
 
-  const lines = arr.map(e=>{
-    const monShort = getMonShort(e.mon);
+  const lines = view.entries.map(e=>{
+    const monShort = tkbMonLabel(e.classId, e.mon);
     const room = (e.room||"").toString().trim();
     return `<div class="tkb-cell-stack">`+
       mobileStackCellLineHTML(e.classDisplay, monShort, "tkb-class-line tkb-class-subject-line")+
@@ -2268,9 +2973,10 @@ function cellHTMLTeacher(entries, thu, buoi, ti, gvCode){
     ? (offConflict ? `<div class="tkb-off-conflict-label">Nghỉ</div>${htmlLines}` : "")
     : htmlLines;
   const classIds = arr.map(e=>String(e.classId)).join(",");
-  const one = arr.length === 1 ? arr[0] : null;
+  const one = view.entries.length === 1 ? view.entries[0] : null;   // ô tiết chung gộp -> thao tác theo lớp đầu, các lớp còn lại đồng bộ
   const oneAttrs = one
     ? ` data-classid="${escapeHtml(String(one.classId))}" data-mon="${escapeHtml(String(one.mon || ""))}"`
+      + (one.jointClassLabel ? ` title="${escapeHtml(`Tiết chung: ${one.jointClassLabel}`)}"` : "")
     : "";
 
   return `<td class="${conflict?"tkb-gv-conflict":""} ${teacherOff?"tkb-off":""} ${offConflict?"tkb-off-conflict":""} ${fixed?"tkb-fixed":""}" data-classids="${escapeHtml(classIds)}" data-teacher="${escapeHtml(String(gvCode || ""))}" data-thu="${thu}" data-buoi="${buoi}" data-ti="${ti}"${oneAttrs} draggable="false">`+
@@ -2286,11 +2992,12 @@ function bindTeacherCells(){
     if(!ids.length) return;
     td.style.cursor = "pointer";
     td.ondblclick = (e)=>{
-      if(ids.length === 1){
+      if(ids.length === 1 || (td.dataset.classid || "").trim()){
         handleCellDoubleAction(td, e);
         return;
       }
       try{ e.preventDefault(); e.stopPropagation(); }catch(_){ }
+      if(td.classList && !td.classList.contains("tkb-gv-conflict")) return;
       // nhiều lớp trong cùng tiết => báo xung đột
       const txt = (td.innerText || "").trim();
       alert("⚠ Trùng lịch (nhiều lớp cùng 1 tiết):\n" + txt);
@@ -2323,13 +3030,14 @@ function renderTKBTeacher(gvCode, forceFullRebuild = false){
 
         const entries = (buoi === "chieu") ? sched[thu]?.chieu?.[ti] : sched[thu]?.sang?.[ti];
         const arr = Array.isArray(entries) ? entries : [];
-        const conflict = arr.length > 1;
+        const view = tkbTeacherCellView(arr);
+        const conflict = view.conflict;
         const teacherOff = isTeacherFixedOff(code, thu, buoi, ti);
         const offConflict = teacherOff && arr.length > 0;
         const fixed = !teacherOff && arr.length > 0 && arr.some(e=>!!e.fixed);
 
-        const lines = arr.map(e=>{
-          const monShort = getMonShort(e.mon);
+        const lines = view.entries.map(e=>{
+          const monShort = tkbMonLabel(e.classId, e.mon);
           const room = (e.room||"").toString().trim();
           return `<div class="tkb-cell-stack">`+
             mobileStackCellLineHTML(e.classDisplay, monShort, "tkb-class-line tkb-class-subject-line")+
@@ -2342,7 +3050,7 @@ function renderTKBTeacher(gvCode, forceFullRebuild = false){
           ? (offConflict ? `<div class="tkb-off-conflict-label">Nghỉ</div>${htmlLines}` : "")
           : htmlLines;
         const classIds = arr.map(e=>String(e.classId)).join(",");
-        const one = arr.length === 1 ? arr[0] : null;
+        const one = view.entries.length === 1 ? view.entries[0] : null;   // ô tiết chung gộp -> thao tác theo lớp đầu, các lớp còn lại đồng bộ
 
         const newClass = `${conflict?"tkb-gv-conflict":""} ${teacherOff?"tkb-off":""} ${offConflict?"tkb-off-conflict":""} ${fixed?"tkb-fixed":""}`.trim();
         if(td.className !== newClass) td.className = newClass;
@@ -2524,7 +3232,7 @@ function cellHTMLPhong(entries, thu, buoi, ti){
   const conflict = arr.length > 1;
 
   const lines = arr.map(e=>{
-    const monShort = getMonShort(e.mon);
+    const monShort = tkbMonLabel(e.classId, e.mon);
     const gv = (e.gv||"").toString().trim();
     const top = [e.classDisplay, monShort].filter(Boolean).join(" - ");
     return `<div class="tkb-cell-stack">`+
@@ -2537,6 +3245,7 @@ function cellHTMLPhong(entries, thu, buoi, ti){
   const one = arr.length === 1 ? arr[0] : null;
   const oneAttrs = one
     ? ` data-classid="${escapeHtml(String(one.classId))}" data-mon="${escapeHtml(String(one.mon || ""))}"`
+      + (one.jointClassLabel ? ` title="${escapeHtml(`Tiết chung: ${one.jointClassLabel}`)}"` : "")
     : "";
 
   return `<td class="${conflict?"tkb-gv-conflict":""}" data-classids="${escapeHtml(classIds)}" data-thu="${thu}" data-buoi="${buoi}" data-ti="${ti}"${oneAttrs} draggable="false">`+
@@ -2552,7 +3261,7 @@ function bindRoomCells(){
     if(!ids.length) return;
     td.style.cursor = "pointer";
     td.ondblclick = (e)=>{
-      if(ids.length === 1){
+      if(ids.length === 1 || (td.dataset.classid || "").trim()){
         handleCellDoubleAction(td, e);
         return;
       }
@@ -2621,9 +3330,14 @@ document.addEventListener("DOMContentLoaded", () => {
     console.warn("sanitizePlannerDataFromIndex failed", e);
   }
 
-  // Migration dữ liệu cũ
-  try{ migrateRemoveLegacyDefaultFixedEvents(); }catch(_){ }
+  // 31/08: ĐÃ BỎ migrateRemoveLegacyDefaultFixedEvents() (di sản v1.69). Hàm đó chạy MỖI lần tải trang,
+  // xóa ô "Chào cờ" ở Thứ 2/sáng/tiết 1 và "SHL" ở Thứ 6/chiều/tiết cuối (mặc định tự chèn của bản rất cũ)
+  // rồi saveStore() ngay → người dùng tự cố định Chào cờ đúng ô đó (trường 0l2vcan0xx1, 59 lớp) cứ F5 là mất
+  // và kho bị ghi đè bằng bản đã xóa. Mặc định tự chèn đã bỏ từ lâu (tkbConfig.fixed = []) nên không còn gì để dọn.
+  // Test khóa: e2e_tests/planner_fixed_chao_co_survives_load_node.test.js
   try{ migrateInvalidPartialSchedule(); }catch(_){ }
+  // 31/08: ô ghim tạm {fixed, jointPin} còn sót (tải lại giữa lượt giải) -> trả về ô thường
+  try{ tkbJointClearStalePins(); }catch(_){ }   // không ép lưu lúc tải; bản sạch đi cùng lần lưu kế tiếp
   // Hotkeys: Ctrl/Cmd+C + Ctrl/Cmd+V (copy/paste ô NGHỈ)
   try{ installTKBHotkeysOnce(); }catch(_){ }
 
@@ -3003,6 +3717,9 @@ function _monDisplayName(monKey){
   if(!raw) return "";
   const mh = findMonHoc(raw);
   const ten = (mh && mh.ten) ? String(mh.ten).trim() : "";
+  if(!ten){
+    try{ const g = tkbGhepRowByIdentity(raw); if(g) return tkbGhepLabelOf(g) || raw; }catch(_){ }
+  }
   return ten || raw;
 }
 
@@ -3302,7 +4019,7 @@ function selectLop(id){
 
 
 
-/* [MOVED -> phanmon-ops.js] Section: auto_sort_all */
+/* [REMOVED] Section: auto_sort_all */
 
 /* ======================= RENDER TKB ======================= */
 function renderTKB(id, forceFullRebuild = false){
@@ -3338,14 +4055,12 @@ function renderTKB(id, forceFullRebuild = false){
         let title = "";
         let body = "";
         if(!off){
-          const monShort = getMonShort(mon);
-          teacher = getTeacherForClassMon(lopCanon, mon);
-          const teacherShort = getTeacherShort(teacher);
-          const teacherFull = getTeacherNameByCode(teacher) || teacher;
-          title = [mon, teacherFull].filter(Boolean).join(" - ");
+          const view = tkbClassCellView(lopCanon, mon);
+          teacher = view.teacher;
+          title = view.title;
           body =
             `<div class="tkb-cell-stack">`+
-              mobileStackCellLineHTML(monShort, teacherShort, "tkb-class-line tkb-lesson-line")+
+              mobileStackCellLineHTML(view.monShort, view.teacherShort, "tkb-class-line tkb-lesson-line")+
             `</div>`;
         }
 
@@ -3388,6 +4103,27 @@ function renderTKB(id, forceFullRebuild = false){
 }
 
 /* ======================= CELL ======================= */
+// Nội dung ô bảng LỚP: {monShort, teacher, teacherShort, title}. 29/08 (chủ dự án): ô môn dạy ghép
+// chỉ ghi tên viết tắt — chuỗi "GV1, GV2, GV3, GV4" quá dài; GV (và các lớp cùng tiết chung) vào tooltip.
+function tkbClassCellView(lopCanon, mon){
+  const monShort = tkbMonLabel(lopCanon, mon);
+  const teacher = getTeacherForClassMon(lopCanon, mon);
+  let teacherShort = getTeacherShort(teacher);
+  const teacherFull = getTeacherNameByCode(teacher) || teacher;
+  let title = [mon, teacherFull].filter(Boolean).join(" - ");
+  let ghepRow = null;
+  try{ ghepRow = tkbGhepRowFor(lopCanon, mon); }catch(_){ ghepRow = null; }
+  if(ghepRow){
+    teacherShort = "";
+    const parts = [monShort];
+    if(teacher) parts.push(`GV: ${teacherFull}`);
+    else if(tkbGhepRowHasNoTeacher(ghepRow)) parts.push("Tiết không giáo viên");
+    if(Array.isArray(ghepRow.lop) && ghepRow.lop.length >= 2) parts.push(`Tiết chung: ${ghepRow.lop.join(", ")}`);
+    title = parts.join(" — ");
+  }
+  return {monShort, teacher, teacherShort, title};
+}
+
 function cellHTML(v, thu, buoi, ti, lopCanon){
   const off = (v === "OFF");
   const fixed = isFixed(v);
@@ -3396,14 +4132,12 @@ function cellHTML(v, thu, buoi, ti, lopCanon){
   let title = "";
   let body = "";
   if(!off){
-    const monShort = getMonShort(mon);
-    teacher = getTeacherForClassMon(lopCanon, mon);
-    const teacherShort = getTeacherShort(teacher);
-    const teacherFull = getTeacherNameByCode(teacher) || teacher;
-    title = [mon, teacherFull].filter(Boolean).join(" - ");
+    const view = tkbClassCellView(lopCanon, mon);
+    teacher = view.teacher;
+    title = view.title;
     body =
       `<div class="tkb-cell-stack">`+
-        mobileStackCellLineHTML(monShort, teacherShort, "tkb-class-line tkb-lesson-line")+
+        mobileStackCellLineHTML(view.monShort, view.teacherShort, "tkb-class-line tkb-lesson-line")+
       `</div>`;
   }
 
@@ -5049,32 +5783,52 @@ function bindCells(){
       e.preventDefault();
       let res = DRAG_VALIDATE_CACHE.get(td);
       if(!res){
-        res = validateDrop(td, dragMon);
+        // lượt 6: chưa tô tới ô này -> kiểm nhanh, kế hoạch đổi chỗ để lát tô màu tính
+        res = tkbMainDropResult(td, dragMon, {deadline: Date.now() - 1});
         DRAG_VALIDATE_CACHE.set(td, res);
       }
       setDropHint(td, res.ok && !res.warn);
     };
 
-    td.ondragenter = ()=>{
+    td.ondragenter = (e)=>{
       if(!dragData || isPlannerBusySolving()) return;
+      // 13/09 (lượt 8, chủ dự án: "kéo thả bị đứng, không kéo thả được" — tái hiện bằng kéo chuột thật
+      // trên Chrome): con trỏ đi từ chữ trong ô (span) sang nền ô (td) là ĐỔI phần tử đích; lần cập nhật đó
+      // Chrome lấy kết quả của dragenter (dragover chỉ bắn ở lần sau). dragenter không huỷ = "không thả được"
+      // -> thả đúng lúc đó bị từ chối (dragleave + dragend, không có drop). Phải huỷ cả dragenter.
+      try{ if(e) e.preventDefault(); }catch(_){ }
       td.classList.add("drag-over");
     };
-    td.ondragleave = ()=>{
+    td.ondragleave = (e)=>{
+      // rời chữ bên trong ô sang chính ô đó (hoặc ngược lại) không phải rời ô
+      if(e && e.relatedTarget && td.contains(e.relatedTarget)) return;
       releaseDragOver(td);
     };
 
     td.ondrop = (e)=>{
       if(!dragData || isPlannerBusySolving()){ try{ if(e) e.preventDefault(); }catch(_){} return; }
       try{ if(e) e.preventDefault(); }catch(_){ }
+      // 13/09: tiết bị đè chuyển được sang ô cũ -> đổi chỗ, không đưa về "Chưa phân"
+      if(tkbTryDropSwap(td, currentLop)) return;
       let res = validateDrop(td, dragMon);
       if(!res.ok && maybeRaiseSessionLimitForDrop(td, dragMon, res)){
         res = validateDrop(td, dragMon);
+        if(res.ok && tkbTryDropSwap(td, currentLop)) return;
       }
 
       // Không hợp lệ => chặn luôn
       if(!res.ok){
         flashInvalid(td);
         showDropError(res, td);
+        return;
+      }
+
+      // 13/09 (lượt 4): tiết đang có mà thả đè tiết khác thì phải đổi chỗ được — không cho thả, không
+      // đưa tiết nào về "Chưa phân". (Kéo từ "Chưa phân" vẫn đi đường cũ bên dưới.)
+      const blockedNote = tkbSwapBlockedNote(td, currentLop, res);
+      if(blockedNote){
+        flashInvalid(td);
+        showDropError({ok:false, reason:"swap-blocked", msg:blockedNote}, td);
         return;
       }
 
@@ -5253,6 +6007,8 @@ function buildReplaceConfirmText(conflicts){
       lines.push(`- Trùng GV ${c.gv || ""}: ${mon}-${lop}`);
     } else if(c.type === "room"){
       lines.push(`- Trùng phòng ${c.room || ""}: ${mon}-${lop}`);
+    } else if(c.type === "joint"){
+      lines.push(`- Tiết chung: lớp ${lop} đang có ${mon} ở ô này (sẽ về Chưa phân)`);
     } else {
       lines.push(`- Xung đột: ${mon}-${lop}`);
     }
@@ -5329,6 +6085,297 @@ function onDrop(td){
   dragMon = "";
 }
 
+/* ======================= ĐỔI CHỖ KHI THẢ ĐÈ (13/09) =======================
+   Chủ dự án 13/09: kéo tiết A thả lên ô đang có tiết khác — nếu các tiết bị đè chuyển được
+   sang ô cũ của A mà vẫn đúng mọi luật thì ĐỔI CHỖ thay vì đưa chúng về "Chưa phân".
+   Tiết bị đè = tiết B của chính lớp ở ô đích + tiết C ở lớp khác cùng giờ đang giữ GV/phòng
+   của A; ô cũ của A ở lớp đó đang có tiết D thì D sang ô đích (đổi chỗ kép — kéo 2 tiết của
+   cùng GV ở 2 lớp trên bảng GV). Dùng cho bảng lớp và bảng GV.
+   Chủ dự án 13/09 (lượt 4): "2 bên phải thật sự trống mới xanh" — kéo một tiết ĐANG CÓ lên ô sẽ đè
+   tiết khác chỉ được khi đổi chỗ được; không thì ô đỏ, thả bị từ chối kèm lý do, KHÔNG đưa tiết
+   nào về "Chưa phân". Kéo từ "Chưa phân" giữ đường cũ.
+   - Chỉ đổi trong lớp: kiểm "A kéo nguồn -> đích" và "B kéo đích -> nguồn" trên dữ liệu thật;
+     validateDrop + luật Yêu cầu loại cả ô nguồn lẫn ô đích nên không đếm trùng tiết.
+   - Có tiết lớp khác: đặt thử trạng thái SAU khi đổi, xoá bộ đệm luật Yêu cầu (chỉ mục lịch
+     không tự theo dõi ô đổi) rồi kiểm từng tiết tại chỗ mới; luôn trả nguyên dữ liệu.
+   Không đổi tiết cố định, ô nghỉ, tiết học chung nhiều lớp (Dạy ghép). */
+function tkbSwapSlot(ds){
+  if(!ds) return null;
+  const ti = Number(ds.ti);
+  if(!ds.thu || !ds.buoi || !Number.isInteger(ti) || ti < 0) return null;
+  return {thu:String(ds.thu), buoi:String(ds.buoi), ti};
+}
+
+function tkbSwapMovable(raw){
+  return raw !== "OFF" && !isFixed(raw) && !!cellMon(raw);
+}
+
+function tkbSwapIsJoint(classId, mon){
+  try{ return typeof tkbGhepJointRowAt === "function" && !!tkbGhepJointRowAt(classId, mon); }
+  catch(_){ return true; }
+}
+
+// warm: dựng lại NGAY chỉ mục lịch của luật Yêu cầu. Luật ở chế độ kéo thả dừng sau 24 ms; lượt
+// kiểm đầu sau khi xoá bộ đệm mà phải tự dựng chỉ mục sẽ bị cắt giữa chừng và cho qua dễ dãi.
+// 13/09 (lượt 6, "kéo bị đứng"): trước đây làm ấm bằng một lượt kiểm ĐẦY ĐỦ (cả luật toàn trường)
+// cho mỗi lần thử đổi chỗ khác lớp — quá nặng; nay chỉ dựng chỉ mục (teacherCellsAfterPlace).
+function tkbSwapInvalidateRules(warm){
+  try{ window.TKBConstraints?.invalidateConstraintCache?.(); }catch(_){ }
+  if(warm){
+    try{ window.TKBConstraints?.teacherCellsAfterPlace?.("__tkb_swap_warm__", {}); }catch(_){ }
+  }
+}
+
+// 13/09 (lượt 7, chủ dự án: "kéo thả các tiết bị đứng, không kéo thả được"): mỗi lần thử đổi chỗ khác
+// lớp trước đây gọi invalidateConstraintCache 2 lần = dựng lại CẢ chỉ mục luật + xoá mọi bảng dẫn xuất
+// (đo kho TEST 36 lớp: ~20-60 ms/lần, và ô kế tiếp lại phải dựng tiếp) -> lát tô màu chặn luồng liên tục.
+// Nay chỉ quét lại ô của các lớp trong kế hoạch (TKBConstraints.refreshScheduleIndexClasses, ~1 ms);
+// bản tkb-constraints.js cũ chưa có hàm đó thì dựng lại đầy đủ như trước.
+function tkbSwapRefreshRules(plan, warm){
+  const api = window.TKBConstraints;
+  if(api && typeof api.refreshScheduleIndexClasses === "function"){
+    const ids = [plan.classId].concat(plan.moves.map(mv=>mv.classId));
+    try{ if(api.refreshScheduleIndexClasses(ids)) return; }catch(_){ }
+  }
+  tkbSwapInvalidateRules(warm);
+}
+
+function tkbSwapWarmCtx(classId, slot, mon){
+  return {lopId:String(classId), mon, thu:slot.thu, buoi:slot.buoi, ti:slot.ti};
+}
+
+// Kiểm tiết `mon` của lớp ở ô `slot` như một lần kéo tay từ ô `from` (mặc định: tại chỗ).
+function tkbSwapLessonCheck(classId, slot, mon, from){
+  const src = from || slot;
+  const stub = tkbAutoRepairCellStub(classId, slot.thu, slot.buoi, slot.ti);
+  const task = {
+    classId, classCanon:getLopCanonById(classId), mon, remain:1,
+    dragData:{type:"cell", classId, mon, val:mon, from:tkbAutoRepairCellStub(classId, src.thu, src.buoi, src.ti)}
+  };
+  try{
+    return tkbAutoRepairWithDropContext(task, ()=>validateDrop(stub, mon)) || {ok:false, reason:"runtime"};
+  }catch(err){
+    return {ok:false, reason:"runtime", msg:String(err && err.message || err)};
+  }
+}
+
+function tkbSwapLessonFits(classId, slot, mon, from){
+  const res = tkbSwapLessonCheck(classId, slot, mon, from);
+  return !!(res && res.ok && !res.warn);
+}
+
+// Ghi các ô của kế hoạch vào DATA.tkb; trả hàm hoàn tác.
+function tkbSwapWriteCells(plan){
+  const tkbs = DATA.tkb;
+  const saved = [];
+  const put = (classId, slot, value)=>{
+    const arr = tkbs[classId][slot.thu][slot.buoi];
+    saved.push([arr, slot.ti, arr[slot.ti]]);
+    arr[slot.ti] = value;
+  };
+  put(plan.classId, plan.from, "");
+  plan.moves.forEach(mv=>put(mv.classId, mv.from, ""));
+  put(plan.classId, plan.to, plan.raw);
+  plan.moves.forEach(mv=>put(mv.classId, mv.to, mv.raw));
+  return ()=>{
+    for(let i = saved.length - 1; i >= 0; i--){
+      const [arr, ti, value] = saved[i];
+      arr[ti] = value;
+    }
+  };
+}
+
+function tkbSwapPlanFits(plan){
+  if(plan.moves.every(mv=>mv.classId === plan.classId)){
+    return tkbSwapLessonFits(plan.classId, plan.to, plan.mon, plan.from)
+      && tkbSwapLessonFits(plan.classId, plan.from, plan.moves[0].mon, plan.to);
+  }
+  const undo = tkbSwapWriteCells(plan);
+  try{
+    tkbSwapRefreshRules(plan, tkbSwapWarmCtx(plan.classId, plan.to, plan.mon));
+    return tkbSwapLessonFits(plan.classId, plan.to, plan.mon)
+      && plan.moves.every(mv=>tkbSwapLessonFits(mv.classId, mv.to, mv.mon));
+  }catch(_){
+    return false;
+  }finally{
+    undo();
+    tkbSwapRefreshRules(plan, tkbSwapWarmCtx(plan.classId, plan.from, plan.mon));
+  }
+}
+
+// Kế hoạch đổi chỗ khi thả tiết `mon` của lớp từ ô `from` lên ô `to`; null = không đổi được.
+function tkbDropSwapPlan(classId, from, to, mon){
+  classId = String(classId || "");
+  mon = String(mon || "").trim();
+  if(!classId || !mon || !from || !to) return null;
+  if(from.thu === to.thu && from.buoi === to.buoi && from.ti === to.ti) return null;
+  const tkbs = DATA?.tkb || {};
+  const session = (lopId, slot)=>{
+    const arr = tkbs[lopId]?.[slot.thu]?.[slot.buoi];
+    return (Array.isArray(arr) && slot.ti < arr.length) ? arr : null;
+  };
+  const srcArr = session(classId, from);
+  const dstArr = session(classId, to);
+  if(!srcArr || !dstArr) return null;
+  const raw = srcArr[from.ti];
+  if(!tkbSwapMovable(raw) || cellMon(raw) !== mon || tkbSwapIsJoint(classId, mon)) return null;
+  const rawTarget = dstArr[to.ti];
+  if(rawTarget === "OFF" || isFixed(rawTarget)) return null;
+
+  const moves = [];
+  const targetMon = cellMon(rawTarget);
+  if(targetMon){
+    if(targetMon === mon || tkbSwapIsJoint(classId, targetMon)) return null;
+    moves.push({classId, mon:targetMon, raw:rawTarget, from:to, to:from});
+  }
+
+  const canon = getLopCanonById(classId);
+  const gv = teacherValueFromRaw(getTeacherForClassMon(canon, mon));
+  const room = String(getRoomForClassMon(canon, mon) || "").trim();
+  for(const lopId of Object.keys(tkbs)){
+    if(String(lopId) === classId) continue;
+    const other = session(lopId, to)?.[to.ti];
+    const otherMon = cellMon(other);
+    if(!otherMon) continue;
+    const otherCanon = getLopCanonById(lopId);
+    const clashGv = !!gv && teacherValuesIntersect(getTeacherForClassMon(otherCanon, otherMon), gv)
+      && !tkbIsJointGhepPair(mon, classId, otherMon, lopId);
+    const clashRoom = !!room && String(getRoomForClassMon(otherCanon, otherMon) || "").trim() === room;
+    if(!clashGv && !clashRoom) continue;
+    if(!tkbSwapMovable(other) || tkbSwapIsJoint(lopId, otherMon)) return null;
+    const back = session(lopId, from);
+    const backRaw = back ? back[from.ti] : "OFF";
+    if(backRaw === "OFF" || isFixed(backRaw)) return null;
+    moves.push({classId:String(lopId), mon:otherMon, raw:other, from:to, to:from});
+    // ô cũ của A ở lớp này đang có tiết D -> D sang ô đích của lớp này (đổi chỗ kép)
+    const backMon = cellMon(backRaw);
+    if(backMon){
+      if(tkbSwapIsJoint(lopId, backMon)) return null;
+      moves.push({classId:String(lopId), mon:backMon, raw:backRaw, from, to});
+    }
+  }
+  if(!moves.length) return null;
+
+  const plan = {classId, from, to, mon, raw, moves};
+  return tkbSwapPlanFits(plan) ? plan : null;
+}
+
+// opts.fresh: bỏ qua bộ đệm (lúc thả); opts.deadline: hết ngân sách lúc tô thì trả undefined.
+function tkbDropSwapPlanCached(classId, from, to, mon, opts){
+  const o = opts || {};
+  if(!from || !to) return null;
+  const key = [classId, from.thu, from.buoi, from.ti, to.thu, to.buoi, to.ti, mon].join("|");
+  if(!o.fresh && DRAG_SWAP_PLAN_CACHE.has(key)) return DRAG_SWAP_PLAN_CACHE.get(key);
+  if(o.deadline && Date.now() > o.deadline) return undefined;
+  const plan = tkbDropSwapPlan(classId, from, to, mon);
+  DRAG_SWAP_PLAN_CACHE.set(key, plan);
+  return plan;
+}
+
+// Ô nguồn/đích của lượt kéo một tiết đang có trên lưới (không áp cho kéo từ "Chưa phân").
+function tkbDragSwapContext(td, classId){
+  if(!dragData || (dragData.type !== "cell" && dragData.type !== "pairTeacherCell")) return null;
+  const lop = String(classId || "");
+  if(!lop) return null;
+  if(dragData.classId != null && String(dragData.classId) !== lop) return null;
+  const from = tkbSwapSlot(dragData.from?.dataset);
+  const to = tkbSwapSlot(td?.dataset);
+  return (from && to) ? {classId:lop, from, to} : null;
+}
+
+// Lượt kéo tiết đang có này có đè tiết nào không (tiết khác môn ở ô đích / tiết trùng GV-phòng cùng giờ).
+function tkbSwapDisplaces(ctx, mon, res){
+  const targetMon = cellMon(DATA?.tkb?.[ctx.classId]?.[ctx.to.thu]?.[ctx.to.buoi]?.[ctx.to.ti]);
+  return (!!targetMon && targetMon !== mon) || !!(res && res.warn);
+}
+
+// Kết quả kiểm khi thả tiết đang có (base = validateDrop của tiết đó): đè tiết khác thì chỉ hợp lệ
+// khi đổi chỗ được. {swap} = xanh + đổi chỗ; swap-pending = chưa kịp tính (tính lúc rê chuột);
+// swap-blocked = đỏ, không cho thả.
+function tkbSwapAwareResult(res, classId, from, to, mon, opts){
+  const onlyGvRoom = !(Array.isArray(res.conflicts) && res.conflicts.some(c=>c.type !== "teacher" && c.type !== "room"));
+  const plan = onlyGvRoom ? tkbDropSwapPlanCached(classId, from, to, mon, opts) : null;
+  if(plan === undefined) return {ok:false, reason:"swap-pending", swapDeferred:true};
+  if(plan) return Object.assign({}, res, {warn:false, conflicts:[], swap:plan});
+  return {ok:false, reason:"swap-blocked", swapBlocked:true};
+}
+
+// Bảng lớp.
+function tkbMainDropResult(td, mon, opts){
+  const res = validateDrop(td, mon);
+  if(!res || !res.ok) return res;
+  const ctx = tkbDragSwapContext(td, currentLop);
+  if(!ctx || !tkbSwapDisplaces(ctx, mon, res)) return res;
+  return tkbSwapAwareResult(res, ctx.classId, ctx.from, ctx.to, mon, opts);
+}
+
+function tkbApplyDropSwap(plan, td){
+  tkbSwapWriteCells(plan);
+  tkbSwapInvalidateRules(tkbSwapWarmCtx(plan.classId, plan.to, plan.mon));
+  const others = plan.moves.map(mv=>mv.classId === plan.classId
+    ? getMonShort(mv.mon)
+    : `${getMonShort(mv.mon)}-${getLopCanonById(mv.classId)}`).join(", ");
+  const msg = `Đã đổi chỗ ${getMonShort(plan.mon)} ↔ ${others}.`;
+  try{ showDropToast(msg, td, "info"); }catch(_){ }
+  try{ _setStatus(msg, "info"); }catch(_){ }
+  try{ saveStoreDeferred(); }catch(e){ console.error('saveStore failed', e); }
+  try{ renderCurrentView(); }catch(e){ console.error('renderCurrentView failed', e); }
+  try{ loadMonList(); }catch(e){ console.error('loadMonList failed', e); }
+  clearDragVisual();
+  dragData = null;
+  dragMon = "";
+}
+
+// Lý do (tiếng Việt) một lần kiểm không đạt.
+function tkbSwapReasonText(res){
+  if(!res || (res.ok && !res.warn)) return "";
+  const first = String(res.msg || "").split("\n")[0].trim();
+  switch(res.reason){
+    case "exceed session limit": return `vượt giới hạn ${Number(res.limit) || 1} tiết/buổi`;
+    case "split block":
+    case "touch left":
+    case "touch right": return "các tiết cùng môn trong buổi sẽ không liền nhau";
+    case "exceed week total": return "vượt số tiết/tuần";
+    case "locked": return "ô bị khoá (nghỉ / cố định)";
+    default: return first || String(res.reason || "");
+  }
+}
+
+// Kéo tiết đang có lên ô sẽ đè tiết khác mà không đổi chỗ được: câu báo lý do ("" = không đè tiết nào).
+// res = validateDrop của tiết đang kéo tại ô đích (để biết tiết trùng GV/phòng).
+function tkbSwapBlockedNote(td, classId, res){
+  const ctx = tkbDragSwapContext(td, classId);
+  if(!ctx) return "";
+  const targetMon = cellMon(DATA?.tkb?.[ctx.classId]?.[ctx.to.thu]?.[ctx.to.buoi]?.[ctx.to.ti]);
+  const hasTarget = !!targetMon && targetMon !== dragMon;
+  const conflicts = (res && res.warn && Array.isArray(res.conflicts)) ? res.conflicts : [];
+  if(!hasTarget && !conflicts.length) return "";
+  const name = hasTarget ? getMonShort(targetMon) : "";
+  let why = "";
+  if(hasTarget && (tkbSwapIsJoint(ctx.classId, targetMon) || tkbSwapIsJoint(ctx.classId, dragMon))){
+    why = "tiết học chung nhiều lớp không đổi chỗ bằng kéo thả";
+  }else if(hasTarget){
+    const back = tkbSwapReasonText(tkbSwapLessonCheck(ctx.classId, ctx.from, targetMon, ctx.to));
+    if(back) why = `${name} về ô cũ thì ${back}`;
+  }
+  if(!why && conflicts.length){
+    const clash = conflicts.map(c=>c && c.msg).filter(Boolean)[0] || "trùng lịch ở tiết này";
+    why = `${clash} — tiết đó không đổi sang ô cũ được`;
+  }
+  return `Không đổi chỗ được${why ? ": " + why : ""}.`;
+}
+
+// Thả trên bảng lớp: true = đã đổi chỗ xong.
+function tkbTryDropSwap(td, classId){
+  const ctx = tkbDragSwapContext(td, classId);
+  if(!ctx) return false;
+  const plan = tkbDropSwapPlanCached(ctx.classId, ctx.from, ctx.to, dragMon, {fresh:true});
+  if(!plan) return false;
+  tkbApplyDropSwap(plan, td);
+  return true;
+}
+/* ======================= HẾT ĐỔI CHỖ KHI THẢ ĐÈ ======================= */
+
 function setDropHint(td, ok){
   const want = ok ? "drop-valid" : "drop-invalid";
   if(td.classList.contains(want)) return; // tranh churn class -> style recalc moi dragover
@@ -5352,30 +6399,56 @@ function tkbSupportDropCells(){
   return Array.from(document.querySelectorAll(".tkb-support-table td[data-pair-slot='teacher']"));
 }
 
+// 13/09 (lượt 6, chủ dự án: "kéo các tiết bị đứng, không mượt"): tô theo LÁT ~12 ms rồi nhả luồng
+// cho trình duyệt (setTimeout 0) thay vì kiểm toàn bộ ô trong một khung. Ô cần kế hoạch đổi chỗ mà
+// hết lát (swapDeferred) được xếp lại cuối hàng; mỗi lát luôn tính xong ít nhất một ô nên chắc chắn
+// tiến. Rê chuột (dragover) không tự tính kế hoạch nặng — chỉ đọc kết quả lát đã tô.
+const DRAG_PAINT_SLICE_MS = 12;
+
 function paintDropTargets(mon){
   const token = ++DRAG_PAINT_TOKEN;
-  const paint = (cells, validate)=>{
-    cells.forEach(td=>{
-      if(td.classList.contains("drag-source")) return;
+  const validateSupport = window.__tkbValidateSupportDrop;
+  const queue = tkbMainDropCells().map(td=>({td, main:true}));
+  if(typeof validateSupport === "function"){
+    tkbSupportDropCells().forEach(td=>queue.push({td, main:false}));
+  }
+  let warmed = false;
+  const run = ()=>{
+    if(token !== DRAG_PAINT_TOKEN || !dragData) return;
+    if(!warmed){
+      // lượt 7: dựng chỉ mục luật MỘT lần ở đầu lượt kéo (lưới có thể vừa đổi mà chưa lưu), các lần
+      // thử đổi chỗ sau chỉ làm tươi từng lớp. Lát riêng để thao tác kéo khởi động mượt.
+      warmed = true;
+      tkbSwapInvalidateRules(true);
+      setTimeout(run, 0);
+      return;
+    }
+    const sliceEnd = Date.now() + DRAG_PAINT_SLICE_MS;
+    let first = true;
+    while(queue.length && (first || Date.now() < sliceEnd)){
+      const item = queue.shift();
+      const td = item.td;
+      if(td.classList.contains("drag-source")) continue;
       let res = DRAG_VALIDATE_CACHE.get(td);
-      if(!res){
-        try{ res = validate(td); }catch(_){ res = {ok:false, reason:"runtime"}; }
+      if(!res || res.swapDeferred){
+        const opts = {deadline: first ? Date.now() + DRAG_SWAP_PAINT_BUDGET_MS : sliceEnd};
+        first = false;
+        try{ res = item.main ? tkbMainDropResult(td, mon, opts) : validateSupport(td, opts); }
+        catch(_){ res = {ok:false, reason:"runtime"}; }
         DRAG_VALIDATE_CACHE.set(td, res);
+        if(res && res.swapDeferred) queue.push(item);
       }
       setDropHint(td, !!(res && res.ok && !res.warn));
-    });
+    }
+    if(queue.length) setTimeout(run, 0);
   };
-  requestAnimationFrame(()=>{
-    if(token !== DRAG_PAINT_TOKEN || !dragData) return;
-    paint(tkbMainDropCells(), td => validateDrop(td, mon));
-    const validateSupport = window.__tkbValidateSupportDrop;
-    if(typeof validateSupport === "function") paint(tkbSupportDropCells(), validateSupport);
-  });
+  setTimeout(run, 0);
 }
 
 function applyDragVisual(mon, excludeTd){
   clearDragVisual();
   DRAG_VALIDATE_CACHE.clear();
+  DRAG_SWAP_PLAN_CACHE.clear();
 
   // excludeTd có thể là <td> (khi kéo trong TKB) hoặc null (khi kéo từ "Chưa phân")
   const isEl = !!(excludeTd && typeof excludeTd === "object" && excludeTd.classList);
@@ -5395,6 +6468,7 @@ function applyDragVisual(mon, excludeTd){
 function clearDragVisual(){
   DRAG_PAINT_TOKEN++; // huỷ lượt tô đang chờ frame
   DRAG_VALIDATE_CACHE.clear();
+  DRAG_SWAP_PLAN_CACHE.clear();
   document.querySelectorAll("#tkb td").forEach(td=>{
     td.classList.remove("conflict","drag-source","drag-over","drop-valid","drop-invalid");
   });
@@ -5405,6 +6479,288 @@ function releaseDragOver(td){
   td.classList.remove("drag-over");
   if(!DRAG_VALIDATE_CACHE.has(td)) td.classList.remove("drop-valid","drop-invalid");
 }
+
+/* ======================= KÉO THẢ BẰNG CẢM ỨNG (ĐIỆN THOẠI) ======================= */
+// 13/09 (lượt 9, chủ dự án: "kéo thả trên điện thoại không được"): trang chỉ dựa vào kéo thả gốc
+// (dragstart / dragover / drop) mà trình duyệt điện thoại (Android Chrome, nhiều bản iOS) không bắn
+// khi chạm vào ô draggable. Android còn bắn contextmenu khi giữ ngón tay -> td.oncontextmenu (chuột
+// phải = đưa tiết về Chưa phân) có thể xoá mất tiết. Ở đây: giữ ngón tay ~300 ms trên phần tử kéo
+// được của trang Sắp xếp thì bắt đầu kéo, bóng tiết chạy theo ngón tay, rồi PHÁT LẠI đúng chuỗi sự
+// kiện dragstart / dragenter / dragover / dragleave / drop / dragend lên phần tử dưới ngón tay — đi
+// chung mọi handler của chuột (tô xanh/đỏ, đổi chỗ, bảng GV, kéo từ Chưa phân). Chuột vẫn kéo gốc.
+const TKB_TOUCH_DRAG_HOLD_MS = 300;
+const TKB_TOUCH_DRAG_SLOP_PX = 10;
+const TKB_TOUCH_DRAG_EDGE_PX = 48;
+const TKB_TOUCH_DRAG = {state:null, touchingUntil:0};
+
+function tkbTouchDragDataTransfer(){
+  const data = {};
+  return {
+    dropEffect:"move", effectAllowed:"all", types:[], files:[], items:[],
+    setData(type, value){ data[String(type)] = String(value); this.types = Object.keys(data); },
+    getData(type){ return data[String(type)] || ""; },
+    clearData(){ Object.keys(data).forEach(k=>{ delete data[k]; }); this.types = []; },
+    setDragImage(){ }
+  };
+}
+
+// Sự kiện kéo giả: Event thường + các thuộc tính handler kéo thả đọc (dataTransfer, relatedTarget, toạ độ).
+function tkbTouchDragEvent(type, extra){
+  const st = TKB_TOUCH_DRAG.state;
+  const ev = new Event(type, {bubbles:true, cancelable:true});
+  const props = Object.assign({
+    dataTransfer: st ? st.dt : tkbTouchDragDataTransfer(),
+    clientX: st ? st.x : 0,
+    clientY: st ? st.y : 0,
+    relatedTarget: null,
+    pointerType: "touch",
+    tkbTouchDrag: true
+  }, extra || {});
+  Object.keys(props).forEach(key=>{
+    try{ Object.defineProperty(ev, key, {value:props[key], configurable:true}); }catch(_){ }
+  });
+  return ev;
+}
+
+// true = không ai huỷ sự kiện (dragover: không thả được ở đây).
+function tkbTouchDragFire(el, type, extra){
+  if(!el) return true;
+  try{ return el.dispatchEvent(tkbTouchDragEvent(type, extra)); }
+  catch(err){ console.warn("[tkb-touch-drag]", type, err); return true; }
+}
+
+function tkbTouchDragSource(target){
+  const el = target && target.closest ? target.closest("[draggable]") : null;
+  if(!el || el.getAttribute("draggable") !== "true") return null;
+  if(!el.matches("#tkb td, .mon-item")) return null;
+  return el;
+}
+
+function tkbTouchDragPlaceGhost(st){
+  if(!st.ghost) return;
+  st.ghost.style.left = `${Math.round(st.x)}px`;
+  st.ghost.style.top = `${Math.round(st.y)}px`;
+}
+
+function tkbTouchDragUpdateTarget(st){
+  let el = null;
+  try{ el = document.elementFromPoint(st.x, st.y); }catch(_){ }
+  if(el && st.ghost && st.ghost.contains(el)) el = null;
+  if(el !== st.target){
+    const prev = st.target;
+    if(el) tkbTouchDragFire(el, "dragenter", {relatedTarget:prev});
+    if(prev) tkbTouchDragFire(prev, "dragleave", {relatedTarget:el});
+    st.target = el;
+  }
+  st.allowed = el ? !tkbTouchDragFire(el, "dragover") : false;
+  st.overAt = Date.now();
+}
+
+function tkbTouchDragScroller(el){
+  for(let node = el; node && node !== document.body && node !== document.documentElement; node = node.parentElement){
+    let oy = "";
+    try{ oy = getComputedStyle(node).overflowY; }catch(_){ }
+    if((oy === "auto" || oy === "scroll") && node.scrollHeight > node.clientHeight + 1) return node;
+  }
+  return null;
+}
+
+// Ngón tay sát mép vùng cuộn (bảng lớp/GV hoặc cả trang) thì tự cuộn; ngón tay đứng yên vẫn bắn
+// dragover định kỳ như trình duyệt để màu ô cập nhật khi lát tô màu tính xong.
+function tkbTouchDragTick(st){
+  if(TKB_TOUCH_DRAG.state !== st || st.phase !== "active") return;
+  const edge = TKB_TOUCH_DRAG_EDGE_PX;
+  let scrolled = false;
+  const box = tkbTouchDragScroller(st.target || st.source);
+  if(box){
+    const r = box.getBoundingClientRect();
+    const top = Math.max(r.top, 0);
+    const bottom = Math.min(r.bottom, window.innerHeight);
+    const before = box.scrollTop;
+    if(st.y < top + edge) box.scrollTop = before - Math.ceil((top + edge - st.y) / 4);
+    else if(st.y > bottom - edge) box.scrollTop = before + Math.ceil((st.y - (bottom - edge)) / 4);
+    scrolled = box.scrollTop !== before;
+  }
+  if(!scrolled){
+    const vh = window.innerHeight;
+    const before = window.scrollY;
+    if(st.y < edge) window.scrollBy(0, -Math.ceil((edge - st.y) / 4));
+    else if(st.y > vh - edge) window.scrollBy(0, Math.ceil((st.y - (vh - edge)) / 4));
+    scrolled = window.scrollY !== before;
+  }
+  if(scrolled || Date.now() - (st.overAt || 0) > 100) tkbTouchDragUpdateTarget(st);
+  st.raf = requestAnimationFrame(()=>tkbTouchDragTick(st));
+}
+
+function tkbTouchDragTeardown(st){
+  if(!st) return;
+  if(st.timer){ clearTimeout(st.timer); st.timer = 0; }
+  if(st.raf){ try{ cancelAnimationFrame(st.raf); }catch(_){ } st.raf = 0; }
+  if(st.ghost){ try{ st.ghost.remove(); }catch(_){ } st.ghost = null; }
+  // trả lại draggable đã tắt tạm (chặn kéo gốc của iOS/Android trong lúc giữ ngón tay)
+  if(st.source && st.restoreDraggable && st.source.getAttribute("draggable") === "false"){
+    st.source.setAttribute("draggable", "true");
+  }
+  st.restoreDraggable = false;
+  document.documentElement.classList.remove("tkb-touch-pending", "tkb-touch-dragging");
+}
+
+function tkbTouchDragReset(){
+  tkbTouchDragTeardown(TKB_TOUCH_DRAG.state);
+  TKB_TOUCH_DRAG.state = null;
+}
+
+function tkbTouchDragActivate(st){
+  if(TKB_TOUCH_DRAG.state !== st || st.phase !== "pending") return;
+  st.timer = 0;
+  if(!st.source.isConnected || (typeof isPlannerBusySolving === "function" && isPlannerBusySolving())){
+    tkbTouchDragReset();
+    return;
+  }
+  st.phase = "active";
+  const started = tkbTouchDragFire(st.source, "dragstart");
+  if(!started || !dragData){
+    // ô nghỉ / cố định bị từ chối / đang xếp: handler đã huỷ dragstart
+    st.phase = "pending";
+    tkbTouchDragReset();
+    return;
+  }
+  try{ navigator.vibrate && navigator.vibrate(12); }catch(_){ }
+  const ghost = document.createElement("div");
+  ghost.className = "tkb-touch-drag-ghost";
+  ghost.textContent = String(st.source.textContent || "").replace(/\s+/g, " ").trim().slice(0, 48) || String(dragMon || "");
+  document.body.appendChild(ghost);
+  st.ghost = ghost;
+  document.documentElement.classList.add("tkb-touch-dragging");
+  tkbTouchDragPlaceGhost(st);
+  tkbTouchDragUpdateTarget(st);
+  st.raf = requestAnimationFrame(()=>tkbTouchDragTick(st));
+}
+
+function tkbTouchDragOnStart(e){
+  TKB_TOUCH_DRAG.touchingUntil = Date.now() + 60000;
+  if(TKB_TOUCH_DRAG.state){
+    // ngón thứ hai trong lúc đang kéo: bỏ qua, giữ lượt kéo
+    if(TKB_TOUCH_DRAG.state.phase === "active") return;
+    tkbTouchDragReset();
+  }
+  if(!e.touches || e.touches.length !== 1) return;
+  const source = tkbTouchDragSource(e.target);
+  if(!source) return;
+  if(typeof isPlannerBusySolving === "function" && isPlannerBusySolving()) return;
+  const t = e.touches[0];
+  const st = {
+    phase:"pending", source, id:t.identifier, x0:t.clientX, y0:t.clientY, x:t.clientX, y:t.clientY,
+    timer:0, raf:0, ghost:null, target:null, allowed:false, overAt:0,
+    dt:tkbTouchDragDataTransfer(), restoreDraggable:false
+  };
+  // tắt tạm kéo gốc của trình duyệt cho phần tử này (iOS nhấc ô sau ~0,5 s rồi huỷ chuỗi chạm)
+  source.setAttribute("draggable", "false");
+  st.restoreDraggable = true;
+  document.documentElement.classList.add("tkb-touch-pending");
+  st.timer = setTimeout(()=>tkbTouchDragActivate(st), TKB_TOUCH_DRAG_HOLD_MS);
+  TKB_TOUCH_DRAG.state = st;
+}
+
+function tkbTouchDragFind(list, id){
+  const arr = Array.from(list || []);
+  return arr.find(t=>t.identifier === id) || null;
+}
+
+function tkbTouchDragOnMove(e){
+  const st = TKB_TOUCH_DRAG.state;
+  if(!st) return;
+  const t = tkbTouchDragFind(e.touches, st.id);
+  if(!t) return;
+  if(st.phase === "pending"){
+    if(e.touches.length !== 1 || Math.hypot(t.clientX - st.x0, t.clientY - st.y0) > TKB_TOUCH_DRAG_SLOP_PX){
+      tkbTouchDragReset(); // đang cuộn trang, không phải kéo
+    }
+    return;
+  }
+  try{ if(e.cancelable) e.preventDefault(); }catch(_){ }
+  st.x = t.clientX;
+  st.y = t.clientY;
+  tkbTouchDragPlaceGhost(st);
+  tkbTouchDragUpdateTarget(st);
+}
+
+function tkbTouchDragOnEnd(e){
+  const st = TKB_TOUCH_DRAG.state;
+  if(!e.touches || !e.touches.length) TKB_TOUCH_DRAG.touchingUntil = Date.now() + 800;
+  if(!st) return;
+  if(st.phase !== "active"){
+    tkbTouchDragReset();
+    return;
+  }
+  const t = tkbTouchDragFind(e.changedTouches, st.id);
+  if(!t) return; // ngón khác nhấc lên, ngón đang kéo vẫn giữ
+  try{ if(e.cancelable) e.preventDefault(); }catch(_){ } // không để chạm thành click / chạm đúp mở menu ô
+  st.x = t.clientX;
+  st.y = t.clientY;
+  tkbTouchDragUpdateTarget(st);
+  const target = st.target;
+  const source = st.source;
+  const allowed = st.allowed;
+  tkbTouchDragTeardown(st);
+  if(target && allowed) tkbTouchDragFire(target, "drop");
+  else if(target) tkbTouchDragFire(target, "dragleave", {relatedTarget:null});
+  TKB_TOUCH_DRAG.state = null;
+  tkbTouchDragFire(source, "dragend");
+}
+
+function tkbTouchDragOnCancel(e){
+  if(!e || !e.touches || !e.touches.length) TKB_TOUCH_DRAG.touchingUntil = Date.now() + 800;
+  const st = TKB_TOUCH_DRAG.state;
+  if(!st) return;
+  if(e && e.changedTouches && e.changedTouches.length && !tkbTouchDragFind(e.changedTouches, st.id)) return;
+  if(st.phase === "active"){
+    const target = st.target;
+    const source = st.source;
+    tkbTouchDragTeardown(st);
+    TKB_TOUCH_DRAG.state = null;
+    if(target) tkbTouchDragFire(target, "dragleave", {relatedTarget:null});
+    tkbTouchDragFire(source, "dragend");
+    return;
+  }
+  tkbTouchDragReset();
+}
+
+(function tkbTouchDragInstall(){
+  if(typeof window === "undefined" || typeof document === "undefined" || window.__tkbTouchDragInstalled) return;
+  window.__tkbTouchDragInstalled = true;
+  try{
+    const css = document.createElement("style");
+    css.id = "tkbTouchDragStyle";
+    css.textContent = [
+      ".tkb-touch-drag-ghost{position:fixed;left:0;top:0;z-index:2147483000;pointer-events:none;transform:translate(-50%,-140%);padding:6px 10px;border-radius:8px;background:#2f54eb;color:#fff;font:600 13px/1.2 system-ui,-apple-system,sans-serif;box-shadow:0 6px 18px rgba(15,23,42,.28);white-space:nowrap;max-width:70vw;overflow:hidden;text-overflow:ellipsis;opacity:.95}",
+      "html.tkb-touch-pending #tkb td, html.tkb-touch-pending .mon-item, html.tkb-touch-dragging #tkb td, html.tkb-touch-dragging .mon-item{-webkit-user-drag:none !important;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}",
+      "html.tkb-touch-dragging, html.tkb-touch-dragging body{overscroll-behavior:none}",
+      "@media (any-pointer: coarse){#tkb td[draggable], .mon-item[draggable]{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}}"
+    ].join("\n");
+    (document.head || document.documentElement).appendChild(css);
+  }catch(_){ }
+  if(typeof document.addEventListener !== "function" || typeof window.addEventListener !== "function") return;
+  document.addEventListener("touchstart", tkbTouchDragOnStart, {passive:true, capture:true});
+  document.addEventListener("touchmove", tkbTouchDragOnMove, {passive:false, capture:true});
+  document.addEventListener("touchend", tkbTouchDragOnEnd, {passive:false, capture:true});
+  document.addEventListener("touchcancel", tkbTouchDragOnCancel, {passive:true, capture:true});
+  // kéo gốc của trình duyệt bắt đầu từ chạm (Chrome Windows/Android, iOS): nhường cho kéo cảm ứng
+  window.addEventListener("dragstart", e=>{
+    if(TKB_TOUCH_DRAG.state && e.isTrusted){
+      try{ e.preventDefault(); e.stopImmediatePropagation(); }catch(_){ }
+    }
+  }, true);
+  // giữ ngón tay trên ô: Android bắn contextmenu -> KHÔNG được coi là chuột phải (đưa tiết về Chưa phân)
+  window.addEventListener("contextmenu", e=>{
+    const touching = !!TKB_TOUCH_DRAG.state || Date.now() < TKB_TOUCH_DRAG.touchingUntil || e.pointerType === "touch";
+    if(!touching) return;
+    const target = e.target && e.target.closest ? e.target.closest("#tkb td, .mon-item") : null;
+    if(!target) return;
+    try{ e.preventDefault(); e.stopImmediatePropagation(); }catch(_){ }
+  }, true);
+})();
+/* ======================= HẾT KÉO THẢ BẰNG CẢM ỨNG ======================= */
 
 /* ======================= VALIDATION (KHÔNG TRÙNG MÔN TRONG 1 BUỔI) ======================= */
 /*
@@ -5513,7 +6869,7 @@ function validateDrop(targetTd, mon){
   const conflicts = [];
 
   const gv = getTeacherForClassMon(lopCanon, mon);
-  const gvConflict = findTeacherConflictAtSlot(gv, tThu, tBuoi, tTi, currentLop);
+  const gvConflict = findTeacherConflictAtSlot(gv, tThu, tBuoi, tTi, currentLop, mon);
   if(gvConflict){
     conflicts.push({
       type: "teacher",
@@ -5542,6 +6898,18 @@ function validateDrop(targetTd, mon){
     });
   }
 
+  // ===== Tiết học chung nhiều lớp: ô cùng vị trí ở các lớp còn lại =====
+  const joint = (typeof tkbJointSiblingBlockers === "function") ? tkbJointSiblingBlockers(currentLop, mon, tThu, tBuoi, tTi) : null;
+  if(joint && joint.blocked.length){
+    const name = String(joint.row.viettat || joint.row.ten || mon);
+    return {
+      ok:false,
+      reason:"joint blocked",
+      msg:`Tiết chung "${name}" không đặt được ở tiết này: ${joint.blocked.map(b => `${getLopCanonById(b.classId)} (${b.why})`).join("; ")}.`
+    };
+  }
+  if(joint && joint.displace.length) joint.displace.forEach(d => conflicts.push(d));
+
   if(conflicts.length){
     // highlight lớp bị trùng
     try{
@@ -5550,7 +6918,7 @@ function validateDrop(targetTd, mon){
 
     const msg = (conflicts.length === 1)
       ? conflicts[0].msg
-      : ("Có " + conflicts.length + " xung đột (GV/Phòng) ở tiết này.");
+      : ("Có " + conflicts.length + " xung đột (GV/Phòng/tiết chung) ở tiết này.");
 
     return {
       ok: true,
@@ -5646,11 +7014,26 @@ function requiredSubjectsForClass(lop){
   const matrix = DATA.pccmMatrix || {};
   const periods = DATA.pccmTietMatrix || {};
   const rooms = DATA.pccmRoomMatrix || {};
-  Object.keys(matrix).forEach(rawKey=>{
+  // 29/08: khoá phân công có thể theo TÊN lớp ("6.1|AI-1" — app.js và Dạy ghép chiếu theo tên)
+  // hay theo mã lớp ("L001|…"); trước chỉ so mã nên môn ghép không vào danh sách Chưa phân.
+  let classKeys;
+  try{ classKeys = new Set([classId].concat(classKeyCandidates(classCanon) || []).map(x => String(x || "").trim().toLowerCase()).filter(Boolean)); }
+  catch(_){ classKeys = new Set([classId.toLowerCase()]); }
+  // 02/09: dòng Dạy ghép KHÔNG giáo viên chỉ có khoá trong bảng Tiết (không có pccmMatrix) —
+  // quét thêm các khoá đó (chỉ khoá do dòng không GV sở hữu, tránh môn ma từ bảng Tiết lạc).
+  const noTeacherKeys = Object.keys(periods).filter(rawKey => {
+    if(Object.prototype.hasOwnProperty.call(matrix, rawKey)) return false;
+    if(typeof tkbIsNoTeacherGhep !== "function") return false;
     const parts = String(rawKey).split("|");
     const cid = String(parts.shift() || "").trim();
     const subject = String(parts.join("|") || "").trim();
-    if(cid !== classId || !subject) return;
+    return !!subject && classKeys.has(cid.toLowerCase()) && tkbIsNoTeacherGhep(classCanon, subject);
+  });
+  Object.keys(matrix).concat(noTeacherKeys).forEach(rawKey=>{
+    const parts = String(rawKey).split("|");
+    const cid = String(parts.shift() || "").trim();
+    const subject = String(parts.join("|") || "").trim();
+    if(!classKeys.has(cid.toLowerCase()) || !subject) return;
     let req = Number(periods[rawKey] ?? periods[`${cid}|${subject}`] ?? 0);
     if(!Number.isFinite(req) || req <= 0){
       const existing = bySubject.get(monCanonicalKey(subject));
@@ -5741,10 +7124,11 @@ function collectUnassignedTasks(options={}){
       if(!mon) return;
       // Count only teacher assignments that exist in the current PCCM data.
       // Timetable cells and legacy subject rows must not create phantom work.
+      // 02/09: trừ tiết dạy ghép KHÔNG giáo viên (tkbIsNoTeacherGhep) — là tiết thật của lớp.
       const pccmTeachers = teacherListFromValue(
         classAssignmentStatisticsTeacherForClassMon(classCanon, mon)
       );
-      if(!pccmTeachers.length) return;
+      if(!pccmTeachers.length && !tkbIsNoTeacherGhep(classCanon, mon)) return;
       const gv = pccmTeachers.join(", ");
       const required = Number(s?.required ?? s?.sotiet ?? 0);
       if(!Number.isFinite(required) || required <= 0) return;
@@ -5953,6 +7337,38 @@ function tkbAutoRepairLessonBlockPairShortfall(task){
   }
 }
 
+/* 27/08: LOP KHONG HOC MON NAY. Truong x2454rrc9y1: KHTN-CS / ToanCD chi day
+   o 6/1, 7/1, 8/1 (Phan cong 1 tiet) nhung "Yeu cau mon hoc" van con muc
+   byClass cho ca 6/2..6/8, 7/2..7/7 tu lan quick-fill "all" hoi mon con 2 tiet.
+   tkbLessonBlockPeriodsForClassMon roi ve Tiet chuan THEO KHOI (khoi 6/7 van
+   ghi 2 tiet) nen 26 lop khong he hoc mon do bi do bang so tiet cua ca khoi
+   => bang RB bao "Tiet doi >= 1 ✗ thieu 1 cum" trong khi trinh kiem tra tong
+   bao 0 vi pham. Lop khong hoc mon thi luat cua mon do la RONG: khong the vi
+   pham, cung khong the sua. Nhan dien giong computeMonsForClass: co phan cong
+   giao vien / co mat trong danh sach mon cua lop (Phan cong) hay khong. */
+function tkbClassSubjectUnassigned(classId, mon){
+  try{
+    if(typeof getLopCanonById !== "function") return false;
+    const canon = getLopCanonById(classId);
+    const monRaw = String(mon == null ? "" : mon).trim();
+    if(!canon || !monRaw) return false;
+    if(typeof getTeacherForClassMon === "function"
+      && String(getTeacherForClassMon(canon, monRaw) || "").trim()) return false;
+    if(typeof getSoTietForClassMon === "function"
+      && Number(getSoTietForClassMon(canon, monRaw)) > 0) return false;
+    if(typeof _collectPCCMSubjectKeysForClass !== "function") return false;
+    const keys = _collectPCCMSubjectKeysForClass(canon);
+    // Lop chua co dong phan cong nao: khong ket luan (giu cach do cu).
+    if(!keys || !keys.size) return false;
+    for(const k of keys){
+      if(typeof monMatches === "function" ? monMatches(k, monRaw) : String(k).trim() === monRaw) return false;
+    }
+    return true;
+  }catch(_){
+    return false;
+  }
+}
+
 /* 25/08: so tiet/tuan cua (lop, mon) theo Phan cong (pccmTietMatrix); 0 khi
    chua biet. Dung de bo qua yeu cau "min N cum L tiet lien" bat kha thi:
    min > floor(soTiet / L) thi khong lich nao dat duoc, nen bang RB va bo tu
@@ -5977,6 +7393,7 @@ function tkbLessonBlockPeriodsForClassMon(classId, mon){
   }
 }
 function tkbLessonBlockMinImpossible(classId, mon, len, min){
+  if(tkbClassSubjectUnassigned(classId, mon)) return true;   // lop khong hoc mon nay
   const periods = tkbLessonBlockPeriodsForClassMon(classId, mon);
   if(periods <= 0) return false;   // chua biet so tiet: khong ket luan
   return Number(min) > Math.floor(periods / Math.max(1, Number(len) || 1));
@@ -6384,7 +7801,7 @@ function tkbCrossClassEjectionPlace(task, options={}){
     for(const gv of teachers){
       let guard = 0;
       while(guard++ < 4){
-        const clash = findTeacherConflictAtSlot(gv, slot.thu, slot.buoi, slot.ti, classId);
+        const clash = findTeacherConflictAtSlot(gv, slot.thu, slot.buoi, slot.ti, classId, task.mon);
         if(!clash) break;
         if(!tkbFreeBlockingLesson(clash.lopId, slot, setCell, maxSwapScan)){ cleared = false; break; }
       }
@@ -6445,7 +7862,7 @@ function tkbCrossClassEjectionPlace(task, options={}){
         for(const gv of teachers){
           let guard2 = 0;
           while(guard2++ < 4){
-            const clash = findTeacherConflictAtSlot(gv, spot.thu, spot.buoi, spot.ti, classId);
+            const clash = findTeacherConflictAtSlot(gv, spot.thu, spot.buoi, spot.ti, classId, task.mon);
             if(!clash) break;
             if(!tkbFreeBlockingLesson(clash.lopId, spot, setCell, maxSwapScan)){ cleared2 = false; break; }
           }
@@ -7596,13 +9013,19 @@ function tkbConstraintAuditRows(){
       if(minPairs > 0){
         // 25/08: mon it tiet hon 2*min (vd Tin 1 tiet/tuan, quick-fill min=1)
         // -> yeu cau bat kha thi, bao "bo qua" thay vi "thieu cum".
-        const periods = tkbLessonBlockPeriodsForClassMon(cid, key);
-        if(periods > 0 && minPairs > Math.floor(periods / 2)){
+        // 27/08: lop khong hoc mon do (Phan cong khong co) cung la "bo qua",
+        // nhung ghi ly do khac de chu du an biet la luat thua trong du lieu.
+        const unassigned = tkbClassSubjectUnassigned(cid, key);
+        const periods = unassigned ? 0 : tkbLessonBlockPeriodsForClassMon(cid, key);
+        if(unassigned || (periods > 0 && minPairs > Math.floor(periods / 2))){
           rows.push({
             lop: canon, mon: key,
             rb: "Tiết đôi ≥ " + minPairs,
             ok: true,
-            note: "bỏ qua: chỉ " + periods + " tiết/tuần, không thể xếp " + minPairs + " cụm đôi"
+            skipped: true,
+            note: unassigned
+              ? "bỏ qua: lớp không học môn này (Phân công không có)"
+              : "bỏ qua: chỉ " + periods + " tiết/tuần, không thể xếp " + minPairs + " cụm đôi"
           });
         }else{
           let shortfall = 0;
@@ -7646,6 +9069,7 @@ try{
       let stale = {classes: [], rules: 0};
       try{ stale = tkbConstraintAuditStaleSummary() || stale; }catch(_){ }
       const bad = rows.filter(r => !r.ok);
+      const skipped = rows.filter(r => r.skipped);
       const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
       const rowHtml = r => "<tr>"
         + `<td style="padding:2px 10px 2px 0">${esc(r.lop)}</td>`
@@ -7667,6 +9091,10 @@ try{
         + (stale.rules
           ? `<div style="color:#a60;margin-bottom:8px">Đã bỏ qua ${stale.rules} luật của ${stale.classes.length} lớp đã xóa `
             + `(${esc(stale.classes.slice(0, 12).join(", "))}${stale.classes.length > 12 ? "…" : ""}) — nên xóa trong Yêu cầu môn học.</div>`
+          : "")
+        + (skipped.length
+          ? `<div style="color:#a60;margin-bottom:8px">Đã bỏ qua ${skipped.length} luật tiết đôi bất khả thi `
+            + `(lớp không học môn đó, hoặc môn ít tiết hơn 1 cụm) — có thể xóa trong Yêu cầu môn học.</div>`
           : "")
         + (bad.length
           ? `<div style="color:#c00;margin-bottom:4px"><b>Các luật chưa đạt:</b></div>`
@@ -8370,7 +9798,13 @@ function auditCandidateHardConflicts(data, candidateTkb){
           for(const t of teachers){
             const key = `${t}|${d}|${b}|${i}`;
             const holder = busy.get(key);
-            if(holder && holder.cid !== cid){ clashWith = `${holder.ten} - ${holder.mon}`; break; }
+            if(holder && holder.cid !== cid){
+              // 29/08: các lớp của cùng tiết học chung (Dạy ghép nhiều lớp) không phải trùng
+              let joint = false;
+              try{ joint = tkbIsJointGhepPair(mon, cid, holder.mon, holder.cid); }catch(_){ joint = false; }
+              if(joint) continue;
+              clashWith = `${holder.ten} - ${holder.mon}`; break;
+            }
           }
           if(clashWith){
             const isFixed = typeof cell === "object" && cell.fixed === true;
@@ -8575,12 +10009,12 @@ function tkbFetAcquireKeepalive(){
    — sau khi ▶ xep xong thi tu goi backend CP-SAT/Cloud Run de xep bu / toi uu
    roi keo theo bac thang tu tinh chinh — DA GO BO. Nut ▶ chi con FET trong
    trinh duyet de kiem tra xep du hay khong; toi uu GV dung nut Cherry hoac
-   menu Toi uu. */
+   menu Toi uu v3 (menu Toi uu FET trong trinh duyet da go han 03/09). */
 
 async function executeDirectFastSchedule(options = {}){
   try{
-    // SINGLE-FLIGHT GUARD (sua 17/08): duong goi truc tiep (menu Toi uu, nut
-    // Tron goi) truoc day KHONG co khoa nhu nut Sap xep (preflight token o
+    // SINGLE-FLIGHT GUARD (sua 17/08): duong goi truc tiep (menu Toi uu FET, nut
+    // Tron goi — ca hai da go, 03/09) truoc day KHONG co khoa nhu nut Sap xep (preflight token o
     // bridge), nen bam chong len nhau tao NHIEU worker song song; ket qua
     // muon cua worker cu ap de trang thai moi (da tai hien: luot optimize 225s
     // ket thuc sau khi nguoi dung xoa lich + bam xep lai -> luu lich rong).
@@ -8598,6 +10032,13 @@ async function executeDirectFastSchedule(options = {}){
     if(!data.tkb) data.tkb = {};
     if(!data.tkbLessonTeachers) data.tkbLessonTeachers = {};
     if(!data.tkbLessonRooms) data.tkbLessonRooms = {};
+
+    // 29/08 Tiết học chung nhiều lớp: ghim tạm vào cùng ô trước khi xếp (bộ giải giữ ô cố định).
+    // Lane tối ưu chỉ tối ưu lưới đang có, không xếp tiết thiếu -> không được đè tiết khác.
+    try{
+      const pinMsg = tkbJointPinBeforeSolve({allowDisplace: !/^optimize/.test(String(options?.mode || ""))});
+      if(pinMsg && typeof setStatus === "function") setStatus(pinMsg, "info");
+    }catch(err){ console.error("pin ghep", err); }
 
     const FetEngineClass = (typeof window !== "undefined" && window.FetTimetableEngine)
       ? window.FetTimetableEngine
@@ -9880,16 +11321,8 @@ try{
     // do thieu (thieu o, GV qua tai, tiet doi vuot gioi han...). KHONG doi
     // sang mode "xep + toi uu tron goi", KHONG goi backend CP-SAT/Cloud Run,
     // KHONG noi chuoi hau ky (da go ngay 22/08). Toi uu giao vien la viec
-    // cua nut Cherry / menu Toi uu.
+    // cua nut Cherry / Toi uu v3.
     return await executeDirectFastSchedule({ mode: options?.mode || "auto" });
-  };
-  window.sapXepTheoCheDo = async function(mode = "optimize_singletons"){
-    return await executeDirectFastSchedule({ mode: mode });
-  };
-  window.deepOptimizeTheoCheDo = async function(mode = "optimize_singletons"){
-    // Backward-compatible alias for old cached callers.  There is no deep
-    // Cloud Run lane anymore; every planner action stays in the FET worker.
-    return await executeDirectFastSchedule({ mode });
   };
 }catch(_){}
 
@@ -9897,13 +11330,6 @@ async function sapXepTuDongAll(options = {}){
   return await executeDirectFastSchedule({ mode: options?.mode || "auto" });
 }
 
-async function sapXepTheoCheDo(mode = "optimize_singletons"){
-  return await executeDirectFastSchedule({ mode: mode });
-}
-
-async function deepOptimizeTheoCheDo(mode = "optimize_singletons"){
-  return await executeDirectFastSchedule({ mode });
-}
 
 function countMon(mon){
   return countMonInTKB(DATA.tkb[currentLop], mon);
@@ -9927,7 +11353,7 @@ function calcClassTKBPeriodStats(classId){
     if(!monName || !Number.isFinite(req) || req <= 0) continue;
     if(!teacherListFromValue(
       classAssignmentStatisticsTeacherForClassMon(classCanon, monName)
-    ).length) continue;
+    ).length && !tkbIsNoTeacherGhep(classCanon, monName)) continue;   // 02/09: tiết ghép không GV vẫn là tiết của lớp
     const used = countMonFromTkbCountMap(tkbMonCounts, monName);
     total += req;
     assigned += Math.min(req, Math.max(0, used));
@@ -10349,7 +11775,7 @@ function loadMonList(){
       d.dataset.mon = t.mon;
       d.dataset.classid = String(t.classId);
 
-      const monShort = getMonShort(t.mon);
+      const monShort = tkbMonLabel(t.classId, t.mon);
       const gvTxt = (t.gv||"").toString().trim();
       const roomTxt = (t.room||"").toString().trim();
       const roomDisp = roomTxt ? ` (${roomTxt})` : "";
@@ -10517,7 +11943,7 @@ function renderOtherUnassignedList(kFilter){
     d.className = "mon-item mon-other";
     d.dataset.classid = String(t.classId);
 
-    const monShort = getMonShort(t.mon);
+    const monShort = tkbMonLabel(t.classId, t.mon);
     const gvTxt = (t.gv||"").toString().trim();
     const roomTxt = (t.room||"").toString().trim();
     const roomDisp = roomTxt ? ` (${roomTxt})` : "";
@@ -10759,6 +12185,44 @@ function ensureClassAssignmentTeacherCache(){
   return CLASS_ASSIGNMENT_TEACHER_CACHE.values;
 }
 
+/* 04/09: chi muc PCCM theo KHOA CHUAN HOA (lop + mon canonical).
+   Tra cuu ben duoi so khop CHUOI CHINH XAC, nen mot phan cong nhap lech chu
+   hoa/thuong so voi bang Mon hoc (vi du ma mon "TIN" trong khi Mon hoc ghi
+   "Tin") khong bao gio khop. Hau qua: buildClassAssignmentStatistics bo han
+   mon do khoi tong tiet cua lop, con calcTeacherTKBStats mat luon cac tiet ay
+   nen bao NHAM "day 1 tiet" cho GV day nhieu mon (do 04/09 tren THCS An Phu:
+   CN.Ly day ca Tin lan Cong nghe -> 3 buoi 2 tiet bi dem con 1). Bo giai von
+   khop khong phan biet hoa/thuong nen van xep du tiet; chi thong ke tren
+   trinh duyet lech. Chi muc nay la duong lui, dung dung ngu nghia
+   monCanonicalKey (giong monMatches) nen khong the ghep nham hai mon khac. */
+function ensureClassAssignmentTeacherCanonIndex(){
+  ensureClassAssignmentTeacherCache();
+  if(CLASS_ASSIGNMENT_TEACHER_CACHE.canonical){
+    return CLASS_ASSIGNMENT_TEACHER_CACHE.canonical;
+  }
+  const index = new Map();
+  const pccm = DATA.pccmMatrix;
+  if(pccm && typeof pccm === "object"){
+    for(const rawKey of Object.keys(pccm)){
+      const value = String(pccm[rawKey] ?? "").trim();
+      if(!value) continue;
+      const key = String(rawKey);
+      const sep = key.indexOf("|");
+      if(sep < 0) continue;
+      const classPart = key.slice(0, sep).trim();
+      const monPart = key.slice(sep + 1).trim();
+      if(!classPart || !monPart) continue;
+      const clsKey = normKey(classPart);
+      const monKey = monCanonicalKey(monPart);
+      if(!clsKey || !monKey) continue;
+      const canonKey = clsKey + "|" + monKey;
+      if(!index.has(canonKey)) index.set(canonKey, value);
+    }
+  }
+  CLASS_ASSIGNMENT_TEACHER_CACHE.canonical = index;
+  return index;
+}
+
 function classAssignmentStatisticsTeacherForClassMon(classCanon, mon){
   const cls = String(classCanon || "").trim();
   const rawMon = String(mon || "").trim();
@@ -10782,6 +12246,18 @@ function classAssignmentStatisticsTeacherForClassMon(classCanon, mon){
         const result = String(value).trim();
         cache.set(cacheKey, result);
         return result;
+      }
+    }
+  }
+  // Duong lui: khop theo khoa chuan hoa (bo qua chu hoa/thuong va bi danh).
+  const monKey = monCanonicalKey(rawMon);
+  if(monKey){
+    const canonIndex = ensureClassAssignmentTeacherCanonIndex();
+    for(const classKey of classKeys){
+      const hit = canonIndex.get(normKey(classKey) + "|" + monKey);
+      if(hit){
+        cache.set(cacheKey, hit);
+        return hit;
       }
     }
   }
@@ -10823,7 +12299,8 @@ function buildClassAssignmentStatistics(){
       const teacherRaw = classAssignmentStatisticsTeacherForClassMon(classCanon, raw);
       // A subject without a PCCM teacher is not an assigned period and must
       // stay out of both the subject total and the class total.
-      if(!teacherListFromValue(teacherRaw).length) return;
+      // 02/09: trừ tiết dạy ghép KHÔNG giáo viên — vẫn là tiết của lớp (đếm vào tổng).
+      if(!teacherListFromValue(teacherRaw).length && !tkbIsNoTeacherGhep(classCanon, raw)) return;
       const current = bySubject.get(meta.key);
       if(!current || periods > current.periods){
         bySubject.set(meta.key, {meta, periods, teacherRaw});
@@ -11338,7 +12815,7 @@ function calcSchoolTKBStats(){
       const pccmTeachers = teacherListFromValue(
         classAssignmentStatisticsTeacherForClassMon(classCanon, monName)
       );
-      if(!pccmTeachers.length) continue;
+      if(!pccmTeachers.length && !tkbIsNoTeacherGhep(classCanon, monName)) continue;   // 02/09: tiết ghép không GV
 
       const req = Number(m?.required ?? m?.sotiet ?? 0);
       if(!Number.isFinite(req) || req <= 0) continue;
@@ -11578,7 +13055,7 @@ function highlightUnassignedIssue(target){
     try{ item.scrollIntoView({block:"nearest", inline:"nearest"}); }catch(_){ }
   }
   try{
-    const monShort = getMonShort(mon);
+    const monShort = tkbMonLabel(classId, mon);
     const count = unassignedIssueCount(target);
     const name = target.className || classId;
     _setStatus(`Ti\u1ebft ch\u01b0a x\u1ebfp: ${name} - ${monShort}${count > 1 ? ` x${count}` : ""}`, "info");
@@ -12070,8 +13547,8 @@ function calcTeacherTKBStats(){
         let teachers = [];
         if(typeof v === "object" && v.gv){
           teachers = teacherListFromValue(v.gv);
-        }else if(typeof v === "string" && v.includes(" - ")){
-          teachers = teacherListFromValue(v.split(" - ")[1]);
+        }else if(cellLegacyTeacher(v, classCanon)){
+          teachers = teacherListFromValue(cellLegacyTeacher(v, classCanon));
         }
         if(!teachers.length){
           teachers = teacherListFromValue(
@@ -12093,8 +13570,8 @@ function calcTeacherTKBStats(){
         let teachers = [];
         if(typeof v === "object" && v.gv){
           teachers = teacherListFromValue(v.gv);
-        }else if(typeof v === "string" && v.includes(" - ")){
-          teachers = teacherListFromValue(v.split(" - ")[1]);
+        }else if(cellLegacyTeacher(v, classCanon)){
+          teachers = teacherListFromValue(cellLegacyTeacher(v, classCanon));
         }
         if(!teachers.length){
           teachers = teacherListFromValue(
@@ -12571,9 +14048,7 @@ function setAutoSortHomeHidden(hidden){
   const shouldLock = !!hidden;
   const btn = document.getElementById("btnHome");
   const agentBtn = document.getElementById("btnAgentHelper");
-  const optimizeBtn = document.getElementById("btnOptimizeMenu");
-  const optimizeMenu = document.getElementById("plannerOptimizeMenu");
-  if(!btn && !agentBtn && !optimizeBtn) return false;
+  if(!btn && !agentBtn) return false;
   if(btn){
     btn.hidden = false;
     btn.setAttribute("aria-hidden", "false");
@@ -12587,13 +14062,6 @@ function setAutoSortHomeHidden(hidden){
     agentBtn.setAttribute("aria-hidden", agentVisible ? "false" : "true");
     setAutoSortControlLocked(agentBtn, shouldLock);
     if(!shouldLock) syncAgentHelperVisibility();
-  }
-  if(optimizeBtn){
-    setAutoSortControlLocked(optimizeBtn, shouldLock);
-    if(shouldLock){
-      if(optimizeMenu) optimizeMenu.hidden = true;
-      optimizeBtn.setAttribute("aria-expanded", "false");
-    }
   }
   return true;
 }
@@ -12622,7 +14090,6 @@ function setAutoSortBusyControls(locked){
     document.getElementById("btnRedoTKB"),
     document.getElementById("btnAutoSort"),
     document.getElementById("btnEngineCherry"),
-    document.getElementById("btnOptimizeMenu"),
     // 25/08 (chi dao chu du an): nut "Toi uu v3" truoc day KHONG bi khoa khi
     // dang xep. runPlannerV3Mode van chan bang testControlBusy() nen bam
     // khong chay gi, nhung nut sang binh thuong nen nguoi dung tuong no hong.
@@ -12632,16 +14099,15 @@ function setAutoSortBusyControls(locked){
     document.getElementById("btnConstraintAudit"),
     document.getElementById("btnHome"),
     document.getElementById("solveDurationSeconds"),
-    // Muc ben trong hai menu toi uu: menu co the dang mo khi luot xep bat dau.
+    // Muc ben trong menu Toi uu v3: menu co the dang mo khi luot xep bat dau.
     ...Array.from(document.querySelectorAll(
-      "#plannerOptimizeMenu button, #plannerTestMenu button"
+      "#plannerTestMenu button"
     )),
     ...Array.from(document.querySelectorAll(".solver-preset-btn[data-preset]"))
   ].filter(Boolean);
   controls.forEach(el => setAutoSortControlLocked(el, shouldLock));
   if(shouldLock){
     [
-      ["plannerOptimizeMenu", "btnOptimizeMenu"],
       ["plannerTestMenu", "btnTestMenu"]
     ].forEach(([menuId, buttonId]) => {
       const menu = document.getElementById(menuId);
@@ -13129,11 +14595,11 @@ function confirmDeleteMenu(){
 
 
 
-/* [MOVED -> phanmon-ops.js] Section: xep_lai */
+/* [REMOVED] Section: xep_lai */
 
 
 
-/* [MOVED -> phanmon-ops.js] Section: panel_and_constraints */
+/* [REMOVED] Section: panel_and_constraints */
 
 /* ======================= CHECK / EXPORT ======================= */
 function showTKBError(){
@@ -13296,6 +14762,54 @@ function togglePrintTKBMenu(ev){
   setPrintTKBMenuOpen(!!menu?.hidden);
 }
 
+/* 31/08: "In TKB" luôn là XUẤT EXCEL (tkb-student-excel-export.js). Trước đây nếu module đó không nạp
+   được lúc mở trang (mạng chập chờn, tải hụt một file) thì các nhánh dưới lặng lẽ rơi về window.print()
+   → người dùng thấy hộp "In / Lưu PDF" và tưởng tính năng đổi. Nay: thử nạp lại module đúng một lần,
+   vẫn không có thì báo rõ và KHÔNG in PDF thay thế. */
+const PRINT_EXPORT_MODULE_FILE = "tkb-student-excel-export.js";
+function __printExportModuleSrc(){
+  let src = PRINT_EXPORT_MODULE_FILE;
+  try{
+    const tag = Array.from(document.scripts || []).find(el => /tkb-student-excel-export\.js/.test(String(el.src || "")));
+    if(tag && tag.src) src = tag.src;
+  }catch(_){ }
+  return `${src}${src.includes("?") ? "&" : "?"}retry=${Date.now()}`;
+}
+
+function ensurePrintExportFn(name){
+  if(typeof window[name] === "function") return Promise.resolve(window[name]);
+  if(!window.__TKB_PRINT_EXPORT_RELOAD){
+    window.__TKB_PRINT_EXPORT_RELOAD = new Promise(resolve => {
+      let done = false;
+      const finish = () => { if(done) return; done = true; resolve(); };
+      try{
+        const el = document.createElement("script");
+        el.src = __printExportModuleSrc();
+        el.onload = finish;
+        el.onerror = finish;
+        (document.head || document.body).appendChild(el);
+        setTimeout(finish, 8000);
+      }catch(_){ finish(); }
+    }).finally(() => { window.__TKB_PRINT_EXPORT_RELOAD = null; });
+  }
+  return window.__TKB_PRINT_EXPORT_RELOAD.then(() => (typeof window[name] === "function" ? window[name] : null));
+}
+
+function runPrintExport(name, label, fallback){
+  try{ if(typeof _setStatus === "function") _setStatus(`Đang chuẩn bị ${label}...`, "info"); }catch(_){ }
+  return ensurePrintExportFn(name).then(fn => {
+    if(fn) return fn();
+    if(typeof fallback === "function"){
+      const r = fallback();
+      if(r !== null && r !== undefined) return r;
+    }
+    const msg = `Chưa tải được module ${label} (mạng chập chờn khi mở trang?). Hãy tải lại trang (F5) rồi bấm In TKB lại.`;
+    try{ if(typeof _setStatus === "function") _setStatus(msg, "error"); }catch(_){ }
+    alert(msg);
+    return null;
+  });
+}
+
 function printCurrentClassTKB(){
   const id = String(currentLop || getFilteredLops()[0]?.id || "");
   if(!id){
@@ -13304,42 +14818,18 @@ function printCurrentClassTKB(){
   }
   if(VIEW_MODE !== "lop") setViewMode("lop");
   if(String(currentLop || "") !== id) selectLop(id);
-  if(typeof window.exportCurrentClassTKBExcel === "function"){
-    window.exportCurrentClassTKBExcel();
-    return;
-  }
-  if(typeof window.exportCurrentClassTKBDocx === "function"){
-    window.exportCurrentClassTKBDocx();
-    return;
-  }
-  setTimeout(()=>printTKB(), 30);
-}
-
-function printCurrentTeacherTKB(){
-  const code = String(currentGV || getTeacherListForCurrentFilter()[0]?.code || "").trim();
-  if(!code){
-    alert("Chưa có giáo viên để in.");
-    return;
-  }
-  if(VIEW_MODE !== "gv") setViewMode("gv");
-  if(String(currentGV || "") !== code) selectGV(code);
-  setTimeout(()=>printTKB(), 30);
+  return runPrintExport("exportCurrentClassTKBExcel", "xuất Excel TKB lớp học", () => {
+    if(typeof window.exportCurrentClassTKBDocx === "function") return window.exportCurrentClassTKBDocx();
+    return null;
+  });
 }
 
 function printTeacherTKBTemplate1(){
-  if(typeof window.exportTeacherTKBExcelTemplate1 === "function"){
-    window.exportTeacherTKBExcelTemplate1();
-    return;
-  }
-  printCurrentTeacherTKB();
+  return runPrintExport("exportTeacherTKBExcelTemplate1", "xuất Excel TKB giáo viên (mẫu 1)");
 }
 
 function printTeacherTKBTemplate2(){
-  if(typeof window.exportTeacherTKBExcelTemplate2 === "function"){
-    window.exportTeacherTKBExcelTemplate2();
-    return;
-  }
-  printCurrentTeacherTKB();
+  return runPrintExport("exportTeacherTKBExcelTemplate2", "xuất Excel TKB giáo viên (mẫu 2)");
 }
 
 function handlePrintTKBOption(mode){
@@ -13356,14 +14846,8 @@ function handlePrintTKBOption(mode){
   if(key === "class") return printCurrentClassTKB();
   if(key === "teacher" || key === "teacher-template-1") return printTeacherTKBTemplate1();
   if(key === "teacher-template-2") return printTeacherTKBTemplate2();
-  if(key === "school-class"){
-    if(typeof window.exportSchoolClassTKBExcel === "function") return window.exportSchoolClassTKBExcel();
-    return alert("Chưa tải xong module xuất Excel toàn trường theo lớp học.");
-  }
-  if(key === "school-teacher"){
-    if(typeof window.exportSchoolTeacherTKBExcel === "function") return window.exportSchoolTeacherTKBExcel();
-    return alert("Chưa tải xong module xuất Excel toàn trường theo giáo viên.");
-  }
+  if(key === "school-class") return runPrintExport("exportSchoolClassTKBExcel", "xuất Excel TKB toàn trường theo lớp học");
+  if(key === "school-teacher") return runPrintExport("exportSchoolTeacherTKBExcel", "xuất Excel TKB toàn trường theo giáo viên");
   if(key === "industry-database"){
     if(typeof window.exportIndustryDatabaseExcel === "function") return window.exportIndustryDatabaseExcel();
     return alert("Chưa tải xong module chuyển CSDL ngành.");
@@ -13413,7 +14897,7 @@ function backToMain(){
 
 
 
-/* [MOVED -> phanmon-ops.js] Section: optimize_improvements */
+/* [REMOVED] Section: optimize_improvements */
 
 /* =========================================================
    PATCH 2026-05-03: paired schedule views
@@ -13660,12 +15144,13 @@ function backToMain(){
 
     function pvTeacherCellHTML(entries, thu, buoi, ti, gvCode){
       const arr = Array.isArray(entries) ? entries : [];
-      const conflict = arr.length > 1;
+      const view = tkbTeacherCellView(arr);
+      const conflict = view.conflict;
       const teacherOff = isTeacherFixedOff(gvCode, thu, buoi, ti);
       const offConflict = teacherOff && arr.length > 0;
       const fixed = !teacherOff && arr.length > 0 && arr.some(e=>!!e.fixed);
-      const lines = arr.map(e=>{
-        const monShort = getMonShort(e.mon);
+      const lines = view.entries.map(e=>{
+        const monShort = tkbMonLabel(e.classId, e.mon);
         const room = (e.room||"").toString().trim();
         return `<div class="tkb-cell-stack">`+
           mobileStackCellLineHTML(e.classDisplay, monShort, "tkb-class-line tkb-class-subject-line")+
@@ -13677,7 +15162,7 @@ function backToMain(){
         ? (offConflict ? `<div class="tkb-off-conflict-label">Nghỉ</div>${htmlLines}` : "")
         : htmlLines;
       const classIds = arr.map(e=>String(e.classId)).join(",");
-      const one = arr.length === 1 ? arr[0] : null;
+      const one = view.entries.length === 1 ? view.entries[0] : null;   // ô tiết chung gộp -> thao tác theo lớp đầu, các lớp còn lại đồng bộ
       const oneAttrs = one
         ? ` data-classid="${escapeHtml(String(one.classId))}" data-mon="${escapeHtml(String(one.mon || ""))}" draggable="${fixed ? "false" : "true"}"`
         : ` draggable="false"`;
@@ -14024,7 +15509,7 @@ function backToMain(){
       return null;
     }
 
-    function pvValidateSupportDrop(td){
+    function pvValidateSupportDrop(td, opts){
       const info = pvPairDragInfo();
       if(!info || !info.classId || !info.mon) return {ok:false, reason:"empty"};
       const thu = td.dataset.thu;
@@ -14052,9 +15537,19 @@ function backToMain(){
       }
       if(!res || !res.ok) return res || {ok:false, reason:"runtime"};
 
+      // 13/09: tiết bị đè (của lớp ở ô này / trùng GV-phòng ở lớp khác) chuyển được sang ô
+      // cũ -> đổi chỗ (ô xanh), không đưa về "Chưa phân".
+      const occupied = cellMon(targetVal);
+      if(info.type === "cell" && ((occupied && occupied !== info.mon) || res.warn)){
+        // lượt 4: tiết đang có đè tiết khác -> chỉ hợp lệ khi đổi chỗ được
+        const from = tkbSwapSlot({thu:info.fromThu, buoi:info.fromBuoi, ti:info.fromTi});
+        const swapRes = tkbSwapAwareResult(res, info.classId, from, tkbSwapSlot(td.dataset), info.mon, opts);
+        if(swapRes.swapBlocked && opts && opts.fresh) swapRes.msg = tkbSwapBlockedNote(td, info.classId, res);
+        return swapRes;
+      }
+
       // O tren luoi GV trong khong co nghia la o cua LOP cung trong. Khong hoi
       // truoc thi tiet cu cua lop se bi ghi de am tham.
-      const occupied = cellMon(targetVal);
       if(occupied && occupied !== info.mon){
         const lopCanon = getLopCanonById(info.classId);
         const extra = `Ô này của lớp ${lopCanon} đang có ${getMonShort(occupied)}.\n`+
@@ -14080,13 +15575,17 @@ function backToMain(){
       const thu = td.dataset.thu;
       const buoi = td.dataset.buoi;
       const ti = Number(td.dataset.ti);
-      let res = pvValidateSupportDrop(td);
+      let res = pvValidateSupportDrop(td, {fresh:true});
       if(!res.ok && maybeRaiseSessionLimitForDrop(td, info.mon, res)){
-        res = pvValidateSupportDrop(td);
+        res = pvValidateSupportDrop(td, {fresh:true});
       }
       if(!res.ok){
         flashInvalid(td);
         showDropError(res, td);
+        return;
+      }
+      if(res.swap){
+        tkbApplyDropSwap(res.swap, td);
         return;
       }
       if(res.warn){
@@ -14145,16 +15644,19 @@ function backToMain(){
           try{ e.preventDefault(); }catch(_){}
           let res = DRAG_VALIDATE_CACHE.get(td);
           if(!res){
-            res = pvValidateSupportDrop(td);
+            res = pvValidateSupportDrop(td, {deadline: Date.now() - 1});
             DRAG_VALIDATE_CACHE.set(td, res);
           }
           setDropHint(td, res.ok && !res.warn);
         };
-        td.ondragenter = ()=>{
+        td.ondragenter = (e)=>{
           if(!dragData) return;
+          // lượt 8: huỷ cả dragenter (xem bindCells) — không thì thả lúc con trỏ vừa đổi phần tử con bị từ chối
+          try{ if(e) e.preventDefault(); }catch(_){ }
           td.classList.add("drag-over");
         };
-        td.ondragleave = ()=>{
+        td.ondragleave = (e)=>{
+          if(e && e.relatedTarget && td.contains(e.relatedTarget)) return;
           releaseDragOver(td);
         };
         td.ondrop = (e)=>{
@@ -14272,7 +15774,7 @@ function backToMain(){
         d.dataset.classid = String(t.classId);
 
         const clsName = (t.className || getLopCanonById(t.classId) || t.classId || "").toString();
-        const monShort = getMonShort(t.mon);
+        const monShort = tkbMonLabel(t.classId, t.mon);
         const roomTxt = (t.room||"").toString().trim();
         const remainDisp = Number(t.remain || 0) > 1 ? ` x${Number(t.remain || 0)}` : "";
         d.innerHTML = `<span class="mon-item-main">${escapeHtml(clsName)} - ${escapeHtml(monShort)}${escapeHtml(remainDisp)}</span>`+

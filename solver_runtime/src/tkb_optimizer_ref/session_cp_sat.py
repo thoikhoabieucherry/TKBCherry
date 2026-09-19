@@ -190,13 +190,20 @@ def _iter_limit_rules(constraints: Any | None) -> list[Mapping[str, Any]]:
     return out
 
 
+def _rule_subject_of(constraints: Any, subject: Any) -> str:
+    """31/08: mon dung de tra luat (khoa day ghep -> mon goc); thieu ho tro thi giu nguyen."""
+    fn = getattr(constraints, "rule_subject", None)
+    text = "" if subject is None else str(subject)
+    return fn(text) if callable(fn) else text
+
+
 def _assignment_matches_limit(assignment: Any, rule: Mapping[str, Any], constraints: Any | None) -> bool:
     if constraints is None:
         return False
     target_type = str(rule.get("targetType") or "")
     target_id = str(rule.get("targetId") or "")
     if target_type == "subject":
-        return assignment.subject == target_id
+        return assignment.subject == target_id or _rule_subject_of(constraints, assignment.subject) == target_id
     if target_type == "subjectGroup":
         return constraints.subject_in_group(assignment.subject, target_id)
     if target_type == "teacherGroup":

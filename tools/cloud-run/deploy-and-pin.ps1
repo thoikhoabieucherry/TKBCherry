@@ -46,10 +46,21 @@ $log = Join-Path $env:TEMP "tkb-deploy-and-pin-$stamp.log"
 function Step([string]$t) { Write-Host ''; Write-Host "==== $t ====" -ForegroundColor Cyan }
 
 Step '1/4 Cloud Run: build + canary + promote (3 vung)'
+# PowerShell 5.1 boc MOI dong stderr cua lenh native (gcloud in ca thong bao
+# "finished successfully" ra stderr) thanh NativeCommandError; voi
+# ErrorActionPreference='Stop' thi ca script chet oan. Ha ve 'Continue' quanh
+# lenh nay va tu kiem $LASTEXITCODE.
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'deploy.ps1') `
     -ProjectId $ProjectId -ConfirmDeployment -InvokerServiceAccount $InvokerServiceAccount *>&1 |
     Tee-Object -FilePath $log
+$deployExit = $LASTEXITCODE
+$ErrorActionPreference = $prevEap
 $deployText = Get-Content $log -Raw
+if ($deployExit -ne 0 -and $deployText -notmatch 'Cloud Run deployment completed') {
+    throw "deploy.ps1 that bai (exit $deployExit). Xem $log"
+}
 
 $digest = ([regex]::Matches($deployText, 'Solver digest:\s*([0-9a-f]{64})') |
     ForEach-Object { $_.Groups[1].Value } | Select-Object -Last 1)
@@ -86,6 +97,10 @@ $urls = [ordered]@{
     'asia-east1'      = 'https://tkb-solver-tys7xrhbca-de.a.run.app'
 }
 $bad = 0
+# gcloud in WARNING mao danh ra stderr -> NativeCommandError -> chet oan neu
+# ErrorActionPreference van la 'Stop' (bay thu HAI cua PowerShell 5.1).
+$prevEap2 = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 foreach ($region in $urls.Keys) {
     $u = $urls[$region]
     $tok = & gcloud auth print-identity-token --impersonate-service-account=$InvokerServiceAccount --audiences=$u --quiet 2>$null
@@ -104,6 +119,8 @@ foreach ($region in $urls.Keys) {
         "{0,-16} LOI  {1}" -f $region, $_.Exception.Message
     }
 }
+
+$ErrorActionPreference = $prevEap2
 
 Write-Host ''
 if ($bad -gt 0) {

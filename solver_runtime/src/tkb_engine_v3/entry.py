@@ -34,6 +34,14 @@ def _to_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def _max_solve_seconds() -> int:
+    """03/09: tran thoi gian mot luot cua engine (truoc day ghi cung 600 s). Ban chay
+    trong may (Cherry Local, o chon thoi luong toi 30 phut) nang bang env
+    TKB_V3_MAX_SOLVE_SECONDS; khong dat thi giu 600 s nhu production."""
+    cap = _to_int(os.environ.get("TKB_V3_MAX_SOLVE_SECONDS", ""), 0)
+    return cap if cap > 0 else 600
+
+
 def _solve_deadline_seconds(settings: Mapping[str, Any] | None) -> float:
     settings = settings or {}
     candidates = [
@@ -43,7 +51,7 @@ def _solve_deadline_seconds(settings: Mapping[str, Any] | None) -> float:
     ]
     positive = [c for c in candidates if c > 0]
     total = min(positive) if positive else 110
-    return float(max(10, min(total, 600)))
+    return float(max(10, min(total, _max_solve_seconds())))
 
 
 def _context_with_fixed_demand(original_ctx, trimmed_ctx, fixed_lessons):
@@ -224,6 +232,23 @@ def _focus_rounds(settings: Mapping[str, Any] | None, budget_s: float) -> int:
     return min(rounds, 6)
 
 
+def _cherry_rounds(settings: Mapping[str, Any] | None, budget_s: float) -> int:
+    """03/09: nut Cherry (khong focus) mac dinh MOT vong nhu production: moi worker
+    thoat "converged" (construct.py, bac 3 idle 25-90 s) roi portfolio tra ket qua,
+    phan ngan sach con lai bi bo (do 5 phut tren Thi Tran: xong o 173 s). Ban chay
+    trong may (Cherry Local) dat env TKB_V3_CHERRY_ROUNDS=auto (hoac mot so) de luot
+    dai chia nhieu vong: vong sau warm-start tu luoi tot nhat vong truoc voi seed
+    moi (cung co che rounds cua lane mot muc tieu). Khong dat env -> 1."""
+    raw = os.environ.get("TKB_V3_CHERRY_ROUNDS", "").strip().lower()
+    if not raw:
+        return 1
+    if raw == "auto":
+        if budget_s < 150:
+            return 1
+        return max(2, min(6, int(budget_s // 60)))
+    return max(1, min(6, _to_int(raw, 1)))
+
+
 def _cpsat_lane_enabled(settings: Mapping[str, Any] | None, problem: Problem | None = None) -> bool:
     """26/08: toan tu CP-SAT LNS theo cum cho nut gap1/sessions co san va
     khong bi tat (settings.focus_cpsat_lns hoac env TKB_CPSAT_LNS = 0).
@@ -251,11 +276,19 @@ def _cpsat_lane_enabled(settings: Mapping[str, Any] | None, problem: Problem | N
         return False
 
 
+def _portfolio_worker_cap() -> int:
+    """03/09: tran so tien trinh portfolio (truoc day ghi cung 8 = Cloud Run
+    8 vCPU / VPS 6). Ban chay trong may (Cherry Local, 16 nhan) nang bang env
+    TKB_V3_MAX_WORKERS; khong dat thi giu nguyen 8 nhu production."""
+    cap = _to_int(os.environ.get("TKB_V3_MAX_WORKERS", ""), 0)
+    return cap if cap > 0 else 8
+
+
 def _num_workers(settings: Mapping[str, Any] | None) -> int:
     requested = _to_int((settings or {}).get("num_workers"), 0)
     cpus = os.cpu_count() or 2
     if requested > 0:
-        return max(1, min(requested, cpus, 8))
+        return max(1, min(requested, cpus, _portfolio_worker_cap()))
     return max(1, min(cpus - 1, 6))
 
 
@@ -438,7 +471,31 @@ def _worker_solve(args) -> dict:
     # so tiet engine CHU DONG dua ve Chua phan (kem ly do) de GV het buoi 1
     # tiet / trong >= 2 — tinh la "da xu ly" khi so sanh cac seed.
     result["quality_ejected"] = len((info or {}).get("quality_ejected") or [])
+    # 13/09 (chu du an: "gioi han buoi day khi bam Cherry phai tuan thu"): so tiet
+    # dang VI PHAM "Gioi han buoi day" — trinh duyet se go chung ve Chua phan nen
+    # rank() tinh chung la chua xep.
+    try:
+        result["session_debt"] = _session_debt_lessons(problem, state)
+    except Exception:
+        result["session_debt"] = 0
     return result
+
+
+def _session_debt_lessons(problem, state) -> int:
+    debt = 0
+    for t, rule in enumerate(problem.teacher_rules):
+        if rule is None or not any(rule.session_mode):
+            continue
+        counts = state.ts_count[t]
+        for d, mode in enumerate(rule.session_mode):
+            am, pm = counts[d * 2], counts[d * 2 + 1]
+            if mode == "morning":
+                debt += pm
+            elif mode == "afternoon":
+                debt += am
+            elif mode == "either" and am > 0 and pm > 0:
+                debt += min(am, pm)
+    return debt
 
 
 def _result_hits_floor(res: dict | None, expected: int) -> bool:
@@ -633,8 +690,8 @@ def _portfolio_solve(
     results: list[dict] = []
     used_mp = False
     rounds = max(1, int(rounds or 1))
-    if not focus:
-        rounds = 1
+    if not focus and not os.environ.get("TKB_V3_CHERRY_ROUNDS", "").strip():
+        rounds = 1   # production: Cherry mot vong (xem _cherry_rounds)
     round_warm = warm_cells
     rounds_done = 0
     # moc xuat phat THAT (luoi nguoi dung) — vong sau warm-start tu luoi tot
@@ -748,6 +805,10 @@ def _rank_key(res: dict, focus: str | None) -> tuple:
     # da xu ly -> seed dat 0 buoi 1 tiet / 0 trong >= 2 nho dua vai tiet ra
     # thang seed giu du tiet nhung con no; sau do moi uu tien xep NHIEU hon.
     handled = int(res["placed"]) + int(res.get("quality_ejected") or 0)
+    # 13/09: tiet vi pham "Gioi han buoi day" bi trinh duyet go ve Chua phan ->
+    # khong duoc tinh la da xep khi so cac nghiem.
+    session_debt = int(res.get("session_debt") or 0)
+    handled -= session_debt
     if focus:
         # 25/08: nut mot muc tieu — worker nao KHONG rot tiet so voi luoi
         # xuat phat (warm_placed) thi so CHI SO PHU TRACH truoc, so tiet
@@ -767,6 +828,7 @@ def _rank_key(res: dict, focus: str | None) -> tuple:
         )
     return (
         -handled,
+        session_debt,
         loc_debt,
         0 if res.get("min_ok", True) else 1,
         obj[:2],
@@ -848,7 +910,12 @@ def _location_gate(
     # duoc NHIEU tiet hon luoi xuat phat thi khong tu y vut no di chi vi no
     # dia diem cao hon — de cong ben trinh duyet quyet dinh.
     result_handled = int(best.get("placed") or 0) + int(best.get("quality_ejected") or 0)
-    if result_handled > start_placed:
+    gained = result_handled - start_placed
+    # 26/08 (do that tren 2kkn7c6y7l1): mien tru nay tung cho qua mot luoi
+    # +1 TIET nhung +17 BUOI VI PHAM (27 -> 44). "Du tiet la uu tien tuyet doi"
+    # KHONG co nghia mot tiet le mua duoc thiet hai dia diem vo han. Chi mien
+    # tru khi so buoi vi pham TANG THEM khong vuot qua so tiet xep them.
+    if gained > 0 and (now - start) <= gained:
         verdict["kept_for_more_lessons"] = True
         return verdict
     start_q = info.get("warm_quality")
@@ -922,6 +989,39 @@ def _focus_gate(focus: str, best: dict) -> dict | None:
         "aborted": str(aborted) if aborted else None,
     }
     if not reasons:
+        return verdict
+    # 13/09 (chu du an: "giam tu 59 con 13 nhung tra ket qua lai phuc hoi 59"):
+    # ket qua cuoi hong hop dong nhung trong luot da gap mot luoi HOP LE dat hop
+    # dong (Constructor._offer_focus_candidate) -> giu luoi do, khong vut ve goc.
+    from .construct import focus_candidate_acceptable
+
+    cand = info.get("focus_candidate")
+    if (
+        isinstance(cand, dict)
+        and isinstance(cand.get("grid"), list)
+        and cand["grid"]
+        and focus_candidate_acceptable(focus, start_q, start_placed, cand.get("quality") or [], cand.get("placed") or 0)
+    ):
+        cand_q = [int(x) for x in (cand.get("quality") or [])]
+        best["grid"] = [list(row) for row in cand["grid"]]
+        best["placed"] = int(cand["placed"])
+        best["objective"] = cand_q[:4] + (cand_q[4:5] or list(obj[4:5]))
+        best["quality_ejected"] = 0
+        new_info = dict(info)
+        new_info["quality_ejected"] = []
+        new_info["focus_aborted"] = None
+        new_info["focus_fallback"] = {"reasons": list(reasons), "quality": cand_q[:4]}
+        best["info"] = new_info
+        verdict.update(
+            {
+                "result_quality": cand_q[:4],
+                "keep_original": False,
+                "reasons": [],
+                "aborted": None,
+                "fallback_from": list(reasons),
+                "message": "Giữ lịch hợp lệ tốt nhất tìm được trong lượt (kết quả cuối bị loại: %s)" % "; ".join(reasons),
+            }
+        )
         return verdict
     verdict["message"] = "; ".join(reasons)
     if isinstance(warm_grid, list) and warm_grid:
@@ -1222,7 +1322,7 @@ def solve_from_ui_data_v3(
         expected=expected,
         workers=workers,
     )
-    rounds = _focus_rounds(settings, solve_budget) if quality_focus else 1
+    rounds = _focus_rounds(settings, solve_budget) if quality_focus else _cherry_rounds(settings, solve_budget)
     # 26/08: nut gap1/sessions co toan tu CP-SAT LNS theo cum -> 1 tien trinh x
     # N luong CP-SAT (do: 6 tien trinh x 1 luong deu hoi tu ~90, 1 x 6 luong
     # dat 51-56 vi cac worker khong chia se luoi trong mot vong) va 1 vong
@@ -1442,8 +1542,9 @@ def solve_from_ui_data_v3(
 
     # Per-run monitor file: exactly what the engine achieved this run
     try:
-        repo_root = Path(__file__).resolve().parents[3]
-        marker_dir = repo_root / "Cherry" / "logs"
+        # 28/08: ghi vao solver_runtime/logs/ (cung cho voi solve-py-*.json cua
+        # solve_stdio.py, da nam trong .gitignore) thay vi thu muc Cherry/ o goc.
+        marker_dir = Path(__file__).resolve().parents[2] / "logs"
         marker_dir.mkdir(parents=True, exist_ok=True)
         marker = {
             "engine": ENGINE_NAME,

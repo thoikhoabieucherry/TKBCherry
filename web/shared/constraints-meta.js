@@ -6,11 +6,13 @@
       ["maxDaysSessions", "Giới hạn số ngày dạy & buổi dạy/1 tuần"],
       ["maxPeriods", "Giới hạn số tiết dạy/1 buổi"],
       ["maxMorningAfternoon", "Giới hạn số buổi dạy sáng & chiều"],
-      ["oneSessionPerDay", "Chỉ dạy 1 buổi/1 ngày"],
+      ["oneSessionPerDay", "Giới hạn buổi dạy"],
       ["noMorningP5AfternoonP1", "Không dạy tiết 5 buổi sáng & tiết 1 buổi chiều"],
       ["oneLocationPerSession", "Chỉ dạy 1 địa điểm/1 buổi"],
       ["gapBetweenLocations", "Có tiết trống giữa 2 địa điểm"],
       ["maxOneMovePerSession", "Không di chuyển 2 lần/1 buổi giữa các địa điểm"],
+      ["moveAtBreak23", "Đổi địa điểm ở giờ ra chơi (tiết 2-3)"],
+      ["moveAtBreak34", "Đổi địa điểm ở giờ ra chơi (tiết 3-4)"],
       ["mustTeach", "Vị trí phải có tiết dạy"]
     ],
     SUBJECT_RULES: [

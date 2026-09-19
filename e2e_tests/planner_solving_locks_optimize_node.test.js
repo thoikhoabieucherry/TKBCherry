@@ -3,11 +3,11 @@
 // 25/08 (chi dao chu du an): "khi sap xep nut toi uu cung nen disable. con TKB
 // minh van xem duoc chi la ko thao tac duoc o bang xep thoi".
 //
-// Nut "Toi uu" (btnOptimizeMenu) da bi khoa tu truoc, nhung nut "Toi uu v3"
+// Nut "Toi uu" FET (btnOptimizeMenu, da go han 03/09) bi khoa tu truoc, nhung nut "Toi uu v3"
 // (btnTestMenu) thi khong: runPlannerV3Mode co chan bang testControlBusy() nen
 // bam khong chay gi ca, the nhung nut van sang binh thuong -> nguoi dung tuong
 // nut hong. Cac muc BEN TRONG hai menu cung phai bi khoa vi menu co the dang
-// mo dung luc luot xep bat dau.
+// mo dung luc luot xep bat dau. 03/09: menu Toi uu FET da go, chi con menu Toi uu v3.
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -51,9 +51,7 @@ function loadBusyControls(){
     btnHome:makeControl(false),
     btnAutoSort:makeControl(false),
     btnEngineCherry:makeControl(false),
-    btnOptimizeMenu:makeControl(false),
     btnTestMenu:makeControl(false),
-    plannerOptimizeMenu:makeControl(false),
     plannerTestMenu:makeControl(false),
     btnUndoTKB:makeControl(false),
     btnRedoTKB:makeControl(false),
@@ -62,8 +60,7 @@ function loadBusyControls(){
     solveDurationSeconds:makeControl(false),
     tkb:makeControl(false)
   };
-  // Muc menu: 4 muc "Toi uu" (FET) + 4 muc "Toi uu v3".
-  const optimizeItems = [makeControl(), makeControl(), makeControl(), makeControl()];
+  // Muc menu: 4 muc "Toi uu v3".
   const v3Items = [makeControl(), makeControl(), makeControl(), makeControl()];
   const surfaces = {center:makeControl(false), left:makeControl(false)};
 
@@ -84,7 +81,7 @@ function loadBusyControls(){
       },
       querySelectorAll(selector){
         const text = String(selector);
-        if(text.includes("#plannerOptimizeMenu button")) return [...optimizeItems, ...v3Items];
+        if(text.includes("#plannerTestMenu button")) return [...v3Items];
         return [];
       }
     },
@@ -96,44 +93,41 @@ function loadBusyControls(){
     plannerSource.indexOf("function setAutoSortStopVisible")
   )}\nthis.lockBusyControls = setAutoSortBusyControls;`, context);
 
-  return {context, controls, optimizeItems, v3Items, surfaces};
+  return {context, controls, v3Items, surfaces};
 }
 
-test("dang xep thi khoa ca hai nut toi uu, khong chi nut Toi uu", () => {
+test("dang xep thi khoa nut Toi uu v3 cung voi ▶ va Cherry", () => {
   const {context, controls} = loadBusyControls();
 
   context.lockBusyControls(true);
-  for(const id of ["btnOptimizeMenu", "btnTestMenu", "btnAutoSort", "btnEngineCherry"]){
+  for(const id of ["btnTestMenu", "btnAutoSort", "btnEngineCherry"]){
     assert.equal(controls[id].disabled, true, `${id} phai bi khoa khi dang xep`);
     assert.equal(controls[id].getAttribute("aria-disabled"), "true", id);
     assert.equal(controls[id].classList.contains("is-auto-sort-disabled"), true, id);
   }
 
   context.lockBusyControls(false);
-  for(const id of ["btnOptimizeMenu", "btnTestMenu", "btnAutoSort", "btnEngineCherry"]){
+  for(const id of ["btnTestMenu", "btnAutoSort", "btnEngineCherry"]){
     assert.equal(controls[id].disabled, false, `${id} phai mo lai khi xep xong`);
     assert.equal(controls[id].getAttribute("aria-disabled"), null, id);
     assert.equal(controls[id].classList.contains("is-auto-sort-disabled"), false, id);
   }
 });
 
-test("ca hai menu toi uu bi dong va khoa tung muc khi dang xep", () => {
-  const {context, controls, optimizeItems, v3Items} = loadBusyControls();
+test("menu Toi uu v3 bi dong va khoa tung muc khi dang xep", () => {
+  const {context, controls, v3Items} = loadBusyControls();
   // Menu dang mo dung luc luot xep bat dau.
-  controls.plannerOptimizeMenu.hidden = false;
   controls.plannerTestMenu.hidden = false;
 
   context.lockBusyControls(true);
-  assert.equal(controls.plannerOptimizeMenu.hidden, true);
   assert.equal(controls.plannerTestMenu.hidden, true);
-  assert.equal(controls.btnOptimizeMenu.getAttribute("aria-expanded"), "false");
   assert.equal(controls.btnTestMenu.getAttribute("aria-expanded"), "false");
-  [...optimizeItems, ...v3Items].forEach((item, index) => {
+  [...v3Items].forEach((item, index) => {
     assert.equal(item.disabled, true, `muc menu ${index} phai bi khoa`);
   });
 
   context.lockBusyControls(false);
-  [...optimizeItems, ...v3Items].forEach((item, index) => {
+  [...v3Items].forEach((item, index) => {
     assert.equal(item.disabled, false, `muc menu ${index} phai mo lai`);
   });
 });
@@ -155,9 +149,9 @@ test("luoi TKB chi doc khi dang xep: van xem duoc, khong thao tac duoc", () => {
   assert.equal(surfaces.left.classList.contains("is-solving-readonly"), false);
 });
 
-test("trang thai khoa co kieu dang nhin thay duoc cho ca hai nut toi uu", () => {
+test("trang thai khoa co kieu dang nhin thay duoc cho nut Toi uu v3", () => {
   const disabledBlock = plannerHtml.slice(
-    plannerHtml.indexOf("body.planner-shell .planner-optimize-wrap > #btnOptimizeMenu.is-auto-sort-disabled"),
+    plannerHtml.indexOf("body.planner-shell .planner-optimize-wrap > #btnTestMenu.is-auto-sort-disabled"),
     plannerHtml.indexOf("body.planner-shell .planner-mode-icon")
   );
   assert.ok(disabledBlock.length > 0, "khong tim thay khoi kieu dang is-auto-sort-disabled");
