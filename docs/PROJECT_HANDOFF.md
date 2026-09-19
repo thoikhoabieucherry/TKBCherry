@@ -6,12 +6,19 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-09-19 (7) `cquz335tkr1` — NHẬP THCS TRẦN HƯNG ĐẠO
+
+- **Chủ dự án**: nhập `C:\Users\Cherry\Documents\Codex\phancong\tranhungdao` lên `https://tkbcherry.com/app?sid=cquz335tkr1`; khối 6–7 cố định HĐTN 1–2 chiều tiết 4–5 thứ 2, khối 8–9 ngược lại buổi sáng; tiết nghỉ cùng pattern; Văn/Toán/Anh/LSĐL/KHTN/GDTC phải có 1 cụm liền, không tiết 5 sáng / tiết 1 chiều, chỉ 1 buổi/ngày.
+- **Nguồn**: `lop.xlsx` 61 lớp (18+14+16+13), `giaovien.xlsx` 102 GV, `monhoc.xlsx` 20 môn (HĐTN1/2/3 tách riêng), `tietchuan.xlsx` 80 dòng (khối 6–8 = 38 tiết, khối 9 = 39 vì GDĐP 2), `pccm.xlsx` 1102 ô, `ghep.xlsx` 1 dòng Toán 6A3 (`PHT.Ánh, TO.Hà`, 4 tiết, giới hạn 2).
+- **HĐTN / nghỉ lớp**: ghim `HĐTN1` tiết 4 + `HĐTN2` tiết 5 thứ 2 (6–7 chiều, 8–9 sáng); nghỉ tiết 1–2 cùng buổi đó; nghỉ cả Thứ 7. `HĐTN3` để máy xếp. Không nhập `nghilop.xlsx` từng lớp (lịch cũ lộn xộn). Có nhập `nghigv.xlsx` + khóa hết ô `TO.Mỹ` / `MT.Mơ` (hộ sản); mở 8 ô GVCN trùng đúng ô ghim HĐTN.
+- **Yêu cầu môn**: 6 môn trên, mọi lớp có phân công — `lessonBlocks[2].min=1`, `sessionAllowed.oneSessionPerDay`, `fixedOff.subject` cấm `*|sang|4` và `*|chieu|0`.
+- **Đã ghi** kvstore `school_cquz335tkr1` (backup `/root/tkb-backups/school_cquz335tkr1_20260919-113403.json`). Ctrl+F5; đừng Lưu tab cũ. Chưa bấm Cherry.
+
 ## 2026-09-19 (6) ĐẨY MÃ NGUỒN LÊN GITHUB CHO CURSOR ĐIỆN THOẠI
 
-- **Chủ dự án**: "đưa dự án này lên github để khi tôi chạy cursor trên điện thoại vẫn được".
-- Repo sẵn có: `https://github.com/thoikhoabieucherry/TKBCherry` (nhánh đang làm: `backup-2026-08-26`). Nhánh `main` trên origin vẫn là dòng FET thí nghiệm tách từ 26/08 — **không** fast-forward lên đây, không force-push.
-- Commit snapshot mã nguồn hiện tại (engine v3, UI, test, docs) trên `backup-2026-08-26`. `scratchpad/` (dump trường ry7/kn5) và `toff.txt` **không** vào git — đã thêm `scratchpad/` vào `.gitignore`.
-- Điện thoại: mở repo đó trong Cursor, checkout nhánh `backup-2026-08-26` (không phải `main`).
+- **Chủ dự án**: "đưa dự án này lên github… github này chỉ có mình tôi sử dụng thôi".
+- Repo: `https://github.com/thoikhoabieucherry/TKBCherry` — **private**, owner User `thoikhoabieucherry`, chỉ 1 collaborator (chính mình, admin). Snapshot hôm nay: commit `9637942` trên `backup-2026-08-26`. Đã đặt nhánh đó làm **default** (không force-push `main`; `main` vẫn là dòng FET thí nghiệm).
+- `scratchpad/` (dump trường ry7/kn5) và `toff.txt` **không** vào git.
 
 ## 2026-09-19 (5) `kn5m2p35ms3` — ĐỔI PCCM + LY.Phúc, XẾP LẠI TKB
 

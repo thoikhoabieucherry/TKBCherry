@@ -30,8 +30,8 @@ Hệ thống xếp thời khóa biểu tự động cho trường phổ thông, 
 
 ## Nhánh và quy trình Git
 
-- Remote: `https://github.com/thoikhoabieucherry/TKBCherry` (nhánh mặc định GitHub: `main`).
-- Snapshot mã nguồn đang dùng (engine v3 / UI / test, 19/09/2026) nằm trên `backup-2026-08-26`. Cursor điện thoại mở repo này rồi chọn nhánh đó — `main` trên origin vẫn là dòng FET thí nghiệm tách từ 26/08.
+- Remote: `https://github.com/thoikhoabieucherry/TKBCherry` — **private**, chủ sở hữu `thoikhoabieucherry` (User), không collaborator khác.
+- Nhánh mặc định GitHub (19/09/2026): `backup-2026-08-26` = snapshot mã nguồn đang dùng. `main` trên origin vẫn là dòng FET thí nghiệm tách từ 26/08, không phải bản điện thoại cần mở.
 - Phát triển trên nhánh `codex/*` theo từng đợt tính năng, merge về `main` khi ổn định.
 - CI (GitHub Actions): chỉ còn `security.yml` (secret scan + CodeQL) và Dependabot. Không có CI test trên GitHub: workflow test cũ nằm ở `tools/ci/tests.yml` (ngoài `.github/workflows/`) nên GitHub chưa từng chạy nó, đã bỏ ngày 28/08/2026. Trước khi commit chạy `python run_tests.py` (đối chiếu mốc chuẩn `docs/test-baseline.json`). GitHub chỉ còn `security.yml` (secret scan + CodeQL) và Dependabot. `build-agent-wasm.yml` (Agent WASM đã ngừng) bỏ cùng ngày.
 
