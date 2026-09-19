@@ -14733,10 +14733,6 @@ function setAutoSortProgress(percent, label, details){
     }
   }
 
-  // Clear statusMsg to prevent flickering
-  const statusMsgEl = document.getElementById("statusMsg");
-  if(statusMsgEl && statusMsgEl.textContent) statusMsgEl.textContent = "";
-
   const btn = document.getElementById("btnStopAutoSort");
   // 24/08: chi giu nut Dung o trang thai khoa khi lan dung mem VAN con trong
   // thoi gian cho. Khi bridge bao da treo qua han, nut phai song lai de lan
@@ -14744,6 +14740,25 @@ function setAutoSortProgress(percent, label, details){
   const bestEffortStopStuck = window.__TKB_RUST_PROGRESS_STATE?.bestEffortStopStuck === true;
   const bestEffortStopPending = window.__TKB_RUST_PROGRESS_STATE?.bestEffortStopPending === true
     && !bestEffortStopStuck;
+  // 19/09: dung mem / dang ap lich tot nhat — GIU statusMsg. Truoc day moi
+  // khung tien do xoa statusMsg -> nguoi dung thay tien trinh "tat" roi doi
+  // 10-20s moi thay "Da xep xong", tuong bi rollback im lang.
+  const statusMsgEl = document.getElementById("statusMsg");
+  if(statusMsgEl && statusMsgEl.textContent){
+    const statusText = String(statusMsgEl.textContent || "");
+    const keepStopStatus = bestEffortStopPending
+      || bestEffortStopStuck
+      || window.__TKB_SOFT_STOP_APPLYING === true
+      || /đang nhận (phương án|lịch) tốt nhất|đang áp lịch tốt nhất/i.test(statusText);
+    if(!keepStopStatus) statusMsgEl.textContent = "";
+  }
+  if(bestEffortStopPending && metric && !metric.hidden){
+    const live = String(metric.textContent || "").trim();
+    if(live && !/đang nhận lịch tốt nhất/i.test(live)){
+      metric.textContent = "Đang nhận lịch tốt nhất · " + live;
+      metric.title = metric.textContent;
+    }
+  }
   if(btn && !window.__AUTO_SORT_STOP_REQUESTED && !bestEffortStopPending && n < 100){
     btn.disabled = false;
     setAutoSortStopAccessibleState(false);

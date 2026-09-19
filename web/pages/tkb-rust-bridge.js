@@ -4398,6 +4398,10 @@
   }
 
   function setActiveSolveRunningStatus(){
+    if(window.__TKB_SOFT_STOP_APPLYING === true){
+      setStatus("Đang áp lịch tốt nhất…", "info");
+      return;
+    }
     setStatus(
       bestEffortStopStatusActive()
         ? (bestEffortStopEscalationDue()
@@ -4504,7 +4508,19 @@
       // focused improvement already accepted by CP-SAT.
       if(bestEffortStopPendingFor(backendJobId)) return true;
       setBestEffortStopPending(backendJobId, true);
-      setStatus("\u0110ang nh\u1eadn ph\u01b0\u01a1ng \u00e1n t\u1ed1t nh\u1ea5t...", "info");
+      try{ window.__TKB_SOFT_STOP_APPLYING = false; }catch(_){ }
+      const liveMetric = String(
+        progressState?.metricLabelText
+        || window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL
+        || ""
+      ).trim()
+        .replace(/\s*·\s*Đang tìm[^·]*$/u, "")
+        .replace(/^Đang nhận lịch tốt nhất\s*·\s*/u, "");
+      if(liveMetric){
+        progressState.metricLabelText = `Đang nhận lịch tốt nhất · ${liveMetric}`;
+        try{ window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = progressState.metricLabelText; }catch(_){ }
+      }
+      setStatus("Đang nhận phương án tốt nhất...", "info");
       tickEstimatedProgress();
       let browserStopResult = null;
       if(typeof window.TKBBrowserWasmExecutor?.stopAndSubmitBest === "function"){
@@ -5251,15 +5267,15 @@
       const mode = String(focusMode || window.__TKB_ENGINE_FOCUS_MODE || "").trim();
       let label = "";
       if(mode === "optimize_gap1" || mode === "gap1"){
-        label = `Trống 1 tiết: ${gap1} ➔ ${gap1}`;
+        label = `Trống 1 tiết: ${gap1} ➔ ${gap1} · Đang tìm phương án…`;
       }else if(mode === "optimize_gap2" || mode === "gap2"){
-        label = `Trống 2 tiết: ${gap2} ➔ ${gap2}`;
+        label = `Trống 2 tiết: ${gap2} ➔ ${gap2} · Đang tìm phương án…`;
       }else if(mode === "optimize_sessions" || mode === "sessions"){
-        label = `Buổi dạy: ${sessions} ➔ ${sessions}`;
+        label = `Buổi dạy: ${sessions} ➔ ${sessions} · Đang tìm phương án…`;
       }else if(mode === "optimize_singletons" || mode === "singletons"){
-        label = `Dạy 1 tiết: ${one} ➔ ${one}`;
+        label = `Dạy 1 tiết: ${one} ➔ ${one} · Đang tìm phương án…`;
       }else{
-        label = `1 tiết/buổi ${one} ➔ ${one} · Trống 2 tiết ${gap2} ➔ ${gap2} · Buổi ${sessions} · Trống 1 ${gap1}`;
+        label = `1 tiết/buổi ${one} ➔ ${one} · Trống 2 tiết ${gap2} ➔ ${gap2} · Buổi ${sessions} · Trống 1 ${gap1} · Đang tìm…`;
       }
       window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = label;
       if(progressState) progressState.metricLabelText = label;
@@ -19243,6 +19259,17 @@
           !strictBrowserAutomaticRequired(settings)
           || !strictBrowserAutomaticQualityMessage(incumbentPayload, settings)
         )
+        // 19/09: dung mem dang cho nhan best — khong rollback ve lich cu khi
+        // ung vien tot hon (nguoi dung vua thay so lieu giam tren huy hieu).
+        && !(
+          bestEffortStopPendingFor(
+            activeBackendJobId || window.__TKB_ACTIVE_BACKEND_JOB_ID || ""
+          )
+          && cherryCandidateStrictlyBetter(payload, incumbentPayload, {
+            focusMode: window.__TKB_ENGINE_FOCUS_MODE,
+            ignoreVisibleMetrics: true
+          })
+        )
         && shouldKeepIncumbentForTeacherQuality(payload, incumbentPayload, incumbentQualityGuard, settings)
       ){
         inheritRefinementRound(incumbentPayload, payload);
@@ -19358,7 +19385,11 @@
         refreshStatsPopoverIfOpen();
         return null;
       }
-      setStatus("Đang sắp xếp...", "info");
+      const softStopApplying = bestEffortStopPendingFor(
+        activeBackendJobId || window.__TKB_ACTIVE_BACKEND_JOB_ID || ""
+      );
+      try{ window.__TKB_SOFT_STOP_APPLYING = softStopApplying; }catch(_){ }
+      setStatus(softStopApplying ? "Đang áp lịch tốt nhất…" : "Đang sắp xếp...", "info");
       await sleep(0);
       let result;
       autoSortTerminalSettlementActive = true;
@@ -19526,6 +19557,10 @@
         qualityNote ? qualityNote.replace(/^Không áp dụng phương án vì /, "Đã áp dụng, nhưng ") : ""
       ].filter(Boolean).join(" ");
       window.__TKB_FORCED_ENGINE_QUALITY_NOTE = "";
+      try{
+        window.__TKB_SOFT_STOP_APPLYING = false;
+        setBestEffortStopPending("", false);
+      }catch(_){ }
       finishProgress("100%", "ok");
       window.__TKB_SOLVER_LAST_COMPLETION_MESSAGE = terminalMessage;
       setStatus(terminalMessage, "ok");
@@ -19548,6 +19583,10 @@
     }catch(err){
       if(!isCurrentSolveRun(activeSolveRunId)) return null;
       stopProgressTicker();
+      try{
+        window.__TKB_SOFT_STOP_APPLYING = false;
+        setBestEffortStopPending("", false);
+      }catch(_){ }
       if(err?.kind === "user_cancelled"){
         finishProgress("Dừng", "error");
         setStatus(err.message || "Đã dừng sắp xếp.", "info");
@@ -22633,11 +22672,11 @@
         const sessions = Math.max(0, Number(st.tsBuoiDay) || 0);
         const gap1 = Math.max(0, Number(st.soBuoiTrong1) || 0);
         var seedLabel = "";
-        if(focusMode === "optimize_gap1") seedLabel = "Trống 1 tiết: " + gap1 + " ➔ " + gap1;
-        else if(focusMode === "optimize_gap2") seedLabel = "Trống 2 tiết: " + gap2 + " ➔ " + gap2;
-        else if(focusMode === "optimize_sessions") seedLabel = "Buổi dạy: " + sessions + " ➔ " + sessions;
-        else if(focusMode === "optimize_singletons") seedLabel = "Dạy 1 tiết: " + one + " ➔ " + one;
-        else seedLabel = "1 tiết/buổi " + one + " ➔ " + one + " · Trống 2 tiết " + gap2 + " ➔ " + gap2 + " · Buổi " + sessions + " · Trống 1 " + gap1;
+        if(focusMode === "optimize_gap1") seedLabel = "Trống 1 tiết: " + gap1 + " ➔ " + gap1 + " · Đang tìm phương án…";
+        else if(focusMode === "optimize_gap2") seedLabel = "Trống 2 tiết: " + gap2 + " ➔ " + gap2 + " · Đang tìm phương án…";
+        else if(focusMode === "optimize_sessions") seedLabel = "Buổi dạy: " + sessions + " ➔ " + sessions + " · Đang tìm phương án…";
+        else if(focusMode === "optimize_singletons") seedLabel = "Dạy 1 tiết: " + one + " ➔ " + one + " · Đang tìm phương án…";
+        else seedLabel = "1 tiết/buổi " + one + " ➔ " + one + " · Trống 2 tiết " + gap2 + " ➔ " + gap2 + " · Buổi " + sessions + " · Trống 1 " + gap1 + " · Đang tìm…";
         window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = seedLabel;
       }
     }catch(_){ }

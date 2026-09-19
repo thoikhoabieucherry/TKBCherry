@@ -6,6 +6,13 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-09-19 (11) UX DỪNG + SEED «ĐANG TÌM» (KHÔNG CẢM GIÁC ẢO / ROLLBACK)
+
+- **Chủ dự án**: seed `40 ➔ 40` hiện ngay nhưng ~22s mới giảm thật; bấm Dừng thì tắt tiến trình, 10–20s sau mới «Đã xếp xong», đôi khi như rollback.
+- **Chẩn đoán**: (1) ~22s = cold start / floors / CP-SAT trước khung quality thật — seed chỉ là mốc, chưa phải kết quả. (2) Soft-stop đã có («Đang nhận phương án tốt nhất…») nhưng `setAutoSortProgress` **xoá `statusMsg` mỗi tick** → người dùng không thấy đang nhận best; Cloud Run grace ~8s + áp lịch. (3) Cổng giữ lịch cũ có thể rollback dù huy hiệu đã thấy giảm.
+- **Sửa**: giữ `statusMsg` khi soft-stop/áp best; chip «Đang nhận lịch tốt nhất · …»; seed thêm «Đang tìm phương án…»; khi soft-stop mà ứng viên tốt hơn thì không giữ incumbent; cờ `__TKB_SOFT_STOP_APPLYING` + «Đang áp lịch tốt nhất…».
+- **Deploy** (PowerShell một dòng, sau `git checkout` nhánh PR): `python deploy.py files deploy soft-stop-ux-20260919 --no-restart web/pages/phanmon.js web/pages/sapxep.html web/pages/tkb-rust-bridge.js` rồi Ctrl+F5. Muốn khung quality sớm hơn trên Cloud Run: `python deploy.py cloudrun`.
+
 ## 2026-09-19 (10) DEPLOY NHẦM NHÁNH — VẪN CHƯA THẤY THỐNG KÊ GV
 
 - **Chủ dự án**: vẫn chưa thấy «Thống kê theo giáo viên» / phân công GV.

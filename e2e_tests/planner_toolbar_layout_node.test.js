@@ -1016,6 +1016,10 @@ test("progress UI exposes Stop while active and bridge disables it during best-e
   assert.match(body, /const bestEffortStopPending = window\.__TKB_RUST_PROGRESS_STATE\?\.bestEffortStopPending === true/);
   assert.match(body, /if\(btn && !window\.__AUTO_SORT_STOP_REQUESTED && !bestEffortStopPending && n < 100\)/);
   assert.match(body, /else if\(btn && bestEffortStopPending\)[\s\S]*?btn\.disabled = true/);
+  // 19/09: dung mem — khong xoa statusMsg / hien "Dang nhan lich tot nhat" tren chip
+  assert.match(body, /keepStopStatus/);
+  assert.match(body, /Đang nhận lịch tốt nhất/);
+  assert.match(body, /đang nhận \(phương án\|lịch\) tốt nhất\|đang áp lịch tốt nhất/);
 
   const stopStart = bridgeSource.indexOf("function setBestEffortStopPending");
   const stopEnd = bridgeSource.indexOf("async function requestStopActiveSolve", stopStart);
