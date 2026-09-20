@@ -6,6 +6,14 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-09-20 (1) SOFT-STOP VẪN CHƯA LÊN VPS + STATUS BỊ ẨN
+
+- **Chủ dự án**: chạy rồi không thấy thông báo «Đang tìm / Đang nhận lịch tốt nhất».
+- **Live** vẫn `?v=20260919-cherry-speed-teacher-stats-v1` — **chưa** deploy bản soft-stop (`soft-stop-ux` / `soft-stop-visible`).
+- **Thêm**: `_setStatus` cố ý ẩn mọi «Đang nhận…» khi thanh tiến độ đang chạy → dù deploy đúng cũng không thấy dòng soft-stop trên `statusMsg` (chỉ còn huy hiệu xanh). Vá: `isSoftStopOrApply` không ẩn; không timeout 6s cho soft-stop/áp best.
+- **Chỗ nhìn**: huy hiệu xanh `#autoSortProgressMetric` = «… · Đang tìm phương án…» / «Đang nhận lịch tốt nhất · …»; dòng xanh/xanh dương cạnh đó = status soft-stop.
+- **Deploy**: `git pull` trên nhánh PR → `Select-String soft-stop-visible-v1` → `python deploy.py files deploy soft-stop-visible-20260920 --no-restart web/pages/phanmon.js web/pages/sapxep.html web/pages/tkb-rust-bridge.js` → Ctrl+F5 → View Source phải có `soft-stop-visible-v1`.
+
 ## 2026-09-19 (11) UX DỪNG + SEED «ĐANG TÌM» (KHÔNG CẢM GIÁC ẢO / ROLLBACK)
 
 - **Chủ dự án**: seed `40 ➔ 40` hiện ngay nhưng ~22s mới giảm thật; bấm Dừng thì tắt tiến trình, 10–20s sau mới «Đã xếp xong», đôi khi như rollback.

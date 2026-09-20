@@ -291,7 +291,7 @@ test("requirements menu puts Statistics by class immediately above Print TKB", (
   assert.match(menuSource, /openClassAssignmentStatistics/);
   assert.match(menuSource, /openTeacherAssignmentStatistics/);
   assert.match(plannerCss, /\.class-assignment-stats-table-wrap[\s\S]*?overflow:\s*auto/);
-  assert.match(plannerHtml, /phanmon\.js\?v=20260919-soft-stop-ux-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260920-soft-stop-visible-v1/);
   assert.match(plannerHtml, /tkb-constraints-menu\.js\?v=20260919-teacher-stats-v1/);
-  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260919-soft-stop-ux-v1/);
+  assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260920-soft-stop-visible-v1/);
 });

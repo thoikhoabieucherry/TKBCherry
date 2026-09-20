@@ -14069,8 +14069,14 @@ function _setStatus(msg, type="error"){
   if(!el) return;
   const wrap = document.getElementById("autoSortProgress");
   const isSolving = wrap && (wrap.classList.contains("is-active") || !wrap.hidden);
+  // 19/09: dung mem / ap lich tot nhat PHAI hien — truoc day moi chuoi
+  // "Dang nhan..." bi an khi thanh tien do dang chay, nen nguoi dung tuong
+  // tien trinh tat im trong 10-20s.
+  const isSoftStopOrApply = /đang nhận (phương án|lịch) tốt nhất|đang áp lịch tốt nhất/i.test(
+    String(msg || "").trim()
+  );
   const isRoutine = /^(đang sắp xếp|đang tối ưu|đang nhận|đang xử lý)/i.test(String(msg || "").trim());
-  if(isSolving && isRoutine){
+  if(isSolving && isRoutine && !isSoftStopOrApply){
     el.textContent = "";
     el.style.display = "none";
     return;
@@ -14088,7 +14094,8 @@ function _setStatus(msg, type="error"){
   else el.style.color = "#dc2626";
   fitPlannerMobileStatusMessage(el);
   const persistentCompletion = String(msg || "").trim() === "Đã xếp xong!" || /^(đã tối ưu|dạy 1 tiết|trống \d tiết|buổi dạy)/i.test(String(msg || "").trim());
-  if(msg && !persistentCompletion){
+  const persistentSoftStop = /đang nhận (phương án|lịch) tốt nhất|đang áp lịch tốt nhất/i.test(String(msg || "").trim());
+  if(msg && !persistentCompletion && !persistentSoftStop){
     window.__TKB_STATUS_HIDE_TIMER = window.setTimeout(() => {
       el.textContent = "";
       el.style.display = "none";
