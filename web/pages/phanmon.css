@@ -4357,6 +4357,25 @@ body.planner-shell .stats-popover{
 }
 .class-assignment-stats-table thead tr:first-child th{ top: 0; }
 .class-assignment-stats-table thead tr:nth-child(2) th{ top: 31px; }
+
+.teacher-slot-presence-dialog{ width: min(920px, 96vw); }
+.teacher-slot-presence-modes{
+  display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;
+}
+.teacher-slot-presence-modes button{
+  border: 1px solid #cbd5e1; background: #fff; color: #0f172a;
+  border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer;
+}
+.teacher-slot-presence-modes button.is-active{
+  background: #e0f2fe; border-color: #38bdf8; color: #075985; font-weight: 600;
+}
+.teacher-slot-presence-table{ min-width: 100%; }
+.teacher-slot-presence-table th,
+.teacher-slot-presence-table td{ min-width: 72px; padding: 8px 10px; }
+.teacher-slot-presence-session-end td{
+  border-bottom: 2px solid #38bdf8;
+}
+.class-assignment-stats-table .class-stats-subject-col{ min-width: 68px; }
 .class-assignment-stats-table th.class-stats-class-col{ min-width: 72px; }
 .class-assignment-stats-table td.class-stats-unassigned-col.has-unassigned{ color: #dc2626; font-weight: 700; }
 .class-assignment-stats-table tr.class-stats-grade-start th,

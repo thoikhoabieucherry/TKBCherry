@@ -6,6 +6,15 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-09-20 (2) TIÊN LƯỢNG GV / THỜI ĐIỂM (TRƯỚC KHI XẾP XONG)
+
+- **Chủ dự án**: muốn lưới như hình thống kê số GV có mặt từng ô (Thứ × tiết), nhưng **đoán trước** khi TKB chưa xếp xong — không chỉ đếm sau khi xếp.
+- **Cách làm**: menu Thống kê → **Tiên lượng GV / thời điểm**. Hai chế độ:
+  1. **Tiên lượng** — từ PCCM (tổng tiết mỗi GV) + nghỉ GV (`fixedOff`) + ô cố định; chia đều tiết còn lại lên ô GV còn dạy được; làm tròn Hamilton để tổng ô ≈ tổng tiết PCCM (tránh `Math.round` từng ô → toàn 0 khi trường nhỏ / kì vọng < 0,5).
+  2. **Đã xếp trên TKB** — đếm GV đang có tiết trên lưới hiện tại (như hình khi xếp xong / xếp dở).
+- **File**: `phanmon.js` (`buildTeacherSlotPresenceStatistics`), `tkb-constraints-menu.js`, `phanmon.css`, `sapxep.html` cache-bust `?v=20260920-presence-forecast-v1`. Test `e2e_tests/planner_teacher_slot_presence_forecast_node.test.js`.
+- **Deploy** (cùng nhánh PR, PowerShell một dòng): `python deploy.py files deploy presence-forecast-20260920 --no-restart web/pages/phanmon.js web/pages/phanmon.css web/pages/sapxep.html web/pages/tkb-constraints-menu.js` → Ctrl+F5 → View Source phải có `presence-forecast-v1`. Soft-stop UX vẫn cần deploy kèm `tkb-rust-bridge.js` nếu chưa lên (xem mục 20/09 (1)).
+
 ## 2026-09-20 (1) SOFT-STOP VẪN CHƯA LÊN VPS + STATUS BỊ ẨN
 
 - **Chủ dự án**: chạy rồi không thấy thông báo «Đang tìm / Đang nhận lịch tốt nhất».

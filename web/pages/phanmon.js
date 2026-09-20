@@ -12853,6 +12853,343 @@ window.renderTeacherAssignmentStatisticsTable = renderTeacherAssignmentStatistic
 window.openTeacherAssignmentStatistics = openTeacherAssignmentStatistics;
 window.closeTeacherAssignmentStatistics = closeTeacherAssignmentStatistics;
 
+/* ======================= TIÊN LƯỢNG GV / THỜI ĐIỂM (20/09) =======================
+   Lưới Thứ × tiết (sáng/chiều) đếm số GV có mặt cùng lúc.
+   - Đã xếp: đếm từ TKB hiện tại (như hình khi xếp xong).
+   - Tiên lượng: phân bổ tiết PCCM đều trên các ô GV còn dạy được (trừ nghỉ),
+     cộng ô cố định — ước lượng trước khi xếp xong, không phải kết quả cuối.
+============================================================================= */
+const TEACHER_SLOT_PRESENCE_MODAL_ID = "teacherSlotPresenceModal";
+
+function teacherSlotPresenceKey(thu, buoi, ti){
+  return String(thu) + "|" + String(buoi) + "|" + String(ti);
+}
+
+function buildTeacherSlotPresenceStatistics(){
+  const days = Array.isArray(DAYS) ? DAYS.slice() : ["thu2","thu3","thu4","thu5","thu6","thu7"];
+  const sangN = Math.max(0, Number(SANG) || 5);
+  const chieuN = Math.max(0, Number(CHIEU) || 5);
+  const emptyGrid = ()=>{
+    const grid = Object.create(null);
+    days.forEach(thu=>{
+      grid[thu] = {sang: Array(sangN).fill(0), chieu: Array(chieuN).fill(0)};
+    });
+    return grid;
+  };
+  const actual = emptyGrid();
+  const forecast = emptyGrid();
+  const available = emptyGrid();
+
+  // --- Đã xếp: mỗi ô = số GV khác nhau đang có tiết ---
+  const actualSets = Object.create(null);
+  const bumpActual = (thu, buoi, ti, code)=>{
+    const key = teacherSlotPresenceKey(thu, buoi, ti);
+    if(!actualSets[key]) actualSets[key] = new Set();
+    actualSets[key].add(code);
+  };
+  const lops = Array.isArray(DATA.lop) ? DATA.lop : [];
+  lops.forEach(lop=>{
+    const classId = String(lop?.id || "").trim();
+    if(!classId) return;
+    const classCanon = getLopCanonById(classId) || classCanonFromLop(lop) || "";
+    days.forEach(thu=>{
+      ["sang","chieu"].forEach(buoi=>{
+        const arr = DATA.tkb?.[classId]?.[thu]?.[buoi];
+        if(!Array.isArray(arr)) return;
+        arr.forEach((cell, ti)=>{
+          if(cell == null || cell === "" || cell === "OFF") return;
+          const mon = cellMon(cell);
+          if(!mon) return;
+          let teachers = [];
+          try{
+            const fromMatrix = typeof getTeacherForClassMon === "function"
+              ? getTeacherForClassMon(classCanon, mon)
+              : "";
+            teachers = teacherListFromValue(fromMatrix);
+          }catch(_){ teachers = []; }
+          if(!teachers.length){
+            const legacy = cellLegacyTeacher(cell, classCanon);
+            if(legacy) teachers = teacherListFromValue(legacy);
+          }
+          teachers.forEach(raw=>{
+            const code = resolveTeacherCode(raw) || String(raw || "").trim();
+            if(code) bumpActual(thu, buoi, ti, code);
+          });
+        });
+      });
+    });
+  });
+  Object.keys(actualSets).forEach(key=>{
+    const [thu, buoi, tiRaw] = key.split("|");
+    const ti = Number(tiRaw);
+    if(!actual[thu] || !actual[thu][buoi] || !Number.isFinite(ti)) return;
+    actual[thu][buoi][ti] = actualSets[key].size;
+  });
+
+  // --- Tiên lượng: PCCM periods / ô cho phép + ô cố định ---
+  const teacherPeriods = Object.create(null);
+  lops.forEach(lop=>{
+    const classId = String(lop?.id || "").trim();
+    const classCanon = classId ? getLopCanonById(classId) : "";
+    if(!classCanon) return;
+    const grade = String(
+      extractKhoiNumber(lop?.khoi)
+      || extractKhoiNumber(lop?.ten2)
+      || extractKhoiNumber(lop?.ten)
+      || ""
+    );
+    const seen = new Set();
+    const consider = (mon, fallbackPeriods)=>{
+      const raw = String(mon || "").trim();
+      if(!raw) return;
+      const meta = classAssignmentStatisticsSubjectMeta(raw);
+      if(!meta || seen.has(meta.key)) return;
+      const periods = classAssignmentStatisticsPeriodForClassMon(lop, classCanon, raw, fallbackPeriods);
+      if(!(periods > 0)) return;
+      const teachers = teacherListFromValue(
+        classAssignmentStatisticsTeacherForClassMon(classCanon, raw)
+      );
+      if(!teachers.length){
+        if(typeof tkbIsNoTeacherGhep === "function" && tkbIsNoTeacherGhep(classCanon, raw)) return;
+        return;
+      }
+      seen.add(meta.key);
+      teachers.forEach(rawCode=>{
+        const code = resolveTeacherCode(rawCode) || String(rawCode || "").trim();
+        if(!code) return;
+        teacherPeriods[code] = (teacherPeriods[code] || 0) + periods;
+      });
+    };
+    (DATA.mon || []).forEach(standard=>{
+      const standardGrade = extractKhoiNumber(standard?.khoi);
+      if(String(standardGrade || "") !== grade) return;
+      consider(standard?.ten, standard?.sotiet);
+    });
+    if(typeof _collectPCCMSubjectKeysForClass === "function"){
+      _collectPCCMSubjectKeysForClass(classCanon).forEach(monKey=>consider(monKey, 0));
+    }
+  });
+
+  const fixedByTeacher = Object.create(null);
+  lops.forEach(lop=>{
+    const classId = String(lop?.id || "").trim();
+    if(!classId) return;
+    const classCanon = getLopCanonById(classId) || "";
+    days.forEach(thu=>{
+      ["sang","chieu"].forEach(buoi=>{
+        const arr = DATA.tkb?.[classId]?.[thu]?.[buoi];
+        if(!Array.isArray(arr)) return;
+        arr.forEach((cell, ti)=>{
+          if(!cell || typeof cell !== "object" || cell.fixed !== true) return;
+          const mon = cellMon(cell);
+          if(!mon) return;
+          const teachers = teacherListFromValue(
+            typeof getTeacherForClassMon === "function"
+              ? getTeacherForClassMon(classCanon, mon)
+              : ""
+          );
+          teachers.forEach(raw=>{
+            const code = resolveTeacherCode(raw) || String(raw || "").trim();
+            if(!code) return;
+            if(!fixedByTeacher[code]) fixedByTeacher[code] = new Set();
+            fixedByTeacher[code].add(teacherSlotPresenceKey(thu, buoi, ti));
+          });
+        });
+      });
+    });
+  });
+
+  const allSlots = [];
+  days.forEach(thu=>{
+    for(let ti = 0; ti < sangN; ti++) allSlots.push({thu, buoi:"sang", ti});
+    for(let ti = 0; ti < chieuN; ti++) allSlots.push({thu, buoi:"chieu", ti});
+  });
+
+  let periodMass = 0;
+  Object.keys(teacherPeriods).forEach(code=>{
+    const total = Math.max(0, Number(teacherPeriods[code]) || 0);
+    if(!(total > 0)) return;
+    periodMass += total;
+    const allowed = allSlots.filter(slot=>{
+      try{ return !isTeacherFixedOff(code, slot.thu, slot.buoi, slot.ti); }
+      catch(_){ return true; }
+    });
+    allowed.forEach(slot=>{
+      available[slot.thu][slot.buoi][slot.ti] += 1;
+    });
+    const fixedKeys = fixedByTeacher[code] || new Set();
+    let remaining = total;
+    fixedKeys.forEach(key=>{
+      const [thu, buoi, tiRaw] = key.split("|");
+      const ti = Number(tiRaw);
+      if(forecast[thu] && forecast[thu][buoi] && Number.isFinite(ti)){
+        forecast[thu][buoi][ti] += 1;
+        remaining = Math.max(0, remaining - 1);
+      }
+    });
+    const freeSlots = allowed.filter(slot => !fixedKeys.has(
+      teacherSlotPresenceKey(slot.thu, slot.buoi, slot.ti)
+    ));
+    if(remaining > 0 && freeSlots.length > 0){
+      // Kì vọng: mỗi ô nhận periods/ô_còn — không làm tròn từng ô (sẽ về 0
+      // khi trường nhỏ). Làm tròn Hamilton bên dưới để tổng ≈ tổng tiết PCCM.
+      const share = remaining / freeSlots.length;
+      freeSlots.forEach(slot=>{
+        forecast[slot.thu][slot.buoi][slot.ti] += share;
+      });
+    }
+  });
+
+  // Làm tròn Hamilton (largest remainder): giữ tổng số nguyên ≈ tổng tiết GV.
+  const cells = [];
+  days.forEach(thu=>{
+    ["sang","chieu"].forEach(buoi=>{
+      const arr = forecast[thu][buoi];
+      for(let ti = 0; ti < arr.length; ti++){
+        const raw = Number(arr[ti]) || 0;
+        cells.push({thu, buoi, ti, raw, base: Math.floor(raw), frac: raw - Math.floor(raw)});
+      }
+    });
+  });
+  const targetTotal = Math.max(0, Math.round(periodMass));
+  let assigned = cells.reduce((sum, cell) => sum + cell.base, 0);
+  cells.sort((a, b)=>{
+    if(b.frac !== a.frac) return b.frac - a.frac;
+    if(a.thu !== b.thu) return String(a.thu).localeCompare(String(b.thu));
+    if(a.buoi !== b.buoi) return a.buoi === "sang" ? -1 : 1;
+    return a.ti - b.ti;
+  });
+  for(let i = 0; assigned < targetTotal && i < cells.length; i++){
+    cells[i].base += 1;
+    assigned += 1;
+  }
+  cells.forEach(cell=>{
+    forecast[cell.thu][cell.buoi][cell.ti] = cell.base;
+  });
+
+  return {
+    days,
+    sangN,
+    chieuN,
+    actual,
+    forecast,
+    available,
+    teacherCount: Object.keys(teacherPeriods).length,
+    periodMass: targetTotal
+  };
+}
+
+function renderTeacherSlotPresenceTable(model, mode){
+  const view = mode === "actual" ? "actual" : "forecast";
+  const grid = view === "actual" ? model.actual : model.forecast;
+  const days = Array.isArray(model?.days) ? model.days : [];
+  const sangN = Math.max(0, Number(model?.sangN) || 5);
+  const chieuN = Math.max(0, Number(model?.chieuN) || 5);
+  const html = [];
+  html.push('<div class="class-assignment-stats-table-wrap teacher-slot-presence-wrap">');
+  html.push('<table class="class-assignment-stats-table teacher-slot-presence-table"><thead><tr>');
+  days.forEach(thu=>{
+    html.push('<th scope="col">' + escapeHtml((LABEL && LABEL[thu]) || thu).toUpperCase() + '</th>');
+  });
+  html.push('</tr></thead><tbody>');
+  const renderSession = (buoi, count, sessionClass)=>{
+    for(let ti = 0; ti < count; ti++){
+      html.push('<tr class="' + sessionClass + (ti === count - 1 && buoi === "sang" ? " teacher-slot-presence-session-end" : "") + '">');
+      days.forEach(thu=>{
+        const actual = Number(model.actual?.[thu]?.[buoi]?.[ti] || 0);
+        const forecast = Number(model.forecast?.[thu]?.[buoi]?.[ti] || 0);
+        const available = Number(model.available?.[thu]?.[buoi]?.[ti] || 0);
+        const value = view === "actual" ? actual : forecast;
+        const title = "Đã xếp: " + actual
+          + " · Tiên lượng: " + forecast
+          + " · GV còn có thể dạy ô này: " + available;
+        html.push('<td title="' + escapeHtml(title) + '">'
+          + (value > 0 ? escapeHtml(value) : "") + '</td>');
+      });
+      html.push('</tr>');
+    }
+  };
+  renderSession("sang", sangN, "teacher-slot-presence-morning");
+  renderSession("chieu", chieuN, "teacher-slot-presence-afternoon");
+  html.push('</tbody></table></div>');
+  return html.join("");
+}
+
+function closeTeacherSlotPresenceStatistics(){
+  const modal = document.getElementById(TEACHER_SLOT_PRESENCE_MODAL_ID);
+  if(modal) modal.remove();
+  document.body?.classList?.remove("class-assignment-stats-open");
+}
+
+function openTeacherSlotPresenceStatistics(preferredMode){
+  try{ closeStatsPopover(); }catch(_){ }
+  try{ closePrintTKBMenu(); }catch(_){ }
+  try{ closeClassAssignmentStatistics(); }catch(_){ }
+  try{ closeTeacherAssignmentStatistics(); }catch(_){ }
+  closeTeacherSlotPresenceStatistics();
+  const model = buildTeacherSlotPresenceStatistics();
+  const school = typeof calcSchoolTKBStats === "function" ? (calcSchoolTKBStats() || {}) : {};
+  const hasUnassigned = Number(school.chuaXepTiet || 0) > 0;
+  let mode = preferredMode === "actual" || preferredMode === "forecast"
+    ? preferredMode
+    : (hasUnassigned ? "forecast" : "actual");
+  const modal = document.createElement("div");
+  modal.id = TEACHER_SLOT_PRESENCE_MODAL_ID;
+  modal.className = "class-assignment-stats-overlay";
+  const renderBody = ()=>{
+    const note = mode === "forecast"
+      ? "Ước lượng từ phân công (PCCM) + nghỉ GV + ô cố định: chia đều tiết còn lại lên các ô GV còn dạy được, làm tròn giữ tổng tiết. Không phải lịch cuối — chỉ để đoán mật độ GV trước khi xếp xong."
+      : "Đếm GV đang có tiết trên TKB hiện tại (sau khi xếp / đang xếp dở).";
+    return '<header class="class-assignment-stats-header"><div>'
+      + '<h2 id="teacherSlotPresenceTitle">Tiên lượng GV / thời điểm</h2>'
+      + '<p>' + escapeHtml(note) + '</p>'
+      + '<div class="teacher-slot-presence-modes" role="tablist">'
+      + '<button type="button" data-presence-mode="forecast"'
+      + (mode === "forecast" ? ' aria-pressed="true" class="is-active"' : ' aria-pressed="false"')
+      + '>Tiên lượng</button>'
+      + '<button type="button" data-presence-mode="actual"'
+      + (mode === "actual" ? ' aria-pressed="true" class="is-active"' : ' aria-pressed="false"')
+      + '>Đã xếp trên TKB</button>'
+      + '</div></div>'
+      + '<button type="button" class="class-assignment-stats-close" aria-label="Đóng thống kê">×</button></header>'
+      + renderTeacherSlotPresenceTable(model, mode);
+  };
+  modal.innerHTML = '<section class="class-assignment-stats-dialog teacher-slot-presence-dialog" role="dialog" aria-modal="true" aria-labelledby="teacherSlotPresenceTitle">'
+    + renderBody() + '</section>';
+  document.body.appendChild(modal);
+  document.body.classList.add("class-assignment-stats-open");
+  const dialog = modal.querySelector(".class-assignment-stats-dialog");
+  const rebind = ()=>{
+    dialog.innerHTML = renderBody();
+    dialog.querySelector(".class-assignment-stats-close")?.addEventListener("click", closeTeacherSlotPresenceStatistics);
+    dialog.querySelectorAll("[data-presence-mode]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        mode = btn.getAttribute("data-presence-mode") === "actual" ? "actual" : "forecast";
+        rebind();
+      });
+    });
+  };
+  rebind();
+  modal.addEventListener("pointerdown", ev=>{
+    if(ev.target === modal) closeTeacherSlotPresenceStatistics();
+  });
+  window.setTimeout(()=>modal.querySelector(".class-assignment-stats-close")?.focus(), 0);
+  return model;
+}
+
+if(!window.__TKB_TEACHER_SLOT_PRESENCE_BOUND){
+  window.__TKB_TEACHER_SLOT_PRESENCE_BOUND = true;
+  document.addEventListener("keydown", ev=>{
+    if(ev.key === "Escape" && document.getElementById(TEACHER_SLOT_PRESENCE_MODAL_ID)){
+      closeTeacherSlotPresenceStatistics();
+    }
+  });
+}
+window.buildTeacherSlotPresenceStatistics = buildTeacherSlotPresenceStatistics;
+window.renderTeacherSlotPresenceTable = renderTeacherSlotPresenceTable;
+window.openTeacherSlotPresenceStatistics = openTeacherSlotPresenceStatistics;
+window.closeTeacherSlotPresenceStatistics = closeTeacherSlotPresenceStatistics;
+
 function renderStatsBox(){
   const box = document.getElementById("statsBox");
   if(!box) return;

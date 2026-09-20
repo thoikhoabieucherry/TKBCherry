@@ -190,7 +190,7 @@ test("teacher assignment table exposes quality columns and menu wiring", () => {
   assert.match(html, /data-teacher-code="GV1"/);
   assert.match(menuSource, /data-rb-statistics="teacher">Thống kê theo giáo viên/);
   assert.match(menuSource, /openTeacherAssignmentStatistics/);
-  assert.match(plannerHtml, /tkb-constraints-menu\.js\?v=20260919-teacher-stats-v1/);
-  assert.match(plannerHtml, /phanmon\.js\?v=20260920-soft-stop-visible-v1/);
+  assert.match(plannerHtml, /tkb-constraints-menu\.js\?v=20260920-presence-forecast-v1/);
+  assert.match(plannerHtml, /phanmon\.js\?v=20260920-presence-forecast-v1/);
   assert.match(plannerHtml, /tkb-rust-bridge\.js\?v=20260920-soft-stop-visible-v1/);
 });

@@ -1,7 +1,7 @@
 (function(){
   'use strict';
 
-  const VERSION = 'constraints-menu-v8-teacher-assignment-statistics';
+  const VERSION = 'constraints-menu-v9-teacher-slot-presence-forecast';
   const MENU_ID = 'tkbConstraintsDropdownMenu';
   const STYLE_ID = 'tkbConstraintsDropdownStyle';
   let activeAnchor = null;
@@ -129,6 +129,7 @@
     return `
       <li><button type="button" data-rb-statistics="class">Thống kê theo lớp</button></li>
       <li><button type="button" data-rb-statistics="teacher">Thống kê theo giáo viên</button></li>
+      <li><button type="button" data-rb-statistics="presence">Tiên lượng GV / thời điểm</button></li>
     `;
   }
 
@@ -245,6 +246,10 @@
           window.openTeacherAssignmentStatistics();
         }else if(mode === 'teacher'){
           alert('Chưa tải xong module thống kê theo giáo viên.');
+        }else if(mode === 'presence' && typeof window.openTeacherSlotPresenceStatistics === 'function'){
+          window.openTeacherSlotPresenceStatistics();
+        }else if(mode === 'presence'){
+          alert('Chưa tải xong module tiên lượng GV / thời điểm.');
         }
         return;
       }
