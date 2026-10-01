@@ -8,6 +8,7 @@
   "js-e2e/auth_mobile_layout_node.test.js": false,
   "js-e2e/auth_session_persistence_node.test.js": true,
   "js-e2e/benchmark_fet_node.test.js": false,
+  "js-e2e/excel_location_colors_node.test.js": true,
   "js-e2e/fet_client_telemetry_node.test.js": true,
   "js-e2e/industry_database_export_node.test.js": false,
   "js-e2e/max_plan_pricing_node.test.js": false,

@@ -302,6 +302,69 @@
     return lops.map(lop => classSchedulePayload(lop));
   }
 
+  // 01/10/2026 (chủ dự án, THCS Tăng Bạt Hổ — 2 cơ sở): file Excel TKB giáo viên (mẫu 1, mẫu 2) và
+  // TKB tổng (theo lớp, theo giáo viên) phải phân biệt ĐỊA ĐIỂM bằng màu như trang Sắp xếp (vạch màu
+  // cạnh trái ô, 23/09 tkbLocationCellInfo). Excel: cạnh trái đậm đúng màu web + nền nhạt cùng tông,
+  // kèm dòng chú thích tên địa điểm. Chỉ tô khi trường có >= 2 địa điểm; ô trống hoặc ô có lớp ở
+  // nhiều địa điểm (trùng lịch) không tô — giống web.
+  const LOCATION_COLORS = [
+    {edge:'FF1677FF', fill:'FFBAE0FF'},
+    {edge:'FFFA8C16', fill:'FFFFE7BA'},
+    {edge:'FF52C41A', fill:'FFD9F7BE'},
+    {edge:'FF722ED1', fill:'FFEFDBFF'}
+  ];
+
+  function exportLocationList(){
+    try{ if(typeof tkbLocationList === 'function') return tkbLocationList().map(safe).filter(Boolean); }catch(_){ }
+    const set = new Set();
+    (Array.isArray(DATA?.lop) ? DATA.lop : []).forEach(l => { const v = safe(l?.diadiem); if(v) set.add(v); });
+    (Array.isArray(DATA?.phong) ? DATA.phong : []).forEach(p => { const v = safe(p?.diadiem); if(v) set.add(v); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'vi', {numeric:true}));
+  }
+
+  function exportLocations(){
+    const list = exportLocationList();
+    return list.length >= 2 ? list : null;
+  }
+
+  // Địa điểm = của phòng (DATA.phong.diadiem) nếu tiết có phòng, không thì của lớp (như tkbEntryLocation).
+  function exportEntryLocation(entry){
+    try{ if(typeof tkbEntryLocation === 'function') return safe(tkbEntryLocation(entry)); }catch(_){ }
+    const room = safe(entry?.room);
+    if(room){
+      const p = (Array.isArray(DATA?.phong) ? DATA.phong : []).find(x => [x?.id, x?.ma, x?.ten].some(v => safe(v) === room));
+      const v = safe(p?.diadiem);
+      if(v) return v;
+    }
+    const l = (Array.isArray(DATA?.lop) ? DATA.lop : []).find(x => safe(x?.id) === safe(entry?.classId));
+    return safe(l?.diadiem);
+  }
+
+  // Chỉ số màu của ô (-1 = không tô). Tiết học chung đã gộp (jointClassIds) xét đủ các lớp.
+  function locationIndexFor(entries, locations){
+    if(!locations) return -1;
+    const arr = (Array.isArray(entries) ? entries : []).flatMap(e => Array.isArray(e?.jointClassIds) && e.jointClassIds.length
+      ? e.jointClassIds.map(id => ({classId:id, room:e.room}))
+      : [e]);
+    if(!arr.length) return -1;
+    const locs = Array.from(new Set(arr.map(exportEntryLocation).filter(Boolean)));
+    if(locs.length !== 1) return -1;
+    return locations.indexOf(locs[0]);
+  }
+
+  function roomForLesson(classCanon, mon){
+    try{ if(typeof getRoomForClassMon === 'function') return safe(getRoomForClassMon(classCanon, mon)); }catch(_){ }
+    return '';
+  }
+
+  function teacherLocationRows(sched, days, session, locations){
+    const rows = [];
+    for(let ti = 0; ti < 5; ti++){
+      rows.push(days.map(d => locationIndexFor(sched?.[d]?.[session]?.[ti], locations)));
+    }
+    return rows;
+  }
+
   function schoolClassSchedulePayload(lop){
     const classId = safe(lop?.id);
     const tkb = findClassTkb(lop);
@@ -318,6 +381,22 @@
       }
       return rows;
     };
+    const locations = exportLocations();
+    const classCanon = classCanonForTeacherLookup(lop);
+    const locRowFor = session => {
+      const rows = [];
+      for(let ti = 0; ti < 5; ti++){
+        rows.push(days.map(d => {
+          const raw = tkb?.[d]?.[session]?.[ti];
+          if(!locations || !raw || raw === 'OFF') return -1;
+          let mon = '';
+          try{ mon = safe(cellMon(raw)); }catch(_){ mon = safe(raw?.mon || raw); }
+          if(!mon) return -1;
+          return locationIndexFor([{classId, mon, room: roomForLesson(classCanon, mon)}], locations);
+        }));
+      }
+      return rows;
+    };
     return {
       schoolName: getStoredSchoolName(),
       scheduleNumber: getScheduleNumber(),
@@ -325,7 +404,11 @@
       className: classDisplay(lop) || classId,
       dayLabels,
       morning: rowFor('sang'),
-      afternoon: rowFor('chieu')
+      afternoon: rowFor('chieu'),
+      locations,
+      classLoc: locationIndexFor([{classId}], locations),
+      morningLoc: locRowFor('sang'),
+      afternoonLoc: locRowFor('chieu')
     };
   }
 
@@ -471,7 +554,7 @@
           if(!mon) continue;
           let teachers = '';
           try{ teachers = getTeacherForClassMon(classCanon, mon); }catch(_){ teachers = ''; }
-          if(teacherValueContains(teachers, code)) sched[thu].sang[ti].push({classId, classDisplay: display, mon});
+          if(teacherValueContains(teachers, code)) sched[thu].sang[ti].push({classId, classDisplay: display, mon, room: roomForLesson(classCanon, mon)});
         }
         for(let ti = 0; ti < afternoonCount; ti++){
           const raw = tkb?.[thu]?.chieu?.[ti];
@@ -481,7 +564,7 @@
           if(!mon) continue;
           let teachers = '';
           try{ teachers = getTeacherForClassMon(classCanon, mon); }catch(_){ teachers = ''; }
-          if(teacherValueContains(teachers, code)) sched[thu].chieu[ti].push({classId, classDisplay: display, mon});
+          if(teacherValueContains(teachers, code)) sched[thu].chieu[ti].push({classId, classDisplay: display, mon, room: roomForLesson(classCanon, mon)});
         }
       });
     });
@@ -580,7 +663,10 @@
       infoLine: `  - Giáo viên : ${label}`,
       dayLabels,
       morning: rowFor('sang'),
-      afternoon: rowFor('chieu')
+      afternoon: rowFor('chieu'),
+      locations: exportLocations(),
+      morningLoc: teacherLocationRows(sched, days, 'sang', exportLocations()),
+      afternoonLoc: teacherLocationRows(sched, days, 'chieu', exportLocations())
     };
   }
 
@@ -612,7 +698,10 @@
       className: teacherShort(code) || teacherCode(code),
       dayLabels,
       morning: rowFor('sang'),
-      afternoon: rowFor('chieu')
+      afternoon: rowFor('chieu'),
+      locations: exportLocations(),
+      morningLoc: teacherLocationRows(sched, days, 'sang', exportLocations()),
+      afternoonLoc: teacherLocationRows(sched, days, 'chieu', exportLocations())
     };
   }
 
@@ -645,7 +734,10 @@
       periodCount: teacherPeriodCount(sched, days),
       dayLabels,
       morning: rowFor('sang'),
-      afternoon: rowFor('chieu')
+      afternoon: rowFor('chieu'),
+      locations: exportLocations(),
+      morningLoc: teacherLocationRows(sched, days, 'sang', exportLocations()),
+      afternoonLoc: teacherLocationRows(sched, days, 'chieu', exportLocations())
     };
   }
 
@@ -730,7 +822,41 @@
     teacher1Info: style(8, {align:'left', border:false, wrap:false, shrink:true}),
     teacher1Table: style(8, {wrap:false, shrink:true}),
     teacher1Session: style(8, {wrap:false, shrink:true, rotation:90}),
+    locationLegend: style(7, {wrap:false, shrink:true}),
   };
+
+  // Kiểu ô có màu địa điểm: giữ nguyên kiểu gốc, thêm nền nhạt + cạnh trái đậm (như vạch màu trên web).
+  const locationStyleCache = new Map();
+  function locationStyle(base, locIndex){
+    const idx = Number(locIndex);
+    if(!base || !Number.isInteger(idx) || idx < 0) return base;
+    let byBase = locationStyleCache.get(base);
+    if(!byBase){ byBase = new Map(); locationStyleCache.set(base, byBase); }
+    if(byBase.has(idx)) return byBase.get(idx);
+    const color = LOCATION_COLORS[idx % LOCATION_COLORS.length];
+    const next = JSON.parse(JSON.stringify(base));
+    next.fill = {patternType:'solid', fgColor:{rgb:color.fill}};
+    next.border = Object.assign({}, next.border || border('thin'), {left:{style:'thick', color:{rgb:color.edge}}});
+    byBase.set(idx, next);
+    return next;
+  }
+
+  // Chú thích màu: chia cột [firstCol..lastCol] cho từng địa điểm (gộp ô), in tên địa điểm trên màu của nó.
+  function applyLocationLegend(ws, row, firstCol, lastCol, locations){
+    if(!Array.isArray(locations) || locations.length < 2) return;
+    const span = lastCol - firstCol + 1;
+    if(span <= 0) return;
+    const count = Math.min(locations.length, span);
+    const per = Math.floor(span / count);
+    for(let i = 0; i < count; i++){
+      const start = firstCol + i * per;
+      const end = i === count - 1 ? lastCol : start + per - 1;
+      const st = locationStyle(styles.locationLegend, i);
+      if(end > start) merge(ws, row, start, row, end);
+      setCell(ws, row, start, locations[i], st);
+      for(let c = start + 1; c <= end; c++) setCell(ws, row, c, '', st);
+    }
+  }
 
   function schoolClassTitle(data){
     const number = safe(data?.scheduleNumber || getScheduleNumber()) || '1';
@@ -768,7 +894,11 @@
     setCell(ws, top + 1, 1, 'Buổi', styles.schoolClassHeader);
     setCell(ws, top + 1, 2, 'Tiết', styles.schoolClassHeader);
     for(let i = 0; i < slotCount; i++){
-      setCell(ws, top + 1, 3 + i, chunk[i]?.className || '', styles.schoolClassHeader);
+      setCell(ws, top + 1, 3 + i, chunk[i]?.className || '', locationStyle(styles.schoolClassHeader, chunk[i]?.classLoc));
+    }
+    const legendLocations = (chunk || []).find(p => Array.isArray(p?.locations))?.locations;
+    if(legendLocations && lastCol > titleLastCol){
+      applyLocationLegend(ws, top, titleLastCol + 1, Math.min(lastCol, titleLastCol + legendLocations.length), legendLocations);
     }
 
     const dayLabels = chunk[0]?.dayLabels?.length ? chunk[0].dayLabels.slice(0, 6) : ['2','3','4','5','6','7'];
@@ -785,8 +915,10 @@
         setCell(ws, dayTop + 5 + period, 2, period + 1, styles.schoolClassLabel);
         for(let classIndex = 0; classIndex < slotCount; classIndex++){
           const payload = chunk[classIndex];
-          setCell(ws, dayTop + period, 3 + classIndex, payload?.morning?.[period]?.[dayIndex] || '', styles.schoolClassCell);
-          setCell(ws, dayTop + 5 + period, 3 + classIndex, payload?.afternoon?.[period]?.[dayIndex] || '', styles.schoolClassCell);
+          const am = payload?.morning?.[period]?.[dayIndex] || '';
+          const pm = payload?.afternoon?.[period]?.[dayIndex] || '';
+          setCell(ws, dayTop + period, 3 + classIndex, am, am ? locationStyle(styles.schoolClassCell, payload?.morningLoc?.[period]?.[dayIndex]) : styles.schoolClassCell);
+          setCell(ws, dayTop + 5 + period, 3 + classIndex, pm, pm ? locationStyle(styles.schoolClassCell, payload?.afternoonLoc?.[period]?.[dayIndex]) : styles.schoolClassCell);
         }
       }
     });
@@ -858,10 +990,13 @@
       setCell(ws, top + 7 + i, left + 2, `S${i + 1}`, styles.tableTiny);
       setCell(ws, top + 12 + i, left + 2, `C${i + 1}`, styles.tableTiny);
       for(let d = 0; d < 6; d++){
-        setCell(ws, top + 7 + i, left + 3 + d, data.morning?.[i]?.[d] || '', styles.tableTiny);
-        setCell(ws, top + 12 + i, left + 3 + d, data.afternoon?.[i]?.[d] || '', styles.tableTiny);
+        const am = data.morning?.[i]?.[d] || '';
+        const pm = data.afternoon?.[i]?.[d] || '';
+        setCell(ws, top + 7 + i, left + 3 + d, am, am ? locationStyle(styles.tableTiny, data.morningLoc?.[i]?.[d]) : styles.tableTiny);
+        setCell(ws, top + 12 + i, left + 3 + d, pm, pm ? locationStyle(styles.tableTiny, data.afternoonLoc?.[i]?.[d]) : styles.tableTiny);
       }
     }
+    applyLocationLegend(ws, top + 5, left + 3, left + 8, data.locations);
   }
 
   function cardPosition(index){
@@ -940,10 +1075,13 @@
       setCell(ws, top + 8 + i, left + 1, i + 1, styles.teacher1Table);
       setCell(ws, top + 13 + i, left + 1, i + 1, styles.teacher1Table);
       for(let d = 0; d < 6; d++){
-        setCell(ws, top + 8 + i, left + 2 + d, data.morning?.[i]?.[d] || '', styles.teacher1Table);
-        setCell(ws, top + 13 + i, left + 2 + d, data.afternoon?.[i]?.[d] || '', styles.teacher1Table);
+        const am = data.morning?.[i]?.[d] || '';
+        const pm = data.afternoon?.[i]?.[d] || '';
+        setCell(ws, top + 8 + i, left + 2 + d, am, am ? locationStyle(styles.teacher1Table, data.morningLoc?.[i]?.[d]) : styles.teacher1Table);
+        setCell(ws, top + 13 + i, left + 2 + d, pm, pm ? locationStyle(styles.teacher1Table, data.afternoonLoc?.[i]?.[d]) : styles.teacher1Table);
       }
     }
+    applyLocationLegend(ws, top + 6, left + 2, left + 7, data.locations);
   }
 
   function teacher1CardPosition(index){
@@ -1288,6 +1426,12 @@
       alert(msg);
       return null;
     }
+  };
+
+  // 01/10: cho test Node kiểm màu địa điểm (e2e_tests/excel_location_colors_node.test.js).
+  window.__tkbExcelLocationInternals = {
+    exportLocations, locationIndexFor, locationStyle, schoolClassSchedulePayload, teacherSchedulePayload,
+    schoolTeacherSchedulePayload, teacherTemplate1Payload, buildTeacher1Workbook, buildWorkbook, buildSchoolClassWorkbook
   };
 
   window.exportSchoolClassTKBExcel = async function(){

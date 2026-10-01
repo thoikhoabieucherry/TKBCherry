@@ -6,6 +6,28 @@
 > [`archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md).
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-01 XUẤT EXCEL TKB GV + TKB TỔNG TÔ MÀU THEO ĐỊA ĐIỂM (ĐÃ DEPLOY)
+
+- **Chủ dự án** (THCS Tăng Bạt Hổ 2 cơ sở): "khi xuất ra, trên TKB của giáo viên và TKB tổng trên file Excel cần thể hiện các màu ở
+  Địa điểm để người ta phân biệt như trên web".
+- **`web/pages/tkb-student-excel-export.js`**: 4 file Excel (GV mẫu 1 `gv…`, GV mẫu 2 `gv…`, tổng theo GV `tonggv…`, tổng theo lớp `tonghs…`)
+  tô ô có tiết theo địa điểm — cùng 4 màu vạch trên web (`tkb-loc-1..4`: #1677ff, #fa8c16, #52c41a, #722ed1): **cạnh trái đậm (thick)**
+  đúng màu web + **nền nhạt** cùng tông (BAE0FF / FFE7BA / D9F7BE / EFDBFF). Địa điểm lấy giống web (`tkbLocationList` / `tkbEntryLocation`:
+  phòng `DATA.phong.diadiem` nếu tiết có phòng, không thì `DATA.lop.diadiem`; có bản dự phòng khi phanmon.js cũ). Chỉ tô khi trường ≥ 2 địa điểm;
+  ô trống / ô có lớp ở nhiều địa điểm (trùng lịch) không tô; tiết học chung đã gộp xét đủ `jointClassIds`.
+  **Chú thích** tên địa điểm trên nền màu: mẫu 1 ở dòng trống `top+6`, mẫu 2 ở dòng trống `top+5`, bản tổng ở dòng tiêu đề sau cột 16.
+  Bản tổng theo lớp tô cả ô tên lớp. Phiếu TKB lớp (`hs…`) không đổi.
+- **Test**: `e2e_tests/excel_location_colors_node.test.js` 7/7 (nạp `vendor/xlsx.min.js` thật, kiểm style ô + `xl/styles.xml` có `<left style="thick">`).
+  `run_tests.py`: 7 "MỚI HỎNG" giống hệt mục 30/09 — hỏng y nguyên trên HEAD sạch không có bản sửa này (không test nào nạp module xuất Excel).
+- **Deploy**: dựng từ git worktree sạch tại HEAD (= live cho file này) để KHÔNG đẩy thay đổi chưa deploy của phiên khác trong cùng file
+  (nhãn dạy ghép nhiều GV 29/09, `ghepMultiTeacherLabel`): `python deploy.py files deploy excel-location-colors-20261001 --no-restart
+  web/pages/tkb-student-excel-export.js` (sha `02047acdc49046e3`, backup `/root/tkb-backups/excel-location-colors-20261001`). Server trả
+  `Cache-Control: no-store` nên không đổi `?v=` trong sapxep.html. Working tree giữ cả hai thay đổi (gộp 3 chiều).
+- **Kiểm trên web thật** (sid `i350pgr8o92`, 53 lớp, 2 địa điểm): xuất cả 4 file — tonghs 1975 ô màu (= 1920 tiết + 53 tiêu đề lớp + 2 chú thích),
+  tonggv 1922 (= 1920 + 2), mẫu 1/2 mỗi file 2772 (= 1920 + 142 GV × 6 ô chú thích).
+- **Chưa commit (của phiên khác)**: tính năng vạch màu địa điểm trên web 23/09 (`tkbLocationList`/`tkbLocationCellInfo` trong phanmon.js,
+  `phanmon.css`) đã live nhưng vẫn nằm ở working tree.
+
 ## 2026-09-20 (2) TIÊN LƯỢNG GV / THỜI ĐIỂM (TRƯỚC KHI XẾP XONG)
 
 - **Chủ dự án**: muốn lưới như hình thống kê số GV có mặt từng ô (Thứ × tiết), nhưng **đoán trước** khi TKB chưa xếp xong — không chỉ đếm sau khi xếp.
