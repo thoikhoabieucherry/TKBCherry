@@ -60,7 +60,10 @@ from typing import Any, Callable, Iterable
 
 from .core import NUM_DAYS, NUM_SESSIONS, NUM_SLOTS, PERIODS
 
-LANES = ("gap1", "sessions")
+# 01/10: "fill" — vung LAP TIET THIEU: o trong (class_avail) cua cum cung la bien,
+# tiet con thieu cua phan cong trong cum duoc phep dat vao; muc tieu chinh la
+# giam so tiet chua xep (truong 0 o du: THCS Hung Long 1207 tiet / 1207 o).
+LANES = ("gap1", "sessions", "fill")
 
 # Truong TeacherRule ma model ma hoa duoc (core.py 184-206). Truong khac co gia
 # tri khac mac dinh -> GV dong bang.
@@ -251,6 +254,8 @@ def build_and_solve(
     require_improve: bool = True,
     log: bool = False,
     sessions: Iterable[int] | None = None,
+    full_classes: Iterable[int] | None = None,
+    fill_quality: bool = True,
 ) -> tuple[dict[tuple[int, int], int] | None, dict[str, Any]]:
     """Xep lai cac o tu do cua ``classes`` bang CP-SAT theo hop dong ``lane``.
 
@@ -308,6 +313,8 @@ def build_and_solve(
             info,
             t0,
             sessions,
+            full_classes,
+            fill_quality,
         )
     except Exception as exc:  # du lieu la -> bao loi, khong nem
         info["status"] = "ERROR"
@@ -332,8 +339,13 @@ def _build_and_solve(
     info: dict[str, Any],
     t0: float,
     sessions: Iterable[int] | None = None,
+    full_classes: Iterable[int] | None = None,
+    fill_quality: bool = True,
 ) -> tuple[dict[tuple[int, int], int] | None, dict[str, Any]]:
     C = P.num_classes()
+    # 01/10: lop trong full_classes tu do o MOI buoi ke ca khi co ``sessions``
+    # (lap tiet thieu: ca tuan cua lop thieu + buoi nghen cua toan truong).
+    full_set: set[int] = {int(c) for c in (full_classes or ())}
     sess_set: set[int] | None = None
     if sessions is not None:
         sess_set = {int(s) for s in sessions if 0 <= int(s) < NUM_SESSIONS}
@@ -401,7 +413,7 @@ def _build_and_solve(
             ai = row[x]
             if ai < 0 or _is_const(c, x, ai):
                 continue
-            if sess_set is not None and (x // PERIODS) not in sess_set:
+            if sess_set is not None and (x // PERIODS) not in sess_set and c not in full_set:
                 continue
             if P.a_class[ai] != c:
                 info["error"] = "cell (%d,%d) holds assignment %d of another class" % (c, x, ai)
@@ -409,6 +421,40 @@ def _build_and_solve(
             cells.add(x)
             residual[ai] += 1
         free_by_class[c] = cells
+
+    # 01/10 lane "fill": them o TRONG cua lop (class_avail, khong khoa) va so
+    # tiet CON THIEU cua tung phan cong trong cum (khong tinh phan cong co GV
+    # dong bang — tiet do la hang so, khong dat duoc).
+    fill = lane == "fill"
+    missing_add = [0] * A
+    if fill:
+        class_avail = getattr(P, "class_avail", None) or []
+        placed_cnt = [0] * A
+        for c in range(C):
+            for ai in grid[c]:
+                if ai >= 0:
+                    placed_cnt[ai] += 1
+        for c in CL:
+            avail = class_avail[c] if c < len(class_avail) else None
+            row = grid[c]
+            for x in range(NUM_SLOTS):
+                if row[x] >= 0 or locked[c][x]:
+                    continue
+                if avail is not None and not avail[x]:
+                    continue
+                if fixed_mask is not None and fixed_mask[c][x]:
+                    continue
+                if sess_set is not None and (x // PERIODS) not in sess_set and c not in full_set:
+                    continue
+                free_by_class[c].add(x)
+        for ai in range(A):
+            if P.a_class[ai] not in cl_set:
+                continue
+            miss = int(P.a_periods[ai]) - placed_cnt[ai]
+            if miss <= 0 or any(t in frozen for t in a_teachers[ai]):
+                continue
+            missing_add[ai] = miss
+            residual[ai] += miss
 
     # -- loai lop khong ma hoa duoc ----------------------------------------
     dropped: dict[int, str] = {}
@@ -451,7 +497,14 @@ def _build_and_solve(
             free.add((c, x))
     for c in dropped:
         for x in free_by_class[c]:
-            residual[grid[c][x]] -= 1
+            if grid[c][x] >= 0:
+                residual[grid[c][x]] -= 1
+    if fill:
+        for ai in range(A):
+            if missing_add[ai] and P.a_class[ai] in dropped:
+                residual[ai] -= missing_add[ai]
+                missing_add[ai] = 0
+        info["missing_before"] = sum(missing_add)
     info["free_cells"] = len(free)
     if not free:
         info["error"] = "no free cells"
@@ -501,6 +554,8 @@ def _build_and_solve(
     # (lop, GV, buoi) -> [(so tiet, bien, mon)] cho class_period_caps
     class_teacher_terms: dict[tuple[int, int, int], list[tuple[int, Any, int]]] = collections.defaultdict(list)
     blocks: dict[tuple[int, int], list[tuple[Any, tuple[int, ...], int, tuple[int, ...]]]] = {}
+    unplaced_vars: dict[int, Any] = {}
+    block_short: list[Any] = []
     n_choice = 0
 
     # -- bien chon khoi: (phan cong, buoi, cua so lien tiet) ----------------
@@ -577,10 +632,20 @@ def _build_and_solve(
                     blocks.setdefault((av, s), []).append((v, tuple(window), d, blk))
                     total_terms.append(d * v)
                     m.AddHint(v, 1 if blk == cur else 0)
-        if not total_terms:
-            info["error"] = "assignment %d has no candidate block" % av
-            return None, info
-        m.Add(sum(total_terms) == r)
+        if fill:
+            # so tiet KHONG xep duoc cua phan cong (muc tieu chinh cua lane)
+            u = m.NewIntVar(0, r, "u%d" % av)
+            unplaced_vars[av] = u
+            if total_terms:
+                m.Add(sum(total_terms) + u == r)
+            else:
+                m.Add(u == r)
+            m.AddHint(u, max(0, missing_add[av]))
+        else:
+            if not total_terms:
+                info["error"] = "assignment %d has no candidate block" % av
+                return None, info
+            m.Add(sum(total_terms) == r)
         for s in range(NUM_SESSIONS):
             lst = blocks.get((av, s))
             if lst and len(lst) > 1:
@@ -588,6 +653,11 @@ def _build_and_solve(
     info["choice_vars"] = n_choice
 
     for key, lst in free_cover.items():
+        if fill:
+            # lane fill: o duoc phep de trong (tiet chua xep tinh o unplaced_vars)
+            if len(lst) > 1:
+                m.AddAtMostOne(v for v, _av in lst)
+            continue
         if not lst:
             info["error"] = "free cell %s has no candidate" % (key,)
             return None, info
@@ -636,6 +706,18 @@ def _build_and_solve(
         day_pres_cache[key] = out
         return out
 
+    def _blocks_now(c: int, si: int, length: int) -> int:
+        """So buoi lop c dang co >= length tiet cua mon si (luoi vao)."""
+
+        n_blk = 0
+        row = grid[c]
+        for s_ in range(NUM_SESSIONS):
+            b0 = s_ * PERIODS
+            cnt = sum(1 for q in range(PERIODS) if row[b0 + q] >= 0 and P.a_subject[row[b0 + q]] == si)
+            if cnt >= length:
+                n_blk += 1
+        return n_blk
+
     # -- luat tuan cua mon (checks.py check_class_subject_week 98-140) ------
     for av in ais_var:
         rule = P.a_rule[av]
@@ -676,7 +758,21 @@ def _build_and_solve(
                 elif len(const) >= length:
                     terms.append(1)
             if minimum > 0:
-                m.Add(sum(terms) >= minimum)
+                if fill and av in unplaced_vars:
+                    # 01/10 lane fill: lich DO DANG duoc hoan "tiet doi toi thieu"
+                    # (nhu defer_min cua pha 1/2) CHI khi mon con tiet chua xep, hoac
+                    # luoi vao da thieu san -> mon xep du thi luat van cung. Thieu
+                    # dong nay mo hinh VO NGHIEM (do truong 61 lop: GDTC 2 tiet chi
+                    # chieu, min 1 tiet doi, chua xep tiet nao -> 85/97 lan INFEASIBLE).
+                    viol0 = 1 if _blocks_now(c, si, length) < minimum else 0
+                    short = m.NewIntVar(0, minimum, "lbs%d_%d" % (av, length))
+                    m.Add(sum(terms) + short >= minimum)
+                    m.Add(short <= unplaced_vars[av] + viol0 * minimum)
+                    # thieu cap bi PHAT ngang mot tiet chua xep: chi con lai khi
+                    # khong the tao cap trong vung (khong phai vi solver luoi).
+                    block_short.append(short)
+                else:
+                    m.Add(sum(terms) >= minimum)
             if maximum > 0:
                 m.Add(sum(terms) <= maximum)
 
@@ -848,6 +944,10 @@ def _build_and_solve(
         for x in P.teacher_must[t]:
             if const_occ.get((t, x)):
                 continue
+            if fill:
+                # lane fill: o "bat buoc day" la no luat GV (penalty) — nguoi goi
+                # chi nhan khi penalty() khong tang, khong ep cung o day.
+                continue
             if teacher_terms.get((t, x)):
                 m.Add(sum(teacher_terms[(t, x)]) == 1)
             else:
@@ -945,10 +1045,23 @@ def _build_and_solve(
     SG = sum(SG_terms)
     G1 = sum(G1_terms)
     G2 = sum(G2_terms)
-    m.Add(SG <= cur[1])
-    m.Add(G2 <= cur[3])
-    m.Add(S <= cur[0])
-    if lane == "gap1":
+    if fill:
+        # lap tiet thieu: khong ep "khong xau hon" (dat them tiet co the buoc
+        # tao buoi moi); so tiet chua xep la tren het, chat luong GV la phu.
+        U = (sum(unplaced_vars.values()) if unplaced_vars else 0) + (sum(block_short) if block_short else 0)
+        if fill_quality or not unplaced_vars:
+            m.Minimize(U * 100000 + (SG + G2) * 200 + S * 4 + G1)
+        else:
+            # chi so tiet: cham 0 la OPTIMAL ngay, khong dot thoi gian vao chat
+            # luong (pha 3 + vong chat luong sau do lo).
+            m.Minimize(U)
+    else:
+        m.Add(SG <= cur[1])
+        m.Add(G2 <= cur[3])
+        m.Add(S <= cur[0])
+    if fill:
+        pass
+    elif lane == "gap1":
         m.Add(G1 <= cur[2] - (1 if require_improve else 0))
         m.Minimize(G1 * 1000 + S)
     else:
@@ -1008,15 +1121,26 @@ def _build_and_solve(
                     return None, info
                 new_cells[key] = av
                 written[av] += 1
-    if len(new_cells) != len(free):
+    if fill:
+        for key in free:
+            new_cells.setdefault(key, -1)
+        info["unplaced"] = int(sum(solver.Value(u) for u in unplaced_vars.values()))
+        info["block_short"] = int(sum(solver.Value(b) for b in block_short))
+        for av, u in unplaced_vars.items():
+            if written[av] + int(solver.Value(u)) != residual[av]:
+                info["error"] = "assignment %d residual %d != written %d + unplaced" % (av, residual[av], written[av])
+                return None, info
+    elif len(new_cells) != len(free):
         info["error"] = "extraction covered %d of %d free cells" % (len(new_cells), len(free))
         return None, info
-    for av in ais_var:
+    for av in ais_var if not fill else ():
         if written[av] != residual[av]:
             info["error"] = "assignment %d residual %d != written %d" % (av, residual[av], written[av])
             return None, info
     occ_check: set[tuple[int, int]] = set()
     for (c, x), av in new_cells.items():
+        if av < 0:
+            continue
         for t in a_teachers[av]:
             if const_occ.get((t, x)) or (t, x) in occ_check:
                 info["error"] = "teacher %d double-booked at slot %d" % (t, x)
