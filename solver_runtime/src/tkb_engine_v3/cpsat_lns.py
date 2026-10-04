@@ -34,8 +34,9 @@ Rang buoc cung duoc ma hoa 1-1 voi bo kiem tra cua engine:
         dong tren 5 bit chiem cho)
 
 Khong ma hoa duoc -> KHONG bao gio lieu:
-  * Luat DIA DIEM cua GV (P.teacher_loc_rules): GV bi DONG BANG (tiet la hang
-    so ca trong cluster) - dem o info["frozen_teachers"].
+  * (05/10: luat DIA DIEM nay DA ma hoa — 1 dia diem/buoi, tiet trong khi doi
+    dia diem tru gio ra choi, toi da 1 lan doi/buoi; TKB_CPSAT_LOC=0 tro ve cach
+    cu: GV co luat dia diem bi DONG BANG, dem o info["frozen_teachers"].)
   * Truong TeacherRule / SubjectRule la (chua biet, khac mac dinh): GV dong
     bang / lop bi loai khoi cluster (info["dropped_classes"]).
   * Hai phan cong cung mon trong mot lop (vd o co dinh dung chung + phan cong
@@ -71,6 +72,7 @@ _TEACHER_FIELDS_ENCODED = frozenset(
     {
         "max_days",
         "max_sessions",
+        "min_sessions",
         "max_morning",
         "max_afternoon",
         "session_mode",
@@ -381,9 +383,12 @@ def _build_and_solve(
             frozen.add(t)
             frozen_reasons[t] = "caller"
     loc_rules = getattr(P, "teacher_loc_rules", None) or []
+    # 05/10: luat dia diem duoc ma hoa trong mo hinh (xem khoi "yeu cau DIA
+    # DIEM" phia duoi) -> GV khong con bi dong bang. TKB_CPSAT_LOC=0 = cach cu.
+    loc_in_model = os.environ.get("TKB_CPSAT_LOC", "1") != "0"
     for t in range(T):
         # state.py 243-260: luat dia diem chi kiem khi P.teacher_loc_rules[t]
-        if t < len(loc_rules) and loc_rules[t]:
+        if t < len(loc_rules) and loc_rules[t] and not loc_in_model:
             frozen.add(t)
             frozen_reasons.setdefault(t, "location_rules")
         rule = P.teacher_rules[t]
@@ -521,6 +526,9 @@ def _build_and_solve(
 
     # -- hang so: chiem cho GV, o hang so theo (lop, mon, buoi) --------------
     const_occ: dict[tuple[int, int], int] = {}
+    # 05/10: dia diem cua tiet hang so tai (GV, o) -> rang buoc dia diem
+    a_loc = list(getattr(P, "a_loc", None) or [])
+    const_loc: dict[tuple[int, int], int] = {}
     const_periods: dict[tuple[int, int, int], set[int]] = {}
     cur_occ: dict[int, list[int]] = {t: [0] * NUM_SESSIONS for t in touched}
     const_cells_at: list[list[tuple[int, int]]] = [[] for _ in range(NUM_SLOTS)]
@@ -539,9 +547,22 @@ def _build_and_solve(
                 continue
             for t in a_teachers[ai]:
                 const_occ[(t, x)] = 1
+                const_loc[(t, x)] = a_loc[ai] if ai < len(a_loc) else -1
             const_cells_at[x].append((c, ai))
             if in_cluster:
                 const_periods.setdefault((c, P.a_subject[ai], s), set()).add(p)
+    # 05/10: o GV ban co dinh vi tiet chung nhieu lop (phan cong tong hop co
+    # a_teachers = ()) van la cho chiem cua GV -> hang so chiem cho + thong ke.
+    fixed_busy = getattr(P, "teacher_fixed_busy", None) or ()
+    for t, busy in enumerate(fixed_busy):
+        if not busy:
+            continue
+        for x, bai in busy.items():
+            const_occ[(t, x)] = 1
+            const_loc[(t, x)] = a_loc[bai] if bai < len(a_loc) else -1
+            if t in touched:
+                s, p = divmod(x, PERIODS)
+                cur_occ[t][s] |= 1 << p
     cur_free: dict[tuple[int, int], list[int]] = {}
     for c, x in free:
         cur_free.setdefault((grid[c][x], x // PERIODS), []).append(x % PERIODS)
@@ -551,6 +572,7 @@ def _build_and_solve(
     m = cp_model.CpModel()
     free_cover: dict[tuple[int, int], list[tuple[Any, int]]] = {key: [] for key in free}
     teacher_terms: dict[tuple[int, int], list[Any]] = collections.defaultdict(list)
+    teacher_terms_loc: dict[tuple[int, int], list[tuple[Any, int]]] = collections.defaultdict(list)
     # (lop, GV, buoi) -> [(so tiet, bien, mon)] cho class_period_caps
     class_teacher_terms: dict[tuple[int, int, int], list[tuple[int, Any, int]]] = collections.defaultdict(list)
     blocks: dict[tuple[int, int], list[tuple[Any, tuple[int, ...], int, tuple[int, ...]]]] = {}
@@ -627,6 +649,7 @@ def _build_and_solve(
                         free_cover[(c, x)].append((v, av))
                         for t in members:
                             teacher_terms[(t, x)].append(v)
+                            teacher_terms_loc[(t, x)].append((v, a_loc[av] if av < len(a_loc) else -1))
                     for t in members:
                         class_teacher_terms[(c, t, s)].append((d, v, si))
                     blocks.setdefault((av, s), []).append((v, tuple(window), d, blk))
@@ -815,6 +838,20 @@ def _build_and_solve(
         if len(lst) > 1:
             m.AddAtMostOne(lst)
 
+    _t_placed: dict[int, int] = collections.Counter()
+    _t_expected: dict[int, int] = collections.Counter()
+    for ai in range(A):
+        for tt in a_teachers[ai]:
+            _t_expected[tt] += int(P.a_periods[ai])
+    for c_ in range(C):
+        for ai in grid[c_]:
+            if ai >= 0:
+                for tt in a_teachers[ai]:
+                    _t_placed[tt] += 1
+
+    def t_complete(t: int) -> bool:
+        return _t_placed[t] >= _t_expected[t]
+
     def occ_expr(t: int, x: int) -> Any:
         if const_occ.get((t, x)):
             return 1
@@ -871,6 +908,10 @@ def _build_and_solve(
             # state.py 261-286
             if rule.max_sessions > 0:
                 m.Add(sum(ne_list) <= rule.max_sessions)
+            # 05/10: so buoi toi thieu — chi khi luoi vao da du tiet cua GV (lane
+            # gap1/sessions); lane fill (con tiet thieu) khong ep.
+            if rule.min_sessions > 0 and not fill and t_complete(t):
+                m.Add(sum(ne_list) >= rule.min_sessions)
             if rule.max_morning > 0:
                 m.Add(sum(ne_list[s] for s in range(0, NUM_SESSIONS, 2)) <= rule.max_morning)
             if rule.max_afternoon > 0:
@@ -940,6 +981,78 @@ def _build_and_solve(
                         for d in range(NUM_DAYS):
                             if any(not isinstance(e, int) for e in day_terms[d]):
                                 m.Add(sum(day_terms[d]) <= per_day)
+        # 05/10: yeu cau DIA DIEM (core.location_rule_debt == 0) ma hoa truc tiep
+        # thay vi dong bang GV: chi xet o co dia diem (>= 0), y[p][L] = GV day
+        # o tiet p tai dia diem L (hang so hoac tong bien cung dia diem).
+        if loc_in_model and rule is not None and t < len(loc_rules) and loc_rules[t]:
+            for s in range(NUM_SESSIONS):
+                one = rule.loc_one[s]
+                gap = rule.loc_gap[s]
+                move = rule.loc_move[s]
+                breaks = rule.loc_breaks[s]
+                if not (one or gap or move or breaks):
+                    continue
+                base = s * PERIODS
+                ys: list[dict[int, Any]] = []
+                has_var = False
+                for p in range(PERIODS):
+                    x = base + p
+                    row: dict[int, Any] = {}
+                    if const_occ.get((t, x)):
+                        L = const_loc.get((t, x), -1)
+                        if L >= 0:
+                            row[L] = 1
+                    else:
+                        by_l: dict[int, list[Any]] = collections.defaultdict(list)
+                        for v, L in teacher_terms_loc.get((t, x), ()):
+                            if L >= 0:
+                                by_l[L].append(v)
+                        for L, lst in by_l.items():
+                            row[L] = sum(lst)
+                            has_var = True
+                    ys.append(row)
+                if not has_var:
+                    continue
+                locs = sorted({L for row in ys for L in row})
+                if len(locs) < 2:
+                    continue
+                n_loc_cons = 0
+                if one:
+                    lits = []
+                    for L in locs:
+                        bl = m.NewBoolVar("lo%d_%d_%d" % (t, s, L))
+                        for row in ys:
+                            if L in row:
+                                m.Add(bl >= row[L])
+                        lits.append(bl)
+                    m.Add(sum(lits) <= 1)
+                    n_loc_cons += 1
+                if gap or breaks:
+                    for p in range(PERIODS - 1):
+                        if p in breaks:
+                            continue
+                        r1, r2 = ys[p], ys[p + 1]
+                        for L1, e1 in r1.items():
+                            for L2, e2 in r2.items():
+                                if L1 != L2 and not (isinstance(e1, int) and isinstance(e2, int)):
+                                    m.Add(e1 + e2 <= 1)
+                                    n_loc_cons += 1
+                if move:
+                    for p in range(PERIODS):
+                        for q in range(p + 1, PERIODS):
+                            for r in range(q + 1, PERIODS):
+                                for L1, e1 in ys[p].items():
+                                    for L2, e2 in ys[q].items():
+                                        if L2 == L1:
+                                            continue
+                                        for L3, e3 in ys[r].items():
+                                            if L3 == L2:
+                                                continue
+                                            if isinstance(e1, int) and isinstance(e2, int) and isinstance(e3, int):
+                                                continue
+                                            m.Add(e1 + e2 + e3 <= 2)
+                                            n_loc_cons += 1
+                info["loc_constraints"] = info.get("loc_constraints", 0) + n_loc_cons
         # state.py 207-212
         for x in P.teacher_must[t]:
             if const_occ.get((t, x)):

@@ -216,6 +216,22 @@ class SoftSchedule:
         # choi -> engine xay lai ca truong (dung cai bay da sua hom qua).
         self.loc_mixed: list[int] = [0] * T
         self.loc_mixed_total = 0
+        # 05/10: o GV ban co dinh vi tiet chung nhieu lop (P.teacher_fixed_busy)
+        # la cho chiem THAT cua GV: dem vao tcnt (=> thong ke buoi, luat GV, trung
+        # gio neu co tiet khac chen vao) va dia diem. Cac o nay khong bao gio doi
+        # (o co dinh) va GV da bi cam o do (teacher_avail = 0).
+        a_loc = getattr(P, "a_loc", None) or []
+        for t, busy in enumerate(getattr(P, "teacher_fixed_busy", None) or ()):
+            if t >= T or not busy:
+                continue
+            row = self.tcnt[t]
+            tl = self.tloc[t]
+            for slot, ai in busy.items():
+                row[slot] += 1
+                if tl is not None and ai < len(a_loc) and a_loc[ai] >= 0:
+                    tl[slot].append(a_loc[ai])
+            if tl is not None:
+                self._loc_dirty.add(t)
 
     def enable_quality_tracking(self) -> None:
         """Recompute all teacher-session stats and switch on incremental upkeep."""
@@ -352,6 +368,25 @@ class SoftSchedule:
     def quality(self) -> tuple[int, int, int, int, int]:
         return (self.q_singleton, self.q_gap2, self.q_sessions, self.q_gap1, self.q_days)
 
+    def teacher_complete(self, t: int) -> bool:
+        """05/10: GV t da xep du tiet (so o chiem >= tong tiet phan cong + o ban
+        co dinh). Dung cho luat so buoi toi thieu."""
+
+        P = self.P
+        exp = getattr(self, "_t_expected", None)
+        if exp is None:
+            T = P.num_teachers()
+            exp = [0] * T
+            for ai, members in enumerate(P.a_teachers):
+                for tt in members:
+                    if 0 <= tt < T:
+                        exp[tt] += int(P.a_periods[ai])
+            for tt, busy in enumerate(getattr(P, "teacher_fixed_busy", None) or ()):
+                if tt < T:
+                    exp[tt] += len(busy)
+            self._t_expected = exp
+        return sum(self.tcnt[t]) >= exp[t]
+
     def teacher_rule_penalty(self, t: int) -> int:
         P = self.P
         rule = P.teacher_rules[t]
@@ -401,6 +436,10 @@ class SoftSchedule:
             pen += used_days - rule.max_days
         if rule.max_sessions > 0 and used_sessions > rule.max_sessions:
             pen += used_sessions - rule.max_sessions
+        # 05/10: so buoi toi thieu ("dung bang") — chi tinh khi GV da du tiet
+        # (lich dang xay thieu tiet thi chua the doi du buoi).
+        if rule.min_sessions > 0 and used_sessions < rule.min_sessions and self.teacher_complete(t):
+            pen += rule.min_sessions - used_sessions
         if rule.max_morning > 0 and used_am > rule.max_morning:
             pen += used_am - rule.max_morning
         if rule.max_afternoon > 0 and used_pm > rule.max_afternoon:

@@ -260,7 +260,10 @@ def _cpsat_lane_enabled(settings: Mapping[str, Any] | None, problem: Problem | N
     raw = (settings or {}).get("focus_cpsat_lns")
     if raw is not None and str(raw).strip().lower() in ("0", "false", "off", "no"):
         return False
-    if problem is not None:
+    # 05/10: CP-SAT da ma hoa luat dia diem (cpsat_lns, TKB_CPSAT_LOC) -> khong
+    # con can tranh truong nhieu GV co luat dia diem.
+    loc_in_model = os.environ.get("TKB_CPSAT_LOC", "1") != "0"
+    if problem is not None and not loc_in_model:
         try:
             loc = list(getattr(problem, "teacher_loc_rules", None) or [])
             n_t = max(1, problem.num_teachers())
@@ -1414,7 +1417,20 @@ def solve_from_ui_data_v3(
         # GV co luat DIA DIEM bi CP-SAT dong bang -> lap tiet/chat luong yeu
         # (do Tan An Hoi 2 co so: 1764/1766 + 8 buoi vi pham doi co so, ban cu
         # 6 worker 1766/1766) -> truong co luat dia diem giu duong cu.
-        and not any(getattr(problem, "teacher_loc_rules", None) or [])
+        # 05/10: CP-SAT da ma hoa luat dia diem -> truong co luat dia diem duoc
+        # Cherry 2 vong KHI DA CO LICH DU TIET lam diem xuat phat (toi uu lich
+        # dang co: An Phu kkhg52etp92 316 -> 300 buoi, 0 vi pham). Xep TU DAU
+        # thi giu duong cu: pha heuristic can tron ngan sach moi go het buoi 1
+        # tiet (Tan An Hoi luoi trong 60 s: 2 vong [86,25,723,151] khong hop le,
+        # duong cu [0,0,675,126]). TKB_CPSAT_LOC=0 giu cach cu hoan toan.
+        and (
+            not any(getattr(problem, "teacher_loc_rules", None) or [])
+            or (
+                os.environ.get("TKB_CPSAT_LOC", "1") != "0"
+                and bool(warm_cells)
+                and len(warm_cells) >= expected
+            )
+        )
     ):
         cherry_cpsat = True
         raw_threads = settings.get("cpsat_threads")

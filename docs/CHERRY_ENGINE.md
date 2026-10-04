@@ -101,6 +101,19 @@ Nút TEST (21/08, chỉ superadmin) được **công khai** thành menu **Tối 
 
 **Đo (60 s, 6 luồng CP-SAT như Cloud Run, cũ = `TKB_CHERRY_CPSAT=0`):** Hưng Long lưới trống 1192 không đủ → **1207/1207 hợp lệ** [1,0,423,65]; Hồ Văn Long TKB 5 lưới trống không hợp lệ [3,3,649,184] → **hợp lệ** [1,0,612,129]; Nguyễn Ảnh Thủ lưới trống 1123/1149 → **1149/1149 hợp lệ**; trường 61 lớp (lịch có vi phạm) 2051 [72,31,724] → **2071** [10,9,656]; bấm lại trên lịch đủ: tốt hơn hoặc bằng ở mọi trường thử. Test: `solver_runtime/tests/test_engine_v3_cpsat_fill.py`.
 
+## Tiết chung nhiều lớp, luật địa điểm trong CP-SAT, số buổi tối thiểu (05/10/2026)
+
+**Vì sao:** chủ dự án "bấm Cherry xong TKB không đổi" (THCS An Phú `kkhg52etp92`, 2 cơ sở, 6 dòng dạy ghép nhiều lớp TANN/KNS/STEM, luật số buổi "đúng bằng" theo số tiết). Tái hiện đúng production (ghim tiết ghép `{fixed, jointPin}` + `preserve_fixed_lessons_only`): engine thấy lịch hiện tại là [5,0,315,10] trong khi giao diện thấy [0,0,316,10] → tối ưu sai mục tiêu, ứng viên [2,0,304,23] bị cổng trình duyệt loại; trường có luật địa điểm thì Cherry không bật CP-SAT.
+
+**Đã làm:**
+- `core.py` `Problem.teacher_fixed_busy[t] = {ô: phân công tổng hợp}` — ô GV bận vì ô cố định dùng chung nhiều lớp (phân công tổng hợp `a_teachers=()`); địa điểm của các ô này cũng tính vào `teacher_loc_rules`. `SoftSchedule` (`tcnt`/`tloc`), `State` (`teacher_slot`) và CP-SAT (`const_occ`/`cur_occ`/`const_loc`) nạp sẵn → thống kê buổi/1 tiết/trống, luật GV, địa điểm tính đúng như `validate`.
+- `cpsat_lns.py`: luật **địa điểm** mã hoá trực tiếp (`y[p][L]`): `loc_one` (≤1 địa điểm/buổi), `loc_gap`/`loc_breaks` (2 tiết liền khác địa điểm chỉ hợp lệ qua giờ ra chơi), `loc_move` (≤1 lần đổi/buổi: cấm bộ ba p<q<r đổi 2 lần) — tương đương `core.location_rule_debt == 0`. GV không còn bị đóng băng (`info.loc_constraints`). `TKB_CPSAT_LOC=0` = cách cũ.
+- `entry.py`: `_cpsat_lane_enabled` bỏ điều kiện "≤25 % GV có luật địa điểm"; Cherry 2 vòng cho trường có luật địa điểm **chỉ khi có lịch đủ tiết làm điểm xuất phát** (xếp từ đầu vẫn đi đường heuristic trọn ngân sách — Tân An Hội lưới trống 60 s: 2 vòng [86,25,723,151] không hợp lệ, đường cũ [0,0,675,126]).
+- Luật **số buổi tối thiểu** `maxDaysSessions.minSessions` (`TeacherRule.min_sessions`; cùng `maxSessions` = "đúng bằng"): `State` chặn khi GV đã đủ tiết (`teacher_complete`, không áp khi `defer_min`), `SoftSchedule.teacher_rule_penalty` phạt khi đủ tiết, CP-SAT `sum(buổi) ≥ min` ở lane không phải `fill`. Giao diện CHƯA có ô nhập (dữ liệu ghi thẳng vào kho).
+- `state.py` `apply`: cập nhật bộ đếm buổi (`ts_count`) **trước** khi kiểm luật (trước đây kiểm trên số của lưới cũ — luật theo buổi bị trễ một bước), hoàn lại khi bị từ chối.
+
+**Đo (60 s, 6 tiến trình, chạy tuần tự từng bản):** An Phú lịch hiện tại [0,0,316,10] → cũ [2,0,311,13] (cổng loại vì thêm buổi 1 tiết), mới **[0,0,301,18] hợp lệ, 0 vi phạm địa điểm**; có `minSessions` = số buổi hiện tại: cũ phá luật 8 GV, mới giữ [0,0,316,10]. Tân An Hội lịch có sẵn [0,0,622,60] → [0,0,619,70]; lưới trống như cũ. Các trường khác (Hưng Long, Nguyễn Ảnh Thủ, GDTX, Hồ Văn Long, trường 61 lớp, Củ Chi 2 TKB 3) trong dao động giữa các lần chạy. Test: `solver_runtime/tests/test_engine_v3_shared_busy_loc_min.py` (8).
+
 ## Kiến trúc
 ```
 entry.solve_from_ui_data_v3(ui_data, settings, progress)

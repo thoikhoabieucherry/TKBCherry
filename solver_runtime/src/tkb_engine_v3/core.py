@@ -185,6 +185,10 @@ def compile_subject_rule(rule: Mapping[str, Any], periods_per_week: int, cap: in
 class TeacherRule:
     max_days: int = 0
     max_sessions: int = 0
+    # 05/10: so BUOI TOI THIEU / tuan (maxDaysSessions.minSessions). Cung
+    # maxSessions = "dung bang" (THCS An Phu: <=14 tiet 5 buoi, 15-19 = 6,
+    # >=20 = 7). Chi kiem khi GV da xep du tiet (lich dang xay thi bo qua).
+    min_sessions: int = 0
     max_morning: int = 0
     max_afternoon: int = 0
     session_mode: tuple[str, ...] = ("",) * NUM_DAYS   # "", morning, afternoon, either
@@ -216,6 +220,7 @@ class TeacherRule:
         return (
             self.max_days == 0
             and self.max_sessions == 0
+            and self.min_sessions == 0
             and self.max_morning == 0
             and self.max_afternoon == 0
             and not any(self.session_mode)
@@ -333,6 +338,7 @@ def compile_teacher_rule(rule: Mapping[str, Any], one_session_mode: Callable[[An
     return TeacherRule(
         max_days=_to_int(_get_path(rule, "maxDaysSessions.maxDays", 0), 0),
         max_sessions=_to_int(_get_path(rule, "maxDaysSessions.maxSessions", 0), 0),
+        min_sessions=_to_int(_get_path(rule, "maxDaysSessions.minSessions", 0), 0),
         max_morning=_to_int(_get_path(rule, "maxMorningAfternoon.morning", 0), 0),
         max_afternoon=_to_int(_get_path(rule, "maxMorningAfternoon.afternoon", 0), 0),
         session_mode=session_mode,
@@ -407,6 +413,14 @@ class Problem:
     # do co "tranh cap tiet 3-4") khong duoc chan engine xep phan con lai cua
     # lop — vi pham do van duoc bo kiem dinh bao cho nguoi dung.
     fixed_mask: list[bytearray] = field(default_factory=list)
+    # 05/10: o GV BAN CO DINH vi tiet chung nhieu lop (o co dinh dung chung:
+    # tiet ghep TANN/KNS chung khoi, chao co...) -> {o: phan cong tong hop}.
+    # Phan cong tong hop co a_teachers = () nen truoc day engine KHONG dem cac o
+    # nay vao thong ke buoi/buoi 1 tiet/trong va luat GV, trong khi giao dien
+    # (validate) co dem: engine toi uu sai muc tieu va cong cua trinh duyet loai
+    # ket qua (THCS An Phu kkhg52etp92). SoftSchedule/State/CP-SAT nap san cac
+    # o nay nhu cho chiem cua GV.
+    teacher_fixed_busy: list[dict[int, int]] = field(default_factory=list)
 
     def num_classes(self) -> int:
         return len(self.class_names)
@@ -690,10 +704,13 @@ def compile_problem(
         a_rule.append(merged_rule)
         a_teacher_label.append(str(a.teacher or "") if len(member_ids) > 1 else "")
 
+    # phan cong tong hop -> GV thanh vien (de nap o ban co dinh, xem teacher_fixed_busy)
+    shared_members: dict[int, tuple[int, ...]] = {}
     for shared_key, ci, si, ti, room, cap, merged_rule, slots in pending_shared:
         allowed = bytearray(NUM_SLOTS)
         for slot in slots:
             allowed[slot] = 1
+        shared_members[len(a_class)] = _member_ids(shared_key[2])
         shared_assignment[shared_key] = len(a_class)
         a_class.append(ci)
         a_subject.append(si)
@@ -843,10 +860,19 @@ def compile_problem(
             loc_idx[loc_text] = li
             loc_names.append(loc_text)
         a_loc.append(li)
+    # 05/10: o GV ban co dinh vi tiet chung nhieu lop (phan cong tong hop).
+    teacher_fixed_busy: list[dict[int, int]] = [dict() for _ in teacher_names]
+    for _c, slot, ai in fixed_cells:
+        for ti in shared_members.get(ai, ()):
+            teacher_fixed_busy[ti].setdefault(slot, ai)
     teacher_locs: list[set[int]] = [set() for _ in teacher_names]
     for ai in range(len(a_class)):
         if a_loc[ai] >= 0:
             for ti in a_teachers[ai]:
+                teacher_locs[ti].add(a_loc[ai])
+    for ti, busy in enumerate(teacher_fixed_busy):
+        for ai in busy.values():
+            if a_loc[ai] >= 0:
                 teacher_locs[ti].add(a_loc[ai])
     teacher_loc_rules = [
         bool(tr is not None and tr.has_location_rules() and len(teacher_locs[ti]) >= 2)
@@ -887,6 +913,7 @@ def compile_problem(
         loc_names=loc_names,
         teacher_loc_rules=teacher_loc_rules,
         fixed_mask=fixed_mask,
+        teacher_fixed_busy=teacher_fixed_busy,
     )
 
 
