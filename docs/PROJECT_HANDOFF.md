@@ -8,6 +8,21 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-06 NÚT CHERRY: Ô CỐ ĐỊNH VƯỢT GIỚI HẠN KHÔNG CÒN LÀM BỎ KẾT QUẢ + 2 VÒNG CHO TRƯỜNG 2 CƠ SỞ XẾP TỪ ĐẦU
+
+- **Chủ dự án** (Tân Nhựt `0adf9782364`): «bấm Cherry thấy có tối ưu nhưng trả kết quả về lại không nhận, trả lại như cũ; xếp lại
+  vi phạm ràng buộc quá nhiều; phải đảm bảo mọi ràng buộc, xếp đủ, tối ưu, lần sau bấm tối ưu tiếp».
+- **Nguyên nhân** (kho kéo RO `_updatedAt=1791217377134`, chạy 180 s như production): engine ra 1746/1746 [0,0,620,59] từ
+  [7,0,679,106] nhưng `ok=false` chỉ vì 2 cặp Tin-QT CỐ ĐỊNH (mục 05/10/06/10 bên dưới) → bridge "Kết quả máy chủ chưa đủ điều kiện để
+  áp dụng; lịch hiện tại được giữ nguyên" ở MỌI lượt. Xếp từ đầu trường 54 lớp có luật địa điểm đi đường heuristic cũ (không CP-SAT).
+- **Code**: `validate.compute_metrics(fixed_lessons=)` → `fixed_subject_session_limit_overrides` (cảnh báo) cho phần vượt nằm trọn
+  trong ô cố định; `adapter.build_payload`/engine v3 truyền ô cố định; Cherry 2 vòng mặc định cho trường luật địa điểm khi xếp từ
+  đầu (`TKB_CHERRY_LOC_FRESH=0` = cũ). Chi tiết + số đo: `docs/CHERRY_ENGINE.md` mục 06/10.
+- **Đo**: lịch trên kho → `ok=true` 60 s [0,1,658,91]; lưới trống 180 s cũ [6,1,672,100] → mới [0,0,635,68]; Tân An Hội lưới trống
+  [0,0,664,118] → [0,0,646,114]. RB (node + `tkb-constraints.js`) mọi kết quả 0 vi phạm, 0 nợ địa điểm.
+- **Test**: engine v3 + hợp đồng kết quả 334 pass (+4 `test_fixed_cell_limit_override.py`); sửa fixture
+  `test_engine_v3_edge_pair_rule` (chọn seed có ≥ 2 vi phạm). KHÔNG ghi dữ liệu trường (phiên khác đang ghi Tân Nhựt).
+
 ## 2026-10-06 `0adf9782364` THCS Tân Nhựt — TỐI ƯU THÊM 1 LƯỢT, ĐÃ GHI 1746/1746
 
 - **Chủ dự án**: «tối ưu thêm 1 lần nữa». Đọc lại kho live `_updatedAt=1791217377134`: lịch/yêu cầu đã khác bản tối ưu 05/10,

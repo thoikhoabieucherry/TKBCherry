@@ -127,6 +127,15 @@ Nút TEST (21/08, chỉ superadmin) được **công khai** thành menu **Tối 
 
 **Đo (An Phú có `minSessions` "đúng bằng", 180 s, tuần tự):** bấm lần 2 trên lịch 868/869 hợp lệ [1,0,317,22] — cũ: trả y nguyên (cổng địa điểm vứt 869/7 vi phạm cùng bản 868 [0,0,317,18]); mới **869/869 hợp lệ [0,0,317,20]** (toàn trường giữ tiết 24 s → 869 còn 1 buổi vi phạm, gỡ ở lần thử 8). Xếp từ đầu — cũ: 868 [1,0,317,22] hoặc 869 kèm 7–10 buổi vi phạm địa điểm; mới **869/869 hợp lệ [2,0,316,15]** (834 → 867 sau lần toàn trường + 28 lần gỡ, lần 2 → 869). Các trường khác (110 s, cũ = 2513f38, tuần tự): Củ Chi 2 TKB 3 lưới trống [2,0,640,84] → [0,0,621,61]; Nguyễn Ảnh Thủ 355 → 350 buổi; An Phú có lịch 297 → 292 buổi; trường 61 lớp 2044 → 2051 tiết; Hưng Long, Tân An Hội (trống + có lịch), Hồ Văn Long ngang nhau; GDTX lưới trống 236 → 243–248 buổi (lần giải toàn trường ăn thời gian chất lượng → trường KHÔNG có luật địa điểm giới hạn lần đó `max(8 s, 25 %)`). Test: `solver_runtime/tests/test_engine_v3_loc_fill_repair.py` (6).
 
+## Ô cố định vượt "giới hạn tiết/buổi" làm mọi lượt Cherry bị bỏ + bật 2 vòng cho trường 2 cơ sở xếp từ đầu (06/10/2026)
+
+**Vì sao:** chủ dự án (trường `0adf9782364`, 54 lớp, 2 cơ sở, mọi GV có luật địa điểm): «bấm Cherry thấy có tối ưu nhưng khi trả kết quả về lại không nhận, trả lại như cũ». Tái hiện offline trên lịch hiện tại (180 s): engine ra 1746/1746 [0,0,620,59] (lịch cũ [7,0,679,106]) nhưng `payload.ok=false`, `hard_ok=false` chỉ vì `subject_session_limit_violations` = 6/5 và 7/5 Tin học Quốc tế 2 tiết chiều T6 — **ô người dùng cố định** (`{fixed:true, mon:"Tin-QT"}` × 2) trong khi tiết chuẩn "Giới hạn" = 1 tiết/buổi. Engine không được dời ô cố định ⇒ mọi kết quả đều "vi phạm" ⇒ bridge báo "Kết quả máy chủ chưa đủ điều kiện để áp dụng; lịch hiện tại được giữ nguyên". (Bảng RB của trình duyệt không coi cặp này là vi phạm: lịch hiện tại và mọi kết quả đo đều 0 vi phạm RB, 0 buổi vi phạm địa điểm — chạy `scratch/s0adf/rb_audit.js` bằng node của run_tests.)
+
+**Đã làm:**
+- `tkb_optimizer_ref/validate.py` `compute_metrics(..., fixed_lessons=)`: nhóm (lớp, môn, ngày, buổi) vượt giới hạn mà số tiết ≤ số ô cố định của nhóm đó → `metrics.fixed_subject_session_limit_overrides` (cảnh báo), không vào `subject_session_limit_violations`/`core_hard_ok`; engine xếp THÊM tiết vượt thì vẫn vi phạm. `adapter.build_payload(fixed_lessons=)`, engine v3 truyền `fixed_lessons`. Rust không đổi (chỉ đọc danh sách vi phạm). Test `solver_runtime/tests/test_fixed_cell_limit_override.py` (4).
+- `entry.py`: Cherry 2 vòng (CP-SAT) cho trường có luật địa điểm **mặc định cả khi xếp từ đầu** (`TKB_CHERRY_LOC_FRESH=0` = đường cũ). Đo 180 s lưới trống: `0adf9782364` đường cũ [6,1,672,100] → **[0,0,635,68]**; Tân An Hội [0,0,664,118] → **[0,0,646,114]**; cả hai 0 vi phạm.
+- Fixture `test_engine_v3_edge_pair_rule` chọn seed đầu tiên cho lịch "không luật" có ≥ 2 vi phạm (seed 3 cố định giờ ra 0).
+
 ## Kiến trúc
 ```
 entry.solve_from_ui_data_v3(ui_data, settings, progress)

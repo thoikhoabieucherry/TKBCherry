@@ -1502,7 +1502,11 @@ def solve_from_ui_data_v3(
                     # truong vua (<= TKB_CPSAT_WHOLE_MAX_CLASSES lop) xep TU DAU:
                     # vong 2 co lan giai CP-SAT toan truong (construct fill phase)
                     or problem.num_classes() <= _to_int(os.environ.get("TKB_CPSAT_WHOLE_MAX_CLASSES", ""), 40)
-                    or os.environ.get("TKB_CHERRY_LOC_FRESH", "0") == "1"
+                    # 06/10: mac dinh BAT. Do 180 s luoi trong, duong cu -> 2 vong:
+                    # truong 0adf9782364 (54 lop, 2 co so) [6,1,672,100] ->
+                    # [0,0,635,68]; Tan An Hoi (50 lop) [0,0,664,118] -> [0,0,646,114].
+                    # TKB_CHERRY_LOC_FRESH=0 giu duong cu.
+                    or os.environ.get("TKB_CHERRY_LOC_FRESH", "1") != "0"
                 )
             )
         )
@@ -1776,6 +1780,9 @@ def solve_from_ui_data_v3(
         optimization_skipped_reason=None,
         allow_temporary_teacher_gap_debt=True,
         shared_teacher_slots=shared_slots,
+        # 06/10: vuot "gioi han tiet/buoi" nam tron trong o NGUOI DUNG co dinh
+        # khong lam ket qua thanh vi pham (truoc day moi luot Cherry bi bo).
+        fixed_lessons=fixed_lessons,
     )
     if shared_slots:
         try:
