@@ -8,6 +8,23 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-06 `0adf9782364` THCS Tân Nhựt — TỐI ƯU THÊM 1 LƯỢT, ĐÃ GHI 1746/1746
+
+- **Chủ dự án**: «tối ưu thêm 1 lần nữa». Đọc lại kho live `_updatedAt=1791217377134`: lịch/yêu cầu đã khác bản tối ưu 05/10,
+  có 141 ô cố định (trước 124), 679 buổi, 7 buổi 1 tiết, 0 trống 2, 106 trống 1; 2 lỗi yêu cầu giới hạn số ngày dạy.
+- **Thực hiện**: đúng một lượt Cherry 180 s, warm từ kho mới, giữ toàn bộ ô cố định/nghỉ và nguyên yêu cầu/phân công.
+  Chạy ngoài sandbox để multiprocessing hoạt động (6 worker, `used_multiprocessing=true`), thực tế 174,6 s.
+  Kết quả **1746/1746, 640 buổi, 0 buổi 1 tiết, 0 trống 2, 70 trống 1**; 2 lỗi số ngày dạy đã hết.
+- **Kiểm chứng**: validator Python 0 trùng GV/lớp/phòng, 0 thiếu/thừa phân công, 0 lỗi tiết đôi/ô nghỉ/yêu cầu/địa điểm;
+  `validateAll(5000)` của RB production = 0, cả trước khi ghi và sau khi đọc lại độc lập. Giữ đúng 141 ô cố định.
+  Vẫn giữ hai ngoại lệ Tin-QT cố định 6/5, 7/5 chiều T6 t1–2 vượt giới hạn 1/buổi đã nêu ở mục 05/10;
+  Python `hard_ok=false` chỉ vì hai ngoại lệ này, không mô tả là đã thỏa mọi kiểm tra hard.
+- **Đã ghi** qua SSH KV store với transaction + cổng hash toàn kho, backup
+  `/root/tkb-recovery/tannhut4-0adf9782364-20261006-011635/`; ba timestamp/revision = `1791224196468`.
+  Chỉ cập nhật lịch và ánh xạ GV/phòng, bỏ kết quả giải cũ; phân công/yêu cầu giữ nguyên. Bản đọc lại khớp lưới đã ghi và chất lượng,
+  có file `.cherry` tại `scratch/0adf9782364/rerun_20261006/` (gitignore). Không thay mã nguồn sản phẩm/deploy.
+- **Kiểm tra repo trước commit**: `python run_tests.py`: 131 pass / 28 fail / 159 module (483 s); 7 module đánh dấu MỚI HỎNG khớp các lỗi JS CRLF đã ghi nhận trước phiên này. Không đổi mã nguồn sản phẩm hoặc baseline.
+
 ## 2026-10-05 `0adf9782364` THCS Tân Nhựt — XẾP LẠI + TỐI ƯU, ĐÃ GHI 1746/1746
 
 - **Chủ dự án**: «xếp và tối ưu TKB này» (TKB số 4, bản sao TKB 3, ngày áp dụng 12/10). Kho có 54 lớp, 113 GV trong danh sách,
