@@ -16255,7 +16255,11 @@
         // nut 1 tiet trong 4 worker: 60s -> 148, 120s -> 140, 180s -> 128 (van
         // giam khi het gio) -> chon 120s: gap doi thoi gian cho loi ich ro,
         // 2 phut/cu bam con chap nhan duoc; bam lai van warm-start tiep.
-        const engineDefaultBudget = focusedV3Turn ? (focusBudgetOverride > 0 ? focusBudgetOverride : 120) : 90;
+        // 05/10 (chu du an: "tang thoi gian chay va ke thua ket qua chay thu"):
+        // nut Cherry 90s -> 180s. Do An Phu (28 lop, 2 co so): 90-110s xep tu dau
+        // dung o 867-868/869; vong 2 can ~30s lap tiet (CP-SAT toan truong + go
+        // luat dia diem) roi ~40s toi uu chat luong. Tran Cloud Run 285s.
+        const engineDefaultBudget = focusedV3Turn ? (focusBudgetOverride > 0 ? focusBudgetOverride : 120) : 180;
         budgetSeconds = engineBudgetOverride > 0 ? engineBudgetOverride : engineDefaultBudget;
         effectiveSettings.overall_time_limit_seconds = budgetSeconds;
         effectiveSettings.integrated_time_limit = budgetSeconds;

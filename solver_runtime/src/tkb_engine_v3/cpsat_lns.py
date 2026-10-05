@@ -258,6 +258,8 @@ def build_and_solve(
     sessions: Iterable[int] | None = None,
     full_classes: Iterable[int] | None = None,
     fill_quality: bool = True,
+    loc_soft: bool = False,
+    require_full: bool = False,
 ) -> tuple[dict[tuple[int, int], int] | None, dict[str, Any]]:
     """Xep lai cac o tu do cua ``classes`` bang CP-SAT theo hop dong ``lane``.
 
@@ -317,6 +319,8 @@ def build_and_solve(
             sessions,
             full_classes,
             fill_quality,
+            loc_soft,
+            require_full,
         )
     except Exception as exc:  # du lieu la -> bao loi, khong nem
         info["status"] = "ERROR"
@@ -343,6 +347,8 @@ def _build_and_solve(
     sessions: Iterable[int] | None = None,
     full_classes: Iterable[int] | None = None,
     fill_quality: bool = True,
+    loc_soft: bool = False,
+    require_full: bool = False,
 ) -> tuple[dict[tuple[int, int], int] | None, dict[str, Any]]:
     C = P.num_classes()
     # 01/10: lop trong full_classes tu do o MOI buoi ke ca khi co ``sessions``
@@ -578,6 +584,10 @@ def _build_and_solve(
     blocks: dict[tuple[int, int], list[tuple[Any, tuple[int, ...], int, tuple[int, ...]]]] = {}
     unplaced_vars: dict[int, Any] = {}
     block_short: list[Any] = []
+    min_short: list[Any] = []
+    # 05/10: lane fill + loc_soft: vi pham dia diem cua (GV, buoi) la bien phat
+    # (khong phai rang buoc cung) -> CP-SAT di qua luoi du tiet con no roi go no.
+    loc_viol: list[Any] = []
     n_choice = 0
 
     # -- bien chon khoi: (phan cong, buoi, cua so lien tiet) ----------------
@@ -664,6 +674,10 @@ def _build_and_solve(
             else:
                 m.Add(u == r)
             m.AddHint(u, max(0, missing_add[av]))
+            if require_full:
+                # 05/10: vung go no (giu du tiet): moi tiet dang xep phai xep lai —
+                # bai toan kha thi thuan, CP-SAT bac bo nhanh khi vung khong go duoc.
+                m.Add(u <= max(0, missing_add[av]))
         else:
             if not total_terms:
                 info["error"] = "assignment %d has no candidate block" % av
@@ -912,6 +926,12 @@ def _build_and_solve(
             # gap1/sessions); lane fill (con tiet thieu) khong ep.
             if rule.min_sessions > 0 and not fill and t_complete(t):
                 m.Add(sum(ne_list) >= rule.min_sessions)
+            elif rule.min_sessions > 0 and fill:
+                # 05/10 lane fill: thieu buoi so voi toi thieu bi PHAT ngang mot
+                # tiet chua xep (khong ep cung: con tiet chua xep thi chua du buoi).
+                ms = m.NewIntVar(0, rule.min_sessions, "mss%d" % t)
+                m.Add(sum(ne_list) + ms >= rule.min_sessions)
+                min_short.append(ms)
             if rule.max_morning > 0:
                 m.Add(sum(ne_list[s] for s in range(0, NUM_SESSIONS, 2)) <= rule.max_morning)
             if rule.max_afternoon > 0:
@@ -1017,6 +1037,10 @@ def _build_and_solve(
                 if len(locs) < 2:
                     continue
                 n_loc_cons = 0
+                lv: Any = 0
+                if loc_soft and fill:
+                    lv = m.NewBoolVar("lv%d_%d" % (t, s))
+                    loc_viol.append(lv)
                 if one:
                     lits = []
                     for L in locs:
@@ -1025,7 +1049,7 @@ def _build_and_solve(
                             if L in row:
                                 m.Add(bl >= row[L])
                         lits.append(bl)
-                    m.Add(sum(lits) <= 1)
+                    m.Add(sum(lits) <= 1 + (len(locs) - 1) * lv)
                     n_loc_cons += 1
                 if gap or breaks:
                     for p in range(PERIODS - 1):
@@ -1035,7 +1059,7 @@ def _build_and_solve(
                         for L1, e1 in r1.items():
                             for L2, e2 in r2.items():
                                 if L1 != L2 and not (isinstance(e1, int) and isinstance(e2, int)):
-                                    m.Add(e1 + e2 <= 1)
+                                    m.Add(e1 + e2 <= 1 + lv)
                                     n_loc_cons += 1
                 if move:
                     for p in range(PERIODS):
@@ -1050,7 +1074,7 @@ def _build_and_solve(
                                                 continue
                                             if isinstance(e1, int) and isinstance(e2, int) and isinstance(e3, int):
                                                 continue
-                                            m.Add(e1 + e2 + e3 <= 2)
+                                            m.Add(e1 + e2 + e3 <= 2 + lv)
                                             n_loc_cons += 1
                 info["loc_constraints"] = info.get("loc_constraints", 0) + n_loc_cons
         # state.py 207-212
@@ -1161,8 +1185,20 @@ def _build_and_solve(
     if fill:
         # lap tiet thieu: khong ep "khong xau hon" (dat them tiet co the buoc
         # tao buoi moi); so tiet chua xep la tren het, chat luong GV la phu.
-        U = (sum(unplaced_vars.values()) if unplaced_vars else 0) + (sum(block_short) if block_short else 0)
-        if fill_quality or not unplaced_vars:
+        U = (
+            (sum(unplaced_vars.values()) if unplaced_vars else 0)
+            + (sum(block_short) if block_short else 0)
+            + (sum(min_short) if min_short else 0)
+        )
+        if loc_viol:
+            # tiet chua xep tren het, roi so buoi vi pham dia diem (nguoi goi chi
+            # nhan khi het vi pham), roi chat luong neu fill_quality
+            LV = sum(loc_viol)
+            if fill_quality:
+                m.Minimize(U * 10**7 + LV * 100000 + (SG + G2) * 200 + S * 4 + G1)
+            else:
+                m.Minimize(U * 10000 + LV)
+        elif fill_quality or not unplaced_vars:
             m.Minimize(U * 100000 + (SG + G2) * 200 + S * 4 + G1)
         else:
             # chi so tiet: cham 0 la OPTIMAL ngay, khong dot thoi gian vao chat
@@ -1239,6 +1275,8 @@ def _build_and_solve(
             new_cells.setdefault(key, -1)
         info["unplaced"] = int(sum(solver.Value(u) for u in unplaced_vars.values()))
         info["block_short"] = int(sum(solver.Value(b) for b in block_short))
+        info["min_sessions_short"] = int(sum(solver.Value(b) for b in min_short))
+        info["loc_viol"] = int(sum(solver.Value(b) for b in loc_viol))
         for av, u in unplaced_vars.items():
             if written[av] + int(solver.Value(u)) != residual[av]:
                 info["error"] = "assignment %d residual %d != written %d + unplaced" % (av, residual[av], written[av])

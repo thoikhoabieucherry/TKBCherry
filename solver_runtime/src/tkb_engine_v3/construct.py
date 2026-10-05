@@ -779,6 +779,9 @@ class Constructor:
         # 01/10: nut Cherry dung CP-SAT de LAP TIET THIEU + toi uu chat luong
         # (entry bat khi _cpsat_lane_enabled: ortools co, <= 25 % GV luat dia diem).
         self.cherry_cpsat: bool = False
+        # 05/10: luoi warm la luoi TRUNG GIAN (vong 2 Cherry xep tu dau), khong
+        # phai lich nguoi dung -> no luat duoc go ca khi phai bot tiet (_maybe_fill_warm)
+        self.prefer_valid: bool = False
         self._cpsat_stats: collections.Counter = collections.Counter()
         self._cpsat_memo: dict[frozenset, tuple[str, int]] = {}
         self._cpsat_pass_idx: int = 0
@@ -5607,7 +5610,12 @@ class Constructor:
             return
         expected = sum(self.P.a_periods)
         placed = sum(1 for row in soft.grid for v in row if v >= 0)
-        if placed >= expected:
+        # 05/10: luoi DU tiet nhung con no luat (vong 2 Cherry di tu luoi xep moi
+        # 869/869 con 9 buoi vi pham dia diem; pha 2 chi go con 6) cung lap lai:
+        # pha lap tiet go no roi CP-SAT xep lai. Truoc day bo qua -> tra luoi vi
+        # pham, khong toi uu chat luong, het luot som (43/105 s). CHI khi luoi la
+        # luoi trung gian (prefer_valid): lich nguoi dung co no san thi giu du tiet.
+        if placed >= expected and (soft.penalty() <= 0 or not self.prefer_valid):
             return
         if soft.overlap:
             self._shed_overlaps(soft)
@@ -5692,13 +5700,183 @@ class Constructor:
                         if gain > 0 and (best is None or gain > best[0]):
                             best = (gain, c, slot, members)
                 if best is None:
-                    break
+                    # 05/10: go tung tiet khong giam no (vd VUOT so buoi toi da ma
+                    # moi buoi >= 2 tiet: An Phu GDTC.Loc 7/6 buoi) -> go NGUYEN buoi
+                    # it tiet nhat cua GV (moi o khong khoa), neu giam duoc no.
+                    got = self._shed_teacher_session(soft, t)
+                    if not got:
+                        break
+                    removed += got
+                    continue
                 _gain, c, slot, members = best
                 soft.set_cell(c, slot, -1)
                 for m in members:
                     soft.refresh_rule_pen(m)
                 removed += 1
         return removed
+
+    def _shed_teacher_session(self, soft: SoftSchedule, t: int) -> int:
+        """Go moi tiet (khong khoa) cua GV t trong MOT buoi — buoi it tiet nhat
+        lam giam no luat cua cac GV lien quan. Tra so tiet da go (0 = khong co)."""
+
+        P = self.P
+        best = None
+        for s in range(NUM_SESSIONS):
+            cells = []
+            ok = True
+            for p in range(PERIODS):
+                x = s * PERIODS + p
+                if soft.tcnt[t][x] <= 0:
+                    continue
+                found = False
+                for c in range(P.num_classes()):
+                    ai = soft.grid[c][x]
+                    if ai >= 0 and t in P.a_teachers[ai]:
+                        if soft.locked[c][x]:
+                            ok = False
+                        cells.append((c, x, ai))
+                        found = True
+                if not found:
+                    ok = False  # o ban co dinh dung chung (khong go duoc)
+            if not ok or not cells or (best is not None and len(cells) >= len(best[1])):
+                continue
+            members = sorted({m for _c, _x, ai in cells for m in P.a_teachers[ai]})
+            pen0 = sum(soft.rule_pen[m] for m in members)
+            for c, x, _ai in cells:
+                soft.set_cell(c, x, -1)
+            for m in members:
+                soft.refresh_rule_pen(m)
+            gain = pen0 - sum(soft.rule_pen[m] for m in members)
+            for c, x, ai in cells:
+                soft.set_cell(c, x, ai)
+            for m in members:
+                soft.refresh_rule_pen(m)
+            if gain > 0:
+                best = (gain, cells, members)
+        if best is None:
+            return 0
+        _gain, cells, members = best
+        for c, x, _ai in cells:
+            soft.set_cell(c, x, -1)
+        for m in members:
+            soft.refresh_rule_pen(m)
+        return len(cells)
+
+    def _cpsat_repair_loc_debt(
+        self, soft: SoftSchedule, deadline: float, stats: dict, *, target: int = 0, max_tries: int = 40
+    ) -> None:
+        """05/10: go no luat DIA DIEM ma KHONG bot tiet: moi lan giai lai 2-4 buoi
+        (luon co mot buoi dang vi pham) tren MOI lop bang CP-SAT lane "fill" voi
+        require_full (moi tiet dang xep phai xep lai, luat dia diem cung) — bai
+        toan kha thi thuan: vung khong go duoc bi bac bo trong 0.03-4 s, vung go
+        duoc giai trong 0.3-1.5 s (ban phat mem chay het 6-10 s moi lan). Nhan khi
+        so tiet khong giam va no luat giam; dung khi no <= target. GV con no luat
+        KHAC dia diem bi dong bang (phan hang so cua ho da vi pham).
+
+        Do An Phu (lich 868/869 hop le, tiet cuoi la Mi thuat co Thi day 1 tiet o
+        ca 28 lop / 2 co so): lan giai toan truong (vi pham dia diem phat mem) dat
+        869 con 1 buoi vi pham; vet can moi vung 4 buoi chua buoi no: 28/165 go
+        duoc, deu chua buoi cung co so "thieu so" con cho trong."""
+
+        from . import cpsat_lns
+
+        P = self.P
+        T = P.num_teachers()
+        threads = self._cpsat_threads_effective()
+        tries = accepted = 0
+        while not self._stop_requested() and soft.overlap == 0 and soft.penalty() > target:
+            now = time.monotonic()
+            if deadline - now < 2.0 or tries >= max_tries:
+                break
+            debt_pairs = [
+                (t, s) for t in range(T) if soft.tloc[t] is not None
+                for s in soft.location_debt_sessions(t)
+            ]
+            if not debt_pairs:
+                break
+            tries += 1
+            t0, s0 = debt_pairs[self.rng.randrange(len(debt_pairs))]
+            sess = {s0}
+            # do An Phu (vet can moi to hop chua buoi no): 1-2 buoi 0/11, 3 buoi
+            # 2/55, 4 buoi 16/165 to hop go duoc -> uu tien vung 4 buoi
+            r = self.rng.random()
+            k = 4 if r < 0.55 else (3 if r < 0.85 else 2)
+            # buoi khac cua CHINH GV dang no (doi tiet giua cac buoi cua GV do de
+            # moi buoi con mot co so), them ngau nhien
+            own = [
+                s for s in range(NUM_SESSIONS)
+                if s != s0 and any(soft.tcnt[t0][s * PERIODS + p] > 0 for p in range(PERIODS))
+            ]
+            # buoi cua GV o dung dia diem "thieu so" cua buoi no con cho trong: tiet
+            # le dia diem chuyen sang do (do An Phu: buoi T3 sang 3 tiet co so 1 +
+            # 1 tiet co so 0; moi vung go duoc deu chua buoi chieu T4 cua co so 0
+            # dang 3/4 tiet).
+            def _locs_at(s: int) -> list[int]:
+                out: list[int] = []
+                for p in range(PERIODS):
+                    x = s * PERIODS + p
+                    if soft.tcnt[t0][x] > 0 and soft.tloc[t0][x]:
+                        out.append(soft.tloc[t0][x][0])
+                return out
+
+            here = _locs_at(s0)
+            counts = collections.Counter(here)
+            if len(counts) >= 2:
+                minority = min(counts, key=lambda L: (counts[L], self.rng.random()))
+                host = [
+                    s for s in own
+                    if _locs_at(s) and all(L == minority for L in _locs_at(s))
+                ]
+                spare = [s for s in host if len(_locs_at(s)) < PERIODS]
+                pick_from = spare or host
+                if pick_from and self.rng.random() < 0.8:
+                    sess.add(pick_from[self.rng.randrange(len(pick_from))])
+            guard = 0
+            while len(sess) < k and guard < 20:
+                guard += 1
+                if own and self.rng.random() < 0.6:
+                    sess.add(own[self.rng.randrange(len(own))])
+                else:
+                    sess.add(self.rng.randrange(NUM_SESSIONS))
+            frozen = [
+                t for t in self._has_rule_teachers
+                if soft.rule_pen[t] > (soft.location_debt(t) if soft.tloc[t] is not None else 0)
+            ]
+            before = sum(1 for row in soft.grid for v in row if v >= 0)
+            pen0 = soft.penalty()
+            self._cpsat_pass_idx += 1
+            try:
+                new_cells, cinfo = cpsat_lns.build_and_solve(
+                    P, soft, list(range(P.num_classes())), "fill",
+                    time_limit=min(6.0, deadline - now - 0.5), workers=threads,
+                    seed=self._cpsat_pass_idx, stop_check=self._stop_requested,
+                    require_improve=False, sessions=sorted(sess), full_classes=[],
+                    fill_quality=False, frozen_teachers=frozen, require_full=True,
+                )
+            except Exception:  # noqa: BLE001 - toan tu phu
+                new_cells, cinfo = None, {}
+            if new_cells is None:
+                continue
+            journal = cpsat_lns.apply_cells(soft, new_cells)
+            for t in self._has_rule_teachers:
+                soft.refresh_rule_pen(t)
+            after = sum(1 for row in soft.grid for v in row if v >= 0)
+            if soft.overlap == 0 and after >= before and soft.penalty() < pen0:
+                accepted += 1
+                if os.environ.get("TKB_EVAC_DEBUG"):
+                    sys.stderr.write(
+                        f"[locfix] sessions={sorted(sess)} pen {pen0}->{soft.penalty()} placed {before}->{after} "
+                        f"try={tries}\n"
+                    )
+                continue
+            cpsat_lns.revert(soft, journal)
+            for t in self._has_rule_teachers:
+                soft.refresh_rule_pen(t)
+        stats["loc_repair"] = [
+            int(stats.get("loc_repair", [0, 0, 0])[0]) + tries,
+            int(stats.get("loc_repair", [0, 0, 0])[1]) + accepted,
+            int(soft.penalty()),
+        ]
 
     def _cpsat_fill_phase(self, soft: SoftSchedule, deadline: float) -> dict:
         """01/10: lap tiet CHUA XEP bang CP-SAT LNS (cpsat_lns lane "fill") tren
@@ -5715,11 +5893,137 @@ class Constructor:
         sub_limit = float(max(1, self._cpsat_env_int("TKB_CPSAT_FILL_LIMIT", 4)))
         k_max = max(2, self._cpsat_env_int("TKB_CPSAT_FILL_K", 6))
         A = P.num_assignments()
+        if soft.penalty() > 0 and soft.overlap == 0:
+            # 05/10: no DIA DIEM sua bang cach xep lai NGUYEN BUOI toan truong (giu
+            # du tiet) TRUOC khi go tiet. Do An Phu (luoi 869/869, 9 buoi vi pham):
+            # go tham lam lay ra 21 tiet roi lap lai chi duoc 867.
+            self._cpsat_repair_loc_debt(soft, started + (deadline - started) * 0.3, stats, max_tries=12)
         if soft.penalty() > 0:
             stats["debt_shed"] = self._shed_rule_debt(soft)
             stats["pen_after_shed"] = int(soft.penalty())
         placed0 = sum(1 for row in soft.grid for v in row if v >= 0)
         stats["placed_start"] = placed0
+        # 05/10 (chu du an: "tai sao chay bang Claude lai duoc con bam Cherry ko"):
+        # truong co rang buoc CHEO nhieu lop (so buoi "dung bang", luat dia diem 2
+        # co so) thi sua theo cum 3-6 lop bi ket (An Phu 28 lop: 845 -> 867 tiet,
+        # con 2 vi pham). Truong vua phai -> MOT lan giai TOAN TRUONG (moi o la
+        # bien, khong dong bang GV) truoc, giong cach giai ngoai app.
+        whole_max = self._cpsat_env_int("TKB_CPSAT_WHOLE_MAX_CLASSES", 40)
+        cnt0 = [0] * A
+        for row in soft.grid:
+            for v in row:
+                if v >= 0:
+                    cnt0[v] += 1
+        need_fix = any(cnt0[ai] < P.a_periods[ai] for ai in range(A)) or soft.penalty() > 0
+        left0 = deadline - time.monotonic()
+        if whole_max > 0 and P.num_classes() <= whole_max and need_fix and left0 > 12.0:
+            stats["whole_pass"] = 0
+            # 05/10: truong co luat DIA DIEM -> vi pham dia diem la PHAT trong lan
+            # giai toan truong (tiet chua xep tren het), roi go no bang vung nguyen
+            # buoi. Rang buoc cung thi CP-SAT khong qua duoc luoi trung gian: An Phu
+            # 868/869 hop le, 173 s van 868; mem: 869 con 1 buoi trong 10-20 s ->
+            # vung 4 buoi go het. Mot lan giai mem co the khong cham du tiet (do:
+            # 22 s con thieu 1) -> thu lai voi hat khac khi con thoi gian.
+            loc_soft = bool(
+                any(getattr(P, "teacher_loc_rules", None) or [])
+                and os.environ.get("TKB_CPSAT_LOC", "1") != "0"
+                and os.environ.get("TKB_CPSAT_LOC_SOFT", "1") != "0"
+            )
+            while not self._stop_requested():
+                cnt_now = [0] * A
+                for row in soft.grid:
+                    for v in row:
+                        if v >= 0:
+                            cnt_now[v] += 1
+                miss_classes = sorted({P.a_class[ai] for ai in range(A) if cnt_now[ai] < P.a_periods[ai]})
+                left = deadline - time.monotonic()
+                whole_limit = min(float(self._cpsat_env_int("TKB_CPSAT_WHOLE_LIMIT", 75)), left * 0.6)
+                scope = list(range(P.num_classes()))
+                keep_all = False
+                if loc_soft:
+                    whole_limit = min(whole_limit, max(10.0, min(25.0, left * 0.35)))
+                    turn = stats["whole_pass"] % 3
+                    # vong 3 lan: (0) chi lop con thieu tiet, (1) toan truong GIU moi
+                    # tiet dang xep (require_full), (2) toan truong tu do doi tiet.
+                    # Do An Phu (868/869): toan truong giu tiet cham du tiet 4/4 lan
+                    # trong 15 s, ban tu do 0/2 (khong gian tim kiem qua rong).
+                    keep_all = turn in (0, 1)
+                    if turn == 0 and 0 < len(miss_classes) <= 6:
+                        scope = list(miss_classes)
+                        whole_limit = min(whole_limit, 6.0)
+                    elif turn == 0:
+                        keep_all = True
+                else:
+                    # truong khong co luat dia diem: vong cum lop lap tiet trong vai
+                    # giay (GDTX: 3.8 s) — lan toan truong 20 s an mat thoi gian toi
+                    # uu chat luong (248 so voi 236 buoi)
+                    whole_limit = min(whole_limit, max(8.0, left * 0.25))
+                stats["whole_pass"] += 1
+                try:
+                    new_cells, cinfo = cpsat_lns.build_and_solve(
+                        P, soft, scope, "fill",
+                        time_limit=whole_limit, workers=threads,
+                        seed=self._cpsat_pass_idx + 7 + 13 * stats["whole_pass"],
+                        stop_check=self._stop_requested, require_improve=False,
+                        fill_quality=False, frozen_teachers=[], loc_soft=loc_soft,
+                        require_full=keep_all,
+                    )
+                except Exception as exc:  # noqa: BLE001 - toan tu phu
+                    new_cells, cinfo = None, {"status": "ERROR", "error": repr(exc)}
+                stats["whole_status"] = str((cinfo or {}).get("status") or "")
+                if os.environ.get("TKB_EVAC_DEBUG"):
+                    sys.stderr.write(
+                        f"[whole] status={stats['whole_status']} limit={whole_limit:.1f}s build={(cinfo or {}).get('build_s')} "
+                        f"solve={(cinfo or {}).get('solve_s')} unplaced={(cinfo or {}).get('unplaced')} "
+                        f"short={(cinfo or {}).get('block_short')} mss={(cinfo or {}).get('min_sessions_short')} "
+                        f"dropped={(cinfo or {}).get('dropped_classes')} lv={(cinfo or {}).get('loc_viol')} "
+                        f"err={(cinfo or {}).get('error')}\n"
+                    )
+                ok = False
+                if new_cells is not None:
+                    before = placed0
+                    pen0 = soft.penalty()
+                    grid_before = [row[:] for row in soft.grid]
+                    cpsat_lns.apply_cells(soft, new_cells)
+                    for t in self._has_rule_teachers:
+                        soft.refresh_rule_pen(t)
+                    after = sum(1 for row in soft.grid for v in row if v >= 0)
+                    pen1 = soft.penalty()
+                    ok = soft.overlap == 0 and (
+                        (after > before and pen1 <= pen0) or (after == before and pen1 < pen0)
+                        or (after >= before and pen1 == 0 and pen0 > 0)
+                    )
+                    if (
+                        not ok and loc_soft and soft.overlap == 0 and after > before and pen1 > pen0
+                        and time.monotonic() < deadline - 4.0
+                    ):
+                        # xep THEM duoc tiet nhung con no dia diem -> go bang vung
+                        # nguyen buoi toan truong (giu du tiet), chi nhan khi het no
+                        # moi. Lap theo cum sau do khong xep duoc tiet nay (An Phu:
+                        # 69 lan deu bo 1 tiet) -> phan lon thoi gian con lai.
+                        left_r = deadline - time.monotonic()
+                        rep_end = deadline - 1.0 if left_r < 50.0 else time.monotonic() + left_r * 0.6
+                        self._cpsat_repair_loc_debt(soft, rep_end, stats, target=pen0, max_tries=200)
+                        after = sum(1 for row in soft.grid for v in row if v >= 0)
+                        pen1 = soft.penalty()
+                        ok = soft.overlap == 0 and after > before and pen1 <= pen0
+                        stats["whole_loc_repair"] = [int(ok), int(pen1)]
+                    if ok:
+                        stats["whole_accept"] = 1
+                        stats["gained"] += after - before
+                        placed0 = after
+                    else:
+                        self._restore_grid(soft, grid_before)
+                        stats["whole_reject"] = [before, after, int(pen0), int(pen1)]
+                    if os.environ.get("TKB_EVAC_DEBUG"):
+                        sys.stderr.write(f"[whole] before={before} after={after} pen {pen0}->{pen1} ok={ok}\n")
+                # khong phai truong luat dia diem: mot lan nhu cu. Truong dia diem:
+                # lap lai (hat khac / tu luoi vua nhan) toi khi du tiet + sach no —
+                # do An Phu xep tu dau: lan 1 nhan 851 -> 863 (con thieu), cum lop
+                # sau do chi them 3 tiet.
+                done = ok and placed0 >= sum(P.a_periods) and soft.penalty() == 0
+                if done or not loc_soft or stats["whole_pass"] >= 8 or deadline - time.monotonic() < 25.0:
+                    break
         while not self._stop_requested():
             now = time.monotonic()
             limit = min(sub_limit, deadline - now - 0.3)
@@ -5802,6 +6106,13 @@ class Constructor:
                     f"[fill] +{after - before} -> {after} pen={pen1} classes={classes} "
                     f"t={time.monotonic() - started:.1f}s status={(cinfo or {}).get('status')}\n"
                 )
+        if soft.overlap == 0 and soft.penalty() > 0:
+            # 05/10: con no luat GV (vd so buoi "dung bang" thieu khi GV vua du
+            # tiet) -> go tiet gay no de tra luoi HOP LE thieu vai tiet. Truoc day
+            # tra luoi con no: _salvage_warm vut no (An Phu: lap duoc 867/869 con
+            # no 4 -> xay lai tu dau chi 850) va pha chat luong CP-SAT bo qua.
+            stats["end_shed"] = self._shed_rule_debt(soft)
+            stats["pen_end"] = int(soft.penalty())
         stats["placed_end"] = sum(1 for row in soft.grid for v in row if v >= 0)
         stats["seconds"] = round(time.monotonic() - started, 1)
         return stats

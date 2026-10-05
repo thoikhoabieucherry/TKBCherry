@@ -119,7 +119,9 @@ class CherryPhaseTests(unittest.TestCase):
         stats = con._cpsat_fill_phase(soft, time.monotonic() + 15.0)
         self.assertEqual(stats["placed_start"], 9)
         self.assertEqual(stats["placed_end"], 10)
-        self.assertGreaterEqual(stats["accept"], 1)
+        # 05/10: truong nho (<= TKB_CPSAT_WHOLE_MAX_CLASSES lop) lap xong ngay o lan
+        # giai toan truong (whole_accept) truoc cac vong cum lop
+        self.assertGreaterEqual(stats["accept"] + int(stats.get("whole_accept") or 0), 1)
         self.assertEqual(_counts(P, soft.grid), [5, 5])
         ok, reason = _hard_ok(P, soft.grid)
         self.assertTrue(ok, reason)

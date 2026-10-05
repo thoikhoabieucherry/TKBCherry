@@ -433,6 +433,7 @@ def _worker_solve(args) -> dict:
     live_sink = args[6] if len(args) > 6 else None
     cpsat_threads = int(args[7]) if len(args) > 7 else 0
     cherry_cpsat = bool(args[8]) if len(args) > 8 else False
+    prefer_valid = bool(args[9]) if len(args) > 9 else False
     started = time.monotonic()
     deadline = started + budget_s
     expected = sum(problem.a_periods)
@@ -442,6 +443,7 @@ def _worker_solve(args) -> dict:
     # 26/08: so luong CP-SAT cua toan tu LNS theo cum (0 = tu chon)
     constructor.cpsat_threads = max(0, cpsat_threads)
     constructor.cherry_cpsat = cherry_cpsat
+    constructor.prefer_valid = prefer_valid
     if warm_missing_ok > 0:
         # 22/08 (toi): lich vao duoc phep thieu dung nhung tiet Cherry lan
         # truoc da dua ve Chua phan vi chat luong GV -> van warm-start.
@@ -543,6 +545,7 @@ def _portfolio_solve(
     rounds: int = 1,
     cpsat_threads: int = 0,
     cherry_cpsat: bool = False,
+    loc_baseline: tuple[int | None, int | None] | None = None,
 ) -> dict:
     """Multi-seed portfolio bounded by ONE hard wall-clock deadline.
 
@@ -701,9 +704,22 @@ def _portfolio_solve(
         return collected, early_cut
 
     best = None
+    loc_start, loc_placed = loc_baseline if loc_baseline else (None, None)
 
     def rank(res: dict) -> tuple:
-        return _rank_key(res, focus)
+        # 05/10 (An Phu kkhg52etp92, bam Cherry lan 2): nghiem bi _location_gate
+        # tra ve lich cu (869 tiet / 7 buoi vi pham dia diem) dung SAU nghiem
+        # qua cong (868 tiet, [0,0,317,18] tot hon lich cu [1,0,317,22]) -> cong
+        # vut ca luot, nguoi dung thay "bam Cherry lich khong doi".
+        fail = 1 if _location_gate_fails(res, loc_start, loc_placed) else 0
+        return (fail,) + _rank_key(res, focus)
+
+    def handled(res: dict) -> int:
+        return (
+            int(res.get("placed") or 0)
+            + int(res.get("quality_ejected") or 0)
+            - int(res.get("session_debt") or 0)
+        )
 
     results: list[dict] = []
     used_mp = False
@@ -735,7 +751,10 @@ def _portfolio_solve(
             for res in collected:
                 info0 = (res or {}).get("info") or {}
                 if info0.get("warm_quality") is not None:
-                    origin_baseline = {k: info0.get(k) for k in ("warm_quality", "warm_placed", "warm_grid")}
+                    origin_baseline = {
+                        k: info0.get(k)
+                        for k in ("warm_quality", "warm_placed", "warm_grid", "warm_location_debt")
+                    }
                     break
             if collected and not early_cut and remaining() > 12:
                 stage_best = None
@@ -743,13 +762,31 @@ def _portfolio_solve(
                     if res and (stage_best is None or rank(res) < rank(stage_best)):
                         stage_best = res
                 warm2 = _grid_to_warm_cells(stage_best.get("grid")) if stage_best else None
-                if warm_cells and stage_best and not (stage_best.get("info") or {}).get("warm_start"):
-                    # vong 1 khong giu duoc lich nguoi dung (warm bi tu choi, xep lai
-                    # tu dau) -> vong 2 di tu CHINH lich nguoi dung: Constructor giu
+                if warm_cells:
+                    # Lich nguoi dung dang co: vong 2 di tu ket qua giu lich do
+                    # (warm_start) tot nhat; vong 1 khong giu duoc (warm bi tu choi,
+                    # xep lai tu dau) -> di tu CHINH lich nguoi dung: Constructor giu
                     # luoi da sua do + lap tiet (_salvage_warm). Do truong 61 lop:
-                    # 2067 tiet so voi 2044 khi di tu luoi xep lai. Ket qua cuoi van
-                    # chon tot nhat giua ca hai vong (rank).
-                    warm2 = list(warm_cells)
+                    # 2067 tiet so voi 2044 khi di tu luoi xep lai.
+                    warm_res = [r for r in collected if r and (r.get("info") or {}).get("warm_start")]
+                    fresh_res = [r for r in collected if r and not (r.get("info") or {}).get("warm_start")]
+                    warm_best = min(warm_res, key=rank) if warm_res else None
+                    base_handled = handled(warm_best) if warm_best else len(warm_cells)
+                    fresh_ok = [r for r in fresh_res if not _location_gate_fails(r, loc_start, loc_placed)]
+                    fresh_best = min(fresh_ok, key=lambda r: (-handled(r), rank(r))) if fresh_ok else None
+                    if fresh_best is not None and handled(fresh_best) > base_handled:
+                        # 05/10: luoi xay moi XEP DUOC NHIEU TIET HON lich dang co
+                        # (va qua cong dia diem) la diem xuat phat vong 2. Luoi xay
+                        # moi con no dia diem thi KHONG: do An Phu bam lan 2 (lich
+                        # 868/869 hop le, worker xay moi 869 + 7 buoi vi pham + 39
+                        # buoi 1 tiet): vong 2 tu luoi do go no xong chi con 855
+                        # tiet; tu lich 868 thi pha lap tiet (CP-SAT toan truong vi
+                        # pham dia diem phat mem + go no) dat 869/869 hop le.
+                        warm2 = _grid_to_warm_cells(fresh_best.get("grid"))
+                    elif warm_best is not None:
+                        warm2 = _grid_to_warm_cells(warm_best.get("grid"))
+                    else:
+                        warm2 = list(warm_cells)
                 if warm2:
                     report_heartbeat("1 tien trinh x %d luong CP-SAT tu luoi tot nhat" % cpsat_threads)
                     sink2 = (lambda seed_i, evt: (live.on_event(seed_i, evt), live.maybe_emit())) if progress is not None else None
@@ -757,6 +794,9 @@ def _portfolio_solve(
                         _worker_solve((
                             problem, base_seed + 7777, max(8.0, remaining() - 2.0), warm2,
                             None, warm_missing_ok, sink2, cpsat_threads, True,
+                            # xep tu dau: luoi vong 1 con no luat la luoi trung gian
+                            # -> vong 2 duoc go tiet de tra luoi HOP LE
+                            not warm_cells,
                         ))
                     )
                     rounds_done = 2
@@ -782,7 +822,8 @@ def _portfolio_solve(
                         info0 = (res or {}).get("info") or {}
                         if info0.get("warm_quality") is not None:
                             origin_baseline = {
-                                k: info0.get(k) for k in ("warm_quality", "warm_placed", "warm_grid")
+                                k: info0.get(k)
+                                for k in ("warm_quality", "warm_placed", "warm_grid", "warm_location_debt")
                             }
                             break
                 if early_cut:
@@ -816,6 +857,18 @@ def _portfolio_solve(
         )
     live.maybe_emit(force=True)
 
+    if loc_start is None:
+        # 05/10: XEP TU DAU (khong co lich nguoi dung lam moc dia diem): moc = nghiem
+        # it no dia diem nhat. Do An Phu lan dau bam: chon 869 tiet / 10 buoi vi
+        # pham thay vi 866 hop le -> bang rang buoc bao loi hang loat. Van giu quy
+        # tac cua cong: them N tiet duoc doi toi da N buoi vi pham.
+        valid = [r for r in results if r]
+        if valid:
+            ref_debt = min(int(r.get("location_debt") or 0) for r in valid)
+            ref_pool = [r for r in valid if int(r.get("location_debt") or 0) == ref_debt]
+            ref = min(ref_pool, key=lambda r: (-(int(r.get("placed") or 0) + int(r.get("quality_ejected") or 0)), _rank_key(r, focus)))
+            loc_start = ref_debt
+            loc_placed = int(ref.get("placed") or 0) + int(ref.get("quality_ejected") or 0)
     for res in results:
         if res and (best is None or rank(res) < rank(best)):
             best = res
@@ -927,6 +980,21 @@ def _warm_location_baseline(problem: Problem, warm_cells) -> tuple[int | None, l
         return None, None
 
 
+def _location_gate_fails(res: dict | None, start: int | None, start_placed: int | None) -> bool:
+    """True khi _location_gate se tra lich xuat phat thay cho nghiem nay: no
+    dia diem TANG so voi moc va so buoi tang them vuot so tiet xep them."""
+
+    if not res or not isinstance(start, int):
+        return False
+    now = res.get("location_debt")
+    if not isinstance(now, int) or now <= start:
+        return False
+    if not isinstance(start_placed, int):
+        return True
+    gained = int(res.get("placed") or 0) + int(res.get("quality_ejected") or 0) - start_placed
+    return not (gained > 0 and (now - start) <= gained)
+
+
 def _location_gate(
     best: dict,
     baseline_debt: int | None = None,
@@ -948,11 +1016,13 @@ def _location_gate(
     """
 
     info = best.get("info") or {}
-    # Moc uu tien lay tu Constructor; thieu thi dung moc tinh o entry.py tu
-    # chinh warm_cells (luon co khi nguoi dung dang co lich).
-    start = info.get("warm_location_debt")
+    # 05/10: moc uu tien tinh o entry.py tu CHINH lich nguoi dung — vong 2 cua
+    # Cherry co the di tu luoi xep moi (con no dia diem) nen info.warm_* cua nghiem
+    # la moc trung gian, khong phai lich nguoi dung. Khong co lich thi dung moc
+    # cua Constructor.
+    start = baseline_debt
     if not isinstance(start, int):
-        start = baseline_debt
+        start = info.get("warm_location_debt")
     now = best.get("location_debt")
     if not isinstance(start, int) or not isinstance(now, int):
         return None
@@ -1427,8 +1497,13 @@ def solve_from_ui_data_v3(
             not any(getattr(problem, "teacher_loc_rules", None) or [])
             or (
                 os.environ.get("TKB_CPSAT_LOC", "1") != "0"
-                and bool(warm_cells)
-                and len(warm_cells) >= expected
+                and (
+                    (bool(warm_cells) and len(warm_cells) >= expected)
+                    # truong vua (<= TKB_CPSAT_WHOLE_MAX_CLASSES lop) xep TU DAU:
+                    # vong 2 co lan giai CP-SAT toan truong (construct fill phase)
+                    or problem.num_classes() <= _to_int(os.environ.get("TKB_CPSAT_WHOLE_MAX_CLASSES", ""), 40)
+                    or os.environ.get("TKB_CHERRY_LOC_FRESH", "0") == "1"
+                )
             )
         )
     ):
@@ -1451,6 +1526,7 @@ def solve_from_ui_data_v3(
         warm_cells=warm_cells, focus=quality_focus, warm_all=warm_all,
         warm_missing_ok=warm_missing_ok, rounds=rounds, cpsat_threads=cpsat_threads,
         cherry_cpsat=cherry_cpsat,
+        loc_baseline=(origin_loc_debt, origin_loc_placed),
     )
 
     # ---- 26/08: cong DIA DIEM chay TRUOC va cho MOI luot (Cherry + mot muc
