@@ -22,6 +22,11 @@
   [0,0,664,118] → [0,0,646,114]. RB (node + `tkb-constraints.js`) mọi kết quả 0 vi phạm, 0 nợ địa điểm.
 - **Test**: engine v3 + hợp đồng kết quả 334 pass (+4 `test_fixed_cell_limit_override.py`); sửa fixture
   `test_engine_v3_edge_pair_rule` (chọn seed có ≥ 2 vi phạm). KHÔNG ghi dữ liệu trường (phiên khác đang ghi Tân Nhựt).
+- **Deploy** commit `1bad953`: `deploy-and-pin.ps1` → digest `7bf7ddd86e82ec244d006e2e116fc388475834e65962f94adb4ab294266c346d`, VPS ghim,
+  /health 3 vùng khớp. Bước nâng max 2 lại hết giờ ở CẢ 3 vùng (revision max 2 Ready nhưng 0 % traffic) → `update-traffic` sang
+  `00180-wzh` (Jakarta) / `00037-bqb` (Singapore) / `00037-xpr` (Đài Loan), cùng image `3c84cdfd…`. Nghiệm thu Cloud Run thật trên
+  kho mới nhất (`_updatedAt=1791224196468`, settings như bridge, 180 s): `ok=true hard_ok=true` 1746/1746 [0,0,640,70] → [0,0,619,59].
+  Bẫy lặp lại 2 lần: `deploy-and-pin.ps1` chờ revision max 2 chỉ 2 phút — cần nới thời gian chờ trong script.
 
 ## 2026-10-06 `0adf9782364` THCS Tân Nhựt — TỐI ƯU THÊM 1 LƯỢT, ĐÃ GHI 1746/1746
 
