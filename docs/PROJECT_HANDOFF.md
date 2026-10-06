@@ -24,9 +24,9 @@
   Đã thử thêm gỡ ghim trong `restoreScheduleData` rồi BỎ: `maybeFinishLocalUnassignedRepairSolve` (▶/v3) khôi phục SAU khi ghim, TRƯỚC khi gửi.
 - **Test**: mới `e2e_tests/planner_ghep_pin_survives_apply_node.test.js` 3/3 (bản cũ 0/3); `planner_ghep_teacher_clash` thêm stub
   `isShownFixed`. `run_tests.py`: "mới hỏng" chỉ 7 test CRLF đã biết — cả 7 đạt trên bản bỏ CR có phần sửa.
-- **Deploy**: lệnh `deploy.py files` của Claude bị classifier chặn ("Production Deploy"). Bản deploy = live + phần này (phanmon.js live
-  = working tree; bridge live cũ hơn HEAD) nằm ở worktree scratchpad phiên 9a96eae5 (`wt/`); chủ dự án chạy
-  `python <wt>/deploy.py files deploy joint-pin-flag-20261006 --no-restart web/pages/phanmon.js web/pages/tkb-rust-bridge.js`.
+- **Deploy**: ĐÃ DEPLOY 07/10 (chủ dự án chạy `deploy.py files deploy joint-pin-flag-20261006 --no-restart` từ worktree = live + phần này;
+  lệnh của Claude bị classifier chặn "Production Deploy"), backup `/root/tkb-backups/joint-pin-flag-20261006`; live sha256
+  phanmon.js `9646bf21f0d0fbbe`, tkb-rust-bridge.js `2a794b98a150ec6a` (= bản dựng). Bridge live vẫn CŨ hơn HEAD (f3679c3 soft-stop chưa deploy).
 - **Còn mở**: (1) Cherry vẫn không tự dời tiết ghép (engine coi là ô cố định dùng chung, `core.py shared_fixed`); muốn Cherry chọn ô
   phải mô hình tiết ghép trong engine v3 (biến chung cho các lớp trong CP-SAT + bridge nhận ô ghép đã dời). (2) Ô ghép đã lỡ thành cố
   định thật (không `jointPin`) trong kho phải "Bỏ cố định" tay — không tự gỡ được vì người dùng cũng tự cố định tiết ghép (Chào cờ (ghép)).
