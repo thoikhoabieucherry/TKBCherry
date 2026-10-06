@@ -34,6 +34,11 @@
   3 vùng: revision max 2 cùng image ĐÃ Ready (`00182-bgv` / `00039-swd` / `00039-nxg`) nhưng 0 % traffic — `update-traffic` của
   Claude cũng bị chặn → chủ dự án chạy 3 lệnh `update-traffic`; Claude kiểm lại: cả 3 vùng 100 % trên revision max 2, cùng image
   `sha256:f79feabe…88c6c7`, Ready. Chưa nghiệm thu `/solve` trên Cloud Run; chủ dự án đang bấm Cherry trên An Phú để thử.
+- **HỒI QUY sau deploy (13:53)**: chủ dự án bấm Cherry An Phú → vòng 2 trả 167 tiết, khoá "nợ lên đầu" chọn nó, bridge từ chối, lịch 859 giữ nguyên.
+  Tái hiện từ file `.cherry` chủ dự án xuất (Desktop\QLSS_HDSD, chép vào scratchpad): nhánh warm `_repair_partial_warm` sửa xong 863 tiết, `_load_state`
+  từ chối (thiếu tiết → tiết đôi chưa đủ) → rơi xuống xây lại từ đầu với ~1 s. Sửa (`b7e28ef` + commit này): khoá `(rule_debt − handled)`, giữ lưới đã sửa
+  (`warm_final_lenient`), không xây lại khi < 20 s. Kho An Phú 180 s ×2: 866/869, 0 nợ luật GV/địa điểm. Trần dữ liệu 867: NV.Vy chỉ rảnh sáng T2 + chiều T3,
+  sáng T2 của 6A2 kín ô cố định. 343 test v3 đạt. CHƯA DEPLOY bản sửa (chờ chủ dự án chạy deploy-and-pin).
 
 ## 2026-10-06 NÚT CHERRY: Ô CỐ ĐỊNH VƯỢT GIỚI HẠN KHÔNG CÒN LÀM BỎ KẾT QUẢ + 2 VÒNG CHO TRƯỜNG 2 CƠ SỞ XẾP TỪ ĐẦU
 

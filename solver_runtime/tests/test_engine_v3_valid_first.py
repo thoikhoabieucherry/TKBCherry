@@ -106,5 +106,57 @@ class WholePassKeepsPartialTests(unittest.TestCase):
         self.assertEqual(sum(1 for row in soft.grid for v in row if v >= 0), 9)
 
 
+class WarmRepairNeverRebuildsTests(unittest.TestCase):
+    """06/10 (An Phu that): vong 2 sua + toi uu xong 863 tiet, `_load_state` tu choi
+    (lesson_blocks_min_2 vi con thieu tiet) -> truoc day roi xuong XAY LAI TU DAU voi
+    ~1 s -> 283 / 167 tiet."""
+
+    def _setup(self):
+        from unittest import mock
+
+        P = _problem(["A"], ["T0"], ["M0"], [(0, 0, (0,), 4, 2)], {0: [0]})
+        warm = [(0, 0, 0), (0, 1, 0), (0, 2, 0)]
+        con = Constructor(P, seed=1)
+        patches = [
+            mock.patch.object(Constructor, "_load_state", lambda self, soft: None),
+            mock.patch.object(Constructor, "_run_quality", lambda self, *a, **k: None),
+            mock.patch.object(Constructor, "_maybe_fill_warm", lambda self, *a, **k: None),
+            mock.patch.object(Constructor, "_finish_quality", lambda self, *a, **k: None),
+            mock.patch.object(Constructor, "structural_floors", lambda self: ([], [], [])),
+            mock.patch.object(Constructor, "_phase1", side_effect=AssertionError("rebuilt from scratch")),
+        ]
+        return P, warm, con, patches
+
+    def test_repaired_grid_is_kept_when_final_check_rejects_it(self) -> None:
+        from contextlib import ExitStack
+        from unittest import mock
+
+        P, warm, con, patches = self._setup()
+        with ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            stack.enter_context(mock.patch.object(
+                Constructor, "_repair_partial_warm", lambda self, soft, expected, deadline: _soft(P, warm)
+            ))
+            state, info = con.solve(time.monotonic() + 60.0, warm_cells=warm)
+        self.assertEqual(state.placed, 3)
+        self.assertIn("warm_final_lenient", info)
+
+    def test_no_fresh_rebuild_when_time_is_nearly_out(self) -> None:
+        from contextlib import ExitStack
+        from unittest import mock
+
+        P, warm, con, patches = self._setup()
+        with ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            stack.enter_context(mock.patch.object(
+                Constructor, "_repair_partial_warm", lambda self, soft, expected, deadline: None
+            ))
+            state, info = con.solve(time.monotonic() + 10.0, warm_cells=warm)
+        self.assertEqual(state.placed, 3)
+        self.assertEqual(info.get("warm_fresh_skipped"), "no_time")
+
+
 if __name__ == "__main__":
     unittest.main()

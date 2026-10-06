@@ -963,10 +963,16 @@ class Constructor:
                 state = self._load_state(repaired)
                 if state is not None:
                     return state, info
-                if info.get("warm_salvaged"):
+                if info.get("warm_salvaged") or (self.quality_focus is None and repaired.overlap == 0):
                     # 01/10: luoi giu lai con THIEU tiet (mon thieu chua du cap
                     # doi -> full_recheck tu choi) — tra ban do dang nhu duong
                     # xay moi, khong roi ve xay lai tu dau khi da het gio.
+                    # 06/10: ca luoi _repair_partial_warm sua duoc (khong qua
+                    # salvage). An Phu that: vong 2 Cherry sua + toi uu xong 863
+                    # tiet [5,0,317,25], _load_state tu choi (lesson_blocks_min_2 vi
+                    # con thieu tiet) -> roi xuong xay lai tu dau voi ~1 s -> 283 /
+                    # 167 tiet.
+                    info["warm_final_lenient"] = self._last_load_fail or "hard_check"
                     return self._lenient_state(repaired.grid), info
             if self.quality_focus is not None:
                 fallback = self._focus_fallback_state(soft, info)
@@ -984,6 +990,11 @@ class Constructor:
                     or info.get("warm_reject_reason")
                     or "warm_rejected"
                 )
+                return self._lenient_state(warm_grid0), info
+            if time.monotonic() > deadline - 20.0:
+                # 06/10: nut Cherry khong bao gio XAY LAI TU DAU khi gan het gio
+                # (vai giay chi lat duoc vai tram tiet) — tra lich nguoi dung.
+                info["warm_fresh_skipped"] = "no_time"
                 return self._lenient_state(warm_grid0), info
         best_soft: SoftSchedule | None = None
         best_pen = 1 << 30
