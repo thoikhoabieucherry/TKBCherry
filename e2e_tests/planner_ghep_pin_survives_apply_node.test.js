@@ -79,3 +79,44 @@ test("lưới không vẽ khoá cho ô ghim tạm tiết chung", () => {
   assert.ok(PHANMON.includes("sched[thu].sang[ti].push({classId, classDisplay, mon, room, fixed: isShownFixed(v)});"));
   assert.ok(PHANMON.includes("sched[thu].chieu[ti].push({classId, classDisplay, mon, room, fixed: isShownFixed(v)});"));
 });
+
+// 07/10: engine được dời tiết chung (tkb_engine_v3/joint.py) — bridge gửi khoá ghim tạm và khi áp
+// thì NHẬN vị trí engine trả về cho các khoá engine báo trong solver.engine_v3.joint_free.keys.
+test("áp kết quả: khoá engine báo joint_free thì bỏ khoá ô ghim tạm, ô người dùng cố định vẫn khoá", () => {
+  const ctx = {
+    fixedLessonCanonicalSubjectKey(s){ return String(s || "").trim().toLowerCase(); },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(["fixedLessonLockSubject", "jointFreeKeysFromPayload", "releaseJointFreeLocks", "fixedLessonLockSubjectKey"]
+    .map(n => sliceFn(BRIDGE, n, "  ")).join("\n"), ctx, {filename: "bridge-slice.js"});
+  const out = vm.runInContext(`(() => {
+    const mk = () => new Map([
+      ["L2|thu2|sang|2", {subject: "KNS (ghép)", key: "kns (ghép)", jointPin: true}],
+      ["L2|thu2|sang|0", {subject: "HĐTN 1-SHTT", key: "hđtn 1-shtt", jointPin: false}],
+      ["L9|thu5|sang|0", {subject: "KNS (ghép)", key: "kns (ghép)", jointPin: false}]
+    ]);
+    const a = mk();
+    const released = releaseJointFreeLocks(a, {solver: {engine_v3: {joint_free: {keys: ["KNS (ghép)"], moved: []}}}});
+    const b = mk();
+    const none = releaseJointFreeLocks(b, {solver: {engine_v3: {}}});
+    return {released, left: Array.from(a.keys()), none, leftB: b.size};
+  })()`, ctx);
+  assert.equal(out.released, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(out.left)), ["L2|thu2|sang|0", "L9|thu5|sang|0"]);
+  assert.equal(out.none, 0);
+  assert.equal(out.leftB, 3);
+  const a = BRIDGE.indexOf("  async function applyPayload(payload, solveSettings){");
+  const body = BRIDGE.slice(a, a + 6000);
+  assert.ok(body.includes("releaseJointFreeLocks(fixedLessonLocks, payload)"), "applyPayload phải bỏ khoá ghim tạm theo joint_free");
+});
+
+test("lượt Cherry gửi khoá ghim tạm (cherry_joint_movable) và planner có tkbJointPinnedKeys", () => {
+  assert.ok(BRIDGE.includes("effectiveSettings.cherry_joint_movable = jointKeys.slice();"));
+  const start = PHANMON.indexOf("function tkbJointPinnedKeys(){");
+  assert.ok(start >= 0);
+  const end = PHANMON.indexOf("\n}\n", start);
+  const ctx = {__TKB_JOINT_PINNED: [{key: "KNS (ghép)"}, {key: "KNS (ghép)"}, {key: " TANN (ghép) "}, {key: ""}]};
+  vm.createContext(ctx);
+  vm.runInContext(PHANMON.slice(start, end + 3), ctx);
+  assert.deepEqual(Array.from(vm.runInContext("tkbJointPinnedKeys()", ctx)), ["KNS (ghép)", "TANN (ghép)"]);
+});

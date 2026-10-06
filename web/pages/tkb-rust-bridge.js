@@ -13395,6 +13395,33 @@
     return cell;
   }
 
+  // 07/10: engine bao da tha tu do tiet chung (solver.engine_v3.joint_free.keys) ->
+  // o ghim TAM cua cac khoa do khong con la khoa khi ap: nhan vi tri engine tra ve.
+  function jointFreeKeysFromPayload(payload){
+    const out = new Set();
+    try{
+      const keys = payload?.solver?.engine_v3?.joint_free?.keys;
+      (Array.isArray(keys) ? keys : []).forEach(k => {
+        const key = fixedLessonCanonicalSubjectKey(String(k || "").trim());
+        if(key) out.add(key);
+      });
+    }catch(_){ }
+    return out;
+  }
+
+  function releaseJointFreeLocks(locks, payload){
+    const keys = jointFreeKeysFromPayload(payload);
+    let released = 0;
+    if(!keys.size || !locks) return released;
+    Array.from(locks.entries()).forEach(([key, lock]) => {
+      if(lock && typeof lock === "object" && lock.jointPin === true && keys.has(fixedLessonLockSubjectKey(lock))){
+        locks.delete(key);
+        released += 1;
+      }
+    });
+    return released;
+  }
+
   function fixedLessonLockSubjectKey(lock, fallback){
     if(lock && typeof lock === "object" && lock.key) return String(lock.key || "");
     return fixedLessonCanonicalSubjectKey(fixedLessonLockSubject(lock, fallback));
@@ -15535,6 +15562,8 @@
     if(!data.tkb || typeof data.tkb !== "object") data.tkb = {};
     const offLocks = collectOffLocks(data);
     const fixedLessonLocks = collectFixedLessonLocks(data);
+    const jointFreeReleased = releaseJointFreeLocks(fixedLessonLocks, payload);
+    if(jointFreeReleased) traceSolveStep("solve:apply-joint-free", {released: jointFreeReleased});
     const resolveSubject = makeUiSubjectResolver(data);
     const teacherOffFiltered = filterTeacherFixedOffPayloadLessons(data, payload, resolveSubject);
     const teacherOffRejected = applyTeacherFixedOffPayloadFilter(payload, teacherOffFiltered);
@@ -16527,6 +16556,15 @@
           // giao dien 378 tiet roi vao o co dinh cua mon khac, bi bo, lich
           // "2193/2193" chi con 2003 va bi tu choi (tai hien 22/08 11:31 UTC).
           effectiveSettings.preserve_fixed_lessons_only = true;
+          // 07/10 (chu du an An Phu: "cu bam Cherry la 2 tiet KNS/STEM lai co dinh"):
+          // tiet chung nhieu lop chi duoc GHIM TAM de engine xep cung o -> bao engine
+          // cac khoa ghim tam (khong gom o nguoi dung tu co dinh) de no duoc doi ca
+          // nhom lop sang o tot hon (tkb_engine_v3/joint.py).
+          try{
+            const jointKeys = typeof window.tkbJointPinnedKeys === "function" ? window.tkbJointPinnedKeys() : [];
+            if(Array.isArray(jointKeys) && jointKeys.length) effectiveSettings.cherry_joint_movable = jointKeys.slice();
+            else delete effectiveSettings.cherry_joint_movable;
+          }catch(_){ delete effectiveSettings.cherry_joint_movable; }
           // Tat bo giai chay trong trinh duyet (no khong biet engine nay)...
           effectiveSettings.ui_agent_preference_enabled = false;
           effectiveSettings.ui_browser_agent_required = false;

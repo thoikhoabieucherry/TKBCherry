@@ -1452,6 +1452,74 @@ def solve_from_ui_data_v3(
     if warm_cells:
         _warm_diag = dict(_warm_diag or {}, cells=len(warm_cells))
 
+    # 07/10 (chu du an An Phu: "fix ko co dinh nhu vay nua, cu bam cherry la 2
+    # tiet do lai co dinh"): tiet chung nhieu lop trinh duyet ghim TAM
+    # (settings.cherry_joint_movable) duoc tha tu do — CP-SAT ca truong buoc ca
+    # nhom cung o; nhan thi viet lai lich dau vao (tiet chung o cho moi) va chay
+    # luot Cherry binh thuong tren do voi thoi gian con lai. Xem joint.py.
+    from .joint import joint_free_enabled, movable_joint_keys, relocate_joint_lessons
+
+    joint_free_info: dict[str, Any] | None = None
+    _joint_keys = movable_joint_keys(settings)
+    if _joint_keys:
+        joint_free_info = {"keys": _joint_keys, "moved": [], "status": "skipped"}
+        if settings.get("_joint_prepass_done"):
+            joint_free_info["status"] = "inner"
+        elif not joint_free_enabled(settings):
+            joint_free_info["reason"] = "disabled"
+        elif _focus_requested:
+            joint_free_info["reason"] = "focus_lane"
+        elif not (preserve_fixed and fixed_lessons and warm_cells):
+            joint_free_info["reason"] = "no_pins_or_schedule"
+        elif not _cpsat_lane_enabled(settings, problem):
+            joint_free_info["reason"] = "cpsat_lane_disabled"
+        else:
+            left = total_budget - (time.monotonic() - started) - reserve
+            jf_limit = min(
+                float(_to_int(os.environ.get("TKB_JOINT_FREE_LIMIT", ""), 0) or 45),
+                left * 0.3,
+            )
+            if jf_limit >= 5.0:
+                raw_threads = settings.get("cpsat_threads")
+                if raw_threads is None or str(raw_threads).strip() == "":
+                    raw_threads = os.environ.get("TKB_CPSAT_THREADS", "")
+                jf_threads = max(1, min(16, _to_int(raw_threads, 0) or max(1, min(8, os.cpu_count() or 1))))
+                report("engine_v3:joint", "Dang tim cho tot hon cho tiet chung nhieu lop (%s)" % ", ".join(_joint_keys))
+                try:
+                    new_ui, joint_free_info = relocate_joint_lessons(
+                        ui_data=ui_data,
+                        settings=settings,
+                        problem_ctx=problem_ctx,
+                        original_ctx=original_ctx,
+                        rules=rules,
+                        fixed_lessons=fixed_lessons,
+                        problem=problem,
+                        warm_cells=warm_cells,
+                        time_limit=jf_limit,
+                        threads=jf_threads,
+                        seed=_to_int(settings.get("random_seed"), 0),
+                    )
+                except Exception as exc:  # noqa: BLE001 - buoc phu, khong duoc lam hong luot
+                    new_ui = None
+                    joint_free_info = {"keys": _joint_keys, "moved": [], "status": "error", "error": repr(exc)[:300]}
+                if new_ui is not None:
+                    remaining = max(10, int(total_budget - (time.monotonic() - started)))
+                    inner_settings = dict(settings)
+                    inner_settings["_joint_prepass_done"] = True
+                    inner_settings["overall_time_limit_seconds"] = remaining
+                    if _to_int(inner_settings.get("optimization_time_limit_seconds"), 0) > 0:
+                        inner_settings["optimization_time_limit_seconds"] = remaining
+                    if _to_int(inner_settings.get("backend_deadline_ms"), 0) > 0:
+                        inner_settings["backend_deadline_ms"] = remaining * 1000
+                    inner = solve_from_ui_data_v3(new_ui, inner_settings, progress=progress)
+                    try:
+                        inner.setdefault("solver", {}).setdefault("engine_v3", {})["joint_free"] = joint_free_info
+                    except Exception:
+                        pass
+                    return inner
+            else:
+                joint_free_info["reason"] = "no_time"
+
     workers = _num_workers(settings)
     seed = _to_int(settings.get("random_seed"), 0) or (int(time.time()) & 0xFFFF)
     solve_budget = max(6.0, total_budget - (time.monotonic() - started) - reserve)
@@ -1842,6 +1910,13 @@ def solve_from_ui_data_v3(
             payload.setdefault("solver", {}).setdefault("engine_v3", {})["shared_fixed_teacher_slots"] = len(
                 shared_slots
             )
+        except Exception:
+            pass
+    if joint_free_info is not None:
+        # 07/10: bridge doc khoa nay de NHAN vi tri tiet chung engine tra ve
+        # (khong ep ve o ghim tam) — co ca khi khong doi cho.
+        try:
+            payload.setdefault("solver", {}).setdefault("engine_v3", {})["joint_free"] = joint_free_info
         except Exception:
             pass
     if fixed_warnings:

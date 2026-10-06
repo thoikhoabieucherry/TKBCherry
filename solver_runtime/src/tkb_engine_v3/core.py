@@ -421,6 +421,11 @@ class Problem:
     # ket qua (THCS An Phu kkhg52etp92). SoftSchedule/State/CP-SAT nap san cac
     # o nay nhu cho chiem cua GV.
     teacher_fixed_busy: list[dict[int, int]] = field(default_factory=list)
+    # 07/10: tiet chung nhieu lop THA TU DO (compile_problem(joint_groups=...)):
+    # moi nhom = (phan cong lop dau mang GV, phan cong cac lop con lai KHONG GV)
+    # — cac phan cong trong nhom phai nam cung o (cpsat_lns them rang buoc dong
+    # bo). Rong o bai toan thuong: tiet chung la o co dinh dung chung nhu cu.
+    joint_sync: list[tuple[int, ...]] = field(default_factory=list)
 
     def num_classes(self) -> int:
         return len(self.class_names)
@@ -452,8 +457,14 @@ def compile_problem(
     fixed_lessons: list[Any],
     *,
     shared_teacher_slots: Iterable[tuple[str, int, str, int]] | None = None,
+    joint_groups: Iterable[tuple[str, Iterable[str]]] | None = None,
 ) -> Problem:
     """Compile UiDataContext + TimetableRuleSet (+ locked lessons) into arrays.
+
+    ``joint_groups`` (07/10): (mon, [lop...]) cua tiet chung nhieu lop KHONG nam
+    trong ``fixed_lessons`` (khong ghim) -> phan cong cua lop dau giu GV, cac lop
+    con lai thanh phan cong khong GV (nhan GV giu nguyen de xuat), va
+    ``Problem.joint_sync`` ghi nhom de CP-SAT buoc cung o.
 
     ``shared_teacher_slots``: (teacher, day, session, period) cells that the
     user locked for ONE teacher in several classes at the same time (school-
@@ -620,6 +631,7 @@ def compile_problem(
     a_rule: list[SubjectRule | None] = []
     a_teacher_label: list[str] = []
     a_teachers: list[tuple[int, ...]] = []
+    a_teacher_raw: list[str] = []
     group_rule_keys: dict[tuple[int, str], SubjectRule] = {}
     # (class, subject, teacher) -> synthetic assignment index for shared cells
     shared_assignment: dict[tuple[str, str, str], int] = {}
@@ -703,6 +715,7 @@ def compile_problem(
         a_allowed.append(allowed)
         a_rule.append(merged_rule)
         a_teacher_label.append(str(a.teacher or "") if len(member_ids) > 1 else "")
+        a_teacher_raw.append(str(a.teacher or ""))
 
     # phan cong tong hop -> GV thanh vien (de nap o ban co dinh, xem teacher_fixed_busy)
     shared_members: dict[int, tuple[int, ...]] = {}
@@ -722,6 +735,50 @@ def compile_problem(
         a_allowed.append(allowed)
         a_rule.append(merged_rule)
         a_teacher_label.append(str(shared_key[2] or "") or (teacher_names[ti] if ti >= 0 else ""))
+
+    # --- tiet chung nhieu lop tha tu do (07/10) ---------------------------
+    # Chu du an (An Phu kkhg52etp92): "bam Cherry la 2 tiet KNS/STEM lai co
+    # dinh" — app ghim tam tiet chung vao o dau tien ca nhom lop cung trong roi
+    # engine khong duoc doi. Nhom tha tu do: lop DAU giu GV (chiem cho GV, thong
+    # ke buoi/trong, luat GV, dia diem tinh MOT lan), cac lop con lai la phan
+    # cong khong GV (nhan GV giu nguyen de xuat) — CP-SAT buoc ca nhom cung o.
+    joint_sync: list[tuple[int, ...]] = []
+    if joint_groups:
+        real_count = len(a_class) - len(pending_shared)
+        ai_of_cs: dict[tuple[int, int], list[int]] = {}
+        for ai in range(real_count):
+            ai_of_cs.setdefault((a_class[ai], a_subject[ai]), []).append(ai)
+        in_group: set[int] = set()
+        for subject, class_list in joint_groups:
+            si = subject_idx.get(str(subject))
+            if si is None:
+                continue
+            members: list[int] = []
+            for cname in class_list:
+                ci = class_idx.get(str(cname))
+                lst = ai_of_cs.get((ci, si)) if ci is not None else None
+                if not lst or len(lst) != 1 or lst[0] in in_group or lst[0] in members:
+                    continue
+                members.append(lst[0])
+            if len(members) < 2 or len({a_periods[ai] for ai in members}) != 1 or a_periods[members[0]] <= 0:
+                continue
+            # o hop le chung cua ca nhom (moi lop + moi GV cua lop dau)
+            common = bytearray(a_allowed[members[0]])
+            for ai in members[1:]:
+                other = a_allowed[ai]
+                for slot in range(NUM_SLOTS):
+                    if not other[slot]:
+                        common[slot] = 0
+            if not any(common):
+                continue
+            for ai in members:
+                a_allowed[ai] = bytearray(common)
+            for ai in members[1:]:
+                a_teacher_label[ai] = a_teacher_label[ai] or a_teacher_raw[ai]
+                a_teacher[ai] = -1
+                a_teachers[ai] = ()
+            in_group.update(members)
+            joint_sync.append(tuple(members))
 
     # --- teacher rules ----------------------------------------------------
     teacher_rules: list[TeacherRule | None] = []
@@ -914,6 +971,7 @@ def compile_problem(
         teacher_loc_rules=teacher_loc_rules,
         fixed_mask=fixed_mask,
         teacher_fixed_busy=teacher_fixed_busy,
+        joint_sync=joint_sync,
     )
 
 

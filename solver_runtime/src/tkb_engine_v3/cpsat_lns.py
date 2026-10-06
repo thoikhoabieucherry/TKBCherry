@@ -700,6 +700,36 @@ def _build_and_solve(
             return None, info
         m.AddExactlyOne(v for v, _av in lst)
 
+    # -- 07/10: tiet chung nhieu lop tha tu do — ca nhom cung o ----------------
+    # P.joint_sync (core.compile_problem(joint_groups=)): phan cong lop dau (mang
+    # GV) va cac lop con lai (khong GV) phai phu dung cung tap o. Lop ngoai cum /
+    # o hang so -> hang so 0/1, nen nhom van dong bo khi chi mot phan la bien.
+    n_sync = 0
+    for group in getattr(P, "joint_sync", None) or ():
+        members = [int(ai) for ai in group if 0 <= int(ai) < A]
+        if len(members) < 2:
+            continue
+
+        def _cov(ai: int, x: int) -> Any:
+            c = P.a_class[ai]
+            if (c, x) in free_cover:
+                return sum(v for v, av in free_cover[(c, x)] if av == ai)
+            return 1 if grid[c][x] == ai else 0
+
+        lead = members[0]
+        for x in range(NUM_SLOTS):
+            e0 = _cov(lead, x)
+            for ai in members[1:]:
+                e1 = _cov(ai, x)
+                if isinstance(e0, int) and isinstance(e1, int):
+                    if e0 != e1:
+                        info["error"] = "joint group %s out of sync at slot %d" % (tuple(members), x)
+                        return None, info
+                    continue
+                m.Add(e0 == e1)
+                n_sync += 1
+    info["joint_sync"] = n_sync
+
     # -- bieu thuc muc mon (lop, mon, buoi) ---------------------------------
     def pres(c: int, si: int, s: int) -> Any:
         if const_periods.get((c, si, s)):

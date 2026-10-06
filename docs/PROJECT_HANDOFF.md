@@ -8,6 +8,24 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-07 CHERRY TỰ DỜI TIẾT CHUNG NHIỀU LỚP (An Phú KNS/STEM "bay về T2 sáng")
+
+- **Chủ dự án** (`kkhg52etp92`): «tôi bấm nút cherry tự nhiên tiết kns và stem bay vào tiết 2 3 của lớp 6a2 sáng thứ 2», «nó ở ô nào
+  cũng về ô đó luôn» → «tôi muốn bạn fix ko cố định như vậy nữa khi xếp». File `.cherry` chủ dự án xuất 07/10 00:35 (Desktop\vanban).
+- **Gốc**: `tkbJointPinForSolve` ghim TẠM tiết chung; dòng thiếu tiết (kéo ra Chưa phân / đặt tiết khác vào) lấy ô chung ĐẦU TIÊN =
+  đúng lỗ vừa bỏ ra (T2 sáng tiết 3-4) — tái hiện bằng chính hàm của app trên kho (scratchpad `sim/pin_sim*.js`); engine coi là ô cố định
+  dùng chung ⇒ không bao giờ dời. Lượt 00:31: 866/869, cô Vy thiếu 3 tiết (2 bị cắt sức chứa TRƯỚC khi giải vì sáng T2 6A2 kín ô cố định).
+- **Sửa**: bridge gửi `settings.cherry_joint_movable` (`tkbJointPinnedKeys`), engine `joint.py` `relocate_joint_lessons` (CP-SAT toàn trường,
+  nhóm buộc cùng ô qua `Problem.joint_sync` / `cpsat_lns`, giữ mọi tiết + tối thiểu tiết thiếu, cắt sức chứa lại khi bỏ ghim) rồi chạy lại lượt
+  với lịch viết lại; payload `solver.engine_v3.joint_free` ⇒ `applyPayload` `releaseJointFreeLocks` nhận vị trí mới. Chi tiết
+  `docs/CHERRY_ENGINE.md` mục 07/10.
+- **Đo** (kho 00:35, ghim như production, 180 s): cũ 866/869 `hard_ok=false` [1,0,316,12]; mới **869/869 hợp lệ** [0,0,315,14], KNS → T3 sáng
+  t1, STEM → T3 sáng t2. Luật "ghép nhiều lớp học sau 2 tiết, cuối buổi" (01/10) không có trong Yêu cầu ⇒ engine không biết.
+- **Test**: `test_engine_v3_joint_free.py` 9/9; engine v3 + hợp đồng 357 pass / 2 skip; `planner_ghep_pin_survives_apply_node` 5/5;
+  `run_tests.py` "mới hỏng" chỉ 7 test CRLF đã biết (đạt hết trên bản bỏ CR).
+- **Deploy**: CHƯA — web (`phanmon.js` = live + `tkbJointPinnedKeys`, bridge = live + phần này) và Cloud Run (engine) đều phải do chủ dự án
+  chạy (classifier chặn "Production Deploy"). Thứ tự nào cũng an toàn: engine cũ không trả `joint_free` ⇒ bridge giữ khoá như trước.
+
 ## 2026-10-06 (tối) TIẾT GHÉP NHIỀU LỚP BỊ "KHOÁ" SAU LƯỢT CHERRY (An Phú KNS/STEM)
 
 - **Chủ dự án** (`kkhg52etp92`): «bấm nút cherry lại có tiết kns và stem cố định là sao» → «tôi kéo rồi nhưng bấm Cherry nó lại khóa 2 tiết đó».

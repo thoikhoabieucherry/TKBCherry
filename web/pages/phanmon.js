@@ -1765,6 +1765,15 @@ function tkbJointSiblingBlockers(classId, mon, thu, buoi, ti){
 // ---- Ghim tạm trước khi giải ----
 let __TKB_JOINT_PINNED = [];
 function tkbJointPinnedCount(){ return __TKB_JOINT_PINNED.length; }
+// 07/10: khoá các dòng ghép đang ghim TẠM (không gồm ô người dùng tự cố định) — bridge gửi cho
+// engine (settings.cherry_joint_movable) để Cherry được dời cả nhóm lớp sang ô tốt hơn
+// (An Phú: "cứ bấm Cherry là 2 tiết KNS/STEM lại cố định").
+function tkbJointPinnedKeys(){
+  const out = [];
+  __TKB_JOINT_PINNED.forEach(p => { const k = String(p?.key || "").trim(); if(k && !out.includes(k)) out.push(k); });
+  return out;
+}
+try{ window.tkbJointPinnedKeys = tkbJointPinnedKeys; }catch(_){ }
 
 // GV của dòng có tiết ở lớp NGOÀI nhóm tại ô này?
 function tkbGhepTeachersBusyOutside(row, memberIds, thu, buoi, ti){
