@@ -8,6 +8,29 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-06 (tối) TIẾT GHÉP NHIỀU LỚP BỊ "KHOÁ" SAU LƯỢT CHERRY (An Phú KNS/STEM)
+
+- **Chủ dự án** (`kkhg52etp92`): «bấm nút cherry lại có tiết kns và stem cố định là sao» → «tôi kéo rồi nhưng bấm Cherry nó lại khóa 2 tiết đó».
+- **Cơ chế** (`phanmon.js tkbJointPinForSolve`): trước mỗi lượt (Cherry/▶/Tối ưu) mọi dòng Dạy ghép ≥ 2 lớp được ghim tạm
+  `{mon, fixed:true, jointPin:true}` cùng ô ở mọi lớp; dòng đã có tiết thì GIỮ đúng chỗ (Cherry không bao giờ dời tiết ghép), dòng
+  thiếu tiết thì lấy ô chung ĐẦU TIÊN (Thứ 2, sáng, tiết nhỏ trước). An Phú: sau lượt xoá lịch + Cherry 05/10, KNS T3 sáng t4 → T2 sáng t3,
+  STEM T6 sáng t4 → T2 sáng t4, TANN 6A1-4 T4 chiều t3 → T2 chiều t1 (`scratch/anphu2r/live_0510b.json` → `live_0510c.json`, cả 19 ô
+  `jointPin`); sáng T2 6A2 kín 4 ô cố định = nút thắt NV.Vy (trần 867/869 ở mục chiều nay).
+- **Lỗi**: `applyPayload` dựng lại ô cố định thành `{mon, fixed:true}` trần → mất `jointPin`. Đường gỡ ghim nào lỡ (tải lại trang, áp
+  kết quả sau khi sổ ghim đã mất) thì lượt ghim sau coi ô đó là ô NGƯỜI DÙNG khoá (`wasFixed`) → khoá vĩnh viễn, `tkbJointClearStalePins`
+  (quét cờ `jointPin`) cũng không nhận ra.
+- **Sửa**: `tkb-rust-bridge.js` `collectFixedLessonLocks` ghi `jointPin`, `fixedLessonLockCell` giữ cờ khi áp (vòng lặp áp +
+  `applyFixedLessonLocks`); `phanmon.js` `isShownFixed` — lưới lớp, vẽ lại tại chỗ và TKB GV không vẽ khoá cho ô ghim tạm.
+  Đã thử thêm gỡ ghim trong `restoreScheduleData` rồi BỎ: `maybeFinishLocalUnassignedRepairSolve` (▶/v3) khôi phục SAU khi ghim, TRƯỚC khi gửi.
+- **Test**: mới `e2e_tests/planner_ghep_pin_survives_apply_node.test.js` 3/3 (bản cũ 0/3); `planner_ghep_teacher_clash` thêm stub
+  `isShownFixed`. `run_tests.py`: "mới hỏng" chỉ 7 test CRLF đã biết — cả 7 đạt trên bản bỏ CR có phần sửa.
+- **Deploy**: lệnh `deploy.py files` của Claude bị classifier chặn ("Production Deploy"). Bản deploy = live + phần này (phanmon.js live
+  = working tree; bridge live cũ hơn HEAD) nằm ở worktree scratchpad phiên 9a96eae5 (`wt/`); chủ dự án chạy
+  `python <wt>/deploy.py files deploy joint-pin-flag-20261006 --no-restart web/pages/phanmon.js web/pages/tkb-rust-bridge.js`.
+- **Còn mở**: (1) Cherry vẫn không tự dời tiết ghép (engine coi là ô cố định dùng chung, `core.py shared_fixed`); muốn Cherry chọn ô
+  phải mô hình tiết ghép trong engine v3 (biến chung cho các lớp trong CP-SAT + bridge nhận ô ghép đã dời). (2) Ô ghép đã lỡ thành cố
+  định thật (không `jointPin`) trong kho phải "Bỏ cố định" tay — không tự gỡ được vì người dùng cũng tự cố định tiết ghép (Chào cờ (ghép)).
+
 ## 2026-10-06 (chiều) KIỂM TRA THUẬT TOÁN NÚT CHERRY: LỊCH HỢP LỆ THẮNG LỊCH NHIỀU TIẾT CÒN NỢ LUẬT + GIỮ PHẦN LẤP ĐƯỢC
 
 - **Chủ dự án** (An Phú `kkhg52etp92`): «bấm xếp nó lại ko xếp đủ tiết và tối ưu, có phải thuật toán có vấn đề ko?» →

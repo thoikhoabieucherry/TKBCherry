@@ -13369,7 +13369,8 @@
             const subject = cellSubjectText(value);
             locks.set(fixedLessonLockKey(classId, thu, buoi, ti), {
               subject,
-              key: fixedLessonCanonicalSubjectKey(subject)
+              key: fixedLessonCanonicalSubjectKey(subject),
+              jointPin: value.jointPin === true
             });
           });
         });
@@ -13383,6 +13384,15 @@
       return String(lock.subject || fallback || "").trim();
     }
     return String(fallback || lock || "").trim();
+  }
+
+  // 06/10: o ghim TAM tiet chung nhieu lop (phanmon.js tkbJointPinForSolve) phai giu co
+  // jointPin khi ap ket qua — truoc day ghi lai thanh {mon, fixed} tran nen cac duong go ghim
+  // (quet co jointPin) khong nhan ra, tiet ghep KNS/STEM o lai "co dinh" sau luot Cherry (An Phu).
+  function fixedLessonLockCell(lock, fallback){
+    const cell = {mon: fixedLessonLockSubject(lock, fallback), fixed: true};
+    if(lock && typeof lock === "object" && lock.jointPin === true) cell.jointPin = true;
+    return cell;
   }
 
   function fixedLessonLockSubjectKey(lock, fallback){
@@ -13427,7 +13437,7 @@
       if(!nextTkb[classId]) nextTkb[classId] = makeEmptyTKB();
       const arr = nextTkb[classId]?.[thu]?.[buoi];
       if(arr && ti >= 0 && ti < arr.length){
-        arr[ti] = {mon: subject, fixed: true};
+        arr[ti] = fixedLessonLockCell(lock, subject);
       }
     });
   }
@@ -15617,7 +15627,7 @@
       if(nextTkb[classId]?.[d]?.[b] && idx >= 0 && idx < nextTkb[classId][d][b].length){
         const keepFixed = fixedLessonLockMatches(fixedLock, subject);
         if(keepFixed) consumeFixedSubject(classId, subject);
-        nextTkb[classId][d][b][idx] = keepFixed ? {mon: fixedLessonLockSubject(fixedLock, subject), fixed: true} : subject;
+        nextTkb[classId][d][b][idx] = keepFixed ? fixedLessonLockCell(fixedLock, subject) : subject;
       }
       await yieldApplySlice(false);
     }

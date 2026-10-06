@@ -1431,6 +1431,9 @@ function cellMon(v){
   return "";
 }
 function isFixed(v){ return (v && typeof v === "object" && v.fixed); }
+// 06/10: ô ghim TẠM tiết chung nhiều lớp ({fixed, jointPin}) chỉ có nghĩa trong lượt giải, không phải
+// ô người dùng cố định -> không vẽ khoá (An Phú: "bấm Cherry nó lại khóa 2 tiết KNS/STEM").
+function isShownFixed(v){ return !!isFixed(v) && !v.jointPin; }
 // Ô dạng cũ "Môn - GV" (chuỗi). 29/08: CHỈ khi cả chuỗi không phải môn đã phân công của lớp —
 // nhãn/khoá môn dạy ghép như "AI - 1" là một môn, "1" không phải giáo viên.
 function cellLegacyTeacher(v, classCanon){
@@ -2915,7 +2918,7 @@ function buildTeacherSchedule(gvCode){
         }
         if(gv && teacherValueHas(gv, code)){
           const room = getRoomForClassMon(classCanon, mon);
-          sched[thu].sang[ti].push({classId, classDisplay, mon, room, fixed: !!isFixed(v)});
+          sched[thu].sang[ti].push({classId, classDisplay, mon, room, fixed: isShownFixed(v)});
         }
       }
       // chiều
@@ -2933,7 +2936,7 @@ function buildTeacherSchedule(gvCode){
         }
         if(gv && teacherValueHas(gv, code)){
           const room = getRoomForClassMon(classCanon, mon);
-          sched[thu].chieu[ti].push({classId, classDisplay, mon, room, fixed: !!isFixed(v)});
+          sched[thu].chieu[ti].push({classId, classDisplay, mon, room, fixed: isShownFixed(v)});
         }
       }
     }
@@ -4064,7 +4067,7 @@ function renderTKB(id, forceFullRebuild = false){
             `</div>`;
         }
 
-        const newClass = `${off?'tkb-off':''} ${fixed?'tkb-fixed':''}`.trim();
+        const newClass = `${off?'tkb-off':''} ${isShownFixed(v)?'tkb-fixed':''}`.trim();
         if(td.className !== newClass) td.className = newClass;
         if(td.getAttribute("data-mon") !== mon) td.setAttribute("data-mon", mon);
         if(td.getAttribute("data-teacher") !== teacher) td.setAttribute("data-teacher", teacher);
@@ -4142,7 +4145,7 @@ function cellHTML(v, thu, buoi, ti, lopCanon){
   }
 
   // note: data-mon để highlight conflict
-  return `<td class="${off?'tkb-off':''} ${fixed?'tkb-fixed':''}"
+  return `<td class="${off?'tkb-off':''} ${isShownFixed(v)?'tkb-fixed':''}"
     data-thu="${thu}" data-buoi="${buoi}" data-ti="${ti}" data-mon="${escapeHtml(mon)}" data-teacher="${escapeHtml(teacher)}"
     title="${escapeHtml(title)}"
     draggable="${off?'false':'true'}">${body}</td>`;
