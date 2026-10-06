@@ -987,11 +987,15 @@ def _rank_key(res: dict, focus: str | None) -> tuple:
             -int(res["placed"]),
             obj[2:],
         )
-    # 06/10: luoi con NO LUAT GV (so buoi "dung bang", so ngay, o bat buoc...) la
-    # payload ok=false — trinh duyet khong ap. Luoi hop le (tiet thieu vao Chua
-    # phan kem ly do) luon dung truoc; giua cac luoi con no thi it no hon truoc.
+    # 06/10: luoi con NO LUAT GV (so buoi "dung bang", so ngay, o bat buoc...) bi
+    # tru di so no: luoi hop le thang khi KHONG bot nhieu tiet hon so no cua luoi
+    # kia (truong thu: 869 hop le thang 871 no 41). Ban dau dat no LEN DAU tuyet doi
+    # -> An Phu that: vong CP-SAT sup con 167 tiet hop le thang 867 tiet no 19,
+    # trinh duyet tu choi (giu lich 859). Cung tinh than _location_gate_fails:
+    # them N tiet duoc doi toi da N don vi no.
     rule_debt = int(res.get("rule_debt") or 0)
     return (
+        rule_debt - handled,
         rule_debt,
         -handled,
         session_debt,

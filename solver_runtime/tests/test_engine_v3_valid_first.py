@@ -70,6 +70,13 @@ class ValidFirstRankTests(unittest.TestCase):
         less_debt = dict(invalid, rule_debt=5, placed=860)
         self.assertLess(_rank_key(less_debt, None), _rank_key(invalid, None))
 
+    def test_valid_grid_cannot_win_by_dropping_hundreds_of_lessons(self) -> None:
+        # An Phu that 06/10: vong CP-SAT sup con 167 tiet hop le; luoi 867 tiet no
+        # 19 phai thang (truoc day trinh duyet tu choi 167 vi lich hien tai 859).
+        collapsed = {"placed": 167, "objective": [34, 0, 93, 3, 82], "rule_debt": 0}
+        nearly = {"placed": 867, "objective": [39, 1, 333, 37, 214], "rule_debt": 19}
+        self.assertLess(_rank_key(nearly, None), _rank_key(collapsed, None))
+
     def test_equal_debt_still_prefers_more_lessons(self) -> None:
         a = {"placed": 871, "objective": [3, 0, 270, 1, 193], "rule_debt": 0}
         b = {"placed": 869, "objective": [0, 0, 260, 0, 190], "rule_debt": 0}
