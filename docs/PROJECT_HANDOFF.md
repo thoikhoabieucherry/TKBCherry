@@ -8,6 +8,27 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-06 (chiều) KIỂM TRA THUẬT TOÁN NÚT CHERRY: LỊCH HỢP LỆ THẮNG LỊCH NHIỀU TIẾT CÒN NỢ LUẬT + GIỮ PHẦN LẤP ĐƯỢC
+
+- **Chủ dự án** (An Phú `kkhg52etp92`): «bấm xếp nó lại ko xếp đủ tiết và tối ưu, có phải thuật toán có vấn đề ko?» →
+  «tôi cần bạn kiểm tra lại thuật toán».
+- **Không đọc được dữ liệu trường**: SSH đọc kho production và cả bản sao cũ trong `scratch/anphu2r/` bị classifier chặn
+  ("Production Reads") → CHƯA tái hiện trên kho thật của An Phú; mọi kết luận dưới đây từ trường thử.
+- **Cách kiểm**: trường thử CÓ ĐÁP ÁN (`scratch/synthetic_bench/`, gitignore; README trong đó): 28 lớp 2 cơ sở, 871 tiết,
+  10 GV dạy 2 cơ sở có "1 địa điểm/buổi" (MT/Nhạc 28 lớp), họp tổ, tiết ghép cố định; Cherry xếp bản lỏng ra đáp án 871/871 rồi
+  ghi `maxSessions = minSessions` = số buổi đáp án cho mọi GV (luật "đúng bằng" như An Phú). Lưới trống, 180 s, 6 tiến trình + 6 luồng.
+- **Lỗi 1 (gốc của "không xếp đủ / không tối ưu")**: vòng 1 heuristic trả lưới 871/871 còn nợ luật số buổi; `_rank_key` xếp số tiết
+  lên đầu nên lưới đó thắng lưới HỢP LỆ 869/868/797 của vòng CP-SAT → payload `ok=false` (41–45 `teacher.maxSessions`), trình duyệt
+  không áp được. Bản cũ gặp ở 4/8 lượt. Sửa `entry.py`: `_grid_rule_debt` → `result["rule_debt"]`, xếp hạng nút Cherry đặt `rule_debt`
+  trước số tiết, `_result_hits_floor` đòi 0 nợ, lưới xây mới còn nợ không làm điểm xuất phát vòng 2.
+- **Lỗi 2**: `_cpsat_fill_phase` vứt cả lần giải toàn trường (758 → 864) khi gỡ địa điểm không hết → về 758. Sửa `construct.py`: gỡ không
+  hết thì `_shed_rule_debt` + GIỮ phần còn lại; gỡ vùng ≤ max(8 s, 30 %); ngưỡng thêm lần toàn trường 25 → 15 s; `entry.py` trường có
+  `minSessions` để vòng 1 dùng 25 % ngân sách (cũ 40 %). Toàn trường chỉ chạy khi ≤ 40 lớp (Tân Nhựt, Tân An Hội không đổi).
+- **Đo**: cũ 4/8 lượt lưới vi phạm, 4/8 đủ 871; bản cuối 4/4 đủ 871/871 hợp lệ [3,0,270,1]/[3,0,271,0] (= đáp án); bấm lần 2 trên lịch
+  đủ [3,0,270,4] → [3,0,270,1], trên lịch 869 → 871 trong 10 s. Chi tiết: `docs/CHERRY_ENGINE.md` mục 06/10 chiều.
+- **Test**: engine v3 + hợp đồng kết quả 340 pass (+6 `test_engine_v3_valid_first.py`; `test_engine_v3_location_rules` sửa chỉ số khoá
+  xếp hạng). `run_tests.py`: 133 pass / 27 fail / 160; "mới hỏng" chỉ 7 test JS CRLF đã biết, `test_cloud_run_deploy_assets` fail sẵn.
+
 ## 2026-10-06 NÚT CHERRY: Ô CỐ ĐỊNH VƯỢT GIỚI HẠN KHÔNG CÒN LÀM BỎ KẾT QUẢ + 2 VÒNG CHO TRƯỜNG 2 CƠ SỞ XẾP TỪ ĐẦU
 
 - **Chủ dự án** (Tân Nhựt `0adf9782364`): «bấm Cherry thấy có tối ưu nhưng trả kết quả về lại không nhận, trả lại như cũ; xếp lại

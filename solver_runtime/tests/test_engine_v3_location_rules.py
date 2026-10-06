@@ -440,7 +440,11 @@ class RankKeyTests(unittest.TestCase):
         b = self._res(1100, 0)
         self.assertLess(_rank_key(a, None), _rank_key(b, None))
         # loc_debt = 0 o moi nghiem -> phan tu do khong bao gio pha the
-        self.assertEqual(_rank_key(a, None)[1], 0)
+        # (06/10: khoa = (rule_debt, -handled, session_debt, loc_debt, ...))
+        key = _rank_key(a, None)
+        self.assertEqual(key[0], 0)
+        self.assertEqual(key[1], -1110)
+        self.assertEqual(key[3], 0)
 
 
 class LocationGateTests(unittest.TestCase):

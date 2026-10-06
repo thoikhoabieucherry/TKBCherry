@@ -6002,12 +6002,26 @@ class Constructor:
                         # moi. Lap theo cum sau do khong xep duoc tiet nay (An Phu:
                         # 69 lan deu bo 1 tiet) -> phan lon thoi gian con lai.
                         left_r = deadline - time.monotonic()
-                        rep_end = deadline - 1.0 if left_r < 50.0 else time.monotonic() + left_r * 0.6
+                        # 06/10: go theo vung 2-4 buoi thuong chi nhan 1/60-100 lan khi
+                        # con nhieu buoi no -> gioi han ~30% thoi gian con lai; phan con
+                        # lai danh cho go tiet gay no + giai lai toan truong (ben duoi).
+                        rep_end = time.monotonic() + min(left_r - 1.0, max(8.0, left_r * 0.3))
                         self._cpsat_repair_loc_debt(soft, rep_end, stats, target=pen0, max_tries=200)
                         after = sum(1 for row in soft.grid for v in row if v >= 0)
                         pen1 = soft.penalty()
                         ok = soft.overlap == 0 and after > before and pen1 <= pen0
                         stats["whole_loc_repair"] = [int(ok), int(pen1)]
+                        if not ok and soft.overlap == 0 and pen1 > pen0:
+                            # 06/10: go KHONG HET no dia diem -> chi go dung cac tiet
+                            # gay no (tiet le co so trong buoi vi pham), GIU phan con
+                            # lai. Truoc day vut ca lan giai: do truong 2 co so 28 lop
+                            # (so buoi "dung bang") 758 -> 864 con 8 buoi vi pham bi
+                            # tra ve 758, het gio lap cum chi lai duoc 864 - thieu 7.
+                            shed = self._shed_rule_debt(soft)
+                            after = sum(1 for row in soft.grid for v in row if v >= 0)
+                            pen1 = soft.penalty()
+                            ok = soft.overlap == 0 and after > before and pen1 <= pen0
+                            stats["whole_loc_shed"] = [int(shed), int(after), int(pen1)]
                     if ok:
                         stats["whole_accept"] = 1
                         stats["gained"] += after - before
@@ -6022,7 +6036,9 @@ class Constructor:
                 # do An Phu xep tu dau: lan 1 nhan 851 -> 863 (con thieu), cum lop
                 # sau do chi them 3 tiet.
                 done = ok and placed0 >= sum(P.a_periods) and soft.penalty() == 0
-                if done or not loc_soft or stats["whole_pass"] >= 8 or deadline - time.monotonic() < 25.0:
+                # 06/10: nguong 25 -> 15 s: sau khi go tiet gay no, them mot lan giai
+                # toan truong (giu moi tiet) lap du tiet hon hang chuc vong cum lop.
+                if done or not loc_soft or stats["whole_pass"] >= 8 or deadline - time.monotonic() < 15.0:
                     break
         while not self._stop_requested():
             now = time.monotonic()

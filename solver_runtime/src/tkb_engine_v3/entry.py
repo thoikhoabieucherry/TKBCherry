@@ -485,7 +485,38 @@ def _worker_solve(args) -> dict:
         result["session_debt"] = _session_debt_lessons(problem, state)
     except Exception:
         result["session_debt"] = 0
+    try:
+        result["rule_debt"] = _grid_rule_debt(problem, result["grid"])
+    except Exception:
+        result["rule_debt"] = 0
     return result
+
+
+def _grid_rule_debt(problem, grid) -> int:
+    """06/10 (chu du an: "bam xep ko xep du tiet va toi uu, thuat toan co van de
+    ko?"): no luat CUNG cua GV trong luoi ket qua — trung gio + luat GV (so buoi /
+    so ngay toi da, so buoi toi thieu "dung bang", o bat buoc day, gioi han tiet),
+    KHONG tinh luat dia diem (da co location_debt + cong rieng).
+
+    Worker xay moi het gio ma chua go het no tra luoi DU TIET con no (duong
+    `_load_state` khi penalty > 0 khong kiem luat). Truoc day rank() chi so tiet
+    nen luoi 871/871 vi pham 41 luat "so buoi" thang luoi 869 HOP LE cua vong
+    CP-SAT -> payload ok=false, trinh duyet khong ap duoc gi."""
+
+    from .construct import SoftSchedule
+
+    soft = SoftSchedule(problem)
+    for c, row in enumerate(grid or []):
+        for slot, ai in enumerate(row):
+            if ai >= 0:
+                soft.set_cell(c, slot, int(ai))
+    debt = int(soft.overlap)
+    for t in range(problem.num_teachers()):
+        if problem.teacher_rules[t] is None and not problem.teacher_must[t]:
+            continue
+        soft.refresh_rule_pen(t)
+        debt += max(0, int(soft.rule_pen[t]) - int(soft.location_debt(t)))
+    return debt
 
 
 def _session_debt_lessons(problem, state) -> int:
@@ -512,6 +543,8 @@ def _result_hits_floor(res: dict | None, expected: int) -> bool:
     if not res:
         return False
     try:
+        if int(res.get("rule_debt") or 0) > 0:
+            return False
         placed_or_handled = int(res.get("placed", 0)) + int(res.get("quality_ejected") or 0)
         if placed_or_handled < int(expected or 0):
             return False
@@ -743,7 +776,14 @@ def _portfolio_solve(
         # (truong 61 lop: 1825 tiet sau heuristic so voi 2050 cua best-of-6).
         two_stage = True
         try:
-            stage1_deadline = time.monotonic() + remaining() * 0.4
+            share1 = 0.4
+            if any(r is not None and r.min_sessions > 0 for r in problem.teacher_rules):
+                # 06/10: luat so buoi TOI THIEU ("dung bang") — heuristic vong 1 khong
+                # go duoc (luoi vong 1 deu no 55-90 don vi, vong 2 go ~110 tiet roi
+                # lap lai) -> nhuong thoi gian cho vong CP-SAT. Do truong thu 2 co
+                # so 28 lop 180 s: 0,4 -> 5/7 luot du 871/871; 0,25 -> 4/4.
+                share1 = 0.25
+            stage1_deadline = time.monotonic() + remaining() * share1
             collected, early_cut = run_pool(round_warm, stage1_deadline, base_seed, pool_cherry=False, pool_threads=0)
             rounds_done = 1
             results.extend(collected)
@@ -772,7 +812,10 @@ def _portfolio_solve(
                     fresh_res = [r for r in collected if r and not (r.get("info") or {}).get("warm_start")]
                     warm_best = min(warm_res, key=rank) if warm_res else None
                     base_handled = handled(warm_best) if warm_best else len(warm_cells)
-                    fresh_ok = [r for r in fresh_res if not _location_gate_fails(r, loc_start, loc_placed)]
+                    fresh_ok = [
+                        r for r in fresh_res
+                        if not _location_gate_fails(r, loc_start, loc_placed) and not int(r.get("rule_debt") or 0)
+                    ]
                     fresh_best = min(fresh_ok, key=lambda r: (-handled(r), rank(r))) if fresh_ok else None
                     if fresh_best is not None and handled(fresh_best) > base_handled:
                         # 05/10: luoi xay moi XEP DUOC NHIEU TIET HON lich dang co
@@ -884,6 +927,7 @@ def _portfolio_solve(
             "placed": r["placed"],
             "objective": list(r["objective"]),
             "quality_ejected": int(r.get("quality_ejected") or 0),
+            "rule_debt": int(r.get("rule_debt") or 0),
         }
         for r in results
         if r
@@ -943,7 +987,12 @@ def _rank_key(res: dict, focus: str | None) -> tuple:
             -int(res["placed"]),
             obj[2:],
         )
+    # 06/10: luoi con NO LUAT GV (so buoi "dung bang", so ngay, o bat buoc...) la
+    # payload ok=false — trinh duyet khong ap. Luoi hop le (tiet thieu vao Chua
+    # phan kem ly do) luon dung truoc; giua cac luoi con no thi it no hon truoc.
+    rule_debt = int(res.get("rule_debt") or 0)
     return (
+        rule_debt,
         -handled,
         session_debt,
         loc_debt,
