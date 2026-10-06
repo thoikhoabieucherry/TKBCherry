@@ -32,7 +32,8 @@
   `tkb-solver:20261006-033419`, digest `683e7603bf6a90013370a1b3ce003a8e35b30dc27ff1030c0a91d71858d405fa`; Jakarta `00424-new`,
   Singapore `00083-six`, Đài Loan `00083-yud`; 3 profile kvstore + 2 drop-in đã ghim, /health 3 vùng khớp. Bước max 2 lại hết giờ ở cả
   3 vùng: revision max 2 cùng image ĐÃ Ready (`00182-bgv` / `00039-swd` / `00039-nxg`) nhưng 0 % traffic — `update-traffic` của
-  Claude cũng bị chặn, chờ chủ dự án chạy (lệnh trong phiên). Chưa nghiệm thu `/solve` trên Cloud Run (tránh chiếm instance max 1).
+  Claude cũng bị chặn → chủ dự án chạy 3 lệnh `update-traffic`; Claude kiểm lại: cả 3 vùng 100 % trên revision max 2, cùng image
+  `sha256:f79feabe…88c6c7`, Ready. Chưa nghiệm thu `/solve` trên Cloud Run; chủ dự án đang bấm Cherry trên An Phú để thử.
 
 ## 2026-10-06 NÚT CHERRY: Ô CỐ ĐỊNH VƯỢT GIỚI HẠN KHÔNG CÒN LÀM BỎ KẾT QUẢ + 2 VÒNG CHO TRƯỜNG 2 CƠ SỞ XẾP TỪ ĐẦU
 
