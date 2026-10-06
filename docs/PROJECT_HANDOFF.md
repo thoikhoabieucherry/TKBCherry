@@ -38,7 +38,9 @@
   Tái hiện từ file `.cherry` chủ dự án xuất (Desktop\QLSS_HDSD, chép vào scratchpad): nhánh warm `_repair_partial_warm` sửa xong 863 tiết, `_load_state`
   từ chối (thiếu tiết → tiết đôi chưa đủ) → rơi xuống xây lại từ đầu với ~1 s. Sửa (`b7e28ef` + commit này): khoá `(rule_debt − handled)`, giữ lưới đã sửa
   (`warm_final_lenient`), không xây lại khi < 20 s. Kho An Phú 180 s ×2: 866/869, 0 nợ luật GV/địa điểm. Trần dữ liệu 867: NV.Vy chỉ rảnh sáng T2 + chiều T3,
-  sáng T2 của 6A2 kín ô cố định. 343 test v3 đạt. CHƯA DEPLOY bản sửa (chờ chủ dự án chạy deploy-and-pin).
+  sáng T2 của 6A2 kín ô cố định. 343 test v3 đạt. ĐÃ DEPLOY (chủ dự án chạy deploy-and-pin 15:04): digest
+  `5de729ee70476f2193142623f344a0e45efa22969d70edd9a9ad59a40166dff1`, Jakarta `00429-xay`, Singapore `00088-kow`, Đài Loan `00088-wir` (max 1),
+  /health 3 vùng khớp; revision max 2 Ready cùng image `00184-5nk` / `00041-hq8` / `00041-nv6` — chờ chủ dự án update-traffic.
 
 ## 2026-10-06 NÚT CHERRY: Ô CỐ ĐỊNH VƯỢT GIỚI HẠN KHÔNG CÒN LÀM BỎ KẾT QUẢ + 2 VÒNG CHO TRƯỜNG 2 CƠ SỞ XẾP TỪ ĐẦU
 
