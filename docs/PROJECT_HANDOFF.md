@@ -28,6 +28,11 @@
   đủ [3,0,270,4] → [3,0,270,1], trên lịch 869 → 871 trong 10 s. Chi tiết: `docs/CHERRY_ENGINE.md` mục 06/10 chiều.
 - **Test**: engine v3 + hợp đồng kết quả 340 pass (+6 `test_engine_v3_valid_first.py`; `test_engine_v3_location_rules` sửa chỉ số khoá
   xếp hạng). `run_tests.py`: 133 pass / 27 fail / 160; "mới hỏng" chỉ 7 test JS CRLF đã biết, `test_cloud_run_deploy_assets` fail sẵn.
+- **Deploy** (chủ dự án chạy `deploy-and-pin.ps1` — lệnh deploy của Claude bị classifier chặn "Production Deploy"): ảnh
+  `tkb-solver:20261006-033419`, digest `683e7603bf6a90013370a1b3ce003a8e35b30dc27ff1030c0a91d71858d405fa`; Jakarta `00424-new`,
+  Singapore `00083-six`, Đài Loan `00083-yud`; 3 profile kvstore + 2 drop-in đã ghim, /health 3 vùng khớp. Bước max 2 lại hết giờ ở cả
+  3 vùng: revision max 2 cùng image ĐÃ Ready (`00182-bgv` / `00039-swd` / `00039-nxg`) nhưng 0 % traffic — `update-traffic` của
+  Claude cũng bị chặn, chờ chủ dự án chạy (lệnh trong phiên). Chưa nghiệm thu `/solve` trên Cloud Run (tránh chiếm instance max 1).
 
 ## 2026-10-06 NÚT CHERRY: Ô CỐ ĐỊNH VƯỢT GIỚI HẠN KHÔNG CÒN LÀM BỎ KẾT QUẢ + 2 VÒNG CHO TRƯỜNG 2 CƠ SỞ XẾP TỪ ĐẦU
 
