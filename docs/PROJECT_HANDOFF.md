@@ -8,6 +8,40 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-07 (tối, 2) WEBSITE CÔNG KHAI ĐỂ XÁC MINH STARTUP (trang chủ + /about /privacy /terms + robots/sitemap) — ĐÃ DEPLOY
+
+- **Chủ dự án**: làm tkbcherry.com đủ thông tin công khai cho chương trình startup (Claude Startups/Anthropic) mà **không đụng**
+  login/đăng ký/API/solver/backend; không bịa khách hàng/doanh thu/nhà đầu tư/pháp nhân; AI chỉ "exploring" (chưa có Claude production).
+- **Trang chủ** `web/index.html`: title/description/canonical/OG/twitter + JSON-LD @graph (Organization: founder Person "Nguyen Hoang An"
+  alternateName "Nguyễn Hoàng Ân", foundingDate 2026, address TP.HCM, contactPoint contact@tkbcherry.com; WebSite; SoftwareApplication).
+  `body.auth-landing`: nav dính (Product/About/Technology/Contact/Đăng nhập), hero bên trái (≥1100px lưới 3fr/2fr), **thẻ đăng nhập/đăng ký/quên
+  mật khẩu byte-identical** bên phải, thấy ngay khi mở (mobile: logo + headline + thẻ trong màn đầu, ẩn subheadline/CTA/chips < 900px);
+  dưới là `#product` (EN + VI), `#about` (dl Founder/Founded/Location/Stage/Website/Contact), `#technology`, `#contact`, footer mới
+  (© 2026, /about /privacy /terms, email, SĐT/Zalo/địa chỉ cũ). CSS riêng `web/public-site.css` (lớp `lp-*`), không sửa `auth.css`/`auth.js`.
+- **Trang mới**: `web/about/index.html`, `web/privacy/index.html`, `web/terms/index.html` (Rust `static_file` phục vụ index.html của thư mục →
+  `/about` và `/about/` đều 200, không redirect). Privacy liệt kê bên thứ ba thật: VPS, Google Cloud Run (Jakarta/Singapore/Đài Loan),
+  Gmail (OTP), Google Workspace (contact@), api.ipify.org (lúc login/đăng ký), Google Fonts, Zalo; không analytics.
+- **robots.txt / sitemap.xml**: Rust chỉ phục vụ html/js/css/ảnh ⇒ **nginx** khối `TKB_PUBLIC_SEO_BEGIN/END` (`location =`) trỏ
+  `/var/www/tkbcherry-public/` — `tools/vps-deploy/install-public-seo-nginx.py --apply` (sao lưu, `nginx -t`, tự khôi phục nếu lỗi, reload;
+  mỗi lần chạy upload lại 2 file từ `web/`). Lần đầu alias vào `/opt/cherry-scheduler/web` bị **403** vì `/opt/cherry-scheduler` là 0700
+  (đúng, chứa DB — KHÔNG nới). Cùng lỗi 403 này đang xảy ra với khối `TKB_AGENT_DOWNLOAD` cũ (`/downloads/TKBCherryAgent-*`, Agent đã ngừng).
+- **Lệch live ↔ repo**: live `index.html` vẫn gọi `shared/auth.js?v=20260823-default-first-v1` (auth.js 30 ngày) còn repo có bản 1 năm chưa
+  deploy (test `auth_activation_grant_one_year_node` cần khoá mới). Đã deploy **biến thể** index.html = repo nhưng giữ khoá live
+  (scratch `deploy_index_variant.py`, sha256 `6b459be7…`, 25165 B); repo giữ khoá mới. Lần deploy auth.js 1 năm phải deploy kèm index.html repo.
+- **Kiểm**: E2E CDP trên backend local (DB mới) cũ vs mới GIỐNG HỆT: đăng ký 200 "Đăng ký thành công…" → chuyển pane login điền sẵn ID;
+  sai mật khẩu "Mật khẩu không đúng."; quên mật khẩu bật/tắt; đăng nhập → `/school-portal`; 0 JS exception. Live (chỉ đọc): thẻ login thấy
+  ngay 390×844 và 1366×768, tab đăng ký/quên mật khẩu bật tắt, tài khoản không tồn tại báo lỗi server. HTTP live: `/`, `/about`, `/about/`,
+  `/privacy`, `/terms`, `/robots.txt`, `/sitemap.xml` = 200 không redirect (HEAD trả 404 vì Rust chỉ route GET). `run_tests.py`: "mới hỏng"
+  chỉ 7 test CRLF đã biết; `test_vps_deploy_packaging` FAIL trong lượt chạy chung nhưng chạy riêng 16/16 pass.
+- **Deploy** (không restart, không đổi backend): `deploy-files.py deploy public-site-20261007 --no-restart` (6 file mới) + biến thể index.html,
+  backup `/root/tkb-backups/public-site-20261007/`; nginx backup `/root/tkb-backups/nginx-public-seo-20261007-200608/` và `-200720/`.
+- **RỦI RO BẢO MẬT phát hiện (CHƯA sửa, chờ chủ dự án duyệt)**: (1) `GET /api/school/store?id=default` trả **toàn bộ kho default không cần
+  đăng nhập** (~362 KB: 135 GV kèm mã HT/PHT, 74 lớp, TKB) — `school_store_get_json` bỏ qua auth khi id = default; theo mã nguồn
+  `school_store_post_json` cũng vậy ⇒ có thể ghi đè ẩn danh (chưa thử). Đề xuất: bắt buộc phiên superadmin cho `default`.
+  (2) `GET /api/sample-data` công khai 43 GV họ tên đầy đủ (`rust_api/fixtures/sample-data.json`) — cần xác nhận là dữ liệu giả.
+  (3) `/pages.zip` (500 KB mã JS front-end, 16/08) tải công khai — nên xoá. (4) `/api/health` lộ đường dẫn máy chủ.
+- **Việc mở**: chủ dự án xác nhận hộp thư contact@tkbcherry.com nhận được thư; duyệt hướng sửa 4 rủi ro trên.
+
 ## 2026-10-07 (tối) `ry7gvvz7vk3` — CÔ QUYÊN TIN CHỈ DẠY THỨ 5 (10 TIẾT), THẦY TAM NGHỈ CHUYÊN MÔN THỨ 4 (ĐÃ GHI)
 
 - **Chủ dự án**: «giữ nguyên các ràng buộc cũ, cô Quyên Tin học chỉ dạy thứ 5 10 tiết; thầy Tam nghỉ chuyên môn Thứ Tư, không nghỉ

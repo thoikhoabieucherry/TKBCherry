@@ -28,6 +28,7 @@ graph TD
    * **Trang quản trị dữ liệu** (Khối / Lớp / Giáo viên / Môn học / Tiết chuẩn / Phân công / Dạy ghép): `web/app.html`, `web/app.js`, `web/modules/admin-nav.js`, `web/modules/day-ghep.js` (28/08/2026 — dòng dạy ghép `DATA.dayGhep` được chiếu vào bảng phân công `pccmMatrix["Lớp|Môn"] = "GV1, GV2"`: dòng một môn dưới đúng môn thật, nhãn hiển thị `ten` chỉ dùng trên TKB qua `tkbMonLabel`; dòng nhiều môn dưới môn ảo mang tên dòng — nên planner/ràng buộc/bộ giải dùng nguyên hợp đồng phân công).
    * **Bộ giải & tối ưu FET chạy trực tiếp trên Browser**: `web/pages/tkb-fet-engine.js`, `web/pages/tkb-fet-worker.js`.
    * **Quản trị hệ thống & Cổng trường học**: `web/super-admin.js`, `web/school-portal.js`, `web/app.js`.
+   * **Website công khai (07/10/2026)**: trang chủ `web/index.html` = khu đăng nhập/đăng ký giữ nguyên + các mục giới thiệu (Product / About / Technology / Contact, JSON-LD Organization) render tĩnh để crawler đọc được khi chưa đăng nhập; trang `/about`, `/privacy`, `/terms` là `web/<trang>/index.html` (handler tĩnh Rust tự phục vụ `index.html` của thư mục — không cần đổi backend); CSS riêng `web/public-site.css` (lớp `lp-*` + `body.auth-landing`, không đụng style đăng nhập). `web/robots.txt` + `web/sitemap.xml` do **nginx** phục vụ (Rust không phục vụ .txt/.xml) — khối `TKB_PUBLIC_SEO` cài bằng `tools/vps-deploy/install-public-seo-nginx.py`.
 
 2. **Backend API Server (Rust)**:
    * **Thư mục**: `rust_api/`
@@ -173,6 +174,9 @@ Ba bộ test cần backend đang chạy (`app_assignment_subject_visibility`, `a
 | `solver_runtime/scripts/cloud_run_service.py` | Service endpoint nhận request solve trên Google Cloud Run |
 | `tools/vps-deploy/update-deploy.py` | Script tự động hóa build và deploy lên VPS một bước |
 | `tools/cloud-run/deploy.ps1` | Script tự động hóa build container và deploy lên Google Cloud Run |
+| `web/index.html` + `web/public-site.css` | Trang chủ công khai (giới thiệu startup + khu đăng nhập giữ nguyên), meta SEO, JSON-LD |
+| `web/about/`, `web/privacy/`, `web/terms/` | Trang công khai `/about`, `/privacy`, `/terms` (HTML tĩnh, không cần đăng nhập) |
+| `web/robots.txt`, `web/sitemap.xml` + `tools/vps-deploy/install-public-seo-nginx.py` | SEO; nginx phục vụ hai file này (khối `TKB_PUBLIC_SEO`) |
 
 ---
 
