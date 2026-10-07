@@ -8,6 +8,20 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-07 (tối) `ry7gvvz7vk3` — CÔ QUYÊN TIN CHỈ DẠY THỨ 5 (10 TIẾT), THẦY TAM NGHỈ CHUYÊN MÔN THỨ 4 (ĐÃ GHI)
+
+- **Chủ dự án**: «giữ nguyên các ràng buộc cũ, cô Quyên Tin học chỉ dạy thứ 5 10 tiết; thầy Tam nghỉ chuyên môn Thứ Tư, không nghỉ
+  thứ 3 và 5 nữa. TKB vừa rồi đẹp rồi» ⇒ sửa ít nhất có thể.
+- **Ràng buộc** (`tkbConstraints`): `fixedOff.teacher["TI.Quyên"]` = nghỉ cả ngày T2/T3/T4/T6/T7 (thêm T6), `maxPeriods.day.thu5` 8 → 10;
+  `fixedOff.teacher["TN.Tam"]` bỏ T3 sáng + T5 sáng, giữ nghỉ cả ngày T4. Mọi ràng buộc khác giữ nguyên.
+- **Lịch**: CP-SAT cục bộ trên lớp 9A10/9A13 (`scratch/ry7gvvz7vk3_20261007/minimum_change.py`, mục tiêu = ít ô đổi nhất) → **11 ô / 3 lớp**
+  (9A9, 9A10, 9A13). Cô Quyên đủ 10 tiết T5 (sáng 9A9–9A13, chiều 6A6–6A10); thầy Tam không có tiết T4 (lịch thầy không đổi).
+  Chất lượng 387 buổi / 0 buổi 1 tiết / 0 trống 2 / 65 trống 1 → **386 / 0 / 0 / 65**; 1370/1370; giữ mọi ô cố định/nghỉ.
+- **Kiểm**: validator Python `hard_ok`, 0 vi phạm Yêu cầu; RB production (`tkb-constraints.live.js` `validateAll(5000)`) = 0 cả trước và sau khi
+  đọc lại bản đã ghi.
+- **Ghi**: SSH KV (`remote.py --apply`, `BEGIN IMMEDIATE` + cổng hash toàn kho), chỉ thay `tkb` + `tkbConstraints`, bỏ kết quả giải cũ;
+  `_updatedAt = 1791373254319`; backup `/root/tkb-recovery/pvh3-ry7gvvz7vk3-20261007-184052/`. Không đổi mã nguồn, không deploy.
+
 ## 2026-10-07 CHERRY TỰ DỜI TIẾT CHUNG NHIỀU LỚP (An Phú KNS/STEM "bay về T2 sáng")
 
 - **Chủ dự án** (`kkhg52etp92`): «tôi bấm nút cherry tự nhiên tiết kns và stem bay vào tiết 2 3 của lớp 6a2 sáng thứ 2», «nó ở ô nào
@@ -248,3 +262,22 @@
   tonggv 1922 (= 1920 + 2), mẫu 1/2 mỗi file 2772 (= 1920 + 142 GV × 6 ô chú thích).
 - **Chưa commit (của phiên khác)**: tính năng vạch màu địa điểm trên web 23/09 (`tkbLocationList`/`tkbLocationCellInfo` trong phanmon.js,
   `phanmon.css`) đã live nhưng vẫn nằm ở working tree.
+
+## 2026-10-01 Sắp xếp: tiết DẠY GHÉP dùng giới hạn tiết/buổi của chính dòng ghép (ĐÃ DEPLOY) · `af5ldw7i8y3` Tân Phú Trung TKB 3 (ĐÃ GHI)
+
+- **Lỗi (chủ dự án)**: dòng ghép "Bản ngữ" giới hạn 2, kéo 2 tiết liền thì báo "giới hạn môn này chỉ có 1".
+  Gốc: `validateDrop`/`showTKBError` lấy giới hạn qua `getMonMeta(mon)` = `CURRENT_MON_META`, mà danh sách này chỉ có môn
+  ĐÃ PHÂN CÔNG GV và khoá theo TÊN HIỂN THỊ; ô TKB lưu khoá dòng ghép (`Bản ngữ (ghép)`) → tiết ghép (đặc biệt dòng không GV)
+  rơi về mặc định `{sotiet:0, gioihan:1}`. RB (`tkb-constraints.js`) không kiểm giới hạn phân công nên không bị.
+- **Sửa (`web/pages/phanmon.js`)**: `tkbGhepMetaForClass(classRef, mon)` (bộ đệm theo ref dayGhep/pccmTiet/pccmGioihan, xoá trong
+  `invalidatePccmNumCaches`) lấy Số tiết / Giới hạn của DÒNG ghép (khoá chiếu `Lớp|ten`, thiếu thì `row.sotiet/row.gioihan`);
+  `getMonMeta` ưu tiên nó cho lớp đang chọn. `setClassSubjectSessionLimit` (nâng giới hạn khi thả) với tiết ghép ghi cả
+  `row.gioihan` + khoá chiếu mọi lớp của dòng (vì `day-ghep.js syncDayGhepProjection` chép `row.gioihan` đè lên).
+  Test mới `e2e_tests/planner_ghep_session_limit_node.test.js` (5/5). `run_tests.py`: 7 "MỚI HỎNG" + 2 test mới FAIL
+  (`planner_teacher_assignment_statistics`, `planner_teacher_slot_presence_forecast`) cho kết quả Y HỆT khi thay bằng bản live chưa sửa.
+  Deploy `python deploy.py files deploy ghep-limit-20261001 --no-restart web/pages/phanmon.js` (backup `/root/tkb-backups/ghep-limit-20261001`),
+  live sha (bỏ CR) `0b89d6ac19b54e81` = working tree; kiểm trên trang TKB 3: `getMonMeta('Bản ngữ (ghép)')` 6A1 = 2/2 (trước 0/1).
+  Bản deploy = live + phần này (live trước đó khớp working tree, kể cả sửa đổi chưa commit của phiên khác). Không commit (cùng lý do mục 30/09).
+- **Dữ liệu TKB 3 Tân Phú Trung** (`scratch/tpt3/`, không vào repo): phân công 05/10 (`pccm510moi.xlsx` sheet tổng) + 2 GV mới, Bản ngữ/KNS/THQT
+  ngoài nhà trường (dòng ghép không GV; app sau đó tự đổi khoá thành `Bản ngữ (ghép)`/`KNS (ghép)`/`THQT`), cô Hòa T5→T4, giữ 14 ô thầy Ân.
+  CP-SAT với khung buổi trái là biến; ghi 01/10 03:42: 651 buổi / 14 buổi 1 tiết / 86 trống, RB 0.
