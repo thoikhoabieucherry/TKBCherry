@@ -8,6 +8,53 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-08 KIỂM TRA CHERRY / TỐI ƯU AN PHÚ `kkhg52etp92`: SEED CANONICAL VƯỢT INT32 LÀM HỎNG CP-SAT TIẾT GHÉP
+
+- **Chủ dự án**: trang Sắp xếp báo không xếp / tối ưu được. Đọc kho bằng SSH SQLite `mode=ro`
+  (`scratch/cherry_check_20261008/before.json`, không vào git), `_updatedAt=1791424910050`, 28 lớp / 58 dòng GV.
+- **Live hiện tại**: cả bridge + planner ĐÃ có `cherry_joint_movable` / `tkbJointPinnedKeys` (khác trạng thái chưa deploy ghi 07/10).
+  Kết quả lưu 08/10 02:01:40 UTC, revision `tkb-solver-00434-kup`, digest `d351e288…`, đủ **869/869**, `hard_ok=true`,
+  chất lượng [1,0,315,27]; chạy validator JS trên kho hiện tại = **0 vi phạm**. Không có browser surface trong phiên này,
+  nên kiểm tra bằng bản JS production tải từ VPS + engine chạy trên bản sao; chưa bấm UI thật.
+- **Lỗi xác định**: `solver.engine_v3.joint_free.cpsat.error` ghi `TypeError` khi gán seed `825714465373582943` vào
+  `SatParameters.random_seed` (int32). Backend `server_request_with_canonical_seed` thay seed bằng hash job (u64);
+  `joint.py` chuyển nguyên số này vào `cpsat_lns`; các test cũ chỉ dùng seed nhỏ nên không thấy lỗi.
+  Pha tiết ghép thất bại trước `Solve`, còn pha Cherry sau đó vẫn có thể chạy và xếp đủ — không quy mọi lỗi tối ưu cho seed.
+- **Sửa**: chuẩn hoá tại ranh giới CP-SAT (`int(seed) & 0x7FFFFFFF`), giữ nguyên seed int32 không âm; không đổi seed của
+  portfolio heuristic / job. Test mới LNS dùng seed production, âm int64 và int32 tối đa; test end-to-end tiết ghép cũng dùng seed production.
+  Trước sửa test mới lỗi 2/3 seed; sau sửa đạt. Suite tiết ghép **9/9 pass**.
+- **Đo trên bản sao trường**: ghim bằng chính khối planner live; Cherry 90 s → 83,8 s, **869/869 hợp lệ**, [1,0,315,27] →
+  **[0,0,315,20]**. CP-SAT tiết ghép `OPTIMAL` (không còn TypeError), giữ vị trí vì không tốt hơn; không tự ghi lịch thử vào trường.
+- **Menu tối ưu trên bản sao** (60 s/mục): cả 4 mục HTTP-style 200 / 869 tiết / `hard_ok=true`; 1 tiết/buổi 1→1,
+  trống 2 0→0, buổi 315→315 (giữ lịch, không phải lỗi giải), trống 1 **27→20**. Áp lưới thử vào bản sao rồi chạy
+  đúng validator JS live: **0 vi phạm ở cả 5 kết quả**, giữ mọi ô cố định/nghỉ. Trong sandbox, portfolio nhiều tiến trình
+  rơi về một tiến trình ở mục singletons; đây là đo ngắn, không phải chứng minh tối ưu toàn cục.
+- **Vì sao tối ưu buổi khó giảm**: 47/58 dòng GV có `minSessions=maxSessions` (5–5/6–6…), 7 GV khác đã đạt min.
+  Tổng min của 54 GV = 292; 4 GV không đặt min đóng góp 23 buổi: KHTN.Lên 27 tiết / 7 buổi (khung 4 tiết ⇒ đã đạt sàn),
+  LSĐL.Bích 16 tiết / 5 buổi, MT.Thi 28 tiết / 8 buổi (16+12 ở 2 cơ sở), TANN 7 tiết chung / 3 buổi (ghim giữ vị trí trong focus).
+  CP-SAT toàn trường target <315, 90 s / 6 luồng = `UNKNOWN` (9.966 biến lựa chọn, không đóng băng GV), không phải chứng minh
+  vô nghiệm. Không được kết luận 315 là sàn tuyệt đối chỉ từ lượt heuristic không giảm. Đọc lại kho 02:10 UTC:
+  `_updatedAt=1791425428194`, đã đổi luật địa điểm, vẫn 47 GV min=max, lịch đủ 869 và 315 buổi / 0 buổi 1 tiết.
+- **Chủ dự án sửa rõ ý định trong phiên**: «tối đa là 6 có thể xếp ít hơn cũng được». Form `maxDaysSessions` production
+  chỉ có maxDays/maxSessions, KHÔNG hiện minSessions; giới hạn tối thiểu do lượt chỉnh kho 05/10 vẫn còn ẩn ⇒ trên UI thấy
+  "tối đa", engine nhận "đúng bằng". ĐÃ gỡ **54 khoá minSessions** (47 đúng bằng + 7 min riêng), chỉ giữ giới hạn tối đa
+  và các luật khác, không đổi lịch/PCCM/nghỉ/ô cố định. Ghi bằng transaction + kiểm hash toàn kho, sao lưu
+  `/root/tkb-recovery/anphu-hidden-min-20261008-021746/`; `_updatedAt=_lastModified=1791425866501`.
+  Đọc lại xác nhận không còn min, mọi max giữ nguyên, lịch byte-equivalent. Từ nay không được tự thêm minSessions
+  khi chủ dự án yêu cầu số buổi **tối đa**; "đúng bằng" cần chỉ dẫn rõ riêng.
+- **Xác minh / triển khai**: `python run_tests.py` trong sandbox bị `spawn EPERM` ở test Node; đã chạy lại ngoài sandbox,
+  PATH chỉ rõ runtime Node để tránh quét toàn LocalAppData: **133 pass / 29 fail / 162 module, 512 s**.
+  "Mới hỏng" chỉ 7 test JS CRLF đã biết từ 30/09,
+  không thuộc file sửa; test CP-SAT seed + tiết ghép đạt. Bản sửa seed CHƯA deploy; thay đổi dữ liệu trường đã có hiệu lực,
+  không cần deploy/restart. Sau khi bỏ min, **Tối ưu buổi 120 s → 115 s: 315→283 buổi**, 869/869,
+  0 buổi 1 tiết / 0 trống 2, trống 1 18→21 (mục này ưu tiên giảm buổi). Chỉ đo trên bản sao, không ghi lịch thử.
+  Payload HTTP-style 200, `hard_ok=true`, focus gate nhận; validator JS live trên lưới đã áp vào bản sao = 0 vi phạm,
+  giữ mọi ô cố định/nghỉ. Nhắc người dùng Ctrl+F5 trước khi tối ưu để tab không gửi cấu hình min cũ.
+  Đọc lại lúc kết thúc thấy tab/lượt cũ đã ghi lại 54 min (`_updatedAt=1791425960950`); gỡ lại bằng cùng cổng hash,
+  giữ LỊCH MỚI NHẤT của người dùng. Backup lần 2 `/root/tkb-recovery/anphu-hidden-min-20261008-022045/`,
+  `_updatedAt=1791426045968`; đã xác nhận lại 0 min.
+  Người dùng cần dừng lượt cũ và tải lại tất cả tab của trường này để tránh tiếp tục ghi cấu hình cũ.
+
 ## 2026-10-07 (tối, 2) WEBSITE CÔNG KHAI ĐỂ XÁC MINH STARTUP (trang chủ + /about /privacy /terms + robots/sitemap) — ĐÃ DEPLOY
 
 - **Chủ dự án**: làm tkbcherry.com đủ thông tin công khai cho chương trình startup (Claude Startups/Anthropic) mà **không đụng**

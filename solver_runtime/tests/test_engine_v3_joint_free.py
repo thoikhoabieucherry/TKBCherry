@@ -221,7 +221,10 @@ class JointFreeEndToEndTests(unittest.TestCase):
         self.assertEqual(bytes(P.a_allowed[lead]), bytes(P.a_allowed[followers[0]]))
 
     def test_pinned_joint_moves_so_only_slot_lesson_fits(self) -> None:
-        payload = solve_from_ui_data_v3(_school(), _settings(30, cherry_joint_movable=[JOINT]))
+        payload = solve_from_ui_data_v3(
+            _school(),
+            _settings(30, cherry_joint_movable=[JOINT], random_seed=825714465373582943),
+        )
         jf = ((payload.get("solver") or {}).get("engine_v3") or {}).get("joint_free") or {}
         self.assertEqual(jf.get("status"), "accepted", jf)
         self.assertTrue(jf.get("moved"), jf)

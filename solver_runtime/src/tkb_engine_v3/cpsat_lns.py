@@ -1259,7 +1259,10 @@ def _build_and_solve(
     solver = cp_model.CpSolver()
     solver.parameters.num_workers = max(1, workers)
     solver.parameters.max_time_in_seconds = max(0.01, time_limit)
-    solver.parameters.random_seed = seed
+    # SatParameters.random_seed is int32. Browser/backend seeds can be int64;
+    # fold them at the CP-SAT boundary so joint relocation cannot fail before
+    # Solve. Existing nonnegative int32 seeds keep their exact behavior.
+    solver.parameters.random_seed = int(seed) & 0x7FFFFFFF
     solver.parameters.log_search_progress = log
     timeline: list[tuple[float, int, int]] = []
     info["timeline"] = timeline

@@ -246,6 +246,19 @@ class AvailableTests(unittest.TestCase):
 
 @unittest.skipUnless(HAS_ORTOOLS, "ortools CP-SAT khong co san")
 class LaneContractTests(unittest.TestCase):
+    def test_request_seed_outside_int32_still_solves(self) -> None:
+        # Production joint relocation forwarded the backend's canonical seed to
+        # SatParameters.random_seed (int32), raising before Solve was called.
+        P, soft, classes = _latin()
+        for seed in (825714465373582943, -(2**63), 2**31 - 1):
+            with self.subTest(seed=seed):
+                cells, info = cpsat_lns.build_and_solve(
+                    P, soft, classes, "gap1", time_limit=5, workers=1,
+                    seed=seed, require_improve=False,
+                )
+                self.assertIsNotNone(cells, info)
+                self.assertIn(info["status"], ("OPTIMAL", "FEASIBLE"))
+
     def _run_lane(self, lane: str) -> None:
         P, soft, classes = _latin()
         ok, reason = _hard_ok(P, soft.grid)
