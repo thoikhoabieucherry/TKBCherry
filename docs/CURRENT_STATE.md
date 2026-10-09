@@ -1,8 +1,10 @@
 # TKBCherry — Trạng thái hiện hành (CURRENT STATE)
 
-*Cập nhật: 2026-09-03. File này là bản tóm tắt ngắn để onboard nhanh; chi tiết từng phiên làm việc nằm trong `PROJECT_HANDOFF.md` (mục cũ hơn ở `docs/archive/`).*
+*Cập nhật: 2026-10-10. File này là bản tóm tắt ngắn để onboard nhanh; chi tiết từng phiên làm việc nằm trong `PROJECT_HANDOFF.md` (mục cũ hơn ở `docs/archive/`).*
 
 ## Sản phẩm
+
+- **Vạch màu phòng bộ môn trên TKB giáo viên (10/10/2026, đã deploy)**: trường khai `DATA.tkbSubjectRooms` (vd 3 phòng Tin học: tên phòng + địa điểm, GV có phòng riêng, GV có địa điểm riêng theo ngày, địa điểm ưu tiên cho tiết trái buổi) thì ô TKB giáo viên ở trang Sắp xếp có thêm **vạch màu cạnh PHẢI theo phòng** (vạch địa điểm cạnh trái giữ nguyên, và lấy địa điểm theo phòng nếu có); hết phòng → vạch sọc đỏ. Phòng không lưu theo từng tiết mà tự chia lại mỗi lượt vẽ (`tkbSubjectRoomPlan`, `web/pages/phanmon.js`). Chỉ là hiển thị: validator và engine chưa biết sức chứa phòng bộ môn; chưa có giao diện nhập cấu hình (ghi thẳng kho). Test `e2e_tests/planner_subject_rooms_node.test.js`.
 
 - **Website công khai / xác minh startup (07/10/2026)**: trang chủ `web/index.html` = landing SaaS 2 cột (trái: hero "Cherry Scheduler — Intelligent School Timetable Optimization", phải: thẻ đăng nhập/đăng ký/quên mật khẩu **giữ nguyên markup + `shared/auth.js`**), bên dưới là các mục tĩnh Product / About (Founder Nguyen Hoang An (Nguyễn Hoàng Ân), Founded 2026, TP.HCM, Bootstrapped / Early-stage, contact@tkbcherry.com) / Technology / Contact + footer. Trang tĩnh `web/about/`, `web/privacy/`, `web/terms/` (Rust `static_file` phục vụ `index.html` của thư mục, 200 không redirect), CSS chung `web/public-site.css` (lớp `lp-*`, `body.auth-landing`). `robots.txt`/`sitemap.xml` do **nginx** phục vụ (khối `TKB_PUBLIC_SEO_BEGIN/END`, `tools/vps-deploy/install-public-seo-nginx.py`) vì Rust chỉ phục vụ html/js/css/ảnh. Không được ghi khách hàng/doanh thu/nhà đầu tư/pháp nhân chưa có thật; AI chỉ ở mức "exploring".
 

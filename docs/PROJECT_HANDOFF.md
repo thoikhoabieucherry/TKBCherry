@@ -8,6 +8,42 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-10 VẠCH MÀU CẠNH PHẢI Ô TKB GIÁO VIÊN THEO PHÒNG BỘ MÔN (`DATA.tkbSubjectRooms`) — ĐÃ DEPLOY
+
+- **Chủ dự án** (THCS Tân Phú Trung, khuya 09/10): «Phòng Tin học chia làm 3 phòng, thầy Ân luôn dạy Phòng 3 (ở địa điểm 2),
+  2 phòng còn lại địa điểm 1. Thứ 2 và thứ 6 thầy Thuận dạy trái buổi nhưng ở địa điểm 1. Tô màu cạnh bên phải để biết từng phòng».
+- **Hành vi mới** (trang Sắp xếp, cả 3 chỗ vẽ ô TKB giáo viên: bảng chính, cập nhật tại chỗ, bảng GV phụ): ô có tiết của môn dùng
+  phòng bộ môn có thêm **vạch màu cạnh PHẢI** theo phòng (`td.tkb-room tkb-room-1..6`, `::after`; vạch địa điểm cạnh trái `tkb-loc` giữ nguyên),
+  tooltip ghi «Địa điểm · Phòng», thêm thuộc tính `data-room`. Hết phòng → vạch **sọc đỏ** `tkb-room-x` («… : thiếu phòng»).
+  Địa điểm của tiết (vạch trái) lấy theo **phòng bộ môn** nếu có (thầy luôn dạy Phòng 3 thì vạch trái là địa điểm của Phòng 3 dù lớp ở địa điểm khác).
+  Màu: Phòng 1 hồng `#eb2f96`, Phòng 2 xanh ngọc `#13c2c2`, Phòng 3 nâu `#5b3a29` (4–6: `#a0d911`, `#2f54eb`, `#595959`).
+- **Cấu hình** (khoá kho mới, tuỳ chọn; trường không khai thì mọi thứ y như cũ):
+  `DATA.tkbSubjectRooms = [{name, subjects:[mã/tên môn hoặc nhãn dòng Dạy ghép], rooms:[{name, diadiem}], teacherRoom:{mãGV: tên phòng},
+  teacherLocation:[{teacher, days:[thuN], buoi?, diadiem}], offSessionPrefer: địa điểm ưu tiên cho tiết trái buổi}]`.
+  **Chưa có giao diện nhập** — hiện ghi thẳng vào kho (đã ghi cho `af5ldw7i8y4`: 3 phòng Tin học, `Ti.Ân` → Phòng 3, `Ti.Thuận` thu2/thu6 → Địa điểm 1).
+- **Cách chia phòng** (`tkbSubjectRoomPlan`, `web/pages/phanmon.js`): phòng KHÔNG lưu theo từng tiết, mỗi lượt vẽ tự chia lại (bộ nhớ đệm chỉ sống
+  trong một lượt vẽ, `setTimeout 0`). Đơn vị = (nhóm phòng, GV) trong một ô giờ — các lớp của một tiết học chung dùng chung phòng. Phòng được phép:
+  GV có `teacherRoom` → đúng phòng đó; GV có `teacherLocation` khớp ngày → phòng ở địa điểm đó; lớp học **buổi chính** (buổi mở nhiều ô hơn) →
+  phòng cùng địa điểm với lớp; **tiết trái buổi** → phòng nào cũng được, ưu tiên `offSessionPrefer`. Ghép phòng bằng thử-lùi trong từng ô giờ,
+  GV đang giữ phòng từ tiết liền trước được xếp trước (ở yên một phòng cả buổi nếu được).
+- **Chỉ là hiển thị**: không đổi lịch, không đổi `tkb-constraints.js`, bridge hay engine. Cherry/Tối ưu v3 **chưa biết** sức chứa phòng bộ môn —
+  bấm Cherry có thể xếp quá số phòng, khi đó ô hiện sọc đỏ. Đường phòng cũ (`DATA.phong`, `pccmRoomMatrix`, `tkbLessonRooms`) không đụng tới:
+  `pccmRoomMatrix` vẫn bị `app.js ensureDataShape` xoá mỗi lần mở trang Dữ liệu và `tkbLessonRooms` bị ghi đè sau mỗi lượt áp kết quả, nên không dùng
+  được để giữ phòng. Excel (`tkb-student-excel-export.js`) chưa có vạch phòng (file đó đang có việc dở chưa deploy của phiên khác).
+- **Giữ hợp đồng cũ**: dòng `sched[thu].sang[ti].push({classId, classDisplay, mon, room, fixed: isShownFixed(v)});` không đổi
+  (`planner_ghep_pin_survives_apply` đối chiếu nguyên văn); vị trí ô (`thu/buoi/ti`) được đóng dấu một lần ở cuối `buildTeacherSchedule`.
+  `tkbEntryLocation(e)` với ô không mang vị trí (Excel) chạy như trước.
+- **Test**: `e2e_tests/planner_subject_rooms_node.test.js` (7 ca: buổi chính theo địa điểm, hai lớp cùng giờ khác phòng, giữ phòng tiết liền nhau,
+  quá phòng → đúng một ô sọc đỏ, phòng riêng của GV + địa điểm theo phòng, trái buổi + địa điểm theo ngày, trường không khai thì như cũ).
+  `python run_tests.py --group js-e2e|js-guard|js-syntax`: «mới hỏng» vẫn đúng 7 test CRLF đã biết; chạy 11 test đang hỏng trên cây gốc (bản live
+  trước khi sửa) và cây mới cho cùng số pass/fail. Chạy thật mã chia phòng trên kho `af5ldw7i8y4` trong Node: 0 ô thiếu phòng.
+  `python run_tests.py` trọn bộ: **132 pass / 31 fail / 163** (726 s, máy đang chạy job giải của phiên khác): ngoài 7 test CRLF còn báo «mới hỏng»
+  `py-solver/test_engine_v3_cpsat_lns` (`test_stop_check_stops_quickly`: 2,42 s > 2,0 s) và `test_engine_v3_co_teacher_lessons` — cả hai là test đo
+  thời gian, chạy lại riêng đều đạt; phiên này không sửa file Python nào. Chưa nhìn vạch màu trên trình duyệt thật (tiện ích Chrome không kết nối).
+- **Deploy**: `python deploy.py files deploy subject-rooms-20261010 --no-restart web/pages/phanmon.js web/pages/phanmon.css`
+  (backup `/root/tkb-backups/subject-rooms-20261010`, không restart, không đụng DB). Trước khi sửa: bản local của hai file = bản live (md5).
+  File tĩnh trả `Cache-Control: no-store` nên không cần đổi `?v=`.
+
 ## 2026-10-09 (tiếp) TKB 4 TÂN PHÚ TRUNG: SỬA TĂNG BUỔI 1 TIẾT, 8 → 6 (ĐÃ GHI)
 
 - **Phản hồi**: «lẽ ra 1 tiết/buổi phải ít hơn … coi lại». Hai lượt trước đã gom ưu tiên cá nhân nhưng

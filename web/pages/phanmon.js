@@ -1375,6 +1375,7 @@ function invalidatePccmNumCaches(){
   try{ if(DATA.pccmGioihanMatrix) PCCM_NUM_CACHE.delete(DATA.pccmGioihanMatrix); }catch(_){}
   try{ COMPUTE_MONS_CACHE = {refs: [], values: new Map()}; }catch(_){}
   try{ REQUIRED_SUBJECTS_CACHE = {refs: [], values: new Map()}; }catch(_){}
+  try{ GHEP_META_CACHE = {refs: [], values: new Map()}; }catch(_){}
 }
 function getPccmNumCached(matrix, lopCanon, mon){
   if(!matrix || typeof matrix !== "object") return 0;
@@ -1410,6 +1411,19 @@ function setClassSubjectSessionLimit(lopCanon, mon, limit){
   if(!cls || !monKey || !Number.isFinite(next)) return false;
   if(!DATA.pccmGioihanMatrix || typeof DATA.pccmGioihanMatrix !== "object") DATA.pccmGioihanMatrix = {};
   DATA.pccmGioihanMatrix[`${cls}|${monKey}`] = String(next);
+  // 01/10: tiết dạy ghép — giới hạn thuộc DÒNG ghép (day-ghep.js chiếu row.gioihan đè lên khoá
+  // "Lớp|ten" mỗi lần đồng bộ) nên nâng ở đây phải ghi cả vào dòng, không thì lần sau bị trả về số cũ.
+  try{
+    const ghepRow = tkbGhepRowFor(cls, mon);
+    if(ghepRow){
+      ghepRow.gioihan = String(next);
+      const ghepKey = String(ghepRow.ten || mon).trim();
+      (Array.isArray(ghepRow.lop) ? ghepRow.lop : []).forEach(l => {
+        const lc = String(l || "").trim();
+        if(lc && ghepKey) DATA.pccmGioihanMatrix[`${lc}|${ghepKey}`] = String(next);
+      });
+    }
+  }catch(_){ }
   invalidatePccmNumCaches();
   CURRENT_MONS.forEach(m=>{
     if(monMatches(m.ten, mon)){
@@ -1586,14 +1600,41 @@ function tkbJointClassLabel(row){
 }
 
 // Gộp các ô cùng tiết chung (TKB GV, xuất file): entries [{classId, classDisplay, mon, ...}]
+// 30/09 (chủ dự án, trường An Phú): tiết chung ghép theo khối -> ô TKB GV ghi KHỐI trước tên
+// ("Khối 6 - T.Anh BN"); lớp thuộc nhiều khối -> "Khối 6, 7". Lớp không có khối -> "".
+function tkbJointGradeLabel(entries){
+  const grades = [];
+  (Array.isArray(entries) ? entries : []).forEach(e => {
+    const l = (DATA?.lop || []).find(x => x && String(x.id) === String(e?.classId));
+    const g = String(l?.khoi || "").trim();
+    if(g && !grades.includes(g)) grades.push(g);
+  });
+  if(grades.length <= 1) return grades[0] || "";
+  const prefix = grades[0].replace(/\d+\s*$/, "");
+  const nums = grades.map(g => (g.match(/(\d+)\s*$/) || [])[1] || "");
+  if(nums.every(Boolean) && grades.every(g => g.replace(/\d+\s*$/, "") === prefix)) return prefix + nums.join(", ");
+  return grades.join(", ");
+}
+
+// 30/09: bấm ô TKB GV (bảng phụ) -> nhảy sang lớp. Ô một lớp -> lớp đó; ô tiết chung đã gộp
+// (một mục, nhiều lớp, có data-classid) -> lớp đầu của tiết chung; ô trùng lịch thật -> "".
+function tkbSupportCellTargetClass(ids, oneClassId, isConflict){
+  const list = (Array.isArray(ids) ? ids : []).map(s => String(s || "").trim()).filter(Boolean);
+  if(list.length === 1) return list[0];
+  const one = String(oneClassId || "").trim();
+  return (list.length > 1 && one && !isConflict) ? one : "";
+}
+
 function tkbJointMergeEntries(list){
   const arr = Array.isArray(list) ? list : [];
   const row = tkbJointGhepRow(arr);
   if(!row) return arr;
   // 29/08 (chủ dự án): GV chỉ cần biết tiết đó dạy NỘI DUNG gì -> ô chỉ ghi tên viết tắt;
   // danh sách lớp để ở tooltip (jointClassLabel), không in trước tên.
+  // 30/09: ô TKB GV in thêm khối (jointGradeLabel); classDisplay vẫn rỗng cho xuất Excel.
   return [Object.assign({}, arr[0], {
     classDisplay: "",
+    jointGradeLabel: tkbJointGradeLabel(arr),
     jointClassLabel: arr.map(e => String(e.classDisplay || "").trim()).filter(Boolean).join(", "),
     fixed: arr.some(e => !!e.fixed),
     jointClassIds: arr.map(e => String(e.classId))
@@ -2615,8 +2656,44 @@ try{
   deferInitialHistorySnapshot();
 }catch(_){}
 
+// 01/10: tiết DẠY GHÉP lấy Số tiết / Giới hạn tiết/buổi của CHÍNH dòng ghép (khoá "Lớp|<ten ghép>"
+// do day-ghep.js chiếu từ dòng, thiếu thì lấy row.sotiet/row.gioihan) — không theo môn gốc hay mặc
+// định 1. CURRENT_MON_META chỉ có môn ĐÃ PHÂN CÔNG GV và khoá theo TÊN HIỂN THỊ, còn ô TKB lưu khoá
+// dòng ghép (vd "Bản ngữ (ghép)") nên trước đây tiết ghép (nhất là dòng không GV) rơi về {gioihan:1}:
+// kéo 2 tiết Bản ngữ liền nhau bị báo "giới hạn 1 tiết/buổi" dù dòng ghép đặt 2.
+let GHEP_META_CACHE = {refs: [], values: new Map()};
+function tkbGhepMetaForClass(classRef, mon){
+  const rows = DATA?.dayGhep;
+  if(!Array.isArray(rows) || !rows.length) return null;
+  const monRaw = String(mon || "").trim();
+  if(!classRef || !monRaw) return null;
+  const refs = [rows, DATA.pccmTietMatrix, DATA.pccmGioihanMatrix];
+  if(GHEP_META_CACHE.refs.length !== refs.length || !refs.every((ref,i)=>ref === GHEP_META_CACHE.refs[i])){
+    GHEP_META_CACHE = {refs, values: new Map()};
+  }
+  const cacheKey = `${classRef}|${monRaw}`;
+  if(GHEP_META_CACHE.values.has(cacheKey)) return GHEP_META_CACHE.values.get(cacheKey);
+  let out = null;
+  try{
+    const row = tkbGhepRowFor(classRef, monRaw);
+    if(row){
+      const cls = (getLopCanonById(classRef) || String(classRef)).toString().trim();
+      const key = String(row.ten || monRaw).trim();
+      const sotiet = Number(getSoTietForClassMon(cls, key) || row.sotiet || 0);
+      const gioihan = Number(getGioiHanForClassMon(cls, key) || row.gioihan || 1);
+      out = {
+        sotiet: Number.isFinite(sotiet) && sotiet > 0 ? sotiet : 0,
+        gioihan: Math.max(1, Number.isFinite(gioihan) ? gioihan : 1)
+      };
+    }
+  }catch(_){ out = null; }
+  GHEP_META_CACHE.values.set(cacheKey, out);
+  return out;
+}
+
 function getMonMeta(mon){
-  return CURRENT_MON_META[mon] || {sotiet: 0, gioihan: 1};
+  const ghep = (typeof currentLop !== "undefined" && currentLop) ? tkbGhepMetaForClass(currentLop, mon) : null;
+  return ghep || CURRENT_MON_META[mon] || {sotiet: 0, gioihan: 1};
 }
 
 
@@ -2951,6 +3028,10 @@ function buildTeacherSchedule(gvCode){
     }
   });
 
+  // 09/10: mỗi ô mang theo vị trí (thứ/buổi/tiết) để tra phòng bộ môn lúc vẽ (tkbEntrySubjectRoom).
+  DAYS.forEach(thu => ["sang", "chieu"].forEach(buoi => {
+    sched[thu][buoi].forEach((arr, ti) => arr.forEach(e => { e.thu = thu; e.buoi = buoi; e.ti = ti; }));
+  }));
   return sched;
 }
 
@@ -2963,9 +3044,236 @@ function tkbTeacherCellView(arr){
   return {entries: list, conflict: list.length > 1};
 }
 
+// 23/09: vạch màu cạnh trái ô TKB giáo viên theo ĐỊA ĐIỂM (chỉ khi trường có >=2 địa điểm),
+// để thấy GV đổi cơ sở giữa các tiết. Địa điểm = phòng (DATA.phong.diadiem) nếu có, không thì của lớp.
+function tkbLocationList(){
+  const set = new Set();
+  (DATA.lop || []).forEach(l => { const v = String(l?.diadiem || "").trim(); if(v) set.add(v); });
+  (DATA.phong || []).forEach(p => { const v = String(p?.diadiem || "").trim(); if(v) set.add(v); });
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "vi", {numeric: true}));
+}
+function tkbEntryLocation(e){
+  const sr = tkbEntrySubjectRoom(e);
+  if(sr && !sr.conflict && sr.diadiem) return sr.diadiem;
+  const room = String(e?.room || "").trim();
+  if(room){
+    const p = (DATA.phong || []).find(x => [x?.id, x?.ma, x?.ten].some(v => String(v || "").trim() === room));
+    const v = String(p?.diadiem || "").trim();
+    if(v) return v;
+  }
+  const l = (DATA.lop || []).find(x => String(x?.id) === String(e?.classId));
+  return String(l?.diadiem || "").trim();
+}
+function tkbLocationCellInfo(entries){
+  const arr = Array.isArray(entries) ? entries : [];
+  if(!arr.length) return {cls: "", title: "", room: "", tip: ""};
+  const info = {cls: "", title: "", room: "", tip: ""};
+  const all = tkbLocationList();
+  if(all.length >= 2){
+    const locs = Array.from(new Set(arr.map(tkbEntryLocation).filter(Boolean)));
+    const idx = locs.length === 1 ? all.indexOf(locs[0]) : -1;
+    if(idx >= 0){
+      info.cls = `tkb-loc tkb-loc-${(idx % 4) + 1}`;
+      info.title = locs[0];
+    }
+  }
+  const rooms = arr.map(tkbEntrySubjectRoom).filter(Boolean);
+  if(rooms.length){
+    const r = rooms[0];
+    const bad = r.conflict || rooms.some(x => x.conflict || x.idx !== r.idx || x.group !== r.group);
+    info.cls = `${info.cls} tkb-room tkb-room-${bad ? "x" : (r.idx % 6) + 1}`.trim();
+    info.room = bad ? `${r.group || "Phòng"}: thiếu phòng` : r.name;
+  }
+  info.tip = [info.title, info.room].filter(Boolean).join(" · ");
+  return info;
+}
+// Thuộc tính data-location / data-room / title của ô TKB giáo viên (title chỉ ghi khi withTitle).
+function tkbLocationCellAttrs(info, withTitle){
+  if(!info) return "";
+  return (info.title ? ` data-location="${escapeHtml(info.title)}"` : "")
+    + (info.room ? ` data-room="${escapeHtml(info.room)}"` : "")
+    + (withTitle !== false && info.tip ? ` title="${escapeHtml(info.tip)}"` : "");
+}
+
+// 09/10: vạch màu cạnh PHẢI ô TKB giáo viên theo PHÒNG BỘ MÔN dùng chung (vd 3 phòng Tin học).
+// Cấu hình DATA.tkbSubjectRooms = [{name, subjects:[mã/tên môn], rooms:[{name, diadiem}],
+//   teacherRoom:{mãGV: tên phòng}, teacherLocation:[{teacher, days:[thuN], buoi, diadiem}],
+//   offSessionPrefer: địa điểm ưu tiên cho tiết trái buổi}].
+// Phòng KHÔNG lưu theo từng tiết mà tự chia lại mỗi lần vẽ: GV có phòng riêng -> phòng đó; GV có
+// địa điểm riêng theo ngày -> phòng ở địa điểm đó; lớp học buổi chính -> phòng cùng địa điểm với lớp;
+// tiết trái buổi -> phòng nào còn trống (giữ phòng của tiết liền trước trong buổi nếu được).
+// Hết phòng -> vạch đỏ sọc (thiếu phòng). Chỉ là hiển thị, không đổi lịch và không đổi luật.
+let TKB_SUBJECT_ROOM_PLAN = null;
+function tkbSubjectRoomNorm(v){
+  return String(v == null ? "" : v).normalize("NFC").trim().toLowerCase();
+}
+function tkbSubjectRoomGroups(){
+  const raw = Array.isArray(DATA.tkbSubjectRooms) ? DATA.tkbSubjectRooms : [];
+  return raw.map(g => {
+    const rooms = (Array.isArray(g?.rooms) ? g.rooms : [])
+      .map(r => ({name: String(r?.name || "").trim(), diadiem: String(r?.diadiem || "").trim()}))
+      .filter(r => r.name);
+    const teacherRoom = {};
+    Object.entries(g?.teacherRoom || {}).forEach(([gv, room]) => {
+      const idx = rooms.findIndex(r => r.name === String(room || "").trim());
+      if(idx >= 0) teacherRoom[String(gv).normalize("NFC").trim()] = idx;
+    });
+    return {
+      name: String(g?.name || "").trim(),
+      rooms,
+      subjects: new Set((Array.isArray(g?.subjects) ? g.subjects : []).map(tkbSubjectRoomNorm).filter(Boolean)),
+      teacherRoom,
+      teacherLocation: (Array.isArray(g?.teacherLocation) ? g.teacherLocation : []).filter(Boolean),
+      offSessionPrefer: String(g?.offSessionPrefer || "").trim()
+    };
+  }).filter(g => g.rooms.length && g.subjects.size);
+}
+// Buổi chính của lớp = buổi mở nhiều ô hơn (ô khác "OFF").
+function tkbClassMainSession(tkb){
+  let sang = 0, chieu = 0;
+  DAYS.forEach(d => {
+    (tkb?.[d]?.sang || []).forEach(v => { if(v !== "OFF") sang++; });
+    (tkb?.[d]?.chieu || []).forEach(v => { if(v !== "OFF") chieu++; });
+  });
+  return sang >= chieu ? "sang" : "chieu";
+}
+// Danh sách phòng được phép của một tiết, theo thứ tự ưu tiên.
+function tkbSubjectRoomAllowed(g, teacher, thu, buoi, isMain, classLoc){
+  const all = g.rooms.map((_, i) => i);
+  if(teacher && Object.prototype.hasOwnProperty.call(g.teacherRoom, teacher)) return [g.teacherRoom[teacher]];
+  const at = loc => {
+    const r = all.filter(i => g.rooms[i].diadiem === loc);
+    return r.length ? r : all;
+  };
+  const ov = g.teacherLocation.find(x =>
+    String(x?.teacher || "").normalize("NFC").trim() === teacher &&
+    (!Array.isArray(x.days) || !x.days.length || x.days.includes(thu)) &&
+    (!x.buoi || x.buoi === buoi) && String(x?.diadiem || "").trim());
+  if(ov) return at(String(ov.diadiem).trim());
+  if(isMain && classLoc) return at(classLoc);
+  const prefer = g.offSessionPrefer || classLoc;
+  return all.slice().sort((a, b) => (g.rooms[a].diadiem === prefer ? 0 : 1) - (g.rooms[b].diadiem === prefer ? 0 : 1) || a - b);
+}
+function tkbSubjectRoomPlan(){
+  if(TKB_SUBJECT_ROOM_PLAN) return TKB_SUBJECT_ROOM_PLAN;
+  const plan = new Map();
+  TKB_SUBJECT_ROOM_PLAN = plan;
+  // Kế hoạch chỉ sống trong một lượt vẽ: sửa lịch xong vẽ lại là chia phòng lại.
+  setTimeout(() => { if(TKB_SUBJECT_ROOM_PLAN === plan) TKB_SUBJECT_ROOM_PLAN = null; }, 0);
+  const groups = tkbSubjectRoomGroups();
+  if(!groups.length) return plan;
+  const monGroup = new Map();
+  const groupOfMon = mon => {
+    if(monGroup.has(mon)) return monGroup.get(mon);
+    let mh = null;
+    try{ mh = findMonHoc(mon); }catch(_){ }
+    const names = [mon, mh?.ma, mh?.ten].map(tkbSubjectRoomNorm).filter(Boolean);
+    const gi = groups.findIndex(x => names.some(n => x.subjects.has(n)));
+    monGroup.set(mon, gi);
+    return gi;
+  };
+  // Đơn vị xếp phòng = (nhóm phòng, GV) trong một ô giờ: một GV chỉ đứng một phòng,
+  // nên các lớp của cùng một tiết học chung dùng chung phòng.
+  const slots = new Map();
+  (DATA.lop || []).forEach(l => {
+    const classId = l?.id;
+    const tkb = DATA.tkb?.[classId];
+    if(!tkb) return;
+    const classCanon = getLopCanonById(classId);
+    const main = tkbClassMainSession(tkb);
+    const classLoc = String(l?.diadiem || "").trim();
+    DAYS.forEach(thu => {
+      ["sang", "chieu"].forEach(buoi => {
+        (tkb?.[thu]?.[buoi] || []).forEach((v, ti) => {
+          if(!v || v === "OFF") return;
+          const mon = cellMon(v);
+          if(!mon) return;
+          const gi = groupOfMon(mon);
+          if(gi < 0) return;
+          const g = groups[gi];
+          let gv = (typeof v === "object" && v.gv) ? v.gv : cellLegacyTeacher(v, classCanon);
+          if(!gv) gv = getTeacherForClassMon(classCanon, mon);
+          const teacher = String(gv || "").normalize("NFC").trim();
+          const slotKey = `${thu}|${buoi}|${ti}`;
+          if(!slots.has(slotKey)) slots.set(slotKey, {thu, buoi, ti, units: new Map()});
+          const units = slots.get(slotKey).units;
+          const unitKey = `${gi}|${teacher || "lop:" + classId}`;
+          const allowed = tkbSubjectRoomAllowed(g, teacher, thu, buoi, buoi === main, classLoc);
+          let u = units.get(unitKey);
+          if(!u){
+            u = {gi, key: unitKey, cells: [], allowed};
+            units.set(unitKey, u);
+          } else {
+            const both = u.allowed.filter(i => allowed.includes(i));
+            u.allowed = both.length ? both : u.allowed;
+          }
+          u.cells.push(`${classId}|${slotKey}`);
+        });
+      });
+    });
+  });
+  const prev = new Map();      // (đơn vị, thứ, buổi) -> phòng của tiết liền trước
+  const ordered = Array.from(slots.values()).sort((a, b) =>
+    DAYS.indexOf(a.thu) - DAYS.indexOf(b.thu) || (a.buoi === b.buoi ? 0 : (a.buoi === "sang" ? -1 : 1)) || a.ti - b.ti);
+  ordered.forEach(slot => {
+    groups.forEach((g, gi) => {
+      const lastRoom = u => {
+        const p = prev.get(`${u.key}|${slot.thu}|${slot.buoi}`);
+        return (p && p.ti === slot.ti - 1 && u.allowed.includes(p.idx)) ? p.idx : -1;
+      };
+      // GV đang giữ phòng từ tiết liền trước xếp trước (ở yên phòng đó cả buổi nếu được), rồi tới GV ít lựa chọn.
+      const units = Array.from(slot.units.values()).filter(u => u.gi === gi)
+        .sort((a, b) => (lastRoom(a) >= 0 ? 0 : 1) - (lastRoom(b) >= 0 ? 0 : 1)
+          || a.allowed.length - b.allowed.length || a.key.localeCompare(b.key));
+      if(!units.length) return;
+      const wish = units.map(u => {
+        const last = lastRoom(u);
+        return last >= 0 ? [last].concat(u.allowed.filter(i => i !== last)) : u.allowed;
+      });
+      // Ghép phòng bằng thử-lùi (vài GV x vài phòng): nhiều GV có phòng nhất, ưu tiên theo thứ tự mong muốn.
+      let best = null, bestN = -1;
+      const cur = new Array(units.length).fill(-1);
+      const used = new Set();
+      const walk = (k, n) => {
+        if(bestN === units.length) return;
+        if(k === units.length){
+          if(n > bestN){ bestN = n; best = cur.slice(); }
+          return;
+        }
+        if(n + (units.length - k) <= bestN) return;
+        for(const idx of wish[k]){
+          if(used.has(idx)) continue;
+          used.add(idx); cur[k] = idx;
+          walk(k + 1, n + 1);
+          used.delete(idx); cur[k] = -1;
+          if(bestN === units.length) return;
+        }
+        walk(k + 1, n);
+      };
+      walk(0, 0);
+      units.forEach((u, k) => {
+        const idx = best ? best[k] : -1;
+        const room = idx >= 0 ? g.rooms[idx] : null;
+        if(room) prev.set(`${u.key}|${slot.thu}|${slot.buoi}`, {ti: slot.ti, idx});
+        const rec = room
+          ? {group: g.name, idx, name: room.name, diadiem: room.diadiem, conflict: false}
+          : {group: g.name, idx: -1, name: "", diadiem: "", conflict: true};
+        u.cells.forEach(cell => plan.set(cell, rec));
+      });
+    });
+  });
+  return plan;
+}
+function tkbEntrySubjectRoom(e){
+  if(!e || e.classId == null || !e.thu || !e.buoi || e.ti == null) return null;
+  if(!Array.isArray(DATA.tkbSubjectRooms) || !DATA.tkbSubjectRooms.length) return null;
+  return tkbSubjectRoomPlan().get(`${e.classId}|${e.thu}|${e.buoi}|${e.ti}`) || null;
+}
+
 function cellHTMLTeacher(entries, thu, buoi, ti, gvCode){
   const arr = Array.isArray(entries) ? entries : [];
   const view = tkbTeacherCellView(arr);
+  const locInfo = tkbLocationCellInfo(arr);
   const conflict = view.conflict;
   const teacherOff = isTeacherFixedOff(gvCode, thu, buoi, ti);
   const offConflict = teacherOff && arr.length > 0;
@@ -2975,7 +3283,7 @@ function cellHTMLTeacher(entries, thu, buoi, ti, gvCode){
     const monShort = tkbMonLabel(e.classId, e.mon);
     const room = (e.room||"").toString().trim();
     return `<div class="tkb-cell-stack">`+
-      mobileStackCellLineHTML(e.classDisplay, monShort, "tkb-class-line tkb-class-subject-line")+
+      mobileStackCellLineHTML(e.jointGradeLabel || e.classDisplay, monShort, "tkb-class-line tkb-class-subject-line")+
       (room ? `<div class="tkb-cell-line tkb-teacher-line tkb-room-line">${escapeHtml(room)}</div>` : "")+
     `</div>`;
   });
@@ -2991,7 +3299,9 @@ function cellHTMLTeacher(entries, thu, buoi, ti, gvCode){
       + (one.jointClassLabel ? ` title="${escapeHtml(`Tiết chung: ${one.jointClassLabel}`)}"` : "")
     : "";
 
-  return `<td class="${conflict?"tkb-gv-conflict":""} ${teacherOff?"tkb-off":""} ${offConflict?"tkb-off-conflict":""} ${fixed?"tkb-fixed":""}" data-classids="${escapeHtml(classIds)}" data-teacher="${escapeHtml(String(gvCode || ""))}" data-thu="${thu}" data-buoi="${buoi}" data-ti="${ti}"${oneAttrs} draggable="false">`+
+  const locAttrs = teacherOff ? "" : tkbLocationCellAttrs(locInfo, !(one && one.jointClassLabel));
+
+  return `<td class="${conflict?"tkb-gv-conflict":""} ${teacherOff?"tkb-off":""} ${offConflict?"tkb-off-conflict":""} ${fixed?"tkb-fixed":""} ${teacherOff?"":locInfo.cls}" data-classids="${escapeHtml(classIds)}" data-teacher="${escapeHtml(String(gvCode || ""))}" data-thu="${thu}" data-buoi="${buoi}" data-ti="${ti}"${oneAttrs}${locAttrs} draggable="false">`+
          `<div class="tkb-gv-cell">${visibleLines}</div>`+
          `</td>`;
 }
@@ -3052,7 +3362,7 @@ function renderTKBTeacher(gvCode, forceFullRebuild = false){
           const monShort = tkbMonLabel(e.classId, e.mon);
           const room = (e.room||"").toString().trim();
           return `<div class="tkb-cell-stack">`+
-            mobileStackCellLineHTML(e.classDisplay, monShort, "tkb-class-line tkb-class-subject-line")+
+            mobileStackCellLineHTML(e.jointGradeLabel || e.classDisplay, monShort, "tkb-class-line tkb-class-subject-line")+
             (room ? `<div class="tkb-cell-line tkb-teacher-line tkb-room-line">${escapeHtml(room)}</div>` : "")+
           `</div>`;
         });
@@ -3064,8 +3374,25 @@ function renderTKBTeacher(gvCode, forceFullRebuild = false){
         const classIds = arr.map(e=>String(e.classId)).join(",");
         const one = view.entries.length === 1 ? view.entries[0] : null;   // ô tiết chung gộp -> thao tác theo lớp đầu, các lớp còn lại đồng bộ
 
-        const newClass = `${conflict?"tkb-gv-conflict":""} ${teacherOff?"tkb-off":""} ${offConflict?"tkb-off-conflict":""} ${fixed?"tkb-fixed":""}`.trim();
+        const locInfo = teacherOff ? {cls: "", title: "", room: "", tip: ""} : tkbLocationCellInfo(arr);
+        const newClass = `${conflict?"tkb-gv-conflict":""} ${teacherOff?"tkb-off":""} ${offConflict?"tkb-off-conflict":""} ${fixed?"tkb-fixed":""} ${locInfo.cls}`.trim();
         if(td.className !== newClass) td.className = newClass;
+        const hadLocTip = td.hasAttribute("data-location") || td.hasAttribute("data-room");
+        if(locInfo.title){
+          if(td.getAttribute("data-location") !== locInfo.title) td.setAttribute("data-location", locInfo.title);
+        } else if(td.hasAttribute("data-location")){
+          td.removeAttribute("data-location");
+        }
+        if(locInfo.room){
+          if(td.getAttribute("data-room") !== locInfo.room) td.setAttribute("data-room", locInfo.room);
+        } else if(td.hasAttribute("data-room")){
+          td.removeAttribute("data-room");
+        }
+        if(locInfo.tip){
+          if(td.getAttribute("title") !== locInfo.tip) td.setAttribute("title", locInfo.tip);
+        } else if(hadLocTip){
+          td.removeAttribute("title");
+        }
         if(td.getAttribute("data-classids") !== classIds) td.setAttribute("data-classids", classIds);
         if(td.getAttribute("data-teacher") !== String(code || "")) td.setAttribute("data-teacher", String(code || ""));
         if(one){
@@ -15865,7 +16192,7 @@ function backToMain(){
         const monShort = tkbMonLabel(e.classId, e.mon);
         const room = (e.room||"").toString().trim();
         return `<div class="tkb-cell-stack">`+
-          mobileStackCellLineHTML(e.classDisplay, monShort, "tkb-class-line tkb-class-subject-line")+
+          mobileStackCellLineHTML(e.jointGradeLabel || e.classDisplay, monShort, "tkb-class-line tkb-class-subject-line")+
           (room ? `<div class="tkb-cell-line tkb-teacher-line tkb-room-line">${escapeHtml(room)}</div>` : "")+
         `</div>`;
       });
@@ -15878,7 +16205,9 @@ function backToMain(){
       const oneAttrs = one
         ? ` data-classid="${escapeHtml(String(one.classId))}" data-mon="${escapeHtml(String(one.mon || ""))}" draggable="${fixed ? "false" : "true"}"`
         : ` draggable="false"`;
-      return `<td class="${conflict?"tkb-gv-conflict":""} ${one && !fixed?"tkb-pair-draggable":""} ${teacherOff?"tkb-off":""} ${offConflict?"tkb-off-conflict":""} ${fixed?"tkb-fixed":""}" data-pair-slot="teacher" data-teacher="${escapeHtml(String(gvCode || ""))}" data-classids="${escapeHtml(classIds)}" data-thu="${thu}" data-buoi="${buoi}" data-ti="${ti}"${oneAttrs}>`+
+      const locInfo = teacherOff ? {cls: "", title: "", room: "", tip: ""} : tkbLocationCellInfo(arr);
+      const locAttrs = tkbLocationCellAttrs(locInfo, true);
+      return `<td class="${conflict?"tkb-gv-conflict":""} ${one && !fixed?"tkb-pair-draggable":""} ${teacherOff?"tkb-off":""} ${offConflict?"tkb-off-conflict":""} ${fixed?"tkb-fixed":""} ${locInfo.cls}" data-pair-slot="teacher" data-teacher="${escapeHtml(String(gvCode || ""))}" data-classids="${escapeHtml(classIds)}" data-thu="${thu}" data-buoi="${buoi}" data-ti="${ti}"${oneAttrs}${locAttrs}>`+
              `<div class="tkb-gv-cell">${visibleLines}</div>`+
              `</td>`;
     }
@@ -16153,9 +16482,11 @@ function backToMain(){
         const ids = (td.dataset.classids||"").split(",").map(s=>s.trim()).filter(Boolean);
         if(!ids.length) return;
         td.style.cursor = "pointer";
+        // 30/09: ô tiết chung (Dạy ghép) gộp nhiều lớp -> nhảy tới lớp đầu của tiết chung
+        const supportTarget = ()=> tkbSupportCellTargetClass(ids, td.dataset.classid, !!(td.classList && td.classList.contains("tkb-gv-conflict")));
         const openClassFromSupport = ()=>{
-          if(ids.length === 1){
-            const targetId = ids[0];
+          const targetId = supportTarget();
+          if(targetId){
             const keepGV = (currentGV || "").toString().trim();
             if(VIEW_MODE !== "lop"){
               setViewMode("lop");
@@ -16170,11 +16501,11 @@ function backToMain(){
         };
         td.onclick = (e)=>{
           if(e && (e.ctrlKey || e.metaKey || e.shiftKey)) return;
-          if(ids.length !== 1) return;
+          if(!supportTarget()) return;
           openClassFromSupport();
         };
         td.ondblclick = (e)=>{
-          if(ids.length > 1){
+          if(!supportTarget()){
             try{ e.preventDefault(); e.stopPropagation(); }catch(_){ }
             openClassFromSupport();
             return;

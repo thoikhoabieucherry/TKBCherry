@@ -4413,3 +4413,48 @@ body.class-assignment-stats-open{ overflow: hidden; }
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
+
+/* 23/09: vach mau canh trai o TKB giao vien theo dia diem (truong >=2 dia diem) */
+.table td.tkb-loc::before{
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--tkb-loc-color, #1677ff);
+  pointer-events: none;
+  z-index: 1;
+}
+.table td.tkb-loc-1{ --tkb-loc-color: #1677ff; }
+.table td.tkb-loc-2{ --tkb-loc-color: #fa8c16; }
+.table td.tkb-loc-3{ --tkb-loc-color: #52c41a; }
+.table td.tkb-loc-4{ --tkb-loc-color: #722ed1; }
+@media print{
+  .table td.tkb-loc::before{ print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}
+
+/* 09/10: vach mau canh PHAI o TKB giao vien theo phong bo mon (DATA.tkbSubjectRooms, vd 3 phong Tin hoc) */
+.table td.tkb-room::after{
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--tkb-room-color, #eb2f96);
+  pointer-events: none;
+  z-index: 1;
+}
+.table td.tkb-room-1{ --tkb-room-color: #eb2f96; }
+.table td.tkb-room-2{ --tkb-room-color: #13c2c2; }
+.table td.tkb-room-3{ --tkb-room-color: #5b3a29; }
+.table td.tkb-room-4{ --tkb-room-color: #a0d911; }
+.table td.tkb-room-5{ --tkb-room-color: #2f54eb; }
+.table td.tkb-room-6{ --tkb-room-color: #595959; }
+.table td.tkb-room-x::after{
+  background: repeating-linear-gradient(135deg, #f5222d 0 4px, #ffffff 4px 7px);
+}
+@media print{
+  .table td.tkb-room::after{ print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}
