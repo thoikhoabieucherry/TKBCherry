@@ -8,6 +8,31 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-09 (tiếp) TKB 4 TÂN PHÚ TRUNG: SỬA TĂNG BUỔI 1 TIẾT, 8 → 6 (ĐÃ GHI)
+
+- **Phản hồi**: «lẽ ra 1 tiết/buổi phải ít hơn … coi lại». Hai lượt trước đã gom ưu tiên cá nhân nhưng
+  đẩy buổi lẻ sang GV khác: toàn trường từ 6 ban đầu lên 8. Đã nhận rõ đánh đổi này và tối ưu lại toàn trường.
+- **Kết quả đã ghi**: buổi 1 tiết **8 → 6**, tổng buổi GV **683 → 680**, tổng ô trống giữa buổi **102 → 88**,
+  trống ≥2 giữ **0**. Cô Lan giữ **5 buổi / 0 buổi lẻ**, nay **0 ô trống** (trước 1); cô Trang giữ **5 buổi / 0 ô trống**;
+  Hải–Nhơn giữ **0 buổi / 0 tiết trùng**. Gỡ buổi lẻ phát sinh của `CN.Liên` và `SĐ.Thắm`.
+  Đổi cơ sở ngoài Âm nhạc/Mỹ thuật **15 → 14 lượt**; vẫn chỉ ngoại lệ chưa xử lý là hai ô cố định thầy Ân tiết 4–5 sáng T2.
+- **Giới hạn buổi lẻ còn lại**: 4 buổi chiều của `Nhạc.Dương` (T2–T5 chỉ được dạy tiết 1 theo nghỉ GV;
+  9 tiết chiều, T6 chứa tối đa 5). `A.Hải` và `A.Khánh` mỗi người chỉ có 3 tiết sáng, đều môn Anh ở một lớp
+  (`8A8`, `8A2`), giới hạn 2 tiết/buổi, khung còn lại của các lớp này không thể tự mở do nghỉ/cố định.
+  Vì vậy mỗi người còn ít nhất một buổi lẻ. Sáu buổi hiện tại đạt sàn này khi giữ nguyên phân công, khung và luật;
+  không tuyên bố tối ưu toàn cục các chỉ số khác.
+- **Cách tìm**: các bản sao/script trong `scratch/tpt4/location_20261009/single*/` (gitignore).
+  LNS ban đầu về 7 buổi lẻ; vùng rộng không tìm được nghiệm trong thời gian thử. Dùng lịch ban đầu của 9A17/9A18
+  làm gợi ý (chưa hợp lệ: 5 xung đột), mở thêm các lớp xung đột và lớp của CN.Lý để sửa bằng CP-SAT;
+  `single/seed_local.py` tìm nghiệm hợp lệ 6 buổi lẻ. Bản chốt riêng ở `single_final/`, không bị các lượt thử ghi đè.
+- **Kiểm tra / ghi**: đủ **2.279/2.279 tiết**, giữ **2.746 ô nghỉ/cố định**, đổi 325 ô ở 57 lớp;
+  validator JS production **0 vi phạm**, audit độc lập đạt theo lớp/môn, tiết đôi, lịch GV và di chuyển.
+  Ghi transaction có cổng SHA256 toàn kho, chỉ đổi `tkb`, cập nhật timestamp/revision và gỡ cache solver cũ.
+  Backup `/root/tkb-recovery/tpt4-single-20261009-203522/`, `_updatedAt=_lastModified=tkbScheduleRevision=1791552923865`.
+  Đọc lại production khớp chính xác lưới ứng viên, dữ liệu khác được giữ; validator trên bản đọc lại = 0.
+- **Phạm vi**: không sửa mã nguồn/test, không deploy/restart. Dùng kết quả `python run_tests.py` đã chạy trong cùng phiên
+  (133 pass / 29 fail / 162 module, 7 "mới hỏng" CRLF đã biết), kiểm tra riêng toàn bộ dữ liệu vừa thay trước và sau ghi.
+
 ## 2026-10-09 (tiếp) TKB 4 TÂN PHÚ TRUNG: GOM CÔ HƯƠNG LAN `A.Lan` 6 → 5 BUỔI (ĐÃ GHI)
 
 - **Phản hồi**: «cô Hương Lan không tối ưu vậy? … phải tối ưu …». Đúng GV là Nguyễn Thị Hương Lan, mã `A.Lan`
