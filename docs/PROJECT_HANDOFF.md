@@ -8,6 +8,34 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-09 TỐI ƯU TÂN PHÚ TRUNG TKB 4 `af5ldw7i8y4`: ĐỔI CƠ SỞ + HẢI/NHƠN + THÙY TRANG
+
+- **Yêu cầu**: hạn chế đổi cơ sở; nếu đổi phải ở giờ ra chơi tiết 2–3 hoặc có tiết trống; miễn yêu cầu này cho GV Âm nhạc,
+  Mỹ thuật. Ưu tiên cô Hải (`A.Hải`) và thầy Nhơn (`T.Nhơn`) ít trùng lịch, gom buổi cô Thùy Trang (`T.Trang`).
+- **Nguồn / cách làm**: đọc riêng kho được yêu cầu bằng SSH SQLite `mode=ro`, `_updatedAt=1791542302004`, 74 lớp / 139 dòng GV.
+  Dữ liệu và các script CP-SAT chuyên trường ở `scratch/tpt4/location_20261009/` (gitignore); không thay engine, frontend hay luật
+  của trường. Chỉ hoán đổi tiết đang xếp; giữ PCCM, khung, nghỉ, tiết ghép và mọi ô cố định. Kiểm tra bằng validator JS production
+  vừa tải từ VPS (`scratch/0adf9782364/tkb-constraints.live.js`) và bộ đếm độc lập theo lớp/GV.
+- **Giới hạn**: cô Trang có 12 tiết chiều + 8 tiết sáng, khung tối đa 5 tiết/buổi ⇒ ít nhất 3 chiều + 2 sáng = 5 buổi;
+  không thể xuống 4 nếu giữ khung hiện tại. Thầy Ân (`Ti.Ân`) đổi cơ sở tiết 4–5 sáng T2: cả hai ô cố định thật,
+  giữ nguyên trong lượt này; đã hỏi riêng về việc dời ô cố định, chưa có trả lời. Không tự coi thầy Ân là ngoại lệ của yêu cầu.
+- **Kết quả đã ghi**: đủ **2.279/2.279 tiết**, validator JS production = **0 vi phạm**, giữ nguyên 2.746 ô nghỉ/cố định;
+  đổi 530 ô ở 68 lớp. Không tính Âm nhạc/Mỹ thuật: lượt đổi cơ sở trong buổi **24 → 15**; đổi sát tiết ngoài giờ ra chơi
+  **11 → 1**, trường hợp còn lại chính là thầy Ân ở hai ô cố định kể trên. Mọi lượt đổi khác ở tiết 2–3 hoặc có tiết trống.
+  Hải/Nhơn: **1 → 0 buổi trùng**, **1 → 0 tiết trùng**. Trang: giữ sàn **5 buổi**, trống giữa buổi **1 → 0**.
+  Tổng buổi GV **685 → 684**, trống ≥2 giữ **0**; đánh đổi do ưu tiên di chuyển và tách lịch: buổi 1 tiết **6 → 8**,
+  tổng ô trống giữa buổi **84 → 98**. Đây là nghiệm cải thiện theo ưu tiên riêng, không chứng minh tối ưu toàn cục.
+- **Ghi / sao lưu**: `scratch/tpt4/location_20261009/write.py` transaction `BEGIN IMMEDIATE` + cổng SHA256 toàn kho,
+  chỉ thay `tkb`, làm mới timestamp/revision và gỡ cache kết quả solver/baseline cũ. Backup đầy đủ trước/sau tại
+  `/root/tkb-recovery/tpt4-location-20261009-184722/`; `_updatedAt=_lastModified=tkbScheduleRevision=1791546443838`.
+  Đọc lại từ production: lưới khớp chính xác ứng viên, PCCM/luật/các dữ liệu khác giữ nguyên; validator trên bản đọc lại = 0.
+  Không deploy/restart. Người dùng tải lại trang để nạp bản mới.
+- **Kiểm tra**: `node scratch/tpt4/location_20261009/rb_check.js <store>` dùng JS production;
+  `python -X utf8 scratch/tpt4/location_20261009/audit.py` kiểm đủ từng lớp/môn, giữ ô nghỉ/cố định, trùng GV,
+  nghỉ GV, liên tiết, tiết đôi, giới hạn, đồng bộ tiết ghép. `python run_tests.py` đã chạy lại ngoài sandbox
+  (lần trong sandbox lỗi khởi tạo tiến trình Node); "mới hỏng" đúng 7 test JS CRLF đã biết từ 30/09.
+  Không thay mã nguồn/test trong phiên này; các test engine v3 địa điểm, tiết ghép và hợp đồng đều đạt.
+
 ## 2026-10-08 KIỂM TRA CHERRY / TỐI ƯU AN PHÚ `kkhg52etp92`: SEED CANONICAL VƯỢT INT32 LÀM HỎNG CP-SAT TIẾT GHÉP
 
 - **Chủ dự án**: trang Sắp xếp báo không xếp / tối ưu được. Đọc kho bằng SSH SQLite `mode=ro`
