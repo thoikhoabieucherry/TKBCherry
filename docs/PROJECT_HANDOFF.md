@@ -8,6 +8,31 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-09 (tiếp) TKB 4 TÂN PHÚ TRUNG: GOM CÔ HƯƠNG LAN `A.Lan` 6 → 5 BUỔI (ĐÃ GHI)
+
+- **Phản hồi**: «cô Hương Lan không tối ưu vậy? … phải tối ưu …». Đúng GV là Nguyễn Thị Hương Lan, mã `A.Lan`
+  (không phải `T.HLoan`, cô Hồng Loan). Lịch xuất phát: 21 tiết, **6 buổi**, hai buổi sáng T4/T5 chỉ 1 tiết.
+- **Kết quả**: cô Lan **6 → 5 buổi**, **2 → 0 buổi 1 tiết**: giữ sáng T3 4 tiết, sáng T4 dạy tiết 1 và 3,
+  bỏ buổi sáng T5; ba buổi chiều T3/T4/T5 vẫn 5 tiết/buổi. Còn **1 ô trống tiết 2 sáng T4**; không khẳng định
+  đã tối ưu tuyệt đối ô trống. Cô Thùy Trang giữ **5 buổi / 0 ô trống**, Hải–Nhơn giữ **0 buổi / 0 tiết trùng**.
+  Đổi cơ sở giữ **15 lượt**, chỉ trường hợp thầy Ân tiết 4–5 sáng T2 cố định còn thiếu khoảng di chuyển như trước.
+- **Toàn trường / kiểm tra**: **2.279/2.279 tiết**, giữ 2.746 ô nghỉ/cố định, đổi 64 ô ở 7 lớp; validator JS production
+  **0 vi phạm**, độc lập đếm từng lớp/môn và lịch GV cũng đạt. Buổi GV **684 → 683**, buổi 1 tiết toàn trường giữ **8**,
+  trống ≥2 giữ **0**; đánh đổi tổng ô trống **98 → 102**. Không thay PCCM, yêu cầu, nghỉ hay dữ liệu khác.
+- **Cách làm / bài học**: các script và bản sao trong `scratch/tpt4/location_20261009/hlan/`, ứng viên cuối từ
+  `alternative/`. Các lượt ép cô Lan đồng thời 5 buổi + 0 ô trống không tìm được nghiệm bảo toàn các ưu tiên;
+  không suy ra vô nghiệm toàn cục từ `UNKNOWN` hay vùng hoán đổi `INFEASIBLE`. Cho phép 1 ô trống tìm được 5 buổi,
+  0 buổi 1 tiết và giữ cô Trang 5 buổi. Các ứng viên đẩy Trang lên 6 buổi đã loại, không ghi. CP-SAT `repair_hint`
+  thử trên máy gây native check failure `heuristics.fixed_search != nullptr`; bỏ tùy chọn này, không sửa engine/repo.
+- **Ghi**: cổng SHA256 lần đầu chặn đúng vì kho đổi `tkbConstraints.meta.defaultGroupsSig` (32 → 52), timestamp;
+  lưới và mọi luật thực chất vẫn nguyên. Nạp metadata mới, kiểm tra lại ứng viên trước khi transaction ghi.
+  Backup `/root/tkb-recovery/tpt4-hlan-20261009-195333/`, `_updatedAt=_lastModified=tkbScheduleRevision=1791550414554`.
+  Đọc lại từ VPS: lưới khớp chính xác, mọi trường dữ liệu khác được giữ; validator trên bản đọc lại = 0.
+- **Xác minh**: validator production + `hlan/audit.py` kiểm thêm hồ sơ Lan/Trang, Hải–Nhơn và từng lượt di chuyển.
+  Chỉ đổi dữ liệu trường và nhật ký; không deploy/restart, không thay mã nguồn/test. Bộ `python run_tests.py` đã chạy
+  trong cùng phiên trước thay đổi dữ liệu: **133 pass / 29 fail / 162 module**, 7 "mới hỏng" CRLF đã biết; không chạy
+  lại toàn bộ khi mã nguồn không đổi. Người dùng tải lại trang để nhận lịch mới.
+
 ## 2026-10-09 TỐI ƯU TÂN PHÚ TRUNG TKB 4 `af5ldw7i8y4`: ĐỔI CƠ SỞ + HẢI/NHƠN + THÙY TRANG
 
 - **Yêu cầu**: hạn chế đổi cơ sở; nếu đổi phải ở giờ ra chơi tiết 2–3 hoặc có tiết trống; miễn yêu cầu này cho GV Âm nhạc,
