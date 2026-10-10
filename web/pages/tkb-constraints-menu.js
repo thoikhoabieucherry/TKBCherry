@@ -119,6 +119,7 @@
           <li><button type="button" data-rb-print="teacher-template-2">Mẫu 2</button></li>
         </ul>
       </li>
+      <li><button type="button" data-rb-print="rooms">TKB phòng</button></li>
       <li><button type="button" data-rb-print="school-class">TKB toàn trường theo lớp học</button></li>
       <li><button type="button" data-rb-print="school-teacher">TKB toàn trường theo giáo viên</button></li>
       <li><button type="button" data-rb-print="industry-database">Xuất CSDL ngành</button></li>

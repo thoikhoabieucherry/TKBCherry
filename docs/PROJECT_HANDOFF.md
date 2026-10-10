@@ -8,6 +8,40 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-10 (tiếp) IN TKB → «TKB PHÒNG»: XUẤT EXCEL MỖI PHÒNG MỘT BẢNG — ĐÃ DEPLOY
+
+- **Chủ dự án** (sau khi có vạch màu phòng): «thêm 1 mục xuất phòng ở phần In TKB thể hiện từng phòng».
+- **Hành vi mới**: menu Yêu cầu → **In TKB → TKB phòng** (ngay sau «TKB giáo viên»; `data-rb-print="rooms"` → `handlePrintTKBOption("rooms")`
+  → `runPrintExport("exportRoomTKBExcel", …)`). Ra file `phongNN<ddmmyyyy>.xlsx`, sheet `PHONG`, A4 dọc: tiêu đề trường / «THỜI KHÓA BIỂU THEO PHÒNG» /
+  TKB số + ngày áp dụng, rồi **mỗi phòng một bảng** Buổi/Tiết × Thứ 2–7, ô ghi «Lớp - Môn - GV». Dòng tên phòng «Phòng 1 · Phòng Tin học · Địa điểm 1 · 39 tiết»
+  tô đúng màu vạch cạnh phải trên web (hồng / xanh ngọc / nâu…, cạnh trái đậm), ô có tiết nền nhạt cùng màu, ô trống trắng.
+- **Phòng lấy từ hai nguồn** (`allRoomSchedulePayloads`, `web/pages/tkb-student-excel-export.js`): (1) phòng bộ môn `DATA.tkbSubjectRooms` —
+  hỏi đúng hàm của trang Sắp xếp (`tkbSubjectRoomGroups`, `tkbEntrySubjectRoom({classId, thu, buoi, ti})`) nên phòng trong file = phòng của vạch màu;
+  (2) phòng gắn theo Lớp|Môn (`getRoomForClassMon`, chế độ xem Phòng) cho tiết không thuộc nhóm phòng bộ môn. Thứ tự: phòng bộ môn theo thứ tự khai báo →
+  bảng «<nhóm>: tiết chưa có phòng» (đỏ) nếu nhóm đó hết phòng → phòng gắn theo Lớp|Môn theo tên. Tiết hết phòng **không bị giấu**; dòng trạng thái
+  ghi «còn N tiết chưa có phòng». Hai GV khác nhau cùng giờ một phòng (chỉ xảy ra với phòng gắn theo Lớp|Môn) → ô đỏ đậm, mỗi mục một dòng.
+  Trường chưa khai phòng nào → báo «Trường này chưa khai phòng nên chưa có TKB phòng để xuất.», không tạo file.
+- **Tiết học chung nhiều lớp** (cùng GV, cùng môn, cùng giờ) gộp một mục: «6A10, 6A12, 6A15» dòng trên, «THQT - Ti.Hào» dòng dưới. Mục dài hơn 24 ký tự
+  tách hai dòng, ô đó xuống dòng và hàng cao lên theo số dòng ước lượng (16 ký tự/dòng, cố ý dư để không bao giờ cắt chữ); ô ngắn in một dòng + co chữ.
+- **Kỹ thuật Excel đáng nhớ**: (a) thư viện `xlsx-js-style` (`web/vendor/xlsx.min.js`) **không ghi `shrinkToFit`** — mọi `shrink:true` trong các mẫu cũ
+  là vô tác dụng; riêng mẫu phòng `buildXlsxBlob` chèn `shrinkToFit="1"` vào `xl/styles.xml` cho kiểu ô không xuống dòng (`built.shrinkToFit`,
+  `addShrinkToFitXml`). (b) Trang cao thấp khác nhau nên ngắt trang theo hàng chỉ định: `print.rowBreaks` → `buildRowBreaksXml(pageCount, pageRows, explicitRows)`;
+  sang trang khi đủ 4 phòng hoặc trang quá 780 pt, trang sau có lại tiêu đề. (c) `print.centered: 'horizontal'` = chỉ canh giữa ngang.
+  Ba chỗ này chỉ bật cho mẫu phòng; mẫu lớp / GV / toàn trường ra XML y như trước (có test đối chiếu).
+- **Chỉ đọc**: mục xuất phòng KHÔNG gọi `saveStore({force:true})` (các mục xuất khác vẫn gọi như cũ).
+- **Test**: `e2e_tests/excel_room_export_node.test.js` (11 ca: thứ tự phòng, nội dung ô, GV có phòng riêng, tiết học chung, hết phòng, trùng phòng,
+  trường chưa khai phòng, bố cục + màu, sang trang, file .xlsx thật qua JSZip, các mẫu khác không đổi, menu + định tuyến). `python run_tests.py` trọn bộ: **135 pass / 29 fail / 164** (601 s); «mới hỏng» vẫn đúng 7 test CRLF đã biết của planner (chạy lại 7 test đó trên HEAD sạch và trên cây có thay đổi: cùng số pass/fail), không còn test nào khác; `industry_database_export_node` hỏng sẵn 1 ca vì chuỗi `?v=` cũ trong `sapxep.html` (có trong mốc chuẩn).
+- **Kiểm trên dữ liệu thật**: `node scratch/tpt4/tap/room_xlsx_real.js <kho.json> <gốc repo> <out.xlsx>` chạy đúng mã web trên kho `af5ldw7i8y4`:
+  3 phòng 39 / 21 / 30 tiết = 90 ô giờ (114 ô lớp sau khi gộp tiết chung), 0 tiết chưa có phòng. Mở file bằng **Excel thật** (COM) in ra PDF: 1 trang,
+  vừa khổ, chữ không bị cắt; bản thử 7 bảng (2 nhóm phòng, có bảng hết phòng) ra 3 trang, ngắt đúng chỗ. Chưa bấm được trên trình duyệt thật
+  (tiện ích Chrome vẫn không kết nối) — đường menu → hàm xuất chỉ mới kiểm bằng test nguồn.
+- **Deploy**: `python deploy.py files deploy room-export-20261010 --no-restart web/pages/tkb-student-excel-export.js web/pages/tkb-constraints-menu.js web/pages/phanmon.js`
+  chạy **từ worktree sạch tại HEAD** (backup `/root/tkb-backups/room-export-20261010`, không restart, không đụng DB). Lý do: `tkb-student-excel-export.js`
+  ở máy còn việc dở 29/09 của phiên khác (`ghepMultiTeacherLabel`, chưa deploy) — bản đưa lên = bản live + đúng phần mục phòng; commit cũng chỉ gồm
+  phần này (`git update-index --cacheinfo`), việc dở kia vẫn nằm nguyên trong cây làm việc.
+- **Còn mở**: Excel TKB giáo viên / toàn trường chưa có vạch phòng; chưa có lựa chọn «mỗi phòng một trang»; Cherry/Tối ưu vẫn chưa biết sức chứa
+  phòng bộ môn (nếu xếp quá phòng thì file có bảng «tiết chưa có phòng»); vẫn chưa có giao diện nhập `tkbSubjectRooms`.
+
 ## 2026-10-10 VẠCH MÀU CẠNH PHẢI Ô TKB GIÁO VIÊN THEO PHÒNG BỘ MÔN (`DATA.tkbSubjectRooms`) — ĐÃ DEPLOY
 
 - **Chủ dự án** (THCS Tân Phú Trung, khuya 09/10): «Phòng Tin học chia làm 3 phòng, thầy Ân luôn dạy Phòng 3 (ở địa điểm 2),

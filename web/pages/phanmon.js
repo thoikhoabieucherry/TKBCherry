@@ -15885,6 +15885,7 @@ function handlePrintTKBOption(mode){
   if(key === "class") return printCurrentClassTKB();
   if(key === "teacher" || key === "teacher-template-1") return printTeacherTKBTemplate1();
   if(key === "teacher-template-2") return printTeacherTKBTemplate2();
+  if(key === "rooms") return runPrintExport("exportRoomTKBExcel", "xuất Excel TKB phòng");
   if(key === "school-class") return runPrintExport("exportSchoolClassTKBExcel", "xuất Excel TKB toàn trường theo lớp học");
   if(key === "school-teacher") return runPrintExport("exportSchoolTeacherTKBExcel", "xuất Excel TKB toàn trường theo giáo viên");
   if(key === "industry-database"){
