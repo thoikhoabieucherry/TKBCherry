@@ -8,6 +8,30 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-13 WEBSITE CÔNG KHAI KHỚP ĐƠN CLAUDE STARTUPS (ngày thành lập, tên công ty, cách dùng Claude, email) — CHỜ DEPLOY
+
+- **Chủ dự án**: đơn Claude Startups (nộp từ contact@tkbcherry.com, tổ chức "Cherry Software") lần trước không được duyệt; yêu cầu
+  chỉnh website cho khớp đơn và thêm email liên lạc. Đơn trước ghi Company website = trang của một trường học (phải là tkbcherry.com).
+- **Sửa `web/index.html` + `web/about/index.html`** (không đụng thẻ đăng nhập, `auth.js`, CSS, privacy/terms):
+  - Founded `2026` → **December 2025** theo đơn chủ dự án tự khai (JSON-LD `foundingDate: "2025-12"`, chip hero, bảng facts, đoạn tiếng Việt).
+  - Thêm tên công ty **Cherry Software**: dòng Company trong bảng facts, JSON-LD Organization `name` = Cherry Software +
+    `alternateName` = Cherry Scheduler. Không dùng `legalName` — chưa xác nhận pháp nhân.
+  - Founder: "Founder & CEO" + link LinkedIn (JSON-LD `sameAs`) + email founder **an@tkbcherry.com** (JSON-LD `founder.email`) —
+    chủ dự án nộp lại đơn bằng email này vì đơn dưới contact@ đã bị từ chối; `contact@tkbcherry.com` vẫn là email liên lạc chung.
+  - Technology: thêm đoạn stack thật (Rust, OR-Tools CP-SAT trên Cloud Run, đã kiểm chứng 75 lớp / 125 GV / ~2.200 tiết); ghi chú
+    **How we build** (một founder + Claude Code) và **Exploring** (onboarding bằng Claude API: nhập bảng tính, yêu cầu GV → ràng buộc,
+    giải thích bất khả thi — ghi rõ "not part of the product yet"). `/about` có mục "How we build" cùng nội dung.
+  - Email: chip `Contact: contact@tkbcherry.com` ở hero trang chủ (≥ 900px, chip vốn ẩn trên điện thoại) và dòng Contact đầu `/about`.
+- Giữ nguyên tắc 07/10: không ghi khách hàng/doanh thu/nhà đầu tư/pháp nhân; Claude chưa nằm trong đường xử lý production.
+- **Kiểm**: JSON-LD parse được; chụp Edge headless bản local (hero, About, Technology, `/about`) bố cục ổn;
+  `auth_activation_grant_one_year_node` 4/4; `auth_mobile_layout_node` fail sẵn (mốc chuẩn = false, khoá `auth.css`).
+  `run_tests.py`: "mới hỏng" 7 test `planner_*` — lỗi sẵn, fail y hệt trên worktree HEAD sạch và không test nào đọc hai trang này.
+- **Deploy — CHƯA lên live**: live `index.html` vẫn là biến thể 07/10 (sha256 `6b459be7…`, khoá `shared/auth.js?v=20260823-default-first-v1`
+  vì `auth.js` live chưa phải bản 1 năm) ⇒ dựng worktree sạch `<scratchpad>/wt` với index.html = repo nhưng **giữ khoá live**
+  (sha256 `2704a649…`, 26426 B) + about (sha256 `cd6babea…`, 7618 B). `deploy.py files preflight` khớp bản live; lệnh
+  `deploy.py files deploy public-site-20261013 --no-restart web/index.html web/about/index.html` **bị classifier chặn "Production Deploy"**
+  → chờ chủ dự án chạy bằng `!`. Khi deploy `auth.js` 1 năm thì deploy kèm `index.html` của repo (khoá mới).
+
 ## 2026-10-10 (tiếp) IN TKB → «TKB PHÒNG»: XUẤT EXCEL MỖI PHÒNG MỘT BẢNG — ĐÃ DEPLOY
 
 - **Chủ dự án** (sau khi có vạch màu phòng): «thêm 1 mục xuất phòng ở phần In TKB thể hiện từng phòng».

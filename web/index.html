@@ -28,16 +28,20 @@
       {
         "@type": "Organization",
         "@id": "https://tkbcherry.com/#organization",
-        "name": "Cherry Scheduler",
+        "name": "Cherry Software",
+        "alternateName": "Cherry Scheduler",
         "url": "https://tkbcherry.com/",
         "logo": "https://tkbcherry.com/assets/cherry-scheduler-logo.png",
         "email": "contact@tkbcherry.com",
-        "description": "Cherry Scheduler is a Vietnamese EdTech startup building intelligent school timetable optimization software for schools.",
-        "foundingDate": "2026",
+        "description": "Cherry Software is a Vietnamese EdTech startup building Cherry Scheduler, intelligent school timetable optimization software for schools.",
+        "foundingDate": "2025-12",
         "founder": {
           "@type": "Person",
           "name": "Nguyen Hoang An",
-          "alternateName": "Nguyễn Hoàng Ân"
+          "alternateName": "Nguyễn Hoàng Ân",
+          "jobTitle": "Founder & CEO",
+          "email": "an@tkbcherry.com",
+          "sameAs": "https://www.linkedin.com/in/an-nguyen-1b4133442/"
         },
         "foundingLocation": {
           "@type": "Place",
@@ -122,8 +126,9 @@
           </div>
           <ul class="lp-facts-inline" lang="en" aria-label="Company facts">
             <li>Vietnamese EdTech startup</li>
-            <li>Founded 2026</li>
+            <li>Founded December 2025</li>
             <li>Ho Chi Minh City, Vietnam</li>
+            <li>Contact: <a href="mailto:contact@tkbcherry.com" style="color:inherit">contact@tkbcherry.com</a></li>
           </ul>
         </div>
       </div>
@@ -334,17 +339,19 @@
         <div>
           <p class="lp-eyebrow">Company</p>
           <h2 class="lp-h2" id="aboutTitle">About Cherry Scheduler</h2>
-          <p class="lp-lead">Cherry Scheduler is an early-stage Vietnamese EdTech startup focused on school timetable optimization and intelligent scheduling tools.</p>
+          <p class="lp-lead">Cherry Scheduler is built by Cherry Software, an early-stage Vietnamese EdTech startup focused on school timetable optimization and intelligent scheduling tools.</p>
           <p class="lp-lead">We build software that reduces the complexity and manual effort involved in creating timetables for teachers and classes.</p>
           <a class="lp-link-more" href="/about">Read more about Cherry Scheduler →</a>
         </div>
         <dl class="lp-facts">
+          <dt>Company</dt>
+          <dd>Cherry Software</dd>
           <dt>Product</dt>
           <dd>Cherry Scheduler</dd>
           <dt>Founded</dt>
-          <dd>2026</dd>
+          <dd>December 2025</dd>
           <dt>Founder</dt>
-          <dd>Nguyen Hoang An <span lang="vi">(Nguyễn Hoàng Ân)</span></dd>
+          <dd>Nguyen Hoang An <span lang="vi">(Nguyễn Hoàng Ân)</span>, Founder &amp; CEO · <a href="https://www.linkedin.com/in/an-nguyen-1b4133442/" target="_blank" rel="noopener">LinkedIn</a> · <a href="mailto:an@tkbcherry.com">an@tkbcherry.com</a></dd>
           <dt>Location</dt>
           <dd>Ho Chi Minh City, Vietnam</dd>
           <dt>Stage</dt>
@@ -364,6 +371,7 @@
       <h2 class="lp-h2" id="techTitle">Optimization-first scheduling</h2>
       <p class="lp-lead">Cherry Scheduler combines constraint-based scheduling and optimization techniques to solve complex school timetable problems.</p>
       <p class="lp-lead">The scheduling engine evaluates teacher, class, subject, workload and session constraints to generate feasible schedules and improve timetable quality.</p>
+      <p class="lp-lead">In production today: a Rust backend, a Python OR-Tools CP-SAT solver running on Google Cloud Run, and a drag-and-drop web planner. Verified on a school of 75 classes, 125 teachers and about 2,200 lessons per week.</p>
 
       <ol class="lp-steps" aria-label="How Cherry Scheduler works">
         <li>
@@ -385,8 +393,12 @@
       </ol>
 
       <div class="lp-note">
+        <span class="lp-badge">How we build</span>
+        <p>Cherry Scheduler is developed by a solo founder working with Claude Code, Anthropic's AI coding assistant, to build, test and ship the product and to prepare each school's data from its raw spreadsheets.</p>
+      </div>
+      <div class="lp-note">
         <span class="lp-badge">Exploring</span>
-        <p>We are also exploring AI-assisted workflows that can help administrators describe scheduling requirements in natural language, understand conflicts, and analyze timetable quality more easily.</p>
+        <p>Next, we are exploring Claude-powered onboarding inside the product: importing school spreadsheets, turning teachers' written requests into scheduling constraints, and explaining in plain language why a timetable is infeasible. These AI features are not part of the product yet.</p>
       </div>
     </div>
   </section>
