@@ -34,6 +34,17 @@
   `/`, `/about`, `/about/` = 200; sha256 khớp (`2704a649…`, `cd6babea…`); thẻ `#authCard` còn nguyên, khoá `auth.js` live giữ nguyên.
   Rollback: `deploy.py files rollback public-site-20261013 web/index.html web/about/index.html` (lệnh này CÓ restart dịch vụ).
   Khi deploy `auth.js` 1 năm thì deploy kèm `index.html` của repo (khoá mới).
+- **Kết quả đơn (13/10 trưa)**: đơn nộp bằng an@tkbcherry.com vẫn **không được duyệt** — thư ghi "founded in the last five years or
+  funded in the last two… or we couldn't verify it from the details in the application". 12/2025 nằm trong khung ⇒ nhánh "không xác minh được".
+- **VIỆC MỞ — `HEAD /` và `HEAD /about` trả 404** (GET 200; `HEAD /robots.txt` 200 vì nginx phục vụ). Đo thẳng backend
+  `127.0.0.1:1010`: HEAD 404, GET 200 ⇒ Rust chỉ route GET. Công cụ kiểm tra tự động dò bằng HEAD sẽ thấy website "chết".
+  Hướng sửa nhẹ nhất (CHƯA làm, chưa thử `nginx -t`): trong `/etc/nginx/sites-available/tkbcherry` thêm
+  `map $request_method $tkb_upstream_method { default $request_method; HEAD GET; }` ở đầu file và
+  `proxy_method $tkb_upstream_method;` trong `location / {` (nginx 1.24 nhận biến) — hoặc sửa gốc ở Rust (coi HEAD như GET cho
+  file tĩnh, cần build + restart). Phiên này classifier chặn cả việc viết script vá nginx lẫn chạy dry-run ⇒ chờ chủ dự án quyết.
+- **Ghi nhận khác**: GET từ bên ngoài (hạ tầng ở Mỹ) đọc được đủ tên công ty/founder/ngày/email; `www` và http→https ổn; MX =
+  Google; **chưa có bản ghi SPF/DMARC**. Tìm kiếm web không ra kết quả nào về "Cherry Software"/tkbcherry (trang công khai mới có
+  từ 07/10, chưa được lập chỉ mục); website không có mã số đăng ký kinh doanh — chủ dự án chưa xác nhận đã có pháp nhân hay chưa.
 
 ## 2026-10-10 (tiếp) IN TKB → «TKB PHÒNG»: XUẤT EXCEL MỖI PHÒNG MỘT BẢNG — ĐÃ DEPLOY
 
