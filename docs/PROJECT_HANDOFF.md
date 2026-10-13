@@ -44,7 +44,11 @@
   file tĩnh, cần build + restart). Phiên này classifier chặn cả việc viết script vá nginx lẫn chạy dry-run ⇒ chờ chủ dự án quyết.
 - **Ghi nhận khác**: GET từ bên ngoài (hạ tầng ở Mỹ) đọc được đủ tên công ty/founder/ngày/email; `www` và http→https ổn; MX =
   Google; **chưa có bản ghi SPF/DMARC**. Tìm kiếm web không ra kết quả nào về "Cherry Software"/tkbcherry (trang công khai mới có
-  từ 07/10, chưa được lập chỉ mục); website không có mã số đăng ký kinh doanh — chủ dự án chưa xác nhận đã có pháp nhân hay chưa.
+  từ 07/10, chưa được lập chỉ mục); website không có mã số đăng ký kinh doanh.
+- **Chủ dự án xác nhận 13/10: CHƯA đăng ký kinh doanh** (Cherry Software chưa có pháp nhân). Đơn hỏi "Month and year you
+  incorporated" nên chưa có gì để chương trình xác minh ⇒ không nộp lại cho tới khi có đăng ký thật. Website vẫn theo nguyên tắc 07/10
+  (không ghi pháp nhân chưa có): dòng "Company: Cherry Software" thêm sáng 13/10 nên đổi nhãn cho khỏi hiểu là công ty đã đăng ký —
+  đã đề xuất, chờ chủ dự án quyết.
 
 ## 2026-10-10 (tiếp) IN TKB → «TKB PHÒNG»: XUẤT EXCEL MỖI PHÒNG MỘT BẢNG — ĐÃ DEPLOY
 
