@@ -49,6 +49,9 @@
   incorporated" nên chưa có gì để chương trình xác minh ⇒ không nộp lại cho tới khi có đăng ký thật. Website vẫn theo nguyên tắc 07/10
   (không ghi pháp nhân chưa có): dòng "Company: Cherry Software" thêm sáng 13/10 nên đổi nhãn cho khỏi hiểu là công ty đã đăng ký —
   đã đề xuất, chờ chủ dự án quyết.
+- **Khép lại (13/10 chiều)**: chủ dự án gửi phản hồi qua khung hỗ trợ của Console; Anthropic trả lời đã xem lại kỹ hồ sơ và xác định
+  hiện **không đủ điều kiện**. Dừng việc nộp đơn; chỉ xem lại khi đã có đăng ký kinh doanh. Hai việc website còn treo: nhãn "Company"
+  và lỗi `HEAD` 404 (ở trên).
 
 ## 2026-10-10 (tiếp) IN TKB → «TKB PHÒNG»: XUẤT EXCEL MỖI PHÒNG MỘT BẢNG — ĐÃ DEPLOY
 
