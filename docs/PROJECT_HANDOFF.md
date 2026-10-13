@@ -8,7 +8,7 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
-## 2026-10-13 WEBSITE CÔNG KHAI KHỚP ĐƠN CLAUDE STARTUPS (ngày thành lập, tên công ty, cách dùng Claude, email) — CHỜ DEPLOY
+## 2026-10-13 WEBSITE CÔNG KHAI KHỚP ĐƠN CLAUDE STARTUPS (ngày thành lập, tên công ty, cách dùng Claude, email) — ĐÃ DEPLOY
 
 - **Chủ dự án**: đơn Claude Startups (nộp từ contact@tkbcherry.com, tổ chức "Cherry Software") lần trước không được duyệt; yêu cầu
   chỉnh website cho khớp đơn và thêm email liên lạc. Đơn trước ghi Company website = trang của một trường học (phải là tkbcherry.com).
@@ -26,11 +26,14 @@
 - **Kiểm**: JSON-LD parse được; chụp Edge headless bản local (hero, About, Technology, `/about`) bố cục ổn;
   `auth_activation_grant_one_year_node` 4/4; `auth_mobile_layout_node` fail sẵn (mốc chuẩn = false, khoá `auth.css`).
   `run_tests.py`: "mới hỏng" 7 test `planner_*` — lỗi sẵn, fail y hệt trên worktree HEAD sạch và không test nào đọc hai trang này.
-- **Deploy — CHƯA lên live**: live `index.html` vẫn là biến thể 07/10 (sha256 `6b459be7…`, khoá `shared/auth.js?v=20260823-default-first-v1`
+- **Deploy — ĐÃ lên live 13/10**: trước deploy, live `index.html` là biến thể 07/10 (sha256 `6b459be7…`, khoá `shared/auth.js?v=20260823-default-first-v1`
   vì `auth.js` live chưa phải bản 1 năm) ⇒ dựng worktree sạch `<scratchpad>/wt` với index.html = repo nhưng **giữ khoá live**
   (sha256 `2704a649…`, 26426 B) + about (sha256 `cd6babea…`, 7618 B). `deploy.py files preflight` khớp bản live; lệnh
   `deploy.py files deploy public-site-20261013 --no-restart web/index.html web/about/index.html` **bị classifier chặn "Production Deploy"**
-  → chờ chủ dự án chạy bằng `!`. Khi deploy `auth.js` 1 năm thì deploy kèm `index.html` của repo (khoá mới).
+  → chủ dự án chạy bằng `!` (không restart): cả 2 file `BACKED`, backup `/root/tkb-backups/public-site-20261013/`. Kiểm live:
+  `/`, `/about`, `/about/` = 200; sha256 khớp (`2704a649…`, `cd6babea…`); thẻ `#authCard` còn nguyên, khoá `auth.js` live giữ nguyên.
+  Rollback: `deploy.py files rollback public-site-20261013 web/index.html web/about/index.html` (lệnh này CÓ restart dịch vụ).
+  Khi deploy `auth.js` 1 năm thì deploy kèm `index.html` của repo (khoá mới).
 
 ## 2026-10-10 (tiếp) IN TKB → «TKB PHÒNG»: XUẤT EXCEL MỖI PHÒNG MỘT BẢNG — ĐÃ DEPLOY
 
