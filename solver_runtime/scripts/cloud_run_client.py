@@ -34,6 +34,15 @@ CLOUD_PLATFORM_SCOPE: Final = "https://www.googleapis.com/auth/cloud-platform"
 CLOUD_RUN_HTTP_TIMEOUT_CAP_SECONDS: Final = 295.0
 
 
+class CloudRunAuthError(RuntimeError):
+    """The VPS identity could not mint a Cloud Run ID token.
+
+    Every region is invoked as the same service account, so this is never a
+    regional problem: retrying the next region only burns time that the Rust
+    coordinator needs for its early VPS fallback.
+    """
+
+
 def _env_flag(name: str, default: bool = False) -> bool:
     raw = os.environ.get(name, "1" if default else "0")
     return raw.strip().lower() in {"1", "true", "yes", "on"}
@@ -92,12 +101,42 @@ def _workload_identity_token(audience: str) -> str:
         },
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=30.0) as response:
-        payload = json.loads(response.read(MAX_REQUEST_BYTES + 1))
+    try:
+        with urllib.request.urlopen(request, timeout=30.0) as response:
+            payload = json.loads(response.read(MAX_REQUEST_BYTES + 1))
+    except urllib.error.HTTPError as error:
+        # Keep Google's own reason ("Account disabled", "Permission denied",
+        # project suspended...) so the operator sees why every region failed.
+        detail = error.read(2048).decode("utf-8", errors="replace")
+        try:
+            message = json.loads(detail)["error"]["message"]
+        except Exception:  # noqa: BLE001 - non-JSON error body.
+            message = detail.strip()[:300]
+        raise RuntimeError(
+            f"IAM Credentials HTTP {error.code}: {message}"
+        ) from error
     token = payload.get("token") if isinstance(payload, dict) else None
     if not isinstance(token, str) or token.count(".") != 2:
         raise RuntimeError("IAM Credentials returned no Cloud Run ID token")
     return token
+
+
+def _adc_is_external_account() -> bool:
+    """True when ADC is a Workload Identity Federation credential file.
+
+    ``id_token.fetch_id_token`` cannot use such a file and falls through to a
+    GCE metadata-server ping that only times out on the VPS (~14 s per call,
+    paid once per region on every solve). Skip straight to WIF instead.
+    """
+    path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+    if not path:
+        return False
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            info = json.load(handle)
+    except (OSError, ValueError):
+        return False
+    return isinstance(info, dict) and info.get("type") == "external_account"
 
 
 def _identity_token(audience: str) -> str:
@@ -106,15 +145,16 @@ def _identity_token(audience: str) -> str:
         return explicit
 
     primary_error: Exception | None = None
-    try:
-        from google.auth.transport.requests import Request  # type: ignore
-        from google.oauth2 import id_token  # type: ignore
+    if not _adc_is_external_account():
+        try:
+            from google.auth.transport.requests import Request  # type: ignore
+            from google.oauth2 import id_token  # type: ignore
 
-        token = id_token.fetch_id_token(Request(), audience)
-        if token:
-            return str(token)
-    except Exception as error:
-        primary_error = error
+            token = id_token.fetch_id_token(Request(), audience)
+            if token:
+                return str(token)
+        except Exception as error:
+            primary_error = error
 
     try:
         return _workload_identity_token(audience)
@@ -122,7 +162,7 @@ def _identity_token(audience: str) -> str:
         detail = "Google ADC returned no Cloud Run identity token"
         if primary_error is not None:
             detail = "cannot obtain a Cloud Run identity token from Google ADC"
-        raise RuntimeError(detail) from error
+        raise CloudRunAuthError(f"{detail}: {error}") from error
 
 
 def _expected_digest() -> str:
@@ -332,6 +372,8 @@ def solve() -> int:
                 headers=_request_headers(url, expected_digest, audience),
                 method="POST",
             )
+        except CloudRunAuthError as error:
+            raise RuntimeError(f"cloud_run_auth_unavailable: {error}") from error
         except Exception as error:  # noqa: BLE001 - token minting for one region.
             if remaining == 0 and last_error is None:
                 raise

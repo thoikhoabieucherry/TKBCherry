@@ -8,6 +8,75 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-25 "CLOUD RUN KHÔNG NHẬN LƯỢT GIẢI" = GOOGLE ĐÌNH CHỈ PROJECT MỚI — client báo lỗi nhanh + VPS dự phòng
+
+- **Triệu chứng** (chủ dự án, Tân Nhựt TKB 5 `0adf9782365`): bấm Cherry/Tối ưu → "Cloud Run không nhận lượt giải".
+  `solver_telemetry_events`: lượt thành công cuối **22/10 16:34**; từ **23/10 08:03** mọi lượt `cloud_run` `failed`,
+  runtime ~42 s, `cloud_revision` NULL (mọi trường, không riêng Tân Nhựt).
+- **Nguyên nhân**: project `project-29291bde-aebd-4c97-baf` (số 488043050753) bị Google **đình chỉ** —
+  `gcloud run services list` / `logging read` trả `CONSUMER_SUSPENDED`; cả 3 service account (invoker, runtime,
+  compute) `disabled=True`; billing `012A3D-BE6382-F2160D` vẫn mở. Trên VPS, STS/WIF (pool ở project cũ) vẫn đổi được
+  token nhưng IAM `generateIdToken` trả **404 "Account disabled"**. 42 s = 3 vùng × ~14 s, phần lớn là
+  `id_token.fetch_id_token` ping metadata server GCE (không tồn tại trên VPS) trước khi tới WIF.
+  Project cũ `project-61ee7855-507e-40a3-879` ACTIVE nhưng không billing (tài khoản đã đóng 20/10).
+  Lý do đình chỉ không đọc được bằng gcloud (logging bị chặn vì suspended) — **chủ dự án phải xem email/Console của
+  thayankorea@gmail.com và kháng nghị**; không có cách sửa bằng mã.
+- **Sửa `solver_runtime/scripts/cloud_run_client.py`**: ADC kiểu `external_account` (WIF) → bỏ qua
+  `fetch_id_token`/metadata ping, đi thẳng WIF (lúc khoẻ cũng bớt ~14 s/lượt); lỗi lấy token = `CloudRunAuthError` →
+  dừng ngay, không thử vùng khác (cùng một danh tính); thông báo giữ lý do của Google
+  (`cloud_run_auth_unavailable: … IAM Credentials HTTP 404: Account disabled: …`). Đo trên VPS: **42 s → 2,6 s**.
+  Test `test_cloud_run_transport.py` 25/25 (+3: bỏ ping khi WIF, giữ lý do IAM, lỗi token không thử vùng khác).
+- **VPS đã nhận** (backup `/root/tkb-backups/vps-solver-fallback-20261025/`, không restart): client mới + 8 file engine
+  v3 / adapter / validate + `joint.py` mới — VPS kẹt bản engine 01/10 trong khi Cloud Run chạy bản 08/10 (888069f);
+  ortools hai bên cùng 9.15.6755; import OK.
+- **CHỜ CHỦ DỰ ÁN** (classifier chặn ghi kvstore production): đổi `serverless_infrastructure_v1.mode`
+  `serverless_only` → `auto` (`fallback` đã là `vps`). Khi đó lượt Cherry/Tối ưu thử Cloud Run, lỗi trong 2,6 s
+  (< `SERVERLESS_EARLY_FALLBACK_MAX_MS` 30 s) → `fallback_serverless_to_vps` → giải trên VPS (6 vCPU); Google gỡ đình chỉ
+  thì tự dùng lại Cloud Run, không phải sửa gì. Rollback: ghi lại file
+  `serverless_infrastructure_v1.before.json` trong thư mục backup trên.
+
+## 2026-10-20 CHUYỂN GOOGLE CLOUD PROJECT (solver Cloud Run) — ĐÃ ÁP VPS
+
+- **Chủ dự án** cung cấp project mới qua Console:
+  `https://console.cloud.google.com/home/dashboard?project=project-29291bde-aebd-4c97-baf`
+  (Owner gcloud trên máy: `thayankorea@gmail.com`; billing bật).
+- **Cloud Run đã deploy** service `tkb-solver` 3 vùng trên project mới:
+  - Jakarta (chính): `https://tkb-solver-sgsazbuzwq-et.a.run.app` — revision `tkb-solver-00003-pal`
+  - Singapore: `https://tkb-solver-sgsazbuzwq-as.a.run.app`
+  - Đài Loan: `https://tkb-solver-sgsazbuzwq-de.a.run.app`
+  - Solver digest: `818f657a0525f867d4ab34d85599e685da27e3e5bae289df27a7d7413fe36e59`
+  - SA: `tkb-cloud-run-invoker@project-29291bde-aebd-4c97-baf.iam.gserviceaccount.com`,
+    `tkb-cloud-run-runtime@project-29291bde-aebd-4c97-baf.iam.gserviceaccount.com`
+- **Sửa `deploy.ps1`**: lần tạo service đầu không dùng `--no-traffic` (gcloud từ chối);
+  cấp `roles/run.invoker` cho Invoker SA **trước** canary (tránh 403 trên project mới).
+- **VPS đã chuyển** (backup `/root/tkb-backups/gcp-switch-20261020-114718/`):
+  - kvstore `serverless_infrastructure_v1`: `activeProfileId=cloud-run-project-29291bde-aebd-4c97-baf`,
+    3 profile mới `enabled=true`, 3 profile project cũ `enabled=false`.
+  - systemd drop-in `cloud-run.conf` / `cloudrun.conf`: URL/audience/digest/project/SA mới + `TKB_CLOUD_PROFILE`.
+  - `/etc/tkb-google-cloud-usage.env`: project + monitor SA mới; Billing Export table chưa có trên project mới.
+  - `tkb-app` restart → `active`.
+- **WIF**: pool X.509 vẫn ở project cũ `project-61ee7855-507e-40a3-879` (số `747788327707`,
+  pool `tkb-vps`, subject `tkb-cherry-vps`). Đã bind principal đó
+  `roles/iam.workloadIdentityUser` + `roles/iam.serviceAccountTokenCreator` lên SA invoker project mới.
+  Nghiệm thu từ VPS: `cloud_run_client._identity_token` → `/health` Jakarta **200** đúng digest/revision.
+  **Không xoá project cũ** cho đến khi migrate WIF pool sang project mới.
+- **Billing cũ ĐÃ ĐÓNG (20/10, chiều)**: tài khoản thanh toán `0106E4-FC8666-B2FF00` (của
+  `thoikhoabieucherry@gmail.com`) đóng, Google hoàn ~250.000 ₫ về Mastercard ••8059 (thẻ đã hết hạn —
+  chủ dự án tự lo với ngân hàng / Cloud Billing Support). Kiểm 13:59 VN: project cũ `billingEnabled=false`,
+  pool WIF `tkb-vps` vẫn `ACTIVE`; project mới dùng billing **khác** `012A3D-BE6382-F2160D` (mở).
+  Lượt POST cuối trước khi kiểm: 12:34 VN, 200. Chưa có lượt nào để chứng minh STS/WIF trên project
+  không billing còn đổi được token — nếu Cherry báo "Cloud Run không nhận lượt giải", nghi chỗ này trước.
+- **Mặc định script**: `deploy-all.py`, `deploy-and-pin.ps1`, `rollout-multi-region.ps1`,
+  `cherry-canary.ps1`, `google-cloud-usage.env.example` → project mới.
+- **Việc mở**: (1) bật Billing Export BigQuery trên project mới nếu muốn đối soát chi phí Super Admin;
+  (2) migrate WIF pool/provider X.509 sang project mới rồi mới có thể tắt project cũ;
+  (3) Jakarta lúc đầu cold-start trả 429 "no available instance" — đã promote revision `00004-kww`
+  và **đổi `activeProfileId` sang Singapore** (`…-asia-southeast1`, URL `…-as.a.run.app`) kèm
+  `TKB_CLOUD_RUN_FALLBACK_URLS` = Jakarta + Đài Loan; profile cũ vẫn giữ `enabled=false` (không xóa).
+  Health 3 vùng từ VPS = 200 sau khi chuyển.
+- **Legacy giữ trên VPS**: `/root/tkb-cloud-legacy-project-61ee7855/` + 3 profile OFF trong kvstore
+  (digest gốc `d351e288…`, URL `tys7xrhbca-…`).
+
 ## 2026-10-13 WEBSITE CÔNG KHAI KHỚP ĐƠN CLAUDE STARTUPS (ngày thành lập, tên công ty, cách dùng Claude, email) — ĐÃ DEPLOY
 
 - **Chủ dự án**: đơn Claude Startups (nộp từ contact@tkbcherry.com, tổ chức "Cherry Software") lần trước không được duyệt; yêu cầu
@@ -50,8 +119,12 @@
   (không ghi pháp nhân chưa có): dòng "Company: Cherry Software" thêm sáng 13/10 nên đổi nhãn cho khỏi hiểu là công ty đã đăng ký —
   đã đề xuất, chờ chủ dự án quyết.
 - **Khép lại (13/10 chiều)**: chủ dự án gửi phản hồi qua khung hỗ trợ của Console; Anthropic trả lời đã xem lại kỹ hồ sơ và xác định
-  hiện **không đủ điều kiện**. Dừng việc nộp đơn; chỉ xem lại khi đã có đăng ký kinh doanh. Hai việc website còn treo: nhãn "Company"
-  và lỗi `HEAD` 404 (ở trên).
+  hiện **không đủ điều kiện**. Dừng việc nộp đơn; chỉ xem lại khi đã có đăng ký kinh doanh. Việc website còn treo: lỗi `HEAD` 404 (ở trên).
+- **Nhãn "Company" → "Team" (13/10 chiều, chủ dự án đồng ý)**: `<dt>Company</dt>` → `<dt>Team</dt>` ở bảng facts của `web/index.html` và
+  `web/about/index.html` (tên Cherry Software giữ nguyên) để không bị hiểu là công ty đã đăng ký. Bản deploy = live + đúng một dòng đó mỗi
+  trang (index giữ khoá `auth.js` live; sha256 `8c506d67…` 26423 B, about `379bf4ca…` 7615 B), dựng ở worktree sạch `<scratchpad>/wt`;
+  chủ dự án chạy `deploy.py files deploy public-site-team-20261013 --no-restart web/index.html web/about/index.html` —
+  **ĐÃ DEPLOY** (backup `/root/tkb-backups/public-site-team-20261013/`); kiểm live: `/` và `/about` 200, sha256 khớp, `<dt>Team</dt>` có, `#authCard` còn.
 
 ## 2026-10-10 (tiếp) IN TKB → «TKB PHÒNG»: XUẤT EXCEL MỖI PHÒNG MỘT BẢNG — ĐÃ DEPLOY
 
