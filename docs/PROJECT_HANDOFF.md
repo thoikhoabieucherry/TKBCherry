@@ -29,11 +29,16 @@
 - **VPS đã nhận** (backup `/root/tkb-backups/vps-solver-fallback-20261025/`, không restart): client mới + 8 file engine
   v3 / adapter / validate + `joint.py` mới — VPS kẹt bản engine 01/10 trong khi Cloud Run chạy bản 08/10 (888069f);
   ortools hai bên cùng 9.15.6755; import OK.
-- **CHỜ CHỦ DỰ ÁN** (classifier chặn ghi kvstore production): đổi `serverless_infrastructure_v1.mode`
-  `serverless_only` → `auto` (`fallback` đã là `vps`). Khi đó lượt Cherry/Tối ưu thử Cloud Run, lỗi trong 2,6 s
+- **ĐÃ ĐỔI (25/10 ~20:05, chủ dự án duyệt)**: `serverless_infrastructure_v1.mode` `serverless_only` → `auto`
+  (`fallback` `vps`). Lượt Cherry/Tối ưu thử Cloud Run, lỗi trong 2,6 s
   (< `SERVERLESS_EARLY_FALLBACK_MAX_MS` 30 s) → `fallback_serverless_to_vps` → giải trên VPS (6 vCPU); Google gỡ đình chỉ
   thì tự dùng lại Cloud Run, không phải sửa gì. Rollback: ghi lại file
   `serverless_infrastructure_v1.before.json` trong thư mục backup trên.
+  Thử đường VPS (chỉ đọc, chạy `solve_stdio.py solve` như Rust, `engine=cherry`, 45 s) với kho Tân Nhựt: status 200,
+  `cherry_engine_v3`, 1754/1754, 0 vi phạm Yêu cầu, 41 s. Chưa có lượt thật đi trọn Rust → Cloud Run lỗi → VPS:
+  kiểm `solver_telemetry_events` (`cloud_run` failed + `fallback=vps`, rồi một dòng `vps`) sau lần bấm kế tiếp.
+- **Bẫy**: trong lúc chưa đổi mode, bấm xếp lại trên web vẫn ra lưới thiếu tiết (19:58 Tân Nhựt bị đè còn 1690/1754,
+  RB 357) — không phải do thiếu ô; bản offline 1754/1754 vừa đủ ô hiện có, không cần mở tiết nghỉ.
 
 ## 2026-10-20 CHUYỂN GOOGLE CLOUD PROJECT (solver Cloud Run) — ĐÃ ÁP VPS
 
