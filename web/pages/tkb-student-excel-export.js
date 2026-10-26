@@ -252,6 +252,22 @@
     return display;
   }
 
+  // 29/09 (chủ dự án, TH Tân An Hội): ô dạy ghép NHIỀU GV (TANN = GV bản ngữ + GV Tiếng Anh
+  // trợ giảng) in "TANN-TANN1.Nguyệt TA" quá dài, tràn ô -> chỉ in tên tắt của dòng dạy ghép,
+  // giống bảng lớp trên trang Sắp xếp (tkbClassCellView, 29/08). Dòng ghép 1 GV giữ "Môn-GV".
+  function ghepMultiTeacherLabel(lop, mon, classRef){
+    try{
+      if(typeof tkbGhepRowFor !== 'function') return '';
+      const row = (classRef ? tkbGhepRowFor(classRef, mon) : null) || tkbGhepRowFor(safe(lop?.id), mon);
+      if(!row) return '';
+      const gv = Array.isArray(row.gv) ? row.gv : String(row.gv || '').split(/[,;+\n]+/);
+      if(gv.map(x => safe(x)).filter(Boolean).length < 2) return '';
+      return safe(row.viettat) || safe(row.ten);
+    }catch(_){
+      return '';
+    }
+  }
+
   // 04/09 (chủ dự án): thêm tham số classRef để phiếu TKB học sinh cũng dùng được
   // hàm này mà vẫn giữ nhãn dạy ghép của lessonText. Không truyền classRef thì
   // phần môn đúng bằng monShort(mon) như trước (bản toàn trường theo lớp giữ nguyên).
@@ -260,6 +276,8 @@
     let mon = '';
     try{ mon = safe(cellMon(raw)); }catch(_){ mon = safe(raw?.mon || raw); }
     if(!mon) return '';
+    const ghepLabel = ghepMultiTeacherLabel(lop, mon, classRef);
+    if(ghepLabel) return ghepLabel;
     const subject = lessonText(raw, classRef) || monShort(mon);
     let teachers = '';
     try{ teachers = getTeacherForClassMon(classCanonForTeacherLookup(lop), mon); }catch(_){ teachers = ''; }
@@ -1793,6 +1811,9 @@
       return null;
     }
   };
+
+  // Cho test Node (e2e_tests/student_excel_ghep_label_node.test.js).
+  window.__tkbStudentExcelInternals = { lessonTeacherText };
 
   // 01/10: cho test Node kiểm màu địa điểm (e2e_tests/excel_location_colors_node.test.js).
   window.__tkbExcelLocationInternals = {
