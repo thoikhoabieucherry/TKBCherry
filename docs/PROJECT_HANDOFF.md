@@ -8,6 +8,40 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-27 HỌC TỪ BẢN "CHERRY v3.5 TURBO" (Desktop/TKBCherry-FET-VPS-V4) + NÚT GẠT «MÁY CHỦ / MÁY NÀY» — CHƯA DEPLOY
+
+- **Câu hỏi chủ dự án**: thuật toán ở `C:\Users\Cherry\Desktop\TKBCherry-FET-VPS-V4` có tốt hơn không. Bản đó = bản sao Cherry
+  Local, 40/43 file `solver_runtime` giống hệt; khác `construct.py`/`cpsat_lns.py`/`entry.py` + FET trình duyệt (kiểm luật GV/địa
+  điểm) + nút Cherry tự lùi về FET worker khi không có backend. File Excel so sánh đi kèm có nhiều khẳng định sai về bản mình.
+  Đo An Phú (ghim tiết ghép như `tkbJointPinForSolve`): V4 xếp mới 180 s hơn rõ; **bấm lại thì V4 vứt lịch hợp lệ** (dòng
+  `warm_all=False` khi `_grid_rule_debt` của lưới gốc > 0 — hàm đó đếm nhầm 32 trùng giờ do ô cố định/tiết ghép); FET trình
+  duyệt của V4 xếp mới vẫn ~300 vi phạm RB (không kiểm luật lớp/môn) → không thay được máy chủ. Máy chủ local của V4 nhận MỌI
+  Origin cho `/api/*` (trang lạ đọc được kho trường) — không dùng lại phần đó.
+- **Nhánh `feat/cherry-dense-cpsat` (d386a46)**: chỉ lấy phần "CP-SAT LNS dày" của V4 — vòng 1 heuristic ~9–11,5 s, tabu khởi động
+  vài giây, mỗi lượt CP-SAT chất lượng 2 s và dừng ở cải thiện đầu (`exact_quality`), vùng theo GV nợ + lớp chặn hoán đổi
+  (`_cpsat_debt_cluster`/`_cpsat_debt_sessions`, `debt_tries`), sửa nợ luật số buổi trong `_cpsat_repair_loc_debt`. KHÔNG lấy:
+  `warm_all=False`, `skip_local_repair`, `max_dirty=3`, `_maybe_fill_warm`/ngân sách sửa warm chặt hơn; vòng 1 vẫn nhận lịch người
+  dùng. 180 s, 4 worker, seed 11, [1 tiết, buổi, trống 1]: An Phú xếp mới [4,306,30]→[0,285,21], bấm lại [0,281,14]→[0,277,11];
+  Tân Nhựt `0adf9782364` xếp mới [0,652,78]→[0,613,50], bấm lại [0,594,37]→[0,590,36]; Tân Phú Trung (`store_af5ldw7i8y2_v11sep_final`)
+  xếp mới 36 vi phạm→1, lịch gốc vi phạm `subject_session_cap` → bản cũ 2189 + 2 vi phạm, bản mới 2193 hợp lệ.
+  Test engine v3 173/173. **Còn mở**: Tân Phú Trung xếp mới kết thúc ở 128 s vì `_run_quality` chỉ chạy khi `penalty()==0`
+  (còn 1 buổi vi phạm địa điểm) — thời gian dư chưa dùng; mỗi ô mới 1 seed.
+- **Nhánh `feat/cherry-local-solver-toggle` (gồm cả engine ở trên)**: viên «Máy chủ / Máy này» sau `#btnEngineCherry` (bridge tự gắn
+  + CSS; ẩn ≤ 900 px; điện thoại luôn Máy chủ; khoá khi đang giải). «Máy này» → `rustApiBase()` dò `http://127.0.0.1:2210`
+  (override loopback `TKB_LOCAL_SOLVER_ORIGIN_V1`), không cache, không rơi về máy chủ, `solverRequestHeaders` bỏ thẻ đăng nhập;
+  thông báo hướng dẫn mở `start-cherry-local.bat` + cho phép "truy cập mạng cục bộ" của Chrome. `tools/local-solver/`:
+  `cherry_local_solver.py` (chỉ endpoint giải, 127.0.0.1, Origin allowlist tkbcherry.com + localhost, 403 cho trang khác, PNA
+  header) + `solver_jobs.py` (lấy từ Cherry Local) + `start-cherry-local.bat` + `build_package.py` (zip `cherry-may-nay`, bỏ
+  google-auth). Test: `e2e_tests/planner_solver_target_toggle_node` 9/9, `tests/test_local_solver` 8/8; bridge/toolbar suites đỏ
+  đúng 30 ca có sẵn như HEAD. E2E: lượt Cherry 60 s qua bộ giải local (Origin tkbcherry.com) → 869/869 hard_ok. Bẫy đã sửa: in tiếng
+  Việt ra console cp1252 làm bộ giải sập lúc khởi động → `reconfigure(utf-8)`. «Máy chủ» = đường hiện tại (Cloud Run → VPS), không
+  ép chỉ Cloud Run (project đang bị đình chỉ).
+- **Deploy (chưa làm, chờ chủ dự án)**: web = `tkb-rust-bridge.js` + dòng `?v=` bridge trong `sapxep.html` (dựng = live + 1 dòng,
+  cây làm việc đang có các bump `?v` khác chưa commit); engine = 3 file `tkb_engine_v3` lên VPS (không restart). Gói zip phát cho
+  trường riêng. Lưu ý: bản V4 của chủ dự án đang chạy Cherry Local ở cổng 2210 — trùng cổng mặc định của bộ giải mới.
+- Cây làm việc chính vẫn còn nguyên 17 file của đợt "dọn repo 26/10" **chưa commit** (mục 26/10 ghi đã commit nhưng HEAD không có);
+  phiên này không đụng vào, làm trong worktree riêng.
+
 ## 2026-10-25 "CLOUD RUN KHÔNG NHẬN LƯỢT GIẢI" = GOOGLE ĐÌNH CHỈ PROJECT MỚI — client báo lỗi nhanh + VPS dự phòng
 
 - **Triệu chứng** (chủ dự án, Tân Nhựt TKB 5 `0adf9782365`): bấm Cherry/Tối ưu → "Cloud Run không nhận lượt giải".
