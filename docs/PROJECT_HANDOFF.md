@@ -69,6 +69,16 @@
   **Lộ dữ liệu**: bản V4 đã đăng `web/data/kkhg52etp92.json` (An Phú, tên GV/lớp/TKB) công khai; trang chính nay 404 nhưng 7 bản
   đăng cũ (6adf8953…, 6ae0044d…, 6ae019de…, 6ae021b4…, 6ae0261f…, 6ae02750…, 6ae042a2…) vẫn trả 200 ở
   `https://<id>--tkbcherry.netlify.app/data/kkhg52etp92.json` — chủ dự án tự xoá trong Netlify (xoá vĩnh viễn, Claude không làm).
+- **Một nút Cherry tự mời cài + bộ giải ở khay hệ thống (27/10 khuya, chủ dự án: "nút máy này và cherry như nhau, nút cherry
+  nếu chưa phát hiện local thì tải file và cài, làm như phần mềm hỗ trợ thu nhỏ vào taskbar")**: bản không đăng nhập bỏ viên
+  «Máy này»; chấm trạng thái trên nút Cherry (`#tkbCherryLocalDot`); Cherry không thấy bộ giải → hộp `#tkbLocalSolverInstall`
+  (tải `/download/CherrySetup.exe` cùng trang, không phải Windows thì gợi ý ▶), dò 3 s/lần tới 15 phút, cài xong tự báo sẵn
+  sàng. Bộ giải `--tray`: biểu tượng 🍒 (pystray + Pillow) — trạng thái / Mở TKB Cherry / Trang kiểm tra / Thoát; thiếu thư
+  viện thì chạy ngầm như cũ. Bộ cài: lối tắt Start Menu + Startup có `cherry.ico`, `--first-run` báo bằng thông báo khay (không
+  mở tab). **Engine trong gói chỉ là bytecode `-OO`** (bộ cài tải công khai; vẫn dịch ngược được — chỉ làm khó). Đã kiểm:
+  engine `.pyc` + khay 869/869 trống 1 14→10 (45 s); Chrome trên bản dựng: hộp cài, tải 200, bật bộ giải → "Đã sẵn sàng".
+  Đăng `--prod` deploy `6ae0bbddaa5b701d7a7a5b29`. Agent cũ của chủ dự án (TKBCherryAgent 1.6.x, nhánh `codex/agent-1.6.33-ci`)
+  ghi nhận **Smart App Control** (Windows 11) chặn exe/DLL/PYD chưa ký số — bộ cài này cũng chưa ký, máy bật SAC có thể bị chặn.
 - **Deploy (chưa làm, chờ chủ dự án)**: web = `tkb-rust-bridge.js` + dòng `?v=` bridge trong `sapxep.html` (dựng = live + 1 dòng,
   cây làm việc đang có các bump `?v` khác chưa commit); engine = 3 file `tkb_engine_v3` lên VPS (không restart). Gói zip phát cho
   trường riêng. Lưu ý: bản V4 của chủ dự án đang chạy Cherry Local ở cổng 2210 — trùng cổng mặc định của bộ giải mới.
