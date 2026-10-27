@@ -52,7 +52,7 @@ def find_solver_runtime(explicit: str | None = None) -> Path:
     candidates = [Path(explicit)] if explicit else []
     candidates += [HERE / "solver_runtime", HERE.parent.parent / "solver_runtime"]
     for cand in candidates:
-        if (cand / "scripts" / "solve_stdio.py").exists():
+        if (cand / "scripts" / "solve_stdio.py").exists() or (cand / "scripts" / "solve_stdio.pyc").exists():
             return cand.resolve()
     return candidates[0] if candidates else HERE / "solver_runtime"
 
@@ -214,6 +214,92 @@ def write_log(log_dir: Path, message: str) -> None:
         pass
 
 
+def app_url() -> str:
+    """Trang TKB mà menu khay mở: trang thử nghiệm ghi trong allowed_origins.txt nếu có."""
+    extra = extra_origins()
+    return (extra[0].rstrip("/") if extra else DEFAULT_ORIGINS[0]) + "/app"
+
+
+def tray_image():
+    from PIL import Image, ImageDraw
+
+    try:
+        return Image.open(HERE / "cherry.png").convert("RGBA")
+    except Exception:
+        img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+        ImageDraw.Draw(img).ellipse((8, 14, 56, 62), fill=(239, 30, 60, 255))
+        return img
+
+
+def run_tray(server, manager: SolverManager, port: int, first_run: bool, log_dir: Path) -> bool:
+    """27/10 (chủ dự án: "làm như phần mềm hỗ trợ thu nhỏ vào taskbar"): biểu tượng 🍒 ở khay
+    hệ thống cạnh đồng hồ — trạng thái, mở TKB Cherry, trang kiểm tra, Thoát. Máy chủ giải chạy
+    ở luồng nền; khay giữ luồng chính. Thiếu pystray/Pillow -> trả False (chạy ngầm như cũ)."""
+
+    try:
+        import pystray
+    except Exception as exc:  # noqa: BLE001
+        write_log(log_dir, f"khong co khay he thong: {exc}")
+        return False
+    import threading
+    import webbrowser
+
+    def busy() -> bool:
+        try:
+            return bool(manager.state().get("busy"))
+        except Exception:
+            return False
+
+    def status_text(_item=None) -> str:
+        return "Đang xếp thời khóa biểu…" if busy() else f"Sẵn sàng — {manager.workers} luồng giải"
+
+    def open_app(_icon=None, _item=None):
+        webbrowser.open(app_url())
+
+    def open_status(_icon=None, _item=None):
+        webbrowser.open(f"http://127.0.0.1:{port}/")
+
+    stopped = threading.Event()
+
+    def quit_app(icon, _item=None):
+        stopped.set()
+        icon.visible = False
+        icon.stop()
+
+    menu = pystray.Menu(
+        pystray.MenuItem(status_text, None, enabled=False),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Mở TKB Cherry", open_app, default=True),
+        pystray.MenuItem("Trang kiểm tra bộ giải", open_status),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Thoát Cherry máy này", quit_app),
+    )
+    icon = pystray.Icon("CherryMayNay", tray_image(), "Cherry máy này", menu)
+    threading.Thread(target=server.serve_forever, name="cherry-local-http", daemon=True).start()
+
+    def watch(icon_):
+        icon_.visible = True
+        if first_run:
+            try:
+                icon_.notify("Đã cài xong, bộ giải chạy ngầm ở đây. Quay lại trang TKB và bấm Cherry.", "Cherry máy này")
+            except Exception:
+                pass
+        last = None
+        while not stopped.wait(2):
+            text = "Cherry máy này — " + status_text()
+            if text != last:
+                icon_.title = text
+                last = text
+
+    try:
+        icon.run(setup=watch)
+    finally:
+        stopped.set()
+        server.shutdown()
+        server.server_close()
+    return True
+
+
 def main(argv: list[str] | None = None) -> int:
     # Cửa sổ cmd tiếng Anh dùng cp1252: in tiếng Việt sẽ sập ngay lúc khởi động.
     # pythonw.exe (chạy ngầm) không có stdout -> print bỏ qua, reconfigure cũng bỏ qua.
@@ -232,6 +318,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--background", action="store_true", help="chạy ngầm (bộ cài dùng): ghi log ra file")
     ap.add_argument("--wake", nargs="?", const="", default=None,
                     help="được gọi qua cherry-local:// — đã chạy rồi thì thoát êm")
+    ap.add_argument("--tray", action="store_true", help="hiện biểu tượng 🍒 ở khay hệ thống (bộ cài dùng)")
+    ap.add_argument("--first-run", action="store_true", help="vừa cài xong: báo một thông báo ở khay")
     args = ap.parse_args(argv)
 
     log_dir = HERE / "logs"
@@ -263,6 +351,8 @@ def main(argv: list[str] | None = None) -> int:
     print("[Cherry máy này] Trên trang Sắp xếp, gạt nút về 'Máy này' rồi bấm Cherry. Ctrl+C để dừng.", flush=True)
     if args.background:
         write_log(log_dir, ready)
+    if args.tray and run_tray(server, manager, args.port, args.first_run, log_dir):
+        return 0
     try:
         server.serve_forever()
     except KeyboardInterrupt:

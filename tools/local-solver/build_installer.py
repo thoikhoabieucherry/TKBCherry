@@ -13,6 +13,7 @@ Cần mạng (tải Python nhúng + wheel), chạy trên Windows x64 với Pytho
 from __future__ import annotations
 
 import argparse
+import compileall
 import platform
 import shutil
 import subprocess
@@ -26,6 +27,9 @@ REPO = HERE.parent.parent
 RUNTIME = REPO / "solver_runtime"
 APP_FILES = ("cherry_local_solver.py", "solver_jobs.py", "status_page.html")
 SERVER_ONLY_REQUIREMENTS = ("google-auth",)
+# Biểu tượng 🍒 ở khay hệ thống (chỉ bản cài trên máy trường).
+TRAY_REQUIREMENTS = ["pystray==0.19.5", "pillow"]
+CHERRY_PNG = REPO / "web" / "assets" / "favicon-cherry.png"
 IEXPRESS = Path(r"C:\Windows\System32\iexpress.exe")
 
 
@@ -60,7 +64,8 @@ def embed_python(stage: Path, cache: Path) -> Path:
     subprocess.run(
         [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--no-warn-script-location",
          "--target", str(site), "--only-binary=:all:", "--platform", "win_amd64",
-         "--python-version", version.rsplit(".", 1)[0], "--implementation", "cp", *local_requirements()],
+         "--python-version", version.rsplit(".", 1)[0], "--implementation", "cp",
+         *local_requirements(), *TRAY_REQUIREMENTS],
         check=True,
     )
     for junk in site.rglob("__pycache__"):
@@ -76,11 +81,29 @@ def copy_app(stage: Path, extra_origins: list[str]) -> None:
     if extra_origins:
         # Bản thử nghiệm: trang ngoài tkbcherry.com (vd Netlify) được gọi bộ giải.
         (app / "allowed_origins.txt").write_text("\n".join(extra_origins) + "\n", encoding="utf-8")
+    shutil.copy2(CHERRY_PNG, app / "cherry.png")
+    from PIL import Image  # máy dựng có Pillow; .ico cho lối tắt + mục gỡ cài đặt
+    Image.open(CHERRY_PNG).save(app / "cherry.ico", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128)])
     rt = app / "solver_runtime"
     shutil.copytree(RUNTIME / "src", rt / "src", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     (rt / "scripts").mkdir(parents=True, exist_ok=True)
     shutil.copy2(RUNTIME / "scripts" / "solve_stdio.py", rt / "scripts" / "solve_stdio.py")
     (rt / "requirements.txt").write_text("\n".join(local_requirements()) + "\n", encoding="utf-8")
+    strip_engine_sources(rt)
+
+
+def strip_engine_sources(rt: Path) -> None:
+    """Gói cài được tải công khai -> KHÔNG kèm mã nguồn engine: biên dịch sang bytecode -OO
+    (bỏ chú thích + docstring) đặt đúng chỗ file .py (legacy layout, Python nạp được khi
+    không có .py), rồi xoá .py. Bytecode vẫn dịch ngược được — chỉ làm khó, không bảo mật."""
+    if not compileall.compile_dir(str(rt), quiet=1, legacy=True, optimize=2):
+        raise SystemExit("Biên dịch bytecode engine thất bại")
+    for py in rt.rglob("*.py"):
+        if py.with_suffix(".pyc").exists():
+            py.unlink()
+    leftovers = list(rt.rglob("*.py"))
+    if leftovers:
+        raise SystemExit(f"Còn mã nguồn trong gói: {leftovers[:3]}")
 
 
 def write_windows_text(src: Path, dst: Path, bom: bool) -> None:

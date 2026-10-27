@@ -4,7 +4,7 @@
 #   %LOCALAPPDATA%\CherryMayNay\app\     cherry_local_solver.py + solver_runtime\
 # Tự bật cùng Windows (lối tắt Startup), giao thức cherry-local:// để trang web đánh thức,
 # mục gỡ cài đặt trong Settings > Apps.
-param([switch]$NoBrowser)
+param([switch]$OpenStatusPage)
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $dest = Join-Path $env:LOCALAPPDATA "CherryMayNay"
@@ -32,23 +32,28 @@ try {
     [System.IO.Compression.ZipFile]::ExtractToDirectory((Join-Path $here "payload.zip"), $dest)
     Write-Log "da giai nen"
 
-    # Tự bật cùng Windows, chạy ngầm bằng pythonw.exe (không có cửa sổ).
-    $startup = [Environment]::GetFolderPath("Startup")
+    # Tự bật cùng Windows + lối tắt Start Menu: pythonw.exe (không cửa sổ), biểu tượng 🍒 ở khay.
+    $icon = Join-Path $appDir "cherry.ico"
     $shell = New-Object -ComObject WScript.Shell
-    $lnk = $shell.CreateShortcut((Join-Path $startup "Cherry may nay.lnk"))
-    $lnk.TargetPath = $pyw
-    $lnk.Arguments = "`"$app`" --background"
-    $lnk.WorkingDirectory = $appDir
-    $lnk.WindowStyle = 7
-    $lnk.Description = "Cherry may nay - bo giai thoi khoa bieu chay tren may nay"
-    $lnk.Save()
+    foreach ($folder in @([Environment]::GetFolderPath("Startup"), [Environment]::GetFolderPath("Programs"))) {
+        $lnk = $shell.CreateShortcut((Join-Path $folder "Cherry may nay.lnk"))
+        $lnk.TargetPath = $pyw
+        $lnk.Arguments = "`"$app`" --background --tray"
+        $lnk.WorkingDirectory = $appDir
+        $lnk.WindowStyle = 7
+        $lnk.IconLocation = "$icon,0"
+        $lnk.Description = "Cherry may nay - bo giai thoi khoa bieu chay tren may nay"
+        $lnk.Save()
+    }
 
     # cherry-local:// -> trang Sắp xếp đánh thức bộ giải khi nó đang tắt.
     $proto = "HKCU:\Software\Classes\cherry-local"
     New-Item -Path "$proto\shell\open\command" -Force | Out-Null
     Set-ItemProperty -Path $proto -Name "(default)" -Value "URL:Cherry may nay"
     New-ItemProperty -Path $proto -Name "URL Protocol" -Value "" -PropertyType String -Force | Out-Null
-    Set-ItemProperty -Path "$proto\shell\open\command" -Name "(default)" -Value "`"$pyw`" `"$app`" --background --wake `"%1`""
+    Set-ItemProperty -Path "$proto\shell\open\command" -Name "(default)" -Value "`"$pyw`" `"$app`" --background --tray --wake `"%1`""
+    New-Item -Path "$proto\DefaultIcon" -Force | Out-Null
+    Set-ItemProperty -Path "$proto\DefaultIcon" -Name "(default)" -Value "$icon,0"
 
     # Settings > Apps > Cherry máy này > Uninstall
     $un = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\CherryMayNay"
@@ -59,6 +64,7 @@ try {
         "DisplayVersion"  = "1.0"
         "Publisher"       = "Cherry Software"
         "InstallLocation" = $dest
+        "DisplayIcon"     = $icon
         "UninstallString" = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$dest\uninstall.ps1`""
     }
     foreach ($k in $values.Keys) { Set-ItemProperty -Path $un -Name $k -Value $values[$k] }
@@ -67,7 +73,8 @@ try {
     New-ItemProperty -Path $un -Name "NoRepair" -Value 1 -PropertyType DWord -Force | Out-Null
     Write-Log "da dang ky startup + cherry-local:// + muc go cai dat"
 
-    Start-Process -FilePath $pyw -ArgumentList "`"$app`" --background" -WorkingDirectory $appDir -WindowStyle Hidden
+    # Lần đầu: biểu tượng 🍒 hiện ở khay kèm thông báo; trang TKB đang mở tự nhận ra bộ giải.
+    Start-Process -FilePath $pyw -ArgumentList "`"$app`" --background --tray --first-run" -WorkingDirectory $appDir -WindowStyle Hidden
     $ready = $false
     for ($i = 0; $i -lt 60; $i++) {
         try {
@@ -77,7 +84,8 @@ try {
         Start-Sleep -Milliseconds 500
     }
     Write-Log "bo giai san sang: $ready"
-    if ($ready -and -not $NoBrowser) { Start-Process "http://127.0.0.1:$port/" }
+    # Không mở thêm tab: thông báo ở khay + trang TKB đang mở tự nhận bộ giải.
+    if ($ready -and $OpenStatusPage) { Start-Process "http://127.0.0.1:$port/" }
     exit 0
 } catch {
     Write-Log ("LOI: " + $_.Exception.Message)

@@ -73,5 +73,17 @@ class NetlifyBuildTests(unittest.TestCase):
                 build_netlify.build(web, Path(tmp) / "site")
 
 
+class NetlifyInstallerDownloadTests(unittest.TestCase):
+    def test_installer_served_from_download_as_attachment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "CherrySetup.exe"
+            fake.write_bytes(b"MZ-fake-installer")
+            out = build_netlify.build(ROOT / "web", Path(tmp) / "site", fake)
+            self.assertEqual((out / "download" / "CherrySetup.exe").read_bytes(), b"MZ-fake-installer")
+            headers = (out / "_headers").read_text(encoding="utf-8")
+            self.assertIn("/download/*", headers)
+            self.assertIn("Content-Disposition: attachment", headers)
+
+
 if __name__ == "__main__":
     unittest.main()

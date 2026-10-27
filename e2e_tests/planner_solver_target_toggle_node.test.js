@@ -27,10 +27,18 @@ function memoryStorage(initial = {}){
   };
 }
 
-function makeNode(id){
+function registerTree(nodes, node){
+  if(node && node.id) nodes.set(node.id, node);
+  for(const child of (node && node.children) || []) registerTree(nodes, child);
+}
+
+function makeNode(id, nodes, tag = ""){
   const listeners = {};
   return {
     id,
+    tagName:String(tag).toUpperCase(),
+    hidden:false,
+    children:[],
     dataset:{},
     attributes:{},
     textContent:"",
@@ -41,14 +49,14 @@ function makeNode(id){
     removeAttribute(name){ delete this.attributes[name]; },
     addEventListener(type, fn){ listeners[type] = fn; },
     click(){ return listeners.click && listeners.click(); },
-    appendChild(child){ return child; },
+    appendChild(child){ this.children.push(child); if(nodes) registerTree(nodes, child); return child; },
     remove(){}
   };
 }
 
 function makeDocument(){
   const nodes = new Map();
-  const cherry = makeNode("btnEngineCherry");
+  const cherry = makeNode("btnEngineCherry", nodes, "button");
   const inserted = [];
   cherry.insertAdjacentElement = (where, el) => { inserted.push({where, el}); nodes.set(el.id, el); return el; };
   nodes.set("btnEngineCherry", cherry);
@@ -60,10 +68,10 @@ function makeDocument(){
     getElementById(id){ return nodes.get(String(id)) || null; },
     querySelector(){ return null; },
     querySelectorAll(){ return []; },
-    createElement(){ return makeNode(""); },
+    createElement(tag){ return makeNode("", nodes, tag); },
     head,
     documentElement:{appendChild(child){ return child; }},
-    body:{appendChild(child){ frames.push(child); return child; }}
+    body:{appendChild(child){ frames.push(child); registerTree(nodes, child); return child; }}
   };
 }
 
@@ -231,14 +239,13 @@ test("bộ giải đang tắt: chỉ thao tác của người dùng mới đánh
   assert.equal(window.__TKB_LOCAL_SOLVER_ONLINE, true);
 });
 
-test("bản web không đăng nhập (Netlify): luôn giải ở Máy này, nút chỉ kiểm tra/đánh thức, không có Máy chủ", async () => {
+test("bản web không đăng nhập (Netlify): chỉ một nút Cherry + chấm trạng thái, luôn giải ở máy này", async () => {
   const storage = memoryStorage({TKB_SOLVER_TARGET_V1:"server"});
-  let online = false;
-  const {hooks, document, statuses, calls} = loadBridge({
+  const {hooks, document, calls} = loadBridge({
     storage,
     noServer:true,
     fetchImpl:async url => {
-      if(url.startsWith(LOCAL) && !online) throw new TypeError("Failed to fetch");
+      if(url.startsWith(LOCAL)) throw new TypeError("Failed to fetch");
       return health(url);
     }
   });
@@ -246,16 +253,46 @@ test("bản web không đăng nhập (Netlify): luôn giải ở Máy này, nút
   assert.match(hooks.noSolverBackendMessage(), /CherrySetup\.exe/);
   assert.match(hooks.noSolverBackendMessage(), /nút ▶/);
   hooks.initSolverTargetUi();
-  const btn = document.getElementById("btnSolverTarget");
-  assert.equal(btn.textContent, "Máy này");
-  assert.equal(btn.dataset.fixed, "true");
-  const pending = btn.click();
-  await new Promise(r => setTimeout(r, 50));
-  assert.equal(document.frames.length, 1, "bấm nút thì đánh thức cherry-local://");
-  online = true;
-  await pending;
-  assert.equal(storage.getItem("TKB_SOLVER_TARGET_V1"), "server", "nút không đổi lựa chọn đã lưu");
-  assert.equal(hooks.solverTarget(), "local");
-  assert.equal(statuses.at(-1).type, "success");
+  assert.equal(document.getElementById("btnSolverTarget"), null, "không còn viên Máy chủ / Máy này");
+  assert.equal(document.inserted.length, 0);
+  await new Promise(r => setTimeout(r, 20));
+  const dot = document.getElementById("tkbCherryLocalDot");
+  assert.ok(dot, "chấm trạng thái gắn trên nút Cherry");
+  assert.equal(dot.dataset.state, "offline");
   assert.ok(calls.every(c => !c.url.startsWith(SITE)), "không gọi máy chủ");
+});
+
+test("bản không đăng nhập: chưa có bộ giải -> hộp tải CherrySetup.exe, cài xong tự báo sẵn sàng", async () => {
+  let online = false;
+  const {hooks, document, statuses} = loadBridge({
+    noServer:true,
+    fetchImpl:async url => {
+      if(url.startsWith(LOCAL) && !online) throw new TypeError("Failed to fetch");
+      return health(url);
+    }
+  });
+  const modal = hooks.offerLocalSolverInstall();
+  assert.ok(modal && modal.hidden === false);
+  const link = document.getElementById("tkbLocalSolverDownload");
+  assert.equal(link.href, "/download/CherrySetup.exe");
+  assert.equal(link.getAttribute("download"), "CherrySetup.exe");
+  link.click();
+  assert.match(document.getElementById("tkbLocalSolverInstallStatus").textContent, /Đang chờ cài đặt/);
+  online = true;  // người dùng vừa cài xong
+  await new Promise(r => setTimeout(r, 3400));
+  assert.match(document.getElementById("tkbLocalSolverInstallStatus").textContent, /Đã sẵn sàng/);
+  assert.equal(document.getElementById("tkbCherryLocalDot").dataset.state, "online");
+  assert.equal(statuses.at(-1).type, "success");
+  hooks.stopLocalInstallPolling();
+});
+
+test("bản không đăng nhập trên máy không phải Windows: không mời tải bộ cài", () => {
+  const {hooks, document} = loadBridge({
+    noServer:true,
+    navigator:{userAgent:"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) Safari/605"},
+    fetchImpl:async () => { throw new TypeError("Failed to fetch"); }
+  });
+  hooks.offerLocalSolverInstall();
+  assert.equal(document.getElementById("tkbLocalSolverDownload"), null);
+  hooks.stopLocalInstallPolling();
 });

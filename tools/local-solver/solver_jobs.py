@@ -601,6 +601,9 @@ class SolverManager:
                  workers: int | None = None, save_artifacts: bool = False):
         self.solver_runtime_dir = Path(solver_runtime_dir)
         self.script = self.solver_runtime_dir / "scripts" / "solve_stdio.py"
+        if not self.script.exists() and self.script.with_suffix(".pyc").exists():
+            # Gói cài CherrySetup.exe chỉ mang bytecode của engine (không kèm mã nguồn .py).
+            self.script = self.script.with_suffix(".pyc")
         self.log_dir = Path(log_dir)
         exe = Path(python_exe or sys.executable)
         if exe.name.lower() == "pythonw.exe" and exe.with_name("python.exe").exists():

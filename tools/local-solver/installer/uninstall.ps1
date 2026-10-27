@@ -10,6 +10,7 @@ Get-CimInstance Win32_Process -Filter "Name='pythonw.exe' OR Name='python.exe'" 
 Start-Sleep -Milliseconds 800
 
 Remove-Item (Join-Path ([Environment]::GetFolderPath("Startup")) "Cherry may nay.lnk") -Force
+Remove-Item (Join-Path ([Environment]::GetFolderPath("Programs")) "Cherry may nay.lnk") -Force
 Remove-Item "HKCU:\Software\Classes\cherry-local" -Recurse -Force
 Remove-Item "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\CherryMayNay" -Recurse -Force
 Remove-Item $dest -Recurse -Force

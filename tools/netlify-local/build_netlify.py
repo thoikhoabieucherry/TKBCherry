@@ -20,7 +20,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 OVERLAY = HERE / "overlay"
-STAMP = "20261027-noserver-v1"
+STAMP = "20261027-noserver-v2"
 
 REDIRECTS = """/               /app                 302!
 /index.html     /app                 302!
@@ -37,6 +37,10 @@ HEADERS = """/*
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
+/download/*
+  Content-Type: application/octet-stream
+  Content-Disposition: attachment
+  Cache-Control: no-cache
 """
 
 APP_INIT_LOCAL = """    (async function(){
@@ -76,7 +80,7 @@ def patch_file(path: Path, steps: list[tuple[str, str, int]], name: str) -> None
     path.write_bytes((text.replace("\n", "\r\n") if crlf else text).encode("utf-8"))
 
 
-def build(web: Path, out: Path) -> Path:
+def build(web: Path, out: Path, installer: Path | None = None) -> Path:
     if out.exists() and any(out.iterdir()):
         raise SystemExit(f"{out} không trống — chọn thư mục mới.")
     shutil.copytree(web, out, dirs_exist_ok=True)
@@ -108,6 +112,11 @@ def build(web: Path, out: Path) -> Path:
          r"\1" + STORAGE_HOST_BRANCH.replace("\\", "\\\\"), 0),
     ], "storage.js")
 
+    if installer is not None:
+        # Nút Cherry mời tải bộ cài ngay trên trang: /download/CherrySetup.exe (bridge
+        # LOCAL_SOLVER_DOWNLOAD_URL_DEFAULT). Gói chỉ mang bytecode engine, không mã nguồn.
+        (out / "download").mkdir(exist_ok=True)
+        shutil.copy2(installer, out / "download" / "CherrySetup.exe")
     (out / "_redirects").write_text(REDIRECTS, encoding="utf-8")
     (out / "_headers").write_text(HEADERS, encoding="utf-8")
     (out / "robots.txt").write_text("User-agent: *\nDisallow: /\n", encoding="utf-8")
@@ -132,8 +141,9 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", required=True)
     ap.add_argument("--web", default=str(REPO / "web"))
+    ap.add_argument("--installer", default=None, help="CherrySetup.exe để đặt ở /download/ (build_installer.py)")
     args = ap.parse_args(argv)
-    out = build(Path(args.web), Path(args.out))
+    out = build(Path(args.web), Path(args.out), Path(args.installer) if args.installer else None)
     print(f"Đã dựng {out}")
     return 0
 
