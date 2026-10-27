@@ -27,6 +27,10 @@ ProgressFn = Callable[[dict], None]
 ENGINE_NAME = "tkb-engine-v3"
 
 
+# Vong 1 cua nut Cherry 2 vong: moc mem (giay) — xem stage1_usable_ready.
+STAGE1_SOFT_S = 11.5
+
+
 def _to_int(value: Any, default: int = 0) -> int:
     try:
         return int(float(str(value).strip()))
@@ -634,6 +638,15 @@ def _portfolio_solve(
 
         collected: list[dict] = []
         early_cut = False
+        pool_started = time.monotonic()
+
+        def stage1_usable_ready() -> bool:
+            # 27/10: vong 1 da co luoi DUNG DUOC cho vong 2 (thieu <= 20 tiet) va da qua
+            # moc mem STAGE1_SOFT_S (hoac du 3 ket qua) -> cat, khong cho het tran.
+            usable = any(int(r.get("placed") or 0) >= expected - 20 for r in collected)
+            if not usable:
+                return False
+            return (time.monotonic() - pool_started) >= STAGE1_SOFT_S or len(collected) >= min(3, len(args))
         ctx = multiprocessing.get_context("spawn" if os.name == "nt" else "fork")
         live_queue = None
         manager = None
@@ -705,6 +718,9 @@ def _portfolio_solve(
                         # workers overran their own deadline guard — cut them
                         pool.terminate()
                         break
+                    if stage1_cut and stage1_usable_ready():
+                        pool.terminate()
+                        break
                     drain_live()
                     if live.by_seed:
                         live.maybe_emit()
@@ -736,6 +752,9 @@ def _portfolio_solve(
                             and int(r.get("location_debt") or 0) <= 2
                         )
                         if clean_full >= 1 and len(collected) >= min(3, len(args)):
+                            pool.terminate()
+                            break
+                        if stage1_usable_ready():
                             pool.terminate()
                             break
         finally:
@@ -823,7 +842,11 @@ def _portfolio_solve(
                         for k in ("warm_quality", "warm_placed", "warm_grid", "warm_location_debt")
                     }
             else:
-                stage1_sec = min(11.5, max(9.2, remaining() * 0.27))
+                # 27/10: V4 cat vong 1 o 9.2-11.5 s co dinh -> may truong yeu / dang ban chi xep
+                # duoc 200-500/869 tiet, vong 2 phai xay lai tu dau (do An Phu 6 worker: 868
+                # tiet, 13 buoi 1 tiet). Nay tran rong (30% ngan sach), cat ngay khi da co luoi
+                # dung duoc (stage1_usable_ready) -> may manh van ~10 s, may yeu duoc cho du.
+                stage1_sec = max(STAGE1_SOFT_S, remaining() * 0.30)
                 stage1_deadline = time.monotonic() + stage1_sec
                 stage1_workers = min(6, workers)
                 collected, early_cut = run_pool(

@@ -920,14 +920,21 @@ class Constructor:
             # Warm khong hop le/khong du (vi du lich do CP-SAT dua sang con
             # thieu vai tiet hoac vi pham luat lop): SUA CUC BO thay vi vut di —
             # chi lam lai nhung lop co van de, giu nguyen cau truc con lai.
-            repaired = self._repair_partial_warm(soft, expected, deadline)
+            skip_local_repair = (
+                self.prefer_valid
+                and self.cherry_cpsat
+                and self.quality_focus is None
+                and soft.overlap == 0
+                and self._cpsat_available()
+            )
+            repaired = None if skip_local_repair else self._repair_partial_warm(soft, expected, deadline)
             if repaired is None:
                 info["warm_repair_failed"] = self._last_load_fail or info.get("warm_reject_reason") or "unknown"
                 if (
                     self.quality_focus is None
                     and self.cherry_cpsat
                     and self._cpsat_available()
-                    and time.monotonic() < deadline - 15.0
+                    and time.monotonic() < deadline - 6.0
                 ):
                     # 01/10: nut Cherry voi CP-SAT — KHONG vut lich nguoi dung de
                     # xay lai tu dau (1 tien trinh: do truong 61 lop 2051 -> 1983
@@ -991,7 +998,7 @@ class Constructor:
                     or "warm_rejected"
                 )
                 return self._lenient_state(warm_grid0), info
-            if time.monotonic() > deadline - 20.0:
+            if time.monotonic() > deadline - 12.0:
                 # 06/10: nut Cherry khong bao gio XAY LAI TU DAU khi gan het gio
                 # (vai giay chi lat duoc vai tram tiet) — tra lich nguoi dung.
                 info["warm_fresh_skipped"] = "no_time"
