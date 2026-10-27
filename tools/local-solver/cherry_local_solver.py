@@ -1,0 +1,185 @@
+"""Cherry trên máy này — bộ giải engine v3 chạy bằng CPU của máy người dùng.
+
+27/10/2026 (chủ dự án: "có 1 nút trạng thái, bật thì luôn máy chủ, tắt thì dùng local"):
+trang Sắp xếp trên tkbcherry.com có nút gạt "Máy chủ / Máy này". Ở chế độ "Máy này"
+bridge (web/pages/tkb-rust-bridge.js) gửi mọi lượt giải (Cherry, Tối ưu v3) tới
+http://127.0.0.1:2210 thay vì máy chủ; dữ liệu trường vẫn lưu trên tkbcherry.com
+như cũ — máy này chỉ GIẢI, không giữ kho.
+
+Chỉ có các endpoint của hợp đồng giải mà bridge dùng (solver_jobs.SolverManager mô
+phỏng rust_api): /api/health, /api/solve-data, /api/solve-result, /api/solver-state,
+/api/solve-cancel, /api/solve-precheck. Chỉ nghe 127.0.0.1 và chỉ trả lời trang có
+Origin nằm trong danh sách cho phép (mặc định tkbcherry.com + localhost) — trang lạ
+mở trong cùng trình duyệt không gửi được lượt giải hay đọc kết quả.
+
+Chạy:  python cherry_local_solver.py [--port 2210] [--workers N] [--allow-origin URL ...]
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+
+from solver_jobs import SolverManager  # noqa: E402
+
+VERSION = "cherry-local-solver-v1"
+DEFAULT_PORT = 2210
+DEFAULT_ORIGINS = ("https://tkbcherry.com", "https://www.tkbcherry.com")
+MAX_BODY_BYTES = 64 * 1024 * 1024
+
+
+def find_solver_runtime(explicit: str | None = None) -> Path:
+    """Gói phát cho trường: solver_runtime/ nằm cạnh file này; chạy từ repo: ../../solver_runtime."""
+    candidates = [Path(explicit)] if explicit else []
+    candidates += [HERE / "solver_runtime", HERE.parent.parent / "solver_runtime"]
+    for cand in candidates:
+        if (cand / "scripts" / "solve_stdio.py").exists():
+            return cand.resolve()
+    return candidates[0] if candidates else HERE / "solver_runtime"
+
+
+def origin_allowed(origin: str, allowed: tuple[str, ...]) -> bool:
+    origin = str(origin or "").strip().rstrip("/").lower()
+    if not origin:
+        # Không có Origin = công cụ dòng lệnh trên chính máy này (curl, test), không phải trang web.
+        return True
+    if origin in allowed:
+        return True
+    parts = urlsplit(origin)
+    return parts.scheme == "http" and parts.hostname in ("127.0.0.1", "localhost")
+
+
+def make_handler(manager: SolverManager, allowed: tuple[str, ...]):
+    class Handler(BaseHTTPRequestHandler):
+        server_version = "CherryLocalSolver/1"
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, fmt, *args):  # noqa: N802 - im lặng, không ghi dữ liệu trường ra màn hình
+            return
+
+        def _origin(self) -> str:
+            return str(self.headers.get("Origin") or "").strip()
+
+        def _send(self, status: int, payload: dict | None = None) -> None:
+            body = b"" if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            origin = self._origin()
+            if origin and origin_allowed(origin, allowed):
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Accept, X-Requested-With")
+                self.send_header("Access-Control-Allow-Private-Network", "true")
+                self.send_header("Access-Control-Max-Age", "600")
+            self.end_headers()
+            if body and self.command != "HEAD":
+                self.wfile.write(body)
+
+        def _guard(self) -> bool:
+            if origin_allowed(self._origin(), allowed):
+                return True
+            self._send(403, {"ok": False, "kind": "origin_not_allowed",
+                             "error": "Trang này không được phép dùng bộ giải trên máy."})
+            return False
+
+        def _body(self) -> bytes | None:
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = 0
+            if length < 0 or length > MAX_BODY_BYTES:
+                self._send(413, {"ok": False, "kind": "payload_too_large", "error": "Dữ liệu gửi quá lớn."})
+                return None
+            return self.rfile.read(length) if length else b""
+
+        def do_OPTIONS(self):  # noqa: N802
+            if not self._guard():
+                return
+            self._send(204)
+
+        def do_GET(self):  # noqa: N802
+            if not self._guard():
+                return
+            parts = urlsplit(self.path)
+            query = parse_qs(parts.query)
+            job_id = (query.get("jobId") or query.get("solve_run_id") or [""])[0]
+            if parts.path == "/api/health":
+                # bridge (probeRustApiBase) chỉ nhận máy giải trả api:"rust".
+                self._send(200, {"ok": True, "api": "rust", "localSolver": True, "version": VERSION,
+                                 "solverAvailable": manager.available(), "workers": manager.workers})
+            elif parts.path == "/api/solver-state":
+                self._send(200, manager.state(job_id))
+            elif parts.path == "/api/solve-result":
+                status, payload = manager.result(job_id)
+                self._send(status, payload)
+            else:
+                self._send(404, {"ok": False, "kind": "not_found", "error": "not_found"})
+
+        def do_POST(self):  # noqa: N802
+            if not self._guard():
+                return
+            body = self._body()
+            if body is None:
+                return
+            path = urlsplit(self.path).path
+            if path == "/api/solve-data":
+                status, payload = manager.start(body)
+                self._send(status, payload)
+            elif path == "/api/solve-cancel":
+                self._send(200, manager.cancel(body))
+            elif path == "/api/solve-precheck":
+                # Máy chủ Rust kiểm sức chứa trước khi giải; bản local để engine tự báo thiếu chỗ.
+                self._send(200, {"ok": True, "blocked": False, "localSolver": True})
+            else:
+                self._send(404, {"ok": False, "kind": "not_found", "error": "not_found"})
+
+    return Handler
+
+
+def main(argv: list[str] | None = None) -> int:
+    # Cửa sổ cmd tiếng Anh dùng cp1252: in tiếng Việt sẽ sập ngay lúc khởi động.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    ap = argparse.ArgumentParser(description="Cherry trên máy này — bộ giải engine v3 cho nút gạt 'Máy này'.")
+    ap.add_argument("--port", type=int, default=int(os.environ.get("CHERRY_LOCAL_PORT", DEFAULT_PORT)))
+    ap.add_argument("--workers", type=int, default=int(os.environ.get("CHERRY_LOCAL_WORKERS", 0) or 0),
+                    help="số tiến trình/luồng giải (mặc định min(8, số nhân - 1))")
+    ap.add_argument("--allow-origin", action="append", default=[],
+                    help="thêm Origin được phép (vd https://staging.tkbcherry.com)")
+    ap.add_argument("--solver-runtime", default=None, help="đường dẫn thư mục solver_runtime")
+    args = ap.parse_args(argv)
+
+    runtime = find_solver_runtime(args.solver_runtime)
+    manager = SolverManager(runtime, HERE / "logs", workers=args.workers or None)
+    if not manager.available():
+        print(f"[Cherry máy này] Không thấy {manager.script}. Thiếu thư mục solver_runtime.", file=sys.stderr)
+        return 2
+    allowed = tuple(o.strip().rstrip("/").lower() for o in (*DEFAULT_ORIGINS, *args.allow_origin) if o.strip())
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(manager, allowed))
+    print(f"[Cherry máy này] Sẵn sàng tại http://127.0.0.1:{args.port} — {manager.workers} luồng giải.", flush=True)
+    print("[Cherry máy này] Trên trang Sắp xếp, gạt nút về 'Máy này' rồi bấm Cherry. Ctrl+C để dừng.", flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -103,6 +103,8 @@
 
     function solverRequestHeaders(extra){
       const fallback = Object.assign({"Accept": "application/json"}, extra || {});
+      // 27/10: bo giai tren MAY NAY (nut gat "May nay") khong can the dang nhap -> khong gui.
+      if(typeof window.__tkbSolverTargetIsLocal === "function" && window.__tkbSolverTargetIsLocal()) return fallback;
       try{
         if(window.TKBAuthApi && typeof window.TKBAuthApi.getAuthHeaders === "function"){
           return window.TKBAuthApi.getAuthHeaders(extra || {});
@@ -1394,6 +1396,119 @@
 
   let rustApiBaseCache = "";
 
+  /* 27/10 (chu du an: "co 1 nut trang thai, bat thi luon may chu, tat thi dung local"):
+     nut gat "May chu / May nay" canh nut Cherry. "May nay" = moi luot giai (Cherry,
+     Toi uu, Sap xep) gui toi bo giai chay tren CHINH MAY NAY
+     (tools/local-solver/cherry_local_solver.py, http://127.0.0.1:2210); du lieu truong
+     van luu tren may chu nhu cu, may nay chi GIAI. Khong thay bo giai local thi bao ro,
+     KHONG tu chay tren may chu (nguoi dung da chon may nay). Dien thoai luon "May chu". */
+  const SOLVER_TARGET_KEY = "TKB_SOLVER_TARGET_V1";
+  const LOCAL_SOLVER_ORIGIN_KEY = "TKB_LOCAL_SOLVER_ORIGIN_V1";
+  const LOCAL_SOLVER_ORIGIN_DEFAULT = "http://127.0.0.1:2210";
+
+  function solverTarget(){
+    try{
+      if(isMobileBrowserAgentNavigator(window.navigator)) return "server";
+      return window.localStorage?.getItem(SOLVER_TARGET_KEY) === "local" ? "local" : "server";
+    }catch(_){
+      return "server";
+    }
+  }
+
+  function localSolverOrigin(){
+    try{
+      const raw = String(window.localStorage?.getItem(LOCAL_SOLVER_ORIGIN_KEY) || "").trim().replace(/\/+$/, "");
+      // chi dia chi loopback: nut gat khong bao gio gui du lieu truong sang may khac
+      if(/^http:\/\/(127\.0\.0\.1|localhost)(:\d{2,5})?$/i.test(raw)) return raw;
+    }catch(_){}
+    return LOCAL_SOLVER_ORIGIN_DEFAULT;
+  }
+
+  function setSolverTarget(target){
+    const next = target === "local" ? "local" : "server";
+    try{ window.localStorage?.setItem(SOLVER_TARGET_KEY, next); }catch(_){}
+    rustApiBaseCache = "";
+    syncSolverTargetUi();
+    return solverTarget();
+  }
+
+  function noSolverBackendMessage(){
+    return solverTarget() === "local"
+      ? `Chưa thấy bộ giải trên máy này (${localSolverOrigin()}). Mở start-cherry-local.bat rồi bấm lại (Chrome hỏi quyền truy cập mạng cục bộ thì chọn Cho phép), hoặc gạt về "Máy chủ".`
+      : "Chưa cấu hình dịch vụ xếp lịch.";
+  }
+
+  window.__tkbSolverTargetIsLocal = () => solverTarget() === "local";
+
+  const SOLVER_TARGET_CSS = [
+    "#btnSolverTarget.solver-target-toggle{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;",
+    "border-radius:999px;border:1px solid #cbd5e1;background:#f8fafc;color:#334155;font:600 12px/1 inherit;",
+    "white-space:nowrap;cursor:pointer;flex:0 0 auto}",
+    "#btnSolverTarget.solver-target-toggle::before{content:\"\";width:8px;height:8px;border-radius:50%;background:#0ea5e9}",
+    "#btnSolverTarget.solver-target-toggle[data-target=\"local\"]{background:#ecfdf5;border-color:#34d399;color:#047857}",
+    "#btnSolverTarget.solver-target-toggle[data-target=\"local\"]::before{background:#10b981}",
+    "#btnSolverTarget.solver-target-toggle[data-local-online=\"false\"]::before{background:#f59e0b}",
+    "@media (max-width:900px){#btnSolverTarget.solver-target-toggle{display:none!important}}"
+  ].join("");
+
+  function syncSolverTargetUi(){
+    const btn = typeof document !== "undefined" ? document.getElementById("btnSolverTarget") : null;
+    if(!btn) return;
+    const local = solverTarget() === "local";
+    btn.dataset.target = local ? "local" : "server";
+    if(local && window.__TKB_LOCAL_SOLVER_ONLINE === false) btn.dataset.localOnline = "false";
+    else delete btn.dataset.localOnline;
+    btn.setAttribute("aria-pressed", local ? "false" : "true");
+    btn.textContent = local ? "Máy này" : "Máy chủ";
+    btn.title = local
+      ? `Cherry giải bằng máy này (${localSolverOrigin()}). Bấm để chuyển về Máy chủ.`
+      : "Cherry giải trên máy chủ. Bấm để chuyển sang Máy này (cần mở start-cherry-local.bat).";
+    btn.setAttribute("aria-label", btn.title);
+  }
+
+  async function onSolverTargetClick(){
+    if(window.__TKB_RUST_SOLVER_RUNNING || window.__TKB_SOLVE_UI_BUSY){
+      setStatus("Đang xếp lịch — đợi lượt này xong rồi mới đổi nơi giải.", "warning");
+      return;
+    }
+    const next = setSolverTarget(solverTarget() === "local" ? "server" : "local");
+    if(next !== "local"){
+      window.__TKB_LOCAL_SOLVER_ONLINE = undefined;
+      syncSolverTargetUi();
+      setStatus("Cherry sẽ giải trên máy chủ.", "info");
+      return;
+    }
+    const base = await rustApiBase();
+    syncSolverTargetUi();
+    if(base) setStatus("Cherry sẽ giải bằng máy này — bộ giải trên máy đã sẵn sàng.", "success");
+    else setStatus(noSolverBackendMessage(), "warning");
+  }
+
+  function initSolverTargetUi(){
+    if(typeof document === "undefined") return;
+    const cherry = document.getElementById("btnEngineCherry");
+    if(!cherry || document.getElementById("btnSolverTarget")){
+      syncSolverTargetUi();
+      return;
+    }
+    if(!document.getElementById("tkbSolverTargetStyle") && document.head){
+      const style = document.createElement("style");
+      style.id = "tkbSolverTargetStyle";
+      style.textContent = SOLVER_TARGET_CSS;
+      document.head.appendChild(style);
+    }
+    const btn = document.createElement("button");
+    btn.id = "btnSolverTarget";
+    btn.type = "button";
+    btn.className = "solver-target-toggle";
+    btn.addEventListener("click", () => onSolverTargetClick().catch(() => {}));
+    cherry.insertAdjacentElement("afterend", btn);
+    syncSolverTargetUi();
+    if(solverTarget() === "local"){
+      rustApiBase().then(() => syncSolverTargetUi()).catch(() => {});
+    }
+  }
+
   /* 21/08: TIMER KHONG BI THROTTLE khi tab an. Chrome bop setTimeout cua tab
      nen xuong ~1 lan/phut (sau 5 phut an), lam vong poll ket qua + apply chia
      lat dung im — nguoi dung chuyen tab xem YouTube thi luot xep "2 phut"
@@ -1863,6 +1978,12 @@
   let rustApiBaseProbePromise = null;
 
   async function rustApiBase(){
+    if(solverTarget() === "local"){
+      // Khong cache: bo giai local co the vua tat/bat; do 127.0.0.1 chi mat vai ms.
+      const ok = await probeRustApiBase(localSolverOrigin(), 1500);
+      window.__TKB_LOCAL_SOLVER_ONLINE = Boolean(ok);
+      return ok;
+    }
     if(rustApiBaseCache) return rustApiBaseCache;
     if(rustApiBaseProbePromise) return rustApiBaseProbePromise;
     rustApiBaseProbePromise = (async () => {
@@ -16500,7 +16621,7 @@
     let response;
     try{
       const apiBase = await rustApiBase();
-      if(!apiBase) throw new Error("Chưa cấu hình dịch vụ xếp lịch.");
+      if(!apiBase) throw new Error(noSolverBackendMessage());
       traceSolveStep("postSolve:before-request-data", {
         scheduled: countScheduledLessons(data),
         expected: expectedLessonCount(data)
@@ -19958,7 +20079,13 @@
         backendAuthRequired:() => backendAuthRequired,
         suspendBackendResumeForAuth,
         clearBackendAuthRequired,
-        postSolve
+        postSolve,
+        rustApiBase,
+        solverRequestHeaders,
+        solverTarget,
+        setSolverTarget,
+        noSolverBackendMessage,
+        initSolverTargetUi
       };
     }
   }catch(_){}
@@ -22607,6 +22734,7 @@
     installOptimizationLockSaveHook();
     initSolverPresetUi();
     initCustomSolveDurationUi();
+    initSolverTargetUi();
     syncOptimizationLockState();
     if(window.TKBRustAPI){
       window.TKBRustAPI.readSolverPreset = readSolverPreset;
@@ -22616,6 +22744,9 @@
     }
     if(window.TKBRustAPI){
       window.TKBRustAPI.updateBackendStatusBanner = updateBackendStatusBanner;
+      window.TKBRustAPI.solverTarget = solverTarget;
+      window.TKBRustAPI.setSolverTarget = setSolverTarget;
+      window.TKBRustAPI.localSolverOrigin = localSolverOrigin;
     }
     updateBackendStatusBanner();
     if(window.__TKB_E2E_EXPOSE_TEST_HOOKS !== true){
