@@ -1023,26 +1023,32 @@ class Constructor:
         feas_deadline = min(deadline, started + max(20.0, (deadline - started) * 0.6))
         if self.cherry_cpsat and self.quality_focus is None and self._cpsat_available():
             # 01/10: co pha lap tiet bang CP-SAT phia sau (_cpsat_fill_phase) ->
-            # pha 1+2 chi can ~1 lan thu (do Hung Long: lan thu 2-3 khong hon
-            # lan 1, moi lan ~15 s), phan con lai danh cho lap tiet + chat luong.
-            feas_deadline = min(deadline, started + max(10.0, (deadline - started) * 0.3))
+            # pha 1+2 chi can 1 luoi sach trung gio + sach no dia diem, phan con
+            # lai danh cho lap tiet + chat luong.
+            feas_deadline = min(deadline, started + max(12.0, (deadline - started) * 0.38))
         cherry_one_attempt = self.cherry_cpsat and self.quality_focus is None and self._cpsat_available()
+        has_min_sess = any(r is not None and r.min_sessions > 0 for r in P.teacher_rules)
         while time.monotonic() < feas_deadline and not self._stop_requested():
-            if cherry_one_attempt and attempts >= 1:
-                # 01/10: pha lap tiet CP-SAT lam tiep — lan thu heuristic thu 2
-                # (~10-15 s) hiem khi hon lan 1 (do Hung Long, truong 61 lop).
+            if (
+                (cherry_one_attempt or has_min_sess or (not self.cherry_cpsat and self.quality_focus is None and self._cpsat_available()))
+                and attempts >= 1
+                and best_soft is not None
+                and best_soft.overlap == 0
+                and best_placed >= expected - 16
+            ):
+                # Da co luoi sach trung gio -> sang CP-SAT lap tiet + toi uu.
                 break
             attempts += 1
             if attempts % 4 == 0 and best_soft is not None and best_pen <= 8:
                 # ILS: retry from the best near-feasible grid with a fresh walk
                 soft = clone_from_grid(best_soft.grid)
-                self._phase2(soft, min(feas_deadline, time.monotonic() + 12.0))
+                self._phase2(soft, min(feas_deadline, time.monotonic() + 6.0))
             else:
                 soft, _tiled = self._phase1(feas_deadline)
                 self._phase2(soft, min(feas_deadline, time.monotonic() + 8.0))
                 if 0 < soft.penalty() <= 6 and time.monotonic() < feas_deadline:
                     # so close — extend this attempt with the heavy hammers
-                    self._phase2(soft, min(feas_deadline, time.monotonic() + 10.0))
+                    self._phase2(soft, min(feas_deadline, time.monotonic() + 4.0))
             placed = sum(1 for row in soft.grid for v in row if v >= 0)
             pen = soft.penalty()
             if placed >= expected and pen == 0:
@@ -1058,6 +1064,7 @@ class Constructor:
             and best_placed >= expected
             and best_soft.overlap == 0
             and best_pen > 0
+            and not cherry_one_attempt
         ):
             # 13/09 (chu du an: "gioi han buoi day khi bam Cherry phai tuan thu"):
             # du tiet, het trung gio, chi con NO LUAT GV (thuong la "sang HOAC
@@ -1067,20 +1074,23 @@ class Constructor:
             extend_deadline = deadline - max(5.0, (deadline - time.monotonic()) * 0.35)
             extend_rounds = 0
             idle_rounds = 0
+            is_stage1_worker = not self.cherry_cpsat and self.quality_focus is None and self._cpsat_available()
+            max_idle_rounds = 1 if is_stage1_worker else 2
+            round_step_s = 2.0 if is_stage1_worker else 6.0
             while (
                 time.monotonic() < extend_deadline
                 and not self._stop_requested()
                 and best_soft.penalty() > 0
-                and idle_rounds < 3
+                and idle_rounds < max_idle_rounds
             ):
                 extend_rounds += 1
                 soft = clone_from_grid(best_soft.grid)
                 round_started = time.monotonic()
-                self._phase2(soft, min(extend_deadline, time.monotonic() + 12.0))
+                self._phase2(soft, min(extend_deadline, time.monotonic() + round_step_s))
                 placed = sum(1 for row in soft.grid for v in row if v >= 0)
                 pen = soft.penalty()
-                # pha 2 tra ve ngay (khong con o nao sua duoc) -> dung, khong quay vong
-                idle_rounds = idle_rounds + 1 if time.monotonic() - round_started < 0.2 and pen >= best_pen else 0
+                # pha 2 khong giam duoc penalty -> tang idle_rounds de dung som
+                idle_rounds = idle_rounds + 1 if pen >= best_pen else 0
                 if placed >= expected and pen == 0:
                     complete_soft = soft
                     break
@@ -1089,7 +1099,12 @@ class Constructor:
                     best_soft = soft
             info["rule_debt_extend_rounds"] = extend_rounds
             info["rule_debt_extend_solved"] = complete_soft is not None
-            if complete_soft is None and best_soft.overlap == 0 and best_soft.penalty() > 0:
+            if (
+                complete_soft is None
+                and best_soft.overlap == 0
+                and best_soft.penalty() > 0
+                and not is_stage1_worker
+            ):
                 # van con no: dua DUNG cac tiet vi pham ve Chua phan (chu du an:
                 # "co mau thuan rang buoc thi thong bao de toi xu ly") thay vi
                 # tra lich vi pham va bo qua toi uu chat luong.
@@ -1132,7 +1147,12 @@ class Constructor:
                     state.apply([(c, slot, ai)], check=False)
                 state.lock_cell(c, slot)
             return state, info
-        if target_soft is not None and target_soft.penalty() == 0 and time.monotonic() < deadline - 5:
+        if (
+            target_soft is not None
+            and target_soft.penalty() == 0
+            and time.monotonic() < deadline - 5
+            and (self.cherry_cpsat or self.quality_focus is not None)
+        ):
             target_soft.enable_quality_tracking()
             self._run_quality(target_soft, deadline, progress=progress, info=info)
             self._finish_quality(target_soft, info)
@@ -1526,11 +1546,27 @@ class Constructor:
                     # 26/08: o lam vo luat DIA DIEM bi day xuong cuoi hang chu
                     # KHONG bi cam — cam cung lam mat 85 tiet (do 26/08).
                     score = rng.random()
-                    if any(soft.location_blocks(ai, x) for x in window):
+                    loc_bad_win = any(soft.location_blocks(ai, x) for x in window)
+                    if loc_bad_win:
                         score += _LOC_AVOID
                     mix = soft.location_mix_cost(ai, window[0])
                     if mix:
                         score += _LOC_MIX * mix
+                    if not loc_bad_win and mix == 0:
+                        for tm in P.a_teachers[ai]:
+                            rt = P.teacher_rules[tm]
+                            if rt is None:
+                                continue
+                            in_s = any(soft.tcnt[tm][base + p] > 0 for p in range(PERIODS))
+                            if rt.min_sessions > 0 and in_s:
+                                score += 0.25
+                            if rt.max_sessions > 0 and not in_s:
+                                used_s = sum(
+                                    1 for ss in range(NUM_SESSIONS)
+                                    if any(soft.tcnt[tm][ss * PERIODS + pp] > 0 for pp in range(PERIODS))
+                                )
+                                if used_s >= rt.max_sessions:
+                                    score += 0.35
                     if best is None or score < best[0]:
                         best = (score, s, window)
             if best is None:
@@ -1616,9 +1652,25 @@ class Constructor:
                         free_teacher += 1
                 if ok:
                     # 26/08: uu tien manh cac o KHONG pha luat dia diem
+                    mix_cost = soft.location_mix_cost(ai, base + start)
                     score = (-free_teacher + rng.random()
                              + (_LOC_AVOID if loc_bad else 0)
-                             + _LOC_MIX * soft.location_mix_cost(ai, base + start))
+                             + _LOC_MIX * mix_cost)
+                    if not loc_bad and mix_cost == 0 and free_teacher == size:
+                        for tm in P.a_teachers[ai]:
+                            rt = P.teacher_rules[tm]
+                            if rt is None:
+                                continue
+                            in_s = any(soft.tcnt[tm][base + p] > 0 for p in range(PERIODS))
+                            if rt.min_sessions > 0 and in_s:
+                                score += 0.25
+                            if rt.max_sessions > 0 and not in_s:
+                                used_s = sum(
+                                    1 for ss in range(NUM_SESSIONS)
+                                    if any(soft.tcnt[tm][ss * PERIODS + pp] > 0 for pp in range(PERIODS))
+                                )
+                                if used_s >= rt.max_sessions:
+                                    score += 0.35
                     candidates.append((score, s, start))
         candidates.sort()
         for _score, s, start in candidates:
@@ -1669,7 +1721,9 @@ class Constructor:
                 best_pen = pen
                 best_grid = [row[:] for row in soft.grid]
                 stall = 0
-            if stall > 0 and stall % 120 == 0:
+            if not soft.conflicts and stall >= 3200:
+                break
+            if stall > 0 and stall % 120 == 0 and soft.conflicts:
                 # endgame: relabel cycles + dig chains + augment + Kempe
                 for t_conf, slot_conf in list(soft.conflicts):
                     if time.monotonic() > deadline:
@@ -1705,7 +1759,7 @@ class Constructor:
                     best_pen = pen
                     best_grid = [row[:] for row in soft.grid]
                     stall = 0
-            if stall > 500:
+            if stall > 500 and soft.conflicts:
                 # hard escape: rebuild the tilings of the conflicted classes
                 self._retile_conflicted_classes(soft)
                 for t in self._has_rule_teachers:
@@ -1801,6 +1855,25 @@ class Constructor:
                         debt_slots.update(pm if lock_am else am)
                     else:
                         debt_slots.update(am if len(am) <= len(pm) else pm)
+            if rule_t is not None and (rule_t.min_sessions > 0 or rule_t.max_sessions > 0):
+                by_s = {s: [x for x in slots if x // PERIODS == s] for s in range(NUM_SESSIONS)}
+                used_s = [s for s, lst in by_s.items() if lst]
+                if rule_t.min_sessions > 0 and len(used_s) < rule_t.min_sessions:
+                    multi_s = []
+                    for s in used_s:
+                        cls_in_s = {
+                            cc for x in by_s[s] for cc in range(P.num_classes())
+                            if soft.grid[cc][x] >= 0 and t in P.a_teachers[soft.grid[cc][x]]
+                        }
+                        if len(cls_in_s) >= 2 or len(by_s[s]) >= 2:
+                            multi_s.extend(by_s[s])
+                    if multi_s:
+                        debt_slots.update(multi_s)
+                if rule_t.max_sessions > 0 and len(used_s) > rule_t.max_sessions:
+                    min_len = min(len(by_s[s]) for s in used_s)
+                    for s in used_s:
+                        if len(by_s[s]) <= min_len + 1:
+                            debt_slots.update(by_s[s])
             loc_sessions = soft.location_debt_sessions(t)
             if loc_sessions:
                 debt_slots.update(
@@ -3095,16 +3168,29 @@ class Constructor:
         # 22/08 (toi, chi dao chu du an: "tap trung toi uu them 1 tiet/buoi va
         # 2 tiet trong"): bac 1/2 duoc uu tien ngan sach — kien nhan dai hon va
         # tran cao hon; bac 3 (buoi day / trong 1) chi nhan phan con lai.
-        stage_patience = {
-            1: max(30.0, budget * 0.40),
-            2: max(20.0, budget * 0.30),
-            3: stagnation_limit,
-        }
-        stage_cap = {
-            1: started_at + budget * 0.75,
-            2: started_at + budget * 0.92,
-            3: deadline,
-        }
+        if self.cherry_cpsat and self.quality_focus is None:
+            stagnation_limit = 1.2
+            stage_patience = {
+                1: 1.5,
+                2: 1.0,
+                3: 1.2,
+            }
+            stage_cap = {
+                1: started_at + budget * 0.80,
+                2: started_at + budget * 0.90,
+                3: deadline,
+            }
+        else:
+            stage_patience = {
+                1: max(30.0, budget * 0.40),
+                2: max(20.0, budget * 0.30),
+                3: stagnation_limit,
+            }
+            stage_cap = {
+                1: started_at + budget * 0.75,
+                2: started_at + budget * 0.92,
+                3: deadline,
+            }
         if stage_only is not None:
             # Nut mot muc tieu (chu du an 22/08 khuya: "rang khu toi da ve 0"):
             # bac do duoc dung TRON ngan sach — khong chuyen bac, khong bo cuoc
@@ -5356,11 +5442,8 @@ class Constructor:
         return classes
 
     def _run_quality(self, soft: SoftSchedule, deadline: float, *, progress=None, info: dict | None = None) -> None:
-        """Toi uu chat luong GV: pha 3 (tabu theo bac co khoa); 01/10 voi nut
-        Cherry (khong focus) them vong CP-SAT LNS (_cpsat_quality_phase) cho
-        ~60% thoi gian con lai — do tren THCS Hung Long: tabu dung o 10 buoi
-        1 tiet / 432 buoi / 68 trong, CP-SAT LNS ngoai app dat 0 / 388 / 24.
-        env TKB_CPSAT_QUALITY=0 tat."""
+        """Toi uu chat luong GV: pha 3 (tabu nhanh lam nong luoi) + CP-SAT LNS
+        (_cpsat_quality_phase) chiem ~88% thoi gian con lai. env TKB_CPSAT_QUALITY=0 tat."""
 
         use_cpsat = (
             self.quality_focus is None
@@ -5369,55 +5452,157 @@ class Constructor:
             and self._cpsat_available()
         )
         remaining = deadline - time.monotonic()
-        if not use_cpsat or remaining < 12.0:
+        if not use_cpsat or remaining < 4.5:
             self.phase3_quality(soft, deadline, progress=progress)
             return
-        self.phase3_quality(soft, time.monotonic() + remaining * 0.4, progress=progress)
+        warmup = (
+            min(14.0, max(7.5, remaining * 0.45))
+            if soft.q_singleton > 10
+            else min(3.2, max(1.5, remaining * 0.15))
+        )
+        self.phase3_quality(soft, time.monotonic() + warmup, progress=progress)
         if self._stop_requested() or soft.penalty() != 0:
             return
-        stats = self._cpsat_quality_phase(soft, deadline - 0.5, progress=progress)
+        stats = self._cpsat_quality_phase(soft, deadline - 0.4, progress=progress)
         if info is not None:
             info["cpsat_quality"] = stats
 
-    def _cpsat_debt_cluster(self, soft: SoftSchedule, debts: list[tuple[int, int]], k: int) -> list[int]:
-        """Cum lop tu cac buoi no (GV, buoi): lop dang giu tiet cua GV trong buoi
-        do (ngau nhien), them lop ngau nhien cho du k."""
+    def _cpsat_debt_cluster(
+        self,
+        soft: SoftSchedule,
+        debts: list[tuple[int, int]],
+        k: int,
+        debt_tries: dict[tuple[int, int], int] | None = None,
+    ) -> list[int]:
+        """Cum lop ket noi theo GV va doi tac hoan doi cho cac buoi no (GV, buoi):
+        (1) lop dang giu tiet cua GV trong buoi no s0,
+        (2) cac lop khac cua cung GV (uu tien buoi mong 1-2 tiet cua GV do),
+        (3) cac lop chan doi tac hoan doi (GV khac day cung lop c0 tai cac buoi GV
+            dang co mat), roi moi bo sung lop con lai cho du k."""
 
         P = self.P
         rng = self.rng
         order = list(debts)
-        rng.shuffle(order)
+        if debt_tries:
+            order.sort(key=lambda item: (debt_tries.get(item, 0), rng.random()))
+        else:
+            rng.shuffle(order)
         classes: list[int] = []
         seen: set[int] = set()
-        for t, s in order:
+
+        def add(c: int) -> None:
+            if c >= 0 and c not in seen and len(classes) < k:
+                seen.add(c)
+                classes.append(c)
+
+        for idx, (t, s) in enumerate(order):
+            if len(classes) >= k:
+                break
+            if debt_tries is not None and idx == 0:
+                debt_tries[(t, s)] = debt_tries.get((t, s), 0) + 1
             base = s * PERIODS
+            owner_here: list[int] = []
             for p in range(PERIODS):
                 x = base + p
                 if soft.tcnt[t][x] <= 0:
                     continue
                 oc = self._owner_class(soft, t, x)
-                if oc >= 0 and oc not in seen:
-                    seen.add(oc)
-                    classes.append(oc)
-            if len(classes) >= k:
-                break
+                if oc >= 0:
+                    owner_here.append(oc)
+                    add(oc)
+            if idx < 2:
+                # Cac lop khac ma GV t day (uu tien buoi mong <= 2 tiet cua t)
+                thin_classes: list[int] = []
+                other_classes: list[int] = []
+                for s2 in range(NUM_SESSIONS):
+                    if s2 == s or soft.ts_cnt[t][s2] <= 0:
+                        continue
+                    is_thin = soft.ts_cnt[t][s2] <= 2
+                    b2 = s2 * PERIODS
+                    for p2 in range(PERIODS):
+                        x2 = b2 + p2
+                        if soft.tcnt[t][x2] <= 0:
+                            continue
+                        oc2 = self._owner_class(soft, t, x2)
+                        if oc2 >= 0 and oc2 not in seen:
+                            (thin_classes if is_thin else other_classes).append(oc2)
+                rng.shuffle(thin_classes)
+                rng.shuffle(other_classes)
+                for oc2 in thin_classes + other_classes[:3]:
+                    add(oc2)
+                # Lop chan cua cac GV khac day cung lop owner_here tai buoi s
+                for c0 in owner_here:
+                    swap_teachers: set[int] = set()
+                    for s2 in range(NUM_SESSIONS):
+                        if s2 == s or soft.ts_cnt[t][s2] <= 0:
+                            continue
+                        b2 = s2 * PERIODS
+                        for p2 in range(PERIODS):
+                            ai2 = soft.grid[c0][b2 + p2]
+                            if ai2 >= 0:
+                                swap_teachers.update(P.a_teachers[ai2])
+                    swap_teachers.discard(t)
+                    blocker_classes: list[int] = []
+                    for t2 in swap_teachers:
+                        for p in range(PERIODS):
+                            x = base + p
+                            if soft.tcnt[t2][x] > 0:
+                                bc = self._owner_class(soft, t2, x)
+                                if bc >= 0 and bc not in seen:
+                                    blocker_classes.append(bc)
+                    rng.shuffle(blocker_classes)
+                    for bc in blocker_classes[:2]:
+                        add(bc)
         C = P.num_classes()
         guard = 0
         while len(classes) < min(k, C) and guard < 10 * C:
             guard += 1
-            c = rng.randrange(C)
-            if c not in seen:
-                seen.add(c)
-                classes.append(c)
+            add(rng.randrange(C))
         return classes[: max(k, 1)]
+
+    def _cpsat_debt_sessions(
+        self,
+        soft: SoftSchedule,
+        debts: list[tuple[int, int]],
+        debt_tries: dict[tuple[int, int], int],
+    ) -> list[int]:
+        """Chon 2 buoi toan truong nham thang vao mot buoi no (1 tiet/buoi hoac
+        trong >= 2) cua GV t0 va mot buoi khac ma GV t0 cung day (uu tien buoi
+        mong 1-3 tiet cua t0) de gop/chuyen tiet giua 2 buoi."""
+
+        if not debts:
+            return []
+        rng = self.rng
+        order = sorted(debts, key=lambda item: (debt_tries.get(item, 0), rng.random()))
+        t0, s0 = order[0]
+        debt_tries[(t0, s0)] = debt_tries.get((t0, s0), 0) + 1
+        own_thin = [
+            s for s in range(NUM_SESSIONS)
+            if s != s0 and 0 < soft.ts_cnt[t0][s] <= 3
+        ]
+        own_any = [
+            s for s in range(NUM_SESSIONS)
+            if s != s0 and soft.ts_cnt[t0][s] > 0
+        ]
+        cands = own_thin or own_any
+        if not cands:
+            open_s = [
+                s for s in range(NUM_SESSIONS)
+                if s != s0 and any(self.P.class_avail[c][s * PERIODS + p] for c in range(self.P.num_classes()) for p in range(PERIODS))
+            ]
+            if not open_s:
+                return []
+            cands = open_s
+        s1 = cands[rng.randrange(len(cands))]
+        return sorted((s0, s1))
 
     def _cpsat_quality_phase(self, soft: SoftSchedule, deadline: float, *, progress=None) -> dict:
         """01/10: vong CP-SAT LNS chat luong cho nut Cherry tren luoi DU tiet,
-        sach no (lane "fill", fill_quality=True: muc tieu 200*(1 tiet + trong2)
-        + 4*buoi + trong1 tren GV bi cham). Vung: cum lop quanh buoi no (1 tiet
-        / trong >= 2 truoc, roi buoi mong / buoi trong 1) xen ke "nguyen buoi
-        toan truong". Chi nhan khi _quality_score (thu tu bac) GIAM, penalty()
-        == 0, khong vuot khoa, so tiet khong doi, _load_state hop le."""
+        sach no (lane "fill", fill_quality=True, require_full=True). Vung: cum lop
+        ket noi theo GV quanh buoi no (1 tiet / trong >= 2 truoc, roi buoi mong /
+        buoi trong 1) xen ke vung "nguyen buoi toan truong". Chi nhan khi
+        _quality_score (thu tu bac) GIAM, penalty() == 0, khong vuot khoa, so tiet
+        khong doi, _load_state hop le."""
 
         from . import cpsat_lns
 
@@ -5427,42 +5612,66 @@ class Constructor:
         stats: dict = {"pass": 0, "accept": 0, "session_pass": 0, "rejected": 0, "none": 0, "error": 0}
         started = time.monotonic()
         threads = self._cpsat_threads_effective()
-        sub_limit = float(max(1, self._cpsat_env_int("TKB_CPSAT_QUALITY_LIMIT", 4)))
-        k_max = max(3, self._cpsat_env_int("TKB_CPSAT_QUALITY_K", 6))
+        sub_limit = float(max(1, self._cpsat_env_int("TKB_CPSAT_QUALITY_LIMIT", 2)))
+        k_default = 8 if threads >= 4 else 6
+        k_max = max(4, self._cpsat_env_int("TKB_CPSAT_QUALITY_K", k_default))
         stats["start"] = [int(x) for x in soft.quality()[:4]]
         floor_teachers = self._singleton_floor_teachers()
-        # luoi vao da qua trong tai (full_recheck) thi moi buoc phai giu; luoi vao
-        # con no cau truc (vd thieu cap doi tu pha 1/2) thi khong doi hoi — neu
-        # khong moi lan cai thien deu bi loai.
         start_valid = self._load_state(soft) is not None
         stats["start_valid"] = start_valid
+        expected = sum(P.a_periods)
+        tried_keys: set = set()
+        debt_tries: dict[tuple[int, int], int] = {}
+        last_sg_g2 = (soft.q_singleton, soft.q_gap2)
         while not self._stop_requested():
             now = time.monotonic()
-            limit = min(sub_limit, deadline - now - 0.3)
-            if limit < 0.8:
+            rem = deadline - now - 0.2
+            if rem < 0.6:
                 break
+            cur_sg_g2 = (soft.q_singleton, soft.q_gap2)
+            if cur_sg_g2 < last_sg_g2:
+                debt_tries.clear()
+                last_sg_g2 = cur_sg_g2
             placed0 = sum(1 for row in soft.grid for v in row if v >= 0)
             score0 = self._quality_score(soft, weights)
+            act_debts = self._debt_sessions_of(soft, set(range(T)), floor_teachers)
+            unexhausted_debts = [d for d in act_debts if debt_tries.get(d, 0) < 3]
             sessions: list[int] | None = None
-            if stats["pass"] % 3 == 2:
-                lane = "gap1" if self.rng.random() < 0.5 else "sessions"
-                sessions = self._cpsat_pick_sessions(soft, lane) or None
-            if sessions:
-                classes = list(range(P.num_classes()))
-                limit = min(max(limit, 2.0 * sub_limit), deadline - now - 0.3)
-                stats["session_pass"] += 1
-            else:
+            classes: list[int] = []
+            limit = min(sub_limit, rem)
+            turn = stats["pass"] % 3
+            if turn == 1:
+                if unexhausted_debts and self.rng.random() < 0.7:
+                    sessions = self._cpsat_debt_sessions(soft, unexhausted_debts, debt_tries) or None
+                else:
+                    lane = "sessions" if self.rng.random() < 0.55 else "gap1"
+                    sessions = self._cpsat_pick_sessions(soft, lane) or None
+                if sessions:
+                    classes = list(range(P.num_classes()))
+                    limit = min(max(sub_limit * 1.6, 3.2), rem)
+            if not sessions:
                 sessions = None
-                k = self.rng.randint(3, k_max)
-                debts = self._debt_sessions_of(soft, set(range(T)), floor_teachers)
-                if not debts or self.rng.random() < 0.3:
-                    if self.rng.random() < 0.5:
-                        debts = list(self._gap1_sessions_of(soft, set(range(T))))
-                    else:
-                        debts = list(self._thin_sessions_of(soft, range(T)))
-                classes = self._cpsat_debt_cluster(soft, debts, k) if debts else []
+                k = self.rng.randint(max(4, k_max - 3), k_max)
+                if unexhausted_debts and self.rng.random() < 0.75:
+                    target_debts = act_debts
+                elif act_debts and self.rng.random() < 0.30:
+                    target_debts = act_debts
+                elif self.rng.random() < 0.55:
+                    target_debts = list(self._thin_sessions_of(soft, range(T)))
+                else:
+                    target_debts = list(self._gap1_sessions_of(soft, set(range(T))))
+                if not target_debts:
+                    target_debts = list(self._thin_sessions_of(soft, range(T))) or list(self._gap1_sessions_of(soft, set(range(T))))
+                classes = self._cpsat_debt_cluster(soft, target_debts, k, debt_tries) if target_debts else []
                 if not classes:
                     break
+            key = ("S", tuple(sessions)) if sessions is not None else ("C", frozenset(classes))
+            if key in tried_keys and len(tried_keys) < 40:
+                self._cpsat_pass_idx += 1
+                continue
+            tried_keys.add(key)
+            if sessions is not None:
+                stats["session_pass"] += 1
             stats["pass"] += 1
             self._cpsat_pass_idx += 1
             try:
@@ -5471,6 +5680,7 @@ class Constructor:
                     time_limit=limit, workers=threads, seed=self._cpsat_pass_idx,
                     stop_check=self._stop_requested, require_improve=False,
                     sessions=sessions, fill_quality=True,
+                    require_full=(placed0 >= expected),
                 )
             except Exception as exc:  # noqa: BLE001 - toan tu phu
                 stats["error"] += 1
@@ -5499,6 +5709,11 @@ class Constructor:
                 stats["rejected"] += 1
                 continue
             stats["accept"] += 1
+            tried_keys.clear()
+            if self._lock_singleton is not None and soft.q_singleton < self._lock_singleton:
+                self._lock_singleton = soft.q_singleton
+            if self._lock_gap2 is not None and soft.q_gap2 < self._lock_gap2:
+                self._lock_gap2 = soft.q_gap2
             q = soft.quality()
             if os.environ.get("TKB_EVAC_DEBUG"):
                 sys.stderr.write(
@@ -5803,55 +6018,92 @@ class Constructor:
                 (t, s) for t in range(T) if soft.tloc[t] is not None
                 for s in soft.location_debt_sessions(t)
             ]
-            if not debt_pairs:
-                break
-            tries += 1
-            t0, s0 = debt_pairs[self.rng.randrange(len(debt_pairs))]
-            sess = {s0}
-            # do An Phu (vet can moi to hop chua buoi no): 1-2 buoi 0/11, 3 buoi
-            # 2/55, 4 buoi 16/165 to hop go duoc -> uu tien vung 4 buoi
-            r = self.rng.random()
-            k = 4 if r < 0.55 else (3 if r < 0.85 else 2)
-            # buoi khac cua CHINH GV dang no (doi tiet giua cac buoi cua GV do de
-            # moi buoi con mot co so), them ngau nhien
-            own = [
-                s for s in range(NUM_SESSIONS)
-                if s != s0 and any(soft.tcnt[t0][s * PERIODS + p] > 0 for p in range(PERIODS))
-            ]
-            # buoi cua GV o dung dia diem "thieu so" cua buoi no con cho trong: tiet
-            # le dia diem chuyen sang do (do An Phu: buoi T3 sang 3 tiet co so 1 +
-            # 1 tiet co so 0; moi vung go duoc deu chua buoi chieu T4 cua co so 0
-            # dang 3/4 tiet).
-            def _locs_at(s: int) -> list[int]:
-                out: list[int] = []
-                for p in range(PERIODS):
-                    x = s * PERIODS + p
-                    if soft.tcnt[t0][x] > 0 and soft.tloc[t0][x]:
-                        out.append(soft.tloc[t0][x][0])
-                return out
-
-            here = _locs_at(s0)
-            counts = collections.Counter(here)
-            if len(counts) >= 2:
-                minority = min(counts, key=lambda L: (counts[L], self.rng.random()))
-                host = [
-                    s for s in own
-                    if _locs_at(s) and all(L == minority for L in _locs_at(s))
+            t_unfreeze = -1
+            if debt_pairs:
+                tries += 1
+                t0, s0 = debt_pairs[self.rng.randrange(len(debt_pairs))]
+                sess = {s0}
+                # do An Phu (vet can moi to hop chua buoi no): 1-2 buoi 0/11, 3 buoi
+                # 2/55, 4 buoi 16/165 to hop go duoc -> uu tien vung 4 buoi
+                r = self.rng.random()
+                k = 4 if r < 0.55 else (3 if r < 0.85 else 2)
+                # buoi khac cua CHINH GV dang no (doi tiet giua cac buoi cua GV do de
+                # moi buoi con mot co so), them ngau nhien
+                own = [
+                    s for s in range(NUM_SESSIONS)
+                    if s != s0 and any(soft.tcnt[t0][s * PERIODS + p] > 0 for p in range(PERIODS))
                 ]
-                spare = [s for s in host if len(_locs_at(s)) < PERIODS]
-                pick_from = spare or host
-                if pick_from and self.rng.random() < 0.8:
-                    sess.add(pick_from[self.rng.randrange(len(pick_from))])
-            guard = 0
-            while len(sess) < k and guard < 20:
-                guard += 1
-                if own and self.rng.random() < 0.6:
-                    sess.add(own[self.rng.randrange(len(own))])
+                def _locs_at(s: int) -> list[int]:
+                    out: list[int] = []
+                    for p in range(PERIODS):
+                        x = s * PERIODS + p
+                        if soft.tcnt[t0][x] > 0 and soft.tloc[t0][x]:
+                            out.append(soft.tloc[t0][x][0])
+                    return out
+
+                here = _locs_at(s0)
+                counts = collections.Counter(here)
+                if len(counts) >= 2:
+                    minority = min(counts, key=lambda L: (counts[L], self.rng.random()))
+                    host = [
+                        s for s in own
+                        if _locs_at(s) and all(L == minority for L in _locs_at(s))
+                    ]
+                    spare = [s for s in host if len(_locs_at(s)) < PERIODS]
+                    pick_from = spare or host
+                    if pick_from and self.rng.random() < 0.8:
+                        sess.add(pick_from[self.rng.randrange(len(pick_from))])
+                guard = 0
+                while len(sess) < k and guard < 20:
+                    guard += 1
+                    if own and self.rng.random() < 0.6:
+                        sess.add(own[self.rng.randrange(len(own))])
+                    else:
+                        sess.add(self.rng.randrange(NUM_SESSIONS))
+            else:
+                rule_bad = [t for t in self._has_rule_teachers if soft.rule_pen[t] > 0]
+                if not rule_bad:
+                    break
+                tries += 1
+                t0 = rule_bad[self.rng.randrange(len(rule_bad))]
+                t_unfreeze = t0
+                rt0 = P.teacher_rules[t0]
+                used_s = [
+                    s for s in range(NUM_SESSIONS)
+                    if any(soft.tcnt[t0][s * PERIODS + p] > 0 for p in range(PERIODS))
+                ]
+                empty_avail_s = [
+                    s for s in range(NUM_SESSIONS)
+                    if s not in used_s and any(P.teacher_avail[t0][s * PERIODS + p] for p in range(PERIODS))
+                ]
+                sess = set()
+                if rt0 is not None and rt0.min_sessions > 0 and len(used_s) < rt0.min_sessions and empty_avail_s:
+                    heavy_s = [
+                        s for s in used_s
+                        if sum(1 for p in range(PERIODS) if soft.tcnt[t0][s * PERIODS + p] > 0) >= 2
+                    ] or used_s
+                    sess.add(heavy_s[self.rng.randrange(len(heavy_s))])
+                    sess.add(empty_avail_s[self.rng.randrange(len(empty_avail_s))])
+                    while len(sess) < 4:
+                        pool_s = (used_s + empty_avail_s) if self.rng.random() < 0.8 else list(range(NUM_SESSIONS))
+                        sess.add(pool_s[self.rng.randrange(len(pool_s))])
+                elif rt0 is not None and rt0.max_sessions > 0 and len(used_s) > rt0.max_sessions:
+                    light_s = sorted(
+                        used_s,
+                        key=lambda s: (sum(1 for p in range(PERIODS) if soft.tcnt[t0][s * PERIODS + p] > 0), self.rng.random()),
+                    )
+                    for s in light_s[: min(4, len(light_s))]:
+                        sess.add(s)
+                    while len(sess) < 4:
+                        sess.add(self.rng.randrange(NUM_SESSIONS))
                 else:
-                    sess.add(self.rng.randrange(NUM_SESSIONS))
+                    for s in used_s[:2]:
+                        sess.add(s)
+                    while len(sess) < 4:
+                        sess.add(self.rng.randrange(NUM_SESSIONS))
             frozen = [
                 t for t in self._has_rule_teachers
-                if soft.rule_pen[t] > (soft.location_debt(t) if soft.tloc[t] is not None else 0)
+                if t != t_unfreeze and soft.rule_pen[t] > (soft.location_debt(t) if soft.tloc[t] is not None else 0)
             ]
             before = sum(1 for row in soft.grid for v in row if v >= 0)
             pen0 = soft.penalty()
@@ -5859,7 +6111,7 @@ class Constructor:
             try:
                 new_cells, cinfo = cpsat_lns.build_and_solve(
                     P, soft, list(range(P.num_classes())), "fill",
-                    time_limit=min(6.0, deadline - now - 0.5), workers=threads,
+                    time_limit=min(1.4, deadline - now - 0.25), workers=threads,
                     seed=self._cpsat_pass_idx, stop_check=self._stop_requested,
                     require_improve=False, sessions=sorted(sess), full_classes=[],
                     fill_quality=False, frozen_teachers=frozen, require_full=True,
@@ -5908,7 +6160,7 @@ class Constructor:
             # 05/10: no DIA DIEM sua bang cach xep lai NGUYEN BUOI toan truong (giu
             # du tiet) TRUOC khi go tiet. Do An Phu (luoi 869/869, 9 buoi vi pham):
             # go tham lam lay ra 21 tiet roi lap lai chi duoc 867.
-            self._cpsat_repair_loc_debt(soft, started + (deadline - started) * 0.3, stats, max_tries=12)
+            self._cpsat_repair_loc_debt(soft, started + (deadline - started) * 0.65, stats, max_tries=60)
         if soft.penalty() > 0:
             stats["debt_shed"] = self._shed_rule_debt(soft)
             stats["pen_after_shed"] = int(soft.penalty())
@@ -5925,9 +6177,9 @@ class Constructor:
             for v in row:
                 if v >= 0:
                     cnt0[v] += 1
-        need_fix = any(cnt0[ai] < P.a_periods[ai] for ai in range(A)) or soft.penalty() > 0
+        need_fix = (sum(P.a_periods) - placed0 > 5) or soft.penalty() > 0
         left0 = deadline - time.monotonic()
-        if whole_max > 0 and P.num_classes() <= whole_max and need_fix and left0 > 12.0:
+        if whole_max > 0 and P.num_classes() <= whole_max and need_fix and left0 > 4.0:
             stats["whole_pass"] = 0
             # 05/10: truong co luat DIA DIEM -> vi pham dia diem la PHAT trong lan
             # giai toan truong (tiet chua xep tren het), roi go no bang vung nguyen
@@ -5952,18 +6204,10 @@ class Constructor:
                 scope = list(range(P.num_classes()))
                 keep_all = False
                 if loc_soft:
-                    whole_limit = min(whole_limit, max(10.0, min(25.0, left * 0.35)))
-                    turn = stats["whole_pass"] % 3
-                    # vong 3 lan: (0) chi lop con thieu tiet, (1) toan truong GIU moi
-                    # tiet dang xep (require_full), (2) toan truong tu do doi tiet.
-                    # Do An Phu (868/869): toan truong giu tiet cham du tiet 4/4 lan
-                    # trong 15 s, ban tu do 0/2 (khong gian tim kiem qua rong).
-                    keep_all = turn in (0, 1)
-                    if turn == 0 and 0 < len(miss_classes) <= 6:
-                        scope = list(miss_classes)
-                        whole_limit = min(whole_limit, 6.0)
-                    elif turn == 0:
-                        keep_all = True
+                    whole_limit = min(whole_limit, max(9.0, min(20.0, left * 0.45)))
+                    # Do An Phu (868/869): toan truong giu tiet (require_full=True)
+                    # cham du tiet 4/4 lan trong 6-15 s, ban tu do 0/2.
+                    keep_all = (stats["whole_pass"] % 2 == 0)
                 else:
                     # truong khong co luat dia diem: vong cum lop lap tiet trong vai
                     # giay (GDTX: 3.8 s) — lan toan truong 20 s an mat thoi gian toi
@@ -6006,7 +6250,7 @@ class Constructor:
                     )
                     if (
                         not ok and loc_soft and soft.overlap == 0 and after > before and pen1 > pen0
-                        and time.monotonic() < deadline - 4.0
+                        and time.monotonic() < deadline - 0.5
                     ):
                         # xep THEM duoc tiet nhung con no dia diem -> go bang vung
                         # nguyen buoi toan truong (giu du tiet), chi nhan khi het no
@@ -6049,8 +6293,14 @@ class Constructor:
                 done = ok and placed0 >= sum(P.a_periods) and soft.penalty() == 0
                 # 06/10: nguong 25 -> 15 s: sau khi go tiet gay no, them mot lan giai
                 # toan truong (giu moi tiet) lap du tiet hon hang chuc vong cum lop.
-                if done or not loc_soft or stats["whole_pass"] >= 8 or deadline - time.monotonic() < 15.0:
+                if done or not loc_soft or stats["whole_pass"] >= 8 or deadline - time.monotonic() < 8.0:
                     break
+        consec_reject = 0
+        loc_soft_flag = bool(
+            any(getattr(P, "teacher_loc_rules", None) or [])
+            and os.environ.get("TKB_CPSAT_LOC", "1") != "0"
+            and os.environ.get("TKB_CPSAT_LOC_SOFT", "1") != "0"
+        )
         while not self._stop_requested():
             now = time.monotonic()
             limit = min(sub_limit, deadline - now - 0.3)
@@ -6063,6 +6313,54 @@ class Constructor:
                         cnt[v] += 1
             missing = [ai for ai in range(A) if cnt[ai] < P.a_periods[ai]]
             if not missing:
+                break
+            if (
+                (consec_reject >= 3 or deadline - now <= 6.5)
+                and whole_max > 0
+                and P.num_classes() <= whole_max
+                and loc_soft_flag
+                and stats.get("whole_pass", 0) == 0
+                and deadline - now > 3.2
+            ):
+                stats["whole_pass"] = 1
+                left_w = deadline - now
+                whole_limit = min(7.0, max(2.2, left_w * 0.45))
+                try:
+                    new_cells, cinfo = cpsat_lns.build_and_solve(
+                        P, soft, list(range(P.num_classes())), "fill",
+                        time_limit=whole_limit, workers=threads,
+                        seed=self._cpsat_pass_idx + 20,
+                        stop_check=self._stop_requested, require_improve=False,
+                        fill_quality=False, frozen_teachers=[], loc_soft=True,
+                        require_full=True,
+                    )
+                except Exception as exc:
+                    new_cells, cinfo = None, {"status": "ERROR", "error": repr(exc)}
+                stats["whole_status"] = str((cinfo or {}).get("status") or "")
+                if new_cells is not None:
+                    before_w = sum(cnt)
+                    pen0_w = soft.penalty()
+                    grid_before_w = [row[:] for row in soft.grid]
+                    cpsat_lns.apply_cells(soft, new_cells)
+                    for t in self._has_rule_teachers:
+                        soft.refresh_rule_pen(t)
+                    after_w = sum(1 for row in soft.grid for v in row if v >= 0)
+                    pen1_w = soft.penalty()
+                    ok_w = soft.overlap == 0 and after_w > before_w and pen1_w <= pen0_w
+                    if not ok_w and soft.overlap == 0 and after_w > before_w and pen1_w > pen0_w and time.monotonic() < deadline - 0.5:
+                        rep_end = min(deadline - 0.3, time.monotonic() + max(3.5, (deadline - time.monotonic()) * 0.65))
+                        self._cpsat_repair_loc_debt(soft, rep_end, stats, target=pen0_w, max_tries=60)
+                        after_w = sum(1 for row in soft.grid for v in row if v >= 0)
+                        pen1_w = soft.penalty()
+                        ok_w = soft.overlap == 0 and after_w > before_w and pen1_w <= pen0_w
+                        stats["whole_loc_repair"] = [int(ok_w), int(pen1_w)]
+                    if ok_w:
+                        stats["whole_accept"] = 1
+                        stats["gained"] += after_w - before_w
+                        consec_reject = 0
+                        continue
+                    self._restore_grid(soft, grid_before_w)
+                    stats["whole_reject"] = [before_w, after_w, int(pen0_w), int(pen1_w)]
                 break
             sessions: list[int] | None = None
             full: list[int] | None = None
@@ -6101,6 +6399,7 @@ class Constructor:
             if new_cells is None:
                 status = str((cinfo or {}).get("status") or "")
                 stats["infeasible" if status == "INFEASIBLE" else "unknown"] += 1
+                consec_reject += 1
                 if os.environ.get("TKB_EVAC_DEBUG"):
                     sys.stderr.write(f"[fill] {status} classes={classes} err={(cinfo or {}).get('error')}\n")
                 continue
@@ -6125,9 +6424,11 @@ class Constructor:
                 for t in self._has_rule_teachers:
                     soft.refresh_rule_pen(t)
                 stats["rejected"] += 1
+                consec_reject += 1
                 continue
             stats["accept"] += 1
             stats["gained"] += after - before
+            consec_reject = 0
             if os.environ.get("TKB_EVAC_DEBUG"):
                 sys.stderr.write(
                     f"[fill] +{after - before} -> {after} pen={pen1} classes={classes} "

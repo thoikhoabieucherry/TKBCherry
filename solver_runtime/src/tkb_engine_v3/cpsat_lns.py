@@ -666,18 +666,25 @@ def _build_and_solve(
                     total_terms.append(d * v)
                     m.AddHint(v, 1 if blk == cur else 0)
         if fill:
-            # so tiet KHONG xep duoc cua phan cong (muc tieu chinh cua lane)
-            u = m.NewIntVar(0, r, "u%d" % av)
-            unplaced_vars[av] = u
-            if total_terms:
-                m.Add(sum(total_terms) + u == r)
+            if require_full and max(0, missing_add[av]) == 0:
+                if not total_terms:
+                    info["error"] = "assignment %d has no candidate block" % av
+                    return None, info
+                unplaced_vars[av] = m.NewConstant(0)
+                m.Add(sum(total_terms) == r)
             else:
-                m.Add(u == r)
-            m.AddHint(u, max(0, missing_add[av]))
-            if require_full:
-                # 05/10: vung go no (giu du tiet): moi tiet dang xep phai xep lai —
-                # bai toan kha thi thuan, CP-SAT bac bo nhanh khi vung khong go duoc.
-                m.Add(u <= max(0, missing_add[av]))
+                # so tiet KHONG xep duoc cua phan cong (muc tieu chinh cua lane)
+                u = m.NewIntVar(0, r, "u%d" % av)
+                unplaced_vars[av] = u
+                if total_terms:
+                    m.Add(sum(total_terms) + u == r)
+                else:
+                    m.Add(u == r)
+                m.AddHint(u, max(0, missing_add[av]))
+                if require_full:
+                    # 05/10: vung go no (giu du tiet): moi tiet dang xep phai xep lai —
+                    # bai toan kha thi thuan, CP-SAT bac bo nhanh khi vung khong go duoc.
+                    m.Add(u <= max(0, missing_add[av]))
         else:
             if not total_terms:
                 info["error"] = "assignment %d has no candidate block" % av
@@ -825,13 +832,13 @@ def _build_and_solve(
                 elif len(const) >= length:
                     terms.append(1)
             if minimum > 0:
-                if fill and av in unplaced_vars:
+                viol0 = 1 if _blocks_now(c, si, length) < minimum else 0
+                if fill and av in unplaced_vars and not (require_full and max(0, missing_add[av]) == 0 and viol0 == 0):
                     # 01/10 lane fill: lich DO DANG duoc hoan "tiet doi toi thieu"
                     # (nhu defer_min cua pha 1/2) CHI khi mon con tiet chua xep, hoac
                     # luoi vao da thieu san -> mon xep du thi luat van cung. Thieu
                     # dong nay mo hinh VO NGHIEM (do truong 61 lop: GDTC 2 tiet chi
                     # chieu, min 1 tiet doi, chua xep tiet nao -> 85/97 lan INFEASIBLE).
-                    viol0 = 1 if _blocks_now(c, si, length) < minimum else 0
                     short = m.NewIntVar(0, minimum, "lbs%d_%d" % (av, length))
                     m.Add(sum(terms) + short >= minimum)
                     m.Add(short <= unplaced_vars[av] + viol0 * minimum)
@@ -957,11 +964,23 @@ def _build_and_solve(
             if rule.min_sessions > 0 and not fill and t_complete(t):
                 m.Add(sum(ne_list) >= rule.min_sessions)
             elif rule.min_sessions > 0 and fill:
-                # 05/10 lane fill: thieu buoi so voi toi thieu bi PHAT ngang mot
-                # tiet chua xep (khong ep cung: con tiet chua xep thi chua du buoi).
-                ms = m.NewIntVar(0, rule.min_sessions, "mss%d" % t)
-                m.Add(sum(ne_list) + ms >= rule.min_sessions)
-                min_short.append(ms)
+                cur_t_sess = sum(1 for s_ in range(NUM_SESSIONS) if cur_occ[t][s_])
+                if require_full and sum(missing_add) == 0 and t_complete(t) and cur_t_sess >= rule.min_sessions:
+                    m.Add(sum(ne_list) >= rule.min_sessions)
+                elif (
+                    require_full
+                    and sum(missing_add) == 0
+                    and t_complete(t)
+                    and not fill_quality
+                    and any(not isinstance(ne_list[s_], int) and not cur_occ[t][s_] for s_ in range(NUM_SESSIONS))
+                ):
+                    m.Add(sum(ne_list) >= min(rule.min_sessions, cur_t_sess + 1))
+                else:
+                    # 05/10 lane fill: thieu buoi so voi toi thieu bi PHAT ngang mot
+                    # tiet chua xep (khong ep cung: con tiet chua xep thi chua du buoi).
+                    ms = m.NewIntVar(0, rule.min_sessions, "mss%d" % t)
+                    m.Add(sum(ne_list) + ms >= rule.min_sessions)
+                    min_short.append(ms)
             if rule.max_morning > 0:
                 m.Add(sum(ne_list[s] for s in range(0, NUM_SESSIONS, 2)) <= rule.max_morning)
             if rule.max_afternoon > 0:
@@ -1068,7 +1087,13 @@ def _build_and_solve(
                     continue
                 n_loc_cons = 0
                 lv: Any = 0
-                if loc_soft and fill:
+                pre_loc_bad = False
+                if fill and not loc_soft and require_full and not fill_quality:
+                    try:
+                        pre_loc_bad = int(soft.location_session_debt(t, s)) > 0
+                    except Exception:
+                        pre_loc_bad = False
+                if (loc_soft and fill) or pre_loc_bad:
                     lv = m.NewBoolVar("lv%d_%d" % (t, s))
                     loc_viol.append(lv)
                 if one:
@@ -1212,6 +1237,7 @@ def _build_and_solve(
     SG = sum(SG_terms)
     G1 = sum(G1_terms)
     G2 = sum(G2_terms)
+    exact_quality = bool(fill and fill_quality and require_full and sum(missing_add) == 0 and not loc_viol)
     if fill:
         # lap tiet thieu: khong ep "khong xau hon" (dat them tiet co the buoc
         # tao buoi moi); so tiet chua xep la tren het, chat luong GV la phu.
@@ -1220,16 +1246,23 @@ def _build_and_solve(
             + (sum(block_short) if block_short else 0)
             + (sum(min_short) if min_short else 0)
         )
-        if loc_viol:
+        if exact_quality:
+            m.Add(SG <= cur[1])
+            m.Add(SG * 100 + G2 <= cur[1] * 100 + cur[3])
+            m.Add(SG * 10000 + G2 * 100 + S <= cur[1] * 10000 + cur[3] * 100 + cur[0])
+            m.Minimize(U * 10**8 + SG * 50000 + G2 * 1000 + S * 40 + G1)
+        elif loc_viol:
             # tiet chua xep tren het, roi so buoi vi pham dia diem (nguoi goi chi
             # nhan khi het vi pham), roi chat luong neu fill_quality
             LV = sum(loc_viol)
+            if not loc_soft and require_full and not fill_quality:
+                m.Add(LV <= len(loc_viol) - 1)
             if fill_quality:
-                m.Minimize(U * 10**7 + LV * 100000 + (SG + G2) * 200 + S * 4 + G1)
+                m.Minimize(U * 10**8 + LV * 10**6 + SG * 50000 + G2 * 1000 + S * 40 + G1)
             else:
                 m.Minimize(U * 10000 + LV)
         elif fill_quality or not unplaced_vars:
-            m.Minimize(U * 100000 + (SG + G2) * 200 + S * 4 + G1)
+            m.Minimize(U * 10**8 + SG * 50000 + G2 * 1000 + S * 40 + G1)
         else:
             # chi so tiet: cham 0 la OPTIMAL ngay, khong dot thoi gian vao chat
             # luong (pha 3 + vong chat luong sau do lo).
@@ -1267,16 +1300,31 @@ def _build_and_solve(
     timeline: list[tuple[float, int, int]] = []
     info["timeline"] = timeline
     stopped = [False]
+    cur_lex = (int(cur[1]), int(cur[3]), int(cur[0]), int(cur[2]))
 
     class _Callback(cp_model.CpSolverSolutionCallback):
         def __init__(self) -> None:
             super().__init__()
 
         def on_solution_callback(self) -> None:
-            timeline.append((round(time.monotonic() - t0, 2), int(self.Value(G1)), int(self.Value(S))))
+            s_val = int(self.Value(S))
+            g1_val = int(self.Value(G1))
+            timeline.append((round(time.monotonic() - t0, 2), g1_val, s_val))
             if stop_check is not None and _safe_stop(stop_check):
                 stopped[0] = True
                 self.StopSearch()
+                return
+            if exact_quality:
+                sg_val = int(self.Value(SG))
+                g2_val = int(self.Value(G2))
+                cand_lex = (sg_val, g2_val, s_val, g1_val)
+                if cand_lex < cur_lex:
+                    if sg_val < cur_lex[0] or g2_val < cur_lex[1] or s_val < cur_lex[2]:
+                        self.StopSearch()
+                        return
+                    if g1_val <= cur_lex[3] - 2 or (time.monotonic() - t0 - build_s) >= 0.35:
+                        self.StopSearch()
+                        return
 
     status = solver.Solve(m, _Callback())
     info["status"] = solver.StatusName(status)
