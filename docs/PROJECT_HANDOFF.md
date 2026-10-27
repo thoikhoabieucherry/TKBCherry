@@ -36,6 +36,18 @@
   đúng 30 ca có sẵn như HEAD. E2E: lượt Cherry 60 s qua bộ giải local (Origin tkbcherry.com) → 869/869 hard_ok. Bẫy đã sửa: in tiếng
   Việt ra console cp1252 làm bộ giải sập lúc khởi động → `reconfigure(utf-8)`. «Máy chủ» = đường hiện tại (Cloud Run → VPS), không
   ép chỉ Cloud Run (project đang bị đình chỉ).
+- **Bộ cài không cần Python (27/10 chiều, chủ dự án: "có cách nào ko cần cài đặt mà tất cả cài ngầm")**: không thể cài mà người
+  dùng không bấm gì (trình duyệt chặn); làm `CherrySetup.exe` cài 1 lần rồi chạy ngầm. `build_installer.py` (dựng ở thư mục ĐƯỜNG DẪN
+  NGẮN — scratchpad sâu quá 260 ký tự làm lỗi MAX_PATH): Python nhúng python.org cùng bản + `pip --target` ortools/numpy/scipy/openpyxl,
+  payload.zip + `installer/install.ps1` (UTF-8 BOM — PS 5.1 đọc ANSI) bọc bằng IExpress (~92 MB). Cài per-user
+  `%LOCALAPPDATA%\CherryMayNay`, lối tắt Startup chạy `pythonw.exe … --background`, `HKCU\Software\Classes\cherry-local`, mục gỡ
+  `HKCU\…\Uninstall\CherryMayNay` (`uninstall.ps1`). Bộ giải v2: **cổng 2211** (2210 = Cherry Local / bản V4), `ExclusiveServer`
+  (Windows `SO_REUSEADDR` cho 2 tiến trình cùng nghe một cổng — bản V4 đang bị đúng vậy), `--wake` thoát êm nếu đã chạy, trang
+  `/` giải thử file `.cherry` (ghim tiết ghép như app). Bridge: `rustApiBase({wakeLocal:true})` chỉ khi người dùng gạt nút/bấm
+  Cherry → iframe `cherry-local://start` rồi chờ tối đa 12 s. Đã kiểm: Python nhúng + pythonw giải trọn vòng, 0 cửa sổ
+  (`MainWindowHandle` = 0 cho mọi tiến trình); trang kiểm tra trên Chrome thật An Phú 180 s 869/869, 0 vi phạm, buổi 281→276,
+  trống 1 14→8; cú pháp install/uninstall.ps1 OK. **CHƯA chạy bộ cài thật** (auto mode chặn tạo Startup/registry — để chủ dự án
+  tự chạy `Desktop\CherrySetup.exe`). Test: toggle node 10/10, `tests/test_local_solver` 10/10.
 - **Deploy (chưa làm, chờ chủ dự án)**: web = `tkb-rust-bridge.js` + dòng `?v=` bridge trong `sapxep.html` (dựng = live + 1 dòng,
   cây làm việc đang có các bump `?v` khác chưa commit); engine = 3 file `tkb_engine_v3` lên VPS (không restart). Gói zip phát cho
   trường riêng. Lưu ý: bản V4 của chủ dự án đang chạy Cherry Local ở cổng 2210 — trùng cổng mặc định của bộ giải mới.

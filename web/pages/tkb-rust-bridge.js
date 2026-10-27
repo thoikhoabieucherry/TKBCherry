@@ -1404,7 +1404,8 @@
      KHONG tu chay tren may chu (nguoi dung da chon may nay). Dien thoai luon "May chu". */
   const SOLVER_TARGET_KEY = "TKB_SOLVER_TARGET_V1";
   const LOCAL_SOLVER_ORIGIN_KEY = "TKB_LOCAL_SOLVER_ORIGIN_V1";
-  const LOCAL_SOLVER_ORIGIN_DEFAULT = "http://127.0.0.1:2210";
+  // 2210 = Cherry Local (ban chay ca web trong may); bo giai rieng dung 2211.
+  const LOCAL_SOLVER_ORIGIN_DEFAULT = "http://127.0.0.1:2211";
 
   function solverTarget(){
     try{
@@ -1434,8 +1435,40 @@
 
   function noSolverBackendMessage(){
     return solverTarget() === "local"
-      ? `Chưa thấy bộ giải trên máy này (${localSolverOrigin()}). Mở start-cherry-local.bat rồi bấm lại (Chrome hỏi quyền truy cập mạng cục bộ thì chọn Cho phép), hoặc gạt về "Máy chủ".`
+      ? `Chưa thấy bộ giải trên máy này (${localSolverOrigin()}). Cài CherrySetup.exe một lần (Chrome hỏi "Mở Cherry máy này?" hoặc quyền truy cập mạng cục bộ thì chọn Cho phép), hoặc gạt về "Máy chủ".`
       : "Chưa cấu hình dịch vụ xếp lịch.";
+  }
+
+  /* 27/10: bo cai CherrySetup.exe dang ky giao thuc cherry-local:// -> trang danh thuc bo
+     giai dang tat (Chrome hoi "Mo Cherry may nay?" mot lan, tick "luon cho phep"). Chi goi
+     tu thao tac cua nguoi dung (gat nut, bam Cherry): Chrome chan mo ung dung ngoai khi
+     khong co cu chi, va vong kiem tra banner 30 s khong duoc bat hop thoai lien tuc. */
+  let localSolverWakePromise = null;
+  async function wakeLocalSolver(){
+    if(localSolverWakePromise) return localSolverWakePromise;
+    localSolverWakePromise = (async () => {
+      try{
+        const frame = document.createElement("iframe");
+        frame.hidden = true;
+        frame.setAttribute("aria-hidden", "true");
+        if(frame.style) frame.style.display = "none";
+        frame.src = "cherry-local://start";
+        (document.body || document.documentElement).appendChild(frame);
+        window.setTimeout(() => { try{ frame.remove(); }catch(_){ } }, 15000);
+      }catch(_){ }
+      const deadline = Date.now() + 12000;
+      while(Date.now() < deadline){
+        await sleep(400);
+        const ok = await probeRustApiBase(localSolverOrigin(), 1500);
+        if(ok) return ok;
+      }
+      return "";
+    })();
+    try{
+      return await localSolverWakePromise;
+    }finally{
+      localSolverWakePromise = null;
+    }
   }
 
   window.__tkbSolverTargetIsLocal = () => solverTarget() === "local";
@@ -1462,7 +1495,7 @@
     btn.textContent = local ? "Máy này" : "Máy chủ";
     btn.title = local
       ? `Cherry giải bằng máy này (${localSolverOrigin()}). Bấm để chuyển về Máy chủ.`
-      : "Cherry giải trên máy chủ. Bấm để chuyển sang Máy này (cần mở start-cherry-local.bat).";
+      : "Cherry giải trên máy chủ. Bấm để chuyển sang Máy này (cần cài CherrySetup.exe một lần).";
     btn.setAttribute("aria-label", btn.title);
   }
 
@@ -1478,7 +1511,8 @@
       setStatus("Cherry sẽ giải trên máy chủ.", "info");
       return;
     }
-    const base = await rustApiBase();
+    setStatus("Đang tìm bộ giải trên máy này…", "info");
+    const base = await rustApiBase({wakeLocal:true});
     syncSolverTargetUi();
     if(base) setStatus("Cherry sẽ giải bằng máy này — bộ giải trên máy đã sẵn sàng.", "success");
     else setStatus(noSolverBackendMessage(), "warning");
@@ -1977,10 +2011,11 @@
 
   let rustApiBaseProbePromise = null;
 
-  async function rustApiBase(){
+  async function rustApiBase(options){
     if(solverTarget() === "local"){
       // Khong cache: bo giai local co the vua tat/bat; do 127.0.0.1 chi mat vai ms.
-      const ok = await probeRustApiBase(localSolverOrigin(), 1500);
+      let ok = await probeRustApiBase(localSolverOrigin(), 1500);
+      if(!ok && options?.wakeLocal === true) ok = await wakeLocalSolver();
       window.__TKB_LOCAL_SOLVER_ONLINE = Boolean(ok);
       return ok;
     }
@@ -16620,7 +16655,7 @@
     };
     let response;
     try{
-      const apiBase = await rustApiBase();
+      const apiBase = await rustApiBase({wakeLocal:true});
       if(!apiBase) throw new Error(noSolverBackendMessage());
       traceSolveStep("postSolve:before-request-data", {
         scheduled: countScheduledLessons(data),

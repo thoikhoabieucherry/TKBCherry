@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cherry máy này</title>
+<style>
+  :root{--bg:#f8fafc;--card:#fff;--text:#0f172a;--muted:#64748b;--line:#e2e8f0;--ok:#047857;--okbg:#ecfdf5;--bad:#b91c1c;--badbg:#fef2f2;--accent:#e11d48}
+  @media (prefers-color-scheme: dark){:root{--bg:#0b1220;--card:#111a2e;--text:#e2e8f0;--muted:#94a3b8;--line:#1e293b;--ok:#34d399;--okbg:#06281f;--bad:#f87171;--badbg:#2a1215;--accent:#fb7185}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:760px;margin:0 auto;padding:24px 16px 48px}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:0 0 16px}
+  .card h2{font-size:16px;margin:0 0 10px}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-weight:600;font-size:13px;background:var(--okbg);color:var(--ok)}
+  .pill::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
+  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:8px 0}
+  button{font:inherit;font-weight:600;padding:8px 16px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button:disabled{opacity:.5;cursor:default}
+  select,input[type=file]{font:inherit;color:var(--text)}
+  table{width:100%;border-collapse:collapse;margin-top:10px;font-variant-numeric:tabular-nums}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:13px}
+  td.num{text-align:right}
+  .better{color:var(--ok);font-weight:600}
+  .worse{color:var(--bad);font-weight:600}
+  #progress{color:var(--muted);min-height:1.5em}
+  #error{color:var(--bad);background:var(--badbg);border-radius:8px;padding:8px 10px;display:none}
+  ol{margin:6px 0 0;padding-left:20px}
+  code{font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <h1>🍒 Cherry máy này</h1>
+  <p class="sub">Bộ giải Cherry chạy bằng CPU của máy này. Dữ liệu trường vẫn lưu trên tkbcherry.com.</p>
+
+  <section class="card">
+    <h2>Trạng thái</h2>
+    <div class="row"><span class="pill" id="statusPill">Đang chạy</span><span id="statusText"></span></div>
+  </section>
+
+  <section class="card">
+    <h2>Giải thử bằng file .cherry</h2>
+    <p class="sub" style="margin:0 0 6px">Chọn file xuất từ nút <b>File .cherry</b> trong app. File chỉ đọc trong máy này, không gửi đi đâu.</p>
+    <div class="row">
+      <input type="file" id="file" accept=".cherry,.json">
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="fresh"> Xếp lại từ lưới trống</label>
+      <label>Thời gian
+        <select id="seconds"><option value="60">60 giây</option><option value="180" selected>180 giây (như nút Cherry)</option></select>
+      </label>
+    </div>
+    <div class="row">
+      <button class="primary" id="run" disabled>Giải thử</button>
+      <button id="stop" disabled>Dừng</button>
+    </div>
+    <div id="progress"></div>
+    <div id="error"></div>
+    <table id="result" hidden>
+      <thead><tr><th>Chỉ số</th><th class="num">Trước</th><th class="num">Sau</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Kiểm tra tự bật lại</h2>
+    <ol>
+      <li>Mở <b>Task Manager</b>, kết thúc tiến trình <code>pythonw.exe</code> của Cherry (hoặc khởi động lại máy).</li>
+      <li>Bấm <code>Win + R</code>, gõ <code>cherry-local://start</code>, Enter — bộ giải bật lại ngầm, không có cửa sổ.</li>
+      <li>Tải lại trang này: trạng thái phải là <b>Đang chạy</b>.</li>
+    </ol>
+    <p class="sub" style="margin:10px 0 0">Gỡ cài đặt: <b>Settings → Apps → Installed apps → Cherry máy này → Uninstall</b>.</p>
+  </section>
+</main>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const DAYS = ["thu2", "thu3", "thu4", "thu5", "thu6", "thu7"];
+let jobId = "";
+
+async function refreshStatus(){
+  try{
+    const res = await fetch("/api/health", {cache:"no-store"});
+    const h = await res.json();
+    $("statusText").textContent = `${h.workers} luồng giải · máy có ${h.cpuCount} nhân · ${h.version}`;
+  }catch(_){
+    $("statusPill").textContent = "Không kết nối được";
+  }
+}
+
+function cellMon(c){ return c && typeof c === "object" ? String(c.mon || "") : String(c || ""); }
+
+function blankGrid(data){
+  for(const grid of Object.values(data.tkb || {})){
+    for(const day of Object.values(grid || {})){
+      if(!day || typeof day !== "object") continue;
+      for(const arr of Object.values(day)){
+        if(!Array.isArray(arr)) continue;
+        arr.forEach((c, i) => {
+          if(c === "OFF") return;
+          if(c && typeof c === "object" && (c.fixed || c.off || c.mon === "OFF")) return;
+          arr[i] = "";
+        });
+      }
+    }
+  }
+  for(const k of ["tkbSolverResult", "tkbRustSolverResult", "tkbOptimizationPlateau", "tkbGapProgressBaseline"]) delete data[k];
+}
+
+// Bản rút gọn của phanmon.js tkbJointPinForSolve: tiết DẠY GHÉP nhiều lớp được ghim tạm
+// cùng một ô ở mọi lớp (engine dời được cả nhóm nhờ settings.cherry_joint_movable).
+function jointPin(data){
+  const nameToId = {};
+  (data.lop || []).forEach(l => [l.id, l.ten, l.ten2].forEach(k => { if(k) nameToId[String(k)] = l.id; }));
+  const fixedSlots = new Set();
+  for(const g of Object.values(data.tkb || {})){
+    for(const thu of DAYS) for(const b of ["sang", "chieu"]){
+      ((g[thu] || {})[b] || []).forEach((c, ti) => { if(c && typeof c === "object" && c.fixed) fixedSlots.add(`${thu}|${b}|${ti}`); });
+    }
+  }
+  const keys = [];
+  for(const row of data.dayGhep || []){
+    const key = String(row.ten || "").trim();
+    const low = key.toLowerCase();
+    const members = (row.lop || []).map(x => nameToId[String(x)]).filter(id => id && data.tkb && data.tkb[id]);
+    if(members.length < 2) continue;
+    const need = Math.max(1, parseInt(row.sotiet, 10) || 1);
+    const gh = Math.max(1, parseInt(row.gioihan, 10) || 1);
+    const slots = [];
+    for(const thu of DAYS) for(const b of ["sang", "chieu"]){
+      const n = ((data.tkb[members[0]][thu] || {})[b] || []).length;
+      for(let ti = 0; ti < n; ti++){
+        let have = 0, blocked = false;
+        for(const cid of members){
+          const c = ((data.tkb[cid][thu] || {})[b] || [])[ti];
+          if(c === "OFF"){ blocked = true; break; }
+          if(cellMon(c).trim().toLowerCase() === low){ have += 1; continue; }
+          if(cellMon(c)){ blocked = true; break; }
+        }
+        if(blocked || (have === 0 && fixedSlots.has(`${thu}|${b}|${ti}`))) continue;
+        slots.push({thu, b, ti, have});
+      }
+    }
+    const chosen = slots.filter(s => s.have > 0);
+    const usedDays = new Set(chosen.map(s => s.thu));
+    const usedSess = {};
+    chosen.forEach(s => { usedSess[`${s.thu}|${s.b}`] = (usedSess[`${s.thu}|${s.b}`] || 0) + 1; });
+    while(chosen.length < need){
+      const cand = slots.filter(s => !chosen.includes(s) && (usedSess[`${s.thu}|${s.b}`] || 0) < gh);
+      if(!cand.length) break;
+      cand.sort((a, c) => (usedDays.has(a.thu) - usedDays.has(c.thu)) || (DAYS.indexOf(a.thu) - DAYS.indexOf(c.thu))
+        || ((a.b === "sang" ? 0 : 1) - (c.b === "sang" ? 0 : 1)) || (a.ti - c.ti));
+      const s = cand[0];
+      chosen.push(s);
+      usedDays.add(s.thu);
+      usedSess[`${s.thu}|${s.b}`] = (usedSess[`${s.thu}|${s.b}`] || 0) + 1;
+    }
+    let pinned = false;
+    for(const cid of members) for(const s of chosen){
+      const arr = data.tkb[cid][s.thu][s.b];
+      const c = arr[s.ti];
+      if(c && typeof c === "object" && c.fixed && !c.jointPin && cellMon(c).trim().toLowerCase() === low) continue;
+      arr[s.ti] = {mon:key, fixed:true, jointPin:true};
+      pinned = true;
+    }
+    if(pinned && !keys.includes(key)) keys.push(key);
+  }
+  return keys;
+}
+
+async function readCherryFile(file){
+  const obj = JSON.parse(await file.text());
+  const data = obj && obj.format === "tkbcherry" && obj.data ? obj.data : obj;
+  if(!data || !Array.isArray(data.lop) || !data.tkb) throw new Error("File không phải dữ liệu TKB Cherry.");
+  return data;
+}
+
+function showError(msg){
+  $("error").textContent = msg;
+  $("error").style.display = msg ? "block" : "none";
+}
+
+function fmtDelta(before, after, lowerIsBetter){
+  if(before == null || after == null || before === after) return "";
+  const better = lowerIsBetter ? after < before : after > before;
+  return better ? "better" : "worse";
+}
+
+function renderResult(res, seconds){
+  const m = res.metrics || {};
+  const e = ((res.solver || {}).engine_v3) || {};
+  const wq = Array.isArray(e.warm_quality) ? e.warm_quality : null;
+  const gaps = m.gap_distribution || {};
+  const gap2 = Object.entries(gaps).reduce((s, [k, v]) => s + (parseInt(k, 10) >= 2 ? Number(v) || 0 : 0), 0);
+  const viol = Array.isArray((res.validation || {}).violations) ? res.validation.violations.length : (m.app_constraint_violation_count || 0);
+  const rows = [
+    ["Tiết xếp được", e.warm_placed != null ? `${e.warm_placed}/${m.expected_periods}` : "—", `${m.scheduled_periods}/${m.expected_periods}`, null],
+    ["Vi phạm luật", "—", String(viol), null],
+    ["Buổi dạy 1 tiết", wq ? wq[0] : null, m.one_period_teacher_sessions, true],
+    ["Buổi trống ≥ 2 tiết", wq ? wq[1] : null, gap2, true],
+    ["Tổng buổi dạy", wq ? wq[2] : null, m.teacher_sessions, true],
+    ["Buổi trống 1 tiết", wq ? wq[3] : null, Number(gaps["1"] || 0), true],
+    ["Thời gian", "", `${seconds} giây`, null]
+  ];
+  const body = $("result").querySelector("tbody");
+  body.innerHTML = "";
+  for(const [label, before, after, lower] of rows){
+    const tr = document.createElement("tr");
+    const cls = lower ? fmtDelta(Number(before), Number(after), true) : "";
+    tr.innerHTML = `<td></td><td class="num"></td><td class="num ${cls}"></td>`;
+    tr.children[0].textContent = label;
+    tr.children[1].textContent = before == null ? "—" : String(before);
+    tr.children[2].textContent = after == null ? "—" : String(after);
+    body.appendChild(tr);
+  }
+  $("result").hidden = false;
+}
+
+async function run(){
+  showError("");
+  $("result").hidden = true;
+  const file = $("file").files[0];
+  if(!file) return;
+  let data;
+  try{ data = await readCherryFile(file); }catch(err){ showError(String(err.message || err)); return; }
+  if($("fresh").checked) blankGrid(data);
+  const jointKeys = jointPin(data);
+  const seconds = Number($("seconds").value) || 180;
+  jobId = `thu-${Date.now()}`;
+  const settings = {
+    engine:"cherry", solve_run_id:jobId,
+    overall_time_limit_seconds:seconds, optimization_time_limit_seconds:seconds,
+    backend_deadline_ms:(seconds + 20) * 1000,
+    preserve_fixed_lessons_only:true, require_complete_schedule:false,
+    best_effort_on_timeout:true, ui_accept_incomplete_best_effort:true
+  };
+  if(jointKeys.length) settings.cherry_joint_movable = jointKeys;
+  $("run").disabled = true;
+  $("stop").disabled = false;
+  const started = Date.now();
+  try{
+    let res = await fetch("/api/solve-data", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({data, settings})});
+    let payload = await res.json();
+    while(res.status === 202){
+      const msg = (payload.progress && (payload.progress.message || payload.progress.stage)) || "Đang giải…";
+      $("progress").textContent = `${Math.round((Date.now() - started) / 1000)} s — ${msg}`;
+      await new Promise(r => setTimeout(r, 1500));
+      res = await fetch(`/api/solve-result?jobId=${encodeURIComponent(jobId)}`, {cache:"no-store"});
+      payload = await res.json();
+    }
+    const took = Math.round((Date.now() - started) / 1000);
+    if(!payload || !payload.metrics){ showError(payload && payload.error || `Lỗi ${res.status}`); $("progress").textContent = ""; return; }
+    $("progress").textContent = payload.ok ? `Xong sau ${took} giây.` : `Xong sau ${took} giây (lịch chưa đạt hết yêu cầu).`;
+    renderResult(payload, took);
+  }catch(err){
+    showError(String(err.message || err));
+  }finally{
+    $("run").disabled = !$("file").files[0];
+    $("stop").disabled = true;
+  }
+}
+
+$("file").addEventListener("change", () => { $("run").disabled = !$("file").files[0]; });
+$("run").addEventListener("click", () => { run(); });
+$("stop").addEventListener("click", async () => {
+  $("stop").disabled = true;
+  try{
+    await fetch("/api/solve-cancel", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({solve_run_id:jobId, retainBest:true})});
+    $("progress").textContent = "Đang dừng — lấy lịch tốt nhất hiện có…";
+  }catch(_){}
+});
+refreshStatus();
+</script>
+</body>
+</html>

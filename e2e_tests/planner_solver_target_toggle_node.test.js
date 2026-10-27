@@ -14,7 +14,7 @@ const vm = require("node:vm");
 const BRIDGE_PATH = path.resolve(__dirname, "..", "web", "pages", "tkb-rust-bridge.js");
 const BRIDGE_SOURCE = fs.readFileSync(BRIDGE_PATH, "utf8");
 const PLANNER_HTML = fs.readFileSync(path.resolve(__dirname, "..", "web", "pages", "sapxep.html"), "utf8");
-const LOCAL = "http://127.0.0.1:2210";
+const LOCAL = "http://127.0.0.1:2211";
 const SITE = "https://tkbcherry.com";
 
 function memoryStorage(initial = {}){
@@ -53,15 +53,17 @@ function makeDocument(){
   cherry.insertAdjacentElement = (where, el) => { inserted.push({where, el}); nodes.set(el.id, el); return el; };
   nodes.set("btnEngineCherry", cherry);
   const head = {appendChild(child){ if(child.id) nodes.set(child.id, child); return child; }};
+  const frames = [];
   return {
     inserted,
+    frames,
     getElementById(id){ return nodes.get(String(id)) || null; },
     querySelector(){ return null; },
     querySelectorAll(){ return []; },
     createElement(){ return makeNode(""); },
     head,
     documentElement:{appendChild(child){ return child; }},
-    body:{appendChild(child){ return child; }}
+    body:{appendChild(child){ frames.push(child); return child; }}
   };
 }
 
@@ -139,8 +141,8 @@ test("Máy này nhưng chưa mở bộ giải: trả rỗng + thông báo hướ
   assert.equal(await hooks.rustApiBase(), "");
   assert.equal(window.__TKB_LOCAL_SOLVER_ONLINE, false);
   assert.ok(calls.every(c => !c.url.startsWith(SITE)), "không được tự gửi lượt giải lên máy chủ");
-  assert.match(hooks.noSolverBackendMessage(), /start-cherry-local\.bat/);
-  assert.match(hooks.noSolverBackendMessage(), /127\.0\.0\.1:2210/);
+  assert.match(hooks.noSolverBackendMessage(), /CherrySetup\.exe/);
+  assert.match(hooks.noSolverBackendMessage(), /127\.0\.0\.1:2211/);
 });
 
 test("Máy này: không gửi thẻ đăng nhập sang bộ giải local; Máy chủ vẫn gửi", () => {
@@ -203,4 +205,27 @@ test("đang xếp lịch thì không cho đổi nơi giải", async () => {
 
 test("sapxep.html nạp bridge bản mới (?v) để trình duyệt không giữ bản cũ", () => {
   assert.match(PLANNER_HTML, /tkb-rust-bridge\.js\?v=20261027-solver-target-toggle-v1/);
+});
+
+test("bộ giải đang tắt: chỉ thao tác của người dùng mới đánh thức qua cherry-local://", async () => {
+  const storage = memoryStorage({TKB_SOLVER_TARGET_V1:"local"});
+  let online = false;
+  const {hooks, document, window} = loadBridge({
+    storage,
+    fetchImpl:async url => {
+      if(url.startsWith(LOCAL) && !online) throw new TypeError("Failed to fetch");
+      return health(url);
+    }
+  });
+  // vong kiem tra banner / goi thuong: KHONG mo ung dung ngoai
+  assert.equal(await hooks.rustApiBase(), "");
+  assert.equal(document.frames.length, 0);
+  // bam Cherry / gat nut: mo cherry-local://start roi cho bo giai len
+  const pending = hooks.rustApiBase({wakeLocal:true});
+  await new Promise(r => setTimeout(r, 50));
+  assert.equal(document.frames.length, 1);
+  assert.equal(document.frames[0].src, "cherry-local://start");
+  online = true;
+  assert.equal(await pending, LOCAL);
+  assert.equal(window.__TKB_LOCAL_SOLVER_ONLINE, true);
 });

@@ -16,7 +16,6 @@ import unittest
 import urllib.error
 import urllib.request
 import zipfile
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -80,7 +79,7 @@ class ServerTests(unittest.TestCase):
         (runtime / "scripts" / "solve_stdio.py").write_text(FAKE_SOLVER, encoding="utf-8")
         cls_.manager = SolverManager(runtime, Path(cls_.tmp.name) / "logs", workers=1)
         allowed = tuple(o.lower() for o in cls.DEFAULT_ORIGINS)
-        cls_.server = ThreadingHTTPServer(("127.0.0.1", 0), cls.make_handler(cls_.manager, allowed))
+        cls_.server = cls.ExclusiveServer(("127.0.0.1", 0), cls.make_handler(cls_.manager, allowed))
         cls_.port = cls_.server.server_address[1]
         cls_.thread = threading.Thread(target=cls_.server.serve_forever, daemon=True)
         cls_.thread.start()
@@ -137,6 +136,20 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(payload["echoEngine"], "cherry")
         self.assertEqual(payload["solver"]["backend"], "cherry-local-python")
 
+    def test_status_page(self):
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode("utf-8")
+            self.assertIn("text/html", resp.headers.get("Content-Type"))
+        self.assertIn("Cherry máy này", html)
+        self.assertIn("/api/solve-data", html)
+
+    def test_second_instance_cannot_share_the_port(self):
+        # Windows: SO_REUSEADDR mac dinh cho 2 tien trinh cung nghe 1 cong -> phai doc quyen.
+        with self.assertRaises(OSError):
+            cls.ExclusiveServer(("127.0.0.1", self.port), cls.make_handler(self.manager, ()))
+        self.assertTrue(cls.already_running(self.port))
+
     def test_unknown_path(self):
         status, _, payload = request(self.port, "GET", "/api/school/store", ALLOWED)
         self.assertEqual(status, 404)  # may nay chi GIAI, khong co kho du lieu
@@ -150,7 +163,7 @@ class PackageTests(unittest.TestCase):
                 names = zf.namelist()
                 reqs = zf.read("cherry-may-nay/solver_runtime/requirements.txt").decode("utf-8")
         prefix = "cherry-may-nay/"
-        for required in ("cherry_local_solver.py", "solver_jobs.py", "start-cherry-local.bat", "HUONG_DAN.txt",
+        for required in ("cherry_local_solver.py", "solver_jobs.py", "status_page.html", "start-cherry-local.bat", "HUONG_DAN.txt",
                          "solver_runtime/scripts/solve_stdio.py",
                          "solver_runtime/src/tkb_engine_v3/entry.py"):
             self.assertIn(prefix + required, names)

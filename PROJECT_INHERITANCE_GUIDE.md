@@ -171,7 +171,7 @@ Ba bộ test cần backend đang chạy (`app_assignment_subject_visibility`, `a
 | `rust_api/src/solver_pool.rs` | Solver pool FIFO theo CPU token, quản lý job đa trường |
 | `solver_runtime/src/tkb_new/adapter.py` | Adapter chính của solver Python: dựng model, chạy CP-SAT/MILP, trả kết quả |
 | `solver_runtime/src/tkb_engine_v3/` | Engine Cherry (nút 🍒 + menu Tối ưu v3), tài liệu `docs/CHERRY_ENGINE.md` |
-| `tools/local-solver/` | «Cherry trên máy này»: bộ giải engine v3 chạy bằng CPU máy người dùng cho nút gạt «Máy chủ / Máy này» (27/10); chỉ nghe 127.0.0.1, chỉ nhận Origin tkbcherry.com; `build_package.py` đóng gói zip phát cho trường |
+| `tools/local-solver/` | «Cherry trên máy này»: bộ giải engine v3 chạy bằng CPU máy người dùng cho nút gạt «Máy chủ / Máy này» (27/10); cổng 2211, chỉ nghe 127.0.0.1, chỉ nhận Origin tkbcherry.com; `build_installer.py` dựng `CherrySetup.exe` (Python nhúng, chạy ngầm, `cherry-local://`) |
 | `solver_runtime/scripts/cloud_run_service.py` | Service endpoint nhận request solve trên Google Cloud Run |
 | `tools/vps-deploy/update-deploy.py` | Script tự động hóa build và deploy lên VPS một bước |
 | `tools/cloud-run/deploy.ps1` | Script tự động hóa build container và deploy lên Google Cloud Run |
