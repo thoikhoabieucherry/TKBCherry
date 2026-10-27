@@ -1407,8 +1407,15 @@
   // 2210 = Cherry Local (ban chay ca web trong may); bo giai rieng dung 2211.
   const LOCAL_SOLVER_ORIGIN_DEFAULT = "http://127.0.0.1:2211";
 
+  // 27/10: ban web KHONG dang nhap (Netlify, shared/auth-local.js dat TKBAuth.noServer) khong
+  // co may chu giai (API that bat dang nhap) -> luon giai bang bo giai tren may nay.
+  function pageHasSolverServer(){
+    try{ return !(window.TKBAuth && window.TKBAuth.noServer === true); }catch(_){ return true; }
+  }
+
   function solverTarget(){
     try{
+      if(!pageHasSolverServer()) return "local";
       if(isMobileBrowserAgentNavigator(window.navigator)) return "server";
       return window.localStorage?.getItem(SOLVER_TARGET_KEY) === "local" ? "local" : "server";
     }catch(_){
@@ -1434,6 +1441,11 @@
   }
 
   function noSolverBackendMessage(){
+    if(!pageHasSolverServer()){
+      return `Chưa thấy bộ giải Cherry trên máy này (${localSolverOrigin()}). Cài CherrySetup.exe một lần rồi bấm lại `
+        + `(Chrome hỏi "Mở Cherry máy này?" hoặc quyền truy cập mạng cục bộ thì chọn Cho phép). `
+        + `Chưa cài thì dùng nút ▶ để xếp nhanh ngay trên trình duyệt.`;
+    }
     return solverTarget() === "local"
       ? `Chưa thấy bộ giải trên máy này (${localSolverOrigin()}). Cài CherrySetup.exe một lần (Chrome hỏi "Mở Cherry máy này?" hoặc quyền truy cập mạng cục bộ thì chọn Cho phép), hoặc gạt về "Máy chủ".`
       : "Chưa cấu hình dịch vụ xếp lịch.";
@@ -1488,12 +1500,18 @@
     const btn = typeof document !== "undefined" ? document.getElementById("btnSolverTarget") : null;
     if(!btn) return;
     const local = solverTarget() === "local";
+    const fixedLocal = !pageHasSolverServer();
     btn.dataset.target = local ? "local" : "server";
+    if(fixedLocal) btn.dataset.fixed = "true";
     if(local && window.__TKB_LOCAL_SOLVER_ONLINE === false) btn.dataset.localOnline = "false";
     else delete btn.dataset.localOnline;
     btn.setAttribute("aria-pressed", local ? "false" : "true");
     btn.textContent = local ? "Máy này" : "Máy chủ";
-    btn.title = local
+    btn.title = fixedLocal
+      ? (window.__TKB_LOCAL_SOLVER_ONLINE === false
+        ? `Chưa thấy bộ giải trên máy này (${localSolverOrigin()}) — bấm để thử đánh thức; chưa cài thì cài CherrySetup.exe.`
+        : `Cherry giải bằng máy này (${localSolverOrigin()}). Bấm để kiểm tra bộ giải.`)
+      : local
       ? `Cherry giải bằng máy này (${localSolverOrigin()}). Bấm để chuyển về Máy chủ.`
       : "Cherry giải trên máy chủ. Bấm để chuyển sang Máy này (cần cài CherrySetup.exe một lần).";
     btn.setAttribute("aria-label", btn.title);
@@ -1502,6 +1520,15 @@
   async function onSolverTargetClick(){
     if(window.__TKB_RUST_SOLVER_RUNNING || window.__TKB_SOLVE_UI_BUSY){
       setStatus("Đang xếp lịch — đợi lượt này xong rồi mới đổi nơi giải.", "warning");
+      return;
+    }
+    if(!pageHasSolverServer()){
+      // Trang khong co may chu: nut chi kiem tra / danh thuc bo giai tren may.
+      setStatus("Đang tìm bộ giải trên máy này…", "info");
+      const found = await rustApiBase({wakeLocal:true});
+      syncSolverTargetUi();
+      if(found) setStatus("Bộ giải Cherry trên máy này đã sẵn sàng.", "success");
+      else setStatus(noSolverBackendMessage(), "warning");
       return;
     }
     const next = setSolverTarget(solverTarget() === "local" ? "server" : "local");

@@ -67,7 +67,7 @@ function makeDocument(){
   };
 }
 
-function loadBridge({storage, fetchImpl, navigator, authHeaders} = {}){
+function loadBridge({storage, fetchImpl, navigator, authHeaders, noServer} = {}){
   const localStorage = storage || memoryStorage();
   const document = makeDocument();
   const statuses = [];
@@ -75,6 +75,7 @@ function loadBridge({storage, fetchImpl, navigator, authHeaders} = {}){
     DATA:{lop:[], mon:[], monhoc:[], giaovien:[], pccmMatrix:{}, tkb:{}, tkbConstraints:{}},
     __TKB_E2E_EXPOSE_TEST_HOOKS:true,
     TKBBrowserWasmExecutor:{isEnabled(){ return false; }},
+    TKBAuth: noServer ? {isLocal:true, noServer:true} : undefined,
     TKBAuthApi: authHeaders ? {getAuthHeaders(extra){ return Object.assign({}, authHeaders, extra || {}); }} : undefined,
     document,
     localStorage,
@@ -228,4 +229,33 @@ test("bộ giải đang tắt: chỉ thao tác của người dùng mới đánh
   online = true;
   assert.equal(await pending, LOCAL);
   assert.equal(window.__TKB_LOCAL_SOLVER_ONLINE, true);
+});
+
+test("bản web không đăng nhập (Netlify): luôn giải ở Máy này, nút chỉ kiểm tra/đánh thức, không có Máy chủ", async () => {
+  const storage = memoryStorage({TKB_SOLVER_TARGET_V1:"server"});
+  let online = false;
+  const {hooks, document, statuses, calls} = loadBridge({
+    storage,
+    noServer:true,
+    fetchImpl:async url => {
+      if(url.startsWith(LOCAL) && !online) throw new TypeError("Failed to fetch");
+      return health(url);
+    }
+  });
+  assert.equal(hooks.solverTarget(), "local", "trang không có máy chủ thì bỏ qua lựa chọn Máy chủ đã lưu");
+  assert.match(hooks.noSolverBackendMessage(), /CherrySetup\.exe/);
+  assert.match(hooks.noSolverBackendMessage(), /nút ▶/);
+  hooks.initSolverTargetUi();
+  const btn = document.getElementById("btnSolverTarget");
+  assert.equal(btn.textContent, "Máy này");
+  assert.equal(btn.dataset.fixed, "true");
+  const pending = btn.click();
+  await new Promise(r => setTimeout(r, 50));
+  assert.equal(document.frames.length, 1, "bấm nút thì đánh thức cherry-local://");
+  online = true;
+  await pending;
+  assert.equal(storage.getItem("TKB_SOLVER_TARGET_V1"), "server", "nút không đổi lựa chọn đã lưu");
+  assert.equal(hooks.solverTarget(), "local");
+  assert.equal(statuses.at(-1).type, "success");
+  assert.ok(calls.every(c => !c.url.startsWith(SITE)), "không gọi máy chủ");
 });

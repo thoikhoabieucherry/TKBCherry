@@ -1,0 +1,157 @@
+/* Cherry Local — giao dien rieng cua ban chay trong may (bang chon truong, nhan Local) */
+.ls-nav-tag{
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  margin-left: 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+  white-space: nowrap;
+}
+.ls-modal-content{
+  width: min(760px, calc(100vw - 28px));
+}
+.ls-modal-body{
+  gap: 12px;
+}
+.ls-intro{
+  margin: 0;
+  color: #374151;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.ls-intro code{
+  background: #f3f4f6;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.ls-actions{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ls-table-wrap{
+  max-height: 46vh;
+  overflow: auto;
+  border: 1px solid #e3e8f3;
+  border-radius: 8px;
+}
+.ls-table{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.ls-table th,
+.ls-table td{
+  padding: 8px 10px;
+  border-bottom: 1px solid #eef2f7;
+  text-align: left;
+  vertical-align: middle;
+}
+.ls-table th{
+  position: sticky;
+  top: 0;
+  background: #f8fafc;
+  font-weight: 600;
+  color: #1f2937;
+}
+.ls-table tr.is-current td{
+  background: #eff6ff;
+}
+.ls-name{
+  font-weight: 600;
+  color: #111827;
+}
+.ls-sid{
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  color: #6b7280;
+}
+.ls-summary{
+  color: #4b5563;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.ls-row-actions{
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.ls-row-actions .btn{
+  height: 28px;
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+.ls-empty{
+  padding: 18px 12px;
+  text-align: center;
+  color: #6b7280;
+}
+.ls-status{
+  min-height: 18px;
+  font-size: 13px;
+  color: #4b5563;
+}
+.ls-status-error{ color: #b91c1c; }
+.ls-status-ok{ color: #047857; }
+@media (max-width: 640px){
+  .ls-summary{ white-space: normal; }
+  .ls-row-actions{ justify-content: flex-start; }
+}
+
+/* ---- pages/local-planner.js: ô chọn thời lượng mỗi lượt Cherry / Tối ưu (trang Sắp xếp) ---- */
+body.planner-shell .toolbar-actions > .local-engine-budget {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 36px;
+  min-height: 36px;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0 0 0 4px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+body.planner-shell .toolbar-actions > .local-engine-budget > .local-engine-budget-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+body.planner-shell .toolbar-actions > .local-engine-budget > select {
+  height: 36px;
+  min-height: 36px;
+  box-sizing: border-box;
+  padding: 0 4px;
+  border: 1px solid var(--tkb-border, #e2e8f0);
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+body.planner-shell .toolbar-actions > .local-engine-budget > select:hover,
+body.planner-shell .toolbar-actions > .local-engine-budget > select:focus-visible {
+  border-color: #94a3b8;
+  background: #f8fafc;
+  color: #0f172a;
+  outline: none;
+}
+
+/* Lưới nút trên điện thoại đặt cột cố định cho từng nút -> ẩn ô chọn (bản local dùng trên máy tính). */
+@media (max-width: 900px) {
+  body.planner-shell .toolbar-actions > .local-engine-budget {
+    display: none !important;
+  }
+}
