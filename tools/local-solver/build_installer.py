@@ -25,7 +25,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 RUNTIME = REPO / "solver_runtime"
-APP_FILES = ("cherry_local_solver.py", "solver_jobs.py", "status_page.html")
+APP_FILES = ("cherry_local_solver.py", "solver_jobs.py")
 SERVER_ONLY_REQUIREMENTS = ("google-auth",)
 # Biểu tượng 🍒 ở khay hệ thống (chỉ bản cài trên máy trường).
 TRAY_REQUIREMENTS = ["pystray==0.19.5", "pillow"]

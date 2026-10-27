@@ -8,18 +8,19 @@ Dữ liệu trường vẫn lưu trên tkbcherry.com; máy này chỉ giải r�
 1. Chạy `CherrySetup.exe` → bấm **Yes** → đợi khoảng 1 phút → **OK**.
    Không cần cài Python, không cần quyền admin. Windows SmartScreen có thể cảnh báo vì file
    chưa ký số: bấm **More info → Run anyway**.
-2. Trình duyệt tự mở trang kiểm tra `http://127.0.0.1:2211` — trạng thái **Đang chạy**.
-3. Từ đó bộ giải tự chạy ngầm mỗi khi bật máy, không có cửa sổ nào.
+2. Biểu tượng 🍒 hiện ở khay hệ thống (cạnh đồng hồ) kèm thông báo "Đã cài xong".
+3. Từ đó bộ giải tự chạy ngầm mỗi khi bật máy, không có cửa sổ nào. Chuột phải biểu tượng 🍒:
+   trạng thái, **Mở TKB Cherry**, **Thoát**.
 
-Trên trang Sắp xếp: bấm nút gạt cạnh nút Cherry để chuyển **Máy chủ → Máy này**, rồi bấm Cherry
-hoặc Tối ưu như bình thường. Nếu bộ giải đang tắt, trang tự đánh thức nó qua `cherry-local://`
-(Chrome hỏi "Mở Cherry máy này?" một lần — tick "Luôn cho phép" rồi **Mở**; nếu Chrome hỏi quyền
-truy cập mạng cục bộ thì chọn **Cho phép**).
+Bản web không đăng nhập: chỉ có nút 🍒 Cherry (chấm xanh = bộ giải sẵn sàng). Bấm Cherry khi
+bộ giải không chạy: trình duyệt từng thấy bộ giải → hộp **Bật bộ giải và xếp** (đánh thức qua
+`cherry-local://`, Chrome hỏi "Mở Cherry máy này?" một lần — tick "Luôn cho phép"); chưa từng thấy
+→ hộp **Tải về CherrySetup.exe**. Bản tkbcherry.com (có đăng nhập): nút gạt **Máy chủ / Máy này**.
 
 Gỡ: **Settings → Apps → Installed apps → Cherry máy này → Uninstall**.
 
-Cài vào `%LOCALAPPDATA%\CherryMayNay` (Python nhúng + ortools/numpy/scipy + mã bộ giải), lối tắt
-`Cherry may nay` trong thư mục Startup, khoá `HKCU\Software\Classes\cherry-local`.
+Cài vào `%LOCALAPPDATA%\CherryMayNay` (Python nhúng + ortools/numpy/scipy + bytecode bộ giải),
+lối tắt `Cherry may nay` trong Startup và Start Menu, khoá `HKCU\Software\Classes\cherry-local`.
 
 ## Cách cũ: chạy bằng Python có sẵn
 

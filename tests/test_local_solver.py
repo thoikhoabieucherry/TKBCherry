@@ -145,13 +145,11 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(payload["echoEngine"], "cherry")
         self.assertEqual(payload["solver"]["backend"], "cherry-local-python")
 
-    def test_status_page(self):
-        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/")
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            html = resp.read().decode("utf-8")
-            self.assertIn("text/html", resp.headers.get("Content-Type"))
-        self.assertIn("Cherry máy này", html)
-        self.assertIn("/api/solve-data", html)
+    def test_no_status_page(self):
+        # 27/10: chủ dự án bỏ trang kiểm tra — bộ giải chỉ có các endpoint giải.
+        status, _, payload = request(self.port, "GET", "/", ALLOWED)
+        self.assertEqual(status, 404)
+        self.assertEqual(payload["kind"], "not_found")
 
     def test_second_instance_cannot_share_the_port(self):
         # Windows: SO_REUSEADDR mac dinh cho 2 tien trinh cung nghe 1 cong -> phai doc quyen.
@@ -172,7 +170,8 @@ class PackageTests(unittest.TestCase):
                 names = zf.namelist()
                 reqs = zf.read("cherry-may-nay/solver_runtime/requirements.txt").decode("utf-8")
         prefix = "cherry-may-nay/"
-        for required in ("cherry_local_solver.py", "solver_jobs.py", "status_page.html", "start-cherry-local.bat", "HUONG_DAN.txt",
+        self.assertNotIn(prefix + "status_page.html", names)
+        for required in ("cherry_local_solver.py", "solver_jobs.py", "start-cherry-local.bat", "HUONG_DAN.txt",
                          "solver_runtime/scripts/solve_stdio.py",
                          "solver_runtime/src/tkb_engine_v3/entry.py"):
             self.assertIn(prefix + required, names)

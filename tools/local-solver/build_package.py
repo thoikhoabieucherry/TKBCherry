@@ -18,7 +18,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 RUNTIME = REPO / "solver_runtime"
 PACKAGE_NAME = "cherry-may-nay"
-TOOL_FILES = ("cherry_local_solver.py", "solver_jobs.py", "status_page.html", "start-cherry-local.bat")
+TOOL_FILES = ("cherry_local_solver.py", "solver_jobs.py", "start-cherry-local.bat")
 # Thư viện chỉ bản máy chủ cần (gọi Cloud Run) — máy trường không cần.
 SERVER_ONLY_REQUIREMENTS = ("google-auth",)
 

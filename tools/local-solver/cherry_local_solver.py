@@ -8,8 +8,7 @@ như cũ — máy này chỉ GIẢI, không giữ kho.
 
 Chỉ có các endpoint của hợp đồng giải mà bridge dùng (solver_jobs.SolverManager mô
 phỏng rust_api): /api/health, /api/solve-data, /api/solve-result, /api/solver-state,
-/api/solve-cancel, /api/solve-precheck, cộng trang kiểm tra "/" (giải thử một file
-.cherry). Chỉ nghe 127.0.0.1, giữ cổng ĐỘC QUYỀN (bản thứ hai tự thoát) và chỉ trả lời
+/api/solve-cancel, /api/solve-precheck. Chỉ nghe 127.0.0.1, giữ cổng ĐỘC QUYỀN (bản thứ hai tự thoát) và chỉ trả lời
 trang có Origin nằm trong danh sách cho phép (mặc định tkbcherry.com + localhost) —
 trang lạ mở trong cùng trình duyệt không gửi được lượt giải hay đọc kết quả.
 
@@ -41,7 +40,6 @@ VERSION = "cherry-local-solver-v2"
 DEFAULT_PORT = 2211
 DEFAULT_ORIGINS = ("https://tkbcherry.com", "https://www.tkbcherry.com")
 MAX_BODY_BYTES = 64 * 1024 * 1024
-STATUS_PAGE = HERE / "status_page.html"
 # Bản thử nghiệm (vd trang Netlify) thêm Origin ở đây, mỗi dòng một địa chỉ https://… — không
 # cần sửa mã. Dòng trống / bắt đầu bằng # bị bỏ qua.
 EXTRA_ORIGINS_FILE = HERE / "allowed_origins.txt"
@@ -155,13 +153,7 @@ def make_handler(manager: SolverManager, allowed: tuple[str, ...]):
             parts = urlsplit(self.path)
             query = parse_qs(parts.query)
             job_id = (query.get("jobId") or query.get("solve_run_id") or [""])[0]
-            if parts.path in ("/", "/index.html"):
-                try:
-                    page = STATUS_PAGE.read_bytes()
-                except OSError:
-                    page = b"<!doctype html><meta charset=utf-8><p>Cherry m\xc3\xa1y n\xc3\xa0y \xc4\x91ang ch\xe1\xba\xa1y.</p>"
-                self._send(200, body=page, content_type="text/html; charset=utf-8")
-            elif parts.path == "/api/health":
+            if parts.path == "/api/health":
                 # bridge (probeRustApiBase) chỉ nhận máy giải trả api:"rust".
                 self._send(200, {"ok": True, "api": "rust", "localSolver": True, "version": VERSION,
                                  "solverAvailable": manager.available(), "workers": manager.workers,
@@ -233,7 +225,7 @@ def tray_image():
 
 def run_tray(server, manager: SolverManager, port: int, first_run: bool, log_dir: Path) -> bool:
     """27/10 (chủ dự án: "làm như phần mềm hỗ trợ thu nhỏ vào taskbar"): biểu tượng 🍒 ở khay
-    hệ thống cạnh đồng hồ — trạng thái, mở TKB Cherry, trang kiểm tra, Thoát. Máy chủ giải chạy
+    hệ thống cạnh đồng hồ — trạng thái, mở TKB Cherry, Thoát (trang kiểm tra đã bỏ theo yêu cầu). Máy chủ giải chạy
     ở luồng nền; khay giữ luồng chính. Thiếu pystray/Pillow -> trả False (chạy ngầm như cũ)."""
 
     try:
@@ -256,9 +248,6 @@ def run_tray(server, manager: SolverManager, port: int, first_run: bool, log_dir
     def open_app(_icon=None, _item=None):
         webbrowser.open(app_url())
 
-    def open_status(_icon=None, _item=None):
-        webbrowser.open(f"http://127.0.0.1:{port}/")
-
     stopped = threading.Event()
 
     def quit_app(icon, _item=None):
@@ -270,7 +259,6 @@ def run_tray(server, manager: SolverManager, port: int, first_run: bool, log_dir
         pystray.MenuItem(status_text, None, enabled=False),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Mở TKB Cherry", open_app, default=True),
-        pystray.MenuItem("Trang kiểm tra bộ giải", open_status),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Thoát Cherry máy này", quit_app),
     )

@@ -4,7 +4,6 @@
 #   %LOCALAPPDATA%\CherryMayNay\app\     cherry_local_solver.py + solver_runtime\
 # Tự bật cùng Windows (lối tắt Startup), giao thức cherry-local:// để trang web đánh thức,
 # mục gỡ cài đặt trong Settings > Apps.
-param([switch]$OpenStatusPage)
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $dest = Join-Path $env:LOCALAPPDATA "CherryMayNay"
@@ -85,7 +84,6 @@ try {
     }
     Write-Log "bo giai san sang: $ready"
     # Không mở thêm tab: thông báo ở khay + trang TKB đang mở tự nhận bộ giải.
-    if ($ready -and $OpenStatusPage) { Start-Process "http://127.0.0.1:$port/" }
     exit 0
 } catch {
     Write-Log ("LOI: " + $_.Exception.Message)

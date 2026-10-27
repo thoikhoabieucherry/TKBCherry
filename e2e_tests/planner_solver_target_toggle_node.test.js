@@ -271,7 +271,7 @@ test("bản không đăng nhập: chưa có bộ giải -> hộp tải CherrySet
       return health(url);
     }
   });
-  const modal = hooks.offerLocalSolverInstall();
+  const modal = hooks.showLocalSolverDialog();
   assert.ok(modal && modal.hidden === false);
   const link = document.getElementById("tkbLocalSolverDownload");
   assert.equal(link.href, "/download/CherrySetup.exe");
@@ -292,7 +292,47 @@ test("bản không đăng nhập trên máy không phải Windows: không mời 
     navigator:{userAgent:"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) Safari/605"},
     fetchImpl:async () => { throw new TypeError("Failed to fetch"); }
   });
-  hooks.offerLocalSolverInstall();
+  hooks.showLocalSolverDialog();
   assert.equal(document.getElementById("tkbLocalSolverDownload"), null);
+  hooks.stopLocalInstallPolling();
+});
+
+test("bản không đăng nhập: máy từng có bộ giải mà đang tắt -> hộp Bật bộ giải và xếp, bật xong tự chạy Cherry", async () => {
+  const storage = memoryStorage({TKB_LOCAL_SOLVER_SEEN_V1:"1793000000000"});
+  let online = false;
+  const {hooks, document, window} = loadBridge({
+    storage,
+    noServer:true,
+    fetchImpl:async url => {
+      if(url.startsWith(LOCAL) && !online) throw new TypeError("Failed to fetch");
+      return health(url);
+    }
+  });
+  const runs = [];
+  window.tkbRunEngine = (...args) => runs.push(args);
+  const modal = hooks.showLocalSolverDialog();
+  assert.equal(modal.dataset.mode, "off");
+  assert.equal(document.frames.filter(f => f.src === "cherry-local://start").length, 0, "chưa tự đánh thức khi chưa bấm");
+  const on = document.getElementById("tkbLocalSolverTurnOn");
+  assert.equal(on.textContent, "Bật bộ giải và xếp");
+  const pending = on.click();
+  await new Promise(r => setTimeout(r, 50));
+  assert.equal(document.frames.filter(f => f.src === "cherry-local://start").length, 1, "bấm Bật thì đánh thức cherry-local://");
+  online = true;
+  await pending;
+  await new Promise(r => setTimeout(r, 900));
+  assert.equal(modal.hidden, true);
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0][0], "cherry");
+  assert.equal(document.getElementById("tkbCherryLocalDot").dataset.state, "online");
+});
+
+test("bản không đăng nhập: chưa từng thấy bộ giải -> hộp cài hiện NGAY, không đánh thức trước", () => {
+  const {hooks, document} = loadBridge({noServer:true, fetchImpl:async () => { throw new TypeError("Failed to fetch"); }});
+  const modal = hooks.showLocalSolverDialog();
+  assert.equal(modal.dataset.mode, "missing");
+  assert.equal(document.frames.filter(f => f.src === "cherry-local://start").length, 0);
+  assert.equal(document.getElementById("tkbLocalSolverDownload").textContent, "Tải về CherrySetup.exe");
+  assert.equal(document.getElementById("tkbLocalSolverTurnOn").textContent, "Đã cài rồi? Bật bộ giải");
   hooks.stopLocalInstallPolling();
 });

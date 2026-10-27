@@ -1575,6 +1575,7 @@
      thai bo giai tren may (xanh/vang). Bam Cherry ma chua co bo giai -> hop huong dan tai
      CherrySetup.exe (/download/CherrySetup.exe cung trang) + tu do moi 3 s, cai xong bao san sang. */
   const LOCAL_SOLVER_DOWNLOAD_URL_DEFAULT = "/download/CherrySetup.exe";
+  const LOCAL_SOLVER_SEEN_KEY = "TKB_LOCAL_SOLVER_SEEN_V1";
   const LOCAL_INSTALL_POLL_MS = 3000;
   const LOCAL_INSTALL_POLL_MAX_MS = 15 * 60 * 1000;
   let localInstallPollTimer = 0;
@@ -1637,6 +1638,7 @@
       const ok = await probeRustApiBase(localSolverOrigin(), 1500).catch(() => "");
       if(ok){
         window.__TKB_LOCAL_SOLVER_ONLINE = true;
+        rememberLocalSolverSeen();
         markCherryLocalStatus(true);
         setLocalInstallStatus("Đã sẵn sàng! Bấm 🍒 Cherry để xếp thời khóa biểu.", true);
         setStatus("Bộ giải Cherry trên máy này đã sẵn sàng — bấm 🍒 Cherry để xếp.", "success");
@@ -1650,69 +1652,112 @@
     localInstallPollTimer = window.setTimeout(tick, LOCAL_INSTALL_POLL_MS);
   }
 
-  function offerLocalSolverInstall(){
+  // 27/10 (chu du an: "neu ko co cherry thi keu cai, neu co san tren may thi yeu cau bat; thay no
+  // chay vai giay moi yeu cau cai"): KHONG tu danh thuc 12 s truoc khi hoi. Trinh duyet nho lan
+  // cuoi thay bo giai (TKB_LOCAL_SOLVER_SEEN_V1): da tung thay -> hop "dang tat" + nut Bat (danh
+  // thuc cherry-local:// bang cu chi cua nguoi dung roi xep luon); chua tung thay -> hop tai + cai.
+  function rememberLocalSolverSeen(){
+    try{ window.localStorage?.setItem(LOCAL_SOLVER_SEEN_KEY, String(Date.now())); }catch(_){ }
+  }
+
+  function localSolverSeenBefore(){
+    try{ return Boolean(window.localStorage?.getItem(LOCAL_SOLVER_SEEN_KEY)); }catch(_){ return false; }
+  }
+
+  async function turnOnLocalSolverFromDialog(runAfter){
+    setLocalInstallStatus("Đang bật bộ giải… (Chrome hỏi “Mở Cherry máy này?” thì chọn Mở)", false);
+    const ok = await wakeLocalSolver();
+    if(ok){
+      window.__TKB_LOCAL_SOLVER_ONLINE = true;
+      rememberLocalSolverSeen();
+      markCherryLocalStatus(true);
+      setLocalInstallStatus("Đã bật bộ giải.", true);
+      closeLocalInstallDialog();
+      if(runAfter && typeof window.tkbRunEngine === "function"){
+        try{ window.tkbRunEngine("cherry", document.getElementById("btnEngineCherry")); }catch(_){ }
+      }
+      return true;
+    }
+    setLocalInstallStatus("Chưa bật được. Nếu máy này chưa cài (hoặc đã gỡ) bộ giải, bấm Tải về để cài lại.", false);
+    const dl = document.getElementById("tkbLocalSolverDownload");
+    if(dl) dl.hidden = false;
+    return false;
+  }
+
+  function showLocalSolverDialog(){
     if(typeof document === "undefined" || !document.body) return null;
     ensureSolverTargetCss();
     markCherryLocalStatus(false);
-    let modal = document.getElementById("tkbLocalSolverInstall");
-    if(!modal){
-      const el = (tag, cls, text) => {
-        const node = document.createElement(tag);
-        if(cls) node.className = cls;
-        if(text) node.textContent = text;
-        return node;
-      };
-      modal = el("div");
-      modal.id = "tkbLocalSolverInstall";
-      modal.setAttribute("role", "dialog");
-      modal.setAttribute("aria-modal", "true");
-      const card = el("div", "lsi-card");
+    const old = document.getElementById("tkbLocalSolverInstall");
+    if(old){ try{ old.remove(); }catch(_){ } }
+    const el = (tag, cls, text) => {
+      const node = document.createElement(tag);
+      if(cls) node.className = cls;
+      if(text) node.textContent = text;
+      return node;
+    };
+    const windows = isWindowsDesktopNavigator();
+    const installedBefore = windows && localSolverSeenBefore();
+    const modal = el("div");
+    modal.id = "tkbLocalSolverInstall";
+    modal.dataset.mode = installedBefore ? "off" : (windows ? "missing" : "unsupported");
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    const card = el("div", "lsi-card");
+    const actions = el("div", "lsi-actions");
+    const download = el("a", installedBefore ? "" : "lsi-primary", installedBefore ? "Tải bộ cài lại" : "Tải về CherrySetup.exe");
+    download.id = "tkbLocalSolverDownload";
+    download.href = localSolverDownloadUrl();
+    download.setAttribute("download", "CherrySetup.exe");
+    download.addEventListener("click", () => {
+      setLocalInstallStatus("Đang chờ cài đặt… (mở file CherrySetup.exe vừa tải)", false);
+      startLocalInstallPolling();
+    });
+    if(installedBefore){
+      card.appendChild(el("h3", "", "🍒 Bộ giải Cherry trên máy này đang tắt"));
+      card.appendChild(el("p", "", "Máy này đã cài bộ giải Cherry nhưng nó đang không chạy (có thể đã bấm Thoát ở biểu tượng 🍒 cạnh đồng hồ)."));
+      const on = el("button", "lsi-primary", "Bật bộ giải và xếp");
+      on.type = "button";
+      on.id = "tkbLocalSolverTurnOn";
+      on.addEventListener("click", () => { turnOnLocalSolverFromDialog(true).catch(() => {}); });
+      actions.appendChild(on);
+      actions.appendChild(download);
+    }else if(windows){
       card.appendChild(el("h3", "", "🍒 Cài bộ giải Cherry cho máy này"));
       card.appendChild(el("p", "", "Nút Cherry xếp thời khóa biểu bằng CPU của máy này qua một phần mềm nhỏ chạy ngầm (biểu tượng 🍒 ở khay hệ thống cạnh đồng hồ). Máy này chưa có phần mềm đó."));
-      const windows = isWindowsDesktopNavigator();
-      if(windows){
-        const steps = el("ol");
-        steps.appendChild(el("li", "", "Bấm Tải về (khoảng 90 MB, chỉ một lần)."));
-        steps.appendChild(el("li", "", "Mở file CherrySetup.exe vừa tải → Yes. Windows cảnh báo thì bấm More info → Run anyway."));
-        steps.appendChild(el("li", "", "Đợi khoảng 1 phút — trang này tự nhận bộ giải, không cần tải lại."));
-        card.appendChild(steps);
-      }else{
-        card.appendChild(el("p", "", "Bộ giải Cherry chỉ cài được trên máy tính Windows. Trên máy này hãy dùng nút ▶ để xếp nhanh ngay trên trình duyệt."));
-      }
-      const actions = el("div", "lsi-actions");
-      if(windows){
-        const dl = el("a", "lsi-primary", "Tải về CherrySetup.exe");
-        dl.id = "tkbLocalSolverDownload";
-        dl.href = localSolverDownloadUrl();
-        dl.setAttribute("download", "CherrySetup.exe");
-        dl.addEventListener("click", () => {
-          setLocalInstallStatus("Đang chờ cài đặt… (mở file CherrySetup.exe vừa tải)", false);
-          startLocalInstallPolling();
-        });
-        actions.appendChild(dl);
-      }
-      const browserBtn = el("button", "", "Xếp nhanh trên trình duyệt (▶)");
-      browserBtn.type = "button";
-      browserBtn.addEventListener("click", () => {
-        closeLocalInstallDialog();
-        try{ document.getElementById("btnAutoSort")?.click(); }catch(_){ }
-      });
-      actions.appendChild(browserBtn);
-      const closeBtn = el("button", "", "Đóng");
-      closeBtn.type = "button";
-      closeBtn.addEventListener("click", closeLocalInstallDialog);
-      actions.appendChild(closeBtn);
-      card.appendChild(actions);
-      const status = el("p", "lsi-status");
-      status.id = "tkbLocalSolverInstallStatus";
-      card.appendChild(status);
-      modal.appendChild(card);
-      document.body.appendChild(modal);
+      const steps = el("ol");
+      steps.appendChild(el("li", "", "Bấm Tải về (khoảng 100 MB, chỉ một lần)."));
+      steps.appendChild(el("li", "", "Mở file CherrySetup.exe vừa tải → Yes. Windows cảnh báo thì bấm More info → Run anyway."));
+      steps.appendChild(el("li", "", "Đợi khoảng 1 phút — trang này tự nhận bộ giải, không cần tải lại."));
+      card.appendChild(steps);
+      actions.appendChild(download);
+      const already = el("button", "", "Đã cài rồi? Bật bộ giải");
+      already.type = "button";
+      already.id = "tkbLocalSolverTurnOn";
+      already.addEventListener("click", () => { turnOnLocalSolverFromDialog(true).catch(() => {}); });
+      actions.appendChild(already);
+    }else{
+      card.appendChild(el("h3", "", "🍒 Bộ giải Cherry"));
+      card.appendChild(el("p", "", "Bộ giải Cherry chỉ cài được trên máy tính Windows. Trên máy này hãy dùng nút ▶ để xếp nhanh ngay trên trình duyệt."));
     }
+    const browserBtn = el("button", "", "Xếp nhanh trên trình duyệt (▶)");
+    browserBtn.type = "button";
+    browserBtn.addEventListener("click", () => {
+      closeLocalInstallDialog();
+      try{ document.getElementById("btnAutoSort")?.click(); }catch(_){ }
+    });
+    actions.appendChild(browserBtn);
+    const closeBtn = el("button", "", "Đóng");
+    closeBtn.type = "button";
+    closeBtn.addEventListener("click", closeLocalInstallDialog);
+    actions.appendChild(closeBtn);
+    card.appendChild(actions);
+    const status = el("p", "lsi-status");
+    status.id = "tkbLocalSolverInstallStatus";
+    card.appendChild(status);
+    modal.appendChild(card);
+    document.body.appendChild(modal);
     modal.hidden = false;
-    setLocalInstallStatus("", false);
-    // Có thể đã cài nhưng đang tắt, hoặc người dùng cài từ trước: cứ dò nền.
-    startLocalInstallPolling();
     return modal;
   }
 
@@ -1726,6 +1771,7 @@
       markCherryLocalStatus(undefined);
       probeRustApiBase(localSolverOrigin(), 1500).then(ok => {
         window.__TKB_LOCAL_SOLVER_ONLINE = Boolean(ok);
+        if(ok) rememberLocalSolverSeen();
         markCherryLocalStatus(Boolean(ok));
       }).catch(() => {});
       return;
@@ -2221,6 +2267,7 @@
       let ok = await probeRustApiBase(localSolverOrigin(), 1500);
       if(!ok && options?.wakeLocal === true) ok = await wakeLocalSolver();
       window.__TKB_LOCAL_SOLVER_ONLINE = Boolean(ok);
+      if(ok) rememberLocalSolverSeen();
       return ok;
     }
     if(rustApiBaseCache) return rustApiBaseCache;
@@ -16859,12 +16906,15 @@
     };
     let response;
     try{
-      const apiBase = await rustApiBase({wakeLocal:true});
+      const apiBase = await rustApiBase({wakeLocal:pageHasSolverServer()});
       if(!apiBase){
-        if(!pageHasSolverServer()) offerLocalSolverInstall();
+        if(!pageHasSolverServer()) showLocalSolverDialog();
         throw new Error(noSolverBackendMessage());
       }
-      if(!pageHasSolverServer()) markCherryLocalStatus(true);
+      if(!pageHasSolverServer()){
+        rememberLocalSolverSeen();
+        markCherryLocalStatus(true);
+      }
       traceSolveStep("postSolve:before-request-data", {
         scheduled: countScheduledLessons(data),
         expected: expectedLessonCount(data)
@@ -20329,7 +20379,7 @@
         setSolverTarget,
         noSolverBackendMessage,
         initSolverTargetUi,
-        offerLocalSolverInstall,
+        showLocalSolverDialog,
         stopLocalInstallPolling
       };
     }
