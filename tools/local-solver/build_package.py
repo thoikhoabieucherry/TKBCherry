@@ -52,6 +52,12 @@ def build(out_dir: Path) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Cửa sổ cmd tiếng Anh dùng cp1252: in tiếng Việt sẽ lỗi.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", default=str(HERE / "dist"), help="thư mục ghi file zip (mặc định tools/local-solver/dist)")
     args = ap.parse_args(argv)
