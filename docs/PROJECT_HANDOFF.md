@@ -57,6 +57,18 @@
   trường, không lưu; đã khuyên thu hồi). Bộ giải có `allowed_origins.txt` (`build_installer.py --allow-origin`): bản
   `Desktop\CherrySetup.exe` dựng cho phép `https://maynay--tkbcherry.netlify.app` — preflight 204 + PNA, `tkbcherry.netlify.app`
   và trang lạ 403. Bản phát chính thức dựng KHÔNG có `--allow-origin`.
+- **Bản KHÔNG ĐĂNG NHẬP trên Netlify (27/10 tối, chủ dự án: "up trực tiếp lên tkbcherry, ko cần login vào thẳng trang app")**:
+  `python tools/netlify-local/build_netlify.py --web <web> --out <thư mục mới>` → đăng `--prod` lên project Netlify `tkbcherry`
+  → **https://tkbcherry.netlify.app** (deploy `6ae0ad1add15379f04d2df36`, thay bản V4). `/` → `/app` không đăng nhập; kho trường
+  trong localStorage (`overlay/shared/auth-local.js`, viết lại từ shim Cherry Local/V4, BỎ tự nạp `/data/*.json`, đồng bộ kho sang
+  máy local và đánh thức `cherry-local://` khi dò nền); `TKBAuth.noServer` → bridge luôn giải bằng bộ giải trên máy (API thật trả
+  401 khi không đăng nhập, nên không có "Máy chủ"); chưa cài bộ giải thì báo cài `CherrySetup.exe` / dùng ▶. Web dựng từ `web/`
+  cây làm việc chính (= live) + bridge nhánh này. Đã thử trọn vòng trên Chrome (bản dựng phục vụ ở 127.0.0.1): nhập `.cherry`,
+  Cherry 60 s qua bộ giải → 869/869, trống 1 14→10, lưu trong trình duyệt. `Desktop\CherrySetup.exe` dựng `--allow-origin`
+  `https://tkbcherry.netlify.app` + alias `maynay`.
+  **Lộ dữ liệu**: bản V4 đã đăng `web/data/kkhg52etp92.json` (An Phú, tên GV/lớp/TKB) công khai; trang chính nay 404 nhưng 7 bản
+  đăng cũ (6adf8953…, 6ae0044d…, 6ae019de…, 6ae021b4…, 6ae0261f…, 6ae02750…, 6ae042a2…) vẫn trả 200 ở
+  `https://<id>--tkbcherry.netlify.app/data/kkhg52etp92.json` — chủ dự án tự xoá trong Netlify (xoá vĩnh viễn, Claude không làm).
 - **Deploy (chưa làm, chờ chủ dự án)**: web = `tkb-rust-bridge.js` + dòng `?v=` bridge trong `sapxep.html` (dựng = live + 1 dòng,
   cây làm việc đang có các bump `?v` khác chưa commit); engine = 3 file `tkb_engine_v3` lên VPS (không restart). Gói zip phát cho
   trường riêng. Lưu ý: bản V4 của chủ dự án đang chạy Cherry Local ở cổng 2210 — trùng cổng mặc định của bộ giải mới.
