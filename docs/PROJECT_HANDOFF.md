@@ -48,6 +48,15 @@
   (`MainWindowHandle` = 0 cho mọi tiến trình); trang kiểm tra trên Chrome thật An Phú 180 s 869/869, 0 vi phạm, buổi 281→276,
   trống 1 14→8; cú pháp install/uninstall.ps1 OK. **CHƯA chạy bộ cài thật** (auto mode chặn tạo Startup/registry — để chủ dự án
   tự chạy `Desktop\CherrySetup.exe`). Test: toggle node 10/10, `tests/test_local_solver` 10/10.
+- **Bản thử trên Netlify (27/10 tối, chủ dự án: "up lên netlify thử nghiệm trước")**: alias `maynay` của project Netlify
+  `tkbcherry` (id `7256f81a-…`) → **https://maynay--tkbcherry.netlify.app** (deploy `6ae092610c6e369d0e6f121f`); bản chính
+  `tkbcherry.netlify.app` (bản V4 của chủ dự án) KHÔNG đổi. Nội dung = `web/` cây làm việc chính (= live) + bridge nhánh này + dòng
+  `?v=` bridge; `_redirects` `/api/* → https://tkbcherry.com/api/:splat 200` (API thật, `Access-Control-Allow-Origin: *`, không
+  kiểm Origin — đăng nhập + dữ liệu là THẬT, thử bằng trường TEST), `_headers` noindex + `robots.txt` Disallow. Deploy bằng
+  `npx netlify-cli deploy --dir <thư mục> --site <id> --alias maynay --no-build` với token chủ dự án đưa trong phiên (biến môi
+  trường, không lưu; đã khuyên thu hồi). Bộ giải có `allowed_origins.txt` (`build_installer.py --allow-origin`): bản
+  `Desktop\CherrySetup.exe` dựng cho phép `https://maynay--tkbcherry.netlify.app` — preflight 204 + PNA, `tkbcherry.netlify.app`
+  và trang lạ 403. Bản phát chính thức dựng KHÔNG có `--allow-origin`.
 - **Deploy (chưa làm, chờ chủ dự án)**: web = `tkb-rust-bridge.js` + dòng `?v=` bridge trong `sapxep.html` (dựng = live + 1 dòng,
   cây làm việc đang có các bump `?v` khác chưa commit); engine = 3 file `tkb_engine_v3` lên VPS (không restart). Gói zip phát cho
   trường riêng. Lưu ý: bản V4 của chủ dự án đang chạy Cherry Local ở cổng 2210 — trùng cổng mặc định của bộ giải mới.
