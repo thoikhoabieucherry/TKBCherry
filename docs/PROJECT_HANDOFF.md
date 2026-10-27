@@ -79,6 +79,20 @@
   engine `.pyc` + khay 869/869 trống 1 14→10 (45 s); Chrome trên bản dựng: hộp cài, tải 200, bật bộ giải → "Đã sẵn sàng".
   Đăng `--prod` deploy `6ae0bbddaa5b701d7a7a5b29`. Agent cũ của chủ dự án (TKBCherryAgent 1.6.x, nhánh `codex/agent-1.6.33-ci`)
   ghi nhận **Smart App Control** (Windows 11) chặn exe/DLL/PYD chưa ký số — bộ cài này cũng chưa ký, máy bật SAC có thể bị chặn.
+- **Xếp mới yếu hơn V4 → engine h2 (27–28/10, chủ dự án: "chất lượng nút cherry là v4 hay cherry cũ? yếu hơn v4 khi xếp
+  mới")**: nguyên nhân = vòng 1 của V4 cắt cứng 9,2–11,5 s → máy bận/yếu chỉ xếp 200–530/869 tiết, vòng 2 xây lại, CP-SAT chất
+  lượng còn 11 s. `167ca78`: vòng 1 trần 30% ngân sách nhưng cắt ngay khi có lưới dùng được (thiếu ≤ 20 tiết) sau 11,5 s hoặc đủ
+  3 kết quả (`STAGE1_SOFT_S`, `stage1_usable_ready`) + hunk 1–2 V4 (vòng 2 xếp mới bỏ sửa cục bộ, vào thẳng CP-SAT; lịch người
+  dùng giữ sửa cục bộ). 180 s/6 worker xếp mới: An Phú V4 861✗ 5/311/43 · port 868✗ 13/326/44 · h2 869✓ 0/280/17; Tân Nhựt
+  V4 6/669/104 · port 0/607/50 · h2 0/610/52; Tân Phú Trung V4 2174 0vp 39/724 · port 2190 1vp 51/738 · h2 2192 0vp 22/707.
+  Riêng hunk 1–2 (không vòng 1 thích ứng) làm hỏng Tân Phú Trung (2165, 7 vp). Bấm lại h2: An Phú 281/14→275/10, Tân Nhựt
+  594/37→587/36. Test engine 173/173.
+- **Hộp hỏi NGAY + bỏ trang kiểm tra (28/10, chủ dự án: "bỏ trang kiểm tra, ko có cherry thì kêu cài, có sẵn thì yêu cầu bật;
+  thấy chạy vài giây mới yêu cầu cài")**: bản không đăng nhập không còn tự đánh thức 12 s trước khi hỏi; localStorage
+  `TKB_LOCAL_SOLVER_SEEN_V1` (ghi mỗi lần dò thấy bộ giải) → hộp "đang tắt" + **Bật bộ giải và xếp** (đánh thức bằng cử chỉ
+  người dùng rồi tự chạy Cherry) / hộp **Tải về** + "Đã cài rồi? Bật bộ giải". Bộ giải bỏ GET `/` và mục khay "Trang kiểm
+  tra". Chrome trên bản dựng: hộp hiện sau ~1 s (trước > 12 s). Đăng prod deploy `6ae0d98922da77e30adc66de`; Desktop\
+  CherrySetup.exe == bản trên trang.
 - **Deploy (chưa làm, chờ chủ dự án)**: web = `tkb-rust-bridge.js` + dòng `?v=` bridge trong `sapxep.html` (dựng = live + 1 dòng,
   cây làm việc đang có các bump `?v` khác chưa commit); engine = 3 file `tkb_engine_v3` lên VPS (không restart). Gói zip phát cho
   trường riêng. Lưu ý: bản V4 của chủ dự án đang chạy Cherry Local ở cổng 2210 — trùng cổng mặc định của bộ giải mới.
