@@ -68,11 +68,14 @@ def embed_python(stage: Path, cache: Path) -> Path:
     return py_dir
 
 
-def copy_app(stage: Path) -> None:
+def copy_app(stage: Path, extra_origins: list[str]) -> None:
     app = stage / "app"
     app.mkdir(parents=True, exist_ok=True)
     for name in APP_FILES:
         shutil.copy2(HERE / name, app / name)
+    if extra_origins:
+        # Bản thử nghiệm: trang ngoài tkbcherry.com (vd Netlify) được gọi bộ giải.
+        (app / "allowed_origins.txt").write_text("\n".join(extra_origins) + "\n", encoding="utf-8")
     rt = app / "solver_runtime"
     shutil.copytree(RUNTIME / "src", rt / "src", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     (rt / "scripts").mkdir(parents=True, exist_ok=True)
@@ -138,7 +141,7 @@ SourceFiles0={src}\\
 """
 
 
-def build(out_dir: Path, cache: Path) -> Path:
+def build(out_dir: Path, cache: Path, extra_origins: list[str] | None = None) -> Path:
     if not IEXPRESS.exists():
         raise SystemExit("Không thấy iexpress.exe (chỉ dựng được trên Windows).")
     work = out_dir / "build"
@@ -149,7 +152,7 @@ def build(out_dir: Path, cache: Path) -> Path:
     stage.mkdir(parents=True)
     files.mkdir(parents=True)
     embed_python(stage, cache)
-    copy_app(stage)
+    copy_app(stage, list(extra_origins or []))
     print("Nén payload.zip…")
     make_payload(stage, files / "payload.zip")
     write_windows_text(HERE / "installer" / "install.ps1", files / "install.ps1", bom=True)
@@ -175,8 +178,13 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", default=str(HERE / "dist"))
     ap.add_argument("--cache", default=str(HERE / "dist" / "cache"))
+    ap.add_argument("--allow-origin", action="append", default=[],
+                    help="thêm trang được gọi bộ giải (bản thử nghiệm, vd https://ten.netlify.app)")
     args = ap.parse_args(argv)
-    target = build(Path(args.out), Path(args.cache))
+    bad = [o for o in args.allow_origin if not o.lower().startswith("https://")]
+    if bad:
+        raise SystemExit(f"Chỉ nhận https://…: {bad}")
+    target = build(Path(args.out), Path(args.cache), args.allow_origin)
     print(f"Đã tạo {target} ({target.stat().st_size // (1024 * 1024)} MB)")
     return 0
 

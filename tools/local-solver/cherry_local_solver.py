@@ -42,6 +42,9 @@ DEFAULT_PORT = 2211
 DEFAULT_ORIGINS = ("https://tkbcherry.com", "https://www.tkbcherry.com")
 MAX_BODY_BYTES = 64 * 1024 * 1024
 STATUS_PAGE = HERE / "status_page.html"
+# Bản thử nghiệm (vd trang Netlify) thêm Origin ở đây, mỗi dòng một địa chỉ https://… — không
+# cần sửa mã. Dòng trống / bắt đầu bằng # bị bỏ qua.
+EXTRA_ORIGINS_FILE = HERE / "allowed_origins.txt"
 
 
 def find_solver_runtime(explicit: str | None = None) -> Path:
@@ -52,6 +55,19 @@ def find_solver_runtime(explicit: str | None = None) -> Path:
         if (cand / "scripts" / "solve_stdio.py").exists():
             return cand.resolve()
     return candidates[0] if candidates else HERE / "solver_runtime"
+
+
+def extra_origins(path: Path = EXTRA_ORIGINS_FILE) -> list[str]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith("#") and line.lower().startswith("https://"):
+            out.append(line)
+    return out
 
 
 def origin_allowed(origin: str, allowed: tuple[str, ...]) -> bool:
@@ -228,7 +244,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[Cherry máy này] {msg}", file=sys.stderr)
         write_log(log_dir, msg)
         return 2
-    allowed = tuple(o.strip().rstrip("/").lower() for o in (*DEFAULT_ORIGINS, *args.allow_origin) if o.strip())
+    allowed = tuple(
+        o.strip().rstrip("/").lower()
+        for o in (*DEFAULT_ORIGINS, *extra_origins(), *args.allow_origin)
+        if o.strip()
+    )
     try:
         server = ExclusiveServer(("127.0.0.1", args.port), make_handler(manager, allowed))
     except OSError as exc:

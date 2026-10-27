@@ -70,6 +70,15 @@ class OriginTests(unittest.TestCase):
         self.assertFalse(cls.origin_allowed("null", allowed))
 
 
+class ExtraOriginsTests(unittest.TestCase):
+    def test_reads_https_lines_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "allowed_origins.txt"
+            path.write_text("# ban thu\nhttps://tkbcherry-thu.netlify.app\n\nhttp://evil.example.com\n", encoding="utf-8")
+            self.assertEqual(cls.extra_origins(path), ["https://tkbcherry-thu.netlify.app"])
+            self.assertEqual(cls.extra_origins(Path(tmp) / "missing.txt"), [])
+
+
 class ServerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls_):
