@@ -144,6 +144,14 @@
   Vẫn đăng ký Startup + `cherry-local://` (cần để trang tự mở bộ giải). Bộ cài dựng lại `%LOCALAPPDATA%\Temp\cmnb7` (origin
   thêm: chỉ https://tkbcherry.netlify.app). Claude KHÔNG chạy thử được bộ cài (auto mode chặn tạo Startup/registry) → chủ
   dự án thử. Test toggle 25/25, test_local_solver + test_netlify_build 18/18. Đăng prod deploy `6ae1f2526c92f333f7e45fbe`.
+- **Ô ⏱ chỉ còn 1 / 2 / 3 phút, mặc định 2 phút (28/10 đêm, chủ dự án: "chạy local mà giải lâu vậy" → "nên cho option
+  từ 1 phút 2 phút 3 phút thôi")**: lượt Cherry của chủ dự án sau khi cài Cherry.exe chạy 197 s (mặc định 180 s, V4 cũng
+  180). Đo An Phú xếp mới (gói Cherry.exe, 8 luồng): ~15 s đủ 869 tiết; ~50 s hợp lệ 0 buổi 1 tiết; 60 s 303 buổi/24 trống1;
+  90 s 289/23; 120 s 284/21; 180 s 279/15. 16 luồng KHÔNG hơn (180 s 284/15). Bấm Dừng (`retainBest`) lúc 70 s → 1 s sau có
+  lịch 869/869 hợp lệ. `tools/netlify-local/overlay/pages/local-planner.js`: OPTIONS 60/120/180, mặc định 120 (cả Cherry lẫn
+  Tối ưu), giá trị cũ đã lưu làm tròn (≤90→1 phút, ≤150→2, còn lại 3). Test mới `e2e_tests/netlify_local_budget_node`
+  3/3. Đăng prod `6ae200d8df17f7add5590e59` (`local-planner.js?v=20261028-noserver-v9`). Bộ giải đã cài dùng Python đi kèm
+  (`%LOCALAPPDATA%\CherryMayNay\python\pythonw.exe`), không đụng Python của máy.
 - **Deploy (chưa làm, chờ chủ dự án)**: web = `tkb-rust-bridge.js` + dòng `?v=` bridge trong `sapxep.html` (dựng = live + 1 dòng,
   cây làm việc đang có các bump `?v` khác chưa commit); engine = 3 file `tkb_engine_v3` lên VPS (không restart). Gói zip phát cho
   trường riêng. Lưu ý: bản V4 của chủ dự án đang chạy Cherry Local ở cổng 2210 — trùng cổng mặc định của bộ giải mới.

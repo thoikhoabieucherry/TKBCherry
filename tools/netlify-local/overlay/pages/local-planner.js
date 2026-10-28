@@ -9,37 +9,35 @@
      window.__TKB_ENGINE_BUDGET_SECONDS        -> nút Cherry
      window.__TKB_ENGINE_FOCUS_BUDGET_SECONDS  -> menu Tối ưu (từng mục tiêu)
    0 = dùng mặc định của bridge. Lựa chọn được nhớ trong localStorage.
+   28/10 (chủ dự án: "nên cho option từ 1 phút 2 phút 3 phút thôi"): chỉ còn 1 / 2 / 3 phút,
+   mặc định 2 phút (đo An Phú xếp mới: 1 phút đã hợp lệ 303 buổi / 24 trống, 2 phút 284 / 21,
+   3 phút 279 / 15). Giá trị cũ đã lưu (30 giây … 30 phút) làm tròn về một trong ba.
 ============================================================ */
 (function(){
   "use strict";
 
   const KEY = "CHERRY_LOCAL_ENGINE_BUDGET_SECONDS";
-  const MAX_SECONDS = 1800;
+  const DEFAULT_SECONDS = 120;
   const OPTIONS = [
-    { value: 0,    label: "Mặc định" },
-    { value: 30,   label: "30 giây" },
-    { value: 45,   label: "45 giây" },
-    { value: 60,   label: "60 giây" },
-    { value: 180,  label: "3 phút" },
-    { value: 300,  label: "5 phút" },
-    { value: 600,  label: "10 phút" },
-    { value: 900,  label: "15 phút" },
-    { value: 1800, label: "30 phút" }
+    { value: 60,  label: "1 phút" },
+    { value: 120, label: "2 phút" },
+    { value: 180, label: "3 phút" }
   ];
 
   function normalize(value){
     const n = Math.round(Number(value) || 0);
-    if(!Number.isFinite(n) || n <= 0) return 0;
-    return Math.min(MAX_SECONDS, Math.max(30, n));
+    if(!Number.isFinite(n) || n <= 0) return DEFAULT_SECONDS;
+    if(n <= 90) return 60;
+    if(n <= 150) return 120;
+    return 180;
   }
 
   function readSaved(){
-    try{ return normalize(localStorage.getItem(KEY)); }catch(_){ return 0; }
+    try{ return normalize(localStorage.getItem(KEY)); }catch(_){ return DEFAULT_SECONDS; }
   }
 
   function describe(seconds){
-    if(seconds <= 0) return "Cherry 180 giây · Tối ưu 120 giây (như bản online)";
-    return seconds % 60 === 0 ? `${seconds / 60} phút mỗi lượt` : `${seconds} giây mỗi lượt`;
+    return `${normalize(seconds) / 60} phút mỗi lượt`;
   }
 
   function apply(seconds, persist){
@@ -48,17 +46,13 @@
     window.__TKB_ENGINE_FOCUS_BUDGET_SECONDS = n;
     window.__CHERRY_LOCAL_ENGINE_BUDGET_SECONDS = n;
     if(persist){
-      try{
-        if(n > 0) localStorage.setItem(KEY, String(n));
-        else localStorage.removeItem(KEY);
-      }catch(_){ }
+      try{ localStorage.setItem(KEY, String(n)); }catch(_){ }
     }
-    const testBtn = document.getElementById("btnTestMenu");
+    const testBtn = typeof document !== "undefined" ? document.getElementById("btnTestMenu") : null;
     if(testBtn){
-      const span = n > 0 ? describe(n).replace(" mỗi lượt", "") : "≈120 giây";
-      testBtn.title = `Tối ưu — từng mục tiêu bằng Cherry engine (${span})`;
+      testBtn.title = `Tối ưu — từng mục tiêu bằng Cherry engine (${describe(n).replace(" mỗi lượt", "")})`;
     }
-    const select = document.getElementById("localEngineBudget");
+    const select = typeof document !== "undefined" ? document.getElementById("localEngineBudget") : null;
     if(select){
       select.value = String(n);
       select.title = `Thời lượng mỗi lượt Cherry / Tối ưu trên máy này: ${describe(n)}`;
@@ -94,9 +88,7 @@
       const n = apply(select.value, true);
       try{
         window._setStatus?.(
-          n > 0
-            ? `Mỗi lượt Cherry / Tối ưu sẽ chạy ${describe(n)} trên máy này (bấm Dừng để lấy kết quả tốt nhất sớm hơn).`
-            : "Thời lượng mỗi lượt về mặc định (Cherry 180 giây, Tối ưu 120 giây).",
+          `Mỗi lượt Cherry / Tối ưu sẽ chạy ${describe(n)} trên máy này (bấm Dừng để lấy kết quả tốt nhất sớm hơn).`,
           "info"
         );
       }catch(_){ }
