@@ -15,7 +15,7 @@ $port = 2211
 $pyw = Join-Path $dest "python\pythonw.exe"
 $appDir = Join-Path $dest "app"
 $app = Join-Path $appDir "cherry_local_solver.py"
-$log = Join-Path $env:TEMP "CherryMayNay-install.log"
+$log = Join-Path $env:TEMP "Cherry-install.log"
 $progressFile = Join-Path $env:TEMP "CherrySplash.progress"
 
 function Write-Log($msg) { Add-Content -Path $log -Value ("{0} {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $msg) -Encoding UTF8 }
@@ -113,20 +113,20 @@ try {
         Start-Sleep -Milliseconds 800
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         if ($sameRuntime) {
-            Set-CherryProgress 10 "Đang thay bộ giải mới…"
+            Set-CherryProgress 10 "Đang cập nhật Cherry…"
             foreach ($old in @($appDir, (Join-Path $dest "uninstall.ps1"))) {
                 if (Test-Path $old) { Remove-Item $old -Recurse -Force }
             }
-            [void](Expand-WithProgress (Join-Path $here "app.zip") $dest 20 85 "Đang chép bộ giải")
+            [void](Expand-WithProgress (Join-Path $here "app.zip") $dest 20 85 "Đang cập nhật Cherry")
         } else {
             if (Test-Path $dest) {
                 Set-CherryProgress 3 "Đang dọn bản cũ…"
                 Remove-Item $dest -Recurse -Force
             }
             New-Item -ItemType Directory -Force -Path $dest | Out-Null
-            $pyBytes = Expand-WithProgress (Join-Path $here "python.zip") $dest 5 84 "Đang giải nén Python và thư viện"
+            $pyBytes = Expand-WithProgress (Join-Path $here "python.zip") $dest 5 84 "Đang cài các thành phần"
             Write-Log "da giai nen python"
-            $appBytes = Expand-WithProgress (Join-Path $here "app.zip") $dest 84 88 "Đang chép bộ giải"
+            $appBytes = Expand-WithProgress (Join-Path $here "app.zip") $dest 84 88 "Đang cài Cherry"
             $installedBytes = $pyBytes + $appBytes
             # Lần đầu nạp thư viện gốc (ortools ~80 MB, scipy, numpy) mất ~16 s vì Windows quét
             # tệp mới -> nạp sẵn ở tiến trình ẩn ngay bây giờ, lượt Cherry đầu tiên khỏi chờ.
@@ -143,20 +143,23 @@ try {
     $icon = Join-Path $appDir "cherry.ico"
     $shell = New-Object -ComObject WScript.Shell
     foreach ($folder in @([Environment]::GetFolderPath("Startup"), [Environment]::GetFolderPath("Programs"))) {
-        $lnk = $shell.CreateShortcut((Join-Path $folder "Cherry may nay.lnk"))
+        # 28/10: tên hiển thị chỉ là "Cherry" — gỡ lối tắt tên cũ "Cherry may nay"
+        $oldLnk = Join-Path $folder "Cherry may nay.lnk"
+        if (Test-Path $oldLnk) { Remove-Item $oldLnk -Force }
+        $lnk = $shell.CreateShortcut((Join-Path $folder "Cherry.lnk"))
         $lnk.TargetPath = $pyw
         $lnk.Arguments = "`"$app`" --background --tray"
         $lnk.WorkingDirectory = $appDir
         $lnk.WindowStyle = 7
         $lnk.IconLocation = "$icon,0"
-        $lnk.Description = "Cherry may nay - bo giai thoi khoa bieu chay tren may nay"
+        $lnk.Description = "Cherry - xếp thời khóa biểu"
         $lnk.Save()
     }
 
     # cherry-local:// -> trang Sắp xếp đánh thức bộ giải khi nó đang tắt.
     $proto = "HKCU:\Software\Classes\cherry-local"
     New-Item -Path "$proto\shell\open\command" -Force | Out-Null
-    Set-ItemProperty -Path $proto -Name "(default)" -Value "URL:Cherry may nay"
+    Set-ItemProperty -Path $proto -Name "(default)" -Value "URL:Cherry"
     New-ItemProperty -Path $proto -Name "URL Protocol" -Value "" -PropertyType String -Force | Out-Null
     Set-ItemProperty -Path "$proto\shell\open\command" -Name "(default)" -Value "`"$pyw`" `"$app`" --background --tray --wake `"%1`""
     New-Item -Path "$proto\DefaultIcon" -Force | Out-Null
@@ -166,7 +169,7 @@ try {
     $un = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\CherryMayNay"
     New-Item -Path $un -Force | Out-Null
     $values = @{
-        "DisplayName"     = "Cherry máy này"
+        "DisplayName"     = "Cherry"
         "DisplayVersion"  = "1.0"
         "Publisher"       = "Cherry Software"
         "InstallLocation" = $dest

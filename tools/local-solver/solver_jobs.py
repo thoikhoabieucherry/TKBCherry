@@ -438,7 +438,7 @@ def normalize_payload(payload: dict, request: dict, status: int, elapsed_ms: int
         payload["solver"] = solver
     solver["backend"] = "cherry-local-python"
     solver.setdefault("name", "cherry_engine_v3_local")
-    solver.setdefault("description", "Cherry engine v3 chạy trực tiếp trên máy này (Cherry Local).")
+    solver.setdefault("description", "Cherry engine v3 (Cherry.exe).")
     runtime = solver.get("runtime_settings")
     if not isinstance(runtime, dict):
         runtime = {}

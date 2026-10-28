@@ -260,9 +260,9 @@ def run_tray(server, manager: SolverManager, port: int, first_run: bool, log_dir
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Mở TKB Cherry", open_app, default=True),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Thoát Cherry máy này", quit_app),
+        pystray.MenuItem("Thoát Cherry", quit_app),
     )
-    icon = pystray.Icon("CherryMayNay", tray_image(), "Cherry máy này", menu)
+    icon = pystray.Icon("Cherry", tray_image(), "Cherry", menu)
     threading.Thread(target=server.serve_forever, name="cherry-local-http", daemon=True).start()
 
     def watch(icon_):
@@ -274,7 +274,7 @@ def run_tray(server, manager: SolverManager, port: int, first_run: bool, log_dir
                 pass
         last = None
         while not stopped.wait(2):
-            text = "Cherry máy này — " + status_text()
+            text = "Cherry — " + status_text()
             if text != last:
                 icon_.title = text
                 last = text
@@ -296,7 +296,7 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
             pass
-    ap = argparse.ArgumentParser(description="Cherry trên máy này — bộ giải engine v3 cho nút gạt 'Máy này'.")
+    ap = argparse.ArgumentParser(description="Cherry — bộ giải engine v3 chạy trên máy người dùng.")
     ap.add_argument("--port", type=int, default=int(os.environ.get("CHERRY_LOCAL_PORT", DEFAULT_PORT)))
     ap.add_argument("--workers", type=int, default=int(os.environ.get("CHERRY_LOCAL_WORKERS", 0) or 0),
                     help="số tiến trình/luồng giải (mặc định min(8, số nhân - 1))")
@@ -317,7 +317,7 @@ def main(argv: list[str] | None = None) -> int:
     manager = SolverManager(runtime, log_dir, workers=args.workers or None)
     if not manager.available():
         msg = f"Không thấy {manager.script}. Thiếu thư mục solver_runtime."
-        print(f"[Cherry máy này] {msg}", file=sys.stderr)
+        print(f"[Cherry] {msg}", file=sys.stderr)
         write_log(log_dir, msg)
         return 2
     allowed = tuple(
@@ -331,12 +331,12 @@ def main(argv: list[str] | None = None) -> int:
         if already_running(args.port):
             return 0  # bản khác đang chạy: đúng ý, thoát êm
         msg = f"Không mở được cổng {args.port}: {exc}"
-        print(f"[Cherry máy này] {msg}", file=sys.stderr)
+        print(f"[Cherry] {msg}", file=sys.stderr)
         write_log(log_dir, msg)
         return 3
     ready = f"Sẵn sàng tại http://127.0.0.1:{args.port} — {manager.workers} luồng giải."
-    print(f"[Cherry máy này] {ready}", flush=True)
-    print("[Cherry máy này] Trên trang Sắp xếp, gạt nút về 'Máy này' rồi bấm Cherry. Ctrl+C để dừng.", flush=True)
+    print(f"[Cherry] {ready}", flush=True)
+    print("[Cherry] Trên trang Sắp xếp, bấm Cherry. Ctrl+C để dừng.", flush=True)
     if args.background:
         write_log(log_dir, ready)
     if args.tray and run_tray(server, manager, args.port, args.first_run, log_dir):

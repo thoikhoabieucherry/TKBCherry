@@ -9,11 +9,11 @@
 param(
     [string]$ProgressFile = (Join-Path $env:TEMP "CherrySplash.progress"),
     [int]$TimeoutSec = 180,
-    [string]$Log = (Join-Path $env:TEMP "CherryMayNay-install.log"),
+    [string]$Log = (Join-Path $env:TEMP "Cherry-install.log"),
     [string]$Logo = "",
     [string]$Snapshot = "",
     [int]$SnapshotPct = 45,
-    [string]$SnapshotMsg = "Đang giải nén Python và thư viện (1294/2877 tệp)",
+    [string]$SnapshotMsg = "Đang cài các thành phần (1294/2877 tệp)",
     [string]$SnapshotState = "progress"
 )
 $ErrorActionPreference = "Stop"
@@ -115,8 +115,8 @@ function Draw-Splash([System.Drawing.Graphics]$g) {
     $white = New-Object System.Drawing.SolidBrush((New-Color "#FFFFFF"))
     $g.DrawString("Cherry", $fTitle, $white, 94, 18)
     $tw = $g.MeasureString("Cherry", $fTitle).Width
-    # huy hiệu "AI · CP-SAT"
-    $badgeText = "AI · CP-SAT"
+    # huy hiệu "AI" (28/10: chủ dự án bỏ chữ "CP-SAT" / "chạy bằng sức của chính máy này" — "kì")
+    $badgeText = "AI"
     $bw = $g.MeasureString($badgeText, $fBadge).Width + 14
     $bx = 94 + $tw + 4; $by = 31
     $badge = New-RoundPath $bx $by $bw 19 9.5
@@ -124,7 +124,7 @@ function Draw-Splash([System.Drawing.Graphics]$g) {
     $g.FillPath($bb, $badge); $bb.Dispose(); $badge.Dispose()
     $g.DrawString($badgeText, $fBadge, $white, [single]($bx + 7), [single]($by + 2.5))
     $sub = New-Object System.Drawing.SolidBrush((New-Color "#C7D2FE"))
-    $g.DrawString("Bộ giải thời khóa biểu chạy bằng sức của chính máy này", $fSub, $sub, 96, 62)
+    $g.DrawString("Xếp thời khóa biểu thông minh", $fSub, $sub, 96, 62)
     $sub.Dispose()
 
     # dòng trạng thái + phần trăm
@@ -189,7 +189,7 @@ function Draw-Splash([System.Drawing.Graphics]$g) {
             "Biểu tượng Cherry ở cạnh đồng hồ (không thấy thì bấm ^) · tự đóng sau $left giây"
         }
         "error" { "$($S.msg) Gửi file log nếu vẫn lỗi: $Log" }
-        default { "Python portable · OR-Tools CP-SAT · không cần cài Python, không cần quyền quản trị" }
+        default { "Lần đầu mất khoảng 10 giây · các lần sau mở ngay" }
     }
     $footRect = if ($S.mode -eq "progress") { New-Object System.Drawing.RectangleF(28, 164, ($W - 56), 34) } else { New-Object System.Drawing.RectangleF(28, 158, ($W - 160), 44) }
     $wrap = New-Object System.Drawing.StringFormat

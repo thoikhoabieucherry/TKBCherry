@@ -187,6 +187,15 @@
   chuỗi UTF-8 bằng cp1252). Bộ cài `%LOCALAPPDATA%\Temp\cmnb14` (89 MB, runtime dd99dac779bf68e2, build
   20261028-231234-8fdddaf0), deploy prod `6ae21f83e4843b8ee56245b3`, Desktop\Cherry.exe == bản trên trang. Bẫy PowerShell:
   `@($W - 250, -170)` = `$W - (250, -170)` (dấu phẩy ưu tiên hơn phép trừ) → phải `@(($W - 250), …)`.
+- **Tên chỉ là "Cherry", bỏ chữ kỹ thuật trên cửa sổ cài (28/10 khuya, chủ dự án: "bỏ cái ghi là chạy = cp sat hay là chạy =
+  chính máy này đi, kì"; "để là phần mềm Cherry thôi, đừng ghi là Cherry máy này"): `splash.ps1` phụ đề "Xếp thời khóa biểu
+  thông minh", huy hiệu chỉ "AI", chân "Lần đầu mất khoảng 10 giây · các lần sau mở ngay"; dòng tiến trình "Đang cài các thành
+  phần (n/2877 tệp)" / "Đang cập nhật Cherry"; hộp tải trên trang: "Để dùng nút Cherry, máy này cần Cherry.exe — đã gói sẵn mọi
+  thứ…". Tên hiển thị "Cherry": Settings > Apps (DisplayName), lối tắt Startup/Start Menu `Cherry.lnk` (cài bản mới tự xoá
+  `Cherry may nay.lnk`; gỡ cài xoá cả hai), giao thức `URL:Cherry`, khay "Cherry" / "Thoát Cherry", log `%TEMP%\Cherry-install.log`.
+  Thư mục cài `%LOCALAPPDATA%\CherryMayNay` + khoá `Uninstall\CherryMayNay` GIỮ (nội bộ, đổi phải di trú). Bộ cài `cmnb16`
+  (runtime dd99dac779bf68e2 không đổi → máy đã có bộ Python mới chỉ thay app), deploy prod `6ae2233b1290adeae86f57b9`
+  (bridge `?v=20261028-noserver-v10`).
 - **Deploy (chưa làm, chờ chủ dự án)**: web = `tkb-rust-bridge.js` + dòng `?v=` bridge trong `sapxep.html` (dựng = live + 1 dòng,
   cây làm việc đang có các bump `?v` khác chưa commit); engine = 3 file `tkb_engine_v3` lên VPS (không restart). Gói zip phát cho
   trường riêng. Lưu ý: bản V4 của chủ dự án đang chạy Cherry Local ở cổng 2210 — trùng cổng mặc định của bộ giải mới.

@@ -1448,7 +1448,7 @@
         : `Trên máy này nút 🍒 Cherry xếp ngay trên trình duyệt; bộ giải Cherry đầy đủ (cả Tối ưu) hiện mới có cho máy tính Windows.`;
     }
     return solverTarget() === "local"
-      ? `Chưa thấy bộ giải trên máy này (${localSolverOrigin()}). Mở Cherry.exe một lần (Chrome hỏi "Mở Cherry máy này?" hoặc quyền truy cập mạng cục bộ thì chọn Cho phép), hoặc gạt về "Máy chủ".`
+      ? `Chưa thấy bộ giải trên máy này (${localSolverOrigin()}). Mở Cherry.exe một lần (Chrome hỏi "Mở …?" hoặc quyền truy cập mạng cục bộ thì chọn Cho phép), hoặc gạt về "Máy chủ".`
       : "Chưa cấu hình dịch vụ xếp lịch.";
   }
 
@@ -1709,7 +1709,7 @@
   }
 
   async function turnOnLocalSolverFromDialog(runAfter){
-    setLocalInstallStatus("Đang bật bộ giải… (Chrome hỏi “Mở Cherry máy này?” thì chọn Mở)", false);
+    setLocalInstallStatus("Đang bật Cherry… (Chrome hỏi “Mở …?” thì chọn Mở)", false);
     const ok = await wakeLocalSolver();
     if(ok){
       window.__TKB_LOCAL_SOLVER_ONLINE = true;
@@ -1779,7 +1779,7 @@
       actions.appendChild(on);
     }else if(windows){
       card.appendChild(el("h3", "", "🍒 Chạy Cherry trên máy này"));
-      card.appendChild(el("p", "", "Nút Cherry xếp thời khóa biểu bằng sức của chính máy này qua Cherry.exe — đã gói sẵn Python, không cần cài Python hay quyền quản trị. Máy này chưa có Cherry.exe."));
+      card.appendChild(el("p", "", "Để dùng nút Cherry, máy này cần Cherry.exe — đã gói sẵn mọi thứ, không cần cài thêm gì, không cần quyền quản trị."));
       const steps = el("ol");
       steps.appendChild(el("li", "", "Bấm Tải về (khoảng 100 MB, chỉ tải một lần)."));
       steps.appendChild(el("li", "", "Mở file Cherry.exe vừa tải. Windows cảnh báo thì bấm More info → Run anyway."));
