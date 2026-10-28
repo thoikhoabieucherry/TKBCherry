@@ -85,6 +85,18 @@ class NetlifyInstallerDownloadTests(unittest.TestCase):
             self.assertIn("/download/*", headers)
             self.assertIn("Content-Disposition: attachment", headers)
 
+    def test_self_update_files_published_next_to_installer(self):
+        # 28/10: Cherry da cai tu cap nhat tu /download/cherry-latest.json + goi app (updater.py).
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "Cherry.exe"
+            fake.write_bytes(b"MZ-fake-installer")
+            (Path(tmp) / "cherry-app-b1.zip").write_bytes(b"PK-fake-app")
+            (Path(tmp) / "cherry-latest.json").write_text(
+                '{"build": "b1", "runtime": "r1", "app": "cherry-app-b1.zip", "sha256": "x", "size": 11}', encoding="utf-8")
+            out = build_netlify.build(ROOT / "web", Path(tmp) / "site", fake)
+            self.assertEqual((out / "download" / "cherry-app-b1.zip").read_bytes(), b"PK-fake-app")
+            self.assertIn('"build": "b1"', (out / "download" / "cherry-latest.json").read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

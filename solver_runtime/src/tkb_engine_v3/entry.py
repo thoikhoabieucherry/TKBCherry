@@ -346,12 +346,49 @@ class _LiveQuality:
         # gap1) -> nhan co them "· đã thử n lỗ" doi lien tuc giua hai lan giam.
         self.tried_by_seed: dict[int, int] = {}
         self.last_label: str = ""
+        # 28/10: so lieu luc DUNG lich (truoc khung chat luong dau tien)
+        self.construct_best: tuple[int, int, int] | None = None
+        self.construct_emit = 0.0
 
     @staticmethod
     def _better(a: list[int], b: list[int]) -> bool:
         return tuple(a) < tuple(b)
 
+    def on_construct(self, seed: int, evt: Mapping[str, Any]) -> None:
+        """28/10 (chu du an: "xep moi cham"): truoc khung chat luong dau tien, hien
+        "Dang dung lich · 812/869 tiet · con 37 cho vuong" (worker tot nhat) ~1 lan/giay."""
+        if self.progress is None or self.by_seed:
+            return
+        try:
+            placed = int(evt.get("placed") or 0)
+            expected = int(evt.get("expected") or 0)
+            conflicts = int(evt.get("conflicts") or 0)
+        except (TypeError, ValueError):
+            return
+        if expected <= 0:
+            return
+        # tot nhat tu dau (nhieu tiet hon, roi it cho vuong hon) -> so chi di mot chieu
+        best = self.construct_best
+        if best is None or (placed, -conflicts) > (best[0], -best[1]):
+            self.construct_best = (placed, conflicts, expected)
+        now = time.monotonic()
+        if now - self.construct_emit < 1.0:
+            return
+        self.construct_emit = now
+        placed, conflicts, expected = self.construct_best
+        label = f"Đang dựng lịch · {placed}/{expected} tiết"
+        if conflicts > 0:
+            label += f" · còn {conflicts} chỗ vướng"
+        try:
+            self.progress({"stage": "construct", "message": label, "metricLabel": label,
+                           "placed": placed, "expected": expected, "conflicts": conflicts})
+        except Exception:
+            pass
+
     def on_event(self, seed: int, evt: Mapping[str, Any]) -> None:
+        if isinstance(evt, Mapping) and evt.get("stage") == "construct":
+            self.on_construct(seed, evt)
+            return
         q = evt.get("quality") if isinstance(evt, Mapping) else None
         if not (isinstance(q, (list, tuple)) and len(q) >= 4):
             return

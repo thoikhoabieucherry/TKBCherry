@@ -119,6 +119,14 @@ def build(web: Path, out: Path, installer: Path | None = None) -> Path:
         shutil.copy2(installer, out / "download" / "Cherry.exe")
         # Ten cu cho trang con giu ban bridge truoc 28/10 (cung noi dung).
         shutil.copy2(installer, out / "download" / "CherrySetup.exe")
+        # 28/10: Cherry da cai tu cap nhat engine tu cherry-latest.json + cherry-app-<build>.zip
+        # (build_installer.py dat canh Cherry.exe).
+        latest = Path(installer).parent / "cherry-latest.json"
+        if latest.exists():
+            import json
+            meta = json.loads(latest.read_text(encoding="utf-8"))
+            shutil.copy2(latest, out / "download" / "cherry-latest.json")
+            shutil.copy2(Path(installer).parent / meta["app"], out / "download" / meta["app"])
     (out / "_redirects").write_text(REDIRECTS, encoding="utf-8")
     (out / "_headers").write_text(HEADERS, encoding="utf-8")
     (out / "robots.txt").write_text("User-agent: *\nDisallow: /\n", encoding="utf-8")

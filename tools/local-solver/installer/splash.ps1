@@ -58,7 +58,7 @@ function New-RoundPath([single]$x, [single]$y, [single]$w, [single]$h, [single]$
 }
 
 $logoImage = $null
-foreach ($candidate in @($Logo, (Join-Path $env:LOCALAPPDATA "CherryMayNay\app\cherry.png"))) {
+foreach ($candidate in @($Logo, (Join-Path $env:LOCALAPPDATA "Cherry\app\cherry.png"))) {
     if ($candidate -and (Test-Path $candidate)) {
         try { $logoImage = [System.Drawing.Image]::FromFile($candidate); break } catch {}
     }

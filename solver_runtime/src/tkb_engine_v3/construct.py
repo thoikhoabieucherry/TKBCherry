@@ -808,6 +808,8 @@ class Constructor:
         P = self.P
         expected = sum(P.a_periods)
         info: dict = {"expected": expected}
+        self._construct_progress = progress
+        self._construct_report_at = 0.0
         # 25/08: nut mot muc tieu luon di duong warm (ke ca lich rong) de ghi
         # moc xuat phat va "bao khong toi uu duoc" thay vi xay lai tu dau.
         if warm_cells or (warm_cells is not None and self.quality_focus is not None):
@@ -1702,6 +1704,27 @@ class Constructor:
     # phase 2: min-conflicts on teacher overlaps (+ teacher-rule debts)
     # ------------------------------------------------------------------
 
+    def _report_construct(self, soft: SoftSchedule, force: bool = False) -> None:
+        """28/10 (chu du an: "xep moi cham"): phat {stage: construct, placed, expected, conflicts}
+        toi da ~1 lan/giay trong luc dung lich; entry._LiveQuality bien thanh nhan cho trang."""
+        fn = getattr(self, "_construct_progress", None)
+        if fn is None:
+            return
+        now = time.monotonic()
+        if not force and now - getattr(self, "_construct_report_at", 0.0) < 1.0:
+            return
+        self._construct_report_at = now
+        try:
+            placed = sum(1 for row in soft.grid for v in row if v >= 0)
+            fn({
+                "stage": "construct",
+                "placed": int(placed),
+                "expected": int(sum(self.P.a_periods)),
+                "conflicts": int(soft.penalty()),
+            })
+        except Exception:
+            pass
+
     def _phase2(self, soft: SoftSchedule, deadline: float) -> None:
         P = self.P
         rng = self.rng
@@ -1715,6 +1738,7 @@ class Constructor:
         while soft.penalty() > 0 and time.monotonic() < deadline:
             iteration += 1
             self._iteration = iteration
+            self._report_construct(soft)
             target = self._pick_conflict(soft)
             if target is None:
                 break
@@ -6149,6 +6173,10 @@ class Constructor:
         ]
 
     def _cpsat_fill_phase(self, soft: SoftSchedule, deadline: float) -> dict:
+        self._report_construct(soft, force=True)
+        return self._cpsat_fill_phase_inner(soft, deadline)
+
+    def _cpsat_fill_phase_inner(self, soft: SoftSchedule, deadline: float) -> dict:
         """01/10: lap tiet CHUA XEP bang CP-SAT LNS (cpsat_lns lane "fill") tren
         luoi khong trung gio. Moi vong giai lai 3-6 lop (o trong + tiet thieu),
         nhan khi so tiet da xep TANG ma no luat GV khong tang (hoac bang tiet ma

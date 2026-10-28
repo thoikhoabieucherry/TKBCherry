@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import compileall
 import hashlib
+import json
 import platform
 import shutil
 import subprocess
@@ -29,7 +30,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 RUNTIME = REPO / "solver_runtime"
-APP_FILES = ("cherry_local_solver.py", "solver_jobs.py")
+APP_FILES = ("cherry_local_solver.py", "solver_jobs.py", "updater.py")
+# Cherry đã cài tự đọc file này để tự cập nhật phần engine (updater.py).
+DEFAULT_UPDATE_URL = "https://tkbcherry.netlify.app/download/cherry-latest.json"
 SERVER_ONLY_REQUIREMENTS = ("google-auth",)
 # Biểu tượng 🍒 ở khay hệ thống (chỉ bản cài trên máy trường).
 TRAY_REQUIREMENTS = ["pystray==0.19.5", "pillow"]
@@ -199,7 +202,8 @@ SourceFiles0={src}\\
 """
 
 
-def build(out_dir: Path, cache: Path, extra_origins: list[str] | None = None) -> Path:
+def build(out_dir: Path, cache: Path, extra_origins: list[str] | None = None,
+          update_url: str = DEFAULT_UPDATE_URL) -> Path:
     if not IEXPRESS.exists():
         raise SystemExit("Không thấy iexpress.exe (chỉ dựng được trên Windows).")
     work = out_dir / "build"
@@ -215,8 +219,19 @@ def build(out_dir: Path, cache: Path, extra_origins: list[str] | None = None) ->
     build_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
     (stage / "app" / "build-id.txt").write_text(build_id + "\n", encoding="ascii")
     (files / "build-id.txt").write_text(build_id + "\n", encoding="ascii")
+    if update_url:
+        (stage / "app" / "update-url.txt").write_text(update_url + "\n", encoding="ascii")
     print("Nén python.zip + app.zip…")
     make_payload(stage, files)
+    # Gói tự cập nhật đặt cạnh Cherry.exe: build_netlify.py chép lên /download/.
+    app_blob = (files / "app.zip").read_bytes()
+    app_name = f"cherry-app-{build_id}.zip"
+    (out_dir / app_name).write_bytes(app_blob)
+    runtime_id = (files / "runtime-id.txt").read_text(encoding="ascii").strip()
+    latest = {"build": build_id, "runtime": runtime_id, "app": app_name,
+              "sha256": hashlib.sha256(app_blob).hexdigest(), "size": len(app_blob),
+              "published": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    (out_dir / "cherry-latest.json").write_text(json.dumps(latest, indent=1) + "\n", encoding="utf-8")
     write_windows_text(HERE / "installer" / "install.ps1", files / "install.ps1", bom=True)
     write_windows_text(HERE / "installer" / "install.cmd", files / "install.cmd", bom=False)
     write_windows_text(HERE / "installer" / "splash.ps1", files / "splash.ps1", bom=True)
@@ -242,13 +257,15 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", default=str(HERE / "dist"))
     ap.add_argument("--cache", default=str(HERE / "dist" / "cache"))
+    ap.add_argument("--update-url", default=DEFAULT_UPDATE_URL,
+                    help="cherry-latest.json cho Cherry đã cài tự cập nhật (rỗng = tắt)")
     ap.add_argument("--allow-origin", action="append", default=[],
                     help="thêm trang được gọi bộ giải (bản thử nghiệm, vd https://ten.netlify.app)")
     args = ap.parse_args(argv)
     bad = [o for o in args.allow_origin if not o.lower().startswith("https://")]
     if bad:
         raise SystemExit(f"Chỉ nhận https://…: {bad}")
-    target = build(Path(args.out), Path(args.cache), args.allow_origin)
+    target = build(Path(args.out), Path(args.cache), args.allow_origin, args.update_url)
     print(f"Đã tạo {target} ({target.stat().st_size // (1024 * 1024)} MB)")
     return 0
 

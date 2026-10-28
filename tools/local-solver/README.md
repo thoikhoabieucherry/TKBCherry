@@ -42,3 +42,7 @@ Cài Python 3.10+ (tick **Add python.exe to PATH**), giải nén `cherry-may-nay
   (cần mạng + Windows; thư mục build sâu quá 260 ký tự sẽ lỗi MAX_PATH).
 - Gói zip (cách cũ): `python tools/local-solver/build_package.py` → `dist/cherry-may-nay.zip`.
 - Test: `python -m unittest tests.test_local_solver`, `node --test e2e_tests/planner_solver_target_toggle_node.test.js`.
+
+## Tự cập nhật (29/10)
+
+Bản cài chạy `updater.py`: 90 s sau khi bật rồi mỗi 6 giờ đọc `app/update-url.txt` (mặc định `https://tkbcherry.netlify.app/download/cherry-latest.json`). Bản mới cùng bộ Python (`runtime`) → tải `cherry-app-<build>.zip`, kiểm SHA-256, đợi lúc rảnh rồi tự đổi thư mục `app` và bật lại. Khác bộ Python → báo ở khay để tải Cherry.exe mới. Phát hành: `build_installer.py --out <thư mục>` (xuất Cherry.exe + cherry-latest.json + cherry-app-<build>.zip) rồi `build_netlify.py --installer <thư mục>\Cherry.exe` và deploy. Thư mục cài: `%LOCALAPPDATA%\Cherry` (bản cũ `CherryMayNay` tự đổi tên).

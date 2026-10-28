@@ -196,6 +196,26 @@
   Thư mục cài `%LOCALAPPDATA%\CherryMayNay` + khoá `Uninstall\CherryMayNay` GIỮ (nội bộ, đổi phải di trú). Bộ cài `cmnb16`
   (runtime dd99dac779bf68e2 không đổi → máy đã có bộ Python mới chỉ thay app), deploy prod `6ae2233b1290adeae86f57b9`
   (bridge `?v=20261028-noserver-v10`).
+- **Thư mục `Cherry`, tự cập nhật engine, số chạy khi xếp mới (29/10 rạng sáng, chủ dự án: "thư mục tên là Cherry luôn. Bạn
+  phải chuẩn bị nếu có cập nhật thêm tính năng cho Cherry.exe nha… xếp từ đầu thì xếp và tối ưu khá chậm? có cách nào khi xếp
+  mới nhanh như vậy ko?")**:
+  (1) Cài vào `%LOCALAPPDATA%\Cherry`; bản cũ `CherryMayNay` được `Rename-Item` tại chỗ (giữ Python) + gỡ `Uninstall\CherryMayNay`;
+  khoá mới `Uninstall\Cherry`. Dừng tiến trình theo ĐƯỜNG DẪN ĐẦY ĐỦ thư mục cài (+`\`), không `*\Cherry\*` — hồ sơ người dùng
+  tên `C:\Users\Cherry`. (2) `tools/local-solver/updater.py` (bản cài, `--background`): 90 s sau khi bật rồi mỗi 6 h đọc
+  `app/update-url.txt` → `https://tkbcherry.netlify.app/download/cherry-latest.json` {build, runtime, app, sha256, size}; cùng
+  runtime → tải `cherry-app-<build>.zip` (~1 MB), kiểm kích thước + SHA-256, giải nén `app.new`, đợi rảnh, sinh
+  `%TEMP%\CherryUpdateSwap.ps1` (giá trị ghi THẲNG vào script — PS 5.1 đọc sai ngoặc kép trong tham số -File) chạy bằng
+  CREATE_NO_WINDOW|NEW_PROCESS_GROUP(+BREAKAWAY) — DETACHED_PROCESS làm PowerShell chết ngay (đo spawn_test) — đợi tiến trình cũ
+  thoát, đổi app.new→app (giữ logs), bật lại; khác runtime → `/api/health` "update":"installer" + thông báo khay. Health thêm
+  build/runtime/update. `build_installer.py` xuất `cherry-latest.json` + `cherry-app-<build>.zip` cạnh Cherry.exe (`--update-url`),
+  `build_netlify.py` chép lên `/download/`. Thử trọn vòng trên bản cài tạm cổng 2299 (+ http.server 8897): bản giả cũ → giây 4
+  đã chạy bản mới (đổi thư mục ~1 s). **Từ giờ phát hành tính năng engine = dựng bộ cài + deploy Netlify; máy đã cài tự lên
+  bản mới trong ≤ 6 h (hoặc lần bật kế tiếp + 90 s), không cần chạy lại Cherry.exe** (trừ khi đổi bộ Python/thư viện).
+  (3) Xếp mới: bấm lại nhanh vì đã có lịch đủ tiết để tối ưu ngay; xếp mới phải DỰNG lịch trước (An Phú ~15 s phase 2 sửa chỗ
+  vướng). `construct.py` `_report_construct` (phase 2 + đầu CP-SAT lấp tiết, ≤ 1 lần/giây) + `entry._LiveQuality.on_construct`
+  (tốt nhất từ đầu, chỉ đi một chiều) → trang hiện "Đang dựng lịch · 869/869 tiết · còn 68 chỗ vướng" từ giây ~6 thay vì đứng
+  "X ➔ X · Đang tìm…" tới giây ~23. Test engine 173/173. Bộ cài `cmnb18` (build 20261029-001842-148023b2), deploy prod
+  `6ae22f84cd2979db833b09c5` (có `/download/cherry-latest.json`, đã kiểm SHA-256 gói app từ trang thật).
 - **Deploy (chưa làm, chờ chủ dự án)**: web = `tkb-rust-bridge.js` + dòng `?v=` bridge trong `sapxep.html` (dựng = live + 1 dòng,
   cây làm việc đang có các bump `?v` khác chưa commit); engine = 3 file `tkb_engine_v3` lên VPS (không restart). Gói zip phát cho
   trường riêng. Lưu ý: bản V4 của chủ dự án đang chạy Cherry Local ở cổng 2210 — trùng cổng mặc định của bộ giải mới.

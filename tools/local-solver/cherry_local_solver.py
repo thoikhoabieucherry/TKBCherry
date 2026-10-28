@@ -34,8 +34,9 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from solver_jobs import SolverManager  # noqa: E402
+from updater import Updater  # noqa: E402
 
-VERSION = "cherry-local-solver-v2"
+VERSION = "cherry-local-solver-v3"
 # 2210 là cổng của Cherry Local (bản chạy cả web trong máy) -> bộ giải dùng 2211 để hai bản cùng sống được.
 DEFAULT_PORT = 2211
 DEFAULT_ORIGINS = ("https://tkbcherry.com", "https://www.tkbcherry.com")
@@ -93,7 +94,7 @@ class ExclusiveServer(ThreadingHTTPServer):
         super().server_bind()
 
 
-def make_handler(manager: SolverManager, allowed: tuple[str, ...]):
+def make_handler(manager: SolverManager, allowed: tuple[str, ...], updater: Updater | None = None):
     class Handler(BaseHTTPRequestHandler):
         server_version = "CherryLocalSolver/2"
         protocol_version = "HTTP/1.1"
@@ -155,9 +156,12 @@ def make_handler(manager: SolverManager, allowed: tuple[str, ...]):
             job_id = (query.get("jobId") or query.get("solve_run_id") or [""])[0]
             if parts.path == "/api/health":
                 # bridge (probeRustApiBase) chỉ nhận máy giải trả api:"rust".
-                self._send(200, {"ok": True, "api": "rust", "localSolver": True, "version": VERSION,
-                                 "solverAvailable": manager.available(), "workers": manager.workers,
-                                 "cpuCount": os.cpu_count() or 0})
+                payload = {"ok": True, "api": "rust", "localSolver": True, "version": VERSION,
+                           "solverAvailable": manager.available(), "workers": manager.workers,
+                           "cpuCount": os.cpu_count() or 0}
+                if updater is not None:
+                    payload.update(updater.info())
+                self._send(200, payload)
             elif parts.path == "/api/solver-state":
                 self._send(200, manager.state(job_id))
             elif parts.path == "/api/solve-result":
@@ -200,7 +204,7 @@ def already_running(port: int) -> bool:
 def write_log(log_dir: Path, message: str) -> None:
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
-        with open(log_dir / "cherry-may-nay.log", "a", encoding="utf-8") as fh:
+        with open(log_dir / "cherry.log", "a", encoding="utf-8") as fh:
             fh.write(time.strftime("%Y-%m-%d %H:%M:%S ") + message + "\n")
     except OSError:
         pass
@@ -223,7 +227,28 @@ def tray_image():
         return img
 
 
-def run_tray(server, manager: SolverManager, port: int, first_run: bool, log_dir: Path) -> bool:
+def restart_args(argv: list[str]) -> list[str]:
+    """Tham số để bật lại sau khi tự cập nhật: bỏ --first-run và --wake <url>."""
+    out: list[str] = []
+    skip = False
+    for a in argv:
+        if skip:
+            skip = False
+            if not a.startswith("--"):
+                continue
+        if a == "--first-run":
+            continue
+        if a == "--wake":
+            skip = True
+            continue
+        if a.startswith("--wake="):
+            continue
+        out.append(a)
+    return out
+
+
+def run_tray(server, manager: SolverManager, port: int, first_run: bool, log_dir: Path,
+             updater: Updater | None = None) -> bool:
     """27/10 (chủ dự án: "làm như phần mềm hỗ trợ thu nhỏ vào taskbar"): biểu tượng 🍒 ở khay
     hệ thống cạnh đồng hồ — trạng thái, mở TKB Cherry, Thoát (trang kiểm tra đã bỏ theo yêu cầu). Máy chủ giải chạy
     ở luồng nền; khay giữ luồng chính. Thiếu pystray/Pillow -> trả False (chạy ngầm như cũ)."""
@@ -264,6 +289,17 @@ def run_tray(server, manager: SolverManager, port: int, first_run: bool, log_dir
     )
     icon = pystray.Icon("Cherry", tray_image(), "Cherry", menu)
     threading.Thread(target=server.serve_forever, name="cherry-local-http", daemon=True).start()
+    if updater is not None:
+        def _notify(text: str) -> None:
+            icon.notify(text, "Cherry")
+
+        def _restart() -> None:
+            stopped.set()
+            icon.visible = False
+            icon.stop()
+
+        updater.notify = _notify
+        updater.on_restart = _restart
 
     def watch(icon_):
         icon_.visible = True
@@ -311,6 +347,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     log_dir = HERE / "logs"
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
     if args.wake is not None and already_running(args.port):
         return 0
     runtime = find_solver_runtime(args.solver_runtime)
@@ -337,9 +374,16 @@ def main(argv: list[str] | None = None) -> int:
     ready = f"Sẵn sàng tại http://127.0.0.1:{args.port} — {manager.workers} luồng giải."
     print(f"[Cherry] {ready}", flush=True)
     print("[Cherry] Trên trang Sắp xếp, bấm Cherry. Ctrl+C để dừng.", flush=True)
+    updater = None
     if args.background:
         write_log(log_dir, ready)
-    if args.tray and run_tray(server, manager, args.port, args.first_run, log_dir):
+        # 28/10: bản cài (Cherry.exe) tự cập nhật phần engine — xem updater.py
+        updater = Updater(HERE, lambda: bool(manager.state().get("busy")), lambda m: write_log(log_dir, m),
+                          restart_args(raw_argv))
+        server.RequestHandlerClass = make_handler(manager, allowed, updater)
+        updater.on_restart = server.shutdown
+        updater.start()
+    if args.tray and run_tray(server, manager, args.port, args.first_run, log_dir, updater):
         return 0
     try:
         server.serve_forever()

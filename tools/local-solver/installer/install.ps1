@@ -1,7 +1,9 @@
-# Cài "Cherry máy này" cho người dùng hiện tại — không cần quyền admin, không cần cài Python.
+# Cài Cherry cho người dùng hiện tại — không cần quyền admin, không cần cài Python.
 # Gọi bởi install.cmd bên trong Cherry.exe (IExpress giải nén python.zip + app.zip + file này vào thư mục tạm).
-#   %LOCALAPPDATA%\CherryMayNay\python\  Python nhúng + ortools/numpy/scipy (python.zip, ít khi đổi)
-#   %LOCALAPPDATA%\CherryMayNay\app\     cherry_local_solver.py + solver_runtime\ (app.zip, ~1 MB)
+#   %LOCALAPPDATA%\Cherry\python\  Python nhúng + ortools/numpy/scipy (python.zip, ít khi đổi)
+#   %LOCALAPPDATA%\Cherry\app\     cherry_local_solver.py + updater.py + solver_runtime\ (app.zip, ~1 MB)
+# 28/10 (chủ dự án: "thư mục tên là Cherry luôn"): bản cũ %LOCALAPPDATA%\CherryMayNay được ĐỔI TÊN tại
+# chỗ (giữ Python -> không giải nén lại), mục Uninstall\CherryMayNay cũ bị gỡ.
 # Tự bật cùng Windows (lối tắt Startup), giao thức cherry-local:// để trang web đánh thức,
 # mục gỡ cài đặt trong Settings > Apps.
 # 28/10 (chủ dự án: "mở luôn chứ sao đợi 20 giây"; "cho thể hiện tiến trình cho phù hợp đúng
@@ -10,7 +12,8 @@
 # bản mới cùng bộ Python (runtime-id) -> chỉ thay app (< 1 s); còn lại giải nén Python theo từng tệp.
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
-$dest = Join-Path $env:LOCALAPPDATA "CherryMayNay"
+$dest = Join-Path $env:LOCALAPPDATA "Cherry"
+$legacy = Join-Path $env:LOCALAPPDATA "CherryMayNay"
 $port = 2211
 $pyw = Join-Path $dest "python\pythonw.exe"
 $appDir = Join-Path $dest "app"
@@ -36,6 +39,30 @@ function Read-Id([string]$path) {
     return ""
 }
 
+# Chỉ dừng Python chạy TỪ thư mục cài (đường dẫn đầy đủ + "\"): hồ sơ người dùng có thể tên
+# "Cherry" (C:\Users\Cherry\…) nên không được so khớp "*\Cherry\*".
+function Stop-CherryMayNay {
+    $roots = @(($dest.TrimEnd('\') + '\'), ($legacy.TrimEnd('\') + '\'))
+    Get-CimInstance Win32_Process -Filter "Name='pythonw.exe' OR Name='python.exe'" |
+        Where-Object {
+            $cmd = $_.CommandLine
+            $cmd -and ($roots | Where-Object { $cmd.IndexOf($_, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 })
+        } |
+        ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop } catch {} }
+}
+
+# Bản cũ ở %LOCALAPPDATA%\CherryMayNay -> đổi tên thành %LOCALAPPDATA%\Cherry (tức thì, giữ Python).
+if (Test-Path $legacy) {
+    try {
+        Stop-CherryMayNay
+        Start-Sleep -Milliseconds 800
+        if (Test-Path $dest) { Remove-Item $legacy -Recurse -Force }
+        else { Rename-Item $legacy (Split-Path $dest -Leaf) }
+        Remove-Item "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\CherryMayNay" -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Log "doi thu muc CherryMayNay -> Cherry"
+    } catch { Write-Log ("doi thu muc cu LOI: " + $_.Exception.Message) }
+}
+
 # Mở lại Cherry.exe đúng bản đã cài -> không giải nén lại, chỉ bật bộ giải.
 $buildNew = Read-Id (Join-Path $here "build-id.txt")
 $buildOld = Read-Id (Join-Path $appDir "build-id.txt")
@@ -44,12 +71,6 @@ $sameBuild = ($buildNew -ne "") -and ($buildNew -eq $buildOld) -and (Test-Path $
 $runtimeNew = Read-Id (Join-Path $here "runtime-id.txt")
 $runtimeOld = Read-Id (Join-Path $dest "python\runtime-id.txt")
 $sameRuntime = ($runtimeNew -ne "") -and ($runtimeNew -eq $runtimeOld) -and (Test-Path $pyw)
-
-function Stop-CherryMayNay {
-    Get-CimInstance Win32_Process -Filter "Name='pythonw.exe' OR Name='python.exe'" |
-        Where-Object { $_.CommandLine -and $_.CommandLine -like "*\CherryMayNay\*" } |
-        ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop } catch {} }
-}
 
 # Giải nén từng tệp để báo % theo dung lượng đã giải nén (from..to trên thanh tiến trình).
 function Expand-WithProgress([string]$zipPath, [string]$destDir, [int]$from, [int]$to, [string]$label) {
@@ -114,7 +135,7 @@ try {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         if ($sameRuntime) {
             Set-CherryProgress 10 "Đang cập nhật Cherry…"
-            foreach ($old in @($appDir, (Join-Path $dest "uninstall.ps1"))) {
+            foreach ($old in @($appDir, (Join-Path $dest "uninstall.ps1"), (Join-Path $dest "app.new"), (Join-Path $dest "app.old"))) {
                 if (Test-Path $old) { Remove-Item $old -Recurse -Force }
             }
             [void](Expand-WithProgress (Join-Path $here "app.zip") $dest 20 85 "Đang cập nhật Cherry")
@@ -166,7 +187,7 @@ try {
     Set-ItemProperty -Path "$proto\DefaultIcon" -Name "(default)" -Value "$icon,0"
 
     # Settings > Apps > Cherry máy này > Uninstall
-    $un = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\CherryMayNay"
+    $un = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Cherry"
     New-Item -Path $un -Force | Out-Null
     $values = @{
         "DisplayName"     = "Cherry"
