@@ -1445,7 +1445,7 @@
       // 28/10 (chu du an: "xep nhanh tren trinh duyet chi cho dien thoai"): may Windows chi moi cai.
       return isWindowsDesktopNavigator()
         ? `Máy này chưa có bộ giải Cherry (${localSolverOrigin()}) — tải và cài CherrySetup.exe một lần theo hộp hướng dẫn.`
-        : `Bộ giải Cherry hiện mới có cho máy tính Windows — trên máy này hãy dùng nút ▶ để xếp nhanh ngay trên trình duyệt.`;
+        : `Trên máy này nút 🍒 Cherry xếp ngay trên trình duyệt; bộ giải Cherry đầy đủ (cả Tối ưu) hiện mới có cho máy tính Windows.`;
     }
     return solverTarget() === "local"
       ? `Chưa thấy bộ giải trên máy này (${localSolverOrigin()}). Cài CherrySetup.exe một lần (Chrome hỏi "Mở Cherry máy này?" hoặc quyền truy cập mạng cục bộ thì chọn Cho phép), hoặc gạt về "Máy chủ".`
@@ -1510,6 +1510,7 @@
     "border:1.5px solid #fff;background:#94a3b8;pointer-events:none}",
     "#tkbCherryLocalDot[data-state=\"online\"]{background:#10b981}",
     "#tkbCherryLocalDot[data-state=\"offline\"]{background:#f59e0b}",
+    "#tkbCherryLocalDot[data-state=\"browser\"]{display:none}",
     "#tkbLocalSolverInstall{position:fixed;inset:0;z-index:100000;display:flex;align-items:center;",
     "justify-content:center;background:rgba(15,23,42,.45);padding:16px}",
     "#tkbLocalSolverInstall[hidden]{display:none}",
@@ -1619,8 +1620,11 @@
       dot.setAttribute("aria-hidden", "true");
       cherry.appendChild(dot);
     }
-    dot.dataset.state = online === true ? "online" : (online === false ? "offline" : "unknown");
-    const tip = online === true
+    // "browser": may khong cai duoc bo giai (Mac, dien thoai) -> Cherry xep tren trinh duyet, an cham.
+    dot.dataset.state = online === "browser" ? "browser" : (online === true ? "online" : (online === false ? "offline" : "unknown"));
+    const tip = online === "browser"
+      ? "Cherry Time! — xếp ngay trên trình duyệt"
+      : online === true
       ? "Cherry Time! — bộ giải trên máy này đã sẵn sàng"
       : (online === false ? "Cherry Time! — máy này chưa có bộ giải (bấm để cài)" : "Cherry Time!");
     cherry.title = tip;
@@ -1779,19 +1783,9 @@
       card.appendChild(el("p", "", "Máy này đã cài rồi mà Chrome hỏi “Mở …?” thì bấm Mở — trang tự xếp tiếp."));
       actions.appendChild(download);
     }else{
+      // Chi con toi day khi bam Toi uu (can bo giai day du) — nut Cherry da xep tren trinh duyet.
       card.appendChild(el("h3", "", "🍒 Bộ giải Cherry"));
-      card.appendChild(el("p", "", "Bộ giải Cherry chỉ cài được trên máy tính Windows. Trên máy này hãy dùng nút ▶ để xếp nhanh ngay trên trình duyệt."));
-    }
-    if(!windows){
-      // Xep nhanh tren trinh duyet chi danh cho may khong cai duoc bo giai (dien thoai, Mac).
-      const browserBtn = el("button", "", "Xếp nhanh trên trình duyệt (▶)");
-      browserBtn.type = "button";
-      browserBtn.id = "tkbLocalSolverBrowser";
-      browserBtn.addEventListener("click", () => {
-        closeLocalInstallDialog();
-        try{ document.getElementById("btnAutoSort")?.click(); }catch(_){ }
-      });
-      actions.appendChild(browserBtn);
+      card.appendChild(el("p", "", "Trên máy này nút 🍒 Cherry xếp ngay trên trình duyệt. Tối ưu cần bộ giải Cherry đầy đủ, hiện mới có cho máy tính Windows."));
     }
     const closeBtn = el("button", "", "Đóng");
     closeBtn.type = "button";
@@ -1832,6 +1826,12 @@
       event?.stopImmediatePropagation?.();
       event?.stopPropagation?.();
     }catch(_){ }
+    if(!windows){
+      // 28/10 (chu du an: "bo luon cho may Mac, Mac va dien thoai dung web"): khong cai duoc bo
+      // giai -> xep ngay tren trinh duyet (cung bo giai voi nut ▶), khong hoi, khong co lua chon.
+      runBrowserSolve();
+      return;
+    }
     const ask = () => showLocalSolverDialog({runCherryWhenReady:windows, starting:windows && localSolverSeenBefore()});
     if(window.__TKB_LOCAL_SOLVER_ONLINE === false){
       ask();
@@ -1849,6 +1849,23 @@
         try{ window.tkbRunEngine("cherry", document.getElementById("btnEngineCherry")); }catch(_){ }
       }
     });
+  }
+
+  function runBrowserSolve(){
+    try{
+      const play = document.getElementById("btnAutoSort");
+      if(play && typeof play.click === "function"){
+        play.click();
+        return true;
+      }
+      if(typeof window.sapXepTuDongAll === "function"){
+        window.__TKB_FORCE_ENGINE = "";
+        window.__TKB_LAST_REQUESTED_ENGINE = "";
+        window.sapXepTuDongAll();
+        return true;
+      }
+    }catch(_){ }
+    return false;
   }
 
   // Cho bo giai vua goi mo len (duong du phong khi cham xanh ma bo giai vua tat).
@@ -1882,7 +1899,8 @@
     if(!pageHasSolverServer()){
       // Ban khong dang nhap: chi mot nut Cherry + cham trang thai (do 1 lan, khong danh thuc).
       ensureSolverTargetCss();
-      markCherryLocalStatus(undefined);
+      const windows = isWindowsDesktopNavigator();
+      markCherryLocalStatus(windows ? undefined : "browser");
       if(!document.__tkbCherryLocalHooked && typeof document.addEventListener === "function"){
         document.__tkbCherryLocalHooked = true;
         document.addEventListener("click", event => {
@@ -1892,7 +1910,7 @@
         }, true);
         // Quay lai tab (vua cai xong / vua Thoat o khay) -> do lai de cham dung mau.
         window.addEventListener("focus", () => {
-          if(window.__TKB_RUST_SOLVER_RUNNING === true) return;
+          if(!windows || window.__TKB_RUST_SOLVER_RUNNING === true) return;
           probeRustApiBase(localSolverOrigin(), 1500).then(ok => {
             window.__TKB_LOCAL_SOLVER_ONLINE = Boolean(ok);
             if(ok) rememberLocalSolverSeen();
@@ -1900,6 +1918,8 @@
           }).catch(() => {});
         });
       }
+      // Mac / dien thoai: khong do 127.0.0.1 (khong co bo giai de do, tranh Chrome hoi quyen mang cuc bo).
+      if(!windows) return;
       probeRustApiBase(localSolverOrigin(), 1500).then(ok => {
         window.__TKB_LOCAL_SOLVER_ONLINE = Boolean(ok);
         if(ok) rememberLocalSolverSeen();

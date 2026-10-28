@@ -297,8 +297,8 @@ test("bản không đăng nhập trên máy không phải Windows: không mời 
   });
   hooks.showLocalSolverDialog();
   assert.equal(document.getElementById("tkbLocalSolverDownload"), null);
-  assert.ok(document.getElementById("tkbLocalSolverBrowser"), "máy không cài được bộ giải thì còn ▶ trên trình duyệt");
-  assert.match(hooks.noSolverBackendMessage(), /nút ▶/);
+  assert.equal(document.getElementById("tkbLocalSolverBrowser"), null, "không còn nút chọn xếp trên trình duyệt");
+  assert.match(hooks.noSolverBackendMessage(), /xếp ngay trên trình duyệt/);
   hooks.stopLocalInstallPolling();
 });
 
@@ -492,14 +492,32 @@ test("vừa mở trang chưa dò xong: bấm Cherry đợi lần dò, bộ giả
   assert.equal(document.getElementById("tkbLocalSolverInstall"), null);
 });
 
-test("Mac (không cài được bộ giải): chấm cam -> hộp hiện ngay, không gọi cherry-local://", () => {
-  const {hooks, document, window} = loadBridge({
-    noServer:true,
-    navigator:{userAgent:"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) Chrome/142"},
-    fetchImpl:async () => { throw new TypeError("Failed to fetch"); }
+function addPlayButton(document){
+  const clicks = [];
+  const play = {id:"btnAutoSort", children:[], click(){ clicks.push(Date.now()); }};
+  document.body.appendChild(play);
+  return clicks;
+}
+
+for(const [label, userAgent] of [
+  ["Mac", "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 Chrome/142 Safari/537.36"],
+  ["điện thoại", "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/142 Mobile Safari/537.36"]
+]){
+  test(`${label}: bấm Cherry xếp ngay trên trình duyệt (như ▶), không hộp, không lựa chọn, không gọi 127.0.0.1`, async () => {
+    const {hooks, document, calls} = loadBridge({
+      noServer:true,
+      navigator:{userAgent},
+      fetchImpl:async () => { throw new TypeError("Failed to fetch"); }
+    });
+    const clicks = addPlayButton(document);
+    hooks.initSolverTargetUi();
+    await new Promise(r => setTimeout(r, 20));
+    assert.equal(document.getElementById("tkbCherryLocalDot").dataset.state, "browser", "ẩn chấm cài đặt");
+    const event = cherryClick(document);
+    assert.equal(event.stopped, true, "không vào lượt Cherry cần bộ giải");
+    assert.equal(clicks.length, 1, "chạy bộ giải trên trình duyệt");
+    assert.equal(document.getElementById("tkbLocalSolverInstall"), null, "không hiện hộp");
+    assert.equal(document.frames.filter(f => f.src === "cherry-local://start").length, 0);
+    assert.ok(calls.every(c => !c.url.startsWith(LOCAL)), "không dò bộ giải trên máy");
   });
-  window.__TKB_LOCAL_SOLVER_ONLINE = false;
-  hooks.launchLocalSolverOnGesture();
-  assert.equal(document.getElementById("tkbLocalSolverInstall").dataset.mode, "unsupported");
-  assert.equal(document.frames.filter(f => f.src === "cherry-local://start").length, 0);
-});
+}
