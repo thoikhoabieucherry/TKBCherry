@@ -133,6 +133,17 @@
   Cherry", **Tải về** là nút chính, "Thử bật lại" thứ hai; hộp "Đang bật…" có thêm "Chưa cài? Tải về" (bấm thì thôi tự đổi
   sang hộp lỗi). Test toggle 25/25; deploy prod `6ae1e6a68663a235d6c1db97` (`?v=20261028-noserver-v7`). Bài học: chạy bộ giải
   thử trên máy chủ dự án thì bỏ origin thật khỏi `allowed_origins.txt` (hoặc dùng cổng khác) để không ghi dấu vào trình duyệt.
+- **CherrySetup.exe → Cherry.exe (28/10 khuya, chủ dự án: "không mạnh mẽ như 3.5 Turbo; hình như buộc phải cài python rồi
+  tạo local server; sao không đóng gói luôn bộ python mini, gọi là Cherry, chạy là khởi động python portable")**: bộ cài VỐN ĐÃ
+  mang Python nhúng 3.12.10 + OR-Tools/numpy/scipy (không cần cài Python, không cần admin); ngược lại V4 "3.5 Turbo" chạy
+  `launch_backend.vbs` → Python CÀI SẴN của chủ dự án (`%LOCALAPPDATA%\Programs\Python\Python312\pythonw.exe`) nên máy khác
+  chỉ còn FET trình duyệt (cảm giác "lúc nào cũng chạy" nhưng yếu). Đổi theo ý chủ dự án: file tải = `Cherry.exe`
+  (`/download/Cherry.exe`; giữ `/download/CherrySetup.exe` cùng nội dung cho trang cũ), IExpress bỏ câu hỏi Yes/No và hộp
+  "đã cài xong" (hộp cũ còn bảo "gạt nút sang Máy này" — sai từ khi bỏ viên gạt), FriendlyName "Cherry"; thông báo khay lần
+  đầu: "Cherry đã chạy ngầm… trang TKB tự nhận và xếp tiếp"; chữ trên trang: "Chạy Cherry trên máy này… đã gói sẵn Python".
+  Vẫn đăng ký Startup + `cherry-local://` (cần để trang tự mở bộ giải). Bộ cài dựng lại `%LOCALAPPDATA%\Temp\cmnb7` (origin
+  thêm: chỉ https://tkbcherry.netlify.app). Claude KHÔNG chạy thử được bộ cài (auto mode chặn tạo Startup/registry) → chủ
+  dự án thử. Test toggle 25/25, test_local_solver + test_netlify_build 18/18. Đăng prod deploy `6ae1f2526c92f333f7e45fbe`.
 - **Deploy (chưa làm, chờ chủ dự án)**: web = `tkb-rust-bridge.js` + dòng `?v=` bridge trong `sapxep.html` (dựng = live + 1 dòng,
   cây làm việc đang có các bump `?v` khác chưa commit); engine = 3 file `tkb_engine_v3` lên VPS (không restart). Gói zip phát cho
   trường riêng. Lưu ý: bản V4 của chủ dự án đang chạy Cherry Local ở cổng 2210 — trùng cổng mặc định của bộ giải mới.

@@ -1,5 +1,5 @@
 # Cài "Cherry máy này" cho người dùng hiện tại — không cần quyền admin, không cần cài Python.
-# Gọi bởi install.cmd bên trong CherrySetup.exe (IExpress giải nén payload.zip + file này vào thư mục tạm).
+# Gọi bởi install.cmd bên trong Cherry.exe (IExpress giải nén payload.zip + file này vào thư mục tạm).
 #   %LOCALAPPDATA%\CherryMayNay\python\  Python nhúng + ortools/numpy/scipy
 #   %LOCALAPPDATA%\CherryMayNay\app\     cherry_local_solver.py + solver_runtime\
 # Tự bật cùng Windows (lối tắt Startup), giao thức cherry-local:// để trang web đánh thức,

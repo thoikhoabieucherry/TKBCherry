@@ -1,10 +1,11 @@
-"""Dựng CherrySetup.exe — bộ cài "Cherry máy này" một lần, sau đó chạy ngầm.
+"""Dựng Cherry.exe — nhấp đúp là chạy bộ giải Cherry trên máy này (lần đầu tự đặt Python portable).
 
 Không cần Python trên máy trường: gói mang Python nhúng (python.org embeddable, cùng bản
 với máy dựng) + ortools/numpy/scipy/openpyxl cài sẵn bằng pip --target. IExpress (có sẵn
 trong Windows) bọc payload.zip + installer/install.ps1 thành một file exe; install.ps1
 chép vào %LOCALAPPDATA%\\CherryMayNay, tạo lối tắt Startup, giao thức cherry-local://,
-mục gỡ trong Settings > Apps, rồi bật bộ giải và mở trang kiểm tra 127.0.0.1:2211.
+mục gỡ trong Settings > Apps, rồi bật bộ giải (biểu tượng 🍒 ở khay). Không hỏi Yes/No, không
+hộp "đã cài xong" (28/10, chủ dự án: "gọi là Cherry, chạy là khởi động python portable").
 
     python tools/local-solver/build_installer.py [--out <thư mục>] [--cache <thư mục tải>]
 
@@ -143,11 +144,11 @@ AdminQuietInstCmd=%AdminQuietInstCmd%
 UserQuietInstCmd=%UserQuietInstCmd%
 SourceFiles=SourceFiles
 [Strings]
-InstallPrompt=Cai dat Cherry may nay (bo giai thoi khoa bieu chay tren may nay)?
+InstallPrompt=
 DisplayLicense=
-FinishMessage=Da cai xong Cherry may nay. Bo giai tu chay ngam moi khi bat may. Tren trang Sap xep, gat nut sang 'May nay' de dung.
+FinishMessage=
 TargetName={target}
-FriendlyName=Cherry may nay
+FriendlyName=Cherry
 AppLaunched=cmd.exe /c install.cmd
 PostInstallCmd=<None>
 AdminQuietInstCmd=cmd.exe /c install.cmd
@@ -180,15 +181,15 @@ def build(out_dir: Path, cache: Path, extra_origins: list[str] | None = None) ->
     make_payload(stage, files / "payload.zip")
     write_windows_text(HERE / "installer" / "install.ps1", files / "install.ps1", bom=True)
     write_windows_text(HERE / "installer" / "install.cmd", files / "install.cmd", bom=False)
-    target = out_dir / "CherrySetup.exe"
+    target = out_dir / "Cherry.exe"
     if target.exists():
         target.unlink()
-    sed = work / "CherrySetup.sed"
+    sed = work / "Cherry.sed"
     sed.write_text(SED.format(target=str(target), src=str(files)), encoding="mbcs")
     print("Đóng gói bằng IExpress…")
     subprocess.run([str(IEXPRESS), "/N", "/Q", str(sed)], check=True)
     if not target.exists():
-        raise SystemExit("IExpress không tạo được CherrySetup.exe")
+        raise SystemExit("IExpress không tạo được Cherry.exe")
     return target
 
 

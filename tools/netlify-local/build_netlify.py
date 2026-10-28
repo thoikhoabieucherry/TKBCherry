@@ -4,7 +4,7 @@
 lấy web/ hiện hành + lớp vỏ overlay/ (shared/auth-local.js: người dùng giả, kho dữ liệu
 trường trong trình duyệt; modules/local-schools.js: danh sách trường; pages/local-planner.js:
 ô thời lượng ⏱; local.css), sửa app.html / sapxep.html / storage.js cho dùng lớp vỏ đó.
-Giải: nút gạt "Máy này" -> bộ giải tools/local-solver (CherrySetup.exe) ở 127.0.0.1:2211.
+Giải: nút gạt "Máy này" -> bộ giải tools/local-solver (Cherry.exe) ở 127.0.0.1:2211.
 KHÔNG đăng kèm dữ liệu trường nào (bản V4 từng đăng web/data/<mã>.json công khai).
 
     python tools/netlify-local/build_netlify.py --out <thư mục> [--web <thư mục web>]
@@ -20,7 +20,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 OVERLAY = HERE / "overlay"
-STAMP = "20261028-noserver-v7"
+STAMP = "20261028-noserver-v8"
 
 REDIRECTS = """/               /app                 302!
 /index.html     /app                 302!
@@ -113,9 +113,11 @@ def build(web: Path, out: Path, installer: Path | None = None) -> Path:
     ], "storage.js")
 
     if installer is not None:
-        # Nút Cherry mời tải bộ cài ngay trên trang: /download/CherrySetup.exe (bridge
+        # Nút Cherry mời tải bộ cài ngay trên trang: /download/Cherry.exe (bridge
         # LOCAL_SOLVER_DOWNLOAD_URL_DEFAULT). Gói chỉ mang bytecode engine, không mã nguồn.
         (out / "download").mkdir(exist_ok=True)
+        shutil.copy2(installer, out / "download" / "Cherry.exe")
+        # Ten cu cho trang con giu ban bridge truoc 28/10 (cung noi dung).
         shutil.copy2(installer, out / "download" / "CherrySetup.exe")
     (out / "_redirects").write_text(REDIRECTS, encoding="utf-8")
     (out / "_headers").write_text(HEADERS, encoding="utf-8")
@@ -141,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", required=True)
     ap.add_argument("--web", default=str(REPO / "web"))
-    ap.add_argument("--installer", default=None, help="CherrySetup.exe để đặt ở /download/ (build_installer.py)")
+    ap.add_argument("--installer", default=None, help="Cherry.exe để đặt ở /download/ (build_installer.py)")
     args = ap.parse_args(argv)
     out = build(Path(args.web), Path(args.out), Path(args.installer) if args.installer else None)
     print(f"Đã dựng {out}")

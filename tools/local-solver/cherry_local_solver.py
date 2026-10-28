@@ -269,7 +269,7 @@ def run_tray(server, manager: SolverManager, port: int, first_run: bool, log_dir
         icon_.visible = True
         if first_run:
             try:
-                icon_.notify("Đã cài xong, bộ giải chạy ngầm ở đây. Quay lại trang TKB và bấm Cherry.", "Cherry máy này")
+                icon_.notify("Cherry đã chạy ngầm ở đây (🍒). Trang TKB tự nhận và xếp tiếp — không cần bấm lại.", "Cherry")
             except Exception:
                 pass
         last = None

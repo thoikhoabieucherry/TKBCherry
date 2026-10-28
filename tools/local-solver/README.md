@@ -5,7 +5,7 @@ Dữ liệu trường vẫn lưu trên tkbcherry.com; máy này chỉ giải r�
 
 ## Cài một lần (khuyên dùng)
 
-1. Chạy `CherrySetup.exe` → bấm **Yes** → đợi khoảng 1 phút → **OK**.
+1. Nhấp đúp `Cherry.exe` (đã gói Python portable + OR-Tools, không cần cài Python, không cần quyền admin) → đợi khoảng 1 phút, biểu tượng 🍒 hiện ở khay. Không có câu hỏi Yes/No hay hộp "đã cài xong".
    Không cần cài Python, không cần quyền admin. Windows SmartScreen có thể cảnh báo vì file
    chưa ký số: bấm **More info → Run anyway**.
 2. Biểu tượng 🍒 hiện ở khay hệ thống (cạnh đồng hồ) kèm thông báo "Đã cài xong".
@@ -15,7 +15,7 @@ Dữ liệu trường vẫn lưu trên tkbcherry.com; máy này chỉ giải r�
 Bản web không đăng nhập: chỉ có nút 🍒 Cherry (chấm xanh = bộ giải sẵn sàng). Bấm Cherry khi
 bộ giải không chạy: trình duyệt từng thấy bộ giải → hộp **Bật bộ giải và xếp** (đánh thức qua
 `cherry-local://`, Chrome hỏi "Mở Cherry máy này?" một lần — tick "Luôn cho phép"); chưa từng thấy
-→ hộp **Tải về CherrySetup.exe**. Bản tkbcherry.com (có đăng nhập): nút gạt **Máy chủ / Máy này**.
+→ hộp **Tải về Cherry.exe**. Bản tkbcherry.com (có đăng nhập): nút gạt **Máy chủ / Máy này**.
 
 Gỡ: **Settings → Apps → Installed apps → Cherry máy này → Uninstall**.
 
@@ -38,7 +38,7 @@ Cài Python 3.10+ (tick **Add python.exe to PATH**), giải nén `cherry-may-nay
 ## Cho người phát triển
 
 - Chạy từ repo: `python tools/local-solver/cherry_local_solver.py` (dùng `solver_runtime/` của repo).
-- Bộ cài: `python tools/local-solver/build_installer.py --out <thư mục ĐƯỜNG DẪN NGẮN>` → `CherrySetup.exe`
+- Bộ cài: `python tools/local-solver/build_installer.py --out <thư mục ĐƯỜNG DẪN NGẮN>` → `Cherry.exe`
   (cần mạng + Windows; thư mục build sâu quá 260 ký tự sẽ lỗi MAX_PATH).
 - Gói zip (cách cũ): `python tools/local-solver/build_package.py` → `dist/cherry-may-nay.zip`.
 - Test: `python -m unittest tests.test_local_solver`, `node --test e2e_tests/planner_solver_target_toggle_node.test.js`.

@@ -153,7 +153,7 @@ test("Máy này nhưng chưa mở bộ giải: trả rỗng + thông báo hướ
   assert.equal(await hooks.rustApiBase(), "");
   assert.equal(window.__TKB_LOCAL_SOLVER_ONLINE, false);
   assert.ok(calls.every(c => !c.url.startsWith(SITE)), "không được tự gửi lượt giải lên máy chủ");
-  assert.match(hooks.noSolverBackendMessage(), /CherrySetup\.exe/);
+  assert.match(hooks.noSolverBackendMessage(), /Cherry\.exe/);
   assert.match(hooks.noSolverBackendMessage(), /127\.0\.0\.1:2211/);
 });
 
@@ -253,7 +253,7 @@ test("bản web không đăng nhập (Netlify): chỉ một nút Cherry + chấm
     }
   });
   assert.equal(hooks.solverTarget(), "local", "trang không có máy chủ thì bỏ qua lựa chọn Máy chủ đã lưu");
-  assert.match(hooks.noSolverBackendMessage(), /CherrySetup\.exe/);
+  assert.match(hooks.noSolverBackendMessage(), /Cherry\.exe/);
   assert.doesNotMatch(hooks.noSolverBackendMessage(), /nút ▶/, "máy Windows không mời xếp trên trình duyệt");
   hooks.initSolverTargetUi();
   assert.equal(document.getElementById("btnSolverTarget"), null, "không còn viên Máy chủ / Máy này");
@@ -265,7 +265,7 @@ test("bản web không đăng nhập (Netlify): chỉ một nút Cherry + chấm
   assert.ok(calls.every(c => !c.url.startsWith(SITE)), "không gọi máy chủ");
 });
 
-test("bản không đăng nhập: chưa có bộ giải -> hộp tải CherrySetup.exe, cài xong tự báo sẵn sàng", async () => {
+test("bản không đăng nhập: chưa có bộ giải -> hộp tải Cherry.exe, chạy lên tự báo sẵn sàng", async () => {
   let online = false;
   const {hooks, document, statuses} = loadBridge({
     noServer:true,
@@ -277,10 +277,10 @@ test("bản không đăng nhập: chưa có bộ giải -> hộp tải CherrySet
   const modal = hooks.showLocalSolverDialog();
   assert.ok(modal && modal.hidden === false);
   const link = document.getElementById("tkbLocalSolverDownload");
-  assert.equal(link.href, "/download/CherrySetup.exe");
-  assert.equal(link.getAttribute("download"), "CherrySetup.exe");
+  assert.equal(link.href, "/download/Cherry.exe");
+  assert.equal(link.getAttribute("download"), "Cherry.exe");
   link.click();
-  assert.match(document.getElementById("tkbLocalSolverInstallStatus").textContent, /Đang chờ cài đặt/);
+  assert.match(document.getElementById("tkbLocalSolverInstallStatus").textContent, /Mở file Cherry\.exe vừa tải/);
   online = true;  // người dùng vừa cài xong
   await new Promise(r => setTimeout(r, 3400));
   assert.match(document.getElementById("tkbLocalSolverInstallStatus").textContent, /Đã sẵn sàng/);
@@ -320,7 +320,7 @@ test("bản không đăng nhập: tự bật không lên với máy từng có b
   const title = modal.children[0].children.find(n => n.tagName === "H3").textContent;
   assert.doesNotMatch(title, /từng có/, "dấu “từng thấy” không chứng minh máy đã cài");
   const dl = document.getElementById("tkbLocalSolverDownload");
-  assert.equal(dl.textContent, "Tải về CherrySetup.exe");
+  assert.equal(dl.textContent, "Tải về Cherry.exe");
   assert.equal(dl.className, "lsi-primary", "Tải về là nút chính khi bật không được");
   const on = document.getElementById("tkbLocalSolverTurnOn");
   assert.equal(on.textContent, "Thử bật lại");
@@ -342,7 +342,7 @@ test("bản không đăng nhập: chưa từng thấy bộ giải -> hộp cài 
   const modal = hooks.showLocalSolverDialog();
   assert.equal(modal.dataset.mode, "missing");
   assert.equal(document.frames.filter(f => f.src === "cherry-local://start").length, 0);
-  assert.equal(document.getElementById("tkbLocalSolverDownload").textContent, "Tải về CherrySetup.exe");
+  assert.equal(document.getElementById("tkbLocalSolverDownload").textContent, "Tải về Cherry.exe");
   assert.equal(document.getElementById("tkbLocalSolverTurnOn"), null, "không còn bắt người dùng tự bật");
   assert.equal(document.getElementById("tkbLocalSolverBrowser"), null, "máy Windows không mời xếp trên trình duyệt");
   hooks.stopLocalInstallPolling();
@@ -431,7 +431,7 @@ test("chấm cam + máy từng có bộ giải: bấm Cherry KHÔNG vào lượt
   const modal = document.getElementById("tkbLocalSolverInstall");
   assert.equal(modal.dataset.mode, "starting");
   assert.equal(modal.hidden, false);
-  assert.equal(document.getElementById("tkbLocalSolverDownload").textContent, "Chưa cài? Tải về", "đang bật vẫn có đường tải");
+  assert.equal(document.getElementById("tkbLocalSolverDownload").textContent, "Chưa có? Tải Cherry.exe", "đang bật vẫn có đường tải");
   assert.equal(runs.length, 0);
   online = true;
   await new Promise(r => setTimeout(r, 1400));

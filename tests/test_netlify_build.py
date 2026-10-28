@@ -79,6 +79,7 @@ class NetlifyInstallerDownloadTests(unittest.TestCase):
             fake = Path(tmp) / "CherrySetup.exe"
             fake.write_bytes(b"MZ-fake-installer")
             out = build_netlify.build(ROOT / "web", Path(tmp) / "site", fake)
+            self.assertEqual((out / "download" / "Cherry.exe").read_bytes(), b"MZ-fake-installer")
             self.assertEqual((out / "download" / "CherrySetup.exe").read_bytes(), b"MZ-fake-installer")
             headers = (out / "_headers").read_text(encoding="utf-8")
             self.assertIn("/download/*", headers)

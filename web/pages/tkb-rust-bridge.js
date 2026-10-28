@@ -1444,11 +1444,11 @@
     if(!pageHasSolverServer()){
       // 28/10 (chu du an: "xep nhanh tren trinh duyet chi cho dien thoai"): may Windows chi moi cai.
       return isWindowsDesktopNavigator()
-        ? `Máy này chưa có bộ giải Cherry (${localSolverOrigin()}) — tải và cài CherrySetup.exe một lần theo hộp hướng dẫn.`
+        ? `Máy này chưa có bộ giải Cherry (${localSolverOrigin()}) — tải Cherry.exe theo hộp hướng dẫn rồi mở nó một lần.`
         : `Trên máy này nút 🍒 Cherry xếp ngay trên trình duyệt; bộ giải Cherry đầy đủ (cả Tối ưu) hiện mới có cho máy tính Windows.`;
     }
     return solverTarget() === "local"
-      ? `Chưa thấy bộ giải trên máy này (${localSolverOrigin()}). Cài CherrySetup.exe một lần (Chrome hỏi "Mở Cherry máy này?" hoặc quyền truy cập mạng cục bộ thì chọn Cho phép), hoặc gạt về "Máy chủ".`
+      ? `Chưa thấy bộ giải trên máy này (${localSolverOrigin()}). Mở Cherry.exe một lần (Chrome hỏi "Mở Cherry máy này?" hoặc quyền truy cập mạng cục bộ thì chọn Cho phép), hoặc gạt về "Máy chủ".`
       : "Chưa cấu hình dịch vụ xếp lịch.";
   }
 
@@ -1539,11 +1539,11 @@
     btn.textContent = local ? "Máy này" : "Máy chủ";
     btn.title = fixedLocal
       ? (window.__TKB_LOCAL_SOLVER_ONLINE === false
-        ? `Chưa thấy bộ giải trên máy này (${localSolverOrigin()}) — bấm để thử đánh thức; chưa cài thì cài CherrySetup.exe.`
+        ? `Chưa thấy bộ giải trên máy này (${localSolverOrigin()}) — bấm để thử đánh thức; chưa có thì tải và mở Cherry.exe.`
         : `Cherry giải bằng máy này (${localSolverOrigin()}). Bấm để kiểm tra bộ giải.`)
       : local
       ? `Cherry giải bằng máy này (${localSolverOrigin()}). Bấm để chuyển về Máy chủ.`
-      : "Cherry giải trên máy chủ. Bấm để chuyển sang Máy này (cần cài CherrySetup.exe một lần).";
+      : "Cherry giải trên máy chủ. Bấm để chuyển sang Máy này (cần mở Cherry.exe một lần).";
     btn.setAttribute("aria-label", btn.title);
   }
 
@@ -1587,7 +1587,7 @@
      tai file va cai"): ban web KHONG dang nhap chi con MOT nut Cherry. Cham nho tren nut = trang
      thai bo giai tren may (xanh/vang). Bam Cherry ma chua co bo giai -> hop huong dan tai
      CherrySetup.exe (/download/CherrySetup.exe cung trang) + tu do moi 3 s, cai xong bao san sang. */
-  const LOCAL_SOLVER_DOWNLOAD_URL_DEFAULT = "/download/CherrySetup.exe";
+  const LOCAL_SOLVER_DOWNLOAD_URL_DEFAULT = "/download/Cherry.exe";
   const LOCAL_SOLVER_SEEN_KEY = "TKB_LOCAL_SOLVER_SEEN_V1";
   const LOCAL_INSTALL_POLL_MS = 3000;
   const LOCAL_INSTALL_POLL_MAX_MS = 15 * 60 * 1000;
@@ -1722,7 +1722,7 @@
       }
       return true;
     }
-    setLocalInstallStatus("Chưa bật được. Máy này chưa cài bộ giải thì bấm Tải về để cài.", false);
+    setLocalInstallStatus("Chưa bật được. Máy này chưa có Cherry.exe thì bấm Tải về rồi mở nó.", false);
     const dl = document.getElementById("tkbLocalSolverDownload");
     if(dl) dl.hidden = false;
     return false;
@@ -1752,14 +1752,14 @@
     modal.setAttribute("aria-modal", "true");
     const card = el("div", "lsi-card");
     const actions = el("div", "lsi-actions");
-    const download = el("a", starting ? "" : "lsi-primary", starting ? "Chưa cài? Tải về" : "Tải về CherrySetup.exe");
+    const download = el("a", starting ? "" : "lsi-primary", starting ? "Chưa có? Tải Cherry.exe" : "Tải về Cherry.exe");
     download.id = "tkbLocalSolverDownload";
     download.href = localSolverDownloadUrl();
-    download.setAttribute("download", "CherrySetup.exe");
+    download.setAttribute("download", "Cherry.exe");
     download.addEventListener("click", () => {
       // Dang cai -> hop "Dang bat..." khong duoc tu doi sang "Thu bat lai" giua chung.
       localInstallStartingUntil = 0;
-      setLocalInstallStatus("Đang chờ cài đặt… Mở file CherrySetup.exe vừa tải → Yes (Windows cảnh báo thì More info → Run anyway). Cài xong trang tự nhận.", false);
+      setLocalInstallStatus("Đang chờ… Mở file Cherry.exe vừa tải (Windows cảnh báo thì More info → Run anyway). Cherry chạy lên là trang tự xếp tiếp.", false);
       startLocalInstallPolling();
     });
     if(starting){
@@ -1770,7 +1770,7 @@
       // 28/10: dau "tung thay" chi la trinh duyet tung thay mot bo giai tra loi (co the da go, hoac
       // ban chay thu) -> KHONG khang dinh may da cai; Tai ve dung dau.
       card.appendChild(el("h3", "", "🍒 Chưa bật được bộ giải Cherry"));
-      card.appendChild(el("p", "", "Máy này chưa cài bộ giải thì bấm Tải về và cài một lần (khoảng 100 MB). Đã cài rồi thì bấm Thử bật lại — Chrome hỏi “Mở …?” thì bấm Mở."));
+      card.appendChild(el("p", "", "Máy này chưa có Cherry.exe thì bấm Tải về rồi mở nó (khoảng 100 MB, một lần). Đã có rồi thì bấm Thử bật lại — Chrome hỏi “Mở …?” thì bấm Mở."));
       actions.appendChild(download);
       const on = el("button", "", "Thử bật lại");
       on.type = "button";
@@ -1778,12 +1778,12 @@
       on.addEventListener("click", () => { turnOnLocalSolverFromDialog(true).catch(() => {}); });
       actions.appendChild(on);
     }else if(windows){
-      card.appendChild(el("h3", "", "🍒 Cài bộ giải Cherry cho máy này"));
-      card.appendChild(el("p", "", "Nút Cherry xếp thời khóa biểu bằng CPU của máy này qua một phần mềm nhỏ chạy ngầm (biểu tượng 🍒 ở khay hệ thống cạnh đồng hồ). Máy này chưa có phần mềm đó."));
+      card.appendChild(el("h3", "", "🍒 Chạy Cherry trên máy này"));
+      card.appendChild(el("p", "", "Nút Cherry xếp thời khóa biểu bằng sức của chính máy này qua Cherry.exe — đã gói sẵn Python, không cần cài Python hay quyền quản trị. Máy này chưa có Cherry.exe."));
       const steps = el("ol");
-      steps.appendChild(el("li", "", "Bấm Tải về (khoảng 100 MB, chỉ một lần)."));
-      steps.appendChild(el("li", "", "Mở file CherrySetup.exe vừa tải → Yes. Windows cảnh báo thì bấm More info → Run anyway."));
-      steps.appendChild(el("li", "", "Đợi khoảng 1 phút — trang này tự nhận bộ giải, không cần tải lại."));
+      steps.appendChild(el("li", "", "Bấm Tải về (khoảng 100 MB, chỉ tải một lần)."));
+      steps.appendChild(el("li", "", "Mở file Cherry.exe vừa tải. Windows cảnh báo thì bấm More info → Run anyway."));
+      steps.appendChild(el("li", "", "Đợi khoảng 1 phút — biểu tượng 🍒 hiện cạnh đồng hồ và trang này tự xếp tiếp."));
       card.appendChild(steps);
       card.appendChild(el("p", "", "Máy này đã cài rồi mà Chrome hỏi “Mở …?” thì bấm Mở — trang tự xếp tiếp."));
       actions.appendChild(download);
