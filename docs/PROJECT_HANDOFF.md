@@ -126,6 +126,13 @@
   Chrome thật (UA Mac giả lập, An Phú, ⏱ 45 s): bấm Cherry → gọi bộ giải trình duyệt 1 lần, không hộp; kết quả 46/336 dòng RB
   không đạt (đều "1 buổi/ngày") so với Cherry 0. Test node toggle 25/25. Đăng prod deploy `6ae1e43575d3eb8c3634455d` (bridge
   `?v=20261028-noserver-v6`). Mục "Mac: … hộp chỉ có cho Windows + ▶" ở trên đã lỗi thời.
+- **Hộp "Không bật được" nói sai "máy từng có bộ giải" (28/10 khuya, chủ dự án: "hình như chưa cài mà")**: máy chủ dự án
+  CHƯA cài (không có `HKCU\Software\Classes\cherry-local`); dấu `TKB_LOCAL_SOLVER_SEEN_V1` do bộ giải THỬ của Claude (thư mục
+  build `cmnb6`, cổng 2211, `allowed_origins.txt` có tkbcherry.netlify.app) trả lời trang thật trong trình duyệt của chủ dự án.
+  Dấu này chỉ chứng minh "từng có bộ giải trả lời" (bản thử, hoặc đã gỡ) → `952925f`: hộp đổi thành "Chưa bật được bộ giải
+  Cherry", **Tải về** là nút chính, "Thử bật lại" thứ hai; hộp "Đang bật…" có thêm "Chưa cài? Tải về" (bấm thì thôi tự đổi
+  sang hộp lỗi). Test toggle 25/25; deploy prod `6ae1e6a68663a235d6c1db97` (`?v=20261028-noserver-v7`). Bài học: chạy bộ giải
+  thử trên máy chủ dự án thì bỏ origin thật khỏi `allowed_origins.txt` (hoặc dùng cổng khác) để không ghi dấu vào trình duyệt.
 - **Deploy (chưa làm, chờ chủ dự án)**: web = `tkb-rust-bridge.js` + dòng `?v=` bridge trong `sapxep.html` (dựng = live + 1 dòng,
   cây làm việc đang có các bump `?v` khác chưa commit); engine = 3 file `tkb_engine_v3` lên VPS (không restart). Gói zip phát cho
   trường riêng. Lưu ý: bản V4 của chủ dự án đang chạy Cherry Local ở cổng 2210 — trùng cổng mặc định của bộ giải mới.
