@@ -19,7 +19,9 @@ import platform
 import shutil
 import subprocess
 import sys
+import time
 import urllib.request
+import uuid
 import zipfile
 from pathlib import Path
 
@@ -156,12 +158,16 @@ UserQuietInstCmd=cmd.exe /c install.cmd
 FILE0="payload.zip"
 FILE1="install.ps1"
 FILE2="install.cmd"
+FILE3="splash.ps1"
+FILE4="build-id.txt"
 [SourceFiles]
 SourceFiles0={src}\\
 [SourceFiles0]
 %FILE0%=
 %FILE1%=
 %FILE2%=
+%FILE3%=
+%FILE4%=
 """
 
 
@@ -177,10 +183,15 @@ def build(out_dir: Path, cache: Path, extra_origins: list[str] | None = None) ->
     files.mkdir(parents=True)
     embed_python(stage, cache)
     copy_app(stage, list(extra_origins or []))
+    # Ma ban dung: mo lai Cherry.exe da cai dung ban nay thi install.ps1 khong giai nen lai.
+    build_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
+    (stage / "app" / "build-id.txt").write_text(build_id + "\n", encoding="ascii")
+    (files / "build-id.txt").write_text(build_id + "\n", encoding="ascii")
     print("Nén payload.zip…")
     make_payload(stage, files / "payload.zip")
     write_windows_text(HERE / "installer" / "install.ps1", files / "install.ps1", bom=True)
     write_windows_text(HERE / "installer" / "install.cmd", files / "install.cmd", bom=False)
+    write_windows_text(HERE / "installer" / "splash.ps1", files / "splash.ps1", bom=True)
     target = out_dir / "Cherry.exe"
     if target.exists():
         target.unlink()

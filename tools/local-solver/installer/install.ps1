@@ -15,6 +15,22 @@ $log = Join-Path $env:TEMP "CherryMayNay-install.log"
 
 function Write-Log($msg) { Add-Content -Path $log -Value ("{0} {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $msg) -Encoding UTF8 }
 
+function Test-CherryHealth {
+    try {
+        $r = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$port/api/health" -TimeoutSec 2
+        return ($r.StatusCode -eq 200)
+    } catch { return $false }
+}
+
+# Mở lại Cherry.exe đúng bản đã cài -> không giải nén lại ~300 MB (17 s), chỉ bật bộ giải.
+$buildNew = ""
+$bn = Join-Path $here "build-id.txt"
+if (Test-Path $bn) { $buildNew = (Get-Content $bn -Raw).Trim() }
+$buildOld = ""
+$bo = Join-Path $appDir "build-id.txt"
+if (Test-Path $bo) { $buildOld = (Get-Content $bo -Raw).Trim() }
+$sameBuild = ($buildNew -ne "") -and ($buildNew -eq $buildOld) -and (Test-Path $pyw) -and (Test-Path $app)
+
 function Stop-CherryMayNay {
     Get-CimInstance Win32_Process -Filter "Name='pythonw.exe' OR Name='python.exe'" |
         Where-Object { $_.CommandLine -and $_.CommandLine -like "*\CherryMayNay\*" } |
@@ -22,14 +38,29 @@ function Stop-CherryMayNay {
 }
 
 try {
-    Write-Log "bat dau cai vao $dest"
-    Stop-CherryMayNay
-    Start-Sleep -Milliseconds 800
-    if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
-    New-Item -ItemType Directory -Force -Path $dest | Out-Null
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    [System.IO.Compression.ZipFile]::ExtractToDirectory((Join-Path $here "payload.zip"), $dest)
-    Write-Log "da giai nen"
+    # 28/10 (chủ dự án: "chạy Cherry.exe nó ko khởi động phần mềm lên ngay"): cửa sổ
+    # "Đang khởi động Cherry…" hiện NGAY (tiến trình riêng, tự dò bộ giải, lên thì tự đóng).
+    try {
+        $splashSrc = Join-Path $here "splash.ps1"
+        if (Test-Path $splashSrc) {
+            $splash = Join-Path $env:TEMP "CherrySplash.ps1"
+            Copy-Item $splashSrc $splash -Force
+            Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File `"$splash`" -Port $port" -WindowStyle Hidden
+        }
+    } catch {}
+
+    if ($sameBuild) {
+        Write-Log "da co dung ban $buildNew - khong giai nen lai"
+    } else {
+        Write-Log "bat dau cai vao $dest (ban $buildNew)"
+        Stop-CherryMayNay
+        Start-Sleep -Milliseconds 800
+        if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+        New-Item -ItemType Directory -Force -Path $dest | Out-Null
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [System.IO.Compression.ZipFile]::ExtractToDirectory((Join-Path $here "payload.zip"), $dest)
+        Write-Log "da giai nen"
+    }
 
     # Tự bật cùng Windows + lối tắt Start Menu: pythonw.exe (không cửa sổ), biểu tượng 🍒 ở khay.
     $icon = Join-Path $appDir "cherry.ico"
@@ -72,6 +103,10 @@ try {
     New-ItemProperty -Path $un -Name "NoRepair" -Value 1 -PropertyType DWord -Force | Out-Null
     Write-Log "da dang ky startup + cherry-local:// + muc go cai dat"
 
+    if ($sameBuild -and (Test-CherryHealth)) {
+        Write-Log "bo giai dang chay"
+        exit 0
+    }
     # Lần đầu: biểu tượng 🍒 hiện ở khay kèm thông báo; trang TKB đang mở tự nhận ra bộ giải.
     Start-Process -FilePath $pyw -ArgumentList "`"$app`" --background --tray --first-run" -WorkingDirectory $appDir -WindowStyle Hidden
     $ready = $false

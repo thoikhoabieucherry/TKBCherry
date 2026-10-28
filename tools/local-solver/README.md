@@ -5,7 +5,7 @@ Dữ liệu trường vẫn lưu trên tkbcherry.com; máy này chỉ giải r�
 
 ## Cài một lần (khuyên dùng)
 
-1. Nhấp đúp `Cherry.exe` (đã gói Python portable + OR-Tools, không cần cài Python, không cần quyền admin) → đợi khoảng 1 phút, biểu tượng 🍒 hiện ở khay. Không có câu hỏi Yes/No hay hộp "đã cài xong".
+1. Nhấp đúp `Cherry.exe` (đã gói Python portable + OR-Tools, không cần cài Python, không cần quyền admin) → cửa sổ nhỏ "Đang khởi động Cherry…" hiện ngay (`installer/splash.ps1`), lên xong báo "Cherry đã chạy" rồi tự đóng; lần đầu / bản mới mất ~20 s giải nén, mở lại đúng bản đã cài (`build-id.txt`) thì chỉ bật bộ giải. Không có câu hỏi Yes/No.
    Không cần cài Python, không cần quyền admin. Windows SmartScreen có thể cảnh báo vì file
    chưa ký số: bấm **More info → Run anyway**.
 2. Biểu tượng 🍒 hiện ở khay hệ thống (cạnh đồng hồ) kèm thông báo "Đã cài xong".

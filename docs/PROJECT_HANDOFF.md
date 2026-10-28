@@ -163,6 +163,15 @@
   đầu 76 s → 26 s, kết quả [0,0,300,28] → [0,0,285,26]. Lịch Cherry hợp lệ bấm lại: bước tiết chung vẫn chạy (~2 s), khung
   số ở giây 4 (281/14 → 278/7). Test engine v3 173/173. Bộ cài dựng lại `%LOCALAPPDATA%\Temp\cmnb9`, đăng prod
   `6ae2110ce865cec3e13c4ae2`; Desktop\Cherry.exe == bản trên trang; máy đã cài cần chạy lại Cherry.exe để cập nhật engine.
+- **Cherry.exe hiện cửa sổ ngay + mở lại không cài lại (28/10 đêm, chủ dự án: "chạy Cherry.exe nó ko khởi động phần mềm lên
+  ngay")**: log cài 22:20:27 → giải nén xong 22:20:44 → bộ giải sẵn sàng 22:20:46, nhưng suốt ~20 s không có gì hiện ra (🍒 bị
+  Windows 11 giấu sau ^). `installer/splash.ps1` (WinForms, tiến trình riêng, dò `/api/health` bằng HttpClient bất đồng bộ):
+  "Đang khởi động Cherry…" → "Cherry đã chạy… bấm dấu ^ nếu không thấy" tự đóng sau 8 s; quá 150 s báo lỗi + đường log.
+  `build-id.txt` (dựng bộ cài ghi vào gói + `app\`): mở lại đúng bản đã cài → không xoá/giải nén ~300 MB, bộ giải đang chạy thì
+  thoát ngay, chưa chạy thì bật. Đã thử: splash với bộ giải đang chạy tự đóng sau 9,7 s; cổng trống → báo lỗi, chờ Đóng; khối
+  so `build-id` của install.ps1 đóng gói chạy riêng trên thư mục tạm: cùng bản True, khác bản / bản cũ không có id / thiếu
+  python False. KHÔNG chạy được trọn bộ cài (auto mode chặn Startup/registry). Bộ cài `%LOCALAPPDATA%\Temp\cmnb10`
+  (build-id 20261028-222625-81806d46), deploy prod `6ae214d3888cf53a5161d685`, Desktop\Cherry.exe == bản trên trang.
 - **Deploy (chưa làm, chờ chủ dự án)**: web = `tkb-rust-bridge.js` + dòng `?v=` bridge trong `sapxep.html` (dựng = live + 1 dòng,
   cây làm việc đang có các bump `?v` khác chưa commit); engine = 3 file `tkb_engine_v3` lên VPS (không restart). Gói zip phát cho
   trường riêng. Lưu ý: bản V4 của chủ dự án đang chạy Cherry Local ở cổng 2210 — trùng cổng mặc định của bộ giải mới.
