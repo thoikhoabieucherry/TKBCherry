@@ -103,6 +103,19 @@
   cú bấm Cherry tự chạy Cherry khi bộ giải lên muộn (`localInstallRunCherryUntil`, 2 phút). Test node toggle 18/18. Chrome thật
   trên bản dựng (devserve + bộ giải cmnb6 bật tay sau 2 s): trang tự chờ rồi xếp An Phú 869/869, 0 buổi 1 tiết, không hiện hộp.
   Đăng prod deploy `6ae1d61393d30c6eb1eb8ec8` (bridge `?v=20261028-noserver-v4`); bộ cài không đổi.
+- **Chấm cam thì hỏi ngay, bỏ ▶ trên máy Windows (28/10 tối, chủ dự án: "xếp nhanh trên trình duyệt chỉ cho điện thoại, khỏi
+  đưa option đó; sao xếp rồi mới hỏi? trạng thái cam là hỏi liền chứ")**: `b30e388` — listener capture ở `document` (chạy trước
+  onclick của nút Cherry ở mọi trình duyệt, sống qua việc vẽ lại thanh công cụ): biết bộ giải đang tắt → gọi `cherry-local://`
+  trong cú bấm và KHÔNG vào lượt xếp, hộp hiện ngay (đo Chrome: 0 ms) — máy từng có bộ giải: "Đang bật bộ giải Cherry…" (chỉ
+  nút Đóng; bộ giải lên thì tự xếp; 20 s không lên → "Thử bật lại / Tải bộ cài lại"); chưa từng: hộp cài + dòng "đã cài mà
+  Chrome hỏi Mở… thì bấm Mở". Chưa dò xong (vừa mở trang) thì đợi lần dò ≤ 1,5 s. Đóng = huỷ tự xếp. Dò mỗi 1 s trong 20 s đầu;
+  dò lại chấm khi tab lấy lại focus. Nút "Xếp nhanh trên trình duyệt (▶)" chỉ còn ở máy không cài được bộ giải (điện thoại,
+  Mac). Test node toggle 24/24. Chrome thật (bản dựng): bấm → hộp "Đang bật…", bật bộ giải tay 3 s sau → 2 s sau trang tự xếp,
+  An Phú 869/869, 0 buổi 1 tiết. `run_tests.py` ở worktree báo 9 "mới hỏng" nhưng KHÔNG do thay đổi này: 8 test JS cắt hàm
+  `phanmon.js` theo `\n}\n` hỏng vì checkout CRLF (cây chính cũng hỏng y vậy), `test_stop_check_stops_quickly` lệch giờ lúc máy
+  bận (chạy riêng 2/2 pass). Đăng prod deploy `6ae1deeee2c5c4a498309927` (bridge `?v=20261028-noserver-v5`).
+  Mac: chưa có bộ giải (bộ cài là Python nhúng Windows + IExpress) → hộp "chỉ có cho Windows" + ▶; muốn có cần gói riêng cho
+  macOS (Python + ortools bản mac, LaunchAgent, Gatekeeper chặn app chưa ký/notarize) và một máy Mac để thử.
 - **Deploy (chưa làm, chờ chủ dự án)**: web = `tkb-rust-bridge.js` + dòng `?v=` bridge trong `sapxep.html` (dựng = live + 1 dòng,
   cây làm việc đang có các bump `?v` khác chưa commit); engine = 3 file `tkb_engine_v3` lên VPS (không restart). Gói zip phát cho
   trường riêng. Lưu ý: bản V4 của chủ dự án đang chạy Cherry Local ở cổng 2210 — trùng cổng mặc định của bộ giải mới.
