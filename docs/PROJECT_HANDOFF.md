@@ -116,6 +116,16 @@
   bận (chạy riêng 2/2 pass). Đăng prod deploy `6ae1deeee2c5c4a498309927` (bridge `?v=20261028-noserver-v5`).
   Mac: chưa có bộ giải (bộ cài là Python nhúng Windows + IExpress) → hộp "chỉ có cho Windows" + ▶; muốn có cần gói riêng cho
   macOS (Python + ortools bản mac, LaunchAgent, Gatekeeper chặn app chưa ký/notarize) và một máy Mac để thử.
+- **Mac + điện thoại: Cherry xếp ngay trên trình duyệt (28/10 khuya, chủ dự án: "bỏ luôn cho máy Mac, Mac và điện thoại sẽ
+  dùng web assem")**: `e54682d` — máy không cài được bộ giải (không phải Windows desktop) bấm Cherry → chạy thẳng bộ giải
+  trình duyệt của nút ▶ (`sapXepTuDongAll` → `executeDirectFastSchedule`, FET **JavaScript** `tkb-fet-engine.js`), không hộp, không
+  nút lựa chọn; không dò 127.0.0.1 (tránh Chrome hỏi quyền mạng cục bộ), ẩn chấm. Nút "Xếp nhanh trên trình duyệt" bỏ khỏi mọi
+  hộp; hộp "unsupported" chỉ còn khi bấm Tối ưu (cần bộ giải đầy đủ). LƯU Ý: hiện KHÔNG có bộ giải WebAssembly — Agent WASM
+  (Rust hint solver + CP-SAT/HiGHS WASM, model builder Python vẫn ở VPS) đã gỡ 10–13/08 (`eb4c10f`); runtime OR-Tools Emscripten
+  chưa từng vào git; ghi chú cũ: xếp mới bằng Rust-WASM kẹt ~1530/1566, Pyodide không chạy được OR-Tools, iPhone WebKit giết tab.
+  Chrome thật (UA Mac giả lập, An Phú, ⏱ 45 s): bấm Cherry → gọi bộ giải trình duyệt 1 lần, không hộp; kết quả 46/336 dòng RB
+  không đạt (đều "1 buổi/ngày") so với Cherry 0. Test node toggle 25/25. Đăng prod deploy `6ae1e43575d3eb8c3634455d` (bridge
+  `?v=20261028-noserver-v6`). Mục "Mac: … hộp chỉ có cho Windows + ▶" ở trên đã lỗi thời.
 - **Deploy (chưa làm, chờ chủ dự án)**: web = `tkb-rust-bridge.js` + dòng `?v=` bridge trong `sapxep.html` (dựng = live + 1 dòng,
   cây làm việc đang có các bump `?v` khác chưa commit); engine = 3 file `tkb_engine_v3` lên VPS (không restart). Gói zip phát cho
   trường riêng. Lưu ý: bản V4 của chủ dự án đang chạy Cherry Local ở cổng 2210 — trùng cổng mặc định của bộ giải mới.
