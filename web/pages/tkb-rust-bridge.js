@@ -1442,8 +1442,10 @@
 
   function noSolverBackendMessage(){
     if(!pageHasSolverServer()){
-      return `Máy này chưa có bộ giải Cherry (${localSolverOrigin()}) — tải và cài CherrySetup.exe một lần theo hộp hướng dẫn, `
-        + `hoặc dùng nút ▶ để xếp nhanh ngay trên trình duyệt.`;
+      // 28/10 (chu du an: "xep nhanh tren trinh duyet chi cho dien thoai"): may Windows chi moi cai.
+      return isWindowsDesktopNavigator()
+        ? `Máy này chưa có bộ giải Cherry (${localSolverOrigin()}) — tải và cài CherrySetup.exe một lần theo hộp hướng dẫn.`
+        : `Bộ giải Cherry hiện mới có cho máy tính Windows — trên máy này hãy dùng nút ▶ để xếp nhanh ngay trên trình duyệt.`;
     }
     return solverTarget() === "local"
       ? `Chưa thấy bộ giải trên máy này (${localSolverOrigin()}). Cài CherrySetup.exe một lần (Chrome hỏi "Mở Cherry máy này?" hoặc quyền truy cập mạng cục bộ thì chọn Cho phép), hoặc gạt về "Máy chủ".`
@@ -1590,6 +1592,7 @@
   const LOCAL_INSTALL_POLL_MAX_MS = 15 * 60 * 1000;
   let localInstallPollTimer = 0;
   let localInstallRunCherryUntil = 0;
+  let localInstallStartingUntil = 0;
 
   function localSolverDownloadUrl(){
     return String(window.__TKB_LOCAL_SOLVER_DOWNLOAD_URL || LOCAL_SOLVER_DOWNLOAD_URL_DEFAULT);
@@ -1644,6 +1647,8 @@
   function startLocalInstallPolling(){
     if(localInstallPollTimer || !isWindowsDesktopNavigator()) return;
     const startedAt = Date.now();
+    // 20 s dau (vua goi mo bo giai / vua cai xong) do moi giay, sau do 3 s.
+    const nextDelay = () => (Date.now() - startedAt < 20000 ? 1000 : LOCAL_INSTALL_POLL_MS);
     const tick = async () => {
       localInstallPollTimer = 0;
       const ok = await probeRustApiBase(localSolverOrigin(), 1500).catch(() => "");
@@ -1665,11 +1670,20 @@
         window.setTimeout(closeLocalInstallDialog, 2500);
         return;
       }
+      if(localInstallStartingUntil && Date.now() >= localInstallStartingUntil){
+        // Hop "Dang bat..." het cho ma bo giai khong len -> doi sang hop Thu bat lai / Tai lai.
+        localInstallStartingUntil = 0;
+        const modal = document.getElementById("tkbLocalSolverInstall");
+        if(modal && !modal.hidden){
+          showLocalSolverDialog({runCherryWhenReady:true});
+          return;
+        }
+      }
       if(Date.now() - startedAt < LOCAL_INSTALL_POLL_MAX_MS){
-        localInstallPollTimer = window.setTimeout(tick, LOCAL_INSTALL_POLL_MS);
+        localInstallPollTimer = window.setTimeout(tick, nextDelay());
       }
     };
-    localInstallPollTimer = window.setTimeout(tick, LOCAL_INSTALL_POLL_MS);
+    localInstallPollTimer = window.setTimeout(tick, nextDelay());
   }
 
   // 27/10 (chu du an: "neu ko co cherry thi keu cai, neu co san tren may thi yeu cau bat; thay no
@@ -1682,6 +1696,12 @@
 
   function localSolverSeenBefore(){
     try{ return Boolean(window.localStorage?.getItem(LOCAL_SOLVER_SEEN_KEY)); }catch(_){ return false; }
+  }
+
+  // May tung co bo giai cho lau hon (lan dau Chrome hoi "Mo...?").
+  function localSolverStartWaitMs(seen){
+    const custom = Number(window.__TKB_LOCAL_SOLVER_START_WAIT_MS);
+    return custom > 0 ? custom : (seen ? 20000 : 6000);
   }
 
   async function turnOnLocalSolverFromDialog(runAfter){
@@ -1719,9 +1739,11 @@
     };
     const windows = isWindowsDesktopNavigator();
     const installedBefore = windows && localSolverSeenBefore();
+    const starting = installedBefore && options?.starting === true;
+    localInstallStartingUntil = starting ? Date.now() + localSolverStartWaitMs(true) : 0;
     const modal = el("div");
     modal.id = "tkbLocalSolverInstall";
-    modal.dataset.mode = installedBefore ? "failed" : (windows ? "missing" : "unsupported");
+    modal.dataset.mode = starting ? "starting" : (installedBefore ? "failed" : (windows ? "missing" : "unsupported"));
     modal.setAttribute("role", "dialog");
     modal.setAttribute("aria-modal", "true");
     const card = el("div", "lsi-card");
@@ -1734,7 +1756,10 @@
       setLocalInstallStatus("Đang chờ cài đặt… (mở file CherrySetup.exe vừa tải)", false);
       startLocalInstallPolling();
     });
-    if(installedBefore){
+    if(starting){
+      card.appendChild(el("h3", "", "🍒 Đang bật bộ giải Cherry…"));
+      card.appendChild(el("p", "", "Bộ giải Cherry trên máy này đang tắt nên trang đang tự mở nó. Chrome hỏi “Mở …?” thì bấm Mở (tick “Luôn cho phép” để lần sau khỏi hỏi). Bộ giải lên là tự xếp, không cần bấm lại."));
+    }else if(installedBefore){
       card.appendChild(el("h3", "", "🍒 Không bật được bộ giải Cherry"));
       card.appendChild(el("p", "", "Máy này từng có bộ giải Cherry nhưng lần này nó không chạy lên — có thể đã bị gỡ, hoặc bạn đã bấm Hủy khi Chrome hỏi “Mở …?”."));
       const on = el("button", "lsi-primary", "Thử bật lại");
@@ -1751,21 +1776,32 @@
       steps.appendChild(el("li", "", "Mở file CherrySetup.exe vừa tải → Yes. Windows cảnh báo thì bấm More info → Run anyway."));
       steps.appendChild(el("li", "", "Đợi khoảng 1 phút — trang này tự nhận bộ giải, không cần tải lại."));
       card.appendChild(steps);
+      card.appendChild(el("p", "", "Máy này đã cài rồi mà Chrome hỏi “Mở …?” thì bấm Mở — trang tự xếp tiếp."));
       actions.appendChild(download);
     }else{
       card.appendChild(el("h3", "", "🍒 Bộ giải Cherry"));
       card.appendChild(el("p", "", "Bộ giải Cherry chỉ cài được trên máy tính Windows. Trên máy này hãy dùng nút ▶ để xếp nhanh ngay trên trình duyệt."));
     }
-    const browserBtn = el("button", "", "Xếp nhanh trên trình duyệt (▶)");
-    browserBtn.type = "button";
-    browserBtn.addEventListener("click", () => {
-      closeLocalInstallDialog();
-      try{ document.getElementById("btnAutoSort")?.click(); }catch(_){ }
-    });
-    actions.appendChild(browserBtn);
+    if(!windows){
+      // Xep nhanh tren trinh duyet chi danh cho may khong cai duoc bo giai (dien thoai, Mac).
+      const browserBtn = el("button", "", "Xếp nhanh trên trình duyệt (▶)");
+      browserBtn.type = "button";
+      browserBtn.id = "tkbLocalSolverBrowser";
+      browserBtn.addEventListener("click", () => {
+        closeLocalInstallDialog();
+        try{ document.getElementById("btnAutoSort")?.click(); }catch(_){ }
+      });
+      actions.appendChild(browserBtn);
+    }
     const closeBtn = el("button", "", "Đóng");
     closeBtn.type = "button";
-    closeBtn.addEventListener("click", closeLocalInstallDialog);
+    closeBtn.id = "tkbLocalSolverClose";
+    closeBtn.addEventListener("click", () => {
+      // Dong = thoi khong xep: bo giai len muon cung khong tu chay Cherry.
+      localInstallRunCherryUntil = 0;
+      localInstallStartingUntil = 0;
+      closeLocalInstallDialog();
+    });
     actions.appendChild(closeBtn);
     card.appendChild(actions);
     const status = el("p", "lsi-status");
@@ -1774,26 +1810,53 @@
     modal.appendChild(card);
     document.body.appendChild(modal);
     modal.hidden = false;
+    if(starting) setLocalInstallStatus("Đang chờ bộ giải lên…", false);
     // Bo giai len muon (Chrome hoi "Mo...?" / vua cai xong) -> hop tu nhan va xep tiep.
     startLocalInstallPolling();
     return modal;
   }
 
   // 28/10 (chu du an: "khi bam cherry he thong tu check tien trinh cherry chay chua, chua thi mo
-  // ung dung theo duong dan mac dinh, khong co moi keu cai"): goi mo NGAY trong cu bam Cherry
-  // (Chrome chi cho mo ung dung ngoai khi co cu chi) neu chua biet bo giai dang chay.
-  function launchLocalSolverOnGesture(){
-    if(pageHasSolverServer() || window.__TKB_LOCAL_SOLVER_ONLINE === true || !isWindowsDesktopNavigator()) return;
-    triggerLocalSolverLaunch();
+  // ung dung theo duong dan mac dinh, khong co moi keu cai"; roi "trang thai cam la hoi lien chu,
+  // sao xep roi moi hoi"): chay o pha capture TRUOC onclick cua nut Cherry. Bo giai chua chay ->
+  // goi mo NGAY trong cu bam (Chrome chi cho mo ung dung ngoai khi co cu chi) va KHONG vao luot
+  // xep: hien hop luon ("Dang bat..." tu xep khi bo giai len, hoac hop cai). Chua do xong (vua mo
+  // trang) thi cho lan do <= 1,5 s roi moi quyet.
+  function launchLocalSolverOnGesture(event){
+    if(pageHasSolverServer() || window.__TKB_LOCAL_SOLVER_ONLINE === true) return;
+    if(window.__TKB_SOLVE_UI_BUSY === true || window.__TKB_RUST_SOLVER_RUNNING === true) return;
+    const windows = isWindowsDesktopNavigator();
+    if(windows) triggerLocalSolverLaunch();
+    try{
+      event?.preventDefault?.();
+      event?.stopImmediatePropagation?.();
+      event?.stopPropagation?.();
+    }catch(_){ }
+    const ask = () => showLocalSolverDialog({runCherryWhenReady:windows, starting:windows && localSolverSeenBefore()});
+    if(window.__TKB_LOCAL_SOLVER_ONLINE === false){
+      ask();
+      return;
+    }
+    probeRustApiBase(localSolverOrigin(), 1500).catch(() => "").then(ok => {
+      window.__TKB_LOCAL_SOLVER_ONLINE = Boolean(ok);
+      markCherryLocalStatus(Boolean(ok));
+      if(!ok){
+        ask();
+        return;
+      }
+      rememberLocalSolverSeen();
+      if(typeof window.tkbRunEngine === "function"){
+        try{ window.tkbRunEngine("cherry", document.getElementById("btnEngineCherry")); }catch(_){ }
+      }
+    });
   }
 
-  // Cho bo giai vua goi mo len: may tung co bo giai cho lau hon (lan dau Chrome hoi "Mo...?").
+  // Cho bo giai vua goi mo len (duong du phong khi cham xanh ma bo giai vua tat).
   async function awaitLocalSolverStart(){
     if(pageHasSolverServer() || !isWindowsDesktopNavigator()) return "";
     const seen = localSolverSeenBefore();
     if(Date.now() - localSolverLaunchAt > 10000) triggerLocalSolverLaunch();
-    const custom = Number(window.__TKB_LOCAL_SOLVER_START_WAIT_MS);
-    const waitMs = custom > 0 ? custom : (seen ? 20000 : 6000);
+    const waitMs = localSolverStartWaitMs(seen);
     setStatus(seen
       ? "Đang bật bộ giải Cherry trên máy này… (Chrome hỏi “Mở …?” thì bấm Mở và tick Luôn cho phép)"
       : "Đang tìm bộ giải Cherry trên máy này…", "info");
@@ -1820,9 +1883,22 @@
       // Ban khong dang nhap: chi mot nut Cherry + cham trang thai (do 1 lan, khong danh thuc).
       ensureSolverTargetCss();
       markCherryLocalStatus(undefined);
-      if(!cherry.dataset.localLaunchHooked){
-        cherry.dataset.localLaunchHooked = "1";
-        cherry.addEventListener("click", launchLocalSolverOnGesture, true);
+      if(!document.__tkbCherryLocalHooked && typeof document.addEventListener === "function"){
+        document.__tkbCherryLocalHooked = true;
+        document.addEventListener("click", event => {
+          const target = event && event.target;
+          const btn = target && typeof target.closest === "function" ? target.closest("#btnEngineCherry") : null;
+          if(btn) launchLocalSolverOnGesture(event);
+        }, true);
+        // Quay lai tab (vua cai xong / vua Thoat o khay) -> do lai de cham dung mau.
+        window.addEventListener("focus", () => {
+          if(window.__TKB_RUST_SOLVER_RUNNING === true) return;
+          probeRustApiBase(localSolverOrigin(), 1500).then(ok => {
+            window.__TKB_LOCAL_SOLVER_ONLINE = Boolean(ok);
+            if(ok) rememberLocalSolverSeen();
+            markCherryLocalStatus(Boolean(ok));
+          }).catch(() => {});
+        });
       }
       probeRustApiBase(localSolverOrigin(), 1500).then(ok => {
         window.__TKB_LOCAL_SOLVER_ONLINE = Boolean(ok);
