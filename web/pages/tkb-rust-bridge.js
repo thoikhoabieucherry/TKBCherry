@@ -1455,18 +1455,28 @@
      tu thao tac cua nguoi dung (gat nut, bam Cherry): Chrome chan mo ung dung ngoai khi
      khong co cu chi, va vong kiem tra banner 30 s khong duoc bat hop thoai lien tuc. */
   let localSolverWakePromise = null;
+  let localSolverLaunchAt = 0;
+
+  // Mo bo giai DA CAI theo duong dan bo cai dang ky cho giao thuc cherry-local://
+  // (%LOCALAPPDATA%\CherryMayNay\...\pythonw.exe). Trang web khong duoc chay file theo duong
+  // dan hay xem tien trinh — day la cach duy nhat; may chua cai thi Chrome bo qua im lang.
+  function triggerLocalSolverLaunch(){
+    localSolverLaunchAt = Date.now();
+    try{
+      const frame = document.createElement("iframe");
+      frame.hidden = true;
+      frame.setAttribute("aria-hidden", "true");
+      if(frame.style) frame.style.display = "none";
+      frame.src = "cherry-local://start";
+      (document.body || document.documentElement).appendChild(frame);
+      window.setTimeout(() => { try{ frame.remove(); }catch(_){ } }, 15000);
+    }catch(_){ }
+  }
+
   async function wakeLocalSolver(){
     if(localSolverWakePromise) return localSolverWakePromise;
     localSolverWakePromise = (async () => {
-      try{
-        const frame = document.createElement("iframe");
-        frame.hidden = true;
-        frame.setAttribute("aria-hidden", "true");
-        if(frame.style) frame.style.display = "none";
-        frame.src = "cherry-local://start";
-        (document.body || document.documentElement).appendChild(frame);
-        window.setTimeout(() => { try{ frame.remove(); }catch(_){ } }, 15000);
-      }catch(_){ }
+      triggerLocalSolverLaunch();
       const deadline = Date.now() + 12000;
       while(Date.now() < deadline){
         await sleep(400);
@@ -1579,6 +1589,7 @@
   const LOCAL_INSTALL_POLL_MS = 3000;
   const LOCAL_INSTALL_POLL_MAX_MS = 15 * 60 * 1000;
   let localInstallPollTimer = 0;
+  let localInstallRunCherryUntil = 0;
 
   function localSolverDownloadUrl(){
     return String(window.__TKB_LOCAL_SOLVER_DOWNLOAD_URL || LOCAL_SOLVER_DOWNLOAD_URL_DEFAULT);
@@ -1640,6 +1651,15 @@
         window.__TKB_LOCAL_SOLVER_ONLINE = true;
         rememberLocalSolverSeen();
         markCherryLocalStatus(true);
+        if(Date.now() < localInstallRunCherryUntil && typeof window.tkbRunEngine === "function"){
+          // Nguoi dung vua bam Cherry ma bo giai chua len (Chrome hoi "Mo...?", vua cai xong):
+          // bo giai da len -> xep luon, khong bat bam lai.
+          localInstallRunCherryUntil = 0;
+          setLocalInstallStatus("Bộ giải đã chạy — đang xếp…", true);
+          closeLocalInstallDialog();
+          try{ window.tkbRunEngine("cherry", document.getElementById("btnEngineCherry")); }catch(_){ }
+          return;
+        }
         setLocalInstallStatus("Đã sẵn sàng! Bấm 🍒 Cherry để xếp thời khóa biểu.", true);
         setStatus("Bộ giải Cherry trên máy này đã sẵn sàng — bấm 🍒 Cherry để xếp.", "success");
         window.setTimeout(closeLocalInstallDialog, 2500);
@@ -1684,8 +1704,9 @@
     return false;
   }
 
-  function showLocalSolverDialog(){
+  function showLocalSolverDialog(options){
     if(typeof document === "undefined" || !document.body) return null;
+    if(options?.runCherryWhenReady) localInstallRunCherryUntil = Date.now() + 2 * 60 * 1000;
     ensureSolverTargetCss();
     markCherryLocalStatus(false);
     const old = document.getElementById("tkbLocalSolverInstall");
@@ -1700,7 +1721,7 @@
     const installedBefore = windows && localSolverSeenBefore();
     const modal = el("div");
     modal.id = "tkbLocalSolverInstall";
-    modal.dataset.mode = installedBefore ? "off" : (windows ? "missing" : "unsupported");
+    modal.dataset.mode = installedBefore ? "failed" : (windows ? "missing" : "unsupported");
     modal.setAttribute("role", "dialog");
     modal.setAttribute("aria-modal", "true");
     const card = el("div", "lsi-card");
@@ -1714,9 +1735,9 @@
       startLocalInstallPolling();
     });
     if(installedBefore){
-      card.appendChild(el("h3", "", "🍒 Bộ giải Cherry trên máy này đang tắt"));
-      card.appendChild(el("p", "", "Máy này đã cài bộ giải Cherry nhưng nó đang không chạy (có thể đã bấm Thoát ở biểu tượng 🍒 cạnh đồng hồ)."));
-      const on = el("button", "lsi-primary", "Bật bộ giải và xếp");
+      card.appendChild(el("h3", "", "🍒 Không bật được bộ giải Cherry"));
+      card.appendChild(el("p", "", "Máy này từng có bộ giải Cherry nhưng lần này nó không chạy lên — có thể đã bị gỡ, hoặc bạn đã bấm Hủy khi Chrome hỏi “Mở …?”."));
+      const on = el("button", "lsi-primary", "Thử bật lại");
       on.type = "button";
       on.id = "tkbLocalSolverTurnOn";
       on.addEventListener("click", () => { turnOnLocalSolverFromDialog(true).catch(() => {}); });
@@ -1731,11 +1752,6 @@
       steps.appendChild(el("li", "", "Đợi khoảng 1 phút — trang này tự nhận bộ giải, không cần tải lại."));
       card.appendChild(steps);
       actions.appendChild(download);
-      const already = el("button", "", "Đã cài rồi? Bật bộ giải");
-      already.type = "button";
-      already.id = "tkbLocalSolverTurnOn";
-      already.addEventListener("click", () => { turnOnLocalSolverFromDialog(true).catch(() => {}); });
-      actions.appendChild(already);
     }else{
       card.appendChild(el("h3", "", "🍒 Bộ giải Cherry"));
       card.appendChild(el("p", "", "Bộ giải Cherry chỉ cài được trên máy tính Windows. Trên máy này hãy dùng nút ▶ để xếp nhanh ngay trên trình duyệt."));
@@ -1758,7 +1774,42 @@
     modal.appendChild(card);
     document.body.appendChild(modal);
     modal.hidden = false;
+    // Bo giai len muon (Chrome hoi "Mo...?" / vua cai xong) -> hop tu nhan va xep tiep.
+    startLocalInstallPolling();
     return modal;
+  }
+
+  // 28/10 (chu du an: "khi bam cherry he thong tu check tien trinh cherry chay chua, chua thi mo
+  // ung dung theo duong dan mac dinh, khong co moi keu cai"): goi mo NGAY trong cu bam Cherry
+  // (Chrome chi cho mo ung dung ngoai khi co cu chi) neu chua biet bo giai dang chay.
+  function launchLocalSolverOnGesture(){
+    if(pageHasSolverServer() || window.__TKB_LOCAL_SOLVER_ONLINE === true || !isWindowsDesktopNavigator()) return;
+    triggerLocalSolverLaunch();
+  }
+
+  // Cho bo giai vua goi mo len: may tung co bo giai cho lau hon (lan dau Chrome hoi "Mo...?").
+  async function awaitLocalSolverStart(){
+    if(pageHasSolverServer() || !isWindowsDesktopNavigator()) return "";
+    const seen = localSolverSeenBefore();
+    if(Date.now() - localSolverLaunchAt > 10000) triggerLocalSolverLaunch();
+    const custom = Number(window.__TKB_LOCAL_SOLVER_START_WAIT_MS);
+    const waitMs = custom > 0 ? custom : (seen ? 20000 : 6000);
+    setStatus(seen
+      ? "Đang bật bộ giải Cherry trên máy này… (Chrome hỏi “Mở …?” thì bấm Mở và tick Luôn cho phép)"
+      : "Đang tìm bộ giải Cherry trên máy này…", "info");
+    const deadline = Date.now() + waitMs;
+    while(Date.now() < deadline){
+      const ok = await probeRustApiBase(localSolverOrigin(), 1500).catch(() => "");
+      if(ok){
+        window.__TKB_LOCAL_SOLVER_ONLINE = true;
+        rememberLocalSolverSeen();
+        markCherryLocalStatus(true);
+        setStatus("Đã bật bộ giải Cherry — đang xếp…", "info");
+        return ok;
+      }
+      await sleep(500);
+    }
+    return "";
   }
 
   function initSolverTargetUi(){
@@ -1769,6 +1820,10 @@
       // Ban khong dang nhap: chi mot nut Cherry + cham trang thai (do 1 lan, khong danh thuc).
       ensureSolverTargetCss();
       markCherryLocalStatus(undefined);
+      if(!cherry.dataset.localLaunchHooked){
+        cherry.dataset.localLaunchHooked = "1";
+        cherry.addEventListener("click", launchLocalSolverOnGesture, true);
+      }
       probeRustApiBase(localSolverOrigin(), 1500).then(ok => {
         window.__TKB_LOCAL_SOLVER_ONLINE = Boolean(ok);
         if(ok) rememberLocalSolverSeen();
@@ -16906,9 +16961,10 @@
     };
     let response;
     try{
-      const apiBase = await rustApiBase({wakeLocal:pageHasSolverServer()});
+      let apiBase = await rustApiBase({wakeLocal:pageHasSolverServer()});
+      if(!apiBase && !pageHasSolverServer()) apiBase = await awaitLocalSolverStart();
       if(!apiBase){
-        if(!pageHasSolverServer()) showLocalSolverDialog();
+        if(!pageHasSolverServer()) showLocalSolverDialog({runCherryWhenReady:true});
         throw new Error(noSolverBackendMessage());
       }
       if(!pageHasSolverServer()){
@@ -20380,7 +20436,9 @@
         noSolverBackendMessage,
         initSolverTargetUi,
         showLocalSolverDialog,
-        stopLocalInstallPolling
+        stopLocalInstallPolling,
+        launchLocalSolverOnGesture,
+        awaitLocalSolverStart
       };
     }
   }catch(_){}

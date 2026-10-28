@@ -297,7 +297,7 @@ test("bản không đăng nhập trên máy không phải Windows: không mời 
   hooks.stopLocalInstallPolling();
 });
 
-test("bản không đăng nhập: máy từng có bộ giải mà đang tắt -> hộp Bật bộ giải và xếp, bật xong tự chạy Cherry", async () => {
+test("bản không đăng nhập: tự bật không lên với máy từng có bộ giải -> hộp Thử bật lại, bật xong tự chạy Cherry", async () => {
   const storage = memoryStorage({TKB_LOCAL_SOLVER_SEEN_V1:"1793000000000"});
   let online = false;
   const {hooks, document, window} = loadBridge({
@@ -311,13 +311,12 @@ test("bản không đăng nhập: máy từng có bộ giải mà đang tắt ->
   const runs = [];
   window.tkbRunEngine = (...args) => runs.push(args);
   const modal = hooks.showLocalSolverDialog();
-  assert.equal(modal.dataset.mode, "off");
-  assert.equal(document.frames.filter(f => f.src === "cherry-local://start").length, 0, "chưa tự đánh thức khi chưa bấm");
+  assert.equal(modal.dataset.mode, "failed");
   const on = document.getElementById("tkbLocalSolverTurnOn");
-  assert.equal(on.textContent, "Bật bộ giải và xếp");
+  assert.equal(on.textContent, "Thử bật lại");
   const pending = on.click();
   await new Promise(r => setTimeout(r, 50));
-  assert.equal(document.frames.filter(f => f.src === "cherry-local://start").length, 1, "bấm Bật thì đánh thức cherry-local://");
+  assert.equal(document.frames.filter(f => f.src === "cherry-local://start").length, 1, "bấm Thử bật lại thì gọi mở bộ giải");
   online = true;
   await pending;
   await new Promise(r => setTimeout(r, 900));
@@ -325,6 +324,7 @@ test("bản không đăng nhập: máy từng có bộ giải mà đang tắt ->
   assert.equal(runs.length, 1);
   assert.equal(runs[0][0], "cherry");
   assert.equal(document.getElementById("tkbCherryLocalDot").dataset.state, "online");
+  hooks.stopLocalInstallPolling();
 });
 
 test("bản không đăng nhập: chưa từng thấy bộ giải -> hộp cài hiện NGAY, không đánh thức trước", () => {
@@ -333,6 +333,51 @@ test("bản không đăng nhập: chưa từng thấy bộ giải -> hộp cài 
   assert.equal(modal.dataset.mode, "missing");
   assert.equal(document.frames.filter(f => f.src === "cherry-local://start").length, 0);
   assert.equal(document.getElementById("tkbLocalSolverDownload").textContent, "Tải về CherrySetup.exe");
-  assert.equal(document.getElementById("tkbLocalSolverTurnOn").textContent, "Đã cài rồi? Bật bộ giải");
+  assert.equal(document.getElementById("tkbLocalSolverTurnOn"), null, "không còn bắt người dùng tự bật");
+  hooks.stopLocalInstallPolling();
+});
+
+test("bấm Cherry khi bộ giải chưa chạy: gọi mở theo đường dẫn cài (cherry-local://) ngay trong cú bấm; đang chạy thì không", () => {
+  const {hooks, document, window} = loadBridge({noServer:true, fetchImpl:async () => { throw new TypeError("Failed to fetch"); }});
+  window.__TKB_LOCAL_SOLVER_ONLINE = false;
+  hooks.launchLocalSolverOnGesture();
+  assert.equal(document.frames.filter(f => f.src === "cherry-local://start").length, 1);
+  window.__TKB_LOCAL_SOLVER_ONLINE = true;
+  hooks.launchLocalSolverOnGesture();
+  assert.equal(document.frames.filter(f => f.src === "cherry-local://start").length, 1, "đang chạy thì không gọi mở");
+});
+
+test("sau cú bấm: chờ bộ giải lên rồi xếp tiếp; không lên thì trả rỗng (để hiện hộp cài)", async () => {
+  let online = false;
+  const {hooks, document, window} = loadBridge({
+    noServer:true,
+    fetchImpl:async url => {
+      if(url.startsWith(LOCAL) && !online) throw new TypeError("Failed to fetch");
+      return health(url);
+    }
+  });
+  window.__TKB_LOCAL_SOLVER_START_WAIT_MS = 1500;
+  assert.equal(await hooks.awaitLocalSolverStart(), "", "máy chưa cài: hết chờ thì trả rỗng");
+  setTimeout(() => { online = true; }, 300);
+  assert.equal(await hooks.awaitLocalSolverStart(), LOCAL, "bộ giải lên trong lúc chờ: xếp tiếp");
+  assert.equal(document.getElementById("tkbCherryLocalDot").dataset.state, "online");
+});
+
+test("hộp cài mở từ cú bấm Cherry: bộ giải lên muộn (vừa bấm Mở / vừa cài) thì tự chạy Cherry", async () => {
+  let online = false;
+  const {hooks, window} = loadBridge({
+    noServer:true,
+    fetchImpl:async url => {
+      if(url.startsWith(LOCAL) && !online) throw new TypeError("Failed to fetch");
+      return health(url);
+    }
+  });
+  const runs = [];
+  window.tkbRunEngine = (...args) => runs.push(args);
+  hooks.showLocalSolverDialog({runCherryWhenReady:true});
+  online = true;
+  await new Promise(r => setTimeout(r, 3400));
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0][0], "cherry");
   hooks.stopLocalInstallPolling();
 });
