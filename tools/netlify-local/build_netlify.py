@@ -20,7 +20,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 OVERLAY = HERE / "overlay"
-STAMP = "20261028-noserver-v6"
+STAMP = "20261028-noserver-v7"
 
 REDIRECTS = """/               /app                 302!
 /index.html     /app                 302!

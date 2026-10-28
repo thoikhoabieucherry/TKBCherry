@@ -1722,7 +1722,7 @@
       }
       return true;
     }
-    setLocalInstallStatus("Chưa bật được. Nếu máy này chưa cài (hoặc đã gỡ) bộ giải, bấm Tải về để cài lại.", false);
+    setLocalInstallStatus("Chưa bật được. Máy này chưa cài bộ giải thì bấm Tải về để cài.", false);
     const dl = document.getElementById("tkbLocalSolverDownload");
     if(dl) dl.hidden = false;
     return false;
@@ -1752,26 +1752,31 @@
     modal.setAttribute("aria-modal", "true");
     const card = el("div", "lsi-card");
     const actions = el("div", "lsi-actions");
-    const download = el("a", installedBefore ? "" : "lsi-primary", installedBefore ? "Tải bộ cài lại" : "Tải về CherrySetup.exe");
+    const download = el("a", starting ? "" : "lsi-primary", starting ? "Chưa cài? Tải về" : "Tải về CherrySetup.exe");
     download.id = "tkbLocalSolverDownload";
     download.href = localSolverDownloadUrl();
     download.setAttribute("download", "CherrySetup.exe");
     download.addEventListener("click", () => {
-      setLocalInstallStatus("Đang chờ cài đặt… (mở file CherrySetup.exe vừa tải)", false);
+      // Dang cai -> hop "Dang bat..." khong duoc tu doi sang "Thu bat lai" giua chung.
+      localInstallStartingUntil = 0;
+      setLocalInstallStatus("Đang chờ cài đặt… Mở file CherrySetup.exe vừa tải → Yes (Windows cảnh báo thì More info → Run anyway). Cài xong trang tự nhận.", false);
       startLocalInstallPolling();
     });
     if(starting){
       card.appendChild(el("h3", "", "🍒 Đang bật bộ giải Cherry…"));
-      card.appendChild(el("p", "", "Bộ giải Cherry trên máy này đang tắt nên trang đang tự mở nó. Chrome hỏi “Mở …?” thì bấm Mở (tick “Luôn cho phép” để lần sau khỏi hỏi). Bộ giải lên là tự xếp, không cần bấm lại."));
+      card.appendChild(el("p", "", "Trang đang mở bộ giải Cherry trên máy này. Chrome hỏi “Mở …?” thì bấm Mở (tick “Luôn cho phép” để lần sau khỏi hỏi) — bộ giải lên là tự xếp, không cần bấm lại."));
+      actions.appendChild(download);
     }else if(installedBefore){
-      card.appendChild(el("h3", "", "🍒 Không bật được bộ giải Cherry"));
-      card.appendChild(el("p", "", "Máy này từng có bộ giải Cherry nhưng lần này nó không chạy lên — có thể đã bị gỡ, hoặc bạn đã bấm Hủy khi Chrome hỏi “Mở …?”."));
-      const on = el("button", "lsi-primary", "Thử bật lại");
+      // 28/10: dau "tung thay" chi la trinh duyet tung thay mot bo giai tra loi (co the da go, hoac
+      // ban chay thu) -> KHONG khang dinh may da cai; Tai ve dung dau.
+      card.appendChild(el("h3", "", "🍒 Chưa bật được bộ giải Cherry"));
+      card.appendChild(el("p", "", "Máy này chưa cài bộ giải thì bấm Tải về và cài một lần (khoảng 100 MB). Đã cài rồi thì bấm Thử bật lại — Chrome hỏi “Mở …?” thì bấm Mở."));
+      actions.appendChild(download);
+      const on = el("button", "", "Thử bật lại");
       on.type = "button";
       on.id = "tkbLocalSolverTurnOn";
       on.addEventListener("click", () => { turnOnLocalSolverFromDialog(true).catch(() => {}); });
       actions.appendChild(on);
-      actions.appendChild(download);
     }else if(windows){
       card.appendChild(el("h3", "", "🍒 Cài bộ giải Cherry cho máy này"));
       card.appendChild(el("p", "", "Nút Cherry xếp thời khóa biểu bằng CPU của máy này qua một phần mềm nhỏ chạy ngầm (biểu tượng 🍒 ở khay hệ thống cạnh đồng hồ). Máy này chưa có phần mềm đó."));

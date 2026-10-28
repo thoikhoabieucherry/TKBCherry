@@ -317,6 +317,11 @@ test("bản không đăng nhập: tự bật không lên với máy từng có b
   window.tkbRunEngine = (...args) => runs.push(args);
   const modal = hooks.showLocalSolverDialog();
   assert.equal(modal.dataset.mode, "failed");
+  const title = modal.children[0].children.find(n => n.tagName === "H3").textContent;
+  assert.doesNotMatch(title, /từng có/, "dấu “từng thấy” không chứng minh máy đã cài");
+  const dl = document.getElementById("tkbLocalSolverDownload");
+  assert.equal(dl.textContent, "Tải về CherrySetup.exe");
+  assert.equal(dl.className, "lsi-primary", "Tải về là nút chính khi bật không được");
   const on = document.getElementById("tkbLocalSolverTurnOn");
   assert.equal(on.textContent, "Thử bật lại");
   const pending = on.click();
@@ -426,6 +431,7 @@ test("chấm cam + máy từng có bộ giải: bấm Cherry KHÔNG vào lượt
   const modal = document.getElementById("tkbLocalSolverInstall");
   assert.equal(modal.dataset.mode, "starting");
   assert.equal(modal.hidden, false);
+  assert.equal(document.getElementById("tkbLocalSolverDownload").textContent, "Chưa cài? Tải về", "đang bật vẫn có đường tải");
   assert.equal(runs.length, 0);
   online = true;
   await new Promise(r => setTimeout(r, 1400));
