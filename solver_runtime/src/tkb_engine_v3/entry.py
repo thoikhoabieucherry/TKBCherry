@@ -816,7 +816,13 @@ def _portfolio_solve(
         # trong: [3,0,311,28] -> [0,0,283,18].
         two_stage = True
         try:
-            warm_clean = bool(warm_all and round_warm and (loc_start or 0) == 0)
+            # 28/10 (chu du an: "khi da xep du truc tiep vao toi uu chat luong nhu cherry v3
+            # luon"): lich nguoi dung DU tiet -> vao thang vong 2 du lich con no dia diem / no
+            # luat (truoc day chi khi sach no dia diem; con lai chay vong 1 portfolio ~30%
+            # ngan sach, trang dung "X ➔ X · Dang tim…" toi 1 phut 40). Vong 2 tu sua no
+            # (hoac xay lai neu lich bi tu choi). Do An Phu, luoi nut ▶ 869/869 con 300-314 vi
+            # pham RB, 120 s / 8 luong: [2,0,314,41] -> [0,0,286,25]; [1,0,295,24] -> [0,0,281,21].
+            warm_clean = bool(warm_all and round_warm)
             if warm_clean:
                 report_heartbeat("1 tien trinh x %d luong CP-SAT Hybrid" % cpsat_threads)
                 sink2 = (lambda seed_i, evt: (live.on_event(seed_i, evt), live.maybe_emit())) if progress is not None else None

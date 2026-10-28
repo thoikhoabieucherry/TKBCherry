@@ -152,6 +152,17 @@
   Tối ưu), giá trị cũ đã lưu làm tròn (≤90→1 phút, ≤150→2, còn lại 3). Test mới `e2e_tests/netlify_local_budget_node`
   3/3. Đăng prod `6ae200d8df17f7add5590e59` (`local-planner.js?v=20261028-noserver-v9`). Bộ giải đã cài dùng Python đi kèm
   (`%LOCALAPPDATA%\CherryMayNay\python\pythonw.exe`), không đụng Python của máy.
+- **Lịch đủ tiết → vào thẳng tối ưu chất lượng (28/10 đêm, chủ dự án: "chạy tới 1p40 mới thấy số thay đổi… khi đã xếp đủ
+  trực tiếp vào tối ưu chất lượng như cherry v3 luôn")**: nhãn "X ➔ X · Đang tìm…" là trang tự seed từ lịch đang có, đứng
+  tới khung `optimize:quality` đầu tiên. Hai chỗ ngốn giờ khi lịch ĐỦ tiết nhưng CÒN NỢ luật/địa điểm (lịch nút ▶, sửa tay):
+  (1) `joint.py` bước dời tiết chung chạy CP-SAT tới min(45 s, 30%) rồi "not_better" (An Phú lưới ▶: 35,6 s); (2) `entry.py`
+  chỉ vào thẳng vòng 2 khi sạch nợ địa điểm, còn lại chạy vòng 1 portfolio. Sửa: `warm_clean = warm_all and round_warm`
+  (đủ tiết là vào thẳng vòng 2, vòng 2 tự sửa/xây lại); `relocate_joint_lessons` thoát ngay khi penalty xuất phát > 0
+  (`start_rule_debt`). A/B bench2 120 s / 8 luồng, 2 lưới ▶ × 2 seed: hiện tại [2,0,314,41] [0,0,294,21] [1,0,295,24]
+  [0,0,290,33] → vào thẳng [0,0,286,25] [0,0,293,24] [0,0,281,21] [0,0,295,27]. Qua bộ giải (như trang) lưới ▶: khung số
+  đầu 76 s → 26 s, kết quả [0,0,300,28] → [0,0,285,26]. Lịch Cherry hợp lệ bấm lại: bước tiết chung vẫn chạy (~2 s), khung
+  số ở giây 4 (281/14 → 278/7). Test engine v3 173/173. Bộ cài dựng lại `%LOCALAPPDATA%\Temp\cmnb9`, đăng prod
+  `6ae2110ce865cec3e13c4ae2`; Desktop\Cherry.exe == bản trên trang; máy đã cài cần chạy lại Cherry.exe để cập nhật engine.
 - **Deploy (chưa làm, chờ chủ dự án)**: web = `tkb-rust-bridge.js` + dòng `?v=` bridge trong `sapxep.html` (dựng = live + 1 dòng,
   cây làm việc đang có các bump `?v` khác chưa commit); engine = 3 file `tkb_engine_v3` lên VPS (không restart). Gói zip phát cho
   trường riêng. Lưu ý: bản V4 của chủ dự án đang chạy Cherry Local ở cổng 2210 — trùng cổng mặc định của bộ giải mới.
