@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import compileall
+import hashlib
 import platform
 import shutil
 import subprocess
@@ -73,7 +74,22 @@ def embed_python(stage: Path, cache: Path) -> Path:
     )
     for junk in site.rglob("__pycache__"):
         shutil.rmtree(junk, ignore_errors=True)
+    trim_site_packages(site)
+    # Ma bo Python: doi khi doi ban Python / thu vien -> may da co dung bo nay chi thay app.
+    dists = sorted(p.name for p in site.glob("*.dist-info"))
+    runtime_id = hashlib.sha256("\n".join([version, *dists]).encode("utf-8")).hexdigest()[:16]
+    (py_dir / "runtime-id.txt").write_text(runtime_id + "\n", encoding="ascii")
     return py_dir
+
+
+def trim_site_packages(site: Path) -> None:
+    """28/10: bo thu muc tests (scipy/pandas/numpy ~2300 file, 78 MB) va stub .pyi — khong
+    dung luc chay, chi lam cham giai nen (moi file con bi Defender quet)."""
+    for tests in sorted(site.rglob("tests"), key=lambda p: len(p.parts)):
+        if tests.is_dir() and tests.exists():
+            shutil.rmtree(tests, ignore_errors=True)
+    for stub in site.rglob("*.pyi"):
+        stub.unlink(missing_ok=True)
 
 
 def copy_app(stage: Path, extra_origins: list[str]) -> None:
@@ -115,12 +131,18 @@ def write_windows_text(src: Path, dst: Path, bom: bool) -> None:
     dst.write_bytes(text.encode("utf-8-sig" if bom else "utf-8"))
 
 
-def make_payload(stage: Path, out_zip: Path) -> None:
+def make_payload(stage: Path, files: Path) -> None:
+    """python.zip = stage/python (it khi doi), app.zip = stage/app + uninstall.ps1 (engine, ~3 MB)."""
     write_windows_text(HERE / "installer" / "uninstall.ps1", stage / "uninstall.ps1", bom=True)
-    with zipfile.ZipFile(out_zip, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
-        for path in sorted(stage.rglob("*")):
-            if path.is_file():
+    parts = {
+        "python.zip": [p for p in sorted((stage / "python").rglob("*")) if p.is_file()],
+        "app.zip": [p for p in sorted((stage / "app").rglob("*")) if p.is_file()] + [stage / "uninstall.ps1"],
+    }
+    for name, paths in parts.items():
+        with zipfile.ZipFile(files / name, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+            for path in paths:
                 zf.write(path, path.relative_to(stage).as_posix())
+    shutil.copy2(stage / "python" / "runtime-id.txt", files / "runtime-id.txt")
 
 
 SED = """[Version]
@@ -155,11 +177,14 @@ AppLaunched=cmd.exe /c install.cmd
 PostInstallCmd=<None>
 AdminQuietInstCmd=cmd.exe /c install.cmd
 UserQuietInstCmd=cmd.exe /c install.cmd
-FILE0="payload.zip"
+FILE0="python.zip"
 FILE1="install.ps1"
 FILE2="install.cmd"
 FILE3="splash.ps1"
 FILE4="build-id.txt"
+FILE5="app.zip"
+FILE6="runtime-id.txt"
+FILE7="cherry.png"
 [SourceFiles]
 SourceFiles0={src}\\
 [SourceFiles0]
@@ -168,6 +193,9 @@ SourceFiles0={src}\\
 %FILE2%=
 %FILE3%=
 %FILE4%=
+%FILE5%=
+%FILE6%=
+%FILE7%=
 """
 
 
@@ -187,11 +215,12 @@ def build(out_dir: Path, cache: Path, extra_origins: list[str] | None = None) ->
     build_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
     (stage / "app" / "build-id.txt").write_text(build_id + "\n", encoding="ascii")
     (files / "build-id.txt").write_text(build_id + "\n", encoding="ascii")
-    print("Nén payload.zip…")
-    make_payload(stage, files / "payload.zip")
+    print("Nén python.zip + app.zip…")
+    make_payload(stage, files)
     write_windows_text(HERE / "installer" / "install.ps1", files / "install.ps1", bom=True)
     write_windows_text(HERE / "installer" / "install.cmd", files / "install.cmd", bom=False)
     write_windows_text(HERE / "installer" / "splash.ps1", files / "splash.ps1", bom=True)
+    shutil.copy2(CHERRY_PNG, files / "cherry.png")
     target = out_dir / "Cherry.exe"
     if target.exists():
         target.unlink()

@@ -172,6 +172,21 @@
   so `build-id` của install.ps1 đóng gói chạy riêng trên thư mục tạm: cùng bản True, khác bản / bản cũ không có id / thiếu
   python False. KHÔNG chạy được trọn bộ cài (auto mode chặn Startup/registry). Bộ cài `%LOCALAPPDATA%\Temp\cmnb10`
   (build-id 20261028-222625-81806d46), deploy prod `6ae214d3888cf53a5161d685`, Desktop\Cherry.exe == bản trên trang.
+- **Cherry.exe: % thật, cập nhật < 1 s, giao diện cài mới (28/10 đêm, chủ dự án: "mở luôn chứ sao đợi 20 giây"; "cho thể
+  hiện tiến trình cho phù hợp đúng 20 giây"; "sao lỗi font, làm font và giao diện cài đặt chuyên nghiệp đẹp xíu AI xíu")**:
+  gói tách `python.zip` (Python + thư viện, bỏ thư mục `tests` + `.pyi`: 5.482 → 2.877 tệp, 312 → 266 MB) và `app.zip`
+  (engine ~1 MB); `runtime-id.txt` (hash phiên bản Python + tên dist-info) → bản mới cùng bộ Python chỉ thay app (đo 0,08 s);
+  `build-id.txt` → mở lại đúng bản chỉ bật bộ giải. `install.ps1` giải nén TỪNG TỆP, ghi "phần trăm|dòng chữ" vào
+  `%TEMP%\CherrySplash.progress` (100 = bộ giải đã trả lời, −1 = lỗi); `splash.ps1` vẽ GDI+ (nền gradient tối + mạng nút,
+  logo cherry đi kèm gói, huy hiệu "AI · CP-SAT", thanh % gradient có vệt sáng, đếm ngược tự đóng 6 s, nút Đóng/Esc khi lỗi)
+  và chỉ đi theo file % (không tự dò: bản cũ có thể còn chạy lúc mới mở). Đo trên máy chủ dự án: giải nén python.zip 6,5 s
+  (cũ payload 9 s + xoá 1,4 s); trọn vòng thử (splash thật + Expand-WithProgress thật) 100% ở 8,0 s, cửa sổ tự đóng 14,1 s.
+  Lần nạp thư viện đầu ~16 s (Windows quét tệp mới, dịch pyc chỉ 2,4 s) → nạp sẵn bằng pythonw ẩn ngay sau giải nén; lượt
+  45 s đầu tiên sau cài: không nạp sẵn 72 s / 9 buổi 1 tiết, có nạp sẵn (18 s trước) 51,6 s / 3. Kiểm giao diện bằng
+  `splash.ps1 -Snapshot <png>` (3 trạng thái, tiếng Việt hiển thị đúng; "lỗi font" chủ dự án thấy là log console của Claude in
+  chuỗi UTF-8 bằng cp1252). Bộ cài `%LOCALAPPDATA%\Temp\cmnb14` (89 MB, runtime dd99dac779bf68e2, build
+  20261028-231234-8fdddaf0), deploy prod `6ae21f83e4843b8ee56245b3`, Desktop\Cherry.exe == bản trên trang. Bẫy PowerShell:
+  `@($W - 250, -170)` = `$W - (250, -170)` (dấu phẩy ưu tiên hơn phép trừ) → phải `@(($W - 250), …)`.
 - **Deploy (chưa làm, chờ chủ dự án)**: web = `tkb-rust-bridge.js` + dòng `?v=` bridge trong `sapxep.html` (dựng = live + 1 dòng,
   cây làm việc đang có các bump `?v` khác chưa commit); engine = 3 file `tkb_engine_v3` lên VPS (không restart). Gói zip phát cho
   trường riêng. Lưu ý: bản V4 của chủ dự án đang chạy Cherry Local ở cổng 2210 — trùng cổng mặc định của bộ giải mới.

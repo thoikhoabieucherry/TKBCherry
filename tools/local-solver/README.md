@@ -5,7 +5,7 @@ Dữ liệu trường vẫn lưu trên tkbcherry.com; máy này chỉ giải r�
 
 ## Cài một lần (khuyên dùng)
 
-1. Nhấp đúp `Cherry.exe` (đã gói Python portable + OR-Tools, không cần cài Python, không cần quyền admin) → cửa sổ nhỏ "Đang khởi động Cherry…" hiện ngay (`installer/splash.ps1`), lên xong báo "Cherry đã chạy" rồi tự đóng; lần đầu / bản mới mất ~20 s giải nén, mở lại đúng bản đã cài (`build-id.txt`) thì chỉ bật bộ giải. Không có câu hỏi Yes/No.
+1. Nhấp đúp `Cherry.exe` (đã gói Python portable + OR-Tools, không cần cài Python, không cần quyền admin) → cửa sổ cài (`installer/splash.ps1`, vẽ GDI+: nền gradient tối, thanh % gradient) hiện ngay và chạy theo % THẬT mà `install.ps1` ghi vào `%TEMP%\CherrySplash.progress`; lần đầu ~10 s (giải nén `python.zip` ~2.900 tệp), bản mới cùng bộ Python (`runtime-id.txt`) chỉ thay `app.zip` (<1 s), mở lại đúng bản (`build-id.txt`) chỉ bật bộ giải. Sau khi giải nén, nạp sẵn ortools/numpy/scipy ở tiến trình ẩn (lần nạp đầu ~16 s vì Windows quét tệp mới). Không có câu hỏi Yes/No.
    Không cần cài Python, không cần quyền admin. Windows SmartScreen có thể cảnh báo vì file
    chưa ký số: bấm **More info → Run anyway**.
 2. Biểu tượng 🍒 hiện ở khay hệ thống (cạnh đồng hồ) kèm thông báo "Đã cài xong".
