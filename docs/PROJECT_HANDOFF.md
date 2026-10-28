@@ -93,6 +93,16 @@
   người dùng rồi tự chạy Cherry) / hộp **Tải về** + "Đã cài rồi? Bật bộ giải". Bộ giải bỏ GET `/` và mục khay "Trang kiểm
   tra". Chrome trên bản dựng: hộp hiện sau ~1 s (trước > 12 s). Đăng prod deploy `6ae0d98922da77e30adc66de`; Desktop\
   CherrySetup.exe == bản trên trang.
+- **Bấm Cherry tự bật bộ giải (28/10, chủ dự án: "khi bấm nút cherry hệ thống tự check tiến trình cherry chạy chưa, chưa thì
+  mở ứng dụng theo đường dẫn mặc định, đường dẫn mặc định ko có thì mới kêu cài")**: trang web không được xem tiến trình hay chạy
+  file theo đường dẫn → tương đương: dò `127.0.0.1:2211/api/health` (= kiểm tra đang chạy), mở bằng `cherry-local://start` (bộ cài
+  đăng ký giao thức trỏ tới `pythonw` đã cài = đường dẫn mặc định). `7318137`: listener pha capture trên `#btnEngineCherry`
+  (`launchLocalSolverOnGesture`) gọi mở NGAY trong cú bấm (Chrome chỉ cho mở ứng dụng ngoài khi có cử chỉ); `postSolve` dò không
+  thấy → `awaitLocalSolverStart` chờ 20 s (máy từng có bộ giải, Chrome có thể hỏi "Mở …?") / 6 s (chưa từng) rồi xếp tiếp; chỉ khi
+  không lên mới hiện hộp: "Không bật được bộ giải / Thử bật lại" hoặc hộp Tải về (bỏ nút "Đã cài rồi? Bật bộ giải"). Hộp mở từ
+  cú bấm Cherry tự chạy Cherry khi bộ giải lên muộn (`localInstallRunCherryUntil`, 2 phút). Test node toggle 18/18. Chrome thật
+  trên bản dựng (devserve + bộ giải cmnb6 bật tay sau 2 s): trang tự chờ rồi xếp An Phú 869/869, 0 buổi 1 tiết, không hiện hộp.
+  Đăng prod deploy `6ae1d61393d30c6eb1eb8ec8` (bridge `?v=20261028-noserver-v4`); bộ cài không đổi.
 - **Deploy (chưa làm, chờ chủ dự án)**: web = `tkb-rust-bridge.js` + dòng `?v=` bridge trong `sapxep.html` (dựng = live + 1 dòng,
   cây làm việc đang có các bump `?v` khác chưa commit); engine = 3 file `tkb_engine_v3` lên VPS (không restart). Gói zip phát cho
   trường riêng. Lưu ý: bản V4 của chủ dự án đang chạy Cherry Local ở cổng 2210 — trùng cổng mặc định của bộ giải mới.
