@@ -7595,6 +7595,151 @@
     });
   }
 
+  // 30/10 (chu du an: "hoc hoi gi tu TKBCherry-FET-VPS-V3 de toi uu thoi gian xep cho Cherry.exe"):
+  // FET trong trinh duyet (ban V3 day du luat Yeu cau GV/mon) dung lich DU tiet, 0 vi pham RB trong
+  // ~5-8 s (An Phu 869, Tan Nhut 1746) — engine Cherry nhan lich do la lich SACH va vao thang toi uu,
+  // bo vong 1 dung lich (14-18 s). Nut Cherry XEP MOI tren bo giai may nay: dung nhap FET truoc roi gui
+  // nhu lich nguoi dung. Chi nhan nhap thieu <= 1% tiet + 0 vi pham; khong thi gui lich trong nhu cu.
+  // Do 30/10 (3 truong x 2 seed, 2 phut): so lieu hien som hon 2-3 lan, lich cuoi bang hoac tot hon 5/6.
+  // window.__TKB_CHERRY_FET_SEED = false de tat (do A/B).
+  function cherryFetSeedEligible(sourceData, requestData, settings){
+    try{
+      if(window.__TKB_CHERRY_FET_SEED === false) return false;
+      if(pageHasSolverServer()) return false;
+      if(typeof window.Worker !== "function") return false;
+      if(typeof window.inspectFetCandidateHardConstraints !== "function") return false;
+      if(String(window.__TKB_FORCE_ENGINE || "").trim().toLowerCase() !== "cherry") return false;
+      if(String(window.__TKB_ENGINE_FOCUS_MODE || "").trim()) return false;
+      if(settings?.ui_resume_existing_server_job_only === true) return false;
+      const focus = String(settings?.optimization_focus || "").trim().toLowerCase();
+      if(focus && focus !== "automatic") return false;
+      const expected = expectedLessonCount(sourceData);
+      if(!(expected > 0)) return false;
+      // "Xep moi" = luoi gan nhu trong (chi con o co dinh / tiet ghep ghim tam).
+      let free = 0;
+      Object.values(requestData?.tkb || {}).forEach(grid => {
+        Object.values(grid || {}).forEach(day => {
+          if(!day || typeof day !== "object") return;
+          ["sang", "chieu"].forEach(buoi => (Array.isArray(day[buoi]) ? day[buoi] : []).forEach(cell => {
+            if(!cell || cell === "OFF") return;
+            if(typeof cell === "object" && (cell.fixed || cell.off || cell.mon === "OFF" || !String(cell.mon || "").trim())) return;
+            free += 1;
+          }));
+        });
+      });
+      return free <= Math.max(3, Math.floor(expected * 0.02));
+    }catch(_){
+      return false;
+    }
+  }
+
+  function showCherrySeedLabel(label){
+    try{
+      window.__CURRENT_ACTIVE_OPTIMIZE_METRIC_LABEL = label;
+      if(progressState) progressState.metricLabelText = label;
+      const metricEl = document.getElementById("autoSortProgressMetric");
+      if(metricEl){
+        metricEl.textContent = label;
+        metricEl.hidden = !label;
+      }
+    }catch(_){ }
+  }
+
+  async function buildCherryFetSeed(sourceData, requestData, settings, signal){
+    const budgetSeconds = Math.max(0, Number(settings?.overall_time_limit_seconds || 0) || 0);
+    // Tran dung nhap: 20% ngan sach, 10-25 s (An Phu ~5 s may ranh, ~15 s may day tai).
+    const capMs = Math.round(Math.max(10, Math.min(25, budgetSeconds > 0 ? budgetSeconds * 0.2 : 15)) * 1000);
+    const startedAt = Date.now();
+    const seed = await new Promise(resolve => {
+      let settled = false;
+      let worker = null;
+      let timer = 0;
+      const finish = value => {
+        if(settled) return;
+        settled = true;
+        if(timer) window.clearTimeout(timer);
+        try{ worker?.terminate?.(); }catch(_){ }
+        resolve(value || null);
+      };
+      try{
+        worker = new window.Worker("tkb-fet-worker.js?v=20261030-cherry-fet-seed-v1");
+        worker.onmessage = event => {
+          const msg = event?.data || {};
+          if(msg.type === "progress"){
+            const placed = Math.max(0, Number(msg.placed) || 0);
+            const total = Math.max(0, Number(msg.total) || 0);
+            if(total > 0) showCherrySeedLabel(`Đang dựng lịch nháp · ${Math.min(placed, total)}/${total} tiết`);
+            return;
+          }
+          const placed = Math.max(0, Number(msg.placed) || 0);
+          const missing = Math.max(0, Number(msg.unassigned) || 0);
+          // Thieu <= 1% tiet van nhan (Tan Phu Trung 2190/2193: Cherry xep not 3 tiet va ra 2193/2193,
+          // xep moi chi 2191 trong 2 phut); thieu nhieu hon thi Cherry tu dung lich nhu cu.
+          if(msg.type === "done" && msg.ok === true && msg.tkb && placed > 0 && missing <= Math.floor((placed + missing) * 0.01)){
+            finish({tkb:msg.tkb, placed, missing});
+          }else{
+            finish(null);
+          }
+        };
+        worker.onerror = () => finish(null);
+        timer = window.setTimeout(() => finish(null), capMs + 3_000);
+        if(signal){
+          if(signal.aborted) return finish(null);
+          signal.addEventListener("abort", () => finish(null), {once:true});
+        }
+        showCherrySeedLabel("Đang dựng lịch nháp…");
+        worker.postMessage({
+          action:"solve",
+          mode:"auto",
+          data:clonePlain(requestData),
+          options:{
+            mode:"auto",
+            seed:Math.max(1, Number(settings?.random_seed || makeRandomSeed()) || 1),
+            solveBudgetMs:capMs,
+            uiBreathingMs:0
+          }
+        });
+      }catch(_){
+        finish(null);
+      }
+    });
+    if(!seed || signal?.aborted) return null;
+    // O co dinh / tiet ghep ghim tam (jointPin) phai giu NGUYEN DANG: FET V3 (syncJointGhepCells) ghi lai
+    // o ghim thanh chu thuong "KNS (ghép)" -> engine coi tiet chung nhieu lop la tiet rieng tung lop, cung
+    // GV nhieu lop mot gio -> "con 22 tiet chua on" va phai go lai (thu Chrome 30/10, An Phu).
+    let restoredFixed = 0;
+    try{
+      Object.entries(requestData?.tkb || {}).forEach(([cid, grid]) => {
+        Object.entries(grid || {}).forEach(([thu, day]) => {
+          if(!day || typeof day !== "object") return;
+          ["sang", "chieu"].forEach(buoi => (Array.isArray(day[buoi]) ? day[buoi] : []).forEach((cell, ti) => {
+            if(!(cell && typeof cell === "object" && cell.fixed)) return;
+            const row = seed.tkb?.[cid]?.[thu]?.[buoi];
+            if(!Array.isArray(row)) return;
+            row[ti] = clonePlain(cell);
+            restoredFixed += 1;
+          }));
+        });
+      });
+    }catch(_){
+      return null;
+    }
+    seed.restoredFixed = restoredFixed;
+    // Kiem lai bang bang RB day du cua trang (luat FET chua biet thi bat o day): con vi pham -> bo nhap.
+    try{
+      const inspection = await window.inspectFetCandidateHardConstraints(sourceData, seed.tkb);
+      if(inspection?.available !== true) return null;
+      if((inspection.violations || []).length){
+        traceSolveStep("postSolve:cherry-fet-seed-rejected", {violations:inspection.violations.length});
+        return null;
+      }
+    }catch(_){
+      return null;
+    }
+    seed.elapsedMs = Date.now() - startedAt;
+    return seed;
+  }
+
   function classAliasIdsForFixedOff(data, classId){
     const ids = new Set([String(classId || "").trim()].filter(Boolean));
     try{
@@ -17098,6 +17243,33 @@
         delete requestData.__tkbClientFastSeedV1;
         delete effectiveSettings.client_fast_seed_hint;
       }
+      if(cherryFetSeedEligible(data, requestData, effectiveSettings)){
+        const fetSeed = await buildCherryFetSeed(data, requestData, effectiveSettings, controller.signal);
+        throwIfStopRequested(activeSolveRunId);
+        if(fetSeed){
+          requestData.tkb = fetSeed.tkb;
+          // Thoi gian dung nhap tinh vao o ⏱: engine chay phan con lai.
+          const usedSeconds = Math.ceil(fetSeed.elapsedMs / 1000);
+          [
+            "overall_time_limit_seconds",
+            "integrated_time_limit",
+            "optimization_time_limit_seconds",
+            "optimization_adaptive_time_limit_seconds",
+            "progress_estimate_seconds"
+          ].forEach(key => {
+            const value = Number(effectiveSettings[key] || 0);
+            if(value > 0) effectiveSettings[key] = Math.max(20, value - usedSeconds);
+          });
+          const deadlineMs = Number(effectiveSettings.backend_deadline_ms || 0);
+          if(deadlineMs > 0) effectiveSettings.backend_deadline_ms = Math.max(20_000, deadlineMs - fetSeed.elapsedMs);
+          effectiveSettings.cherry_fet_seed = {elapsed_ms:fetSeed.elapsedMs, placed:fetSeed.placed, missing:fetSeed.missing};
+          showCherrySeedLabel(`Đã dựng lịch nháp ${fetSeed.placed} tiết · đang tối ưu…`);
+          traceSolveStep("postSolve:cherry-fet-seed", {elapsedMs:fetSeed.elapsedMs, placed:fetSeed.placed});
+        }else{
+          delete effectiveSettings.cherry_fet_seed;
+          showCherrySeedLabel("");
+        }
+      }
       await yieldResponsiveUi();
       if(!cacheEligible) requestData.__tkbSolverRequestNonce = solveRunId;
       // 19/08: gan engine do nguoi dung chon (cherry). Trong thi giu
@@ -20539,7 +20711,9 @@
         showLocalSolverDialog,
         stopLocalInstallPolling,
         launchLocalSolverOnGesture,
-        awaitLocalSolverStart
+        awaitLocalSolverStart,
+        cherryFetSeedEligible,
+        buildCherryFetSeed
       };
     }
   }catch(_){}
