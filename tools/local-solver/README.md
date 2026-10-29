@@ -34,6 +34,10 @@ Cài Python 3.10+ (tick **Add python.exe to PATH**), giải nén `cherry-may-nay
 - Bộ giải chỉ nghe `127.0.0.1`, giữ cổng độc quyền (bản thứ hai tự thoát), chỉ nhận lệnh từ
   trang tkbcherry.com (và localhost).
 - Nhật ký ở `logs/` cạnh `cherry_local_solver.py` (không chứa dữ liệu trường).
+- Nạp sẵn (29/10): khi trang Sắp xếp hỏi `/api/health` (có Origin) và sau mỗi lượt xếp, Cherry bật
+  sẵn MỘT tiến trình bộ giải (`TKB_STDIO_PREWARM=1`: đã import engine + OR-Tools, chờ dữ liệu) — bấm
+  Cherry dùng ngay, không chờ khởi động Python (1 s khi máy vừa dùng, ~12 s lần đầu sau một lúc).
+  Không ai dùng 15 phút thì tự tắt; thoát/cập nhật Cherry thì tắt theo.
 
 ## Cho người phát triển
 

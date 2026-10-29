@@ -216,6 +216,49 @@
   (tốt nhất từ đầu, chỉ đi một chiều) → trang hiện "Đang dựng lịch · 869/869 tiết · còn 68 chỗ vướng" từ giây ~6 thay vì đứng
   "X ➔ X · Đang tìm…" tới giây ~23. Test engine 173/173. Bộ cài `cmnb18` (build 20261029-001842-148023b2), deploy prod
   `6ae22f84cd2979db833b09c5` (có `/download/cherry-latest.json`, đã kiểm SHA-256 gói app từ trang thật).
+- **Xếp mới nhanh hơn: nạp sẵn bộ giải + vòng 1 trả lịch nháp sớm + số "còn N tiết chưa ổn" (29/10 sáng, chủ dự án: "khúc
+  cherry v3 đang dựng lịch tôi thấy sao sao đó… khi xếp mới nó mất rất lâu để dựng? có cách nào tối ưu thời gian xử lý hơn
+  ko")**: đo An Phú `anphu_coldpin` (lưới trống + tiết ghép ghim), ô 2 phút, 8 luồng, qua Cherry trên máy chủ dự án: số tối ưu
+  đầu tiên ở giây **49,7** = khởi động Python 12 s (lần đầu sau một lúc; máy vừa dùng ~1 s) + vòng 1 heuristic 24 s (6 tiến
+  trình đuổi nợ luật địa điểm bằng pha 2 tới khi một tiến trình trả về) + vòng 2 CP-SAT lấp tiết/gỡ nợ 11 s.
+  (1) `solver_jobs.py` `SolverManager.prewarm()`: trang hỏi `/api/health` (có Origin) hoặc vừa xếp xong → bật sẵn MỘT
+  `solve_stdio.py` với `TKB_STDIO_PREWARM=1` (`_prewarm_imports`: engine v3 + cpsat_lns + OR-Tools, rồi chờ stdin; đồng hồ
+  tiến độ đếm lại từ lúc nhận dữ liệu); `start()` lấy tiến trình đó (+ file dừng của nó), chết/không có thì bật mới như cũ;
+  15 phút không ai dùng thì tắt; `close()` khi thoát / cập nhật (tiến trình có cwd trong `app/` sẽ chặn đổi tên thư mục).
+  Tốn ~120 MB RAM khi chờ (với biến giới hạn luồng của helper; không có chúng OpenBLAS giữ 1,4 GB commit).
+  (2) Engine: worker vòng 1 có `stage1_ready_at` (`_worker_solve` arg 10 = `STAGE1_READY_S` 4 s, chỉ khi `stage1_cut`):
+  `Constructor._stage1_ready` — từ mốc đó, lưới có (tiết đã xếp − trùng giờ) ≥ tổng − 16 là thoát pha 2 / vòng đuổi nợ;
+  CHỈ bật quanh vòng xây mới (`_stage1_armed_at`), sửa lịch người dùng (warm) không đổi. Nợ luật / địa điểm còn lại vòng 2
+  CP-SAT gỡ (đo 1 worker: vòng 1 dài 4 / 7 / 12 s thì vòng 2 vào tối ưu nhanh như nhau, kết quả cuối 869/869 cả 9 lượt).
+  `STAGE1_SOFT_S` 11,5 → 7 s (đã có lịch nháp dùng được thì không chờ thêm). (3) `_LiveQuality.on_construct`: MỘT số
+  "Đang dựng lịch · còn N tiết chưa ổn" = tiết chưa xếp + chỗ vướng, nhỏ nhất từ đầu, chỉ giảm; `_report_construct` gọi thêm
+  trong vòng CP-SAT lấp tiết (toàn trường / cụm lớp / gỡ nợ địa điểm). Trước đây "869/869 tiết · còn 68 chỗ vướng" đứng yên
+  cả chục giây vì vòng 2 gỡ bớt tiết (853/869 không "tốt hơn" 869).
+  Đo lại (in-process, 120 s, tới khung số tối ưu đầu tiên, chưa tính khởi động): HEAD 45,1 / 21,9 / 38,5 / 42,4 s (TB 37);
+  mới 22,1 / 21,1 / 32,0 / 26,0 s và sau khi hạ STAGE1_SOFT_S 23,4 / 35,1 / 17,0 / 28,1 / 18,0 s (TB 24); vòng 1 kết thúc ở
+  giây 6–9 thay vì 15–23. Cộng nạp sẵn: bấm Cherry → số tối ưu đầu tiên ~20–25 s thay vì ~35–50 s.
+  Lịch cuối 120 s không xấu đi: HEAD 289/21, 288/20 (buổi/trống 1); mới 282/20, 292/29, 283/23 — mọi lượt 869/869
+  hợp lệ, 0 buổi 1 tiết. Test engine `unittest discover -p "test_engine_v3_*.py"` 179/179 (1 skip).
+  Test: `tests/test_local_solver.py` 15/15 (+4 nạp sẵn) + `test_netlify_build.py`, `test_engine_v3_stage1_ready.py` 6/6.
+  (4) Vòng 2 lấp tiết: `_cpsat_repair_loc_debt` nhớ vùng buổi đã hỏng (khoá = buổi + GV mở băng) cho tới khi lưới đổi,
+  hỏng liền `LOCFIX_FAIL_STREAK` = 16 vùng thì nhường bước gỡ tiết gây nợ + lấp lại (đo: còn 1 buổi nợ → 45 lần thử liền
+  INFEASIBLE ~10 s, vùng [0,1,7,10] thử 4 lần); `cpsat_lns.build_and_solve(stall_s=)` — luồng canh gọi `solver.stop_search()`
+  khi đã có lời giải mà `stall_s` giây không có lời giải mới; lần giải TOÀN TRƯỜNG của pha lấp tiết dùng 2 s (chỉ trường có
+  luật địa điểm) — đo: lời giải cuối ở giây 2,7–4,1 rồi chạy không tới trần 7 s. BẪY ĐÃ GẶP: `build_and_solve` là vỏ gọi
+  `_build_and_solve` với danh sách tham số viết tay — thêm tham số phải thêm CẢ HAI chỗ, không thì mọi lượt CP-SAT trả
+  ERROR (NameError bị nuốt thành status ERROR); test `test_engine_v3_cpsat_fill` bắt được. Đo lại 6 lượt sạch sau (4):
+  15,0 / 32,9 / 22,0 / 18,9 / 24,1 / 28,3 s (TB 23,5 — trung bình không đổi so với trước (4), độ dao động lấn át).
+  Chưa gỡ được: vòng 2 lấp tiết + gỡ nợ địa điểm của An Phú còn 6–25 s (mỗi lần thử vùng 2–4 buổi 0,1–1,4 s, nhiều lần
+  INFEASIBLE/UNKNOWN); ít luồng hơn thì chậm hẳn (2 luồng 26 s so với 8 luồng 10 s) nên chạy đua nhiều bản nháp song song
+  không lợi. Đo bằng `scratchpad/bench/prof_portfolio.py` (EXIT_AT_FIRST_Q=1, TRACE_CPSAT=1), `trace_whole.py`, `fill_race.py`.
+  Bản cuối: lịch 120 s 279/17, 287/19; test engine 181/181. Bộ cài `%LOCALAPPDATA%\Temp\cmnb20` (build
+  20261029-104621-baf006a5, runtime dd99dac779bf68e2 KHÔNG đổi → máy đã cài tự lên qua gói app 1 MB), thử gói thật cổng 2299:
+  1 tiến trình nạp sẵn trước khi bấm, lượt xếp dùng nó, xong lại nạp 1 tiến trình mới. `Desktop\Cherry.exe` = cmnb20.
+  Trang đăng dựng = `%LOCALAPPDATA%\Temp\cmnweb17` (chép `cmnweb16` = bản đang chạy, chỉ thay 4 tệp `download/`).
+  **CHƯA ĐĂNG**: lệnh deploy (token đọc từ lịch sử phiên) bị auto mode chặn lần này → chủ dự án tự chạy
+  `npx -y netlify-cli@latest deploy --dir %LOCALAPPDATA%\Temp\cmnweb17 --site 7256f81a-369e-41e2-86c0-6a8ecba91ff4 --prod --no-build`
+  (sau `netlify login` hoặc với NETLIFY_AUTH_TOKEN). Bẫy: lệnh dọn tiến trình lọc theo dòng lệnh `*cmnb19*` giết luôn các
+  shell bash có chữ đó (kể cả monitor) — lọc thêm `Name = 'python.exe'`.
 - **Deploy (chưa làm, chờ chủ dự án)**: web = `tkb-rust-bridge.js` + dòng `?v=` bridge trong `sapxep.html` (dựng = live + 1 dòng,
   cây làm việc đang có các bump `?v` khác chưa commit); engine = 3 file `tkb_engine_v3` lên VPS (không restart). Gói zip phát cho
   trường riêng. Lưu ý: bản V4 của chủ dự án đang chạy Cherry Local ở cổng 2210 — trùng cổng mặc định của bộ giải mới.

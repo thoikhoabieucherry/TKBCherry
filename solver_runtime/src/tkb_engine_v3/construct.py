@@ -727,6 +727,13 @@ _REMOVE_FAIL_LABEL = {
 }
 
 
+# 29/10: _cpsat_repair_loc_debt — so vung lien tiep khong go duoc no (luoi khong doi) thi dung.
+LOCFIX_FAIL_STREAK = 16
+# 29/10: lan giai TOAN TRUONG cua pha lap tiet dung khi 2 s khong co loi giai moi (xem
+# cpsat_lns.build_and_solve stall_s) — no dia diem con lai buoc go no theo vung xu ly.
+WHOLE_FILL_STALL_S = 2.0
+
+
 class Constructor:
     def __init__(self, problem: Problem, seed: int = 0):
         self.P = problem
@@ -782,6 +789,10 @@ class Constructor:
         # 05/10: luoi warm la luoi TRUNG GIAN (vong 2 Cherry xep tu dau), khong
         # phai lich nguoi dung -> no luat duoc go ca khi phai bot tiet (_maybe_fill_warm)
         self.prefer_valid: bool = False
+        # 29/10: worker vong 1 cua Cherry 2 vong — tu moc nay, luoi het trung gio va gan du tiet
+        # la tra ve ngay (xem _stage1_ready). 0 = tat.
+        self.stage1_ready_at: float = 0.0
+        self._stage1_armed_at: float = 0.0
         self._cpsat_stats: collections.Counter = collections.Counter()
         self._cpsat_memo: dict[frozenset, tuple[str, int]] = {}
         self._cpsat_pass_idx: int = 0
@@ -1037,13 +1048,17 @@ class Constructor:
             feas_deadline = min(deadline, started + max(12.0, (deadline - started) * 0.38))
         cherry_one_attempt = self.cherry_cpsat and self.quality_focus is None and self._cpsat_available()
         has_min_sess = any(r is not None and r.min_sessions > 0 for r in P.teacher_rules)
+        # chi luc XAY MOI (khong dung luc sua lich nguoi dung) — go o cuoi khoi duoi no ben duoi
+        self._stage1_armed_at = self.stage1_ready_at
         while time.monotonic() < feas_deadline and not self._stop_requested():
             if (
                 (cherry_one_attempt or has_min_sess or (not self.cherry_cpsat and self.quality_focus is None and self._cpsat_available()))
                 and attempts >= 1
                 and best_soft is not None
-                and best_soft.overlap == 0
-                and best_placed >= expected - 16
+                and (
+                    (best_soft.overlap == 0 and best_placed >= expected - 16)
+                    or self._stage1_ready(best_soft)
+                )
             ):
                 # Da co luoi sach trung gio -> sang CP-SAT lap tiet + toi uu.
                 break
@@ -1091,6 +1106,7 @@ class Constructor:
                 and not self._stop_requested()
                 and best_soft.penalty() > 0
                 and idle_rounds < max_idle_rounds
+                and not self._stage1_ready(best_soft)
             ):
                 extend_rounds += 1
                 soft = clone_from_grid(best_soft.grid)
@@ -1107,6 +1123,8 @@ class Constructor:
                     best_pen = pen
                     best_soft = soft
             info["rule_debt_extend_rounds"] = extend_rounds
+            if self._stage1_armed_at and self._stage1_ready(best_soft):
+                info["stage1_ready"] = True
             info["rule_debt_extend_solved"] = complete_soft is not None
             if (
                 complete_soft is None
@@ -1120,6 +1138,7 @@ class Constructor:
                 ejected = self._eject_session_debt(best_soft, deadline)
                 if ejected:
                     info["rule_debt_ejected"] = ejected
+        self._stage1_armed_at = 0.0
         if (
             complete_soft is None
             and best_soft is not None
@@ -1725,6 +1744,18 @@ class Constructor:
         except Exception:
             pass
 
+    def _stage1_ready(self, soft: SoftSchedule) -> bool:
+        """29/10 (chu du an: "xep moi mat rat lau de dung"): worker vong 1 chi can giao cho vong 2
+        MOT luoi gan du tiet: trung gio con lai worker go bot tiet truoc khi tra (_shed_overlaps),
+        no luat GV / dia diem vong 2 CP-SAT go nhanh hon pha 2. Do An Phu (869 tiet, 120 s): vong 1
+        an 11-24 s de duoi no ma vong 2 vao toi uu nhanh nhu nhau du nhan luoi cua giay 4 hay 12."""
+
+        at = self._stage1_armed_at
+        if at <= 0 or time.monotonic() < at:
+            return False
+        placed = sum(1 for row in soft.grid for v in row if v >= 0)
+        return placed - soft.overlap >= sum(self.P.a_periods) - 16
+
     def _phase2(self, soft: SoftSchedule, deadline: float) -> None:
         P = self.P
         rng = self.rng
@@ -1736,6 +1767,8 @@ class Constructor:
         stall = 0
         iteration = 0
         while soft.penalty() > 0 and time.monotonic() < deadline:
+            if self._stage1_ready(soft):
+                break
             iteration += 1
             self._iteration = iteration
             self._report_construct(soft)
@@ -6041,9 +6074,17 @@ class Constructor:
         T = P.num_teachers()
         threads = self._cpsat_threads_effective()
         tries = accepted = 0
+        # 29/10 (chu du an: "khi xep moi no mat rat lau de dung"): do An Phu con 1 buoi no dia diem ->
+        # 45 lan thu lien INFEASIBLE (~10 s), nhieu vung 4 buoi boc trung 3-4 lan tren CUNG luoi.
+        # Nho vung da hong cho toi khi luoi doi; hong lien LOCFIX_FAIL_STREAK vung -> nhuong cho
+        # buoc go tiet gay no + lap lai (vong do xep xong tiet con lai trong ~1.5 s).
+        failed: set[tuple[frozenset[int], int]] = set()
+        streak = 0
+        redraws = 0
         while not self._stop_requested() and soft.overlap == 0 and soft.penalty() > target:
+            self._report_construct(soft)
             now = time.monotonic()
-            if deadline - now < 2.0 or tries >= max_tries:
+            if deadline - now < 2.0 or tries >= max_tries or streak >= LOCFIX_FAIL_STREAK or redraws > 60:
                 break
             debt_pairs = [
                 (t, s) for t in range(T) if soft.tloc[t] is not None
@@ -6132,6 +6173,11 @@ class Constructor:
                         sess.add(s)
                     while len(sess) < 4:
                         sess.add(self.rng.randrange(NUM_SESSIONS))
+            key = (frozenset(sess), t_unfreeze)
+            if key in failed:
+                tries -= 1
+                redraws += 1
+                continue
             frozen = [
                 t for t in self._has_rule_teachers
                 if t != t_unfreeze and soft.rule_pen[t] > (soft.location_debt(t) if soft.tloc[t] is not None else 0)
@@ -6150,6 +6196,8 @@ class Constructor:
             except Exception:  # noqa: BLE001 - toan tu phu
                 new_cells, cinfo = None, {}
             if new_cells is None:
+                failed.add(key)
+                streak += 1
                 continue
             journal = cpsat_lns.apply_cells(soft, new_cells)
             for t in self._has_rule_teachers:
@@ -6157,6 +6205,8 @@ class Constructor:
             after = sum(1 for row in soft.grid for v in row if v >= 0)
             if soft.overlap == 0 and after >= before and soft.penalty() < pen0:
                 accepted += 1
+                failed.clear()
+                streak = 0
                 if os.environ.get("TKB_EVAC_DEBUG"):
                     sys.stderr.write(
                         f"[locfix] sessions={sorted(sess)} pen {pen0}->{soft.penalty()} placed {before}->{after} "
@@ -6166,6 +6216,9 @@ class Constructor:
             cpsat_lns.revert(soft, journal)
             for t in self._has_rule_teachers:
                 soft.refresh_rule_pen(t)
+            failed.add(key)
+            streak += 1
+        stats["loc_repair_streak_stop"] = int(stats.get("loc_repair_streak_stop", 0)) + int(streak >= LOCFIX_FAIL_STREAK)
         stats["loc_repair"] = [
             int(stats.get("loc_repair", [0, 0, 0])[0]) + tries,
             int(stats.get("loc_repair", [0, 0, 0])[1]) + accepted,
@@ -6228,6 +6281,7 @@ class Constructor:
                 and os.environ.get("TKB_CPSAT_LOC_SOFT", "1") != "0"
             )
             while not self._stop_requested():
+                self._report_construct(soft)
                 cnt_now = [0] * A
                 for row in soft.grid:
                     for v in row:
@@ -6256,7 +6310,7 @@ class Constructor:
                         seed=self._cpsat_pass_idx + 7 + 13 * stats["whole_pass"],
                         stop_check=self._stop_requested, require_improve=False,
                         fill_quality=False, frozen_teachers=[], loc_soft=loc_soft,
-                        require_full=keep_all,
+                        require_full=keep_all, stall_s=WHOLE_FILL_STALL_S if loc_soft else 0.0,
                     )
                 except Exception as exc:  # noqa: BLE001 - toan tu phu
                     new_cells, cinfo = None, {"status": "ERROR", "error": repr(exc)}
@@ -6337,6 +6391,7 @@ class Constructor:
             and os.environ.get("TKB_CPSAT_LOC_SOFT", "1") != "0"
         )
         while not self._stop_requested():
+            self._report_construct(soft)
             now = time.monotonic()
             limit = min(sub_limit, deadline - now - 0.3)
             if limit < 0.8:
@@ -6367,7 +6422,7 @@ class Constructor:
                         seed=self._cpsat_pass_idx + 20,
                         stop_check=self._stop_requested, require_improve=False,
                         fill_quality=False, frozen_teachers=[], loc_soft=True,
-                        require_full=True,
+                        require_full=True, stall_s=WHOLE_FILL_STALL_S,
                     )
                 except Exception as exc:
                     new_cells, cinfo = None, {"status": "ERROR", "error": repr(exc)}

@@ -26,13 +26,15 @@ import cherry_local_solver as cls  # noqa: E402
 from solver_jobs import SolverManager  # noqa: E402
 
 FAKE_SOLVER = r'''
-import json, sys
+import json, os, sys
 request = json.loads(sys.stdin.read() or "{}")
 payload = {
     "ok": True, "lessons": [], "unassignedLessons": [],
     "metrics": {"expected_periods": 1, "scheduled_periods": 1, "unassigned_periods": 0,
                 "app_constraint_violation_count": 0, "hard_ok": True},
     "echoEngine": (request.get("settings") or {}).get("engine"),
+    "echoPid": os.getpid(),
+    "echoPrewarm": os.environ.get("TKB_STDIO_PREWARM", ""),
 }
 print(json.dumps({"protocol": "tkb-reference-solver-stdio-v1", "status": 200, "payload": payload}))
 '''
@@ -97,6 +99,7 @@ class ServerTests(unittest.TestCase):
     def tearDownClass(cls_):
         cls_.server.shutdown()
         cls_.server.server_close()
+        cls_.manager.close()
         cls_.tmp.cleanup()
 
     def test_binds_loopback_only(self):
@@ -160,6 +163,94 @@ class ServerTests(unittest.TestCase):
     def test_unknown_path(self):
         status, _, payload = request(self.port, "GET", "/api/school/store", ALLOWED)
         self.assertEqual(status, 404)  # may nay chi GIAI, khong co kho du lieu
+
+
+def solve_until_done(port, job_id, deadline_s=30):
+    body = {"data": {"lop": []}, "settings": {"solve_run_id": job_id, "engine": "cherry"}}
+    status, _, payload = request(port, "POST", "/api/solve-data", ALLOWED, body)
+    assert status == 202, payload
+    deadline = time.time() + deadline_s
+    while time.time() < deadline:
+        status, _, payload = request(port, "GET", f"/api/solve-result?jobId={job_id}", ALLOWED)
+        if status != 202:
+            return status, payload
+        time.sleep(0.1)
+    raise AssertionError("job did not finish")
+
+
+class PrewarmTests(unittest.TestCase):
+    """29/10: trang Sap xep hoi /api/health -> Cherry nap san MOT tien trinh bo giai (Python + engine
+    da import, cho du lieu) — bam Cherry khong cho khoi dong Python."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        runtime = Path(self.tmp.name) / "solver_runtime"
+        (runtime / "scripts").mkdir(parents=True)
+        (runtime / "scripts" / "solve_stdio.py").write_text(FAKE_SOLVER, encoding="utf-8")
+        self.manager = SolverManager(runtime, Path(self.tmp.name) / "logs", workers=1)
+        allowed = tuple(o.lower() for o in cls.DEFAULT_ORIGINS)
+        self.server = cls.ExclusiveServer(("127.0.0.1", 0), cls.make_handler(self.manager, allowed))
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.manager.close()
+        self.tmp.cleanup()
+
+    def spare_pid(self, wait=False, other_than=None):
+        # handler tra /api/health TRUOC roi moi nap san -> cho mot chut
+        deadline = time.time() + (10 if wait else 0)
+        while True:
+            spare = self.manager._spare
+            pid = spare[0].pid if spare is not None and spare[0].poll() is None else None
+            if not wait or (pid is not None and pid != other_than) or time.time() > deadline:
+                return pid
+            time.sleep(0.05)
+
+    def test_health_without_page_origin_does_not_prewarm(self):
+        # bo cai / ban khac kiem "da chay chua" (khong co Origin) -> khong ton tien trinh
+        status, _, _ = request(self.port, "GET", "/api/health")
+        self.assertEqual(status, 200)
+        time.sleep(0.3)
+        self.assertIsNone(self.spare_pid())
+
+    def test_page_health_prewarms_and_click_uses_it(self):
+        request(self.port, "GET", "/api/health", ALLOWED)
+        first = self.spare_pid(wait=True)
+        self.assertIsNotNone(first)
+        request(self.port, "GET", "/api/health", ALLOWED)
+        time.sleep(0.3)
+        self.assertEqual(self.spare_pid(), first)  # hoi lai khong bat them tien trinh
+        status, payload = solve_until_done(self.port, "job-prewarm-1")
+        self.assertEqual(status, 200, payload)
+        self.assertEqual(payload["echoPid"], first)
+        self.assertEqual(payload["echoPrewarm"], "1")
+        # xep xong -> nap san tien trinh moi cho lan bam tiep
+        second = self.spare_pid(wait=True, other_than=first)
+        self.assertIsNotNone(second)
+        self.assertNotEqual(second, first)
+        status, payload = solve_until_done(self.port, "job-prewarm-2")
+        self.assertEqual(payload["echoPid"], second)
+
+    def test_dead_spare_is_replaced(self):
+        self.manager.prewarm()
+        spare = self.manager._spare[0]
+        spare.kill()
+        spare.wait(timeout=10)
+        status, payload = solve_until_done(self.port, "job-prewarm-dead")
+        self.assertEqual(status, 200, payload)
+        self.assertNotEqual(payload["echoPid"], spare.pid)
+        self.assertEqual(payload["echoPrewarm"], "")
+
+    def test_close_kills_spare(self):
+        self.manager.prewarm()
+        spare = self.manager._spare[0]
+        self.manager.close()
+        spare.wait(timeout=20)
+        self.assertIsNotNone(spare.poll())
+        self.assertIsNone(self.manager._spare)
 
 
 class PackageTests(unittest.TestCase):

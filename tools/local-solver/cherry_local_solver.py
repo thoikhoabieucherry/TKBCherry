@@ -162,6 +162,9 @@ def make_handler(manager: SolverManager, allowed: tuple[str, ...], updater: Upda
                 if updater is not None:
                     payload.update(updater.info())
                 self._send(200, payload)
+                if self._origin():
+                    # 29/10: trang Sap xep dang mo -> nap san tien trinh bo giai cho cu bam Cherry
+                    manager.prewarm()
             elif parts.path == "/api/solver-state":
                 self._send(200, manager.state(job_id))
             elif parts.path == "/api/solve-result":
@@ -381,9 +384,10 @@ def main(argv: list[str] | None = None) -> int:
         updater = Updater(HERE, lambda: bool(manager.state().get("busy")), lambda m: write_log(log_dir, m),
                           restart_args(raw_argv))
         server.RequestHandlerClass = make_handler(manager, allowed, updater)
-        updater.on_restart = server.shutdown
+        updater.on_restart = lambda: (manager.close(), server.shutdown())
         updater.start()
     if args.tray and run_tray(server, manager, args.port, args.first_run, log_dir, updater):
+        manager.close()
         return 0
     try:
         server.serve_forever()
@@ -391,6 +395,7 @@ def main(argv: list[str] | None = None) -> int:
         pass
     finally:
         server.server_close()
+        manager.close()
     return 0
 
 

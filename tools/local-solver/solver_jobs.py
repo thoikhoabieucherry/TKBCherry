@@ -40,6 +40,8 @@ STOP_GRACE_MS = 15_000       # qua han bao nhieu thi dat co dung mem
 KILL_GRACE_MS = 45_000       # qua han bao nhieu thi giet tien trinh
 CANCEL_KILL_MS = 6_000       # huy han: cho engine tra ket qua toi da 6 s roi giet
 COMPLETED_KEEP_MS = 30 * 60 * 1000
+# 29/10: tien trinh bo giai NAP SAN (xem SolverManager.prewarm) song toi da bay lau khi khong ai bam
+SPARE_IDLE_MS = 15 * 60 * 1000
 
 
 def now_ms() -> int:
@@ -547,6 +549,7 @@ class SolverJob:
         self.started_ms = 0
         self.completed_ms = 0
         self.proc = None
+        self.spare_proc = None   # tien trinh nap san (da import xong) danh cho job nay
         self.progress = None
         self.progress_updated_ms = 0
         self.stderr_tail = []
@@ -620,6 +623,78 @@ class SolverManager:
         self.jobs: dict[str, SolverJob] = {}
         self.order: list[str] = []
         self.lock = threading.Lock()
+        # (proc, stop_file, lan cuoi trang hoi /api/health)
+        self._spare: tuple[subprocess.Popen, Path, int] | None = None
+        self._spare_lock = threading.Lock()
+        self._reaper_started = False
+
+    # ---- tien trinh bo giai
+    def _new_stop_file(self) -> Path:
+        return Path(tempfile.gettempdir()) / f"cherry-local-stop-{os.getpid()}-{uuid.uuid4().hex[:10]}.flag"
+
+    def _spawn(self, stop_file: Path, prewarm: bool = False) -> subprocess.Popen:
+        env = build_solver_env(self.workers, stop_file, self.save_artifacts)
+        if prewarm:
+            env["TKB_STDIO_PREWARM"] = "1"
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+        return subprocess.Popen(
+            [self.python_exe, str(self.script), "solve"],
+            cwd=str(self.solver_runtime_dir),
+            env=env,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            creationflags=creationflags,
+            start_new_session=(os.name != "nt"),
+        )
+
+    def prewarm(self) -> None:
+        """29/10 (chu du an: "xep moi mat rat lau de dung"): moi lan bam Cherry la mot tien trinh
+        Python moi phai nap engine + thu vien — 1 s khi may vua dung, ~12 s lan dau sau mot luc
+        (do: An Phu 120 s, "Dang khoi dong" 1.1 -> 13.2 s). Trang Sap xep hoi /api/health khi mo /
+        quay lai -> nap san MOT tien trinh (import xong, cho du lieu tren stdin); bam Cherry dung
+        ngay tien trinh do. Khong nap khi dang xep (khong tranh CPU); bo sau SPARE_IDLE_MS."""
+        if not self.available():
+            return
+        with self._spare_lock:
+            spare = self._spare
+            if spare is not None and spare[0].poll() is None:
+                self._spare = (spare[0], spare[1], now_ms())
+                return
+            if self._active_job() is not None:
+                return
+            stop_file = self._new_stop_file()
+            try:
+                proc = self._spawn(stop_file, prewarm=True)
+            except OSError:
+                return
+            self._spare = (proc, stop_file, now_ms())
+            if not self._reaper_started:
+                self._reaper_started = True
+                threading.Thread(target=self._reap_spare_loop, name="cherry-local-spare", daemon=True).start()
+
+    def _reap_spare_loop(self) -> None:
+        while True:
+            time.sleep(30)
+            with self._spare_lock:
+                spare = self._spare
+                if spare is None or (spare[0].poll() is None and now_ms() - spare[2] < SPARE_IDLE_MS):
+                    continue
+                self._spare = None
+            kill_tree(spare[0])
+
+    def _take_spare(self) -> tuple[subprocess.Popen, Path] | None:
+        with self._spare_lock:
+            spare, self._spare = self._spare, None
+        if spare is None:
+            return None
+        if spare[0].poll() is not None:
+            return None
+        return spare[0], spare[1]
+
+    def close(self) -> None:
+        with self._spare_lock:
+            spare, self._spare = self._spare, None
+        if spare is not None:
+            kill_tree(spare[0])
 
     # ---- helpers
     def available(self) -> bool:
@@ -670,8 +745,10 @@ class SolverManager:
                 }
             budget = compute_budget(settings)
             prepared = prepare_request(request, budget, self.workers)
-            stop_file = Path(tempfile.gettempdir()) / f"cherry-local-stop-{os.getpid()}-{uuid.uuid4().hex[:10]}.flag"
+            spare = self._take_spare()
+            stop_file = spare[1] if spare else self._new_stop_file()
             job = SolverJob(job_id, request, prepared, budget, self.workers, stop_file)
+            job.spare_proc = spare[0] if spare else None
             job.started_ms = now_ms()
             self.jobs[job_id] = job
             self.order.append(job_id)
@@ -779,20 +856,12 @@ class SolverManager:
 
     # ---- chay tien trinh
     def _run(self, job: SolverJob) -> None:
-        env = build_solver_env(job.workers, job.stop_file, self.save_artifacts)
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
         self.log_dir.mkdir(parents=True, exist_ok=True)
         safe_tail = "".join(ch if ch.isalnum() else "-" for ch in job.id[-16:])
         log_path = self.log_dir / f"solver-{time.strftime('%Y%m%d-%H%M%S')}-{safe_tail}.log"
         try:
-            proc = subprocess.Popen(
-                [self.python_exe, str(self.script), "solve"],
-                cwd=str(self.solver_runtime_dir),
-                env=env,
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                creationflags=creationflags,
-                start_new_session=(os.name != "nt"),
-            )
+            proc = job.spare_proc if job.spare_proc is not None else self._spawn(job.stop_file)
+            job.spare_proc = None
         except OSError as exc:
             job.error = f"Không chạy được bộ giải: {exc}"
             job.result = (500, {"ok": False, "kind": "solver_worker_start_failed", "error": job.error, "jobId": job.id})
@@ -900,3 +969,5 @@ class SolverManager:
         job.stdout_text = ""
         job.request = {"settings": job.request.get("settings") or {}}
         job.completed_ms = now_ms()
+        # nguoi dung hay bam Cherry tiep (lich vua xep) -> nap san tien trinh cho lan sau
+        self.prewarm()

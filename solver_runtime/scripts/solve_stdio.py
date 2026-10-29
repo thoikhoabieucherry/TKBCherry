@@ -560,6 +560,20 @@ def period_allocation_error_payload(
     )
 
 
+def _prewarm_imports() -> None:
+    """29/10: tools/local-solver (Cherry) bat san tien trinh nay khi trang Sap xep mo
+    (TKB_STDIO_PREWARM=1): nap truoc engine v3 + OR-Tools roi moi cho du lieu tren stdin,
+    bam Cherry khong phai cho 1-12 s khoi dong Python."""
+
+    import importlib
+
+    for name in ("tkb_engine_v3.entry", "tkb_engine_v3.cpsat_lns", "ortools.sat.python.cp_model"):
+        try:
+            importlib.import_module(name)
+        except Exception:  # noqa: BLE001 - nap san la toi uu, luot xep tu import lai
+            pass
+
+
 def main() -> int:
     mode = sys.argv[1] if len(sys.argv) > 1 else "solve"
     ui_data = None
@@ -580,10 +594,17 @@ def main() -> int:
                 "message": "Dang doc du lieu sap xep",
             }
         )
+        prewarm = os.environ.get("TKB_STDIO_PREWARM") == "1"
+        if prewarm:
+            _prewarm_imports()
         if mode == "external-cp-sat-stream":
             raw = sys.stdin.buffer.readline(MAX_EXTERNAL_CP_SAT_STREAM_REQUEST_BYTES + 1)
         else:
             raw = sys.stdin.buffer.read()
+        if prewarm:
+            # tien trinh nap san cho du lieu co the hang phut: dem thoi gian tu luc nhan luot
+            global _PROGRESS_STARTED
+            _PROGRESS_STARTED = time.monotonic()
         global CURRENT_REQUEST_BODY
         CURRENT_REQUEST_BODY = raw
         if not raw:

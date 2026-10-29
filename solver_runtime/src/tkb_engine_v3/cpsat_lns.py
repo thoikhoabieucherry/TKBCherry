@@ -55,6 +55,7 @@ import collections
 import collections.abc
 import dataclasses
 import os
+import threading
 import time
 import traceback
 from typing import Any, Callable, Iterable
@@ -260,8 +261,13 @@ def build_and_solve(
     fill_quality: bool = True,
     loc_soft: bool = False,
     require_full: bool = False,
+    stall_s: float = 0.0,
 ) -> tuple[dict[tuple[int, int], int] | None, dict[str, Any]]:
     """Xep lai cac o tu do cua ``classes`` bang CP-SAT theo hop dong ``lane``.
+
+    ``stall_s`` (29/10): > 0 -> da co loi giai ma ``stall_s`` giay khong co loi giai moi thi dung
+    (trang thai FEASIBLE nhu het gio). Do An Phu: lan giai toan truong cua pha lap tiet tim loi giai
+    cuoi o giay 2.7-4.1 roi chay khong toi het tran 7 s.
 
     Tra ve (new_cells, info): new_cells = {(lop, o): phan cong} cho MOI o tu do
     cua cluster, hoac None (khong co loi giai cai thien / du lieu khong ma
@@ -321,6 +327,7 @@ def build_and_solve(
             fill_quality,
             loc_soft,
             require_full,
+            float(stall_s or 0.0),
         )
     except Exception as exc:  # du lieu la -> bao loi, khong nem
         info["status"] = "ERROR"
@@ -349,6 +356,7 @@ def _build_and_solve(
     fill_quality: bool = True,
     loc_soft: bool = False,
     require_full: bool = False,
+    stall_s: float = 0.0,
 ) -> tuple[dict[tuple[int, int], int] | None, dict[str, Any]]:
     C = P.num_classes()
     # 01/10: lop trong full_classes tu do o MOI buoi ke ca khi co ``sessions``
@@ -1307,6 +1315,7 @@ def _build_and_solve(
             super().__init__()
 
         def on_solution_callback(self) -> None:
+            last_solution[0] = time.monotonic()
             s_val = int(self.Value(S))
             g1_val = int(self.Value(G1))
             timeline.append((round(time.monotonic() - t0, 2), g1_val, s_val))
@@ -1326,7 +1335,21 @@ def _build_and_solve(
                         self.StopSearch()
                         return
 
-    status = solver.Solve(m, _Callback())
+    last_solution = [0.0]
+    stall_done = threading.Event()
+    if stall_s > 0:
+        def _stall_watch() -> None:
+            while not stall_done.wait(0.1):
+                if last_solution[0] and time.monotonic() - last_solution[0] >= stall_s:
+                    info["stalled"] = True
+                    solver.stop_search()
+                    return
+
+        threading.Thread(target=_stall_watch, name="cpsat-stall", daemon=True).start()
+    try:
+        status = solver.Solve(m, _Callback())
+    finally:
+        stall_done.set()
     info["status"] = solver.StatusName(status)
     info["solve_s"] = round(time.monotonic() - t0 - build_s, 2)
     info["stopped"] = stopped[0]

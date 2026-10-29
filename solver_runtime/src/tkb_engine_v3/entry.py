@@ -28,7 +28,12 @@ ENGINE_NAME = "tkb-engine-v3"
 
 
 # Vong 1 cua nut Cherry 2 vong: moc mem (giay) — xem stage1_usable_ready.
-STAGE1_SOFT_S = 11.5
+# 29/10: 11.5 -> 7: worker tra luoi nhap tu giay ~5 (STAGE1_READY_S); do An Phu 2 luot cho tu 6 s toi
+# 11.5 s chi de doi them ket qua, vong 2 khong nhanh hon.
+STAGE1_SOFT_S = 7.0
+# 29/10: tu giay thu may (tinh tu luc worker vong 1 bat dau) luoi het trung gio, thieu <= 16 tiet
+# la du cho vong 2 — xem Constructor._stage1_ready.
+STAGE1_READY_S = 4.0
 
 
 def _to_int(value: Any, default: int = 0) -> int:
@@ -356,7 +361,7 @@ class _LiveQuality:
 
     def on_construct(self, seed: int, evt: Mapping[str, Any]) -> None:
         """28/10 (chu du an: "xep moi cham"): truoc khung chat luong dau tien, hien
-        "Dang dung lich · 812/869 tiet · con 37 cho vuong" (worker tot nhat) ~1 lan/giay."""
+        "Dang dung lich · con 37 tiet chua on" (worker tot nhat) ~1 lan/giay."""
         if self.progress is None or self.by_seed:
             return
         try:
@@ -367,21 +372,22 @@ class _LiveQuality:
             return
         if expected <= 0:
             return
-        # tot nhat tu dau (nhieu tiet hon, roi it cho vuong hon) -> so chi di mot chieu
+        # 29/10 (chu du an: "khuc dang dung lich thay sao sao do"): "869/869 tiet · con 68 cho
+        # vuong" dung yen ca chuc giay (vong 2 go bot tiet de lap lai: 853/869 khong "tot hon" 869)
+        # -> MOT so: tiet chua xep + cho vuong, nho nhat tu dau, chi giam.
+        left = max(0, expected - placed) + max(0, conflicts)
         best = self.construct_best
-        if best is None or (placed, -conflicts) > (best[0], -best[1]):
-            self.construct_best = (placed, conflicts, expected)
+        if best is None or left < best[0]:
+            self.construct_best = (left, placed, expected)
         now = time.monotonic()
         if now - self.construct_emit < 1.0:
             return
         self.construct_emit = now
-        placed, conflicts, expected = self.construct_best
-        label = f"Đang dựng lịch · {placed}/{expected} tiết"
-        if conflicts > 0:
-            label += f" · còn {conflicts} chỗ vướng"
+        left, placed, expected = self.construct_best
+        label = f"Đang dựng lịch · còn {left} tiết chưa ổn" if left > 0 else "Đang dựng lịch · đã đủ tiết"
         try:
             self.progress({"stage": "construct", "message": label, "metricLabel": label,
-                           "placed": placed, "expected": expected, "conflicts": conflicts})
+                           "placed": placed, "expected": expected, "remaining": left})
         except Exception:
             pass
 
@@ -475,6 +481,7 @@ def _worker_solve(args) -> dict:
     cpsat_threads = int(args[7]) if len(args) > 7 else 0
     cherry_cpsat = bool(args[8]) if len(args) > 8 else False
     prefer_valid = bool(args[9]) if len(args) > 9 else False
+    stage1_ready_s = float(args[10]) if len(args) > 10 else 0.0
     started = time.monotonic()
     deadline = started + budget_s
     expected = sum(problem.a_periods)
@@ -485,6 +492,8 @@ def _worker_solve(args) -> dict:
     constructor.cpsat_threads = max(0, cpsat_threads)
     constructor.cherry_cpsat = cherry_cpsat
     constructor.prefer_valid = prefer_valid
+    if stage1_ready_s > 0:
+        constructor.stage1_ready_at = started + stage1_ready_s
     if warm_missing_ok > 0:
         # 22/08 (toi): lich vao duoc phep thieu dung nhung tiet Cherry lan
         # truoc da dua ve Chua phan vi chat luong GV -> van warm-start.
@@ -736,6 +745,9 @@ def _portfolio_solve(
                     live_queue,
                     (max(1, p_threads // max(1, n_workers)) if p_threads > 0 else 1),
                     p_cherry,
+                    False,
+                    # 29/10: vong 1 tra luoi ngay khi het trung gio (vong 2 CP-SAT go no con lai)
+                    STAGE1_READY_S if stage1_cut else 0.0,
                 )
                 for i in range(n_workers)
             ]
