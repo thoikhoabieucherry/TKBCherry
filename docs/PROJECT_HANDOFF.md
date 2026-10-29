@@ -255,9 +255,10 @@
   20261029-104621-baf006a5, runtime dd99dac779bf68e2 KHÔNG đổi → máy đã cài tự lên qua gói app 1 MB), thử gói thật cổng 2299:
   1 tiến trình nạp sẵn trước khi bấm, lượt xếp dùng nó, xong lại nạp 1 tiến trình mới. `Desktop\Cherry.exe` = cmnb20.
   Trang đăng dựng = `%LOCALAPPDATA%\Temp\cmnweb17` (chép `cmnweb16` = bản đang chạy, chỉ thay 4 tệp `download/`).
-  **CHƯA ĐĂNG**: lệnh deploy (token đọc từ lịch sử phiên) bị auto mode chặn lần này → chủ dự án tự chạy
-  `npx -y netlify-cli@latest deploy --dir %LOCALAPPDATA%\Temp\cmnweb17 --site 7256f81a-369e-41e2-86c0-6a8ecba91ff4 --prod --no-build`
-  (sau `netlify login` hoặc với NETLIFY_AUTH_TOKEN). Bẫy: lệnh dọn tiến trình lọc theo dòng lệnh `*cmnb19*` giết luôn các
+  **ĐÃ ĐĂNG Netlify** prod `6ae2c80d375727927268ec38` (lần đầu auto mode chặn `deploy_v4.py`; chủ dự án: "deploy lên
+  netlify thôi đừng đụng tới tkbcherry.com" → chạy lại; CLI báo 422 như mọi lần nhưng deploy ready + published). Đã kiểm
+  từ trang thật: `cherry-latest.json` build 20261029-104621-baf006a5, SHA-256 gói app khớp, `Cherry.exe` khớp cmnb20, bridge
+  không đổi. tkbcherry.com KHÔNG đụng. Bẫy: lệnh dọn tiến trình lọc theo dòng lệnh `*cmnb19*` giết luôn các
   shell bash có chữ đó (kể cả monitor) — lọc thêm `Name = 'python.exe'`.
 - **Deploy (chưa làm, chờ chủ dự án)**: web = `tkb-rust-bridge.js` + dòng `?v=` bridge trong `sapxep.html` (dựng = live + 1 dòng,
   cây làm việc đang có các bump `?v` khác chưa commit); engine = 3 file `tkb_engine_v3` lên VPS (không restart). Gói zip phát cho
