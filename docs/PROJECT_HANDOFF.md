@@ -8,6 +8,53 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-30 NÚT CHERRY XẾP MỚI: FET (BẢN V3, ĐỦ LUẬT) DỰNG NHÁP → CHERRY TỐI ƯU + VÁ 403 TRANG NETLIFY + VÁ DỪNG SỚM — CHỜ ĐĂNG NETLIFY
+
+- **Câu hỏi chủ dự án (29–30/10)**: "xếp mới vẫn chưa ổn… dùng FET xếp full hạn chế vi phạm rồi chạy tiếp Cherry turbo 3.5 thì
+  sao?"; "giữa v3 và 3.5 turbo cái nào tốt hơn? học hỏi gì `Desktop\TKBCherry-FET-VPS-V3` để tối ưu thời gian xếp cho Cherry.exe".
+- **Đo (scratchpad phiên c14cda64 `fetpipe/`: `bench3.py` có dòng thời gian, `fet_construct.js`, `run_pipe2.sh`, `summ_pipe.py`)**:
+  FET của mình / của V4 xếp đủ nhưng 276–433 vi phạm RB → làm nháp cho Cherry/Turbo đều XẤU HƠN xếp mới (Turbo vứt lưới
+  `warm_all=False`). v3 vs Turbo xếp mới 120 s máy rảnh: chất lượng hoà; v3 nhanh hơn ở trường 2 cơ sở, Turbo nhanh hơn ở trường
+  lớn 1 cơ sở (`_stage1_ready` chỉ xét số tiết thiếu, không xét nợ luật — chưa sửa). `TKBCherry-FET-VPS-V3` = bản thuần trình
+  duyệt; `tkb-fet-engine.js` của nó = FET mình + ~2000 dòng dạy đủ 9 luật GV + 11 luật môn + xếp trước tiết ghép nhiều lớp
+  (`syncJointGhepCells`) → An Phú 869/869 RB 0 (~3–8 s), Tân Nhựt 1746/1746 RB 0 (~4–5 s), Tân Phú Trung 2190/2193 RB 0 (25 s).
+- **FET mới (`web/pages/tkb-fet-engine.js`)**: ghép 3 chiều gốc `e9c0e76` (26/08) + bản mình + V3 → 0 xung đột (V3 tách trước
+  các sửa ghép 02/09 nên KHÔNG chép đè được). Sửa thêm: `getCanonMonKey` của V3 có bộ đệm không bao giờ xoá → gắn với
+  `ensureMonAliasIndex()` (đổi dayGhep thì xoá). Test: `tkb_fet_engine_ghep_alias_node` sửa ca 02/09 (tiết ghép nhiều lớp
+  không GV nay = MỘT ô chung, kiểm cùng ô thay vì đếm hoạt động); `tools/tests/fet_guards_test.js` ca "giới hạn 2 giữ cặp đôi"
+  kiểm KẾT QUẢ trên lưới (V3 làm cặp đôi bằng 2 tiết lẻ liền nhau). Các suite FET khác đỏ đúng như trước (`tkb_fet_engine_node`
+  0/33 có sẵn). ▶ và Mac/điện thoại (dùng FET) giờ ra lịch RB 0 ở các trường đã thử.
+- **Bridge (`cherryFetSeedEligible` / `buildCherryFetSeed`, sau `buildClientFastSeed` trong `postSolve`)**: nút Cherry, bộ giải máy
+  này (`!pageHasSolverServer()`), không phải mục Tối ưu riêng, lưới gần trống (≤ 2% tiết không cố định) → worker FET `action:"solve"`
+  (trần 20% ngân sách, 10–25 s) trên bản sao `requestData`; nhận nháp thiếu ≤ 1% tiết, ĐẶT LẠI nguyên dạng mọi ô cố định / ghim
+  tiết ghép (`jointPin`) của lưới gửi đi (FET V3 ghi đè ô ghim thành chữ thường → engine coi tiết chung là tiết riêng từng lớp, "còn
+  22 tiết chưa ổn" — bắt được khi thử Chrome), kiểm bằng `inspectFetCandidateHardConstraints` (phanmon.js) phải 0 vi phạm; trừ thời
+  gian dựng nháp khỏi ngân sách ⏱; nhãn "Đang dựng lịch nháp · N/M tiết". Tắt: `window.__TKB_CHERRY_FET_SEED = false`. tkbcherry.com
+  (có máy chủ) KHÔNG đổi hành vi. Test `e2e_tests/planner_cherry_fet_seed_node` 8/8.
+- **Engine (`construct.py` `_run_quality`)**: lịch đủ tiết còn nợ luật sau pha khởi động → trước đây `return` (TPT dừng ở 18,7/120 s,
+  35 vi phạm); nay lặp `_cpsat_repair_loc_debt` (+ pha 3 6 s khi CP-SAT hết nước) tới hết giờ / hết nợ rồi mới CP-SAT chất lượng.
+  Test engine v3 181/181.
+- **LỖI ĐANG CHẠY ĐÃ VÁ — Cherry.exe từ chối trang Netlify (403)**: bộ cài `cmnb19`/`cmnb20` (đăng 29/10 sáng, máy đã cài tự cập nhật
+  lên) dựng THIẾU `--allow-origin https://tkbcherry.netlify.app` → `allowed_origins.txt` không có, `DEFAULT_ORIGINS` chỉ tkbcherry.com
+  → nút Cherry trên tkbcherry.netlify.app không gọi được bộ giải (thử lại bản đã cài ở cổng 2299: Netlify 403, tkbcherry.com 200).
+  Nay `DEFAULT_ORIGINS` có sẵn `https://tkbcherry.netlify.app` (test `OriginTests`). Máy đã cài tự lên bản vá qua gói app vì
+  updater chỉ GET `cherry-latest.json` (không cần Origin).
+- **A/B kiểu thật** (FET mới + engine vá, 120 s, 8 luồng; máy tải 34–95% do phiên khác — mỗi cặp cùng điều kiện), [lẻ/trống2/buổi/trống1]
+  (giây có số đầu): An Phú s11 xếp mới 0/0/302/34 (51) vs nháp 1/0/292/29 (26); s22 0/0/279/13 (15) vs 0/0/278/14 (6); Tân Nhựt s11
+  3/0/652/95 (25) vs 0/0/650/91 (10); s22 0/0/618/66 (10) vs 0/0/604/49 (6); TPT s11 2191/2193 11/12/702/188 (81) vs 2193/2193
+  22/1/707/138 (28); s22 2191 15/5/695/159 (78) vs 2193 10/0/704/123 (28). Gói thật cmnb21 qua HTTP (60 s, An Phú nháp): số ở giây 3,
+  869/869 hợp lệ 0 lẻ 288 buổi. **Chrome thật** (trang cmnweb18 phục vụ cục bộ + bộ giải gói cmnb21 cổng 2299 qua
+  `TKB_LOCAL_SOLVER_ORIGIN_V1`): nháp 4,3 s, số tối ưu giây 8,6, sau 2 phút áp lên trang 869/869 RB 0, 0/0/281/14.
+- **Bản dựng**: bộ cài `%LOCALAPPDATA%\Temp\cmnb21` (build 20261030-014806-b014f8da, runtime dd99dac779bf68e2 KHÔNG đổi — dựng với
+  `PIP_CONSTRAINT` = đúng phiên bản thư viện của cmnb20, nếu không pip kéo bản mới → runtime đổi → máy đã cài phải tải lại cả exe);
+  trang `%LOCALAPPDATA%\Temp\cmnweb18` = cmnweb17 (đang chạy) + `tkb-fet-engine.js` + `tkb-rust-bridge.js` + `sapxep.html` ?v
+  (`20261030-fet-v3-rules-v1`, `20261030-noserver-v12`) + `download/` cmnb21. **CHƯA ĐĂNG**: Netlify CLI trên máy chưa đăng nhập
+  và token phiên trước không dùng lại → chờ chủ dự án `netlify login` / cấp token. tkbcherry.com KHÔNG đụng.
+- **Còn mở**: `_stage1_ready` xét thêm nợ luật (Tân Nhựt xếp mới khi FET không dùng được); bước "tìm chỗ tốt hơn cho tiết chung"
+  (joint.py) tốn 3–6 s trên nháp FET; pha khởi động tabu 7,5–14 s trước CP-SAT có khi đứng yên (An Phú 24→14 lẻ rồi 10 s không
+  đổi) — CP-SAT hạ buổi lẻ nhanh hơn nhiều. `run_tests.py` trong worktree báo 8 test JS "mới hỏng" do CRLF (cắt hàm theo `\n  }\n`)
+  — chạy lại bản LF thì đạt; không phải lỗi thật.
+
 ## 2026-10-27 HỌC TỪ BẢN "CHERRY v3.5 TURBO" (Desktop/TKBCherry-FET-VPS-V4) + NÚT GẠT «MÁY CHỦ / MÁY NÀY» — CHƯA DEPLOY
 
 - **Câu hỏi chủ dự án**: thuật toán ở `C:\Users\Cherry\Desktop\TKBCherry-FET-VPS-V4` có tốt hơn không. Bản đó = bản sao Cherry
