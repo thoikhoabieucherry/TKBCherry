@@ -8,7 +8,7 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
-## 2026-10-30 NÚT CHERRY XẾP MỚI: FET (BẢN V3, ĐỦ LUẬT) DỰNG NHÁP → CHERRY TỐI ƯU + VÁ 403 TRANG NETLIFY + VÁ DỪNG SỚM — CHỜ ĐĂNG NETLIFY
+## 2026-10-30 NÚT CHERRY XẾP MỚI: FET (BẢN V3, ĐỦ LUẬT) DỰNG NHÁP → CHERRY TỐI ƯU + VÁ 403 TRANG NETLIFY + VÁ DỪNG SỚM — ĐÃ ĐĂNG NETLIFY 30/10
 
 - **Câu hỏi chủ dự án (29–30/10)**: "xếp mới vẫn chưa ổn… dùng FET xếp full hạn chế vi phạm rồi chạy tiếp Cherry turbo 3.5 thì
   sao?"; "giữa v3 và 3.5 turbo cái nào tốt hơn? học hỏi gì `Desktop\TKBCherry-FET-VPS-V3` để tối ưu thời gian xếp cho Cherry.exe".
@@ -48,8 +48,13 @@
 - **Bản dựng**: bộ cài `%LOCALAPPDATA%\Temp\cmnb21` (build 20261030-014806-b014f8da, runtime dd99dac779bf68e2 KHÔNG đổi — dựng với
   `PIP_CONSTRAINT` = đúng phiên bản thư viện của cmnb20, nếu không pip kéo bản mới → runtime đổi → máy đã cài phải tải lại cả exe);
   trang `%LOCALAPPDATA%\Temp\cmnweb18` = cmnweb17 (đang chạy) + `tkb-fet-engine.js` + `tkb-rust-bridge.js` + `sapxep.html` ?v
-  (`20261030-fet-v3-rules-v1`, `20261030-noserver-v12`) + `download/` cmnb21. **CHƯA ĐĂNG**: Netlify CLI trên máy chưa đăng nhập
-  và token phiên trước không dùng lại → chờ chủ dự án `netlify login` / cấp token. tkbcherry.com KHÔNG đụng.
+  (`20261030-fet-v3-rules-v1`, `20261030-noserver-v12`) + `download/` cmnb21. **ĐÃ ĐĂNG** tkbcherry.netlify.app deploy
+  `6ae3d81762e7a94aaf3917c8` (chủ dự án `! npx -y netlify-cli@latest login`, rồi `netlify deploy --dir cmnweb18 --site
+  7256f81a-369e-41e2-86c0-6a8ecba91ff4 --prod --no-build`; lần đầu lỗi 422 "no records matched" lúc tải 2 file trùng nội dung
+  Cherry.exe/CherrySetup.exe — đăng lại là qua). Kiểm trang thật: `cherry-latest.json`, bridge, FET, worker, gói app (SHA-256
+  f0dd266d…), Cherry.exe = CherrySetup.exe trùng SHA-256 bản dựng; `sapxep.html` chỉ khác ở chú thích + script HUD Netlify tự chèn.
+  Thử updater của gói cmnb20 (29/10) trỏ vào trang thật: tải + khớp SHA-256 + giải nén đúng bản 20261030-014806-b014f8da có origin
+  Netlify → máy đã cài tự lành 403 trong ~90 s sau lần bật kế tiếp (hoặc ≤ 6 giờ nếu đang bật). tkbcherry.com KHÔNG đụng.
 - **Còn mở**: `_stage1_ready` xét thêm nợ luật (Tân Nhựt xếp mới khi FET không dùng được); bước "tìm chỗ tốt hơn cho tiết chung"
   (joint.py) tốn 3–6 s trên nháp FET; pha khởi động tabu 7,5–14 s trước CP-SAT có khi đứng yên (An Phú 24→14 lẻ rồi 10 s không
   đổi) — CP-SAT hạ buổi lẻ nhanh hơn nhiều. `run_tests.py` trong worktree báo 8 test JS "mới hỏng" do CRLF (cắt hàm theo `\n  }\n`)
