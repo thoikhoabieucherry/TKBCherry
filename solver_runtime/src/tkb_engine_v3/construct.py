@@ -5525,8 +5525,30 @@ class Constructor:
             else min(3.2, max(1.5, remaining * 0.15))
         )
         self.phase3_quality(soft, time.monotonic() + warmup, progress=progress)
-        if self._stop_requested() or soft.penalty() != 0:
+        if self._stop_requested():
             return
+        if soft.penalty() != 0:
+            # 30/10: lich DU tiet con no luat (luoi nut ▶ FET cu, sua tay) — truoc day tra ve ngay
+            # sau pha khoi dong, bo phi phan con lai cua ngan sach (Tan Phu Trung: dung o giay
+            # 18.7/120, con 35 vi pham). Dung phan con lai go no (CP-SAT vung 2-4 buoi, khong bot
+            # tiet; xen pha 3 khi CP-SAT het nuoc) roi moi toi uu chat luong.
+            rep: dict = {}
+            while (
+                not self._stop_requested()
+                and soft.overlap == 0
+                and soft.penalty() > 0
+                and deadline - time.monotonic() > 6.0
+            ):
+                pen0 = soft.penalty()
+                self._cpsat_repair_loc_debt(soft, deadline - 4.0, rep, max_tries=400)
+                if soft.penalty() >= pen0:
+                    self.phase3_quality(soft, min(deadline - 4.0, time.monotonic() + 6.0), progress=progress)
+                    if soft.penalty() >= pen0:
+                        break
+            if info is not None:
+                info["quality_debt_repair"] = rep.get("loc_repair")
+            if self._stop_requested() or soft.penalty() != 0 or deadline - time.monotonic() < 4.5:
+                return
         stats = self._cpsat_quality_phase(soft, deadline - 0.4, progress=progress)
         if info is not None:
             info["cpsat_quality"] = stats
