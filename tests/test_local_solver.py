@@ -63,6 +63,9 @@ class OriginTests(unittest.TestCase):
         allowed = tuple(o.lower() for o in cls.DEFAULT_ORIGINS)
         self.assertTrue(cls.origin_allowed("https://tkbcherry.com", allowed))
         self.assertTrue(cls.origin_allowed("https://www.tkbcherry.com/", allowed))
+        # 30/10: trang phat Cherry.exe phai duoc nhan ma khong can --allow-origin luc dung bo cai.
+        self.assertTrue(cls.origin_allowed("https://tkbcherry.netlify.app", allowed))
+        self.assertFalse(cls.origin_allowed("https://evil--tkbcherry.netlify.app", allowed))
         self.assertTrue(cls.origin_allowed("http://127.0.0.1:2210", allowed))
         self.assertTrue(cls.origin_allowed("http://localhost:1010", allowed))
         self.assertTrue(cls.origin_allowed("", allowed))  # curl / test tren chinh may

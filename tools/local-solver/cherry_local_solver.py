@@ -39,7 +39,10 @@ from updater import Updater  # noqa: E402
 VERSION = "cherry-local-solver-v3"
 # 2210 là cổng của Cherry Local (bản chạy cả web trong máy) -> bộ giải dùng 2211 để hai bản cùng sống được.
 DEFAULT_PORT = 2211
-DEFAULT_ORIGINS = ("https://tkbcherry.com", "https://www.tkbcherry.com")
+# 30/10: trang khong dang nhap https://tkbcherry.netlify.app la noi phat Cherry.exe -> mac dinh luon nhan.
+# Truoc day chi them qua --allow-origin luc dung; ban cmnb19/cmnb20 quen co nay nen may da tu cap
+# nhat tra 403 cho chinh trang do (nut Cherry khong goi duoc bo giai).
+DEFAULT_ORIGINS = ("https://tkbcherry.com", "https://www.tkbcherry.com", "https://tkbcherry.netlify.app")
 MAX_BODY_BYTES = 64 * 1024 * 1024
 # Bản thử nghiệm (vd trang Netlify) thêm Origin ở đây, mỗi dòng một địa chỉ https://… — không
 # cần sửa mã. Dòng trống / bắt đầu bằng # bị bỏ qua.
