@@ -216,7 +216,7 @@ test("đang xếp lịch thì không cho đổi nơi giải", async () => {
 });
 
 test("sapxep.html nạp bridge bản mới (?v) để trình duyệt không giữ bản cũ", () => {
-  assert.match(PLANNER_HTML, /tkb-rust-bridge\.js\?v=20261030-noserver-v12/);
+  assert.match(PLANNER_HTML, /tkb-rust-bridge\.js\?v=20261030-noserver-v13/);
 });
 
 test("bộ giải đang tắt: chỉ thao tác của người dùng mới đánh thức qua cherry-local://", async () => {

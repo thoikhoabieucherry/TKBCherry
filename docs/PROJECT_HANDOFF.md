@@ -8,6 +8,43 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-30 (sáng) TRANG NETLIFY: NÚT GẠT CHERRY.EXE / MÁY CHỦ CẠNH RB + KHÁNG CÁO CLOUD RUN — ĐÃ ĐĂNG NETLIFY
+
+- **Yêu cầu chủ dự án**: "thêm 1 nút đổi trạng thái kế bên nút RB, mặc định local thì bấm Cherry chạy = Cherry.exe,
+  tắt đi thì chạy về cloud run" — "thử nghiệm … cho netlify trước". tkbcherry.com KHÔNG đụng (chỉ dùng API sẵn có).
+- **Cloud Run vẫn bị đình chỉ** (30/10 `gcloud`: "Consumer 'projects/488043050753' has been suspended"); tài khoản
+  thayankorea@gmail.com có org `thayankorea-org` + 8 project tạo 20/10, KHOÁ 5 (project giải + 4 `cs-project-*` do trình
+  thiết lập Google tạo; 3 `google-mpf-*` + project cũ 61ee7855 không khoá). **Đã gửi kháng cáo** cho project giải trên
+  Console (chủ dự án duyệt nguyên văn; "Submitted request. Check your email for confirmation."), chờ email ~2 ngày làm việc.
+  Không lập tài khoản Google khác để né (điều khoản cấm, dễ bị khoá tiếp, hại đơn). tkbcherry.com vẫn xếp: `/api/health`
+  `serverless.mode=auto, fallback=vps`, 3 lượt × 6 luồng.
+- **Thiết kế**: Máy chủ = tài khoản tkbcherry.com; `_redirects` Netlify chuyển tiếp ĐÚNG 8 đường
+  (`build_netlify.SERVER_API_PATHS`: auth/login, auth/logout, health, solve-data, solve-result, solver-state, solve-cancel,
+  solve-precheck) sang https://tkbcherry.com (máy chủ tự chọn Cloud Run/VPS) — không có `/api/*` chung nên
+  `/api/school/store`, `/api/local/schools`, registry không bao giờ tới kho thật (test). Máy chủ chỉ giữ kết quả trong RAM,
+  trình duyệt tự áp + lưu vào kho trình duyệt. solve-data trả 202 + jobId rồi poll → không vướng giới hạn thời gian proxy.
+- **Code**: `overlay/shared/auth-local.js` — `TKBAuth.noServer` thành getter (= không phải [gạt Máy chủ + có phiên]),
+  `serverSwitch:true`, phiên riêng `TKB_NETLIFY_SERVER_SESSION_V1`, gạt chung khoá `TKB_SOLVER_TARGET_V1`; fetch các đường
+  trên ra mạng kèm Bearer chỉ khi chế độ máy chủ bật; 401 → bỏ phiên, về máy này, sự kiện `cherry:solver-mode`
+  (`expired`); `window.__cherryServerMode` {active, wanted, session, login, logout, setMode}. `overlay/pages/local-planner.js`
+  — viên `#cherrySolverModeToggle` (role=switch) chèn trước `#btnHome` (ngay sau RB), nhãn "Cherry.exe" (Mac: "Trình duyệt") /
+  "Máy chủ", hộp đăng nhập `#cherryServerLogin`, chuột phải = đăng xuất, khoá khi đang xếp; ẩn trên điện thoại/cảm ứng
+  (`local.css`). Bridge: `pageHasServerSwitch()` → trang Netlify luôn dùng móc bản không đăng nhập (chấm, hộp cài), chấm
+  xanh dương `data-state="server"`, `window.__tkbSolverModeChanged`, câu lỗi "Không kết nối được máy chủ…"; ?v bridge
+  `20261030-noserver-v13`, overlay STAMP `20261030-noserver-v11`.
+- **Test**: `e2e_tests/netlify_server_mode_node` 6/6 (mặc định tại chỗ, gạt chưa đăng nhập vẫn tại chỗ, đăng nhập + gạt →
+  Bearer; kho/registry không ra mạng; 401 → về máy này; đăng nhập sai; đăng xuất), `tests/test_netlify_build`
+  9/9 (chỉ chuyển tiếp đúng 8 đường), các suite bridge/overlay liên quan đạt.
+- **Đăng**: bản nháp `6ae405760d08c5a075cdb7c4--tkbcherry.netlify.app` (curl: health = máy chủ thật, solve-data/solver-state
+  không thẻ → 401 từ máy chủ, school/store + auth/registry → 404 Netlify; Chrome: viên hiện giữa RB và Home, bấm → hộp
+  đăng nhập, Huỷ giữ Cherry.exe; gạt có phiên → "Máy chủ", chấm xanh dương; trong lúc thử, chủ dự án tự đăng nhập "suadmin"
+  qua Netlify thành công). Prod `6ae4072712ca1de0088e922a` (trang `%LOCALAPPDATA%\Temp\cmnweb19` = cmnweb18 + 7 file,
+  `scratchpad c14cda64/make_cmnweb19.py`); file trên trang thật khớp SHA-256, proxy prod 200/401/404.
+- **Lưu ý**: qua Netlify máy chủ thấy IP biên Netlify → giới hạn đăng nhập sai (RAM, theo IP) có thể chặn tạm đăng nhập qua
+  Netlify; Cherry.exe chỉ nhận đúng origin tkbcherry.netlify.app (bản nháp `<id>--` → chấm cam, đúng thiết kế). Lượt máy chủ
+  dùng chung 3 suất VPS với các trường thật. **Chưa thử** trọn một lượt Cherry máy chủ có dữ liệu thật từ trang Netlify
+  (cần đăng nhập thật — để chủ dự án bấm).
+
 ## 2026-10-30 NÚT CHERRY XẾP MỚI: FET (BẢN V3, ĐỦ LUẬT) DỰNG NHÁP → CHERRY TỐI ƯU + VÁ 403 TRANG NETLIFY + VÁ DỪNG SỚM — ĐÃ ĐĂNG NETLIFY 30/10
 
 - **Câu hỏi chủ dự án (29–30/10)**: "xếp mới vẫn chưa ổn… dùng FET xếp full hạn chế vi phạm rồi chạy tiếp Cherry turbo 3.5 thì

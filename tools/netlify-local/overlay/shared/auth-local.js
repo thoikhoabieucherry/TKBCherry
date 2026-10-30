@@ -11,6 +11,14 @@
    khai), đồng bộ kho sang máy local, và chuyển/đánh thức lệnh giải — việc giải do
    tkb-rust-bridge.js lo (nút gạt "Máy này" -> bộ giải tools/local-solver ở 127.0.0.1:2211,
    chỉ đánh thức cherry-local:// khi người dùng bấm).
+
+   30/10/2026 (chủ dự án: "thêm 1 nút đổi trạng thái kế bên nút RB, mặc định local thì bấm
+   Cherry chạy = Cherry.exe, tắt đi thì chạy về cloud run"): chế độ MÁY CHỦ tuỳ chọn. Nút gạt
+   (pages/local-planner.js) + đăng nhập tài khoản tkbcherry.com; _redirects của Netlify chuyển
+   tiếp ĐÚNG các đường giải + đăng nhập sang https://tkbcherry.com (máy chủ tự chọn Cloud Run /
+   VPS). Chỉ khi chế độ máy chủ bật VÀ có phiên: TKBAuth.noServer = false (bridge đi đường máy
+   chủ), fetch các đường đó ra mạng kèm thẻ Bearer. Kho trường LUÔN ở trình duyệt:
+   /api/school/store, /api/local/schools trả lời tại chỗ, không bao giờ lên mạng.
 ============================================================ */
 (function(){
   "use strict";
@@ -18,6 +26,116 @@
   const HOST_SCHOOLS_KEY = "CHERRY_HOST_SCHOOLS_V1";
   const HOST_DATA_PREFIX = "CHERRY_HOST_DATA_V1::";
   const origFetch = typeof window.fetch === "function" ? window.fetch.bind(window) : null;
+
+  /* ---------------- Chế độ máy chủ (tuỳ chọn) ---------------- */
+  // Cùng khoá với nút gạt "Máy chủ / Máy này" của bridge: "server" = máy chủ, còn lại = máy này.
+  const SOLVER_TARGET_KEY = "TKB_SOLVER_TARGET_V1";
+  const SERVER_SESSION_KEY = "TKB_NETLIFY_SERVER_SESSION_V1";
+  const SERVER_LOGIN_PATH = "/api/auth/login";
+  // Phải khớp danh sách chuyển tiếp trong tools/netlify-local/build_netlify.py (REDIRECTS).
+  const SERVER_PATHS = new Set([
+    "/api/health", "/api/solve-data", "/api/solve-result", "/api/solver-state",
+    "/api/solve-cancel", "/api/solve-precheck", "/api/auth/logout"
+  ]);
+
+  function readServerSession(){
+    try{
+      const parsed = JSON.parse(localStorage.getItem(SERVER_SESSION_KEY) || "null");
+      if(parsed && typeof parsed.token === "string" && parsed.token) return parsed;
+    }catch(_){ }
+    return null;
+  }
+
+  function serverWanted(){
+    try{ return localStorage.getItem(SOLVER_TARGET_KEY) === "server"; }catch(_){ return false; }
+  }
+
+  function serverModeActive(){
+    return serverWanted() && !!readServerSession();
+  }
+
+  function notifySolverMode(reason){
+    try{ if(typeof window.__tkbSolverModeChanged === "function") window.__tkbSolverModeChanged(); }catch(_){ }
+    try{ window.dispatchEvent(new CustomEvent("cherry:solver-mode", {detail:{reason:reason || "", server:serverModeActive()}})); }catch(_){ }
+  }
+
+  function setSolverMode(mode){
+    const next = mode === "server" ? "server" : "local";
+    try{ localStorage.setItem(SOLVER_TARGET_KEY, next); }catch(_){ }
+    notifySolverMode("set");
+    return serverModeActive() ? "server" : "local";
+  }
+
+  async function serverLogin(loginId, password){
+    if(!origFetch) return {ok:false, message:"Trình duyệt không hỗ trợ đăng nhập máy chủ."};
+    const id = String(loginId || "").trim();
+    const pw = String(password || "");
+    if(!id || !pw) return {ok:false, message:"Nhập đầy đủ tài khoản và mật khẩu."};
+    let resp = null;
+    let data = {};
+    try{
+      resp = await origFetch(SERVER_LOGIN_PATH, {
+        method:"POST",
+        headers:{"Content-Type":"application/json", "Accept":"application/json"},
+        body:JSON.stringify({loginId:id, password:pw}),
+        cache:"no-store"
+      });
+      data = await resp.json().catch(() => ({}));
+    }catch(_){
+      return {ok:false, message:"Không kết nối được máy chủ tkbcherry.com. Kiểm tra mạng rồi thử lại."};
+    }
+    if(!resp.ok || !data || data.ok !== true || !data.sessionToken){
+      return {ok:false, message:String((data && (data.message || data.error)) || "Đăng nhập thất bại.")};
+    }
+    const session = {
+      token:String(data.sessionToken),
+      loginId:id,
+      name:String((data.user && (data.user.displayName || data.user.name)) || id),
+      role:String(data.role || ""),
+      at:Date.now()
+    };
+    try{ localStorage.setItem(SERVER_SESSION_KEY, JSON.stringify(session)); }catch(_){ }
+    return {ok:true, session};
+  }
+
+  function clearServerSession(){
+    try{ localStorage.removeItem(SERVER_SESSION_KEY); }catch(_){ }
+  }
+
+  async function serverLogout(){
+    const session = readServerSession();
+    clearServerSession();
+    try{ localStorage.setItem(SOLVER_TARGET_KEY, "local"); }catch(_){ }
+    notifySolverMode("logout");
+    if(session && origFetch){
+      try{
+        await origFetch("/api/auth/logout", {
+          method:"POST",
+          headers:{"Content-Type":"application/json", "Accept":"application/json", "Authorization":"Bearer " + session.token},
+          body:"{}",
+          cache:"no-store"
+        });
+      }catch(_){ }
+    }
+    return true;
+  }
+
+  // Máy chủ trả 401 (phiên hết hạn / bị thu hồi): bỏ phiên, về Cherry.exe, báo trang.
+  function expireServerSession(){
+    if(!readServerSession()) return;
+    clearServerSession();
+    try{ localStorage.setItem(SOLVER_TARGET_KEY, "local"); }catch(_){ }
+    notifySolverMode("expired");
+  }
+
+  window.__cherryServerMode = {
+    active:serverModeActive,
+    wanted:serverWanted,
+    session:readServerSession,
+    login:serverLogin,
+    logout:serverLogout,
+    setMode:setSolverMode
+  };
 
   function sanitize(value){
     try{
@@ -191,6 +309,12 @@
       try{ parsed = new URL(urlStr, location.href); }catch(_){ }
       if(parsed && parsed.origin === location.origin && parsed.pathname.startsWith("/api/")){
         const path = parsed.pathname;
+        if(path === SERVER_LOGIN_PATH) return origFetch(input, init);
+        if(SERVER_PATHS.has(path) && serverModeActive()){
+          const res = await origFetch(input, init);
+          if(res.status === 401 && path !== "/api/health" && path !== "/api/auth/logout") expireServerSession();
+          return res;
+        }
         const method = String((init && init.method) || (input && input.method) || "GET").toUpperCase();
         const bodyText = () => String((init && init.body) || "{}");
         if(path === "/api/local/schools"){
@@ -322,7 +446,9 @@
 
   window.TKBAuth = {
     isLocal:true,
-    noServer:true,
+    // Bridge đọc lại mỗi lần bấm: chế độ máy chủ bật + có phiên -> trang "có máy chủ".
+    get noServer(){ return !serverModeActive(); },
+    serverSwitch:true,
     remoteOnly:false,
     PLANS:{local:PLAN},
     loadRegistry,
@@ -353,8 +479,16 @@
   };
 
   window.TKBAuthApi = {
-    getAuthHeaders(extra){ return Object.assign({"Accept":"application/json"}, extra || {}); },
-    getSessionToken(){ return "local"; },
+    getAuthHeaders(extra){
+      const headers = Object.assign({"Accept":"application/json"}, extra || {});
+      const session = serverModeActive() ? readServerSession() : null;
+      if(session) headers.Authorization = "Bearer " + session.token;
+      return headers;
+    },
+    getSessionToken(){
+      const session = serverModeActive() ? readServerSession() : null;
+      return session ? session.token : "local";
+    },
     async apiHealth(){
       try{ return await (await fetch("/api/health", {cache:"no-store"})).json(); }catch(_){ return null; }
     },
@@ -370,7 +504,7 @@
     async guardProtectedPage(){ dispatchReady(); return true; },
     async checkHealth(){ return true; },
     async validateSession(){ return true; },
-    handleAuthExpired(){ },
+    handleAuthExpired(){ expireServerSession(); },
     rememberAuthReturnTarget(){ },
     startHealthPolling(){ }
   };

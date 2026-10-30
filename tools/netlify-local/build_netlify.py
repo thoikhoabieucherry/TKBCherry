@@ -5,6 +5,8 @@ lấy web/ hiện hành + lớp vỏ overlay/ (shared/auth-local.js: người d�
 trường trong trình duyệt; modules/local-schools.js: danh sách trường; pages/local-planner.js:
 ô thời lượng ⏱; local.css), sửa app.html / sapxep.html / storage.js cho dùng lớp vỏ đó.
 Giải: nút gạt "Máy này" -> bộ giải tools/local-solver (Cherry.exe) ở 127.0.0.1:2211.
+30/10: nút gạt cạnh Home Cherry.exe / Máy chủ; Máy chủ = đăng nhập tkbcherry.com, Netlify chuyển
+tiếp đúng SERVER_API_PATHS (đăng nhập + giải) sang máy chủ thật; kho trường vẫn trong trình duyệt.
 KHÔNG đăng kèm dữ liệu trường nào (bản V4 từng đăng web/data/<mã>.json công khai).
 
     python tools/netlify-local/build_netlify.py --out <thư mục> [--web <thư mục web>]
@@ -20,9 +22,19 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 OVERLAY = HERE / "overlay"
-STAMP = "20261028-noserver-v10"
+STAMP = "20261030-noserver-v11"
 
-REDIRECTS = """/               /app                 302!
+# 30/10: nút gạt Cherry.exe / Máy chủ (overlay pages/local-planner.js + shared/auth-local.js).
+# Netlify chuyển tiếp ĐÚNG các đường đăng nhập + giải sang tkbcherry.com (máy chủ chọn Cloud Run /
+# VPS); KHÔNG có /api/* chung -> /api/school/store, /api/local/schools không bao giờ tới kho thật.
+# Phải khớp SERVER_PATHS + SERVER_LOGIN_PATH trong overlay/shared/auth-local.js.
+SERVER_API_ORIGIN = "https://tkbcherry.com"
+SERVER_API_PATHS = (
+    "/api/auth/login", "/api/auth/logout", "/api/health", "/api/solve-data", "/api/solve-result",
+    "/api/solver-state", "/api/solve-cancel", "/api/solve-precheck",
+)
+
+REDIRECTS = "".join(f"{p:<24}{SERVER_API_ORIGIN}{p}  200\n" for p in SERVER_API_PATHS) + """/               /app                 302!
 /index.html     /app                 302!
 /login          /app                 302!
 /school-portal  /app                 302!

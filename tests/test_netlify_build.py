@@ -52,9 +52,26 @@ class NetlifyBuildTests(unittest.TestCase):
         redirects = self.read("_redirects")
         self.assertIn("/               /app                 302!", redirects)
         self.assertIn("/app            /app.html            200", redirects)
-        self.assertNotIn("tkbcherry.com", redirects)  # không proxy API thật
         self.assertIn("noindex", self.read("_headers"))
         self.assertIn("Disallow: /", self.read("robots.txt"))
+
+    def test_proxies_only_login_and_solver_paths(self):
+        # 30/10: nút gạt Máy chủ — chỉ đăng nhập + giải đi qua Netlify sang tkbcherry.com;
+        # kho trường (/api/school/store, /api/local/schools) và /api/* chung không bao giờ.
+        proxied = {}
+        for line in self.read("_redirects").splitlines():
+            parts = line.split()
+            if len(parts) >= 3 and "tkbcherry.com" in parts[1]:
+                proxied[parts[0]] = (parts[1], parts[2])
+        self.assertEqual(set(proxied), set(build_netlify.SERVER_API_PATHS))
+        for path, (target, status) in proxied.items():
+            self.assertEqual(target, "https://tkbcherry.com" + path)
+            self.assertEqual(status, "200")
+        for never in ("/api/*", "/api/school/store", "/api/local/schools", "/api/auth/registry", "/api/auth/register"):
+            self.assertNotIn(never, proxied)
+        shim = self.read("shared/auth-local.js")
+        for path in build_netlify.SERVER_API_PATHS:
+            self.assertIn(f'"{path}"', shim, f"auth-local.js phải biết đường {path}")
 
     def test_no_school_data_shipped(self):
         files = [p.relative_to(self.out).as_posix() for p in self.out.rglob("*") if p.is_file()]

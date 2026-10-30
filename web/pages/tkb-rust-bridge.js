@@ -1413,6 +1413,13 @@
     try{ return !(window.TKBAuth && window.TKBAuth.noServer === true); }catch(_){ return true; }
   }
 
+  // 30/10: ban Netlify co nut gat Cherry.exe / May chu (overlay pages/local-planner.js). TKBAuth.noServer
+  // doi theo nut gat (+ dang nhap tkbcherry.com) -> trang nay luon dung moc cua ban khong dang nhap
+  // (cham trang thai, hop cai Cherry.exe), con duong giai thi theo pageHasSolverServer() luc bam.
+  function pageHasServerSwitch(){
+    try{ return !!(window.TKBAuth && window.TKBAuth.serverSwitch === true); }catch(_){ return false; }
+  }
+
   function solverTarget(){
     try{
       if(!pageHasSolverServer()) return "local";
@@ -1446,6 +1453,9 @@
       return isWindowsDesktopNavigator()
         ? `Máy này chưa có bộ giải Cherry (${localSolverOrigin()}) — tải Cherry.exe theo hộp hướng dẫn rồi mở nó một lần.`
         : `Trên máy này nút 🍒 Cherry xếp ngay trên trình duyệt; bộ giải Cherry đầy đủ (cả Tối ưu) hiện mới có cho máy tính Windows.`;
+    }
+    if(pageHasServerSwitch() && solverTarget() !== "local"){
+      return "Không kết nối được máy chủ xếp lịch tkbcherry.com. Gạt về Cherry.exe để xếp trên máy này.";
     }
     return solverTarget() === "local"
       ? `Chưa thấy bộ giải trên máy này (${localSolverOrigin()}). Mở Cherry.exe một lần (Chrome hỏi "Mở …?" hoặc quyền truy cập mạng cục bộ thì chọn Cho phép), hoặc gạt về "Máy chủ".`
@@ -1511,6 +1521,7 @@
     "#tkbCherryLocalDot[data-state=\"online\"]{background:#10b981}",
     "#tkbCherryLocalDot[data-state=\"offline\"]{background:#f59e0b}",
     "#tkbCherryLocalDot[data-state=\"browser\"]{display:none}",
+    "#tkbCherryLocalDot[data-state=\"server\"]{background:#3b82f6}",
     "#tkbLocalSolverInstall{position:fixed;inset:0;z-index:100000;display:flex;align-items:center;",
     "justify-content:center;background:rgba(15,23,42,.45);padding:16px}",
     "#tkbLocalSolverInstall[hidden]{display:none}",
@@ -1621,8 +1632,13 @@
       cherry.appendChild(dot);
     }
     // "browser": may khong cai duoc bo giai (Mac, dien thoai) -> Cherry xep tren trinh duyet, an cham.
-    dot.dataset.state = online === "browser" ? "browser" : (online === true ? "online" : (online === false ? "offline" : "unknown"));
-    const tip = online === "browser"
+    // "server" (30/10, ban Netlify gat sang May chu): cham xanh duong.
+    dot.dataset.state = online === "browser" || online === "server"
+      ? online
+      : (online === true ? "online" : (online === false ? "offline" : "unknown"));
+    const tip = online === "server"
+      ? "Cherry Time! — xếp trên máy chủ tkbcherry.com"
+      : online === "browser"
       ? "Cherry Time! — xếp ngay trên trình duyệt"
       : online === true
       ? "Cherry Time! — bộ giải trên máy này đã sẵn sàng"
@@ -1901,11 +1917,11 @@
     if(typeof document === "undefined") return;
     const cherry = document.getElementById("btnEngineCherry");
     if(!cherry) return;
-    if(!pageHasSolverServer()){
+    if(!pageHasSolverServer() || pageHasServerSwitch()){
       // Ban khong dang nhap: chi mot nut Cherry + cham trang thai (do 1 lan, khong danh thuc).
       ensureSolverTargetCss();
       const windows = isWindowsDesktopNavigator();
-      markCherryLocalStatus(windows ? undefined : "browser");
+      markCherryLocalStatus(pageHasSolverServer() ? "server" : (windows ? undefined : "browser"));
       if(!document.__tkbCherryLocalHooked && typeof document.addEventListener === "function"){
         document.__tkbCherryLocalHooked = true;
         document.addEventListener("click", event => {
@@ -1915,7 +1931,7 @@
         }, true);
         // Quay lai tab (vua cai xong / vua Thoat o khay) -> do lai de cham dung mau.
         window.addEventListener("focus", () => {
-          if(!windows || window.__TKB_RUST_SOLVER_RUNNING === true) return;
+          if(!windows || pageHasSolverServer() || window.__TKB_RUST_SOLVER_RUNNING === true) return;
           probeRustApiBase(localSolverOrigin(), 1500).then(ok => {
             window.__TKB_LOCAL_SOLVER_ONLINE = Boolean(ok);
             if(ok) rememberLocalSolverSeen();
@@ -1924,7 +1940,7 @@
         });
       }
       // Mac / dien thoai: khong do 127.0.0.1 (khong co bo giai de do, tranh Chrome hoi quyen mang cuc bo).
-      if(!windows) return;
+      if(!windows || pageHasSolverServer()) return;
       probeRustApiBase(localSolverOrigin(), 1500).then(ok => {
         window.__TKB_LOCAL_SOLVER_ONLINE = Boolean(ok);
         if(ok) rememberLocalSolverSeen();
@@ -1948,6 +1964,27 @@
       rustApiBase().then(() => syncSolverTargetUi()).catch(() => {});
     }
   }
+
+  // 30/10: overlay Netlify goi khi gat Cherry.exe <-> May chu (hoac phien may chu het han).
+  window.__tkbSolverModeChanged = function(){
+    rustApiBaseCache = "";
+    window.__TKB_LOCAL_SOLVER_ONLINE = undefined;
+    if(pageHasSolverServer()){
+      markCherryLocalStatus("server");
+      return;
+    }
+    if(!isWindowsDesktopNavigator()){
+      markCherryLocalStatus("browser");
+      return;
+    }
+    markCherryLocalStatus(undefined);
+    probeRustApiBase(localSolverOrigin(), 1500).then(ok => {
+      if(pageHasSolverServer()) return;
+      window.__TKB_LOCAL_SOLVER_ONLINE = Boolean(ok);
+      if(ok) rememberLocalSolverSeen();
+      markCherryLocalStatus(Boolean(ok));
+    }).catch(() => {});
+  };
 
   /* 21/08: TIMER KHONG BI THROTTLE khi tab an. Chrome bop setTimeout cua tab
      nen xuong ~1 lan/phut (sau 5 phut an), lam vong poll ket qua + apply chia

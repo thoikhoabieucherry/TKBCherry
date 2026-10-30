@@ -155,3 +155,135 @@ body.planner-shell .toolbar-actions > .local-engine-budget > select:focus-visibl
     display: none !important;
   }
 }
+
+/* ---- pages/local-planner.js: nút gạt nơi xếp (Cherry.exe / Máy chủ) cạnh Home — 30/10 ---- */
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .cherry-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  height: 36px;
+  min-height: 36px;
+  margin: 0;
+  padding: 0 10px 0 8px;
+  border: 1px solid #34d399;
+  border-radius: var(--tkb-radius, 10px);
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .cherry-mode-toggle[data-mode="server"] {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .cherry-mode-toggle:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.cherry-mode-toggle .cmt-track {
+  position: relative;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 14px;
+  border-radius: 999px;
+  background: #10b981;
+  transition: background-color .15s ease;
+}
+
+.cherry-mode-toggle .cmt-knob {
+  position: absolute;
+  top: 2px;
+  left: 14px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left .15s ease;
+}
+
+.cherry-mode-toggle[data-mode="server"] .cmt-track { background: #94a3b8; }
+.cherry-mode-toggle[data-mode="server"] .cmt-knob { left: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cherry-mode-toggle .cmt-track,
+  .cherry-mode-toggle .cmt-knob { transition: none; }
+}
+
+/* Điện thoại / máy cảm ứng: lưới nút đặt cột cố định cho từng nút, và không chạy Cherry.exe. */
+@media (max-width: 900px), (hover: none) and (pointer: coarse), (orientation: landscape) and (max-height: 540px) and (any-pointer: coarse) {
+  body.planner-shell .toolbar-secondary-actions .stats-popover-wrap > .cherry-mode-toggle {
+    display: none !important;
+  }
+}
+
+#cherryServerLogin {
+  position: fixed;
+  inset: 0;
+  z-index: 100001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, .45);
+}
+
+#cherryServerLogin[hidden] { display: none; }
+
+#cherryServerLogin .csl-card {
+  width: 100%;
+  max-width: 400px;
+  box-sizing: border-box;
+  padding: 20px 22px;
+  border-radius: 14px;
+  background: #fff;
+  color: #0f172a;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .25);
+  font: 14px/1.5 system-ui, "Segoe UI", sans-serif;
+}
+
+#cherryServerLogin h3 { margin: 0 0 6px; font-size: 18px; }
+#cherryServerLogin .csl-note { margin: 0 0 12px; color: #475569; font-size: 13px; }
+
+#cherryServerLogin label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 10px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+#cherryServerLogin input {
+  height: 38px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 400;
+}
+
+#cherryServerLogin input:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
+#cherryServerLogin .csl-error { min-height: 1.3em; margin: 0 0 8px; color: #b91c1c; font-size: 13px; }
+#cherryServerLogin .csl-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+#cherryServerLogin .csl-actions button {
+  padding: 9px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background: #fff;
+  color: #0f172a;
+  font: 600 14px/1 system-ui, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+
+#cherryServerLogin .csl-actions .csl-primary { border-color: #e11d48; background: #e11d48; color: #fff; }
+#cherryServerLogin .csl-actions .csl-primary:disabled { opacity: .6; cursor: progress; }
