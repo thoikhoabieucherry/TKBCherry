@@ -1,8 +1,10 @@
 # TKBCherry — Trạng thái hiện hành (CURRENT STATE)
 
-*Cập nhật: 2026-10-20. File này là bản tóm tắt ngắn để onboard nhanh; chi tiết từng phiên làm việc nằm trong `PROJECT_HANDOFF.md` (mục cũ hơn ở `docs/archive/`).*
+*Cập nhật: 2026-10-30. File này là bản tóm tắt ngắn để onboard nhanh; chi tiết từng phiên làm việc nằm trong `PROJECT_HANDOFF.md` (mục cũ hơn ở `docs/archive/`).*
 
 ## Sản phẩm
+
+- **Engine Cherry + FET của dòng Cherry.exe trên tkbcherry.com (30/10/2026, đã deploy VPS)**: production chạy cùng engine v3 với Cherry.exe — pha chất lượng CP-SAT LNS nhiều lượt nhỏ (gốc bản V4 "Turbo"), vòng 1 thích ứng, lịch đủ tiết vào thẳng tối ưu, gỡ nợ luật tới hết giờ — và nút ▶ dùng FET đọc đủ luật Yêu cầu GV/môn (gốc bản V3, RB 0 ở An Phú/Tân Nhựt). Nháp FET cho Cherry chỉ chạy với bộ giải máy này (Netlify). Đo 6 luồng/180 s: tốt hơn engine cũ ở An Phú, Tân Nhựt, Đồng Đen bấm lại; **kém hơn ở xếp mới trường rất lớn** (Đồng Đen 72 lớp: 11 buổi 1 tiết vs 3) — đang xử lý. Cloud Run (bị đình chỉ) vẫn ảnh cũ. Chi tiết `PROJECT_HANDOFF.md` mục 30/10 (tối).
 
 - **Vạch màu phòng bộ môn trên TKB giáo viên (10/10/2026, đã deploy)**: trường khai `DATA.tkbSubjectRooms` (vd 3 phòng Tin học: tên phòng + địa điểm, GV có phòng riêng, GV có địa điểm riêng theo ngày, địa điểm ưu tiên cho tiết trái buổi) thì ô TKB giáo viên ở trang Sắp xếp có thêm **vạch màu cạnh PHẢI theo phòng** (vạch địa điểm cạnh trái giữ nguyên, và lấy địa điểm theo phòng nếu có); hết phòng → vạch sọc đỏ. Phòng không lưu theo từng tiết mà tự chia lại mỗi lượt vẽ (`tkbSubjectRoomPlan`, `web/pages/phanmon.js`). Chỉ là hiển thị: validator và engine chưa biết sức chứa phòng bộ môn; chưa có giao diện nhập cấu hình (ghi thẳng kho). Test `e2e_tests/planner_subject_rooms_node.test.js`. **In TKB → TKB phòng** (10/10, đã deploy): xuất Excel mỗi phòng một bảng Thứ × Tiết ghi «Lớp - Môn - GV», tên phòng tô cùng màu vạch; gồm phòng bộ môn và phòng gắn theo Lớp|Môn, tiết hết phòng nằm ở bảng «tiết chưa có phòng» (`exportRoomTKBExcel`, `web/pages/tkb-student-excel-export.js`; test `e2e_tests/excel_room_export_node.test.js`).
 

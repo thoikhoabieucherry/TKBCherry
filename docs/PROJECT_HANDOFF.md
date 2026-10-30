@@ -8,6 +8,33 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-30 (tối) ENGINE CHERRY + FET CỦA DÒNG CHERRY.EXE LÊN TKBCHERRY.COM (ĐÃ DEPLOY VPS)
+
+- **Chủ dự án**: "xem lại Desktop\TKBCherry-FET-VPS-V3 và V4 có gì hay hơn thuật toán trên tkbcherry.com… tích hợp vào cherry hiện tại"
+  → "đưa mới luôn đi rồi tính tiếp". Code V3/V4 KHÔNG đổi từ 26–27/10; điểm mạnh của chúng đã port vào nhánh
+  `feat/cherry-local-solver-toggle` (Cherry.exe/Netlify) 27–30/10 nhưng production vẫn chạy engine cũ.
+- **Đo Đồng Đen TKB 7** (72 lớp/2188 tiết; điểm xuất phát = bản chủ dự án nạp vào V4 20:02: trường thêm fixedOff BN.Kỳ/BN.Ngân/BN.Thư
+  19:57, bấm Cherry → 626/68 + 2 buổi 1 tiết), 120 s/8 luồng, [1tiết, trống2, buổi, trống1]: bấm lại — live 1/0/619/67, Cherry.exe
+  0/0/611/79, V4 0/0/611/75; xếp mới — live 2187/2188 HỎNG, Cherry.exe 3/0/667/112, V4 2/0/662/114, đường thật Cherry.exe (nháp FET V3
+  24 s → engine 95 s) 0/0/646/124. Lượt V4 của chủ dự án ra 647/124 vì chỉ chạy ~19 s.
+- **Đo kiểu VPS** (6 luồng, 180 s, cũ/mới chạy song song từng cặp, seed 11): An Phú xếp mới 0/0/293/26 → 0/0/285/16; Tân Nhựt xếp mới
+  0/0/635/68 → 0/0/618/54; Đồng Đen bấm lại 0/0/620/68 → 0/0/611/77; **Đồng Đen xếp mới 3/1/680/120 → 11/0/673/122 (KÉM HƠN)**:
+  pha chất lượng "nhiều lượt nhỏ" (sub_limit 2 s, dừng ở cải thiện đầu — gốc V4) gỡ buổi 1 tiết chậm ở trường rất lớn (205 lượt,
+  16 → 11), engine cũ 20 lượt lớn 16 → 3. Việc tiếp theo.
+- **Commit** `4feee12` (nhánh `deploy/cherry-engine-1030`, fast-forward vào nhánh này): chỉ engine (`construct.py`, `cpsat_lns.py`,
+  `entry.py`, `joint.py` = d386a46, 167ca78, 6320118, phần engine của 3bdcbb3/3cff7b6, 8d87530) + `tkb-fet-engine.js` (FET V3 đọc đủ
+  luật Yêu cầu, 90b7e64) + test. KHÔNG đưa: bridge (nháp FET cho Cherry chỉ chạy với bộ giải máy này — `cherryFetSeedEligible` trả
+  false khi có máy chủ), prewarm `solve_stdio.py`, updater Cherry.exe. `run_tests.py` (worktree LF): không test mới hỏng; 3 test JS
+  planner fail y hệt trên HEAD cũ.
+- **ĐÃ DEPLOY 30/10 ~23:40** (chủ dự án chạy `!` vì trình kiểm quyền chặn Claude chạy cả `preflight`):
+  `python <wt-deploy>/tools/vps-deploy/deploy-files.py deploy cherry-engine-20261030 --no-restart <4 file engine> web/pages/tkb-fet-engine.js`
+  (ROOT của deploy-files = cây chứa script ⇒ đẩy file LF của worktree). Preflight: 4/5 file live == HEAD; `cpsat_lns.py` live ==
+  bản CRLF của cây chính (bỏ CR = HEAD) — không mất bản vá nào. Backup `/root/tkb-backups/cherry-engine-20261030/`; rollback:
+  `deploy-files.py rollback cherry-engine-20261030 <file…>`. Không restart (Rust spawn `solve_stdio.py` mỗi lượt). Kiểm: FET live
+  sha256 `a23ed9da…` khớp, `/api/health` 200. ortools ghim 9.15.6755 (requirements) — `stop_search()` đã có sẵn trong engine cũ.
+- **Còn mở**: (1) xếp mới trường > 60 lớp kém hơn engine cũ ở buổi 1 tiết (trên); (2) Cloud Run (đang bị đình chỉ) vẫn ảnh cũ — khi
+  mở lại phải build ảnh mới; (3) bridge production cũ hơn HEAD (live thiếu khối soft-stop "Đang nhận lịch tốt nhất") — chưa đụng.
+
 ## 2026-10-30 KÉO-THẢ SO MÔN THEO MÃ (ĐÃ DEPLOY) + THCS ĐỒNG ĐEN TKB 7 ≤ 8 TIẾT/NGÀY
 
 - **Chủ dự án** (`sapxep?sid=e3d7a3b21e7`): "lớp 7/6 TNHN tiết 1-2 rồi lại có ở tiết 5 — chung buổi phải liền nhau". Lượt Cherry 18:09
