@@ -8,6 +8,28 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-30 KÉO-THẢ SO MÔN THEO MÃ (ĐÃ DEPLOY) + THCS ĐỒNG ĐEN TKB 7 ≤ 8 TIẾT/NGÀY
+
+- **Chủ dự án** (`sapxep?sid=e3d7a3b21e7`): "lớp 7/6 TNHN tiết 1-2 rồi lại có ở tiết 5 — chung buổi phải liền nhau". Lượt Cherry 18:09
+  xếp ĐÚNG (TNHN t1-2, Toán t5 trong `tkbSolverResult`); 18:16 lưới bị kéo-thả 19 ô / 8 lớp. `validateDrop` (`phanmon.js`) so chuỗi
+  thô: ô cố định ghi MÃ `TNHN`, tiết thường ghi TÊN "Hoạt động trải nghiệm hướng nghiệp" ⇒ không thấy cùng môn, cho thả tiết thứ 3
+  (vượt giới hạn 2/buổi, tách cụm). Vá: đếm / giới hạn buổi / liền tiết dùng `monMatches` (19c5b54). Test mới
+  `planner_drop_subject_alias_node` 4/4 (HEAD cũ 2 fail); 3 harness cắt `validateDrop` thêm `monMatches`.
+  `run_tests.py`: 7 "mới hỏng" y hệt trên worktree HEAD sạch (lỗi CRLF sẵn có).
+  **ĐÃ DEPLOY 30/10** `deploy.py files deploy drop-subject-alias-20261030 --no-restart web/pages/phanmon.js web/pages/sapxep.html`
+  (sapxep = live + khoá `phanmon.js?v=20261030-drop-subject-alias-v1`); sha256 live khớp, `/api/health` 200.
+  Bảng RB (`validateAll`) vẫn KHÔNG kiểm giới hạn tiết/buổi và liền tiết — chỉ kiểm lúc thả.
+- **Bẫy ngoại tuyến**: adapter lấy lưới warm từ `tkbSolverResult.lessons` khi đủ tiết (bỏ qua sửa tay trong `tkb`); trình duyệt đã bỏ
+  `lessons` khi gửi nên web không bị, nhưng script ngoài app phải `pop('tkbSolverResult')`.
+- **Xếp lại TKB 7** (chủ dự án: gọn buổi + tiết trống, GV ≤ 8 tiết/ngày trừ Mỹ thuật/Âm nhạc/Công nghệ): luật ghi vào kho
+  `tkbConstraints.teacher[gv].maxPeriods.day.thu2..7 = 8` cho 124 GV (Yêu cầu GV "Giới hạn số tiết dạy/1 buổi", cột Cả ngày — engine v3
+  và RB đều đọc). Công cụ `scratch/e3d7/fix_run.py` (LNS trên mô hình `cpsat_lns` của engine: pha gỡ nợ luật giữ lưới, pha gọn buổi/trống).
+  Bản chốt `scratch/e3d7/final_D.json`: 2188/2188, 671 → **619 buổi**, trống 1 (đếm theo khoảng) 100 → **59**, 0 buổi 1 tiết, 0 trống 2,
+  0 GV ngoài MT/Nhạc/CN quá 8 tiết/ngày (trước 10), RB 0, ô cố định/OFF và số tiết từng lớp-môn giữ nguyên; đổi 1291 ô.
+  **CHƯA GHI** — `apply.py` bị classifier chặn; BASELINE = 1793361798059 (kho lưu lại 19:03, nội dung = bản kéo 18:16).
+  Lệnh cho chủ dự án: `python scratch/e3d7/apply.py scratch/e3d7/final_D.json --write` (đóng tab TKB 7 trước). Dự phòng:
+  `Downloads/e3d7a3b21e7_TKB7_DongDen_8tiet.cherry`.
+
 ## 2026-10-25 "CLOUD RUN KHÔNG NHẬN LƯỢT GIẢI" = GOOGLE ĐÌNH CHỈ PROJECT MỚI — client báo lỗi nhanh + VPS dự phòng
 
 - **Triệu chứng** (chủ dự án, Tân Nhựt TKB 5 `0adf9782365`): bấm Cherry/Tối ưu → "Cloud Run không nhận lượt giải".
