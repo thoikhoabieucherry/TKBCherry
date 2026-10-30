@@ -106,11 +106,12 @@ test("02/09 dòng ghép không giáo viên: FET tạo hoạt động gv='' và x
 
   engine.init();
   const acts = engine.activities || [];
-  const hall = acts.filter(a => a.mon === "Hội trường");
   const self = acts.filter(a => a.mon === "Tự học");
-  assert.equal(hall.length, 2, "mỗi lớp một hoạt động Hội trường: " + JSON.stringify(acts.map(a => [a.classId, a.mon])));
+  // 30/10 (FET V3): dòng ghép NHIỀU lớp (Hội trường) được đặt trước vào MỘT ô chung cho cả nhóm
+  // lớp (syncJointGhepCells) nên không còn là hoạt động riêng từng lớp; dòng một lớp vẫn là hoạt động.
+  assert.equal(acts.filter(a => a.mon === "Hội trường").length, 0, JSON.stringify(acts.map(a => [a.classId, a.mon])));
   assert.equal(self.length, 2, "10A1 có 2 tiết Tự học (giới hạn 1/buổi -> 2 hoạt động đơn)");
-  hall.concat(self).forEach(a => assert.equal(a.gv, "", "hoạt động không GV"));
+  self.forEach(a => assert.equal(a.gv, "", "hoạt động không GV"));
 
   const result = await engine.solve();
   assert.ok(result && result.ok, JSON.stringify(result && {ok:result.ok, unassigned:result.unassigned, error:result.error}));
@@ -125,6 +126,15 @@ test("02/09 dòng ghép không giáo viên: FET tạo hoạt động gv='' và x
   };
   assert.equal(count("L1", "Hội trường"), 1);
   assert.equal(count("L2", "Hội trường"), 1);
+  const slotsOf = (cid, mon) => {
+    const out = [];
+    Object.entries(data.tkb[cid] || {}).forEach(([thu, day]) => ["sang", "chieu"].forEach(b => (day?.[b] || []).forEach((v, ti) => {
+      const m = typeof v === "object" && v ? v.mon : v;
+      if(String(m || "") === mon) out.push(`${thu}|${b}|${ti}`);
+    })));
+    return out;
+  };
+  assert.deepEqual(slotsOf("L1", "Hội trường"), slotsOf("L2", "Hội trường"), "tiết ghép nhiều lớp = một tiết chung");
   assert.equal(count("L1", "Tự học"), 2);
   assert.equal(count("L1", "TOAN"), 4);
   assert.equal(count("L2", "TOAN"), 4);

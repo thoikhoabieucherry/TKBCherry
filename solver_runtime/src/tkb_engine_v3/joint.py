@@ -245,6 +245,13 @@ def relocate_joint_lessons(
     if overlap0 > 0:
         info["reason"] = "start_overlap"
         return None, info
+    if pen0 > 0:
+        # 28/10 (chu du an: "chay toi 1p40 moi thay so thay doi"): luoi con no luat (lich
+        # nut ▶ / sua tay) -> luot chinh tu choi va xay lai, CP-SAT o day chi ton thoi gian
+        # (An Phu luoi ▶ penalty 37: 35.6 s roi "not_better"). Bo qua, tiet chung giu cho.
+        info["reason"] = "start_rule_debt"
+        info["seconds"] = round(time.monotonic() - t0, 2)
+        return None, info
 
     whole_max = max(1, int(os.environ.get("TKB_CPSAT_WHOLE_MAX_CLASSES", "40") or 40))
     scope = list(range(P.num_classes()))
