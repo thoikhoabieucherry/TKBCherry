@@ -26,7 +26,7 @@
   và RB đều đọc). Công cụ `scratch/e3d7/fix_run.py` (LNS trên mô hình `cpsat_lns` của engine: pha gỡ nợ luật giữ lưới, pha gọn buổi/trống).
   Bản chốt `scratch/e3d7/final_D.json`: 2188/2188, 671 → **619 buổi**, trống 1 (đếm theo khoảng) 100 → **59**, 0 buổi 1 tiết, 0 trống 2,
   0 GV ngoài MT/Nhạc/CN quá 8 tiết/ngày (trước 10), RB 0, ô cố định/OFF và số tiết từng lớp-môn giữ nguyên; đổi 1291 ô.
-  **CHƯA GHI** — `apply.py` bị classifier chặn; BASELINE = 1793361798059 (kho lưu lại 19:03, nội dung = bản kéo 18:16).
+  **ĐÃ GHI 30/10 ~19:22** (chủ dự án chạy `apply.py --write`, mốc mới 1793362972710; kéo lại khớp final_D, verify 0, RB 0). BASELINE cũ = 1793361798059.
   Lệnh cho chủ dự án: `python scratch/e3d7/apply.py scratch/e3d7/final_D.json --write` (đóng tab TKB 7 trước). Dự phòng:
   `Downloads/e3d7a3b21e7_TKB7_DongDen_8tiet.cherry`.
 
