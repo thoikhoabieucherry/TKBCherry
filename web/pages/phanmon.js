@@ -7145,12 +7145,17 @@ function validateDrop(targetTd, mon){
   const srcTi = src ? Number(src.ti) : -1;
   const srcVal = (src && srcThu && srcBuoi) ? cellMon(tkb[srcThu][srcBuoi][srcTi]) : "";
 
+  // 30/10: so theo MÃ môn — ô cố định hay ghi mã ("TNHN") còn tiết thường ghi tên
+  // ("Hoạt động trải nghiệm hướng nghiệp"); so chuỗi thô thì không thấy cùng môn
+  // và cho thả TNHN tiết 5 sau 2 tiết TNHN cố định (Đồng Đen 7/6).
+  const sameMon = v => monMatches(cellMon(v), mon);
+
   // tính newUsed sau drop
   let newUsed = used;
   // remove source if it is the same mon
-  if(srcVal === mon) newUsed -= 1;
+  if(sameMon(srcVal)) newUsed -= 1;
   // remove target if target currently is same mon (vì ta clear target trước khi đặt)
-  if(targetVal === mon) newUsed -= 1;
+  if(sameMon(targetVal)) newUsed -= 1;
   // add one at target
   newUsed += 1;
 
@@ -7171,7 +7176,7 @@ function validateDrop(targetTd, mon){
   // gioihan của Phân công là giới hạn riêng cho BUỔI mục tiêu, không cộng sáng + chiều.
   const idx = [];
   for(let i=0;i<arr.length;i++){
-    if(cellMon(arr[i]) === mon) idx.push(i);
+    if(sameMon(arr[i])) idx.push(i);
   }
   if(idx.length > sessionLimit){
     return {
@@ -7196,8 +7201,8 @@ function validateDrop(targetTd, mon){
   if(idx.length){
     const left = idx[0]-1;
     const right = idx[idx.length-1] + 1;
-    if(left >= 0 && cellMon(arr[left]) === mon) return {ok:false, reason:"touch left"};
-    if(right < arr.length && cellMon(arr[right]) === mon) return {ok:false, reason:"touch right"};
+    if(left >= 0 && sameMon(arr[left])) return {ok:false, reason:"touch left"};
+    if(right < arr.length && sameMon(arr[right])) return {ok:false, reason:"touch right"};
   }
 
 

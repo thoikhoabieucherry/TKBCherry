@@ -51,6 +51,7 @@ function loadValidateDrop({tkb, gioihan = 1, dragData = {type:"mon", classId:"L1
       return count;
     },
     cellMon:lessonValue,
+    monMatches(a, b){ return !!a && !!b && a === b; },
     getLopCanonById(id){ return String(id); },
     getTeacherForClassMon(){ return ""; },
     findTeacherConflictAtSlot(){ return null; },
