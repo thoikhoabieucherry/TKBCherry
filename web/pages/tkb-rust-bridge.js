@@ -1427,7 +1427,8 @@
      chu nhu cu. Mac / dien thoai khong cai duoc Cherry.exe -> luon may chu, khong hien cong tac.
      Chu du an chon: moi tai khoan deu duoc dung Agent, luot Cherry.exe khong tru han muc goi. */
   const AGENT_MODE_KEY = "TKB_AGENT_MODE_V1";
-  const AGENT_ANNOUNCE_KEY = "TKB_AGENT_ANNOUNCE_V1";
+  // V2 (31/10 khuya): popup rut gon — ai da thay ban dai (V1) cung duoc thay ban ngan mot lan.
+  const AGENT_ANNOUNCE_KEY = "TKB_AGENT_ANNOUNCE_V2";
   // Trang tkbcherry.com chua co ban cai Cherry.exe -> tai tu trang Netlify (cung ban tu cap nhat).
   const AGENT_DOWNLOAD_URL = "https://tkbcherry.netlify.app/download/Cherry.exe";
 
@@ -2087,11 +2088,12 @@
       btn.type = "button";
       btn.className = "agent-toggle";
       btn.addEventListener("click", () => onSolverTargetClick().catch(() => {}));
-      // 31/10 (chu du an: "nut agent ke ben nut RB, cho no nho lai xiu"): ngay sau RB (nhom RB/Home,
-      // RB chi hien cho superadmin — an thi cong tac dung truoc Home); khong co nhom do thi sau Cherry.
+      // 31/10 (chu du an: "nut agent ke ben nut RB, cho no nho lai xiu" -> "ben trai nut RB"): ngay
+      // TRUOC RB (nhom RB/Home; RB chi hien cho superadmin, an thi cong tac van dung truoc Home);
+      // khong co nhom do thi sau Cherry.
       const rb = document.getElementById("btnConstraintAudit");
       const home = document.getElementById("btnHome");
-      if(rb) rb.insertAdjacentElement("afterend", btn);
+      if(rb) rb.insertAdjacentElement("beforebegin", btn);
       else if(home) home.insertAdjacentElement("beforebegin", btn);
       else cherry.insertAdjacentElement("afterend", btn);
     }
@@ -2169,14 +2171,27 @@
 
   function scheduleAgentAnnouncement(){
     if(!agentSupported() || agentAnnouncementSeen()) return;
-    window.setTimeout(() => {
-      // Dang xep / dang co hop khac thi de lan mo trang sau.
-      if(window.__TKB_RUST_SOLVER_RUNNING === true || window.__TKB_SOLVE_UI_BUSY === true) return;
-      if(agentAnnouncementSeen()) return;
+    // 31/10 (chu du an: "sao toi khong thay thong bao"): trang dang ban (nhan lai luot xep cu, dang
+    // xep) hoac dang mo hop Cherry.exe thi CHO roi hien — truoc day bo qua luon lan mo trang do.
+    let tries = 0;
+    const attempt = () => {
+      if(agentAnnouncementSeen() || document.getElementById("tkbAgentAnnounce")) return;
       const install = document.getElementById("tkbLocalSolverInstall");
-      if(install && !install.hidden) return;
-      showAgentAnnouncement();
-    }, 1500);
+      const busy = window.__TKB_RUST_SOLVER_RUNNING === true
+        || window.__TKB_SOLVE_UI_BUSY === true
+        || Boolean(install && !install.hidden);
+      if(!busy){
+        showAgentAnnouncement();
+        return;
+      }
+      tries += 1;
+      if(tries < 300){
+        // unref: Node (test) khong bi giu song boi vong cho nay; trinh duyet tra ve so -> bo qua.
+        const id = window.setTimeout(attempt, 2000);
+        try{ id?.unref?.(); }catch(_){ }
+      }
+    };
+    window.setTimeout(attempt, 1500);
   }
 
   window.tkbShowAgentAnnouncement = showAgentAnnouncement;
