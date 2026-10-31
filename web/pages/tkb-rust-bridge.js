@@ -1572,21 +1572,23 @@
     "#tkbLocalSolverInstall .lsi-actions .lsi-primary{background:#e11d48;border-color:#e11d48;color:#fff}",
     "#tkbLocalSolverInstall .lsi-status{margin:12px 0 0;color:#475569;min-height:1.4em}",
     "#tkbLocalSolverInstall .lsi-status[data-ok=\"true\"]{color:#047857;font-weight:600}",
-    // 31/10: cong tac Agent (tkbcherry.com) — ray + nut tron ve bang ::before/::after.
-    "#btnSolverTarget.agent-toggle{position:relative;display:inline-flex;align-items:center;height:32px;",
-    "padding:0 11px 0 44px;border-radius:999px;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;",
-    "font:700 12px/1 inherit;letter-spacing:.02em;white-space:nowrap;cursor:pointer;flex:0 0 auto}",
-    "#btnSolverTarget.agent-toggle::before{content:\"\";position:absolute;left:10px;top:50%;width:26px;height:16px;",
-    "margin-top:-8px;border-radius:999px;background:#cbd5e1;transition:background .15s}",
-    "#btnSolverTarget.agent-toggle::after{content:\"\";position:absolute;left:12px;top:50%;width:12px;height:12px;",
-    "margin-top:-6px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.3);transition:transform .15s}",
+    // 31/10: cong tac Agent (tkbcherry.com, canh nut RB) — ray + nut tron ve bang ::before/::after.
+    "#btnSolverTarget.agent-toggle{position:relative;display:inline-flex;align-items:center;box-sizing:border-box;height:28px;",
+    "padding:0 9px 0 35px;border-radius:999px;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;",
+    "font:700 11px/1 inherit;letter-spacing:.02em;white-space:nowrap;cursor:pointer;flex:0 0 auto}",
+    "#btnSolverTarget.agent-toggle::before{content:\"\";position:absolute;left:8px;top:50%;width:21px;height:13px;",
+    "margin-top:-6.5px;border-radius:999px;background:#cbd5e1;transition:background .15s}",
+    "#btnSolverTarget.agent-toggle::after{content:\"\";position:absolute;left:10px;top:50%;width:9px;height:9px;",
+    "margin-top:-4.5px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.3);transition:transform .15s}",
     "#btnSolverTarget.agent-toggle[data-target=\"local\"]{background:#ecfdf5;border-color:#34d399;color:#047857}",
     "#btnSolverTarget.agent-toggle[data-target=\"local\"]::before{background:#10b981}",
-    "#btnSolverTarget.agent-toggle[data-target=\"local\"]::after{transform:translateX(10px)}",
+    "#btnSolverTarget.agent-toggle[data-target=\"local\"]::after{transform:translateX(8px)}",
     "#btnSolverTarget.agent-toggle[data-target=\"local\"][data-local-online=\"false\"]{background:#fffbeb;border-color:#fbbf24;color:#b45309}",
     "#btnSolverTarget.agent-toggle[data-target=\"local\"][data-local-online=\"false\"]::before{background:#f59e0b}",
     "#btnSolverTarget.agent-toggle:focus-visible{outline:2px solid #0ea5e9;outline-offset:2px}",
-    "@media (max-width:900px){#btnSolverTarget.agent-toggle{display:none!important}}",
+    // Cung dieu kien voi luoi thanh cong cu dien thoai (sapxep.html): o do nhom RB/Home la display:contents.
+    "@media (max-width:900px),(hover:none) and (pointer:coarse),(orientation:landscape) and (max-height:540px) and (any-pointer:coarse)",
+    "{#btnSolverTarget.agent-toggle{display:none!important}}",
     "#tkbAgentAnnounce{position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;",
     "background:rgba(15,23,42,.5);padding:16px}",
     "#tkbAgentAnnounce[hidden]{display:none}",
@@ -2085,7 +2087,13 @@
       btn.type = "button";
       btn.className = "agent-toggle";
       btn.addEventListener("click", () => onSolverTargetClick().catch(() => {}));
-      cherry.insertAdjacentElement("afterend", btn);
+      // 31/10 (chu du an: "nut agent ke ben nut RB, cho no nho lai xiu"): ngay sau RB (nhom RB/Home,
+      // RB chi hien cho superadmin — an thi cong tac dung truoc Home); khong co nhom do thi sau Cherry.
+      const rb = document.getElementById("btnConstraintAudit");
+      const home = document.getElementById("btnHome");
+      if(rb) rb.insertAdjacentElement("afterend", btn);
+      else if(home) home.insertAdjacentElement("beforebegin", btn);
+      else cherry.insertAdjacentElement("afterend", btn);
     }
     syncSolverTargetUi();
     if(solverTarget() === "local"){
