@@ -1590,25 +1590,17 @@
     "#tkbAgentAnnounce{position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;",
     "background:rgba(15,23,42,.5);padding:16px}",
     "#tkbAgentAnnounce[hidden]{display:none}",
-    "#tkbAgentAnnounce .aa-card{background:#fff;color:#0f172a;max-width:560px;width:100%;max-height:calc(100vh - 32px);",
+    "#tkbAgentAnnounce .aa-card{background:#fff;color:#0f172a;max-width:420px;width:100%;max-height:calc(100vh - 32px);",
     "overflow:auto;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.3);padding:22px 24px;",
     "font:14px/1.55 system-ui,'Segoe UI',sans-serif}",
     "#tkbAgentAnnounce .aa-badge{display:inline-block;margin-bottom:6px;padding:3px 9px;border-radius:999px;",
     "background:#ffe4e6;color:#be123c;font:700 11px/1.4 system-ui,'Segoe UI',sans-serif;letter-spacing:.06em}",
     "#tkbAgentAnnounce h3{margin:0 0 6px;font-size:20px;line-height:1.3}",
-    "#tkbAgentAnnounce p{margin:0 0 10px}",
-    "#tkbAgentAnnounce .aa-modes{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}",
-    "#tkbAgentAnnounce .aa-mode{border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;background:#f8fafc}",
-    "#tkbAgentAnnounce .aa-mode.aa-on{border-color:#34d399;background:#ecfdf5}",
-    "#tkbAgentAnnounce .aa-mode h4{margin:0 0 4px;font-size:14px}",
-    "#tkbAgentAnnounce .aa-mode p{margin:0;color:#334155;font-size:13px}",
-    "#tkbAgentAnnounce .aa-note{color:#475569;font-size:13px}",
-    "#tkbAgentAnnounce .aa-ready{color:#047857;font-weight:600}",
-    "#tkbAgentAnnounce .aa-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}",
+    "#tkbAgentAnnounce p{margin:0 0 6px;font-size:15px}",
+    "#tkbAgentAnnounce .aa-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}",
     "#tkbAgentAnnounce .aa-actions a,#tkbAgentAnnounce .aa-actions button{font:600 14px/1 system-ui,'Segoe UI',sans-serif;",
     "padding:10px 14px;border-radius:9px;border:1px solid #cbd5e1;background:#fff;color:#0f172a;cursor:pointer;text-decoration:none}",
-    "#tkbAgentAnnounce .aa-actions .aa-primary{background:#e11d48;border-color:#e11d48;color:#fff}",
-    "@media (max-width:540px){#tkbAgentAnnounce .aa-modes{grid-template-columns:1fr}}"
+    "#tkbAgentAnnounce .aa-actions .aa-primary{background:#e11d48;border-color:#e11d48;color:#fff}"
   ].join("");
 
   function syncSolverTargetUi(){
@@ -1625,8 +1617,8 @@
       btn.title = on
         ? (window.__TKB_LOCAL_SOLVER_ONLINE === false
           ? "Agent BẬT nhưng Cherry.exe chưa chạy — bấm 🍒 Cherry để mở hoặc tải Cherry.exe. Bấm công tắc để tắt Agent và xếp trên máy chủ."
-          : "Agent BẬT (máy mạnh): 🍒 Cherry và Tối ưu chạy bằng Cherry.exe trên máy này. Bấm để tắt và xếp trên máy chủ.")
-        : "Agent TẮT (máy yếu): Cherry xếp trên máy chủ tkbcherry.com. Bấm để bật Cherry.exe trên máy này.";
+          : "Agent BẬT — xếp thời khóa biểu mạnh hơn bằng Cherry.exe trên máy này. Bấm để tắt.")
+        : "Agent TẮT — Cherry xếp trên máy chủ. Bấm để bật Agent.";
       btn.setAttribute("aria-label", btn.title);
       return;
     }
@@ -2142,47 +2134,15 @@
     modal.setAttribute("aria-labelledby", "tkbAgentAnnounceTitle");
     const card = el("div", "aa-card");
     card.appendChild(el("span", "aa-badge", "TÍNH NĂNG MỚI"));
-    const title = el("h3", "", "🍒 Cherry Agent — xếp lịch ngay trên máy tính của bạn");
+    // 31/10 (chu du an: "dung giai thich nhu vay rat ki, chi can noi che do Agent ho tro xep TKB
+    // manh hon, Agent de mac dinh"): chi hai y, mot nut.
+    const title = el("h3", "", "🍒 Chế độ Agent");
     title.id = "tkbAgentAnnounceTitle";
     card.appendChild(title);
-    card.appendChild(el("p", "", "Nút 🍒 Cherry và Tối ưu giờ có thể chạy bằng Cherry.exe ngay trên máy này: không phải chờ máy chủ, dùng toàn bộ sức máy để xếp và tối ưu."));
-    const modes = el("div", "aa-modes");
-    const on = el("div", "aa-mode aa-on");
-    on.appendChild(el("h4", "", "Agent BẬT — máy mạnh"));
-    on.appendChild(el("p", "", "Mặc định. Cherry xếp bằng Cherry.exe trên máy này. Lần đầu tải Cherry.exe (khoảng 100 MB, không cần quyền quản trị); những lần sau trang tự mở."));
-    const off = el("div", "aa-mode");
-    off.appendChild(el("h4", "", "Agent TẮT — máy yếu"));
-    off.appendChild(el("p", "", "Cherry xếp trên máy chủ tkbcherry.com như trước, không cần cài gì."));
-    modes.appendChild(on);
-    modes.appendChild(off);
-    card.appendChild(modes);
-    card.appendChild(el("p", "aa-note", "Công tắc Agent nằm ngay cạnh nút 🍒 Cherry. Dữ liệu trường vẫn lưu trên tkbcherry.com như cũ. Điện thoại và máy Mac luôn xếp trên máy chủ."));
-    if(window.__TKB_LOCAL_SOLVER_ONLINE === true){
-      card.appendChild(el("p", "aa-ready", "✓ Máy này đã có Cherry.exe đang chạy — bấm 🍒 Cherry là xếp được ngay."));
-    }
+    card.appendChild(el("p", "", "Chế độ Agent hỗ trợ xếp thời khóa biểu mạnh hơn."));
+    card.appendChild(el("p", "", "Agent được bật mặc định."));
     const actions = el("div", "aa-actions");
-    if(window.__TKB_LOCAL_SOLVER_ONLINE !== true){
-      const download = el("a", "aa-primary", "Tải Cherry.exe");
-      download.id = "tkbAgentAnnounceDownload";
-      download.href = localSolverDownloadUrl();
-      download.setAttribute("download", "Cherry.exe");
-      download.addEventListener("click", () => {
-        closeAgentAnnouncement();
-        setStatus("Đang tải Cherry.exe — mở file vừa tải (Windows cảnh báo thì More info → Run anyway). Cherry chạy lên là bấm 🍒 Cherry được ngay.", "info");
-        startLocalInstallPolling();
-      });
-      actions.appendChild(download);
-    }
-    const turnOff = el("button", "", "Tắt Agent (máy yếu)");
-    turnOff.type = "button";
-    turnOff.id = "tkbAgentAnnounceOff";
-    turnOff.addEventListener("click", () => {
-      setSolverTarget("server");
-      closeAgentAnnouncement();
-      setStatus("Agent tắt — Cherry xếp trên máy chủ. Bật lại bằng công tắc Agent cạnh nút 🍒 Cherry.", "info");
-    });
-    actions.appendChild(turnOff);
-    const ok = el("button", window.__TKB_LOCAL_SOLVER_ONLINE === true ? "aa-primary" : "", "Đã hiểu");
+    const ok = el("button", "aa-primary", "Đã hiểu");
     ok.type = "button";
     ok.id = "tkbAgentAnnounceOk";
     ok.addEventListener("click", closeAgentAnnouncement);
