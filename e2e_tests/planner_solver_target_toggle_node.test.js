@@ -316,31 +316,25 @@ test("hộp cài trên tkbcherry.com: tải Cherry.exe từ trang Netlify, có n
   assert.deepEqual(ran, ["cherry"], "đang bấm Cherry dở thì xếp luôn trên máy chủ");
 });
 
-test("thông báo tính năng mới: hiện trên Windows, nêu máy mạnh / máy yếu, Đã hiểu thì không đổi Agent", () => {
+test("thông báo tính năng mới: ngắn gọn — Agent xếp mạnh hơn, bật mặc định; Đã hiểu thì không đổi Agent", () => {
   const storage = memoryStorage();
   const {hooks, document} = loadBridge({storage, fetchImpl:health});
   const modal = hooks.showAgentAnnouncement();
   assert.ok(modal);
   assert.equal(modal.id, "tkbAgentAnnounce");
   const text = allText(modal);
-  for(const phrase of ["Agent BẬT", "máy mạnh", "Agent TẮT", "máy yếu", "Cherry.exe", "Điện thoại và máy Mac"]){
-    assert.ok(text.includes(phrase), phrase);
+  assert.ok(text.includes("Chế độ Agent hỗ trợ xếp thời khóa biểu mạnh hơn."), text);
+  assert.ok(text.includes("Agent được bật mặc định."), text);
+  for(const gone of ["máy mạnh", "máy yếu", "100 MB", "Điện thoại"]){
+    assert.ok(!text.includes(gone), `không giải thích dài: ${gone}`);
   }
-  assert.equal(document.getElementById("tkbAgentAnnounceDownload").href, NETLIFY_DOWNLOAD);
+  assert.equal(document.getElementById("tkbAgentAnnounceOff"), null);
   document.getElementById("tkbAgentAnnounceOk").click();
   assert.ok(storage.getItem("TKB_AGENT_ANNOUNCE_V1"));
   assert.equal(hooks.solverTarget(), "local", "Đã hiểu không đổi Agent");
 });
 
-test("thông báo: nút Tắt Agent (máy yếu) chuyển sang máy chủ; trang Netlify không hiện thông báo này", () => {
-  const storage = memoryStorage();
-  const {hooks, document} = loadBridge({storage, fetchImpl:health});
-  hooks.showAgentAnnouncement();
-  document.getElementById("tkbAgentAnnounceOff").click();
-  assert.equal(storage.getItem("TKB_AGENT_MODE_V1"), "off");
-  assert.ok(storage.getItem("TKB_AGENT_ANNOUNCE_V1"));
-  assert.equal(hooks.solverTarget(), "server");
-
+test("trang Netlify không hiện thông báo Agent", () => {
   const netlify = loadBridge({noServer:true, fetchImpl:health});
   assert.equal(netlify.hooks.agentPage(), false);
   assert.equal(netlify.hooks.showAgentAnnouncement(), null);
