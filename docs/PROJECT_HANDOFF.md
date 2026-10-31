@@ -52,6 +52,11 @@
   (khoảng 31/10 23:00–23:40) không thấy lại popup ngắn (cùng khoá `TKB_AGENT_ANNOUNCE_V1`).
 - **Bẫy**: Python `write_text` trên Windows ghi CRLF — đã lỡ commit 2 file test Agent dạng CRLF (9fa018c), sửa ở c8fcb55; dùng
   `write_bytes`. Bridge deploy luôn = `git merge-file` (live, base = commit của bản live, mới) — live thiếu f3679c3 (63 dòng).
+- **Sửa lần 4 (31/10 khuya, ĐÃ DEPLOY)**: chủ dự án "vị trí nút Agent bên TRÁI nút RB" + "sao không thấy thông báo" → công tắc
+  `beforebegin` RB (thứ tự Agent · RB · Home · 📊); popup đổi khoá `TKB_AGENT_ANNOUNCE_V2` (ai đóng bản dài V1 vẫn thấy bản ngắn một
+  lần) và CHỜ trang rảnh (đang xếp / nhận lại lượt cũ / hộp Cherry.exe) thay vì bỏ qua lần mở trang đó — vòng chờ 2 s × 300, timer
+  `unref` để Node test không treo. Commit a336fc4 (nhánh agent fe26054). Deploy `scratch/agent-deploy/run.py`: preflight remote
+  `3f3aa358…`, live `152b6d06…` khớp, backup `/root/tkb-backups/agent-left-rb-20261031/`.
 
 ## 2026-10-30 (tối) ENGINE CHERRY + FET CỦA DÒNG CHERRY.EXE LÊN TKBCHERRY.COM (ĐÃ DEPLOY VPS)
 
