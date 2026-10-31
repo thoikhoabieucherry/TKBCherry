@@ -42,6 +42,16 @@
   (rollback có restart — chọn lúc không ai đang xếp). Commit `9fa018c` (nhánh `feat/agent-cherry-exe`, ff vào nhánh này).
 - **Chưa thử**: một lượt Cherry thật trên tkbcherry.com với Agent (cần đăng nhập). Bản Netlify (`cmnweb19`) vẫn bridge cũ — Netlify và
   tkbcherry.com giờ khác nhánh bridge; lần dựng Netlify sau phải lấy bridge từ đây (logic Netlify không đổi). Cloud Run vẫn ảnh cũ.
+- **Sửa theo chủ dự án (31/10 tối, ĐÃ DEPLOY)**: (1) "đừng giải thích như vầy rất kì" → popup chỉ "🍒 Cherry Agent / Xếp TKB mạnh hơn
+  với Cherry Agent. / Cherry Agent được bật mặc định." + nút Đã hiểu (bỏ máy mạnh/máy yếu, 100 MB, Mac/điện thoại); (2) "thay vì nói
+  trên máy này nó kì" → mọi chữ của Agent (chú thích công tắc, hộp tải/đang bật, trạng thái, chấm Cherry) nói "Cherry Agent", bản
+  Netlify giữ chữ cũ; (3) "nút agent kế bên nút RB, nhỏ lại xíu" → công tắc ngay sau `#btnConstraintAudit` (RB ẩn với người không
+  phải superadmin → đứng trước Home; không có nhóm đó → sau Cherry), cao 28 px, ẩn theo đúng media query lưới điện thoại của sapxep.html.
+  Commit 3e40444/c8fcb55/c77efb9 (nhánh agent 64ea6ab/e2c1b11/8141dd9). Deploy bằng `scratch/agent-deploy/run.py` (lệnh dài bị ô nhập
+  cắt): preflight remote `0b35847a…`, live mới `3f3aa358…` khớp, backup `/root/tkb-backups/agent-rb-20261031/`. Ai đã thấy popup dài
+  (khoảng 31/10 23:00–23:40) không thấy lại popup ngắn (cùng khoá `TKB_AGENT_ANNOUNCE_V1`).
+- **Bẫy**: Python `write_text` trên Windows ghi CRLF — đã lỡ commit 2 file test Agent dạng CRLF (9fa018c), sửa ở c8fcb55; dùng
+  `write_bytes`. Bridge deploy luôn = `git merge-file` (live, base = commit của bản live, mới) — live thiếu f3679c3 (63 dòng).
 
 ## 2026-10-30 (tối) ENGINE CHERRY + FET CỦA DÒNG CHERRY.EXE LÊN TKBCHERRY.COM (ĐÃ DEPLOY VPS)
 
