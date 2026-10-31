@@ -1573,6 +1573,9 @@
     "#tkbLocalSolverInstall .lsi-actions .lsi-primary{background:#e11d48;border-color:#e11d48;color:#fff}",
     "#tkbLocalSolverInstall .lsi-status{margin:12px 0 0;color:#475569;min-height:1.4em}",
     "#tkbLocalSolverInstall .lsi-status[data-ok=\"true\"]{color:#047857;font-weight:600}",
+    // 31/10: hop "Dang bat Cherry Agent…" chi bao doi — the nho, can giua.
+    "#tkbLocalSolverInstall[data-wait-only=\"true\"] .lsi-card{max-width:340px;text-align:center}",
+    "#tkbLocalSolverInstall[data-wait-only=\"true\"] .lsi-status:empty{display:none}",
     // 31/10: cong tac Agent (tkbcherry.com, canh nut RB) — ray + nut tron ve bang ::before/::after.
     "#btnSolverTarget.agent-toggle{position:relative;display:inline-flex;align-items:center;box-sizing:border-box;height:28px;",
     "padding:0 9px 0 35px;border-radius:999px;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;",
@@ -1879,15 +1882,35 @@
       setLocalInstallStatus("Đang chờ… Mở file Cherry.exe vừa tải (Windows cảnh báo thì More info → Run anyway). Cherry chạy lên là trang tự xếp tiếp.", false);
       startLocalInstallPolling();
     });
-    if(starting){
-      card.appendChild(el("h3", "", agentPage() ? "🍒 Đang bật Cherry Agent…" : "🍒 Đang bật bộ giải Cherry…"));
-      card.appendChild(el("p", "", agentPage() ? "Trang đang mở Cherry Agent. Chrome hỏi “Mở …?” thì bấm Mở (tick “Luôn cho phép” để lần sau khỏi hỏi) — Cherry Agent lên là tự xếp, không cần bấm lại." : "Trang đang mở bộ giải Cherry trên máy này. Chrome hỏi “Mở …?” thì bấm Mở (tick “Luôn cho phép” để lần sau khỏi hỏi) — bộ giải lên là tự xếp, không cần bấm lại."));
+    // 31/10 (chu du an: "luc chua mo Agent ma co Agent trong may roi thi cu keu nguoi dung doi thoi,
+    // bo cac option khac di; truong hop check ma khong co moi keu nguoi dung mo len"): trang
+    // tkbcherry.com — hop "Dang bat" chi bao doi, khong nut nao; het gio cho ma Agent khong len thi
+    // vong do doi sang hop "Chua mo duoc" (mo ung dung Cherry / Thu lai / tai / tat Agent).
+    const waitOnly = starting && agentPage();
+    if(waitOnly){
+      modal.dataset.waitOnly = "true";
+      card.appendChild(el("h3", "", "🍒 Đang bật Cherry Agent…"));
+      card.appendChild(el("p", "", "Vui lòng đợi trong giây lát."));
+    }else if(starting){
+      card.appendChild(el("h3", "", "🍒 Đang bật bộ giải Cherry…"));
+      card.appendChild(el("p", "", "Trang đang mở bộ giải Cherry trên máy này. Chrome hỏi “Mở …?” thì bấm Mở (tick “Luôn cho phép” để lần sau khỏi hỏi) — bộ giải lên là tự xếp, không cần bấm lại."));
+      actions.appendChild(download);
+    }else if(installedBefore && agentPage()){
+      card.appendChild(el("h3", "", "🍒 Chưa mở được Cherry Agent"));
+      card.appendChild(el("p", "", "Hãy mở ứng dụng Cherry trên máy — Cherry Agent lên là trang tự xếp tiếp."));
+      const retry = el("button", "lsi-primary", "Thử lại");
+      retry.type = "button";
+      retry.id = "tkbLocalSolverTurnOn";
+      retry.addEventListener("click", () => { turnOnLocalSolverFromDialog(true).catch(() => {}); });
+      actions.appendChild(retry);
+      download.className = "";
+      download.textContent = "Chưa cài? Tải Cherry.exe";
       actions.appendChild(download);
     }else if(installedBefore){
       // 28/10: dau "tung thay" chi la trinh duyet tung thay mot bo giai tra loi (co the da go, hoac
       // ban chay thu) -> KHONG khang dinh may da cai; Tai ve dung dau.
-      card.appendChild(el("h3", "", agentPage() ? "🍒 Chưa bật được Cherry Agent" : "🍒 Chưa bật được bộ giải Cherry"));
-      card.appendChild(el("p", "", agentPage() ? "Chưa có Cherry.exe thì bấm Tải về rồi mở nó (khoảng 100 MB, một lần). Đã có rồi thì bấm Thử bật lại — Chrome hỏi “Mở …?” thì bấm Mở." : "Máy này chưa có Cherry.exe thì bấm Tải về rồi mở nó (khoảng 100 MB, một lần). Đã có rồi thì bấm Thử bật lại — Chrome hỏi “Mở …?” thì bấm Mở."));
+      card.appendChild(el("h3", "", "🍒 Chưa bật được bộ giải Cherry"));
+      card.appendChild(el("p", "", "Máy này chưa có Cherry.exe thì bấm Tải về rồi mở nó (khoảng 100 MB, một lần). Đã có rồi thì bấm Thử bật lại — Chrome hỏi “Mở …?” thì bấm Mở."));
       actions.appendChild(download);
       const on = el("button", "", "Thử bật lại");
       on.type = "button";
@@ -1911,7 +1934,7 @@
       card.appendChild(el("h3", "", "🍒 Bộ giải Cherry"));
       card.appendChild(el("p", "", "Trên máy này nút 🍒 Cherry xếp ngay trên trình duyệt. Tối ưu cần bộ giải Cherry đầy đủ, hiện mới có cho máy tính Windows."));
     }
-    if(agentPage()){
+    if(agentPage() && !waitOnly){
       // 31/10: may yeu / khong muon cai -> tat Agent, xep tren may chu ngay (khong phai tim cong tac).
       const off = el("button", "", "Tắt Agent, xếp trên máy chủ");
       off.type = "button";
@@ -1930,24 +1953,26 @@
       });
       actions.appendChild(off);
     }
-    const closeBtn = el("button", "", "Đóng");
-    closeBtn.type = "button";
-    closeBtn.id = "tkbLocalSolverClose";
-    closeBtn.addEventListener("click", () => {
-      // Dong = thoi khong xep: bo giai len muon cung khong tu chay Cherry.
-      localInstallRunCherryUntil = 0;
-      localInstallStartingUntil = 0;
-      closeLocalInstallDialog();
-    });
-    actions.appendChild(closeBtn);
-    card.appendChild(actions);
+    if(!waitOnly){
+      const closeBtn = el("button", "", "Đóng");
+      closeBtn.type = "button";
+      closeBtn.id = "tkbLocalSolverClose";
+      closeBtn.addEventListener("click", () => {
+        // Dong = thoi khong xep: bo giai len muon cung khong tu chay Cherry.
+        localInstallRunCherryUntil = 0;
+        localInstallStartingUntil = 0;
+        closeLocalInstallDialog();
+      });
+      actions.appendChild(closeBtn);
+      card.appendChild(actions);
+    }
     const status = el("p", "lsi-status");
     status.id = "tkbLocalSolverInstallStatus";
     card.appendChild(status);
     modal.appendChild(card);
     document.body.appendChild(modal);
     modal.hidden = false;
-    if(starting) setLocalInstallStatus("Đang chờ bộ giải lên…", false);
+    if(starting && !waitOnly) setLocalInstallStatus("Đang chờ bộ giải lên…", false);
     // Bo giai len muon (Chrome hoi "Mo...?" / vua cai xong) -> hop tu nhan va xep tiep.
     startLocalInstallPolling();
     return modal;

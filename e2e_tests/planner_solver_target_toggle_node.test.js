@@ -322,6 +322,60 @@ test("bấm Cherry khi Agent BẬT mà Cherry.exe chưa chạy: mở cherry-loca
   assert.equal(off.document.frames.length, 0);
 });
 
+test("Agent: máy đã có Cherry Agent mà chưa chạy — hộp chỉ báo đợi, không nút nào; Agent lên thì tự xếp", async () => {
+  const storage = memoryStorage({TKB_LOCAL_SOLVER_SEEN_V1:"1793000000000", TKB_AGENT_ANNOUNCE_V2:"1"});
+  let online = false;
+  const {hooks, document, window} = loadBridge({
+    storage,
+    fetchImpl:async url => {
+      if(url.startsWith(LOCAL) && !online) throw new TypeError("Failed to fetch");
+      return health(url);
+    }
+  });
+  const runs = [];
+  window.tkbRunEngine = (...args) => runs.push(args);
+  window.__TKB_LOCAL_SOLVER_ONLINE = false;
+  const evt = stopEvent();
+  hooks.launchLocalSolverOnGesture(evt);
+  assert.ok(evt.stopped >= 1);
+  const modal = document.getElementById("tkbLocalSolverInstall");
+  assert.equal(modal.dataset.mode, "starting");
+  assert.equal(modal.dataset.waitOnly, "true");
+  const text = allText(modal);
+  assert.ok(text.includes("Đang bật Cherry Agent"), text);
+  assert.ok(text.includes("Vui lòng đợi"), text);
+  for(const id of ["tkbLocalSolverDownload", "tkbLocalSolverAgentOff", "tkbLocalSolverClose", "tkbLocalSolverTurnOn"]){
+    assert.equal(document.getElementById(id), null, `không có lựa chọn ${id}`);
+  }
+  online = true;
+  await new Promise(r => setTimeout(r, 1400));
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0][0], "cherry");
+  assert.equal(modal.hidden, true);
+  hooks.stopLocalInstallPolling();
+});
+
+test("Agent: chờ hết giờ mà không thấy Cherry Agent — mới yêu cầu mở ứng dụng Cherry (Thử lại / tải / tắt Agent)", async () => {
+  const storage = memoryStorage({TKB_LOCAL_SOLVER_SEEN_V1:"1793000000000", TKB_AGENT_ANNOUNCE_V2:"1"});
+  const {hooks, document, window} = loadBridge({storage, fetchImpl:offlineLocal});
+  window.__TKB_LOCAL_SOLVER_START_WAIT_MS = 600;
+  window.__TKB_LOCAL_SOLVER_ONLINE = false;
+  hooks.launchLocalSolverOnGesture(stopEvent());
+  assert.equal(document.getElementById("tkbLocalSolverInstall").dataset.waitOnly, "true");
+  await new Promise(r => setTimeout(r, 1300));
+  const modal = document.getElementById("tkbLocalSolverInstall");
+  assert.equal(modal.dataset.mode, "failed");
+  const text = allText(modal);
+  assert.ok(text.includes("Chưa mở được Cherry Agent"), text);
+  assert.ok(text.includes("Hãy mở ứng dụng Cherry"), text);
+  assert.equal(document.getElementById("tkbLocalSolverTurnOn").textContent, "Thử lại");
+  assert.equal(document.getElementById("tkbLocalSolverTurnOn").className, "lsi-primary");
+  assert.equal(document.getElementById("tkbLocalSolverDownload").textContent, "Chưa cài? Tải Cherry.exe");
+  assert.ok(document.getElementById("tkbLocalSolverAgentOff"));
+  assert.ok(document.getElementById("tkbLocalSolverClose"));
+  hooks.stopLocalInstallPolling();
+});
+
 test("hộp cài trên tkbcherry.com: tải Cherry.exe từ trang Netlify, có nút Tắt Agent xếp luôn trên máy chủ", () => {
   const ran = [];
   const {hooks, document, window} = loadBridge({fetchImpl:health});
