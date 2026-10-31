@@ -54,12 +54,21 @@ function makeNode(id, nodes, tag = ""){
   };
 }
 
-function makeDocument(){
+function makeDocument({toolbarGroup = true} = {}){
   const nodes = new Map();
   const cherry = makeNode("btnEngineCherry", nodes, "button");
   const inserted = [];
-  cherry.insertAdjacentElement = (where, el) => { inserted.push({where, el}); nodes.set(el.id, el); return el; };
+  const anchor = node => { node.insertAdjacentElement = (where, el) => { inserted.push({anchor:node.id, where, el}); nodes.set(el.id, el); return el; }; };
+  anchor(cherry);
   nodes.set("btnEngineCherry", cherry);
+  // 31/10: nhom RB / Home cua thanh cong cu (RB chi hien cho superadmin nhung van co trong DOM).
+  if(toolbarGroup){
+    for(const id of ["btnConstraintAudit", "btnHome"]){
+      const node = makeNode(id, nodes, "button");
+      anchor(node);
+      nodes.set(id, node);
+    }
+  }
   const head = {appendChild(child){ if(child.id) nodes.set(child.id, child); return child; }};
   const frames = [];
   const docListeners = [];
@@ -78,9 +87,9 @@ function makeDocument(){
   };
 }
 
-function loadBridge({storage, fetchImpl, navigator, authHeaders, noServer} = {}){
+function loadBridge({storage, fetchImpl, navigator, authHeaders, noServer, toolbarGroup} = {}){
   const localStorage = storage || memoryStorage();
-  const document = makeDocument();
+  const document = makeDocument({toolbarGroup});
   const statuses = [];
   const window = {
     DATA:{lop:[], mon:[], monhoc:[], giaovien:[], pccmMatrix:{}, tkb:{}, tkbConstraints:{}},
@@ -216,11 +225,12 @@ test("địa chỉ Cherry.exe chỉ nhận loopback (không gửi dữ liệu tr
   assert.equal(await hooks.rustApiBase(), "http://127.0.0.1:2300");
 });
 
-test("công tắc Agent gắn ngay sau nút Cherry, bật mặc định, bấm để tắt / bật và nhớ lựa chọn", async () => {
+test("công tắc Agent gắn ngay sau nút RB, bật mặc định, bấm để tắt / bật và nhớ lựa chọn", async () => {
   const storage = memoryStorage({TKB_AGENT_ANNOUNCE_V1:"1"});
   const {hooks, document, statuses} = loadBridge({storage, fetchImpl:health});
   hooks.initSolverTargetUi();
   assert.equal(document.inserted.length, 1);
+  assert.equal(document.inserted[0].anchor, "btnConstraintAudit");
   assert.equal(document.inserted[0].where, "afterend");
   const btn = document.getElementById("btnSolverTarget");
   assert.ok(btn);
@@ -243,6 +253,15 @@ test("công tắc Agent gắn ngay sau nút Cherry, bật mặc định, bấm �
   assert.equal(document.getElementById("tkbCherryLocalDot").dataset.state, "online");
   hooks.initSolverTargetUi();
   assert.equal(document.inserted.length, 1, "không gắn công tắc hai lần");
+});
+
+test("trang không có nhóm RB / Home: công tắc Agent về ngay sau nút Cherry", () => {
+  const storage = memoryStorage({TKB_AGENT_ANNOUNCE_V1:"1"});
+  const {hooks, document} = loadBridge({storage, fetchImpl:health, toolbarGroup:false});
+  hooks.initSolverTargetUi();
+  assert.equal(document.inserted.length, 1);
+  assert.equal(document.inserted[0].anchor, "btnEngineCherry");
+  assert.equal(document.inserted[0].where, "afterend");
 });
 
 test("bật Agent khi Cherry.exe chưa chạy: chỉ dò nhanh, không tự mở ứng dụng, công tắc chuyển màu cam", async () => {
