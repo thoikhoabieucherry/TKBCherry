@@ -225,13 +225,13 @@ test("địa chỉ Cherry.exe chỉ nhận loopback (không gửi dữ liệu tr
   assert.equal(await hooks.rustApiBase(), "http://127.0.0.1:2300");
 });
 
-test("công tắc Agent gắn ngay sau nút RB, bật mặc định, bấm để tắt / bật và nhớ lựa chọn", async () => {
-  const storage = memoryStorage({TKB_AGENT_ANNOUNCE_V1:"1"});
+test("công tắc Agent gắn ngay bên trái nút RB, bật mặc định, bấm để tắt / bật và nhớ lựa chọn", async () => {
+  const storage = memoryStorage({TKB_AGENT_ANNOUNCE_V2:"1"});
   const {hooks, document, statuses} = loadBridge({storage, fetchImpl:health});
   hooks.initSolverTargetUi();
   assert.equal(document.inserted.length, 1);
   assert.equal(document.inserted[0].anchor, "btnConstraintAudit");
-  assert.equal(document.inserted[0].where, "afterend");
+  assert.equal(document.inserted[0].where, "beforebegin");
   const btn = document.getElementById("btnSolverTarget");
   assert.ok(btn);
   assert.equal(btn.textContent, "Agent");
@@ -256,7 +256,7 @@ test("công tắc Agent gắn ngay sau nút RB, bật mặc định, bấm để
 });
 
 test("trang không có nhóm RB / Home: công tắc Agent về ngay sau nút Cherry", () => {
-  const storage = memoryStorage({TKB_AGENT_ANNOUNCE_V1:"1"});
+  const storage = memoryStorage({TKB_AGENT_ANNOUNCE_V2:"1"});
   const {hooks, document} = loadBridge({storage, fetchImpl:health, toolbarGroup:false});
   hooks.initSolverTargetUi();
   assert.equal(document.inserted.length, 1);
@@ -265,7 +265,7 @@ test("trang không có nhóm RB / Home: công tắc Agent về ngay sau nút Che
 });
 
 test("bật Agent khi Cherry.exe chưa chạy: chỉ dò nhanh, không tự mở ứng dụng, công tắc chuyển màu cam", async () => {
-  const storage = memoryStorage({TKB_AGENT_MODE_V1:"off", TKB_AGENT_ANNOUNCE_V1:"1"});
+  const storage = memoryStorage({TKB_AGENT_MODE_V1:"off", TKB_AGENT_ANNOUNCE_V2:"1"});
   const {hooks, document} = loadBridge({storage, fetchImpl:offlineLocal});
   hooks.initSolverTargetUi();
   const btn = document.getElementById("btnSolverTarget");
@@ -277,7 +277,7 @@ test("bật Agent khi Cherry.exe chưa chạy: chỉ dò nhanh, không tự mở
 });
 
 test("đang xếp lịch thì không cho đổi Agent", async () => {
-  const storage = memoryStorage({TKB_AGENT_ANNOUNCE_V1:"1"});
+  const storage = memoryStorage({TKB_AGENT_ANNOUNCE_V2:"1"});
   const {hooks, document, window, statuses} = loadBridge({storage, fetchImpl:health});
   hooks.initSolverTargetUi();
   window.__TKB_RUST_SOLVER_RUNNING = true;
@@ -352,7 +352,7 @@ test("thông báo tính năng mới: ngắn gọn — Agent xếp mạnh hơn, b
   }
   assert.equal(document.getElementById("tkbAgentAnnounceOff"), null);
   document.getElementById("tkbAgentAnnounceOk").click();
-  assert.ok(storage.getItem("TKB_AGENT_ANNOUNCE_V1"));
+  assert.ok(storage.getItem("TKB_AGENT_ANNOUNCE_V2"));
   assert.equal(hooks.solverTarget(), "local", "Đã hiểu không đổi Agent");
 });
 
@@ -360,6 +360,27 @@ test("trang Netlify không hiện thông báo Agent", () => {
   const netlify = loadBridge({noServer:true, fetchImpl:health});
   assert.equal(netlify.hooks.agentPage(), false);
   assert.equal(netlify.hooks.showAgentAnnouncement(), null);
+});
+
+test("popup: ai đã thấy bản dài (khoá V1) vẫn được thấy bản ngắn một lần", async () => {
+  const storage = memoryStorage({TKB_AGENT_ANNOUNCE_V1:"1793460000000"});
+  const {hooks, document} = loadBridge({storage, fetchImpl:health});
+  hooks.initSolverTargetUi();
+  await new Promise(r => setTimeout(r, 1700));
+  assert.ok(document.getElementById("tkbAgentAnnounce"));
+});
+
+test("popup: trang đang bận lúc mở thì chờ rảnh rồi mới hiện, không bỏ qua", async () => {
+  const storage = memoryStorage();
+  const {hooks, document, window} = loadBridge({storage, fetchImpl:health});
+  window.__TKB_SOLVE_UI_BUSY = true;
+  hooks.initSolverTargetUi();
+  await new Promise(r => setTimeout(r, 1700));
+  assert.equal(document.getElementById("tkbAgentAnnounce"), null, "đang bận thì chưa hiện");
+  window.__TKB_SOLVE_UI_BUSY = false;
+  await new Promise(r => setTimeout(r, 2200));
+  assert.ok(document.getElementById("tkbAgentAnnounce"), "rảnh thì hiện");
+  document.getElementById("tkbAgentAnnounceOk").click();
 });
 
 test("thông báo chỉ tự hiện một lần sau khi mở trang", async () => {
