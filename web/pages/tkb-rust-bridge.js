@@ -1492,7 +1492,7 @@
       return "Không kết nối được máy chủ xếp lịch tkbcherry.com. Gạt về Cherry.exe để xếp trên máy này.";
     }
     if(agentPage() && solverTarget() === "local"){
-      return "Agent đang bật nhưng chưa thấy Cherry.exe trên máy này — mở Cherry.exe (chưa có thì tải về), hoặc tắt Agent để xếp trên máy chủ.";
+      return "Cherry Agent đang bật nhưng Cherry.exe chưa chạy — mở Cherry.exe (chưa có thì tải về), hoặc tắt Agent để xếp trên máy chủ.";
     }
     return solverTarget() === "local"
       ? `Chưa thấy bộ giải trên máy này (${localSolverOrigin()}). Mở Cherry.exe một lần (Chrome hỏi "Mở …?" hoặc quyền truy cập mạng cục bộ thì chọn Cho phép), hoặc gạt về "Máy chủ".`
@@ -1616,9 +1616,9 @@
       btn.textContent = "Agent";
       btn.title = on
         ? (window.__TKB_LOCAL_SOLVER_ONLINE === false
-          ? "Agent BẬT nhưng Cherry.exe chưa chạy — bấm 🍒 Cherry để mở hoặc tải Cherry.exe. Bấm công tắc để tắt Agent và xếp trên máy chủ."
-          : "Agent BẬT — xếp thời khóa biểu mạnh hơn bằng Cherry.exe trên máy này. Bấm để tắt.")
-        : "Agent TẮT — Cherry xếp trên máy chủ. Bấm để bật Agent.";
+          ? "Cherry Agent đang bật nhưng Cherry.exe chưa chạy — bấm 🍒 Cherry để mở hoặc tải Cherry.exe. Bấm công tắc để tắt Agent."
+          : "Xếp TKB mạnh hơn với Cherry Agent. Bấm để tắt.")
+        : "Cherry Agent đang tắt. Bấm để bật — xếp TKB mạnh hơn với Cherry Agent.";
       btn.setAttribute("aria-label", btn.title);
       return;
     }
@@ -1658,19 +1658,19 @@
     if(next !== "local"){
       window.__TKB_LOCAL_SOLVER_ONLINE = undefined;
       syncSolverTargetUi();
-      setStatus(agentPage() ? "Agent tắt — Cherry sẽ xếp trên máy chủ." : "Cherry sẽ giải trên máy chủ.", "info");
+      setStatus(agentPage() ? "Đã tắt Cherry Agent." : "Cherry sẽ giải trên máy chủ.", "info");
       return;
     }
     if(agentPage()){
       // Bat Agent: do nhanh, KHONG danh thuc 12 s — chua chay thi bam Cherry se mo / moi tai.
-      setStatus("Agent bật — đang tìm Cherry.exe trên máy này…", "info");
+      setStatus("Đang bật Cherry Agent…", "info");
       const found = await probeRustApiBase(localSolverOrigin(), 1500).catch(() => "");
       window.__TKB_LOCAL_SOLVER_ONLINE = Boolean(found);
       if(found) rememberLocalSolverSeen();
       markCherryLocalStatus(Boolean(found));
       syncSolverTargetUi();
-      if(found) setStatus("Agent bật — Cherry.exe đã sẵn sàng, bấm 🍒 Cherry để xếp trên máy này.", "success");
-      else setStatus("Agent bật — Cherry.exe chưa chạy. Bấm 🍒 Cherry: trang sẽ mở Cherry.exe, chưa có thì hướng dẫn tải.", "info");
+      if(found) setStatus("Cherry Agent đã sẵn sàng — xếp TKB mạnh hơn, bấm 🍒 Cherry.", "success");
+      else setStatus("Đã bật Cherry Agent — Cherry.exe chưa chạy. Bấm 🍒 Cherry: trang sẽ mở Cherry.exe, chưa có thì hướng dẫn tải.", "info");
       return;
     }
     setStatus("Đang tìm bộ giải trên máy này…", "info");
@@ -1735,8 +1735,10 @@
       : online === "browser"
       ? "Cherry Time! — xếp ngay trên trình duyệt"
       : online === true
-      ? "Cherry Time! — bộ giải trên máy này đã sẵn sàng"
-      : (online === false ? "Cherry Time! — máy này chưa có bộ giải (bấm để cài)" : "Cherry Time!");
+      ? (agentPage() ? "Cherry Time! — Cherry Agent đã sẵn sàng" : "Cherry Time! — bộ giải trên máy này đã sẵn sàng")
+      : (online === false
+        ? (agentPage() ? "Cherry Time! — Cherry Agent chưa chạy (bấm để mở hoặc tải)" : "Cherry Time! — máy này chưa có bộ giải (bấm để cài)")
+        : "Cherry Time!");
     cherry.title = tip;
     cherry.setAttribute("aria-label", tip);
   }
@@ -1782,7 +1784,7 @@
           return;
         }
         setLocalInstallStatus("Đã sẵn sàng! Bấm 🍒 Cherry để xếp thời khóa biểu.", true);
-        setStatus("Bộ giải Cherry trên máy này đã sẵn sàng — bấm 🍒 Cherry để xếp.", "success");
+        setStatus(agentPage() ? "Cherry Agent đã sẵn sàng — bấm 🍒 Cherry để xếp." : "Bộ giải Cherry trên máy này đã sẵn sàng — bấm 🍒 Cherry để xếp.", "success");
         window.setTimeout(closeLocalInstallDialog, 2500);
         return;
       }
@@ -1834,7 +1836,7 @@
       }
       return true;
     }
-    setLocalInstallStatus("Chưa bật được. Máy này chưa có Cherry.exe thì bấm Tải về rồi mở nó.", false);
+    setLocalInstallStatus(agentPage() ? "Chưa bật được Cherry Agent. Chưa có Cherry.exe thì bấm Tải về rồi mở nó." : "Chưa bật được. Máy này chưa có Cherry.exe thì bấm Tải về rồi mở nó.", false);
     const dl = document.getElementById("tkbLocalSolverDownload");
     if(dl) dl.hidden = false;
     return false;
@@ -1875,14 +1877,14 @@
       startLocalInstallPolling();
     });
     if(starting){
-      card.appendChild(el("h3", "", "🍒 Đang bật bộ giải Cherry…"));
-      card.appendChild(el("p", "", "Trang đang mở bộ giải Cherry trên máy này. Chrome hỏi “Mở …?” thì bấm Mở (tick “Luôn cho phép” để lần sau khỏi hỏi) — bộ giải lên là tự xếp, không cần bấm lại."));
+      card.appendChild(el("h3", "", agentPage() ? "🍒 Đang bật Cherry Agent…" : "🍒 Đang bật bộ giải Cherry…"));
+      card.appendChild(el("p", "", agentPage() ? "Trang đang mở Cherry Agent. Chrome hỏi “Mở …?” thì bấm Mở (tick “Luôn cho phép” để lần sau khỏi hỏi) — Cherry Agent lên là tự xếp, không cần bấm lại." : "Trang đang mở bộ giải Cherry trên máy này. Chrome hỏi “Mở …?” thì bấm Mở (tick “Luôn cho phép” để lần sau khỏi hỏi) — bộ giải lên là tự xếp, không cần bấm lại."));
       actions.appendChild(download);
     }else if(installedBefore){
       // 28/10: dau "tung thay" chi la trinh duyet tung thay mot bo giai tra loi (co the da go, hoac
       // ban chay thu) -> KHONG khang dinh may da cai; Tai ve dung dau.
-      card.appendChild(el("h3", "", "🍒 Chưa bật được bộ giải Cherry"));
-      card.appendChild(el("p", "", "Máy này chưa có Cherry.exe thì bấm Tải về rồi mở nó (khoảng 100 MB, một lần). Đã có rồi thì bấm Thử bật lại — Chrome hỏi “Mở …?” thì bấm Mở."));
+      card.appendChild(el("h3", "", agentPage() ? "🍒 Chưa bật được Cherry Agent" : "🍒 Chưa bật được bộ giải Cherry"));
+      card.appendChild(el("p", "", agentPage() ? "Chưa có Cherry.exe thì bấm Tải về rồi mở nó (khoảng 100 MB, một lần). Đã có rồi thì bấm Thử bật lại — Chrome hỏi “Mở …?” thì bấm Mở." : "Máy này chưa có Cherry.exe thì bấm Tải về rồi mở nó (khoảng 100 MB, một lần). Đã có rồi thì bấm Thử bật lại — Chrome hỏi “Mở …?” thì bấm Mở."));
       actions.appendChild(download);
       const on = el("button", "", "Thử bật lại");
       on.type = "button";
@@ -1890,16 +1892,16 @@
       on.addEventListener("click", () => { turnOnLocalSolverFromDialog(true).catch(() => {}); });
       actions.appendChild(on);
     }else if(windows){
-      card.appendChild(el("h3", "", agentPage() ? "🍒 Agent cần Cherry.exe" : "🍒 Chạy Cherry trên máy này"));
+      card.appendChild(el("h3", "", agentPage() ? "🍒 Cherry Agent cần Cherry.exe" : "🍒 Chạy Cherry trên máy này"));
       card.appendChild(el("p", "", agentPage()
-        ? "Agent đang bật nên Cherry xếp ngay trên máy này bằng Cherry.exe — đã gói sẵn mọi thứ, không cần cài thêm gì, không cần quyền quản trị."
+        ? "Xếp TKB mạnh hơn với Cherry Agent — chỉ cần Cherry.exe (đã gói sẵn mọi thứ, không cần cài thêm gì, không cần quyền quản trị)."
         : "Để dùng nút Cherry, máy này cần Cherry.exe — đã gói sẵn mọi thứ, không cần cài thêm gì, không cần quyền quản trị."));
       const steps = el("ol");
       steps.appendChild(el("li", "", "Bấm Tải về (khoảng 100 MB, chỉ tải một lần)."));
       steps.appendChild(el("li", "", "Mở file Cherry.exe vừa tải. Windows cảnh báo thì bấm More info → Run anyway."));
       steps.appendChild(el("li", "", "Đợi khoảng 1 phút — biểu tượng 🍒 hiện cạnh đồng hồ và trang này tự xếp tiếp."));
       card.appendChild(steps);
-      card.appendChild(el("p", "", "Máy này đã cài rồi mà Chrome hỏi “Mở …?” thì bấm Mở — trang tự xếp tiếp."));
+      card.appendChild(el("p", "", agentPage() ? "Đã cài rồi mà Chrome hỏi “Mở …?” thì bấm Mở — trang tự xếp tiếp." : "Máy này đã cài rồi mà Chrome hỏi “Mở …?” thì bấm Mở — trang tự xếp tiếp."));
       actions.appendChild(download);
     }else{
       // Chi con toi day khi bam Toi uu (can bo giai day du) — nut Cherry da xep tren trinh duyet.
@@ -2014,8 +2016,8 @@
     if(Date.now() - localSolverLaunchAt > 10000) triggerLocalSolverLaunch();
     const waitMs = localSolverStartWaitMs(seen);
     setStatus(seen
-      ? "Đang bật bộ giải Cherry trên máy này… (Chrome hỏi “Mở …?” thì bấm Mở và tick Luôn cho phép)"
-      : "Đang tìm bộ giải Cherry trên máy này…", "info");
+      ? (agentPage() ? "Đang bật Cherry Agent… (Chrome hỏi “Mở …?” thì bấm Mở và tick Luôn cho phép)" : "Đang bật bộ giải Cherry trên máy này… (Chrome hỏi “Mở …?” thì bấm Mở và tick Luôn cho phép)")
+      : (agentPage() ? "Đang tìm Cherry Agent…" : "Đang tìm bộ giải Cherry trên máy này…"), "info");
     const deadline = Date.now() + waitMs;
     while(Date.now() < deadline){
       const ok = await probeRustApiBase(localSolverOrigin(), 1500).catch(() => "");
@@ -2136,11 +2138,11 @@
     card.appendChild(el("span", "aa-badge", "TÍNH NĂNG MỚI"));
     // 31/10 (chu du an: "dung giai thich nhu vay rat ki, chi can noi che do Agent ho tro xep TKB
     // manh hon, Agent de mac dinh"): chi hai y, mot nut.
-    const title = el("h3", "", "🍒 Chế độ Agent");
+    const title = el("h3", "", "🍒 Cherry Agent");
     title.id = "tkbAgentAnnounceTitle";
     card.appendChild(title);
-    card.appendChild(el("p", "", "Chế độ Agent hỗ trợ xếp thời khóa biểu mạnh hơn."));
-    card.appendChild(el("p", "", "Agent được bật mặc định."));
+    card.appendChild(el("p", "", "Xếp TKB mạnh hơn với Cherry Agent."));
+    card.appendChild(el("p", "", "Cherry Agent được bật mặc định."));
     const actions = el("div", "aa-actions");
     const ok = el("button", "aa-primary", "Đã hiểu");
     ok.type = "button";

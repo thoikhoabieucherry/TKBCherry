@@ -169,6 +169,7 @@ test("Agent BẬT mà Cherry.exe chưa chạy: trả rỗng + nhắc mở/tải 
   assert.ok(calls.every(c => !c.url.startsWith(SITE)), "không được tự gửi lượt giải lên máy chủ");
   assert.match(hooks.noSolverBackendMessage(), /Cherry\.exe/);
   assert.match(hooks.noSolverBackendMessage(), /tắt Agent/);
+  assert.doesNotMatch(hooks.noSolverBackendMessage(), /máy này/);
 });
 
 test("Agent TẮT (đã lưu): giải trên máy chủ như cũ, không gọi 127.0.0.1", async () => {
@@ -233,7 +234,8 @@ test("công tắc Agent gắn ngay sau nút Cherry, bật mặc định, bấm �
   assert.equal(btn.dataset.target, "server");
   assert.equal(btn.attributes["aria-checked"], "false");
   assert.equal(document.getElementById("tkbCherryLocalDot").dataset.state, "server");
-  assert.match(statuses.at(-1).msg, /máy chủ/);
+  assert.match(statuses.at(-1).msg, /tắt Cherry Agent/);
+  assert.doesNotMatch(btn.title, /máy này/);
   await btn.click();
   assert.equal(storage.getItem("TKB_AGENT_MODE_V1"), "on");
   assert.equal(btn.dataset.target, "local");
@@ -309,7 +311,8 @@ test("hộp cài trên tkbcherry.com: tải Cherry.exe từ trang Netlify, có n
   hooks.stopLocalInstallPolling();
   assert.equal(hooks.localSolverDownloadUrl(), NETLIFY_DOWNLOAD);
   assert.equal(document.getElementById("tkbLocalSolverDownload").href, NETLIFY_DOWNLOAD);
-  assert.match(allText(document.getElementById("tkbLocalSolverInstall")), /Agent/);
+  assert.match(allText(document.getElementById("tkbLocalSolverInstall")), /Xếp TKB mạnh hơn với Cherry Agent/);
+  assert.doesNotMatch(allText(document.getElementById("tkbLocalSolverInstall")), /máy này/);
   document.getElementById("tkbLocalSolverAgentOff").click();
   assert.equal(hooks.solverTarget(), "server");
   assert.equal(document.getElementById("tkbLocalSolverInstall").hidden, true);
@@ -323,9 +326,9 @@ test("thông báo tính năng mới: ngắn gọn — Agent xếp mạnh hơn, b
   assert.ok(modal);
   assert.equal(modal.id, "tkbAgentAnnounce");
   const text = allText(modal);
-  assert.ok(text.includes("Chế độ Agent hỗ trợ xếp thời khóa biểu mạnh hơn."), text);
-  assert.ok(text.includes("Agent được bật mặc định."), text);
-  for(const gone of ["máy mạnh", "máy yếu", "100 MB", "Điện thoại"]){
+  assert.ok(text.includes("Xếp TKB mạnh hơn với Cherry Agent."), text);
+  assert.ok(text.includes("Cherry Agent được bật mặc định."), text);
+  for(const gone of ["máy mạnh", "máy yếu", "100 MB", "Điện thoại", "máy này"]){
     assert.ok(!text.includes(gone), `không giải thích dài: ${gone}`);
   }
   assert.equal(document.getElementById("tkbAgentAnnounceOff"), null);
