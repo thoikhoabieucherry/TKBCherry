@@ -57,6 +57,11 @@
   lần) và CHỜ trang rảnh (đang xếp / nhận lại lượt cũ / hộp Cherry.exe) thay vì bỏ qua lần mở trang đó — vòng chờ 2 s × 300, timer
   `unref` để Node test không treo. Commit a336fc4 (nhánh agent fe26054). Deploy `scratch/agent-deploy/run.py`: preflight remote
   `3f3aa358…`, live `152b6d06…` khớp, backup `/root/tkb-backups/agent-left-rb-20261031/`.
+- **Sửa lần 5 (31/10 khuya, ĐÃ DEPLOY)**: chủ dự án "chưa mở Agent mà có Agent trong máy rồi thì cứ kêu người đợi, bỏ các option
+  khác; check mà không có mới kêu người dùng mở lên" → tkbcherry.com: hộp `starting` (`dataset.waitOnly`) chỉ "🍒 Đang bật Cherry
+  Agent… / Vui lòng đợi trong giây lát.", KHÔNG nút; hết `localSolverStartWaitMs` (20 s) → hộp `failed` "Chưa mở được Cherry Agent —
+  Hãy mở ứng dụng Cherry trên máy…" + Thử lại (chính) / Chưa cài? Tải Cherry.exe / Tắt Agent / Đóng. Netlify giữ hộp cũ. Commit d61bd38
+  (nhánh agent 3947a3e); test toggle 35/35. Live `4b48ce53…`, backup `/root/tkb-backups/agent-wait-dialog-20261031/`.
 
 ## 2026-10-30 (tối) ENGINE CHERRY + FET CỦA DÒNG CHERRY.EXE LÊN TKBCHERRY.COM (ĐÃ DEPLOY VPS)
 
