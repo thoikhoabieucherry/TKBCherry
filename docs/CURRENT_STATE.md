@@ -1,8 +1,10 @@
 # TKBCherry — Trạng thái hiện hành (CURRENT STATE)
 
-*Cập nhật: 2026-10-30. File này là bản tóm tắt ngắn để onboard nhanh; chi tiết từng phiên làm việc nằm trong `PROJECT_HANDOFF.md` (mục cũ hơn ở `docs/archive/`).*
+*Cập nhật: 2026-10-31. File này là bản tóm tắt ngắn để onboard nhanh; chi tiết từng phiên làm việc nằm trong `PROJECT_HANDOFF.md` (mục cũ hơn ở `docs/archive/`).*
 
 ## Sản phẩm
+
+- **Công tắc "Agent" trên tkbcherry.com (31/10/2026, đã deploy)**: máy Windows mặc định BẬT — 🍒 Cherry và Tối ưu xếp bằng Cherry.exe trên máy người dùng (bấm Cherry khi chưa chạy: mở `cherry-local://` hoặc hộp tải từ trang Netlify; hộp có nút tắt Agent), xếp mới có nháp FET trong trình duyệt; TẮT, Mac, điện thoại = máy chủ như cũ. `localStorage.TKB_AGENT_MODE_V1` ("off" = tắt). Popup "Tính năng mới" một lần mỗi trình duyệt (`TKB_AGENT_ANNOUNCE_V1`). Lượt Cherry.exe không trừ hạn mức gói (quyết định chủ dự án). Chi tiết `PROJECT_HANDOFF.md` mục 31/10.
 
 - **Engine Cherry + FET của dòng Cherry.exe trên tkbcherry.com (30/10/2026, đã deploy VPS)**: production chạy cùng engine v3 với Cherry.exe — pha chất lượng CP-SAT LNS nhiều lượt nhỏ (gốc bản V4 "Turbo"), vòng 1 thích ứng, lịch đủ tiết vào thẳng tối ưu, gỡ nợ luật tới hết giờ — và nút ▶ dùng FET đọc đủ luật Yêu cầu GV/môn (gốc bản V3, RB 0 ở An Phú/Tân Nhựt). Nháp FET cho Cherry chỉ chạy với bộ giải máy này (Netlify). Đo 6 luồng/180 s: tốt hơn engine cũ ở An Phú, Tân Nhựt, Đồng Đen bấm lại; **kém hơn ở xếp mới trường rất lớn** (Đồng Đen 72 lớp: 11 buổi 1 tiết vs 3) — đang xử lý. Cloud Run (bị đình chỉ) vẫn ảnh cũ. Chi tiết `PROJECT_HANDOFF.md` mục 30/10 (tối).
 

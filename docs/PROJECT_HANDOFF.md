@@ -8,6 +8,41 @@
 > - [`2026-07-28 – 2026-08-09`](archive/PROJECT_HANDOFF_2026-07-28_2026-08-09.md)
 > Chính sách: đầu mỗi tháng, chuyển các mục của tháng trước vào `docs/archive/`.
 
+## 2026-10-31 TKBCHERRY.COM: CÔNG TẮC "AGENT" — CHERRY.EXE MẶC ĐỊNH TRÊN MÁY WINDOWS + POPUP TÍNH NĂNG MỚI
+
+- **Chủ dự án**: "thêm chế độ Cherry.exe làm mặc định. Điện thoại và Mac thì sài Cloud Run… thêm tính năng bật (gọi là Agent) thì khi
+  xếp phải kêu tải Cherry.exe còn không bật thì chạy trên Cloud Run… Có Cherry.exe dành cho máy mạnh, không có cho máy yếu… làm bảng
+  popup thông báo tính năng mới". Hỏi hạn mức gói: chủ dự án chọn **mọi tài khoản đều dùng Agent, lượt Cherry.exe KHÔNG trừ hạn mức**
+  (máy chủ không thấy lượt local: không trừ lượt Free/Trial/Plus, không chặn trần lớp Max 1; in/xuất vẫn khoá theo gói).
+- **Bridge** (`tkb-rust-bridge.js`, lấy bản bridge của nhánh `feat/cherry-local-solver-toggle` — HEAD bridge == merge-base nên chỉ thêm
+  phần Cherry.exe/Netlify/nháp FET — rồi sửa): `agentPage()` = có máy chủ và không có nút gạt Netlify; `agentSupported()` = thêm máy
+  Windows desktop; `agentEnabled()` đọc `localStorage.TKB_AGENT_MODE_V1` (mặc định BẬT, "off" = tắt). `solverTarget()` trên tkbcherry.com
+  = Agent ? "local" : "server"; điện thoại / Mac / Linux luôn "server". Trang Netlify giữ nguyên logic cũ (`TKB_SOLVER_TARGET_V1`).
+  - Công tắc `#btnSolverTarget.agent-toggle` (role=switch, nhãn "Agent", ray + nút tròn bằng CSS ::before/::after) gắn ngay sau nút
+    Cherry, chỉ máy Windows, ẩn ≤ 900 px; xanh = bật + Cherry.exe chạy, cam = bật nhưng chưa thấy Cherry.exe, xám = tắt. Chấm trên nút
+    Cherry: xanh/cam/xanh dương (máy chủ). Bật công tắc chỉ dò nhanh 1,5 s (không tự mở ứng dụng); khoá khi đang xếp.
+  - Agent BẬT: cú bấm Cherry đi qua `launchLocalSolverOnGesture` như bản Netlify (mở `cherry-local://` trong cú bấm, hộp "Đang bật…"
+    hoặc hộp tải); Tối ưu / lượt giải không thấy Cherry.exe → hộp tải (không tự chạy Cherry nếu là mục Tối ưu). Hộp có nút **"Tắt Agent,
+    xếp trên máy chủ"** (đang bấm Cherry dở thì xếp luôn trên máy chủ). Tải từ `https://tkbcherry.netlify.app/download/Cherry.exe`
+    (VPS không giữ file ~100 MB; Rust `static_file` đọc cả file vào RAM). Nháp FET V3 (`cherryFetSeedEligible`) chạy khi `solverTarget()
+    === "local"` → tkbcherry.com với Agent BẬT cũng dựng nháp trong trình duyệt. Thẻ đăng nhập không gửi sang Cherry.exe.
+  - **Popup** `#tkbAgentAnnounce` ("TÍNH NĂNG MỚI · Cherry Agent"): tự hiện 1,5 s sau khi mở trang Sắp xếp, MỘT lần mỗi trình duyệt
+    (`TKB_AGENT_ANNOUNCE_V1`), chỉ máy Windows; 2 thẻ "Agent BẬT — máy mạnh" / "Agent TẮT — máy yếu", nút Tải Cherry.exe (ẩn khi
+    Cherry.exe đang chạy) / Tắt Agent (máy yếu) / Đã hiểu. Mở lại: `window.tkbShowAgentAnnouncement()`.
+  - Cherry.exe đã cho Origin `https://tkbcherry.com` + `www` (`DEFAULT_ORIGINS`) — không phải dựng lại bộ cài.
+- **Test**: `planner_solver_target_toggle_node` viết lại phần trang có máy chủ cho Agent (30/30), `planner_cherry_fet_seed_node` thêm ca
+  Agent (9/9). Xem UI thật trong Chrome bằng trang thử `scratchpad/deploy/ui-check` (bridge bản deploy, Origin 127.0.0.1:8765): popup,
+  công tắc bật/tắt, hộp tải đều hiển thị đúng.
+- **Deploy**: bản đẩy = bridge LIVE + phần thay đổi (`git merge-file` 3 chiều, base = HEAD; 0 xung đột) — live vẫn thiếu f3679c3
+  (soft-stop 19/09, 63 dòng) như trước. Thư mục đẩy `scratchpad(c14cda64)/deploy/stage-agent` (script deploy-files + bridge bản live).
+- **ĐÃ DEPLOY 31/10** (chủ dự án chạy `!` — classifier chặn Claude): `python <stage-agent>/tools/vps-deploy/deploy-files.py deploy
+  agent-switch-20261031 --no-restart web/pages/tkb-rust-bridge.js`; preflight remote `cd7b7fbd…` (= live đã đối chiếu), live mới
+  `0b35847a…` khớp bản dựng, `/api/health` 200, link tải Netlify trả 206 + `Content-Disposition: attachment` (93,7 MB). Backup
+  `/root/tkb-backups/agent-switch-20261031/`; rollback `deploy-files.py rollback agent-switch-20261031 web/pages/tkb-rust-bridge.js`
+  (rollback có restart — chọn lúc không ai đang xếp). Commit `9fa018c` (nhánh `feat/agent-cherry-exe`, ff vào nhánh này).
+- **Chưa thử**: một lượt Cherry thật trên tkbcherry.com với Agent (cần đăng nhập). Bản Netlify (`cmnweb19`) vẫn bridge cũ — Netlify và
+  tkbcherry.com giờ khác nhánh bridge; lần dựng Netlify sau phải lấy bridge từ đây (logic Netlify không đổi). Cloud Run vẫn ảnh cũ.
+
 ## 2026-10-30 (tối) ENGINE CHERRY + FET CỦA DÒNG CHERRY.EXE LÊN TKBCHERRY.COM (ĐÃ DEPLOY VPS)
 
 - **Chủ dự án**: "xem lại Desktop\TKBCherry-FET-VPS-V3 và V4 có gì hay hơn thuật toán trên tkbcherry.com… tích hợp vào cherry hiện tại"
